@@ -1,0 +1,100 @@
+# Architecture
+
+jc3vr is a VR mod for Just Cause 3. A DLL, the payload, is injected into the running game. Inside the process it detours the engine's frame, camera, rendering, input, character, and UI functions, drives an OpenXR session against the game's own Direct3D 11 device, renders the scene once per eye or once for both eyes at the headset's per-eye resolution, and submits the result to the OpenXR compositor. The game never sees the headset: it renders as it normally would, while the mod substitutes the camera, the targets, and the present.
+
+Each section below links to the document that owns its detail. [CONTRIBUTING.md](../CONTRIBUTING.md) holds the conventions and the development workflow, and [README.md](README.md) indexes every document.
+
+## Workspace
+
+The Cargo workspace (`Cargo.toml`) groups its members into the runtime, shared libraries, and offline tools.
+
+| Path | What it is |
+| --- | --- |
+| `injector/` | Loads the payload into a running game process (or ejects or reloads it), then stays running as the capture host that encodes the payload's video stream ([mod/capture.md](mod/capture.md)). |
+| `payload/` | The injected DLL: every hook, the OpenXR runtime, the HUD, the controllers and body, the debug UI, and the diagnostics. Its shaders live in `payload/src/shaders/` as HLSL with committed DXBC. |
+| `jc3gi/` | Rust bindings to the game's types, functions, and globals, generated at build time by pyxis from the `.pyxis` files in the `jc3gi/pyxis-defs` submodule. The defs are the record of every address, offset, and reverse-engineered finding; CONTRIBUTING.md describes the rules and the submodule workflow. |
+| `crates/body-estimator` | The learned full-body estimator's inference (EgoPoser) in plain Rust ([mod/body/body-estimator.md](mod/body/body-estimator.md)). |
+| `crates/body-rig` | The body rig's pure core (the pelvis solver, the yaw follow, and the step commit), shared by the payload and the offline evaluator ([mod/body/rig.md](mod/body/rig.md)). |
+| `crates/dxbc-stereo` | DXBC bytecode rewriting of the game's vertex shaders for single-pass stereo ([mod/stereo/single-pass-stereo.md](mod/stereo/single-pass-stereo.md)). |
+| `crates/fsr-sys` | Bindings to FidelityFX Super Resolution 2 with its DX11 backend, built from the vendored source in `vendor/` ([mod/rendering/fsr.md](mod/rendering/fsr.md)). |
+| `crates/tracking-format` | The `.jc3trk` tracking recording's data model and codec, built for any host ([mod/testing/recorder.md](mod/testing/recorder.md)). |
+| `tools/shadergen` | Compiles the payload's shaders and the FSR2 shader permutations. |
+| `tools/dxbc-tool` | Compiles HLSL and disassembles DXBC through `d3dcompiler_47` under wine. |
+| `tools/scaleform-gfx-examine` | Inspects Scaleform movie files ([engine/scaleform.md](engine/scaleform.md)). |
+| `tools/tracking-synth` | Offline tools over tracking recordings: printing, the body rig evaluator, the Rerun export, the view scan, and synthetic recordings ([mod/testing/recorder.md](mod/testing/recorder.md)). |
+| `tools/rendering/` | The Python capture harness that drives a live session for image comparisons and the frame-time benchmark ([mod/testing/fast-comparison.md](mod/testing/fast-comparison.md), [mod/testing/benchmark.md](mod/testing/benchmark.md)). |
+| `tools/*` (other) | Python extraction and analysis scripts for game data: shaders, animation graphs, sights, door handles, spawn definitions, captures, and profiles. Each subject's doc names its tool. |
+| `scripts/` | Shell and PowerShell entry points: cross-building and testing under `cargo xwin`, launching and injecting under Proton, the shared wine prefix, the capture relay, and fetch scripts for vendored binaries. |
+
+The documentation lives in `docs/`. `docs/engine/` is reverse-engineered ground truth about the game as it is. `docs/mod/` is the mod's design and shipped implementation, with subject subdirectories that mirror `docs/engine/`. `docs/issues/` holds investigations scoped to one issue. `docs/sessions/<stamp>/` holds the review of each headset playtest session: its notes, the user's feedback, and the checklist for the next session, which `payload/build.rs` embeds in the payload for the debug UI.
+
+## Payload lifecycle
+
+The injector calls the payload's `run` export. It resolves the session output folder ([mod/sessions.md](mod/sessions.md)), installs logging and the crash handler, loads the settings ([mod/settings.md](mod/settings.md)), and installs the hooks (`hooks::install`). The rest of the initialization runs on the game thread at the first [`Game::Update`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/game::Game##func-Update): the debug UI's egui state, the HUD redirect, and the OpenXR runtime. An eject (F5, or the injector's `--eject`) prepares every subsystem for shutdown on the game thread, tears down in a fixed order, removes the hooks, and unmaps the module ([mod/lifecycle.md](mod/lifecycle.md)).
+
+## Path of a frame
+
+The engine runs one frame on the game thread as an update, a render update, and one or more draws. The draws are recorded by the engine's draw task on a CPU fragment worker. The mod's hooks sit at each stage. [mod/threading.md](mod/threading.md) owns the thread model, the two locks of the VR runtime, and the rules for which thread may take them; [mod/vr-runtime.md](mod/vr-runtime.md) owns the OpenXR loop step by step. The steps below follow one frame with a VR session running.
+
+### Update and simulation
+
+1. The [`Game::Update`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/game::Game##func-Update) detour (`hooks::game`) runs `crate::update` before the original: the directing tools, the tracking recorder's frame tick, the capture harness's requests, the hand bodies' frame tick, and the debug UI.
+2. The original update runs the simulation tick. The engine's input job polls the devices; the mod's [`InputDeviceManager::Update`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/input::input_device_manager::InputDeviceManager##func-Update) detour consumes the look and move input and lands the controller bindings' writes ([mod/input/input.md](mod/input/input.md)). The input tick's game stage, in the world's pre-simulation queue, makes the bindings' decisions and every act that changes the world ([mod/input/controllers.md](mod/input/controllers.md#bindings-and-injection)).
+3. The character hooks (`hooks::character`) run inside the pose-finalization pass: the procedural torso and the wrist targets before the HumanIK solve, then the head override and the finger curls after it ([mod/body/procedural-body.md](mod/body/procedural-body.md), [mod/body/head-and-body.md](mod/body/head-and-body.md)). The rig moves Rico through the game's own character movement ([mod/body/rig.md](mod/body/rig.md)).
+
+### Render update and the OpenXR frame
+
+4. The [`Game::UpdateRender`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/game::Game##func-UpdateRender) detour opens the frame's generation of the per-frame slots (`crate::render_frame`), which keep the values of the frame being prepared apart from those of the frame the draw task is still recording.
+5. `vr::update` pumps OpenXR events and brings the session up, retries it, or tears it down. Without a runtime, the mod plays in flatscreen stereo and keeps retrying. `vr::apply_native_resolution` sizes the scene targets to the headset's per-eye resolution; while a session runs, the engine renders into a back buffer the mod owns rather than the DXGI swapchain ([mod/stereo/swapchain-ownership.md](mod/stereo/swapchain-ownership.md)).
+6. `vr::frame_wait` calls `xrWaitFrame`, which paces the game against the compositor in place of vsync, locates the eye views, and samples the controllers. `vr::input` publishes the controller snapshot (`ControllerFrame`) that everything in `controllers` reads.
+7. `vr::begin_render_frame` composes the head pose into the world (`headpose::xr`) and publishes it with the per-eye off-axis projections. The original render update runs. At render time, the controllers' late update and the presentation layer re-pose the held weapon, the hands, and the upper body on the skinning palette from the latest tracking, so nothing attached to the player is drawn a simulation tick behind ([mod/rendering/presentation-layer.md](mod/rendering/presentation-layer.md), [mod/rendering/render-time-anchoring.md](mod/rendering/render-time-anchoring.md)).
+8. `WaitedFrame::begin` calls `xrBeginFrame` once the previous frame's tail has submitted. With the direct eye blit, `vr::arm_direct` acquires the swapchain image so each eye can be blitted into its slice from the draw task.
+
+### Draws
+
+9. `hooks::game` builds a dispatch plan (`stereo::dispatch::DispatchPlan`) and calls [`Game::Draw`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/game::Game##func-Draw) once per dispatch. Between dispatches it restores the engine state that advances once per draw (frame counters, constant-buffer rings, temporal history indices, draw-list parity), so each dispatch sees the same frame. [engine/rendering/rendering.md](engine/rendering/rendering.md) sections 5 and 11 to 13 describe that state.
+10. Each draw runs on the draw task ([`GraphicsEngine::HandleDrawThreadTask`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::GraphicsEngine##func-HandleDrawThreadTask)). The [`Camera::SetupRenderCamera`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/camera::camera::Camera##func-SetupRenderCamera) detour (`hooks::camera`) applies the eye's projection and offset. The render-pass, scene, screen-space, and post-effect hooks (`hooks::graphics_engine`) correct what does not survive per-eye rendering: culling widened to both eyes ([mod/stereo/culling.md](mod/stereo/culling.md)), lighting and shadow state ([mod/stereo/lighting-shadow-vr-interactions.md](mod/stereo/lighting-shadow-vr-interactions.md)), and FSR or the mod's TAA in place of the engine's SMAA ([mod/rendering/fsr.md](mod/rendering/fsr.md), [mod/rendering/taa.md](mod/rendering/taa.md)). Game shaders are patched in memory when the engine creates them ([mod/rendering/shader-patching.md](mod/rendering/shader-patching.md)).
+11. The [`RenderEngine::PostDraw`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderEngine##func-PostDraw) detour draws the floating HUD panel, the controls summary, the egui debug panel, and the desktop mirror overlay into each eye's back buffer, then blits the eye into its swapchain slice or copies it into its capture texture.
+
+### Submit and mirror
+
+12. `vr::present_and_submit` blits any eye the draw did not, and ends the frame with one projection layer. `vr::present_mirror` draws one or both eyes into the game window and presents the game's swapchain, the only present of the frame. With a VR frame to submit and no render trace running, these run on the frame-tail worker (`vr::tail`), so the game thread starts the next frame's update while the last draw and the GPU finish.
+
+### Stereo rendering paths
+
+Multipass stereo dispatches `Game::Draw` once per eye. Single-pass stereo, the default while a session runs, dispatches once into a double-wide target: the game's vertex shaders are rewritten so one instanced draw emits both eyes through viewport routing, and the content that reads a single camera is corrected per eye ([mod/stereo/single-pass-stereo.md](mod/stereo/single-pass-stereo.md), [mod/stereo/single-pass-render-blocks.md](mod/stereo/single-pass-render-blocks.md)). The monoscopic far field adds a far-only dispatch shared by both eyes and cannot run under the single-pass collapse ([mod/stereo/far-field.md](mod/stereo/far-field.md)). Where the frame time goes in each path is in [mod/performance/performance.md](mod/performance/performance.md) and [mod/performance/frame-budget.md](mod/performance/frame-budget.md).
+
+### The floating panel
+
+The game's Scaleform UI is redirected into a texture the mod owns by rebinding [`UIManager::m_RenderBuffer`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::ui_manager::UIManager##field-m_RenderBuffer). That texture is drawn as a quad in each eye's scene at `RenderEngine::PostDraw`, so it reaches the compositor inside the projection layer rather than as a separate composition layer. World-anchored markers are reprojected into the world rather than drawn on the panel ([mod/hud.md](mod/hud.md), [engine/rendering/ui-rendering.md](engine/rendering/ui-rendering.md)). The VR settings are pages in the game's own pause menu ([mod/pause-menu.md](mod/pause-menu.md)); everything else is in the debug UI ([mod/debug-ui.md](mod/debug-ui.md)).
+
+## Payload modules by domain
+
+The payload's top-level modules group by the domain they serve. Detours live in `hooks/`, which mirrors the pyxis hierarchy, and also inside the domain modules that own the behaviour (mostly under `controllers/`, `grapple/`, and `pause_menu/`).
+
+| Domain | Modules | Responsibility | Owning docs |
+| --- | --- | --- | --- |
+| Lifecycle and process | `lib.rs`, `module`, `lifecycle`, `crash`, `allocator`, `eject_gpu`, `thread_role`, `cpu_placement`, `util`, `hash` | Startup, shutdown preparation and eject, crash logs, the private heap, GPU resource release at eject, thread roles for the lock rules, thread placement on large-cache cores, and shared helpers such as the engine's name hash | [mod/lifecycle.md](mod/lifecycle.md), [mod/threading.md](mod/threading.md) |
+| Hooks | `hooks` (`game`, `camera`, `character`, `animation`, `graphics_engine`, `input`, `ui`, `sim`, `clock`, `online`, `window_focus`, ...) | Detour installation and the engine-facing hooks, grouped by the engine area they patch | The engine and mod doc for each area; [mod/window-focus.md](mod/window-focus.md) |
+| VR runtime | `vr`, `render_frame`, `headpose` | The OpenXR instance, session, swapchain, frame loop, tail, mirror, and controller input; the per-frame slots; the head pose from the sim or the headset | [mod/vr-runtime.md](mod/vr-runtime.md), [mod/body/head-and-body.md](mod/body/head-and-body.md) |
+| Stereo rendering | `stereo`, `far_field`, `fsr` | Per-eye dispatch state and plans, single-pass stereo, the far field, and FSR and TAA | `docs/mod/stereo/`, `docs/mod/rendering/` |
+| HUD and menus | `hud`, `pause_menu` | The floating panel, world markers, reticle, and overlays; the VR pages in the pause menu | [mod/hud.md](mod/hud.md), [mod/pause-menu.md](mod/pause-menu.md) |
+| Controllers and body | `controllers`, `grapple` | Everything built on the controller snapshot: bindings, hands, grip, weapons, inventory, vehicles, roomscale, the body rig and estimator, haptics; grapple comfort and the physical grapple | `docs/mod/input/`, `docs/mod/body/`, starting at [mod/input/controllers.md](mod/input/controllers.md) |
+| Configuration | `config` | The settings struct, its load, and the debounced save | [mod/settings.md](mod/settings.md) |
+| Debug UI and status | `ui`, `egui_impl`, `status`, `debug`, `director` | The egui debug UI, the status rows, the render trace, and the directing tools | [mod/debug-ui.md](mod/debug-ui.md), [mod/status.md](mod/status.md), [mod/rendering/render-trace.md](mod/rendering/render-trace.md), [mod/trailer-tooling.md](mod/trailer-tooling.md) |
+| Diagnostics and output | `session`, `logging`, `frame_timing`, `profiler`, `screenshot`, `image_writer`, `recorder`, `testing` | The session folder, logs, the always-on frame breakdown, the profiler, screenshots, the video and tracking recorders, and the capture harness's in-game side | [mod/sessions.md](mod/sessions.md), [mod/performance/frame-timing.md](mod/performance/frame-timing.md), [mod/performance/profiler.md](mod/performance/profiler.md), [mod/capture.md](mod/capture.md), [mod/testing/recorder.md](mod/testing/recorder.md) |
+
+## Reading order
+
+1. [CONTRIBUTING.md](../CONTRIBUTING.md): the workspace rules, the pyxis workflow, and the build, test, and lint commands.
+2. This page, then [mod/vr-runtime.md](mod/vr-runtime.md) and [mod/threading.md](mod/threading.md) for the frame loop and the thread model in detail.
+3. [engine/rendering/rendering.md](engine/rendering/rendering.md) for the engine's frame pipeline, which every rendering change depends on, then [mod/stereo/swapchain-ownership.md](mod/stereo/swapchain-ownership.md) and [mod/stereo/single-pass-stereo.md](mod/stereo/single-pass-stereo.md).
+4. [mod/hud.md](mod/hud.md) and [mod/settings.md](mod/settings.md) for the panel and the settings.
+5. [mod/input/controllers.md](mod/input/controllers.md), [mod/input/grip.md](mod/input/grip.md), and [mod/body/rig.md](mod/body/rig.md) for the controllers and the body, with [engine/gameplay/input.md](engine/gameplay/input.md) and [engine/character/skeleton.md](engine/character/skeleton.md) for the engine side.
+6. The latest folder in `docs/sessions/` for the state of the most recent headset playtest.
+
+Subject docs beyond these are read as a change touches them; [README.md](README.md) lists each with a one-line summary.
+
+## Where new findings go
+
+A finding about the game goes into the pyxis defs as a typed binding with its doc comment, and its explanation goes into `docs/engine/<subject>/`. A design or implementation of the mod goes into `docs/mod/<subject>/`, under the subject directory that matches the payload module. An investigation that answers one issue's question goes into `docs/issues/`. A doc that would mix engine and mod material is split along that line. Every new doc gets an entry in [README.md](README.md). Docs and comments name pyxis symbols and carry no addresses, offsets, or other game-owned constants (CONTRIBUTING.md has the full rule).
