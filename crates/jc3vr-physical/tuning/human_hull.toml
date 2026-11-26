@@ -1,0 +1,25 @@
+# The human hull's tuning: `HumanHullTuning` in
+# `src/controllers/physical_hands/human_hull/tuning.rs`, whose fields say what each value does.
+# Every key is required and no other is accepted. Lengths are metres, speeds metres per second, and
+# times seconds; passes are the hull's pre-simulation passes, and a share is a fraction of a range,
+# in `0..1`.
+
+[step_up]
+min_wanted_mps = 0.5
+blocked_share = 0.5
+probe_ahead_m = 0.15
+probe_above_m = 0.1
+min_top_normal_y = 0.7
+lift_margin_m = 0.03
+lift_time_s = 0.15
+max_lift_mps = 3.0
+lift_hold_s = 0.4
+
+[restore]
+shutdown_attempts = 8
+max_retry_wait_passes = 64
+max_candidates = 65_536
+max_leaf_work = 1_000_000
+
+[discovery]
+interval_passes = 60

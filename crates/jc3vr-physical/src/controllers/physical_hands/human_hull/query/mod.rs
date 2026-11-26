@@ -16,6 +16,7 @@ use jc3gi::{
 use crate::controllers::physical_hands::human_hull::{
     ClearanceUnavailableReason,
     geometry::{self, Bounds},
+    tuning::HUMAN_HULL,
 };
 
 #[derive(Debug, Copy, Clone)]
@@ -38,7 +39,7 @@ struct QueryHull<'a> {
 impl Budget {
     pub(super) fn new() -> Self {
         Self {
-            remaining: MAXIMUM_LEAF_WORK,
+            remaining: HUMAN_HULL.get().restore.max_leaf_work,
         }
     }
 
@@ -369,7 +370,6 @@ fn validate_transform(transform: &hkTransformf) -> Result<(), ClearanceUnavailab
 }
 
 const KEY_PAGE: usize = 64;
-const MAXIMUM_LEAF_WORK: usize = 1_000_000;
 const CLEARANCE_MARGIN_M: f32 = 1.0e-3;
 const CONTACT_DISTANCE_TOLERANCE_M: f32 = 2.0e-4;
 const MAXIMUM_EXISTING_SUPPORT_DEPTH_M: f32 = 0.02;

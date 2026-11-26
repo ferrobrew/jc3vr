@@ -4,7 +4,10 @@ use std::{collections::HashMap, ptr::NonNull};
 
 use jc3gi::havok::hknpShape;
 
-use crate::controllers::physical_hands::human_hull::native::{Change, Table};
+use crate::controllers::physical_hands::human_hull::{
+    native::{Change, Table},
+    tuning::HUMAN_HULL,
+};
 
 /// The adopted pairs keyed by each of their shapes, rebuilt whenever the tables change.
 #[derive(Default)]
@@ -85,7 +88,7 @@ pub(super) fn scan(
 /// Paces the discovery walk, which looks up every live body's owner. Construction hooks adopt new
 /// settings tables as they are made, so the walk only has to find tables that existed before the
 /// hooks did and whose characters stream in later: it runs on every pass until a table is adopted,
-/// then once every [`DISCOVERY_INTERVAL_PASSES`].
+/// then once in each run of the tuning's `discovery.interval_passes` passes.
 #[derive(Debug, Default)]
 pub(super) struct DiscoveryClock {
     passes_since: u32,
@@ -94,7 +97,7 @@ pub(super) struct DiscoveryClock {
 impl DiscoveryClock {
     pub(super) fn due(&mut self, have_tables: bool) -> bool {
         if !have_tables || self.passes_since == 0 {
-            self.passes_since = DISCOVERY_INTERVAL_PASSES - 1;
+            self.passes_since = HUMAN_HULL.get().discovery.interval_passes - 1;
             true
         } else {
             self.passes_since -= 1;
@@ -106,9 +109,6 @@ impl DiscoveryClock {
         Self { passes_since: 0 }
     }
 }
-
-/// The longest a table whose characters stream in waits to be found, in pre-simulation passes.
-const DISCOVERY_INTERVAL_PASSES: u32 = 60;
 
 #[cfg(test)]
 mod tests {
@@ -168,7 +168,7 @@ mod tests {
         let mut clock = DiscoveryClock::new();
         assert!(clock.due(false));
         assert!(clock.due(false));
-        let runs = (0..DISCOVERY_INTERVAL_PASSES * 3)
+        let runs = (0..HUMAN_HULL.get().discovery.interval_passes * 3)
             .filter(|_| clock.due(true))
             .count();
         assert_eq!(runs, 3);

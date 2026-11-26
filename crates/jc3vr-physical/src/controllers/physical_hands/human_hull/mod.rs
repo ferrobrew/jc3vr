@@ -11,6 +11,7 @@ mod kept;
 mod native;
 mod query;
 pub mod step_up;
+pub mod tuning;
 
 use std::{
     ptr::NonNull,
@@ -27,7 +28,10 @@ use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 use windows::Win32::System::Threading::GetCurrentThreadId;
 
-use crate::controllers::physical_hands::{human_hull::native::NativeState, physics::step_seconds};
+use crate::controllers::physical_hands::{
+    human_hull::{native::NativeState, tuning::HUMAN_HULL},
+    physics::step_seconds,
+};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum AdapterAvailability {
@@ -213,7 +217,7 @@ impl ShutdownParticipant for HumanHullShutdown {
                     tracing::info!(
                         clearance = ?state.clearance,
                         attempt = state.shutdown_attempts,
-                        of = RESTORE_ATTEMPTS,
+                        of = HUMAN_HULL.get().restore.shutdown_attempts,
                         "human hull: restoration incomplete; the eject waits"
                     );
                 }
@@ -234,18 +238,12 @@ static PHYSICS_THREAD: AtomicU32 = AtomicU32::new(0);
 static SHUTDOWN_REQUESTED: AtomicBool = AtomicBool::new(false);
 static ACTIVE_ENTRIES: AtomicUsize = AtomicUsize::new(0);
 
-/// How many shutdown attempts wait for the native phase to restore every narrowed body before the
-/// eject leaves the hulls in place. The lifecycle retries every few frames, so this is a second or
-/// two: each body restores once its own surroundings are clear, which a body pressed against a
-/// wall may never be, and an idle subsystem must not hold the eject indefinitely.
-const RESTORE_ATTEMPTS: u32 = 8;
-
 /// How a shutdown attempt settles the narrowed hulls.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 enum Resolution {
     /// The native phase restored every tracked body in this generation.
     Restored { generation: u64 },
-    /// Restoration did not complete within [`RESTORE_ATTEMPTS`]: commit with the shapes as they
+    /// Restoration did not complete within the tuning's `restore.shutdown_attempts`: commit with the shapes as they
     /// are in this generation ([`NativeState::commit_in_place`]).
     LeaveInPlace { generation: u64 },
     /// Wait for the native phase, or for a settings hook still running payload code.
@@ -265,7 +263,7 @@ fn resolve(
         Resolution::Wait
     } else if let Some(generation) = restored {
         Resolution::Restored { generation }
-    } else if deferred_attempts >= RESTORE_ATTEMPTS {
+    } else if deferred_attempts >= HUMAN_HULL.get().restore.shutdown_attempts {
         Resolution::LeaveInPlace { generation }
     } else {
         Resolution::Wait
@@ -367,11 +365,12 @@ mod tests {
 
     #[test]
     fn an_incomplete_restoration_waits_a_bounded_number_of_attempts() {
-        for attempts in 0..RESTORE_ATTEMPTS {
+        let limit = HUMAN_HULL.get().restore.shutdown_attempts;
+        for attempts in 0..limit {
             assert_eq!(resolve(None, 9, attempts, 0), Resolution::Wait);
         }
         assert_eq!(
-            resolve(None, 9, RESTORE_ATTEMPTS, 0),
+            resolve(None, 9, limit, 0),
             Resolution::LeaveInPlace { generation: 9 }
         );
         assert_eq!(

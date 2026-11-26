@@ -23,6 +23,7 @@ use crate::controllers::physical_hands::human_hull::{
         slot_kind,
     },
     query::{self, Budget},
+    tuning::HUMAN_HULL,
 };
 
 /// Which migrated bodies a pass restores, and why any other waits.
@@ -73,7 +74,7 @@ impl Allowance {
     pub(super) fn new() -> Self {
         Self {
             budget: Budget::new(),
-            candidates: MAXIMUM_RESTORE_CANDIDATES,
+            candidates: HUMAN_HULL.get().restore.max_candidates,
         }
     }
 
@@ -170,7 +171,7 @@ pub(super) unsafe fn check_body(
 
 /// Paces restoration while the hull is disabled and some body stays obstructed, which may last as
 /// long as an NPC leans on a wall: each pass that restores nothing doubles the wait before the
-/// next attempt, up to [`MAXIMUM_RETRY_WAIT_PASSES`]. A shutdown never waits on it, since its own
+/// next attempt, up to the tuning's `restore.max_retry_wait_passes`. A shutdown never waits on it, since its own
 /// attempts are bounded.
 #[derive(Debug, Default)]
 pub(super) struct RetryBackoff {
@@ -201,7 +202,7 @@ impl RetryBackoff {
         self.wait = if progressed {
             0
         } else {
-            (self.wait * 2).clamp(1, MAXIMUM_RETRY_WAIT_PASSES)
+            (self.wait * 2).clamp(1, HUMAN_HULL.get().restore.max_retry_wait_passes)
         };
         self.remaining = self.wait;
     }
@@ -210,12 +211,6 @@ impl RetryBackoff {
         *self = Self::new();
     }
 }
-
-/// The candidates one pass may examine across all of its bodies.
-const MAXIMUM_RESTORE_CANDIDATES: usize = 65_536;
-
-/// The longest wait between attempts while disabled, in pre-simulation passes.
-const MAXIMUM_RETRY_WAIT_PASSES: u32 = 64;
 
 unsafe fn check(
     body: &Migrated,
@@ -359,7 +354,9 @@ mod tests {
             }
             gaps.push(skipped);
         }
-        assert_eq!(gaps, [1, 2, 4, 8, 16, 32, 64, 64, 64]);
+        let max = HUMAN_HULL.get().restore.max_retry_wait_passes;
+        let doubling: Vec<u32> = (0..9).map(|i| (1u32 << i).min(max)).collect();
+        assert_eq!(gaps, doubling);
         // Progress retries on the next pass.
         backoff.record(true);
         assert!(backoff.ready());

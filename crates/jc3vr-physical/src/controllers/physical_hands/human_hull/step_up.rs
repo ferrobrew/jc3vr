@@ -31,7 +31,13 @@ use jc3vr_body::controllers::{
 use parking_lot::Mutex;
 
 use crate::controllers::physical_hands::{
-    climb, climb::engine as proxy, human_hull::geometry::StepProfile, vault::lifted,
+    climb,
+    climb::engine as proxy,
+    human_hull::{
+        geometry::StepProfile,
+        tuning::{HUMAN_HULL, StepUpTuning},
+    },
+    vault::lifted,
 };
 
 /// The local player's narrowed hull's step profile and the authored one it replaces.
@@ -73,6 +79,7 @@ pub fn set_enabled(enabled: bool) {
 /// The thread that steps the physics world, outside the step, after the characters' proxy updates
 /// (the pre-simulation callback).
 pub(crate) unsafe fn step(steps: Option<PlayerSteps>, step_s: f32) {
+    let tuning = &HUMAN_HULL.get().step_up;
     let mut state = STATE.lock();
     let Some(steps) = steps.filter(|_| ENABLED.load(Ordering::Relaxed) && unsafe { on_foot() })
     else {
@@ -88,8 +95,8 @@ pub(crate) unsafe fn step(steps: Option<PlayerSteps>, step_s: f32) {
     let feet = place.feet;
     if let Some(lift) = state.lift {
         let elapsed = lift.elapsed_s + step_s;
-        match lift_speed(feet.y, lift.top_y, step_s) {
-            Some(speed) if elapsed <= LIFT_HOLD_S => {
+        match lift_speed(feet.y, lift.top_y, step_s, tuning) {
+            Some(speed) if elapsed <= tuning.lift_hold_s => {
                 state.lift = Some(Lift {
                     elapsed_s: elapsed,
                     ..lift
@@ -104,12 +111,12 @@ pub(crate) unsafe fn step(steps: Option<PlayerSteps>, step_s: f32) {
     // SAFETY: forwarded from the caller; the local player is live while the proxy is.
     let measured = unsafe { measured_velocity() };
     let (Some(direction), true) = (
-        blocked(wanted, measured),
+        blocked(wanted, measured, tuning),
         unsafe { proxy::support() }.is_some(),
     ) else {
         return;
     };
-    let probes = Probes::ahead(feet, direction, &steps);
+    let probes = Probes::ahead(feet, direction, &steps, tuning);
     // SAFETY: forwarded from the caller.
     if !unsafe { clear(probes.clear_from, probes.clear_to) } {
         return;
@@ -118,11 +125,11 @@ pub(crate) unsafe fn step(steps: Option<PlayerSteps>, step_s: f32) {
     let Some(hit) = (unsafe { cast(probes.down_from, probes.down_to) }) else {
         return;
     };
-    let Some(height) = step_height(feet.y, hit.position.y, hit.normal.y, &steps) else {
+    let Some(height) = step_height(feet.y, hit.position.y, hit.normal.y, &steps, tuning) else {
         return;
     };
     let top_y = feet.y + height;
-    let Some(speed) = lift_speed(feet.y, top_y, step_s) else {
+    let Some(speed) = lift_speed(feet.y, top_y, step_s, tuning) else {
         return;
     };
     tracing::info!(
@@ -140,38 +147,17 @@ pub(crate) unsafe fn step(steps: Option<PlayerSteps>, step_s: f32) {
     unsafe { state.apply(current, speed) };
 }
 
-/// The slowest horizontal speed the controller drives the proxy at that counts as walking into
-/// something, metres per second.
-const MIN_WANTED_MPS: f32 = 0.5;
-/// The share of the driven speed the player may still make along it and count as stopped.
-const BLOCKED_SHARE: f32 = 0.5;
-/// How far past the narrowed hull's edge the step's top is looked for, metres.
-const PROBE_AHEAD_M: f32 = 0.15;
-/// How far above the authored cone's height the ray down starts, and the path ahead must be clear,
-/// metres.
-const PROBE_ABOVE_M: f32 = 0.1;
-/// The least walkable top's normal height: the cosine of the steepest top stepped onto.
-const MIN_TOP_NORMAL_Y: f32 = 0.7;
-/// How far above the step's top the feet are lifted, metres.
-const LIFT_MARGIN_M: f32 = 0.03;
-/// The time a lift takes to raise the feet to the step's top, seconds.
-const LIFT_TIME_S: f32 = 0.15;
-/// The fastest lift, metres per second.
-const MAX_LIFT_MPS: f32 = 3.0;
-/// The longest a lift lasts, seconds: a step the proxy does not clear by then is let go.
-const LIFT_HOLD_S: f32 = 0.4;
-
 static ENABLED: AtomicBool = AtomicBool::new(true);
 
 /// The direction across the ground the player walks into something along, when the controller
 /// drives the proxy at `wanted` and the player last moved at `measured`, world `(x, z)`.
-fn blocked(wanted: Vec2, measured: Vec2) -> Option<Vec2> {
+fn blocked(wanted: Vec2, measured: Vec2, tuning: &StepUpTuning) -> Option<Vec2> {
     let speed = wanted.length();
-    if !(speed.is_finite() && speed >= MIN_WANTED_MPS && measured.is_finite()) {
+    if !(speed.is_finite() && speed >= tuning.min_wanted_mps && measured.is_finite()) {
         return None;
     }
     let direction = wanted / speed;
-    (measured.dot(direction) < speed * BLOCKED_SHARE).then_some(direction)
+    (measured.dot(direction) < speed * tuning.blocked_share).then_some(direction)
 }
 
 /// The rays that find a step ahead, world space.
@@ -186,10 +172,10 @@ struct Probes {
 }
 
 impl Probes {
-    fn ahead(feet: Vec3, direction: Vec2, steps: &PlayerSteps) -> Self {
+    fn ahead(feet: Vec3, direction: Vec2, steps: &PlayerSteps, tuning: &StepUpTuning) -> Self {
         let across = Vec3::new(direction.x, 0.0, direction.y);
-        let above = Vec3::Y * (steps.authored.cone_height_m + PROBE_ABOVE_M);
-        let ahead = across * (steps.narrowed.half_width_m + PROBE_AHEAD_M);
+        let above = Vec3::Y * (steps.authored.cone_height_m + tuning.probe_above_m);
+        let ahead = across * (steps.narrowed.half_width_m + tuning.probe_ahead_m);
         Self {
             clear_from: feet + above,
             clear_to: feet + above + ahead,
@@ -202,10 +188,16 @@ impl Probes {
 /// The height above the feet at `feet_y` of a top hit at `hit_y` with a normal of height
 /// `normal_y`, when the narrowed hull cannot step up it and the authored one can, and it is
 /// walkable.
-fn step_height(feet_y: f32, hit_y: f32, normal_y: f32, steps: &PlayerSteps) -> Option<f32> {
+fn step_height(
+    feet_y: f32,
+    hit_y: f32,
+    normal_y: f32,
+    steps: &PlayerSteps,
+    tuning: &StepUpTuning,
+) -> Option<f32> {
     let height = hit_y - feet_y;
     (height.is_finite()
-        && normal_y >= MIN_TOP_NORMAL_Y
+        && normal_y >= tuning.min_top_normal_y
         && height > steps.narrowed.cone_height_m
         && height <= steps.authored.cone_height_m)
         .then_some(height)
@@ -213,10 +205,10 @@ fn step_height(feet_y: f32, hit_y: f32, normal_y: f32, steps: &PlayerSteps) -> O
 
 /// The lift that raises the feet at `feet_y` to above a step's top at `top_y` within the lift's
 /// time, metres per second; `None` once they are above it.
-fn lift_speed(feet_y: f32, top_y: f32, step_s: f32) -> Option<f32> {
-    let remaining = top_y + LIFT_MARGIN_M - feet_y;
+fn lift_speed(feet_y: f32, top_y: f32, step_s: f32, tuning: &StepUpTuning) -> Option<f32> {
+    let remaining = top_y + tuning.lift_margin_m - feet_y;
     (remaining > 0.0 && remaining.is_finite() && step_s > 0.0)
-        .then(|| (remaining / LIFT_TIME_S.max(step_s)).min(MAX_LIFT_MPS))
+        .then(|| (remaining / tuning.lift_time_s.max(step_s)).min(tuning.max_lift_mps))
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -322,6 +314,10 @@ unsafe fn cast(from: Vec3, to: Vec3) -> Option<raycast::RayHit> {
 mod tests {
     use super::*;
 
+    fn tuning() -> &'static StepUpTuning {
+        &HUMAN_HULL.get().step_up
+    }
+
     fn steps() -> PlayerSteps {
         PlayerSteps {
             narrowed: StepProfile {
@@ -337,47 +333,72 @@ mod tests {
 
     #[test]
     fn only_a_player_stopped_while_driven_looks_for_a_step() {
-        let wanted = Vec2::new(0.0, 4.0);
-        assert_eq!(blocked(wanted, Vec2::new(0.6, 0.3)), Some(Vec2::Y));
-        assert_eq!(blocked(wanted, Vec2::new(0.0, 3.5)), None);
-        assert_eq!(blocked(Vec2::new(0.2, 0.0), Vec2::ZERO), None);
-        assert_eq!(blocked(wanted, Vec2::NAN), None);
+        let tuning = tuning();
+        let wanted = Vec2::new(0.0, tuning.min_wanted_mps * 8.0);
+        let along = |share: f32| Vec2::new(0.6, wanted.y * share);
+        assert_eq!(
+            blocked(wanted, along(tuning.blocked_share * 0.5), tuning),
+            Some(Vec2::Y)
+        );
+        assert_eq!(
+            blocked(wanted, along((1.0 + tuning.blocked_share) * 0.5), tuning),
+            None
+        );
+        let slow = Vec2::new(tuning.min_wanted_mps * 0.5, 0.0);
+        assert_eq!(blocked(slow, Vec2::ZERO, tuning), None);
+        assert_eq!(blocked(wanted, Vec2::NAN, tuning), None);
     }
 
     #[test]
     fn the_probes_look_past_the_narrowed_edge_from_above_the_authored_cone() {
-        let probes = Probes::ahead(Vec3::new(10.0, 2.0, 5.0), Vec2::X, &steps());
+        let tuning = tuning();
+        let steps = steps();
+        let feet = Vec3::new(10.0, 2.0, 5.0);
+        let probes = Probes::ahead(feet, Vec2::X, &steps, tuning);
+        let ahead = feet.x + steps.narrowed.half_width_m + tuning.probe_ahead_m;
+        let above = feet.y + steps.authored.cone_height_m + tuning.probe_above_m;
         assert!(
             probes
                 .down_from
-                .abs_diff_eq(Vec3::new(10.385, 2.55, 5.0), 1e-5)
+                .abs_diff_eq(Vec3::new(ahead, above, feet.z), 1e-5)
         );
+        assert!(probes.down_to.abs_diff_eq(
+            Vec3::new(ahead, feet.y + steps.narrowed.cone_height_m, feet.z),
+            1e-5
+        ));
         assert!(
             probes
-                .down_to
-                .abs_diff_eq(Vec3::new(10.385, 2.225, 5.0), 1e-5)
+                .clear_from
+                .abs_diff_eq(Vec3::new(feet.x, above, feet.z), 1e-5)
         );
-        assert_eq!(probes.clear_from, Vec3::new(10.0, 2.55, 5.0));
         assert_eq!(probes.clear_to, probes.down_from);
     }
 
     #[test]
     fn a_step_is_lifted_onto_between_the_narrowed_and_the_authored_cones() {
-        let steps = steps();
+        let (steps, tuning) = (steps(), tuning());
         // A kerb the narrowed cone steps up on its own.
-        assert_eq!(step_height(0.0, 0.15, 1.0, &steps), None);
+        assert_eq!(step_height(0.0, 0.15, 1.0, &steps, tuning), None);
         // A step only the authored cone would step up.
-        assert_eq!(step_height(0.0, 0.35, 1.0, &steps), Some(0.35));
+        assert_eq!(step_height(0.0, 0.35, 1.0, &steps, tuning), Some(0.35));
         // A ledge the authored hull would not step up either, or a top too steep to stand on.
-        assert_eq!(step_height(0.0, 0.5, 1.0, &steps), None);
-        assert_eq!(step_height(0.0, 0.35, 0.5, &steps), None);
+        assert_eq!(step_height(0.0, 0.5, 1.0, &steps, tuning), None);
+        let steep = tuning.min_top_normal_y * 0.5;
+        assert_eq!(step_height(0.0, 0.35, steep, &steps, tuning), None);
     }
 
     #[test]
     fn the_lift_reaches_the_top_within_its_time_and_stops_above_it() {
-        let speed = lift_speed(0.0, 0.3, 1.0 / 30.0).unwrap();
-        assert!((speed - 0.33 / LIFT_TIME_S).abs() < 1e-5);
-        assert_eq!(lift_speed(0.0, 1.0, 1.0 / 30.0), Some(MAX_LIFT_MPS));
-        assert_eq!(lift_speed(0.34, 0.3, 1.0 / 30.0), None);
+        let tuning = tuning();
+        let step_s = 1.0 / 30.0;
+        let speed = lift_speed(0.0, 0.3, step_s, tuning).unwrap();
+        let expected = (0.3 + tuning.lift_margin_m) / tuning.lift_time_s.max(step_s);
+        assert!((speed - expected.min(tuning.max_lift_mps)).abs() < 1e-5);
+        assert_eq!(
+            lift_speed(0.0, 100.0, step_s, tuning),
+            Some(tuning.max_lift_mps)
+        );
+        let above = 0.3 + tuning.lift_margin_m + 0.01;
+        assert_eq!(lift_speed(above, 0.3, step_s, tuning), None);
     }
 }
