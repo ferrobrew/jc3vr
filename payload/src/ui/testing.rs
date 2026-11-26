@@ -2,13 +2,16 @@
 
 use egui::Color32;
 
-use crate::{config, recorder::tracking, testing::request};
+use crate::{
+    recorder::tracking,
+    testing::{TESTING_CONFIG, request},
+};
 
 /// Render the tracking recorder's controls.
 pub(crate) fn tracking_feature(ui: &mut egui::Ui) {
     {
-        let mut cfg = config::edit();
-        ui.checkbox(&mut cfg.testing.enabled, "Test tools available")
+        let mut cfg = TESTING_CONFIG.edit();
+        ui.checkbox(&mut cfg.enabled, "Test tools available")
             .on_hover_text(
                 "Whether the recorder can be started from here, the director's keys, and the \
                  request file. Nothing runs until it is started.",
@@ -50,9 +53,9 @@ fn recording_ui(ui: &mut egui::Ui) {
     } else {
         "Tracking recording: start a session recording with F1 to capture data"
     });
-    let mut cfg = config::edit();
+    let mut cfg = TESTING_CONFIG.edit();
     ui.checkbox(
-        &mut cfg.testing.record_hand_joints,
+        &mut cfg.record_hand_joints,
         "Record the tracked hand joints",
     )
     .on_hover_text("They triple a frame's size, and only the finger curls read them.");

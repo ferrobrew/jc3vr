@@ -5,10 +5,11 @@ use jc3gi::character::inventory::WeaponSlot;
 
 use crate::{
     controllers::{
+        config::CONTROLLERS_CONFIG,
         frame::Hand,
         hands::grip,
         loadout::{Delivery, TakeSource, live::Expect, slot_label},
-        menu::read_config,
+        menu::read,
         weapons::{
             self,
             hold::{self, armed},
@@ -56,8 +57,8 @@ fn right_action() -> Line {
 /// The action of `hand`'s gun on its travel: where its part is, whether a hand holds it, and
 /// whether its slide is locked back, with the chamber it loaded.
 fn action(hand: Hand) -> Line {
-    if !read_config(|c| {
-        let reload = c.controllers.weapons.reload;
+    if !read(&CONTROLLERS_CONFIG, |c| {
+        let reload = c.weapons.reload;
         reload.enabled && reload.manual_action && reload.action.physical
     }) {
         return Line::off("");
@@ -119,7 +120,7 @@ fn right_hand_on_gun() -> Line {
 /// Where `hand` holds the wielded gun, and what it does there: fires it from the grip, braces it,
 /// or carries it by another part, unable to fire.
 fn hand_on_gun(hand: Hand) -> Line {
-    if !read_config(|c| c.controllers.weapons.regions.enabled) {
+    if !read(&CONTROLLERS_CONFIG, |c| c.weapons.regions.enabled) {
         return Line::off("");
     }
     let status = regions::status();
@@ -155,7 +156,7 @@ fn hand_on_gun(hand: Hand) -> Line {
 }
 
 fn armed() -> Line {
-    if !read_config(|c| c.controllers.weapons.hold.either_hand) {
+    if !read(&CONTROLLERS_CONFIG, |c| c.weapons.hold.either_hand) {
         return Line::off("");
     }
     let armed = armed::status();
@@ -210,7 +211,7 @@ fn last_refusal() -> Line {
 }
 
 fn takes() -> Line {
-    if !read_config(|c| c.controllers.weapons.hold.either_hand) {
+    if !read(&CONTROLLERS_CONFIG, |c| c.weapons.hold.either_hand) {
         return Line::off("");
     }
     let take = hold::status().take;
@@ -225,7 +226,7 @@ fn takes() -> Line {
 }
 
 fn racks() -> Line {
-    if !read_config(|c| c.controllers.weapons.hold.either_hand) {
+    if !read(&CONTROLLERS_CONFIG, |c| c.weapons.hold.either_hand) {
         return Line::off("");
     }
     let take = hold::status().take;
@@ -240,7 +241,7 @@ fn racks() -> Line {
 }
 
 fn hand(hand: Hand) -> Line {
-    if !read_config(|c| c.controllers.weapons.hold.either_hand) {
+    if !read(&CONTROLLERS_CONFIG, |c| c.weapons.hold.either_hand) {
         return Line::off("");
     }
     let wielded = weapons::status()

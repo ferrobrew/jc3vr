@@ -4,7 +4,8 @@
 
 use crate::{
     controllers::{
-        menu::read_config,
+        config::CONTROLLERS_CONFIG,
+        menu::read,
         physical_hands::{
             self, Idle, climb, doors,
             grasp::TargetKind,
@@ -27,14 +28,14 @@ pub(crate) const PUSH_UP: Row = Row::new("PUSH UP", "Push up", push_up);
 pub(crate) const ARTICULATED: Row = Row::new("HINGED THINGS", "Hinged things", articulated);
 
 fn palms() -> Line {
-    let on = read_config(|c| c.controllers.physical_hands.enabled);
+    let on = read(&CONTROLLERS_CONFIG, |c| c.physical_hands.enabled);
     let status = physical_hands::status();
     palms_line(on, status.idle, status.casts, status.off_thread)
 }
 
 fn doors() -> Line {
-    let on = read_config(|c| {
-        let p = &c.controllers.physical_hands;
+    let on = read(&CONTROLLERS_CONFIG, |c| {
+        let p = &c.physical_hands;
         p.enabled && p.pickup.enabled && p.doors.enabled
     });
     let status = physical_hands::status();
@@ -43,8 +44,8 @@ fn doors() -> Line {
 }
 
 fn characters() -> Line {
-    let on = read_config(|c| {
-        let p = &c.controllers.physical_hands;
+    let on = read(&CONTROLLERS_CONFIG, |c| {
+        let p = &c.physical_hands;
         p.enabled && p.pickup.enabled && (p.characters.grab || p.characters.hijack)
     });
     characters_line(
@@ -55,7 +56,7 @@ fn characters() -> Line {
 }
 
 fn moving_climbs() -> Line {
-    let on = read_config(|c| climb::enabled(&c.controllers.physical_hands));
+    let on = read(&CONTROLLERS_CONFIG, |c| climb::enabled(&c.physical_hands));
     let status = climb::status();
     let on_moving = status
         .hands
@@ -65,21 +66,21 @@ fn moving_climbs() -> Line {
 }
 
 fn stunt_positions() -> Line {
-    let on = read_config(|c| stunt::enabled(&c.controllers.physical_hands));
+    let on = read(&CONTROLLERS_CONFIG, |c| stunt::enabled(&c.physical_hands));
     stunt_line(on, &stunt::status())
 }
 
 fn push_up() -> Line {
-    let on = read_config(|c| {
-        let p = &c.controllers.physical_hands;
+    let on = read(&CONTROLLERS_CONFIG, |c| {
+        let p = &c.physical_hands;
         physics::enabled(p) && p.vault.enabled
     });
     push_up_line(on, vault::status())
 }
 
 fn articulated() -> Line {
-    let on = read_config(|c| {
-        let p = &c.controllers.physical_hands;
+    let on = read(&CONTROLLERS_CONFIG, |c| {
+        let p = &c.physical_hands;
         p.enabled && p.pickup.enabled
     });
     let status = physical_hands::status();

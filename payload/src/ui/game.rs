@@ -5,12 +5,12 @@ use std::sync::atomic::Ordering;
 use jc3gi::character::character::{AimState, Character};
 
 use crate::{
-    config::{self, Config},
     hooks::{
         self,
         animation::canopy::REEL_OPENINGS_SKIPPED,
         input::{
             air::carried_updates,
+            config::{MOVEMENT_CONFIG, MovementConfig},
             locomotion::{
                 AIM_RELATIVE_TASK_CALLS, FACE_CAMERA_CALLS, INSTANT_SPEED_FLOORS, MOVE_TASK_CALLS,
                 SKIPPED_STARTS, SLIDE_CALLS,
@@ -28,7 +28,7 @@ use crate::{
 
 pub(crate) fn controls(ui: &mut egui::Ui, id: FeatureId) {
     if id == FeatureId::OnFoot {
-        swimming_controls(ui, &mut config::edit());
+        swimming_controls(ui, &mut MOVEMENT_CONFIG.edit());
     }
 }
 
@@ -47,9 +47,9 @@ pub(crate) fn status(id: FeatureId) -> Option<FeatureBody> {
     Some(body)
 }
 
-fn swimming_controls(ui: &mut egui::Ui, cfg: &mut Config) {
+fn swimming_controls(ui: &mut egui::Ui, movement: &mut MovementConfig) {
     ui.checkbox(
-        &mut cfg.movement.smooth_swim_yaw,
+        &mut movement.smooth_swim_yaw,
         "Smooth swim yaw (right-stick heading in water)",
     )
     .on_hover_text(
@@ -61,7 +61,7 @@ fn swimming_controls(ui: &mut egui::Ui, cfg: &mut Config) {
          before the right-stick yaw target seeds.",
     );
     ui.add(
-        egui::Slider::new(&mut cfg.movement.swim_turn_rate_deg_s, 180.0..=540.0)
+        egui::Slider::new(&mut movement.swim_turn_rate_deg_s, 180.0..=540.0)
             .text("Swim body turn rate (deg/s)"),
     )
     .on_hover_text(
@@ -176,14 +176,14 @@ mod tests {
     #[test]
     fn swimming_editor_changes_only_the_selected_config_target_without_runtime() {
         let context = egui::Context::default();
-        let mut cfg = Config::new();
-        cfg.movement.smooth_swim_yaw = false;
-        let before = serde_json::to_value(&cfg).unwrap();
+        let mut movement = MovementConfig::new();
+        movement.smooth_swim_yaw = false;
+        let before = serde_json::to_value(movement).unwrap();
         let mut first_control = egui::Pos2::ZERO;
         for _ in 0..2 {
             let _ = context.run_ui(egui::RawInput::default(), |ui| {
                 first_control = ui.cursor().min + egui::vec2(8.0, 8.0);
-                swimming_controls(ui, &mut cfg);
+                swimming_controls(ui, &mut movement);
             });
         }
         for pressed in [true, false] {
@@ -199,11 +199,11 @@ mod tests {
                 ],
                 ..Default::default()
             };
-            let _ = context.run_ui(input, |ui| swimming_controls(ui, &mut cfg));
+            let _ = context.run_ui(input, |ui| swimming_controls(ui, &mut movement));
         }
-        assert!(cfg.movement.smooth_swim_yaw);
+        assert!(movement.smooth_swim_yaw);
         let mut expected = before;
-        expected["movement"]["smooth_swim_yaw"] = true.into();
-        assert_eq!(serde_json::to_value(&cfg).unwrap(), expected);
+        expected["smooth_swim_yaw"] = true.into();
+        assert_eq!(serde_json::to_value(movement).unwrap(), expected);
     }
 }

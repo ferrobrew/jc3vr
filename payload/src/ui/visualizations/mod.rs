@@ -4,9 +4,8 @@ use egui::Ui;
 use parking_lot::Mutex;
 
 use crate::{
-    config::{self, Config},
     controllers::{
-        config::GunReadout,
+        config::{CONTROLLERS_CONFIG, ControllersConfig, GunReadout},
         overlay::{
             self,
             primitive::Source,
@@ -20,7 +19,7 @@ use crate::{
 
 /// A snapshot taken before any configuration edit guard is acquired.
 pub(crate) struct Snapshot {
-    config: Config,
+    config: ControllersConfig,
     runtime: Runtime,
 }
 
@@ -76,13 +75,13 @@ impl Snapshot {
         if self.runtime.temporarily_hidden {
             return ViewState::Blocked(Blocker::TemporaryHide);
         }
-        if !self.config.controllers.enabled {
+        if !self.config.enabled {
             return ViewState::Blocked(Blocker::Controllers);
         }
-        if !self.config.controllers.overlay.enabled {
+        if !self.config.overlay.enabled {
             return ViewState::Blocked(Blocker::Overlay);
         }
-        if id.grab_child() && !self.config.controllers.physical_hands.grab_view.enabled {
+        if id.grab_child() && !self.config.physical_hands.grab_view.enabled {
             return ViewState::Blocked(Blocker::GrabView);
         }
         if self.runtime.clean_view {
@@ -100,7 +99,7 @@ impl Snapshot {
 
 /// Read existing status only; this does not activate a preview, scan, or draw producer.
 pub(crate) fn snapshot() -> Snapshot {
-    let config = config::get();
+    let config = CONTROLLERS_CONFIG.lock().clone();
     let runtime = Runtime {
         controllers_scheme: scheme::is_controllers(),
         gameplay: crate::hooks::in_gameplay(),
@@ -162,7 +161,7 @@ pub(crate) fn controls(ui: &mut Ui, snapshot: &Snapshot) {
             ui.small("Preview, HUD, sight/scope, and performance tools remain in their existing feature editors. Opening this drawer does not activate their capture or scan work.");
         });
     if !edits.is_empty() {
-        apply_edits(&mut config::edit(), &edits);
+        apply_edits(&mut CONTROLLERS_CONFIG.edit(), &edits);
     }
 }
 
@@ -209,9 +208,9 @@ impl ViewId {
         }
     }
 
-    fn requested(self, config: &Config) -> bool {
-        let overlay = &config.controllers.overlay;
-        let grab = &config.controllers.physical_hands.grab_view;
+    fn requested(self, config: &ControllersConfig) -> bool {
+        let overlay = &config.overlay;
+        let grab = &config.physical_hands.grab_view;
         match self {
             Self::BodyMirror => overlay.body_mirror,
             Self::BodyRig => overlay.body_rig,
@@ -227,15 +226,15 @@ impl ViewId {
             Self::GrabRefusals => grab.refusals,
             Self::GrabCandidates => grab.candidates,
             Self::GrabZones => grab.zones,
-            Self::ColliderView => config.controllers.physical_hands.collider_view.enabled,
-            Self::PalmBoxes => config.controllers.physical_hands.show_boxes,
+            Self::ColliderView => config.physical_hands.collider_view.enabled,
+            Self::PalmBoxes => config.physical_hands.show_boxes,
             Self::DockedGuns => overlay.docked_guns,
         }
     }
 
-    fn set(self, config: &mut Config, requested: bool) {
-        let overlay = &mut config.controllers.overlay;
-        let grab = &mut config.controllers.physical_hands.grab_view;
+    fn set(self, config: &mut ControllersConfig, requested: bool) {
+        let overlay = &mut config.overlay;
+        let grab = &mut config.physical_hands.grab_view;
         match self {
             Self::BodyMirror => overlay.body_mirror = requested,
             Self::BodyRig => overlay.body_rig = requested,
@@ -251,10 +250,8 @@ impl ViewId {
             Self::GrabRefusals => grab.refusals = requested,
             Self::GrabCandidates => grab.candidates = requested,
             Self::GrabZones => grab.zones = requested,
-            Self::ColliderView => {
-                config.controllers.physical_hands.collider_view.enabled = requested
-            }
-            Self::PalmBoxes => config.controllers.physical_hands.show_boxes = requested,
+            Self::ColliderView => config.physical_hands.collider_view.enabled = requested,
+            Self::PalmBoxes => config.physical_hands.show_boxes = requested,
             Self::DockedGuns => overlay.docked_guns = requested,
         }
     }
@@ -415,7 +412,7 @@ const ENTRIES: &[Entry] = &[
 struct RequestedViews([Option<ViewId>; ENTRIES.len()]);
 
 impl RequestedViews {
-    fn capture(config: &Config) -> Self {
+    fn capture(config: &ControllersConfig) -> Self {
         Self(std::array::from_fn(|index| {
             let id = ENTRIES[index].id;
             id.requested(config).then_some(id)
@@ -433,7 +430,7 @@ struct TemporaryHide {
 }
 
 impl TemporaryHide {
-    fn hide(&mut self, config: &Config) -> SourceMask {
+    fn hide(&mut self, config: &ControllersConfig) -> SourceMask {
         self.requested_at_hide
             .get_or_insert_with(|| RequestedViews::capture(config));
         let mut mask = SourceMask::NONE;
@@ -538,7 +535,7 @@ impl Blocker {
     }
 }
 
-fn matching<'a>(config: &Config, filter: &str) -> Vec<&'a Entry> {
+fn matching<'a>(config: &ControllersConfig, filter: &str) -> Vec<&'a Entry> {
     let filter = filter.trim().to_lowercase();
     let mut entries: Vec<_> = ENTRIES
         .iter()
@@ -595,7 +592,7 @@ fn unblock_control(ui: &mut Ui, blocker: Blocker, edits: &mut Vec<Edit>) {
 }
 
 fn shared_settings(ui: &mut Ui, snapshot: &Snapshot, edits: &mut Vec<Edit>) {
-    let mut overlay = snapshot.config.controllers.overlay;
+    let mut overlay = snapshot.config.overlay;
     if ui
         .checkbox(
             &mut overlay.hide_game_reticle,
@@ -682,7 +679,7 @@ fn shared_settings(ui: &mut Ui, snapshot: &Snapshot, edits: &mut Vec<Edit>) {
 /// What the collider view draws, edited on a copy. Only the contents are written back, so the
 /// view's switch edited in the same frame keeps its value.
 fn collider_settings(ui: &mut Ui, snapshot: &Snapshot, edits: &mut Vec<Edit>) {
-    let current = snapshot.config.controllers.physical_hands.collider_view;
+    let current = snapshot.config.physical_hands.collider_view;
     let mut collider = current;
     controllers::collider_view_settings(ui, &mut collider);
     if collider != current {
@@ -690,28 +687,24 @@ fn collider_settings(ui: &mut Ui, snapshot: &Snapshot, edits: &mut Vec<Edit>) {
     }
 }
 
-fn apply_edits(config: &mut Config, edits: &[Edit]) {
+fn apply_edits(config: &mut ControllersConfig, edits: &[Edit]) {
     for edit in edits {
         match *edit {
             Edit::Switch(id, requested) => id.set(config, requested),
-            Edit::Controllers(enabled) => config.controllers.enabled = enabled,
-            Edit::Overlay(enabled) => config.controllers.overlay.enabled = enabled,
-            Edit::GunReadout(readout) => config.controllers.overlay.gun_readout = readout,
-            Edit::MirrorDistance(distance) => {
-                config.controllers.overlay.body_mirror_distance_m = distance
-            }
-            Edit::DepthTolerance(tolerance) => {
-                config.controllers.overlay.depth_tolerance_m = tolerance
-            }
+            Edit::Controllers(enabled) => config.enabled = enabled,
+            Edit::Overlay(enabled) => config.overlay.enabled = enabled,
+            Edit::GunReadout(readout) => config.overlay.gun_readout = readout,
+            Edit::MirrorDistance(distance) => config.overlay.body_mirror_distance_m = distance,
+            Edit::DepthTolerance(tolerance) => config.overlay.depth_tolerance_m = tolerance,
             Edit::RelativeDepthTolerance(tolerance) => {
-                config.controllers.overlay.depth_tolerance_rel = tolerance
+                config.overlay.depth_tolerance_rel = tolerance
             }
-            Edit::MinimumLineWidth(width) => config.controllers.overlay.min_line_px = width,
-            Edit::XrayAlpha(alpha) => config.controllers.overlay.xray_alpha = alpha,
-            Edit::HideGameReticle(hide) => config.controllers.overlay.hide_game_reticle = hide,
+            Edit::MinimumLineWidth(width) => config.overlay.min_line_px = width,
+            Edit::XrayAlpha(alpha) => config.overlay.xray_alpha = alpha,
+            Edit::HideGameReticle(hide) => config.overlay.hide_game_reticle = hide,
             Edit::ColliderViewContents(contents) => {
                 // The view's switch is a registered switch; the contents edit leaves it alone.
-                let view = &mut config.controllers.physical_hands.collider_view;
+                let view = &mut config.physical_hands.collider_view;
                 *view = ColliderViewConfig {
                     enabled: view.enabled,
                     ..contents

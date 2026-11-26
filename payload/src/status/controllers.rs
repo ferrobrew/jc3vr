@@ -10,6 +10,7 @@ use crate::{
         body::procedural::{
             self, ProceduralStatus, authority::Case, config::ProceduralMode, twist::TwistStatus,
         },
+        config::CONTROLLERS_CONFIG,
         frame::Hand,
         hands::grip::{self, GripRead},
         locomotion::{
@@ -17,7 +18,7 @@ use crate::{
             acts::{self, ActFilterStatus},
             anchor::{self, AnchorStatus},
         },
-        menu::read_config,
+        menu::read,
         physical_hands::{
             collider_view::{self, ColliderViewStatus},
             physics::{
@@ -62,7 +63,7 @@ pub(crate) const HAND_OVER: Row = Row::new("HAND-OVER CASE", "Hand-over case", h
 pub(crate) const TWIST_BONES: Row = Row::new("TWIST BONES", "Twist bones", twist_bones);
 
 fn rigid_grip() -> Line {
-    if !read_config(|c| c.controllers.hands.rigid_grip) {
+    if !read(&CONTROLLERS_CONFIG, |c| c.hands.rigid_grip) {
         return Line::off("");
     }
     let pinned = grip_watch::status().pinned;
@@ -96,7 +97,7 @@ fn bone_changes() -> Line {
 }
 
 fn callback() -> Line {
-    let enabled = read_config(|c| physics::enabled(&c.controllers.physical_hands));
+    let enabled = read(&CONTROLLERS_CONFIG, |c| physics::enabled(&c.physical_hands));
     callback_line(enabled, physics::callback_status())
 }
 
@@ -133,7 +134,7 @@ fn body_errors() -> Line {
 }
 
 fn contact_events() -> Line {
-    let hits = read_config(|c| physics::enabled(&c.controllers.physical_hands));
+    let hits = read(&CONTROLLERS_CONFIG, |c| physics::enabled(&c.physical_hands));
     if !hits {
         return Line::off("");
     }
@@ -171,7 +172,7 @@ fn blows() -> Line {
 }
 
 fn joints() -> Line {
-    let on = read_config(|c| physics::enabled(&c.controllers.physical_hands));
+    let on = read(&CONTROLLERS_CONFIG, |c| physics::enabled(&c.physical_hands));
     if !on {
         return Line::off("");
     }
@@ -184,7 +185,7 @@ fn joints() -> Line {
 }
 
 fn stick_velocity() -> Line {
-    if !read_config(|c| c.controllers.locomotion.stick.enabled) {
+    if !read(&CONTROLLERS_CONFIG, |c| c.locomotion.stick.enabled) {
         return Line::off("");
     }
     // The last tick's, not this one's: the movement task does not run while the game is paused,
@@ -198,14 +199,14 @@ fn stick_velocity() -> Line {
 }
 
 fn act_filter() -> Line {
-    if !read_config(|c| c.controllers.locomotion.acts.enabled) {
+    if !read(&CONTROLLERS_CONFIG, |c| c.locomotion.acts.enabled) {
         return Line::off("");
     }
     act_filter_line(acts::status())
 }
 
 fn act_watchdog() -> Line {
-    if !read_config(|c| c.controllers.locomotion.acts.enabled) {
+    if !read(&CONTROLLERS_CONFIG, |c| c.locomotion.acts.enabled) {
         return Line::off("");
     }
     let status = acts::status();
@@ -218,14 +219,14 @@ fn act_watchdog() -> Line {
 }
 
 fn steady_view() -> Line {
-    if !read_config(|c| c.controllers.locomotion.view.enabled) {
+    if !read(&CONTROLLERS_CONFIG, |c| c.locomotion.view.enabled) {
         return Line::off("");
     }
     steady_view_line(&anchor::status())
 }
 
 fn neutral_head() -> Line {
-    if !read_config(|c| c.controllers.locomotion.view.enabled) {
+    if !read(&CONTROLLERS_CONFIG, |c| c.locomotion.view.enabled) {
         return Line::off("");
     }
     match anchor::status().neutral {
@@ -236,19 +237,19 @@ fn neutral_head() -> Line {
 }
 
 fn procedural_mode() -> Line {
-    let mode = read_config(|c| c.controllers.body.procedural.mode);
+    let mode = read(&CONTROLLERS_CONFIG, |c| c.body.procedural.mode);
     procedural_mode_line(mode, &procedural::published_status(), Instant::now())
 }
 
 fn hand_over() -> Line {
-    if read_config(|c| c.controllers.body.procedural.mode) != ProceduralMode::Full {
+    if read(&CONTROLLERS_CONFIG, |c| c.body.procedural.mode) != ProceduralMode::Full {
         return Line::off("");
     }
     hand_over_line(procedural::published_status().case)
 }
 
 fn twist_bones() -> Line {
-    if read_config(|c| c.controllers.body.procedural.mode) != ProceduralMode::Full {
+    if read(&CONTROLLERS_CONFIG, |c| c.body.procedural.mode) != ProceduralMode::Full {
         return Line::off("");
     }
     twist_line(&procedural::twist::status())
@@ -358,7 +359,7 @@ fn right_gun_body() -> Line {
 }
 
 fn gun_body(hand: Hand) -> Line {
-    let enabled = read_config(|c| guns::enabled(&c.controllers.physical_hands));
+    let enabled = read(&CONTROLLERS_CONFIG, |c| guns::enabled(&c.physical_hands));
     let status = guns::status();
     gun_body_line(
         enabled,
@@ -400,7 +401,7 @@ fn gun_body_line(enabled: bool, status: Option<GunBodyStatus>, contacts: u64) ->
 }
 
 fn body(hand: Hand) -> Line {
-    let enabled = read_config(|c| physics::enabled(&c.controllers.physical_hands));
+    let enabled = read(&CONTROLLERS_CONFIG, |c| physics::enabled(&c.physical_hands));
     body_line(enabled, &physics::status().hands[hand.index()])
 }
 

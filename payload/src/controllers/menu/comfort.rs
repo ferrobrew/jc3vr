@@ -6,14 +6,14 @@
 
 use crate::{
     controllers::{
-        config::{Posture, SeatTransition},
+        config::{CONTROLLERS_CONFIG, Posture, SeatTransition},
         menu::{
             config_choice, config_slider, config_toggle, edit_config, nearest_index, read_config,
         },
         roomscale::manual_recenter_kind,
     },
     grapple::GrappleComfortMode,
-    headpose::config::{VrTurnConfig, VrTurnMode},
+    headpose::config::{HEADPOSE_CONFIG, VrTurnConfig, VrTurnMode},
     pause_menu::model::{
         page::{Button, ButtonOutcome, Choice, Page, PageDef},
         slider::{SliderFormat, SliderRange},
@@ -39,33 +39,37 @@ fn build() -> Page {
         })
         .text("LOOK AHEAD, THEN PRESS RECENTER.")
         .header("POSTURE")
-        .item(config_choice!("POSTURE", &POSTURES, &POSTURE_LABELS, |c| c
-            .controllers
-            .roomscale
-            .posture))
-        .item(config_toggle!("BODY FOLLOWS YOU", |c| c
-            .controllers
-            .body
-            .rig
-            .steps
-            .enabled))
-        .item(config_toggle!("FADE WHEN HEAD IS IN WALLS", |c| c
-            .controllers
-            .roomscale
-            .head_fade
-            .enabled))
+        .item(config_choice!(
+            "POSTURE",
+            &POSTURES,
+            &POSTURE_LABELS,
+            CONTROLLERS_CONFIG,
+            |c| c.roomscale.posture
+        ))
+        .item(config_toggle!(
+            "BODY FOLLOWS YOU",
+            CONTROLLERS_CONFIG,
+            |c| c.body.rig.steps.enabled
+        ))
+        .item(config_toggle!(
+            "FADE WHEN HEAD IS IN WALLS",
+            CONTROLLERS_CONFIG,
+            |c| c.roomscale.head_fade.enabled
+        ))
         .header("TURNING")
         .item(config_choice!(
             "TURN MODE",
             &TURN_MODES,
             &TURN_MODE_LABELS,
-            |c| c.headpose.vr_turn.mode
+            HEADPOSE_CONFIG,
+            |c| c.vr_turn.mode
         ))
         .item(config_slider!(
             "SMOOTH TURN SPEED",
             TURN_SPEED_RANGE,
             SliderFormat::new(2, "X"),
-            |c| c.headpose.vr_turn.smooth_scale
+            HEADPOSE_CONFIG,
+            |c| c.vr_turn.smooth_scale
         ))
         .item(Choice {
             label: SNAP_TURN_ANGLE.into(),
@@ -84,29 +88,31 @@ fn build() -> Page {
             default: nearest_index(&SNAP_ANGLES, VrTurnConfig::new().snap_angle_deg),
         })
         .header("MOVEMENT")
-        .item(config_toggle!("SMOOTH STICK MOVEMENT", |c| c
-            .controllers
-            .locomotion
-            .stick
-            .enabled))
+        .item(config_toggle!(
+            "SMOOTH STICK MOVEMENT",
+            CONTROLLERS_CONFIG,
+            |c| c.locomotion.stick.enabled
+        ))
         .item(config_choice!(
             "VIEW ON THE GRAPPLE",
             &GRAPPLE_VIEWS,
             &GRAPPLE_VIEW_LABELS,
-            |c| c.headpose.grapple.mode
+            HEADPOSE_CONFIG,
+            |c| c.grapple.mode
         ))
         .header("VEHICLES")
         .item(config_choice!(
             "VEHICLE ENTRY",
             &SEAT_TRANSITIONS,
             &SEAT_TRANSITION_LABELS,
-            |c| c.controllers.roomscale.seat_transition
+            CONTROLLERS_CONFIG,
+            |c| c.roomscale.seat_transition
         ))
-        .item(config_toggle!("FIT VIEW TO THE WHEEL", |c| c
-            .controllers
-            .vehicles
-            .driving_view
-            .enabled))
+        .item(config_toggle!(
+            "FIT VIEW TO THE WHEEL",
+            CONTROLLERS_CONFIG,
+            |c| c.vehicles.driving_view.enabled
+        ))
 }
 
 /// The recenter button: ask for a recenter of the kind the F7 key does, at the start of the next

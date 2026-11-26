@@ -3,8 +3,9 @@
 
 use crate::{
     controllers::{
+        config::CONTROLLERS_CONFIG,
         loadout::{Place, live, slot_label},
-        menu::read_config,
+        menu::read,
         weapons::{
             dual_wield::single::{self, grant::TwinState},
             inventory::{
@@ -26,7 +27,7 @@ pub(crate) const PINNED: Row = Row::new("KEPT IN THE WORLD", "Kept in the world"
 pub(crate) const LOADOUT: Row = Row::new("LOADOUT TABLE", "Loadout table", loadout);
 
 fn tracked() -> Line {
-    if !read_config(|c| c.controllers.weapons.inventory.enabled) {
+    if !read(&CONTROLLERS_CONFIG, |c| c.weapons.inventory.enabled) {
         return Line::off("");
     }
     let s = inventory::status();
@@ -48,7 +49,7 @@ fn tracked() -> Line {
 /// The live loadout table: where its items are, and how many weapons it disagrees with the old
 /// handling about.
 fn loadout() -> Line {
-    if !read_config(|c| c.controllers.weapons.inventory.enabled) {
+    if !read(&CONTROLLERS_CONFIG, |c| c.weapons.inventory.enabled) {
         return Line::off("");
     }
     let s = live::status();
@@ -78,7 +79,7 @@ fn loadout() -> Line {
 /// Whether the pistols are two weapons: the slot's pistol, the second pistol of the last pair, and
 /// the counts.
 fn separate_pistols() -> Line {
-    if !read_config(|c| c.controllers.weapons.separate_pistols) {
+    if !read(&CONTROLLERS_CONFIG, |c| c.weapons.separate_pistols) {
         return Line::off("");
     }
     let s = single::status();
@@ -110,7 +111,7 @@ fn separate_pistols() -> Line {
 }
 
 fn pinned() -> Line {
-    if !read_config(|c| c.controllers.weapons.inventory.enabled) {
+    if !read(&CONTROLLERS_CONFIG, |c| c.weapons.inventory.enabled) {
         return Line::off("");
     }
     let s = inventory::status();
@@ -127,8 +128,8 @@ fn pinned() -> Line {
 }
 
 fn sidecar() -> Line {
-    if !read_config(|c| {
-        let inventory = c.controllers.weapons.inventory;
+    if !read(&CONTROLLERS_CONFIG, |c| {
+        let inventory = c.weapons.inventory;
         inventory.enabled && inventory.carry && inventory.persist
     }) {
         return Line::off("");
@@ -152,8 +153,8 @@ fn sidecar() -> Line {
 }
 
 fn last_load() -> Line {
-    if !read_config(|c| {
-        let inventory = c.controllers.weapons.inventory;
+    if !read(&CONTROLLERS_CONFIG, |c| {
+        let inventory = c.weapons.inventory;
         inventory.enabled && inventory.carry && inventory.persist
     }) {
         return Line::off("");
@@ -208,8 +209,8 @@ fn last_load() -> Line {
 }
 
 fn carried() -> Line {
-    if !read_config(|c| {
-        let inventory = c.controllers.weapons.inventory;
+    if !read(&CONTROLLERS_CONFIG, |c| {
+        let inventory = c.weapons.inventory;
         inventory.enabled && inventory.carry
     }) {
         return Line::off("");

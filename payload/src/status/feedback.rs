@@ -2,7 +2,7 @@
 //! folded them together, and the impact sounds the hands made.
 
 use crate::{
-    controllers::{haptics, menu::read_config, physical_hands::sounds},
+    controllers::{config::CONTROLLERS_CONFIG, haptics, menu::read, physical_hands::sounds},
     status::{Line, Row, text},
 };
 
@@ -10,7 +10,7 @@ pub(crate) const HAPTIC_CUES: Row = Row::new("HAPTIC CUES", "Haptic cues", hapti
 pub(crate) const IMPACT_SOUNDS: Row = Row::new("IMPACT SOUNDS", "Impact sounds", impact_sounds);
 
 fn haptic_cues() -> Line {
-    if !read_config(|c| c.controllers.haptics.enabled) {
+    if !read(&CONTROLLERS_CONFIG, |c| c.haptics.enabled) {
         return Line::off("");
     }
     let status = haptics::status();
@@ -30,7 +30,7 @@ fn haptic_cues() -> Line {
 }
 
 fn impact_sounds() -> Line {
-    if !read_config(|c| c.controllers.physical_hands.sounds.enabled) {
+    if !read(&CONTROLLERS_CONFIG, |c| c.physical_hands.sounds.enabled) {
         return Line::off("");
     }
     let status = sounds::status();

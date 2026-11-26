@@ -9,10 +9,13 @@
 
 use crate::{
     controllers::menu::{config_slider, config_toggle},
+    fsr::FSR_CONFIG,
+    hud::config::HUD_CONFIG,
     pause_menu::model::{
         page::{Page, PageDef},
         slider::{SliderFormat, SliderRange},
     },
+    vr::{FOVEATION_CONFIG, VR_CONFIG},
 };
 
 /// The `VR: DISPLAY` page.
@@ -30,35 +33,43 @@ fn build() -> Page {
             "RESOLUTION",
             RESOLUTION_RANGE,
             SliderFormat::new(2, "X"),
-            |c| c.vr.resolution_scale
+            VR_CONFIG,
+            |c| c.resolution_scale
         ))
         .text("THE SCENE RESIZES AT ONCE, THE")
         .text("HEADSET IMAGE AFTER A RESTART.")
-        .item(config_toggle!("FSR SHARPENING", |c| c.fsr.sharpen))
+        .item(config_toggle!("FSR SHARPENING", FSR_CONFIG, |c| c.sharpen))
         .item(config_slider!(
             "SHARPNESS",
             UNIT_RANGE,
             SliderFormat::new(2, ""),
-            |c| c.fsr.sharpness
+            FSR_CONFIG,
+            |c| c.sharpness
         ))
-        .item(config_toggle!("FOVEATED RENDERING", |c| c
-            .foveation
-            .enabled))
+        .item(config_toggle!(
+            "FOVEATED RENDERING",
+            FOVEATION_CONFIG,
+            |c| c.enabled
+        ))
         .header("FLOATING PANEL")
         .item(config_slider!(
             "PANEL DISTANCE",
             PANEL_DISTANCE_RANGE,
             SliderFormat::new(1, " M"),
-            |c| c.hud.distance
+            HUD_CONFIG,
+            |c| c.distance
         ))
         .item(config_slider!(
             "PANEL SIZE",
             PANEL_SCALE_RANGE,
             SliderFormat::new(2, "X"),
-            |c| c.hud.panel_scale
+            HUD_CONFIG,
+            |c| c.panel_scale
         ))
         .header("HUD")
-        .item(config_toggle!("HUD ON THE HANDS", |c| c.hud.atlas.enabled))
+        .item(config_toggle!("HUD ON THE HANDS", HUD_CONFIG, |c| c
+            .atlas
+            .enabled))
 }
 
 // Slider notch counts are multiples of ten: the movie's keyboard step is a tenth of the notches,

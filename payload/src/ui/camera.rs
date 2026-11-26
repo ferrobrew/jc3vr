@@ -5,15 +5,17 @@
 use jc3gi::types::math::Matrix4;
 
 use crate::{
-    config, grapple, headpose, hooks,
-    vr::{self, FreezeMode, pose_control},
+    config::engine::{Parts, edit_parts},
+    grapple, headpose, hooks,
+    hooks::camera::config::CAMERA_CONFIG,
+    vr::{self, FreezeMode, VR_CONFIG, pose_control},
 };
 
 pub(crate) fn head_view(ui: &mut egui::Ui) {
-    let mut cfg = config::edit();
-    ui.checkbox(&mut cfg.camera.enabled, "Enabled");
+    let mut cfg = edit_parts();
+    ui.checkbox(&mut cfg.part_mut(&CAMERA_CONFIG).enabled, "Enabled");
     ui.collapsing("Frozen pose (diagnostic)", |ui| {
-        egui_frozen_pose(ui, &mut cfg.vr);
+        egui_frozen_pose(ui, cfg.part_mut(&VR_CONFIG));
     });
 }
 

@@ -9,7 +9,7 @@
 use std::{sync::OnceLock, time::Instant};
 
 use crate::{
-    config::{self, SaveStatus},
+    config::engine::{self, SaveStatus},
     egui_impl::{debug_ui_capture, request_debug_ui},
     hud::egui_panel,
     ui::capture::{OwnershipBlocker, PanelMode, PanelRequest},
@@ -153,7 +153,7 @@ fn neutralize_dock_input(context: &egui::Context) {
 
 /// The settings file's path, selectable so it can be copied, and whether it is up to date.
 fn settings_line(ui: &mut egui::Ui) {
-    let state = match config::status() {
+    let state = match engine::status() {
         SaveStatus::UpToDate => "saved",
         SaveStatus::Pending => "saving",
         SaveStatus::Failed => "save failed, see the log",
@@ -165,7 +165,7 @@ fn settings_line(ui: &mut egui::Ui) {
                 .weak()
                 .small(),
         );
-        if let Some(path) = config::paths::settings_file() {
+        if let Some(path) = engine::paths::settings_file() {
             let text = path.display().to_string();
             let mut shown = text.as_str();
             ui.add(

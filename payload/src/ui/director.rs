@@ -7,14 +7,14 @@ use jc3gi::heat_manager::HeatManager;
 use parking_lot::Mutex;
 
 use crate::{
-    config,
     director::{
+        DIRECTOR_CONFIG,
         clean_view::CleanViewScope,
         heat, keymap, markers, safety, spawn,
         teleport::{self, TeleportMode},
         time,
     },
-    recorder::{self, Arrangement, HostState, VideoStatus, session_recording},
+    recorder::{self, Arrangement, HostState, RECORDER_CONFIG, VideoStatus, session_recording},
     ui::catalog::FeatureId,
 };
 
@@ -133,8 +133,8 @@ pub(crate) fn host_line(status: &recorder::Status) -> String {
 }
 
 fn clean_view_ui(ui: &mut egui::Ui) {
-    let mut cfg = config::edit();
-    let d = &mut cfg.director.clean_view;
+    let mut cfg = DIRECTOR_CONFIG.edit();
+    let d = &mut cfg.clean_view;
     ui.horizontal(|ui| {
         ui.checkbox(&mut d.on, "Clean view (F4)").on_hover_text(
             "Hides the mod's overlays at the chosen scope without changing their settings. At \
@@ -152,8 +152,8 @@ fn clean_view_ui(ui: &mut egui::Ui) {
 }
 
 fn time_ui(ui: &mut egui::Ui) {
-    let mut cfg = config::edit();
-    let d = &mut cfg.director;
+    let mut cfg = DIRECTOR_CONFIG.edit();
+    let d = &mut *cfg;
     ui.add(
         Slider::new(
             &mut d.time_scale,
@@ -183,8 +183,8 @@ fn time_ui(ui: &mut egui::Ui) {
 }
 
 fn safety_ui(ui: &mut egui::Ui) {
-    let mut cfg = config::edit();
-    let d = &mut cfg.director;
+    let mut cfg = DIRECTOR_CONFIG.edit();
+    let d = &mut *cfg;
     ui.checkbox(&mut d.god_mode, "God mode (re-asserted every frame)")
         .on_hover_text(
             "The game's own god mode on the player's character, kept on across respawns.",
@@ -211,8 +211,8 @@ fn safety_readout(ui: &mut egui::Ui) {
 }
 
 fn heat_ui(ui: &mut egui::Ui) {
-    let mut cfg = config::edit();
-    let d = &mut cfg.director;
+    let mut cfg = DIRECTOR_CONFIG.edit();
+    let d = &mut *cfg;
     ui.checkbox(&mut d.heat_lock, "Lock heat (no rise, no decay)")
         .on_hover_text(
             "Sets the heat manager's system lock every frame: the level neither climbs nor clears \
@@ -369,8 +369,8 @@ struct SpawnPicker {
 }
 
 fn spawn_ui(ui: &mut egui::Ui) {
-    let mut cfg = config::edit();
-    let s = &mut cfg.director.spawn;
+    let mut cfg = DIRECTOR_CONFIG.edit();
+    let s = &mut cfg.spawn;
     ui.horizontal(|ui| {
         ui.label("Tags:");
         ui.text_edit_singleline(&mut s.tags);
@@ -531,8 +531,8 @@ fn capture_host_ui(ui: &mut egui::Ui) {
     let session = session_recording::status();
     let running = session.video || session.tracking;
     let in_process = {
-        let mut cfg = config::edit();
-        let r = &mut cfg.recorder;
+        let mut cfg = RECORDER_CONFIG.edit();
+        let r = &mut *cfg;
         ui.add_enabled_ui(!running, |ui| {
             ui.checkbox(&mut r.in_process, "Capture the eye views in process")
                 .on_hover_text(

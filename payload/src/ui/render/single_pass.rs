@@ -4,16 +4,16 @@
 use std::sync::atomic::Ordering;
 
 use crate::{
-    config,
-    far_field::FarFieldMode,
+    config::engine::Parts,
+    far_field::{FAR_FIELD_CONFIG, FarFieldMode},
     hooks::{draw_count::EFFECT_DEPTH_COPIES_SKIPPED, graphics_engine::shader},
     stereo::{
-        config::set_single_pass_feature,
+        config::{STEREO_CONFIG, StereoConfig, set_single_pass_feature},
         single_pass::{self, Capability},
     },
 };
 
-pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
+pub(super) fn section(ui: &mut egui::Ui, cfg: &mut impl Parts) {
     // Single-pass stereo (on by default while a VR session runs): render the G-buffer geometry once,
     // emitting both eyes via instancing + SV_ViewportArrayIndex routing, instead of the double-draw.
     // The census dry-run below is safe (no rendering change) and reports how the vertex-shader
@@ -23,7 +23,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
         // normal way to switch between single-pass and multipass. The individual levers below stay
         // for bisection. Reloads either way -- on to apply the patches, off to restore the pristine
         // shaders.
-        let enabled = cfg.stereo.single_pass.enabled;
+        let enabled = cfg.part_mut(&STEREO_CONFIG).single_pass.enabled;
         let toggle_label = if enabled {
             "⚡ Disable single-pass stereo"
         } else {
@@ -44,7 +44,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
         }
         ui.separator();
         ui.checkbox(
-            &mut cfg.stereo.single_pass.enabled,
+            &mut cfg.part_mut(&STEREO_CONFIG).single_pass.enabled,
             "Enable single-pass stereo",
         )
         .on_hover_text(
@@ -52,7 +52,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
              Forced inert without the DXVK viewport-routing capability (below).",
         );
         ui.checkbox(
-            &mut cfg.stereo.single_pass.patch_dryrun,
+            &mut cfg.part_mut(&STEREO_CONFIG).single_pass.patch_dryrun,
             "Census only (dry-run: patch + tally, do not substitute -- safe)",
         )
         .on_hover_text(
@@ -60,7 +60,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
              outcomes, without changing rendering. Validates the rewriter against real shaders.",
         );
         ui.checkbox(
-            &mut cfg.stereo.single_pass.dump_vs_name_census,
+            &mut cfg.part_mut(&STEREO_CONFIG).single_pass.dump_vs_name_census,
             "Dump the vertex-shader name census on the next shader reload",
         )
         .on_hover_text(
@@ -70,18 +70,18 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
         );
         ui.separator();
         ui.label("Enable top-to-bottom; all are needed together for a clean image:");
-        ui.add_enabled_ui(cfg.stereo.single_pass.enabled, |ui| {
+        ui.add_enabled_ui(cfg.part_mut(&STEREO_CONFIG).single_pass.enabled, |ui| {
             ui.checkbox(
-                &mut cfg.stereo.single_pass.dual_eye,
+                &mut cfg.part_mut(&STEREO_CONFIG).single_pass.dual_eye,
                 "Dual-eye: distinct per-eye cb13 + eye-half viewports + instance doubling",
             )
             .on_hover_text(
                 "Makes the eyes diverge. On its own (no double-wide, no collapse) each eye \
                  renders into half of a per-eye target -- squished; a bisection step.",
             );
-            ui.add_enabled_ui(cfg.stereo.single_pass.dual_eye, |ui| {
+            ui.add_enabled_ui(cfg.part_mut(&STEREO_CONFIG).single_pass.dual_eye, |ui| {
                 ui.checkbox(
-                    &mut cfg.stereo.single_pass.double_wide,
+                    &mut cfg.part_mut(&STEREO_CONFIG).single_pass.double_wide,
                     "Double-wide render target (full per-eye resolution)",
                 )
                 .on_hover_text(
@@ -90,7 +90,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                 );
                 let collapse_changed = ui
                     .checkbox(
-                        &mut cfg.stereo.single_pass.collapse,
+                        &mut cfg.part_mut(&STEREO_CONFIG).single_pass.collapse,
                         "Collapse to a single game.Draw walk (the actual perf win; riskiest)",
                     )
                     .on_hover_text(
@@ -109,14 +109,14 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                     shader::request_reload();
                 }
                 if collapse_changed
-                    && cfg.stereo.single_pass.collapse
-                    && cfg.far_field.mode == FarFieldMode::Share
+                    && cfg.part_mut(&STEREO_CONFIG).single_pass.collapse
+                    && cfg.part_mut(&FAR_FIELD_CONFIG).mode == FarFieldMode::Share
                 {
-                    cfg.far_field.mode = FarFieldMode::Collect;
+                    cfg.part_mut(&FAR_FIELD_CONFIG).mode = FarFieldMode::Collect;
                 }
                 if ui
                     .checkbox(
-                        &mut cfg.stereo.single_pass.reproject,
+                        &mut cfg.part_mut(&STEREO_CONFIG).single_pass.reproject,
                         "Reproject the no-cb0 scene families (NPCs, props, buildings, roads)",
                     )
                     .on_hover_text(
@@ -130,7 +130,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                 }
                 if ui
                     .checkbox(
-                        &mut cfg.stereo.single_pass.reproject_camera_only,
+                        &mut cfg.part_mut(&STEREO_CONFIG).single_pass.reproject_camera_only,
                         "...including the ones claimed on a cb0[4] reference alone",
                     )
                     .on_hover_text(
@@ -147,7 +147,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                 }
                 if ui
                     .checkbox(
-                        &mut cfg.stereo.single_pass.terrain,
+                        &mut cfg.part_mut(&STEREO_CONFIG).single_pass.terrain,
                         "Single-pass the tessellated terrain (VS -> HS -> DS)",
                     )
                     .on_hover_text(
@@ -163,9 +163,9 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                 }
                 if ui
                     .add_enabled(
-                        cfg.stereo.single_pass.terrain,
+                        cfg.part_mut(&STEREO_CONFIG).single_pass.terrain,
                         egui::Checkbox::new(
-                            &mut cfg.stereo.single_pass.terrain_patch_per_eye,
+                            &mut cfg.part_mut(&STEREO_CONFIG).single_pass.terrain_patch_per_eye,
                             "Terrain patches per eye",
                         ),
                     )
@@ -181,9 +181,9 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                 }
                 if ui
                     .add_enabled(
-                        cfg.stereo.single_pass.terrain,
+                        cfg.part_mut(&STEREO_CONFIG).single_pass.terrain,
                         egui::Checkbox::new(
-                            &mut cfg.stereo.single_pass.terrain_eye_rows,
+                            &mut cfg.part_mut(&STEREO_CONFIG).single_pass.terrain_eye_rows,
                             "Terrain domain shaders from each eye's own rows",
                         ),
                     )
@@ -199,7 +199,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                 }
                 if ui
                     .checkbox(
-                        &mut cfg.stereo.single_pass.full_view_projection_rows,
+                        &mut cfg.part_mut(&STEREO_CONFIG).single_pass.full_view_projection_rows,
                         "Full view-projection from each eye's own rows",
                     )
                     .on_hover_text(
@@ -214,7 +214,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                 }
                 if ui
                     .checkbox(
-                        &mut cfg.stereo.single_pass.tree_impostors,
+                        &mut cfg.part_mut(&STEREO_CONFIG).single_pass.tree_impostors,
                         "Single-pass the tree impostors (far-distance billboards)",
                     )
                     .on_hover_text(
@@ -227,7 +227,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                     shader::request_reload();
                 }
                 ui.checkbox(
-                    &mut cfg.stereo.single_pass.tree_impostor_pixel_size_per_eye,
+                    &mut cfg.part_mut(&STEREO_CONFIG).single_pass.tree_impostor_pixel_size_per_eye,
                     "Tree impostor pixel size per eye",
                 )
                 .on_hover_text(
@@ -238,7 +238,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                 );
                 if ui
                     .checkbox(
-                        &mut cfg.stereo.single_pass.tree_impostor_screen_door_per_eye,
+                        &mut cfg.part_mut(&STEREO_CONFIG).single_pass.tree_impostor_screen_door_per_eye,
                         "Tree impostor screen door per eye",
                     )
                     .on_hover_text(
@@ -254,7 +254,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                 }
                 if ui
                     .checkbox(
-                        &mut cfg.stereo.single_pass.static_lights_per_eye,
+                        &mut cfg.part_mut(&STEREO_CONFIG).single_pass.static_lights_per_eye,
                         "Static light sprites per eye (distant town lights)",
                     )
                     .on_hover_text(
@@ -269,7 +269,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                 {
                     shader::request_reload();
                 }
-                ui.checkbox(&mut cfg.stereo.single_pass.moon_per_eye, "Moon per eye")
+                ui.checkbox(&mut cfg.part_mut(&STEREO_CONFIG).single_pass.moon_per_eye, "Moon per eye")
                     .on_hover_text(
                         "Promotes the moon's non-indexed draw to one two-instance draw routed to the \
                          eye halves, with its far-plane depth kept through the reprojection. Off, \
@@ -279,7 +279,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                     );
                 if ui
                     .checkbox(
-                        &mut cfg.stereo.single_pass.water_plane_per_eye,
+                        &mut cfg.part_mut(&STEREO_CONFIG).single_pass.water_plane_per_eye,
                         "Water reflection planes per eye",
                     )
                     .on_hover_text(
@@ -293,7 +293,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                     shader::request_reload();
                 }
                 if ui
-                    .checkbox(&mut cfg.stereo.single_pass.clouds_per_eye, "Clouds per eye")
+                    .checkbox(&mut cfg.part_mut(&STEREO_CONFIG).single_pass.clouds_per_eye, "Clouds per eye")
                     .on_hover_text(
                         "Reprojects the cloud vertex shaders by M_eye. Off, the clouds take their \
                          clip position from the centred render camera in both eyes, which is \
@@ -304,7 +304,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                     shader::request_reload();
                 }
                 if ui
-                    .checkbox(&mut cfg.stereo.single_pass.stars_per_eye, "Stars per eye")
+                    .checkbox(&mut cfg.part_mut(&STEREO_CONFIG).single_pass.stars_per_eye, "Stars per eye")
                     .on_hover_text(
                         "Reprojects the stars' vertex shader by M_eye and promotes their \
                          non-indexed draw to one two-instance draw routed to the eye halves, \
@@ -318,7 +318,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                 ui.label("Render-block re-issue:");
                 if ui
                     .checkbox(
-                        &mut cfg.stereo.single_pass.bark,
+                        &mut cfg.part_mut(&STEREO_CONFIG).single_pass.bark,
                         "Bark (tree trunks/branches)",
                     )
                     .on_hover_text(
@@ -333,7 +333,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                     shader::request_reload();
                 }
                 if ui
-                    .checkbox(&mut cfg.stereo.single_pass.foliage, "Foliage (grass)")
+                    .checkbox(&mut cfg.part_mut(&STEREO_CONFIG).single_pass.foliage, "Foliage (grass)")
                     .on_hover_text(
                         "Re-issues CRenderBlockFoliage's Draw/DrawZ once per eye with its baked cb2 \
                          view-projection reprojected by M_eye, and declines the cb0 remap on the \
@@ -346,7 +346,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                     shader::request_reload();
                 }
                 ui.checkbox(
-                    &mut cfg.stereo.single_pass.vegetation_once,
+                    &mut cfg.part_mut(&STEREO_CONFIG).single_pass.vegetation_once,
                     "Bark and foliage once for both eyes",
                 )
                 .on_hover_text(
@@ -362,7 +362,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                     crate::stereo::single_pass::vegetation_once::status()
                 ));
                 ui.checkbox(
-                    &mut cfg.stereo.single_pass.occluder,
+                    &mut cfg.part_mut(&STEREO_CONFIG).single_pass.occluder,
                     "Occluder (depth-prime boxes)",
                 )
                 .on_hover_text(
@@ -371,7 +371,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                      projection.",
                 );
                 ui.checkbox(
-                    &mut cfg.stereo.single_pass.instanced_per_eye,
+                    &mut cfg.part_mut(&STEREO_CONFIG).single_pass.instanced_per_eye,
                     "Already-instanced draws per eye (buildings, vegetation)",
                 )
                 .on_hover_text(
@@ -381,7 +381,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                      split alternately between the eyes -- the building flicker.",
                 );
                 ui.checkbox(
-                    &mut cfg.stereo.single_pass.hw_instanced_once,
+                    &mut cfg.part_mut(&STEREO_CONFIG).single_pass.hw_instanced_once,
                     "Hardware-instanced buildings once for both eyes",
                 )
                 .on_hover_text(
@@ -396,7 +396,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                     crate::stereo::single_pass::hw_instanced::status()
                 ));
                 ui.checkbox(
-                    &mut cfg.stereo.single_pass.indirect_per_eye,
+                    &mut cfg.part_mut(&STEREO_CONFIG).single_pass.indirect_per_eye,
                     "GPU-indirect draws per eye (near terrain patches, foliage)",
                 )
                 .on_hover_text(
@@ -407,7 +407,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                      them sliding across the screen at twice the camera's rate.",
                 );
                 ui.checkbox(
-                    &mut cfg.stereo.single_pass.vertex_globals_per_eye,
+                    &mut cfg.part_mut(&STEREO_CONFIG).single_pass.vertex_globals_per_eye,
                     "Per-eye vertex globals for unpatched re-issues",
                 )
                 .on_hover_text(
@@ -417,7 +417,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                      asymmetric or canted eyes. Applies at once.",
                 );
                 ui.checkbox(
-                    &mut cfg.stereo.single_pass.reconstruct_per_eye,
+                    &mut cfg.part_mut(&STEREO_CONFIG).single_pass.reconstruct_per_eye,
                     "Deferred lighting resolve per eye (sun shadows)",
                 )
                 .on_hover_text(
@@ -428,7 +428,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                      screen. Needs the off-axis reconstruction override on.",
                 );
                 ui.checkbox(
-                    &mut cfg.stereo.single_pass.fullscreen_camera_per_eye,
+                    &mut cfg.part_mut(&STEREO_CONFIG).single_pass.fullscreen_camera_per_eye,
                     "Fullscreen passes use each eye's camera position",
                 )
                 .on_hover_text(
@@ -438,7 +438,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                 );
                 if ui
                     .checkbox(
-                        &mut cfg.stereo.single_pass.pixel_camera_per_eye,
+                        &mut cfg.part_mut(&STEREO_CONFIG).single_pass.pixel_camera_per_eye,
                         "Geometry shades from each eye's camera position",
                     )
                     .on_hover_text(
@@ -455,7 +455,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                 }
                 if ui
                     .checkbox(
-                        &mut cfg.stereo.single_pass.local_lights_per_eye,
+                        &mut cfg.part_mut(&STEREO_CONFIG).single_pass.local_lights_per_eye,
                         "Local lights measured from each eye",
                     )
                     .on_hover_text(
@@ -475,7 +475,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                 ));
                 if ui
                     .checkbox(
-                        &mut cfg.stereo.single_pass.screen_door_per_eye,
+                        &mut cfg.part_mut(&STEREO_CONFIG).single_pass.screen_door_per_eye,
                         "Screen-door fades laid out per eye",
                     )
                     .on_hover_text(
@@ -492,7 +492,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                 }
                 if ui
                     .checkbox(
-                        &mut cfg.stereo.single_pass.velocity_per_eye,
+                        &mut cfg.part_mut(&STEREO_CONFIG).single_pass.velocity_per_eye,
                         "Motion vectors per eye",
                     )
                     .on_hover_text(
@@ -513,7 +513,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                 ));
                 if ui
                     .checkbox(
-                        &mut cfg.stereo.single_pass.clip_origin_per_eye,
+                        &mut cfg.part_mut(&STEREO_CONFIG).single_pass.clip_origin_per_eye,
                         "Road clip origin per eye",
                     )
                     .on_hover_text(
@@ -528,7 +528,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                     shader::request_reload();
                 }
                 ui.checkbox(
-                    &mut cfg.stereo.single_pass.terrain_detail_eye_rows,
+                    &mut cfg.part_mut(&STEREO_CONFIG).single_pass.terrain_detail_eye_rows,
                     "Terrain detail from each eye's own rows",
                 )
                 .on_hover_text(
@@ -538,7 +538,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                      by up to one part in ten thousand of its depth.",
                 );
                 ui.checkbox(
-                    &mut cfg.stereo.single_pass.terrain_cull_both_eyes,
+                    &mut cfg.part_mut(&STEREO_CONFIG).single_pass.terrain_cull_both_eyes,
                     "Terrain culled for both eyes",
                 )
                 .on_hover_text(
@@ -553,7 +553,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                      position {projected} (declined {declined})"
                 ));
                 ui.checkbox(
-                    &mut cfg.stereo.single_pass.nvwater_per_eye,
+                    &mut cfg.part_mut(&STEREO_CONFIG).single_pass.nvwater_per_eye,
                     "WaveWorks water per eye (parallax)",
                 )
                 .on_hover_text(
@@ -563,7 +563,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                      Flat water at the wrong depth looks right on the mirror and wrong in the headset.",
                 );
                 ui.checkbox(
-                    &mut cfg.stereo.single_pass.water_reflection_per_eye,
+                    &mut cfg.part_mut(&STEREO_CONFIG).single_pass.water_reflection_per_eye,
                     "...and look its reflection up per eye",
                 )
                 .on_hover_text(
@@ -573,7 +573,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                      eye. Applies immediately: the per-eye shaders are built with the originals.",
                 );
                 ui.checkbox(
-                    &mut cfg.stereo.single_pass.water_reflection_eye_size,
+                    &mut cfg.part_mut(&STEREO_CONFIG).single_pass.water_reflection_eye_size,
                     "...and render its reflection at one eye's size",
                 )
                 .on_hover_text(
@@ -583,7 +583,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                      sparkle over far water. Applies immediately.",
                 );
                 ui.checkbox(
-                    &mut cfg.stereo.single_pass.water_camera_per_eye,
+                    &mut cfg.part_mut(&STEREO_CONFIG).single_pass.water_camera_per_eye,
                     "...and shade it from each eye's position",
                 )
                 .on_hover_text(
@@ -592,7 +592,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                      water as seen from the point between them.",
                 );
                 ui.checkbox(
-                    &mut cfg.stereo.single_pass.ssdecal_geometry_per_eye,
+                    &mut cfg.part_mut(&STEREO_CONFIG).single_pass.ssdecal_geometry_per_eye,
                     "...and reproject the decal box geometry",
                 )
                 .on_hover_text(
@@ -602,7 +602,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                 );
                 if ui
                     .checkbox(
-                        &mut cfg.stereo.single_pass.ssdecal_per_eye,
+                        &mut cfg.part_mut(&STEREO_CONFIG).single_pass.ssdecal_per_eye,
                         "Screen-space decals per eye",
                     )
                     .on_hover_text(
@@ -619,7 +619,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                 }
                 if ui
                     .checkbox(
-                        &mut cfg.stereo.single_pass.composite_overlays_per_eye,
+                        &mut cfg.part_mut(&STEREO_CONFIG).single_pass.composite_overlays_per_eye,
                         "Vignette and lens dirt per eye",
                     )
                     .on_hover_text(
@@ -632,7 +632,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                     shader::request_reload();
                 }
                 if ui
-                    .checkbox(&mut cfg.stereo.single_pass.glare_per_eye, "Glare per eye")
+                    .checkbox(&mut cfg.part_mut(&STEREO_CONFIG).single_pass.glare_per_eye, "Glare per eye")
                     .on_hover_text(
                         "Keeps the bloom chain's blurs, downsamples, and upsamples, and the final \
                          composite's bloom lookups, inside each eye's half. Off, a bright sky or sun \
@@ -648,7 +648,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                     crate::stereo::single_pass::post_filters::registered_count()
                 ));
                 ui.checkbox(
-                    &mut cfg.stereo.single_pass.foveation_per_eye,
+                    &mut cfg.part_mut(&STEREO_CONFIG).single_pass.foveation_per_eye,
                     "Foveation per eye",
                 )
                 .on_hover_text(
@@ -657,7 +657,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                      frame, so each eye drops pixels at its own centre of view.",
                 );
                 ui.checkbox(
-                    &mut cfg.stereo.single_pass.foveation_gbuffer,
+                    &mut cfg.part_mut(&STEREO_CONFIG).single_pass.foveation_gbuffer,
                     "Foveation over the G-buffer",
                 )
                 .on_hover_text(
@@ -666,7 +666,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                      vegetation, and the creatures skip them.",
                 );
                 ui.checkbox(
-                    &mut cfg.stereo.single_pass.foveation_lighting,
+                    &mut cfg.part_mut(&STEREO_CONFIG).single_pass.foveation_lighting,
                     "Foveation over the lighting",
                 )
                 .on_hover_text(
@@ -676,7 +676,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                      post effects.",
                 );
                 ui.checkbox(
-                    &mut cfg.stereo.single_pass.foveation_quads,
+                    &mut cfg.part_mut(&STEREO_CONFIG).single_pass.foveation_quads,
                     "Foveation drops whole quads",
                 )
                 .on_hover_text(
@@ -684,7 +684,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                      no pixel shader at all, in multipass too. Off, single pixels are dropped and \
                      nearly every quad still shades.",
                 );
-                ui.checkbox(&mut cfg.stereo.single_pass.fsr_per_eye, "FSR per eye")
+                ui.checkbox(&mut cfg.part_mut(&STEREO_CONFIG).single_pass.fsr_per_eye, "FSR per eye")
                     .on_hover_text(
                         "Resolves FSR once per eye over that eye's half, each with its own history, \
                          as an eye rendered on its own is. Off, one FSR pass covers both eyes: its \
@@ -696,7 +696,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                     crate::fsr::split_dispatch_count()
                 ));
                 if ui
-                    .checkbox(&mut cfg.stereo.single_pass.ssao_per_eye, "SSAO per eye")
+                    .checkbox(&mut cfg.part_mut(&STEREO_CONFIG).single_pass.ssao_per_eye, "SSAO per eye")
                     .on_hover_text(
                         "Computes ambient occlusion for each eye's half in the pass's one run: each \
                          eye's basis and view rotation, taps kept to the eye's half and scaled to it, \
@@ -708,7 +708,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                 }
                 if ui
                     .checkbox(
-                        &mut cfg.stereo.single_pass.ssao_exact_sampling,
+                        &mut cfg.part_mut(&STEREO_CONFIG).single_pass.ssao_exact_sampling,
                         "SSAO exact sampling",
                     )
                     .on_hover_text(
@@ -725,7 +725,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                 }
                 if ui
                     .checkbox(
-                        &mut cfg.stereo.single_pass.ssao_far_early_out,
+                        &mut cfg.part_mut(&STEREO_CONFIG).single_pass.ssao_far_early_out,
                         "SSAO far early-out",
                     )
                     .on_hover_text(
@@ -740,7 +740,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                     shader::request_reload();
                 }
                 ui.checkbox(
-                    &mut cfg.stereo.single_pass.ssao_skip_temporal,
+                    &mut cfg.part_mut(&STEREO_CONFIG).single_pass.ssao_skip_temporal,
                     "SSAO without the temporal copy",
                 )
                 .on_hover_text(
@@ -750,7 +750,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                 );
                 if ui
                     .checkbox(
-                        &mut cfg.stereo.single_pass.ao_volumes_per_eye,
+                        &mut cfg.part_mut(&STEREO_CONFIG).single_pass.ao_volumes_per_eye,
                         "Ambient-occlusion volumes per eye",
                     )
                     .on_hover_text(
@@ -766,7 +766,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                     shader::request_reload();
                 }
                 if ui
-                    .checkbox(&mut cfg.stereo.single_pass.ssr_per_eye, "SSR per eye")
+                    .checkbox(&mut cfg.part_mut(&STEREO_CONFIG).single_pass.ssr_per_eye, "SSR per eye")
                     .on_hover_text(
                         "Traces screen-space reflections for each eye's half in the pass's one run: \
                          each eye's view ray, view, projection, and history lookup, the march kept \
@@ -778,42 +778,42 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                     shader::request_reload();
                 }
                 ui.checkbox(
-                    &mut cfg.stereo.single_pass.subsurface_per_eye,
+                    &mut cfg.part_mut(&STEREO_CONFIG).single_pass.subsurface_per_eye,
                     "Subsurface skin per eye",
                 )
                 .on_hover_text(
                     "Same reconstruction defect. This block rebuilds the inverse twice, once per blur \
                      axis, so both runs have to be masked.",
                 );
-                ui.checkbox(&mut cfg.stereo.single_pass.dof_per_eye, "Depth of field per eye")
+                ui.checkbox(&mut cfg.part_mut(&STEREO_CONFIG).single_pass.dof_per_eye, "Depth of field per eye")
                     .on_hover_text(
                         "The last consumer of the reconstruction basis. A post pass rather than a \
                          render block, so it may want the basis substituted rather than the pass \
                          re-issued.",
                     );
                 ui.checkbox(
-                    &mut cfg.stereo.single_pass.collapse_viewport_follows_target,
+                    &mut cfg.part_mut(&STEREO_CONFIG).single_pass.collapse_viewport_follows_target,
                     "Eye viewports follow the bound target (clouds, smoke, spotlight volumetrics)",
                 )
                 .on_hover_text(
                     "Splits the viewport of whatever render target the engine currently has bound, instead of always splitting the scene's double-wide one. The low-resolution clouds, particles, and spot-light cones render into a shared quarter-resolution buffer (half per axis); handing those draws a full-scene viewport magnifies them 2x about the target's origin and crops them, which is also a 2x motion gain -- clouds and smoke sliding at twice the camera's rate. A no-op everywhere else, since the two viewports agree outside those passes.",
                 );
                 ui.checkbox(
-                    &mut cfg.stereo.single_pass.slot13_per_eye,
+                    &mut cfg.part_mut(&STEREO_CONFIG).single_pass.slot13_per_eye,
                     "Non-indexed geometry per eye (decals, roads, skidmarks)",
                 )
                 .on_hover_text(
                     "Re-issues a non-indexed Draw once per eye, with both viewport and cb13 eye slots pinned to that eye, for the passes known to submit geometry this way. Off, every slot-13 draw gets the whole double-wide viewport -- right for a fullscreen triangle, but it stretches decals and road layers 2x horizontally, which is a 2x motion gain and reads as them sliding over the world. Default off until the pass allowlist is confirmed: read the 'slot-13 by pass' census in the log to see which passes actually arrive here.",
                 );
                 ui.checkbox(
-                    &mut cfg.stereo.single_pass.non_indexed_geometry_once,
+                    &mut cfg.part_mut(&STEREO_CONFIG).single_pass.non_indexed_geometry_once,
                     "Patched non-indexed geometry once for both eyes (skidmarks)",
                 )
                 .on_hover_text(
                     "In the same passes, a non-indexed Draw whose vertex shader is patched is promoted to one two-instance draw routed to the eye halves, instead of being re-issued once per eye. The shader picks its eye from the instance parity, so one submission covers both eyes. Applies at once.",
                 );
                 ui.checkbox(
-                    &mut cfg.stereo.single_pass.atmospheric_per_eye,
+                    &mut cfg.part_mut(&STEREO_CONFIG).single_pass.atmospheric_per_eye,
                     "Atmospheric scattering per eye (sun shadows, aerial perspective)",
                 )
                 .on_hover_text(
@@ -824,7 +824,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                      over the fixed one. Needs the off-axis reconstruction override on.",
                 );
                 ui.checkbox(
-                    &mut cfg.stereo.single_pass.fog_volume_per_eye,
+                    &mut cfg.part_mut(&STEREO_CONFIG).single_pass.fog_volume_per_eye,
                     "Volumetric fog per eye",
                 )
                 .on_hover_text(
@@ -834,7 +834,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                      so each run is handed that eye's, mapped onto its half of the target.",
                 );
                 ui.checkbox(
-                    &mut cfg.stereo.single_pass.water_uv_per_eye,
+                    &mut cfg.part_mut(&STEREO_CONFIG).single_pass.water_uv_per_eye,
                     "Water reflection UVs per eye (legacy non-WaveWorks water)",
                 )
                 .on_hover_text(
@@ -847,7 +847,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                      settings; the NvWater WaveWorks path samples by pixel coordinate and is fine.",
                 );
                 ui.checkbox(
-                    &mut cfg.stereo.single_pass.clustered_per_eye,
+                    &mut cfg.part_mut(&STEREO_CONFIG).single_pass.clustered_per_eye,
                     "Clustered light grid per eye (local lights on forward materials)",
                 )
                 .on_hover_text(
@@ -861,7 +861,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                      if the eye seam does not fall on a tile boundary.",
                 );
                 ui.checkbox(
-                    &mut cfg.stereo.single_pass.clustered_per_eye_light_view,
+                    &mut cfg.part_mut(&STEREO_CONFIG).single_pass.clustered_per_eye_light_view,
                     "...and assign its lights from each eye's position",
                 )
                 .on_hover_text(
@@ -872,7 +872,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                      per-eye display canting is not applied.",
                 );
                 ui.checkbox(
-                    &mut cfg.stereo.single_pass.uniform_viewport_slots,
+                    &mut cfg.part_mut(&STEREO_CONFIG).single_pass.uniform_viewport_slots,
                     "Uniform viewport slots outside the G-buffer",
                 )
                 .on_hover_text(
@@ -882,7 +882,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                      the other eye's half. Slot 0 is never changed.",
                 );
                 ui.checkbox(
-                    &mut cfg.stereo.single_pass.viewport_bind_cache,
+                    &mut cfg.part_mut(&STEREO_CONFIG).single_pass.viewport_bind_cache,
                     "Skip viewport binds the slots already hold",
                 )
                 .on_hover_text(
@@ -891,7 +891,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                      pass's patched draws bind the eye split once rather than once each.",
                 );
                 ui.checkbox(
-                    &mut cfg.stereo.single_pass.collapse_direct_blit,
+                    &mut cfg.part_mut(&STEREO_CONFIG).single_pass.collapse_direct_blit,
                     "Blit each eye straight from its half",
                 )
                 .on_hover_text(
@@ -900,7 +900,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                      screenshot, the recorder, or the previews read it.",
                 );
                 ui.checkbox(
-                    &mut cfg.stereo.single_pass.skip_unread_effect_depth_copy,
+                    &mut cfg.part_mut(&STEREO_CONFIG).single_pass.skip_unread_effect_depth_copy,
                     format!(
                         "Skip the unread effect depth copy ({} skipped)",
                         EFFECT_DEPTH_COPIES_SKIPPED.load(Ordering::Relaxed)
@@ -968,10 +968,8 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
 /// ([`crate::stereo::single_pass::collapse_active`] also requires the device capability and a live
 /// session). The UI needs the *intent*, so a mutually-exclusive option greys out as soon as the boxes
 /// are ticked rather than only once the collapse is running.
-pub(super) fn collapse_configured(cfg: &config::Config) -> bool {
-    cfg.stereo.single_pass.enabled
-        && cfg.stereo.single_pass.dual_eye
-        && cfg.stereo.single_pass.collapse
+pub(super) fn collapse_configured(stereo: &StereoConfig) -> bool {
+    stereo.single_pass.enabled && stereo.single_pass.dual_eye && stereo.single_pass.collapse
 }
 
 /// How much of the collapse's frame the already-instanced eye-parity case covers, and how much of that

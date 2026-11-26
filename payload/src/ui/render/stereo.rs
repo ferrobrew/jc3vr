@@ -2,14 +2,18 @@
 //! shader patches.
 
 use crate::{
-    config,
-    fsr::AntiAliasing,
+    config::engine::Parts,
+    fsr::{AntiAliasing, FSR_CONFIG},
     hooks::graphics_engine::{shader, shadow_fit_gap_m},
+    stereo::config::STEREO_CONFIG,
 };
 
-pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
-    ui.checkbox(&mut cfg.stereo.enabled, "Stereo (double-Draw)")
-        .on_hover_text("Issue a second game.Draw per frame; CClock::Update is gated to once/frame");
+pub(super) fn section(ui: &mut egui::Ui, cfg: &mut impl Parts) {
+    ui.checkbox(
+        &mut cfg.part_mut(&STEREO_CONFIG).enabled,
+        "Stereo (double-Draw)",
+    )
+    .on_hover_text("Issue a second game.Draw per frame; CClock::Update is gated to once/frame");
     ui.horizontal(|ui| {
         ui.label("Anti-aliasing");
         for (choice, label, hover) in [
@@ -31,12 +35,12 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                 "The engine's own anti-aliasing (SMAA 1x in stereo), without the jitter",
             ),
         ] {
-            ui.selectable_value(&mut cfg.fsr.antialiasing, choice, label)
+            ui.selectable_value(&mut cfg.part_mut(&FSR_CONFIG).antialiasing, choice, label)
                 .on_hover_text(hover);
         }
     });
-    if cfg.fsr.antialiasing == AntiAliasing::Taa {
-        let taa = &mut cfg.fsr.taa;
+    if cfg.part_mut(&FSR_CONFIG).antialiasing == AntiAliasing::Taa {
+        let taa = &mut cfg.part_mut(&FSR_CONFIG).taa;
         ui.add(egui::Slider::new(&mut taa.history_weight, 0.0..=0.98).text("TAA history at rest"))
             .on_hover_text("The history's share of each pixel with the pixel still");
         ui.add(
@@ -56,14 +60,17 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
         ui.add(egui::Slider::new(&mut taa.depth_tolerance, 0.01..=0.5).text("TAA depth tolerance"))
             .on_hover_text("The relative depth slack before a history counts as disoccluded");
     }
-    ui.checkbox(&mut cfg.fsr.jitter, "Sub-pixel jitter (FSR and TAA)")
-        .on_hover_text(
-            "Moves each eye's projection by a sub-pixel offset of FSR's Halton sequence every frame \
+    ui.checkbox(
+        &mut cfg.part_mut(&FSR_CONFIG).jitter,
+        "Sub-pixel jitter (FSR and TAA)",
+    )
+    .on_hover_text(
+        "Moves each eye's projection by a sub-pixel offset of FSR's Halton sequence every frame \
              and tells the temporal resolve the offset, so its accumulation gathers new sample \
              positions rather than filtering one. Only while FSR or TAA runs. Off for an A/B.",
-        );
+    );
     ui.checkbox(
-        &mut cfg.fsr.stereo_mv_correction,
+        &mut cfg.part_mut(&FSR_CONFIG).stereo_mv_correction,
         "FSR stereo motion-vector correction",
     )
     .on_hover_text(
@@ -73,7 +80,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
          into the parallax. Off for an A/B.",
     );
     ui.checkbox(
-        &mut cfg.fsr.hybrid_velocity,
+        &mut cfg.part_mut(&FSR_CONFIG).hybrid_velocity,
         "FSR hybrid motion vectors (camera motion from depth)",
     )
     .on_hover_text(
@@ -82,7 +89,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
          view-projection, keeping the engine's object motion where it wrote some. Off for an A/B.",
     );
     ui.checkbox(
-        &mut cfg.stereo.shadow_anchor_to_fit,
+        &mut cfg.part_mut(&STEREO_CONFIG).shadow_anchor_to_fit,
         "Anchor shadows to the cascade fit's camera",
     )
     .on_hover_text(
@@ -91,7 +98,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
          A/B of shadows detached from distant objects while moving fast.",
     );
     ui.checkbox(
-        &mut cfg.stereo.terrain_prep_from_centre,
+        &mut cfg.part_mut(&STEREO_CONFIG).terrain_prep_from_centre,
         "Terrain patch prep from the centre camera",
     )
     .on_hover_text(
@@ -105,7 +112,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
         shadow_fit_gap_m()
     ));
     ui.checkbox(
-        &mut cfg.stereo.shadow_fit_unpadded,
+        &mut cfg.part_mut(&STEREO_CONFIG).shadow_fit_unpadded,
         "Fit shadow cascades to the eyes' exact field of view",
     )
     .on_hover_text(

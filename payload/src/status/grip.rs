@@ -3,12 +3,13 @@
 
 use crate::{
     controllers::{
+        config::CONTROLLERS_CONFIG,
         frame::Hand,
         grab::{
             latch::GripLatch,
             tick::{self, GrabStatus},
         },
-        menu::read_config,
+        menu::read,
     },
     status::{Health, Line, Row, prose, text},
 };
@@ -26,7 +27,9 @@ fn right_grip() -> Line {
 }
 
 fn markers() -> Line {
-    let on = read_config(|c| c.controllers.overlay.enabled && c.controllers.overlay.markers);
+    let on = read(&CONTROLLERS_CONFIG, |c| {
+        c.overlay.enabled && c.overlay.markers
+    });
     markers_line(on, &tick::status())
 }
 

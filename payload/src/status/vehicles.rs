@@ -3,7 +3,8 @@
 
 use crate::{
     controllers::{
-        menu::read_config,
+        config::CONTROLLERS_CONFIG,
+        menu::read,
         mode::{VehicleClass, VehicleSeat},
         vehicles::{
             self, VehicleSummary,
@@ -25,15 +26,15 @@ pub(crate) const PASSENGER_AIM: Row = Row::new("PASSENGER AIM", "Passenger aim",
 pub(crate) const MOUNTED_GUN: Row = Row::new("MOUNTED GUN", "Mounted gun", mounted_gun);
 
 fn flight_controls() -> Line {
-    let on = read_config(|c| {
-        let p = &c.controllers.vehicles.physical;
+    let on = read(&CONTROLLERS_CONFIG, |c| {
+        let p = &c.vehicles.physical;
         p.sticks || p.levers
     });
     flight_controls_line(on, &vehicles::summary())
 }
 
 fn mounted_gun() -> Line {
-    let config = read_config(|c| c.controllers.vehicles.mounted);
+    let config = read(&CONTROLLERS_CONFIG, |c| c.vehicles.mounted);
     mounted_gun_line(&config, &vehicles::summary(), mounted_recoil::shots())
 }
 
@@ -62,7 +63,7 @@ fn mounted_gun_line(config: &MountedConfig, summary: &VehicleSummary, shots: u64
 }
 
 fn passenger_aim() -> Line {
-    let on = read_config(|c| c.controllers.vehicles.passenger_body_by_hand);
+    let on = read(&CONTROLLERS_CONFIG, |c| c.vehicles.passenger_body_by_hand);
     let seat = vehicles::summary().seat;
     passenger_aim_line(on, seat, passenger::status())
 }
@@ -88,7 +89,7 @@ fn passenger_aim_line(on: bool, seat: Option<VehicleSeat>, status: PassengerStat
 }
 
 fn cockpit_buttons() -> Line {
-    let physical = read_config(|c| c.controllers.vehicles.physical);
+    let physical = read(&CONTROLLERS_CONFIG, |c| c.vehicles.physical);
     // The horn and the collective's twist come with their controls, so with every control off no
     // button is reachable.
     if !physical.any() {

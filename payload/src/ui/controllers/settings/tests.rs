@@ -1,15 +1,20 @@
 //! The paired editor's transaction and its settings-file boundary.
 
 use super::*;
+use crate::config::{
+    engine::{Snapshot, load, store},
+    write,
+};
 
 #[test]
 fn threshold_edits_remain_valid_and_survive_the_settings_file() {
-    let mut cfg = config::Config::new();
+    let mut cfg = Snapshot::defaults();
+    let input = &mut cfg.part_mut(&CONTROLLERS_CONFIG).input;
     for pair in [
-        &mut cfg.controllers.input.trigger_press,
-        &mut cfg.controllers.input.squeeze_press,
-        &mut cfg.controllers.input.squeeze_force_press,
-        &mut cfg.controllers.input.trackpad_press,
+        &mut input.trigger_press,
+        &mut input.squeeze_press,
+        &mut input.squeeze_force_press,
+        &mut input.trackpad_press,
     ] {
         set_threshold(pair, true, 0.2);
         assert!(pair.release <= pair.press);
@@ -28,15 +33,16 @@ fn threshold_edits_remain_valid_and_survive_the_settings_file() {
             assert_eq!(pair.release, before.release);
         }
     }
-    config::validate::controllers(&cfg.controllers).unwrap();
-    let text = toml::to_string_pretty(&cfg).unwrap();
+    input.validate().unwrap();
+    let text = cfg.to_toml().unwrap();
     let path = std::env::temp_dir().join(format!(
         "jc3vr-threshold-settings-{}.toml",
         std::process::id()
     ));
-    config::write::replace(&path, text.as_bytes()).unwrap();
-    let loaded = config::load::parse(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    write::replace(&path, text.as_bytes()).unwrap();
+    let schema = store::schema();
+    let loaded = load::parse(schema, &std::fs::read_to_string(&path).unwrap()).unwrap();
     std::fs::remove_file(path).unwrap();
     assert!(loaded.report.reset.is_empty(), "{:?}", loaded.report);
-    assert_eq!(toml::to_string_pretty(&loaded.config).unwrap(), text);
+    assert_eq!(schema.serialize(loaded.root.as_ref()).unwrap(), text);
 }

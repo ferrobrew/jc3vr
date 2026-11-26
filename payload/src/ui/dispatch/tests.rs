@@ -2,7 +2,8 @@ use std::collections::HashSet;
 
 use super::*;
 use crate::{
-    config, headpose,
+    config::engine::{Snapshot, test_fixture},
+    headpose,
     ui::{
         catalog::{FEATURES, PageId},
         edit_boundary, feature_dock,
@@ -322,8 +323,8 @@ fn production_dock_read_only_disables_main_and_detached_controls_and_layout_gest
 
 #[test]
 fn actual_runtime_dispatch_renders_controls_then_live_status_without_a_renderer() {
-    let _config = crate::config::test_fixture();
-    let before = serde_json::to_value(config::get()).unwrap();
+    let _config = test_fixture();
+    let before = Snapshot::take().to_toml().unwrap();
     let source = headpose::source();
     let angles = headpose::sim::euler_angles();
     let recenters = recenter_count();
@@ -357,7 +358,7 @@ fn actual_runtime_dispatch_renders_controls_then_live_status_without_a_renderer(
             assert!(position(readout) > position("Live status"), "{readout}");
         }
         assert_eq!(selection, expected);
-        assert_eq!(serde_json::to_value(config::get()).unwrap(), before);
+        assert_eq!(Snapshot::take().to_toml().unwrap(), before);
         assert_eq!(headpose::source(), source);
         assert_eq!(headpose::sim::euler_angles(), angles);
         assert_eq!(recenter_count(), recenters);
@@ -405,7 +406,7 @@ fn collect_text(shape: &egui::Shape, labels: &mut Vec<(String, egui::Rect)>) {
 
 #[test]
 fn actual_preview_route_reports_missing_renderer_without_a_device() {
-    let _config = crate::config::test_fixture();
+    let _config = test_fixture();
     let context = egui::Context::default();
     let mut selection = NavigationState {
         feature: FeatureId::Previews,

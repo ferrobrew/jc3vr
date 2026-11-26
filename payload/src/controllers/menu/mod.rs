@@ -6,70 +6,73 @@
 //! `docs/mod/pause-menu.md` for the menu itself.
 //!
 //! The pages edit the live configuration, so every change applies at once, and each change goes
-//! through [`crate::config::edit`], so the settings file saves it like any other change the user
-//! makes. The macros below build an item from a place expression in [`Config`]
-//! (`|c| c.controllers.aim.gun`): the item reads the place, writes it, and takes its default from
-//! [`Config::new`], so the menu's defaults are the configuration's.
+//! through a slot's edit guard, so the settings file saves it like any other change the user makes.
+//! The macros below build an item from a slot and a place expression in its part of the
+//! configuration (`CONTROLLERS_CONFIG, |c| c.aim.gun`): the item reads the place, writes it, and
+//! takes its default from the configuration's defaults, so the menu's defaults are the
+//! configuration's.
 
 pub(crate) mod comfort;
 pub(crate) mod controls;
 pub(crate) mod display;
 
-use crate::config::Config;
+use crate::config::{Config, engine::ConfigSlot};
 
-/// A [`Toggle`](crate::pause_menu::model::page::Toggle) over the `bool` at a place in [`Config`].
+/// A [`Toggle`](crate::pause_menu::model::page::Toggle) over the `bool` at a place in a slot's
+/// part of the configuration.
 macro_rules! config_toggle {
-    ($label:expr, |$c:ident| $place:expr $(,)?) => {
+    ($label:expr, $slot:expr, |$c:ident| $place:expr $(,)?) => {
         $crate::pause_menu::model::page::Toggle {
             label: $label.into(),
-            get: || $crate::controllers::menu::read_config(|$c| $place),
-            set: |value| $crate::controllers::menu::edit_config(|$c| $place = value),
+            get: || $crate::controllers::menu::read(&$slot, |$c| $place),
+            set: |value| $crate::controllers::menu::edit(&$slot, |$c| $place = value),
             default: {
-                let $c = &$crate::config::Config::new();
+                let $c = &$crate::controllers::menu::default_of(&$slot);
                 $place
             },
         }
     };
 }
 
-/// A [`Slider`](crate::pause_menu::model::page::Slider) over the `f32` at a place in [`Config`].
+/// A [`Slider`](crate::pause_menu::model::page::Slider) over the `f32` at a place in a slot's
+/// part of the configuration.
 macro_rules! config_slider {
-    ($label:expr, $range:expr, $format:expr, |$c:ident| $place:expr $(,)?) => {
+    ($label:expr, $range:expr, $format:expr, $slot:expr, |$c:ident| $place:expr $(,)?) => {
         $crate::pause_menu::model::page::Slider {
             label: $label.into(),
             range: $range,
             format: $format,
-            get: || $crate::controllers::menu::read_config(|$c| $place),
-            set: |value| $crate::controllers::menu::edit_config(|$c| $place = value),
+            get: || $crate::controllers::menu::read(&$slot, |$c| $place),
+            set: |value| $crate::controllers::menu::edit(&$slot, |$c| $place = value),
             default: {
-                let $c = &$crate::config::Config::new();
+                let $c = &$crate::controllers::menu::default_of(&$slot);
                 $place
             },
         }
     };
 }
 
-/// A [`Choice`](crate::pause_menu::model::page::Choice) over the value at a place in [`Config`],
-/// among the constant `$values`, labelled by the constant `$labels` (the same length, in the same
-/// order). A value not in the list shows as the first option.
+/// A [`Choice`](crate::pause_menu::model::page::Choice) over the value at a place in a slot's part
+/// of the configuration, among the constant `$values`, labelled by the constant `$labels` (the
+/// same length, in the same order). A value not in the list shows as the first option.
 macro_rules! config_choice {
-    ($label:expr, $values:expr, $labels:expr, |$c:ident| $place:expr $(,)?) => {
+    ($label:expr, $values:expr, $labels:expr, $slot:expr, |$c:ident| $place:expr $(,)?) => {
         $crate::pause_menu::model::page::Choice {
             label: $label.into(),
             options: $labels,
             get: || {
                 $crate::controllers::menu::index_of(
                     $values,
-                    &$crate::controllers::menu::read_config(|$c| $place),
+                    &$crate::controllers::menu::read(&$slot, |$c| $place),
                 )
             },
             set: |index| {
                 if let Some(&value) = $values.get(index) {
-                    $crate::controllers::menu::edit_config(|$c| $place = value);
+                    $crate::controllers::menu::edit(&$slot, |$c| $place = value);
                 }
             },
             default: $crate::controllers::menu::index_of($values, &{
-                let $c = &$crate::config::Config::new();
+                let $c = &$crate::controllers::menu::default_of(&$slot);
                 $place
             }),
         }
@@ -79,6 +82,22 @@ macro_rules! config_choice {
 pub(crate) use config_choice;
 pub(crate) use config_slider;
 pub(crate) use config_toggle;
+
+/// Read the part of the configuration `slot` names.
+pub(crate) fn read<T, R>(slot: &'static ConfigSlot<T>, f: impl FnOnce(&T) -> R) -> R {
+    with_part(slot, |part| f(part))
+}
+
+/// Change the part of the configuration `slot` names as the user meant to, so that the change is
+/// saved.
+pub(crate) fn edit<T>(slot: &'static ConfigSlot<T>, f: impl FnOnce(&mut T)) {
+    edit_part(slot, f);
+}
+
+/// The default of the part of the configuration `slot` names.
+pub(crate) fn default_of<T: Clone>(slot: &'static ConfigSlot<T>) -> T {
+    slot.default_value()
+}
 
 /// Read the configuration.
 pub(crate) fn read_config<R>(f: impl FnOnce(&Config) -> R) -> R {
@@ -106,6 +125,16 @@ pub(crate) fn nearest_index(values: &[f32], value: f32) -> usize {
 }
 
 #[cfg(not(test))]
+fn with_part<T, R>(slot: &'static ConfigSlot<T>, f: impl FnOnce(&mut T) -> R) -> R {
+    f(&mut slot.lock())
+}
+
+#[cfg(not(test))]
+fn edit_part<T>(slot: &'static ConfigSlot<T>, f: impl FnOnce(&mut T)) {
+    f(&mut slot.edit());
+}
+
+#[cfg(not(test))]
 fn with_config<R>(f: impl FnOnce(&mut Config) -> R) -> R {
     f(&mut crate::config::CONFIG.lock())
 }
@@ -117,6 +146,16 @@ fn edit_with(f: impl FnOnce(&mut Config)) {
 
 // Tests run each item against a configuration of their own thread, so they can change settings
 // without racing other tests over the global one.
+#[cfg(test)]
+fn with_part<T, R>(slot: &'static ConfigSlot<T>, f: impl FnOnce(&mut T) -> R) -> R {
+    tests::TEST_CONFIG.with_borrow_mut(|config| f(slot.project_mut(config)))
+}
+
+#[cfg(test)]
+fn edit_part<T>(slot: &'static ConfigSlot<T>, f: impl FnOnce(&mut T)) {
+    tests::TEST_CONFIG.with_borrow_mut(|config| f(slot.project_mut(config)));
+}
+
 #[cfg(test)]
 fn with_config<R>(f: impl FnOnce(&mut Config) -> R) -> R {
     tests::TEST_CONFIG.with_borrow_mut(f)

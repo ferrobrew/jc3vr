@@ -2,9 +2,10 @@
 
 use crate::{
     controllers::{
+        config::CONTROLLERS_CONFIG,
         fingers::{self, HandFingersStatus, grip::GripSource, target::GripMode},
         frame::Hand,
-        menu::read_config,
+        menu::read,
     },
     status::{Line, Row, Text, prose, text},
 };
@@ -21,7 +22,7 @@ fn right_grip() -> Line {
 }
 
 fn grip(hand: Hand) -> Line {
-    let curls = read_config(|c| c.controllers.fingers.enabled && c.controllers.enabled);
+    let curls = read(&CONTROLLERS_CONFIG, |c| c.fingers.enabled && c.enabled);
     grip_line(curls, &fingers::status()[hand.index()])
 }
 

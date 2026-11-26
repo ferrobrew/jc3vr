@@ -3,9 +3,8 @@
 use std::time::Instant;
 
 use crate::{
-    config,
     hud::{
-        HUD_STATE, StageSafeAreaReadout, aim, stage_safe_area_readout,
+        HUD_STATE, StageSafeAreaReadout, aim, config::HUD_CONFIG, stage_safe_area_readout,
         world_markers::layout::StageFrame,
     },
     status::system::{ATLAS, MARKER_DEPTH, WORLD_MARKERS},
@@ -19,8 +18,8 @@ pub fn egui_debug_hud(ui: &mut egui::Ui, renderer: &mut egui_directx11::Renderer
     // The CONFIG lock is scoped to this block and dropped before HUD_STATE is locked for the
     // preview.
     let redirect = {
-        let mut cfg = config::edit();
-        let hud = &mut cfg.hud;
+        let mut cfg = HUD_CONFIG.edit();
+        let hud = &mut *cfg;
         ui.checkbox(
             &mut hud.redirect,
             "Redirect HUD into our texture (drops it from the scene composite)",

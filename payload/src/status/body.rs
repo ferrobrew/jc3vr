@@ -12,7 +12,8 @@ use crate::{
             mirror::{self, MirrorStatus},
             procedural::{self, ProceduralStatus, authority::Case, config::ProceduralMode},
         },
-        menu::read_config,
+        config::CONTROLLERS_CONFIG,
+        menu::read,
         presentation::{self, ElbowReadout, PresentationStatus},
     },
     status::{Line, Row, prose, text},
@@ -28,7 +29,7 @@ pub(crate) const ROOF_TORSO: Row = Row::new("ROOF TORSO", "Roof torso", roof_tor
 pub(crate) const BODY_MIRROR: Row = Row::new("BODY MIRROR", "Body mirror", body_mirror);
 
 fn seated_torso() -> Line {
-    if read_config(|c| c.controllers.body.procedural.mode) != ProceduralMode::Full {
+    if read(&CONTROLLERS_CONFIG, |c| c.body.procedural.mode) != ProceduralMode::Full {
         return Line::off("");
     }
     seated_line(&procedural::published_status())
@@ -60,7 +61,7 @@ fn torso_on_hips_line(status: &ProceduralStatus) -> Line {
 }
 
 fn wingsuit_arms() -> Line {
-    if read_config(|c| c.controllers.body.procedural.mode) != ProceduralMode::Full {
+    if read(&CONTROLLERS_CONFIG, |c| c.body.procedural.mode) != ProceduralMode::Full {
         return Line::off("");
     }
     wings_line(&procedural::published_status())
@@ -86,7 +87,7 @@ fn wings_line(status: &ProceduralStatus) -> Line {
 }
 
 fn parachute_body() -> Line {
-    if read_config(|c| c.controllers.body.procedural.mode) != ProceduralMode::Full {
+    if read(&CONTROLLERS_CONFIG, |c| c.body.procedural.mode) != ProceduralMode::Full {
         return Line::off("");
     }
     parachute_line(&procedural::published_status())
@@ -101,7 +102,7 @@ fn parachute_line(status: &ProceduralStatus) -> Line {
 }
 
 fn swim_torso() -> Line {
-    if read_config(|c| c.controllers.body.procedural.mode) != ProceduralMode::Full {
+    if read(&CONTROLLERS_CONFIG, |c| c.body.procedural.mode) != ProceduralMode::Full {
         return Line::off("");
     }
     let status = procedural::published_status();
@@ -112,7 +113,7 @@ fn swim_torso() -> Line {
 }
 
 fn roof_torso() -> Line {
-    if read_config(|c| c.controllers.body.procedural.mode) != ProceduralMode::Full {
+    if read(&CONTROLLERS_CONFIG, |c| c.body.procedural.mode) != ProceduralMode::Full {
         return Line::off("");
     }
     roof_line(&procedural::published_status())
@@ -127,7 +128,7 @@ fn roof_line(status: &ProceduralStatus) -> Line {
 }
 
 fn body_mirror() -> Line {
-    if !read_config(|c| c.controllers.overlay.body_mirror) {
+    if !read(&CONTROLLERS_CONFIG, |c| c.overlay.body_mirror) {
         return Line::off(prose("Switch on in debug UI"))
             .with_note("the visualization drawer's Body mirror");
     }
@@ -155,7 +156,7 @@ fn mirror_line(status: &MirrorStatus, now: Instant) -> Line {
 const MIRROR_STALE: Duration = Duration::from_secs(30);
 
 fn render_rate_body() -> Line {
-    if !read_config(|c| c.controllers.hands.presentation.enabled) {
+    if !read(&CONTROLLERS_CONFIG, |c| c.hands.presentation.enabled) {
         return Line::off("");
     }
     presentation_line(&presentation::status())

@@ -11,7 +11,7 @@ use std::{
 
 use parking_lot::{Condvar, Mutex};
 
-use crate::config;
+use crate::config::write;
 
 #[derive(Clone)]
 pub(super) struct Snapshot {
@@ -157,7 +157,7 @@ struct Queue {
 }
 
 fn replace(snapshot: &Snapshot) -> Result<(), String> {
-    config::write::replace(&snapshot.path, snapshot.text.as_bytes()).map_err(|error| {
+    write::replace(&snapshot.path, snapshot.text.as_bytes()).map_err(|error| {
         format!(
             "UI layout: could not replace {}: {error}",
             snapshot.path.display()

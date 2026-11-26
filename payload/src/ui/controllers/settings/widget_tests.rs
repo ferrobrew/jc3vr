@@ -4,7 +4,7 @@ use super::*;
 
 fn frame(
     context: &egui::Context,
-    cfg: &mut config::Config,
+    cfg: &mut ControllersConfig,
     events: Vec<egui::Event>,
 ) -> Vec<egui::Rect> {
     let output = context.run_ui(
@@ -29,7 +29,7 @@ fn frame(
     rows
 }
 
-fn click(context: &egui::Context, cfg: &mut config::Config, pos: egui::Pos2) {
+fn click(context: &egui::Context, cfg: &mut ControllersConfig, pos: egui::Pos2) {
     for pressed in [true, false] {
         frame(
             context,
@@ -50,22 +50,18 @@ fn click(context: &egui::Context, cfg: &mut config::Config, pos: egui::Pos2) {
 #[test]
 fn actual_widgets_keep_pair_order() {
     let context = egui::Context::default();
-    let mut cfg = config::Config::new();
-    cfg.controllers.input.trigger_press = PressThresholds {
+    let mut cfg = ControllersConfig::new();
+    cfg.input.trigger_press = PressThresholds {
         press: 0.9,
         release: 0.8,
     };
     let rows = frame(&context, &mut cfg, vec![]);
     assert_eq!(rows.len(), 2);
     click(&context, &mut cfg, egui::pos2(20.0, rows[0].center().y));
-    assert!(cfg.controllers.input.trigger_press.press < 0.8);
-    assert!(
-        cfg.controllers.input.trigger_press.release <= cfg.controllers.input.trigger_press.press
-    );
+    assert!(cfg.input.trigger_press.press < 0.8);
+    assert!(cfg.input.trigger_press.release <= cfg.input.trigger_press.press);
     click(&context, &mut cfg, egui::pos2(100.0, rows[1].center().y));
-    assert!(cfg.controllers.input.trigger_press.release > 0.5);
-    assert!(
-        cfg.controllers.input.trigger_press.release <= cfg.controllers.input.trigger_press.press
-    );
-    config::validate::controllers(&cfg.controllers).unwrap();
+    assert!(cfg.input.trigger_press.release > 0.5);
+    assert!(cfg.input.trigger_press.release <= cfg.input.trigger_press.press);
+    cfg.input.validate().unwrap();
 }

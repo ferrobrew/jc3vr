@@ -3,17 +3,17 @@
 use egui::{Slider, Ui};
 
 use crate::{
-    config,
+    config::engine::Parts,
     controllers::{
         bindings::{Blocker, HandRecovery},
-        config::InputConfig,
+        config::{CONTROLLERS_CONFIG, ControllersConfig, InputConfig},
         frame::{self, Button, GripPress, Hand, PressThresholds},
     },
+    hooks::character::config::BODY_IK_CONFIG,
     ui::controllers::{locomotion, unarmed},
 };
 
-pub(super) fn devices(ui: &mut Ui, cfg: &mut config::Config) {
-    let c = &mut cfg.controllers;
+pub(super) fn devices(ui: &mut Ui, c: &mut ControllersConfig) {
     ui.checkbox(&mut c.input.hand_tracking, "Hand tracking")
         .on_hover_text("Locate the hand skeleton through XR_EXT_hand_tracking when offered.");
     ui.checkbox(&mut c.bindings.enabled, "Inject bindings")
@@ -58,12 +58,11 @@ pub(super) fn devices_readout(ui: &mut Ui, recovery: [HandRecovery; 2]) {
              grip, buttons, and stick rest.",
         );
     }
-    let input = config::Config::lock_query(|c| c.controllers.input);
+    let input = CONTROLLERS_CONFIG.query(|c| c.input);
     grip_readout(ui, &input);
 }
 
-pub(super) fn grapple_settings(ui: &mut Ui, cfg: &mut config::Config) {
-    let c = &mut cfg.controllers;
+pub(super) fn grapple_settings(ui: &mut Ui, c: &mut ControllersConfig) {
     ui.checkbox(&mut c.bindings.yank.enabled, "Yank to zip").on_hover_text(
         "A sharp pull of the grapple hand toward the body taps the grapple while a line is live.",
     );
@@ -102,12 +101,9 @@ pub(super) fn grapple_settings(ui: &mut Ui, cfg: &mut config::Config) {
     });
 }
 
-pub(super) fn vehicle_chord_settings(ui: &mut Ui, cfg: &mut config::Config) {
+pub(super) fn vehicle_chord_settings(ui: &mut Ui, c: &mut ControllersConfig) {
     ui.checkbox(
-        &mut cfg
-            .controllers
-            .bindings
-            .suppress_developer_chords_in_vehicles,
+        &mut c.bindings.suppress_developer_chords_in_vehicles,
         "No developer chords in vehicles",
     )
     .on_hover_text(
@@ -117,15 +113,15 @@ pub(super) fn vehicle_chord_settings(ui: &mut Ui, cfg: &mut config::Config) {
     );
 }
 
-pub(super) fn locomotion_settings(ui: &mut Ui, cfg: &mut config::Config) {
-    let l = &mut cfg.controllers.locomotion;
+pub(super) fn locomotion_settings(ui: &mut Ui, c: &mut ControllersConfig) {
+    let l = &mut c.locomotion;
     locomotion::locomotion_settings(ui, &mut l.stick, &mut l.acts, &mut l.view, &mut l.strokes);
 }
 
-pub(super) fn animation_settings(ui: &mut Ui, cfg: &mut config::Config) {
-    ui.checkbox(&mut cfg.body_ik.enabled, "Body IK")
+pub(super) fn animation_settings(ui: &mut Ui, cfg: &mut impl Parts) {
+    ui.checkbox(&mut cfg.part_mut(&BODY_IK_CONFIG).enabled, "Body IK")
         .on_hover_text("Drive the upper body toward the headpose via the engine's HumanIK solver.");
-    let c = &mut cfg.controllers;
+    let c = cfg.part_mut(&CONTROLLERS_CONFIG);
     ui.checkbox(&mut c.aim_state.skip_arm_ik, "Skip the game's arm aim IK");
     unarmed::unarmed_settings(ui, &mut c.body.unarmed);
 }
@@ -162,7 +158,7 @@ fn set_threshold(pair: &mut PressThresholds, press: bool, value: f32) {
             release: value,
         }
     };
-    if config::validate::press_thresholds("input", candidate).is_ok() {
+    if candidate.validate("input").is_ok() {
         *pair = candidate;
     }
 }

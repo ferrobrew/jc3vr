@@ -7,8 +7,8 @@ use std::{collections::VecDeque, time::Instant};
 use parking_lot::Mutex;
 
 use crate::{
-    config,
     frame_timing::{self, Kind, ThreadClass, TickLoad, ns_to_ms},
+    hooks::online::ONLINE_CONFIG,
     ui::util::patchbox,
 };
 
@@ -132,7 +132,7 @@ fn frame_breakdown(ui: &mut egui::Ui) {
 fn online_controls(ui: &mut egui::Ui) {
     ui.separator();
     ui.checkbox(
-        &mut config::edit().online.skip_logged_on_check,
+        &mut ONLINE_CONFIG.edit().skip_logged_on_check,
         "Skip the offline suite retry's Steam check",
     )
     .on_hover_text(

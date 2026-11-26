@@ -43,10 +43,11 @@ use egui::Ui;
 use glam::{Quat, Vec3};
 
 use crate::{
-    config,
+    config::engine::edit_parts,
     controllers::{
         aim as controller_aim, aim_state as controller_aim_state, bindings,
         body::{self as controller_body, rig as controller_rig, unarmed as controller_unarmed},
+        config::CONTROLLERS_CONFIG,
         fingers as controller_fingers,
         frame::{self as controller_frame, InteractionProfile},
         gamepad_setting, glass as controller_glass,
@@ -69,97 +70,97 @@ use crate::{
 /// guard itself, after reading any snapshot providers that read configuration.
 pub(crate) fn controls(id: FeatureId) -> Option<FeatureBody> {
     let body: FeatureBody = match id {
-        FeatureId::Devices => |ui, _| settings::devices(ui, &mut config::edit()),
-        FeatureId::OnFoot => |ui, _| settings::locomotion_settings(ui, &mut config::edit()),
+        FeatureId::Devices => |ui, _| settings::devices(ui, &mut CONTROLLERS_CONFIG.edit()),
+        FeatureId::OnFoot => {
+            |ui, _| settings::locomotion_settings(ui, &mut CONTROLLERS_CONFIG.edit())
+        }
         FeatureId::Grapple => |ui, _| {
-            let mut cfg = config::edit();
-            settings::grapple_settings(ui, &mut cfg);
-            hands::anchor_settings(ui, &mut cfg.controllers.hands);
+            let mut c = CONTROLLERS_CONFIG.edit();
+            settings::grapple_settings(ui, &mut c);
+            hands::anchor_settings(ui, &mut c.hands);
         },
-        FeatureId::AnimationIk => |ui, _| settings::animation_settings(ui, &mut config::edit()),
+        FeatureId::AnimationIk => |ui, _| settings::animation_settings(ui, &mut edit_parts()),
         FeatureId::Presentation => {
-            |ui, _| hands::presentation_settings(ui, &mut config::edit().controllers.hands)
+            |ui, _| hands::presentation_settings(ui, &mut CONTROLLERS_CONFIG.edit().hands)
         }
         FeatureId::GripFingers => |ui, _| {
-            let mut cfg = config::edit();
-            hands::grip_settings(ui, &mut cfg.controllers.hands);
-            fingers::fingers_settings(ui, &mut cfg.controllers.fingers);
+            let mut c = CONTROLLERS_CONFIG.edit();
+            hands::grip_settings(ui, &mut c.hands);
+            fingers::fingers_settings(ui, &mut c.fingers);
         },
         FeatureId::PhysicalHands => |ui, _| {
-            let mut cfg = config::edit();
-            physical_hands::physical_hands_settings(ui, &mut cfg.controllers.physical_hands);
+            let mut c = CONTROLLERS_CONFIG.edit();
+            physical_hands::physical_hands_settings(ui, &mut c.physical_hands);
             ui.separator();
-            glass::glass_settings(ui, &mut cfg.controllers.glass);
+            glass::glass_settings(ui, &mut c.glass);
         },
         FeatureId::CharactersDoors => |ui, _| {
             physical_hands::characters_doors_settings(
                 ui,
-                &mut config::edit().controllers.physical_hands,
+                &mut CONTROLLERS_CONFIG.edit().physical_hands,
             );
         },
         FeatureId::Snatch => {
-            |ui, _| snatch::snatch_settings(ui, &mut config::edit().controllers.weapons.snatch)
+            |ui, _| snatch::snatch_settings(ui, &mut CONTROLLERS_CONFIG.edit().weapons.snatch)
         }
         FeatureId::Feedback => |ui, _| {
-            let mut cfg = config::edit();
-            haptics::haptics_settings(ui, &mut cfg.controllers.haptics);
+            let mut c = CONTROLLERS_CONFIG.edit();
+            haptics::haptics_settings(ui, &mut c.haptics);
             ui.separator();
-            physical_hands::impact_sounds_settings(ui, &mut cfg.controllers.physical_hands);
+            physical_hands::impact_sounds_settings(ui, &mut c.physical_hands);
         },
         FeatureId::Hold => {
-            |ui, _| weapons::hold_feature_settings(ui, &mut config::edit().controllers.weapons)
+            |ui, _| weapons::hold_feature_settings(ui, &mut CONTROLLERS_CONFIG.edit().weapons)
         }
-        FeatureId::Support => {
-            |ui, _| weapons::support_settings(ui, &mut config::edit().controllers)
-        }
+        FeatureId::Support => |ui, _| weapons::support_settings(ui, &mut CONTROLLERS_CONFIG.edit()),
         FeatureId::Aim => |ui, _| {
-            let mut cfg = config::edit();
-            aim::aim_settings(ui, &mut cfg.controllers);
-            let w = &mut cfg.controllers.weapons;
+            let mut c = CONTROLLERS_CONFIG.edit();
+            aim::aim_settings(ui, &mut c);
+            let w = &mut c.weapons;
             scope::scope_settings(ui, &mut w.scopes);
             scope::ads_settings(ui, &mut w.ads);
             scope::collide_settings(ui, &mut w.collide);
         },
         FeatureId::Reload => {
-            |ui, _| weapons::reload_feature_settings(ui, &mut config::edit().controllers.weapons)
+            |ui, _| weapons::reload_feature_settings(ui, &mut CONTROLLERS_CONFIG.edit().weapons)
         }
         FeatureId::Inventory => {
-            |ui, _| inventory::inventory_settings(ui, &mut config::edit().controllers.weapons)
+            |ui, _| inventory::inventory_settings(ui, &mut CONTROLLERS_CONFIG.edit().weapons)
         }
         FeatureId::Explosives => {
-            |ui, _| weapons::explosive_feature_settings(ui, &mut config::edit().controllers.weapons)
+            |ui, _| weapons::explosive_feature_settings(ui, &mut CONTROLLERS_CONFIG.edit().weapons)
         }
-        FeatureId::WeaponSelection => |ui, _| {
-            weapon_selection::selection_settings(ui, &mut config::edit().controllers.weapons)
-        },
+        FeatureId::WeaponSelection => {
+            |ui, _| weapon_selection::selection_settings(ui, &mut CONTROLLERS_CONFIG.edit().weapons)
+        }
         FeatureId::Climbing => |ui, _| {
-            let mut cfg = config::edit();
-            climb::climb_settings(ui, &mut cfg.controllers.physical_hands.climb);
-            stunt::stunt_settings(ui, &mut cfg.controllers.physical_hands.stunt);
+            let mut c = CONTROLLERS_CONFIG.edit();
+            climb::climb_settings(ui, &mut c.physical_hands.climb);
+            stunt::stunt_settings(ui, &mut c.physical_hands.stunt);
         },
         FeatureId::Vehicles => |ui, id| {
-            let mut cfg = config::edit();
-            vehicles::feature_settings(ui, &mut cfg.controllers.vehicles, id);
-            settings::vehicle_chord_settings(ui, &mut cfg);
+            let mut c = CONTROLLERS_CONFIG.edit();
+            vehicles::feature_settings(ui, &mut c.vehicles, id);
+            settings::vehicle_chord_settings(ui, &mut c);
         },
         FeatureId::Air => |ui, id| {
-            vehicles::feature_settings(ui, &mut config::edit().controllers.vehicles, id);
+            vehicles::feature_settings(ui, &mut CONTROLLERS_CONFIG.edit().vehicles, id);
         },
         FeatureId::Posture => {
-            |ui, _| roomscale::roomscale_settings(ui, &mut config::edit().controllers.roomscale)
+            |ui, _| roomscale::roomscale_settings(ui, &mut CONTROLLERS_CONFIG.edit().roomscale)
         }
         FeatureId::BodyFit => |ui, _| {
-            let mut cfg = config::edit();
-            rig::rig_settings(ui, &mut cfg.controllers.body);
-            estimator::estimator_settings(ui, &mut cfg.controllers);
+            let mut c = CONTROLLERS_CONFIG.edit();
+            rig::rig_settings(ui, &mut c.body);
+            estimator::estimator_settings(ui, &mut c);
         },
         FeatureId::Wrist => {
-            |ui, _| summary::summary_settings(ui, &mut config::edit().controllers.summary)
+            |ui, _| summary::summary_settings(ui, &mut CONTROLLERS_CONFIG.edit().summary)
         }
-        FeatureId::Presets => |ui, _| presets::presets(ui, &mut config::edit()),
+        FeatureId::Presets => |ui, _| presets::presets(ui, &mut CONTROLLERS_CONFIG.edit()),
         FeatureId::Semantic => |ui, _| {
             ui.checkbox(
-                &mut config::edit().controllers.input.self_check,
+                &mut CONTROLLERS_CONFIG.edit().input.self_check,
                 "Input self-check",
             );
         },

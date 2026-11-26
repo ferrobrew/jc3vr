@@ -7,16 +7,17 @@ use openxr as xr;
 use smol_str::format_smolstr;
 
 use crate::{
-    config::{self, SaveStatus},
-    controllers::{frame::Hand, menu::read_config},
+    config::engine::{SaveStatus, status},
+    controllers::{config::CONTROLLERS_CONFIG, frame::Hand, menu::read},
     frame_timing::{self, FramePercentiles},
     hud::{
         atlas,
+        config::HUD_CONFIG,
         world_markers::{self, DistanceSource},
     },
     status::{Line, Row, Text, prose, text},
     vr::{
-        self, DirectArm, DirectStatus, PublishedStatus, ResolutionStatus,
+        self, DirectArm, DirectStatus, PublishedStatus, ResolutionStatus, VR_CONFIG,
         input::{self as vr_input, ActionsOrigin, InputStatus, layout, restart, self_check},
     },
 };
@@ -39,18 +40,18 @@ pub(crate) const WORLD_MARKERS: Row = Row::new("WORLD MARKERS", "World markers",
 pub(crate) const MARKER_DEPTH: Row = Row::new("MARKER DEPTH", "Marker depth", marker_depth);
 
 fn settings_file() -> Line {
-    settings_line(config::status())
+    settings_line(status())
 }
 
 fn session() -> Line {
-    if !read_config(|c| c.vr.enabled) {
+    if !read(&VR_CONFIG, |c| c.enabled) {
         return Line::off("");
     }
     session_line(vr::published_status(), vr::render_params(0).is_some())
 }
 
 fn direct_blit() -> Line {
-    if !read_config(|c| c.vr.direct_eye_blit) {
+    if !read(&VR_CONFIG, |c| c.direct_eye_blit) {
         return Line::off("");
     }
     direct_blit_line(vr::direct_status())
@@ -61,12 +62,12 @@ fn frame_time() -> Line {
 }
 
 fn render_size() -> Line {
-    let native = read_config(|c| c.vr.native_resolution);
+    let native = read(&VR_CONFIG, |c| c.native_resolution);
     render_size_line(native, vr::resolution_status())
 }
 
 fn input_actions() -> Line {
-    let configured = read_config(|c| c.controllers.dominant_hand);
+    let configured = read(&CONTROLLERS_CONFIG, |c| c.dominant_hand);
     input_line(&vr_input::status(), configured)
 }
 
@@ -77,7 +78,7 @@ fn layout_fingerprint() -> Line {
     };
     let fingerprint = format_smolstr!("{:016X}", fingerprint(hand));
     let short = &fingerprint[..8];
-    let configured = read_config(|c| c.controllers.dominant_hand);
+    let configured = read(&CONTROLLERS_CONFIG, |c| c.dominant_hand);
     match restart::reason(&status, configured) {
         Some(reason) if reason.blocks_input() => {
             Line::failed(short).with_note(format!("{fingerprint}, restart the game"))
@@ -106,7 +107,7 @@ fn self_check() -> Line {
 }
 
 fn atlas() -> Line {
-    if !read_config(|c| c.hud.atlas.enabled) {
+    if !read(&HUD_CONFIG, |c| c.atlas.enabled) {
         return Line::off("");
     }
     let status = atlas::status();
@@ -142,7 +143,7 @@ fn atlas() -> Line {
 }
 
 fn world_markers() -> Line {
-    if !read_config(|c| c.hud.world_markers.enabled) {
+    if !read(&HUD_CONFIG, |c| c.world_markers.enabled) {
         return Line::off("");
     }
     match world_markers::status() {
@@ -158,7 +159,7 @@ fn world_markers() -> Line {
 }
 
 fn marker_depth() -> Line {
-    if !read_config(|c| c.hud.world_markers.enabled) {
+    if !read(&HUD_CONFIG, |c| c.world_markers.enabled) {
         return Line::off("");
     }
     let Some(status) = world_markers::status() else {

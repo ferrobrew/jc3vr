@@ -17,8 +17,10 @@ pub use crate::hooks::graphics_engine::capture::{
     mark_previews_visible, previews_visible,
 };
 use crate::{
-    config,
+    config::engine::{Parts, edit_parts},
+    hooks::graphics_engine::config::POST_FX_CONFIG,
     ui::{catalog::FeatureId, dispatch::FeatureBody},
+    vr::FOVEATION_CONFIG,
 };
 
 /// Debug-UI only: swap the two eyes in the side-by-side stereo preview, so the pair can be fused
@@ -27,14 +29,14 @@ pub(crate) static STEREO_CROSS_EYED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(true);
 
 pub(crate) fn controls(ui: &mut egui::Ui, id: FeatureId) {
-    let mut cfg = config::edit();
-    let cfg = &mut *cfg;
+    let mut cfg = edit_parts();
+    let cfg = &mut cfg;
     match id {
         FeatureId::Stereo => stereo::section(ui, cfg),
-        FeatureId::Foveation => resolution::section(ui, cfg),
+        FeatureId::Foveation => resolution::section(ui, cfg.part_mut(&FOVEATION_CONFIG)),
         FeatureId::SinglePass => single_pass::section(ui, cfg),
         FeatureId::FarField => far_field::section(ui, cfg),
-        FeatureId::PostFx => post_fx::section(ui, cfg),
+        FeatureId::PostFx => post_fx::section(ui, cfg.part_mut(&POST_FX_CONFIG)),
         _ => {}
     }
 }

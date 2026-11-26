@@ -1,58 +1,51 @@
 //! Runtime controls and a separate read-only OpenXR status snapshot.
 
 use crate::{
-    config, headpose, vr,
-    vr::{EyeMask, MaskStatus, MirrorView},
+    headpose, vr,
+    vr::{EyeMask, MaskStatus, MirrorView, VR_CONFIG},
 };
 
 pub fn egui_debug_vr(ui: &mut egui::Ui) {
     // Live-editable, mutating the shared config directly (the frame loop reads it each frame), the
     // same pattern the other tabs use.
-    let mut cfg = config::edit();
-    ui.checkbox(&mut cfg.vr.enabled, "Enabled (bring up the OpenXR session)")
+    let mut cfg = VR_CONFIG.edit();
+    ui.checkbox(&mut cfg.enabled, "Enabled (bring up the OpenXR session)")
         .on_hover_text("Off leaves the mod in flatscreen stereo and tears any live runtime down.");
-    ui.checkbox(&mut cfg.vr.native_resolution, "Native per-eye resolution")
+    ui.checkbox(&mut cfg.native_resolution, "Native per-eye resolution")
         .on_hover_text(
             "Drive the engine to render each eye at the HMD-recommended resolution; disabled \
              automatically on a resize fault.",
         );
-    ui.checkbox(&mut cfg.vr.mirror, "Desktop mirror")
+    ui.checkbox(&mut cfg.mirror, "Desktop mirror")
         .on_hover_text("Show the headset view in the game window while a session runs.");
-    ui.add_enabled_ui(cfg.vr.mirror, |ui| {
+    ui.add_enabled_ui(cfg.mirror, |ui| {
         ui.indent("mirror", |ui| {
             ui.horizontal(|ui| {
                 ui.label("View");
-                ui.selectable_value(&mut cfg.vr.mirror_view, MirrorView::Left, "Left");
-                ui.selectable_value(&mut cfg.vr.mirror_view, MirrorView::Right, "Right");
-                ui.selectable_value(
-                    &mut cfg.vr.mirror_view,
-                    MirrorView::StereoPair,
-                    "Stereo pair",
-                )
-                .on_hover_text(
-                    "Both eyes side by side, uncropped, in cross-eyed order (the right eye on \
+                ui.selectable_value(&mut cfg.mirror_view, MirrorView::Left, "Left");
+                ui.selectable_value(&mut cfg.mirror_view, MirrorView::Right, "Right");
+                ui.selectable_value(&mut cfg.mirror_view, MirrorView::StereoPair, "Stereo pair")
+                    .on_hover_text(
+                        "Both eyes side by side, uncropped, in cross-eyed order (the right eye on \
                      the left). F10 toggles between this and the last single eye.",
-                );
+                    );
             });
-            ui.checkbox(
-                &mut cfg.vr.mirror_frame_stamp,
-                "Frame stamp while capturing",
-            )
-            .on_hover_text(
-                "While a capture take runs, draw the mirror's present counter as black and \
+            ui.checkbox(&mut cfg.mirror_frame_stamp, "Frame stamp while capturing")
+                .on_hover_text(
+                    "While a capture take runs, draw the mirror's present counter as black and \
                      white blocks in the window's bottom-left corner; the take's frames.jsonl \
                      logs the same counter per present.",
-            );
+                );
         });
     });
-    ui.checkbox(&mut cfg.vr.own_back_buffer, "Mod-owned back buffer")
+    ui.checkbox(&mut cfg.own_back_buffer, "Mod-owned back buffer")
         .on_hover_text(
             "Render into a mod-owned target so the DXGI swapchain stays at the window size instead \
              of following the per-eye render resolution. Makes the desktop mirror's present 1:1 and \
              stops single-pass double-wide forcing a 2x-width swapchain. Takes effect on the next \
              resize, which toggling this issues.",
         );
-    ui.checkbox(&mut cfg.vr.direct_eye_blit, "Direct eye blit")
+    ui.checkbox(&mut cfg.direct_eye_blit, "Direct eye blit")
         .on_hover_text(
             "Blit each eye straight from the engine's back buffer into the headset swapchain on \
              the eye's own draw, skipping the full-size copy into the eye capture unless the \
@@ -60,7 +53,7 @@ pub fn egui_debug_vr(ui: &mut egui::Ui) {
              eye and blits at the frame submit.",
         );
     ui.checkbox(
-        &mut cfg.vr.overlap_render_update,
+        &mut cfg.overlap_render_update,
         "Overlap the render update with the draw",
     )
     .on_hover_text(
@@ -70,7 +63,7 @@ pub fn egui_debug_vr(ui: &mut egui::Ui) {
          serial ordering.",
     );
     ui.checkbox(
-        &mut cfg.vr.large_cache_cores,
+        &mut cfg.large_cache_cores,
         "Run on the cores with the largest cache",
     )
     .on_hover_text(

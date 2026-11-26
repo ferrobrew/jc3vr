@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::{
-    config,
+    config::paths,
     ui::{catalog::FeatureId, navigation::NavigationState},
 };
 
@@ -61,7 +61,7 @@ impl Default for Layout {
 
 impl Layout {
     pub(crate) fn load() -> Self {
-        Self::load_path(config::paths::file("ui_layout_v2.json").as_deref())
+        Self::load_path(paths::file("ui_layout_v2.json").as_deref())
     }
 
     fn load_path(path: Option<&Path>) -> Self {
@@ -156,7 +156,7 @@ impl Layout {
                 return;
             }
         };
-        let Some(path) = config::paths::file("ui_layout_v2.json") else {
+        let Some(path) = paths::file("ui_layout_v2.json") else {
             return;
         };
         if let Err(error) = writer::submit(path, json) {

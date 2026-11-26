@@ -6,8 +6,9 @@ use smol_str::format_smolstr;
 
 use crate::{
     controllers::{
+        config::CONTROLLERS_CONFIG,
         hands::anchor,
-        menu::read_config,
+        menu::read,
         snatch::{self, SnatchStatus},
     },
     grapple::{
@@ -39,31 +40,28 @@ fn target() -> Line {
 }
 
 fn reel() -> Line {
-    let enabled = read_config(|c| c.controllers.grapple.pull_to_reel);
+    let enabled = read(&CONTROLLERS_CONFIG, |c| c.grapple.pull_to_reel);
     reel_line(enabled, &physical::status())
 }
 
 fn tethers() -> Line {
-    let enabled = read_config(|c| c.controllers.grapple.pull_to_reel);
+    let enabled = read(&CONTROLLERS_CONFIG, |c| c.grapple.pull_to_reel);
     tethers_line(enabled, &physical::status())
 }
 
 fn lock() -> Line {
-    let enabled = read_config(|c| c.controllers.grapple.lock.enabled);
+    let enabled = read(&CONTROLLERS_CONFIG, |c| c.grapple.lock.enabled);
     lock_line(enabled, &lock::status())
 }
 
 fn seat_row() -> Line {
-    let enabled = read_config(|c| c.controllers.grapple.seat);
+    let enabled = read(&CONTROLLERS_CONFIG, |c| c.grapple.seat);
     seat_line(enabled, &seat::status())
 }
 
 fn swing() -> Line {
-    let (hold, pump) = read_config(|c| {
-        (
-            c.controllers.hands.anchor.enabled,
-            c.controllers.grapple.pump,
-        )
+    let (hold, pump) = read(&CONTROLLERS_CONFIG, |c| {
+        (c.hands.anchor.enabled, c.grapple.pump)
     });
     let status = anchor::status();
     if !(hold || pump) {
@@ -83,12 +81,12 @@ fn swing() -> Line {
 }
 
 fn snatch() -> Line {
-    let enabled = read_config(|c| c.controllers.weapons.snatch.enabled);
+    let enabled = read(&CONTROLLERS_CONFIG, |c| c.weapons.snatch.enabled);
     snatch_line(enabled, &snatch::status())
 }
 
 fn haptics() -> Line {
-    if !read_config(|c| c.controllers.haptics.enabled) {
+    if !read(&CONTROLLERS_CONFIG, |c| c.haptics.enabled) {
         return Line::off("");
     }
     let status = physical::status();

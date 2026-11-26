@@ -4,7 +4,8 @@
 
 use crate::{
     controllers::{
-        menu::read_config,
+        config::CONTROLLERS_CONFIG,
+        menu::read,
         weapons::{ads, c4, collide, grenade, reload::loose},
     },
     status::{Line, Row, Text, prose, text},
@@ -19,7 +20,7 @@ pub(crate) const GUN_AGAINST_WALLS: Row =
     Row::new("GUN AGAINST WALLS", "Gun against walls", gun_against_walls);
 
 fn gun_against_walls() -> Line {
-    if !read_config(|c| c.controllers.weapons.collide.enabled) {
+    if !read(&CONTROLLERS_CONFIG, |c| c.weapons.collide.enabled) {
         return Line::off("");
     }
     let s = collide::status();
@@ -50,7 +51,7 @@ fn gun_against_walls() -> Line {
 }
 
 fn down_the_sights() -> Line {
-    if !read_config(|c| c.controllers.weapons.ads.enabled) {
+    if !read(&CONTROLLERS_CONFIG, |c| c.weapons.ads.enabled) {
         return Line::off("");
     }
     let s = ads::status();
@@ -81,8 +82,8 @@ fn down_the_sights() -> Line {
 }
 
 fn magazines() -> Line {
-    if !read_config(|c| {
-        let reload = c.controllers.weapons.reload;
+    if !read(&CONTROLLERS_CONFIG, |c| {
+        let reload = c.weapons.reload;
         reload.enabled && reload.loose.enabled
     }) {
         return Line::off("");
@@ -99,7 +100,7 @@ fn magazines() -> Line {
 }
 
 fn c4_by_hand() -> Line {
-    if !read_config(|c| c.controllers.weapons.c4_throw) {
+    if !read(&CONTROLLERS_CONFIG, |c| c.weapons.c4_throw) {
         return Line::off("");
     }
     let status = c4::status();
@@ -110,7 +111,7 @@ fn c4_by_hand() -> Line {
         " pressed on, ",
         status.stuck_on_objects.to_string(),
         " on objects",
-        if read_config(|c| c.controllers.weapons.c4.stick.enabled) {
+        if read(&CONTROLLERS_CONFIG, |c| c.weapons.c4.stick.enabled) {
             Text::default()
         } else {
             prose(", pressing off")
@@ -119,8 +120,8 @@ fn c4_by_hand() -> Line {
 }
 
 fn live_grenades() -> Line {
-    if !read_config(|c| {
-        c.controllers.weapons.grenade_throw && c.controllers.weapons.grenade.catch.enabled
+    if !read(&CONTROLLERS_CONFIG, |c| {
+        c.weapons.grenade_throw && c.weapons.grenade.catch.enabled
     }) {
         return Line::off("");
     }

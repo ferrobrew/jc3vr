@@ -19,9 +19,10 @@ use jc3gi::{
 };
 
 use crate::{
-    config,
+    config::engine::{Parts, edit_parts},
     debug::camera::{CAMERA_SNAPSHOTS, CameraSnapshot},
-    hooks::graphics_engine::terrain,
+    hooks::graphics_engine::{config::EXPOSURE_CONFIG, terrain},
+    stereo::config::STEREO_CONFIG,
     ui::camera::matrix_grid,
 };
 
@@ -70,34 +71,34 @@ static OPEN: AtomicBool = AtomicBool::new(false);
 /// the Tools page's render capture ([`crate::ui::render_capture`]). The render camera's coordinate
 /// frame is recorded into every trace and has no toggle.
 fn trace_options(ui: &mut egui::Ui) {
-    let mut cfg = config::edit();
+    let mut cfg = STEREO_CONFIG.edit();
     ui.collapsing("Render trace probes", |ui| {
         ui.checkbox(
-            &mut cfg.stereo.diagnose_rt_screenshots,
+            &mut cfg.diagnose_rt_screenshots,
             "Write each eye's BackBufferLinear to a PNG per frame into the trace folder",
         );
         ui.checkbox(
-            &mut cfg.stereo.auto_trace_brightness_step,
+            &mut cfg.auto_trace_brightness_step,
             "Auto-capture a trace when the frame brightness steps (one-shot; disarms after firing)",
         );
         ui.checkbox(
-            &mut cfg.stereo.diagnose_main_color_means,
+            &mut cfg.diagnose_main_color_means,
             "Record MainColor means at the pipeline stage brackets (slower traces)",
         );
         ui.checkbox(
-            &mut cfg.stereo.diagnose_pass_sweep,
+            &mut cfg.diagnose_pass_sweep,
             "Record MainColor means after every late-scene pass (per-pass ladder; much slower)",
         );
         ui.checkbox(
-            &mut cfg.stereo.diagnose_global_constants,
+            &mut cfg.diagnose_global_constants,
             "Dump the FP/VP global constant staging into the trace (scene + frame end)",
         );
         ui.checkbox(
-            &mut cfg.stereo.diagnose_rt_hashes,
+            &mut cfg.diagnose_rt_hashes,
             "Hash engine RTs per eye into the trace (run with cameras off)",
         );
         ui.checkbox(
-            &mut cfg.stereo.diagnose_stereo_draw_diff,
+            &mut cfg.diagnose_stereo_draw_diff,
             "Diff the two eyes' per-pass draw counts into the trace (single-pass-stereo feasibility)",
         )
         .on_hover_text(
@@ -109,12 +110,12 @@ fn trace_options(ui: &mut egui::Ui) {
 }
 
 fn diagnostics_controls(ui: &mut egui::Ui) {
-    let mut cfg = config::edit();
+    let mut cfg = edit_parts();
     // The #31 flicker-isolation A/B levers -- all default off; enable one at a time to localize the
     // whole-terrain sun-shadow flicker. See `crate::stereo::config::StereoConfig`.
     ui.collapsing("Flicker isolation (#31)", |ui| {
             ui.checkbox(
-                &mut cfg.stereo.symmetrize_eye_frusta,
+                &mut cfg.part_mut(&STEREO_CONFIG).symmetrize_eye_frusta,
                 "A: Symmetric eye frusta (zero shear, same FOV; if flicker dies, the off-axis shear is \
                  the amplifier)",
             )
@@ -124,7 +125,7 @@ fn diagnostics_controls(ui: &mut egui::Ui) {
                  headset image will look slightly stretched -- diagnostic only.",
             );
             ui.checkbox(
-                &mut cfg.stereo.mirror_eye0_to_both,
+                &mut cfg.part_mut(&STEREO_CONFIG).mirror_eye0_to_both,
                 "B: Both eyes = eye 0 (identical off-axis view twice; if flicker survives, it isn't \
                  inter-eye divergence)",
             )
@@ -133,7 +134,7 @@ fn diagnostics_controls(ui: &mut egui::Ui) {
                  divergence while keeping the off-axis projection and its reconstruction.",
             );
             ui.checkbox(
-                &mut cfg.stereo.shadow_update_every_frame,
+                &mut cfg.part_mut(&STEREO_CONFIG).shadow_update_every_frame,
                 "Update all shadow cascades every frame (defeats 2^L amortization; parity-flip probe)",
             )
             .on_hover_text(
@@ -321,8 +322,11 @@ fn diagnostics_controls(ui: &mut egui::Ui) {
         );
         ui.horizontal(|ui| {
             ui.add(
-                egui::Slider::new(&mut cfg.stereo.terrain_detail_budget_scale, 1..=16)
-                    .text("budget scale"),
+                egui::Slider::new(
+                    &mut cfg.part_mut(&STEREO_CONFIG).terrain_detail_budget_scale,
+                    1..=16,
+                )
+                .text("budget scale"),
             );
             if ui
                 .button("Re-apply (patch sizes + recreate setup buffers)")
@@ -347,38 +351,38 @@ fn diagnostics_controls(ui: &mut egui::Ui) {
     // Investigation levers -- normally off; used to isolate what differs between the eyes.
     ui.collapsing("Per-eye diagnostics", |ui| {
         ui.checkbox(
-            &mut cfg.stereo.cameras,
+            &mut cfg.part_mut(&STEREO_CONFIG).cameras,
             "Stereo cameras (per-eye IPD offset; off for the render-target hash diagnostic)",
         );
         ui.checkbox(
-            &mut cfg.stereo.present_eye_0,
+            &mut cfg.part_mut(&STEREO_CONFIG).present_eye_0,
             "Present eye 0 (else eye 1) -- flip to compare each eye live",
         );
         ui.checkbox(
-            &mut cfg.stereo.skip_ssr,
+            &mut cfg.part_mut(&STEREO_CONFIG).skip_ssr,
             "Skip SSR (drops screen-space reflections; tests the per-eye prev-scene feedback)",
         );
         ui.checkbox(
-            &mut cfg.stereo.skip_gi,
+            &mut cfg.part_mut(&STEREO_CONFIG).skip_gi,
             "Skip GI (drops global illumination; isolates the residual per-eye MainColor divergence)",
         );
         ui.checkbox(
-            &mut cfg.stereo.skip_ao_volumes,
+            &mut cfg.part_mut(&STEREO_CONFIG).skip_ao_volumes,
             "Skip AO volumes (depth-tested darkening volumes; suspect for the blob shadow flicker)",
         );
         ui.checkbox(
-            &mut cfg.stereo.disable_sun_shadows,
+            &mut cfg.part_mut(&STEREO_CONFIG).disable_sun_shadows,
             "Disable sun shadows (engine SetEnabled path; does the flicker survive with none?)",
         );
         ui.checkbox(
-            &mut cfg.stereo.freeze_shadow_maps,
+            &mut cfg.part_mut(&STEREO_CONFIG).freeze_shadow_maps,
             "Freeze shadow maps (atlas keeps last contents; dies = content, survives = sampling)",
         );
         ui.horizontal(|ui| {
-            ui.checkbox(&mut cfg.stereo.skip_pass_range_enabled, "Skip pass range");
+            ui.checkbox(&mut cfg.part_mut(&STEREO_CONFIG).skip_pass_range_enabled, "Skip pass range");
             // The bounds stay editable while disarmed, so a target range can be preset and then
             // armed in one step instead of dragging through unsafe intermediate ranges live.
-            let (lo, hi) = &mut cfg.stereo.skip_pass_range;
+            let (lo, hi) = &mut cfg.part_mut(&STEREO_CONFIG).skip_pass_range;
             // Each end clamps to the other so the range can never invert mid-drag.
             let hi_cap = *hi;
             ui.add(egui::DragValue::new(lo).range(0..=hi_cap).hexadecimal(2, false, false));
@@ -392,49 +396,49 @@ fn diagnostics_controls(ui: &mut egui::Ui) {
              jc3gi's RenderPassId maps every index)",
         );
         ui.checkbox(
-            &mut cfg.stereo.disable_ssao,
+            &mut cfg.part_mut(&STEREO_CONFIG).disable_ssao,
             "Disable SSAO (does the 'stronger in one eye' darkening vanish?)",
         );
         ui.checkbox(
-            &mut cfg.stereo.ssao_eye0_only,
+            &mut cfg.part_mut(&STEREO_CONFIG).ssao_eye0_only,
             "SSAO on eye 0 only (drop the second eye's screen AO)",
         );
         ui.checkbox(
-            &mut cfg.stereo.restore_cb_ring,
+            &mut cfg.part_mut(&STEREO_CONFIG).restore_cb_ring,
             "Restore CB ring between eyes (pin RenderEngine +0x16C0; both eyes share CB slots)",
         );
     });
 
     ui.collapsing("Eye-1 gates (skip on second Draw)", |ui| {
         ui.checkbox(
-            &mut cfg.exposure.gate,
+            &mut cfg.part_mut(&EXPOSURE_CONFIG).gate,
             "Auto-exposure (SmoothedExposure + Histogram)",
         );
         ui.checkbox(
-            &mut cfg.exposure.gate_update,
+            &mut cfg.part_mut(&EXPOSURE_CONFIG).gate_update,
             "ToneMappingEffect::Update ring-index step",
         );
         ui.checkbox(
-            &mut cfg.stereo.gate_eye1_dt,
+            &mut cfg.part_mut(&STEREO_CONFIG).gate_eye1_dt,
             "Eye-1 dt=0 (world fade / sun / heat-haze step once per frame)",
         );
         ui.checkbox(
-            &mut cfg.stereo.gate_setup_render_frame_data,
+            &mut cfg.part_mut(&STEREO_CONFIG).gate_setup_render_frame_data,
             "SetupRenderFrameData (per-batch list build, not the swap)",
         );
         ui.checkbox(
-            &mut cfg.stereo.gate_hand_back_buffers,
+            &mut cfg.part_mut(&STEREO_CONFIG).gate_hand_back_buffers,
             "HandBackBuffers (constant-buffer recycle)",
         );
     });
 
     ui.collapsing("Exposure A/B (pin the applied exposure)", |ui| {
         ui.checkbox(
-            &mut cfg.exposure.force,
+            &mut cfg.part_mut(&EXPOSURE_CONFIG).force,
             "Force exposure (pin after the engine's Update)",
         );
         ui.add(
-            egui::Slider::new(&mut cfg.exposure.forced_value, 0.0..=0.5)
+            egui::Slider::new(&mut cfg.part_mut(&EXPOSURE_CONFIG).forced_value, 0.0..=0.5)
                 .text("Forced exposure (~0.11 = non-stereo daylight)"),
         );
         ui.label(

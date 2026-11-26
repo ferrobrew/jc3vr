@@ -18,6 +18,7 @@ use crate::{
                 },
             },
         },
+        config::CONTROLLERS_CONFIG,
         menu::config_toggle,
     },
     pause_menu::model::{
@@ -71,14 +72,16 @@ pub(super) fn summary(page: Page) -> Page {
         .text("STANDING: HEIGHT AND ARM SPAN.")
         .text("SEATED: SEATED EYES AND ARM SPAN.")
         .header("SCALING")
-        .item(config_toggle!("MATCH CHARACTER HEIGHT", |c| c
-            .controllers
-            .body
-            .remap_head))
-        .item(config_toggle!("MATCH CHARACTER REACH", |c| c
-            .controllers
-            .body
-            .remap_hands))
+        .item(config_toggle!(
+            "MATCH CHARACTER HEIGHT",
+            CONTROLLERS_CONFIG,
+            |c| c.body.remap_head
+        ))
+        .item(config_toggle!(
+            "MATCH CHARACTER REACH",
+            CONTROLLERS_CONFIG,
+            |c| c.body.remap_hands
+        ))
 }
 
 pub(super) fn stand(page: Page) -> Page {

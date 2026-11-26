@@ -1,15 +1,16 @@
 //! The near/far draw-list split (#32): its levers and the per-pass split counters.
 
 use crate::{
-    config,
-    far_field::FarFieldMode,
+    config::engine::Parts,
+    far_field::{FAR_FIELD_CONFIG, FarFieldMode},
+    stereo::config::STEREO_CONFIG,
     ui::render::{passes::render_pass_name, single_pass::collapse_configured},
 };
 
-pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
+pub(super) fn section(ui: &mut egui::Ui, cfg: &mut impl Parts) {
     ui.collapsing("Far field (#32, experimental)", |ui| {
         ui.checkbox(
-            &mut cfg.far_field.enabled,
+            &mut cfg.part_mut(&FAR_FIELD_CONFIG).enabled,
             "Enable near/far draw-list split (engine depth buckets)",
         )
         .on_hover_text(
@@ -18,7 +19,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
              run. Off restores the stock single bucket.",
         );
         ui.add(
-            egui::Slider::new(&mut cfg.far_field.threshold_m, 50.0..=2000.0)
+            egui::Slider::new(&mut cfg.part_mut(&FAR_FIELD_CONFIG).threshold_m, 50.0..=2000.0)
                 .logarithmic(true)
                 .text("Threshold (m)"),
         )
@@ -28,7 +29,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
         );
         ui.horizontal(|ui| {
             ui.label("Far-regime types:");
-            ui.text_edit_singleline(&mut cfg.far_field.gated_types)
+            ui.text_edit_singleline(&mut cfg.part_mut(&FAR_FIELD_CONFIG).gated_types)
                 .on_hover_text(
                     "Registry type names (comma-separated) whose draws are inherently distant \
                      and skip with the far field, with no distance split — find candidates by \
@@ -71,9 +72,9 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
             ] {
                 // `Share` needs the two per-eye dispatches it composites into, which the single-pass
                 // collapse does away with; the two are mutually exclusive.
-                let blocked = mode == FarFieldMode::Share && collapse_configured(cfg);
+                let blocked = mode == FarFieldMode::Share && collapse_configured(cfg.part(&STEREO_CONFIG));
                 ui.add_enabled_ui(!blocked, |ui| {
-                    ui.selectable_value(&mut cfg.far_field.mode, mode, label)
+                    ui.selectable_value(&mut cfg.part_mut(&FAR_FIELD_CONFIG).mode, mode, label)
                         .on_hover_text(if blocked {
                             "Unavailable while the single-pass collapse is on: the collapse renders \
                              both eyes in one walk, so there are no per-eye dispatches to share a \
