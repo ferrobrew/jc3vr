@@ -125,7 +125,7 @@ fn the_nitrous_button_sits_beside_the_wheel_and_holds_the_vehicle_mod() {
     assert!(out.nitrous && !out.horn);
 
     let mut off = placement();
-    off.config.buttons.nitrous_button = false;
+    off.nitrous = false;
     let mut state = ControlState::default();
     step_with(
         &mut state,

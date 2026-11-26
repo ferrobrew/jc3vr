@@ -226,38 +226,24 @@ pub struct YokeSpec {
 }
 
 /// The horn and the nitrous worked by hand (see
-/// [`crate::controllers::vehicles::physical::buttons`]): the horn pressed on the wheel's hub, a
-/// nitrous button on the dash beside the wheel, and the collective twisted for the nitrous. The plane's
-/// afterburner is its throttle's gate
-/// ([`FlightControlsTuning::afterburner_gate`]). The buttons stay alongside the controller's.
+/// [`crate::controllers::vehicles::physical::buttons`]): the horn pressed with a free hand on the
+/// wheel's hub, a nitrous button on the dash beside the wheel (on a vehicle with nitrous), and the
+/// collective's grip twisted either way for the nitrous. The plane's afterburner is its throttle's
+/// gate ([`FlightControlsTuning::gate_at`]). The buttons stay alongside the controller's.
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CockpitButtonsTuning {
-    /// Sound the horn by pushing a free hand into the wheel's hub.
-    pub horn: bool,
     /// The hub's share of the wheel's radius that presses the horn.
     pub hub_share: f32,
-    /// A nitrous button on the dash beside the wheel, pushed with a free hand. Off on a vehicle
-    /// without nitrous.
-    pub nitrous_button: bool,
     /// The nitrous button from the wheel's rim on its right: along the wheel's right, its up, and
     /// its axis toward the driver, metres.
     pub nitrous_from_rim_m: Vec3,
     pub nitrous_radius_m: f32,
     /// How far past a button's face a hand pushes to press it, metres.
     pub press_depth_m: f32,
-    /// Burn the nitrous by twisting the collective's grip either way.
-    pub twist_nitrous: bool,
     /// How far the collective's grip is twisted from where the hand took it to burn the nitrous,
     /// degrees: well past the roll a wrist makes while it raises and lowers the lever.
     pub twist_deg: f32,
-}
-
-impl CockpitButtonsTuning {
-    /// Whether any button is switched on.
-    pub const fn any(&self) -> bool {
-        self.horn || self.nitrous_button || self.twist_nitrous
-    }
 }
 
 /// The plane's flight stick and throttle beyond a plain stick and lever (see
@@ -269,11 +255,10 @@ pub struct FlightControlsTuning {
     pub twist_deadzone_deg: f32,
     /// The twist that gives a full rudder, degrees.
     pub twist_full_deg: f32,
-    /// Give the throttle a gate at the top of its travel: below it the throttle stops short of the
-    /// thrust that lights the afterburner, and pushed through it, the throttle is full and the
-    /// afterburner burns where the game allows it. Off, the throttle runs straight to full.
-    pub afterburner_gate: bool,
-    /// Where the gate starts, as a share of the throttle's forward travel, `0..1`.
+    /// Where the throttle's gate at the top of its travel starts, as a share of its forward travel,
+    /// `0..1`. Below the gate the throttle stops short of the thrust that lights the afterburner,
+    /// and pushed through it, the throttle is full and the afterburner burns where the game allows
+    /// it.
     pub gate_at: f32,
     /// The share of the throttle's whole travel, at its back, that is the reverse section behind
     /// the zero gate, `0..0.9`. The rest, in front of the gate, is forward thrust from nothing to

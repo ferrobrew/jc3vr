@@ -59,7 +59,6 @@ return_s = 0.12
 [physical.flight]
 twist_deadzone_deg = 6.0
 twist_full_deg = 35.0
-afterburner_gate = true
 gate_at = 0.85
 reverse_share = 0.33333334
 zero_pull = 0.12
@@ -67,13 +66,10 @@ zero_snap = 0.06
 thrust_step = 0.1
 
 [physical.buttons]
-horn = true
 hub_share = 0.35
-nitrous_button = true
 nitrous_from_rim_m = [0.12, 0.02, 0.0]
 nitrous_radius_m = 0.045
 press_depth_m = 0.02
-twist_nitrous = true
 twist_deg = 40.0
 
 [arm_steering]

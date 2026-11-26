@@ -198,19 +198,20 @@ pub struct ButtonPlacement {
 }
 
 impl ButtonPlacement {
-    /// The buttons a seat offering `kinds` has with `config`: the horn and the nitrous button with
-    /// the wheel, and the collective's twist with the collective.
+    /// The buttons a seat offering `kinds` has with `config`: the horn with the wheel, the nitrous
+    /// button with the wheel of a vehicle with nitrous (`nitrous`), and the collective's twist with
+    /// the collective.
     pub fn for_seat(
         kinds: &[ControlKind],
         config: &CockpitButtonsTuning,
         wheel: &WheelFrame,
+        nitrous: bool,
     ) -> Self {
         let wheel_seat = kinds.contains(&ControlKind::Wheel);
         Self {
-            horn: (wheel_seat && config.horn).then(|| PushButton::horn(wheel, config)),
-            nitrous: (wheel_seat && config.nitrous_button)
-                .then(|| PushButton::nitrous(wheel, config)),
-            collective_twist: config.twist_nitrous && kinds.contains(&ControlKind::Collective),
+            horn: wheel_seat.then(|| PushButton::horn(wheel, config)),
+            nitrous: (wheel_seat && nitrous).then(|| PushButton::nitrous(wheel, config)),
+            collective_twist: kinds.contains(&ControlKind::Collective),
         }
     }
 

@@ -191,26 +191,6 @@ fn the_throttle_lights_the_afterburner_only_through_its_gate_and_cues_on_the_way
     let out = at(&mut state, 0.3, 0.0);
     assert_eq!(out.lever_cue, Some(ControlCue::ReverseGate));
     assert_eq!(state.throttle.section, ThrottleSection::Forward);
-
-    let mut off = plane();
-    off.config.flight.afterburner_gate = false;
-    let mut state = ControlState::default();
-    step_with(
-        &mut state,
-        &off,
-        &KINDS,
-        [Some(throttle_point(&off, 0.0, 0.0)), None],
-        grabs,
-    );
-    let (out, _) = step_with(
-        &mut state,
-        &off,
-        &KINDS,
-        [Some(throttle_point(&off, 0.95, 0.0)), None],
-        [None; 2],
-    );
-    assert!(out.throttle.is_some_and(|t| t > AFTERBURNER), "{out:?}");
-    assert!(!out.afterburner);
 }
 
 #[test]

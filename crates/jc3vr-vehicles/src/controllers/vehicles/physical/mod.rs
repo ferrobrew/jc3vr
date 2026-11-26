@@ -242,6 +242,8 @@ pub struct Placement {
     pub native_stick: Option<native::NativeStick>,
     /// The controls measured within a merged cockpit mesh, without moving that mesh.
     pub cockpit: Option<native::CockpitFit>,
+    /// Whether the vehicle has nitrous, and so a nitrous button beside its wheel.
+    pub nitrous: bool,
 }
 
 impl Placement {
@@ -254,6 +256,7 @@ impl Placement {
             dominant,
             native_stick: None,
             cockpit: None,
+            nitrous: true,
         }
     }
 
@@ -387,11 +390,11 @@ impl Placement {
         }
     }
 
-    /// Where `kind`'s afterburner gate starts along its forward section, for the throttle with the
-    /// gate on: past the snap next to zero, short of the stop.
+    /// Where `kind`'s afterburner gate starts along its forward section, for the throttle: past the
+    /// snap next to zero, short of the stop.
     pub(super) fn gate(&self, kind: ControlKind) -> Option<f32> {
         let flight = &self.config.flight;
-        (kind == ControlKind::Throttle && flight.afterburner_gate).then(|| {
+        (kind == ControlKind::Throttle).then(|| {
             let snap = flight.zero_snap.clamp(0.0, 0.9);
             flight.gate_at.clamp(snap + 0.05, 0.98)
         })
@@ -624,8 +627,12 @@ pub fn step(
         }
     }
 
-    let buttons =
-        ButtonPlacement::for_seat(inputs.kinds, &placement.config.buttons, &placement.wheel);
+    let buttons = ButtonPlacement::for_seat(
+        inputs.kinds,
+        &placement.config.buttons,
+        &placement.wheel,
+        placement.nitrous,
+    );
     let mut button_events = Vec::new();
     let pressed = step_buttons(
         &mut state.buttons,
