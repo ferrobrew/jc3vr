@@ -2,15 +2,13 @@
 //! effect and the frame-time breakdown. Like every event, nothing is built unless a recording or
 //! the lookback collects.
 
+use jc3vr_core::frame_timing::{Report, Slot, ns_to_ms};
 use tracking_format::event::{FrameTiming, Label, Settings, SlotTiming};
 
-use crate::{
-    frame_timing::{Report, Slot, ns_to_ms},
-    recorder::tracking::events::{self, EventKind},
-};
+use crate::recorder::tracking::{events, events::EventKind};
 
 /// Note the settings file's text, as a save writes it or a recording starts with it.
-pub(crate) fn note_settings(toml: &str) {
+pub fn note_settings(toml: &str) {
     events::note_with(|| {
         EventKind::Settings(Box::new(Settings {
             toml: Label::Owned(toml.to_owned()),

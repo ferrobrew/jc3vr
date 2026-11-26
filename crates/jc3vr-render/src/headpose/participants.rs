@@ -14,7 +14,7 @@ use glam::{Quat, Vec3};
 use crate::headpose::{config::GrappleComfortConfig, xr::FollowSettings};
 
 /// The functions the head pose calls into its owners through.
-pub(crate) struct HeadParticipants {
+pub struct HeadParticipants {
     /// Advance the grapple's body-frame filter: the body rotation the view composes with, the
     /// view head's offset from the character's root (`None` while the pose is frozen or without
     /// anchors), and whether the head follows the character on foot.
@@ -61,7 +61,7 @@ pub struct FrameTelemetry {
 }
 
 /// Hand the head pose its participants. Called once at install; a second table is ignored.
-pub(crate) fn register_head_participants(participants: &'static HeadParticipants) {
+pub fn register_head_participants(participants: &'static HeadParticipants) {
     if PARTICIPANTS.set(participants).is_err() {
         tracing::warn!("head participants: a table is already registered; the new one is ignored");
     }

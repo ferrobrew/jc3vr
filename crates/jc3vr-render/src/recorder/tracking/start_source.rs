@@ -5,22 +5,22 @@
 use std::sync::OnceLock;
 
 /// Where the player stands and the places the player named, for a recording's start marker.
-pub(crate) struct StartSource {
+pub struct StartSource {
     /// The player character's world matrix, row-major with the translation in elements 12 to 14,
     /// or `None` without a player character. Called on the game thread.
-    pub(crate) player_transform: fn() -> Option<[f32; 16]>,
+    pub player_transform: fn() -> Option<[f32; 16]>,
     /// The named places a start marker near one is labelled with.
-    pub(crate) places: fn() -> Vec<NamedPlace>,
+    pub places: fn() -> Vec<NamedPlace>,
 }
 
 /// A place the player named, at a world position.
-pub(crate) struct NamedPlace {
-    pub(crate) name: String,
-    pub(crate) position: [f32; 3],
+pub struct NamedPlace {
+    pub name: String,
+    pub position: [f32; 3],
 }
 
 /// Register the start marker's source. One source: a second registration is refused and logged.
-pub(crate) fn register_start_source(source: StartSource) {
+pub fn register_start_source(source: StartSource) {
     if SOURCE.set(source).is_err() {
         tracing::error!(
             "recorder: tracking: a start source is already registered; keeping the first"

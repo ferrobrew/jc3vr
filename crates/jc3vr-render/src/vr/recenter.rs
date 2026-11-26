@@ -9,17 +9,21 @@ use std::{
 };
 
 use body_rig::{angle::head_heading, rotation::twist_about_y};
+use jc3vr_input::frame as controller_frame;
 use openxr as xr;
 use parking_lot::Mutex;
 
 use crate::{
-    controllers::{body::rig::origin_provenance, frame as controller_frame},
+    controllers::body::rig::origin_provenance,
     headpose::xr::{bank, on_recenter, pending_bank, stepping},
     recorder::tracking::format::RecenterEvent,
     vr::{
         VR_CONFIG,
         convert::{posef, quat, vec3},
-        input::flight_pose::{self, EpochChange, GestureSample},
+        input::{
+            flight_pose,
+            flight_pose::{EpochChange, GestureSample},
+        },
         is_running,
         participants::frame_participants,
         state::lock_state,
@@ -377,7 +381,7 @@ pub fn auto_recenter_tick() {
     if !VR_CONFIG.query(|c| c.auto_recenter_on_gameplay) {
         return;
     }
-    let in_gameplay = crate::hooks::in_gameplay();
+    let in_gameplay = jc3vr_core::hooks::in_gameplay();
     let has_character =
         unsafe { jc3gi::character::character::Character::GetLocalPlayerCharacter().as_ref() }
             .is_some();

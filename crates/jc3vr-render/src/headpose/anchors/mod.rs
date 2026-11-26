@@ -12,12 +12,14 @@ use crate::{
     vr::{VR_CONFIG, live_tracking},
 };
 
+#[cfg(any(test, feature = "test-support"))]
+pub mod test_support;
 #[cfg(test)]
 pub(crate) mod tests;
 
 /// One complete camera-anchor endpoint, in the captured simulation root's world frame.
 #[derive(Debug, Copy, Clone, Default, PartialEq)]
-pub(crate) struct Geometry {
+pub struct Geometry {
     pub root: Mat4,
     pub collapsed: bool,
     pub head: Vec3,
@@ -84,7 +86,7 @@ impl Geometry {
         toward_heading(root * self.animation_rotation, root, self.camera_weight)
     }
 
-    pub(crate) fn from_anchors(anchors: Anchors, root: Mat4) -> Self {
+    pub fn from_anchors(anchors: Anchors, root: Mat4) -> Self {
         Self {
             root,
             collapsed: false,
@@ -126,7 +128,7 @@ fn toward_heading(frame: Quat, root: Quat, weight: f32) -> Quat {
 
 /// The allocations and bone selection checked at the pre-finalize seam.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) struct Identity {
+pub struct Identity {
     pub character: usize,
     pub skeleton: SkeletonKey,
     pub producer: usize,
@@ -135,7 +137,7 @@ pub(crate) struct Identity {
 
 /// Source context whose changes invalidate interpolation, not a body-authority decision.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub(crate) struct Context {
+pub struct Context {
     pub source: Source,
     pub gameplay: bool,
     pub teleport: u64,
@@ -145,7 +147,7 @@ pub(crate) struct Context {
 }
 
 impl Context {
-    pub(crate) fn current() -> Self {
+    pub fn current() -> Self {
         let now = Instant::now();
         let tracking = live_tracking::status()
             .packet
@@ -165,7 +167,7 @@ impl Context {
             });
         Self {
             source: crate::headpose::source(),
-            gameplay: crate::hooks::in_gameplay() && !(head_participants().ui_mode)(),
+            gameplay: jc3vr_core::hooks::in_gameplay() && !(head_participants().ui_mode)(),
             teleport: teleport::epoch(),
             recenter: crate::vr::recenter_count(),
             world_scale: VR_CONFIG.query(|c| c.world_scale),
@@ -177,7 +179,7 @@ impl Context {
         self.continuous(next)
     }
 
-    pub(crate) fn continuous(self, next: Self) -> bool {
+    pub fn continuous(self, next: Self) -> bool {
         if self.source != next.source
             || self.gameplay != next.gameplay
             || self.teleport != next.teleport
@@ -204,7 +206,7 @@ impl Context {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) struct Publication {
+pub struct Publication {
     pub sequence: u64,
     pub display_time_ns: i64,
     pub published_at: Instant,
@@ -213,7 +215,7 @@ pub(crate) struct Publication {
 
 /// Current joints and root copied before any procedural or HumanIK override.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub(crate) struct Sample {
+pub struct Sample {
     pub root: Mat4,
     pub head_model: Vec3,
     pub neck_model: Vec3,
@@ -224,7 +226,7 @@ pub(crate) struct Sample {
 }
 
 impl Sample {
-    pub(crate) fn animated(root: Mat4, points: [Vec3; 3], rotations: [Quat; 2]) -> Self {
+    pub fn animated(root: Mat4, points: [Vec3; 3], rotations: [Quat; 2]) -> Self {
         let [head_model, neck_model, eyes_model] = points;
         let (_, rotation, _) = root.to_scale_rotation_translation();
         let head = root.transform_point3(head_model);
@@ -253,7 +255,7 @@ impl Sample {
         }
     }
 
-    pub(crate) fn valid(self) -> bool {
+    pub fn valid(self) -> bool {
         self.root.is_finite()
             && self.root.determinant().abs() > f32::EPSILON
             && self.head_model.is_finite()
@@ -268,14 +270,14 @@ impl Sample {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub(crate) struct Pair {
+pub struct Pair {
     pub collapsed: bool,
     pub previous: Sample,
     pub current: Sample,
 }
 
 impl Pair {
-    pub(crate) fn geometry(self) -> [Geometry; 2] {
+    pub fn geometry(self) -> [Geometry; 2] {
         [self.previous.geometry, self.current.geometry].map(|mut geometry| {
             geometry.collapsed = self.collapsed;
             geometry
@@ -283,7 +285,7 @@ impl Pair {
     }
 }
 
-pub(crate) struct Capture {
+pub struct Capture {
     pub identity: Identity,
     pub tick: u64,
     pub serial: Option<u64>,
@@ -293,7 +295,7 @@ pub(crate) struct Capture {
 }
 
 #[derive(Default)]
-pub(crate) struct History {
+pub struct History {
     entry: Option<Entry>,
     consumed: u64,
 }
@@ -306,12 +308,12 @@ impl History {
         }
     }
 
-    pub(crate) fn clear(&mut self) {
+    pub fn clear(&mut self) {
         self.entry = None;
     }
 
     /// A synchronous publication is consumed at most once, independent of dispatch cadence.
-    pub(crate) fn capture(
+    pub fn capture(
         &mut self,
         request: Capture,
         read: impl FnOnce() -> Option<Sample>,
@@ -378,7 +380,7 @@ impl History {
     }
 }
 
-pub(crate) static HISTORY: Mutex<History> = Mutex::new(History::new());
+pub static HISTORY: Mutex<History> = Mutex::new(History::new());
 
 struct Entry {
     identity: Identity,

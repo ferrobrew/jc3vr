@@ -275,7 +275,7 @@ pub(crate) fn totals(cells: &[Cell], grid: [u32; 2], pixels: u64) -> Totals {
 /// differ, or its mean difference exceeds `mean`. The same limits as the Python comparison's
 /// `changed_fraction` and `mean` thresholds.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) struct FailLimits {
+pub struct FailLimits {
     pub fraction: f64,
     pub mean: f64,
 }

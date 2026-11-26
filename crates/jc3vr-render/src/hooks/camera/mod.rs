@@ -14,37 +14,34 @@ use jc3gi::{
     hash::hashlittle,
     types::math::Matrix4,
 };
+use jc3vr_core::render_frame::RenderFrameSlot;
+use jc3vr_input::frame::Pose;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{
-    controllers::{cockpit::CockpitTransform, frame::Pose},
+    controllers::cockpit::CockpitTransform,
     debug::trace::{TraceEvent, TraceState},
     fsr::FSR_CONFIG,
     hooks::camera::config::CAMERA_CONFIG,
-    render_frame::RenderFrameSlot,
     stereo::{STEREO_STATE, config::STEREO_CONFIG},
     vr::{FreezeMode, VR_CONFIG, pose_control},
 };
 
-pub(crate) mod authored;
-pub(crate) mod config;
-pub mod height;
+pub mod authored;
+pub mod config;
 mod participants;
-pub(crate) use config::{CameraConfig, SCENE_NEAR_CLIP_M};
-pub(crate) use participants::{
+pub use config::{CameraConfig, SCENE_NEAR_CLIP_M};
+use jc3vr_core::hooks::in_gameplay;
+pub use participants::{
     CameraParticipants, register_camera_participants, register_render_camera_observer,
 };
 
-use crate::{
-    headpose::{
-        HeadPose, Source, anchor, anchor_prev, is_active, query, query_prev, source,
-        xr::follow_turn,
-    },
-    hooks::in_gameplay,
+use crate::headpose::{
+    HeadPose, Source, anchor, anchor_prev, is_active, query, query_prev, source, xr::follow_turn,
 };
 
-pub(crate) fn hook_library() -> HookLibrary {
+pub fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_static_binder(&CAMERA_UPDATE_RENDER_BINDER)
         .with_static_binder(&CAMERA_TREE_UPDATE_RENDER_CONTEXTS_BINDER)
@@ -746,7 +743,7 @@ fn game_camera_manager_get_camera_matrix(manager: *const GameCameraManager, matr
 
 /// The `dtf` the active camera's `UpdateRender` received for the frame (see [`last_dtf`]). Per
 /// frame, so the draw task's palette edits and anchored readouts interpolate at the fraction of the
-/// frame they draw (see [`crate::render_frame`]).
+/// frame they draw (see [`jc3vr_core::render_frame`]).
 static LAST_DTF: RenderFrameSlot<f32> = RenderFrameSlot::new();
 
 /// The camera world transform last written to the active camera's `m_TransformT1` with the

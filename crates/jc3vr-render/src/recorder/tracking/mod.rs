@@ -19,9 +19,9 @@
 //! [`lookback`] keeps the last few seconds of the same capture batches while motion controllers are
 //! enabled, whether or not a recording runs, and saves them as a recording on request.
 
-pub(crate) mod events;
-pub(crate) mod format;
-pub(crate) mod lookback;
+pub mod events;
+pub mod format;
+pub mod lookback;
 mod notes;
 #[cfg(test)]
 mod query_tests;
@@ -37,20 +37,23 @@ use std::{
     time::{Duration, Instant},
 };
 
+use jc3vr_core::{
+    config::engine::{ConfigSlot, Snapshot},
+    session::{RecordingFile, SessionError},
+};
+use jc3vr_input::frame as controller_frame;
 use parking_lot::Mutex;
 use tracking_format::{
     event::{Event, Label, Settings},
     input::{CapturedInput, DiscontinuityReason, InputRecord},
 };
 
-pub(crate) use crate::recorder::tracking::{
+pub use crate::recorder::tracking::{
     notes::note_settings,
     register_frame_timing::register_frame_timing,
     start_source::{NamedPlace, StartSource, register_start_source},
 };
 use crate::{
-    config::engine::{ConfigSlot, Snapshot},
-    controllers::frame as controller_frame,
     recorder::tracking::{
         events::{EventKind, Noted},
         format::{
@@ -60,15 +63,11 @@ use crate::{
         lookback::{Entry, Lookback, LookbackStatus},
         writer::{CaptureBatch, SendOutcome, Writer},
     },
-    session::{RecordingFile, SessionError},
     vr::{
         VR_CONFIG,
         input::{
             config::{CONTROLLERS_ENABLED, DOMINANT_HAND},
-            semantic::{
-                frame as semantic_frame,
-                history::{self, Publication},
-            },
+            semantic::{frame as semantic_frame, history, history::Publication},
         },
         stage,
     },
@@ -76,14 +75,13 @@ use crate::{
 
 /// Whether the test tools are on, `testing.enabled` in the settings file: off, a recording does not
 /// start. The payload binds this slot and the two below to their fields at startup.
-pub(crate) static TESTING_ENABLED: ConfigSlot<bool> = ConfigSlot::new("testing.enabled");
+pub static TESTING_ENABLED: ConfigSlot<bool> = ConfigSlot::new("testing.enabled");
 
 /// Whether a recording carries the tracked hand joints, `testing.record_hand_joints`.
-pub(crate) static RECORD_HAND_JOINTS: ConfigSlot<bool> =
-    ConfigSlot::new("testing.record_hand_joints");
+pub static RECORD_HAND_JOINTS: ConfigSlot<bool> = ConfigSlot::new("testing.record_hand_joints");
 
 /// The game's time scale, `director.time_scale`, which a recording's header notes.
-pub(crate) static TIME_SCALE: ConfigSlot<f32> = ConfigSlot::new("director.time_scale");
+pub static TIME_SCALE: ConfigSlot<f32> = ConfigSlot::new("director.time_scale");
 
 /// What the frame loop knows about a frame's views when it hands it to [`capture`].
 #[derive(Debug, Copy, Clone)]
@@ -100,22 +98,22 @@ pub(crate) struct CaptureSample {
 
 /// The tracking recorder's state for the debug UI.
 #[derive(Debug, Clone, Default)]
-pub(crate) struct TrackingStatus {
-    pub(crate) recording: bool,
+pub struct TrackingStatus {
+    pub recording: bool,
     /// The file of the current or last recording.
-    pub(crate) path: Option<PathBuf>,
-    pub(crate) frames: u32,
+    pub path: Option<PathBuf>,
+    pub frames: u32,
     /// Frames dropped because the writer fell behind.
-    pub(crate) dropped: u32,
+    pub dropped: u32,
     /// Stored bytes accepted by the buffered sink, including the preamble. A flush error can
     /// prevent durability. The chunked writer stores chunks; the raw writer stores original records.
-    pub(crate) bytes: u64,
+    pub bytes: u64,
     /// Preamble and original record bytes for complete accepted batches, before compression.
     pub(crate) logical_bytes: u64,
     /// How long the current or last recording ran.
-    pub(crate) duration: Duration,
+    pub duration: Duration,
     /// Why the last recording did not start or stopped early.
-    pub(crate) error: Option<String>,
+    pub error: Option<String>,
 }
 
 /// Why a recording, or a save of the lookback, did not start.
@@ -153,42 +151,42 @@ impl std::fmt::Display for StartError {
 impl std::error::Error for StartError {}
 
 /// Ask for a recording to start at the top of the next frame. Any thread.
-pub(crate) fn request_start() {
+pub fn request_start() {
     *REQUESTED_STAMP.lock() = None;
     REQUEST.store(REQUEST_START, Ordering::Relaxed);
 }
 
 /// Ask for a recording stamped `stamp` to start at the top of the next frame, so it pairs with a
 /// video recording of the same stamp. Any thread.
-pub(crate) fn request_start_stamped(stamp: String) {
+pub fn request_start_stamped(stamp: String) {
     *REQUESTED_STAMP.lock() = Some(stamp);
     REQUEST.store(REQUEST_START, Ordering::Relaxed);
 }
 
 /// Ask for the recording to stop at the top of the next frame. Any thread.
-pub(crate) fn request_stop() {
+pub fn request_stop() {
     REQUEST.store(REQUEST_STOP, Ordering::Relaxed);
 }
 
 /// Whether a recording is running.
-pub(crate) fn is_recording() -> bool {
+pub fn is_recording() -> bool {
     RECORDING.load(Ordering::Relaxed)
 }
 
 /// The recorder's state after collecting completed writers.
-pub(crate) fn status() -> TrackingStatus {
+pub fn status() -> TrackingStatus {
     let mut state = STATE.lock();
     state.reap();
     state.snapshot()
 }
 
 /// The recorder's state without polling, joining, or collecting completed writers.
-pub(crate) fn peek_status() -> TrackingStatus {
+pub fn peek_status() -> TrackingStatus {
     STATE.lock().snapshot()
 }
 
 /// The lookback's state after collecting completed writers.
-pub(crate) fn lookback_status() -> LookbackStatus {
+pub fn lookback_status() -> LookbackStatus {
     let mut state = STATE.lock();
     state.reap();
     let mut status = state.lookback_save.clone();
@@ -203,7 +201,7 @@ pub(crate) fn lookback_status() -> LookbackStatus {
 
 /// Service a start or stop request, and keep the lookback. Game thread, once per frame, outside
 /// the VR runtime lock.
-pub(crate) fn frame_tick() {
+pub fn frame_tick() {
     STATE.lock().reap();
     match REQUEST.swap(REQUEST_NONE, Ordering::Relaxed) {
         REQUEST_START => start(),
@@ -428,7 +426,7 @@ pub(crate) fn note_recenter(event: RecenterEvent) {
 /// Close every writer without waiting on disk. The eject caller must pin the payload when any
 /// retained owner is still running. I/O failure after termination does not prevent unmapping.
 #[must_use = "a writer that did not finish means the payload must stay mapped"]
-pub(crate) fn shutdown() -> bool {
+pub fn shutdown() -> bool {
     let mut state = STATE.lock();
     REQUEST.store(REQUEST_NONE, Ordering::Relaxed);
     RECORDING.store(false, Ordering::Relaxed);
@@ -593,7 +591,7 @@ fn start() {
     let stamp = REQUESTED_STAMP
         .lock()
         .take()
-        .unwrap_or_else(crate::session::stamp);
+        .unwrap_or_else(jc3vr_core::session::stamp);
     if is_recording() {
         return;
     }
@@ -613,7 +611,7 @@ fn begin(stamp: String) -> Result<PathBuf, StartError> {
     let transform = start_source::player_transform().ok_or(StartError::NoPlayer)?;
     let hand_joints = *RECORD_HAND_JOINTS.lock();
     let header = header_at(transform, stamp.clone());
-    let path = crate::session::recording_file(RecordingFile::Tracking, &stamp)
+    let path = jc3vr_core::session::recording_file(RecordingFile::Tracking, &stamp)
         .map_err(StartError::Session)?;
     let mut state = STATE.lock();
     state.can_start()?;
@@ -661,7 +659,7 @@ fn header_at(transform: [f32; 16], stamp: String) -> Header {
     let world_scale = VR_CONFIG.lock().world_scale;
     let time_scale = *TIME_SCALE.lock();
     Header {
-        build: crate::BUILD_STAMP.to_owned(),
+        build: jc3vr_core::lifecycle::build_stamp().to_owned(),
         recorded_at: stamp,
         action_schema: crate::vr::input::semantic::SCHEMA_VERSION,
         start: StartMarker { bookmark, ..marker },
@@ -726,9 +724,9 @@ fn save_lookback() -> Result<PathBuf, StartError> {
         .transform
         .or_else(start_source::player_transform)
         .ok_or(StartError::NoPlayer)?;
-    let stamp = crate::session::stamp();
+    let stamp = jc3vr_core::session::stamp();
     let header = header_at(transform, stamp.clone());
-    let path = crate::session::recording_file(RecordingFile::Lookback, &stamp)
+    let path = jc3vr_core::session::recording_file(RecordingFile::Lookback, &stamp)
         .map_err(StartError::Session)?;
     // The evicted batches took their input history with them: say so before the first record.
     let discontinuity = snapshot

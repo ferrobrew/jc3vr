@@ -106,7 +106,7 @@ impl Stats {
                 " (per-pass subdivision off: busy is the whole span)"
             },
         );
-        crate::profiler::blocks::log_summary();
+        jc3vr_core::profiler::blocks::log_summary();
         *self = Self::new();
     }
 }

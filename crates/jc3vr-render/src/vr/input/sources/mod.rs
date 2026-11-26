@@ -25,20 +25,18 @@ use std::{
     time::{Duration, Instant},
 };
 
+use jc3vr_input::frame::{Hand, InteractionProfile};
 use openxr as xr;
 use openxr::sys;
 use parking_lot::Mutex;
 use tracking_format::input::{MAX_SOURCE_PATH, MAX_SOURCES, SourceQuery};
 
-use crate::{
-    controllers::frame::{Hand, InteractionProfile},
-    vr::input::{
-        actions::{Actions, SetId},
-        layout::hand_path,
-        semantic::{
-            SemanticSet,
-            bound::{self, EnumeratedSource, PhysicalSet, SourceTable},
-        },
+use crate::vr::input::{
+    actions::{Actions, SetId},
+    layout::hand_path,
+    semantic::{
+        SemanticSet, bound,
+        bound::{EnumeratedSource, PhysicalSet, SourceTable},
     },
 };
 
@@ -47,21 +45,21 @@ use crate::vr::input::sources::metadata::MetadataCache;
 
 /// One source an action is bound to.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct BoundSource {
+pub struct BoundSource {
     /// The source path as the runtime names it.
-    pub(crate) path: String,
+    pub path: String,
     /// The runtime's localized name of the source, with the user path and the component, or why
     /// it could not be read.
-    pub(crate) localized: Result<String, String>,
+    pub localized: Result<String, String>,
     /// The hand whose user path the source is under.
     pub(crate) hand: Option<Hand>,
 }
 
 /// The sources of one action, or why they could not be enumerated.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ActionSources {
-    pub(crate) name: &'static str,
-    pub(crate) sources: Result<Vec<BoundSource>, String>,
+pub struct ActionSources {
+    pub name: &'static str,
+    pub sources: Result<Vec<BoundSource>, String>,
     observation: SourceQuery,
 }
 
@@ -115,34 +113,34 @@ impl ActionSources {
 
 /// The sources of every action of one set.
 #[derive(Debug, Clone)]
-pub(crate) struct SetSources {
-    pub(crate) set: SetId,
-    pub(crate) refreshed_at: Instant,
+pub struct SetSources {
+    pub set: SetId,
+    pub refreshed_at: Instant,
     /// Whether the set was active when it was queried.
-    pub(crate) active: bool,
-    pub(crate) actions: Vec<ActionSources>,
+    pub active: bool,
+    pub actions: Vec<ActionSources>,
 }
 
 /// The cached sources, one entry per set that has been queried, in stash order.
-pub(crate) fn cached() -> Vec<SetSources> {
+pub fn cached() -> Vec<SetSources> {
     CACHE.lock().clone()
 }
 
 /// The physical inputs each action of the semantic `set` was last enumerated as reading, by action
 /// index (`None` where its enumeration failed), or `None` before the set has been enumerated.
-pub(crate) fn enumerated(set: SemanticSet) -> Option<Enumerated> {
+pub fn enumerated(set: SemanticSet) -> Option<Enumerated> {
     ENUMERATED.lock()[set.index()].clone()
 }
 
 /// The semantic actions' sources as the controls summary shows them, and a generation that
 /// changes whenever they do.
-pub(crate) fn table() -> (u64, Arc<SourceTable>) {
+pub fn table() -> (u64, Arc<SourceTable>) {
     let table = TABLE.lock();
     (table.generation, table.table.clone().unwrap_or_default())
 }
 
 /// The generation of [`table`], to tell whether it changed without cloning it.
-pub(crate) fn table_generation() -> u64 {
+pub fn table_generation() -> u64 {
     TABLE.lock().generation
 }
 
@@ -235,12 +233,12 @@ struct Interpretation {
 static INTERPRETATION: Mutex<(u64, Option<Interpretation>)> = Mutex::new((0, None));
 
 /// Note that the debug UI is showing the sources, so the frame keeps them all fresh.
-pub(crate) fn note_viewed() {
+pub fn note_viewed() {
     *VIEWED_AT.lock() = Some(Instant::now());
 }
 
 /// Refresh every set's source names on the next frame after a locale or diagnostic request.
-pub(crate) fn request_refresh() {
+pub fn request_refresh() {
     REFRESH_REQUESTED.store(true, Ordering::Relaxed);
 }
 

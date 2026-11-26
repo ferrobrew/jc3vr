@@ -45,10 +45,11 @@ use body_rig::{
     rotation::level,
 };
 use glam::{Quat, Vec3};
+use jc3vr_input::frame::Pose;
 use parking_lot::Mutex;
 
 use crate::{
-    controllers::{cockpit::CockpitTransform, frame::Pose},
+    controllers::cockpit::CockpitTransform,
     headpose::{
         HeadPose, anchor_pair,
         config::{HeadPoseConfig, VrTurnMode},

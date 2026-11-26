@@ -35,6 +35,7 @@ use jc3gi::{
     },
     types::math::{Matrix4, Vector4},
 };
+use jc3vr_core::{hooks::suspend, util::bump};
 use parking_lot::Mutex;
 use windows::{
     Win32::{
@@ -48,8 +49,6 @@ use windows::{
     },
     core::{IUnknown, Interface},
 };
-
-use crate::{hooks::suspend, util::bump};
 
 /// The result of the DXVK viewport-routing capability probe.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -75,16 +74,16 @@ mod cb13;
 mod config_snapshot;
 mod detour_lifecycle;
 mod draw_detours;
-pub(crate) mod eye_camera;
+pub mod eye_camera;
 pub(crate) mod eye_globals;
 mod eye_vertex_globals;
 mod frame_diagnostics;
-pub(crate) mod hw_instanced;
+pub mod hw_instanced;
 mod impostor_pixel_size;
 mod instanced_exposure;
 mod per_eye_reissue;
 mod pinned_eye;
-pub(crate) mod post_filters;
+pub mod post_filters;
 // The ambient-occlusion volumes' pixel-shader rewrite and its per-eye rows; reached by the shader
 // creation detour and the volume pass's draw walk.
 pub(crate) mod ao_volumes;
@@ -96,7 +95,7 @@ pub(crate) mod shader_identity;
 mod shader_policy;
 mod static_lights;
 mod sun;
-pub(crate) mod vegetation_once;
+pub mod vegetation_once;
 mod viewport;
 pub(crate) mod viewport_record;
 mod water_fragment_state;
@@ -193,8 +192,8 @@ pub fn capability() -> Capability {
 pub fn active() -> bool {
     // Go inert the instant eject begins: the render thread keeps running through the whole teardown,
     // so an ungated single-pass path would race the hook uninstall and the D3D-resource release (the
-    // same crash-on-uninject class already fixed for `vr::update` -- see `crate::is_shutting_down`).
-    if crate::is_shutting_down() {
+    // same crash-on-uninject class already fixed for `vr::update` -- see `jc3vr_core::is_shutting_down`).
+    if jc3vr_core::is_shutting_down() {
         return false;
     }
     let flags = config_flags();
@@ -389,13 +388,13 @@ pub fn collapse_ui_eye_override() -> Option<(D3D11_VIEWPORT, Matrix4)> {
 
 /// Set the immediate-context viewport via the original (un-detoured) `RSSetViewports`, so a mod
 /// overlay can bind one eye's half of the double-wide target without the collapse viewport detour
-/// dup'ing it to full width. `context` is the raw `ID3D11DeviceContext` pointer.
-pub fn set_ui_viewport_raw(context: *mut c_void, viewport: &D3D11_VIEWPORT) {
+/// dup'ing it to full width. `context` is the immediate context.
+pub fn set_ui_viewport_raw(context: &ID3D11DeviceContext, viewport: &D3D11_VIEWPORT) {
     if let Some(detour) = RS_SET_VIEWPORTS.get() {
         // One slot: slot 1 is left unbound, so the slots are no longer uniform.
         set_viewport_slots_uniform(false);
         // SAFETY: `context` is the live immediate context; the trampoline is the original function.
-        unsafe { detour.call(context, 1, std::slice::from_ref(viewport).as_ptr()) };
+        unsafe { detour.call(context.as_raw(), 1, std::slice::from_ref(viewport).as_ptr()) };
         viewport_record::forget_bound();
     }
 }
@@ -986,7 +985,10 @@ mod tests {
         assert!(!allow_com_reclamation(true, false, 1));
     }
 
-    const CAPTURE_VS: &[u8] = include_bytes!("../../shaders/capture_vs.dxbc");
+    const CAPTURE_VS: &[u8] = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/shaders/capture_vs.dxbc"
+    ));
 
     fn only_nv_water(block: BlockIntercept) -> bool {
         matches!(block, BlockIntercept::NvWater)
@@ -1025,6 +1027,7 @@ mod tests {
 
     #[test]
     fn baked_cb_block_owns_vs_agrees_with_the_intercept_flag_on_real_bytecode() {
+        crate::test_config::register();
         for name in ["nvwaterbox", "nvwaterbox_tess"] {
             assert_eq!(
                 baked_cb_block_owns_vs(Some(name), CAPTURE_VS),
@@ -1038,6 +1041,7 @@ mod tests {
 
     #[test]
     fn malformed_bytecode_is_never_owned() {
+        crate::test_config::register();
         assert!(!baked_cb_block_owns_vs(
             Some("nvwaterbox"),
             b"not a dxbc container"

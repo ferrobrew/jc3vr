@@ -184,7 +184,7 @@ pub(crate) fn rewrite_velocity(code: &[u8], enabled: bool) -> Option<Vec<u8>> {
 }
 
 /// How many velocity pixel shaders have been rewritten since injection, and how many were declined.
-pub(crate) fn velocity_counts() -> (usize, usize) {
+pub fn velocity_counts() -> (usize, usize) {
     (
         VELOCITIES.load(Ordering::Relaxed),
         VELOCITIES_DECLINED.load(Ordering::Relaxed),
@@ -200,7 +200,7 @@ pub(crate) fn velocity_maps() -> Option<[glam::Mat4; 2]> {
 
 /// How many pixel shaders have been rewritten since injection, and how many that read the camera
 /// position were declined.
-pub(crate) fn counts() -> (usize, usize) {
+pub fn counts() -> (usize, usize) {
     (
         REWRITTEN.load(Ordering::Relaxed),
         DECLINED.load(Ordering::Relaxed),
@@ -210,7 +210,7 @@ pub(crate) fn counts() -> (usize, usize) {
 /// How many pixel shaders have had their screen-door pattern laid out per eye since injection (from
 /// the pixel position, and from their projected position), and how many that build one were
 /// declined.
-pub(crate) fn screen_door_counts() -> (usize, usize, usize) {
+pub fn screen_door_counts() -> (usize, usize, usize) {
     (
         SCREEN_DOORS.load(Ordering::Relaxed),
         PROJECTED_SCREEN_DOORS.load(Ordering::Relaxed),

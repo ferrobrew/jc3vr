@@ -70,7 +70,7 @@ use std::{
 };
 
 pub use config::HudConfig;
-use glam::{Mat3, Mat4, Quat, Vec2, Vec3};
+use glam::{Mat4, Vec2, Vec3};
 use jc3gi::{
     camera::camera_manager::CameraManager,
     graphics_engine::{device::Device, texture::Texture},
@@ -80,6 +80,9 @@ use jc3gi::{
         ui_manager::{GetIUIManager, UIManager},
     },
 };
+// The render camera's pose lives in the render crate; the old path keeps working until the final
+// cleanup pass.
+pub(crate) use jc3vr_render::hud::render_camera_pose;
 pub use state::HUD_STATE;
 use state::{StageSafeArea, publish_stage_safe_area};
 pub(crate) use state::{StageSafeAreaReadout, stage_safe_area_readout};
@@ -460,36 +463,6 @@ pub fn draw_quad(context: &ID3D11DeviceContext, device: &Device, target: &Textur
 /// Whether the last panel drawn on eye 0 lacked the pointer's captured camera basis, so the
 /// transition is logged once rather than every frame.
 static POINTER_BASIS_MISSING: AtomicBool = AtomicBool::new(false);
-
-/// Extract the head's world-space pose `(position, rotation)` from the render camera's world
-/// transform, or `None` if the camera is not available.
-///
-/// The camera's world transform stores its basis vectors in rows (pyxis docs): right (+X), up (+Y),
-/// the +Z basis (back), then the translation. A row-major, row-vector matrix's flat array is the
-/// column-major array of the equivalent glam matrix, so those rows arrive as `Mat4`'s `x_axis`,
-/// `y_axis`, `z_axis`, and `w_axis`. The rotation converts to a quaternion that maps camera-local to
-/// world space, so `quat * Vec3::NEG_Z` yields the forward direction.
-pub(crate) fn render_camera_pose() -> Option<(Vec3, Quat)> {
-    // Prefer the center (un-offset) transform snapshotted in `SetupRenderCamera` before the per-eye
-    // parallax offset is applied. By the time `draw_quad` runs on eye 0, `m_TransformF` already
-    // carries eye 0's half-IPD offset, which would leak into the cached panel position and double
-    // the stereo disparity for eye 1. Fall back to the live transform when the snapshot is absent
-    // (e.g. stereo not active, or the hook has not run yet).
-    let transform = crate::stereo::STEREO_STATE
-        .lock()
-        .center_transform
-        .or_else(|| unsafe {
-            let cm = CameraManager::get()?;
-            let cam = cm.m_RenderCamera.as_ref()?;
-            Some(cam.m_TransformF)
-        })?;
-
-    let transform = Mat4::from(transform);
-    Some((
-        transform.w_axis.truncate(),
-        Quat::from_mat3(&Mat3::from_mat4(transform)),
-    ))
-}
 
 /// Compute the view-projection and camera matrices for the floating panel's orientation, so that
 /// W2S (`Get2DInfo`) projects world points onto the panel's surface rather than the screen plane.

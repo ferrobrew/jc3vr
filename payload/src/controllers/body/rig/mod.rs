@@ -15,7 +15,9 @@ pub mod config;
 pub mod frames;
 pub mod grounded;
 pub(crate) mod live_observation;
-pub(crate) mod origin_provenance;
+// The render layer's half lives in the render crate; the old path keeps working until the final
+// cleanup pass.
+pub(crate) use jc3vr_render::controllers::body::rig::origin_provenance;
 pub mod root;
 pub mod skeleton;
 pub mod torso;

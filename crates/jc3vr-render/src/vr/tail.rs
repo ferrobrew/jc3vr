@@ -16,7 +16,7 @@
 //!   neither the next frame's `xrBeginFrame` nor its dispatches can start before the tail submits.
 //!   With the render update overlapped, the next frame's `xrWaitFrame`, view location, and render
 //!   update do run alongside the tail; what they publish for the draw task is kept per frame
-//!   ([`crate::render_frame`]), so the draw the tail drains keeps reading its own frame.
+//!   ([`jc3vr_core::render_frame`]), so the draw the tail drains keeps reading its own frame.
 //! - The blit and mirror are recorded on the engine's immediate context under the context mutex
 //!   *before* the lock is released, so the next frame's `PostDraw` capture copies cannot overwrite
 //!   the eye textures the tail reads.
@@ -32,13 +32,12 @@ use std::{
 };
 
 use jc3gi::{cpu_fragment::CpuPrimaryCount, graphics_engine::graphics_engine::GraphicsEngine};
+use jc3vr_core::{frame_timing, frame_timing::Slot, thread_role, thread_role::ThreadRole};
 use parking_lot::Mutex;
 use windows::Win32::{Foundation::HANDLE, System::Threading::WaitForSingleObject};
 
 use crate::{
-    frame_timing::{self, Slot},
     stereo::dispatch,
-    thread_role::{self, ThreadRole},
     vr::{FrameContext, config::VrConfig},
 };
 
@@ -62,7 +61,7 @@ static SENDER: OnceLock<mpsc::Sender<Message>> = OnceLock::new();
 /// Emit a VR frame-loop health line about once every [`VR_HEALTH_INTERVAL`]: the mean submitted
 /// frame time over the window and the fraction of frames the runtime asked to render. Logs are the
 /// only diagnostics a headset playtest has, so this stays cheap and steady rather than per-frame.
-pub(crate) fn log_vr_frame_health(should_render: bool) {
+pub fn log_vr_frame_health(should_render: bool) {
     let mut health = VR_FRAME_HEALTH.lock();
     let now = Instant::now();
     health.frames += 1;
@@ -151,7 +150,7 @@ static QUIT_ACKED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool
 fn worker(rx: mpsc::Receiver<Message>) {
     thread_role::mark_thread(ThreadRole::FrameTail);
     #[cfg(feature = "profiler")]
-    crate::profiler::label_thread("tail");
+    jc3vr_core::profiler::label_thread("tail");
     while let Ok(message) = rx.recv() {
         match message {
             Message::Job(job) => run_tail(*job),

@@ -13,14 +13,14 @@ mod runtime;
 #[cfg(test)]
 mod tests;
 
-pub(crate) use evidence::select_controller;
-pub(crate) use native::{animation_evaluation, animation_update};
+pub use evidence::select_controller;
+pub use native::{animation_evaluation, animation_update};
 use parking_lot::Mutex;
 pub(crate) use runtime::{TrackedView, capture, normal_reset, reset, selected, take_normal_reset};
 
 /// The existing camera debug UI displays the current admission and its integration limits.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Status {
+pub enum Status {
     WaitingForCameraTree,
     NormalTracked {
         reason: Refusal,
@@ -37,7 +37,7 @@ pub(crate) enum Status {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Refusal {
+pub enum Refusal {
     Disabled,
     OutsideGameplay,
     NoTrackedHead,
@@ -56,11 +56,11 @@ pub(crate) enum Refusal {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Limit {
+pub enum Limit {
     SynchronousSourceVerifiedNativeBlend,
 }
 
-pub(crate) fn status() -> Status {
+pub fn status() -> Status {
     *STATUS.lock()
 }
 

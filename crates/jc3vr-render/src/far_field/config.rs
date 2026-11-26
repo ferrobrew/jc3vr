@@ -2,13 +2,12 @@
 
 use std::borrow::Cow;
 
+use jc3vr_core::config::engine::ConfigSlot;
 use serde::{Deserialize, Serialize};
-
-use crate::config::engine::ConfigSlot;
 
 /// The far-field settings, at `far_field` in the settings file; the payload binds the slot at
 /// startup.
-pub(crate) static FAR_FIELD_CONFIG: ConfigSlot<FarFieldConfig> = ConfigSlot::new("far_field");
+pub static FAR_FIELD_CONFIG: ConfigSlot<FarFieldConfig> = ConfigSlot::new("far_field");
 
 /// The monoscopic far field (issue #32): partition each scene pass's sorted draw list into near
 /// and far runs at a distance threshold, using the engine's own depth-bucket sort machinery, so

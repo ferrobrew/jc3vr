@@ -64,6 +64,7 @@ fn stale_shaders_hold_off_readiness_until_the_rebuild_lands() {
 
 #[test]
 fn single_pass_switch_overrides_survive_the_profile_and_reset_with_it() {
+    crate::test_config::register();
     let overrides = VisualOverrides::try_from(
         toml::from_str::<VisualOverridesTable>(
             "[single_pass]\nssr_per_eye = false\ntree_impostors = false\n",
@@ -85,6 +86,7 @@ fn single_pass_switch_overrides_survive_the_profile_and_reset_with_it() {
 
 #[test]
 fn reflection_override_runs_the_producer_without_disabling_sun_shadows() {
+    crate::test_config::register();
     let mut config = Snapshot::defaults();
     for mode in [
         Mode::LeftOnly,
@@ -164,6 +166,7 @@ fn shadows_disabled() -> VisualOverrides {
 
 #[test]
 fn shadow_override_resets_on_new_profile() {
+    crate::test_config::register();
     let mut config = Snapshot::defaults();
     let treatment = Some(shadows_disabled());
     apply_profile_with_overrides(&mut config, Mode::Multipass, treatment);
@@ -363,6 +366,7 @@ fn failed_reload_never_becomes_ready() {
 
 #[test]
 fn profile_states_single_pass_for_every_mode() {
+    crate::test_config::register();
     for mode in [
         Mode::LeftOnly,
         Mode::RightOnly,
@@ -384,6 +388,7 @@ fn profile_states_single_pass_for_every_mode() {
 
 #[test]
 fn profile_keeps_per_eye_native_resolution_across_modes() {
+    crate::test_config::register();
     let mut config = Snapshot::defaults();
     config.part_mut(&VR_CONFIG).resolution_scale = 0.75;
     config.part_mut(&POST_FX_CONFIG).skip_dof = true;
@@ -677,6 +682,7 @@ fn metadata_tracks_generation_and_profile_without_json_state() {
 
 #[test]
 fn restoration_retains_the_original_configuration_until_completion() {
+    crate::test_config::register();
     let mut original = Snapshot::defaults();
     original.part_mut(&VR_CONFIG).native_resolution = false;
     let mut state = State::new();

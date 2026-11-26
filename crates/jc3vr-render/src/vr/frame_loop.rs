@@ -11,29 +11,32 @@ use std::{
 };
 
 use anyhow::Context as _;
+use jc3vr_core::{frame_timing, frame_timing::Slot};
+use jc3vr_input::frame as controller_frame;
 use openxr as xr;
 use parking_lot::MutexGuard;
 
 use crate::{
-    controllers::{
-        body::rig::origin_provenance::{self, OriginEvidence, OriginUnavailable, TrackingReceipt},
-        frame as controller_frame,
+    controllers::body::rig::{
+        origin_provenance,
+        origin_provenance::{OriginEvidence, OriginUnavailable, TrackingReceipt},
     },
-    frame_timing::{self, Slot},
     recorder::tracking::{CaptureSample, format::EyeSample},
     stereo::engine_context::EngineContext,
     testing::visual::headset,
     vr::{
-        Fov, FreezeMode, OffAxisProjection, VIEW_TYPE, VR_CONFIG, VrConfig,
-        convert::{self, posef, quat, vec3},
+        Fov, FreezeMode, OffAxisProjection, VIEW_TYPE, VR_CONFIG, VrConfig, convert,
+        convert::{posef, quat, vec3},
         input::{
             config::{
                 CONTROLLERS_ENABLED, HAPTICS_ENABLED, HAPTICS_INTENSITY, HapticOutput,
                 INPUT_CONFIG, SamplingConfig,
             },
-            flight_pose::{self, LocatedHead},
+            flight_pose,
+            flight_pose::LocatedHead,
         },
-        live_tracking::{self, LocatedTracking},
+        live_tracking,
+        live_tracking::LocatedTracking,
         pose_control,
         recenter::mid_pose,
         stage,
@@ -181,7 +184,7 @@ fn under_engine_context<R>(f: impl FnOnce() -> R) -> R {
 /// How old the head pose a frame was rendered from is when the frame is submitted: the time from
 /// its `locate_views` to its `xrEndFrame`, summed over the submitted frames that located one, and
 /// their count, since the payload loaded. A sampler takes the difference of two readings.
-pub(crate) fn pose_age_totals() -> (u64, u64) {
+pub fn pose_age_totals() -> (u64, u64) {
     (
         POSE_AGE_NS.load(Ordering::Relaxed),
         POSE_AGES.load(Ordering::Relaxed),
@@ -359,7 +362,7 @@ impl LocatedFrame {
 static HEAD_TRACKED: AtomicBool = AtomicBool::new(true);
 
 /// Whether the last located views had a valid position and orientation.
-pub(crate) fn head_tracked() -> bool {
+pub fn head_tracked() -> bool {
     HEAD_TRACKED.load(Ordering::Relaxed)
 }
 

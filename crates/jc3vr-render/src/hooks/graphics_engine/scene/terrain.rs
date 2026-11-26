@@ -117,7 +117,7 @@ pub fn process_budget_request() {
         return;
     }
     {
-        let Some(mut patcher) = crate::hooks::patcher() else {
+        let Some(mut patcher) = jc3vr_core::hooks::patcher() else {
             tracing::warn!("terrain detail budget: patcher unavailable; skipping");
             return;
         };

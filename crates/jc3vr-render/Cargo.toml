@@ -1,0 +1,59 @@
+[package]
+name = "jc3vr-render"
+version = "0.1.0"
+edition = "2024"
+description = "The render layer of the payload: the OpenXR runtime and input sampling, the head pose, stereo rendering, FSR, the far field, the engine-pipeline hooks, the overlay and scope passes, the tracking recorder, and the render diagnostics."
+publish = false
+
+[features]
+# The in-game profiler's render half (issue #34): the GPU timestamp lane, the render-pass and
+# engine-phase scopes, and the frame-tail scopes. The payload's `profiler` feature forwards here.
+profiler = ["dep:puffin", "jc3vr-core/profiler"]
+# Test fixtures and per-test isolation other crates' tests rely on: the head pose and anchor
+# fixtures, the live input packet's test guard, and the authored camera's per-thread evidence
+# publication.
+test-support = []
+
+[dependencies]
+windows = { workspace = true }
+glam = { workspace = true }
+anyhow = { workspace = true }
+jc3gi = { path = "../../jc3gi" }
+jc3vr-core = { path = "../jc3vr-core" }
+jc3vr-input = { path = "../jc3vr-input" }
+# The engine-pipeline detours. The detour macro emits `::re_utilities` paths, so a crate that
+# defines detours depends on `re-utilities` directly.
+re-utilities = { workspace = true }
+detours-macro = { workspace = true }
+# Runtime (address-resolved) detours for the single-pass D3D11 viewport hook, where the target is a
+# COM vtable slot only known at runtime. Same git source re-utilities already pins, so Cargo unifies
+# on one copy.
+retour = { git = "https://github.com/Hpmason/retour-rs.git" }
+fsr-sys = { path = "../fsr-sys" }
+dxbc-stereo = { path = "../dxbc-stereo" }
+tracking-format = { path = "../tracking-format" }
+body-rig = { path = "../body-rig" }
+# Runtime-loaded; see the payload's manifest for why the loader is not linked statically.
+openxr = "0.21"
+tracing = "0.1"
+# The debug captures register their textures with the debug UI's renderer.
+egui = "0.35"
+egui-directx11 = "0.13"
+# Same rev as the payload's `puffin_egui`, so both agree on the puffin data model.
+puffin = { git = "https://github.com/EmbarkStudios/puffin", rev = "d06bed0fcb8c8e4c78643d4ead7cf1de9b76fd3b", optional = true }
+# `send_guard`: the VR frame context carries the runtime lock's guard for the frame, and the
+# deferred frame tail hands that context to the tail thread to submit.
+parking_lot = { version = "0.12.5", features = ["send_guard"] }
+sha2 = "0.10.9"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# PNG-only: the render-trace screenshot diagnostic encodes eye-0 frames; no other formats needed.
+image = { version = "0.25", default-features = false, features = ["png"] }
+# The capture harness's snapshot dumps compress raw planes with gzip.
+flate2 = "1"
+
+[dev-dependencies]
+jc3vr-core = { path = "../jc3vr-core", features = ["test-support"] }
+pretty_assertions = "1.4.1"
+test-case = "3.3.1"
+toml = "1.1.6"

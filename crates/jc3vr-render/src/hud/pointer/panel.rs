@@ -5,19 +5,17 @@
 use std::time::Instant;
 
 use glam::{Mat4, Vec3, Vec4};
+use jc3vr_input::frame::{MAX_FRAME_AGE, Pose};
 use parking_lot::Mutex;
 
 use crate::{
-    controllers::{
-        cockpit::{CockpitTransform, body_of_head},
-        frame::{MAX_FRAME_AGE, Pose},
-    },
+    controllers::cockpit::{CockpitTransform, body_of_head},
     headpose::xr::CockpitPose,
 };
 
 /// A ray in world space, used by the pure panel intersection helper.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub(crate) struct PanelRay {
+pub struct PanelRay {
     pub(crate) origin: Vec3,
     pub(crate) direction: Vec3,
 }
@@ -26,10 +24,10 @@ pub(crate) struct PanelRay {
 /// records whether the original intersection was inside the displayed panel. `distance` is how far
 /// along the ray the plane lies, in the ray's world units.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub(crate) struct PanelHit {
-    pub(crate) uv: (f32, f32),
-    pub(crate) inside: bool,
-    pub(crate) distance: f32,
+pub struct PanelHit {
+    pub uv: (f32, f32),
+    pub inside: bool,
+    pub distance: f32,
 }
 
 /// The center camera and tracking sample captured together before per-eye offsets.
@@ -93,13 +91,13 @@ pub fn publish_egui_panel(panel: Option<RenderedPanel>) {
 
 /// The world-space aim ray of a cockpit-frame `aim` pose against the latest fresh panel, with the
 /// panel's corners.
-pub(crate) fn aim_at_panel(aim: Pose) -> Option<(PanelRay, [Vec4; 4])> {
+pub fn aim_at_panel(aim: Pose) -> Option<(PanelRay, [Vec4; 4])> {
     aim_at(&RENDERED_PANEL, aim)
 }
 
 /// The world-space aim ray of a cockpit-frame `aim` pose against the latest fresh egui debug
 /// panel, with the panel's corners.
-pub(crate) fn aim_at_egui_panel(aim: Pose) -> Option<(PanelRay, [Vec4; 4])> {
+pub fn aim_at_egui_panel(aim: Pose) -> Option<(PanelRay, [Vec4; 4])> {
     aim_at(&RENDERED_EGUI_PANEL, aim)
 }
 
@@ -107,7 +105,7 @@ pub(crate) fn aim_at_egui_panel(aim: Pose) -> Option<(PanelRay, [Vec4; 4])> {
 /// bottom-right corners. The helper intentionally returns out-of-bounds UVs as a clamped hit: the
 /// pointer state uses those values to keep a captured drag at the panel edge. A new hover only owns
 /// the UI when [`PanelHit::inside`] is true.
-pub(crate) fn intersect_panel(ray: PanelRay, corners: &[Vec4; 4]) -> Option<PanelHit> {
+pub fn intersect_panel(ray: PanelRay, corners: &[Vec4; 4]) -> Option<PanelHit> {
     if !ray.origin.is_finite() || !ray.direction.is_finite() {
         return None;
     }

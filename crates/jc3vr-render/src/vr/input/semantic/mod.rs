@@ -25,20 +25,20 @@
 //! - [`bound`] reduces the runtime's bound sources to the physical inputs each action reads on
 //!   each hand, which the bindings' masks act on.
 
-pub(crate) mod admission;
-pub(crate) mod bound;
-pub(crate) mod defaults;
-pub(crate) mod frame;
-pub(crate) mod history;
-pub(crate) mod vocabulary;
+pub mod admission;
+pub mod bound;
+pub mod defaults;
+pub mod frame;
+pub mod history;
+pub mod vocabulary;
 
 #[cfg(test)]
 mod tests;
 
-pub(crate) use crate::input_core::semantic::{ActionKind, SemanticSet};
+pub use jc3vr_input::semantic::{ActionKind, SemanticSet};
 
 /// The version of the action schema: the sets, their actions, and the actions' types. It is the
 /// OpenXR application version, so a runtime that keys saved bindings on it can tell the schemas
 /// apart. A change to the schema bumps it and adds an entry to the changelog in
 /// `docs/mod/input/controllers.md` ("Action schema").
-pub(crate) const SCHEMA_VERSION: u32 = 6;
+pub const SCHEMA_VERSION: u32 = 6;

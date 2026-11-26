@@ -29,7 +29,7 @@ use std::{
 use anyhow::Context as _;
 use jc3gi::graphics_engine::{graphics_engine::GraphicsEngine, texture::Texture};
 use parking_lot::Mutex;
-pub(crate) use request::{Plane, SnapshotError, SnapshotRequest, SnapshotTable};
+pub use request::{Plane, SnapshotError, SnapshotRequest, SnapshotTable};
 use serde::Serialize;
 use windows::{
     Win32::Graphics::Direct3D11::{ID3D11Device, ID3D11DeviceContext, ID3D11Resource},
@@ -59,7 +59,7 @@ use crate::{
 };
 
 /// Admit a snapshot request. Game thread. A request that cannot start is acknowledged as failed.
-pub(crate) fn request(request: SnapshotRequest) {
+pub fn request(request: SnapshotRequest) {
     let Some(folder) = captures_folder() else {
         tracing::error!("snapshot: no configuration directory");
         return;
@@ -99,7 +99,7 @@ pub(crate) fn request(request: SnapshotRequest) {
 }
 
 /// Release every kept snapshot's textures, and acknowledge with how many there were. Game thread.
-pub(crate) fn release(id: RequestId) {
+pub fn release(id: RequestId) {
     let Some(folder) = captures_folder() else {
         tracing::error!("snapshot: no configuration directory");
         return;
@@ -336,7 +336,7 @@ pub(crate) fn capture(
         return;
     }
     if !crate::vr::is_running_published()
-        || !crate::hooks::in_gameplay()
+        || !jc3vr_core::hooks::in_gameplay()
         || !crate::stereo::active()
         || pending.after == Some(frame)
         || !crate::screenshot::harness::eyes_fresh(frame, selected)
@@ -479,7 +479,7 @@ pub(crate) fn tick() {
 /// Release the snapshots and wait for the writers, for eject. Returns whether every writer
 /// finished.
 #[must_use = "a writer that did not finish means the payload must stay mapped"]
-pub(crate) fn shutdown() -> bool {
+pub fn shutdown() -> bool {
     let writers = {
         let mut state = STATE.lock();
         if let Some(pending) = state.pending.take() {
@@ -899,7 +899,7 @@ fn plane_name(plane: Plane) -> String {
 }
 
 fn captures_folder() -> Option<PathBuf> {
-    crate::config::paths::dir().map(|dir| dir.join("captures"))
+    jc3vr_core::config::engine::paths::dir().map(|dir| dir.join("captures"))
 }
 
 #[derive(Serialize)]

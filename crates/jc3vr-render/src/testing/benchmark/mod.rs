@@ -5,7 +5,7 @@
 //! the foveation at their shipped settings), holds the camera at a fixed pose or moves it along a gentle path while the
 //! clock and the world run on, waits for the shaders and the render size to apply, warms up, and
 //! then records each frame: the frame interval and the always-on frame breakdown's per-thread and
-//! per-slot times (`crate::frame_timing`), the engine's draw calls and the stereo draw path's
+//! per-slot times (`jc3vr_core::frame_timing`), the engine's draw calls and the stereo draw path's
 //! submissions, the draw detours' own cost when asked, and the GPU time of each dispatch from
 //! timestamp queries (`crate::profiler::gpu`). The acknowledgement carries every frame, so the
 //! statistics are computed off line. See `docs/mod/testing/benchmark.md`.
@@ -28,6 +28,11 @@ use std::{
 };
 
 use anyhow::Context as _;
+use jc3vr_core::{
+    config::engine::{Parts, Snapshot, lock_parts},
+    frame_timing,
+    frame_timing::Slot,
+};
 use parking_lot::Mutex;
 use serde::Serialize;
 use windows::{
@@ -35,13 +40,9 @@ use windows::{
     core::HSTRING,
 };
 
-pub(crate) use crate::testing::benchmark::request::{
-    BenchmarkError, BenchmarkRequest, BenchmarkTable,
-};
+pub use crate::testing::benchmark::request::{BenchmarkError, BenchmarkRequest, BenchmarkTable};
 use crate::{
-    config::engine::{Parts, Snapshot, lock_parts},
     far_field::FAR_FIELD_CONFIG,
-    frame_timing::{self, Slot},
     fsr::{AntiAliasing, FSR_CONFIG, FsrConfig},
     hooks::{
         draw_count,
@@ -63,8 +64,8 @@ use crate::{
         visual::{OrientationOffset, TranslationOffset, overrides::SinglePassOverrides},
     },
     vr::{
-        FOVEATION_CONFIG, FoveationConfig, FreezeMode, VR_CONFIG,
-        pose_control::{self, PoseValues},
+        FOVEATION_CONFIG, FoveationConfig, FreezeMode, VR_CONFIG, pose_control,
+        pose_control::PoseValues,
     },
 };
 
@@ -97,7 +98,7 @@ pub(crate) struct GpuDispatchSample {
 
 /// Queue a benchmark run. One runs at a time; a request while another is queued or running is
 /// refused with a failed acknowledgement.
-pub(crate) fn request(request: BenchmarkRequest) {
+pub fn request(request: BenchmarkRequest) {
     let mut state = STATE.lock();
     if state.pending.is_some() || state.run.is_some() {
         drop(state);
@@ -112,7 +113,7 @@ pub(crate) fn request(request: BenchmarkRequest) {
 
 /// Advance the queued or running benchmark by one frame. Game thread, once per frame, from the top
 /// of the game's update.
-pub(crate) fn tick() {
+pub fn tick() {
     let now = Instant::now();
     let mut state = STATE.lock();
     if state.run.is_none()
@@ -180,7 +181,7 @@ pub(crate) fn note_draw_thread() {
 }
 
 /// Stop any run, for eject, putting the configuration back.
-pub(crate) fn shutdown() {
+pub fn shutdown() {
     disarm();
     let mut state = STATE.lock();
     state.pending = None;
@@ -262,7 +263,7 @@ struct RunResult {
 }
 
 fn start(state: &mut State, request: BenchmarkRequest, now: Instant) -> Result<Run, String> {
-    if !crate::hooks::in_gameplay() || !crate::vr::is_running_published() {
+    if !jc3vr_core::hooks::in_gameplay() || !crate::vr::is_running_published() {
         return Err("benchmark: the game is not in gameplay with a VR session running".to_owned());
     }
     let single_pass_on = request.mode == BenchmarkMode::SinglePass;
@@ -619,7 +620,7 @@ impl Environment {
             foveation_enabled: foveation,
             far_field_enabled: far_field,
             overlap_render_update: overlap,
-            large_cache_mask: crate::cpu_placement::applied_mask().map(|mask| mask as u64),
+            large_cache_mask: jc3vr_core::cpu_placement::applied_mask().map(|mask| mask as u64),
             clock_pair_ns: detour_timing::clock_pair_ns(10_000),
         }
     }
@@ -799,7 +800,8 @@ fn publish_failure(request: &BenchmarkRequest, error: String) {
 }
 
 fn write_ack(request: &BenchmarkRequest, ack: &BenchmarkAck<'_>) {
-    let Some(folder) = crate::config::paths::dir().map(|dir| dir.join("captures")) else {
+    let Some(folder) = jc3vr_core::config::engine::paths::dir().map(|dir| dir.join("captures"))
+    else {
         tracing::error!("benchmark: no configuration directory for the acknowledgement");
         return;
     };

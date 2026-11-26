@@ -32,19 +32,18 @@ use parking_lot::Mutex;
 
 use crate::{headpose::config::HEADPOSE_CONFIG, vr::VR_CONFIG};
 
-pub(crate) mod anchors;
-pub(crate) mod animation;
+pub mod anchors;
+pub mod animation;
 pub mod config;
 pub mod follow;
 pub(crate) mod participants;
 pub mod sim;
-pub(crate) mod skeleton;
+pub mod skeleton;
 pub mod teleport;
 pub mod xr;
 
 pub use config::HeadPoseConfig;
-pub use participants::FrameTelemetry;
-pub(crate) use participants::{HeadParticipants, register_head_participants};
+pub use participants::{FrameTelemetry, HeadParticipants, register_head_participants};
 
 /// Which source currently owns the published headpose. The flatscreen [`sim`] and the VR [`xr`]
 /// source are mutually exclusive publishers; the arbiter is a plain atomic so the sim's per-tick
@@ -164,7 +163,7 @@ pub struct Anchors {
 }
 
 /// Publish a collapsed anchor sample for non-historical callers.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub fn set_anchors(anchors: Anchors) {
     let geometry = anchors::Geometry::from_anchors(anchors, glam::Mat4::IDENTITY);
     set_anchor_pair([geometry; 2]);
@@ -172,7 +171,7 @@ pub fn set_anchors(anchors: Anchors) {
 
 /// Publish the complete pre-override endpoints captured on distinct simulation ticks.
 /// Invalid geometry withdraws the whole pair rather than retaining individual old components.
-pub(crate) fn set_anchor_pair(pair: [anchors::Geometry; 2]) {
+pub fn set_anchor_pair(pair: [anchors::Geometry; 2]) {
     if !pair.into_iter().all(anchors::Geometry::valid) {
         withdraw_anchors();
         return;
@@ -193,12 +192,12 @@ pub(crate) fn set_anchor_pair(pair: [anchors::Geometry; 2]) {
 }
 
 /// Read both complete endpoints from the same publication.
-pub(crate) fn anchor_pair() -> Option<[anchors::Geometry; 2]> {
+pub fn anchor_pair() -> Option<[anchors::Geometry; 2]> {
     state().lock().anchor_pair
 }
 
 /// The filtered synthetic head frame relative to the captured root. Tracking is not part of it.
-pub(crate) fn animation_rotation(current: bool) -> Quat {
+pub fn animation_rotation(current: bool) -> Quat {
     let pair = anchor_pair();
     pair.map_or(Quat::IDENTITY, |pair| {
         pair[usize::from(current || pair[0].collapsed)].animation_rotation
@@ -206,7 +205,7 @@ pub(crate) fn animation_rotation(current: bool) -> Quat {
 }
 
 /// Withdraw simulation anchor authority while leaving the separately published display pose alone.
-pub(crate) fn withdraw_anchors() {
+pub fn withdraw_anchors() {
     state().lock().withdraw_anchors();
 }
 

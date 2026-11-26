@@ -33,33 +33,33 @@ pub struct MirrorDraw {
 
 /// The overlay textures the mirror composites over the eye images.
 #[derive(Clone, Copy)]
-pub(crate) struct MirrorLayers {
+pub struct MirrorLayers {
     /// The floating panel's texture, while the panel is up and has drawn.
-    pub(crate) panel_srv: fn() -> Option<ID3D11ShaderResourceView>,
+    pub panel_srv: fn() -> Option<ID3D11ShaderResourceView>,
     /// The flat debug overlay's offscreen texture, while it holds a frame.
-    pub(crate) overlay_srv: fn() -> Option<ID3D11ShaderResourceView>,
+    pub overlay_srv: fn() -> Option<ID3D11ShaderResourceView>,
 }
 
 /// The observer of the mirror's presents.
 #[derive(Clone, Copy)]
-pub(crate) struct MirrorObserver {
+pub struct MirrorObserver {
     /// Whether anything records the mirror window, so the frame stamp means something.
-    pub(crate) records_mirror: fn() -> bool,
+    pub records_mirror: fn() -> bool,
     /// The layout of a present, after it.
-    pub(crate) note_mirror: fn(MirrorFrame),
+    pub note_mirror: fn(MirrorFrame),
     /// A present's counter, and whether the frame stamp drew it into the window.
-    pub(crate) note_present: fn(u32, bool),
+    pub note_present: fn(u32, bool),
 }
 
 /// Register the mirror's overlay textures. The first registration stands.
-pub(crate) fn register_mirror_layers(layers: MirrorLayers) {
+pub fn register_mirror_layers(layers: MirrorLayers) {
     if LAYERS.set(layers).is_err() {
         tracing::warn!("vr: mirror layers are already registered; the new ones are ignored");
     }
 }
 
 /// Register the mirror's observer. The first registration stands.
-pub(crate) fn register_mirror_observer(observer: MirrorObserver) {
+pub fn register_mirror_observer(observer: MirrorObserver) {
     if OBSERVER.set(observer).is_err() {
         tracing::warn!("vr: a mirror observer is already registered; the new one is ignored");
     }

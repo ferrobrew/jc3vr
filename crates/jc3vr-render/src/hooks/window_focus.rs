@@ -24,7 +24,7 @@ use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 use windows::Win32::{Foundation::HWND, UI::WindowsAndMessaging::GetForegroundWindow};
 
-pub(crate) fn hook_library() -> HookLibrary {
+pub fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_static_binder(&LOSE_FOCUS_BINDER)
         .with_static_binder(&GAIN_FOCUS_BINDER)
@@ -36,7 +36,7 @@ pub(crate) fn hook_library() -> HookLibrary {
 /// load reaches gameplay. Runs the engine's own resume (`window::GainFocus`), which restores what
 /// `window::LoseFocus` changed, then puts the keyboard and mouse focus back in line with the
 /// desktop. Call on the game thread at the top of `Game::Update`.
-pub(crate) fn resume_for_vr() {
+pub fn resume_for_vr() {
     // SAFETY: the main loop and `Game::Update` share the game thread, the only writer of the flag.
     if !crate::vr::is_running_published() || !unsafe { *get_SuspendGame() } {
         return;

@@ -24,15 +24,12 @@ use jc3gi::graphics_engine::{
     render_engine::{RenderBlockTypeBase, RenderEngine},
     render_pass::RenderPass,
 };
+use jc3vr_core::profiler::{self, type_scope};
 use re_utilities::hook_library::HookLibrary;
 
-use crate::profiler::{
-    self,
-    gpu::{self, GpuSeam},
-    type_scope,
-};
+use crate::profiler::gpu::{self, GpuSeam};
 
-pub(crate) fn hook_library() -> HookLibrary {
+pub fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_static_binder(&DRAW_GBUFFER_BINDER)
         .with_static_binder(&RENDER_ENGINE_DRAW_BINDER)

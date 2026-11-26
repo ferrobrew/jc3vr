@@ -8,10 +8,10 @@
 
 use std::collections::BTreeMap;
 
+use jc3vr_core::config::engine::Parts;
 use serde::{Deserialize, Serialize, Serializer, ser::SerializeMap as _};
 
 use crate::{
-    config::engine::Parts,
     fsr::{AntiAliasing, FSR_CONFIG, FsrConfig},
     hooks::graphics_engine::config::{EXPOSURE_CONFIG, ExposureConfig, POST_FX_CONFIG},
     stereo::{
@@ -25,13 +25,13 @@ use crate::{
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum SunShadowsOverride {
+pub enum SunShadowsOverride {
     Disabled,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum ReflectionOverride {
+pub enum ReflectionOverride {
     Enabled,
     /// Leave the screen-space reflections out in every mode, to attribute a difference to them.
     Disabled,
@@ -40,21 +40,21 @@ pub(crate) enum ReflectionOverride {
 /// Put back, in every mode, a setting the profile turns off or pins, at the value the mod ships with.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum ShippedOverride {
+pub enum ShippedOverride {
     Enabled,
 }
 
 /// Leave FSR's stereo motion-vector correction out in every mode, to attribute a difference to it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum CorrectionOverride {
+pub enum CorrectionOverride {
     Disabled,
 }
 
 /// Leave out an ambient-occlusion source in every mode, to attribute a difference to it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum AmbientOcclusionOverride {
+pub enum AmbientOcclusionOverride {
     Disabled,
 }
 
@@ -62,7 +62,7 @@ pub(crate) enum AmbientOcclusionOverride {
 /// exactly. Within [`ResolutionScaleOverride::MIN`] and [`ResolutionScaleOverride::MAX`]: the top
 /// is twice the session's pixels, past which the card's video memory runs out at the headset's size.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct ResolutionScaleOverride(u16);
+pub struct ResolutionScaleOverride(u16);
 
 impl ResolutionScaleOverride {
     pub(crate) const MIN: f64 = 0.5;
@@ -96,7 +96,7 @@ impl Serialize for ResolutionScaleOverride {
 /// FSR's sharpening strength in every mode, in place of the shipped one, held in thousandths so the
 /// overrides compare exactly. Within [0, 1].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct SharpnessOverride(u16);
+pub struct SharpnessOverride(u16);
 
 impl SharpnessOverride {
     pub(crate) fn sharpness(self) -> f32 {
@@ -125,7 +125,7 @@ impl Serialize for SharpnessOverride {
 /// A tuning value of the mod's temporal resolve in every mode, in place of the shipped one, held
 /// in thousandths so the overrides compare exactly. Within [0, 4].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct TaaTuningOverride(u16);
+pub struct TaaTuningOverride(u16);
 
 impl TaaTuningOverride {
     pub(crate) fn value(self) -> f32 {
@@ -154,14 +154,14 @@ impl Serialize for TaaTuningOverride {
 /// Restrict the stage images every capture writes, to keep captures at a large eye size small.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum StagesOverride {
+pub enum StagesOverride {
     /// Only the geometry stages: the depth, the albedo and normal G-buffers, and the velocity.
     Geometry,
 }
 
 /// A validated, nonempty set of overrides. Each kind is independent of the others.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-pub(crate) struct VisualOverrides {
+pub struct VisualOverrides {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sun_shadows: Option<SunShadowsOverride>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -240,7 +240,7 @@ pub(crate) struct VisualOverrides {
 /// The `[visual_overrides]` table of a request file, before validation.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct VisualOverridesTable {
+pub struct VisualOverridesTable {
     sun_shadows: Option<SunShadowsOverride>,
     screen_space_reflections: Option<ReflectionOverride>,
     ssao: Option<AmbientOcclusionOverride>,
@@ -272,7 +272,7 @@ pub(crate) struct VisualOverridesTable {
 /// is forced, and one for the value it is forced to. Packed, since a request carries one and the
 /// switch list keeps growing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub(crate) struct SinglePassOverrides {
+pub struct SinglePassOverrides {
     forced: u128,
     values: u128,
 }
@@ -280,7 +280,7 @@ pub(crate) struct SinglePassOverrides {
 const _: () = assert!(SinglePassSwitch::COUNT <= u128::BITS as usize);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum OverrideError {
+pub enum OverrideError {
     /// The table names no override at all.
     Empty,
     /// The `single_pass` table is present but names no switch.
@@ -380,7 +380,7 @@ impl TryFrom<VisualOverridesTable> for VisualOverrides {
 
 impl VisualOverrides {
     /// Check the overrides against the mode they are requested with.
-    pub(crate) fn validate_for(&self, mode: RenderMode) -> Result<(), OverrideError> {
+    pub fn validate_for(&self, mode: RenderMode) -> Result<(), OverrideError> {
         if !self.single_pass.is_empty() && mode != RenderMode::SinglePass {
             return Err(OverrideError::SinglePassOnMode(mode));
         }
@@ -497,12 +497,12 @@ impl SinglePassOverrides {
         Ok(overrides)
     }
 
-    pub(crate) fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.forced == 0
     }
 
     /// The overridden switches and their values, in [`SinglePassSwitch::ALL`] order.
-    pub(crate) fn iter(&self) -> impl Iterator<Item = (SinglePassSwitch, bool)> + '_ {
+    pub fn iter(&self) -> impl Iterator<Item = (SinglePassSwitch, bool)> + '_ {
         SinglePassSwitch::ALL
             .iter()
             .filter(|&&switch| self.forced & (1 << switch as usize) != 0)
@@ -528,10 +528,10 @@ impl Serialize for SinglePassOverrides {
 
 #[cfg(test)]
 mod tests {
+    use jc3vr_core::config::engine::Snapshot;
     use pretty_assertions::assert_eq;
 
     use super::*;
-    use crate::config::engine::Snapshot;
 
     fn parse(text: &str) -> Result<VisualOverrides, OverrideError> {
         VisualOverrides::try_from(toml::from_str::<VisualOverridesTable>(text).unwrap())
@@ -589,6 +589,7 @@ mod tests {
 
     #[test]
     fn a_resolution_scale_applies_within_its_range() {
+        crate::test_config::register();
         let overrides = parse("resolution_scale = 1.414\n").unwrap();
         let mut config = Snapshot::defaults();
         overrides.apply(&mut config);
@@ -621,6 +622,7 @@ mod tests {
 
     #[test]
     fn apply_sets_only_the_named_switches() {
+        crate::test_config::register();
         let overrides = parse("[single_pass]\nssr_per_eye = false\n").unwrap();
         let mut config = Snapshot::defaults();
         let before = config.part(&STEREO_CONFIG).single_pass;
@@ -643,6 +645,7 @@ mod tests {
 
     #[test]
     fn shipped_behaviours_are_restored_in_any_mode() {
+        crate::test_config::register();
         let overrides = parse(
             "fsr = 'enabled'\nfoveation = 'enabled'\nauto_exposure = 'enabled'\n\
              screen_fade = 'enabled'\nplayer_damage = 'enabled'\n",
@@ -709,6 +712,7 @@ mod tests {
 
     #[test]
     fn the_fsr_correction_can_be_left_out_in_any_mode() {
+        crate::test_config::register();
         let overrides = parse("fsr_mv_correction = 'disabled'\n").unwrap();
         assert_eq!(overrides.validate_for(RenderMode::LeftOnly), Ok(()));
         let mut config = Snapshot::defaults();
@@ -723,6 +727,7 @@ mod tests {
 
     #[test]
     fn fsrs_jitter_sharpening_and_the_game_anti_aliasing_can_be_overridden() {
+        crate::test_config::register();
         let overrides = parse(
             "fsr = 'enabled'\nfsr_jitter = 'disabled'\nfsr_sharpness = 0.45\n\
              anti_aliasing = 'disabled'\n",
@@ -756,6 +761,7 @@ mod tests {
 
     #[test]
     fn a_headset_rig_applies_in_any_mode_and_leaves_the_config_alone() {
+        crate::test_config::register();
         let overrides = parse("headset = 'index'\n").unwrap();
         assert_eq!(overrides.headset, Some(HeadsetRig::Index));
         for mode in [
@@ -791,6 +797,7 @@ mod tests {
 
     #[test]
     fn ambient_occlusion_sources_can_be_left_out_in_any_mode() {
+        crate::test_config::register();
         let overrides = parse(
             "ssao = 'disabled'
 ao_volumes = 'disabled'

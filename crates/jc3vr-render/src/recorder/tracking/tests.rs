@@ -1,9 +1,10 @@
 //! The tracking recorder's writer ownership, capture draining, and capture batch wire.
 
+use jc3vr_input::frame::Hand;
 use tracking_format::input::DiscontinuityReason;
 
 use super::*;
-use crate::{controllers::frame::Hand, vr::stage::StageInfo};
+use crate::vr::stage::StageInfo;
 
 pub(super) fn assert_active_failure_transition(completion: writer::Completion) {
     let _serial = history::TEST_LOCK.lock();

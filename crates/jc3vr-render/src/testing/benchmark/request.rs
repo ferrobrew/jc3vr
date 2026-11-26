@@ -20,7 +20,7 @@ pub(crate) enum BenchmarkMode {
 /// The `[benchmark]` table of a `benchmark` request file.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct BenchmarkTable {
+pub struct BenchmarkTable {
     /// The name the run is reported under.
     label: String,
     mode: BenchmarkMode,
@@ -113,9 +113,9 @@ impl CameraPath {
 
 /// A validated benchmark request.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct BenchmarkRequest {
+pub struct BenchmarkRequest {
     pub(crate) id: RequestId,
-    pub(crate) label: String,
+    pub label: String,
     pub(crate) mode: BenchmarkMode,
     pub(crate) warmup_seconds: f64,
     pub(crate) record_seconds: f64,
@@ -127,7 +127,7 @@ pub(crate) struct BenchmarkRequest {
     pub(crate) install_draw_detours: bool,
     pub(crate) recapture_camera: bool,
     pub(crate) restore: bool,
-    pub(crate) switches: SinglePassOverrides,
+    pub switches: SinglePassOverrides,
     pub(crate) overlap_render_update: Option<bool>,
     pub(crate) fsr: Option<bool>,
     pub(crate) taa: Option<bool>,
@@ -140,7 +140,7 @@ pub(crate) struct BenchmarkRequest {
 
 /// Why a benchmark table is refused.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) enum BenchmarkError {
+pub enum BenchmarkError {
     Label,
     Warmup(f64),
     Record(f64),
@@ -191,7 +191,7 @@ pub(crate) const MAX_WARMUP_SECONDS: f64 = 60.0;
 pub(crate) const MAX_RECORD_SECONDS: f64 = 120.0;
 
 impl BenchmarkRequest {
-    pub(crate) fn parse(id: RequestId, table: BenchmarkTable) -> Result<Self, BenchmarkError> {
+    pub fn parse(id: RequestId, table: BenchmarkTable) -> Result<Self, BenchmarkError> {
         if RequestId::parse(&table.label).is_err() {
             return Err(BenchmarkError::Label);
         }

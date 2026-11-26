@@ -40,10 +40,9 @@ use jc3gi::graphics_engine::{
     render_block::RenderBlockTypeGeneralMkIII,
     render_engine::RenderEngine,
 };
+use jc3vr_core::util::bump;
 use parking_lot::Mutex;
 use windows::{Win32::Graphics::Direct3D11::ID3D11InputLayout, core::Interface};
-
-use crate::util::bump;
 
 /// Whether this thread is replaying the type's `Create` on the scratch copy, which the replay
 /// detours consult to suppress everything but the instanced declarations.
@@ -169,7 +168,7 @@ pub(super) fn take_counts() -> (usize, usize) {
 }
 
 /// A one-line status for the debug UI.
-pub(crate) fn status() -> String {
+pub fn status() -> String {
     match &*STATE.lock() {
         State::Unbuilt => "twins not built yet (built at the first single-pass dispatch)".into(),
         State::Built(twins) => format!("{} layouts twinned", twins.by_layout.len()),

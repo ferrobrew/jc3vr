@@ -11,15 +11,14 @@ use jc3gi::{
     character::character::{AnimationController, Character},
     types::{math::Matrix4, shared_ptr::SharedPtr},
 };
+use jc3vr_core::hash::{StateTable, hashlittle};
 
-use crate::{
-    hash::{StateTable, hashlittle},
-    hooks::camera::authored::{
-        Refusal,
-        composition::Trs,
-        evidence::{self, Animation, Clip, ClipSource},
-        policy::{GraphState, HangingState},
-    },
+use crate::hooks::camera::authored::{
+    Refusal,
+    composition::Trs,
+    evidence,
+    evidence::{Animation, Clip, ClipSource},
+    policy::{GraphState, HangingState},
 };
 
 /// All native pointers are used only during capture; publication contains owned values.
@@ -127,14 +126,19 @@ pub(super) unsafe fn read(character: &Character) -> Result<NativeSample, Refusal
 }
 
 /// The selected range and producer buffers immediately before a synchronous update.
-pub(crate) struct AnimationEvaluation {
+pub struct AnimationEvaluation {
     controller: u64,
     num_of_bones: i32,
     before: ProducerBuffers,
 }
 
 /// Snapshots typed producer state without retaining native pointers across the call.
-pub(crate) unsafe fn animation_evaluation(
+///
+/// # Safety
+///
+/// `controller` must be a live animation controller whose pose producer pointer, when non-null,
+/// points at a live producer, as the animation hooks receive it from the engine.
+pub unsafe fn animation_evaluation(
     controller: &AnimationController,
     num_of_bones: i32,
 ) -> Option<AnimationEvaluation> {
@@ -147,7 +151,12 @@ pub(crate) unsafe fn animation_evaluation(
 
 /// Observe only the controller supplied by the serialized animation hook.
 /// Time-only, skipped, and camera-excluding updates invalidate the previous evidence.
-pub(crate) unsafe fn animation_update(
+///
+/// # Safety
+///
+/// `controller` must be a live animation controller whose pose producer pointer, when non-null,
+/// points at a live producer, as the animation hooks receive it from the engine.
+pub unsafe fn animation_update(
     controller: &AnimationController,
     evaluation: Option<AnimationEvaluation>,
 ) {

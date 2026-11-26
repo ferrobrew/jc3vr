@@ -2335,6 +2335,39 @@ dependencies = [
 ]
 
 [[package]]
+name = "jc3vr-render"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "body-rig",
+ "detours-macro",
+ "dxbc-stereo",
+ "egui",
+ "egui-directx11",
+ "flate2",
+ "fsr-sys",
+ "glam",
+ "image",
+ "jc3gi",
+ "jc3vr-core",
+ "jc3vr-input",
+ "openxr",
+ "parking_lot",
+ "pretty_assertions",
+ "puffin 0.20.0 (git+https://github.com/EmbarkStudios/puffin?rev=d06bed0fcb8c8e4c78643d4ead7cf1de9b76fd3b)",
+ "re-utilities",
+ "retour",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "test-case",
+ "toml 1.1.6+spec-1.1.0",
+ "tracing",
+ "tracking-format",
+ "windows 0.62.2",
+]
+
+[[package]]
 name = "jc3vr_injector"
 version = "0.1.0"
 dependencies = [
@@ -2361,18 +2394,15 @@ dependencies = [
  "clipboard-win",
  "detours-macro",
  "directories",
- "dxbc-stereo",
  "egui",
  "egui-directx11",
  "egui_dock",
  "erased-serde",
- "flate2",
- "fsr-sys",
  "glam",
- "image",
  "jc3gi",
  "jc3vr-core",
  "jc3vr-input",
+ "jc3vr-render",
  "jiff",
  "openxr",
  "parking_lot",
@@ -2381,12 +2411,10 @@ dependencies = [
  "puffin 0.20.0 (git+https://github.com/EmbarkStudios/puffin?rev=d06bed0fcb8c8e4c78643d4ead7cf1de9b76fd3b)",
  "puffin_egui",
  "re-utilities",
- "retour",
  "serde",
  "serde_ignored",
  "serde_json",
  "serde_path_to_error",
- "sha2 0.10.9",
  "smol_str",
  "test-case",
  "toml 1.1.6+spec-1.1.0",

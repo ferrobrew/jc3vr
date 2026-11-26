@@ -12,7 +12,7 @@ use windows::Win32::{
 
 /// The game window's client size (`width`, `height`) in pixels, or `None` if it cannot be read or is
 /// degenerate.
-pub(crate) fn client_size() -> Option<(u32, u32)> {
+pub fn client_size() -> Option<(u32, u32)> {
     let (left, top, right, bottom) = rect()?;
     let (w, h) = (right - left, bottom - top);
     (w > 0 && h > 0).then_some((w as u32, h as u32))
@@ -21,7 +21,7 @@ pub(crate) fn client_size() -> Option<(u32, u32)> {
 /// The game window's title, or `None` if it cannot be read or is empty. Read with
 /// `InternalGetWindowText`, which copies the stored text without sending the window a message, so
 /// it cannot wait on the window's thread whatever thread calls it.
-pub(crate) fn title() -> Option<String> {
+pub fn title() -> Option<String> {
     let hwnd: HWND = unsafe { get_graphics_params() }.m_Hwnd;
     let mut buffer = [0u16; 256];
     // SAFETY: `hwnd` is the live game window handle; the call writes at most `buffer.len()` units.

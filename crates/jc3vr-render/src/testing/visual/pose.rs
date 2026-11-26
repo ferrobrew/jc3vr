@@ -7,7 +7,7 @@ use crate::{
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum PoseError {
+pub enum PoseError {
     InvalidCaseId(&'static str),
     NonFiniteAngle(&'static str),
     AngleOutOfRange(&'static str),
@@ -47,7 +47,7 @@ impl std::fmt::Display for PoseError {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
-pub(crate) struct OrientationOffset {
+pub struct OrientationOffset {
     pub yaw_deg: f32,
     pub pitch_deg: f32,
     pub roll_deg: f32,
@@ -65,7 +65,7 @@ impl OrientationOffset {
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
-pub(crate) struct TranslationOffset {
+pub struct TranslationOffset {
     pub right: f32,
     pub up: f32,
     pub forward: f32,
@@ -101,7 +101,7 @@ impl TranslationOffset {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct PoseTable {
+pub struct PoseTable {
     case_id: String,
     yaw_deg: f32,
     pitch_deg: f32,
@@ -116,7 +116,7 @@ pub(crate) struct PoseTable {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "PoseTable")]
-pub(crate) struct PoseRequest {
+pub struct PoseRequest {
     case_id: RequestId,
     yaw_deg: f32,
     pitch_deg: f32,
@@ -219,7 +219,7 @@ impl TryFrom<PoseTable> for PoseRequest {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct AnchorTable {
+pub struct AnchorTable {
     position: [f32; 3],
     orientation: [f32; 4],
 }
@@ -230,12 +230,12 @@ pub(crate) struct AnchorTable {
 /// apart; a pinned anchor makes every configuration that names it render from the same pose to the
 /// bit, whatever was live when it began.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) struct AnchorPin {
+pub struct AnchorPin {
     values: PoseValues,
 }
 
 impl AnchorPin {
-    pub(crate) fn values(self) -> PoseValues {
+    pub fn values(self) -> PoseValues {
         self.values
     }
 }
@@ -259,7 +259,7 @@ impl TryFrom<AnchorTable> for AnchorPin {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
-pub(crate) struct PoseTransform {
+pub struct PoseTransform {
     pub position: [f32; 3],
     pub orientation: [f32; 4],
 }
@@ -274,7 +274,7 @@ impl From<PoseValues> for PoseTransform {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub(crate) struct PoseEvidence {
+pub struct PoseEvidence {
     pub case_id: RequestId,
     pub offset: OrientationOffset,
     #[serde(default)]
@@ -284,7 +284,7 @@ pub(crate) struct PoseEvidence {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) enum PoseFrame {
+pub enum PoseFrame {
     NotRequested,
     Defer,
     Apply(PoseValues),
@@ -296,7 +296,7 @@ const TRANSLATION_LIMIT: f32 = 5000.0;
 const POSE_ORIENTATION_TOLERANCE: f32 = 1e-5;
 const ANCHOR_UNIT_TOLERANCE: f32 = 1e-3;
 
-pub(crate) fn pose_frame(
+pub fn pose_frame(
     request: Option<&PoseRequest>,
     frame_identity: Option<i64>,
     rendered: Option<(PoseValues, PoseValues)>,
@@ -322,7 +322,7 @@ pub(crate) fn pose_frame(
     }
 }
 
-pub(crate) fn pose_matches(actual: PoseValues, target: PoseValues) -> bool {
+pub fn pose_matches(actual: PoseValues, target: PoseValues) -> bool {
     actual.position.is_finite()
         && target.position.is_finite()
         && actual.position.distance(target.position) <= POSE_POSITION_TOLERANCE

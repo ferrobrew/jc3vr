@@ -93,7 +93,7 @@ pub fn dispatch(
     layout: EyeLayout,
     tuning: TaaConfig,
 ) -> bool {
-    if crate::is_shutting_down() {
+    if jc3vr_core::is_shutting_down() {
         return false;
     }
     let width = u32::from(textures.slot_color.m_Width);
@@ -220,7 +220,10 @@ pub fn dispatch(
 }
 
 /// The committed, precompiled resolve compute shader (entry point `main`, `cs_5_0`).
-const RESOLVE_DXBC: &[u8] = include_bytes!("../shaders/taa_resolve.dxbc");
+const RESOLVE_DXBC: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/shaders/taa_resolve.dxbc"
+));
 
 /// Compute-shader thread-group size (must match `[numthreads(8, 8, 1)]` in the HLSL).
 const GROUP: u32 = 8;

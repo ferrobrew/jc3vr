@@ -10,7 +10,8 @@ use std::fmt;
 use tracking_format::model::{ActionState, ActionValue, SemanticSet, SetState};
 
 /// The payload's snapshot of its semantic action schema.
-pub const GOLDEN: &str = include_str!("../../../payload/src/vr/input/semantic/schema.golden");
+pub const GOLDEN: &str =
+    include_str!("../../../crates/jc3vr-render/src/vr/input/semantic/schema.golden");
 
 /// The schema: its version and each semantic set's actions.
 #[derive(Debug, Clone, PartialEq)]

@@ -43,7 +43,9 @@ use crate::controllers::{
             native::{self, CockpitFit, NativeStick},
         },
         tuning::PhysicalControlsTuning,
-        wheel::{self, BarsFrame, PartWheel, WheelFrame, WheelPartView, WheelSource},
+        wheel::{
+            self, BarsFrame, CockpitParts as _, PartWheel, WheelFrame, WheelPartView, WheelSource,
+        },
         wheel_render::RenderWheel,
     },
 };

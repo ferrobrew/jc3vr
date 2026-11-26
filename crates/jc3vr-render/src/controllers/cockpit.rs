@@ -12,8 +12,9 @@
 //! view.
 
 use glam::{Quat, Vec3};
+use jc3vr_input::frame::Pose;
 
-use crate::{controllers::frame::Pose, headpose, hooks};
+use crate::{headpose, hooks};
 
 /// The map between the world and the cockpit frame at one moment: the cockpit frame's
 /// `head_cockpit` sits at the world's `head_world`, turned by `body` and scaled by `world_scale`.

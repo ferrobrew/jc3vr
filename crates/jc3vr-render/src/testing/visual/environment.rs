@@ -3,16 +3,15 @@
 //! when the visual control ends.
 
 use jc3gi::environment::{LandscapeManager, Weather, WeatherController, WorldTime};
+use jc3vr_core::hooks::in_gameplay;
 use serde::{Deserialize, Serialize};
-
-use crate::hooks::in_gameplay;
 
 /// How far the observed hour may differ from the requested hour after `SetTimeOfDay`.
 pub(crate) const HOUR_TOLERANCE: f32 = 1e-4;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum WeatherControl {
+pub enum WeatherControl {
     Sunny,
     Rain,
     Snow,
@@ -20,7 +19,7 @@ pub(crate) enum WeatherControl {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
-pub(crate) struct EnvironmentMetadata {
+pub struct EnvironmentMetadata {
     pub hour: f32,
     pub day_cycle_speed: f32,
     pub weather_severity: f32,
@@ -73,13 +72,13 @@ impl EnvironmentWeather {
 
 #[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct EnvironmentTable {
+pub struct EnvironmentTable {
     hour: f32,
     weather: EnvironmentWeather,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) struct EnvironmentRequest {
+pub struct EnvironmentRequest {
     hour: f32,
     weather: EnvironmentWeather,
 }
@@ -105,7 +104,7 @@ impl TryFrom<EnvironmentTable> for EnvironmentRequest {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) enum EnvironmentError {
+pub enum EnvironmentError {
     NotInGameplay,
     WorldTimeUnavailable,
     WeatherUnavailable,
@@ -147,7 +146,7 @@ impl std::fmt::Display for EnvironmentError {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) struct WorldTimeSnapshot {
+pub struct WorldTimeSnapshot {
     hour: f32,
     speed: f32,
     pause: f32,
@@ -170,7 +169,7 @@ impl WorldTimeSnapshot {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct EnvironmentControl {
+pub struct EnvironmentControl {
     saved: WorldTimeSnapshot,
     observed: Option<EnvironmentMetadata>,
 }
@@ -246,7 +245,7 @@ pub(crate) fn apply(request: &EnvironmentRequest) -> Result<EnvironmentMetadata,
 /// for a scene being staged with the clock running, so the weather and the time of day have run
 /// for a while before a configuration holds them. The configuration that follows applies the same
 /// request with [`apply`], and its restore returns the weather to the ambient system.
-pub(crate) fn preview(request: &EnvironmentRequest) -> Result<(), EnvironmentError> {
+pub fn preview(request: &EnvironmentRequest) -> Result<(), EnvironmentError> {
     available()?;
     let time = unsafe { WorldTime::get() }.ok_or(EnvironmentError::WorldTimeUnavailable)?;
     unsafe { time.SetTimeOfDay(request.hour) };

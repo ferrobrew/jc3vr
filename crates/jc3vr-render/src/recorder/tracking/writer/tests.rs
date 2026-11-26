@@ -1,8 +1,8 @@
+use jc3vr_input::frame::{ActionSetKind, HandFrame, HandJoint};
 use tracking_format::{Header, StartMarker, model::Hand};
 
 use super::*;
 use crate::{
-    controllers::frame::{ActionSetKind, HandFrame, HandJoint},
     recorder::tracking::{
         encode_capture,
         format::{ControllerSample, Frame, SessionSample},
@@ -154,7 +154,7 @@ fn recordings_start_with_the_version_4_chunked_preamble() {
             transform: [0.0; 16],
             bookmark: None,
         },
-        dominant_hand: crate::controllers::frame::Hand::Right,
+        dominant_hand: jc3vr_input::frame::Hand::Right,
         world_scale: 1.0,
         time_scale: 1.0,
     };
@@ -495,6 +495,7 @@ fn writer_codec_failure_keeps_prior_complete_chunks_and_exact_error() {
 
 #[test]
 fn stopped_writer_reports_accepted_write_marker_flush_and_sync_failures() {
+    crate::test_config::register();
     for (fault, expected, written) in [
         (Fault::Write(1), "record write", 0),
         (Fault::Write(2), "final input loss write", 1),
@@ -563,6 +564,7 @@ fn partial_accepted_write_is_counted_before_its_error() {
 
 #[test]
 fn active_sink_panic_preserves_exact_cause_and_bytes_through_fail_stop_reap() {
+    crate::test_config::register();
     let (mut writer, receiver) = writer();
     writer.finish();
     let shared = Arc::clone(&writer.shared);

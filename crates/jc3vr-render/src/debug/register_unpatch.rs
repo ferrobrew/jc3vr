@@ -1,8 +1,10 @@
-//! The debug tools' step at hook removal ([`crate::hooks::register_pre_unpatch`]).
+//! The debug tools' step at hook removal ([`jc3vr_core::hooks::register_pre_unpatch`]).
 
-use crate::{debug::texture_census, hooks};
+use jc3vr_core::hooks;
 
-pub(crate) fn register() {
+use crate::debug::texture_census;
+
+pub fn register() {
     hooks::register_pre_unpatch(texture_census_unarmed);
 }
 

@@ -124,6 +124,7 @@ fn claims_only_the_sun_pass() {
 
 #[test]
 fn declines_without_collapse_state() {
+    crate::test_config::register();
     let called = Cell::new(false);
     let result = reissue_sun_pass(std::ptr::null(), &|| {
         called.set(true);

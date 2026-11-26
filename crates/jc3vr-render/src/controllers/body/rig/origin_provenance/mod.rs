@@ -8,17 +8,16 @@ use std::{
     time::Instant,
 };
 
+use jc3vr_input::frame::ControllerFrame;
 use openxr as xr;
-
-use crate::controllers::frame::ControllerFrame;
 
 /// A non-reused source identity. Only the source can construct a token.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) struct OriginToken(u64);
+pub struct OriginToken(u64);
 
 /// Why acquisition or composition has no supported origin identity.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) enum OriginUnavailable {
+pub enum OriginUnavailable {
     SourceAbsent,
     DiagnosticExpired,
     MutationInProgress,
@@ -30,7 +29,7 @@ pub(crate) enum OriginUnavailable {
 
 /// Evidence attached to the acquired packet, never inferred when reading diagnostics.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) enum OriginEvidence {
+pub enum OriginEvidence {
     Known(OriginToken),
     Unavailable(OriginUnavailable),
 }
@@ -55,18 +54,18 @@ impl OriginEvidence {
 
 /// The actual controller receipt associated with the acquired live head and frame.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) struct TrackingReceipt {
+pub struct TrackingReceipt {
     sequence: u64,
     display_time_ns: i64,
     published_at: Instant,
 }
 
 impl TrackingReceipt {
-    pub(crate) fn from_frame(frame: &ControllerFrame) -> Self {
+    pub fn from_frame(frame: &ControllerFrame) -> Self {
         Self::from_receipt(frame.sequence, frame.display_time_ns, frame.published_at)
     }
 
-    pub(crate) fn from_receipt(sequence: u64, display_time_ns: i64, published_at: Instant) -> Self {
+    pub fn from_receipt(sequence: u64, display_time_ns: i64, published_at: Instant) -> Self {
         Self {
             sequence,
             display_time_ns,
@@ -86,11 +85,11 @@ pub(crate) fn begin(readiness: Result<(), OriginUnavailable>) -> OriginEvidence 
 
 /// An atomic-only invalidation held across an actual source mutation and its dependent rebases.
 /// This never takes a runtime, configuration, body, or publication lock.
-pub(crate) fn changing() -> OriginMutation<'static> {
+pub fn changing() -> OriginMutation<'static> {
     SOURCE.changing()
 }
 
-pub(crate) struct OriginMutation<'a> {
+pub struct OriginMutation<'a> {
     source: &'a Source,
 }
 
@@ -245,8 +244,8 @@ impl Source {
 
 static SOURCE: Source = Source::new();
 
-#[cfg(test)]
-pub(crate) fn test_origins() -> [OriginEvidence; 2] {
+#[cfg(any(test, feature = "test-support"))]
+pub fn test_origins() -> [OriginEvidence; 2] {
     let source = Source::new();
     let before = source.capture();
     drop(source.changing());

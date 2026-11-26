@@ -16,19 +16,16 @@ use std::{ffi::c_char, ptr};
 
 use anyhow::Context as _;
 use glam::Vec2;
+use jc3vr_input::frame::{ActionSetKind, Hand};
 use openxr as xr;
 use openxr::sys::{self, Handle as _};
 
-use crate::{
-    controllers::frame::{ActionSetKind, Hand},
-    vr::input::{
-        layout::{
-            self, BoolInput, FloatInput, HandsAction, Input, Profile, Vec2Input, binding, hand_path,
-        },
-        semantic::{
-            ActionKind, SemanticSet, defaults,
-            frame::{ActionState, ActionValue},
-        },
+use crate::vr::input::{
+    layout,
+    layout::{BoolInput, FloatInput, HandsAction, Input, Profile, Vec2Input, binding, hand_path},
+    semantic::{
+        ActionKind, SemanticSet, defaults,
+        frame::{ActionState, ActionValue},
     },
 };
 
@@ -47,7 +44,7 @@ pub(crate) struct Actions {
 
 /// An action set, for the bound-source queries and the debug UI.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub(crate) enum SetId {
+pub enum SetId {
     /// The always-active set of the poses, the haptic output, and the raw inputs.
     Hands,
     Semantic(SemanticSet),
@@ -55,11 +52,11 @@ pub(crate) enum SetId {
 
 impl SetId {
     /// Every set, in stash order.
-    pub(crate) fn all() -> impl Iterator<Item = SetId> {
+    pub fn all() -> impl Iterator<Item = SetId> {
         std::iter::once(SetId::Hands).chain(SemanticSet::ALL.into_iter().map(SetId::Semantic))
     }
 
-    pub(crate) const fn name(self) -> &'static str {
+    pub const fn name(self) -> &'static str {
         match self {
             SetId::Hands => layout::HANDS_SET_NAME,
             SetId::Semantic(set) => set.name(),

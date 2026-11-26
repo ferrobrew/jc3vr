@@ -3,7 +3,7 @@
 //! and the persistence of the action handles across
 //! reinjects. Once per rendered frame the VR frame loop syncs the actions, locates the controllers
 //! at the frame's predicted display time, and publishes a
-//! [`ControllerFrame`](crate::controllers::frame::ControllerFrame) for the rest of the mod.
+//! [`ControllerFrame`](jc3vr_input::frame::ControllerFrame) for the rest of the mod.
 //!
 //! # Action sets
 //!
@@ -12,7 +12,7 @@
 //! - `hands`, always active: the grip and aim poses, the haptic output, and the raw inputs, named
 //!   for the physical inputs of the Valve Index controller (see [`layout`]): triggers, grips,
 //!   sticks, trackpads, face buttons, the system button, and their touches. The raw inputs feed
-//!   the published [`ControllerFrame`](crate::controllers::frame::ControllerFrame), whatever the
+//!   the published [`ControllerFrame`](jc3vr_input::frame::ControllerFrame), whatever the
 //!   mode, and everything that reads it: the gestures, the grabs, the finger curls, the chords,
 //!   input recovery, scheme detection, and the pointers.
 //! - `global`, always active, and one mode set at a time (`on_foot`, `wingsuit`, `land_vehicle`,
@@ -58,28 +58,26 @@
 //! attachment is possible only once per session; the master toggle gates the per-frame sync and the
 //! publication.
 
-pub(crate) mod actions;
-pub(crate) mod config;
-pub(crate) mod flight_pose;
-pub(crate) mod layout;
+pub mod actions;
+pub mod config;
+pub mod flight_pose;
+pub mod layout;
 pub mod restart;
 mod sample;
-pub(crate) mod self_check;
-pub(crate) mod semantic;
-pub(crate) mod sources;
+pub mod self_check;
+pub mod semantic;
+pub mod sources;
 mod stash;
 mod state;
 
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
+use jc3vr_input::frame::{ActionSetKind, Hand, InteractionProfile};
 use parking_lot::Mutex;
 pub(crate) use stash::clear as clear_stash;
 pub(crate) use state::InputState;
 
-use crate::{
-    controllers::frame::{ActionSetKind, Hand, InteractionProfile},
-    vr::input::restart::RestartReason,
-};
+use crate::vr::input::restart::RestartReason;
 
 /// Select the mode action set read from the next frame on. The mode detector calls this once per
 /// sim tick.

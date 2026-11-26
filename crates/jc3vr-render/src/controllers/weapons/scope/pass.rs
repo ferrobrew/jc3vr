@@ -119,54 +119,49 @@ pub fn source_eye(sighting: usize, other_available: bool) -> usize {
 
 /// The frame's lens, as the scopes planned it.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
-pub(crate) struct LensFrame {
+pub struct LensFrame {
     /// Whether a scoped weapon is held and aimed, so the eyes' images are copied.
-    pub(crate) armed: bool,
+    pub armed: bool,
     /// The eye at the eyepiece.
-    pub(crate) sighting: Option<usize>,
+    pub sighting: Option<usize>,
     /// The lens, while armed.
-    pub(crate) lens: Option<LensDraw>,
+    pub lens: Option<LensDraw>,
 }
 
 /// The draw's readout: what the lens drew and its last failure.
 #[derive(Debug, Clone, PartialEq, Default)]
-pub(crate) struct LensDrawStatus {
+pub struct LensDrawStatus {
     /// The eye that sights through the lens and the eye whose image it reads.
-    pub(crate) eyes: Option<(usize, usize)>,
+    pub eyes: Option<(usize, usize)>,
     /// Frames the lens was drawn in, since the payload loaded.
-    pub(crate) frames: u64,
+    pub frames: u64,
     /// The last failure to build the pipeline, copy an eye, or draw.
-    pub(crate) error: Option<String>,
+    pub error: Option<String>,
 }
 
 /// Hand the pass the frame's lens. Called once per frame, before the frame's first capture; a
 /// frame without a sighting eye clears the readout's eyes.
-pub(crate) fn set_frame(frame: LensFrame) {
+pub fn set_frame(frame: LensFrame) {
     STATE.lock().frame = frame;
     if frame.sighting.is_none() {
         STATUS.lock().eyes = None;
     }
 }
 
-pub(crate) fn draw_status() -> LensDrawStatus {
+pub fn draw_status() -> LensDrawStatus {
     STATUS.lock().clone()
 }
 
 /// Release the lens pipeline, for eject: it holds each eye's image copy and a render-target view
 /// over the engine's back buffer, which keeps that texture alive after the engine resizes off it.
-pub(crate) fn release_on_eject() {
+pub fn release_on_eject() {
     STATE.lock().renderer = None;
 }
 
 /// Copy the dispatch's eye images for the lens while a scoped weapon is held. Called under the
 /// engine's context lock, before the world-space overlay draws, with `target` the dispatch's final
 /// back buffer.
-pub(crate) fn capture(
-    context: &ID3D11DeviceContext,
-    device: &Device,
-    target: &Texture,
-    eye: usize,
-) {
+pub fn capture(context: &ID3D11DeviceContext, device: &Device, target: &Texture, eye: usize) {
     if crate::stereo::far_phase() {
         return;
     }
@@ -211,8 +206,8 @@ pub(crate) fn capture(
 /// Draw the lens onto `target` for `eye`, when `eye` sights through it. Called under the engine's
 /// context lock after the world-space overlay; under the collapse, the caller has selected the eye
 /// with `set_collapse_ui_eye`.
-pub(crate) fn draw(context: &ID3D11DeviceContext, device: &Device, target: &Texture, eye: usize) {
-    if crate::stereo::far_phase() || crate::director::clean_view::hides_everything() {
+pub fn draw(context: &ID3D11DeviceContext, device: &Device, target: &Texture, eye: usize) {
+    if crate::stereo::far_phase() || jc3vr_core::director::clean_view::hides_everything() {
         return;
     }
     let mut state = STATE.lock();

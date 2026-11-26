@@ -459,12 +459,12 @@ pub(crate) fn capture_slot(stage: Stage, mgr: *mut c_void, slot: u32) {
     });
 }
 
-pub(crate) struct StageImage {
+pub struct StageImage {
     pub record: usize,
     pub artifact: StageArtifact,
 }
 
-pub(crate) enum StageArtifact {
+pub enum StageArtifact {
     Png(Image),
     Raw(Vec<u8>),
 }

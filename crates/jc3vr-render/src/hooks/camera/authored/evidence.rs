@@ -1,9 +1,9 @@
 //! Owned animation evidence copied at synchronous completion and checked at the camera seam.
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 use std::cell::RefCell;
 
-#[cfg(not(test))]
+#[cfg(not(any(test, feature = "test-support")))]
 use parking_lot::Mutex;
 
 use crate::hooks::camera::authored::{Refusal, native::Source};
@@ -152,7 +152,7 @@ impl Publication {
     }
 }
 
-pub(crate) fn select_controller(controller: Option<u64>) {
+pub fn select_controller(controller: Option<u64>) {
     with_publication(|publication| publication.select(controller));
 }
 
@@ -189,24 +189,24 @@ pub(super) fn matching(
 /// Run `f` on the publication. The game has one, shared by its controller seam; each unit test has
 /// its own, so that tests running side by side do not select controllers out from under each
 /// other.
-#[cfg(not(test))]
+#[cfg(not(any(test, feature = "test-support")))]
 fn with_publication<R>(f: impl FnOnce(&mut Publication) -> R) -> R {
     f(&mut PUBLICATION.lock())
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 fn with_publication<R>(f: impl FnOnce(&mut Publication) -> R) -> R {
     PUBLICATION.with_borrow_mut(f)
 }
 
-#[cfg(not(test))]
+#[cfg(not(any(test, feature = "test-support")))]
 static PUBLICATION: Mutex<Publication> = Mutex::new(Publication {
     serial: 0,
     selected: None,
     latest: None,
 });
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 thread_local! {
     static PUBLICATION: RefCell<Publication> = RefCell::new(Publication::default());
 }

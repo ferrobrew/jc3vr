@@ -1,8 +1,7 @@
 //! FSR configuration. See `docs/mod/rendering/fsr.md`.
 
+use jc3vr_core::config::engine::ConfigSlot;
 use serde::{Deserialize, Serialize};
-
-use crate::config::engine::ConfigSlot;
 
 /// Which anti-aliasing resolves the eye images at the engine's anti-aliasing stage.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -25,7 +24,7 @@ impl AntiAliasing {
 
 /// The upscaling and anti-aliasing settings, at `fsr` in the settings file; the payload binds the
 /// slot at startup.
-pub(crate) static FSR_CONFIG: ConfigSlot<FsrConfig> = ConfigSlot::new("fsr");
+pub static FSR_CONFIG: ConfigSlot<FsrConfig> = ConfigSlot::new("fsr");
 
 /// Anti-aliasing settings: the resolve in use, and FSR's and the shared inputs' switches. See
 /// `docs/mod/rendering/fsr.md` and `docs/mod/rendering/taa.md`.
@@ -78,6 +77,12 @@ impl FsrConfig {
             jitter: true,
             taa: TaaConfig::new(),
         }
+    }
+}
+
+impl Default for FsrConfig {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

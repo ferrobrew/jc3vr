@@ -17,12 +17,12 @@ use std::{
 
 use detours_macro::detour;
 use jc3gi::graphics_engine::graphics_engine::GraphicsEngine;
+use jc3vr_core::util::bump;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{
     debug::trace::{DrawCounts, TraceEvent, TraceState},
     hooks::graphics_engine::{clustered_lighting, reconstruction},
-    util::bump,
 };
 
 // Per-pass tallies: bumped alongside the global per-eye counters, then read + reset on each
@@ -36,7 +36,7 @@ thread_local! {
 
 /// The live per-eye draw-call counters: worker threads bump these per draw; the Draw driver clears
 /// them at `draw_begin` and snapshots them into the `draw_end` event.
-pub(crate) static DRAW_COUNTS: DrawCounts = DrawCounts::new();
+pub static DRAW_COUNTS: DrawCounts = DrawCounts::new();
 
 /// The engine's draw calls and compute dispatches through its `Graphics::` wrappers, summed since the
 /// payload loaded and never reset, for samplers that difference two readings (the benchmark,
@@ -77,7 +77,7 @@ fn bump_dispatch() {
     PASS_DISPATCH.with(|c| c.set(c.get() + 1));
 }
 
-pub(crate) fn hook_library() -> HookLibrary {
+pub fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_static_binder(&DRAW_INDEXED_BINDER)
         .with_static_binder(&DRAW_BINDER)
@@ -283,7 +283,7 @@ fn copy_surface_to_texture(ctx: *mut c_void, dst: *mut c_void, src: *mut c_void)
 }
 
 /// The effect depth-history copies [`copy_surface_to_texture`] has skipped since the payload loaded.
-pub(crate) static EFFECT_DEPTH_COPIES_SKIPPED: AtomicU64 = AtomicU64::new(0);
+pub static EFFECT_DEPTH_COPIES_SKIPPED: AtomicU64 = AtomicU64::new(0);
 
 /// Whether `dst` is the depth texture of one of the engine's effect depth-history slots. Matching the
 /// destination rather than trusting the call site keeps the skip exact if another caller ever copies

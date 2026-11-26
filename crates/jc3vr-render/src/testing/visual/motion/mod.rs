@@ -14,10 +14,10 @@ pub(crate) const MAX_PERIOD_FRAMES: u32 = 600;
 pub(crate) const MAX_AMPLITUDE_DEG: f32 = 45.0;
 /// The largest translation amplitude along one camera axis, metres.
 pub(crate) const MAX_TRANSLATION_M: f32 = 20.0;
-pub(crate) const HISTORY_FRAMES: usize = 8;
+pub const HISTORY_FRAMES: usize = 8;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum MotionError {
+pub enum MotionError {
     InvalidCaseId(&'static str),
     PeriodOutOfRange(u32),
     NonFiniteAmplitude(&'static str),
@@ -52,7 +52,7 @@ impl std::fmt::Display for MotionError {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct MotionTable {
+pub struct MotionTable {
     case_id: String,
     period_frames: u32,
     yaw_deg: f32,
@@ -70,7 +70,7 @@ pub(crate) struct MotionTable {
 /// and the camera-local translation as `sin θ`, with `θ` the phase's fraction of the period.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "MotionTable")]
-pub(crate) struct MotionRequest {
+pub struct MotionRequest {
     case_id: RequestId,
     period_frames: u32,
     yaw_deg: f32,
@@ -193,14 +193,14 @@ impl TryFrom<MotionTable> for MotionRequest {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub(crate) struct MotionHistoryEntry {
+pub struct MotionHistoryEntry {
     pub phase: u32,
     pub rendered_frame: i64,
     pub applied: PoseTransform,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub(crate) struct MotionMetadata {
+pub struct MotionMetadata {
     pub request: MotionRequest,
     pub phase: u32,
     pub cycle: u64,
@@ -209,7 +209,7 @@ pub(crate) struct MotionMetadata {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct MotionState {
+pub struct MotionState {
     request: MotionRequest,
     phase: u32,
     cycle: u64,
@@ -337,7 +337,7 @@ impl MotionState {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) enum AdvanceOutcome {
+pub enum AdvanceOutcome {
     Advanced(PoseValues),
     Duplicate,
 }
@@ -367,7 +367,7 @@ pub(crate) fn previous_phase(phase: u32, period_frames: u32) -> u32 {
     (phase + period_frames - 1) % period_frames
 }
 
-pub(crate) fn anchor_matches(anchor: PoseValues, base: PoseValues) -> bool {
+pub fn anchor_matches(anchor: PoseValues, base: PoseValues) -> bool {
     pose_matches(base, anchor)
 }
 

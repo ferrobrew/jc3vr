@@ -53,7 +53,10 @@ use windows::{
 };
 
 /// The committed, precompiled decode compute shader (entry point `main`, `cs_5_0`).
-const DECODE_DXBC: &[u8] = include_bytes!("../shaders/velocity_decode.dxbc");
+const DECODE_DXBC: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/shaders/velocity_decode.dxbc"
+));
 
 /// Compute-shader thread-group size (must match `[numthreads(8, 8, 1)]` in the HLSL).
 const GROUP: u32 = 8;

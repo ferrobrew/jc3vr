@@ -74,7 +74,9 @@ pub(crate) mod register_render;
 pub(crate) mod session_recording;
 mod stream;
 mod take;
-pub(crate) mod tracking;
+// The tracking recorder lives in the render crate; the old path keeps working until the final
+// cleanup pass.
+pub(crate) use jc3vr_render::recorder::tracking;
 
 pub use crate::{
     recorder::{

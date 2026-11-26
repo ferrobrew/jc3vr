@@ -316,10 +316,27 @@ pub fn turn_about_hub(hub: Vec3, axis: Vec3, angle: f32) -> Mat4 {
         * Mat4::from_translation(-hub)
 }
 
-/// The wheel and the handlebars carried between the vehicle and the cockpit frame.
-impl CockpitTransform {
+/// The wheel and the handlebars carried between the vehicle and the cockpit frame. A trait
+/// rather than an inherent impl because the cockpit transform belongs to the render layer.
+pub trait CockpitParts {
     /// `wheel`, in the space `to_world` maps to the world, in the cockpit frame.
-    pub fn wheel(&self, to_world: Mat4, wheel: &PartWheel) -> Option<WheelFrame> {
+    fn wheel(&self, to_world: Mat4, wheel: &PartWheel) -> Option<WheelFrame>;
+
+    /// The handlebars whose middle is `centre` and half width `half_width`, in the space
+    /// `to_world` maps to the world, in the cockpit frame.
+    fn bars(&self, to_world: Mat4, centre: Vec3, half_width: f32) -> Option<BarsFrame>;
+
+    /// `frame` carried into the space `to_world` maps to the world: the inverse of
+    /// [`wheel`](Self::wheel), for holding a cockpit-placed wheel fixed to the vehicle.
+    fn wheel_into(&self, to_world: Mat4, frame: &WheelFrame) -> Option<WheelFrame>;
+
+    /// A wheel held in the space `to_world` maps to the world (from
+    /// [`wheel_into`](Self::wheel_into)), in the cockpit frame.
+    fn wheel_from(&self, to_world: Mat4, local: &WheelFrame) -> Option<WheelFrame>;
+}
+
+impl CockpitParts for CockpitTransform {
+    fn wheel(&self, to_world: Mat4, wheel: &PartWheel) -> Option<WheelFrame> {
         let (right, up) = wheel.axes();
         let right_w = to_world.transform_vector3(right);
         let up_w = to_world.transform_vector3(up);
@@ -333,9 +350,7 @@ impl CockpitTransform {
         (frame.centre.is_finite() && frame.radius.is_finite()).then_some(frame)
     }
 
-    /// The handlebars whose middle is `centre` and half width `half_width`, in the space
-    /// `to_world` maps to the world, in the cockpit frame.
-    pub fn bars(&self, to_world: Mat4, centre: Vec3, half_width: f32) -> Option<BarsFrame> {
+    fn bars(&self, to_world: Mat4, centre: Vec3, half_width: f32) -> Option<BarsFrame> {
         let scale = to_world.transform_vector3(Vec3::X).length();
         let frame = BarsFrame {
             centre: self.point_to_cockpit(to_world.transform_point3(centre)),
@@ -344,9 +359,7 @@ impl CockpitTransform {
         (frame.centre.is_finite() && frame.half_width.is_finite()).then_some(frame)
     }
 
-    /// `frame` carried into the space `to_world` maps to the world: the inverse of
-    /// [`wheel`](Self::wheel), for holding a cockpit-placed wheel fixed to the vehicle.
-    pub fn wheel_into(&self, to_world: Mat4, frame: &WheelFrame) -> Option<WheelFrame> {
+    fn wheel_into(&self, to_world: Mat4, frame: &WheelFrame) -> Option<WheelFrame> {
         let to_local = to_world.inverse();
         let local = WheelFrame {
             centre: to_local.transform_point3(self.point_to_world(frame.centre)),
@@ -361,9 +374,7 @@ impl CockpitTransform {
         local.centre.is_finite().then_some(local)
     }
 
-    /// A wheel held in the space `to_world` maps to the world (from
-    /// [`wheel_into`](Self::wheel_into)), in the cockpit frame.
-    pub fn wheel_from(&self, to_world: Mat4, local: &WheelFrame) -> Option<WheelFrame> {
+    fn wheel_from(&self, to_world: Mat4, local: &WheelFrame) -> Option<WheelFrame> {
         let frame = WheelFrame {
             centre: self.point_to_cockpit(to_world.transform_point3(local.centre)),
             right: self

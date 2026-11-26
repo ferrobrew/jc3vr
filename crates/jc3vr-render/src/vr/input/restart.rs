@@ -18,12 +18,11 @@
 
 use std::fmt;
 
-use crate::{
-    controllers::frame::Hand,
-    vr::input::{
-        InputStatus,
-        config::{CONTROLLERS_ENABLED, DOMINANT_HAND},
-    },
+use jc3vr_input::frame::Hand;
+
+use crate::vr::input::{
+    InputStatus,
+    config::{CONTROLLERS_ENABLED, DOMINANT_HAND},
 };
 
 /// Why the game must restart for the controller input to match the settings.

@@ -39,7 +39,7 @@ use crate::{
 /// Whether the motion blur and the depth of field are forced off: while a VR session runs, whatever
 /// the `post_fx` switches say. The eye images then go to the headset, where both effects would blur
 /// the view with the player's own head motion and gaze.
-pub(crate) fn vr_forces_blurs_off() -> bool {
+pub fn vr_forces_blurs_off() -> bool {
     crate::vr::is_running_published()
 }
 
@@ -136,7 +136,7 @@ static WORLD_POST_BLOCK_RAN: AtomicBool = AtomicBool::new(false);
 
 /// Re-arm the once-per-dispatch world post-effects block gate. Called by the Draw driver
 /// (`hooks::game`) at the start of every dispatch.
-pub(crate) fn reset_post_block_gate() {
+pub fn reset_post_block_gate() {
     WORLD_POST_BLOCK_RAN.store(false, Ordering::Relaxed);
 }
 

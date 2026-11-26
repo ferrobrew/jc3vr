@@ -44,9 +44,8 @@ use jc3gi::graphics_engine::{
     },
     texture::Texture,
 };
+use jc3vr_core::config::engine::{Switch, disable_automatically};
 use parking_lot::Mutex;
-
-use crate::config::engine::{Switch, disable_automatically};
 
 /// The mod-owned backing texture and the size it was created at.
 ///

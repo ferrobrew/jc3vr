@@ -17,14 +17,11 @@
 use std::panic::Location;
 
 use anyhow::Context as _;
+use jc3vr_core::{frame_timing, frame_timing::Slot, thread_role};
 use openxr as xr;
 use parking_lot::{Mutex, MutexGuard};
 
-use crate::{
-    frame_timing::{self, Slot},
-    thread_role,
-    vr::{VrConfig, state::report_forbidden_lock, swapchain::Swapchain},
-};
+use crate::vr::{VrConfig, state::report_forbidden_lock, swapchain::Swapchain};
 
 /// The submit side of a running session.
 pub(super) struct Submitter {

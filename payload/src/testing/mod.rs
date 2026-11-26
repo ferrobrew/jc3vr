@@ -6,15 +6,16 @@
 //!
 //! [`update`] drives the tools from the top of the game's update on the game thread.
 
-pub(crate) mod benchmark;
 mod config;
 pub(crate) mod request;
 pub(crate) mod stage;
 mod text;
-pub(crate) mod visual;
 
+// The visual stage and the benchmark live in the render crate; the old paths keep working until
+// the final cleanup pass.
 pub(crate) use config::TESTING_CONFIG;
 pub use config::TestingConfig;
+pub(crate) use jc3vr_render::testing::{benchmark, visual};
 
 /// Drive the test tools for this frame: the capture harness, the request file, the benchmark, and
 /// the visual stage. Game thread, once per frame from the top of the game's update, after the

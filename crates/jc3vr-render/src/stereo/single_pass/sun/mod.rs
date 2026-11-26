@@ -79,7 +79,7 @@ pub fn is_sun_pass(pass: i16) -> bool {
 /// The gate is deliberately checked here rather than left to the per-eye helper: its inputs are
 /// cached across frames, so a stale full viewport or `cb13` row set from an earlier collapsed session
 /// would otherwise make it re-issue the sun in a multipass frame.
-pub fn reissue_sun_pass(ctx: *const RenderContext, draw: &dyn Fn() -> bool) -> Option<bool> {
+pub(crate) fn reissue_sun_pass(ctx: *const RenderContext, draw: &dyn Fn() -> bool) -> Option<bool> {
     if !reissue_ready(
         collapse_active(),
         in_gbuffer_range(),

@@ -90,7 +90,7 @@ mod tests {
                 |_| Ok("A".to_owned()),
             )
             .unwrap();
-        assert_eq!(sources[0].hand, Some(crate::controllers::frame::Hand::Left));
+        assert_eq!(sources[0].hand, Some(jc3vr_input::frame::Hand::Left));
         assert_eq!(cache.entries.len(), 1);
     }
 

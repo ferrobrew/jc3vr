@@ -17,7 +17,9 @@
 //! [`register_pointer`] installs.
 
 mod egui_route;
-pub(crate) mod panel;
+// The render layer's half lives in the render crate; the old path keeps working until the final
+// cleanup pass.
+pub(crate) use jc3vr_render::hud::pointer::panel;
 pub(crate) mod register_pointer;
 mod route;
 

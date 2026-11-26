@@ -1,12 +1,11 @@
 //! Headpose configuration: the thresholds and tunables for the headpose simulation.
 
+use jc3vr_core::config::engine::ConfigSlot;
 use serde::{Deserialize, Serialize};
-
-use crate::config::engine::ConfigSlot;
 
 /// The head pose settings, at `headpose` in the settings file; the payload binds the slot at
 /// startup.
-pub(crate) static HEADPOSE_CONFIG: ConfigSlot<HeadPoseConfig> = ConfigSlot::new("headpose");
+pub static HEADPOSE_CONFIG: ConfigSlot<HeadPoseConfig> = ConfigSlot::new("headpose");
 
 /// All thresholds and tunables for the headpose simulation, added to [`crate::config::Config`] as
 /// `headpose`.
@@ -31,6 +30,12 @@ impl HeadPoseConfig {
             vr_turn: VrTurnConfig::new(),
             grapple: GrappleComfortConfig::new(),
         }
+    }
+}
+
+impl Default for HeadPoseConfig {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

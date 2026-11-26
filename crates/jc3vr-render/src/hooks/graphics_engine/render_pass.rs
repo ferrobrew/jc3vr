@@ -183,7 +183,7 @@ fn do_draw(this: *mut RenderPass, ctx: *mut RenderContext, color_mask: u32) -> b
     }
     // Close the final render-block-type run's scope before the pass scope closes.
     #[cfg(feature = "profiler")]
-    crate::profiler::type_scope::clear();
+    jc3vr_core::profiler::type_scope::clear();
     result
 }
 
@@ -831,7 +831,7 @@ fn pre_draw(this: *mut RenderEngine, ctx: *mut HContext_t) -> u64 {
     // (disjoint query + CPU reference), and bracket PreDraw on both the CPU and GPU timelines.
     // The GPU dispatch is closed in `graphics_engine::render_engine_post_draw` (the last seam).
     #[cfg(feature = "profiler")]
-    crate::profiler::label_thread("draw");
+    jc3vr_core::profiler::label_thread("draw");
     #[cfg(feature = "profiler")]
     puffin::profile_scope!("RenderEngine::PreDraw");
     #[cfg(feature = "profiler")]
@@ -964,7 +964,7 @@ fn shadow_lookup_delta(state: &crate::stereo::StereoState, anchor_to_fit: bool) 
 
 /// How far the render camera's centre sat from the camera position the sun-shadow cascade fit read,
 /// at the last staging of the shader constants, metres.
-pub(crate) fn shadow_fit_gap_m() -> f32 {
+pub fn shadow_fit_gap_m() -> f32 {
     f32::from_bits(SHADOW_FIT_GAP_BITS.load(Ordering::Relaxed))
 }
 

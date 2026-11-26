@@ -20,8 +20,7 @@
 //! its own pixels; the motion vectors it is handed are free of it ([`jitter_free_reprojection`]).
 
 mod config;
-pub(crate) use config::FSR_CONFIG;
-pub use config::{AntiAliasing, FsrConfig, TaaConfig};
+pub use config::{AntiAliasing, FSR_CONFIG, FsrConfig, TaaConfig};
 pub mod jitter;
 pub mod taa;
 mod velocity_decode;
@@ -353,7 +352,7 @@ pub fn dispatch(
     sharpness: Option<f32>,
 ) -> bool {
     // Nothing is built once eject has begun: the eject's release would not see it.
-    if crate::is_shutting_down() {
+    if jc3vr_core::is_shutting_down() {
         return false;
     }
     let width = u32::from(textures.slot_color.m_Width);

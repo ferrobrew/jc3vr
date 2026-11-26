@@ -194,7 +194,7 @@ pub(super) fn release() {
 }
 
 /// A one-line status for the debug UI.
-pub(crate) fn status() -> String {
+pub fn status() -> String {
     let (attached, failed) = variants::counts();
     format!(
         "{attached} shader variants ({failed} failed); {} blocks drawn once, {} re-issued, {} draws \

@@ -6,7 +6,7 @@ use crate::hooks::camera::authored::composition::{
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum NamedCase {
+pub enum NamedCase {
     #[cfg(test)]
     BoostedGroundTakeoff,
     #[cfg(test)]
@@ -167,7 +167,7 @@ pub(crate) struct Frame {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Phase {
+pub enum Phase {
     Idle,
     Entry,
     Live,

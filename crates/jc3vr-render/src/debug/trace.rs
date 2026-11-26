@@ -1,18 +1,14 @@
 //! Render-call tracing subsystem: collects per-call NDJSON records over a fixed number of frames and
-//! dumps them into the trace's session folder (see [`crate::session`]), with a self-describing
+//! dumps them into the trace's session folder (see [`jc3vr_core::session`]), with a self-describing
 //! manifest as the first record.
 
 use std::sync::atomic::{AtomicI32, AtomicUsize, Ordering};
 
+use jc3vr_core::{config::engine::Snapshot, session::CaptureFolder};
 use parking_lot::Mutex;
 
-use crate::{
-    config::engine::Snapshot,
-    debug::{
-        coord_frame::{self, CoordFrameSample},
-        stereo_diff::{self, DrawDiff},
-    },
-    session::CaptureFolder,
+use crate::debug::{
+    coord_frame, coord_frame::CoordFrameSample, stereo_diff, stereo_diff::DrawDiff,
 };
 
 /// Frames left in the active trace; 0 = inactive. Kept as a standalone atomic so the hot-path
@@ -28,7 +24,7 @@ pub static CAPTURE_FRAMES: AtomicI32 = AtomicI32::new(60);
 pub struct TraceState {
     /// NDJSON records collected so far.
     log: Vec<String>,
-    /// The trace's [`crate::session::stamp`], naming its session folder, set at [`TraceState::start`].
+    /// The trace's [`jc3vr_core::session::stamp`], naming its session folder, set at [`TraceState::start`].
     stamp: String,
     /// Absolute path of the most recent dump, shown in the UI so it's findable.
     last_path: Option<String>,
@@ -88,6 +84,12 @@ impl DrawCounts {
     }
 }
 
+impl Default for DrawCounts {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// One render event, serialized inside a [`TraceRecord`] (which stamps timing / frame / eye). The
 /// `ev` tag names the event. Frame/driver markers that carry their own `eye` field set it explicitly.
 #[derive(serde::Serialize)]
@@ -97,7 +99,7 @@ pub enum TraceEvent {
     /// self-describing (which gates / skips / the exposure pin were on) without external notes.
     #[serde(rename = "manifest")]
     Manifest {
-        /// The trace's [`crate::session::stamp`], matching its folder name.
+        /// The trace's [`jc3vr_core::session::stamp`], matching its folder name.
         timestamp: String,
         /// The full runtime configuration, serialized as the configuration's own type would be.
         config: Snapshot,
@@ -371,7 +373,7 @@ impl TraceState {
     /// Write the collected log to `trace.ndjson` in the trace's session folder and record its path
     /// for the UI (caller holds the lock).
     fn dump(&mut self) {
-        let dir = match crate::session::capture_folder(CaptureFolder::Trace, &self.stamp) {
+        let dir = match jc3vr_core::session::capture_folder(CaptureFolder::Trace, &self.stamp) {
             Ok(dir) => dir,
             Err(e) => {
                 tracing::error!("render trace: {e}");
@@ -423,7 +425,7 @@ impl TraceState {
     /// written as the first record while the counter is still 0 (lock held), then the counter is
     /// armed -- so render-thread hooks that observe it can never race ahead of the manifest.
     pub fn start(frames: i32) {
-        let stamp = crate::session::stamp();
+        let stamp = jc3vr_core::session::stamp();
         {
             let mut state = TRACE_STATE.lock();
             let last_path = state.last_path.take();

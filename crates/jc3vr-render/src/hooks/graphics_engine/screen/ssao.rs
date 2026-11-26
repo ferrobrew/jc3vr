@@ -38,7 +38,7 @@ use crate::{
 static SSAO_PASS: AtomicPtr<SSAOPass> = AtomicPtr::new(ptr::null_mut());
 
 /// The last-seen `CSSAOPass` instance, or null before the pass has drawn once.
-pub(crate) fn ssao_pass() -> *mut SSAOPass {
+pub fn ssao_pass() -> *mut SSAOPass {
     SSAO_PASS.load(Ordering::Relaxed)
 }
 

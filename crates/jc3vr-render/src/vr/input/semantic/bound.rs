@@ -20,14 +20,13 @@
 //! ([`SourceTable`]): a recognised source is drawn with its glyph, and any other with the
 //! runtime's localized name for it.
 
-use crate::{
-    controllers::frame::{Hand, InteractionProfile},
-    vr::input::{
-        layout::{Profile, hand_path},
-        semantic::{
-            SemanticSet,
-            defaults::{Component, DefaultBinding},
-        },
+use jc3vr_input::frame::{Hand, InteractionProfile};
+
+use crate::vr::input::{
+    layout::{Profile, hand_path},
+    semantic::{
+        SemanticSet,
+        defaults::{Component, DefaultBinding},
     },
 };
 
@@ -35,7 +34,7 @@ use crate::{
 /// stick's axes apart from its click, and the face buttons by position.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 #[repr(u8)]
-pub(crate) enum Physical {
+pub enum Physical {
     Trigger,
     Grip,
     /// The stick's axes and touch.
@@ -58,31 +57,31 @@ impl Physical {
 
 /// A set of [`Physical`] inputs, plus whether a source matched none of them.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Default)]
-pub(crate) struct PhysicalSet(u16);
+pub struct PhysicalSet(u16);
 
 impl PhysicalSet {
-    pub(crate) const EMPTY: PhysicalSet = PhysicalSet(0);
+    pub const EMPTY: PhysicalSet = PhysicalSet(0);
 
-    pub(crate) const fn of(physical: Physical) -> PhysicalSet {
+    pub const fn of(physical: Physical) -> PhysicalSet {
         PhysicalSet(physical.bit())
     }
 
-    pub(crate) const fn with(self, physical: Physical) -> PhysicalSet {
+    pub const fn with(self, physical: Physical) -> PhysicalSet {
         PhysicalSet(self.0 | physical.bit())
     }
 
-    pub(crate) const fn with_unknown(self) -> PhysicalSet {
+    pub const fn with_unknown(self) -> PhysicalSet {
         PhysicalSet(self.0 | UNKNOWN)
     }
 
-    pub(crate) const fn contains(self, physical: Physical) -> bool {
+    pub const fn contains(self, physical: Physical) -> bool {
         self.0 & physical.bit() != 0
     }
 }
 
 impl Component {
     /// The physical input the component belongs to.
-    pub(crate) const fn physical(self) -> Physical {
+    pub const fn physical(self) -> Physical {
         match self {
             Component::TriggerValue => Physical::Trigger,
             Component::GripPress => Physical::Grip,
@@ -141,7 +140,7 @@ pub(crate) fn classify_component(path: &str) -> Option<(Hand, Option<Component>)
 /// user path. An opaque enumeration counts as a failed one, and the default binding stands in for
 /// it. An enumeration that mixes user paths with others is read path by path, and the others are
 /// unknown.
-pub(crate) fn opaque<'a>(paths: impl IntoIterator<Item = &'a str>) -> bool {
+pub fn opaque<'a>(paths: impl IntoIterator<Item = &'a str>) -> bool {
     let mut any = false;
     for path in paths {
         if path.starts_with(USER_PATH) {
@@ -153,7 +152,7 @@ pub(crate) fn opaque<'a>(paths: impl IntoIterator<Item = &'a str>) -> bool {
 }
 
 /// The physical inputs of the sources of one action, by [`Hand::index`].
-pub(crate) fn of_sources<'a>(paths: impl IntoIterator<Item = &'a str>) -> [PhysicalSet; 2] {
+pub fn of_sources<'a>(paths: impl IntoIterator<Item = &'a str>) -> [PhysicalSet; 2] {
     let mut out = [PhysicalSet::EMPTY; 2];
     for path in paths {
         match classify(path) {
@@ -177,28 +176,28 @@ pub struct SourceName(u16);
 
 /// One bound source of an action, as the controls summary shows it.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) struct ShownSource {
+pub struct ShownSource {
     /// The hand whose user path the source is under.
-    pub(crate) hand: Option<Hand>,
+    pub hand: Option<Hand>,
     /// The component the source names, where the mod recognises it.
-    pub(crate) component: Option<Component>,
+    pub component: Option<Component>,
     /// The runtime's name for the source, for one no glyph shows.
-    pub(crate) name: SourceName,
+    pub name: SourceName,
 }
 
 /// One source as the runtime enumerated it: its path, and its localized name where it could be
 /// read.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) struct EnumeratedSource<'a> {
-    pub(crate) path: &'a str,
-    pub(crate) localized: Option<&'a str>,
+pub struct EnumeratedSource<'a> {
+    pub path: &'a str,
+    pub localized: Option<&'a str>,
 }
 
 /// The runtime's bound sources of the semantic actions, as the controls summary shows them: per
 /// set that has been enumerated, each action's sources, matched to the components the mod knows
 /// and named by the runtime.
 #[derive(Debug, Clone, PartialEq, Default)]
-pub(crate) struct SourceTable {
+pub struct SourceTable {
     /// By [`SemanticSet::index`], then action index; `None` for a set not enumerated yet, or for an
     /// action whose enumeration failed.
     sets: [Option<Vec<Option<Vec<ShownSource>>>>; SemanticSet::ALL.len()],
@@ -209,7 +208,7 @@ impl SourceTable {
     /// Record the sources of every action of `set`, by action index, `None` for an action whose
     /// enumeration failed. A source's name is the runtime's localized name, or its path where the
     /// runtime gave none.
-    pub(crate) fn insert<'a>(
+    pub fn insert<'a>(
         &mut self,
         set: SemanticSet,
         actions: impl IntoIterator<Item = Option<Vec<EnumeratedSource<'a>>>>,
@@ -252,12 +251,12 @@ impl SourceTable {
 
     /// The sources of action `index` of `set`, or `None` where they are not known: the set has not
     /// been enumerated, or the action's enumeration failed. An empty slice is an unbound action.
-    pub(crate) fn sources(&self, set: SemanticSet, index: usize) -> Option<&[ShownSource]> {
+    pub fn sources(&self, set: SemanticSet, index: usize) -> Option<&[ShownSource]> {
         self.sets[set.index()].as_ref()?.get(index)?.as_deref()
     }
 
     /// The text of a source's name.
-    pub(crate) fn name(&self, name: SourceName) -> &str {
+    pub fn name(&self, name: SourceName) -> &str {
         self.names
             .get(usize::from(name.0))
             .map_or("", String::as_str)
@@ -278,20 +277,20 @@ impl SourceTable {
 /// A table of default bindings: action `index` of a set's default binding, or `None` when it ships
 /// unbound. The shipped table is [`crate::vr::input::semantic::defaults::default_binding`]; the
 /// tests also read the layout the tables used before the semantic actions.
-pub(crate) type Layout = fn(SemanticSet, usize) -> Option<DefaultBinding>;
+pub type Layout = fn(SemanticSet, usize) -> Option<DefaultBinding>;
 
 /// The physical inputs every action of one set reads on each hand.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct BoundSet {
-    pub(crate) set: SemanticSet,
+pub struct BoundSet {
+    pub set: SemanticSet,
     /// By action index, then [`Hand::index`].
-    pub(crate) actions: Vec<[PhysicalSet; 2]>,
+    pub actions: Vec<[PhysicalSet; 2]>,
 }
 
 impl BoundSet {
     /// The inputs `layout` binds each action of `set` to, for a player whose dominant hand is
     /// `dominant` and whose hands report `profiles`.
-    pub(crate) fn defaults(
+    pub fn defaults(
         set: SemanticSet,
         profiles: [InteractionProfile; 2],
         dominant: Hand,
@@ -305,7 +304,7 @@ impl BoundSet {
 
     /// The inputs the runtime reported, as enumerated per action (`None` where the enumeration
     /// failed), with the defaults standing in for the gaps.
-    pub(crate) fn merged(
+    pub fn merged(
         set: SemanticSet,
         enumerated: &[Option<[PhysicalSet; 2]>],
         profiles: [InteractionProfile; 2],
@@ -325,7 +324,7 @@ impl BoundSet {
     }
 
     /// The inputs action `index` reads on `hand`.
-    pub(crate) fn get(&self, index: usize, hand: Hand) -> PhysicalSet {
+    pub fn get(&self, index: usize, hand: Hand) -> PhysicalSet {
         self.actions
             .get(index)
             .map_or(PhysicalSet::EMPTY, |a| a[hand.index()])

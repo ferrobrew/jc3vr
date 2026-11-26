@@ -18,6 +18,7 @@ use std::{
 };
 
 use jc3gi::graphics_engine::render_engine::{RenderBlockTypeBase, RenderPassId};
+use jc3vr_core::util::bump;
 use parking_lot::Mutex;
 use serde::Serialize;
 use windows::{
@@ -31,11 +32,9 @@ use crate::{
         draw_index,
         single_pass::{
             RawDrawKind, bound_vertex_shader_patched, current_pass_id, per_eye_reissue_eye,
-            shader_identity::{self, IdentityResult},
-            vertex_identity_lookup,
+            shader_identity, shader_identity::IdentityResult, vertex_identity_lookup,
         },
     },
-    util::bump,
 };
 
 /// The census of one frame, as the capture metadata carries it.

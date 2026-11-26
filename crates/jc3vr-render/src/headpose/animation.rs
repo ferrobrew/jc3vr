@@ -3,7 +3,7 @@
 use glam::{Quat, Vec3};
 
 /// A first-order quaternion low-pass with unit gain at steady state.
-pub(crate) struct RotationFilter {
+pub struct RotationFilter {
     rotation: Option<Quat>,
     time_constant_s: f32,
 }
@@ -15,14 +15,14 @@ impl Default for RotationFilter {
 }
 
 impl RotationFilter {
-    pub(crate) const fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             rotation: None,
             time_constant_s: TIME_CONSTANT_S,
         }
     }
 
-    pub(crate) fn clear(&mut self) {
+    pub fn clear(&mut self) {
         self.rotation = None;
     }
 
@@ -41,13 +41,13 @@ impl RotationFilter {
 }
 
 /// Remove the bone's bind frame before composing it with the world root.
-pub(crate) fn head_frame(root: Quat, animated: Quat, bind: Quat) -> Quat {
+pub fn head_frame(root: Quat, animated: Quat, bind: Quat) -> Quat {
     (root * animated * bind.inverse()).normalize()
 }
 
 /// Keep commanded root yaw immediate while filtering animation and root pitch and roll together.
 /// Filtering them separately would briefly apply a bank twice when a clip transfers it to the root.
-pub(crate) fn synthetic_rotation(
+pub fn synthetic_rotation(
     filter: &mut RotationFilter,
     root: Quat,
     head: Quat,
@@ -60,7 +60,7 @@ pub(crate) fn synthetic_rotation(
 }
 
 /// Keep the animated eye point exact while the synthetic orientation settles.
-pub(crate) fn eye_arm(root: Quat, filtered: Quat, neck_to_eyes_world: Vec3) -> Vec3 {
+pub fn eye_arm(root: Quat, filtered: Quat, neck_to_eyes_world: Vec3) -> Vec3 {
     (root * filtered).inverse() * neck_to_eyes_world
 }
 

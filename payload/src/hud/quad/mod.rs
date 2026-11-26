@@ -21,22 +21,19 @@ use jc3gi::{
     graphics_engine::{device::Device, texture::Texture},
     types::math::Matrix4,
 };
-use windows::{
-    Win32::Graphics::{
-        Direct3D::D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP,
-        Direct3D11::{
-            D3D11_BIND_CONSTANT_BUFFER, D3D11_BLEND_DESC, D3D11_BLEND_INV_SRC_ALPHA,
-            D3D11_BLEND_ONE, D3D11_BLEND_OP_ADD, D3D11_BUFFER_DESC, D3D11_COLOR_WRITE_ENABLE_ALL,
-            D3D11_CPU_ACCESS_WRITE, D3D11_CULL_NONE, D3D11_DEPTH_STENCIL_DESC, D3D11_FILL_SOLID,
-            D3D11_FILTER_MIN_MAG_MIP_LINEAR, D3D11_MAP_WRITE_DISCARD, D3D11_MAPPED_SUBRESOURCE,
-            D3D11_RASTERIZER_DESC, D3D11_RENDER_TARGET_BLEND_DESC, D3D11_SAMPLER_DESC,
-            D3D11_TEXTURE_ADDRESS_CLAMP, D3D11_USAGE_DYNAMIC, D3D11_VIEWPORT, ID3D11BlendState,
-            ID3D11Buffer, ID3D11DepthStencilState, ID3D11DeviceContext, ID3D11PixelShader,
-            ID3D11RasterizerState, ID3D11RenderTargetView, ID3D11SamplerState,
-            ID3D11ShaderResourceView, ID3D11VertexShader,
-        },
+use windows::Win32::Graphics::{
+    Direct3D::D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP,
+    Direct3D11::{
+        D3D11_BIND_CONSTANT_BUFFER, D3D11_BLEND_DESC, D3D11_BLEND_INV_SRC_ALPHA, D3D11_BLEND_ONE,
+        D3D11_BLEND_OP_ADD, D3D11_BUFFER_DESC, D3D11_COLOR_WRITE_ENABLE_ALL,
+        D3D11_CPU_ACCESS_WRITE, D3D11_CULL_NONE, D3D11_DEPTH_STENCIL_DESC, D3D11_FILL_SOLID,
+        D3D11_FILTER_MIN_MAG_MIP_LINEAR, D3D11_MAP_WRITE_DISCARD, D3D11_MAPPED_SUBRESOURCE,
+        D3D11_RASTERIZER_DESC, D3D11_RENDER_TARGET_BLEND_DESC, D3D11_SAMPLER_DESC,
+        D3D11_TEXTURE_ADDRESS_CLAMP, D3D11_USAGE_DYNAMIC, D3D11_VIEWPORT, ID3D11BlendState,
+        ID3D11Buffer, ID3D11DepthStencilState, ID3D11DeviceContext, ID3D11PixelShader,
+        ID3D11RasterizerState, ID3D11RenderTargetView, ID3D11SamplerState,
+        ID3D11ShaderResourceView, ID3D11VertexShader,
     },
-    core::Interface as _,
 };
 
 use crate::hud::cursor::{CursorFrame, LIFT, SIZE};
@@ -344,7 +341,7 @@ impl HudQuad {
                 // Collapse: bind this eye's half via the un-detoured RSSetViewports (so the collapse
                 // detour does not dup it back to full width).
                 Some((viewport, _)) => {
-                    crate::stereo::single_pass::set_ui_viewport_raw(context.as_raw(), viewport);
+                    crate::stereo::single_pass::set_ui_viewport_raw(context, viewport);
                 }
                 None => {
                     context.RSSetViewports(Some(&[D3D11_VIEWPORT {

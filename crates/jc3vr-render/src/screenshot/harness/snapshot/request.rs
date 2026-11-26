@@ -7,7 +7,7 @@ use crate::screenshot::harness::{RequestId, snapshot::summary::FailLimits};
 /// One image a snapshot can hold per eye.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum Plane {
+pub enum Plane {
     /// The eye's final image, as the headset receives it.
     Final,
     /// The main depth buffer as the G-buffer fill leaves it.
@@ -87,7 +87,7 @@ impl Plane {
 /// When a snapshot's comparisons dump the compared pixels to files.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum DumpPolicy {
+pub enum DumpPolicy {
     #[default]
     Never,
     /// Only the comparisons whose differences exceed the failure limits.
@@ -98,7 +98,7 @@ pub(crate) enum DumpPolicy {
 /// The `[snapshot]` table of a `snapshot` request file.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct SnapshotTable {
+pub struct SnapshotTable {
     /// The name the snapshot is kept and compared under.
     label: String,
     planes: Vec<Plane>,
@@ -137,7 +137,7 @@ pub(crate) struct SnapshotTable {
 
 /// A validated snapshot request.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct SnapshotRequest {
+pub struct SnapshotRequest {
     pub id: RequestId,
     pub label: String,
     /// The motion phase to take the snapshot at, under a motion configuration.
@@ -157,7 +157,7 @@ pub(crate) struct SnapshotRequest {
 
 /// Why a snapshot table is refused.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum SnapshotError {
+pub enum SnapshotError {
     Label,
     NoPlanes,
     NoFinal,
@@ -208,7 +208,7 @@ pub(crate) const MAX_COMPARED: usize = 8;
 pub(crate) const MAX_DEPTH_ULPS: u32 = 512;
 
 impl SnapshotRequest {
-    pub(crate) fn parse(
+    pub fn parse(
         id: RequestId,
         phase: Option<u32>,
         table: SnapshotTable,

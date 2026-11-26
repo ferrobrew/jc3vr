@@ -1,12 +1,11 @@
 //! Producer-side route availability retained in the ordered input history.
 
+use jc3vr_input::frame::{Hand, HandFrame};
 use tracking_format::input::{InputRoute, RouteSample};
-
-use crate::controllers::frame::{Hand, HandFrame};
 
 /// Retain tracking loss on each affected route, even when a later frame recovers before a tick.
 /// Values remain unmasked evidence; an unavailable sample cannot establish a neutral boundary.
-pub(crate) fn apply(hands: &[HandFrame; 2], samples: &mut [RouteSample]) {
+pub fn apply(hands: &[HandFrame; 2], samples: &mut [RouteSample]) {
     let usable = hands.each_ref().map(hand_usable);
     for sample in samples {
         let hand = match sample.route {
@@ -20,7 +19,7 @@ pub(crate) fn apply(hands: &[HandFrame; 2], samples: &mut [RouteSample]) {
 }
 
 /// The same hand admission applies to ordered route evidence and physical-control recovery.
-pub(crate) fn hand_usable(hand: &HandFrame) -> bool {
+pub fn hand_usable(hand: &HandFrame) -> bool {
     hand.active
         && hand.grip.is_valid()
         && hand.grip.pose.position.is_finite()

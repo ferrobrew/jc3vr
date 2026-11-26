@@ -20,6 +20,7 @@ use std::{
 };
 
 use jc3gi::graphics_engine::graphics_engine::GraphicsEngine;
+use jc3vr_core::config::engine::ConfigSlot;
 use parking_lot::Mutex;
 use retour::GenericDetour;
 use windows::{
@@ -44,11 +45,9 @@ use windows::{
     core::{HRESULT, Interface as _, PCWSTR},
 };
 
-use crate::config::engine::ConfigSlot;
-
 /// Whether to keep the census, `testing.texture_census` in the settings file. The payload binds the
 /// slot to its field in the capture harness's settings at startup.
-pub(crate) static TEXTURE_CENSUS: ConfigSlot<bool> = ConfigSlot::new("testing.texture_census");
+pub static TEXTURE_CENSUS: ConfigSlot<bool> = ConfigSlot::new("testing.texture_census");
 
 /// The log line that marks the payload as pinned by the census's detours.
 pub(crate) const PINNED_BY_TEXTURE_CENSUS: &str =
@@ -61,7 +60,7 @@ pub(crate) fn ensure_armed() {
         return;
     }
     let _install = INSTALL.lock();
-    if ARMED.load(Ordering::Acquire) || crate::is_shutting_down() {
+    if ARMED.load(Ordering::Acquire) || jc3vr_core::is_shutting_down() {
         return;
     }
     match unsafe { arm() } {
@@ -204,7 +203,7 @@ unsafe fn arm() -> Result<(), String> {
     // The detours live for the rest of the process.
     let create = CREATE.get_or_init(|| create);
     let release = RELEASE.get_or_init(|| release);
-    crate::hooks::suspend::for_block(|| {
+    jc3vr_core::hooks::suspend::for_block(|| {
         // SAFETY: the detours were built from these targets; other threads are suspended.
         unsafe {
             create.enable()?;

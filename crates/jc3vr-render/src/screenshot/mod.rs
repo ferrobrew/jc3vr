@@ -1,4 +1,4 @@
-//! On-demand screenshots to the session's screenshots (F12; see [`crate::session`]), for in-headset
+//! On-demand screenshots to the session's screenshots (F12; see [`jc3vr_core::session`]), for in-headset
 //! diagnosis. Every capture shows both eyes side by side in a single PNG: under single-pass collapse
 //! the linear back buffer *is* that side-by-side render and is captured directly, while in two-pass
 //! stereo the back buffer only ever holds one eye, so the two per-eye capture textures the VR
@@ -22,7 +22,7 @@ use windows::{
     core::Interface as _,
 };
 
-pub(crate) mod harness;
+pub mod harness;
 
 use crate::{
     image_writer::{self, ChannelOrder, Image, ImageTarget},
@@ -199,7 +199,7 @@ unsafe fn map_out(
     Ok(Capture {
         image,
         format: format!("{:?}", desc.Format),
-        stamp: crate::session::stamp(),
+        stamp: jc3vr_core::session::stamp(),
         diagnostics: crate::stereo::single_pass::last_frame_diagnostics(),
     })
 }
@@ -209,7 +209,7 @@ unsafe fn map_out(
 /// exact matrices that produced the image can be inspected offline instead of read from a log line.
 fn submit(capture: Capture) {
     let sidecar = serde_json::json!({
-        "image": crate::session::CaptureFile::Screenshot.file_name(&capture.stamp),
+        "image": jc3vr_core::session::CaptureFile::Screenshot.file_name(&capture.stamp),
         "width": capture.image.width(),
         "height": capture.image.height(),
         "format": capture.format,

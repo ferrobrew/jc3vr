@@ -7,10 +7,10 @@
 //! overlapping primitives are ordered by the painter's algorithm.
 
 use glam::{Quat, Vec3};
+use jc3vr_input::frame::Pose;
 
-use crate::controllers::{
-    frame::Pose,
-    overlay::primitive::{Anchor, Facing, HandPose, Primitive, Shape, SpriteSize},
+use crate::controllers::overlay::primitive::{
+    Anchor, Facing, HandPose, Primitive, Shape, SpriteSize,
 };
 
 /// A hand's render-time world poses.
@@ -189,8 +189,10 @@ fn sprite_axes(facing: Facing, head: Quat) -> (Vec3, Vec3) {
 
 #[cfg(test)]
 mod tests {
+    use jc3vr_input::frame::Hand;
+
     use super::*;
-    use crate::controllers::{frame::Hand, overlay::primitive::DepthMode};
+    use crate::controllers::overlay::primitive::DepthMode;
 
     fn frame() -> Frame {
         let right = HandPoses {

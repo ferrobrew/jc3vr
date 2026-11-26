@@ -29,43 +29,42 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use jc3vr_input::frame::{
+    ActionSetKind, GripPress, Hand, HandFrame, HandInputs, InteractionProfile,
+};
 use openxr as xr;
 use parking_lot::Mutex;
 
-use crate::{
-    controllers::frame::{
-        ActionSetKind, GripPress, Hand, HandFrame, HandInputs, InteractionProfile,
+use crate::vr::input::{
+    actions::{Actions, SetId},
+    config::InputConfig,
+    layout,
+    layout::{BoolInput, FloatInput, Input, Profile, Vec2Input},
+    semantic::{
+        SCHEMA_VERSION, SemanticSet, defaults,
+        frame::{ActionValue, SemanticFrame},
     },
-    vr::input::{
-        actions::{Actions, SetId},
-        config::InputConfig,
-        layout::{self, BoolInput, FloatInput, Input, Profile, Vec2Input},
-        semantic::{
-            SCHEMA_VERSION, SemanticSet, defaults,
-            frame::{ActionValue, SemanticFrame},
-        },
-        sources,
-    },
+    sources,
 };
 
 /// The self-check's results, for the debug UI.
 #[derive(Debug, Clone, Default)]
-pub(crate) struct SelfCheckStatus {
+pub struct SelfCheckStatus {
     /// The logged block, once it has run.
-    pub(crate) report: Option<String>,
+    pub report: Option<String>,
     /// The findings logged since.
-    pub(crate) findings: Vec<String>,
+    pub findings: Vec<String>,
     /// How many of the findings are problems: a pair the runtime gave to one set only.
-    pub(crate) problems: usize,
+    pub problems: usize,
 }
 
 /// A snapshot of the self-check's results.
-pub(crate) fn status() -> SelfCheckStatus {
+pub fn status() -> SelfCheckStatus {
     STATUS.lock().clone()
 }
 
 /// Run the self-check again on the next frame.
-pub(crate) fn request_rerun() {
+pub fn request_rerun() {
     RERUN.store(true, Ordering::Relaxed);
 }
 

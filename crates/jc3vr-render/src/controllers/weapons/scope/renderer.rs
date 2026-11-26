@@ -256,9 +256,7 @@ impl Renderer {
             match crate::stereo::single_pass::collapse_ui_eye_override() {
                 // The collapse detours the plain viewport call; bind this eye's half through the
                 // original.
-                Some(_) => {
-                    crate::stereo::single_pass::set_ui_viewport_raw(context.as_raw(), &viewport)
-                }
+                Some(_) => crate::stereo::single_pass::set_ui_viewport_raw(context, &viewport),
                 None => context.RSSetViewports(Some(&[viewport])),
             }
             context.OMSetBlendState(&self.blend, None, 0xffff_ffff);
@@ -336,8 +334,14 @@ impl EyeCopy {
 }
 
 /// The committed, precompiled lens shaders (entry point `main`).
-const VERTEX_DXBC: &[u8] = include_bytes!("../../../shaders/scope_lens_vs.dxbc");
-const PIXEL_DXBC: &[u8] = include_bytes!("../../../shaders/scope_lens_ps.dxbc");
+const VERTEX_DXBC: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/shaders/scope_lens_vs.dxbc"
+));
+const PIXEL_DXBC: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/shaders/scope_lens_ps.dxbc"
+));
 
 /// The render-target view of `target`, created when the target changes.
 fn target_view(

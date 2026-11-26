@@ -12,7 +12,7 @@
 //! `static` loader route (build the Khronos loader through cmake against the xwin/clang-cl cross
 //! toolchain) does not build in this environment -- cmake selects the Ninja generator, which the
 //! cross toolchain lacks -- so the portable choice is the runtime loader. The loader DLL defaults to
-//! `openxr_loader.dll` next to the payload DLL ([`crate::module::get_path`]) and is overridable via
+//! `openxr_loader.dll` next to the payload DLL ([`jc3vr_core::module::get_path`]) and is overridable via
 //! [`crate::vr::VrConfig::loader_path`]. When the loader is absent the mod stays in flatscreen
 //! stereo and retries on the configured cadence.
 //!
@@ -22,7 +22,7 @@
 //! the top of the render update. The submit side (the frame stream and the swapchain, [`submit`]) is
 //! a second lock, held from [`WaitedFrame::begin`] for the frame and taken over by the deferred frame
 //! tail ([`tail`]) until it submits; both holders wait on engine threads meanwhile, so every blocking
-//! lock of either goes through a thread-role check (see [`crate::thread_role`] and
+//! lock of either goes through a thread-role check (see [`jc3vr_core::thread_role`] and
 //! `docs/mod/threading.md`), and other threads read the published slots instead. The game's
 //! `ID3D11Device` is fetched from the graphics engine singleton at session-create time,
 //! null-guarded; the device is never stored (so the state carries no raw device pointer across
@@ -32,16 +32,15 @@
 //!
 //! Bring-up failure at any stage logs on target `"vr"` and leaves the mod in flatscreen stereo;
 //! [`update`] retries the whole bring-up every [`crate::vr::VrConfig::retry_interval_secs`] while
-//! `vr.enabled`. Turning `vr.enabled` off, or [`crate::lifecycle`] shutdown, tears the runtime down
+//! `vr.enabled`. Turning `vr.enabled` off, or [`jc3vr_core::lifecycle`] shutdown, tears the runtime down
 //! in order (swapchain → session → instance) so the OpenXR instance never outlives the DLL.
 
 pub mod projection;
 
 pub use config::{
-    BlitGamma, FoveationConfig, FoveationConfigError, FreezeMode, MirrorView, ProjectionConvention,
-    VrConfig,
+    BlitGamma, FOVEATION_CONFIG, FoveationConfig, FoveationConfigError, FreezeMode, MirrorView,
+    ProjectionConvention, VR_CONFIG, VrConfig,
 };
-pub(crate) use config::{FOVEATION_CONFIG, VR_CONFIG};
 pub use frame::{
     CaptureEyeView, CaptureViews, EyeRenderParams, begin_render_frame, capture_views,
     clear_render_params, cull_projection_standard, eyes_union_projection_standard, render_params,
@@ -61,7 +60,7 @@ pub mod foveation;
 mod frame;
 mod frame_loop;
 pub mod input;
-pub(crate) mod live_tracking;
+pub mod live_tracking;
 mod loader;
 mod mirror;
 mod participants;
@@ -76,39 +75,43 @@ mod submit;
 mod swapchain;
 pub mod tail;
 mod visibility_mask;
-pub(crate) mod window;
+pub mod window;
 
 pub use back_buffer::{
     owned as back_buffer_owned, resize_substitute_bypassed, substitute_render_setups,
     sync_swapchain_to_window,
 };
-pub(crate) use blit::{
-    DirectArm, DirectStatus, blit_direct, direct_status, fade_level, set_fade_level, texture_size,
+pub use blit::{
+    DirectArm, DirectStatus, arm_direct, blit_direct, direct_status, disarm_direct, fade_level,
+    present_and_submit, set_fade_level, texture_size,
 };
-pub use blit::{arm_direct, disarm_direct, present_and_submit};
 pub(crate) use blit_region::BlitSource;
 pub use eye_resolution::{engine_render_resolution, native_eye_resolution};
-pub use frame_loop::{EyeImage, EyeView, FrameContext, LocatedFrame, WaitedFrame, frame_wait};
-pub(crate) use frame_loop::{head_tracked, pose_age_totals};
-pub use mirror::{MirrorDraw, MirrorFrame, present_mirror, toggle_stereo_pair};
-pub(crate) use mirror::{
-    MirrorLayers, MirrorObserver, PANEL_ENABLED, PANEL_ON_MIRROR, PANEL_RESOLUTION, latest_present,
-    register_mirror_layers, register_mirror_observer,
+pub use frame_loop::{
+    EyeImage, EyeView, FrameContext, LocatedFrame, WaitedFrame, frame_wait, head_tracked,
+    pose_age_totals,
 };
-pub use participants::FrameInputs;
-pub(crate) use participants::{CockpitPositions, FrameParticipants, register_frame_participants};
+pub use mirror::{
+    MirrorDraw, MirrorFrame, MirrorLayers, MirrorObserver, PANEL_ENABLED, PANEL_ON_MIRROR,
+    PANEL_RESOLUTION, latest_present, present_mirror, register_mirror_layers,
+    register_mirror_observer, toggle_stereo_pair,
+};
+pub use participants::{
+    CockpitPositions, FrameInputs, FrameParticipants, register_frame_participants,
+};
 pub use recenter::{
     RecenterCause, RecenterKind, auto_recenter_tick, recenter, recenter_count, request_recenter,
     request_seat_recenter, request_seat_yaw_rebase,
 };
-pub use resolution::apply_native_resolution;
-pub(crate) use resolution::{
-    ResolutionProgress, ResolutionStatus, progress as resolution_progress,
+pub use resolution::{
+    ResolutionProgress, ResolutionStatus, apply_native_resolution, progress as resolution_progress,
     status as resolution_status,
 };
-pub(crate) use state::{PublishedStatus, is_running_published, published_status};
-pub use state::{VrStatus, install, is_running, status, uninstall, update, wait_for_frame_tail};
-pub(crate) use visibility_mask::{EyeMask, MaskStatus, status as visibility_mask_status};
+pub use state::{
+    PublishedStatus, VrStatus, install, is_running, is_running_published, published_status, status,
+    uninstall, update, wait_for_frame_tail,
+};
+pub use visibility_mask::{EyeMask, MaskStatus, status as visibility_mask_status};
 
 /// The OpenXR view configuration: standard stereo, two views (one per eye).
 const VIEW_TYPE: xr::ViewConfigurationType = xr::ViewConfigurationType::PRIMARY_STEREO;

@@ -15,32 +15,27 @@ use crate::egui_impl::EguiState;
 
 pub mod egui_impl;
 pub mod ui;
-pub mod vr;
+// The render layer lives in its own crate; the old paths keep working until the final cleanup pass.
+pub use jc3vr_render::vr;
+pub(crate) use jc3vr_render::{debug, far_field, fsr, headpose, image_writer, screenshot, stereo};
 
 mod allocator;
 mod composition;
 mod config;
 mod controllers;
-mod debug;
 mod diagnostics;
 mod director;
 mod eject_gpu;
-mod far_field;
-mod fsr;
 mod grapple;
-mod headpose;
 mod hooks;
 mod hud;
-mod image_writer;
 // The input layer lives in its own crate; the old path keeps working until the final cleanup pass.
 pub(crate) use jc3vr_input as input_core;
 mod pause_menu;
 #[cfg(feature = "profiler")]
 mod profiler;
 mod recorder;
-mod screenshot;
 mod status;
-mod stereo;
 mod testing;
 
 #[unsafe(no_mangle)]

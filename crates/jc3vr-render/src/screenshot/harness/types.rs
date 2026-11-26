@@ -1,15 +1,15 @@
 use std::path::PathBuf;
 
+use jc3vr_core::config::engine::Snapshot;
 use serde::Serialize;
 
 use crate::{
-    config::engine::Snapshot,
     stereo::{dispatch::RenderMode, single_pass::FrameDiagnostics},
     testing::visual::{DiagnosticProfile, VisualMetadata},
 };
 
 #[derive(Clone, Serialize)]
-pub(crate) struct CaptureMetadata {
+pub struct CaptureMetadata {
     pub(crate) id: String,
     pub(crate) state: CaptureState,
     #[serde(flatten)]

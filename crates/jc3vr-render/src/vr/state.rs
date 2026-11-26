@@ -10,6 +10,8 @@ use std::{
 };
 
 use anyhow::Context as _;
+use jc3vr_core::{frame_timing, frame_timing::Slot, thread_role, thread_role::ThreadRole};
+use jc3vr_input::frame as controller_frame;
 use openxr as xr;
 use parking_lot::{Mutex, MutexGuard};
 use windows::{
@@ -20,21 +22,17 @@ use windows::{
 };
 
 use crate::{
-    controllers::{
-        body::rig::origin_provenance::{self, ReferenceSpaceChanges},
-        frame as controller_frame,
-    },
-    frame_timing::{self, Slot},
+    controllers::body::rig::{origin_provenance, origin_provenance::ReferenceSpaceChanges},
     hooks::graphics_engine::graphics_engine,
-    thread_role::{self, ThreadRole},
     vr::{
         VIEW_TYPE, VR_CONFIG, VrConfig, blit,
         eye_resolution::scaled_eye_size,
-        foveation,
+        foveation, input,
         input::{
-            self, InputState,
+            InputState,
             config::{DOMINANT_HAND, INPUT_CONFIG},
-            flight_pose::{self, EpochChange},
+            flight_pose,
+            flight_pose::EpochChange,
         },
         loader::{LoaderUnavailable, load_entry},
         mirror,
@@ -44,8 +42,8 @@ use crate::{
         recenter::Baseline,
         resolution,
         session::Session,
-        stage,
-        submit::{self, Submitter},
+        stage, submit,
+        submit::Submitter,
         visibility_mask,
     },
 };
@@ -58,7 +56,7 @@ pub fn install() {
     // size is requested while the hooks are still live, so the delayed hook uninstall (lib.rs
     // `shutdown_startup`) leaves the `Draw` prologue time to service it before teardown.
     resolution::install();
-    crate::lifecycle::on_cleanup(|_renderer| {
+    jc3vr_core::lifecycle::on_cleanup(|_renderer| {
         blit::teardown();
         foveation::teardown();
         crate::far_field::share::teardown();
@@ -81,7 +79,7 @@ pub fn update() -> bool {
 /// Whether an OpenXR session was running when the game thread last pumped the runtime ([`update`]).
 /// An atomic, so any thread may read it, including the main loop outside `Game::Update`, where
 /// [`is_running`] may not take the runtime lock. One frame stale at most.
-pub(crate) fn is_running_published() -> bool {
+pub fn is_running_published() -> bool {
     SESSION_RUNNING.load(Ordering::Relaxed)
 }
 
@@ -92,7 +90,7 @@ fn update_runtime() -> bool {
     // `instance.is_none()`, re-acquire those persisted handles, and rebuild the swapchain -- racing
     // the hook uninstall and crashing the game on uninject. Returning false also skips `frame_wait`
     // and `present_and_submit` in the caller, quiescing the whole VR frame path.
-    if crate::is_shutting_down() {
+    if jc3vr_core::is_shutting_down() {
         return false;
     }
 
@@ -184,18 +182,18 @@ pub fn status() -> VrStatus {
 /// The runtime's state as the game thread last published it, for a status readout. Atomics only,
 /// so any thread may read it, unlike [`status`].
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub(crate) struct PublishedStatus {
+pub struct PublishedStatus {
     /// Whether the runtime is brought up: an instance and a session exist.
-    pub(crate) runtime_up: bool,
+    pub runtime_up: bool,
     /// The session state the runtime last reported, or `None` before the first report since
     /// bring-up. A session reused from a reinject reports none until it next changes state.
-    pub(crate) session_state: Option<xr::SessionState>,
+    pub session_state: Option<xr::SessionState>,
     /// Whether the last bring-up attempt failed, so the runtime is retrying.
-    pub(crate) bring_up_failed: bool,
+    pub bring_up_failed: bool,
 }
 
 /// The runtime's published state.
-pub(crate) fn published_status() -> PublishedStatus {
+pub fn published_status() -> PublishedStatus {
     PublishedStatus {
         runtime_up: RUNTIME_UP.load(Ordering::Relaxed),
         session_state: match SESSION_STATE.load(Ordering::Relaxed) {
@@ -206,7 +204,7 @@ pub(crate) fn published_status() -> PublishedStatus {
     }
 }
 
-/// Tear the runtime down and clear all state. Idempotent. Registered with [`crate::lifecycle`], so it
+/// Tear the runtime down and clear all state. Idempotent. Registered with [`jc3vr_core::lifecycle`], so it
 /// runs on uninject — where, if [`VrConfig::persist_instance`] is set, the instance and session are
 /// kept alive (their handles stashed in the game process environment, the wrappers leaked) for a
 /// reinject to reuse, sidestepping the runtime's per-process instance/session budget. Otherwise

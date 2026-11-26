@@ -300,7 +300,10 @@ struct Params {
 
 const SLOTS: usize = 6;
 
-const SHADER: &[u8] = include_bytes!("../../../shaders/snapshot_diff_cs.dxbc");
+const SHADER: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/shaders/snapshot_diff_cs.dxbc"
+));
 
 fn cells_per_job() -> usize {
     (GRID[0] * GRID[1]) as usize

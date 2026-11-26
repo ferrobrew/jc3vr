@@ -312,9 +312,18 @@ pub fn teardown() {
 
 /// The committed, precompiled foveation shaders. The vertex shader is the shared fullscreen-triangle from
 /// the capture composite; the pixel shaders are foveation-specific.
-const VERTEX_DXBC: &[u8] = include_bytes!("../shaders/capture_vs.dxbc");
-const MASK_DXBC: &[u8] = include_bytes!("../shaders/foveation_mask_ps.dxbc");
-const FILL_DXBC: &[u8] = include_bytes!("../shaders/foveation_fill_ps.dxbc");
+const VERTEX_DXBC: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/shaders/capture_vs.dxbc"
+));
+const MASK_DXBC: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/shaders/foveation_mask_ps.dxbc"
+));
+const FILL_DXBC: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/shaders/foveation_fill_ps.dxbc"
+));
 
 /// The foveation pipeline singleton, built lazily on first use and torn down with the runtime. Holds COM
 /// objects, which `windows` marks `Send`/`Sync`, so a `Mutex` static is sound.

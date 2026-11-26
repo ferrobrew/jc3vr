@@ -101,7 +101,7 @@ pub(crate) enum DeltaRequest {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum InvalidPair {
+pub enum InvalidPair {
     MissingSample,
     MixedRootLocalTime,
     CharacterChanged,

@@ -11,7 +11,7 @@ use glam::Vec2;
 /// bands at its sides. `UIManager::Convert3DCoords` maps a world point into this same frame
 /// (stage coordinates, with the frame running outside `0..stage` on the longer axis).
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub(crate) struct StageFrame {
+pub struct StageFrame {
     /// The visible frame's top-left corner, in stage coordinates.
     pub origin: Vec2,
     /// The visible frame's size, in stage units.

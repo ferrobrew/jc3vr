@@ -10,12 +10,10 @@
 use std::{collections::BTreeMap, sync::atomic::Ordering};
 
 use dxbc_stereo::DxbcError;
+use jc3vr_core::session::CaptureFile;
 use parking_lot::Mutex;
 
-use crate::{
-    session::CaptureFile,
-    stereo::{config::STEREO_CONFIG, single_pass::*},
-};
+use crate::stereo::{config::STEREO_CONFIG, single_pass::*};
 
 /// Vertex-shader name prefixes whose no-`cb0` shaders are reprojected for single-pass: the scene
 /// geometry that writes clip as `scene-VP · world` (skinned characters/NPCs, static and dynamic
@@ -530,8 +528,10 @@ pub fn dump_vs_name_census() {
     if census.is_empty() {
         return;
     }
-    let path = match crate::session::capture_file(CaptureFile::ShaderDump, &crate::session::stamp())
-    {
+    let path = match jc3vr_core::session::capture_file(
+        CaptureFile::ShaderDump,
+        &jc3vr_core::session::stamp(),
+    ) {
         Ok(path) => path,
         Err(e) => {
             tracing::warn!("vs name census: {e}");

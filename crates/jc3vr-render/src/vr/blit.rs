@@ -78,8 +78,14 @@ use crate::{
 
 /// The committed, precompiled blit shaders. The vertex shader is the shared fullscreen-triangle from
 /// the capture composite (entry point `main`); the pixel shader is VR-specific (gamma bridge).
-const VERTEX_DXBC: &[u8] = include_bytes!("../shaders/capture_vs.dxbc");
-const PIXEL_DXBC: &[u8] = include_bytes!("../shaders/vr_blit_ps.dxbc");
+const VERTEX_DXBC: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/shaders/capture_vs.dxbc"
+));
+const PIXEL_DXBC: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/shaders/vr_blit_ps.dxbc"
+));
 
 /// The blit pipeline singleton, built lazily on the first submitted VR frame and torn down with the
 /// runtime. Holds COM objects, which `windows` marks `Send`/`Sync`, so a `Mutex` static is sound.
@@ -111,12 +117,12 @@ pub fn present_and_submit(mut frame: FrameContext, cfg: &VrConfig) {
 
 /// Set the comfort fade's darkness, `0` (clear) to `1` (black), that the blit scales each eye by.
 /// The fade's owner writes it once per rendered frame, and any thread may.
-pub(crate) fn set_fade_level(level: f32) {
+pub fn set_fade_level(level: f32) {
     FADE_LEVEL.store(level.to_bits(), Ordering::Relaxed);
 }
 
 /// The comfort fade's darkness, as last set by [`set_fade_level`].
-pub(crate) fn fade_level() -> f32 {
+pub fn fade_level() -> f32 {
     f32::from_bits(FADE_LEVEL.load(Ordering::Relaxed))
 }
 
@@ -174,21 +180,21 @@ pub fn disarm_direct() {
 /// What the direct route did on the last frame, for a status readout. Atomics only, so any thread
 /// may read it.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub(crate) struct DirectStatus {
+pub struct DirectStatus {
     /// How the last frame's [`arm_direct`] or [`disarm_direct`] left the route, or `None` before
     /// the first frame.
-    pub(crate) arm: Option<DirectArm>,
+    pub arm: Option<DirectArm>,
     /// How many eyes the last submitted frame took from the direct route.
-    pub(crate) direct_eyes: u8,
+    pub direct_eyes: u8,
     /// Whether the back buffer was last found readable by the direct route, or `None` before it
     /// was checked.
-    pub(crate) back_buffer_readable: Option<bool>,
+    pub back_buffer_readable: Option<bool>,
 }
 
 /// How a frame left the direct route.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[repr(u8)]
-pub(crate) enum DirectArm {
+pub enum DirectArm {
     /// The image was acquired and published for the eyes' post-draws.
     Armed = 1,
     /// `vr.direct_eye_blit` is off.
@@ -203,7 +209,7 @@ pub(crate) enum DirectArm {
 }
 
 /// The direct route's last frame.
-pub(crate) fn direct_status() -> DirectStatus {
+pub fn direct_status() -> DirectStatus {
     let arm = match LAST_ARM.load(Ordering::Relaxed) {
         1 => Some(DirectArm::Armed),
         2 => Some(DirectArm::ConfigOff),
@@ -232,7 +238,7 @@ pub(crate) fn direct_status() -> DirectStatus {
 /// # Safety
 /// Called from the post-draw hook with the engine context mutex held; `device` and `context` are
 /// the live engine device and immediate context.
-pub(crate) unsafe fn blit_direct(
+pub unsafe fn blit_direct(
     device: &Device,
     context: &ID3D11DeviceContext,
     src: &ID3D11Resource,
@@ -959,7 +965,7 @@ impl VrBlit {
 ///
 /// # Safety
 /// `texture` must be a live `ID3D11Texture2D`.
-pub(crate) unsafe fn texture_size(texture: &ID3D11Texture2D) -> (u32, u32) {
+pub unsafe fn texture_size(texture: &ID3D11Texture2D) -> (u32, u32) {
     let mut desc = D3D11_TEXTURE2D_DESC::default();
     unsafe {
         texture.GetDesc(&mut desc);

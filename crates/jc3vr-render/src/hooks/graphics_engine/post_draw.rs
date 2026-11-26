@@ -25,7 +25,7 @@ pub(crate) type FrameDraw = fn(&ID3D11DeviceContext, &Device, &Texture);
 /// is taken. The ticks read the published state of the systems they draw under those systems' own
 /// locks.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) enum DispatchTick {
+pub enum DispatchTick {
     /// The world-space overlay's producers.
     WorldOverlay,
     /// The scope lens's plan.
@@ -40,7 +40,7 @@ impl DispatchTick {
 /// A layer drawn onto each eye's final back buffer, in draw order: the panels sit on top of the
 /// world-locked readouts.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) enum EyeLayer {
+pub enum EyeLayer {
     /// The world-space overlay.
     WorldOverlay,
     /// The scope lens, over the overlay.
@@ -62,7 +62,7 @@ impl EyeLayer {
 
 /// A pass run once per frame, on its last near dispatch, in this order.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) enum FramePass {
+pub enum FramePass {
     /// The flat debug overlay, rendered offscreen for the desktop mirror.
     MirrorOverlay,
     /// The learned body estimator's GPU pass.
@@ -77,59 +77,59 @@ impl FramePass {
 /// The game UI's redirect into the floating panel's texture, kept up by the draw task under the
 /// UI's deferred-render lock and the engine's context lock.
 #[derive(Clone, Copy)]
-pub(crate) struct UiRedirect {
+pub struct UiRedirect {
     /// Maintain the redirect for the device and its back buffer's width and height.
-    pub(crate) maintain: fn(&Device, u32, u32),
+    pub maintain: fn(&Device, u32, u32),
     /// Whether the redirect is in place, so the UI's deferred render is submitted from the
     /// post-draw.
-    pub(crate) applied: fn() -> bool,
+    pub applied: fn() -> bool,
 }
 
 /// What records the frame's eye images.
 #[derive(Clone, Copy)]
-pub(crate) struct EyeFrameRecorder {
+pub struct EyeFrameRecorder {
     /// Whether the eye captures must be copied every frame, even where the eyes go straight to
     /// the headset.
-    pub(crate) wants_eye_captures: fn() -> bool,
+    pub wants_eye_captures: fn() -> bool,
     /// Note a rendered frame, on its last near dispatch; returns the frame's ordinal while a
     /// recording runs.
-    pub(crate) frame_rendered: fn() -> Option<u32>,
+    pub frame_rendered: fn() -> Option<u32>,
     /// Record both eyes' captures, which hold the frame `frame_rendered` returned, under the
     /// engine's context lock.
-    pub(crate) capture_frame:
+    pub capture_frame:
         unsafe fn(&ID3D11Device, &ID3D11DeviceContext, [&ID3D11Texture2D; 2], Option<u32>),
     /// Release what recording the eyes holds, on a frame whose eyes are not recorded.
-    pub(crate) release_capture: fn(),
+    pub release_capture: fn(),
 }
 
-pub(crate) fn register_dispatch_tick(tick: DispatchTick, run: fn(usize)) {
+pub fn register_dispatch_tick(tick: DispatchTick, run: fn(usize)) {
     DISPATCH_TICKS.set(tick as usize, run, "dispatch tick");
 }
 
 /// Register the copy of the dispatch's eye images, taken before any [`EyeLayer`] draws.
-pub(crate) fn register_scene_capture(capture: EyeDraw) {
+pub fn register_scene_capture(capture: EyeDraw) {
     set_once(&SCENE_CAPTURE, capture, "scene capture");
 }
 
-pub(crate) fn register_eye_layer(layer: EyeLayer, draw: EyeDraw) {
+pub fn register_eye_layer(layer: EyeLayer, draw: EyeDraw) {
     EYE_LAYERS.set(layer as usize, draw, "eye layer");
 }
 
-pub(crate) fn register_frame_pass(pass: FramePass, draw: FrameDraw) {
+pub fn register_frame_pass(pass: FramePass, draw: FrameDraw) {
     FRAME_PASSES.set(pass as usize, draw, "frame pass");
 }
 
-pub(crate) fn register_ui_redirect(redirect: UiRedirect) {
+pub fn register_ui_redirect(redirect: UiRedirect) {
     set_once(&UI_REDIRECT, redirect, "UI redirect");
 }
 
-pub(crate) fn register_eye_frame_recorder(recorder: EyeFrameRecorder) {
+pub fn register_eye_frame_recorder(recorder: EyeFrameRecorder) {
     set_once(&RECORDER, recorder, "eye-frame recorder");
 }
 
 /// Register the desktop overlay drawn into the game's own back buffer just before the engine's
 /// flip presents it.
-pub(crate) fn register_desktop_overlay(draw: fn()) {
+pub fn register_desktop_overlay(draw: fn()) {
     set_once(&DESKTOP_OVERLAY, draw, "desktop overlay");
 }
 

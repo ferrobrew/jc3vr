@@ -51,12 +51,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use jc3gi::{
     camera::camera_manager::CameraManager, graphics_engine::graphics_engine::GraphicsEngine,
 };
+use jc3vr_core::config::engine::{Switch, disable_automatically};
 use parking_lot::Mutex;
 
-use crate::{
-    config::engine::{Switch, disable_automatically},
-    vr::{VR_CONFIG, back_buffer},
-};
+use crate::vr::{VR_CONFIG, back_buffer};
 
 /// How many frames to wait for a requested deferred resize to be serviced before treating it as a
 /// fault. A resize is serviced in the very next `Draw` prologue, so this is a generous ceiling that
@@ -89,7 +87,7 @@ static STATE: Mutex<ResolutionState> = Mutex::new(ResolutionState::new());
 
 /// Register the shutdown restore. Called once from [`crate::vr::install`].
 pub fn install() {
-    crate::lifecycle::on_cleanup(|_renderer| on_shutdown());
+    jc3vr_core::lifecycle::on_cleanup(|_renderer| on_shutdown());
 }
 
 /// The once-per-frame driver, called from the frame top in `hooks::game::game_update_render` **before
@@ -246,16 +244,16 @@ pub fn apply_native_resolution() {
 /// The engine's render size and the size the driver wants it at, as the last frame saw them, for a
 /// status readout. Atomics only, so any thread may read it.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub(crate) struct ResolutionStatus {
+pub struct ResolutionStatus {
     /// The engine's display size, or `None` before the engine is initialized.
-    pub(crate) engine: Option<(u32, u32)>,
+    pub engine: Option<(u32, u32)>,
     /// The native render size the driver targets, or `None` while no session runs or native
     /// resolution is off. Twice the per-eye width under single-pass double-wide.
-    pub(crate) target: Option<(u32, u32)>,
+    pub target: Option<(u32, u32)>,
 }
 
 /// The last frame's sizes.
-pub(crate) fn status() -> ResolutionStatus {
+pub fn status() -> ResolutionStatus {
     ResolutionStatus {
         engine: unpack(ENGINE_SIZE.load(Ordering::Relaxed)),
         target: unpack(TARGET_SIZE.load(Ordering::Relaxed)),
@@ -264,7 +262,7 @@ pub(crate) fn status() -> ResolutionStatus {
 
 /// The last driver observation, including a restore target and any unserviced resize.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct ResolutionProgress {
+pub struct ResolutionProgress {
     pub(crate) engine: Option<(u32, u32)>,
     pub(crate) desired: Option<(u32, u32)>,
     pub(crate) pending: bool,
@@ -281,7 +279,7 @@ impl ResolutionProgress {
 }
 
 /// Read a coherent frame-safe snapshot without locking the VR runtime or driver state.
-pub(crate) fn progress() -> ResolutionProgress {
+pub fn progress() -> ResolutionProgress {
     *PROGRESS.lock()
 }
 

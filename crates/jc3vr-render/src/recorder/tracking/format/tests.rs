@@ -1,15 +1,13 @@
 use glam::{Quat, Vec2, Vec3};
+use jc3vr_input::frame::{
+    Button, ButtonSet, HandInputs, HandJoint, InteractionProfile, TrackedPose,
+};
 use pretty_assertions::assert_eq;
 
 use super::*;
-use crate::{
-    controllers::frame::{
-        Button, ButtonSet, HandInputs, HandJoint, InteractionProfile, TrackedPose,
-    },
-    vr::input::semantic::{
-        SemanticSet,
-        frame::{ActionState, ActionValue},
-    },
+use crate::vr::input::semantic::{
+    SemanticSet,
+    frame::{ActionState, ActionValue},
 };
 
 fn header() -> Header {

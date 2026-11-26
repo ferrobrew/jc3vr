@@ -1,9 +1,8 @@
 //! VR runtime configuration. See [`crate::vr`] and `docs/mod/vr-runtime.md`.
 
 use jc3gi::camera::camera::Camera;
+use jc3vr_core::config::engine::ConfigSlot;
 use serde::{Deserialize, Serialize};
-
-use crate::config::engine::ConfigSlot;
 
 /// Which depth convention the per-eye off-axis projection is written in, and where in the
 /// `SetupRenderCamera` sequence it lands (`docs/engine/rendering/rendering.md` §2.7, `docs/mod/vr-runtime.md` blocker 1).
@@ -122,7 +121,7 @@ impl MirrorView {
 }
 
 /// The VR runtime settings, at `vr` in the settings file; the payload binds the slot at startup.
-pub(crate) static VR_CONFIG: ConfigSlot<VrConfig> = ConfigSlot::new("vr");
+pub static VR_CONFIG: ConfigSlot<VrConfig> = ConfigSlot::new("vr");
 
 /// OpenXR runtime settings. `Clone` (not `Copy`) because [`loader_path`](VrConfig::loader_path) owns
 /// a `String`.
@@ -242,7 +241,7 @@ pub struct VrConfig {
     #[serde(default = "default_true")]
     pub overlap_render_update: bool,
     /// Keep the game's threads on the cores that share the largest L3 cache, on a processor whose
-    /// L3 caches differ in size (see [`crate::cpu_placement`]). The draw task, which bounds the
+    /// L3 caches differ in size (see [`jc3vr_core::cpu_placement`]). The draw task, which bounds the
     /// heaviest scenes, runs far faster there. A processor with one size of L3 is left alone. On by
     /// default; off puts the affinity it found back.
     #[serde(default = "default_true")]
@@ -297,7 +296,7 @@ impl Default for VrConfig {
 
 /// The foveation settings, at `foveation` in the settings file; the payload binds the slot at
 /// startup.
-pub(crate) static FOVEATION_CONFIG: ConfigSlot<FoveationConfig> = ConfigSlot::new("foveation");
+pub static FOVEATION_CONFIG: ConfigSlot<FoveationConfig> = ConfigSlot::new("foveation");
 
 /// Static foveated rendering (issue #29): a radial stencil mask drops a dithered fraction of the
 /// peripheral pixels before the expensive scene passes shade them, and a fill-in pass reconstructs them

@@ -16,13 +16,13 @@ use crate::headpose::xr::CockpitPose;
 
 /// The camera's gameplay-side participants.
 #[derive(Clone, Copy)]
-pub(crate) struct CameraParticipants {
+pub struct CameraParticipants {
     /// The camera matrix the camera getter returns in place of the camera's own, when one stands in
     /// for the camera on the calling thread.
-    pub(crate) matrix_override: fn() -> Option<Matrix4>,
+    pub matrix_override: fn() -> Option<Matrix4>,
     /// Observes a gameplay frame's camera placement: the character world matrix the placement
     /// composed with, and the camera's eye point.
-    pub(crate) placed: fn(Mat4, Vec3),
+    pub placed: fn(Mat4, Vec3),
 }
 
 /// An observer of the un-offset centre render camera's world transform, with the cockpit head pose
@@ -30,14 +30,14 @@ pub(crate) struct CameraParticipants {
 pub(crate) type RenderCameraObserver = fn(Mat4, Option<CockpitPose>, f32);
 
 /// Register the camera's gameplay-side participants. The first registration stands.
-pub(crate) fn register_camera_participants(participants: CameraParticipants) {
+pub fn register_camera_participants(participants: CameraParticipants) {
     if PARTICIPANTS.set(participants).is_err() {
         tracing::warn!("camera: participants are already registered; the new ones are ignored");
     }
 }
 
 /// Register the render camera's observer. The first registration stands.
-pub(crate) fn register_render_camera_observer(observer: RenderCameraObserver) {
+pub fn register_render_camera_observer(observer: RenderCameraObserver) {
     if RENDER_CAMERA_OBSERVER.set(observer).is_err() {
         tracing::warn!(
             "camera: a render camera observer is already registered; the new one is ignored"

@@ -8,7 +8,7 @@ use parking_lot::Mutex;
 /// Snapshot of the render camera's projection state, captured after each eye's Draw so the two eyes
 /// can be compared in the debug UI (to isolate the eye-1 projection corruption).
 #[derive(Copy, Clone)]
-pub(crate) struct CameraSnapshot {
+pub struct CameraSnapshot {
     pub valid: bool,
     pub camera_ptr: usize,
     pub state_bits: u8,
@@ -50,12 +50,12 @@ impl CameraSnapshot {
 }
 
 /// Per-eye render-camera snapshots (index 0 / 1), filled by [`capture_render_camera`].
-pub(crate) static CAMERA_SNAPSHOTS: Mutex<[CameraSnapshot; 2]> =
+pub static CAMERA_SNAPSHOTS: Mutex<[CameraSnapshot; 2]> =
     Mutex::new([CameraSnapshot::empty(), CameraSnapshot::empty()]);
 
 /// Snapshot `CameraManager::m_RenderCamera` into slot `index`. Call after the eye's Draw has been
 /// drained, so the captured projection is the one that eye actually rendered with.
-pub(crate) fn capture_render_camera(index: usize) {
+pub fn capture_render_camera(index: usize) {
     unsafe {
         let Some(cm) = jc3gi::camera::camera_manager::CameraManager::get() else {
             return;

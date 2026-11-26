@@ -15,16 +15,14 @@ mod convert;
 mod tests;
 
 use glam::Quat;
+use jc3vr_input::frame::{ActionSetKind, Hand, HandFrame, Pose};
 use openxr as xr;
 pub(crate) use tracking_format::DecodeError;
 // Only the tests name these.
 #[cfg(test)]
 use tracking_format::{DecodeErrorKind, VERSION};
 
-use crate::{
-    controllers::frame::{ActionSetKind, Hand, HandFrame, Pose},
-    vr::{RecenterCause, RecenterKind, input::semantic::frame::SetState, stage::StageInfo},
-};
+use crate::vr::{RecenterCause, RecenterKind, input::semantic::frame::SetState, stage::StageInfo};
 
 /// A whole recording, as read back. Only the tests read a recording back, to check what the
 /// recorder wrote; the host tools read files through `tracking-format` directly.
@@ -122,7 +120,7 @@ pub(crate) struct EyeSample {
     pub(crate) fov: [f32; 4],
 }
 
-/// The published [`ControllerFrame`](crate::controllers::frame::ControllerFrame), less the fields
+/// The published [`ControllerFrame`](jc3vr_input::frame::ControllerFrame), less the fields
 /// a publish stamps.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ControllerSample {
@@ -180,13 +178,13 @@ pub(crate) fn encode_legacy_frame(frame: &Frame) -> Vec<u8> {
 
 /// A hand in the file's own type, for the producers of events, which build the file's types
 /// directly.
-pub(crate) fn hand_to_file(hand: Hand) -> tracking_format::model::Hand {
+pub fn hand_to_file(hand: Hand) -> tracking_format::model::Hand {
     convert::hand_to_file(hand)
 }
 
 /// A runtime value's `Debug` text as the file's label, for the producers of events that record a
 /// nested state as text.
-pub(crate) fn debug_label(value: &impl std::fmt::Debug) -> tracking_format::event::Label {
+pub fn debug_label(value: &impl std::fmt::Debug) -> tracking_format::event::Label {
     tracking_format::event::Label::Owned(format!("{value:?}"))
 }
 

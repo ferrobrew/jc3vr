@@ -7,40 +7,40 @@
 use std::{ptr, sync::atomic::Ordering, time::Instant};
 
 use glam::Vec3;
+use jc3vr_input::{
+    frame,
+    frame::{
+        ButtonSet, ControllerFrame, HAND_JOINT_COUNT, Hand, HandFrame, HandInputs, HandJoint,
+        InteractionProfile, Pose, TrackedPose, derive_buttons,
+    },
+    haptics::{mixer::HapticPulse, output as haptic_output},
+};
 use openxr as xr;
 use openxr::sys;
 use tracking_format::input::{
     DiscontinuityReason, InputRoute, RouteSample, ValueBits, policy::PROTECTED_CONTROLS,
 };
 
-use crate::{
-    controllers::frame::{
-        self, ButtonSet, ControllerFrame, HAND_JOINT_COUNT, Hand, HandFrame, HandInputs, HandJoint,
-        InteractionProfile, Pose, TrackedPose, derive_buttons,
-    },
-    input_core::haptics::{mixer::HapticPulse, output as haptic_output},
-    vr::{
-        convert,
-        input::{
-            PROFILES_DIRTY, STATUS,
-            actions::{SetId, State},
-            active_action_set,
-            config::SamplingConfig,
-            flight_pose::{self, PendingHead},
-            layout::{BoolInput, FloatInput, HandsAction, Vec2Input},
-            self_check::CheckFrame,
-            semantic::{
-                SemanticSet, admission,
-                frame::{
-                    self as semantic_frame, ActionState, ActionValue, SemanticFrame, SetState,
-                },
-                history,
-            },
-            sources,
-            state::InputState,
+use crate::vr::{
+    convert,
+    input::{
+        PROFILES_DIRTY, STATUS,
+        actions::{SetId, State},
+        active_action_set,
+        config::SamplingConfig,
+        flight_pose,
+        flight_pose::PendingHead,
+        layout::{BoolInput, FloatInput, HandsAction, Vec2Input},
+        self_check::CheckFrame,
+        semantic::{
+            SemanticSet, admission, frame as semantic_frame,
+            frame::{ActionState, ActionValue, SemanticFrame, SetState},
+            history,
         },
-        recenter::Baseline,
+        sources,
+        state::InputState,
     },
+    recenter::Baseline,
 };
 
 impl InputState {

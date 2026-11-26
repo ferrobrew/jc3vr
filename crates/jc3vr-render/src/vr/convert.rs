@@ -3,9 +3,8 @@
 //! is a field-by-field copy.
 
 use glam::{Quat, Vec3};
+use jc3vr_input::frame::Pose;
 use openxr as xr;
-
-use crate::controllers::frame::Pose;
 
 /// An OpenXR vector as a [`Vec3`].
 pub(crate) fn vec3(v: xr::Vector3f) -> Vec3 {

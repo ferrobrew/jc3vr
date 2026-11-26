@@ -15,7 +15,7 @@ macro_rules! single_pass_switches {
     ($($variant:ident => $field:ident, $rebuilds:literal;)*) => {
         /// A single-pass production switch: one boolean field of [`SinglePassConfig`].
         #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-        pub(crate) enum SinglePassSwitch {
+        pub enum SinglePassSwitch {
             $($variant,)*
         }
 

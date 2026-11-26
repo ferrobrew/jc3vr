@@ -33,11 +33,11 @@ pub const POST_STAGE_MB: usize = 1;
 /// created on the render thread (where the stage runs); the egui id is registered lazily on the UI
 /// thread.
 #[derive(Default)]
-pub(crate) struct StageCapture {
+pub struct StageCapture {
     created_desc: Option<(u32, u32, i32)>,
     texture: Option<ID3D11Texture2D>,
-    pub(crate) srv: Option<ID3D11ShaderResourceView>,
-    pub(crate) egui_id: Option<egui::TextureId>,
+    pub srv: Option<ID3D11ShaderResourceView>,
+    pub egui_id: Option<egui::TextureId>,
 }
 
 pub struct EguiDebugRenderState {
@@ -45,15 +45,15 @@ pub struct EguiDebugRenderState {
     /// The per-eye captures the VR presentation path submits. The egui id is `None` until the UI
     /// thread registers one for the Previews panel: these textures must exist whether or not the
     /// debug UI ever installs, so their creation cannot depend on a renderer.
-    pub(crate) target_textures: [Option<(ID3D11Texture2D, Option<egui::TextureId>)>; 2],
+    pub target_textures: [Option<(ID3D11Texture2D, Option<egui::TextureId>)>; 2],
     /// HDR scene (MainColor, pre-post) capture per eye -- the first column of the pipeline rows.
-    pub(crate) main_color_textures: [Option<(ID3D11Texture2D, egui::TextureId)>; 2],
+    pub main_color_textures: [Option<(ID3D11Texture2D, egui::TextureId)>; 2],
     /// (w, h) the back-buffer captures were built for; recreate them when the back buffer resizes.
     target_size: Option<(u32, u32)>,
     /// (w, h, dxgi format) the MainColor captures were built for; recreate on change.
     main_color_desc: Option<(u32, u32, i32)>,
     /// Per-(stage, eye) captures of intermediate post-effect results: index `stage * 2 + eye`.
-    pub(crate) post_stage_captures: Vec<StageCapture>,
+    pub post_stage_captures: Vec<StageCapture>,
     /// Cache of engine SRV pointer -> (width, height, egui texture id), for the live render-target
     /// thumbnails. The size rides along so a reused SRV address backed by a resized surface (see
     /// [`Self::thumbnail_id`]) is detected instead of serving the stale image.
@@ -175,7 +175,7 @@ impl EguiDebugRenderState {
     /// SRV's raw pointer *and* its current size, so a reused address backed by a resized surface
     /// (a resolution change recreates the engine's render targets) is treated as a fresh SRV
     /// instead of returning a retained id that shows the pre-resize image.
-    pub(crate) fn thumbnail_id(
+    pub fn thumbnail_id(
         &mut self,
         renderer: &mut egui_directx11::Renderer,
         srv_raw: usize,
@@ -199,7 +199,7 @@ impl EguiDebugRenderState {
         id
     }
 
-    pub(crate) fn prepare_if_necessary(&mut self, renderer: &mut egui_directx11::Renderer) {
+    pub fn prepare_if_necessary(&mut self, renderer: &mut egui_directx11::Renderer) {
         // Drain post-stage egui ids the render thread dropped without a renderer to unregister
         // them with (see `capture_post_stage`); this is the first point back on the UI thread.
         for id in self.pending_unregisters.drain(..) {
@@ -282,7 +282,7 @@ impl EguiDebugRenderState {
     /// egui closure. These textures are what VR presents; they existed only as a side effect of the
     /// debug UI preparing itself, so an `EguiState` that failed to install left VR with nothing to
     /// submit and no indication why.
-    pub(crate) fn ensure_eye_targets(&mut self) {
+    pub fn ensure_eye_targets(&mut self) {
         // SAFETY: reads the live engine device on the game thread, as the UI preparation does.
         unsafe {
             let Some(ge) = jc3gi::graphics_engine::graphics_engine::GraphicsEngine::get() else {
@@ -558,7 +558,7 @@ pub fn capture_main_color(eye: usize) {
 /// Register the debug render-state cleanup. Call once at init; it tears down the captured textures and
 /// egui registrations at shutdown.
 pub fn install() {
-    crate::lifecycle::on_cleanup(|renderer| {
+    jc3vr_core::lifecycle::on_cleanup(|renderer| {
         EGUI_DEBUG_RENDER_STATE
             .lock()
             .uninstall(renderer.and_then(|renderer| renderer.downcast_mut()));

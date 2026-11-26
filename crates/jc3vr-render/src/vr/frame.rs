@@ -11,14 +11,15 @@
 
 use glam::{Quat, Vec2, Vec3};
 use jc3gi::types::math::Matrix4;
+use jc3vr_core::render_frame::RenderFrameSlot;
 use parking_lot::Mutex;
 
 use crate::{
     controllers::body::rig::origin_provenance::{OriginEvidence, TrackingReceipt},
-    headpose::{self, FrameTelemetry, config::HEADPOSE_CONFIG, participants::head_participants},
-    render_frame::RenderFrameSlot,
+    headpose,
+    headpose::{FrameTelemetry, config::HEADPOSE_CONFIG, participants::head_participants},
     stereo::config::STEREO_CONFIG,
-    testing::visual::headset::{self, HeadsetRig},
+    testing::visual::{headset, headset::HeadsetRig},
     vr::{
         EyeView, Fov, FrameInputs, FreezeMode, LocatedFrame, OffAxisProjection, VrConfig,
         config::ProjectionConvention,
@@ -155,7 +156,7 @@ fn engine_reverse_z(standard: Matrix4) -> Matrix4 {
 /// The per-eye render parameters for the frame in flight, or `None` when no VR frame is rendering
 /// (flatscreen, or a VR frame the runtime asked to skip). Kept per frame, apart from the OpenXR
 /// runtime state, so the camera hook and the draw task read it without the runtime's locks, and
-/// the draw task reads the frame it records (see [`crate::render_frame`]).
+/// the draw task reads the frame it records (see [`jc3vr_core::render_frame`]).
 static RENDER_PARAMS: RenderFrameSlot<Option<[EyeRenderParams; 2]>> = RenderFrameSlot::new();
 
 /// The per-eye render parameters captured on the first frame of a [`FreezeMode::FullCamera`] freeze

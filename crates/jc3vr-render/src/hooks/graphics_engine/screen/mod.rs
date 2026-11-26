@@ -8,7 +8,7 @@ pub(crate) mod atmospheric_scattering;
 // The clustered-lighting froxel tile-bounds fix for off-axis VR projections (issue #35);
 // crate-visible so the shared `Graphics::Clear` / `SetRenderSetup` / `SetVertexProgramConstants`
 // detours (which the trace and single-pass modules own) can consult the per-eye froxel split.
-pub(crate) mod clustered_lighting;
+pub mod clustered_lighting;
 // The volumetric fog generation pass's per-eye re-issue under the collapse.
 mod fog_volume;
 // The remaining fullscreen depth-reconstruction passes under the collapse: SSAO's per-eye rows, and
@@ -17,13 +17,13 @@ pub(crate) mod fullscreen_reconstruction;
 // The per-eye off-axis clip-to-view reconstruction fix (`PerspectiveFovInverse`); crate-visible so
 // the shared `SetRenderSetup` detour can re-derive an at-entry per-eye scissor mask from the target
 // the bind just made current.
-pub(crate) mod reconstruction;
+pub mod reconstruction;
 // `ssao` is crate-visible so hooks::game can read the recorded CSSAOPass pointer for the
 // between-eye history-index restore.
-pub(crate) mod ssao;
+pub mod ssao;
 // The screen-space decal blocks' per-eye depth reconstruction under the collapse; reached by
 // `shader` for the paired permutation rewrite.
-pub(crate) mod ss_decal;
+pub mod ss_decal;
 
 /// Bundle the screen-space pass detours into one hook library.
 pub(super) fn hook_library() -> HookLibrary {

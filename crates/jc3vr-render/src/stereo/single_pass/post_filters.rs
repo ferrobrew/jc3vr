@@ -56,7 +56,7 @@ pub(crate) fn register(original: &ID3D11PixelShader, code: &[u8]) -> anyhow::Res
 }
 
 /// How many filter variants have been built since injection.
-pub(crate) fn registered_count() -> usize {
+pub fn registered_count() -> usize {
     REGISTERED.load(Ordering::Relaxed)
 }
 

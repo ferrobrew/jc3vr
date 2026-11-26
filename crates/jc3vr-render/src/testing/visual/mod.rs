@@ -21,30 +21,32 @@ use crate::{
     vr::{FOVEATION_CONFIG, VR_CONFIG},
 };
 
-pub(crate) mod environment;
+pub mod environment;
 pub(crate) mod headset;
 pub(crate) mod motion;
-pub(crate) mod overrides;
+pub mod overrides;
 pub(crate) mod pose;
 
-pub(crate) use environment::{
+pub use environment::{
     EnvironmentControl, EnvironmentError, EnvironmentMetadata, EnvironmentRequest,
     EnvironmentTable, WorldTimeSnapshot,
 };
-pub(crate) use motion::{
+use jc3vr_core::{
+    config::engine::{ConfigSlot, Parts, Snapshot, lock_parts},
+    director::clean_view::{CLEAN_VIEW_CONFIG, CleanViewScope},
+};
+pub use motion::{
     AdvanceOutcome, HISTORY_FRAMES, MotionError, MotionMetadata, MotionRequest, MotionState,
     MotionTable, anchor_matches,
 };
-pub(crate) use overrides::{OverrideError, VisualOverrides, VisualOverridesTable};
-pub(crate) use pose::{
+pub use overrides::{OverrideError, VisualOverrides, VisualOverridesTable};
+pub use pose::{
     AnchorPin, AnchorTable, OrientationOffset, PoseError, PoseEvidence, PoseFrame, PoseRequest,
     PoseTable, PoseTransform, TranslationOffset, pose_frame, pose_matches,
 };
 
-pub(crate) use crate::stereo::dispatch::RenderMode;
+pub use crate::stereo::dispatch::RenderMode;
 use crate::{
-    config::engine::{ConfigSlot, Parts, Snapshot, lock_parts},
-    director::clean_view::{CLEAN_VIEW_CONFIG, CleanViewScope},
     fsr::AntiAliasing,
     hooks::graphics_engine::{shader, tone_mapping},
     stereo::{
@@ -52,15 +54,12 @@ use crate::{
         dispatch, single_pass, sun_shadows,
         switches::ShaderBuild,
     },
-    vr::{
-        FreezeMode, ResolutionProgress,
-        pose_control::{self, PoseValues},
-    },
+    vr::{FreezeMode, ResolutionProgress, pose_control, pose_control::PoseValues},
 };
 
 /// Whether the game is paused, `director.paused` in the settings file, which a capture pins. The
 /// payload binds the slot to its field in the directing settings at startup.
-pub(crate) static PAUSED: ConfigSlot<bool> = ConfigSlot::new("director.paused");
+pub static PAUSED: ConfigSlot<bool> = ConfigSlot::new("director.paused");
 pub(crate) type Mode = RenderMode;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -122,10 +121,10 @@ struct VisualResult<'a> {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(transparent)]
-pub(crate) struct RequestId(String);
+pub struct RequestId(String);
 
 impl RequestId {
-    pub(crate) fn parse(id: &str) -> Result<Self, &'static str> {
+    pub fn parse(id: &str) -> Result<Self, &'static str> {
         if id.is_empty() || id.len() > 64 {
             return Err("expected 1-64 ASCII letters, digits, underscores, or hyphens");
         }
@@ -138,13 +137,13 @@ impl RequestId {
         Ok(Self(id.to_owned()))
     }
 
-    pub(crate) fn as_str(&self) -> &str {
+    pub fn as_str(&self) -> &str {
         &self.0
     }
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) enum Request {
+pub enum Request {
     Configure {
         id: RequestId,
         mode: Mode,
@@ -178,7 +177,7 @@ pub(crate) struct FrameObservation {
     pub pose: Option<PoseEvidence>,
 }
 
-pub(crate) fn enqueue(request: Request) {
+pub fn enqueue(request: Request) {
     let mut state = STATE.lock();
     let id = request.id();
     if state.contains_id(id) || result_path(id).is_some_and(|path| path.exists()) {
@@ -195,11 +194,11 @@ pub(crate) fn enqueue(request: Request) {
     state.pending.push_back(request);
 }
 
-pub(crate) fn has_pending() -> bool {
+pub fn has_pending() -> bool {
     !STATE.lock().pending.is_empty()
 }
 
-pub(crate) fn requires_inline_tail() -> bool {
+pub fn requires_inline_tail() -> bool {
     let state = STATE.lock();
     state.requires_inline_tail()
 }
@@ -209,7 +208,7 @@ pub(crate) fn ready() -> bool {
     state.is_ready()
 }
 
-pub(crate) fn is_active() -> bool {
+pub fn is_active() -> bool {
     STATE.lock().is_active()
 }
 
@@ -271,7 +270,7 @@ pub(crate) fn capture_metadata(frame: i64) -> VisualMetadata {
     metadata
 }
 
-pub(crate) fn process_pending() {
+pub fn process_pending() {
     let mut state = STATE.lock();
     let Some(request) = state.pending.pop_front() else {
         return;
@@ -439,7 +438,7 @@ pub(crate) fn process_pending() {
     }
 }
 
-pub(crate) fn frame_complete() {
+pub fn frame_complete() {
     let mut state = STATE.lock();
     state.refresh_environment_observation();
     if state.mode.is_none() {
@@ -467,7 +466,7 @@ pub(crate) fn frame_complete() {
         state.configure_frames = state.configure_frames.saturating_add(1);
     }
     let resolution = crate::vr::resolution_status();
-    let frame_identity = (crate::hooks::in_gameplay() && crate::vr::is_running_published())
+    let frame_identity = (jc3vr_core::hooks::in_gameplay() && crate::vr::is_running_published())
         .then(crate::vr::capture_views)
         .flatten()
         .map(|views| views.predicted_display_time_ns);
@@ -535,7 +534,7 @@ pub(crate) fn frame_complete() {
     }
 }
 
-pub(crate) fn tick() {
+pub fn tick() {
     let mut state = STATE.lock();
     if let Some(active) = state.expire(Instant::now()) {
         if let Some(error) = state.cleanup_environment() {
@@ -550,7 +549,7 @@ pub(crate) fn clock_held() -> bool {
     CLOCK_HELD.load(Ordering::Acquire)
 }
 
-pub(crate) fn shutdown() {
+pub fn shutdown() {
     single_pass::shader_identity::disarm();
     headset::set_active(None);
     crate::screenshot::harness::stages::set_geometry_only(false);
@@ -1230,7 +1229,8 @@ fn apply_profile(config: &mut impl Parts, mode: Mode) {
 }
 
 fn result_path(id: &RequestId) -> Option<std::path::PathBuf> {
-    crate::config::paths::dir().map(|dir| dir.join("visual").join(format!("{}.json", id.0)))
+    jc3vr_core::config::engine::paths::dir()
+        .map(|dir| dir.join("visual").join(format!("{}.json", id.0)))
 }
 
 fn publish(id: &RequestId, state: ResultState, metadata: &VisualMetadata) {

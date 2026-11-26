@@ -19,7 +19,7 @@ use crate::{
 
 /// The functions the VR frame and the recenter call into their owners through. Each runs on the
 /// game thread, at the point of the frame its caller documents.
-pub(crate) struct FrameParticipants {
+pub struct FrameParticipants {
     /// Resolve the posture, remap the head height, and shift the cockpit for the frame, returning
     /// the cockpit positions to compose the pose pair with.
     pub compose_cockpit: fn(inputs: &FrameInputs) -> CockpitPositions,
@@ -48,13 +48,13 @@ pub struct FrameInputs {
 
 /// The cockpit positions to compose the two sides of the pose pair with.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub(crate) struct CockpitPositions {
+pub struct CockpitPositions {
     pub prev: Vec3,
     pub cur: Vec3,
 }
 
 /// Hand the VR frame its participants. Called once at install; a second table is ignored.
-pub(crate) fn register_frame_participants(participants: &'static FrameParticipants) {
+pub fn register_frame_participants(participants: &'static FrameParticipants) {
     if PARTICIPANTS.set(participants).is_err() {
         tracing::warn!(
             target: "vr",

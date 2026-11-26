@@ -22,7 +22,7 @@ use std::{
 };
 
 /// How far back the lookback reaches.
-pub(crate) const WINDOW: Duration = Duration::from_secs(10);
+pub const WINDOW: Duration = Duration::from_secs(10);
 
 /// Whether the lookback is collecting. Any thread.
 pub(crate) fn is_running() -> bool {
@@ -30,21 +30,21 @@ pub(crate) fn is_running() -> bool {
 }
 
 /// Ask for the window to be saved at the top of the next frame. Any thread.
-pub(crate) fn request_save() {
+pub fn request_save() {
     SAVE_REQUESTED.store(true, Ordering::Relaxed);
 }
 
 /// The lookback's state for the debug UI.
 #[derive(Debug, Clone, Default)]
-pub(crate) struct LookbackStatus {
-    pub(crate) running: bool,
-    pub(crate) frames: usize,
-    pub(crate) seconds: f32,
-    pub(crate) bytes: usize,
+pub struct LookbackStatus {
+    pub running: bool,
+    pub frames: usize,
+    pub seconds: f32,
+    pub bytes: usize,
     /// The file of the last save.
-    pub(crate) path: Option<std::path::PathBuf>,
+    pub path: Option<std::path::PathBuf>,
     /// Why the last save failed.
-    pub(crate) error: Option<String>,
+    pub error: Option<String>,
 }
 
 /// The window's capture batches, oldest first.

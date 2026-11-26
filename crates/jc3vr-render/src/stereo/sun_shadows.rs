@@ -14,7 +14,7 @@ pub(crate) fn override_active() -> bool {
 /// `ShadowManager::m_Enabled`, which the sim-side `UpdateRender` syncs the engine to via
 /// `SetEnabled` -- the same route the graphics menu takes, so resources are torn down and recreated
 /// cleanly. Called on the game thread before the frame's update render.
-pub(crate) fn apply_override(disable: bool) {
+pub fn apply_override(disable: bool) {
     // SAFETY: the graphics-engine singleton and its shadow manager are live once the engine is
     // initialised; both are null-checked, and the flag is a plain settings toggle.
     unsafe {

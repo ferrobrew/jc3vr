@@ -18,12 +18,12 @@ pub fn warps() -> u64 {
 }
 
 /// Count a teleport the game's camera reset marked.
-pub(crate) fn count_teleport() {
+pub fn count_teleport() {
     EPOCH.fetch_add(1, Ordering::Relaxed);
 }
 
 /// Count a teleport the distance test found.
-pub(crate) fn count_warp() {
+pub fn count_warp() {
     WARPS.fetch_add(1, Ordering::Relaxed);
     EPOCH.fetch_add(1, Ordering::Relaxed);
 }

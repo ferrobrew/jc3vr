@@ -72,15 +72,12 @@ use jc3gi::graphics_engine::{
     render_engine::GetRenderPassName_ADDRESS,
     render_pass::RenderPass,
 };
+use jc3vr_core::profiler::{EngineScope, named_scope_id};
 use parking_lot::Mutex;
 use puffin::ScopeId;
 
+use crate::profiler::gpu::queries::{DispatchLane, GpuProfiler, IntervalLabel, SendPtr};
 pub use crate::profiler::gpu::stats::summary;
-use crate::profiler::{
-    EngineScope,
-    gpu::queries::{DispatchLane, GpuProfiler, IntervalLabel, SendPtr},
-    named_scope_id,
-};
 
 /// The coarse render seams bracketed on the GPU timeline, in draw order.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -158,7 +155,7 @@ pub unsafe fn begin_dispatch(ctx: *mut HContext_t) {
     // game thread keeps ticking for a few more frames. Without this the next dispatch would rebuild
     // the state and allocate a fresh pool that nothing is left to destroy -- reintroducing, in that
     // window, the exact leak the teardown exists to close.
-    if crate::is_shutting_down() {
+    if jc3vr_core::is_shutting_down() {
         return;
     }
     // SAFETY: reads the live graphics-engine singleton's device pointer on the draw thread.
@@ -403,7 +400,7 @@ impl Drop for IntervalGuard {
 /// so the profiler works normally across an eject/reinject cycle rather than reusing handles that
 /// died with the device.
 ///
-/// Registered with [`crate::lifecycle::on_cleanup`] by [`ensure_cleanup_registered`] when the first
+/// Registered with [`jc3vr_core::lifecycle::on_cleanup`] by [`ensure_cleanup_registered`] when the first
 /// dispatch would build the state, so there is a cleanup exactly when there can be queries to
 /// destroy.
 pub fn teardown() {
@@ -422,7 +419,7 @@ static STATE: Mutex<Option<GpuProfiler>> = Mutex::new(None);
 fn ensure_cleanup_registered() {
     static REGISTER: Once = Once::new();
     REGISTER.call_once(|| {
-        crate::lifecycle::on_cleanup(|_renderer| teardown());
+        jc3vr_core::lifecycle::on_cleanup(|_renderer| teardown());
     });
 }
 

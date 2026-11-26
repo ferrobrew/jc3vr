@@ -6,8 +6,7 @@
 //! sim tick's rate.
 
 use glam::Vec3;
-
-use crate::controllers::frame::Hand;
+use jc3vr_input::frame::Hand;
 
 /// Who submitted a set of primitives. Each source owns one retained slot, which a submission
 /// replaces wholesale.

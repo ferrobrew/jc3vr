@@ -91,8 +91,14 @@ pub fn teardown() {
 
 /// The committed, precompiled shaders: the shared fullscreen-triangle vertex shader and the
 /// G-buffer composite pixel shader.
-const VERTEX_DXBC: &[u8] = include_bytes!("../shaders/capture_vs.dxbc");
-const COMPOSITE_DXBC: &[u8] = include_bytes!("../shaders/far_field_composite_ps.dxbc");
+const VERTEX_DXBC: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/shaders/capture_vs.dxbc"
+));
+const COMPOSITE_DXBC: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/shaders/far_field_composite_ps.dxbc"
+));
 
 /// The share pipeline singleton, built lazily on first use. Holds COM objects, which `windows`
 /// marks `Send`/`Sync`, so a `Mutex` static is sound.

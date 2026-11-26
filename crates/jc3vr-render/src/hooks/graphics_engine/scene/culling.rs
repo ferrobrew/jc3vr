@@ -284,7 +284,7 @@ static BUDGETS_SCALED: AtomicBool = AtomicBool::new(false);
 /// Patch every budget entry's `m_Budget` to `original * scale` through the patcher, which auto-reverts
 /// on uninject.
 fn patch_spawn_budgets(spawn_system: *mut SpawnSystem, scale: f32) {
-    let Some(mut patcher) = crate::hooks::patcher() else {
+    let Some(mut patcher) = jc3vr_core::hooks::patcher() else {
         return;
     };
     // SAFETY: `spawn_system` is the live singleton on the game thread.

@@ -12,6 +12,7 @@ use jc3gi::{
     },
     ui::ui_manager::{GetIUIManager, UIManager},
 };
+use jc3vr_core::{frame_timing, frame_timing::Slot};
 use re_utilities::hook_library::HookLibrary;
 use windows::Win32::{
     Graphics::Direct3D11::{D3D11_BOX, ID3D11Texture2D},
@@ -22,7 +23,6 @@ use windows::Win32::{
 
 use crate::{
     debug::trace::{TraceEvent, TraceState},
-    frame_timing::{self, Slot},
     hooks::graphics_engine::{
         capture::{EGUI_DEBUG_RENDER_STATE, eye_capture_fresh, mark_eye_capture, previews_visible},
         post_draw,
@@ -68,7 +68,7 @@ pub(super) fn hook_library() -> HookLibrary {
 /// draw task runs on whichever CPU fragment worker picks it up, so `render_engine_post_draw` changes
 /// thread on most dispatches, and logging each change at info would write some eighty synchronous
 /// log lines a second for the whole session.
-pub(crate) fn log_hook_thread(hook: &'static str, last_thread_id: &AtomicU32) {
+pub fn log_hook_thread(hook: &'static str, last_thread_id: &AtomicU32) {
     // SAFETY: `GetCurrentThreadId` reads only the calling thread's own TEB entry; it has no
     // preconditions and cannot fail.
     let thread_id = unsafe { GetCurrentThreadId() };
@@ -172,7 +172,7 @@ fn graphics_engine_draw(graphics_engine: *mut GraphicsEngine, dt: f32) {
     // SAFETY: runs inside `CGame::Draw` (which just set the flag) before the draw is dispatched, on
     // the render thread; `graphics_engine` is the live engine and `GetIUIManager` the live UI.
     unsafe {
-        if crate::hooks::in_gameplay()
+        if jc3vr_core::hooks::in_gameplay()
             && let Some(ge) = graphics_engine.as_mut()
             && let Some(ui) = GetIUIManager().as_ref()
             && ui.IsUsingStaticBackGround()
@@ -181,7 +181,7 @@ fn graphics_engine_draw(graphics_engine: *mut GraphicsEngine, dt: f32) {
         }
         // The prologue hands the draw task this dispatch; its per-frame values are the ones the
         // game thread prepared for this frame.
-        crate::render_frame::note_dispatch();
+        jc3vr_core::render_frame::note_dispatch();
         GRAPHICS_ENGINE_DRAW
             .get()
             .unwrap()
@@ -194,7 +194,7 @@ fn handle_draw_thread_task(engine: *mut GraphicsEngine, param: *mut DrawThreadTa
     crate::testing::benchmark::note_draw_thread();
     let _sampled = crate::testing::benchmark::sampler::enter_draw_task();
     // The task records the frame its dispatch drew, whatever the game thread prepares meanwhile.
-    let _frame = crate::render_frame::pin_dispatch();
+    let _frame = jc3vr_core::render_frame::pin_dispatch();
     let _timing = frame_timing::scope(Slot::DrawTask);
     let _dispatch = UiDispatchGuard::enter(engine);
     HANDLE_DRAW_THREAD_TASK.get().unwrap().call(engine, param)

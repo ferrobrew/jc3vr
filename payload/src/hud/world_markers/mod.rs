@@ -27,11 +27,12 @@ mod depth;
 pub(crate) mod layout;
 mod render;
 mod seam;
-pub(crate) mod stage_frame;
-
+// The render layer's half lives in the render crate; the old path keeps working until the final
+// cleanup pass.
 use std::collections::VecDeque;
 
 use glam::{Vec2, Vec3};
+pub(crate) use jc3vr_render::hud::world_markers::stage_frame;
 use parking_lot::Mutex;
 pub(crate) use render::{FrameInputs, clear_frame, draw_billboards, prepare_eye, prepare_frame};
 pub(crate) use seam::{

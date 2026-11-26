@@ -20,29 +20,29 @@ use crate::vr::input::{
 /// One producer publication. No display-time comparison or later snapshot read establishes its
 /// controller association; only the publishing call supplies that identity.
 #[derive(Debug, Clone)]
-pub(crate) struct Publication {
-    pub(crate) observed_at: Instant,
-    pub(crate) frame_sequence: Option<u64>,
-    pub(crate) record: InputRecord,
+pub struct Publication {
+    pub observed_at: Instant,
+    pub frame_sequence: Option<u64>,
+    pub record: InputRecord,
 }
 
-pub(crate) struct LiveSample {
-    pub(crate) samples: Vec<RouteSample>,
-    pub(crate) context: u64,
-    pub(crate) focused: bool,
-    pub(crate) generation: u64,
-    pub(crate) observed_at: Instant,
-    pub(crate) frame_sequence: u64,
+pub struct LiveSample {
+    pub samples: Vec<RouteSample>,
+    pub context: u64,
+    pub focused: bool,
+    pub generation: u64,
+    pub observed_at: Instant,
+    pub frame_sequence: u64,
 }
 
 /// Capture this immediately after a successful sync, not after the action-reading loops.
-pub(crate) fn observation_time() -> Instant {
+pub fn observation_time() -> Instant {
     let _ = *ORIGIN;
     Instant::now()
 }
 
 /// Failed reads discard the entire candidate group while retaining the actual snapshot identity.
-pub(crate) fn publish_observation(sample: LiveSample, reads_succeeded: bool) {
+pub fn publish_observation(sample: LiveSample, reads_succeeded: bool) {
     SLOT.lock().publish_observation(sample, reads_succeeded);
 }
 
@@ -119,7 +119,7 @@ impl Published {
 }
 
 /// Drain even while idle, so recording start cannot inherit pre-recording observations.
-pub(crate) fn take_capture() -> Vec<Publication> {
+pub fn take_capture() -> Vec<Publication> {
     SLOT.lock().take_capture()
 }
 
@@ -127,7 +127,7 @@ pub(crate) fn take_capture() -> Vec<Publication> {
 /// identity is retained so a later snapshot cannot authorize an older group's edges.
 /// Return the latest original group only when it belongs to this exact controller publication.
 /// This does not drain or reinterpret the gameplay evidence.
-pub(crate) fn original_group(frame_sequence: u64) -> Option<InputGroup> {
+pub fn original_group(frame_sequence: u64) -> Option<InputGroup> {
     let slot = SLOT.lock();
     slot.latest
         .as_ref()
@@ -138,19 +138,19 @@ pub(crate) fn original_group(frame_sequence: u64) -> Option<InputGroup> {
         })
 }
 
-pub(crate) fn take_gameplay() -> Vec<Publication> {
+pub fn take_gameplay() -> Vec<Publication> {
     SLOT.lock().gameplay.pending.drain(..).collect()
 }
 
 /// Capture a final decision without changing live ownership. A fresh recording has an explicit
 /// unavailable prefix until a recorded real-neutral boundary, rather than inheriting a live episode.
-pub(crate) fn record_policy(evaluation: PolicyEvaluation) {
-    #[cfg(test)]
+pub fn record_policy(evaluation: PolicyEvaluation) {
+    #[cfg(any(test, feature = "test-support"))]
     let _serial = TEST_LOCK.lock();
     SLOT.lock().record_policy(evaluation);
 }
 
-pub(crate) fn begin_capture() {
+pub fn begin_capture() {
     let mut slot = SLOT.lock();
     slot.capture.pending.clear();
     slot.capture_boundary = false;
@@ -257,8 +257,8 @@ static SLOT: LazyLock<Mutex<Published>> = LazyLock::new(|| {
     })
 });
 
-#[cfg(test)]
-pub(crate) static TEST_LOCK: parking_lot::ReentrantMutex<()> = parking_lot::ReentrantMutex::new(());
+#[cfg(any(test, feature = "test-support"))]
+pub static TEST_LOCK: parking_lot::ReentrantMutex<()> = parking_lot::ReentrantMutex::new(());
 
 #[cfg(test)]
 mod tests {

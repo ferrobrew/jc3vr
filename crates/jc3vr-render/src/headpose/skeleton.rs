@@ -42,4 +42,4 @@ impl SkeletonKey {
 }
 
 /// Bone counts beyond this are garbage data, not a character skeleton.
-pub(crate) const MAX_BONES: i32 = 1024;
+pub const MAX_BONES: i32 = 1024;

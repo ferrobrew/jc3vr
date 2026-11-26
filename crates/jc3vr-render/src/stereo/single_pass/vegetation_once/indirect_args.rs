@@ -105,7 +105,10 @@ static STATE: Mutex<Option<Copy>> = Mutex::new(None);
 static FAILED: AtomicBool = AtomicBool::new(false);
 static GENERATION: AtomicU64 = AtomicU64::new(0);
 
-const COMPUTE_DXBC: &[u8] = include_bytes!("../../../shaders/indirect_args_double_cs.dxbc");
+const COMPUTE_DXBC: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/shaders/indirect_args_double_cs.dxbc"
+));
 /// The doubling shader's thread-group width.
 const GROUP_SIZE: u32 = 64;
 

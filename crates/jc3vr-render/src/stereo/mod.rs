@@ -11,10 +11,10 @@ use parking_lot::Mutex;
 pub mod config;
 pub mod dispatch;
 pub(crate) mod engine_context;
-pub(crate) mod register_unpatch;
+pub mod register_unpatch;
 pub mod single_pass;
-pub(crate) mod sun_shadows;
-pub(crate) mod switches;
+pub mod sun_shadows;
+pub mod switches;
 pub(crate) mod terrain_prep;
 
 /// The live stereo render state for the frame in flight.

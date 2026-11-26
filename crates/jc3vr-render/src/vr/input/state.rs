@@ -4,22 +4,26 @@
 use std::sync::atomic::Ordering;
 
 use anyhow::Context as _;
+use jc3vr_input::{
+    frame,
+    frame::{ButtonSet, Hand, InteractionProfile},
+    haptics::output as haptic_output,
+};
 use openxr as xr;
 use openxr::{sys, sys::Handle as _};
 
-use crate::{
-    controllers::frame::{self, ButtonSet, Hand, InteractionProfile},
-    input_core::haptics::output as haptic_output,
-    vr::input::{
-        ActionsOrigin, HandTrackingStatus, InputStatus, PROFILES_DIRTY, STATUS,
-        actions::Actions,
-        layout::{self, HandsAction, Profile},
-        restart::{self, NeedsRestart, RestartReason},
-        self_check::SelfCheck,
-        semantic, set_bound_hand,
-        sources::{self, SourcesRefresh},
-        stash::{self, InputStash},
-    },
+use crate::vr::input::{
+    ActionsOrigin, HandTrackingStatus, InputStatus, PROFILES_DIRTY, STATUS,
+    actions::Actions,
+    layout,
+    layout::{HandsAction, Profile},
+    restart,
+    restart::{NeedsRestart, RestartReason},
+    self_check::SelfCheck,
+    semantic, set_bound_hand, sources,
+    sources::SourcesRefresh,
+    stash,
+    stash::InputStash,
 };
 
 /// The controller input of one session. Created at bring-up by [`InputState::acquire`] and ended

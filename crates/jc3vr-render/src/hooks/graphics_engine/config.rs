@@ -1,12 +1,11 @@
 //! Graphics-engine area configuration: exposure and post-effect toggles.
 
+use jc3vr_core::config::engine::ConfigSlot;
 use serde::{Deserialize, Serialize};
-
-use crate::config::engine::ConfigSlot;
 
 /// The exposure settings, at `exposure` in the settings file; the payload binds the slot at
 /// startup.
-pub(crate) static EXPOSURE_CONFIG: ConfigSlot<ExposureConfig> = ConfigSlot::new("exposure");
+pub static EXPOSURE_CONFIG: ConfigSlot<ExposureConfig> = ConfigSlot::new("exposure");
 
 /// Auto-exposure toggles.
 #[derive(Clone, Serialize, Deserialize)]
@@ -34,9 +33,15 @@ impl ExposureConfig {
     }
 }
 
+impl Default for ExposureConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// The post-processing settings, at `post_fx` in the settings file; the payload binds the slot at
 /// startup.
-pub(crate) static POST_FX_CONFIG: ConfigSlot<PostFxConfig> = ConfigSlot::new("post_fx");
+pub static POST_FX_CONFIG: ConfigSlot<PostFxConfig> = ConfigSlot::new("post_fx");
 
 /// Post-effect skip toggles (bisection aids / VR cleanups).
 #[derive(Clone, Serialize, Deserialize)]
@@ -69,5 +74,11 @@ impl PostFxConfig {
             skip_histogram: false,
             skip_anti_aliasing: false,
         }
+    }
+}
+
+impl Default for PostFxConfig {
+    fn default() -> Self {
+        Self::new()
     }
 }

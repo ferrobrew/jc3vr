@@ -11,14 +11,14 @@
 //! An image's file name is `<stem>.png` when it holds the whole frame and `<stem>_eye<N>.png` when
 //! it holds one eye; a sidecar sits beside it as `<stem>.json`. The stem is the capture's stamp for
 //! a screenshot and the frame index (`frameNNN`) for a trace frame, so a trace's images align 1:1
-//! with its per-frame events. The folders are the session's (see [`crate::session`]).
+//! with its per-frame events. The folders are the session's (see [`jc3vr_core::session`]).
 //!
 //! The queue between the submitters and the writer is bounded, so a trace that produces images
 //! faster than they encode blocks its submitter until one drains rather than holding an unbounded
 //! number of frames in memory: at worst it degrades to the writing-inline cost it replaces.
 //!
 //! A writer thread outliving the payload is the hazard this buys: a thread still executing when
-//! [`crate::module::exit`] unmaps the image parks forever holding whatever it took. [`shutdown`]
+//! [`jc3vr_core::module::exit`] unmaps the image parks forever holding whatever it took. [`shutdown`]
 //! closes admission, lets the queue drain, and waits for the thread, the same way
 //! [`crate::vr::tail::shutdown`] and the profiler's capture writer do.
 
@@ -32,18 +32,19 @@ use std::{
 
 use anyhow::Context as _;
 use image::{ExtendedColorType, ImageEncoder, codecs::png::PngEncoder};
+use jc3vr_core::{
+    session,
+    session::{CaptureFile, CaptureFolder},
+};
 use parking_lot::Mutex;
 use windows::Win32::Graphics::Dxgi::Common::{
     DXGI_FORMAT, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_B8G8R8A8_UNORM_SRGB,
     DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
 };
 
-use crate::{
-    screenshot::harness::{
-        stages::{Stage, StageArtifact, StageImage, StageRecord},
-        types::CaptureMetadata,
-    },
-    session::{self, CaptureFile, CaptureFolder},
+use crate::screenshot::harness::{
+    stages::{Stage, StageArtifact, StageImage, StageRecord},
+    types::CaptureMetadata,
 };
 
 /// The byte order of a read-back image's four channels.
@@ -153,7 +154,7 @@ impl From<Result<PathBuf, String>> for WriteOutcome {
 pub fn submit(target: ImageTarget, image: Image) {
     let sender = {
         let mut writer = WRITER.lock();
-        if writer.closed || crate::is_shutting_down() {
+        if writer.closed || jc3vr_core::is_shutting_down() {
             return;
         }
         match writer.sender() {
@@ -183,7 +184,7 @@ pub(crate) fn try_submit(
 ) -> anyhow::Result<Receiver<WriteOutcome>> {
     let mut writer = WRITER.lock();
     anyhow::ensure!(
-        !crate::is_shutting_down(),
+        !jc3vr_core::is_shutting_down(),
         "image writer: admission is closed"
     );
     writer.try_submit(target, image)
@@ -618,6 +619,7 @@ mod tests {
 
     #[test]
     fn stage_artifacts_finish_before_completion_and_sidecar_and_report_failures() {
+        crate::test_config::register();
         for fail in [false, true] {
             let directory = TestDirectory::new();
             let path = directory.0.join("writer-test.capture.png");
@@ -695,6 +697,7 @@ mod tests {
 
     #[test]
     fn geometry_artifacts_keep_stable_names_alpha_and_acknowledged_metadata() {
+        crate::test_config::register();
         let directory = TestDirectory::new();
         let path = directory.0.join("writer-test.capture.png");
         let mut metadata = test_metadata();
@@ -776,6 +779,7 @@ mod tests {
 
     #[test]
     fn raw_stage_failure_is_acknowledged_in_the_sidecar() {
+        crate::test_config::register();
         let directory = TestDirectory::new();
         let path = directory.0.join("writer-test.capture.png");
         let raw_path = directory.0.join("writer-test.geometry_depth.eye0.raw");
@@ -837,6 +841,7 @@ mod tests {
 
     #[test]
     fn hdr_stage_names_and_extensions_cover_every_hdr_stage() {
+        crate::test_config::register();
         let directory = TestDirectory::new();
         let path = directory.0.join("writer-test.capture.png");
         let mut metadata = test_metadata();
@@ -917,7 +922,7 @@ mod tests {
                 eye_height: 1,
                 world_scale: 1.0,
             },
-            effective_config: crate::config::engine::Snapshot::defaults(),
+            effective_config: jc3vr_core::config::engine::Snapshot::defaults(),
             water_reflection: None,
             aa_weights: None,
             aa_draws: None,

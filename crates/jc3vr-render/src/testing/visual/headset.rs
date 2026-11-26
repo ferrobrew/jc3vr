@@ -22,7 +22,7 @@ use crate::vr::Fov;
 /// A named headset-like rig.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum HeadsetRig {
+pub enum HeadsetRig {
     /// Asymmetric frusta, wider towards the outside, with each display canted outward by five
     /// degrees.
     Index,

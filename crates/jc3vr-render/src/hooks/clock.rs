@@ -9,7 +9,7 @@ use re_utilities::hook_library::HookLibrary;
 /// the SPF exponential smoother twice and drag the game into slow motion.
 pub static UPDATED_THIS_FRAME: AtomicBool = AtomicBool::new(false);
 
-pub(crate) fn hook_library() -> HookLibrary {
+pub fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&CLOCK_UPDATE_BINDER)
 }
 

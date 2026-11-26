@@ -136,7 +136,7 @@ fn create_vertex_program(
     // times there is a multi-second freeze on every F5, on a path already racing teardown, and it buys
     // nothing: the substitution is inert during shutdown, so the rewrite's only product is a tally
     // nobody will read.
-    let census = !crate::is_shutting_down()
+    let census = !jc3vr_core::is_shutting_down()
         && STEREO_CONFIG.query(|c| c.single_pass.enabled || c.single_pass.patch_dryrun);
     if census
         && let Some(p) = unsafe { params.as_mut() }
@@ -233,7 +233,7 @@ fn create_fragment_program(
     device: *mut c_void,
     params: *mut CreateFragmentProgramParams,
 ) -> *mut HFragmentProgram_t {
-    let identity = if crate::is_shutting_down() {
+    let identity = if jc3vr_core::is_shutting_down() {
         None
     } else {
         unsafe { params.as_ref() }.and_then(|p| unsafe {
@@ -301,7 +301,7 @@ fn create_fragment_program(
         && STEREO_CONFIG.query(|c| c.single_pass.velocity_per_eye);
     let ssao_far_early_out = STEREO_CONFIG.lock().single_pass.ssao_far_early_out;
     let mut rewritten_screen_pass = None;
-    if !crate::is_shutting_down()
+    if !jc3vr_core::is_shutting_down()
         && let Some(p) = unsafe { params.as_ref() }
         && !p.m_Code.is_null()
         && let Ok(size) = usize::try_from(p.m_Size)
@@ -337,7 +337,7 @@ fn create_fragment_program(
         saved = Some((p.m_Code, p.m_Size, blob));
         p.m_Code = saved.as_ref().expect("just set").2.as_ptr();
         p.m_Size = len;
-    } else if !crate::is_shutting_down()
+    } else if !jc3vr_core::is_shutting_down()
         && (patch_pcf || bias_ssdecal || localize_overlays || localize_bloom)
         && let Some(p) = unsafe { params.as_mut() }
     {
@@ -407,7 +407,7 @@ fn create_fragment_program(
     // `patch_shadow_pcf_hash` zeroes.
     let substituted_before_camera = saved.is_some();
     let mut rewrote_velocity = false;
-    if !crate::is_shutting_down()
+    if !jc3vr_core::is_shutting_down()
         && let Some(p) = unsafe { params.as_mut() }
         && !p.m_Code.is_null()
         && let Ok(size) = usize::try_from(p.m_Size)
@@ -457,7 +457,7 @@ fn create_fragment_program(
         .map(|&(code, size, _)| (code, size))
         .or_else(|| unsafe { params.as_ref() }.map(|p| (p.m_Code, p.m_Size)));
     if !substituted_before_camera
-        && !crate::is_shutting_down()
+        && !jc3vr_core::is_shutting_down()
         && let Some((code, size)) = engine_code
         && !code.is_null()
         && let Ok(size) = usize::try_from(size)
@@ -471,7 +471,7 @@ fn create_fragment_program(
 
     // The glare chain's filters get an eye-half variant the draw detour binds while the chain runs.
     // Built whenever single-pass is on, so the switch applies without a reload.
-    if !crate::is_shutting_down()
+    if !jc3vr_core::is_shutting_down()
         && STEREO_CONFIG.query(|c| c.single_pass.enabled)
         && let Some(p) = unsafe { params.as_ref() }
         && !p.m_Code.is_null()
@@ -677,7 +677,7 @@ pub fn request_reload() {
 /// configuration snapshot is refreshed and before [`process_reload_request`], so the reload lands
 /// in the frame whose snapshot asked for it.
 pub fn reconcile_single_pass() {
-    if crate::is_shutting_down() {
+    if jc3vr_core::is_shutting_down() {
         return;
     }
     let active = crate::stereo::single_pass::active();
@@ -704,7 +704,7 @@ pub fn process_reload_request() -> Option<Result<(), ReloadError>> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ReloadError {
+pub enum ReloadError {
     NoGraphicsEngine,
     InvalidBundleLength,
     InvalidBundleEncoding,
@@ -751,7 +751,7 @@ pub(crate) fn reload_now() -> Result<(), ReloadError> {
 
 /// On eject: if the mod patched any shaders that the game still holds -- single-pass's substituted
 /// (`cb13`-reading) vertex shaders, or the fragment-side PCF edits -- re-create the
-/// originals. `LoadShaderBundle` re-runs the create hooks, and with `crate::is_shutting_down()` set
+/// originals. `LoadShaderBundle` re-runs the create hooks, and with `jc3vr_core::is_shutting_down()` set
 /// both the vertex substitution and the fragment patches are inert, so the game returns to fully
 /// pristine shaders instead of keeping the mod's edits after it is gone. Game thread, during
 /// shutdown, before the hooks are uninstalled.

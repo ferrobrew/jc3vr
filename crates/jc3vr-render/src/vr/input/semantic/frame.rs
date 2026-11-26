@@ -2,7 +2,7 @@
 //! `global` and for the mode set that was active when the frame was sampled.
 //!
 //! The VR frame loop publishes one beside every
-//! [`ControllerFrame`](crate::controllers::frame::ControllerFrame), read in the same sync. The
+//! [`ControllerFrame`](jc3vr_input::frame::ControllerFrame), read in the same sync. The
 //! input tick takes the latest with the press and release edges accumulated since its last take
 //! ([`take`]), as it takes the raw frame's: render frames outpace the sim tick, and a tap between
 //! two ticks must still reach the bindings.
@@ -15,19 +15,17 @@
 use std::time::Instant;
 
 use glam::Vec2;
+use jc3vr_input::frame::{ActionSetKind, GripPress, Hand, MAX_FRAME_AGE, PressRules};
 use parking_lot::Mutex;
 
-use crate::{
-    controllers::frame::{ActionSetKind, GripPress, Hand, MAX_FRAME_AGE, PressRules},
-    vr::input::semantic::{
-        ActionKind, SemanticSet,
-        vocabulary::{ActionId, FloatPress},
-    },
+use crate::vr::input::semantic::{
+    ActionKind, SemanticSet,
+    vocabulary::{ActionId, FloatPress},
 };
 
 /// One action's value on one hand.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub(crate) enum ActionValue {
+pub enum ActionValue {
     Bool(bool),
     Float(f32),
     Vec2(Vec2),
@@ -57,18 +55,18 @@ impl ActionValue {
 
 /// One action's state on one hand.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub(crate) struct ActionState {
-    pub(crate) value: ActionValue,
+pub struct ActionState {
+    pub value: ActionValue,
     /// Whether the runtime bound the action to an active source on this hand this sync.
-    pub(crate) active: bool,
+    pub active: bool,
     /// The digital state: a boolean action's value, or a float action past its press thresholds.
     /// Always false for a vector action, and for a float action with no press semantics.
-    pub(crate) down: bool,
+    pub down: bool,
 }
 
 impl ActionState {
     /// The rest state of an action of `kind`.
-    pub(crate) const fn rest(kind: ActionKind) -> ActionState {
+    pub const fn rest(kind: ActionKind) -> ActionState {
         ActionState {
             value: ActionValue::rest(kind),
             active: false,
@@ -78,28 +76,28 @@ impl ActionState {
 }
 
 /// Every action of one set, each per hand, indexed like [`SemanticSet::actions`] and then by
-/// [`Hand::index`](crate::controllers::frame::Hand::index).
+/// [`Hand::index`](jc3vr_input::frame::Hand::index).
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct SetState {
-    pub(crate) set: SemanticSet,
-    pub(crate) actions: Vec<[ActionState; 2]>,
+pub struct SetState {
+    pub set: SemanticSet,
+    pub actions: Vec<[ActionState; 2]>,
 }
 
 /// The semantic state of one frame.
 #[derive(Debug, Clone)]
-pub(crate) struct SemanticFrame {
+pub struct SemanticFrame {
     /// When the frame was published, on the host clock.
-    pub(crate) published_at: Instant,
+    pub published_at: Instant,
     /// The mode set that was active.
-    pub(crate) action_set: ActionSetKind,
-    pub(crate) global: SetState,
+    pub action_set: ActionSetKind,
+    pub global: SetState,
     /// The active mode set's actions.
-    pub(crate) mode: SetState,
+    pub mode: SetState,
 }
 
 impl SemanticFrame {
     /// The state of `set`, when it was active for this frame.
-    pub(crate) fn set(&self, set: SemanticSet) -> Option<&SetState> {
+    pub fn set(&self, set: SemanticSet) -> Option<&SetState> {
         [&self.global, &self.mode]
             .into_iter()
             .find(|state| state.set == set)
@@ -109,7 +107,7 @@ impl SemanticFrame {
 /// The digital state of action `index` of `set` after observing `value` on a hand read by `rules`,
 /// given whether it was down before. A float action uses its action-owned press classification,
 /// wherever the player binds it.
-pub(crate) fn digital(
+pub fn digital(
     set: SemanticSet,
     index: usize,
     value: ActionValue,
@@ -142,7 +140,7 @@ pub(crate) fn digital(
 /// and hand: bit `i` is the action of index `i`. An action pressed and released between two takes
 /// appears in both.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
-pub(crate) struct SemanticEdges {
+pub struct SemanticEdges {
     /// By [`SemanticSet::index`], then [`Hand::index`].
     pressed: [[u32; 2]; SET_COUNT],
     released: [[u32; 2]; SET_COUNT],
@@ -150,12 +148,12 @@ pub(crate) struct SemanticEdges {
 
 impl SemanticEdges {
     /// Whether `action` was pressed on `hand` since the last take.
-    pub(crate) fn pressed(&self, action: ActionId, hand: Hand) -> bool {
+    pub fn pressed(&self, action: ActionId, hand: Hand) -> bool {
         self.pressed[action.set.index()][hand.index()] & bit(action.index()) != 0
     }
 
     /// Whether `action` was released on `hand` since the last take.
-    pub(crate) fn released(&self, action: ActionId, hand: Hand) -> bool {
+    pub fn released(&self, action: ActionId, hand: Hand) -> bool {
         self.released[action.set.index()][hand.index()] & bit(action.index()) != 0
     }
 
@@ -178,7 +176,7 @@ impl SemanticEdges {
 /// The latest published frame, or `None` when there is none or it is older than
 /// [`MAX_FRAME_AGE`], with the edges accumulated since the last take; the edges are reset. The
 /// input tick is the one taker.
-pub(crate) fn take() -> (Option<SemanticFrame>, SemanticEdges) {
+pub fn take() -> (Option<SemanticFrame>, SemanticEdges) {
     let now = Instant::now();
     let mut slot = SLOT.lock();
     let frame = slot
@@ -191,7 +189,7 @@ pub(crate) fn take() -> (Option<SemanticFrame>, SemanticEdges) {
 
 /// A copy of the latest published frame, or `None` when there is none or it is older than
 /// [`MAX_FRAME_AGE`]. Leaves the edges to [`take`].
-pub(crate) fn latest() -> Option<SemanticFrame> {
+pub fn latest() -> Option<SemanticFrame> {
     let now = Instant::now();
     SLOT.lock()
         .frame
@@ -233,7 +231,7 @@ pub(crate) fn publish(frame: SemanticFrame) {
     *previous = Some(frame);
 }
 
-/// Drop the latest frame and any untaken edges, alongside [`crate::controllers::frame::clear`].
+/// Drop the latest frame and any untaken edges, alongside [`jc3vr_input::frame::clear`].
 pub(crate) fn clear() {
     *SLOT.lock() = Slot {
         frame: None,

@@ -13,24 +13,21 @@ use std::sync::{
 
 use glam::Vec3;
 use jc3gi::graphics_engine::{device::Device, graphics_engine::GraphicsEngine, texture::Texture};
+use jc3vr_core::hooks::in_gameplay;
+use jc3vr_input::frame::Pose;
 use parking_lot::Mutex;
 use windows::{
     Win32::Graphics::Direct3D11::{D3D11_VIEWPORT, ID3D11DeviceContext},
     core::Interface as _,
 };
 
-use crate::{
-    controllers::{
-        frame::Pose,
-        overlay::{
-            primitive::{Primitive, Source},
-            renderer::{EyeConstants, EyeDraw, Renderer},
-            resolve::{self, Frame, GpuPrimitive, HandPoses},
-            store,
-            view::{self, EyeView},
-        },
-    },
-    hooks,
+use crate::controllers::overlay::{
+    primitive::{Primitive, Source},
+    renderer::{EyeConstants, EyeDraw, Renderer},
+    resolve,
+    resolve::{Frame, GpuPrimitive, HandPoses},
+    store, view,
+    view::EyeView,
 };
 
 /// The overlay's readout for the debug UI.
@@ -52,26 +49,26 @@ pub struct OverlayStatus {
 
 /// How the overlay draws, while it is on.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub(crate) struct DrawSettings {
+pub struct DrawSettings {
     /// The thinnest a line is drawn, in pixels.
-    pub(crate) min_line_px: f32,
+    pub min_line_px: f32,
     /// How far behind the scene's depth a primitive still draws, metres.
-    pub(crate) depth_tolerance_m: f32,
+    pub depth_tolerance_m: f32,
     /// How far behind the scene's depth a primitive still draws, as a fraction of its distance.
-    pub(crate) depth_tolerance_rel: f32,
+    pub depth_tolerance_rel: f32,
 }
 
 /// What the overlay's draw reads from the controllers.
 #[derive(Clone, Copy)]
-pub(crate) struct OverlayInputs {
+pub struct OverlayInputs {
     /// How the overlay draws, or `None` while it is off.
-    pub(crate) settings: fn() -> Option<DrawSettings>,
+    pub settings: fn() -> Option<DrawSettings>,
     /// Each hand's world poses as it is drawn this frame, by hand index.
-    pub(crate) hand_poses: fn() -> [Option<HandPoses>; 2],
+    pub hand_poses: fn() -> [Option<HandPoses>; 2],
 }
 
 /// Register what the overlay's draw reads. The first registration stands.
-pub(crate) fn register_overlay_inputs(inputs: OverlayInputs) {
+pub fn register_overlay_inputs(inputs: OverlayInputs) {
     if INPUTS.set(inputs).is_err() {
         tracing::warn!("overlay: inputs are already registered; the new ones are ignored");
     }
@@ -79,7 +76,7 @@ pub(crate) fn register_overlay_inputs(inputs: OverlayInputs) {
 
 /// Release the pipeline, for eject: it holds a render-target view over the engine's back buffer,
 /// which keeps that texture alive after the engine resizes off it.
-pub(crate) fn release_on_eject() {
+pub fn release_on_eject() {
     STATE.lock().renderer = None;
 }
 
@@ -91,8 +88,8 @@ pub fn status() -> OverlayStatus {
 /// Draw the overlay onto `target` (the eye's final back buffer) for `eye`. The caller holds the
 /// engine's context lock and, under the collapse, has selected the eye with
 /// `set_collapse_ui_eye`.
-pub(crate) fn draw(context: &ID3D11DeviceContext, device: &Device, target: &Texture, eye: usize) {
-    if crate::stereo::far_phase() || crate::director::clean_view::hides_everything() {
+pub fn draw(context: &ID3D11DeviceContext, device: &Device, target: &Texture, eye: usize) {
+    if crate::stereo::far_phase() || jc3vr_core::director::clean_view::hides_everything() {
         return;
     }
     let Some(inputs) = INPUTS.get() else {
@@ -129,7 +126,7 @@ pub(crate) fn draw(context: &ID3D11DeviceContext, device: &Device, target: &Text
     };
 
     if let Some(frame) = frame {
-        let collection = store::snapshot(&mut state.primitives, hooks::in_gameplay());
+        let collection = store::snapshot(&mut state.primitives, in_gameplay());
         match frame {
             Some(frame) => {
                 resolve::resolve(&state.primitives, &frame, &mut state.packed);
@@ -204,7 +201,7 @@ static DRAW_ERROR_LOGGED: AtomicBool = AtomicBool::new(false);
 
 /// The frame's resolution inputs, with the head as the origin; `None` when no camera is readable.
 /// The head-anchored primitives ride the render camera, whose position is the eye midpoint the
-/// tick measured their offsets from ([`hooks::camera::eye_point`]).
+/// tick measured their offsets from ([`crate::hooks::camera::eye_point`]).
 fn frame_inputs(inputs: &OverlayInputs) -> Option<Frame> {
     let (position, orientation) = crate::hud::render_camera_pose()?;
     Some(Frame {

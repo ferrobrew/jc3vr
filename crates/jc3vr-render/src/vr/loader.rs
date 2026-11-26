@@ -23,7 +23,7 @@ pub(super) fn load_entry(cfg: &VrConfig) -> anyhow::Result<xr::Entry> {
     }
 
     if let Some(path) =
-        crate::module::get_path().and_then(|p| p.parent().map(|d| d.join("openxr_loader.dll")))
+        jc3vr_core::module::get_path().and_then(|p| p.parent().map(|d| d.join("openxr_loader.dll")))
     {
         tracing::info!(target: "vr", loader = %path.display(), "loading the payload-adjacent OpenXR loader");
         match unsafe { xr::Entry::load_from(&path) } {

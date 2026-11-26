@@ -4,7 +4,7 @@
 
 /// Which part of the back buffer an eye's direct blit samples.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub(crate) enum BlitSource {
+pub enum BlitSource {
     /// The whole back buffer: a dispatch that rendered one eye.
     Whole,
     /// One eye's half of the double-wide back buffer the single-pass collapse renders, left half

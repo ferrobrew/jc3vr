@@ -12,23 +12,22 @@
 //! sides) are left as they are. The table is chosen from `controllers.dominant_hand` when the
 //! actions are created, since suggestions are fixed once the sets are attached.
 
-use crate::{
-    controllers::frame::Hand,
-    vr::input::{
-        layout::Profile,
-        semantic::{
-            SemanticSet,
-            vocabulary::{
-                GlobalAction, HelicopterAction, LandVehicleAction, MenuAction, OnFootAction,
-                PlaneAction, WingsuitAction,
-            },
+use jc3vr_input::frame::Hand;
+
+use crate::vr::input::{
+    layout::Profile,
+    semantic::{
+        SemanticSet,
+        vocabulary::{
+            GlobalAction, HelicopterAction, LandVehicleAction, MenuAction, OnFootAction,
+            PlaneAction, WingsuitAction,
         },
     },
 };
 
 /// The hand or hands a default binding is on.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub(crate) enum Side {
+pub enum Side {
     Dom,
     Off,
     Both,
@@ -38,7 +37,7 @@ pub(crate) enum Side {
 
 impl Side {
     /// Whether this side includes `hand` for a player whose dominant hand is `dominant`.
-    pub(crate) const fn covers(self, hand: Hand, dominant: Hand) -> bool {
+    pub const fn covers(self, hand: Hand, dominant: Hand) -> bool {
         let dom = matches!(
             (hand, dominant),
             (Hand::Left, Hand::Left) | (Hand::Right, Hand::Right)
@@ -60,7 +59,7 @@ impl Side {
 
 /// A physical input, named by its position on the controller.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub(crate) enum Component {
+pub enum Component {
     TriggerValue,
     /// The deliberate grip press: the squeeze force on a force-sensing grip (Index), whose
     /// capacitive squeeze value is full whenever the hand rests round the handle, and the squeeze
@@ -115,13 +114,13 @@ impl Component {
 
 /// An action's default binding.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub(crate) struct DefaultBinding {
-    pub(crate) side: Side,
-    pub(crate) component: Component,
+pub struct DefaultBinding {
+    pub side: Side,
+    pub component: Component,
 }
 
 /// The default binding of action `index` of `set`, or `None` for an action that ships unbound.
-pub(crate) fn default_binding(set: SemanticSet, index: usize) -> Option<DefaultBinding> {
+pub fn default_binding(set: SemanticSet, index: usize) -> Option<DefaultBinding> {
     match set {
         SemanticSet::Global => global(GlobalAction::ALL[index]),
         SemanticSet::OnFoot => on_foot(OnFootAction::ALL[index]),

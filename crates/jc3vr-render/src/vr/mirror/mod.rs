@@ -57,6 +57,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use anyhow::Context as _;
 use jc3gi::graphics_engine::device::Device;
+use jc3vr_core::config::engine::{ConfigSlot, Switch, disable_automatically};
 use parking_lot::Mutex;
 use windows::{
     Win32::{
@@ -78,7 +79,6 @@ use windows::{
 };
 
 use crate::{
-    config::engine::{ConfigSlot, Switch, disable_automatically},
     hooks::graphics_engine::capture::{EGUI_DEBUG_RENDER_STATE, eye_capture_fresh},
     vr::{
         MirrorView, VR_CONFIG,
@@ -96,30 +96,34 @@ mod layout;
 mod participants;
 mod stamp;
 
-pub use crate::vr::mirror::participants::{MirrorDraw, MirrorFrame};
-pub(crate) use crate::vr::mirror::participants::{
-    MirrorLayers, MirrorObserver, register_mirror_layers, register_mirror_observer,
+pub use crate::vr::mirror::participants::{
+    MirrorDraw, MirrorFrame, MirrorLayers, MirrorObserver, register_mirror_layers,
+    register_mirror_observer,
 };
 
 /// The committed, precompiled shaders shared with the VR blit and others: the fullscreen-triangle
 /// vertex shader and the plain-sample (no gamma) pixel shader. See the module gamma note.
-const VERTEX_DXBC: &[u8] = include_bytes!("../../shaders/capture_vs.dxbc");
-const PIXEL_DXBC: &[u8] = include_bytes!("../../shaders/capture_ps.dxbc");
+const VERTEX_DXBC: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/shaders/capture_vs.dxbc"
+));
+const PIXEL_DXBC: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/shaders/capture_ps.dxbc"
+));
 
 /// The mirror pipeline singleton, built lazily on the first mirrored frame and torn down with the
 /// runtime. Holds COM objects, which `windows` marks `Send`/`Sync`, so a `Mutex` static is sound.
 /// Whether the floating debug panel is up, `hud.egui_panel.enabled`: the mirror then shows the
 /// panel's texture instead of the flat overlay. The payload binds this slot and the two below to
 /// their fields in the HUD settings at startup.
-pub(crate) static PANEL_ENABLED: ConfigSlot<bool> = ConfigSlot::new("hud.egui_panel.enabled");
+pub static PANEL_ENABLED: ConfigSlot<bool> = ConfigSlot::new("hud.egui_panel.enabled");
 
 /// Whether the floating panel also shows on the desktop mirror, `hud.egui_panel.show_on_mirror`.
-pub(crate) static PANEL_ON_MIRROR: ConfigSlot<bool> =
-    ConfigSlot::new("hud.egui_panel.show_on_mirror");
+pub static PANEL_ON_MIRROR: ConfigSlot<bool> = ConfigSlot::new("hud.egui_panel.show_on_mirror");
 
 /// The floating panel's texture size, `hud.egui_panel.resolution`.
-pub(crate) static PANEL_RESOLUTION: ConfigSlot<(u32, u32)> =
-    ConfigSlot::new("hud.egui_panel.resolution");
+pub static PANEL_RESOLUTION: ConfigSlot<(u32, u32)> = ConfigSlot::new("hud.egui_panel.resolution");
 
 static MIRROR: Mutex<Option<Mirror>> = Mutex::new(None);
 
@@ -194,7 +198,7 @@ pub fn teardown() {
 
 /// The counter of the mirror's latest present, the number the frame stamp draws (wrapping at its
 /// bits), or `None` before the first present. Lock-free, for the tracking recorder.
-pub(crate) fn latest_present() -> Option<u32> {
+pub fn latest_present() -> Option<u32> {
     PRESENTS.load(Ordering::Relaxed).checked_sub(1)
 }
 
@@ -306,7 +310,7 @@ unsafe fn present_mirror_inner(view: MirrorView) -> anyhow::Result<()> {
         // (`crate::hud::mirror_overlay`) -- so here we only composite that texture as an
         // alpha-blended overlay. Never `EguiState::render` (a second egui pass that mutates shared
         // state), so this is safe from the deferred frame tail's thread as well as inline.
-        if !crate::director::clean_view::hides_everything() {
+        if !jc3vr_core::director::clean_view::hides_everything() {
             let panel_enabled = *PANEL_ENABLED.lock();
             if panel_enabled {
                 // With `show_on_mirror` off, the panel stays in the headset only, leaving the desktop
@@ -328,7 +332,7 @@ unsafe fn present_mirror_inner(view: MirrorView) -> anyhow::Result<()> {
                     );
                     mirror.draw_overlay(&context.m_Context, &rtv, &srv, overlay);
                 }
-            } else if !crate::director::clean_view::hides_desktop()
+            } else if !jc3vr_core::director::clean_view::hides_desktop()
                 && let Some(srv) = overlay_srv()
             {
                 // The flat overlay texture is window-sized, so stretching it across the whole buffer

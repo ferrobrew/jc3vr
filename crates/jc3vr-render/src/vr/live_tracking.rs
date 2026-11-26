@@ -9,21 +9,16 @@
 use std::time::{Duration, Instant};
 
 use glam::Quat;
+use jc3vr_input::frame::{ControllerFrame, Pose, TrackedPose};
 use openxr as xr;
 use parking_lot::Mutex;
 
-use crate::{
-    controllers::{
-        body::rig::origin_provenance::OriginEvidence,
-        frame::{ControllerFrame, Pose, TrackedPose},
-    },
-    vr::convert,
-};
+use crate::{controllers::body::rig::origin_provenance::OriginEvidence, vr::convert};
 
 /// The located head, with the exact transform used to rebase grips.
 /// `cockpit_from_local` is a transform value, not a complete origin-generation identity.
 #[derive(Clone, Copy)]
-pub(crate) struct LocatedTracking {
+pub struct LocatedTracking {
     pub head: xr::Posef,
     pub flags: xr::ViewStateFlags,
     pub display_time_ns: i64,
@@ -34,7 +29,7 @@ pub(crate) struct LocatedTracking {
 /// Raw cockpit-space poses with the controller publisher's actual sequence and host time.
 /// Invalid components retain their runtime flags; inactive grips remain absent.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub(crate) struct RawPacket {
+pub struct RawPacket {
     pub head: TrackedPose,
     pub grips: [Option<TrackedPose>; 2],
     pub focused: bool,
@@ -47,7 +42,7 @@ pub(crate) struct RawPacket {
 
 /// Why one source is unavailable for current diagnostic inspection.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) enum Unavailable {
+pub enum Unavailable {
     NotCaptured,
     NoLiveTracking,
     MixedDisplayTimes,
@@ -59,7 +54,7 @@ pub(crate) enum Unavailable {
 
 /// Raw tracking availability, independent of native capture and body-work eligibility.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) enum RawAvailability {
+pub enum RawAvailability {
     Unavailable(Unavailable),
     Observed { age: Duration },
 }
@@ -67,7 +62,7 @@ pub(crate) enum RawAvailability {
 /// A fixed-size owned snapshot with no allocation on publication or status reads.
 /// Unavailable snapshots omit the packet rather than retaining previously observed tracking.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub(crate) struct RawObservation {
+pub struct RawObservation {
     pub availability: RawAvailability,
     pub packet: Option<RawPacket>,
 }
@@ -89,7 +84,7 @@ impl RawObservation {
 }
 
 /// How old a publication may be and still count for current diagnostic inspection.
-pub(crate) const DIAGNOSTIC_MAX_AGE: Duration = Duration::from_millis(500);
+pub const DIAGNOSTIC_MAX_AGE: Duration = Duration::from_millis(500);
 
 /// Publish only the sampler-owned controller frame returned with its real publication receipt.
 /// No latest-value global controller is paired with the located live head.
@@ -106,7 +101,7 @@ pub(crate) fn tracking_unavailable() {
 }
 
 /// The latest publication, or why there is none, without an age check.
-pub(crate) fn publication() -> Result<RawPacket, Unavailable> {
+pub fn publication() -> Result<RawPacket, Unavailable> {
     *SLOT.lock()
 }
 
@@ -117,7 +112,7 @@ pub(crate) fn status() -> RawObservation {
 
 /// The availability of `publication` at `now`: unavailable past `max_age` or before it was
 /// published, so no stale packet is retained.
-pub(crate) fn observe(
+pub fn observe(
     publication: Result<RawPacket, Unavailable>,
     now: Instant,
     max_age: Duration,
@@ -131,7 +126,7 @@ pub(crate) fn observe(
     }
 }
 
-pub(crate) fn make_raw_packet(
+pub fn make_raw_packet(
     located: Option<LocatedTracking>,
     controllers: Option<ControllerFrame>,
 ) -> Result<RawPacket, Unavailable> {
@@ -179,7 +174,7 @@ pub(crate) fn make_raw_packet(
     Ok(packet)
 }
 
-pub(crate) fn age_at(
+pub fn age_at(
     published_at: Instant,
     now: Instant,
     max_age: Duration,
@@ -213,7 +208,7 @@ fn valid_pose(pose: Pose) -> bool {
     pose.position.is_finite() && unit_rotation(pose.orientation)
 }
 
-pub(crate) fn unit_rotation(rotation: Quat) -> bool {
+pub fn unit_rotation(rotation: Quat) -> bool {
     rotation.is_finite() && (rotation.length_squared() - 1.0).abs() <= 1.0e-4
 }
 

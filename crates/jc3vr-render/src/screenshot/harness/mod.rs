@@ -16,15 +16,16 @@ pub(crate) mod constants;
 pub(crate) mod draw_census;
 pub(crate) mod patch_draw;
 pub(crate) mod resolve_probe;
-pub(crate) mod snapshot;
+pub mod snapshot;
 pub(crate) mod stages;
 pub(crate) mod types;
 
+use jc3vr_core::config::engine::Snapshot;
 use windows::Win32::Graphics::Direct3D11::{ID3D11Device, ID3D11DeviceContext};
 
 use crate::{
-    config::engine::Snapshot,
-    image_writer::{self, ImageTarget, WriteOutcome},
+    image_writer,
+    image_writer::{ImageTarget, WriteOutcome},
     screenshot::{
         CaptureSource,
         harness::types::{
@@ -33,15 +34,15 @@ use crate::{
         },
         read_back,
     },
-    stereo::dispatch::{self, RenderMode},
+    stereo::{dispatch, dispatch::RenderMode},
     testing::visual::{HISTORY_FRAMES, VisualMetadata},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct RequestId(String);
+pub struct RequestId(String);
 
 impl RequestId {
-    pub(crate) fn parse(id: &str) -> Result<Self, &'static str> {
+    pub fn parse(id: &str) -> Result<Self, &'static str> {
         if id.is_empty() || id.len() > 64 {
             return Err("expected 1–64 ASCII letters, digits, underscores, or hyphens");
         }
@@ -61,7 +62,7 @@ impl RequestId {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum WaterReflection {
+pub enum WaterReflection {
     PlanarUv,
     LakeSamples,
     LakeLighting,
@@ -133,13 +134,13 @@ impl WaterReflection {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum SunDepthClip {
+pub enum SunDepthClip {
     DisabledRight,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum CascadeScale {
+pub enum CascadeScale {
     ShoreLow,
     ShoreHigh,
 }
@@ -153,7 +154,7 @@ impl CascadeScale {
     }
 }
 
-pub(crate) struct CaptureRequest {
+pub struct CaptureRequest {
     pub water_reflection: Option<WaterReflection>,
     pub water_inputs: bool,
     pub water_tess_draw: Option<u8>,
@@ -230,7 +231,7 @@ pub(crate) struct CaptureRequest {
     pub sun_depth_clip: Option<SunDepthClip>,
 }
 
-pub(crate) fn request(id: RequestId, options: CaptureRequest) {
+pub fn request(id: RequestId, options: CaptureRequest) {
     if (options.aa_color_edge.is_some()
         && (!options.aa_weights || options.patch63_hull != Some(true)))
         || (options.aa_weights && !options.aa_draws)
@@ -417,7 +418,7 @@ pub(crate) fn request(id: RequestId, options: CaptureRequest) {
     request_with_phase(id, None, options);
 }
 
-pub(crate) fn request_motion(id: RequestId, phase: u32, options: CaptureRequest) {
+pub fn request_motion(id: RequestId, phase: u32, options: CaptureRequest) {
     if options.water_reflection.is_some() {
         reject(
             &id,
@@ -446,7 +447,8 @@ pub(crate) fn request_motion(id: RequestId, phase: u32, options: CaptureRequest)
 }
 
 fn request_with_phase(id: RequestId, target_phase: Option<u32>, options: CaptureRequest) {
-    let Some(folder) = crate::config::paths::dir().map(|dir| dir.join("captures")) else {
+    let Some(folder) = jc3vr_core::config::engine::paths::dir().map(|dir| dir.join("captures"))
+    else {
         tracing::error!("screenshot harness: no configuration directory");
         return;
     };
@@ -543,7 +545,8 @@ fn request_with_phase(id: RequestId, target_phase: Option<u32>, options: Capture
 }
 
 fn reject(id: &RequestId, error: &str) {
-    let Some(folder) = crate::config::paths::dir().map(|dir| dir.join("captures")) else {
+    let Some(folder) = jc3vr_core::config::engine::paths::dir().map(|dir| dir.join("captures"))
+    else {
         tracing::error!("screenshot harness: no configuration directory");
         return;
     };
@@ -729,7 +732,7 @@ pub(crate) fn screenshot_wants_eyes() -> bool {
 pub(crate) fn diagnostic_capture_id() -> Option<String> {
     if !screenshot_wants_eyes()
         || !crate::testing::visual::ready()
-        || !crate::hooks::in_gameplay()
+        || !jc3vr_core::hooks::in_gameplay()
         || !crate::vr::is_running_published()
         || !crate::stereo::active()
     {
@@ -1327,7 +1330,7 @@ pub(crate) fn capture(
     }
     let frame = frame_identity();
     let running = crate::vr::is_running_published();
-    let gameplay = crate::hooks::in_gameplay();
+    let gameplay = jc3vr_core::hooks::in_gameplay();
     let effective_config = Snapshot::take();
     let mode = dispatch::mode();
     let selected_eye = mode.selected_eye();
@@ -1525,7 +1528,7 @@ pub(crate) fn capture(
     }
 }
 
-pub(crate) fn tick() {
+pub fn tick() {
     snapshot::tick();
     let latest_readiness = screenshot_wants_eyes().then(readiness);
     let mut state = STATE.lock();
@@ -1832,7 +1835,7 @@ fn comparison_inputs(
         })
     });
     ComparisonInputs {
-        build_stamp: crate::BUILD_STAMP,
+        build_stamp: jc3vr_core::lifecycle::build_stamp(),
         profile: visual.profile,
         camera,
         eyes,
@@ -1844,10 +1847,10 @@ fn comparison_inputs(
 
 fn readiness() -> Readiness {
     Readiness {
-        gameplay_ready: crate::hooks::in_gameplay(),
+        gameplay_ready: jc3vr_core::hooks::in_gameplay(),
         xr_session_running: crate::vr::is_running_published(),
         xr_frame_rendering: frame_identity().is_some(),
-        build_stamp: crate::BUILD_STAMP,
+        build_stamp: jc3vr_core::lifecycle::build_stamp(),
     }
 }
 

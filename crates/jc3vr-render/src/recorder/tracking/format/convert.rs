@@ -3,15 +3,15 @@
 //! Every struct is destructured in full and every enum matched without a wildcard, so a field or
 //! variant added to a payload type fails to build here until the file format accounts for it.
 
+use jc3vr_input::frame::{
+    ActionSetKind, Button, ButtonSet, Hand, HandFrame, HandInputs, HandJoint, InteractionProfile,
+    Pose, TrackedPose,
+};
 use tracking_format::{self as file, model as wire};
 
 #[cfg(test)]
 use crate::recorder::tracking::format::Recording;
 use crate::{
-    controllers::frame::{
-        ActionSetKind, Button, ButtonSet, Hand, HandFrame, HandInputs, HandJoint,
-        InteractionProfile, Pose, TrackedPose,
-    },
     recorder::tracking::format::{
         ControllerSample, EyeSample, Frame, HeadSample, Header, RecenterEvent, SemanticSample,
         SessionSample, StartMarker,

@@ -14,15 +14,15 @@ use std::{
 
 use parking_lot::Mutex;
 use tracking_format::event::Event;
-pub(crate) use tracking_format::event::EventKind;
+pub use tracking_format::event::EventKind;
 
 /// Whether noted events are kept: a tracking recording runs, or the lookback does.
-pub(crate) fn collecting() -> bool {
+pub fn collecting() -> bool {
     crate::recorder::tracking::is_recording() || crate::recorder::tracking::lookback::is_running()
 }
 
 /// Note an event for the next captured frame. Any thread; takes only this module's leaf lock.
-pub(crate) fn note(kind: EventKind) {
+pub fn note(kind: EventKind) {
     if !collecting() {
         return;
     }
@@ -36,14 +36,14 @@ pub(crate) fn note(kind: EventKind) {
 }
 
 /// Note the event `build` makes, building it only while a recording or the lookback collects.
-pub(crate) fn note_with(build: impl FnOnce() -> EventKind) {
+pub fn note_with(build: impl FnOnce() -> EventKind) {
     if collecting() {
         note(build());
     }
 }
 
 /// Events dropped because the pending list was full, since the payload loaded.
-pub(crate) fn dropped() -> u64 {
+pub fn dropped() -> u64 {
     DROPPED.load(Ordering::Relaxed)
 }
 

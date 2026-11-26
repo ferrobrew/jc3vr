@@ -242,9 +242,7 @@ impl Renderer {
             match crate::stereo::single_pass::collapse_ui_eye_override() {
                 // The collapse detours the plain viewport call; bind this eye's half through the
                 // original.
-                Some(_) => {
-                    crate::stereo::single_pass::set_ui_viewport_raw(context.as_raw(), &eye.viewport)
-                }
+                Some(_) => crate::stereo::single_pass::set_ui_viewport_raw(context, &eye.viewport),
                 None => context.RSSetViewports(Some(&[eye.viewport])),
             }
             context.OMSetBlendState(&self.blend, None, 0xffff_ffff);
@@ -271,8 +269,14 @@ impl Renderer {
 }
 
 /// The committed, precompiled overlay shaders (entry point `main`).
-const VERTEX_DXBC: &[u8] = include_bytes!("../../shaders/overlay_vs.dxbc");
-const PIXEL_DXBC: &[u8] = include_bytes!("../../shaders/overlay_ps.dxbc");
+const VERTEX_DXBC: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/shaders/overlay_vs.dxbc"
+));
+const PIXEL_DXBC: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/shaders/overlay_ps.dxbc"
+));
 
 /// The smallest primitive buffer, in primitives.
 const MIN_CAPACITY: usize = 64;

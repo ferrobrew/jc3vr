@@ -23,13 +23,11 @@
 //! primitives are snapshotted and uploaded once, on the first eye's draw, so both eyes draw the same
 //! geometry.
 
-pub mod pass;
-pub mod primitive;
 pub mod producers;
-pub mod renderer;
-pub mod resolve;
-pub mod store;
-pub mod view;
+
+// The render layer's half lives in the render crate; the old path keeps working until the final
+// cleanup pass.
+pub(crate) use jc3vr_render::controllers::overlay::{pass, primitive, resolve, store};
 
 pub use crate::controllers::overlay::pass::{OverlayStatus, status};
 pub(crate) use crate::controllers::overlay::pass::{draw, release_on_eject};

@@ -4,13 +4,11 @@
 
 use std::{sync::LazyLock, time::Instant};
 
+use jc3vr_input::frame::{ControllerFrame, Pose, TrackedPose};
 use openxr as xr;
 use parking_lot::Mutex;
 
-use crate::{
-    controllers::frame::{ControllerFrame, Pose, TrackedPose},
-    vr::convert,
-};
+use crate::vr::convert;
 
 /// Source-owned discontinuities. Ordinary head/controller movement does not advance the epoch.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -23,7 +21,7 @@ pub(crate) enum EpochChange {
 
 /// Identity and pose time of an input observation. A newer epoch permits clock/sequence reset.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) struct GestureSample {
+pub struct GestureSample {
     pub epoch: u64,
     pub sequence: u64,
     pub time_ns: i64,
@@ -34,7 +32,7 @@ pub(crate) struct GestureSample {
 /// The producer must preserve the original sample identity and tracking flags. Copying the current
 /// controller stamp onto a separately queried global head pose does not satisfy this contract.
 #[derive(Debug, Copy, Clone)]
-pub(crate) struct GestureHead {
+pub struct GestureHead {
     pub sample: GestureSample,
     pub pose: TrackedPose,
     pub published_at: Instant,
@@ -42,7 +40,7 @@ pub(crate) struct GestureHead {
 
 /// Head data from this frame's located and already-rebased eye views.
 /// The same baseline and predicted display time must be passed to controller sampling.
-pub(crate) struct LocatedHead {
+pub struct LocatedHead {
     pub eyes: [xr::Posef; 2],
     pub flags: xr::ViewStateFlags,
     pub display_time_ns: i64,
@@ -50,7 +48,7 @@ pub(crate) struct LocatedHead {
 
 /// Single-use completion token. Neither a partial head nor a receipt alone is readable.
 #[derive(Debug)]
-pub(crate) struct PendingHead {
+pub struct PendingHead {
     epoch: u64,
     ticket: u64,
     display_time_ns: i64,
@@ -59,40 +57,40 @@ pub(crate) struct PendingHead {
 
 /// A complete publication. Its controller poses have the same cockpit baseline as its head.
 #[derive(Debug, Clone)]
-pub(crate) struct FlightPacket {
+pub struct FlightPacket {
     head: GestureHead,
     controllers: ControllerFrame,
 }
 
 impl FlightPacket {
-    pub(crate) fn sample(&self) -> GestureSample {
+    pub fn sample(&self) -> GestureSample {
         self.head.sample
     }
 
     /// The head from this tracked publication, before body or vehicle composition.
-    pub(crate) fn head_pose(&self) -> Pose {
+    pub fn head_pose(&self) -> Pose {
         self.head.pose.pose
     }
 
     /// The head from the same locate and cockpit baseline as the controllers.
-    pub(crate) fn head(&self) -> GestureHead {
+    pub fn head(&self) -> GestureHead {
         self.head
     }
 
     /// The controller frame published with the head.
-    pub(crate) fn controllers(&self) -> &ControllerFrame {
+    pub fn controllers(&self) -> &ControllerFrame {
         &self.controllers
     }
 }
 
 /// Start this live frame even when no tracked views are available, clearing the previous packet.
-pub(crate) fn begin_located(head: Option<LocatedHead>) -> Option<PendingHead> {
+pub fn begin_located(head: Option<LocatedHead>) -> Option<PendingHead> {
     SLOT.lock().begin(head)
 }
 
 /// Complete only after `frame::publish` returns its real sequence and host publication time.
 /// `controllers` is the sampled frame retained before that call, never read back from a global slot.
-pub(crate) fn complete(
+pub fn complete(
     pending: PendingHead,
     controllers: ControllerFrame,
     receipt: (u64, Instant),
@@ -101,12 +99,12 @@ pub(crate) fn complete(
 }
 
 /// Match the input tick's exact controller publication before returning one complete packet.
-pub(crate) fn for_frame(frame: &ControllerFrame, now: Instant) -> Option<FlightPacket> {
+pub fn for_frame(frame: &ControllerFrame, now: Instant) -> Option<FlightPacket> {
     SLOT.lock().for_frame(frame, now)
 }
 
 /// Drop the current/pending packet when no sample is published. This does not replace the clock.
-pub(crate) fn unavailable() {
+pub fn unavailable() {
     SLOT.lock().cancel();
 }
 
@@ -119,7 +117,7 @@ pub(crate) fn source_changed(change: EpochChange) {
 /// The current source epoch: it advances at every change of the cockpit frame's source (a
 /// recenter, a follow bank, each share of a seat-lock yaw re-base, a runtime reset).
 /// `None` once it has overflowed.
-pub(crate) fn epoch() -> Option<u64> {
+pub fn epoch() -> Option<u64> {
     SLOT.lock().epoch
 }
 
@@ -255,8 +253,8 @@ fn located_center(head: &LocatedHead) -> Option<TrackedPose> {
 static SLOT: LazyLock<Mutex<Producer>> = LazyLock::new(|| Mutex::new(Producer::new()));
 
 /// Serialize tests that share the live packet with history source changes, and leave it empty.
-#[cfg(test)]
-pub(crate) fn test_guard() -> impl Drop {
+#[cfg(any(test, feature = "test-support"))]
+pub fn test_guard() -> impl Drop {
     struct Guard {
         _serial: parking_lot::ReentrantMutexGuard<'static, ()>,
     }
@@ -279,9 +277,9 @@ mod tests {
     use std::time::Duration;
 
     use glam::Vec3;
+    use jc3vr_input::frame::{ActionSetKind, HandFrame};
 
     use super::*;
-    use crate::controllers::frame::{ActionSetKind, HandFrame};
 
     fn head(time_ns: i64) -> LocatedHead {
         LocatedHead {

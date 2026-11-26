@@ -42,13 +42,10 @@ use jc3gi::graphics_engine::{
 use parking_lot::Mutex;
 
 mod config;
-pub(crate) use config::FAR_FIELD_CONFIG;
-pub use config::{FarFieldConfig, FarFieldMode};
+pub use config::{FAR_FIELD_CONFIG, FarFieldConfig, FarFieldMode};
+use jc3vr_core::hooks::patcher;
 
-use crate::{
-    hooks,
-    stereo::{far_phase, is_second_eye, share_frame},
-};
+use crate::stereo::{far_phase, is_second_eye, share_frame};
 
 pub mod share;
 
@@ -93,7 +90,7 @@ pub fn sync_type_gates(names: &str) {
         .collect();
 
     let mut gated = GATED_TYPE_SLOTS.lock();
-    let Some(mut patcher) = hooks::patcher() else {
+    let Some(mut patcher) = patcher() else {
         return;
     };
     // SAFETY: the registry is static engine storage with live type singletons; the slot writes are
@@ -388,7 +385,7 @@ fn apply_buckets(pass: &mut RenderPass, threshold_m: f32) -> bool {
     if pass.m_NumDepthBuckets != 1 {
         return false;
     }
-    let Some(mut patcher) = hooks::patcher() else {
+    let Some(mut patcher) = patcher() else {
         return false;
     };
     pass.m_DepthSqTable[1] = sq;
@@ -411,7 +408,7 @@ fn restore_buckets(pass: &mut RenderPass) {
         return;
     }
     // SAFETY: reverts the count patch applied in `apply_buckets` on the same live pass.
-    if let Some(mut patcher) = hooks::patcher() {
+    if let Some(mut patcher) = patcher() {
         unsafe { patcher.unpatch((&raw const pass.m_NumDepthBuckets) as usize) };
     }
 }

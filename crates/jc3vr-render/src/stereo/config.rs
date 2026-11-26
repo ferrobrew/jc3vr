@@ -1,9 +1,9 @@
 //! Stereo rendering configuration. The live per-eye runtime state is [`crate::stereo::StereoState`].
 
+use jc3vr_core::config::engine::{ConfigSlot, Parts};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    config::engine::{ConfigSlot, Parts},
     far_field::{FAR_FIELD_CONFIG, FarFieldMode},
     vr::VR_CONFIG,
 };
@@ -16,7 +16,7 @@ use crate::{
 /// it to collecting. The defaults are the feature turned on, so applying this with `on` to a
 /// default configuration changes nothing. The caller requests the shader reload that applies the
 /// change.
-pub(crate) fn set_single_pass_feature(config: &mut impl Parts, on: bool) {
+pub fn set_single_pass_feature(config: &mut impl Parts, on: bool) {
     let sps = &mut config.part_mut(&STEREO_CONFIG).single_pass;
     sps.enabled = on;
     sps.dual_eye = on;
@@ -764,7 +764,7 @@ pub struct SinglePassConfig {
 }
 
 /// The stereo settings, at `stereo` in the settings file; the payload binds the slot at startup.
-pub(crate) static STEREO_CONFIG: ConfigSlot<StereoConfig> = ConfigSlot::new("stereo");
+pub static STEREO_CONFIG: ConfigSlot<StereoConfig> = ConfigSlot::new("stereo");
 
 /// Stereo rendering toggles. The live per-eye runtime state is [`crate::stereo::StereoState`].
 #[derive(Clone, Serialize, Deserialize)]
@@ -1023,6 +1023,12 @@ impl SinglePassConfig {
     }
 }
 
+impl Default for SinglePassConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl StereoConfig {
     pub const fn new() -> Self {
         Self {
@@ -1069,17 +1075,24 @@ impl StereoConfig {
     }
 }
 
+impl Default for StereoConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use jc3vr_core::config::engine::Snapshot;
     use pretty_assertions::assert_eq;
 
     use super::*;
-    use crate::config::engine::Snapshot;
 
     /// The defaults are the single-pass feature turned on, exactly as the debug UI's button turns it
     /// on, so the two cannot drift apart.
     #[test]
     fn defaults_are_the_single_pass_feature_turned_on() {
+        crate::test_config::register();
         let defaults = Snapshot::defaults();
         let mut turned_on = Snapshot::defaults();
         set_single_pass_feature(&mut turned_on, true);
@@ -1097,6 +1110,7 @@ mod tests {
     /// single-pass runs.
     #[test]
     fn turning_the_feature_off_clears_the_master_switch_and_the_collapse() {
+        crate::test_config::register();
         let mut config = Snapshot::defaults();
         set_single_pass_feature(&mut config, false);
         let sps = &config.part(&STEREO_CONFIG).single_pass;

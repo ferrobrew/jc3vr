@@ -68,19 +68,19 @@ pub fn set_mode(mode: RenderMode) {
 
 /// True for the physical eye that prepares shared UI before the other eye draws it.
 /// Single-pass callers pass the physical eye of each half, not the dispatch's eye tag.
-pub(crate) fn first_ui_eye(eye: usize) -> bool {
+pub fn first_ui_eye(eye: usize) -> bool {
     eye == mode().first_eye()
 }
 
 /// The ordered physical-eye dispatches and their once-per-frame ownership.
 #[derive(Clone, Copy)]
-pub(crate) struct DispatchPlan {
+pub struct DispatchPlan {
     /// Each dispatch's physical eye and far-only flag.
-    pub(crate) dispatches: &'static [(usize, bool)],
+    pub dispatches: &'static [(usize, bool)],
 }
 
 impl DispatchPlan {
-    pub(crate) fn new(mode: RenderMode, collapsed: bool, share: bool) -> Self {
+    pub fn new(mode: RenderMode, collapsed: bool, share: bool) -> Self {
         let dispatches: &'static [(usize, bool)] = match mode {
             RenderMode::Native if collapsed => &[(0, false)],
             RenderMode::Native if share => &[(0, true), (0, false), (1, false)],
@@ -92,11 +92,11 @@ impl DispatchPlan {
         Self { dispatches }
     }
 
-    pub(crate) fn share_frame(self) -> bool {
+    pub fn share_frame(self) -> bool {
         self.dispatches.iter().any(|&(_, far)| far)
     }
 
-    pub(crate) fn last_near(self, ordinal: usize) -> bool {
+    pub fn last_near(self, ordinal: usize) -> bool {
         ordinal + 1 == self.dispatches.len()
             && self.dispatches.get(ordinal).is_some_and(|&(_, far)| !far)
     }
@@ -116,7 +116,7 @@ pub(crate) fn later_scene_dispatch(
 /// phase, no share frame, ordinal 0 — so state from a share frame's last dispatch never leaks into
 /// the next frame's first dispatch (or into a non-stereo frame). Called on the main thread inline,
 /// or from the tail worker after it drains the final dispatch (see [`crate::vr::tail`]).
-pub(crate) fn reset_dispatch_state() {
+pub fn reset_dispatch_state() {
     let mut state = STEREO_STATE.lock();
     state.draw_index = 0;
     state.far_phase = false;

@@ -13,10 +13,9 @@
 //! re-wraps another payload's handles: a runtime takes suggestions only before the sets are
 //! attached, so re-wrapping would keep the old suggestions without a sign.
 
-use crate::{
-    controllers::frame::{Hand, InteractionProfile},
-    vr::input::semantic::{SemanticSet, defaults},
-};
+use jc3vr_input::frame::{Hand, InteractionProfile};
+
+use crate::vr::input::semantic::{SemanticSet, defaults};
 
 /// Append the note that marks a raw input's localized name.
 macro_rules! raw_name {
@@ -27,7 +26,7 @@ macro_rules! raw_name {
 
 /// A boolean input.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) enum BoolInput {
+pub enum BoolInput {
     TriggerClick,
     TriggerTouch,
     ThumbstickClick,
@@ -45,7 +44,7 @@ pub(crate) enum BoolInput {
 }
 
 impl BoolInput {
-    pub(crate) const ALL: [BoolInput; 11] = [
+    pub const ALL: [BoolInput; 11] = [
         BoolInput::TriggerClick,
         BoolInput::TriggerTouch,
         BoolInput::ThumbstickClick,
@@ -59,7 +58,7 @@ impl BoolInput {
         BoolInput::SqueezeClick,
     ];
 
-    pub(crate) const fn name(self) -> &'static str {
+    pub const fn name(self) -> &'static str {
         match self {
             BoolInput::TriggerClick => "trigger_click",
             BoolInput::TriggerTouch => "trigger_touch",
@@ -94,7 +93,7 @@ impl BoolInput {
 
 /// A scalar input, `0..=1`.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) enum FloatInput {
+pub enum FloatInput {
     Trigger,
     Squeeze,
     SqueezeForce,
@@ -102,14 +101,14 @@ pub(crate) enum FloatInput {
 }
 
 impl FloatInput {
-    pub(crate) const ALL: [FloatInput; 4] = [
+    pub const ALL: [FloatInput; 4] = [
         FloatInput::Trigger,
         FloatInput::Squeeze,
         FloatInput::SqueezeForce,
         FloatInput::TrackpadForce,
     ];
 
-    pub(crate) const fn name(self) -> &'static str {
+    pub const fn name(self) -> &'static str {
         match self {
             FloatInput::Trigger => "trigger_value",
             FloatInput::Squeeze => "squeeze_value",
@@ -130,15 +129,15 @@ impl FloatInput {
 
 /// A two-axis input, each axis `-1..=1`.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) enum Vec2Input {
+pub enum Vec2Input {
     Thumbstick,
     Trackpad,
 }
 
 impl Vec2Input {
-    pub(crate) const ALL: [Vec2Input; 2] = [Vec2Input::Thumbstick, Vec2Input::Trackpad];
+    pub const ALL: [Vec2Input; 2] = [Vec2Input::Thumbstick, Vec2Input::Trackpad];
 
-    pub(crate) const fn name(self) -> &'static str {
+    pub const fn name(self) -> &'static str {
         match self {
             Vec2Input::Thumbstick => "thumbstick",
             Vec2Input::Trackpad => "trackpad",
@@ -160,20 +159,20 @@ pub(crate) const HANDS_SET_LOCALIZED_NAME: &str = "Hands and raw input";
 
 /// The pose and output actions of the hands set, in stash order.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) enum HandsAction {
+pub enum HandsAction {
     GripPose,
     AimPose,
     Haptic,
 }
 
 impl HandsAction {
-    pub(crate) const ALL: [HandsAction; 3] = [
+    pub const ALL: [HandsAction; 3] = [
         HandsAction::GripPose,
         HandsAction::AimPose,
         HandsAction::Haptic,
     ];
 
-    pub(crate) const fn name(self) -> &'static str {
+    pub const fn name(self) -> &'static str {
         match self {
             HandsAction::GripPose => "grip_pose",
             HandsAction::AimPose => "aim_pose",
@@ -200,7 +199,7 @@ impl HandsAction {
 
 /// Any action of the layout, for the binding table.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) enum Input {
+pub enum Input {
     Bool(BoolInput),
     Float(FloatInput),
     Vec2(Vec2Input),
@@ -262,7 +261,7 @@ pub(crate) const fn shipped(profile: InteractionProfile) -> Option<Profile> {
 /// Whether a hand bound to `profile` reads `input` from a physical input of its own. Only a
 /// profile the mod ships bindings for is known to: an emulated profile reads whatever the runtime
 /// maps onto the shipped bindings, which for an input the emulated controller lacks is nothing.
-pub(crate) const fn provides(profile: InteractionProfile, hand: Hand, input: Input) -> bool {
+pub const fn provides(profile: InteractionProfile, hand: Hand, input: Input) -> bool {
     match shipped(profile) {
         Some(profile) => binding(profile, hand, input).is_some(),
         None => false,
@@ -294,7 +293,7 @@ pub(crate) fn stash_len() -> usize {
 
 /// An FNV-1a hash identifying this layout and its suggested bindings for a player whose dominant
 /// hand is `dominant`: [`stash_order`], names and types, then [`suggested_bindings`].
-pub(crate) fn fingerprint(dominant: Hand) -> u64 {
+pub fn fingerprint(dominant: Hand) -> u64 {
     fingerprint_of(stash_order().chain(suggested_bindings(dominant)))
 }
 

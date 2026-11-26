@@ -33,8 +33,9 @@
 //! eye.
 
 pub mod lens;
-pub mod pass;
-mod renderer;
+// The render layer's half lives in the render crate; the old path keeps working until the final
+// cleanup pass.
+pub(crate) use jc3vr_render::controllers::weapons::scope::pass;
 pub mod suppress;
 
 use std::time::{Duration, Instant};

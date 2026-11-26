@@ -1,31 +1,27 @@
 //! What the VR runtime's input sampling reads from the settings: the raw input interpretation
 //! ([`InputConfig`], stored as `controllers.input`), and the frame's [`SamplingConfig`].
 
+use jc3vr_core::config::engine::{ConfigSlot, Invalid, range};
+use jc3vr_input::frame::{GripPress, Hand, InteractionProfile, PressRules, PressThresholds};
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    config::engine::{ConfigSlot, Invalid, range},
-    controllers::frame::{GripPress, Hand, InteractionProfile, PressRules, PressThresholds},
-    vr::input::layout::{FloatInput, Input, provides},
-};
+use crate::vr::input::layout::{FloatInput, Input, provides};
 
 /// The raw input interpretation, at `controllers.input` in the settings file. The payload binds
 /// this slot and the four below to their fields in the controller settings at startup.
-pub(crate) static INPUT_CONFIG: ConfigSlot<InputConfig> = ConfigSlot::new("controllers.input");
+pub static INPUT_CONFIG: ConfigSlot<InputConfig> = ConfigSlot::new("controllers.input");
 
 /// The controllers master switch, `controllers.enabled`.
-pub(crate) static CONTROLLERS_ENABLED: ConfigSlot<bool> = ConfigSlot::new("controllers.enabled");
+pub static CONTROLLERS_ENABLED: ConfigSlot<bool> = ConfigSlot::new("controllers.enabled");
 
 /// The hand that holds and fires the guns, `controllers.dominant_hand`.
-pub(crate) static DOMINANT_HAND: ConfigSlot<Hand> = ConfigSlot::new("controllers.dominant_hand");
+pub static DOMINANT_HAND: ConfigSlot<Hand> = ConfigSlot::new("controllers.dominant_hand");
 
 /// The haptic output's switch, `controllers.haptics.enabled`.
-pub(crate) static HAPTICS_ENABLED: ConfigSlot<bool> =
-    ConfigSlot::new("controllers.haptics.enabled");
+pub static HAPTICS_ENABLED: ConfigSlot<bool> = ConfigSlot::new("controllers.haptics.enabled");
 
 /// The haptic output's strength, `controllers.haptics.intensity`.
-pub(crate) static HAPTICS_INTENSITY: ConfigSlot<f32> =
-    ConfigSlot::new("controllers.haptics.intensity");
+pub static HAPTICS_INTENSITY: ConfigSlot<f32> = ConfigSlot::new("controllers.haptics.intensity");
 
 /// What one frame's input update reads from the controller settings: whether the controllers are
 /// on, the raw input interpretation, and the haptic output.
@@ -52,24 +48,24 @@ pub(crate) struct HapticOutput {
 #[serde(default)]
 pub struct InputConfig {
     /// The trigger values that press and release
-    /// [`Button::TriggerPress`](crate::controllers::frame::Button::TriggerPress).
+    /// [`Button::TriggerPress`](jc3vr_input::frame::Button::TriggerPress).
     pub trigger_press: PressThresholds,
     /// The squeeze values that press and release
-    /// [`Button::SqueezePress`](crate::controllers::frame::Button::SqueezePress) on a controller
+    /// [`Button::SqueezePress`](jc3vr_input::frame::Button::SqueezePress) on a controller
     /// without a force-sensing grip (Touch, or a profile the runtime emulates). The grip is used
     /// only as an edge, so the press threshold sits high enough that resting a hand on the grip
     /// does not press it.
     pub squeeze_press: PressThresholds,
     /// The squeeze forces that press and release
-    /// [`Button::SqueezePress`](crate::controllers::frame::Button::SqueezePress) on a controller
+    /// [`Button::SqueezePress`](jc3vr_input::frame::Button::SqueezePress) on a controller
     /// whose profile provides the grip force (the Index). The Index grip's value is capacitive and
     /// reads a full squeeze with the hand merely closed round the handle, so the press waits for a
     /// deliberate squeeze, and the release sits low enough that a held grab does not need a hard
     /// squeeze to keep.
     pub squeeze_force_press: PressThresholds,
     /// The trackpad forces that press and release
-    /// [`Button::TrackpadPressLeft`](crate::controllers::frame::Button::TrackpadPressLeft) and
-    /// [`Button::TrackpadPressRight`](crate::controllers::frame::Button::TrackpadPressRight), on
+    /// [`Button::TrackpadPressLeft`](jc3vr_input::frame::Button::TrackpadPressLeft) and
+    /// [`Button::TrackpadPressRight`](jc3vr_input::frame::Button::TrackpadPressRight), on
     /// a controller with a trackpad. A resting thumb reads no force, so a light press is enough.
     pub trackpad_press: PressThresholds,
     /// Locate the hand skeleton through `XR_EXT_hand_tracking` when the runtime offers it. The
@@ -84,7 +80,7 @@ pub struct InputConfig {
 impl InputConfig {
     /// Check the raw input settings, returning the first that is out of range. Paths are relative
     /// to `controllers`.
-    pub(crate) fn validate(&self) -> Result<(), Invalid> {
+    pub fn validate(&self) -> Result<(), Invalid> {
         validate_thresholds(self.trigger_press, "input.trigger_press")?;
         validate_thresholds(self.squeeze_press, "input.squeeze_press")?;
         validate_thresholds(self.squeeze_force_press, "input.squeeze_force_press")?;
@@ -142,7 +138,7 @@ impl Default for InputConfig {
 
 /// Check that both thresholds are in `[0, 1]` and the release does not exceed the press. `name` is
 /// the pair's settings path, which leads the failure's message.
-pub(crate) fn validate_thresholds(pair: PressThresholds, name: &str) -> Result<(), Invalid> {
+pub fn validate_thresholds(pair: PressThresholds, name: &str) -> Result<(), Invalid> {
     range(&format!("{name}.press"), pair.press, 0.0, 1.0)?;
     range(&format!("{name}.release"), pair.release, 0.0, 1.0)?;
     if pair.release > pair.press {

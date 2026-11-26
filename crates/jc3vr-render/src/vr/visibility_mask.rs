@@ -16,18 +16,18 @@ use parking_lot::Mutex;
 
 /// One eye's hidden-area mesh and the field of view it was fetched against.
 #[derive(Clone, Debug, Default)]
-pub(crate) struct EyeMask {
+pub struct EyeMask {
     /// The vertices on the `z = -1` plane: tangents of the view angles.
-    pub(crate) vertices: Vec<[f32; 2]>,
+    pub vertices: Vec<[f32; 2]>,
     /// Three indices per hidden triangle.
-    pub(crate) indices: Vec<u32>,
+    pub indices: Vec<u32>,
     /// The field-of-view rectangle in the same space: left, right, down, and up tangents.
-    pub(crate) fov_tangents: [f32; 4],
+    pub fov_tangents: [f32; 4],
 }
 
 impl EyeMask {
     /// The hidden triangles' total area as a fraction of the field-of-view rectangle's.
-    pub(crate) fn hidden_fraction(&self) -> f32 {
+    pub fn hidden_fraction(&self) -> f32 {
         let [left, right, down, up] = self.fov_tangents;
         let rect = (right - left) * (up - down);
         if rect <= 0.0 {
@@ -39,7 +39,7 @@ impl EyeMask {
 
 /// What the runtime returned, for the debug UI.
 #[derive(Clone, Debug, Default)]
-pub(crate) enum MaskStatus {
+pub enum MaskStatus {
     /// No session has located a frame yet.
     #[default]
     NotFetched,
@@ -99,7 +99,7 @@ pub(super) fn refresh(session: &xr::Session<xr::D3D11>, fovs: [xr::Fovf; 2]) {
 }
 
 /// The last fetch's result.
-pub(crate) fn status() -> MaskStatus {
+pub fn status() -> MaskStatus {
     STATUS.lock().clone()
 }
 
