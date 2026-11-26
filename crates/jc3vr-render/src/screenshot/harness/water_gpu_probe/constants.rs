@@ -13,11 +13,9 @@ use windows::{
     core::Interface,
 };
 
-use crate::{
-    screenshot::harness::bound_buffer::{
-        Readback, ShaderStage, Slot, WATER_READBACK_ROWS, read_bound_constant_buffer,
-    },
-    stereo::single_pass::water_gpu_probe::{ProbeContext, pointer},
+use crate::screenshot::harness::{
+    bound_buffer::{Readback, ShaderStage, Slot, WATER_READBACK_ROWS, read_bound_constant_buffer},
+    water_gpu_probe::{ProbeContext, pointer},
 };
 
 /// A domain-shader resource slot the displaced world-position path reads.

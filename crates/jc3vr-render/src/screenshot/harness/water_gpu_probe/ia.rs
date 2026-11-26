@@ -8,7 +8,7 @@ use windows::{
     core::Interface,
 };
 
-use crate::stereo::single_pass::water_gpu_probe::ProbeContext;
+use crate::screenshot::harness::water_gpu_probe::ProbeContext;
 
 const VERTEX_SLOTS: usize = 4;
 

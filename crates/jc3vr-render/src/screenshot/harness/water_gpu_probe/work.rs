@@ -12,9 +12,9 @@ use windows::{
     core::{HRESULT, Interface},
 };
 
-use crate::stereo::single_pass::{
-    EngineContext,
-    water_gpu_probe::{ProbeContext, ProbeError, RawDrawKind},
+use crate::{
+    screenshot::harness::water_gpu_probe::{ProbeContext, ProbeError},
+    stereo::single_pass::{EngineContext, RawDrawKind},
 };
 
 const POLLS: u32 = 20;

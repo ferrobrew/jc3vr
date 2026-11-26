@@ -22,12 +22,10 @@ use crate::{
         lake_waves_requested,
         patch_draw::LakeMvpGuard,
         stages::{LakeSampleTargets, capture_water_inputs, record_water_treatment},
+        water_gpu_probe::work,
         water_inputs_requested, water_reflection_requested, water_tess_draw,
     },
-    stereo::single_pass::{
-        shader_identity::{self, IdentityResult, LAKE_PS},
-        water_gpu_probe::work,
-    },
+    stereo::single_pass::shader_identity::{self, IdentityResult, LAKE_PS},
 };
 
 thread_local! {

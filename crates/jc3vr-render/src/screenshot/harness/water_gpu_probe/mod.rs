@@ -28,7 +28,7 @@ use windows::{
     core::{Error as WindowsError, HRESULT, Interface},
 };
 
-use crate::stereo::single_pass::EngineContext;
+use crate::stereo::single_pass::{EngineContext, RawDrawKind};
 
 mod constants;
 mod ia;
@@ -38,30 +38,6 @@ mod work;
 
 pub(crate) use inputs::{begin_water_input_capture, reflection_treatment};
 pub(crate) use reflection::reflection_producer;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[repr(usize)]
-pub(crate) enum RawDrawKind {
-    Indexed,
-    NonIndexed,
-    IndexedInstanced,
-    IndexedInstancedIndirect,
-    InstancedIndirect,
-}
-
-impl RawDrawKind {
-    const COUNT: usize = 5;
-
-    pub(crate) fn name(self) -> &'static str {
-        match self {
-            Self::Indexed => "indexed",
-            Self::NonIndexed => "non_indexed",
-            Self::IndexedInstanced => "indexed_instanced",
-            Self::IndexedInstancedIndirect => "indexed_instanced_indirect",
-            Self::InstancedIndirect => "instanced_indirect",
-        }
-    }
-}
 
 /// # Safety
 ///

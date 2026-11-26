@@ -29,11 +29,11 @@ use windows::{
     core::Interface,
 };
 
-use crate::stereo::{
-    draw_index,
-    single_pass::{
-        EngineContext,
-        water_gpu_probe::{RawDrawKind, pointer, viewport_text},
+use crate::{
+    screenshot::harness::water_gpu_probe::{pointer, viewport_text},
+    stereo::{
+        draw_index,
+        single_pass::{EngineContext, RawDrawKind},
     },
 };
 
