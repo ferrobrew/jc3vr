@@ -104,7 +104,7 @@ use re_utilities::hook_library::HookLibrary;
 use crate::controllers::snatch::{
     arrival::ArrivalWatch,
     brace::Brace,
-    config::{SNATCH_YANK, SnatchSettings},
+    config::{SnatchSettings, snatch_yank},
     moment::Moment,
     prearm::Prearm,
     pull::{Arrival, Attached, Fired, Flight, Freeing, Grabbed, SlingInput, Step, Swinging},
@@ -249,7 +249,7 @@ pub struct OfferInput<'a> {
 /// The remote target for the grapple hand's grip this tick, if there is one.
 pub fn targets(game: &GameTick<'_>, input: &OfferInput) -> Provided {
     grapple_weapons::set_enabled(true);
-    steal::widen_notice(SNATCH.range_m);
+    steal::widen_notice(SNATCH.get().range_m);
     let mut state = STATE.lock();
     state.status.live = true;
     if !matches!(state.phase, Phase::Idle) {
@@ -612,7 +612,7 @@ impl State {
                 offer,
                 mut line,
                 mut yank,
-            } => match yank.step(input.real_dt, line.reach(input.line), true, &SNATCH_YANK) {
+            } => match yank.step(input.real_dt, line.reach(input.line), true, &snatch_yank()) {
                 Some(pulled) => {
                     tracing::info!(
                         target: "controllers",
@@ -703,7 +703,7 @@ impl State {
                 waited_s,
             } => match unsafe { engine::read_wire(wire) }.0 {
                 engine::WireReading::Attached => {
-                    match unsafe { pull::attached(&target, SNATCH.door_swing_mps) } {
+                    match unsafe { pull::attached(&target, SNATCH.get().door_swing_mps) } {
                         Ok(Attached::Pull) => {
                             haptics::play(hand, Event::SnatchHit);
                             let mut rope = None;
@@ -762,7 +762,9 @@ impl State {
                         }
                     }
                 }
-                engine::WireReading::Flying if waited_s + input.dt < SNATCH.attach_timeout_s => {
+                engine::WireReading::Flying
+                    if waited_s + input.dt < SNATCH.get().attach_timeout_s =>
+                {
                     Phase::HookOut {
                         hand,
                         target,
@@ -986,7 +988,7 @@ impl State {
             hand,
             offer,
             line,
-            yank: armed_yank(reach, &SNATCH_YANK),
+            yank: armed_yank(reach, &snatch_yank()),
         }
     }
 
@@ -1016,8 +1018,8 @@ mod tests {
 
     #[test]
     fn the_first_held_tick_measures_the_pull_from_the_grip_edge() {
-        let mut yank = armed_yank(Some(0.6), &SNATCH_YANK);
-        assert!(yank.step(0.05, Some(0.42), true, &SNATCH_YANK).is_some());
-        assert!(yank.step(0.05, Some(0.3), true, &SNATCH_YANK).is_none());
+        let mut yank = armed_yank(Some(0.6), &snatch_yank());
+        assert!(yank.step(0.05, Some(0.42), true, &snatch_yank()).is_some());
+        assert!(yank.step(0.05, Some(0.3), true, &snatch_yank()).is_none());
     }
 }

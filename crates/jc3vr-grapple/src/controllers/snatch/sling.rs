@@ -7,7 +7,7 @@ use glam::Vec3;
 use jc3vr_body::controllers::physics::rigid::RigidBody;
 
 use crate::{
-    controllers::snatch::config::{REFERENCE_MASS_KG, SwingTuning},
+    controllers::snatch::config::{SNATCH, SwingTuning},
     grapple::{
         rope,
         rope::{Rope, RopeEnd, RopeFault, RopeOutput, RopeTuning},
@@ -58,8 +58,8 @@ pub(super) fn attached_mode(button_held: bool, swinging: bool, tethered: bool) -
     }
 }
 
-/// The most tension the line holds on a target of `mass_kg`, newtons: `strength_n` at
-/// [`REFERENCE_MASS_KG`], growing with the mass to the power `scaling`, `0..=1`. Below 1 the
+/// The most tension the line holds on a target of `mass_kg`, newtons: `strength_n` at the
+/// tuning's [`reference_mass_kg`](SwingTuning::reference_mass_kg), growing with the mass to the power `scaling`, `0..=1`. Below 1 the
 /// acceleration the line can give falls as the mass grows. A mass that is not positive gets none.
 pub(super) fn line_strength_n(mass_kg: f32, strength_n: f32, scaling: f32) -> f32 {
     if !(mass_kg.is_finite() && mass_kg > 0.0 && strength_n.is_finite()) {
@@ -70,7 +70,7 @@ pub(super) fn line_strength_n(mass_kg: f32, strength_n: f32, scaling: f32) -> f3
     } else {
         1.0
     };
-    strength_n.max(0.0) * (mass_kg / REFERENCE_MASS_KG).powf(scaling)
+    strength_n.max(0.0) * (mass_kg / SNATCH.get().swing.reference_mass_kg).powf(scaling)
 }
 
 /// The line's strength while braced, or not, as a multiple of one hand's `single_n`. A brace never
@@ -85,23 +85,16 @@ pub(super) fn braced_strength_n(single_n: f32, factor: f32, braced: bool) -> f32
 
 /// Reel `rope` in for one tick of `dt` at `reel_mps` toward `floor_m`, with the target
 /// `distance_m` from the hand. The reel takes in line no faster than the target comes, keeping it
-/// at most [`REEL_LEAD_M`] inside the target, so a heavy target that lags is pulled hard rather
+/// at most the tuning's [`reel_lead_m`](SwingTuning::reel_lead_m) inside the target, so a heavy target that lags is pulled hard rather
 /// than left far beyond the line. It never pays line out ([`Rope::shorten`]).
 pub(super) fn reel_in(rope: &mut Rope, distance_m: f32, floor_m: f32, reel_mps: f32, dt: f32) {
     if reel_mps.is_finite() && floor_m.is_finite() && distance_m.is_finite() {
         rope.shorten(
             reel_mps.max(0.0) * dt,
-            floor_m.max(distance_m - REEL_LEAD_M),
+            floor_m.max(distance_m - SNATCH.get().swing.reel_lead_m),
         );
     }
 }
-
-/// How far inside the target the reel may take the line in, metres: at the default stiffness, a
-/// pull of about the strength of any line up to a few hundred kilograms.
-pub(super) const REEL_LEAD_M: f32 = 0.3;
-
-/// How far the target may be stretched past the held length before the line breaks, metres.
-pub(super) const MAX_STRETCH_M: f32 = 3.0;
 
 /// The held line: the shared rope ([`Rope`]) from the tracked hand to the target, and the hand's
 /// previous anchor, from which the hand's velocity is measured.
@@ -222,7 +215,7 @@ impl Sling {
         }
         let anchor_velocity = (anchor - self.anchor) / dt;
         self.anchor = anchor;
-        if anchor_velocity.length() > 30.0 {
+        if anchor_velocity.length() > SNATCH.get().swing.max_anchor_speed_mps {
             return Err(RopeFault::Invalid);
         }
         reel_in(
@@ -248,7 +241,7 @@ impl Sling {
                 stiffness_per_s2: line.stiffness_per_s2,
                 damping_per_s: line.damping_per_s,
                 max_tension_n: line.max_tension_n,
-                max_stretch_m: MAX_STRETCH_M,
+                max_stretch_m: SNATCH.get().swing.max_stretch_m,
             },
         })
     }
@@ -260,7 +253,6 @@ mod tests {
     use jc3vr_body::controllers::physics::rigid::{BodyPose, Velocities};
 
     use super::*;
-    use crate::controllers::snatch::config::SWING;
 
     #[test]
     fn a_rotating_detached_panel_uses_its_selected_surface_and_point_velocity() {
@@ -344,7 +336,7 @@ mod tests {
     #[test]
     fn the_strength_grows_with_the_mass_but_the_acceleration_falls() {
         let at = |mass: f32| line_strength_n(mass, 1500.0, 0.5);
-        assert!((at(REFERENCE_MASS_KG) - 1500.0).abs() < 1e-3);
+        assert!((at(SNATCH.get().swing.reference_mass_kg) - 1500.0).abs() < 1e-3);
         let (rifle, barrel, heavy) = (at(4.0), at(100.0), at(400.0));
         assert!(rifle < at(10.0) && at(10.0) < barrel && barrel < heavy);
         assert!(rifle / 4.0 > barrel / 100.0 && barrel / 100.0 > heavy / 400.0);
@@ -355,7 +347,10 @@ mod tests {
     fn the_mass_scaling_spans_a_fixed_pull_to_a_fixed_acceleration() {
         assert!((line_strength_n(100.0, 1500.0, 0.0) - 1500.0).abs() < 1e-3);
         assert!(
-            (line_strength_n(100.0, 1500.0, 1.0) / 100.0 - 1500.0 / REFERENCE_MASS_KG).abs() < 1e-2
+            (line_strength_n(100.0, 1500.0, 1.0) / 100.0
+                - 1500.0 / SNATCH.get().swing.reference_mass_kg)
+                .abs()
+                < 1e-2
         );
         assert_eq!(
             line_strength_n(100.0, 1500.0, 7.0),
@@ -382,7 +377,11 @@ mod tests {
     #[test]
     fn the_reel_takes_in_line_toward_the_swing_length_no_faster_than_the_target_comes() {
         assert!((reeled_length(10.0, 10.0, 3.0, 8.0, 0.02) - 9.84).abs() < 1e-4);
-        assert!((reeled_length(10.0, 10.1, 3.0, 8.0, 0.1) - (10.1 - REEL_LEAD_M)).abs() < 1e-4);
+        assert!(
+            (reeled_length(10.0, 10.1, 3.0, 8.0, 0.1) - (10.1 - SNATCH.get().swing.reel_lead_m))
+                .abs()
+                < 1e-4
+        );
         assert_eq!(reeled_length(3.1, 3.1, 3.0, 8.0, 0.1), 3.0);
         assert_eq!(
             reeled_length(2.0, 2.0, 3.0, 8.0, 0.1),
@@ -512,7 +511,7 @@ mod tests {
         // A 100 kg target hanging 2.5 m out along +X from a hand holding the line ahead; the hand
         // sweeps 0.6 m along +Z over a fifth of a second.
         let mass_kg = 100.0;
-        let tuning = LineTuning::of(&SWING, mass_kg, true);
+        let tuning = LineTuning::of(&SNATCH.get().swing, mass_kg, true);
         let mut rope = Sling::new(Vec3::X * 2.5, Vec3::ZERO).unwrap();
         let (mut centre, mut velocity) = (Vec3::X * 2.5, Vec3::ZERO);
         let dt = 1.0 / 60.0;
@@ -554,7 +553,7 @@ mod tests {
     fn a_hand_whirling_a_heavy_target_brings_it_up_to_speed() {
         // A 100 kg target at rest 3 m off, the hand circling at 0.4 m and 1.5 turns a second.
         let mass_kg = 100.0;
-        let config = SWING;
+        let config = SNATCH.get().swing;
         let tuning = LineTuning::of(&config, mass_kg, false);
         let hand = |t: f32| {
             let a = t * std::f32::consts::TAU * 1.5;
@@ -578,13 +577,13 @@ mod tests {
             centre += velocity * dt;
         }
         assert!(velocity.length() > 8.0, "{}", velocity.length());
-        assert!(centre.length() < rope.length_m() + MAX_STRETCH_M);
+        assert!(centre.length() < rope.length_m() + SNATCH.get().swing.max_stretch_m);
     }
 
     #[test]
     fn the_line_reels_a_far_target_in_no_faster_than_the_reel() {
         let mass_kg = 100.0;
-        let config = SWING;
+        let config = SNATCH.get().swing;
         let tuning = LineTuning::of(&config, mass_kg, false);
         let mut rope = Sling::new(Vec3::X * 12.0, Vec3::ZERO).unwrap();
         let (mut centre, mut velocity) = (Vec3::X * 12.0, Vec3::ZERO);

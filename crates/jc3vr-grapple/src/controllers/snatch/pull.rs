@@ -41,7 +41,6 @@ use crate::{
         brace::{Brace, BraceInput, BraceReach, LineInput, Regrip},
         catch,
         catch::{CatchHand, CatchTuning, CatchWatch},
-        config::SWING,
         engine, juice, landing, rules,
         rules::{FlightLimits, FlightSample, PropHandling, StallWatch, Verdict},
         sling::{LineTuning, Sling, SlingStep},
@@ -274,10 +273,10 @@ pub(super) fn pull(
     let state = unsafe { physics::body_state(body, owner) }.map_err(Refusal::Body)?;
     let heavy = rules::HeavyCatch {
         mass_kg: state.mass_kg.unwrap_or(f32::INFINITY),
-        heavy_mass_kg: SNATCH.heavy_mass_kg,
-        zone_m: SNATCH.catch_zone_m,
-        heavy_zone_m: SNATCH.heavy_catch_zone_m,
-        speed_share: SNATCH.heavy_speed_share,
+        heavy_mass_kg: SNATCH.get().heavy_mass_kg,
+        zone_m: SNATCH.get().catch_zone_m,
+        heavy_zone_m: SNATCH.get().heavy_catch_zone_m,
+        speed_share: SNATCH.get().heavy_speed_share,
     };
     let zone_m = heavy.zone_m();
     let palms = ik::tick_records()
@@ -297,7 +296,7 @@ pub(super) fn pull(
             offered,
             centre,
             camera::eye_point(),
-            SNATCH.landing.hysteresis_m,
+            SNATCH.get().landing.hysteresis_m,
         );
     }
     let receiver = flight
@@ -310,12 +309,15 @@ pub(super) fn pull(
     // A placed charge comes off its surface slowly, as the body the drop restores settles into
     // the simulation: it gets longer before it counts as snagged.
     let stall_window_s = match grabbed.kind {
-        Pulled::Charge { .. } => SNATCH.stall_window_s * CHARGE_STALL_SCALE,
-        _ => SNATCH.stall_window_s,
+        Pulled::Charge { .. } => SNATCH.get().stall_window_s * SNATCH.get().charge_stall_scale,
+        _ => SNATCH.get().stall_window_s,
     };
-    let stalled = flight
-        .stall
-        .step(input.dt, centre, stall_window_s, SNATCH.stall_distance_m);
+    let stalled = flight.stall.step(
+        input.dt,
+        centre,
+        stall_window_s,
+        SNATCH.get().stall_distance_m,
+    );
     if let Some(slack_s) = &mut flight.slack_s {
         *slack_s += input.dt;
     }
@@ -354,7 +356,7 @@ pub(super) fn pull(
         catchers,
         &CatchTuning {
             zone_m,
-            grace_s: SNATCH.catch_grace_s,
+            grace_s: SNATCH.get().catch_grace_s,
         },
     );
     let sample = FlightSample {
@@ -368,12 +370,12 @@ pub(super) fn pull(
     let limits = FlightLimits {
         slack_radius_m: rules::slack_radius(
             state.velocities.linear.length(),
-            SNATCH.coast_s,
-            SNATCH.slack_min_m,
-            SNATCH.slack_max_m,
+            SNATCH.get().coast_s,
+            SNATCH.get().slack_min_m,
+            SNATCH.get().slack_max_m,
         ),
-        line_m: line_m.unwrap_or(SNATCH.range_m),
-        max_slack_s: SNATCH.max_slack_s,
+        line_m: line_m.unwrap_or(SNATCH.get().range_m),
+        max_slack_s: SNATCH.get().max_slack_s,
     };
     // The turn keeps running once the line is slack: it cannot change whether the catch happens.
     let drive = landed.and_then(|l| l.angular);
@@ -410,7 +412,7 @@ pub(super) fn pull(
                     let (angle, distance) = arrival::residual(rotation, l.grip, target);
                     let speed = state.velocities.linear.length();
                     let slide_s =
-                        landing::arrival_slide(angle, distance, speed, SNAP_S, &SNATCH.landing);
+                        landing::arrival_slide(angle, distance, speed, SNAP_S, &SNATCH.get().landing);
                     tracing::info!(
                         target: "controllers",
                         hand = catcher.label(),
@@ -455,9 +457,9 @@ pub(super) fn pull(
     let tuning = HoldTuning {
         stiffness_per_s: 0.0,
         angular_stiffness_per_s: 0.0,
-        max_speed_mps: SNATCH.line_speed_mps.max(0.0) * heavy.speed_scale(),
-        max_angular_speed_rps: SNATCH.max_spin_rps.max(0.0),
-        hand_force_n: mass * SNATCH.line_accel_mps2.max(0.0),
+        max_speed_mps: SNATCH.get().line_speed_mps.max(0.0) * heavy.speed_scale(),
+        max_angular_speed_rps: SNATCH.get().max_spin_rps.max(0.0),
+        hand_force_n: mass * SNATCH.get().line_accel_mps2.max(0.0),
         hand_torque_nm: 0.0,
         two_hand_angular_share: 1.0,
         gravity: Vec3::new(0.0, -GRAVITY_MPS2, 0.0),
@@ -467,13 +469,17 @@ pub(super) fn pull(
     let anchor = state.pose.point(flight.hit.local_point);
     let speed = rules::line_speed(
         distance,
-        SNATCH.line_speed_mps * heavy.speed_scale(),
-        SNATCH.arrival_speed_mps * heavy.speed_scale(),
-        SNATCH.approach_m,
+        SNATCH.get().line_speed_mps * heavy.speed_scale(),
+        SNATCH.get().arrival_speed_mps * heavy.speed_scale(),
+        SNATCH.get().approach_m,
     );
     let shift = landed.map_or(Vec3::ZERO, |l| l.shift);
-    let aim =
-        rules::pull_point(centre, palm + shift, SNATCH.arc, SNATCH.approach_m) + (anchor - centre);
+    let aim = rules::pull_point(
+        centre,
+        palm + shift,
+        SNATCH.get().arc,
+        SNATCH.get().approach_m,
+    ) + (anchor - centre);
     let mut holds = [None; 2];
     holds[hand.index()] = Some(HandHold {
         anchor,
@@ -694,8 +700,8 @@ pub(super) unsafe fn sling(
             gap_m: other_wrist.map(|other| other.distance(wrist)),
         },
         BraceReach {
-            take_m: SNATCH.brace_take_m,
-            break_m: SNATCH.brace_break_m,
+            take_m: SNATCH.get().brace_take_m,
+            break_m: SNATCH.get().brace_break_m,
         },
     );
     let braced_anchor = brace::anchor(line_anchor, wrist, other_wrist);
@@ -746,16 +752,17 @@ pub(super) unsafe fn sling(
         Pulled::Ragdoll { mass_kg, .. } => mass_kg,
         _ => state.mass_kg.unwrap_or(1.0),
     };
-    let mut line = LineTuning::of(&SWING, mass_kg, braced || line_held);
+    let mut line = LineTuning::of(&SNATCH.get().swing, mass_kg, braced || line_held);
     if let Pulled::Ragdoll { .. } = grabbed.kind {
         // A body is yanked in to arm's reach, where the free hand can take it, and then swung on
         // the line held there; at the swing's own length and reel, a body bitten a few metres off
         // barely came.
         // The reel slows as the line nears that length, so the body arrives at a walk rather than
         // flying on through the view at the yank's speed.
-        line.swing_length_m = line.swing_length_m.min(RAGDOLL_YANK_LENGTH_M);
+        let ragdoll = &SNATCH.get().ragdoll;
+        line.swing_length_m = line.swing_length_m.min(ragdoll.length_m);
         let left_m = (rope.length_m() - line.swing_length_m).max(0.0);
-        line.reel_mps = (left_m * RAGDOLL_YANK_EASE_PER_S).clamp(line.reel_mps, RAGDOLL_YANK_MPS);
+        line.reel_mps = (left_m * ragdoll.ease_per_s).clamp(line.reel_mps, ragdoll.mps);
     }
     let rigid = state.rigid();
     let hook_point = state.pose.point(hit.local_point);
@@ -798,27 +805,6 @@ pub(super) unsafe fn sling(
     }
     Ok(swinging)
 }
-
-/// How many times the stall window a placed charge has before it counts as snagged.
-const CHARGE_STALL_SCALE: f32 = 3.0;
-
-/// The length a ragdoll's line reels in to, metres: about an arm's reach from the grapple hand.
-const RAGDOLL_YANK_LENGTH_M: f32 = 1.2;
-
-/// How fast a ragdoll's line reels in, metres per second: a yank, not the swing's draw.
-const RAGDOLL_YANK_MPS: f32 = 9.0;
-
-/// How fast a ragdoll's reel slows toward its length, per second: the reel's speed is what is left
-/// of the line times this, between the swing's reel and [`RAGDOLL_YANK_MPS`], so a body bitten far
-/// off comes at the yank's speed and eases in over its last two metres.
-const RAGDOLL_YANK_EASE_PER_S: f32 = 3.0;
-
-/// Where a tossed gun lands, metres in front of the player toward where it came from.
-const TOSS_LAND_M: f32 = 1.2;
-/// The toss's speed over the ground, metres per second, and its shortest and longest flight,
-/// seconds.
-const TOSS_SPEED_MPS: f32 = 9.0;
-const TOSS_FLIGHT_S: (f32, f32) = (0.45, 1.2);
 
 /// Hand what the hand caught over: a weapon into the hand through the table, sliding the rest of
 /// the way into its grip over `slide_s`, an object into the hand's hold at its surface nearest the
@@ -916,12 +902,13 @@ pub(super) fn toss(game: &GameTick<'_>, weak: &Weak) -> Result<(), Refusal> {
     let toward = Vec3::new(from.x - player.x, 0.0, from.z - player.z)
         .try_normalize()
         .unwrap_or(Vec3::ZERO);
-    let land = player + toward * TOSS_LAND_M;
+    let toss = &SNATCH.get().toss;
+    let land = player + toward * toss.land_m;
     let flight = rules::toss_flight(
         from.distance(land),
-        TOSS_SPEED_MPS,
-        TOSS_FLIGHT_S.0,
-        TOSS_FLIGHT_S.1,
+        toss.speed_mps,
+        toss.min_flight_s,
+        toss.max_flight_s,
     );
     let velocity = rules::toss_velocity(from, land, flight, Vec3::new(0.0, -GRAVITY_MPS2, 0.0));
     unsafe { physics::set_body_velocities(body, weapon, velocity, Vec3::ZERO) }

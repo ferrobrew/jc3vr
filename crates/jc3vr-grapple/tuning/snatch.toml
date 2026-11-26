@@ -1,0 +1,84 @@
+# The grapple snatch's tuning: `SnatchTuning` in `src/controllers/snatch/config.rs`, whose fields
+# say what each value does. Every key is required and no other is accepted. Lengths are metres,
+# angles degrees, times seconds (or milliseconds where the key ends in `_ms`), and masses
+# kilograms; a share is a fraction of a range, in `0..1`.
+
+brace_take_m = 0.15
+brace_break_m = 0.3
+range_m = 20.0
+cone_deg = 6.0
+floor_cone_widen_deg = 4.0
+line_speed_mps = 18.0
+arrival_speed_mps = 12.0
+line_accel_mps2 = 240.0
+approach_m = 2.5
+arc = 0.08
+coast_s = 0.07
+slack_min_m = 0.4
+slack_max_m = 1.0
+catch_zone_m = 0.4
+heavy_mass_kg = 60.0
+heavy_catch_zone_m = 0.8
+heavy_speed_share = 0.7
+catch_grace_s = 0.15
+max_slack_s = 0.5
+max_spin_rps = 25.0
+stall_distance_m = 0.1
+stall_window_s = 0.5
+attach_timeout_s = 2.5
+free_timeout_s = 0.5
+door_reach_m = 0.5
+door_max_vehicle_speed_mps = 2.0
+door_swing_mps = 3.0
+retain_s = 0.2
+retain_cone_deg = 4.0
+sight_tolerance_m = 0.3
+attach_tolerance_m = 0.02
+impact_overshoot_m = 0.5
+watch_ms = 300
+charge_stall_scale = 3.0
+
+[landing]
+ramp_m = 0.25
+ramp_ticks = 1.0
+min_t_go_s = 0.033333335
+max_t_go_s = 0.5
+max_spin_rps = 40.0
+max_angular_accel = 1200.0
+lateral_window_m = 0.3
+hysteresis_m = 0.1
+max_extrapolate_s = 0.1
+settled_deg = 5.0
+settled_m = 0.02
+full_slide_deg = 30.0
+
+[yank]
+min_distance_m = 0.1
+min_speed_mps = 0.7
+window_s = 0.25
+cooldown_s = 0.5
+
+[swing]
+ceiling_kg = 300.0
+stiffness_per_s2 = 400.0
+damping_per_s = 30.0
+strength_n = 1500.0
+mass_scaling = 0.5
+brace_factor = 1.75
+swing_length_m = 3.0
+reel_mps = 4.0
+reference_mass_kg = 10.0
+reel_lead_m = 0.3
+max_stretch_m = 3.0
+max_anchor_speed_mps = 30.0
+
+[ragdoll]
+length_m = 1.2
+mps = 9.0
+ease_per_s = 3.0
+
+[toss]
+land_m = 1.2
+speed_mps = 9.0
+min_flight_s = 0.45
+max_flight_s = 1.2
