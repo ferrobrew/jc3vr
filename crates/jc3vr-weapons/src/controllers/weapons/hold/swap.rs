@@ -19,6 +19,7 @@ use crate::controllers::{
         hold::{
             equip::{self, DockRefusal},
             release_diagnostics::ReleaseMotion,
+            tuning::HOLD,
         },
         inventory::{
             engine::{strong_to, weapon_of},
@@ -27,9 +28,9 @@ use crate::controllers::{
     },
 };
 
-/// Let the weapon docked on `socket` fall into the world, moving away from the player at
-/// [`EJECT_MPS`] so that it falls clear of the body rather than onto it, and take it off the socket
-/// in the table.
+/// Let the weapon docked on `socket` fall into the world, moving away from the player at the swap's
+/// [`eject_mps`](crate::controllers::weapons::hold::tuning::SwapTuning::eject_mps) so that it
+/// falls clear of the body rather than onto it, and take it off the socket in the table.
 pub(crate) fn eject(game: &GameTick<'_>, socket: Socket) -> Result<(), DockRefusal> {
     let mut local_player = LocalPlayer::get(game).ok_or(DockRefusal::NoCharacter)?;
     let owner = local_player.character_mut();
@@ -61,7 +62,8 @@ pub(crate) fn eject(game: &GameTick<'_>, socket: Socket) -> Result<(), DockRefus
         },
         ..ReleaseMotion::REST
     };
-    let thrown = unsafe { equip::drop_carried(owner, weapon, EJECT_MPS, motion) };
+    let thrown =
+        unsafe { equip::drop_carried(owner, weapon, HOLD.get().hold.swap.eject_mps, motion) };
     drop(strong);
     unsafe { reconcile::apply(owner) };
     tracing::info!(
@@ -75,23 +77,18 @@ pub(crate) fn eject(game: &GameTick<'_>, socket: Socket) -> Result<(), DockRefus
     Ok(())
 }
 
-/// How fast an ejected weapon leaves its socket, metres per second: enough to clear the body
-/// before it lands, slow enough to stay at the player's feet.
-const EJECT_MPS: f32 = 1.5;
-
 /// The velocity that carries a weapon at `at` (world) clear of a character standing at
-/// `character`: out from the body horizontally and a little up, at [`EJECT_MPS`]. Straight back
+/// `character`: out from the body horizontally and a little up, at the swap's
+/// [`eject_mps`](crate::controllers::weapons::hold::tuning::SwapTuning::eject_mps). Straight back
 /// for a weapon over the character's own position.
 fn away_from(character: Vec3, at: Vec3) -> Vec3 {
+    let tuning = &HOLD.get().hold.swap;
     let out = Vec3::new(at.x - character.x, 0.0, at.z - character.z)
         .try_normalize()
         .unwrap_or(Vec3::ZERO);
-    let direction = (out + Vec3::Y * EJECT_LIFT).normalize_or(Vec3::Y);
-    direction * EJECT_MPS
+    let direction = (out + Vec3::Y * tuning.eject_lift).normalize_or(Vec3::Y);
+    direction * tuning.eject_mps
 }
-
-/// The upward share of an ejected weapon's direction against its outward one.
-const EJECT_LIFT: f32 = 0.4;
 
 #[cfg(test)]
 mod tests {
@@ -101,7 +98,7 @@ mod tests {
     fn an_ejected_weapon_leaves_outward_and_a_little_up() {
         let character = Vec3::new(10.0, 2.0, -5.0);
         let v = away_from(character, character + Vec3::new(0.3, 1.4, 0.2));
-        assert!((v.length() - EJECT_MPS).abs() < 1e-4);
+        assert!((v.length() - HOLD.get().hold.swap.eject_mps).abs() < 1e-4);
         assert!(v.y > 0.0 && v.y < v.length() * 0.5, "{v}");
         let flat = Vec3::new(v.x, 0.0, v.z).normalize();
         assert!(

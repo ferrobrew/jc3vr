@@ -50,8 +50,7 @@ use crate::controllers::{
         c4,
         dual_wield::single,
         grenade::stock,
-        hold,
-        hold::{act, swap},
+        hold::{act, swap, tuning::HOLD},
         inventory::{
             engine as inventory_engine,
             restore::{PLAN, SpawnToken, adoption, adoption::Outcome, spawned},
@@ -575,7 +574,7 @@ fn draw_given(game: &GameTick<'_>) {
                 hand.label()
             )
         } else {
-            match act::draw(game, hand, socket, hold::SNAP_S) {
+            match act::draw(game, hand, socket, HOLD.get().hold.snap_s) {
                 Ok(()) => format!("give: {name} is in the {} hand", hand.label()),
                 Err(refusal) => format!("give: {name} stays on the {}: {refusal}", socket.label()),
             }

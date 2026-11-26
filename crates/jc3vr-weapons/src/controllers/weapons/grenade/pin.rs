@@ -143,7 +143,7 @@ mod tests {
     use jc3vr_body::controllers::grab::grab_volume;
 
     use super::*;
-    use crate::controllers::weapons::{grenade::tuning::GRENADE, hold::HANDLE_RADIUS_M};
+    use crate::controllers::weapons::{grenade::tuning::GRENADE, hold::tuning::HOLD};
 
     fn config() -> &'static PinTuning {
         &GRENADE.get().pin
@@ -165,7 +165,7 @@ mod tests {
             let up = (pin - grip.position).dot(Vec3::NEG_Z);
             assert!(up > 0.05, "{hand:?}: {up}");
             // Within the grenade's own reach, so the pin is on the grenade the hand holds.
-            assert!(pin.distance(grip.position) < HANDLE_RADIUS_M);
+            assert!(pin.distance(grip.position) < HOLD.get().hold.handle_radius_m);
         }
     }
 
@@ -196,7 +196,7 @@ mod tests {
             Candidate {
                 volume: GrabVolume::Handle,
                 centre: grip.position,
-                radius: HANDLE_RADIUS_M,
+                radius: HOLD.get().hold.handle_radius_m,
                 hand: Some(taker),
             },
             candidate(holder, pin, config()),

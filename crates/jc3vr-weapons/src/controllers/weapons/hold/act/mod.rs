@@ -65,10 +65,11 @@ use crate::controllers::{
             equip::{DockRefusal, Thrown},
             layout,
             release_diagnostics::{
-                ControllerContext, MAX_RELEASE_AGE_S, ReleaseFrame, ReleaseInput, ReleaseMotion,
-                ReleaseRecord, ReleaseRoute, ReleaseStatus, ReleaseTransport, RigMotion,
-                SampleStage, estimate_release,
+                ControllerContext, ReleaseFrame, ReleaseInput, ReleaseMotion, ReleaseRecord,
+                ReleaseRoute, ReleaseStatus, ReleaseTransport, RigMotion, SampleStage,
+                estimate_release,
             },
+            tuning::HOLD,
         },
         inventory,
         inventory::{reconcile, sockets, traversal},
@@ -371,7 +372,7 @@ pub(crate) fn release_tick(
                     if let Some(object) = live::in_hand(hand) {
                         intend_release(hand, object, None);
                     }
-                    let _ = let_go(game, hand, hold::MAX_THROW_MPS);
+                    let _ = let_go(game, hand, HOLD.get().hold.max_throw_mps);
                 }
                 Err((refusal, StowFallback::Keep)) => tracing::info!(
                     target: "controllers",
@@ -436,7 +437,7 @@ fn stow(game: &GameTick<'_>, hand: Hand) -> Result<Socket, DockRefusal> {
     // The refusals are the caller's to log.
     intend_release(hand, object, Some(socket));
     let object = start_dock(game, hand, socket)?;
-    dock_started(game, hand, socket, object, hold::SNAP_S)?;
+    dock_started(game, hand, socket, object, HOLD.get().hold.snap_s)?;
     Ok(socket)
 }
 
@@ -900,7 +901,7 @@ fn estimate(
         let state = STATE.lock();
         let rig = state
             .rig
-            .filter(|(at, _)| at.elapsed().as_secs_f32() <= MAX_RELEASE_AGE_S);
+            .filter(|(at, _)| at.elapsed().as_secs_f32() <= HOLD.get().hold.release_max_age_s);
         (rig.map(|(_, rig)| rig), state.transport.history_after_s())
     };
     let samples = motion::history(hand);

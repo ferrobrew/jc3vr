@@ -15,7 +15,9 @@ use jc3gi::character::inventory::WeaponSlot;
 use jc3vr_body::controllers::grab::{Candidate, GrabVolume};
 use jc3vr_input::frame::{Hand, Pose};
 
-use crate::controllers::weapons::{engine, engine::HeldWeapon, regions::GunRegion};
+use crate::controllers::weapons::{
+    engine, engine::HeldWeapon, hold::tuning::HOLD, regions::GunRegion,
+};
 
 /// Where a target weapon is.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -299,24 +301,26 @@ pub(crate) fn grip_on_current_wrist(
 
 /// The impulse that staggers a character without knocking it down, from its hit-reaction tuning:
 /// `type_scale` scales an impulse of the reaction's damage type, a scaled impulse above
-/// `stumble_threshold` staggers it, and one at `ragdoll_threshold` knocks it down. `None` without
-/// a usable tuning, or when no impulse staggers without knocking down.
+/// `stumble_threshold` staggers it, and one at `ragdoll_threshold` knocks it down. The scaled
+/// impulse is the steal's `over_stumble` times the stumble threshold, capped at its
+/// `under_ragdoll` share of the knockdown
+/// ([`StealTuning`](crate::controllers::weapons::hold::tuning::StealTuning)). `None` without a
+/// usable tuning, or when no impulse staggers without knocking down.
 pub fn stagger_impulse(
     type_scale: f32,
     stumble_threshold: f32,
     ragdoll_threshold: f32,
 ) -> Option<f32> {
-    const OVER_STUMBLE: f32 = 1.1;
-    const UNDER_RAGDOLL: f32 = 0.9;
+    let tuning = &HOLD.get().hold.steal;
     if !(type_scale.is_finite() && stumble_threshold.is_finite() && type_scale > 0.0) {
         return None;
     }
-    let scaled = stumble_threshold.max(0.0) * OVER_STUMBLE;
+    let scaled = stumble_threshold.max(0.0) * tuning.over_stumble;
     let scaled = if ragdoll_threshold.is_finite() && ragdoll_threshold > 0.0 {
         if stumble_threshold >= ragdoll_threshold {
             return None;
         }
-        scaled.min(ragdoll_threshold * UNDER_RAGDOLL)
+        scaled.min(ragdoll_threshold * tuning.under_ragdoll)
     } else {
         scaled
     };
@@ -334,10 +338,7 @@ mod tests {
     use jc3vr_view::controllers::cockpit::CockpitTransform;
 
     use super::*;
-    use crate::controllers::weapons::{
-        engine::Wielded,
-        hold::{HANDLE_RADIUS_M, TAKE_RADIUS_M},
-    };
+    use crate::controllers::weapons::engine::Wielded;
 
     #[test]
     fn holster_intent_blocks_incidental_but_not_deliberate_transfer() {
@@ -553,7 +554,7 @@ mod tests {
     #[test]
     fn acquisition_and_completion_share_the_capsule_boundary() {
         let gun = target(TargetKind::Rack { weapon: 3 }, Vec3::ZERO, Vec3::NEG_Z);
-        let radius = TAKE_RADIUS_M;
+        let radius = HOLD.get().hold.take_radius_m;
         for (point, inside) in [
             (Vec3::new(radius - 0.001, 0.0, -0.5), true),
             (Vec3::new(radius, 0.0, -0.5), true),
@@ -768,7 +769,7 @@ mod tests {
         Handover {
             holder: Hand::Right,
             grip: Vec3::ZERO,
-            radius: HANDLE_RADIUS_M,
+            radius: HOLD.get().hold.handle_radius_m,
             free: [true, false],
             points: [Some(point), Some(Vec3::ZERO)],
             contact: None,
@@ -777,7 +778,7 @@ mod tests {
 
     #[test]
     fn transfer_reach_includes_its_boundary_but_not_the_foregrip() {
-        let radius = HANDLE_RADIUS_M;
+        let radius = HOLD.get().hold.handle_radius_m;
         for (distance, inside) in [
             (radius - 0.001, true),
             (radius, true),
@@ -980,7 +981,7 @@ mod tests {
     #[test]
     fn world_acquisition_is_invariant_under_the_cockpit_transform() {
         let point = Vec3::new(0.29, 0.0, -0.5);
-        let radius = TAKE_RADIUS_M;
+        let radius = HOLD.get().hold.take_radius_m;
         for scale in [0.5, 1.0, 2.0] {
             let frames = Frames {
                 cockpit: CockpitTransform {

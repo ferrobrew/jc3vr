@@ -41,7 +41,7 @@ use crate::controllers::{
         grip_watch, gun_bodies,
         handling_tuning::HANDLING,
         heft, hold,
-        hold::armed,
+        hold::{armed, tuning::HOLD},
         hud_feed::hand_ammo,
         inventory,
         inventory::tuning::INVENTORY,
@@ -262,7 +262,7 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickStart {
                     &Candidate {
                         volume: GrabVolume::Handle,
                         centre: held.grip.position,
-                        radius: hold::HANDLE_RADIUS_M,
+                        radius: HOLD.get().hold.handle_radius_m,
                         hand: Some(taker),
                     },
                     holder,
@@ -504,28 +504,33 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickStart {
             match (touch, holder) {
                 (Some((touch, centre)), Some(holder)) if touch.hit.region == GunRegion::Grip => {
                     if handover_allowed {
-                        targets.push(place.on_hand(
-                            &Candidate {
-                                volume: GrabVolume::Handle,
-                                centre,
-                                radius:
-                                    gun_volume_radius(touch.hit.distance).min(hold::HANDOVER_MAX_M),
-                                hand: Some(touch.hand),
-                            },
-                            holder,
-                        ));
+                        targets.push(
+                            place.on_hand(
+                                &Candidate {
+                                    volume: GrabVolume::Handle,
+                                    centre,
+                                    radius: gun_volume_radius(touch.hit.distance)
+                                        .min(HOLD.get().hold.handover_max_m),
+                                    hand: Some(touch.hand),
+                                },
+                                holder,
+                            ),
+                        );
                     }
                 }
                 (Some((touch, centre)), Some(holder)) => {
-                    targets.push(place.on_hand(
-                        &Candidate {
-                            volume: GrabVolume::Foregrip,
-                            centre,
-                            radius: gun_volume_radius(touch.hit.distance).min(hold::HANDOVER_MAX_M),
-                            hand: Some(touch.hand),
-                        },
-                        holder,
-                    ));
+                    targets.push(
+                        place.on_hand(
+                            &Candidate {
+                                volume: GrabVolume::Foregrip,
+                                centre,
+                                radius: gun_volume_radius(touch.hit.distance)
+                                    .min(HOLD.get().hold.handover_max_m),
+                                hand: Some(touch.hand),
+                            },
+                            holder,
+                        ),
+                    );
                 }
                 _ => {}
             }
@@ -575,7 +580,7 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickStart {
                 offer: hold::world::Handover {
                     holder,
                     grip,
-                    radius: hold::HANDLE_RADIUS_M,
+                    radius: HOLD.get().hold.handle_radius_m,
                     free,
                     points: active.hands.map(|hand| hand.map(|hand| hand.grip.position)),
                     contact: state.touch.as_ref().map(|touch| touch.hit.region),

@@ -37,12 +37,13 @@ use crate::controllers::{
         dual_wield::single,
         engine::slot_of,
         hold::{
-            SNAP_S, pickup,
+            pickup,
             pickup::TakeOptions,
             rack,
             rack::paired::Member,
             steal,
             steal::CharacterGun,
+            tuning::HOLD,
             world::{TargetKind, WorldTarget},
         },
         inventory::engine::{strong_to, weak_to, weapon_of},
@@ -174,7 +175,7 @@ pub(crate) fn take(
     source: &WeaponSource,
 ) -> Result<WeaponSlot, SourceRefusal> {
     let options = |source| TakeOptions {
-        slide_s: SNAP_S,
+        slide_s: HOLD.get().hold.snap_s,
         source,
         delivery: Delivery::Local,
     };

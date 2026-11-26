@@ -56,7 +56,7 @@ use crate::controllers::{
         grenade,
         handling_tuning::HANDLING,
         hold,
-        hold::{armed, tick},
+        hold::{armed, tick, tuning::HOLD},
         regions,
         regions::GunRegion,
         reload,
@@ -201,7 +201,7 @@ pub fn finish_tick(
                         });
                 if moved {
                     if let (Some(object), true, Some(from)) = (gun, gun_moved, from) {
-                        hold::act::slide_in(object, hand, from, hold::SNAP_S);
+                        hold::act::slide_in(object, hand, from, HOLD.get().hold.snap_s);
                     }
                     // The hand that took the gun let go of the foregrip to take it.
                     foregrip::clear();
@@ -750,14 +750,18 @@ fn grab_socket(game: &GameTick<'_>, hand: Hand, socket: Socket) -> Option<GrabOu
     }
     let snapshot = live::snapshot_now()?;
     let outcome = match grab::grab(&snapshot, hand, socket) {
-        Ok(SocketMove::Draw { .. }) => match hold::act::draw(game, hand, socket, hold::SNAP_S) {
-            Ok(()) => SocketOutcome::Drew,
-            Err(refusal) => SocketOutcome::Failed(refusal),
-        },
-        Ok(SocketMove::Dock { .. }) => match hold::act::dock(game, hand, socket, hold::SNAP_S) {
-            Ok(()) => SocketOutcome::Docked,
-            Err(refusal) => SocketOutcome::Failed(refusal),
-        },
+        Ok(SocketMove::Draw { .. }) => {
+            match hold::act::draw(game, hand, socket, HOLD.get().hold.snap_s) {
+                Ok(()) => SocketOutcome::Drew,
+                Err(refusal) => SocketOutcome::Failed(refusal),
+            }
+        }
+        Ok(SocketMove::Dock { .. }) => {
+            match hold::act::dock(game, hand, socket, HOLD.get().hold.snap_s) {
+                Ok(()) => SocketOutcome::Docked,
+                Err(refusal) => SocketOutcome::Failed(refusal),
+            }
+        }
         Err(SocketRefusal::Empty(_)) => return None,
         Err(refusal) => {
             hold::refused(refusal);
@@ -854,7 +858,7 @@ fn release(
             hold::act::intend_release(hand, object, Some(socket));
             let docked = match attracted.filter(|a| a.socket == socket) {
                 Some(a) => {
-                    let travel = attract::travel_s(a.distance, hold::SNAP_S, &ATTRACTION);
+                    let travel = attract::travel_s(a.distance, HOLD.get().hold.snap_s, &ATTRACTION);
                     tracing::info!(
                         target: "controllers",
                         hand = hand.label(),
@@ -867,7 +871,7 @@ fn release(
                     );
                     hold::act::attract(game, hand, socket, a.toward, travel)
                 }
-                None => hold::act::dock(game, hand, socket, hold::SNAP_S),
+                None => hold::act::dock(game, hand, socket, HOLD.get().hold.snap_s),
             };
             match docked {
                 Ok(()) if swapped => haptics::play(hand, Event::SocketSwap),
@@ -886,7 +890,7 @@ fn release(
             if braced {
                 return;
             }
-            if let Err(refusal) = hold::act::let_go(game, hand, hold::MAX_THROW_MPS) {
+            if let Err(refusal) = hold::act::let_go(game, hand, HOLD.get().hold.max_throw_mps) {
                 tracing::debug!(target: "controllers", %refusal, "hold: the weapon was not let go of");
             }
         }
@@ -936,10 +940,10 @@ fn waiting_on_action(action_hands: [bool; 2], passes: [bool; 2]) -> [bool; 2] {
 }
 
 /// Pass the gun `hand` let go of to the other hand, which holds its action: the table moves it,
-/// and the gun glides from where it was into the other hand's grip over [`hold::SNAP_S`], so it is
-/// seen to move into the palm rather than jump there. The action lets go of its handle once the
-/// hand on it holds the gun. `false` when the other hand could not take it, for the ordinary
-/// release to decide.
+/// and the gun glides from where it was into the other hand's grip over the hold's
+/// [`snap_s`](crate::controllers::weapons::hold::tuning::HoldTuning::snap_s), so it is seen to move
+/// into the palm rather than jump there. The action lets go of its handle once the hand on it holds
+/// the gun. `false` when the other hand could not take it, for the ordinary release to decide.
 fn pass_by_action(game: &GameTick<'_>, hand: Hand) -> bool {
     let Some(object) = live::in_hand(hand) else {
         return false;
@@ -953,7 +957,7 @@ fn pass_by_action(game: &GameTick<'_>, hand: Hand) -> bool {
         return false;
     }
     if let Some(from) = from {
-        hold::act::slide_in(object, to, from, hold::SNAP_S);
+        hold::act::slide_in(object, to, from, HOLD.get().hold.snap_s);
     }
     tracing::info!(
         target: "controllers",

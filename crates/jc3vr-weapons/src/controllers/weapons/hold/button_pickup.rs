@@ -34,6 +34,8 @@ use jc3vr_body::controllers::scheme;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
+use crate::controllers::weapons::hold::tuning::HOLD;
+
 /// The button pickup suppression's readout.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
 pub struct ButtonPickupStatus {
@@ -62,7 +64,7 @@ pub fn suppressing() -> bool {
     scheme::enabled() && scheme::is_controllers()
 }
 
-/// Let the use-item clicks of the next [`GRANT_WINDOW`] through: the mod is clicking the action to
+/// Let the use-item clicks of the next [`grant_window`] through: the mod is clicking the action to
 /// have the game pick up a weapon the hand reached.
 pub(crate) fn grant() {
     *GRANT.lock() = Some(Instant::now());
@@ -105,11 +107,6 @@ pub unsafe fn hold_back(character: &mut Character) -> Option<HeldUseItem> {
     Some(held)
 }
 
-/// How long a [`grant`] lets the use-item input through: long enough for the injected click to
-/// reach the weapon handling a tick or two later, short enough that a button press after it does
-/// not ride along.
-const GRANT_WINDOW: Duration = Duration::from_millis(500);
-
 static GRANT: Mutex<Option<Instant>> = Mutex::new(None);
 static HELD_BACK: AtomicU64 = AtomicU64::new(0);
 static GRANTED: AtomicU64 = AtomicU64::new(0);
@@ -117,7 +114,12 @@ static PANEL_HIDDEN: AtomicU64 = AtomicU64::new(0);
 
 /// Whether a grant made at `at` still covers `now`.
 fn granted(at: Option<Instant>, now: Instant) -> bool {
-    at.is_some_and(|at| now.saturating_duration_since(at) <= GRANT_WINDOW)
+    at.is_some_and(|at| now.saturating_duration_since(at) <= grant_window())
+}
+
+/// How long a [`grant`] lets the use-item input through ([`use_item_grant_ms`](crate::controllers::weapons::hold::tuning::HoldTuning::use_item_grant_ms)).
+fn grant_window() -> Duration {
+    HOLD.get().hold.use_item_grant_ms.duration()
 }
 
 /// The player's pickup readout. While the suppression acts, the panel is cleared when it shows and
@@ -150,10 +152,10 @@ mod tests {
         let at = Instant::now();
         assert!(!granted(None, at));
         assert!(granted(Some(at), at));
-        assert!(granted(Some(at), at + GRANT_WINDOW));
+        assert!(granted(Some(at), at + grant_window()));
         assert!(!granted(
             Some(at),
-            at + GRANT_WINDOW + Duration::from_millis(1)
+            at + grant_window() + Duration::from_millis(1)
         ));
     }
 

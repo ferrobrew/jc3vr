@@ -74,8 +74,7 @@ use crate::controllers::{
             stock::Stock,
             tuning::{GRENADE, GrenadeTuning},
         },
-        hold,
-        hold::act,
+        hold::{act, tuning::HOLD},
         inventory::engine::weapon_of,
         pouch_return, reload,
     },
@@ -132,7 +131,8 @@ impl Release {
 }
 
 /// The release of the `item` `hand` holds at `point_world`, held since `since_s` (display time): the
-/// estimate and the cap a gun's let-go takes ([`act::release_at`], [`hold::MAX_THROW_MPS`]), so a
+/// estimate and the cap a gun's let-go takes ([`act::release_at`], the hold's
+/// [`max_throw_mps`](crate::controllers::weapons::hold::tuning::HoldTuning::max_throw_mps)), so a
 /// grenade, a charge, and a gun leave the hand with the same motion for the same swing. The release
 /// is recorded as a throw of `item`, `armed` when the item has a live state.
 pub(crate) fn throw_release(
@@ -143,7 +143,7 @@ pub(crate) fn throw_release(
     armed: Option<bool>,
 ) -> Release {
     let estimate = act::release_at(hand, point_world, since_s);
-    let requested = estimate.capped(hold::MAX_THROW_MPS);
+    let requested = estimate.capped(HOLD.get().hold.max_throw_mps);
     telemetry::note_throw_at(
         Thrown {
             hand,

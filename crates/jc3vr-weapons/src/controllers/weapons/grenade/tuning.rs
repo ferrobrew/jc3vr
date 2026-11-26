@@ -139,8 +139,9 @@ impl CatchTuning {
 pub struct PinTuning {
     /// The pin's reach, metres at the player's scale: larger than the ring, so that a hand reaching
     /// for the top of the grenade takes the pin without aiming for it, and smaller than the
-    /// grenade's own reach ([`crate::controllers::weapons::hold::HANDLE_RADIUS_M`]), so that a hand
-    /// closing on the grenade's body still takes the grenade.
+    /// grenade's own reach (the hold's
+    /// [`handle_radius_m`](crate::controllers::weapons::hold::tuning::HoldTuning::handle_radius_m)),
+    /// so that a hand closing on the grenade's body still takes the grenade.
     pub radius_m: f32,
     /// How long the pin stays at the mouth before the teeth pull it, seconds: longer than a grenade
     /// passing the face takes.

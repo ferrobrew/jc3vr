@@ -30,12 +30,10 @@ use crate::controllers::{
         hold::{
             rack::{
                 paired,
-                paired::{
-                    COPY_WAIT, Claim, ClaimKind, MAX_SOURCES, Member, SOURCE_GRACE, Stage, gun,
-                    member_points,
-                },
+                paired::{Claim, ClaimKind, MAX_SOURCES, Member, Stage, gun, member_points},
             },
             source::SourceRefusal,
+            tuning::HOLD,
             world::{TargetKind, WorldTarget},
         },
         inventory::{engine, gives},
@@ -101,7 +99,7 @@ pub(super) unsafe fn targets(
                 .y_axis
                 .truncate()
                 .normalize_or_zero()
-                * STACK_M
+                * HOLD.get().hold.rack.paired.stack_m
         })
         .filter(|offset| offset.is_finite() && *offset != Vec3::ZERO);
     {
@@ -361,10 +359,12 @@ pub(crate) fn stack_offset(weapon: usize) -> Option<Vec3> {
 /// The finite rack sources whose second pistol is drawn apart, with its offset.
 static STACKED: Mutex<Vec<(usize, Vec3)>> = Mutex::new(Vec::new());
 
-/// How far the second pistol is drawn from the first, metres: a pistol's thickness, a little more.
-const STACK_M: f32 = 0.045;
-
 pub(super) fn tick() {
+    let tuning = &HOLD.get().hold.rack.paired;
+    let (source_grace, copy_wait) = (
+        tuning.source_grace_ms.duration(),
+        tuning.copy_wait_ms.duration(),
+    );
     let mut state = STATE.lock();
     let mut retired = Vec::new();
     let mut at = 0;
@@ -374,7 +374,7 @@ pub(super) fn tick() {
             retired.push(state.swap_remove(at));
             continue;
         }
-        if source.seen.elapsed() >= SOURCE_GRACE {
+        if source.seen.elapsed() >= source_grace {
             if source.claims.first.is_some() {
                 source.alive = None;
             } else {
@@ -382,7 +382,7 @@ pub(super) fn tick() {
                 continue;
             }
         }
-        if matches!(source.copy, Stage::Waiting { at } if at.elapsed() >= COPY_WAIT) {
+        if matches!(source.copy, Stage::Waiting { at } if at.elapsed() >= copy_wait) {
             source.copy = Stage::Failed;
             tracing::warn!(target: "controllers", "rack: the finite pair's copy did not arrive");
         }

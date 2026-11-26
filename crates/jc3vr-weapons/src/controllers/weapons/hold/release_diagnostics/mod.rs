@@ -22,7 +22,7 @@ use jc3vr_view::{
 };
 use tracking_format::event::{GunRelease, ReleaseController, ReleaseDrop, WorldMotion};
 
-use crate::controllers::weapons::hold::equip::DockRefusal;
+use crate::controllers::weapons::hold::{equip::DockRefusal, tuning::HOLD};
 
 /// The cockpit-to-world transform sampled on an input tick, without controller translation.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -74,7 +74,7 @@ impl ReleaseTransport {
             self.cut_history(time_s);
             return None;
         };
-        if !(0.001..=MAX_RELEASE_AGE_S).contains(&dt)
+        if !(0.001..=HOLD.get().hold.release_max_age_s).contains(&dt)
             || current.teleport_epoch != previous.teleport_epoch
             || current.recenters != previous.recenters
             || (current.scale - previous.scale).abs() > 1e-4
@@ -180,9 +180,10 @@ impl ReleaseMotion {
     /// The motion a release requests: non-finite parts are zero, and the hand's own part of the
     /// linear motion, beyond what the player's movement carries, is held to `max_speed_mps` per
     /// real second (zero when the cap is not a finite number), so a tracking glitch is capped alike
-    /// at any time scale. The carried part is bounded only by [`MAX_CARRIED_MPS`]: a throw from a
-    /// vehicle keeps the vehicle's speed, and a stale or corrupt reading does not fling the
-    /// released object.
+    /// at any time scale. The carried part is bounded only by the hold's
+    /// [`max_carried_mps`](crate::controllers::weapons::hold::tuning::HoldTuning::max_carried_mps):
+    /// a throw from a vehicle keeps the vehicle's speed, and a stale or corrupt reading does not
+    /// fling the released object.
     pub(crate) fn capped(self, max_speed_mps: f32) -> WorldMotion {
         let cap = if max_speed_mps.is_finite() {
             max_speed_mps.max(0.0) / self.time_scale.get()
@@ -196,7 +197,8 @@ impl ReleaseMotion {
                 Vec3::ZERO
             }
         };
-        let carried = finite(self.inherited.linear).clamp_length_max(MAX_CARRIED_MPS);
+        let carried =
+            finite(self.inherited.linear).clamp_length_max(HOLD.get().hold.max_carried_mps);
         let own = finite(self.world.linear) - carried;
         WorldMotion {
             linear: carried + own.clamp_length_max(cap),
@@ -240,7 +242,7 @@ pub(crate) fn estimate_release(input: ReleaseInput<'_>) -> ReleaseMotion {
         && controller.orientation_valid
         && controller.position_tracked
         && controller.orientation_tracked)
-        || controller.publication_age.as_secs_f32() > MAX_RELEASE_AGE_S
+        || controller.publication_age.as_secs_f32() > HOLD.get().hold.release_max_age_s
     {
         return fallback;
     }
@@ -254,7 +256,8 @@ pub(crate) fn estimate_release(input: ReleaseInput<'_>) -> ReleaseMotion {
         return fallback;
     };
     let age_s = (release_s - latest.time_s) as f32;
-    if !(0.0..=MAX_RELEASE_AGE_S).contains(&age_s) || !input.point_world.is_finite() {
+    if !(0.0..=HOLD.get().hold.release_max_age_s).contains(&age_s) || !input.point_world.is_finite()
+    {
         return fallback;
     }
     let mut samples = input
@@ -323,8 +326,6 @@ impl ReleaseInput<'_> {
                 .is_none_or(|boundary| time_s > boundary)
     }
 }
-
-pub(crate) const MAX_RELEASE_AGE_S: f32 = 0.15;
 
 /// A fixed-size readout containing only the latest release attempt.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
@@ -626,9 +627,6 @@ pub enum Unavailable {
     ReadbackContractUnproven,
     LifetimeAndPhaseUnproven,
 }
-
-/// The fastest carried motion a release keeps, metres per second: past the game's fastest jets.
-const MAX_CARRIED_MPS: f32 = 150.0;
 
 #[cfg(test)]
 mod tests;

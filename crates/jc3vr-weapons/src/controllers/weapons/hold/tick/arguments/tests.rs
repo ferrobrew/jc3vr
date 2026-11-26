@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use super::*;
 
 fn facts(now: Instant) -> UpdateFacts {
@@ -51,7 +53,8 @@ fn recovered_aim_uses_the_hand_point_and_expiry_returns_to_native() {
     };
     input.hand_target = Some(target);
     assert_eq!(tick(update_arguments(input)), (1.0, point));
-    let mut expired = facts(now + MAX_TARGET_AGE + Duration::from_nanos(1));
+    let mut expired =
+        facts(now + HOLD.get().hold.target_max_age_ms.duration() + Duration::from_nanos(1));
     expired.hand_target = Some(target);
     let native = expired.native_target.unwrap();
     assert_eq!(tick(update_arguments(expired)), (1.0, native));

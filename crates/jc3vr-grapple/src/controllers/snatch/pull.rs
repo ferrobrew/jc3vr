@@ -26,7 +26,7 @@ use jc3vr_physical::controllers::physical_hands::{
 use jc3vr_view::hooks::camera;
 use jc3vr_weapons::controllers::weapons::{
     grenade,
-    hold::{SNAP_S, source as hold_source},
+    hold::{source as hold_source, tuning::HOLD},
     inventory::engine::weapon_of,
 };
 
@@ -406,13 +406,14 @@ pub(super) fn pull(
                 zone_m,
                 "snatch: the hand caught the target"
             );
+            let snap_s = HOLD.get().hold.snap_s;
             let slide_s = match (&flight.landing, landed) {
-                (Some(landing), Some(l)) => l.targets[catcher.index()].map_or(SNAP_S, |target| {
+                (Some(landing), Some(l)) => l.targets[catcher.index()].map_or(snap_s, |target| {
                     let rotation = arrival::gun_rotation(landing, state.pose);
                     let (angle, distance) = arrival::residual(rotation, l.grip, target);
                     let speed = state.velocities.linear.length();
                     let slide_s =
-                        landing::arrival_slide(angle, distance, speed, SNAP_S, &SNATCH.get().landing);
+                        landing::arrival_slide(angle, distance, speed, snap_s, &SNATCH.get().landing);
                     tracing::info!(
                         target: "controllers",
                         hand = catcher.label(),
@@ -427,7 +428,7 @@ pub(super) fn pull(
                     );
                     slide_s
                 }),
-                _ => SNAP_S,
+                _ => snap_s,
             };
             let arrived = arrive(game, catcher, grabbed, body, centre, catcher_palm, slide_s);
             if arrived.is_err() {

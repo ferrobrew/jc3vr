@@ -32,10 +32,11 @@ use parking_lot::Mutex;
 use crate::controllers::weapons::{
     docks, hold,
     hold::{
-        STEAL_RADIUS_M, TAKE_RADIUS_M, rack, source,
+        rack, source,
         source::{SourceRefusal, WeaponSource},
         steal,
         take::placement::{Identity, Records, Sample},
+        tuning::HOLD,
         world,
         world::{TakeRadii, TargetKind, WorldTarget},
     },
@@ -199,8 +200,8 @@ pub(crate) fn begin_tick(game: &GameTick<'_>, inputs: &TakeInputs) -> Vec<Candid
     state.status.holstered_targets = holstered;
     state.status.rack_targets = state.targets.len() - on_characters;
     let points = inputs.active.hands.map(|h| h.map(|h| h.grip.position));
-    state.offered = world::Offers::gather(&state.targets, TAKE_RADII, inputs.free, points);
-    world::candidates(&state.targets, TAKE_RADII, inputs.free, points)
+    state.offered = world::Offers::gather(&state.targets, take_radii(), inputs.free, points);
+    world::candidates(&state.targets, take_radii(), inputs.free, points)
 }
 
 /// Take the weapon `hand`'s grab of a
@@ -213,7 +214,7 @@ pub(crate) fn begin_tick(game: &GameTick<'_>, inputs: &TakeInputs) -> Vec<Candid
 /// After [`begin_tick`] on the same input tick.
 pub(crate) unsafe fn finish_grab(game: &GameTick<'_>, hand: Hand, inputs: &TakeInputs) -> bool {
     let point = inputs.active.hands[hand.index()].map(|h| h.grip.position);
-    let target = STATE.lock().offered.take(hand, point, TAKE_RADII);
+    let target = STATE.lock().offered.take(hand, point, take_radii());
     let result = world::complete_offer(target, |target| {
         WeaponSource::of_target(game, &target)
             .and_then(|source| source::take(game, hand, &source))
@@ -272,10 +273,13 @@ pub(crate) fn steal_offer(hand: Hand) -> Option<usize> {
 }
 
 /// The take's reach around each kind of target.
-const TAKE_RADII: TakeRadii = TakeRadii {
-    held: STEAL_RADIUS_M,
-    rack: TAKE_RADIUS_M,
-};
+fn take_radii() -> TakeRadii {
+    let tuning = &HOLD.get().hold;
+    TakeRadii {
+        held: tuning.steal_radius_m,
+        rack: tuning.take_radius_m,
+    }
+}
 
 fn report_refusal(hand: Hand, refusal: TakeRefusal) {
     tracing::info!(target: "controllers", hand = hand.label(), %refusal, "hold: no weapon taken");

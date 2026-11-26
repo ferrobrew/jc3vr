@@ -43,7 +43,7 @@ use crate::controllers::{
         engine::slot_of,
         grenade::stock,
         hold,
-        hold::{SNAP_S, pickup, pickup::TakeOptions, rack},
+        hold::{pickup, pickup::TakeOptions, rack, tuning::HOLD},
         inventory::{
             engine as inventory_engine,
             engine::{strong_to, weapon_of},
@@ -112,7 +112,7 @@ unsafe fn take(owner: &mut Character, weapon: &mut WeaponBase) {
     let result = match route {
         Ok(TakeRoute::Table { hand }) => {
             let options = TakeOptions {
-                slide_s: SNAP_S,
+                slide_s: HOLD.get().hold.snap_s,
                 source: TakeSource::World,
                 delivery: Delivery::Local,
             };

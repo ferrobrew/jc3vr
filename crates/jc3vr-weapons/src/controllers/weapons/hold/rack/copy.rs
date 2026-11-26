@@ -20,7 +20,7 @@
 
 use std::{
     sync::atomic::{AtomicU64, Ordering},
-    time::{Duration, Instant},
+    time::Instant,
 };
 
 use jc3gi::{
@@ -42,10 +42,11 @@ use crate::controllers::{
         engine::slot_of,
         hold,
         hold::{
-            SNAP_S, pickup,
+            pickup,
             pickup::TakeOptions,
             rack::{paired, paired::Member},
             source::{Freed, SourceRefusal},
+            tuning::HOLD,
         },
         inventory::{
             engine::{strong_to, weapon_of},
@@ -201,17 +202,19 @@ pub(crate) fn tick() {
     let Some(p) = pending.as_mut() else {
         return;
     };
+    let tuning = &HOLD.get().hold.rack;
+    let copy_wait = tuning.copy_wait_ms.duration();
     let done = match p.stage {
-        Stage::Waiting if p.asked_at.elapsed() >= COPY_WAIT => {
+        Stage::Waiting if p.asked_at.elapsed() >= copy_wait => {
             tracing::info!(target: "controllers", "hold: the rack's copy never came");
             hold::refused("take off a rack: the rack's copy never came");
             p.stage = Stage::Failed;
             false
         }
         Stage::Waiting => false,
-        Stage::Delivered { at } => at.elapsed() >= RESTOCK_AFTER,
+        Stage::Delivered { at } => at.elapsed() >= tuning.restock_after_ms.duration(),
         // A copy the snatch never collected lies in the world where it hangs.
-        Stage::Freed(_) | Stage::Failed => p.asked_at.elapsed() >= 2 * COPY_WAIT,
+        Stage::Freed(_) | Stage::Failed => p.asked_at.elapsed() >= 2 * copy_wait,
     };
     if done && let Some(p) = pending.take() {
         drop(pending);
@@ -232,11 +235,6 @@ pub(crate) fn clear() {
 pub(crate) fn count() -> u64 {
     COPIES.load(Ordering::Relaxed)
 }
-
-/// How long a rack's weapon stays hidden after its copy left it.
-const RESTOCK_AFTER: Duration = Duration::from_millis(800);
-/// How long a copy is waited for.
-pub const COPY_WAIT: Duration = Duration::from_secs(3);
 
 /// A copy a rack with unlimited stock is spawning.
 struct Pending {
@@ -293,7 +291,7 @@ unsafe fn deliver(game: &GameTick<'_>, hand: Hand, weapon: &mut WeaponBase) {
     };
     let owner = local_player.character_mut();
     let options = TakeOptions {
-        slide_s: SNAP_S,
+        slide_s: HOLD.get().hold.snap_s,
         source: TakeSource::RackCopy,
         delivery: Delivery::Local,
     };

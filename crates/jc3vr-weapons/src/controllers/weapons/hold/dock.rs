@@ -19,7 +19,7 @@
 use body_rig::smooth::smoothstep;
 use jc3vr_input::frame::{Hand, Pose};
 
-use crate::controllers::loadout::Socket;
+use crate::controllers::{loadout::Socket, weapons::hold::tuning::HOLD};
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub(crate) struct ReleaseIntent {
@@ -29,11 +29,11 @@ pub(crate) struct ReleaseIntent {
 }
 
 impl ReleaseIntent {
-    pub(crate) const fn new(weapon: usize, socket: Option<Socket>) -> Self {
+    pub(crate) fn new(weapon: usize, socket: Option<Socket>) -> Self {
         Self {
             weapon,
             socket,
-            remaining_s: 0.35,
+            remaining_s: HOLD.get().hold.release_intent_s,
         }
     }
 
@@ -369,7 +369,7 @@ mod tests {
             assert!(intent.step(Some(7), false, true, dt));
             assert_eq!(intent.socket, Some(Socket::Hip(Hand::Left)));
         }
-        assert!(intent.step(Some(7), false, true, 0.35));
+        assert!(intent.step(Some(7), false, true, HOLD.get().hold.release_intent_s));
         assert_eq!(intent.socket, None);
     }
 

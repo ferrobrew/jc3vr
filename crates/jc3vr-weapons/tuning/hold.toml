@@ -1,0 +1,37 @@
+# The weapon handling's hold tuning: `HoldFileTuning` in
+# `src/controllers/weapons/hold/tuning.rs`, whose fields say what each value does. Every key is
+# required and no other is accepted. Lengths are metres (player-scale where the field says so),
+# speeds metres per second, and times seconds (`_s`) or whole milliseconds (`_ms`); a share or a
+# fraction is in `0..1`.
+
+[hold]
+snap_s = 0.12
+max_throw_mps = 15.0
+handle_radius_m = 0.14
+handover_max_m = 0.20
+take_radius_m = 0.3
+steal_radius_m = 0.4
+release_intent_s = 0.35
+use_item_grant_ms = 500
+target_max_age_ms = 250
+release_max_age_s = 0.15
+max_carried_mps = 150.0
+
+[hold.steal]
+notice_range_m = 3.0
+seen_for_ms = 500
+over_stumble = 1.1
+under_ragdoll = 0.9
+
+[hold.swap]
+eject_mps = 1.5
+eject_lift = 0.4
+
+[hold.rack]
+restock_after_ms = 800
+copy_wait_ms = 3000
+
+[hold.rack.paired]
+source_grace_ms = 3000
+copy_wait_ms = 3000
+stack_m = 0.045

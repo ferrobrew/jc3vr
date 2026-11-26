@@ -68,6 +68,7 @@ pub mod steal;
 pub(crate) mod swap;
 pub mod take;
 pub mod tick;
+pub mod tuning;
 pub mod use_item;
 pub mod world;
 
@@ -112,33 +113,6 @@ pub(crate) fn hook_library() -> HookLibrary {
         .with_hook_library(use_item::hook_library())
         .with_hook_library(button_pickup::hook_library())
 }
-
-/// How long a draw off a socket, a dock onto one, or a take from the world slides the gun between
-/// where it was and the hand, seconds.
-pub const SNAP_S: f32 = 0.12;
-
-/// The fastest a let-go gun leaves the hand, metres per second, against tracking glitches.
-pub const MAX_THROW_MPS: f32 = 15.0;
-
-/// The radius around the held gun's pistol grip for the free hand to take it, in player-scale
-/// metres. A touch on another gun region keeps that region's action.
-pub const HANDLE_RADIUS_M: f32 = 0.14;
-
-/// The farthest a free hand may be from a gun's grip or handguard to take it, in player-scale
-/// metres. The volume around the touched region otherwise reaches as far as the hand does, which
-/// would take a gun from any distance the palm ray meets it; beyond this reach the grab is
-/// refused, and within it the gun slides into the hand over [`SNAP_S`].
-pub const HANDOVER_MAX_M: f32 = 0.20;
-
-/// The reach from the nearest point of a gun's grip-to-grip segment on a rack or in a locker, in
-/// player-scale metres. Acquisition and completion use the same boundary.
-pub const TAKE_RADIUS_M: f32 = 0.3;
-
-/// The reach from the nearest point of a gun's grip-to-grip segment in a living character's hands,
-/// in player-scale metres: wider than a rack's, since the character moves and turns while the hand
-/// closes, and a hand within it takes the gun rather than the character holding it. Acquisition
-/// and completion use the same boundary.
-pub const STEAL_RADIUS_M: f32 = 0.4;
 
 /// What brought a weapon into a hand, as the hold reads it: a hand's expectation of the table's
 /// that one of the hold's grabs set (a draw, or a take from a source in reach or by the grapple's

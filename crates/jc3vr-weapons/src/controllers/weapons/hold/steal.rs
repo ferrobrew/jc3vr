@@ -38,7 +38,7 @@
 
 use std::{
     sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
-    time::{Duration, Instant},
+    time::Instant,
 };
 
 use glam::Vec3;
@@ -67,6 +67,7 @@ use crate::controllers::{
         engine::{grip_points, slot_of, takeable_gun_slot},
         hold::{
             source::{Freed, SourceRefusal},
+            tuning::HOLD,
             world,
             world::{TargetKind, WorldTarget},
         },
@@ -79,7 +80,7 @@ use crate::controllers::{
 #[inline]
 pub fn widen_notice(range_m: f32) {
     let range = if range_m.is_finite() { range_m } else { 0.0 };
-    NOTICE_RANGE.store(range.max(NOTICE_RANGE_M).to_bits(), Ordering::Relaxed);
+    NOTICE_RANGE.store(range.to_bits(), Ordering::Relaxed);
 }
 
 /// Publish where the local player is, for the detour's first test, or `None` to stop noting
@@ -127,7 +128,8 @@ pub(crate) unsafe fn observe(inventory: *mut Inventory) {
     );
     let at = character_position(character);
     let distance_sq = at.distance_squared(probe);
-    let range = f32::from_bits(NOTICE_RANGE.load(Ordering::Relaxed));
+    let range = f32::from_bits(NOTICE_RANGE.load(Ordering::Relaxed))
+        .max(HOLD.get().hold.steal.notice_range_m);
     if distance_sq.is_nan() || distance_sq > range * range {
         return;
     }
@@ -173,7 +175,8 @@ pub(crate) unsafe fn observe(inventory: *mut Inventory) {
 pub fn targets(to_cockpit: impl Fn(Vec3) -> Vec3) -> Vec<WorldTarget> {
     let to_cockpit = &to_cockpit;
     let mut seen = SEEN.lock();
-    seen.retain(|s| s.at.elapsed() <= SEEN_FOR);
+    let seen_for = HOLD.get().hold.steal.seen_for_ms.duration();
+    seen.retain(|s| s.at.elapsed() <= seen_for);
     seen.iter()
         .flat_map(|s| {
             let character = s.character;
@@ -210,7 +213,8 @@ pub struct HolsteredTarget {
 /// noted for a while.
 pub fn holstered_targets() -> Vec<HolsteredTarget> {
     let mut seen = SEEN.lock();
-    seen.retain(|s| s.at.elapsed() <= SEEN_FOR);
+    let seen_for = HOLD.get().hold.steal.seen_for_ms.duration();
+    seen.retain(|s| s.at.elapsed() <= seen_for);
     seen.iter()
         .flat_map(|s| {
             s.holstered.iter().flatten().map(|h| HolsteredTarget {
@@ -329,10 +333,6 @@ pub(crate) fn steals() -> u64 {
     STEALS.load(Ordering::Relaxed)
 }
 
-/// How far from the player a character's gun is noted, metres.
-const NOTICE_RANGE_M: f32 = 3.0;
-/// How long a noted character stays a target without being noted again.
-const SEEN_FOR: Duration = Duration::from_millis(500);
 /// The most characters noted at once.
 const MAX_SEEN: usize = 16;
 
@@ -377,9 +377,10 @@ static SEEN: Mutex<Vec<Seen>> = Mutex::new(Vec::new());
 static PROBE: [AtomicU32; 3] = [const { AtomicU32::new(0) }; 3];
 static ARMED: AtomicBool = AtomicBool::new(false);
 static STEALS: AtomicU64 = AtomicU64::new(0);
-/// How far from the player a character's gun is noted, metres, as `f32` bits: at least
-/// [`NOTICE_RANGE_M`].
-static NOTICE_RANGE: AtomicU32 = AtomicU32::new(NOTICE_RANGE_M.to_bits());
+/// How far from the player the grapple's snatch notes characters' guns, metres, as `f32` bits:
+/// never nearer than the steal's
+/// [`notice_range_m`](crate::controllers::weapons::hold::tuning::StealTuning::notice_range_m).
+static NOTICE_RANGE: AtomicU32 = AtomicU32::new(0);
 
 /// The gun `character` wields and its slot.
 unsafe fn wielded(character: &Character) -> Option<(*mut WeaponBase, WeaponSlot)> {

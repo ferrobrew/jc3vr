@@ -15,10 +15,10 @@ use jc3vr_weapons::controllers::{
     weapons::{
         c4::placed,
         hold::{
-            rack::copy,
             source as hold_source,
             source::{Freed, Ticket, WeaponSource, Yield},
             steal::CharacterGun,
+            tuning::HOLD,
         },
     },
 };
@@ -261,7 +261,7 @@ impl Freeing {
     pub(super) fn timeout_s(&self) -> f32 {
         match self {
             Freeing::Freed(_) => SNATCH.get().free_timeout_s,
-            Freeing::Making(..) => copy::COPY_WAIT.as_secs_f32(),
+            Freeing::Making(..) => HOLD.get().hold.rack.copy_wait_ms.duration().as_secs_f32(),
         }
     }
 }

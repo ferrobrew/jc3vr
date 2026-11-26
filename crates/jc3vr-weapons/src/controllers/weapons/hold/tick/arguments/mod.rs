@@ -1,11 +1,11 @@
 //! The arguments used by both native armed-weapon update phases.
 
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use glam::Vec3;
 use jc3gi::{equipment::weapon::WeaponInputs, types::math::Vector3};
 
-pub(super) const MAX_TARGET_AGE: Duration = Duration::from_millis(250);
+use crate::controllers::weapons::hold::tuning::HOLD;
 
 #[derive(Copy, Clone)]
 pub(super) struct HandTarget {
@@ -43,7 +43,8 @@ pub(super) fn update_arguments(facts: UpdateFacts) -> UpdateArguments {
             target.owner == facts.owner
                 && target.weapon == facts.weapon
                 && target.point.is_finite()
-                && facts.now.saturating_duration_since(target.at) <= MAX_TARGET_AGE
+                && facts.now.saturating_duration_since(target.at)
+                    <= HOLD.get().hold.target_max_age_ms.duration()
         })
         .map(|target| target.point)
         .or(facts.native_target.filter(|target| target.is_finite()));

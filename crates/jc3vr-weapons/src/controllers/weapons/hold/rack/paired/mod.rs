@@ -5,7 +5,7 @@
 
 mod finite;
 
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 pub(crate) use finite::stack_offset;
 use jc3gi::{
@@ -29,6 +29,7 @@ use crate::controllers::{
             pickup,
             rack::{copy, offered_state},
             source::SourceRefusal,
+            tuning::HOLD,
             world::{TargetKind, WorldTarget},
         },
         inventory::{engine, gives},
@@ -415,17 +416,22 @@ unsafe fn settle_unlimited(member: Member, actor: Strong, accepted: bool) {
 /// Retire sources no longer offered, and make failed native requests non-repeating.
 pub(crate) fn tick() {
     finite::tick();
+    let tuning = &HOLD.get().hold.rack.paired;
+    let (source_grace, copy_wait) = (
+        tuning.source_grace_ms.duration(),
+        tuning.copy_wait_ms.duration(),
+    );
     let mut state = STATE.lock();
     let mut retired = Vec::new();
     let mut at = 0;
     while at < state.sources.len() {
         let source = &mut state.sources[at];
-        if source.seen.elapsed() >= SOURCE_GRACE {
+        if source.seen.elapsed() >= source_grace {
             retired.push(state.sources.swap_remove(at));
             continue;
         }
         for member in &mut source.members {
-            if matches!(member, Stage::Waiting { at } if at.elapsed() >= COPY_WAIT) {
+            if matches!(member, Stage::Waiting { at } if at.elapsed() >= copy_wait) {
                 *member = Stage::Failed;
                 tracing::warn!(target: "controllers", "rack: a source member did not arrive; it is not requested again");
             }
@@ -455,8 +461,6 @@ unsafe fn designate_member(weapon: &mut WeaponBase) -> Result<(), Refusal> {
 }
 
 const MAX_SOURCES: usize = 8;
-const SOURCE_GRACE: Duration = Duration::from_secs(3);
-const COPY_WAIT: Duration = Duration::from_secs(3);
 
 struct Source {
     address: usize,
