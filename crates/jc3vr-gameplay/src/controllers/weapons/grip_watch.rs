@@ -29,11 +29,11 @@ use jc3gi::{
     character::character::Character,
     equipment::weapon::{WeaponBase, WeaponState},
 };
+use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
 use crate::{
     controllers::{
-        frame::Hand,
         hands::{
             grip::{self, HandGrip},
             tiers,

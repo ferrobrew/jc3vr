@@ -25,40 +25,36 @@ use std::time::Instant;
 
 use detours_macro::detour;
 use jc3gi::{character::character::Character, game::GameObjectUpdateContext};
+use jc3vr_core::frame_timing::{self, Slot};
 use re_utilities::hook_library::HookLibrary;
 
-use crate::{
-    controllers::{
-        self,
-        body::procedural::{
-            gate_skipped, signals::set_local_character, skeleton, wings::wing_arms,
-        },
-        hands::{self, ik::HandPlan},
-    },
-    frame_timing::{self, Slot},
+use crate::controllers::{
+    self,
+    body::procedural::{gate_skipped, signals::set_local_character, skeleton, wings::wing_arms},
+    hands::{self, ik::HandPlan},
 };
 
 pub(crate) mod acts;
 pub(crate) mod body_ik;
-pub(crate) mod config;
+pub mod config;
 pub(crate) mod gate;
 pub(crate) mod head;
 pub(crate) mod layers;
 pub(crate) mod magazine;
 pub(crate) mod modifiers;
-pub(crate) mod pose;
+pub mod pose;
 pub(crate) mod pose_observer;
 pub(crate) mod signals;
 mod stunt;
 pub(crate) mod wielded;
 
 pub(crate) use acts::resolve_act_id;
-pub(crate) use body_ik::body_ik_status;
-pub(crate) use config::BodyIkConfig;
+pub use body_ik::body_ik_status;
+pub use config::BodyIkConfig;
 
-pub(crate) use crate::hooks::character::pose_observer::{PoseObserver, register_pose_observer};
+pub use crate::hooks::character::pose_observer::{PoseObserver, register_pose_observer};
 
-pub(crate) fn hook_library() -> HookLibrary {
+pub fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_static_binder(&CHARACTER_UPDATE_PASS_FINALIZE_POSE_PARALLEL_BINDER)
         .with_static_binder(&CHARACTER_UPDATE_SECONDARY_HAND_IK_PASS_BINDER)

@@ -8,6 +8,7 @@ pub mod menu;
 pub mod sink;
 
 use jc3gi::input::input_action_map::Action;
+use jc3vr_input::frame::Hand;
 
 use crate::controllers::{
     bindings::{
@@ -23,7 +24,6 @@ use crate::controllers::{
         },
     },
     config::BindingsConfig,
-    frame::Hand,
     mode::{AirborneVariant, Mode, VehicleClass},
 };
 

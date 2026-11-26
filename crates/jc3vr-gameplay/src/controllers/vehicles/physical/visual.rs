@@ -4,15 +4,17 @@
 use std::time::Duration;
 
 use glam::Vec3;
-
-use crate::controllers::{
+use jc3vr_input::frame::Hand;
+use jc3vr_render::controllers::{
     cockpit::CockpitTransform,
-    frame::Hand,
     overlay::{
         primitive::{Anchor, DepthMode, Facing, Primitive, Rgba, Shape, Source, SpriteSize},
         store,
     },
-    vehicles::physical::{ControlKind, ControlState, Placement, yoke::YokeFrame},
+};
+
+use crate::controllers::vehicles::physical::{
+    ControlKind, ControlState, Placement, yoke::YokeFrame,
 };
 
 pub(crate) fn submit(

@@ -14,10 +14,9 @@
 use std::sync::OnceLock;
 
 use jc3gi::{spawn_system::SpawnSystem, types::math::Matrix4};
+use jc3vr_core::hash::hashlittle;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
-
-use crate::hash::hashlittle;
 
 /// What the spawner spawns and where.
 #[derive(Clone, Serialize, Deserialize)]
@@ -36,6 +35,12 @@ impl SpawnConfig {
             distance: 8.0,
             face_player: false,
         }
+    }
+}
+
+impl Default for SpawnConfig {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -139,7 +144,7 @@ const SPAWN_DEFS_JSON: &str = include_str!("spawn_defs.json");
 
 /// The last request-processing result; submission does not confirm an object has spawned.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Submission {
+pub enum Submission {
     NoTags,
     TagsContainNul,
     NoSpawnSystem,
@@ -148,13 +153,13 @@ pub(crate) enum Submission {
 
 /// Owned request state, independent of asynchronous entity streaming.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct Status {
+pub struct Status {
     pub pending: bool,
     pub last_submission: Option<Submission>,
 }
 
 /// Copy the request state without servicing it or querying the engine.
-pub(crate) fn status() -> Status {
+pub fn status() -> Status {
     with_state(|state| *state)
 }
 
@@ -164,7 +169,7 @@ pub fn request() {
 }
 
 /// Run the queued spawn, if any. Main thread: the spawn system is game-thread data.
-pub(crate) fn service_pending(cfg: &SpawnConfig) {
+pub fn service_pending(cfg: &SpawnConfig) {
     if !with_state(|state| std::mem::take(&mut state.pending)) {
         return;
     }
@@ -191,7 +196,7 @@ pub(crate) fn service_pending(cfg: &SpawnConfig) {
 /// Submit a spawn request for `tags` at `transform` with the high-priority flags, which skip the
 /// line-of-sight, proximity, and spawn-block checks. Main thread. The object appears once its
 /// entity streams in; the result records the submission, not the entity's completion.
-pub(crate) fn submit(tags: &str, transform: &Matrix4) -> Submission {
+pub fn submit(tags: &str, transform: &Matrix4) -> Submission {
     let tags_c = match validated_tags(tags) {
         Ok(tags_c) => tags_c,
         Err(rejected) => return rejected,

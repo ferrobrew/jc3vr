@@ -298,8 +298,9 @@ fn is_false(value: &bool) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use jc3vr_input::frame::Hand;
+
     use super::*;
-    use crate::controllers::frame::Hand;
 
     fn fingerprint() -> Fingerprint {
         let mut slots = [0; SLOTS];

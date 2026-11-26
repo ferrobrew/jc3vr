@@ -7,8 +7,9 @@
 //! forward, the negated third row, is `-z_axis`.
 
 use glam::{EulerRot, Mat4, Quat, Vec2, Vec3};
+use jc3vr_input::frame::Pose;
 
-use crate::controllers::{config::SightOverride, frame::Pose};
+use crate::controllers::config::SightOverride;
 
 /// A world-space ray with a unit direction.
 #[derive(Debug, Copy, Clone, PartialEq)]

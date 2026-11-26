@@ -1,4 +1,5 @@
 use glam::Vec3;
+use jc3vr_render::controllers::overlay::primitive::{Anchor, Primitive};
 
 use super::{
     latch::{GripLatch, LatchTick},
@@ -6,11 +7,7 @@ use super::{
     resolve::{Lost, choose, dock_target, losers, nearest_within, resolve},
     *,
 };
-use crate::controllers::{
-    bindings::controls::ButtonControl,
-    loadout::Socket,
-    overlay::primitive::{Anchor, Primitive},
-};
+use crate::controllers::{bindings::controls::ButtonControl, loadout::Socket};
 
 fn sphere(volume: GrabVolume, x: f32, radius: f32, hand: Option<Hand>) -> GripTarget {
     GripTarget::sphere(

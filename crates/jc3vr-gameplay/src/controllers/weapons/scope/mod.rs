@@ -42,23 +42,18 @@ use std::time::{Duration, Instant};
 
 use glam::{Mat4, Vec3};
 use jc3gi::equipment::weapon::{WeaponBase, WeaponClass};
+use jc3vr_input::frame::{Hand, Pose};
+use jc3vr_render::controllers::weapons::scope::pass::LensFrame;
+pub use jc3vr_render::controllers::weapons::scope::pass::{capture, draw, release_on_eject};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-pub(crate) use crate::controllers::weapons::scope::pass::{capture, draw, release_on_eject};
-use crate::{
-    controllers::{
-        aim::{self, AimStatus, HandSource, gun::HeldWeapon, sights::SightSource},
-        config::CONTROLLERS_CONFIG,
-        frame::{Hand, Pose},
-        hands::late,
-        scheme,
-        weapons::scope::{
-            lens::{LENS, Lens, LensTuning, SightAnchor},
-            pass::LensFrame,
-        },
-    },
-    hooks,
+use crate::controllers::{
+    aim::{self, AimStatus, HandSource, gun::HeldWeapon, sights::SightSource},
+    config::CONTROLLERS_CONFIG,
+    hands::late,
+    scheme,
+    weapons::scope::lens::{LENS, Lens, LensTuning, SightAnchor},
 };
 
 /// The scope hooks, aggregated by [`crate::controllers::weapons::hook_library`].
@@ -159,7 +154,7 @@ pub(crate) fn is_scoped(address: usize) -> bool {
 /// Plan the frame's lens. Called once per render dispatch at the end of `RenderEngine::PostDraw`,
 /// before the engine's context lock is taken; it acts only on the frame's first eye.
 pub(crate) fn tick(eye: usize) {
-    if !crate::stereo::dispatch::first_ui_eye(eye) || crate::stereo::far_phase() {
+    if !jc3vr_render::stereo::dispatch::first_ui_eye(eye) || jc3vr_render::stereo::far_phase() {
         return;
     }
     let enabled = CONTROLLERS_CONFIG.query(|c| c.enabled && c.weapons.scopes);
@@ -223,8 +218,8 @@ fn plan(enabled: bool, config: &LensTuning, anchors: &mut [Option<(u64, SightAnc
         return idle(LensIdle::Disabled);
     }
     if !scheme::is_controllers()
-        || !hooks::in_gameplay()
-        || crate::director::clean_view::hides_everything()
+        || !jc3vr_core::hooks::in_gameplay()
+        || jc3vr_core::director::clean_view::hides_everything()
     {
         return idle(LensIdle::Inactive);
     }
@@ -235,7 +230,8 @@ fn plan(enabled: bool, config: &LensTuning, anchors: &mut [Option<(u64, SightAnc
     let aim = aim::status();
     let frame = FrameInputs {
         aim: &aim,
-        wrists: late::drawn_hands(hooks::camera::last_dtf()).map(|h| h.map(|h| h.wrist)),
+        wrists: late::drawn_hands(jc3vr_render::hooks::camera::last_dtf())
+            .map(|h| h.map(|h| h.wrist)),
         eyes: eye_positions(),
         config,
     };
@@ -350,11 +346,13 @@ fn chosen(plans: &[Option<Plan>; 2]) -> Option<Hand> {
 /// Both eyes' world positions this frame: the centre camera moved by each eye's offset. `None`
 /// for an eye without a VR frame's render parameters.
 fn eye_positions() -> [Option<Vec3>; 2] {
-    let Some((head, orientation)) = crate::hud::render_camera_pose() else {
+    let Some((head, orientation)) = jc3vr_render::hud::render_camera_pose() else {
         return [None; 2];
     };
     let center = Mat4::from_rotation_translation(orientation, head);
-    [0, 1].map(|eye| crate::vr::render_params(eye).map(|p| p.resolve(center).w_axis.truncate()))
+    [0, 1].map(|eye| {
+        jc3vr_render::vr::render_params(eye).map(|p| p.resolve(center).w_axis.truncate())
+    })
 }
 
 #[cfg(test)]

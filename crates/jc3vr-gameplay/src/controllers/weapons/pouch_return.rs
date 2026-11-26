@@ -9,9 +9,10 @@
 //! ([`take_grenades`], [`take_charges`]) and decide whether the pouch takes the item.
 
 use glam::Vec3;
+use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
-use crate::controllers::{frame::Hand, loadout::ItemId};
+use crate::controllers::loadout::ItemId;
 
 /// How a press onto a pouch is told from a hand passing by it.
 #[derive(Debug, Copy, Clone, PartialEq)]

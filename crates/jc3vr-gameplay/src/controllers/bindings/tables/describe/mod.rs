@@ -6,35 +6,33 @@
 //! the rows.
 //!
 //! The tables name semantic actions; each is described on the physical inputs the runtime reports
-//! it bound to ([`crate::vr::input::semantic::bound::SourceTable`]), or, for an action whose
+//! it bound to ([`jc3vr_render::vr::input::semantic::bound::SourceTable`]), or, for an action whose
 //! sources are not known, on those its default binding
-//! ([`crate::vr::input::semantic::defaults`]) puts it on, less the inputs the table context masks
+//! ([`jc3vr_render::vr::input::semantic::defaults`]) puts it on, less the inputs the table context masks
 //! ([`crate::controllers::bindings::tables::context_masks`]). A source the mod does not recognise
 //! is described by the runtime's name for it ([`Control::Named`]), and an action bound to nothing
 //! as [`Control::Unbound`].
 
 use jc3gi::input::input_action_map::Action;
+use jc3vr_input::frame::Hand;
+use jc3vr_render::vr::input::semantic::{
+    bound::{Layout, PhysicalSet, SourceName, SourceTable},
+    defaults::{Component, default_binding},
+    vocabulary::{ActionId, GlobalAction, MenuAction, OnFootAction},
+};
 
-use crate::{
-    controllers::{
-        bindings::{
-            intents::{Mask, YANK_ACTIONS},
-            tables::{
-                body_turn_action, context_masks,
-                declare::{TableCtx, declare, vehicle_weapon_actions},
-                grapple_press,
-                sink::{Axis, Direction, Gate, Input, PadLayout, PadZone, Press, Sink, pad_of},
-            },
+use crate::controllers::{
+    bindings::{
+        intents::{Mask, YANK_ACTIONS},
+        tables::{
+            body_turn_action, context_masks,
+            declare::{TableCtx, declare, vehicle_weapon_actions},
+            grapple_press,
+            sink::{Axis, Direction, Gate, Input, PadLayout, PadZone, Press, Sink, pad_of},
         },
-        frame::Hand,
-        mode::{AirborneVariant, Mode, OnFootVariant, VehicleClass},
-        vehicles::wingsuit_gestures::GestureAvailability,
     },
-    vr::input::semantic::{
-        bound::{Layout, PhysicalSet, SourceName, SourceTable},
-        defaults::{Component, default_binding},
-        vocabulary::{ActionId, GlobalAction, MenuAction, OnFootAction},
-    },
+    mode::{AirborneVariant, Mode, OnFootVariant, VehicleClass},
+    vehicles::wingsuit_gestures::GestureAvailability,
 };
 
 /// Which way a stick is pushed for a row.
@@ -890,7 +888,7 @@ fn outside_rows(ctx: &DescribeCtx, bindings: Bindings) -> Vec<Row> {
             add(control, gesture, modded(ModAction::WeaponWheel));
         }
     }
-    // The map reads its zoom itself (`crate::controllers::map`), in the menu set.
+    // The map reads its zoom itself (`controllers::map`), in the menu set.
     if ctx.mode == Mode::Ui {
         for (control, _) in controls(MenuAction::MapZoom.id()) {
             add(control, Gesture::Press, modded(ModAction::MapZoom));

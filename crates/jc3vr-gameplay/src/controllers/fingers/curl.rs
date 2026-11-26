@@ -6,11 +6,11 @@
 
 use body_rig::rotation::twist_angle;
 use glam::{FloatExt, Quat, Vec3};
-
-use crate::controllers::{
-    fingers::config::FingerSource,
-    frame::{HAND_JOINT_COUNT, Hand, HandFrame, HandInputs, HandJoint, InteractionProfile},
+use jc3vr_input::frame::{
+    HAND_JOINT_COUNT, Hand, HandFrame, HandInputs, HandJoint, InteractionProfile,
 };
+
+use crate::controllers::fingers::config::FingerSource;
 
 /// A finger of the hand.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -222,9 +222,9 @@ fn flexion(parent: Quat, child: Quat) -> f32 {
 #[cfg(test)]
 mod tests {
     use glam::Vec3;
+    use jc3vr_input::frame::Pose;
 
     use super::*;
-    use crate::controllers::frame::Pose;
 
     /// A hand skeleton with every finger's joints bent by `flex` radians each, and each knuckle
     /// turned by `turn` radians about +Y.

@@ -13,16 +13,14 @@
 use std::fmt;
 
 use jc3gi::character::inventory::WeaponSlot;
+use jc3vr_input::frame::Hand;
 
-use crate::controllers::{
-    frame::Hand,
-    loadout::{
-        binding::{Awaiting, Binding, ObjectAddress},
-        item::{ItemId, ItemKind, WeaponType},
-        projection::{BodyPlace, SlotContent, StoreProjection, project, project_store},
-        table::{Departure, Docked, Item, Loadout, Place},
-        transition::{Cause, Change, Transition, TransitionError, change, left},
-    },
+use crate::controllers::loadout::{
+    binding::{Awaiting, Binding, ObjectAddress},
+    item::{ItemId, ItemKind, WeaponType},
+    projection::{BodyPlace, SlotContent, StoreProjection, project, project_store},
+    table::{Departure, Docked, Item, Loadout, Place},
+    transition::{Cause, Change, Transition, TransitionError, change, left},
 };
 
 /// What the spawn reset was for, which decides what the hands keep.

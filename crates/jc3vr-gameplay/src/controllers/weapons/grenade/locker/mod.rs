@@ -24,11 +24,11 @@ use jc3gi::{
     equipment::weapon::{ThrownGrenadeWeapon, WeaponBase, WeaponData, WeaponState},
     graphics_engine::model_instance::ModelInstanceFlags,
 };
+use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
-    frame::Hand,
     grab::{Candidate, GrabVolume, resolve::nearest_within},
     weapons::{
         engine::{self, gun_count, gun_ptr},
@@ -43,7 +43,7 @@ use crate::controllers::{
 
 pub(super) fn hook_library() -> HookLibrary {
     if !CLEANUP.swap(true, Ordering::AcqRel) {
-        crate::lifecycle::on_cleanup(|_| reset());
+        jc3vr_core::lifecycle::on_cleanup(|_| reset());
     }
     HookLibrary::new()
         .with_static_binder(&WORLD_STATE_BINDER)

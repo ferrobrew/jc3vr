@@ -1,13 +1,12 @@
 //! Input hook configuration: the movement settings. The rest of the movement hooks' behaviour is
 //! fixed in the hook modules that own it.
 
+use jc3vr_core::config::engine::ConfigSlot;
 use serde::{Deserialize, Serialize};
-
-use crate::config::engine::ConfigSlot;
 
 /// The movement settings, at `movement` in the settings file; the payload binds the slot at
 /// startup.
-pub(crate) static MOVEMENT_CONFIG: ConfigSlot<MovementConfig> = ConfigSlot::new("movement");
+pub static MOVEMENT_CONFIG: ConfigSlot<MovementConfig> = ConfigSlot::new("movement");
 
 /// Movement settings.
 #[derive(Copy, Clone, Serialize, Deserialize)]
@@ -40,5 +39,11 @@ impl MovementConfig {
             swim_turn_rate_deg_s: 360.0,
             suppress_air_aim_facing: true,
         }
+    }
+}
+
+impl Default for MovementConfig {
+    fn default() -> Self {
+        Self::new()
     }
 }

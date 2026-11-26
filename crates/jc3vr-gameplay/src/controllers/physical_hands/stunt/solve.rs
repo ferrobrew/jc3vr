@@ -26,7 +26,7 @@ impl StuntKind {
 pub struct Tick {
     /// The stunt position the game has the player in, if any.
     pub position: Option<StuntKind>,
-    /// Whether each hand's grip is held, indexed by [`crate::controllers::frame::Hand::index`].
+    /// Whether each hand's grip is held, indexed by [`jc3vr_input::frame::Hand::index`].
     pub held: [bool; 2],
     /// A mantle that landed on a vehicle since the last tick: how far the feet are from the
     /// vehicle's nearest stunt area, metres, or `None` for a vehicle without one.

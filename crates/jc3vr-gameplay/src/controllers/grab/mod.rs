@@ -30,19 +30,19 @@ pub mod latch;
 pub mod markers;
 pub mod resolve;
 pub mod target;
-pub(crate) mod tick;
+pub mod tick;
 
 #[cfg(test)]
 mod tests;
 
 use glam::Vec3;
+use jc3vr_input::frame::Hand;
 
 pub use crate::controllers::grab::{
     resolve::{Reach, Resolved},
     target::{GripTarget, Mark, MarkAt, MarkStyle, Shown, Tier},
 };
 use crate::controllers::{
-    frame::Hand,
     loadout::Socket,
     vehicles::physical::{ControlKind, buttons::Button},
 };

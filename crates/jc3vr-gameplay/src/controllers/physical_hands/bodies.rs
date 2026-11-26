@@ -29,20 +29,18 @@ use jc3gi::{
     },
     vehicle::{parts::VehiclePartGameObject, vehicle::Vehicle},
 };
+use jc3vr_core::hash::hashlittle;
 
-use crate::{
-    controllers::{
-        aim::grapple_weapons,
-        diagnostics::{Applied, BodyBefore, note_force},
-        physical_hands::{
-            doors::engine as door_engine,
-            grasp::{TargetKind, mass_of},
-            physics::havok_vector,
-            rigid::{BodyPose, RigidBody, Velocities},
-            world::World,
-        },
+use crate::controllers::{
+    aim::grapple_weapons,
+    diagnostics::{Applied, BodyBefore, note_force},
+    physical_hands::{
+        doors::engine as door_engine,
+        grasp::{TargetKind, mass_of},
+        physics::havok_vector,
+        rigid::{BodyPose, RigidBody, Velocities},
+        world::World,
     },
-    hash::hashlittle,
 };
 
 /// Why a body could not be read or driven.
@@ -258,7 +256,7 @@ pub(super) unsafe fn position(body: u32, owner: NonZeroUsize) -> Result<Vec3, Bo
 
 /// Why a reached object is no loose object for a hand.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) enum Unclassified {
+pub enum Unclassified {
     /// A weapon in this state (raw), not lying dropped in the world.
     WeaponNotDropped(i32),
     WeaponOwned,

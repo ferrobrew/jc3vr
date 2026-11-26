@@ -49,23 +49,22 @@ pub mod calibration;
 pub mod estimator;
 pub mod firm_ragdoll;
 pub mod ik_body;
-pub(crate) mod menu;
 pub mod mirror;
 pub mod procedural;
 pub mod rig;
 pub mod unarmed;
 
 use glam::{Quat, Vec3};
+use jc3vr_core::config::engine::ConfigSlot;
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    config::engine::ConfigSlot,
-    controllers::body::calibration::{ARM_SPAN_HEIGHT_RATIO, FOREARM_RATIO, UPPER_ARM_RATIO},
+use crate::controllers::body::calibration::{
+    ARM_SPAN_HEIGHT_RATIO, FOREARM_RATIO, UPPER_ARM_RATIO,
 };
 
 /// The player's body dimensions, at `body` in the settings file; the payload binds the slot at
 /// startup.
-pub(crate) static BODY_CONFIG: ConfigSlot<BodyDimensions> = ConfigSlot::new("body");
+pub static BODY_CONFIG: ConfigSlot<BodyDimensions> = ConfigSlot::new("body");
 
 /// A body's dimensions, in metres. Heights are measured from the floor.
 #[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]

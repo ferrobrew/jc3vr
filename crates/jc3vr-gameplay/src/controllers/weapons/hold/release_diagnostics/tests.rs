@@ -1,7 +1,8 @@
 use std::{mem, time::Instant};
 
+use jc3vr_input::frame::{ActionSetKind, HandFrame, TrackedPose};
+
 use super::*;
-use crate::controllers::frame::{ActionSetKind, HandFrame, TrackedPose};
 
 fn record(hand: Hand, weapon: usize) -> ReleaseRecord {
     ReleaseRecord {

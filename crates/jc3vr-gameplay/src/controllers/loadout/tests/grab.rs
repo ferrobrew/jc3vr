@@ -1,15 +1,13 @@
 //! The socket grab's decision against the table: draws, docks, refusals, and releases.
 
+use jc3vr_input::frame::Hand;
 use pretty_assertions::assert_eq;
 
 use super::fixtures::{a_launcher, a_pistol, a_rifle, docked, table, take, weapon};
-use crate::controllers::{
-    frame::Hand,
-    loadout::{
-        grab::{GrabRules, Release, SocketMove, SocketRefusal, grab, refusing, release, swaps},
-        item::ItemKind,
-        socket::Socket,
-    },
+use crate::controllers::loadout::{
+    grab::{GrabRules, Release, SocketMove, SocketRefusal, grab, refusing, release, swaps},
+    item::ItemKind,
+    socket::Socket,
 };
 
 const BOTH: GrabRules = GrabRules { both_hands: true };

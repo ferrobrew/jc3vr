@@ -13,20 +13,16 @@
 
 use glam::Vec2;
 use jc3gi::input::input_action_map::Action;
+use jc3vr_input::frame::Hand;
+use jc3vr_render::vr::input::semantic::{
+    SemanticSet,
+    vocabulary::{ActionId, MenuAction, OnFootAction},
+};
 
-use crate::{
-    controllers::{
-        bindings::{
-            controls::{ButtonControl, rotate_stick},
-            hold::{Desired, MapKind, Target, Want},
-            intents::Intents,
-        },
-        frame::Hand,
-    },
-    vr::input::semantic::{
-        SemanticSet,
-        vocabulary::{ActionId, MenuAction, OnFootAction},
-    },
+use crate::controllers::bindings::{
+    controls::{ButtonControl, rotate_stick},
+    hold::{Desired, MapKind, Target, Want},
+    intents::Intents,
 };
 
 /// A digital input of the tables.

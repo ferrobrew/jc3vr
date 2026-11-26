@@ -1,13 +1,11 @@
 //! The held wheel's motion: the holding hands turn it, and let go, it returns to centre.
 
 use glam::Quat;
+use jc3vr_input::frame::Hand;
 
-use crate::controllers::{
-    frame::Hand,
-    vehicles::{
-        physical::{ControlState, Holding, Placement},
-        steering::{self, WheelCue, WheelGrip, WheelTravel},
-    },
+use crate::controllers::vehicles::{
+    physical::{ControlState, Holding, Placement},
+    steering::{self, WheelCue, WheelGrip, WheelTravel},
 };
 
 /// The wheel's steering this tick, `None` while it neither is held nor returns, with the cue it

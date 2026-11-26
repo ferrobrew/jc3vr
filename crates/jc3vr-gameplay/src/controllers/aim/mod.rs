@@ -31,7 +31,7 @@ pub mod assist;
 pub mod grapple;
 pub mod grapple_weapons;
 pub mod gun;
-pub(crate) mod marker_rays;
+pub mod marker_rays;
 pub mod ray;
 pub mod raycast;
 pub mod sights;
@@ -47,11 +47,16 @@ use jc3gi::{
     character::character::Character,
     types::math::{Matrix4, Vector3},
 };
+use jc3vr_core::{
+    config::engine::ConfigSlot,
+    frame_timing::{self, Slot},
+};
+use jc3vr_input::frame::{Hand, Pose};
+use jc3vr_render::controllers::cockpit::CockpitTransform;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{
-    config::engine::ConfigSlot,
     controllers::{
         aim::{
             assist::{AssistCorrection, GrappleAssist},
@@ -59,9 +64,7 @@ use crate::{
             ray::Ray,
             raycast::{CastOptions, RayHit, RaycastError},
         },
-        cockpit::CockpitTransform,
         config::{CONTROLLERS_CONFIG, ControllersConfig},
-        frame::{Hand, Pose},
         hands::{self, ik, late},
         mode::{self, Mode},
         physical_hands, scheme, vehicles,
@@ -70,9 +73,7 @@ use crate::{
             hold::{armed, tick as hold_tick},
         },
     },
-    frame_timing::{self, Slot},
     grapple::seat::{rides_in_seat, stands_in},
-    hooks,
 };
 
 /// The nearest a gun's aim point may be to the sight's origin, metres. A nearer hit is pushed out
@@ -82,8 +83,7 @@ const MIN_TARGET_DISTANCE_M: f32 = 2.0;
 
 /// Whether the HUD's world markers are on, at `hud.world_markers.enabled` in the settings file;
 /// the payload binds the slot at startup. The aim casts the markers' fallback rays.
-pub(crate) static WORLD_MARKERS_ENABLED: ConfigSlot<bool> =
-    ConfigSlot::new("hud.world_markers.enabled");
+pub static WORLD_MARKERS_ENABLED: ConfigSlot<bool> = ConfigSlot::new("hud.world_markers.enabled");
 
 /// The aiming hooks, aggregated by [`crate::controllers::hook_library`].
 pub(crate) fn hook_library() -> HookLibrary {
@@ -305,7 +305,7 @@ fn begin() -> Result<TickHands, AimIdle> {
     if !scheme::is_controllers() {
         return Err(AimIdle::GamepadScheme);
     }
-    if !hooks::in_gameplay() {
+    if !jc3vr_core::hooks::in_gameplay() {
         return Err(AimIdle::NoHands);
     }
     let active = hands::active_hands().ok_or(AimIdle::NoHands)?;

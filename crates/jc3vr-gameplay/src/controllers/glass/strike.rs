@@ -2,8 +2,9 @@
 //! segment its sweep is cast along, how much damage a strike does, and whether the pane shatters.
 
 use glam::Vec3;
+use jc3vr_input::frame::Hand;
 
-use crate::controllers::{frame::Hand, glass::config::GlassTuning};
+use crate::controllers::glass::config::GlassTuning;
 
 /// What a strike is made with.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]

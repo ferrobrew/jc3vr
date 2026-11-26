@@ -5,14 +5,12 @@
 
 use std::num::NonZeroUsize;
 
+use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
-use crate::controllers::{
-    frame::Hand,
-    physical_hands::{
-        articulated, characters, physics,
-        pickup::state::{HeldKind, PickupState},
-    },
+use crate::controllers::physical_hands::{
+    articulated, characters, physics,
+    pickup::state::{HeldKind, PickupState},
 };
 
 /// Damp each assembly the hands hold once, however many hands hold it, over a tick of `dt`

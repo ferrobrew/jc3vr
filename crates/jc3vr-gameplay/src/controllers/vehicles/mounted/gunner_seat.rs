@@ -22,11 +22,11 @@ use jc3gi::{
     character::character::Character, equipment::weapon::WeaponState,
     input::input_action_map::Action, vehicle::vehicle::NStateTask_InputVehicleEnterTask,
 };
+use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
 use crate::controllers::{
     bindings::hold::{Desired, MapKind, Target, Want},
-    frame::Hand,
     physical_hands::{doors::engine::vehicle_of, physics_object_of},
     vehicles::mounted::{handle, pivot_and_barrel},
     weapons::{engine::weapon_at, hold::refs::Weak},

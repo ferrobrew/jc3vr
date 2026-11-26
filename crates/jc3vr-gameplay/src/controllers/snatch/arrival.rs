@@ -18,10 +18,10 @@ use jc3gi::{
     character::character::Character, equipment::weapon::WeaponBase,
     graphics_engine::model_instance::ModelInstanceFlags,
 };
+use jc3vr_input::frame::{Hand, Pose};
 
 use crate::controllers::{
     aim::gun,
-    frame::{Hand, Pose},
     hands::{grip, ik, pose as hand_pose},
     loadout::live,
     physical_hands::rigid::BodyPose,

@@ -448,9 +448,10 @@ mod tests {
     use crate::controllers::physical_hands::doors::geometry::DoorBox;
 
     fn canopy() -> DoorRead {
-        let entry = table::parse(include_str!(
-            "../../../../../tools/door_handles/door_handles.json"
-        ))
+        let entry = table::parse(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tools/door_handles/door_handles.json"
+        )))
         .unwrap()
         .into_iter()
         .find(|entry| entry.part == "fighterjet_door_f")

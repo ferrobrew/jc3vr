@@ -25,20 +25,17 @@ use glam::{Vec2, Vec3};
 use jc3gi::character::character::Character;
 use parking_lot::Mutex;
 
-use crate::{
-    controllers::{
-        aim::{
-            ray::Ray,
-            raycast::{self, CastOptions},
-        },
-        mode::{self, Mode, OnFootVariant},
-        physical_hands::{
-            climb::{self, engine as proxy},
-            human_hull::geometry::StepProfile,
-            vault::lifted,
-        },
+use crate::controllers::{
+    aim::{
+        ray::Ray,
+        raycast::{self, CastOptions},
     },
-    hooks,
+    mode::{self, Mode, OnFootVariant},
+    physical_hands::{
+        climb::{self, engine as proxy},
+        human_hull::geometry::StepProfile,
+        vault::lifted,
+    },
 };
 
 /// The local player's narrowed hull's step profile and the authored one it replaces.
@@ -50,17 +47,17 @@ pub(crate) struct PlayerSteps {
 
 /// The step-up's readout.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
-pub(crate) struct StepUpStatus {
-    pub(crate) enabled: bool,
+pub struct StepUpStatus {
+    pub enabled: bool,
     /// Whether the proxy was lifted on the last pass.
-    pub(crate) lifting: bool,
+    pub lifting: bool,
     /// Steps lifted onto since the payload loaded.
-    pub(crate) steps: u64,
+    pub steps: u64,
     /// The height of the last step lifted onto, metres above the feet.
-    pub(crate) last_height_m: Option<f32>,
+    pub last_height_m: Option<f32>,
 }
 
-pub(crate) fn status() -> StepUpStatus {
+pub fn status() -> StepUpStatus {
     let state = STATE.lock();
     StepUpStatus {
         enabled: ENABLED.load(Ordering::Relaxed),
@@ -68,7 +65,7 @@ pub(crate) fn status() -> StepUpStatus {
     }
 }
 
-pub(crate) fn set_enabled(enabled: bool) {
+pub fn set_enabled(enabled: bool) {
     ENABLED.store(enabled, Ordering::Relaxed);
 }
 
@@ -275,7 +272,7 @@ static STATE: Mutex<State> = Mutex::new(State {
 ///
 /// As [`step`].
 unsafe fn on_foot() -> bool {
-    if !hooks::in_gameplay() || climb::climbing() {
+    if !jc3vr_core::hooks::in_gameplay() || climb::climbing() {
         return false;
     }
     let detection = mode::current();

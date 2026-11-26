@@ -1,7 +1,7 @@
 //! Body calibration: the player's saved body dimensions, derived from the two things the headset can
 //! measure, and the guided flow that measures them.
 //!
-//! The headset measures the eye height (the head above the STAGE floor, see [`crate::vr::stage`])
+//! The headset measures the eye height (the head above the STAGE floor, see [`jc3vr_render::vr::stage`])
 //! and, in a T-pose, the distance between the two controllers' grip poses. A standing player's eye
 //! height gives their height. A seated player's gives the seated eye height the seated posture
 //! measures the head against, and their height is estimated from the arm span instead, which is
@@ -17,7 +17,7 @@
 //!
 //! [`Calibration`] is the flow's state: which step it is on, what it has measured, and the capture
 //! in progress. It takes the time and the live measurement as arguments, so it runs without a
-//! headset in tests; the pause menu's `VR: BODY` page ([`crate::controllers::body::menu`]) drives
+//! headset in tests; the pause menu's `VR: BODY` page (`controllers::body::menu`) drives
 //! it.
 
 mod derive;

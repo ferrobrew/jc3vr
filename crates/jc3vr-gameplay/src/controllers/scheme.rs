@@ -1,15 +1,13 @@
 //! Controller versus gamepad scheme selection from the settings and the published controller
-//! frame. The scheme type and its rule live in [`crate::input_core::scheme`].
+//! frame. The scheme type and its rule live in [`jc3vr_input::scheme`].
 
-pub(crate) use crate::input_core::scheme::{Scheme, resolve};
-use crate::{
-    config::engine::ConfigSlot,
-    controllers::frame::{self, ControllerFrame},
-};
+use jc3vr_core::config::engine::ConfigSlot;
+use jc3vr_input::frame::{self, ControllerFrame};
+pub use jc3vr_input::scheme::{Scheme, resolve};
 
 /// The controllers' master switch, at `controllers.enabled` in the settings file; the payload
 /// binds the slot at startup.
-pub(crate) static CONTROLLERS_ENABLED: ConfigSlot<bool> = ConfigSlot::new("controllers.enabled");
+pub static CONTROLLERS_ENABLED: ConfigSlot<bool> = ConfigSlot::new("controllers.enabled");
 
 /// The scheme in effect now. Cheap: one config read and a peek at the published controller frame.
 pub fn current() -> Scheme {

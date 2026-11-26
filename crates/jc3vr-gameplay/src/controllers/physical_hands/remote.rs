@@ -6,20 +6,18 @@ use std::num::NonZeroUsize;
 
 use glam::Vec3;
 use jc3gi::character::character::Character;
+use jc3vr_input::frame::Hand;
 
-use crate::controllers::{
-    frame::Hand,
-    physical_hands::{
-        STATE,
-        bodies::{self, BodyError},
-        characters::ragdoll::{Bone, Ragdoll},
-        collider_view::{self, model::Aabb},
-        contact::{Surface, SurfaceHit},
-        doors::{self, DoorTarget, DoorsConfig, acquisition::PanelReach, engine as door_engine},
-        engine,
-        grasp::{self, Reach, TargetKind},
-        pickup::{PICKUP, Request},
-    },
+use crate::controllers::physical_hands::{
+    STATE,
+    bodies::{self, BodyError},
+    characters::ragdoll::{Bone, Ragdoll},
+    collider_view::{self, model::Aabb},
+    contact::{Surface, SurfaceHit},
+    doors::{self, DoorTarget, DoorsConfig, acquisition::PanelReach, engine as door_engine},
+    engine,
+    grasp::{self, Reach, TargetKind},
+    pickup::{PICKUP, Request},
 };
 
 /// The mass of `object`'s body `body`, when it is a loose object by the reach's own classification

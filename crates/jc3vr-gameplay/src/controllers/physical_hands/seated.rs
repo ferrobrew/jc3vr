@@ -3,14 +3,14 @@ use std::{num::NonZeroUsize, time::Instant};
 use body_rig::rotation::level;
 use glam::{Vec2, Vec3};
 use jc3gi::character::character::Character;
+use jc3vr_input::frame::{Hand, Pose};
+use jc3vr_render::controllers::cockpit::CockpitTransform;
 
 use crate::controllers::{
     aim::raycast::CastOptions,
     body,
     clock::TimeScale,
-    cockpit::CockpitTransform,
     config::CONTROLLERS_CONFIG,
-    frame::{Hand, Pose},
     hands,
     haptics::{self, Event},
     physical_hands::{
@@ -20,8 +20,11 @@ use crate::controllers::{
             acquisition::PanelReach,
             config::{TEARING, TearTuning},
         },
-        draw, grab_view,
-        grab_view::model::{RayOutcome, ReachRay},
+        draw,
+        grab_view::{
+            self,
+            model::{RayOutcome, ReachRay},
+        },
         grasp::{self, PalmMotion, Reach, TargetKind},
         palm::{PROBE_POINTS, PalmBox},
         physics,

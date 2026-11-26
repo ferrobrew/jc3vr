@@ -8,13 +8,14 @@
 //! weapon action alone fires the gun. The tables keep a gun hand's vehicle weapon action from the
 //! vehicle's weapon ([`crate::controllers::bindings::tables::sink::Gate::HandUnarmed`]).
 
+use jc3vr_input::frame::Hand;
+
 use crate::controllers::{
     bindings::{
         controls::ButtonControl,
         intents::SemanticInput,
         tables::{declare::vehicle_weapon_actions, merge_buttons},
     },
-    frame::Hand,
     mode::Mode,
 };
 
@@ -60,15 +61,13 @@ const fn triggers_fire_guns(mode: Mode) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use jc3vr_render::vr::input::semantic::{SemanticSet, defaults::default_binding};
     use test_case::test_case;
 
     use super::*;
-    use crate::{
-        controllers::{
-            bindings::{controls::Controls, intents::simulate::simulate},
-            mode::{AirborneVariant, OnFootVariant, VehicleClass, VehicleSeat},
-        },
-        vr::input::semantic::{SemanticSet, defaults::default_binding},
+    use crate::controllers::{
+        bindings::{controls::Controls, intents::simulate::simulate},
+        mode::{AirborneVariant, OnFootVariant, VehicleClass, VehicleSeat},
     };
 
     const HELD: ButtonControl = ButtonControl {

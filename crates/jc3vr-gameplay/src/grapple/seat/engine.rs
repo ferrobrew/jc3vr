@@ -14,6 +14,8 @@ use jc3gi::{
         shared_ptr::SharedPtr,
     },
 };
+use jc3vr_input::frame::Hand;
+use jc3vr_render::controllers::cockpit::CockpitTransform;
 
 use crate::{
     controllers::{
@@ -22,8 +24,6 @@ use crate::{
             ray::Ray,
             raycast::{self, CastOptions, RayHit},
         },
-        cockpit::CockpitTransform,
-        frame::Hand,
         hands,
         physical_hands::{self, doors::engine::vehicle_body, game_object_of},
         weapons::hold::refs::{Strong, null_weak},

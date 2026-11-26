@@ -5,11 +5,10 @@ mod seated;
 
 use std::f32::consts::FRAC_PI_2;
 
+use jc3vr_input::frame::{ActionSetKind, HandFrame, TrackedPose};
+
 use super::*;
-use crate::controllers::{
-    frame::{ActionSetKind, HandFrame, TrackedPose},
-    mode::{OnFootVariant, VehicleClass, VehicleSeat},
-};
+use crate::controllers::mode::{OnFootVariant, VehicleClass, VehicleSeat};
 
 const CONFIG: WingsuitGesturesConfig = WingsuitGesturesConfig::new();
 const FALLING: Mode = Mode::Airborne(AirborneVariant::Falling);

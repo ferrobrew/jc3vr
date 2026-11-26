@@ -52,17 +52,15 @@ use jc3gi::{
     character::character::{Character, SafeBoneIndex},
     vehicle::vehicle::DoorSlot,
 };
+use jc3vr_input::frame::Pose;
 
-use crate::controllers::{
-    frame::Pose,
-    physical_hands::{
-        bodies::owner_of,
-        characters::ragdoll::Ragdoll,
-        contact::SurfaceHit,
-        doors::engine as door_engine,
-        grasp::{Reach, TargetKind},
-        remote,
-    },
+use crate::controllers::physical_hands::{
+    bodies::owner_of,
+    characters::ragdoll::Ragdoll,
+    contact::SurfaceHit,
+    doors::engine as door_engine,
+    grasp::{Reach, TargetKind},
+    remote,
 };
 
 /// A character a hand can take hold of.

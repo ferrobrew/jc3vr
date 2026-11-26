@@ -21,7 +21,7 @@
 //! hands it the grapple hand's grip and aim and injects the retract it returns. It reads
 //! the hook, steps the pull, publishes the reel's drive for the reel task's detour, vibrates the
 //! grapple hand, logs the grapple's events, and publishes the readout ([`status`]) for the
-//! status rows ([`crate::status`]).
+//! status rows (`status`).
 
 pub mod config;
 pub mod lock;
@@ -34,6 +34,7 @@ use std::time::{Duration, Instant};
 
 pub use config::{PhysicalGrappleConfig, PhysicalGrappleTuning};
 use jc3gi::equipment::grappling_hook::GrapplingHookState;
+use jc3vr_render::headpose;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
@@ -53,11 +54,10 @@ use crate::{
             tether::TetherTick,
         },
     },
-    headpose,
 };
 
 /// The physical grapple's hooks, aggregated by [`crate::hooks`].
-pub(crate) fn hook_library() -> HookLibrary {
+pub fn hook_library() -> HookLibrary {
     reel::hook_library().with_hook_library(lock::hook_library())
 }
 

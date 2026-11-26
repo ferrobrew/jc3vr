@@ -4,9 +4,9 @@
 
 use glam::{Mat4, Quat};
 use jc3gi::equipment::weapon::WeaponData;
+use jc3vr_input::frame::Hand;
 
 use crate::controllers::{
-    frame::Hand,
     haptics::{self, Event},
     weapons::reload::{
         GunTick, State, Tick, WeaponTick, casings,

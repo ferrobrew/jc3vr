@@ -35,12 +35,10 @@ pub mod config;
 
 pub use config::{VAULT, VaultConfig, VaultTuning};
 use glam::Vec3;
+use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
-use crate::controllers::{
-    frame::Hand,
-    physical_hands::climb::{Hold, engine as proxy},
-};
+use crate::controllers::physical_hands::climb::{Hold, engine as proxy};
 
 /// The push-up's readout.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]

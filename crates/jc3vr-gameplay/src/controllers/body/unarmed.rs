@@ -32,6 +32,7 @@ use std::{
 };
 
 use jc3gi::character::character::{AnimationLayer, Character};
+use jc3vr_render::headpose;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
@@ -41,7 +42,7 @@ use crate::{
         hands::tiers::{self, TierState},
         scheme,
     },
-    headpose, hooks,
+    hooks,
 };
 
 /// Which of the game's weapon animations reach the character's body on foot.
@@ -262,7 +263,7 @@ pub unsafe fn tick(character: *mut Character) {
     let inputs = GateInputs {
         controllers: scheme::is_controllers(),
         vr: headpose::source() == headpose::Source::Vr,
-        gameplay: hooks::in_gameplay(),
+        gameplay: jc3vr_core::hooks::in_gameplay(),
         tier: tiers::status().state,
     };
     let verdict = decide(weapon_animations, &inputs);

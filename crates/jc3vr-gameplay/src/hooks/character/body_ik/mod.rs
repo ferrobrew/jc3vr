@@ -17,6 +17,8 @@ use jc3gi::{
     },
     types::math::Vector3,
 };
+use jc3vr_input::frame::Hand;
+use jc3vr_render::{headpose, vr::VR_CONFIG};
 use parking_lot::Mutex;
 
 use crate::{
@@ -28,23 +30,19 @@ use crate::{
                 live_observation::{self, NativeCapture},
             },
         },
-        frame::Hand,
         locomotion::{anchor::stabilize as stabilize_anchors, view::Neutral},
     },
-    headpose,
     hooks::{
-        self,
         animation::{active_state_type_id, body_rule_system},
         character::{body_ik::tuning::BODY_IK_TUNING, config::BODY_IK_CONFIG},
     },
-    vr::VR_CONFIG,
 };
 
 /// A snapshot of what the body-IK path did on its last frame, for the debug UI. The engine-side
 /// control values are read at hook entry, so they show what the *previous* frame's drive and solve
 /// actually left in the solver — the ground truth for whether a queued weight took effect.
 #[derive(Clone, Copy, Default)]
-pub(crate) struct BodyIkStatus {
+pub struct BodyIkStatus {
     /// Why nothing was queued, or `None` if targets were queued.
     pub skip: Option<BodyIkSkip>,
     /// The headpose mode this frame: on foot versus everything else (vehicle, wingsuit, parachute).
@@ -105,7 +103,7 @@ impl BodyIkStatus {
 
 /// The reason the body-IK path queued nothing on a frame.
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum BodyIkSkip {
+pub enum BodyIkSkip {
     Disabled,
     HeadposeInactive,
     NoAnchor,
@@ -116,7 +114,7 @@ pub(crate) enum BodyIkSkip {
 }
 
 impl BodyIkSkip {
-    pub(crate) fn label(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
             Self::Disabled => "disabled in config",
             Self::HeadposeInactive => "headpose inactive",
@@ -130,7 +128,7 @@ impl BodyIkSkip {
 }
 
 /// The last frame's body-IK snapshot, or `None` before the hook has run once.
-pub(crate) fn body_ik_status() -> Option<BodyIkStatus> {
+pub fn body_ik_status() -> Option<BodyIkStatus> {
     *BODY_IK_STATUS.lock()
 }
 
@@ -428,7 +426,7 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
             .then_some(BodyIkSkip::Disabled)
             .or((!headpose::is_active()).then_some(BodyIkSkip::HeadposeInactive))
             .or(headpose::anchor().is_none().then_some(BodyIkSkip::NoAnchor))
-            .or((!hooks::in_gameplay()).then_some(BodyIkSkip::NotInGameplay))
+            .or((!jc3vr_core::hooks::in_gameplay()).then_some(BodyIkSkip::NotInGameplay))
         {
             set_body_ik_status(BodyIkStatus::skipped(skip));
             return;

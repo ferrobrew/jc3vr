@@ -30,10 +30,10 @@ pub mod solve;
 use std::time::Instant;
 
 use glam::Vec3;
+use jc3vr_input::frame::{Hand, Pose};
 use parking_lot::Mutex;
 
 use crate::controllers::{
-    frame::{Hand, Pose},
     hands::CockpitHand,
     weapons::{
         ads::{

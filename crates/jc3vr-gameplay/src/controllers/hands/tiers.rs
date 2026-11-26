@@ -32,13 +32,13 @@ use jc3gi::{
     camera::game_camera_manager::GameCameraManager, character::character::Character,
     state::StateBitFlag,
 };
+use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
 use crate::controllers::{
     body::procedural::config::ProceduralMode,
     config::CONTROLLERS_CONFIG,
-    frame::Hand,
     hands::anchor::{ANCHOR_BLEND_S, AnchorConfig},
     loadout::live,
     mode::{self, AirborneVariant, CharacterSnapshot, Detection, Mode, OnFootVariant, Traversal},

@@ -7,6 +7,8 @@ use std::num::NonZeroUsize;
 
 use glam::{Mat4, Vec3};
 use jc3gi::{character::inventory::WeaponSlot, equipment::weapon::WeaponBase};
+use jc3vr_input::frame::Hand;
+use jc3vr_render::hooks::camera;
 
 pub(super) use crate::controllers::snatch::acquisition::{
     Fired, Freeing, Grabbed, Pulled, collect, fire_at,
@@ -18,7 +20,6 @@ use crate::{
             ray::Ray,
             raycast::{self, CastOptions},
         },
-        frame::Hand,
         grab::latch::GripLatch,
         hands::ik,
         haptics::{self, Sustain},
@@ -52,7 +53,6 @@ use crate::{
         line_grab,
         rope::{self, GRAVITY_MPS2, RopeFault},
     },
-    hooks::camera,
 };
 
 /// Fire the hook at what `grabbed` holds.

@@ -54,12 +54,12 @@ pub(crate) mod visual;
 pub mod yoke;
 
 use glam::{Quat, Vec2, Vec3};
+use jc3vr_input::frame::Hand;
 
 pub use crate::controllers::vehicles::physical::{
     cues::ControlCue, handlebars::bar_ends, sticks::stick_deflection,
 };
 use crate::controllers::{
-    frame::Hand,
     grab::{Candidate, GrabVolume},
     mode::VehicleClass,
     vehicles::{

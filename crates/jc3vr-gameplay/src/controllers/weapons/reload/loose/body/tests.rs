@@ -1,15 +1,14 @@
 use std::{num::NonZeroUsize, time::Instant};
 
+use jc3vr_input::frame::Hand;
+
 use super::*;
-use crate::controllers::{
-    frame::Hand,
-    weapons::reload::{
-        loose::{
-            Captured, LooseCounts,
-            records::{DropKey, Records},
-        },
-        tuning::RELOAD,
+use crate::controllers::weapons::reload::{
+    loose::{
+        Captured, LooseCounts,
+        records::{DropKey, Records},
     },
+    tuning::RELOAD,
 };
 
 struct FakeBodies {

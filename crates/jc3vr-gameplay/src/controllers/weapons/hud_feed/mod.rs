@@ -6,7 +6,7 @@
 //! draws. The HUD owns the drawing and everything it reads from the renderer; these modules hold
 //! only the data and its slot.
 
-pub(crate) mod grab_hint;
-pub(crate) mod hand_ammo;
-pub(crate) mod icon;
-pub(crate) mod lost_weapons;
+pub mod grab_hint;
+pub mod hand_ammo;
+pub mod icon;
+pub mod lost_weapons;

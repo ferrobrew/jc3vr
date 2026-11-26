@@ -5,44 +5,42 @@ use jc3gi::{
     equipment::weapon::WeaponBase,
     input::input_action_map::Action,
 };
+use jc3vr_input::frame::Hand;
+use jc3vr_render::vr::input::semantic::{bound::PhysicalSet, vocabulary::ActionId};
 
-use crate::{
-    controllers::{
-        aim::gun,
-        bindings::{
-            controls::Controls,
-            grapple_button::GrapplePermissions,
-            intents::SemanticInput,
-            policy_a::runtime::Tick,
-            tables::{
-                self,
-                describe::{Control, Effect, Gesture, ModAction, Row},
-            },
-            trigger_ownership::{Owner, TriggerMask},
-        },
-        config::ControllersConfig,
-        frame::Hand,
-        grab::{GrabVolume, GripTarget, PickupKind},
-        hands::{
-            late,
-            tiers::{self, HandTier, TierState},
-        },
-        mode::{AirborneVariant, Detection, Mode},
-        snatch,
-        summary::{
-            current::{CurrentRouting, TriggerUse},
-            eligibility::{Eligibility, SnatchHint},
-        },
-        vehicles::{
-            parachute::HandleHold, physical::ControlKind, wingsuit_gestures::GestureAvailability,
-        },
-        weapons::{
+use crate::controllers::{
+    aim::gun,
+    bindings::{
+        controls::Controls,
+        grapple_button::GrapplePermissions,
+        intents::SemanticInput,
+        policy_a::runtime::Tick,
+        tables::{
             self,
-            capabilities::{GunHand, GunOwner},
-            reload::{BeltEligibility, ReloadStatus},
+            describe::{Control, Effect, Gesture, ModAction, Row},
         },
+        trigger_ownership::{Owner, TriggerMask},
     },
-    vr::input::semantic::{bound::PhysicalSet, vocabulary::ActionId},
+    config::ControllersConfig,
+    grab::{GrabVolume, GripTarget, PickupKind},
+    hands::{
+        late,
+        tiers::{self, HandTier, TierState},
+    },
+    mode::{AirborneVariant, Detection, Mode},
+    snatch,
+    summary::{
+        current::{CurrentRouting, TriggerUse},
+        eligibility::{Eligibility, SnatchHint},
+    },
+    vehicles::{
+        parachute::HandleHold, physical::ControlKind, wingsuit_gestures::GestureAvailability,
+    },
+    weapons::{
+        self,
+        capabilities::{GunHand, GunOwner},
+        reload::{BeltEligibility, ReloadStatus},
+    },
 };
 
 /// State that can invalidate an offer between the provider pass and final publication.

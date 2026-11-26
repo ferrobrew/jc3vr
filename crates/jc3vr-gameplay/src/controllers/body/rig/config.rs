@@ -1,9 +1,8 @@
 //! The body rig's settings, under `controllers.body.rig` (`docs/mod/body/rig.md`).
 
 use body_rig::{PelvisTuning, StepTuning, YawTuning};
+use jc3vr_core::config::engine::Invalid;
 use serde::{Deserialize, Serialize};
-
-use crate::config::validate::Invalid;
 
 /// The body rig's switches and tuning. The switches default on; the tuning is the pure core's
 /// (`body-rig`), set from the offline evaluation of a standing session.
@@ -46,7 +45,7 @@ impl RigConfig {
         }
     }
 
-    pub(crate) fn validate(&self) -> Result<(), Invalid> {
+    pub fn validate(&self) -> Result<(), Invalid> {
         let p = &self.pelvis;
         let s = &self.step;
         let y = &self.yaw;

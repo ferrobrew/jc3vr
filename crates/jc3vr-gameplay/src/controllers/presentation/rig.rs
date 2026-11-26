@@ -100,7 +100,7 @@ impl Group {
     }
 
     /// The arm groups of one side: the upper arm, the forearm, and the hand. `side` is
-    /// [`Hand::index`](crate::controllers::frame::Hand::index), left then right.
+    /// [`Hand::index`](jc3vr_input::frame::Hand::index), left then right.
     pub const fn arm(side: usize) -> [Self; 3] {
         if side == 0 {
             [Self::LeftArm, Self::LeftForeArm, Self::LeftHand]

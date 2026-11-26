@@ -15,7 +15,7 @@ use crate::controllers::{
 };
 
 /// Each gun hand's speedloader on its belt pouch, by
-/// [`Hand::index`](crate::controllers::frame::Hand::index).
+/// [`Hand::index`](jc3vr_input::frame::Hand::index).
 #[derive(Debug, Copy, Clone)]
 pub(super) struct Speedloaders {
     groups: [Group; 2],
@@ -69,7 +69,7 @@ impl Speedloaders {
     }
 
     /// How many rounds each hand's speedloader shows, by
-    /// [`Hand::index`](crate::controllers::frame::Hand::index).
+    /// [`Hand::index`](jc3vr_input::frame::Hand::index).
     pub(super) fn shown(&self) -> [usize; 2] {
         self.groups.map(|g| if g.visible() { g.count } else { 0 })
     }
@@ -208,12 +208,11 @@ impl Group {
 
 #[cfg(test)]
 mod tests {
+    use jc3vr_input::frame::{Hand, Pose};
+    use jc3vr_render::controllers::cockpit::CockpitTransform;
+
     use super::*;
-    use crate::controllers::{
-        cockpit::CockpitTransform,
-        frame::{Hand, Pose},
-        weapons::reload::plan,
-    };
+    use crate::controllers::weapons::reload::plan;
 
     #[test]
     fn the_rounds_stand_mouth_up_on_the_pouch() {

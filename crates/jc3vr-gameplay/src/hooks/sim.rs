@@ -1,5 +1,5 @@
 //! Detours around the sim tick and its phases: timing for the always-on frame breakdown
-//! (`crate::frame_timing`) and, under the `profiler` feature, the profiler's flame graph; the input
+//! (`jc3vr_core::frame_timing`) and, under the `profiler` feature, the profiler's flame graph; the input
 //! job's thread role; the input tick's game stage; and the post-step observer
 //! ([`register_post_step`]), run after the world's post-simulation update.
 //!
@@ -27,7 +27,7 @@
 //! The rest of the tick is split in two by [`frame_timing::interval`]s: the head, from the tick's
 //! start to the world's pre-simulation queue, and the tail, from the end of the streaming block to
 //! the tick's end. The online managers, which run in both and keep their own clocks, are timed on
-//! their own inside them by `crate::hooks::online`.
+//! their own inside them by `jc3vr_core::hooks::online`.
 //!
 //! Threading: everything here except the AI thread bodies and the input job runs on the game thread,
 //! inside the engine's `Game::Update`.
@@ -40,25 +40,25 @@ use jc3gi::{
     game_world::GameWorld,
     update_queue::UpdateQueue,
 };
-use re_utilities::hook_library::HookLibrary;
-
-use crate::{
-    controllers::bindings::stage,
+use jc3vr_core::{
     frame_timing::{self, Interval, Slot},
     thread_role::{self, ThreadRole},
 };
+use re_utilities::hook_library::HookLibrary;
+
+use crate::controllers::bindings::stage;
 
 /// Register the observer that runs after each simulation step, at the end of the world's
 /// post-simulation update. One observer: a second registration is refused and logged.
 ///
 /// The observer is called on the game thread, after the step's physics phase and outside it.
-pub(crate) fn register_post_step(observer: unsafe fn()) {
+pub fn register_post_step(observer: unsafe fn()) {
     if POST_STEP.set(observer).is_err() {
         tracing::error!("sim: a post-step observer is already registered; keeping the first");
     }
 }
 
-pub(crate) fn hook_library() -> HookLibrary {
+pub fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_static_binder(&UPDATE_GAME_BINDER)
         .with_static_binder(&WORLD_UPDATE_PRE_SIM_BINDER)

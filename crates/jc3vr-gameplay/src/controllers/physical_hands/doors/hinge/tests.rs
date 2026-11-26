@@ -286,9 +286,10 @@ fn a_lid_stays_up_above_the_strut_and_falls_below_it() {
 
 #[test]
 fn a_known_canopy_in_the_front_left_slot_gets_lid_support() {
-    let canopy = table::parse(include_str!(
-        "../../../../../../tools/door_handles/door_handles.json"
-    ))
+    let canopy = table::parse(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../tools/door_handles/door_handles.json"
+    )))
     .unwrap()
     .into_iter()
     .find(|entry| entry.part == "fighterjet_door_f")

@@ -16,19 +16,15 @@ use jc3gi::{
     animation::ik::Effector,
     character::character::{AnimationController, Character, Joint, SafeBoneIndex},
 };
+use jc3vr_render::{controllers::cockpit::CockpitTransform, headpose, vr::VR_CONFIG};
 use parking_lot::Mutex;
 
 use crate::{
-    controllers::{
-        body::rig::{
-            self,
-            frames::{self, Divergence, Frames, Implausible, SkeletonLandmarks, divergence},
-        },
-        cockpit::CockpitTransform,
+    controllers::body::rig::{
+        self,
+        frames::{self, Divergence, Frames, Implausible, SkeletonLandmarks, divergence},
     },
-    headpose, hooks,
     hooks::character::body_ik::bone_for_effector,
-    vr::VR_CONFIG,
 };
 
 /// The tracing target for the divergence's once-a-second log. Public so that the debug UI can turn
@@ -117,7 +113,7 @@ pub unsafe fn after_solve(character: *mut Character) {
     let Some(character) = (unsafe { character.as_mut() }).filter(|c| c.m_IsLocalCharacter) else {
         return;
     };
-    if headpose::source() != headpose::Source::Vr || !hooks::in_gameplay() {
+    if headpose::source() != headpose::Source::Vr || !jc3vr_core::hooks::in_gameplay() {
         STATE.lock().memory.latest = None;
         return;
     }

@@ -15,7 +15,7 @@
 //!
 //! With the HUD atlas on, the capture seam moves the cross from wherever this placed it into an
 //! atlas cell for the capture, and the HUD draws that cell at the steering hand
-//! ([`crate::hud::anchored`], from [`crate::controllers::weapons::wheel::cross_anchor`]); the cross is moved back to this
+//! (`hud::anchored`, from [`crate::controllers::weapons::wheel::cross_anchor`]); the cross is moved back to this
 //! placement after the capture, so this stays the placement the game sees and the fallback
 //! whenever the atlas does not draw the cross.
 
@@ -31,16 +31,13 @@ use jc3gi::{
         ui_manager::{StageRect, UIManager},
     },
 };
+use jc3vr_input::frame::Pose;
+use jc3vr_render::hud::{
+    pointer::panel::{aim_at_panel, intersect_panel},
+    world_markers::stage_frame::StageFrame,
+};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
-
-use crate::{
-    controllers::frame::Pose,
-    hud::{
-        pointer::panel::{aim_at_panel, intersect_panel},
-        world_markers::stage_frame::StageFrame,
-    },
-};
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&UPDATE_WEAPON_SELECTION_PLACEMENT_BINDER)

@@ -5,30 +5,26 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use glam::{Mat4, Vec3};
 use jc3gi::{character::character::Character, graphics_engine::render_block::Matrix3x4};
+use jc3vr_core::render_frame::RenderFrameSlot;
+use jc3vr_input::frame::{self, Hand, Pose};
+use jc3vr_render::{controllers::cockpit::CockpitTransform, headpose, hooks::camera::eye_points};
 
-use crate::{
-    controllers::{
-        cockpit::CockpitTransform,
-        frame::{self, Hand, Pose},
-        hands::{
-            self, ActiveHands, ik,
-            late::{
-                bones::{self, HandBones, Solved},
-                math::{
-                    MAX_SHIFT_M, MAX_TURN_RAD, correction, interpolate_attached, keep_on_forearm,
-                    lerp_transform, pose_matrix, relative_metrics,
-                },
+use crate::controllers::{
+    hands::{
+        self, ActiveHands, ik,
+        late::{
+            bones::{self, HandBones, Solved},
+            math::{
+                MAX_SHIFT_M, MAX_TURN_RAD, correction, interpolate_attached, keep_on_forearm,
+                lerp_transform, pose_matrix, relative_metrics,
             },
-            palette::{self, PaletteLayout},
-            pose as hand_pose,
-            reach::{self, REACH, ReachTuning},
         },
-        physical_hands::{DrawTime, physics},
-        presentation,
+        palette::{self, PaletteLayout},
+        pose as hand_pose,
+        reach::{self, REACH, ReachTuning},
     },
-    headpose,
-    hooks::camera::eye_points,
-    render_frame::RenderFrameSlot,
+    physical_hands::{DrawTime, physics},
+    presentation,
 };
 
 /// A pose composed with both sides of the render-time head pose pair: `previous` with the
@@ -98,14 +94,14 @@ pub fn drawn_hands(dtf: f32) -> [Option<DrawnHand>; 2] {
 
 /// The world-space edit that carries a thing riding `hand`'s forearm, as the tick posed it, onto the
 /// forearm as the presentation layer draws it at `dtf`, or `None` while the layer re-poses nothing.
-pub(crate) fn drawn_forearm_delta(hand: Hand, dtf: f32) -> Option<Mat4> {
+pub fn drawn_forearm_delta(hand: Hand, dtf: f32) -> Option<Mat4> {
     let frame = FRAME.get().flatten()?;
     frame.forearm_delta(hand, dtf)
 }
 
 /// Count a palette upload edited by a draw outside this module (the presentation layer's), for the
 /// readout's tally.
-pub(crate) fn count_palette_edit() {
+pub fn count_palette_edit() {
     PALETTES_EDITED.fetch_add(1, Ordering::Relaxed);
 }
 
@@ -184,7 +180,7 @@ pub struct LateStatus {
 /// The late update's readout.
 pub fn status() -> LateStatus {
     let frame = FRAME.get().flatten();
-    let dtf = crate::hooks::camera::last_dtf();
+    let dtf = jc3vr_render::hooks::camera::last_dtf();
     let hands = frame.map_or([HandLateStatus::default(); 2], |frame| {
         Hand::BOTH.map(|hand| frame.hand_status(hand, dtf))
     });
@@ -209,7 +205,7 @@ pub fn status() -> LateStatus {
 
 /// Snapshot the frame's late-update inputs. Called once per rendered frame from `Game::UpdateRender`
 /// after the VR head pose pair is published and before the engine's render update.
-pub(crate) fn begin_frame() {
+pub fn begin_frame() {
     crate::controllers::hands::late::weapon::begin_frame();
     // All model and palette consumers share this post-step measurement for the rendered frame.
     unsafe { physics::sample_render_offsets() };
@@ -345,7 +341,7 @@ impl PaletteEdit {
 
 /// The palette edit for a draw of the local player's body whose instance matrix is `instance`, at
 /// the interpolation fraction `dtf`, or `None` when no hand is corrected.
-pub(crate) fn palette_edit(instance: Mat4, dtf: f32) -> Option<PaletteEdit> {
+pub fn palette_edit(instance: Mat4, dtf: f32) -> Option<PaletteEdit> {
     let frame = FRAME.get().flatten()?;
     let to_model = instance.inverse();
     let hands = Hand::BOTH.map(|hand| {
@@ -367,7 +363,7 @@ pub(crate) fn palette_edit(instance: Mat4, dtf: f32) -> Option<PaletteEdit> {
     })
 }
 
-pub(crate) fn shoulder_target(hand: Hand, dtf: f32) -> Option<Vec3> {
+pub fn shoulder_target(hand: Hand, dtf: f32) -> Option<Vec3> {
     let frame = FRAME.get().flatten()?;
     let target = frame.ticks.current[hand.index()]?;
     (target.owner == ik::TargetOwner::Controller)
@@ -375,20 +371,20 @@ pub(crate) fn shoulder_target(hand: Hand, dtf: f32) -> Option<Vec3> {
         .flatten()
 }
 
-pub(crate) fn arm_target(hand: Hand, dtf: f32) -> Option<(Pose, f32)> {
+pub fn arm_target(hand: Hand, dtf: f32) -> Option<(Pose, f32)> {
     let frame = FRAME.get().flatten()?;
     frame.arm_target(hand, dtf)
 }
 
 /// The world-space correction of `hand` at the interpolation fraction `dtf`, as a matrix, for a
 /// render seam that re-pushes a model riding that hand; `None` when the hand is not corrected.
-pub(crate) fn hand_correction(hand: Hand, dtf: f32) -> Option<Mat4> {
+pub fn hand_correction(hand: Hand, dtf: f32) -> Option<Mat4> {
     let frame = FRAME.get().flatten()?;
     frame.hand_delta(hand, dtf).map(pose_matrix)
 }
 
 /// Interpolate a model attachment in the same parent frame as this frame's hand references.
-pub(crate) fn interpolate_in_character(matrices: [Mat4; 2], dtf: f32) -> Mat4 {
+pub fn interpolate_in_character(matrices: [Mat4; 2], dtf: f32) -> Mat4 {
     let transport = FRAME.get().flatten().and_then(|frame| frame.transport);
     transport.map_or_else(
         || lerp_transform(matrices[0], matrices[1], dtf),

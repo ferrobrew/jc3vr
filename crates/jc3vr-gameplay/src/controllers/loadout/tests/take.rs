@@ -2,18 +2,16 @@
 //! pickup where the table cannot hold it, and the refusals.
 
 use jc3gi::character::inventory::WeaponSlot;
+use jc3vr_input::frame::Hand;
 use pretty_assertions::assert_eq;
 
 use super::fixtures::*;
-use crate::controllers::{
-    frame::Hand,
-    loadout::{
-        projection::{SlotContent, project},
-        socket::Socket,
-        table::Place,
-        take::{GameTake, TakeOffer, TakeRefusal, TakeRoute, TakeRules, route},
-        transition::{Take, TakeSource},
-    },
+use crate::controllers::loadout::{
+    projection::{SlotContent, project},
+    socket::Socket,
+    table::Place,
+    take::{GameTake, TakeOffer, TakeRefusal, TakeRoute, TakeRules, route},
+    transition::{Take, TakeSource},
 };
 
 const BOTH: TakeRules = TakeRules {

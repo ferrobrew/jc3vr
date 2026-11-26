@@ -35,6 +35,7 @@ use std::time::{Duration, Instant};
 
 use body_rig::smooth::smoothstep;
 use glam::{Quat, Vec3};
+use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
 pub use self::{
@@ -44,7 +45,6 @@ pub use self::{
         slide_on_bone, turn_on_wrist,
     },
 };
-use crate::controllers::frame::Hand;
 
 /// How far outside the gun's model box a hand still touches the gun, metres.
 pub const REACH_M: f32 = 0.05;

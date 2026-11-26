@@ -5,14 +5,10 @@
 
 use std::time::Duration;
 
-use crate::controllers::{
-    frame::Hand,
-    overlay::{
-        primitive::{
-            Anchor, DepthMode, Facing, HandPose, Primitive, Rgba, Shape, Source, SpriteSize,
-        },
-        store,
-    },
+use jc3vr_input::frame::Hand;
+use jc3vr_render::controllers::overlay::{
+    primitive::{Anchor, DepthMode, Facing, HandPose, Primitive, Rgba, Shape, Source, SpriteSize},
+    store,
 };
 
 /// Submit the guide while `shown`, lit while the arms steer (`engaged`), or clear it.

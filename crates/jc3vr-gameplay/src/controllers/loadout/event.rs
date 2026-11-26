@@ -7,19 +7,17 @@
 //! what changed for the log and, for a store or a cache, what the game's slots and the sidecar
 //! should hold before the game goes on.
 
-use crate::controllers::{
-    frame::Hand,
-    loadout::{
-        binding::ObjectAddress,
-        item::ItemId,
-        projection::{StoreProjection, project_store},
-        reset::{CacheKind, ResetKind, SlotObject},
-        socket::Socket,
-        table::Loadout,
-        transition::{
-            Give, LostWhy, Release, Removal, RemovalWhy, Restored, Take, Transition,
-            TransitionError,
-        },
+use jc3vr_input::frame::Hand;
+
+use crate::controllers::loadout::{
+    binding::ObjectAddress,
+    item::ItemId,
+    projection::{StoreProjection, project_store},
+    reset::{CacheKind, ResetKind, SlotObject},
+    socket::Socket,
+    table::Loadout,
+    transition::{
+        Give, LostWhy, Release, Removal, RemovalWhy, Restored, Take, Transition, TransitionError,
     },
 };
 

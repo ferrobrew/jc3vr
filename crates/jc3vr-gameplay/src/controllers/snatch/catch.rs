@@ -11,8 +11,7 @@
 
 use body_rig::geometry::segment_distance;
 use glam::Vec3;
-
-use crate::controllers::frame::Hand;
+use jc3vr_input::frame::Hand;
 
 /// The hand the line steers toward: of the hands `palms` offers (by [`Hand::index`], the free,
 /// empty hands' palms), the one nearest the segment from the target at `target` to the eyes at

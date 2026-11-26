@@ -1,10 +1,10 @@
 use std::num::NonZeroUsize;
 
 use jc3gi::{character::inventory::WeaponSlot, equipment::weapon::WeaponClass};
+use jc3vr_input::frame::Hand;
 
 use super::*;
 use crate::controllers::{
-    frame::Hand,
     loadout::{
         BodyLayout, ObjectAddress, Place, WeaponType,
         binding::{Awaiting, Binding},

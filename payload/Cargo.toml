@@ -11,7 +11,7 @@ default = ["profiler"]
 # The in-game profiler (issue #34): puffin scopes across the mod's hooks and the engine's frame
 # phases, a flame-graph panel in the Performance tab, and on-demand trace capture to disk.
 # Compile-time so the extra hooks and per-scope overhead vanish entirely when disabled.
-profiler = ["dep:puffin", "dep:puffin_egui", "jc3vr-core/profiler", "jc3vr-render/profiler"]
+profiler = ["dep:puffin", "dep:puffin_egui", "jc3vr-core/profiler", "jc3vr-render/profiler", "jc3vr-gameplay/profiler"]
 
 [dependencies]
 windows = { workspace = true }
@@ -24,13 +24,14 @@ jc3gi = { path = "../jc3gi" }
 jc3vr-core = { path = "../crates/jc3vr-core" }
 tracking-format = { path = "../crates/tracking-format" }
 body-rig = { path = "../crates/body-rig", features = ["serde"] }
-# The learned body estimator, run on the game's device through its Direct3D 11 executor.
-body-estimator = { path = "../crates/body-estimator" }
 # The input layer: the controller frame, motion, scheme, haptic mixer, and capture policy.
 jc3vr-input = { path = "../crates/jc3vr-input" }
 # The render layer: the OpenXR runtime, the head pose, stereo, FSR, the far field, the
 # engine-pipeline hooks, and the render diagnostics.
 jc3vr-render = { path = "../crates/jc3vr-render" }
+# The gameplay layer: the controller subsystems, the grapple, and the character, animation, input,
+# equipment, and sim detours.
+jc3vr-gameplay = { path = "../crates/jc3vr-gameplay" }
 # Runtime-loaded (`loaded` default feature): the OpenXR loader is opened at runtime via
 # `xr::Entry::load_from`, not linked, so an `openxr_loader.dll` must sit beside the payload DLL (see
 # the `vr` module docs). The `static` feature would build the loader in and drop that DLL, but it does
@@ -55,7 +56,6 @@ anyhow.workspace = true
 # `send_guard`: the VR frame context carries the runtime lock's guard for the frame, and the
 # deferred frame tail hands that context to the tail thread to submit.
 parking_lot = { version = "0.12.5", features = ["send_guard"] }
-arc-swap = "1.8"
 clipboard-win = "5.4.1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -77,5 +77,4 @@ jiff = "0.2.29"
 jc3vr-core = { path = "../crates/jc3vr-core", features = ["test-support"] }
 jc3vr-render = { path = "../crates/jc3vr-render", features = ["test-support"] }
 pretty_assertions = "1.4.1"
-proptest = "1.11.0"
 test-case = "3.3.1"

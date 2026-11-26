@@ -27,19 +27,17 @@ use jc3gi::{
     equipment::weapon::{WeaponBase, WeaponState},
     graphics_engine::model_instance::ModelInstanceFlags,
 };
+use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
-use crate::controllers::{
-    frame::Hand,
-    weapons::{
-        dual_wield::single,
-        engine::{self, character_object, object_of, slot_of, takeable_gun_slot},
-        hold::{
-            pickup::{self, Refusal},
-            rack::{offered_source, paired},
-            refs::Weak,
-            source::{Freed, SourceRefusal},
-        },
+use crate::controllers::weapons::{
+    dual_wield::single,
+    engine::{self, character_object, object_of, slot_of, takeable_gun_slot},
+    hold::{
+        pickup::{self, Refusal},
+        rack::{offered_source, paired},
+        refs::Weak,
+        source::{Freed, SourceRefusal},
     },
 };
 

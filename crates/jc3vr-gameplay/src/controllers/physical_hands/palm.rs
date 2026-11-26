@@ -2,8 +2,9 @@
 //! from.
 
 use glam::{Quat, Vec3};
+use jc3vr_input::frame::Pose;
 
-use crate::controllers::{frame::Pose, physical_hands::tuning::PalmTuning};
+use crate::controllers::physical_hands::tuning::PalmTuning;
 
 /// A palm box in the world: an oriented box in the wrist frame's axes.
 #[derive(Debug, Copy, Clone, PartialEq)]

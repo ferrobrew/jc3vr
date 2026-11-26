@@ -141,15 +141,13 @@ unsafe fn active(charge: usize) -> Option<*mut PlantedExplosive> {
 #[cfg(test)]
 mod tests {
     use glam::Vec3;
+    use jc3vr_input::frame::Hand;
 
     use super::*;
-    use crate::controllers::{
-        frame::Hand,
-        snatch::{
-            catch::{CatchHand, CatchTuning, CatchWatch},
-            rules::{FlightLimits, FlightSample, Verdict, verdict},
-            target::OfferKind,
-        },
+    use crate::controllers::snatch::{
+        catch::{CatchHand, CatchTuning, CatchWatch},
+        rules::{FlightLimits, FlightSample, Verdict, verdict},
+        target::OfferKind,
     };
 
     #[test]

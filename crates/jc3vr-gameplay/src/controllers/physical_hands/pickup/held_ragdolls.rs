@@ -4,14 +4,12 @@
 
 use std::num::NonZeroUsize;
 
+use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
-use crate::controllers::{
-    frame::Hand,
-    physical_hands::{
-        characters::{CharactersConfig, get_up},
-        pickup::{state::PickupState, tick::TickOutcome},
-    },
+use crate::controllers::physical_hands::{
+    characters::{CharactersConfig, get_up},
+    pickup::{state::PickupState, tick::TickOutcome},
 };
 
 /// Follow each hand's hold of a ragdoll after a pickup tick of `dt` seconds of game time: write

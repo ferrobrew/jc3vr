@@ -7,15 +7,15 @@
 //! and the world scale. The overlay's producers draw it into [`Source::BodyRig`] once per rendered
 //! frame ([`crate::controllers::overlay::producers`]).
 //!
-//! [`Source::BodyRig`]: crate::controllers::overlay::primitive::Source::BodyRig
+//! [`Source::BodyRig`]: jc3vr_render::controllers::overlay::primitive::Source::BodyRig
 
 use body_rig::StepPhase;
 use glam::{Quat, Vec3};
-
-use crate::controllers::{
-    body::rig::grounded::Diagnostics,
-    overlay::primitive::{Anchor, DepthMode, Facing, Primitive, Rgba, Shape, SpriteSize},
+use jc3vr_render::controllers::overlay::primitive::{
+    Anchor, DepthMode, Facing, Primitive, Rgba, Shape, SpriteSize,
 };
+
+use crate::controllers::body::rig::grounded::Diagnostics;
 
 /// Build the rig's diagnostics for `d`, with `view` the cockpit frame's rotation into the world and
 /// `scale` the world scale.

@@ -9,12 +9,12 @@ use std::num::NonZeroUsize;
 pub(crate) use engine::{Target, WireReading};
 use glam::Vec3;
 use jc3gi::{character::character::Character, equipment::grappling_hook::GrapplingHook};
+use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
 use crate::{
     controllers::{
         bindings::grapple_button::{SeatRequest, TAP_S},
-        frame::Hand,
         haptics::{self, Event},
     },
     grapple::hook::local,

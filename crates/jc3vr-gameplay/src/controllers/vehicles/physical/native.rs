@@ -288,13 +288,12 @@ pub fn asset(name: &str) -> Option<(ControlKind, Vec3, Vec3)> {
 
 #[cfg(test)]
 mod tests {
+    use jc3vr_input::frame::Hand;
+
     use super::*;
-    use crate::controllers::{
-        frame::Hand,
-        vehicles::{
-            physical::{ControlState, Hold, Placement, anchor_point},
-            tuning::PHYSICAL,
-        },
+    use crate::controllers::vehicles::{
+        physical::{ControlState, Hold, Placement, anchor_point},
+        tuning::PHYSICAL,
     };
 
     fn stick(name: &str, part_to_cockpit: Mat4) -> NativeStick {

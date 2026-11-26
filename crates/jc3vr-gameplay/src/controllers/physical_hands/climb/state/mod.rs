@@ -5,11 +5,11 @@
 use std::time::{Duration, Instant};
 
 use glam::{Affine3A, Quat, Vec3};
+use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
 use crate::controllers::{
     fingers::grip::{self, Grip as FingerGrip, GripSource},
-    frame::Hand,
     grab::GrabVolume,
     mode::{self, AirborneVariant, Mode, OnFootVariant},
     physical_hands::{
@@ -42,7 +42,7 @@ pub fn climbing() -> bool {
 }
 
 /// What each hand grips, as the last pre-simulation step left it, indexed by [`Hand::index`].
-pub(crate) fn gripped() -> [Option<Hold>; 2] {
+pub fn gripped() -> [Option<Hold>; 2] {
     let state = STATE.lock();
     if !state.stepped_lately(Instant::now()) {
         return [None; 2];
@@ -52,7 +52,7 @@ pub(crate) fn gripped() -> [Option<Hold>; 2] {
 
 /// The last mantle that landed on a moving body, once: the stunt positions take the player into
 /// a vehicle's stunt area from it. A landing older than a moment is dropped.
-pub(crate) fn take_landing()
+pub fn take_landing()
 -> Option<crate::controllers::physical_hands::climb::native::LandingOffer<'static>> {
     let context = unsafe { engine::gate_context() };
     crate::controllers::physical_hands::climb::native::observe(context);
@@ -64,7 +64,7 @@ pub(crate) fn take_landing()
 /// The static surface each hand reaches, as the palms' tick last found it: the hands push the body
 /// up only from a surface under them, which may be written as the player's support
 /// ([`crate::controllers::physical_hands::vault`]).
-pub(crate) fn static_reaches() -> [Option<Hold>; 2] {
+pub fn static_reaches() -> [Option<Hold>; 2] {
     let state = STATE.lock();
     let fresh = state.fresh(Instant::now());
     state
@@ -74,14 +74,14 @@ pub(crate) fn static_reaches() -> [Option<Hold>; 2] {
 }
 
 /// Whether the climbing is on: its switch, under the hand bodies, which it needs.
-pub(crate) fn enabled(config: &PhysicalHandsConfig) -> bool {
+pub fn enabled(config: &PhysicalHandsConfig) -> bool {
     config.climb.enabled && physics::enabled(config)
 }
 
 /// The surface `hand` could climb: the one its reach found, while the hand grips nothing. A hand
 /// that only presses into something its reach did not find offers nothing, since a grip there would
 /// have nothing to hold. Called from the input tick.
-pub(crate) fn reach_hold(hand: Hand) -> Option<Hold> {
+pub fn reach_hold(hand: Hand) -> Option<Hold> {
     let state = STATE.lock();
     let i = hand.index();
     if !state.fresh(Instant::now()) || state.grips[i].is_some() {
@@ -93,7 +93,7 @@ pub(crate) fn reach_hold(hand: Hand) -> Option<Hold> {
 /// Act on the input tick's grips: a grip pressed on the climb's grab volume asks the next step to
 /// grip the surface in reach, and a released grip asks it to let go. Called from the input tick
 /// after the tables, with each hand's held grip and the grab volume its press latched.
-pub(crate) fn finish_tick(held: [bool; 2], grabs: [Option<GrabVolume>; 2]) {
+pub fn finish_tick(held: [bool; 2], grabs: [Option<GrabVolume>; 2]) {
     crate::controllers::physical_hands::climb::native::observe(unsafe { engine::gate_context() });
     let mut state = STATE.lock();
     let now = Instant::now();
@@ -141,7 +141,7 @@ pub(crate) fn finish_tick(held: [bool; 2], grabs: [Option<GrabVolume>; 2]) {
     }
 }
 
-pub(crate) fn stand_down() {
+pub fn stand_down() {
     crate::controllers::physical_hands::climb::native::clear();
     let mut state = STATE.lock();
     state.requests = [None; 2];

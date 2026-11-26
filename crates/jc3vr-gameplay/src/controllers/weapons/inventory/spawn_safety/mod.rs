@@ -16,11 +16,10 @@ use std::{
     },
 };
 
-use parking_lot::Mutex;
-
-use crate::lifecycle::{
+use jc3vr_core::lifecycle::{
     DeferReason, Preparation, PrepareOutcome, PreparedParticipant, ShutdownParticipant,
 };
+use parking_lot::Mutex;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) enum RequestKind {
@@ -246,7 +245,7 @@ impl ShutdownParticipant for SpawnSafety {
             Admission::Preparing(_) | Admission::Committed
         ) {
             return PrepareOutcome::Deferred(DeferReason::ParticipantBusy(
-                crate::lifecycle::ParticipantId::InventorySpawn,
+                jc3vr_core::lifecycle::ParticipantId::InventorySpawn,
             ));
         }
         let previous = state.admission;

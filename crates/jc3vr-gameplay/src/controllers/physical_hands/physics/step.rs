@@ -5,42 +5,39 @@ use std::time::Instant;
 
 use glam::{Quat, Vec2, Vec3};
 use jc3gi::physics::PhysicsSystem;
+use jc3vr_input::frame::{Hand, Pose};
 
-use crate::{
-    controllers::{
-        aim::{
-            ray::Ray,
-            raycast::{self, CastOptions},
-        },
-        clock::TimeScale,
-        config::CONTROLLERS_CONFIG,
-        frame::{Hand, Pose},
-        mode,
-        physical_hands::{
-            climb, impacts, mode_acts,
-            physics::{
-                HAND_BODIES,
-                body::{BodyShape, BodySpec, Capsule, HandBody, player_system_group},
-                contact,
-                drive::{
-                    DriveTuning, Goal, JoinedLoad, PushTuning, contact_gain, lag_push, smooth_push,
-                },
-                guns::{self, step::GunStep},
-                joint::Joint,
-                lifecycle::{ActRequest, HANDS, RenderTuning},
-                render::RenderOffset,
-                state::{
-                    MAX_LEAD_S, PARK_AFTER, READOUT_PERIOD, RENDER_MAX_TURN_RAD,
-                    RENDER_TURN_DEADBAND_RAD, SHARED, count_step, current_at, enabled, gun_tuning,
-                    holding_tuning, press_load,
-                },
-                types::{BodyPhase, HandBodyStatus},
-            },
-            pickup::PICKUP,
-            stunt, vault,
-        },
+use crate::controllers::{
+    aim::{
+        ray::Ray,
+        raycast::{self, CastOptions},
     },
-    hooks,
+    clock::TimeScale,
+    config::CONTROLLERS_CONFIG,
+    mode,
+    physical_hands::{
+        climb, impacts, mode_acts,
+        physics::{
+            HAND_BODIES,
+            body::{BodyShape, BodySpec, Capsule, HandBody, player_system_group},
+            contact,
+            drive::{
+                DriveTuning, Goal, JoinedLoad, PushTuning, contact_gain, lag_push, smooth_push,
+            },
+            guns::{self, step::GunStep},
+            joint::Joint,
+            lifecycle::{ActRequest, HANDS, RenderTuning},
+            render::RenderOffset,
+            state::{
+                MAX_LEAD_S, PARK_AFTER, READOUT_PERIOD, RENDER_MAX_TURN_RAD,
+                RENDER_TURN_DEADBAND_RAD, SHARED, count_step, current_at, enabled, gun_tuning,
+                holding_tuning, press_load,
+            },
+            types::{BodyPhase, HandBodyStatus},
+        },
+        pickup::PICKUP,
+        stunt, vault,
+    },
 };
 
 /// The pre-simulation step: make, add, park, and drive the hand bodies. Called by the
@@ -49,7 +46,7 @@ use crate::{
 /// # Safety
 ///
 /// The thread that steps the physics world, outside the step.
-pub(crate) unsafe fn step() {
+pub unsafe fn step() {
     let now = Instant::now();
     // SAFETY: the physics step runs while the game runs.
     let time_scale = unsafe { TimeScale::current() };
@@ -62,9 +59,9 @@ pub(crate) unsafe fn step() {
     hands.placed = [false; 2];
     let reason = if !enabled(&config) {
         Some("the hand bodies are off")
-    } else if !hooks::in_gameplay() {
+    } else if !jc3vr_core::hooks::in_gameplay() {
         Some("the game left gameplay")
-    } else if crate::is_shutting_down() {
+    } else if jc3vr_core::is_shutting_down() {
         Some("the payload is shutting down")
     } else {
         None
@@ -484,7 +481,7 @@ pub(crate) fn physical_locomotion_allowed(
 
 /// The step the physics world takes, seconds: the engine's 30 Hz constant, to which the physics
 /// update pins whatever time it is given. Read by the drives, the climb, and the proxy's velocity.
-pub(crate) const fn step_seconds() -> f32 {
+pub const fn step_seconds() -> f32 {
     PhysicsSystem::STEP_SECONDS
 }
 

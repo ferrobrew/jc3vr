@@ -4,7 +4,7 @@ use jc3gi::equipment::weapon::WeaponBase;
 
 /// A weapon icon, by the weapon's id ([`WeaponBase::m_WeaponId`]).
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub(crate) struct IconId(pub i16);
+pub struct IconId(pub i16);
 
 impl IconId {
     /// The icon of `weapon`; none for a weapon without an id.

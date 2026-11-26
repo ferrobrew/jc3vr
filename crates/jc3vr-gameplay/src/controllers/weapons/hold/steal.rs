@@ -52,10 +52,10 @@ use jc3gi::{
     equipment::weapon::{WeaponBase, WeaponState},
     types::math::Vector3,
 };
+use jc3vr_input::frame::Pose;
 use parking_lot::Mutex;
 
 use crate::controllers::{
-    frame::Pose,
     hands::ik,
     loadout::TakeSource,
     weapons::{

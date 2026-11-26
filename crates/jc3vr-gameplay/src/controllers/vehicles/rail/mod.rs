@@ -47,6 +47,7 @@ use jc3gi::{
     character::character::Character,
     types::math::Vector3,
 };
+use jc3vr_core::hash::hashlittle;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
@@ -61,7 +62,6 @@ use crate::{
         },
         weapons::engine::character_position,
     },
-    hash::hashlittle,
     hooks::animation::{active_state_type_id, body_rule_system},
 };
 
@@ -264,7 +264,7 @@ fn evaluate(
 /// Whether the rail acts: the controllers' scheme, and its switch on.
 fn enabled() -> bool {
     scheme::is_controllers()
-        && !crate::is_shutting_down()
+        && !jc3vr_core::is_shutting_down()
         && CONTROLLERS_CONFIG.query(|c| c.enabled && c.vehicles.helicopter_rail)
 }
 

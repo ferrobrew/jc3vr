@@ -9,15 +9,13 @@
 use std::collections::HashMap;
 
 use glam::{Affine3A, Vec3};
+use jc3vr_render::controllers::overlay::primitive::{
+    Anchor, DepthMode, Facing, Primitive, Rgba, Shape, SpriteSize, scale_alpha,
+};
 
-use crate::controllers::{
-    overlay::primitive::{
-        Anchor, DepthMode, Facing, Primitive, Rgba, Shape, SpriteSize, scale_alpha,
-    },
-    physical_hands::collider_view::{
-        config::ColliderViewConfig,
-        model::{Aabb, Body, BodyKind, Geometry, JointKind, Snapshot, interpolate},
-    },
+use crate::controllers::physical_hands::collider_view::{
+    config::ColliderViewConfig,
+    model::{Aabb, Body, BodyKind, Geometry, JointKind, Snapshot, interpolate},
 };
 
 /// A contact to flash.

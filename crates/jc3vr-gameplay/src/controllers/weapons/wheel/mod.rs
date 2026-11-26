@@ -38,6 +38,7 @@ use jc3gi::{
     },
     ui::hud_ui::HUDUI,
 };
+use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
@@ -45,7 +46,6 @@ use crate::controllers::{
     aim::gun,
     bindings::hold::{Desired, MapKind, Target, Want},
     config::CONTROLLERS_CONFIG,
-    frame::Hand,
     hands,
     haptics::{self, Event},
     mode::Mode,
@@ -169,9 +169,9 @@ pub(crate) fn input_tick(inputs: &TickInputs, desired: &mut Vec<Desired>) -> Whe
 }
 
 /// Where the HUD draws the selection cross while the wheel shows it: at the steering hand
-/// ([`crate::hud::anchored`]).
+/// (`hud::anchored`).
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub(crate) struct CrossAnchor {
+pub struct CrossAnchor {
     /// The hand steering the wheel, or that steered it until it closed.
     pub hand: Hand,
     /// Whether the wheel is open.
@@ -182,11 +182,11 @@ pub(crate) struct CrossAnchor {
 
 /// How long the cross's anchor outlives the wheel's close: the length of the cross's hide
 /// animation.
-pub(crate) const CROSS_LINGER: Duration = Duration::from_millis(500);
+pub const CROSS_LINGER: Duration = Duration::from_millis(500);
 
 /// The selection cross's anchor: the steering hand while the wheel is open, and for
 /// [`CROSS_LINGER`] after it closes, so the cross's hide animation plays where it was.
-pub(crate) fn cross_anchor() -> Option<CrossAnchor> {
+pub fn cross_anchor() -> Option<CrossAnchor> {
     let (hand, closed_at) = (*ANCHOR.lock())?;
     let closed_s = closed_at.map_or(0.0, |at| at.elapsed().as_secs_f32());
     (closed_s <= CROSS_LINGER.as_secs_f32()).then_some(CrossAnchor {

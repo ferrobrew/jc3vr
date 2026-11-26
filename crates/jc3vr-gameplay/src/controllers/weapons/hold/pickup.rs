@@ -40,11 +40,11 @@ use jc3gi::{
     equipment::weapon::{WeaponBase, WeaponState},
     hash::hashlittle,
 };
+use jc3vr_input::frame::Hand;
 
 use crate::controllers::{
     aim::gun,
     config::CONTROLLERS_CONFIG,
-    frame::Hand,
     loadout::{
         Delivery, ObjectAddress, TakeSource, WeaponType, live, slot_label,
         take::{self, TakeOffer, TakeRefusal, TakeRoute, TakeRules},

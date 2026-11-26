@@ -21,16 +21,16 @@ use std::{fmt, time::Instant};
 use body_rig::{angle::yaw_of, rotation::level};
 pub(crate) use commands::desired_for;
 use glam::{Quat, Vec3};
+use jc3vr_input::frame::{ControllerFrame, Hand, Pose};
+pub(crate) use jc3vr_render::vr::input::flight_pose::{FlightPacket, GestureHead, GestureSample};
 
 use crate::controllers::{
     body::{self, BodyDimensions},
     config::GripOffset,
-    frame::{ControllerFrame, Hand, Pose},
     hands::pose::cockpit_hand,
     mode::{AirborneVariant, Mode, OnFootVariant},
     vehicles::{arm_steering::wrist_tilt, config::WingsuitGesturesConfig},
 };
-pub(crate) use crate::vr::input::flight_pose::{FlightPacket, GestureHead, GestureSample};
 
 /// A single transition request. The binding owner emits it once, never as a held toggle.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]

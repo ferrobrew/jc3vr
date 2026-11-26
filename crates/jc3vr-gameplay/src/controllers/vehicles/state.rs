@@ -4,13 +4,13 @@
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use glam::Vec3;
+use jc3vr_input::frame::{Hand, Pose};
+use jc3vr_render::controllers::overlay::{primitive::Source, store};
 use parking_lot::Mutex;
 
 use crate::controllers::{
-    frame::{Hand, Pose},
     hands::{self, CockpitHand, tiers},
     mode::VehicleSeat,
-    overlay::{primitive::Source, store},
     vehicles::{
         arm_steering as arm,
         config::{MountedConfig, ParachuteHandlesConfig},

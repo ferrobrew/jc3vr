@@ -29,10 +29,9 @@ use jc3gi::{
     physics::GameMaterialId,
     types::math::{Matrix4, Vector3},
 };
+use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
-
-use crate::controllers::frame::Hand;
 
 /// The impact sounds' settings, `physical_hands.sounds`.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]

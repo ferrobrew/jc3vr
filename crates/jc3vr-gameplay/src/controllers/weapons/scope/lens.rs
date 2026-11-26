@@ -1,5 +1,5 @@
 //! The lens's geometry, all pure: where the eyepiece is, which eye sights through it, and the lens
-//! draw it hands the pass ([`crate::controllers::weapons::scope::pass`]), which holds the draw's
+//! draw it hands the pass ([`jc3vr_render::controllers::weapons::scope::pass`]), which holds the draw's
 //! constants.
 //!
 //! The sight line is kept in the holding hand's wrist frame between aim updates, so the lens follows
@@ -13,13 +13,10 @@
 //! image, so the image is correct at the target and the parallax between the eyes vanishes there.
 
 use glam::Vec3;
+use jc3vr_input::frame::{Hand, Pose};
+use jc3vr_render::controllers::weapons::scope::pass::LensDraw;
 
-use crate::controllers::{
-    aim::ray::Ray,
-    frame::{Hand, Pose},
-    hands::pose as hand_pose,
-    weapons::scope::pass::LensDraw,
-};
+use crate::controllers::{aim::ray::Ray, hands::pose as hand_pose};
 
 /// The lens's fixed tuning.
 pub const LENS: LensTuning = LensTuning {
@@ -138,11 +135,11 @@ const MIN_FOCUS_M: f32 = 1.0;
 #[cfg(test)]
 mod tests {
     use glam::{Mat4, Quat, Vec2, Vec4};
-
-    use super::*;
-    use crate::controllers::weapons::scope::pass::{
+    use jc3vr_render::controllers::weapons::scope::pass::{
         EyeCamera, LensConstants, field_tangent, lens_basis,
     };
+
+    use super::*;
 
     /// The scene point the lens shows at `q` (the lens's unit disc, +x right and +y up), relative to
     /// the source eye: `eyepiece_from_source` is the eyepiece relative to that eye. The lens pixel shader

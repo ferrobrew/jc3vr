@@ -110,7 +110,7 @@ pub(crate) fn in_stock() -> bool {
 }
 
 /// The stock as the last read found it.
-pub(crate) fn last() -> Option<Stock> {
+pub fn last() -> Option<Stock> {
     *CACHED.lock()
 }
 
@@ -191,7 +191,7 @@ pub(crate) unsafe fn set(count: i32) -> Option<i32> {
 }
 
 /// The stock's capacity, for a fill, or `None` for an uncapped reserve.
-pub(crate) fn capacity() -> Option<i32> {
+pub fn capacity() -> Option<i32> {
     CACHED.lock().and_then(|stock| stock.capacity)
 }
 

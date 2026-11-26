@@ -45,6 +45,12 @@ use std::{
 use body_rig::body::EYES_TO_NECK;
 use glam::{Mat4, Quat, Vec3};
 use jc3gi::character::character::{AnimationController, Character, Joint};
+use jc3vr_core::{
+    frame_timing::{self, Slot},
+    render_frame::RenderFrameSlot,
+};
+use jc3vr_input::frame::{Hand, Pose};
+use jc3vr_render::{headpose, vr::VR_CONFIG};
 use parking_lot::Mutex;
 use smol_str::{SmolStr, ToSmolStr};
 
@@ -53,27 +59,20 @@ pub use crate::controllers::presentation::{
     config::PresentationConfig,
     edit::{BodyEdit, DrawEdit},
 };
-use crate::{
-    controllers::{
-        body::procedural::{
-            self,
-            skeleton::{self, SkeletonKey},
-        },
-        config::CONTROLLERS_CONFIG,
-        frame::{Hand, Pose},
-        hands::{ik, late, pose as hand_pose, reach::REACH},
-        mode::{self, Mode},
-        presentation::{
-            edit::{DrawnArms, PaletteRegistration},
-            rig::{Group, GroupMap, PresentationRig},
-            solve::{ArmDrive, ArmJoints, ElbowDrive, Motion, UpperBody, head_motion, solve},
-        },
-        roomscale::teleport,
+use crate::controllers::{
+    body::procedural::{
+        self,
+        skeleton::{self, SkeletonKey},
     },
-    frame_timing::{self, Slot},
-    headpose, hooks,
-    render_frame::RenderFrameSlot,
-    vr::VR_CONFIG,
+    config::CONTROLLERS_CONFIG,
+    hands::{ik, late, pose as hand_pose, reach::REACH},
+    mode::{self, Mode},
+    presentation::{
+        edit::{DrawnArms, PaletteRegistration},
+        rig::{Group, GroupMap, PresentationRig},
+        solve::{ArmDrive, ArmJoints, ElbowDrive, Motion, UpperBody, head_motion, solve},
+    },
+    roomscale::teleport,
 };
 
 /// Why the layer is or is not re-posing the body.
@@ -249,7 +248,7 @@ pub(crate) unsafe fn after_solve(character: *mut Character) {
 /// Snapshot the frame's inputs: the last two ticks, the render-time head pose pair, and the
 /// settings. Called once per rendered frame from `Game::UpdateRender`, after the head pose pair is
 /// published and before the engine's render update and the draws.
-pub(crate) fn begin_frame() {
+pub fn begin_frame() {
     let start = Instant::now();
     let _timing = frame_timing::scope(Slot::Presentation);
     roll_cost();
@@ -262,7 +261,7 @@ pub(crate) fn begin_frame() {
         .filter(|t| start.saturating_duration_since(t.at) <= STALE_AFTER);
     let (idle, frame) = if !config.enabled {
         (Idle::Off, None)
-    } else if headpose::source() != headpose::Source::Vr || !hooks::in_gameplay() {
+    } else if headpose::source() != headpose::Source::Vr || !jc3vr_core::hooks::in_gameplay() {
         (Idle::NotInHeadset, None)
     } else if rig_failed {
         (Idle::NoRig, None)

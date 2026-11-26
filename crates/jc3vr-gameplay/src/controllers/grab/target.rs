@@ -3,11 +3,9 @@
 //! drawn. Pure.
 
 use glam::Vec3;
+use jc3vr_input::frame::Hand;
 
-use crate::controllers::{
-    frame::Hand,
-    grab::{Category, GrabVolume},
-};
+use crate::controllers::grab::{Category, GrabVolume};
 
 /// Something a hand could take, as its provider places it on the input tick.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -150,7 +148,7 @@ pub struct Mark {
     pub size: f32,
     pub style: MarkStyle,
     pub shown: Shown,
-    /// A short name drawn above the marker while it shows ([`crate::hud::mark_labels`]).
+    /// A short name drawn above the marker while it shows (`hud::mark_labels`).
     pub label: Option<&'static str>,
 }
 

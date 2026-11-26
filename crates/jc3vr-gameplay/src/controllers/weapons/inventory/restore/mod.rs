@@ -41,24 +41,22 @@ use jc3gi::{
     spawn_system::SpawnSystem,
     types::{math::Matrix4, shared_ptr::SharedPtr, std_vector::Vector},
 };
+use jc3vr_core::config::engine::paths;
 use parking_lot::Mutex;
 
-use crate::{
-    config::paths,
-    controllers::{
-        hands::ik,
-        weapons::{
-            dual_wield::single,
-            engine::weapon_at,
-            hold::refs::Strong,
-            inventory::{
-                carry,
-                config::InventoryConfig,
-                engine::{self as inventory_engine, kind_of},
-                persist::{Fingerprint, MAX_BYTES, RESERVES, Record, SLOTS, Sidecar},
-                sidecar,
-                spawn_safety::{self, RequestKind},
-            },
+use crate::controllers::{
+    hands::ik,
+    weapons::{
+        dual_wield::single,
+        engine::weapon_at,
+        hold::refs::Strong,
+        inventory::{
+            carry,
+            config::InventoryConfig,
+            engine::{self as inventory_engine, kind_of},
+            persist::{Fingerprint, MAX_BYTES, RESERVES, Record, SLOTS, Sidecar},
+            sidecar,
+            spawn_safety::{self, RequestKind},
         },
     },
 };
@@ -233,7 +231,7 @@ pub(crate) fn on_frontend() {
 ///
 /// `save_data` must be the save data the store is given, live for the call.
 pub(crate) unsafe fn on_store(save_data: *const PlayerSaveData, settings: &InventoryConfig) {
-    if crate::is_shutting_down() || !(settings.enabled && settings.carry && settings.persist) {
+    if jc3vr_core::is_shutting_down() || !(settings.enabled && settings.carry && settings.persist) {
         return;
     }
     let Some(character) = (unsafe { character_of(save_data) }) else {
@@ -304,7 +302,7 @@ pub(crate) unsafe fn on_load(save_data: *const PlayerSaveData, settings: &Invent
 ///
 /// `owner` must be the live local player character, on the game thread before the world update.
 pub(crate) unsafe fn input_tick(owner: &mut Character, settings: &InventoryConfig, ready: bool) {
-    if !ready || crate::is_shutting_down() || !crate::hooks::in_gameplay() {
+    if !ready || jc3vr_core::is_shutting_down() || !jc3vr_core::hooks::in_gameplay() {
         return;
     }
     let enabled = settings.enabled && settings.carry;

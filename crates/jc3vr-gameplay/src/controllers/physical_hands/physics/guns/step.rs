@@ -15,28 +15,26 @@ use std::time::Instant;
 use body_rig::{geometry::point_velocity, rotation::angle};
 use glam::Vec3;
 use jc3gi::physics::CustomGroupCollisionFilter;
+use jc3vr_input::frame::{Hand, Pose};
 use parking_lot::Mutex;
 
-use crate::controllers::{
-    frame::{Hand, Pose},
-    physical_hands::physics::{
-        body::{BodyError, BodyShape, BodySpec, HandBody},
-        config::{BraceConfig, HeldGunsTuning},
-        contact::{self, Source},
-        drive::BodyMotion,
-        guns::{
-            GunBodyStatus, GunHolds, HeldGun, SHARED,
-            engine::{GunError, GunSource, check_own_body, read_source},
-            math::{
-                BRACE_BREAK_STEPS, GunAxes, MAX_GRIP_SEAT_M, MassSource, brace_broken, brace_due,
-                brace_palm, clamp_velocity, class_value, deviation, gun_mass, intended_seat, limit,
-                seat, seated, settled, shot_impulse, strayed,
-            },
+use crate::controllers::physical_hands::physics::{
+    body::{BodyError, BodyShape, BodySpec, HandBody},
+    config::{BraceConfig, HeldGunsTuning},
+    contact::{self, Source},
+    drive::BodyMotion,
+    guns::{
+        GunBodyStatus, GunHolds, HeldGun, SHARED,
+        engine::{GunError, GunSource, check_own_body, read_source},
+        math::{
+            BRACE_BREAK_STEPS, GunAxes, MAX_GRIP_SEAT_M, MassSource, brace_broken, brace_due,
+            brace_palm, clamp_velocity, class_value, deviation, gun_mass, intended_seat, limit,
+            seat, seated, settled, shot_impulse, strayed,
         },
-        joint::Joint,
-        lifecycle::{Hands, PLACED_MUTE_STEPS},
-        types::BodyPhase,
     },
+    joint::Joint,
+    lifecycle::{Hands, PLACED_MUTE_STEPS},
+    types::BodyPhase,
 };
 
 /// A holding hand's gun body.

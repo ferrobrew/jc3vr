@@ -4,9 +4,11 @@
 //! A hand takes hold when its grip is pressed with its ray on the panel, after a released sample,
 //! so a grip already held as the pointer starts never grabs. One hand holds at a time. The grab
 //! lasts while the grip is held and the hand stays tracked, and ends when either stops. The
-//! placement the grab moves lives in [`crate::hud::egui_panel`].
+//! placement the grab moves lives in `hud::egui_panel`.
 
-use crate::controllers::{bindings::pointer::controller::TriggerSample, frame::Hand};
+use jc3vr_input::frame::Hand;
+
+use crate::controllers::bindings::pointer::controller::TriggerSample;
 
 /// What one hand offers the grab on one tick.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]

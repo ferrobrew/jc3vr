@@ -25,20 +25,17 @@
 //! tracked ([`active_hands`]), and each part has its toggle in [`HandsConfig`].
 
 use glam::{Quat, Vec3};
+use jc3vr_input::frame::{self, ControllerFrame, Hand, Pose};
+use jc3vr_render::{headpose, vr::VR_CONFIG};
 use re_utilities::hook_library::HookLibrary;
 
-use crate::{
-    controllers::{
-        body::{self, BodyDimensions, rig as body_rig},
-        config::{CONTROLLERS_CONFIG, ControllersConfig, HandsConfig},
-        frame::{self, ControllerFrame, Hand, Pose},
-        hands::reach::{ArmRemap, ReachLimit},
-        physical_hands::{self, DrawTime, physics::guns},
-        scheme, vehicles,
-        weapons::{ads, collide, recoil},
-    },
-    headpose, hooks,
-    vr::VR_CONFIG,
+use crate::controllers::{
+    body::{self, BodyDimensions, rig as body_rig},
+    config::{CONTROLLERS_CONFIG, ControllersConfig, HandsConfig},
+    hands::reach::{ArmRemap, ReachLimit},
+    physical_hands::{self, DrawTime, physics::guns},
+    scheme, vehicles,
+    weapons::{ads, collide, recoil},
 };
 
 pub mod anchor;
@@ -207,7 +204,7 @@ pub(crate) fn ik_owned() -> [bool; 2] {
         || !scheme::is_controllers()
         || headpose::source() != headpose::Source::Vr
         || !headpose::is_active()
-        || !hooks::in_gameplay()
+        || !jc3vr_core::hooks::in_gameplay()
         || headpose::xr::cockpit_pose().is_none()
     {
         return [false; 2];

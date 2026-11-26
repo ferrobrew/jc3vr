@@ -1,19 +1,21 @@
 //! The raw-input tables' declarations, frozen.
 
 use jc3gi::input::input_action_map::Action::{self, *};
+use jc3vr_input::frame::Hand;
 
 use crate::controllers::{
     bindings::{
         controls::Controls,
         tables::tests::legacy::sink::{
-            Axis, Direction, Gate, Input,
-            Input::{A, B, GripDefault, Stick, StickClick, TrackpadLeft, TrackpadRight, Trigger},
+            Axis, Direction, Gate,
+            Input::{
+                self, A, B, GripDefault, Stick, StickClick, TrackpadLeft, TrackpadRight, Trigger,
+            },
             Press,
             Role::{self, Dom, Left, Off, Right},
             Sink,
         },
     },
-    frame::Hand,
     mode::{AirborneVariant, Mode, VehicleClass, VehicleSeat},
 };
 

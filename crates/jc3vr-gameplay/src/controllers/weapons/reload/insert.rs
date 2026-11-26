@@ -13,8 +13,9 @@
 
 use body_rig::smooth::smoothstep;
 use glam::{Quat, Vec3};
+use jc3vr_input::frame::Hand;
 
-use crate::controllers::{frame::Hand, weapons::reload::tuning::Reload};
+use crate::controllers::weapons::reload::tuning::Reload;
 
 /// Where the insertion is.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]

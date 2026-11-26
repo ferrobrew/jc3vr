@@ -5,14 +5,13 @@
 
 use std::{fmt, num::NonZeroU64};
 
-use crate::controllers::{
-    frame::Hand,
-    loadout::{
-        Socket,
-        binding::Binding,
-        item::{ItemId, ItemKind},
-        table::{Departure, Docked, Item, ItemView, Loadout, Place},
-    },
+use jc3vr_input::frame::Hand;
+
+use crate::controllers::loadout::{
+    Socket,
+    binding::Binding,
+    item::{ItemId, ItemKind},
+    table::{Departure, Docked, Item, ItemView, Loadout, Place},
 };
 
 /// An opaque item lease identity, distinct from an object address.

@@ -5,21 +5,19 @@ use std::cell::RefCell;
 
 use glam::{Mat4, Vec3};
 use jc3gi::graphics_engine::render_block::Matrix3x4;
+use jc3vr_render::hooks::graphics_engine::palette_edit::{BodyPaletteEdit, PlayerDrawEdits};
 
-use crate::{
-    controllers::{
-        diagnostics,
-        hands::{
-            late::{self, PaletteEdit},
-            palette::{self, PaletteLayout},
-        },
-        presentation::{
-            draw_edit,
-            rig::{Group, GroupMap, MAX_BONES},
-            solve::Edits,
-        },
+use crate::controllers::{
+    diagnostics,
+    hands::{
+        late::{self, PaletteEdit},
+        palette::{self, PaletteLayout},
     },
-    hooks::graphics_engine::palette_edit::{BodyPaletteEdit, PlayerDrawEdits},
+    presentation::{
+        draw_edit,
+        rig::{Group, GroupMap, MAX_BONES},
+        solve::Edits,
+    },
 };
 
 /// What a draw of the player's body re-poses: the whole upper body from the presentation layer, or

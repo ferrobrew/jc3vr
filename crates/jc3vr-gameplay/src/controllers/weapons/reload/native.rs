@@ -21,11 +21,11 @@
 use std::time::{Duration, Instant};
 
 use jc3gi::{character::character::Character, equipment::weapon::WeaponBase};
+use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
 use crate::controllers::{
     config::ControllersConfig,
-    frame::Hand,
     weapons::{
         dual_wield::single,
         engine::reserve,

@@ -32,11 +32,11 @@ use jc3gi::{
     graphics_engine::model_instance::{Model, ModelInstance},
     types::shared_ptr::SharedPtr,
 };
+use jc3vr_input::frame::{Hand, Pose};
 use parking_lot::Mutex;
 
 use crate::controllers::{
     bindings::controls::ButtonControl,
-    frame::{Hand, Pose},
     hands::{
         held::{self, HoldPlacement},
         late,
@@ -162,7 +162,7 @@ pub(crate) unsafe fn place_model(held: Option<(Hand, Pose)>) {
 /// # Safety
 ///
 /// The game thread, outside the world update.
-pub(crate) unsafe fn render_frame(dtf: f32) {
+pub unsafe fn render_frame(dtf: f32) {
     let model = MODEL.lock();
     let Some(hand) = model.hand.filter(|_| model.owned.visible()) else {
         return;
@@ -229,7 +229,7 @@ static CLEANUP_REGISTERED: AtomicBool = AtomicBool::new(false);
 
 fn ensure_cleanup() {
     if !CLEANUP_REGISTERED.swap(true, Ordering::AcqRel) {
-        crate::lifecycle::on_cleanup(|_renderer| {
+        jc3vr_core::lifecycle::on_cleanup(|_renderer| {
             // SAFETY: the shutdown cleanups run on the game thread, outside the game's update.
             unsafe { MODEL.lock().release() };
         });

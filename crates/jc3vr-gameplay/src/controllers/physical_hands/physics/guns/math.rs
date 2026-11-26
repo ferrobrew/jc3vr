@@ -4,9 +4,9 @@
 
 use body_rig::rotation::{angle, angle_between, angular_velocity, clamp_angle};
 use glam::{Mat4, Vec3};
+use jc3vr_input::frame::Pose;
 
 use crate::controllers::{
-    frame::Pose,
     hands::{CockpitHand, pose as hand_pose},
     physical_hands::physics::{
         config::{BraceConfig, GunClassValues, HeldGunsTuning},

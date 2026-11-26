@@ -20,22 +20,20 @@
 
 use body_rig::angle::wrap;
 use glam::{Quat, Vec3};
+use jc3vr_input::frame::Hand;
 
-use crate::controllers::{
-    frame::Hand,
-    vehicles::{
-        physical::{ControlState, Holding, Placement},
-        steering::{WheelCue, cue_at_lock},
-        tuning::HandlebarsSpec,
-        wheel::BarsFrame,
-    },
+use crate::controllers::vehicles::{
+    physical::{ControlState, Holding, Placement},
+    steering::{WheelCue, cue_at_lock},
+    tuning::HandlebarsSpec,
+    wheel::BarsFrame,
 };
 
 /// The handlebars as the holding hands took them.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub(super) struct BarsLatch {
     /// Which hands held the bars when the latch was taken, indexed by
-    /// [`Hand::index`](crate::controllers::frame::Hand::index).
+    /// [`Hand::index`](jc3vr_input::frame::Hand::index).
     holders: [bool; 2],
     /// The bars' turn then, radians.
     bars: f32,
@@ -140,7 +138,7 @@ pub(super) fn bar_turn(centre: Vec3, grips: [Option<Vec3>; 2]) -> Option<f32> {
     Some(across.z.atan2(across.x))
 }
 
-/// The handlebars' grips, indexed by [`Hand::index`](crate::controllers::frame::Hand::index), for
+/// The handlebars' grips, indexed by [`Hand::index`](jc3vr_input::frame::Hand::index), for
 /// the bars turned by `turn` radians.
 pub fn bar_ends(centre: Vec3, half_width: f32, turn: f32) -> [Vec3; 2] {
     let across = Quat::from_rotation_y(-turn) * Vec3::X;

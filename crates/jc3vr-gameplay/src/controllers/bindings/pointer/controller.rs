@@ -8,20 +8,20 @@
 
 use std::time::Instant;
 
-use parking_lot::Mutex;
-
-use crate::{
-    controllers::{
-        bindings::{
-            controls::ButtonControl,
-            intents::Intent,
-            pointer::{aim_hold::AimHold, registered_hud},
-        },
-        frame::{ActionSetKind, ControllerFrame, Hand, MAX_FRAME_AGE},
-        scheme,
-    },
+use jc3vr_input::frame::{ActionSetKind, ControllerFrame, Hand, MAX_FRAME_AGE};
+use jc3vr_render::{
     headpose,
     hud::pointer::panel::{PanelHit, aim_at_panel, intersect_panel},
+};
+use parking_lot::Mutex;
+
+use crate::controllers::{
+    bindings::{
+        controls::ButtonControl,
+        intents::Intent,
+        pointer::{aim_hold::AimHold, registered_hud},
+    },
+    scheme,
 };
 
 /// The controller-owned game-UI pointer for this tick.

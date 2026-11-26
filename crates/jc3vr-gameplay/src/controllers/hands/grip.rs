@@ -54,12 +54,12 @@ use jc3gi::{
     equipment::weapon::{WeaponBase, WeaponData, WeaponState},
     types::math::Matrix4,
 };
+use jc3vr_input::frame::{Hand, Pose};
 use parking_lot::Mutex;
 
 use crate::controllers::{
     aim::gun,
     config::CONTROLLERS_CONFIG,
-    frame::{Hand, Pose},
     hands::{ik, pose as hand_pose},
     physical_hands::physics::guns,
     weapons::{
@@ -195,7 +195,7 @@ pub const AUTO_TURN_DEG: f32 = 45.0;
 /// How a hand's last placement fared at reading its canonical grip.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 #[repr(u8)]
-pub(crate) enum GripRead {
+pub enum GripRead {
     /// The canonical grip was read, or found cached.
     Read = 1,
     /// The wrist or an attach bone did not resolve on the skeleton.
@@ -206,7 +206,7 @@ pub(crate) enum GripRead {
 
 /// Each hand's last canonical grip read, indexed by [`Hand::index`], or `None` before the hand
 /// placed a gun. Atomics only, so any thread may read it.
-pub(crate) fn grip_reads() -> [Option<GripRead>; 2] {
+pub fn grip_reads() -> [Option<GripRead>; 2] {
     READS
         .each_ref()
         .map(|read| match read.load(Ordering::Relaxed) {

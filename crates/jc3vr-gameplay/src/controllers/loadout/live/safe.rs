@@ -3,20 +3,16 @@
 //! Mutations publish hand occupancy immediately. Model allocation, native activation, and resource
 //! cleanup remain with the grenade controller, outside the live table's lock.
 
-use crate::controllers::{
-    frame::Hand,
-    loadout::{
-        ItemId,
-        live::{LIVE, Live},
-        safe_items::{ItemLeaseId, SafeItemError, SafeItemView},
-        table::Place,
-    },
+use jc3vr_input::frame::Hand;
+
+use crate::controllers::loadout::{
+    ItemId,
+    live::{LIVE, Live},
+    safe_items::{ItemLeaseId, SafeItemError, SafeItemView},
+    table::Place,
 };
 
-pub(crate) fn admit_safe_item(
-    model: ItemLeaseId,
-    hand: Hand,
-) -> Result<SafeItemView, SafeItemError> {
+pub fn admit_safe_item(model: ItemLeaseId, hand: Hand) -> Result<SafeItemView, SafeItemError> {
     let mut live = LIVE.lock();
     require_available(&live)?;
     let result = live.table.admit_safe_item(model, hand);
@@ -30,7 +26,7 @@ pub(crate) fn admit_safe_item(
     result
 }
 
-pub(crate) fn admit_safe_item_to_world(model: ItemLeaseId) -> Result<SafeItemView, SafeItemError> {
+pub fn admit_safe_item_to_world(model: ItemLeaseId) -> Result<SafeItemView, SafeItemError> {
     let mut live = LIVE.lock();
     require_available(&live)?;
     let result = live.table.admit_safe_item_to_world(model);
@@ -44,7 +40,7 @@ pub(crate) fn admit_safe_item_to_world(model: ItemLeaseId) -> Result<SafeItemVie
     result
 }
 
-pub(crate) fn move_safe_item(
+pub fn move_safe_item(
     expected: SafeItemView,
     destination: Place,
 ) -> Result<SafeItemView, SafeItemError> {
@@ -62,7 +58,7 @@ pub(crate) fn move_safe_item(
 }
 
 /// Retire an item even during a reset so the resource owner can complete cleanup.
-pub(crate) fn retire_safe_item(expected: SafeItemView) -> Result<ItemLeaseId, SafeItemError> {
+pub fn retire_safe_item(expected: SafeItemView) -> Result<ItemLeaseId, SafeItemError> {
     let mut live = LIVE.lock();
     let result = live.table.retire_safe_item(expected);
     match &result {
@@ -75,11 +71,11 @@ pub(crate) fn retire_safe_item(expected: SafeItemView) -> Result<ItemLeaseId, Sa
     result
 }
 
-pub(crate) fn safe_item(id: ItemId) -> Option<SafeItemView> {
+pub fn safe_item(id: ItemId) -> Option<SafeItemView> {
     LIVE.lock().table.safe_item(id)
 }
 
-pub(crate) fn safe_items() -> Vec<SafeItemView> {
+pub fn safe_items() -> Vec<SafeItemView> {
     LIVE.lock().table.safe_items().collect()
 }
 

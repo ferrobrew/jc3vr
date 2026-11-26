@@ -69,15 +69,13 @@ pub use config::{HAND_BODIES, HandBodiesConfig, HandHitsTuning};
 pub(crate) use joint::{affine as havok_affine, vector as havok_vector};
 pub(crate) use lifecycle::release_body_joints;
 
-pub(crate) use self::{
+pub use self::{
     observe::{apply, apply_at_render, frame_tick, observe, sample_render_offsets},
     state::{
-        body_pose, drives, enabled, pressing, publish_holds, publish_pins, push, take_joint_losses,
+        body_pose, callback_status, drives, enabled, pressing, publish_holds, publish_pins, push,
+        status, take_joint_losses,
     },
     step::{step, step_seconds},
-};
-pub use self::{
-    state::{callback_status, status},
     types::{BodyPhase, CallbackStatus, HandBodiesStatus, HandBodyStatus, HoldTarget},
 };
 
@@ -86,14 +84,12 @@ mod tests {
     use std::num::NonZeroUsize;
 
     use glam::{Quat, Vec3};
+    use jc3vr_input::frame::Pose;
 
-    use crate::controllers::{
-        frame::Pose,
-        physical_hands::{
-            characters::RAGDOLL_CARRY_STRENGTH,
-            physics::{HAND_BODIES, HoldTarget, drive::DriveTuning, state::holding_tuning},
-            pickup::PICKUP,
-        },
+    use crate::controllers::physical_hands::{
+        characters::RAGDOLL_CARRY_STRENGTH,
+        physics::{HAND_BODIES, HoldTarget, drive::DriveTuning, state::holding_tuning},
+        pickup::PICKUP,
     };
 
     #[test]

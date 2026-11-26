@@ -1,9 +1,9 @@
 //! The support and weight targets shared by the physical hand drive and its drawn reference.
 
 use glam::Vec3;
+use jc3vr_input::frame::Hand;
 
 use crate::controllers::{
-    frame::Hand,
     hands::CockpitHand,
     physical_hands::physics::{
         guns::{self, GunHolds},
@@ -53,10 +53,10 @@ mod tests {
     use std::num::NonZeroUsize;
 
     use glam::Quat;
+    use jc3vr_input::frame::Pose;
 
     use super::*;
     use crate::controllers::{
-        frame::Pose,
         hands::pose as hand_pose,
         physical_hands::{
             palm::PalmBox,

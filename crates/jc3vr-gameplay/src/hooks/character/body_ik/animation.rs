@@ -7,13 +7,12 @@ use jc3gi::{
     animation::pose_producer::QsTransform, character::character::AnimationController,
     types::math::Matrix4,
 };
-use parking_lot::Mutex;
-
-use crate::headpose::{
+use jc3vr_render::headpose::{
     Source,
     anchors::{Context, Identity, Sample},
     animation::{RotationFilter, eye_arm, head_frame, synthetic_rotation},
 };
+use parking_lot::Mutex;
 
 /// All gameplay modes share this history. A mode switch does not reseed the view from a transient
 /// entry pose; pause, tracking loss, recenter, teleport, and skeleton changes break continuity.

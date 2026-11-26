@@ -17,20 +17,18 @@ use jc3gi::{
     location::Location,
     types::math::Matrix4,
 };
+use jc3vr_core::hash::hashlittle;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::{
-    controllers::weapons::grenade::locker::{
-        Identity, Provider, Source,
-        format::{Dictionary, MAX_BYTES, dictionary, grenade_model},
-    },
-    hash::hashlittle,
+use crate::controllers::weapons::grenade::locker::{
+    Identity, Provider, Source,
+    format::{Dictionary, MAX_BYTES, dictionary, grenade_model},
 };
 
 pub(super) fn hook_library() -> HookLibrary {
     if !CLEANUP.swap(true, Ordering::AcqRel) {
-        crate::lifecycle::on_cleanup(|_| {
+        jc3vr_core::lifecycle::on_cleanup(|_| {
             let mut registry = REGISTRY.lock();
             registry.closed = true;
             registry.collections.clear();

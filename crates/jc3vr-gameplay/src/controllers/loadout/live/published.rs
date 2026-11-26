@@ -13,19 +13,17 @@
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
-use crate::controllers::{
-    frame::Hand,
-    loadout::{
-        binding::ObjectAddress,
-        item::{ItemId, ItemKind},
-        table::{Loadout, Place},
-    },
+use crate::controllers::loadout::{
+    binding::ObjectAddress,
+    item::{ItemId, ItemKind},
+    table::{Loadout, Place},
 };
 
 /// The hand holding the weapon at `address`, when the table has it in one.
-pub(crate) fn hand_of(address: usize) -> Option<Hand> {
+pub fn hand_of(address: usize) -> Option<Hand> {
     if address == 0 {
         return None;
     }
@@ -35,12 +33,12 @@ pub(crate) fn hand_of(address: usize) -> Option<Hand> {
 }
 
 /// What the table has in `hand`, of any kind, when it has an item there.
-pub(crate) fn held_kind(hand: Hand) -> Option<ItemKind> {
+pub fn held_kind(hand: Hand) -> Option<ItemKind> {
     HELD.lock()[hand.index()]
 }
 
 /// The weapon in `hand`, when the table has one there.
-pub(crate) fn in_hand(hand: Hand) -> Option<usize> {
+pub fn in_hand(hand: Hand) -> Option<usize> {
     match HANDS[hand.index()].load(Ordering::Relaxed) {
         0 => None,
         address => Some(address),
@@ -48,7 +46,7 @@ pub(crate) fn in_hand(hand: Hand) -> Option<usize> {
 }
 
 /// Where on the body the table has the object at `address`: a hand or a socket.
-pub(crate) fn place_of(address: usize) -> Option<Place> {
+pub fn place_of(address: usize) -> Option<Place> {
     PLACES
         .lock()
         .iter()
@@ -57,7 +55,7 @@ pub(crate) fn place_of(address: usize) -> Option<Place> {
 }
 
 /// The item the table binds to the object at `address` on the body.
-pub(crate) fn item_of(address: usize) -> Option<ItemId> {
+pub fn item_of(address: usize) -> Option<ItemId> {
     PLACES
         .lock()
         .iter()

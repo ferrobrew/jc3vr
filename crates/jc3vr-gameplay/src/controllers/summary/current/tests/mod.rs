@@ -1,24 +1,23 @@
 use std::sync::Arc;
 
+use jc3vr_render::vr::input::semantic::{
+    SemanticSet,
+    bound::{EnumeratedSource, SourceTable},
+    vocabulary::OnFootAction,
+};
+
 use super::*;
-use crate::{
-    controllers::{
-        bindings::tables::{
-            declare::TableCtx,
-            describe::{DescribeCtx, Features, StickDir, describe_bound, describe_sources},
-        },
-        grab::GrabVolume,
-        mode::OnFootVariant,
-        summary::{
-            eligibility::{self, Eligibility},
-            localise::humanise,
-            retain_wrist,
-        },
+use crate::controllers::{
+    bindings::tables::{
+        declare::TableCtx,
+        describe::{DescribeCtx, Features, StickDir, describe_bound, describe_sources},
     },
-    vr::input::semantic::{
-        SemanticSet,
-        bound::{EnumeratedSource, SourceTable},
-        vocabulary::OnFootAction,
+    grab::GrabVolume,
+    mode::OnFootVariant,
+    summary::{
+        eligibility::{self, Eligibility},
+        localise::humanise,
+        retain_wrist,
     },
 };
 

@@ -3,7 +3,7 @@
 //!
 //! While enabled (from the debug UI's Camera tab; off by default), one row is written per input
 //! tick (`tick`) and per rendered VR frame (`frame`) to a new file in the session's grapple logs
-//! (see [`crate::session`]). The file is created lazily on
+//! (see [`jc3vr_core::session`]). The file is created lazily on
 //! the first row, and toggling off and on starts a fresh file, so captures with different settings
 //! stay separate. A dedicated file rather than the tracing stack because the capture is a dense
 //! machine-read stream that must survive log-filter changes and re-injection.
@@ -15,10 +15,11 @@ use std::{
 };
 
 use glam::{Quat, Vec3};
+use jc3vr_core::session::CaptureFile;
+pub use jc3vr_render::headpose::FrameTelemetry;
 use parking_lot::Mutex;
 
-pub use crate::headpose::FrameTelemetry;
-use crate::{grapple::filter_snapshot, session::CaptureFile};
+use crate::grapple::filter_snapshot;
 
 /// Whether the capture is running.
 pub fn log_enabled() -> bool {
@@ -34,7 +35,7 @@ pub fn set_log_enabled(enabled: bool) {
 }
 
 /// Log one input tick's filter state (no-op when disabled). Called from
-/// [`crate::headpose::sim::on_input_tick`] after [`crate::grapple::advance`]; `dt` is the engine's tick
+/// [`jc3vr_render::headpose::sim::on_input_tick`] after [`crate::grapple::advance`]; `dt` is the engine's tick
 /// delta.
 pub fn log_tick(body: Quat, dt: f32) {
     if !log_enabled() {
@@ -132,8 +133,10 @@ fn write_row(kind: &str, fields: &str) {
 /// Create a fresh timestamped capture file with its header, or `None` (with a warning logged) when
 /// the path cannot be resolved or created.
 fn open_capture() -> Option<TelemetryWriter> {
-    let path = match crate::session::capture_file(CaptureFile::GrappleLog, &crate::session::stamp())
-    {
+    let path = match jc3vr_core::session::capture_file(
+        CaptureFile::GrappleLog,
+        &jc3vr_core::session::stamp(),
+    ) {
         Ok(path) => path,
         Err(e) => {
             tracing::warn!("grapple telemetry: {e}");

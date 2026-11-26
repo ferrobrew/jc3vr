@@ -41,36 +41,33 @@ use std::{num::NonZeroUsize, time::Instant};
 pub use config::{GlassConfig, GlassTuning};
 use glam::Vec3;
 use jc3gi::physics::{GameMaterialId, PhysicsSystem};
+use jc3vr_core::thread_role::{self, ThreadRole};
+use jc3vr_input::frame::{Hand, Pose};
+use jc3vr_render::controllers::cockpit::CockpitTransform;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::{
-    controllers::{
-        aim::{
-            ray::Ray,
-            raycast::{self, CastOptions, RaycastError},
-        },
-        cockpit::CockpitTransform,
-        config::CONTROLLERS_CONFIG,
-        frame::{Hand, Pose},
-        glass::{
-            engine::{HideRefusal, Pane},
-            strike::{Limiter, Outcome, STRIKERS, Sample, Striker, StrikerKind},
-        },
-        hands::{self, ActiveHands, CockpitHand},
-        haptics::{self, Event},
-        loadout::{ItemKind, live},
-        physical_hands::{
-            self,
-            palm::PalmBox,
-            sounds::{self, MeleeImpact},
-            tuning::PALMS,
-        },
-        scheme,
-        weapons::{self, collide},
+use crate::controllers::{
+    aim::{
+        ray::Ray,
+        raycast::{self, CastOptions, RaycastError},
     },
-    hooks,
-    thread_role::{self, ThreadRole},
+    config::CONTROLLERS_CONFIG,
+    glass::{
+        engine::{HideRefusal, Pane},
+        strike::{Limiter, Outcome, STRIKERS, Sample, Striker, StrikerKind},
+    },
+    hands::{self, ActiveHands, CockpitHand},
+    haptics::{self, Event},
+    loadout::{ItemKind, live},
+    physical_hands::{
+        self,
+        palm::PalmBox,
+        sounds::{self, MeleeImpact},
+        tuning::PALMS,
+    },
+    scheme,
+    weapons::{self, collide},
 };
 
 /// Why breaking glass stands down this tick.
@@ -141,9 +138,9 @@ pub fn status() -> GlassStatus {
 /// # Safety
 ///
 /// The game thread, outside the world update and the physics step.
-pub(crate) unsafe fn main_thread_tick() {
+pub unsafe fn main_thread_tick() {
     let config = CONTROLLERS_CONFIG.lock().glass;
-    let active = config.enabled && scheme::is_controllers() && hooks::in_gameplay();
+    let active = config.enabled && scheme::is_controllers() && jc3vr_core::hooks::in_gameplay();
     let idle = if !active {
         Some(Idle::Disabled)
     } else if thread_role::current() != ThreadRole::Game {

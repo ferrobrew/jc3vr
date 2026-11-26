@@ -3,10 +3,12 @@
 use std::time::Instant;
 
 use glam::Mat4;
+use jc3vr_render::controllers::body::rig::origin_provenance::{
+    OriginEvidence, OriginUnavailable, TrackingReceipt,
+};
 
 use crate::controllers::body::rig::{
     collision::probe,
-    origin_provenance::{OriginEvidence, OriginUnavailable, TrackingReceipt},
     root::{
         Sim,
         ledger::{CompletedMovement, LedgerCompletion},

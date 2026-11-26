@@ -37,8 +37,7 @@ use jc3gi::{
     blackboard::{ObjectBlackboard, PersistenceType},
     types::math::Vector3,
 };
-
-use crate::controllers::frame::Hand;
+use jc3vr_input::frame::Hand;
 
 /// Which parts of the `SECONDARY` pass to switch off for a hand.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]

@@ -8,7 +8,9 @@
 //!
 //! [`PlantedExplosiveWeapon::m_IsInPlantingMode`]: jc3gi::equipment::weapon::PlantedExplosiveWeapon::m_IsInPlantingMode
 
-use crate::controllers::{frame::Hand, weapons::c4::stage::Stage};
+use jc3vr_input::frame::Hand;
+
+use crate::controllers::weapons::c4::stage::Stage;
 
 /// The hands a charge from the wheel may go to.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]

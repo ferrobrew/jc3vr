@@ -1,11 +1,10 @@
-use super::*;
-use crate::{
-    controllers::bindings::controls::{Controls, HandControls},
-    vr::input::semantic::{
-        defaults::default_binding,
-        vocabulary::{MenuAction, OnFootAction},
-    },
+use jc3vr_render::vr::input::semantic::{
+    defaults::default_binding,
+    vocabulary::{MenuAction, OnFootAction},
 };
+
+use super::*;
+use crate::controllers::bindings::controls::{Controls, HandControls};
 
 const DOWN: ButtonControl = ButtonControl {
     down: true,

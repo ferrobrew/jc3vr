@@ -12,7 +12,7 @@ use crate::controllers::physical_hands::{
 pub(crate) const SCAN_CAPACITY: usize = 12;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) enum Branch {
+pub enum Branch {
     Ray,
     Press,
     DoorPanel,
@@ -20,7 +20,7 @@ pub(crate) enum Branch {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) enum ScanResult {
+pub enum ScanResult {
     Offered,
     StaticWorld,
     StandingOn,
@@ -36,7 +36,7 @@ pub(crate) enum ScanResult {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub(crate) struct ScanEntry {
+pub struct ScanEntry {
     pub branch: Branch,
     pub object: Option<NonZeroUsize>,
     pub body: Option<u32>,
@@ -48,7 +48,7 @@ pub(crate) struct ScanEntry {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub(crate) struct Scan {
+pub struct Scan {
     pub entries: [Option<ScanEntry>; SCAN_CAPACITY],
     pub omitted: usize,
     pub ray_ran: bool,

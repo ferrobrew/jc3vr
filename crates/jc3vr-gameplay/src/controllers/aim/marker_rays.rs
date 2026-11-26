@@ -1,4 +1,4 @@
-//! The raycast fallback for the world markers' surface placement ([`crate::hud::world_markers`]):
+//! The raycast fallback for the world markers' surface placement (`hud::world_markers`):
 //! markers the render thread could not sample the scene depth for (no recent depth result) get a
 //! physics raycast from the head toward their world point instead.
 //!
@@ -19,7 +19,7 @@ use crate::controllers::aim::{
 
 /// What a depth or ray probe says about the line of sight to a marker.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub(crate) enum Sight {
+pub enum Sight {
     /// The nearest surface along the line of sight is this far from the eye, in metres.
     Surface(f32),
     /// Nothing blocks the line of sight before the point.
@@ -28,7 +28,7 @@ pub(crate) enum Sight {
 
 /// A result together with when it was read back.
 #[derive(Clone, Copy)]
-pub(crate) struct Timed {
+pub struct Timed {
     pub sight: Sight,
     pub at: Instant,
 }
@@ -40,7 +40,7 @@ pub(crate) struct Timed {
 /// `owner` must be the live local player character, on the simulation thread outside the physics
 /// step.
 pub(crate) unsafe fn resolve_rays(owner: &Character, enabled: bool) {
-    let _timing = crate::frame_timing::scope(crate::frame_timing::Slot::WorldMarkers);
+    let _timing = jc3vr_core::frame_timing::scope(jc3vr_core::frame_timing::Slot::WorldMarkers);
     if !enabled {
         return;
     }
@@ -48,7 +48,7 @@ pub(crate) unsafe fn resolve_rays(owner: &Character, enabled: bool) {
     if requests.is_empty() {
         return;
     }
-    let head = crate::headpose::query().position;
+    let head = jc3vr_render::headpose::query().position;
     // SAFETY: the owner is the live local player; its vehicle pointer is live or null.
     let options = unsafe { CastOptions::ignoring_rider(owner) }.seeing_through();
     let now = Instant::now();
@@ -72,17 +72,17 @@ pub(crate) unsafe fn resolve_rays(owner: &Character, enabled: bool) {
 }
 
 /// Replace the markers awaiting a raycast (render thread).
-pub(crate) fn request(markers: Vec<(u32, Vec3)>) {
+pub fn request(markers: Vec<(u32, Vec3)>) {
     *REQUESTS.lock() = markers;
 }
 
 /// The latest raycast result for each marker (render thread).
-pub(crate) fn result(id: u32) -> Option<Timed> {
+pub fn result(id: u32) -> Option<Timed> {
     RESULTS.lock().as_ref()?.get(&id).copied()
 }
 
 /// Forget results older than `ttl_s` seconds (render thread).
-pub(crate) fn expire(ttl_s: f32) {
+pub fn expire(ttl_s: f32) {
     if let Some(table) = RESULTS.lock().as_mut() {
         table.retain(|_, timed| timed.at.elapsed().as_secs_f32() < ttl_s);
     }

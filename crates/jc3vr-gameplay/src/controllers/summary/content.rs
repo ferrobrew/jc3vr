@@ -1,16 +1,15 @@
 //! The summary's content and layout model: the described rows labelled, grouped by hand, and the
 //! sizes the panel lays them out at. Pure.
 
-use crate::{
-    controllers::{
-        bindings::tables::describe::{Control, Effect, Row},
-        frame::Hand,
-        mode::Mode,
-        summary::labels::{
-            ActionLabel, HOLD_KEY, ModText, Text, action_label, gesture_prefix, heading, mod_action,
-        },
+use jc3vr_input::frame::Hand;
+use jc3vr_render::vr::input::semantic::bound::SourceName;
+
+use crate::controllers::{
+    bindings::tables::describe::{Control, Effect, Row},
+    mode::Mode,
+    summary::labels::{
+        ActionLabel, HOLD_KEY, ModText, Text, action_label, gesture_prefix, heading, mod_action,
     },
-    vr::input::semantic::bound::SourceName,
 };
 
 /// The labelled summary of one mode.
@@ -194,18 +193,16 @@ pub const MAX_ROW_PX: f32 = 64.0;
 #[cfg(test)]
 mod tests {
     use jc3gi::input::input_action_map::Action::*;
+    use jc3vr_render::vr::input::semantic::{
+        SemanticSet,
+        bound::{EnumeratedSource, SourceTable},
+    };
 
     use super::*;
-    use crate::{
-        controllers::{
-            bindings::tables::describe::{Gesture, ModAction, StickDir},
-            mode::OnFootVariant,
-            summary::localise::humanise,
-        },
-        vr::input::semantic::{
-            SemanticSet,
-            bound::{EnumeratedSource, SourceTable},
-        },
+    use crate::controllers::{
+        bindings::tables::describe::{Gesture, ModAction, StickDir},
+        mode::OnFootVariant,
+        summary::localise::humanise,
     };
 
     const ON_FOOT: Mode = Mode::OnFoot(OnFootVariant::Ground);

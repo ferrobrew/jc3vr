@@ -12,14 +12,13 @@
 
 use std::time::{Duration, Instant};
 
-use crate::{
-    controllers::{
-        config::{BindingsConfig, InputConfig},
-        frame::{Button, ButtonSet, ControllerFrame, Edges, Hand, HandFrame},
-    },
+use jc3vr_input::frame::{Button, ButtonSet, ControllerFrame, Edges, Hand, HandFrame};
+use jc3vr_render::{
     headpose::config::{VrTurnConfig, VrTurnMode},
     vr::input::semantic::admission::hand_usable,
 };
+
+use crate::controllers::config::{BindingsConfig, InputConfig};
 
 /// One hand's recovery state, for the tick report.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
@@ -305,6 +304,7 @@ impl MaskWait {
 mod tests {
     use glam::Vec2;
     use jc3gi::input::input_action_map::Action;
+    use jc3vr_input::frame::{ActionSetKind, Button, Hand, InteractionProfile, derive_buttons};
 
     use super::*;
     use crate::controllers::{
@@ -316,7 +316,6 @@ mod tests {
             yank::LineYank,
         },
         config::BindingsConfig,
-        frame::{ActionSetKind, Button, Hand, InteractionProfile, derive_buttons},
     };
 
     fn policy() -> NeutralPolicy {

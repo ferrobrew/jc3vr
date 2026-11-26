@@ -1,5 +1,5 @@
 //! Each hand's gun as the input tick samples it for the HUD's ammunition counter
-//! ([`crate::hud::anchored`]): its magazine, its reserve, and its model's box.
+//! (`hud::anchored`): its magazine, its reserve, and its model's box.
 //!
 //! The input tick samples each hand's gun ([`observe`], on the game thread where the table keeps
 //! the guns alive), and the HUD reads the latest sample ([`sampled`]) on the render thread. The
@@ -15,14 +15,14 @@ use crate::controllers::weapons::{engine::reserve, regions::engine::model_box};
 /// A gun model's box in the gun's own frame (+Y up, -Z toward the muzzle, the origin at the
 /// pistol grip), metres.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub(crate) struct ModelBox {
+pub struct ModelBox {
     pub min: Vec3,
     pub max: Vec3,
 }
 
 /// One hand's gun as the input tick read it.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub(crate) struct HandAmmo {
+pub struct HandAmmo {
     /// The gun's address.
     pub weapon: usize,
     /// The rounds in its magazine.
@@ -35,13 +35,13 @@ pub(crate) struct HandAmmo {
     pub model: Option<ModelBox>,
 }
 
-/// The input tick's sample: each hand's gun, by [`Hand::index`](crate::controllers::frame::Hand::index).
+/// The input tick's sample: each hand's gun, by [`Hand::index`](jc3vr_input::frame::Hand::index).
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
-pub(crate) struct HandsAmmo {
+pub struct HandsAmmo {
     pub hands: [Option<HandAmmo>; 2],
 }
 
-/// Sample the gun in each hand, by [`Hand::index`](crate::controllers::frame::Hand::index), for the HUD. Called each input tick of the
+/// Sample the gun in each hand, by [`Hand::index`](jc3vr_input::frame::Hand::index), for the HUD. Called each input tick of the
 /// weapon handling.
 ///
 /// # Safety
@@ -80,7 +80,7 @@ pub(crate) fn clear() {
 }
 
 /// The last sample.
-pub(crate) fn sampled() -> Option<HandsAmmo> {
+pub fn sampled() -> Option<HandsAmmo> {
     *SAMPLE.lock()
 }
 

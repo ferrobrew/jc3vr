@@ -35,13 +35,11 @@ use jc3gi::{
     game::GameObjectRenderContext,
     types::math::Matrix4,
 };
+use jc3vr_input::frame::{Hand, Pose};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::controllers::{
-    frame::{Hand, Pose},
-    hands::late,
-};
+use crate::controllers::hands::late;
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new()

@@ -1,8 +1,7 @@
+use jc3vr_core::lifecycle::{Preparation, PrepareOutcome};
+
 use super::*;
-use crate::{
-    controllers::loadout::Socket,
-    lifecycle::{Preparation, PrepareOutcome},
-};
+use crate::controllers::loadout::Socket;
 
 #[test]
 fn clear_reset_and_expiry_never_erase_callback_exposure_or_block_preparation() {
@@ -28,7 +27,7 @@ fn clear_reset_and_expiry_never_erase_callback_exposure_or_block_preparation() {
     let record = Record {
         tag_hash: 7,
         magazine: 5,
-        socket: Socket::Shoulder(crate::controllers::frame::Hand::Right),
+        socket: Socket::Shoulder(jc3vr_input::frame::Hand::Right),
         single: false,
     };
     PLAN.lock().spawning.push(Spawning {

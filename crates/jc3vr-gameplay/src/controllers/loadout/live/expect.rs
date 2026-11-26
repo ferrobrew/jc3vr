@@ -10,12 +10,11 @@
 
 use std::fmt;
 
-use crate::controllers::{
-    frame::Hand,
-    loadout::{
-        binding::ObjectAddress,
-        transition::{Delivery, TakeSource},
-    },
+use jc3vr_input::frame::Hand;
+
+use crate::controllers::loadout::{
+    binding::ObjectAddress,
+    transition::{Delivery, TakeSource},
 };
 
 /// How long a hand expects a weapon, seconds.
@@ -23,7 +22,7 @@ pub(crate) const PENDING_S: f32 = 3.0;
 
 /// What a grab told its hand to expect.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) enum Expect {
+pub enum Expect {
     /// A draw off the body.
     Draw,
     /// A take from this source, delivered this way.
@@ -42,7 +41,7 @@ impl fmt::Display for Expect {
 
 /// A hand expecting the game to wield a weapon.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub(crate) struct Pending {
+pub struct Pending {
     pub hand: Hand,
     pub expect: Expect,
     /// The weapon the hand is for, when it is known.

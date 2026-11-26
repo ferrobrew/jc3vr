@@ -80,7 +80,7 @@ pub(crate) mod grenade_moves;
 pub mod grip_watch;
 pub mod heft;
 pub mod hold;
-pub(crate) mod hud_feed;
+pub mod hud_feed;
 pub mod inventory;
 pub mod opening;
 pub(crate) mod permission;
@@ -131,13 +131,13 @@ pub(crate) fn hook_library() -> HookLibrary {
 #[cfg(test)]
 mod tests {
     use jc3gi::{character::inventory::WeaponSlot, input::input_action_map::Action};
+    use jc3vr_input::frame::Hand;
 
     use crate::controllers::{
         bindings::{
             controls::ButtonControl,
             hold::{Desired, MapKind, Target, Want},
         },
-        frame::Hand,
         grab::GrabVolume,
         loadout::{Socket, grab::SocketRefusal},
         mode::{AirborneVariant, Mode, OnFootVariant},

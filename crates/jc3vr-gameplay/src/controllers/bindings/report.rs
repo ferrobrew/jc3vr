@@ -49,7 +49,7 @@ pub struct TickReport {
     pub writes: Vec<ReportedWrite>,
 }
 
-/// Each hand's input recovery at the last input tick, in [`Hand::index`](crate::controllers::frame::Hand::index) order. Safe to call with
+/// Each hand's input recovery at the last input tick, in [`Hand::index`](jc3vr_input::frame::Hand::index) order. Safe to call with
 /// the config locked: it takes only a lock that is never held while taking
 /// another.
 pub fn recovery_status() -> [HandRecovery; 2] {

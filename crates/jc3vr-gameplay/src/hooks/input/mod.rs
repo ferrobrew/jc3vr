@@ -2,8 +2,8 @@
 
 use re_utilities::hook_library::HookLibrary;
 
-pub(crate) mod config;
-pub(crate) use config::MovementConfig;
+pub mod config;
+pub use config::MovementConfig;
 
 pub mod air;
 pub mod locomotion;
@@ -12,7 +12,7 @@ pub mod parachute;
 pub mod swim;
 pub mod wingsuit;
 
-pub(crate) fn hook_library() -> HookLibrary {
+pub fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_hook_library(air::hook_library())
         .with_hook_library(locomotion::hook_library())

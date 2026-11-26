@@ -27,23 +27,21 @@ pub(crate) mod simulate;
 mod tests;
 
 use glam::Vec2;
+use jc3vr_input::frame::{Hand, InteractionProfile};
+use jc3vr_render::vr::input::{
+    semantic::{
+        SemanticSet,
+        bound::{BoundSet, Physical, PhysicalSet},
+        defaults::{Component, default_binding},
+        frame::{ActionValue, SemanticEdges, SemanticFrame, SetState},
+        vocabulary::{ActionId, OnFootAction, WingsuitAction},
+    },
+    sources,
+};
 
-use crate::{
-    controllers::{
-        bindings::controls::{ButtonControl, radial_deadzone, scalar_deadzone},
-        config::BindingsConfig,
-        frame::{Hand, InteractionProfile},
-    },
-    vr::input::{
-        semantic::{
-            SemanticSet,
-            bound::{BoundSet, Physical, PhysicalSet},
-            defaults::{Component, default_binding},
-            frame::{ActionValue, SemanticEdges, SemanticFrame, SetState},
-            vocabulary::{ActionId, OnFootAction, WingsuitAction},
-        },
-        sources,
-    },
+use crate::controllers::{
+    bindings::controls::{ButtonControl, radial_deadzone, scalar_deadzone},
+    config::BindingsConfig,
 };
 
 /// One semantic action's state on one hand over the tick.

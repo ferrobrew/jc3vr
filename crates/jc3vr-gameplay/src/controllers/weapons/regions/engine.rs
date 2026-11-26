@@ -7,10 +7,10 @@ use jc3gi::{
     equipment::weapon::{WeaponBase, WeaponGripHand},
     types::math::{Matrix4, Vector3},
 };
+use jc3vr_input::frame::{Hand, Pose};
 
 use crate::controllers::{
     aim::gun,
-    frame::{Hand, Pose},
     loadout::{LoadoutSnapshot, Socket},
     weapons::{
         docks,

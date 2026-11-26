@@ -25,10 +25,10 @@ use glam::{Mat3, Mat4, Quat, Vec3};
 use jc3gi::equipment::weapon::{
     BarrelRecoilWeaponComponent, ModelAttachementWeaponComponent, WeaponComponentType,
 };
+use jc3vr_input::frame::{Hand, Pose};
 use parking_lot::Mutex;
 
 use crate::controllers::{
-    frame::{Hand, Pose},
     hands::{held::away_from_palm, late},
     weapons::reload::chamber::ActionKind,
 };

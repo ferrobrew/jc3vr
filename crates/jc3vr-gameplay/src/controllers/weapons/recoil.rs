@@ -26,10 +26,10 @@
 use std::time::{Duration, Instant};
 
 use glam::{FloatExt, Quat, Vec3};
+use jc3vr_input::frame::{Hand, Pose};
 use parking_lot::Mutex;
 
 use crate::controllers::{
-    frame::{Hand, Pose},
     hands::CockpitHand,
     weapons::{config::RecoilConfig, foregrip},
 };

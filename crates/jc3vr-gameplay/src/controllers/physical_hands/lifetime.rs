@@ -15,17 +15,14 @@ use windows::Win32::System::Threading::{
     CRITICAL_SECTION, EnterCriticalSection, LeaveCriticalSection,
 };
 
-use crate::{
-    controllers::{
-        config::CONTROLLERS_CONFIG,
-        physical_hands::{
-            STALE_AFTER, bodies,
-            climb::engine::{BodyIdentity, body_identity},
-        },
-        scheme,
-        weapons::hold::refs::Weak,
+use crate::controllers::{
+    config::CONTROLLERS_CONFIG,
+    physical_hands::{
+        STALE_AFTER, bodies,
+        climb::engine::{BodyIdentity, body_identity},
     },
-    hooks,
+    scheme,
+    weapons::hold::refs::Weak,
 };
 
 pub(crate) fn hook_library() -> HookLibrary {
@@ -126,8 +123,8 @@ fn active(state: &State, now: Instant) -> bool {
     state
         .published
         .is_some_and(|at| now.saturating_duration_since(at) <= STALE_AFTER)
-        && hooks::in_gameplay()
-        && !crate::is_shutting_down()
+        && jc3vr_core::hooks::in_gameplay()
+        && !jc3vr_core::is_shutting_down()
         && scheme::is_controllers()
         && CONTROLLERS_CONFIG.query(|config| config.enabled && config.physical_hands.enabled)
 }

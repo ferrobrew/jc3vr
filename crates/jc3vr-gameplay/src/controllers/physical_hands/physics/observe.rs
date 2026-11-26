@@ -8,48 +8,45 @@ use std::{
 };
 
 use glam::Vec3;
+use jc3vr_input::frame::{Hand, Pose};
+use jc3vr_render::{headpose, vr::recenter_count};
 use parking_lot::Mutex;
 
-use crate::{
-    controllers::{
-        clock::TimeScale,
-        config::CONTROLLERS_CONFIG,
-        frame::{Hand, Pose},
-        hands::CockpitHand,
-        haptics::{self, Sustain},
-        physical_hands::{
-            physics::{
-                HAND_BODIES, blows, callback, drawn_body,
-                drive::rig_jumped,
-                guns,
-                lifecycle::HANDS,
-                render::{RenderOffset, apply_offsets},
-                state::{
-                    CLEANUP_REGISTERED, MIN_PRESSURE_LOAD, RENDER_MAX_TURN_RAD,
-                    RENDER_TURN_DEADBAND_RAD, SHARED, STALE_AFTER, TRACKERS_AT_REST, Target,
-                    acting_palms, enabled, steps,
-                },
+use crate::controllers::{
+    clock::TimeScale,
+    config::CONTROLLERS_CONFIG,
+    hands::CockpitHand,
+    haptics::{self, Sustain},
+    physical_hands::{
+        physics::{
+            HAND_BODIES, blows, callback, drawn_body,
+            drive::rig_jumped,
+            guns,
+            lifecycle::HANDS,
+            render::{RenderOffset, apply_offsets},
+            state::{
+                CLEANUP_REGISTERED, MIN_PRESSURE_LOAD, RENDER_MAX_TURN_RAD,
+                RENDER_TURN_DEADBAND_RAD, SHARED, STALE_AFTER, TRACKERS_AT_REST, Target,
+                acting_palms, enabled, steps,
             },
-            state::VELOCITY_SMOOTHING_S,
         },
-        roomscale::teleport,
-        weapons::foregrip,
+        state::VELOCITY_SMOOTHING_S,
     },
-    headpose, hooks,
-    vr::recenter_count,
+    roomscale::teleport,
+    weapons::foregrip,
 };
 
 /// Register the pre-simulation callback when the hand bodies are wanted, and the cleanup that
 /// removes it. Called once per frame on the game thread, ahead of the game's update.
-pub(crate) fn frame_tick() {
-    if crate::is_shutting_down() {
+pub fn frame_tick() {
+    if jc3vr_core::is_shutting_down() {
         blows::discard();
         return;
     }
     let config = CONTROLLERS_CONFIG.lock().physical_hands;
     // SAFETY: the game thread, ahead of the game's update.
     unsafe { crate::controllers::physical_hands::impacts::deliver() };
-    if hooks::in_gameplay() {
+    if jc3vr_core::hooks::in_gameplay() {
         // The shoves come from the pickups, which hold characters with or without the bodies.
         // SAFETY: the game thread, ahead of the game's update.
         let shoves = unsafe { blows::deliver_shoves() };
@@ -63,12 +60,12 @@ pub(crate) fn frame_tick() {
     // SAFETY: the game thread, ahead of the game's update, which fires the callbacks.
     let registered = unsafe { callback::ensure_registered() };
     if registered && !CLEANUP_REGISTERED.swap(true, Ordering::AcqRel) {
-        crate::lifecycle::on_cleanup(|_renderer| {
+        jc3vr_core::lifecycle::on_cleanup(|_renderer| {
             // SAFETY: the shutdown cleanups run on the game thread, outside the game's update.
             unsafe { shutdown() };
         });
     }
-    if !enabled(&config) || !hooks::in_gameplay() {
+    if !enabled(&config) || !jc3vr_core::hooks::in_gameplay() {
         blows::discard();
         return;
     }
@@ -99,7 +96,7 @@ pub(crate) fn frame_tick() {
 /// Publish each acting hand's palm pose and velocity for the next step, and take the last step's
 /// results. Called from the player aim control's post-simulation update, `dt` seconds after the
 /// last.
-pub(crate) fn observe(dt: f32) {
+pub fn observe(dt: f32) {
     let config = CONTROLLERS_CONFIG.lock().physical_hands;
     let now = Instant::now();
     let acting = enabled(&config).then(|| acting_palms(&config)).flatten();
@@ -199,7 +196,7 @@ pub(crate) fn observe(dt: f32) {
 /// Draw each driven hand where its body is, in the cockpit frame, turning it about the palm's
 /// centre at `palm_offset` in the wrist frame. Called by
 /// [`crate::controllers::physical_hands::apply`].
-pub(crate) fn apply(cockpit: &mut [Option<CockpitHand>; 2], palm_offset: Vec3) {
+pub fn apply(cockpit: &mut [Option<CockpitHand>; 2], palm_offset: Vec3) {
     let offsets = {
         let shared = SHARED.lock();
         if !shared.fresh(Instant::now()) {
@@ -226,7 +223,7 @@ fn braced_by_hold() -> Option<Hand> {
 /// # Safety
 ///
 /// The game thread, after simulation and outside the physics step.
-pub(crate) unsafe fn sample_render_offsets() {
+pub unsafe fn sample_render_offsets() {
     let now = Instant::now();
     let config = CONTROLLERS_CONFIG.lock().physical_hands;
     let (targets, rotation, scale, shown, fallback) = {
@@ -287,7 +284,7 @@ pub(crate) unsafe fn sample_render_offsets() {
 }
 
 /// Apply the frame's post-step offsets without adding another physics-step interpolation delay.
-pub(crate) fn apply_at_render(cockpit: &mut [Option<CockpitHand>; 2], palm_offset: Vec3) {
+pub fn apply_at_render(cockpit: &mut [Option<CockpitHand>; 2], palm_offset: Vec3) {
     let sampled = *RENDER_OFFSETS.lock();
     let Some((at, offsets)) = sampled else {
         apply(cockpit, palm_offset);

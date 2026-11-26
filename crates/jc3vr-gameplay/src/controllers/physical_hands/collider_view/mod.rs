@@ -19,7 +19,7 @@ mod callback;
 pub mod config;
 pub mod draw;
 pub mod model;
-pub(crate) mod nearby;
+pub mod nearby;
 mod scan;
 
 use std::{
@@ -28,6 +28,14 @@ use std::{
 };
 
 use glam::Vec3;
+use jc3vr_input::frame::Hand;
+use jc3vr_render::{
+    controllers::overlay::{
+        primitive::{Primitive, Source},
+        store,
+    },
+    headpose,
+};
 use parking_lot::Mutex;
 
 pub use self::{config::ColliderViewConfig, scan::ScanError};
@@ -36,18 +44,10 @@ use self::{
     model::{Aabb, BodyKind, JointKind, MotionKind, Snapshot, gazed},
     scan::ModIds,
 };
-use crate::{
-    controllers::{
-        config::CONTROLLERS_CONFIG,
-        frame::Hand,
-        hands::late,
-        overlay::{
-            primitive::{Primitive, Source},
-            store,
-        },
-        physical_hands::physics::{self, guns},
-    },
-    headpose, hooks,
+use crate::controllers::{
+    config::CONTROLLERS_CONFIG,
+    hands::late,
+    physical_hands::physics::{self, guns},
 };
 
 /// The view's readout for the debug UI and the status rows.
@@ -126,13 +126,13 @@ pub fn toggle() {
 
 /// Register the step counter while the view is on, and remove it while it is off. Called once
 /// per frame on the game thread, ahead of the game's update.
-pub(crate) fn frame_tick() {
-    let wanted = !crate::is_shutting_down()
+pub fn frame_tick() {
+    let wanted = !jc3vr_core::is_shutting_down()
         && CONTROLLERS_CONFIG.query(|c| c.physical_hands.collider_view.enabled);
     // SAFETY: the game thread, ahead of the game's update, which fires the callbacks.
     let registered = unsafe { callback::reconcile(wanted) };
     if registered && !CLEANUP_REGISTERED.swap(true, Ordering::AcqRel) {
-        crate::lifecycle::on_cleanup(|_renderer| {
+        jc3vr_core::lifecycle::on_cleanup(|_renderer| {
             // SAFETY: the shutdown cleanups run on the game thread, outside the game's update.
             unsafe { callback::unregister() };
         });
@@ -146,9 +146,9 @@ pub(crate) fn frame_tick() {
 /// # Safety
 ///
 /// The game thread, after the engine's render update and outside the physics step.
-pub(crate) unsafe fn render_tick(dtf: f32) {
+pub unsafe fn render_tick(dtf: f32) {
     let config = CONTROLLERS_CONFIG.lock().physical_hands.collider_view;
-    if !config.enabled || !hooks::in_gameplay() {
+    if !config.enabled || !jc3vr_core::hooks::in_gameplay() {
         if WAS_ACTIVE.swap(false, Ordering::Relaxed) {
             store::clear(Source::ColliderView);
             *STATE.lock() = State::EMPTY;

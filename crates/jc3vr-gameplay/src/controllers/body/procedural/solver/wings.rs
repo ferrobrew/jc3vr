@@ -13,8 +13,7 @@
 //! orientation is carried over by the same turn.
 
 use glam::{Mat4, Quat, Vec3};
-
-use crate::controllers::frame::Pose;
+use jc3vr_input::frame::Pose;
 
 /// The player's arms, in the cockpit frame.
 #[derive(Debug, Copy, Clone, PartialEq)]

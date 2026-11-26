@@ -10,6 +10,11 @@ use std::{fmt, time::Instant};
 use jc3gi::input::input_action_map::Action::{
     CANCEL, FIRE_GRAPPLE, OPEN_PARACHUTE, PUSH_GRAPPLE, RETRACT_GRAPPLE,
 };
+use jc3vr_input::frame::{Button, ControllerFrame, Hand};
+use jc3vr_render::{
+    recorder::tracking::events::{self, EventKind},
+    vr::input::flight_pose,
+};
 use tracking_format::event::{Label, WingsuitGesture};
 
 use crate::{
@@ -18,7 +23,6 @@ use crate::{
         body::BodyDimensions,
         config::{ControllersConfig, GripOffset},
         fingers::grip::{self, GripSource},
-        frame::{Button, ControllerFrame, Hand},
         grab::GrabVolume,
         mode::{AirborneVariant, Detection, Mode, OnFootVariant, Traversal},
         vehicles::{
@@ -32,8 +36,6 @@ use crate::{
         weapons,
     },
     grapple::hook,
-    recorder::tracking::events::{self, EventKind},
-    vr::input::flight_pose,
 };
 
 /// Recognition and the calibration that interprets its pose history belong to one binding state.

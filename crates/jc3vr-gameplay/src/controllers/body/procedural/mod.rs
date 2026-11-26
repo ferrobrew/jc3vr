@@ -67,6 +67,12 @@ use jc3gi::{
     animation::ik::{Effector, HumanIK},
     character::character::Character,
 };
+use jc3vr_core::hash::StateSet;
+use jc3vr_render::{
+    controllers::cockpit::CockpitTransform,
+    headpose::{body_relative_rotation, xr},
+    vr::VR_CONFIG,
+};
 use parking_lot::Mutex;
 
 use crate::{
@@ -93,17 +99,13 @@ use crate::{
             },
             rig::{grounded, torso::relative_heading, torso_turn},
         },
-        cockpit::CockpitTransform,
         config::CONTROLLERS_CONFIG,
         hands::{active_hands_raw, arm_remaps},
         locomotion::{anchor::JUMP_GRACE_S, status as locomotion_status},
         mode::{AirborneVariant, Mode, current as current_mode},
     },
     grapple::physical::lock,
-    hash::StateSet,
-    headpose::{body_relative_rotation, xr},
     hooks::animation::active_state_type_id,
-    vr::VR_CONFIG,
 };
 
 /// What the procedural body did at its last gate.

@@ -1,10 +1,10 @@
 //! Select socket interaction poses once for the candidate adapter and the copied mirror sample.
 
 use glam::{Mat4, Vec3};
+use jc3vr_input::frame::Hand;
 
 use crate::controllers::{
     body::rig::frames::Frames,
-    frame::Hand,
     grab::{Candidate, GrabVolume},
     hands::ActiveHands,
     loadout::Socket,

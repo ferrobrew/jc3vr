@@ -12,11 +12,9 @@
 use std::fmt;
 
 use jc3gi::character::inventory::WeaponSlot;
+use jc3vr_input::frame::Hand;
 
-use crate::controllers::{
-    frame::Hand,
-    loadout::{item::WeaponType, table::LoadoutSnapshot},
-};
+use crate::controllers::loadout::{item::WeaponType, table::LoadoutSnapshot};
 
 /// A weapon offered to the hands.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]

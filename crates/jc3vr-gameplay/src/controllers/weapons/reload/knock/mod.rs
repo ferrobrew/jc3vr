@@ -21,10 +21,10 @@
 use std::time::{Duration, Instant};
 
 use glam::{Quat, Vec3};
+use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
 use crate::controllers::{
-    frame::Hand,
     physical_hands::rigid::{RigidBody, Velocities},
     weapons::reload::{
         extraction::MagazineId,

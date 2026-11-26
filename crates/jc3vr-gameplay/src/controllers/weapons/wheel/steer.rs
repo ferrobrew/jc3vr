@@ -2,8 +2,9 @@
 //! where the wheel opened, and which arm of the cross that picks. Pure.
 
 use glam::{Quat, Vec2, Vec3};
+use jc3vr_input::frame::Pose;
 
-use crate::controllers::{frame::Pose, weapons::wheel::select::WheelSlot};
+use crate::controllers::weapons::wheel::select::WheelSlot;
 
 /// The steering hand's frame when the wheel opened: where it pointed, and the directions the
 /// cross's arms lie in.

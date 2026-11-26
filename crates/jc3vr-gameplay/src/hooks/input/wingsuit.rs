@@ -36,10 +36,10 @@ use jc3gi::{
     animation::symbol_table::EventIdSymbolTable, character::character::AnimatedModel,
     input::parachute::get_WingsuitBlendState_StallFlagSet,
 };
+use jc3vr_render::headpose::{self, Source};
 
 use crate::{
     controllers::{body::procedural::signals::is_local_model, config::CONTROLLERS_CONFIG},
-    headpose::{self, Source},
     hooks::character::resolve_act_id,
 };
 
@@ -76,12 +76,12 @@ pub(crate) fn drops_act(model: *const AnimatedModel, act: i32) -> bool {
 
 /// Apply or revert the patch to match the head pose's source. Called once per
 /// frame on the game thread; it writes only when the wanted state changes.
-pub(crate) fn sync() {
+pub fn sync() {
     let wanted = headpose::is_active() && headpose::source() == Source::Vr;
     if wanted == PATCHED.load(Ordering::Relaxed) {
         return;
     }
-    let Some(mut patcher) = crate::hooks::patcher() else {
+    let Some(mut patcher) = jc3vr_core::hooks::patcher() else {
         return;
     };
     // SAFETY: the extern names the immediate byte of an instruction in the game's code, which the

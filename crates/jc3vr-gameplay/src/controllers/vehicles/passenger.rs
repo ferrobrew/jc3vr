@@ -20,8 +20,9 @@
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use glam::Vec3;
+use jc3vr_input::frame::Hand;
 
-use crate::controllers::{config::ControllersConfig, frame::Hand, mode::VehicleSeat};
+use crate::controllers::{config::ControllersConfig, mode::VehicleSeat};
 
 /// The passenger aim's readout.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]

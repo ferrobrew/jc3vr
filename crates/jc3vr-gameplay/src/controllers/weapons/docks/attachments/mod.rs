@@ -6,9 +6,9 @@
 use std::time::{Duration, Instant};
 
 use glam::{Mat4, Quat, Vec3};
+use jc3vr_input::frame::{Hand, Pose};
 
 use crate::controllers::{
-    frame::{Hand, Pose},
     loadout::{ItemId, Socket},
     weapons::docks::{SocketPoint, SocketUse},
 };

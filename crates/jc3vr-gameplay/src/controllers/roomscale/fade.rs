@@ -1,7 +1,7 @@
 //! The comfort fade: a full-screen darkening of the headset's view, shared by the head-through-
 //! geometry probe, the push-back at walls, and the seat transitions. Each source sets a target level; the fade eases toward
 //! the darkest target at the configured rates, and hands the level to the VR blit
-//! ([`crate::vr::set_fade_level`]), which scales the image by `1 - level` as it copies each eye
+//! ([`jc3vr_render::vr::set_fade_level`]), which scales the image by `1 - level` as it copies each eye
 //! into the swapchain.
 //!
 //! The engine has its own screen fade (the post-effect fade quad), but the game drives it for its
@@ -9,9 +9,8 @@
 //! is the mod's own last stage before the compositor, so darkening there leaves the game's fades
 //! alone and never reaches the flat mirror.
 
+use jc3vr_render::vr::{fade_level, set_fade_level};
 use parking_lot::Mutex;
-
-use crate::vr::{fade_level, set_fade_level};
 
 /// The comfort fade's timing, shared by every source (the head in geometry, the seat transitions).
 #[derive(Copy, Clone, Debug)]

@@ -50,13 +50,13 @@ use jc3gi::{
     game::GameObject,
     graphics_engine::model_instance::ModelInstanceFlags,
 };
+use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
     aim::gun,
     config::CONTROLLERS_CONFIG,
-    frame::Hand,
     loadout::{Place, Socket, live},
     weapons::{
         dual_wield::single::{
@@ -68,7 +68,10 @@ use crate::controllers::{
         },
         hold::{self, rack::paired, refs::Strong},
         inventory::{
-            carry, config::InventoryConfig, engine as inventory_engine, engine::ObjectKey, restore,
+            carry,
+            config::InventoryConfig,
+            engine::{self as inventory_engine, ObjectKey},
+            restore,
         },
         reload,
     },

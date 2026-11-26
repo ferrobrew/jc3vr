@@ -10,9 +10,9 @@
 //! the character mans it.
 
 use glam::Vec3;
+use jc3vr_input::frame::Hand;
 
 use crate::controllers::{
-    frame::Hand,
     grab::{Candidate, GrabVolume},
     hands::tiers,
     vehicles::{config::MountedConfig, physical::Release},

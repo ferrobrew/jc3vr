@@ -53,11 +53,11 @@ use jc3gi::{
     equipment::weapon::{WeaponBase, WeaponInputs, WeaponState},
     types::math::Vector3,
 };
+use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
-    frame::Hand,
     loadout::live,
     weapons::{
         dual_wield::single,

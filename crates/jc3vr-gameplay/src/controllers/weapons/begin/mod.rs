@@ -6,12 +6,12 @@ use std::time::Instant;
 
 use glam::{Mat4, Vec3};
 use jc3gi::equipment::weapon::WeaponBase;
+use jc3vr_input::frame::{Hand, Pose};
 use parking_lot::Mutex;
 
 use crate::controllers::{
     body::rig::{frames::SkeletonLandmarks, skeleton},
     config::{CONTROLLERS_CONFIG, ControllersConfig},
-    frame::{Hand, Pose},
     grab::{self, Candidate, GrabVolume, GripTarget, Mark, MarkAt, MarkStyle, Shown},
     hands::{self, ActiveHands, CockpitHand, pose as hand_pose},
     haptics::{self, Event},

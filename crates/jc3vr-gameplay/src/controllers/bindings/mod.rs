@@ -52,7 +52,7 @@ pub mod hold;
 pub mod inject;
 pub mod intents;
 mod loss;
-pub(crate) mod pointer;
+pub mod pointer;
 pub(crate) mod policy_a;
 mod rail;
 mod recovery;
@@ -75,6 +75,21 @@ use body_rig::angle::{head_heading, yaw_of};
 use glam::Vec3;
 use jc3gi::{
     character::character::Character, input::input_action_map::Action, state::StateBitFlag,
+};
+use jc3vr_input::{
+    capture::{CaptureUpdate, OwnershipBlocker, desktop_input_observation},
+    frame::{self, Button, ControllerFrame, GripPress, Hand},
+};
+use jc3vr_render::{
+    controllers::cockpit::CockpitTransform,
+    headpose::{self, config::HEADPOSE_CONFIG},
+    vr::{
+        self,
+        input::semantic::{
+            SemanticSet, frame as semantic_frame, history,
+            vocabulary::{MenuAction, OnFootAction},
+        },
+    },
 };
 use parking_lot::Mutex;
 
@@ -111,9 +126,7 @@ use crate::{
         },
         body::{BODY_CONFIG, firm_ragdoll, rig::grounded::add_step_walk},
         clock::TimeScale,
-        cockpit::CockpitTransform,
         config::{CONTROLLERS_CONFIG, LocomotionDirection},
-        frame::{self, Button, ControllerFrame, GripPress, Hand},
         grab::{self, Consumer, Provided, grabs_for, markers::MarkerFrame},
         hands::{self, tiers},
         haptics::{self, Event},
@@ -121,17 +134,7 @@ use crate::{
         mode::{self, AirborneVariant, Detection, Mode, Traversal, VehicleClass},
         physical_hands, roomscale, scheme, snatch, vehicles, weapons,
     },
-    grapple, headpose,
-    headpose::config::HEADPOSE_CONFIG,
-    input_core::capture::desktop_input_observation,
-    ui::capture::{CaptureUpdate, OwnershipBlocker},
-    vr::{
-        self,
-        input::semantic::{
-            SemanticSet, frame as semantic_frame, history,
-            vocabulary::{MenuAction, OnFootAction},
-        },
-    },
+    grapple,
 };
 
 /// The bindings' game stage ([`stage::game_stage`]): take in where the last writes landed, detect
@@ -789,7 +792,7 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
     let summary_masks = state
         .bindings
         .effective_masks(detection.mode, &controls, &semantic_input);
-    let (_, summary_sources) = crate::vr::input::sources::table();
+    let (_, summary_sources) = jc3vr_render::vr::input::sources::table();
     let (summary_hold, summary_cancel) = crate::controllers::summary::hold::accepted(
         &semantic_input,
         &routed,
@@ -955,7 +958,8 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
             grabs_for(step.grabs, Consumer::Climb),
         );
         physical_hands::stunt::finish_tick(finish.grips.map(|g| g.held()), &mut step.desired);
-        let rail_packet = crate::vr::input::flight_pose::for_frame(&original, Instant::now());
+        let rail_packet =
+            jc3vr_render::vr::input::flight_pose::for_frame(&original, Instant::now());
         if state.rail.step(
             rail::RailInput {
                 hanging: physical_hands::stunt::hanging()
@@ -1184,7 +1188,7 @@ fn system_command(command: SystemCommand) {
         }
         SystemCommand::Mark => {
             tracing::info!(target: "controllers", "controller input: take marker");
-            crate::session::request_mark();
+            jc3vr_core::session::request_mark();
             haptics::play_hands(Hand::BOTH, Event::Chord);
         }
     }

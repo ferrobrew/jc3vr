@@ -54,12 +54,12 @@ use std::{
 };
 
 use glam::Vec3;
+use jc3vr_input::frame::{Hand, Pose};
 use parking_lot::Mutex;
 
 pub(crate) use self::engine::read_holds;
 pub use self::math::MassSource;
 use crate::controllers::{
-    frame::{Hand, Pose},
     mode::{AirborneVariant, Detection, Mode, OnFootVariant},
     physical_hands::{
         PhysicalHandsConfig,
@@ -171,7 +171,7 @@ pub fn status() -> GunsStatus {
 }
 
 /// Whether held guns are bodies: whenever the hand bodies are.
-pub(crate) fn enabled(config: &PhysicalHandsConfig) -> bool {
+pub fn enabled(config: &PhysicalHandsConfig) -> bool {
     hand_bodies_enabled(config)
 }
 

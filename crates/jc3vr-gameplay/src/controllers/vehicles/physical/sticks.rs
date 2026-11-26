@@ -9,16 +9,14 @@
 
 use body_rig::rotation::twist_angle;
 use glam::{Quat, Vec2, Vec3};
+use jc3vr_input::frame::Hand;
 
-use crate::controllers::{
-    frame::Hand,
-    vehicles::{
-        physical::{
-            ControlKind, ControlState, Holding, Placement,
-            cues::{self, ControlCue, TravelCues},
-        },
-        tuning::{FlightControlsTuning, StickSpec},
+use crate::controllers::vehicles::{
+    physical::{
+        ControlKind, ControlState, Holding, Placement,
+        cues::{self, ControlCue, TravelCues},
     },
+    tuning::{FlightControlsTuning, StickSpec},
 };
 
 /// A stick's deflection (+X right, +Y back) for its top pulled to `top_now`, limited to the full

@@ -34,9 +34,10 @@ mod safe;
 
 use std::{sync::Arc, time::Instant};
 
+use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
-pub(crate) use crate::controllers::loadout::live::{
+pub use crate::controllers::loadout::live::{
     expect::{Expect, Pending},
     hands::{Held, Whereabouts},
     published::{hand_of, held_kind, in_hand, item_of, place_of},
@@ -46,7 +47,6 @@ pub(crate) use crate::controllers::loadout::live::{
     },
 };
 use crate::controllers::{
-    frame::Hand,
     loadout::{
         binding::{Awaiting, Binding, ObjectAddress},
         event::Event,

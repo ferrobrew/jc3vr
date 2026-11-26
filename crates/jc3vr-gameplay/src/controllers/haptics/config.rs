@@ -6,7 +6,7 @@ use crate::controllers::haptics::cues::Category;
 
 /// Controller vibration (see [`crate::controllers::haptics`]), as `controllers.haptics`. The
 /// primitives' shapes are fixed at [`VOCABULARY`](crate::controllers::haptics::vocabulary::VOCABULARY)
-/// and the mixer's rules at [`MIX`](crate::controllers::haptics::mixer::MIX); every category of the
+/// and the mixer's rules at [`MIX`](jc3vr_input::haptics::mixer::MIX); every category of the
 /// mod's own cues plays, each with its primitive's frequency.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]

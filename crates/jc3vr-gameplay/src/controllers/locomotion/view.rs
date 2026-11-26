@@ -21,8 +21,9 @@ use body_rig::{
     smooth::{critically_damped, smoothstep},
 };
 use glam::{Mat4, Vec3};
+use jc3vr_render::headpose::Anchors;
 
-use crate::{controllers::body::procedural::authority::Case, headpose::Anchors};
+use crate::controllers::body::procedural::authority::Case;
 
 /// The neutral standing head, neck, and eye midpoint, in Rico's model space.
 #[derive(Debug, Copy, Clone, PartialEq)]

@@ -30,15 +30,13 @@ use jc3gi::{
     physics::{hknpConstraint, hknpConstraintManager, hknpWorld},
     types::vector_math::AlignedVector3,
 };
+use jc3vr_input::frame::Pose;
 use windows::Win32::System::Threading::TlsGetValue;
 
-use crate::controllers::{
-    frame::Pose,
-    physical_hands::{
-        bodies::{self, BodyError as ObjectError},
-        physics::body::release,
-        world::World,
-    },
+use crate::controllers::physical_hands::{
+    bodies::{self, BodyError as ObjectError},
+    physics::body::release,
+    world::World,
 };
 
 /// Why a joint could not be made.

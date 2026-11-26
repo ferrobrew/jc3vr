@@ -57,6 +57,7 @@ use jc3gi::{
     state::{StateBitFlag, StateContext},
     types::math::Vector3,
 };
+use jc3vr_render::headpose;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
@@ -68,7 +69,6 @@ use crate::{
         mode::{self, Mode},
         scheme, weapons,
     },
-    headpose,
     hooks::{character::resolve_act_id, input::locomotion::character_from_context},
 };
 

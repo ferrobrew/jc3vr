@@ -64,8 +64,8 @@ mod engine;
 pub mod grab_view;
 pub mod grasp;
 pub mod hold;
-pub(crate) mod human_hull;
-pub(crate) mod impacts;
+pub mod human_hull;
+pub mod impacts;
 pub mod palm;
 pub mod physics;
 pub mod pickup;
@@ -100,21 +100,21 @@ pub(crate) use status::{PalmReadout, palm_readout, press_summary};
 #[cfg(test)]
 pub(crate) use targets::test_support::DoorProvider;
 pub(crate) use targets::{DoorEligibility, targets};
-pub(crate) use tick::{after_aim, free_hands, main_thread_tick, mode_acts};
+pub use tick::{after_aim, free_hands, main_thread_tick, mode_acts};
 
 use crate::controllers::config::CONTROLLERS_CONFIG;
 
 pub(crate) mod lifetime;
 
-use crate::controllers::{
-    frame::Hand, grab::PickupKind, hands::CockpitHand, physical_hands::state::STATE,
-};
+use jc3vr_input::frame::Hand;
+
+use crate::controllers::{grab::PickupKind, hands::CockpitHand, physical_hands::state::STATE};
 
 pub(crate) unsafe fn carry_bodies_destroying(world: *mut hknpWorld, ids: *const u32, count: i32) {
     unsafe { carry_collision::destroying(world, ids, count) };
 }
 
-/// The loose object each hand carries, by [`Hand::index`](crate::controllers::frame::Hand::index),
+/// The loose object each hand carries, by [`Hand::index`](jc3vr_input::frame::Hand::index),
 /// for the loadout table: a prop, not a grip on something hinged, a door, or a character, which are
 /// the world's.
 pub(crate) fn held_props() -> [Option<NonZeroUsize>; 2] {
@@ -124,7 +124,7 @@ pub(crate) fn held_props() -> [Option<NonZeroUsize>; 2] {
 /// What a hand holds through its grip: the object, its body, the kind of hold, and the hold's last
 /// report, for the tracking recorder.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub(crate) struct HeldBody {
+pub struct HeldBody {
     pub object: NonZeroUsize,
     pub body: u32,
     pub kind: PickupKind,
@@ -132,7 +132,7 @@ pub(crate) struct HeldBody {
 }
 
 /// What each hand holds through its grip, by [`Hand::index`].
-pub(crate) fn held_bodies() -> [Option<HeldBody>; 2] {
+pub fn held_bodies() -> [Option<HeldBody>; 2] {
     let state = STATE.lock();
     let objects = state.pickup.held_objects();
     Hand::BOTH.map(|hand| {

@@ -17,31 +17,31 @@ use std::time::{Duration, Instant};
 
 use glam::{Mat4, Vec3};
 use jc3gi::character::character::{AnimationController, Character, Joint};
-use parking_lot::Mutex;
-
-use crate::{
-    controllers::{
-        body::procedural::{
-            head::head_bone_world,
-            joints::from_joint,
-            skeleton::{self, SkeletonKey},
-        },
-        config::CONTROLLERS_CONFIG,
-        hands::ik::tick_records,
-        overlay::{
-            primitive::{Anchor, DepthMode, Facing, Primitive, Rgba, Shape, Source, SpriteSize},
-            store,
-        },
-        weapons::{
-            docks::{
-                self, SocketUse,
-                attachments::{Occupancy, PoseSource, Sample},
-            },
-            pouch_models::attachments::{RenderSample as PouchRenderSample, SampleId},
-        },
+use jc3vr_render::{
+    controllers::overlay::{
+        primitive::{Anchor, DepthMode, Facing, Primitive, Rgba, Shape, Source, SpriteSize},
+        store,
     },
     hooks::camera::eye_point,
     vr::VR_CONFIG,
+};
+use parking_lot::Mutex;
+
+use crate::controllers::{
+    body::procedural::{
+        head::head_bone_world,
+        joints::from_joint,
+        skeleton::{self, SkeletonKey},
+    },
+    config::CONTROLLERS_CONFIG,
+    hands::ik::tick_records,
+    weapons::{
+        docks::{
+            self, SocketUse,
+            attachments::{Occupancy, PoseSource, Sample},
+        },
+        pouch_models::attachments::{RenderSample as PouchRenderSample, SampleId},
+    },
 };
 
 /// What the mirror drew on its last pass.
@@ -80,7 +80,7 @@ pub fn attachment_status() -> AttachmentStatus {
 
 /// Identities for the last render-time comparison, separate from the skeleton's solve pass.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
-pub(crate) struct PouchRenderStatus {
+pub struct PouchRenderStatus {
     pub render: Option<SampleId>,
     pub input: Option<SampleId>,
     pub displayed: usize,
@@ -88,7 +88,7 @@ pub(crate) struct PouchRenderStatus {
     pub missing: usize,
 }
 
-pub(crate) fn pouch_render_status() -> PouchRenderStatus {
+pub fn pouch_render_status() -> PouchRenderStatus {
     let (at, status) = *POUCH_RENDER_STATUS.lock();
     if at
         .and_then(|at| Instant::now().checked_duration_since(at))

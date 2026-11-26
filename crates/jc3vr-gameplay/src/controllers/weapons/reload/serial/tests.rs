@@ -1,7 +1,9 @@
 use std::num::NonZeroUsize;
 
+use jc3vr_input::frame::Hand;
+
 use super::*;
-use crate::controllers::{frame::Hand, weapons::reload::loose::Loose};
+use crate::controllers::weapons::reload::loose::Loose;
 
 fn request(generation: u64) -> DetachRequest {
     DetachRequest {

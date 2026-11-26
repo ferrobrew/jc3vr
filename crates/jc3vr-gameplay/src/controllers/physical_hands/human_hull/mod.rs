@@ -10,7 +10,7 @@ mod geometry;
 mod kept;
 mod native;
 mod query;
-pub(crate) mod step_up;
+pub mod step_up;
 
 use std::{
     ptr::NonNull,
@@ -19,20 +19,18 @@ use std::{
 
 use detours_macro::detour;
 use jc3gi::physics::{SharedPfxCharacterSettings, hknpWorld};
+use jc3vr_core::lifecycle::{
+    DeferReason, ParticipantId, Preparation, PrepareOutcome, PreparedParticipant,
+    ShutdownParticipant,
+};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 use windows::Win32::System::Threading::GetCurrentThreadId;
 
-use crate::{
-    controllers::physical_hands::{human_hull::native::NativeState, physics::step_seconds},
-    lifecycle::{
-        DeferReason, ParticipantId, Preparation, PrepareOutcome, PreparedParticipant,
-        ShutdownParticipant,
-    },
-};
+use crate::controllers::physical_hands::{human_hull::native::NativeState, physics::step_seconds};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) enum AdapterAvailability {
+pub enum AdapterAvailability {
     Unavailable,
     Active,
     Disabled,
@@ -41,7 +39,7 @@ pub(crate) enum AdapterAvailability {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) enum ClearanceUnavailableReason {
+pub enum ClearanceUnavailableReason {
     MissingDispatcherContract,
     NotRequested,
     RestorationRequested,
@@ -61,12 +59,12 @@ pub(crate) enum ClearanceUnavailableReason {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) struct HumanHullStatus {
-    pub(crate) adapter: AdapterAvailability,
-    pub(crate) clearance: ClearanceUnavailableReason,
-    pub(crate) settings: usize,
-    pub(crate) migrated_bodies: usize,
-    pub(crate) enabled: bool,
+pub struct HumanHullStatus {
+    pub adapter: AdapterAvailability,
+    pub clearance: ClearanceUnavailableReason,
+    pub settings: usize,
+    pub migrated_bodies: usize,
+    pub enabled: bool,
 }
 
 impl HumanHullStatus {
@@ -86,7 +84,7 @@ impl Default for HumanHullStatus {
 }
 
 /// The readout copies state and never retains native pointers.
-pub(crate) fn status() -> HumanHullStatus {
+pub fn status() -> HumanHullStatus {
     let state = STATE.lock();
     HumanHullStatus {
         adapter: if state.committed {
@@ -116,14 +114,14 @@ pub(crate) fn status() -> HumanHullStatus {
 }
 
 /// Disable requests restore at the next native phase; a blocked restore retains the narrow hull.
-pub(crate) fn set_enabled(enabled: bool) {
+pub fn set_enabled(enabled: bool) {
     let mut state = STATE.lock();
     if !state.committed {
         state.enabled = enabled;
     }
 }
 
-pub(crate) fn hook_library() -> HookLibrary {
+pub fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_static_binder(&SETTINGS_CONSTRUCT_BINDER)
         .with_static_binder(&SETTINGS_DESTRUCT_BINDER)

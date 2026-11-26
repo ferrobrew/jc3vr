@@ -7,11 +7,11 @@ use std::sync::OnceLock;
 use jc3gi::character::character::Character;
 
 /// The two points of the pose-finalization pass an observer sees.
-pub(crate) struct PoseObserver {
+pub struct PoseObserver {
     /// Called at the pass's entry, after every target queued there and before the solves.
-    pub(crate) before_solve: unsafe fn(*mut Character),
+    pub before_solve: unsafe fn(*mut Character),
     /// Called at the end of the pass, after the solves and every joint written after them.
-    pub(crate) after_pass: unsafe fn(*mut Character),
+    pub after_pass: unsafe fn(*mut Character),
 }
 
 /// Register the pose-finalization observer. One observer: a second registration is refused and
@@ -20,7 +20,7 @@ pub(crate) struct PoseObserver {
 /// Both calls run on the thread that owns the character's pass. The entry call comes only for a
 /// local character whose live pose is readable; the end call comes for every character, and may
 /// pass null.
-pub(crate) fn register_pose_observer(observer: PoseObserver) {
+pub fn register_pose_observer(observer: PoseObserver) {
     if OBSERVER.set(observer).is_err() {
         tracing::error!("character: a pose observer is already registered; keeping the first");
     }

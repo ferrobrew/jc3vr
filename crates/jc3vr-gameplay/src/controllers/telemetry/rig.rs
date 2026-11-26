@@ -7,13 +7,11 @@ use std::time::{Duration, Instant};
 
 use body_rig::{PlayerBody, RigFrame, RigOutput, RigTuning};
 use glam::{Vec2, Vec3};
+use jc3vr_render::recorder::tracking::events::{self, EventKind};
 use parking_lot::Mutex;
 use tracking_format::event::{Label, RigConfig, RigInput, RigResult, RigSample};
 
-use crate::{
-    controllers::body::BodyDimensions,
-    recorder::tracking::events::{self, EventKind},
-};
+use crate::controllers::body::BodyDimensions;
 
 /// One grounded-rig frame as the payload ran it.
 pub(crate) struct RigRun<'a> {

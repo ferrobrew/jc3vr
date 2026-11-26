@@ -1,13 +1,11 @@
 //! The raw-input tables' vocabulary and evaluating reader, frozen.
 
 use jc3gi::input::input_action_map::Action;
+use jc3vr_input::frame::Hand;
 
-use crate::controllers::{
-    bindings::{
-        controls::{ButtonControl, Controls, HandControls, rotate_stick},
-        hold::{Desired, MapKind, Target, Want},
-    },
-    frame::Hand,
+use crate::controllers::bindings::{
+    controls::{ButtonControl, Controls, HandControls, rotate_stick},
+    hold::{Desired, MapKind, Target, Want},
 };
 
 /// Which hand an input is on: by its role in the layout, or by its physical side. The gameplay

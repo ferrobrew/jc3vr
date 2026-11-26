@@ -1,7 +1,8 @@
 use body_rig::rotation::angular_velocity;
 use glam::{Quat, Vec3};
+use jc3vr_input::frame::Pose;
 
-use crate::controllers::{frame::Pose, physical_hands::rigid::Velocities};
+use crate::controllers::physical_hands::rigid::Velocities;
 
 #[derive(Debug, Copy, Clone, Default)]
 pub(super) struct Transport {

@@ -7,8 +7,9 @@ use jc3gi::{
         DamageStateFlags, Joint,
     },
 };
+use jc3vr_core::hash::hashlittle;
 
-use crate::{controllers::body::procedural::skeleton::SkeletonKey, hash::hashlittle};
+use crate::controllers::body::procedural::skeleton::SkeletonKey;
 
 #[cfg(test)]
 mod tests;
@@ -40,7 +41,7 @@ pub(crate) unsafe fn identity(controller: &AnimationController) -> Option<(Skele
 
 /// A live pose whose buffers cover the skeleton and its parent traversal.
 /// The owning character thread must serialize native reads and writes for the borrow.
-pub(crate) struct LivePose<'a> {
+pub struct LivePose<'a> {
     controller: &'a mut AnimationController,
     key: SkeletonKey,
 }
@@ -51,7 +52,7 @@ impl<'a> LivePose<'a> {
     /// # Safety
     ///
     /// The controller and its native allocations must be live and exclusively owned by this thread.
-    pub(crate) unsafe fn new(controller: &'a mut AnimationController) -> Option<Self> {
+    pub unsafe fn new(controller: &'a mut AnimationController) -> Option<Self> {
         let key = unsafe { SkeletonKey::of(controller) }?;
         let producer = unsafe { controller.m_PoseProducer.as_ref() }?;
         let pose = unsafe { producer.m_PoseT1.as_ref() }?;
@@ -77,7 +78,7 @@ impl<'a> LivePose<'a> {
         Some(Self { controller, key })
     }
 
-    pub(crate) fn key(&self) -> SkeletonKey {
+    pub fn key(&self) -> SkeletonKey {
         self.key
     }
 
@@ -95,7 +96,7 @@ impl<'a> LivePose<'a> {
     }
 
     /// Resolve an optional named bone without accepting the native missing-name root fallback.
-    pub(crate) fn named(&self, name: &[u8]) -> Option<u32> {
+    pub fn named(&self, name: &[u8]) -> Option<u32> {
         self.named_hash(hashlittle(name))
     }
 
@@ -119,7 +120,7 @@ impl<'a> LivePose<'a> {
         }
     }
 
-    pub(crate) fn read(&self, index: u32) -> Option<Joint> {
+    pub fn read(&self, index: u32) -> Option<Joint> {
         if !self.contains(index) {
             return None;
         }

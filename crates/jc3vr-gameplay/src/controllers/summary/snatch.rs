@@ -1,11 +1,10 @@
 //! Current snatch instructions from the owner's phase and permitted semantic routes.
 
-use crate::{
-    controllers::{
-        bindings::tables::describe::{Control, Effect, Gesture, ModAction, Row, press_control},
-        summary::{current::CurrentContext, eligibility::SnatchHint},
-    },
-    vr::input::semantic::bound::SourceTable,
+use jc3vr_render::vr::input::semantic::bound::SourceTable;
+
+use crate::controllers::{
+    bindings::tables::describe::{Control, Effect, Gesture, ModAction, Row, press_control},
+    summary::{current::CurrentContext, eligibility::SnatchHint},
 };
 
 pub(crate) fn extend(current: &mut CurrentContext, table: &SourceTable, hint: Option<&SnatchHint>) {

@@ -3,14 +3,14 @@
 //! toggle and the tuning beside it.
 //!
 //! `ControllersConfig::new()` ships as the full gameplay preset
-//! ([`presets::Preset::Controllers`](crate::controllers::presets::Preset::Controllers)),
+//! (`presets::Preset::Controllers`),
 //! so that hand aiming, roomscale, weapon handling, vehicle steering (including the wingsuit's arm
 //! steering and the parachute's handles), and the debug gizmos all work, and show, out of the box.
 //! `presets::preset_modified` checked against that preset stays false for the defaults.
 //!
 //! Stick turning is not configured here: the controller scheme's right stick drives the same body
 //! yaw as the gamepad's look input, so it shares
-//! [`VrTurnConfig`](crate::headpose::config::VrTurnConfig) (`headpose.vr_turn`) rather than keeping
+//! [`VrTurnConfig`](jc3vr_render::headpose::config::VrTurnConfig) (`headpose.vr_turn`) rather than keeping
 //! a second copy of the smooth and snap settings.
 //!
 //! One file per subsystem cluster: [`input`] (raw input, locomotion, and the bindings), [`aim`] (controller-owned hands and per-hand aiming), [`overlay`], [`weapons`],
@@ -23,6 +23,8 @@ mod overlay;
 mod roomscale;
 mod weapons;
 
+use jc3vr_core::config::engine::ConfigSlot;
+use jc3vr_input::frame::Hand;
 use serde::{Deserialize, Serialize};
 
 pub use self::{
@@ -35,9 +37,8 @@ pub use self::{
 };
 pub use crate::controllers::aim::sights::config::{SightOverride, SightTable, SightTuningConfig};
 use crate::{
-    config::engine::ConfigSlot,
     controllers::{
-        fingers::config::FingersConfig, frame::Hand, glass::GlassConfig, haptics::HapticsConfig,
+        fingers::config::FingersConfig, glass::GlassConfig, haptics::HapticsConfig,
         physical_hands::PhysicalHandsConfig, summary::SummaryConfig,
         vehicles::config::VehiclesConfig,
     },
@@ -46,10 +47,9 @@ use crate::{
 
 /// The controller settings, at `controllers` in the settings file; the payload binds the slot at
 /// startup.
-pub(crate) static CONTROLLERS_CONFIG: ConfigSlot<ControllersConfig> =
-    ConfigSlot::new("controllers");
+pub static CONTROLLERS_CONFIG: ConfigSlot<ControllersConfig> = ConfigSlot::new("controllers");
 
-/// All motion-controller settings, added to [`crate::config::Config`] as `controllers`.
+/// All motion-controller settings, added to `config::Config` as `controllers`.
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ControllersConfig {
@@ -109,7 +109,7 @@ impl ControllersConfig {
     /// change of [`ControllersConfig::dominant_hand`] takes effect for the roles at the same
     /// restart as for the buttons, so the two never disagree.
     pub fn acting_hand(&self) -> Hand {
-        acting_hand(self.dominant_hand, crate::vr::input::bound_hand())
+        acting_hand(self.dominant_hand, jc3vr_render::vr::input::bound_hand())
     }
 
     pub const fn new() -> Self {

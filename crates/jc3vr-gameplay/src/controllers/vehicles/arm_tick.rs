@@ -2,11 +2,11 @@
 //! wingsuit's arm steering is switched on.
 
 use glam::Vec2;
+use jc3vr_input::frame::Hand;
 
 use crate::controllers::{
     bindings::{controls::Controls, hold::Desired},
     config::ControllersConfig,
-    frame::Hand,
     hands::ActiveHands,
     mode::{AirborneVariant, Mode},
     vehicles::{

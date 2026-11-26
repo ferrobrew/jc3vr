@@ -1,15 +1,13 @@
 use std::time::Duration;
 
 use glam::{Quat, Vec3};
+use jc3vr_render::controllers::overlay::{
+    primitive::{Anchor, DepthMode, HandPose, Primitive, Source},
+    store,
+};
 
-use crate::controllers::{
-    overlay::{
-        primitive::{Anchor, DepthMode, HandPose, Primitive, Source},
-        store,
-    },
-    weapons::reload::{
-        State, Tick, guide::geometry::shape, insert::InsertStage, plan::WellFrame, tuning::Reload,
-    },
+use crate::controllers::weapons::reload::{
+    State, Tick, guide::geometry::shape, insert::InsertStage, plan::WellFrame, tuning::Reload,
 };
 
 mod geometry;

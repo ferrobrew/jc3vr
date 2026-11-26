@@ -17,16 +17,15 @@
 
 use std::fmt;
 
-use crate::controllers::{
-    frame::Hand,
-    loadout::{
-        binding::Binding,
-        item::{ItemId, ItemKind},
-        projection::{Projection, project},
-        reset::Caches,
-        safe_items::SafeWorld,
-        socket::{BodyLayout, Socket},
-    },
+use jc3vr_input::frame::Hand;
+
+use crate::controllers::loadout::{
+    binding::Binding,
+    item::{ItemId, ItemKind},
+    projection::{Projection, project},
+    reset::Caches,
+    safe_items::SafeWorld,
+    socket::{BodyLayout, Socket},
 };
 
 /// The table.

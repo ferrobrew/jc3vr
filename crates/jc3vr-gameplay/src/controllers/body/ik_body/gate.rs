@@ -19,36 +19,34 @@ use body_rig::{
     ik_weight::{IkBlend, IkState, IkWeights},
 };
 use glam::{Mat4, Vec2, Vec3};
+use jc3vr_render::headpose::xr;
 
-use crate::{
-    controllers::{
-        body::{
-            firm_ragdoll::{
-                self,
-                target::{IkLegs, TargetBones},
-            },
-            ik_body::{
-                climb::{ClimbFeet, ClimbLegs, ModelBrace},
-                config::IkBodyConfig,
-                fk::{self, FkPose},
-                probe,
-                seed::{self, ModelBody, Proportions},
-                support,
-            },
-            procedural::{
-                authority::Case,
-                rig::{Rig, RigBone},
-                solver::pose::RigPose,
-                stance::StanceConfig,
-            },
-            rig::grounded,
+use crate::controllers::{
+    body::{
+        firm_ragdoll::{
+            self,
+            target::{IkLegs, TargetBones},
         },
-        diagnostics::report,
-        locomotion::LocomotionStatus,
-        roomscale::teleport,
-        scheme,
+        ik_body::{
+            climb::{ClimbFeet, ClimbLegs, ModelBrace},
+            config::IkBodyConfig,
+            fk::{self, FkPose},
+            probe,
+            seed::{self, ModelBody, Proportions},
+            support,
+        },
+        procedural::{
+            authority::Case,
+            rig::{Rig, RigBone},
+            solver::pose::RigPose,
+            stance::StanceConfig,
+        },
+        rig::grounded,
     },
-    headpose::xr,
+    diagnostics::report,
+    locomotion::LocomotionStatus,
+    roomscale::teleport,
+    scheme,
 };
 
 /// Why the IK body leaves the body to the game.

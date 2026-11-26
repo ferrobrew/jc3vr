@@ -4,18 +4,16 @@
 use std::num::NonZeroUsize;
 
 use jc3gi::{character::inventory::WeaponSlot, equipment::weapon::WeaponClass};
+use jc3vr_input::frame::Hand;
 use pretty_assertions::assert_eq;
 
-use crate::controllers::{
-    frame::Hand,
-    loadout::{
-        binding::{Binding, ObjectAddress},
-        item::{ItemId, ItemKind, WeaponType},
-        projection::{SLOTS, SlotContent, project},
-        socket::{BodyLayout, Socket},
-        table::{Departure, ItemView, Loadout, Place, primary},
-        transition::{Change, Take, TakeSource, Transition},
-    },
+use crate::controllers::loadout::{
+    binding::{Binding, ObjectAddress},
+    item::{ItemId, ItemKind, WeaponType},
+    projection::{SLOTS, SlotContent, project},
+    socket::{BodyLayout, Socket},
+    table::{Departure, ItemView, Loadout, Place, primary},
+    transition::{Change, Take, TakeSource, Transition},
 };
 
 /// A made-up object at an address derived from `n`.

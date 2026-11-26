@@ -7,6 +7,10 @@ use jc3gi::{
     character::inventory::WeaponSlot, equipment::weapon::WeaponBase,
     input::input_action_map::Action,
 };
+use jc3vr_input::{
+    frame::{self, Hand},
+    motion,
+};
 
 use crate::controllers::{
     bindings::{
@@ -16,7 +20,6 @@ use crate::controllers::{
     config::{CONTROLLERS_CONFIG, ControllersConfig},
     diagnostics,
     fingers::grip::{self, Grip, GripSource},
-    frame::{self, Hand},
     grab::{GrabVolume, resolve::dock_target},
     hands::{
         self, ActiveHands, pose as hand_pose,
@@ -28,7 +31,7 @@ use crate::controllers::{
         grab::{self, GrabRules, Release, SocketMove, SocketRefusal},
         live,
     },
-    mode, motion,
+    mode,
     physical_hands::physics::guns,
     weapons::{
         begin::with_holder,

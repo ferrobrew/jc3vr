@@ -30,11 +30,11 @@ use jc3gi::{
     rumble_manager::{RumbleEffectType, RumbleManager},
     types::math::Vector3,
 };
+use jc3vr_input::frame::Hand;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
     config::CONTROLLERS_CONFIG,
-    frame::Hand,
     haptics::{self, Event, HapticsConfig, Sustain},
     scheme,
     weapons::fire,

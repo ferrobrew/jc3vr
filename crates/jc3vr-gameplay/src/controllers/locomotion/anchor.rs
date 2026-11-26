@@ -8,32 +8,32 @@ use std::time::Instant;
 
 use glam::{Mat4, Vec3};
 use jc3gi::character::character::{AimState, Character};
-use parking_lot::Mutex;
-
-use crate::{
-    controllers::{
-        body::procedural::{
-            authority::{Case, classify},
-            state::StateTracker,
-        },
-        config::CONTROLLERS_CONFIG,
-        locomotion::{
-            status as locomotion_status,
-            view::{
-                Eligibility, Handover, HeightFilter, MOVEMENT_TASK_GRACE_S, Neutral,
-                NeutralCapture, blend, face_clear, face_offset, neck_model_anchors, stable_anchors,
-            },
-            view_follow::{Escape, HeadFollower, HeldSource, escape_distance},
-        },
-        mode::{AirborneVariant, Mode, OnFootVariant, current as current_mode},
-    },
+use jc3vr_core::hooks::in_gameplay;
+use jc3vr_render::{
     headpose::{
         Anchors, Source,
         sim::{HeadMode, mode as head_mode},
         source,
     },
-    hooks::in_gameplay,
     vr::VR_CONFIG,
+};
+use parking_lot::Mutex;
+
+use crate::controllers::{
+    body::procedural::{
+        authority::{Case, classify},
+        state::StateTracker,
+    },
+    config::CONTROLLERS_CONFIG,
+    locomotion::{
+        status as locomotion_status,
+        view::{
+            Eligibility, Handover, HeightFilter, MOVEMENT_TASK_GRACE_S, Neutral, NeutralCapture,
+            blend, face_clear, face_offset, neck_model_anchors, stable_anchors,
+        },
+        view_follow::{Escape, HeadFollower, HeldSource, escape_distance},
+    },
+    mode::{AirborneVariant, Mode, OnFootVariant, current as current_mode},
 };
 
 /// What the stable anchor did on its last tick, for the debug UI.

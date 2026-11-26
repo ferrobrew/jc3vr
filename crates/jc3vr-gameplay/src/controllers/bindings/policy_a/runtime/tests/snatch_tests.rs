@@ -1,24 +1,22 @@
 use jc3gi::input::input_action_map::Action;
+use jc3vr_render::vr::input::semantic::bound::{EnumeratedSource, SourceTable, of_sources};
 
 use super::*;
-use crate::{
-    controllers::{
-        bindings::{
-            controls::{ButtonControl, Controls},
-            summary::grapple_routes,
-            tables::{
-                Bindings,
-                describe::{Control as ShownControl, Effect, ModAction},
-            },
-            trigger_ownership::{self, Owner, TriggerMask},
+use crate::controllers::{
+    bindings::{
+        controls::{ButtonControl, Controls},
+        summary::grapple_routes,
+        tables::{
+            Bindings,
+            describe::{Control as ShownControl, Effect, ModAction},
         },
-        grab::GrabVolume,
-        loadout::Socket,
-        mode::{Mode, OnFootVariant},
-        summary::{current::CurrentContext, eligibility::SnatchHint, snatch},
-        weapons::capabilities::{GunHand, GunOwner},
+        trigger_ownership::{self, Owner, TriggerMask},
     },
-    vr::input::semantic::bound::{EnumeratedSource, SourceTable, of_sources},
+    grab::GrabVolume,
+    loadout::Socket,
+    mode::{Mode, OnFootVariant},
+    summary::{current::CurrentContext, eligibility::SnatchHint, snatch},
+    weapons::capabilities::{GunHand, GunOwner},
 };
 
 pub(super) const MODE: Mode = Mode::OnFoot(OnFootVariant::Ground);

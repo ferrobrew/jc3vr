@@ -193,7 +193,10 @@ impl std::error::Error for WellsTableError {
 }
 
 /// The shipped table; regenerate with `tools/sights/extract_wells.py`.
-const WELLS_JSON: &str = include_str!("../../../../../tools/sights/wells.json");
+const WELLS_JSON: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../tools/sights/wells.json"
+));
 
 #[cfg(test)]
 mod tests {

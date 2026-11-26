@@ -4,11 +4,9 @@
 use std::num::NonZeroUsize;
 
 use glam::{Vec2, Vec3};
+use jc3vr_input::frame::Pose;
 
-use crate::controllers::{
-    frame::Pose,
-    physical_hands::physics::blows::{BlowReport, ShoveReport},
-};
+use crate::controllers::physical_hands::physics::blows::{BlowReport, ShoveReport};
 
 /// What a hand body is doing.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]

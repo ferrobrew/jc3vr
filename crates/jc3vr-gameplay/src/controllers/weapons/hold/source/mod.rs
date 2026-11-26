@@ -19,10 +19,10 @@ use jc3gi::{
     character::inventory::WeaponSlot,
     equipment::weapon::{WeaponBase, WeaponState},
 };
+use jc3vr_input::frame::Hand;
 
 use crate::controllers::{
     aim::grapple_weapons,
-    frame::Hand,
     loadout::{Delivery, TakeSource},
     weapons::{
         dual_wield::single,

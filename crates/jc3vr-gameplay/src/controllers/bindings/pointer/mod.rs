@@ -10,7 +10,7 @@
 //! - [`egui_grab`] decides which hand's grip holds the panel.
 //!
 //! The rays are intersected with the panels the renderer last drew
-//! ([`crate::hud::pointer::panel`]). The HUD reads the results: it routes the game UI's mouse from
+//! ([`jc3vr_render::hud::pointer::panel`]). The HUD reads the results: it routes the game UI's mouse from
 //! [`selected_controller`] and drains the egui updates ([`take_updates`]). What the pointers need
 //! from the HUD (its settings, the desktop mouse's capture, and the debug panel's placement) comes
 //! through the [`PointerHud`] table the HUD registers at install.
@@ -22,17 +22,21 @@ mod egui_grab;
 
 use std::sync::OnceLock;
 
-pub use crate::controllers::bindings::pointer::controller::{
-    ControllerPointer, clear_controller, owns_menu_trigger, selected_controller, update_controller,
+use jc3vr_input::frame::{Hand, Pose};
+
+pub use crate::controllers::bindings::pointer::{
+    controller::{
+        ControllerPointer, clear_controller, owns_menu_trigger, selected_controller,
+        update_controller,
+    },
+    egui_controller::{
+        ControllerUpdate, reset_egui_controller, take_updates, update_egui_controller,
+    },
 };
-pub(crate) use crate::controllers::bindings::pointer::egui_controller::{
-    ControllerUpdate, reset_egui_controller, take_updates, update_egui_controller,
-};
-use crate::controllers::frame::{Hand, Pose};
 
 /// What the controller pointers read from and do to the HUD, registered by the HUD at install
 /// ([`register_hud`]). Each entry is called from the input tick.
-pub(crate) struct PointerHud {
+pub struct PointerHud {
     /// Whether the game-UI pointer is enabled: the HUD is redirected onto the floating panel.
     pub native_pointer_enabled: fn() -> bool,
     /// Whether a desktop press currently owns the game UI, so a controller press must not start
@@ -58,7 +62,7 @@ pub(crate) struct PointerHud {
 
 /// The egui panel pointer's settings, read together.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub(crate) struct EguiPointerSettings {
+pub struct EguiPointerSettings {
     /// Whether the controllers point at the panel.
     pub enabled: bool,
     /// The panel's width over its height.
@@ -67,7 +71,7 @@ pub(crate) struct EguiPointerSettings {
 
 /// Register the HUD's side of the pointers. Only one table is held: the first registration wins
 /// and a later one is refused with a warning.
-pub(crate) fn register_hud(hud: &'static PointerHud) {
+pub fn register_hud(hud: &'static PointerHud) {
     if HUD.set(hud).is_err() {
         tracing::warn!("controller pointer: a HUD is already registered; the new one is ignored");
     }

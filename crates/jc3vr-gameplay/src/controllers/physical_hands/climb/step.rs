@@ -5,10 +5,10 @@ use std::time::Instant;
 
 use glam::{Quat, Vec3};
 use jc3gi::character::character::Character;
+use jc3vr_input::frame::Hand;
 
 use crate::controllers::{
     config::CONTROLLERS_CONFIG,
-    frame::Hand,
     physical_hands::{
         climb::{
             config::HandClimbTuning,
@@ -37,7 +37,7 @@ use crate::controllers::{
 ///
 /// The thread that steps the physics world, outside the step, after the characters' proxy
 /// updates (the pre-simulation callback).
-pub(crate) unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2] {
+pub unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2] {
     let config = CONTROLLERS_CONFIG.lock().physical_hands;
     let climb = HandClimbTuning::of(&config.climb);
     let context = unsafe { engine::gate_context() };

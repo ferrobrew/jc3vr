@@ -17,13 +17,13 @@ use jc3gi::{
     equipment::weapon::{WeaponBase, WeaponState},
     input::input_action_map::Action,
 };
+use jc3vr_input::frame::Hand;
+use jc3vr_render::controllers::cockpit::CockpitTransform;
 use parking_lot::Mutex;
 
 use crate::controllers::{
     bindings::hold::{Desired, MapKind, Target, Want},
-    cockpit::CockpitTransform,
     config::CONTROLLERS_CONFIG,
-    frame::Hand,
     hands,
     loadout::{Delivery, TakeSource},
     physical_hands::{self, doors::engine::vehicle_of as resolve_vehicle, physics_object_of},
@@ -84,7 +84,7 @@ pub(crate) unsafe fn observe(weapon: &WeaponBase) {
 /// The game thread, after the physical hands and weapon handling settled this tick.
 pub(crate) unsafe fn tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
     let enabled = scheme::is_controllers()
-        && !crate::is_shutting_down()
+        && !jc3vr_core::is_shutting_down()
         && CONTROLLERS_CONFIG.query(|config| config.enabled && config.physical_hands.enabled);
     let held = physical_hands::held_bodies();
     let now = Instant::now();

@@ -123,8 +123,9 @@ static STORE: Mutex<Store> = Mutex::new(Store {
 
 #[cfg(test)]
 mod tests {
+    use jc3vr_render::headpose::anchors::test_support::identity_fixture;
+
     use super::*;
-    use crate::headpose::anchors::test_support::identity_fixture;
 
     fn fixture() -> (Store, Evaluation) {
         let identity = identity_fixture();

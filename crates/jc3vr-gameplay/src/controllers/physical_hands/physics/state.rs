@@ -8,34 +8,31 @@ use std::{
 };
 
 use glam::{Quat, Vec2, Vec3};
+use jc3vr_input::frame::Hand;
+use jc3vr_render::controllers::cockpit::CockpitTransform;
 use parking_lot::Mutex;
 
-use crate::{
-    controllers::{
-        cockpit::CockpitTransform,
-        frame::Hand,
-        hands::{self, CockpitHand},
-        mode,
-        physical_hands::{
-            PhysicalHandsConfig, STATE, free_hands,
-            grasp::{AngularTracker, VelocityTracker},
-            mode_acts,
-            palm::PalmBox,
-            physics::{
-                callback,
-                config::HandBodyTuning,
-                contact,
-                drive::{DriveTuning, Goal},
-                guns,
-                render::{OffsetTimeline, RenderOffset},
-                types::{BodyPhase, CallbackStatus, HandBodiesStatus, HandBodyStatus, HoldTarget},
-            },
-            pickup::PICKUP,
-            tuning::PALMS,
+use crate::controllers::{
+    hands::{self, CockpitHand},
+    mode,
+    physical_hands::{
+        PhysicalHandsConfig, STATE, free_hands,
+        grasp::{AngularTracker, VelocityTracker},
+        mode_acts,
+        palm::PalmBox,
+        physics::{
+            callback,
+            config::HandBodyTuning,
+            contact,
+            drive::{DriveTuning, Goal},
+            guns,
+            render::{OffsetTimeline, RenderOffset},
+            types::{BodyPhase, CallbackStatus, HandBodiesStatus, HandBodyStatus, HoldTarget},
         },
-        scheme,
+        pickup::PICKUP,
+        tuning::PALMS,
     },
-    hooks,
+    scheme,
 };
 
 pub fn status() -> HandBodiesStatus {
@@ -53,32 +50,32 @@ pub fn callback_status() -> CallbackStatus {
 }
 
 /// Whether the hand bodies are on: their switch, under the physical hands' master switch.
-pub(crate) fn enabled(config: &PhysicalHandsConfig) -> bool {
+pub fn enabled(config: &PhysicalHandsConfig) -> bool {
     config.enabled && config.bodies.enabled
 }
 
 /// Publish what each hand's grip holds through a joint, for the next step to join. Called from the
 /// player aim control's post-simulation update.
-pub(crate) fn publish_holds(holds: [Option<HoldTarget>; 2]) {
+pub fn publish_holds(holds: [Option<HoldTarget>; 2]) {
     SHARED.lock().holds = holds;
 }
 
 /// Publish where each hand that grips something it cannot move yet is held, world space: a latched
 /// door's grab point. The next step holds the hand's body there instead of driving it to its
 /// controller. Called from the player aim control's post-simulation update.
-pub(crate) fn publish_pins(pins: [Option<Vec3>; 2]) {
+pub fn publish_pins(pins: [Option<Vec3>; 2]) {
     SHARED.lock().pins = pins;
 }
 
 /// Take which hands lost the joint their grip held since the last call: the joint could not be
 /// made, the object's body went away, or the hand's body stopped.
-pub(crate) fn take_joint_losses() -> [bool; 2] {
+pub fn take_joint_losses() -> [bool; 2] {
     std::mem::take(&mut SHARED.lock().joint_lost)
 }
 
 /// Whether `hand` is driven by its body: the hand acts, and the last step drove its body. The
 /// palm's probes leave such a hand alone, and take it back as soon as its body stops.
-pub(crate) fn drives(hand: Hand) -> bool {
+pub fn drives(hand: Hand) -> bool {
     let shared = SHARED.lock();
     let now = Instant::now();
     shared.fresh(now)
@@ -89,7 +86,7 @@ pub(crate) fn drives(hand: Hand) -> bool {
 
 /// Where `hand`'s body was before the last step, game space, while it acts: the place its reach
 /// is cast from, so that what the hand reaches is what its body touches.
-pub(crate) fn body_pose(hand: Hand) -> Option<(Vec3, Quat)> {
+pub fn body_pose(hand: Hand) -> Option<(Vec3, Quat)> {
     let shared = SHARED.lock();
     let now = Instant::now();
     (shared.fresh(now) && shared.stepped_lately(now))
@@ -98,7 +95,7 @@ pub(crate) fn body_pose(hand: Hand) -> Option<(Vec3, Quat)> {
 }
 
 /// Whether `hand`'s body presses into something that holds it back, as the last step found it.
-pub(crate) fn pressing(hand: Hand) -> bool {
+pub fn pressing(hand: Hand) -> bool {
     let shared = SHARED.lock();
     let now = Instant::now();
     shared.fresh(now)
@@ -108,7 +105,7 @@ pub(crate) fn pressing(hand: Hand) -> bool {
 
 /// The push the hand bodies give the player, world `(x, z)` metres per second: zero when no step
 /// has run lately.
-pub(crate) fn push() -> Vec2 {
+pub fn push() -> Vec2 {
     if crate::controllers::physical_hands::stunt::game_holds() {
         return Vec2::ZERO;
     }
@@ -340,7 +337,7 @@ pub(super) static SHARED: Mutex<Shared> = Mutex::new(Shared {
 /// a tracked hand the controllers drive that holds nothing, or that holds or braces a gun whose
 /// body it holds ([`guns::acting_hands`]).
 pub(super) fn acting_palms(config: &PhysicalHandsConfig) -> Option<ActingPalms> {
-    if !scheme::is_controllers() || !hooks::in_gameplay() {
+    if !scheme::is_controllers() || !jc3vr_core::hooks::in_gameplay() {
         return None;
     }
     let detection = mode::current();
@@ -492,8 +489,9 @@ pub(super) fn press_load(lag: Vec3, config: &HandBodyTuning, scale: f32) -> f32 
 
 #[cfg(test)]
 mod tests {
+    use jc3vr_input::frame::Pose;
+
     use super::*;
-    use crate::controllers::frame::Pose;
 
     #[test]
     fn a_publication_ages_by_steps_so_a_hitch_drops_nothing() {

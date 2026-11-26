@@ -3,11 +3,11 @@
 //! measured geometry, and the bookkeeping the two tick halves share.
 
 use glam::Vec3;
+use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
 use crate::controllers::{
     config::ControllersConfig,
-    frame::Hand,
     grab::{GrabVolume, GripTarget},
     hands::ik,
     physical_hands::physics::guns,

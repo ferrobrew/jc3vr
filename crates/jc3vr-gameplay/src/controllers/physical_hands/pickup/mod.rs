@@ -34,7 +34,7 @@
 //! hand keeps on what it cannot simply carry.
 
 mod damping;
-pub(crate) mod diagnostics;
+pub mod diagnostics;
 mod grips;
 mod held_ragdolls;
 mod input;
@@ -52,6 +52,7 @@ use glam::Vec3;
 use jc3gi::{
     equipment::weapon::WeaponBase, input::input_action_map::Action, vehicle::vehicle::DoorSlot,
 };
+use jc3vr_input::frame::Hand;
 pub(super) use reach::{REACH_DIRECTIONS, ReachObservations, ReachTuning, floor_weapons, reach};
 pub(super) use state::{Held, HeldKind, PickupState, Request};
 pub(super) use tick::{JointInputs, TickInputs, TickOutcome, tick};
@@ -59,7 +60,6 @@ pub use tuning::{PICKUP, PickupTuning};
 
 use crate::controllers::{
     bindings::hold::{Desired, MapKind, Target, Want},
-    frame::Hand,
     haptics::{self, Event},
     physical_hands::{STATE, bodies, grab_view, grasp::Reach},
     weapons::{

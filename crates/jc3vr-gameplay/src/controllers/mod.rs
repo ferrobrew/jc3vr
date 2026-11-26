@@ -2,13 +2,12 @@
 //! locomotion, following the plan of record in `docs/mod/input/controllers-and-roomscale.md`.
 //!
 //! The OpenXR side (action sets, suggested bindings, locating the controller spaces, haptics
-//! output, hand tracking) lives in [`crate::vr::input`], which publishes one
-//! [`ControllerFrame`](frame::ControllerFrame) per rendered frame. This module owns everything
-//! built on that snapshot:
+//! output, hand tracking) lives in [`jc3vr_render::vr::input`], which publishes one
+//! [`ControllerFrame`](jc3vr_input::frame::ControllerFrame) per rendered frame; the snapshot, the
+//! hands' recent motion, and the scheme rule are the input crate's ([`jc3vr_input`]). This module
+//! owns everything built on that snapshot:
 //!
 //! - [`config`]: [`ControllersConfig`], one toggle per subsystem;
-//! - [`frame`]: the published snapshot and the input edge latch;
-//! - [`motion`]: the hands' recent motion, for throws and strikes;
 //! - [`scheme`]: controller versus gamepad scheme selection;
 //! - [`mode`]: the per-tick mode detector, which selects the OpenXR action set;
 //! - [`bindings`]: the per-mode mapping from the controllers to the game's actions, and its
@@ -25,8 +24,8 @@
 //!   update;
 //! - [`presentation`]: the render-rate presentation layer: the upper body re-posed every rendered
 //!   frame from the latest tracking, on top of the pose the tick wrote;
-//! - [`haptics`]: the controllers' vibration: one vocabulary of cues for every source, the mixer
-//!   that folds them into what each hand plays, and the game's rumble forwarded;
+//! - [`haptics`]: the controllers' vibration: one vocabulary of cues for every source, which the
+//!   input crate's mixer folds into what each hand plays, and the game's rumble forwarded;
 //! - [`fingers`]: finger curls on the rendered hands, from hand tracking or estimated from the
 //!   inputs;
 //! - [`aim`]: per-hand aiming: the guns along the hands' sight lines and the grapple along the
@@ -49,19 +48,18 @@
 //! - [`roomscale`]: posture, the head-height remap, the cockpit composition, the crouch capsule, the
 //!   head-through-geometry fade, and seat transitions. These need the headset rather than the
 //!   controllers, so they are gated on the VR source and their own toggles instead of the scheme;
-//! - [`summary`]: the controls summary on the off-hand wrist, and hiding the game's own button
-//!   hints;
-//! - [`menu`]: the pause menu's `VR: CONTROLS`, `VR: COMFORT`, and `VR: DISPLAY` pages over the
-//!   settings a player reaches for in the headset (the `VR: BODY` page is [`body::menu`]); the
-//!   rest are in the debug UI.
+//! - [`summary`]: the controls summary's model, which the HUD draws on the off-hand wrist;
+//! - [`telemetry`]: the notes the subsystems write to the tracking recording.
+//!
+//! The controls map and the summary's presentation belong to the HUD layer, and the pause menu's
+//! `VR:` pages to the UI layer.
 //!
 //! Every subsystem is gated on its toggle and, where it changes how the character behaves, on the
 //! controller scheme ([`scheme::is_controllers`]), so that the mod behaves as before whenever no
 //! controllers are in use.
 
+use jc3vr_core::lifecycle::RegistrationError;
 use re_utilities::hook_library::HookLibrary;
-
-use crate::lifecycle::RegistrationError;
 
 pub mod aim;
 pub mod aim_state;
@@ -70,11 +68,10 @@ pub mod body;
 pub mod clock;
 // The render layer's half lives in the render crate; the old path keeps working until the final
 // cleanup pass.
-pub(crate) use jc3vr_render::controllers::cockpit;
+pub use jc3vr_render::controllers::cockpit;
 pub mod config;
 pub mod diagnostics;
 pub mod fingers;
-pub mod frame;
 pub mod gamepad_setting;
 pub mod glass;
 pub mod grab;
@@ -82,14 +79,10 @@ pub mod hands;
 pub mod haptics;
 pub mod loadout;
 pub mod locomotion;
-pub mod map;
-pub(crate) mod menu;
 pub mod mode;
-pub mod motion;
 pub mod overlay;
 pub mod physical_hands;
 pub mod presentation;
-pub mod presets;
 mod register_head_pose;
 mod register_lifecycle;
 mod register_render;
@@ -108,7 +101,7 @@ pub use config::ControllersConfig;
 /// Register the controller subsystems' shutdown participants and their hook installation and
 /// removal steps. Runs before the hooks are installed; an error refuses hook installation, and the
 /// refusal is already logged.
-pub(crate) fn install() -> Result<(), RegistrationError> {
+pub fn install() -> Result<(), RegistrationError> {
     register_head_pose::register();
     register_vr_frame::register();
     register_render::register();
@@ -123,14 +116,16 @@ pub(crate) fn register_head_participants_for_tests() {
     REGISTERED.call_once(register_head_pose::register);
 }
 
-/// The controller subsystems' hooks, aggregated into the payload's hook library by
-/// [`crate::composition`].
-pub(crate) fn hook_library() -> HookLibrary {
+/// The controller subsystems' hooks, aggregated into the payload's hook library by its composition.
+///
+/// The HUD layer's controls map hooks enable inside this library, after the aim's and before the
+/// roomscale's, so the composition passes them in as `map`.
+pub fn hook_library(map: HookLibrary) -> HookLibrary {
     HookLibrary::new()
         .with_hook_library(aim_state::hook_library())
         .with_hook_library(hands::hook_library())
         .with_hook_library(aim::hook_library())
-        .with_hook_library(map::hook_library())
+        .with_hook_library(map)
         .with_hook_library(roomscale::hook_library())
         .with_hook_library(body::rig::root::hook_library())
         .with_hook_library(body::firm_ragdoll::hook_library())

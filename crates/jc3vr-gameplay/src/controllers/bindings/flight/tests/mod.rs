@@ -1,11 +1,11 @@
 mod current;
 
 use jc3gi::input::input_action_map::Action::{CANCEL, OPEN_WINGSUIT, WINGSUIT_AIRBRAKE};
+use jc3vr_input::frame::ActionSetKind;
 
 use super::*;
 use crate::controllers::{
     bindings::hold::{Target, Want},
-    frame::ActionSetKind,
     loadout::Socket,
     mode::AirborneVariant,
     vehicles::{

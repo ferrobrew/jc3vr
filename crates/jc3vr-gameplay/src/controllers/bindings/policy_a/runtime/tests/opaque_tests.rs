@@ -2,8 +2,9 @@
 //! the default bindings stand in as the attribution, and the raw protected routes are taken at
 //! their fixed location.
 
+use jc3vr_render::vr::input::semantic::bound::opaque;
+
 use super::*;
-use crate::vr::input::semantic::bound::opaque;
 
 /// The raw routes' sources, as the runtime reports them: each `hands` action is bound on both
 /// hands, so every route names two opaque sources.

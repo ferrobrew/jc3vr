@@ -16,9 +16,7 @@ use crate::controllers::{
 
 mod diagnostics;
 
-pub(crate) use crate::controllers::physical_hands::doors::pressure::diagnostics::{
-    Readout, Reason,
-};
+pub use crate::controllers::physical_hands::doors::pressure::diagnostics::{Readout, Reason};
 use crate::controllers::physical_hands::{
     bodies,
     contact::{Surface, SurfaceHit},
@@ -59,7 +57,7 @@ pub(crate) enum Probe {
     Hidden,
 }
 
-pub(crate) fn status() -> [Readout; 2] {
+pub fn status() -> [Readout; 2] {
     STATE
         .lock()
         .door_press

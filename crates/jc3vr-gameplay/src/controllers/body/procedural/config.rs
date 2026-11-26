@@ -1,8 +1,9 @@
 //! The procedural body's settings, `controllers.body.procedural`.
 
+use jc3vr_core::config::engine::Invalid;
 use serde::{Deserialize, Serialize};
 
-use crate::{config::validate::Invalid, controllers::body::procedural::stance::StanceConfig};
+use crate::controllers::body::procedural::stance::StanceConfig;
 
 /// The procedural body (see [`crate::controllers::body::procedural`]).
 #[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
@@ -90,7 +91,7 @@ impl ProceduralBodyConfig {
     }
 
     /// Check the settings. Paths are relative to `controllers.body.procedural`.
-    pub(crate) fn validate(&self) -> Result<(), Invalid> {
+    pub fn validate(&self) -> Result<(), Invalid> {
         let checks = [
             ("blend_s", self.blend_s, 0.0, 10.0),
             ("blend_out_s", self.blend_out_s, 0.0, 10.0),

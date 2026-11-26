@@ -5,10 +5,10 @@ use std::{num::NonZeroUsize, time::Instant};
 
 use glam::Vec3;
 use jc3gi::vehicle::vehicle::DoorSlot;
+use jc3vr_input::frame::{Hand, Pose};
 
 use crate::controllers::{
     diagnostics::{Released, Thrown, note_release, note_throw},
-    frame::{Hand, Pose},
     physical_hands::{
         STALE_AFTER, bodies, carry_collision,
         characters::{self, CharactersConfig, Regrip, Seize},

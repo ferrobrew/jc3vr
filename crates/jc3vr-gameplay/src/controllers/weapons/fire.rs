@@ -20,12 +20,12 @@ use std::cell::Cell;
 
 use detours_macro::detour;
 use jc3gi::equipment::weapon::{WeaponBase, WeaponData, WeaponState};
+use jc3vr_input::frame::Hand;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
     aim::gun,
     config::CONTROLLERS_CONFIG,
-    frame::Hand,
     hands::late,
     haptics::rumble,
     physical_hands::physics::guns,

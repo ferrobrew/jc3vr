@@ -49,19 +49,19 @@
 
 use std::cell::{Cell, RefCell};
 
-use parking_lot::Mutex;
-
-use crate::{
-    controllers::{
-        bindings::{
-            hold::{ActionWrite, DevicePoll, Phase},
-            inject::{self, Landing, Outcome},
-        },
-        diagnostics::{Write, note_injected},
-        gamepad_setting,
-    },
+use jc3vr_core::{
     frame_timing::{self, Slot},
     thread_role::{self, ThreadRole},
+};
+use parking_lot::Mutex;
+
+use crate::controllers::{
+    bindings::{
+        hold::{ActionWrite, DevicePoll, Phase},
+        inject::{self, Landing, Outcome},
+    },
+    diagnostics::{Write, note_injected},
+    gamepad_setting,
 };
 
 /// Where the game stage runs relative to the poll stage that fed it.

@@ -15,7 +15,7 @@ fn request(generation: u64) -> DetachRequest {
         id: MagazineId {
             weapon: 1,
             gun: 0,
-            holder: crate::controllers::frame::Hand::Right,
+            holder: jc3vr_input::frame::Hand::Right,
         },
         generation,
         expected: Identity::test(),

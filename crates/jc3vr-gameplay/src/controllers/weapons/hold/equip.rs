@@ -24,10 +24,10 @@ use jc3gi::{
     },
     equipment::weapon::{WeaponBase, WeaponData, WeaponState},
 };
+use jc3vr_input::frame::Pose;
 
 use crate::controllers::{
     aim::gun,
-    frame::Pose,
     hands::{grip, pose as hand_pose},
     physical_hands,
     weapons::{

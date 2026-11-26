@@ -13,15 +13,18 @@ use jc3gi::{
     },
     types::math::Vector3,
 };
+use jc3vr_input::{
+    frame::{Hand, Pose},
+    motion,
+};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
     bindings,
     config::CONTROLLERS_CONFIG,
-    frame::{Hand, Pose},
     hands::held::{self, Held, Slot, held_matrix},
-    motion, scheme,
+    scheme,
     weapons::{
         engine,
         grenade::{
@@ -195,7 +198,7 @@ pub(super) unsafe fn render_frame() {
     if !selected
         || !same_actor
         || !owner_valid
-        || !crate::hooks::in_gameplay()
+        || !jc3vr_core::hooks::in_gameplay()
         || !scheme::is_controllers()
         || !CONTROLLERS_CONFIG.query(|config| config.weapons.grenade_throw)
         || bindings::grip_holds_now(pending.gesture.hand).is_none()
@@ -268,7 +271,7 @@ pub(super) fn propelling(explosive: usize) -> bool {
 
 unsafe fn observe_selection() {
     if !scheme::is_controllers()
-        || !crate::hooks::in_gameplay()
+        || !jc3vr_core::hooks::in_gameplay()
         || !CONTROLLERS_CONFIG.query(|config| config.weapons.grenade_throw)
     {
         STATE.lock().selection = None;

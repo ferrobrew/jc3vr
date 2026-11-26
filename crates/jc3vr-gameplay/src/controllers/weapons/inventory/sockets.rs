@@ -8,8 +8,9 @@
 
 use glam::Vec3;
 use jc3gi::character::character::SafeBoneIndex;
+use jc3vr_input::frame::Hand;
 
-use crate::controllers::{frame::Hand, loadout::Socket};
+use crate::controllers::loadout::Socket;
 
 /// The name the save sidecar keeps `socket` under. The first back socket is the right shoulder's,
 /// and the second is the left's.

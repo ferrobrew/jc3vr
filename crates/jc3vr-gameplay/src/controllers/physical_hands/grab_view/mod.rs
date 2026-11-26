@@ -26,6 +26,11 @@ use std::{
 };
 
 use glam::Vec3;
+use jc3vr_input::frame::Hand;
+use jc3vr_render::controllers::overlay::{
+    primitive::{Anchor, Primitive, Source},
+    store,
+};
 use parking_lot::Mutex;
 
 pub use self::config::GrabViewConfig;
@@ -35,14 +40,9 @@ use self::{
 };
 use crate::controllers::{
     config::CONTROLLERS_CONFIG,
-    frame::Hand,
     grab::{
         markers::{MarkerFrame, anchor as marker_anchor},
         tick::Tick,
-    },
-    overlay::{
-        primitive::{Anchor, Primitive, Source},
-        store,
     },
     physical_hands::{PhysicalHandsConfig, palm_readout},
     weapons::reload::{knock, zones},

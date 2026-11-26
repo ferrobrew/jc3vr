@@ -58,6 +58,10 @@ use jc3gi::{
     state::StateContext,
     types::math::Vector3,
 };
+use jc3vr_render::{
+    headpose,
+    vr::{RecenterCause, RecenterKind},
+};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
@@ -69,40 +73,36 @@ pub(crate) use crate::controllers::body::rig::root::completion::{
 pub(crate) use crate::controllers::body::rig::root::completion::{
     test_source, test_source_with_root,
 };
-use crate::{
-    controllers::{
-        aim::raycast::CastOptions,
-        body::{
-            BodyDimensions, estimator, ik_body,
-            procedural::state::animation_moves_body,
-            rig::{
-                collision::probe,
-                config::RigConfig,
-                grounded::{self, GroundedFrame, GroundedInput},
-                root::{
-                    drive::{StepFrame, to_cockpit, to_world},
-                    ledger::{CompletedMovement, LedgerCounts, Movement, Requests},
-                    owner::{OwnerInput, RootOwner},
-                    pushback::{Pushback, PushbackInput, PushbackOutcome},
-                    shift::{CockpitBasis, CockpitShift},
-                    trace::{Jump, ProxyRead, RootTrace, Split, Support, TickInput, Tracer},
-                },
+use crate::controllers::{
+    aim::raycast::CastOptions,
+    body::{
+        BodyDimensions, estimator, ik_body,
+        procedural::state::animation_moves_body,
+        rig::{
+            collision::probe,
+            config::RigConfig,
+            grounded::{self, GroundedFrame, GroundedInput},
+            root::{
+                drive::{StepFrame, to_cockpit, to_world},
+                ledger::{CompletedMovement, LedgerCounts, Movement, Requests},
+                owner::{OwnerInput, RootOwner},
+                pushback::{Pushback, PushbackInput, PushbackOutcome},
+                shift::{CockpitBasis, CockpitShift},
+                trace::{Jump, ProxyRead, RootTrace, Split, Support, TickInput, Tracer},
             },
         },
-        clock::TimeScale,
-        config::{CONTROLLERS_CONFIG, RoomscaleConfig},
-        locomotion::after_task,
-        physical_hands::{self, climb},
-        roomscale::{
-            self, SeatPhase,
-            crouch::capsule_step,
-            fade::{self, FadeSource},
-            posture::EffectivePosture,
-            teleport,
-        },
     },
-    headpose, hooks,
-    vr::{RecenterCause, RecenterKind},
+    clock::TimeScale,
+    config::{CONTROLLERS_CONFIG, RoomscaleConfig},
+    locomotion::after_task,
+    physical_hands::{self, climb},
+    roomscale::{
+        self, SeatPhase,
+        crouch::capsule_step,
+        fade::{self, FadeSource},
+        posture::EffectivePosture,
+        teleport,
+    },
 };
 
 pub(crate) fn hook_library() -> HookLibrary {
@@ -617,7 +617,7 @@ unsafe fn after_locomotion(character: &mut Character, dt: f32) {
     let wrote_velocity = character.m_CurrentMotionState == Character::MOTION_STATE_TASK_DEFINED
         && !unsafe { character.IsAttachedToVehicle() };
     let driven = headpose::source() == headpose::Source::Vr
-        && hooks::in_gameplay()
+        && jc3vr_core::hooks::in_gameplay()
         && shared.is_some_and(|f| f.fresh(now));
     let live = driven && wrote_velocity;
     let position = glam::Mat4::from(character.m_WorldMatrixT1)

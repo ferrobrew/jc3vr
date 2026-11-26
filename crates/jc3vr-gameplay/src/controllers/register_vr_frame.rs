@@ -1,9 +1,8 @@
-//! The gameplay participants of the VR frame and its recenters ([`crate::vr::FrameParticipants`]).
+//! The gameplay participants of the VR frame and its recenters ([`jc3vr_render::vr::FrameParticipants`]).
 
-use crate::{
-    controllers::roomscale,
-    vr::{FrameParticipants, register_frame_participants},
-};
+use jc3vr_render::vr::{FrameParticipants, register_frame_participants};
+
+use crate::controllers::roomscale;
 
 pub(super) fn register() {
     register_frame_participants(&PARTICIPANTS);

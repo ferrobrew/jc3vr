@@ -55,7 +55,7 @@
 //! weapons that have no body in the world ([`take`] and [`world`]).
 
 pub mod act;
-pub(crate) mod armed;
+pub mod armed;
 pub mod button_pickup;
 pub mod dock;
 pub mod equip;
@@ -86,12 +86,12 @@ use jc3gi::{
     },
     equipment::weapon::{WeaponBase, WeaponState},
 };
+use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
     aim::gun,
-    frame::Hand,
     hands::{grip, late},
     loadout::{ObjectAddress, TakeSource, live},
     weapons::{

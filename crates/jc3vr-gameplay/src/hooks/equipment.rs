@@ -18,7 +18,7 @@ use crate::controllers::{
     weapons::{engine::weapon_at, hold::armed},
 };
 
-pub(crate) fn hook_library() -> HookLibrary {
+pub fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_static_binder(&WEAPON_PRE_SIM_BINDER)
         .with_static_binder(&WEAPON_POST_SIM_BINDER)

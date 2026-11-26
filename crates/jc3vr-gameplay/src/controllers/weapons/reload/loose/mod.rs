@@ -34,13 +34,13 @@ use jc3gi::{
     equipment::weapon::WeaponData,
     physics::{PfxRigidBody, PhysicsGameObject},
 };
+use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
     body::rig::frames::Frames,
     config::CONTROLLERS_CONFIG,
-    frame::Hand,
     grab::{Candidate, GrabVolume},
     physical_hands::{
         self,

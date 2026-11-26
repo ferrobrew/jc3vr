@@ -9,29 +9,28 @@
 //! A move the table already shows sends nothing, and a hand the table disagrees about is left as
 //! the table has it.
 
-use crate::controllers::{
-    frame::Hand,
-    loadout::{
-        binding::{Binding, ObjectAddress},
-        event::Event,
-        item::{ItemKind, WeaponType},
-        live::HeldOther,
-        socket::Socket,
-        table::{Loadout, Place},
-        transition::{Release, Removal, RemovalWhy, Take, TakeSource},
-    },
+use jc3vr_input::frame::Hand;
+
+use crate::controllers::loadout::{
+    binding::{Binding, ObjectAddress},
+    event::Event,
+    item::{ItemKind, WeaponType},
+    live::HeldOther,
+    socket::Socket,
+    table::{Loadout, Place},
+    transition::{Release, Removal, RemovalWhy, Take, TakeSource},
 };
 
 /// A weapon one of the old hand authorities holds.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) struct Held {
+pub struct Held {
     pub object: ObjectAddress,
     pub weapon: WeaponType,
 }
 
 /// Where a weapon that left a hand went.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) enum Whereabouts {
+pub enum Whereabouts {
     /// Onto the body where the game docks its slot, or the nearest socket that fits it.
     Slot,
     /// Out of the player's keeping: dropped, taken, or gone.

@@ -1,9 +1,8 @@
 //! The IK body's settings, `controllers.body.ik` (`docs/mod/body/ik-body.md`).
 
 use body_rig::{brace::BraceTuning, contact::ContactTuning, fk::FkTuning};
+use jc3vr_core::config::engine::Invalid;
 use serde::{Deserialize, Serialize};
-
-use crate::config::validate::Invalid;
 
 /// The IK-first on-foot body: its switch, its blend, how firmly it holds HumanIK's effectors, and
 /// the tuning of the FK pelvis and the feet.
@@ -76,7 +75,7 @@ impl IkBodyConfig {
     }
 
     /// Check the settings. Paths are relative to `controllers.body.ik`.
-    pub(crate) fn validate(&self) -> Result<(), Invalid> {
+    pub fn validate(&self) -> Result<(), Invalid> {
         let c = &self.contact;
         let b = &self.brace;
         let checks = [

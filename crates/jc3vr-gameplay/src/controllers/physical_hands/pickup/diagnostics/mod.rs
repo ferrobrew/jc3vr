@@ -12,31 +12,29 @@ pub(crate) mod scan;
 #[cfg(test)]
 mod tests;
 
+use jc3vr_input::frame::Hand;
+use jc3vr_render::recorder::tracking::{
+    events::{self, EventKind},
+    format::{debug_label, hand_to_file},
+};
 use parking_lot::Mutex;
 use tracking_format::event::{
     GripAcquisition, GripCandidate, GripDrive, GripScan, GripScanEntry, GripStage, Label,
 };
 
-use crate::{
-    controllers::{
-        bindings::controls::ButtonControl,
-        frame::Hand,
-        grab::{
-            GrabVolume,
-            latch::GripLatch,
-            resolve::{self, Lost},
-            tick::Tick,
-        },
-        physical_hands::{
-            bodies::{BodyError, BodyState},
-            grasp::Reach,
-            pickup::HeldReport,
-            rigid::Velocities,
-        },
+use crate::controllers::{
+    bindings::controls::ButtonControl,
+    grab::{
+        GrabVolume,
+        latch::GripLatch,
+        resolve::{self, Lost},
+        tick::Tick,
     },
-    recorder::tracking::{
-        events::{self, EventKind},
-        format::{debug_label, hand_to_file},
+    physical_hands::{
+        bodies::{BodyError, BodyState},
+        grasp::Reach,
+        pickup::HeldReport,
+        rigid::Velocities,
     },
 };
 
@@ -61,7 +59,7 @@ pub(crate) struct InputContext {
 
 /// A reached target retained from the real resolver output.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub(crate) struct Candidate {
+pub struct Candidate {
     pub resolved: resolve::Reach,
     /// The provider's copied reach, when that provider supplies identity.
     pub observed: Option<Reach>,
@@ -70,7 +68,7 @@ pub(crate) struct Candidate {
 
 /// One hand's input observation. A frame sequence is a publication identity, not a clock.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub(crate) struct InputRecord {
+pub struct InputRecord {
     /// The scan copied by the provider while it reads the corresponding physical-hand state.
     pub scan: Option<scan::Scan>,
     pub sequence: u64,
@@ -89,7 +87,7 @@ pub(crate) struct InputRecord {
 
 /// What the pickup input consumer actually did with an input observation.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) enum InputConsumer {
+pub enum InputConsumer {
     NotRun,
     GripOpen,
     NotPickup,
@@ -101,7 +99,7 @@ pub(crate) enum InputConsumer {
 
 /// An identity carried by the actual queued request to its simulation consumer.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub(crate) struct RequestKey {
+pub struct RequestKey {
     pub sequence: u64,
     pub episode: u64,
     pub request: u64,
@@ -111,7 +109,7 @@ pub(crate) struct RequestKey {
 
 /// The simulation consumer's observed result, or the queue operation that removed a request.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) enum ConsumerResult {
+pub enum ConsumerResult {
     Queued,
     Replaced,
     Cleared,
@@ -127,7 +125,7 @@ pub(crate) enum ConsumerResult {
 
 /// The last observed carried-body write or joined-body report for an accepted request.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub(crate) struct DriveRecord {
+pub struct DriveRecord {
     pub object: usize,
     pub body: u32,
     pub before: BodyState,
@@ -139,7 +137,7 @@ pub(crate) struct DriveRecord {
 
 /// One queued request and its observed continuation.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub(crate) struct RequestRecord {
+pub struct RequestRecord {
     pub key: RequestKey,
     pub input: InputRecord,
     pub consumer: ConsumerResult,
@@ -148,7 +146,7 @@ pub(crate) struct RequestRecord {
 
 /// A fixed-size readout for a hand. Array order is storage order; request keys identify entries.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub(crate) struct HandEvidence {
+pub struct HandEvidence {
     pub latest: Option<InputRecord>,
     pub last_press: Option<InputRecord>,
     pub requests: [Option<RequestRecord>; REQUEST_CAPACITY],
@@ -162,7 +160,7 @@ pub(crate) struct HandEvidence {
 
 /// Both hands' copied evidence. Reading this slot acquires only its leaf lock.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub(crate) struct Status {
+pub struct Status {
     pub hands: [HandEvidence; 2],
 }
 
@@ -188,7 +186,7 @@ pub(crate) fn input(
 }
 
 /// Copy a bounded snapshot for a guard-free consumer to format after this call returns.
-pub(crate) fn status() -> Status {
+pub fn status() -> Status {
     *STATUS.lock()
 }
 

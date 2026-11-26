@@ -496,16 +496,13 @@ impl ModText {
 
 #[cfg(test)]
 mod tests {
+    use jc3vr_input::frame::Hand;
+
     use super::*;
-    use crate::controllers::{
-        bindings::tables::{
-            coverage::{all_contexts, all_modes, injected},
-            declare::TableCtx,
-            describe::{
-                Control, DescribeCtx, Effect, Features, Gesture, PhysicalFeatures, describe,
-            },
-        },
-        frame::Hand,
+    use crate::controllers::bindings::tables::{
+        coverage::{all_contexts, all_modes, injected},
+        declare::TableCtx,
+        describe::{Control, DescribeCtx, Effect, Features, Gesture, PhysicalFeatures, describe},
     };
 
     #[test]

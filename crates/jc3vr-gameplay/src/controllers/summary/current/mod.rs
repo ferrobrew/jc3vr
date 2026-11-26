@@ -1,21 +1,19 @@
 //! Current wrist hints, projected from resolved sources and explicit gameplay eligibility.
 
 use jc3gi::input::input_action_map::Action;
+use jc3vr_input::frame::Hand;
+use jc3vr_render::vr::input::semantic::bound::SourceName;
 
-use crate::{
-    controllers::{
-        bindings::tables::describe::{Control, Effect, Gesture, ModAction, Row},
-        frame::Hand,
-        mode::Mode,
-        summary::{
-            content::{Line, build},
-            context::ContextHint,
-            labels::{
-                ActionLabel, CurrentAction, HOLD_KEY, Text, action_label, gesture_prefix, heading,
-            },
+use crate::controllers::{
+    bindings::tables::describe::{Control, Effect, Gesture, ModAction, Row},
+    mode::Mode,
+    summary::{
+        content::{Line, build},
+        context::ContextHint,
+        labels::{
+            ActionLabel, CurrentAction, HOLD_KEY, Text, action_label, gesture_prefix, heading,
         },
     },
-    vr::input::semantic::bound::SourceName,
 };
 
 /// The current consumer of a physical trigger, including neutral-transfer suppression.
@@ -76,7 +74,7 @@ pub(crate) struct CurrentContext {
 
 /// Fixed spatial cells. Hand dominance never changes a cell's column.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) enum CellKind {
+pub enum CellKind {
     Left,
     Right,
     Available,
@@ -84,9 +82,9 @@ pub(crate) enum CellKind {
 }
 
 impl CellKind {
-    pub(crate) const ALL: [Self; 4] = [Self::Left, Self::Right, Self::Available, Self::ViewMenu];
+    pub const ALL: [Self; 4] = [Self::Left, Self::Right, Self::Available, Self::ViewMenu];
 
-    pub(crate) const fn index(self) -> usize {
+    pub const fn index(self) -> usize {
         match self {
             Self::Left => 0,
             Self::Right => 1,
@@ -97,14 +95,14 @@ impl CellKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
-pub(crate) struct CurrentSummary {
+pub struct CurrentSummary {
     pub heading: String,
     pub cells: [Vec<Hint>; 4],
 }
 
 /// One action, with all usable sources in this spatial cell retained once.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct Hint {
+pub struct Hint {
     pub sources: Vec<Source>,
     pub prefix: Option<String>,
     pub text: String,
@@ -114,7 +112,7 @@ pub(crate) struct Hint {
 }
 
 #[derive(Debug, Clone, Eq)]
-pub(crate) struct Source {
+pub struct Source {
     pub control: Control,
     pub name: Option<String>,
 }

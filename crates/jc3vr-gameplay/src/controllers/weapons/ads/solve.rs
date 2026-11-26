@@ -25,8 +25,9 @@
 
 use body_rig::smooth::{follow_factor, smoothstep_between};
 use glam::{Quat, Vec3};
+use jc3vr_input::frame::Pose;
 
-use crate::controllers::{frame::Pose, hands::CockpitHand, weapons::ads::config::AdsConfig};
+use crate::controllers::{hands::CockpitHand, weapons::ads::config::AdsConfig};
 
 /// How far the eye may be off the sight line for the line to start turning onto it, metres.
 pub const ENGAGE_M: f32 = 0.06;

@@ -4,8 +4,9 @@
 //! gun gives it. The catch itself is in [`crate::controllers::snatch::catch`].
 
 use glam::Vec3;
+use jc3vr_input::frame::Hand;
 
-use crate::controllers::{aim::ray::Ray, frame::Hand, snatch::catch::CatchTick};
+use crate::controllers::{aim::ray::Ray, snatch::catch::CatchTick};
 
 /// A thing the snatch could take, as the aim or the noted characters place it this tick.
 #[derive(Debug, Copy, Clone, PartialEq)]

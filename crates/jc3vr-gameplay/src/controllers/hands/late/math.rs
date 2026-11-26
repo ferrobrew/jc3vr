@@ -3,8 +3,9 @@
 
 use body_rig::{geometry::within_sphere, rotation::angle};
 use glam::{Mat4, Quat, Vec3};
+use jc3vr_input::frame::Pose;
 
-use crate::controllers::{frame::Pose, hands::pose as hand_pose};
+use crate::controllers::hands::pose as hand_pose;
 
 /// Derive a bounded correction from the physical move between the reference and current wrist.
 ///

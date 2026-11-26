@@ -51,7 +51,7 @@ impl PanelReach {
 
 /// Why a vehicle-reported panel offers no door grip.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) enum PanelRefusal {
+pub enum PanelRefusal {
     NoBox,
     OutOfReach,
     NoOpenBody,

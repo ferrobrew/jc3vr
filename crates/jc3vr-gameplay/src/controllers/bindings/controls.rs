@@ -3,18 +3,14 @@
 //! take, and whether a hand that closed on a hold is still closed ([`ClosedHand`]). Pure.
 
 use glam::Vec2;
+use jc3vr_input::frame::{Button, ControllerFrame, Edges, Hand, HandFrame};
+use jc3vr_render::vr::input::{
+    layout::{Input, Vec2Input, provides},
+    semantic::bound::PhysicalSet,
+};
 
-use crate::{
-    controllers::{
-        bindings::grapple_button::GrappleContext,
-        config::BindingsConfig,
-        frame::{Button, ControllerFrame, Edges, Hand, HandFrame},
-        grab::GrabVolume,
-    },
-    vr::input::{
-        layout::{Input, Vec2Input, provides},
-        semantic::bound::PhysicalSet,
-    },
+use crate::controllers::{
+    bindings::grapple_button::GrappleContext, config::BindingsConfig, grab::GrabVolume,
 };
 
 /// One digital input over the tick.
@@ -295,8 +291,9 @@ pub fn rotate_stick(stick: Vec2, angle: f32) -> Vec2 {
 mod tests {
     use std::{f32::consts::FRAC_PI_2, time::Instant};
 
+    use jc3vr_input::frame::{ActionSetKind, InteractionProfile};
+
     use super::*;
-    use crate::controllers::frame::{ActionSetKind, InteractionProfile};
 
     fn close(a: Vec2, b: Vec2) -> bool {
         (a - b).length() < 1e-5

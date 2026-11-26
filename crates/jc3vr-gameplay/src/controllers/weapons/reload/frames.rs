@@ -8,9 +8,9 @@
 //! by it.
 
 use glam::{Mat4, Vec3};
+use jc3vr_input::frame::{Hand, Pose};
 
 use crate::controllers::{
-    frame::{Hand, Pose},
     hands::{held::away_from_palm, pose as hand_pose},
     weapons::reload::plan::WellFrame,
 };

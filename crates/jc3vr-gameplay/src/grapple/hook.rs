@@ -132,7 +132,7 @@ pub(crate) unsafe fn local_hook() -> Option<&'static mut GrapplingHook> {
 /// # Safety
 ///
 /// `character` must be live, and its hook not freed while the borrow lasts.
-pub(crate) unsafe fn of(character: &Character) -> Option<&GrapplingHook> {
+pub unsafe fn of(character: &Character) -> Option<&GrapplingHook> {
     unsafe { character.m_Inventory.m_GrapplingHook.px.as_ref() }
 }
 
@@ -173,7 +173,7 @@ pub(crate) fn firing(hook: &GrapplingHook) -> bool {
 }
 
 /// `wire`'s hook end, which flies to and holds the target.
-pub(crate) fn hook_end(wire: &GrapplingHookWire) -> &WireEnd {
+pub fn hook_end(wire: &GrapplingHookWire) -> &WireEnd {
     &wire.m_WireEnds[HOOK_END]
 }
 
@@ -183,7 +183,7 @@ pub(crate) fn hook_end_mut(wire: &mut GrapplingHookWire) -> &mut WireEnd {
 }
 
 /// `wire`'s device end, on the gauntlet.
-pub(crate) fn device_end(wire: &GrapplingHookWire) -> &WireEnd {
+pub fn device_end(wire: &GrapplingHookWire) -> &WireEnd {
     &wire.m_WireEnds[DEVICE_END]
 }
 

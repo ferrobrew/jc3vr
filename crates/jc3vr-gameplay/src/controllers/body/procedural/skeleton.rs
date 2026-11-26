@@ -16,10 +16,9 @@ use jc3gi::{
     animation::{pose_producer::QsTransform, skeleton::HkArray},
     character::character::{AnimationController, Character},
 };
+use jc3vr_render::headpose::skeleton::MAX_BONES;
+pub use jc3vr_render::headpose::skeleton::SkeletonKey;
 use smol_str::SmolStr;
-
-use crate::headpose::skeleton::MAX_BONES;
-pub use crate::headpose::skeleton::SkeletonKey;
 
 /// A bone transform: translation, rotation, and scale, in the parent's frame or in model space
 /// depending on where it came from.

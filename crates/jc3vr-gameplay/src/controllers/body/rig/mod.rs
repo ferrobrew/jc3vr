@@ -15,9 +15,6 @@ pub mod config;
 pub mod frames;
 pub mod grounded;
 pub(crate) mod live_observation;
-// The render layer's half lives in the render crate; the old path keeps working until the final
-// cleanup pass.
-pub(crate) use jc3vr_render::controllers::body::rig::origin_provenance;
 pub mod root;
 pub mod skeleton;
 pub mod torso;
@@ -25,22 +22,19 @@ pub(crate) mod visual;
 
 use body_rig::angle::{direction, wrap, yaw_of};
 use glam::{Quat, Vec3};
+use jc3vr_input::frame::Pose;
+use jc3vr_render::headpose::{self, xr::FollowSettings};
 use parking_lot::Mutex;
 
 pub use crate::controllers::body::rig::config::RigConfig;
-use crate::{
-    controllers::{
-        body::{
-            procedural::wings::airborne_torso_heading,
-            rig::torso::{CHEST_LIMIT_DEG, TorsoEstimate},
-        },
-        config::CONTROLLERS_CONFIG,
-        frame::Pose,
-        hands::reach,
-        mode::{self, Mode},
+use crate::controllers::{
+    body::{
+        procedural::wings::airborne_torso_heading,
+        rig::torso::{CHEST_LIMIT_DEG, TorsoEstimate},
     },
-    headpose::{self, xr::FollowSettings},
-    hooks,
+    config::CONTROLLERS_CONFIG,
+    hands::reach,
+    mode::{self, Mode},
 };
 
 /// The player's torso as the grounded rig places it, while it is fresh.
@@ -57,7 +51,10 @@ pub fn estimate() -> Option<TorsoEstimate> {
 /// following.
 pub fn follow_settings() -> FollowSettings {
     let follow = CONTROLLERS_CONFIG.lock().body.rig.follow;
-    if !follow.enabled || headpose::source() != headpose::Source::Vr || !hooks::in_gameplay() {
+    if !follow.enabled
+        || headpose::source() != headpose::Source::Vr
+        || !jc3vr_core::hooks::in_gameplay()
+    {
         return FollowSettings::OFF;
     }
     let Some(yaw) = grounded::body_yaw() else {

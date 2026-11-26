@@ -1,31 +1,28 @@
 //! Current descriptions retain the same aggregate permissions as table execution.
 
 use jc3gi::input::input_action_map::Action;
+use jc3vr_render::vr::input::semantic::vocabulary::LandVehicleAction;
 
 use super::{
     snatch_tests::{GRIP, LEFT_A, MODE, TRIGGER, fixture},
     *,
 };
-use crate::{
-    controllers::{
-        bindings::{
-            controls::Controls,
-            summary::permitted_routes,
-            tables::{
-                Bindings,
-                declare::TableCtx,
-                describe::{
-                    Control as ShownControl, DescribeCtx, Effect, Features, ModAction,
-                    describe_current,
-                },
+use crate::controllers::{
+    bindings::{
+        controls::Controls,
+        summary::permitted_routes,
+        tables::{
+            Bindings,
+            declare::TableCtx,
+            describe::{
+                Control as ShownControl, DescribeCtx, Effect, Features, ModAction, describe_current,
             },
-            trigger_ownership::{self, TriggerMask},
         },
-        grab::GrabVolume,
-        loadout::Socket,
-        mode::{Mode, VehicleClass, VehicleSeat},
+        trigger_ownership::{self, TriggerMask},
     },
-    vr::input::semantic::vocabulary::LandVehicleAction,
+    grab::GrabVolume,
+    loadout::Socket,
+    mode::{Mode, VehicleClass, VehicleSeat},
 };
 
 #[test]

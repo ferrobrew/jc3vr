@@ -39,8 +39,9 @@ use jc3gi::{
     equipment::weapon::{WeaponBase, WeaponGripHand, WeaponState},
     types::math::Matrix4,
 };
+use jc3vr_input::frame::Hand;
 
-use crate::controllers::{aim::gun, frame::Hand};
+use crate::controllers::aim::gun;
 
 mod control;
 mod gunner_seat;

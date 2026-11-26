@@ -1,4 +1,4 @@
-//! Each hand's grab hint ([`crate::hud::grab_hint`], published through
+//! Each hand's grab hint (`hud::grab_hint`, published through
 //! [`crate::controllers::weapons::hud_feed::grab_hint`]) from the input tick's grip resolution: the
 //! icon of what a grip on a body slot would take, or the swap a release over a taken socket would
 //! make, with the socket or pouch it is at.
@@ -7,9 +7,9 @@ use jc3gi::{
     character::{character::Character, inventory::WeaponSlot},
     equipment::weapon::WeaponBase,
 };
+use jc3vr_input::frame::Hand;
 
 use crate::controllers::{
-    frame::Hand,
     grab::GrabVolume,
     loadout::{ItemView, LoadoutSnapshot, Socket},
     weapons::hud_feed::{

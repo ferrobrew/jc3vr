@@ -8,10 +8,7 @@ use std::num::NonZeroUsize;
 
 use glam::Vec3;
 
-use crate::{
-    controllers::{aim::raycast::CastOptions, glass::bullets, physical_hands::query},
-    hooks,
-};
+use crate::controllers::{aim::raycast::CastOptions, glass::bullets, physical_hands::query};
 
 /// Whether a palm at `palm` that reaches `target` on an occupant of `vehicle` came in through one
 /// of the vehicle's panes the glass brought down ([`query::crosses_hidden_pane`]), with the
@@ -41,7 +38,7 @@ pub(crate) unsafe fn reached_through(
 
 /// The point the camera renders the player's eyes from, where the hand's way in starts.
 pub(crate) fn eyes() -> Vec3 {
-    hooks::camera::eye_point()
+    jc3vr_render::hooks::camera::eye_point()
 }
 
 /// Whether any leg of the path through `points` crosses, by `crosses`, skipping a leg too short or

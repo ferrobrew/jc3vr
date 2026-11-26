@@ -13,11 +13,9 @@ use jc3gi::ui::{
     locator::{Locale, Locator},
     ui_menu::UIMenu,
 };
+use jc3vr_core::hash::hashlittle;
 
-use crate::{
-    controllers::summary::labels::{ModText, Text},
-    hash::hashlittle,
-};
+use crate::controllers::summary::labels::{ModText, Text};
 
 /// The game's current language, or `None` before the localisation store exists.
 ///

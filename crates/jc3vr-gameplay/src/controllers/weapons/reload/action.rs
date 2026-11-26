@@ -4,10 +4,10 @@
 //! loads; and the parts published for drawing.
 
 use glam::{Quat, Vec3};
+use jc3vr_input::frame::{Hand, Pose};
 
 use crate::controllers::{
     config::ControllersConfig,
-    frame::{Hand, Pose},
     grab::GrabVolume,
     haptics::{self, Event},
     weapons::{

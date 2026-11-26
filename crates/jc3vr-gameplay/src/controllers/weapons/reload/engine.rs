@@ -29,13 +29,13 @@ use jc3gi::{
     spawn_system::SpawnSystem,
     types::math::{Matrix4, Vector3},
 };
+use jc3vr_input::frame::{Hand, Pose};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{
     controllers::{
         aim::gun,
-        frame::{Hand, Pose},
         hands::{
             ik::{self, TickTarget},
             late,

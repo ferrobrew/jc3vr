@@ -40,9 +40,9 @@
 //! down, up, or forward with the hand by no more than a full pull.
 
 use glam::{Vec2, Vec3};
+use jc3vr_input::frame::Hand;
 
 use crate::controllers::{
-    frame::Hand,
     grab::{Candidate, GrabVolume},
     vehicles::{config::ParachuteHandlesConfig, physical::Release},
 };

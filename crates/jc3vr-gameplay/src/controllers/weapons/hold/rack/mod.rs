@@ -41,9 +41,9 @@ use jc3gi::{
     character::{character::Character, inventory::WeaponSlot},
     equipment::weapon::{WeaponBase, WeaponState},
 };
+use jc3vr_input::frame::Hand;
 
 use crate::controllers::{
-    frame::Hand,
     loadout::{TakeSource, live},
     weapons::{
         engine::{self, character_object, grip_points, slot_of, takeable_gun_slot, weapon_at},

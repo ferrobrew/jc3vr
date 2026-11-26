@@ -1,15 +1,13 @@
 //! Bounded current eligibility from mode routes, resolved grab choices, and explicit mechanic gates.
 
 use jc3gi::input::input_action_map::Action;
+use jc3vr_input::frame::Hand;
+use jc3vr_render::vr::input::semantic::vocabulary::ActionId;
 
-use crate::{
-    controllers::{
-        bindings::tables::describe::{Control, Effect, Gesture, ModAction, Row},
-        frame::Hand,
-        grab::GrabVolume,
-        summary::current::{CurrentContext, CurrentRouting},
-    },
-    vr::input::semantic::vocabulary::ActionId,
+use crate::controllers::{
+    bindings::tables::describe::{Control, Effect, Gesture, ModAction, Row},
+    grab::GrabVolume,
+    summary::current::{CurrentContext, CurrentRouting},
 };
 
 /// A current snatch phase; modifier controls are resolved from known runtime sources.

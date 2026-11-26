@@ -261,6 +261,12 @@ impl HeldGunsTuning {
     }
 }
 
+impl Default for HeldGunsTuning {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// A hand body's hits (see [`crate::controllers::physical_hands::physics::hit`]): each contact a
 /// hand body starts pulses the hand by its impulse, and a character it strikes reacts as to a
 /// blow of that impulse, against its own stagger and knockdown thresholds; a hard enough blow deals
@@ -321,5 +327,11 @@ impl HandHitsTuning {
             follow_through_gain: 0.3,
             full_pulse_impulse_ns: 50.0,
         }
+    }
+}
+
+impl Default for HandHitsTuning {
+    fn default() -> Self {
+        Self::new()
     }
 }

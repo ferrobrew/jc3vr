@@ -10,13 +10,11 @@ use std::time::Instant;
 
 use body_rig::angle::{direction, wrap};
 use glam::{Quat, Vec3};
+use jc3vr_render::controllers::overlay::primitive::{Anchor, DepthMode, Primitive, Rgba};
 
-use crate::controllers::{
-    body::{
-        estimator::{latest, producer},
-        rig::grounded,
-    },
-    overlay::primitive::{Anchor, DepthMode, Primitive, Rgba},
+use crate::controllers::body::{
+    estimator::{latest, producer},
+    rig::grounded,
 };
 
 /// Build the arrows for the latest estimate and the grounded rig, if any, with `view` the cockpit

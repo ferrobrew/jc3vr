@@ -697,10 +697,10 @@ unsafe fn articulated_kind(
 #[cfg(test)]
 mod tests {
     use glam::Quat;
+    use jc3vr_input::frame::Hand;
 
     use super::*;
     use crate::controllers::{
-        frame::Hand,
         grab::{GrabVolume, GripTarget, Mark, MarkAt, PickupKind, RemoteKind, resolve},
         physical_hands::pickup::PICKUP,
     };

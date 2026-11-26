@@ -150,25 +150,24 @@ fn essential_mod(mode: Mode, action: ModAction) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use jc3vr_input::frame::Hand;
+    use jc3vr_render::vr::input::semantic::{
+        SemanticSet,
+        bound::{EnumeratedSource, SourceTable},
+        vocabulary::OnFootAction,
+    };
+
     use super::*;
-    use crate::{
-        controllers::{
-            bindings::tables::{
-                declare::TableCtx,
-                describe::{DescribeCtx, Features, Gesture, describe_current},
-            },
-            frame::Hand,
-            mode::{OnFootVariant, VehicleClass, VehicleSeat},
-            summary::{
-                current::{CellKind, Hint, Source, project},
-                labels::Text,
-                localise::humanise,
-            },
+    use crate::controllers::{
+        bindings::tables::{
+            declare::TableCtx,
+            describe::{DescribeCtx, Features, Gesture, describe_current},
         },
-        vr::input::semantic::{
-            SemanticSet,
-            bound::{EnumeratedSource, SourceTable},
-            vocabulary::OnFootAction,
+        mode::{OnFootVariant, VehicleClass, VehicleSeat},
+        summary::{
+            current::{CellKind, Hint, Source, project},
+            labels::Text,
+            localise::humanise,
         },
     };
 

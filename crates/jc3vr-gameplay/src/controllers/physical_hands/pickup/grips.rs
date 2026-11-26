@@ -4,21 +4,20 @@
 
 use std::time::Instant;
 
-use crate::controllers::{
-    frame::Hand,
-    physical_hands::{
-        bodies,
-        characters::{
-            self, CharactersConfig, GunnerOut, Regrip, SeatAccess, SeatOut, Seize, SeizeStep,
-        },
-        doors::{self, LatchStep},
-        grasp::{self, Grip, PalmMotion, Reach, TargetKind},
-        physics::{self, Shove, ShoveForce},
-        pickup::{
-            Held, HeldKind, JointInputs, PickupState, PickupTuning, TickOutcome, tick::held_mass,
-        },
-        world::World,
+use jc3vr_input::frame::Hand;
+
+use crate::controllers::physical_hands::{
+    bodies,
+    characters::{
+        self, CharactersConfig, GunnerOut, Regrip, SeatAccess, SeatOut, Seize, SeizeStep,
     },
+    doors::{self, LatchStep},
+    grasp::{self, Grip, PalmMotion, Reach, TargetKind},
+    physics::{self, Shove, ShoveForce},
+    pickup::{
+        Held, HeldKind, JointInputs, PickupState, PickupTuning, TickOutcome, tick::held_mass,
+    },
+    world::World,
 };
 
 /// Keep `hand`'s grip on a latched door: hold the hand at the grab point while the latch holds,

@@ -37,6 +37,7 @@ use std::time::Instant;
 
 use glam::{Quat, Vec3};
 use jc3gi::character::character::{AnimationController, Character, Joint};
+use jc3vr_input::frame::{self, Hand};
 use parking_lot::Mutex;
 
 use crate::controllers::{
@@ -51,7 +52,6 @@ use crate::controllers::{
         target::{GripMemory, GripReport, TargetInputs},
         tuning::FINGERS,
     },
-    frame::{self, Hand},
     hands::ik,
     scheme,
 };

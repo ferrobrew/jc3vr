@@ -22,6 +22,7 @@
 //! [`StickTuning::push_mps`]: crate::controllers::weapons::c4::tuning::StickTuning::push_mps
 
 use glam::Vec3;
+use jc3vr_input::frame::Pose;
 
 use crate::controllers::{
     aim::{
@@ -29,7 +30,6 @@ use crate::controllers::{
         raycast::{self, CastOptions},
     },
     config::ControllersConfig,
-    frame::Pose,
     hands::held::held_matrix,
     weapons::c4::{
         self,

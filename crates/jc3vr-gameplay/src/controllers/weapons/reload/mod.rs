@@ -78,6 +78,7 @@ pub(crate) mod zones;
 
 use glam::Vec3;
 use jc3gi::equipment::weapon::WeaponBase;
+use jc3vr_input::frame::{Hand, Pose};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
@@ -89,7 +90,6 @@ use crate::controllers::{
     body::rig::frames::Frames,
     config::ControllersConfig,
     diagnostics,
-    frame::{Hand, Pose},
     grab::{Candidate, GrabVolume, GripTarget},
     hands::{ActiveHands, pose::CockpitHand},
     weapons::{
@@ -866,7 +866,7 @@ pub(crate) fn adjust_part(
 /// # Safety
 ///
 /// The game thread, outside the world update.
-pub(crate) unsafe fn render_frame() {
+pub unsafe fn render_frame() {
     unsafe { casings::render_frame() };
 }
 

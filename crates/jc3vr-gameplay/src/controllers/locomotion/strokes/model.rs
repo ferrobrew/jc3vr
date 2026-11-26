@@ -24,7 +24,7 @@ pub struct StrokeHand {
 /// One tick's inputs.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct StrokeInput {
-    /// Indexed by [`Hand::index`](crate::controllers::frame::Hand::index); `None` for a hand that
+    /// Indexed by [`Hand::index`](jc3vr_input::frame::Hand::index); `None` for a hand that
     /// is untracked or may not stroke.
     pub hands: [Option<StrokeHand>; 2],
     /// The head (the eye midpoint): the strokes turn the body about it, and a hand is in the water
@@ -45,7 +45,7 @@ pub struct StrokeStep {
     /// How far to turn the heading this tick, radians, positive to the right.
     pub turn_right: f32,
     /// Each hand's push on the swimmer this tick (+X right, +Z back), metres per second of paddle
-    /// speed, by [`Hand::index`](crate::controllers::frame::Hand::index).
+    /// speed, by [`Hand::index`](jc3vr_input::frame::Hand::index).
     pub push: [Vec2; 2],
     /// Whether each hand is in the water.
     pub in_water: [bool; 2],

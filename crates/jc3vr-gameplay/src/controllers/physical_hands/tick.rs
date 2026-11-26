@@ -14,6 +14,9 @@ use std::{num::NonZeroUsize, time::Instant};
 use body_rig::rotation::level;
 use glam::{Mat4, Quat, Vec2, Vec3};
 use jc3gi::character::character::Character;
+use jc3vr_core::thread_role::{self, ThreadRole};
+use jc3vr_input::frame::{Hand, Pose};
+use jc3vr_render::controllers::cockpit::CockpitTransform;
 use parking_lot::Mutex;
 use windows::Win32::System::Threading::GetCurrentThreadId;
 
@@ -22,7 +25,6 @@ use crate::{
         aim::raycast::CastOptions,
         body,
         clock::TimeScale,
-        cockpit::CockpitTransform,
         config::CONTROLLERS_CONFIG,
         fingers::{
             grip::{
@@ -32,7 +34,6 @@ use crate::{
             },
             tuning::FINGERS,
         },
-        frame::{Hand, Pose},
         hands::{self, tiers},
         haptics::{self, Event, Sustain},
         loadout::{ItemKind, live},
@@ -46,8 +47,8 @@ use crate::{
                 config::{TEARING, TearTuning},
                 hinge::HingeConfig,
             },
-            draw, engine, grab_view, grasp,
-            grasp::PalmMotion,
+            draw, engine, grab_view,
+            grasp::{self, PalmMotion},
             hold::{self, BodySpace, PlayerKeepOut},
             impacts,
             palm::{PROBE_POINTS, PalmBox},
@@ -65,14 +66,12 @@ use crate::{
         weapons::{self, c4, foregrip, grenade},
     },
     grapple::seat::rides_in_seat,
-    hooks,
-    thread_role::{self, ThreadRole},
 };
 
 /// Note that a palms' tick is due, `dt` seconds of simulation after the last: called from the
 /// player aim control's post-simulation update, on whichever thread runs it. Ticks noted before the
 /// next [`main_thread_tick`] are run as one, over their summed time.
-pub(crate) fn after_aim(dt: f32) {
+pub fn after_aim(dt: f32) {
     let dt = if dt.is_finite() { dt.max(0.0) } else { 0.0 };
     let mut pending = PENDING.lock();
     *pending = Some(pending.unwrap_or(0.0) + dt);
@@ -83,7 +82,7 @@ pub(crate) fn after_aim(dt: f32) {
 /// # Safety
 ///
 /// The game thread, outside the world update and the physics step.
-pub(crate) unsafe fn main_thread_tick() {
+pub unsafe fn main_thread_tick() {
     let Some(dt) = PENDING.lock().take() else {
         return;
     };
@@ -110,7 +109,7 @@ unsafe fn run(owner: &Character, dt: f32) {
     let time_scale = unsafe { TimeScale::current() };
     let config = CONTROLLERS_CONFIG.lock().physical_hands;
     let gate = Gate {
-        active: config.enabled && scheme::is_controllers() && hooks::in_gameplay(),
+        active: config.enabled && scheme::is_controllers() && jc3vr_core::hooks::in_gameplay(),
         role: thread_role::current(),
     };
     let seated_vehicle =
@@ -818,7 +817,7 @@ fn stand_down_reason(gate: Gate, mode_acts: impl FnOnce() -> bool) -> Option<Idl
 /// Whether the hands act in the mode `detection`: on foot on the ground, or falling, so that a
 /// hand flung or jumped at a ledge can catch it; not swimming, in a vehicle, in the wingsuit or
 /// under the parachute, nor while the grapple carries the player.
-pub(crate) fn mode_acts(detection: Detection) -> bool {
+pub fn mode_acts(detection: Detection) -> bool {
     matches!(
         detection.mode,
         Mode::OnFoot(OnFootVariant::Ground) | Mode::Airborne(AirborneVariant::Falling)
@@ -843,7 +842,7 @@ fn joint_inputs(config: &PhysicalHandsConfig) -> pickup::JointInputs {
 /// charge, or detonator, nothing of the loadout table's but a prop the pickup carries, no mounted
 /// gun's handle, and the controller drives the hand. A hand on a handle is drawn there, and a hand
 /// body left at its controller would fight the gun it holds.
-pub(crate) fn free_hands() -> [bool; 2] {
+pub fn free_hands() -> [bool; 2] {
     let wielded = weapons::status()
         .wielded
         .map_or([false; 2], |w| w.weapon.wielded.hands);

@@ -1,9 +1,10 @@
 use glam::{Quat, Vec3};
+use jc3vr_input::frame::Pose;
 use pretty_assertions::assert_eq;
 
 use super::*;
 use crate::controllers::{
-    fingers::grip::catalogue::GripPose, frame::Pose, hands::pose as hand_pose,
+    fingers::grip::catalogue::GripPose, hands::pose as hand_pose,
     weapons::regions::shape::MagazineWell,
 };
 

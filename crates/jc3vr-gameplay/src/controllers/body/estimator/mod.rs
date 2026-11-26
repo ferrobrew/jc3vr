@@ -18,7 +18,7 @@
 //! window to run, and the estimate read back. A window the render thread has not taken by the next
 //! submission is replaced, and so is an estimate nobody has read.
 
-pub(crate) mod config;
+pub mod config;
 pub(crate) mod executor;
 pub mod producer;
 pub(crate) mod visual;
@@ -36,10 +36,9 @@ use body_rig::{BodyEstimate, EstimateTuning, angle::wrap};
 use glam::{DMat3, DQuat, DVec3, Quat};
 use parking_lot::Mutex;
 
-pub(crate) use crate::controllers::body::estimator::executor::shutdown;
 pub use crate::controllers::body::estimator::{
     config::EstimatorConfig,
-    executor::{render_tick, status as executor_status},
+    executor::{render_tick, shutdown, status as executor_status},
     producer::{Observation, observe, on_recenter},
 };
 use crate::controllers::roomscale::posture::EffectivePosture;

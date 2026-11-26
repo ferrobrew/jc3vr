@@ -6,44 +6,40 @@
 use std::{sync::atomic::Ordering, time::Instant};
 
 use glam::Vec3;
+use jc3vr_input::frame::Hand;
+use jc3vr_render::{controllers::cockpit::CockpitTransform, headpose};
 use parking_lot::Mutex;
 
-use crate::{
-    controllers::{
-        body::{self, BodyDimensions},
-        cockpit::CockpitTransform,
-        config::ControllersConfig,
-        fingers::grip::{self, Grip, GripSource},
-        frame::Hand,
-        grab::{self, GrabVolume, GripTarget, Mark, MarkAt, MarkStyle, Shown, Tier},
-        hands::{self, tiers},
-        loadout::live,
-        mode::{Mode, VehicleSeat},
-        vehicles::{
-            arm_tick::arms_act,
-            driving_view,
-            entry::{VehicleEntry, VehicleEntryIdentity},
-            fit,
-            fit::{FitInputs, VehicleLatch},
-            handle_tick::handles_act,
-            mounted_grip,
-            mounted_tick::{MountedTick, mounted_tick, offered},
-            parachute, parachute_rig,
-            physical::{
-                self, ControlEvent, Placement,
-                buttons::{Button, ButtonPlacement, PushPhase},
-            },
-            ripcord_tick,
-            state::{
-                MOUNTED_WEAPON, MountedHandWeight, STATE, State, log_handle_events,
-                mounted_hand_weight, push_events,
-            },
-            tuning::PhysicalControlsTuning,
-            types::TickVolumes,
-            wing_guide,
+use crate::controllers::{
+    body::{self, BodyDimensions},
+    config::ControllersConfig,
+    fingers::grip::{self, Grip, GripSource},
+    grab::{self, GrabVolume, GripTarget, Mark, MarkAt, MarkStyle, Shown, Tier},
+    hands::{self, tiers},
+    loadout::live,
+    mode::{Mode, VehicleSeat},
+    vehicles::{
+        arm_tick::arms_act,
+        driving_view,
+        entry::{VehicleEntry, VehicleEntryIdentity},
+        fit::{self, FitInputs, VehicleLatch},
+        handle_tick::handles_act,
+        mounted_grip,
+        mounted_tick::{MountedTick, mounted_tick, offered},
+        parachute, parachute_rig,
+        physical::{
+            self, ControlEvent, Placement,
+            buttons::{Button, ButtonPlacement, PushPhase},
         },
+        ripcord_tick,
+        state::{
+            MOUNTED_WEAPON, MountedHandWeight, STATE, State, log_handle_events,
+            mounted_hand_weight, push_events,
+        },
+        tuning::PhysicalControlsTuning,
+        types::TickVolumes,
+        wing_guide,
     },
-    headpose, hooks,
 };
 
 /// The first half of the vehicle handling's input tick: read the mounted gun, place the physical
@@ -80,7 +76,8 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
     let retired_owner = state.entry_owner.take();
     drop(state);
     drop(retired_owner);
-    let view_eyes = headpose::anchor().map(|anchor| anchor + hooks::camera::head_to_eye_point());
+    let view_eyes =
+        headpose::anchor().map(|anchor| anchor + jc3vr_render::hooks::camera::head_to_eye_point());
     let fit = fit::fit(
         &FitInputs {
             physical: &physical_config,

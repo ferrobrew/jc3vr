@@ -10,16 +10,18 @@
 //! door handles, the candidates, a refusal's point) to the world.
 
 use glam::Vec3;
+use jc3vr_input::frame::Hand;
+use jc3vr_render::controllers::overlay::primitive::{
+    Anchor, DepthMode, Facing, HandPose, Primitive, Rgba, Shape, SpriteSize,
+};
 
 use crate::controllers::{
-    frame::Hand,
     grab::{
         Category, GripTarget, MarkAt, Shown,
         markers::{self, MarkerFrame},
         target::TargetReach,
         tick::Tick,
     },
-    overlay::primitive::{Anchor, DepthMode, Facing, HandPose, Primitive, Rgba, Shape, SpriteSize},
     physical_hands::grab_view::{
         Recorded,
         candidates::MAX_CANDIDATES,

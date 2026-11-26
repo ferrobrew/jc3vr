@@ -24,7 +24,7 @@ use crate::controllers::physical_hands::{
 
 /// Where a slice of the walk ended.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) struct Slice {
+pub struct Slice {
     /// The slots the slice went through.
     pub walked: u32,
     /// The world's peak slot.
@@ -35,7 +35,7 @@ pub(crate) struct Slice {
 
 /// A dynamic body's pose and velocities, game space.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub(crate) struct BodyState {
+pub struct BodyState {
     pub position: Vec3,
     pub orientation: Quat,
     pub linear: Vec3,
@@ -45,7 +45,7 @@ pub(crate) struct BodyState {
 
 /// What a body is, for its introduction.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub(crate) struct BodyDescription {
+pub struct BodyDescription {
     pub object: Option<NonZeroUsize>,
     pub kind: &'static str,
     pub mass_kg: Option<f32>,
@@ -60,7 +60,7 @@ pub(crate) struct BodyDescription {
 /// # Safety
 ///
 /// The game thread, outside the physics step.
-pub(crate) unsafe fn walk_dynamic(
+pub unsafe fn walk_dynamic(
     start: u32,
     count: u32,
     mut keep: impl FnMut(u32, &Aabb),
@@ -98,7 +98,7 @@ pub(crate) unsafe fn walk_dynamic(
 /// # Safety
 ///
 /// The game thread, outside the physics step.
-pub(crate) unsafe fn dynamic_state(id: u32) -> Option<BodyState> {
+pub unsafe fn dynamic_state(id: u32) -> Option<BodyState> {
     let world = unsafe { World::get() }?;
     let w = world.world();
     let slot = unsafe { dynamic_slot(w, id) }?;
@@ -131,7 +131,7 @@ pub(crate) unsafe fn dynamic_state(id: u32) -> Option<BodyState> {
 /// # Safety
 ///
 /// The game thread, outside the physics step.
-pub(crate) unsafe fn describe(id: u32) -> Option<BodyDescription> {
+pub unsafe fn describe(id: u32) -> Option<BodyDescription> {
     let world = unsafe { World::get() }?;
     let w = world.world();
     let slot = unsafe { dynamic_slot(w, id) }?;

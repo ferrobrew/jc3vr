@@ -21,10 +21,10 @@ use std::{
 };
 
 use glam::{Vec2, Vec3};
+use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
 use crate::controllers::{
-    frame::Hand,
     haptics::{self, Event},
     vehicles::config::MountedConfig,
     weapons::recoil::Spring,

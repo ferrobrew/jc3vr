@@ -3,6 +3,8 @@
 
 use std::time::{Duration, Instant};
 
+use jc3vr_input::frame::Hand;
+
 use crate::controllers::{
     body::{
         BodyDimensions,
@@ -13,7 +15,6 @@ use crate::controllers::{
         },
     },
     config::Posture,
-    frame::Hand,
     roomscale::posture::DetectedPosture,
 };
 

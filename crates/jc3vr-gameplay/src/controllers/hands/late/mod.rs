@@ -51,14 +51,14 @@ mod weapon;
 
 pub(crate) use bones::publish_solved;
 pub use bones::{ArmJoints, HandBones, MAX_BONE_INDEX};
-pub use frame::{HandLateStatus, LateStatus, PaletteEdit, drawn_hands, status};
-pub(crate) use frame::{
-    arm_target, begin_frame, count_palette_edit, drawn_forearm_delta, hand_correction,
-    interpolate_in_character, palette_edit, shoulder_target,
+pub use frame::{
+    HandLateStatus, LateStatus, PaletteEdit, arm_target, begin_frame, count_palette_edit,
+    drawn_forearm_delta, drawn_hands, hand_correction, interpolate_in_character, palette_edit,
+    shoulder_target, status,
 };
 pub(crate) use math::{correction, lerp_transform, plausible};
 use re_utilities::hook_library::HookLibrary;
-pub(crate) use weapon::{attach_hand, gun_hand, rendered_guns};
+pub use weapon::{attach_hand, gun_hand, rendered_guns};
 
 pub(super) fn hook_library() -> HookLibrary {
     weapon::hook_library()

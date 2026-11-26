@@ -10,17 +10,13 @@
 //! threshold, and reports nothing else meanwhile.
 
 use glam::Vec2;
+use jc3vr_input::frame::Hand;
+use jc3vr_render::vr::input::semantic::vocabulary::MenuAction;
 
-use crate::{
-    controllers::{
-        bindings::{
-            controls::ButtonControl,
-            intents::Intents,
-            tables::sink::{Direction, MenuLatch, PadLatch, pad_of, pad_press_of},
-        },
-        frame::Hand,
-    },
-    vr::input::semantic::vocabulary::MenuAction,
+use crate::controllers::bindings::{
+    controls::ButtonControl,
+    intents::Intents,
+    tables::sink::{Direction, MenuLatch, PadLatch, pad_of, pad_press_of},
 };
 
 /// Advance `latch` by one tick of `hand`'s menu actions. `push` is how far the stick must be

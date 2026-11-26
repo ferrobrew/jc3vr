@@ -14,15 +14,13 @@
 use std::time::{Duration, Instant};
 
 use glam::{Mat4, Vec3};
+use jc3vr_render::headpose::{anchor, eye_arm, neck_delta};
 use parking_lot::Mutex;
 
-use crate::{
-    controllers::{
-        body::{self, BodyDimensions, rig::collision::probe},
-        roomscale::{self, RoomscaleStatus, SeatPhase, posture::HeadHeight},
-        vehicles::driving_view,
-    },
-    headpose::{anchor, eye_arm, neck_delta},
+use crate::controllers::{
+    body::{self, BodyDimensions, rig::collision::probe},
+    roomscale::{self, RoomscaleStatus, SeatPhase, posture::HeadHeight},
+    vehicles::driving_view,
 };
 
 /// One sample of the camera height and what explains it.

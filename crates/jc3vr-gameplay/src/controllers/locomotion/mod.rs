@@ -39,15 +39,13 @@ use jc3gi::{
     input::input_action_map::{Action, LocalPlayerActionMap},
     types::math::Vector3,
 };
+use jc3vr_render::headpose;
 use parking_lot::Mutex;
 
-use crate::{
-    controllers::{
-        body::{procedural::state::animation_moves_body, rig::grounded},
-        config::CONTROLLERS_CONFIG,
-        locomotion::{accel::Rates, speeds::SpeedLog},
-    },
-    headpose,
+use crate::controllers::{
+    body::{procedural::state::animation_moves_body, rig::grounded},
+    config::CONTROLLERS_CONFIG,
+    locomotion::{accel::Rates, speeds::SpeedLog},
 };
 
 /// What the stick locomotion did on its last tick.

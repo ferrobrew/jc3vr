@@ -40,13 +40,12 @@ mod types;
 
 pub use config::ClimbConfig;
 
-pub(crate) use self::{
-    observe::{observe, reach},
-    state::{enabled, finish_tick, gripped, reach_hold, stand_down, static_reaches, take_landing},
-    step::step,
-    types::Observed,
-};
 pub use self::{
-    state::{climbing, status},
-    types::{ClimbStatus, Hold},
+    observe::{observe, reach},
+    state::{
+        climbing, enabled, finish_tick, gripped, reach_hold, stand_down, static_reaches, status,
+        take_landing,
+    },
+    step::step,
+    types::{ClimbStatus, Hold, Observed},
 };

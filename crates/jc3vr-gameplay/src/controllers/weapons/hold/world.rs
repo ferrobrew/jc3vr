@@ -12,9 +12,9 @@
 use body_rig::geometry::{closest_on_segment, segment_distance};
 use glam::Vec3;
 use jc3gi::character::inventory::WeaponSlot;
+use jc3vr_input::frame::{Hand, Pose};
 
 use crate::controllers::{
-    frame::{Hand, Pose},
     grab::{Candidate, GrabVolume},
     weapons::{
         engine::{self, HeldWeapon},
@@ -331,11 +331,11 @@ pub fn stagger_impulse(
 #[cfg(test)]
 mod tests {
     use glam::{Mat4, Quat};
+    use jc3vr_render::controllers::cockpit::CockpitTransform;
 
     use super::*;
     use crate::controllers::{
         body::rig::frames::Frames,
-        cockpit::CockpitTransform,
         grab::{Mark, MarkAt, PickupKind, RemoteKind, Tier, resolve},
         weapons::{
             engine::Wielded,

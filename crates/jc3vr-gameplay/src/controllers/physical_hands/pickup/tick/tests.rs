@@ -2,18 +2,16 @@ use std::num::NonZeroUsize;
 
 use glam::Quat;
 use jc3gi::vehicle::vehicle::DoorSlot;
+use jc3vr_input::frame::Pose;
 
 use super::*;
-use crate::controllers::{
-    frame::Pose,
-    physical_hands::{
-        carry_collision::Assembly,
-        characters::{CharacterTarget, RAGDOLL_CARRY_STRENGTH},
-        doors::{DoorTarget, config::TEARING},
-        grasp::GripTarget,
-        pickup::PICKUP,
-        rigid::BodyPose,
-    },
+use crate::controllers::physical_hands::{
+    carry_collision::Assembly,
+    characters::{CharacterTarget, RAGDOLL_CARRY_STRENGTH},
+    doors::{DoorTarget, config::TEARING},
+    grasp::GripTarget,
+    pickup::PICKUP,
+    rigid::BodyPose,
 };
 
 struct FakeBodies {

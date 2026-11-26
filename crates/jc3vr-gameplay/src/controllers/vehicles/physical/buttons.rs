@@ -17,14 +17,12 @@
 
 use body_rig::rotation::twist_angle;
 use glam::{Quat, Vec3};
+use jc3vr_input::frame::Hand;
 
-use crate::controllers::{
-    frame::Hand,
-    vehicles::{
-        physical::{ControlKind, Hold, bar_ends},
-        tuning::CockpitButtonsTuning,
-        wheel::{BarsFrame, WheelFrame},
-    },
+use crate::controllers::vehicles::{
+    physical::{ControlKind, Hold, bar_ends},
+    tuning::CockpitButtonsTuning,
+    wheel::{BarsFrame, WheelFrame},
 };
 
 /// A cockpit button.

@@ -5,12 +5,12 @@ use std::time::Instant;
 
 use glam::Vec3;
 use jc3gi::character::character::Character;
+use jc3vr_input::frame::Hand;
+use jc3vr_render::controllers::cockpit::CockpitTransform;
 
 use crate::controllers::{
     aim::RAY_LENGTH_M,
-    cockpit::CockpitTransform,
     config::ControllersConfig,
-    frame::Hand,
     hands::ActiveHands,
     mode::VehicleSeat,
     vehicles::{
@@ -35,7 +35,7 @@ pub(super) struct MountedTick {
 }
 
 /// Read the mounted gun and derive its aim from the hands in `aiming`, indexed by
-/// [`Hand::index`](crate::controllers::frame::Hand::index). With the grip on the handles and no hand
+/// [`Hand::index`](jc3vr_input::frame::Hand::index). With the grip on the handles and no hand
 /// aiming, the gun keeps the direction the hands last gave it, in the body frame.
 pub(super) fn mounted_tick(active: &ActiveHands, aiming: [bool; 2]) -> MountedTick {
     let config = &active.config;

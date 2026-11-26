@@ -3,13 +3,13 @@
 
 use std::time::Duration;
 
+pub use jc3vr_render::vr::input::config::InputConfig;
 use serde::{Deserialize, Serialize};
 
 use crate::controllers::{
     bindings::{policy_a::PolicyAConfig, yank::GrappleYankConfig},
     locomotion::config::{ActFilterConfig, StableViewConfig, StickConfig, SwimStrokeConfig},
 };
-pub use crate::vr::input::config::InputConfig;
 
 /// On-foot stick locomotion. Turning is configured in `headpose.vr_turn` (see the module docs).
 #[derive(Copy, Clone, Serialize, Deserialize)]

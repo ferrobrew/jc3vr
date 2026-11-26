@@ -3,10 +3,10 @@
 use std::time::Instant;
 
 use glam::{Mat4, Quat};
+use jc3vr_input::frame::{Hand, Pose};
 
 use crate::controllers::{
     body::rig::frames::Frames,
-    frame::{Hand, Pose},
     weapons::{
         docks::attachments::MAX_AGE,
         pouch_models::{ModelPlacement, Prop, ShownPouch, on_pouch},
@@ -36,7 +36,7 @@ pub(crate) struct Attachment {
 
 /// A producer-local identity, not an engine frame number or a host-time join.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) struct SampleId {
+pub struct SampleId {
     pub owner: usize,
     pub epoch: u64,
     pub sequence: u64,

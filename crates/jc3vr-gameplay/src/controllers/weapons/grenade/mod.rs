@@ -32,6 +32,14 @@ use jc3gi::{
     input::input_action_map::Action,
     types::math::{Matrix4, Vector3},
 };
+use jc3vr_input::{
+    frame::{Hand, Pose},
+    motion,
+};
+use jc3vr_render::controllers::overlay::{
+    primitive::{Anchor, DepthMode, Facing, HandPose, Primitive, Rgba, Shape, Source, SpriteSize},
+    store,
+};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
@@ -45,7 +53,6 @@ use crate::controllers::{
     body::rig::frames::Frames,
     config::{CONTROLLERS_CONFIG, ControllersConfig},
     diagnostics::{self, Thrown},
-    frame::{Hand, Pose},
     grab::{Candidate, GrabVolume, resolve::nearest_within},
     hands::{
         ActiveHands,
@@ -53,13 +60,6 @@ use crate::controllers::{
     },
     haptics::{self, Event},
     loadout::{ItemId, Place, TakeSource, live, safe_items::SafeItemView},
-    motion,
-    overlay::{
-        primitive::{
-            Anchor, DepthMode, Facing, HandPose, Primitive, Rgba, Shape, Source, SpriteSize,
-        },
-        store,
-    },
     physical_hands,
     weapons::{
         docks, engine,
@@ -648,7 +648,7 @@ pub(crate) fn observe_hands(grips: [Option<Pose>; 2]) {
 /// # Safety
 ///
 /// The game thread, before the world update.
-pub(crate) unsafe fn render_frame(dtf: f32) {
+pub unsafe fn render_frame(dtf: f32) {
     unsafe { beacon::render_frame() };
     let tuning = GrenadeTuning::of(&CONTROLLERS_CONFIG.query(|config| config.weapons.grenade));
     unsafe { safe::render_frame(dtf, &tuning) };

@@ -122,7 +122,7 @@ pub fn render_tick(context: &ID3D11DeviceContext, device: &ID3D11Device) {
         }
         return;
     }
-    let path = config.weights(crate::module::get_path());
+    let path = config.weights(jc3vr_core::module::get_path());
     let now = Instant::now();
     if executor.path != path {
         executor.path = path.clone();
@@ -167,7 +167,7 @@ pub fn render_tick(context: &ID3D11DeviceContext, device: &ID3D11Device) {
 }
 
 #[must_use = "a loader that did not finish means the payload must stay mapped"]
-pub(crate) fn shutdown() -> bool {
+pub fn shutdown() -> bool {
     withdraw();
     stop(&EXECUTOR, SHUTDOWN_BUDGET)
 }

@@ -11,17 +11,17 @@
 use std::time::Duration;
 
 use glam::Vec3;
-
-use crate::{
-    controllers::{
-        config::CONTROLLERS_CONFIG,
-        overlay::{
-            primitive::{Anchor, DepthMode, Facing, Primitive, Rgba, Shape, Source, SpriteSize},
-            store,
-        },
-        physical_hands::{HandStatus, PhysicalHandsConfig, palm::EDGES},
+use jc3vr_render::{
+    controllers::overlay::{
+        primitive::{Anchor, DepthMode, Facing, Primitive, Rgba, Shape, Source, SpriteSize},
+        store,
     },
     hooks::camera::eye_point,
+};
+
+use crate::controllers::{
+    config::CONTROLLERS_CONFIG,
+    physical_hands::{HandStatus, PhysicalHandsConfig, palm::EDGES},
 };
 
 /// Submit the palms of the last tick, or clear them when they are not shown.

@@ -23,10 +23,10 @@ use std::{num::NonZeroUsize, time::Instant};
 
 use glam::Vec3;
 use jc3gi::{equipment::explosive::Explosive, physics::PfxInstance};
+use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
 use crate::controllers::{
-    frame::Hand,
     grab::{Candidate, GrabVolume},
     hands::held::{self, Slot},
     physical_hands,

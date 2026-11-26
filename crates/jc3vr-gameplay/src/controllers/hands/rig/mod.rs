@@ -16,15 +16,15 @@ use jc3gi::{
     animation::ik::Effector,
     character::character::{AnimationController, Character},
 };
+use jc3vr_input::frame::Hand;
+use jc3vr_render::headpose;
 use parking_lot::Mutex;
 
 use crate::{
     controllers::{
         body::procedural::skeleton::SkeletonKey,
-        frame::Hand,
         hands::reach::{ArmSample, ArmTracker, MeasuredArm},
     },
-    headpose,
     hooks::character::{
         body_ik,
         pose::{self, LivePose},
@@ -39,10 +39,10 @@ use crate::{
 /// as they are; the input tick's callers run in the game stage, which revalidates every tick.
 pub fn arms() -> [Option<MeasuredArm>; 2] {
     if matches!(
-        crate::thread_role::current(),
-        crate::thread_role::ThreadRole::Game
-            | crate::thread_role::ThreadRole::GameFrame
-            | crate::thread_role::ThreadRole::GameDebugUi
+        jc3vr_core::thread_role::current(),
+        jc3vr_core::thread_role::ThreadRole::Game
+            | jc3vr_core::thread_role::ThreadRole::GameFrame
+            | jc3vr_core::thread_role::ThreadRole::GameDebugUi
     ) {
         unsafe {
             match Character::GetLocalPlayerCharacter().as_ref() {

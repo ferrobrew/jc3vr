@@ -18,19 +18,16 @@
 use std::time::{Duration, Instant};
 
 use glam::Vec3;
+use jc3vr_input::frame::{Hand, Pose};
 use parking_lot::Mutex;
 
-use crate::controllers::{
-    fingers::{
-        curl::Finger,
-        grip::catalogue::GripPose,
-        pose::{
-            BoneJoint, PalmFrame, bone_directions, finger_axes, joint_angles, thumb_axis,
-            thumb_open,
-        },
-        tuning::FingerTuning,
+use crate::controllers::fingers::{
+    curl::Finger,
+    grip::catalogue::GripPose,
+    pose::{
+        BoneJoint, PalmFrame, bone_directions, finger_axes, joint_angles, thumb_axis, thumb_open,
     },
-    frame::{Hand, Pose},
+    tuning::FingerTuning,
 };
 
 /// A hand's proportions: each finger's root and bone lengths, indexed by [`Finger::index`]. The

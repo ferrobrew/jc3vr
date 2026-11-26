@@ -20,15 +20,13 @@ use jc3gi::{
     physics::RigidObject,
     types::math::Matrix4,
 };
+use jc3vr_input::frame::Hand;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::{
-    controllers::{frame::Hand, hands::late},
-    grapple::hook,
-};
+use crate::{controllers::hands::late, grapple::hook};
 
 /// The device's render hook, registered by `crate::hooks`.
-pub(crate) fn hook_library() -> HookLibrary {
+pub fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&RIGID_OBJECT_UPDATE_RENDER_BINDER)
 }
 

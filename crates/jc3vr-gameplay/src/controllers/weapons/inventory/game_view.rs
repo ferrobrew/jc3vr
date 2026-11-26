@@ -22,15 +22,14 @@ use crate::controllers::{
     summary::localise::{self, current_locale, renders},
     weapons::{
         dual_wield::single,
-        engine as weapons_engine,
-        engine::slot_from_raw,
+        engine::{self as weapons_engine, slot_from_raw},
         inventory::{carry, traversal},
     },
 };
 
 /// The game's inventory as of one input tick.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct GameInventory {
+pub struct GameInventory {
     /// Each slot, in the slots' index order.
     pub slots: [GameSlot; SLOT_COUNT],
     /// The character's selected slot.
@@ -50,7 +49,7 @@ pub(crate) struct GameInventory {
 
 /// One of the game's slots.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct GameSlot {
+pub struct GameSlot {
     pub slot: WeaponSlot,
     pub weapon: Option<GameWeapon>,
     /// Whether a spawn of the slot's weapon is on its way.
@@ -59,7 +58,7 @@ pub(crate) struct GameSlot {
 
 /// A weapon in one of the game's slots.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct GameWeapon {
+pub struct GameWeapon {
     pub object: ObjectAddress,
     /// The weapon type's name hash.
     pub name_hash: u32,
@@ -85,7 +84,7 @@ impl GameWeapon {
 
 /// What the pistol slot holds.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) enum Pistols {
+pub enum Pistols {
     Empty,
     /// The game's pair: one weapon with a gun in each hand.
     Pair,

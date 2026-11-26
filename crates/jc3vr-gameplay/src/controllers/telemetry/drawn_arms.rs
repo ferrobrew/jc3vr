@@ -6,15 +6,14 @@ use std::time::{Duration, Instant};
 
 use glam::Vec3;
 use jc3gi::graphics_engine::render_block::Matrix3x4;
-use parking_lot::Mutex;
-use tracking_format::event::{Diagnostic, Label};
-
-use crate::{
-    controllers::hands::palette::{PaletteLayout, entry_to_matrix},
-    hooks,
+use jc3vr_render::{
     recorder::tracking::events::{self, EventKind},
     stereo,
 };
+use parking_lot::Mutex;
+use tracking_format::event::{Diagnostic, Label};
+
+use crate::controllers::hands::palette::{PaletteLayout, entry_to_matrix};
 
 /// The drawn arm joints, each joint's bind point carried through its edited palette entry, or
 /// `None` when an entry is missing or a point is not finite.
@@ -44,7 +43,7 @@ pub(crate) fn drawn_arm_joints(
 /// eye's draw during gameplay.
 pub(crate) fn sample_drawn_arms(sequence: u64, dtf: f32, joints: [[Vec3; 3]; 2]) {
     if stereo::draw_index() != 0
-        || !hooks::in_gameplay()
+        || !jc3vr_core::hooks::in_gameplay()
         || !dtf.is_finite()
         || !joints.iter().flatten().all(|point| point.is_finite())
     {

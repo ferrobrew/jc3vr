@@ -17,11 +17,11 @@
 //! The rows come from the binding tables themselves
 //! ([`crate::controllers::bindings::tables::describe`]), so the summary cannot drift from what the
 //! controllers inject, and each row's control from the sources the runtime bound its actions to
-//! ([`crate::vr::input::sources::table`]): a compact control label for a known source, the runtime's
+//! ([`jc3vr_render::vr::input::sources::table`]): a compact control label for a known source, the runtime's
 //! name otherwise, and "unbound" in the reference for an action bound to nothing. The input tick
 //! rebuilds the summary when the mode, the table context, the enabled gestures, the game's
 //! language, or the bound sources change ([`refresh`]), resolving the strings on the game thread;
-//! the render thread draws the latest one ([`crate::hud::summary_panel`]). Active source paths are
+//! the render thread draws the latest one (`hud::summary_panel`). Active source paths are
 //! checked every sync independently of panel visibility. A locale change requests fresh names.
 //!
 //! The presentation modules ([`glance`], [`grid`], [`page_clock`], [`game_hints`], and the test-only
@@ -31,18 +31,12 @@
 pub mod config;
 pub mod content;
 pub mod context;
-pub(crate) mod current;
+pub mod current;
 pub(crate) mod eligibility;
 pub(crate) mod essentials;
-pub mod game_hints;
-pub mod glance;
-#[cfg(test)]
-mod glyphs;
-pub(crate) mod grid;
-pub(crate) mod hold;
+pub mod hold;
 pub mod labels;
 pub mod localise;
-pub(crate) mod page_clock;
 pub(crate) mod snatch;
 
 use std::{
@@ -53,32 +47,28 @@ use std::{
 };
 
 use jc3gi::ui::locator::Locale;
+use jc3vr_render::vr::input::sources;
 use parking_lot::Mutex;
 
 pub use crate::controllers::summary::config::SummaryConfig;
-use crate::{
-    controllers::{
-        bindings::{
-            controls::Controls,
-            tables::{
-                declare::TableCtx,
-                describe::{
-                    DescribeCtx, Features, PhysicalFeatures, describe_bound, describe_current,
-                },
-            },
+use crate::controllers::{
+    bindings::{
+        controls::Controls,
+        tables::{
+            declare::TableCtx,
+            describe::{DescribeCtx, Features, PhysicalFeatures, describe_bound, describe_current},
         },
-        config::ControllersConfig,
-        mode::{AirborneVariant, Mode},
-        summary::{
-            content::{Side, Summary, build, with_context},
-            context::ContextHint,
-            current::{CurrentContext, CurrentSummary, project},
-            eligibility::{Eligibility, Omission},
-            labels::{HOLD_KEY, ModText, Text},
-        },
-        weapons::{c4, wheel::tuning::WHEEL},
     },
-    vr::input::sources,
+    config::ControllersConfig,
+    mode::{AirborneVariant, Mode},
+    summary::{
+        content::{Side, Summary, build, with_context},
+        context::ContextHint,
+        current::{CurrentContext, CurrentSummary, project},
+        eligibility::{Eligibility, Omission},
+        labels::{HOLD_KEY, ModText, Text},
+    },
+    weapons::{c4, wheel::tuning::WHEEL},
 };
 
 /// The latest summary, for the panel.
@@ -87,7 +77,7 @@ pub struct Published {
     /// The complete binding reference, including unavailable and unbound routes.
     pub summary: Arc<Summary>,
     /// The current usable wrist projection, independent of the reference inventory.
-    pub(crate) current: Arc<CurrentSummary>,
+    pub current: Arc<CurrentSummary>,
     pub(crate) omitted: Arc<
         Vec<(
             crate::controllers::bindings::tables::describe::Row,
@@ -97,7 +87,7 @@ pub struct Published {
     /// Bumped on every complete-reference rebuild.
     pub revision: u64,
     /// Changes only when the projected wrist content changes.
-    pub(crate) wrist_revision: u64,
+    pub wrist_revision: u64,
     /// When the mode last changed to one the player settles in with another heading than the last
     /// such mode's ([`shows_mode_change`]).
     pub mode_changed_at: Instant,
@@ -417,11 +407,11 @@ static STATE: Mutex<State> = Mutex::new(State {
 #[cfg(test)]
 mod tests {
     use jc3gi::input::input_action_map::Action;
+    use jc3vr_input::frame::Hand;
 
     use super::*;
     use crate::controllers::{
         bindings::tables::describe::{Control, Effect, Gesture, Row},
-        frame::Hand,
         mode::{OnFootVariant, VehicleClass, VehicleSeat},
         summary::current::CurrentRouting,
     };

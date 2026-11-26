@@ -11,10 +11,10 @@ use std::num::NonZeroUsize;
 
 use body_rig::{geometry::point_velocity, rotation::angular_velocity, smooth::follow_factor};
 use glam::{Quat, Vec3};
+use jc3vr_input::frame::Pose;
 
 use crate::controllers::{
     clock::TimeScale,
-    frame::Pose,
     physical_hands::{
         characters::CharacterTarget, doors::DoorTarget, pickup::PickupTuning, rigid::BodyPose,
     },

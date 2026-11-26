@@ -1,28 +1,26 @@
 //! Per-physical-hand gun trigger ownership and neutral transfer between gameplay consumers.
 
 use jc3gi::input::input_action_map::Action;
+use jc3vr_input::frame::Hand;
+use jc3vr_render::vr::input::semantic::{
+    SemanticSet,
+    bound::{Physical, PhysicalSet},
+    vocabulary::{ActionId, HelicopterAction, LandVehicleAction, OnFootAction, PlaneAction},
+};
 
-use crate::{
-    controllers::{
-        bindings::{
-            controls::{ButtonControl, Controls},
-            hold::{Desired, MapKind},
-            intents::{Intent, SemanticInput},
-            tables::{
-                declare::{TableCtx, declare},
-                grapple_press,
-                sink::{Axis, Press, Sink},
-            },
+use crate::controllers::{
+    bindings::{
+        controls::{ButtonControl, Controls},
+        hold::{Desired, MapKind},
+        intents::{Intent, SemanticInput},
+        tables::{
+            declare::{TableCtx, declare},
+            grapple_press,
+            sink::{Axis, Press, Sink},
         },
-        frame::Hand,
-        mode::{AirborneVariant, Mode},
-        weapons::capabilities::{GunHand, GunOwner},
     },
-    vr::input::semantic::{
-        SemanticSet,
-        bound::{Physical, PhysicalSet},
-        vocabulary::{ActionId, HelicopterAction, LandVehicleAction, OnFootAction, PlaneAction},
-    },
+    mode::{AirborneVariant, Mode},
+    weapons::capabilities::{GunHand, GunOwner},
 };
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -291,22 +289,21 @@ impl Sink for ChangedRoutes<'_> {
 
 #[cfg(test)]
 mod tests {
+    use jc3vr_render::vr::input::semantic::{
+        bound::PhysicalSet, defaults::default_binding, vocabulary::WingsuitAction,
+    };
+
     use super::*;
-    use crate::{
-        controllers::{
-            bindings::{
-                grapple_button::GrappleContext,
-                hold::{Target, Want},
-                intents::simulate::simulate,
-                tables::Bindings,
-            },
-            config::BindingsConfig,
-            mode::{OnFootVariant, VehicleClass, VehicleSeat},
-            weapons::capabilities::{Capabilities, NativePair, TriggerClaim, trigger_claims},
+    use crate::controllers::{
+        bindings::{
+            grapple_button::GrappleContext,
+            hold::{Target, Want},
+            intents::simulate::simulate,
+            tables::Bindings,
         },
-        vr::input::semantic::{
-            bound::PhysicalSet, defaults::default_binding, vocabulary::WingsuitAction,
-        },
+        config::BindingsConfig,
+        mode::{OnFootVariant, VehicleClass, VehicleSeat},
+        weapons::capabilities::{Capabilities, NativePair, TriggerClaim, trigger_claims},
     };
 
     fn owner(weapon: Option<usize>, role: GunHand) -> Owner {

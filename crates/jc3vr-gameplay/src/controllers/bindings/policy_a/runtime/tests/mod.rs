@@ -9,13 +9,11 @@ mod ui_tests;
 
 use std::{sync::Arc, time::Instant};
 
+use jc3vr_input::frame::ActionSetKind;
+use jc3vr_render::vr::input::semantic::vocabulary::{LandVehicleAction, OnFootAction};
 use tracking_format::input::{ClockDomain, GroupOrder, InputStamp, SourceQuery};
 
 use super::*;
-use crate::{
-    controllers::frame::ActionSetKind,
-    vr::input::semantic::vocabulary::{LandVehicleAction, OnFootAction},
-};
 
 const LS: &str = "/user/hand/left/input/thumbstick/click";
 const RS: &str = "/user/hand/right/input/thumbstick/click";

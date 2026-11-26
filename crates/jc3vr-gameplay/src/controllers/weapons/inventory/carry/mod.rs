@@ -52,12 +52,12 @@ use jc3gi::{
     equipment::weapon::{ModelAttachementWeaponComponent, WeaponBase, WeaponData, WeaponState},
     types::math::Matrix4,
 };
+use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
     aim::gun,
-    frame::Hand,
     hands::ik,
     loadout::{ObjectAddress, Place, Socket, live},
     weapons::{

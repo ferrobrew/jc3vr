@@ -2,13 +2,11 @@
 //! would take. Pure.
 
 use glam::Vec3;
+use jc3vr_input::frame::Hand;
 
-use crate::controllers::{
-    frame::Hand,
-    grab::{
-        GrabVolume, PickupKind,
-        target::{GripTarget, TargetReach, Tier},
-    },
+use crate::controllers::grab::{
+    GrabVolume, PickupKind,
+    target::{GripTarget, TargetReach, Tier},
 };
 
 /// A target within a hand's reach: which of the tick's targets it is, what it is, how far its grab

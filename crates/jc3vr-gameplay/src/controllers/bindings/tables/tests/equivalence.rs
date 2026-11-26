@@ -23,26 +23,24 @@
 //!   where the raw-input tables evaded ([`normalise`]).
 
 use glam::Vec2;
+use jc3vr_render::vr::input::semantic::{
+    defaults::{Component, DefaultBinding, Side},
+    vocabulary::{
+        GlobalAction, HelicopterAction, LandVehicleAction, MenuAction, OnFootAction, PlaneAction,
+        WingsuitAction,
+    },
+};
 
 use super::*;
-use crate::{
-    controllers::{
-        bindings::{
-            controls::radial_deadzone,
-            tables::{
-                coverage::{all_contexts, all_modes},
-                tests::legacy,
-            },
-        },
-        loadout::Socket,
-    },
-    vr::input::semantic::{
-        defaults::{Component, DefaultBinding, Side},
-        vocabulary::{
-            GlobalAction, HelicopterAction, LandVehicleAction, MenuAction, OnFootAction,
-            PlaneAction, WingsuitAction,
+use crate::controllers::{
+    bindings::{
+        controls::radial_deadzone,
+        tables::{
+            coverage::{all_contexts, all_modes},
+            tests::legacy,
         },
     },
+    loadout::Socket,
 };
 
 #[test]

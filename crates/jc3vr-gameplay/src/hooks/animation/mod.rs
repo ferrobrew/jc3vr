@@ -8,10 +8,10 @@ use jc3gi::{
 };
 use re_utilities::hook_library::HookLibrary;
 
-pub(crate) mod canopy;
+pub mod canopy;
 pub(crate) mod publication;
 
-pub(crate) fn hook_library() -> HookLibrary {
+pub fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_static_binder(&UPDATE_ANIMATIONS_TIME_BINDER)
         .with_static_binder(&UPDATE_ANIMATIONS_BINDER)
@@ -43,7 +43,7 @@ fn update_animations_time(controller: *mut AnimationController, dt: f32) {
     if unsafe { is_local_controller(controller) }
         && let Some(controller) = unsafe { controller.as_ref() }
     {
-        unsafe { crate::hooks::camera::authored::animation_update(controller, None) };
+        unsafe { jc3vr_render::hooks::camera::authored::animation_update(controller, None) };
     }
 }
 
@@ -66,7 +66,10 @@ fn update_animations(controller: *mut AnimationController, dt: f32, num_of_bones
             .as_ref()
             .filter(|_| local)
             .and_then(|controller| {
-                crate::hooks::camera::authored::animation_evaluation(controller, num_of_bones)
+                jc3vr_render::hooks::camera::authored::animation_evaluation(
+                    controller,
+                    num_of_bones,
+                )
             })
     };
     UPDATE_ANIMATIONS
@@ -75,7 +78,7 @@ fn update_animations(controller: *mut AnimationController, dt: f32, num_of_bones
         .call(controller, dt, num_of_bones);
     if local && let Some(controller) = unsafe { controller.as_ref() } {
         unsafe { publication::complete(controller, pose_evaluation) };
-        unsafe { crate::hooks::camera::authored::animation_update(controller, evaluation) };
+        unsafe { jc3vr_render::hooks::camera::authored::animation_update(controller, evaluation) };
     }
 }
 
@@ -84,14 +87,21 @@ unsafe fn is_local_controller(controller: *mut AnimationController) -> bool {
         .map(|player| player.m_AnimatedModel.m_AnimationController)
         .filter(|controller| !controller.is_null());
     publication::select(selected.map(|controller| controller as usize));
-    crate::hooks::camera::authored::select_controller(selected.map(|controller| controller as u64));
+    jc3vr_render::hooks::camera::authored::select_controller(
+        selected.map(|controller| controller as u64),
+    );
     selected.is_some_and(|selected| std::ptr::eq(selected, controller))
 }
 
 /// The character's active animation rule-state id (`hashlittle(state_name)`, e.g. `S_IDLE`), read
 /// through its first (body) rule system's state machine, mirroring `CCharacter::IsInVehicleAttachState`.
 /// `None` if any link in the chain is absent (loading, no rule system).
-pub(crate) unsafe fn active_state_type_id(character: &Character) -> Option<u32> {
+///
+/// # Safety
+///
+/// `character` must be a live engine character: the chain from its animated model to the rule
+/// system's state machine is read through raw engine pointers.
+pub unsafe fn active_state_type_id(character: &Character) -> Option<u32> {
     unsafe {
         Some(
             body_rule_system(character)?
@@ -137,7 +147,12 @@ pub(crate) unsafe fn ready_body_machine(character: &Character) -> Option<&StateM
 
 /// The character's first (body) rule system, which also holds the height over the ground its
 /// ground information last wrote. `None` while the character has none.
-pub(crate) unsafe fn body_rule_system(character: &Character) -> Option<&AnimationRuleSystem> {
+///
+/// # Safety
+///
+/// `character` must be a live engine character: its rule systems are read through raw engine
+/// pointers.
+pub unsafe fn body_rule_system(character: &Character) -> Option<&AnimationRuleSystem> {
     unsafe {
         character
             .m_AnimatedModel

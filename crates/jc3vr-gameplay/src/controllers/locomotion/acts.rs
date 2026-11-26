@@ -37,6 +37,8 @@ use std::{
 };
 
 use jc3gi::{animation::symbol_table::EventIdSymbolTable, character::character::Character};
+use jc3vr_core::hooks::in_gameplay;
+use jc3vr_render::headpose::{Source, source};
 use parking_lot::Mutex;
 
 use crate::{
@@ -46,8 +48,7 @@ use crate::{
         locomotion::status as locomotion_status,
         mode::{Mode, OnFootVariant, current as current_mode},
     },
-    headpose::{Source, source},
-    hooks::{character::resolve_act_id, in_gameplay},
+    hooks::character::resolve_act_id,
 };
 
 /// Where an act the filter knows is filtered.

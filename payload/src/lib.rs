@@ -26,7 +26,8 @@ mod controllers;
 mod diagnostics;
 mod director;
 mod eject_gpu;
-mod grapple;
+// The gameplay layer lives in its own crate; the old paths keep working until the final cleanup pass.
+pub(crate) use jc3vr_gameplay::grapple;
 mod hooks;
 mod hud;
 // The input layer lives in its own crate; the old path keeps working until the final cleanup pass.

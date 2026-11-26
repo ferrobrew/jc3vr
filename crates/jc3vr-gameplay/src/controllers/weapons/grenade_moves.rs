@@ -1,7 +1,8 @@
 //! Route socket, release, and handover interactions for actor-free grenades.
 
+use jc3vr_input::frame::Hand;
+
 use crate::controllers::{
-    frame::Hand,
     loadout::{Place, Socket, live},
     weapons::{docks, grenade},
 };

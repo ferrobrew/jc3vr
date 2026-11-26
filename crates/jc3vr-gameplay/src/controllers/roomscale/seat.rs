@@ -15,7 +15,10 @@
 
 use std::sync::LazyLock;
 
-use crate::{controllers::config::SeatTransition, hash::StateTable, vr::RecenterKind};
+use jc3vr_core::hash::StateTable;
+use jc3vr_render::vr::RecenterKind;
+
+use crate::controllers::config::SeatTransition;
 
 /// Under [`SeatTransition::Fade`], how long the view stays dark after the seat locks, so that the
 /// re-based view settles before it clears, seconds.
@@ -121,7 +124,7 @@ pub struct SeatAction {
     /// The recenter to request.
     pub recenter: Option<RecenterKind>,
     /// Re-base the cockpit's yaw by the head's offset from the body when it stopped following
-    /// ([`crate::vr::request_seat_yaw_rebase`]), in place of a recenter.
+    /// ([`jc3vr_render::vr::request_seat_yaw_rebase`]), in place of a recenter.
     pub rebase_yaw: bool,
 }
 
@@ -175,7 +178,7 @@ pub fn action(mode: SeatTransition, event: SeatEvent, hold_s: f32) -> SeatAction
 }
 
 /// The state names of each phase, from the state names of Rico's base animation graph (`rico_base`), the graph the body rule system runs. No name is in two phases.
-pub(crate) const PHASE_STATES: [(SeatPhase, &[&str]); 4] = [
+pub const PHASE_STATES: [(SeatPhase, &[&str]); 4] = [
     (SeatPhase::Locked, LOCKED),
     (SeatPhase::Shuffle, SHUFFLE),
     (SeatPhase::Entering, ENTERING),
@@ -365,8 +368,9 @@ const EXITING: &[&str] = &[
 mod tests {
     use std::collections::HashSet;
 
+    use jc3vr_core::hash::hashlittle;
+
     use super::*;
-    use crate::hash::hashlittle;
 
     fn state(name: &str) -> Option<u32> {
         Some(hashlittle(name.as_bytes()))

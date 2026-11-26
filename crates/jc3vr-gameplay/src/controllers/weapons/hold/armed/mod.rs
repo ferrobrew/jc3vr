@@ -38,10 +38,10 @@ use jc3gi::{
     },
     equipment::weapon::{WeaponBase, WeaponData, WeaponState},
 };
+use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
 use crate::controllers::{
-    frame::Hand,
     hands::ik,
     weapons::{
         dual_wield::single,

@@ -7,14 +7,17 @@
 
 use std::sync::Arc;
 
-use crate::{
-    controllers::weapons::reload::{cancel_extraction_on_standdown, serial},
-    hooks::character::magazine,
+use jc3vr_core::{
     lifecycle::{
         DeferReason, ParticipantId, Preparation, PrepareOutcome, PreparedParticipant,
         ShutdownParticipant,
     },
     thread_role::{self, ThreadRole},
+};
+
+use crate::{
+    controllers::weapons::reload::{cancel_extraction_on_standdown, serial},
+    hooks::character::magazine,
 };
 
 /// The participant that keeps shutdown waiting while magazine work is pending or running.

@@ -14,14 +14,12 @@ use std::time::{Duration, Instant};
 
 use body_estimator::{GripOffset, LiveFrame, SparseWindow, WindowBuilder};
 use glam::{DQuat, Quat, Vec3};
+use jc3vr_render::vr;
 use parking_lot::Mutex;
 
-use crate::{
-    controllers::{
-        body::estimator::withdraw, config::CONTROLLERS_CONFIG,
-        roomscale::posture::EffectivePosture, scheme,
-    },
-    vr,
+use crate::controllers::{
+    body::estimator::withdraw, config::CONTROLLERS_CONFIG, roomscale::posture::EffectivePosture,
+    scheme,
 };
 
 /// One rendered frame's tracking, in the rig's room frame.
@@ -92,7 +90,7 @@ pub(crate) fn eyes(now: Instant) -> Option<Vec3> {
 }
 
 /// How many poses the window holds, for the debug UI.
-pub(crate) fn window_len() -> usize {
+pub fn window_len() -> usize {
     STATE.lock().as_ref().map_or(0, |p| p.builder.len())
 }
 

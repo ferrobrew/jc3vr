@@ -3,9 +3,8 @@
 
 use std::path::PathBuf;
 
+use jc3vr_core::config::engine::Invalid;
 use serde::{Deserialize, Serialize};
-
-use crate::config::validate::Invalid;
 
 /// The estimator's switch, its weights, and how often it runs.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -44,7 +43,7 @@ impl EstimatorConfig {
         }
     }
 
-    pub(crate) fn validate(&self) -> Result<(), Invalid> {
+    pub fn validate(&self) -> Result<(), Invalid> {
         if !self.submit_hz.is_finite() || !(1.0..=90.0).contains(&self.submit_hz) {
             return Err(Invalid(format!(
                 "body.estimator.submit_hz must be finite and in [1, 90], got {}",

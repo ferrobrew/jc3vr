@@ -12,9 +12,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+use jc3vr_core::config::engine::write;
 use parking_lot::{Condvar, Mutex};
-
-use crate::config::write;
 
 pub(super) struct Snapshot {
     pub(super) path: PathBuf,
@@ -47,7 +46,7 @@ pub(super) fn status() -> WriteStatus {
 }
 
 #[must_use = "an unfinished sidecar writer requires the payload to stay mapped"]
-pub(crate) fn shutdown() -> bool {
+pub fn shutdown() -> bool {
     let stopped = shutdown_owner(&OWNER, SHUTDOWN_BUDGET);
     if !stopped {
         tracing::error!(target: "controllers", "inventory: sidecar writer has not exited; keeping the payload mapped");

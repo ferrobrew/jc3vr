@@ -1,8 +1,9 @@
 use std::{num::NonZeroUsize, time::Duration};
 
+use jc3vr_input::frame::Hand;
+
 use super::*;
 use crate::controllers::{
-    frame::Hand,
     physical_hands::BodyError,
     weapons::reload::loose::{LooseCounts, State, body_status},
 };

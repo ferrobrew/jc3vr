@@ -7,19 +7,17 @@
 use std::{num::NonZeroUsize, time::Instant};
 
 use glam::Vec3;
+use jc3vr_input::frame::{Hand, Pose};
 use parking_lot::Mutex;
 
-use crate::controllers::{
-    frame::{Hand, Pose},
-    physical_hands::physics::{
-        BodyPhase, HandBodyStatus, HoldTarget,
-        body::{BodyError, BodyShape, BodySpec, HandBody},
-        contact,
-        drive::{DriveTuning, Goal, JoinedLoad, drive, drive_joined, rig_carry},
-        guns::step::{GunSlot, drop_hand},
-        joint::{Joint, JointKind},
-        render::RenderOffset,
-    },
+use crate::controllers::physical_hands::physics::{
+    BodyPhase, HandBodyStatus, HoldTarget,
+    body::{BodyError, BodyShape, BodySpec, HandBody},
+    contact,
+    drive::{DriveTuning, Goal, JoinedLoad, drive, drive_joined, rig_carry},
+    guns::step::{GunSlot, drop_hand},
+    joint::{Joint, JointKind},
+    render::RenderOffset,
 };
 
 /// One hand's drive request.

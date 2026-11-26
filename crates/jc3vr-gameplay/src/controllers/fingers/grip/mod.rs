@@ -29,11 +29,10 @@ pub mod contact;
 
 use std::time::{Duration, Instant};
 
+use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
-use crate::controllers::{
-    fingers::grip::catalogue::GripPose, frame::Hand, vehicles::physical::ControlKind,
-};
+use crate::controllers::{fingers::grip::catalogue::GripPose, vehicles::physical::ControlKind};
 
 /// What put something in a hand, in the order the declarations win.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -253,7 +252,7 @@ pub(crate) fn current(hand: Hand, now: Instant, max_age: Duration) -> Option<Gri
 /// Every source declaring for `hand` at `now`, in the order the declarations win, for the
 /// readouts. A declaration counts within the longest age [`max_age`] gives, since the readouts do
 /// not know the finger curls' tick interval.
-pub(crate) fn declared(hand: Hand, now: Instant) -> Vec<GripSource> {
+pub fn declared(hand: Hand, now: Instant) -> Vec<GripSource> {
     let declared = DECLARED.lock()[hand.index()];
     fresh(&declared, now, Duration::from_secs_f32(MAX_AGE_S))
         .map(|grip| grip.source)

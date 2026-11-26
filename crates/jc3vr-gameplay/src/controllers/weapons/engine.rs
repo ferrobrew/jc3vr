@@ -16,11 +16,11 @@ use jc3gi::{
     graphics_engine::model_instance::ModelInstanceFlags,
     types::math::Matrix4,
 };
+use jc3vr_input::frame::{Hand, Pose};
 
 use crate::controllers::{
     aim::{gun, ray, sights},
     config::AimConfig,
-    frame::{Hand, Pose},
     hands::{ik::TickTarget, late, pose as hand_pose},
     loadout::SLOTS,
     weapons::{

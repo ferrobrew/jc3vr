@@ -10,11 +10,9 @@
 //! [`GunRegion::Action`]: crate::controllers::weapons::regions::GunRegion::Action
 
 use glam::Vec3;
+use jc3vr_input::frame::Hand;
 
-use crate::controllers::{
-    frame::Hand,
-    grab::{Candidate, GrabVolume},
-};
+use crate::controllers::grab::{Candidate, GrabVolume};
 
 /// The action's grab volume for `hand`: a sphere of `radius` at the action's handle `handle`, in
 /// the cockpit frame, carried `back` cockpit metres along the gun's `rearward` axis with the part.

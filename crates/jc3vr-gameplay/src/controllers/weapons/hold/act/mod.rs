@@ -27,43 +27,45 @@ use jc3gi::{
     character::character::{Character, SafeBoneIndex},
     equipment::weapon::{WeaponBase, WeaponState},
 };
-use parking_lot::Mutex;
-
-use crate::{
-    controllers::{
-        aim::gun,
-        bindings,
-        clock::TimeScale,
-        diagnostics,
-        frame::{self, Hand, Pose},
-        hands::grip,
-        loadout::{ObjectAddress, Socket, grab, live},
-        motion,
-        roomscale::teleport,
-        weapons::{
-            docks,
-            dual_wield::single,
-            engine::{self, grip_points, slot_of},
-            hold::{
-                self, armed,
-                dock::{
-                    DrawRearm, ReleaseIntent, ReleaseWatch, Snap, SnapFrom, SnapKind, draw_blocked,
-                },
-                equip::{self, DockRefusal, Thrown},
-                layout,
-                release_diagnostics::{
-                    ControllerContext, MAX_RELEASE_AGE_S, ReleaseFrame, ReleaseInput,
-                    ReleaseMotion, ReleaseRecord, ReleaseRoute, ReleaseStatus, ReleaseTransport,
-                    RigMotion, SampleStage, estimate_release,
-                },
-            },
-            inventory::{self, reconcile, sockets, traversal},
-            sounds::{self, GunSound},
-        },
-    },
-    headpose, hooks,
+use jc3vr_input::{
+    frame::{self, Hand, Pose},
+    motion,
+};
+use jc3vr_render::{
+    headpose,
     recorder::tracking::events::{self, EventKind},
     vr::{VR_CONFIG, recenter_count},
+};
+use parking_lot::Mutex;
+
+use crate::controllers::{
+    aim::gun,
+    bindings,
+    clock::TimeScale,
+    diagnostics,
+    hands::grip,
+    loadout::{ObjectAddress, Socket, grab, live},
+    roomscale::teleport,
+    weapons::{
+        docks,
+        dual_wield::single,
+        engine::{self, grip_points, slot_of},
+        hold::{
+            self, armed,
+            dock::{
+                DrawRearm, ReleaseIntent, ReleaseWatch, Snap, SnapFrom, SnapKind, draw_blocked,
+            },
+            equip::{self, DockRefusal, Thrown},
+            layout,
+            release_diagnostics::{
+                ControllerContext, MAX_RELEASE_AGE_S, ReleaseFrame, ReleaseInput, ReleaseMotion,
+                ReleaseRecord, ReleaseRoute, ReleaseStatus, ReleaseTransport, RigMotion,
+                SampleStage, estimate_release,
+            },
+        },
+        inventory::{self, reconcile, sockets, traversal},
+        sounds::{self, GunSound},
+    },
 };
 
 /// A snap as the rigid grip sees it.
@@ -850,7 +852,7 @@ static STATE: Mutex<State> = Mutex::new(State {
 fn sample_release_transport(dt: f32) {
     let scale = VR_CONFIG.lock().world_scale;
     let frame = headpose::xr::cockpit_pose().map(|head_cockpit| {
-        let head_world = hooks::camera::eye_point();
+        let head_world = jc3vr_render::hooks::camera::eye_point();
         ReleaseFrame {
             origin: head_world,
             rotation: headpose::xr::body_rotation(),

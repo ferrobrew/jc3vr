@@ -77,6 +77,7 @@ use std::num::NonZeroUsize;
 
 use glam::Vec3;
 use jc3gi::character::character::Character;
+use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
@@ -94,7 +95,6 @@ use crate::controllers::{
         yank::{ArmedLine, HandLine, YankConfig, YankDetector},
     },
     config::ControllersConfig,
-    frame::Hand,
     grab::{GrabVolume, GripTarget, Mark, MarkAt, Provided, latch::GripLatch},
     haptics::{self, Event},
     loadout::slot_label,

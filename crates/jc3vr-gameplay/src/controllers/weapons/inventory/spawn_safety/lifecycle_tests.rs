@@ -3,13 +3,12 @@
 
 use std::sync::Arc;
 
-use crate::{
-    controllers::weapons::inventory::spawn_safety::{RequestKind, SpawnSafety},
-    lifecycle::{
-        ParticipantId,
-        test_support::{Answer, FakeParticipant, Harness},
-    },
+use jc3vr_core::lifecycle::{
+    ParticipantId,
+    test_support::{Answer, FakeParticipant, Harness},
 };
+
+use crate::controllers::weapons::inventory::spawn_safety::{RequestKind, SpawnSafety};
 
 #[test]
 fn exposed_inventory_requests_do_not_block_shutdown() {

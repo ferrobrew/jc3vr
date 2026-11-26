@@ -23,9 +23,8 @@
 
 use std::time::{Duration, Instant};
 
+use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
-
-use crate::controllers::frame::Hand;
 
 /// What the input tick publishes for the detours.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]

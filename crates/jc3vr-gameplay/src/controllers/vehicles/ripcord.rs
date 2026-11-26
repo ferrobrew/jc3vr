@@ -16,10 +16,10 @@
 //! line. A hold pulls once; the hand lets go and takes it again to pull again.
 
 use glam::{Quat, Vec3};
+use jc3vr_input::frame::Hand;
 
 use crate::controllers::{
     body::BodyDimensions,
-    frame::Hand,
     grab::{Candidate, GrabVolume},
     vehicles::physical::Release,
 };

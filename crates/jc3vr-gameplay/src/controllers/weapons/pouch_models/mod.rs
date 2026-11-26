@@ -49,29 +49,26 @@ use jc3gi::{
     graphics_engine::model_instance::Model,
     types::shared_ptr::SharedPtr,
 };
+use jc3vr_input::frame::{Hand, Pose};
 use parking_lot::Mutex;
 
-use crate::{
-    controllers::{
-        body::{mirror, rig::frames::Frames},
-        frame::{Hand, Pose},
-        hands::{grip, late::lerp_transform},
-        weapons::{
-            c4::detonator::trigger_model,
-            config::PouchModelsConfig,
-            engine,
-            pouch_models::{
-                attachments::{RenderSample, Sample, SampleId, placement},
-                owned::{OwnedModel, magazine_source, without_magazine_prop},
-                speedloader::Speedloaders,
-            },
-            reload::{
-                self,
-                plan::{HandModel, MAX_HELD_ROUNDS, RoundModel},
-            },
+use crate::controllers::{
+    body::{mirror, rig::frames::Frames},
+    hands::{grip, late::lerp_transform},
+    weapons::{
+        c4::detonator::trigger_model,
+        config::PouchModelsConfig,
+        engine,
+        pouch_models::{
+            attachments::{RenderSample, Sample, SampleId, placement},
+            owned::{OwnedModel, magazine_source, without_magazine_prop},
+            speedloader::Speedloaders,
+        },
+        reload::{
+            self,
+            plan::{HandModel, MAX_HELD_ROUNDS, RoundModel},
         },
     },
-    hooks,
 };
 
 pub(crate) mod attachments;
@@ -255,7 +252,7 @@ pub(crate) unsafe fn input_tick(
     frames: Option<Frames>,
     shown: &[ShownPouch],
 ) {
-    let owner = if config.enabled && hooks::in_gameplay() {
+    let owner = if config.enabled && jc3vr_core::hooks::in_gameplay() {
         unsafe { engine::local_player() }
     } else {
         None
@@ -437,7 +434,7 @@ pub(crate) unsafe fn hand_draws(weapon: usize) -> bool {
 /// # Safety
 ///
 /// The game thread, before the world update.
-pub(crate) unsafe fn render_frame(dtf: f32) {
+pub unsafe fn render_frame(dtf: f32) {
     mirror::clear_pouch_render();
     let mut state = STATE.lock();
     state.render_sequence = state.render_sequence.wrapping_add(1);
@@ -755,7 +752,7 @@ static CLEANUP_REGISTERED: AtomicBool = AtomicBool::new(false);
 /// Release the instances when the payload unloads, once one may exist.
 fn ensure_cleanup() {
     if !CLEANUP_REGISTERED.swap(true, Ordering::AcqRel) {
-        crate::lifecycle::on_cleanup(|_renderer| {
+        jc3vr_core::lifecycle::on_cleanup(|_renderer| {
             // SAFETY: the shutdown cleanups run on the game thread, outside the game's update.
             unsafe { STATE.lock().release_all() };
         });
@@ -819,8 +816,9 @@ unsafe fn slot_weapon(owner: &Character, slot: WeaponSlot) -> Option<&WeaponBase
 
 #[cfg(test)]
 mod tests {
+    use jc3vr_render::controllers::cockpit::CockpitTransform;
+
     use super::*;
-    use crate::controllers::cockpit::CockpitTransform;
 
     const PLACEMENT: ModelPlacement = ModelPlacement {
         offset_m: Vec3::new(0.03, 0.01, -0.02),

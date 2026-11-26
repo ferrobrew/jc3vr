@@ -8,11 +8,9 @@ use std::time::Instant;
 
 use body_rig::rotation::shortest;
 use glam::{Quat, Vec3};
+use jc3vr_input::frame::{Hand, Pose};
 
-use crate::controllers::{
-    frame::{Hand, Pose},
-    hands::CockpitHand,
-};
+use crate::controllers::hands::CockpitHand;
 
 /// The offset that draws a hand where its body is.
 #[derive(Debug, Copy, Clone, PartialEq)]

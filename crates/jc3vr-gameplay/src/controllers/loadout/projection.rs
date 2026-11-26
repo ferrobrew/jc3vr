@@ -20,15 +20,13 @@
 //!   game's.
 
 use jc3gi::character::inventory::WeaponSlot;
+use jc3vr_input::frame::Hand;
 
-use crate::controllers::{
-    frame::Hand,
-    loadout::{
-        binding::Binding,
-        item::{ItemId, WeaponType},
-        socket::Socket,
-        table::{Loadout, Place},
-    },
+use crate::controllers::loadout::{
+    binding::Binding,
+    item::{ItemId, WeaponType},
+    socket::Socket,
+    table::{Loadout, Place},
 };
 
 /// What one of the game's slots should hold.

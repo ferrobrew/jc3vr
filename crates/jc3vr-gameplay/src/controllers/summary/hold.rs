@@ -2,17 +2,15 @@
 
 use std::time::Instant;
 
+use jc3vr_input::frame::{Button, ControllerFrame, Hand, MAX_FRAME_AGE};
+use jc3vr_render::vr::input::semantic::{
+    bound::SourceTable, defaults::Component, vocabulary::GlobalAction,
+};
 use parking_lot::Mutex;
 
-use crate::{
-    controllers::{
-        bindings::{
-            intents::{Mask, SemanticInput},
-            policy_a::runtime::Tick,
-        },
-        frame::{Button, ControllerFrame, Hand, MAX_FRAME_AGE},
-    },
-    vr::input::semantic::{bound::SourceTable, defaults::Component, vocabulary::GlobalAction},
+use crate::controllers::bindings::{
+    intents::{Mask, SemanticInput},
+    policy_a::runtime::Tick,
 };
 
 static HOLD: Mutex<Option<(Instant, bool, bool)>> = Mutex::new(None);
@@ -66,7 +64,7 @@ pub(crate) fn accepted(
     (held, cancel)
 }
 
-pub(crate) fn current() -> (bool, bool) {
+pub fn current() -> (bool, bool) {
     HOLD.lock()
         .filter(|(at, _, _)| at.elapsed() <= MAX_FRAME_AGE)
         .map_or((false, false), |(_, held, cancel)| (held, cancel))

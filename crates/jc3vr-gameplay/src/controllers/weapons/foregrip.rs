@@ -37,10 +37,10 @@
 
 use body_rig::smooth::smoothstep_between;
 use glam::{Quat, Vec3};
+use jc3vr_input::frame::{Hand, Pose};
 use parking_lot::Mutex;
 
 use crate::controllers::{
-    frame::{Hand, Pose},
     hands::{CockpitHand, pose as hand_pose},
     weapons::regions::GunRegion,
 };

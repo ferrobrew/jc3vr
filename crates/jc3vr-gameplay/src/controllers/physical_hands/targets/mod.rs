@@ -8,9 +8,10 @@
 
 use std::time::Instant;
 
+use jc3vr_input::frame::Hand;
+
 use crate::controllers::{
     config::CONTROLLERS_CONFIG,
-    frame::Hand,
     grab::{GrabVolume, GripTarget, Mark, MarkAt, PickupKind, Provided, Shown},
     physical_hands::{
         STATE, climb,

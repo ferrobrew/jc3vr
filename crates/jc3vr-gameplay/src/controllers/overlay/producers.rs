@@ -20,33 +20,32 @@ use std::{
 };
 
 use glam::Vec3;
-use parking_lot::Mutex;
-
-use crate::{
-    controllers::{
-        aim::{
-            self, GRAPPLE_ORIGIN_M, GrappleAim, HandAim, HandSource, raycast::RayHit,
-            sights::tuning,
+use jc3vr_input::frame::Hand;
+use jc3vr_render::{
+    controllers::overlay::{
+        primitive::{
+            Anchor, DepthMode, Facing, HandPose, Primitive, Rgba, Shape, Source, SpriteSize,
+            with_alpha,
         },
-        body::{
-            estimator,
-            rig::{grounded, visual},
-        },
-        config::{CONTROLLERS_CONFIG, GunReadout, OverlayConfig},
-        frame::Hand,
-        hands::tiers,
-        mode,
-        overlay::{
-            primitive::{
-                Anchor, DepthMode, Facing, HandPose, Primitive, Rgba, Shape, Source, SpriteSize,
-                with_alpha,
-            },
-            resolve::HandPoses,
-            store,
-        },
+        resolve::HandPoses,
+        store,
     },
     headpose,
     vr::VR_CONFIG,
+};
+use parking_lot::Mutex;
+
+use crate::controllers::{
+    aim::{
+        self, GRAPPLE_ORIGIN_M, GrappleAim, HandAim, HandSource, raycast::RayHit, sights::tuning,
+    },
+    body::{
+        estimator,
+        rig::{grounded, visual},
+    },
+    config::{CONTROLLERS_CONFIG, GunReadout, OverlayConfig},
+    hands::tiers,
+    mode,
 };
 
 /// Build and submit every producer's primitives for this frame, given the render-time hand poses.
@@ -501,13 +500,11 @@ mod tests {
     }
 
     use glam::Quat;
+    use jc3vr_input::frame::Pose;
+    use jc3vr_render::controllers::overlay::resolve::anchor_position;
 
     use super::*;
-    use crate::controllers::{
-        aim::{assist::GrappleAssist, ray::Ray},
-        frame::Pose,
-        overlay::resolve::anchor_position,
-    };
+    use crate::controllers::aim::{assist::GrappleAssist, ray::Ray};
 
     fn grapple(valid: bool, tetherable: bool) -> GrappleAim {
         GrappleAim {

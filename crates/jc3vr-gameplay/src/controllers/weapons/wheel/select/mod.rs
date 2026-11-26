@@ -21,10 +21,10 @@
 
 use glam::{Quat, Vec3};
 use jc3gi::{character::inventory::WeaponSlot, input::input_action_map::Action};
+use jc3vr_input::frame::{Hand, Pose};
 
 use crate::controllers::{
     bindings::{controls::ButtonControl, tables::sink::PadZone},
-    frame::{Hand, Pose},
     weapons::wheel::{
         steer::{Aimed, SteerOrigin, aim},
         tuning::WheelTuning,

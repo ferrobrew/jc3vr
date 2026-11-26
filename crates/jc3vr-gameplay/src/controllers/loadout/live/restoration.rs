@@ -2,12 +2,11 @@
 
 use std::time::Instant;
 
-use crate::controllers::{
-    frame::Hand,
-    loadout::{
-        BodyLayout, CacheKind, Event, ResetKind, SlotObject,
-        live::{Hold, Live, ResetWatch, SETTLE_WAIT},
-    },
+use jc3vr_input::frame::Hand;
+
+use crate::controllers::loadout::{
+    BodyLayout, CacheKind, Event, ResetKind, SlotObject,
+    live::{Hold, Live, ResetWatch, SETTLE_WAIT},
 };
 
 impl Live {

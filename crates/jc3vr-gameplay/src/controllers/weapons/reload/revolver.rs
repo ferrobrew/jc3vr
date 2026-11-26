@@ -16,8 +16,7 @@
 use std::f32::consts::{FRAC_PI_2, TAU};
 
 use glam::{Quat, Vec3};
-
-use crate::controllers::frame::Hand;
+use jc3vr_input::frame::Hand;
 
 /// The crane's swing, in the gun's model frame, metres, as the revolvers' reload clips move it.
 pub(super) struct Crane {

@@ -10,16 +10,13 @@ use jc3gi::{
 };
 use parking_lot::Mutex;
 
-use crate::{
-    controllers::{
-        config::CONTROLLERS_CONFIG,
-        physical_hands::{
-            STALE_AFTER, bodies, characters::engine::proxy_body, doors::engine::is_vehicle_part,
-            physics::drawn_body, world::World,
-        },
-        scheme,
+use crate::controllers::{
+    config::CONTROLLERS_CONFIG,
+    physical_hands::{
+        STALE_AFTER, bodies, characters::engine::proxy_body, doors::engine::is_vehicle_part,
+        physics::drawn_body, world::World,
     },
-    hooks,
+    scheme,
 };
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -53,8 +50,8 @@ pub(super) unsafe fn step() {
     let enabled = CONTROLLERS_CONFIG
         .query(|c| c.enabled && c.physical_hands.enabled && c.physical_hands.pickup.enabled)
         && scheme::is_controllers()
-        && hooks::in_gameplay()
-        && !crate::is_shutting_down();
+        && jc3vr_core::hooks::in_gameplay()
+        && !jc3vr_core::is_shutting_down();
     let now = Instant::now();
     let mut state = STATE.lock();
     let fresh = state
@@ -152,7 +149,7 @@ pub(super) unsafe fn step() {
         let held = current && carried.contains(&lease.a) && players.contains(&lease.b);
         let overlapping =
             current && !held && !unsafe { separated(world.world(), lease.a.body, lease.b.body) };
-        if lease.retain(held, now, overlapping, crate::is_shutting_down()) {
+        if lease.retain(held, now, overlapping, jc3vr_core::is_shutting_down()) {
             return true;
         }
         unsafe { filter.enableCollisionsBetween(world.world_mut(), lease.a.body, lease.b.body) };

@@ -11,13 +11,13 @@ use jc3gi::{
     game::GameObjectUpdateContext,
     game_world::GameWorld,
 };
+use jc3vr_input::frame::{self, Hand};
 use parking_lot::Mutex;
 
 use crate::controllers::{
     aim::gun,
     bindings,
     config::CONTROLLERS_CONFIG,
-    frame::{self, Hand},
     hands::late,
     loadout::live,
     mode, scheme,
@@ -291,7 +291,7 @@ pub(crate) unsafe fn consume(character: *mut Character, context: *mut GameObject
 
 fn permitted(request: DetachRequest, retain: bool) -> bool {
     let pull = request.kind == DetachKind::Pull;
-    if crate::is_shutting_down()
+    if jc3vr_core::is_shutting_down()
         || !scheme::is_controllers()
         || !Capabilities::of(mode::current().mode).reload
         || !CONTROLLERS_CONFIG.query(|c| {

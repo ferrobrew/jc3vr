@@ -3,12 +3,10 @@
 
 use glam::{Mat4, Quat, Vec3};
 use jc3gi::character::character::AnimationController;
+use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
-use crate::controllers::{
-    frame::Hand,
-    hands::{ik, palette},
-};
+use crate::controllers::hands::{ik, palette};
 
 /// The largest skeleton bone index accepted from a name lookup; the engine's bone indices are
 /// `i16`-sized.

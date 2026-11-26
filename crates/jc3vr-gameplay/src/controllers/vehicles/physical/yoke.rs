@@ -9,16 +9,14 @@
 //! ends of each axis, so the hands find centre and the limits without looking.
 
 use glam::{Quat, Vec2, Vec3};
+use jc3vr_input::frame::Hand;
 
-use crate::controllers::{
-    frame::Hand,
-    vehicles::{
-        physical::{
-            ControlState, Holding,
-            cues::{self, ControlCue, TravelCues},
-        },
-        tuning::YokeSpec,
+use crate::controllers::vehicles::{
+    physical::{
+        ControlState, Holding,
+        cues::{self, ControlCue, TravelCues},
     },
+    tuning::YokeSpec,
 };
 
 /// The yoke at rest in the cockpit frame.

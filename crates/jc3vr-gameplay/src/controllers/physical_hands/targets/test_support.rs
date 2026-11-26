@@ -2,9 +2,9 @@ use std::{num::NonZeroUsize, time::Instant};
 
 use glam::Vec3;
 use jc3gi::vehicle::vehicle::DoorSlot;
+use jc3vr_input::frame::Hand;
 
 use crate::controllers::{
-    frame::Hand,
     grab::GripTarget,
     physical_hands::{
         config::PhysicalHandsConfig,

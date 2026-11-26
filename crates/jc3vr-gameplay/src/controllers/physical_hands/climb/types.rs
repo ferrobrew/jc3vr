@@ -71,7 +71,7 @@ pub struct ClimbStatus {
 
 /// A mantle that landed on a moving body.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub(crate) struct Landing {
+pub struct Landing {
     /// The body whose ledge the mantle carried the player over.
     pub body: u32,
     /// The body and owner that completed the mantle.
@@ -84,7 +84,7 @@ pub(crate) struct Landing {
 }
 
 /// What the palms' tick found for the climb, indexed by [`Hand::index`].
-pub(crate) struct Observed {
+pub struct Observed {
     /// Each driven hand's palm in the rig: its tracking-space place turned by the body's facing
     /// and scaled into world metres.
     pub palms: [Option<Vec3>; 2],

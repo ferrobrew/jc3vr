@@ -1,12 +1,12 @@
 use std::num::NonZeroUsize;
 
 use glam::{Mat4, Quat};
+use jc3vr_render::controllers::cockpit::CockpitTransform;
 
 use super::*;
 use crate::controllers::{
     bindings::controls::ButtonControl,
     body::rig::frames::Frames,
-    cockpit::CockpitTransform,
     config::ControllersConfig,
     hands::pose::CockpitHand,
     weapons::reload::{

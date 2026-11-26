@@ -2,11 +2,11 @@ use std::{num::NonZeroUsize, time::Instant};
 
 use glam::{Quat, Vec3};
 use jc3gi::vehicle::vehicle::DoorSlot;
+use jc3vr_input::frame::Pose;
 
 use super::*;
 use crate::controllers::{
     bindings::controls::ButtonControl,
-    frame::Pose,
     grab::{PickupKind, latch::GripLatch},
     physical_hands::{
         characters::{CharacterTarget, CharactersConfig, Regrip, Seize},

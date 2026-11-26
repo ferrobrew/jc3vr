@@ -5,9 +5,9 @@ use std::f32::consts::TAU;
 
 use body_rig::{rotation::rotation_error, smooth::smoothstep_between};
 use glam::{FloatExt, Quat, Vec2, Vec3};
+use jc3vr_input::frame::Hand;
 
 use crate::controllers::{
-    frame::Hand,
     hands::CockpitHand,
     weapons::{
         foregrip,

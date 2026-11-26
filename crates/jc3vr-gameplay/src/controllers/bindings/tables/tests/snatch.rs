@@ -1,13 +1,12 @@
 //! Snatch ownership through the production binding tables and native hook gate.
 
+use jc3vr_render::vr::input::semantic::defaults::{Component, DefaultBinding};
+
 use super::*;
-use crate::{
-    controllers::{
-        bindings::grapple_button::GrappleContext,
-        grab::RemoteKind,
-        snatch::{ButtonHolds, should_reel_weapon},
-    },
-    vr::input::semantic::defaults::{Component, DefaultBinding},
+use crate::controllers::{
+    bindings::grapple_button::GrappleContext,
+    grab::RemoteKind,
+    snatch::{ButtonHolds, should_reel_weapon},
 };
 
 fn rebound(set: SemanticSet, index: usize) -> Option<DefaultBinding> {

@@ -5,7 +5,7 @@
 //! and shows as its [`Shown`] says: faint while no hand is within reach of it, brighter once one
 //! is, brightest and a little larger on the target a squeeze would take, and solid while a hand
 //! holds it. A marker on a surface lies on it ([`Mark::normal`]). A marker with a label
-//! ([`Mark::label`]) has it drawn above it by the HUD ([`crate::hud::mark_labels`], from
+//! ([`Mark::label`]) has it drawn above it by the HUD (`hud::mark_labels`, from
 //! [`published_labels`]) while a hand is at it.
 //!
 //! Every marker is anchored at render time (`docs/mod/rendering/render-time-anchoring.md`): a point
@@ -14,17 +14,19 @@
 
 use std::time::{Duration, Instant};
 
-use parking_lot::Mutex;
-
-use crate::controllers::{
+use jc3vr_input::frame::Hand;
+use jc3vr_render::controllers::{
     cockpit::CockpitTransform,
-    frame::Hand,
-    grab::{Category, GripTarget, MarkAt, MarkStyle, Resolved, Shown},
-    hands::CockpitHand,
     overlay::{
         primitive::{Anchor, DepthMode, Facing, HandPose, Primitive, Shape, Source, SpriteSize},
         store,
     },
+};
+use parking_lot::Mutex;
+
+use crate::controllers::{
+    grab::{Category, GripTarget, MarkAt, MarkStyle, Resolved, Shown},
+    hands::CockpitHand,
 };
 
 /// Where the tick's cockpit-frame points are placed for the overlay, and the hands that reach for
@@ -39,7 +41,7 @@ pub struct MarkerFrame {
 
 /// One marker's label as the markers publish it for the HUD.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub(crate) struct MarkLabel {
+pub struct MarkLabel {
     pub text: &'static str,
     /// Where the marker is drawn.
     pub at: Anchor,
@@ -62,7 +64,7 @@ pub fn clear() {
 
 /// The labels published no longer than `stale` before `now`, or none when the latest list is
 /// older or none was published.
-pub(crate) fn published_labels(now: Instant, stale: Duration) -> Vec<MarkLabel> {
+pub fn published_labels(now: Instant, stale: Duration) -> Vec<MarkLabel> {
     LABELS
         .lock()
         .as_ref()

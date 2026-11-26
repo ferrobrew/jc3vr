@@ -30,9 +30,9 @@ use jc3gi::equipment::{
     explosive::{Explosive, PlantedExplosive},
     weapon::PlantedExplosiveWeapon,
 };
+use jc3vr_input::frame::Hand;
 
 use crate::controllers::{
-    frame::Hand,
     grab::{Candidate, GrabVolume},
     hands::ActiveHands,
     weapons::{

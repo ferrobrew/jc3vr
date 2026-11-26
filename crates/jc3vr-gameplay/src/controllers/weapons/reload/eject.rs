@@ -11,8 +11,9 @@
 //! ejects the gun of the hand that flicked.
 
 use glam::Quat;
+use jc3vr_input::frame::Hand;
 
-use crate::controllers::{bindings::controls::ButtonControl, frame::Hand};
+use crate::controllers::bindings::controls::ButtonControl;
 
 /// The reload button's tap detector.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]

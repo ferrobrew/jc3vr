@@ -38,7 +38,7 @@ mod challenges;
 pub mod config;
 mod docked_view;
 pub(crate) mod engine;
-pub(crate) mod game_view;
+pub mod game_view;
 pub(crate) mod gives;
 pub mod lost;
 mod missions;
@@ -47,7 +47,7 @@ pub mod pins;
 pub mod reconcile;
 mod reset;
 pub mod restore;
-pub(crate) mod sidecar;
+pub mod sidecar;
 pub mod sockets;
 pub(crate) mod spawn_safety;
 pub mod traversal;
@@ -65,12 +65,12 @@ use jc3gi::{
     character::{character::Character, inventory::WeaponSlot},
     equipment::weapon::WeaponBase,
 };
+use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
     config::CONTROLLERS_CONFIG,
-    frame::Hand,
     loadout::{ItemKind, ObjectAddress, Place, Restored, SlotObject, Socket, TakeSource, live},
     physical_hands,
     weapons::{
@@ -163,7 +163,7 @@ pub fn status() -> InventoryStatus {
 
 /// Why a UI snapshot cannot be read without waiting.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) enum StatusUnavailable {
+pub enum StatusUnavailable {
     /// No owner has published a snapshot yet.
     Uninitialized,
     /// The publication is being replaced.
@@ -172,7 +172,7 @@ pub(crate) enum StatusUnavailable {
 
 /// The last completed inventory readout, with no engine references or owner guards.
 #[derive(Debug)]
-pub(crate) struct InventoryReadout {
+pub struct InventoryReadout {
     pub status: InventoryStatus,
     pub published_at: Instant,
     revision: u64,
@@ -183,7 +183,7 @@ pub(crate) struct InventoryReadout {
 }
 
 /// Read the last publication without acquiring the inventory owner or copying its vectors.
-pub(crate) fn peek_status() -> Result<Arc<InventoryReadout>, StatusUnavailable> {
+pub fn peek_status() -> Result<Arc<InventoryReadout>, StatusUnavailable> {
     let publication = UI_STATUS.try_lock().ok_or(StatusUnavailable::Busy)?;
     publication
         .as_ref()
@@ -422,7 +422,7 @@ pub(crate) unsafe fn input_tick(
 }
 
 pub(crate) unsafe fn maintenance_tick(settings: &InventoryConfig, dominant: Hand) {
-    if crate::is_shutting_down() || !crate::hooks::in_gameplay() {
+    if jc3vr_core::is_shutting_down() || !jc3vr_core::hooks::in_gameplay() {
         return;
     }
     let Some(owner) = (unsafe { weapons_engine::local_player() }) else {

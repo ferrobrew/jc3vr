@@ -10,6 +10,7 @@ members = [
     "crates/dxbc-stereo",
     "crates/fsr-sys",
     "crates/jc3vr-core",
+    "crates/jc3vr-gameplay",
     "crates/jc3vr-input",
     "crates/jc3vr-render",
     "crates/tracking-format",

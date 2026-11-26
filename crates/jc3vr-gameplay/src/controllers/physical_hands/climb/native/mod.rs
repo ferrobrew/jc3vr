@@ -37,7 +37,7 @@ pub(crate) struct Context {
     pub epoch: u64,
 }
 
-pub(crate) struct LandingOffer<'a> {
+pub struct LandingOffer<'a> {
     gate: &'a Gate,
     claim: Arc<Claim>,
     pub landing: Landing,

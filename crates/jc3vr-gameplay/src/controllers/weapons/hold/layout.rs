@@ -10,8 +10,7 @@
 //! hip holster, back attach, or chest explosive bones ([`dock_bone`]).
 
 use jc3gi::character::character::SafeBoneIndex;
-
-use crate::controllers::frame::Hand;
+use jc3vr_input::frame::Hand;
 
 /// The bone a gun on `bone` rides while `holder` holds the weapon, when it differs from `bone`:
 /// the counterpart on the holder's hand of the other hand's attach bone. `None` for a bone that

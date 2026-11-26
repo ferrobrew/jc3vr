@@ -16,9 +16,9 @@
 //! chamber empties rather than from a grab.
 
 use glam::Vec3;
+use jc3vr_input::frame::Hand;
 
 use crate::controllers::{
-    frame::Hand,
     grab::{GrabVolume, GripTarget, target::TargetReach},
     weapons::reload::tuning::ActionTuning,
 };

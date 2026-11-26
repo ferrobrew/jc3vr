@@ -11,13 +11,11 @@
 
 use glam::{Quat, Vec3};
 use jc3gi::equipment::weapon::WeaponClass;
+use jc3vr_core::hash::hashlittle;
 
-use crate::{
-    controllers::weapons::reload::{
-        chamber::ActionKind,
-        wells::{RoundEntry, WellEntry, WellKind},
-    },
-    hash::hashlittle,
+use crate::controllers::weapons::reload::{
+    chamber::ActionKind,
+    wells::{RoundEntry, WellEntry, WellKind},
 };
 
 /// The most rounds a hand holds at once: a revolver's cylinder.

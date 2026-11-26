@@ -4,18 +4,16 @@
 use std::time::Instant;
 
 use glam::{Vec2, Vec3};
+use jc3vr_input::frame::Hand;
 
-use crate::controllers::{
-    frame::Hand,
-    physical_hands::{
-        free_hands,
-        grasp::Reach,
-        human_hull::{self, HumanHullStatus},
-        palm::PalmBox,
-        physics,
-        pickup::{HeldReport, PickupStatus},
-        state::STATE,
-    },
+use crate::controllers::physical_hands::{
+    free_hands,
+    grasp::Reach,
+    human_hull::{self, HumanHullStatus},
+    palm::PalmBox,
+    physics,
+    pickup::{HeldReport, PickupStatus},
+    state::STATE,
 };
 
 /// Why the palms did nothing on their last tick.
@@ -81,7 +79,7 @@ pub struct ShoveReport {
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct PhysicalHandsStatus {
     pub idle: Option<Idle>,
-    /// Indexed by [`crate::controllers::frame::Hand::index`].
+    /// Indexed by [`jc3vr_input::frame::Hand::index`].
     pub hands: [HandStatus; 2],
     /// The combined push, world `(x, z)` metres per second.
     pub push: Vec2,
@@ -97,7 +95,7 @@ pub struct PhysicalHandsStatus {
     pub last_error: Option<String>,
     pub pickup: PickupStatus,
     /// The human-hull adapter and clearance policy availability.
-    pub(crate) human_hull: HumanHullStatus,
+    pub human_hull: HumanHullStatus,
 }
 
 pub fn status() -> PhysicalHandsStatus {
@@ -109,7 +107,7 @@ pub fn status() -> PhysicalHandsStatus {
 /// What the palms' last tick did for one hand: the inputs of the grip press log's summary
 /// ([`press_summary`]) and of the grab view's palm marker.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct PalmReadout {
+pub struct PalmReadout {
     /// Why the palms stood down, if they did.
     pub idle: Option<Idle>,
     /// How long ago the palms last ticked, or `None` before the first tick.

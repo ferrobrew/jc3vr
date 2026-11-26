@@ -4,10 +4,10 @@
 use std::{num::NonZeroUsize, time::Instant};
 
 use glam::Vec3;
+use jc3vr_input::frame::{Hand, Pose};
 
 use crate::controllers::{
     fingers::grip::GripSource,
-    frame::{Hand, Pose},
     grab::PickupKind,
     physical_hands::{
         carry_collision::{Assembly, Subject},

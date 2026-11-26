@@ -28,24 +28,21 @@ use std::{
 
 use glam::{Mat4, Quat, Vec3};
 use jc3gi::character::character::Character;
+use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
-use crate::{
-    controllers::{
-        body::procedural::{solver::arms::Capsule as KeepOutCapsule, torso_keep_out},
-        config::CONTROLLERS_CONFIG,
-        frame::Hand,
-        physical_hands::{
-            bodies,
-            physics::{
-                body::{BodyShape, BodySpec, Capsule, HandBody, player_system_group},
-                contact::Source,
-                step::step_seconds,
-            },
+use crate::controllers::{
+    body::procedural::{solver::arms::Capsule as KeepOutCapsule, torso_keep_out},
+    config::CONTROLLERS_CONFIG,
+    physical_hands::{
+        bodies,
+        physics::{
+            body::{BodyShape, BodySpec, Capsule, HandBody, player_system_group},
+            contact::Source,
+            step::step_seconds,
         },
-        scheme,
     },
-    hooks,
+    scheme,
 };
 
 /// Whether `body` is one of the drawn torso's capsules. Lock-free, for the carry collision's
@@ -127,8 +124,8 @@ pub(super) unsafe fn step() {
     let enabled = CONTROLLERS_CONFIG
         .query(|c| c.enabled && c.physical_hands.enabled && c.physical_hands.body_proxies)
         && scheme::is_controllers()
-        && hooks::in_gameplay()
-        && !crate::is_shutting_down();
+        && jc3vr_core::hooks::in_gameplay()
+        && !jc3vr_core::is_shutting_down();
     let targets = enabled
         .then(|| unsafe { Character::GetLocalPlayerCharacter().as_ref() })
         .flatten()

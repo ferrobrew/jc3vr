@@ -1,7 +1,7 @@
 //! The game's context button hints, relabelled for the controllers: the hints the HUD has queued
 //! (release the tethers, the gunner seat, a hang jump, a mission's prompt), each shown on the wrist
 //! with the controller input that drives its action in the current mode, rather than the gamepad
-//! glyph the hidden HUD hint would show ([`crate::controllers::summary::game_hints`]).
+//! glyph the hidden HUD hint would show (`controllers::summary::game_hints`).
 //!
 //! The input tick reads the HUD's queue ([`read`]) without waiting on its lock, and [`lines`] turns
 //! each hint into a row of the summary: the hint's own localised description, with the glyph of the
@@ -174,9 +174,10 @@ fn fallback_label(action: Action, mode: Mode, resolve: &dyn Fn(Text) -> String) 
 
 #[cfg(test)]
 mod tests {
+    use jc3vr_input::frame::Hand;
+
     use super::*;
     use crate::controllers::{
-        frame::Hand,
         mode::{OnFootVariant, VehicleClass, VehicleSeat},
         summary::localise::humanise,
     };

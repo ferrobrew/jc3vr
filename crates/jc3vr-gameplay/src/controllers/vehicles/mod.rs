@@ -76,7 +76,7 @@ mod ripcord_tick;
 mod speed;
 mod state;
 pub mod steering;
-pub(crate) mod take_off;
+pub mod take_off;
 pub mod tuning;
 pub mod turret;
 mod types;
@@ -120,12 +120,12 @@ pub(crate) fn hook_library() -> HookLibrary {
 mod tests {
     use glam::{Quat, Vec2, Vec3};
     use jc3gi::input::input_action_map::Action::{self, *};
+    use jc3vr_input::frame::Pose;
 
     use super::*;
     use crate::controllers::{
         bindings::hold::{Desired, MapKind, Target, Want},
         config::ControllersConfig,
-        frame::Pose,
         hands::CockpitHand,
         mode::{VehicleClass, VehicleSeat},
         vehicles::{

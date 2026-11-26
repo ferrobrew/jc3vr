@@ -2,15 +2,13 @@
 
 use glam::Vec2;
 use jc3gi::input::input_action_map::Action::{self, *};
+use jc3vr_render::vr::input::semantic::{SemanticSet, defaults::default_binding};
 
 use super::*;
-use crate::{
-    controllers::{
-        bindings::{controls::HandControls, intents::simulate::simulate},
-        loadout::Socket,
-        mode::{OnFootVariant, VehicleSeat},
-    },
-    vr::input::semantic::{SemanticSet, defaults::default_binding},
+use crate::controllers::{
+    bindings::{controls::HandControls, intents::simulate::simulate},
+    loadout::Socket,
+    mode::{OnFootVariant, VehicleSeat},
 };
 
 const DT: f32 = 1.0 / 30.0;

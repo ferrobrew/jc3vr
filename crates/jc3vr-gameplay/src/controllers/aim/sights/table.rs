@@ -106,7 +106,10 @@ impl std::error::Error for SightTableError {
 }
 
 /// The shipped table; regenerate with `tools/sights/extract_sights.py`.
-const SIGHTS_JSON: &str = include_str!("../../../../../tools/sights/sights.json");
+const SIGHTS_JSON: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../tools/sights/sights.json"
+));
 
 #[cfg(test)]
 mod tests {

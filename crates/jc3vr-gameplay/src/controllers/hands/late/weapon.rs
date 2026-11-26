@@ -11,26 +11,24 @@ use jc3gi::{
     game::GameObjectRenderContext,
     types::math::Matrix4,
 };
+use jc3vr_core::render_frame::RenderFrameSlot;
+use jc3vr_input::frame::Hand;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::{
-    controllers::{
-        aim::gun,
-        frame::Hand,
-        hands::{
-            ik,
-            late::{
-                frame,
-                math::{lerp_transform, pose_matrix},
-            },
-        },
-        weapons::{
-            c4,
-            engine::{self, weapon_at},
-            hold::{self, armed, rack::paired::stack_offset},
+use crate::controllers::{
+    aim::gun,
+    hands::{
+        ik,
+        late::{
+            frame,
+            math::{lerp_transform, pose_matrix},
         },
     },
-    render_frame::RenderFrameSlot,
+    weapons::{
+        c4,
+        engine::{self, weapon_at},
+        hold::{self, armed, rack::paired::stack_offset},
+    },
 };
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -39,14 +37,14 @@ pub(super) fn hook_library() -> HookLibrary {
 
 /// One gun mesh's submitted pose, for comparison with its identified current collision body.
 #[derive(Debug, Copy, Clone)]
-pub(crate) struct RenderedGun {
+pub struct RenderedGun {
     pub weapon: usize,
     pub matrix: Mat4,
     pub fraction: f32,
     pub at: Instant,
 }
 
-pub(crate) fn rendered_guns() -> [Option<RenderedGun>; 2] {
+pub fn rendered_guns() -> [Option<RenderedGun>; 2] {
     RENDERED_GUNS.get().unwrap_or([None; 2])
 }
 
@@ -55,7 +53,7 @@ pub(super) fn begin_frame() {
 }
 
 /// The hand that owns this gun, retaining paired-gun placement through native state changes.
-pub(crate) fn gun_hand(
+pub fn gun_hand(
     weapon: usize,
     state: WeaponState,
     bone: Option<u32>,
@@ -97,7 +95,7 @@ fn attachment_hand(
 }
 
 /// The hand an attach bone belongs to, or `None` for a non-hand bone.
-pub(crate) fn attach_hand(bone: u32) -> Option<Hand> {
+pub fn attach_hand(bone: u32) -> Option<Hand> {
     [
         (SafeBoneIndex::ATTACH_HAND_LEFT as u32, Hand::Left),
         (SafeBoneIndex::ATTACH_HAND_LEFT2 as u32, Hand::Left),
@@ -212,7 +210,7 @@ unsafe fn late_update_weapon(game_object: *mut c_void, context: *const GameObjec
 }
 
 /// The guns as the frame's render update placed them, per frame so the draw task's readouts read
-/// the frame they draw (see [`crate::render_frame`]).
+/// the frame they draw (see [`jc3vr_core::render_frame`]).
 static RENDERED_GUNS: RenderFrameSlot<[Option<RenderedGun>; 2]> = RenderFrameSlot::new();
 
 #[cfg(test)]

@@ -176,7 +176,7 @@ impl World {
     }
 
     /// Where each of `lying` lies and its icon, for the HUD's markers
-    /// ([`crate::hud::lost_weapons`]), while it lives and its place can be read.
+    /// (`hud::lost_weapons`), while it lives and its place can be read.
     pub(super) fn markers(&self, lying: &[ObjectAddress]) -> Vec<LostWeapon> {
         lying
             .iter()

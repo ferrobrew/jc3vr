@@ -24,13 +24,13 @@
 
 use body_rig::smooth::follow_factor;
 use glam::{Quat, Vec3};
+use jc3vr_input::frame::Hand;
 
 use crate::controllers::{
     fingers::{
         curl::{Finger, FingerCurls},
         tuning::FingerTuning,
     },
-    frame::Hand,
     hands::pose as hand_pose,
 };
 

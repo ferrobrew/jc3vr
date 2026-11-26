@@ -2324,6 +2324,35 @@ dependencies = [
 ]
 
 [[package]]
+name = "jc3vr-gameplay"
+version = "0.1.0"
+dependencies = [
+ "arc-swap",
+ "body-estimator",
+ "body-rig",
+ "detours-macro",
+ "glam",
+ "jc3gi",
+ "jc3vr-core",
+ "jc3vr-input",
+ "jc3vr-render",
+ "openxr",
+ "parking_lot",
+ "pretty_assertions",
+ "proptest",
+ "puffin 0.20.0 (git+https://github.com/EmbarkStudios/puffin?rev=d06bed0fcb8c8e4c78643d4ead7cf1de9b76fd3b)",
+ "re-utilities",
+ "serde",
+ "serde_json",
+ "smol_str",
+ "test-case",
+ "toml 1.1.6+spec-1.1.0",
+ "tracing",
+ "tracking-format",
+ "windows 0.62.2",
+]
+
+[[package]]
 name = "jc3vr-input"
 version = "0.1.0"
 dependencies = [
@@ -2388,8 +2417,6 @@ name = "jc3vr_payload"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "arc-swap",
- "body-estimator",
  "body-rig",
  "clipboard-win",
  "detours-macro",
@@ -2401,13 +2428,13 @@ dependencies = [
  "glam",
  "jc3gi",
  "jc3vr-core",
+ "jc3vr-gameplay",
  "jc3vr-input",
  "jc3vr-render",
  "jiff",
  "openxr",
  "parking_lot",
  "pretty_assertions",
- "proptest",
  "puffin 0.20.0 (git+https://github.com/EmbarkStudios/puffin?rev=d06bed0fcb8c8e4c78643d4ead7cf1de9b76fd3b)",
  "puffin_egui",
  "re-utilities",

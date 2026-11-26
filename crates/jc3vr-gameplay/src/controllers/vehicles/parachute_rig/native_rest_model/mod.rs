@@ -7,8 +7,9 @@
 use std::time::{Duration, Instant};
 
 use glam::{Mat4, Vec3};
+use jc3vr_render::controllers::cockpit::CockpitTransform;
 
-use crate::controllers::{body::rig::frames::Frames, cockpit::CockpitTransform};
+use crate::controllers::body::rig::frames::Frames;
 
 /// Why a free handle has no normal or wider-reach target.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]

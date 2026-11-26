@@ -53,6 +53,9 @@ use jc3gi::{
     },
     types::math::Vector3,
 };
+use jc3vr_core::hash::hashlittle;
+use jc3vr_input::frame::{Hand, Pose};
+use jc3vr_render::{controllers::cockpit::CockpitTransform, headpose};
 use parking_lot::Mutex;
 
 use crate::{
@@ -65,8 +68,6 @@ use crate::{
             },
             unarmed,
         },
-        cockpit::CockpitTransform,
-        frame::{Hand, Pose},
         hands::{
             self, ActiveHands, CockpitHand, late, pose as hand_pose, reach,
             rig::{self, TickArm},
@@ -74,9 +75,7 @@ use crate::{
             tiers,
         },
     },
-    hash::hashlittle,
-    headpose,
-    hooks::{self, character::body_ik},
+    hooks::character::body_ik,
 };
 
 mod ownership;
@@ -125,7 +124,7 @@ impl HandPlan {
 pub(crate) unsafe fn plan(character: &Character) -> HandPlan {
     unsafe { rig::prepare(character) };
     let active = hands::active_hands()
-        .filter(|a| a.config.hands.ik && hooks::in_gameplay() && headpose::is_active());
+        .filter(|a| a.config.hands.ik && jc3vr_core::hooks::in_gameplay() && headpose::is_active());
     let tier_weights = tiers::weights();
     let tracked = Hand::BOTH.map(|hand| {
         active

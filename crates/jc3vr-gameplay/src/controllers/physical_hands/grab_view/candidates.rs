@@ -6,17 +6,15 @@
 use std::num::NonZeroUsize;
 
 use glam::Vec3;
+use jc3vr_input::frame::Hand;
 
-use crate::controllers::{
-    frame::Hand,
-    physical_hands::{
-        bodies,
-        collider_view::{self, ScanError, model::BodyKind},
-        doors::engine::{broken_off, vehicle_of},
-        grab_view::model::{Candidate, CandidateKind},
-        grasp::{self, TargetKind},
-        pickup::PICKUP,
-    },
+use crate::controllers::physical_hands::{
+    bodies,
+    collider_view::{self, ScanError, model::BodyKind},
+    doors::engine::{broken_off, vehicle_of},
+    grab_view::model::{Candidate, CandidateKind},
+    grasp::{self, TargetKind},
+    pickup::PICKUP,
 };
 
 /// The candidates whose boxes come within the candidate radius of a hand at `hands` (game space,

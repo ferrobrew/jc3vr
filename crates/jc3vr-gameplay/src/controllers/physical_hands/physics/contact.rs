@@ -38,13 +38,11 @@ use jc3gi::{
     havok::{hknpContactImpulseEvent, hknpContactJacobianUtil},
     physics::{PfxInstance, PfxRigidBody, PfxRigidBodyVftable},
 };
+use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 use windows::Win32::System::Threading::GetCurrentThreadId;
 
-use crate::controllers::{
-    frame::Hand,
-    physical_hands::physics::{callback, hit::contact_impulse},
-};
+use crate::controllers::physical_hands::physics::{callback, hit::contact_impulse};
 
 /// A body whose contacts are listened for: a hand's own, or the body of the gun a hand holds.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -178,7 +176,7 @@ pub(super) fn abandon(source: Source) {
             "hand bodies: a forgotten body still points at the payload's virtual table; pinning \
              the payload"
         );
-        crate::module::pin();
+        jc3vr_core::module::pin();
     }
     forget(source);
 }

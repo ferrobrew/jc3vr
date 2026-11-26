@@ -50,6 +50,7 @@ use body_rig::rotation::{angle, clamp_angle};
 use detours_macro::detour;
 use glam::{FloatExt, Quat, Vec2, Vec3};
 use jc3gi::equipment::weapon::WeaponBase;
+use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 #[cfg(test)]
@@ -62,7 +63,6 @@ pub use self::{
 };
 use crate::controllers::{
     config::CONTROLLERS_CONFIG,
-    frame::Hand,
     hands::CockpitHand,
     scheme,
     weapons::{foregrip, recoil::Motion},
@@ -407,11 +407,11 @@ mod tests {
     use body_rig::rotation::angle;
     use glam::{Quat, Vec2, Vec3};
     use jc3gi::equipment::weapon::WeaponClass;
+    use jc3vr_input::frame::{Hand, Pose};
 
     use super::{HeftClass, HeftTarget, advance_clock, apply, freeze, observe};
     use crate::controllers::{
         config::GripOffset,
-        frame::{Hand, Pose},
         hands::{CockpitHand, pose as hand_pose},
         weapons::{
             foregrip,

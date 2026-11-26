@@ -8,7 +8,7 @@ use crate::controllers::physical_hands::{
 };
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) enum Reason {
+pub enum Reason {
     NoContact,
     GlassRejected,
     NoPanel,
@@ -22,7 +22,7 @@ pub(crate) enum Reason {
 }
 
 impl Reason {
-    pub(crate) const fn label(self) -> &'static str {
+    pub const fn label(self) -> &'static str {
         match self {
             Self::NoContact => "no contact",
             Self::GlassRejected => "glass rejected",
@@ -39,11 +39,11 @@ impl Reason {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub(crate) struct Readout {
-    pub(crate) reason: Reason,
-    pub(crate) slot: Option<DoorSlot>,
-    pub(crate) displacement_m: f32,
-    pub(crate) required_m: f32,
+pub struct Readout {
+    pub reason: Reason,
+    pub slot: Option<DoorSlot>,
+    pub displacement_m: f32,
+    pub required_m: f32,
 }
 
 #[derive(Debug, Copy, Clone)]

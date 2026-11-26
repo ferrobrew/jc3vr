@@ -248,9 +248,10 @@ fn ordinary_glass_is_excluded_and_known_canopy_glass_is_allowed() {
     let (reach, mut hit, mut door) = fixture();
     hit.material = Some(GameMaterialId::EGameMaterialId_Glass as u32);
     assert!(Sample::new(reach, hit, door, Mat4::IDENTITY, Vec3::X).is_none());
-    let entries = table::parse(include_str!(
-        "../../../../../../tools/door_handles/door_handles.json"
-    ))
+    let entries = table::parse(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../tools/door_handles/door_handles.json"
+    )))
     .unwrap();
     let canopy = entries
         .iter()
@@ -521,9 +522,10 @@ fn withdrawal_resets_progress_even_with_current_panel_contact() {
 fn hidden_canopy_panes_cannot_arm_or_bridge_pressure() {
     let (reach, mut hit, mut door) = fixture();
     hit.material = Some(GameMaterialId::EGameMaterialId_Glass as u32);
-    let entries = table::parse(include_str!(
-        "../../../../../../tools/door_handles/door_handles.json"
-    ))
+    let entries = table::parse(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../tools/door_handles/door_handles.json"
+    )))
     .unwrap();
     door.part_hash = entries
         .iter()

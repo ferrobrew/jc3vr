@@ -1,25 +1,23 @@
 //! Sampler admission through ordered arbitration and semantic table execution.
 
 use jc3gi::input::input_action_map::Action;
+use jc3vr_input::frame::{HandFrame, InteractionProfile, TrackedPose};
+use jc3vr_render::vr::input::semantic::{
+    admission,
+    bound::of_sources,
+    frame::{ActionValue, digital},
+    vocabulary::WingsuitAction,
+};
 
 use super::*;
-use crate::{
-    controllers::{
-        bindings::{
-            controls::Controls,
-            tables::Bindings,
-            trigger_ownership::{TriggerMask, mask_routes},
-        },
-        config::ControllersConfig,
-        frame::{HandFrame, InteractionProfile, TrackedPose},
-        mode::{AirborneVariant, Mode, OnFootVariant},
+use crate::controllers::{
+    bindings::{
+        controls::Controls,
+        tables::Bindings,
+        trigger_ownership::{TriggerMask, mask_routes},
     },
-    vr::input::semantic::{
-        admission,
-        bound::of_sources,
-        frame::{ActionValue, digital},
-        vocabulary::WingsuitAction,
-    },
+    config::ControllersConfig,
+    mode::{AirborneVariant, Mode, OnFootVariant},
 };
 
 fn hands() -> [HandFrame; 2] {
@@ -251,7 +249,7 @@ fn captured_loss_round_trips_through_the_recording() {
 
 #[test]
 fn queued_live_publications_keep_middle_loss_through_capture() {
-    let _flight = crate::vr::input::flight_pose::test_guard();
+    let _flight = jc3vr_render::vr::input::flight_pose::test_guard();
     let _serial = history::TEST_LOCK.lock();
     history::take_gameplay();
     history::begin_capture();

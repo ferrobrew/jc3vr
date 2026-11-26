@@ -1,18 +1,16 @@
 //! Advertised UI routes consume accepted delivery rather than their former raw controls.
 
 use jc3gi::input::input_action_map::Action;
+use jc3vr_render::vr::input::semantic::bound::{EnumeratedSource, SourceTable, of_sources};
 
 use super::*;
-use crate::{
-    controllers::{
-        bindings::{
-            controls::Controls,
-            intents::{Mask, MaskScope},
-            tables::Bindings,
-        },
-        mode::{Mode, OnFootVariant},
+use crate::controllers::{
+    bindings::{
+        controls::Controls,
+        intents::{Mask, MaskScope},
+        tables::Bindings,
     },
-    vr::input::semantic::bound::{EnumeratedSource, SourceTable, of_sources},
+    mode::{Mode, OnFootVariant},
 };
 
 fn menu_tick(runtime: &mut Runtime, sequence: u64, select: bool, source: &str) -> Tick {
@@ -84,7 +82,7 @@ fn remapped_pointer_select_uses_a_in_debug_capture_without_raw_trigger_fallback(
     let tick = menu_tick(&mut runtime, 3, true, A);
     assert!(tick.intent(id, Hand::Right).button.pressed);
     let mut input = SemanticInput::rest(SemanticSet::Menu, Default::default(), Hand::Right);
-    input.get_mut(id).unwrap().bound = crate::vr::input::semantic::bound::of_sources([A]);
+    input.get_mut(id).unwrap().bound = jc3vr_render::vr::input::semantic::bound::of_sources([A]);
     tick.filter_semantic(&mut input);
     let controls = Controls {
         pointer_hand: Some(Hand::Right),
@@ -93,7 +91,7 @@ fn remapped_pointer_select_uses_a_in_debug_capture_without_raw_trigger_fallback(
     let masks = Bindings::new().effective_masks(Mode::Ui, &controls, &input);
     assert!(masks.iter().any(|mask| mask.covers(
         MenuAction::MenuConfirm.id(),
-        crate::vr::input::semantic::bound::PhysicalSet::of(Physical::LowerFace)
+        jc3vr_render::vr::input::semantic::bound::PhysicalSet::of(Physical::LowerFace)
     )));
     assert!(
         !masks
@@ -148,7 +146,8 @@ fn commlink_remap_uses_accepted_press_and_existing_native_toggle_targets() {
             true,
         );
         let mut input = SemanticInput::rest(SemanticSet::OnFoot, Default::default(), Hand::Right);
-        input.get_mut(id).unwrap().bound = crate::vr::input::semantic::bound::of_sources([A]);
+        input.get_mut(id).unwrap().bound =
+            jc3vr_render::vr::input::semantic::bound::of_sources([A]);
         tick.filter_semantic(&mut input);
         let step = bindings.step(
             Mode::OnFoot(OnFootVariant::Ground),

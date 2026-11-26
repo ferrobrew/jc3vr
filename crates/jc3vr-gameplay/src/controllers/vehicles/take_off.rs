@@ -5,7 +5,7 @@
 //! grounded rig puts it, under the view, not where the head looks, so the suit left off to one side
 //! of the player's gaze. A take-off is a movement action, so it may turn the body: the head's
 //! heading relative to the view stands in for the torso's as the body's follow target
-//! ([`crate::headpose::xr::set_take_off_heading`]), and the game's own turn brings the body around
+//! ([`jc3vr_render::headpose::xr::set_take_off_heading`]), and the game's own turn brings the body around
 //! under the view, so the view does not move.
 //!
 //! The game turns the body only while its movement task runs, which it stops for the wind-up, so the
@@ -23,12 +23,12 @@ use jc3gi::{
     character::character::Character,
     input::input_action_map::{Action, LocalPlayerActionMap},
 };
+use jc3vr_core::hash::StateSet;
+use jc3vr_render::headpose::{self, sim::body_yaw_of};
 use parking_lot::Mutex;
 
 use crate::{
     controllers::mode::{self, Mode, OnFootVariant},
-    hash::StateSet,
-    headpose::{self, sim::body_yaw_of},
     hooks::animation::active_state_type_id,
 };
 
@@ -163,7 +163,7 @@ unsafe fn use_held() -> bool {
 const HELD_VALUE: f32 = 0.5;
 
 /// The rule states of the take-off from the ground.
-pub(crate) const TAKE_OFF_STATES: [&str; 2] = [
+pub const TAKE_OFF_STATES: [&str; 2] = [
     "S_JC_WINGSUIT_BOOST_TRANSITION_FROM_GROUND_INTO",
     "S_JC_WINGSUIT_BOOST_TRANSITION_FROM_GROUND",
 ];
@@ -176,8 +176,9 @@ fn is_take_off_state(state: u32) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use jc3vr_core::hash::hashlittle;
+
     use super::*;
-    use crate::hash::hashlittle;
 
     fn after(start: Instant, s: f32) -> Instant {
         start + Duration::from_secs_f32(s)

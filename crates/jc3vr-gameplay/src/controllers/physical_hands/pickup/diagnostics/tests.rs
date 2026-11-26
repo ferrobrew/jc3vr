@@ -1,10 +1,10 @@
 use std::{num::NonZeroUsize, time::Instant};
 
 use glam::{Quat, Vec3};
+use jc3vr_input::frame::Pose;
 
 use super::*;
 use crate::controllers::{
-    frame::Pose,
     grab::{GripTarget, Mark, MarkAt, PickupKind, target::Tier},
     physical_hands::{
         characters::{CharactersConfig, RAGDOLL_CARRY_STRENGTH},

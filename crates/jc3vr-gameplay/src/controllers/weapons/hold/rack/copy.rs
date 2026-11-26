@@ -28,10 +28,10 @@ use jc3gi::{
     equipment::weapon::{WeaponBase, WeaponState},
     types::math::Matrix4,
 };
+use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
 use crate::controllers::{
-    frame::Hand,
     loadout::{Delivery, TakeSource},
     weapons::{
         engine::{self, character_object, slot_of},

@@ -89,7 +89,10 @@ impl std::error::Error for DoorHandleTableError {
 }
 
 /// The shipped table; regenerate with `tools/door_handles/extract_door_handles.py`.
-const DOOR_HANDLES_JSON: &str = include_str!("../../../../../tools/door_handles/door_handles.json");
+const DOOR_HANDLES_JSON: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../tools/door_handles/door_handles.json"
+));
 
 #[cfg(test)]
 mod tests {

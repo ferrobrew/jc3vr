@@ -66,7 +66,7 @@ pub(super) fn hook_library() -> HookLibrary {
 }
 
 /// The camera matrix the camera getters return while the grapple ray stands in for the camera,
-/// for the `GameCameraManager::GetCameraMatrix` detour in [`crate::hooks::camera`]. `None` outside
+/// for the `GameCameraManager::GetCameraMatrix` detour in [`jc3vr_render::hooks::camera`]. `None` outside
 /// the grapple's scoped calls.
 pub(crate) fn camera_matrix_override() -> Option<Matrix4> {
     OVERRIDE.with(Cell::get)

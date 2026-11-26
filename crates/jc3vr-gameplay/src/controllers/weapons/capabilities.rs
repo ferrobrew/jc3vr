@@ -4,9 +4,9 @@ use jc3gi::{
     character::{character::Character, inventory::WeaponSlot},
     equipment::weapon::WeaponBase,
 };
+use jc3vr_input::frame::{self, Hand};
 
 use crate::controllers::{
-    frame::{self, Hand},
     hands::tiers::{self, HandTier, TierState},
     loadout::live,
     mode::{AirborneVariant, Mode, OnFootVariant},

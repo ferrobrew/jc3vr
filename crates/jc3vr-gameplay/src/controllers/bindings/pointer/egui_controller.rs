@@ -6,7 +6,7 @@
 //! with the debug panel chord's presses already masked out, and queues one [`ControllerUpdate`] per
 //! tick. The egui pump drains the queue on the same thread before the next egui frame and decides
 //! whether the controller or the desktop mouse owns egui's pointer
-//! ([`crate::hud::pointer::egui_route`]). The queue's lock is a leaf.
+//! (`hud::pointer::egui_route`). The queue's lock is a leaf.
 //!
 //! The pointing hand starts as the dominant hand. It passes to the other hand when that hand pulls
 //! its trigger with its ray on the panel, or when only the other hand's ray is on the panel, but
@@ -30,7 +30,7 @@
 //! turns a press into a drag. Once the hit leaves the slop, the pointer jumps to it and follows it
 //! for the rest of the press, which drags a slider or a scroll area. egui also stops counting a
 //! press as a click once it has been held for its click duration, which the panel raises
-//! ([`crate::hud::pointer::apply_panel_input_options`]).
+//! (`hud::pointer::apply_panel_input_options`).
 
 use std::{
     cmp::Ordering,
@@ -39,42 +39,40 @@ use std::{
 };
 
 use glam::{Vec2, Vec3};
-use parking_lot::Mutex;
-
-use crate::{
-    controllers::{
-        bindings::{
-            intents::Intent,
-            pointer::{
-                EguiPointerSettings, PointerHud,
-                controller::{ControllerState, TriggerSample},
-                egui_grab::{GrabSample, GrabStep, GrabTracker},
-                registered_hud,
-            },
-        },
-        frame::{Button, ControllerFrame, Edges, Hand, Pose},
-        overlay::{
-            primitive::{Anchor, DepthMode, HandPose, Primitive, Rgba, Source},
-            store,
-        },
+use jc3vr_input::frame::{Button, ControllerFrame, Edges, Hand, Pose};
+use jc3vr_render::{
+    controllers::overlay::{
+        primitive::{Anchor, DepthMode, HandPose, Primitive, Rgba, Source},
+        store,
     },
     hud::pointer::panel::{PanelHit, aim_at_egui_panel, intersect_panel},
+};
+use parking_lot::Mutex;
+
+use crate::controllers::bindings::{
+    intents::Intent,
+    pointer::{
+        EguiPointerSettings, PointerHud,
+        controller::{ControllerState, TriggerSample},
+        egui_grab::{GrabSample, GrabStep, GrabTracker},
+        registered_hud,
+    },
 };
 
 /// One input tick of the controller pointer, as the egui pump consumes it.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub(crate) struct ControllerUpdate {
+pub struct ControllerUpdate {
     /// The panel UV the pointer is at, or `None` while it is off the panel.
-    pub(crate) uv: Option<(f32, f32)>,
+    pub uv: Option<(f32, f32)>,
     /// Bit zero is the primary button, bit one the secondary.
-    pub(crate) buttons: u32,
+    pub buttons: u32,
     /// The wheel motion this tick, in egui points, in egui's wheel convention.
-    pub(crate) scroll: Vec2,
+    pub scroll: Vec2,
 }
 
 impl ControllerUpdate {
     /// The controller has stopped pointing: off the panel, nothing held.
-    pub(crate) const GONE: Self = Self {
+    pub const GONE: Self = Self {
         uv: None,
         buttons: 0,
         scroll: Vec2::ZERO,
@@ -84,7 +82,7 @@ impl ControllerUpdate {
 /// Step the controller pointer from the latest frame and the edges since the last tick, both with
 /// the debug panel chord masked, or `None` when no focused frame is available. Runs on the input
 /// tick, which owns the controller edges.
-pub(crate) fn update_egui_controller(
+pub fn update_egui_controller(
     input: Option<(&ControllerFrame, &Edges)>,
     dominant: Hand,
     select: [Intent; 2],
@@ -150,13 +148,13 @@ pub(crate) fn update_egui_controller(
 }
 
 /// Drain the updates queued since the last call, oldest first.
-pub(crate) fn take_updates() -> Vec<ControllerUpdate> {
+pub fn take_updates() -> Vec<ControllerUpdate> {
     UPDATES.lock().drain(..).collect()
 }
 
 /// Forget the queued updates, for a panel that is not shown. The pointer's own state resets on the
 /// next input tick, which finds the panel hidden.
-pub(crate) fn reset_egui_controller() {
+pub fn reset_egui_controller() {
     UPDATES.lock().clear();
 }
 
@@ -519,21 +517,19 @@ impl SecondaryButton {
 mod tests {
     use std::sync::Arc;
 
+    use jc3vr_input::frame::ActionSetKind;
+    use jc3vr_render::vr::input::semantic::{
+        ActionKind, SCHEMA_VERSION, SemanticSet, history::Publication, vocabulary::GlobalAction,
+    };
     use tracking_format::input::{
         ClockDomain, GroupOrder, InputGroup, InputRecord, InputRoute, InputStamp, RouteSample,
         SourceQuery, ValueBits,
     };
 
     use super::*;
-    use crate::{
-        controllers::{
-            bindings::policy_a::runtime::{Runtime, TickInput},
-            config::BindingsConfig,
-            frame::ActionSetKind,
-        },
-        vr::input::semantic::{
-            ActionKind, SCHEMA_VERSION, SemanticSet, history::Publication, vocabulary::GlobalAction,
-        },
+    use crate::controllers::{
+        bindings::policy_a::runtime::{Runtime, TickInput},
+        config::BindingsConfig,
     };
 
     const INSIDE: Option<PanelHit> = Some(PanelHit {

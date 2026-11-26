@@ -1,11 +1,10 @@
 //! Character hook configuration: headset-driven upper-body IK.
 
+use jc3vr_core::config::engine::ConfigSlot;
 use serde::{Deserialize, Serialize};
 
-use crate::config::engine::ConfigSlot;
-
 /// The body IK settings, at `body_ik` in the settings file; the payload binds the slot at startup.
-pub(crate) static BODY_IK_CONFIG: ConfigSlot<BodyIkConfig> = ConfigSlot::new("body_ik");
+pub static BODY_IK_CONFIG: ConfigSlot<BodyIkConfig> = ConfigSlot::new("body_ik");
 
 /// Headset-driven upper-body IK: drive the player's spine and head toward the headpose target by
 /// feeding the engine's own HumanIK `MAIN` pass an effector target for the head bone, so the body
@@ -21,5 +20,11 @@ pub struct BodyIkConfig {
 impl BodyIkConfig {
     pub const fn new() -> Self {
         Self { enabled: true }
+    }
+}
+
+impl Default for BodyIkConfig {
+    fn default() -> Self {
+        Self::new()
     }
 }

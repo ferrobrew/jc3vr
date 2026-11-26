@@ -1,6 +1,6 @@
 //! Carry-off ordering keeps the retained actor alive through every owner transition.
 
-use crate::controllers::frame::Hand;
+use jc3vr_input::frame::Hand;
 
 pub(super) trait Adapter {
     fn disarm(&mut self, hand: Hand);

@@ -25,13 +25,11 @@ use jc3gi::{
     state::StateContext,
     types::math::{Matrix4, Vector3},
 };
+use jc3vr_render::headpose::sim::{HeadMode, LatchState};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::{
-    headpose::sim::{HeadMode, LatchState},
-    hooks::input::config::MOVEMENT_CONFIG,
-};
+use crate::hooks::input::config::MOVEMENT_CONFIG;
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new()
@@ -292,7 +290,7 @@ fn force_face_camera(
     // [`FACE_CAMERA_TURN_STEP`] as the turn rate and intentionally bypasses the move-dir cone check: the requested heading takes priority over strafe, so the
     // native turn-toward-movement never fights it (which is what let backpedaling tank-turn the body
     // in VR).
-    if let Some(face_dir) = crate::headpose::body_yaw_target() {
+    if let Some(face_dir) = jc3vr_render::headpose::body_yaw_target() {
         unsafe {
             let value = Vector3 {
                 data: [face_dir.x, face_dir.y, face_dir.z],
@@ -365,7 +363,7 @@ fn force_face_camera(
 /// turning past its threshold, and while idle within the cone the head moves freely, so the body is
 /// held only in that specific window.
 pub(crate) fn head_decoupled(character: &Character) -> bool {
-    if !crate::headpose::is_active() {
+    if !jc3vr_render::headpose::is_active() {
         return false;
     }
     // Under the VR source the HMD owns the head and the stick owns the body in *every* mode -- on
@@ -375,13 +373,13 @@ pub(crate) fn head_decoupled(character: &Character) -> bool {
     // aim-turn drag the body around whenever the mode detector fell out of `OnFoot`: the yaw kick on
     // jumping and the head-driven body spin while dangling from a helicopter both land in `Other`,
     // where the suppression used to switch off.
-    if crate::headpose::source() == crate::headpose::Source::Vr {
+    if jc3vr_render::headpose::source() == jc3vr_render::headpose::Source::Vr {
         return true;
     }
-    if crate::headpose::sim::mode() != HeadMode::OnFoot {
+    if jc3vr_render::headpose::sim::mode() != HeadMode::OnFoot {
         return false;
     }
-    crate::headpose::sim::latch_state() == LatchState::Decoupled
+    jc3vr_render::headpose::sim::latch_state() == LatchState::Decoupled
         && !character
             .m_AimFlags
             .intersects(AimState::m_AimingWeapon | AimState::m_AimingGrapple)

@@ -3,7 +3,7 @@
 //!
 //! The chain, per hand:
 //!
-//! 1. The grip pose, in the cockpit frame ([`crate::controllers::frame`]).
+//! 1. The grip pose, in the cockpit frame ([`jc3vr_input::frame`]).
 //! 2. Times the grip offset ([`grip_to_wrist`]): the **wrist frame**, the hand-tracking wrist
 //!    convention (origin at the wrist joint, -Z toward the fingers, +Y out of the back of the
 //!    hand, X = Y × Z).
@@ -12,7 +12,7 @@
 //! 4. Held within the character's arm length of his solved shoulder ([`limit_reach`]), so the arm
 //!    can always reach the hand.
 //! 5. Into the world through the head's transform
-//!    ([`CockpitTransform`](crate::controllers::cockpit::CockpitTransform)), the same composition
+//!    ([`CockpitTransform`](jc3vr_render::controllers::cockpit::CockpitTransform)), the same composition
 //!    the head pose uses, so that the hands and the view agree.
 //!
 //! On the character's side, the same wrist frame is built from the animated bones
@@ -22,11 +22,11 @@
 
 use body_rig::rotation::shortest;
 use glam::{EulerRot, Mat3, Quat, Vec3};
+use jc3vr_input::frame::{Hand, Pose};
+pub use jc3vr_render::controllers::cockpit::body_of_head;
 
-pub(crate) use crate::controllers::cockpit::body_of_head;
 use crate::controllers::{
     config::GripOffset,
-    frame::{Hand, Pose},
     hands::reach::{ArmRemap, ReachLimit},
 };
 
@@ -196,8 +196,9 @@ fn right_wrist_in_grip() -> Mat3 {
 
 #[cfg(test)]
 mod tests {
+    use jc3vr_render::controllers::cockpit::CockpitTransform;
+
     use super::*;
-    use crate::controllers::cockpit::CockpitTransform;
 
     const EPS: f32 = 1e-4;
 

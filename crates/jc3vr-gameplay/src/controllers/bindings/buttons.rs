@@ -1,11 +1,10 @@
 //! Semantic button reads shared by input-tick consumers outside the binding tables.
 
-use crate::{
-    controllers::{
-        bindings::{controls::ButtonControl, intents::SemanticInput, tables},
-        mode::Mode,
-    },
-    vr::input::semantic::vocabulary::OnFootAction,
+use jc3vr_render::vr::input::semantic::vocabulary::OnFootAction;
+
+use crate::controllers::{
+    bindings::{controls::ButtonControl, intents::SemanticInput, tables},
+    mode::Mode,
 };
 
 /// The reload tap and held holster share the same accepted semantic press.

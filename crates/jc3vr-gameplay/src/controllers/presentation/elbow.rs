@@ -188,8 +188,9 @@ const LEFT_LITTLE_FINGER: Vec3 = Vec3::new(0.265_185_6, 0.319_041_06, -0.909_884
 mod tests {
     use std::f32::consts::{FRAC_PI_2, TAU};
 
+    use jc3vr_input::frame::Hand;
+
     use super::*;
-    use crate::controllers::frame::Hand;
 
     const SHOULDER_HEIGHT: f32 = 1.45;
 

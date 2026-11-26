@@ -12,9 +12,9 @@
 //! [`Tier::Handle`]: crate::controllers::grab::Tier::Handle
 
 use glam::Vec3;
+use jc3vr_input::frame::{Hand, Pose};
 
 use crate::controllers::{
-    frame::{Hand, Pose},
     grab::{Candidate, GrabVolume},
     weapons::grenade::tuning::GrenadeTuning,
 };

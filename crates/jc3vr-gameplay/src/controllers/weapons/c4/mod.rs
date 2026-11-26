@@ -89,6 +89,10 @@ use jc3gi::{
     },
     types::math::{Matrix4, Vector3},
 };
+use jc3vr_input::{
+    frame::{Hand, Pose},
+    motion,
+};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
@@ -96,11 +100,10 @@ use crate::controllers::{
     aim::targets::weak_target,
     bindings::controls::ButtonControl,
     config::CONTROLLERS_CONFIG,
-    frame::{Hand, Pose},
     hands::held::{self, Held, Slot},
     haptics::{self, Event},
     loadout::{ObjectAddress, live},
-    motion, physical_hands, scheme,
+    physical_hands, scheme,
     weapons::{
         c4::{
             detonator::{DETONATOR_HOLD, Detonator, DetonatorStep},

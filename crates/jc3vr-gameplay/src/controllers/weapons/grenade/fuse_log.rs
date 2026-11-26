@@ -21,13 +21,11 @@ use jc3gi::{
     equipment::explosive::{Explosive, Grenade},
     physics::Collision,
 };
+use jc3vr_input::frame::{Hand, Pose};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::controllers::{
-    frame::{Hand, Pose},
-    weapons::grenade::{Release, pin::PinSource, safe},
-};
+use crate::controllers::weapons::grenade::{Release, pin::PinSource, safe};
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new()
@@ -71,7 +69,7 @@ pub(super) fn lit(hand: Hand, by: PinSource) {
 /// detonation to measure against. Runs every input tick.
 pub(super) fn observe(grips: [Option<Pose>; 2]) {
     let held = Hand::BOTH.map(|hand| safe::explosive_in_hand(hand).map(|e| e as usize));
-    let head = crate::hud::render_camera_pose().map(|(position, _)| position);
+    let head = jc3vr_render::hud::render_camera_pose().map(|(position, _)| position);
     let mut log = LOG.lock();
     log.grips = grips.map(|grip| grip.map(|grip| grip.position));
     log.head = head;

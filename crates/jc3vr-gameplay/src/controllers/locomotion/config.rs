@@ -3,9 +3,8 @@
 //! swimming ([`SwimStrokeConfig`]). They live under `controllers.locomotion` beside the stick's
 //! direction frame.
 
+use jc3vr_core::config::engine::Invalid;
 use serde::{Deserialize, Serialize};
-
-use crate::config::validate::Invalid;
 
 /// Stick-driven on-foot velocity with fixed acceleration (see [`crate::controllers::locomotion`]).
 #[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
@@ -160,7 +159,7 @@ impl Default for SwimStrokeConfig {
 }
 
 /// Check the stick locomotion's settings. Paths are relative to `controllers.locomotion`.
-pub(crate) fn validate(stick: &StickConfig) -> Result<(), Invalid> {
+pub fn validate(stick: &StickConfig) -> Result<(), Invalid> {
     positive("stick.run_speed_mps", stick.run_speed_mps, 50.0)
 }
 

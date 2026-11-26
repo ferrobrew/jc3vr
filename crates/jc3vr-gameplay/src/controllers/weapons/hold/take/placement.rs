@@ -2,11 +2,9 @@
 
 use glam::{Mat4, Vec3};
 use jc3gi::equipment::weapon::WeaponState;
+use jc3vr_input::frame::{Hand, Pose};
 
-use crate::controllers::{
-    frame::{Hand, Pose},
-    weapons::{engine::FULL_WEIGHT, hold::world},
-};
+use crate::controllers::weapons::{engine::FULL_WEIGHT, hold::world};
 
 /// A placement's identity, checked again before its captured grip is used.
 #[derive(Debug, Copy, Clone, PartialEq)]

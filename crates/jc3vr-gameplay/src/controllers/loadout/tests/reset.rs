@@ -1,20 +1,18 @@
 //! The spawn reset's re-keying, and the checkpoint and mission snapshots.
 
 use jc3gi::{character::inventory::WeaponSlot, equipment::weapon::WeaponClass};
+use jc3vr_input::frame::Hand;
 use test_case::test_case;
 
 use super::fixtures::*;
-use crate::controllers::{
-    frame::Hand,
-    loadout::{
-        binding::{Awaiting, Binding},
-        item::{ItemId, ItemKind, WeaponType},
-        projection::{SlotContent, project},
-        reset::{CacheKind, ResetKind, SlotObject},
-        socket::{BodyLayout, Socket},
-        table::{Departure, ItemView, Loadout, Place},
-        transition::{Cause, Change, Release, Removal, RemovalWhy, Restored, TransitionError},
-    },
+use crate::controllers::loadout::{
+    binding::{Awaiting, Binding},
+    item::{ItemId, ItemKind, WeaponType},
+    projection::{SlotContent, project},
+    reset::{CacheKind, ResetKind, SlotObject},
+    socket::{BodyLayout, Socket},
+    table::{Departure, ItemView, Loadout, Place},
+    transition::{Cause, Change, Release, Removal, RemovalWhy, Restored, TransitionError},
 };
 
 fn slot(n: usize, weapon: WeaponType) -> SlotObject {

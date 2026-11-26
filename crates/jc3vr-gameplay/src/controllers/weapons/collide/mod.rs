@@ -23,6 +23,8 @@ pub mod solve;
 use std::time::{Duration, Instant};
 
 use glam::Vec3;
+use jc3vr_input::frame::{Hand, Pose};
+use jc3vr_render::controllers::cockpit::CockpitTransform;
 use parking_lot::Mutex;
 
 use crate::controllers::{
@@ -30,8 +32,6 @@ use crate::controllers::{
         ray::Ray,
         raycast::{self, CastOptions},
     },
-    cockpit::CockpitTransform,
-    frame::{Hand, Pose},
     hands::CockpitHand,
     weapons::{
         ads::solve::RigidMove,

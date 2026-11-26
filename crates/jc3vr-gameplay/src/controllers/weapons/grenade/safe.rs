@@ -21,17 +21,19 @@ use jc3gi::{
     character::{character::Character, inventory::WeaponSlot},
     equipment::{explosive::Explosive, weapon::ThrownGrenadeWeapon},
 };
+use jc3vr_input::{
+    frame::{Hand, Pose},
+    motion,
+};
 use parking_lot::Mutex;
 
 use crate::controllers::{
     body::rig::frames::Frames,
-    frame::{Hand, Pose},
     hands::{held::held_matrix, late},
     loadout::{
         Departure, ItemId, Place, Socket, live,
         safe_items::{ItemLeaseId, SafeItemView},
     },
-    motion,
     weapons::{
         engine,
         grenade::{
@@ -481,7 +483,7 @@ pub(crate) fn observe(grips: [Option<Pose>; 2], tuning: &GrenadeTuning) {
 ///
 /// The game thread, before the world update.
 pub(crate) unsafe fn render_frame(dtf: f32, tuning: &GrenadeTuning) {
-    let owner = if crate::hooks::in_gameplay() {
+    let owner = if jc3vr_core::hooks::in_gameplay() {
         (unsafe { engine::local_player() }).map(|owner| owner as *const Character as usize)
     } else {
         None
@@ -715,7 +717,7 @@ unsafe fn clear() {
 
 fn ensure_cleanup() {
     if !CLEANUP.swap(true, Ordering::AcqRel) {
-        crate::lifecycle::on_cleanup(|_| {
+        jc3vr_core::lifecycle::on_cleanup(|_| {
             // SAFETY: the shutdown cleanups run on the game thread before the world update.
             unsafe { clear() };
         });
@@ -796,12 +798,10 @@ static CLEANUP: AtomicBool = AtomicBool::new(false);
 #[cfg(test)]
 mod tests {
     use glam::Quat;
+    use jc3vr_render::controllers::cockpit::CockpitTransform;
 
     use super::*;
-    use crate::controllers::{
-        cockpit::CockpitTransform,
-        loadout::{BodyLayout, Loadout},
-    };
+    use crate::controllers::loadout::{BodyLayout, Loadout};
 
     #[test]
     fn loose_completion_matches_offer_boundary_at_every_world_scale() {

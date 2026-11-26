@@ -30,11 +30,11 @@ use jc3gi::{
     character::character::Character,
     hash::HashString,
 };
+use jc3vr_core::hash::hashlittle;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{
     controllers::config::CONTROLLERS_CONFIG,
-    hash::hashlittle,
     hooks::{animation::body_rule_system, input::locomotion::head_decoupled},
 };
 
@@ -43,7 +43,7 @@ pub(super) fn hook_library() -> HookLibrary {
 }
 
 /// How often the canopy's opening out of a reel was skipped. Read by the Air feature's readout.
-pub(crate) static REEL_OPENINGS_SKIPPED: AtomicU64 = AtomicU64::new(0);
+pub static REEL_OPENINGS_SKIPPED: AtomicU64 = AtomicU64::new(0);
 
 /// Move the local player's body machine on from a reel opening it is in into the canopy's idle,
 /// before the local controller evaluates the pose.

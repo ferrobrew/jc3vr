@@ -20,12 +20,12 @@ use jc3gi::{
     havok::{hkcdManifold4, hknpContactImpulseEvent},
     physics::{PhysicsGameObject, hknpWorld},
 };
+use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
     config::CONTROLLERS_CONFIG,
-    frame::Hand,
     haptics::{self, Event},
     physical_hands::{
         bodies, carry_collision, engine,
@@ -45,7 +45,7 @@ use crate::controllers::{
 
 /// Counters for held-prop contact observation and feedback.
 #[derive(Debug, Default, Copy, Clone)]
-pub(crate) struct Status {
+pub struct Status {
     pub listening: usize,
     pub contacts: u64,
     pub feedback: u64,
@@ -53,7 +53,7 @@ pub(crate) struct Status {
     pub dropped: u64,
 }
 
-pub(crate) fn status() -> Status {
+pub fn status() -> Status {
     STATE.lock().status
 }
 pub(crate) fn hook_library() -> HookLibrary {
@@ -460,8 +460,8 @@ fn enabled() -> Enabled {
         controllers: c.enabled,
         hands: c.physical_hands.enabled,
         pickup: c.physical_hands.pickup.enabled,
-        gameplay: crate::hooks::in_gameplay(),
-        running: !crate::is_shutting_down(),
+        gameplay: jc3vr_core::hooks::in_gameplay(),
+        running: !jc3vr_core::is_shutting_down(),
     })
 }
 

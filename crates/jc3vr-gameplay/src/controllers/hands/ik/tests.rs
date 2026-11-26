@@ -5,13 +5,11 @@ use jc3gi::{
     },
     character::character::{CharacterInitializationFlags, DamageStateFlags},
 };
+use jc3vr_core::thread_role::{self, ThreadRole};
+use jc3vr_render::headpose::Anchors;
 
 use super::*;
-use crate::{
-    controllers::config::{CONTROLLERS_CONFIG, ControllersConfig},
-    headpose::Anchors,
-    thread_role::{self, ThreadRole},
-};
+use crate::controllers::config::{CONTROLLERS_CONFIG, ControllersConfig};
 
 fn array<T>(values: &mut [T]) -> HkArray<T> {
     HkArray {
@@ -30,7 +28,7 @@ impl FixtureState {
     }
 
     fn clear() {
-        crate::controllers::frame::clear();
+        jc3vr_input::frame::clear();
         rig::invalidate();
         DEFERRED.replace(None);
         ownership::clear();
@@ -47,7 +45,7 @@ impl Drop for FixtureState {
 #[test]
 fn replacement_before_measure_cannot_seed_new_or_deferred_plans_with_old_arms() {
     crate::controllers::register_head_participants_for_tests();
-    let _config = crate::config::engine::test_fixture();
+    let _config = jc3vr_core::config::engine::test_fixture();
     // Plan admission is under test, not the live controller and world-rotation adapters.
     CONTROLLERS_CONFIG.lock().enabled = false;
     let _role = thread_role::enter(ThreadRole::Unmarked);

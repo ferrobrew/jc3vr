@@ -10,11 +10,9 @@
 use std::fmt;
 
 use jc3gi::character::inventory::WeaponSlot;
+use jc3vr_input::frame::Hand;
 
-use crate::controllers::{
-    frame::Hand,
-    loadout::item::{SizeClass, WeaponType},
-};
+use crate::controllers::loadout::item::{SizeClass, WeaponType};
 
 /// A socket on the body.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]

@@ -10,7 +10,9 @@
 //! under [`OPEN`]. A hand whose value is not read (an inactive controller) opens with its grip's
 //! press instead.
 
-use crate::controllers::{bindings::controls::ButtonControl, frame::Hand};
+use jc3vr_input::frame::Hand;
+
+use crate::controllers::bindings::controls::ButtonControl;
 
 /// The grip value at or above which the fingers count as closed round the handle.
 pub const CLOSED: f32 = 0.6;

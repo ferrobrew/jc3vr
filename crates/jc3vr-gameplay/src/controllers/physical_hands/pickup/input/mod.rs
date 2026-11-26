@@ -1,10 +1,10 @@
 //! The input tick's pickup requests and derived vehicle-entry clicks, without native acquisition.
 
 use jc3gi::input::input_action_map::Action;
+use jc3vr_input::frame::Hand;
 
 use crate::controllers::{
     bindings::hold::{Desired, MapKind, Target, Want},
-    frame::Hand,
     grab::GrabVolume,
     physical_hands::{
         grasp::{Reach, TargetKind},

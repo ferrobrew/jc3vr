@@ -31,11 +31,11 @@ mod stride;
 
 use body_rig::smooth::smoothstep_between;
 use glam::{Mat3, Quat, Vec3};
+use jc3vr_input::frame::Hand;
 pub(crate) use stride::StrideFilter;
 
 use crate::controllers::{
     body::{self, rig::frames::SkeletonLandmarks},
-    frame::Hand,
     grab::{Candidate, GrabVolume},
     loadout::Socket,
 };

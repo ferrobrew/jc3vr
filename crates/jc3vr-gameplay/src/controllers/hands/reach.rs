@@ -33,11 +33,9 @@ use body_rig::{
     smooth::{follow_factor, smoothstep_between},
 };
 use glam::{FloatExt, Quat, Vec3};
+use jc3vr_input::frame::{Hand, Pose};
 
-use crate::controllers::{
-    body::{self, BodyDimensions},
-    frame::{Hand, Pose},
-};
+use crate::controllers::body::{self, BodyDimensions};
 
 /// The arm-reach tuning, fixed at [`REACH`]. Each part acts only under the controller scheme with
 /// the hand IK or the late update on.

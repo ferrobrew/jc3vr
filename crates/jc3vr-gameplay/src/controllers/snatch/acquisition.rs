@@ -3,10 +3,10 @@
 use std::{cell::Cell, num::NonZeroUsize};
 
 use glam::Vec3;
+use jc3vr_input::frame::Hand;
 
 use crate::{
     controllers::{
-        frame::Hand,
         loadout::TakeSource,
         physical_hands::doors::{DoorTarget, engine::vehicle_frame},
         snatch::{

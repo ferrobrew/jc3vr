@@ -21,7 +21,7 @@ fn stale_world_and_missing_or_reused_slots_never_dispatch_wrapper_operations() {
             contact_events: false,
             gravity: false,
         },
-        source: crate::controllers::frame::Hand::Left.into(),
+        source: jc3vr_input::frame::Hand::Left.into(),
         world: 0,
     };
     for operation in ["is_added", "add", "remove", "transform"] {

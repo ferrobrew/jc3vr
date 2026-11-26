@@ -20,18 +20,16 @@ use std::{
 };
 
 use glam::Vec3;
+use jc3vr_core::config::engine::{paths, write};
+use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    config::{paths, write},
-    controllers::{
-        frame::Hand,
-        haptics::{self, Event},
-        vehicles::physical::{
-            ControlKind,
-            native::{CockpitAsset, YokeAsset},
-        },
+use crate::controllers::{
+    haptics::{self, Event},
+    vehicles::physical::{
+        ControlKind,
+        native::{CockpitAsset, YokeAsset},
     },
 };
 

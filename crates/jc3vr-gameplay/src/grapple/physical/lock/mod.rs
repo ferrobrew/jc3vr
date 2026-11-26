@@ -60,6 +60,11 @@ use jc3gi::{
     equipment::{grapple_point_proxy::AttachmentObjectInfo, grappling_hook::GrapplingHook},
     types::{math::Vector3, shared_ptr::SharedPtr},
 };
+use jc3vr_input::frame::{self, Hand};
+use jc3vr_render::{
+    headpose::xr,
+    vr::{VR_CONFIG, recenter_count},
+};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
@@ -68,7 +73,6 @@ use crate::{
     controllers::{
         bindings::yank::HandLine,
         config::CONTROLLERS_CONFIG,
-        frame::{self, Hand},
         haptics::{self, Event, Sustain},
         physical_hands::remote,
         weapons::engine::character_position,
@@ -81,9 +85,7 @@ use crate::{
         },
         rope::{self, RopeFault},
     },
-    headpose::xr,
     hooks::input::air,
-    vr::{VR_CONFIG, recenter_count},
 };
 
 /// The lock's hooks, aggregated by [`crate::grapple::physical::hook_library`].

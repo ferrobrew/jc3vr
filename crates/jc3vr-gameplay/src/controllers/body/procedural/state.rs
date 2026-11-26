@@ -10,6 +10,8 @@
 use std::{sync::OnceLock, time::Instant};
 
 use jc3gi::{character::character::Character, state::StateBitFlag};
+use jc3vr_core::{hash::hashlittle, hooks::in_gameplay};
+use jc3vr_render::headpose::{Source, source};
 
 use crate::{
     controllers::{
@@ -24,9 +26,7 @@ use crate::{
         mode::{AirborneVariant, Mode, OnFootVariant, current as current_mode},
         physical_hands::climb,
     },
-    hash::hashlittle,
-    headpose::{Source, source},
-    hooks::{animation::active_state_type_id, in_gameplay},
+    hooks::animation::active_state_type_id,
 };
 
 /// Whether the game's animation moves the body this tick, rather than the movement task's

@@ -23,31 +23,29 @@ use body_rig::{
 };
 use glam::{Mat4, Quat, Vec3};
 use jc3gi::character::character::Character;
+use jc3vr_input::frame::{self, Hand, Pose};
+use jc3vr_render::headpose::{self, Source};
 use parking_lot::Mutex;
 
-use crate::{
-    controllers::{
-        body::{
-            self,
-            procedural::{
-                authority::Case,
-                config::ProceduralBodyConfig,
-                gate_state::State,
-                rig::{Rig, RigBone},
-                solver::{
-                    arms::Side,
-                    clavicles::shoulder_joint,
-                    pose::RigPose,
-                    wings::{PlayerArms, RicoArms, WingTarget, flight_heading, wing_targets},
-                },
+use crate::controllers::{
+    body::{
+        self,
+        procedural::{
+            authority::Case,
+            config::ProceduralBodyConfig,
+            gate_state::State,
+            rig::{Rig, RigBone},
+            solver::{
+                arms::Side,
+                clavicles::shoulder_joint,
+                pose::RigPose,
+                wings::{PlayerArms, RicoArms, WingTarget, flight_heading, wing_targets},
             },
         },
-        config::CONTROLLERS_CONFIG,
-        frame::{self, Hand, Pose},
-        hands::{ik::queue_model_wrists, pose::cockpit_hand},
-        scheme,
     },
-    headpose::{self, Source},
+    config::CONTROLLERS_CONFIG,
+    hands::{ik::queue_model_wrists, pose::cockpit_hand},
+    scheme,
 };
 
 /// The wrist targets the gate placed for the wingsuit's arms this tick, to queue once it has let go

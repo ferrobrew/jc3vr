@@ -2,10 +2,10 @@
 //! placement; these fixtures do not establish callback scheduling or authorize native restoration.
 
 use glam::Quat;
+use jc3vr_input::frame::Hand;
 
 use super::*;
 use crate::controllers::{
-    frame::Hand,
     grab::{Candidate, GrabVolume},
     vehicles::{
         config::ParachuteHandlesConfig,

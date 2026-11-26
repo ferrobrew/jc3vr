@@ -1,13 +1,15 @@
 use std::time::{Duration, Instant};
 
 use glam::{Quat, Vec3};
+use jc3vr_input::frame::{Hand, Pose};
+use jc3vr_render::controllers::{
+    cockpit::CockpitTransform,
+    overlay::primitive::{Anchor, Primitive},
+};
 
 use super::*;
 use crate::controllers::{
     body::mirror::{Plane, attachment_markers},
-    cockpit::CockpitTransform,
-    frame::{Hand, Pose},
-    overlay::primitive::{Anchor, Primitive},
     weapons::{
         docks::attachments::{Attachment, MAX_AGE, Missing, Occupancy, PoseSource},
         volumes::{self, SOCKETS},

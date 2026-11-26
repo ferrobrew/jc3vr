@@ -23,12 +23,12 @@ use std::{
 };
 
 use glam::{Mat4, Vec2, Vec3};
+use jc3vr_input::frame::{Hand, Pose};
 use parking_lot::Mutex;
 
 use crate::controllers::{
     aim::{gun::HeldWeapon, ray, sights},
     config::{CONTROLLERS_CONFIG, SightOverride, SightTuningConfig},
-    frame::{Hand, Pose},
 };
 
 /// How far ahead of the head the line-up marker is placed, metres.

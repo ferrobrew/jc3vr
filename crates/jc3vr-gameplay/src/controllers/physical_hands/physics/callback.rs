@@ -131,11 +131,12 @@ unsafe extern "system" fn pre_simulation(
     }
     // The payload aborts on a panic, so the step must not panic: its paths handle a missing body,
     // joint, or grip as a lost one.
-    let _timing = crate::frame_timing::scope(crate::frame_timing::Slot::HandBodies);
+    let _timing = jc3vr_core::frame_timing::scope(jc3vr_core::frame_timing::Slot::HandBodies);
     // SAFETY: the engine calls this before a step, on the thread that steps the world.
     unsafe {
         {
-            let _timing = crate::frame_timing::scope(crate::frame_timing::Slot::HumanHull);
+            let _timing =
+                jc3vr_core::frame_timing::scope(jc3vr_core::frame_timing::Slot::HumanHull);
             crate::controllers::physical_hands::human_hull::step(_world);
         }
         crate::controllers::physical_hands::physics::drawn_body::step();
@@ -143,7 +144,8 @@ unsafe extern "system" fn pre_simulation(
         crate::controllers::vehicles::rail::step_physics();
         crate::controllers::physical_hands::physics::step();
         {
-            let _timing = crate::frame_timing::scope(crate::frame_timing::Slot::HandImpacts);
+            let _timing =
+                jc3vr_core::frame_timing::scope(jc3vr_core::frame_timing::Slot::HandImpacts);
             crate::controllers::physical_hands::impacts::step();
         }
     }

@@ -12,10 +12,10 @@ use jc3gi::{
     character::{character::Character, inventory::WeaponSlot},
     equipment::weapon::{WeaponBase, WeaponData, WeaponState},
 };
+use jc3vr_input::frame::{Hand, Pose};
 use parking_lot::Mutex;
 
 use crate::controllers::{
-    frame::{Hand, Pose},
     loadout::{live, take::TakeRoute},
     weapons::{
         dual_wield::single::{self, magazine},

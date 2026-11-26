@@ -18,11 +18,9 @@
 //! the vehicle's world transform into the cockpit frame ([`CockpitTransform`]).
 
 use glam::{Mat4, Quat, Vec3};
+use jc3vr_render::controllers::cockpit::CockpitTransform;
 
-use crate::controllers::{
-    cockpit::CockpitTransform,
-    vehicles::tuning::{HandlebarsSpec, WheelSpec},
-};
+use crate::controllers::vehicles::tuning::{HandlebarsSpec, WheelSpec};
 
 /// A steering wheel in the cockpit frame: its hub, its in-plane axes, and its rim's radius.
 #[derive(Debug, Copy, Clone, PartialEq)]

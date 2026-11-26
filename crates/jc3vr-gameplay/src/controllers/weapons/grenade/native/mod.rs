@@ -78,13 +78,13 @@ use jc3gi::{
     },
     types::{math::Vector3, shared_ptr::WeakPtrGameObject},
 };
+use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
     aim::targets::weak_target,
     bindings::stage::{self, Spawn},
-    frame::Hand,
     loadout::{live, safe_items::SafeItemView},
     weapons::{
         engine::{gun_ptr, is_hand_grenade},

@@ -63,7 +63,9 @@ fn libraries() -> Vec<NamedLibrary> {
         library("input", hooks::input::hook_library),
         library("ui", hooks::ui::hook_library),
         library("pause_menu", pause_menu::hook_library),
-        library("controllers", controllers::hook_library),
+        library("controllers", || {
+            controllers::hook_library(controllers::map::hook_library())
+        }),
         library(
             "human_hull",
             controllers::physical_hands::human_hull::hook_library,

@@ -2,8 +2,9 @@
 //! the sticks' and levers' stops, the levers' neutral, the throttle's afterburner gate, and the
 //! cockpit buttons.
 
+use jc3vr_input::frame::Hand;
+
 use crate::controllers::{
-    frame::Hand,
     haptics::{self, Event},
     vehicles::{
         physical::{ControlCue, ControlKind, Outputs, buttons::ButtonEvent},

@@ -17,11 +17,9 @@
 //! ([`crate::controllers::loadout::grab::release`]).
 
 use body_rig::smooth::smoothstep;
+use jc3vr_input::frame::{Hand, Pose};
 
-use crate::controllers::{
-    frame::{Hand, Pose},
-    loadout::Socket,
-};
+use crate::controllers::loadout::Socket;
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub(crate) struct ReleaseIntent {

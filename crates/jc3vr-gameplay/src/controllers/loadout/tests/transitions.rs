@@ -1,18 +1,16 @@
 //! The player's and the game's moves: what each does, what it never touches, and its refusals.
 
+use jc3vr_input::frame::Hand;
 use test_case::test_case;
 
 use super::fixtures::*;
-use crate::controllers::{
-    frame::Hand,
-    loadout::{
-        item::{ItemId, ItemKind, SizeClass, WeaponType},
-        socket::{BodyLayout, Socket},
-        table::{Departure, Loadout, Place, primary},
-        transition::{
-            Cause, Change, Give, GiveSource, LostWhy, Release, Removal, RemovalWhy, Restored, Take,
-            TakeSource, TransitionError,
-        },
+use crate::controllers::loadout::{
+    item::{ItemId, ItemKind, SizeClass, WeaponType},
+    socket::{BodyLayout, Socket},
+    table::{Departure, Loadout, Place, primary},
+    transition::{
+        Cause, Change, Give, GiveSource, LostWhy, Release, Removal, RemovalWhy, Restored, Take,
+        TakeSource, TransitionError,
     },
 };
 

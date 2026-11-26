@@ -8,15 +8,14 @@
 
 use std::fmt;
 
-use crate::controllers::{
-    frame::Hand,
-    loadout::{
-        binding::{Awaiting, Binding, ObjectAddress},
-        item::{ItemId, ItemKind, WeaponType},
-        reset::{CacheKind, ResetKind},
-        socket::Socket,
-        table::{Departure, Docked, Item, Loadout, Lying, Place},
-    },
+use jc3vr_input::frame::Hand;
+
+use crate::controllers::loadout::{
+    binding::{Awaiting, Binding, ObjectAddress},
+    item::{ItemId, ItemKind, WeaponType},
+    reset::{CacheKind, ResetKind},
+    socket::Socket,
+    table::{Departure, Docked, Item, Loadout, Lying, Place},
 };
 
 /// A take into a hand.

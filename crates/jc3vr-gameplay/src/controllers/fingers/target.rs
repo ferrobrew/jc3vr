@@ -1,18 +1,17 @@
 //! A hand's target shape for a tick, pure: its measured curls, or what it holds wrapped by the
 //! grip pose.
 
-use crate::controllers::{
-    fingers::{
-        curl::{CurlSource, FingerCurls},
-        grip::{
-            Grip, GripSource,
-            blend::{self, BlendInputs},
-            catalogue::GripPose,
-        },
-        pose::{ALL_FINGERS, HandShape},
-        tuning::FingerTuning,
+use jc3vr_input::frame::HandInputs;
+
+use crate::controllers::fingers::{
+    curl::{CurlSource, FingerCurls},
+    grip::{
+        Grip, GripSource,
+        blend::{self, BlendInputs},
+        catalogue::GripPose,
     },
-    frame::HandInputs,
+    pose::{ALL_FINGERS, HandShape},
+    tuning::FingerTuning,
 };
 
 /// What a hand holds and how its fingers take it, for the readout.

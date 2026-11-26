@@ -39,12 +39,12 @@ use jc3gi::{
     types::math::Matrix4,
     ui::locator::Locale,
 };
+use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
 use crate::controllers::{
     bindings,
     config::CONTROLLERS_CONFIG,
-    frame::Hand,
     loadout::{ObjectAddress, Socket, live},
     spawn::{self, SpawnDefinition},
     summary::localise,

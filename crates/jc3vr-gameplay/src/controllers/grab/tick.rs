@@ -2,7 +2,7 @@
 //! placed, then, after the tables have latched the grips, publish the result for the readouts,
 //! submit the markers, and log each grip press.
 //!
-//! The readout is a leaf slot that any thread may read ([`status`]), as the status rows ([`crate::status`])
+//! The readout is a leaf slot that any thread may read ([`status`]), as the status rows (`status`)
 //! do in the middle of a frame (`docs/mod/threading.md`).
 
 use std::{
@@ -11,11 +11,11 @@ use std::{
 };
 
 use glam::Vec3;
+use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
 use crate::controllers::{
     bindings::controls::ButtonControl,
-    frame::Hand,
     grab::{
         GrabVolume, GripTarget, Reach, Resolved, Tier,
         latch::GripLatch,

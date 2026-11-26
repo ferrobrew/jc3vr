@@ -3,15 +3,12 @@
 //! the moment it acts; nothing is noted unless a recording or the lookback collects.
 
 use glam::{Quat, Vec3};
-use tracking_format::event::{GripRelease, Label, ReleasePose, Throw, WorldMotion};
-
-use crate::{
-    controllers::frame::Hand,
-    recorder::tracking::{
-        events::{self, EventKind},
-        format::hand_to_file,
-    },
+use jc3vr_input::frame::Hand;
+use jc3vr_render::recorder::tracking::{
+    events::{self, EventKind},
+    format::hand_to_file,
 };
+use tracking_format::event::{GripRelease, Label, ReleasePose, Throw, WorldMotion};
 
 /// An item that left a hand with a requested motion.
 #[derive(Debug, Copy, Clone, PartialEq)]

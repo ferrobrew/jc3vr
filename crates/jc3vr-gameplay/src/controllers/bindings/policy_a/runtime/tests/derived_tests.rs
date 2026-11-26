@@ -1,19 +1,17 @@
 //! Accepted semantic episodes through ordered delivery and the actual gesture tables.
 
 use jc3gi::input::input_action_map::Action;
+use jc3vr_input::frame::{HandFrame, InteractionProfile, TrackedPose};
+use jc3vr_render::vr::input::semantic::{admission, bound::of_sources};
 
 use super::*;
-use crate::{
-    controllers::{
-        bindings::{
-            controls::Controls,
-            grapple_button::GrappleContext,
-            tables::{Bindings, Step},
-        },
-        frame::{HandFrame, InteractionProfile, TrackedPose},
-        mode::{Mode, OnFootVariant},
+use crate::controllers::{
+    bindings::{
+        controls::Controls,
+        grapple_button::GrappleContext,
+        tables::{Bindings, Step},
     },
-    vr::input::semantic::{admission, bound::of_sources},
+    mode::{Mode, OnFootVariant},
 };
 
 const MODE: Mode = Mode::OnFoot(OnFootVariant::Ground);

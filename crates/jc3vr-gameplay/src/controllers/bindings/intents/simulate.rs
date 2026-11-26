@@ -9,20 +9,16 @@
 //! when one is set, and otherwise the middle of the pressed half.
 
 use glam::Vec2;
+use jc3vr_input::frame::{Hand, InteractionProfile};
+use jc3vr_render::vr::input::semantic::{
+    SemanticSet,
+    bound::{BoundSet, Layout},
+    defaults::Component,
+};
 
-use crate::{
-    controllers::{
-        bindings::{
-            controls::{ButtonControl, Controls, HandControls},
-            intents::{ActionInput, Intent, SemanticInput, SetInput},
-        },
-        frame::{Hand, InteractionProfile},
-    },
-    vr::input::semantic::{
-        SemanticSet,
-        bound::{BoundSet, Layout},
-        defaults::Component,
-    },
+use crate::controllers::bindings::{
+    controls::{ButtonControl, Controls, HandControls},
+    intents::{ActionInput, Intent, SemanticInput, SetInput},
 };
 
 /// The semantic input of `global` and `mode` for one tick of `controls` under `layout`, on Index

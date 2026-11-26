@@ -15,7 +15,6 @@
 
 pub mod config;
 pub mod cues;
-pub mod mixer;
 pub mod rumble;
 pub mod vocabulary;
 
@@ -23,21 +22,21 @@ use std::time::{Duration, Instant};
 
 pub use config::HapticsConfig;
 pub use cues::{Category, Event, Sustain};
+use jc3vr_input::{
+    frame::Hand,
+    haptics::{
+        mixer::{MixStats, Sustained, Transient},
+        output,
+    },
+};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::{
-    controllers::{
-        config::{CONTROLLERS_CONFIG, ControllersConfig},
-        diagnostics,
-        frame::Hand,
-        haptics::{
-            mixer::{MixStats, Sustained, Transient},
-            vocabulary::{Primitive, VOCABULARY},
-        },
-        scheme,
-    },
-    input_core::haptics::output,
+use crate::controllers::{
+    config::{CONTROLLERS_CONFIG, ControllersConfig},
+    diagnostics,
+    haptics::vocabulary::{Primitive, VOCABULARY},
+    scheme,
 };
 
 /// The haptics' hooks, aggregated by [`crate::controllers::hook_library`].

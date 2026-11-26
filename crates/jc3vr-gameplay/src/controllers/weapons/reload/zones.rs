@@ -18,12 +18,10 @@
 use std::time::{Duration, Instant};
 
 use glam::Vec3;
+use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
-use crate::controllers::{
-    frame::Hand,
-    weapons::reload::plan::{LoadKind, WellFrame},
-};
+use crate::controllers::weapons::reload::plan::{LoadKind, WellFrame};
 
 /// The space under a gun's magazine well, in the cockpit frame.
 #[derive(Debug, Copy, Clone, PartialEq)]

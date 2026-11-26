@@ -3,20 +3,18 @@
 use std::num::NonZeroU64;
 
 use jc3gi::character::inventory::WeaponSlot;
+use jc3vr_input::frame::Hand;
 use pretty_assertions::assert_eq;
 
 use super::fixtures::{a_pistol, check_invariants, object, take, weapon};
-use crate::controllers::{
-    frame::Hand,
-    loadout::{
-        BodyLayout, Event, ResetKind, Socket,
-        binding::Binding,
-        item::ItemKind,
-        projection::{SlotContent, project_store},
-        safe_items::{ItemLeaseId, SafeItemError},
-        table::{Departure, Loadout, Place},
-        transition::{Release, Removal, RemovalWhy, TransitionError},
-    },
+use crate::controllers::loadout::{
+    BodyLayout, Event, ResetKind, Socket,
+    binding::Binding,
+    item::ItemKind,
+    projection::{SlotContent, project_store},
+    safe_items::{ItemLeaseId, SafeItemError},
+    table::{Departure, Loadout, Place},
+    transition::{Release, Removal, RemovalWhy, TransitionError},
 };
 
 #[test]

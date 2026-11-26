@@ -5,28 +5,26 @@
 use std::time::Instant;
 
 use glam::Vec3;
+use jc3vr_input::frame::Hand;
+use jc3vr_render::vr::recenter_count;
 
-use crate::{
-    controllers::{
-        frame::Hand,
-        haptics::{self, Sustain},
-        mode::{self, Mode, OnFootVariant},
-        physical_hands::{
-            PhysicalHandsConfig,
-            climb::{
-                config::CLIMB,
-                engine,
-                solve::tension,
-                state::{Event, MIN_TENSION, STATE, enabled},
-                types::{Hold, Observed},
-            },
-            contact::{Surface, SurfaceHit},
-            palm::PalmBox,
-            physics::drive::rig_jumped,
-            pickup::REACH_DIRECTIONS,
+use crate::controllers::{
+    haptics::{self, Sustain},
+    mode::{self, Mode, OnFootVariant},
+    physical_hands::{
+        PhysicalHandsConfig,
+        climb::{
+            config::CLIMB,
+            engine,
+            solve::tension,
+            state::{Event, MIN_TENSION, STATE, enabled},
+            types::{Hold, Observed},
         },
+        contact::{Surface, SurfaceHit},
+        palm::PalmBox,
+        physics::drive::rig_jumped,
+        pickup::REACH_DIRECTIONS,
     },
-    vr::recenter_count,
 };
 
 /// The surface `palm` reaches: the nearest hit, on a body a hand climbs ([`engine::climbable`]), of
@@ -36,7 +34,7 @@ use crate::{
 /// # Safety
 ///
 /// The game thread, outside the physics step; `cast` must cast against the live world.
-pub(crate) unsafe fn reach(
+pub unsafe fn reach(
     palm: &PalmBox,
     reach_m: f32,
     cast: &mut impl FnMut(Vec3, Vec3) -> Option<SurfaceHit>,
@@ -71,7 +69,7 @@ pub(crate) unsafe fn reach(
 /// Publish what the palms' tick found, with where the player's body is, and pulse the hands for
 /// the last step's grips and releases. Called from the palms' tick, on the game thread outside the
 /// physics step.
-pub(crate) fn observe(observed: Observed, config: &PhysicalHandsConfig) {
+pub fn observe(observed: Observed, config: &PhysicalHandsConfig) {
     let Observed {
         palms,
         reaches,

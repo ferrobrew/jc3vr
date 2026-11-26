@@ -18,12 +18,10 @@ use jc3gi::{
     animation::ik::{HumanIK, Pass},
     character::character::Character,
 };
+use jc3vr_core::frame_timing::{self, Slot};
 use re_utilities::hook_library::HookLibrary;
 
-use crate::{
-    controllers::{body::procedural::at_solve_gate, hands::ik::queue_deferred},
-    frame_timing::{self, Slot},
-};
+use crate::controllers::{body::procedural::at_solve_gate, hands::ik::queue_deferred};
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&HUMAN_IK_HAS_TARGETS_BINDER)

@@ -8,10 +8,9 @@
 
 use body_rig::geometry::closest_on_segment;
 use glam::{Quat, Vec3};
+use jc3vr_input::frame::Pose;
 
-use crate::controllers::{
-    fingers::grip::catalogue::GripPose, frame::Pose, hands::pose as hand_pose,
-};
+use crate::controllers::{fingers::grip::catalogue::GripPose, hands::pose as hand_pose};
 
 /// A part of a gun a hand can hold it by.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]

@@ -5,9 +5,9 @@
 //! tick ([`crate::controllers::physical_hands::main_thread_tick`]) only on that thread.
 
 use glam::Vec3;
+use jc3vr_input::frame::Hand;
 
 use crate::controllers::{
-    frame::Hand,
     haptics::{self, Event, Sustain},
     physical_hands::{
         HandStatus, PhysicalHandsConfig, ShoveReport, State, bodies,

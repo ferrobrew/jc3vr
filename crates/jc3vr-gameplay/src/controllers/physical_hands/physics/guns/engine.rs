@@ -9,10 +9,10 @@ use jc3gi::{
     havok::hknpShape,
     physics::PfxRigidBody,
 };
+use jc3vr_input::frame::{Hand, Pose};
 
 use crate::controllers::{
     aim::gun,
-    frame::{Hand, Pose},
     hands::{self, grip},
     physical_hands::{
         bodies,

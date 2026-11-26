@@ -40,14 +40,11 @@ use jc3gi::{
     state::StateBitFlag,
     vehicle::vehicle::Seat,
 };
+pub(crate) use jc3vr_input::capture::{DebugUiInput, debug_ui_capture, update_debug_ui_capture};
+use jc3vr_input::frame::ActionSetKind;
 use parking_lot::Mutex;
 
-pub(crate) use crate::input_core::capture::{
-    DebugUiInput, debug_ui_capture, update_debug_ui_capture,
-};
-use crate::{
-    controllers::frame::ActionSetKind, grapple::hook, hooks::animation::active_state_type_id,
-};
+use crate::{grapple::hook, hooks::animation::active_state_type_id};
 
 /// The mod contributes a UI-mode signal only while it owns editing input.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -397,7 +394,7 @@ pub(crate) fn tick() -> Detection {
         tracing::debug!(target: "controllers", ?before, after = ?detection.mode, "mode change");
     }
     *LAST_SNAPSHOT.lock() = Some(snapshot);
-    crate::vr::input::set_active_action_set(detection.mode.action_set());
+    jc3vr_render::vr::input::set_active_action_set(detection.mode.action_set());
     detection
 }
 

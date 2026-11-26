@@ -1,15 +1,12 @@
 //! The snatch's phase changes as tracking-recording events: what the step saw on its way from one
 //! phase to the next, gathered while it runs and noted once it has settled.
 
-use tracking_format::event::{Label, Snatch};
-
-use crate::{
-    controllers::frame::Hand,
-    recorder::tracking::{
-        events::{self, EventKind},
-        format::hand_to_file,
-    },
+use jc3vr_input::frame::Hand;
+use jc3vr_render::recorder::tracking::{
+    events::{self, EventKind},
+    format::hand_to_file,
 };
+use tracking_format::event::{Label, Snatch};
 
 /// What a step saw beyond the phases it went between.
 #[derive(Debug, Default)]

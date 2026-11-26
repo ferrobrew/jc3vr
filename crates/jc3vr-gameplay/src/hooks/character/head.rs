@@ -5,19 +5,18 @@
 
 use glam::Quat;
 use jc3gi::character::character::{AnimatedModel, Character, Joint, SafeBoneIndex};
+use jc3vr_render::{
+    headpose::{self, Source},
+    hooks::graphics_engine::render_block,
+    vr::VR_CONFIG,
+};
 
 use crate::{
     controllers::body::procedural::head::head_bone_world,
-    headpose::{self, Source},
-    hooks::{
-        self,
-        character::{
-            body_ik::{PRE_IK_POSE, PreIkPose, body_ik_status, tuning::BODY_IK_TUNING},
-            config::BODY_IK_CONFIG,
-        },
-        graphics_engine::render_block,
+    hooks::character::{
+        body_ik::{PRE_IK_POSE, PreIkPose, body_ik_status, tuning::BODY_IK_TUNING},
+        config::BODY_IK_CONFIG,
     },
-    vr::VR_CONFIG,
 };
 
 /// Hide the player's head and drive its full pose from the headpose.
@@ -127,7 +126,7 @@ pub(crate) unsafe fn override_head(character: *mut Character) {
         // Only drive the head/neck from the headpose while gameplay owns the character. Outside
         // E_GAME_RUN the engine repositions Rico for a teleport (issue #27), so the mod stops driving
         // his pose and lets the animation/engine place him.
-        let in_gameplay = hooks::in_gameplay();
+        let in_gameplay = jc3vr_core::hooks::in_gameplay();
 
         // Only override the pose once a valid anchor exists; until then (loading screens, garbage
         // bone data) the bone keeps its animated pose.

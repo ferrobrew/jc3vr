@@ -12,7 +12,7 @@
 //! - [`seat`]: the seat-transition phases and modes.
 //!
 //! The frame half runs once per rendered VR frame from the pose composition
-//! ([`compose_cockpit`], called by [`crate::vr::begin_render_frame`] on the game thread, after the
+//! ([`compose_cockpit`], called by [`jc3vr_render::vr::begin_render_frame`] on the game thread, after the
 //! simulation tick and before the render update): it resolves the posture, remaps the head height,
 //! hands the cockpit to the rig's frame half for the shift, tracks the seat phase, and advances the
 //! fade. It publishes what the simulation half needs ([`FrameShared`]).
@@ -38,11 +38,17 @@ use std::{
 
 use glam::{Quat, Vec3};
 use jc3gi::character::character::Character;
+use jc3vr_input::frame as controllers_frame;
+pub use jc3vr_render::vr::FrameInputs;
+use jc3vr_render::{
+    controllers::body::rig::origin_provenance::{OriginEvidence, TrackingReceipt},
+    headpose,
+    vr::{self, CockpitPositions, RecenterCause, RecenterKind, stage::StageInfo},
+};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 pub use seat::SeatPhase;
 
-pub use crate::vr::FrameInputs;
 use crate::{
     controllers::{
         body::{
@@ -53,12 +59,11 @@ use crate::{
                     probe::{self, ProbeResult},
                 },
                 grounded, live_observation,
-                origin_provenance::{OriginEvidence, TrackingReceipt},
                 root::{self as rig_root, FrameSourceSnapshot, RootStatus, capsule_enabled},
             },
         },
         config::{CONTROLLERS_CONFIG, Posture, RoomscaleConfig},
-        frame as controllers_frame, locomotion,
+        locomotion,
         mode::{Mode, current as current_mode},
         roomscale::{
             crouch::{CROUCH_EXIT_DROP_M, CrouchTracker},
@@ -72,9 +77,7 @@ use crate::{
         },
         vehicles::driving_view,
     },
-    headpose,
-    hooks::{self, animation::active_state_type_id},
-    vr::{self, CockpitPositions, RecenterCause, RecenterKind, stage::StageInfo},
+    hooks::animation::active_state_type_id,
 };
 
 /// The roomscale hooks, aggregated by [`crate::controllers::hook_library`].
@@ -106,7 +109,7 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
     let stage = vr::stage::stage();
     let player = body::player();
     let now = Instant::now();
-    let in_gameplay = hooks::in_gameplay();
+    let in_gameplay = jc3vr_core::hooks::in_gameplay();
     let on_foot = headpose::sim::mode() == headpose::sim::HeadMode::OnFoot;
     let moving = {
         let stick = locomotion::status();
@@ -353,7 +356,7 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
     }
 }
 
-/// The frame half as the VR frame drives it ([`crate::vr::FrameParticipants`]): [`compose_cockpit`],
+/// The frame half as the VR frame drives it ([`jc3vr_render::vr::FrameParticipants`]): [`compose_cockpit`],
 /// keeping the composition's source for [`publish_composition`], which the frame calls once the
 /// pose pair is published.
 pub(crate) fn compose_frame(inputs: &FrameInputs) -> CockpitPositions {
@@ -420,7 +423,7 @@ const MOVING_STICK: f32 = 0.2;
 
 /// Re-base the cockpit shift after the recenter baseline was re-based
 /// ([`crate::controllers::body::rig::root::on_recenter`]). Called by the recenter at the top of the
-/// frame ([`crate::vr::auto_recenter_tick`]).
+/// frame ([`jc3vr_render::vr::auto_recenter_tick`]).
 ///
 /// A manual recenter is also the player saying "this is how I am": in the automatic posture it
 /// classifies seated or standing at once from the head height, and while seated it captures the

@@ -15,7 +15,7 @@
 //!   through the inputs the controllers register (`crate::controllers::register_render`).
 //!
 //! The game's own HUD reticles, hidden while the hands aim, are the HUD's
-//! (`crate::hud::game_reticle`).
+//! (`hud::game_reticle`).
 //!
 //! The overlay draws at the end of `RenderEngine::PostDraw`, onto the eye's final back buffer
 //! before the HUD panel, after the post chain and the upscaler: the readouts keep their colours
@@ -27,37 +27,31 @@ pub mod producers;
 
 // The render layer's half lives in the render crate; the old path keeps working until the final
 // cleanup pass.
-pub(crate) use jc3vr_render::controllers::overlay::{pass, primitive, resolve, store};
-
-pub use crate::controllers::overlay::pass::{OverlayStatus, status};
-pub(crate) use crate::controllers::overlay::pass::{draw, release_on_eject};
-use crate::{
-    controllers::{
-        config::CONTROLLERS_CONFIG,
-        hands::late,
-        overlay::{pass::DrawSettings, resolve::HandPoses},
-        scheme,
-    },
-    hooks,
+use jc3vr_render::controllers::overlay::{pass::DrawSettings, resolve::HandPoses};
+pub use jc3vr_render::controllers::overlay::{
+    pass::{self, OverlayStatus, draw, release_on_eject, status},
+    primitive, resolve, store,
 };
+
+use crate::controllers::{config::CONTROLLERS_CONFIG, hands::late, scheme};
 
 /// Run the overlay's producers. Called once per render dispatch at the end of
 /// `RenderEngine::PostDraw`, before the engine's context lock is taken; it acts only on the
 /// frame's first eye.
 pub(crate) fn tick(eye: usize) {
-    if !crate::stereo::dispatch::first_ui_eye(eye) || crate::stereo::far_phase() {
+    if !jc3vr_render::stereo::dispatch::first_ui_eye(eye) || jc3vr_render::stereo::far_phase() {
         return;
     }
     let active = CONTROLLERS_CONFIG.query(|c| c.enabled && c.overlay.enabled)
         && scheme::is_controllers()
-        && hooks::in_gameplay();
+        && jc3vr_core::hooks::in_gameplay();
     producers::tick(active, &render_poses());
 }
 
 /// Each hand's world poses as it is drawn at the camera's interpolation fraction, so what is
 /// anchored to a hand stays on the hand the late update and the presentation layer draw.
-pub(crate) fn render_poses() -> [Option<HandPoses>; 2] {
-    late::drawn_hands(hooks::camera::last_dtf()).map(|hand| {
+pub fn render_poses() -> [Option<HandPoses>; 2] {
+    late::drawn_hands(jc3vr_render::hooks::camera::last_dtf()).map(|hand| {
         hand.map(|h| HandPoses {
             wrist: h.wrist,
             grip: h.grip,

@@ -9,13 +9,14 @@
 
 use std::sync::Arc;
 
+use jc3vr_core::lifecycle::{self, ParticipantId, RegistrationError};
+
 use crate::{
     controllers::{
         physical_hands::human_hull::{self, HumanHullShutdown},
         weapons::{grenade, inventory::spawn_safety, reload::shutdown as magazine_shutdown},
     },
-    hooks::{self, character::magazine},
-    lifecycle::{self, ParticipantId, RegistrationError},
+    hooks::character::magazine,
 };
 
 pub(super) fn register() -> Result<(), RegistrationError> {
@@ -38,11 +39,11 @@ pub(super) fn register() -> Result<(), RegistrationError> {
         tracing::error!(%error, "human hull installation refused without shutdown preparation");
         return Err(error);
     }
-    hooks::register_post_enable(magazine_shutdown::activate);
-    hooks::register_post_enable(spawn_safety::activate);
-    hooks::register_post_unpatch(magazine_shutdown::deactivate_after_unpatch);
-    hooks::register_post_unpatch(spawn_callbacks_returned);
-    hooks::register_post_unpatch(native_callbacks_returned);
+    jc3vr_core::hooks::register_post_enable(magazine_shutdown::activate);
+    jc3vr_core::hooks::register_post_enable(spawn_safety::activate);
+    jc3vr_core::hooks::register_post_unpatch(magazine_shutdown::deactivate_after_unpatch);
+    jc3vr_core::hooks::register_post_unpatch(spawn_callbacks_returned);
+    jc3vr_core::hooks::register_post_unpatch(native_callbacks_returned);
     Ok(())
 }
 

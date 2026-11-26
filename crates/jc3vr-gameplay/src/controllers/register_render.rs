@@ -4,22 +4,11 @@
 //! (the grapple's aim matrix and the camera height readout).
 
 use jc3gi::graphics_engine::{device::Device, texture::Texture};
-use windows::Win32::Graphics::Direct3D11::ID3D11DeviceContext;
-
-use crate::{
-    controllers::{
-        aim,
-        body::estimator,
-        overlay::{
-            self,
-            pass::{OverlayInputs, register_overlay_inputs},
-        },
-        presentation::PlayerBodyEdits,
-        weapons::scope,
-    },
-    frame_timing::{self, Slot},
+use jc3vr_core::frame_timing::{self, Slot};
+use jc3vr_render::{
+    controllers::overlay::pass::{OverlayInputs, register_overlay_inputs},
     hooks::{
-        camera::{CameraParticipants, height, register_camera_participants},
+        camera::{CameraParticipants, register_camera_participants},
         graphics_engine::{
             palette_edit::register_player_draw_edits,
             post_draw::{
@@ -28,6 +17,12 @@ use crate::{
             },
         },
     },
+};
+use windows::Win32::Graphics::Direct3D11::ID3D11DeviceContext;
+
+use crate::{
+    controllers::{aim, body::estimator, overlay, presentation::PlayerBodyEdits, weapons::scope},
+    hooks::camera::height,
 };
 
 pub(super) fn register() {

@@ -305,17 +305,15 @@ mod tests {
     use std::num::NonZeroUsize;
 
     use glam::{Mat4, Vec3};
+    use jc3vr_input::frame::Pose;
 
     use super::*;
-    use crate::controllers::{
-        frame::Pose,
-        physical_hands::{
-            doors::{DoorTarget, config::TEARING},
-            grasp::Grip,
-            hold::{self, HandHold},
-            pickup::{HeldReport, PICKUP, PickupTuning, tick::carry_tuning},
-            rigid::{BodyPose, Velocities},
-        },
+    use crate::controllers::physical_hands::{
+        doors::{DoorTarget, config::TEARING},
+        grasp::Grip,
+        hold::{self, HandHold},
+        pickup::{HeldReport, PICKUP, PickupTuning, tick::carry_tuning},
+        rigid::{BodyPose, Velocities},
     };
 
     fn held() -> Held {

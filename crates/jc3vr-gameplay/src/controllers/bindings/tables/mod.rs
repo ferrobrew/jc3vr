@@ -3,8 +3,8 @@
 //! the timed presses, what each grip press is doing ([`GripLatch`]), the wingsuit's evade press,
 //! and the menu and pad latches).
 //!
-//! Each mode reads the semantic actions of its action set ([`crate::vr::input::semantic`]), which
-//! the player can rebind in the runtime; [`crate::vr::input::semantic::defaults`] suggests the
+//! Each mode reads the semantic actions of its action set ([`jc3vr_render::vr::input::semantic`]), which
+//! the player can rebind in the runtime; [`jc3vr_render::vr::input::semantic::defaults`] suggests the
 //! layout. The gestures, the grabs, the chords, and the pointers read the raw controls instead, and
 //! what they claim of a hand is masked from the semantic actions bound there
 //! ([`crate::controllers::bindings::intents`]).
@@ -45,44 +45,42 @@ pub mod menu;
 pub mod sink;
 
 use jc3gi::input::input_action_map::Action;
+use jc3vr_input::frame::Hand;
+use jc3vr_render::vr::input::semantic::{
+    SemanticSet,
+    bound::{Physical, PhysicalSet},
+    vocabulary::{
+        ActionId, GlobalAction, HelicopterAction, LandVehicleAction, MenuAction, OnFootAction,
+        PlaneAction, WingsuitAction,
+    },
+};
 
-use crate::{
-    controllers::{
-        bindings::{
-            bail::ExitLatch,
-            controls::{ButtonControl, Controls},
-            grapple_button::{
-                GrappleActions, GrappleButton, GrappleContext, GrapplePermissions, GrappleTick,
-                LockButton, SeatRequest,
-            },
-            hold::{Desired, MapKind, Target, Want},
-            intents::{Gestures, Intents, Mask, MaskScope, SemanticInput},
-            policy_a::runtime::Tick,
-            tables::{
-                declare::{PAD_Y_VEHICLE, TableCtx, declare, exit_action, stunt_action},
-                sink::{
-                    Axis, EvalSink, Input, Latches, MAX_TIMED, MenuLatch, PadLatch, Press,
-                    PressTimer, Sink, TimedLatch,
-                },
+use crate::controllers::{
+    bindings::{
+        bail::ExitLatch,
+        controls::{ButtonControl, Controls},
+        grapple_button::{
+            GrappleActions, GrappleButton, GrappleContext, GrapplePermissions, GrappleTick,
+            LockButton, SeatRequest,
+        },
+        hold::{Desired, MapKind, Target, Want},
+        intents::{Gestures, Intents, Mask, MaskScope, SemanticInput},
+        policy_a::runtime::Tick,
+        tables::{
+            declare::{PAD_Y_VEHICLE, TableCtx, declare, exit_action, stunt_action},
+            sink::{
+                Axis, EvalSink, Input, Latches, MAX_TIMED, MenuLatch, PadLatch, Press, PressTimer,
+                Sink, TimedLatch,
             },
         },
-        config::BindingsConfig,
-        frame::Hand,
-        grab::{
-            GrabVolume,
-            latch::{GripLatch, LatchTick},
-        },
-        mode::{AirborneVariant, Mode, VehicleClass, VehicleSeat},
-        weapons::wheel::select::WheelPress,
     },
-    vr::input::semantic::{
-        SemanticSet,
-        bound::{Physical, PhysicalSet},
-        vocabulary::{
-            ActionId, GlobalAction, HelicopterAction, LandVehicleAction, MenuAction, OnFootAction,
-            PlaneAction, WingsuitAction,
-        },
+    config::BindingsConfig,
+    grab::{
+        GrabVolume,
+        latch::{GripLatch, LatchTick},
     },
+    mode::{AirborneVariant, Mode, VehicleClass, VehicleSeat},
+    weapons::wheel::select::WheelPress,
 };
 
 /// One tick's output of the tables.

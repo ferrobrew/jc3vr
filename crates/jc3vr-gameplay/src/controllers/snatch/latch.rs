@@ -13,15 +13,13 @@
 use std::time::Duration;
 
 use glam::Vec3;
-
-use crate::controllers::{
-    frame::Hand,
-    overlay::{
-        primitive::{Anchor, DepthMode, Facing, HandPose, Primitive, Shape, Source, SpriteSize},
-        store,
-    },
-    snatch::SwingReadout,
+use jc3vr_input::frame::Hand;
+use jc3vr_render::controllers::overlay::{
+    primitive::{Anchor, DepthMode, Facing, HandPose, Primitive, Shape, Source, SpriteSize},
+    store,
 };
+
+use crate::controllers::snatch::SwingReadout;
 
 /// Draw the latch of `hand` on the target at the world point `point`.
 pub(super) fn submit(hand: Hand, point: Vec3) {

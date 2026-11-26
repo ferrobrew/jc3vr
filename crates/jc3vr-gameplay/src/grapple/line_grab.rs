@@ -13,18 +13,18 @@
 //! ([`handed_back_m`]).
 
 use glam::Vec3;
+use jc3vr_input::frame::{Hand, Pose};
+use jc3vr_render::headpose::xr;
 
 use crate::{
     controllers::{
         aim::GRAPPLE_ORIGIN_M,
         bindings::yank::HandLine,
-        frame::{Hand, Pose},
         grab::{GrabVolume, GripTarget, Mark, MarkAt, Provided, latch::GripLatch},
         hands::{self, ik},
         physical_hands, snatch,
     },
     grapple::{physical::lock, rope::held_floor},
-    headpose::xr,
 };
 
 /// Where the free hand may take the line, metres: how far ahead of the grapple hand's wrist along

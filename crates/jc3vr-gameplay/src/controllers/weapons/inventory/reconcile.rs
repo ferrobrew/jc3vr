@@ -34,11 +34,11 @@ use jc3gi::{
     },
     equipment::weapon::{WeaponBase, WeaponState},
 };
+use jc3vr_input::frame::Hand;
 
 use crate::{
     controllers::{
         aim::gun,
-        frame::Hand,
         loadout::{LoadoutSnapshot, Place, Projection, SlotContent, Socket, StoreProjection, live},
         weapons::{
             engine,

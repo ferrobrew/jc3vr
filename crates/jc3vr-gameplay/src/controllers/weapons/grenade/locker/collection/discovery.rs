@@ -4,13 +4,11 @@ use jc3gi::{
     graphics_engine::model_instance::{ModelCollection, ModelInstance, ModelManager},
     location::{GameLocationSystemContext, Location, LocationInfo, LocationType},
 };
+use jc3vr_core::hash::hashlittle;
 
-use crate::{
-    controllers::weapons::grenade::locker::{
-        collection::{MAX_PATH_BYTES, Observation, capture, path, visible},
-        format::{Dictionary, grenade_model, loaded_location},
-    },
-    hash::hashlittle,
+use crate::controllers::weapons::grenade::locker::{
+    collection::{MAX_PATH_BYTES, Observation, capture, path, visible},
+    format::{Dictionary, grenade_model, loaded_location},
 };
 
 /// Copy qualifying sources while the game thread owns a stable loaded-location list.

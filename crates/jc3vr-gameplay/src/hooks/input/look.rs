@@ -21,14 +21,14 @@ use jc3gi::input::{
     input_action_map::{Action, EffectorState, LocalPlayerActionMap},
     input_device_manager::InputDeviceManager,
 };
+use jc3vr_core::frame_timing::{self, Slot};
+use jc3vr_input::capture::input_captured;
+use jc3vr_render::headpose;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{
     controllers::{self, bindings::hold::DevicePoll},
-    frame_timing::{self, Slot},
-    headpose,
     hooks::input::swim::{log_tick, refuse_swim_moves},
-    input_core::capture::input_captured,
 };
 
 pub(super) fn hook_library() -> HookLibrary {

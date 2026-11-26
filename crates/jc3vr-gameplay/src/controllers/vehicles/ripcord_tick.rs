@@ -7,6 +7,7 @@
 //! tick, as the button does.
 
 use jc3gi::input::input_action_map::Action::OPEN_PARACHUTE;
+use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
 use crate::controllers::{
@@ -17,7 +18,6 @@ use crate::controllers::{
     body,
     config::ControllersConfig,
     fingers::grip::{self, Grip, GripSource},
-    frame::Hand,
     grab::{GrabVolume, GripTarget, Mark, MarkAt, MarkStyle, Shown, Tier},
     hands::{self, ActiveHands},
     haptics::{self, Event},

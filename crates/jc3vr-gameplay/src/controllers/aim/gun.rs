@@ -30,6 +30,7 @@ use jc3gi::{
     },
     types::math::Vector3,
 };
+use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
@@ -40,7 +41,6 @@ use crate::controllers::{
         sights::{self, ResolvedSight},
     },
     config::AimConfig,
-    frame::Hand,
     hands::late,
     vehicles,
     weapons::{

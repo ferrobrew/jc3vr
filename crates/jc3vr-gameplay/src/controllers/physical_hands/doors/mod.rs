@@ -25,7 +25,7 @@ pub mod config;
 pub mod engine;
 pub mod geometry;
 pub mod hinge;
-pub(crate) mod pressure;
+pub mod pressure;
 pub(crate) mod scan;
 pub mod table;
 pub(crate) mod tearing;
@@ -35,19 +35,17 @@ use std::{num::NonZeroUsize, time::Instant};
 pub use config::DoorsConfig;
 use glam::{Mat4, Vec3};
 use jc3gi::{physics::GameMaterialId, vehicle::vehicle::DoorSlot};
+use jc3vr_input::frame::Pose;
 
-use crate::controllers::{
-    frame::Pose,
-    physical_hands::{
-        contact::SurfaceHit,
-        doors::{
-            acquisition::{PanelBody, PanelReach},
-            engine::DoorError,
-            geometry::pull,
-        },
-        grasp::{Reach, TargetKind},
-        pickup::diagnostics::scan::{Branch, Scan, ScanEntry, ScanResult},
+use crate::controllers::physical_hands::{
+    contact::SurfaceHit,
+    doors::{
+        acquisition::{PanelBody, PanelReach},
+        engine::DoorError,
+        geometry::pull,
     },
+    grasp::{Reach, TargetKind},
+    pickup::diagnostics::scan::{Branch, Scan, ScanEntry, ScanResult},
 };
 
 /// A door a hand can take.
@@ -433,9 +431,10 @@ mod tests {
         assert!(panel_hit(&door, &hit));
         hit.material = Some(GameMaterialId::EGameMaterialId_Glass as u32);
         assert!(!panel_hit(&door, &hit));
-        door.part_hash = table::parse(include_str!(
-            "../../../../../tools/door_handles/door_handles.json"
-        ))
+        door.part_hash = table::parse(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tools/door_handles/door_handles.json"
+        )))
         .unwrap()
         .into_iter()
         .find(|entry| entry.part == "fighterjet_door_f")

@@ -15,11 +15,11 @@ use jc3gi::{
     equipment::weapon::{WeaponBase, WeaponGripHand},
     types::math::Matrix4,
 };
+use jc3vr_input::frame::{Hand, Pose};
 use parking_lot::Mutex;
 
 use crate::controllers::{
     aim::gun,
-    frame::{Hand, Pose},
     grab::Candidate,
     hands::{ActiveHands, CockpitHand},
     physical_hands::grab_view,
