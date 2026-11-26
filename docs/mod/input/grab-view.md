@@ -53,7 +53,7 @@ The input tick draws it all after the grip model's own finish (`bindings::input_
 
 ## Anchoring
 
-Everything is anchored at render time ([render-time-anchoring.md](../rendering/render-time-anchoring.md)). The hands' ends of the lines follow the hands as they are drawn. A target's end of its line is where its grip marker is, anchored as the marker is. The reach rays and their hits ride with the player, so they are anchored to the render-time head at their offset from the head of the tick that cast them, as the palm boxes are. The door handles, the candidates' boxes, and a refusal the physical hands made lie in the world and are world anchors; the candidates are read a few times a second, so a box on something moving lags it by up to one read.
+Everything is anchored at render time ([render-time-anchoring.md](../rendering/render-time-anchoring.md)). The hands' ends of the lines follow the hands as they are drawn. A target's end of its line is where its grip marker is, anchored as the marker is. The reach rays and their hits ride with the player, so they are anchored to the render-time head at their offset from the head of the tick that cast them. The door handles, the candidates' boxes, and a refusal the physical hands made lie in the world and are world anchors; the candidates are read a few times a second, so a box on something moving lags it by up to one read.
 
 ## Cost and caps
 

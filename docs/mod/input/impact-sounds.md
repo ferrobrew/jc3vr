@@ -17,7 +17,7 @@ Grabbing a ledge or a door sounds when the hand arrives fast enough to count as 
 
 ## Settings, readout, and log
 
-`controllers.physical_hands.sounds.enabled` (on) switches them, in the debug UI's Feedback feature, under the `IMPACT SOUNDS` status row with the counts, and with the last sound's kind and material. The thresholds and the cooldowns are fixed in `physical_hands::sounds::SOUNDS`.
+The sounds are always on under the controller scheme. The debug UI's Feedback feature shows them under the `IMPACT SOUNDS` status row with the counts, and with the last sound's kind and material. The thresholds and the cooldowns are fixed in `physical_hands::sounds::SOUNDS`.
 
 The debug UI's Status page has `IMPACT SOUNDS` under FEEDBACK: the sounds played, the impacts the cooldowns held back, and the impacts whose material has no melee impact sound (`SILENT`).
 
@@ -33,8 +33,7 @@ Both sources run on the game thread outside the physics step: the palms' tick (t
 2. Touch the wall slowly: no sound.
 3. Slap a car, a wooden crate, and the ground: each sounds like a punch on its material. Report a material that is silent (`SILENT` counts up and the log names the material).
 4. Punch a soldier: a punch-on-flesh sound with the blow.
-5. Turn `physical_hands.sounds.enabled` off: slaps are silent and the row reads `OFF`.
-6. Slap with both hands at once: two sounds at most, never a doubled one from a single hand.
+5. Slap with both hands at once: two sounds at most, never a doubled one from a single hand.
 
 ## Open questions
 

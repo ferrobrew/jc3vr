@@ -262,7 +262,7 @@ In the headset:
 
 ### Phase 4: car doors
 
-Built, and offered while the doors' own `physical_hands.doors.enabled` is on. A closed door of the vehicle under the aim whose handle area is within `SNATCH.door_reach_m` of the aim's point is the target, found by the doors' own reach ([vehicle-doors.md](vehicle-doors.md)) with the aim's point standing in for the palm; a vehicle moving faster than `SNATCH.door_max_vehicle_speed_mps`, read from the body the aim hit, is refused. The yank fires the hook at the vehicle, latched at the handle in the vehicle's frame. Once it holds, the door's latch is undone as a hand's pull undoes it, the door's own body is pushed outward at the handle by its mass times `SNATCH.door_swing_mps`, and the wire ends. The door swings; nothing comes into the hand.
+Built, and always offered. A closed door of the vehicle under the aim whose handle area is within `SNATCH.door_reach_m` of the aim's point is the target, found by the doors' own reach ([vehicle-doors.md](vehicle-doors.md)) with the aim's point standing in for the palm; a vehicle moving faster than `SNATCH.door_max_vehicle_speed_mps`, read from the body the aim hit, is refused. The yank fires the hook at the vehicle, latched at the handle in the vehicle's frame. Once it holds, the door's latch is undone as a hand's pull undoes it, the door's own body is pushed outward at the handle by its mass times `SNATCH.door_swing_mps`, and the wire ends. The door swings; nothing comes into the hand.
 
 In the headset:
 
