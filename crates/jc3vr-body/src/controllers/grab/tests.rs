@@ -7,7 +7,10 @@ use super::{
     resolve::{Lost, choose, dock_target, losers, nearest_within, resolve},
     *,
 };
-use crate::controllers::{grab::socket::Socket, intent::controls::ButtonControl};
+use crate::controllers::{
+    grab::{socket::Socket, tuning::GRAB},
+    intent::controls::ButtonControl,
+};
 
 fn sphere(volume: GrabVolume, x: f32, radius: f32, hand: Option<Hand>) -> GripTarget {
     GripTarget::sphere(
@@ -577,7 +580,7 @@ fn a_hand_that_closes_just_before_it_arrives_takes_what_it_arrives_at() {
         ..tick(HELD, Some(handle))
     };
     assert_eq!(latch.step(arriving), Some(handle));
-    const { assert!(super::latch::FIST_WINDOW_S >= 2.0 * DT) };
+    assert!(GRAB.get().reach.fist_window_s >= 2.0 * DT);
 }
 
 #[test]

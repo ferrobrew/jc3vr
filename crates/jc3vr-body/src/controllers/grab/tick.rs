@@ -18,6 +18,7 @@ use crate::{
             latch::GripLatch,
             markers::{self, MarkerFrame},
             resolve::{self, losers, nearest_miss},
+            tuning::GRAB,
         },
         hands::ActiveHands,
         intent::controls::ButtonControl,
@@ -88,11 +89,9 @@ pub fn palm_summary_registered() -> bool {
     PALM_SUMMARY.get().is_some()
 }
 
-/// How long a hand that leaves a body slot's reach still takes from it ([`resolve::recall`]).
-pub const RECALL_S: f32 = 0.3;
-
 /// Note the body slots each hand is in reach of this tick, and let a hand in reach of nothing (or
-/// only a remote target) take the one it was in reach of within [`RECALL_S`], most recent first.
+/// only a remote target) take the one it was in reach of within the grab tuning's `reach.recall_s`,
+/// most recent first.
 fn recall_body_slots(
     targets: &[GripTarget],
     grips: [Option<Vec3>; 2],
@@ -100,11 +99,12 @@ fn recall_body_slots(
     notes: &mut [Vec<String>; 2],
     now: Instant,
 ) {
+    let recall_s = GRAB.get().reach.recall_s;
     let mut recent = RECENT.lock();
     for hand in Hand::BOTH {
         let i = hand.index();
         let seen = &mut recent[i];
-        seen.retain(|&(_, at)| now.saturating_duration_since(at).as_secs_f32() <= RECALL_S);
+        seen.retain(|&(_, at)| now.saturating_duration_since(at).as_secs_f32() <= recall_s);
         for reach in &resolved[i].reaches {
             if reach.volume.on_body() && reach.tier != Tier::Touch {
                 seen.retain(|&(volume, _)| volume != reach.volume);
@@ -227,10 +227,6 @@ pub fn status() -> GrabStatus {
     }
 }
 
-/// The fastest a hand may move for a closed fist to take what it comes to, metres per second at the
-/// player's scale: a hand laid on a handle is slower, and a punch is far faster.
-pub const SLOW_HAND_MPS: f32 = 1.2;
-
 /// Log a grip press of `hand` (or what its fist took, with `acquired`): what it was within reach
 /// of, what it took or why not, and why the others lost.
 fn log_press(hand: Hand, tick: &Tick, latch: GripLatch, acquired: bool) {
@@ -327,14 +323,14 @@ fn slow_between(last: Option<(Vec3, Instant)>, now: Option<(Vec3, Instant)>) -> 
         return true;
     }
     let speed = from.distance(to) / dt;
-    !speed.is_finite() || speed <= SLOW_HAND_MPS
+    !speed.is_finite() || speed <= GRAB.get().reach.slow_hand_mps
 }
 
 static PALM_SUMMARY: OnceLock<fn(Hand) -> String> = OnceLock::new();
 
 static SPEEDS: Mutex<[Option<(Vec3, Instant)>; 2]> = Mutex::new([None; 2]);
 
-/// The body slots each hand was in reach of over the last [`RECALL_S`], oldest first, by
+/// The body slots each hand was in reach of over the last `reach.recall_s`, oldest first, by
 /// [`Hand::index`].
 static RECENT: Mutex<[Vec<(GrabVolume, Instant)>; 2]> = Mutex::new([Vec::new(), Vec::new()]);
 

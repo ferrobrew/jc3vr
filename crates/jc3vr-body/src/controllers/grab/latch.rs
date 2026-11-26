@@ -2,7 +2,8 @@
 //!
 //! A press takes the target the hand is in reach of. A press with nothing in reach closes the hand
 //! into a fist when no game action reads that grip, and the fist keeps looking for a moment: it
-//! takes the first target the hand comes to within [`FIST_WINDOW_S`] of closing, or later while
+//! takes the first target the hand comes to within the grab tuning's `reach.fist_window_s` of
+//! closing, or later while
 //! the hand moves slowly, so that a hand closed in the air and then laid on a handle takes it. A
 //! fist that stays closed and moves fast stays a fist: a punch does not take what it strikes,
 //! which the hand bodies deal as a blow instead, and a fist swung past the hip draws nothing. A
@@ -16,7 +17,7 @@
 //! grip can be after the press itself ends. A fist or a game action ends with the press.
 
 use crate::controllers::{
-    grab::{GrabVolume, Tier},
+    grab::{GrabVolume, Tier, tuning::GRAB},
     intent::controls::ButtonControl,
 };
 
@@ -56,10 +57,6 @@ pub struct LatchTick {
     pub dt: f32,
 }
 
-/// How long after closing a fist still takes what the hand comes to however fast it moves,
-/// seconds: a hand that closes a moment before it reaches a handle still takes the handle.
-pub const FIST_WINDOW_S: f32 = 0.2;
-
 impl GripLatch {
     /// Advance one tick. Returns the target the grip took this tick.
     pub fn step(&mut self, tick: LatchTick) -> Option<GrabVolume> {
@@ -94,7 +91,7 @@ impl GripLatch {
         if let GripLatch::Fist { closed_s } = *self {
             let dt = if dt.is_finite() { dt.max(0.0) } else { 0.0 };
             let closed_s = closed_s + dt;
-            let window = closed_s <= FIST_WINDOW_S;
+            let window = closed_s <= GRAB.get().reach.fist_window_s;
             let takes = |v: GrabVolume| {
                 (window || (slow && !(holds_line && v.on_body()))) && Tier::of(v) != Tier::Remote
             };

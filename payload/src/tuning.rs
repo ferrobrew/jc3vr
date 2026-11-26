@@ -3,6 +3,7 @@
 //! below fails until it is.
 
 use jc3vr_body::controllers::body::rig::tuning::RIG;
+use jc3vr_body::controllers::grab::tuning::GRAB;
 use jc3vr_body::controllers::hands::tuning::HANDS;
 use jc3vr_body::controllers::intent::tuning::CONTROLS;
 use jc3vr_body::controllers::locomotion::tuning::LOCOMOTION;
@@ -64,6 +65,7 @@ static FILES: &[&dyn AnyTuningFile] = &[
     &HANDS,
     &RIG,
     &PRESENTATION,
+    &GRAB,
 ];
 
 #[cfg(test)]

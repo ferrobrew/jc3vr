@@ -104,7 +104,7 @@ impl Place {
     pub(super) fn world(&self, c: &Candidate) -> GripTarget {
         c.target(Mark::ring(
             MarkAt::World(self.xf.point_to_world(c.centre)),
-            Mark::WORLD_SIZE_M,
+            Mark::world_size_m(),
         ))
     }
 }

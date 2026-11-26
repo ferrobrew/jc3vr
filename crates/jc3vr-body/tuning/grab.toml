@@ -1,0 +1,36 @@
+# The grip model's tuning: `GrabTuning` in `src/controllers/grab/tuning.rs` and the structs under
+# it, whose fields say what each value does. Every key is required and no other is accepted.
+# Lengths are metres at the player's scale, times seconds, and speeds metres per second. Opacities,
+# ring thicknesses, and shares are fractions in `0..1`, and colours RGB in `0..1`.
+
+[reach]
+fist_window_s = 0.2
+slow_hand_mps = 1.2
+recall_s = 0.3
+low_reach_m = 0.1
+
+[markers]
+world_size_m = 0.06
+min_size_m = 0.02
+occluded_alpha = 0.4
+idle_alpha = 0.22
+reach_alpha = 0.55
+chosen_alpha = 0.95
+held_alpha = 0.8
+chosen_scale = 1.15
+ring_thickness = 0.15
+chosen_thickness = 0.3
+handle_ring_thickness = 0.12
+button_ring_thickness = 0.15
+handle_dot_share = 0.3
+no_fit_share = 0.4
+
+[markers.colours]
+no_fit = [1.0, 0.2, 0.2]
+prop = [1.0, 1.0, 1.0]
+weapon = [1.0, 0.8, 0.25]
+body = [0.35, 0.6, 1.0]
+vehicle = [0.4, 1.0, 0.45]
+climb = [1.0, 0.55, 0.15]
+character = [0.75, 0.45, 1.0]
+explosive = [1.0, 0.3, 0.25]

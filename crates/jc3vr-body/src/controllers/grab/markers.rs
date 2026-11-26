@@ -25,7 +25,7 @@ use jc3vr_view::controllers::{
 use parking_lot::Mutex;
 
 use crate::controllers::{
-    grab::{Category, GripTarget, MarkAt, MarkStyle, Resolved, Shown},
+    grab::{Category, GripTarget, MarkAt, MarkStyle, Resolved, Shown, tuning::GRAB},
     hands::CockpitHand,
 };
 
@@ -93,7 +93,9 @@ pub(crate) fn labels(
             Some(MarkLabel {
                 text,
                 at: anchor(target, frame)?,
-                clearance: target.mark.size.max(MIN_SIZE_M) * frame.xf.world_scale * 0.5,
+                clearance: target.mark.size.max(GRAB.get().markers.min_size_m)
+                    * frame.xf.world_scale
+                    * 0.5,
             })
         })
         .collect()
@@ -105,6 +107,10 @@ pub fn primitives(
     resolved: &[Resolved; 2],
     frame: &MarkerFrame,
 ) -> Vec<Primitive> {
+    let tuning = &GRAB.get().markers;
+    let depth = DepthMode::XRay {
+        occluded_alpha: tuning.occluded_alpha,
+    };
     let mut prims = Vec::new();
     for (index, target) in targets.iter().enumerate() {
         let state = state_of(index, target, resolved);
@@ -115,7 +121,7 @@ pub fn primitives(
             continue;
         };
         let [r, g, b] = match target.mark.style {
-            MarkStyle::NoFit | MarkStyle::NoFitRing => NO_FIT_COLOUR,
+            MarkStyle::NoFit | MarkStyle::NoFitRing => tuning.colours.no_fit,
             _ => colour(target.category()),
         };
         let facing = match target.mark.normal {
@@ -129,8 +135,12 @@ pub fn primitives(
                 },
             },
         };
-        let scale = if state.chosen { CHOSEN_SCALE } else { 1.0 };
-        let size = target.mark.size.max(MIN_SIZE_M) * frame.xf.world_scale * scale;
+        let scale = if state.chosen {
+            tuning.chosen_scale
+        } else {
+            1.0
+        };
+        let size = target.mark.size.max(tuning.min_size_m) * frame.xf.world_scale * scale;
         let color = [r, g, b, alpha];
         let lit = state.reacher.is_some() || state.held;
         let sprite = |size: f32, shape: Shape| Primitive::Sprite {
@@ -139,47 +149,51 @@ pub fn primitives(
             facing,
             shape,
             color,
-            depth: XRAY,
+            depth,
         };
         match target.mark.style {
             MarkStyle::Ring | MarkStyle::NoFitRing => {
                 let thickness = if state.chosen || state.held {
-                    CHOSEN_THICKNESS
+                    tuning.chosen_thickness
                 } else {
-                    RING_THICKNESS
+                    tuning.ring_thickness
                 };
                 prims.push(sprite(size, Shape::Ring { thickness }));
             }
             MarkStyle::Handle => {
-                prims.push(sprite(size * HANDLE_DOT_SHARE, Shape::Disc));
+                prims.push(sprite(size * tuning.handle_dot_share, Shape::Disc));
                 if lit {
-                    prims.push(sprite(size, Shape::Ring { thickness: 0.12 }));
+                    let thickness = tuning.handle_ring_thickness;
+                    prims.push(sprite(size, Shape::Ring { thickness }));
                 }
             }
             MarkStyle::Button => {
                 let shape = if lit && !state.held {
-                    Shape::Ring { thickness: 0.15 }
+                    Shape::Ring {
+                        thickness: tuning.button_ring_thickness,
+                    }
                 } else {
                     Shape::Disc
                 };
                 prims.push(sprite(size, shape));
             }
-            MarkStyle::NoFit => prims.push(sprite(size * NO_FIT_SHARE, Shape::Disc)),
+            MarkStyle::NoFit => prims.push(sprite(size * tuning.no_fit_share, Shape::Disc)),
         }
     }
     prims
 }
 
 /// The colour of a kind of target.
-pub const fn colour(category: Category) -> [f32; 3] {
+pub fn colour(category: Category) -> [f32; 3] {
+    let colours = &GRAB.get().markers.colours;
     match category {
-        Category::Prop => [1.0, 1.0, 1.0],
-        Category::Weapon => [1.0, 0.8, 0.25],
-        Category::Body => [0.35, 0.6, 1.0],
-        Category::Vehicle => [0.4, 1.0, 0.45],
-        Category::Climb => [1.0, 0.55, 0.15],
-        Category::Character => [0.75, 0.45, 1.0],
-        Category::Explosive => [1.0, 0.3, 0.25],
+        Category::Prop => colours.prop,
+        Category::Weapon => colours.weapon,
+        Category::Body => colours.body,
+        Category::Vehicle => colours.vehicle,
+        Category::Climb => colours.climb,
+        Category::Character => colours.character,
+        Category::Explosive => colours.explosive,
     }
 }
 
@@ -219,16 +233,17 @@ fn state_of(index: usize, target: &GripTarget, resolved: &[Resolved; 2]) -> Mark
 
 /// The marker's opacity in `state`, or `None` when it is not drawn.
 fn alpha(shown: Shown, state: MarkState) -> Option<f32> {
+    let tuning = &GRAB.get().markers;
     if state.held {
-        return (shown != Shown::Never).then_some(HELD_ALPHA);
+        return (shown != Shown::Never).then_some(tuning.held_alpha);
     }
     if state.chosen {
-        return (shown != Shown::Never).then_some(CHOSEN_ALPHA);
+        return (shown != Shown::Never).then_some(tuning.chosen_alpha);
     }
     match (shown, state.reacher) {
         (Shown::Never, _) => None,
-        (_, Some(_)) => Some(REACH_ALPHA),
-        (Shown::Always, None) => Some(IDLE_ALPHA),
+        (_, Some(_)) => Some(tuning.reach_alpha),
+        (Shown::Always, None) => Some(tuning.idle_alpha),
         (Shown::InReach, None) => None,
     }
 }
@@ -281,29 +296,3 @@ const MARKER_TTL: Duration = Duration::from_millis(150);
 
 /// The labels to draw, published at the input tick's rate with when they were published.
 static LABELS: Mutex<Option<(Vec<MarkLabel>, Instant)>> = Mutex::new(None);
-
-const XRAY: DepthMode = DepthMode::XRay {
-    occluded_alpha: 0.4,
-};
-
-/// The opacity of a marker no hand is within reach of: faint, so that it shows where the target is
-/// without drawing the eye.
-const IDLE_ALPHA: f32 = 0.22;
-/// The opacity of a marker a hand is within reach of.
-const REACH_ALPHA: f32 = 0.55;
-/// The opacity of the marker a squeeze would take.
-const CHOSEN_ALPHA: f32 = 0.95;
-/// The opacity of a marker a hand holds.
-const HELD_ALPHA: f32 = 0.8;
-/// How much larger the marker a squeeze would take is drawn.
-const CHOSEN_SCALE: f32 = 1.15;
-const RING_THICKNESS: f32 = 0.15;
-const CHOSEN_THICKNESS: f32 = 0.3;
-/// The share of a handle's marker its centre dot spans.
-const HANDLE_DOT_SHARE: f32 = 0.3;
-/// The colour of a place that does not take what the hand holds.
-const NO_FIT_COLOUR: [f32; 3] = [1.0, 0.2, 0.2];
-/// The share of its size a no-fit marker's disc spans.
-const NO_FIT_SHARE: f32 = 0.4;
-/// The smallest a marker is drawn, metres.
-const MIN_SIZE_M: f32 = 0.02;

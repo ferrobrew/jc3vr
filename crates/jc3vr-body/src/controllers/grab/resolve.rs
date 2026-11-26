@@ -7,6 +7,7 @@ use jc3vr_input::frame::Hand;
 use crate::controllers::grab::{
     GrabVolume, PickupKind,
     target::{GripTarget, TargetReach, Tier},
+    tuning::GRAB,
 };
 
 /// A target within a hand's reach: which of the tick's targets it is, what it is, how far its grab
@@ -150,6 +151,7 @@ pub fn reach_low(
     drawn: [Option<Vec3>; 2],
     controllers: [Option<Vec3>; 2],
 ) {
+    let low_reach_m = GRAB.get().reach.low_reach_m;
     for target in targets.iter_mut() {
         if !matches!(
             target.volume,
@@ -165,7 +167,7 @@ pub fn reach_low(
         else {
             continue;
         };
-        if drawn.y - controller.y < LOW_REACH_M || drawn.distance(centre) <= radius {
+        if drawn.y - controller.y < low_reach_m || drawn.distance(centre) <= radius {
             continue;
         }
         let distance = controller.distance(centre);
@@ -174,10 +176,6 @@ pub fn reach_low(
         }
     }
 }
-
-/// How far below the drawn hand the controller must be for [`reach_low`] to reach from it, metres:
-/// more than the drawn hand strays from its controller in ordinary reaches.
-const LOW_REACH_M: f32 = 0.1;
 
 /// Why a reach lost to the chosen one, for the grip press's log.
 #[derive(Debug, Copy, Clone, PartialEq)]

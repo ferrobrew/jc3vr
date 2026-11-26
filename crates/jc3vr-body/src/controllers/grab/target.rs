@@ -7,6 +7,7 @@ use jc3vr_input::frame::Hand;
 
 use crate::controllers::grab::{
     Category, GrabVolume,
+    tuning::GRAB,
     world_reach::{DoorEligibility, Reach},
 };
 
@@ -156,8 +157,11 @@ pub struct Mark {
 }
 
 impl Mark {
-    /// The size of the marker on something in the world, metres.
-    pub const WORLD_SIZE_M: f32 = 0.06;
+    /// The size of the marker on something in the world, metres: the grab tuning's
+    /// `markers.world_size_m`.
+    pub fn world_size_m() -> f32 {
+        GRAB.get().markers.world_size_m
+    }
 
     /// A ring of `size` at `at`, facing the eye, shown while a hand is within reach.
     pub const fn ring(at: MarkAt, size: f32) -> Self {

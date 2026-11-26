@@ -136,7 +136,7 @@ pub fn targets(grapple_hand: Hand, world_scale: f32) -> Provided {
         GrabVolume::GrappleLine,
         free,
         spot.distance_m / world_scale.max(1e-3),
-        Mark::ring(MarkAt::World(spot.point), Mark::WORLD_SIZE_M),
+        Mark::ring(MarkAt::World(spot.point), Mark::world_size_m()),
     ));
     out
 }

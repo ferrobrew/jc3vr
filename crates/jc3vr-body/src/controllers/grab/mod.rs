@@ -33,6 +33,7 @@ pub mod resolve;
 pub mod socket;
 pub mod target;
 pub mod tick;
+pub mod tuning;
 pub mod world_reach;
 
 #[cfg(test)]

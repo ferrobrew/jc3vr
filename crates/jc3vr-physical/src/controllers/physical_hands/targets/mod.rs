@@ -71,7 +71,7 @@ pub fn targets(world_scale: f32, scans: &mut [Option<Scan>; 2]) -> Provided {
             GrabVolume::Climb,
             hand,
             distance,
-            Mark::ring(MarkAt::World(hold.point), Mark::WORLD_SIZE_M).on_surface(hold.normal),
+            Mark::ring(MarkAt::World(hold.point), Mark::world_size_m()).on_surface(hold.normal),
         ));
     }
     if stunt::hanging() {
@@ -80,7 +80,7 @@ pub fn targets(world_scale: f32, scans: &mut [Option<Scan>; 2]) -> Provided {
                 GrabVolume::StuntHold,
                 hand,
                 0.0,
-                Mark::ring(MarkAt::World(glam::Vec3::ZERO), Mark::WORLD_SIZE_M)
+                Mark::ring(MarkAt::World(glam::Vec3::ZERO), Mark::world_size_m())
                     .showing(Shown::Never),
             ));
         }
@@ -153,7 +153,7 @@ fn same_door(a: DoorTarget, b: DoorTarget) -> bool {
 /// What `reach` found, as a target `hand` is at the reach's distance from, at the player's scale
 /// (`scale` world metres to one).
 fn reach_target(hand: Hand, reach: &Reach, scale: f32) -> GripTarget {
-    let mark = Mark::ring(MarkAt::World(reach.point), Mark::WORLD_SIZE_M);
+    let mark = Mark::ring(MarkAt::World(reach.point), Mark::world_size_m());
     let mark = match reach.normal.try_normalize() {
         Some(normal) => mark.on_surface(normal),
         None => mark,
