@@ -23,10 +23,10 @@ use crate::{
                 signals::{in_hit_reaction, in_ledge_climb},
             },
         },
+        facts::climb,
         hands::tiers::{self, TierState},
         locomotion::LocomotionStatus,
         mode::{AirborneVariant, Mode, OnFootVariant, current as current_mode},
-        physical_hands::climb,
     },
     hooks::animation::active_state_type_id,
 };

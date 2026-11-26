@@ -50,7 +50,6 @@ mod tests;
 
 use std::{
     num::NonZeroUsize,
-    sync::atomic::{AtomicBool, Ordering},
     time::{Duration, Instant},
 };
 
@@ -74,7 +73,7 @@ use re_utilities::hook_library::HookLibrary;
 pub use crate::controllers::bindings::grapple_button::LockButton;
 use crate::{
     controllers::{
-        bindings::yank::HandLine, haptics, physical_hands::remote,
+        bindings::yank::HandLine, facts, haptics, physical_hands::remote,
         weapons::engine::character_position,
     },
     grapple::{
@@ -207,7 +206,7 @@ pub fn status() -> LockStatus {
 
 /// Whether the lock holds the line.
 pub(crate) fn holds() -> bool {
-    LOCKED.load(Ordering::Acquire)
+    facts::lock::holds()
 }
 
 /// Whether the lock hangs the character below a helicopter, where Y enters it.
@@ -440,7 +439,7 @@ pub(crate) fn stand_down() {
         shared.status.locked = false;
         shared.status.free_hand = false;
         shared.status.last_end = Some(LockEnd::ReelEnded);
-        LOCKED.store(false, Ordering::Release);
+        facts::lock::publish(false);
         tracing::info!(target: "grapple", "grapple lock: the bindings stand down");
     }
 }
@@ -719,7 +718,7 @@ unsafe fn start(
             ..shared.status
         };
     }
-    LOCKED.store(true, Ordering::Release);
+    facts::lock::publish(true);
     tracing::info!(
         target: "grapple",
         length_m = held.rope.length_m,
@@ -815,7 +814,7 @@ fn end(local: Option<(&mut Character, &mut GrapplingHook)>, why: LockEnd, hand: 
         }
         (shared.status, last_velocity, active.free.held())
     };
-    LOCKED.store(false, Ordering::Release);
+    facts::lock::publish(false);
     if why.lets_go()
         && let Some((character, hook)) = local
     {
@@ -961,11 +960,8 @@ static SHARED: Mutex<Shared> = Mutex::new(Shared {
     armed: false,
 });
 
-/// Whether the lock holds the line, for the detours, which must not wait on [`SHARED`].
 /// The character's speed on the reel's last carrying tick, until the reel ends.
 static REEL_SPEED: Mutex<Option<f32>> = Mutex::new(None);
-
-static LOCKED: AtomicBool = AtomicBool::new(false);
 
 /// When the reel's arrival last asked for a hang ([`want_hang`]), when the lock last ticked, and
 /// when it last refused a hang ([`hang_takes_over`]): a leaf lock the arrival's detours and the

@@ -100,11 +100,11 @@ use crate::{
             },
             rig::{grounded, torso::relative_heading, torso_turn},
         },
+        facts,
         hands::{active_hands_raw, arm_remaps},
         locomotion::{anchor::JUMP_GRACE_S, status as locomotion_status},
         mode::{AirborneVariant, Mode, current as current_mode},
     },
-    grapple::physical::lock,
     hooks::animation::active_state_type_id,
 };
 
@@ -276,7 +276,7 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
     let visual_heading = (mode == Mode::Airborne(AirborneVariant::Parachute))
         .then(|| player_arms.as_ref().map(|arms| arms.torso))
         .flatten();
-    let locked = lock::holds();
+    let locked = facts::lock::holds();
     let arm_shoulders = active_hands_raw().map_or([None; 2], |active| {
         let cockpit = CockpitTransform::current(active.head.position, active.world_scale);
         let to_model = Mat4::from(character.m_WorldMatrixT1).inverse();

@@ -4,7 +4,7 @@
 //! A ground probe that lands on the static world names [`SupportId::WORLD`], whose frame is the
 //! identity. One that lands on a body that moves (a vehicle, a keyframed platform, a loose crate)
 //! names that body: its id in the Havok world and the lifetime stamp the climb keeps for it
-//! ([`crate::controllers::physical_hands::climb::lifetime`]), so a freed and reused id is a different
+//! ([`crate::controllers::facts::climb::body_identity`]), so a freed and reused id is a different
 //! support. The gate runs inside the pose-finalization pass, where the mod does not read the physics
 //! world, so each support's transform and motion are snapshotted where the probes cast (the player
 //! aim control's post-simulation update, outside the physics step), and the gate carries the
@@ -16,7 +16,7 @@ use body_rig::contact::{SupportFrame, SupportId, SupportMotion};
 use glam::Quat;
 use parking_lot::Mutex;
 
-use crate::controllers::physical_hands::climb::engine::{body_frame, body_identity};
+use crate::controllers::facts::climb::{body_frame, body_identity};
 
 /// The support the body `body` stands for: the static world for a static body, and the body itself
 /// otherwise, recorded so its frame is read from now on.

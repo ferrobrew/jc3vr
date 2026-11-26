@@ -16,14 +16,14 @@
 
 use std::{fmt, ptr};
 
-use body_rig::geometry::point_velocity;
-use glam::{Affine3A, Quat, Vec3, Vec3A};
+use glam::{Quat, Vec3, Vec3A};
 use jc3gi::{
     character::character::Character,
     havok::hkSimdFloat32,
     physics::{PfxCharacterInstance, PfxInstance, hknpBody, hknpCharacterSurfaceInfo, hknpWorld},
 };
 
+pub use crate::controllers::facts::climb::{BodyFrame, BodyIdentity};
 use crate::controllers::{
     physical_hands::{
         bodies::slot,
@@ -82,19 +82,6 @@ pub unsafe fn player_place() -> Result<PlayerPlace, ClimbEngineError> {
         return Err(ClimbEngineError::NoPlayer);
     }
     Ok(PlayerPlace { body, feet })
-}
-
-/// The live metadata of a reached body. Static world geometry may have no engine owner.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
-pub struct BodyIdentity {
-    pub(crate) world: usize,
-    pub(crate) bodies: usize,
-    pub(crate) instance: usize,
-    pub(crate) owner: usize,
-    pub(crate) shape: usize,
-    pub(crate) motion: u32,
-    pub(crate) static_body: bool,
-    pub(crate) lifetime: u64,
 }
 
 /// The current identity of an added body, checked before reading its engine instance.
@@ -173,32 +160,6 @@ pub(crate) unsafe fn gate_context()
         bodies: world.m_bodies as usize,
         epoch: jc3vr_render::headpose::teleport::epoch(),
     })
-}
-
-/// A body's place and motion, game space.
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub struct BodyFrame {
-    /// The body's transform.
-    pub transform: Affine3A,
-    /// Whether the body is static, which never moves.
-    pub is_static: bool,
-    /// Whether the body is keyframed, moved along a set path.
-    pub is_keyframed: bool,
-    /// The body's mass, or `None` for an infinite one.
-    pub mass_kg: Option<f32>,
-    pub centre: Vec3,
-    pub linear: Vec3,
-    pub angular: Vec3,
-}
-
-impl BodyFrame {
-    /// The velocity of the body's point at `at`, world space.
-    pub fn point_velocity(&self, at: Vec3) -> Vec3 {
-        if self.is_static {
-            return Vec3::ZERO;
-        }
-        point_velocity(self.centre, self.linear, self.angular, at)
-    }
 }
 
 /// The place and motion of the body `body`, or `None` for a freed slot or a motion that is not
@@ -368,6 +329,8 @@ unsafe fn proxy_slot<'w>(
 
 #[cfg(test)]
 mod tests {
+    use glam::Affine3A;
+
     use super::*;
 
     #[test]

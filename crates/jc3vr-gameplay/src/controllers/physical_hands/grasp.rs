@@ -7,8 +7,6 @@
 //! ([`crate::controllers::physical_hands::hold`]), so that a plank held by one end hangs and swings
 //! from the hand rather than from its middle.
 
-use std::num::NonZeroUsize;
-
 use body_rig::{geometry::point_velocity, rotation::angular_velocity, smooth::follow_factor};
 use glam::{Quat, Vec3};
 use jc3vr_input::frame::Pose;
@@ -308,7 +306,7 @@ impl AngularTracker {
 
 #[cfg(test)]
 mod tests {
-    use std::f32::consts::FRAC_PI_2;
+    use std::{f32::consts::FRAC_PI_2, num::NonZeroUsize};
 
     use super::*;
     use crate::controllers::physical_hands::pickup::PICKUP;

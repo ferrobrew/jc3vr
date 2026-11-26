@@ -13,7 +13,7 @@
 //!
 //! The input tick publishes the correction for the vehicle ([`publish`]). The frame half of the
 //! pose composition ([`crate::controllers::roomscale::compose_cockpit`]) eases toward it, and back
-//! to nothing through a seat transition ([`advance`]), and adds it to the composed cockpit
+//! to nothing through a seat transition ([`facts::driving::advance`]), and adds it to the composed cockpit
 //! position after the posture, the seated reference, and the crouch have been resolved, so it
 //! neither feeds them nor is undone by them. The view, the hands, and the grab volumes are all
 //! composed from the eye point the head pose places, so they move together, and the correction is in the body frame,
@@ -28,13 +28,12 @@
 //! handles from a few centimetres and the player stepped back to reach them. Their midpoint is put
 //! at [`HANDLES_FROM_EYES_M`] ([`derive_handles`]).
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
-use body_rig::smooth::smoothstep;
 use glam::Vec3;
 use parking_lot::Mutex;
 
-use crate::controllers::vehicles::fit::SETTLE;
+use crate::controllers::{facts, vehicles::fit::SETTLE};
 
 /// Where the hub sits from the eyes in the standard driving position, cockpit frame (+X right, +Y
 /// up, +Z back), metres. The standard is the middle of a road car's ergonomic range: the wheel's
@@ -214,38 +213,11 @@ pub struct Target {
 }
 
 /// Publish the input tick's target: the driven vehicle's correction, or `None` out of a measured
-/// driver's seat. A leaf slot, taken briefly.
+/// driver's seat, for the readout, and its applied correction for the frame half
+/// ([`facts::driving::publish`]). Leaf slots, taken briefly one after the other.
 pub fn publish(target: Option<Target>) {
-    let mut shared = SHARED.lock();
-    shared.target = target;
-    shared.published_at = Some(Instant::now());
-}
-
-/// The frame half's inputs to [`advance`].
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub struct FrameInputs {
-    /// Whether the player is not entering, shuffling between, or leaving a seat.
-    pub seated: bool,
-    /// Seconds since the previous frame.
-    pub dt: f32,
-}
-
-/// Ease the correction toward the published target and return it, cockpit frame, metres, to add
-/// to the composed cockpit position. Called once per rendered VR frame by the pose composition,
-/// under the roomscale frame lock; takes only this module's slot.
-pub fn advance(enabled: bool, inputs: FrameInputs, now: Instant) -> Vec3 {
-    let mut shared = SHARED.lock();
-    let fresh = shared
-        .published_at
-        .is_some_and(|at| now.saturating_duration_since(at) < STALE_AFTER);
-    let goal = match shared.target {
-        Some(target) if enabled && inputs.seated && fresh => target.correction.applied,
-        _ => Vec3::ZERO,
-    };
-    let offset = shared.ease.advance(goal, inputs.dt, BLEND_S);
-    shared.offset = offset;
-    shared.goal = goal;
-    offset
+    *TARGET.lock() = target;
+    facts::driving::publish(target.map(|t| t.correction.applied));
 }
 
 /// The driving view's readout.
@@ -260,22 +232,17 @@ pub struct DrivingViewStatus {
 }
 
 pub fn status() -> DrivingViewStatus {
-    let shared = SHARED.lock();
+    let target = *TARGET.lock();
+    let eased = facts::driving::status();
     DrivingViewStatus {
-        target: shared.target,
-        goal: shared.goal,
-        offset: shared.offset,
+        target,
+        goal: eased.goal,
+        offset: eased.offset,
     }
 }
 
 /// The longest correction applied, metres; a longer one is shortened to this along its direction.
 const MAX_M: f32 = 0.25;
-
-/// How long the view takes to ease to a new correction, seconds.
-const BLEND_S: f32 = 1.0;
-
-/// A target older than this is ignored: the input tick stopped publishing, so the view eases back.
-const STALE_AFTER: Duration = Duration::from_millis(500);
 
 /// A running mean of the measured hub.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -304,60 +271,7 @@ impl Sampler {
     }
 }
 
-/// An eased move from one correction to another, restarted from wherever it is whenever the goal
-/// changes, so a new goal never jumps the view.
-#[derive(Debug, Copy, Clone, PartialEq)]
-struct Ease {
-    from: Vec3,
-    to: Vec3,
-    elapsed: f32,
-}
-
-impl Ease {
-    const fn new() -> Self {
-        Self {
-            from: Vec3::ZERO,
-            to: Vec3::ZERO,
-            elapsed: 0.0,
-        }
-    }
-
-    /// Step toward `goal` by `dt` seconds, over `duration` seconds, and return the value.
-    fn advance(&mut self, goal: Vec3, dt: f32, duration: f32) -> Vec3 {
-        if goal != self.to {
-            self.from = self.value(duration);
-            self.to = goal;
-            self.elapsed = 0.0;
-        }
-        if dt.is_finite() {
-            self.elapsed += dt.max(0.0);
-        }
-        self.value(duration)
-    }
-
-    fn value(&self, duration: f32) -> Vec3 {
-        if !(duration.is_finite() && duration > 0.0) {
-            return self.to;
-        }
-        self.from.lerp(self.to, smoothstep(self.elapsed / duration))
-    }
-}
-
-struct Shared {
-    target: Option<Target>,
-    published_at: Option<Instant>,
-    ease: Ease,
-    goal: Vec3,
-    offset: Vec3,
-}
-
-static SHARED: Mutex<Shared> = Mutex::new(Shared {
-    target: None,
-    published_at: None,
-    ease: Ease::new(),
-    goal: Vec3::ZERO,
-    offset: Vec3::ZERO,
-});
+static TARGET: Mutex<Option<Target>> = Mutex::new(None);
 
 #[cfg(test)]
 mod tests {
@@ -433,46 +347,5 @@ mod tests {
         let mut entry = Entry::new();
         assert!(entry.observe(SETTLE + SAMPLE_WINDOW, None));
         assert_eq!(entry.mean(), None);
-    }
-
-    /// The ease starts and ends at rest and reaches the goal after its duration.
-    #[test]
-    fn the_ease_reaches_the_goal_smoothly() {
-        let goal = Vec3::new(0.0, 0.1, -0.2);
-        let mut ease = Ease::new();
-        let first = ease.advance(goal, 0.0, 1.0);
-        assert_eq!(first, Vec3::ZERO);
-        let mid = ease.advance(goal, 0.5, 1.0);
-        assert!((mid - goal * 0.5).length() < EPS);
-        let early = Ease {
-            from: Vec3::ZERO,
-            to: goal,
-            elapsed: 0.05,
-        }
-        .value(1.0);
-        assert!(early.length() < goal.length() * 0.05, "slow out of rest");
-        assert!((ease.advance(goal, 0.6, 1.0) - goal).length() < EPS);
-        assert!((ease.advance(goal, 5.0, 1.0) - goal).length() < EPS);
-    }
-
-    /// A goal changed part way restarts from where the view is, so it never jumps.
-    #[test]
-    fn a_new_goal_starts_from_the_current_value() {
-        let mut ease = Ease::new();
-        let goal = Vec3::new(0.0, 0.0, -0.2);
-        let partway = ease.advance(goal, 0.3, 1.0);
-        let restarted = ease.advance(Vec3::ZERO, 0.0, 1.0);
-        assert!((restarted - partway).length() < EPS);
-        assert!(ease.advance(Vec3::ZERO, 1.0, 1.0).length() < EPS);
-    }
-
-    #[test]
-    fn a_zero_duration_or_bad_step_is_immediate_and_safe() {
-        let goal = Vec3::new(0.1, 0.0, 0.0);
-        let mut ease = Ease::new();
-        assert_eq!(ease.advance(goal, 0.0, 0.0), goal);
-        let mut ease = Ease::new();
-        let value = ease.advance(goal, f32::NAN, 1.0);
-        assert!(value.is_finite());
     }
 }
