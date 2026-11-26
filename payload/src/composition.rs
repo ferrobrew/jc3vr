@@ -18,6 +18,7 @@ use jc3vr_hud::{controllers::map, egui_impl::register_desktop_overlay, hooks::ui
 #[cfg(feature = "profiler")]
 use jc3vr_render::hooks::profiler;
 use jc3vr_render::{
+    controllers::register_passes,
     debug,
     hooks::{camera, clock, draw_count, graphics_engine, window_focus},
     stereo,
@@ -34,6 +35,8 @@ pub(crate) fn install() {
     // Registered first, so hook removal attempts them whether or not installation got further.
     stereo::register_unpatch::register();
     debug::register_unpatch::register();
+    // The render layer's own passes in the post-draw.
+    register_passes::register();
     // What the layers above the render hooks contribute to the post-draw, the mirror, the camera,
     // and the flip.
     hud::register_render::register();

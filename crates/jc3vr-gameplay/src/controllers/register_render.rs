@@ -1,23 +1,18 @@
 //! Registers the controller subsystems with the render layer: the world-space overlay's and the
-//! scope lens's ticks and draws in the post-draw, the body estimator's GPU pass, what the overlay's
-//! draw reads, the presentation layer's edits of the body's palette, and the camera's participants
-//! (the grapple's aim matrix and the camera height readout).
+//! scope lens's ticks in the post-draw, the body estimator's GPU pass, what the overlay's draw
+//! reads, the presentation layer's edits of the body's palette, and the camera's participants (the
+//! grapple's aim matrix and the camera height readout). The overlay's and the lens's draws are the
+//! render layer's own, which it registers itself.
 
 use jc3gi::graphics_engine::{device::Device, texture::Texture};
 use jc3vr_core::frame_timing::{self, Slot};
 use jc3vr_render::{
-    controllers::{
-        overlay::pass::{self as overlay_pass, OverlayInputs, register_overlay_inputs},
-        weapons::scope::pass as scope_pass,
-    },
+    controllers::overlay::inputs::{OverlayInputs, register_overlay_inputs},
     hooks::{
         camera::{CameraParticipants, register_camera_participants},
         graphics_engine::{
             palette_edit::register_player_draw_edits,
-            post_draw::{
-                DispatchTick, EyeLayer, FramePass, register_dispatch_tick, register_eye_layer,
-                register_frame_pass, register_scene_capture,
-            },
+            post_draw::{DispatchTick, FramePass, register_dispatch_tick, register_frame_pass},
         },
     },
 };
@@ -31,9 +26,6 @@ use crate::{
 pub(super) fn register() {
     register_dispatch_tick(DispatchTick::WorldOverlay, overlay::tick);
     register_dispatch_tick(DispatchTick::ScopeLens, scope::tick);
-    register_scene_capture(scope_pass::capture);
-    register_eye_layer(EyeLayer::WorldOverlay, overlay_pass::draw);
-    register_eye_layer(EyeLayer::ScopeLens, scope_pass::draw);
     register_frame_pass(FramePass::BodyEstimator, body_estimator_pass);
     register_overlay_inputs(OverlayInputs {
         settings: overlay::draw_settings,
