@@ -37,8 +37,8 @@ use re_utilities::hook_library::HookLibrary;
 use crate::{
     controllers::frame::Pose,
     hud::{
-        pointer::{aim_at_panel, intersect_panel},
-        world_markers::layout::StageFrame,
+        pointer::panel::{aim_at_panel, intersect_panel},
+        world_markers::stage_frame::StageFrame,
     },
 };
 

@@ -31,6 +31,7 @@ pub mod assist;
 pub mod grapple;
 pub mod grapple_weapons;
 pub mod gun;
+pub(crate) mod marker_rays;
 pub mod ray;
 pub mod raycast;
 pub mod sights;
@@ -227,8 +228,9 @@ fn update_post_sim(aim: *mut PlayerAimControl, dt: f32, character: *mut Characte
     // The world markers' fallback raycasts run here whatever the control scheme: this is the
     // simulation update, outside the physics step, where the game casts its own aim ray.
     if let Some(owner) = owner {
+        let markers = Config::lock_query(|c| c.hud.world_markers.enabled);
         // SAFETY: the owner is the live local player character, on the simulation thread.
-        unsafe { crate::hud::world_markers::resolve_rays(owner) };
+        unsafe { marker_rays::resolve_rays(owner, markers) };
         // SAFETY: as above. The head probe runs in every state and scheme, for the comfort fade.
         unsafe { crate::controllers::body::rig::collision::tick(owner) };
         // SAFETY: as above. The feet's ground probes the IK body asked for at the solve gate.

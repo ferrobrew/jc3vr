@@ -23,18 +23,19 @@ use windows::Win32::Graphics::Direct3D11::{D3D11_BOX, ID3D11DeviceContext};
 
 use crate::{
     config::Config,
+    controllers::aim::marker_rays::{self as raycast, Sight, Timed},
     hud::{
         log_once::LogOnce,
         quad::HudQuad,
         target::HudTarget,
         world_markers::{
             CROP, DistanceSource, LABEL_CROP, MarkerStatus, STATUS, Status,
-            depth::{DepthPoint, DepthProbe, RESULT_TTL_S, Timed},
+            depth::{DepthPoint, DepthProbe, RESULT_TTL_S},
             layout::{
-                Billboard, Crop, Sight, StageFrame, billboard_corners, crop, placement_distance,
+                Billboard, Crop, StageFrame, billboard_corners, crop, placement_distance,
                 radians_per_texel, slot_size, smooth_distance, surface_sight,
             },
-            layout_for, raycast,
+            layout_for,
         },
         world_quads_active,
     },

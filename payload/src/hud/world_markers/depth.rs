@@ -8,8 +8,6 @@
 //! `w`, so their ratio is the fraction of the way to the marker at which the line of sight meets a
 //! surface, whatever the angle off-axis.
 
-use std::time::Instant;
-
 use anyhow::Context as _;
 use glam::{Mat4, Vec3};
 use jc3gi::graphics_engine::{device::Device, graphics_engine::GraphicsEngine};
@@ -27,7 +25,7 @@ use windows::Win32::Graphics::{
     Dxgi::Common::DXGI_FORMAT_R32_FLOAT,
 };
 
-use crate::hud::world_markers::layout::Sight;
+use crate::controllers::aim::marker_rays::Sight;
 
 /// One point to sample: a marker id and its world point.
 #[derive(Clone, Copy)]
@@ -347,13 +345,6 @@ impl DepthProbe {
 
 /// The time a probe result stays usable, after which the marker falls back to the raycast.
 pub(super) const RESULT_TTL_S: f32 = 0.25;
-
-/// A result together with when it was read back.
-#[derive(Clone, Copy)]
-pub(super) struct Timed {
-    pub sight: Sight,
-    pub at: Instant,
-}
 
 /// The committed, precompiled probe shader (entry point `main`).
 const COMPUTE_DXBC: &[u8] = include_bytes!("../../shaders/marker_depth_cs.dxbc");

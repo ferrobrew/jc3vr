@@ -63,6 +63,7 @@ hooks::profiler render
 hooks::window_focus render
 hud::pointer::panel render
 hud::render_camera_pose render
+hud::world_markers::stage_frame render
 image_writer render
 profiler::gpu render
 recorder::tracking render

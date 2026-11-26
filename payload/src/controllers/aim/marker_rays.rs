@@ -1,10 +1,10 @@
-//! The raycast fallback for the world markers' surface placement: markers the render thread could
-//! not sample the scene depth for (no recent depth result) get a physics raycast from the head
-//! toward their world point instead.
+//! The raycast fallback for the world markers' surface placement ([`crate::hud::world_markers`]):
+//! markers the render thread could not sample the scene depth for (no recent depth result) get a
+//! physics raycast from the head toward their world point instead.
 //!
 //! The casts run on the game thread in the player aim's simulation update, outside the physics
 //! step, as the player aim's own raycast does ([`crate::controllers::aim::raycast`]); the render
-//! thread only publishes which markers need one and reads the results.
+//! thread only publishes which markers need one ([`request`]) and reads the results ([`result`]).
 
 use std::{collections::HashMap, time::Instant};
 
@@ -12,24 +12,36 @@ use glam::Vec3;
 use jc3gi::character::character::Character;
 use parking_lot::Mutex;
 
-use crate::{
-    config::Config,
-    controllers::aim::{
-        ray::Ray,
-        raycast::{CastOptions, cast},
-    },
-    hud::world_markers::{depth::Timed, layout::Sight},
+use crate::controllers::aim::{
+    ray::Ray,
+    raycast::{CastOptions, cast},
 };
 
-/// Cast the pending markers' rays. Call from the player aim control's simulation update for the
-/// local player character.
+/// What a depth or ray probe says about the line of sight to a marker.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub(crate) enum Sight {
+    /// The nearest surface along the line of sight is this far from the eye, in metres.
+    Surface(f32),
+    /// Nothing blocks the line of sight before the point.
+    Clear,
+}
+
+/// A result together with when it was read back.
+#[derive(Clone, Copy)]
+pub(crate) struct Timed {
+    pub sight: Sight,
+    pub at: Instant,
+}
+
+/// Cast the pending markers' rays, while the world markers are `enabled`. Call from the player aim
+/// control's simulation update for the local player character.
 ///
 /// # Safety
 /// `owner` must be the live local player character, on the simulation thread outside the physics
 /// step.
-pub(crate) unsafe fn resolve_rays(owner: &Character) {
+pub(crate) unsafe fn resolve_rays(owner: &Character, enabled: bool) {
     let _timing = crate::frame_timing::scope(crate::frame_timing::Slot::WorldMarkers);
-    if !Config::lock_query(|c| c.hud.world_markers.enabled) {
+    if !enabled {
         return;
     }
     let requests = std::mem::take(&mut *REQUESTS.lock());
@@ -60,17 +72,17 @@ pub(crate) unsafe fn resolve_rays(owner: &Character) {
 }
 
 /// Replace the markers awaiting a raycast (render thread).
-pub(super) fn request(markers: Vec<(u32, Vec3)>) {
+pub(crate) fn request(markers: Vec<(u32, Vec3)>) {
     *REQUESTS.lock() = markers;
 }
 
 /// The latest raycast result for each marker (render thread).
-pub(super) fn result(id: u32) -> Option<Timed> {
+pub(crate) fn result(id: u32) -> Option<Timed> {
     RESULTS.lock().as_ref()?.get(&id).copied()
 }
 
 /// Forget results older than `ttl_s` seconds (render thread).
-pub(super) fn expire(ttl_s: f32) {
+pub(crate) fn expire(ttl_s: f32) {
     if let Some(table) = RESULTS.lock().as_mut() {
         table.retain(|_, timed| timed.at.elapsed().as_secs_f32() < ttl_s);
     }
