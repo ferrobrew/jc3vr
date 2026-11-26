@@ -9,6 +9,7 @@ members = [
     "crates/body-rig",
     "crates/dxbc-stereo",
     "crates/fsr-sys",
+    "crates/jc3vr-input",
     "crates/tracking-format",
     # Offline tools.
     "tools/dxbc-tool",

@@ -1,0 +1,21 @@
+[package]
+name = "jc3vr-input"
+version = "0.1.0"
+edition = "2024"
+description = "The input layer's pure core: the published controller frame and its motion history, the control scheme, the haptic mixer, the semantic action vocabulary, and the debug UI's input-capture policy."
+publish = false
+
+# Host-native on purpose: nothing here names the game, Win32, or OpenXR, so the crate builds and
+# tests on Linux with `cargo test -p jc3vr-input --target x86_64-unknown-linux-gnu` as well as
+# under `scripts/xwin_test.sh` with the rest of the workspace. It sits directly above the core crate
+# but needs nothing from it.
+
+[dependencies]
+glam = { workspace = true }
+serde = { version = "1", features = ["derive"] }
+parking_lot = "0.12.5"
+# The release-velocity estimate in `motion` turns consecutive grip orientations into an angular
+# velocity with the same function the body rig uses.
+body-rig = { path = "../body-rig" }
+# The capture policy filters the debug UI's raw egui input.
+egui = "0.35"
