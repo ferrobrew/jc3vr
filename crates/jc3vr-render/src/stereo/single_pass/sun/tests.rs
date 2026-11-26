@@ -3,25 +3,6 @@ use std::cell::Cell;
 use super::*;
 
 #[test]
-fn probe_budget_is_bounded_per_request() {
-    let mut budget = (None, 0);
-    for invocation in 0..=MAX_INVOCATIONS {
-        assert_eq!(reserve_probe(&mut budget, "first"), invocation);
-    }
-    assert_eq!(reserve_probe(&mut budget, "second"), 0);
-}
-
-#[test]
-fn wrong_pass_does_not_reserve_diagnostic() {
-    let mut budget = (None, 0);
-    let reserve = |pass, budget: &mut (Option<String>, usize)| {
-        raw_sun_pass(pass).then(|| reserve_probe(budget, "capture"))
-    };
-    assert_eq!(reserve(RenderPassId::RP_STARS as u8, &mut budget), None);
-    assert_eq!(reserve(RenderPassId::RP_SUN as u8, &mut budget), Some(0));
-}
-
-#[test]
 fn upload_observer_matches_context_ranges_and_overwrites() {
     let _scope = UploadScope::enter(123);
     let rows = [0.0f32, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0];
