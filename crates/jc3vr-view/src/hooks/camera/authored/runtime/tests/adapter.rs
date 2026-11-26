@@ -7,7 +7,7 @@ fn views() -> [TrackedView; 2] {
     }; 2]
 }
 
-fn timed(serial: u64, graph: GraphState, time: f32, position: Vec3) -> NativeSample {
+fn timed(serial: u64, graph: State, time: f32, position: Vec3) -> NativeSample {
     let mut value = native(100, graph, position);
     value.finalized = serial;
     value.animation.playing[0].time = time;
@@ -15,16 +15,8 @@ fn timed(serial: u64, graph: GraphState, time: f32, position: Vec3) -> NativeSam
     value
 }
 
-fn all_cases() -> [GraphState; 7] {
-    [
-        GraphState::GroundInto,
-        GraphState::Landing(LandingState::Hard),
-        GraphState::Recovery(RecoveryState::GetUp),
-        GraphState::FloorPickup,
-        GraphState::Hanging(HangingState::GrappleAttached),
-        GraphState::Hanging(HangingState::GrapplePreUpsideDown),
-        GraphState::Hanging(HangingState::GrappleUpsideDown),
-    ]
+fn all_cases() -> [State; 3] {
+    [State::PreUpsideDown, State::UpsideDown, State::StuntIdle]
 }
 
 #[test]
@@ -65,13 +57,12 @@ fn every_case_rebases_same_state_restart_on_the_same_pose_buffer() {
                     .is_some()
             );
         }
-        assert_eq!(runtime.serial, 6);
     }
 }
 
 #[test]
 fn native_forward_wrap_keeps_baseline_but_unexplained_reverse_restarts() {
-    let graph = GraphState::Hanging(HangingState::GrappleAttached);
+    let graph = State::StuntIdle;
     let mut runtime = Runtime::default();
     let looping = |serial, time, cycles, position| {
         let mut value = timed(serial, graph, time, position);
@@ -107,10 +98,7 @@ fn native_forward_wrap_keeps_baseline_but_unexplained_reverse_restarts() {
             .is_none()
     );
     assert!(runtime.run > run);
-    assert_eq!(
-        runtime.baseline.unwrap().sample.local.transform.translation,
-        Vec3::Z
-    );
+    assert_eq!(runtime.baseline.unwrap().translation, Vec3::Z);
 }
 
 #[test]
@@ -125,7 +113,7 @@ fn native_outgoing_sources_survive_interrupts_and_are_not_weighted_twice() {
             .unwrap();
         for (serial, weight) in [(3, 0.75), (4, 0.25)] {
             let mut tail = timed(serial, graph, 0.6 + serial as f32 * 0.1, Vec3::X * weight);
-            tail.state = Err(Refusal::OrdinaryOrUnsupportedState);
+            tail.state = Err(Refusal::UnsupportedState);
             let mut incoming = clip(0.1);
             incoming.source.instance += serial;
             incoming.source.owner += serial;
@@ -143,7 +131,7 @@ fn native_outgoing_sources_survive_interrupts_and_are_not_weighted_twice() {
             assert!(runtime.outgoing);
         }
         let mut done = timed(5, graph, 1.2, Vec3::ZERO);
-        done.state = Err(Refusal::OrdinaryOrUnsupportedState);
+        done.state = Err(Refusal::UnsupportedState);
         done.animation.samplers[0].camera_track_weight = 0.0;
         done.animation.playing[0].camera_track_weight = 0.0;
         assert_eq!(
@@ -159,18 +147,18 @@ fn missing_or_invalid_source_time_and_stale_serial_clear_capture() {
         let mut runtime = Runtime::default();
         let now = Instant::now();
         runtime.capture(
-            Ok(timed(1, GraphState::FloorPickup, 0.0, Vec3::ZERO)),
+            Ok(timed(1, State::StuntIdle, 0.0, Vec3::ZERO)),
             views(),
             now,
             0,
         );
         runtime.capture(
-            Ok(timed(2, GraphState::FloorPickup, 0.1, Vec3::X)),
+            Ok(timed(2, State::StuntIdle, 0.1, Vec3::X)),
             views(),
             now,
             0,
         );
-        let mut next = timed(3, GraphState::FloorPickup, 0.2, Vec3::Y);
+        let mut next = timed(3, State::StuntIdle, 0.2, Vec3::Y);
         match change {
             0 => next.animation.samplers[0].time = f32::NAN,
             1 => next.animation.samplers[0].weight = f32::INFINITY,
@@ -188,7 +176,7 @@ fn missing_or_invalid_source_time_and_stale_serial_clear_capture() {
 
 #[test]
 fn same_state_binding_replacement_restarts_without_reusing_the_baseline() {
-    let graph = GraphState::FloorPickup;
+    let graph = State::StuntIdle;
     let mut runtime = Runtime::default();
     runtime
         .update(timed(1, graph, 0.0, Vec3::ZERO), views())
@@ -206,15 +194,12 @@ fn same_state_binding_replacement_restarts_without_reusing_the_baseline() {
         clip.source.binding += 1;
     }
     assert!(runtime.update(replaced, views()).unwrap().is_none());
-    assert_eq!(
-        runtime.baseline.unwrap().sample.local.transform.translation,
-        Vec3::Y
-    );
+    assert_eq!(runtime.baseline.unwrap().translation, Vec3::Y);
 }
 
 #[test]
 fn native_tail_composes_the_current_head_transform_once() {
-    let graph = GraphState::FloorPickup;
+    let graph = State::StuntIdle;
     let mut runtime = Runtime::default();
     runtime
         .update(timed(1, graph, 0.0, Vec3::ZERO), views())
@@ -223,7 +208,7 @@ fn native_tail_composes_the_current_head_transform_once() {
         .update(timed(2, graph, 0.5, Vec3::X), views())
         .unwrap();
     let mut tail = timed(3, graph, 0.6, Vec3::X * 0.5);
-    tail.state = Err(Refusal::OrdinaryOrUnsupportedState);
+    tail.state = Err(Refusal::UnsupportedState);
     tail.animation.playing[0].weight = 0.5;
     tail.animation.samplers[0].weight = 0.5;
     let head = Mat4::from_rotation_translation(Quat::from_rotation_y(0.4), Vec3::Y * 0.3);

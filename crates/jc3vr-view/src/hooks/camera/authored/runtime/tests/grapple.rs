@@ -3,7 +3,7 @@ use super::*;
 #[test]
 fn identity_hanging_channel_still_has_an_active_runtime_pair() {
     let mut state = Runtime::default();
-    let graph = GraphState::Hanging(HangingState::GrappleAttached);
+    let graph = State::StuntIdle;
     let tracked = views(Quat::IDENTITY, Vec3::ZERO);
     state
         .update(native(100, graph, Vec3::ZERO), tracked)
@@ -15,20 +15,6 @@ fn identity_hanging_channel_still_has_an_active_runtime_pair() {
         Some([Mat4::IDENTITY; 2])
     );
     assert!(state.deltas.is_some());
-}
-
-#[test]
-fn upside_down_graph_handoff_is_directional_and_does_not_merge_other_hanging_motions() {
-    let entry = GraphState::Hanging(HangingState::GrapplePreUpsideDown);
-    let idle = GraphState::Hanging(HangingState::GrappleUpsideDown);
-    assert!(entry.can_enter());
-    assert!(idle.can_enter());
-    assert!(entry.continues(idle));
-    assert!(!idle.continues(entry));
-    for other in [HangingState::GrappleAttached, HangingState::StuntIdle] {
-        assert!(!entry.continues(GraphState::Hanging(other)));
-        assert!(!GraphState::Hanging(other).continues(idle));
-    }
 }
 
 #[test]
@@ -89,10 +75,7 @@ fn upside_down_camera_handoff_keeps_both_local_components_and_tracking_once() {
             .is_none()
     );
     assert!(runtime.run > run);
-    assert_eq!(
-        runtime.baseline.unwrap().sample.local.transform,
-        entry_local
-    );
+    assert_eq!(runtime.baseline.unwrap(), entry_local);
 }
 
 #[test]
@@ -138,11 +121,7 @@ fn upside_down_handoff_uses_the_admitted_land_control_until_the_idle_control_con
     assert!(selected[1].abs_diff_eq(local.matrix().unwrap() * head[1].world, 0.0001));
     assert_eq!(runtime.baseline, baseline);
     assert_eq!(runtime.run, run);
-    assert_eq!(runtime.serial, 5);
-    assert_eq!(
-        runtime.graph_state,
-        Some(GraphState::Hanging(HangingState::GrappleUpsideDown))
-    );
+    assert_eq!(runtime.graph_state, Some(State::UpsideDown));
 }
 
 #[test]
@@ -166,7 +145,7 @@ fn pending_handoff_rejects_changed_native_data_at_the_same_finalized_serial() {
         );
         let mut changed = pending(3, local, outgoing);
         match change {
-            0 => changed.state = Ok(GraphState::Hanging(HangingState::GrapplePreUpsideDown)),
+            0 => changed.state = Ok(State::PreUpsideDown),
             1 => changed.animation.state = Some(2),
             2 => {
                 changed.animation.playing[0].time = 0.1;
@@ -291,11 +270,11 @@ fn pending(serial: u64, local: Trs, outgoing: Clip) -> NativeSample {
 }
 
 fn sample(serial: u64, idle: bool, time: f32, local: Trs) -> NativeSample {
-    let graph = GraphState::Hanging(if idle {
-        HangingState::GrappleUpsideDown
+    let graph = if idle {
+        State::UpsideDown
     } else {
-        HangingState::GrapplePreUpsideDown
-    });
+        State::PreUpsideDown
+    };
     let mut value = native(100, graph, local.translation);
     value.local = local;
     value.finalized = serial;

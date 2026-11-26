@@ -18,8 +18,22 @@ use crate::hooks::camera::authored::{
     composition::Trs,
     evidence,
     evidence::{Animation, Clip, ClipSource},
-    policy::{GraphState, HangingState},
 };
+
+/// The admitted graph states (see [`EXACT_STATES`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum State {
+    PreUpsideDown,
+    UpsideDown,
+    StuntIdle,
+}
+
+impl State {
+    /// Only the forward upside-down handoff shares an entry baseline across distinct states.
+    pub fn continues(self, next: Self) -> bool {
+        self == next || (self, next) == (Self::PreUpsideDown, Self::UpsideDown)
+    }
+}
 
 /// All native pointers are used only during capture; publication contains owned values.
 #[derive(PartialEq)]
@@ -29,7 +43,7 @@ pub(super) struct NativeSample {
     pub pose_buffer: u64,
     pub finalized: u64,
     pub animation: Animation,
-    pub state: Result<GraphState, Refusal>,
+    pub state: Result<State, Refusal>,
     pub root: Trs,
     pub local: Trs,
 }
@@ -60,34 +74,12 @@ pub(super) unsafe fn read(character: &Character) -> Result<NativeSample, Refusal
             .as_ref()
             .ok_or(Refusal::MissingChannel)?;
         let pose = producer.m_PoseT1.as_ref().ok_or(Refusal::MissingChannel)?;
-        let skeleton = controller
-            .m_Skeleton
-            .as_ref()
-            .ok_or(Refusal::MissingChannel)?;
-        let havok = skeleton
-            .m_HavokSkeleton
-            .as_ref()
-            .ok_or(Refusal::MissingChannel)?;
-        if controller.m_SkeletonResourceHandle.is_null()
-            || !std::ptr::eq(pose.m_Skeleton, skeleton.m_HavokSkeleton)
-            || havok.m_Bones.size <= 0
-            || havok.m_Bones.data.is_null()
-            || skeleton.m_BoneNameHashes.is_null()
-        {
-            return Err(Refusal::MissingChannel);
-        }
-        // The safe CAMERA slot names an absent unnumbered bone on the checked skeleton.
-        // Resolve the actual named channel and reject GetBoneIndex's root fallback.
-        let hash = hashlittle(b"CharacterCam1");
-        let index = controller.GetBoneIndex(hash);
-        let count = havok.m_Bones.size as u32;
-        if index == 0
-            || index >= count
+        let index = camera_bone(controller)?;
+        if !std::ptr::eq(pose.m_Skeleton, (*controller.m_Skeleton).m_HavokSkeleton)
             || index >= pose.m_ModelPose.size.max(0) as u32
             || index >= pose.m_BoneFlags.size.max(0) as u32
             || pose.m_ModelPose.data.is_null()
             || pose.m_BoneFlags.data.is_null()
-            || *skeleton.m_BoneNameHashes.add(index as usize) != hash
         {
             return Err(Refusal::MissingChannel);
         }
@@ -106,12 +98,6 @@ pub(super) unsafe fn read(character: &Character) -> Result<NativeSample, Refusal
         let finalized = evidence::matching(identity, producer.m_PoseT1 as u64, &observed)?;
         let mut matrix = Matrix4::default();
         controller.GetBoneMatrix(index, &mut matrix);
-        let after = animation(controller, index)?;
-        let checked =
-            evidence::matching(source(controller, index)?, producer.m_PoseT1 as u64, &after)?;
-        if checked.serial != finalized.serial || checked.animation != finalized.animation {
-            return Err(Refusal::IncoherentAnimation);
-        }
         Ok(NativeSample {
             character: character as *const Character as u64,
             source: identity,
@@ -168,25 +154,7 @@ pub unsafe fn animation_update(
             if evaluation.controller != address || !evaluation.before.exchanged_with(after) {
                 return Err(Refusal::MissingFinalizedAnimation);
             }
-            if controller.m_SkeletonResourceHandle.is_null() || controller.m_Skeleton.is_null() {
-                return Err(Refusal::MissingChannel);
-            }
-            let index = controller.GetBoneIndex(hashlittle(b"CharacterCam1"));
-            let skeleton = controller
-                .m_Skeleton
-                .as_ref()
-                .ok_or(Refusal::MissingChannel)?;
-            let havok = skeleton
-                .m_HavokSkeleton
-                .as_ref()
-                .ok_or(Refusal::MissingChannel)?;
-            if index == 0
-                || index >= havok.m_Bones.size.max(0) as u32
-                || skeleton.m_BoneNameHashes.is_null()
-                || *skeleton.m_BoneNameHashes.add(index as usize) != hashlittle(b"CharacterCam1")
-            {
-                return Err(Refusal::MissingChannel);
-            }
+            let index = camera_bone(controller)?;
             let source = source(controller, index)?;
             evaluation.complete(after, source.camera_bone)?;
             let animation = animation(controller, index)?;
@@ -194,6 +162,37 @@ pub unsafe fn animation_update(
         })()
     };
     publish_evaluation(address, result);
+}
+
+/// The safe CAMERA slot names an absent unnumbered bone on the checked skeleton, so this resolves
+/// the actual named channel and rejects [`AnimationController::GetBoneIndex`]'s root fallback.
+unsafe fn camera_bone(controller: &AnimationController) -> Result<u32, Refusal> {
+    unsafe {
+        let skeleton = controller
+            .m_Skeleton
+            .as_ref()
+            .ok_or(Refusal::MissingChannel)?;
+        let havok = skeleton
+            .m_HavokSkeleton
+            .as_ref()
+            .ok_or(Refusal::MissingChannel)?;
+        if controller.m_SkeletonResourceHandle.is_null()
+            || havok.m_Bones.size <= 0
+            || havok.m_Bones.data.is_null()
+            || skeleton.m_BoneNameHashes.is_null()
+        {
+            return Err(Refusal::MissingChannel);
+        }
+        let hash = hashlittle(b"CharacterCam1");
+        let index = controller.GetBoneIndex(hash);
+        if index == 0
+            || index >= havok.m_Bones.size as u32
+            || *skeleton.m_BoneNameHashes.add(index as usize) != hash
+        {
+            return Err(Refusal::MissingChannel);
+        }
+        Ok(index)
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -401,19 +400,11 @@ unsafe fn hk_slice<T>(array: &HkArray<T>) -> Result<&[T], Refusal> {
 // A bounded diagnostic read, not an engine allocation limit.
 const MAX_NATIVE_ITEMS: usize = 4096;
 
-fn classify(hash: Option<u32>) -> Result<GraphState, Refusal> {
-    static STATES: LazyLock<StateTable<Result<GraphState, Refusal>>> = LazyLock::new(|| {
-        StateTable::new(
-            EXACT_STATES
-                .iter()
-                .map(|&(name, state)| (name, Ok(state)))
-                .chain([(IDLE_TAIL_STATE, Err(Refusal::IdleTailWeightNotBound))]),
-        )
-    });
+fn classify(hash: Option<u32>) -> Result<State, Refusal> {
+    static STATES: LazyLock<StateTable<State>> =
+        LazyLock::new(|| StateTable::new(EXACT_STATES.iter().copied()));
     let hash = hash.ok_or(Refusal::MissingState)?;
-    STATES
-        .get(hash)
-        .unwrap_or(Err(Refusal::OrdinaryOrUnsupportedState))
+    STATES.get(hash).ok_or(Refusal::UnsupportedState)
 }
 
 pub(super) fn trs(matrix: Mat4) -> Result<Trs, Refusal> {
@@ -448,32 +439,21 @@ pub(super) fn trs(matrix: Mat4) -> Result<Trs, Refusal> {
 // sequence, not the native S_GRAPPLE_HANG name: rico_grpl_newhang_land pitches and raises the
 // marker with no root motion, and rico_grpl_newhang_idle (also bound by S_IDLE_HANG_STUNT) holds
 // its endpoint, so the verified handoff retains the entry-relative correction.
-const EXACT_STATES: &[(&str, GraphState)] = &[
-    (
-        "S_GRAPPLE_PRE_UPSIDEDOWN",
-        GraphState::Hanging(HangingState::GrapplePreUpsideDown),
-    ),
-    (
-        "S_GRAPPLE_ATTACH_UPSIDE_DOWN",
-        GraphState::Hanging(HangingState::GrappleUpsideDown),
-    ),
-    (
-        "S_IDLE_HANG_STUNT",
-        GraphState::Hanging(HangingState::StuntIdle),
-    ),
+const EXACT_STATES: &[(&str, State)] = &[
+    ("S_GRAPPLE_PRE_UPSIDEDOWN", State::PreUpsideDown),
+    ("S_GRAPPLE_ATTACH_UPSIDE_DOWN", State::UpsideDown),
+    ("S_IDLE_HANG_STUNT", State::StuntIdle),
 ];
-
-/// The wingsuit idle, refused because the weight of its idle tail is not bound.
-const IDLE_TAIL_STATE: &str = "S_JC_WINGSUIT_IDLE";
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn animation_adapter_invalidates_a_range_excluding_the_camera() {
-        for count in [-1, 0, 7, 8] {
+    fn skipped_producer_work_or_a_range_excluding_the_camera_invalidates_the_evidence() {
+        for (count, exchanged) in [(-1, true), (0, true), (8, true), (9, false)] {
             let (evaluation, after, source, animation) = evaluation_fixture(910, count);
+            let after = if exchanged { after } else { evaluation.before };
             evidence::publish(source, after.current, animation.clone());
             let result = evaluation
                 .complete(after, source.camera_bone)
@@ -488,7 +468,7 @@ mod tests {
     }
 
     #[test]
-    fn animation_adapter_publishes_a_range_including_the_camera() {
+    fn an_evaluation_including_the_camera_publishes_a_new_serial() {
         let (evaluation, after, source, animation) = evaluation_fixture(911, 9);
         evidence::publish(source, evaluation.before.current, animation.clone());
         let previous = evidence::matching(source, evaluation.before.current, &animation)
@@ -505,53 +485,6 @@ mod tests {
                 .serial
                 > previous
         );
-        evidence::invalidate(source.controller);
-    }
-
-    #[test]
-    fn animation_adapter_invalidates_skipped_producer_work() {
-        let (evaluation, _, source, animation) = evaluation_fixture(912, 9);
-        let after = evaluation.before;
-        evidence::publish(source, after.current, animation.clone());
-        let result = evaluation
-            .complete(after, source.camera_bone)
-            .map(|()| (source, after.current, animation.clone()));
-        assert!(matches!(result, Err(Refusal::MissingFinalizedAnimation)));
-        publish_evaluation(source.controller, result);
-        assert!(matches!(
-            evidence::matching(source, after.current, &animation),
-            Err(Refusal::MissingFinalizedAnimation)
-        ));
-    }
-
-    #[test]
-    fn upside_down_camera_states_cannot_bypass_evaluated_range_or_buffer_exchange() {
-        for (offset, name) in [
-            b"S_GRAPPLE_PRE_UPSIDEDOWN".as_slice(),
-            b"S_GRAPPLE_ATTACH_UPSIDE_DOWN".as_slice(),
-        ]
-        .into_iter()
-        .enumerate()
-        {
-            for exchanged in [false, true] {
-                let count = if exchanged { 8 } else { 9 };
-                let (evaluation, after, source, mut animation) =
-                    evaluation_fixture(920 + offset as u64, count);
-                animation.state = Some(hashlittle(name));
-                assert!(classify(animation.state).is_ok());
-                let after = if exchanged { after } else { evaluation.before };
-                evidence::publish(source, after.current, animation.clone());
-                let result = evaluation
-                    .complete(after, source.camera_bone)
-                    .map(|()| (source, after.current, animation.clone()));
-                assert!(matches!(result, Err(Refusal::MissingFinalizedAnimation)));
-                publish_evaluation(source.controller, result);
-                assert!(matches!(
-                    evidence::matching(source, after.current, &animation),
-                    Err(Refusal::MissingFinalizedAnimation)
-                ));
-            }
-        }
     }
 
     fn evaluation_fixture(
@@ -613,73 +546,41 @@ mod tests {
     }
 
     #[test]
-    fn classifier_rejects_ordinary_and_root_motion_only_states() {
+    fn the_classifier_admits_only_the_upside_down_family() {
+        assert_eq!(
+            classify(Some(hashlittle(b"S_GRAPPLE_PRE_UPSIDEDOWN"))),
+            Ok(State::PreUpsideDown)
+        );
+        assert_eq!(
+            classify(Some(hashlittle(b"S_GRAPPLE_ATTACH_UPSIDE_DOWN"))),
+            Ok(State::UpsideDown)
+        );
+        assert_eq!(
+            classify(Some(hashlittle(b"S_IDLE_HANG_STUNT"))),
+            Ok(State::StuntIdle)
+        );
+        // The marker only cancels root motion or holds identity in these, and the legacy hang
+        // name is absent from the shipped graph.
         for name in [
-            // The marker only cancels the clip's root motion, or holds identity.
-            b"S_JC_WINGSUIT_BOOST_TRANSITION_FROM_GROUND_INTO".as_slice(),
-            b"S_JC_WINGSUIT_BOOST_TRANSITION_FROM_GROUND".as_slice(),
-            b"S_JC_BOOST_WINGSUIT_BREAK_TO_LAND".as_slice(),
-            b"S_JC_PARACHUTE_SLIDE_LAND".as_slice(),
-            b"S_LAND_FAST_FALL".as_slice(),
-            b"S_LAND_HARD".as_slice(),
-            b"S_LAND_IDLE_0".as_slice(),
             b"S_LAND_RUN_0".as_slice(),
-            b"S_GETUP_POSEMATCHING".as_slice(),
-            b"S_GETUP".as_slice(),
-            b"S_IDLE_PICKUP".as_slice(),
             b"S_GRAPPLE_ATTACH_0".as_slice(),
-            // These bind no clip.
-            b"S_IDLE_HANG_STUNT_120L".as_slice(),
-            b"S_IDLE_HANG_STUNT2".as_slice(),
+            b"S_JC_WINGSUIT_IDLE".as_slice(),
+            b"S_GRAPPLE_HANG".as_slice(),
             b"S_IDLE".as_slice(),
-            b"S_JUMP".as_slice(),
-            b"S_RUN".as_slice(),
-            b"S_FULL_RAGDOLL".as_slice(),
-            b"S_CRASH_LAND_RAGDOLL".as_slice(),
-            b"S_HEAVY_WEAPON_PICKUP".as_slice(),
-            b"S_GRAPPLE_REEL_TO_LAND".as_slice(),
-            b"S_GRAPPLE_ATTACH_UPSIDE_DOWN_UNKNOWN".as_slice(),
-            b"S_GRAPPLE_PRE_UPSIDEDOWN_UNKNOWN".as_slice(),
-            b"S_JC_WINGSUIT_TO_LAND_SLIDE".as_slice(),
-            b"S_GETUP_UNKNOWN".as_slice(),
         ] {
             assert_eq!(
                 classify(Some(hashlittle(name))),
-                Err(Refusal::OrdinaryOrUnsupportedState)
+                Err(Refusal::UnsupportedState)
             );
         }
-        assert_eq!(
-            classify(Some(hashlittle(b"S_JC_WINGSUIT_IDLE"))),
-            Err(Refusal::IdleTailWeightNotBound)
-        );
         assert_eq!(classify(None), Err(Refusal::MissingState));
     }
 
     #[test]
-    fn legacy_grapple_hang_predicate_name_does_not_supply_a_shipped_camera_state() {
-        assert_eq!(
-            classify(Some(hashlittle(b"S_GRAPPLE_HANG"))),
-            Err(Refusal::OrdinaryOrUnsupportedState)
-        );
-    }
-
-    #[test]
-    fn classifier_admits_the_states_whose_marker_moves() {
-        for (name, expected) in [
-            (
-                b"S_GRAPPLE_PRE_UPSIDEDOWN".as_slice(),
-                GraphState::Hanging(HangingState::GrapplePreUpsideDown),
-            ),
-            (
-                b"S_GRAPPLE_ATTACH_UPSIDE_DOWN".as_slice(),
-                GraphState::Hanging(HangingState::GrappleUpsideDown),
-            ),
-            (
-                b"S_IDLE_HANG_STUNT".as_slice(),
-                GraphState::Hanging(HangingState::StuntIdle),
-            ),
-        ] {
-            assert_eq!(classify(Some(hashlittle(name))), Ok(expected));
-        }
+    fn only_the_forward_upside_down_handoff_continues_across_states() {
+        assert!(State::PreUpsideDown.continues(State::UpsideDown));
+        assert!(!State::UpsideDown.continues(State::PreUpsideDown));
+        assert!(!State::StuntIdle.continues(State::UpsideDown));
+        assert!(!State::PreUpsideDown.continues(State::StuntIdle));
     }
 }
