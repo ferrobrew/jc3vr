@@ -1,6 +1,6 @@
 //! Registers the physical hands, the vehicle handling, and the weapon handling with the systems
 //! below them: the body, the grip model, the roomscale, the hand bodies' step, the per-shot seam,
-//! and the character hooks. Each subsystem's own `register_body` names what it contributes.
+//! the weapon take, and the character hooks. Each subsystem's own `register_body` names what it contributes.
 //!
 //! Each of these does real work every tick, and the body destruction observer keeps the climb and
 //! the carried bodies from holding a destroyed body, so the install refuses to finish with one
@@ -15,7 +15,7 @@ use crate::{
         grab::tick as grab_tick,
         physical_hands::{self, physics as hand_bodies},
         roomscale, vehicles,
-        weapons::{self, fire},
+        weapons::{self, fire, hold::take},
     },
     hooks::character::{
         bodies_destroying_registered, missing_auto_attach_blockers, serial_consumer_registered,
@@ -59,6 +59,9 @@ fn missing() -> String {
     }
     if !fire::mounted_shot_observer_registered() {
         missing.push_str("\n- the mounted shot observer");
+    }
+    if !take::refusal_sink_registered() {
+        missing.push_str("\n- the take refusal sink");
     }
     if !serial_consumer_registered() {
         missing.push_str("\n- the magazine serial consumer");

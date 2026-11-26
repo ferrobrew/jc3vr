@@ -1,17 +1,19 @@
-//! Registers the physical hands with the body, the grip model, and the character hooks below them:
-//! the climb's readers ([`crate::controllers::facts::climb`]), the palms' push in the rig's
-//! simulation half, the climb's refusal of the automatic entry into a vehicle's stunt area below
-//! the player, the observer of a body destruction, and the palm summary logged with each grip
-//! press.
+//! Registers the physical hands with the body, the grip model, the weapon handling, and the
+//! character hooks below them: the climb's readers ([`crate::controllers::facts::climb`]), the
+//! palms' push in the rig's simulation half, the climb's refusal of the automatic entry into a
+//! vehicle's stunt area below the player, the observer of a body destruction, the palm summary
+//! logged with each grip press, and the grip view's flash for a refused take of a weapon.
 
 use jc3gi::physics::hknpWorld;
+use jc3vr_input::frame::Hand;
 
 use crate::{
     controllers::{
         body::rig::root::register_palm_push,
         facts::climb::{self as climb_facts, ClimbReaders},
         grab::tick::register_palm_summary,
-        physical_hands::{carry_bodies_destroying, climb, press_summary, push_body},
+        physical_hands::{carry_bodies_destroying, climb, grab_view, press_summary, push_body},
+        weapons::hold::take::register_refusal_sink,
     },
     hooks::character::{
         AutoAttachBlocker, register_auto_attach_blocker, register_bodies_destroying,
@@ -28,6 +30,12 @@ pub(crate) fn register() {
     register_auto_attach_blocker(AutoAttachBlocker::PhysicalClimb, climb::native::blocks);
     register_bodies_destroying(bodies_destroying);
     register_palm_summary(press_summary);
+    register_refusal_sink(take_refused);
+}
+
+/// A refused take of a weapon, flashed in the grip view at the target the hand's grip chose.
+fn take_refused(hand: Hand, why: &str) {
+    grab_view::refused(hand, None, why);
 }
 
 /// Before the world destroys bodies: the climb forgets each body's lifetime stamp, then the carried

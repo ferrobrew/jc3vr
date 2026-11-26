@@ -5,10 +5,13 @@
 //! ([`crate::controllers::weapons::hold::world`]), places their grab volumes for the free hands
 //! ([`begin_tick`]), and carries out a grab of one ([`finish_grab`]).
 //!
+//! A refusal is also handed to the sink the physical hands register ([`register_refusal_sink`]),
+//! which shows it in their grip view.
+//!
 //! The targets come from the world in world space and are carried into the cockpit frame the grab
 //! volumes live in ([`crate::controllers::weapons::docks::cockpit_frames`]).
 
-use std::fmt;
+use std::{fmt, sync::OnceLock};
 
 use glam::{Mat4, Vec3};
 use jc3gi::{
@@ -23,7 +26,6 @@ use crate::controllers::{
     aim::gun,
     grab::Candidate,
     hands::{ActiveHands, CockpitHand},
-    physical_hands::grab_view,
     weapons::{
         config::HoldConfig,
         docks, engine,
@@ -251,6 +253,20 @@ pub(crate) fn stand_down() {
     state.status.rack_targets = 0;
 }
 
+/// Register the sink of each refused take: called with the hand and why, on the game thread where
+/// the refusal is made, outside the take's own lock. One sink: a second registration is refused
+/// and logged.
+pub(crate) fn register_refusal_sink(sink: fn(Hand, &str)) {
+    if REFUSAL_SINK.set(sink).is_err() {
+        tracing::error!("hold: a take refusal sink is already registered; keeping the first");
+    }
+}
+
+/// Whether the sink of each refused take is registered.
+pub(crate) fn refusal_sink_registered() -> bool {
+    REFUSAL_SINK.get().is_some()
+}
+
 /// The character whose gun the last input tick offered `hand`, as an address: the hand is within
 /// its steal reach of a gun in its hands or holstered on its body. `None` when no gun on a
 /// character was offered to it, or once a grab consumed the offer.
@@ -266,7 +282,9 @@ const TAKE_RADII: TakeRadii = TakeRadii {
 
 fn report_refusal(hand: Hand, refusal: TakeRefusal) {
     tracing::info!(target: "controllers", hand = hand.label(), %refusal, "hold: no weapon taken");
-    grab_view::refused(hand, None, &refusal.to_string());
+    if let Some(sink) = REFUSAL_SINK.get() {
+        sink(hand, &refusal.to_string());
+    }
     hold::refused(refusal);
 }
 
@@ -294,6 +312,8 @@ struct State {
     offered: world::Offers,
     status: TakeStatus,
 }
+
+static REFUSAL_SINK: OnceLock<fn(Hand, &str)> = OnceLock::new();
 
 static HANDLE_PLACEMENTS: Mutex<Records> = Mutex::new(Records::new());
 
