@@ -40,11 +40,10 @@ pub mod step;
 pub mod tuning;
 pub mod yaw;
 
-// The math modules at their earlier root paths, for the consumers that still name them there.
 pub use crate::{
     body::PlayerBody,
     estimate::{BodyEstimate, EstimateTuning},
-    math::{Pose, Side, angle, geometry, rotation, smooth},
+    math::{Pose, Side},
     pelvis::{Bend, PelvisSolve, PelvisTuning},
     rig::{GroundedRig, RigFrame, RigOutput, RigTuning},
     step::{StepPhase, StepTuning, drive_velocity},

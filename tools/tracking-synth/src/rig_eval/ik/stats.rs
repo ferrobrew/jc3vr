@@ -2,8 +2,8 @@
 //! the twist, and the glances.
 
 use body_rig::{
-    angle::wrap,
-    contact::{ContactFrame, FootPose, Release, Side},
+    contact::{ContactFrame, FootPose, Release},
+    math::{Side, angle::wrap},
 };
 use glam::{Vec2, Vec3};
 

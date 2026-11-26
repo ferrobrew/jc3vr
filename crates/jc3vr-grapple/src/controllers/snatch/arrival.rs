@@ -17,7 +17,7 @@ use glam::{Quat, Vec3};
 use jc3gi::{equipment::weapon::WeaponBase, graphics_engine::model_instance::ModelInstanceFlags};
 use jc3vr_body::controllers::{
     aim::gun,
-    hands::{grip, ik, pose as hand_pose},
+    hands::{grip, ik},
     physics::{local_player::LocalPlayer, rigid::BodyPose},
 };
 use jc3vr_core::game_tick::GameTick;
@@ -74,13 +74,10 @@ impl Landing {
     /// `weapon` must be live, on the game thread before the world update.
     pub(super) unsafe fn measure(weapon: &WeaponBase, body: BodyPose) -> Option<Self> {
         let gun = unsafe { gun_pose(weapon) }?;
-        let body_in_gun = hand_pose::mul(
-            hand_pose::inverse(gun),
-            Pose {
-                position: body.centre,
-                orientation: body.orientation,
-            },
-        );
+        let body_in_gun = gun.inverse().compose(Pose {
+            position: body.centre,
+            orientation: body.orientation,
+        });
         (body_in_gun.position.is_finite() && body_in_gun.orientation.is_finite()).then_some(Self {
             body_in_gun,
             start_m: None,
@@ -95,7 +92,7 @@ impl Landing {
             position: input.body.centre,
             orientation: input.body.orientation,
         };
-        let gun = hand_pose::mul(body, hand_pose::inverse(self.body_in_gun));
+        let gun = body.compose(self.body_in_gun.inverse());
         let grip = gun.position;
         let local_player = LocalPlayer::get(game);
         let character = local_player.as_ref().map(LocalPlayer::character);
@@ -109,7 +106,7 @@ impl Landing {
         let catch_reach = SNATCH.get().catch_zone_m;
         let targets = Hand::BOTH.map(|hand| {
             let (current, previous, canonical) = wrists[hand.index()]?;
-            let now = hand_pose::mul(current, canonical);
+            let now = current.compose(canonical);
             let t_go = landing::time_to_go(grip, input.velocity, now.position, catch_reach, tuning);
             let (position, orientation, angular) = landing::extrapolate(
                 previous.map(|p| (p.position, p.orientation)),
@@ -122,7 +119,7 @@ impl Landing {
                 position,
                 orientation,
             };
-            Some((hand_pose::mul(wrist, canonical), angular))
+            Some((wrist.compose(canonical), angular))
         });
         let distance = input.body.centre.distance(input.palm);
         let mut tick = LandingTick {
@@ -140,7 +137,7 @@ impl Landing {
         let Some((target, hand_angular)) = targets[input.receiver.index()] else {
             return tick;
         };
-        let target_body = hand_pose::mul(target, self.body_in_gun);
+        let target_body = target.compose(self.body_in_gun);
         let t_go = landing::time_to_go(grip, input.velocity, target.position, catch_reach, tuning);
         let drive = landing::turn_drive(
             Turning {

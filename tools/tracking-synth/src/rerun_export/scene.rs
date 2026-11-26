@@ -6,7 +6,7 @@
 //! `world/cockpit` shows them as the runtime gave them. The rig is under `world/cockpit/room`, the
 //! cockpit lowered to its floor.
 
-use body_rig::{StepPhase, angle};
+use body_rig::{StepPhase, math::angle};
 use glam::{Quat, Vec2, Vec3};
 use rerun::{
     Arrows3D, Clear, Color, LineStrips3D, Points3D, Quaternion, RecordingStreamResult, Rgba32,

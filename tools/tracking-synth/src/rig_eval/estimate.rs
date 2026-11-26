@@ -10,7 +10,7 @@ use body_estimator::{
     EgoPoser,
     smpl::{AMASS_FROM_ROOM, JOINT_COUNT},
 };
-use body_rig::{BodyEstimate, EstimateTuning, angle::wrap};
+use body_rig::{BodyEstimate, EstimateTuning, math::angle::wrap};
 use glam::Quat;
 use tracking_format::Frame;
 

@@ -4,10 +4,7 @@
 
 use body_rig::math::rotation::{angle, angle_between, angular_velocity, clamp_angle};
 use glam::{Mat4, Vec3};
-use jc3vr_body::controllers::{
-    hands::pose as hand_pose,
-    held::guns::{BraceContact, HeftClass, MassSource},
-};
+use jc3vr_body::controllers::held::guns::{BraceContact, HeftClass, MassSource};
 use jc3vr_input::frame::Pose;
 
 use crate::controllers::physical_hands::physics::tuning::{
@@ -88,19 +85,19 @@ pub fn gun_mass(
 /// The gun body's place on the holding hand's body: the gun's pose `gun` in the frame of the hand
 /// body's pose `hand`, both world space.
 pub fn seat(hand: Pose, gun: Pose) -> Pose {
-    hand_pose::mul(hand_pose::inverse(hand), gun)
+    hand.inverse().compose(gun)
 }
 
 /// Where the gun body sits on the holding hand's body at `seat`, world space.
 pub fn seated(hand: Pose, seat: Pose) -> Pose {
-    hand_pose::mul(hand, seat)
+    hand.compose(seat)
 }
 
 /// How far the gun body at `gun` strays from its seat on the hand body at `hand`, in the gun's own
 /// frame: the transform that carries the seated gun onto the gun body. The identity while the
 /// joint holds the gun exactly where it took it.
 pub fn deviation(hand: Pose, seat: Pose, gun: Pose) -> Pose {
-    hand_pose::mul(hand_pose::inverse(seated(hand, seat)), gun)
+    seated(hand, seat).inverse().compose(gun)
 }
 
 /// Whether a deviation is past what a held gun may stray before it is put back on its seat: a
@@ -141,13 +138,13 @@ pub fn clamp_velocity(
     if !(step_s.is_finite() && step_s > 0.0) {
         return None;
     }
-    let drift = hand_pose::mul(hand_pose::inverse(seated), gun);
+    let drift = seated.inverse().compose(gun);
     if !(drift.position.is_finite() && drift.orientation.is_finite())
         || !strayed(drift, max_shift_m, max_turn_rad)
     {
         return None;
     }
-    let target = hand_pose::mul(seated, limit(drift, max_shift_m, max_turn_rad));
+    let target = seated.compose(limit(drift, max_shift_m, max_turn_rad));
     let angular =
         angular_velocity(gun.orientation, target.orientation, step_s).unwrap_or(Vec3::ZERO);
     Some(((target.position - gun.position) / step_s, angular))
@@ -280,18 +277,18 @@ mod tests {
         let seated = pose(Vec3::new(0.3, 1.4, -0.2), Quat::from_rotation_y(0.7));
         let step_s = 1.0 / 60.0;
         // Within the clamps the hand alone carries the body.
-        let near = hand_pose::mul(seated, pose(Vec3::X * shift * 0.5, Quat::IDENTITY));
+        let near = seated.compose(pose(Vec3::X * shift * 0.5, Quat::IDENTITY));
         assert_eq!(clamp_velocity(seated, near, shift, turn, step_s), None);
         // A shot's muzzle rise past the clamp: one step of the correction lands on the clamp.
         let rise = Quat::from_rotation_x(turn * 3.0);
-        let kicked = hand_pose::mul(seated, pose(Vec3::Z * shift * 2.0, rise));
+        let kicked = seated.compose(pose(Vec3::Z * shift * 2.0, rise));
         let (linear, angular) = clamp_velocity(seated, kicked, shift, turn, step_s).unwrap();
         let next = Pose {
             position: kicked.position + linear * step_s,
             orientation: (Quat::from_scaled_axis(angular * step_s) * kicked.orientation)
                 .normalize(),
         };
-        let drift = hand_pose::mul(hand_pose::inverse(seated), next);
+        let drift = seated.inverse().compose(next);
         assert!((drift.position.length() - shift).abs() < 1e-4);
         assert!((angle(drift.orientation) - turn).abs() < 1e-3);
         assert!(!strayed(drift, shift + 1e-4, turn + 1e-3));
@@ -503,7 +500,7 @@ mod tests {
         let d = deviation(hand, seat, gun);
         assert!(d.position.abs_diff_eq(Vec3::new(0.0, -0.05, 0.0), 1e-5));
         // Composing the seated pose with the deviation is the gun body.
-        let back = hand_pose::mul(seated(hand, seat), d);
+        let back = seated(hand, seat).compose(d);
         assert!(back.position.abs_diff_eq(gun.position, 1e-5));
         assert!(strayed(
             pose(Vec3::new(0.06, 0.0, 0.0), Quat::IDENTITY),

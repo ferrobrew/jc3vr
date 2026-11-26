@@ -8,7 +8,7 @@
 //! which stops any step, and past the tuning file's restart ([`RigFile::resume_after_ns`]) forgets
 //! the heading as the payload does. A teleport's forget leaves no trace in the recording.
 
-use body_rig::{GroundedRig, RigFrame, angle};
+use body_rig::{GroundedRig, RigFrame, math::angle};
 use glam::{Vec2, Vec3};
 use tracking_format::{Frame, Recording, event::EventKind};
 

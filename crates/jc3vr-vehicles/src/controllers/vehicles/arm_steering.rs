@@ -31,9 +31,8 @@
 //! once they come in past a narrower share (the tuning's `arm_steering.spread_hysteresis`), so a wing held near the
 //! threshold does not flicker in and out.
 
-use body_rig::math::axis::past_deadzone;
+use body_rig::math::{axis::past_deadzone, shoulders::EYES_FORWARD_OF_SHOULDERS};
 use glam::{Quat, Vec2, Vec3};
-use jc3vr_body::controllers::body::EYES_FORWARD_OF_SHOULDERS;
 
 use crate::controllers::vehicles::{
     config::{ArmPitch, ArmSteeringConfig},

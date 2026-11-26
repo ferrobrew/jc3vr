@@ -1,7 +1,7 @@
 //! The evaluated rig against the one the payload ran: each row beside the recorded rig frame
 //! (`Rig`, from version 8) nearest before it, and how far the two agree.
 
-use body_rig::{RigOutput, StepPhase, angle};
+use body_rig::{RigOutput, StepPhase, math::angle};
 use glam::Vec2;
 use tracking_format::{
     Recording,

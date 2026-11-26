@@ -339,10 +339,5 @@ fn read_body_rotation() -> Option<Quat> {
     }
 }
 
-/// The yaw component (radians) of a body rotation, for the on-foot compensation and latch math.
-pub fn body_yaw_of(rotation: Quat) -> f32 {
-    rotation.to_euler(glam::EulerRot::YXZ).0
-}
-
 #[cfg(test)]
 mod tests;

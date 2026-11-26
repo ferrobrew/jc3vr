@@ -2,7 +2,7 @@
 
 use std::io::{self, Write};
 
-use body_rig::{StepPhase, angle};
+use body_rig::{StepPhase, math::angle};
 
 use crate::rig_eval::{ComparedRow, EvalRow};
 

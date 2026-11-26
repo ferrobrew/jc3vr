@@ -3,8 +3,11 @@
 use glam::{Vec2, Vec3};
 
 use crate::{
-    contact::{ContactFrame, FootPose, Release, Rules, Side, off_stance},
-    math::angle::{forward, wrap},
+    contact::{ContactFrame, FootPose, Release, Rules, off_stance},
+    math::{
+        Side,
+        angle::{forward, wrap},
+    },
 };
 
 /// What the rules found this frame.

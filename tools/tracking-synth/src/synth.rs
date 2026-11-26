@@ -11,7 +11,7 @@
 
 use std::fmt;
 
-use body_rig::rotation::angular_velocity;
+use body_rig::math::rotation::angular_velocity;
 use glam::{Quat, Vec2};
 use tracking_format::{
     ControllerSample, EyeSample, Frame, HeadSample, Header, RecenterEvent, Recording,

@@ -1,6 +1,6 @@
 //! The evaluation's summary, accumulated frame by frame.
 
-use body_rig::{RigOutput, StepPhase, angle};
+use body_rig::{RigOutput, StepPhase, math::angle};
 
 use crate::rig_eval::{EvalSummary, HELD_LEAN_M, HELD_LEAN_S};
 

@@ -146,17 +146,6 @@ pub fn wrist_rotation_delta(target: Quat, animated: Quat) -> (Vec3, f32) {
     shortest(target * animated.inverse()).to_axis_angle()
 }
 
-/// `a` then `b`, as rigid transforms: [`Pose::compose`], kept for the crates that still call it
-/// here.
-pub fn mul(a: Pose, b: Pose) -> Pose {
-    a.compose(b)
-}
-
-/// The inverse rigid transform: [`Pose::inverse`], kept for the crates that still call it here.
-pub fn inverse(p: Pose) -> Pose {
-    p.inverse()
-}
-
 /// Interpolate between two poses: a linear position and a spherical orientation.
 pub fn interp(a: Pose, b: Pose, t: f32) -> Pose {
     Pose {

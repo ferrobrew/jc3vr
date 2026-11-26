@@ -11,11 +11,13 @@
 //! The probe names the body it lands on as the foot's support ([`support::identify`]), and the
 //! same update snapshots every moving support the gate still asks about ([`support::tick`]).
 
-use std::time::Instant;
-
-use body_rig::contact::{Ground, Probe, Side};
+use body_rig::{
+    contact::{Ground, Probe},
+    math::Side,
+};
 use glam::{Vec2, Vec3};
 use jc3gi::character::character::Character;
+use jc3vr_core::published::Stamp;
 use parking_lot::Mutex;
 
 use crate::{
@@ -35,15 +37,19 @@ pub(crate) fn ask(side: Side, at: Vec2, near: f32) -> Probe {
     if !at.is_finite() || !near.is_finite() {
         return Probe::Miss;
     }
-    let now = Instant::now();
+    let now = Stamp::now();
     let tuning = &IK_BODY.get().probe;
     let mut probes = PROBES.lock();
     let slot = &mut probes[side.index()];
     if let Some(answer) = slot.answer
         && answer.at.distance(at) <= tuning.same_point_m
         && (answer.near - near).abs() <= tuning.same_height_m
-        && now.saturating_duration_since(answer.when)
-            <= FRESHNESS.get().body.ik_probe_answer_ms.duration()
+        && FRESHNESS
+            .get()
+            .body
+            .ik_probe_answer_ms
+            .window()
+            .holds(answer.when, now)
     {
         return match answer.ground {
             Some(ground) => Probe::Hit(ground),
@@ -66,7 +72,7 @@ pub(crate) fn ask(side: Side, at: Vec2, near: f32) -> Probe {
 /// `character` must be the live local character, in the simulation phase outside the physics
 /// step.
 pub(crate) unsafe fn tick(character: &Character) {
-    let now = Instant::now();
+    let now = Stamp::now();
     let requests = {
         let probes = PROBES.lock();
         [probes[0].request, probes[1].request]
@@ -92,7 +98,7 @@ pub(crate) fn forget() {
 /// # Safety
 ///
 /// As [`tick`].
-unsafe fn cast(character: &Character, requests: [Option<Request>; 2], now: Instant) {
+unsafe fn cast(character: &Character, requests: [Option<Request>; 2], now: Stamp) {
     let options = cast_options(character);
     let tuning = &IK_BODY.get().probe;
     for (index, request) in requests.into_iter().enumerate() {
@@ -145,7 +151,7 @@ struct Answer {
     at: Vec2,
     near: f32,
     ground: Option<Ground>,
-    when: Instant,
+    when: Stamp,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]

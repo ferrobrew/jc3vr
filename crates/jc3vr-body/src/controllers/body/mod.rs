@@ -56,7 +56,6 @@ pub mod rig;
 pub mod tuning;
 pub mod unarmed;
 
-pub use body_rig::math::shoulders::EYES_FORWARD_OF_SHOULDERS;
 use body_rig::math::shoulders::{eyes_to_right_shoulder, shoulders};
 use glam::{Quat, Vec3};
 use jc3vr_core::config::engine::{ConfigSlot, Invalid, SlotOptions, load::Reset};
@@ -300,8 +299,9 @@ pub fn remap_head_translation(
 
 /// Estimate the shoulder joints `[left, right]` of a body from its eye position and torso heading
 /// ([`shoulders`]): `eye_height - shoulder_height` below the eyes, spread by the shoulder width
-/// along the torso's right axis, and [`EYES_FORWARD_OF_SHOULDERS`] behind the eyes. `torso` is a
-/// heading, a turn about +Y, so the shoulders do not pitch when the head nods.
+/// along the torso's right axis, and
+/// [`EYES_FORWARD_OF_SHOULDERS`](body_rig::math::shoulders::EYES_FORWARD_OF_SHOULDERS) behind the
+/// eyes. `torso` is a heading, a turn about +Y, so the shoulders do not pitch when the head nods.
 pub fn shoulder_positions(eye_position: Vec3, torso: Quat, body: &BodyDimensions) -> [Vec3; 2] {
     let drop = body.eye_height - body.shoulder_height;
     shoulders(

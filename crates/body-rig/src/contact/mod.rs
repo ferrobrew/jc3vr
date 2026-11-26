@@ -32,21 +32,21 @@ mod tests;
 
 use glam::{Vec2, Vec3};
 
-pub use crate::{
-    contact::{
-        rate::StepRate,
-        rules::{outside_support, support_points},
-        support::{SupportFrame, SupportId, SupportMotion},
-        swing::Swing,
-    },
-    math::side::Side,
+pub use crate::contact::{
+    rate::StepRate,
+    rules::{outside_support, support_points},
+    support::{SupportFrame, SupportId, SupportMotion},
+    swing::Swing,
 };
 use crate::{
     contact::{
         rules::{Need, needs},
         swing::{Landing, Plan, plan},
     },
-    math::angle::{right, wrap},
+    math::{
+        Side,
+        angle::{right, wrap},
+    },
 };
 
 /// A foot's pose: the ankle, and the heading the foot points along.

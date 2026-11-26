@@ -1,7 +1,7 @@
 //! The rig over the tracking frames: the eyes, the head, and the hands from each frame, and the
 //! pelvis either simulated under the step drive or taken from the game's pre-IK pose.
 
-use body_rig::{GroundedRig, RigFrame, angle, drive_velocity};
+use body_rig::{GroundedRig, RigFrame, drive_velocity, math::angle};
 use glam::{Quat, Vec2, Vec3};
 use tracking_format::{
     Frame, Recording,

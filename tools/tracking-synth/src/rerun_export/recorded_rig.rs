@@ -5,7 +5,7 @@
 //! The recorded rig works in the room frame its sample's floor gives; the export's room frame is
 //! the frame's own floor estimate, so the recorded rig's entity carries the difference.
 
-use body_rig::angle;
+use body_rig::math::angle;
 use glam::Vec3;
 use rerun::{Clear, Color, RecordingStreamResult, Rgba32, StateChange, Transform3D};
 use tracking_format::event::{EventKind, RigSample};

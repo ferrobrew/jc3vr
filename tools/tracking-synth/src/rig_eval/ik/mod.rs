@@ -20,14 +20,14 @@ mod tests;
 
 use body_estimator::smpl::{JOINT_COUNT, PELVIS, SPINE3};
 use body_rig::{
-    PlayerBody, angle,
+    PlayerBody,
     body::neck_pivot,
     contact::{
         ContactEvent, ContactFileTuning, ContactFrame, ContactTuning, FootContacts, FootPose,
-        FootTarget, Ground, Probe, Side, Stance, SupportFrame, SupportId, Surroundings,
-        stance_spot,
+        FootTarget, Ground, Probe, Stance, SupportFrame, SupportId, Surroundings, stance_spot,
     },
     fk::{ANKLE_HEIGHT_M, BodyRotations, FkFollower, FkFrame, FkSkeleton, FkTuning, PelvisSource},
+    math::{Side, angle},
 };
 use glam::{Quat, Vec2, Vec3};
 use tracking_format::{

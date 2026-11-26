@@ -181,7 +181,7 @@ impl Log<'_, '_> {
         for frame in context.frames {
             context.set_time(frame.time_ns);
             for recenter in &frame.recenters {
-                let turn = body_rig::angle::yaw_of(recenter.turn * Vec3::NEG_Z)
+                let turn = body_rig::math::angle::yaw_of(recenter.turn * Vec3::NEG_Z)
                     .unwrap_or(0.0)
                     .to_degrees();
                 let cause = match recenter.cause {
