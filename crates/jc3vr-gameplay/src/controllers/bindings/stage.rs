@@ -59,6 +59,7 @@ use jc3vr_body::controllers::{
 };
 use jc3vr_core::{
     frame_timing::{self, Slot},
+    game_tick::GameTick,
     thread_role::{self, ThreadRole},
 };
 use parking_lot::Mutex;
@@ -221,7 +222,15 @@ fn game_stage(delivery: Delivery, spawn: Spawn) {
     let output = {
         let _timing = frame_timing::scope(Slot::Bindings);
         let _spawn = SpawnScope::enter(spawn);
-        crate::controllers::bindings::game_tick(record, landed, delivery)
+        // SAFETY: the game stage is one of the frame's serial points: the game thread with no input
+        // job in flight, at the top of the world's pre-simulation queue before any character,
+        // weapon, or vehicle update and the physics step, after a pre-simulation update that
+        // skipped its queue, or inline after the device poll with no world update after it.
+        unsafe {
+            GameTick::enter(|game| {
+                crate::controllers::bindings::game_tick(game, record, landed, delivery)
+            })
+        }
     };
     gamepad_setting::input_tick();
     HANDOFF.lock().finish(output);

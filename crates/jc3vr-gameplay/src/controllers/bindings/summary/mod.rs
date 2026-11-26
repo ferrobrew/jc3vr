@@ -1,8 +1,7 @@
 //! Current wrist eligibility from the input tick's effective routes and post-finish owners.
 
 use jc3gi::{
-    character::character::{Character, WeaponInput},
-    equipment::weapon::WeaponBase,
+    character::character::WeaponInput, equipment::weapon::WeaponBase,
     input::input_action_map::Action,
 };
 use jc3vr_body::controllers::{
@@ -18,7 +17,9 @@ use jc3vr_body::controllers::{
         rows::{Control, Effect, Gesture, ModAction, Row},
     },
     mode::{AirborneVariant, Detection, Mode},
+    physics::local_player::LocalPlayer,
 };
+use jc3vr_core::game_tick::GameTick;
 use jc3vr_grapple::controllers::snatch;
 use jc3vr_input::{frame::Hand, semantic::vocabulary::ActionId};
 use jc3vr_physical::controllers::physical_hands::door_offer_current;
@@ -154,12 +155,12 @@ pub(super) fn permitted_routes(
         .collect()
 }
 
-pub(super) fn capture(input: Refresh<'_>) -> Eligibility {
+pub(super) fn capture(game: &GameTick<'_>, input: Refresh<'_>) -> Eligibility {
     let parachute = input.parachute;
     let guns = weapons::capabilities::gun_owners_now();
     let reload = current_reload(guns);
-    let fire = fire_ready(input.ready, guns);
-    let reload_permissions = read_reload_permissions(input.config);
+    let fire = fire_ready(game, input.ready, guns);
+    let reload_permissions = read_reload_permissions(game, input.config);
     let doors = Hand::BOTH.map(|hand| {
         input.selected[hand.index()]
             .and_then(|target| target.door_eligibility)
@@ -372,11 +373,11 @@ struct ReloadPermissionRead {
     holster_animation: bool,
 }
 
-fn read_reload_permissions(config: &ControllersConfig) -> ReloadPermissions {
-    // SAFETY: the input tick reads the live local character and its wielded inventory entry.
-    let Some(owner) = (unsafe { Character::GetLocalPlayerCharacter().as_ref() }) else {
+fn read_reload_permissions(game: &GameTick<'_>, config: &ControllersConfig) -> ReloadPermissions {
+    let Some(owner) = LocalPlayer::get(game) else {
         return ReloadPermissions::default();
     };
+    let owner = owner.character();
     // SAFETY: GetWieldingWeapon returns an inventory-owned shared pointer or a static empty one.
     let weapon = unsafe { owner.GetWieldingWeapon(false).as_ref() }
         .and_then(|weapon| unsafe { weapon.px.as_ref() });
@@ -547,16 +548,18 @@ pub(super) fn yank_armed_in(wire: bool, detection: &Detection) -> bool {
         && matches!(detection.mode, Mode::OnFoot(_) | Mode::Airborne(_))
 }
 
-fn fire_ready(ready: [bool; 2], guns: [Option<GunOwner>; 2]) -> [bool; 2] {
+fn fire_ready(game: &GameTick<'_>, ready: [bool; 2], guns: [Option<GunOwner>; 2]) -> [bool; 2] {
     let base = weapons::capabilities::fire_ready_now(ready, false);
     let action = tiers::status();
     let action_running = Hand::BOTH.map(|hand| {
         action.state == Some(TierState::WeaponAction)
             && action.effective[hand.index()] == HandTier::ActionRuns
     });
-    // SAFETY: the input tick reads the current local character and wielded weapon.
-    let weapon = unsafe { Character::GetLocalPlayerCharacter().as_ref() }
-        .and_then(|owner| unsafe { gun::held_weapon(owner) });
+    let local_player = LocalPlayer::get(game);
+    // SAFETY: the local player and its wielded weapon, in the game tick.
+    let weapon = local_player
+        .as_ref()
+        .and_then(|owner| unsafe { gun::held_weapon(owner.character()) });
     let primary = weapon.map(|weapon| weapon as *const _ as usize);
     let holder = primary.and_then(weapons::hold::owned_holder).or_else(|| {
         let weapon = weapon?;

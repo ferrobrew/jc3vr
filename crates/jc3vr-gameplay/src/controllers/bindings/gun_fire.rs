@@ -119,7 +119,7 @@ mod tests {
             .unwrap()
             .0;
         assert!(inactive_branch.contains("weapons::hold::tick::publish_fire([false; 2]);"));
-        assert!(inactive_branch.contains("weapons::wheel::pause();"));
+        assert!(inactive_branch.contains("weapons::wheel::pause(game);"));
     }
 
     #[test_case(VehicleClass::Car)]

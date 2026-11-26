@@ -63,9 +63,7 @@ use std::{sync::LazyLock, time::Instant};
 
 use body_rig::angle::{head_heading, yaw_of};
 use glam::Vec3;
-use jc3gi::{
-    character::character::Character, input::input_action_map::Action, state::StateBitFlag,
-};
+use jc3gi::{input::input_action_map::Action, state::StateBitFlag};
 use jc3vr_body::controllers::{
     aim,
     aim::sights,
@@ -87,8 +85,10 @@ use jc3vr_body::controllers::{
     locomotion::config::LocomotionDirection,
     mode,
     mode::{AirborneVariant, Detection, Mode, Traversal, VehicleClass},
+    physics::local_player::LocalPlayer,
     roomscale, scheme,
 };
+use jc3vr_core::game_tick::GameTick;
 use jc3vr_grapple::{
     controllers::{snatch, snatch::config::SnatchSettings},
     grapple,
@@ -150,13 +150,14 @@ use crate::controllers::{
 /// produce this tick's writes. Under [`Delivery::Inline`] the writes land before this returns;
 /// under [`Delivery::Deferred`] they are returned for the next poll stage to land.
 pub(crate) fn game_tick(
+    game: &GameTick<'_>,
     record: PollRecord,
     landed: Vec<LandedSegment>,
     delivery: Delivery,
 ) -> GameStageOutput {
     let mut reported = absorb_landed(landed);
     let mut sink = Vec::new();
-    let body_turn = tick(record.dt, record.poll, &mut sink);
+    let body_turn = tick(game, record.dt, record.poll, &mut sink);
     let deferred = match delivery {
         Delivery::Inline => {
             // SAFETY: an inline game stage runs inside the input update right after the device
@@ -190,7 +191,7 @@ fn absorb_landed(landed: Vec<LandedSegment>) -> Vec<ReportedWrite> {
 /// One tick of the bindings, pushing its writes to `sink` in order. `dt` is the engine's tick
 /// delta, seconds, and `poll` is whether the device poll that preceded the tick ran. Returns the
 /// controllers' body turn, or `None` when they are not injecting.
-fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
+fn tick(game: &GameTick<'_>, dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
     // What the player's body does is timed in real time, and `dt` is the game's step, which its
     // slow motion shortens.
     // SAFETY: the bindings tick runs while the game runs.
@@ -273,19 +274,17 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
             config: &config.bindings,
             dominant: config.acting_hand(),
         });
-        weapons::stand_down();
-        // SAFETY: the game stage runs on the game thread before the world update.
-        unsafe { weapons::inventory::stand_down() };
+        weapons::stand_down(game);
+        weapons::inventory::stand_down(game);
         vehicles::stand_down();
         grapple::physical::stand_down();
-        // SAFETY: as above.
-        unsafe { grapple::seat::stand_down() };
+        grapple::seat::stand_down(game);
         snatch::stand_down();
         grab::tick::stand_down();
         return None;
     }
-    let mut detection = mode::tick();
-    tiers::tick(dt);
+    let mut detection = mode::tick(game);
+    tiers::tick(game, dt);
     // SAFETY: the game stage runs on the game thread before the world update.
     unsafe { hands::anchor::input_tick(config.acting_hand()) };
 
@@ -334,7 +333,7 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
                 capture_cancelled = true;
                 cancel_capture_routes(poll_after, sink);
             }
-            detection = mode::tick();
+            detection = mode::tick(game);
             if debug_ui_capture().is_some_and(|snapshot| !snapshot.gameplay_effective) {
                 idle = Some(Idle::ModPanel);
             }
@@ -387,29 +386,25 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
         if matches!(idle, Some(Idle::ModPanel | Idle::PollDisabled)) {
             weapons::pause();
         } else {
-            weapons::stand_down();
+            weapons::stand_down(game);
         }
         if !matches!(idle, Some(Idle::Disabled | Idle::GamepadScheme)) {
-            unsafe {
-                weapons::inventory::maintenance_tick(
-                    &config.weapons.inventory,
-                    config.acting_hand(),
-                )
-            };
+            weapons::inventory::maintenance_tick(
+                game,
+                &config.weapons.inventory,
+                config.acting_hand(),
+            );
         }
         // Leaving the controllers puts the loadout table back into the game's slots; a pause of
         // the controllers (the debug panel, a lost frame) keeps it.
         if matches!(idle, Some(Idle::Disabled | Idle::GamepadScheme)) {
-            // SAFETY: the game stage runs on the game thread before the world update.
-            unsafe { weapons::inventory::stand_down() };
+            weapons::inventory::stand_down(game);
             // A hook flying from the seat is kept through a pause, for the next tick to tether.
-            // SAFETY: as above.
-            unsafe { grapple::seat::stand_down() };
+            grapple::seat::stand_down(game);
         }
         vehicles::stand_down();
         grapple::physical::stand_down();
-        // SAFETY: the game stage runs on the game thread before the world update.
-        unsafe { firm_ragdoll::input_tick(firm_ragdoll::Want::Off, false) };
+        firm_ragdoll::input_tick(game, firm_ragdoll::Want::Off, false);
         snatch::stand_down();
         grab::tick::stand_down();
         state.report = TickReport {
@@ -482,8 +477,8 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
         )
     } else {
         (
-            weapons::begin_tick(detection.mode),
-            vehicles::begin_tick(detection.mode),
+            weapons::begin_tick(game, detection.mode),
+            vehicles::begin_tick(game, detection.mode),
         )
     };
     // Every subsystem's targets go to the one resolver, which picks what each hand would take.
@@ -524,9 +519,9 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
     // The hand's pulls act only while the grapple button is held.
     let mut grapple_held = grapple_button_held(&semantic_input, detection.mode);
     if !in_menu {
-        // SAFETY: the game stage runs on the game thread before the world update.
-        provided.extend(unsafe {
-            snatch::targets(&snatch::OfferInput {
+        provided.extend(snatch::targets(
+            game,
+            &snatch::OfferInput {
                 hand: grapple_hand,
                 detection: &detection,
                 button_held: grapple_held,
@@ -540,8 +535,8 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
                 },
                 dt: real_dt,
                 config: &snatch_settings(&config),
-            })
-        });
+            },
+        ));
         provided.extend(grapple::line_grab::targets(
             grapple_hand,
             config.grapple.free_hand_line,
@@ -587,26 +582,22 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
             // holds him inverted; the seat's exit takes the press instead.
             Some(false)
         } else {
-            // SAFETY: the binding game stage runs before the world update on the game thread.
-            unsafe { bail::seated_stunt_available() }
+            bail::seated_stunt_available(game)
         }
     } else {
         None
     };
     controls.bail = match detection.mode {
         Mode::Vehicle(seat) => {
-            // SAFETY: the game stage runs on the game thread before the world update.
-            let mounted_gun = unsafe { Character::GetLocalPlayerCharacter().as_ref() }
-                .is_some_and(|character| unsafe { character.IsInMountedGunState() });
+            let mounted_gun = LocalPlayer::get(game).is_some_and(|p| p.in_mounted_gun_state());
             let seat_bails = bails_by_parachute(seat, mounted_gun);
             let press_long = state
                 .bindings
                 .exit_press_long(seat, config.bindings.long_press_s);
             state.bail.step(BailTick {
                 seat_bails,
-                // SAFETY: the game stage runs on the game thread before the world update.
                 speed_mps: seat_bails
-                    .then(|| unsafe { vehicles::seat_vehicle_speed_mps() })
+                    .then(|| vehicles::seat_vehicle_speed_mps(game))
                     .flatten(),
                 press_long,
             })
@@ -678,7 +669,7 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
         snatch::can_claim_button() && config.weapons.snatch.sling,
         semantic.is_some()
             && !controls.masked_hands.contains(&true)
-            && snatch::available_in(&detection),
+            && snatch::available_in(game, &detection),
         neutral_policy.frame_neutral(&original) && source_neutral,
     );
     grapple_held = state.bindings.physical_grapple_held(grapple_held);
@@ -696,9 +687,9 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
         tracing::debug!(target: "controllers", ?yank, "yank");
         haptics::play(grapple_hand, Event::Yank);
     }
-    // SAFETY: the game stage runs on the game thread before the world update.
-    let physical_grapple = unsafe {
-        grapple::physical::input_tick(&grapple::physical::TickInput {
+    let physical_grapple = grapple::physical::input_tick(
+        game,
+        &grapple::physical::TickInput {
             dt,
             real_dt,
             line: grapple_line,
@@ -706,15 +697,14 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
             detection: &detection,
             config: &config.grapple,
             dominant: config.acting_hand(),
-        })
-    };
+        },
+    );
     controls.grapple = GrappleContext {
         tethers: physical_grapple.tethers > 0,
         line: yank_armed_in(line, &detection) || grapple::seat::status().flying,
         aim_target: aim::status().grapple.is_some_and(|g| g.valid),
         reeling: physical_grapple.lockable && !snatch_button_owned,
-        // SAFETY: the game stage runs on the game thread before the world update.
-        seated: config.grapple.seat && unsafe { grapple::seat::stands_in_for_local() },
+        seated: config.grapple.seat && grapple::seat::stands_in_for_local(game),
     };
     controls.lock_yank = physical_grapple.lock_yank;
     let lock_status = grapple::physical::lock::status();
@@ -730,9 +720,9 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
         &config.bindings,
     );
     let enter_from_hang = heli_hang::step(&mut step.desired);
-    // SAFETY: the game stage runs on the game thread before the world update.
-    unsafe {
-        grapple::physical::lock::lock_tick(&grapple::physical::lock::LockTickInput {
+    grapple::physical::lock::lock_tick(
+        game,
+        &grapple::physical::lock::LockTickInput {
             button: step.grapple_lock,
             carries: detection.traversal == Some(Traversal::ReelingIn),
             yank: physical_grapple.lock_yank,
@@ -753,19 +743,17 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
             real_dt,
             hand: grapple_hand,
             config: &config.grapple.lock,
-        })
-    };
+        },
+    );
     // The helicopter's skid: standing on it, and the jump off it.
-    // SAFETY: the game stage runs on the game thread before the world update.
-    unsafe {
-        vehicles::rail::input_tick(
-            semantic_input
-                .get(OnFootAction::Jump.id())
-                .is_some_and(|input| input.hands.iter().any(|hand| hand.button.pressed)),
-            matches!(detection.mode, Mode::OnFoot(_))
-                && detection.traversal != Some(Traversal::ReelingIn),
-        )
-    };
+    vehicles::rail::input_tick(
+        game,
+        semantic_input
+            .get(OnFootAction::Jump.id())
+            .is_some_and(|input| input.hands.iter().any(|hand| hand.button.pressed)),
+        matches!(detection.mode, Mode::OnFoot(_))
+            && detection.traversal != Some(Traversal::ReelingIn),
+    );
     // The firm ragdoll for the line the lock holds and for the canopy.
     let firm = if grapple::physical::lock::holds() {
         firm_ragdoll::Want::Line
@@ -774,11 +762,10 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
     } else {
         firm_ragdoll::Want::Off
     };
-    // SAFETY: the game stage runs on the game thread before the world update.
-    unsafe { firm_ragdoll::input_tick(firm, config.body.procedural.firm_ragdoll) };
-    // SAFETY: as above.
-    unsafe {
-        grapple::seat::tick(&grapple::seat::SeatTickInput {
+    firm_ragdoll::input_tick(game, firm, config.body.procedural.firm_ragdoll);
+    grapple::seat::tick(
+        game,
+        &grapple::seat::SeatTickInput {
             seated: controls.grapple.seated,
             fire: step.grapple_seat_fire,
             held: grapple_held && !snatch_button_owned,
@@ -791,11 +778,11 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
             target: aim::status()
                 .grapple
                 .filter(|g| g.seat && g.valid)
-                .and_then(|g| grapple::seat::Target::capture(g.point)),
+                .and_then(|g| grapple::seat::Target::capture(game, g.point)),
             dt,
             hand: grapple_hand,
-        })
-    };
+        },
+    );
     let summary_masks = state
         .bindings
         .effective_masks(detection.mode, &controls, &semantic_input);
@@ -886,7 +873,7 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
             dt,
             real_dt,
         };
-        belt_reload = weapons::finish_tick(&finish, &mut step.desired);
+        belt_reload = weapons::finish_tick(game, &finish, &mut step.desired);
         let after = weapons::capabilities::gun_owners_now().map(|gun| TriggerOwner {
             mode: detection.mode,
             gun: gun.filter(|_| gun_triggers),
@@ -904,6 +891,7 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
             }
         }
         let wheel = weapons::wheel::input_tick(
+            game,
             &weapons::wheel::TickInputs {
                 mode: detection.mode,
                 presses: step.wheel,
@@ -915,6 +903,7 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
             step.body_turn = 0.0;
         }
         physical_hands::pickup::finish_tick(
+            game,
             &FinishInputs {
                 grabs: grabs_for(step.grabs, Consumer::Pickup),
                 ..finish
@@ -922,7 +911,7 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
             &mut step.desired,
             &interaction_context,
         );
-        unsafe { vehicles::mounted::tick(&finish, &mut step.desired) };
+        unsafe { vehicles::mounted::tick(game, &finish, &mut step.desired) };
         unsafe {
             physical_hands::lifetime::publish(
                 physical_hands::held_bodies().map(|held| held.map(|held| (held.object, held.body))),
@@ -938,25 +927,23 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
             });
         }
         let button_holds = snatch::ButtonHolds::routed(step.grapple_held, snatch_button_owned);
-        // SAFETY: the game stage runs on the game thread before the world update.
-        unsafe {
-            snatch::finish_tick(
-                &snatch::FinishInput {
-                    hand: grapple_hand,
-                    grabs: grabs_for(step.grabs, Consumer::Snatch),
-                    grips: finish.grips,
-                    latches: state.bindings.grip_latches(),
-                    line: grapple_line,
-                    ordinary_button_held: button_holds.ordinary,
-                    modifier_held: button_holds.modifier,
-                    detection: &detection,
-                    dt,
-                    real_dt,
-                    config: &snatch_settings(&config),
-                },
-                &mut step.desired,
-            )
-        };
+        snatch::finish_tick(
+            game,
+            &snatch::FinishInput {
+                hand: grapple_hand,
+                grabs: grabs_for(step.grabs, Consumer::Snatch),
+                grips: finish.grips,
+                latches: state.bindings.grip_latches(),
+                line: grapple_line,
+                ordinary_button_held: button_holds.ordinary,
+                modifier_held: button_holds.modifier,
+                detection: &detection,
+                dt,
+                real_dt,
+                config: &snatch_settings(&config),
+            },
+            &mut step.desired,
+        );
         if let Some((hand, volume)) = snatch::take_other_catch() {
             state.bindings.hold_catch(hand, volume);
         }
@@ -964,7 +951,7 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
             finish.grips.map(|g| g.held()),
             grabs_for(step.grabs, Consumer::Climb),
         );
-        physical_hands::stunt::finish_tick(finish.grips.map(|g| g.held()), &mut step.desired);
+        physical_hands::stunt::finish_tick(game, finish.grips.map(|g| g.held()), &mut step.desired);
         let rail_packet = jc3vr_view::vr::input::flight_pose::for_frame(&original, Instant::now());
         if state.rail.step(
             rail::RailInput {
@@ -1011,6 +998,7 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
             state.bindings.spend_grapple();
         }
         vehicles::finish_tick(
+            game,
             detection.mode,
             grabs_for(step.grabs, Consumer::Vehicles),
             &controls,
@@ -1031,7 +1019,7 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
     } else {
         state.rail = rail::RailRelease::new();
         weapons::hold::tick::publish_fire([false; 2]);
-        weapons::wheel::pause();
+        weapons::wheel::pause(game);
         physical_hands::pickup::pause();
         snatch::stand_down();
         unsafe { vehicles::mounted::stand_down() };
@@ -1067,43 +1055,47 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
             Hand::BOTH.map(|hand| trigger_blocked[hand.index()] || trigger_changed[hand.index()]),
         ),
     );
-    let mut eligibility = summary::capture(summary::Refresh {
-        sequence: frame.sequence,
-        belt_reload,
-        parachute: vehicles::parachute_holds(),
-        config: &config,
-        owners: final_owners,
-        ready: Hand::BOTH.map(|hand| !in_menu && state.recovery.ready(hand)),
-        grapple_routes: summary::grapple_routes(
-            &state.bindings,
-            detection.mode,
-            &controls,
-            &semantic_input,
-            &routed,
-            trigger_ownership::masks(
-                final_owners,
-                Hand::BOTH
-                    .map(|hand| trigger_blocked[hand.index()] || trigger_changed[hand.index()]),
+    let mut eligibility = summary::capture(
+        game,
+        summary::Refresh {
+            sequence: frame.sequence,
+            belt_reload,
+            parachute: vehicles::parachute_holds(),
+            config: &config,
+            owners: final_owners,
+            ready: Hand::BOTH.map(|hand| !in_menu && state.recovery.ready(hand)),
+            grapple_routes: summary::grapple_routes(
+                &state.bindings,
+                detection.mode,
+                &controls,
+                &semantic_input,
+                &routed,
+                trigger_ownership::masks(
+                    final_owners,
+                    Hand::BOTH
+                        .map(|hand| trigger_blocked[hand.index()] || trigger_changed[hand.index()]),
+                ),
             ),
-        ),
-        trigger_blocked: Hand::BOTH
-            .map(|hand| trigger_blocked[hand.index()] || trigger_changed[hand.index()]),
-        chosen: Hand::BOTH.map(|hand| {
-            targets.chosen()[hand.index()].filter(|_| !controls.hands[hand.index()].grip.released)
-        }),
-        selected: Hand::BOTH.map(|hand| {
-            targets.selected_for_summary()[hand.index()]
-                .filter(|_| !controls.hands[hand.index()].grip.released)
-        }),
-        grabs: step.grabs,
-        before: &summary_before,
-        grapple: state.bindings.grapple_permissions(controls.grapple),
-        yank: (yank_armed_in(line, &detection) && grapple_held).then_some(grapple_hand),
-        flight: state
-            .flight
-            .as_ref()
-            .map_or(Default::default(), flight::FlightState::current),
-    });
+            trigger_blocked: Hand::BOTH
+                .map(|hand| trigger_blocked[hand.index()] || trigger_changed[hand.index()]),
+            chosen: Hand::BOTH.map(|hand| {
+                targets.chosen()[hand.index()]
+                    .filter(|_| !controls.hands[hand.index()].grip.released)
+            }),
+            selected: Hand::BOTH.map(|hand| {
+                targets.selected_for_summary()[hand.index()]
+                    .filter(|_| !controls.hands[hand.index()].grip.released)
+            }),
+            grabs: step.grabs,
+            before: &summary_before,
+            grapple: state.bindings.grapple_permissions(controls.grapple),
+            yank: (yank_armed_in(line, &detection) && grapple_held).then_some(grapple_hand),
+            flight: state
+                .flight
+                .as_ref()
+                .map_or(Default::default(), flight::FlightState::current),
+        },
+    );
     eligibility.routes = routes;
     crate::controllers::summary::refresh(detection.mode, &controls, &config, &eligibility);
     let writes = state.tracker.resolve(&step.desired, dt);

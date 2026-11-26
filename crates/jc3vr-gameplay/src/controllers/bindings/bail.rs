@@ -6,14 +6,15 @@
 //! and the bail holds `OPEN_PARACHUTE`. Between presses, the vehicle's speed uses a hysteresis
 //! band above the game's bail speed so a hovering speed does not flicker between the two.
 
-use jc3gi::character::character::Character;
 use jc3vr_body::{
     controllers::{
         intent::controls::ButtonControl,
         mode::{Mode, VehicleClass, VehicleSeat},
+        physics::local_player::LocalPlayer,
     },
     hooks::{animation::ready_body_machine, character::acts::resolve_act_id},
 };
+use jc3vr_core::game_tick::GameTick;
 
 /// The vehicle speed, metres per second, from which the game's driver, rider, and spinning mounted
 /// gun states take a long `OPEN_PARACHUTE` hold as the parachute bail: the minimum of the animation
@@ -71,12 +72,9 @@ pub(crate) fn stunt_hangs_inverted(mode: Mode, upright: bool) -> bool {
 
 /// Whether the local seated character's live body state can take the vehicle stunt act.
 /// Missing animation, ownership, or resource evidence remains unknown rather than a negative.
-///
-/// # Safety
-///
-/// The game thread, before the world update, outside an animation update.
-pub(crate) unsafe fn seated_stunt_available() -> Option<bool> {
-    let character = unsafe { Character::GetLocalPlayerCharacter().as_ref() }?;
+pub(crate) fn seated_stunt_available(game: &GameTick<'_>) -> Option<bool> {
+    let local_player = LocalPlayer::get(game)?;
+    let character = local_player.character();
     let machine = unsafe { ready_body_machine(character) }?;
     if !unsafe { character.IsInVehicleAttachState() } {
         return None;
