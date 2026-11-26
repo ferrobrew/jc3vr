@@ -93,7 +93,9 @@ pub(crate) struct PolicyAConfig {
 }
 
 /// The policy's effective timings from the bindings' settings. Invalid live edits withhold
-/// protected input rather than silently substituting a different join window.
+/// protected input rather than silently substituting a different join window. The developer
+/// chords are always withheld in a vehicle; a recording from before that was fixed replays with
+/// them, through the recorded timing.
 pub(crate) fn effective_config(bindings: &BindingsConfig) -> Option<PolicyAConfig> {
     let recenter_join = Duration::try_from_secs_f32(bindings.stick_chord_window_s).ok()?;
     let panel_join = Duration::try_from_secs_f32(bindings.panel_chord_window_s).ok()?;
@@ -111,7 +113,7 @@ pub(crate) fn effective_config(bindings: &BindingsConfig) -> Option<PolicyAConfi
         recenter_join,
         panel_join,
         recenter_hold,
-        suppress_developer_chords_in_vehicles: bindings.suppress_developer_chords_in_vehicles,
+        suppress_developer_chords_in_vehicles: true,
     })
 }
 

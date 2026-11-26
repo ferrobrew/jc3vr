@@ -15,10 +15,6 @@ use jc3vr_view::vr::input::config::{InputConfig, validate_thresholds};
 pub(super) fn devices(ui: &mut Ui, c: &mut ControllersConfig) {
     ui.checkbox(&mut c.input.hand_tracking, "Hand tracking")
         .on_hover_text("Locate the hand skeleton through XR_EXT_hand_tracking when offered.");
-    ui.checkbox(&mut c.bindings.enabled, "Inject bindings")
-        .on_hover_text(
-            "Map the controllers to the game's actions while the controller scheme is in effect.",
-        );
     let input = &mut c.input;
     threshold_pair(ui, &mut input.trigger_press, "Trigger", None);
     threshold_pair(
@@ -59,24 +55,6 @@ pub(super) fn devices_readout(ui: &mut Ui, recovery: [HandRecovery; 2]) {
     }
     let input = CONTROLLERS_CONFIG.query(|c| c.input);
     grip_readout(ui, &input);
-}
-
-pub(super) fn grapple_settings(ui: &mut Ui, c: &mut ControllersConfig) {
-    ui.checkbox(&mut c.bindings.yank.enabled, "Yank to zip").on_hover_text(
-        "A sharp pull of the grapple hand toward the body taps the grapple while a line is live.",
-    );
-}
-
-pub(super) fn vehicle_chord_settings(ui: &mut Ui, c: &mut ControllersConfig) {
-    ui.checkbox(
-        &mut c.bindings.suppress_developer_chords_in_vehicles,
-        "No developer chords in vehicles",
-    )
-    .on_hover_text(
-        "In a vehicle, the left stick click no longer starts the debug panel (then right B) or \
-         take marker (then right A) chords, so it acts without waiting for them. The recenter \
-         chord still works.",
-    );
 }
 
 /// The press and release sliders of one threshold pair, kept in order and valid.

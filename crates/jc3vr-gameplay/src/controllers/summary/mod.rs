@@ -139,7 +139,6 @@ pub(crate) fn refresh(
         dominant: controls.dominant,
         table: TableCtx::of(controls),
         features: Features {
-            yank: config.bindings.yank.enabled,
             holsters: true,
             magazine: weapons.reload.enabled,
             belt_reload: weapons.reload.enabled && weapons.reload.belt.enabled,
@@ -157,9 +156,6 @@ pub(crate) fn refresh(
                 helicopter: physical.sticks || physical.levers,
                 plane: physical.sticks || physical.levers,
             },
-            suppress_developer_chords_in_vehicles: config
-                .bindings
-                .suppress_developer_chords_in_vehicles,
         },
     };
     // SAFETY: the game stage runs on the game thread past startup.

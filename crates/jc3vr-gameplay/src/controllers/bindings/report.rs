@@ -15,8 +15,6 @@ use crate::controllers::bindings::{
 /// Why the bindings did not inject on a tick.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Idle {
-    /// The bindings toggle is off.
-    Disabled,
     /// The gamepad scheme is in effect.
     GamepadScheme,
     /// No controller frame, or no active controller.

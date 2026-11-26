@@ -118,7 +118,6 @@ fn every_injected_action_is_described() {
     for mode in all_modes() {
         for (dominant, table) in all_contexts() {
             let features = Features {
-                yank: true,
                 ..Features::default()
             };
             let rows = describe(&DescribeCtx {
@@ -232,7 +231,6 @@ fn the_menu_trigger_of_the_pointer_hand_is_left_out() {
 #[test]
 fn features_add_their_gestures_where_the_hand_weapons_are_used() {
     let features = Features {
-        yank: true,
         holsters: true,
         ..Features::default()
     };
@@ -392,15 +390,9 @@ fn the_chords_are_listed_in_every_mode() {
 }
 
 #[test]
-fn the_panel_chord_is_unlisted_in_vehicles_while_suppressed() {
+fn the_panel_chord_is_unlisted_in_vehicles() {
     for mode in all_modes() {
-        let ctx = DescribeCtx {
-            features: Features {
-                suppress_developer_chords_in_vehicles: true,
-                ..Features::default()
-            },
-            ..ctx(mode, Hand::Right, TableCtx::default())
-        };
+        let ctx = ctx(mode, Hand::Right, TableCtx::default());
         let rows = describe(&ctx);
         assert!(
             rows.iter()

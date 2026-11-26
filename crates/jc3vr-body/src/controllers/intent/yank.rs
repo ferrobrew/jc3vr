@@ -24,37 +24,8 @@ use std::collections::VecDeque;
 use glam::Vec3;
 use serde::{Deserialize, Serialize};
 
-/// The grapple yank's switch, held in
-/// [`BindingsConfig`](crate::controllers::intent::config::BindingsConfig): a sharp pull of the
-/// grapple hand toward the body zips along an attached line. Acts only under the controller scheme,
-/// so it defaults on. Its detector is tuned at [`GRAPPLE_YANK`].
-#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct GrappleYankConfig {
-    pub enabled: bool,
-}
-
-impl GrappleYankConfig {
-    pub const fn new() -> Self {
-        Self { enabled: true }
-    }
-
-    /// The detector's settings: [`GRAPPLE_YANK`] with this switch.
-    pub const fn detector(&self) -> YankConfig {
-        YankConfig {
-            enabled: self.enabled,
-            ..GRAPPLE_YANK
-        }
-    }
-}
-
-impl Default for GrappleYankConfig {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// The grapple yank's detector settings, with the switch on.
+/// The grapple yank's detector settings: a sharp pull of the grapple hand toward the body zips
+/// along an attached line. Acts only under the controller scheme.
 pub const GRAPPLE_YANK: YankConfig = YankConfig {
     enabled: true,
     min_distance_m: 0.15,

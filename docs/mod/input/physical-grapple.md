@@ -71,7 +71,7 @@ The input tick's game stage (the game thread, before the world update; [controll
 
 ## Settings and readouts
 
-The reel and tether pull, the pump, the lock ([grapple-lock.md](grapple-lock.md)), and the seat grapple ([seat-grapple.md](seat-grapple.md)) have no switches: they act whenever the controller scheme is in effect. The debug UI's Grapple feature, under Movement/vehicles, keeps yank to zip (`bindings.yank.enabled`); the line's vibration is behind the haptics' master switch ([haptics.md](haptics.md)). The tuning is fixed in `GRAPPLE` (`PhysicalGrappleTuning`) and the yank's in `GRAPPLE_YANK`, and the Grapple feature's live status opens with the `GRAPPLE` section's rows, then adds the attach point, the hang's hand motion, impulse, and pump, the hand's pull speed and depth, the yanks, and the snatches failed and the tosses.
+The reel and tether pull, the pump, the lock ([grapple-lock.md](grapple-lock.md)), and the seat grapple ([seat-grapple.md](seat-grapple.md)) have no switches: they act whenever the controller scheme is in effect. Yank to zip has no switch either; the line's vibration is behind the haptics' master switch ([haptics.md](haptics.md)). The tuning is fixed in `GRAPPLE` (`PhysicalGrappleTuning`) and the yank's in `GRAPPLE_YANK`, and the Grapple feature's live status opens with the `GRAPPLE` section's rows, then adds the attach point, the hang's hand motion, impulse, and pump, the hand's pull speed and depth, the yanks, and the snatches failed and the tosses.
 
 The debug UI's Status page has a `GRAPPLE` section:
 

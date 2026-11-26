@@ -525,7 +525,6 @@ mod tests {
     #[test]
     fn every_described_action_has_a_label() {
         let features = Features {
-            yank: true,
             holsters: true,
             magazine: true,
             belt_reload: true,
@@ -544,7 +543,6 @@ mod tests {
                 plane: true,
             },
             // Off, so that every mode describes the panel chord too.
-            suppress_developer_chords_in_vehicles: false,
         };
         for mode in all_modes() {
             for (dominant, table) in all_contexts() {

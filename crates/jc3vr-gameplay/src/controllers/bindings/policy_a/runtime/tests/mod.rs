@@ -309,80 +309,63 @@ fn unordered_panel_is_consumed_but_ordered_panel_works_while_gameplay_stands_dow
 }
 
 #[test]
-fn vehicle_left_click_skips_the_panel_window_only_under_suppression() {
+fn vehicle_left_click_skips_the_panel_window() {
     let vehicle = ActionSetKind::LandVehicle;
-    for suppress in [true, false] {
-        let config = BindingsConfig {
-            suppress_developer_chords_in_vehicles: suppress,
-            ..BindingsConfig::new()
-        };
-        let mut runtime = Runtime::default();
-        let mut step = |ms, sequence, down| {
-            evaluate_in(
-                &mut runtime,
-                group_in(vehicle, ms, sequence, down, &[]),
-                true,
-                vehicle as u64,
-                &config,
-            )
-        };
-        step(1, 1, [false; CONTROLS]);
-        step(10, 2, [true, false, false, false]);
-        let joined = step(50, 3, [true, false, true, false]);
-        let after_recenter = step(120, 4, [true, false, true, false]);
-        if suppress {
-            assert!(joined.commands.is_empty());
-            assert!(joined.raw[Control::RightB.index()].pressed);
-            assert!(after_recenter.raw[Control::LeftStick.index()].pressed);
-        } else {
-            assert_eq!(joined.commands, [SystemCommand::TogglePanel]);
-            assert!(joined.raw.iter().all(|button| !button.held()));
-            assert!(!after_recenter.raw[Control::LeftStick.index()].held());
-        }
-    }
+    let config = BindingsConfig::new();
+    let mut runtime = Runtime::default();
+    let mut step = |ms, sequence, down| {
+        evaluate_in(
+            &mut runtime,
+            group_in(vehicle, ms, sequence, down, &[]),
+            true,
+            vehicle as u64,
+            &config,
+        )
+    };
+    step(1, 1, [false; CONTROLS]);
+    step(10, 2, [true, false, false, false]);
+    let joined = step(50, 3, [true, false, true, false]);
+    let after_recenter = step(120, 4, [true, false, true, false]);
+    assert!(joined.commands.is_empty());
+    assert!(joined.raw[Control::RightB.index()].pressed);
+    assert!(after_recenter.raw[Control::LeftStick.index()].pressed);
 }
 
 #[test]
-fn vehicle_grapple_press_waits_only_for_the_recenter_window_under_suppression() {
+fn vehicle_grapple_press_waits_only_for_the_recenter_window() {
     let vehicle = ActionSetKind::LandVehicle;
     let id = LandVehicleAction::Grapple.id();
-    for suppress in [true, false] {
-        let config = BindingsConfig {
-            suppress_developer_chords_in_vehicles: suppress,
-            ..BindingsConfig::new()
-        };
-        let mut runtime = Runtime::default();
-        let mut step = |ms, sequence, down: bool| {
-            let tick = evaluate_in(
-                &mut runtime,
-                group_in(
-                    vehicle,
-                    ms,
-                    sequence,
-                    [down, false, false, false],
-                    &[(id, down, paths(&[LS]))],
-                ),
-                true,
-                vehicle as u64,
-                &config,
-            );
-            button_hand(&tick, id, Hand::Left)
-        };
-        step(1, 1, false);
-        assert!(!step(10, 2, true).held());
-        assert!(!step(100, 3, true).held());
-        let past_recenter = step(120, 4, true);
-        assert_eq!(past_recenter.pressed, suppress, "suppress={suppress}");
-        let past_panel = step(370, 5, true);
-        assert_eq!(past_panel.pressed, !suppress, "suppress={suppress}");
-        assert!(past_panel.down);
-    }
+    let config = BindingsConfig::new();
+    let mut runtime = Runtime::default();
+    let mut step = |ms, sequence, down: bool| {
+        let tick = evaluate_in(
+            &mut runtime,
+            group_in(
+                vehicle,
+                ms,
+                sequence,
+                [down, false, false, false],
+                &[(id, down, paths(&[LS]))],
+            ),
+            true,
+            vehicle as u64,
+            &config,
+        );
+        button_hand(&tick, id, Hand::Left)
+    };
+    step(1, 1, false);
+    assert!(!step(10, 2, true).held());
+    assert!(!step(100, 3, true).held());
+    let past_recenter = step(120, 4, true);
+    assert!(past_recenter.pressed);
+    let past_panel = step(370, 5, true);
+    assert!(!past_panel.pressed);
+    assert!(past_panel.down);
 }
 
 #[test]
-fn on_foot_left_click_keeps_the_panel_chord_under_suppression() {
+fn on_foot_left_click_keeps_the_panel_chord() {
     let config = BindingsConfig::new();
-    assert!(config.suppress_developer_chords_in_vehicles);
     let mut runtime = Runtime::default();
     let on_foot = ActionSetKind::OnFoot as u64;
     evaluate_in(

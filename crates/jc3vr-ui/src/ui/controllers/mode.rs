@@ -87,7 +87,6 @@ pub(super) fn mode_readout(
 
 fn idle_label(idle: Idle) -> &'static str {
     match idle {
-        Idle::Disabled => "the bindings are off",
         Idle::GamepadScheme => "the gamepad scheme is in effect",
         Idle::NoControllers => "no active controller",
         Idle::PollDisabled => "the game's device poll is disabled",

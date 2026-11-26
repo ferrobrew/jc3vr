@@ -79,7 +79,7 @@ use jc3vr_body::controllers::{
         finish::FinishInputs,
         grapple_button::GrappleContext,
         hold::{ActionWrite, Desired, DevicePoll, HoldTracker, MapKind, Target, Want},
-        yank::{HandLine, LineYank, Yank},
+        yank::{GRAPPLE_YANK, HandLine, LineYank, Yank},
     },
     locomotion,
     locomotion::config::LocomotionDirection,
@@ -293,9 +293,7 @@ fn tick(game: &GameTick<'_>, dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>)
     let frame = frame::latest()
         .filter(ControllerFrame::any_active)
         .filter(|frame| frame.focused);
-    let mut idle = if !config.bindings.enabled {
-        Some(Idle::Disabled)
-    } else if !scheme::is_controllers() {
+    let mut idle = if !scheme::is_controllers() {
         Some(Idle::GamepadScheme)
     } else if frame.is_none() {
         Some(Idle::NoControllers)
@@ -316,7 +314,7 @@ fn tick(game: &GameTick<'_>, dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>)
         frame: frame.as_ref(),
         context: policy_context(detection.mode),
         gameplay: idle.is_none(),
-        usable: config.bindings.enabled && scheme::is_controllers(),
+        usable: scheme::is_controllers(),
         config: &config.bindings,
         dominant: config.acting_hand(),
     });
@@ -390,7 +388,7 @@ fn tick(game: &GameTick<'_>, dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>)
         } else {
             weapons::stand_down(game);
         }
-        if !matches!(idle, Some(Idle::Disabled | Idle::GamepadScheme)) {
+        if idle != Some(Idle::GamepadScheme) {
             weapons::inventory::maintenance_tick(
                 game,
                 &config.weapons.inventory,
@@ -399,7 +397,7 @@ fn tick(game: &GameTick<'_>, dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>)
         }
         // Leaving the controllers puts the loadout table back into the game's slots; a pause of
         // the controllers (the debug panel, a lost frame) keeps it.
-        if matches!(idle, Some(Idle::Disabled | Idle::GamepadScheme)) {
+        if idle == Some(Idle::GamepadScheme) {
             weapons::inventory::stand_down(game);
             // A hook flying from the seat is kept through a pause, for the next tick to tether.
             grapple::seat::stand_down(game);
@@ -683,7 +681,7 @@ fn tick(game: &GameTick<'_>, dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>)
         grapple_line,
         headpose::xr::cockpit_pose().map(|pose| pose.position),
         yank_armed_in(line, &detection) && grapple_held,
-        &config.bindings.yank.detector(),
+        &GRAPPLE_YANK,
     );
     if let Some(yank) = yank {
         controls.yank = true;

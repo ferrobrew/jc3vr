@@ -61,8 +61,6 @@ pub(crate) fn flight_mechanics(availability: GestureAvailability) -> Vec<Row> {
 /// The mod's own controller features that add inputs outside the tables, as configured.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Default)]
 pub struct Features {
-    /// The yank gesture.
-    pub yank: bool,
     pub holsters: bool,
     /// The true reload's pouch and well.
     pub magazine: bool,
@@ -86,9 +84,6 @@ pub struct Features {
     pub arm_steering: bool,
     /// The physical vehicle controls offered to a driver, by kind.
     pub physical: PhysicalFeatures,
-    /// The developer chords are withheld in the vehicle sets
-    /// (`controllers.bindings.suppress_developer_chords_in_vehicles`).
-    pub suppress_developer_chords_in_vehicles: bool,
 }
 
 /// The physical vehicle controls that are on, by kind.
@@ -182,7 +177,6 @@ pub(crate) fn describe_with(ctx: &DescribeCtx, bindings: Bindings) -> Vec<Row> {
 fn describe_unfolded(ctx: &DescribeCtx, bindings: Bindings) -> Vec<Row> {
     let mut sink = DescribeSink {
         dominant: ctx.dominant,
-        yank: ctx.features.yank,
         bindings,
         masks: if bindings.routes.is_some() {
             Vec::new()
@@ -200,8 +194,6 @@ fn describe_unfolded(ctx: &DescribeCtx, bindings: Bindings) -> Vec<Row> {
 /// The describing [`Sink`]: records a row per input instead of resolving it.
 pub struct DescribeSink<'a> {
     dominant: Hand,
-    /// Whether the yank gesture is on; off, its rows are left out.
-    yank: bool,
     bindings: Bindings<'a>,
     masks: Vec<Mask>,
     pub rows: Vec<Row>,
@@ -278,7 +270,7 @@ impl DescribeSink<'_> {
                     }
                     None => rows.push(unbound),
                 }
-                if self.yank && YANK_ACTIONS.contains(&action) {
+                if YANK_ACTIONS.contains(&action) {
                     rows.push(row(Control::Motion(self.dominant.other()), Gesture::Yank));
                 }
             }
@@ -693,7 +685,7 @@ fn outside_rows(ctx: &DescribeCtx, bindings: Bindings) -> Vec<Row> {
         Gesture::Hold,
         modded(ModAction::Recenter),
     );
-    if !(features.suppress_developer_chords_in_vehicles && ctx.mode.action_set().is_vehicle()) {
+    if !ctx.mode.action_set().is_vehicle() {
         add(
             Control::LeftStickClickAndRightB,
             Gesture::Press,

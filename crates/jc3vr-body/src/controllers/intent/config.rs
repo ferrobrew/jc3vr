@@ -3,8 +3,6 @@
 use jc3vr_core::config::engine::ConfigSlot;
 use serde::{Deserialize, Serialize};
 
-use crate::controllers::intent::yank::GrappleYankConfig;
-
 /// The controller-to-game bindings' settings, at `controllers.bindings` in the settings file; the
 /// payload binds the slot at startup.
 pub static BINDINGS_CONFIG: ConfigSlot<BindingsConfig> = ConfigSlot::new("controllers.bindings");
@@ -14,8 +12,6 @@ pub static BINDINGS_CONFIG: ConfigSlot<BindingsConfig> = ConfigSlot::new("contro
 #[derive(Copy, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct BindingsConfig {
-    /// Inject the controllers' input into the game's actions.
-    pub enabled: bool,
     /// The radial deadzone of the stick that moves, steers, and navigates, `0..1`. The output is
     /// rescaled so that it starts from zero at the deadzone's edge.
     pub move_deadzone: f32,
@@ -38,19 +34,11 @@ pub struct BindingsConfig {
     /// How soon after the left stick click a fresh right B press can show or hide the debug panel,
     /// seconds. The left click waits for the longer of this and the recenter join window.
     pub panel_chord_window_s: f32,
-    /// Withhold the left-stick-first developer chords (the debug panel and the take marker) in a
-    /// vehicle, so that the left stick click, a right-handed player's grapple there, waits only for
-    /// the recenter join window rather than the panel's.
-    pub suppress_developer_chords_in_vehicles: bool,
-    /// The yank gesture: a sharp pull of the grapple hand toward the body zips along an attached
-    /// line.
-    pub yank: GrappleYankConfig,
 }
 
 impl BindingsConfig {
     pub const fn new() -> Self {
         Self {
-            enabled: true,
             move_deadzone: 0.15,
             trigger_deadzone: 0.05,
             long_press_s: 0.5,
@@ -59,8 +47,6 @@ impl BindingsConfig {
             stick_chord_window_s: 0.1,
             recenter_hold_s: 1.0,
             panel_chord_window_s: 0.35,
-            suppress_developer_chords_in_vehicles: true,
-            yank: GrappleYankConfig::new(),
         }
     }
 }

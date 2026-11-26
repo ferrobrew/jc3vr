@@ -73,10 +73,6 @@ use crate::{
 pub(crate) fn controls(id: FeatureId) -> Option<FeatureBody> {
     let body: FeatureBody = match id {
         FeatureId::Devices => |ui, _| settings::devices(ui, &mut CONTROLLERS_CONFIG.edit()),
-        FeatureId::Grapple => |ui, _| {
-            let mut c = CONTROLLERS_CONFIG.edit();
-            settings::grapple_settings(ui, &mut c);
-        },
         FeatureId::GripFingers => |ui, _| {
             let mut c = CONTROLLERS_CONFIG.edit();
             hands::grip_settings(ui, &mut c.hands);
@@ -124,9 +120,7 @@ pub(crate) fn controls(id: FeatureId) -> Option<FeatureBody> {
             stunt::stunt_settings(ui, &mut c.physical_hands.stunt);
         },
         FeatureId::Vehicles => |ui, id| {
-            let mut c = CONTROLLERS_CONFIG.edit();
-            vehicles::feature_settings(ui, &mut c.vehicles, id);
-            settings::vehicle_chord_settings(ui, &mut c);
+            vehicles::feature_settings(ui, &mut CONTROLLERS_CONFIG.edit().vehicles, id);
         },
         FeatureId::Air => |ui, id| {
             vehicles::feature_settings(ui, &mut CONTROLLERS_CONFIG.edit().vehicles, id);
