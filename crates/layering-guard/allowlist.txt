@@ -64,9 +64,7 @@ payload/src/controllers/presentation/mod.rs -> payload
 payload/src/controllers/presets.rs -> payload
 payload/src/controllers/roomscale/mod.rs -> payload
 payload/src/controllers/scheme.rs -> payload
-payload/src/controllers/summary/current/tests/mod.rs -> hud
 payload/src/controllers/summary/game_hints.rs -> payload
-payload/src/controllers/summary/mod.rs -> hud
 payload/src/controllers/vehicles/driver_aim.rs -> payload
 payload/src/controllers/vehicles/look_steer.rs -> payload
 payload/src/controllers/vehicles/mounted/runtime.rs -> payload

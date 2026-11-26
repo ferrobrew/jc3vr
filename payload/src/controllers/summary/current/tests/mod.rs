@@ -12,7 +12,6 @@ use crate::{
         summary::{
             eligibility::{self, Eligibility},
             localise::humanise,
-            page_clock::{DWELL_S, PageClock},
             retain_wrist,
         },
     },
@@ -141,7 +140,7 @@ fn current_belt_reload_keeps_only_its_physical_motion_source() {
 }
 
 #[test]
-fn named_source_index_churn_preserves_wrist_revision_arc_page_and_dwell() {
+fn named_source_index_churn_preserves_wrist_revision_and_arc() {
     let make_table = |earlier_move: bool, jump_path: &str, jump_name: &str| {
         let mut actions = vec![Some(Vec::new()); OnFootAction::ALL.len()];
         if earlier_move {
@@ -177,21 +176,15 @@ fn named_source_index_churn_preserves_wrist_revision_arc_page_and_dwell() {
     };
     assert_ne!(reference(&original_table), reference(&shifted_table));
     let (revision, original) = retain_wrist(None, original);
-    let mut clock = PageClock::new();
-    clock.step(revision, 3, true, true, 0.0);
-    let before = clock.step(revision, 3, true, true, DWELL_S + 1.0);
-    assert_eq!(before.index, 1);
     let (shifted_revision, retained) = retain_wrist(Some((revision, &original)), shifted);
     assert_eq!(shifted_revision, revision);
     assert!(Arc::ptr_eq(&original, &retained));
-    assert_eq!(clock.step(shifted_revision, 3, true, true, 0.0), before);
 
     let renamed_table = make_table(true, right_path, "Right squeeze");
     let renamed = resolved(&ctx, &renamed_table, &right_ready, &[]);
     let (renamed_revision, renamed) = retain_wrist(Some((revision, &retained)), renamed);
     assert_eq!(renamed_revision, revision + 1);
     assert!(!Arc::ptr_eq(&retained, &renamed));
-    assert_eq!(clock.step(renamed_revision, 3, true, true, 0.0).index, 0);
 
     let moved_table = make_table(true, "/user/hand/left/input/pinch_ext/value", "Right pinch");
     let moved = resolved(

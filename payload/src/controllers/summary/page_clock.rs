@@ -74,6 +74,19 @@ mod tests {
         assert_eq!(clock.step(2, 0, true, true, f32::NAN).index, 0);
     }
 
+    /// The wrist's content revision is all the clock keys on: the summary keeps it across
+    /// rebuilds that leave the wrist's content alone, so such a rebuild keeps the page and its
+    /// dwell, and one that changes the content starts again at page one.
+    #[test]
+    fn an_unchanged_revision_keeps_the_page_and_a_new_one_restarts() {
+        let mut clock = PageClock::new();
+        clock.step(1, 3, true, true, 0.0);
+        let before = clock.step(1, 3, true, true, DWELL_S + 1.0);
+        assert_eq!(before.index, 1);
+        assert_eq!(clock.step(1, 3, true, true, 0.0), before);
+        assert_eq!(clock.step(2, 3, true, true, 0.0).index, 0);
+    }
+
     #[test]
     fn hidden_prepare_clears_the_glance_without_advancing_time() {
         let mut clock = PageClock::new();

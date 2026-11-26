@@ -23,6 +23,10 @@
 //! language, or the bound sources change ([`refresh`]), resolving the strings on the game thread;
 //! the render thread draws the latest one ([`crate::hud::summary_panel`]). Active source paths are
 //! checked every sync independently of panel visibility. A locale change requests fresh names.
+//!
+//! The presentation modules ([`glance`], [`grid`], [`page_clock`], [`game_hints`], and the test-only
+//! glyph mapping) belong to the HUD with the panel that draws them; the rest is the model, which
+//! describes the binding tables and is built on the input tick.
 
 pub mod config;
 pub mod content;
@@ -419,17 +423,14 @@ mod tests {
         bindings::tables::describe::{Control, Effect, Gesture, Row},
         frame::Hand,
         mode::{OnFootVariant, VehicleClass, VehicleSeat},
-        summary::{
-            current::CurrentRouting,
-            page_clock::{DWELL_S, PageClock},
-        },
+        summary::current::CurrentRouting,
     };
 
     const GROUND: Mode = Mode::OnFoot(OnFootVariant::Ground);
     const FALLING: Mode = Mode::Airborne(AirborneVariant::Falling);
 
     #[test]
-    fn reference_and_ignored_hint_churn_preserve_wrist_page_and_dwell() {
+    fn reference_and_ignored_hint_churn_preserve_the_wrist_revision() {
         let row = Row {
             control: Control::A(Hand::Left),
             gesture: Gesture::Press,
@@ -454,10 +455,6 @@ mod tests {
             &|_| None,
         );
         let (revision, original) = retain_wrist(None, wrist);
-        let mut clock = PageClock::new();
-        clock.step(revision, 3, true, true, 0.0);
-        let before = clock.step(revision, 3, true, true, DWELL_S + 1.0);
-        assert_eq!(before.index, 1);
         let mut rows = vec![row];
         rows.push(Row {
             control: Control::Unbound,
@@ -482,12 +479,10 @@ mod tests {
         let (unchanged_revision, retained) = retain_wrist(Some((revision, &original)), unchanged);
         assert_eq!(unchanged_revision, revision);
         assert!(Arc::ptr_eq(&retained, &original));
-        assert_eq!(clock.step(unchanged_revision, 3, true, true, 0.0), before);
         let mut changed = retained.as_ref().clone();
         changed.heading.push_str(" changed");
         let (changed_revision, _) = retain_wrist(Some((revision, &retained)), changed);
         assert_eq!(changed_revision, revision + 1);
-        assert_eq!(clock.step(changed_revision, 3, true, true, 0.0).index, 0);
     }
 
     /// Run `modes` from nothing settled, and say which changes showed the summary.
