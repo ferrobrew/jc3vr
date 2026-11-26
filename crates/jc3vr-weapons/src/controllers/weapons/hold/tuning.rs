@@ -1,15 +1,20 @@
 //! The weapon handling's hold tuning, read from the shipped `tuning/hold.toml` ([`HOLD`]): the
 //! hold's slides, reaches, and throw cap, the takes from characters and racks, the grip targets'
-//! volumes and marks, the sockets' attraction, and the body's grab volumes.
+//! volumes and marks, the sockets' attraction, the body's grab volumes, the gun's regions, the
+//! dual-wield split's waits, the pouches' models, and the pouch returns.
 
+use glam::Vec3;
 use jc3vr_body::tuning::Millis;
 use jc3vr_core::{
-    config::engine::{Invalid, nonnegative, positive, range},
+    config::engine::{Invalid, nonnegative, positive, range, vec3},
     tuning::Tuning,
 };
 use serde::Deserialize;
 
-use crate::controllers::weapons::{docks::attract::AttractionTuning, volumes::VolumesTuning};
+use crate::controllers::weapons::{
+    docks::attract::AttractionTuning, pouch_models::ModelPlacement, pouch_return::PressTuning,
+    volumes::VolumesTuning,
+};
 
 jc3vr_core::tuning_file! {
     /// The hold tuning file.
@@ -24,6 +29,11 @@ pub struct HoldFileTuning {
     pub begin: BeginTuning,
     pub docks: DocksTuning,
     pub volumes: VolumesTuning,
+    pub regions: RegionsTuning,
+    pub dual_wield: DualWieldTuning,
+    pub gun_bodies: GunBodiesTuning,
+    pub pouch_models: PouchModelsTuning,
+    pub pouch_return: PouchReturnTuning,
 }
 
 impl Tuning for HoldFileTuning {
@@ -31,7 +41,14 @@ impl Tuning for HoldFileTuning {
         self.hold.validate()?;
         self.begin.validate()?;
         self.docks.validate()?;
-        self.volumes.validate()
+        self.volumes.validate()?;
+        self.regions.validate()?;
+        self.dual_wield.validate()?;
+        self.gun_bodies
+            .pinned_lately_ms
+            .validate("gun_bodies.pinned_lately_ms", 5_000)?;
+        self.pouch_models.validate()?;
+        self.pouch_return.validate()
     }
 }
 
@@ -269,6 +286,185 @@ impl DocksTuning {
         positive("docks.attraction.travel_mps", a.travel_mps, 50.0)?;
         positive("docks.attraction.max_travel_s", a.max_travel_s, 5.0)?;
         nonnegative("docks.attraction.exit_margin_m", a.exit_margin_m, 0.5)
+    }
+}
+
+/// Where a hand touches a gun, and what it holds there (see
+/// [`crate::controllers::weapons::regions`]).
+#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RegionsTuning {
+    /// How far outside the gun's model box a hand still touches the gun, metres.
+    pub reach_m: f32,
+    /// How far from the pistol grip a hand still holds the grip, metres.
+    pub grip_radius_m: f32,
+    /// How long a bracing hand takes to slide onto the grip.
+    pub grip_slide_ms: Millis,
+    pub shape: GunShapeTuning,
+}
+
+impl RegionsTuning {
+    fn validate(&self) -> Result<(), Invalid> {
+        nonnegative("regions.reach_m", self.reach_m, 1.0)?;
+        positive("regions.grip_radius_m", self.grip_radius_m, 1.0)?;
+        self.grip_slide_ms
+            .validate("regions.grip_slide_ms", 5_000)?;
+        self.shape.validate()
+    }
+}
+
+/// The regions of a gun's shape, in the gun's frame (see
+/// [`crate::controllers::weapons::regions::classify`]).
+#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GunShapeTuning {
+    /// The bottom of the pistol grip, from the attach point: down and a little back, metres.
+    pub grip_bottom_m: Vec3,
+    /// How far along the bore either side of the grip the grip's hand reaches, metres: the
+    /// receiver's length the grip hand covers.
+    pub grip_reach_m: f32,
+    /// The radius of the action's handle, metres.
+    pub action_radius_m: f32,
+    /// How far a magazine hangs from its well, metres.
+    pub magazine_length_m: f32,
+    /// How thick a magazine is, metres.
+    pub magazine_radius_m: f32,
+    /// How far past the foregrip the handguard reaches, metres.
+    pub past_foregrip_m: f32,
+    /// The share of the way to the muzzle the handguard covers on a gun without a foregrip.
+    pub handguard_share: f32,
+    /// The diameter the fingers wrap on a barrel, metres.
+    pub barrel_diameter_m: f32,
+    /// The diameter the fingers wrap on a stock, metres.
+    pub stock_diameter_m: f32,
+}
+
+impl GunShapeTuning {
+    fn validate(&self) -> Result<(), Invalid> {
+        vec3("regions.shape.grip_bottom_m", self.grip_bottom_m, 1.0)?;
+        nonnegative("regions.shape.grip_reach_m", self.grip_reach_m, 1.0)?;
+        positive("regions.shape.action_radius_m", self.action_radius_m, 1.0)?;
+        nonnegative(
+            "regions.shape.magazine_length_m",
+            self.magazine_length_m,
+            1.0,
+        )?;
+        positive(
+            "regions.shape.magazine_radius_m",
+            self.magazine_radius_m,
+            1.0,
+        )?;
+        nonnegative("regions.shape.past_foregrip_m", self.past_foregrip_m, 2.0)?;
+        range(
+            "regions.shape.handguard_share",
+            self.handguard_share,
+            0.0,
+            1.0,
+        )?;
+        positive(
+            "regions.shape.barrel_diameter_m",
+            self.barrel_diameter_m,
+            0.5,
+        )?;
+        positive("regions.shape.stock_diameter_m", self.stock_diameter_m, 0.5)
+    }
+}
+
+/// The dual-wield split's waits (see [`crate::controllers::weapons::dual_wield::single::grant`]).
+#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DualWieldTuning {
+    /// How long a twin is waited for once asked, seconds: the respawn's own wait.
+    pub twin_wait_s: f32,
+    /// How long a rack's copy is expected after the game's pickup of a rack with unlimited stock,
+    /// seconds.
+    pub rack_copy_cover_s: f32,
+    /// How long a respawn's cover waits for the slot's pistol to come back after a reset, seconds.
+    pub respawn_cover_s: f32,
+}
+
+impl DualWieldTuning {
+    fn validate(&self) -> Result<(), Invalid> {
+        positive("dual_wield.twin_wait_s", self.twin_wait_s, 120.0)?;
+        positive(
+            "dual_wield.rack_copy_cover_s",
+            self.rack_copy_cover_s,
+            120.0,
+        )?;
+        positive("dual_wield.respawn_cover_s", self.respawn_cover_s, 120.0)
+    }
+}
+
+/// The guns' own bodies (see [`crate::controllers::weapons::gun_bodies`]).
+#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GunBodiesTuning {
+    /// How lately the rigid grip must have pinned a gun for it to count as in the hand.
+    pub pinned_lately_ms: Millis,
+}
+
+/// Where the pouches' models sit on their pouches (see
+/// [`crate::controllers::weapons::pouch_models`]).
+#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PouchModelsTuning {
+    /// The grenade's, the magazine's, and the detonator's models: at the pouch's centre, square to
+    /// the girdle.
+    pub model: ModelPlacement,
+    /// The C4 charge's model: at the pouch's centre, pitched down a quarter turn, so that the
+    /// charge, whose in-hand model lies face up, lies flat on the chest with its face forward
+    /// rather than standing out of it.
+    pub charge: ModelPlacement,
+}
+
+impl PouchModelsTuning {
+    fn validate(&self) -> Result<(), Invalid> {
+        for (path, placement) in [
+            ("pouch_models.model", &self.model),
+            ("pouch_models.charge", &self.charge),
+        ] {
+            vec3(&format!("{path}.offset_m"), placement.offset_m, 1.0)?;
+            vec3(
+                &format!("{path}.rotation_deg"),
+                placement.rotation_deg,
+                360.0,
+            )?;
+        }
+        Ok(())
+    }
+}
+
+/// How a press onto a chest pouch puts its item back (see
+/// [`crate::controllers::weapons::pouch_return`]).
+#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PouchReturnTuning {
+    /// A grenade's press. Its reach rises above the pouch: a hand bringing a grenade back stops
+    /// high, and in the 14 November 02:05 session the grenades at 2560 to 2580 s were let go at
+    /// shoulder height, above the pouch, and fell.
+    pub grenade: PressTuning,
+    /// A held charge's return, near the pouch's surface without a deep push into the chest. The
+    /// larger leave margin keeps a draw or a hand resting in the return volume from returning
+    /// immediately.
+    pub c4: PressTuning,
+}
+
+impl PouchReturnTuning {
+    fn validate(&self) -> Result<(), Invalid> {
+        for (path, press) in [
+            ("pouch_return.grenade", &self.grenade),
+            ("pouch_return.c4", &self.c4),
+        ] {
+            nonnegative(&format!("{path}.leave_margin_m"), press.leave_margin_m, 0.5)?;
+            nonnegative(&format!("{path}.depth_m"), press.depth_m, 0.5)?;
+            nonnegative(
+                &format!("{path}.return_margin_m"),
+                press.return_margin_m,
+                0.5,
+            )?;
+            nonnegative(&format!("{path}.rise_m"), press.rise_m, 0.5)?;
+        }
+        Ok(())
     }
 }
 

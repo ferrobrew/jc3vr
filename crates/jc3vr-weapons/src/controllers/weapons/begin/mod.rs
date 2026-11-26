@@ -749,8 +749,8 @@ fn off_touch(gun: &GunOnHand, hand: Hand, active: &ActiveHands) -> Option<(OffTo
     let hit = regions::classify(
         &gun.shape,
         regions::into_gun(pose, point, scale),
-        regions::GRIP_RADIUS_M,
-        regions::REACH_M,
+        HOLD.get().regions.grip_radius_m,
+        HOLD.get().regions.reach_m,
     )?;
     let touch = OffTouch {
         hand,
@@ -767,8 +767,8 @@ fn brace_slide(gun: &GunOnHand, hand: Hand, active: &ActiveHands) -> Option<(Vec
     let hit = regions::classify(
         &gun.shape,
         regions::into_gun(gun.pose(), point, active.world_scale),
-        regions::GRIP_RADIUS_M,
-        regions::REACH_M,
+        HOLD.get().regions.grip_radius_m,
+        HOLD.get().regions.reach_m,
     )?;
     hit.region.slides().then(|| {
         (
@@ -812,8 +812,8 @@ fn docked_candidates(ticked: &Ticked, active: &ActiveHands, free: [bool; 2]) -> 
                 let hit = regions::classify(
                     &gun.shape,
                     regions::into_gun(gun.pose, world, 1.0),
-                    regions::GRIP_RADIUS_M,
-                    regions::REACH_M,
+                    HOLD.get().regions.grip_radius_m,
+                    HOLD.get().regions.reach_m,
                 )?;
                 Some((gun, hit))
             })

@@ -100,3 +100,50 @@ radius_m = 0.075
 smoothing_s = 0.2
 max_lag_m = 0.12
 max_dt_s = 0.1
+
+[regions]
+reach_m = 0.05
+grip_radius_m = 0.07
+grip_slide_ms = 250
+
+# In the gun's frame, from the grip's attach point: -Z along the bore, +Y up.
+[regions.shape]
+grip_bottom_m = [0.0, -0.1, 0.02]
+grip_reach_m = 0.06
+action_radius_m = 0.045
+magazine_length_m = 0.16
+magazine_radius_m = 0.05
+past_foregrip_m = 0.12
+handguard_share = 0.6
+barrel_diameter_m = 0.03
+stock_diameter_m = 0.045
+
+[dual_wield]
+twin_wait_s = 10.0
+rack_copy_cover_s = 5.0
+respawn_cover_s = 20.0
+
+[gun_bodies]
+pinned_lately_ms = 250
+
+# In the frame of the girdle the pouch rides (+X right, +Y up the spine, +Z back), given for the
+# right side and mirrored for the left; the turn is about X, then Y, then Z, in degrees.
+[pouch_models.model]
+offset_m = [0.0, 0.0, 0.0]
+rotation_deg = [0.0, 0.0, 0.0]
+
+[pouch_models.charge]
+offset_m = [0.0, 0.0, 0.0]
+rotation_deg = [-90.0, 0.0, 0.0]
+
+[pouch_return.grenade]
+leave_margin_m = 0.03
+depth_m = 0.02
+return_margin_m = 0.0
+rise_m = 0.08
+
+[pouch_return.c4]
+leave_margin_m = 0.07
+depth_m = 0.0
+return_margin_m = 0.04
+rise_m = 0.0

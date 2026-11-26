@@ -42,12 +42,7 @@ pub use self::{
     action::{action_back, action_volume},
     shape::{GunRegion, GunShape, RegionHit, classify, into_gun, out_of_gun, turn_on_wrist},
 };
-
-/// How far outside the gun's model box a hand still touches the gun, metres.
-pub const REACH_M: f32 = 0.05;
-
-/// How far from the pistol grip a hand still holds the grip, metres.
-pub const GRIP_RADIUS_M: f32 = 0.07;
+use crate::controllers::weapons::hold::tuning::HOLD;
 
 /// What a hand does on a gun.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -149,7 +144,7 @@ pub(crate) fn slide_mark(weapon: usize, hand: Hand) -> Option<u32> {
 
 /// The grip a bracing hand slides onto when the holding hand lets go, from wherever it braced:
 /// the gun's point `from` (in the gun's frame) glides through the hand to the grip (the attach
-/// point) over [`GRIP_SLIDE`] ([`slid_anchor`]), and the gun turns from `turn`, its rotation on the
+/// point) over [`grip_slide`] ([`slid_anchor`]), and the gun turns from `turn`, its rotation on the
 /// wrist as the hand braced it, onto the canonical grip over the same slide, so it ends aligned to
 /// shoot.
 pub(crate) fn grip_from_brace(
@@ -189,8 +184,11 @@ pub fn slid_anchor(from: Vec3, to: Vec3, elapsed: Duration, over: Duration) -> V
     from.lerp(to, eased_share(elapsed, over))
 }
 
-/// How long a bracing hand takes to slide onto the grip.
-pub const GRIP_SLIDE: Duration = Duration::from_millis(250);
+/// How long a bracing hand takes to slide onto the grip
+/// ([`RegionsTuning::grip_slide_ms`](crate::controllers::weapons::hold::tuning::RegionsTuning::grip_slide_ms)).
+pub fn grip_slide() -> Duration {
+    HOLD.get().regions.grip_slide_ms.duration()
+}
 
 /// Note a brace at a point the hand chose.
 pub(crate) fn braced(hand: Hand, region: GunRegion) {
@@ -285,17 +283,18 @@ impl SlideHold {
     /// The slide's mark at `now`. A slide that has ended counts as one of its own, so a gun body
     /// seated while the gun was gliding through the hand is seated again where it came to rest.
     fn mark_at(self, now: Instant) -> u32 {
-        let settled = now.saturating_duration_since(self.since) >= GRIP_SLIDE;
+        let settled = now.saturating_duration_since(self.since) >= grip_slide();
         self.mark.wrapping_mul(2).wrapping_add(u32::from(settled))
     }
 
     /// Where the slide has the gun at `now`.
     fn at(self, now: Instant) -> GripSlide {
         let elapsed = now.saturating_duration_since(self.since);
+        let over = grip_slide();
         GripSlide {
-            anchor: slid_anchor(self.from, Vec3::ZERO, elapsed, GRIP_SLIDE),
+            anchor: slid_anchor(self.from, Vec3::ZERO, elapsed, over),
             turn: self.turn,
-            aligned: eased_share(elapsed, GRIP_SLIDE),
+            aligned: eased_share(elapsed, over),
         }
     }
 }

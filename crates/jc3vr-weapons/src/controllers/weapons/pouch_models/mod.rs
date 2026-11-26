@@ -57,9 +57,11 @@ use jc3vr_body::controllers::{
 use jc3vr_core::game_tick::GameTick;
 use jc3vr_input::frame::{Hand, Pose};
 use parking_lot::Mutex;
+use serde::Deserialize;
 
 use crate::controllers::weapons::{
     c4::detonator::trigger_model,
+    hold::tuning::HOLD,
     mirror::pouches_rendered,
     pouch_models::{
         attachments::{RenderSample, Sample, placement},
@@ -109,10 +111,11 @@ impl Prop {
     }
 
     /// Where the prop's model sits on its pouch.
-    pub const fn placement(self) -> ModelPlacement {
+    pub fn placement(self) -> ModelPlacement {
+        let tuning = &HOLD.get().pouch_models;
         match self {
-            Prop::Charge => CHARGE_PLACEMENT,
-            Prop::Grenade | Prop::Magazine | Prop::Detonator => MODEL_PLACEMENT,
+            Prop::Charge => tuning.charge,
+            Prop::Grenade | Prop::Magazine | Prop::Detonator => tuning.model,
         }
     }
 
@@ -124,25 +127,11 @@ impl Prop {
     }
 }
 
-/// Where the grenade's and the magazine's models sit on their pouches: at the pouch's centre,
-/// square to the girdle.
-pub const MODEL_PLACEMENT: ModelPlacement = ModelPlacement {
-    offset_m: Vec3::ZERO,
-    rotation_deg: Vec3::ZERO,
-};
-
-/// Where the C4 charge's model sits on its pouch: at the pouch's centre, pitched down a quarter
-/// turn, so that the charge, whose in-hand model lies face up, lies flat on the chest with its face
-/// forward rather than standing out of it.
-pub const CHARGE_PLACEMENT: ModelPlacement = ModelPlacement {
-    offset_m: Vec3::ZERO,
-    rotation_deg: Vec3::new(-90.0, 0.0, 0.0),
-};
-
 /// Where a model sits relative to its pouch's centre, in the frame of the girdle the pouch rides
 /// (+X right, +Y up the spine, +Z back), given for the right side and mirrored across the body's
 /// midline for the left.
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ModelPlacement {
     /// Metres.
     pub offset_m: Vec3,

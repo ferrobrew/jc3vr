@@ -100,7 +100,6 @@ use crate::controllers::weapons::{
     hold::tuning::HOLD,
     inventory::engine::strong_to,
     pouch_models,
-    pouch_models::MODEL_PLACEMENT,
     reload::{
         belt::{BeltPush, PushStage},
         chamber::{ActionWork, Chamber},
@@ -277,7 +276,7 @@ pub(super) fn begin_tick(inputs: &BeginInputs) -> Vec<Candidate> {
                     position: pouch.centre,
                     orientation: body.pelvis,
                 },
-                &MODEL_PLACEMENT,
+                &HOLD.get().pouch_models.model,
                 side,
                 tick.world_scale,
             );

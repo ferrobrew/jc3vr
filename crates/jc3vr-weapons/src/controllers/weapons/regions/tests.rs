@@ -383,7 +383,7 @@ fn a_slide_ends_when_its_hand_holds_another_gun_or_none() {
 fn a_hand_slides_onto_the_grip_eased_and_ends_there() {
     let from = Vec3::new(0.0, 0.02, -0.3);
     let to = Vec3::ZERO;
-    let over = GRIP_SLIDE;
+    let over = grip_slide();
     assert_eq!(slid_anchor(from, to, Duration::ZERO, over), from);
     assert_eq!(slid_anchor(from, to, over, over), to);
     assert_eq!(slid_anchor(from, to, over * 3, over), to);
@@ -411,10 +411,10 @@ fn a_held_slide_moves_the_anchor_onto_the_grip_and_turns_the_gun_there() {
     assert_eq!(start.anchor, Vec3::new(0.0, 0.0, 0.2));
     assert_eq!(start.turn, turn);
     assert_eq!(start.aligned, 0.0);
-    let end = hold.at(since + GRIP_SLIDE);
+    let end = hold.at(since + grip_slide());
     assert_eq!(end.anchor, Vec3::ZERO);
     assert_eq!(end.aligned, 1.0);
     // The gun body is seated again once the slide has ended, and not before.
-    assert_eq!(hold.mark_at(since), hold.mark_at(since + GRIP_SLIDE / 2));
-    assert_ne!(hold.mark_at(since), hold.mark_at(since + GRIP_SLIDE));
+    assert_eq!(hold.mark_at(since), hold.mark_at(since + grip_slide() / 2));
+    assert_ne!(hold.mark_at(since), hold.mark_at(since + grip_slide()));
 }

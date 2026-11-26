@@ -11,6 +11,8 @@ use glam::{Quat, Vec3};
 use jc3vr_body::controllers::{fingers::grip::catalogue::GripPose, hands::pose as hand_pose};
 use jc3vr_input::frame::Pose;
 
+use crate::controllers::weapons::hold::tuning::HOLD;
+
 /// A part of a gun a hand can hold it by.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum GunRegion {
@@ -56,15 +58,15 @@ impl GunRegion {
     }
 
     /// The fingers' pose for a hand holding the gun here.
-    pub const fn finger_pose(self) -> GripPose {
+    pub fn finger_pose(self) -> GripPose {
         match self {
             GunRegion::Grip => GripPose::PistolGrip,
             GunRegion::Handguard => GripPose::Foregrip,
             GunRegion::Barrel => GripPose::Cylinder {
-                diameter_m: BARREL_DIAMETER_M,
+                diameter_m: HOLD.get().regions.shape.barrel_diameter_m,
             },
             GunRegion::Stock => GripPose::Cylinder {
-                diameter_m: STOCK_DIAMETER_M,
+                diameter_m: HOLD.get().regions.shape.stock_diameter_m,
             },
             GunRegion::Magazine => GripPose::MagazineCup,
             GunRegion::Action => GripPose::SlidePinch,
@@ -119,7 +121,7 @@ impl GunShape {
     /// the grip.
     fn muzzle_along(&self) -> f32 {
         let muzzle = along(self.muzzle);
-        if muzzle > GRIP_REACH_M {
+        if muzzle > HOLD.get().regions.shape.grip_reach_m {
             muzzle
         } else {
             along(self.min)
@@ -128,9 +130,12 @@ impl GunShape {
 
     /// Where the handguard ends: past the foregrip, or most of the way to the muzzle without one.
     fn handguard_end(&self) -> f32 {
+        let shape = &HOLD.get().regions.shape;
         let end = self.muzzle_along();
         self.foregrip
-            .map_or(end * HANDGUARD_SHARE, |f| along(f) + PAST_FOREGRIP_M)
+            .map_or(end * shape.handguard_share, |f| {
+                along(f) + shape.past_foregrip_m
+            })
             .min(end)
     }
 }
@@ -156,6 +161,8 @@ pub fn classify(shape: &GunShape, point: Vec3, grip_radius: f32, reach: f32) -> 
     if !shape.is_usable() || !point.is_finite() {
         return None;
     }
+    let tuning = &HOLD.get().regions.shape;
+    let grip_reach = tuning.grip_reach_m;
     let outside = point - point.clamp(shape.min, shape.max);
     if outside.length() > reach.max(0.0) {
         return None;
@@ -167,7 +174,7 @@ pub fn classify(shape: &GunShape, point: Vec3, grip_radius: f32, reach: f32) -> 
     };
     // The parts with a point of their own, nearest first by the share of their radius.
     let mut parts: Vec<(f32, RegionHit)> = Vec::new();
-    let grip_segment = closest_on_segment(point, Vec3::ZERO, GRIP_BOTTOM);
+    let grip_segment = closest_on_segment(point, Vec3::ZERO, tuning.grip_bottom_m);
     let grip_radius = grip_radius.max(0.0);
     if grip_radius > 0.0 && point.distance(grip_segment) <= grip_radius {
         parts.push((
@@ -177,8 +184,8 @@ pub fn classify(shape: &GunShape, point: Vec3, grip_radius: f32, reach: f32) -> 
     }
     if let Some(action) = shape.action.filter(|a| a.is_finite()) {
         let d = point.distance(action);
-        if d <= ACTION_RADIUS_M {
-            parts.push((d / ACTION_RADIUS_M, hit(GunRegion::Action, action)));
+        if d <= tuning.action_radius_m {
+            parts.push((d / tuning.action_radius_m, hit(GunRegion::Action, action)));
         }
     }
     // A pistol's magazine is in its grip.
@@ -188,11 +195,11 @@ pub fn classify(shape: &GunShape, point: Vec3, grip_radius: f32, reach: f32) -> 
             .filter(|m| m.mouth.is_finite() && m.axis.is_finite())
         && well.mouth.length() > grip_radius
     {
-        let end = well.mouth - well.axis.normalize_or_zero() * MAGAZINE_LENGTH_M;
+        let end = well.mouth - well.axis.normalize_or_zero() * tuning.magazine_length_m;
         let on = closest_on_segment(point, well.mouth, end);
         let d = point.distance(on);
-        if d <= MAGAZINE_RADIUS_M {
-            parts.push((d / MAGAZINE_RADIUS_M, hit(GunRegion::Magazine, on)));
+        if d <= tuning.magazine_radius_m {
+            parts.push((d / tuning.magazine_radius_m, hit(GunRegion::Magazine, on)));
         }
     }
     if let Some((_, nearest)) = parts.into_iter().min_by(|a, b| a.0.total_cmp(&b.0)) {
@@ -203,23 +210,23 @@ pub fn classify(shape: &GunShape, point: Vec3, grip_radius: f32, reach: f32) -> 
     let muzzle_along = shape.muzzle_along();
     let on_line = |through: Vec3, along: f32| Vec3::new(through.x, through.y, -along);
     if !shape.long {
-        return Some(if along_bore > GRIP_REACH_M {
+        return Some(if along_bore > grip_reach {
             hit(
                 GunRegion::Barrel,
-                on_line(shape.muzzle, along_bore.clamp(GRIP_REACH_M, muzzle_along)),
+                on_line(shape.muzzle, along_bore.clamp(grip_reach, muzzle_along)),
             )
         } else {
             hit(GunRegion::Grip, Vec3::ZERO)
         });
     }
-    if along_bore < -GRIP_REACH_M {
-        let rear = shape.rear().min(-GRIP_REACH_M);
+    if along_bore < -grip_reach {
+        let rear = shape.rear().min(-grip_reach);
         return Some(hit(
             GunRegion::Stock,
-            on_line(Vec3::ZERO, along_bore.clamp(rear, -GRIP_REACH_M)),
+            on_line(Vec3::ZERO, along_bore.clamp(rear, -grip_reach)),
         ));
     }
-    let handguard_end = shape.handguard_end().max(GRIP_REACH_M);
+    let handguard_end = shape.handguard_end().max(grip_reach);
     if along_bore <= handguard_end {
         let through = shape
             .foregrip
@@ -227,7 +234,7 @@ pub fn classify(shape: &GunShape, point: Vec3, grip_radius: f32, reach: f32) -> 
             .unwrap_or(shape.muzzle);
         return Some(hit(
             GunRegion::Handguard,
-            on_line(through, along_bore.clamp(-GRIP_REACH_M, handguard_end)),
+            on_line(through, along_bore.clamp(-grip_reach, handguard_end)),
         ));
     }
     Some(hit(
@@ -272,23 +279,6 @@ pub fn out_of_gun(gun: Pose, point: Vec3, scale: f32) -> Vec3 {
 
 /// A gun's length below which its box is not trusted, metres.
 const MIN_LENGTH_M: f32 = 0.05;
-/// The bottom of the pistol grip, from the attach point: down and a little back.
-const GRIP_BOTTOM: Vec3 = Vec3::new(0.0, -0.1, 0.02);
-/// How far along the bore either side of the grip the grip's hand reaches, metres: the receiver's
-/// length the grip hand covers.
-const GRIP_REACH_M: f32 = 0.06;
-/// The radius of the action's handle, metres.
-const ACTION_RADIUS_M: f32 = 0.045;
-/// How far a magazine hangs from its well, and how thick it is, metres.
-const MAGAZINE_LENGTH_M: f32 = 0.16;
-const MAGAZINE_RADIUS_M: f32 = 0.05;
-/// How far past the foregrip the handguard reaches, metres.
-const PAST_FOREGRIP_M: f32 = 0.12;
-/// The share of the way to the muzzle the handguard covers on a gun without a foregrip.
-const HANDGUARD_SHARE: f32 = 0.6;
-/// The diameters the fingers wrap on a barrel and on a stock, metres.
-const BARREL_DIAMETER_M: f32 = 0.03;
-const STOCK_DIAMETER_M: f32 = 0.045;
 
 /// How far along the bore from the grip `point` is.
 fn along(point: Vec3) -> f32 {

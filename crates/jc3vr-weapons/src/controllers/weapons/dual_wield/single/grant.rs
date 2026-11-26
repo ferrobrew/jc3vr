@@ -14,13 +14,7 @@
 //! when the twin never comes, there is no hip to carry it on, or the carried weapons are stashed
 //! for a mission.
 
-/// How long a twin is waited for once asked, seconds: the respawn's own wait.
-pub const TWIN_WAIT_S: f32 = 10.0;
-/// How long a rack's copy is expected after the game's pickup of a rack with unlimited stock,
-/// seconds.
-pub const RACK_COPY_COVER_S: f32 = 5.0;
-/// How long a respawn's cover waits for the slot's pistol to come back after a reset, seconds.
-pub const RESPAWN_COVER_S: f32 = 20.0;
+use crate::controllers::weapons::hold::tuning::HOLD;
 
 /// One input tick's view of the dual-wield slot.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -156,14 +150,15 @@ impl Grants {
 
     /// The game's pickup of a rack with unlimited stock asked for a copy.
     pub fn cover_rack_copy(&mut self) {
-        self.rack_copy = Some(RACK_COPY_COVER_S);
+        self.rack_copy = Some(HOLD.get().dual_wield.rack_copy_cover_s);
     }
 
     /// A reset is under way, and the slot's pistol comes back as one pistol (`Some(true)`), a pair
     /// (`Some(false)`), or with nothing known of it (`None`, which a pair the game hands over
     /// follows).
     pub fn cover_respawn(&mut self, single: Option<bool>) {
-        self.respawn = single.map(|single| (single, RESPAWN_COVER_S));
+        let cover_s = HOLD.get().dual_wield.respawn_cover_s;
+        self.respawn = single.map(|single| (single, cover_s));
     }
 
     /// The respawn's one pistol was the only pistol the player carried: a respawn hands it a twin
@@ -215,7 +210,7 @@ impl Grants {
                     return Grant::Nothing;
                 }
                 *age_s += dt;
-                if *age_s > TWIN_WAIT_S {
+                if *age_s > HOLD.get().dual_wield.twin_wait_s {
                     let why = PairWhy::TwinNeverCame;
                     self.state = TwinState::Pair { object, why };
                     return Grant::Pair { object, why };
@@ -374,7 +369,7 @@ mod tests {
         let mut g = Grants::new();
         g.observe(tick(Some(PAIR)));
         let mut last = Grant::Nothing;
-        for _ in 0..((TWIN_WAIT_S / TICK) as usize + 2) {
+        for _ in 0..((HOLD.get().dual_wield.twin_wait_s / TICK) as usize + 2) {
             last = g.observe(tick(Some(PAIR)));
             if last != Grant::Nothing {
                 break;
@@ -433,7 +428,7 @@ mod tests {
         );
         let mut g = Grants::new();
         g.cover_rack_copy();
-        for _ in 0..((RACK_COPY_COVER_S / TICK) as usize + 2) {
+        for _ in 0..((HOLD.get().dual_wield.rack_copy_cover_s / TICK) as usize + 2) {
             g.observe(tick(None));
         }
         assert_eq!(

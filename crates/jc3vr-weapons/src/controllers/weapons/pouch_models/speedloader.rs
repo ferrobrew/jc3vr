@@ -8,7 +8,8 @@ use glam::{Mat4, Quat, Vec3};
 use jc3vr_body::controllers::body::rig::frames::Frames;
 
 use crate::controllers::weapons::{
-    pouch_models::{MODEL_PLACEMENT, on_pouch, owned::OwnedModel, render_matrix},
+    hold::tuning::HOLD,
+    pouch_models::{on_pouch, owned::OwnedModel, render_matrix},
     reload::{BeltSpeedloader, plan::MAX_HELD_ROUNDS},
 };
 
@@ -94,7 +95,7 @@ fn group_local(wanted: &BeltSpeedloader, frames: &Frames) -> Option<Mat4> {
     let orientation = frames.cockpit_rotation_to_model(wanted.pouch.orientation);
     let stand = Quat::from_rotation_arc(wanted.round.axis, Vec3::Y);
     let local = Mat4::from_rotation_translation(orientation, position)
-        * on_pouch(&MODEL_PLACEMENT, wanted.side)
+        * on_pouch(&HOLD.get().pouch_models.model, wanted.side)
         * Mat4::from_quat(stand)
         * Mat4::from_translation(-wanted.round.top);
     local.is_finite().then_some(local)

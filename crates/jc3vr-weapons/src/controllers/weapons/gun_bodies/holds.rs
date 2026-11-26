@@ -2,7 +2,7 @@
 //! grip pinned lately, with its own body, and the hand that braces a holding hand's gun on its
 //! foregrip, with where it braces it.
 
-use std::{num::NonZeroUsize, time::Duration};
+use std::num::NonZeroUsize;
 
 use glam::Vec3;
 use jc3gi::equipment::weapon::{WeaponBase, WeaponData};
@@ -14,7 +14,12 @@ use jc3vr_body::controllers::{
 };
 use jc3vr_input::frame::Hand;
 
-use crate::controllers::weapons::{foregrip, foregrip::GripGeometry, hold::act, regions};
+use crate::controllers::weapons::{
+    foregrip,
+    foregrip::GripGeometry,
+    hold::{act, tuning::HOLD},
+    regions,
+};
 
 /// Read the guns in the hands: each hand whose gun the rigid grip pinned lately, of one of
 /// `weapons` (the wielded weapon and the second weapon, each with its weight class), with no slide
@@ -39,7 +44,7 @@ pub(crate) unsafe fn read_holds(weapons: [Option<(usize, HeftClass)>; 2]) -> Gun
             continue;
         };
         if !placed.pinned
-            || placed.at.elapsed() > PINNED_LATELY
+            || placed.at.elapsed() > HOLD.get().gun_bodies.pinned_lately_ms.duration()
             || act::snap_view(weapon, hand).is_some()
         {
             continue;
@@ -90,9 +95,6 @@ pub fn brace_contact(
         palm_from_grip,
     })
 }
-
-/// How lately the rigid grip must have pinned a gun for it to count as in the hand.
-const PINNED_LATELY: Duration = Duration::from_millis(250);
 
 /// The gun `index` of `weapon`, with its own body.
 ///
