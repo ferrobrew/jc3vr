@@ -33,6 +33,7 @@ mod headpose;
 mod hooks;
 mod hud;
 mod image_writer;
+mod input_core;
 mod lifecycle;
 mod logging;
 mod pause_menu;
