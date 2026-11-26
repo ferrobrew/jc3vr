@@ -77,8 +77,12 @@ use jc3gi::{
     character::character::Character, input::input_action_map::Action, state::StateBitFlag,
 };
 use jc3vr_input::{
-    capture::{CaptureUpdate, OwnershipBlocker, desktop_input_observation},
+    capture::{
+        CaptureUpdate, DebugUiInput, OwnershipBlocker, debug_ui_capture, desktop_input_observation,
+        update_debug_ui_capture,
+    },
     frame::{self, Button, ControllerFrame, GripPress, Hand},
+    haptics::cues::Event,
     semantic::{
         SemanticSet,
         vocabulary::{MenuAction, OnFootAction},
@@ -130,8 +134,7 @@ use crate::{
         config::{CONTROLLERS_CONFIG, LocomotionDirection},
         grab::{self, Consumer, Provided, grabs_for, markers::MarkerFrame},
         hands::{self, tiers},
-        haptics::{self, Event},
-        locomotion,
+        haptics, locomotion,
         mode::{self, AirborneVariant, Detection, Mode, Traversal, VehicleClass},
         physical_hands, roomscale, scheme, snatch, vehicles, weapons,
     },
@@ -210,7 +213,7 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
         || raw_frame
             .as_ref()
             .is_some_and(|frame| neutral_policy.frame_neutral(frame) && source_neutral);
-    let capture_input = mode::DebugUiInput {
+    let capture_input = DebugUiInput {
         focused: desktop.focused() == Some(true)
             && raw_frame.as_ref().is_none_or(|frame| frame.focused),
         tracking_ready: !config.enabled
@@ -228,7 +231,7 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
         // the editing owner is gated on desktop focus, under which the sample is observed.
         controls_neutral: controller_neutral && desktop.controls_neutral() != Some(false),
     };
-    let capture_update = mode::update_debug_ui_capture(capture_input);
+    let capture_update = update_debug_ui_capture(capture_input);
     log_capture_wait(capture_update.as_ref(), capture_input, || CaptureEvidence {
         hands: raw_frame
             .as_ref()
@@ -293,7 +296,7 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
         Some(Idle::NoControllers)
     } else if poll == DevicePoll::Disabled {
         Some(Idle::PollDisabled)
-    } else if mode::debug_ui_capture().is_some_and(|snapshot| !snapshot.gameplay_effective) {
+    } else if debug_ui_capture().is_some_and(|snapshot| !snapshot.gameplay_effective) {
         Some(Idle::ModPanel)
     } else {
         None
@@ -318,7 +321,7 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
         system_command(command);
         if command == SystemCommand::TogglePanel {
             panel_toggled = true;
-            let cancellation = mode::update_debug_ui_capture(mode::DebugUiInput {
+            let cancellation = update_debug_ui_capture(DebugUiInput {
                 controls_neutral: false,
                 ..capture_input
             })
@@ -328,7 +331,7 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
                 cancel_capture_routes(poll_after, sink);
             }
             detection = mode::tick();
-            if mode::debug_ui_capture().is_some_and(|snapshot| !snapshot.gameplay_effective) {
+            if debug_ui_capture().is_some_and(|snapshot| !snapshot.gameplay_effective) {
                 idle = Some(Idle::ModPanel);
             }
             break;
@@ -354,9 +357,7 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
     update_egui_controller(
         panel_input
             .as_ref()
-            .filter(|_| {
-                mode::debug_ui_capture().is_some_and(|snapshot| snapshot.edit_capture.pointer)
-            })
+            .filter(|_| debug_ui_capture().is_some_and(|snapshot| snapshot.edit_capture.pointer))
             .map(|(frame, edges)| (frame, edges)),
         config.acting_hand(),
         Hand::BOTH.map(|hand| {
@@ -1235,7 +1236,7 @@ struct CaptureEvidence {
 /// the wait is on. `evidence` is read only when a log is due.
 fn log_capture_wait(
     update: Option<&CaptureUpdate>,
-    input: mode::DebugUiInput,
+    input: DebugUiInput,
     evidence: impl FnOnce() -> CaptureEvidence,
 ) {
     let blocker = update

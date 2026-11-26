@@ -9,6 +9,7 @@ use jc3gi::{
 };
 use jc3vr_input::{
     frame::{self, Hand},
+    haptics::cues::Event,
     motion,
 };
 
@@ -18,14 +19,13 @@ use crate::controllers::{
         hold::{Desired, MapKind},
     },
     config::{CONTROLLERS_CONFIG, ControllersConfig},
-    diagnostics,
     fingers::grip::{self, Grip, GripSource},
     grab::{GrabVolume, resolve::dock_target},
     hands::{
         self, ActiveHands, pose as hand_pose,
         tiers::{self, HandTier, TierState},
     },
-    haptics::{self, Event},
+    haptics,
     loadout::{
         Socket,
         grab::{self, GrabRules, Release, SocketMove, SocketRefusal},
@@ -33,6 +33,7 @@ use crate::controllers::{
     },
     mode,
     physical_hands::physics::guns,
+    telemetry,
     weapons::{
         begin::with_holder,
         c4::{self, tuning::C4Tuning},
@@ -455,7 +456,7 @@ pub(crate) fn finish_tick(
         .filter_map(|hand| refusals[hand.index()].map(|r| (hand, r)))
     {
         haptics::play(hand, Event::DryFire);
-        diagnostics::report("trigger", Some(hand), "the trigger fired nothing", || {
+        telemetry::report("trigger", Some(hand), "the trigger fired nothing", || {
             Some(refusal.label().to_owned())
         });
     }

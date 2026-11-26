@@ -31,14 +31,14 @@ mod tests;
 use std::time::{Duration, Instant};
 
 use jc3gi::state::StateBitFlag;
-use jc3vr_input::frame::Hand;
+use jc3vr_input::{frame::Hand, haptics::cues::Event};
 use jc3vr_render::headpose;
 use parking_lot::Mutex;
 
 use crate::{
     controllers::{
         hands::{ActiveHands, controller_grips},
-        haptics::{self, Event},
+        haptics,
         locomotion::{
             config::SwimStrokeConfig,
             strokes::model::{StrokeHand, StrokeInput, StrokeModel, StrokeStep},

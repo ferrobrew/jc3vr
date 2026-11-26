@@ -91,6 +91,7 @@ use jc3gi::{
 };
 use jc3vr_input::{
     frame::{Hand, Pose},
+    haptics::cues::Event,
     motion,
 };
 use parking_lot::Mutex;
@@ -101,7 +102,7 @@ use crate::controllers::{
     bindings::controls::ButtonControl,
     config::CONTROLLERS_CONFIG,
     hands::held::{self, Held, Slot},
-    haptics::{self, Event},
+    haptics,
     loadout::{ObjectAddress, live},
     physical_hands, scheme,
     weapons::{

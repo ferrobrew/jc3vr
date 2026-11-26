@@ -3,11 +3,10 @@
 use egui::Ui;
 use jc3vr_gameplay::controllers::{
     config::{CONTROLLERS_CONFIG, ControllersConfig, GunReadout},
-    overlay,
     physical_hands::collider_view::ColliderViewConfig,
     scheme,
 };
-use jc3vr_render::controllers::overlay::{primitive::Source, store, store::SourceMask};
+use jc3vr_render::controllers::overlay::{self, primitive::Source, store, store::SourceMask};
 use parking_lot::Mutex;
 
 use crate::ui::{catalog::FeatureId, controllers};
@@ -100,7 +99,7 @@ pub(crate) fn snapshot() -> Snapshot {
         gameplay: jc3vr_core::hooks::in_gameplay(),
         clean_view: jc3vr_core::director::clean_view::hides_everything(),
         temporarily_hidden: TEMPORARY_HIDE.lock().requested_at_hide.is_some(),
-        overlay: overlay::status(),
+        overlay: overlay::pass::status(),
     };
     Snapshot { config, runtime }
 }
@@ -483,7 +482,7 @@ struct Runtime {
     gameplay: bool,
     clean_view: bool,
     temporarily_hidden: bool,
-    overlay: overlay::OverlayStatus,
+    overlay: overlay::pass::OverlayStatus,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

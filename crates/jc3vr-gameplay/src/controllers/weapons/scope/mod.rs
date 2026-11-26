@@ -31,11 +31,10 @@
 //! or one armed beside it. There is one lens, so with a scoped gun in each hand the lens is the one
 //! raised to the eye ([`chosen`]): a scope an eye is at, then the one whose eyepiece is nearest an
 //! eye.
+//!
+//! [`renderer`]: jc3vr_render::controllers::weapons::scope::renderer
 
 pub mod lens;
-// The render layer's half lives in the render crate; the old path keeps working until the final
-// cleanup pass.
-pub(crate) use jc3vr_render::controllers::weapons::scope::pass;
 pub mod suppress;
 
 use std::time::{Duration, Instant};
@@ -43,8 +42,7 @@ use std::time::{Duration, Instant};
 use glam::{Mat4, Vec3};
 use jc3gi::equipment::weapon::{WeaponBase, WeaponClass};
 use jc3vr_input::frame::{Hand, Pose};
-use jc3vr_render::controllers::weapons::scope::pass::LensFrame;
-pub use jc3vr_render::controllers::weapons::scope::pass::{capture, draw, release_on_eject};
+use jc3vr_render::controllers::weapons::scope::pass::{self, LensFrame};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 

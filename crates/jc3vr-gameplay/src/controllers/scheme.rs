@@ -2,8 +2,10 @@
 //! frame. The scheme type and its rule live in [`jc3vr_input::scheme`].
 
 use jc3vr_core::config::engine::ConfigSlot;
-use jc3vr_input::frame::{self, ControllerFrame};
-pub use jc3vr_input::scheme::{Scheme, resolve};
+use jc3vr_input::{
+    frame::{self, ControllerFrame},
+    scheme::{Scheme, resolve},
+};
 
 /// The controllers' master switch, at `controllers.enabled` in the settings file; the payload
 /// binds the slot at startup.

@@ -35,7 +35,7 @@ use jc3gi::{
     state::StateBitFlag,
     types::{math::Vector3, shared_ptr::WeakPtrGameObject},
 };
-use jc3vr_input::frame::Hand;
+use jc3vr_input::{frame::Hand, haptics::cues::Event};
 use parking_lot::Mutex;
 
 use crate::{
@@ -43,7 +43,7 @@ use crate::{
         aim_state::StateBit,
         clock::{GameClock, TimeScale},
         grab::{self, latch::GripLatch},
-        haptics::{self, Event},
+        haptics,
         physical_hands::{
             PhysicalHandsConfig,
             bodies::{instance_of, owner_of},

@@ -15,12 +15,12 @@ use jc3gi::{
 
 use crate::controllers::{
     aim::raycast::RayHit,
-    diagnostics::{Applied, note_force},
     physical_hands::{
         bodies::is_type,
         contact::{Surface, SurfaceHit},
         physics::havok_vector,
     },
+    telemetry::{Applied, note_force},
 };
 
 /// Why an engine call did not run.

@@ -38,7 +38,7 @@ use jc3gi::{
     },
     ui::hud_ui::HUDUI,
 };
-use jc3vr_input::frame::Hand;
+use jc3vr_input::{frame::Hand, haptics::cues::Event};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
@@ -46,8 +46,7 @@ use crate::controllers::{
     aim::gun,
     bindings::hold::{Desired, MapKind, Target, Want},
     config::CONTROLLERS_CONFIG,
-    hands,
-    haptics::{self, Event},
+    hands, haptics,
     mode::Mode,
     weapons::{
         engine, gameplay,

@@ -4,6 +4,9 @@
 //! highlight and beam, the guns' dot or laser, the grab-volume highlights, the ghosts of yielded
 //! hands, and the controller gizmos.
 //!
+//! The overlay's render half lives in [`jc3vr_render::controllers::overlay`]; this module holds
+//! the producers and the inputs the draw reads.
+//!
 //! - [`primitive`]: what a producer submits;
 //! - [`store`]: the retained per-source slots, replaced by each submission and expiring on their
 //!   own, which any thread may submit to ([`store::submit`], [`store::clear`]);
@@ -13,6 +16,15 @@
 //! - [`renderer`]: the D3D11 pipeline;
 //! - [`pass`]: the draw, which reads the overlay's settings and the hands' render-time poses
 //!   through the inputs the controllers register (`crate::controllers::register_render`).
+//!
+//! [`primitive`]: jc3vr_render::controllers::overlay::primitive
+//! [`store`]: jc3vr_render::controllers::overlay::store
+//! [`store::submit`]: jc3vr_render::controllers::overlay::store::submit
+//! [`store::clear`]: jc3vr_render::controllers::overlay::store::clear
+//! [`resolve`]: jc3vr_render::controllers::overlay::resolve
+//! [`view`]: jc3vr_render::controllers::overlay::view
+//! [`renderer`]: jc3vr_render::controllers::overlay::renderer
+//! [`pass`]: jc3vr_render::controllers::overlay::pass
 //!
 //! The game's own HUD reticles, hidden while the hands aim, are the HUD's
 //! (`hud::game_reticle`).
@@ -25,13 +37,7 @@
 
 pub mod producers;
 
-// The render layer's half lives in the render crate; the old path keeps working until the final
-// cleanup pass.
 use jc3vr_render::controllers::overlay::{pass::DrawSettings, resolve::HandPoses};
-pub use jc3vr_render::controllers::overlay::{
-    pass::{self, OverlayStatus, draw, release_on_eject, status},
-    primitive, resolve, store,
-};
 
 use crate::controllers::{config::CONTROLLERS_CONFIG, hands::late, scheme};
 

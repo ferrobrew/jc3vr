@@ -22,17 +22,14 @@ use jc3vr_render::{
         primitive::{Anchor, DepthMode, Facing, Primitive, Rgba, Shape, Source, SpriteSize},
         store,
     },
+    headpose::skeleton::SkeletonKey,
     hooks::camera::eye_point,
     vr::VR_CONFIG,
 };
 use parking_lot::Mutex;
 
 use crate::controllers::{
-    body::procedural::{
-        head::head_bone_world,
-        joints::from_joint,
-        skeleton::{self, SkeletonKey},
-    },
+    body::procedural::{head::head_bone_world, joints::from_joint, skeleton},
     config::CONTROLLERS_CONFIG,
     hands::ik::tick_records,
     weapons::{

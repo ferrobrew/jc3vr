@@ -19,12 +19,14 @@ use jc3vr_gameplay::{
         },
         hands::{ik, late, tiers},
         mode::{self, AirborneVariant, HoldReason, Mode, OnFootVariant, Traversal},
-        roomscale,
-        scheme::{self, Scheme},
+        roomscale, scheme,
     },
     hooks::animation::body_rule_system,
 };
-use jc3vr_input::frame::{self, Hand};
+use jc3vr_input::{
+    frame::{self, Hand},
+    scheme::Scheme,
+};
 use jc3vr_render::vr::input as vr_input;
 use tracking_format::event::{
     AimState, CharacterMotion, ControllerState, GrappleAim, GroundHeight, HandAim, HandLate,

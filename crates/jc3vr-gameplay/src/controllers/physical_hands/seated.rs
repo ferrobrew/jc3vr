@@ -3,16 +3,18 @@ use std::{num::NonZeroUsize, time::Instant};
 use body_rig::rotation::level;
 use glam::{Vec2, Vec3};
 use jc3gi::character::character::Character;
-use jc3vr_input::frame::{Hand, Pose};
-use jc3vr_render::controllers::cockpit::CockpitTransform;
+use jc3vr_input::{
+    frame::{Hand, Pose},
+    haptics::cues::Event,
+};
+use jc3vr_render::{controllers::cockpit::CockpitTransform, headpose::teleport};
 
 use crate::controllers::{
     aim::raycast::CastOptions,
     body,
     clock::TimeScale,
     config::CONTROLLERS_CONFIG,
-    hands,
-    haptics::{self, Event},
+    hands, haptics,
     physical_hands::{
         contact::{HandContact, PointContact, Surface, SurfaceHit},
         doors::{
@@ -39,7 +41,6 @@ use crate::controllers::{
         touch::pressure_haptics,
         tuning::PALMS,
     },
-    roomscale::teleport,
 };
 
 pub(super) unsafe fn run(owner: &Character, dt: f32) {

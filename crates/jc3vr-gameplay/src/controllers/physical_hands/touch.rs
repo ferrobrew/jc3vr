@@ -5,10 +5,13 @@
 //! tick ([`crate::controllers::physical_hands::main_thread_tick`]) only on that thread.
 
 use glam::Vec3;
-use jc3vr_input::frame::Hand;
+use jc3vr_input::{
+    frame::Hand,
+    haptics::cues::{Event, Sustain},
+};
 
 use crate::controllers::{
-    haptics::{self, Event, Sustain},
+    haptics,
     physical_hands::{
         HandStatus, PhysicalHandsConfig, ShoveReport, State, bodies,
         contact::{Surface, SurfaceHit},

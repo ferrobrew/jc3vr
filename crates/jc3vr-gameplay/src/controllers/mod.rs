@@ -66,11 +66,7 @@ pub mod aim_state;
 pub mod bindings;
 pub mod body;
 pub mod clock;
-// The render layer's half lives in the render crate; the old path keeps working until the final
-// cleanup pass.
-pub use jc3vr_render::controllers::cockpit;
 pub mod config;
-pub mod diagnostics;
 pub mod fingers;
 pub mod gamepad_setting;
 pub mod glass;

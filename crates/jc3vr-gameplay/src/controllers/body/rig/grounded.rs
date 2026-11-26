@@ -37,7 +37,7 @@ use crate::controllers::{
         BodyDimensions,
         rig::torso::{HIP_SPACING_FRACTION, TorsoEstimate},
     },
-    diagnostics::{RigRun, note_rig},
+    telemetry::{RigRun, note_rig},
     vehicles::axis_output::{read_move, write_move},
 };
 

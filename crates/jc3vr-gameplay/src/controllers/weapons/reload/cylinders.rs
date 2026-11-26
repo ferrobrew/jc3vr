@@ -4,10 +4,10 @@
 
 use glam::{Mat4, Quat};
 use jc3gi::equipment::weapon::WeaponData;
-use jc3vr_input::frame::Hand;
+use jc3vr_input::{frame::Hand, haptics::cues::Event};
 
 use crate::controllers::{
-    haptics::{self, Event},
+    haptics,
     weapons::reload::{
         GunTick, State, Tick, WeaponTick, casings,
         engine::{dump_cylinder, gun_address, gun_has_bone, gun_world},

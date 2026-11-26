@@ -11,13 +11,13 @@ use egui::{Response, RichText, Ui};
 #[cfg(feature = "profiler")]
 use jc3vr_core::profiler::capture;
 use jc3vr_core::{frame_timing, session};
-use jc3vr_gameplay::controllers::overlay;
 use jc3vr_hud::egui_impl;
 use jc3vr_input::{
     capture::{OwnershipBlocker, OwnershipSnapshot, PanelMode},
     frame,
 };
 use jc3vr_render::{
+    controllers::overlay,
     recorder::tracking::TrackingStatus,
     vr::{input, input::InputStatus},
 };
@@ -47,7 +47,7 @@ struct Snapshot {
     #[cfg(feature = "profiler")]
     profiler: ProfilerCapture,
     timing: Option<frame_timing::Report>,
-    overlay: overlay::OverlayStatus,
+    overlay: overlay::pass::OverlayStatus,
     sections: Vec<StatusSection>,
     session: Option<session::Location>,
 }
@@ -71,7 +71,7 @@ impl Snapshot {
                 last_result: capture::last_result(),
             },
             timing: frame_timing::latest(),
-            overlay: overlay::status(),
+            overlay: overlay::pass::status(),
             sections: status::read_all().collect(),
             session: session::location(),
         }
@@ -418,7 +418,7 @@ fn timing_row(timing: Option<&frame_timing::Report>) -> Row {
     }
 }
 
-fn overlay_row(overlay: &overlay::OverlayStatus) -> Row {
+fn overlay_row(overlay: &overlay::pass::OverlayStatus) -> Row {
     Row {
         id: RowId::Overlay,
         group: "Capture and tools",

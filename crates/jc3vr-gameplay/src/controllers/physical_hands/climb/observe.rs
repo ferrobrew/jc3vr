@@ -5,11 +5,14 @@
 use std::time::Instant;
 
 use glam::Vec3;
-use jc3vr_input::frame::Hand;
+use jc3vr_input::{
+    frame::Hand,
+    haptics::cues::{self, Sustain},
+};
 use jc3vr_render::vr::recenter_count;
 
 use crate::controllers::{
-    haptics::{self, Sustain},
+    haptics,
     mode::{self, Mode, OnFootVariant},
     physical_hands::{
         PhysicalHandsConfig,
@@ -124,9 +127,9 @@ pub fn observe(observed: Observed, config: &PhysicalHandsConfig) {
     let (events, strain, gripping) = events;
     for (hand, event) in events {
         match event {
-            Event::Gripped => haptics::play(hand, haptics::Event::ClimbGrip),
-            Event::Released => haptics::play(hand, haptics::Event::ClimbRelease),
-            Event::Flung(share) => haptics::play_scaled(hand, haptics::Event::ClimbFling, share),
+            Event::Gripped => haptics::play(hand, cues::Event::ClimbGrip),
+            Event::Released => haptics::play(hand, cues::Event::ClimbRelease),
+            Event::Flung(share) => haptics::play_scaled(hand, cues::Event::ClimbFling, share),
         }
     }
     if let Some(strain) = strain.filter(|&s| s >= MIN_TENSION) {

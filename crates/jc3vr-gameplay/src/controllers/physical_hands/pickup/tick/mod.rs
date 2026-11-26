@@ -8,7 +8,6 @@ use jc3gi::vehicle::vehicle::DoorSlot;
 use jc3vr_input::frame::{Hand, Pose};
 
 use crate::controllers::{
-    diagnostics::{Released, Thrown, note_release, note_throw},
     physical_hands::{
         STALE_AFTER, bodies, carry_collision,
         characters::{self, CharactersConfig, Regrip, Seize},
@@ -27,6 +26,7 @@ use crate::controllers::{
         },
         rigid::Velocities,
     },
+    telemetry::{Released, Thrown, note_release, note_throw},
 };
 
 /// What the hand bodies tell a pickup tick about the joints.

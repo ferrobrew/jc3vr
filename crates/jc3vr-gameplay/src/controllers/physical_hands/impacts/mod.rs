@@ -20,13 +20,13 @@ use jc3gi::{
     havok::{hkcdManifold4, hknpContactImpulseEvent},
     physics::{PhysicsGameObject, hknpWorld},
 };
-use jc3vr_input::frame::Hand;
+use jc3vr_input::{frame::Hand, haptics::cues::Event};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
     config::CONTROLLERS_CONFIG,
-    haptics::{self, Event},
+    haptics,
     physical_hands::{
         bodies, carry_collision, engine,
         impacts::{

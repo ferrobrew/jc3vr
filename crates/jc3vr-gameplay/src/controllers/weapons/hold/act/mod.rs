@@ -33,6 +33,7 @@ use jc3vr_input::{
 };
 use jc3vr_render::{
     headpose,
+    headpose::teleport,
     recorder::tracking::events::{self, EventKind},
     vr::{VR_CONFIG, recenter_count},
 };
@@ -42,10 +43,9 @@ use crate::controllers::{
     aim::gun,
     bindings,
     clock::TimeScale,
-    diagnostics,
     hands::grip,
     loadout::{ObjectAddress, Socket, grab, live},
-    roomscale::teleport,
+    telemetry,
     weapons::{
         docks,
         dual_wield::single,
@@ -235,7 +235,7 @@ pub(crate) unsafe fn let_go(hand: Hand, max_speed_mps: f32) -> Result<Thrown, Do
     if let Some(record) = release {
         events::note_with(|| EventKind::GunRelease(Box::new(record.event())));
         if let Some(thrown) = record.thrown() {
-            diagnostics::note_throw(thrown);
+            telemetry::note_throw(thrown);
         }
     }
     match result {

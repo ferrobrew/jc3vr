@@ -20,7 +20,7 @@ use jc3vr_render::headpose::{self, sim::body_yaw_of};
 use parking_lot::Mutex;
 
 use crate::{
-    controllers::{body::procedural, diagnostics::report, hands::tiers, locomotion::strokes},
+    controllers::{body::procedural, hands::tiers, locomotion::strokes, telemetry::report},
     hooks::input::{
         config::MOVEMENT_CONFIG,
         swim::{

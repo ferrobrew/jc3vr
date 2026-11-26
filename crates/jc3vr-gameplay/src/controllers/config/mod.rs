@@ -27,12 +27,13 @@ mod weapons;
 
 use jc3vr_core::config::engine::ConfigSlot;
 use jc3vr_input::frame::Hand;
+use jc3vr_render::vr::input::config::InputConfig;
 use serde::{Deserialize, Serialize};
 
 pub use self::{
     aim::{AimConfig, AimStateConfig, GripOffset, HandsConfig},
     body::BodyRemapConfig,
-    input::{BindingsConfig, InputConfig, LocomotionConfig, LocomotionDirection},
+    input::{BindingsConfig, LocomotionConfig, LocomotionDirection},
     overlay::{GunReadout, OverlayConfig},
     roomscale::{Posture, RoomscaleConfig, SeatTransition},
     weapons::WeaponsConfig,

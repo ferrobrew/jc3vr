@@ -23,7 +23,6 @@
 use body_rig::rotation::shortest;
 use glam::{EulerRot, Mat3, Quat, Vec3};
 use jc3vr_input::frame::{Hand, Pose};
-pub use jc3vr_render::controllers::cockpit::body_of_head;
 
 use crate::controllers::{
     config::GripOffset,
@@ -196,7 +195,7 @@ fn right_wrist_in_grip() -> Mat3 {
 
 #[cfg(test)]
 mod tests {
-    use jc3vr_render::controllers::cockpit::CockpitTransform;
+    use jc3vr_render::controllers::cockpit::{CockpitTransform, body_of_head};
 
     use super::*;
 

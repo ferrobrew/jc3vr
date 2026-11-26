@@ -15,10 +15,10 @@ use std::time::{Duration, Instant};
 use jc3vr_input::frame::{Button, ButtonSet, ControllerFrame, Edges, Hand, HandFrame};
 use jc3vr_render::{
     headpose::config::{VrTurnConfig, VrTurnMode},
-    vr::input::semantic::admission::hand_usable,
+    vr::input::{config::InputConfig, semantic::admission::hand_usable},
 };
 
-use crate::controllers::config::{BindingsConfig, InputConfig};
+use crate::controllers::config::BindingsConfig;
 
 /// One hand's recovery state, for the tick report.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]

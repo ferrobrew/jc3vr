@@ -77,7 +77,7 @@ use std::num::NonZeroUsize;
 
 use glam::Vec3;
 use jc3gi::character::character::Character;
-use jc3vr_input::frame::Hand;
+use jc3vr_input::{frame::Hand, haptics::cues::Event};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
@@ -96,7 +96,7 @@ use crate::controllers::{
     },
     config::ControllersConfig,
     grab::{GrabVolume, GripTarget, Mark, MarkAt, Provided, latch::GripLatch},
-    haptics::{self, Event},
+    haptics,
     loadout::slot_label,
     mode::{Detection, Mode, VehicleClass},
     physical_hands,

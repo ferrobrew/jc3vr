@@ -34,6 +34,7 @@ use std::time::{Duration, Instant};
 
 pub use config::{PhysicalGrappleConfig, PhysicalGrappleTuning};
 use jc3gi::equipment::grappling_hook::GrapplingHookState;
+use jc3vr_input::haptics::cues::{Event, Sustain};
 use jc3vr_render::headpose;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
@@ -43,7 +44,7 @@ use crate::{
         bindings::yank::{GRAPPLE_YANK, HandLine, LineYank},
         config::ControllersConfig,
         hands::anchor,
-        haptics::{self, Event, Sustain},
+        haptics,
         mode::{Detection, Traversal},
     },
     grapple::{

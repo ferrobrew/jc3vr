@@ -15,16 +15,14 @@ use std::{
 
 use arc_swap::ArcSwapOption;
 use jc3gi::character::character::Character;
+use jc3vr_render::headpose::teleport;
 
-use crate::controllers::{
-    physical_hands::climb::{
-        Hold,
-        engine::{self, BodyIdentity},
-        lifetime,
-        state::STALE_AFTER,
-        types::Landing,
-    },
-    roomscale::teleport,
+use crate::controllers::physical_hands::climb::{
+    Hold,
+    engine::{self, BodyIdentity},
+    lifetime,
+    state::STALE_AFTER,
+    types::Landing,
 };
 
 /// Copied only at the serialized input/pre-simulation boundary, never looked up by a worker.

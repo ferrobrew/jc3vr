@@ -12,21 +12,24 @@
 //! against the master switch, the controller scheme, and its category's switch, and handed to the
 //! mixer, a leaf lock.
 //! The VR frame loop calls [`mix`] once per rendered frame and plays what it returns.
+//!
+//! [`vocabulary`]: jc3vr_input::haptics::vocabulary
+//! [`cues`]: jc3vr_input::haptics::cues
+//! [`mixer`]: jc3vr_input::haptics::mixer
 
 pub mod config;
-pub mod cues;
 pub mod rumble;
-pub mod vocabulary;
 
 use std::time::{Duration, Instant};
 
 pub use config::HapticsConfig;
-pub use cues::{Category, Event, Sustain};
 use jc3vr_input::{
     frame::Hand,
     haptics::{
+        cues::{Category, Event, Sustain},
         mixer::{MixStats, Sustained, Transient},
         output,
+        vocabulary::{Primitive, VOCABULARY},
     },
 };
 use parking_lot::Mutex;
@@ -34,9 +37,7 @@ use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
     config::{CONTROLLERS_CONFIG, ControllersConfig},
-    diagnostics,
-    haptics::vocabulary::{Primitive, VOCABULARY},
-    scheme,
+    scheme, telemetry,
 };
 
 /// The haptics' hooks, aggregated by [`crate::controllers::hook_library`].
@@ -215,7 +216,7 @@ fn seconds(s: f32) -> Duration {
 fn queue(hand: Hand, event: Event, transient: Transient) {
     output::with_mixer(|mixer| mixer.transient(hand, transient));
     let cue = event.cue();
-    diagnostics::note_haptic(diagnostics::Cue {
+    telemetry::note_haptic(telemetry::Cue {
         hand,
         event: event.label(),
         primitive: cue.primitive.label(),

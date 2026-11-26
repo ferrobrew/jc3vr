@@ -34,6 +34,7 @@ use jc3gi::{
 };
 use jc3vr_input::{
     frame::{Hand, Pose},
+    haptics::cues::Event,
     motion,
 };
 use jc3vr_render::controllers::overlay::{
@@ -52,15 +53,15 @@ use crate::controllers::{
     },
     body::rig::frames::Frames,
     config::{CONTROLLERS_CONFIG, ControllersConfig},
-    diagnostics::{self, Thrown},
     grab::{Candidate, GrabVolume, resolve::nearest_within},
     hands::{
         ActiveHands,
         held::{self, Held, Slot},
     },
-    haptics::{self, Event},
+    haptics,
     loadout::{ItemId, Place, TakeSource, live, safe_items::SafeItemView},
     physical_hands,
+    telemetry::{self, Thrown},
     weapons::{
         docks, engine,
         grenade::{
@@ -139,7 +140,7 @@ pub(crate) fn throw_release(
 ) -> Release {
     let estimate = act::release_at(hand, point_world, since_s);
     let requested = estimate.capped(hold::MAX_THROW_MPS);
-    diagnostics::note_throw_at(
+    telemetry::note_throw_at(
         Thrown {
             hand,
             item,

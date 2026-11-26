@@ -5,19 +5,21 @@ use std::cell::RefCell;
 
 use glam::{Mat4, Vec3};
 use jc3gi::graphics_engine::render_block::Matrix3x4;
-use jc3vr_render::hooks::graphics_engine::palette_edit::{BodyPaletteEdit, PlayerDrawEdits};
+use jc3vr_render::hooks::graphics_engine::palette_edit::{
+    BodyPaletteEdit, PaletteLayout, PlayerDrawEdits,
+};
 
 use crate::controllers::{
-    diagnostics,
     hands::{
         late::{self, PaletteEdit},
-        palette::{self, PaletteLayout},
+        palette,
     },
     presentation::{
         draw_edit,
         rig::{Group, GroupMap, MAX_BONES},
         solve::Edits,
     },
+    telemetry,
 };
 
 /// What a draw of the player's body re-poses: the whole upper body from the presentation layer, or
@@ -172,9 +174,9 @@ impl DrawEdit {
             return;
         };
         if let Some(joints) =
-            diagnostics::drawn_arm_joints(entries, layout, sample.bones, sample.bind_points)
+            telemetry::drawn_arm_joints(entries, layout, sample.bones, sample.bind_points)
         {
-            diagnostics::sample_drawn_arms(sample.sequence, sample.dtf, joints);
+            telemetry::sample_drawn_arms(sample.sequence, sample.dtf, joints);
         }
     }
 

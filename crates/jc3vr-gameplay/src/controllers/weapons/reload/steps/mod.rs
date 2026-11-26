@@ -3,13 +3,16 @@
 
 use glam::Vec3;
 use jc3gi::equipment::weapon::WeaponBase;
-use jc3vr_input::frame::{self, Hand, Pose};
+use jc3vr_input::{
+    frame::{self, Hand, Pose},
+    haptics::cues::Event,
+};
 
 use crate::controllers::{
     config::ControllersConfig,
     grab::{Candidate, GrabVolume, resolve::nearest_within},
     hands::{ActiveHands, ik},
-    haptics::{self, Event},
+    haptics,
     loadout::live::item_of,
     mode::{self, Mode},
     weapons::{

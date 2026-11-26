@@ -50,7 +50,11 @@ use jc3vr_core::{
     render_frame::RenderFrameSlot,
 };
 use jc3vr_input::frame::{Hand, Pose};
-use jc3vr_render::{headpose, vr::VR_CONFIG};
+use jc3vr_render::{
+    headpose,
+    headpose::{skeleton::SkeletonKey, teleport},
+    vr::VR_CONFIG,
+};
 use parking_lot::Mutex;
 use smol_str::{SmolStr, ToSmolStr};
 
@@ -60,10 +64,7 @@ pub use crate::controllers::presentation::{
     edit::{BodyEdit, DrawEdit},
 };
 use crate::controllers::{
-    body::procedural::{
-        self,
-        skeleton::{self, SkeletonKey},
-    },
+    body::procedural::{self, skeleton},
     config::CONTROLLERS_CONFIG,
     hands::{ik, late, pose as hand_pose, reach::REACH},
     mode::{self, Mode},
@@ -72,7 +73,6 @@ use crate::controllers::{
         rig::{Group, GroupMap, PresentationRig},
         solve::{ArmDrive, ArmJoints, ElbowDrive, Motion, UpperBody, head_motion, solve},
     },
-    roomscale::teleport,
 };
 
 /// Why the layer is or is not re-posing the body.

@@ -49,7 +49,7 @@ use jc3vr_gameplay::controllers::{
     fingers as controller_fingers, gamepad_setting, glass as controller_glass,
     hands::{ik as hand_ik, late, tiers},
     haptics as controller_haptics, locomotion as controller_locomotion, mode as controller_mode,
-    overlay as controller_overlay, physical_hands as controller_physical_hands,
+    physical_hands as controller_physical_hands,
     physical_hands::collider_view::ColliderViewConfig,
     roomscale as controller_roomscale, scheme, summary as controller_summary,
 };
@@ -58,7 +58,7 @@ use jc3vr_hud::{
     hud::{pointer, summary_panel},
 };
 use jc3vr_input::{frame as controller_frame, frame::InteractionProfile};
-use jc3vr_render::vr::input as vr_input;
+use jc3vr_render::{controllers::overlay::pass as overlay_pass, vr::input as vr_input};
 
 use crate::{
     status::{
@@ -329,7 +329,7 @@ pub(crate) fn collider_view_settings(ui: &mut Ui, collider: &mut ColliderViewCon
 /// The world-space overlay, grab view, and collider view readouts, shown in the global
 /// visualization drawer.
 pub(crate) fn view_readouts(ui: &mut Ui) {
-    overlay::overlay_readout(ui, &controller_overlay::status());
+    overlay::overlay_readout(ui, &overlay_pass::status());
     grab_view::grab_view_readout(ui, &controller_physical_hands::grab_view::status());
     collider_view::collider_view_readout(ui, &controller_physical_hands::collider_view::status());
 }

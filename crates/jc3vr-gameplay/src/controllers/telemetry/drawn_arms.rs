@@ -7,13 +7,14 @@ use std::time::{Duration, Instant};
 use glam::Vec3;
 use jc3gi::graphics_engine::render_block::Matrix3x4;
 use jc3vr_render::{
+    hooks::graphics_engine::palette_edit::PaletteLayout,
     recorder::tracking::events::{self, EventKind},
     stereo,
 };
 use parking_lot::Mutex;
 use tracking_format::event::{Diagnostic, Label};
 
-use crate::controllers::hands::palette::{PaletteLayout, entry_to_matrix};
+use crate::controllers::hands::palette::entry_to_matrix;
 
 /// The drawn arm joints, each joint's bind point carried through its edited palette entry, or
 /// `None` when an entry is missing or a point is not finite.

@@ -14,14 +14,13 @@ use std::time::Instant;
 
 use glam::Vec3;
 use jc3gi::character::character::Character;
-use jc3vr_render::headpose::{self, Source};
+use jc3vr_render::headpose::{self, Source, teleport};
 use parking_lot::Mutex;
 
 use crate::controllers::{
     aim::raycast::CastOptions,
     body::rig::collision::probe::{HeadProbe, TimedProbe},
     config::CONTROLLERS_CONFIG,
-    roomscale::teleport,
 };
 
 /// Probe the head for one simulation tick and publish the result ([`latest`]).

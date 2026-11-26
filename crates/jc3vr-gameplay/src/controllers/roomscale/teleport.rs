@@ -12,7 +12,6 @@
 
 use detours_macro::detour;
 use jc3gi::{camera::game_camera_manager::GameCameraManager, types::math::Matrix4};
-pub use jc3vr_render::headpose::teleport::{epoch, warps};
 use jc3vr_render::{controllers::body::rig::origin_provenance, headpose::teleport};
 use re_utilities::hook_library::HookLibrary;
 

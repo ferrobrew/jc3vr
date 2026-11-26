@@ -14,14 +14,14 @@ use std::time::Instant;
 
 use glam::Quat;
 use jc3gi::character::character::{AnimationController, Character, Joint};
+use jc3vr_render::headpose::skeleton::SkeletonKey;
 use parking_lot::Mutex;
 
 use crate::controllers::{
     body::procedural::{
         config::ProceduralMode,
         joints::{from_joint, to_joint},
-        leg_weight, published_status,
-        skeleton::{self, SkeletonKey},
+        leg_weight, published_status, skeleton,
         solver::twist::{Region, TwistRig},
     },
     config::CONTROLLERS_CONFIG,

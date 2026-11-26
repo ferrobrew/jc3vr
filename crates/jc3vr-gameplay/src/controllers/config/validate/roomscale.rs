@@ -1,9 +1,8 @@
 //! Checks for posture and roomscale: the crouch.
 
-use crate::controllers::config::{
-    RoomscaleConfig,
-    validate::{Invalid, nonnegative},
-};
+use jc3vr_core::config::engine::{Invalid, nonnegative};
+
+use crate::controllers::config::RoomscaleConfig;
 
 /// Check the roomscale settings. Paths are relative to `controllers.roomscale`.
 pub(super) fn roomscale(r: &RoomscaleConfig) -> Result<(), Invalid> {

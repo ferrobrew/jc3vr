@@ -3,7 +3,6 @@
 
 use std::time::Duration;
 
-pub use jc3vr_render::vr::input::config::InputConfig;
 use serde::{Deserialize, Serialize};
 
 use crate::controllers::{

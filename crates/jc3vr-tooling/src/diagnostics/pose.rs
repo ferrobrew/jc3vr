@@ -17,9 +17,8 @@ use jc3vr_core::{
     frame_timing::{self, Slot},
     hooks,
 };
-use jc3vr_gameplay::{
-    controllers::body::procedural::skeleton::SkeletonKey, hooks::character::pose::LivePose,
-};
+use jc3vr_gameplay::hooks::character::pose::LivePose;
+use jc3vr_render::headpose::skeleton::SkeletonKey;
 use parking_lot::Mutex;
 use tracking_format::{
     event::{BODY_BONES, BoneSet, IkGoal, IkTarget, PoseSample, PoseStage},

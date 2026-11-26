@@ -55,7 +55,9 @@ use jc3gi::{
 };
 use jc3vr_core::hash::hashlittle;
 use jc3vr_input::frame::{Hand, Pose};
-use jc3vr_render::{controllers::cockpit::CockpitTransform, headpose};
+use jc3vr_render::{
+    controllers::cockpit::CockpitTransform, headpose, headpose::skeleton::SkeletonKey,
+};
 use parking_lot::Mutex;
 
 use crate::{
@@ -63,7 +65,6 @@ use crate::{
         body::{
             procedural::{
                 ArmContext, arm_context, owns_body,
-                skeleton::SkeletonKey,
                 solver::arms::{Side, elbow_hint},
             },
             unarmed,

@@ -8,15 +8,18 @@ use std::{
 };
 
 use glam::Vec3;
-use jc3vr_input::frame::{Hand, Pose};
-use jc3vr_render::{headpose, vr::recenter_count};
+use jc3vr_input::{
+    frame::{Hand, Pose},
+    haptics::cues::Sustain,
+};
+use jc3vr_render::{headpose, headpose::teleport, vr::recenter_count};
 use parking_lot::Mutex;
 
 use crate::controllers::{
     clock::TimeScale,
     config::CONTROLLERS_CONFIG,
     hands::CockpitHand,
-    haptics::{self, Sustain},
+    haptics,
     physical_hands::{
         physics::{
             HAND_BODIES, blows, callback, drawn_body,
@@ -32,7 +35,6 @@ use crate::controllers::{
         },
         state::VELOCITY_SMOOTHING_S,
     },
-    roomscale::teleport,
     weapons::foregrip,
 };
 

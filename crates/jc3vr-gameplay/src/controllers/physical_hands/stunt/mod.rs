@@ -26,14 +26,17 @@ use std::time::{Duration, Instant};
 
 pub use config::StuntConfig;
 use jc3gi::input::input_action_map::Action;
-use jc3vr_input::frame::Hand;
+use jc3vr_input::{
+    frame::Hand,
+    haptics::cues::{Event, Sustain},
+};
 use parking_lot::Mutex;
 
 use crate::controllers::{
     bindings::hold::{Desired, MapKind, Target, Want},
     config::CONTROLLERS_CONFIG,
     fingers::grip::{self, Grip, GripSource, catalogue::GripPose},
-    haptics::{self, Event, Sustain},
+    haptics,
     physical_hands::{
         PhysicalHandsConfig, climb,
         stunt::{

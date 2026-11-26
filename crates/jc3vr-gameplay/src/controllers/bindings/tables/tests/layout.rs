@@ -3,6 +3,8 @@
 
 use std::collections::BTreeSet;
 
+use jc3vr_render::vr::input::flight_pose::GestureSample;
+
 use super::*;
 use crate::controllers::{
     bindings::tables::{
@@ -12,8 +14,7 @@ use crate::controllers::{
     vehicles::{
         config::WingsuitGesturesConfig,
         wingsuit_gestures::{
-            FlightPose, GestureInput, GestureSample, HandClaims, Stage, WingsuitGestures,
-            desired_for,
+            FlightPose, GestureInput, HandClaims, Stage, WingsuitGestures, desired_for,
         },
     },
 };

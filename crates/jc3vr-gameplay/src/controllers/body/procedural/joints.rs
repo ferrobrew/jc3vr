@@ -10,10 +10,11 @@
 
 use glam::{Quat, Vec3};
 use jc3gi::character::character::{AnimationController, Joint};
+use jc3vr_render::headpose::skeleton::SkeletonKey;
 
 use crate::controllers::body::procedural::{
     rig::{Rig, RigBone, RigError},
-    skeleton::{self, SkeletonKey, Transform},
+    skeleton::{self, Transform},
     solver::pose::RigPose,
 };
 

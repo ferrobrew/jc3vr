@@ -60,7 +60,10 @@ use jc3gi::{
     equipment::{grapple_point_proxy::AttachmentObjectInfo, grappling_hook::GrapplingHook},
     types::{math::Vector3, shared_ptr::SharedPtr},
 };
-use jc3vr_input::frame::{self, Hand};
+use jc3vr_input::{
+    frame::{self, Hand},
+    haptics::cues::{Event, Sustain},
+};
 use jc3vr_render::{
     headpose::xr,
     vr::{VR_CONFIG, recenter_count},
@@ -71,10 +74,7 @@ use re_utilities::hook_library::HookLibrary;
 pub use crate::controllers::bindings::grapple_button::LockButton;
 use crate::{
     controllers::{
-        bindings::yank::HandLine,
-        config::CONTROLLERS_CONFIG,
-        haptics::{self, Event, Sustain},
-        physical_hands::remote,
+        bindings::yank::HandLine, config::CONTROLLERS_CONFIG, haptics, physical_hands::remote,
         weapons::engine::character_position,
     },
     grapple::{

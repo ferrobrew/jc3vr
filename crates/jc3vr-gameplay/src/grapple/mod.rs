@@ -52,7 +52,6 @@ use glam::{Quat, Vec3};
 use jc3gi::equipment::grappling_hook::GrapplingHookState;
 use parking_lot::Mutex;
 
-pub mod config;
 pub mod device;
 pub mod hook;
 pub(crate) mod line_grab;
@@ -61,8 +60,10 @@ pub mod rope;
 pub mod seat;
 pub mod telemetry;
 
-pub use config::{GrappleComfortConfig, GrappleComfortMode};
-use jc3vr_render::headpose;
+use jc3vr_render::{
+    headpose,
+    headpose::config::{GrappleComfortConfig, GrappleComfortMode},
+};
 
 use crate::grapple::hook::HookRead;
 

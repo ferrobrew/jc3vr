@@ -11,10 +11,9 @@ use std::time::Duration;
 use body_rig::rotation::{angular_velocity, shortest};
 use glam::{Quat, Vec3};
 use jc3gi::character::inventory::WeaponSlot;
-pub(crate) use jc3vr_input::motion::RELEASE_ESTIMATE;
 use jc3vr_input::{
     frame::{self, ControllerFrame, Hand},
-    motion::{self, MotionSample},
+    motion::{self, MotionSample, RELEASE_ESTIMATE},
 };
 use jc3vr_render::{
     controllers::cockpit::CockpitTransform,
@@ -23,7 +22,7 @@ use jc3vr_render::{
 use tracking_format::event::{GunRelease, ReleaseController, ReleaseDrop, WorldMotion};
 
 use crate::controllers::{
-    clock::TimeScale, diagnostics::Thrown, physical_hands::BodyError,
+    clock::TimeScale, physical_hands::BodyError, telemetry::Thrown,
     weapons::hold::equip::DockRefusal,
 };
 

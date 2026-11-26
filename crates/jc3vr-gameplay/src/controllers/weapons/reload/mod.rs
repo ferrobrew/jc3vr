@@ -89,9 +89,9 @@ use crate::controllers::{
     },
     body::rig::frames::Frames,
     config::ControllersConfig,
-    diagnostics,
     grab::{Candidate, GrabVolume, GripTarget},
     hands::{ActiveHands, pose::CockpitHand},
+    telemetry,
     weapons::{
         capabilities::{GunHand, GunOwner},
         docks,
@@ -307,7 +307,7 @@ pub(super) fn begin_tick(inputs: &BeginInputs) -> Vec<Candidate> {
     });
     // The pouch going unplaced is a failure worth a note; its other refusals follow the hands.
     if pouch_refusal == Some(pouch::PouchRefusal::NoBody) && state.pouch_refusal != pouch_refusal {
-        diagnostics::report("pouch", None, pouch::PouchRefusal::NoBody.label(), || None);
+        telemetry::report("pouch", None, pouch::PouchRefusal::NoBody.label(), || None);
     }
     state.pouch_refusal = pouch_refusal;
     if let Some(pouch) = target_pouch

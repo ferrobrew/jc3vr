@@ -205,10 +205,10 @@ static CONFIRMING_RESET: AtomicBool = AtomicBool::new(false);
 mod tests {
     use glam::{Vec2, Vec3};
     use jc3vr_core::config::engine::{Parts, Snapshot};
-    use jc3vr_gameplay::{controllers::config::SightOverride, grapple::GrappleComfortMode};
+    use jc3vr_gameplay::controllers::config::SightOverride;
     use jc3vr_hud::hud::config::HUD_CONFIG;
     use jc3vr_input::frame::Hand;
-    use jc3vr_render::headpose::config::HEADPOSE_CONFIG;
+    use jc3vr_render::headpose::config::{GrappleComfortMode, HEADPOSE_CONFIG};
 
     use super::{
         sections::{

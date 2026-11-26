@@ -33,7 +33,6 @@ use jc3vr_core::hash::hashlittle;
 
 use crate::controllers::{
     aim::grapple_weapons,
-    diagnostics::{Applied, BodyBefore, note_force},
     physical_hands::{
         doors::engine as door_engine,
         grasp::{TargetKind, mass_of},
@@ -41,6 +40,7 @@ use crate::controllers::{
         rigid::{BodyPose, RigidBody, Velocities},
         world::World,
     },
+    telemetry::{Applied, BodyBefore, note_force},
 };
 
 /// Why a body could not be read or driven.

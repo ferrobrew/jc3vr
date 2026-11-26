@@ -4,11 +4,11 @@
 
 use std::time::Instant;
 
-use jc3vr_input::frame::Hand;
+use jc3vr_input::{frame::Hand, haptics::cues::Event};
 
 use crate::controllers::{
     config::ControllersConfig,
-    haptics::{self, Event},
+    haptics,
     weapons::reload::{
         FinishInputs, State, Tick, engine,
         extraction::{DetachKind, MagazineId},

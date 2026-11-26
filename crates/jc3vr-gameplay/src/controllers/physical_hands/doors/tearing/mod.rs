@@ -6,11 +6,11 @@ use glam::{Mat4, Vec3};
 use jc3gi::vehicle::{parts::ConstraintInfo, vehicle::Vehicle};
 
 use crate::controllers::{
-    diagnostics::report,
     physical_hands::{
         bodies::owner_of,
         doors::{DoorTarget, config::TearTuning, engine},
     },
+    telemetry::report,
 };
 
 /// The native identity and gesture history of an open door grip.

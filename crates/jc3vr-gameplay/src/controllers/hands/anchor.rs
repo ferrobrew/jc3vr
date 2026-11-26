@@ -42,7 +42,10 @@ use jc3gi::{
     state::StateContext,
     types::math::Vector3,
 };
-use jc3vr_input::frame::{Hand, Pose};
+use jc3vr_input::{
+    frame::{Hand, Pose},
+    haptics::cues::Event,
+};
 use jc3vr_render::{controllers::cockpit::CockpitTransform, headpose};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
@@ -53,7 +56,7 @@ use crate::{
         config::{CONTROLLERS_CONFIG, ControllersConfig},
         fingers::grip::{self, Grip, GripSource},
         hands::{self, CockpitHand, tiers},
-        haptics::{self, Event},
+        haptics,
     },
     grapple::{
         hook,

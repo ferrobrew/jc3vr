@@ -152,7 +152,7 @@ pub struct FrameOutput {
 /// ([`crate::controllers::roomscale::compose_cockpit`]).
 pub fn frame(inputs: &FrameInputs) -> FrameOutput {
     let config = inputs.config;
-    let epoch = teleport::epoch();
+    let epoch = headpose::teleport::epoch();
     let now = Instant::now();
     let basis = CockpitBasis {
         body: inputs.view,
@@ -330,13 +330,13 @@ pub(crate) fn complete_movement(
         previous_root,
         current_root,
         Instant::now(),
-        teleport::epoch(),
+        headpose::teleport::epoch(),
     )
 }
 
 /// Copy the bounded completion record without reading engine pointers or frame-half state.
 pub(crate) fn completion_snapshot() -> CompletionSnapshot {
-    SIM.lock().completion_snapshot(teleport::epoch())
+    SIM.lock().completion_snapshot(headpose::teleport::epoch())
 }
 
 /// The root's readout, for the debug UI, the signals, and the diagnostics.
@@ -627,7 +627,7 @@ unsafe fn after_locomotion(character: &mut Character, dt: f32) {
 
     // The teleport bookkeeping runs whether or not the loop is live, so that it never mistakes the
     // first live tick after a teleport for a warp.
-    let teleported = teleport::epoch() != sim.seen_epoch;
+    let teleported = headpose::teleport::epoch() != sim.seen_epoch;
     if let (Some(last), false) = (sim.last_position, teleported) {
         let speed = proxy.map_or(0.0, |p| unsafe { velocity(p) }.length());
         if drive::is_warp((position - last).length(), speed, dt, drive::WARP_MIN_M) {
@@ -635,7 +635,7 @@ unsafe fn after_locomotion(character: &mut Character, dt: f32) {
         }
     }
     sim.last_position = Some(position);
-    let epoch = teleport::epoch();
+    let epoch = headpose::teleport::epoch();
     if epoch != sim.seen_epoch {
         sim.seen_epoch = epoch;
         sim.clear_movement(CompletionUnavailable::Teleported);

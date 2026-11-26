@@ -49,13 +49,13 @@ use jc3gi::{
     character::{character::Character, inventory::Inventory},
     equipment::weapon::{WeaponBase, WeaponData},
 };
+use jc3vr_input::haptics::cues::Event;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
     config::CONTROLLERS_CONFIG,
     hands::ik,
-    haptics::{self, Event},
-    scheme,
+    haptics, scheme,
     weapons::{fire, hold::tick, reload},
 };
 

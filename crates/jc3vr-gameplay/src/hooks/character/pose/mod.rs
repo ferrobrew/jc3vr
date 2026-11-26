@@ -8,8 +8,7 @@ use jc3gi::{
     },
 };
 use jc3vr_core::hash::hashlittle;
-
-use crate::controllers::body::procedural::skeleton::SkeletonKey;
+use jc3vr_render::headpose::skeleton::SkeletonKey;
 
 #[cfg(test)]
 mod tests;

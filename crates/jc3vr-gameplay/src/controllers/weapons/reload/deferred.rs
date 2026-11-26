@@ -6,11 +6,11 @@
 //! leaves with its own rounds (or none under unlimited ammunition), so a load draws on the reserve
 //! for the fresh magazine alone, and a refused drop loads nothing.
 
-use jc3vr_input::frame::Hand;
+use jc3vr_input::{frame::Hand, haptics::cues::Event};
 
 use crate::controllers::{
     config::ControllersConfig,
-    haptics::{self, Event},
+    haptics,
     weapons::{
         pouch_models,
         reload::{

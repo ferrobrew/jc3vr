@@ -1,10 +1,9 @@
 //! Checks for vehicle settings: the wingsuit gestures and evade, the physical wheel, the arm
 //! steering, the parachute handles, and the ripcord.
 
-use crate::controllers::{
-    config::validate::{Invalid, nonnegative, positive, range},
-    vehicles::{config::VehiclesConfig, ripcord::MIN_PULL_M},
-};
+use jc3vr_core::config::engine::{Invalid, nonnegative, positive, range};
+
+use crate::controllers::vehicles::{config::VehiclesConfig, ripcord::MIN_PULL_M};
 
 /// Check the vehicle settings. Paths are relative to `controllers.vehicles`.
 pub(super) fn vehicles(v: &VehiclesConfig) -> Result<(), Invalid> {

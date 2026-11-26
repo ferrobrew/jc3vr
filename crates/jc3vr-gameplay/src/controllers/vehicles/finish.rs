@@ -5,7 +5,7 @@
 use jc3gi::input::input_action_map::Action::{
     HELI_TURN_LEFT, HELI_TURN_RIGHT, TURN_LEFT, TURN_RIGHT,
 };
-use jc3vr_input::frame::Hand;
+use jc3vr_input::{frame::Hand, haptics::cues::Event};
 use jc3vr_render::controllers::cockpit::CockpitTransform;
 
 use crate::controllers::{
@@ -15,7 +15,7 @@ use crate::controllers::{
     },
     grab::GrabVolume,
     hands::{self, anchor::ANCHOR_BLEND_S, tiers},
-    haptics::{self, Event},
+    haptics,
     mode::{Mode, VehicleClass},
     vehicles::{
         arm_tick::arm_tick,

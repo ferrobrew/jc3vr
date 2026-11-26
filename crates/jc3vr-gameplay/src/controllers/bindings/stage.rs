@@ -60,8 +60,8 @@ use crate::controllers::{
         hold::{ActionWrite, DevicePoll, Phase},
         inject::{self, Landing, Outcome},
     },
-    diagnostics::{Write, note_injected},
     gamepad_setting,
+    telemetry::{Write, note_injected},
 };
 
 /// Where the game stage runs relative to the poll stage that fed it.

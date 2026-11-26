@@ -39,11 +39,10 @@ use std::{
 use glam::{Quat, Vec3};
 use jc3gi::character::character::Character;
 use jc3vr_input::frame as controllers_frame;
-pub use jc3vr_render::vr::FrameInputs;
 use jc3vr_render::{
     controllers::body::rig::origin_provenance::{OriginEvidence, TrackingReceipt},
     headpose,
-    vr::{self, CockpitPositions, RecenterCause, RecenterKind, stage::StageInfo},
+    vr::{self, CockpitPositions, FrameInputs, RecenterCause, RecenterKind, stage::StageInfo},
 };
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
@@ -581,8 +580,8 @@ pub fn status() -> RoomscaleStatus {
         frame,
         root: rig_root::status(),
         fade: fade::status(),
-        teleports: teleport::epoch(),
-        warps: teleport::warps(),
+        teleports: headpose::teleport::epoch(),
+        warps: headpose::teleport::warps(),
     }
 }
 

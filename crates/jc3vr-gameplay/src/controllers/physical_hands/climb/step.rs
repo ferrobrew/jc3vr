@@ -6,6 +6,7 @@ use std::time::Instant;
 use glam::{Quat, Vec3};
 use jc3gi::character::character::Character;
 use jc3vr_input::frame::Hand;
+use jc3vr_render::headpose::teleport;
 
 use crate::controllers::{
     config::CONTROLLERS_CONFIG,
@@ -26,7 +27,6 @@ use crate::controllers::{
         pickup::PICKUP,
         stunt,
     },
-    roomscale::teleport,
 };
 
 /// The climb's part of the hand bodies' pre-simulation step: take and end the grips, and move the

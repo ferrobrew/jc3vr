@@ -7,7 +7,11 @@ use glam::{Mat4, Vec3};
 use jc3gi::{character::character::Character, graphics_engine::render_block::Matrix3x4};
 use jc3vr_core::render_frame::RenderFrameSlot;
 use jc3vr_input::frame::{self, Hand, Pose};
-use jc3vr_render::{controllers::cockpit::CockpitTransform, headpose, hooks::camera::eye_points};
+use jc3vr_render::{
+    controllers::cockpit::{CockpitTransform, body_of_head},
+    headpose,
+    hooks::{camera::eye_points, graphics_engine::palette_edit::PaletteLayout},
+};
 
 use crate::controllers::{
     hands::{
@@ -19,8 +23,7 @@ use crate::controllers::{
                 lerp_transform, pose_matrix, relative_metrics,
             },
         },
-        palette::{self, PaletteLayout},
-        pose as hand_pose,
+        palette, pose as hand_pose,
         reach::{self, REACH, ReachTuning},
     },
     physical_hands::{DrawTime, physics},
@@ -704,7 +707,7 @@ fn render_views(
         cockpit: CockpitTransform {
             head_world: eyes[i],
             head_cockpit: cockpit_head.position,
-            body: hand_pose::body_of_head(heads[i].orientation, cockpit_head.orientation),
+            body: body_of_head(heads[i].orientation, cockpit_head.orientation),
             world_scale,
         },
         transport: Mat4::from_rotation_translation(heads[i].orientation, eyes[i]),

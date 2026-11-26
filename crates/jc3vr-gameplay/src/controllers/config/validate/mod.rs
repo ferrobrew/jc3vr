@@ -18,7 +18,7 @@ mod roomscale;
 mod vehicles;
 mod weapons;
 
-pub(crate) use jc3vr_core::config::engine::{Invalid, nonnegative, positive, range, vec2, vec3};
+use jc3vr_core::config::engine::{Invalid, range, vec2, vec3};
 use jc3vr_render::headpose::config::VrTurnConfig;
 
 use crate::controllers::{

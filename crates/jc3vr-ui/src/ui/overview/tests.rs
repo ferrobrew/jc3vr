@@ -452,7 +452,7 @@ fn fixture() -> Snapshot {
             window_s: 1.0,
             totals: Totals::default(),
         }),
-        overlay: overlay::OverlayStatus {
+        overlay: overlay::pass::OverlayStatus {
             frames: 1,
             ..Default::default()
         },

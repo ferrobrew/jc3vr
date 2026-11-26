@@ -215,10 +215,11 @@ impl Controls {
 /// when the press ends. A force-sensing grip (the Index's) presses on a deliberate squeeze, and its
 /// force sags toward nothing while the hand stays wrapped round the handle, so there the hand is
 /// still closed while the grip's squeeze value, the capacitive sense of the fingers round the
-/// handle, stays at or above the value grips release at
-/// ([`InputConfig::squeeze_press`](crate::controllers::config::InputConfig::squeeze_press)), and
+/// handle, stays at or above the value grips release at ([`InputConfig::squeeze_press`]), and
 /// opens when the fingers come off. Only a press closes the hand: fingers resting round the handle
 /// keep a hold, but never start one.
+///
+/// [`InputConfig::squeeze_press`]: jc3vr_render::vr::input::config::InputConfig::squeeze_press
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
 pub struct ClosedHand {
     closed: bool,

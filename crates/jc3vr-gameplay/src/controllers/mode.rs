@@ -40,8 +40,7 @@ use jc3gi::{
     state::StateBitFlag,
     vehicle::vehicle::Seat,
 };
-pub(crate) use jc3vr_input::capture::{DebugUiInput, debug_ui_capture, update_debug_ui_capture};
-use jc3vr_input::frame::ActionSetKind;
+use jc3vr_input::{capture::debug_ui_capture, frame::ActionSetKind};
 use parking_lot::Mutex;
 
 use crate::{grapple::hook, hooks::animation::active_state_type_id};

@@ -5,7 +5,7 @@ use jc3vr_core::config::engine::Parts;
 use jc3vr_gameplay::{
     controllers::{
         bindings::{Blocker, HandRecovery},
-        config::{CONTROLLERS_CONFIG, ControllersConfig, InputConfig},
+        config::{CONTROLLERS_CONFIG, ControllersConfig},
     },
     hooks::character::config::BODY_IK_CONFIG,
 };
@@ -13,7 +13,7 @@ use jc3vr_input::{
     frame,
     frame::{Button, GripPress, Hand, PressThresholds},
 };
-use jc3vr_render::vr::input::config::validate_thresholds;
+use jc3vr_render::vr::input::config::{InputConfig, validate_thresholds};
 
 use crate::ui::controllers::{locomotion, unarmed};
 

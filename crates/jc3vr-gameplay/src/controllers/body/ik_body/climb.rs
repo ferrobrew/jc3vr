@@ -16,7 +16,7 @@ use crate::controllers::{
         brace::{self, BraceCast},
         support,
     },
-    diagnostics::report,
+    telemetry::report,
 };
 
 /// One tick's legs, in Rico's model space, with the character's world transform.

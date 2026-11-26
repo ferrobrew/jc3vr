@@ -6,7 +6,10 @@
 use jc3gi::graphics_engine::{device::Device, texture::Texture};
 use jc3vr_core::frame_timing::{self, Slot};
 use jc3vr_render::{
-    controllers::overlay::pass::{OverlayInputs, register_overlay_inputs},
+    controllers::{
+        overlay::pass::{self as overlay_pass, OverlayInputs, register_overlay_inputs},
+        weapons::scope::pass as scope_pass,
+    },
     hooks::{
         camera::{CameraParticipants, register_camera_participants},
         graphics_engine::{
@@ -28,9 +31,9 @@ use crate::{
 pub(super) fn register() {
     register_dispatch_tick(DispatchTick::WorldOverlay, overlay::tick);
     register_dispatch_tick(DispatchTick::ScopeLens, scope::tick);
-    register_scene_capture(scope::capture);
-    register_eye_layer(EyeLayer::WorldOverlay, overlay::draw);
-    register_eye_layer(EyeLayer::ScopeLens, scope::draw);
+    register_scene_capture(scope_pass::capture);
+    register_eye_layer(EyeLayer::WorldOverlay, overlay_pass::draw);
+    register_eye_layer(EyeLayer::ScopeLens, scope_pass::draw);
     register_frame_pass(FramePass::BodyEstimator, body_estimator_pass);
     register_overlay_inputs(OverlayInputs {
         settings: overlay::draw_settings,

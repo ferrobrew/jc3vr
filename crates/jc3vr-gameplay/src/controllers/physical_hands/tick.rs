@@ -15,8 +15,11 @@ use body_rig::rotation::level;
 use glam::{Mat4, Quat, Vec2, Vec3};
 use jc3gi::character::character::Character;
 use jc3vr_core::thread_role::{self, ThreadRole};
-use jc3vr_input::frame::{Hand, Pose};
-use jc3vr_render::controllers::cockpit::CockpitTransform;
+use jc3vr_input::{
+    frame::{Hand, Pose},
+    haptics::cues::{Event, Sustain},
+};
+use jc3vr_render::{controllers::cockpit::CockpitTransform, headpose::teleport};
 use parking_lot::Mutex;
 use windows::Win32::System::Threading::GetCurrentThreadId;
 
@@ -35,7 +38,7 @@ use crate::{
             tuning::FINGERS,
         },
         hands::{self, tiers},
-        haptics::{self, Event, Sustain},
+        haptics,
         loadout::{ItemKind, live},
         mode::{self, AirborneVariant, Detection, Mode, OnFootVariant},
         physical_hands::{
@@ -61,7 +64,6 @@ use crate::{
             touch::{ShoveInput, Touch, pressure_haptics},
             tuning::PALMS,
         },
-        roomscale::teleport,
         scheme, vehicles,
         weapons::{self, c4, foregrip, grenade},
     },

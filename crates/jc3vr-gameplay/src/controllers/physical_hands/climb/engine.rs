@@ -171,7 +171,7 @@ pub(crate) unsafe fn gate_context()
         proxy: local.m_PfxCharacter.px as usize,
         world: ptr::from_ref(world) as usize,
         bodies: world.m_bodies as usize,
-        epoch: crate::controllers::roomscale::teleport::epoch(),
+        epoch: jc3vr_render::headpose::teleport::epoch(),
     })
 }
 

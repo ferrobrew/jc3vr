@@ -16,7 +16,7 @@ use std::{
 
 use glam::{Quat, Vec3};
 use jc3vr_core::session::CaptureFile;
-pub use jc3vr_render::headpose::FrameTelemetry;
+use jc3vr_render::headpose::FrameTelemetry;
 use parking_lot::Mutex;
 
 use crate::grapple::filter_snapshot;

@@ -42,7 +42,10 @@ pub use config::{GlassConfig, GlassTuning};
 use glam::Vec3;
 use jc3gi::physics::{GameMaterialId, PhysicsSystem};
 use jc3vr_core::thread_role::{self, ThreadRole};
-use jc3vr_input::frame::{Hand, Pose};
+use jc3vr_input::{
+    frame::{Hand, Pose},
+    haptics::cues::Event,
+};
 use jc3vr_render::controllers::cockpit::CockpitTransform;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
@@ -58,7 +61,7 @@ use crate::controllers::{
         strike::{Limiter, Outcome, STRIKERS, Sample, Striker, StrikerKind},
     },
     hands::{self, ActiveHands, CockpitHand},
-    haptics::{self, Event},
+    haptics,
     loadout::{ItemKind, live},
     physical_hands::{
         self,

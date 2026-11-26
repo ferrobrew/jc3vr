@@ -30,7 +30,7 @@ use tracking_format::{
 use crate::recorder::tracking::format::debug_label;
 
 /// The cockpit's placement in the world, from the rendered eye midpoint the hands compose from
-/// ([`jc3vr_gameplay::controllers::cockpit::CockpitTransform::current`]), and the active camera,
+/// ([`jc3vr_render::controllers::cockpit::CockpitTransform::current`]), and the active camera,
 /// while the cockpit is placed.
 pub(super) fn view_state() -> Option<ViewState> {
     let cockpit = headpose::xr::cockpit_pose()?;

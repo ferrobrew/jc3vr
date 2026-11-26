@@ -1,8 +1,8 @@
 //! The haptics: the cues of each kind, what the mixer sent each hand and the recent cues, and the gamepad rumble switch.
 
 use egui::Ui;
-use jc3vr_gameplay::controllers::haptics::{Category, HapticsConfig, HapticsStatus};
-use jc3vr_input::frame::Hand;
+use jc3vr_gameplay::controllers::haptics::{HapticsConfig, HapticsStatus};
+use jc3vr_input::{frame::Hand, haptics::cues::Category};
 
 pub(super) fn haptics_readout(ui: &mut Ui, h: &HapticsStatus) {
     let sent = Category::ALL

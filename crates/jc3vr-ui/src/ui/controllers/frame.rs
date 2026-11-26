@@ -2,10 +2,11 @@
 
 use egui::Ui;
 use glam::Vec3;
-use jc3vr_gameplay::controllers::{haptics, haptics::vocabulary::Primitive};
+use jc3vr_gameplay::controllers::haptics;
 use jc3vr_input::{
     frame,
     frame::{Hand, HandFrame, HandJoint, TrackedPose},
+    haptics::vocabulary::Primitive,
 };
 
 use crate::ui::controllers::{euler_deg, profile_label, vec3, yes_no};

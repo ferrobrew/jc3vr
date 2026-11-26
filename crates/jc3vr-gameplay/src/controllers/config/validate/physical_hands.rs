@@ -1,10 +1,9 @@
 //! Checks for physical hand handling: the throw, the hands' strength, the brace's rebuild and break, and
 //! climbing.
 
-use crate::controllers::{
-    config::validate::{Invalid, nonnegative, range},
-    physical_hands::PhysicalHandsConfig,
-};
+use jc3vr_core::config::engine::{Invalid, nonnegative, range};
+
+use crate::controllers::physical_hands::PhysicalHandsConfig;
 
 /// Check the physical hand settings. Paths are relative to `controllers.physical_hands`.
 pub(super) fn physical_hands(p: &PhysicalHandsConfig) -> Result<(), Invalid> {

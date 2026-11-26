@@ -7,11 +7,11 @@ use std::{
 };
 
 use glam::{Vec2, Vec3};
-use jc3vr_input::{frame::Hand, motion};
+use jc3vr_input::{frame::Hand, haptics::cues::Event, motion};
 use parking_lot::Mutex;
 
 use crate::controllers::{
-    haptics::{self, Event},
+    haptics,
     physical_hands::{
         climb,
         contact::PointProbe,

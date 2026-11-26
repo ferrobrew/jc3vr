@@ -9,8 +9,9 @@
 //!   configuration and the clock, the haptics, the weapons with the loadout and the glass, the
 //!   physical hands, the body, the vehicles, the hands, fingers, presentation, grab, and aim,
 //!   locomotion and roomscale, the snatch, the overlay producers, the scope state, the summary
-//!   model, the telemetry notes, and the spawn table. Its overlay, scope, and cockpit modules also
-//!   re-export the render crate's halves (the passes and the cockpit transform) at their paths.
+//!   model, the telemetry notes, and the spawn table. The render halves of the overlay and the
+//!   scope (the passes) and the cockpit transform live in the render crate, under
+//!   [`jc3vr_render::controllers`], and are named there.
 //! - [`grapple`]: the grapple's device, its physical rope and swing, and its seats.
 //! - [`hooks`]: the gameplay detours (the character and its pose, the animation graph, the input
 //!   tick, the equipment, and the sim step) and the stance height the render crate's camera adjust

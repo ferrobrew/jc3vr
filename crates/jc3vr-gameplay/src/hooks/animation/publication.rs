@@ -8,9 +8,10 @@ use jc3gi::{
     animation::pose_producer::Blender, character::character::AnimationController,
     types::shared_ptr::SharedPtr,
 };
+use jc3vr_render::headpose::skeleton::SkeletonKey;
 use parking_lot::Mutex;
 
-use crate::{controllers::body::procedural::skeleton::SkeletonKey, hooks::character::pose};
+use crate::hooks::character::pose;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Receipt {
