@@ -1,10 +1,22 @@
 //! Floating-HUD configuration types. See `docs/mod/hud.md`.
 
-use jc3vr_core::config::engine::{ConfigSlot, Invalid, positive};
+use jc3vr_core::{
+    config::engine::{ConfigSlot, Invalid, SlotOptions, load::reset_or_default, positive},
+    slot_children,
+};
+use jc3vr_view::vr::{EguiPanelConfig, PANEL_CONFIG};
 use serde::{Deserialize, Serialize};
 
-/// The HUD settings, at `hud` in the settings file; the payload binds the slot at startup.
-pub static HUD_CONFIG: ConfigSlot<HudConfig> = ConfigSlot::new("hud");
+/// The HUD settings, at `hud` in the settings file; the payload binds the slot at startup, and a
+/// load resets the settings that fail [`HudConfig::validate`].
+pub static HUD_CONFIG: ConfigSlot<HudConfig> = ConfigSlot::with(
+    "hud",
+    SlotOptions::new()
+        .with_children(slot_children!(HUD_CONFIG { PANEL_CONFIG => egui_panel }))
+        .validated(|hud, path, resets| {
+            reset_or_default(hud, &HudConfig::new(), path, HudConfig::validate, resets);
+        }),
+);
 
 /// Floating-HUD settings. See `docs/mod/hud.md`.
 #[derive(Copy, Clone, Serialize, Deserialize)]
@@ -95,51 +107,6 @@ impl AtlasConfig {
 }
 
 impl Default for AtlasConfig {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// The interactive egui debug panel rendered as a 2D surface floating in 3D space in VR (issue #24).
-///
-/// The panel is an independent floating surface: it has its own offscreen render target and its own
-/// placement in the player's tracked space, so it never perturbs the gameplay HUD. It only takes
-/// effect while an OpenXR session is running; on the flat desktop the egui debug overlay stays on the
-/// back buffer as before. Its placement and click tuning are fixed in
-/// [`crate::hud::egui_panel`] and [`crate::hud::pointer`].
-#[derive(Copy, Clone, Serialize, Deserialize)]
-#[serde(default)]
-pub struct EguiPanelConfig {
-    /// Panel visibility. While a session runs, the debug UI renders into the floating surface.
-    /// Input ownership is separate: Allow gameplay input keeps the panel visible and read-only.
-    /// Opening through the panel shortcut requests editing, and the preference defaults off. Not
-    /// saved, so a session that left the panel up does not open it at the next launch.
-    #[serde(skip)]
-    pub enabled: bool,
-    /// Aspect ratio (width / height) of the panel quad. Kept in step with
-    /// [`resolution`](EguiPanelConfig::resolution) so the egui content is not stretched.
-    pub aspect: f32,
-    /// The panel texture's pixel resolution. egui lays out at this size, so it also sets the effective
-    /// DPI of the panel content.
-    pub resolution: (u32, u32),
-    /// Whether to also composite the panel onto the desktop mirror while a VR session runs. Off by
-    /// default: the panel is already visible in the headset, so the desktop mirror shows the
-    /// unobstructed scene.
-    pub show_on_mirror: bool,
-}
-
-impl EguiPanelConfig {
-    pub const fn new() -> Self {
-        Self {
-            enabled: false,
-            aspect: 4.0 / 3.0,
-            resolution: (1280, 960),
-            show_on_mirror: false,
-        }
-    }
-}
-
-impl Default for EguiPanelConfig {
     fn default() -> Self {
         Self::new()
     }

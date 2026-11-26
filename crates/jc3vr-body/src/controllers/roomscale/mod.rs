@@ -68,7 +68,7 @@ use crate::{
         locomotion,
         mode::{Mode, current as current_mode},
         roomscale::{
-            config::{DRIVING_VIEW_ENABLED, Posture, ROOMSCALE_CONFIG, RoomscaleConfig},
+            config::{DRIVING_VIEW_CONFIG, Posture, ROOMSCALE_CONFIG, RoomscaleConfig},
             crouch::CrouchTracker,
             fade::FadeSource,
             posture::{
@@ -118,7 +118,7 @@ pub struct ComposedCockpit {
 pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
     let config = *ROOMSCALE_CONFIG.lock();
     let (rig, remap_head) = BODY_REMAP_CONFIG.query(|c| (c.rig, c.remap_head));
-    let driving_view_on = *DRIVING_VIEW_ENABLED.lock();
+    let driving_view_on = DRIVING_VIEW_CONFIG.query(|c| c.enabled);
     let tuning = ROOMSCALE.get();
     let stage = vr::stage::stage();
     let player = body::player();

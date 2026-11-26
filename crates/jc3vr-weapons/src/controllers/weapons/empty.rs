@@ -48,7 +48,7 @@ use jc3gi::{
     character::{character::Character, inventory::Inventory},
     equipment::weapon::{WeaponBase, WeaponData},
 };
-use jc3vr_body::controllers::{hands::ik, haptics, scheme, scheme::CONTROLLERS_ENABLED};
+use jc3vr_body::controllers::{hands::ik, haptics, scheme};
 use jc3vr_input::haptics::cues::Event;
 use re_utilities::hook_library::HookLibrary;
 
@@ -142,7 +142,7 @@ fn check_if_reload_should_be_triggered_base(
             .unwrap()
             .call(weapon, gun_data, should_try_to_fire, was_trigger_pulled)
     };
-    let acting = CONTROLLERS_ENABLED.query(|c| *c) && scheme::is_controllers();
+    let acting = scheme::enabled() && scheme::is_controllers();
     let local = unsafe { weapon.as_ref() }.is_some_and(|w| w.m_IsUserLocalPlayer);
     if !(acting && local) {
         return original();

@@ -10,6 +10,8 @@
 //! The overrides are only read and written with the configuration lock held, so they cannot change
 //! under an edit. They have their own lock, a leaf taken under the configuration lock.
 
+use std::ptr;
+
 use parking_lot::Mutex;
 
 use crate::config::engine::{
@@ -17,12 +19,37 @@ use crate::config::engine::{
     store::{self, Root},
 };
 
-/// A boolean setting a fallback can turn off: its path in the settings file, for the log, and its
-/// place in a slot's part.
+/// A boolean setting a fallback can turn off: the slot whose part holds it, its field there, and
+/// its place in the part. Build one with [`switch!`](crate::switch).
 pub struct Switch<T: 'static> {
-    pub path: &'static str,
     pub slot: &'static ConfigSlot<T>,
+    pub field: &'static str,
     pub place: for<'a> fn(&'a mut T) -> &'a mut bool,
+}
+
+/// The [`Switch`] at the boolean field `$field` of the part of the slot `$slot`
+/// (`switch!(VR_CONFIG, mirror)`).
+#[macro_export]
+macro_rules! switch {
+    ($slot:path, $field:ident) => {
+        $crate::config::engine::Switch {
+            slot: &$slot,
+            field: ::std::stringify!($field),
+            place: |part| &mut part.$field,
+        }
+    };
+}
+
+impl<T: 'static> Switch<T> {
+    /// The setting's path in the settings file, for the log.
+    fn path(&self) -> String {
+        format!("{}.{}", self.slot.path(), self.field)
+    }
+
+    /// What identifies the setting among the overrides.
+    fn key(&self) -> (*const (), &'static str) {
+        (ptr::from_ref(self.slot).cast(), self.field)
+    }
 }
 
 impl<T: 'static> Clone for Switch<T> {
@@ -75,12 +102,12 @@ impl Overrides {
         let place = switch.locate(root);
         let current = *place;
         *place = false;
-        if self.0.iter().any(|o| o.switch.path() == switch.path) {
+        if self.0.iter().any(|o| o.switch.key() == switch.key()) {
             return;
         }
         if current {
             tracing::info!(
-                switch = switch.path,
+                switch = switch.path(),
                 "settings: switched off automatically; the saved setting stays on",
             );
             self.0.push(Override {
@@ -120,13 +147,13 @@ struct Override {
 
 /// A [`Switch`] with its slot's type erased.
 trait Place: Send + Sync {
-    fn path(&self) -> &'static str;
+    fn key(&self) -> (*const (), &'static str);
     fn locate<'a>(&self, root: &'a mut Root) -> &'a mut bool;
 }
 
 impl<T: 'static> Place for Switch<T> {
-    fn path(&self) -> &'static str {
-        self.path
+    fn key(&self) -> (*const (), &'static str) {
+        Switch::key(self)
     }
 
     fn locate<'a>(&self, root: &'a mut Root) -> &'a mut bool {
@@ -141,7 +168,7 @@ mod tests {
     use super::*;
     use crate::config::engine::projection;
 
-    #[derive(Clone)]
+    #[derive(Clone, Default, serde::Serialize, serde::Deserialize)]
     struct Sample {
         mirror: bool,
         sharpness: f32,
@@ -160,8 +187,8 @@ mod tests {
     fn an_automatic_switch_off_keeps_the_saved_choice_until_the_user_changes_it() {
         MIRROR.bind(projection!(Sample, mirror));
         let switch = Switch {
-            path: "mirror",
             slot: &MIRROR,
+            field: "",
             place: |mirror| mirror,
         };
         let mut overrides = Overrides::new();
@@ -199,11 +226,7 @@ mod tests {
             mirror: false,
             ..root()
         };
-        let switch = Switch {
-            path: "mirror",
-            slot: &OFF,
-            place: |root| &mut root.mirror,
-        };
+        let switch = crate::switch!(OFF, mirror);
         overrides.disable(&mut config, switch);
         assert!(overrides.0.is_empty());
         overrides.disable(&mut config, switch);

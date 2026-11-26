@@ -13,7 +13,13 @@
 //! resets (a respawn clearing god mode, a mission reset unlocking heat).
 
 use jc3vr_body::controllers::spawn;
-use jc3vr_core::{config::engine::ConfigSlot, director::clean_view};
+use jc3vr_capture::testing::visual::PAUSED;
+use jc3vr_core::{
+    config::engine::{ConfigSlot, SlotOptions},
+    director::{clean_view, clean_view::CLEAN_VIEW_CONFIG},
+    slot_children,
+};
+use jc3vr_view::recorder::tracking::TIME_SCALE;
 use serde::{Deserialize, Serialize};
 
 pub mod heat;
@@ -25,8 +31,15 @@ pub mod teleport;
 pub mod time;
 
 /// The directing tools' settings, at `director` in the settings file; the payload binds the slot at
-/// startup.
-pub static DIRECTOR_CONFIG: ConfigSlot<DirectorConfig> = ConfigSlot::new("director");
+/// startup. The lower layers read three of its fields through slots of their own.
+pub static DIRECTOR_CONFIG: ConfigSlot<DirectorConfig> = ConfigSlot::with(
+    "director",
+    SlotOptions::new().with_children(slot_children!(DIRECTOR_CONFIG {
+        TIME_SCALE => time_scale,
+        PAUSED => paused,
+        CLEAN_VIEW_CONFIG => clean_view,
+    })),
+);
 
 /// The directing settings, reconciled against the live game every frame by [`update`].
 #[derive(Clone, Serialize, Deserialize)]

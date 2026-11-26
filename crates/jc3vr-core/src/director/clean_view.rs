@@ -29,7 +29,7 @@ pub static CLEAN_VIEW_CONFIG: ConfigSlot<CleanViewConfig> = ConfigSlot::new("dir
 /// launch, which keeps the flat debug overlay off the desktop window until F4 shows it, so a session
 /// that showed the overlay does not leave it showing at the next launch; and the scope is a choice
 /// for the shot at hand, so a launch never starts with the HUD hidden.
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub struct CleanViewConfig {
     /// Hide the mod's overlays at [`scope`](Self::scope).
     pub on: bool,

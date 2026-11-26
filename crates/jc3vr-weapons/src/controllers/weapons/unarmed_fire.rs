@@ -12,7 +12,7 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use jc3gi::character::character::{Character, WeaponInput};
-use jc3vr_body::controllers::{scheme, scheme::CONTROLLERS_ENABLED};
+use jc3vr_body::controllers::scheme;
 
 /// The draw-on-fire suppression's readout.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
@@ -57,7 +57,7 @@ impl HeldDrawInputs {
 /// `character` must be the live local player character, on the thread running its weapon
 /// handling, just before the call.
 pub unsafe fn hold_back(character: &mut Character, holstering: bool) -> Option<HeldDrawInputs> {
-    let enabled = *CONTROLLERS_ENABLED.lock();
+    let enabled = scheme::enabled();
     if !enabled || !scheme::is_controllers() {
         return None;
     }

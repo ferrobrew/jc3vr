@@ -10,11 +10,31 @@ use serde::{Deserialize, Serialize};
 /// binds the slot at startup.
 pub static ROOMSCALE_CONFIG: ConfigSlot<RoomscaleConfig> = ConfigSlot::new("controllers.roomscale");
 
-/// Whether the driver's view moves to a standard place behind the wheel, at
-/// `controllers.vehicles.driving_view.enabled` in the settings file: a field of the vehicles' group,
-/// which the cockpit composition reads. The payload binds the slot at startup.
-pub static DRIVING_VIEW_ENABLED: ConfigSlot<bool> =
-    ConfigSlot::new("controllers.vehicles.driving_view.enabled");
+/// The driver's view, at `controllers.vehicles.driving_view` in the settings file: a group the
+/// vehicles' settings hold, which the cockpit composition reads.
+pub static DRIVING_VIEW_CONFIG: ConfigSlot<DrivingViewConfig> =
+    ConfigSlot::new("controllers.vehicles.driving_view");
+
+/// The driver's view moved per vehicle to a standard place behind the wheel (the vehicles'
+/// `driving_view` module).
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DrivingViewConfig {
+    /// Move a car's view per vehicle so the eyes sit at the standard offset from the wheel's hub.
+    pub enabled: bool,
+}
+
+impl DrivingViewConfig {
+    pub const fn new() -> Self {
+        Self { enabled: true }
+    }
+}
+
+impl Default for DrivingViewConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 /// Posture and roomscale locomotion (see [`crate::controllers::roomscale`]). These act on the
 /// headset alone, controllers or not, and default on as part of the full gameplay preset. The head

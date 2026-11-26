@@ -361,6 +361,24 @@ pub fn reset_named<T: Serialize + DeserializeOwned>(
     check(value)
 }
 
+/// Reset the settings of `value` that `check` names ([`reset_named`]), and `value` whole to
+/// `defaults` when that does not make it pass. `path` is `value`'s path in the configuration.
+pub fn reset_or_default<T: Clone + Serialize + DeserializeOwned>(
+    value: &mut T,
+    defaults: &T,
+    path: &str,
+    check: impl Fn(&T) -> Result<(), Invalid>,
+    resets: &mut Vec<Reset>,
+) {
+    if let Err(error) = reset_named(value, defaults, path, check, resets) {
+        *value = defaults.clone();
+        resets.push(Reset {
+            path: path.to_owned(),
+            reason: error.to_string(),
+        });
+    }
+}
+
 /// The path a validation message leads with ([`Invalid`]), in `a.b[2].c` form. A
 /// message that does not lead with one gives a path that names nothing in the tree, which
 /// [`reset`] does not reset.

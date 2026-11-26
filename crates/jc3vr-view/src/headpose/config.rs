@@ -1,11 +1,22 @@
 //! Headpose configuration: the thresholds and tunables for the headpose simulation.
 
-use jc3vr_core::config::engine::ConfigSlot;
+use jc3vr_core::config::engine::{ConfigSlot, Invalid, SlotOptions, load::reset_or_default, range};
 use serde::{Deserialize, Serialize};
 
 /// The head pose settings, at `headpose` in the settings file; the payload binds the slot at
-/// startup.
-pub static HEADPOSE_CONFIG: ConfigSlot<HeadPoseConfig> = ConfigSlot::new("headpose");
+/// startup, and a load resets the VR turn settings that fail [`VrTurnConfig::validate`].
+pub static HEADPOSE_CONFIG: ConfigSlot<HeadPoseConfig> = ConfigSlot::with(
+    "headpose",
+    SlotOptions::new().validated(|headpose, path, resets| {
+        reset_or_default(
+            &mut headpose.vr_turn,
+            &VrTurnConfig::new(),
+            &format!("{path}.vr_turn"),
+            VrTurnConfig::validate,
+            resets,
+        );
+    }),
+);
 
 /// All thresholds and tunables for the headpose simulation, added to [`crate::config::Config`] as
 /// `headpose`.
@@ -85,6 +96,14 @@ impl VrTurnConfig {
             snap_threshold: 0.6,
             deadzone: 0.02,
         }
+    }
+
+    /// Check the VR turn settings. Paths are relative to `headpose.vr_turn`.
+    pub fn validate(&self) -> Result<(), Invalid> {
+        range("smooth_scale", self.smooth_scale, 0.0, 10.0)?;
+        range("snap_angle_deg", self.snap_angle_deg, 0.0, 180.0)?;
+        range("snap_threshold", self.snap_threshold, 0.0, 1.0)?;
+        range("deadzone", self.deadzone, 0.0, 1.0)
     }
 }
 

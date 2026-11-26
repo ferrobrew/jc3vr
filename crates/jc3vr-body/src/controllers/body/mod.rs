@@ -57,7 +57,7 @@ pub mod tuning;
 pub mod unarmed;
 
 use glam::{Quat, Vec3};
-use jc3vr_core::config::engine::ConfigSlot;
+use jc3vr_core::config::engine::{ConfigSlot, Invalid, SlotOptions, load::Reset};
 use serde::{Deserialize, Serialize};
 
 use crate::controllers::body::calibration::{
@@ -65,8 +65,20 @@ use crate::controllers::body::calibration::{
 };
 
 /// The player's body dimensions, at `body` in the settings file; the payload binds the slot at
-/// startup.
-pub static BODY_CONFIG: ConfigSlot<BodyDimensions> = ConfigSlot::new("body");
+/// startup, and a load resets dimensions that fail [`BodyDimensions::validate`] to the generic
+/// adult's.
+pub static BODY_CONFIG: ConfigSlot<BodyDimensions> = ConfigSlot::with(
+    "body",
+    SlotOptions::new().validated(|body, path, resets| {
+        if let Err(error) = body.validate() {
+            *body = BodyDimensions::GENERIC_ADULT;
+            resets.push(Reset {
+                path: path.to_owned(),
+                reason: Invalid(error.to_string()).to_string(),
+            });
+        }
+    }),
+);
 
 /// A body's dimensions, in metres. Heights are measured from the floor.
 #[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]

@@ -18,7 +18,7 @@
 //! This is a wholly independent panel: its own render target, its own placement, and its own
 //! eye-0-cached corners, so it never touches [`crate::hud::state::HUD_STATE`] and cannot perturb the
 //! gameplay HUD. The whole feature is gated behind [`is_active`] -- an OpenXR session running *and* the
-//! opt-in [`EguiPanelConfig::enabled`](crate::hud::config) flag -- and defaults off, so with it off
+//! opt-in [`EguiPanelConfig::enabled`] flag -- and defaults off, so with it off
 //! every path is byte-identical to the flat overlay baseline.
 //!
 //! egui is tessellated exactly once per frame (the single-use `RendererOutput`), on eye 0, into the
@@ -38,7 +38,10 @@ use jc3vr_input::{
     frame,
     frame::{Hand, Pose},
 };
-use jc3vr_view::hud::pointer::panel::{RenderedPanel, publish_egui_panel, rendered_camera};
+use jc3vr_view::{
+    hud::pointer::panel::{RenderedPanel, publish_egui_panel, rendered_camera},
+    vr::EguiPanelConfig,
+};
 use parking_lot::Mutex;
 use windows::Win32::Graphics::Direct3D11::{ID3D11DeviceContext, ID3D11ShaderResourceView};
 
@@ -46,7 +49,7 @@ pub use crate::hud::egui_panel::slot::{end_grab, is_placed, recall};
 use crate::{
     egui_impl::{EguiState, request_debug_ui},
     hud::{
-        config::{EguiPanelConfig, HUD_CONFIG},
+        config::HUD_CONFIG,
         cursor::CursorFrame,
         egui_panel::{
             placement::world_panel,

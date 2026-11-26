@@ -38,16 +38,37 @@ use jc3gi::{
 };
 use jc3vr_core::config::engine::ConfigSlot;
 use jc3vr_view::{headpose, headpose::Source};
+use serde::{Deserialize, Serialize};
 
 use crate::{
     controllers::body::procedural::signals::is_local_model, hooks::character::resolve_act_id,
 };
 
-/// Whether the arms throw the boost wingsuit's evade and the game's own evade rolls the player's
-/// body, at `controllers.vehicles.wingsuit_evade.enabled` in the settings file; the payload binds the
-/// slot at startup.
-pub static WINGSUIT_EVADE_ENABLED: ConfigSlot<bool> =
-    ConfigSlot::new("controllers.vehicles.wingsuit_evade.enabled");
+/// The boost wingsuit's evade, at `controllers.vehicles.wingsuit_evade` in the settings file: a
+/// group the vehicles' settings hold, which the barrel-roll filter reads.
+pub static WINGSUIT_EVADE_CONFIG: ConfigSlot<WingsuitEvadeConfig> =
+    ConfigSlot::new("controllers.vehicles.wingsuit_evade");
+
+/// The boost wingsuit's barrel-roll evade. Its throw is the vehicles' tuning.
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct WingsuitEvadeConfig {
+    /// Throw the evade with the arms, and let the game's own evade roll the player's body. Off, the
+    /// arms throw nothing and every barrel roll of the player's body is dropped, the gamepad's too.
+    pub enabled: bool,
+}
+
+impl WingsuitEvadeConfig {
+    pub const fn new() -> Self {
+        Self { enabled: true }
+    }
+}
+
+impl Default for WingsuitEvadeConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 /// Whether the stall flip is removed now.
 pub fn suppressed() -> bool {
@@ -69,7 +90,7 @@ pub(crate) fn drops_act(model: *const AnimatedModel, act: i32) -> bool {
     }
     let wanted = headpose::is_active()
         && headpose::source() == Source::Vr
-        && !WINGSUIT_EVADE_ENABLED.query(|enabled| *enabled);
+        && !WINGSUIT_EVADE_CONFIG.query(|evade| evade.enabled);
     if wanted {
         BARREL_ROLLS_DROPPED.fetch_add(1, Ordering::Relaxed);
         tracing::info!(

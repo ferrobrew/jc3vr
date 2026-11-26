@@ -1,16 +1,15 @@
-//! The configuration's schema: how the engine defaults, migrates, validates, and reports a
-//! [`Config`], registered with the store before anything reads the configuration
+//! The configuration's schema: how the engine defaults, migrates, and reports a [`Config`] (the
+//! checks a load runs are the ones the groups' slots carry), registered with the store before anything reads the configuration
 //! ([`crate::config::register`]).
 
 use jc3vr_core::config::engine::{
     ConfigRoot, Parts, Schema,
     format::{Format, Migrated},
-    load::Reset,
     store::Root,
 };
 use toml::Table;
 
-use crate::config::{Config, format, load};
+use crate::config::{Config, format};
 
 /// The schema the payload registers.
 pub(crate) static SCHEMA: Schema = Schema::of::<Config>();
@@ -22,10 +21,6 @@ impl ConfigRoot for Config {
 
     fn migrate(file: &mut Table, format: Format) -> Vec<Migrated> {
         format::migrate(file, format)
-    }
-
-    fn validate(&mut self, resets: &mut Vec<Reset>) {
-        load::validate_subtrees(self, resets);
     }
 
     /// Note the settings for a tracking recording.

@@ -35,6 +35,7 @@ use toml::{Table, Value};
 use crate::config::engine::{
     format::{Format, Migrated},
     load::Reset,
+    slot,
 };
 
 /// The configuration root, with its type erased.
@@ -49,8 +50,12 @@ pub trait ConfigRoot: Serialize + DeserializeOwned + Clone + Send + 'static {
     /// remove the settings a later build replaced. Returns the settings it removed.
     fn migrate(file: &mut Table, format: Format) -> Vec<Migrated>;
 
-    /// Reset the settings that fail their checks, pushing each reset.
-    fn validate(&mut self, resets: &mut Vec<Reset>);
+    /// Reset the settings that fail checks of the root's own, pushing each reset. The checks the
+    /// bound slots carry ([`SlotOptions::validated`](crate::config::engine::SlotOptions::validated))
+    /// run after these.
+    fn validate(&mut self, resets: &mut Vec<Reset>) {
+        let _ = resets;
+    }
 
     /// A save is about to write a change; `text` holds every setting.
     fn note_saved(text: &str);
@@ -300,4 +305,5 @@ fn deserialize_of<C: ConfigRoot>(
 
 fn validate_of<C: ConfigRoot>(root: &mut Root, resets: &mut Vec<Reset>) {
     downcast_mut::<C>(root).validate(resets);
+    slot::validate_bound(root, resets);
 }

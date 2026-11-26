@@ -17,7 +17,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use detours_macro::detour;
 use jc3gi::character::player::{AimMode, Player};
-use jc3vr_body::controllers::{scheme, scheme::CONTROLLERS_ENABLED};
+use jc3vr_body::controllers::scheme;
 use re_utilities::hook_library::HookLibrary;
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -44,7 +44,7 @@ pub fn counters() -> SuppressCounters {
 
 /// Whether precision aim is refused now.
 pub fn suppressing() -> bool {
-    CONTROLLERS_ENABLED.query(|c| *c) && scheme::is_controllers()
+    scheme::enabled() && scheme::is_controllers()
 }
 
 /// The player's aim-mode setter. Passed through unless it would enter precision aim while the

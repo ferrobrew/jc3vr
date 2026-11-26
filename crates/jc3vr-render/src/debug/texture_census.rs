@@ -45,8 +45,8 @@ use windows::{
     core::{HRESULT, Interface as _, PCWSTR},
 };
 
-/// Whether to keep the census, `testing.texture_census` in the settings file. The payload binds the
-/// slot to its field in the capture harness's settings at startup.
+/// Whether to keep the census, `testing.texture_census` in the settings file. The test tools'
+/// settings bind the slot to their field.
 pub static TEXTURE_CENSUS: ConfigSlot<bool> = ConfigSlot::new("testing.texture_census");
 
 /// The log line that marks the payload as pinned by the census's detours.

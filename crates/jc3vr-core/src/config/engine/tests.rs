@@ -12,7 +12,7 @@ use crate::config::engine::{
     projection,
 };
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub(super) struct Sample {
     pub height: f32,
     pub name: Option<String>,
@@ -20,7 +20,7 @@ pub(super) struct Sample {
     pub list: Vec<u32>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub(super) struct Group {
     pub limit: f32,
     pub on: bool,
@@ -153,11 +153,11 @@ fn a_projection_finds_its_part() {
     let mut sample = Sample::defaults();
     let limit = projection!(Sample, group.limit);
     let whole = projection!(Sample);
-    let slot = ConfigSlot::new("group.limit");
-    slot.bind(limit);
-    *slot.project_mut(&mut sample) = 7.0;
+    static SLOT: ConfigSlot<f32> = ConfigSlot::new("group.limit");
+    SLOT.bind(limit);
+    *SLOT.project_mut(&mut sample) = 7.0;
     assert_eq!(sample.group.limit, 7.0);
-    let root = ConfigSlot::<Sample>::new("");
-    root.bind(whole);
-    assert_eq!(root.project(&sample), &sample);
+    static ROOT: ConfigSlot<Sample> = ConfigSlot::new("");
+    ROOT.bind(whole);
+    assert_eq!(ROOT.project(&sample), &sample);
 }

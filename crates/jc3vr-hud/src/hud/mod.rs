@@ -81,10 +81,7 @@ use jc3gi::{
         ui_manager::{GetIUIManager, UIManager},
     },
 };
-use jc3vr_core::{
-    config::engine::{Switch, disable_automatically},
-    hooks::in_gameplay,
-};
+use jc3vr_core::{config::engine::disable_automatically, hooks::in_gameplay, switch};
 use jc3vr_view::{
     hud::{
         pointer::panel::{RenderedPanel, publish_panel, rendered_camera},
@@ -512,11 +509,7 @@ pub fn release_on_eject() {
 pub fn install() {
     jc3vr_core::lifecycle::on_cleanup(|renderer| {
         // Automatically, so that a save during the teardown keeps the redirect the user chose.
-        disable_automatically(Switch {
-            path: "hud.redirect",
-            slot: &HUD_CONFIG,
-            place: |hud| &mut hud.redirect,
-        });
+        disable_automatically(switch!(HUD_CONFIG, redirect));
         if let Some(renderer) = renderer.and_then(|renderer| renderer.downcast_mut()) {
             HUD_STATE.lock().release_preview(renderer);
         }

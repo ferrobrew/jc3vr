@@ -51,7 +51,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use jc3gi::{
     camera::camera_manager::CameraManager, graphics_engine::graphics_engine::GraphicsEngine,
 };
-use jc3vr_core::config::engine::{Switch, disable_automatically};
+use jc3vr_core::{config::engine::disable_automatically, switch};
 use parking_lot::Mutex;
 
 use crate::vr::{VR_CONFIG, back_buffer, participants::resize_observer};
@@ -487,11 +487,7 @@ fn issue_resize(
 /// Disable native resolution at runtime after a fault, so the next tick restores the original size and
 /// the mod continues at desktop resolution. The saved setting keeps the user's choice.
 fn disable_native_resolution() {
-    disable_automatically(Switch {
-        path: "vr.native_resolution",
-        slot: &VR_CONFIG,
-        place: |vr| &mut vr.native_resolution,
-    });
+    disable_automatically(switch!(VR_CONFIG, native_resolution));
 }
 
 /// The engine camera manager's aspect ratio, for the serviced-resize log (set by `ApplyResize`).

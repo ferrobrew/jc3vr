@@ -3,14 +3,30 @@
 //! vehicles, the mounted guns, the wingsuit, and the parachute is fixed in
 //! [`crate::controllers::vehicles::tuning`].
 
-use jc3vr_body::controllers::{body::config::BODY_REMAP_CONFIG, scheme};
-use jc3vr_core::config::engine::ConfigSlot;
+use jc3vr_body::{
+    controllers::{
+        body::config::BODY_REMAP_CONFIG,
+        roomscale::config::{DRIVING_VIEW_CONFIG, DrivingViewConfig},
+        scheme,
+    },
+    hooks::input::wingsuit::{WINGSUIT_EVADE_CONFIG, WingsuitEvadeConfig},
+};
+use jc3vr_core::{
+    config::engine::{ConfigSlot, SlotOptions},
+    slot_children,
+};
 use jc3vr_input::frame::Hand;
 use serde::{Deserialize, Serialize};
 
 /// The vehicle, mounted gun, wingsuit, and parachute settings, at `controllers.vehicles` in the
-/// settings file; the payload binds the slot at startup.
-pub static VEHICLES_CONFIG: ConfigSlot<VehiclesConfig> = ConfigSlot::new("controllers.vehicles");
+/// settings file. The driver's view and the evade are the body's groups, which this one holds.
+pub static VEHICLES_CONFIG: ConfigSlot<VehiclesConfig> = ConfigSlot::with(
+    "controllers.vehicles",
+    SlotOptions::new().with_children(slot_children!(VEHICLES_CONFIG {
+        DRIVING_VIEW_CONFIG => driving_view,
+        WINGSUIT_EVADE_CONFIG => wingsuit_evade,
+    })),
+);
 
 /// The settings one vehicle handling tick reads: its own group and the few fields of lower groups
 /// it consults, read one group at a time so that no two configuration guards are held at once.
@@ -71,27 +87,6 @@ impl VehiclesConfig {
 }
 
 impl Default for VehiclesConfig {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// The driving view's settings, in [`VehiclesConfig::driving_view`] (see
-/// [`crate::controllers::vehicles::driving_view`]).
-#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct DrivingViewConfig {
-    /// Move a car's view per vehicle so the eyes sit at the standard offset from the wheel's hub.
-    pub enabled: bool,
-}
-
-impl DrivingViewConfig {
-    pub const fn new() -> Self {
-        Self { enabled: true }
-    }
-}
-
-impl Default for DrivingViewConfig {
     fn default() -> Self {
         Self::new()
     }
@@ -234,28 +229,6 @@ impl ParachuteHandlesConfig {
 }
 
 impl Default for ParachuteHandlesConfig {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// The boost wingsuit's barrel-roll evade, in [`VehiclesConfig::wingsuit_evade`]. Its throw is
-/// tuning ([`WingsuitEvadeTuning`](crate::controllers::vehicles::tuning::WingsuitEvadeTuning)).
-#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct WingsuitEvadeConfig {
-    /// Throw the evade with the arms, and let the game's own evade roll the player's body. Off, the
-    /// arms throw nothing and every barrel roll of the player's body is dropped, the gamepad's too.
-    pub enabled: bool,
-}
-
-impl WingsuitEvadeConfig {
-    pub const fn new() -> Self {
-        Self { enabled: true }
-    }
-}
-
-impl Default for WingsuitEvadeConfig {
     fn default() -> Self {
         Self::new()
     }

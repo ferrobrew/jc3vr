@@ -33,10 +33,11 @@ use jc3vr_input::{
     frame::Hand,
     haptics::cues::{Event, Sustain},
 };
+use jc3vr_view::vr::input::config::{HAPTICS_CONFIG, HapticsConfig};
 use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
-    haptics::{self, HapticsConfig, config::HAPTICS_CONFIG, shot},
+    haptics::{self, shot},
     intent::tuning::CONTROLS,
     scheme,
 };

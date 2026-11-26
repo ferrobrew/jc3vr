@@ -16,7 +16,8 @@
 //! The configuration is saved to `settings.toml` in the per-user configuration directory
 //! ([`paths`]), which holds only the settings that differ from their defaults ([`format`]), so a
 //! setting the user never changed follows its default when a later build changes it. It is loaded
-//! once at startup, before VR initialization reads it ([`init`]); the load is tolerant ([`load`]),
+//! once at startup, before VR initialization reads it ([`init`]); the load is tolerant
+//! ([`engine::load`]),
 //! so a file from another build costs at most the settings it gets wrong. A change the user meant
 //! goes through an edit guard (a slot's `edit`), which marks the configuration
 //! changed; [`tick`] saves it from the game thread's frame once the changes settle, handing the
@@ -54,6 +55,7 @@
 //! [`BodyDimensions`](jc3vr_body::controllers::body::BodyDimensions) in `controllers::body`.
 
 pub(crate) mod format;
+#[cfg(test)]
 pub(crate) mod load;
 mod schema;
 pub(crate) mod slots;
@@ -178,6 +180,12 @@ impl Config {
     /// hooks: `Config::lock_query(|c| c.post_fx.skip_sun_halo)`. The lock is held only for `f`.
     pub fn lock_query<R>(f: impl FnOnce(&Config) -> R) -> R {
         f(&CONFIG.lock())
+    }
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

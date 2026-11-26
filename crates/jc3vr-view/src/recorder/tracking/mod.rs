@@ -38,7 +38,7 @@ use std::{
 };
 
 use jc3vr_core::{
-    config::engine::{ConfigSlot, Snapshot},
+    config::engine::{ConfigSlot, SlotOptions, Snapshot},
     session::{RecordingFile, SessionError},
 };
 use jc3vr_input::frame as controller_frame;
@@ -75,14 +75,22 @@ use crate::{
 };
 
 /// Whether the test tools are on, `testing.enabled` in the settings file: off, a recording does not
-/// start. The payload binds this slot and the two below to their fields at startup.
-pub static TESTING_ENABLED: ConfigSlot<bool> = ConfigSlot::new("testing.enabled");
+/// start. The test tools' settings bind this slot and the next to their fields, and the directing
+/// settings the third.
+pub static TESTING_ENABLED: ConfigSlot<bool> =
+    ConfigSlot::with("testing.enabled", SlotOptions::new().defaults_to(|| true));
 
 /// Whether a recording carries the tracked hand joints, `testing.record_hand_joints`.
-pub static RECORD_HAND_JOINTS: ConfigSlot<bool> = ConfigSlot::new("testing.record_hand_joints");
+pub static RECORD_HAND_JOINTS: ConfigSlot<bool> = ConfigSlot::with(
+    "testing.record_hand_joints",
+    SlotOptions::new().defaults_to(|| true),
+);
 
 /// The game's time scale, `director.time_scale`, which a recording's header notes.
-pub static TIME_SCALE: ConfigSlot<f32> = ConfigSlot::new("director.time_scale");
+pub static TIME_SCALE: ConfigSlot<f32> = ConfigSlot::with(
+    "director.time_scale",
+    SlotOptions::new().defaults_to(|| 1.0),
+);
 
 /// What the frame loop knows about a frame's views when it hands it to [`capture`].
 #[derive(Debug, Copy, Clone)]

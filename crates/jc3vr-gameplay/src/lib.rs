@@ -43,8 +43,8 @@
 //!   [`jc3vr_grapple::grapple::device::hook_library`].
 //! - The settings: each subsystem declares the [`ConfigSlot`](jc3vr_core::config::engine::ConfigSlot)
 //!   for its group beside the group's type (one per controllers group, such as
-//!   [`jc3vr_weapons::controllers::weapons::config::WEAPONS_CONFIG`]), and the payload binds them
-//!   to its aggregate. A subsystem reads only its own group and the groups of the subsystems it builds on,
+//!   [`jc3vr_weapons::controllers::weapons::config::WEAPONS_CONFIG`]), and the `controllers` slot
+//!   binds them wherever it is bound. A subsystem reads only its own group and the groups of the subsystems it builds on,
 //!   through their slots; the whole `controllers` table
 //!   ([`controllers::config::CONTROLLERS_CONFIG`]) is read only by the bindings, the summary, and
 //!   the layers above.

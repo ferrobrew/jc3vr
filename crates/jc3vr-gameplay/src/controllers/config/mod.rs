@@ -15,28 +15,65 @@
 //!
 //! Each group's type and its slot live beside the subsystem that owns them (`WEAPONS_CONFIG` beside
 //! [`WeaponsConfig`] in [`jc3vr_weapons::controllers::weapons::config`], `controllers.enabled` in
-//! [`jc3vr_body::controllers::scheme`]), and every subsystem reads its own group through its slot. This
-//! module only assembles the groups into the `controllers` table of the settings file, and the
-//! payload's load runs the range and consistency checks in [`validate`] over the whole table.
+//! [`jc3vr_view::vr::input::config`]), and every subsystem reads its own group through its slot.
+//! This module only assembles the groups into the `controllers` table of the settings file, binds
+//! their slots wherever its own is bound, and has a load run the range and consistency checks in
+//! [`validate`] over the whole table.
 
 pub mod validate;
 
 use jc3vr_body::controllers::{
-    aim::config::AimConfig, body::config::BodyRemapConfig, hands::config::HandsConfig,
-    haptics::HapticsConfig, intent::config::BindingsConfig, locomotion::config::LocomotionConfig,
-    overlay::config::OverlayConfig, roomscale::config::RoomscaleConfig, scheme,
+    aim::config::{AIM_CONFIG, AimConfig},
+    body::config::{BODY_REMAP_CONFIG, BodyRemapConfig},
+    hands::config::{HANDS_CONFIG, HandsConfig},
+    intent::config::{BINDINGS_CONFIG, BindingsConfig},
+    locomotion::config::{LOCOMOTION_CONFIG, LocomotionConfig},
+    overlay::config::{OVERLAY_CONFIG, OverlayConfig},
+    roomscale::config::{ROOMSCALE_CONFIG, RoomscaleConfig},
+    scheme,
 };
-use jc3vr_core::config::engine::ConfigSlot;
+use jc3vr_core::{
+    config::engine::{ConfigSlot, SlotOptions},
+    slot_children,
+};
 use jc3vr_input::frame::Hand;
-use jc3vr_physical::controllers::{glass::GlassConfig, physical_hands::PhysicalHandsConfig};
-use jc3vr_vehicles::controllers::vehicles::config::VehiclesConfig;
-use jc3vr_view::vr::input::config::InputConfig;
+use jc3vr_physical::controllers::{
+    glass::{GlassConfig, config::GLASS_CONFIG},
+    physical_hands::{PhysicalHandsConfig, config::PHYSICAL_HANDS_CONFIG},
+};
+use jc3vr_vehicles::controllers::vehicles::config::{VEHICLES_CONFIG, VehiclesConfig};
+use jc3vr_view::vr::input::config::{
+    CONTROLLERS_ENABLED, DOMINANT_HAND, HAPTICS_CONFIG, HapticsConfig, INPUT_CONFIG, InputConfig,
+};
+use jc3vr_weapons::controllers::weapons::config::WEAPONS_CONFIG;
 pub use jc3vr_weapons::controllers::weapons::config::WeaponsConfig;
 use serde::{Deserialize, Serialize};
 
 /// The controller settings, at `controllers` in the settings file; the payload binds the slot at
-/// startup.
-pub static CONTROLLERS_CONFIG: ConfigSlot<ControllersConfig> = ConfigSlot::new("controllers");
+/// startup, which binds each group's slot to its field, and a load resets the settings that fail
+/// their checks ([`validate::reset_invalid`]).
+pub static CONTROLLERS_CONFIG: ConfigSlot<ControllersConfig> = ConfigSlot::with(
+    "controllers",
+    SlotOptions::new()
+        .with_children(slot_children!(CONTROLLERS_CONFIG {
+            CONTROLLERS_ENABLED => enabled,
+            DOMINANT_HAND => dominant_hand,
+            INPUT_CONFIG => input,
+            LOCOMOTION_CONFIG => locomotion,
+            BINDINGS_CONFIG => bindings,
+            HANDS_CONFIG => hands,
+            AIM_CONFIG => aim,
+            OVERLAY_CONFIG => overlay,
+            WEAPONS_CONFIG => weapons,
+            BODY_REMAP_CONFIG => body,
+            ROOMSCALE_CONFIG => roomscale,
+            VEHICLES_CONFIG => vehicles,
+            PHYSICAL_HANDS_CONFIG => physical_hands,
+            HAPTICS_CONFIG => haptics,
+            GLASS_CONFIG => glass,
+        }))
+        .validated(validate::reset_invalid),
+);
 
 /// All motion-controller settings, added to `config::Config` as `controllers`.
 #[derive(Clone, Serialize, Deserialize)]

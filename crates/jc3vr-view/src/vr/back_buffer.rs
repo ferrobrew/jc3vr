@@ -44,7 +44,7 @@ use jc3gi::graphics_engine::{
     },
     texture::Texture,
 };
-use jc3vr_core::config::engine::{Switch, disable_automatically};
+use jc3vr_core::{config::engine::disable_automatically, switch};
 use parking_lot::Mutex;
 
 /// The mod-owned backing texture and the size it was created at.
@@ -337,11 +337,7 @@ pub unsafe fn substitute_render_setups(engine: &mut GraphicsEngine) {
             // and drives another full `ApplyResize`, turning a persistent failure into a per-frame
             // teardown-and-rebuild storm. The saved setting keeps the user's choice.
             OWNED.store(false, Ordering::Release);
-            disable_automatically(Switch {
-                path: "vr.own_back_buffer",
-                slot: &crate::vr::VR_CONFIG,
-                place: |vr| &mut vr.own_back_buffer,
-            });
+            disable_automatically(switch!(crate::vr::VR_CONFIG, own_back_buffer));
             tracing::error!(
                 target: "vr",
                 "back buffer: substitution failed; disabling vr.own_back_buffer: {e:#}",

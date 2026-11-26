@@ -1,20 +1,11 @@
 //! Controller versus gamepad scheme selection from the settings and the published controller
 //! frame. The scheme type and its rule live in [`jc3vr_input::scheme`].
 
-use jc3vr_core::config::engine::ConfigSlot;
 use jc3vr_input::{
     frame::{self, ControllerFrame, Hand},
     scheme::{Scheme, resolve},
 };
-
-/// The controllers' master switch, at `controllers.enabled` in the settings file; the payload
-/// binds the slot at startup.
-pub static CONTROLLERS_ENABLED: ConfigSlot<bool> = ConfigSlot::new("controllers.enabled");
-
-/// The configured dominant hand, at `controllers.dominant_hand` in the settings file; the payload
-/// binds the slot at startup. The hand roles follow [`acting_hand`], which differs from this until
-/// a restart after a change.
-pub static DOMINANT_HAND: ConfigSlot<Hand> = ConfigSlot::new("controllers.dominant_hand");
+use jc3vr_view::vr::input::config::{CONTROLLERS_ENABLED, DOMINANT_HAND};
 
 /// Whether the controllers' master switch is on, whatever the scheme in effect. One config read,
 /// released before this returns, so it composes with other reads in one expression.

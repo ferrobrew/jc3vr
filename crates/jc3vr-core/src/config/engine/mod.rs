@@ -26,15 +26,21 @@ pub mod test_root;
 mod validate;
 pub mod write;
 
-#[cfg(any(test, feature = "test-support"))]
-pub use crate::config::engine::persist::{TestFixture, test_fixture};
 pub use crate::config::engine::{
     automatic::{Switch, disable_automatically},
     parts::{Parts, Snapshot, edit_parts, lock_parts},
     persist::{SaveStatus, init, shutdown, status, tick},
-    slot::{ConfigSlot, EditGuard, Projection, SlotGuard, projection},
+    slot::{
+        ConfigSlot, EditGuard, Projection, SlotGuard, SlotOptions, SlotValue, Validate, bind_child,
+        projection,
+    },
     store::{ConfigRoot, Schema, downcast_mut, downcast_ref, register},
     validate::{Invalid, nonnegative, positive, range, vec2, vec3},
+};
+#[cfg(any(test, feature = "test-support"))]
+pub use crate::config::engine::{
+    persist::{TestFixture, test_fixture},
+    slot::mismatched_defaults,
 };
 
 #[cfg(test)]

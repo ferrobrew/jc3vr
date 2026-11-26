@@ -76,7 +76,7 @@ pub struct Fit {
 pub struct FitInputs<'a> {
     pub physical: &'a PhysicalControlsTuning,
     /// Whether the driving view is switched on
-    /// ([`DrivingViewConfig::enabled`](crate::controllers::vehicles::config::DrivingViewConfig::enabled)).
+    /// ([`DrivingViewConfig::enabled`](jc3vr_body::controllers::roomscale::config::DrivingViewConfig::enabled)).
     pub view_enabled: bool,
     pub seat: Option<VehicleSeat>,
     pub xf: &'a CockpitTransform,

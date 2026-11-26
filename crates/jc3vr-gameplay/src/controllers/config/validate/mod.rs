@@ -1,8 +1,8 @@
-//! Range and consistency checks for the settings whose types admit values the subsystems cannot
-//! use: the controller tuning, the per-weapon sight corrections, and the VR turn settings. The
-//! payload's tolerant load ([`jc3vr_core::config::engine::load`]) runs them on a loaded
-//! configuration, through the configuration's schema, and resets the setting a failure names, or
-//! the subtree when that does not make it pass. A failure is an
+//! Range and consistency checks for the controller settings whose types admit values the
+//! subsystems cannot use: the controller tuning and the per-weapon sight corrections. The tolerant
+//! load ([`jc3vr_core::config::engine::load`]) runs them on a loaded configuration through the
+//! controller settings' slot ([`reset_invalid`]), and resets the setting a failure names, or the
+//! subtree when that does not make it pass. A failure is an
 //! [`Invalid`](jc3vr_core::config::engine::Invalid), which the engine owns so that a subsystem's own
 //! checks need nothing from this module.
 //!
@@ -18,8 +18,11 @@ mod vehicles;
 mod weapons;
 
 use jc3vr_body::controllers::aim::sights::config::SightTable;
-use jc3vr_core::config::engine::{Invalid, range, vec2, vec3};
-use jc3vr_view::headpose::config::VrTurnConfig;
+use jc3vr_core::config::engine::{
+    Invalid,
+    load::{Reset, reset_named},
+    vec2, vec3,
+};
 
 use crate::controllers::config::ControllersConfig;
 
@@ -53,11 +56,25 @@ pub fn sights(sights: &SightTable) -> Result<(), Invalid> {
     Ok(())
 }
 
-/// Check the VR turn settings. Paths are relative to `headpose.vr_turn`.
-pub fn vr_turn(turn: &VrTurnConfig) -> Result<(), Invalid> {
-    range("smooth_scale", turn.smooth_scale, 0.0, 10.0)?;
-    range("snap_angle_deg", turn.snap_angle_deg, 0.0, 180.0)?;
-    range("snap_threshold", turn.snap_threshold, 0.0, 1.0)?;
-    range("deadzone", turn.deadzone, 0.0, 1.0)?;
-    Ok(())
+/// Reset the controller settings at `path` that fail their checks. The checks name the setting
+/// that fails, so that setting is reset alone (or the group around it, when its default does not
+/// pass either), and the settings are reset whole only when that does not make them pass. The
+/// sight corrections are measured rather than chosen, so a failure elsewhere keeps them.
+pub(crate) fn reset_invalid(c: &mut ControllersConfig, path: &str, resets: &mut Vec<Reset>) {
+    if let Err(error) = sights(&c.aim.sights) {
+        c.aim.sights = SightTable::EMPTY;
+        resets.push(Reset {
+            path: format!("{path}.aim.sights"),
+            reason: error.to_string(),
+        });
+    }
+    if let Err(error) = reset_named(c, &ControllersConfig::new(), path, controllers, resets) {
+        let sights = c.aim.sights;
+        *c = ControllersConfig::new();
+        c.aim.sights = sights;
+        resets.push(Reset {
+            path: path.to_owned(),
+            reason: error.to_string(),
+        });
+    }
 }

@@ -93,9 +93,9 @@ pub use frame_loop::{
     pose_age_totals,
 };
 pub use mirror::{
-    MirrorDraw, MirrorFrame, MirrorLayers, MirrorObserver, PANEL_ENABLED, PANEL_ON_MIRROR,
-    PANEL_RESOLUTION, latest_present, present_mirror, register_mirror_layers,
-    register_mirror_observer, toggle_stereo_pair,
+    EguiPanelConfig, MirrorDraw, MirrorFrame, MirrorLayers, MirrorObserver, PANEL_CONFIG,
+    latest_present, present_mirror, register_mirror_layers, register_mirror_observer,
+    toggle_stereo_pair,
 };
 pub use participants::{
     CockpitPositions, FrameInputs, FrameParticipants, ResizeObserver, TeardownParticipant,

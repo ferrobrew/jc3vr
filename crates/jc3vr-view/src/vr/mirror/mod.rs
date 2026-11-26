@@ -57,8 +57,12 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use anyhow::Context as _;
 use jc3gi::graphics_engine::device::Device;
-use jc3vr_core::config::engine::{ConfigSlot, Switch, disable_automatically};
+use jc3vr_core::{
+    config::engine::{ConfigSlot, disable_automatically},
+    switch,
+};
 use parking_lot::Mutex;
+use serde::{Deserialize, Serialize};
 use windows::{
     Win32::{
         Graphics::{
@@ -114,16 +118,55 @@ const PIXEL_DXBC: &[u8] = include_bytes!(concat!(
 
 /// The mirror pipeline singleton, built lazily on the first mirrored frame and torn down with the
 /// runtime. Holds COM objects, which `windows` marks `Send`/`Sync`, so a `Mutex` static is sound.
-/// Whether the floating debug panel is up, `hud.egui_panel.enabled`: the mirror then shows the
-/// panel's texture instead of the flat overlay. The payload binds this slot and the two below to
-/// their fields in the HUD settings at startup.
-pub static PANEL_ENABLED: ConfigSlot<bool> = ConfigSlot::new("hud.egui_panel.enabled");
+/// The floating debug panel's settings, at `hud.egui_panel` in the settings file: the mirror shows
+/// the panel's texture instead of the flat overlay while it is up. The HUD settings bind the slot
+/// to their field.
+pub static PANEL_CONFIG: ConfigSlot<EguiPanelConfig> = ConfigSlot::new("hud.egui_panel");
 
-/// Whether the floating panel also shows on the desktop mirror, `hud.egui_panel.show_on_mirror`.
-pub static PANEL_ON_MIRROR: ConfigSlot<bool> = ConfigSlot::new("hud.egui_panel.show_on_mirror");
+/// The floating debug panel: the egui debug UI rendered into a world-space quad in the headset.
+///
+/// The panel is an independent floating surface: it has its own offscreen render target and its own
+/// placement in the player's tracked space, so it never perturbs the gameplay HUD. It only takes
+/// effect while an OpenXR session is running; on the flat desktop the egui debug overlay stays on the
+/// back buffer as before. Its placement and click tuning are fixed in the HUD's `egui_panel` and
+/// `pointer` modules.
+#[derive(Copy, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct EguiPanelConfig {
+    /// Panel visibility. While a session runs, the debug UI renders into the floating surface.
+    /// Input ownership is separate: Allow gameplay input keeps the panel visible and read-only.
+    /// Opening through the panel shortcut requests editing, and the preference defaults off. Not
+    /// saved, so a session that left the panel up does not open it at the next launch.
+    #[serde(skip)]
+    pub enabled: bool,
+    /// Aspect ratio (width / height) of the panel quad. Kept in step with
+    /// [`resolution`](EguiPanelConfig::resolution) so the egui content is not stretched.
+    pub aspect: f32,
+    /// The panel texture's pixel resolution. egui lays out at this size, so it also sets the effective
+    /// DPI of the panel content.
+    pub resolution: (u32, u32),
+    /// Whether to also composite the panel onto the desktop mirror while a VR session runs. Off by
+    /// default: the panel is already visible in the headset, so the desktop mirror shows the
+    /// unobstructed scene.
+    pub show_on_mirror: bool,
+}
 
-/// The floating panel's texture size, `hud.egui_panel.resolution`.
-pub static PANEL_RESOLUTION: ConfigSlot<(u32, u32)> = ConfigSlot::new("hud.egui_panel.resolution");
+impl EguiPanelConfig {
+    pub const fn new() -> Self {
+        Self {
+            enabled: false,
+            aspect: 4.0 / 3.0,
+            resolution: (1280, 960),
+            show_on_mirror: false,
+        }
+    }
+}
+
+impl Default for EguiPanelConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 static MIRROR: Mutex<Option<Mirror>> = Mutex::new(None);
 
@@ -166,11 +209,7 @@ pub fn present_mirror(view: MirrorView) {
             })
         {
             tracing::error!(target: "vr", "mirror present failed with device-removed error {win_err}; disabling vr.mirror");
-            disable_automatically(Switch {
-                path: "vr.mirror",
-                slot: &VR_CONFIG,
-                place: |vr| &mut vr.mirror,
-            });
+            disable_automatically(switch!(VR_CONFIG, mirror));
             *MIRROR.lock() = None;
         } else {
             let count = MIRROR_FAIL_COUNT.fetch_add(1, Ordering::Relaxed) + 1;
@@ -311,13 +350,14 @@ unsafe fn present_mirror_inner(view: MirrorView) -> anyhow::Result<()> {
         // alpha-blended overlay. Never `EguiState::render` (a second egui pass that mutates shared
         // state), so this is safe from the deferred frame tail's thread as well as inline.
         if !jc3vr_core::director::clean_view::hides_everything() {
-            let panel_enabled = *PANEL_ENABLED.lock();
-            if panel_enabled {
+            let panel = *PANEL_CONFIG.lock();
+            if panel.enabled {
                 // With `show_on_mirror` off, the panel stays in the headset only, leaving the desktop
                 // mirror showing the unobstructed scene.
-                let show_on_mirror = *PANEL_ON_MIRROR.lock();
-                let resolution = *PANEL_RESOLUTION.lock();
-                if show_on_mirror && let Some(srv) = panel_srv() {
+                let resolution = panel.resolution;
+                if panel.show_on_mirror
+                    && let Some(srv) = panel_srv()
+                {
                     // Always letterboxed at 1:1 -- a cropped or magnified UI panel would lose its
                     // edges, whatever the eye image's framing.
                     let overlay = mirror_viewport(

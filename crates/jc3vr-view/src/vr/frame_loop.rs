@@ -30,8 +30,7 @@ use crate::{
         harness,
         input::{
             config::{
-                CONTROLLERS_ENABLED, HAPTICS_ENABLED, HAPTICS_INTENSITY, HapticOutput,
-                INPUT_CONFIG, SamplingConfig,
+                CONTROLLERS_ENABLED, HAPTICS_CONFIG, HapticOutput, INPUT_CONFIG, SamplingConfig,
             },
             flight_pose,
             flight_pose::LocatedHead,
@@ -538,14 +537,13 @@ impl VrState {
             // One slot lock at a time: a guard in a struct literal lives to the statement's end.
             let enabled = *CONTROLLERS_ENABLED.lock();
             let input_config = *INPUT_CONFIG.lock();
-            let haptics_enabled = *HAPTICS_ENABLED.lock();
-            let intensity = *HAPTICS_INTENSITY.lock();
+            let haptics = *HAPTICS_CONFIG.lock();
             let sampling = SamplingConfig {
                 enabled,
                 input: input_config,
                 haptics: HapticOutput {
-                    enabled: haptics_enabled,
-                    intensity,
+                    enabled: haptics.enabled,
+                    intensity: haptics.intensity,
                 },
             };
             let _timing = frame_timing::scope(Slot::VrInput);

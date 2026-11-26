@@ -1,11 +1,23 @@
 //! The test tools' settings.
 
-use jc3vr_core::config::engine::ConfigSlot;
+use jc3vr_core::{
+    config::engine::{ConfigSlot, SlotOptions},
+    slot_children,
+};
+use jc3vr_render::debug::texture_census::TEXTURE_CENSUS;
+use jc3vr_view::recorder::tracking::{RECORD_HAND_JOINTS, TESTING_ENABLED};
 use serde::{Deserialize, Serialize};
 
 /// The capture harness's settings, at `testing` in the settings file; the payload binds the slot at
-/// startup.
-pub static TESTING_CONFIG: ConfigSlot<TestingConfig> = ConfigSlot::new("testing");
+/// startup. The lower layers read three of its fields through slots of their own.
+pub static TESTING_CONFIG: ConfigSlot<TestingConfig> = ConfigSlot::with(
+    "testing",
+    SlotOptions::new().with_children(slot_children!(TESTING_CONFIG {
+        TESTING_ENABLED => enabled,
+        RECORD_HAND_JOINTS => record_hand_joints,
+        TEXTURE_CENSUS => texture_census,
+    })),
+);
 
 /// The test tools' settings: the tracking recorder and the request file.
 #[derive(Clone, Serialize, Deserialize)]

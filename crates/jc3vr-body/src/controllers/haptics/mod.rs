@@ -19,13 +19,11 @@
 //! [`cues`]: jc3vr_input::haptics::cues
 //! [`mixer`]: jc3vr_input::haptics::mixer
 
-pub mod config;
 pub mod rumble;
 pub mod shot;
 
 use std::time::{Duration, Instant};
 
-pub use config::HapticsConfig;
 use jc3vr_input::{
     frame::Hand,
     haptics::{
@@ -35,11 +33,14 @@ use jc3vr_input::{
         vocabulary::Primitive,
     },
 };
-use jc3vr_view::tuning::HAPTICS;
+use jc3vr_view::{
+    tuning::HAPTICS,
+    vr::input::config::{HAPTICS_CONFIG, HapticsConfig},
+};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::controllers::{haptics::config::HAPTICS_CONFIG, scheme, telemetry};
+use crate::controllers::{scheme, telemetry};
 
 /// The haptics' hooks, aggregated by `controllers::hook_library`.
 pub fn hook_library() -> HookLibrary {
