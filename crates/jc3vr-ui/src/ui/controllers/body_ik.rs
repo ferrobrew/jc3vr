@@ -2,8 +2,7 @@
 //! drove, and the values the engine's solver holds.
 
 use egui::Ui;
-
-use crate::hooks;
+use jc3vr_gameplay::hooks;
 
 pub(super) fn body_ik_readout(ui: &mut Ui) {
     match hooks::character::body_ik_status() {

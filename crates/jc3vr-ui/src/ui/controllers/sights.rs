@@ -3,17 +3,16 @@
 //! sight table's line format.
 
 use egui::Ui;
-
-use crate::{
-    controllers::{
-        aim::{
-            self,
-            sights::{self, SightSource, tuning},
-        },
-        config::{ControllersConfig, SightOverride, SightTable},
+use jc3vr_gameplay::controllers::{
+    aim,
+    aim::{
+        sights,
+        sights::{SightSource, tuning},
     },
-    ui::controllers::{vec3, vec3_drag},
+    config::{ControllersConfig, SightOverride, SightTable},
 };
+
+use crate::ui::controllers::{vec3, vec3_drag};
 
 /// Called with the config locked for editing: everything read here takes other locks only.
 pub(super) fn sight_tuning(ui: &mut Ui, c: &mut ControllersConfig) {

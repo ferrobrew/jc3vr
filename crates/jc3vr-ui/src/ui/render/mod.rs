@@ -2,7 +2,7 @@
 //! far field, and post-FX controls, plus render-thread capture state.
 //!
 //! The feature bodies use one section module per concern. The capture state lives in
-//! [`crate::hooks::graphics_engine::capture`], beside the render hooks that fill it.
+//! [`jc3vr_render::hooks::graphics_engine::capture`], beside the render hooks that fill it.
 
 mod far_field;
 mod passes;
@@ -11,17 +11,15 @@ mod resolution;
 mod single_pass;
 mod stereo;
 
-pub use crate::hooks::graphics_engine::capture::{
+use jc3vr_core::config::engine::{Parts, edit_parts};
+pub use jc3vr_render::hooks::graphics_engine::capture::{
     EGUI_DEBUG_RENDER_STATE, EguiDebugRenderState, POST_STAGE_DOF, POST_STAGE_MB,
     capture_main_color, capture_post_stage, eye_capture_fresh, install, mark_eye_capture,
     mark_previews_visible, previews_visible,
 };
-use crate::{
-    config::engine::{Parts, edit_parts},
-    hooks::graphics_engine::config::POST_FX_CONFIG,
-    ui::{catalog::FeatureId, dispatch::FeatureBody},
-    vr::FOVEATION_CONFIG,
-};
+use jc3vr_render::{hooks::graphics_engine::config::POST_FX_CONFIG, vr::FOVEATION_CONFIG};
+
+use crate::ui::{catalog::FeatureId, dispatch::FeatureBody};
 
 /// Debug-UI only: swap the two eyes in the side-by-side stereo preview, so the pair can be fused
 /// cross-eyed (left image -> right eye) instead of parallel (left image -> left eye).

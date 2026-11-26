@@ -9,9 +9,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+use jc3vr_core::config::engine::write;
 use parking_lot::{Condvar, Mutex};
-
-use crate::config::write;
 
 #[derive(Clone)]
 pub(super) struct Snapshot {

@@ -3,19 +3,16 @@
 
 use std::time::Instant;
 
+use jc3vr_gameplay::controllers::body::{
+    BodyDimensions,
+    calibration::{
+        Calibration, CalibrationError, CaptureStatus, Notice, Unavailable, span_out_of_proportion,
+    },
+};
+use jc3vr_input::frame::Hand;
 use smol_str::{SmolStr, format_smolstr};
 
-use crate::controllers::{
-    body::{
-        BodyDimensions,
-        calibration::{
-            Calibration, CalibrationError, CaptureStatus, Notice, Unavailable,
-            span_out_of_proportion,
-        },
-        menu::{measure::live_grip_span, state::CALIBRATION},
-    },
-    frame::Hand,
-};
+use crate::controllers::body::menu::{measure::live_grip_span, state::CALIBRATION};
 
 /// A live estimate from the controllers' gap and what the flow has measured so far.
 pub(super) fn live_estimate(estimate: fn(&Calibration, f32) -> Option<f32>) -> SmolStr {

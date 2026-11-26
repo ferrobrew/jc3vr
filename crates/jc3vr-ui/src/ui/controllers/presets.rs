@@ -1,12 +1,10 @@
 //! The named test presets for the controller feature switches.
 
 use egui::Ui;
+use jc3vr_gameplay::controllers::config::ControllersConfig;
 use parking_lot::Mutex;
 
-use crate::controllers::{
-    config::ControllersConfig,
-    presets::{Preset, apply_preset, preset_modified},
-};
+use crate::controllers::presets::{Preset, apply_preset, preset_modified};
 
 static SELECTED: Mutex<Option<Preset>> = Mutex::new(None);
 

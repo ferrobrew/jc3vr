@@ -1,11 +1,8 @@
 //! Hand climbing: what each hand reaches and grips, how the body is moved, and the settings.
 
 use egui::Ui;
-
-use crate::controllers::{
-    frame::Hand,
-    physical_hands::climb::{ClimbConfig, ClimbStatus, Hold},
-};
+use jc3vr_gameplay::controllers::physical_hands::climb::{ClimbConfig, ClimbStatus, Hold};
+use jc3vr_input::frame::Hand;
 
 pub(super) fn climb_readout(ui: &mut Ui, status: &ClimbStatus) {
     ui.label(format!(

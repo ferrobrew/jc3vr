@@ -1,6 +1,6 @@
 //! Runtime controls and a separate read-only OpenXR status snapshot.
 
-use crate::{
+use jc3vr_render::{
     headpose, vr,
     vr::{EyeMask, MaskStatus, MirrorView, VR_CONFIG},
 };
@@ -71,7 +71,7 @@ pub fn egui_debug_vr(ui: &mut egui::Ui) {
          keep the game's threads on the cores of the largest one, where the draw task runs far \
          faster. Left alone on a processor with one size of L3. Off puts the affinity back.",
     );
-    ui.label(match crate::cpu_placement::applied_mask() {
+    ui.label(match jc3vr_core::cpu_placement::applied_mask() {
         Some(mask) => format!("Cores in use: {mask:#x}"),
         None => "Cores in use: as the scheduler places them".to_owned(),
     });

@@ -4,15 +4,13 @@
 use std::time::Instant;
 
 use egui::Ui;
-
-use crate::{
-    controllers::{
-        frame::Hand,
-        map::{CLICK_SLOP, MapDelivery, MapReport, zoom_label},
-    },
+use jc3vr_hud::{
+    controllers::map::{CLICK_SLOP, MapDelivery, MapReport, zoom_label},
     hud::pointer::{ControllerPointer, RoutedPointer},
-    ui::controllers::yes_no,
 };
+use jc3vr_input::frame::Hand;
+
+use crate::ui::controllers::yes_no;
 
 pub(super) fn map_readout(
     ui: &mut Ui,

@@ -3,20 +3,19 @@
 //! The feature views live in an `egui_dock` tree so any feature can be dragged out into its own
 //! floating window (e.g. Performance parked beside the game view while tuning Render features). The
 //! layout is persisted to `ui_layout_v2.json` in the configuration directory
-//! ([`crate::config::paths`]), apart from the settings, so a customized arrangement survives
+//! ([`jc3vr_core::config::engine::paths`]), apart from the settings, so a customized arrangement survives
 //! relaunches.
 
 use std::{sync::OnceLock, time::Instant};
 
-use crate::{
-    config::engine::{self, SaveStatus},
+use jc3vr_core::config::{engine, engine::SaveStatus};
+use jc3vr_hud::{
     egui_impl::{debug_ui_capture, request_debug_ui},
     hud::egui_panel,
-    ui::capture::{OwnershipBlocker, PanelMode, PanelRequest},
 };
+use jc3vr_input::capture::{OwnershipBlocker, PanelMode, PanelRequest};
 
 pub mod camera;
-pub(crate) mod capture;
 pub(crate) mod catalog;
 mod checklist;
 pub mod controllers;
@@ -26,7 +25,7 @@ mod dispatch;
 pub mod environment;
 pub mod game;
 pub mod hud;
-pub(crate) mod layout;
+pub mod layout;
 pub(crate) mod navigation;
 mod overview;
 pub mod performance;
@@ -201,7 +200,7 @@ pub fn startup_banner(ctx: &egui::Context) {
                     ui.label(
                         egui::RichText::new(format!(
                             "jc3vr injected — build {}",
-                            crate::BUILD_STAMP
+                            jc3vr_core::lifecycle::build_stamp()
                         ))
                         .size(26.0)
                         .strong()
@@ -214,11 +213,11 @@ pub fn startup_banner(ctx: &egui::Context) {
 /// How long (seconds) the startup banner stays up.
 const BANNER_SECONDS: f32 = 15.0;
 
-/// The restart notice ([`crate::vr::input::restart`]) on whatever surface the egui overlay renders
+/// The restart notice ([`jc3vr_render::vr::input::restart`]) on whatever surface the egui overlay renders
 /// to, for as long as it holds. The headset has its own panel for it
-/// ([`crate::hud::restart_notice`]); this is the desktop window's copy.
+/// ([`jc3vr_hud::hud::restart_notice`]); this is the desktop window's copy.
 pub fn restart_banner(ctx: &egui::Context) {
-    let Some(reason) = crate::vr::input::restart::current() else {
+    let Some(reason) = jc3vr_render::vr::input::restart::current() else {
         return;
     };
     egui::Area::new(egui::Id::new("jc3vr_restart_banner"))
@@ -242,7 +241,7 @@ pub fn restart_banner(ctx: &egui::Context) {
 
 pub fn egui_debug_window(ui: &mut egui::Ui, renderer: &mut egui_directx11::Renderer) {
     capture_header(ui);
-    if let Some(reason) = crate::lifecycle::deferred_reason() {
+    if let Some(reason) = jc3vr_core::lifecycle::deferred_reason() {
         ui.colored_label(egui::Color32::YELLOW, reason.to_string());
     }
     let editing = debug_ui_capture().is_some_and(|snapshot| snapshot.edit_capture.any());
@@ -318,7 +317,7 @@ fn capture_header(ui: &mut egui::Ui) {
 fn egui_debug_window_body(ui: &mut egui::Ui, renderer: &mut egui_directx11::Renderer) {
     ui.horizontal(|ui| {
         ui.label(
-            egui::RichText::new(format!("Build {}", crate::BUILD_STAMP))
+            egui::RichText::new(format!("Build {}", jc3vr_core::lifecycle::build_stamp()))
                 .weak()
                 .small(),
         );

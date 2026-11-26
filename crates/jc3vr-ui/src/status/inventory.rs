@@ -1,19 +1,21 @@
 //! The status rows for the VR inventory: the weapons it tracks, the ones lying in the world it
 //! keeps from the game's despawn, and the live loadout table written beside it.
 
-use crate::{
-    controllers::{
-        config::CONTROLLERS_CONFIG,
-        loadout::{Place, live, slot_label},
-        menu::read,
-        weapons::{
-            dual_wield::single::{self, grant::TwinState},
-            inventory::{
-                self,
-                restore::{self, LoadOutcome, Origin},
-            },
+use jc3vr_gameplay::controllers::{
+    config::CONTROLLERS_CONFIG,
+    loadout::{Place, live, slot_label},
+    weapons::{
+        dual_wield::{single, single::grant::TwinState},
+        inventory,
+        inventory::{
+            restore,
+            restore::{LoadOutcome, Origin},
         },
     },
+};
+
+use crate::{
+    controllers::menu::read,
     status::{Line, Row, Text, prose, text},
 };
 

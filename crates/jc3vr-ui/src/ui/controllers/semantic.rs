@@ -2,21 +2,22 @@
 //! active flag, per-hand state, and bound sources.
 
 use egui::{RichText, Ui};
+use jc3vr_input::frame::Hand;
+use jc3vr_render::vr::input::{
+    actions::SetId,
+    layout::{BoolInput, FloatInput, HandsAction, Vec2Input},
+    self_check,
+    semantic::{
+        SemanticSet, frame as semantic_frame,
+        frame::{ActionState, ActionValue},
+    },
+    sources,
+    sources::ActionSources,
+};
 
 use crate::{
-    controllers::frame::Hand,
     status::system::SELF_CHECK,
     ui::{controllers::yes_no, status_row::headlines},
-    vr::input::{
-        actions::SetId,
-        layout::{BoolInput, FloatInput, HandsAction, Vec2Input},
-        self_check,
-        semantic::{
-            SemanticSet,
-            frame::{self as semantic_frame, ActionState, ActionValue},
-        },
-        sources::{self, ActionSources},
-    },
 };
 
 /// Render the section. Showing it keeps the bound sources fresh (the VR thread refreshes them once

@@ -1,11 +1,9 @@
 //! The aim-state pin and the mental-state cuts.
 
 use egui::Ui;
+use jc3vr_gameplay::controllers::aim_state::{AimStateStatus, IkTask};
 
-use crate::{
-    controllers::aim_state::{AimStateStatus, IkTask},
-    ui::controllers::{vec3, yes_no},
-};
+use crate::ui::controllers::{vec3, yes_no};
 
 pub(super) fn aim_state_readout(ui: &mut Ui, status: &AimStateStatus) {
     let pin = &status.pin;

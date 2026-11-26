@@ -26,7 +26,7 @@ use re_utilities::hook_library::HookLibrary;
 use crate::pause_menu::{model::state::MenuState, runtime::SESSION};
 
 /// The pause-menu detours.
-pub(crate) fn hook_library() -> HookLibrary {
+pub fn hook_library() -> HookLibrary {
     runtime::hook_library()
 }
 

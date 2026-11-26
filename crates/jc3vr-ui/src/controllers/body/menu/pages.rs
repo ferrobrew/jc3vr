@@ -1,24 +1,25 @@
 //! The `VR: BODY` page's rows for each step of the flow: the summary, the two measuring steps,
 //! and the review for each stance.
 
+use jc3vr_gameplay::controllers::{
+    body,
+    body::calibration::{Stance, height_from_eye_height},
+    config::CONTROLLERS_CONFIG,
+};
+
 use crate::{
     controllers::{
-        body::{
-            self,
-            calibration::{Stance, height_from_eye_height},
-            menu::{
-                measure::{live_eye_height, live_grip_span},
-                state::{
-                    CALIBRATION, STANCE, chosen_stance, measure, posture_stance, rebuild_if, save,
-                    stance_index,
-                },
-                text::{
-                    live_estimate, live_text, metres, optional_metres, result_text, review_status,
-                    source_label, status,
-                },
+        body::menu::{
+            measure::{live_eye_height, live_grip_span},
+            state::{
+                CALIBRATION, STANCE, chosen_stance, measure, posture_stance, rebuild_if, save,
+                stance_index,
+            },
+            text::{
+                live_estimate, live_text, metres, optional_metres, result_text, review_status,
+                source_label, status,
             },
         },
-        config::CONTROLLERS_CONFIG,
         menu::config_toggle,
     },
     pause_menu::model::{

@@ -2,12 +2,15 @@ use std::{ffi::c_void, sync::OnceLock};
 
 // The core layer lives in its own crate; the old paths keep working until the final cleanup pass.
 pub(crate) use jc3vr_core::{
-    cpu_placement, crash, frame_timing, hash, is_shutting_down, lifecycle, logging, module,
-    render_frame, session, thread_role, util,
+    cpu_placement, crash, frame_timing, is_shutting_down, lifecycle, logging, module, render_frame,
+    session, thread_role, util,
 };
 // The HUD layer lives in its own crate; the old paths keep working until the final cleanup pass.
 pub use jc3vr_hud::egui_impl;
 pub(crate) use jc3vr_hud::hud;
+// The render layer lives in its own crate; the old paths keep working until the final cleanup pass.
+pub use jc3vr_render::vr;
+pub(crate) use jc3vr_render::{debug, far_field, fsr, headpose, image_writer, screenshot, stereo};
 use windows::Win32::{
     Foundation::HMODULE,
     System::{LibraryLoader::DisableThreadLibraryCalls, SystemServices::DLL_PROCESS_ATTACH},
@@ -15,11 +18,6 @@ use windows::Win32::{
 };
 
 use crate::egui_impl::EguiState;
-
-pub mod ui;
-// The render layer lives in its own crate; the old paths keep working until the final cleanup pass.
-pub use jc3vr_render::vr;
-pub(crate) use jc3vr_render::{debug, far_field, fsr, headpose, image_writer, screenshot, stereo};
 
 mod allocator;
 mod composition;
@@ -29,14 +27,14 @@ mod eject_gpu;
 // The gameplay layer lives in its own crate; the old paths keep working until the final cleanup pass.
 pub(crate) use jc3vr_gameplay::grapple;
 mod hooks;
-// The input layer lives in its own crate; the old path keeps working until the final cleanup pass.
-pub(crate) use jc3vr_input as input_core;
-mod pause_menu;
+// The profiler core lives in the core crate; the old path keeps working until the final cleanup pass.
 #[cfg(feature = "profiler")]
-mod profiler;
-mod status;
+pub(crate) use jc3vr_core::profiler;
 // The tooling layer lives in its own crate; the old paths keep working until the final cleanup pass.
 pub(crate) use jc3vr_tooling::{diagnostics, director, recorder, testing};
+// The UI layer lives in its own crate; the old paths keep working until the final cleanup pass.
+pub(crate) use jc3vr_ui::pause_menu;
+pub use jc3vr_ui::ui;
 
 #[unsafe(no_mangle)]
 #[allow(non_snake_case)]

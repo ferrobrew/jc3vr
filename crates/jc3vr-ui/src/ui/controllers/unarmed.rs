@@ -4,18 +4,16 @@
 use std::time::Duration;
 
 use egui::Ui;
-
-use crate::{
-    controllers::{
-        body::unarmed::{
-            MASKABLE_LAYERS, UnarmedBodyConfig, UnarmedStatus, UnarmedVerdict, WeaponAnimations,
-            layer_label,
-        },
-        frame::Hand,
-        hands::ik::HandIkStatus,
+use jc3vr_gameplay::controllers::{
+    body::unarmed::{
+        MASKABLE_LAYERS, UnarmedBodyConfig, UnarmedStatus, UnarmedVerdict, WeaponAnimations,
+        layer_label,
     },
-    ui::controllers::yes_no,
+    hands::ik::HandIkStatus,
 };
+use jc3vr_input::frame::Hand;
+
+use crate::ui::controllers::yes_no;
 
 pub(super) fn unarmed_readout(ui: &mut Ui, unarmed: &UnarmedStatus, hand_ik: &[HandIkStatus; 2]) {
     if !unarmed.at.is_some_and(|at| at.elapsed() < STALE) {

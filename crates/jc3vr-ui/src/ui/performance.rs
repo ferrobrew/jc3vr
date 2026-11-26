@@ -4,13 +4,14 @@
 
 use std::{collections::VecDeque, time::Instant};
 
+use jc3vr_core::{
+    frame_timing,
+    frame_timing::{Kind, ThreadClass, TickLoad, ns_to_ms},
+    hooks::online::ONLINE_CONFIG,
+};
 use parking_lot::Mutex;
 
-use crate::{
-    frame_timing::{self, Kind, ThreadClass, TickLoad, ns_to_ms},
-    hooks::online::ONLINE_CONFIG,
-    ui::util::patchbox,
-};
+use crate::ui::util::patchbox;
 
 pub fn egui_debug_performance(ui: &mut egui::Ui) {
     unsafe {
@@ -48,7 +49,7 @@ pub fn egui_debug_performance(ui: &mut egui::Ui) {
     crate::profiler::ui::egui_profiler(ui);
 }
 
-/// The always-on frame breakdown (`crate::frame_timing`) over the last second: the game thread's
+/// The always-on frame breakdown (`jc3vr_core::frame_timing`) over the last second: the game thread's
 /// time per frame by kind against the frame interval, the other threads' time, and every timed
 /// slot by its self time, largest first. The same numbers go to the log every ten seconds.
 fn frame_breakdown(ui: &mut egui::Ui) {
@@ -146,7 +147,7 @@ fn online_controls(ui: &mut egui::Ui) {
 /// The far-field split totals (issue #32), mirrored here so they can be watched alongside the
 /// frame rate while tuning the Experimental page's far field.
 fn far_field_summary(ui: &mut egui::Ui) {
-    let mut stats = crate::far_field::stats_snapshot();
+    let mut stats = jc3vr_render::far_field::stats_snapshot();
     stats.retain(|(_, s)| s.updated.elapsed().as_secs_f32() < 1.0);
     if stats.is_empty() {
         return;

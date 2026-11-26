@@ -6,19 +6,17 @@
 use std::time::Instant;
 
 use egui::Ui;
-
-use crate::{
-    controllers::{
-        body::{
-            firm_ragdoll,
-            ik_body::IkBodyConfig,
-            procedural::config::ProceduralMode,
-            rig::{collision::probe::STALE_AFTER, grounded, root::RootStatus},
-        },
-        config::BodyRemapConfig,
+use jc3vr_gameplay::controllers::{
+    body::{
+        firm_ragdoll,
+        ik_body::IkBodyConfig,
+        procedural::config::ProceduralMode,
+        rig::{collision::probe::STALE_AFTER, grounded, root::RootStatus},
     },
-    ui::controllers::{vec3, yes_no},
+    config::BodyRemapConfig,
 };
+
+use crate::ui::controllers::{vec3, yes_no};
 
 pub(super) fn rig_readout(ui: &mut Ui, status: &RootStatus) {
     let f = &status.frame;
@@ -105,7 +103,7 @@ pub(super) fn rig_settings(ui: &mut Ui, body: &mut BodyRemapConfig) {
         )
         .clicked()
     {
-        crate::vr::recenter();
+        jc3vr_render::vr::recenter();
     }
     let mut procedural = body.procedural.mode == ProceduralMode::Full;
     if ui

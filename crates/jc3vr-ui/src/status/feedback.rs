@@ -1,8 +1,10 @@
 //! The status rows for what the hands feel and hear: the haptic cues sent and how the mixer
 //! folded them together, and the impact sounds the hands made.
 
+use jc3vr_gameplay::controllers::{config::CONTROLLERS_CONFIG, haptics, physical_hands::sounds};
+
 use crate::{
-    controllers::{config::CONTROLLERS_CONFIG, haptics, menu::read, physical_hands::sounds},
+    controllers::menu::read,
     status::{Line, Row, text},
 };
 

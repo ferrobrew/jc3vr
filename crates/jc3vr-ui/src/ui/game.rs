@@ -3,10 +3,9 @@
 use std::sync::atomic::Ordering;
 
 use jc3gi::character::character::{AimState, Character};
-
-use crate::{
+use jc3vr_gameplay::{
+    hooks,
     hooks::{
-        self,
         animation::canopy::REEL_OPENINGS_SKIPPED,
         input::{
             air::carried_updates,
@@ -23,8 +22,9 @@ use crate::{
             wingsuit::{barrel_rolls_dropped, suppressed as stall_flip_suppressed},
         },
     },
-    ui::{catalog::FeatureId, dispatch::FeatureBody},
 };
+
+use crate::ui::{catalog::FeatureId, dispatch::FeatureBody};
 
 pub(crate) fn controls(ui: &mut egui::Ui, id: FeatureId) {
     if id == FeatureId::OnFoot {

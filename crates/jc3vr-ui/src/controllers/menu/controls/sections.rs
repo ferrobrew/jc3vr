@@ -3,13 +3,14 @@
 
 use std::sync::atomic::Ordering;
 
+use jc3vr_gameplay::controllers::{
+    config::{CONTROLLERS_CONFIG, LocomotionDirection},
+    vehicles::config::{ArmPitch, WheelTracking},
+};
+use jc3vr_input::frame::Hand;
+
 use crate::{
-    controllers::{
-        config::{CONTROLLERS_CONFIG, LocomotionDirection},
-        frame::Hand,
-        menu::{config_choice, config_slider, config_toggle, controls::CONFIRMING_RESET},
-        vehicles::config::{ArmPitch, WheelTracking},
-    },
+    controllers::menu::{config_choice, config_slider, config_toggle, controls::CONFIRMING_RESET},
     pause_menu::model::{
         page::{Button, ButtonOutcome, Page},
         slider::{SliderFormat, SliderRange},

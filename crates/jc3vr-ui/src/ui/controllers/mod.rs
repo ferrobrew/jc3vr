@@ -41,29 +41,31 @@ mod weapons;
 
 use egui::Ui;
 use glam::{Quat, Vec3};
+use jc3vr_core::config::engine::edit_parts;
+use jc3vr_gameplay::controllers::{
+    aim as controller_aim, aim_state as controller_aim_state, bindings, body as controller_body,
+    body::{rig as controller_rig, unarmed as controller_unarmed},
+    config::CONTROLLERS_CONFIG,
+    fingers as controller_fingers, gamepad_setting, glass as controller_glass,
+    hands::{ik as hand_ik, late, tiers},
+    haptics as controller_haptics, locomotion as controller_locomotion, mode as controller_mode,
+    overlay as controller_overlay, physical_hands as controller_physical_hands,
+    physical_hands::collider_view::ColliderViewConfig,
+    roomscale as controller_roomscale, scheme, summary as controller_summary,
+};
+use jc3vr_hud::{
+    controllers::map as controller_map,
+    hud::{pointer, summary_panel},
+};
+use jc3vr_input::{frame as controller_frame, frame::InteractionProfile};
+use jc3vr_render::vr::input as vr_input;
 
 use crate::{
-    config::engine::edit_parts,
-    controllers::{
-        aim as controller_aim, aim_state as controller_aim_state, bindings,
-        body::{self as controller_body, rig as controller_rig, unarmed as controller_unarmed},
-        config::CONTROLLERS_CONFIG,
-        fingers as controller_fingers,
-        frame::{self as controller_frame, InteractionProfile},
-        gamepad_setting, glass as controller_glass,
-        hands::{ik as hand_ik, late, tiers},
-        haptics as controller_haptics, locomotion as controller_locomotion, map as controller_map,
-        mode as controller_mode, overlay as controller_overlay,
-        physical_hands::{self as controller_physical_hands, collider_view::ColliderViewConfig},
-        roomscale as controller_roomscale, scheme, summary as controller_summary,
-    },
-    hud::{pointer, summary_panel},
     status::{
         feedback, hands as hands_status,
         system::{INPUT_ACTIONS, LAYOUT_FINGERPRINT},
     },
     ui::{camera, catalog::FeatureId, dispatch::FeatureBody, status_row::headlines},
-    vr::input as vr_input,
 };
 
 /// The controller editors for a feature, when it has any. Each editor takes the configuration edit

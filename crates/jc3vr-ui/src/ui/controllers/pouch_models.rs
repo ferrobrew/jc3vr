@@ -1,10 +1,8 @@
 //! The pouches' models: whether they are drawn, and which are.
 
 use egui::Ui;
-
-use crate::controllers::weapons::{
-    config::PouchModelsConfig,
-    pouch_models::{self, Prop},
+use jc3vr_gameplay::controllers::weapons::{
+    config::PouchModelsConfig, pouch_models, pouch_models::Prop,
 };
 
 /// The pouches' models' switch and readout.

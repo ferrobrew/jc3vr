@@ -16,9 +16,9 @@ pub(crate) mod comfort;
 pub(crate) mod controls;
 pub(crate) mod display;
 
-use crate::config::engine::ConfigSlot;
+use jc3vr_core::config::engine::ConfigSlot;
 #[cfg(test)]
-use crate::config::engine::Parts;
+use jc3vr_core::config::engine::Parts;
 
 /// A [`Toggle`](crate::pause_menu::model::page::Toggle) over the `bool` at a place in a slot's
 /// part of the configuration.
@@ -142,12 +142,11 @@ fn edit_part<T>(slot: &'static ConfigSlot<T>, f: impl FnOnce(&mut T)) {
 pub(crate) mod tests {
     use std::cell::RefCell;
 
+    use jc3vr_core::config::engine::{Snapshot, store};
+    use jc3vr_render::vr::FOVEATION_CONFIG;
+
     use super::*;
-    use crate::{
-        config::engine::{Snapshot, store},
-        pause_menu::model::page::{Item, Page},
-        vr::FOVEATION_CONFIG,
-    };
+    use crate::pause_menu::model::page::{Item, Page};
 
     thread_local! {
         pub(crate) static TEST_CONFIG: RefCell<Snapshot> = RefCell::new(Snapshot::defaults());

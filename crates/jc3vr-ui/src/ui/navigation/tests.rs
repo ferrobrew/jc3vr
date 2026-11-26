@@ -1,5 +1,6 @@
+use jc3vr_input::capture::{CapturePolicy, InputObservation, PanelRequest};
+
 use super::*;
-use crate::ui::capture::{CapturePolicy, InputObservation, PanelRequest};
 
 /// Whether the longest page lists more features than the feature menu's fixed popup height
 /// shows at the default style, so that the walks must scroll it.

@@ -3,21 +3,19 @@
 
 use std::time::{Duration, Instant};
 
+use jc3vr_gameplay::controllers::{
+    body,
+    body::calibration::{Calibration, Stance, Step, Unavailable},
+    config::CONTROLLERS_CONFIG,
+    roomscale,
+    roomscale::posture::{DetectedPosture, EffectivePosture},
+};
 use parking_lot::Mutex;
 
 use crate::{
     controllers::{
-        body::{
-            self,
-            calibration::{Calibration, Stance, Step, Unavailable},
-            menu::measure::{live_eye_height, live_grip_span},
-        },
-        config::CONTROLLERS_CONFIG,
+        body::menu::measure::{live_eye_height, live_grip_span},
         menu::read,
-        roomscale::{
-            self,
-            posture::{DetectedPosture, EffectivePosture},
-        },
     },
     pause_menu::model::page::ButtonOutcome,
 };

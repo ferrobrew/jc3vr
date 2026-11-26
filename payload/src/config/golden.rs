@@ -8,13 +8,14 @@ use std::{
 };
 
 use glam::{Vec2, Vec3};
+use jc3vr_input::frame::Hand;
 use pretty_assertions::assert_eq;
 
 use crate::{
     config::{
         CONFIG, Config, edit, engine::persist::edit_pending, format, load::parse, test_fixture,
     },
-    controllers::{config::SightOverride, frame::Hand},
+    controllers::config::SightOverride,
     director::keymap::{Action, Binding, Chord},
     hud::config::HUD_CONFIG,
     vr::{MirrorView, VR_CONFIG},

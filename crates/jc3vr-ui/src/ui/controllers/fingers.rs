@@ -1,16 +1,14 @@
 //! Finger curls: the grip pose rows, the per-hand readout, and the finger settings.
 
 use egui::Ui;
+use jc3vr_gameplay::controllers::fingers::{
+    HandFingersStatus,
+    config::{FingerSource, FingersConfig},
+    curl::Finger,
+};
+use jc3vr_input::frame::Hand;
 
 use crate::{
-    controllers::{
-        fingers::{
-            HandFingersStatus,
-            config::{FingerSource, FingersConfig},
-            curl::Finger,
-        },
-        frame::Hand,
-    },
     status::fingers::{LEFT_GRIP, RIGHT_GRIP},
     ui::{controllers::yes_no, status_row::headlines},
 };

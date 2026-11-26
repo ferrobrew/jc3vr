@@ -3,6 +3,7 @@
 use std::borrow::Cow;
 
 use glam::{Vec2, Vec3};
+use jc3vr_input::frame::Hand;
 use pretty_assertions::assert_eq;
 use toml::{Table, Value};
 
@@ -12,10 +13,7 @@ use crate::{
         engine::Snapshot,
         load::{LoadReport, Loaded, parse},
     },
-    controllers::{
-        config::{LocomotionDirection, Posture, SightOverride},
-        frame::Hand,
-    },
+    controllers::config::{LocomotionDirection, Posture, SightOverride},
     director::{
         clean_view::CleanViewScope,
         keymap::{Action, Binding, Chord},

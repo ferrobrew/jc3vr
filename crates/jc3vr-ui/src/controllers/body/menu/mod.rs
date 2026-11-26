@@ -1,6 +1,6 @@
 //! The `VR: BODY` page: the saved body dimensions, the body-scaling switches, and the guided
 //! calibration that measures the player in the headset
-//! ([`Calibration`](crate::controllers::body::calibration::Calibration)) and saves the result with
+//! ([`Calibration`](jc3vr_gameplay::controllers::body::calibration::Calibration)) and saves the result with
 //! the rest of the settings.
 //!
 //! The calibration runs standing or seated ([`Stance`]), as the summary's `STANCE` choice says; it
@@ -15,7 +15,7 @@
 //!
 //! - [`measure`]: the live measurements the calibration steps read;
 //! - [`state`]: the running
-//!   [`Calibration`](crate::controllers::body::calibration::Calibration), the stance choice, and
+//!   [`Calibration`](jc3vr_gameplay::controllers::body::calibration::Calibration), the stance choice, and
 //!   the lifecycle handlers;
 //! - [`text`]: the row text the flow and its readouts show;
 //! - [`pages`]: the page's rows for each step of the flow.
@@ -25,10 +25,9 @@ mod pages;
 mod state;
 mod text;
 
-use crate::{
-    controllers::body::calibration::{Stance, Step},
-    pause_menu::model::page::{Page, PageDef},
-};
+use jc3vr_gameplay::controllers::body::calibration::{Stance, Step};
+
+use crate::pause_menu::model::page::{Page, PageDef};
 
 /// The `VR: BODY` page.
 pub(crate) const PAGE: PageDef = PageDef {
@@ -59,32 +58,34 @@ mod tests {
     use std::time::{Duration, Instant};
 
     use glam::{Vec2, Vec3};
+    use jc3vr_gameplay::controllers::{
+        body::{
+            InvalidDimension,
+            calibration::{
+                CalibrationError, CaptureStatus, Notice, Unavailable, check_eye_height,
+                check_seated_eye_height,
+            },
+        },
+        config::{CONTROLLERS_CONFIG, Posture},
+    };
+    use jc3vr_input::frame::{Hand, Pose, TrackedPose};
+    use jc3vr_render::vr::stage::StageInfo;
     use smol_str::SmolStr;
 
     use super::*;
     use crate::{
         controllers::{
-            body::{
-                InvalidDimension,
-                calibration::{
-                    CalibrationError, CaptureStatus, Notice, Unavailable, check_eye_height,
-                    check_seated_eye_height,
+            body::menu::{
+                measure::{eye_height_from, grip_span_from},
+                pages::{
+                    STANCE_OPTIONS, review_seated, review_standing, sit, span, stand, summary,
                 },
-                menu::{
-                    measure::{eye_height_from, grip_span_from},
-                    pages::{
-                        STANCE_OPTIONS, review_seated, review_standing, sit, span, stand, summary,
-                    },
-                    state::{NOTICE_LOG_INTERVAL, NoticeLog},
-                    text::{live_text, notice_text, status_text, unavailable_text},
-                },
+                state::{NOTICE_LOG_INTERVAL, NoticeLog},
+                text::{live_text, notice_text, status_text, unavailable_text},
             },
-            config::{CONTROLLERS_CONFIG, Posture},
-            frame::{Hand, Pose, TrackedPose},
             menu::{edit, tests::exercise_page},
         },
         pause_menu::model::{page::Item, rows::encode_page},
-        vr::stage::StageInfo,
     };
 
     /// The longest text row that fits one line of the list.

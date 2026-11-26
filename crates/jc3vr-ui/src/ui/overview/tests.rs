@@ -1,7 +1,10 @@
 use std::time::Duration;
 
+use jc3vr_core::frame_timing::Totals;
+use jc3vr_input::capture::EditCapture;
+
 use super::*;
-use crate::{frame_timing::Totals, status::Line, ui::capture::EditCapture};
+use crate::status::Line;
 
 #[test]
 fn ranking_retains_every_typed_row_and_stably_ranks_problems_and_captures() {

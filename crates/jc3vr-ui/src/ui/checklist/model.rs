@@ -12,10 +12,9 @@ use std::{
     sync::LazyLock,
 };
 
+use jc3vr_core::config::engine::{paths, write};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
-
-use crate::config::{paths, write};
 
 /// The results file's name, in the configuration directory.
 pub(crate) const FILE_NAME: &str = "session_checklist.toml";

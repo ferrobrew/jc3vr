@@ -2,14 +2,13 @@
 
 use egui::Ui;
 use glam::Vec3;
-
-use crate::{
-    controllers::{
-        frame::{self, Hand, HandFrame, HandJoint, TrackedPose},
-        haptics::{self, vocabulary::Primitive},
-    },
-    ui::controllers::{euler_deg, profile_label, vec3, yes_no},
+use jc3vr_gameplay::controllers::{haptics, haptics::vocabulary::Primitive};
+use jc3vr_input::{
+    frame,
+    frame::{Hand, HandFrame, HandJoint, TrackedPose},
 };
+
+use crate::ui::controllers::{euler_deg, profile_label, vec3, yes_no};
 
 pub(super) fn live_frame(ui: &mut Ui, frame: Option<&frame::ControllerFrame>) {
     let Some(frame) = frame else {

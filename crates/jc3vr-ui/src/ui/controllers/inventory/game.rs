@@ -4,17 +4,15 @@
 
 use egui::{Grid, RichText, Ui};
 use jc3gi::equipment::weapon::{WeaponClass, WeaponState};
-
-use crate::{
-    controllers::{
-        loadout::{LoadoutSnapshot, SlotContent, slot_label},
-        weapons::inventory::{
-            InventoryReadout,
-            game_view::{GameSlot, GameWeapon, Pistols},
-        },
+use jc3vr_gameplay::controllers::{
+    loadout::{LoadoutSnapshot, SlotContent, slot_label},
+    weapons::inventory::{
+        InventoryReadout,
+        game_view::{GameSlot, GameWeapon, Pistols},
     },
-    ui::controllers::inventory::mismatch::Mismatches,
 };
+
+use crate::ui::controllers::inventory::mismatch::Mismatches;
 
 pub(super) fn game_section(
     ui: &mut Ui,

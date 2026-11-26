@@ -1,6 +1,6 @@
 //! Shared widgets for tabs that edit game memory through the patcher.
 
-use crate::hooks;
+use jc3vr_core::hooks;
 
 /// A checkbox over a game bool, written through the patcher so pages that are not plainly writable
 /// still take the edit (and so the write is reverted on uninject).

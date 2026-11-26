@@ -2,7 +2,7 @@
 //! for the head-tracked gamepad baseline. A preset changes switches only; tuning, sight
 //! calibration, and optional preferences stay as they are.
 
-use crate::controllers::config::{ControllersConfig, GunReadout, Posture, SeatTransition};
+use jc3vr_gameplay::controllers::config::{ControllersConfig, GunReadout, Posture, SeatTransition};
 
 /// The named controller switch presets shown by the Tools page.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -92,9 +92,9 @@ pub fn preset_modified(config: &ControllersConfig, preset: Preset) -> bool {
 #[cfg(test)]
 mod tests {
     use glam::{Vec2, Vec3};
+    use jc3vr_gameplay::controllers::config::SightOverride;
 
     use super::*;
-    use crate::controllers::config::SightOverride;
 
     #[test]
     fn controller_preset_keeps_highlights_without_the_preview_beam() {

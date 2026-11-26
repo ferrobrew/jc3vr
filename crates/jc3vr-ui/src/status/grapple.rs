@@ -2,22 +2,19 @@
 //! reel and the tethers the hand works, the lock, the seat grapple, the hang swing, the snatch, and
 //! the grapple hand's vibration.
 
+use jc3vr_gameplay::{
+    controllers::{config::CONTROLLERS_CONFIG, hands::anchor, snatch, snatch::SnatchStatus},
+    grapple::{
+        physical,
+        physical::{GrapplePhase, GrappleStatus, lock, lock::LockStatus},
+        seat,
+        seat::SeatStatus,
+    },
+};
 use smol_str::format_smolstr;
 
 use crate::{
-    controllers::{
-        config::CONTROLLERS_CONFIG,
-        hands::anchor,
-        menu::read,
-        snatch::{self, SnatchStatus},
-    },
-    grapple::{
-        physical::{
-            self, GrapplePhase, GrappleStatus,
-            lock::{self, LockStatus},
-        },
-        seat::{self, SeatStatus},
-    },
+    controllers::menu::read,
     status::{Line, Row, Text, prose, text},
 };
 
@@ -362,9 +359,9 @@ fn snatch_reason(reason: &str) -> Text {
 #[cfg(test)]
 mod tests {
     use glam::Vec3;
+    use jc3vr_gameplay::grapple::physical::TargetReadout;
 
     use super::*;
-    use crate::grapple::physical::TargetReadout;
 
     #[test]
     fn the_seat_row_reads_the_seat_grapple() {

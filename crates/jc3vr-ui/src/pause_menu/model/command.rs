@@ -208,8 +208,10 @@ pub(crate) fn route(command: Command, state: MenuState) -> Route {
 
 #[cfg(test)]
 mod tests {
+    use jc3vr_core::hash::hashlittle;
+
     use super::*;
-    use crate::{hash::hashlittle, pause_menu::model::tabs::TAB_LIMIT};
+    use crate::pause_menu::model::tabs::TAB_LIMIT;
 
     fn id(page: usize, item: usize) -> i32 {
         RowId::new(page, item).encode().unwrap()

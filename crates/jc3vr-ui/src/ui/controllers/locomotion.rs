@@ -5,14 +5,14 @@
 use std::time::Instant;
 
 use egui::Ui;
+use jc3vr_gameplay::controllers::locomotion::{
+    LocomotionStatus,
+    anchor::{AnchorStatus, remeasure},
+    config::{ActFilterConfig, SpeedSource, StableViewConfig, StickConfig, SwimStrokeConfig},
+    strokes::StrokeStatus,
+};
 
 use crate::{
-    controllers::locomotion::{
-        LocomotionStatus,
-        anchor::{AnchorStatus, remeasure},
-        config::{ActFilterConfig, SpeedSource, StableViewConfig, StickConfig, SwimStrokeConfig},
-        strokes::StrokeStatus,
-    },
     status::controllers::{ACT_FILTER, ACT_WATCHDOG, NEUTRAL_HEAD, STEADY_VIEW, STICK_VELOCITY},
     ui::{controllers::vec3, status_row::headlines},
 };

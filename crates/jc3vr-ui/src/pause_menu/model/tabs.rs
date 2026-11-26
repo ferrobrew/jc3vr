@@ -12,8 +12,7 @@
 //! name; [`TabCommands`] maps those command hashes back to indices.
 
 use jc3gi::ui::pause_ui::SettingsUI;
-
-use crate::hash::hashlittle;
+use jc3vr_core::hash::hashlittle;
 
 /// The most tabs the tab bar holds ([`SettingsUI::TAB_COUNT`]).
 pub(crate) const TAB_LIMIT: usize = SettingsUI::TAB_COUNT as usize;

@@ -4,23 +4,22 @@
 //! `VR: COMFORT` and the HUD placement on `VR: DISPLAY`; the subsystems' switches and the rest of
 //! [`ControllersConfig`] are in the debug UI.
 //!
-//! [`ControllersConfig`]: crate::controllers::config::ControllersConfig
+//! [`ControllersConfig`]: jc3vr_gameplay::controllers::config::ControllersConfig
 
 mod sections;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use jc3vr_gameplay::controllers::{
+    config::CONTROLLERS_CONFIG, vehicles, vehicles::config::ArmPitch,
+};
 #[cfg(not(test))]
 use parking_lot::Mutex;
 use sections::DOMINANT_HAND;
 use smol_str::SmolStr;
 
 use crate::{
-    controllers::{
-        config::CONTROLLERS_CONFIG,
-        menu::{comfort, edit, read},
-        vehicles::{self, config::ArmPitch},
-    },
+    controllers::menu::{comfort, edit, read},
     pause_menu::model::page::{Button, ButtonOutcome, Item, Page, PageDef},
 };
 
@@ -205,6 +204,11 @@ static CONFIRMING_RESET: AtomicBool = AtomicBool::new(false);
 #[cfg(test)]
 mod tests {
     use glam::{Vec2, Vec3};
+    use jc3vr_core::config::engine::{Parts, Snapshot};
+    use jc3vr_gameplay::{controllers::config::SightOverride, grapple::GrappleComfortMode};
+    use jc3vr_hud::hud::config::HUD_CONFIG;
+    use jc3vr_input::frame::Hand;
+    use jc3vr_render::headpose::config::HEADPOSE_CONFIG;
 
     use super::{
         sections::{
@@ -214,15 +218,7 @@ mod tests {
         *,
     };
     use crate::{
-        config::engine::{Parts, Snapshot},
-        controllers::{
-            config::SightOverride,
-            frame::Hand,
-            menu::tests::{TEST_CONFIG, exercise_page},
-        },
-        grapple::GrappleComfortMode,
-        headpose::config::HEADPOSE_CONFIG,
-        hud::config::HUD_CONFIG,
+        controllers::menu::tests::{TEST_CONFIG, exercise_page},
         pause_menu::model::rows::encode_page,
     };
 

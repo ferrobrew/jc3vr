@@ -1,10 +1,8 @@
 //! The paired editor's transaction and its settings-file boundary.
 
+use jc3vr_core::config::engine::{Snapshot, load, store, write};
+
 use super::*;
-use crate::config::{
-    engine::{Snapshot, load, store},
-    write,
-};
 
 #[test]
 fn threshold_edits_remain_valid_and_survive_the_settings_file() {

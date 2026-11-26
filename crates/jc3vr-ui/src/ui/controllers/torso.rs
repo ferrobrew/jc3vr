@@ -4,11 +4,9 @@
 use std::time::Instant;
 
 use egui::Ui;
+use jc3vr_gameplay::controllers::body::rig::{TorsoStatus, skeleton::SkeletonStatus};
 
-use crate::{
-    controllers::body::rig::{TorsoStatus, skeleton::SkeletonStatus},
-    ui::controllers::{vec3, yes_no},
-};
+use crate::ui::controllers::{vec3, yes_no};
 
 pub(super) fn torso_readout(ui: &mut Ui, status: &TorsoStatus, skeleton: &SkeletonStatus) {
     let deg = |r: f32| format!("{:+.1}°", r.to_degrees());

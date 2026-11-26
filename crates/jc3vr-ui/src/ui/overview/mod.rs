@@ -8,23 +8,28 @@ mod tests;
 use std::path::PathBuf;
 
 use egui::{Response, RichText, Ui};
-
 #[cfg(feature = "profiler")]
-use crate::profiler::capture;
-use crate::{
-    controllers::{frame, overlay},
-    egui_impl, frame_timing, recorder,
+use jc3vr_core::profiler::capture;
+use jc3vr_core::{frame_timing, session};
+use jc3vr_gameplay::controllers::overlay;
+use jc3vr_hud::egui_impl;
+use jc3vr_input::{
+    capture::{OwnershipBlocker, OwnershipSnapshot, PanelMode},
+    frame,
+};
+use jc3vr_render::{
     recorder::tracking::TrackingStatus,
-    session,
-    status::{self, Health},
+    vr::{input, input::InputStatus},
+};
+use jc3vr_tooling::recorder;
+
+use crate::{
+    status,
+    status::Health,
     ui::{
-        capture::{OwnershipBlocker, OwnershipSnapshot, PanelMode},
-        catalog::FeatureId,
-        director::host_line,
-        navigation::NavigationState,
+        catalog::FeatureId, director::host_line, navigation::NavigationState,
         status_row::health_color,
     },
-    vr::input::{self, InputStatus},
 };
 
 pub(crate) fn render(ui: &mut Ui, selection: &mut NavigationState) {

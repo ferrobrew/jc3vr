@@ -17,14 +17,14 @@ use jc3gi::{
         render_engine::{RenderBlockTypeInstances, RenderBlockTypeRegistry},
     },
 };
-
-use crate::{
-    config::engine::{Parts, edit_parts},
+use jc3vr_core::config::engine::{Parts, edit_parts};
+use jc3vr_render::{
     debug::camera::{CAMERA_SNAPSHOTS, CameraSnapshot},
     hooks::graphics_engine::{config::EXPOSURE_CONFIG, terrain},
     stereo::config::STEREO_CONFIG,
-    ui::camera::matrix_grid,
 };
+
+use crate::ui::camera::matrix_grid;
 
 /// The Experimental page's entry point: the button that opens the render RE window.
 pub(crate) fn open_button(ui: &mut egui::Ui) {
@@ -112,7 +112,7 @@ fn trace_options(ui: &mut egui::Ui) {
 fn diagnostics_controls(ui: &mut egui::Ui) {
     let mut cfg = edit_parts();
     // The #31 flicker-isolation A/B levers -- all default off; enable one at a time to localize the
-    // whole-terrain sun-shadow flicker. See `crate::stereo::config::StereoConfig`.
+    // whole-terrain sun-shadow flicker. See `jc3vr_render::stereo::config::StereoConfig`.
     ui.collapsing("Flicker isolation (#31)", |ui| {
             ui.checkbox(
                 &mut cfg.part_mut(&STEREO_CONFIG).symmetrize_eye_frusta,
@@ -633,7 +633,7 @@ fn show_unregistered_render_block_types(ui: &mut egui::Ui) {
             if ui
                 .checkbox(&mut enabled, format!("{name} (unregistered)"))
                 .changed()
-                && let Some(mut patcher) = crate::hooks::patcher()
+                && let Some(mut patcher) = jc3vr_core::hooks::patcher()
             {
                 if enabled {
                     patcher.unpatch(slot);
@@ -700,7 +700,7 @@ fn show_render_block_type_registry(ui: &mut egui::Ui) {
                         .checkbox(&mut enabled, format!("{name} ({hash:#010x})"))
                         .changed()
                     {
-                        let Some(mut patcher) = crate::hooks::patcher() else {
+                        let Some(mut patcher) = jc3vr_core::hooks::patcher() else {
                             continue;
                         };
                         if enabled {

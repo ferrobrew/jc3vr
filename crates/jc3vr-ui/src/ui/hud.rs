@@ -2,11 +2,12 @@
 
 use std::time::Instant;
 
+use jc3vr_hud::hud::{
+    HUD_STATE, StageSafeAreaReadout, aim, config::HUD_CONFIG, stage_safe_area_readout,
+    world_markers::layout::StageFrame,
+};
+
 use crate::{
-    hud::{
-        HUD_STATE, StageSafeAreaReadout, aim, config::HUD_CONFIG, stage_safe_area_readout,
-        world_markers::layout::StageFrame,
-    },
     status::system::{ATLAS, MARKER_DEPTH, WORLD_MARKERS},
     ui::status_row::headlines,
 };
@@ -76,7 +77,7 @@ pub fn egui_debug_hud(ui: &mut egui::Ui, renderer: &mut egui_directx11::Renderer
     if redirect {
         // The preview matches the current mode's effective aspect (width / height), so it tracks
         // the live texture shape.
-        let aspect = crate::hud::current_aspect();
+        let aspect = jc3vr_hud::hud::current_aspect();
         let mut hud = HUD_STATE.lock();
         ui.collapsing("HUD texture", |ui| match hud.preview_id(renderer) {
             Some(id) => {
@@ -189,7 +190,7 @@ fn stage_safe_area_status_ui(ui: &mut egui::Ui) {
 
 fn world_markers_status_ui(ui: &mut egui::Ui) {
     headlines(ui, &[&WORLD_MARKERS, &MARKER_DEPTH]);
-    match crate::hud::world_markers::status() {
+    match jc3vr_hud::hud::world_markers::status() {
         None => {
             ui.label("Off, outside gameplay, or the panel is off.");
         }
@@ -242,7 +243,7 @@ fn world_markers_status_ui(ui: &mut egui::Ui) {
 
 fn atlas_status_ui(ui: &mut egui::Ui) {
     headlines(ui, &[&ATLAS]);
-    let status = crate::hud::atlas::status();
+    let status = jc3vr_hud::hud::atlas::status();
     ui.label(format!(
         "Moves {}, restores {}, drift {}",
         status.moves, status.restores, status.drift,
@@ -299,7 +300,7 @@ fn atlas_status_ui(ui: &mut egui::Ui) {
             }
         }
     }
-    let anchored = crate::hud::anchored::status();
+    let anchored = jc3vr_hud::hud::anchored::status();
     ui.label(format!(
         "Ammunition counters {}; health {}; heat level {}; wrist {:.0}% (glance {}, attention \
          {}, heat {}, grenades {})",

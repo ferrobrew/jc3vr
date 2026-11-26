@@ -3,32 +3,31 @@
 
 use std::time::Instant;
 
+use jc3vr_gameplay::controllers::{
+    body::{
+        procedural,
+        procedural::{
+            ProceduralStatus, authority::Case, config::ProceduralMode, twist::TwistStatus,
+        },
+    },
+    config::CONTROLLERS_CONFIG,
+    hands::{grip, grip::GripRead},
+    locomotion,
+    locomotion::{acts, acts::ActFilterStatus, anchor, anchor::AnchorStatus},
+    physical_hands::{
+        collider_view,
+        collider_view::ColliderViewStatus,
+        physics,
+        physics::{BodyPhase, CallbackStatus, HandBodyStatus, guns, guns::GunBodyStatus},
+    },
+    weapons::{grip_watch, heft::HeftClass},
+};
+use jc3vr_input::frame::Hand;
+use jc3vr_tooling::director::{keymap, keymap::Action};
 use smol_str::{SmolStr, format_smolstr};
 
 use crate::{
-    controllers::{
-        body::procedural::{
-            self, ProceduralStatus, authority::Case, config::ProceduralMode, twist::TwistStatus,
-        },
-        config::CONTROLLERS_CONFIG,
-        frame::Hand,
-        hands::grip::{self, GripRead},
-        locomotion::{
-            self,
-            acts::{self, ActFilterStatus},
-            anchor::{self, AnchorStatus},
-        },
-        menu::read,
-        physical_hands::{
-            collider_view::{self, ColliderViewStatus},
-            physics::{
-                self, BodyPhase, CallbackStatus, HandBodyStatus,
-                guns::{self, GunBodyStatus},
-            },
-        },
-        weapons::{grip_watch, heft::HeftClass},
-    },
-    director::keymap::{self, Action},
+    controllers::menu::read,
     status::{Health, Line, Row, Text, prose, text},
 };
 
@@ -568,11 +567,11 @@ mod tests {
     use std::time::Duration;
 
     use glam::Vec3;
-
-    use super::*;
-    use crate::controllers::{
+    use jc3vr_gameplay::controllers::{
         locomotion::view::Neutral, physical_hands::collider_view::draw::Drawn,
     };
+
+    use super::*;
 
     #[test]
     fn the_collider_view_row_says_how_to_show_it_and_what_it_draws() {

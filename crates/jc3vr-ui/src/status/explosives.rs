@@ -2,12 +2,13 @@
 //! grenade's pin, the live grenades within reach of a catch, the C4 pressed on, and the magazines
 //! in the world), and for aiming a long gun down its sights.
 
+use jc3vr_gameplay::controllers::{
+    config::CONTROLLERS_CONFIG,
+    weapons::{ads, c4, collide, grenade, reload::loose},
+};
+
 use crate::{
-    controllers::{
-        config::CONTROLLERS_CONFIG,
-        menu::read,
-        weapons::{ads, c4, collide, grenade, reload::loose},
-    },
+    controllers::menu::read,
     status::{Line, Row, Text, prose, text},
 };
 

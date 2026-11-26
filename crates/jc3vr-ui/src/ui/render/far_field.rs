@@ -1,11 +1,12 @@
 //! The near/far draw-list split (#32): its levers and the per-pass split counters.
 
-use crate::{
-    config::engine::Parts,
+use jc3vr_core::config::engine::Parts;
+use jc3vr_render::{
     far_field::{FAR_FIELD_CONFIG, FarFieldMode},
     stereo::config::STEREO_CONFIG,
-    ui::render::{passes::render_pass_name, single_pass::collapse_configured},
 };
+
+use crate::ui::render::{passes::render_pass_name, single_pass::collapse_configured};
 
 pub(super) fn section(ui: &mut egui::Ui, cfg: &mut impl Parts) {
     ui.collapsing("Far field (#32, experimental)", |ui| {
@@ -36,7 +37,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut impl Parts) {
                      bisecting the render RE window's render-block-type registry",
                 );
         });
-        let gated = crate::far_field::gated_type_names();
+        let gated = jc3vr_render::far_field::gated_type_names();
         if !gated.is_empty() {
             ui.label(format!("gated: {}", gated.join(", ")));
         }
@@ -93,7 +94,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut impl Parts) {
             )
             .clicked()
         {
-            crate::far_field::request_dump(16);
+            jc3vr_render::far_field::request_dump(16);
         }
     });
 }
@@ -101,7 +102,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut impl Parts) {
 /// The per-pass near/far split counters, freshest first. Entries older than a second (passes that
 /// stopped drawing, or the split disabled) are dropped from view.
 pub(super) fn readout(ui: &mut egui::Ui) {
-    let mut stats = crate::far_field::stats_snapshot();
+    let mut stats = jc3vr_render::far_field::stats_snapshot();
     stats.retain(|(_, s)| s.updated.elapsed().as_secs_f32() < 1.0);
     if stats.is_empty() {
         ui.label("(no split passes drawn in the last second)");

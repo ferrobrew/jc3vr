@@ -3,13 +3,14 @@
 
 use std::sync::atomic::Ordering;
 
-use crate::{
-    config::engine::Parts,
+use jc3vr_core::config::engine::Parts;
+use jc3vr_render::{
     far_field::{FAR_FIELD_CONFIG, FarFieldMode},
     hooks::{draw_count::EFFECT_DEPTH_COPIES_SKIPPED, graphics_engine::shader},
     stereo::{
         config::{STEREO_CONFIG, StereoConfig, set_single_pass_feature},
-        single_pass::{self, Capability},
+        single_pass,
+        single_pass::Capability,
     },
 };
 
@@ -359,7 +360,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut impl Parts) {
                 );
                 ui.label(format!(
                     "Vegetation once: {}",
-                    crate::stereo::single_pass::vegetation_once::status()
+                    jc3vr_render::stereo::single_pass::vegetation_once::status()
                 ));
                 ui.checkbox(
                     &mut cfg.part_mut(&STEREO_CONFIG).single_pass.occluder,
@@ -393,7 +394,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut impl Parts) {
                 );
                 ui.label(format!(
                     "Hardware-instanced twins: {}",
-                    crate::stereo::single_pass::hw_instanced::status()
+                    jc3vr_render::stereo::single_pass::hw_instanced::status()
                 ));
                 ui.checkbox(
                     &mut cfg.part_mut(&STEREO_CONFIG).single_pass.indirect_per_eye,
@@ -469,7 +470,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut impl Parts) {
                 {
                     shader::request_reload();
                 }
-                let (rewritten, declined) = crate::stereo::single_pass::eye_camera::counts();
+                let (rewritten, declined) = jc3vr_render::stereo::single_pass::eye_camera::counts();
                 ui.weak(format!(
                     "Pixel shaders reading each eye's camera: {rewritten} (declined {declined})"
                 ));
@@ -507,7 +508,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut impl Parts) {
                 {
                     shader::request_reload();
                 }
-                let (velocities, declined) = crate::stereo::single_pass::eye_camera::velocity_counts();
+                let (velocities, declined) = jc3vr_render::stereo::single_pass::eye_camera::velocity_counts();
                 ui.weak(format!(
                     "Velocity pixel shaders per eye: {velocities} (declined {declined})"
                 ));
@@ -547,7 +548,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut impl Parts) {
                      eye sees past at its outer edge: distant hills go missing there.",
                 );
                 let (rewritten, projected, declined) =
-                    crate::stereo::single_pass::eye_camera::screen_door_counts();
+                    jc3vr_render::stereo::single_pass::eye_camera::screen_door_counts();
                 ui.weak(format!(
                     "Pixel shaders with a per-eye screen door: {rewritten}, from a projected \
                      position {projected} (declined {declined})"
@@ -645,7 +646,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut impl Parts) {
                 }
                 ui.weak(format!(
                     "Glare filter variants built: {}",
-                    crate::stereo::single_pass::post_filters::registered_count()
+                    jc3vr_render::stereo::single_pass::post_filters::registered_count()
                 ));
                 ui.checkbox(
                     &mut cfg.part_mut(&STEREO_CONFIG).single_pass.foveation_per_eye,
@@ -693,7 +694,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut impl Parts) {
                     );
                 ui.weak(format!(
                     "FSR dispatches per eye this frame: {}",
-                    crate::fsr::split_dispatch_count()
+                    jc3vr_render::fsr::split_dispatch_count()
                 ));
                 if ui
                     .checkbox(&mut cfg.part_mut(&STEREO_CONFIG).single_pass.ssao_per_eye, "SSAO per eye")
@@ -965,7 +966,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut impl Parts) {
 }
 
 /// Whether the config asks for the single-pass collapse, ignoring the runtime gates
-/// ([`crate::stereo::single_pass::collapse_active`] also requires the device capability and a live
+/// ([`jc3vr_render::stereo::single_pass::collapse_active`] also requires the device capability and a live
 /// session). The UI needs the *intent*, so a mutually-exclusive option greys out as soon as the boxes
 /// are ticked rather than only once the collapse is running.
 pub(super) fn collapse_configured(stereo: &StereoConfig) -> bool {

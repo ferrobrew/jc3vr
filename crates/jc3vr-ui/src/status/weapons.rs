@@ -2,24 +2,22 @@
 //! came there, and why the last thing the hands tried with a weapon was refused.
 
 use jc3gi::character::inventory::WeaponSlot;
+use jc3vr_gameplay::controllers::{
+    config::CONTROLLERS_CONFIG,
+    hands::grip,
+    loadout::{Delivery, TakeSource, live::Expect, slot_label},
+    weapons,
+    weapons::{
+        hold,
+        hold::armed,
+        regions, reload,
+        reload::chamber::{ActionKind, Chamber},
+    },
+};
+use jc3vr_input::frame::Hand;
 
 use crate::{
-    controllers::{
-        config::CONTROLLERS_CONFIG,
-        frame::Hand,
-        hands::grip,
-        loadout::{Delivery, TakeSource, live::Expect, slot_label},
-        menu::read,
-        weapons::{
-            self,
-            hold::{self, armed},
-            regions,
-            reload::{
-                self,
-                chamber::{ActionKind, Chamber},
-            },
-        },
-    },
+    controllers::menu::read,
     status::{Line, Row, Text, prose, text},
 };
 

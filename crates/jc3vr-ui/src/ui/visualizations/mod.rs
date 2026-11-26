@@ -1,21 +1,16 @@
 //! Shared visualization switches, known draw blockers, and the global drawer.
 
 use egui::Ui;
+use jc3vr_gameplay::controllers::{
+    config::{CONTROLLERS_CONFIG, ControllersConfig, GunReadout},
+    overlay,
+    physical_hands::collider_view::ColliderViewConfig,
+    scheme,
+};
+use jc3vr_render::controllers::overlay::{primitive::Source, store, store::SourceMask};
 use parking_lot::Mutex;
 
-use crate::{
-    controllers::{
-        config::{CONTROLLERS_CONFIG, ControllersConfig, GunReadout},
-        overlay::{
-            self,
-            primitive::Source,
-            store::{self, SourceMask},
-        },
-        physical_hands::collider_view::ColliderViewConfig,
-        scheme,
-    },
-    ui::{catalog::FeatureId, controllers},
-};
+use crate::ui::{catalog::FeatureId, controllers};
 
 /// A snapshot taken before any configuration edit guard is acquired.
 pub(crate) struct Snapshot {
@@ -102,8 +97,8 @@ pub(crate) fn snapshot() -> Snapshot {
     let config = CONTROLLERS_CONFIG.lock().clone();
     let runtime = Runtime {
         controllers_scheme: scheme::is_controllers(),
-        gameplay: crate::hooks::in_gameplay(),
-        clean_view: crate::director::clean_view::hides_everything(),
+        gameplay: jc3vr_core::hooks::in_gameplay(),
+        clean_view: jc3vr_core::director::clean_view::hides_everything(),
         temporarily_hidden: TEMPORARY_HIDE.lock().requested_at_hide.is_some(),
         overlay: overlay::status(),
     };

@@ -2,19 +2,23 @@
 //! doors, the characters they take hold of, the moving bodies they climb, the stunt positions they hold, pushing the body
 //! up, and articulated objects.
 
-use crate::{
-    controllers::{
-        config::CONTROLLERS_CONFIG,
-        menu::read,
-        physical_hands::{
-            self, Idle, climb, doors,
-            grasp::TargetKind,
-            physics,
-            pickup::PickupStatus,
-            stunt::{self, StuntStatus, solve::StuntKind},
-            vault::{self, VaultStatus},
-        },
+use jc3vr_gameplay::controllers::{
+    config::CONTROLLERS_CONFIG,
+    physical_hands,
+    physical_hands::{
+        Idle, climb, doors,
+        grasp::TargetKind,
+        physics,
+        pickup::PickupStatus,
+        stunt,
+        stunt::{StuntStatus, solve::StuntKind},
+        vault,
+        vault::VaultStatus,
     },
+};
+
+use crate::{
+    controllers::menu::read,
     status::{Health, Line, Row, Text, prose, text},
 };
 

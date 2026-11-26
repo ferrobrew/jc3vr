@@ -2,14 +2,12 @@
 //! distance between the controllers' grips.
 
 use glam::Vec3;
-
-use crate::{
-    controllers::{
-        body::calibration::Unavailable,
-        frame::{self, Hand, TrackedPose},
-    },
-    vr::{self, stage::StageInfo},
+use jc3vr_gameplay::controllers::body::calibration::Unavailable;
+use jc3vr_input::{
+    frame,
+    frame::{Hand, TrackedPose},
 };
+use jc3vr_render::{vr, vr::stage::StageInfo};
 
 /// The head's height above the floor now.
 pub(super) fn live_eye_height() -> Result<f32, Unavailable> {

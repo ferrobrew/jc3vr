@@ -1,12 +1,10 @@
 //! The controls summary: what it shows now, why the panel is up, and its switches.
 
 use egui::Ui;
+use jc3vr_gameplay::controllers::summary::{SummaryConfig, SummaryStatus};
+use jc3vr_hud::hud::summary_panel::PanelStatus;
 
-use crate::{
-    controllers::summary::{SummaryConfig, SummaryStatus},
-    hud::summary_panel::PanelStatus,
-    ui::controllers::yes_no,
-};
+use crate::ui::controllers::yes_no;
 
 pub(super) fn summary_readout(ui: &mut Ui, status: &SummaryStatus, panel: &PanelStatus) {
     ui.label(format!(

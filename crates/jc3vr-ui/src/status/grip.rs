@@ -1,16 +1,14 @@
 //! The status rows for the grip model: what each hand's squeeze would take or holds, and
 //! the markers.
 
+use jc3vr_gameplay::controllers::{
+    config::CONTROLLERS_CONFIG,
+    grab::{latch::GripLatch, tick, tick::GrabStatus},
+};
+use jc3vr_input::frame::Hand;
+
 use crate::{
-    controllers::{
-        config::CONTROLLERS_CONFIG,
-        frame::Hand,
-        grab::{
-            latch::GripLatch,
-            tick::{self, GrabStatus},
-        },
-        menu::read,
-    },
+    controllers::menu::read,
     status::{Health, Line, Row, prose, text},
 };
 
@@ -71,8 +69,9 @@ fn markers_line(on: bool, status: &GrabStatus) -> Line {
 
 #[cfg(test)]
 mod tests {
+    use jc3vr_gameplay::controllers::grab::{GrabVolume, tick::HandStatus};
+
     use super::*;
-    use crate::controllers::grab::{GrabVolume, tick::HandStatus};
 
     fn live(hands: [HandStatus; 2]) -> GrabStatus {
         GrabStatus {

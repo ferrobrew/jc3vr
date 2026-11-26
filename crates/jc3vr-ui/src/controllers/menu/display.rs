@@ -7,15 +7,18 @@
 //! the size it was created at until the game restarts, so a resolution change resizes the scene at
 //! once and the image the headset is sent after a restart.
 
+use jc3vr_hud::hud::config::HUD_CONFIG;
+use jc3vr_render::{
+    fsr::FSR_CONFIG,
+    vr::{FOVEATION_CONFIG, VR_CONFIG},
+};
+
 use crate::{
     controllers::menu::{config_slider, config_toggle},
-    fsr::FSR_CONFIG,
-    hud::config::HUD_CONFIG,
     pause_menu::model::{
         page::{Page, PageDef},
         slider::{SliderFormat, SliderRange},
     },
-    vr::{FOVEATION_CONFIG, VR_CONFIG},
 };
 
 /// The `VR: DISPLAY` page.

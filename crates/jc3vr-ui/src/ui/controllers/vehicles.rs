@@ -5,27 +5,28 @@
 //! settings.
 
 use egui::Ui;
+use jc3vr_gameplay::controllers::{
+    vehicles,
+    vehicles::{
+        VehiclesStatus,
+        arm_steering::PitchInput,
+        config::VehiclesConfig,
+        driver_aim, driving_view,
+        driving_view::DrivingViewStatus,
+        fit::FitReadout,
+        look_steer, parachute_rig,
+        physical::{ControlEvent, ControlKind, calibration},
+        rail,
+        ripcord::MIN_PULL_M,
+        turret,
+        wheel::WheelFrame,
+        wheel_render, wingsuit_evade,
+        wingsuit_evade::EvadeStatus,
+    },
+};
+use jc3vr_input::frame::Hand;
 
 use crate::{
-    controllers::{
-        frame::Hand,
-        vehicles::{
-            self, VehiclesStatus,
-            arm_steering::PitchInput,
-            config::VehiclesConfig,
-            driver_aim,
-            driving_view::{self, DrivingViewStatus},
-            fit::FitReadout,
-            look_steer, parachute_rig,
-            physical::{ControlEvent, ControlKind, calibration},
-            rail,
-            ripcord::MIN_PULL_M,
-            turret,
-            wheel::WheelFrame,
-            wheel_render,
-            wingsuit_evade::{self, EvadeStatus},
-        },
-    },
     status::vehicles::{COCKPIT_BUTTONS, FLIGHT_CONTROLS, MOUNTED_GUN, PASSENGER_AIM},
     ui::{catalog::FeatureId, controllers::vec3, status_row::headlines},
 };

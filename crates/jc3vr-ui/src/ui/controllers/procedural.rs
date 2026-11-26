@@ -4,12 +4,12 @@
 use std::time::Instant;
 
 use egui::Ui;
+use jc3vr_gameplay::controllers::body::{
+    ik_body,
+    procedural::{ProceduralStatus, config::ProceduralMode, owns_body},
+};
 
 use crate::{
-    controllers::body::{
-        ik_body,
-        procedural::{ProceduralStatus, config::ProceduralMode, owns_body},
-    },
     status::{
         body::{PARACHUTE_BODY, ROOF_TORSO, SEATED_TORSO, SWIM_TORSO, WINGSUIT_ARMS},
         controllers::{HAND_OVER, PROCEDURAL_MODE, TWIST_BONES},

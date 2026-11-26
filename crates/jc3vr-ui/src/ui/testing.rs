@@ -1,11 +1,8 @@
-//! The Tools page's tracking capture feature: the tracking recorder (`crate::recorder::tracking`).
+//! The Tools page's tracking capture feature: the tracking recorder (`jc3vr_render::recorder::tracking`).
 
 use egui::Color32;
-
-use crate::{
-    recorder::tracking,
-    testing::{TESTING_CONFIG, request},
-};
+use jc3vr_render::recorder::tracking;
+use jc3vr_tooling::testing::{TESTING_CONFIG, request};
 
 /// Render the tracking recorder's controls.
 pub(crate) fn tracking_feature(ui: &mut egui::Ui) {

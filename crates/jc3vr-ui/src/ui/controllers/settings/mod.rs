@@ -1,18 +1,21 @@
 //! Every controller setting except those with their own section's file.
 
 use egui::{Slider, Ui};
-
-use crate::{
-    config::engine::Parts,
+use jc3vr_core::config::engine::Parts;
+use jc3vr_gameplay::{
     controllers::{
         bindings::{Blocker, HandRecovery},
         config::{CONTROLLERS_CONFIG, ControllersConfig, InputConfig},
-        frame::{self, Button, GripPress, Hand, PressThresholds},
     },
     hooks::character::config::BODY_IK_CONFIG,
-    ui::controllers::{locomotion, unarmed},
-    vr::input::config::validate_thresholds,
 };
+use jc3vr_input::{
+    frame,
+    frame::{Button, GripPress, Hand, PressThresholds},
+};
+use jc3vr_render::vr::input::config::validate_thresholds;
+
+use crate::ui::controllers::{locomotion, unarmed};
 
 pub(super) fn devices(ui: &mut Ui, c: &mut ControllersConfig) {
     ui.checkbox(&mut c.input.hand_tracking, "Hand tracking")

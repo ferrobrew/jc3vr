@@ -3,16 +3,17 @@
 //! the rig's ([`crate::ui::controllers::rig`]).
 
 use egui::Ui;
-
-use crate::{
+use jc3vr_gameplay::{
     controllers::{
         body::rig::collision::probe::ProbeResult,
         config::RoomscaleConfig,
-        roomscale::{self, FrameStatus, RoomscaleStatus, posture::EffectivePosture},
+        roomscale,
+        roomscale::{FrameStatus, RoomscaleStatus, posture::EffectivePosture},
     },
     hooks::camera::height,
-    ui::controllers::yes_no,
 };
+
+use crate::ui::controllers::yes_no;
 
 pub(super) fn roomscale_readout(ui: &mut Ui, status: &RoomscaleStatus) {
     if !status.active {
@@ -132,7 +133,7 @@ pub(super) fn roomscale_settings(ui: &mut Ui, r: &mut RoomscaleConfig) {
 }
 
 /// The camera's height against Rico's animated eyes, both above his root, and what sets the
-/// difference ([`crate::hooks::camera::height`]).
+/// difference ([`jc3vr_gameplay::hooks::camera::height`]).
 fn camera_height_readout(ui: &mut Ui) {
     let Some(r) = height::readout() else {
         ui.label("Camera height: the headpose has not placed the camera yet");

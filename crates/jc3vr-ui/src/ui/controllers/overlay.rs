@@ -2,11 +2,8 @@
 //! settings live in the global visualization drawer.
 
 use egui::Ui;
-
-use crate::controllers::{
-    body::mirror,
-    overlay::{OverlayStatus, primitive::Source},
-};
+use jc3vr_gameplay::controllers::{body::mirror, overlay::OverlayStatus};
+use jc3vr_render::controllers::overlay::primitive::Source;
 
 pub(super) fn overlay_readout(ui: &mut Ui, status: &OverlayStatus) {
     ui.label(format!(

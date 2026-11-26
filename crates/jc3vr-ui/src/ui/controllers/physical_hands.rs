@@ -2,20 +2,11 @@
 //! and pickup settings.
 
 use egui::Ui;
-
-use crate::controllers::{
-    frame::Hand,
-    physical_hands::{
-        PhysicalHandsConfig, PhysicalHandsStatus,
-        characters::SeatAccess,
-        doors,
-        grasp::TargetKind,
-        human_hull::{self, step_up},
-        impacts,
-        pickup::diagnostics,
-        sounds::SoundsStatus,
-    },
+use jc3vr_gameplay::controllers::physical_hands::{
+    PhysicalHandsConfig, PhysicalHandsStatus, characters::SeatAccess, doors, grasp::TargetKind,
+    human_hull, human_hull::step_up, impacts, pickup::diagnostics, sounds::SoundsStatus,
 };
+use jc3vr_input::frame::Hand;
 
 pub(super) fn physical_hands_readout(ui: &mut Ui, status: &PhysicalHandsStatus) {
     let hull = &status.human_hull;

@@ -3,23 +3,27 @@
 
 use std::sync::OnceLock;
 
+use jc3vr_core::{
+    config::engine::{SaveStatus, status},
+    frame_timing,
+    frame_timing::FramePercentiles,
+};
+use jc3vr_gameplay::controllers::config::CONTROLLERS_CONFIG;
+use jc3vr_hud::hud::{atlas, config::HUD_CONFIG, world_markers, world_markers::DistanceSource};
+use jc3vr_input::frame::Hand;
+use jc3vr_render::{
+    vr,
+    vr::{
+        DirectArm, DirectStatus, PublishedStatus, ResolutionStatus, VR_CONFIG, input as vr_input,
+        input::{ActionsOrigin, InputStatus, layout, restart, self_check},
+    },
+};
 use openxr as xr;
 use smol_str::format_smolstr;
 
 use crate::{
-    config::engine::{SaveStatus, status},
-    controllers::{config::CONTROLLERS_CONFIG, frame::Hand, menu::read},
-    frame_timing::{self, FramePercentiles},
-    hud::{
-        atlas,
-        config::HUD_CONFIG,
-        world_markers::{self, DistanceSource},
-    },
+    controllers::menu::read,
     status::{Line, Row, Text, prose, text},
-    vr::{
-        self, DirectArm, DirectStatus, PublishedStatus, ResolutionStatus, VR_CONFIG,
-        input::{self as vr_input, ActionsOrigin, InputStatus, layout, restart, self_check},
-    },
 };
 
 pub(crate) const SETTINGS_FILE: Row = Row::new("SETTINGS FILE", "Settings file", settings_file);
@@ -282,8 +286,10 @@ fn fingerprint(hand: Hand) -> u64 {
 
 #[cfg(test)]
 mod tests {
+    use jc3vr_render::vr::input::restart::RestartReason;
+
     use super::*;
-    use crate::{status::Health, vr::input::restart::RestartReason};
+    use crate::status::Health;
 
     #[test]
     fn the_session_reads_rendering_first() {

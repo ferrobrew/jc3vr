@@ -67,7 +67,6 @@ use std::sync::Once;
 pub(crate) use jc3vr_core::config::engine;
 use serde::{Deserialize, Serialize};
 
-pub(crate) use crate::config::engine::{paths, write};
 use crate::{
     config::engine::{EditGuard, SlotGuard},
     controllers::{ControllersConfig, body::BodyDimensions},

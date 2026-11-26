@@ -1,7 +1,7 @@
 //! The post-effect levers: the reprojection passes, and the individual stages to skip when
 //! bisecting an artifact to one of them.
 
-use crate::hooks::graphics_engine::{
+use jc3vr_render::hooks::graphics_engine::{
     config::PostFxConfig, post::post_effects::vr_forces_blurs_off,
 };
 

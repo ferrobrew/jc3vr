@@ -8,28 +8,28 @@
 //! the weapons the table keeps lying in the world, and the table's recent transitions.
 
 use egui::{Button, CollapsingHeader, ComboBox, Grid, Ui};
-
-use crate::{
-    controllers::{
-        fingers::grip::GripSource,
-        frame::Hand,
-        loadout::{
-            Binding, Departure, ItemKind, ItemView, LoadoutSnapshot, Place, Socket,
-            live::LiveStatus, slot_label,
-        },
-        physical_hands::PhysicalHandsStatus,
-        weapons::{
-            c4,
-            grenade::stock,
-            inventory::{
-                InventoryReadout,
-                game_view::GameInventory,
-                restore::give::{self, GiveRequest, GiveTarget, Requested},
+use jc3vr_gameplay::controllers::{
+    fingers::grip::GripSource,
+    loadout::{
+        Binding, Departure, ItemKind, ItemView, LoadoutSnapshot, Place, Socket, live::LiveStatus,
+        slot_label,
+    },
+    physical_hands::PhysicalHandsStatus,
+    weapons::{
+        c4,
+        grenade::stock,
+        inventory::{
+            InventoryReadout,
+            game_view::GameInventory,
+            restore::{
+                give,
+                give::{GiveRequest, GiveTarget, Requested},
             },
         },
     },
-    director::spawn::SpawnDefinition,
 };
+use jc3vr_input::frame::Hand;
+use jc3vr_tooling::director::spawn::SpawnDefinition;
 
 /// What the loadout section reads besides the table.
 pub(super) struct LoadoutInputs<'a> {

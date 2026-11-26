@@ -1,16 +1,14 @@
 use std::collections::HashSet;
 
+use jc3vr_core::config::engine::{Snapshot, test_fixture};
+use jc3vr_render::{headpose, vr::recenter_count};
+
 use super::*;
-use crate::{
-    config::engine::{Snapshot, test_fixture},
-    headpose,
-    ui::{
-        catalog::{FEATURES, PageId},
-        edit_boundary, feature_dock,
-        layout::View,
-        navigation::{feature_body, scroll_key},
-    },
-    vr::recenter_count,
+use crate::ui::{
+    catalog::{FEATURES, PageId},
+    edit_boundary, feature_dock,
+    layout::View,
+    navigation::{feature_body, scroll_key},
 };
 
 #[test]

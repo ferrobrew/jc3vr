@@ -3,8 +3,7 @@
 //! hand's, so a disagreement that outlasts a tick is a bug in the table or in the reconcile.
 
 use jc3gi::character::inventory::WeaponSlot;
-
-use crate::controllers::{
+use jc3vr_gameplay::controllers::{
     loadout::{LoadoutSnapshot, ObjectAddress, Place, SlotContent},
     weapons::inventory::game_view::{GameInventory, GameSlot},
 };

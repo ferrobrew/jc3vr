@@ -1,22 +1,21 @@
-//! The Director and Video features: the directing tools for staging footage (`crate::director`),
+//! The Director and Video features: the directing tools for staging footage (`jc3vr_tooling::director`),
 //! grouped by what a shot needs: time, the actor, heat, where you are, what is in frame, and the
 //! keyboard shortcuts; and the video recorder with its take markers.
 
 use egui::Slider;
 use jc3gi::heat_manager::HeatManager;
-use parking_lot::Mutex;
-
-use crate::{
+use jc3vr_core::director::clean_view::CleanViewScope;
+use jc3vr_tooling::{
     director::{
-        DIRECTOR_CONFIG,
-        clean_view::CleanViewScope,
-        heat, keymap, markers, safety, spawn,
-        teleport::{self, TeleportMode},
+        DIRECTOR_CONFIG, heat, keymap, markers, safety, spawn, teleport, teleport::TeleportMode,
         time,
     },
-    recorder::{self, Arrangement, HostState, RECORDER_CONFIG, VideoStatus, session_recording},
-    ui::catalog::FeatureId,
+    recorder,
+    recorder::{Arrangement, HostState, RECORDER_CONFIG, VideoStatus, session_recording},
 };
+use parking_lot::Mutex;
+
+use crate::ui::catalog::FeatureId;
 
 /// Render the Director or Video feature's controls.
 pub(crate) fn feature(ui: &mut egui::Ui, id: FeatureId) {

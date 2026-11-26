@@ -1,20 +1,22 @@
 //! The status rows for the vehicles: the plane's flight stick and throttle, the cockpit
 //! buttons, the passenger's aim, and the mounted gun.
 
-use crate::{
-    controllers::{
-        config::CONTROLLERS_CONFIG,
-        menu::read,
-        mode::{VehicleClass, VehicleSeat},
-        vehicles::{
-            self, VehicleSummary,
-            config::MountedConfig,
-            mounted_recoil,
-            passenger::{self, PassengerStatus},
-            physical::ControlKind,
-            tuning::{CockpitButtonsTuning, PhysicalControlsTuning},
-        },
+use jc3vr_gameplay::controllers::{
+    config::CONTROLLERS_CONFIG,
+    mode::{VehicleClass, VehicleSeat},
+    vehicles,
+    vehicles::{
+        VehicleSummary,
+        config::MountedConfig,
+        mounted_recoil, passenger,
+        passenger::PassengerStatus,
+        physical::ControlKind,
+        tuning::{CockpitButtonsTuning, PhysicalControlsTuning},
     },
+};
+
+use crate::{
+    controllers::menu::read,
     status::{Health, Line, Row, Text, prose, text},
 };
 
@@ -194,8 +196,9 @@ fn flight_controls_line(on: bool, summary: &VehicleSummary) -> Line {
 
 #[cfg(test)]
 mod tests {
+    use jc3vr_gameplay::controllers::vehicles::{physical::Outputs, tuning::PHYSICAL};
+
     use super::*;
-    use crate::controllers::vehicles::{physical::Outputs, tuning::PHYSICAL};
 
     fn flying() -> VehicleSummary {
         VehicleSummary {

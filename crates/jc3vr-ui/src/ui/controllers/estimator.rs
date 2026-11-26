@@ -3,17 +3,11 @@
 
 use body_rig::angle::{head_heading, wrap};
 use egui::Ui;
-
-use crate::{
-    controllers::{
-        body::{
-            estimator::{self, config::DEFAULT_WEIGHTS_FILE},
-            rig::root::RootStatus,
-        },
-        config::ControllersConfig,
-    },
-    headpose,
+use jc3vr_gameplay::controllers::{
+    body::{estimator, estimator::config::DEFAULT_WEIGHTS_FILE, rig::root::RootStatus},
+    config::ControllersConfig,
 };
+use jc3vr_render::headpose;
 
 pub(super) fn estimator_readout(ui: &mut Ui, root: &RootStatus) {
     let executor = estimator::executor_status();

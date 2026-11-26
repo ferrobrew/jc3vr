@@ -3,15 +3,13 @@
 
 use egui::Ui;
 use jc3gi::physics::CustomGroupCollisionFilter;
-
-use crate::{
-    controllers::physical_hands::collider_view::{
-        self, ColliderViewConfig, ColliderViewStatus, model::BodyKind,
-    },
-    director::keymap::{self, Action},
-    status::controllers::COLLIDER_VIEW,
-    ui::status_row::headlines,
+use jc3vr_gameplay::controllers::physical_hands::{
+    collider_view,
+    collider_view::{ColliderViewConfig, ColliderViewStatus, model::BodyKind},
 };
+use jc3vr_tooling::director::{keymap, keymap::Action};
+
+use crate::{status::controllers::COLLIDER_VIEW, ui::status_row::headlines};
 
 pub(super) fn collider_view_readout(ui: &mut Ui, status: &ColliderViewStatus) {
     headlines(ui, &[&COLLIDER_VIEW]);

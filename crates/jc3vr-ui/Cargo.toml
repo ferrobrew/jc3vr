@@ -1,0 +1,48 @@
+[package]
+name = "jc3vr-ui"
+version = "0.1.0"
+edition = "2024"
+description = "The UI layer of the payload: the debug UI shell and its panels, the status rows, the pause menu with its VR pages, and the profiler's Performance panel."
+publish = false
+
+[features]
+# The in-game profiler's panel (issue #34): the Performance tab's controls and puffin's flame graph.
+# The payload's `profiler` feature forwards here.
+profiler = ["dep:puffin_egui", "jc3vr-core/profiler", "jc3vr-render/profiler"]
+
+[dependencies]
+windows = { workspace = true }
+glam = { workspace = true }
+jc3gi = { path = "../../jc3gi" }
+jc3vr-core = { path = "../jc3vr-core" }
+jc3vr-input = { path = "../jc3vr-input" }
+jc3vr-render = { path = "../jc3vr-render" }
+jc3vr-gameplay = { path = "../jc3vr-gameplay" }
+jc3vr-hud = { path = "../jc3vr-hud" }
+jc3vr-tooling = { path = "../jc3vr-tooling" }
+# The pause menu's detours. The detour macro emits `::re_utilities` paths, so a crate that defines
+# detours depends on `re-utilities` directly.
+re-utilities = { workspace = true }
+detours-macro = { workspace = true }
+body-rig = { path = "../body-rig" }
+# The VR session status row reads the OpenXR runtime's session state.
+openxr = "0.21"
+tracing = "0.1"
+parking_lot = "0.12.5"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+smol_str = "0.3.6"
+toml = "1.1.6"
+jiff = "0.2.29"
+egui = "0.35"
+egui-directx11 = "0.13"
+egui_dock = { version = "0.20", features = ["serde"] }
+clipboard-win = "5.4.1"
+# Git rather than crates.io: the released puffin_egui 0.30 pins egui 0.33, while upstream main has
+# moved to egui 0.35 (unreleased at the time of writing). It rides the same rev as the core's
+# `puffin`, so both agree on the puffin data model.
+puffin_egui = { git = "https://github.com/EmbarkStudios/puffin", rev = "d06bed0fcb8c8e4c78643d4ead7cf1de9b76fd3b", optional = true }
+
+[dev-dependencies]
+jc3vr-core = { path = "../jc3vr-core", features = ["test-support"] }
+test-case = "3.3.1"

@@ -6,16 +6,20 @@
 
 use std::time::{Duration, Instant};
 
-use crate::{
-    controllers::{
-        body::{
-            mirror::{self, MirrorStatus},
-            procedural::{self, ProceduralStatus, authority::Case, config::ProceduralMode},
-        },
-        config::CONTROLLERS_CONFIG,
-        menu::read,
-        presentation::{self, ElbowReadout, PresentationStatus},
+use jc3vr_gameplay::controllers::{
+    body::{
+        mirror,
+        mirror::MirrorStatus,
+        procedural,
+        procedural::{ProceduralStatus, authority::Case, config::ProceduralMode},
     },
+    config::CONTROLLERS_CONFIG,
+    presentation,
+    presentation::{ElbowReadout, PresentationStatus},
+};
+
+use crate::{
+    controllers::menu::read,
     status::{Line, Row, prose, text},
 };
 
@@ -204,8 +208,9 @@ fn elbow_note(elbows: &[Option<ElbowReadout>; 2]) -> String {
 
 #[cfg(test)]
 mod tests {
+    use jc3vr_gameplay::controllers::presentation::Idle;
+
     use super::*;
-    use crate::controllers::presentation::Idle;
 
     fn status(case: Case, weight: f32) -> ProceduralStatus {
         ProceduralStatus {

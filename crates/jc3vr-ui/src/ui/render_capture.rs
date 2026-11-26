@@ -4,7 +4,7 @@
 
 use std::sync::atomic::Ordering;
 
-use crate::debug::trace::{CAPTURE_FRAMES, TraceState, active_frames};
+use jc3vr_render::debug::trace::{CAPTURE_FRAMES, TraceState, active_frames};
 
 pub(crate) fn controls(ui: &mut egui::Ui) {
     // The trace records the next N frames' render events under whatever every option is set to.
@@ -31,7 +31,7 @@ pub(crate) fn controls(ui: &mut egui::Ui) {
         ui.text_edit_singleline(&mut *edit)
             .on_hover_text("RUST_LOG directive syntax, e.g. warn,vr=debug,stereo=debug.");
         if ui.button("Apply").clicked() {
-            *error = crate::logging::set_filter(&edit).err();
+            *error = jc3vr_core::logging::set_filter(&edit).err();
         }
     });
 }
@@ -45,7 +45,7 @@ pub(crate) fn status(ui: &mut egui::Ui) {
     } else {
         ui.label("(writes to traces/<stamp>/)");
     }
-    ui.label(match crate::logging::active_spec() {
+    ui.label(match jc3vr_core::logging::active_spec() {
         Some(spec) => format!("Active filter: {spec}"),
         None => "Active filter: (launch RUST_LOG, INFO floor)".to_string(),
     });

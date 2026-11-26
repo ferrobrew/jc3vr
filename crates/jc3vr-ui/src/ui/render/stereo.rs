@@ -1,8 +1,8 @@
 //! The core stereo widgets: the double-Draw switch, FSR, and the shader reload that applies the
 //! shader patches.
 
-use crate::{
-    config::engine::Parts,
+use jc3vr_core::config::engine::Parts;
+use jc3vr_render::{
     fsr::{AntiAliasing, FSR_CONFIG},
     hooks::graphics_engine::{shader, shadow_fit_gap_m},
     stereo::config::STEREO_CONFIG,

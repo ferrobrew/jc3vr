@@ -1,14 +1,12 @@
 //! The mode detector and the bindings' injection.
 
 use egui::Ui;
-
-use crate::{
-    controllers::{
-        bindings::{Idle, TickReport, hold::Phase, inject::Outcome},
-        mode::{Detection, ModeSnapshot},
-    },
-    ui::controllers::yes_no,
+use jc3vr_gameplay::controllers::{
+    bindings::{Idle, TickReport, hold::Phase, inject::Outcome},
+    mode::{Detection, ModeSnapshot},
 };
+
+use crate::ui::controllers::yes_no;
 
 pub(super) fn mode_readout(
     ui: &mut Ui,

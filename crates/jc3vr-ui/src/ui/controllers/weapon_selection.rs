@@ -1,8 +1,7 @@
 //! Weapon selection: empty-weapon switching and the weapon wheel.
 
 use egui::Ui;
-
-use crate::controllers::config::WeaponsConfig;
+use jc3vr_gameplay::controllers::config::WeaponsConfig;
 
 pub(super) fn selection_settings(ui: &mut Ui, w: &mut WeaponsConfig) {
     ui.checkbox(

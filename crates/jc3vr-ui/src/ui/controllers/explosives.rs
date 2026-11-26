@@ -2,14 +2,15 @@
 //! and their switches.
 
 use egui::Ui;
-
-use crate::{
-    controllers::{
-        config::WeaponsConfig,
-        weapons::c4::{self, C4Status, detonator},
+use jc3vr_gameplay::controllers::{
+    config::WeaponsConfig,
+    weapons::{
+        c4,
+        c4::{C4Status, detonator},
     },
-    ui::controllers::{vec3, yes_no},
 };
+
+use crate::ui::controllers::{vec3, yes_no};
 
 /// Everything the C4 readout shows, read before the config is locked for editing.
 pub(super) struct ExplosivesReadout {

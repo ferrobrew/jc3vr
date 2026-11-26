@@ -6,9 +6,9 @@
 #[cfg(test)]
 use egui::Rect;
 use egui::{ComboBox, Panel, Ui};
-
 #[cfg(test)]
-use crate::ui::capture::{OwnershipBlocker, OwnershipSnapshot, PanelMode};
+use jc3vr_input::{capture::OwnershipBlocker, capture::OwnershipSnapshot, capture::PanelMode};
+
 use crate::ui::catalog::{FEATURES, FeatureId, PageId};
 
 #[cfg(test)]

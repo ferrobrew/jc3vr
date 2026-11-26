@@ -7,7 +7,7 @@
 //! Both crates' modules are re-exported through shim files at their old paths. The UI detours live
 //! in the HUD crate and are re-exported through a shim file at [`ui`].
 
-pub(crate) use jc3vr_core::hooks::{in_gameplay, install, online, patcher, uninstall};
+pub(crate) use jc3vr_core::hooks::{install, online, uninstall};
 
 pub mod animation;
 pub mod camera;

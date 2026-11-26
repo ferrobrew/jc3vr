@@ -31,23 +31,21 @@ use jc3gi::ui::{
     scaleform::{MovieImpl, Value},
     ui_base::UIBase,
 };
+use jc3vr_core::{frame_timing, frame_timing::Slot};
 use re_utilities::hook_library::HookLibrary;
 
-use crate::{
-    frame_timing::{self, Slot},
-    pause_menu::{
-        gfx::{CaptureThread, GfxValue, Screen, decode_arg},
-        model::{
-            command::{Action, Arg, Command, Route, parse, route},
-            headers::skip_header,
-            page::{Applied, ButtonOutcome, Item, PageDef},
-            root::RootPlan,
-            state::{MenuState, PopulateSource},
-            tabs::TabCommands,
-        },
-        pages::{ENTRY_LABEL, MAX_PAGES, PAGES},
-        runtime::{render, root, session::SESSION},
+use crate::pause_menu::{
+    gfx::{CaptureThread, GfxValue, Screen, decode_arg},
+    model::{
+        command::{Action, Arg, Command, Route, parse, route},
+        headers::skip_header,
+        page::{Applied, ButtonOutcome, Item, PageDef},
+        root::RootPlan,
+        state::{MenuState, PopulateSource},
+        tabs::TabCommands,
     },
+    pages::{ENTRY_LABEL, MAX_PAGES, PAGES},
+    runtime::{render, root, session::SESSION},
 };
 
 pub(crate) fn hook_library() -> HookLibrary {

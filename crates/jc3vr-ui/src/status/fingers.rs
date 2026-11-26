@@ -1,12 +1,14 @@
 //! The status rows for the fingers: each hand's grip pose and what declared it.
 
+use jc3vr_gameplay::controllers::{
+    config::CONTROLLERS_CONFIG,
+    fingers,
+    fingers::{HandFingersStatus, grip::GripSource, target::GripMode},
+};
+use jc3vr_input::frame::Hand;
+
 use crate::{
-    controllers::{
-        config::CONTROLLERS_CONFIG,
-        fingers::{self, HandFingersStatus, grip::GripSource, target::GripMode},
-        frame::Hand,
-        menu::read,
-    },
+    controllers::menu::read,
     status::{Line, Row, Text, prose, text},
 };
 
@@ -65,10 +67,11 @@ fn grip_line(curls: bool, status: &HandFingersStatus) -> Line {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::controllers::fingers::{
+    use jc3vr_gameplay::controllers::fingers::{
         curl::CurlSource, grip::catalogue::GripPose, target::GripReport,
     };
+
+    use super::*;
 
     fn driven() -> HandFingersStatus {
         HandFingersStatus {

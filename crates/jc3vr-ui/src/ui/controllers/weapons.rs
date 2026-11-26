@@ -5,39 +5,49 @@
 //! and the switches of the hold, the support, the reload, and the explosives.
 
 use egui::Ui;
+use jc3vr_gameplay::controllers::{
+    aim as controller_aim,
+    aim::AimStatus,
+    bindings,
+    bindings::yank::Yank,
+    config::{ControllersConfig, WeaponsConfig},
+    hands::{
+        anchor,
+        anchor::AnchorStatus,
+        tiers,
+        tiers::{TierState, TierStatus},
+    },
+    loadout::slot_label,
+    snatch, weapons,
+    weapons::{
+        WeaponsStatus, empty,
+        empty::EmptyStatus,
+        foregrip,
+        foregrip::ForegripStatus,
+        grenade,
+        grenade::GrenadeStatus,
+        grip_watch,
+        grip_watch::GripWatchStatus,
+        heft,
+        heft::HeftStatus,
+        hold,
+        hold::{
+            HoldStatus, act, act::DockStatus, button_pickup, button_pickup::ButtonPickupStatus,
+            dock::SnapKind, tick, tick::TickStatus,
+        },
+        recoil,
+        recoil::RecoilStatus,
+        regions,
+        regions::RegionsStatus,
+        reload,
+        reload::ReloadStatus,
+        unarmed_fire,
+        unarmed_fire::UnarmedFireStatus,
+    },
+};
+use jc3vr_input::frame::Hand;
 
 use crate::{
-    controllers::{
-        aim::{self as controller_aim, AimStatus},
-        bindings::{self, yank::Yank},
-        config::{ControllersConfig, WeaponsConfig},
-        frame::Hand,
-        hands::{
-            anchor::{self, AnchorStatus},
-            tiers::{self, TierState, TierStatus},
-        },
-        loadout::slot_label,
-        snatch,
-        weapons::{
-            self, WeaponsStatus,
-            empty::{self, EmptyStatus},
-            foregrip::{self, ForegripStatus},
-            grenade::{self, GrenadeStatus},
-            grip_watch::{self, GripWatchStatus},
-            heft::{self, HeftStatus},
-            hold::{
-                self, HoldStatus,
-                act::{self, DockStatus},
-                button_pickup::{self, ButtonPickupStatus},
-                dock::SnapKind,
-                tick::{self, TickStatus},
-            },
-            recoil::{self, RecoilStatus},
-            regions::{self, RegionsStatus},
-            reload::{self, ReloadStatus},
-            unarmed_fire::{self, UnarmedFireStatus},
-        },
-    },
     status::{
         controllers as gun_status, explosives as explosives_status, grapple as grapple_status,
         weapons as weapons_status,
@@ -402,7 +412,7 @@ fn grapple_readout(ui: &mut Ui, a: &AnchorStatus, (yanks, last): (u64, Option<Ya
         None => "Hang: not swinging".to_owned(),
     });
     ui.label(format!("Hang pump: ({:+.1}, {:+.1})", a.pump.x, a.pump.y));
-    let pull = crate::grapple::physical::status().pull;
+    let pull = jc3vr_gameplay::grapple::physical::status().pull;
     ui.label(format!(
         "Hand pull: {:.2} m/s, {:.2} m deep",
         pull.speed_mps, pull.depth_m

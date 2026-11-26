@@ -2,21 +2,21 @@
 //! the hand settings.
 
 use egui::Ui;
+use jc3vr_gameplay::controllers::{
+    body,
+    config::{GripOffset, HandsConfig},
+    hands::{
+        held,
+        ik::HandIkStatus,
+        late::{HandLateStatus, LateStatus},
+        parts, rig,
+        tiers::{TierState, TierStatus},
+    },
+    presentation::elbow::ElbowPoleConfig,
+};
+use jc3vr_input::frame::Hand;
 
 use crate::{
-    controllers::{
-        body,
-        config::{GripOffset, HandsConfig},
-        frame::Hand,
-        hands::{
-            held,
-            ik::HandIkStatus,
-            late::{HandLateStatus, LateStatus},
-            parts, rig,
-            tiers::{TierState, TierStatus},
-        },
-        presentation::elbow::ElbowPoleConfig,
-    },
     status::body::RENDER_RATE_BODY,
     ui::{
         controllers::{vec3_drag, yes_no},

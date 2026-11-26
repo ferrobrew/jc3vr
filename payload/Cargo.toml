@@ -11,7 +11,13 @@ default = ["profiler"]
 # The in-game profiler (issue #34): puffin scopes across the mod's hooks and the engine's frame
 # phases, a flame-graph panel in the Performance tab, and on-demand trace capture to disk.
 # Compile-time so the extra hooks and per-scope overhead vanish entirely when disabled.
-profiler = ["dep:puffin", "dep:puffin_egui", "jc3vr-core/profiler", "jc3vr-render/profiler", "jc3vr-gameplay/profiler"]
+profiler = [
+    "dep:puffin",
+    "jc3vr-core/profiler",
+    "jc3vr-render/profiler",
+    "jc3vr-gameplay/profiler",
+    "jc3vr-ui/profiler",
+]
 
 [dependencies]
 windows = { workspace = true }
@@ -22,7 +28,6 @@ glam = { workspace = true }
 jc3gi = { path = "../jc3gi" }
 # The core layer: the lifecycle, the configuration engine, the hook plumbing, and frame timing.
 jc3vr-core = { path = "../crates/jc3vr-core" }
-body-rig = { path = "../crates/body-rig", features = ["serde"] }
 # The input layer: the controller frame, motion, scheme, haptic mixer, and capture policy.
 jc3vr-input = { path = "../crates/jc3vr-input" }
 # The render layer: the OpenXR runtime, the head pose, stereo, FSR, the far field, the
@@ -37,6 +42,9 @@ jc3vr-hud = { path = "../crates/jc3vr-hud" }
 # The tooling layer: the video recorder, the directing tools, the capture harness's request file and
 # staging, and the diagnostics samplers.
 jc3vr-tooling = { path = "../crates/jc3vr-tooling" }
+# The UI layer: the debug UI shell and its panels, the status rows, the pause menu with its VR
+# pages, and the profiler's Performance panel.
+jc3vr-ui = { path = "../crates/jc3vr-ui" }
 # Runtime-loaded (`loaded` default feature): the OpenXR loader is opened at runtime via
 # `xr::Entry::load_from`, not linked, so an `openxr_loader.dll` must sit beside the payload DLL (see
 # the `vr` module docs). The `static` feature would build the loader in and drop that DLL, but it does
@@ -49,24 +57,15 @@ openxr = "0.21"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-appender = "0.2"
-egui-directx11 = "0.13"
-# egui-directx11 = { path = "../../egui-directx11" }
 egui = "0.35"
-# Git rather than crates.io: the released puffin_egui 0.30 pins egui 0.33, while upstream main has
-# moved to egui 0.35 (unreleased at the time of writing). Both crates ride the same rev so they
-# agree on the puffin data model.
+# Same rev as the UI crate's `puffin_egui`, so both agree on the puffin data model.
 puffin = { git = "https://github.com/EmbarkStudios/puffin", rev = "d06bed0fcb8c8e4c78643d4ead7cf1de9b76fd3b", optional = true }
-puffin_egui = { git = "https://github.com/EmbarkStudios/puffin", rev = "d06bed0fcb8c8e4c78643d4ead7cf1de9b76fd3b", optional = true }
 anyhow.workspace = true
 # `send_guard`: the VR frame context carries the runtime lock's guard for the frame, and the
 # deferred frame tail hands that context to the tail thread to submit.
 parking_lot = { version = "0.12.5", features = ["send_guard"] }
-clipboard-win = "5.4.1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-jiff = "0.2.29"
-egui_dock = { version = "0.20", features = ["serde"] }
-smol_str = "0.3.6"
 directories = "6.0.0"
 toml = "1.1.6"
 serde_path_to_error = "0.1.20"
@@ -82,4 +81,3 @@ jiff = "0.2.29"
 jc3vr-core = { path = "../crates/jc3vr-core", features = ["test-support"] }
 jc3vr-render = { path = "../crates/jc3vr-render", features = ["test-support"] }
 pretty_assertions = "1.4.1"
-test-case = "3.3.1"

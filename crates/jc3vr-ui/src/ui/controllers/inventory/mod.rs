@@ -11,16 +11,20 @@ mod mismatch;
 use std::{sync::Arc, time::Instant};
 
 use egui::{CollapsingHeader, Ui};
+use jc3vr_gameplay::controllers::{
+    config::WeaponsConfig,
+    fingers::{grip, grip::GripSource},
+    loadout::{live, live::LiveStatus},
+    physical_hands,
+    physical_hands::PhysicalHandsStatus,
+    weapons::{
+        inventory as controller_inventory,
+        inventory::{InventoryReadout, StatusUnavailable},
+    },
+};
+use jc3vr_input::frame::Hand;
 
 use crate::{
-    controllers::{
-        config::WeaponsConfig,
-        fingers::grip::{self, GripSource},
-        frame::Hand,
-        loadout::live::{self, LiveStatus},
-        physical_hands::{self, PhysicalHandsStatus},
-        weapons::inventory::{self as controller_inventory, InventoryReadout, StatusUnavailable},
-    },
     status::inventory::{CARRIED, LAST_LOAD, LOADOUT, PINNED, SEPARATE_PISTOLS, SIDECAR, TRACKED},
     ui::{
         controllers::{

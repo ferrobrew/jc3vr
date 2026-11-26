@@ -3,12 +3,13 @@
 //! matrix-grid widget.
 
 use jc3gi::types::math::Matrix4;
-
-use crate::{
-    config::engine::{Parts, edit_parts},
-    grapple, headpose, hooks,
+use jc3vr_core::config::engine::{Parts, edit_parts};
+use jc3vr_gameplay::grapple;
+use jc3vr_render::{
+    headpose, hooks,
     hooks::camera::config::CAMERA_CONFIG,
-    vr::{self, FreezeMode, VR_CONFIG, pose_control},
+    vr,
+    vr::{FreezeMode, VR_CONFIG, pose_control},
 };
 
 pub(crate) fn head_view(ui: &mut egui::Ui) {
@@ -80,7 +81,7 @@ pub(crate) fn grapple_comfort_readout(ui: &mut egui::Ui) {
     }
 }
 
-/// The frozen-pose diagnostic ([`crate::vr::pose_control`]): pin the rendered pose, then drive it by
+/// The frozen-pose diagnostic ([`jc3vr_render::vr::pose_control`]): pin the rendered pose, then drive it by
 /// hand. Content that only mis-renders *in motion* (a mis-scaled screen-space pass, a render block
 /// that slides under the camera) cannot be measured by turning your head -- the same movement is never
 /// repeated twice. Frozen, a pose is an exact set of numbers: dial one in, step yaw by exactly one

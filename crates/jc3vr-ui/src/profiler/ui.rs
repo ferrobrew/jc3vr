@@ -1,10 +1,7 @@
 //! The profiler's Performance-tab UI: a collapsible holding the enable toggle, the trace-capture
 //! control, and — when scope collection is on — puffin's live flame graph.
 
-use crate::profiler::{
-    capture::{self, DEFAULT_CAPTURE_SECS},
-    ui_enabled,
-};
+use jc3vr_core::profiler::{capture, capture::DEFAULT_CAPTURE_SECS, ui_enabled};
 
 /// Renders the profiler section, as a collapsible under the existing Performance readout.
 pub fn egui_profiler(ui: &mut egui::Ui) {
@@ -18,10 +15,10 @@ pub fn egui_profiler(ui: &mut egui::Ui) {
             )
             .changed()
         {
-            crate::profiler::set_ui_enabled(enabled);
+            jc3vr_core::profiler::set_ui_enabled(enabled);
         }
 
-        let mut per_draw = crate::profiler::per_draw_scopes();
+        let mut per_draw = jc3vr_core::profiler::per_draw_scopes();
         if ui
             .checkbox(&mut per_draw, "Per-draw render-block scopes")
             .on_hover_text(
@@ -32,10 +29,10 @@ pub fn egui_profiler(ui: &mut egui::Ui) {
             )
             .changed()
         {
-            crate::profiler::set_per_draw_scopes(per_draw);
+            jc3vr_core::profiler::set_per_draw_scopes(per_draw);
         }
 
-        let mut pass_timestamps = crate::profiler::gpu::pass_timestamps_enabled();
+        let mut pass_timestamps = jc3vr_render::profiler::gpu::pass_timestamps_enabled();
         if ui
             .checkbox(&mut pass_timestamps, "GPU per-pass timestamps")
             .on_hover_text(
@@ -46,7 +43,7 @@ pub fn egui_profiler(ui: &mut egui::Ui) {
             )
             .changed()
         {
-            crate::profiler::gpu::set_pass_timestamps_enabled(pass_timestamps);
+            jc3vr_render::profiler::gpu::set_pass_timestamps_enabled(pass_timestamps);
         }
 
         capture_controls(ui);
@@ -66,7 +63,7 @@ pub fn egui_profiler(ui: &mut egui::Ui) {
 /// The last completed GPU summary window: the busy/starved decomposition and the CPU submit span
 /// it has to be read against. Mirrors the periodic log line, for reading in-headset.
 fn gpu_summary(ui: &mut egui::Ui) {
-    let Some(summary) = crate::profiler::gpu::summary() else {
+    let Some(summary) = jc3vr_render::profiler::gpu::summary() else {
         return;
     };
     ui.separator();
@@ -90,7 +87,7 @@ fn gpu_summary(ui: &mut egui::Ui) {
 
 /// The busiest render-block types of the last summary window, by blocks drawn.
 fn block_counts(ui: &mut egui::Ui) {
-    let counts = crate::profiler::blocks::snapshot();
+    let counts = jc3vr_core::profiler::blocks::snapshot();
     if counts.is_empty() {
         return;
     }
