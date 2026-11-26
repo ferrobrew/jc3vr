@@ -3,7 +3,9 @@
 
 use jc3vr_core::frame_timing::{Cumulative, Kind, Slot, ThreadClass};
 
-use crate::{hooks::draw_count::EngineCallTotals, testing::benchmark::detour_timing::DetourTotals};
+use crate::{
+    hooks::draw_count::EngineCallTotals, stereo::single_pass::detour_timing::DetourTotals,
+};
 
 /// A reading of every counter a frame row is made from.
 #[derive(Clone, Debug)]

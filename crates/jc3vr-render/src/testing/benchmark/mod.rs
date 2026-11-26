@@ -14,7 +14,6 @@
 //! the game's update. The GPU records arrive from the draw thread through [`record_gpu_dispatch`],
 //! and the draw-thread naming through [`note_draw_thread`].
 
-pub(crate) mod detour_timing;
 pub(crate) mod gpu_passes;
 mod request;
 mod sample;
@@ -51,7 +50,8 @@ use crate::{
     screenshot::harness::draw_census,
     stereo::{
         config::{STEREO_CONFIG, set_single_pass_feature},
-        layout, single_pass,
+        layout,
+        single_pass::{self, detour_timing},
         switches::ShaderBuild,
     },
     testing::{

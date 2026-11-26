@@ -389,7 +389,7 @@ fn submit_impl(
         }
     });
     if let Some(draw) = draw {
-        crate::testing::benchmark::detour_timing::forward(draw);
+        crate::stereo::single_pass::detour_timing::forward(draw);
     }
 }
 
