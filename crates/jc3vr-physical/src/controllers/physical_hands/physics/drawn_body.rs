@@ -23,7 +23,7 @@
 
 use std::{
     sync::atomic::{AtomicU32, Ordering},
-    time::{Duration, Instant},
+    time::Instant,
 };
 
 use glam::{Mat4, Quat, Vec3};
@@ -40,6 +40,7 @@ use crate::controllers::physical_hands::physics::{
     body::{BodyShape, BodySpec, Capsule, HandBody, player_system_group},
     contact::Source,
     step::step_seconds,
+    tuning::{DrawnBodyTuning, PHYSICS},
 };
 
 /// Whether `body` is one of the drawn torso's capsules. Lock-free, for the carry collision's
@@ -61,7 +62,8 @@ pub(crate) fn note_contact(body: u32) {
 }
 
 /// Whether the held body `body` rests against the torso's capsules: it met one since it last came
-/// clear of them ([`note_contact`]), and its box still reaches one within [`REACH_MARGIN_M`]. A
+/// clear of them ([`note_contact`]), and its box still reaches one within the tuning's
+/// `drawn_body.reach_margin_m` ([`DrawnBodyTuning::reach_margin_m`]). A
 /// contact alone is not enough, since a resting contact is reported only as it starts; the box
 /// alone is not either, since a long prop's box reaches the torso well before the prop does.
 ///
@@ -69,6 +71,7 @@ pub(crate) fn note_contact(body: u32) {
 ///
 /// The main thread, outside the physics step.
 pub(crate) unsafe fn rests_against(body: u32) -> bool {
+    let tuning = &PHYSICS.get().drawn_body;
     let met = {
         let mut met = MET.lock();
         let index = met.iter().position(|b| *b == body);
@@ -79,12 +82,13 @@ pub(crate) unsafe fn rests_against(body: u32) -> bool {
         capsules
             .iter()
             .flatten()
-            .any(|c| box_reaches_capsule(min, max, *c, REACH_MARGIN_M))
+            .any(|c| box_reaches_capsule(min, max, *c, tuning.reach_margin_m))
     });
     let at = Instant::now();
+    let forget_after = tuning.forget_after();
     let mut resting = RESTING.lock();
     // A body last asked about long ago was let go since, and starts afresh.
-    resting.retain(|(_, asked)| at.saturating_duration_since(*asked) <= FORGET_AFTER);
+    resting.retain(|(_, asked)| at.saturating_duration_since(*asked) <= forget_after);
     let was = resting.iter().any(|(b, _)| *b == body);
     let now = episode(was, met, reaches);
     resting.retain(|(b, _)| *b != body);
@@ -118,6 +122,7 @@ pub(crate) unsafe fn rests_against(body: u32) -> bool {
 ///
 /// The thread that steps the physics world, before the step.
 pub(super) unsafe fn step() {
+    let tuning = &PHYSICS.get().drawn_body;
     let enabled = scheme::enabled()
         && scheme::is_controllers()
         && jc3vr_core::hooks::in_gameplay()
@@ -126,7 +131,7 @@ pub(super) unsafe fn step() {
         .then(|| unsafe { Character::GetLocalPlayerCharacter().as_ref() })
         .flatten()
         .and_then(|player| torso_keep_out(Mat4::from(player.m_WorldMatrixT1)))
-        .map(|keep_out| keep_out.capsules.map(target));
+        .map(|keep_out| keep_out.capsules.map(|capsule| target(capsule, tuning)));
     let mut bodies = BODIES.lock();
     let Some(targets) = targets.filter(|targets| targets.iter().all(Option::is_some)) else {
         unsafe { remove(&mut bodies) };
@@ -136,7 +141,7 @@ pub(super) unsafe fn step() {
     *CAPSULES.lock() = targets.map(|target| Some(target.segment()));
     for (i, target) in targets.iter().enumerate() {
         if bodies[i].is_none() {
-            bodies[i] = unsafe { make(*target) };
+            bodies[i] = unsafe { make(*target, tuning) };
             if let Some(body) = &bodies[i] {
                 IDS[i].store(body.body_id(), Ordering::Relaxed);
             }
@@ -144,7 +149,7 @@ pub(super) unsafe fn step() {
         let Some(body) = bodies[i].as_mut() else {
             continue;
         };
-        if unsafe { drive(body, *target) }.is_err() {
+        if unsafe { drive(body, *target, tuning) }.is_err() {
             if let Some(body) = bodies[i].take() {
                 unsafe { body.destroy() };
             }
@@ -207,7 +212,7 @@ fn box_reaches_capsule(min: Vec3, max: Vec3, capsule: WorldCapsule, margin_m: f3
 }
 
 /// The target of a keep-out capsule, slimmed so the holsters and pouches stay in reach.
-fn target(capsule: KeepOutCapsule) -> Option<Target> {
+fn target(capsule: KeepOutCapsule, tuning: &DrawnBodyTuning) -> Option<Target> {
     let axis = capsule.b - capsule.a;
     let length = axis.length();
     if !(capsule.a.is_finite() && capsule.b.is_finite() && length > 1e-3) {
@@ -218,7 +223,7 @@ fn target(capsule: KeepOutCapsule) -> Option<Target> {
         orientation: Quat::from_rotation_arc(Vec3::Z, axis / length),
         capsule: Capsule {
             half_length_m: length * 0.5,
-            radius_m: (capsule.radius * RADIUS_SHARE).max(0.02),
+            radius_m: (capsule.radius * tuning.radius_share).max(tuning.min_radius_m),
         },
     })
 }
@@ -228,11 +233,11 @@ fn target(capsule: KeepOutCapsule) -> Option<Target> {
 /// # Safety
 ///
 /// As [`step`].
-unsafe fn make(target: Target) -> Option<HandBody> {
+unsafe fn make(target: Target, tuning: &DrawnBodyTuning) -> Option<HandBody> {
     let group = unsafe { player_system_group() }?;
     let spec = BodySpec {
         shape: BodyShape::Capsule(target.capsule),
-        mass_kg: MASS_KG,
+        mass_kg: tuning.mass_kg,
         system_group: group,
         contact_events: false,
         gravity: false,
@@ -263,12 +268,12 @@ unsafe fn make(target: Target) -> Option<HandBody> {
 /// # Safety
 ///
 /// As [`step`].
-unsafe fn drive(body: &mut HandBody, target: Target) -> Result<(), ()> {
+unsafe fn drive(body: &mut HandBody, target: Target, tuning: &DrawnBodyTuning) -> Result<(), ()> {
     let motion = unsafe { body.motion() }.map_err(|_| ())?;
     let dt = step_seconds();
     let offset = target.centre - motion.position;
     // Far off (a teleport, a respawn), it is put there rather than flown.
-    if offset.length() > SNAP_M {
+    if offset.length() > tuning.snap_m {
         return unsafe { body.place(target.centre, target.orientation) }.map_err(|_| ());
     }
     let turn = (target.orientation * motion.orientation.inverse()).normalize();
@@ -314,28 +319,11 @@ static MET: Mutex<Vec<u32>> = Mutex::new(Vec::new());
 /// The held bodies resting against the capsules, with when each was last asked about.
 static RESTING: Mutex<Vec<(u32, Instant)>> = Mutex::new(Vec::new());
 
-/// How long after it was last asked about a resting body is forgotten: its hold ended.
-const FORGET_AFTER: Duration = Duration::from_millis(500);
-
 /// The most held bodies [`MET`] and [`RESTING`] keep: the two hands hold two at most.
 const MAX_TRACKED: usize = 8;
 
-/// How near a held body's box must come to a capsule to count as still resting on it, metres: the
-/// broad phase's box already reaches a little past the body.
-const REACH_MARGIN_M: f32 = 0.03;
-
 /// How many intervals a capsule's axis is judged at against a box.
 const AXIS_SAMPLES: usize = 8;
-
-/// How much of the keep-out's radius a capsule takes: slimmer than the drawn body, so a hand
-/// reaching for a holster or a pouch meets nothing first.
-const RADIUS_SHARE: f32 = 0.8;
-
-/// The capsules' mass at creation, kilograms; keyframed, they move as driven whatever it is.
-const MASS_KG: f32 = 40.0;
-
-/// How far off its target a capsule is put there rather than flown, metres.
-const SNAP_M: f32 = 1.0;
 
 #[cfg(test)]
 mod tests {

@@ -21,16 +21,13 @@ use parking_lot::Mutex;
 
 use crate::controllers::physical_hands::{
     physics::{
-        HAND_BODIES, blows, callback, drawn_body,
+        PHYSICS, blows, callback, drawn_body,
         drive::rig_jumped,
         lifecycle::HANDS,
         render::{RenderOffset, apply_offsets},
-        state::{
-            CLEANUP_REGISTERED, MIN_PRESSURE_LOAD, RENDER_MAX_TURN_RAD, RENDER_TURN_DEADBAND_RAD,
-            SHARED, STALE_AFTER, TRACKERS_AT_REST, Target, acting_palms,
-        },
+        state::{CLEANUP_REGISTERED, SHARED, TRACKERS_AT_REST, Target, acting_palms},
     },
-    state::VELOCITY_SMOOTHING_S,
+    tuning::PHYSICAL_HANDS,
 };
 
 /// Register the pre-simulation callback when the hand bodies are wanted, and the cleanup that
@@ -66,7 +63,8 @@ pub fn frame_tick(game: &GameTick<'_>) {
     let delivered = blows::deliver(game);
     let mut shared = SHARED.lock();
     let now = Instant::now();
-    let follow_through = Duration::from_secs_f32(HAND_BODIES.hits.follow_through_s.max(0.0));
+    let follow_through =
+        Duration::from_secs_f32(PHYSICS.get().hand_bodies.hits.follow_through_s.max(0.0));
     for (until, struck) in shared
         .follow_through
         .iter_mut()
@@ -121,7 +119,8 @@ pub fn observe(dt: f32) {
         // The palms move in real time, so their velocities, per game second, smooth over a real
         // stretch of time.
         // SAFETY: the observation runs while the game runs.
-        let smoothing_s = unsafe { TimeScale::current() }.game_s(VELOCITY_SMOOTHING_S);
+        let smoothing_s =
+            unsafe { TimeScale::current() }.game_s(PHYSICAL_HANDS.get().state.velocity_smoothing_s);
         let carrier = match &palms {
             Some((_, _, origin)) => shared.carrier.update(*origin, dt, smoothing_s),
             None => {
@@ -177,9 +176,10 @@ pub fn observe(dt: f32) {
             }
         }
     }
+    let min_pressure_load = PHYSICS.get().step.min_pressure_load;
     for hand in Hand::BOTH {
         let load = loads[hand.index()];
-        if load >= MIN_PRESSURE_LOAD {
+        if load >= min_pressure_load {
             haptics::sustain(hand, Sustain::BodyPressure, load);
         }
     }
@@ -233,6 +233,7 @@ pub unsafe fn sample_render_offsets() {
             shared.offset_timeline.at(now),
         )
     };
+    let physics = PHYSICS.get();
     let on_gun = guns::physical_hands();
     let hands = HANDS.lock();
     let offsets = Hand::BOTH.map(|hand| {
@@ -260,13 +261,13 @@ pub unsafe fn sample_render_offsets() {
                 position: motion.position,
                 orientation: motion.orientation,
             },
-            HAND_BODIES.break_distance_m * scale,
+            physics.hand_bodies.break_distance_m * scale,
             if on_gun[i] {
                 0.0
             } else {
-                RENDER_TURN_DEADBAND_RAD
+                physics.render.turn_deadband_rad
             },
-            RENDER_MAX_TURN_RAD,
+            physics.render.max_turn_rad,
         );
         Some(offset.to_cockpit(rotation, scale))
     });
@@ -281,7 +282,7 @@ pub fn apply_at_render(cockpit: &mut [Option<CockpitHand>; 2], palm_offset: Vec3
         apply(cockpit, palm_offset);
         return;
     };
-    if Instant::now().saturating_duration_since(at) > STALE_AFTER {
+    if Instant::now().saturating_duration_since(at) > PHYSICS.get().step.stale_after() {
         apply(cockpit, palm_offset);
         return;
     }

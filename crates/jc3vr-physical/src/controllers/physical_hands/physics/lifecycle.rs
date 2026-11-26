@@ -18,6 +18,7 @@ use crate::controllers::physical_hands::physics::{
     guns::step::{GunSlot, drop_hand},
     joint::{Joint, JointKind},
     render::RenderOffset,
+    tuning::LifecycleTuning,
 };
 
 /// One hand's drive request.
@@ -45,6 +46,7 @@ pub(super) struct ActRequest<'a> {
     pub clear: &'a mut dyn FnMut(Vec3, Vec3) -> bool,
     pub tuning: &'a DriveTuning,
     pub joined: Option<JoinedLoad>,
+    pub lifecycle: &'a LifecycleTuning,
     pub step_s: f32,
 }
 
@@ -159,12 +161,13 @@ impl Hands {
             clear,
             tuning,
             joined,
+            lifecycle,
             step_s,
         } = request;
         let i = hand.index();
         let mut destroyed = false;
         if let Some(existing) = &self.bodies[i]
-            && let Some(reason) = incompatible(&existing.spec(), &spec)
+            && let Some(reason) = incompatible(&existing.spec(), &spec, lifecycle.spec_tolerance)
         {
             // SAFETY: forwarded from the caller.
             destroyed = unsafe { self.destroy(hand, reason) };
@@ -203,7 +206,7 @@ impl Hands {
             self.goals[i] = None;
             self.palms[i] = None;
             unsafe { body.place(goal.position, goal.orientation) }?;
-            contact::mute_for(hand, PLACED_MUTE_STEPS);
+            contact::mute_for(hand, lifecycle.placed_mute_steps);
             self.placed[i] = true;
             tracing::info!(
                 hand = hand.label(),
@@ -256,7 +259,7 @@ impl Hands {
                 )
             };
             unsafe { body.place(goal.position, goal.orientation) }?;
-            contact::mute_for(hand, PLACED_MUTE_STEPS);
+            contact::mute_for(hand, lifecycle.placed_mute_steps);
             contact::record_motion(hand, goal.position, Vec3::ZERO);
             self.placed[i] = true;
             self.resets[i] += 1;
@@ -379,7 +382,13 @@ impl Hands {
     /// the hand moving: put it where it keeps its place against the palm, at rest, and ignore its
     /// contacts for a while, so that a snap turn neither swings it through what is around nor
     /// strikes with it.
-    pub(super) unsafe fn carry(&mut self, hand: Hand, from: Goal, to: Goal) {
+    pub(super) unsafe fn carry(
+        &mut self,
+        hand: Hand,
+        from: Goal,
+        to: Goal,
+        lifecycle: &LifecycleTuning,
+    ) {
         let i = hand.index();
         let Some(body) = self.bodies[i].as_mut().filter(|_| self.added[i]) else {
             return;
@@ -404,7 +413,7 @@ impl Hands {
         // SAFETY: forwarded from the caller.
         match unsafe { body.place(carried.position, carried.orientation) } {
             Ok(()) => {
-                contact::mute_for(hand, RIG_MUTE_STEPS);
+                contact::mute_for(hand, lifecycle.rig_mute_steps);
                 self.placed[i] = true;
                 self.goals[i] = None;
                 self.palms[i] = None;
@@ -543,15 +552,16 @@ unsafe fn end_joint(slot: &mut Option<Joint>, hand: Hand, reason: &str) -> bool 
     true
 }
 
-/// Why a body made to `existing` cannot serve as one made to `wanted`, if it cannot.
-fn incompatible(existing: &BodySpec, wanted: &BodySpec) -> Option<&'static str> {
+/// Why a body made to `existing` cannot serve as one made to `wanted`, if it cannot: `tolerance`
+/// is the relative change in its size or mass that remakes it.
+fn incompatible(existing: &BodySpec, wanted: &BodySpec, tolerance: f32) -> Option<&'static str> {
     if existing.system_group != wanted.system_group {
         return Some("the player's collision group changed");
     }
     if existing.contact_events != wanted.contact_events {
         return Some("the hits were switched on or off");
     }
-    let close = |a: f32, b: f32| (a - b).abs() <= SPEC_TOLERANCE * a.abs().max(b.abs());
+    let close = |a: f32, b: f32| (a - b).abs() <= tolerance * a.abs().max(b.abs());
     let same_shape = match (existing.shape, wanted.shape) {
         (BodyShape::Capsule(a), BodyShape::Capsule(b)) => {
             close(a.radius_m, b.radius_m) && close(a.half_length_m, b.half_length_m)
@@ -563,14 +573,3 @@ fn incompatible(existing: &BodySpec, wanted: &BodySpec) -> Option<&'static str> 
     }
     None
 }
-
-/// How many steps a body put somewhere, rather than moved there, ignores its contacts, at the
-/// game's 30 Hz tick ([`contact::mute_for`] scales it at another sim rate).
-pub(super) const PLACED_MUTE_STEPS: u64 = 3;
-
-/// How many steps a body the rig carried ignores its contacts: a fifth of a second at the game's
-/// 30 Hz tick ([`contact::mute_for`] scales it at another sim rate).
-const RIG_MUTE_STEPS: u64 = 6;
-
-/// The relative change in a body's size or mass that remakes it.
-const SPEC_TOLERANCE: f32 = 0.02;

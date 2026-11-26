@@ -10,7 +10,10 @@ use jc3vr_body::controllers::{
     clock::TimeScale,
     held::guns as held_guns,
     mode,
-    physics::steps::{count_step, current_at},
+    physics::{
+        GRAVITY_MPS2,
+        steps::{count_step, current_at},
+    },
 };
 use jc3vr_input::frame::{Hand, Pose};
 
@@ -19,7 +22,7 @@ use crate::controllers::physical_hands::{
     config::PHYSICAL_HANDS_CONFIG,
     impacts, mode_acts,
     physics::{
-        HAND_BODIES,
+        PHYSICS,
         body::{BodyShape, BodySpec, Capsule, HandBody, player_system_group},
         contact,
         drive::{DriveTuning, Goal, JoinedLoad, PushTuning, contact_gain, lag_push, smooth_push},
@@ -28,10 +31,7 @@ use crate::controllers::physical_hands::{
         joint::Joint,
         lifecycle::{ActRequest, HANDS, RenderTuning},
         render::RenderOffset,
-        state::{
-            MAX_LEAD_S, PARK_AFTER, READOUT_PERIOD, RENDER_MAX_TURN_RAD, RENDER_TURN_DEADBAND_RAD,
-            SHARED, gun_tuning, holding_tuning, press_load,
-        },
+        state::{SHARED, gun_tuning, holding_tuning, press_load},
         types::{BodyPhase, HandBodyStatus},
     },
     pickup::PICKUP,
@@ -46,6 +46,7 @@ use crate::controllers::physical_hands::{
 /// The thread that steps the physics world, outside the step.
 pub unsafe fn step() {
     let now = Instant::now();
+    let physics = PHYSICS.get();
     // SAFETY: the physics step runs while the game runs.
     let time_scale = unsafe { TimeScale::current() };
     let step_number = count_step();
@@ -137,16 +138,17 @@ pub unsafe fn step() {
     let holds = if fresh && ordinary { holds } else { [None; 2] };
     let age_s = published
         .map_or(0.0, |at| now.saturating_duration_since(at).as_secs_f32())
-        .min(MAX_LEAD_S);
+        .min(physics.step.max_lead_s);
     // The palms' target ages in real time while its velocity is the world's, per game second.
     let lead_s = age_s * time_scale.get() + step_s;
     // The carrier moves with the steps alone: its part is led by the steps since the palms were
     // published, and this step.
     let steps_since = published_step.map_or(0, |at| step_number.saturating_sub(at));
-    let carrier_lead_s = ((steps_since as f32 + 1.0) * step_s).min(MAX_LEAD_S + step_s);
+    let carrier_lead_s =
+        ((steps_since as f32 + 1.0) * step_s).min(physics.step.max_lead_s + step_s);
     // SAFETY: forwarded from the caller.
     let group = unsafe { player_system_group() };
-    let b = &HAND_BODIES;
+    let b = &physics.hand_bodies;
     let strength = PHYSICAL_HANDS_CONFIG.query(|c| c.bodies.strength);
     let scale = if world_scale.is_finite() && world_scale > 0.0 {
         world_scale
@@ -161,11 +163,12 @@ pub unsafe fn step() {
         angular_gain: b.angular_gain,
         max_speed_mps: b.max_speed_mps,
         max_angular_speed_rps: b.max_angular_speed_rps,
+        max_carrier_speed_mps: physics.rig.max_carrier_speed_mps,
     };
     let render = RenderTuning {
         max_shift_m: b.break_distance_m * scale,
-        deadband_rad: RENDER_TURN_DEADBAND_RAD,
-        max_turn_rad: RENDER_MAX_TURN_RAD,
+        deadband_rad: physics.render.turn_deadband_rad,
+        max_turn_rad: physics.render.max_turn_rad,
     };
     // A hand on a gun is drawn turned exactly as its body is, since the drawn gun follows the hand.
     let render_on_gun = RenderTuning {
@@ -174,7 +177,7 @@ pub unsafe fn step() {
     };
     // A hand holding through a joint stays drawn on what it holds as far as the hold can trail.
     let render_holding = RenderTuning {
-        max_shift_m: PICKUP.tear_distance_m,
+        max_shift_m: PICKUP.get().tear_distance_m,
         ..render
     };
     let push_tuning = PushTuning {
@@ -219,7 +222,7 @@ pub unsafe fn step() {
             && grips[i].is_none()
         {
             // SAFETY: forwarded from the caller.
-            unsafe { hands.carry(hand, from, to) };
+            unsafe { hands.carry(hand, from, to, &physics.lifecycle) };
         }
     }
     let climbing = climbs.iter().any(Option::is_some);
@@ -267,7 +270,9 @@ pub unsafe fn step() {
                 let held_tuning = if on_gun[i] {
                     gun_tuning(&tuning, held_guns::carried_mass(hand, b.mass_kg))
                 } else {
-                    holding.map_or(tuning, |h| holding_tuning(&tuning, &h))
+                    holding.map_or(tuning, |h| {
+                        holding_tuning(&tuning, &h, b.constrained_gain_share)
+                    })
                 };
                 let hand_tuning = DriveTuning {
                     linear_gain,
@@ -300,8 +305,9 @@ pub unsafe fn step() {
                     tuning: &hand_tuning,
                     joined: holding.filter(|_| !on_gun[i]).map(|_| JoinedLoad {
                         hand_mass_kg: spec.mass_kg,
-                        gravity: Vec3::NEG_Y * PICKUP.gravity_mps2.max(0.0),
+                        gravity: Vec3::NEG_Y * GRAVITY_MPS2,
                     }),
+                    lifecycle: &physics.lifecycle,
                     step_s,
                 };
                 // SAFETY: forwarded from the caller.
@@ -347,7 +353,7 @@ pub unsafe fn step() {
                 let park = group.is_none()
                     || (!ordinary && !on_gun[i])
                     || park_now[i]
-                    || now.saturating_duration_since(since) >= PARK_AFTER;
+                    || now.saturating_duration_since(since) >= physics.step.park_after();
                 let reason = if group.is_none() {
                     "the player has no collision group"
                 } else if park_now[i] {
@@ -377,6 +383,7 @@ pub unsafe fn step() {
             GunStep {
                 holds: gun_holds,
                 config: &b.guns,
+                placed_mute_steps: physics.lifecycle.placed_mute_steps,
                 contact_events: true,
                 group,
                 palms: targets.map(|target| {
@@ -423,7 +430,7 @@ pub unsafe fn step() {
     };
     let log_now = hands
         .last_log
-        .is_none_or(|at| now.saturating_duration_since(at) >= READOUT_PERIOD);
+        .is_none_or(|at| now.saturating_duration_since(at) >= physics.step.readout_period());
     if log_now && statuses.iter().any(|s| s.phase == BodyPhase::Acting) {
         hands.last_log = Some(now);
         for hand in Hand::BOTH {

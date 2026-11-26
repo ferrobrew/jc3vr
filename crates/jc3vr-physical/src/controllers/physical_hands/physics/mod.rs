@@ -18,7 +18,8 @@
 //! - [`guns`]: a held gun as a body of its own, joined to the hand bodies that hold it;
 //! - [`state`]: the shared state the tick's two halves and the rest of the controllers read, and
 //!   the small readers over it;
-//! - [`config`]: the settings, and their fixed tuning ([`HAND_BODIES`]).
+//! - [`config`]: the settings;
+//! - [`tuning`]: the tuning ([`PHYSICS`]).
 //!
 //! Each simulation tick runs in this order:
 //!
@@ -61,12 +62,13 @@ mod observe;
 mod render;
 mod state;
 mod step;
+pub mod tuning;
 mod types;
 
 pub(crate) use blows::queue_shove;
 pub use blows::{Shove, ShoveForce};
 pub use callback::{rail_step_registered, register_rail_step};
-pub use config::{HAND_BODIES, HandBodiesConfig, HandHitsTuning};
+pub use config::HandBodiesConfig;
 pub(crate) use lifecycle::release_body_joints;
 
 pub use self::{
@@ -76,6 +78,7 @@ pub use self::{
         take_joint_losses,
     },
     step::{step, step_seconds},
+    tuning::{HandHitsTuning, PHYSICS},
     types::{BodyPhase, CallbackStatus, HandBodiesStatus, HandBodyStatus, HoldTarget},
 };
 
@@ -87,14 +90,17 @@ mod tests {
     use jc3vr_input::frame::Pose;
 
     use crate::controllers::physical_hands::{
-        characters::RAGDOLL_CARRY_STRENGTH,
-        physics::{HAND_BODIES, HoldTarget, drive::DriveTuning, state::holding_tuning},
-        pickup::PICKUP,
+        characters::tuning::CHARACTERS,
+        physics::{HoldTarget, PHYSICS, drive::DriveTuning, state},
+        pickup::{HandStrength, PICKUP},
     };
 
     #[test]
     fn a_joined_hand_holds_with_a_holding_hands_strength() {
-        let b = &HAND_BODIES;
+        let b = &PHYSICS.get().hand_bodies;
+        let holding_tuning = |tuning: &DriveTuning, hold: &HoldTarget| {
+            state::holding_tuning(tuning, hold, b.constrained_gain_share)
+        };
         let tuning = DriveTuning {
             mass_kg: b.mass_kg,
             max_force_n: b.force_n(1.0),
@@ -103,6 +109,7 @@ mod tests {
             angular_gain: b.angular_gain,
             max_speed_mps: b.max_speed_mps,
             max_angular_speed_rps: b.max_angular_speed_rps,
+            max_carrier_speed_mps: PHYSICS.get().rig.max_carrier_speed_mps,
         };
         let hold = HoldTarget {
             object: NonZeroUsize::new(100).unwrap(),
@@ -114,7 +121,7 @@ mod tests {
             mass_kg: 75.0,
             keep_out: Vec3::ZERO,
             shared: false,
-            hand_force_n: PICKUP.hand_force_n,
+            hand_force_n: HandStrength::full().force_n,
             constrained: false,
         };
         let one = holding_tuning(&tuning, &hold);
@@ -134,13 +141,14 @@ mod tests {
         );
         assert!(shared_soft.linear_gain < soft.linear_gain);
         assert_eq!(one.mass_kg, tuning.mass_kg + hold.mass_kg);
-        assert_eq!(one.max_force_n, PICKUP.hand_force_n);
-        assert_eq!(one.max_torque_nm, PICKUP.hand_torque_nm);
+        assert_eq!(one.max_force_n, HandStrength::full().force_n);
+        assert_eq!(one.max_torque_nm, HandStrength::full().torque_nm);
         let ragdoll = holding_tuning(
             &tuning,
             &HoldTarget {
                 mass_kg: 6.0,
-                hand_force_n: PICKUP.hand_force_n * RAGDOLL_CARRY_STRENGTH,
+                hand_force_n: HandStrength::full().force_n
+                    * CHARACTERS.get().characters.ragdoll_carry_strength,
                 constrained: false,
                 ..hold
             },
@@ -154,20 +162,20 @@ mod tests {
             &tuning,
             &HoldTarget {
                 shared: true,
-                hand_force_n: PICKUP.hand_force_n * 1.5,
+                hand_force_n: HandStrength::full().force_n * 1.5,
                 constrained: false,
                 ..hold
             },
         );
         assert_eq!(
             two.max_force_n,
-            tuning.max_force_n.min(PICKUP.hand_force_n * 1.5)
+            tuning.max_force_n.min(HandStrength::full().force_n * 1.5)
         );
         assert!(
             (two.max_torque_nm
-                - tuning
-                    .max_torque_nm
-                    .min(PICKUP.hand_torque_nm * 1.5 * PICKUP.two_hand_angular_share,))
+                - tuning.max_torque_nm.min(
+                    HandStrength::full().torque_nm * 1.5 * PICKUP.get().two_hand_angular_share,
+                ))
             .abs()
                 < 1e-5
         );
@@ -179,13 +187,13 @@ mod tests {
         let scaled = holding_tuning(
             &stronger,
             &HoldTarget {
-                hand_force_n: PICKUP.hand_force_n * 2.0,
+                hand_force_n: HandStrength::full().force_n * 2.0,
                 constrained: false,
                 ..hold
             },
         );
-        assert_eq!(scaled.max_force_n, PICKUP.hand_force_n * 2.0);
-        assert_eq!(scaled.max_torque_nm, PICKUP.hand_torque_nm * 2.0);
+        assert_eq!(scaled.max_force_n, HandStrength::full().force_n * 2.0);
+        assert_eq!(scaled.max_torque_nm, HandStrength::full().torque_nm * 2.0);
         // Never stronger than the hand itself.
         let weak = DriveTuning {
             max_force_n: 10.0,

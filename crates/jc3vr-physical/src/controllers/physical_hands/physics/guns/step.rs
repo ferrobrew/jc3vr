@@ -24,19 +24,18 @@ use parking_lot::Mutex;
 
 use crate::controllers::physical_hands::physics::{
     body::{BodyError, BodyShape, BodySpec, HandBody},
-    config::HeldGunsTuning,
     contact::{self, Source},
     drive::BodyMotion,
     guns::{
         engine::{GunError, GunSource, check_own_body, read_source},
         math::{
-            BRACE_BREAK_STEPS, GunAxes, MAX_GRIP_SEAT_M, brace_broken, brace_due, brace_palm,
-            clamp_velocity, class_value, deviation, gun_mass, intended_seat, limit, seat, seated,
-            settled, shot_impulse, strayed,
+            GunAxes, brace_broken, brace_due, brace_palm, clamp_velocity, class_value, deviation,
+            gun_mass, intended_seat, limit, seat, seated, settled, shot_impulse, strayed,
         },
     },
     joint::Joint,
-    lifecycle::{Hands, PLACED_MUTE_STEPS},
+    lifecycle::Hands,
+    tuning::HeldGunsTuning,
     types::BodyPhase,
 };
 
@@ -68,6 +67,8 @@ pub(crate) struct GunStep<'a> {
     /// The guns in the hands, as last published; empty when stale or switched off.
     pub holds: GunHolds,
     pub config: &'a HeldGunsTuning,
+    /// How many steps a body put somewhere, rather than moved there, ignores its contacts.
+    pub placed_mute_steps: u64,
     /// Whether the gun bodies' contacts are listened for.
     pub contact_events: bool,
     /// The player's collision system group.
@@ -255,15 +256,15 @@ unsafe fn make(
     let seat = intended_seat(palm, source.pose);
     // A gun held by its grip sits in the palm; one held by another part may sit far along it.
     let seat_limit = if held.carry.is_some() {
-        input.config.stray_distance_m.max(0.0) + source_reach(&source)
+        input.config.stray_distance_m.max(0.0) + source_reach(&source, input.config)
     } else {
-        MAX_GRIP_SEAT_M
+        input.config.max_grip_seat_m
     };
     let reach = seat.position.length();
     if !reach.is_finite() || reach > seat_limit {
         return Err(GunError::NotInHand);
     }
-    if !settled(hand_pose, palm) {
+    if !settled(hand_pose, palm, input.config) {
         return Err(GunError::HandUnsettled);
     }
     let at = seated(hand_pose, seat);
@@ -299,7 +300,7 @@ unsafe fn make(
         unsafe { body.destroy() };
         return Err(GunError::NotInPlayerGroup);
     }
-    contact::mute_for(Source::Gun(hand), PLACED_MUTE_STEPS);
+    contact::mute_for(Source::Gun(hand), input.placed_mute_steps);
     // SAFETY: forwarded from the caller; both bodies are in the simulation.
     let joint = match unsafe { Joint::create_between(hand_id, body.body_id()) } {
         Ok(joint) => joint,
@@ -414,7 +415,7 @@ unsafe fn keep(
         // SAFETY: forwarded from the caller.
         unsafe { slot.body.place(back.position, back.orientation) }
             .map_err(|_| "the gun body could not be put back on its seat")?;
-        contact::mute_for(Source::Gun(hand), PLACED_MUTE_STEPS);
+        contact::mute_for(Source::Gun(hand), input.placed_mute_steps);
         tracing::debug!(
             hand = hand.label(),
             reason,
@@ -427,7 +428,7 @@ unsafe fn keep(
             let palm = seated(back, brace.frame);
             // SAFETY: forwarded from the caller.
             if unsafe { off_hand.place(palm.position, palm.orientation) }.is_ok() {
-                contact::mute_for(Source::Hand(off), PLACED_MUTE_STEPS);
+                contact::mute_for(Source::Hand(off), input.placed_mute_steps);
             }
         }
         gun_pose = back;
@@ -490,7 +491,7 @@ unsafe fn keep(
     } else {
         0
     };
-    let support_broke = slot.support_strays >= BRACE_BREAK_STEPS;
+    let support_broke = slot.support_strays >= input.config.brace.break_steps;
     // Whether the joint is remade for a moved palm, rather than made afresh.
     let mut remade = false;
     if let Some(brace) = slot.brace.take() {
@@ -539,8 +540,8 @@ unsafe fn keep(
             );
         } else {
             // A palm remade a little along the gun it already holds meets nothing new.
-            if !(remade && jump <= QUIET_REBRACE_M) {
-                contact::mute_for(Source::Hand(off), PLACED_MUTE_STEPS);
+            if !(remade && jump <= input.config.quiet_rebrace_m) {
+                contact::mute_for(Source::Hand(off), input.placed_mute_steps);
             }
             // SAFETY: forwarded from the caller; both bodies are in the simulation.
             match unsafe { Joint::create_between(off_id, slot.body.body_id()) } {
@@ -676,10 +677,6 @@ unsafe fn end_quietly(joint: Joint, hand: Hand) {
     );
 }
 
-/// How far a remade brace may move the support palm without muting its contacts, metres: a palm
-/// seated a little along the gun it already holds is no placement into the world.
-const QUIET_REBRACE_M: f32 = 0.05;
-
 /// The motion a body was given: its centre of mass and its velocities, world space.
 #[derive(Copy, Clone)]
 struct Carried {
@@ -737,15 +734,12 @@ unsafe fn carry_with(body: &mut HandBody, carrier: Carried) -> Result<(), BodyEr
 
 /// How far along the gun a hand may hold it by a part other than its grip: the gun's muzzle's
 /// distance from its origin, or a long gun's length when the fire point is unknown.
-fn source_reach(source: &GunSource) -> f32 {
+fn source_reach(source: &GunSource, config: &HeldGunsTuning) -> f32 {
     source
         .axes
-        .map_or(MAX_CARRY_REACH_M, |axes| axes.muzzle.length())
-        .clamp(MAX_GRIP_SEAT_M, MAX_CARRY_REACH_M)
+        .map_or(config.max_carry_reach_m, |axes| axes.muzzle.length())
+        .clamp(config.max_grip_seat_m, config.max_carry_reach_m)
 }
-
-/// The furthest from a gun's origin a hand may hold it, metres: past the longest gun's muzzle.
-const MAX_CARRY_REACH_M: f32 = 1.5;
 
 /// The seat a gun at `gun` has on a hand body at `hand`: the made joint's, for the log.
 fn seat_of(hand: Pose, gun: Pose) -> Pose {

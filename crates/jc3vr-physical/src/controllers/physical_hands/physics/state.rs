@@ -2,10 +2,7 @@
 //! last step's results, the readout, and the small readers both halves and the rest of the
 //! controllers take.
 
-use std::{
-    sync::atomic::AtomicBool,
-    time::{Duration, Instant},
-};
+use std::{sync::atomic::AtomicBool, time::Instant};
 
 use glam::{Quat, Vec2, Vec3};
 // The step counter moved down to the physics substrate; re-exported here so the hand bodies keep
@@ -23,16 +20,15 @@ use crate::controllers::physical_hands::{
     mode_acts,
     palm::PalmBox,
     physics::{
-        callback,
-        config::HandBodyTuning,
-        contact,
+        callback, contact,
         drive::{DriveTuning, Goal},
         guns,
         render::{OffsetTimeline, RenderOffset},
+        tuning::{HandBodyTuning, PHYSICS},
         types::{BodyPhase, CallbackStatus, HandBodiesStatus, HandBodyStatus, HoldTarget},
     },
-    pickup::PICKUP,
-    tuning::PALMS,
+    pickup::{HandStrength, PICKUP},
+    tuning::PHYSICAL_HANDS,
 };
 
 pub fn status() -> HandBodiesStatus {
@@ -95,7 +91,7 @@ pub fn pressing(hand: Hand) -> bool {
     let now = Instant::now();
     shared.fresh(now)
         && shared.stepped_lately(now)
-        && shared.loads[hand.index()] >= MIN_PRESSURE_LOAD
+        && shared.loads[hand.index()] >= PHYSICS.get().step.min_pressure_load
 }
 
 /// The push the hand bodies give the player, world `(x, z)` metres per second: zero when no step
@@ -112,31 +108,6 @@ pub fn push() -> Vec2 {
         Vec2::ZERO
     }
 }
-
-/// How long a published pose stays current for a reader between the steps: the aim update runs
-/// every simulation tick while the hands act, so an older one means they have stopped.
-pub(super) const STALE_AFTER: Duration = Duration::from_millis(200);
-
-/// How long a hand may stop acting before its body leaves the simulation, so that a moment's lost
-/// tracking or a flicker of the mode does not churn the world. A hand that takes a gun or carries
-/// what it grabbed leaves at once.
-pub(super) const PARK_AFTER: Duration = Duration::from_millis(250);
-
-/// The longest a published pose is carried forward by its velocity, seconds.
-pub(super) const MAX_LEAD_S: f32 = 0.1;
-
-/// The turn between a body and its controller's palm that is not drawn, radians: a free hand keeps
-/// the controller's own rotation.
-pub(super) const RENDER_TURN_DEADBAND_RAD: f32 = 0.05;
-
-/// The largest turn a hand is drawn at against its controller, radians.
-pub(super) const RENDER_MAX_TURN_RAD: f32 = 1.5;
-
-/// The least share of a hand's strength that pulses it.
-pub(super) const MIN_PRESSURE_LOAD: f32 = 0.1;
-
-/// How often the drive is written to the debug log while a hand acts.
-pub(super) const READOUT_PERIOD: Duration = Duration::from_secs(1);
 
 pub(super) const TRACKERS_AT_REST: [(VelocityTracker, AngularTracker); 2] =
     [(VelocityTracker::new(), AngularTracker::new()); 2];
@@ -238,13 +209,15 @@ pub(super) struct Shared {
 
 impl Shared {
     pub(super) fn fresh(&self, now: Instant) -> bool {
+        let stale_after = PHYSICS.get().step.stale_after();
         self.published
-            .is_some_and(|at| now.saturating_duration_since(at) <= STALE_AFTER)
+            .is_some_and(|at| now.saturating_duration_since(at) <= stale_after)
     }
 
     pub(super) fn stepped_lately(&self, now: Instant) -> bool {
+        let stale_after = PHYSICS.get().step.stale_after();
         self.stepped
-            .is_some_and(|at| now.saturating_duration_since(at) <= STALE_AFTER)
+            .is_some_and(|at| now.saturating_duration_since(at) <= stale_after)
     }
 }
 
@@ -331,7 +304,11 @@ pub(super) fn acting_palms() -> Option<ActingPalms> {
     guns::targets::apply_physical(&mut active.hands, active.head.position);
     let xf = CockpitTransform::current(active.head.position, active.world_scale);
     let palm_of = |cockpit: CockpitHand| {
-        PalmBox::from_wrist(xf.pose_to_world(cockpit.wrist), active.world_scale, &PALMS)
+        PalmBox::from_wrist(
+            xf.pose_to_world(cockpit.wrist),
+            active.world_scale,
+            &PHYSICAL_HANDS.get().palms,
+        )
     };
     let palms = Hand::BOTH.map(|hand| {
         let i = hand.index();
@@ -376,17 +353,25 @@ pub(super) struct ActingPalms {
 }
 
 /// The drive of a hand that holds an object through a joint: a holding hand's pull and twist
-/// (`hold`'s [`HoldTarget::hand_force_n`], the pull a carry of the object would have, and
-/// [`PickupTuning::hand_torque_nm`]), no stronger than the hand's own, and with both hands on the
+/// (`hold`'s [`HoldTarget::hand_force_n`], the pull a carry of the object would have, and the
+/// twist of a hand at a strength of one, [`HandStrength::full`], in the same proportion), no
+/// stronger than the hand's own, and with both hands on the
 /// object, the twist at [`PickupTuning::two_hand_angular_share`], so the hands lift what they
 /// would carry and the two grab points set the object's line. The combined hand and carried mass
 /// sets the requested impulse; the joined drive applies that impulse through the hand's own mass.
 /// A ragdoll's carried mass is the bone the hand holds, and the rest of the body hangs from it.
+/// A hand joined to a ragdoll or an articulated object pulls with `constrained_gain_share` of the
+/// drive's gains.
 ///
-/// [`PickupTuning::hand_torque_nm`]: crate::controllers::physical_hands::pickup::PickupTuning::hand_torque_nm
+/// [`HandStrength::full`]: crate::controllers::physical_hands::pickup::HandStrength::full
 /// [`PickupTuning::two_hand_angular_share`]: crate::controllers::physical_hands::pickup::PickupTuning::two_hand_angular_share
-pub(super) fn holding_tuning(tuning: &DriveTuning, hold: &HoldTarget) -> DriveTuning {
-    let pickup = &PICKUP;
+pub(super) fn holding_tuning(
+    tuning: &DriveTuning,
+    hold: &HoldTarget,
+    constrained_gain_share: f32,
+) -> DriveTuning {
+    let pickup = PICKUP.get();
+    let full = HandStrength::full();
     let twist_share = if hold.shared {
         pickup.two_hand_angular_share.clamp(0.0, 1.0)
     } else {
@@ -402,8 +387,7 @@ pub(super) fn holding_tuning(tuning: &DriveTuning, hold: &HoldTarget) -> DriveTu
     } else {
         0.0
     };
-    let torque_nm =
-        pickup.hand_torque_nm.max(0.0) * (pull / pickup.hand_force_n).max(0.0) * twist_share;
+    let torque_nm = full.torque_nm.max(0.0) * (pull / full.force_n).max(0.0) * twist_share;
     // A ragdoll or an articulated object hangs most of its mass on its own constraints, which the
     // dead-beat drive does not see: closing the bone's lag in one step, the hand overshot and the
     // body orbited the palm at 2 to 4 Hz, even held still (2659, 2672, and 3270 s of the 14
@@ -411,8 +395,8 @@ pub(super) fn holding_tuning(tuning: &DriveTuning, hold: &HoldTarget) -> DriveTu
     // hard, since each drive assumes it alone moves the assembly.
     let gain_share = match (hold.constrained, hold.shared) {
         (false, _) => 1.0,
-        (true, false) => CONSTRAINED_GAIN_SHARE,
-        (true, true) => CONSTRAINED_GAIN_SHARE * 0.5,
+        (true, false) => constrained_gain_share,
+        (true, true) => constrained_gain_share * 0.5,
     };
     DriveTuning {
         mass_kg: (tuning.mass_kg + carried_mass).min(f32::MAX),
@@ -423,9 +407,6 @@ pub(super) fn holding_tuning(tuning: &DriveTuning, hold: &HoldTarget) -> DriveTu
         ..*tuning
     }
 }
-
-/// The share of the drive's gains a hand joined to a ragdoll or an articulated object pulls with.
-const CONSTRAINED_GAIN_SHARE: f32 = 0.4;
 
 /// The drive of a hand on a gun: the hand's full strength, unlike a hand lifting a loose object,
 /// against the hand's mass and what it carries together (`gun_kg`, the gun body's mass and a
@@ -466,6 +447,7 @@ mod tests {
             angular_gain: 0.8,
             max_speed_mps: 20.0,
             max_angular_speed_rps: 30.0,
+            max_carrier_speed_mps: 80.0,
         };
         let on_gun = gun_tuning(&tuning, Some(4.0));
         assert_eq!(on_gun.mass_kg, 7.0);

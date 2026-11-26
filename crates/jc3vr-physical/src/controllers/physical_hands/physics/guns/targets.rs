@@ -70,7 +70,7 @@ mod tests {
     use crate::controllers::physical_hands::{
         palm::PalmBox,
         physics::guns::math::{intended_seat, seated},
-        tuning::PALMS,
+        tuning::PHYSICAL_HANDS,
     };
 
     fn hand(position: Vec3) -> CockpitHand {
@@ -94,7 +94,7 @@ mod tests {
             let mut shown = hand(Vec3::new(t * 0.1, -0.2, -0.6));
             shown.wrist.orientation =
                 Quat::from_rotation_y(t * 0.3) * Quat::from_rotation_x(-t * 0.6);
-            let palm = PalmBox::from_wrist(shown.wrist, 1.0, &PALMS);
+            let palm = PalmBox::from_wrist(shown.wrist, 1.0, &PHYSICAL_HANDS.get().palms);
             let palm = Pose {
                 position: palm.centre,
                 orientation: palm.orientation,

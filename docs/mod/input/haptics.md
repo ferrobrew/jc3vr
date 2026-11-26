@@ -57,7 +57,7 @@ The one-off sources are `Event` and the sustained ones `Sustain` (`cues.rs`), an
 | Source | Raised when | Primitive | Category | Raised by |
 | --- | --- | --- | --- | --- |
 | `Event::PalmTouch` | a palm meets a surface, scaled by how fast (a quarter at a touch) | bump | contact | `physical_hands::touch` |
-| `Event::HandStrike` | a hand body's contact, or a blow on a character, scaled by the arm's momentum; a held gun's contact by the arm's alone, at most once every `HAND_BODIES.guns.contact_pulse_interval_s` per hand | bump | contact | `physical_hands::physics::blows` |
+| `Event::HandStrike` | a hand body's contact, or a blow on a character, scaled by the arm's momentum; a held gun's contact by the arm's alone, at most once every the physics tuning's `hand_bodies.guns.contact_pulse_interval_s` per hand | bump | contact | `physical_hands::physics::blows` |
 | `Event::Take` | a hand takes hold of an object, a character, a door, or a weapon off the ground | bump | contact | `physical_hands`, `physical_hands::pickup` |
 | `Event::LetGo` | a hand lets go of what it held | click | contact | `physical_hands` |
 | `Event::DoorPressureContact` | an ungripped palm first establishes valid inner-panel opening pressure; retained probe gaps do not repeat it | tick | contact | `physical_hands::doors::pressure` |

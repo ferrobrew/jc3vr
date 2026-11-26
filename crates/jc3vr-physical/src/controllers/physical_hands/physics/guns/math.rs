@@ -10,7 +10,7 @@ use jc3vr_body::controllers::{
 };
 use jc3vr_input::frame::Pose;
 
-use crate::controllers::physical_hands::physics::config::{
+use crate::controllers::physical_hands::physics::tuning::{
     BraceTuning, GunClassValues, HeldGunsTuning,
 };
 
@@ -49,10 +49,6 @@ pub fn brace_broken(tracked: Vec3, held: Vec3, break_m: f32) -> bool {
     let gap = tracked.distance(held);
     gap.is_finite() && break_m.is_finite() && gap > break_m.max(0.0)
 }
-
-/// How many steps in a row the tracked support palm must be past the break distance before the
-/// brace breaks: a single stray sample of the tracking breaks nothing.
-pub const BRACE_BREAK_STEPS: u8 = 3;
 
 /// The value of `values` for a gun of weight class `class`.
 pub fn class_value(values: &GunClassValues, class: HeftClass) -> f32 {
@@ -167,22 +163,13 @@ pub fn intended_seat(palm: Pose, gun: Pose) -> Pose {
 }
 
 /// Whether a hand body at `body` is close enough to its palm `palm` for a gun to be seated on it:
-/// within [`SETTLED_SHIFT_M`] and [`SETTLED_TURN_RAD`].
-pub fn settled(body: Pose, palm: Pose) -> bool {
+/// within `config`'s [`settled_shift_m`](HeldGunsTuning::settled_shift_m) and
+/// [`settled_turn_rad`](HeldGunsTuning::settled_turn_rad).
+pub fn settled(body: Pose, palm: Pose, config: &HeldGunsTuning) -> bool {
     let shift = body.position.distance(palm.position);
     let turn = angle_between(body.orientation, palm.orientation);
-    shift.is_finite() && shift <= SETTLED_SHIFT_M && turn <= SETTLED_TURN_RAD
+    shift.is_finite() && shift <= config.settled_shift_m && turn <= config.settled_turn_rad
 }
-
-/// How far a hand body may be off its palm for a gun to be seated on it, metres.
-pub const SETTLED_SHIFT_M: f32 = 0.05;
-
-/// How far a hand body may be turned off its palm for a gun to be seated on it, radians.
-pub const SETTLED_TURN_RAD: f32 = 0.2;
-
-/// The furthest a gun held by its grip sits from the palm, metres: a seat further out is a gun
-/// still on its way into the hand, or one the hand's pose put somewhere else.
-pub const MAX_GRIP_SEAT_M: f32 = 0.15;
 
 /// The gun's barrel and muzzle in its own frame: the barrel the axis of its fire point `fire_point`
 /// (the fire point's -Z, as the sight line's), and the muzzle the fire point's origin.
@@ -235,7 +222,11 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use super::*;
-    use crate::controllers::physical_hands::physics::config::HAND_BODIES;
+    use crate::controllers::physical_hands::physics::PHYSICS;
+
+    fn tuning() -> &'static HeldGunsTuning {
+        &PHYSICS.get().hand_bodies.guns
+    }
 
     fn pose(position: Vec3, orientation: Quat) -> Pose {
         Pose {
@@ -265,7 +256,7 @@ mod tests {
         let before = seat(gun, brace_palm(gun, Pose::IDENTITY, contact));
         let rotated = pose(Vec3::ZERO, Quat::from_rotation_x(0.2));
         let after = seat(gun, brace_palm(gun, rotated, contact));
-        let rebuild = HAND_BODIES.guns.brace;
+        let rebuild = tuning().brace;
         assert!(brace_changed(before, after, &rebuild));
         assert!(!brace_changed(before, before, &rebuild));
         let slid = BraceContact {
@@ -281,7 +272,7 @@ mod tests {
 
     #[test]
     fn a_body_past_the_drawn_clamps_is_steered_back_to_them_in_one_step() {
-        let config = HeldGunsTuning::new();
+        let config = *tuning();
         let (shift, turn) = (
             config.drawn_max_shift_m,
             config.drawn_max_turn_deg.to_radians(),
@@ -310,7 +301,7 @@ mod tests {
 
     #[test]
     fn a_brace_is_remade_against_its_built_frame_at_a_bounded_rate() {
-        let rebuild = HAND_BODIES.guns.brace;
+        let rebuild = tuning().brace;
         let built = pose(Vec3::new(0.0, 0.0, -0.4), Quat::IDENTITY);
         let step = |by: f32| pose(built.position + Vec3::NEG_Z * by, Quat::IDENTITY);
         // Aim jitter within the thresholds never remakes the joint, however long it stands.
@@ -340,7 +331,7 @@ mod tests {
 
     #[test]
     fn a_brace_breaks_once_the_tracked_palm_leaves_the_gun() {
-        let brace = HAND_BODIES.guns.brace;
+        let brace = tuning().brace;
         let held = Vec3::new(0.2, 1.3, -0.5);
         let at = |by: Vec3| held + by;
         // A hand on the gun, or steering it with the usual slop, keeps the brace.
@@ -391,7 +382,7 @@ mod tests {
 
     #[test]
     fn a_gun_takes_its_own_bodys_mass_within_bounds() {
-        let config = HeldGunsTuning::new();
+        let config = *tuning();
         assert_eq!(
             gun_mass(0.4, HeftClass::Rifle, 1, &config),
             (2.5, MassSource::Body)
@@ -414,7 +405,6 @@ mod tests {
             gun_mass(0.1, HeftClass::Rifle, 1, &config).0,
             config.max_mass_by_class_kg.rifle
         );
-        assert!(gun_mass(0.1, HeftClass::Rifle, 1, &config).0 <= 4.0);
         // Crossed bounds hold the lighter.
         let crossed = HeldGunsTuning {
             min_mass_kg: 5.0,
@@ -428,12 +418,12 @@ mod tests {
     fn a_dual_pair_shares_its_mass_and_each_pistol_is_held_to_a_sidearms() {
         let config = HeldGunsTuning {
             max_mass_by_class_kg: GunClassValues::new(10.0, 10.0, 10.0, 10.0),
-            ..HeldGunsTuning::new()
+            ..*tuning()
         };
         assert_eq!(gun_mass(0.2, HeftClass::Sidearm, 2, &config).0, 2.5);
-        let config = HeldGunsTuning::new();
+        let config = *tuning();
         let (each, _) = gun_mass(0.2, HeftClass::Sidearm, 2, &config);
-        assert!((0.9..=1.1).contains(&each), "{each}");
+        assert_eq!(each, config.max_mass_by_class_kg.sidearm);
         // No guns counts as one.
         assert_eq!(
             gun_mass(0.4, HeftClass::Smg, 0, &config),
@@ -470,10 +460,10 @@ mod tests {
         // A body twenty centimetres behind its palm would have seated the gun that far off.
         let lagging = pose(palm.position + Vec3::new(0.0, 0.0, 0.2), palm.orientation);
         assert!(seat(lagging, gun).position.length() > 0.19);
-        assert!(!settled(lagging, palm));
-        assert!(settled(palm, palm));
+        assert!(!settled(lagging, palm, tuning()));
+        assert!(settled(palm, palm, tuning()));
         let turned = pose(palm.position, palm.orientation * Quat::from_rotation_x(0.5));
-        assert!(!settled(turned, palm));
+        assert!(!settled(turned, palm, tuning()));
     }
 
     #[test]

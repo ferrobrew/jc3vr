@@ -1,0 +1,114 @@
+# The hand bodies' tuning: `PhysicsTuning` in `src/controllers/physical_hands/physics/tuning.rs`,
+# whose fields say what each value does. Every key is required and no other is accepted. Lengths
+# are metres, masses kilograms, forces newtons, impulses newton seconds, and times seconds, except
+# a key ending in `_ms`, which is milliseconds; angles are degrees where the key ends in `_deg` and
+# radians where it ends in `_rad`. A share is a fraction of a range, in `0..1`.
+
+[hand_bodies]
+mass_kg = 3.0
+max_force_n = 3333.0
+max_torque_nm = 267.0
+linear_gain = 1.0
+angular_gain = 0.8
+contact_gain = 0.4
+constrained_gain_share = 0.4
+max_speed_mps = 20.0
+max_angular_speed_rps = 30.0
+radius_m = 0.04
+half_length_m = 0.035
+break_distance_m = 0.6
+body_mass_kg = 90.0
+push_stiffness_n_per_m = 9000.0
+push_deadband_m = 0.02
+max_push_speed_mps = 2.5
+min_push_horizontal = 0.3
+push_smoothing_s = 0.1
+pressure_full_lag_m = 0.1
+
+[hand_bodies.hits]
+min_impulse_ns = 8.0
+stagger_impulse_ns = 30.0
+knockdown_impulse_ns = 55.0
+over_stagger = 1.1
+under_stagger = 0.9
+under_knockdown = 0.95
+damage_impulse_ns = 25.0
+damage_scale = 1.0
+max_held_damage = 90
+cooldown_s = 0.5
+damage_cooldown_s = 1.0
+min_approach_speed_mps = 1.5
+blow_mass_kg = 10.0
+chest_height_m = 1.2
+follow_through_strength = 0.5
+follow_through_s = 0.15
+follow_through_gain = 0.3
+full_pulse_impulse_ns = 50.0
+min_pulse_share = 0.05
+
+[hand_bodies.guns]
+min_mass_kg = 0.5
+muzzle_rise = 0.4
+stray_distance_m = 0.03
+stray_turn_deg = 4.0
+drawn_max_shift_m = 0.015
+drawn_max_turn_deg = 2.0
+contact_pulse_interval_s = 0.2
+settled_shift_m = 0.05
+settled_turn_rad = 0.2
+max_grip_seat_m = 0.15
+max_carry_reach_m = 1.5
+quiet_rebrace_m = 0.05
+
+[hand_bodies.guns.max_mass_by_class_kg]
+sidearm = 1.0
+smg = 2.5
+rifle = 4.0
+heavy = 6.0
+
+[hand_bodies.guns.fallback_mass_kg]
+sidearm = 1.0
+smg = 2.5
+rifle = 4.0
+heavy = 6.0
+
+[hand_bodies.guns.recoil_impulse_ns]
+sidearm = 1.5
+smg = 1.5
+rifle = 3.0
+heavy = 6.0
+
+[hand_bodies.guns.brace]
+distance_m = 0.01
+angle_rad = 0.08
+min_interval_s = 0.25
+break_distance_m = 0.15
+break_steps = 3
+
+[step]
+stale_after_ms = 200
+park_after_ms = 250
+max_lead_s = 0.1
+min_pressure_load = 0.1
+readout_period_ms = 1000
+
+[render]
+turn_deadband_rad = 0.05
+max_turn_rad = 1.5
+
+[rig]
+max_carrier_speed_mps = 80.0
+jump_rad = 0.2
+
+[lifecycle]
+placed_mute_steps = 3
+rig_mute_steps = 6
+spec_tolerance = 0.02
+
+[drawn_body]
+forget_after_ms = 500
+reach_margin_m = 0.03
+radius_share = 0.8
+min_radius_m = 0.02
+mass_kg = 40.0
+snap_m = 1.0

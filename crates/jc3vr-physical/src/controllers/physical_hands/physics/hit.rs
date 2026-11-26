@@ -27,7 +27,7 @@ use jc3vr_body::controllers::{
     grab::{GrabVolume, latch::GripLatch},
 };
 
-use crate::controllers::physical_hands::physics::config::HandHitsTuning;
+use crate::controllers::physical_hands::physics::tuning::HandHitsTuning;
 
 /// How a hand and a character closed on each other before a contact: the hand's speed toward the
 /// character, and the character's toward the hand, metres per second, neither below zero.
@@ -236,7 +236,7 @@ pub fn blow(
     }
     let strength = impulse_ns / knockdown;
     let reaction_impulse = scaled_reaction(impulse_ns, victim, config) / victim.type_scale;
-    let damage = (config.damage && impulse_ns >= config.damage_impulse_ns).then(|| {
+    let damage = (impulse_ns >= config.damage_impulse_ns).then(|| {
         let damage = melee_damage.max(0) as f32 * config.damage_scale.max(0.0) * strength;
         if damage.is_finite() {
             damage.round().clamp(1.0, f32::from(i16::MAX)) as i16
@@ -276,20 +276,13 @@ fn scaled_reaction(impulse_ns: f32, victim: VictimTuning, config: &HandHitsTunin
         return linear;
     }
     if impulse_ns < stagger {
-        return impulse_ns / stagger * victim.stagger_threshold * UNDER_STAGGER;
+        return impulse_ns / stagger * victim.stagger_threshold * config.under_stagger;
     }
     let t = (impulse_ns - stagger) / (knockdown - stagger);
-    let from = victim.stagger_threshold * OVER_STAGGER;
-    let to = victim.knockdown_threshold * UNDER_KNOCKDOWN;
+    let from = victim.stagger_threshold * config.over_stagger;
+    let to = victim.knockdown_threshold * config.under_knockdown;
     from + (to - from.min(to)) * t
 }
-
-/// How far past the stagger threshold a solid punch lands, as a factor of it.
-const OVER_STAGGER: f32 = 1.1;
-/// How far short of the stagger threshold a blow just under a solid punch stays, as a factor.
-const UNDER_STAGGER: f32 = 0.9;
-/// How far short of the knockdown threshold a blow just under a hard swing stays, as a factor.
-const UNDER_KNOCKDOWN: f32 = 0.95;
 
 /// The share of the strongest hit pulse a contact of `impulse_ns` pulses its hand with, `0..=1`.
 pub fn pulse_share(impulse_ns: f32, full_impulse_ns: f32) -> f32 {
@@ -358,8 +351,12 @@ mod tests {
     use jc3vr_body::controllers::grab::PickupKind;
 
     use super::*;
+    use crate::controllers::physical_hands::physics::PHYSICS;
 
-    const CONFIG: HandHitsTuning = HandHitsTuning::new();
+    fn config() -> &'static HandHitsTuning {
+        &PHYSICS.get().hand_bodies.hits
+    }
+
     const VICTIM: VictimTuning = VictimTuning {
         type_scale: 2.0,
         stagger_threshold: 40.0,
@@ -367,7 +364,7 @@ mod tests {
     };
 
     fn plan(impulse: f32) -> BlowPlan {
-        match blow(impulse, VICTIM, 100, &CONFIG) {
+        match blow(impulse, VICTIM, 100, config()) {
             Blow::Strikes(plan) => plan,
             other => panic!("{impulse}: {other:?}"),
         }
@@ -461,11 +458,11 @@ mod tests {
 
     #[test]
     fn a_gun_swings_its_mass_with_the_arm() {
-        let with_rifle = striking_with(&CONFIG, Some(4.0));
-        assert_eq!(with_rifle.blow_mass_kg, CONFIG.blow_mass_kg + 4.0);
-        assert_eq!(striking_with(&CONFIG, None), CONFIG);
-        assert_eq!(striking_with(&CONFIG, Some(f32::NAN)), CONFIG);
-        assert_eq!(striking_with(&CONFIG, Some(-1.0)), CONFIG);
+        let with_rifle = striking_with(config(), Some(4.0));
+        assert_eq!(with_rifle.blow_mass_kg, config().blow_mass_kg + 4.0);
+        assert_eq!(striking_with(config(), None), *config());
+        assert_eq!(striking_with(config(), Some(f32::NAN)), *config());
+        assert_eq!(striking_with(config(), Some(-1.0)), *config());
         // The same swing strikes harder with the gun.
         let swing = Approach {
             hand_mps: 4.0,
@@ -473,20 +470,20 @@ mod tests {
         };
         assert!(
             blow_impulse(swing, Intent::Swing, TimeScale::REAL, &with_rifle).unwrap()
-                > blow_impulse(swing, Intent::Swing, TimeScale::REAL, &CONFIG).unwrap()
+                > blow_impulse(swing, Intent::Swing, TimeScale::REAL, config()).unwrap()
         );
     }
 
     #[test]
     fn a_light_touch_is_no_blow() {
-        assert_eq!(blow(1.0, VICTIM, 100, &CONFIG), Blow::TooWeak);
-        assert_eq!(blow(f32::NAN, VICTIM, 100, &CONFIG), Blow::TooWeak);
-        assert_eq!(blow(-5.0, VICTIM, 100, &CONFIG), Blow::TooWeak);
+        assert_eq!(blow(1.0, VICTIM, 100, config()), Blow::TooWeak);
+        assert_eq!(blow(f32::NAN, VICTIM, 100, config()), Blow::TooWeak);
+        assert_eq!(blow(-5.0, VICTIM, 100, config()), Blow::TooWeak);
     }
 
     #[test]
     fn the_knockdown_impulse_reaches_the_knockdown_threshold() {
-        let p = plan(CONFIG.knockdown_impulse_ns);
+        let p = plan(config().knockdown_impulse_ns);
         assert!((p.strength - 1.0).abs() < 1e-6);
         // The character scales the reaction impulse by its type factor.
         assert!((p.reaction_impulse * VICTIM.type_scale - VICTIM.knockdown_threshold).abs() < 1e-3);
@@ -494,27 +491,22 @@ mod tests {
 
     #[test]
     fn the_reaction_grows_with_the_impulse() {
-        let weak = plan(CONFIG.min_impulse_ns + 1.0);
-        let strong = plan(CONFIG.knockdown_impulse_ns * 1.5);
+        let weak = plan(config().min_impulse_ns + 1.0);
+        let strong = plan(config().knockdown_impulse_ns * 1.5);
         assert!(weak.reaction_impulse < strong.reaction_impulse);
         assert!(weak.strength < 1.0 && strong.strength > 1.0);
     }
 
     #[test]
     fn only_a_hard_blow_deals_damage() {
-        assert_eq!(plan(CONFIG.damage_impulse_ns - 1.0).damage, None);
-        let hard = plan(CONFIG.knockdown_impulse_ns);
-        assert_eq!(hard.damage, Some(100));
-        let off = HandHitsTuning {
-            damage: false,
-            ..CONFIG
-        };
-        let Blow::Strikes(p) = blow(CONFIG.knockdown_impulse_ns, VICTIM, 100, &off) else {
-            panic!("a blow");
-        };
-        assert_eq!(p.damage, None);
+        assert_eq!(plan(config().damage_impulse_ns - 1.0).damage, None);
+        let hard = plan(config().knockdown_impulse_ns);
+        assert_eq!(
+            hard.damage,
+            Some((100.0 * config().damage_scale).round() as i16)
+        );
         // A blow that deals damage deals at least a point.
-        let Blow::Strikes(p) = blow(CONFIG.damage_impulse_ns, VICTIM, 0, &CONFIG) else {
+        let Blow::Strikes(p) = blow(config().damage_impulse_ns, VICTIM, 0, config()) else {
             panic!("a blow");
         };
         assert_eq!(p.damage, Some(1));
@@ -532,7 +524,7 @@ mod tests {
                 ..VICTIM
             },
         ] {
-            assert_eq!(blow(60.0, victim, 100, &CONFIG), Blow::Uncalibrated);
+            assert_eq!(blow(60.0, victim, 100, config()), Blow::Uncalibrated);
         }
     }
 
@@ -558,14 +550,14 @@ mod tests {
         let swing = approach(Vec3::X * 5.0, Vec3::ZERO, toward);
         assert_eq!(swing.hand_mps, 5.0);
         assert_eq!(
-            blow_impulse(swing, Intent::Swing, TimeScale::REAL, &CONFIG),
-            Some(CONFIG.blow_mass_kg * 5.0)
+            blow_impulse(swing, Intent::Swing, TimeScale::REAL, config()),
+            Some(config().blow_mass_kg * 5.0)
         );
         // A hand at rest, which a character walks into.
         let walked_into = approach(Vec3::ZERO, Vec3::NEG_X * 3.0, toward);
         assert_eq!(walked_into.victim_mps, 3.0);
         assert_eq!(
-            blow_impulse(walked_into, Intent::Swing, TimeScale::REAL, &CONFIG),
+            blow_impulse(walked_into, Intent::Swing, TimeScale::REAL, config()),
             None
         );
         // A hand moving away, or resting on the character.
@@ -574,20 +566,20 @@ mod tests {
                 approach(Vec3::NEG_X, Vec3::ZERO, toward),
                 Intent::Swing,
                 TimeScale::REAL,
-                &CONFIG
+                config()
             ),
             None
         );
         let resting = approach(Vec3::X * 0.3, Vec3::ZERO, toward);
         assert_eq!(
-            blow_impulse(resting, Intent::Swing, TimeScale::REAL, &CONFIG),
+            blow_impulse(resting, Intent::Swing, TimeScale::REAL, config()),
             None
         );
         // Only the hand's own speed counts: a character running into a swing adds nothing.
         let both = approach(Vec3::X * 5.0, Vec3::NEG_X * 4.0, toward);
         assert_eq!(
-            blow_impulse(both, Intent::Swing, TimeScale::REAL, &CONFIG),
-            blow_impulse(swing, Intent::Swing, TimeScale::REAL, &CONFIG)
+            blow_impulse(both, Intent::Swing, TimeScale::REAL, config()),
+            blow_impulse(swing, Intent::Swing, TimeScale::REAL, config())
         );
         assert_eq!(approach(Vec3::X, Vec3::ZERO, Vec3::ZERO).hand_mps, 0.0);
     }
@@ -600,14 +592,14 @@ mod tests {
         let running = Vec3::X * 6.0;
         let carried = approach(swing(running, running), Vec3::ZERO, toward);
         assert_eq!(
-            blow_impulse(carried, Intent::Swing, TimeScale::REAL, &CONFIG),
+            blow_impulse(carried, Intent::Swing, TimeScale::REAL, config()),
             None
         );
         // A punch thrown while running swings at the arm's own speed.
         let punch = approach(swing(running + Vec3::X * 5.0, running), Vec3::ZERO, toward);
         assert_eq!(
-            blow_impulse(punch, Intent::Swing, TimeScale::REAL, &CONFIG),
-            Some(CONFIG.blow_mass_kg * 5.0)
+            blow_impulse(punch, Intent::Swing, TimeScale::REAL, config()),
+            Some(config().blow_mass_kg * 5.0)
         );
         // A player velocity that is not finite counts as none.
         assert_eq!(swing(Vec3::X, Vec3::NAN), Vec3::X);
@@ -617,20 +609,26 @@ mod tests {
     fn a_hand_after_the_gun_strikes_only_with_a_deliberate_swing() {
         let toward = Vec3::X;
         let at = |mps: f32| approach(Vec3::X * mps, Vec3::ZERO, toward);
-        let punch_mps = CONFIG.stagger_impulse_ns / CONFIG.blow_mass_kg;
+        let punch_mps = config().stagger_impulse_ns / config().blow_mass_kg;
         // A brisk reach strikes a character the hand is not after the gun of.
-        assert!(blow_impulse(at(2.5), Intent::Swing, TimeScale::REAL, &CONFIG).is_some());
+        assert!(blow_impulse(at(2.5), Intent::Swing, TimeScale::REAL, config()).is_some());
         // Reaching for the gun, it does not; a solid punch still does.
         assert_eq!(
-            blow_impulse(at(2.5), Intent::Reach, TimeScale::REAL, &CONFIG),
+            blow_impulse(at(2.5), Intent::Reach, TimeScale::REAL, config()),
             None
         );
         assert!(
-            blow_impulse(at(punch_mps + 0.1), Intent::Reach, TimeScale::REAL, &CONFIG).is_some()
+            blow_impulse(
+                at(punch_mps + 0.1),
+                Intent::Reach,
+                TimeScale::REAL,
+                config()
+            )
+            .is_some()
         );
         // A hand closing on the gun never strikes, however fast.
         assert_eq!(
-            blow_impulse(at(20.0), Intent::Take, TimeScale::REAL, &CONFIG),
+            blow_impulse(at(20.0), Intent::Take, TimeScale::REAL, config()),
             None
         );
     }
@@ -642,13 +640,13 @@ mod tests {
         // A hand body following a real 1 m/s reach moves 4 m/s through the world at a quarter:
         // a reach, not a swing.
         let reach = approach(Vec3::X * 4.0, Vec3::ZERO, toward);
-        assert!(blow_impulse(reach, Intent::Swing, TimeScale::REAL, &CONFIG).is_some());
-        assert_eq!(blow_impulse(reach, Intent::Swing, slow, &CONFIG), None);
+        assert!(blow_impulse(reach, Intent::Swing, TimeScale::REAL, config()).is_some());
+        assert_eq!(blow_impulse(reach, Intent::Swing, slow, config()), None);
         // A real 2 m/s swing strikes, with the world's 8 m/s.
         let swing = approach(Vec3::X * 8.0, Vec3::ZERO, toward);
         assert_eq!(
-            blow_impulse(swing, Intent::Swing, slow, &CONFIG),
-            Some(CONFIG.blow_mass_kg * 8.0)
+            blow_impulse(swing, Intent::Swing, slow, config()),
+            Some(config().blow_mass_kg * 8.0)
         );
     }
 
@@ -678,20 +676,20 @@ mod tests {
     fn a_solid_punch_staggers_and_a_hard_swing_knocks_down() {
         let reacts = |impulse: f32| plan(impulse).reaction_impulse * VICTIM.type_scale;
         // A solid punch, about three metres a second: past the stagger, short of a knockdown.
-        let punch = reacts(CONFIG.stagger_impulse_ns);
+        let punch = reacts(config().stagger_impulse_ns);
         assert!(punch > VICTIM.stagger_threshold, "{punch}");
         assert!(punch < VICTIM.knockdown_threshold, "{punch}");
         // A blow a little short of it flinches.
-        assert!(reacts(CONFIG.stagger_impulse_ns * 0.8) < VICTIM.stagger_threshold);
+        assert!(reacts(config().stagger_impulse_ns * 0.8) < VICTIM.stagger_threshold);
         // A hard swing knocks down, and harder still more.
-        assert!(reacts(CONFIG.knockdown_impulse_ns) >= VICTIM.knockdown_threshold - 1e-3);
-        assert!(reacts(CONFIG.knockdown_impulse_ns * 1.5) > VICTIM.knockdown_threshold);
+        assert!(reacts(config().knockdown_impulse_ns) >= VICTIM.knockdown_threshold - 1e-3);
+        assert!(reacts(config().knockdown_impulse_ns * 1.5) > VICTIM.knockdown_threshold);
         // Between the two the reaction rises, and never reaches the knockdown early.
         let mut last = punch;
         let steps = 10;
         for k in 1..steps {
-            let impulse = CONFIG.stagger_impulse_ns
-                + (CONFIG.knockdown_impulse_ns - CONFIG.stagger_impulse_ns) * k as f32
+            let impulse = config().stagger_impulse_ns
+                + (config().knockdown_impulse_ns - config().stagger_impulse_ns) * k as f32
                     / steps as f32;
             let r = reacts(impulse);
             assert!(
@@ -702,7 +700,7 @@ mod tests {
         }
         // Damage scales with the blow.
         let damage = |impulse: f32| plan(impulse).damage.unwrap_or(0);
-        assert!(damage(CONFIG.knockdown_impulse_ns * 1.5) > damage(CONFIG.stagger_impulse_ns));
+        assert!(damage(config().knockdown_impulse_ns * 1.5) > damage(config().stagger_impulse_ns));
     }
 
     #[test]
@@ -711,10 +709,10 @@ mod tests {
             stagger_threshold: 150.0,
             ..VICTIM
         };
-        let Blow::Strikes(p) = blow(CONFIG.stagger_impulse_ns, odd, 100, &CONFIG) else {
+        let Blow::Strikes(p) = blow(config().stagger_impulse_ns, odd, 100, config()) else {
             panic!("a blow");
         };
-        let share = CONFIG.stagger_impulse_ns / CONFIG.knockdown_impulse_ns;
+        let share = config().stagger_impulse_ns / config().knockdown_impulse_ns;
         assert!(
             (p.reaction_impulse * odd.type_scale - share * odd.knockdown_threshold).abs() < 1e-3
         );

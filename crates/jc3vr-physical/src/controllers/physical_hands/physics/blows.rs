@@ -59,7 +59,7 @@ use crate::controllers::physical_hands::{
     characters::pane,
     collider_view, engine,
     physics::{
-        HAND_BODIES, HandHitsTuning, body, contact,
+        HandHitsTuning, PHYSICS, body, contact,
         contact::Contact,
         hit::{
             ANY_HAND, Blow, BlowPlan, HitGate, Intent, RiderReaction, VictimTuning, approach, blow,
@@ -109,7 +109,8 @@ pub(super) fn deliver(game: &GameTick<'_>) -> Delivered {
     if contacts.is_empty() {
         return delivered;
     }
-    let own_hits = &HAND_BODIES.hits;
+    let bodies = &PHYSICS.get().hand_bodies;
+    let own_hits = &bodies.hits;
     let mut local_player = LocalPlayer::get(game);
     let attacker = local_player.as_mut().map(LocalPlayer::character_mut);
     let mut gate = GATE.lock();
@@ -121,7 +122,7 @@ pub(super) fn deliver(game: &GameTick<'_>) -> Delivered {
     // SAFETY: the game tick: the game runs.
     let time_scale = unsafe { TimeScale::current() };
     let game_now_s = gate.game.at(now_s, time_scale);
-    let pulse_interval_s = f64::from(HAND_BODIES.guns.contact_pulse_interval_s.max(0.0));
+    let pulse_interval_s = f64::from(bodies.guns.contact_pulse_interval_s.max(0.0));
     let mut rider_reacted = Vec::new();
     for contact in contacts {
         // The player's own body, the hands, and the other gun are in the player's group, which
@@ -151,7 +152,7 @@ pub(super) fn deliver(game: &GameTick<'_>) -> Delivered {
         };
         let met = pulse_mass.max(0.0) * contact.hand_velocity.length();
         let share = pulse_share(met, hits.full_pulse_impulse_ns);
-        let pulse = share >= MIN_PULSE_SHARE
+        let pulse = share >= own_hits.min_pulse_share
             && (!contact.gun
                 || gun_pulse_due(
                     &mut GUN_PULSES.lock(),
@@ -183,7 +184,7 @@ pub(super) fn deliver(game: &GameTick<'_>) -> Delivered {
         // SAFETY: a live character, found again above.
         let victim = unsafe { &mut *victim };
         let victim_at = character_position(victim);
-        let toward = victim_at + Vec3::Y * CHEST_HEIGHT_M - contact.hand_position;
+        let toward = victim_at + Vec3::Y * own_hits.chest_height_m - contact.hand_position;
         let swung = swing(
             contact.hand_velocity,
             Vec3::from_array(attacker.m_MeasuredWorldVelocity.data),
@@ -283,7 +284,8 @@ pub(super) fn deliver(game: &GameTick<'_>) -> Delivered {
             "hand bodies: a hand struck a character"
         );
         delivered.blows += 1;
-        delivered.follow_through[contact.hand.index()] |= plan.strength >= FOLLOW_THROUGH_STRENGTH;
+        delivered.follow_through[contact.hand.index()] |=
+            plan.strength >= own_hits.follow_through_strength;
         delivered.last = Some(BlowReport {
             hand: contact.hand,
             impulse_ns,
@@ -310,16 +312,13 @@ pub(crate) unsafe fn held_strike(
     if std::ptr::eq(attacker, victim) {
         return None;
     }
+    let hits = &PHYSICS.get().hand_bodies.hits;
     let melee_damage = unsafe { engine::melee_damage(attacker) }.unwrap_or(0);
-    let Blow::Strikes(mut plan) = blow(
-        impulse_ns,
-        victim_tuning(victim),
-        melee_damage,
-        &HAND_BODIES.hits,
-    ) else {
+    let Blow::Strikes(mut plan) = blow(impulse_ns, victim_tuning(victim), melee_damage, hits)
+    else {
         return None;
     };
-    plan.damage = plan.damage.map(|damage| damage.min(90));
+    plan.damage = plan.damage.map(|damage| damage.min(hits.max_held_damage));
     let relation = unsafe { GetRelation(attacker.GetFaction(), victim.GetFaction()) };
     let mut gate = GATE.lock();
     let now_s = gate
@@ -333,7 +332,7 @@ pub(crate) unsafe fn held_strike(
             ANY_HAND,
             victim as *mut Character as usize,
             game_now_s,
-            HAND_BODIES.hits.damage_cooldown_s,
+            hits.damage_cooldown_s,
         )
     {
         plan.damage = None;
@@ -434,9 +433,8 @@ pub(super) fn deliver_shoves(game: &GameTick<'_>) -> ShovesDelivered {
         return delivered;
     };
     let hits = HandHitsTuning {
-        damage: false,
         min_impulse_ns: 0.0,
-        ..HAND_BODIES.hits
+        ..PHYSICS.get().hand_bodies.hits
     };
     for shove in shoves {
         // SAFETY: forwarded from the caller; the body's owner proves the character alive.
@@ -488,9 +486,6 @@ const MAX_SHOVES: usize = 8;
 /// The shoves queued since the last frame tick.
 static SHOVES: Mutex<Vec<Shove>> = Mutex::new(Vec::new());
 
-/// How far above a character's root its chest is, metres: where a blow aims.
-const CHEST_HEIGHT_M: f32 = 1.2;
-
 /// A struck character's own hit-reaction tuning, for a blow of the melee type.
 fn victim_tuning(victim: &Character) -> VictimTuning {
     VictimTuning {
@@ -503,12 +498,6 @@ fn victim_tuning(victim: &Character) -> VictimTuning {
         knockdown_threshold: victim.m_HitReaction_ImpulseRagdollThreshold,
     }
 }
-
-/// The share of a knockdown from which a blow follows through.
-const FOLLOW_THROUGH_STRENGTH: f32 = 0.5;
-
-/// The least share of the strongest hit pulse that pulses a hand.
-const MIN_PULSE_SHARE: f32 = 0.05;
 
 /// The characters struck lately.
 struct Gates {

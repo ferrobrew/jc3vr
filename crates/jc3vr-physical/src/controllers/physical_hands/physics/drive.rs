@@ -19,6 +19,8 @@ use body_rig::{rotation::rotation_error, smooth::follow_factor};
 use glam::{DVec3, Mat3, Quat, Vec2, Vec3};
 use jc3vr_body::controllers::clock::TimeScale;
 
+use crate::controllers::physical_hands::physics::tuning::PHYSICS;
+
 /// How a hand body is driven.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct DriveTuning {
@@ -34,6 +36,8 @@ pub struct DriveTuning {
     /// The fastest a body is driven relative to its carrier, metres per second.
     pub max_speed_mps: f32,
     pub max_angular_speed_rps: f32,
+    /// The fastest carrier the drive feeds forward, metres per second.
+    pub max_carrier_speed_mps: f32,
 }
 
 impl DriveTuning {
@@ -105,7 +109,7 @@ pub fn drive(
         return kept;
     }
     let carrier = if carrier.is_finite() {
-        carrier.clamp_length_max(MAX_CARRIER_SPEED_MPS)
+        carrier.clamp_length_max(tuning.max_carrier_speed_mps)
     } else {
         Vec3::ZERO
     };
@@ -176,7 +180,7 @@ pub fn drive_joined(
     let carrier = if carrier.is_finite() {
         carrier
             .as_dvec3()
-            .clamp_length_max(f64::from(MAX_CARRIER_SPEED_MPS))
+            .clamp_length_max(f64::from(tuning.max_carrier_speed_mps))
     } else {
         DVec3::ZERO
     };
@@ -274,20 +278,17 @@ pub fn smooth_push(smoothed: Vec2, push: Vec2, dt: f32, smoothing_s: f32, max_sp
 }
 
 /// Whether the rig moved under the hands between two palms' ticks without the hands moving: the
-/// body's facing turned by more than [`RIG_JUMP_RAD`] (a snap turn, not the body turning), or the
-/// recenter count changed. `last` is the facing and the count of the last tick, if there was one.
+/// body's facing turned by more than the tuning's `rig.jump_rad` ([`RigTuning::jump_rad`]; a snap
+/// turn, not the body turning), or the recenter count changed. `last` is the facing and the count
+/// of the last tick, if there was one.
+///
+/// [`RigTuning::jump_rad`]: crate::controllers::physical_hands::physics::tuning::RigTuning::jump_rad
 pub fn rig_jumped(last: Option<(Quat, u32)>, rotation: Quat, recenters: u32) -> bool {
     last.is_some_and(|(last_rotation, last_recenters)| {
-        last_recenters != recenters || last_rotation.angle_between(rotation) > RIG_JUMP_RAD
+        last_recenters != recenters
+            || last_rotation.angle_between(rotation) > PHYSICS.get().rig.jump_rad
     })
 }
-
-/// The fastest carrier the drive feeds forward, metres per second: past a fall's terminal speed,
-/// so an estimate thrown by a jump of the rig cannot fling a hand.
-pub const MAX_CARRIER_SPEED_MPS: f32 = 80.0;
-
-/// The turn of the body's facing between two palms' ticks past which it is a snap turn.
-pub const RIG_JUMP_RAD: f32 = 0.2;
 
 /// Where a body at `body` goes when the rig carries its hand's palm from `from` to `to` in one
 /// tick: the body keeps its place and turn relative to the palm.
@@ -379,6 +380,7 @@ mod tests {
             angular_gain: 1.0,
             max_speed_mps: 20.0,
             max_angular_speed_rps: 30.0,
+            max_carrier_speed_mps: PHYSICS.get().rig.max_carrier_speed_mps,
         }
     }
 
@@ -639,7 +641,7 @@ mod tests {
         let wild = drive(&body, &goal(Vec3::ZERO), Vec3::splat(f32::NAN), &t, STEP);
         assert!(wild.linear.is_finite());
         let fast = drive(&body, &goal(Vec3::ZERO), Vec3::X * 1e6, &t, STEP);
-        assert!(fast.linear.length() <= MAX_CARRIER_SPEED_MPS + t.max_speed_mps + 1e-3);
+        assert!(fast.linear.length() <= t.max_carrier_speed_mps + t.max_speed_mps + 1e-3);
     }
 
     #[test]
