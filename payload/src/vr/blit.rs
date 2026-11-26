@@ -65,8 +65,8 @@ use windows::{
 };
 
 use crate::{
+    hooks::graphics_engine::capture::EGUI_DEBUG_RENDER_STATE,
     stereo::dispatch,
-    ui::render::EGUI_DEBUG_RENDER_STATE,
     vr::{
         EyeImage, FrameContext, VrConfig,
         blit_region::{BlitSource, SourceRegion, params_words},
