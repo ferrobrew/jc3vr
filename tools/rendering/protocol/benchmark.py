@@ -1,5 +1,5 @@
 """Typed values for the harness's `benchmark` request: record the live game's per-frame timings in
-one render mode (`crates/jc3vr-render/src/testing/benchmark/`)."""
+one render mode (`crates/jc3vr-capture/src/testing/benchmark/`)."""
 
 import json
 import math
@@ -15,7 +15,7 @@ from tools.rendering.protocol.base import (
     valid_request_id,
 )
 
-# Mirrors `MAX_WARMUP_SECONDS` and `MAX_RECORD_SECONDS` in `crates/jc3vr-render/src/testing/benchmark/request.rs`.
+# Mirrors `MAX_WARMUP_SECONDS` and `MAX_RECORD_SECONDS` in `crates/jc3vr-capture/src/testing/benchmark/request.rs`.
 MAX_WARMUP_SECONDS = 60.0
 MAX_RECORD_SECONDS = 120.0
 

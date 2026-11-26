@@ -292,8 +292,8 @@ pub(crate) fn submit_indirect(
 }
 
 /// Every submission the stereo draw path has made while a capture or a benchmark was armed, never
-/// reset, for samplers that difference two readings (the benchmark, `crate::testing::benchmark`,
-/// whose request arms the count). Counted only while the draw-path detours are installed.
+/// reset, for samplers that difference two readings (the capture crate's benchmark,
+/// `testing::benchmark`, whose request arms the count). Counted only while the draw-path detours are installed.
 pub fn submission_total() -> u64 {
     SUBMISSIONS.load(Ordering::Relaxed)
 }

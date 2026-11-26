@@ -23,7 +23,7 @@ from tools.rendering.protocol.base import (
 )
 
 
-# Mirrors `MAX_TRANSLATION_M` in `crates/jc3vr-render/src/testing/visual/motion/mod.rs`.
+# Mirrors `MAX_TRANSLATION_M` in `crates/jc3vr-capture/src/testing/visual/motion/mod.rs`.
 MAX_TRANSLATION_M = 20.0
 
 

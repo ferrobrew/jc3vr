@@ -1,5 +1,5 @@
 """Where the draw task's time goes, from a benchmark run's draw-task samples
-(`crates/jc3vr-render/src/testing/benchmark/sampler.rs`).
+(`crates/jc3vr-capture/src/testing/benchmark/sampler.rs`).
 
 Each sample is one instant of the thread running the draw task: the render pass and render-block
 type the draw path had published, whether it was inside a per-eye re-issue, the instruction pointer,

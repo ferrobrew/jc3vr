@@ -127,7 +127,7 @@ def _stress() -> HeadsetGeometry:
                            (left, EyeGeometry(right.fov_deg, right.yaw_deg, -left.pitch_deg, right.roll_deg)))
 
 
-# Mirrors `HeadsetRig::geometry` in `crates/jc3vr-render/src/testing/visual/headset.rs`.
+# Mirrors `HeadsetRig::geometry` in `crates/jc3vr-capture/src/testing/visual/headset.rs`.
 HEADSET_RIGS = {
     "index": _mirrored("index", 0.064, (-54.0, 51.0, 55.8, -55.8), 5.0, 0.0, 0.0),
     "quest": _mirrored("quest", 0.063, (-50.0, 43.0, 48.0, -52.0), 0.0, 0.0, 0.0),

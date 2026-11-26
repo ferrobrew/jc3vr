@@ -10,13 +10,14 @@ jc3vr is a Cargo workspace. The runtime crates sit at the top level:
 - **payload**: The injected DLL (`jc3vr_payload`, the workspace's only `cdylib`). It holds the entry points, the startup and shutdown order, the composition of every layer crate's hooks and shutdown participants, the game's frame entry points and the window procedure, and the settings aggregate. The rest of the mod's code lives in the layer crates below.
 - **jc3gi**: Generated Rust bindings to JC3's internal structures. Consumed by the payload and the layer crates to read and write game state.
 
-The mod's code is split into eight layer crates in `crates/`, each of which may depend only on the crates below it (`docs/architecture.md`, "Crate layering", has the order and what each holds):
+The mod's code is split into nine layer crates in `crates/`, each of which may depend only on the crates below it (`docs/architecture.md`, "Crate layering", has the order and what each holds):
 
 - **jc3vr-core**: the lifecycle, the configuration engine, the hook plumbing, frame timing, and the profiler core.
 - **jc3vr-input**: the pure controller frame, motion, scheme, haptic mix, and input-capture policy. It depends on no layer crate and builds on any host.
 - **jc3vr-view**: the OpenXR runtime, the head pose, the camera, the frame state the render hooks read per draw, the tracking recorder, and the registries the render hooks share with the layers above.
 - **jc3vr-render** and **jc3vr-gameplay**, siblings on the view crate with no edge between them: stereo, FSR, the far field, the engine-pipeline hooks, and the render diagnostics; and the controllers, the grapple, and the gameplay detours.
-- **jc3vr-hud** and **jc3vr-tooling**, siblings with no edge between them: the floating panel and its layers, and the recorder, directing tools, and capture harness.
+- **jc3vr-capture**: the screenshot harness, the visual stage's controls, and the benchmark samplers, on the render crate. The render hooks reach it only through the probe tables it fills at install, and only the tooling crate and the crates above it may depend on it.
+- **jc3vr-hud** and **jc3vr-tooling**, siblings with no edge between them: the floating panel and its layers, and the recorder, directing tools, and the capture harness's request file and staging.
 - **jc3vr-ui**: the debug UI, the status rows, and the pause menu.
 
 A lower crate reaches a higher one through a registration the higher one makes, never by naming it, and the payload's `composition::install` runs the registrations in their load-bearing order.
