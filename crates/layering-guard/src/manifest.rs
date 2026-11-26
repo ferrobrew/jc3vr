@@ -16,15 +16,16 @@ use crate::{
 };
 
 /// The crates whose `hooks` modules hold the engine detours that body, weapons, physical, vehicles,
-/// gameplay, and the HUD reach only through registrations.
+/// grapple, gameplay, and the HUD reach only through registrations.
 pub const HOOK_CRATES: [Layer; 2] = [Layer::View, Layer::Render];
 
 /// The layers the view and render crates' `hooks` modules must never name.
-pub const HOOKS_FORBIDDEN: [Layer; 6] = [
+pub const HOOKS_FORBIDDEN: [Layer; 7] = [
     Layer::Body,
     Layer::Weapons,
     Layer::Physical,
     Layer::Vehicles,
+    Layer::Grapple,
     Layer::Gameplay,
     Layer::Hud,
 ];
@@ -150,10 +151,10 @@ pub fn check_hooks(files: &[SourceFile]) -> Vec<String> {
             {
                 out.push(format!(
                     "{}:{}: {} names the {layer} crate, but the view and render crates' hooks \
-                     reach body, weapons, physical, vehicles, gameplay, and the HUD only through \
-                     registrations; add a registration point in the crate that owns the hook and \
-                     fill it from the {layer} crate's install, as the existing `register_*` \
-                     modules do",
+                     reach body, weapons, physical, vehicles, grapple, gameplay, and the HUD only \
+                     through registrations; add a registration point in the crate that owns the \
+                     hook and fill it from the {layer} crate's install, as the existing \
+                     `register_*` modules do",
                     file.path,
                     reference.line,
                     reference.display()
@@ -279,6 +280,15 @@ fn violation_advice(layer: Layer, dependency: Layer) -> String {
     }
     if matches!(
         (layer, dependency),
+        (Layer::Vehicles, Layer::Grapple) | (Layer::Grapple, Layer::Vehicles)
+    ) {
+        return "but the vehicles and grapple crates are siblings with no edge between them; pass \
+                what one tells the other through a fact in the body crate, as the door-side \
+                arrival's airframe is, or connect them from the gameplay crate, which sees both"
+            .to_owned();
+    }
+    if matches!(
+        (layer, dependency),
         (Layer::Hud, Layer::Tooling) | (Layer::Tooling, Layer::Hud)
     ) {
         return "but the HUD and tooling crates are siblings with no edge between them; move the \
@@ -290,9 +300,19 @@ fn violation_advice(layer: Layer, dependency: Layer) -> String {
         (layer, dependency),
         (
             Layer::Render,
-            Layer::Gameplay | Layer::Vehicles | Layer::Physical | Layer::Weapons | Layer::Body
+            Layer::Gameplay
+                | Layer::Vehicles
+                | Layer::Grapple
+                | Layer::Physical
+                | Layer::Weapons
+                | Layer::Body
         ) | (
-            Layer::Gameplay | Layer::Vehicles | Layer::Physical | Layer::Weapons | Layer::Body,
+            Layer::Gameplay
+                | Layer::Vehicles
+                | Layer::Grapple
+                | Layer::Physical
+                | Layer::Weapons
+                | Layer::Body,
             Layer::Render
         )
     ) {
@@ -666,6 +686,64 @@ mod tests {
             assert_eq!(violations.len(), 1, "{violations:#?}");
             assert!(
                 violations[0].contains(&format!("the {layer} crate depends on the vehicles crate"))
+            );
+        }
+    }
+
+    #[test]
+    fn grapple_may_not_depend_on_vehicles_gameplay_or_render() {
+        let grapple = r#"
+            [package]
+            name = "jc3vr-grapple"
+            [dependencies]
+            jc3vr-weapons = { path = "../jc3vr-weapons" }
+            jc3vr-physical = { path = "../jc3vr-physical" }
+            jc3vr-vehicles = { path = "../jc3vr-vehicles" }
+            jc3vr-render = { path = "../jc3vr-render" }
+            [dev-dependencies]
+            jc3vr-gameplay = { path = "../jc3vr-gameplay" }
+        "#;
+        let violations = check_manifests(&stack_with(Layer::Grapple, grapple));
+        assert_eq!(violations.len(), 3, "{violations:#?}");
+        assert!(violations[0].contains("the grapple crate depends on the render crate"));
+        assert!(violations[0].contains("but the render and grapple crates are siblings"));
+        assert!(violations[1].contains("the grapple crate depends on the vehicles crate"));
+        assert!(violations[1].contains("but the vehicles and grapple crates are siblings"));
+        assert!(violations[2].contains("the grapple crate depends on the gameplay crate"));
+        assert!(
+            violations[2]
+                .contains("it may only depend on core, input, view, body, weapons, physical")
+        );
+    }
+
+    #[test]
+    fn vehicles_may_not_depend_on_grapple() {
+        let vehicles = r#"
+            [package]
+            name = "jc3vr-vehicles"
+            [dependencies]
+            jc3vr-physical = { path = "../jc3vr-physical" }
+            [dev-dependencies]
+            jc3vr-grapple = { path = "../jc3vr-grapple" }
+        "#;
+        let violations = check_manifests(&stack_with(Layer::Vehicles, vehicles));
+        assert_eq!(violations.len(), 1, "{violations:#?}");
+        assert!(violations[0].contains("the vehicles crate depends on the grapple crate"));
+        assert!(violations[0].contains("but the vehicles and grapple crates are siblings"));
+    }
+
+    #[test]
+    fn weapons_and_physical_may_not_depend_on_grapple() {
+        for layer in [Layer::Weapons, Layer::Physical] {
+            let text = format!(
+                "[package]\nname = \"{}\"\n[dependencies]\njc3vr-body = {{ path = \"../jc3vr-body\" }}\n\
+                 [dev-dependencies]\njc3vr-grapple = {{ path = \"../jc3vr-grapple\" }}\n",
+                layer.package()
+            );
+            let violations = check_manifests(&stack_with(layer, &text));
+            assert_eq!(violations.len(), 1, "{violations:#?}");
+            assert!(
+                violations[0].contains(&format!("the {layer} crate depends on the grapple crate"))
             );
         }
     }

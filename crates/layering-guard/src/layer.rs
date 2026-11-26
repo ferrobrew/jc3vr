@@ -14,6 +14,7 @@ pub enum Layer {
     Weapons,
     Physical,
     Vehicles,
+    Grapple,
     Gameplay,
     Hud,
     Tooling,
@@ -22,7 +23,7 @@ pub enum Layer {
 }
 
 impl Layer {
-    pub const ALL: [Layer; 14] = [
+    pub const ALL: [Layer; 15] = [
         Layer::Core,
         Layer::Input,
         Layer::View,
@@ -32,6 +33,7 @@ impl Layer {
         Layer::Weapons,
         Layer::Physical,
         Layer::Vehicles,
+        Layer::Grapple,
         Layer::Gameplay,
         Layer::Hud,
         Layer::Tooling,
@@ -51,6 +53,7 @@ impl Layer {
             Layer::Weapons => "weapons",
             Layer::Physical => "physical",
             Layer::Vehicles => "vehicles",
+            Layer::Grapple => "grapple",
             Layer::Gameplay => "gameplay",
             Layer::Hud => "hud",
             Layer::Tooling => "tooling",
@@ -93,8 +96,9 @@ impl Layer {
     /// the subsystems it builds on and fills through registrations, and on weapons and physical,
     /// which sit side by side on body, beside render and below gameplay, so neither may depend on
     /// the other: they meet only through the body crate's held-item seam and registrations, and a
-    /// weapons edit does not rebuild physical. Vehicles sits on weapons and physical, below
-    /// gameplay. Capture sits on render, beside
+    /// weapons edit does not rebuild physical. Vehicles and grapple sit side by side on weapons and
+    /// physical, below gameplay, so neither may depend on the other: what one tells the other goes
+    /// through the body crate's facts, and a grapple edit does not rebuild the vehicles. Capture sits on render, beside
     /// body and gameplay, and
     /// only tooling and the layers above it see it: the render hooks reach the capture tooling
     /// through the probe tables the capture crate fills, so a capture edit rebuilds neither render
@@ -109,7 +113,7 @@ impl Layer {
             Layer::Weapons | Layer::Physical => {
                 &[Layer::Core, Layer::Input, Layer::View, Layer::Body]
             }
-            Layer::Vehicles => &[
+            Layer::Vehicles | Layer::Grapple => &[
                 Layer::Core,
                 Layer::Input,
                 Layer::View,
@@ -125,6 +129,7 @@ impl Layer {
                 Layer::Weapons,
                 Layer::Physical,
                 Layer::Vehicles,
+                Layer::Grapple,
             ],
             Layer::Hud => &[
                 Layer::Core,
@@ -135,6 +140,7 @@ impl Layer {
                 Layer::Weapons,
                 Layer::Physical,
                 Layer::Vehicles,
+                Layer::Grapple,
                 Layer::Gameplay,
             ],
             Layer::Tooling => &[
@@ -147,6 +153,7 @@ impl Layer {
                 Layer::Weapons,
                 Layer::Physical,
                 Layer::Vehicles,
+                Layer::Grapple,
                 Layer::Gameplay,
             ],
             Layer::Ui => &[
@@ -159,6 +166,7 @@ impl Layer {
                 Layer::Weapons,
                 Layer::Physical,
                 Layer::Vehicles,
+                Layer::Grapple,
                 Layer::Gameplay,
                 Layer::Hud,
                 Layer::Tooling,
@@ -322,6 +330,36 @@ mod tests {
         for above in [Layer::Gameplay, Layer::Hud, Layer::Tooling, Layer::Ui] {
             assert!(above.may_depend_on(Layer::Vehicles), "{above}");
         }
+    }
+
+    #[test]
+    fn grapple_sits_on_weapons_and_physical_below_gameplay() {
+        for below in [
+            Layer::Core,
+            Layer::Input,
+            Layer::View,
+            Layer::Body,
+            Layer::Weapons,
+            Layer::Physical,
+        ] {
+            assert!(Layer::Grapple.may_depend_on(below), "{below}");
+            assert!(!below.may_depend_on(Layer::Grapple), "{below}");
+        }
+        assert!(!Layer::Grapple.may_depend_on(Layer::Gameplay));
+        assert!(!Layer::Grapple.may_depend_on(Layer::Render));
+        assert!(!Layer::Grapple.may_depend_on(Layer::Capture));
+        assert!(!Layer::Render.may_depend_on(Layer::Grapple));
+        for above in [Layer::Gameplay, Layer::Hud, Layer::Tooling, Layer::Ui] {
+            assert!(above.may_depend_on(Layer::Grapple), "{above}");
+        }
+    }
+
+    #[test]
+    fn vehicles_and_grapple_are_siblings() {
+        assert!(!Layer::Vehicles.may_depend_on(Layer::Grapple));
+        assert!(!Layer::Grapple.may_depend_on(Layer::Vehicles));
+        assert!(Layer::Gameplay.may_depend_on(Layer::Vehicles));
+        assert!(Layer::Gameplay.may_depend_on(Layer::Grapple));
     }
 
     #[test]
