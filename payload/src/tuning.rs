@@ -4,6 +4,7 @@
 
 use jc3vr_core::tuning::{AnyTuningFile, StartupError};
 pub(crate) use jc3vr_core::tuning::{Source, shutdown, tick};
+use jc3vr_ui::tuning::UI;
 use jc3vr_vehicles::controllers::vehicles::tuning::VEHICLES;
 
 /// Loads every tuning file from `source` and starts watching them.
@@ -12,7 +13,7 @@ pub(crate) fn init(source: Source) -> Result<(), StartupError> {
 }
 
 /// The tuning files, in no particular order: each loads on its own.
-static FILES: &[&dyn AnyTuningFile] = &[&VEHICLES];
+static FILES: &[&dyn AnyTuningFile] = &[&VEHICLES, &UI];
 
 #[cfg(test)]
 mod tests {
