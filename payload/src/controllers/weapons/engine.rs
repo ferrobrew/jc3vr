@@ -89,14 +89,16 @@ pub fn long_slot(slot: WeaponSlot) -> bool {
 }
 
 /// Whether a weapon of `slot` is a gun a hand takes from a character or a rack: a pistol, a
-/// two-handed, or a special weapon. A heavy weapon is held at a mount or by the game's own carry,
-/// and the grenade, the planted explosive, and the beacon are not guns.
+/// two-handed, a special, or a heavy weapon. A heavy weapon goes into the table beyond the slots
+/// like one taken from the ground, and the grenade, the planted explosive, and the beacon are not
+/// guns.
 pub(crate) fn takeable_gun_slot(slot: WeaponSlot) -> bool {
     matches!(
         slot,
         WeaponSlot::E_SLOT_DUAL_WIELD
             | WeaponSlot::E_SLOT_TWO_HANDED
             | WeaponSlot::E_SLOT_TWO_HANDED_SPECIAL
+            | WeaponSlot::E_SLOT_HEAVY
     )
 }
 
@@ -627,11 +629,11 @@ mod tests {
     }
 
     #[test]
-    fn a_hand_takes_pistols_and_long_guns_but_not_heavy_weapons() {
+    fn a_hand_takes_pistols_long_guns_and_heavy_weapons_but_not_throwables() {
         assert!(takeable_gun_slot(WeaponSlot::E_SLOT_DUAL_WIELD));
         assert!(takeable_gun_slot(WeaponSlot::E_SLOT_TWO_HANDED));
         assert!(takeable_gun_slot(WeaponSlot::E_SLOT_TWO_HANDED_SPECIAL));
-        assert!(!takeable_gun_slot(WeaponSlot::E_SLOT_HEAVY));
+        assert!(takeable_gun_slot(WeaponSlot::E_SLOT_HEAVY));
         assert!(!takeable_gun_slot(WeaponSlot::E_SLOT_HAND_GRENADE));
         assert!(!takeable_gun_slot(WeaponSlot::E_SLOT_BEACON));
     }
