@@ -19,8 +19,10 @@
 //! rows the `cb13` upload has just derived, and an unpatched per-eye re-issue binds each eye's copy at
 //! vertex slot 0 for that eye's submission and puts the engine's buffer back afterwards.
 
-use super::*;
-use crate::{stereo::engine_context::EngineContext, vr::render_params};
+use crate::{
+    stereo::{engine_context::EngineContext, single_pass::*},
+    vr::render_params,
+};
 
 /// Bound around an unpatched per-eye re-issue: [`bind`](Self::bind) puts an eye's copy at vertex slot
 /// 0, and dropping it puts back the buffer the engine had bound.

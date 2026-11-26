@@ -589,5 +589,4 @@ impl DesktopInputTracker {
 }
 
 #[cfg(test)]
-#[path = "desktop_input_tests.rs"]
 mod tests;

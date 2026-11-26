@@ -640,5 +640,4 @@ pub enum Unavailable {
 const MAX_CARRIED_MPS: f32 = 150.0;
 
 #[cfg(test)]
-#[path = "release_diagnostics_tests.rs"]
 mod tests;

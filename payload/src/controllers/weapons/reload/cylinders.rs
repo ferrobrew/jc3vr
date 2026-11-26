@@ -10,6 +10,7 @@ use crate::controllers::{
     haptics::{self, Event},
     weapons::reload::{
         GunTick, State, Tick, WeaponTick, casings,
+        engine::{dump_cylinder, gun_address, gun_has_bone, gun_world},
         plan::{LoadKind, ReloadPlan, WellFrame},
         render,
         revolver::{Cylinder, CylinderEvent, CylinderInputs, REVOLVER},
@@ -46,9 +47,7 @@ impl State {
         let cylinder = match kept {
             Some(cylinder) => Some(cylinder),
             None if plan.load == LoadKind::Cylinder
-                && unsafe {
-                    super::engine::gun_has_bone(weapon, gun, WeaponData::CHAMBER_BONE_HASH)
-                } =>
+                && unsafe { gun_has_bone(weapon, gun, WeaponData::CHAMBER_BONE_HASH) } =>
             {
                 Some(Cylinder::new(weapon, hand))
             }
@@ -99,9 +98,9 @@ impl State {
     fn dump(&mut self, weapon: &WeaponTick, gun: &GunTick, hand: Hand, cylinder: &Cylinder) {
         // SAFETY (each engine call): the input tick's steps run on the game thread before the
         // world update, with the weapon read this tick.
-        let rounds = unsafe { super::engine::dump_cylinder(weapon.address) };
+        let rounds = unsafe { dump_cylinder(weapon.address) };
         let dropped = match (weapon.plan.round, weapon.plan.well, unsafe {
-            super::engine::gun_world(weapon.address, gun.index)
+            gun_world(weapon.address, gun.index)
         }) {
             (Some(round), WellFrame::Gun { mouth, axis }, Some(world)) => {
                 let face = cylinder.carried(mouth);
@@ -149,7 +148,7 @@ impl State {
             return None;
         }
         // SAFETY: the input tick's steps run on the game thread before the world update.
-        let gun_address = unsafe { super::engine::gun_address(weapon.address, gun.index) }?;
+        let gun_address = unsafe { gun_address(weapon.address, gun.index) }?;
         Some(render::CylinderPart {
             weapon: weapon.address,
             gun_address,

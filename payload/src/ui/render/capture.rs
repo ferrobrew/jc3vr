@@ -33,11 +33,11 @@ pub const POST_STAGE_MB: usize = 1;
 /// created on the render thread (where the stage runs); the egui id is registered lazily on the UI
 /// thread.
 #[derive(Default)]
-pub(in crate::ui) struct StageCapture {
+pub(crate) struct StageCapture {
     created_desc: Option<(u32, u32, i32)>,
     texture: Option<ID3D11Texture2D>,
-    pub(in crate::ui) srv: Option<ID3D11ShaderResourceView>,
-    pub(in crate::ui) egui_id: Option<egui::TextureId>,
+    pub(crate) srv: Option<ID3D11ShaderResourceView>,
+    pub(crate) egui_id: Option<egui::TextureId>,
 }
 
 pub struct EguiDebugRenderState {
@@ -45,15 +45,15 @@ pub struct EguiDebugRenderState {
     /// The per-eye captures the VR presentation path submits. The egui id is `None` until the UI
     /// thread registers one for the Previews panel: these textures must exist whether or not the
     /// debug UI ever installs, so their creation cannot depend on a renderer.
-    pub(in crate::ui) target_textures: [Option<(ID3D11Texture2D, Option<egui::TextureId>)>; 2],
+    pub(crate) target_textures: [Option<(ID3D11Texture2D, Option<egui::TextureId>)>; 2],
     /// HDR scene (MainColor, pre-post) capture per eye -- the first column of the pipeline rows.
-    pub(in crate::ui) main_color_textures: [Option<(ID3D11Texture2D, egui::TextureId)>; 2],
+    pub(crate) main_color_textures: [Option<(ID3D11Texture2D, egui::TextureId)>; 2],
     /// (w, h) the back-buffer captures were built for; recreate them when the back buffer resizes.
     target_size: Option<(u32, u32)>,
     /// (w, h, dxgi format) the MainColor captures were built for; recreate on change.
     main_color_desc: Option<(u32, u32, i32)>,
     /// Per-(stage, eye) captures of intermediate post-effect results: index `stage * 2 + eye`.
-    pub(in crate::ui) post_stage_captures: Vec<StageCapture>,
+    pub(crate) post_stage_captures: Vec<StageCapture>,
     /// Cache of engine SRV pointer -> (width, height, egui texture id), for the live render-target
     /// thumbnails. The size rides along so a reused SRV address backed by a resized surface (see
     /// [`Self::thumbnail_id`]) is detected instead of serving the stale image.
@@ -175,7 +175,7 @@ impl EguiDebugRenderState {
     /// SRV's raw pointer *and* its current size, so a reused address backed by a resized surface
     /// (a resolution change recreates the engine's render targets) is treated as a fresh SRV
     /// instead of returning a retained id that shows the pre-resize image.
-    pub(in crate::ui) fn thumbnail_id(
+    pub(crate) fn thumbnail_id(
         &mut self,
         renderer: &mut egui_directx11::Renderer,
         srv_raw: usize,

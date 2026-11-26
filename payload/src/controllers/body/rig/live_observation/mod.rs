@@ -772,5 +772,4 @@ fn valid_root(root: Mat4) -> bool {
 static SLOT: Mutex<Publisher> = Mutex::new(Publisher::new());
 
 #[cfg(test)]
-#[path = "live_observation_tests.rs"]
 mod tests;

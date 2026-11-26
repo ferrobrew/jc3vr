@@ -6,11 +6,9 @@
 //! camera constants, how they are uploaded and bound, and how they are pinned to one eye for a
 //! re-issue that has to submit each eye separately.
 
-use super::*;
-use crate::vr::render_params;
+use crate::{stereo::single_pass::*, vr::render_params};
 
 #[cfg(test)]
-#[path = "cb13_tests.rs"]
 mod tests;
 
 /// The stereo constant buffer's register slot (`b13`, free across the game's vertex shaders) and its

@@ -888,5 +888,4 @@ static SUN_REISSUED: AtomicBool = AtomicBool::new(false);
 static PROBE_BUDGET: Mutex<(Option<String>, usize)> = Mutex::new((None, 0));
 
 #[cfg(test)]
-#[path = "sun_tests.rs"]
 mod tests;

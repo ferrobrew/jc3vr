@@ -1,18 +1,10 @@
-#[path = "boundary_tests.rs"]
 mod boundary_tests;
-#[path = "derived_tests.rs"]
 mod derived_tests;
-#[path = "hint_tests.rs"]
 mod hint_tests;
-#[path = "opaque_tests.rs"]
 mod opaque_tests;
-#[path = "rereview_tests.rs"]
 mod rereview_tests;
-#[path = "review_tests.rs"]
 mod review_tests;
-#[path = "snatch_tests.rs"]
 mod snatch_tests;
-#[path = "ui_tests.rs"]
 mod ui_tests;
 
 use std::{sync::Arc, time::Instant};

@@ -256,5 +256,4 @@ pub(super) fn unplaced(holds: Option<([bool; 2], Instant)>, now: Instant) -> [bo
 pub(super) const STALE_AFTER: Duration = Duration::from_millis(250);
 
 #[cfg(test)]
-#[path = "parachute_rig_tests.rs"]
 mod tests;

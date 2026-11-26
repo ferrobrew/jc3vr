@@ -504,5 +504,4 @@ mod tests {
 }
 
 #[cfg(test)]
-#[path = "parachute_native_model.rs"]
 mod native_rest_model;

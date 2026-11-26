@@ -254,5 +254,4 @@ pub(crate) fn test_origins() -> [OriginEvidence; 2] {
 }
 
 #[cfg(test)]
-#[path = "origin_provenance_tests.rs"]
 mod tests;

@@ -11,7 +11,7 @@ use std::sync::LazyLock;
 use sha2::{Digest, Sha256};
 use windows::Win32::Graphics::Direct3D11::ID3D11DeviceChild;
 
-use super::*;
+use crate::stereo::single_pass::*;
 
 /// `ID3D11Device::CreateVertexShader` (device vtable slot 12) and `ID3D11DeviceContext::VSSetShader`
 /// (context vtable slot 11), verified against the `windows` vtable structs.

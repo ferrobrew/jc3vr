@@ -63,7 +63,7 @@ use crate::controllers::{
     mode::{AirborneVariant, Detection, Mode, OnFootVariant},
     physical_hands::{
         PhysicalHandsConfig,
-        physics::state::{current_at, steps},
+        physics::state::{current_at, enabled as hand_bodies_enabled, steps},
     },
     weapons::heft::HeftClass,
 };
@@ -172,7 +172,7 @@ pub fn status() -> GunsStatus {
 
 /// Whether held guns are bodies: whenever the hand bodies are.
 pub(crate) fn enabled(config: &PhysicalHandsConfig) -> bool {
-    super::enabled(config)
+    hand_bodies_enabled(config)
 }
 
 pub(crate) fn mode_allows_bodies(detection: Detection) -> bool {

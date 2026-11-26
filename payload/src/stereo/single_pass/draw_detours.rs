@@ -8,15 +8,16 @@
 
 use windows::Win32::Graphics::Direct3D11::{ID3D11DomainShader, ID3D11GeometryShader};
 
-use super::*;
 use crate::{
     screenshot::harness::stages::velocity,
     stereo::single_pass::{
         eye_vertex_globals::EyeVertexGlobals,
         pinned_eye::Cb13EyePin,
+        sun::{after_raw_draw, depth_clip_treatment, on_raw_draw, preserve_far_depth},
         vegetation_once,
         water_fragment_state::packed_water_context,
         water_gpu_probe::{RawDrawKind, raw_entry, reflection_treatment},
+        *,
     },
 };
 
@@ -232,13 +233,13 @@ pub(super) unsafe extern "system" fn draw_detour(
         return;
     }
     if current_pass_id() == RenderPassId::RP_SUN as u8 {
-        let _sun_raster = unsafe { super::sun::depth_clip_treatment(context) };
-        let _sun_depth = unsafe { super::sun::preserve_far_depth(context) };
+        let _sun_raster = unsafe { depth_clip_treatment(context) };
+        let _sun_depth = unsafe { preserve_far_depth(context) };
         // SAFETY: `context` is the live immediate context this entry was called on.
-        unsafe { super::sun::on_raw_draw(context, vertex_count, start_vertex) };
+        unsafe { on_raw_draw(context, vertex_count, start_vertex) };
         submit();
         // SAFETY: the query, if any, was begun on this live immediate context.
-        unsafe { super::sun::after_raw_draw(context) };
+        unsafe { after_raw_draw(context) };
         return;
     }
     if current_pass_id() == RenderPassId::RP_REFLECTIVE_WATER_PLANES as u8

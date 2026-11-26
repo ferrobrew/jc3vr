@@ -12,8 +12,7 @@ use std::{collections::BTreeMap, sync::atomic::Ordering};
 use dxbc_stereo::DxbcError;
 use parking_lot::Mutex;
 
-use super::*;
-use crate::session::CaptureFile;
+use crate::{session::CaptureFile, stereo::single_pass::*};
 
 /// Vertex-shader name prefixes whose no-`cb0` shaders are reprojected for single-pass: the scene
 /// geometry that writes clip as `scene-VP · world` (skinned characters/NPCs, static and dynamic
