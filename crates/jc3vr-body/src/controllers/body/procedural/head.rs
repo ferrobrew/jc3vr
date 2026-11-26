@@ -25,7 +25,7 @@ use jc3vr_view::{
     hooks::camera::eye_point,
 };
 
-use crate::controllers::locomotion::{anchor::status as anchor_status, config::LOCOMOTION_CONFIG};
+use crate::controllers::locomotion::anchor::status as anchor_status;
 
 /// The player's neck pivot and eyes in Rico's model space, as the torso's solve reads them.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -103,11 +103,8 @@ pub fn camera_neck_pivot(eye: Vec3, orientation: Quat, scale: f32) -> Vec3 {
 
 /// How much of the head's target is the camera's neck pivot rather than the published head
 /// carried back onto it: the steady view's weight while the headset's eyes hang from its neutral
-/// head by the neck model (`controllers.locomotion.view.head_on_pivot`), else none.
+/// head by the neck model.
 fn pivot_weight() -> f32 {
-    if !LOCOMOTION_CONFIG.query(|c| c.view.head_on_pivot) {
-        return 0.0;
-    }
     anchor_pair()
         .map(|[_, current]| current)
         .filter(|current| current.camera_stable && current.camera_weight.is_finite())

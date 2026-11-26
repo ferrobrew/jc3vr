@@ -20,15 +20,11 @@ use jc3vr_view::{
 use parking_lot::Mutex;
 
 use crate::controllers::{
-    body::{
-        config::BODY_REMAP_CONFIG,
-        procedural::{
-            authority::{Case, classify},
-            state::StateTracker,
-        },
+    body::procedural::{
+        authority::{Case, classify},
+        state::StateTracker,
     },
     locomotion::{
-        config::LOCOMOTION_CONFIG,
         status as locomotion_status,
         view::{
             Eligibility, Handover, HeightFilter, MOVEMENT_TASK_GRACE_S, Neutral, NeutralCapture,
@@ -88,8 +84,6 @@ pub(crate) unsafe fn stabilize(
     model: Neutral,
     dt: f32,
 ) -> Stabilized {
-    let (enabled, head_on_pivot) =
-        LOCOMOTION_CONFIG.query(|c| (c.view.enabled, c.view.head_on_pivot));
     let controllers_enabled = scheme::enabled();
     let world_scale = VR_CONFIG.lock().world_scale;
     let now = Instant::now();
@@ -111,11 +105,10 @@ pub(crate) unsafe fn stabilize(
     let mut tracker = STATE.lock().tracker;
     let mut airborne = false;
     let case = (controllers_enabled && source() == Source::Vr).then(|| {
-        let config = BODY_REMAP_CONFIG.lock().procedural;
         let step = if dt.is_finite() { dt.max(0.0) } else { 0.0 };
         // SAFETY: the pass's entry, on the thread running it.
         let mut read =
-            unsafe { tracker.read(character, &locomotion, now, step, JUMP_GRACE_S, &config) };
+            unsafe { tracker.read(character, &locomotion, now, step, JUMP_GRACE_S) };
         // A few ticks' jitter in the task's stamp does not hand the view over and back.
         read.movement_task = locomotion.at.is_some_and(|at| {
             now.saturating_duration_since(at).as_secs_f32() <= MOVEMENT_TASK_GRACE_S
@@ -140,7 +133,7 @@ pub(crate) unsafe fn stabilize(
         .grounded_at
         .is_some_and(|at| now.saturating_duration_since(at).as_secs_f32() <= JUMP_GRACE_S);
     let eligible = Eligibility {
-        enabled: enabled && in_gameplay(),
+        enabled: in_gameplay(),
         ragdoll,
         on_ground,
         falling_in_grace: falling && in_grace,
@@ -255,14 +248,9 @@ pub(crate) unsafe fn stabilize(
         // assumes, so the head bone lands on the camera's neck pivot.
         return Stabilized {
             anatomy: animated,
-            camera: stable_target.as_ref().map(|stable| {
-                let stable = if head_on_pivot {
-                    neck_model_anchors(stable, world_scale)
-                } else {
-                    *stable
-                };
-                blend(&animated, &stable, weight)
-            }),
+            camera: stable_target
+                .as_ref()
+                .map(|stable| blend(&animated, &neck_model_anchors(stable, world_scale), weight)),
             weight,
             head_may_lie,
             face_offset: face_offset(&model, FACE_CLEARANCE_M * clear),

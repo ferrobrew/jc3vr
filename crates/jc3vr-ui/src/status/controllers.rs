@@ -199,16 +199,10 @@ fn stick_velocity() -> Line {
 }
 
 fn act_filter() -> Line {
-    if !read(&CONTROLLERS_CONFIG, |c| c.locomotion.acts.enabled) {
-        return Line::off("");
-    }
     act_filter_line(acts::status())
 }
 
 fn act_watchdog() -> Line {
-    if !read(&CONTROLLERS_CONFIG, |c| c.locomotion.acts.enabled) {
-        return Line::off("");
-    }
     let status = acts::status();
     let trips = text!(status.releases.to_string(), " trips");
     if status.released {
@@ -219,16 +213,10 @@ fn act_watchdog() -> Line {
 }
 
 fn steady_view() -> Line {
-    if !read(&CONTROLLERS_CONFIG, |c| c.locomotion.view.enabled) {
-        return Line::off("");
-    }
     steady_view_line(&anchor::status())
 }
 
 fn neutral_head() -> Line {
-    if !read(&CONTROLLERS_CONFIG, |c| c.locomotion.view.enabled) {
-        return Line::off("");
-    }
     match anchor::status().neutral {
         Some(neutral) => Line::ok(text!("Eyes ", format!("{:.2}", neutral.eyes.y), " m"))
             .with_note(format!("head {:.2} m", neutral.head.y)),

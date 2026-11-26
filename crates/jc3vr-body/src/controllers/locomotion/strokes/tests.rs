@@ -1,8 +1,7 @@
 use glam::{Quat, Vec3};
 
-use crate::controllers::locomotion::{
-    config::SwimStrokeConfig,
-    strokes::model::{StrokeHand, StrokeInput, StrokeModel, StrokeStep, propel},
+use crate::controllers::locomotion::strokes::model::{
+    StrokeHand, StrokeInput, StrokeModel, StrokeStep, propel,
 };
 
 const DT: f32 = 1.0 / 60.0;
@@ -13,21 +12,18 @@ fn sample(
     rotation: Quat,
     underwater: bool,
 ) -> StrokeStep {
-    model.step(
-        &StrokeInput {
-            hands: hands.map(|hand| {
-                hand.map(|hand| StrokeHand {
-                    position: rotation * hand.position,
-                    palm: rotation * hand.palm,
-                })
-            }),
-            head: Vec3::ZERO,
-            forward: rotation * Vec3::NEG_Z,
-            underwater,
-            dt: DT,
-        },
-        &SwimStrokeConfig::new(),
-    )
+    model.step(&StrokeInput {
+        hands: hands.map(|hand| {
+            hand.map(|hand| StrokeHand {
+                position: rotation * hand.position,
+                palm: rotation * hand.palm,
+            })
+        }),
+        head: Vec3::ZERO,
+        forward: rotation * Vec3::NEG_Z,
+        underwater,
+        dt: DT,
+    })
 }
 
 fn breaststroke(t: f32, side: f32) -> StrokeHand {

@@ -1010,12 +1010,7 @@ fn tick(game: &GameTick<'_>, dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>)
         if config.body.rig.steps.enabled {
             add_step_walk(&mut step.desired);
         }
-        locomotion::strokes::tick(
-            active.as_ref(),
-            controls.armed,
-            &config.locomotion.strokes,
-            real_dt,
-        );
+        locomotion::strokes::tick(active.as_ref(), controls.armed, real_dt);
     } else {
         state.rail = rail::RailRelease::new();
         weapons::hold::tick::publish_fire([false; 2]);

@@ -99,7 +99,7 @@ use crate::controllers::{
     },
     clock::TimeScale,
     facts::climb,
-    locomotion::{after_task, config::LOCOMOTION_CONFIG},
+    locomotion::after_task,
     roomscale,
     roomscale::{
         SeatPhase, crouch::capsule_step, fade, fade::FadeSource, posture::EffectivePosture,
@@ -285,14 +285,13 @@ pub fn frame(inputs: &FrameInputs) -> FrameOutput {
 }
 
 /// The arm [`eye_rig_slip`] turns: the camera's own head-to-eyes offset while the headset's eyes
-/// hang from the neutral head by the neck model (`controllers.locomotion.view.head_on_pivot`), the
+/// hang from the neutral head by the neck model, the
 /// offset the rig's pelvis assumes the upright eyes stand ahead of the root by; else the measured
 /// neck-to-eyes arm.
 fn slip_arm() -> Vec3 {
-    let head_on_pivot = LOCOMOTION_CONFIG.lock().view.head_on_pivot;
     headpose::anchor_pair()
         .map(|[_, current]| current)
-        .filter(|current| head_on_pivot && current.camera_stable)
+        .filter(|current| current.camera_stable)
         .map_or_else(headpose::eye_arm, |current| {
             current.camera_neck_delta + current.camera_eye_arm
         })

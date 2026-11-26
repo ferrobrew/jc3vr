@@ -136,7 +136,7 @@ pub(crate) unsafe fn after_task(character: &mut Character, dt: f32) {
         _ => body.unwrap_or(task_velocity),
     };
     let forward = unsafe { view_forward(character) };
-    let target = accel::target(stick, forward, game_speed, &config);
+    let target = accel::target(stick, forward, game_speed);
     let start = accel::coast_limited(start, target, body);
     let velocity = accel::step(start, target, dt, Rates::FIXED);
     let world = Vector3 {

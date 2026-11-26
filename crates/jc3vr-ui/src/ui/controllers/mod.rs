@@ -73,9 +73,6 @@ use crate::{
 pub(crate) fn controls(id: FeatureId) -> Option<FeatureBody> {
     let body: FeatureBody = match id {
         FeatureId::Devices => |ui, _| settings::devices(ui, &mut CONTROLLERS_CONFIG.edit()),
-        FeatureId::OnFoot => {
-            |ui, _| settings::locomotion_settings(ui, &mut CONTROLLERS_CONFIG.edit())
-        }
         FeatureId::Grapple => |ui, _| {
             let mut c = CONTROLLERS_CONFIG.edit();
             settings::grapple_settings(ui, &mut c);

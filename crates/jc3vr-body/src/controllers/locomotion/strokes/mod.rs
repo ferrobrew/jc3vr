@@ -21,7 +21,7 @@
 //!   ([`jc3vr_view::headpose::xr::add_swim_turn`]).
 //!
 //! A hand is in the water when it is below the head by
-//! [`SwimStrokeConfig::water_below_eyes_m`], or anywhere underwater. A hand holding a gun strokes
+//! [`StrokeTuning::water_below_eyes_m`](model::StrokeTuning::water_below_eyes_m), or anywhere underwater. A hand holding a gun strokes
 //! nothing. Each stroke that catches the water knocks its hand.
 
 pub mod model;
@@ -39,10 +39,7 @@ use crate::{
     controllers::{
         hands::{ActiveHands, controller_grips},
         haptics,
-        locomotion::{
-            config::SwimStrokeConfig,
-            strokes::model::{StrokeHand, StrokeInput, StrokeModel, StrokeStep},
-        },
+        locomotion::strokes::model::{StrokeHand, StrokeInput, StrokeModel, StrokeStep},
         mode,
     },
     hooks::input::swim,
@@ -94,11 +91,11 @@ pub fn record_applied(core_mps: f32, written_mps: f32) {
 }
 
 /// Run the strokes for this input tick while the local player swims. `armed` is whether each hand
-/// holds a gun, and `dt` the real tick's length, seconds. Out of the water, switched off, or
-/// without tracked hands, the strokes forget their motion and ask for nothing.
-pub fn tick(active: Option<&ActiveHands>, armed: [bool; 2], config: &SwimStrokeConfig, dt: f32) {
+/// holds a gun, and `dt` the real tick's length, seconds. Out of the water or without tracked
+/// hands, the strokes forget their motion and ask for nothing.
+pub fn tick(active: Option<&ActiveHands>, armed: [bool; 2], dt: f32) {
     let mut state = STATE.lock();
-    let Some(active) = active.filter(|_| config.enabled && swim::swimming()) else {
+    let Some(active) = active.filter(|_| swim::swimming()) else {
         state.model = StrokeModel::new();
         state.status.step = StrokeStep::NONE;
         return;
@@ -120,16 +117,13 @@ pub fn tick(active: Option<&ActiveHands>, armed: [bool; 2], config: &SwimStrokeC
             palm: hand.wrist.orientation * model::WRIST_PALM,
         })
     });
-    let step = state.model.step(
-        &StrokeInput {
-            hands,
-            head: active.head.position,
-            forward: active.torso * glam::Vec3::NEG_Z,
-            underwater,
-            dt,
-        },
-        config,
-    );
+    let step = state.model.step(&StrokeInput {
+        hands,
+        head: active.head.position,
+        forward: active.torso * glam::Vec3::NEG_Z,
+        underwater,
+        dt,
+    });
     if step.turn_right != 0.0 {
         headpose::xr::add_swim_turn(step.turn_right);
     }

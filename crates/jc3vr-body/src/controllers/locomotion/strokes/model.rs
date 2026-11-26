@@ -6,11 +6,55 @@
 use body_rig::smooth::follow_factor;
 use glam::{Vec2, Vec3};
 
-use crate::controllers::locomotion::config::SwimStrokeConfig;
-
 /// The palm's normal in the wrist frame: the fingers run along -Z and the back of the hand faces
 /// +Y, so the palm faces -Y.
 pub const WRIST_PALM: Vec3 = Vec3::NEG_Y;
+
+/// The strokes' tuning.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct StrokeTuning {
+    /// The swim speed a metre of palm-first paddle travel back through the water adds, metres per
+    /// second per metre.
+    pub speed_per_metre: f32,
+    /// The time constant the swim speed decays over between strokes, seconds: the glide.
+    pub decay_s: f32,
+    /// The fastest the strokes swim, metres per second.
+    pub max_speed_mps: f32,
+    /// A hand slower than this through the water pushes nothing, metres per second, so a hand held
+    /// still or drifting does not swim.
+    pub min_speed_mps: f32,
+    /// How far the palm may face away from the way the hand moves before the full-strength cone
+    /// falls to its minimum assistance. A hand closed round a controller rarely holds its palm
+    /// square to the stroke. A palm facing against the motion contributes nothing.
+    pub palm_cone_deg: f32,
+    /// The paddle speed that gives the catch haptic its full strength, metres per second.
+    pub catch_mps: f32,
+    /// The heading turn per square metre of the hands' smoothed turning push about the head, in
+    /// radians per second per square metre per second.
+    pub turn_gain: f32,
+    /// The time constant the hands' turning push is smoothed over, seconds: the alternate arms of
+    /// a crawl cancel within it, and a stroke on one side alone turns.
+    pub turn_smoothing_s: f32,
+    /// The fastest the strokes turn the heading, degrees per second.
+    pub max_turn_deg_s: f32,
+    /// How far below the eyes a hand is in the water at the surface, metres. Underwater every hand
+    /// is.
+    pub water_below_eyes_m: f32,
+}
+
+/// The strokes' tuning as they ship.
+pub const STROKES: StrokeTuning = StrokeTuning {
+    speed_per_metre: 4.5,
+    decay_s: 2.0,
+    max_speed_mps: 5.0,
+    min_speed_mps: 0.3,
+    palm_cone_deg: 75.0,
+    catch_mps: 0.6,
+    turn_gain: 3.0,
+    turn_smoothing_s: 0.5,
+    max_turn_deg_s: 90.0,
+    water_below_eyes_m: 0.2,
+};
 
 /// One hand as the strokes read it.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -100,7 +144,8 @@ impl StrokeModel {
     }
 
     /// Advance by one tick.
-    pub fn step(&mut self, input: &StrokeInput, config: &SwimStrokeConfig) -> StrokeStep {
+    pub fn step(&mut self, input: &StrokeInput) -> StrokeStep {
+        let config = &STROKES;
         let dt = if input.dt.is_finite() {
             input.dt.clamp(0.0, MAX_DT)
         } else {

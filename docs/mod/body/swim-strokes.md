@@ -28,7 +28,7 @@ A stroke catches the water when its backward push passes `catch_mps`, and lets g
 
 ## Settings and readouts
 
-The switch and the tuning are `controllers.locomotion.strokes` in the debug UI's On foot feature: `enabled` (on), `speed_per_metre`, `decay_s`, `max_speed_mps`, `min_speed_mps`, `palm_cone_deg`, `catch_mps`, `turn_gain`, `turn_smoothing_s`, `max_turn_deg_s`, and `water_below_eyes_m`. The feature's live status shows, while swimming, each hand in or out of the water with its push, the strokes caught per hand, the strokes' speed, the speed along the facing the swim core wrote against the speed written in its place, the smoothed turning push, and the turn this tick.
+The strokes have no settings; their tuning is `STROKES` in `locomotion::strokes::model`. The debug UI's On foot feature's live status shows, while swimming, each hand in or out of the water with its push, the strokes caught per hand, the strokes' speed, the speed along the facing the swim core wrote against the speed written in its place, the smoothed turning push, and the turn this tick.
 
 ## Unverified
 

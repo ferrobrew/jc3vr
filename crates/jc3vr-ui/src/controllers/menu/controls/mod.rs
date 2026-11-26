@@ -238,7 +238,6 @@ mod tests {
             // Not on either page: the debug UI's switches and tuning, the body page, and the
             // display.
             controllers.input.hand_tracking = false;
-            controllers.locomotion.stick.run_speed_mps = 3.0;
             controllers.body.remap_head = false;
             controllers.body.estimator.enabled = false;
             let headpose = config.part_mut(&HEADPOSE_CONFIG);
@@ -268,7 +267,6 @@ mod tests {
 
             assert_eq!(controllers.dominant_hand, Hand::Left);
             assert!(!controllers.input.hand_tracking);
-            assert_eq!(controllers.locomotion.stick.run_speed_mps, 3.0);
             assert_eq!(headpose.grapple.mode, default_headpose.grapple.mode);
             assert_eq!(controllers.aim.sights.get(7), Some(&sight));
             assert!(!controllers.body.remap_head);

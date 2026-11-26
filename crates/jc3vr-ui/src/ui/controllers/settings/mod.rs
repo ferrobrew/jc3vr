@@ -11,7 +11,6 @@ use jc3vr_input::{
 };
 use jc3vr_view::vr::input::config::{InputConfig, validate_thresholds};
 
-use crate::ui::controllers::locomotion;
 
 pub(super) fn devices(ui: &mut Ui, c: &mut ControllersConfig) {
     ui.checkbox(&mut c.input.hand_tracking, "Hand tracking")
@@ -78,11 +77,6 @@ pub(super) fn vehicle_chord_settings(ui: &mut Ui, c: &mut ControllersConfig) {
          take marker (then right A) chords, so it acts without waiting for them. The recenter \
          chord still works.",
     );
-}
-
-pub(super) fn locomotion_settings(ui: &mut Ui, c: &mut ControllersConfig) {
-    let l = &mut c.locomotion;
-    locomotion::locomotion_settings(ui, &mut l.stick, &mut l.acts, &mut l.view, &mut l.strokes);
 }
 
 /// The press and release sliders of one threshold pair, kept in order and valid.

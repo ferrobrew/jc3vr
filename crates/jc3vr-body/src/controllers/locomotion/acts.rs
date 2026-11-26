@@ -124,9 +124,6 @@ pub(crate) unsafe fn filter(
     locomotion: &LocomotionConfig,
     controllers_enabled: bool,
 ) -> ActDecision {
-    if !locomotion.acts.enabled {
-        return ActDecision::Pass;
-    }
     let Some(table) = table() else {
         return ActDecision::Pass;
     };

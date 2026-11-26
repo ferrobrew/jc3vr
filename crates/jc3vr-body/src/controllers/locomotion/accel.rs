@@ -9,8 +9,6 @@
 
 use glam::Vec2;
 
-use crate::controllers::locomotion::config::{SpeedSource, StickConfig};
-
 /// The rates of the integrator, in metres per second squared.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Rates {
@@ -84,16 +82,15 @@ pub fn to_world(stick: Vec2, forward: Vec2) -> Vec2 {
 
 /// The target velocity for one tick. `stick` is the move stick, `(right, forward)` with a length of
 /// at most one; `forward` is the direction frame's unit forward in world `(x, z)`; `game_speed` is
-/// the game's target speed for the stick, when it has one.
-pub fn target(stick: Vec2, forward: Vec2, game_speed: Option<f32>, config: &StickConfig) -> Vec2 {
+/// the game's target speed for the stick, when it has one: its walk, run, and backpedal speeds,
+/// and zero where it would stop Rico at a ledge or a wall, which keeps distances and chases as
+/// balanced.
+pub fn target(stick: Vec2, forward: Vec2, game_speed: Option<f32>) -> Vec2 {
     let magnitude = stick.length().min(1.0);
     if !magnitude.is_finite() || magnitude < STICK_EPSILON || !forward.is_finite() {
         return Vec2::ZERO;
     }
-    let speed = match config.speed {
-        SpeedSource::Game => game_speed.filter(|s| s.is_finite()).unwrap_or(0.0),
-        SpeedSource::Fixed => config.run_speed_mps * magnitude,
-    };
+    let speed = game_speed.filter(|s| s.is_finite()).unwrap_or(0.0);
     if speed <= 0.0 {
         return Vec2::ZERO;
     }
@@ -223,23 +220,12 @@ mod tests {
 
     #[test]
     fn the_game_speed_sets_the_magnitude_and_zero_stops() {
-        let config = StickConfig::new();
         let forward = Vec2::new(0.0, -1.0);
         let half = Vec2::new(0.0, 0.5);
-        let velocity = target(half, forward, Some(1.6), &config);
+        let velocity = target(half, forward, Some(1.6));
         assert!(velocity.abs_diff_eq(Vec2::new(0.0, -1.6), 1e-6));
-        assert_eq!(target(half, forward, Some(0.0), &config), Vec2::ZERO);
-        assert_eq!(target(half, forward, None, &config), Vec2::ZERO);
-        assert_eq!(target(Vec2::ZERO, forward, Some(4.5), &config), Vec2::ZERO);
-    }
-
-    #[test]
-    fn the_fixed_speed_scales_with_the_stick() {
-        let config = StickConfig {
-            speed: SpeedSource::Fixed,
-            ..StickConfig::new()
-        };
-        let velocity = target(Vec2::new(0.5, 0.0), Vec2::new(0.0, -1.0), None, &config);
-        assert!((velocity.length() - config.run_speed_mps * 0.5).abs() < 1e-5);
+        assert_eq!(target(half, forward, Some(0.0)), Vec2::ZERO);
+        assert_eq!(target(half, forward, None), Vec2::ZERO);
+        assert_eq!(target(Vec2::ZERO, forward, Some(4.5)), Vec2::ZERO);
     }
 }
