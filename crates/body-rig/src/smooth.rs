@@ -40,7 +40,8 @@ pub fn half_life_factor(dt: f32, half_life: f32) -> f32 {
 /// The decay is the rational approximation of the exponential from Game Programming Gems 4
 /// ("Critically damped ease-in/ease-out smoothing"), exact for a constant target and stable for any
 /// step. A `smooth_s` that is not positive lands on the target at rest, and otherwise a `dt` that
-/// is not positive keeps the value and the rate.
+/// is not positive keeps the value and the rate. A step long enough that the decay vanishes, an
+/// infinite one included, lands on the target at rest.
 pub fn critically_damped(value: f32, rate: f32, target: f32, smooth_s: f32, dt: f32) -> (f32, f32) {
     if smooth_s.is_nan() || smooth_s <= 0.0 {
         return (target, 0.0);
@@ -50,12 +51,25 @@ pub fn critically_damped(value: f32, rate: f32, target: f32, smooth_s: f32, dt: 
     }
     let omega = 2.0 / smooth_s;
     let x = omega * dt;
-    let decay = 1.0 / (1.0 + x + 0.48 * x * x + 0.235 * x * x * x);
+    // The terms of the decay's polynomial past `1 + x`, kept apart so the value's step can be
+    // formed without cancellation.
+    let curve = x * x * (0.48 + 0.235 * x);
+    let decay = 1.0 / (1.0 + x + curve);
+    if decay == 0.0 {
+        return (target, 0.0);
+    }
     let change = value - target;
     let temp = (rate + omega * change) * dt;
-    let rate = (rate - omega * temp) * decay;
-    let value = target + (change + temp) * decay;
-    (value, rate)
+    let next_rate = (rate - omega * temp) * decay;
+    // The reference forms the value as `target + (change + temp) * decay`, which is algebraically
+    // `value + (rate * dt - change * curve) * decay`. The reference form rebuilds the value from the
+    // target, so the rounding of `decay` (within an ulp of one when the step is short) is scaled by
+    // the whole distance to the target. That error has the same sign on every step, so it adds up:
+    // at microsecond steps it moves the value away from the target by an ulp a step, more than the
+    // spring moves it. The increment form scales each rounding by the step's own movement, so a
+    // short step's error is no more than the final rounding of the value.
+    let next_value = value + rate * (dt * decay) - change * (curve * decay);
+    (next_value, next_rate)
 }
 
 /// The smoothstep ease `3t² - 2t³` of `t` clamped to `0..=1`; zero for a NaN `t`.
@@ -134,6 +148,68 @@ mod tests {
                 prop_assert!((value - to).abs() <= (from - to).abs() + 1e-4);
             }
         }
+
+        #[test]
+        fn critically_damped_step_matches_the_reference_in_exact_arithmetic(
+            value in -10.0f32..10.0,
+            rate in -50.0f32..50.0,
+            target in -10.0f32..10.0,
+            smooth_s in 0.01f32..2.0,
+            dt in prop_oneof![0.0f32..1e-4, 0.0f32..0.1, 0.0f32..10.0],
+        ) {
+            let (next_value, next_rate) = critically_damped(value, rate, target, smooth_s, dt);
+            let (exact_value, exact_rate) = reference_step(value, rate, target, smooth_s, dt);
+            // Each term of the step carries a few roundings relative to its own size, so the
+            // bound is a few ulps of the largest magnitude the step combines.
+            let value_scale = next_value.abs() + (value - target).abs() + (rate * dt).abs();
+            let rate_scale = rate.abs() + (2.0 / smooth_s * (value - target)).abs();
+            prop_assert!(
+                (f64::from(next_value) - exact_value).abs() <= 4.0 * f64::from(f32::EPSILON * value_scale),
+                "value {next_value} against {exact_value}"
+            );
+            prop_assert!(
+                (f64::from(next_rate) - exact_rate).abs() <= 8.0 * f64::from(f32::EPSILON * rate_scale),
+                "rate {next_rate} against {exact_rate}"
+            );
+        }
+    }
+
+    /// The Game Programming Gems 4 step as published, in f64, standing in for exact arithmetic.
+    fn reference_step(value: f32, rate: f32, target: f32, smooth_s: f32, dt: f32) -> (f64, f64) {
+        let (value, rate, target) = (f64::from(value), f64::from(rate), f64::from(target));
+        let omega = 2.0 / f64::from(smooth_s);
+        let dt = f64::from(dt);
+        let x = omega * dt;
+        let decay = 1.0 / (1.0 + x + 0.48 * x * x + 0.235 * x * x * x);
+        let change = value - target;
+        let temp = (rate + omega * change) * dt;
+        (
+            target + (change + temp) * decay,
+            (rate - omega * temp) * decay,
+        )
+    }
+
+    #[test]
+    fn critically_damped_microsecond_steps_approach_from_rest() {
+        // Proptest's shrunk case for the drift away from the target that the reference form's
+        // rounding builds up over very short steps.
+        let (to, smooth_s, dt) = (9.285876, 0.8704274, 1.6826938e-6);
+        let (mut value, mut rate) = (0.0f32, 0.0);
+        for _ in 0..10_000 {
+            let last = value;
+            (value, rate) = critically_damped(value, rate, to, smooth_s, dt);
+            assert!(value >= last && value <= to, "{last} stepped to {value}");
+        }
+        assert!(value > 0.0);
+    }
+
+    #[test]
+    fn critically_damped_infinite_step_lands_at_rest() {
+        assert_eq!(
+            critically_damped(0.5, 3.0, 1.0, 0.2, f32::INFINITY),
+            (1.0, 0.0)
+        );
+        assert_eq!(critically_damped(0.5, 3.0, 1.0, 0.2, f32::MAX), (1.0, 0.0));
     }
 
     #[test]
