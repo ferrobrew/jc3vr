@@ -59,7 +59,7 @@ use jc3gi::{
     types::math::Vector4,
 };
 use jc3vr_view::{
-    stereo::{config::STEREO_CONFIG, engine_context::EngineContext, layout::collapse_active},
+    stereo::{config::SinglePassSwitch, engine_context::EngineContext, layout::collapse_active},
     vr::render_params,
 };
 use parking_lot::Mutex;
@@ -70,7 +70,7 @@ use windows::Win32::Graphics::Direct3D11::{
 };
 
 use crate::stereo::single_pass::{
-    CURRENT_M_EYE, collapse_full_viewport, eye_globals, in_gbuffer_range,
+    CURRENT_M_EYE, collapse_full_viewport, config_flags, eye_globals, in_gbuffer_range,
     viewport::eye_half_viewport,
 };
 
@@ -227,12 +227,9 @@ pub(crate) fn sync(engine: &RenderEngine) {
     }
     let staged = &engine.m_FPGlobalConstData;
     let mirrored = block(EYE_CAMERA_SOURCE_ROWS.map(|row| staged[row as usize]), ZERO);
-    let (pixel_camera, local_lights) = STEREO_CONFIG.query(|c| {
-        (
-            c.single_pass.pixel_camera_per_eye,
-            c.single_pass.local_lights_per_eye,
-        )
-    });
+    let flags = config_flags();
+    let pixel_camera = flags.has(SinglePassSwitch::PixelCameraPerEye);
+    let local_lights = flags.has(SinglePassSwitch::LocalLightsPerEye);
     let eye_block = |eye: usize| -> Option<[Vector4; EYE_ROWS]> {
         let offset = if local_lights {
             eye_globals::eye_light_offset(eye)?

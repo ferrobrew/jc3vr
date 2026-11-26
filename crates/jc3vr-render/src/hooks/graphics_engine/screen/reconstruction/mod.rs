@@ -52,7 +52,7 @@ use jc3gi::{
     camera::camera::Camera, graphics_engine::graphics_engine::HContext_t, types::math::Matrix4,
 };
 use jc3vr_view::{
-    stereo::{config::STEREO_CONFIG, engine_context::EngineContext},
+    stereo::{config::SinglePassSwitch, engine_context::EngineContext},
     vr::{EyeRenderParams, render_params},
 };
 use re_utilities::hook_library::HookLibrary;
@@ -655,7 +655,7 @@ fn arm_eye_half_scissor(state: &PerEyeState) -> bool {
         masked: true,
         ..*state
     }));
-    if STEREO_CONFIG.query(|c| c.single_pass.fullscreen_camera_per_eye) {
+    if crate::stereo::single_pass::config_flags().has(SinglePassSwitch::FullscreenCameraPerEye) {
         eye_globals::stage(state.eye);
     }
     if !ENGAGED.swap(true, Ordering::Relaxed) {

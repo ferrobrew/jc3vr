@@ -10,7 +10,7 @@ use jc3gi::graphics_engine::{
     render_block::RenderBlockDeferredLighting,
     render_engine::RenderPassId,
 };
-use jc3vr_view::stereo::config::STEREO_CONFIG;
+use jc3vr_view::stereo::config::SinglePassSwitch;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::hooks::graphics_engine::{
@@ -50,12 +50,9 @@ fn draw_clustered(
     a3: *mut c_void,
     a4: *mut HTexture_t,
 ) {
-    let (per_eye, clustered) = STEREO_CONFIG.query(|c| {
-        (
-            c.single_pass.reconstruct_per_eye,
-            c.single_pass.clustered_per_eye,
-        )
-    });
+    let flags = crate::stereo::single_pass::config_flags();
+    let per_eye = flags.has(SinglePassSwitch::ReconstructPerEye);
+    let clustered = flags.has(SinglePassSwitch::ClusteredPerEye);
     let run = |eye: Option<usize>| run_draw_clustered(RunRequest { eye }, this, rc, a3, a4);
 
     // SAFETY: `rc` is the live render context for this dispatch; the caller (the engine's draw

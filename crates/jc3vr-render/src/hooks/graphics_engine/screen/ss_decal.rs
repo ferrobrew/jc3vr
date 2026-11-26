@@ -72,8 +72,10 @@ use jc3gi::{
     },
     types::math::Matrix4,
 };
-use jc3vr_view::{stereo::config::STEREO_CONFIG, vr::render_params};
+use jc3vr_view::{stereo::config::SinglePassSwitch, vr::render_params};
 use re_utilities::hook_library::HookLibrary;
+
+use crate::stereo::single_pass::config_flags;
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&SS_DECAL_DRAW_BINDER)
@@ -94,7 +96,7 @@ pub(super) fn hook_library() -> HookLibrary {
 /// in between bounded.
 pub(crate) fn shader_rewrite_enabled() -> bool {
     let enabled = jc3vr_view::stereo::layout::collapse_active()
-        && STEREO_CONFIG.query(|c| c.single_pass.ssdecal_per_eye);
+        && config_flags().has(SinglePassSwitch::SsdecalPerEye);
     if enabled {
         // Sticky, never cleared: this is the same gate `create_fragment_program` reads to decide
         // whether to splice the depth-UV offset into a permutation, so a `true` here means a
@@ -200,7 +202,7 @@ const MATRIX4_ROWS: u32 = 4;
 /// `rc` must be the live [`RenderContext`] the detoured `Draw` received, and `draw` must invoke the
 /// block's original `Draw` trampoline.
 unsafe fn per_eye(rc: *mut RenderContext, mut draw: impl FnMut()) -> bool {
-    if !STEREO_CONFIG.query(|c| c.single_pass.ssdecal_per_eye) {
+    if !config_flags().has(SinglePassSwitch::SsdecalPerEye) {
         return false;
     }
     // SAFETY: `rc` is live per the caller contract.
@@ -225,7 +227,7 @@ unsafe fn per_eye(rc: *mut RenderContext, mut draw: impl FnMut()) -> bool {
         }
         draw();
     };
-    let handled = if STEREO_CONFIG.query(|c| c.single_pass.ssdecal_geometry_per_eye) {
+    let handled = if config_flags().has(SinglePassSwitch::SsdecalGeometryPerEye) {
         // SAFETY: `rc` is the live render context the detoured `Draw` received, and `render` invokes
         // the block's original `Draw` trampoline.
         unsafe {

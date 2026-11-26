@@ -10,7 +10,6 @@
 use std::{collections::BTreeMap, sync::atomic::Ordering};
 
 use dxbc_stereo::DxbcError;
-use jc3vr_view::stereo::config::STEREO_CONFIG;
 use parking_lot::Mutex;
 
 use crate::stereo::single_pass::*;
@@ -296,7 +295,7 @@ pub enum VsTransform {
 /// [`clip_origin_per_eye`](jc3vr_view::stereo::config::SinglePassConfig::clip_origin_per_eye) is on.
 /// Decided at shader creation, so a change to the switch applies at the next shader reload.
 pub fn remap_vertex_shader(code: &[u8]) -> Result<Vec<u8>, DxbcError> {
-    let origin = if STEREO_CONFIG.query(|c| c.single_pass.clip_origin_per_eye) {
+    let origin = if config_flags().has(SinglePassSwitch::ClipOriginPerEye) {
         dxbc_stereo::ClipOrigin::PerEye
     } else {
         dxbc_stereo::ClipOrigin::Unchanged

@@ -29,7 +29,7 @@ use jc3vr_view::{
         POST_STAGE_DOF, POST_STAGE_MB, capture_post_stage, previews_visible,
     },
     stereo,
-    stereo::{config::STEREO_CONFIG, draw_index, later_scene},
+    stereo::{config::SinglePassSwitch, draw_index, later_scene},
 };
 use re_utilities::hook_library::HookLibrary;
 
@@ -102,7 +102,7 @@ fn temporal_dispatch(mgr: *mut c_void, slot: u32, resolve: TemporalResolve) -> b
             return false;
         };
         let layout = if jc3vr_view::stereo::layout::double_wide_active()
-            && STEREO_CONFIG.query(|c| c.single_pass.fsr_per_eye)
+            && crate::stereo::single_pass::config_flags().has(SinglePassSwitch::FsrPerEye)
         {
             crate::fsr::EyeLayout::SideBySide
         } else {

@@ -6,7 +6,7 @@
 //! [`ShaderBuild`] is the state the live shaders were created under, so a caller can tell whether
 //! the bytecode matches the configuration.
 
-use jc3vr_view::stereo::config::{STEREO_CONFIG, SinglePassConfig, SinglePassSwitch};
+use jc3vr_view::stereo::config::SinglePassSwitch;
 use serde::{Serialize, Serializer, ser::SerializeMap as _};
 
 /// The state the live shaders were created under: whether single-pass and its collapse were live,
@@ -19,19 +19,24 @@ pub struct ShaderBuild {
 }
 
 impl ShaderBuild {
-    /// The build a shader created now would get, from the live configuration and gates.
+    /// The build a shader created now would get, from the config snapshot the creation hooks read.
     pub fn current() -> Self {
-        Self::from_config(
+        let flags = crate::stereo::single_pass::config_flags();
+        Self::from_switches(
             crate::stereo::single_pass::active(),
             jc3vr_view::stereo::layout::collapse_active(),
-            &STEREO_CONFIG.query(|config| config.single_pass),
+            |switch| flags.has(switch),
         )
     }
 
-    pub(crate) fn from_config(active: bool, collapse: bool, config: &SinglePassConfig) -> Self {
+    fn from_switches(
+        active: bool,
+        collapse: bool,
+        value: impl Fn(SinglePassSwitch) -> bool,
+    ) -> Self {
         let mut switches = [false; SinglePassSwitch::COUNT];
         for &switch in SinglePassSwitch::ALL {
-            switches[switch as usize] = switch.rebuilds_shaders() && switch.get(config);
+            switches[switch as usize] = switch.rebuilds_shaders() && value(switch);
         }
         Self {
             active,
@@ -68,6 +73,7 @@ impl Serialize for RebuildSwitches<'_> {
 
 #[cfg(test)]
 mod tests {
+    use jc3vr_view::stereo::config::SinglePassConfig;
     use pretty_assertions::assert_eq;
 
     use super::*;
@@ -79,8 +85,8 @@ mod tests {
             let mut changed = base;
             switch.set(&mut changed, !switch.get(&base));
             assert_eq!(
-                ShaderBuild::from_config(true, true, &base)
-                    != ShaderBuild::from_config(true, true, &changed),
+                ShaderBuild::from_switches(true, true, |s| s.get(&base))
+                    != ShaderBuild::from_switches(true, true, |s| s.get(&changed)),
                 switch.rebuilds_shaders(),
                 "{}",
                 switch.name()
@@ -90,12 +96,10 @@ mod tests {
 
     #[test]
     fn a_build_serializes_the_rebuilding_switches_by_name() {
-        let value = serde_json::to_value(ShaderBuild::from_config(
-            true,
-            true,
-            &SinglePassConfig::new(),
-        ))
-        .unwrap();
+        let config = SinglePassConfig::new();
+        let value =
+            serde_json::to_value(ShaderBuild::from_switches(true, true, |s| s.get(&config)))
+                .unwrap();
         assert_eq!(value["active"], true);
         assert_eq!(value["switches"]["ssr_per_eye"], true);
         assert!(value["switches"].get("fsr_per_eye").is_none());

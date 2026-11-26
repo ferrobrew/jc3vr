@@ -35,7 +35,7 @@ use jc3gi::graphics_engine::{
     },
     graphics_engine::GraphicsEngine,
 };
-use jc3vr_view::stereo::config::STEREO_CONFIG;
+use jc3vr_view::stereo::config::SinglePassSwitch;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
@@ -43,9 +43,9 @@ use crate::{
     hooks::graphics_engine::{probes::registered, ss_decal},
     stereo::{
         single_pass::{
-            VsTransform, ambient_occlusion, ao_volumes, eye_camera, is_terrain_shadow_pass,
-            post_filters, screen_space_reflection, set_patch_pending, terrain_active,
-            water_pixel_variants,
+            VsTransform, ambient_occlusion, ao_volumes, config_flags, eye_camera,
+            is_terrain_shadow_pass, post_filters, screen_space_reflection, set_patch_pending,
+            terrain_active, water_pixel_variants,
         },
         switches::ShaderBuild,
     },
@@ -136,7 +136,7 @@ fn create_vertex_program(
     // times there is a multi-second freeze on every F5, on a path already racing teardown, and it buys
     // nothing: the substitution is inert during shutdown, so the rewrite's only product is a tally
     // nobody will read.
-    let census = !jc3vr_core::is_shutting_down() && STEREO_CONFIG.query(|c| c.single_pass.enabled);
+    let census = !jc3vr_core::is_shutting_down() && config_flags().single_pass_configured();
     if census
         && let Some(p) = unsafe { params.as_mut() }
         && !p.m_Code.is_null()
@@ -254,11 +254,12 @@ fn create_fragment_program(
     // The composite's bloom lookups, kept to each eye's half. Baked into the bytecode like the
     // overlays.
     let localize_bloom = jc3vr_view::stereo::layout::collapse_active();
-    let localize_ambient_occlusion = jc3vr_view::stereo::layout::collapse_active()
-        && STEREO_CONFIG.query(|c| c.single_pass.ssao_per_eye);
+    let flags = config_flags();
+    let localize_ambient_occlusion =
+        jc3vr_view::stereo::layout::collapse_active() && flags.has(SinglePassSwitch::SsaoPerEye);
     // The SSAO passes' sampling computed in the shader, in every mode: under the collapse as part of
     // the rewrite above, elsewhere as a rewrite of its own.
-    let exact_sampling = STEREO_CONFIG.lock().single_pass.ssao_exact_sampling;
+    let exact_sampling = flags.has(SinglePassSwitch::SsaoExactSampling);
     let ambient_occlusion_sampling = if exact_sampling {
         AmbientOcclusionSampling::Exact
     } else {
@@ -267,17 +268,17 @@ fn create_fragment_program(
     // The ambient-occlusion volumes mapped through each eye's camera. Baked into the bytecode like
     // the ambient occlusion; its vertex shader's reprojection is decided by name with the same switch.
     let localize_ao_volumes = jc3vr_view::stereo::layout::collapse_active()
-        && STEREO_CONFIG.query(|c| c.single_pass.ao_volumes_per_eye);
+        && flags.has(SinglePassSwitch::AoVolumesPerEye);
     // The screen-space reflection ray march traced for each eye's half, and its blur kept to it.
     // Baked into the bytecode like the ambient occlusion, and decided for every fragment program so
     // the reflection block knows whether the ray march it will run carries it.
-    let localize_reflections = jc3vr_view::stereo::layout::collapse_active()
-        && STEREO_CONFIG.query(|c| c.single_pass.ssr_per_eye);
+    let localize_reflections =
+        jc3vr_view::stereo::layout::collapse_active() && flags.has(SinglePassSwitch::SsrPerEye);
     // Every pixel shader that reads the camera position picks its eye's copy per pixel. Applied last,
     // over whatever the other rewrites produced, since it composes with all of them.
     let localize_camera = jc3vr_view::stereo::layout::collapse_active()
-        && STEREO_CONFIG.query(|c| c.single_pass.pixel_camera_per_eye);
-    let local_lights = if STEREO_CONFIG.query(|c| c.single_pass.local_lights_per_eye) {
+        && flags.has(SinglePassSwitch::PixelCameraPerEye);
+    let local_lights = if flags.has(SinglePassSwitch::LocalLightsPerEye) {
         LocalLights::PerEye
     } else {
         LocalLights::Unchanged
@@ -285,7 +286,7 @@ fn create_fragment_program(
     // Every screen-door pattern hashed from the pixel position is laid out from its eye's origin.
     // Applied after the camera rewrite, whose buffer carries the eye boundary it reads.
     let localize_screen_door = jc3vr_view::stereo::layout::collapse_active()
-        && STEREO_CONFIG.query(|c| c.single_pass.screen_door_per_eye);
+        && flags.has(SinglePassSwitch::ScreenDoorPerEye);
     // The tree impostors hash theirs from their own projected position; the same buffer's boundary
     // lays it out per eye.
     let localize_projected_screen_door = jc3vr_view::stereo::layout::collapse_active();
@@ -455,7 +456,7 @@ fn create_fragment_program(
     // The glare chain's filters get an eye-half variant the draw detour binds while the chain runs.
     // Built whenever single-pass is on, so the switch applies without a reload.
     if !jc3vr_core::is_shutting_down()
-        && STEREO_CONFIG.query(|c| c.single_pass.enabled)
+        && config_flags().single_pass_configured()
         && let Some(p) = unsafe { params.as_ref() }
         && !p.m_Code.is_null()
         && let Ok(size) = usize::try_from(p.m_Size)
@@ -786,8 +787,9 @@ fn bounce_shader_bundle() -> Result<(), ReloadError> {
         if !away_loaded {
             return Err(ReloadError::LoadVariantFailed);
         }
-        // The debug UI can change the configuration from another thread while the bundle loads;
-        // a set created across that change matches neither state, so it is recorded as unknown.
+        // A dispatch opening on the draw thread resamples the config snapshot, so the configuration
+        // can move while the bundle loads; a set created across that change matches neither state,
+        // so it is recorded as unknown.
         if ShaderBuild::current() == build {
             *BUILT_WITH.lock() = Some(build);
         }

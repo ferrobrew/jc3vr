@@ -1,5 +1,6 @@
-//! The single-pass config snapshot: the flags the render path reads, sampled off the mutex-guarded
-//! configuration and held in an atomic bitfield.
+//! The stereo config snapshot: the flags the render path reads, sampled off the mutex-guarded
+//! configuration and held in an atomic bitfield. Every draw-path read of the stereo settings goes
+//! through it: the single-pass switches, the master switch, and the sun-shadow fit switches.
 //!
 //! Two snapshots, for one reason. Every gate in the feature is consulted from viewport, draw, and
 //! render-block detours, so reading the configuration behind its mutex would cost a lock per draw
@@ -27,21 +28,42 @@ use jc3vr_view::stereo::{
     layout::LayoutFlags,
 };
 
-/// The single-pass config flags, sampled once per frame and pinned for the duration of a dispatch:
+/// The stereo config flags, sampled once per frame and pinned for the duration of a dispatch:
 /// every switch at its [`SinglePassSwitch`] index (from
 /// [`SinglePassConfig::switch_bits`](jc3vr_view::stereo::config::SinglePassConfig::switch_bits)),
-/// and the master switch taken together with the session at [`SINGLE_PASS_BIT`].
+/// the master switch taken together with the session at [`SINGLE_PASS_BIT`], and the remaining
+/// flags just past it.
 #[derive(Clone, Copy)]
-pub(super) struct ConfigFlags(u64);
+pub(crate) struct ConfigFlags(u64);
 
 impl ConfigFlags {
-    pub(super) fn has(self, switch: SinglePassSwitch) -> bool {
+    pub(crate) fn has(self, switch: SinglePassSwitch) -> bool {
         self.0 & (1 << switch as u64) != 0
     }
 
     /// Whether the master switch is on and a VR session is running.
-    pub(super) fn single_pass(self) -> bool {
+    pub(crate) fn single_pass(self) -> bool {
         self.0 & SINGLE_PASS_BIT != 0
+    }
+
+    /// Whether the master switch is on, session or not.
+    pub(crate) fn single_pass_configured(self) -> bool {
+        self.0 & CONFIGURED_BIT != 0
+    }
+
+    /// [`StereoConfig::shadow_update_every_frame`](jc3vr_view::stereo::config::StereoConfig::shadow_update_every_frame).
+    pub(crate) fn shadow_update_every_frame(self) -> bool {
+        self.0 & SHADOW_UPDATE_EVERY_FRAME_BIT != 0
+    }
+
+    /// [`StereoConfig::shadow_fit_unpadded`](jc3vr_view::stereo::config::StereoConfig::shadow_fit_unpadded).
+    pub(crate) fn shadow_fit_unpadded(self) -> bool {
+        self.0 & SHADOW_FIT_UNPADDED_BIT != 0
+    }
+
+    /// [`StereoConfig::shadow_anchor_to_fit`](jc3vr_view::stereo::config::StereoConfig::shadow_anchor_to_fit).
+    pub(crate) fn shadow_anchor_to_fit(self) -> bool {
+        self.0 & SHADOW_ANCHOR_TO_FIT_BIT != 0
     }
 
     /// The stereo layout these flags ask for, as [`layout`] publishes it.
@@ -76,7 +98,7 @@ impl ConfigFlags {
 /// frame's still-walking dispatch -- the same interleaving that made the game-thread G-buffer range
 /// clear tear a live range (see [`begin_dispatch`]). A flag changing there would land between an arm
 /// and its restore, which is why the draw thread reads a pinned copy instead.
-pub(super) fn config_flags() -> ConfigFlags {
+pub(crate) fn config_flags() -> ConfigFlags {
     if let Some(flags) = DISPATCH_FLAGS.get() {
         return flags;
     }
@@ -87,7 +109,7 @@ pub(super) fn config_flags() -> ConfigFlags {
     ConfigFlags(store_config_flags())
 }
 
-/// Re-read the single-pass config flags into the frame snapshot. Called at frame start, on the game
+/// Re-read the stereo config flags into the frame snapshot. Called at frame start, on the game
 /// thread, and read by everything that is not inside a draw-thread dispatch -- see [`config_flags`]
 /// for why the draw thread pins its own copy instead of reading this one.
 ///
@@ -137,26 +159,31 @@ static SESSION_LIVE: AtomicBool = AtomicBool::new(false);
 
 fn store_config_flags() -> u64 {
     let session_live = SESSION_LIVE.load(Ordering::Relaxed);
+    let bit = |on: bool, bit: u64| if on { bit } else { 0 };
     let snapshot = STEREO_CONFIG.query(|c| {
         let s = &c.single_pass;
         s.switch_bits()
-            | if s.enabled && session_live {
-                SINGLE_PASS_BIT
-            } else {
-                0
-            }
+            | bit(s.enabled && session_live, SINGLE_PASS_BIT)
+            | bit(s.enabled, CONFIGURED_BIT)
+            | bit(c.shadow_update_every_frame, SHADOW_UPDATE_EVERY_FRAME_BIT)
+            | bit(c.shadow_fit_unpadded, SHADOW_FIT_UNPADDED_BIT)
+            | bit(c.shadow_anchor_to_fit, SHADOW_ANCHOR_TO_FIT_BIT)
     }) | CONFIG_FLAGS_VALID;
     CONFIG_FLAGS.store(snapshot, Ordering::Relaxed);
     layout::publish_frame_layout(ConfigFlags(snapshot).layout());
     snapshot
 }
 
-/// The master switch's bit, just past the switches'.
+/// The master switch's bit taken with the session, just past the switches', and the flags after it.
 const SINGLE_PASS_BIT: u64 = 1 << SinglePassSwitch::COUNT;
+const CONFIGURED_BIT: u64 = SINGLE_PASS_BIT << 1;
+const SHADOW_UPDATE_EVERY_FRAME_BIT: u64 = SINGLE_PASS_BIT << 2;
+const SHADOW_FIT_UNPADDED_BIT: u64 = SINGLE_PASS_BIT << 3;
+const SHADOW_ANCHOR_TO_FIT_BIT: u64 = SINGLE_PASS_BIT << 4;
 /// Marks [`CONFIG_FLAGS`] as having been sampled at least once, so a zero snapshot before the first
 /// frame is not mistaken for "everything off".
 const CONFIG_FLAGS_VALID: u64 = 1 << 63;
-const _: () = assert!(SINGLE_PASS_BIT < CONFIG_FLAGS_VALID);
+const _: () = assert!(SHADOW_ANCHOR_TO_FIT_BIT < CONFIG_FLAGS_VALID);
 static CONFIG_FLAGS: AtomicU64 = AtomicU64::new(0);
 
 thread_local! {
