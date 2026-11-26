@@ -84,7 +84,13 @@ use jc3vr_core::{
     config::engine::{Switch, disable_automatically},
     hooks::in_gameplay,
 };
-use jc3vr_render::{hud::render_camera_pose, stereo::single_pass::collapse_active};
+use jc3vr_render::{
+    hud::{
+        pointer::panel::{RenderedPanel, publish_panel, rendered_camera},
+        render_camera_pose,
+    },
+    stereo::single_pass::collapse_active,
+};
 pub use state::{HUD_STATE, StageSafeAreaReadout, stage_safe_area_readout};
 use state::{StageSafeArea, publish_stage_safe_area};
 use windows::Win32::Graphics::Direct3D11::ID3D11DeviceContext;
@@ -339,7 +345,7 @@ pub fn draw_quad(context: &ID3D11DeviceContext, device: &Device, target: &Textur
     let mut hud = HUD_STATE.lock();
     if !cfg.redirect || !cfg.quad || hud.redirected_size().is_none() {
         hud.clear_panel_corners();
-        pointer::publish_panel(None);
+        publish_panel(None);
         return;
     }
 
@@ -348,7 +354,7 @@ pub fn draw_quad(context: &ID3D11DeviceContext, device: &Device, target: &Textur
     // disparity. Computing corners per-eye instead would cancel the world transform against the
     // per-eye view (VP = Inverse(Transform) · Projection), collapsing the panel to view space
     // (head-locked, zero disparity, appears at infinity).
-    let pointer_camera = pointer::rendered_camera();
+    let pointer_camera = rendered_camera();
     if jc3vr_render::stereo::dispatch::first_ui_eye(eye)
         && let Some((head_pos, head_rotation)) = pointer_camera
             .map(|camera| (camera.head.position, camera.head.orientation))
@@ -402,8 +408,8 @@ pub fn draw_quad(context: &ID3D11DeviceContext, device: &Device, target: &Textur
                 panel_height_over_distance: panel_height(cfg.panel_scale, 1.0, aspect),
             },
         );
-        pointer::publish_panel(pointer_camera.and_then(|camera| {
-            Some(pointer::RenderedPanel {
+        publish_panel(pointer_camera.and_then(|camera| {
+            Some(RenderedPanel {
                 head: camera.head,
                 cockpit_head: camera.cockpit_head,
                 scale: camera.scale,
@@ -426,7 +432,7 @@ pub fn draw_quad(context: &ID3D11DeviceContext, device: &Device, target: &Textur
         hud.set_cursor_corners(cursor_corners);
     } else if jc3vr_render::stereo::dispatch::first_ui_eye(eye) {
         // No panel pose this frame: the previous corners are not what the player sees.
-        pointer::publish_panel(None);
+        publish_panel(None);
         world_markers::clear_frame();
         atlas::clear_frame();
         reticle::clear_frame();

@@ -4,9 +4,10 @@
 //! and primary-button state as the desktop mouse, and [`crate::hooks::ui`] feeds both through the
 //! engine's `MovieImpl::NotifyMouseState` route.
 //!
-//! - [`panel`](jc3vr_render::hud::pointer::panel), in the render crate, holds the rendered panels and the ray intersection against them;
+//! - [`jc3vr_render::hud::pointer::panel`] holds the rendered panels and the ray intersection
+//!   against them;
 //! - the input tick turns the controllers into pointer samples
-//!   ([`jc3vr_gameplay::controllers::bindings::pointer`]), which this module re-exports;
+//!   ([`jc3vr_gameplay::controllers::bindings::pointer`]);
 //! - [`route`] decides which source, if any, owns the game UI's mouse on each delivery.
 //!
 //! The egui debug panel has its own pointer, built the same way: the input tick queues the
@@ -19,14 +20,6 @@
 mod egui_route;
 pub mod register_pointer;
 mod route;
-
-pub use jc3vr_gameplay::controllers::bindings::pointer::{
-    ControllerPointer, clear_controller, owns_menu_trigger, selected_controller,
-};
-pub use jc3vr_render::hud::pointer::panel::{
-    RenderedCamera, RenderedPanel, publish_camera, publish_egui_panel, publish_panel,
-    rendered_camera,
-};
 
 use crate::hud::cursor;
 pub use crate::hud::pointer::{

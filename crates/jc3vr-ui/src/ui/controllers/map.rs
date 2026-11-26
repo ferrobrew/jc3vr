@@ -4,9 +4,10 @@
 use std::time::Instant;
 
 use egui::Ui;
+use jc3vr_gameplay::controllers::bindings::pointer::ControllerPointer;
 use jc3vr_hud::{
     controllers::map::{CLICK_SLOP, MapDelivery, MapReport, zoom_label},
-    hud::pointer::{ControllerPointer, RoutedPointer},
+    hud::pointer::RoutedPointer,
 };
 use jc3vr_input::frame::Hand;
 

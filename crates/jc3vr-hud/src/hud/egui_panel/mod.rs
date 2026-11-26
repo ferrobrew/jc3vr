@@ -34,16 +34,17 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use glam::Vec4;
 use jc3gi::graphics_engine::{device::Device, texture::Texture};
 use jc3vr_input::{
-    capture::PanelRequest,
+    capture::{PanelRequest, debug_ui_capture},
     frame,
     frame::{Hand, Pose},
 };
+use jc3vr_render::hud::pointer::panel::{RenderedPanel, publish_egui_panel, rendered_camera};
 use parking_lot::Mutex;
 use windows::Win32::Graphics::Direct3D11::{ID3D11DeviceContext, ID3D11ShaderResourceView};
 
 pub use crate::hud::egui_panel::slot::{end_grab, is_placed, recall};
 use crate::{
-    egui_impl::{EguiState, debug_ui_capture, request_debug_ui},
+    egui_impl::{EguiState, request_debug_ui},
     hud::{
         config::{EguiPanelConfig, HUD_CONFIG},
         cursor::CursorFrame,
@@ -52,7 +53,6 @@ use crate::{
             slot::{ResolveInput, Summon},
         },
         pointer,
-        pointer::RenderedPanel,
         quad::{HudQuad, compute_cursor_corners, compute_world_corners},
         target::HudTarget,
     },
@@ -174,7 +174,7 @@ pub(crate) fn draw_quad(
 ) {
     if !is_active() {
         if WAS_ACTIVE.swap(false, Ordering::Relaxed) {
-            pointer::publish_egui_panel(None);
+            publish_egui_panel(None);
         }
         return;
     }
@@ -216,7 +216,7 @@ impl EguiPanelState {
     fn prepare(&mut self, context: &ID3D11DeviceContext, device: &Device, cfg: &EguiPanelConfig) {
         self.cached_corners = None;
         self.cursor_corners = None;
-        pointer::publish_egui_panel(None);
+        publish_egui_panel(None);
 
         let (width, height) = (cfg.resolution.0.max(1), cfg.resolution.1.max(1));
         if self.target.as_ref().map(HudTarget::size) != Some((width, height)) {
@@ -248,7 +248,7 @@ impl EguiPanelState {
         // The panel is placed in the cockpit frame and composed into the world through the
         // pointer's captured camera, the render-time head with the tracking sample that placed it,
         // so the panel, the head, and the controller rays share one basis.
-        let Some(camera) = pointer::rendered_camera() else {
+        let Some(camera) = rendered_camera() else {
             return;
         };
         let held = slot::grabbing().and_then(|hand| Some((hand, latest_aim(hand)?)));
@@ -264,7 +264,7 @@ impl EguiPanelState {
         let panel_height = crate::hud::panel_height(SCALE, SUMMON_DISTANCE, aspect);
         let params = world_panel(&camera, pose, panel_height, aspect);
         self.cached_corners = compute_world_corners(&params);
-        pointer::publish_egui_panel(self.cached_corners.map(|corners| RenderedPanel {
+        publish_egui_panel(self.cached_corners.map(|corners| RenderedPanel {
             head: camera.head,
             cockpit_head: camera.cockpit_head,
             scale: camera.scale,

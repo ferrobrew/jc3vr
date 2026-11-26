@@ -23,6 +23,7 @@ use jc3gi::{
         ui_manager::UIManager,
     },
 };
+use jc3vr_gameplay::controllers::bindings::pointer::{clear_controller, selected_controller};
 use jc3vr_input::capture::debug_ui_capture;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
@@ -60,7 +61,7 @@ pub(super) fn hook_library() -> HookLibrary {
 #[detour(address = UIManager::PreUpdate_ADDRESS)]
 fn pre_update(this: *mut UIManager, dt: f32) {
     let pending = mouse_route_active().then(|| {
-        let controller = pointer::selected_controller();
+        let controller = selected_controller();
         (controller, pointer::peek_route(controller))
     });
     map::prepare_dispatch(
@@ -117,7 +118,7 @@ fn send_mouse_events(this: *mut UIManager, steering: *mut c_void) -> bool {
     };
     let prepared = PREPARED_ROUTE.lock().take();
     let routed = prepared.map_or_else(
-        || pointer::route_game_pointer(pointer::selected_controller()),
+        || pointer::route_game_pointer(selected_controller()),
         PendingRoute::commit,
     );
 
@@ -325,7 +326,7 @@ impl SyntheticMouse {
 /// next controller press must follow a released sample, and a held desktop button must be released
 /// before it counts again.
 fn cancel_pointer(movie: Option<&mut MovieImpl>) {
-    pointer::clear_controller();
+    clear_controller();
     pointer::reset_route();
     cursor::set_frame(None);
     let live = movie.as_deref().map(movie_identity);
@@ -338,7 +339,7 @@ fn cancel_pointer(movie: Option<&mut MovieImpl>) {
 
 /// Native input is not recorded in SyntheticMouse, so every ownership interval parks once.
 fn cancel_pointer_for_ownership(movie: Option<&mut MovieImpl>) {
-    pointer::clear_controller();
+    clear_controller();
     pointer::reset_route();
     cursor::set_frame(None);
     let live = movie.as_deref().map(movie_identity);

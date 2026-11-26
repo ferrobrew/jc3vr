@@ -5,7 +5,7 @@
 use body_rig::smooth::half_life_factor;
 use glam::{Quat, Vec2, Vec3, Vec4};
 use jc3vr_gameplay::controllers::aim::marker_rays::Sight;
-pub use jc3vr_render::hud::world_markers::stage_frame::StageFrame;
+use jc3vr_render::hud::world_markers::stage_frame::StageFrame;
 
 /// A rectangle around a point, as its extents on each side, in stage pixels.
 #[derive(Copy, Clone, Debug, PartialEq)]

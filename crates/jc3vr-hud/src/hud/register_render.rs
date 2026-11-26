@@ -10,12 +10,13 @@ use jc3vr_render::{
             register_ui_redirect,
         },
     },
+    hud::pointer::panel::publish_camera,
     vr::{MirrorLayers, register_mirror_layers},
 };
 
 use crate::{
     hud,
-    hud::{egui_panel, mirror_overlay, pointer::publish_camera, restart_notice, summary_panel},
+    hud::{egui_panel, mirror_overlay, restart_notice, summary_panel},
 };
 
 pub fn register() {

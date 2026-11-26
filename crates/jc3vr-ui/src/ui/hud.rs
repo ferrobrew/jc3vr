@@ -4,8 +4,8 @@ use std::time::Instant;
 
 use jc3vr_hud::hud::{
     HUD_STATE, StageSafeAreaReadout, aim, config::HUD_CONFIG, stage_safe_area_readout,
-    world_markers::layout::StageFrame,
 };
+use jc3vr_render::hud::world_markers::stage_frame::StageFrame;
 
 use crate::{
     status::system::{ATLAS, MARKER_DEPTH, WORLD_MARKERS},

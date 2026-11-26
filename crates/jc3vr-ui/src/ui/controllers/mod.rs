@@ -53,10 +53,7 @@ use jc3vr_gameplay::controllers::{
     physical_hands::collider_view::ColliderViewConfig,
     roomscale as controller_roomscale, scheme, summary as controller_summary,
 };
-use jc3vr_hud::{
-    controllers::map as controller_map,
-    hud::{pointer, summary_panel},
-};
+use jc3vr_hud::{controllers::map as controller_map, hud::summary_panel};
 use jc3vr_input::{frame as controller_frame, frame::InteractionProfile};
 use jc3vr_render::{controllers::overlay::pass as overlay_pass, vr::input as vr_input};
 
@@ -205,8 +202,8 @@ pub(crate) fn status(id: FeatureId) -> Option<FeatureBody> {
             map::map_readout(
                 ui,
                 &controller_map::report(),
-                pointer::selected_controller(),
-                pointer::owns_menu_trigger(),
+                bindings::pointer::selected_controller(),
+                bindings::pointer::owns_menu_trigger(),
             );
         },
         FeatureId::AnimationIk => |ui, _| {

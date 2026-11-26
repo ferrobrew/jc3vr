@@ -8,6 +8,7 @@ use std::time::{Duration, Instant};
 use body_rig::smooth::half_life_factor;
 use glam::{Quat, Vec2, Vec3, Vec4};
 use jc3gi::graphics_engine::{device::Device, texture::Texture};
+use jc3vr_render::hud::world_markers::stage_frame::StageFrame;
 use parking_lot::Mutex;
 use windows::Win32::Graphics::Direct3D11::{
     D3D11_CLEAR_DEPTH, D3D11_CLEAR_STENCIL, ID3D11DeviceContext,
@@ -19,7 +20,6 @@ use crate::hud::{
     quad::{HudQuad, PanelParams},
     state::resources::{Native, Retry, Surface},
     target::HudTarget,
-    world_markers::layout::StageFrame,
 };
 
 /// Global HUD state. Locked briefly on the render thread.

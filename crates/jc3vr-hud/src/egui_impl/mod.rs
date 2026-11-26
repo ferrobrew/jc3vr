@@ -10,10 +10,9 @@ use jc3gi::{
 };
 use jc3vr_core::director::clean_view::hides_desktop;
 use jc3vr_input::capture::{
-    CapturePolicy, CaptureUpdate, DeviceEffect, InputObservation, OwnershipSnapshot, PanelMode,
-    PanelRequest, publish_capture,
+    CapturePolicy, CaptureUpdate, DebugUiInput, DeviceEffect, InputObservation, OwnershipSnapshot,
+    PanelMode, PanelRequest, publish_capture,
 };
-pub use jc3vr_input::capture::{DebugUiInput, debug_ui_capture};
 use parking_lot::{Mutex, MutexGuard};
 use windows::Win32::{
     Foundation::{HWND, LPARAM, WPARAM},

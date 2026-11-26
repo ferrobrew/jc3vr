@@ -15,6 +15,7 @@ use jc3gi::ui::{
     ui_manager::UIManager,
 };
 use jc3vr_gameplay::controllers::scheme;
+use jc3vr_render::hud::world_markers::stage_frame::StageFrame;
 use parking_lot::Mutex;
 
 use crate::hud::{
@@ -32,7 +33,7 @@ use crate::hud::{
     scaleform::{AtlasClip, CLIP_HANDLES, ClipHandle},
     state::applied_redirect,
     world_markers,
-    world_markers::layout::{CropExtents, StageFrame},
+    world_markers::layout::CropExtents,
 };
 
 /// Lay out the atlas for this capture and move the readouts into their cells. Returns the layout

@@ -22,6 +22,7 @@ use jc3vr_gameplay::controllers::aim::{
     marker_rays as raycast,
     marker_rays::{Sight, Timed},
 };
+use jc3vr_render::hud::world_markers::stage_frame::StageFrame;
 use parking_lot::Mutex;
 use windows::Win32::Graphics::Direct3D11::{D3D11_BOX, ID3D11DeviceContext};
 
@@ -34,8 +35,8 @@ use crate::hud::{
         CROP, DistanceSource, LABEL_CROP, MarkerStatus, STATUS, Status,
         depth::{DepthPoint, DepthProbe, RESULT_TTL_S},
         layout::{
-            Billboard, Crop, StageFrame, billboard_corners, crop, placement_distance,
-            radians_per_texel, slot_size, smooth_distance, surface_sight,
+            Billboard, Crop, billboard_corners, crop, placement_distance, radians_per_texel,
+            slot_size, smooth_distance, surface_sight,
         },
         layout_for,
     },

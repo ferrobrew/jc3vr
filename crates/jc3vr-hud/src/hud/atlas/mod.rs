@@ -40,14 +40,12 @@ mod seam;
 
 use std::collections::VecDeque;
 
+use jc3vr_render::hud::world_markers::stage_frame::StageFrame;
 use parking_lot::Mutex;
 pub(crate) use render::{Part, clear_frame, part_texture, prepare_eye, prepare_frame};
 pub(crate) use seam::{after_capture, begin_capture};
 
-use crate::hud::{
-    atlas::layout::{AtlasLayout, Cell},
-    world_markers::layout::StageFrame,
-};
+use crate::hud::atlas::layout::{AtlasLayout, Cell};
 
 /// The atlas's counters and the last frame's readout, for the debug UI.
 #[derive(Debug, Clone, Default)]

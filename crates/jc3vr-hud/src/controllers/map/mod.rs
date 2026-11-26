@@ -34,6 +34,7 @@ use jc3gi::{
     },
     ui::{comm_map_ui::CommMapUI, ui_manager::UIManager},
 };
+use jc3vr_gameplay::controllers::bindings::pointer::ControllerPointer;
 use jc3vr_input::{
     frame,
     frame::MAX_FRAME_AGE,
@@ -56,7 +57,7 @@ use crate::{
         lookup::{SyntheticLookupScope, observe_effector, synthetic_effector},
         report::{DispatchOutcome, DispatchReport, MapFields, record},
     },
-    hud::pointer::{ControllerPointer, RoutedPointer},
+    hud::pointer::RoutedPointer,
 };
 
 /// The map hooks: the map's input handler and per-frame update, and the action lookup the shim

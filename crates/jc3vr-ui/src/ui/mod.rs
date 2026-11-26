@@ -9,11 +9,8 @@
 use std::{sync::OnceLock, time::Instant};
 
 use jc3vr_core::config::{engine, engine::SaveStatus};
-use jc3vr_hud::{
-    egui_impl::{debug_ui_capture, request_debug_ui},
-    hud::egui_panel,
-};
-use jc3vr_input::capture::{OwnershipBlocker, PanelMode, PanelRequest};
+use jc3vr_hud::{egui_impl::request_debug_ui, hud::egui_panel};
+use jc3vr_input::capture::{OwnershipBlocker, PanelMode, PanelRequest, debug_ui_capture};
 
 pub mod camera;
 pub(crate) mod catalog;

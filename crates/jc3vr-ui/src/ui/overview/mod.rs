@@ -11,9 +11,8 @@ use egui::{Response, RichText, Ui};
 #[cfg(feature = "profiler")]
 use jc3vr_core::profiler::capture;
 use jc3vr_core::{frame_timing, session};
-use jc3vr_hud::egui_impl;
 use jc3vr_input::{
-    capture::{OwnershipBlocker, OwnershipSnapshot, PanelMode},
+    capture::{OwnershipBlocker, OwnershipSnapshot, PanelMode, debug_ui_capture},
     frame,
 };
 use jc3vr_render::{
@@ -61,7 +60,7 @@ impl Snapshot {
                 focused: frame.focused,
                 any_active: frame.any_active(),
             }),
-            ownership: egui_impl::debug_ui_capture(),
+            ownership: debug_ui_capture(),
             video: recorder::status(),
             tracking: recorder::tracking::status(),
             #[cfg(feature = "profiler")]

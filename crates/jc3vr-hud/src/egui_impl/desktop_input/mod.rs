@@ -9,7 +9,7 @@ use std::{
 };
 
 use jc3gi::graphics_engine::graphics_engine::get_graphics_params;
-pub(crate) use jc3vr_input::capture::desktop::{
+use jc3vr_input::capture::desktop::{
     DesktopInputEvidence, DesktopInputObservation, DesktopInputUnavailable, DesktopModifiers,
 };
 use parking_lot::Mutex;
