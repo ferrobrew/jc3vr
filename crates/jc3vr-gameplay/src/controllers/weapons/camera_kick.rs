@@ -18,7 +18,7 @@ use jc3gi::{
 };
 use re_utilities::hook_library::HookLibrary;
 
-use crate::controllers::{config::CONTROLLERS_CONFIG, scheme};
+use crate::controllers::{aim::config::AIM_CONFIG, scheme};
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&PROCESS_CAMERA_CONTEXT_BINDER)
@@ -31,7 +31,7 @@ fn process_camera_context(
     previous: *const CameraContext,
     out: *mut CameraContext,
 ) {
-    let suppress = CONTROLLERS_CONFIG.query(|c| c.enabled && c.aim.gun) && scheme::is_controllers();
+    let suppress = scheme::enabled() && AIM_CONFIG.query(|c| c.gun) && scheme::is_controllers();
     // Without a local player the modifier does nothing at all, so the transform is written only
     // when it would have been.
     let local = unsafe { !Character::GetLocalPlayerCharacter().is_null() };

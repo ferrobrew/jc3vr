@@ -100,7 +100,6 @@ use re_utilities::hook_library::HookLibrary;
 use crate::controllers::{
     aim::targets::weak_target,
     bindings::controls::ButtonControl,
-    config::CONTROLLERS_CONFIG,
     hands::held::{self, Held, Slot},
     haptics,
     loadout::{ObjectAddress, live},
@@ -114,6 +113,7 @@ use crate::controllers::{
             tuning::{C4, C4Tuning},
             wheel::{WheelHands, WheelStep},
         },
+        config::WEAPONS_CONFIG,
         engine,
         grenade::{Release, catch::body_of, throw_release},
         pouch_return,
@@ -839,7 +839,8 @@ fn update_from_user_serial(
     let Some(user) = (unsafe { local_user(weapon) }) else {
         return original();
     };
-    let (enabled, config) = CONTROLLERS_CONFIG.query(|c| (c.enabled, c.weapons.c4));
+    let enabled = scheme::enabled();
+    let config = WEAPONS_CONFIG.query(|c| c.c4);
     let tuning = C4Tuning::of(&config);
     let acting = enabled && scheme::is_controllers();
 

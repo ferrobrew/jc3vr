@@ -10,10 +10,10 @@ use jc3vr_input::{
 };
 
 use crate::controllers::{
-    config::ControllersConfig,
     grab::GrabVolume,
     haptics,
     weapons::{
+        config::WeaponSettings,
         foregrip::{self, set_pump_slide},
         pouch_models,
         reload::{
@@ -103,7 +103,7 @@ impl ActionEngine for NativeAction {
 
 impl State {
     /// The action's work by the free hand.
-    pub(super) fn work(&mut self, tick: &Tick, inputs: &FinishInputs, config: &ControllersConfig) {
+    pub(super) fn work(&mut self, tick: &Tick, inputs: &FinishInputs, config: &WeaponSettings) {
         let reload = &Reload::of(&config.weapons.reload);
         if reload.action.physical {
             self.status.work.reset();

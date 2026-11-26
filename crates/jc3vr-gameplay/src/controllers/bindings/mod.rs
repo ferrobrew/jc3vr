@@ -132,12 +132,14 @@ use crate::{
         },
         body::{BODY_CONFIG, firm_ragdoll, rig::grounded::add_step_walk},
         clock::TimeScale,
-        config::{CONTROLLERS_CONFIG, LocomotionDirection},
+        config::{CONTROLLERS_CONFIG, ControllersConfig, LocomotionDirection},
         grab::{self, Consumer, Provided, grabs_for, markers::MarkerFrame},
         hands::{self, tiers},
         haptics, locomotion,
         mode::{self, AirborneVariant, Detection, Mode, Traversal, VehicleClass},
-        physical_hands, roomscale, scheme, snatch, vehicles, weapons,
+        physical_hands, roomscale, scheme, snatch,
+        snatch::config::SnatchSettings,
+        vehicles, weapons,
     },
     grapple,
 };
@@ -284,7 +286,7 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
     let mut detection = mode::tick();
     tiers::tick(dt);
     // SAFETY: the game stage runs on the game thread before the world update.
-    unsafe { hands::anchor::input_tick(&config) };
+    unsafe { hands::anchor::input_tick(config.acting_hand()) };
 
     let frame = frame::latest()
         .filter(ControllerFrame::any_active)
@@ -536,7 +538,7 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
                     released: edges.released(grapple_hand, Button::SqueezePress),
                 },
                 dt: real_dt,
-                config: &config,
+                config: &snatch_settings(&config),
             })
         });
         provided.extend(grapple::line_grab::targets(
@@ -701,7 +703,8 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
             line: grapple_line,
             button_held: grapple_held && !snatch_button_owned,
             detection: &detection,
-            config: &config,
+            config: &config.grapple,
+            dominant: config.acting_hand(),
         })
     };
     controls.grapple = GrappleContext {
@@ -948,7 +951,7 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
                     detection: &detection,
                     dt,
                     real_dt,
-                    config: &config,
+                    config: &snatch_settings(&config),
                 },
                 &mut step.desired,
             )
@@ -1456,4 +1459,15 @@ fn line_attached() -> bool {
     mode::last_snapshot()
         .and_then(|s| s.character)
         .is_some_and(|c| c.grapple_wire)
+}
+
+/// The settings the snatch reads this tick, from the bindings' snapshot of the controllers' settings.
+fn snatch_settings(config: &ControllersConfig) -> SnatchSettings {
+    SnatchSettings {
+        snatch: config.weapons.snatch,
+        hold: config.weapons.hold,
+        overlay: config.overlay,
+        grapple: config.grapple,
+        physical_hands: config.physical_hands,
+    }
 }

@@ -28,8 +28,8 @@ use crate::{
         aim::raycast::CastOptions,
         body,
         clock::TimeScale,
-        config::CONTROLLERS_CONFIG,
         fingers::{
+            config::FINGERS_CONFIG,
             grip::{
                 self, Grip, GripSource,
                 catalogue::GripPose,
@@ -43,6 +43,7 @@ use crate::{
         mode::{self, AirborneVariant, Detection, Mode, OnFootVariant},
         physical_hands::{
             PhysicalHandsConfig, climb,
+            config::PHYSICAL_HANDS_CONFIG,
             contact::{HandContact, PointContact, PointProbe, Surface, SurfaceHit},
             doors::{
                 self,
@@ -109,7 +110,7 @@ unsafe fn run(owner: &Character, dt: f32) {
     physics::observe(dt);
     // SAFETY: forwarded from the caller: the game runs.
     let time_scale = unsafe { TimeScale::current() };
-    let config = CONTROLLERS_CONFIG.lock().physical_hands;
+    let config = *PHYSICAL_HANDS_CONFIG.lock();
     let gate = Gate {
         active: config.enabled && scheme::is_controllers() && jc3vr_core::hooks::in_gameplay(),
         role: thread_role::current(),
@@ -752,7 +753,7 @@ pub(super) fn declare_grips(
     wrists: [Option<Pose>; 2],
     cast: &mut dyn FnMut(Vec3, Vec3) -> Option<SurfaceHit>,
 ) {
-    let fit_on = CONTROLLERS_CONFIG.lock().fingers.enabled;
+    let fit_on = FINGERS_CONFIG.lock().enabled;
     for hand in Hand::BOTH {
         let i = hand.index();
         let Some((source, body)) = pickup.grip(hand) else {

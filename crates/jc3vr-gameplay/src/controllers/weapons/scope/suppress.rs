@@ -19,7 +19,7 @@ use detours_macro::detour;
 use jc3gi::character::player::{AimMode, Player};
 use re_utilities::hook_library::HookLibrary;
 
-use crate::controllers::{config::CONTROLLERS_CONFIG, scheme};
+use crate::controllers::{scheme, scheme::CONTROLLERS_ENABLED};
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new()
@@ -45,7 +45,7 @@ pub fn counters() -> SuppressCounters {
 
 /// Whether precision aim is refused now.
 pub fn suppressing() -> bool {
-    CONTROLLERS_CONFIG.query(|c| c.enabled) && scheme::is_controllers()
+    CONTROLLERS_ENABLED.query(|c| *c) && scheme::is_controllers()
 }
 
 /// The player's aim-mode setter. Passed through unless it would enter precision aim while the

@@ -40,15 +40,17 @@ use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
     body::rig::frames::Frames,
-    config::CONTROLLERS_CONFIG,
     grab::{Candidate, GrabVolume},
     physical_hands::{
         self,
         rigid::{RigidBody, Velocities},
     },
-    weapons::reload::{
-        loose::records::{DropKey, Records, Token, WorldHandle},
-        tuning::LooseTuning,
+    weapons::{
+        config::WEAPONS_CONFIG,
+        reload::{
+            loose::records::{DropKey, Records, Token, WorldHandle},
+            tuning::LooseTuning,
+        },
     },
 };
 
@@ -502,7 +504,7 @@ fn throw_away_magazine_object(
         // The original detour imported NPC rounds without removing them from native accounting.
         // Only a local automatic drop or an already empty NPC magazine is proved import-safe.
         unsafe { gun.as_ref() }.and_then(|g| {
-            let enabled = CONTROLLERS_CONFIG.lock().weapons.reload.loose.enabled;
+            let enabled = WEAPONS_CONFIG.lock().reload.loose.enabled;
             let local = unsafe { character.as_ref() }.is_some_and(|c| c.m_IsLocalCharacter);
             let rounds = unsafe { g.m_Owner.as_ref() }.map(|w| w.m_MagazineAmmo.max(0));
             automatic_rounds(enabled, local, rounds).and_then(|rounds| {

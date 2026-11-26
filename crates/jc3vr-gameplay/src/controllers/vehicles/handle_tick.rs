@@ -3,18 +3,17 @@
 
 use crate::controllers::{
     bindings::{controls::Controls, hold::Desired},
-    config::ControllersConfig,
     mode::{AirborneVariant, Mode},
     vehicles::{
         HandlesReadout, arm_steering as arm,
         axis_output::write_move,
-        config::ParachuteHandlesConfig,
+        config::{ParachuteHandlesConfig, VehicleSettings},
         parachute::{self, HandleState},
     },
 };
 
 /// Whether the parachute handles act in `mode`.
-pub(super) fn handles_act(mode: Mode, config: &ControllersConfig) -> bool {
+pub(super) fn handles_act(mode: Mode, config: &VehicleSettings) -> bool {
     config.vehicles.parachute_handles.enabled && mode == Mode::Airborne(AirborneVariant::Parachute)
 }
 

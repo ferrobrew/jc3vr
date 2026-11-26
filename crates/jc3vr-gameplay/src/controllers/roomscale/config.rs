@@ -10,6 +10,18 @@ use serde::{Deserialize, Serialize};
 /// binds the slot at startup.
 pub static ROOMSCALE_CONFIG: ConfigSlot<RoomscaleConfig> = ConfigSlot::new("controllers.roomscale");
 
+/// Whether the driver's view moves to a standard place behind the wheel, at
+/// `controllers.vehicles.driving_view.enabled` in the settings file: a field of the vehicles' group,
+/// which the cockpit composition reads. The payload binds the slot at startup.
+pub static DRIVING_VIEW_ENABLED: ConfigSlot<bool> =
+    ConfigSlot::new("controllers.vehicles.driving_view.enabled");
+
+/// Whether the body turns to the head's heading when the boost wingsuit takes off from the ground,
+/// at `controllers.vehicles.take_off_to_head` in the settings file: a field of the vehicles' group,
+/// which the roomscale tick reads. The payload binds the slot at startup.
+pub static TAKE_OFF_TO_HEAD: ConfigSlot<bool> =
+    ConfigSlot::new("controllers.vehicles.take_off_to_head");
+
 /// Posture and roomscale locomotion (see [`crate::controllers::roomscale`]). These act on the
 /// headset alone, controllers or not, and default on as part of the full gameplay preset. The head
 /// height itself is remapped only under [`BodyRemapConfig::remap_head`].

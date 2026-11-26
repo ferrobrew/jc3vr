@@ -1,7 +1,10 @@
 use super::*;
 use crate::controllers::{
     mode::VehicleClass,
-    vehicles::physical::{ControlKind, ControlState, Hold, Outputs, Release},
+    vehicles::{
+        config::VehiclesConfig,
+        physical::{ControlKind, ControlState, Hold, Outputs, Release},
+    },
 };
 
 fn driver() -> Option<VehicleSeat> {
@@ -69,7 +72,7 @@ fn begin_adapter_missing_observation_clears_old_entry_and_reentry_is_fresh() {
     assert_eq!(state.entry, None);
     assert_eq!(state.controls, ControlState::default());
     assert_eq!(state.last_holds, [None; 2]);
-    let config = ControllersConfig::default();
+    let config = VehiclesConfig::default();
     let xf = CockpitTransform {
         head_world: Vec3::ZERO,
         head_cockpit: Vec3::ZERO,
@@ -78,8 +81,8 @@ fn begin_adapter_missing_observation_clears_old_entry_and_reentry_is_fresh() {
     };
     let fitted = fit::fit(
         &FitInputs {
-            physical: &PhysicalControlsTuning::of(&config.vehicles.physical),
-            view_enabled: config.vehicles.driving_view.enabled,
+            physical: &PhysicalControlsTuning::of(&config.physical),
+            view_enabled: config.driving_view.enabled,
             seat: driver(),
             xf: &xf,
             eyes: None,

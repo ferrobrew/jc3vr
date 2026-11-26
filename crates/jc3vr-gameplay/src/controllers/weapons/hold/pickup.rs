@@ -44,12 +44,12 @@ use jc3vr_input::frame::Hand;
 
 use crate::controllers::{
     aim::gun,
-    config::CONTROLLERS_CONFIG,
     loadout::{
         Delivery, ObjectAddress, TakeSource, WeaponType, live, slot_label,
         take::{self, TakeOffer, TakeRefusal, TakeRoute, TakeRules},
     },
     weapons::{
+        config::WEAPONS_CONFIG,
         dual_wield::single,
         engine::{self, character_object, credit_stored, gun_pose, slot_of},
         hold::{self, act, equip, use_item},
@@ -209,7 +209,7 @@ pub(crate) unsafe fn preflight(
 pub(crate) unsafe fn route(weapon: &WeaponBase, hand: Option<Hand>) -> Result<TakeRoute, Refusal> {
     let weapon_type =
         unsafe { inventory_engine::weapon_type(weapon) }.ok_or(Refusal::UnknownSlot)?;
-    let hold = CONTROLLERS_CONFIG.lock().weapons.hold;
+    let hold = WEAPONS_CONFIG.lock().hold;
     let snapshot = live::snapshot_now();
     take::route(
         snapshot.as_ref(),

@@ -9,7 +9,11 @@ use jc3vr_core::thread_role::{self, ThreadRole};
 use jc3vr_render::headpose::Anchors;
 
 use super::*;
-use crate::controllers::config::{CONTROLLERS_CONFIG, ControllersConfig};
+use crate::controllers::{
+    body::config::BodyRemapConfig,
+    hands::{HandSettings, config::HandsConfig},
+    scheme::CONTROLLERS_ENABLED,
+};
 
 fn array<T>(values: &mut [T]) -> HkArray<T> {
     HkArray {
@@ -47,7 +51,7 @@ fn replacement_before_measure_cannot_seed_new_or_deferred_plans_with_old_arms() 
     crate::controllers::register_head_participants_for_tests();
     let _config = jc3vr_core::config::engine::test_fixture();
     // Plan admission is under test, not the live controller and world-rotation adapters.
-    CONTROLLERS_CONFIG.lock().enabled = false;
+    *CONTROLLERS_ENABLED.lock() = false;
     let _role = thread_role::enter(ThreadRole::Unmarked);
     let _state = FixtureState::new();
     let mut bones: [HkaBone; 2] = unsafe { std::mem::zeroed() };
@@ -105,7 +109,10 @@ fn replacement_before_measure_cannot_seed_new_or_deferred_plans_with_old_arms() 
             aim: Pose::IDENTITY,
         };
         retained.active = Some(ActiveHands {
-            config: ControllersConfig::default(),
+            config: HandSettings {
+                hands: HandsConfig::new(),
+                remap_hands: BodyRemapConfig::new().remap_hands,
+            },
             head: Pose::IDENTITY,
             hands: [Some(hand); 2],
             world_scale: 1.0,

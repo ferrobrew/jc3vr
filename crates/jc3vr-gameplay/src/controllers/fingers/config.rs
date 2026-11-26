@@ -1,5 +1,4 @@
-//! The finger-curl settings, held in
-//! [`ControllersConfig::fingers`](crate::controllers::config::ControllersConfig::fingers).
+//! The finger-curl settings, held at `controllers.fingers` ([`FINGERS_CONFIG`]).
 
 use jc3vr_core::config::engine::ConfigSlot;
 use serde::{Deserialize, Serialize};

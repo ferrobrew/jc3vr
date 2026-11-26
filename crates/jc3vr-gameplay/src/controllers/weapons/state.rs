@@ -7,12 +7,12 @@ use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
 use crate::controllers::{
-    config::ControllersConfig,
     grab::{GrabVolume, GripTarget},
     hands::ik,
     physical_hands::physics::guns,
     weapons::{
         ads, c4, collide,
+        config::WeaponSettings,
         docks::attract::{Attractor, ZoneWatch},
         dual_wield,
         engine::{self, HeldWeapon},
@@ -145,7 +145,7 @@ impl State {
         &mut self,
         holder: Hand,
         weapon: &HeldWeapon,
-        config: &ControllersConfig,
+        config: &WeaponSettings,
         world_scale: f32,
     ) -> Option<GripGeometry> {
         if weapon.holder != Some(holder) {

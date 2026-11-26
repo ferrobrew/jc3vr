@@ -1,14 +1,30 @@
 //! The grapple snatch's fixed tuning. Its settings, held as `weapons.snatch`, live with the
 //! weapon-handling settings ([`SnatchConfig`]).
 
-use jc3vr_core::config::engine::ConfigSlot;
-
-use crate::controllers::snatch::landing::LandingTuning;
 pub use crate::controllers::weapons::config::{SnatchConfig, SwingConfig};
+use crate::{
+    controllers::{
+        overlay::config::OverlayConfig, physical_hands::config::PhysicalHandsConfig,
+        snatch::landing::LandingTuning, weapons::config::HoldConfig,
+    },
+    grapple::physical::config::PhysicalGrappleConfig,
+};
 
-/// The grapple snatch's settings, at `controllers.weapons.snatch` in the settings file; the payload
-/// binds the slot at startup.
-pub static SNATCH_CONFIG: ConfigSlot<SnatchConfig> = ConfigSlot::new("controllers.weapons.snatch");
+/// The settings one snatch tick reads: its own group and the fields of the other groups it
+/// consults. The bindings fill it from the snapshot of the settings they take for the tick.
+#[derive(Copy, Clone)]
+pub struct SnatchSettings {
+    /// The snatch's own settings.
+    pub snatch: SnatchConfig,
+    /// Which hand holds a weapon, which decides whether a weapon held by a character is offered.
+    pub hold: HoldConfig,
+    /// The world-space overlay, which draws the armed snatch's latch.
+    pub overlay: OverlayConfig,
+    /// The physical grapple, whose free-hand line the swing hands over to.
+    pub grapple: PhysicalGrappleConfig,
+    /// The physical hands, whose door handling decides which doors are snatched.
+    pub physical_hands: PhysicalHandsConfig,
+}
 
 /// The mass the line's [`strength_n`](SwingConfig::strength_n) is given at, kilograms.
 pub const REFERENCE_MASS_KG: f32 = 10.0;

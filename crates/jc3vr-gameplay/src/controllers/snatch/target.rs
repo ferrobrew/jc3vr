@@ -13,7 +13,6 @@ use crate::{
             ray::Ray,
             raycast::{self, CastOptions},
         },
-        config::ControllersConfig,
         grab::RemoteKind,
         physical_hands::{
             self,
@@ -26,7 +25,9 @@ use crate::{
             remote::{self, NearBody, NearKind, RagdollTarget},
         },
         snatch::{
-            OfferInput, Refusal, SNATCH, engine,
+            OfferInput, Refusal, SNATCH,
+            config::SnatchSettings,
+            engine,
             rules::{self, Candidate, PropHandling},
         },
         weapons::{
@@ -48,7 +49,7 @@ use crate::{
 /// # Safety
 ///
 /// The game thread, before the world update and the physics step.
-pub(super) unsafe fn refresh(offer: &mut Offer, ray: &Ray, config: &ControllersConfig) -> bool {
+pub(super) unsafe fn refresh(offer: &mut Offer, ray: &Ray, config: &SnatchSettings) -> bool {
     let point = match &mut offer.kind {
         OfferKind::WorldGrenade { weapon, body, weak } => {
             let Some(_alive) = weak.lock() else {
@@ -431,7 +432,7 @@ pub(super) unsafe fn offerable(input: &OfferInput) -> Result<(), &'static str> {
 /// # Safety
 ///
 /// The game thread, before the world update.
-pub(super) unsafe fn choose(ray: &Ray, config: &ControllersConfig) -> Option<Offer> {
+pub(super) unsafe fn choose(ray: &Ray, config: &SnatchSettings) -> Option<Offer> {
     #[derive(Copy, Clone)]
     enum Kind {
         Aimed,
@@ -443,7 +444,7 @@ pub(super) unsafe fn choose(ray: &Ray, config: &ControllersConfig) -> Option<Off
         Holstered(usize),
         Rack(usize),
     }
-    let hold = &config.weapons.hold;
+    let hold = &config.hold;
     let takes_held = hold.either_hand;
     let aimed = grapple_weapons::aimed().and_then(|(aimed, alive)| {
         unsafe { aimed_offer(&aimed, config) }.map(|k| (aimed, k, alive))
@@ -786,7 +787,7 @@ fn near_point(ray: &Ray, point: Vec3) -> bool {
 /// The game thread, before the world update; the object must be held alive.
 unsafe fn aimed_offer(
     aimed: &grapple_weapons::Aimed,
-    config: &ControllersConfig,
+    config: &SnatchSettings,
 ) -> Option<OfferKind> {
     // SAFETY: the caller's strong reference keeps the object, and its weak reference, alive.
     let weak = || unsafe { weak_of(aimed.object) };
@@ -901,9 +902,9 @@ unsafe fn ragdoll_offer(
     object: NonZeroUsize,
     body: u32,
     point: Vec3,
-    config: &ControllersConfig,
+    config: &SnatchSettings,
 ) -> Option<RagdollTarget> {
-    let snatch = &config.weapons.snatch;
+    let snatch = &config.snatch;
     if !snatch.sling {
         return None;
     }
@@ -920,7 +921,7 @@ unsafe fn ragdoll_offer(
 unsafe fn prop_handling(
     object: NonZeroUsize,
     body: u32,
-    config: &ControllersConfig,
+    config: &SnatchSettings,
 ) -> Option<(f32, PropHandling)> {
     let mass_kg = unsafe { remote::loose_mass(object, body) }?;
     handling(mass_kg, config).map(|h| (mass_kg, h))
@@ -928,8 +929,8 @@ unsafe fn prop_handling(
 
 /// What the snatch does with a loose object of `mass_kg`: carried when one hand could carry it,
 /// swung, while the swing is on, up to its ceiling.
-fn handling(mass_kg: f32, config: &ControllersConfig) -> Option<PropHandling> {
-    let snatch = &config.weapons.snatch;
+fn handling(mass_kg: f32, config: &SnatchSettings) -> Option<PropHandling> {
+    let snatch = &config.snatch;
     let ceiling = if snatch.sling {
         snatch.swing.ceiling_kg
     } else {

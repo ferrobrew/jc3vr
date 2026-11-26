@@ -36,9 +36,14 @@
 //!   place), [`controllers::physical_hands::human_hull::hook_library`],
 //!   [`grapple::physical::hook_library`], and [`grapple::device::hook_library`].
 //! - The settings: each subsystem declares the [`ConfigSlot`](jc3vr_core::config::engine::ConfigSlot)
-//!   for its group beside the group's type ([`controllers::config::CONTROLLERS_CONFIG`],
-//!   [`controllers::body::BODY_CONFIG`], [`hooks::input::config::MOVEMENT_CONFIG`],
-//!   [`hooks::character::config::BODY_IK_CONFIG`]), and the payload binds them to its aggregate.
+//!   for its group beside the group's type ([`controllers::body::BODY_CONFIG`],
+//!   [`hooks::input::config::MOVEMENT_CONFIG`], [`hooks::character::config::BODY_IK_CONFIG`], and
+//!   one per controllers group, such as [`controllers::weapons::config::WEAPONS_CONFIG`]), and the
+//!   payload binds them to its aggregate. A subsystem reads only its own group and the groups of
+//!   the subsystems it builds on, through their slots or a field slot onto one setting
+//!   ([`controllers::hands::config::MOUNTED_AIM_BY_HANDS`]); the whole `controllers` table
+//!   ([`controllers::config::CONTROLLERS_CONFIG`]) is read only by the bindings, the summary, and
+//!   the layers above.
 //!
 //! The `profiler` feature adds the sim step's profiler scopes. The crate's own tests register a
 //! configuration root of their own (`test_config`), since the payload's aggregate is not there.

@@ -2,8 +2,8 @@
 //! record's "Vehicle, mounted, and wingsuit weapons", its vehicle and wingsuit binding tables, and
 //! its decisions on physical controls and arm steering (`docs/mod/input/controllers-and-roomscale.md`).
 //!
-//! - [`config`]: the settings, all under [`ControllersConfig::vehicles`], and [`tuning`]: the
-//!   physical controls' fixed placement and tuning;
+//! - [`config`]: the settings, all at `controllers.vehicles` ([`VEHICLES_CONFIG`]), and
+//!   [`tuning`]: the physical controls' fixed placement and tuning;
 //! - [`physical`]: the wheel, handlebars, cyclic, collective, flight stick, and throttle of
 //!   the driver's seat, grabbed with the grip, which write the vehicle's analog axes and hold the
 //!   hands;
@@ -46,7 +46,7 @@
 //! and jetski's personal weapon is a wielded weapon on the hand's attach bone, so the per-hand gun
 //! aim already aims it by hand ([`crate::controllers::aim::gun`]).
 //!
-//! [`ControllersConfig::vehicles`]: crate::controllers::config::ControllersConfig::vehicles
+//! [`VEHICLES_CONFIG`]: crate::controllers::vehicles::config::VEHICLES_CONFIG
 
 pub mod arm_steering;
 mod arm_tick;
@@ -125,10 +125,10 @@ mod tests {
     use super::*;
     use crate::controllers::{
         bindings::hold::{Desired, MapKind, Target, Want},
-        config::ControllersConfig,
         hands::CockpitHand,
         mode::{VehicleClass, VehicleSeat},
         vehicles::{
+            config::VehiclesConfig,
             finish::rendered_angle,
             mounted_tick::offered,
             physical::{ControlKind, ControlState, Hold, Outputs},
@@ -193,32 +193,63 @@ mod tests {
     fn only_the_driver_is_offered_the_enabled_controls() {
         // The defaults enable every physical control, so disable them all here and re-enable
         // only the one this test means to exercise.
-        let mut config = ControllersConfig::new();
-        config.vehicles.physical.wheel.enabled = false;
-        config.vehicles.physical.handlebars = false;
-        config.vehicles.physical.sticks = false;
-        config.vehicles.physical.levers = false;
+        let mut config = VehiclesConfig::new();
+        config.physical.wheel.enabled = false;
+        config.physical.handlebars = false;
+        config.physical.sticks = false;
+        config.physical.levers = false;
         let seat = |class, driver| Some(VehicleSeat { class, driver });
-        assert!(offered(seat(VehicleClass::Car, true), &config, false, false).is_empty());
-        config.vehicles.physical.levers = true;
+        assert!(
+            offered(
+                seat(VehicleClass::Car, true),
+                &config.physical,
+                false,
+                false
+            )
+            .is_empty()
+        );
+        config.physical.levers = true;
         assert_eq!(
-            offered(seat(VehicleClass::Helicopter, true), &config, false, false),
+            offered(
+                seat(VehicleClass::Helicopter, true),
+                &config.physical,
+                false,
+                false
+            ),
             &[ControlKind::Collective]
         );
-        assert!(offered(seat(VehicleClass::Helicopter, false), &config, false, false).is_empty());
-        assert!(offered(None, &config, false, false).is_empty());
-        config.vehicles.physical.handlebars = true;
+        assert!(
+            offered(
+                seat(VehicleClass::Helicopter, false),
+                &config.physical,
+                false,
+                false
+            )
+            .is_empty()
+        );
+        assert!(offered(None, &config.physical, false, false).is_empty());
+        config.physical.handlebars = true;
         assert_eq!(
-            offered(seat(VehicleClass::Sea, true), &config, true, false),
+            offered(seat(VehicleClass::Sea, true), &config.physical, true, false),
             &[ControlKind::Handlebars]
         );
-        config.vehicles.physical.sticks = true;
+        config.physical.sticks = true;
         assert_eq!(
-            offered(seat(VehicleClass::Plane, true), &config, false, false),
+            offered(
+                seat(VehicleClass::Plane, true),
+                &config.physical,
+                false,
+                false
+            ),
             &[ControlKind::FlightStick, ControlKind::Throttle]
         );
         assert_eq!(
-            offered(seat(VehicleClass::Plane, true), &config, false, true),
+            offered(
+                seat(VehicleClass::Plane, true),
+                &config.physical,
+                false,
+                true
+            ),
             &[ControlKind::Yoke, ControlKind::Throttle]
         );
     }

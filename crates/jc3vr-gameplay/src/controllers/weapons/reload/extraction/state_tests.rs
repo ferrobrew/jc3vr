@@ -7,20 +7,22 @@ use super::*;
 use crate::controllers::{
     bindings::controls::ButtonControl,
     body::rig::frames::Frames,
-    config::ControllersConfig,
     hands::pose::CockpitHand,
-    weapons::reload::{
-        ReloadStatus,
-        belt::{BeltPush, PushStage},
-        chamber::Chamber,
-        eject::{DoubleTapDetector, FlickDetector, TapDetector},
-        engine::{DetachOutcome, Reading},
-        frames::GunFrame,
-        insert::{InsertStage, ReadyCue, Well},
-        knock::Knocks,
-        plan::ReloadPlan,
-        records::{RecordKey, Records},
-        tuning::{RELOAD, Reload},
+    weapons::{
+        config::WeaponSettings,
+        reload::{
+            ReloadStatus,
+            belt::{BeltPush, PushStage},
+            chamber::Chamber,
+            eject::{DoubleTapDetector, FlickDetector, TapDetector},
+            engine::{DetachOutcome, Reading},
+            frames::GunFrame,
+            insert::{InsertStage, ReadyCue, Well},
+            knock::Knocks,
+            plan::ReloadPlan,
+            records::{RecordKey, Records},
+            tuning::{RELOAD, Reload},
+        },
     },
 };
 
@@ -402,7 +404,7 @@ fn state_active_pull_cancels_fresh_and_already_pushing_belt_without_engine_work(
             authority: true,
             ..FakeEngine::default()
         };
-        let config = ControllersConfig::default();
+        let config = WeaponSettings::default();
         let tick = tick(0.0, 17);
         state.extract_with(
             &tick,

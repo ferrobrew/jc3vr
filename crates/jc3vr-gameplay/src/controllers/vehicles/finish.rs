@@ -21,6 +21,7 @@ use crate::controllers::{
         arm_tick::arm_tick,
         axis_output::{axis_wanted, lever_axes_wanted, stick_axes_wanted},
         begin::body_dimensions,
+        config::VehicleSettings,
         control_haptics,
         handle_tick::handles_tick,
         mounted_grip::{self, MountedGripEvent},
@@ -47,7 +48,7 @@ pub(crate) fn finish_tick(
     let Some(active) = hands::active_hands_raw() else {
         return;
     };
-    let config = active.config.clone();
+    let config = VehicleSettings::read();
     let grips = active.hands.map(|h| h.map(|h| h.grip.position));
     let orientations = active.hands.map(|h| h.map(|h| h.grip.orientation));
     let held = Hand::BOTH.map(|hand| controls.hand(hand).hold.held());
@@ -181,7 +182,15 @@ pub(crate) fn finish_tick(
     let last = state.status.arms.map(|a| a.arms);
     let engaged = last.flatten().is_some();
     let was_held = state.status.arms.is_some_and(|a| a.held_for_grapple);
-    let arms = arm_tick(mode, controls, &active, desired, last, grapple_held);
+    let arms = arm_tick(
+        mode,
+        controls,
+        &active,
+        &config,
+        desired,
+        last,
+        grapple_held,
+    );
     // SAFETY: the vehicles' finish runs in the binding stage, on the game thread before the world
     // update.
     unsafe {

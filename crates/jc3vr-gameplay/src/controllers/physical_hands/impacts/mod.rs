@@ -25,10 +25,11 @@ use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
-    config::CONTROLLERS_CONFIG,
     haptics,
     physical_hands::{
-        bodies, carry_collision, engine,
+        bodies, carry_collision,
+        config::PHYSICAL_HANDS_CONFIG,
+        engine,
         impacts::{
             policy::{Motion, object_damage},
             state::{Contact, Enabled, FlagCall, Identity, Lease, Observation, State},
@@ -40,6 +41,7 @@ use crate::controllers::{
         sounds::{self, Impact, ImpactKind},
         world::World,
     },
+    scheme,
     weapons::hold::refs::{Strong, Weak},
 };
 
@@ -141,7 +143,7 @@ pub(crate) unsafe fn deliver() {
         unsafe { clear() };
         return;
     }
-    let config = CONTROLLERS_CONFIG.lock().physical_hands;
+    let config = *PHYSICAL_HANDS_CONFIG.lock();
     let retained = std::mem::take(&mut *RETAINED.lock());
     let locked: Vec<_> = retained
         .iter()
@@ -456,13 +458,15 @@ static STATE: Mutex<State> = Mutex::new(State::new());
 static HAS_LEASES: AtomicBool = AtomicBool::new(false);
 
 fn enabled() -> Enabled {
-    CONTROLLERS_CONFIG.query(|c| Enabled {
-        controllers: c.enabled,
-        hands: c.physical_hands.enabled,
-        pickup: c.physical_hands.pickup.enabled,
+    let controllers = scheme::enabled();
+    let (hands, pickup) = PHYSICAL_HANDS_CONFIG.query(|c| (c.enabled, c.pickup.enabled));
+    Enabled {
+        controllers,
+        hands,
+        pickup,
         gameplay: jc3vr_core::hooks::in_gameplay(),
         running: !jc3vr_core::is_shutting_down(),
-    })
+    }
 }
 
 unsafe fn participant_live(world: &World, id: Identity, strong: &Strong) -> bool {

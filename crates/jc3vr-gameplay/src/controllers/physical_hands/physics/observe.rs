@@ -17,10 +17,10 @@ use parking_lot::Mutex;
 
 use crate::controllers::{
     clock::TimeScale,
-    config::CONTROLLERS_CONFIG,
     hands::CockpitHand,
     haptics,
     physical_hands::{
+        config::PHYSICAL_HANDS_CONFIG,
         physics::{
             HAND_BODIES, blows, callback, drawn_body,
             drive::rig_jumped,
@@ -45,7 +45,7 @@ pub fn frame_tick() {
         blows::discard();
         return;
     }
-    let config = CONTROLLERS_CONFIG.lock().physical_hands;
+    let config = *PHYSICAL_HANDS_CONFIG.lock();
     // SAFETY: the game thread, ahead of the game's update.
     unsafe { crate::controllers::physical_hands::impacts::deliver() };
     if jc3vr_core::hooks::in_gameplay() {
@@ -99,7 +99,7 @@ pub fn frame_tick() {
 /// results. Called from the player aim control's post-simulation update, `dt` seconds after the
 /// last.
 pub fn observe(dt: f32) {
-    let config = CONTROLLERS_CONFIG.lock().physical_hands;
+    let config = *PHYSICAL_HANDS_CONFIG.lock();
     let now = Instant::now();
     let acting = enabled(&config).then(|| acting_palms(&config)).flatten();
     let step = steps();
@@ -227,7 +227,7 @@ fn braced_by_hold() -> Option<Hand> {
 /// The game thread, after simulation and outside the physics step.
 pub unsafe fn sample_render_offsets() {
     let now = Instant::now();
-    let config = CONTROLLERS_CONFIG.lock().physical_hands;
+    let config = *PHYSICAL_HANDS_CONFIG.lock();
     let (targets, rotation, scale, shown, fallback) = {
         let shared = SHARED.lock();
         if !enabled(&config) || !shared.fresh(now) || !shared.stepped_lately(now) {

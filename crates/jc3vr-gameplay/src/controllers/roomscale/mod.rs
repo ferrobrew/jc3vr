@@ -52,7 +52,9 @@ pub use seat::SeatPhase;
 use crate::{
     controllers::{
         body::{
-            self, BodyDimensions, estimator,
+            self, BodyDimensions,
+            config::BODY_REMAP_CONFIG,
+            estimator,
             rig::{
                 collision::{
                     self,
@@ -62,10 +64,11 @@ use crate::{
                 root::{self as rig_root, FrameSourceSnapshot, RootStatus, capsule_enabled},
             },
         },
-        config::{CONTROLLERS_CONFIG, Posture, RoomscaleConfig},
+        config::{Posture, RoomscaleConfig},
         locomotion,
         mode::{Mode, current as current_mode},
         roomscale::{
+            config::{DRIVING_VIEW_ENABLED, ROOMSCALE_CONFIG, TAKE_OFF_TO_HEAD},
             crouch::{CROUCH_EXIT_DROP_M, CrouchTracker},
             fade::{FADE_TIMING, FadeSource},
             posture::{
@@ -98,14 +101,9 @@ pub struct ComposedCockpit {
 /// correction, returning the cockpit positions to compose with. Called once per rendered VR frame
 /// on the game thread, outside the world update.
 pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
-    let (config, rig, remap_head, driving_view_on) = CONTROLLERS_CONFIG.query(|c| {
-        (
-            c.roomscale,
-            c.body.rig,
-            c.body.remap_head,
-            c.vehicles.driving_view.enabled,
-        )
-    });
+    let config = *ROOMSCALE_CONFIG.lock();
+    let (rig, remap_head) = BODY_REMAP_CONFIG.query(|c| (c.rig, c.remap_head));
+    let driving_view_on = *DRIVING_VIEW_ENABLED.lock();
     let stage = vr::stage::stage();
     let player = body::player();
     let now = Instant::now();
@@ -267,7 +265,7 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
     if in_gameplay {
         // SAFETY: the game thread, outside the world update.
         unsafe { seat_tick(&mut frame, &config, now) };
-        let take_off = CONTROLLERS_CONFIG.lock().vehicles.take_off_to_head;
+        let take_off = *TAKE_OFF_TO_HEAD.lock();
         // SAFETY: as above.
         unsafe { crate::controllers::vehicles::take_off::tick(take_off) };
     } else {
@@ -431,7 +429,7 @@ const MOVING_STICK: f32 = 0.2;
 /// re-base and a follow bank do neither, because they happen on the game's schedule rather than the
 /// player's.
 pub fn on_recenter(kind: RecenterKind, turn: Quat, cause: RecenterCause) {
-    let setting = CONTROLLERS_CONFIG.lock().roomscale.posture;
+    let setting = ROOMSCALE_CONFIG.lock().posture;
     let stage = vr::stage::stage();
     let player = body::player();
     rig_root::on_recenter(kind, turn, cause);

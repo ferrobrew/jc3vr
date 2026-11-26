@@ -22,10 +22,10 @@ use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
     bindings,
-    config::CONTROLLERS_CONFIG,
     hands::held::{self, Held, Slot, held_matrix},
     scheme,
     weapons::{
+        config::WEAPONS_CONFIG,
         engine,
         grenade::{
             LAUNCH, PlannedLaunch, Release, TickInputs, catch, hold_local, native::LaunchScope,
@@ -49,7 +49,7 @@ pub(super) fn held() -> Option<(Hand, usize)> {
 }
 
 pub(super) fn input_tick(inputs: &TickInputs, grips: [Option<Pose>; 2]) {
-    let tuning = GrenadeTuning::of(&CONTROLLERS_CONFIG.query(|config| config.weapons.grenade));
+    let tuning = GrenadeTuning::of(&WEAPONS_CONFIG.query(|config| config.grenade));
     let mut state = STATE.lock();
     state.hand = inputs.dominant;
     let State {
@@ -121,7 +121,7 @@ pub(super) unsafe fn observe(weapon: *mut ThrownGrenadeWeapon) {
     if !base.m_IsUserLocalPlayer
         || unsafe { engine::slot_of(base) } != Some(WeaponSlot::E_SLOT_BEACON)
         || !scheme::is_controllers()
-        || !CONTROLLERS_CONFIG.query(|config| config.weapons.grenade_throw)
+        || !WEAPONS_CONFIG.query(|config| config.grenade_throw)
         || STATE.lock().pending.is_some()
     {
         return;
@@ -136,7 +136,7 @@ pub(super) unsafe fn observe(weapon: *mut ThrownGrenadeWeapon) {
     let Some(explosive) = (unsafe { primed_explosive(&*weapon) }) else {
         return;
     };
-    let tuning = GrenadeTuning::of(&CONTROLLERS_CONFIG.query(|config| config.weapons.grenade));
+    let tuning = GrenadeTuning::of(&WEAPONS_CONFIG.query(|config| config.grenade));
     let world = held_matrix(grip, hold_local(hand, &tuning));
     if !world.is_finite() {
         return;
@@ -200,7 +200,7 @@ pub(super) unsafe fn render_frame() {
         || !owner_valid
         || !jc3vr_core::hooks::in_gameplay()
         || !scheme::is_controllers()
-        || !CONTROLLERS_CONFIG.query(|config| config.weapons.grenade_throw)
+        || !WEAPONS_CONFIG.query(|config| config.grenade_throw)
         || bindings::grip_holds_now(pending.gesture.hand).is_none()
     {
         pending.gesture.cancel();
@@ -253,7 +253,7 @@ pub(super) unsafe fn render_frame() {
         (*explosive).m_WorldMatrixT1 = world;
         (*explosive).SetPhysicsTransform(&world);
     }
-    let tuning = GrenadeTuning::of(&CONTROLLERS_CONFIG.query(|config| config.weapons.grenade));
+    let tuning = GrenadeTuning::of(&WEAPONS_CONFIG.query(|config| config.grenade));
     held::hold(
         Slot::Grenade,
         Some(Held {
@@ -272,7 +272,7 @@ pub(super) fn propelling(explosive: usize) -> bool {
 unsafe fn observe_selection() {
     if !scheme::is_controllers()
         || !jc3vr_core::hooks::in_gameplay()
-        || !CONTROLLERS_CONFIG.query(|config| config.weapons.grenade_throw)
+        || !WEAPONS_CONFIG.query(|config| config.grenade_throw)
     {
         STATE.lock().selection = None;
         return;
@@ -301,7 +301,7 @@ unsafe fn observe_selection() {
         .is_none_or(|selection| selection.weapon.raw().pn != weapon.m_WeakThis.pn);
     let grip = crate::controllers::weapons::grenade::STATE.lock().grips[hand.index()];
     if fresh && let Some(grip) = grip {
-        let tuning = GrenadeTuning::of(&CONTROLLERS_CONFIG.query(|config| config.weapons.grenade));
+        let tuning = GrenadeTuning::of(&WEAPONS_CONFIG.query(|config| config.grenade));
         let world = held_matrix(grip, hold_local(hand, &tuning));
         if world.is_finite() {
             STATE.lock().selection = Some(Selection {
@@ -578,7 +578,7 @@ fn fire_beacon(weapon: *mut BeaconWeapon, data: *mut WeaponData) {
         let base = unsafe { &*weapon.cast::<WeaponBase>() };
         let empty_local = base.m_IsUserLocalPlayer
             && scheme::is_controllers()
-            && CONTROLLERS_CONFIG.query(|config| config.weapons.grenade_throw)
+            && WEAPONS_CONFIG.query(|config| config.grenade_throw)
             && unsafe { primed_explosive(&*weapon.cast::<ThrownGrenadeWeapon>()) }.is_none();
         if !empty_local {
             original(weapon, data);

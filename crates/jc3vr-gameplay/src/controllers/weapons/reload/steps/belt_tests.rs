@@ -14,13 +14,13 @@ use crate::controllers::{
 
 const SEQUENCE: u64 = 7;
 
-fn fixture() -> (ControllersConfig, State, Tick, [Option<GunOwner>; 2]) {
-    let config = ControllersConfig::default();
+fn fixture() -> (WeaponSettings, State, Tick, [Option<GunOwner>; 2]) {
+    let config = WeaponSettings::default();
     let mut state = insertion_tests::state(InsertStage::Idle);
     state.status.insert_hands = None;
     state.pouches = [Some(Vec3::ZERO); 2];
     let mut tick = insertion_tests::tick(false);
-    let hand = config.acting_hand();
+    let hand = config.dominant;
     if hand != tick.dominant {
         tick.guns.swap(0, 1);
     }
@@ -37,7 +37,7 @@ fn fixture() -> (ControllersConfig, State, Tick, [Option<GunOwner>; 2]) {
 fn offer(
     state: &State,
     tick: &Tick,
-    config: &ControllersConfig,
+    config: &WeaponSettings,
     guns: [Option<GunOwner>; 2],
 ) -> Option<BeltEligibility> {
     state
@@ -49,13 +49,13 @@ fn offer(
 }
 
 pub(crate) fn eligible_belt_for_test(
-    config: &ControllersConfig,
+    config: &WeaponSettings,
 ) -> (BeltEligibility, [Option<GunOwner>; 2]) {
     let (_, state, mut tick, _) = fixture();
-    if tick.dominant != config.acting_hand() {
+    if tick.dominant != config.dominant {
         tick.guns.swap(0, 1);
     }
-    tick.dominant = config.acting_hand();
+    tick.dominant = config.dominant;
     let guns = Hand::BOTH.map(|hand| {
         (hand == tick.dominant).then_some(GunOwner {
             weapon: 1,

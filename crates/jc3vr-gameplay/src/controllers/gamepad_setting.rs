@@ -16,7 +16,7 @@
 use jc3gi::settings_manager::{SettingType, SettingsManager};
 use parking_lot::Mutex;
 
-use crate::controllers::{config::CONTROLLERS_CONFIG, scheme};
+use crate::controllers::scheme;
 
 /// The value the pin holds: the gamepad is the active input device.
 pub const GAMEPAD: i32 = 1;
@@ -77,8 +77,7 @@ pub fn status() -> SettingStatus {
 /// ([`crate::controllers::bindings::stage::game_stage`]), on the game thread outside the input
 /// job, so the write never overlaps the settings manager's own update.
 pub(crate) fn input_tick() {
-    let config = CONTROLLERS_CONFIG.lock().clone();
-    let active = config.enabled && scheme::is_controllers();
+    let active = scheme::enabled() && scheme::is_controllers();
     let Some(manager) = (unsafe { SettingsManager::get() }) else {
         let mut state = STATE.lock();
         state.pin = SettingPin::new();

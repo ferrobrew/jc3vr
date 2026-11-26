@@ -53,11 +53,10 @@ use re_utilities::hook_library::HookLibrary;
 
 use crate::{
     controllers::{
-        config::CONTROLLERS_CONFIG,
         physical_hands::climb::{self, engine},
         scheme,
         vehicles::{
-            config::RailConfig,
+            config::{RailConfig, VEHICLES_CONFIG},
             rail::solve::{RailLine, RailMotion, RailStep, step, walk_from},
         },
         weapons::engine::character_position,
@@ -127,7 +126,7 @@ pub(crate) unsafe fn input_tick(jump: bool, on_foot: bool) {
         release("the local player went away");
         return;
     };
-    let config = CONTROLLERS_CONFIG.lock().vehicles.rail;
+    let config = VEHICLES_CONFIG.lock().rail;
     if !enabled() {
         ENTER_REQUESTED.store(false, Ordering::Relaxed);
         release("the rail was switched off");
@@ -198,7 +197,7 @@ pub(crate) unsafe fn step_physics() {
     if climb::climbing() {
         return;
     }
-    let config = CONTROLLERS_CONFIG.lock().vehicles.rail;
+    let config = VEHICLES_CONFIG.lock().rail;
     let Some(frame) = (unsafe { engine::body_frame(active.body) }) else {
         drop(state);
         release("the airframe went away");
@@ -265,7 +264,8 @@ fn evaluate(
 fn enabled() -> bool {
     scheme::is_controllers()
         && !jc3vr_core::is_shutting_down()
-        && CONTROLLERS_CONFIG.query(|c| c.enabled && c.vehicles.helicopter_rail)
+        && scheme::enabled()
+        && VEHICLES_CONFIG.query(|c| c.helicopter_rail)
 }
 
 /// The rail's motion from its settings.

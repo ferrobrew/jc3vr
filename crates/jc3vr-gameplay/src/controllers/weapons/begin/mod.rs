@@ -14,7 +14,6 @@ use parking_lot::Mutex;
 
 use crate::controllers::{
     body::rig::{frames::SkeletonLandmarks, skeleton},
-    config::{CONTROLLERS_CONFIG, ControllersConfig},
     grab::{self, Candidate, GrabVolume, GripTarget, Mark, MarkAt, MarkStyle, Shown},
     hands::{self, ActiveHands, CockpitHand, pose as hand_pose},
     haptics,
@@ -32,6 +31,7 @@ use crate::controllers::{
         c4,
         capabilities::{Capabilities, gun_hands_now, tracked_hands, trigger_claims},
         collide,
+        config::{WEAPONS_CONFIG, WeaponSettings},
         docks::{
             self, SocketInputs, SocketUse,
             attachments::Sample,
@@ -65,7 +65,7 @@ mod socket_candidates;
 /// The first half of the weapon handling's input tick: read the weapons in the hands and return
 /// the weapon handling's grip targets. Called while the bindings inject, before the tables.
 pub(crate) fn begin_tick(mode: Mode) -> TickStart {
-    let config = CONTROLLERS_CONFIG.lock().clone();
+    let config = WeaponSettings::read();
     docks::publish_targets(None);
     let Some(active) = hands::active_hands_raw() else {
         crate::controllers::weapons::stand_down();
@@ -87,7 +87,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
                 owner,
                 &inventory::TickInputs {
                     settings: config.weapons.inventory,
-                    dominant: config.acting_hand(),
+                    dominant: config.dominant,
                     wielded,
                     separate_pistols: config.weapons.separate_pistols,
                 },
@@ -133,7 +133,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
                 });
             let docked_long = match &snapshot {
                 Some(snapshot) if config.weapons.regions.enabled && capabilities.dock => {
-                    region_engine::docked_long_guns(owner, snapshot, config.acting_hand())
+                    region_engine::docked_long_guns(owner, snapshot, config.dominant)
                 }
                 _ => Vec::new(),
             };
@@ -184,7 +184,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
 
     let mut state = STATE.lock();
     let holder = weapon.and_then(|w| w.holder);
-    let gun_side = volumes::gun_side(holder, state.last_holder, config.acting_hand());
+    let gun_side = volumes::gun_side(holder, state.last_holder, config.dominant);
     state.last_holder = holder.or(state.last_holder);
     state.gun_side = gun_side;
     // Each hand's long gun is measured on its own wrist.
@@ -210,7 +210,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
     let shape = long.and_then(|w| unsafe {
         region_engine::shape(
             (w.address as *const WeaponBase).as_ref()?,
-            w.holder.unwrap_or(config.acting_hand()),
+            w.holder.unwrap_or(config.dominant),
         )
     });
     regions::observe(&Observed {
@@ -286,7 +286,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
     state.attractors.clear();
     if capabilities.dock {
         let draw = socket_candidates::DrawContext {
-            dominant: config.acting_hand(),
+            dominant: config.dominant,
             occupied: Hand::BOTH
                 .map(|hand| gun_hands[hand.index()] || ticked.table_hands[hand.index()]),
         };
@@ -342,14 +342,13 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
         // A pouch with nothing to give is neither offered nor drawn.
         if config.weapons.grenade_throw
             && grenade::in_stock()
-            && let Some(pouch) =
-                volumes::grenade_pouch(body, pouches, config.acting_hand(), grabbers)
+            && let Some(pouch) = volumes::grenade_pouch(body, pouches, config.dominant, grabbers)
         {
             targets.extend(place.pouch(&pouch, pouches.reach_margin_m));
         }
         if config.weapons.c4_throw
             && c4::pouch_offered()
-            && let Some(pouch) = volumes::c4_pouch(body, pouches, config.acting_hand(), grabbers)
+            && let Some(pouch) = volumes::c4_pouch(body, pouches, config.dominant, grabbers)
         {
             targets.extend(place.pouch(&pouch, pouches.reach_margin_m));
         }
@@ -365,13 +364,13 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
         grenade_pouch: return_body
             .filter(|_| config.weapons.grenade_throw)
             .and_then(|body| {
-                volumes::grenade_pouch(body, &POUCHES, config.acting_hand(), ChestGrabbers::Either)
+                volumes::grenade_pouch(body, &POUCHES, config.dominant, ChestGrabbers::Either)
             })
             .map(as_pouch),
         charge_pouch: return_body
             .filter(|_| config.weapons.c4_throw)
             .and_then(|body| {
-                volumes::c4_pouch(body, &POUCHES, config.acting_hand(), ChestGrabbers::Either)
+                volumes::c4_pouch(body, &POUCHES, config.dominant, ChestGrabbers::Either)
             })
             .map(as_pouch),
         grips: active.hands.map(|hand| hand.map(|hand| hand.grip.position)),
@@ -380,7 +379,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
     });
     if capabilities.dock {
         let mut docked = docked_candidates(&ticked, &active, free);
-        volumes::reserve_long_guns(&mut docked, config.acting_hand(), empty_handed);
+        volumes::reserve_long_guns(&mut docked, config.dominant, empty_handed);
         targets.extend(docked.iter().map(|c| place.touch(c)));
     }
     if config.weapons.grenade_throw {
@@ -841,9 +840,9 @@ fn docked_candidates(ticked: &Ticked, active: &ActiveHands, free: [bool; 2]) -> 
 
 /// The pouches to draw their models on this tick: each pouch with something to give, wherever it
 /// is placed, whichever hands are free to take from it.
-fn shown_props(body: &BodyFrame, config: &ControllersConfig) -> Vec<ShownPouch> {
+fn shown_props(body: &BodyFrame, config: &WeaponSettings) -> Vec<ShownPouch> {
     let pouches = &POUCHES;
-    let dominant = config.acting_hand();
+    let dominant = config.dominant;
     let sides = volumes::chest_sides(dominant);
     let on_chest = |prop: Prop, pouch: Candidate, side: Hand| ShownPouch {
         prop,
@@ -940,7 +939,7 @@ pub(super) fn weighted_hands(active: &ActiveHands) -> [Option<CockpitHand>; 2] {
     heft::apply(
         &mut hands,
         active.head.position,
-        &Heft::of(&active.config.weapons.heft),
+        &Heft::of(&WEAPONS_CONFIG.query(|c| c.heft)),
     );
     hands
 }

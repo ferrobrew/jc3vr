@@ -13,9 +13,9 @@ use crate::controllers::{
     aim::raycast::CastOptions,
     body,
     clock::TimeScale,
-    config::CONTROLLERS_CONFIG,
     hands, haptics,
     physical_hands::{
+        config::PHYSICAL_HANDS_CONFIG,
         contact::{HandContact, PointContact, Surface, SurfaceHit},
         doors::{
             self,
@@ -52,7 +52,7 @@ pub(super) unsafe fn run(owner: &Character, dt: f32) {
         stand_down(Idle::NoHands);
         return;
     };
-    let config = CONTROLLERS_CONFIG.lock().physical_hands;
+    let config = *PHYSICAL_HANDS_CONFIG.lock();
     let time_scale = unsafe { TimeScale::current() };
     let xf = CockpitTransform::current(active.head.position, active.world_scale);
     let shoulders = body::shoulder_positions(

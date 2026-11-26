@@ -44,7 +44,7 @@ use jc3gi::{
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::controllers::config::CONTROLLERS_CONFIG;
+use crate::controllers::glass::config::GLASS_CONFIG;
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&HANDLE_HIT_BINDER)
@@ -147,10 +147,7 @@ unsafe fn pass_through(bullet: *mut Bullet, info: *mut CastRayInfoBase) -> bool 
 
 /// Whether the glass's switches let bullets pass through the panes it brought down.
 fn enabled() -> bool {
-    CONTROLLERS_CONFIG.query(|c| {
-        let glass = &c.glass;
-        glass.enabled && glass.shatter && glass.bullets_pass
-    })
+    GLASS_CONFIG.query(|glass| glass.enabled && glass.shatter && glass.bullets_pass)
 }
 
 /// Whether the hit `info` names a pane the glass brought down that is still hidden.

@@ -20,12 +20,15 @@ use jc3vr_render::{
 use parking_lot::Mutex;
 
 use crate::controllers::{
-    body::procedural::{
-        authority::{Case, classify},
-        state::StateTracker,
+    body::{
+        config::BODY_REMAP_CONFIG,
+        procedural::{
+            authority::{Case, classify},
+            state::StateTracker,
+        },
     },
-    config::CONTROLLERS_CONFIG,
     locomotion::{
+        config::LOCOMOTION_CONFIG,
         status as locomotion_status,
         view::{
             Eligibility, Handover, HeightFilter, MOVEMENT_TASK_GRACE_S, Neutral, NeutralCapture,
@@ -34,6 +37,7 @@ use crate::controllers::{
         view_follow::{Escape, HeadFollower, HeldSource, escape_distance},
     },
     mode::{AirborneVariant, Mode, OnFootVariant, current as current_mode},
+    scheme,
 };
 
 /// What the stable anchor did on its last tick, for the debug UI.
@@ -84,13 +88,9 @@ pub(crate) unsafe fn stabilize(
     model: Neutral,
     dt: f32,
 ) -> Stabilized {
-    let (enabled, controllers_enabled, head_on_pivot) = CONTROLLERS_CONFIG.query(|c| {
-        (
-            c.locomotion.view.enabled,
-            c.enabled,
-            c.locomotion.view.head_on_pivot,
-        )
-    });
+    let (enabled, head_on_pivot) =
+        LOCOMOTION_CONFIG.query(|c| (c.view.enabled, c.view.head_on_pivot));
+    let controllers_enabled = scheme::enabled();
     let world_scale = VR_CONFIG.lock().world_scale;
     let now = Instant::now();
     let locomotion = locomotion_status();
@@ -111,7 +111,7 @@ pub(crate) unsafe fn stabilize(
     let mut tracker = STATE.lock().tracker;
     let mut airborne = false;
     let case = (controllers_enabled && source() == Source::Vr).then(|| {
-        let config = CONTROLLERS_CONFIG.lock().body.procedural;
+        let config = BODY_REMAP_CONFIG.lock().procedural;
         let step = if dt.is_finite() { dt.max(0.0) } else { 0.0 };
         // SAFETY: the pass's entry, on the thread running it.
         let mut read =

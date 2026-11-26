@@ -36,12 +36,18 @@ use jc3gi::{
     animation::symbol_table::EventIdSymbolTable, character::character::AnimatedModel,
     input::parachute::get_WingsuitBlendState_StallFlagSet,
 };
+use jc3vr_core::config::engine::ConfigSlot;
 use jc3vr_render::headpose::{self, Source};
 
 use crate::{
-    controllers::{body::procedural::signals::is_local_model, config::CONTROLLERS_CONFIG},
-    hooks::character::resolve_act_id,
+    controllers::body::procedural::signals::is_local_model, hooks::character::resolve_act_id,
 };
+
+/// Whether the arms throw the boost wingsuit's evade and the game's own evade rolls the player's
+/// body, at `controllers.vehicles.wingsuit_evade.enabled` in the settings file; the payload binds the
+/// slot at startup.
+pub static WINGSUIT_EVADE_ENABLED: ConfigSlot<bool> =
+    ConfigSlot::new("controllers.vehicles.wingsuit_evade.enabled");
 
 /// Whether the stall flip is removed now.
 pub fn suppressed() -> bool {
@@ -63,7 +69,7 @@ pub(crate) fn drops_act(model: *const AnimatedModel, act: i32) -> bool {
     }
     let wanted = headpose::is_active()
         && headpose::source() == Source::Vr
-        && !CONTROLLERS_CONFIG.query(|c| c.vehicles.wingsuit_evade.enabled);
+        && !WINGSUIT_EVADE_ENABLED.query(|enabled| *enabled);
     if wanted {
         BARREL_ROLLS_DROPPED.fetch_add(1, Ordering::Relaxed);
         tracing::info!(

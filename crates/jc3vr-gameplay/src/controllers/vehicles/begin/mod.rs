@@ -12,7 +12,6 @@ use parking_lot::Mutex;
 
 use crate::controllers::{
     body::{self, BodyDimensions},
-    config::ControllersConfig,
     fingers::grip::{self, Grip, GripSource},
     grab::{self, GrabVolume, GripTarget, Mark, MarkAt, MarkStyle, Shown, Tier},
     hands::{self, tiers},
@@ -20,6 +19,7 @@ use crate::controllers::{
     mode::{Mode, VehicleSeat},
     vehicles::{
         arm_tick::arms_act,
+        config::VehicleSettings,
         driving_view,
         entry::{VehicleEntry, VehicleEntryIdentity},
         fit::{self, FitInputs, VehicleLatch},
@@ -51,7 +51,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
         physical::visual::clear();
         return TickVolumes::default();
     };
-    let config = active.config.clone();
+    let config = VehicleSettings::read();
     let seat = match mode {
         Mode::Vehicle(seat) => Some(seat),
         _ => None,
@@ -96,7 +96,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
     let yoke = fit
         .cockpit
         .is_some_and(|fit| fit.asset.stick_kind == physical::ControlKind::Yoke);
-    let offered = offered(seat, &config, fit.fork, yoke);
+    let offered = offered(seat, &config.vehicles.physical, fit.fork, yoke);
     if offered.is_empty() {
         physical::visual::clear();
     }
@@ -105,7 +105,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
         bars: fit.bars,
         native_stick: fit.native_stick,
         cockpit: fit.cockpit,
-        ..Placement::new(physical_config, config.acting_hand())
+        ..Placement::new(physical_config, config.dominant)
     };
     let grips = active.hands.map(|h| h.map(|h| h.grip.position));
     let mounted_config = config.vehicles.mounted;
@@ -113,7 +113,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
         .lock()
         .mounted_grip
         .aiming(&mounted_config, grips.map(|g| g.is_some()));
-    let mounted = mounted_tick(&active, aiming);
+    let mounted = mounted_tick(&active, &config, aiming);
     // A gunner seat's view is corrected from its gun's handles, as a driver's from the wheel.
     let gunner_view = (seat.is_some_and(|s| !s.driver) && fit.view.is_none())
         .then(|| gunner_view_target(&xf, view_eyes, &mounted))
@@ -300,7 +300,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
                 }),
         );
     }
-    targets.extend(ripcord_tick::targets(mode, &active));
+    targets.extend(ripcord_tick::targets(mode, &active, &config));
     let grips = grab::tick::hand_grips(&active);
     let volumes = grab::resolve::resolve(&targets, grips).map(|r| r.chosen.map(|c| c.volume));
     state.handles_on = handles_on;
@@ -344,10 +344,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
             grip::declare(hand, Grip::new(GripSource::Surface));
         }
     }
-    wing_guide::submit(
-        config.overlay.enabled && arms_act(mode, &config),
-        arms_engaged,
-    );
+    wing_guide::submit(config.overlay && arms_act(mode, &config), arms_engaged);
     TickVolumes { targets }
 }
 
@@ -464,8 +461,8 @@ fn mounted_finger_grip(handle: Option<Vec3>, inputs: MountedHandWeight) -> Optio
 
 /// The dimensions the hands are measured against: the character's while the hands are remapped
 /// onto them, the player's otherwise.
-pub(super) fn body_dimensions(config: &ControllersConfig) -> BodyDimensions {
-    if config.body.remap_hands {
+pub(super) fn body_dimensions(config: &VehicleSettings) -> BodyDimensions {
+    if config.remap_hands {
         BodyDimensions::CHARACTER_ESTIMATE
     } else {
         body::player()

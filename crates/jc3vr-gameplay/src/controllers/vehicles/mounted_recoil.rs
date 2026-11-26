@@ -24,11 +24,11 @@ use glam::{Vec2, Vec3};
 use jc3vr_input::{frame::Hand, haptics::cues::Event};
 use parking_lot::Mutex;
 
-use crate::controllers::{haptics, vehicles::config::MountedConfig, weapons::recoil::Spring};
+use crate::controllers::{haptics, vehicles::config::VEHICLES_CONFIG, weapons::recoil::Spring};
 
 /// Kick the handles by one shot of the mounted gun, and pulse the hands holding them.
-pub(crate) fn on_shot(config: &MountedConfig) {
-    if !config.aim_by_hands {
+pub(crate) fn on_shot() {
+    if !VEHICLES_CONFIG.query(|c| c.mounted.aim_by_hands) {
         return;
     }
     SHOTS.fetch_add(1, Ordering::Relaxed);

@@ -57,12 +57,8 @@ impl ActionEngine for FakeAction {
     }
 }
 
-fn fixture(
-    kind: ActionKind,
-    hand: Hand,
-    rounds: i32,
-) -> (ControllersConfig, State, Tick, FakeAction) {
-    let config = ControllersConfig::default();
+fn fixture(kind: ActionKind, hand: Hand, rounds: i32) -> (WeaponSettings, State, Tick, FakeAction) {
+    let config = WeaponSettings::default();
     let mut state = insertion_tests::state(InsertStage::Idle);
     state.status.insert_hands = None;
     state.free = Some(hand.other());
@@ -116,7 +112,7 @@ fn step(
     state: &mut State,
     tick: &mut Tick,
     engine: &mut FakeAction,
-    config: &ControllersConfig,
+    config: &WeaponSettings,
     position: Vec3,
     grip: (bool, bool),
 ) {

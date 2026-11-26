@@ -1,6 +1,5 @@
-//! The physical grapple's settings, held in
-//! [`ControllersConfig`](crate::controllers::config::ControllersConfig) as `grapple`, and its fixed
-//! tuning. Every part acts only under the controller scheme with a tracked grapple hand, so each
+//! The physical grapple's settings, held at `controllers.grapple` ([`GRAPPLE_CONFIG`]), and its
+//! fixed tuning. Every part acts only under the controller scheme with a tracked grapple hand, so each
 //! defaults on.
 
 use jc3vr_core::config::engine::ConfigSlot;

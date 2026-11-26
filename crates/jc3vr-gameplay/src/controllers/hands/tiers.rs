@@ -37,11 +37,14 @@ use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
 use crate::controllers::{
-    body::procedural::config::ProceduralMode,
-    config::CONTROLLERS_CONFIG,
-    hands::anchor::{ANCHOR_BLEND_S, AnchorConfig},
+    body::{config::BODY_REMAP_CONFIG, procedural::config::ProceduralMode},
+    hands::{
+        anchor::{ANCHOR_BLEND_S, AnchorConfig},
+        config::{HANDS_CONFIG, MOUNTED_AIM_BY_HANDS},
+    },
     loadout::live,
     mode::{self, AirborneVariant, CharacterSnapshot, Detection, Mode, OnFootVariant, Traversal},
+    scheme,
     weapons::{self, hold::armed},
 };
 
@@ -451,17 +454,13 @@ pub fn weights() -> [f32; 2] {
 /// Classify this input tick and advance the blends. Called from the game stage after the mode
 /// detector, while the controllers are enabled.
 pub(crate) fn tick(dt: f32) {
-    let (config, dominant, mounted_anchor) = CONTROLLERS_CONFIG.query(|c| {
-        let swim_arms = c.body.procedural.mode == ProceduralMode::Full;
-        (
-            TierConfig {
-                table: HandTierTable::PLAN.with_swim_arms(swim_arms),
-                anchor: c.hands.anchor,
-            },
-            c.acting_hand(),
-            c.vehicles.mounted.aim_by_hands,
-        )
-    });
+    let swim_arms = BODY_REMAP_CONFIG.query(|c| c.procedural.mode == ProceduralMode::Full);
+    let config = TierConfig {
+        table: HandTierTable::PLAN.with_swim_arms(swim_arms),
+        anchor: HANDS_CONFIG.query(|c| c.anchor),
+    };
+    let dominant = scheme::acting_hand();
+    let mounted_anchor = *MOUNTED_AIM_BY_HANDS.lock();
     // SAFETY: the game stage runs on the game thread before the world update, as the mode
     // detector's own reads require.
     let signals = unsafe { read_signals() };

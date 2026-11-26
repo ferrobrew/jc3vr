@@ -24,18 +24,16 @@ use jc3gi::{character::character::Character, equipment::weapon::WeaponBase};
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
-use crate::controllers::{
-    config::ControllersConfig,
-    weapons::{
-        dual_wield::single,
-        engine::reserve,
-        hold::armed,
-        reload::{
-            engine,
-            plan::{self, WeaponFacts},
-            tuning::Reload,
-            wells,
-        },
+use crate::controllers::weapons::{
+    config::WeaponSettings,
+    dual_wield::single,
+    engine::reserve,
+    hold::armed,
+    reload::{
+        engine,
+        plan::{self, WeaponFacts},
+        tuning::Reload,
+        wells,
     },
 };
 
@@ -48,11 +46,7 @@ pub(crate) const REFILL_DELAY: Duration = Duration::from_millis(1500);
 /// # Safety
 ///
 /// `owner` must be the live local player character, on the game thread before the world update.
-pub(crate) unsafe fn refill_armed(
-    owner: &Character,
-    config: &ControllersConfig,
-    reload_acts: bool,
-) {
+pub(crate) unsafe fn refill_armed(owner: &Character, config: &WeaponSettings, reload_acts: bool) {
     let reload = Reload::of(&config.weapons.reload);
     let now = Instant::now();
     let mut pending = PENDING.lock();

@@ -25,12 +25,11 @@ use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
     aim::gun,
-    config::CONTROLLERS_CONFIG,
     hands::late,
     haptics::rumble,
     physical_hands::physics::guns,
     scheme, vehicles,
-    weapons::{dual_wield, heft, hold::armed, recoil, reload},
+    weapons::{config::WeaponSettings, dual_wield, heft, hold::armed, recoil, reload},
 };
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -83,12 +82,12 @@ thread_local! {
 #[detour(address = jc3gi::equipment::weapon::WeaponBase::Fire_ProjectileBase_ADDRESS)]
 fn fire_projectile_base(weapon: *mut WeaponBase, gun_data: *mut WeaponData) {
     let original = || FIRE_PROJECTILE_BASE.get().unwrap().call(weapon, gun_data);
-    let config = CONTROLLERS_CONFIG.lock().clone();
+    let config = WeaponSettings::read();
     let acting = config.enabled && scheme::is_controllers();
     // The mounted gun the hands aim rides no hand; its kick goes to the handles.
     if acting && vehicles::is_mounted_weapon(weapon as usize) {
         original();
-        vehicles::mounted_recoil::on_shot(&config.vehicles.mounted);
+        vehicles::mounted_recoil::on_shot();
         return;
     }
     let Some(w) = unsafe { weapon.as_ref() }.filter(|w| acting && w.m_IsUserLocalPlayer) else {

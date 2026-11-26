@@ -45,10 +45,10 @@ use re_utilities::hook_library::HookLibrary;
 use crate::controllers::{
     aim::gun,
     bindings::hold::{Desired, MapKind, Target, Want},
-    config::CONTROLLERS_CONFIG,
     hands, haptics,
     mode::Mode,
     weapons::{
+        config::WEAPONS_CONFIG,
         engine, gameplay,
         wheel::{
             select::{Close, HandPose, Wheel, WheelInput, WheelPress, WheelSlot, resting},
@@ -79,7 +79,7 @@ pub(crate) struct WheelTick {
 /// One input tick of the wheel: read the game, step the wheel, and put its slot-select hold in
 /// `desired`. Called while the bindings inject, outside the menus.
 pub(crate) fn input_tick(inputs: &TickInputs, desired: &mut Vec<Desired>) -> WheelTick {
-    let config = WheelTuning::of(&CONTROLLERS_CONFIG.query(|c| c.weapons.wheel));
+    let config = WheelTuning::of(&WEAPONS_CONFIG.query(|c| c.wheel));
     // SAFETY: the game stage runs on the game thread before the world update.
     let owner = unsafe { engine::local_player() };
     let acting = config.enabled && gameplay(inputs.mode) && owner.is_some();

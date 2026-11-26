@@ -52,7 +52,6 @@ use crate::controllers::{
         hold::{Desired, MapKind},
     },
     body::rig::frames::Frames,
-    config::{CONTROLLERS_CONFIG, ControllersConfig},
     grab::{Candidate, GrabVolume, resolve::nearest_within},
     hands::{
         ActiveHands,
@@ -63,6 +62,7 @@ use crate::controllers::{
     physical_hands,
     telemetry::{self, Thrown},
     weapons::{
+        config::{WEAPONS_CONFIG, WeaponSettings},
         docks, engine,
         grenade::{
             catch::{CatchCounts, Caught, Sighting},
@@ -419,11 +419,7 @@ pub(super) struct TickInputs {
 }
 
 /// Consume the resolved pouch grab and grip opening in the actual input tick.
-pub(super) fn input_tick(
-    inputs: &TickInputs,
-    config: &ControllersConfig,
-    desired: &mut Vec<Desired>,
-) {
+pub(super) fn input_tick(inputs: &TickInputs, config: &WeaponSettings, desired: &mut Vec<Desired>) {
     if !inputs.acting {
         stand_down();
         return;
@@ -639,7 +635,7 @@ pub(crate) fn observe_hands(grips: [Option<Pose>; 2]) {
     STATE.lock().grips = grips;
     safe::observe(
         grips,
-        &GrenadeTuning::of(&CONTROLLERS_CONFIG.query(|config| config.weapons.grenade)),
+        &GrenadeTuning::of(&WEAPONS_CONFIG.query(|config| config.grenade)),
     );
 }
 
@@ -651,15 +647,13 @@ pub(crate) fn observe_hands(grips: [Option<Pose>; 2]) {
 /// The game thread, before the world update.
 pub unsafe fn render_frame(dtf: f32) {
     unsafe { beacon::render_frame() };
-    let tuning = GrenadeTuning::of(&CONTROLLERS_CONFIG.query(|config| config.weapons.grenade));
+    let tuning = GrenadeTuning::of(&WEAPONS_CONFIG.query(|config| config.grenade));
     unsafe { safe::render_frame(dtf, &tuning) };
 }
 
-pub(crate) fn fallback_target(
-    config: &ControllersConfig,
-    dominant_target: Option<Vec3>,
-) -> Option<Vec3> {
-    dominant_target.filter(|_| config.weapons.grenade_throw && GRENADE.hand_aimed_fallback)
+pub(crate) fn fallback_target(dominant_target: Option<Vec3>) -> Option<Vec3> {
+    let grenade_throw = WEAPONS_CONFIG.query(|c| c.grenade_throw);
+    dominant_target.filter(|_| grenade_throw && GRENADE.hand_aimed_fallback)
 }
 
 pub(super) fn report_native_throw(hand: Hand, release: Release) {
@@ -846,7 +840,7 @@ fn warning(
     state: &mut State,
     caught: Option<(Hand, Fuse)>,
     dt: f32,
-    config: &ControllersConfig,
+    config: &WeaponSettings,
 ) -> Option<(Vec<Primitive>, Option<Hand>)> {
     let tuning = &GrenadeTuning::of(&config.weapons.grenade);
     let Some((hand, fuse)) = caught else {
@@ -855,7 +849,7 @@ fn warning(
     };
     let urgency = fuse_urgency(fuse.remaining_s, fuse.total_s);
     let mut primitives = Vec::new();
-    if tuning.warning_overlay && config.overlay.enabled {
+    if tuning.warning_overlay && config.overlay {
         primitives.push(Primitive::Sprite {
             at: Anchor::Hand {
                 hand,

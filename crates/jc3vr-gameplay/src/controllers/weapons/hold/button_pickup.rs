@@ -33,7 +33,7 @@ use jc3gi::{
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::controllers::{config::CONTROLLERS_CONFIG, scheme};
+use crate::controllers::{scheme, weapons::config::WEAPONS_CONFIG};
 
 /// The button pickup suppression's readout.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
@@ -60,7 +60,8 @@ pub(crate) fn hook_library() -> HookLibrary {
 
 /// Whether the suppression acts now: the switch is on and the controller scheme is in effect.
 pub fn suppressing() -> bool {
-    CONTROLLERS_CONFIG.query(|c| c.enabled && c.weapons.hold.hand_pickup_only)
+    scheme::enabled()
+        && WEAPONS_CONFIG.query(|c| c.hold.hand_pickup_only)
         && scheme::is_controllers()
 }
 

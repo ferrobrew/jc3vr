@@ -56,9 +56,9 @@ use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
     aim::gun,
-    config::CONTROLLERS_CONFIG,
     loadout::{Place, Socket, live},
     weapons::{
+        config::WEAPONS_CONFIG,
         dual_wield::single::{
             grant::{Grant, GrantTick, Grants, OneWhy, TwinState},
             magazine::Dealt,
@@ -704,8 +704,8 @@ unsafe fn share_hands(pair: ObjectKey, twin: ObjectKey) {
         return;
     };
     let other = hand.other();
-    let both_hands = CONTROLLERS_CONFIG.query(|c| {
-        let hold = c.weapons.hold;
+    let both_hands = WEAPONS_CONFIG.query(|c| {
+        let hold = c.hold;
         hold.either_hand
     });
     if both_hands && live::in_hand(other).is_none() && !unsafe { hold::take_into(other, twin) } {

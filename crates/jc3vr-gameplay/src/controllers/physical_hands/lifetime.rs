@@ -16,10 +16,10 @@ use windows::Win32::System::Threading::{
 };
 
 use crate::controllers::{
-    config::CONTROLLERS_CONFIG,
     physical_hands::{
         STALE_AFTER, bodies,
         climb::engine::{BodyIdentity, body_identity},
+        config::PHYSICAL_HANDS_CONFIG,
     },
     scheme,
     weapons::hold::refs::Weak,
@@ -126,7 +126,8 @@ fn active(state: &State, now: Instant) -> bool {
         && jc3vr_core::hooks::in_gameplay()
         && !jc3vr_core::is_shutting_down()
         && scheme::is_controllers()
-        && CONTROLLERS_CONFIG.query(|config| config.enabled && config.physical_hands.enabled)
+        && scheme::enabled()
+        && PHYSICAL_HANDS_CONFIG.query(|config| config.enabled)
 }
 
 /// A physical hold whose object may be waiting in the remove queue.

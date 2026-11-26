@@ -36,11 +36,9 @@ use jc3gi::{
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::{
-    controllers::config::CONTROLLERS_CONFIG,
-    grapple::physical::lock::{
-        engine, entering_helicopter, hang_takes_over, holds, last_velocity, want_hang,
-    },
+use crate::grapple::physical::{
+    config::GRAPPLE_CONFIG,
+    lock::{engine, entering_helicopter, hang_takes_over, holds, last_velocity, want_hang},
 };
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -157,8 +155,8 @@ fn start_reel_upside_down(hook: *mut GrapplingHook, holder: *const SharedPtr<Cha
 
 /// Whether the lock and its hang are on.
 fn hang_enabled() -> bool {
-    CONTROLLERS_CONFIG.query(|c| {
-        let lock = &c.grapple.lock;
+    GRAPPLE_CONFIG.query(|c| {
+        let lock = &c.lock;
         lock.enabled && lock.hang
     })
 }

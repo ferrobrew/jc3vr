@@ -30,12 +30,15 @@ use jc3vr_render::{headpose, vr::VR_CONFIG};
 use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
-    body::{self, BodyDimensions, rig as body_rig},
-    config::{CONTROLLERS_CONFIG, ControllersConfig, HandsConfig},
-    hands::reach::{ArmRemap, ReachLimit},
+    body::{self, BodyDimensions, config::BODY_REMAP_CONFIG, rig as body_rig},
+    config::HandsConfig,
+    hands::{
+        config::HANDS_CONFIG,
+        reach::{ArmRemap, ReachLimit},
+    },
     physical_hands::{self, DrawTime, physics::guns},
     scheme, vehicles,
-    weapons::{ads, collide, recoil},
+    weapons::{ads, collide, config::WEAPONS_CONFIG, recoil},
 };
 
 pub mod anchor;
@@ -62,11 +65,11 @@ pub(crate) fn hook_library() -> HookLibrary {
         .with_hook_library(anchor::hook_library())
 }
 
-/// The inputs every hand subsystem starts from: the controllers' configuration, the head's cockpit
-/// pose, and each tracked hand's cockpit-frame poses after the grip offset and the remap.
+/// The inputs every hand subsystem starts from: the hands' settings, the head's cockpit pose, and
+/// each tracked hand's cockpit-frame poses after the grip offset and the remap.
 #[derive(Clone)]
 pub struct ActiveHands {
-    pub config: ControllersConfig,
+    pub config: HandSettings,
     /// The head (the eye midpoint) in the cockpit frame.
     pub head: Pose,
     /// Indexed by [`Hand::index`]; `None` for a hand whose controller is absent or not tracked.
@@ -76,6 +79,25 @@ pub struct ActiveHands {
     /// The torso's heading the player's shoulders are estimated at ([`body_rig::torso_heading`]),
     /// in the cockpit frame.
     pub torso: Quat,
+}
+
+/// The settings the hands are composed with: the hands' own group, and the body remap's switch
+/// for the arms.
+#[derive(Copy, Clone)]
+pub struct HandSettings {
+    pub hands: HandsConfig,
+    /// Scale the hands' offsets from the shoulders by the ratio of the arm spans
+    /// ([`BodyRemapConfig::remap_hands`](crate::controllers::body::config::BodyRemapConfig::remap_hands)).
+    pub remap_hands: bool,
+}
+
+impl HandSettings {
+    /// The settings as they are now, read one group at a time.
+    pub fn read() -> Self {
+        let hands = *HANDS_CONFIG.lock();
+        let remap_hands = BODY_REMAP_CONFIG.query(|c| c.remap_hands);
+        Self { hands, remap_hands }
+    }
 }
 
 /// The active hands, or `None` while the hands are inert: the controllers are disabled, the gamepad
@@ -99,30 +121,17 @@ pub(crate) fn active_hands_from_frame(
     at: DrawTime,
 ) -> Option<ActiveHands> {
     let mut active = active_hands_raw_from_frame(frame)?;
+    let (heft, ads, recoil, collide) =
+        WEAPONS_CONFIG.query(|c| (c.heft, c.ads, c.recoil, c.collide));
     vehicles::apply(&mut active.hands);
     let physical = guns::physical_hands();
-    guns::targets::apply(
-        &mut active.hands,
-        active.head.position,
-        &active.config.weapons.heft,
-    );
+    guns::targets::apply(&mut active.hands, active.head.position, &heft);
     let torso = active.torso;
     let shoulders = shoulder_joints(&active.config, active.head, active.world_scale, torso);
-    ads::apply(
-        &mut active.hands,
-        active.head,
-        shoulders,
-        torso,
-        &active.config.weapons.ads,
-    );
+    ads::apply(&mut active.hands, active.head, shoulders, torso, &ads);
     let sighted = active.hands;
-    recoil::apply(&mut active.hands, &active.config.weapons.recoil);
-    collide::apply(
-        &mut active.hands,
-        active.head,
-        active.world_scale,
-        &active.config.weapons.collide,
-    );
+    recoil::apply(&mut active.hands, &recoil);
+    collide::apply(&mut active.hands, active.head, active.world_scale, &collide);
     keep_physical(&mut active.hands, &sighted, physical);
     physical_hands::apply(&mut active.hands, at);
     anchor::apply(&mut active.hands, active.head, active.world_scale);
@@ -140,9 +149,10 @@ fn compose_active_hands(at: DrawTime) -> Option<ActiveHands> {
 }
 
 fn active_hands_raw_from_frame(frame: &ControllerFrame) -> Option<ActiveHands> {
-    let config = CONTROLLERS_CONFIG.lock().clone();
+    let config = HandSettings::read();
     let world_scale = VR_CONFIG.lock().world_scale;
-    if !config.enabled || !scheme::is_controllers() || headpose::source() != headpose::Source::Vr {
+    if !scheme::enabled() || !scheme::is_controllers() || headpose::source() != headpose::Source::Vr
+    {
         return None;
     }
     let cockpit = headpose::xr::cockpit_pose()?;
@@ -200,7 +210,7 @@ pub(crate) fn controller_grips(active: &ActiveHands) -> [Option<Vec3>; 2] {
 
 /// Hand IK ownership without composing poses or acquiring weapon and vehicle state locks.
 pub(crate) fn ik_owned() -> [bool; 2] {
-    let enabled = CONTROLLERS_CONFIG.query(|c| c.enabled && c.hands.ik);
+    let enabled = scheme::enabled() && HANDS_CONFIG.query(|c| c.ik);
     if !enabled
         || !scheme::is_controllers()
         || headpose::source() != headpose::Source::Vr
@@ -238,7 +248,7 @@ fn keep_physical(
 /// [`Hand::index`]: the remap's shoulder where the hands are remapped, else the player's estimated
 /// shoulders.
 fn shoulder_joints(
-    config: &ControllersConfig,
+    config: &HandSettings,
     head: Pose,
     world_scale: f32,
     torso: Quat,
@@ -251,7 +261,7 @@ fn shoulder_joints(
 }
 
 pub(crate) fn arm_remaps(
-    config: &ControllersConfig,
+    config: &HandSettings,
     head: Pose,
     torso: Quat,
     world_scale: f32,
@@ -260,7 +270,7 @@ pub(crate) fn arm_remaps(
         .measured_remap
         .then(rig::arms)
         .unwrap_or([None; 2]);
-    if measured.iter().all(Option::is_none) && !config.body.remap_hands {
+    if measured.iter().all(Option::is_none) && !config.remap_hands {
         return [None; 2];
     }
     let player = body::player();
@@ -269,7 +279,7 @@ pub(crate) fn arm_remaps(
         let remap = measured[hand.index()]
             .and_then(|arm| ArmRemap::measured(hand, head, torso, &player, &arm, world_scale))
             .or_else(|| {
-                config.body.remap_hands.then(|| {
+                config.remap_hands.then(|| {
                     ArmRemap::estimated(
                         hand,
                         head,

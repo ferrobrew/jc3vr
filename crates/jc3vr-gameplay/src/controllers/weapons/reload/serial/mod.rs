@@ -17,12 +17,12 @@ use parking_lot::Mutex;
 use crate::controllers::{
     aim::gun,
     bindings,
-    config::CONTROLLERS_CONFIG,
     hands::late,
     loadout::live,
     mode, scheme,
     weapons::{
         capabilities::{Capabilities, GunHand, gun_owners_now},
+        config::WEAPONS_CONFIG,
         hold::{armed, refs::Strong},
         inventory::engine::strong_to,
         reload::{
@@ -294,8 +294,8 @@ fn permitted(request: DetachRequest, retain: bool) -> bool {
     if jc3vr_core::is_shutting_down()
         || !scheme::is_controllers()
         || !Capabilities::of(mode::current().mode).reload
-        || !CONTROLLERS_CONFIG.query(|c| {
-            let reload = &c.weapons.reload;
+        || !WEAPONS_CONFIG.query(|c| {
+            let reload = &c.reload;
             reload.enabled
                 && (!retain || reload.loose.enabled)
                 && (!pull || reload.extraction.enabled)

@@ -18,7 +18,6 @@ use crate::controllers::{
         controls::ButtonControl,
         hold::{Desired, MapKind},
     },
-    config::{CONTROLLERS_CONFIG, ControllersConfig},
     fingers::grip::{self, Grip, GripSource},
     grab::{GrabVolume, resolve::dock_target},
     hands::{
@@ -40,6 +39,7 @@ use crate::controllers::{
         capabilities::{
             Capabilities, GunHand, gun_hands_now, gun_owners_now, tracked_hands, trigger_claims,
         },
+        config::WeaponSettings,
         docks::attract::{self, ATTRACTION},
         dual_wield::single,
         engine,
@@ -94,7 +94,7 @@ pub(crate) fn finish_tick(
         dt,
         real_dt,
     } = *inputs;
-    let config = CONTROLLERS_CONFIG.lock().clone();
+    let config = WeaponSettings::read();
     let active = hands::active_hands_raw();
     let capabilities = Capabilities::of(mode::current().mode);
     let source_guns = gun_owners_now();
@@ -311,7 +311,7 @@ pub(crate) fn finish_tick(
                 .as_ref()
                 .map_or([None; 2], |a| a.hands.map(|h| h.map(|h| h.grip.position))),
             triggers,
-            dominant: config.acting_hand(),
+            dominant: config.dominant,
             opened: grenade_opened,
             dt,
         },
@@ -348,8 +348,8 @@ pub(crate) fn finish_tick(
                 .into_iter()
                 .find(|h| grabs[h.index()] == Some(GrabVolume::PlacedCharge)),
             opened,
-            free: c4::wheel::WheelHands::available(free, unavailable, config.acting_hand()).free,
-            dominant: config.acting_hand(),
+            free: c4::wheel::WheelHands::available(free, unavailable, config.dominant).free,
+            dominant: config.dominant,
         },
         &C4Tuning::of(&config.weapons.c4),
     );
@@ -573,7 +573,7 @@ fn leave_in_brace(weapon: usize, holder: Hand, active: &ActiveHands, world_scale
 
 /// Record the hands on the long guns for the readout: each hand holding one at its grip, and the
 /// bracing hand at its part.
-fn record_hands(config: &ControllersConfig) {
+fn record_hands(config: &WeaponSettings) {
     if !config.weapons.regions.enabled {
         regions::record([None; 2]);
         return;
@@ -740,7 +740,7 @@ fn weapon_action_running(gun_hand: Hand) -> bool {
 /// Carry out `hand`'s grab of `socket` as the table decides it: draw the weapon on it into the
 /// empty hand, or dock the hand's weapon there. `None` for a grab that did nothing worth reporting:
 /// a free socket with nothing to put there, or no table to decide against.
-fn grab_socket(hand: Hand, socket: Socket, config: &ControllersConfig) -> Option<GrabOutcome> {
+fn grab_socket(hand: Hand, socket: Socket, config: &WeaponSettings) -> Option<GrabOutcome> {
     if hold::act::docking()[hand.index()] || hold::act::pending_release(hand).is_some() {
         return None;
     }
@@ -793,7 +793,7 @@ fn release(
     weapon: Option<engine::HeldWeapon>,
     active: Option<&ActiveHands>,
     world_scale: f32,
-    config: &ControllersConfig,
+    config: &WeaponSettings,
 ) {
     let Some(snapshot) = live::snapshot_now() else {
         return;
@@ -996,7 +996,7 @@ fn pass_by_action(hand: Hand) -> bool {
 /// hand's weapon is already on its way to.
 fn attraction_for(
     hand: Hand,
-    config: &ControllersConfig,
+    config: &WeaponSettings,
     reserved: Option<Socket>,
 ) -> Option<attract::Attraction> {
     if !config.weapons.hold.dock_attraction {

@@ -10,10 +10,10 @@ use jc3vr_render::controllers::cockpit::CockpitTransform;
 
 use crate::controllers::{
     aim::RAY_LENGTH_M,
-    config::ControllersConfig,
     hands::ActiveHands,
     mode::VehicleSeat,
     vehicles::{
+        config::{PhysicalControlsConfig, VehicleSettings},
         mounted::{self, MountedTarget},
         physical::ControlKind,
         state::STATE,
@@ -37,8 +37,11 @@ pub(super) struct MountedTick {
 /// Read the mounted gun and derive its aim from the hands in `aiming`, indexed by
 /// [`Hand::index`](jc3vr_input::frame::Hand::index). With the grip on the handles and no hand
 /// aiming, the gun keeps the direction the hands last gave it, in the body frame.
-pub(super) fn mounted_tick(active: &ActiveHands, aiming: [bool; 2]) -> MountedTick {
-    let config = &active.config;
+pub(super) fn mounted_tick(
+    active: &ActiveHands,
+    config: &VehicleSettings,
+    aiming: [bool; 2],
+) -> MountedTick {
     let none = MountedTick {
         readout: None,
         weapon: None,
@@ -166,11 +169,10 @@ const GUNNER_FADE_IN_S: f32 = 0.25;
 /// wheel (`yoke`) offers the yoke.
 pub(super) fn offered(
     seat: Option<VehicleSeat>,
-    config: &ControllersConfig,
+    physical: &PhysicalControlsConfig,
     fork: bool,
     yoke: bool,
 ) -> &'static [ControlKind] {
-    let physical = &config.vehicles.physical;
     let Some(seat) = seat.filter(|s| s.driver && physical.any()) else {
         return &[];
     };

@@ -70,11 +70,11 @@ use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
-    config::CONTROLLERS_CONFIG,
     loadout::{ItemKind, ObjectAddress, Place, Restored, SlotObject, Socket, TakeSource, live},
     physical_hands,
     weapons::{
         c4,
+        config::WEAPONS_CONFIG,
         dual_wield::single,
         engine as weapons_engine, grenade,
         hold::{armed, refs::Strong, use_item},
@@ -460,7 +460,7 @@ pub(crate) unsafe fn stand_down() {
     let Some(owner) = (unsafe { weapons_engine::local_player() }) else {
         return;
     };
-    let carry = CONTROLLERS_CONFIG.lock().weapons.inventory.carry;
+    let carry = WEAPONS_CONFIG.lock().inventory.carry;
     // SAFETY: as this function's own contract.
     STATE.lock().game = Some(unsafe { game_view::capture(owner) });
     unsafe { stop(owner, "the controllers are not in use", carry) };

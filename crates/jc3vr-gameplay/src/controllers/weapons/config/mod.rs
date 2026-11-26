@@ -5,12 +5,14 @@
 //! Each feature keeps its switches here; its fixed tuning is a constant in the module that owns it.
 
 mod group;
+mod settings;
 mod snatch;
 
 use serde::{Deserialize, Serialize};
 
 pub use self::{
     group::{WEAPONS_CONFIG, WeaponsConfig},
+    settings::WeaponSettings,
     snatch::{SnatchConfig, SwingConfig},
 };
 

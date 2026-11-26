@@ -1,13 +1,49 @@
-//! The vehicle, mounted-gun, wingsuit, and parachute settings, held in
-//! [`ControllersConfig::vehicles`](crate::controllers::config::ControllersConfig::vehicles). The
+//! The vehicle, mounted-gun, wingsuit, and parachute settings, held at `controllers.vehicles`
+//! ([`VEHICLES_CONFIG`]), and the snapshot of them a vehicle tick reads ([`VehicleSettings`]). The
 //! physical controls' fixed placement and tuning are [`crate::controllers::vehicles::tuning`]'s.
 
 use jc3vr_core::config::engine::ConfigSlot;
+use jc3vr_input::frame::Hand;
 use serde::{Deserialize, Serialize};
+
+use crate::controllers::{
+    body::config::BODY_REMAP_CONFIG, overlay::config::OVERLAY_CONFIG, scheme,
+};
 
 /// The vehicle, mounted gun, wingsuit, and parachute settings, at `controllers.vehicles` in the
 /// settings file; the payload binds the slot at startup.
 pub static VEHICLES_CONFIG: ConfigSlot<VehiclesConfig> = ConfigSlot::new("controllers.vehicles");
+
+/// The settings one vehicle handling tick reads: its own group and the few fields of lower groups
+/// it consults, read one group at a time so that no two configuration guards are held at once.
+#[derive(Copy, Clone)]
+pub(crate) struct VehicleSettings {
+    pub(crate) vehicles: VehiclesConfig,
+    /// The hand the roles follow ([`scheme::acting_hand`]).
+    pub(crate) dominant: Hand,
+    /// Whether the hands are remapped onto the character's arms
+    /// ([`BodyRemapConfig::remap_hands`](crate::controllers::body::config::BodyRemapConfig::remap_hands)).
+    pub(crate) remap_hands: bool,
+    /// Whether the world-space overlay draws
+    /// ([`OverlayConfig::enabled`](crate::controllers::overlay::config::OverlayConfig::enabled)).
+    pub(crate) overlay: bool,
+}
+
+impl VehicleSettings {
+    /// The settings as they are now.
+    pub(crate) fn read() -> Self {
+        let vehicles = *VEHICLES_CONFIG.lock();
+        let dominant = scheme::acting_hand();
+        let remap_hands = BODY_REMAP_CONFIG.query(|c| c.remap_hands);
+        let overlay = OVERLAY_CONFIG.query(|c| c.enabled);
+        Self {
+            vehicles,
+            dominant,
+            remap_hands,
+            overlay,
+        }
+    }
+}
 
 /// Vehicles, mounted guns, the wingsuit, and the parachute. Stick bindings always work; the
 /// physical controls, the arm steering, and the parachute handles are additional and, as part of

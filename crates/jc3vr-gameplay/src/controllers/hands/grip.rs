@@ -59,8 +59,7 @@ use parking_lot::Mutex;
 
 use crate::controllers::{
     aim::gun,
-    config::CONTROLLERS_CONFIG,
-    hands::{ik, pose as hand_pose},
+    hands::{config::HANDS_CONFIG, ik, pose as hand_pose},
     physical_hands::physics::guns,
     weapons::{
         hold::{
@@ -240,7 +239,7 @@ pub(crate) unsafe fn before_placement(
         return None;
     }
     let controller = unsafe { character.m_AnimatedModel.m_AnimationController.as_mut() }?;
-    let enabled = CONTROLLERS_CONFIG.lock().hands.rigid_grip;
+    let enabled = HANDS_CONFIG.lock().rigid_grip;
     let targets = ik::tick_records().current;
     let weights = ik::placement_weights(local, controller as *mut AnimationController as usize);
     let mut placement = Placement {

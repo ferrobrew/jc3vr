@@ -20,7 +20,7 @@ use parking_lot::Mutex;
 use crate::controllers::{
     aim::raycast::CastOptions,
     body::rig::collision::probe::{HeadProbe, TimedProbe},
-    config::CONTROLLERS_CONFIG,
+    roomscale::config::ROOMSCALE_CONFIG,
 };
 
 /// Probe the head for one simulation tick and publish the result ([`latest`]).
@@ -30,7 +30,7 @@ use crate::controllers::{
 /// `character` must be the live local character, in the simulation phase outside the physics
 /// step.
 pub(crate) unsafe fn tick(character: &Character) {
-    let enabled = CONTROLLERS_CONFIG.lock().roomscale.head_fade.enabled;
+    let enabled = ROOMSCALE_CONFIG.lock().head_fade.enabled;
     let mut state = STATE.lock();
     let epoch = teleport::epoch();
     if !enabled

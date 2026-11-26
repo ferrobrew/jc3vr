@@ -53,10 +53,10 @@ use jc3vr_input::haptics::cues::Event;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
-    config::CONTROLLERS_CONFIG,
     hands::ik,
     haptics, scheme,
-    weapons::{fire, hold::tick, reload},
+    scheme::CONTROLLERS_ENABLED,
+    weapons::{config::WEAPONS_CONFIG, fire, hold::tick, reload},
 };
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -171,7 +171,7 @@ fn check_if_reload_should_be_triggered_base(
             .unwrap()
             .call(weapon, gun_data, should_try_to_fire, was_trigger_pulled)
     };
-    let acting = CONTROLLERS_CONFIG.query(|c| c.enabled) && scheme::is_controllers();
+    let acting = CONTROLLERS_ENABLED.query(|c| *c) && scheme::is_controllers();
     let local = unsafe { weapon.as_ref() }.is_some_and(|w| w.m_IsUserLocalPlayer);
     if !(acting && local) {
         return original();
@@ -236,7 +236,7 @@ fn try_to_switch_to_valid_weapon(inventory: *mut Inventory) -> bool {
     if check.is_some() {
         CHECK.set(Some(Check { tried_switch: true }));
     }
-    let auto_switch = CONTROLLERS_CONFIG.lock().weapons.auto_switch_when_empty;
+    let auto_switch = WEAPONS_CONFIG.lock().auto_switch_when_empty;
     match decide(check.is_some(), auto_switch) {
         SwitchDecision::Suppress => {
             SUPPRESSED.fetch_add(1, Ordering::Relaxed);

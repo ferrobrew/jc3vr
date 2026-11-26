@@ -102,7 +102,7 @@ pub(crate) use targets::test_support::DoorProvider;
 pub(crate) use targets::{DoorEligibility, targets};
 pub use tick::{after_aim, free_hands, main_thread_tick, mode_acts};
 
-use crate::controllers::config::CONTROLLERS_CONFIG;
+use crate::controllers::physical_hands::config::PHYSICAL_HANDS_CONFIG;
 
 pub(crate) mod lifetime;
 
@@ -161,7 +161,7 @@ pub enum DrawTime {
 /// body's hand at its body, for `at`. Called by [`crate::controllers::hands::active_hands`] and
 /// [`crate::controllers::hands::active_hands_from_frame`].
 pub fn apply(cockpit: &mut [Option<CockpitHand>; 2], at: DrawTime) {
-    let enabled = CONTROLLERS_CONFIG.lock().physical_hands.enabled;
+    let enabled = PHYSICAL_HANDS_CONFIG.lock().enabled;
     let palm_offset = tuning::PALMS.palm_offset_m;
     match at {
         DrawTime::Tick => physics::apply(cockpit, palm_offset),
@@ -258,7 +258,7 @@ pub(crate) unsafe fn body_mass_kg(body: u32) -> Option<f32> {
 }
 
 pub(crate) unsafe fn push_body(character: &mut Character) {
-    let enabled = CONTROLLERS_CONFIG.query(|c| c.physical_hands.enabled && c.physical_hands.push);
+    let enabled = PHYSICAL_HANDS_CONFIG.query(|c| c.enabled && c.push);
     let palms = if enabled {
         let state = STATE.lock();
         if state.fresh(std::time::Instant::now()) {

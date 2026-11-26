@@ -9,7 +9,6 @@ use jc3vr_input::{
 };
 
 use crate::controllers::{
-    config::ControllersConfig,
     grab::{Candidate, GrabVolume, resolve::nearest_within},
     hands::{ActiveHands, ik},
     haptics,
@@ -17,6 +16,7 @@ use crate::controllers::{
     mode::{self, Mode},
     weapons::{
         self,
+        config::WeaponSettings,
         engine::{HeldWeapon, reserve},
         foregrip::set_pump_slide,
         inventory::engine::strong_to,
@@ -127,7 +127,7 @@ impl State {
         &mut self,
         weapons: [Option<&HeldWeapon>; 2],
         active: &ActiveHands,
-        config: &ControllersConfig,
+        config: &WeaponSettings,
     ) -> Option<Tick> {
         // The guns as they are shown: turned onto the line between the hands by the two-handed pose
         // and by their weight, so the wells and the handles are where the player sees them.
@@ -255,7 +255,7 @@ impl State {
         Some(Tick {
             sequence: frame::with_latest(|frame| frame.sequence),
             weapons: read,
-            dominant: config.acting_hand(),
+            dominant: config.dominant,
             guns,
             hands: active.hands,
             world_scale: active.world_scale,
@@ -312,7 +312,7 @@ impl State {
         &mut self,
         tick: &Tick,
         inputs: &FinishInputs,
-        config: &ControllersConfig,
+        config: &WeaponSettings,
     ) -> [Option<FireHold>; 2] {
         let reload = &Reload::of(&config.weapons.reload);
         let dt = if inputs.dt.is_finite() {
@@ -478,7 +478,7 @@ impl State {
     }
 
     /// The eject triggers.
-    fn ejects(&mut self, tick: &Tick, inputs: &FinishInputs, config: &ControllersConfig) {
+    fn ejects(&mut self, tick: &Tick, inputs: &FinishInputs, config: &WeaponSettings) {
         let reload = &Reload::of(&config.weapons.reload);
         let tapped = self.tap.step(inputs.reload_button, inputs.dt, reload.tap_s);
         let mut targets = [false; 2];
@@ -539,13 +539,7 @@ impl State {
     }
 
     /// Eject the magazine of `gun` of `weapon`, in `hand`, when it is in.
-    fn eject(
-        &mut self,
-        weapon: &WeaponTick,
-        gun: &GunTick,
-        hand: Hand,
-        config: &ControllersConfig,
-    ) {
+    fn eject(&mut self, weapon: &WeaponTick, gun: &GunTick, hand: Hand, config: &WeaponSettings) {
         if !self.queue_eject(
             weapon,
             gun,
@@ -564,7 +558,7 @@ impl State {
 
     /// The two-handed load: take from the pouch, carry to the well of the gun in the other hand,
     /// seat.
-    fn insert(&mut self, tick: &Tick, inputs: &FinishInputs, config: &ControllersConfig) {
+    fn insert(&mut self, tick: &Tick, inputs: &FinishInputs, config: &WeaponSettings) {
         self.insert_with(tick, inputs, config, &mut NativeMagazine);
     }
 
@@ -572,7 +566,7 @@ impl State {
         &mut self,
         tick: &Tick,
         inputs: &FinishInputs,
-        config: &ControllersConfig,
+        config: &WeaponSettings,
         adapter: &mut impl MagazineInsertion,
     ) {
         let reload = &Reload::of(&config.weapons.reload);
@@ -831,7 +825,7 @@ impl State {
     }
 
     /// The belt pushes of each hand's gun, and the pouches shown as ready for one.
-    pub(super) fn belt(&mut self, tick: &Tick, config: &ControllersConfig) {
+    pub(super) fn belt(&mut self, tick: &Tick, config: &WeaponSettings) {
         let reload = &Reload::of(&config.weapons.reload);
         let belt = &reload.belt;
         self.belt_rings = [None; 2];
@@ -1157,7 +1151,7 @@ fn belt_point(weapon: &WeaponTick, well: Well, world_scale: f32) -> Vec3 {
 unsafe fn weapon_tick(
     weapon: &HeldWeapon,
     base: &WeaponBase,
-    config: &ControllersConfig,
+    config: &WeaponSettings,
 ) -> Option<WeaponTick> {
     let reload = &Reload::of(&config.weapons.reload);
     weapon.holder?;

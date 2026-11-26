@@ -35,10 +35,7 @@ use jc3vr_input::{
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::controllers::{
-    config::{CONTROLLERS_CONFIG, ControllersConfig},
-    scheme, telemetry,
-};
+use crate::controllers::{haptics::config::HAPTICS_CONFIG, scheme, telemetry};
 
 /// The haptics' hooks, aggregated by [`crate::controllers::hook_library`].
 pub(crate) fn hook_library() -> HookLibrary {
@@ -194,14 +191,15 @@ static STATUS: Mutex<HapticsStatus> = Mutex::new(HapticsStatus {
 
 /// Whether the haptics act and `category` plays.
 fn acting(category: Category) -> bool {
-    let config = CONTROLLERS_CONFIG.lock().clone();
-    acts(&config) && config.haptics.category(category)
+    let enabled = scheme::enabled();
+    let haptics = *HAPTICS_CONFIG.lock();
+    acts(enabled, &haptics) && haptics.category(category)
 }
 
-/// Whether the haptics act at all: the controllers and the haptics on, under the controller
-/// scheme.
-fn acts(config: &ControllersConfig) -> bool {
-    config.enabled && config.haptics.enabled && scheme::is_controllers()
+/// Whether the haptics act at all: the controllers (`enabled`) and the haptics on, under the
+/// controller scheme.
+fn acts(enabled: bool, haptics: &HapticsConfig) -> bool {
+    enabled && haptics.enabled && scheme::is_controllers()
 }
 
 fn frequency(primitive: Primitive) -> Option<f32> {

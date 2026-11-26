@@ -13,10 +13,11 @@ use crate::controllers::{
         raycast::{self, CastOptions},
     },
     clock::TimeScale,
-    config::CONTROLLERS_CONFIG,
     mode,
     physical_hands::{
-        climb, impacts, mode_acts,
+        climb,
+        config::PHYSICAL_HANDS_CONFIG,
+        impacts, mode_acts,
         physics::{
             HAND_BODIES,
             body::{BodyShape, BodySpec, Capsule, HandBody, player_system_group},
@@ -52,7 +53,7 @@ pub unsafe fn step() {
     let time_scale = unsafe { TimeScale::current() };
     let step_number = count_step();
     let step_s = step_seconds();
-    let config = CONTROLLERS_CONFIG.lock().physical_hands;
+    let config = *PHYSICAL_HANDS_CONFIG.lock();
     contact::step_tick();
     let mut hands = HANDS.lock();
     hands.steps += 1;

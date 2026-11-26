@@ -9,8 +9,12 @@ use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
     aim_state,
-    config::CONTROLLERS_CONFIG,
-    locomotion::acts::{ActDecision, filter as act_filter},
+    body::config::BODY_REMAP_CONFIG,
+    locomotion::{
+        acts::{ActDecision, filter as act_filter},
+        config::LOCOMOTION_CONFIG,
+    },
+    scheme,
 };
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -35,8 +39,9 @@ fn character_queue_act(character: *mut Character, act: *const u32) {
         && let Some(&id) = (unsafe { act.as_ref() })
     {
         let id = id as i32;
-        let (controllers_enabled, locomotion, follow) =
-            CONTROLLERS_CONFIG.query(|c| (c.enabled, c.locomotion, c.body.rig.follow));
+        let controllers_enabled = scheme::enabled();
+        let locomotion = *LOCOMOTION_CONFIG.lock();
+        let follow = BODY_REMAP_CONFIG.query(|c| c.rig.follow);
         let turn_animation = follow.enabled && follow.turn_animation;
         let reverse = reverse_act_ids().is_some_and(|ids| ids.contains(&id));
         if reverse || aim_state::swallow_local_act(id) {

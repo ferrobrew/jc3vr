@@ -13,7 +13,9 @@ use jc3vr_render::controllers::overlay::{
     store,
 };
 
-use crate::controllers::{aim::gun, config::CONTROLLERS_CONFIG, loadout::live, weapons::docks};
+use crate::controllers::{
+    aim::gun, loadout::live, overlay::config::OVERLAY_CONFIG, weapons::docks,
+};
 
 /// Submit the docked guns' marks for `owner`, or clear them while the view is off.
 ///
@@ -21,7 +23,7 @@ use crate::controllers::{aim::gun, config::CONTROLLERS_CONFIG, loadout::live, we
 ///
 /// `owner` must be the live local player character, on the game thread before the world update.
 pub(crate) unsafe fn submit(owner: &Character) {
-    let on = CONTROLLERS_CONFIG.query(|c| c.overlay.enabled && c.overlay.docked_guns);
+    let on = OVERLAY_CONFIG.query(|c| c.enabled && c.docked_guns);
     let Some(snapshot) = live::snapshot_now().filter(|_| on) else {
         store::clear(Source::DockedGuns);
         return;

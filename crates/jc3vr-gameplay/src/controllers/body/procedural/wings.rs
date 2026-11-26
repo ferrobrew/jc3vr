@@ -43,8 +43,7 @@ use crate::controllers::{
             },
         },
     },
-    config::CONTROLLERS_CONFIG,
-    hands::{ik::queue_model_wrists, pose::cockpit_hand},
+    hands::{config::HANDS_CONFIG, ik::queue_model_wrists, pose::cockpit_hand},
     scheme,
 };
 
@@ -72,8 +71,8 @@ pub(super) fn clear() {
 /// controller frame slot, and the rig's torso estimate, one after the other, so the gate reads it
 /// before it takes its own state.
 pub(super) fn read_player_arms() -> Option<PlayerArms> {
-    let config = CONTROLLERS_CONFIG.lock().clone();
-    if !config.enabled || !scheme::is_controllers() || headpose::source() != Source::Vr {
+    let grip_offset = HANDS_CONFIG.query(|c| c.grip);
+    if !scheme::enabled() || !scheme::is_controllers() || headpose::source() != Source::Vr {
         return None;
     }
     let cockpit = headpose::xr::cockpit_pose()?;
@@ -91,7 +90,7 @@ pub(super) fn read_player_arms() -> Option<PlayerArms> {
                     h.grip.pose
                 };
                 // The player's own hand, not the remap's: the arm is scaled to Rico's below.
-                cockpit_hand(hand, h.grip.pose, aim, &config.hands.grip, None).wrist
+                cockpit_hand(hand, h.grip.pose, aim, &grip_offset, None).wrist
             })
         })
     })

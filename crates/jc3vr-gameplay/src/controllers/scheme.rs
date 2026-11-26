@@ -16,6 +16,13 @@ pub static CONTROLLERS_ENABLED: ConfigSlot<bool> = ConfigSlot::new("controllers.
 /// a restart after a change.
 pub static DOMINANT_HAND: ConfigSlot<Hand> = ConfigSlot::new("controllers.dominant_hand");
 
+/// Whether the controllers' master switch is on, whatever the scheme in effect. One config read,
+/// released before this returns, so it composes with other reads in one expression.
+#[inline]
+pub fn enabled() -> bool {
+    *CONTROLLERS_ENABLED.lock()
+}
+
 /// The scheme in effect now. Cheap: one config read and a peek at the published controller frame.
 pub fn current() -> Scheme {
     let enabled = *CONTROLLERS_ENABLED.lock();

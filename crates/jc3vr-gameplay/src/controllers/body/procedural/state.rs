@@ -15,12 +15,14 @@ use jc3vr_render::headpose::{Source, source};
 
 use crate::{
     controllers::{
-        body::procedural::{
-            authority::CharacterState,
-            config::ProceduralBodyConfig,
-            signals::{in_hit_reaction, in_ledge_climb},
+        body::{
+            config::BODY_REMAP_CONFIG,
+            procedural::{
+                authority::CharacterState,
+                config::ProceduralBodyConfig,
+                signals::{in_hit_reaction, in_ledge_climb},
+            },
         },
-        config::CONTROLLERS_CONFIG,
         hands::tiers::{self, TierState},
         locomotion::LocomotionStatus,
         mode::{AirborneVariant, Mode, OnFootVariant, current as current_mode},
@@ -38,11 +40,7 @@ use crate::{
 ///
 /// `character` must be the live local character, on the thread running its update.
 pub(crate) unsafe fn animation_moves_body(character: &Character, now: Instant) -> bool {
-    let hold_s = CONTROLLERS_CONFIG
-        .lock()
-        .body
-        .procedural
-        .hit_reaction_hold_s;
+    let hold_s = BODY_REMAP_CONFIG.lock().procedural.hit_reaction_hold_s;
     let bits = unsafe { StateBits::of(character) };
     bits.authored_motion() || in_hit_reaction(now, hold_s)
 }

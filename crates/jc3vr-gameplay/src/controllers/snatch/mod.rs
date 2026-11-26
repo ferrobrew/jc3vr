@@ -94,7 +94,6 @@ use crate::controllers::{
         tables,
         yank::{ArmedLine, HandLine, YankConfig, YankDetector},
     },
-    config::ControllersConfig,
     grab::{GrabVolume, GripTarget, Mark, MarkAt, Provided, latch::GripLatch},
     haptics,
     loadout::slot_label,
@@ -103,6 +102,7 @@ use crate::controllers::{
     snatch::{
         arrival::ArrivalWatch,
         brace::Brace,
+        config::SnatchSettings,
         moment::Moment,
         prearm::Prearm,
         pull::{Arrival, Attached, Fired, Flight, Freeing, Grabbed, SlingInput, Step, Swinging},
@@ -245,7 +245,7 @@ pub(crate) struct OfferInput<'a> {
     pub grip: ButtonControl,
     /// The tick's length, real seconds: how long the grapple hand's aim keeps a target.
     pub dt: f32,
-    pub config: &'a ControllersConfig,
+    pub config: &'a SnatchSettings,
 }
 
 /// The remote target for the grapple hand's grip this tick, if there is one.
@@ -254,8 +254,8 @@ pub(crate) struct OfferInput<'a> {
 ///
 /// The game thread, before the world update.
 pub(crate) unsafe fn targets(input: &OfferInput) -> Provided {
-    let config = &input.config.weapons.snatch;
-    let hold = &input.config.weapons.hold;
+    let config = &input.config.snatch;
+    let hold = &input.config.hold;
     let takes_held = hold.either_hand;
     grapple_weapons::set_enabled(config.enabled);
     steal::widen_notice(if config.enabled && takes_held {
@@ -360,7 +360,7 @@ pub(crate) struct FinishInput<'a> {
     pub dt: f32,
     /// The tick's length, real seconds: the hand's yank.
     pub real_dt: f32,
-    pub config: &'a ControllersConfig,
+    pub config: &'a SnatchSettings,
 }
 
 /// Act on the tick's grab of a remote target, step the snatch, and hold the grapple button back from
@@ -370,7 +370,7 @@ pub(crate) struct FinishInput<'a> {
 ///
 /// The game thread, before the world update.
 pub(crate) unsafe fn finish_tick(input: &FinishInput, desired: &mut Vec<Desired>) {
-    let config = &input.config.weapons.snatch;
+    let config = &input.config.snatch;
     hooks::publish(config.enabled, input.ordinary_button_held);
     if let Some(weak) = hooks::take_toss() {
         match unsafe { pull::toss(&weak) } {
@@ -602,7 +602,7 @@ fn log_swing_start(swinging: &Swinging, tethered: bool) {
 impl State {
     /// One input tick of the snatch.
     unsafe fn step(&mut self, input: &FinishInput) {
-        let config = &input.config.weapons.snatch;
+        let config = &input.config.snatch;
         self.status.swing = None;
         if let Phase::HookOut { target, .. } | Phase::Pulling { target, .. } = &self.phase
             && physical_hands::held_props().contains(&Some(target.object))
@@ -1023,7 +1023,7 @@ impl State {
             hand,
             offer,
             line,
-            yank: armed_yank(reach, &input.config.weapons.snatch.yank),
+            yank: armed_yank(reach, &input.config.snatch.yank),
         }
     }
 

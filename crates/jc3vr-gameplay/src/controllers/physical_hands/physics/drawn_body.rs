@@ -33,9 +33,9 @@ use parking_lot::Mutex;
 
 use crate::controllers::{
     body::procedural::{solver::arms::Capsule as KeepOutCapsule, torso_keep_out},
-    config::CONTROLLERS_CONFIG,
     physical_hands::{
         bodies,
+        config::PHYSICAL_HANDS_CONFIG,
         physics::{
             body::{BodyShape, BodySpec, Capsule, HandBody, player_system_group},
             contact::Source,
@@ -121,8 +121,8 @@ pub(crate) unsafe fn rests_against(body: u32) -> bool {
 ///
 /// The thread that steps the physics world, before the step.
 pub(super) unsafe fn step() {
-    let enabled = CONTROLLERS_CONFIG
-        .query(|c| c.enabled && c.physical_hands.enabled && c.physical_hands.body_proxies)
+    let enabled = scheme::enabled()
+        && PHYSICAL_HANDS_CONFIG.query(|c| c.enabled && c.body_proxies)
         && scheme::is_controllers()
         && jc3vr_core::hooks::in_gameplay()
         && !jc3vr_core::is_shutting_down();

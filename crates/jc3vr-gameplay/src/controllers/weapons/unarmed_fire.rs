@@ -13,7 +13,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use jc3gi::character::character::{Character, WeaponInput};
 
-use crate::controllers::{config::CONTROLLERS_CONFIG, scheme};
+use crate::controllers::{scheme, scheme::CONTROLLERS_ENABLED};
 
 /// The draw-on-fire suppression's readout.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
@@ -61,7 +61,7 @@ pub(crate) unsafe fn hold_back(
     character: &mut Character,
     holstering: bool,
 ) -> Option<HeldDrawInputs> {
-    let enabled = CONTROLLERS_CONFIG.lock().enabled;
+    let enabled = *CONTROLLERS_ENABLED.lock();
     if !enabled || !scheme::is_controllers() {
         return None;
     }

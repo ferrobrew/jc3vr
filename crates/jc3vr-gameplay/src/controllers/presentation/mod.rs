@@ -65,8 +65,7 @@ pub use crate::controllers::presentation::{
 };
 use crate::controllers::{
     body::procedural::{self, skeleton},
-    config::CONTROLLERS_CONFIG,
-    hands::{ik, late, pose as hand_pose, reach::REACH},
+    hands::{config::HANDS_CONFIG, ik, late, pose as hand_pose, reach::REACH},
     mode::{self, Mode},
     presentation::{
         edit::{DrawnArms, PaletteRegistration},
@@ -252,7 +251,7 @@ pub fn begin_frame() {
     let start = Instant::now();
     let _timing = frame_timing::scope(Slot::Presentation);
     roll_cost();
-    let config = CONTROLLERS_CONFIG.lock().hands.presentation;
+    let config = HANDS_CONFIG.lock().presentation;
     let world_scale = VR_CONFIG.lock().world_scale;
     let rig_failed = RIG.lock().as_ref().is_some_and(|(_, rig)| rig.is_err());
     let ticks = *TICKS.lock();

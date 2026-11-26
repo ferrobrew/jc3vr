@@ -88,12 +88,12 @@ use crate::controllers::{
         tables::describe::{Control, Effect, Gesture, ModAction, Row},
     },
     body::rig::frames::Frames,
-    config::ControllersConfig,
     grab::{Candidate, GrabVolume, GripTarget},
     hands::{ActiveHands, pose::CockpitHand},
     telemetry,
     weapons::{
         capabilities::{GunHand, GunOwner},
+        config::WeaponSettings,
         docks,
         dual_wield::single::magazine::Dealt,
         engine::{HeldWeapon, reserve},
@@ -206,7 +206,7 @@ pub(super) struct BeginInputs<'a> {
     /// The hands holding any gun, of these weapons or another, by [`Hand::index`].
     pub occupied: [bool; 2],
     pub active: &'a ActiveHands,
-    pub config: &'a ControllersConfig,
+    pub config: &'a WeaponSettings,
     /// The character's body the pouch rides, when its skeleton could be read.
     pub body: Option<&'a BodyFrame>,
     /// The hand the pouches are laid out around ([`volumes::gun_side`]).
@@ -555,7 +555,7 @@ pub(super) struct FinishInputs {
 
 /// The second half of the reload's input tick: eject, load, push, and work the action, and decide
 /// which guns may fire. The copied finish facts are consumed after weapon ownership settles.
-pub(super) fn finish_tick(inputs: &FinishInputs, config: &ControllersConfig) -> FinishResult {
+pub(super) fn finish_tick(inputs: &FinishInputs, config: &WeaponSettings) -> FinishResult {
     let mut state = STATE.lock();
     let Some(tick) = state.tick else {
         state.stand_down();
@@ -641,7 +641,7 @@ impl FinishResult {
     pub(super) fn belt_eligibility(
         self,
         sequence: u64,
-        config: &ControllersConfig,
+        config: &WeaponSettings,
         source_guns: [Option<GunOwner>; 2],
         guns: [Option<GunOwner>; 2],
     ) -> Option<BeltEligibility> {
@@ -682,7 +682,7 @@ impl BeltFinish {
     fn eligibility_with(
         self,
         sequence: u64,
-        config: &ControllersConfig,
+        config: &WeaponSettings,
         source_guns: [Option<GunOwner>; 2],
         guns: [Option<GunOwner>; 2],
         mut read: impl FnMut(usize) -> Option<(Reading, i32)>,
@@ -690,7 +690,7 @@ impl BeltFinish {
         if source_guns != guns
             || !config.weapons.reload.enabled
             || self.sequence != Some(sequence)
-            || self.dominant != config.acting_hand()
+            || self.dominant != config.dominant
         {
             return None;
         }
@@ -761,7 +761,7 @@ impl BeltGate {
 
 #[cfg(test)]
 pub(crate) fn eligible_belt_for_test(
-    config: &ControllersConfig,
+    config: &WeaponSettings,
 ) -> (BeltEligibility, [Option<GunOwner>; 2]) {
     steps::eligible_belt_for_test(config)
 }

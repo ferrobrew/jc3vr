@@ -20,13 +20,13 @@ use jc3vr_render::{
 };
 
 use crate::controllers::{
-    config::CONTROLLERS_CONFIG,
+    overlay::config::OVERLAY_CONFIG,
     physical_hands::{HandStatus, PhysicalHandsConfig, palm::EDGES},
 };
 
 /// Submit the palms of the last tick, or clear them when they are not shown.
 pub(super) fn submit(hands: &[HandStatus; 2], config: &PhysicalHandsConfig) {
-    let overlay = CONTROLLERS_CONFIG.lock().overlay.enabled;
+    let overlay = OVERLAY_CONFIG.lock().enabled;
     if !(overlay && config.show_boxes) {
         clear();
         return;

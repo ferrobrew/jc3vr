@@ -24,7 +24,7 @@ fn shot(hand: Hand, magazine: i32) -> gate::Shot {
 
 #[test]
 fn delayed_pair_shots_preserve_owned_readiness_and_still_lock_back() {
-    let config = ControllersConfig::default();
+    let config = WeaponSettings::default();
     let mut tick = tick(false);
     let mut state = state();
     let weapon = tick.weapons[0].as_mut().unwrap();
@@ -47,7 +47,7 @@ fn delayed_pair_shots_preserve_owned_readiness_and_still_lock_back() {
 
 #[test]
 fn delayed_unowned_shots_keep_the_native_readiness_fallback() {
-    let config = ControllersConfig::default();
+    let config = WeaponSettings::default();
     let tick = tick(false);
     let mut state = state();
     let key = tick.weapons[0].unwrap().key;
@@ -69,7 +69,7 @@ fn delayed_unowned_shots_keep_the_native_readiness_fallback() {
 
 #[test]
 fn first_empty_observation_preserves_owned_chambers_and_seeds_lockback() {
-    let config = ControllersConfig::default();
+    let config = WeaponSettings::default();
     for owned in [false, true] {
         let mut tick = tick(false);
         let weapon = tick.weapons[0].as_mut().unwrap();

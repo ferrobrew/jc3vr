@@ -1,6 +1,8 @@
 use super::*;
 use crate::controllers::{
-    mode::OnFootVariant, summary::eligibility, weapons::reload::eligible_belt_for_test,
+    mode::OnFootVariant,
+    summary::eligibility,
+    weapons::{config::WeaponSettings, reload::eligible_belt_for_test},
 };
 
 mod climb;
@@ -25,7 +27,12 @@ fn capture_revalidates_belt_against_physical_guns_without_per_hand_trigger_subst
     config.weapons.hold.either_hand = false;
     let hand = config.acting_hand();
     let mode = Mode::OnFoot(OnFootVariant::Ground);
-    let (lease, guns) = eligible_belt_for_test(&config);
+    let settings = WeaponSettings {
+        weapons: config.weapons,
+        dominant: hand,
+        ..WeaponSettings::new()
+    };
+    let (lease, guns) = eligible_belt_for_test(&settings);
     let before = owner_state(guns);
     let gun_triggers = config.weapons.hold.either_hand;
     let owners = guns.map(|gun| Owner {

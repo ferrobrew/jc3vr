@@ -27,8 +27,8 @@ use jc3vr_input::frame::{Hand, Pose};
 use parking_lot::Mutex;
 
 use crate::controllers::{
-    aim::{gun::HeldWeapon, ray, sights},
-    config::{CONTROLLERS_CONFIG, SightOverride, SightTuningConfig},
+    aim::{config::AIM_CONFIG, gun::HeldWeapon, ray, sights},
+    config::{SightOverride, SightTuningConfig},
 };
 
 /// How far ahead of the head the line-up marker is placed, metres.
@@ -163,9 +163,8 @@ pub(crate) fn service(
     // The config is locked with the tuning state released: the debug UI's sight tool reads the
     // state while it holds the config. A capture is the player's own choice, so it is saved.
     let result = solve_capture(marker, held, dominant).and_then(|sight| {
-        CONTROLLERS_CONFIG
+        AIM_CONFIG
             .edit()
-            .aim
             .sights
             .set(sight)
             .then_some(sight)

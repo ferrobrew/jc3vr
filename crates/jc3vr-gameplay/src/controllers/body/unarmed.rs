@@ -38,7 +38,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     controllers::{
-        config::CONTROLLERS_CONFIG,
+        body::config::BODY_REMAP_CONFIG,
         hands::tiers::{self, TierState},
         scheme,
     },
@@ -259,7 +259,7 @@ pub unsafe fn tick(character: *mut Character) {
     let Some(character) = (unsafe { character.as_ref() }).filter(|c| c.m_IsLocalCharacter) else {
         return;
     };
-    let weapon_animations = CONTROLLERS_CONFIG.lock().body.unarmed.weapon_animations;
+    let weapon_animations = BODY_REMAP_CONFIG.lock().unarmed.weapon_animations;
     let inputs = GateInputs {
         controllers: scheme::is_controllers(),
         vr: headpose::source() == headpose::Source::Vr,

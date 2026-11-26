@@ -55,8 +55,8 @@ use crate::controllers::{
         ray::Ray,
         raycast::{self, CastOptions, RaycastError},
     },
-    config::CONTROLLERS_CONFIG,
     glass::{
+        config::GLASS_CONFIG,
         engine::{HideRefusal, Pane},
         strike::{Limiter, Outcome, STRIKERS, Sample, Striker, StrikerKind},
     },
@@ -142,7 +142,7 @@ pub fn status() -> GlassStatus {
 ///
 /// The game thread, outside the world update and the physics step.
 pub unsafe fn main_thread_tick() {
-    let config = CONTROLLERS_CONFIG.lock().glass;
+    let config = *GLASS_CONFIG.lock();
     let active = config.enabled && scheme::is_controllers() && jc3vr_core::hooks::in_gameplay();
     let idle = if !active {
         Some(Idle::Disabled)

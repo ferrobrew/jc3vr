@@ -34,7 +34,10 @@ use std::time::{Duration, Instant};
 
 pub use config::{PhysicalGrappleConfig, PhysicalGrappleTuning};
 use jc3gi::equipment::grappling_hook::GrapplingHookState;
-use jc3vr_input::haptics::cues::{Event, Sustain};
+use jc3vr_input::{
+    frame::Hand,
+    haptics::cues::{Event, Sustain},
+};
 use jc3vr_render::headpose;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
@@ -42,7 +45,6 @@ use re_utilities::hook_library::HookLibrary;
 use crate::{
     controllers::{
         bindings::yank::{GRAPPLE_YANK, HandLine, LineYank},
-        config::ControllersConfig,
         hands::anchor,
         haptics,
         mode::{Detection, Traversal},
@@ -73,7 +75,9 @@ pub(crate) struct TickInput<'a> {
     /// Whether the grapple button is held: the pull retracts the tethers only while it is.
     pub button_held: bool,
     pub detection: &'a Detection,
-    pub config: &'a ControllersConfig,
+    pub config: &'a PhysicalGrappleConfig,
+    /// The hand the roles follow, whose other hand is the grapple hand.
+    pub dominant: Hand,
 }
 
 /// What the input tick hands back to the bindings.
@@ -185,8 +189,8 @@ pub fn status() -> GrappleStatus {
 ///
 /// Game thread, before the world update.
 pub(crate) unsafe fn input_tick(input: &TickInput) -> TickOutput {
-    let config = &PhysicalGrappleTuning::of(&input.config.grapple);
-    let hand = input.config.acting_hand().other();
+    let config = &PhysicalGrappleTuning::of(input.config);
+    let hand = input.dominant.other();
     let hook = unsafe { read_hook() };
     let anchor = anchor::status().anchor;
     let head = headpose::query().position;
@@ -375,7 +379,7 @@ pub(crate) unsafe fn input_tick(input: &TickInput) -> TickOutput {
     TickOutput {
         retract,
         tethers,
-        lockable: locked || unsafe { lock::lockable(&input.config.grapple.lock) },
+        lockable: locked || unsafe { lock::lockable(&input.config.lock) },
         lock_yank,
     }
 }

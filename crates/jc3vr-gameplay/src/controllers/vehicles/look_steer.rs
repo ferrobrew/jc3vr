@@ -25,9 +25,9 @@ use re_utilities::hook_library::HookLibrary;
 
 use crate::{
     controllers::{
-        config::CONTROLLERS_CONFIG,
         mode::{self, AirborneVariant, Mode},
         scheme,
+        scheme::CONTROLLERS_ENABLED,
     },
     hooks::input::locomotion::head_decoupled,
 };
@@ -68,7 +68,7 @@ fn update_std_look_steering(
 /// Whether to remove the look-steer: the controller scheme is in effect, the player flies the
 /// wingsuit or the parachute, and the local player's head is decoupled.
 fn should_suppress() -> bool {
-    let enabled = CONTROLLERS_CONFIG.lock().enabled;
+    let enabled = *CONTROLLERS_ENABLED.lock();
     if !(enabled && scheme::is_controllers()) {
         return false;
     }

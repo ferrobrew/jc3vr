@@ -18,7 +18,8 @@ use jc3vr_render::vr;
 use parking_lot::Mutex;
 
 use crate::controllers::{
-    body::estimator::withdraw, config::CONTROLLERS_CONFIG, roomscale::posture::EffectivePosture,
+    body::{config::BODY_REMAP_CONFIG, estimator::withdraw},
+    roomscale::posture::EffectivePosture,
     scheme,
 };
 
@@ -41,7 +42,7 @@ pub struct Observation {
 /// the window starts again and nothing is posted; off or under the gamepad scheme the published
 /// estimate is withdrawn too.
 pub fn observe(observation: &Observation) {
-    let config = CONTROLLERS_CONFIG.lock().body.estimator.clone();
+    let config = BODY_REMAP_CONFIG.lock().estimator.clone();
     let controllers = scheme::is_controllers();
     let mut state = STATE.lock();
     let producer = state.get_or_insert_with(Producer::new);

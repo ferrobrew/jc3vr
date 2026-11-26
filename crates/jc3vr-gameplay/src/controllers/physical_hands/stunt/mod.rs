@@ -34,11 +34,11 @@ use parking_lot::Mutex;
 
 use crate::controllers::{
     bindings::hold::{Desired, MapKind, Target, Want},
-    config::CONTROLLERS_CONFIG,
     fingers::grip::{self, Grip, GripSource, catalogue::GripPose},
     haptics,
     physical_hands::{
         PhysicalHandsConfig, climb,
+        config::PHYSICAL_HANDS_CONFIG,
         stunt::{
             engine::Entry,
             solve::{Decision, StuntKind, Tick, Tracker, Tuning},
@@ -99,7 +99,7 @@ pub(crate) fn hanging() -> bool {
 /// whose grips opened. `held` is each hand's grip; a let-go asks the game for its jump, which
 /// leaves the hang, through `desired`. Called from the input tick after the climb's.
 pub(crate) fn finish_tick(held: [bool; 2], desired: &mut Vec<Desired>) {
-    let config = CONTROLLERS_CONFIG.lock().physical_hands;
+    let config = *PHYSICAL_HANDS_CONFIG.lock();
     let now = Instant::now();
     let mut state = STATE.lock();
     let dt = state

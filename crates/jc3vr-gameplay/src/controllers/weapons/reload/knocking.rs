@@ -7,24 +7,26 @@ use std::time::Instant;
 use jc3vr_input::{frame::Hand, haptics::cues::Event};
 
 use crate::controllers::{
-    config::ControllersConfig,
     haptics,
-    weapons::reload::{
-        FinishInputs, State, Tick, engine,
-        extraction::{DetachKind, MagazineId},
-        frames,
-        insert::{self, InsertStage, InsertionSource},
-        knock::{self, GunMagazine, KNOCK, KnockView, Strike},
-        loose::{self, Operation},
-        tuning::Reload,
-        wells,
+    weapons::{
+        config::WeaponSettings,
+        reload::{
+            FinishInputs, State, Tick, engine,
+            extraction::{DetachKind, MagazineId},
+            frames,
+            insert::{self, InsertStage, InsertionSource},
+            knock::{self, GunMagazine, KNOCK, KnockView, Strike},
+            loose::{self, Operation},
+            tuning::Reload,
+            wells,
+        },
     },
 };
 
 impl State {
     /// Test the held pouch magazine's tip against the inserted magazine of the gun it is for, and
     /// queue that magazine's drop on a strike. The zone is published for the grab view.
-    pub(super) fn knock(&mut self, tick: &Tick, inputs: &FinishInputs, config: &ControllersConfig) {
+    pub(super) fn knock(&mut self, tick: &Tick, inputs: &FinishInputs, config: &WeaponSettings) {
         let reload = &Reload::of(&config.weapons.reload);
         let min_speed_mps = config.weapons.reload.knock.min_speed_mps;
         let holding = matches!(self.status.insertion.stage, InsertStage::Holding { .. })
@@ -128,7 +130,7 @@ impl State {
         self.queue_knock(tick, gun_hand, strike, reload)
     }
 
-    fn knock_guns(&mut self, tick: &Tick, inputs: &FinishInputs, config: &ControllersConfig) {
+    fn knock_guns(&mut self, tick: &Tick, inputs: &FinishInputs, config: &WeaponSettings) {
         if self.status.insertion.holding()
             || self.pending_detach.is_some()
             || self.pending_ejects.iter().any(Option::is_some)

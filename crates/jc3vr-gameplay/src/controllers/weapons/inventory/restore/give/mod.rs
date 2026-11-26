@@ -44,12 +44,12 @@ use parking_lot::Mutex;
 
 use crate::controllers::{
     bindings,
-    config::CONTROLLERS_CONFIG,
     loadout::{ObjectAddress, Socket, live},
     spawn::{self, SpawnDefinition},
     summary::localise,
     weapons::{
         c4,
+        config::WEAPONS_CONFIG,
         dual_wield::single,
         grenade::stock,
         hold::{self, act, refs::Strong, swap},
@@ -678,8 +678,7 @@ unsafe fn adopt(owner: &mut Character) {
         let line = match carried {
             Some(object) => {
                 // SAFETY: the carry set keeps the weapon alive.
-                let separate = CONTROLLERS_CONFIG.query(|config| {
-                    let weapons = &config.weapons;
+                let separate = WEAPONS_CONFIG.query(|weapons| {
                     separate_given_pistol(
                         weapons.separate_pistols,
                         weapons.inventory.enabled,

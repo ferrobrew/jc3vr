@@ -40,7 +40,7 @@ pub mod producers;
 
 use jc3vr_render::controllers::overlay::{pass::DrawSettings, resolve::HandPoses};
 
-use crate::controllers::{config::CONTROLLERS_CONFIG, hands::late, scheme};
+use crate::controllers::{hands::late, overlay::config::OVERLAY_CONFIG, scheme};
 
 /// Run the overlay's producers. Called once per render dispatch at the end of
 /// `RenderEngine::PostDraw`, before the engine's context lock is taken; it acts only on the
@@ -49,7 +49,8 @@ pub(crate) fn tick(eye: usize) {
     if !jc3vr_render::stereo::dispatch::first_ui_eye(eye) || jc3vr_render::stereo::far_phase() {
         return;
     }
-    let active = CONTROLLERS_CONFIG.query(|c| c.enabled && c.overlay.enabled)
+    let active = scheme::enabled()
+        && OVERLAY_CONFIG.query(|c| c.enabled)
         && scheme::is_controllers()
         && jc3vr_core::hooks::in_gameplay();
     producers::tick(active, &render_poses());
@@ -69,9 +70,9 @@ pub fn render_poses() -> [Option<HandPoses>; 2] {
 
 /// How the overlay draws, or `None` while it or the controllers are off.
 pub(crate) fn draw_settings() -> Option<DrawSettings> {
-    CONTROLLERS_CONFIG.query(|c| {
-        let overlay = &c.overlay;
-        (c.enabled && overlay.enabled).then_some(DrawSettings {
+    let enabled = scheme::enabled();
+    OVERLAY_CONFIG.query(|overlay| {
+        (enabled && overlay.enabled).then_some(DrawSettings {
             min_line_px: overlay.min_line_px,
             depth_tolerance_m: overlay.depth_tolerance_m,
             depth_tolerance_rel: overlay.depth_tolerance_rel,

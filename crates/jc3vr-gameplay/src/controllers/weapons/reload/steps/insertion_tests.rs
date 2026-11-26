@@ -274,7 +274,7 @@ fn world_pickup() -> (State, FakeMagazine, FinishInputs) {
 
 #[test]
 fn rejected_oversized_seat_keeps_rounds_and_chamber_and_obeys_grip_release() {
-    let config = ControllersConfig::default();
+    let config = WeaponSettings::default();
     for held in [true, false] {
         let mut state = state(InsertStage::Captured {
             elapsed_s: 0.1,
@@ -301,7 +301,7 @@ fn rejected_oversized_seat_keeps_rounds_and_chamber_and_obeys_grip_release() {
 
 #[test]
 fn escaped_capture_never_transfers_retained_rounds_or_changes_chamber() {
-    let config = ControllersConfig::default();
+    let config = WeaponSettings::default();
     for release in [false, true] {
         let mut state = state(InsertStage::Captured {
             elapsed_s: 0.1,
@@ -328,7 +328,7 @@ fn escaped_capture_never_transfers_retained_rounds_or_changes_chamber() {
 
 #[test]
 fn first_deferred_world_carry_recovers_and_seats_exactly_once() {
-    let config = ControllersConfig::default();
+    let config = WeaponSettings::default();
     let (mut state, mut adapter, pickup) = world_pickup();
     let sighting = state.loose_seen[0];
     assert_eq!(state.status.insertion.stage, InsertStage::Idle);
@@ -395,7 +395,7 @@ fn first_deferred_world_carry_recovers_and_seats_exactly_once() {
 
 #[test]
 fn first_deferred_world_carry_releases_without_transfer() {
-    let config = ControllersConfig::default();
+    let config = WeaponSettings::default();
     let (mut state, mut adapter, pickup) = world_pickup();
     state.insert_with(&tick(false), &pickup, &config, &mut adapter);
     assert_eq!(adapter.takes, vec![(Hand::Left, state.loose_seen[0])]);
@@ -429,7 +429,7 @@ fn first_deferred_world_carry_releases_without_transfer() {
 
 #[test]
 fn unavailable_carry_preserves_hand_occupancy_then_recovers_or_releases() {
-    let config = ControllersConfig::default();
+    let config = WeaponSettings::default();
     for release in [false, true] {
         let mut state = state(InsertStage::Holding { elapsed_s: 0.0 });
         let mut adapter = adapter();
@@ -459,7 +459,7 @@ fn unavailable_carry_preserves_hand_occupancy_then_recovers_or_releases() {
 
 #[test]
 fn unavailable_seat_rolls_back_idle_and_transfers_rounds_only_once_after_recovery() {
-    let config = ControllersConfig::default();
+    let config = WeaponSettings::default();
     for release in [false, true] {
         let mut state = state(InsertStage::Captured {
             elapsed_s: 0.0,
@@ -554,7 +554,7 @@ fn a_stale_pouch_grab_cannot_create_ammo_for_a_full_unlimited_magazine() {
     inputs.grabs[Hand::Left.index()] = Some(GrabVolume::MagazinePouch);
     let mut adapter = adapter();
     adapter.held = false;
-    state.insert_with(&tick, &inputs, &ControllersConfig::default(), &mut adapter);
+    state.insert_with(&tick, &inputs, &WeaponSettings::default(), &mut adapter);
     assert_eq!(state.status.insertion.stage, InsertStage::Idle);
     assert!(state.status.insert_hands.is_none());
     assert_eq!(state.status.counts.empty_pouch, 1);

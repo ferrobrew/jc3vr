@@ -11,10 +11,9 @@ use jc3gi::{
 use parking_lot::Mutex;
 
 use crate::controllers::{
-    config::CONTROLLERS_CONFIG,
     physical_hands::{
-        STALE_AFTER, bodies, characters::engine::proxy_body, doors::engine::is_vehicle_part,
-        physics::drawn_body, world::World,
+        STALE_AFTER, bodies, characters::engine::proxy_body, config::PHYSICAL_HANDS_CONFIG,
+        doors::engine::is_vehicle_part, physics::drawn_body, world::World,
     },
     scheme,
 };
@@ -47,8 +46,8 @@ pub(super) fn publish(held: [Option<Subject>; 2]) {
 }
 
 pub(super) unsafe fn step() {
-    let enabled = CONTROLLERS_CONFIG
-        .query(|c| c.enabled && c.physical_hands.enabled && c.physical_hands.pickup.enabled)
+    let enabled = scheme::enabled()
+        && PHYSICAL_HANDS_CONFIG.query(|c| c.enabled && c.pickup.enabled)
         && scheme::is_controllers()
         && jc3vr_core::hooks::in_gameplay()
         && !jc3vr_core::is_shutting_down();

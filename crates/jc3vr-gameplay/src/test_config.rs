@@ -48,29 +48,33 @@ use toml::Table;
 
 use crate::{
     controllers::{
-        aim::{WORLD_MARKERS_ENABLED, config::AIM_CONFIG},
+        aim::{GRAPPLE_SEAT, WORLD_MARKERS_ENABLED, config::AIM_CONFIG},
         aim_state::AIM_STATE_CONFIG,
         bindings::config::BINDINGS_CONFIG,
         body::{BODY_CONFIG, BodyDimensions, config::BODY_REMAP_CONFIG},
         config::{CONTROLLERS_CONFIG, ControllersConfig},
         fingers::config::FINGERS_CONFIG,
         glass::config::GLASS_CONFIG,
-        hands::config::HANDS_CONFIG,
+        hands::config::{GRAPPLE_PUMP, HANDS_CONFIG, MOUNTED_AIM_BY_HANDS},
         haptics::config::HAPTICS_CONFIG,
         locomotion::config::LOCOMOTION_CONFIG,
         overlay::config::OVERLAY_CONFIG,
         physical_hands::config::PHYSICAL_HANDS_CONFIG,
-        roomscale::config::ROOMSCALE_CONFIG,
+        roomscale::config::{DRIVING_VIEW_ENABLED, ROOMSCALE_CONFIG, TAKE_OFF_TO_HEAD},
         scheme,
-        snatch::config::SNATCH_CONFIG,
         summary::config::SUMMARY_CONFIG,
         vehicles::config::VEHICLES_CONFIG,
         weapons::config::WEAPONS_CONFIG,
     },
     grapple::physical::config::GRAPPLE_CONFIG,
     hooks::{
+        animation::canopy::SKIP_REEL_OPENING,
         character::config::{BODY_IK_CONFIG, BodyIkConfig},
-        input::config::{MOVEMENT_CONFIG, MovementConfig},
+        input::{
+            config::{MOVEMENT_CONFIG, MovementConfig},
+            parachute::{CANOPY_LINE_TURN, CANOPY_LINE_TURN_SCALE},
+            wingsuit::WINGSUIT_EVADE_ENABLED,
+        },
     },
 };
 
@@ -89,7 +93,6 @@ fn register() {
     AIM_CONFIG.bind(projection!(TestRoot, controllers.aim));
     OVERLAY_CONFIG.bind(projection!(TestRoot, controllers.overlay));
     WEAPONS_CONFIG.bind(projection!(TestRoot, controllers.weapons));
-    SNATCH_CONFIG.bind(projection!(TestRoot, controllers.weapons.snatch));
     BODY_REMAP_CONFIG.bind(projection!(TestRoot, controllers.body));
     ROOMSCALE_CONFIG.bind(projection!(TestRoot, controllers.roomscale));
     VEHICLES_CONFIG.bind(projection!(TestRoot, controllers.vehicles));
@@ -99,6 +102,30 @@ fn register() {
     GRAPPLE_CONFIG.bind(projection!(TestRoot, controllers.grapple));
     HAPTICS_CONFIG.bind(projection!(TestRoot, controllers.haptics));
     GLASS_CONFIG.bind(projection!(TestRoot, controllers.glass));
+    MOUNTED_AIM_BY_HANDS.bind(projection!(
+        TestRoot,
+        controllers.vehicles.mounted.aim_by_hands
+    ));
+    GRAPPLE_PUMP.bind(projection!(TestRoot, controllers.grapple.pump));
+    DRIVING_VIEW_ENABLED.bind(projection!(
+        TestRoot,
+        controllers.vehicles.driving_view.enabled
+    ));
+    TAKE_OFF_TO_HEAD.bind(projection!(TestRoot, controllers.vehicles.take_off_to_head));
+    GRAPPLE_SEAT.bind(projection!(TestRoot, controllers.grapple.seat));
+    CANOPY_LINE_TURN.bind(projection!(TestRoot, controllers.vehicles.canopy.line_turn));
+    CANOPY_LINE_TURN_SCALE.bind(projection!(
+        TestRoot,
+        controllers.vehicles.canopy.line_turn_scale
+    ));
+    SKIP_REEL_OPENING.bind(projection!(
+        TestRoot,
+        controllers.vehicles.canopy.skip_reel_opening
+    ));
+    WINGSUIT_EVADE_ENABLED.bind(projection!(
+        TestRoot,
+        controllers.vehicles.wingsuit_evade.enabled
+    ));
     WORLD_MARKERS_ENABLED.bind(projection!(TestRoot, hud.world_markers.enabled));
     STEREO_CONFIG.bind(projection!(TestRoot, stereo));
     EXPOSURE_CONFIG.bind(projection!(TestRoot, exposure));

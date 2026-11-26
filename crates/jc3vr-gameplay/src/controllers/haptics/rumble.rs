@@ -37,8 +37,7 @@ use jc3vr_input::{
 use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
-    config::CONTROLLERS_CONFIG,
-    haptics::{self, HapticsConfig},
+    haptics::{self, HapticsConfig, config::HAPTICS_CONFIG},
     scheme,
     weapons::fire,
 };
@@ -84,7 +83,7 @@ pub fn shot_duration(time: f32) -> f32 {
 
 /// Play a shot of a weapon with no fire rumble on `hand`: the kick alone, as [`Event::Kick`].
 pub(crate) fn kick(hand: Hand, kick_rad: f32) {
-    let config = CONTROLLERS_CONFIG.lock().haptics;
+    let config = *HAPTICS_CONFIG.lock();
     if !config.game_rumble {
         return;
     }
@@ -148,8 +147,9 @@ const KICK_AMPLITUDE_PER_RAD: f32 = 6.0;
 const MAX_SHOT_S: f32 = 0.4;
 
 fn acting() -> Option<HapticsConfig> {
-    let config = CONTROLLERS_CONFIG.lock().clone();
-    (config.enabled && config.haptics.enabled && scheme::is_controllers()).then_some(config.haptics)
+    let enabled = scheme::enabled();
+    let haptics = *HAPTICS_CONFIG.lock();
+    (enabled && haptics.enabled && scheme::is_controllers()).then_some(haptics)
 }
 
 /// Every one-off rumble, turned into a controller pulse before the game spawns it.

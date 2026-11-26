@@ -757,11 +757,7 @@ pub(super) unsafe fn sling(
         Pulled::Ragdoll { mass_kg, .. } => mass_kg,
         _ => state.mass_kg.unwrap_or(1.0),
     };
-    let mut line = LineTuning::of(
-        &input.config.weapons.snatch.swing,
-        mass_kg,
-        braced || line_held,
-    );
+    let mut line = LineTuning::of(&input.config.snatch.swing, mass_kg, braced || line_held);
     if let Pulled::Ragdoll { .. } = grabbed.kind {
         // A body is yanked in to arm's reach, where the free hand can take it, and then swung on
         // the line held there; at the swing's own length and reel, a body bitten a few metres off

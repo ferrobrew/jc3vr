@@ -23,10 +23,12 @@ use parking_lot::Mutex;
 
 use crate::controllers::{
     bindings::hold::{Desired, MapKind, Target, Want},
-    config::CONTROLLERS_CONFIG,
     hands,
     loadout::{Delivery, TakeSource},
-    physical_hands::{self, doors::engine::vehicle_of as resolve_vehicle, physics_object_of},
+    physical_hands::{
+        self, config::PHYSICAL_HANDS_CONFIG, doors::engine::vehicle_of as resolve_vehicle,
+        physics_object_of,
+    },
     scheme,
     vehicles::{
         is_mounted_weapon,
@@ -85,7 +87,8 @@ pub(crate) unsafe fn observe(weapon: &WeaponBase) {
 pub(crate) unsafe fn tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
     let enabled = scheme::is_controllers()
         && !jc3vr_core::is_shutting_down()
-        && CONTROLLERS_CONFIG.query(|config| config.enabled && config.physical_hands.enabled);
+        && scheme::enabled()
+        && PHYSICAL_HANDS_CONFIG.query(|config| config.enabled);
     let held = physical_hands::held_bodies();
     let now = Instant::now();
     let mut previous = std::mem::take(&mut *CONTROLLED.lock());

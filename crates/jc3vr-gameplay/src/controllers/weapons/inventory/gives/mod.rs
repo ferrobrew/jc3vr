@@ -48,10 +48,10 @@ use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
-    config::CONTROLLERS_CONFIG,
     hands::ik,
     loadout::{GiveSource, Place, live, slot_label},
     weapons::{
+        config::WEAPONS_CONFIG,
         engine::{object_of, slot_of, weapon_at},
         hold::{
             equip,
@@ -301,7 +301,7 @@ fn is_local(inventory: *const Inventory) -> bool {
 /// player's weapons (whose give-back the table restores from its cache), and the weapons ride the
 /// hands that took them.
 fn table_places() -> bool {
-    CONTROLLERS_CONFIG.query(|c| c.weapons.hold.either_hand)
+    WEAPONS_CONFIG.query(|c| c.hold.either_hand)
         && live::running()
         && !live::resetting()
         && !live::mission_holds()

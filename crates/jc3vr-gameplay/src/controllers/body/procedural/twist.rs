@@ -17,14 +17,14 @@ use jc3gi::character::character::{AnimationController, Character, Joint};
 use jc3vr_render::headpose::skeleton::SkeletonKey;
 use parking_lot::Mutex;
 
-use crate::controllers::{
-    body::procedural::{
+use crate::controllers::body::{
+    config::BODY_REMAP_CONFIG,
+    procedural::{
         config::ProceduralMode,
         joints::{from_joint, to_joint},
         leg_weight, published_status, skeleton,
         solver::twist::{Region, TwistRig},
     },
-    config::CONTROLLERS_CONFIG,
 };
 
 /// What the twist distribution did on its last pass.
@@ -55,7 +55,7 @@ pub(crate) unsafe fn after_solve(character: *mut Character) {
     let Some(character) = (unsafe { character.as_mut() }).filter(|c| c.m_IsLocalCharacter) else {
         return;
     };
-    let mode = CONTROLLERS_CONFIG.lock().body.procedural.mode;
+    let mode = BODY_REMAP_CONFIG.lock().procedural.mode;
     let body = published_status();
     let weights = [body.weight, leg_weight()];
     let mut status = TwistStatus {

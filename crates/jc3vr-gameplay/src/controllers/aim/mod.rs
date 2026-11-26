@@ -61,12 +61,12 @@ use crate::{
     controllers::{
         aim::{
             assist::{AssistCorrection, GrappleAssist},
+            config::{AIM_CONFIG, AimConfig},
             gun::HeldWeapon,
             ray::Ray,
             raycast::{CastOptions, RayHit, RaycastError},
         },
-        config::{CONTROLLERS_CONFIG, ControllersConfig},
-        hands::{self, ik, late},
+        hands::{self, config::HANDS_CONFIG, ik, late},
         mode::{self, Mode},
         physical_hands, scheme, vehicles,
         weapons::{
@@ -85,6 +85,11 @@ const MIN_TARGET_DISTANCE_M: f32 = 2.0;
 /// Whether the HUD's world markers are on, at `hud.world_markers.enabled` in the settings file;
 /// the payload binds the slot at startup. The aim casts the markers' fallback rays.
 pub static WORLD_MARKERS_ENABLED: ConfigSlot<bool> = ConfigSlot::new("hud.world_markers.enabled");
+
+/// Whether the seat grapple is on, at `controllers.grapple.seat` in the settings file: a field of
+/// the physical grapple's group, which the aim reads to cast the grapple's ray from a seat. The
+/// payload binds the slot at startup.
+pub static GRAPPLE_SEAT: ConfigSlot<bool> = ConfigSlot::new("controllers.grapple.seat");
 
 /// The aiming hooks, aggregated by [`crate::controllers::hook_library`].
 pub(crate) fn hook_library() -> HookLibrary {
@@ -197,7 +202,7 @@ pub fn status() -> AimStatus {
 /// `None` when neither aim is acting. The aim-state hook writes it after the game's own point is
 /// set, so the point still counts as set this frame.
 pub fn character_aim_point() -> Option<Vec3> {
-    let dominant = CONTROLLERS_CONFIG.lock().acting_hand();
+    let dominant = scheme::acting_hand();
     gun::character_aim_point(dominant).or_else(vehicles::mounted_aim_point)
 }
 
@@ -218,7 +223,11 @@ pub(crate) struct WorldHand {
 /// The tick's inputs: the configuration, the head's world pose, and each tracked hand's world
 /// poses.
 pub(crate) struct TickHands {
-    config: ControllersConfig,
+    aim: AimConfig,
+    /// The hand the roles follow ([`scheme::acting_hand`]).
+    dominant: Hand,
+    /// Whether the seat grapple is on ([`GRAPPLE_SEAT`]).
+    grapple_seat: bool,
     head: Pose,
     hands: [Option<WorldHand>; 2],
 }
@@ -258,14 +267,13 @@ fn update_post_sim(aim: *mut PlayerAimControl, dt: f32, character: *mut Characte
     if owner.is_some() {
         // SAFETY: the owner is the live local player, in the simulation phase outside the physics
         // step.
-        unsafe { c4::stick::probe(&tick.config) };
+        unsafe { c4::stick::probe() };
         // SAFETY: as above.
         unsafe { collide::probe() };
     }
 
-    let off = tick.config.acting_hand().other();
+    let off = tick.dominant.other();
     let grapple_ray = tick
-        .config
         .aim
         .grapple
         .then(|| tick.hands[off.index()])
@@ -278,7 +286,7 @@ fn update_post_sim(aim: *mut PlayerAimControl, dt: f32, character: *mut Characte
             let options = unsafe { CastOptions::ignoring_rider(owner) }.seeing_through();
             // SAFETY: the live local player's aim control, before the original, with no grapple
             // view set; the options name the live owner and its vehicle.
-            unsafe { assist::grapple_assist(aim, &ray, &options, &tick.config.aim) }
+            unsafe { assist::grapple_assist(aim, &ray, &options, &tick.aim) }
         }
         _ => None,
     };
@@ -297,10 +305,9 @@ fn update_post_sim(aim: *mut PlayerAimControl, dt: f32, character: *mut Characte
 
 /// Decide whether the aim acts this update and compose the hands into the world.
 fn begin() -> Result<TickHands, AimIdle> {
-    let config = CONTROLLERS_CONFIG.lock().clone();
     // The hands are composed even with both the gun and the grapple aim off: the grenade and C4
     // throws follow them too.
-    if !config.enabled {
+    if !scheme::enabled() {
         return Err(AimIdle::Disabled);
     }
     if !scheme::is_controllers() {
@@ -313,7 +320,7 @@ fn begin() -> Result<TickHands, AimIdle> {
     let xf = CockpitTransform::current(active.head.position, active.world_scale);
     let compose = |pose: Pose| xf.pose_to_world(pose);
     let records = ik::tick_records();
-    let late_update = config.hands.late_update;
+    let late_update = HANDS_CONFIG.query(|c| c.late_update);
     let hands = Hand::BOTH.map(|hand| {
         let cockpit = active.hands[hand.index()]?;
         let wrist = compose(cockpit.wrist);
@@ -331,8 +338,13 @@ fn begin() -> Result<TickHands, AimIdle> {
         return Err(AimIdle::NoHands);
     }
     let head = xf.pose_to_world(active.head);
+    let aim = *AIM_CONFIG.lock();
+    let dominant = scheme::acting_hand();
+    let grapple_seat = *GRAPPLE_SEAT.lock();
     Ok(TickHands {
-        config,
+        aim,
+        dominant,
+        grapple_seat,
         head,
         hands,
     })
@@ -352,7 +364,7 @@ unsafe fn finish(
     grapple_ray: Option<Ray>,
     grapple_assist: Option<GrappleAssist>,
 ) {
-    let cfg = &tick.config.aim;
+    let cfg = &tick.aim;
     let weapon = cfg
         .gun
         .then(|| unsafe { gun::held_weapon(owner) })
@@ -437,7 +449,7 @@ unsafe fn finish(
     };
     // SAFETY: the owner is the live local player character, on the simulation thread.
     let mounted = unsafe { owner.IsInMountedGunState() };
-    let body_point = vehicles::passenger::body_aim_point(&tick.config, seat, mounted, gun_targets);
+    let body_point = vehicles::passenger::body_aim_point(seat, mounted, gun_targets);
     vehicles::passenger::note(body_point.is_some());
     // SAFETY: the aim control is live for its own update, and the original has run.
     if let Some(aim) = unsafe { aim.as_mut() }
@@ -447,18 +459,12 @@ unsafe fn finish(
             data: point.to_array(),
         };
     }
-    sights::tuning::service(
-        &cfg.sight_tuning,
-        tick.head,
-        held.as_ref(),
-        tick.config.acting_hand(),
-    );
+    sights::tuning::service(&cfg.sight_tuning, tick.head, held.as_ref(), tick.dominant);
 
-    let dominant = tick.config.acting_hand();
+    let dominant = tick.dominant;
     // SAFETY: the aim control is live for its own update, and the original has run.
     if let Some(aim) = unsafe { aim.as_mut() }
-        && let Some(point) =
-            grenade::fallback_target(&tick.config, hands[dominant.index()].map(|h| h.target))
+        && let Some(point) = grenade::fallback_target(hands[dominant.index()].map(|h| h.target))
     {
         aim.m_AimPos[TargetType::TARGET_GRENADE as usize] = Vector3 {
             data: point.to_array(),
@@ -470,7 +476,7 @@ unsafe fn finish(
     let fire_enabled = hook.is_some_and(|hook| unsafe { hook.GetFireInputEnabled() });
     // SAFETY: as above.
     let seat_range_m = hook
-        .filter(|hook| tick.config.grapple.seat && unsafe { stands_in(owner, hook) })
+        .filter(|hook| tick.grapple_seat && unsafe { stands_in(owner, hook) })
         .and_then(|hook| unsafe { hook.GetTuning().as_ref() })
         .map(|tuning| tuning.m_GrappleDistance)
         .filter(|range| range.is_finite() && *range > 0.0);

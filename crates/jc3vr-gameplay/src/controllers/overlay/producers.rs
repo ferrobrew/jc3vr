@@ -37,28 +37,27 @@ use parking_lot::Mutex;
 
 use crate::controllers::{
     aim::{
-        self, GRAPPLE_ORIGIN_M, GrappleAim, HandAim, HandSource, raycast::RayHit, sights::tuning,
+        self, GRAPPLE_ORIGIN_M, GrappleAim, HandAim, HandSource, config::AIM_CONFIG,
+        raycast::RayHit, sights::tuning,
     },
     body::{
         estimator,
         rig::{grounded, visual},
     },
-    config::{CONTROLLERS_CONFIG, GunReadout, OverlayConfig},
+    config::{GunReadout, OverlayConfig},
     hands::tiers,
     mode,
+    overlay::config::OVERLAY_CONFIG,
+    scheme,
 };
 
 /// Build and submit every producer's primitives for this frame, given the render-time hand poses.
 /// Every producer's slot is cleared while `active` is false.
 pub fn tick(active: bool, hands: &[Option<HandPoses>; 2]) {
-    let (config, dominant, grapple_origin, sight_tuning) = CONTROLLERS_CONFIG.query(|c| {
-        (
-            c.overlay,
-            c.acting_hand(),
-            GRAPPLE_ORIGIN_M,
-            c.aim.sight_tuning.enabled,
-        )
-    });
+    let config = *OVERLAY_CONFIG.lock();
+    let dominant = scheme::acting_hand();
+    let grapple_origin = GRAPPLE_ORIGIN_M;
+    let sight_tuning = AIM_CONFIG.query(|c| c.sight_tuning.enabled);
     let world_scale = VR_CONFIG.lock().world_scale;
     if !active {
         for source in PRODUCED {

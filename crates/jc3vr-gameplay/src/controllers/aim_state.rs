@@ -65,9 +65,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     controllers::{
-        aim,
-        config::CONTROLLERS_CONFIG,
-        hands,
+        aim, hands,
         mode::{self, Mode},
         scheme, weapons,
     },
@@ -323,7 +321,7 @@ fn controllers() -> bool {
 
 /// Whether the arm aim IK skip acts now: its switch is on, under the controller scheme.
 fn skip_arm_ik() -> bool {
-    CONTROLLERS_CONFIG.query(|c| c.aim_state.skip_arm_ik) && controllers()
+    AIM_STATE_CONFIG.query(|c| c.skip_arm_ik) && controllers()
 }
 
 /// The local player character behind `character`, or `None` for any other character.

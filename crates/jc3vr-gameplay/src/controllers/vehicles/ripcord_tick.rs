@@ -16,17 +16,19 @@ use crate::controllers::{
         hold::{Desired, MapKind, Target, Want},
     },
     body,
-    config::ControllersConfig,
     fingers::grip::{self, Grip, GripSource},
     grab::{GrabVolume, GripTarget, Mark, MarkAt, MarkStyle, Shown, Tier},
     hands::{self, ActiveHands},
     haptics,
     mode::{AirborneVariant, Mode},
-    vehicles::ripcord::{self, RipcordEvent, RipcordState, StepInputs},
+    vehicles::{
+        config::VehicleSettings,
+        ripcord::{self, RipcordEvent, RipcordState, StepInputs},
+    },
 };
 
 /// Whether the ripcord acts in `mode`.
-pub(super) fn ripcord_acts(mode: Mode, config: &ControllersConfig) -> bool {
+pub(super) fn ripcord_acts(mode: Mode, config: &VehicleSettings) -> bool {
     config.vehicles.ripcord.enabled
         && matches!(
             mode,
@@ -36,9 +38,13 @@ pub(super) fn ripcord_acts(mode: Mode, config: &ControllersConfig) -> bool {
 
 /// The ripcord's grip targets this tick: its volume, held by the hand that has it, and its reach
 /// margin while it is free. Lets go of it outside a fall and the wingsuit.
-pub(super) fn targets(mode: Mode, active: &ActiveHands) -> Vec<GripTarget> {
+pub(super) fn targets(
+    mode: Mode,
+    active: &ActiveHands,
+    config: &VehicleSettings,
+) -> Vec<GripTarget> {
     let mut state = STATE.lock();
-    if !ripcord_acts(mode, &active.config) {
+    if !ripcord_acts(mode, config) {
         let mut events = Vec::new();
         ripcord::release_all(&mut state.ripcord, &mut events);
         state.side = None;
@@ -46,7 +52,7 @@ pub(super) fn targets(mode: Mode, active: &ActiveHands) -> Vec<GripTarget> {
         log_events(&events);
         return Vec::new();
     }
-    let side = active.config.acting_hand();
+    let side = config.dominant;
     let player = body::player();
     let torso = active.torso;
     let shoulders = body::shoulder_positions(active.head.position, torso, &player);
@@ -85,8 +91,9 @@ pub(crate) fn finish(
     let Some(active) = hands::active_hands_raw() else {
         return;
     };
+    let config = VehicleSettings::read();
     let mut state = STATE.lock();
-    let Some(side) = state.side.filter(|_| ripcord_acts(mode, &active.config)) else {
+    let Some(side) = state.side.filter(|_| ripcord_acts(mode, &config)) else {
         return;
     };
     let inputs = StepInputs {
@@ -94,7 +101,7 @@ pub(crate) fn finish(
         grips: active.hands.map(|h| h.map(|h| h.grip.position)),
         held: Hand::BOTH.map(|hand| controls.hand(hand).hold.held()),
         grabs: grabs.map(|g| g == Some(GrabVolume::Ripcord)),
-        pull_m: active.config.vehicles.ripcord.pull_m,
+        pull_m: config.vehicles.ripcord.pull_m,
     };
     let mut events = Vec::new();
     let pulled = ripcord::step(&mut state.ripcord, &inputs, &mut events);

@@ -53,14 +53,20 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     controllers::{
-        config::{CONTROLLERS_CONFIG, ControllersConfig},
         fingers::grip::{self, Grip, GripSource},
-        hands::{self, CockpitHand, tiers},
-        haptics,
+        hands::{
+            self, CockpitHand,
+            config::{GRAPPLE_PUMP, HANDS_CONFIG},
+            tiers,
+        },
+        haptics, scheme,
     },
     grapple::{
         hook,
-        physical::{PhysicalGrappleTuning, swing},
+        physical::{
+            config::{GRAPPLE, SwingTuning},
+            swing,
+        },
     },
     hooks::input::locomotion::character_from_context,
 };
@@ -197,12 +203,13 @@ pub fn status() -> AnchorStatus {
 }
 
 /// Read the grapple line for the tick, and pulse the grapple hand when the hook leaves the gauntlet
-/// or attaches. Called from the game stage while the controllers are enabled.
+/// or attaches. Called from the game stage while the controllers are enabled, with the hand the
+/// roles follow ([`scheme::acting_hand`](crate::controllers::scheme::acting_hand)).
 ///
 /// # Safety
 ///
 /// The game stage: the game thread, before the world update.
-pub(crate) unsafe fn input_tick(config: &ControllersConfig) {
+pub(crate) unsafe fn input_tick(dominant: Hand) {
     let hook = unsafe { hook::local_hook() }.map(|hook| &*hook);
     let wire = hook.is_some_and(|h| h.m_ActiveWire.exists());
     let anchor = hook.and_then(|h| unsafe { attach_point(h) });
@@ -213,9 +220,9 @@ pub(crate) unsafe fn input_tick(config: &ControllersConfig) {
     state.status.anchor = anchor;
     state.anchor_at = anchor.map(|_| Instant::now());
     drop(state);
-    declare_line_grip(config.acting_hand().other());
+    declare_line_grip(dominant.other());
 
-    let hand = config.acting_hand().other();
+    let hand = dominant.other();
     if fired {
         haptics::play(hand, Event::GrappleFire);
     }
@@ -306,10 +313,12 @@ fn hang_task_update(ctx: *mut StateContext, p1: *mut c_void, p2: *mut c_void) {
 
 /// Push the local player's hang body by the grapple hand's displacement and motion.
 unsafe fn swing(character: &mut Character) {
-    let config = CONTROLLERS_CONFIG.lock().clone();
-    let anchor = config.hands.anchor;
-    let pump = PhysicalGrappleTuning::of(&config.grapple).swing;
-    let hand = config.acting_hand().other();
+    let anchor = HANDS_CONFIG.query(|c| c.anchor);
+    let pump = SwingTuning {
+        pump: *GRAPPLE_PUMP.lock(),
+        ..GRAPPLE.swing
+    };
+    let hand = scheme::acting_hand().other();
     let now = Instant::now();
     // Read before this module's state is locked, so that no other lock is taken while it is held.
     let anchored = tiers::status().effective[hand.index()] == tiers::HandTier::Anchored;

@@ -45,9 +45,11 @@ use self::{
     scan::ModIds,
 };
 use crate::controllers::{
-    config::CONTROLLERS_CONFIG,
     hands::late,
-    physical_hands::physics::{self, guns},
+    physical_hands::{
+        config::PHYSICAL_HANDS_CONFIG,
+        physics::{self, guns},
+    },
 };
 
 /// The view's readout for the debug UI and the status rows.
@@ -118,8 +120,8 @@ pub fn status() -> ColliderViewStatus {
 
 /// Switch the view on or off.
 pub fn toggle() {
-    let mut config = CONTROLLERS_CONFIG.edit();
-    let view = &mut config.physical_hands.collider_view;
+    let mut config = PHYSICAL_HANDS_CONFIG.edit();
+    let view = &mut config.collider_view;
     view.enabled = !view.enabled;
     tracing::info!(enabled = view.enabled, "collider view: toggled");
 }
@@ -127,8 +129,8 @@ pub fn toggle() {
 /// Register the step counter while the view is on, and remove it while it is off. Called once
 /// per frame on the game thread, ahead of the game's update.
 pub fn frame_tick() {
-    let wanted = !jc3vr_core::is_shutting_down()
-        && CONTROLLERS_CONFIG.query(|c| c.physical_hands.collider_view.enabled);
+    let wanted =
+        !jc3vr_core::is_shutting_down() && PHYSICAL_HANDS_CONFIG.query(|c| c.collider_view.enabled);
     // SAFETY: the game thread, ahead of the game's update, which fires the callbacks.
     let registered = unsafe { callback::reconcile(wanted) };
     if registered && !CLEANUP_REGISTERED.swap(true, Ordering::AcqRel) {
@@ -147,7 +149,7 @@ pub fn frame_tick() {
 ///
 /// The game thread, after the engine's render update and outside the physics step.
 pub unsafe fn render_tick(dtf: f32) {
-    let config = CONTROLLERS_CONFIG.lock().physical_hands.collider_view;
+    let config = PHYSICAL_HANDS_CONFIG.lock().collider_view;
     if !config.enabled || !jc3vr_core::hooks::in_gameplay() {
         if WAS_ACTIVE.swap(false, Ordering::Relaxed) {
             store::clear(Source::ColliderView);

@@ -8,25 +8,23 @@ use jc3gi::character::character::Character;
 use jc3vr_input::frame::Hand;
 use jc3vr_render::headpose::teleport;
 
-use crate::controllers::{
-    config::CONTROLLERS_CONFIG,
-    physical_hands::{
-        climb::{
-            config::HandClimbTuning,
-            engine, native,
-            solve::{
-                ClimbTuning, Follow, MantleTuning, body_target, carry_velocity, climb_velocity,
-                fling_carry, is_ledge, release_velocity, slope_follow, smooth_motion,
-            },
-            state::{
-                Carry, Event, Grip, LOG_PERIOD, MAX_MANTLE_STEPS, MAX_STALE_STEPS, MantleStep,
-                MantleTick, Request, STATE, enabled,
-            },
+use crate::controllers::physical_hands::{
+    climb::{
+        config::HandClimbTuning,
+        engine, native,
+        solve::{
+            ClimbTuning, Follow, MantleTuning, body_target, carry_velocity, climb_velocity,
+            fling_carry, is_ledge, release_velocity, slope_follow, smooth_motion,
         },
-        physics::{self, drive::Goal},
-        pickup::PICKUP,
-        stunt,
+        state::{
+            Carry, Event, Grip, LOG_PERIOD, MAX_MANTLE_STEPS, MAX_STALE_STEPS, MantleStep,
+            MantleTick, Request, STATE, enabled,
+        },
     },
+    config::PHYSICAL_HANDS_CONFIG,
+    physics::{self, drive::Goal},
+    pickup::PICKUP,
+    stunt,
 };
 
 /// The climb's part of the hand bodies' pre-simulation step: take and end the grips, and move the
@@ -38,7 +36,7 @@ use crate::controllers::{
 /// The thread that steps the physics world, outside the step, after the characters' proxy
 /// updates (the pre-simulation callback).
 pub unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2] {
-    let config = CONTROLLERS_CONFIG.lock().physical_hands;
+    let config = *PHYSICAL_HANDS_CONFIG.lock();
     let climb = HandClimbTuning::of(&config.climb);
     let context = unsafe { engine::gate_context() };
     native::observe(context);

@@ -33,6 +33,7 @@ use crate::controllers::{
         tuning::PALMS,
     },
     scheme,
+    weapons::config::WEAPONS_CONFIG,
 };
 
 pub fn status() -> HandBodiesStatus {
@@ -363,7 +364,7 @@ pub(super) fn acting_palms(config: &PhysicalHandsConfig) -> Option<ActingPalms> 
         guns::targets::apply_physical(
             &mut active.hands,
             active.head.position,
-            &active.config.weapons.heft,
+            &WEAPONS_CONFIG.query(|c| c.heft),
         );
     }
     let xf = CockpitTransform::current(active.head.position, active.world_scale);

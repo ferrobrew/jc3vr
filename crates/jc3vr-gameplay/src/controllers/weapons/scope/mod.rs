@@ -48,10 +48,12 @@ use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
     aim::{self, AimStatus, HandSource, gun::HeldWeapon, sights::SightSource},
-    config::CONTROLLERS_CONFIG,
     hands::late,
     scheme,
-    weapons::scope::lens::{LENS, Lens, LensTuning, SightAnchor},
+    weapons::{
+        config::WEAPONS_CONFIG,
+        scope::lens::{LENS, Lens, LensTuning, SightAnchor},
+    },
 };
 
 /// The scope hooks, aggregated by [`crate::controllers::weapons::hook_library`].
@@ -155,7 +157,7 @@ pub(crate) fn tick(eye: usize) {
     if !jc3vr_render::stereo::dispatch::first_ui_eye(eye) || jc3vr_render::stereo::far_phase() {
         return;
     }
-    let enabled = CONTROLLERS_CONFIG.query(|c| c.enabled && c.weapons.scopes);
+    let enabled = scheme::enabled() && WEAPONS_CONFIG.query(|c| c.scopes);
     let mut state = STATE.lock();
     let plan = plan(enabled, &LENS, &mut state.anchors);
     let mut status = STATUS.lock();

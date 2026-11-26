@@ -78,6 +78,7 @@ use parking_lot::Mutex;
 use crate::{
     controllers::{
         body::{
+            config::BODY_REMAP_CONFIG,
             firm_ragdoll,
             ik_body::{self, GateInput},
             procedural::{
@@ -99,7 +100,6 @@ use crate::{
             },
             rig::{grounded, torso::relative_heading, torso_turn},
         },
-        config::CONTROLLERS_CONFIG,
         hands::{active_hands_raw, arm_remaps},
         locomotion::{anchor::JUMP_GRACE_S, status as locomotion_status},
         mode::{AirborneVariant, Mode, current as current_mode},
@@ -262,7 +262,7 @@ pub(crate) unsafe fn at_solve_gate(character: &mut Character, dt: f32) -> bool {
 /// As [`at_solve_gate`].
 unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
     let (config, follow, ik_config) =
-        CONTROLLERS_CONFIG.query(|c| (c.body.procedural, c.body.rig.follow, c.body.ik));
+        BODY_REMAP_CONFIG.query(|c| (c.procedural, c.rig.follow, c.ik));
     let scale = VR_CONFIG.lock().world_scale;
     let now = Instant::now();
     // Read before the gate's own state too: it takes the configuration and the controller frame.

@@ -25,12 +25,14 @@ use parking_lot::Mutex;
 use windows::Win32::Graphics::Direct3D11::{ID3D11Device, ID3D11DeviceContext};
 
 use crate::controllers::{
-    body::estimator::{
-        Reading,
-        config::{DEFAULT_WEIGHTS_FILE, WEIGHTS_SCRIPT},
-        producer, publish, withdraw,
+    body::{
+        config::BODY_REMAP_CONFIG,
+        estimator::{
+            Reading,
+            config::{DEFAULT_WEIGHTS_FILE, WEIGHTS_SCRIPT},
+            producer, publish, withdraw,
+        },
     },
-    config::CONTROLLERS_CONFIG,
     roomscale::posture::EffectivePosture,
 };
 
@@ -112,7 +114,7 @@ pub struct ExecutorStatus {
 /// Run one frame of the executor: take the posted window, record its pass, and publish what has
 /// finished. Called once per frame on the render thread with the engine's context lock held.
 pub fn render_tick(context: &ID3D11DeviceContext, device: &ID3D11Device) {
-    let config = CONTROLLERS_CONFIG.lock().body.estimator.clone();
+    let config = BODY_REMAP_CONFIG.lock().estimator.clone();
     let mut executor = EXECUTOR.lock();
     if !config.enabled {
         if !matches!(executor.stage, Stage::Off) {
@@ -174,7 +176,7 @@ pub fn shutdown() -> bool {
 
 /// The executor's state, for the debug UI.
 pub fn status() -> ExecutorStatus {
-    let enabled = CONTROLLERS_CONFIG.lock().body.estimator.enabled;
+    let enabled = BODY_REMAP_CONFIG.lock().estimator.enabled;
     let executor = EXECUTOR.lock();
     ExecutorStatus {
         stage: match executor.stage {

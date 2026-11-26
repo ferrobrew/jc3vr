@@ -9,9 +9,9 @@
 use jc3vr_input::{frame::Hand, haptics::cues::Event};
 
 use crate::controllers::{
-    config::ControllersConfig,
     haptics,
     weapons::{
+        config::WeaponSettings,
         pouch_models,
         reload::{
             GunTick, State, Tick, WeaponTick,
@@ -66,7 +66,7 @@ impl State {
         queued
     }
 
-    pub(super) fn finish_ejects(&mut self, tick: &Tick, config: &ControllersConfig) {
+    pub(super) fn finish_ejects(&mut self, tick: &Tick, config: &WeaponSettings) {
         for hand in Hand::BOTH {
             let Some(request) = self.pending_ejects[hand.index()] else {
                 continue;

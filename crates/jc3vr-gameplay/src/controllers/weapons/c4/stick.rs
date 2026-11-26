@@ -29,11 +29,13 @@ use crate::controllers::{
         ray::Ray,
         raycast::{self, CastOptions},
     },
-    config::ControllersConfig,
     hands::held::held_matrix,
-    weapons::c4::{
-        self,
-        tuning::{C4Tuning, StickTuning},
+    weapons::{
+        c4::{
+            self,
+            tuning::{C4Tuning, StickTuning},
+        },
+        config::WEAPONS_CONFIG,
     },
 };
 
@@ -65,9 +67,10 @@ pub struct StickAt {
 /// # Safety
 ///
 /// The simulation thread outside the physics step, with a live local player character.
-pub(crate) unsafe fn probe(config: &ControllersConfig) {
-    let tuning = &C4Tuning::of(&config.weapons.c4);
-    if !(config.weapons.c4_throw && tuning.stick.enabled) {
+pub(crate) unsafe fn probe() {
+    let (c4_throw, c4) = WEAPONS_CONFIG.query(|c| (c.c4_throw, c.c4));
+    let tuning = &C4Tuning::of(&c4);
+    if !(c4_throw && tuning.stick.enabled) {
         c4::publish_preview(None);
         return;
     }

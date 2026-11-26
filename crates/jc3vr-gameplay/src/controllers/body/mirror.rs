@@ -30,8 +30,8 @@ use parking_lot::Mutex;
 
 use crate::controllers::{
     body::procedural::{head::head_bone_world, joints::from_joint, skeleton},
-    config::CONTROLLERS_CONFIG,
     hands::ik::tick_records,
+    overlay::config::OVERLAY_CONFIG,
     weapons::{
         docks::{
             self, SocketUse,
@@ -116,8 +116,7 @@ impl PouchRenderContext {
 /// Publish only copied values after the model producer applies this render's matrices.
 pub(crate) fn pouches_rendered(sample: &PouchRenderSample) {
     clear_pouch_render();
-    let (enabled, distance) =
-        CONTROLLERS_CONFIG.query(|c| (c.overlay.body_mirror, c.overlay.body_mirror_distance_m));
+    let (enabled, distance) = OVERLAY_CONFIG.query(|c| (c.body_mirror, c.body_mirror_distance_m));
     if !enabled {
         return;
     }
@@ -151,8 +150,7 @@ pub(crate) unsafe fn after_solve(character: *mut Character) {
     let Some(character) = (unsafe { character.as_ref() }).filter(|c| c.m_IsLocalCharacter) else {
         return;
     };
-    let (enabled, distance) =
-        CONTROLLERS_CONFIG.query(|c| (c.overlay.body_mirror, c.overlay.body_mirror_distance_m));
+    let (enabled, distance) = OVERLAY_CONFIG.query(|c| (c.body_mirror, c.body_mirror_distance_m));
     if !enabled {
         return;
     }

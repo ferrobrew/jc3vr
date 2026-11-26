@@ -41,8 +41,8 @@ use jc3vr_input::frame::{self, Hand};
 use parking_lot::Mutex;
 
 use crate::controllers::{
-    config::CONTROLLERS_CONFIG,
     fingers::{
+        config::FINGERS_CONFIG,
         curl::{CurlSource, Finger},
         grip::{
             SourceLog,
@@ -92,7 +92,8 @@ pub(crate) unsafe fn after_solve(character: *mut Character) {
     let Some(character) = (unsafe { character.as_mut() }).filter(|c| c.m_IsLocalCharacter) else {
         return;
     };
-    let (config, enabled) = CONTROLLERS_CONFIG.query(|c| (c.fingers, c.enabled));
+    let config = *FINGERS_CONFIG.lock();
+    let enabled = scheme::enabled();
     let mut state = STATE.lock();
     if !config.enabled || !enabled || !scheme::is_controllers() {
         *state = FingerState::EMPTY;
