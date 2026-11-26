@@ -8,10 +8,8 @@ use openxr as xr;
 use openxr::{sys, sys::Handle as _};
 
 use crate::{
-    controllers::{
-        frame::{self, ButtonSet, Hand, InteractionProfile},
-        haptics,
-    },
+    controllers::frame::{self, ButtonSet, Hand, InteractionProfile},
+    input_core::haptics::output as haptic_output,
     vr::input::{
         ActionsOrigin, HandTrackingStatus, InputStatus, PROFILES_DIRTY, STATUS,
         actions::Actions,
@@ -155,7 +153,7 @@ impl InputState {
         frame::clear();
         semantic::frame::clear();
         sources::clear();
-        haptics::clear();
+        haptic_output::clear();
         set_bound_hand(None);
         let mut status = STATUS.lock();
         status.attached = false;

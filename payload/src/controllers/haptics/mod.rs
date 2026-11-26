@@ -33,11 +33,12 @@ use crate::{
         diagnostics,
         frame::Hand,
         haptics::{
-            mixer::{HapticPulse, MIX, MixStats, Mixer, Sustained, Transient},
+            mixer::{MixStats, Sustained, Transient},
             vocabulary::{Primitive, VOCABULARY},
         },
         scheme,
     },
+    input_core::haptics::output,
 };
 
 /// The haptics' hooks, aggregated by [`crate::controllers::hook_library`].
@@ -97,11 +98,11 @@ pub fn sustain(hand: Hand, source: Sustain, level: f32) {
         frequency_hz: frequency(cue.primitive),
         hold: seconds(shape.duration_s),
     };
-    MIXER.lock().sustain(hand, sustained, Instant::now());
+    output::with_mixer(|mixer| mixer.sustain(hand, sustained, Instant::now()));
 }
 
 pub(crate) fn cancel_sustain(hand: Hand, source: Sustain) {
-    MIXER.lock().cancel_sustain(hand, source);
+    output::with_mixer(|mixer| mixer.cancel_sustain(hand, source));
 }
 
 /// Play a weapon's fire rumble on `hand` as [`Event::Shot`], at the amplitude and for the length
@@ -120,22 +121,6 @@ pub(crate) fn play_shot(hand: Hand, amplitude: f32, duration_s: f32) {
     queue(hand, Event::Shot, transient);
 }
 
-/// What each hand plays from `now`, indexed by [`Hand::index`], for the VR frame loop to send.
-pub(crate) fn mix(now: Instant) -> [Option<HapticPulse>; 2] {
-    let out = MIXER.lock().mix(now, &MIX);
-    let mut status = STATUS.lock();
-    for hand in Hand::BOTH {
-        status.last_output[hand.index()] = out[hand.index()].map(|p| p.amplitude);
-    }
-    out
-}
-
-/// Forget everything the mixer holds: the controllers or the haptics are off, or the session
-/// ended.
-pub(crate) fn clear() {
-    MIXER.lock().clear();
-}
-
 /// Play `primitive` on `hand` at full strength, for the debug UI, whatever the switches say; the
 /// master switch still applies when the frame loop plays it.
 pub fn test(hand: Hand, primitive: Primitive) {
@@ -152,7 +137,7 @@ pub fn test(hand: Hand, primitive: Primitive) {
         frequency_hz: frequency(primitive),
         priority: primitive.priority(),
     };
-    MIXER.lock().transient(hand, transient);
+    output::with_mixer(|mixer| mixer.transient(hand, transient));
 }
 
 /// One one-off cue sent, for the readout.
@@ -186,7 +171,8 @@ impl HapticsStatus {
 
 pub fn status() -> HapticsStatus {
     let mut status = STATUS.lock().clone();
-    status.mix = MIXER.lock().stats();
+    status.mix = output::with_mixer(|mixer| mixer.stats());
+    status.last_output = output::last_output();
     status
 }
 
@@ -194,8 +180,6 @@ pub fn status() -> HapticsStatus {
 const MAX_RECENT: usize = 12;
 /// How long a sustained primitive plays when tested, seconds.
 const TEST_SUSTAIN_S: f32 = 0.4;
-
-static MIXER: Mutex<Mixer> = Mutex::new(Mixer::new());
 
 static STATUS: Mutex<HapticsStatus> = Mutex::new(HapticsStatus {
     recent: Vec::new(),
@@ -231,7 +215,7 @@ fn seconds(s: f32) -> Duration {
 }
 
 fn queue(hand: Hand, event: Event, transient: Transient) {
-    MIXER.lock().transient(hand, transient);
+    output::with_mixer(|mixer| mixer.transient(hand, transient));
     let cue = event.cue();
     diagnostics::note_haptic(diagnostics::Cue {
         hand,

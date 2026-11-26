@@ -33,12 +33,12 @@ use openxr as xr;
 use parking_lot::Mutex;
 
 use crate::{
-    controllers::{
-        config::InputConfig,
-        frame::{ActionSetKind, GripPress, Hand, HandFrame, HandInputs, InteractionProfile},
+    controllers::frame::{
+        ActionSetKind, GripPress, Hand, HandFrame, HandInputs, InteractionProfile,
     },
     vr::input::{
         actions::{Actions, SetId},
+        config::InputConfig,
         layout::{self, BoolInput, FloatInput, Input, Profile, Vec2Input},
         semantic::{
             SCHEMA_VERSION, SemanticSet, defaults,

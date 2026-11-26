@@ -206,9 +206,6 @@ payload/src/vr/eye_resolution.rs -> payload
 payload/src/vr/frame.rs -> payload
 payload/src/vr/frame_loop.rs -> payload
 payload/src/vr/input/restart.rs -> payload
-payload/src/vr/input/sample.rs -> gameplay
-payload/src/vr/input/self_check.rs -> gameplay
-payload/src/vr/input/state.rs -> gameplay
 payload/src/vr/mirror/mod.rs -> payload
 payload/src/vr/recenter.rs -> payload
 payload/src/vr/resolution.rs -> payload

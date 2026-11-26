@@ -14,20 +14,18 @@ use tracking_format::input::{
 };
 
 use crate::{
-    controllers::{
-        config::ControllersConfig,
-        frame::{
-            self, ButtonSet, ControllerFrame, HAND_JOINT_COUNT, Hand, HandFrame, HandInputs,
-            HandJoint, InteractionProfile, Pose, TrackedPose, derive_buttons,
-        },
-        haptics::{self, mixer::HapticPulse},
+    controllers::frame::{
+        self, ButtonSet, ControllerFrame, HAND_JOINT_COUNT, Hand, HandFrame, HandInputs, HandJoint,
+        InteractionProfile, Pose, TrackedPose, derive_buttons,
     },
+    input_core::haptics::{mixer::HapticPulse, output as haptic_output},
     vr::{
         convert,
         input::{
             PROFILES_DIRTY, STATUS,
             actions::{SetId, State},
             active_action_set,
+            config::SamplingConfig,
             flight_pose::{self, PendingHead},
             layout::{BoolInput, FloatInput, HandsAction, Vec2Input},
             self_check::CheckFrame,
@@ -55,7 +53,7 @@ impl InputState {
         local: &xr::Space,
         time: xr::Time,
         baseline: Option<Baseline>,
-        cfg: &ControllersConfig,
+        cfg: &SamplingConfig,
         flight_head: Option<PendingHead>,
     ) -> Option<ControllerFrame> {
         if !cfg.enabled {
@@ -63,7 +61,7 @@ impl InputState {
             history::interrupt(DiscontinuityReason::Unavailable);
             frame::clear();
             semantic_frame::clear();
-            haptics::clear();
+            haptic_output::clear();
             self.previous_buttons = [ButtonSet::EMPTY; 2];
             return None;
         }
@@ -241,7 +239,7 @@ impl InputState {
         &self,
         session: &xr::Session<xr::D3D11>,
         set: SemanticSet,
-        cfg: &ControllersConfig,
+        cfg: &SamplingConfig,
         first_error: &mut Option<anyhow::Error>,
         observed: &mut Vec<RouteSample>,
     ) -> SetState {
@@ -457,14 +455,14 @@ impl InputState {
     fn flush_haptics(
         &self,
         session: &xr::Session<xr::D3D11>,
-        cfg: &ControllersConfig,
+        cfg: &SamplingConfig,
     ) -> anyhow::Result<()> {
         let haptics_cfg = cfg.haptics;
         if !haptics_cfg.enabled {
-            haptics::clear();
+            haptic_output::clear();
             return Ok(());
         }
-        let pending = haptics::mix(Instant::now());
+        let pending = haptic_output::mix(Instant::now());
         for hand in Hand::BOTH {
             if let Some(pulse) = pending[hand.index()] {
                 let vibration = vibration(pulse, haptics_cfg.intensity);
@@ -521,7 +519,7 @@ struct Sampling<'a> {
     time: xr::Time,
     /// The recenter baseline, re-basing LOCAL into the cockpit frame.
     baseline: Option<Baseline>,
-    cfg: &'a ControllersConfig,
+    cfg: &'a SamplingConfig,
 }
 
 /// How many consecutive failed frames pass between repeated failure logs (a few seconds at a
