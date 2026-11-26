@@ -8,7 +8,7 @@
 //! The pages edit the live configuration, so every change applies at once, and each change goes
 //! through a slot's edit guard, so the settings file saves it like any other change the user makes.
 //! The macros below build an item from a slot and a place expression in its part of the
-//! configuration (`CONTROLLERS_CONFIG, |c| c.aim.gun`): the item reads the place, writes it, and
+//! configuration (`CONTROLLERS_CONFIG, |c| c.aim.assist_strength`): the item reads the place, writes it, and
 //! takes its default from the configuration's defaults, so the menu's defaults are the
 //! configuration's.
 

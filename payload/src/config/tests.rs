@@ -365,7 +365,7 @@ fn an_invalid_controller_setting_is_reset_alone() {
         angles_deg: Vec2::new(0.5, 0.0),
     });
     config.controllers.aim.assist_strength = 5.0;
-    config.controllers.aim.gun = false;
+    config.controllers.overlay.markers = false;
     config.headpose.vr_turn.snap_angle_deg = 45.0;
     let Loaded { config, report, .. } = parse(&toml::to_string(&config).unwrap()).unwrap();
     assert_eq!(config.controllers.dominant_hand, Hand::Left);
@@ -373,7 +373,7 @@ fn an_invalid_controller_setting_is_reset_alone() {
         config.controllers.aim.assist_strength,
         Config::new().controllers.aim.assist_strength
     );
-    assert!(!config.controllers.aim.gun);
+    assert!(!config.controllers.overlay.markers);
     assert!(config.controllers.aim.sights.get(7).is_some());
     assert_eq!(config.headpose.vr_turn.snap_angle_deg, 45.0);
     assert_eq!(reset_paths(&report), ["controllers.aim.assist_strength"]);

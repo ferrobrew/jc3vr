@@ -32,8 +32,6 @@ pub fn apply_preset(c: &mut ControllersConfig, preset: Preset) {
     c.input.hand_tracking = on;
     c.bindings.enabled = on;
     c.bindings.yank.enabled = on;
-    c.aim.gun = on;
-    c.aim.grapple = on;
     c.aim.sight_tuning.enabled = false;
     c.haptics.enabled = on;
     c.haptics.game_rumble = on;

@@ -271,12 +271,8 @@ fn update_post_sim(aim: *mut PlayerAimControl, dt: f32, character: *mut Characte
     }
 
     let off = tick.dominant.other();
-    let grapple_ray = tick
-        .aim
-        .grapple
-        .then(|| tick.hands[off.index()])
-        .flatten()
-        .and_then(|h| ray::grapple_ray(h.wrist, h.aim, GRAPPLE_ORIGIN_M));
+    let grapple_ray =
+        tick.hands[off.index()].and_then(|h| ray::grapple_ray(h.wrist, h.aim, GRAPPLE_ORIGIN_M));
     // The grapple's aim assist turns the ray before the game's own targeting runs along it.
     let grapple_assist = match (grapple_ray, owner) {
         (Some(ray), Some(owner)) => {
@@ -284,7 +280,7 @@ fn update_post_sim(aim: *mut PlayerAimControl, dt: f32, character: *mut Characte
             let options = unsafe { CastOptions::ignoring_rider(owner) }.seeing_through();
             // SAFETY: the live local player's aim control, before the original, with no grapple
             // view set; the options name the live owner and its vehicle.
-            unsafe { assist::grapple_assist(aim, &ray, &options, &tick.aim) }
+            unsafe { assist::grapple_assist(aim, &ray, &options) }
         }
         _ => None,
     };
@@ -359,10 +355,7 @@ unsafe fn finish(
     grapple_assist: Option<GrappleAssist>,
 ) {
     let cfg = &tick.aim;
-    let weapon = cfg
-        .gun
-        .then(|| unsafe { gun::held_weapon(owner) })
-        .flatten();
+    let weapon = unsafe { gun::held_weapon(owner) };
     let (held, mut gun_rays) = match weapon {
         Some(weapon) => {
             let (held, rays) = unsafe { gun::sight_rays(weapon, tick, cfg) };
@@ -372,19 +365,17 @@ unsafe fn finish(
     };
     // A gun armed in a hand beside the wielded weapon aims along its own sight line too.
     let mut armed_weapons = [None; 2];
-    if cfg.gun {
-        for hand in Hand::BOTH {
-            if gun_rays[hand.index()].is_some() {
-                continue;
-            }
-            // SAFETY: the owner is the live local player character, on the thread updating it.
-            let Some(weapon) = (unsafe { armed_weapon(owner, hand) }) else {
-                continue;
-            };
-            let (armed, rays) = unsafe { gun::sight_rays(weapon, tick, cfg) };
-            gun_rays[hand.index()] = rays[hand.index()];
-            armed_weapons[hand.index()] = Some(armed);
+    for hand in Hand::BOTH {
+        if gun_rays[hand.index()].is_some() {
+            continue;
         }
+        // SAFETY: the owner is the live local player character, on the thread updating it.
+        let Some(weapon) = (unsafe { armed_weapon(owner, hand) }) else {
+            continue;
+        };
+        let (armed, rays) = unsafe { gun::sight_rays(weapon, tick, cfg) };
+        gun_rays[hand.index()] = rays[hand.index()];
+        armed_weapons[hand.index()] = Some(armed);
     }
 
     // SAFETY: the owner is the live local player character, on the thread updating it.

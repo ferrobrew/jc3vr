@@ -6,15 +6,14 @@
 //! the guns and the grapple follow the hands, so a reticle on the panel marks a point nothing aims
 //! at, or a point the panel cannot show where it is.
 //!
-//! The grapple reticle is hidden everywhere under the controller scheme while the grapple aims by
-//! hand ([`AimConfig::grapple`](jc3vr_body::controllers::aim::config::AimConfig::grapple)): on foot, in the
-//! air, in the water, and in every seat. The world-space overlay's grapple highlight and gauntlet
-//! beam mark the grapple's target in the world instead, and a flat cursor on the panel adds nothing
-//! to them. With the grapple's hand aim off, the gaze aims it, and the reticle marks where it goes.
+//! The grapple reticle is hidden everywhere under the controller scheme, where the grapple aims by
+//! hand: on foot, in the air, in the water, and in every seat. The world-space overlay's grapple
+//! highlight marks the grapple's target in the world instead, and a flat cursor on the panel adds
+//! nothing to it.
 //!
 //! The weapon reticle is hidden wherever the guns' aim belongs to the hands rather than the gaze:
 //!
-//! - on foot and in the air, whenever the guns aim by hand, armed or not, so it does not show in
+//! - on foot and in the air, always, armed or not, so it does not show in
 //!   the gaps between aim updates (drawing, holstering, a weapon switch, an empty hand);
 //! - in the driver's seat, while the vehicle's built-in weapons aim by hand;
 //! - at a mounted gun, while the gun's point comes from the hands;
@@ -22,8 +21,7 @@
 //!
 //! A gun the gaze still aims keeps the reticle: the driver's weapons with
 //! [`VehiclesConfig::driver_weapons_by_hand`](jc3vr_vehicles::controllers::vehicles::config::VehiclesConfig::driver_weapons_by_hand)
-//! off, and a mounted gun with its hand aim off. The world-space overlay's gun readout stands in
-//! for the hidden weapon reticle.
+//! off, and a mounted gun with its hand aim off.
 //!
 //! [`decide`] is the pure rule; [`hide_game_reticles`] reads the mode, the settings, and the aim's
 //! latest results, and holds the reticle clips hidden through [`crate::hud::scaleform`].
@@ -70,8 +68,8 @@ impl AimPlace {
     }
 }
 
-/// What the rule reads: the toggle, the scheme, the place, the guns' hand-aim settings, and the
-/// aim's latest results.
+/// What the rule reads: the toggle, the scheme, the place, the vehicle weapons' hand-aim
+/// settings, and the aim's latest results.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
 pub struct ReticleInputs {
     /// The toggle, with the controllers' master switch.
@@ -79,10 +77,6 @@ pub struct ReticleInputs {
     /// Whether the controller scheme is in effect.
     pub controllers_scheme: bool,
     pub place: AimPlace,
-    /// Whether the guns aim by hand ([`jc3vr_body::controllers::aim::config::AimConfig::gun`]).
-    pub guns_by_hand: bool,
-    /// Whether the grapple aims by hand ([`jc3vr_body::controllers::aim::config::AimConfig::grapple`]).
-    pub grapple_by_hand: bool,
     /// Whether the driver's built-in weapons aim by hand.
     pub driver_weapons_by_hand: bool,
     /// Whether a manned mounted gun is aimed by hand now.
@@ -103,13 +97,13 @@ pub fn decide(inputs: ReticleInputs) -> HiddenReticles {
     // The mounted gun's point has its own freshness, so it does not wait on the aim update.
     let mounted = inputs.mounted_by_hand;
     let weapon = match inputs.place {
-        AimPlace::OnFoot => inputs.guns_by_hand || weapon_aimed || mounted,
+        AimPlace::OnFoot => true,
         AimPlace::Driver => inputs.driver_weapons_by_hand || weapon_aimed || mounted,
         AimPlace::Passenger | AimPlace::Menu => weapon_aimed || mounted,
     };
     HiddenReticles {
         weapon,
-        grapple: inputs.grapple_by_hand,
+        grapple: true,
     }
 }
 
@@ -120,11 +114,9 @@ pub fn decide(inputs: ReticleInputs) -> HiddenReticles {
 /// Must be called from the [`MovieImpl::Capture`](jc3gi::ui::scaleform::MovieImpl) detour, as
 /// [`crate::hud::scaleform::apply_reticle_suppression`] requires.
 pub(crate) unsafe fn hide_game_reticles() {
-    let (enabled, guns, grapple, driver) = CONTROLLERS_CONFIG.query(|controllers| {
+    let (enabled, driver) = CONTROLLERS_CONFIG.query(|controllers| {
         (
             controllers.enabled,
-            controllers.aim.gun,
-            controllers.aim.grapple,
             controllers.vehicles.driver_weapons_by_hand,
         )
     });
@@ -134,8 +126,6 @@ pub(crate) unsafe fn hide_game_reticles() {
             enabled,
             controllers_scheme: scheme::is_controllers(),
             place: AimPlace::of(mode::current().mode),
-            guns_by_hand: guns,
-            grapple_by_hand: grapple,
             driver_weapons_by_hand: driver,
             mounted_by_hand: vehicles::mounted_aim_point().is_some(),
             aim_fresh: aim_fresh(status.updates),
@@ -175,13 +165,11 @@ mod tests {
 
     use super::*;
 
-    /// On foot under the controller scheme with every hand aim on, and nothing aimed.
+    /// On foot under the controller scheme, with nothing aimed.
     const ON_FOOT: ReticleInputs = ReticleInputs {
         enabled: true,
         controllers_scheme: true,
         place: AimPlace::OnFoot,
-        guns_by_hand: true,
-        grapple_by_hand: true,
         driver_weapons_by_hand: true,
         mounted_by_hand: false,
         aim_fresh: false,
@@ -211,18 +199,7 @@ mod tests {
     }
 
     #[test]
-    fn on_foot_gaze_aimed_guns_keep_the_weapon_reticle() {
-        let gaze_guns = ReticleInputs {
-            guns_by_hand: false,
-            ..ON_FOOT
-        };
-        assert_eq!(decide(gaze_guns), GRAPPLE);
-    }
-
-    /// The grapple reticle is hidden in every place under the controller scheme while the grapple
-    /// aims by hand, and kept in every place while the gaze aims it.
-    #[test]
-    fn the_grapple_reticle_follows_the_grapple_hand_aim_everywhere() {
+    fn the_grapple_reticle_is_hidden_everywhere() {
         for place in [
             AimPlace::OnFoot,
             AimPlace::Driver,
@@ -231,27 +208,7 @@ mod tests {
         ] {
             let inputs = ReticleInputs { place, ..ON_FOOT };
             assert!(decide(inputs).grapple, "{place:?}");
-            let gaze = ReticleInputs {
-                grapple_by_hand: false,
-                ..inputs
-            };
-            assert!(!decide(gaze).grapple, "{place:?}");
         }
-    }
-
-    #[test]
-    fn a_gaze_aimed_grapple_keeps_its_reticle_beside_hand_aimed_guns() {
-        let gaze_grapple = ReticleInputs {
-            grapple_by_hand: false,
-            ..ON_FOOT
-        };
-        assert_eq!(
-            decide(gaze_grapple),
-            HiddenReticles {
-                weapon: true,
-                grapple: false,
-            }
-        );
     }
 
     #[test]

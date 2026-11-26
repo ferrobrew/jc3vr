@@ -17,10 +17,10 @@
 //! The grapple has an assist of its own ([`grapple_assist`]), run before the aim update so that
 //! the game's own grapple targeting runs along the assisted ray. When the grapple hand's ray does
 //! not already hit an object, the candidates in every set within
-//! [`AimConfig::grapple_assist_cone_deg`] of the ray that the game's grapple scoring
+//! [`GRAPPLE_CONE_DEG`] of the ray that the game's grapple scoring
 //! ([`PlayerAimControl::SetTargetGrappleFitness`]) accepts (an object the grapple attaches to, in
 //! range, not the one the wire holds) and that are in sight are ranked by their angle from the
-//! ray, and the ray turns toward the nearest by [`AimConfig::grapple_assist_strength`].
+//! ray, and the ray turns onto the nearest.
 
 use std::f32::consts::FRAC_PI_2;
 
@@ -40,6 +40,10 @@ use crate::controllers::aim::{
 
 /// The farthest a candidate may be from the hand for aim assist, metres.
 const MAX_DISTANCE_M: f32 = 150.0;
+
+/// The half-angle of the cone around the grapple hand's ray that the grapple's aim assist looks for
+/// a target in, degrees.
+const GRAPPLE_CONE_DEG: f32 = 5.0;
 
 /// One hand's correction on the last aim update.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -115,9 +119,9 @@ pub struct GrappleAssist {
     pub angle_rad: f32,
 }
 
-/// The grapple's ray turned toward the valid grapple target nearest `ray` within the configured
-/// cone, and the turn made, or `None` when the assist is off, the ray already hits an object, or
-/// no candidate qualifies.
+/// The grapple's ray turned onto the valid grapple target nearest `ray` within
+/// [`GRAPPLE_CONE_DEG`], and the turn made, or `None` when the ray already hits an object or no
+/// candidate qualifies.
 ///
 /// # Safety
 ///
@@ -127,13 +131,8 @@ pub(super) unsafe fn grapple_assist(
     aim: *mut PlayerAimControl,
     ray: &Ray,
     options: &CastOptions,
-    config: &AimConfig,
 ) -> Option<(Ray, GrappleAssist)> {
-    let strength = config.grapple_assist_strength;
-    let cone = config.grapple_assist_cone_deg.to_radians();
-    if strength.is_nan() || strength <= 0.0 || cone.is_nan() || cone <= 0.0 {
-        return None;
-    }
+    let cone = GRAPPLE_CONE_DEG.to_radians();
     // A ray on an object already has the game's own grapple target, which the assist would only
     // take away.
     let hit = unsafe { raycast::cast(ray, MAX_DISTANCE_M, options) }.ok()?;
@@ -147,7 +146,7 @@ pub(super) unsafe fn grapple_assist(
             grapple_candidate(aim, target, ray, cone)
         })
     }?;
-    let bent = assisted_ray(ray, target, strength)?;
+    let bent = assisted_ray(ray, target, 1.0)?;
     Some((
         bent,
         GrappleAssist {

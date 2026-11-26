@@ -16,7 +16,7 @@ use jc3gi::{
     },
     character::character::Character,
 };
-use jc3vr_body::controllers::{aim::config::AIM_CONFIG, scheme};
+use jc3vr_body::controllers::scheme;
 use re_utilities::hook_library::HookLibrary;
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -30,7 +30,7 @@ fn process_camera_context(
     previous: *const CameraContext,
     out: *mut CameraContext,
 ) {
-    let suppress = scheme::enabled() && AIM_CONFIG.query(|c| c.gun) && scheme::is_controllers();
+    let suppress = scheme::enabled() && scheme::is_controllers();
     // Without a local player the modifier does nothing at all, so the transform is written only
     // when it would have been.
     let local = unsafe { !Character::GetLocalPlayerCharacter().is_null() };

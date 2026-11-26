@@ -83,22 +83,6 @@ pub(super) fn aim_readout(
 }
 
 pub(super) fn aim_settings(ui: &mut Ui, c: &mut ControllersConfig) {
-    let a = &mut c.aim;
-    ui.checkbox(&mut a.gun, "Gun aim from the hands")
-        .on_hover_text("Each gun aims along its hand's sight line instead of the gaze.");
-    ui.checkbox(&mut a.grapple, "Grapple aim from the off-hand")
-        .on_hover_text("The grapple targets along the off-hand's ray, with the game's targeting.");
-    ui.add(
-        egui::Slider::new(&mut a.grapple_assist_strength, 0.0..=1.0).text("Grapple aim assist"),
-    )
-    .on_hover_text(
-        "How far the grapple's ray turns onto the grapple target nearest it in the cone when the \
-         ray is not on an object: one snaps onto it, zero turns the assist off.",
-    );
-    ui.add(
-        egui::Slider::new(&mut a.grapple_assist_cone_deg, 0.0..=30.0)
-            .text("Grapple assist cone (°)"),
-    );
     egui::CollapsingHeader::new("Sight tuning").show(ui, |ui| sights::sight_tuning(ui, c));
 }
 
