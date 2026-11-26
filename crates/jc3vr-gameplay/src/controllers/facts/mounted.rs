@@ -1,5 +1,6 @@
-//! The mounted gun the hands aim, its aim point, and the seated body's aim, as the vehicle handling
-//! publishes them for the aim.
+//! The mounted gun the hands aim, its aim point, the seated body's aim, and each hand's hold on a
+//! mounted gun's handle, as the vehicle handling publishes them for the aim, the weapon handling,
+//! and the physical hands.
 //!
 //! The vehicle handling registers one [`MountedSource`] at install ([`register_mounted_source`]), a
 //! table of its own query functions, and every read here calls through it. The reads are live:
@@ -8,9 +9,13 @@
 //! hop the direct read never had.
 //!
 //! Reading before the source is registered is a programming error and panics; the controllers'
-//! install registers it before any hook is enabled.
+//! install registers it before any hook is enabled. The handle holds are a plain published fact
+//! ([`holds`]), written as the vehicle handling's tick finishes and as it stands down.
 
-use std::sync::OnceLock;
+use std::sync::{
+    OnceLock,
+    atomic::{AtomicBool, Ordering},
+};
 
 use glam::Vec3;
 
@@ -82,6 +87,21 @@ pub fn seated_body_aim(
     (source().seated_body_aim)(seat, mounted, gun_targets)
 }
 
+/// Whether each hand holds a mounted gun's handle, indexed by
+/// [`Hand::index`](jc3vr_input::frame::Hand::index). Lock-free, for the physical hands to leave a
+/// hand on a handle out of their palms.
+#[inline]
+pub fn holds() -> [bool; 2] {
+    HOLDS.each_ref().map(|hold| hold.load(Ordering::Relaxed))
+}
+
+/// Publish each hand's hold on a mounted gun's handle for [`holds`].
+pub fn publish_holds(holds: [bool; 2]) {
+    for (slot, hold) in HOLDS.iter().zip(holds) {
+        slot.store(hold, Ordering::Relaxed);
+    }
+}
+
 fn source() -> &'static MountedSource {
     SOURCE.get().expect(
         "mounted: no mounted-gun source is registered; the controllers' install registers it",
@@ -89,3 +109,5 @@ fn source() -> &'static MountedSource {
 }
 
 static SOURCE: OnceLock<MountedSource> = OnceLock::new();
+
+static HOLDS: [AtomicBool; 2] = [AtomicBool::new(false), AtomicBool::new(false)];

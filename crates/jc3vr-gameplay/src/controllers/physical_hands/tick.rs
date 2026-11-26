@@ -23,52 +23,50 @@ use jc3vr_render::{controllers::cockpit::CockpitTransform, headpose::teleport};
 use parking_lot::Mutex;
 use windows::Win32::System::Threading::GetCurrentThreadId;
 
-use crate::{
-    controllers::{
-        aim::raycast::CastOptions,
-        body,
-        clock::TimeScale,
-        fingers::{
-            config::FINGERS_CONFIG,
-            grip::{
-                self, Grip, GripSource,
-                catalogue::GripPose,
-                contact::{self as finger_contact, CastHit, FitTarget},
-            },
-            tuning::FINGERS,
+use crate::controllers::{
+    aim::raycast::CastOptions,
+    body,
+    clock::TimeScale,
+    facts::{mounted, seat::rides_in_seat},
+    fingers::{
+        config::FINGERS_CONFIG,
+        grip::{
+            self, Grip, GripSource,
+            catalogue::GripPose,
+            contact::{self as finger_contact, CastHit, FitTarget},
         },
-        hands::{self, tiers},
-        haptics,
-        loadout::{ItemKind, live},
-        mode::{self, AirborneVariant, Detection, Mode, OnFootVariant},
-        physical_hands::{
-            PhysicalHandsConfig, climb,
-            config::PHYSICAL_HANDS_CONFIG,
-            contact::{HandContact, PointContact, PointProbe, Surface, SurfaceHit},
-            doors::{
-                self,
-                acquisition::PanelReach,
-                config::{TEARING, TearTuning},
-                hinge::HingeConfig,
-            },
-            draw, engine, grab_view,
-            grasp::{self, PalmMotion},
-            hold::{self, BodySpace, PlayerKeepOut},
-            impacts,
-            palm::{PROBE_POINTS, PalmBox},
-            physics,
-            pickup::{self, PICKUP},
-            push, query, seated,
-            shove::SHOVE,
-            state::{STATE, VELOCITY_SMOOTHING_S, stand_down},
-            status::{HandStatus, Idle},
-            touch::{ShoveInput, Touch, pressure_haptics},
-            tuning::PALMS,
-        },
-        scheme, vehicles,
-        weapons::{self, c4, foregrip, grenade},
+        tuning::FINGERS,
     },
-    grapple::seat::rides_in_seat,
+    hands::{self, tiers},
+    haptics,
+    loadout::{ItemKind, live},
+    mode::{self, AirborneVariant, Detection, Mode, OnFootVariant},
+    physical_hands::{
+        PhysicalHandsConfig, climb,
+        config::PHYSICAL_HANDS_CONFIG,
+        contact::{HandContact, PointContact, PointProbe, Surface, SurfaceHit},
+        doors::{
+            self,
+            acquisition::PanelReach,
+            config::{TEARING, TearTuning},
+            hinge::HingeConfig,
+        },
+        draw, engine, grab_view,
+        grasp::{self, PalmMotion},
+        hold::{self, BodySpace, PlayerKeepOut},
+        impacts,
+        palm::{PROBE_POINTS, PalmBox},
+        physics,
+        pickup::{self, PICKUP},
+        push, query, seated,
+        shove::SHOVE,
+        state::{STATE, VELOCITY_SMOOTHING_S, stand_down},
+        status::{HandStatus, Idle},
+        touch::{ShoveInput, Touch, pressure_haptics},
+        tuning::PALMS,
+    },
+    scheme,
+    weapons::{self, c4, foregrip, grenade},
 };
 
 /// Note that a palms' tick is due, `dt` seconds of simulation after the last: called from the
@@ -856,7 +854,7 @@ pub fn free_hands() -> [bool; 2] {
     let charge = c4::throwing_hand();
     let detonator = c4::detonator_hand();
     let weights = tiers::weights();
-    let mounted = vehicles::mounted_holds();
+    let mounted = mounted::holds();
     Hand::BOTH.map(|hand| {
         let held = live::held_kind(hand).is_some_and(|kind| kind != ItemKind::Prop);
         !wielded[hand.index()]

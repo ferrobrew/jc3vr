@@ -1,7 +1,7 @@
 //! The vehicle handling's tick-to-tick state: the readout the debug UI and the status rows read,
 //! the held controls and handles, the mounted gun's hold, and the arm panel the headset reads.
 
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use glam::Vec3;
 use jc3vr_input::frame::{Hand, Pose};
@@ -9,6 +9,7 @@ use jc3vr_render::controllers::overlay::{primitive::Source, store};
 use parking_lot::Mutex;
 
 use crate::controllers::{
+    facts,
     hands::{self, CockpitHand, tiers},
     mode::VehicleSeat,
     vehicles::{
@@ -71,19 +72,9 @@ pub fn summary() -> VehicleSummary {
     }
 }
 
-/// Whether each hand holds a mounted gun's handle, indexed by [`Hand::index`]. Lock-free, for the
-/// physical hands to leave a hand on a handle out of their palms.
-pub fn mounted_holds() -> [bool; 2] {
-    MOUNTED_HOLDS
-        .each_ref()
-        .map(|hold| hold.load(Ordering::Relaxed))
-}
-
-/// Publish each hand's hold on a mounted gun's handle for [`mounted_holds`].
+/// Publish each hand's hold on a mounted gun's handle ([`facts::mounted::holds`]).
 pub(super) fn publish_mounted_holds(holds: [bool; 2]) {
-    for (slot, hold) in MOUNTED_HOLDS.iter().zip(holds) {
-        slot.store(hold, Ordering::Relaxed);
-    }
+    facts::mounted::publish_holds(holds);
 }
 
 /// Whether `weapon` is the mounted gun the hands last aimed. Lock-free, for the per-weapon update
@@ -394,8 +385,6 @@ pub(super) static STATE: Mutex<State> = Mutex::new(State::new());
 /// The address of the weapon in [`State::mounted_target`], or zero: a lock-free copy for
 /// [`is_mounted_weapon`].
 pub(super) static MOUNTED_WEAPON: AtomicUsize = AtomicUsize::new(0);
-
-static MOUNTED_HOLDS: [AtomicBool; 2] = [AtomicBool::new(false), AtomicBool::new(false)];
 
 pub(super) fn log_handle_events(events: &[HandleEvent]) {
     for event in events {
