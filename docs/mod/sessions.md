@@ -4,7 +4,7 @@ Every file the mod writes during a run lands in one folder, `<sessions root>/<se
 
 ## The sessions root
 
-The payload reads `JC3VR_SESSIONS_DIR` from the game process's environment at injection (`payload/src/session/root.rs`):
+The payload reads `JC3VR_SESSIONS_DIR` from the game process's environment at injection (`crates/jc3vr-core/src/session/root.rs`):
 
 - A value starting with `/` is a host (Unix) path. Under wine or Proton the payload converts it to the Windows path it opens with wine's `wine_get_dos_file_name`, resolved from `kernel32` at run time; on native Windows, where that export does not exist, the value is refused.
 - Any other value is a Windows path, taken as it is.
@@ -16,7 +16,7 @@ When the root is not a Unix path already, the payload asks wine for its Unix for
 
 ## Layout
 
-What lands where is fixed per kind of output, in `payload/src/session.rs`. Folder names are plural, and file names do not repeat the kind their folder names. A folder is created only when its first file is written, so a session holds only the folders its run used.
+What lands where is fixed per kind of output, in `crates/jc3vr-core/src/session/mod.rs`. Folder names are plural, and file names do not repeat the kind their folder names. A folder is created only when its first file is written, so a session holds only the folders its run used.
 
 | Path in the session | What writes it | Read by |
 | --- | --- | --- |

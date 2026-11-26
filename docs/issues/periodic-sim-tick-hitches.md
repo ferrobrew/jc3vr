@@ -92,7 +92,7 @@ In the next session's stall windows the `osuite_*` slot whose maximum matches th
 
 ## Remedy
 
-The payload skips the check (`payload/src/hooks/online.rs`). A detour on the Steam account's check answers false without calling Steam when the call comes from the online-suite manager's retry; it tells that call site apart by the game thread being inside the manager's update and outside the online suite's own update. The retry then never starts, and `BLoggedOn` is never called from there. The switch is in the debug UI under Previews and performance, next to the frame breakdown, and is on by default (the setting is `online.skip_logged_on_check`); off restores the call.
+The payload skips the check (`crates/jc3vr-core/src/hooks/online.rs`). A detour on the Steam account's check answers false without calling Steam when the call comes from the online-suite manager's retry; it tells that call site apart by the game thread being inside the manager's update and outside the online suite's own update. The retry then never starts, and `BLoggedOn` is never called from there. The switch is in the debug UI under Previews and performance, next to the frame breakdown, and is on by default (the setting is `online.skip_logged_on_check`); off restores the call.
 
 The account manager's other callers of the check keep calling Steam:
 

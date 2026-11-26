@@ -4,7 +4,7 @@ The mod carries its own frame profiler because the engine's is dead: the
 [`CpuProfiler`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/cpu_profiler::CpuProfiler), with one phase per [`CpuScopeId`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/cpu_profiler::CpuScopeId), is never written (`docs/engine/performance/profiling.md` §1.1), the `CGPUProfiler` read-back is
 stubbed (§2.2), and the on-screen frame graph is stripped (§1.4). What survives — the live D3D11
 timestamp-query wrappers and the hookable frame-phase functions — is exactly enough to rebuild the
-pipeline mod-side, which is what `payload/src/profiler/` does on top of
+pipeline mod-side, which is what `crates/jc3vr-core/src/profiler/` and `payload/src/profiler/` do on top of
 [puffin](https://github.com/EmbarkStudios/puffin).
 
 Everything is compiled under the `profiler` cargo feature (default on). With the feature on but the
@@ -108,17 +108,17 @@ the frame bars.
 
 ## Structure
 
-- `payload/src/profiler/mod.rs` — the switchboard: the per-frame `new_frame`, the enable state,
+- `crates/jc3vr-core/src/profiler/mod.rs` — the switchboard: the per-frame `new_frame`, the enable state,
   and the dynamic-scope registry for engine-supplied names.
 - `payload/src/profiler/gpu/` — the GPU timestamp ring, the render-pass scopes, the busy/starved
   decomposition, and the puffin GPU-lane reporting. It registers its own shutdown cleanup at its
   first dispatch.
-- `payload/src/profiler/blocks.rs` — the per-render-block-type draw counters.
-- `payload/src/profiler/capture.rs` — the 5 s capture state machine (a puffin frame sink).
-- `payload/src/profiler/chrome_trace.rs` — puffin frames → Chrome trace-event JSON.
+- `crates/jc3vr-core/src/profiler/blocks.rs` — the per-render-block-type draw counters.
+- `crates/jc3vr-core/src/profiler/capture.rs` — the 5 s capture state machine (a puffin frame sink).
+- `crates/jc3vr-core/src/profiler/chrome_trace.rs` — puffin frames → Chrome trace-event JSON.
 - `payload/src/profiler/ui.rs` — the Performance-tab collapsible.
 
-The core (`mod.rs`, `blocks.rs`, `capture.rs`, and `chrome_trace.rs`) does not call into `gpu` or `ui`: `gpu` is the render half and `ui` the debug UI's half, and each depends on the core only.
+The core (`mod.rs`, `blocks.rs`, `capture.rs`, and `chrome_trace.rs`) lives in the core crate and does not call into `gpu` or `ui`: `gpu` is the render half and `ui` the debug UI's half, and each depends on the core only.
 - `payload/src/hooks/profiler.rs` — the profiler-only detours (`DrawGBuffer`,
   `RenderEngine::Draw`, `ChangeRenderBlockType`); seams the mod already hooks
   for other reasons are instrumented inline in those hooks under `#[cfg(feature = "profiler")]`,
