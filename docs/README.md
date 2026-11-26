@@ -68,7 +68,7 @@ One deliberate exception: [`engine/rendering.md`](engine/rendering/rendering.md)
 ## mod/
 
 - [vr-runtime.md](mod/vr-runtime.md) — the OpenXR runtime as built: session lifecycle, the frame loop, pose model, per-eye resolution, mirror, and the playtest checklist.
-- [threading.md](mod/threading.md) — the threads mod code runs on, who holds the VR runtime's two locks across a frame, how the next frame's render update overlaps the previous frame's draw and what keeps that safe, the lock rules, and the thread-role guard that checks them.
+- [threading.md](mod/threading.md) — the threads mod code runs on, who holds the VR runtime's two locks across a frame, how the next frame's render update overlaps the previous frame's draw and what keeps that safe, the lock rules, the thread-role guard that checks them, and the game tick token that proves game-object code runs at a serial point of the frame.
 - [lifecycle.md](mod/lifecycle.md): shutdown preparation, deferred retries, one-shot teardown, and the uninstalled magazine executor restriction.
 - [settings.md](mod/settings.md) — the settings file: where it and the other kept files live, the tolerant load, the `config::edit()` rule and the debounced save, what is not saved, and the TOML representation of optional values and lists.
 - [hud.md](mod/hud.md) — the floating-panel HUD: the redirect, compositing, cursor interaction, and the placement rule for HUD depth (elements tied to one world object receive depth, general elements stay on the panel) with where each element is placed.
