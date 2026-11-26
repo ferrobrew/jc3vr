@@ -93,7 +93,7 @@ pub const LOG_INTERVAL: Duration = Duration::from_secs(5);
 
 /// Record the camera's eye point `camera` for the character world matrix `character` (the matrix
 /// the camera placement composed with), and log the readout if one is due.
-pub(super) fn record(character: Mat4, camera: Vec3) {
+pub(crate) fn record(character: Mat4, camera: Vec3) {
     let Some(head) = anchor() else {
         return;
     };

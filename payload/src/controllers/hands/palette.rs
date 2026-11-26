@@ -10,15 +10,7 @@
 use body_rig::rotation::twist_angle;
 use glam::{Mat3, Mat4, Quat, Vec3, Vec4};
 
-/// How a block's palette stores a 3x4 affine matrix (see the layout detection in
-/// `crate::hooks::graphics_engine::render_block`).
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum PaletteLayout {
-    /// Four 3-float columns: the images of the X, Y, and Z axes, then the translation.
-    Columns,
-    /// Three 4-float rows of `[R | t]`.
-    Rows,
-}
+pub use crate::hooks::graphics_engine::palette_edit::PaletteLayout;
 
 /// Read a palette entry as a transform.
 pub fn entry_to_matrix(m: &[f32; 12], layout: PaletteLayout) -> Mat4 {

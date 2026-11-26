@@ -5,6 +5,8 @@ use re_utilities::hook_library::HookLibrary;
 
 // The VR two-eye cull-frustum widening (`GetBFBCFrustumParamsForCameraAndTime`).
 pub(crate) mod culling;
+// The body's palette edit the character render blocks apply, and its provider's registration.
+pub(crate) mod palette_edit;
 // `render_block` is crate-visible so hooks::character can publish the facial classification bones.
 pub(crate) mod render_block;
 // Diagnostic override of the base VolumetricTerrain color-pass hull-clip type (black cliff-wall

@@ -48,6 +48,7 @@ use jc3gi::character::character::{AnimationController, Character, Joint};
 use parking_lot::Mutex;
 use smol_str::{SmolStr, ToSmolStr};
 
+pub(crate) use crate::controllers::presentation::edit::PlayerBodyEdits;
 pub use crate::controllers::presentation::{
     config::PresentationConfig,
     edit::{BodyEdit, DrawEdit},

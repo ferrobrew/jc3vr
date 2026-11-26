@@ -1,19 +1,25 @@
 //! A draw's palette edit: the bones the player's body draw re-poses, and the model-space transform
 //! each one's palette entry is pre-multiplied by.
 
+use std::cell::RefCell;
+
 use glam::{Mat4, Vec3};
 use jc3gi::graphics_engine::render_block::Matrix3x4;
 
-use crate::controllers::{
-    diagnostics,
-    hands::{
-        late::{self, PaletteEdit},
-        palette::{self, PaletteLayout},
+use crate::{
+    controllers::{
+        diagnostics,
+        hands::{
+            late::{self, PaletteEdit},
+            palette::{self, PaletteLayout},
+        },
+        presentation::{
+            draw_edit,
+            rig::{Group, GroupMap, MAX_BONES},
+            solve::Edits,
+        },
     },
-    presentation::{
-        rig::{Group, GroupMap, MAX_BONES},
-        solve::Edits,
-    },
+    hooks::graphics_engine::palette_edit::{BodyPaletteEdit, PlayerDrawEdits},
 };
 
 /// What a draw of the player's body re-poses: the whole upper body from the presentation layer, or
@@ -261,6 +267,59 @@ impl DrawEdit {
             Self::Body(edit) => edit.edits[Group::Neck.index()],
         }
     }
+}
+
+impl BodyPaletteEdit for DrawEdit {
+    fn touches(&self, bone: usize) -> bool {
+        DrawEdit::touches(self, bone)
+    }
+
+    fn source_len(&self) -> usize {
+        DrawEdit::source_len(self)
+    }
+
+    fn neck(&self) -> Mat4 {
+        DrawEdit::neck(self)
+    }
+
+    fn apply(&self, entries: &mut [Matrix3x4], source: &[Matrix3x4], layout: PaletteLayout) {
+        DrawEdit::apply(self, entries, source, layout);
+    }
+
+    fn sample_drawn_arms(&self, entries: &[Matrix3x4], layout: PaletteLayout) {
+        DrawEdit::sample_drawn_arms(self, entries, layout);
+    }
+}
+
+/// The provider of the render blocks' edits of the player's body: each draw's [`DrawEdit`], held
+/// for the drawing thread.
+pub(crate) struct PlayerBodyEdits;
+
+impl PlayerDrawEdits for PlayerBodyEdits {
+    fn begin(&self, instance: Mat4, dtf: f32) -> bool {
+        let edit = draw_edit(instance, dtf);
+        let held = edit.is_some();
+        DRAW_EDIT.with(|cell| *cell.borrow_mut() = edit);
+        held
+    }
+
+    fn end(&self) {
+        DRAW_EDIT.with(|cell| *cell.borrow_mut() = None);
+    }
+
+    fn with(&self, f: &mut dyn FnMut(Option<&dyn BodyPaletteEdit>)) {
+        DRAW_EDIT.with(|cell| {
+            let edit = cell.borrow();
+            f(edit.as_ref().map(|edit| edit as &dyn BodyPaletteEdit));
+        });
+    }
+}
+
+thread_local! {
+    /// The edit of this thread's draw of the player's body. Thread-local: character draws run on
+    /// several render worker threads at once, and an edit leaked into a concurrent draw of another
+    /// skeleton would re-pose its bones by index collision.
+    static DRAW_EDIT: RefCell<Option<DrawEdit>> = const { RefCell::new(None) };
 }
 
 /// How close to the identity an edit is left out, in matrix elements: well under a tenth of a

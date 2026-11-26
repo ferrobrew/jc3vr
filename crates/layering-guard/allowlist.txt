@@ -122,8 +122,6 @@ payload/src/headpose/sim/mod.rs -> payload
 payload/src/headpose/xr.rs -> gameplay
 payload/src/hooks/animation/canopy.rs -> payload
 payload/src/hooks/camera/authored/runtime/mod.rs -> gameplay
-payload/src/hooks/camera/mod.rs -> gameplay
-payload/src/hooks/camera/mod.rs -> hud
 payload/src/hooks/camera/mod.rs -> payload
 payload/src/hooks/character/acts.rs -> payload
 payload/src/hooks/character/body_ik/mod.rs -> payload
@@ -133,7 +131,6 @@ payload/src/hooks/graphics_engine/post/post_effects.rs -> payload
 payload/src/hooks/graphics_engine/post/tone_mapping.rs -> payload
 payload/src/hooks/graphics_engine/render_pass.rs -> payload
 payload/src/hooks/graphics_engine/scene/culling.rs -> payload
-payload/src/hooks/graphics_engine/scene/render_block.rs -> gameplay
 payload/src/hooks/graphics_engine/scene/terrain.rs -> payload
 payload/src/hooks/graphics_engine/scene/water.rs -> payload
 payload/src/hooks/graphics_engine/screen/atmospheric_scattering.rs -> payload

@@ -47,10 +47,7 @@ use jc3gi::{
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{
-    controllers::{
-        hands::palette::PaletteLayout,
-        presentation::{self, DrawEdit},
-    },
+    hooks::graphics_engine::palette_edit::{BodyPaletteEdit, PaletteLayout, player_draw_edits},
     stereo::STEREO_STATE,
 };
 
@@ -229,10 +226,10 @@ thread_local! {
     static HIDE_ACTIVE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 
     /// Set around the original `Draw`/`DrawZ` call for the local player's body in every pass,
-    /// shadows included, while the presentation layer or the hands' late update re-poses it: the
-    /// palette hooks then re-pose the bones the edit names (see
-    /// [`crate::controllers::presentation`]). Thread-local for the same reason as the hide flag.
-    static HAND_EDIT: std::cell::Cell<Option<DrawEdit>> = const { std::cell::Cell::new(None) };
+    /// shadows included, while the registered provider holds an edit of it for this thread
+    /// ([`crate::hooks::graphics_engine::palette_edit`]): the palette hooks then re-pose the bones
+    /// the edit names. Thread-local for the same reason as the hide flag.
+    static HAND_EDIT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 
     /// The scratch palette the spoof writes into, one per draw thread for the same reason.
     static PALETTE_BUF: std::cell::RefCell<[Matrix3x4; PALETTE_BUF_LEN]> =
@@ -258,28 +255,39 @@ static PLAYER_RBI_INFOS: [AtomicUsize; PLAYER_MODEL_SLOTS] =
 unsafe fn begin_player_draw(rc: *mut RenderContext, info: *const RBIInfo) {
     let hide = unsafe { should_hide_facial(rc, info) };
     HIDE_ACTIVE.with(|flag| flag.set(hide));
-    let edit = unsafe { hand_palette_edit(rc, info) };
+    let edit = unsafe { begin_hand_palette_edit(rc, info) };
     HAND_EDIT.with(|cell| cell.set(edit));
 }
 
 /// Lower the flags [`begin_player_draw`] raised.
 fn end_player_draw() {
     HIDE_ACTIVE.with(|flag| flag.set(false));
-    HAND_EDIT.with(|cell| cell.set(None));
+    if HAND_EDIT.with(|cell| cell.replace(false))
+        && let Some(edits) = player_draw_edits()
+    {
+        edits.end();
+    }
 }
 
-/// The body's palette edit for this draw, when it belongs to the local player's body model: the
-/// render-time re-pose brought into the draw's model space through its instance matrix. Every pass
-/// takes it, so the shadow's body matches the rendered one.
-unsafe fn hand_palette_edit(rc: *mut RenderContext, info: *const RBIInfo) -> Option<DrawEdit> {
+/// Have the provider settle the body's palette edit for this draw, when it belongs to the local
+/// player's body model: the render-time re-pose brought into the draw's model space through its
+/// instance matrix. Every pass takes it, so the shadow's body matches the rendered one. Whether
+/// the provider holds an edit for the draw.
+unsafe fn begin_hand_palette_edit(rc: *mut RenderContext, info: *const RBIInfo) -> bool {
     let body = PLAYER_RBI_INFOS[AnimatedModel::BODY_MODEL_SLOT as usize].load(Ordering::Relaxed);
     if body == 0 || info as usize != body {
-        return None;
+        return false;
     }
-    let (rc, info) = (unsafe { rc.as_ref() }?, unsafe { info.as_ref() }?);
+    let (Some(rc), Some(info), Some(edits)) = (
+        unsafe { rc.as_ref() },
+        unsafe { info.as_ref() },
+        player_draw_edits(),
+    ) else {
+        return false;
+    };
     let mut instance = Matrix4::default();
     unsafe { info.GetMatrix(&mut instance, rc.m_RenderFrameIndex as i32) };
-    presentation::draw_edit(glam::Mat4::from(instance), crate::hooks::camera::last_dtf())
+    edits.begin(glam::Mat4::from(instance), crate::hooks::camera::last_dtf())
 }
 
 /// Whether this draw belongs to the local player's body model in a non-shadow pass. Ownership is
@@ -331,7 +339,32 @@ unsafe fn spoofed_matrices(
     let hide = HIDE_ACTIVE.with(|flag| flag.get())
         && len > 0
         && COLLAPSE_TARGET_VALID.load(Ordering::Relaxed);
-    let hands = HAND_EDIT.with(|cell| cell.get());
+    let edits = HAND_EDIT
+        .with(|cell| cell.get())
+        .then(player_draw_edits)
+        .flatten();
+    match edits {
+        Some(edits) => {
+            let mut spoofed = None;
+            edits.with(&mut |hands| {
+                spoofed = unsafe { spoof(matrices, batch, len, hide, hands) };
+            });
+            spoofed
+        }
+        None if hide => unsafe { spoof(matrices, batch, len, hide, None) },
+        None => None,
+    }
+}
+
+/// The body of [`spoofed_matrices`], with the hide flag settled and the draw's edit, if any, at
+/// hand.
+unsafe fn spoof(
+    matrices: *const Matrix3x4,
+    batch: *const SkinBatch,
+    len: usize,
+    hide: bool,
+    hands: Option<&dyn BodyPaletteEdit>,
+) -> Option<*const Matrix3x4> {
     if !hide && hands.is_none() {
         return None;
     }

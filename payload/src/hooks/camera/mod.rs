@@ -29,7 +29,11 @@ use crate::{
 pub(crate) mod authored;
 pub(crate) mod config;
 pub mod height;
+mod participants;
 pub(crate) use config::{CameraConfig, SCENE_NEAR_CLIP_M};
+pub(crate) use participants::{
+    CameraParticipants, register_camera_participants, register_render_camera_observer,
+};
 
 use crate::{
     headpose::{
@@ -202,7 +206,7 @@ fn setup_render_camera(camera: *mut Camera, jitter: bool) -> *mut c_void {
 
         // Snapshot the un-offset world transform for the HUD panel pose (see `StereoState::center_transform`).
         STEREO_STATE.lock().center_transform = Some(camera.m_TransformF);
-        crate::hud::pointer::publish_camera(
+        participants::publish_render_camera(
             glam::Mat4::from(camera.m_TransformF),
             pointer_cockpit,
             pointer_scale,
@@ -389,7 +393,7 @@ fn camera_update_render(camera: *mut Camera, dt: f32, dtf: f32) {
                 camera.m_TransformT0 = Matrix4::from(previous);
                 camera.m_TransformT1 = Matrix4::from(current);
                 *LAST_CAMERA_WORLD.lock() = Some(camera.m_TransformT1);
-                height::record(
+                participants::note_placement(
                     glam::Mat4::from(local_character.m_WorldMatrixT1),
                     current.w_axis.truncate(),
                 );
@@ -404,7 +408,7 @@ fn camera_update_render(camera: *mut Camera, dt: f32, dtf: f32) {
                 let [previous_position, position] = eye_points([prev, cur]);
                 let character_t1_matrix = glam::Mat4::from(local_character.m_WorldMatrixT1);
                 write_camera_transform(&mut camera.m_TransformT1, cur.orientation, position);
-                height::record(character_t1_matrix, position);
+                participants::note_placement(character_t1_matrix, position);
                 // Republish the transform for the sim-phase readers (see the GetCameraMatrix
                 // hook below).
                 *LAST_CAMERA_WORLD.lock() = Some(camera.m_TransformT1);
@@ -706,7 +710,7 @@ static LOADING_BASE: Mutex<Option<(glam::Vec3, glam::Quat)>> = Mutex::new(None);
 /// same transform the render camera uses.
 ///
 /// Inside the grapple's scoped aim calls, the getter instead returns the grapple ray's camera
-/// matrix ([`crate::controllers::aim::camera_matrix_override`]), so that the game's grapple
+/// matrix (registered through [`register_camera_participants`]), so that the game's grapple
 /// targeting casts from the off-hand.
 #[detour(
     address = jc3gi::camera::game_camera_manager::GameCameraManager::GetCameraMatrix_ADDRESS
@@ -717,9 +721,7 @@ fn game_camera_manager_get_camera_matrix(manager: *const GameCameraManager, matr
         .unwrap()
         .call(manager, matrix);
     if let (Some(view), Some(matrix)) =
-        (crate::controllers::aim::camera_matrix_override(), unsafe {
-            matrix.as_mut()
-        })
+        (participants::matrix_override(), unsafe { matrix.as_mut() })
     {
         *matrix = view;
         return;
