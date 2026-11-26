@@ -2,7 +2,7 @@
 
 While Rico stands on foot, his lower body is posed from the learned body estimate rather than the game's idle clip: the pelvis goes where forward kinematics on the estimate puts the player's, the feet stay planted on the ground through HumanIK and move only by explicit steps, and the root follows the floor point under the pelvis. In the air the pelvis hangs under the head with the legs relaxed toward a light air pose. Hanging from the hands, each foot braces on the face in front of it or hangs relaxed. On the walk the clip keeps the body, with a share of the IK pose turning its pelvis. Everything else keeps what it had: the game's clips, the procedural torso, the arms, and the head.
 
-The pure parts are in the `body-rig` crate (`fk`, `contact`, `brace`, `ik_weight`), and the game-facing parts in `crates/jc3vr-gameplay/src/controllers/body/ik_body/`. The settings are `controllers.body.ik`, and the feature is on by default. The design it implements, and the pitfalls of the procedural legs removed on 2 November that it is built to avoid, are in the 14 November session's feedback (`docs/sessions/2026-11-14_02-05/feedback/body.md`, "The IK-first on-foot body: a design").
+The pure parts are in the `body-rig` crate (`fk`, `contact`, `brace`, `ik_weight`), and the game-facing parts in `crates/jc3vr-body/src/controllers/body/ik_body/`. The settings are `controllers.body.ik`, and the feature is on by default. The design it implements, and the pitfalls of the procedural legs removed on 2 November that it is built to avoid, are in the 14 November session's feedback (`docs/sessions/2026-11-14_02-05/feedback/body.md`, "The IK-first on-foot body: a design").
 
 ## The FK pelvis
 

@@ -1,6 +1,6 @@
 # Smooth swim yaw
 
-Why body yaw snapped in water, and how the mod gives the right stick the swim heading. The engine-side mechanism is [engine/gameplay/swim-locomotion.md](../../engine/gameplay/swim-locomotion.md); the implementation is `crates/jc3vr-gameplay/src/hooks/input/swim/` behind `MovementConfig::smooth_swim_yaw` (default on).
+Why body yaw snapped in water, and how the mod gives the right stick the swim heading. The engine-side mechanism is [engine/gameplay/swim-locomotion.md](../../engine/gameplay/swim-locomotion.md); the implementation is `crates/jc3vr-body/src/hooks/input/swim/` behind `MovementConfig::smooth_swim_yaw` (default on).
 
 ## The problem
 
@@ -60,7 +60,7 @@ Two measures close the lead itself. `swim_turn_rate_deg_s` (360) is passed to [`
 
 ## Telemetry
 
-When the player enters or leaves the water, an info line `swim: the swim gate opened` or `closed` (target `controllers`, the recording's `diagnostic` text) says which signals read swimming (motion state, state bits), whether the override is on, and whether the headpose has a heading to give it; without all of them the detours pass through and the game's own swim steering runs. While the local player swims, an info line `swim: the heading` (target `swim`) is logged once a second from the input tick (`crates/jc3vr-gameplay/src/hooks/input/swim/telemetry.rs`). It carries:
+When the player enters or leaves the water, an info line `swim: the swim gate opened` or `closed` (target `controllers`, the recording's `diagnostic` text) says which signals read swimming (motion state, state bits), whether the override is on, and whether the headpose has a heading to give it; without all of them the detours pass through and the game's own swim steering runs. While the local player swims, an info line `swim: the heading` (target `swim`) is logged once a second from the input tick (`crates/jc3vr-body/src/hooks/input/swim/telemetry.rs`). It carries:
 
 - `target_yaw_deg` and `target_turn_deg_s`: the body-yaw target and how fast it turned since the last line. With no turn input the target only moves when the accumulator is re-seeded or clamped, so a steady rate here with `look_x_peak` near zero is the ratchet.
 - `body_yaw_deg`, `body_heading_deg`, `body_forward_y`, and `body_turn_deg_s`: the body's euler yaw (what the accumulator seeds and clamps against), the ground heading of its forward, the forward's height, and how fast the body turned. A forward near vertical with the two headings apart would mean the character's frame is the swim capsule's rather than the facing frame, and the euler yaw is at its gimbal lock.

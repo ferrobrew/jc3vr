@@ -1,6 +1,6 @@
 # The grip
 
-The grip takes things: a gun from a holster or a rack, a grenade from its pouch, a prop off the ground, the steering wheel, a door's handle, a wall to climb. This doc is the one description of how a hand's grip decides what it takes, when it takes it, what letting go does, and the markers that show it. The subsystems that act on what was taken describe their own side ([physical-weapons.md](physical-weapons.md), [physical-hands.md](physical-hands.md), [steering-wheel.md](steering-wheel.md), and the others linked below). The code is `crates/jc3vr-gameplay/src/controllers/grab/`.
+The grip takes things: a gun from a holster or a rack, a grenade from its pouch, a prop off the ground, the steering wheel, a door's handle, a wall to climb. This doc is the one description of how a hand's grip decides what it takes, when it takes it, what letting go does, and the markers that show it. The subsystems that act on what was taken describe their own side ([physical-weapons.md](physical-weapons.md), [physical-hands.md](physical-hands.md), [steering-wheel.md](steering-wheel.md), and the others linked below). The code is `crates/jc3vr-body/src/controllers/grab/`.
 
 ## Decisions
 

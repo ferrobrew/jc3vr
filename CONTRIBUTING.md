@@ -10,12 +10,12 @@ jc3vr is a Cargo workspace. The runtime crates sit at the top level:
 - **payload**: The injected DLL (`jc3vr_payload`, the workspace's only `cdylib`). It holds the entry points, the startup and shutdown order, the composition of every layer crate's hooks and shutdown participants, the game's frame entry points and the window procedure, and the settings aggregate. The rest of the mod's code lives in the layer crates below.
 - **jc3gi**: Generated Rust bindings to JC3's internal structures. Consumed by the payload and the layer crates to read and write game state.
 
-The mod's code is split into nine layer crates in `crates/`, each of which may depend only on the crates below it (`docs/architecture.md`, "Crate layering", has the order and what each holds):
+The mod's code is split into ten layer crates in `crates/`, each of which may depend only on the crates below it (`docs/architecture.md`, "Crate layering", has the order and what each holds):
 
 - **jc3vr-core**: the lifecycle, the configuration engine, the hook plumbing, frame timing, and the profiler core.
 - **jc3vr-input**: the pure controller frame, motion, scheme, haptic mix, and input-capture policy. It depends on no layer crate and builds on any host.
 - **jc3vr-view**: the OpenXR runtime, the head pose, the camera, the frame state the render hooks read per draw, the tracking recorder, and the registries the render hooks share with the layers above.
-- **jc3vr-render** and **jc3vr-gameplay**, siblings on the view crate with no edge between them: stereo, FSR, the far field, the engine-pipeline hooks, and the render diagnostics; and the controllers, the grapple, and the gameplay detours.
+- **jc3vr-render**, beside **jc3vr-body** and **jc3vr-gameplay** on the view crate with no edge between render and those two: stereo, FSR, the far field, the engine-pipeline hooks, and the render diagnostics; the body-bound controllers (the body, hands, aim, grip, locomotion, and roomscale, and the vocabulary and facts the subsystems above share) with the character, animation, and input detours; and, on the body crate, the weapons, physical hands, vehicles, bindings, the grapple, and the remaining gameplay detours.
 - **jc3vr-capture**: the screenshot harness, the visual stage's controls, and the benchmark samplers, on the render crate. The render hooks reach it only through the probe tables it fills at install, and only the tooling crate and the crates above it may depend on it.
 - **jc3vr-hud** and **jc3vr-tooling**, siblings with no edge between them: the floating panel and its layers, and the recorder, directing tools, and the capture harness's request file and staging.
 - **jc3vr-ui**: the debug UI, the status rows, and the pause menu.
@@ -30,7 +30,7 @@ Libraries shared by the payload and the offline tools live in `crates/` too:
 - **fsr-sys**: FFI bindings to FSR 2 with its Direct3D 11 backend, built from the submodule in `vendor/`.
 - **tracking-format**: The `.jc3trk` tracking recording's data model and codec.
 
-`crates/layering-guard` is not a library but a test crate: Cargo forbids cycles between the layer crates, and the guard checks the rest of the layering (`docs/architecture.md`, "Crate layering"). A dependency that points up the order or across between the HUD and tooling crates, a layer crate that depends on the payload, a second `cdylib`, or the render crate's hooks naming the gameplay or HUD crates fails it, and the message says how to fix it. Move the code down or invert the edge with a registration; do not change the order to admit the edge.
+`crates/layering-guard` is not a library but a test crate: Cargo forbids cycles between the layer crates, and the guard checks the rest of the layering (`docs/architecture.md`, "Crate layering"). A dependency that points up the order or across between the HUD and tooling crates, a layer crate that depends on the payload, a second `cdylib`, or the view and render crates' hooks naming the body, gameplay, or HUD crates fails it, and the message says how to fix it. Move the code down or invert the edge with a registration; do not change the order to admit the edge.
 
 Offline tools live in `tools/`: the Rust crates `shadergen` (compiles the committed `.dxbc` shaders), `tracking-synth` (synthesizes, prints, and evaluates tracking recordings), `dxbc-tool`, and `scaleform-gfx-examine`, alongside Python tooling for the capture harness (`tools/rendering/`), session analysis (`tools/analysis/`), and asset extraction. The rest of the root holds `scripts/` (shell entry points for building, testing, and launching under wine and Proton), `vendor/` (third-party source), and `docs/`.
 

@@ -191,7 +191,7 @@ With `late_update` set, the rendered hands and weapon are corrected at render ti
 
 ## Finger curls
 
-The code is in `crates/jc3vr-gameplay/src/controllers/fingers/`, and the settings are `controllers.fingers`. Each finger of a hand the controllers drive gets a curl from 0 (straight) to 1 (a fist), and each finger but the thumb a splay, its sideways turn at the knuckle.
+The code is in `crates/jc3vr-body/src/controllers/fingers/`, and the settings are `controllers.fingers`. Each finger of a hand the controllers drive gets a curl from 0 (straight) to 1 (a fist), and each finger but the thumb a splay, its sideways turn at the knuckle.
 
 Each hand joint retains position validity, orientation validity, position tracking, and orientation tracking independently. Validity determines whether a component can be consumed; tracking describes whether the runtime actively tracks it. The diagnostic tracked-joint count requires both tracking flags.
 
@@ -238,7 +238,7 @@ While the controller scheme is in effect, the gamepad-semantics pin holds the ac
 
 ## Sight lines
 
-A weapon's sight correction moves the line's origin from the fire point and turns it, in the fire point's frame, and is looked up by the weapon's name hash in order: the per-weapon entry in the config (`aim.sights`, which the sight tuning tool writes), then the embedded sight table, then none, which leaves the line on the fire point. The code is in `crates/jc3vr-gameplay/src/controllers/aim/sights/`.
+A weapon's sight correction moves the line's origin from the fire point and turns it, in the fire point's frame, and is looked up by the weapon's name hash in order: the per-weapon entry in the config (`aim.sights`, which the sight tuning tool writes), then the embedded sight table, then none, which leaves the line on the fire point. The code is in `crates/jc3vr-body/src/controllers/aim/sights/`.
 
 The embedded table is `tools/sights/sights.json`, derived offline from the game's weapon models by the sight tool ([`tools/sights/README.md`](../../../tools/sights/README.md)) and compiled into the payload. Only its `scoped`, `pistol`, and `tuned` entries are used; the `iron_uncertain` and `failed` entries are not trusted and leave the weapon on its fire point. The config's table holds up to 32 entries, room for every weapon the embedded table does not trust. The Weapons > Aim, sights, and scopes live status shows where the held weapon's correction comes from.
 
@@ -269,7 +269,7 @@ The frame's primitives are resolved against the head (the cyclopean eye) rather 
 
 ## Posture and roomscale
 
-This is milestone 2, and has not been run in the headset. The code is in `crates/jc3vr-gameplay/src/controllers/roomscale/` and `crates/jc3vr-view/src/vr/stage.rs`, and the settings are under `controllers.roomscale`, except the head remap (`controllers.body.remap_head`) and the seated crouch flick (`controllers.bindings.crouch_flick`). The body following the head about the room is the rig's ([rig.md](../body/rig.md), `crates/jc3vr-gameplay/src/controllers/body/rig/`, `controllers.body.rig`). The design is in the plan's ["Posture"](controllers-and-roomscale.md#posture) and ["Roomscale design"](controllers-and-roomscale.md#roomscale-design). These parts do not depend on the controller scheme, because a gamepad player standing in a room moves the head in the same way. They act only while the VR source owns the head pose, and each part that changes behaviour is on by default, as part of the full gameplay preset.
+This is milestone 2, and has not been run in the headset. The code is in `crates/jc3vr-body/src/controllers/roomscale/` and `crates/jc3vr-view/src/vr/stage.rs`, and the settings are under `controllers.roomscale`, except the head remap (`controllers.body.remap_head`) and the seated crouch flick (`controllers.bindings.crouch_flick`). The body following the head about the room is the rig's ([rig.md](../body/rig.md), `crates/jc3vr-body/src/controllers/body/rig/`, `controllers.body.rig`). The design is in the plan's ["Posture"](controllers-and-roomscale.md#posture) and ["Roomscale design"](controllers-and-roomscale.md#roomscale-design). These parts do not depend on the controller scheme, because a gamepad player standing in a room moves the head in the same way. They act only while the VR source owns the head pose, and each part that changes behaviour is on by default, as part of the full gameplay preset.
 
 When the runtime offers a STAGE reference space, the session creates one beside the LOCAL space. Once per frame the mid-eye pose in LOCAL is located against STAGE, which gives the head's height above the floor, and the play area's bounds are read again whenever the runtime reports a reference-space change. The bounds are logged (`stage: play area bounds`, info) the first time and whenever they change; a burst of reference-space changes that leaves them as they were logs at debug level only.
 
@@ -389,7 +389,7 @@ The wingsuit's barrel roll (`wingsuit_evade.enabled`, on). The code is in `crate
 
 ## Grenades, aim assist, and reloads
 
-This is most of milestone 5, and has not been run in the headset. The code is in `crates/jc3vr-gameplay/src/controllers/weapons/` (`grenade/`), `crates/jc3vr-gameplay/src/controllers/aim/` (`assist.rs`, `targets.rs`), and `crates/jc3vr-input/src/motion.rs`. The engine side is in [aim-pipeline.md, "Grenades"](../../engine/gameplay/aim-pipeline.md#grenades) and ["Aim assist"](../../engine/gameplay/aim-pipeline.md#aim-assist-updatealltargets). The scopes are the next section, and the sight lines are under "Aiming"; the hand-tier promotions are not built.
+This is most of milestone 5, and has not been run in the headset. The code is in `crates/jc3vr-gameplay/src/controllers/weapons/` (`grenade/`), `crates/jc3vr-body/src/controllers/aim/` (`assist.rs`, `targets.rs`), and `crates/jc3vr-input/src/motion.rs`. The engine side is in [aim-pipeline.md, "Grenades"](../../engine/gameplay/aim-pipeline.md#grenades) and ["Aim assist"](../../engine/gameplay/aim-pipeline.md#aim-assist-updatealltargets). The scopes are the next section, and the sight lines are under "Aiming"; the hand-tier promotions are not built.
 
 The hands' recent motion is kept for the throws. Every published controller frame adds each tracked grip's pose and velocities to a half-second history; an untracked frame adds nothing, so an inferred pose never feeds a throw. A velocity is the runtime's own where it reports one, and a difference of positions otherwise.
 

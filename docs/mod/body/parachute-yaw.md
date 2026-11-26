@@ -1,6 +1,6 @@
 # Parachute head-yaw suppression
 
-Why the parachute turned with the head in VR, and how the mod stops it. The engine-side mechanism is [engine/gameplay/parachute-locomotion.md](../../engine/gameplay/parachute-locomotion.md); the implementation is `crates/jc3vr-gameplay/src/hooks/input/parachute.rs`.
+Why the parachute turned with the head in VR, and how the mod stops it. The engine-side mechanism is [engine/gameplay/parachute-locomotion.md](../../engine/gameplay/parachute-locomotion.md); the implementation is `crates/jc3vr-body/src/hooks/input/parachute.rs`.
 
 ## The problem
 

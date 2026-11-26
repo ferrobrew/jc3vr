@@ -68,7 +68,7 @@ A hand its body drives does not probe, push off surfaces through the probes, sho
 
 ## Probes
 
-With the hand bodies off, the palms are probed with ray casts. The casts reuse the player aim's filtered ray query ([`PhysicsSystem::CastRay`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/physics::PhysicsSystem##func-CastRay) through the aim's filter, as in [the aim raycast](../../../crates/jc3vr-gameplay/src/controllers/aim/raycast.rs)), which never hits the player and already names the hit object and body. The game's own melee uses a box overlap query ([`PhysicsSystem::CollideBox`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/physics::PhysicsSystem##func-CollideBox)) for objects; it is bound but not used, because its all-hits collector owns Havok heap memory the mod would have to manage.
+With the hand bodies off, the palms are probed with ray casts. The casts reuse the player aim's filtered ray query ([`PhysicsSystem::CastRay`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/physics::PhysicsSystem##func-CastRay) through the aim's filter, as in [the aim raycast](../../../crates/jc3vr-body/src/controllers/aim/raycast.rs)), which never hits the player and already names the hit object and body. The game's own melee uses a box overlap query ([`PhysicsSystem::CollideBox`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/physics::PhysicsSystem##func-CollideBox)) for objects; it is bound but not used, because its all-hits collector owns Havok heap memory the mod would have to manage.
 
 ## The palm
 

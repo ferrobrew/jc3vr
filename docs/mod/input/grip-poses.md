@@ -1,6 +1,6 @@
 # Grip poses
 
-A hand that holds something wraps its fingers round it instead of taking a generic curl: a pistol grip with the trigger finger on the trigger, a foregrip, a magazine pinched between the thumb and the first fingers, a grenade in the palm, fingers hooked over a ledge, a palm flat on a crate, a wrap sized to a wheel's rim or a rope, a door handle, a fistful of collar. The code is in `crates/jc3vr-gameplay/src/controllers/fingers/grip/` and `crates/jc3vr-gameplay/src/controllers/fingers/target.rs`; the finger curls it builds on are in [controllers.md, "Finger curls"](controllers.md#finger-curls).
+A hand that holds something wraps its fingers round it instead of taking a generic curl: a pistol grip with the trigger finger on the trigger, a foregrip, a magazine pinched between the thumb and the first fingers, a grenade in the palm, fingers hooked over a ledge, a palm flat on a crate, a wrap sized to a wheel's rim or a rope, a door handle, a fistful of collar. The code is in `crates/jc3vr-body/src/controllers/fingers/grip/` and `crates/jc3vr-body/src/controllers/fingers/target.rs`; the finger curls it builds on are in [controllers.md, "Finger curls"](controllers.md#finger-curls).
 
 ## Declaring what a hand holds
 

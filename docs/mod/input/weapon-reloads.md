@@ -4,7 +4,7 @@ Every weapon in the game, checked against the true reload ([reload.md](reload.md
 
 ## Sources and coverage
 
-The weapons are every weapon entity the archives hold, base game, patch, and DLC, read with the tools in `tools/sights/`: the 40 hand weapons in `01_one_handed` and `02_two_handed` that the Gibbed file lists name, the DLC hand weapons the DLC archives name (the Bavarium Splitter in Sky Fortress and Mech Land Assault, the Lightning Gun in Bavarium Sea Heist), the mounted weapons the player can carry (`04_mounted`, among them Mech Land Assault's power core), the thrown weapons, and the stationary and vehicle weapons. The spawn definitions in `crates/jc3vr-gameplay/src/controllers/spawn/spawn_defs.json` cover the same base-game set less the cut and test weapons, and none of the DLC. The pre-order DLCs add only vehicles. The grappling hook is not a weapon entity.
+The weapons are every weapon entity the archives hold, base game, patch, and DLC, read with the tools in `tools/sights/`: the 40 hand weapons in `01_one_handed` and `02_two_handed` that the Gibbed file lists name, the DLC hand weapons the DLC archives name (the Bavarium Splitter in Sky Fortress and Mech Land Assault, the Lightning Gun in Bavarium Sea Heist), the mounted weapons the player can carry (`04_mounted`, among them Mech Land Assault's power core), the thrown weapons, and the stationary and vehicle weapons. The spawn definitions in `crates/jc3vr-body/src/controllers/spawn/spawn_defs.json` cover the same base-game set less the cut and test weapons, and none of the DLC. The pre-order DLCs add only vehicles. The grappling hook is not a weapon entity.
 
 For each weapon:
 

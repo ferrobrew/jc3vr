@@ -14,7 +14,7 @@ The tick runs on the engine's fixed-rate sim tick, inside the `Update` hook, so 
 
 ## Tapping the move input
 
-Move is handled in the locomotion tasks rather than by clearing effectors (`crates/jc3vr-gameplay/src/hooks/input/locomotion.rs`). The locomotion tasks pick between run/steer and aim-relative strafe by reading the local player's aim flags (`Character::m_AimFlags`), the same flags that drive the weapon raise, the reticle, and auto-aim, so the mod leaves those flags alone and steers the body through the orientation and displacement evaluators instead.
+Move is handled in the locomotion tasks rather than by clearing effectors (`crates/jc3vr-body/src/hooks/input/locomotion.rs`). The locomotion tasks pick between run/steer and aim-relative strafe by reading the local player's aim flags (`Character::m_AimFlags`), the same flags that drive the weapon raise, the reticle, and auto-aim, so the mod leaves those flags alone and steers the body through the orientation and displacement evaluators instead.
 
 `NStateTask_InputLocoSetTargetDirTask::SetupTargetDir` reads the move axes, rotates them camera-relative, and writes the move vectors to the character blackboard; the headpose body-yaw scheme and the slide overrides build on top of it (heading via the target-face-dir blackboard, displacement via `EvaluateCharacterDisplacement`). See `head-and-body.md` for the head/body coupling.
 
