@@ -294,7 +294,7 @@ The mech is its own vehicle class ([`Character::IsAttachedToMech`](https://ferro
 
 #### UI
 
-While a game menu is open, the `ui` action set replaces the gameplay bindings, matching the game's own `END_UI_MAPPINGS` boundary. Both hands navigate the menus alike, with each hand's grip as its modifier; the layout as built is in [controllers.md, "Bindings and injection"](controllers.md#bindings-and-injection). A laser pointer on the floating panel is deferred with the rest of the mod UI. `payload/src/hud/pointer.rs` already isolates the pointer source for it.
+While a game menu is open, the `ui` action set replaces the gameplay bindings, matching the game's own `END_UI_MAPPINGS` boundary. Both hands navigate the menus alike, with each hand's grip as its modifier; the layout as built is in [controllers.md, "Bindings and injection"](controllers.md#bindings-and-injection). A laser pointer on the floating panel is deferred with the rest of the mod UI. `crates/jc3vr-hud/src/hud/pointer/` already isolates the pointer source for it.
 
 ## Aiming
 
