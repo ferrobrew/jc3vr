@@ -144,14 +144,14 @@ pub fn frame_tick() {
 ///
 /// The game thread, after the engine's render update and outside the physics step.
 pub unsafe fn render_tick(dtf: f32) {
-    let config = PHYSICAL_HANDS_CONFIG.lock().collider_view;
-    if !config.enabled || !jc3vr_core::hooks::in_gameplay() {
+    let enabled = PHYSICAL_HANDS_CONFIG.query(|c| c.collider_view.enabled);
+    if !enabled || !jc3vr_core::hooks::in_gameplay() {
         if WAS_ACTIVE.swap(false, Ordering::Relaxed) {
             store::clear(Source::ColliderView);
             *STATE.lock() = State::EMPTY;
             let mut status = STATUS.lock();
             *status = ColliderViewStatus {
-                enabled: config.enabled,
+                enabled,
                 registered: status.registered,
                 steps: status.steps,
                 reads: status.reads,
@@ -172,15 +172,7 @@ pub unsafe fn render_tick(dtf: f32) {
         let mods = mod_ids();
         let started = Instant::now();
         // SAFETY: forwarded from the caller.
-        let scanned = unsafe {
-            scan::scan(
-                head.position,
-                RADIUS_M,
-                MAX_BODIES,
-                config.static_bodies,
-                &mods,
-            )
-        };
+        let scanned = unsafe { scan::scan(head.position, RADIUS_M, MAX_BODIES, true, &mods) };
         (scanned, started.elapsed())
     });
     let flashes = take_flashes();
@@ -220,23 +212,17 @@ pub unsafe fn render_tick(dtf: f32) {
         }
         return;
     };
-    let gaze = config
-        .gaze
-        .then(|| {
-            gazed(
-                &current.bodies,
-                head.position,
-                head.orientation * Vec3::NEG_Z,
-                RADIUS_M * 2.0,
-            )
-        })
-        .flatten();
+    let gaze = gazed(
+        &current.bodies,
+        head.position,
+        head.orientation * Vec3::NEG_Z,
+        RADIUS_M * 2.0,
+    );
     let drawn = draw::build(
         &DrawInputs {
             current,
             previous: None,
             dtf,
-            config: &config,
             budget: MAX_PRIMITIVES,
             flashes: &flashes,
             gaze: gaze.map(|b| b.id),

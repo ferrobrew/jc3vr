@@ -57,7 +57,6 @@ use jc3vr_hud::{controllers::map as controller_map, hud::summary_panel};
 use jc3vr_input::{frame as controller_frame, frame::InteractionProfile};
 use jc3vr_physical::controllers::{
     glass as controller_glass, physical_hands as controller_physical_hands,
-    physical_hands::collider_view::ColliderViewConfig,
 };
 use jc3vr_render::controllers::overlay::pass as overlay_pass;
 use jc3vr_view::vr::input as vr_input;
@@ -320,12 +319,6 @@ pub(crate) fn status(id: FeatureId) -> Option<FeatureBody> {
         _ => return None,
     };
     Some(body)
-}
-
-/// What the collider view draws, edited by the global visualization drawer on a copy of the saved
-/// configuration.
-pub(crate) fn collider_view_settings(ui: &mut Ui, collider: &mut ColliderViewConfig) {
-    collider_view::collider_view_settings(ui, collider);
 }
 
 /// The world-space overlay, grab view, and collider view readouts, shown in the global

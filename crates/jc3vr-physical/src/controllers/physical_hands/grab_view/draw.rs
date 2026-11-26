@@ -1,10 +1,9 @@
-//! The grab view's primitives for one input tick, within a budget: each hand's palm marker, the
-//! refused grabs, the reach rays and the door handles near the palms, a line from each hand to the
+//! The grab view's primitives for one input tick, within a budget: the refused grabs, the reach rays and the door handles near the palms, a line from each hand to the
 //! grip targets near it, and the candidates' boxes, in that order, so that the budget leaves out
 //! the candidates first.
 //!
-//! Everything is anchored at render time (`docs/mod/rendering/render-time-anchoring.md`): the palm
-//! markers and the hands' ends of the lines to the hands' render-time poses, a target's end where
+//! Everything is anchored at render time (`docs/mod/rendering/render-time-anchoring.md`): the hands'
+//! ends of the lines to the hands' render-time poses, a target's end where
 //! its grip marker is, the reach rays (placed by the palms' tick, which rides with the player) to
 //! the render-time head at their offset from the tick's head, and only what lies in the world (the
 //! door handles, the candidates, a refusal's point) to the world.
@@ -25,9 +24,8 @@ use jc3vr_view::controllers::overlay::primitive::{
 use crate::controllers::physical_hands::grab_view::{
     Recorded,
     candidates::MAX_CANDIDATES,
-    config::GrabViewConfig,
     model::{
-        Candidate, PalmState, REFUSAL_COLOUR, TargetState, approach, refusal_flash, target_colour,
+        Candidate, REFUSAL_COLOUR, TargetState, approach, refusal_flash, target_colour,
         target_mark_size,
     },
 };
@@ -48,14 +46,11 @@ pub struct Drawn {
 
 /// What the view is drawn from.
 pub(crate) struct DrawInputs<'a> {
-    pub config: &'a GrabViewConfig,
     pub frame: &'a MarkerFrame,
     /// The grip model's targets and resolution this tick.
     pub tick: &'a Tick,
     /// The palms' last tick, while it is fresh.
     pub recorded: Option<&'a Recorded>,
-    /// Each hand's palm state, by [`Hand::index`].
-    pub palms: [PalmState; 2],
     pub candidates: &'a [Candidate],
     /// The refused grabs still flashing: where, and how many seconds ago.
     pub flashes: &'a [(Anchor, f32)],
@@ -72,38 +67,28 @@ pub const PRIMITIVE_BUDGET: usize = 1024;
 pub(crate) fn build(inputs: &DrawInputs, out: &mut Vec<Primitive>) -> Drawn {
     out.clear();
     let mut drawn = Drawn::default();
-    let config = inputs.config;
-    if config.wrist {
-        for hand in Hand::BOTH {
-            palm_marker(hand, inputs.palms[hand.index()], out);
-        }
-    }
-    if config.refusals {
-        for &(at, age_s) in inputs.flashes {
-            if let Some((alpha, share)) = refusal_flash(age_s) {
-                let [r, g, b] = REFUSAL_COLOUR;
-                out.push(sprite(
-                    at,
-                    REFUSAL_MARK_M * share * inputs.frame.xf.world_scale,
-                    Shape::Ring { thickness: 0.35 },
-                    [r, g, b, alpha],
-                ));
-                drawn.flashes += 1;
-            }
+    for &(at, age_s) in inputs.flashes {
+        if let Some((alpha, share)) = refusal_flash(age_s) {
+            let [r, g, b] = REFUSAL_COLOUR;
+            out.push(sprite(
+                at,
+                REFUSAL_MARK_M * share * inputs.frame.xf.world_scale,
+                Shape::Ring { thickness: 0.35 },
+                [r, g, b, alpha],
+            ));
+            drawn.flashes += 1;
         }
     }
     if let Some(recorded) = inputs.recorded {
         let rides = |p: Vec3| Anchor::Head(p - recorded.head);
-        if config.rays {
-            for ray in recorded.rays.iter().flatten() {
-                let colour = ray.outcome.colour();
-                let end = ray.hit.unwrap_or(ray.to);
-                out.push(line(rides(ray.from), rides(end), RAY_WIDTH_M, colour));
-                if let Some(hit) = ray.hit {
-                    out.push(sprite(rides(hit), HIT_MARK_M, Shape::Disc, colour));
-                }
-                drawn.rays += 1;
+        for ray in recorded.rays.iter().flatten() {
+            let colour = ray.outcome.colour();
+            let end = ray.hit.unwrap_or(ray.to);
+            out.push(line(rides(ray.from), rides(end), RAY_WIDTH_M, colour));
+            if let Some(hit) = ray.hit {
+                out.push(sprite(rides(hit), HIT_MARK_M, Shape::Disc, colour));
             }
+            drawn.rays += 1;
         }
         for handle in recorded.handles.iter().flatten() {
             out.push(sprite(
@@ -115,75 +100,69 @@ pub(crate) fn build(inputs: &DrawInputs, out: &mut Vec<Primitive>) -> Drawn {
             drawn.handles += 1;
         }
     }
-    if config.targets {
-        let lines = target_lines(inputs);
-        for line_spec in lines {
-            if out.len() + 2 > PRIMITIVE_BUDGET {
-                drawn.dropped += 1;
-                continue;
-            }
-            let colour = target_colour(line_spec.state, line_spec.approach);
-            out.push(line(
-                Anchor::hand(line_spec.hand, HandPose::Grip),
-                line_spec.at,
-                TARGET_LINE_WIDTH_M,
-                colour,
-            ));
-            let shape = match line_spec.state {
-                TargetState::OutOfReach | TargetState::InReach => Shape::Ring { thickness: 0.3 },
-                TargetState::Chosen | TargetState::Held => Shape::Disc,
-            };
-            out.push(sprite(
-                line_spec.at,
-                target_mark_size(line_spec.approach) * inputs.frame.xf.world_scale,
-                shape,
-                colour,
-            ));
-            drawn.target_lines += 1;
+    let lines = target_lines(inputs);
+    for line_spec in lines {
+        if out.len() + 2 > PRIMITIVE_BUDGET {
+            drawn.dropped += 1;
+            continue;
         }
+        let colour = target_colour(line_spec.state, line_spec.approach);
+        out.push(line(
+            Anchor::hand(line_spec.hand, HandPose::Grip),
+            line_spec.at,
+            TARGET_LINE_WIDTH_M,
+            colour,
+        ));
+        let shape = match line_spec.state {
+            TargetState::OutOfReach | TargetState::InReach => Shape::Ring { thickness: 0.3 },
+            TargetState::Chosen | TargetState::Held => Shape::Disc,
+        };
+        out.push(sprite(
+            line_spec.at,
+            target_mark_size(line_spec.approach) * inputs.frame.xf.world_scale,
+            shape,
+            colour,
+        ));
+        drawn.target_lines += 1;
     }
-    if config.zones {
-        for view in inputs.zones.iter().flatten() {
-            if out.len() + ZONE_PRIMITIVES > PRIMITIVE_BUDGET {
-                drawn.dropped += 1;
-                continue;
-            }
-            zone_primitives(view, inputs.frame, out);
+    for view in inputs.zones.iter().flatten() {
+        if out.len() + ZONE_PRIMITIVES > PRIMITIVE_BUDGET {
+            drawn.dropped += 1;
+            continue;
+        }
+        zone_primitives(view, inputs.frame, out);
+        drawn.zones += 1;
+    }
+    if let Some(view) = inputs.knock {
+        if out.len() + KNOCK_PRIMITIVES > PRIMITIVE_BUDGET {
+            drawn.dropped += 1;
+        } else {
+            knock_primitives(&view, inputs.frame, out);
             drawn.zones += 1;
         }
-        if let Some(view) = inputs.knock {
-            if out.len() + KNOCK_PRIMITIVES > PRIMITIVE_BUDGET {
-                drawn.dropped += 1;
-            } else {
-                knock_primitives(&view, inputs.frame, out);
-                drawn.zones += 1;
-            }
-        }
     }
-    if config.candidates {
-        for (k, candidate) in inputs.candidates.iter().enumerate() {
-            if k >= MAX_CANDIDATES || out.len() + CANDIDATE_PRIMITIVES > PRIMITIVE_BUDGET {
-                drawn.dropped += 1;
-                continue;
-            }
-            let colour = candidate.kind.colour();
-            for (a, b) in candidate.aabb.edges() {
-                out.push(line(
-                    Anchor::World(a),
-                    Anchor::World(b),
-                    BOX_WIDTH_M,
-                    colour,
-                ));
-            }
-            let [r, g, b, a] = colour;
-            out.push(line(
-                Anchor::World(candidate.aabb.centre()),
-                Anchor::hand(candidate.hand, HandPose::Grip),
-                BOX_WIDTH_M,
-                [r, g, b, a * 0.5],
-            ));
-            drawn.candidates += 1;
+    for (k, candidate) in inputs.candidates.iter().enumerate() {
+        if k >= MAX_CANDIDATES || out.len() + CANDIDATE_PRIMITIVES > PRIMITIVE_BUDGET {
+            drawn.dropped += 1;
+            continue;
         }
+        let colour = candidate.kind.colour();
+        for (a, b) in candidate.aabb.edges() {
+            out.push(line(
+                Anchor::World(a),
+                Anchor::World(b),
+                BOX_WIDTH_M,
+                colour,
+            ));
+        }
+        let [r, g, b, a] = colour;
+        out.push(line(
+            Anchor::World(candidate.aabb.centre()),
+            Anchor::hand(candidate.hand, HandPose::Grip),
+            BOX_WIDTH_M,
+            [r, g, b, a * 0.5],
+        ));
+        drawn.candidates += 1;
     }
     drawn
 }
@@ -260,37 +239,6 @@ fn distance_to(
             let distance = in_reach.unwrap_or(distance);
             distance.is_finite().then_some((distance, distance))
         }
-    }
-}
-
-/// The palm marker on `hand`'s wrist: a disc in the state's colour, ringed while the palm acts.
-fn palm_marker(hand: Hand, state: PalmState, out: &mut Vec<Primitive>) {
-    let at = Anchor::Hand {
-        hand,
-        pose: HandPose::Wrist,
-        offset: WRIST_OFFSET,
-    };
-    let colour = state.colour();
-    out.push(Primitive::Sprite {
-        at,
-        size: SpriteSize::World(WRIST_MARK_M),
-        facing: Facing::Billboard,
-        shape: Shape::Disc,
-        color: colour,
-        depth: DepthMode::Always,
-    });
-    if matches!(
-        state,
-        PalmState::Acting | PalmState::Driven | PalmState::Holding
-    ) {
-        out.push(Primitive::Sprite {
-            at,
-            size: SpriteSize::World(WRIST_MARK_M * 1.6),
-            facing: Facing::Billboard,
-            shape: Shape::Ring { thickness: 0.2 },
-            color: colour,
-            depth: DepthMode::Always,
-        });
     }
 }
 
@@ -443,10 +391,6 @@ const KNOCK_FAST_COLOUR: Rgba = [0.3, 1.0, 0.35, 0.9];
 /// The held tip's marker diameter, metres at the player's scale.
 const KNOCK_TIP_M: f32 = 0.014;
 
-/// The palm marker's place in the wrist frame: over the back of the hand (+Y), toward the forearm.
-const WRIST_OFFSET: Vec3 = Vec3::new(0.0, 0.04, 0.03);
-/// The palm marker's diameter, metres.
-const WRIST_MARK_M: f32 = 0.022;
 /// A refusal's flash at its largest, metres.
 const REFUSAL_MARK_M: f32 = 0.16;
 const RAY_WIDTH_M: f32 = 0.002;
@@ -485,17 +429,14 @@ mod tests {
     }
 
     fn inputs<'a>(
-        config: &'a GrabViewConfig,
         frame: &'a MarkerFrame,
         tick: &'a Tick,
         candidates: &'a [Candidate],
     ) -> DrawInputs<'a> {
         DrawInputs {
-            config,
             frame,
             tick,
             recorded: None,
-            palms: [PalmState::Acting; 2],
             candidates,
             flashes: &[],
             zones: [None; 2],
@@ -528,9 +469,8 @@ mod tests {
             reaches: vec![reach],
             chosen: Some(reach),
         };
-        let config = GrabViewConfig::new();
         let frame = test_frame();
-        let lines = target_lines(&inputs(&config, &frame, &tick, &[]));
+        let lines = target_lines(&inputs(&frame, &tick, &[]));
         let states: Vec<TargetState> = lines.iter().map(|l| l.state).collect();
         assert_eq!(states, vec![TargetState::Chosen, TargetState::OutOfReach]);
         assert!(lines.iter().all(|l| l.hand == Hand::Left));
@@ -545,9 +485,8 @@ mod tests {
             ..Tick::default()
         };
         tick.grips = [Some(Vec3::new(0.0, 1.0, 0.0)); 2];
-        let config = GrabViewConfig::new();
         let frame = test_frame();
-        let lines = target_lines(&inputs(&config, &frame, &tick, &[]));
+        let lines = target_lines(&inputs(&frame, &tick, &[]));
         assert_eq!(lines.len(), 1);
         assert_eq!(lines[0].hand, Hand::Right);
         assert_eq!(lines[0].state, TargetState::Held);
@@ -555,10 +494,6 @@ mod tests {
 
     #[test]
     fn the_rays_follow_the_head_and_the_candidates_are_capped() {
-        let config = GrabViewConfig {
-            wrist: true,
-            ..GrabViewConfig::new()
-        };
         let frame = test_frame();
         let tick = Tick::default();
         let candidate = Candidate {
@@ -585,7 +520,7 @@ mod tests {
             ],
             handles: Default::default(),
         };
-        let mut drawn_inputs = inputs(&config, &frame, &tick, &candidates);
+        let mut drawn_inputs = inputs(&frame, &tick, &candidates);
         drawn_inputs.recorded = Some(&recorded);
         let mut out = Vec::new();
         let drawn = build(&drawn_inputs, &mut out);
@@ -598,7 +533,7 @@ mod tests {
             RAY_WIDTH_M,
             RayOutcome::InReach.colour(),
         )));
-        // Two palm markers with their rings, the ray and its hit, and the candidates.
-        assert_eq!(out.len(), 4 + 2 + MAX_CANDIDATES * CANDIDATE_PRIMITIVES);
+        // The ray and its hit, and the candidates.
+        assert_eq!(out.len(), 2 + MAX_CANDIDATES * CANDIDATE_PRIMITIVES);
     }
 }

@@ -1,10 +1,10 @@
 # The grab view
 
-The grab view draws, around each hand, what the grip and the palms' reach saw on the last tick: the reach's rays and what they hit, a line from the hand to every grip target near it, the palms' state on the wrist, a flash where a grab was refused, and the boxes of the things near the hands that a hand might take, whether or not the reach finds them. It is a diagnostic for telling, in the headset, why a weapon on the ground, a loose object, or a car door is not taken: whether it is a candidate at all, whether a ray reaches it, whether the reach takes what the ray hit, whether the resolver offers it, and whether the subsystem that acts on the grab refused it. The `GRIP` status rows and the grip press log ([grip.md](grip.md#readouts-and-logs)) say the same in text; the view puts it where the hand is. It is on by default. The code is `crates/jc3vr-physical/src/controllers/physical_hands/grab_view/`.
+The grab view draws, around each hand, what the grip and the palms' reach saw on the last tick: the reach's rays and what they hit, a line from the hand to every grip target near it, a flash where a grab was refused, and the boxes of the things near the hands that a hand might take, whether or not the reach finds them. It is a diagnostic for telling, in the headset, why a weapon on the ground, a loose object, or a car door is not taken: whether it is a candidate at all, whether a ray reaches it, whether the reach takes what the ray hit, whether the resolver offers it, and whether the subsystem that acts on the grab refused it. The `GRIP` status rows and the grip press log ([grip.md](grip.md#readouts-and-logs)) say the same in text; the view puts it where the hand is. It is on by default. The code is `crates/jc3vr-physical/src/controllers/physical_hands/grab_view/`.
 
 ## Using it
 
-The Grab view switch in the debug UI's visualization drawer shows and hides it, and so does the button at the top of its readout under the drawer's View readouts; the drawer is reachable in the headset on the floating panel. No key toggles it. The readout sits beside the collider view's ([collider-view.md](collider-view.md)), and the two can be on together. Its settings are `controllers.physical_hands.grab_view`: the switch (`enabled`, on) and switches for each part (`rays`, `targets`, `wrist`, `refusals`, `candidates`, `zones`), each a registered switch in the drawer. Every part is on by default except the palm marker on the wrist (`wrist`): a coloured disc on the wrist reads to a player as a control there, and the palm state it shows is in the readout and the grip press log. A target out of reach still gets a line within 2 m of a hand (`grab_view::draw::TARGET_RADIUS_M`), a candidate is drawn within 3 m of a hand (`grab_view::candidates::CANDIDATE_RADIUS_M`), and at most 24 candidates are drawn (`grab_view::candidates::MAX_CANDIDATES`). It is a diagnostic, so it has no pause menu entry ([settings.md](../settings.md)); switching `enabled` off is how a build for players hides it. The view draws through the overlay, so it needs `controllers.overlay.enabled`, and it is taken down while a menu is up.
+The Grab view switch in the debug UI's visualization drawer shows and hides it, and so does the button at the top of its readout under the drawer's View readouts; the drawer is reachable in the headset on the floating panel. No key toggles it. The readout sits beside the collider view's ([collider-view.md](collider-view.md)), and the two can be on together. Its one setting is `controllers.physical_hands.grab_view.enabled`, on by default, and every part is drawn while it is on. The palms' state for each hand is in the readout and the grip press log rather than on the wrist, where a coloured disc would read to a player as a control. A target out of reach still gets a line within 2 m of a hand (`grab_view::draw::TARGET_RADIUS_M`), a candidate is drawn within 3 m of a hand (`grab_view::candidates::CANDIDATE_RADIUS_M`), and at most 24 candidates are drawn (`grab_view::candidates::MAX_CANDIDATES`). It is a diagnostic, so it has no pause menu entry ([settings.md](../settings.md)); switching `enabled` off is how a build for players hides it. The view draws through the overlay, so it needs `controllers.overlay.enabled`, and it is taken down while a menu is up.
 
 The readout names each hand's palm state, counts what the last tick drew and what the budget left out, the candidates by kind with the time the last read of the world took, and the refused grabs with the last one's hand and reason.
 
@@ -33,26 +33,11 @@ The lines to the targets. From each hand's grip a line runs to every grip target
 
 The marker at the target's end grows from 15 mm to 50 mm as the hand comes from 2 m away to the target's reach, so an approach is visible before the hand gets there.
 
-The palm marker, with `wrist` on. A disc over the back of each wrist shows the palms' state for that hand, ringed while the palm acts on the world. Its inputs are those of the grip press log's `palms` field (`physical_hands::palm_readout`):
-
-| State | Colour | Meaning |
-| --- | --- | --- |
-| Off | grey | the physical hands are off, or the controller scheme is not in effect |
-| Not on foot | blue | the palms act only on foot on the ground or falling |
-| No tracked hands | dark grey | no hands to act for |
-| Off the game thread | red | the palms' tick ran off the game thread, or inside one of its frame scopes |
-| Not ticking | faint white | the palms have not ticked lately |
-| Not tracked | dark grey | this hand is not tracked |
-| Not free | yellow | the hand holds a gun, the foregrip, or a grenade or charge, or the animation owns it |
-| Holding | cyan, ringed | the hand holds what its grip took from the world |
-| Driven | violet, ringed | the hand's body drives it and reaches from where the body is |
-| Acting | green, ringed | the palm probes, pushes, and reaches |
-
 The refusals. When a grab chose a target and the subsystem acting on it refused (the direct pickup of a weapon in the world, the take of a weapon from a character's hands, a rack, or a locker, and the physical hands' grip on an object, a door, or a character), a red ring flashes at the target for half a second, growing as it fades. A refusal the physical hands make flashes where the reach met the object; one the weapon handling makes flashes at the marker of the target the hand chose on that input tick.
 
 The candidates. The weapons lying dropped in the world (gold), the loose objects light enough for a hand (white) and those too heavy (red), and the vehicles and the parts loosened from them (green) whose boxes come within 3 m of a hand are drawn as their boxes, with a faint line from each box's middle to the nearest hand. One box is drawn per object, the nearest first. A candidate the reach never finds, or a weapon with no gold box, is the place to look when a grab does nothing.
 
-The held gun's grab zones, with `zones` on. For a gun held in one hand while the other is free, the zones that decide what the free hand's grip takes on it ([reload.md, "The magazine's zone"](reload.md#the-magazines-zone)) are drawn on the gun as it rides its hand: the magazine's zone under the well as an amber axis with a ring of its radius at each end, and the handover's reach around the pistol grip as a cyan ring of its radius. The zone the free hand is in is drawn bright; while the hand is in the magazine's zone the cyan ring dims, since the handover is not offered there. While the free hand holds a pouch magazine and the gun still holds its own, the knock zone ([reload.md, "Knocking the old magazine out"](reload.md#knocking-the-old-magazine-out)) is drawn instead of nothing in the hand: the inserted magazine as a red axis with a ring at the top and a heavier ring at the base, the held magazine's tip as a dot that turns green while it moves fast enough to knock, and the zone flashing white when it knocks.
+The held gun's grab zones. For a gun held in one hand while the other is free, the zones that decide what the free hand's grip takes on it ([reload.md, "The magazine's zone"](reload.md#the-magazines-zone)) are drawn on the gun as it rides its hand: the magazine's zone under the well as an amber axis with a ring of its radius at each end, and the handover's reach around the pistol grip as a cyan ring of its radius. The zone the free hand is in is drawn bright; while the hand is in the magazine's zone the cyan ring dims, since the handover is not offered there. While the free hand holds a pouch magazine and the gun still holds its own, the knock zone ([reload.md, "Knocking the old magazine out"](reload.md#knocking-the-old-magazine-out)) is drawn instead of nothing in the hand: the inserted magazine as a red axis with a ring at the top and a heavier ring at the base, the held magazine's tip as a dot that turns green while it moves fast enough to knock, and the zone flashing white when it knocks.
 
 ## Where the data comes from
 
@@ -62,17 +47,17 @@ The candidates are read from the physics world on the same tick, outside the phy
 
 The zones are the ones the weapon handling's input tick resolved before the grip model ran (`reload::zones::views` and `reload::knock::view`), drawn only while they are fresh. The grab view reads them through the held-item seam (`held::reload_views`, in the body crate), which the weapon handling fills, so the physical hands do not name the weapon handling.
 
-The refusals are noted where they are made: the direct pickup's refusal in `pickup::finish_tick`, a take's refusal in `weapons::hold::take::finish_grab`, and the pickup tick's refused grips, published after the tick. The palm state is read on the input tick from the palms' readout.
+The refusals are noted where they are made: the direct pickup's refusal in `pickup::finish_tick`, a take's refusal in `weapons::hold::take::finish_grab`, and the pickup tick's refused grips, published after the tick.
 
 The input tick draws it all after the grip model's own finish (`bindings::input_tick`), with the grip model's targets and resolution of the same tick, and submits it to the overlay's own slot, which lives a little past one tick.
 
 ## Anchoring
 
-Everything is anchored at render time ([render-time-anchoring.md](../rendering/render-time-anchoring.md)). The palm markers and the hands' ends of the lines follow the hands as they are drawn. A target's end of its line is where its grip marker is, anchored as the marker is. The reach rays and their hits ride with the player, so they are anchored to the render-time head at their offset from the head of the tick that cast them, as the palm boxes are. The door handles, the candidates' boxes, and a refusal the physical hands made lie in the world and are world anchors; the candidates are read a few times a second, so a box on something moving lags it by up to one read.
+Everything is anchored at render time ([render-time-anchoring.md](../rendering/render-time-anchoring.md)). The hands' ends of the lines follow the hands as they are drawn. A target's end of its line is where its grip marker is, anchored as the marker is. The reach rays and their hits ride with the player, so they are anchored to the render-time head at their offset from the head of the tick that cast them, as the palm boxes are. The door handles, the candidates' boxes, and a refusal the physical hands made lie in the world and are world anchors; the candidates are read a few times a second, so a box on something moving lags it by up to one read.
 
 ## Cost and caps
 
-The reach records five rays and a few handles per hand per tick, only while the view is on. The read for candidates is one pass over every body slot up to the world's peak id, as the collider view's read is, a few times a second, with at most 64 bodies kept and named; the readout shows its time. The drawing is capped at 1024 primitives a tick: the palm markers, the refusals, the rays, and the handles first, then the target lines, then the held gun's zones, then the candidates, each candidate's box whole or not at all, with what does not fit counted as over budget. The view's slot comes before the collider view's in the overlay, so when the overlay is full the collider view gives way first.
+The reach records five rays and a few handles per hand per tick, only while the view is on. The read for candidates is one pass over every body slot up to the world's peak id, as the collider view's read is, a few times a second, with at most 64 bodies kept and named; the readout shows its time. The drawing is capped at 1024 primitives a tick: the refusals, the rays, and the handles first, then the target lines, then the held gun's zones, then the candidates, each candidate's box whole or not at all, with what does not fit counted as over budget. The view's slot comes before the collider view's in the overlay, so when the overlay is full the collider view gives way first.
 
 ## Threading
 
@@ -80,11 +65,10 @@ Everything runs on the game thread: the palms' tick, and the input tick's game s
 
 ## Headset checklist
 
-1. With the view and its `wrist` part on, look at a wrist: the palm marker is green and ringed on foot with an empty hand, yellow with a gun in the hand, cyan holding a crate, and blue in a vehicle.
-2. Hold an empty hand over the ground: five grey rays fan out of the palm. Lower it onto the ground: the rays that reach it turn orange, with dots where they hit.
-3. Hold the hand over a crate: the rays on the crate turn green, a magenta line runs from the hand to the crate's marker, and a squeeze takes it. Try one too heavy: its box is red, the rays orange, and no line.
-4. Drop a weapon and look at it: it has a gold box with a faint line to the nearer hand. Reach for it: the rays on it turn green and the line to its marker magenta. If the take is refused, a red ring flashes on it, and the readout names why.
-5. Stand beside a parked car: its box is green, and as a hand comes within a metre of a door's handle, a faint green ring sits on the handle, bright once the hand is within reach. A red ring there means no body was found at the handle.
-6. Move a hand toward the holster with a gun drawn in the other hand: the line to the holster appears as the hand comes into reach and turns magenta when it would be taken.
-7. Hold a pistol in one hand: an amber cylinder hangs under its grip and a cyan ring surrounds the grip. Move the other hand into the cylinder: it brightens, and the cyan ring dims.
-8. Turn the view off with the button: everything it drew goes, and the grip markers stay.
+1. Hold an empty hand over the ground: five grey rays fan out of the palm. Lower it onto the ground: the rays that reach it turn orange, with dots where they hit.
+2. Hold the hand over a crate: the rays on the crate turn green, a magenta line runs from the hand to the crate's marker, and a squeeze takes it. Try one too heavy: its box is red, the rays orange, and no line.
+3. Drop a weapon and look at it: it has a gold box with a faint line to the nearer hand. Reach for it: the rays on it turn green and the line to its marker magenta. If the take is refused, a red ring flashes on it, and the readout names why.
+4. Stand beside a parked car: its box is green, and as a hand comes within a metre of a door's handle, a faint green ring sits on the handle, bright once the hand is within reach. A red ring there means no body was found at the handle.
+5. Move a hand toward the holster with a gun drawn in the other hand: the line to the holster appears as the hand comes into reach and turns magenta when it would be taken.
+6. Hold a pistol in one hand: an amber cylinder hangs under its grip and a cyan ring surrounds the grip. Move the other hand into the cylinder: it brightens, and the cyan ring dims.
+7. Turn the view off with the button: everything it drew goes, and the grip markers stay.

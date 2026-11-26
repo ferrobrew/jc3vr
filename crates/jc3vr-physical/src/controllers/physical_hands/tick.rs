@@ -720,7 +720,7 @@ fn run(player: &LocalPlayer<'_>, dt: f32) {
             handles,
         });
         // SAFETY: the game tick, outside the physics step.
-        unsafe { grab_view::scan_candidates(near_hands, standing_on, &config) };
+        unsafe { grab_view::scan_candidates(near_hands, standing_on) };
     }
 }
 

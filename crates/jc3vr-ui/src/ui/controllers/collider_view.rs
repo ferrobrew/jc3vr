@@ -1,11 +1,10 @@
-//! The collider view: its status row, its switch, what it read, the body under the gaze, and what it
-//! draws.
+//! The collider view: its status row, its switch, what it read, and the body under the gaze.
 
 use egui::Ui;
 use jc3gi::physics::CustomGroupCollisionFilter;
 use jc3vr_physical::controllers::physical_hands::{
     collider_view,
-    collider_view::{ColliderViewConfig, ColliderViewStatus, model::BodyKind},
+    collider_view::{ColliderViewStatus, model::BodyKind},
 };
 use jc3vr_tooling::director::{keymap, keymap::Action};
 
@@ -66,15 +65,4 @@ pub(super) fn collider_view_readout(ui: &mut Ui, status: &ColliderViewStatus) {
     {
         ui.label(format!("Last error: {error}"));
     }
-}
-
-pub(super) fn collider_view_settings(ui: &mut Ui, v: &mut ColliderViewConfig) {
-    ui.add_enabled_ui(v.enabled, |ui| {
-        ui.checkbox(&mut v.boxes, "Boxes");
-        ui.checkbox(&mut v.shapes, "Shapes (spheres, capsules, convex hulls)");
-        ui.checkbox(&mut v.static_bodies, "Static bodies");
-        ui.checkbox(&mut v.contacts, "Contacts and the player's ground");
-        ui.checkbox(&mut v.joints, "The hands' and guns' joints");
-        ui.checkbox(&mut v.gaze, "The body under the gaze");
-    });
 }

@@ -128,21 +128,6 @@ impl PalmState {
         }
     }
 
-    pub const fn colour(self) -> Rgba {
-        match self {
-            PalmState::Idle(Idle::Disabled) => [0.5, 0.5, 0.5, 0.9],
-            PalmState::Idle(Idle::Mode) => [0.3, 0.5, 1.0, 0.95],
-            PalmState::Idle(Idle::NoHands) => [0.25, 0.25, 0.25, 0.9],
-            PalmState::Idle(Idle::OffThread) => [1.0, 0.15, 0.15, 1.0],
-            PalmState::Stale => [1.0, 1.0, 1.0, 0.5],
-            PalmState::Untracked => [0.25, 0.25, 0.25, 0.9],
-            PalmState::NotFree => [1.0, 0.85, 0.2, 0.95],
-            PalmState::Holding => [0.2, 0.9, 1.0, 0.95],
-            PalmState::Driven => [0.75, 0.45, 1.0, 0.95],
-            PalmState::Acting => [0.35, 1.0, 0.4, 0.95],
-        }
-    }
-
     pub const fn label(self) -> &'static str {
         match self {
             PalmState::Idle(idle) => idle.label(),
@@ -396,19 +381,6 @@ mod tests {
             ..readout(true, true, false, false)
         };
         assert_eq!(PalmState::of(&old), PalmState::Stale);
-    }
-
-    #[test]
-    fn each_idle_reason_has_its_own_colour() {
-        let idle = [Idle::Disabled, Idle::Mode, Idle::NoHands, Idle::OffThread]
-            .map(|i| PalmState::Idle(i).colour());
-        for (i, a) in idle.iter().enumerate() {
-            for b in &idle[i + 1..] {
-                assert_ne!(a, b);
-            }
-        }
-        assert_ne!(PalmState::Acting.colour(), PalmState::Driven.colour());
-        assert_ne!(PalmState::NotFree.colour(), PalmState::Holding.colour());
     }
 
     #[test]

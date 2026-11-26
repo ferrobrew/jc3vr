@@ -111,17 +111,7 @@ pub(crate) fn record(recorded: Recorded) {
 /// # Safety
 ///
 /// The game thread, before the world update.
-pub(crate) unsafe fn scan_candidates(
-    hands: [Option<Vec3>; 2],
-    standing_on: Option<u32>,
-    config: &PhysicalHandsConfig,
-) {
-    if !config.grab_view.candidates {
-        let mut state = STATE.lock();
-        state.candidates.clear();
-        state.candidates_at = None;
-        return;
-    }
+pub(crate) unsafe fn scan_candidates(hands: [Option<Vec3>; 2], standing_on: Option<u32>) {
     let now = Instant::now();
     let due = STATE
         .lock()
@@ -186,9 +176,9 @@ pub fn refused(hand: Hand, at: Option<Vec3>, why: &str) {
 /// `None` (the overlay is off, or a menu is up). Called by the input tick after the grip model's
 /// own finish.
 pub fn submit(tick: &Tick, frame: Option<&MarkerFrame>) {
-    let config = PHYSICAL_HANDS_CONFIG.lock().grab_view;
-    let Some(frame) = frame.filter(|_| config.enabled) else {
-        stand_down(config.enabled);
+    let enabled = PHYSICAL_HANDS_CONFIG.query(|c| c.grab_view.enabled);
+    let Some(frame) = frame.filter(|_| enabled) else {
+        stand_down(enabled);
         return;
     };
     WAS_ACTIVE.store(true, Ordering::Relaxed);
@@ -225,11 +215,9 @@ pub fn submit(tick: &Tick, frame: Option<&MarkerFrame>) {
     let reload = held::reload_views(now);
     let drawn = draw::build(
         &DrawInputs {
-            config: &config,
             frame,
             tick,
             recorded,
-            palms,
             candidates,
             flashes: &flashes,
             zones: reload.zones,

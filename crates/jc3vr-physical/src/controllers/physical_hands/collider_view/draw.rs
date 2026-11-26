@@ -13,9 +13,8 @@ use jc3vr_view::controllers::overlay::primitive::{
     Anchor, DepthMode, Facing, Primitive, Rgba, Shape, SpriteSize, scale_alpha,
 };
 
-use crate::controllers::physical_hands::collider_view::{
-    config::ColliderViewConfig,
-    model::{Aabb, Body, BodyKind, Geometry, JointKind, Snapshot, interpolate},
+use crate::controllers::physical_hands::collider_view::model::{
+    Aabb, Body, BodyKind, Geometry, JointKind, Snapshot, interpolate,
 };
 
 /// A contact to flash.
@@ -37,7 +36,6 @@ pub struct DrawInputs<'a> {
     pub previous: Option<&'a Snapshot>,
     /// The frame's interpolation fraction between the two reads.
     pub dtf: f32,
-    pub config: &'a ColliderViewConfig,
     /// The most primitives to submit, at most [`PRIMITIVE_CEILING`].
     pub budget: usize,
     pub flashes: &'a [Flash],
@@ -71,75 +69,70 @@ pub fn build(inputs: &DrawInputs<'_>, out: &mut Vec<Primitive>) -> Drawn {
     let mut drawn = Drawn::default();
     let mut scratch = Vec::new();
 
-    if inputs.config.joints {
-        for joint in &inputs.current.joints {
-            let (Some(a), Some(b)) = (frames.origin(joint.body_a), frames.origin(joint.body_b))
-            else {
-                continue;
-            };
-            let color = match joint.kind {
-                JointKind::Grip => GRIP_JOINT,
-                JointKind::GunGrip => GUN_GRIP_JOINT,
-                JointKind::GunBrace => GUN_BRACE_JOINT,
-            };
-            scratch.clear();
-            scratch.push(line(a, b, JOINT_WIDTH_M, color, DepthMode::Always));
-            for end in [a, b] {
-                scratch.push(disc(end, JOINT_END_M, color));
-            }
-            commit(out, &mut scratch, budget);
+    for joint in &inputs.current.joints {
+        let (Some(a), Some(b)) = (frames.origin(joint.body_a), frames.origin(joint.body_b)) else {
+            continue;
+        };
+        let color = match joint.kind {
+            JointKind::Grip => GRIP_JOINT,
+            JointKind::GunGrip => GUN_GRIP_JOINT,
+            JointKind::GunBrace => GUN_BRACE_JOINT,
+        };
+        scratch.clear();
+        scratch.push(line(a, b, JOINT_WIDTH_M, color, DepthMode::Always));
+        for end in [a, b] {
+            scratch.push(disc(end, JOINT_END_M, color));
         }
+        commit(out, &mut scratch, budget);
     }
 
-    if inputs.config.contacts {
-        for flash in inputs.flashes {
-            let Some(fade) = flash_fade(flash.age_s) else {
-                continue;
-            };
-            scratch.clear();
-            let size = FLASH_RING_M + FLASH_RING_PER_NS_M * flash.impulse_ns.clamp(0.0, 20.0);
-            scratch.push(Primitive::Sprite {
-                at: Anchor::World(flash.at),
-                size: SpriteSize::World(size * (1.0 + flash.age_s / FLASH_S)),
-                facing: Facing::Billboard,
-                shape: Shape::Ring { thickness: 0.25 },
-                color: scale_alpha(CONTACT, fade),
-                depth: DepthMode::Always,
-            });
-            if let Some(aabb) = flash.body.and_then(|id| frames.aabb(id)) {
-                box_lines(
-                    &aabb,
-                    BOX_WIDTH_M * 2.0,
-                    scale_alpha(CONTACT, fade),
-                    &mut scratch,
-                );
-            }
-            commit(out, &mut scratch, budget);
+    for flash in inputs.flashes {
+        let Some(fade) = flash_fade(flash.age_s) else {
+            continue;
+        };
+        scratch.clear();
+        let size = FLASH_RING_M + FLASH_RING_PER_NS_M * flash.impulse_ns.clamp(0.0, 20.0);
+        scratch.push(Primitive::Sprite {
+            at: Anchor::World(flash.at),
+            size: SpriteSize::World(size * (1.0 + flash.age_s / FLASH_S)),
+            facing: Facing::Billboard,
+            shape: Shape::Ring { thickness: 0.25 },
+            color: scale_alpha(CONTACT, fade),
+            depth: DepthMode::Always,
+        });
+        if let Some(aabb) = flash.body.and_then(|id| frames.aabb(id)) {
+            box_lines(
+                &aabb,
+                BOX_WIDTH_M * 2.0,
+                scale_alpha(CONTACT, fade),
+                &mut scratch,
+            );
         }
-        if let Some(ground) = inputs.current.ground {
-            scratch.clear();
-            if let Some(aabb) = frames.aabb(ground.body) {
-                box_lines(&aabb, BOX_WIDTH_M * 1.5, GROUND, &mut scratch);
-            }
-            let player = inputs
-                .current
-                .bodies
-                .iter()
-                .find(|b| b.kind == BodyKind::PlayerCapsule)
-                .and_then(|b| frames.aabb(b.id));
-            if let Some(player) = player {
-                let centre = player.centre();
-                let foot = Vec3::new(centre.x, player.min.y, centre.z);
-                scratch.push(line(
-                    foot,
-                    foot + ground.normal.normalize_or_zero() * NORMAL_M,
-                    JOINT_WIDTH_M,
-                    GROUND,
-                    DepthMode::Always,
-                ));
-            }
-            commit(out, &mut scratch, budget);
+        commit(out, &mut scratch, budget);
+    }
+    if let Some(ground) = inputs.current.ground {
+        scratch.clear();
+        if let Some(aabb) = frames.aabb(ground.body) {
+            box_lines(&aabb, BOX_WIDTH_M * 1.5, GROUND, &mut scratch);
         }
+        let player = inputs
+            .current
+            .bodies
+            .iter()
+            .find(|b| b.kind == BodyKind::PlayerCapsule)
+            .and_then(|b| frames.aabb(b.id));
+        if let Some(player) = player {
+            let centre = player.centre();
+            let foot = Vec3::new(centre.x, player.min.y, centre.z);
+            scratch.push(line(
+                foot,
+                foot + ground.normal.normalize_or_zero() * NORMAL_M,
+                JOINT_WIDTH_M,
+                GROUND,
+                DepthMode::Always,
+            ));
+        }
+        commit(out, &mut scratch, budget);
     }
 
     if let Some(aabb) = inputs.gaze.and_then(|id| frames.aabb(id)) {
@@ -152,23 +145,16 @@ pub fn build(inputs: &DrawInputs<'_>, out: &mut Vec<Primitive>) -> Drawn {
         scratch.clear();
         let transform = frames.transform(body);
         let color = kind_color(body.kind);
-        if inputs.config.boxes {
-            let aabb = body.aabb.translated(Vec3::from(
-                transform.translation - body.transform.translation,
-            ));
-            box_lines(
-                &aabb,
-                BOX_WIDTH_M,
-                scale_alpha(color, BOX_ALPHA),
-                &mut scratch,
-            );
-        }
-        if inputs.config.shapes {
-            shape(&body.geometry, &transform, color, &mut scratch);
-        }
-        if scratch.is_empty() {
-            continue;
-        }
+        let aabb = body.aabb.translated(Vec3::from(
+            transform.translation - body.transform.translation,
+        ));
+        box_lines(
+            &aabb,
+            BOX_WIDTH_M,
+            scale_alpha(color, BOX_ALPHA),
+            &mut scratch,
+        );
+        shape(&body.geometry, &transform, color, &mut scratch);
         if commit(out, &mut scratch, budget) {
             drawn.bodies += 1;
             drawn.kinds[body.kind.index()] += 1;
@@ -376,20 +362,25 @@ mod tests {
         }
     }
 
-    fn inputs<'a>(
-        current: &'a Snapshot,
-        previous: Option<&'a Snapshot>,
-        config: &'a ColliderViewConfig,
-    ) -> DrawInputs<'a> {
+    fn inputs<'a>(current: &'a Snapshot, previous: Option<&'a Snapshot>) -> DrawInputs<'a> {
         DrawInputs {
             current,
             previous,
             dtf: 0.5,
-            config,
             budget: PRIMITIVE_CEILING,
             flashes: &[],
             gaze: None,
         }
+    }
+
+    /// The anchors of the sprites among `out`: a sphere's ring, apart from its box's lines.
+    fn sprite_anchors(out: &[Primitive]) -> Vec<Anchor> {
+        out.iter()
+            .filter_map(|p| match p {
+                Primitive::Sprite { at, .. } => Some(*at),
+                _ => None,
+            })
+            .collect()
     }
 
     fn sphere() -> Geometry {
@@ -414,16 +405,12 @@ mod tests {
             )],
             ..Snapshot::default()
         };
-        let config = ColliderViewConfig {
-            boxes: false,
-            ..ColliderViewConfig::new()
-        };
         let mut out = Vec::new();
-        build(&inputs(&current, Some(&previous), &config), &mut out);
-        let [Primitive::Sprite { at, .. }] = out.as_slice() else {
+        build(&inputs(&current, Some(&previous)), &mut out);
+        let [at] = sprite_anchors(&out)[..] else {
             panic!("{out:?}");
         };
-        assert_eq!(*at, Anchor::World(Vec3::X));
+        assert_eq!(at, Anchor::World(Vec3::X));
     }
 
     #[test]
@@ -437,19 +424,15 @@ mod tests {
             )],
             ..Snapshot::default()
         };
-        let config = ColliderViewConfig {
-            boxes: false,
-            ..ColliderViewConfig::new()
-        };
         for dtf in [0.0, 0.25, 0.75, 1.0] {
-            let mut input = inputs(&current, None, &config);
+            let mut input = inputs(&current, None);
             input.dtf = dtf;
             let mut out = Vec::new();
             build(&input, &mut out);
-            let [Primitive::Sprite { at, .. }] = out.as_slice() else {
+            let [at] = sprite_anchors(&out)[..] else {
                 panic!("{out:?}");
             };
-            assert_eq!(*at, Anchor::World(Vec3::new(2.0, 0.0, -1.0)));
+            assert_eq!(at, Anchor::World(Vec3::new(2.0, 0.0, -1.0)));
         }
     }
 
@@ -470,16 +453,12 @@ mod tests {
             )],
             ..Snapshot::default()
         };
-        let config = ColliderViewConfig {
-            boxes: false,
-            ..ColliderViewConfig::new()
-        };
         let mut out = Vec::new();
-        build(&inputs(&current, Some(&previous), &config), &mut out);
-        let [Primitive::Sprite { at, .. }] = out.as_slice() else {
+        build(&inputs(&current, Some(&previous)), &mut out);
+        let [at] = sprite_anchors(&out)[..] else {
             panic!("{out:?}");
         };
-        assert_eq!(*at, Anchor::World(Vec3::new(2.0, 0.0, 0.0)));
+        assert_eq!(at, Anchor::World(Vec3::new(2.0, 0.0, 0.0)));
     }
 
     #[test]
@@ -491,12 +470,11 @@ mod tests {
                 .collect(),
             ..Snapshot::default()
         };
-        let config = ColliderViewConfig::new();
         let mut out = Vec::new();
         let drawn = build(
             &DrawInputs {
                 budget: 30,
-                ..inputs(&current, None, &config)
+                ..inputs(&current, None)
             },
             &mut out,
         );
@@ -514,12 +492,11 @@ mod tests {
                 .collect(),
             ..Snapshot::default()
         };
-        let config = ColliderViewConfig::new();
         let mut out = Vec::new();
         build(
             &DrawInputs {
                 budget: usize::MAX,
-                ..inputs(&current, None, &config)
+                ..inputs(&current, None)
             },
             &mut out,
         );
@@ -583,13 +560,12 @@ mod tests {
                 impulse_ns: 1.0,
             },
         ];
-        let config = ColliderViewConfig::new();
         let mut out = Vec::new();
         let drawn = build(
             &DrawInputs {
                 budget: 3 + 13 + 13,
                 flashes: &flashes,
-                ..inputs(&current, None, &config)
+                ..inputs(&current, None)
             },
             &mut out,
         );
