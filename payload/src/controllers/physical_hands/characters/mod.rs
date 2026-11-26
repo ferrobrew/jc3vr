@@ -6,18 +6,20 @@
 //! a character whose state keeps it on its feet, the grip holds the hand on them instead: a yank
 //! throws a character the player is hostile to off their feet, and letting go with a push shoves
 //! them. A character the game protects, mission-critical or in a scripted sequence, is not
-//! taken. A grip on an enclosed vehicle occupant requires an open door. A motorcycle occupant
+//! taken. A grip on an enclosed vehicle occupant requires an open door, or a window of the
+//! vehicle the glass brought down that the hand came in through ([`pane`]). A motorcycle occupant
 //! needs no door; a yank requests the character's hit reaction and retains the anatomical
 //! contact for the resulting ragdoll. A yank on a mounted gun's gunner takes them out of the seat
-//! as a ragdoll where they sit ([`gunner_out`]), and the hand takes hold of it as of a fallen
-//! character. Other enclosed-seat yanks use the vehicle-entry action, which hijacks an occupied
-//! seat. The design is
+//! as a ragdoll where they sit ([`gunner_out`]), and so does a yank on an occupant reached through
+//! a broken window ([`unseat`]); the hand takes hold of it as of a fallen character. Other
+//! enclosed-seat yanks use the vehicle-entry action, which hijacks an occupied seat. The design is
 //! in `docs/mod/input/character-grabs.md`, the engine side in
 //! `docs/engine/gameplay/melee-and-damage.md` and `docs/engine/gameplay/vehicle-doors.md`.
 //!
 //! - [`config`]: the settings;
 //! - [`engine`]: a character's capsule body, the player's hostility to it, and whether it is dead;
 //! - [`get_up`]: holding a held ragdoll's get-up off, and what ended a hold;
+//! - [`pane`]: reaching an occupant through a window the glass brought down;
 //! - [`ragdoll`]: a ragdolling character's bodies, the bone nearest a point, and the whole
 //!   ragdoll's mass.
 //!
@@ -38,12 +40,13 @@ mod acquisition;
 pub mod config;
 pub mod engine;
 pub(crate) mod get_up;
+pub(crate) mod pane;
 pub mod ragdoll;
 
 use std::num::NonZeroUsize;
 
 pub use config::CharactersConfig;
-pub use engine::{GunnerOut, Protection};
+pub use engine::{GunnerOut, Protection, SeatOut};
 use glam::{Mat4, Vec3};
 use jc3gi::{
     character::character::{Character, SafeBoneIndex},
@@ -68,7 +71,8 @@ pub struct CharacterTarget {
     pub character: NonZeroUsize,
     /// The body the reach found, which proves the character alive while the hand holds on.
     pub body: u32,
-    /// The vehicle attachment and its access through an open door or an exposed seat.
+    /// The vehicle attachment and its access through an open door, a broken window, or an exposed
+    /// seat.
     pub seated: Option<Seated>,
     /// Whether the body is one of the character's ragdoll's, which the hand holds as a loose
     /// object, rather than its capsule.
@@ -85,8 +89,9 @@ pub struct CharacterTarget {
 pub enum Unavailable {
     /// The grab, or the hijack for a seated character, is off.
     Off,
-    /// The character is seated in a vehicle with no door open beside the hand.
-    NoOpenDoor,
+    /// The character is seated in a vehicle with no door open beside the hand, and the hand did not
+    /// come in through a window the glass brought down.
+    NoOpening,
     /// The character is dead but not yet a ragdoll: the death animation still drives it.
     Dying,
     /// The character ragdolls but none of its ragdoll's bodies could be read.
@@ -99,7 +104,7 @@ impl Unavailable {
     pub const fn label(self) -> &'static str {
         match self {
             Unavailable::Off => "the grab is off",
-            Unavailable::NoOpenDoor => "seated with no door open beside the hand",
+            Unavailable::NoOpening => "seated with no open door or broken window beside the hand",
             Unavailable::Dying => "dying, not yet a ragdoll",
             Unavailable::NoBody => "no body of its ragdoll could be read",
             Unavailable::Protected(protection) => protection.label(),
@@ -107,14 +112,36 @@ impl Unavailable {
     }
 }
 
-/// A character attached to a vehicle, either exposed or reached through an open door.
+/// A character attached to a vehicle, and how the hand reaches them.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Seated {
     pub vehicle: NonZeroUsize,
-    /// The open door, or none for an exposed motorcycle occupant.
-    pub door: Option<DoorSlot>,
-    /// How far the door stands open, degrees.
-    pub open_deg: f32,
+    pub access: SeatAccess,
+}
+
+/// How a hand reaches a seated character.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub enum SeatAccess {
+    /// Through an open door beside the hand.
+    Door {
+        slot: DoorSlot,
+        /// How far the door stands open, degrees.
+        open_deg: f32,
+    },
+    /// Through a window of the vehicle the glass brought down ([`pane`]).
+    Pane,
+    /// An exposed motorcycle occupant, who needs no door.
+    Exposed,
+}
+
+impl SeatAccess {
+    /// The open door the hand reaches through, and how far it stands open, degrees.
+    pub fn door(self) -> Option<(DoorSlot, f32)> {
+        match self {
+            SeatAccess::Door { slot, open_deg } => Some((slot, open_deg)),
+            SeatAccess::Pane | SeatAccess::Exposed => None,
+        }
+    }
 }
 
 /// How far a hand gripping a character must pull away from its grab point to yank, metres of the
@@ -183,8 +210,9 @@ pub(crate) fn topple_direction(palm_velocity: Vec3, normal: Vec3) -> Option<Vec3
 
 /// What a palm centred at `palm` reaches of the character `object` through the ray hit `hit` on
 /// its body `body`: a character on foot, by its capsule, a ragdolling character, by the body of
-/// its ragdoll nearest the hit, or a vehicle occupant accessible through an open door or an
-/// exposed motorcycle seat; or why it reaches none of these. A character the game protects
+/// its ragdoll nearest the hit, or a vehicle occupant accessible through an open door, a window
+/// the glass brought down that the hand came in through ([`pane::reached_through`]), or an exposed
+/// motorcycle seat; or why it reaches none of these. An open door is preferred over a window. A character the game protects
 /// ([`engine::protection`]) is never reached.
 ///
 /// # Safety
@@ -226,23 +254,18 @@ pub(crate) unsafe fn reach(
             return Err(Unavailable::Off);
         }
         let vehicle = NonZeroUsize::new(unsafe { character.GetVehiclePtr() } as usize)
-            .ok_or(Unavailable::NoOpenDoor)?;
-        let seated = if unsafe { character.IsRidingMC() } {
-            Seated {
-                vehicle,
-                door: None,
-                open_deg: 0.0,
-            }
+            .ok_or(Unavailable::NoOpening)?;
+        let access = if unsafe { character.IsRidingMC() } {
+            SeatAccess::Exposed
+        } else if let Some((slot, open_deg)) = unsafe { open_door_near(vehicle, palm, world_scale) }
+        {
+            SeatAccess::Door { slot, open_deg }
+        } else if unsafe { pane::reached_through(vehicle, pane::eyes(), palm, hit.position) } {
+            SeatAccess::Pane
         } else {
-            let (door, open_deg) = unsafe { open_door_near(vehicle, palm, world_scale) }
-                .ok_or(Unavailable::NoOpenDoor)?;
-            Seated {
-                vehicle,
-                door: Some(door),
-                open_deg,
-            }
+            return Err(Unavailable::NoOpening);
         };
-        return Ok(reach(object, body, Some(seated), None));
+        return Ok(reach(object, body, Some(Seated { vehicle, access }), None));
     }
     if !config.grab {
         return Err(Unavailable::Off);
@@ -512,6 +535,25 @@ pub(crate) unsafe fn damp_held_ragdoll(character: NonZeroUsize, body: u32, dt: f
 /// How fast a held ragdoll's motion within itself dies down, per second.
 const HELD_RAGDOLL_DAMPING_PER_S: f32 = 4.0;
 
+/// Take the character `target`, reached through a window the glass brought down, out of its seat as
+/// a ragdoll where it sits ([`engine::seat_out`]).
+///
+/// # Safety
+///
+/// The game thread, outside the physics step and the game's update. The target's current owner is
+/// checked first.
+pub(crate) unsafe fn unseat(target: CharacterTarget) -> Option<SeatOut> {
+    if unsafe { owner_of(target.body) } != Some(target.character) {
+        return None;
+    }
+    // SAFETY: the body's owner proves the character live.
+    let character = unsafe { &mut *(target.character.get() as *mut Character) };
+    if !unsafe { character.IsAttachedToVehicle() } {
+        return None;
+    }
+    Some(unsafe { engine::seat_out(character) })
+}
+
 /// Ragdoll the character `target` that a topple left standing ([`engine::retry_ragdoll`]).
 /// Returns whether an act was queued.
 ///
@@ -528,8 +570,9 @@ pub(crate) unsafe fn retry_ragdoll(target: CharacterTarget) -> bool {
     unsafe { engine::retry_ragdoll(character) }
 }
 
-/// Whether the hand still has access to the character's current vehicle seat.
-/// Enclosed seats require an open door; motorcycle occupants are exposed.
+/// Whether the hand still has access to the character's current vehicle seat, the same way it
+/// reached it. Enclosed seats require an open door, or stay reached through a window the glass
+/// brought down while the character keeps that seat; motorcycle occupants are exposed.
 ///
 /// # Safety
 ///

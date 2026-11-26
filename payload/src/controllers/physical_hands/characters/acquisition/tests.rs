@@ -49,8 +49,10 @@ fn a_valid_seated_grab_refreshes_the_door_and_preserves_hostility_policy() {
         target.hostile = hostile;
         let mut engine = engine(Attachment::Vehicle(address(64)));
         let current = Seated {
-            door: Some(DoorSlot::REAR_LEFT),
-            open_deg: 75.0,
+            access: SeatAccess::Door {
+                slot: DoorSlot::REAR_LEFT,
+                open_deg: 75.0,
+            },
             ..seated(64)
         };
         engine.door = Some(current);
@@ -114,8 +116,7 @@ fn a_valid_on_foot_grab_reads_the_frame_only_after_owner_and_attachment_checks()
 #[test]
 fn an_exposed_rider_needs_no_door_but_must_keep_the_same_vehicle_and_access() {
     let seated = Seated {
-        door: None,
-        open_deg: 0.0,
+        access: SeatAccess::Exposed,
         ..seated(64)
     };
     let mut engine = engine(Attachment::Exposed(address(64)));
@@ -138,6 +139,51 @@ fn an_exposed_rider_needs_no_door_but_must_keep_the_same_vehicle_and_access() {
 fn an_enclosed_seat_cannot_reuse_an_exposed_rider_offer() {
     let mut engine = engine(Attachment::Exposed(address(64)));
     assert!(acquire(target(Some(seated(64))), &mut engine).is_none());
+    assert_eq!(engine.calls, [Call::Owner, Call::Attachment]);
+}
+
+#[test]
+fn a_seat_reached_through_a_broken_window_keeps_it_without_a_door_while_seated() {
+    let through_pane = Seated {
+        access: SeatAccess::Pane,
+        ..seated(64)
+    };
+    let mut engine = engine(Attachment::Vehicle(address(64)));
+    // No door is open: the window alone is the way in.
+    engine.door = None;
+    let seize = acquire(target(Some(through_pane)), &mut engine).unwrap();
+    assert_eq!(seize.target.seated, Some(through_pane));
+    assert_eq!(engine.calls, [Call::Owner, Call::Attachment, Call::Frame]);
+    // Another vehicle, a motorcycle seat, or stepping out ends it before any frame read.
+    for attachment in [
+        Attachment::OnFoot,
+        Attachment::Vehicle(address(96)),
+        Attachment::Exposed(address(64)),
+    ] {
+        engine.calls.clear();
+        engine.attachment = Some(attachment);
+        assert!(acquire(target(Some(through_pane)), &mut engine).is_none());
+        assert_eq!(engine.calls, [Call::Owner, Call::Attachment]);
+    }
+    // The hijack's switch refuses it as it refuses a door.
+    let config = CharactersConfig {
+        hijack: false,
+        ..CharactersConfig::default()
+    };
+    engine.calls.clear();
+    engine.attachment = Some(Attachment::Vehicle(address(64)));
+    assert!(refresh(target(Some(through_pane)), conditions(&config), &mut engine).is_none());
+    assert_eq!(engine.calls, [Call::Owner, Call::Attachment]);
+}
+
+#[test]
+fn an_exposed_offer_cannot_become_an_enclosed_seat() {
+    let exposed = Seated {
+        access: SeatAccess::Exposed,
+        ..seated(64)
+    };
+    let mut engine = engine(Attachment::Vehicle(address(64)));
+    assert!(acquire(target(Some(exposed)), &mut engine).is_none());
     assert_eq!(engine.calls, [Call::Owner, Call::Attachment]);
 }
 
@@ -221,8 +267,10 @@ fn target(seated: Option<Seated>) -> CharacterTarget {
 fn seated(vehicle: usize) -> Seated {
     Seated {
         vehicle: address(vehicle),
-        door: Some(DoorSlot::FRONT_LEFT),
-        open_deg: 40.0,
+        access: SeatAccess::Door {
+            slot: DoorSlot::FRONT_LEFT,
+            open_deg: 40.0,
+        },
     }
 }
 

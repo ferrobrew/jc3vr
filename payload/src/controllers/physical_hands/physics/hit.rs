@@ -178,11 +178,13 @@ pub struct BlowPlan {
     pub damage: Option<i16>,
 }
 
-/// The live state that permits a motorcycle rider's unsupported knockdown reaction to use a
+/// The live state that permits an exposed occupant's unsupported knockdown reaction to use a
 /// supported full-ragdoll act. No native protection is cleared.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(super) struct RiderReaction {
-    pub motorcycle: bool,
+    /// The occupant is exposed to the hand: a motorcycle rider, or one the hand reached through a
+    /// window of the vehicle the glass brought down.
+    pub exposed: bool,
     pub protected: bool,
     pub dead: bool,
     pub ragdoll: bool,
@@ -196,7 +198,7 @@ impl RiderReaction {
     /// Whether an admitted physical punch may request the rider's full-ragdoll transition.
     /// A rejected damaging message cannot be replaced with a direct reaction.
     pub(super) fn permits(self, plan: &BlowPlan, dealt: i16) -> bool {
-        self.motorcycle
+        self.exposed
             && !self.protected
             && !self.dead
             && !self.ragdoll
@@ -371,7 +373,7 @@ mod tests {
     }
 
     const RIDER: RiderReaction = RiderReaction {
-        motorcycle: true,
+        exposed: true,
         protected: false,
         dead: false,
         ragdoll: false,
@@ -391,7 +393,7 @@ mod tests {
         assert!(RIDER.permits(&punch, 1));
         for mask in 0_u32..64 {
             let state = RiderReaction {
-                motorcycle: mask & 1 == 0,
+                exposed: mask & 1 == 0,
                 protected: mask & 2 != 0,
                 dead: mask & 4 != 0,
                 ragdoll: mask & 8 != 0,

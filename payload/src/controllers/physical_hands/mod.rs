@@ -10,7 +10,8 @@
 //! - [`rigid`]: a rigid body's response to impulses;
 //! - [`touch`]: what the contacts do to the world: knocks, shoves, and pressure pulses;
 //! - [`physics`]: the hand bodies, which replace the palms' probes for the hands they drive;
-//! - [`characters`]: taking hold of characters, and pulling a seated one out through an open door;
+//! - [`characters`]: taking hold of characters, and pulling a seated one out through an open door
+//!   or a broken window;
 //! - [`articulated`]: whether a body hangs from the world or another body by a constraint;
 //! - [`climb`]: climbing by gripping the static world with a hand its body drives;
 //! - [`vault`]: pushing the body up with the hands pressed down on a surface;

@@ -13,7 +13,9 @@ pub struct CharactersConfig {
     /// Throw a standing character into their ragdoll as the grip takes hold of them, held by the
     /// bone nearest the palm, rather than holding on until a yank.
     pub topple: bool,
-    /// Pull a character out of a vehicle seat through an open door: grip them, then yank.
+    /// Reach a character in a vehicle seat through an open door, or through a window the glass
+    /// brought down: grip them, then yank to pull them out (through a door, the game's hijack;
+    /// through a window, out of the seat as a ragdoll).
     pub hijack: bool,
     /// Keep a character a hand holds by its ragdoll in the ragdoll, by writing back their
     /// ragdolling timers through the hold, so the game's get-up does not stand them up out of the

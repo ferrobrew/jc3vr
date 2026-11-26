@@ -6,7 +6,9 @@ use egui::Ui;
 use crate::controllers::{
     frame::Hand,
     physical_hands::{
-        PhysicalHandsConfig, PhysicalHandsStatus, doors,
+        PhysicalHandsConfig, PhysicalHandsStatus,
+        characters::SeatAccess,
+        doors,
         grasp::TargetKind,
         human_hull::{self, step_up},
         impacts,
@@ -239,7 +241,7 @@ pub(super) fn characters_doors_settings(ui: &mut Ui, p: &mut PhysicalHandsConfig
         });
         ui.checkbox(
             &mut p.characters.hijack,
-            "Pull occupants out through open doors",
+            "Pull occupants out through open doors and broken windows",
         );
         ui.checkbox(&mut p.doors.enabled, "Open vehicle doors by hand");
         ui.add_enabled_ui(p.doors.enabled, |ui| {
@@ -306,15 +308,20 @@ pub(super) fn characters_doors_readout(ui: &mut Ui, status: &PhysicalHandsStatus
                             reach.distance * 1000.0
                         ));
                         if let Some(seated) = target.seated {
-                            match seated.door {
-                                Some(door) => {
+                            match seated.access {
+                                SeatAccess::Door { slot, open_deg } => {
                                     ui.label(format!(
                                         "the character sits behind the {} door, open {:.0}°",
-                                        doors::slot_label(door),
-                                        seated.open_deg
+                                        doors::slot_label(slot),
+                                        open_deg
                                     ));
                                 }
-                                None => {
+                                SeatAccess::Pane => {
+                                    ui.label(
+                                        "the character sits behind a window the glass brought down",
+                                    );
+                                }
+                                SeatAccess::Exposed => {
                                     ui.label("the character is an exposed motorcycle occupant");
                                 }
                             }

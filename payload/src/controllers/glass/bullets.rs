@@ -61,6 +61,11 @@ pub fn collide_factor() -> Option<f32> {
     *COLLIDE_FACTOR.lock()
 }
 
+/// Whether the glass has brought any pane down since the game started, read without the lock.
+pub(crate) fn any_hidden() -> bool {
+    ANY_HIDDEN.load(Ordering::Relaxed)
+}
+
 /// Note the pane `instance` as brought down by the glass, so bullets pass through it.
 pub(super) fn note_hidden(instance: *mut ModelInstance) {
     let mut hidden = HIDDEN.lock();

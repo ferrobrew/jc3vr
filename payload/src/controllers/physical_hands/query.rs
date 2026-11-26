@@ -1,5 +1,7 @@
 //! Physical hand ray queries with pane-local glass continuation.
 
+use std::num::NonZeroUsize;
+
 use glam::Vec3;
 use jc3gi::physics::{GameMaterialId, PhysicsSystem};
 
@@ -9,7 +11,10 @@ use crate::controllers::{
         raycast::{self, CastOptions, RaycastError},
     },
     glass::bullets::names_hidden_pane,
-    physical_hands::{contact::SurfaceHit, engine},
+    physical_hands::{
+        contact::{Surface, SurfaceHit},
+        engine,
+    },
 };
 
 /// # Safety
@@ -34,6 +39,23 @@ pub(crate) unsafe fn cast_solid(
     unsafe { cast_with_policy(from, to, options, GlassPolicy::All) }
 }
 
+/// Whether the segment from `from` to `to` passes, before anything solid, a pane the glass brought
+/// down whose hit names the game object `owner`: for a vehicle's window, the vehicle.
+///
+/// # Safety
+///
+/// Run on the simulation thread outside the physics step. Ignored objects must be live or zero.
+pub(crate) unsafe fn crosses_hidden_pane(
+    from: Vec3,
+    to: Vec3,
+    owner: NonZeroUsize,
+    options: &CastOptions,
+) -> Result<bool, RaycastError> {
+    crosses_pane_of(from, to, owner, options, |ray, distance, options| unsafe {
+        native_cast(ray, distance, options, GlassPolicy::Hidden)
+    })
+}
+
 const FORWARD_STEP_M: f32 = 0.001;
 const MAX_CASTS: usize = 16;
 
@@ -44,6 +66,22 @@ unsafe fn cast_with_policy(
     policy: GlassPolicy,
 ) -> Result<Option<SurfaceHit>, RaycastError> {
     continue_cast(from, to, options, |ray, distance, options| unsafe {
+        native_cast(ray, distance, options, policy)
+    })
+}
+
+/// One cast on the query layer, and whether `policy` passes its hit.
+///
+/// # Safety
+///
+/// As [`cast`].
+unsafe fn native_cast(
+    ray: &Ray,
+    distance: f32,
+    options: &CastOptions,
+    policy: GlassPolicy,
+) -> Result<Option<(SurfaceHit, bool)>, RaycastError> {
+    unsafe {
         raycast::cast_on_with(
             ray,
             distance,
@@ -57,7 +95,7 @@ unsafe fn cast_with_policy(
                 (surface, skip)
             },
         )
-    })
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -70,6 +108,32 @@ impl GlassPolicy {
     fn skips(self, material: Option<u32>, hidden: impl FnOnce() -> bool) -> bool {
         material == Some(GameMaterialId::EGameMaterialId_Glass as u32)
             && (matches!(self, Self::All) || hidden())
+    }
+}
+
+/// [`continue_cast`] over `cast`, noting whether one of the panes it passes belongs to `owner`.
+fn crosses_pane_of(
+    from: Vec3,
+    to: Vec3,
+    owner: NonZeroUsize,
+    options: &CastOptions,
+    mut cast: impl FnMut(&Ray, f32, &CastOptions) -> Result<Option<(SurfaceHit, bool)>, RaycastError>,
+) -> Result<bool, RaycastError> {
+    let mut crossed = false;
+    continue_cast(from, to, options, |ray, distance, options| {
+        let result = cast(ray, distance, options)?;
+        if let Some((hit, true)) = result {
+            crossed |= surface_owner(hit.surface) == Some(owner);
+        }
+        Ok(result)
+    })?;
+    Ok(crossed)
+}
+
+fn surface_owner(surface: Surface) -> Option<NonZeroUsize> {
+    match surface {
+        Surface::Solid { object, .. } => object,
+        Surface::Character { object, .. } => Some(object),
     }
 }
 
@@ -284,6 +348,70 @@ mod tests {
             }),
             Err(RaycastError::InvalidDistance),
         );
+    }
+
+    fn owned_by(x: f32, material: Option<u32>, owner: usize) -> SurfaceHit {
+        SurfaceHit {
+            surface: Surface::Solid {
+                object: NonZeroUsize::new(owner),
+                body: 1,
+            },
+            ..hit(x, material)
+        }
+    }
+
+    fn crosses_in(panes: &[(SurfaceHit, bool)], owner: usize) -> Result<bool, RaycastError> {
+        crosses_pane_of(
+            Vec3::ZERO,
+            Vec3::X * 4.0,
+            NonZeroUsize::new(owner).unwrap(),
+            &CastOptions::default(),
+            |ray, distance, _| {
+                Ok(panes
+                    .iter()
+                    .find(|(hit, _)| {
+                        hit.position.x >= ray.origin.x && hit.position.x < ray.origin.x + distance
+                    })
+                    .map(|&(hit, hidden)| {
+                        (hit, GlassPolicy::Hidden.skips(hit.material, || hidden))
+                    }))
+            },
+        )
+    }
+
+    #[test]
+    fn a_hidden_pane_of_the_owner_before_the_end_is_crossed() {
+        let pane = owned_by(1.0, Some(GLASS), 64);
+        assert_eq!(crosses_in(&[(pane, true)], 64), Ok(true));
+        // Whatever stops the cast past the pane, the pane was crossed on the way.
+        let seat = owned_by(2.0, None, 32);
+        assert_eq!(crosses_in(&[(pane, true), (seat, false)], 64), Ok(true));
+    }
+
+    #[test]
+    fn a_pane_behind_something_solid_or_still_standing_is_not_crossed() {
+        let pane = owned_by(2.0, Some(GLASS), 64);
+        let pillar = owned_by(1.0, None, 64);
+        assert_eq!(crosses_in(&[(pillar, false), (pane, true)], 64), Ok(false));
+        assert_eq!(crosses_in(&[(pane, false)], 64), Ok(false));
+        assert_eq!(crosses_in(&[], 64), Ok(false));
+    }
+
+    #[test]
+    fn a_hidden_pane_of_another_object_is_not_the_owners() {
+        let other = owned_by(1.0, Some(GLASS), 96);
+        assert_eq!(crosses_in(&[(other, true)], 64), Ok(false));
+        let world = hit(1.0, Some(GLASS));
+        let world = SurfaceHit {
+            surface: Surface::Solid {
+                object: None,
+                body: 1,
+            },
+            ..world
+        };
+        assert_eq!(crosses_in(&[(world, true)], 64), Ok(false));
+        let own = owned_by(2.0, Some(GLASS), 64);
+        assert_eq!(crosses_in(&[(other, true), (own, true)], 64), Ok(true));
     }
 
     #[test]

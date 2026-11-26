@@ -47,7 +47,7 @@ use crate::{
         physical_hands::{
             PhysicalHandsConfig,
             bodies::{instance_of, owner_of},
-            characters::engine as character_engine,
+            characters::{engine as character_engine, pane},
             collider_view, engine,
             physics::{
                 HAND_BODIES, HandHitsTuning, body,
@@ -252,7 +252,15 @@ pub(super) unsafe fn deliver(config: &PhysicalHandsConfig) -> Delivered {
                 if rider_reacted.contains(&identity) {
                     return false;
                 }
-                let queued = unsafe { react_rider(victim, &plan, dealt, damage_suppressed) };
+                let queued = unsafe {
+                    react_rider(
+                        victim,
+                        &plan,
+                        contact.hand_position,
+                        dealt,
+                        damage_suppressed,
+                    )
+                };
                 if queued {
                     rider_reacted.push(identity);
                 }
@@ -636,13 +644,15 @@ unsafe fn strike(
     }
 }
 
-/// Queue a supported knockdown transition only for a physical punch on an exposed rider.
+/// Queue a supported knockdown transition only for a physical punch, by a hand at `hand_at`, on an
+/// exposed occupant ([`exposed_seat`]).
 ///
 /// # Safety
 /// The game thread, outside the game's update; the victim remains live after native dispatch.
 unsafe fn react_rider(
     victim: &mut Character,
     plan: &BlowPlan,
+    hand_at: Vec3,
     dealt: i16,
     damage_suppressed: bool,
 ) -> bool {
@@ -665,8 +675,9 @@ unsafe fn react_rider(
         let bit = StateBit::of(flag);
         words[bit.word] & bit.mask != 0
     });
+    let seat = unsafe { exposed_seat(victim, hand_at) };
     let state = RiderReaction {
-        motorcycle: unsafe { victim.IsAttachedToVehicle() && victim.IsRidingMC() },
+        exposed: seat.is_some(),
         protected: unsafe { character_engine::protection(victim) }.is_some()
             || victim.m_InvulnerableToMelee
             || victim
@@ -690,13 +701,47 @@ unsafe fn react_rider(
     let fallback = fallback as u32;
     // Motorcycle states omit ACT_HITREACT_RAGDOLL. The supported full-ragdoll transition runs
     // the seat task's native exit cleanup without clearing its protection bits.
-    if unsafe { victim.m_AnimatedModel.TryAct(&native) }
-        || !unsafe { victim.m_AnimatedModel.TryAct(&fallback) }
-    {
+    if seat == Some(ExposedSeat::Motorcycle) && unsafe { victim.m_AnimatedModel.TryAct(&native) } {
+        return false;
+    }
+    if !unsafe { victim.m_AnimatedModel.TryAct(&fallback) } {
         return false;
     }
     unsafe { victim.m_AnimatedModel.QueueAct(&fallback) };
+    if seat == Some(ExposedSeat::BehindPane) {
+        tracing::info!(
+            "hand bodies: a punch through a broken window knocked an occupant out of the seat"
+        );
+    }
     true
+}
+
+/// How an occupant is exposed to a hand's punch.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+enum ExposedSeat {
+    /// A motorcycle rider.
+    Motorcycle,
+    /// An enclosed seat the hand at the contact reached through a window of the vehicle the glass
+    /// brought down ([`pane::reached_through`]).
+    BehindPane,
+}
+
+/// How `victim`, attached to a vehicle, is exposed to a punch by a hand at `hand_at`, or `None`
+/// when it is on foot or enclosed.
+///
+/// # Safety
+/// The game thread, outside the game's update; `victim` must be live.
+unsafe fn exposed_seat(victim: &Character, hand_at: Vec3) -> Option<ExposedSeat> {
+    if !unsafe { victim.IsAttachedToVehicle() } {
+        return None;
+    }
+    if unsafe { victim.IsRidingMC() } {
+        return Some(ExposedSeat::Motorcycle);
+    }
+    let vehicle = NonZeroUsize::new(unsafe { victim.GetVehiclePtr() } as usize)?;
+    // The hand is in the cabin at the contact, so its way in is the leg from the eyes.
+    unsafe { pane::reached_through(vehicle, pane::eyes(), hand_at, hand_at) }
+        .then_some(ExposedSeat::BehindPane)
 }
 
 /// Attribution and damage type for one native message.

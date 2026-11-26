@@ -8,7 +8,8 @@ use jc3gi::character::character::{Character, SafeBoneIndex};
 use crate::controllers::physical_hands::{
     bodies::owner_of,
     characters::{
-        CharacterTarget, CharactersConfig, Seated, Seize, bone_frame, engine, frame, open_door_near,
+        CharacterTarget, CharactersConfig, SeatAccess, Seated, Seize, bone_frame, engine, frame,
+        open_door_near,
     },
 };
 
@@ -95,18 +96,29 @@ fn refresh(
     target.seated = match (target.seated, engine.attachment(target.character)?) {
         (None, Attachment::OnFoot) if conditions.config.grab => None,
         (Some(before), Attachment::Vehicle(vehicle))
-            if conditions.config.hijack && before.vehicle == vehicle && before.door.is_some() =>
+            if conditions.config.hijack && before.vehicle == vehicle =>
         {
-            // The current character supplies this vehicle, not the queued seat observation.
-            Some(engine.open_door(vehicle, conditions)?)
+            match before.access {
+                // The current character supplies this vehicle, not the queued seat observation.
+                SeatAccess::Door { .. } => Some(engine.open_door(vehicle, conditions)?),
+                // A window the glass brought down stays down: the reach that found the way in
+                // judged it, and the hand, now inside the cabin, keeps it while the character
+                // keeps the seat.
+                SeatAccess::Pane => Some(Seated {
+                    vehicle,
+                    access: SeatAccess::Pane,
+                }),
+                SeatAccess::Exposed => return None,
+            }
         }
         (Some(before), Attachment::Exposed(vehicle))
-            if conditions.config.hijack && before.vehicle == vehicle && before.door.is_none() =>
+            if conditions.config.hijack
+                && before.vehicle == vehicle
+                && before.access == SeatAccess::Exposed =>
         {
             Some(Seated {
                 vehicle,
-                door: None,
-                open_deg: 0.0,
+                access: SeatAccess::Exposed,
             })
         }
         _ => return None,
@@ -203,12 +215,11 @@ impl AcquisitionEngine for NativeAcquisition {
 
     fn open_door(&mut self, vehicle: NonZeroUsize, conditions: Conditions<'_>) -> Option<Seated> {
         // SAFETY: refresh obtains the vehicle from the owner-checked live character this call.
-        let (door, open_deg) =
+        let (slot, open_deg) =
             unsafe { open_door_near(vehicle, conditions.palm, conditions.world_scale) }?;
         Some(Seated {
             vehicle,
-            door: Some(door),
-            open_deg,
+            access: SeatAccess::Door { slot, open_deg },
         })
     }
 

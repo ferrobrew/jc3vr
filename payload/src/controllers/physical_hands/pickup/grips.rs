@@ -8,7 +8,9 @@ use crate::controllers::{
     frame::Hand,
     physical_hands::{
         bodies,
-        characters::{self, CharactersConfig, GunnerOut, Regrip, Seize, SeizeStep},
+        characters::{
+            self, CharactersConfig, GunnerOut, Regrip, SeatAccess, SeatOut, Seize, SeizeStep,
+        },
         doors::{self, LatchStep},
         grasp::{self, Grip, PalmMotion, Reach, TargetKind},
         physics::{self, Shove, ShoveForce},
@@ -150,7 +152,8 @@ pub(super) unsafe fn keep_latch(
 
 /// Keep `hand`'s grip on a character: hold the hand at the grab point, and act on a yank. A yank on
 /// a seated character, through a door still open beside the hand, has the input tick click the
-/// vehicle entry, which hijacks the seat; the grip lets go either way.
+/// vehicle entry, which hijacks the seat; the grip lets go either way. A yank on one reached
+/// through a broken window takes them out of the seat as a ragdoll, which the hand then takes.
 ///
 /// # Safety
 ///
@@ -213,9 +216,48 @@ pub(super) unsafe fn keep_seize(
                     }
                 }
             }
-            let exposed = seize.target.seated.is_some_and(|seat| seat.door.is_none())
+            if seize
+                .target
+                .seated
+                .is_some_and(|seat| seat.access == SeatAccess::Pane)
+            {
+                // SAFETY: forwarded from the caller; the access and the target's owner are checked
+                // first.
+                let out =
+                    unsafe { characters::occupant_access(seize.target, palm, world_scale, config) }
+                        .and_then(|_| unsafe { characters::unseat(seize.target) });
+                match out {
+                    Some(SeatOut::Queued) => {
+                        // The occupant falls where they sit, and the hand takes hold of the
+                        // ragdoll as of any fallen character, to pull out through the opening.
+                        tracing::info!(
+                            hand = hand.label(),
+                            ?direction,
+                            "physical hands: characters: a hand pulled an occupant out of the seat \
+                             through a broken window"
+                        );
+                        outcome.yanks += 1;
+                        state.regrips[i] = Some(Regrip::new(seize));
+                    }
+                    refused => {
+                        tracing::info!(
+                            hand = hand.label(),
+                            reason = refused
+                                .map_or("no longer seated in the same vehicle", SeatOut::label),
+                            "physical hands: characters: an occupant reached through a broken window \
+                             stays in the seat"
+                        );
+                        outcome.released[i] = true;
+                    }
+                }
+                return;
+            }
+            let exposed = seize
+                .target
+                .seated
+                .is_some_and(|seat| seat.access == SeatAccess::Exposed)
                 && unsafe { characters::occupant_access(seize.target, palm, world_scale, config) }
-                    .is_some_and(|seat| seat.door.is_none());
+                    .is_some_and(|seat| seat.access == SeatAccess::Exposed);
             if seize.target.seated.is_none() || exposed {
                 // An exposed rider is pulled by the hit reaction, not the seat-entry action.
                 // The anatomical grip stays pending until the resulting ragdoll is dynamic.
@@ -244,8 +286,11 @@ pub(super) unsafe fn keep_seize(
                 Some(seated) => {
                     tracing::info!(
                         hand = hand.label(),
-                        door = seated.door.map(doors::slot_label),
-                        open_deg = seated.open_deg,
+                        door = seated
+                            .access
+                            .door()
+                            .map(|(slot, _)| doors::slot_label(slot)),
+                        open_deg = seated.access.door().map(|(_, open_deg)| open_deg),
                         ?direction,
                         "physical hands: hijack: a hand pulled an accessible vehicle occupant"
                     );

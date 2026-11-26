@@ -1,7 +1,7 @@
 //! The character grabs' engine side: a character's proxy body, which tells its capsule from its
 //! ragdoll's bodies, whether the player's faction is hostile to it, whether it is dead, whether
 //! the game protects it, whether its state keeps it out of its ragdoll, and the ragdoll that takes
-//! a mounted gun's gunner out of their seat.
+//! a seated character, such as a mounted gun's gunner, out of their seat.
 //!
 //! Every function here runs on the game thread outside the physics step.
 
@@ -131,22 +131,61 @@ pub(crate) unsafe fn gunner_out(character: &mut Character) -> GunnerOut {
     if !unsafe { character.IsInMountedGunState() } {
         return GunnerOut::NotAGunner;
     }
+    match unsafe { seat_out(character) } {
+        SeatOut::Queued => GunnerOut::Queued,
+        SeatOut::Refused => GunnerOut::Refused,
+        SeatOut::NoTransition => GunnerOut::NoTransition,
+    }
+}
+
+/// Whether a seated character was taken out of their seat as a ragdoll.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum SeatOut {
+    /// The full ragdoll is queued: the character falls out of the seat where they are.
+    Queued,
+    /// The game protects the character, it is dead or already ragdolling, or its state skips the
+    /// hit reaction's ragdoll.
+    Refused,
+    /// The seat's state takes no full ragdoll, or the act is not in the symbol table.
+    NoTransition,
+}
+
+impl SeatOut {
+    pub const fn label(self) -> &'static str {
+        match self {
+            SeatOut::Queued => "the full ragdoll is queued",
+            SeatOut::Refused => "the character is protected, dead, or keeps its footing",
+            SeatOut::NoTransition => "the seat's state takes no full ragdoll",
+        }
+    }
+}
+
+/// Take the seated `character` out of its seat as a ragdoll, where it is, by the full-ragdoll act
+/// ([`EventIdSymbolTable::ACT_FULL_RAGDOLL`]), queued only once the seat's state accepts it
+/// ([`AnimatedModel::TryAct`](jc3gi::character::character::AnimatedModel::TryAct)). A seated
+/// character's hit reaction never ragdolls it ([`Character::HitReaction`]). Which seat states
+/// besides a mounted gun's take the act is unverified.
+///
+/// # Safety
+///
+/// `character` must be a live character, on the game thread outside the game's update.
+pub(crate) unsafe fn seat_out(character: &mut Character) -> SeatOut {
     if unsafe { protection(character) }.is_some()
         || unsafe { dead(character) }
         || unsafe { character.IsRagdolling() }
         || unsafe { keeps_footing(character) }
     {
-        return GunnerOut::Refused;
+        return SeatOut::Refused;
     }
     let Some(act) = resolve_act_id(EventIdSymbolTable::ACT_FULL_RAGDOLL) else {
-        return GunnerOut::NoTransition;
+        return SeatOut::NoTransition;
     };
     let act = act as u32;
     if !unsafe { character.m_AnimatedModel.TryAct(&act) } {
-        return GunnerOut::NoTransition;
+        return SeatOut::NoTransition;
     }
     unsafe { character.m_AnimatedModel.QueueAct(&act) };
-    GunnerOut::Queued
+    SeatOut::Queued
 }
 
 /// Ragdoll a character a topple left standing, as the hit reaction would have: the hit reaction's
