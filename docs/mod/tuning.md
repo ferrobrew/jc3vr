@@ -29,7 +29,7 @@ The root type and every struct under it derive `Deserialize` with `#[serde(deny_
 
 A value the player's settings also shape is composed at the read: the vehicles' `PhysicalControlsTuning::of` joins the wheel's tuning from the file with the lock and the tracking from the settings, through one generic struct (`PhysicalControls<W>`) whose file form and runtime form differ only in the wheel.
 
-A pure crate the payload shares with the offline tools (`body-rig`, for one) does not depend on `jc3vr-core`. Its tuning structs derive `Deserialize` in the pure crate; the layer crate that runs it live owns the file and wraps the root in a newtype that implements `Tuning`, and an offline tool parses the same file from the repository with `toml`.
+A pure crate the payload shares with the offline tools (`body-rig`, for one) does not depend on `jc3vr-core`. Its tuning structs derive `Deserialize` in the pure crate, and its functions take the values as parameters; the layer crate that runs it live owns the file and wraps the root in a newtype that implements `Tuning`, or, where the file also holds the layer crate's own values, makes the pure root a table of its own root (the body rig's `core` in `rig.toml`). An offline tool parses the same file from the repository with `toml` when it runs, so an edit applies without a rebuild. Tuning is not recorded: a `.jc3trk` recording carries the settings the player had, which `tracking-synth` replays as recorded, while it reads the tuning file as the repository has it now ([body/rig.md, "Offline evaluation"](body/rig.md#offline-evaluation)).
 
 ## Packaging
 
