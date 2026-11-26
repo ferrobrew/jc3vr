@@ -11,12 +11,12 @@ use jc3gi::character::character::{AimState, Character};
 use parking_lot::Mutex;
 
 use crate::{
-    config::Config,
     controllers::{
         body::procedural::{
             authority::{Case, classify},
             state::StateTracker,
         },
+        config::CONTROLLERS_CONFIG,
         locomotion::{
             status as locomotion_status,
             view::{
@@ -33,6 +33,7 @@ use crate::{
         source,
     },
     hooks::in_gameplay,
+    vr::VR_CONFIG,
 };
 
 /// What the stable anchor did on its last tick, for the debug UI.
@@ -83,14 +84,14 @@ pub(crate) unsafe fn stabilize(
     model: Neutral,
     dt: f32,
 ) -> Stabilized {
-    let (enabled, controllers_enabled, head_on_pivot, world_scale) = Config::lock_query(|c| {
+    let (enabled, controllers_enabled, head_on_pivot) = CONTROLLERS_CONFIG.query(|c| {
         (
-            c.controllers.locomotion.view.enabled,
-            c.controllers.enabled,
-            c.controllers.locomotion.view.head_on_pivot,
-            c.vr.world_scale,
+            c.locomotion.view.enabled,
+            c.enabled,
+            c.locomotion.view.head_on_pivot,
         )
     });
+    let world_scale = VR_CONFIG.lock().world_scale;
     let now = Instant::now();
     let locomotion = locomotion_status();
     let grounded = locomotion.fresh(now);
@@ -110,7 +111,7 @@ pub(crate) unsafe fn stabilize(
     let mut tracker = STATE.lock().tracker;
     let mut airborne = false;
     let case = (controllers_enabled && source() == Source::Vr).then(|| {
-        let config = Config::lock_query(|c| c.controllers.body.procedural);
+        let config = CONTROLLERS_CONFIG.lock().body.procedural;
         let step = if dt.is_finite() { dt.max(0.0) } else { 0.0 };
         // SAFETY: the pass's entry, on the thread running it.
         let mut read =

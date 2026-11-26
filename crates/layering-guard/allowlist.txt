@@ -11,12 +11,9 @@ payload/src/controllers/aim/sights/tuning.rs -> payload
 payload/src/controllers/aim_state.rs -> payload
 payload/src/controllers/bindings/mod.rs -> payload
 payload/src/controllers/gamepad_setting.rs -> payload
-payload/src/controllers/locomotion/anchor.rs -> payload
-payload/src/controllers/locomotion/mod.rs -> payload
 payload/src/controllers/menu/controls/mod.rs -> payload
 payload/src/controllers/menu/mod.rs -> payload
 payload/src/controllers/presets.rs -> payload
-payload/src/controllers/roomscale/mod.rs -> payload
 payload/src/controllers/scheme.rs -> payload
 payload/src/controllers/summary/game_hints.rs -> payload
 payload/src/controllers/vehicles/driver_aim.rs -> payload

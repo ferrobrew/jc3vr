@@ -42,9 +42,9 @@ use jc3gi::{
 use parking_lot::Mutex;
 
 use crate::{
-    config::Config,
     controllers::{
         body::{procedural::state::animation_moves_body, rig::grounded},
+        config::CONTROLLERS_CONFIG,
         locomotion::{accel::Rates, speeds::SpeedLog},
     },
     headpose,
@@ -98,7 +98,7 @@ pub fn status() -> LocomotionStatus {
 /// `character` must be the live local character, on the thread running its state machines' serial
 /// pass.
 pub(crate) unsafe fn after_task(character: &mut Character, dt: f32) {
-    let config = Config::lock_query(|c| c.controllers.locomotion.stick);
+    let config = CONTROLLERS_CONFIG.lock().locomotion.stick;
     let now = Instant::now();
     // A committed step of the body rig walks the game's animation through the move stick; its
     // speed is the rig's drive, so its share of the stick moves nothing here.

@@ -44,7 +44,6 @@ pub use seat::SeatPhase;
 
 pub use crate::vr::FrameInputs;
 use crate::{
-    config::Config,
     controllers::{
         body::{
             self, BodyDimensions, estimator,
@@ -58,7 +57,7 @@ use crate::{
                 root::{self as rig_root, FrameSourceSnapshot, RootStatus, capsule_enabled},
             },
         },
-        config::{Posture, RoomscaleConfig},
+        config::{CONTROLLERS_CONFIG, Posture, RoomscaleConfig},
         frame as controllers_frame, locomotion,
         mode::{Mode, current as current_mode},
         roomscale::{
@@ -96,12 +95,12 @@ pub struct ComposedCockpit {
 /// correction, returning the cockpit positions to compose with. Called once per rendered VR frame
 /// on the game thread, outside the world update.
 pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
-    let (config, rig, remap_head, driving_view_on) = Config::lock_query(|c| {
+    let (config, rig, remap_head, driving_view_on) = CONTROLLERS_CONFIG.query(|c| {
         (
-            c.controllers.roomscale,
-            c.controllers.body.rig,
-            c.controllers.body.remap_head,
-            c.controllers.vehicles.driving_view.enabled,
+            c.roomscale,
+            c.body.rig,
+            c.body.remap_head,
+            c.vehicles.driving_view.enabled,
         )
     });
     let stage = vr::stage::stage();
@@ -265,7 +264,7 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
     if in_gameplay {
         // SAFETY: the game thread, outside the world update.
         unsafe { seat_tick(&mut frame, &config, now) };
-        let take_off = Config::lock_query(|c| c.controllers.vehicles.take_off_to_head);
+        let take_off = CONTROLLERS_CONFIG.lock().vehicles.take_off_to_head;
         // SAFETY: as above.
         unsafe { crate::controllers::vehicles::take_off::tick(take_off) };
     } else {
@@ -429,7 +428,7 @@ const MOVING_STICK: f32 = 0.2;
 /// re-base and a follow bank do neither, because they happen on the game's schedule rather than the
 /// player's.
 pub fn on_recenter(kind: RecenterKind, turn: Quat, cause: RecenterCause) {
-    let setting = Config::lock_query(|c| c.controllers.roomscale.posture);
+    let setting = CONTROLLERS_CONFIG.lock().roomscale.posture;
     let stage = vr::stage::stage();
     let player = body::player();
     rig_root::on_recenter(kind, turn, cause);
