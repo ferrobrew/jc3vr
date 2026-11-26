@@ -12,7 +12,10 @@ use body_rig::{
 };
 use glam::{Mat3, Quat, Vec3};
 
-use crate::controllers::body::procedural::{rig::RigBone, solver::pose::RigPose};
+use crate::controllers::body::{
+    ik_body::tuning::IK_BODY,
+    procedural::{rig::RigBone, solver::pose::RigPose},
+};
 
 /// The FK body in Rico's model space, at his proportions.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -110,7 +113,7 @@ pub(crate) fn seed(
 /// How far the hips at `hips` must come down for every planted ankle in `ankles` to stand within
 /// `leg` metres of its hip, at most `max` metres.
 pub(crate) fn pelvis_drop(hips: [Vec3; 2], ankles: [Option<Vec3>; 2], leg: f32, max: f32) -> f32 {
-    let reach = leg * REACH_SHARE;
+    let reach = leg * IK_BODY.get().seed.reach_share;
     let mut drop = 0.0f32;
     for (hip, ankle) in hips.iter().zip(ankles) {
         let Some(ankle) = ankle else {
@@ -139,28 +142,20 @@ pub(crate) fn air_legs(body: &ModelBody, frame: Quat, leg: f32, relax: f32) -> [
     let relax = relax.clamp(0.0, 1.0);
     let down = frame * Vec3::NEG_Y;
     let ahead = frame * Vec3::NEG_Z;
+    let tuning = &IK_BODY.get().seed;
     let mut ankles = body.ankles;
     let mut knees = body.knees;
     for i in 0..2 {
         let hip = body.hips[i];
-        let air_knee = hip + down * leg * AIR_KNEE_DOWN + ahead * leg * AIR_KNEE_AHEAD;
-        let air_ankle = hip + down * leg * AIR_ANKLE_DOWN + ahead * leg * AIR_ANKLE_AHEAD;
+        let air_knee =
+            hip + down * leg * tuning.air_knee_down + ahead * leg * tuning.air_knee_ahead;
+        let air_ankle =
+            hip + down * leg * tuning.air_ankle_down + ahead * leg * tuning.air_ankle_ahead;
         knees[i] = knees[i].lerp(air_knee, relax);
         ankles[i] = ankles[i].lerp(air_ankle, relax);
     }
     [ankles, knees]
 }
-
-/// The share of the leg's straight length the pelvis's drop keeps the planted feet within, so the
-/// knee keeps a little bend to solve with.
-const REACH_SHARE: f32 = 0.995;
-
-/// The light air pose's knee and ankle under the hip, as shares of the leg's length: down along the
-/// pelvis and ahead of it.
-const AIR_KNEE_DOWN: f32 = 0.45;
-const AIR_KNEE_AHEAD: f32 = 0.18;
-const AIR_ANKLE_DOWN: f32 = 0.85;
-const AIR_ANKLE_AHEAD: f32 = 0.05;
 
 #[cfg(test)]
 mod tests {
@@ -256,7 +251,9 @@ mod tests {
         let aside = [Some(Vec3::new(-0.4, 0.1, 0.0)), None];
         let drop = pelvis_drop(hips, aside, leg, 0.2);
         let hip = hips[0] - Vec3::Y * drop;
-        assert!((hip.distance(aside[0].unwrap()) - leg * REACH_SHARE).abs() < 1e-4);
+        assert!(
+            (hip.distance(aside[0].unwrap()) - leg * IK_BODY.get().seed.reach_share).abs() < 1e-4
+        );
         // Out of reach altogether: the most.
         let far = [Some(Vec3::new(-1.5, 0.1, 0.0)), None];
         assert_eq!(pelvis_drop(hips, far, leg, 0.2), 0.2);

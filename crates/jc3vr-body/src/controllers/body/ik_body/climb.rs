@@ -15,6 +15,7 @@ use crate::controllers::{
     body::ik_body::{
         brace::{self, BraceCast},
         support,
+        tuning::IK_BODY,
     },
     telemetry::report,
 };
@@ -92,6 +93,7 @@ impl ClimbFeet {
         let to_model = legs.world.inverse();
         let ahead = direction(legs.world_yaw);
         let forward_down = (ahead + Vec3::NEG_Y).normalize();
+        let casts = &IK_BODY.get().climb;
         Side::BOTH.map(|side| {
             let i = side.index();
             let hip = to_world(legs.hips[i]);
@@ -102,12 +104,12 @@ impl ClimbFeet {
                     BraceCast {
                         from: hip,
                         direction: ahead,
-                        length: legs.leg_m * HIP_CAST_SHARE,
+                        length: legs.leg_m * casts.hip_cast_share,
                     },
                     BraceCast {
                         from: ankle,
                         direction: forward_down,
-                        length: legs.leg_m * ANKLE_CAST_SHARE,
+                        length: legs.leg_m * casts.ankle_cast_share,
                     },
                 ],
                 now,
@@ -175,9 +177,3 @@ impl ClimbFeet {
         );
     }
 }
-
-/// How far the cast from the hip along the facing reaches, as a share of the leg's length.
-const HIP_CAST_SHARE: f32 = 1.0;
-
-/// How far the cast from the ankle forward and down reaches, as a share of the leg's length.
-const ANKLE_CAST_SHARE: f32 = 0.6;
