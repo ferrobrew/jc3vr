@@ -3,13 +3,17 @@
 
 pub(crate) use crate::input_core::scheme::{Scheme, resolve};
 use crate::{
-    config::Config,
+    config::engine::ConfigSlot,
     controllers::frame::{self, ControllerFrame},
 };
 
+/// The controllers' master switch, at `controllers.enabled` in the settings file; the payload
+/// binds the slot at startup.
+pub(crate) static CONTROLLERS_ENABLED: ConfigSlot<bool> = ConfigSlot::new("controllers.enabled");
+
 /// The scheme in effect now. Cheap: one config read and a peek at the published controller frame.
 pub fn current() -> Scheme {
-    let enabled = Config::lock_query(|c| c.controllers.enabled);
+    let enabled = *CONTROLLERS_ENABLED.lock();
     let present = enabled && frame::with_latest(ControllerFrame::any_active).unwrap_or(false);
     resolve(enabled, present)
 }

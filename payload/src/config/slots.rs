@@ -75,6 +75,8 @@ slots! {
     crate::vr::input::config::DOMINANT_HAND = controllers.dominant_hand,
     crate::vr::input::config::HAPTICS_ENABLED = controllers.haptics.enabled,
     crate::vr::input::config::HAPTICS_INTENSITY = controllers.haptics.intensity,
+    crate::controllers::scheme::CONTROLLERS_ENABLED = controllers.enabled,
+    crate::controllers::aim::WORLD_MARKERS_ENABLED = hud.world_markers.enabled,
     crate::vr::PANEL_ENABLED = hud.egui_panel.enabled,
     crate::vr::PANEL_ON_MIRROR = hud.egui_panel.show_on_mirror,
     crate::vr::PANEL_RESOLUTION = hud.egui_panel.resolution,

@@ -83,7 +83,6 @@ pub use crate::controllers::bindings::{
     report::{Idle, ReportedWrite, TickReport, recovery_status},
 };
 use crate::{
-    config::Config,
     controllers::{
         aim::{self, sights},
         bindings::{
@@ -110,10 +109,10 @@ use crate::{
             trigger_ownership::{Owner as TriggerOwner, RawTrigger, TriggerOwnership},
             yank::{HandLine, LineYank, Yank},
         },
-        body::{firm_ragdoll, rig::grounded::add_step_walk},
+        body::{BODY_CONFIG, firm_ragdoll, rig::grounded::add_step_walk},
         clock::TimeScale,
         cockpit::CockpitTransform,
-        config::LocomotionDirection,
+        config::{CONTROLLERS_CONFIG, LocomotionDirection},
         frame::{self, Button, ControllerFrame, GripPress, Hand},
         grab::{self, Consumer, Provided, grabs_for, markers::MarkerFrame},
         hands::{self, tiers},
@@ -123,6 +122,7 @@ use crate::{
         physical_hands, roomscale, scheme, snatch, vehicles, weapons,
     },
     grapple, headpose,
+    headpose::config::HEADPOSE_CONFIG,
     input_core::capture::desktop_input_observation,
     ui::capture::{CaptureUpdate, OwnershipBlocker},
     vr::{
@@ -184,18 +184,15 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
     // slow motion shortens.
     // SAFETY: the bindings tick runs while the game runs.
     let real_dt = unsafe { TimeScale::current() }.real_dt(dt);
-    let (config, neutral_policy, flight_dimensions) = Config::lock_query(|c| {
-        (
-            c.controllers.clone(),
-            NeutralPolicy::new(
-                &c.controllers.input,
-                &c.controllers.bindings,
-                &c.headpose.vr_turn,
-                c.controllers.acting_hand(),
-            ),
-            c.body,
-        )
-    });
+    let config = CONTROLLERS_CONFIG.lock().clone();
+    let vr_turn = HEADPOSE_CONFIG.lock().vr_turn;
+    let neutral_policy = NeutralPolicy::new(
+        &config.input,
+        &config.bindings,
+        &vr_turn,
+        config.acting_hand(),
+    );
+    let flight_dimensions = *BODY_CONFIG.lock();
     let desktop = desktop_input_observation();
     let raw_frame = frame::latest();
     let source_neutral = raw_frame
@@ -1132,7 +1129,7 @@ pub(crate) fn hand_closed(hand: Hand) -> bool {
 /// ([`holds_unseen`]), for a hold resumed with no tick's history of the hand. `None`
 /// while the frame is unfocused or the hand is not tracked, when the grip is not known.
 pub(crate) fn grip_holds_now(hand: Hand) -> Option<bool> {
-    let input = Config::lock_query(|config| config.controllers.input);
+    let input = CONTROLLERS_CONFIG.lock().input;
     frame::with_latest(|f| {
         let source = f.hand(hand);
         (f.focused && source.active).then(|| {
@@ -1274,7 +1271,7 @@ fn cancel_capture_routes(poll: DevicePoll, sink: &mut Vec<Segment>) {
     clear_controller();
     update_egui_controller(
         None,
-        Config::lock_query(|config| config.controllers.acting_hand()),
+        CONTROLLERS_CONFIG.query(|config| config.acting_hand()),
         Default::default(),
     );
     let mut state = STATE.lock();

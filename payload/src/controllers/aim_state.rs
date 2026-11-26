@@ -61,9 +61,10 @@ use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{
-    config::Config,
     controllers::{
-        aim, hands,
+        aim,
+        config::CONTROLLERS_CONFIG,
+        hands,
         mode::{self, Mode},
         scheme, weapons,
     },
@@ -320,7 +321,7 @@ fn controllers() -> bool {
 
 /// Whether the arm aim IK skip acts now: its switch is on, under the controller scheme.
 fn skip_arm_ik() -> bool {
-    Config::lock_query(|c| c.controllers.aim_state.skip_arm_ik) && controllers()
+    CONTROLLERS_CONFIG.query(|c| c.aim_state.skip_arm_ik) && controllers()
 }
 
 /// The local player character behind `character`, or `None` for any other character.

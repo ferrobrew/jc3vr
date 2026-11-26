@@ -51,7 +51,7 @@ use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{
-    config::Config,
+    config::engine::ConfigSlot,
     controllers::{
         aim::{
             assist::{AssistCorrection, GrappleAssist},
@@ -60,7 +60,7 @@ use crate::{
             raycast::{CastOptions, RayHit, RaycastError},
         },
         cockpit::CockpitTransform,
-        config::ControllersConfig,
+        config::{CONTROLLERS_CONFIG, ControllersConfig},
         frame::{Hand, Pose},
         hands::{self, ik, late},
         mode::{self, Mode},
@@ -79,6 +79,11 @@ use crate::{
 /// along the ray, because the game fires along the barrel instead of at an aim point near the
 /// muzzle, and skips the weapon's update entirely for one almost at the muzzle.
 const MIN_TARGET_DISTANCE_M: f32 = 2.0;
+
+/// Whether the HUD's world markers are on, at `hud.world_markers.enabled` in the settings file;
+/// the payload binds the slot at startup. The aim casts the markers' fallback rays.
+pub(crate) static WORLD_MARKERS_ENABLED: ConfigSlot<bool> =
+    ConfigSlot::new("hud.world_markers.enabled");
 
 /// The aiming hooks, aggregated by [`crate::controllers::hook_library`].
 pub(crate) fn hook_library() -> HookLibrary {
@@ -191,7 +196,7 @@ pub fn status() -> AimStatus {
 /// `None` when neither aim is acting. The aim-state hook writes it after the game's own point is
 /// set, so the point still counts as set this frame.
 pub fn character_aim_point() -> Option<Vec3> {
-    let dominant = Config::lock_query(|c| c.controllers.acting_hand());
+    let dominant = CONTROLLERS_CONFIG.lock().acting_hand();
     gun::character_aim_point(dominant).or_else(vehicles::mounted_aim_point)
 }
 
@@ -228,7 +233,7 @@ fn update_post_sim(aim: *mut PlayerAimControl, dt: f32, character: *mut Characte
     // The world markers' fallback raycasts run here whatever the control scheme: this is the
     // simulation update, outside the physics step, where the game casts its own aim ray.
     if let Some(owner) = owner {
-        let markers = Config::lock_query(|c| c.hud.world_markers.enabled);
+        let markers = *WORLD_MARKERS_ENABLED.lock();
         // SAFETY: the owner is the live local player character, on the simulation thread.
         unsafe { marker_rays::resolve_rays(owner, markers) };
         // SAFETY: as above. The head probe runs in every state and scheme, for the comfort fade.
@@ -291,7 +296,7 @@ fn update_post_sim(aim: *mut PlayerAimControl, dt: f32, character: *mut Characte
 
 /// Decide whether the aim acts this update and compose the hands into the world.
 fn begin() -> Result<TickHands, AimIdle> {
-    let config = Config::lock_query(|c| c.controllers.clone());
+    let config = CONTROLLERS_CONFIG.lock().clone();
     // The hands are composed even with both the gun and the grapple aim off: the grenade and C4
     // throws follow them too.
     if !config.enabled {

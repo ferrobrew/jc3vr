@@ -94,7 +94,7 @@ mod tests {
     use glam::{Vec2, Vec3};
 
     use super::*;
-    use crate::{config::Config, controllers::config::SightOverride};
+    use crate::controllers::config::SightOverride;
 
     #[test]
     fn controller_preset_keeps_highlights_without_the_preview_beam() {
@@ -111,21 +111,18 @@ mod tests {
 
     #[test]
     fn presets_preserve_tuning_and_calibration() {
-        let mut config = Config::new();
-        config.controllers.hands.grip.position_m = Vec3::new(0.12, -0.08, 0.04);
-        config.controllers.aim.sights.set(SightOverride {
+        let mut c = ControllersConfig::new();
+        c.hands.grip.position_m = Vec3::new(0.12, -0.08, 0.04);
+        c.aim.sights.set(SightOverride {
             weapon_hash: 99,
             offset_m: Vec3::new(0.0, 0.02, -0.01),
             angles_deg: Vec2::new(2.0, 3.0),
         });
-        config.headpose.vr_turn.snap_angle_deg = 47.0;
-        let grip = config.controllers.hands.grip;
-        let sight = config.controllers.aim.sights.get(99).copied();
-        let turn = config.headpose.vr_turn.snap_angle_deg;
-        apply_preset(&mut config.controllers, Preset::Controllers);
-        assert_eq!(config.controllers.hands.grip, grip);
-        assert_eq!(config.controllers.aim.sights.get(99).copied(), sight);
-        assert_eq!(config.headpose.vr_turn.snap_angle_deg, turn);
+        let grip = c.hands.grip;
+        let sight = c.aim.sights.get(99).copied();
+        apply_preset(&mut c, Preset::Controllers);
+        assert_eq!(c.hands.grip, grip);
+        assert_eq!(c.aim.sights.get(99).copied(), sight);
     }
 
     #[test]
@@ -163,7 +160,7 @@ mod tests {
 
     #[test]
     fn every_owned_switch_marks_the_selected_preset_modified() {
-        let baseline = Config::new().controllers;
+        let baseline = ControllersConfig::new();
         let mut leaves = Vec::new();
         collect_leaves(
             &serde_json::to_value(&baseline).unwrap(),

@@ -25,13 +25,10 @@ use std::{
 use glam::{Mat4, Vec2, Vec3};
 use parking_lot::Mutex;
 
-use crate::{
-    config,
-    controllers::{
-        aim::{gun::HeldWeapon, ray, sights},
-        config::{SightOverride, SightTuningConfig},
-        frame::{Hand, Pose},
-    },
+use crate::controllers::{
+    aim::{gun::HeldWeapon, ray, sights},
+    config::{CONTROLLERS_CONFIG, SightOverride, SightTuningConfig},
+    frame::{Hand, Pose},
 };
 
 /// How far ahead of the head the line-up marker is placed, metres.
@@ -166,8 +163,8 @@ pub(crate) fn service(
     // The config is locked with the tuning state released: the debug UI's sight tool reads the
     // state while it holds the config. A capture is the player's own choice, so it is saved.
     let result = solve_capture(marker, held, dominant).and_then(|sight| {
-        config::edit()
-            .controllers
+        CONTROLLERS_CONFIG
+            .edit()
             .aim
             .sights
             .set(sight)
