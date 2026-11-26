@@ -333,16 +333,26 @@ pub fn classify(state: &CharacterState) -> Case {
     }
 }
 
+impl CharacterState {
+    /// Whether a clip or the physics owns the whole body in a way the grapple line's lock and the
+    /// relaxed legs must not override: a ledge climb, a swim, the wingsuit, the parachute, a hit
+    /// reaction, a climb by the hands, or an authored motion. The classifier ranks these below the
+    /// grapple's cases, so one of them can be set while a traversal or a wall attach is the case.
+    fn clip_owns_body(&self) -> bool {
+        self.ledge_climb
+            || self.swimming
+            || self.wingsuit
+            || self.parachute
+            || self.hit_reaction
+            || self.hand_climb
+            || self.authored_motion
+    }
+}
+
 pub(super) fn classify_locked(state: &CharacterState, locked: bool) -> Case {
     let case = classify(state);
     if locked
-        && !state.ledge_climb
-        && !state.swimming
-        && !state.wingsuit
-        && !state.parachute
-        && !state.hit_reaction
-        && !state.hand_climb
-        && !state.authored_motion
+        && !state.clip_owns_body()
         && matches!(
             case,
             Case::Traversal | Case::GrappleAttach | Case::Flight | Case::NoMovementTask
@@ -354,7 +364,9 @@ pub(super) fn classify_locked(state: &CharacterState, locked: bool) -> Case {
     }
 }
 
-pub(super) fn relaxes_legs(case: Case) -> bool {
+/// Whether the legs relax from the animation toward the grapple line's pose in `case`: the cases
+/// the line hangs the body in, unless a clip owns the body.
+pub(super) fn relaxes_legs(case: Case, state: &CharacterState) -> bool {
     matches!(
         case,
         Case::GrappleLock
@@ -362,7 +374,7 @@ pub(super) fn relaxes_legs(case: Case) -> bool {
             | Case::GrappleAttach
             | Case::Flight
             | Case::NoMovementTask
-    )
+    ) && !state.clip_owns_body()
 }
 
 /// The torso's weight, eased toward its case's.
@@ -768,7 +780,7 @@ mod tests {
         assert_eq!(Case::StuntStanding.target(), 1.0);
         // The vehicle's interaction node carries it, so the view does not hang from the root.
         assert!(!Case::StuntStanding.view_holds_root());
-        assert!(!relaxes_legs(Case::StuntStanding));
+        assert!(!relaxes_legs(Case::StuntStanding, &roof));
         // A traversal through the area is still the vehicle's animation.
         assert_eq!(
             classify(&CharacterState {
@@ -800,6 +812,23 @@ mod tests {
         };
         assert_eq!(classify(&transition), Case::Vehicle);
         assert_eq!(Case::Vehicle.target(), 0.0);
+    }
+
+    #[test]
+    fn a_clip_that_owns_the_body_keeps_the_legs_and_the_line_lock_off() {
+        let traversal = CharacterState {
+            traversal: true,
+            ..on_foot()
+        };
+        assert!(relaxes_legs(Case::Traversal, &traversal));
+        assert_eq!(classify_locked(&traversal, true), Case::GrappleLock);
+        let swimming = CharacterState {
+            swimming: true,
+            ..traversal
+        };
+        assert_eq!(classify(&swimming), Case::Traversal);
+        assert!(!relaxes_legs(Case::Traversal, &swimming));
+        assert_eq!(classify_locked(&swimming, true), Case::Traversal);
     }
 
     #[test]

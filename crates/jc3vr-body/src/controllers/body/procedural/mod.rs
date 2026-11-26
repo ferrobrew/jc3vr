@@ -411,15 +411,7 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
         dt,
     };
     state.wing_queue = state.step_wings(&wings, config);
-    state.leg_weight = if relaxes_legs(case)
-        && !read.ledge_climb
-        && !read.swimming
-        && !read.wingsuit
-        && !read.parachute
-        && !read.hit_reaction
-        && !read.hand_climb
-        && !read.authored_motion
-    {
+    state.leg_weight = if relaxes_legs(case, &read) {
         // The firm ragdoll's physics owns the legs on the line.
         state.legs.step(
             if case == Case::GrappleLock && !firm_ragdoll::owns_legs() {
