@@ -52,15 +52,12 @@ use std::collections::HashSet;
 
 use crate::{
     container::{Dxbc, DxbcError},
+    isa::{
+        OPCODE_DCL_CONSTANT_BUFFER, OPCODE_DCL_INPUT_PS_SIV, OPCODE_DCL_TEMPS, SB_NAME_POSITION,
+    },
     rewrite::{
-        ambient::{
-            operands::{OPCODE_DCL_INPUT_PS_SIV, SB_NAME_POSITION},
-            rewriter::{Counts, Registers, Rewriter},
-        },
-        common::{
-            OPCODE_DCL_CONSTANT_BUFFER, OPCODE_DCL_TEMPS, declared_register, reassemble,
-            signature_register,
-        },
+        ambient::rewriter::{Counts, Registers, Rewriter},
+        common::{declared_register, reassemble, signature_register},
         planar::{BINDING_TEXTURE, binding, constant_location},
     },
     tokens::{ShaderStage, TokenStream},

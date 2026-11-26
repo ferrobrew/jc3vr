@@ -3,14 +3,17 @@
 
 use crate::{
     container::DxbcError,
+    isa::{
+        MODIFIER_NEG, OPCODE_ADD, OPCODE_FTOI, OPCODE_LD, OPCODE_MAD, OPCODE_MAX, OPCODE_MIN,
+        OPCODE_MOV, OPCODE_MUL, OPCODE_RESINFO, OPCODE_ROUND_NI, OPERAND_EXTENDED,
+        OPERAND_IMM32_SCALAR, OPERAND_IMM32_VECTOR, OPERAND_TEMP_MASK_XY, OPERAND_TEMP_MASK_XYZW,
+        OPERAND_TEMP_MASK_ZW, OPERAND_TEMP_SWIZZLE_XYXX, OPERAND_TEMP_SWIZZLE_XYZW,
+    },
     rewrite::ambient::{
         LoadKind, Loads, Pass,
         operands::{
-            IMMEDIATE_VECTOR, MODIFIER_NEG, NEGATE_FLAG, OPCODE_ADD, OPCODE_FTOI, OPCODE_LD,
-            OPCODE_MAD, OPCODE_MAX, OPCODE_MIN, OPCODE_MOV, OPCODE_MUL, OPCODE_RESINFO,
-            OPCODE_ROUND_NI, RESOURCE_XYZW, TEMP_MASK_XY, TEMP_MASK_XYZW, TEMP_MASK_ZW,
-            TEMP_XYXX_SOURCE, TEMP_XYXY_SOURCE, TEMP_XYZW_SOURCE, TEMP_ZWZW_SOURCE,
-            mask_destination, swizzle_source,
+            OPERAND_TEMP_SWIZZLE_XYXY, OPERAND_TEMP_SWIZZLE_ZWZW, RESOURCE_XYZW, mask_destination,
+            swizzle_source,
         },
         rewriter::{Registers, Rewriter},
     },
@@ -40,16 +43,23 @@ impl Rewriter<'_> {
             };
             self.raw(
                 OPCODE_RESINFO,
-                &[TEMP_MASK_XYZW, size, 0x4001, 0, RESOURCE_XYZW, *resource],
+                &[
+                    OPERAND_TEMP_MASK_XYZW,
+                    size,
+                    OPERAND_IMM32_SCALAR,
+                    0,
+                    RESOURCE_XYZW,
+                    *resource,
+                ],
             );
             self.raw(
                 OPCODE_ADD,
                 &[
-                    TEMP_MASK_ZW,
+                    OPERAND_TEMP_MASK_ZW,
                     size,
-                    TEMP_XYXY_SOURCE,
+                    OPERAND_TEMP_SWIZZLE_XYXY,
                     size,
-                    IMMEDIATE_VECTOR,
+                    OPERAND_IMM32_VECTOR,
                     0,
                     0,
                     (-1.0f32).to_bits(),
@@ -78,29 +88,47 @@ impl Rewriter<'_> {
         self.raw(
             OPCODE_MUL,
             &[
-                TEMP_MASK_XY,
+                OPERAND_TEMP_MASK_XY,
                 scratch,
-                TEMP_XYXX_SOURCE,
+                OPERAND_TEMP_SWIZZLE_XYXX,
                 coordinate,
-                TEMP_XYXX_SOURCE,
+                OPERAND_TEMP_SWIZZLE_XYXX,
                 size,
             ],
         );
         self.raw(
             OPCODE_ROUND_NI,
-            &[TEMP_MASK_XY, scratch, TEMP_XYXX_SOURCE, scratch],
+            &[
+                OPERAND_TEMP_MASK_XY,
+                scratch,
+                OPERAND_TEMP_SWIZZLE_XYXX,
+                scratch,
+            ],
         );
-        self.emit_texel_clamp(TEMP_MASK_XY, scratch, size);
+        self.emit_texel_clamp(OPERAND_TEMP_MASK_XY, scratch, size);
         self.raw(
             OPCODE_FTOI,
-            &[TEMP_MASK_XY, scratch, TEMP_XYXX_SOURCE, scratch],
+            &[
+                OPERAND_TEMP_MASK_XY,
+                scratch,
+                OPERAND_TEMP_SWIZZLE_XYXX,
+                scratch,
+            ],
         );
         self.raw(
             OPCODE_MOV,
-            &[TEMP_MASK_ZW, scratch, IMMEDIATE_VECTOR, 0, 0, 0, 0],
+            &[
+                OPERAND_TEMP_MASK_ZW,
+                scratch,
+                OPERAND_IMM32_VECTOR,
+                0,
+                0,
+                0,
+                0,
+            ],
         );
         let mut operands = destination.to_vec();
-        operands.extend([TEMP_XYZW_SOURCE, scratch]);
+        operands.extend([OPERAND_TEMP_SWIZZLE_XYZW, scratch]);
         operands.extend_from_slice(resource);
         self.raw(OPCODE_LD, &operands);
         self.counts.clamps += 1;
@@ -134,13 +162,13 @@ impl Rewriter<'_> {
         self.raw(
             OPCODE_MAD,
             &[
-                TEMP_MASK_XY,
+                OPERAND_TEMP_MASK_XY,
                 weights,
-                TEMP_XYXX_SOURCE,
+                OPERAND_TEMP_SWIZZLE_XYXX,
                 coordinate,
-                TEMP_XYXX_SOURCE,
+                OPERAND_TEMP_SWIZZLE_XYXX,
                 size,
-                IMMEDIATE_VECTOR,
+                OPERAND_IMM32_VECTOR,
                 (-0.5f32).to_bits(),
                 (-0.5f32).to_bits(),
                 0,
@@ -149,16 +177,21 @@ impl Rewriter<'_> {
         );
         self.raw(
             OPCODE_ROUND_NI,
-            &[TEMP_MASK_XY, corners, TEMP_XYXX_SOURCE, weights],
+            &[
+                OPERAND_TEMP_MASK_XY,
+                corners,
+                OPERAND_TEMP_SWIZZLE_XYXX,
+                weights,
+            ],
         );
         self.raw(
             OPCODE_ADD,
             &[
-                TEMP_MASK_XY,
+                OPERAND_TEMP_MASK_XY,
                 weights,
-                TEMP_XYXX_SOURCE,
+                OPERAND_TEMP_SWIZZLE_XYXX,
                 weights,
-                TEMP_XYXX_SOURCE | NEGATE_FLAG,
+                OPERAND_TEMP_SWIZZLE_XYXX | OPERAND_EXTENDED,
                 MODIFIER_NEG,
                 corners,
             ],
@@ -166,39 +199,52 @@ impl Rewriter<'_> {
         self.raw(
             OPCODE_ADD,
             &[
-                TEMP_MASK_ZW,
+                OPERAND_TEMP_MASK_ZW,
                 corners,
-                TEMP_XYXY_SOURCE,
+                OPERAND_TEMP_SWIZZLE_XYXY,
                 corners,
-                IMMEDIATE_VECTOR,
+                OPERAND_IMM32_VECTOR,
                 0,
                 0,
                 1.0f32.to_bits(),
                 1.0f32.to_bits(),
             ],
         );
-        self.emit_texel_clamp(TEMP_MASK_XYZW, corners, size);
+        self.emit_texel_clamp(OPERAND_TEMP_MASK_XYZW, corners, size);
         self.raw(
             OPCODE_FTOI,
-            &[TEMP_MASK_XYZW, corners, TEMP_XYZW_SOURCE, corners],
+            &[
+                OPERAND_TEMP_MASK_XYZW,
+                corners,
+                OPERAND_TEMP_SWIZZLE_XYZW,
+                corners,
+            ],
         );
         self.raw(
             OPCODE_MOV,
-            &[TEMP_MASK_ZW, scratch, IMMEDIATE_VECTOR, 0, 0, 0, 0],
+            &[
+                OPERAND_TEMP_MASK_ZW,
+                scratch,
+                OPERAND_IMM32_VECTOR,
+                0,
+                0,
+                0,
+                0,
+            ],
         );
         // (x0, y0), (x1, y0), (x0, y1), (x1, y1) into samples.x, .y, .z, .w.
         for (target, columns) in [(0, [0, 1]), (1, [2, 1]), (2, [0, 3]), (3, [2, 3])] {
             self.raw(
                 OPCODE_MOV,
                 &[
-                    TEMP_MASK_XY,
+                    OPERAND_TEMP_MASK_XY,
                     scratch,
                     swizzle_source([columns[0], columns[1], 0, 0]),
                     corners,
                 ],
             );
             let mut operands = vec![mask_destination(1 << target), samples];
-            operands.extend([TEMP_XYZW_SOURCE, scratch]);
+            operands.extend([OPERAND_TEMP_SWIZZLE_XYZW, scratch]);
             operands.extend_from_slice(&replicated);
             self.raw(OPCODE_LD, &operands);
         }
@@ -206,11 +252,11 @@ impl Rewriter<'_> {
         self.raw(
             OPCODE_ADD,
             &[
-                TEMP_MASK_ZW,
+                OPERAND_TEMP_MASK_ZW,
                 weights,
                 swizzle_source([0, 0, 1, 3]),
                 samples,
-                swizzle_source([0, 0, 0, 2]) | NEGATE_FLAG,
+                swizzle_source([0, 0, 0, 2]) | OPERAND_EXTENDED,
                 MODIFIER_NEG,
                 samples,
             ],
@@ -218,7 +264,7 @@ impl Rewriter<'_> {
         self.raw(
             OPCODE_MAD,
             &[
-                TEMP_MASK_ZW,
+                OPERAND_TEMP_MASK_ZW,
                 weights,
                 swizzle_source([2, 2, 2, 3]),
                 weights,
@@ -235,7 +281,7 @@ impl Rewriter<'_> {
                 weights,
                 swizzle_source([3, 3, 3, 3]),
                 weights,
-                swizzle_source([2, 2, 2, 2]) | NEGATE_FLAG,
+                swizzle_source([2, 2, 2, 2]) | OPERAND_EXTENDED,
                 MODIFIER_NEG,
                 weights,
             ],
@@ -257,10 +303,10 @@ impl Rewriter<'_> {
     /// Clamp the float texel indices in `register` (under `mask`, `.xy` or `.xyzw`) to the texture's
     /// first and last column and row.
     pub(super) fn emit_texel_clamp(&mut self, mask: u32, register: u32, size: u32) {
-        let source = if mask == TEMP_MASK_XY {
-            TEMP_XYXX_SOURCE
+        let source = if mask == OPERAND_TEMP_MASK_XY {
+            OPERAND_TEMP_SWIZZLE_XYXX
         } else {
-            TEMP_XYZW_SOURCE
+            OPERAND_TEMP_SWIZZLE_XYZW
         };
         self.raw(
             OPCODE_MAX,
@@ -269,7 +315,7 @@ impl Rewriter<'_> {
                 register,
                 source,
                 register,
-                IMMEDIATE_VECTOR,
+                OPERAND_IMM32_VECTOR,
                 0,
                 0,
                 0,
@@ -278,7 +324,14 @@ impl Rewriter<'_> {
         );
         self.raw(
             OPCODE_MIN,
-            &[mask, register, source, register, TEMP_ZWZW_SOURCE, size],
+            &[
+                mask,
+                register,
+                source,
+                register,
+                OPERAND_TEMP_SWIZZLE_ZWZW,
+                size,
+            ],
         );
     }
 }

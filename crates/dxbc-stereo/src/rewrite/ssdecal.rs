@@ -34,7 +34,11 @@
 
 use crate::{
     container::{Dxbc, DxbcError},
-    rewrite::common::{OPERAND_IMM32_SCALAR, OPERAND_TEMP_MASK_X, OPERAND_TEMP_SELECT_X},
+    isa::{
+        OPCODE_DCL_CONSTANT_BUFFER, OPCODE_DIV, OPCODE_MAD, OPCODE_MUL, OPCODE_SAMPLE,
+        OPERAND_CB_2D_SELECT_X, OPERAND_IMM32_SCALAR, OPERAND_TEMP_MASK_X, OPERAND_TEMP_SELECT_X,
+        OPERAND_TYPE_CONSTANT_BUFFER, OPERAND_TYPE_RESOURCE, OPERAND_TYPE_TEMP,
+    },
     tokens::{ShaderStage, TokenStream, parse_operand},
 };
 
@@ -118,7 +122,7 @@ fn bias_instruction(temp: u32) -> [u32; BIAS_INSTRUCTION_DWORDS] {
         temp,
         OPERAND_IMM32_SCALAR,
         HALF.to_bits(),
-        OPERAND_CB_2D_IMM_SELECT_X,
+        OPERAND_CB_2D_SELECT_X,
         DEPTH_UV_CB,
         SSDECAL_EYE_BIAS_REGISTER,
     ]
@@ -277,22 +281,6 @@ fn decode_operands(tokens: &[u32], insn: &Insn) -> Result<Vec<DecodedOperand>, D
     }
     Ok(operands)
 }
-
-// SM4/5 opcodes the matcher and the injected instruction use.
-const OPCODE_DIV: u32 = 0x0E;
-const OPCODE_MAD: u32 = 0x32;
-const OPCODE_MUL: u32 = 0x38;
-const OPCODE_SAMPLE: u32 = 0x45;
-const OPCODE_DCL_CONSTANT_BUFFER: u32 = 0x59;
-
-// SM4/5 operand types.
-const OPERAND_TYPE_TEMP: u32 = 0;
-const OPERAND_TYPE_RESOURCE: u32 = 7;
-const OPERAND_TYPE_CONSTANT_BUFFER: u32 = 8;
-
-/// `cbN[r].x` as a source: constant buffer, 2D immediate indices, select-1 component `.x` -- the
-/// select-1 form of `OPERAND_CB_2D_IMM`.
-const OPERAND_CB_2D_IMM_SELECT_X: u32 = 0x0020_800A;
 
 /// The fragment constant-buffer slot the decal permutations read: their instance constants, and the
 /// slot the rewrite's new register is appended to.

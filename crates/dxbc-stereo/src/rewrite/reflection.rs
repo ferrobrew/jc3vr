@@ -47,14 +47,22 @@
 
 use crate::{
     container::{Dxbc, DxbcError},
+    isa::{
+        IDX_IMM32_PLUS_RELATIVE, LENGTH_MASK, MODIFIER_NEG, OPCODE_ADD, OPCODE_AND,
+        OPCODE_DCL_CONSTANT_BUFFER, OPCODE_DCL_TEMPS, OPCODE_GE, OPCODE_MAD, OPCODE_MOV,
+        OPCODE_MUL, OPCODE_SAMPLE, OPCODE_SAMPLE_L, OPERAND_TEMP_SWIZZLE_XYXX,
+        OPERAND_TYPE_CONSTANT_BUFFER, OPERAND_TYPE_INPUT, OPERAND_TYPE_RESOURCE, OPERAND_TYPE_TEMP,
+        SELECTION_SWIZZLE, W, X, Y, Z, dst, dst_mask, imm, imm4, input, instruction, select, src,
+        src_mod, src_xyzw,
+    },
     rewrite::{
         common::{
-            CB_ACCESS_DYNAMIC_INDEXED, OPCODE_DCL_CONSTANT_BUFFER, OPCODE_DCL_TEMPS,
-            OPERAND_CB_2D_IMM, declared_register, reassemble, signature_register,
+            CB_ACCESS_DYNAMIC_INDEXED, OPERAND_CB_2D_IMM, declared_register, reassemble,
+            signature_register,
         },
         planar::{BINDING_TEXTURE, binding, constant_location},
     },
-    tokens::{IDX_IMM32_PLUS_RELATIVE, Instruction, ShaderStage, TokenStream},
+    tokens::{Instruction, ShaderStage, TokenStream},
 };
 
 /// The constant-buffer slot the rewritten shader reads each eye's rows from. Free across the game's
@@ -428,7 +436,7 @@ impl Rewriter<'_> {
         );
         self.emit(OPCODE_MOV, &[&dst(coordinate, Y), &src(source.register, v)]);
         self.counts.march_samples += 1;
-        Ok(Some([TEMP_XYXX_SOURCE, coordinate]))
+        Ok(Some([OPERAND_TEMP_SWIZZLE_XYXX, coordinate]))
     }
 
     /// Copy an operand, redirecting the view ray and the pixel position to their per-eye temporaries,
@@ -558,98 +566,9 @@ fn resource_register(operand: &[u32]) -> Option<u32> {
     ((token >> 12) & 0xff == OPERAND_TYPE_RESOURCE && token >> 31 == 0).then_some(*index)
 }
 
-const X: u32 = 0;
-const Y: u32 = 1;
-const Z: u32 = 2;
-const W: u32 = 3;
-
 /// Write masks.
 const XYZ: u32 = 0x7;
 const XYZW: u32 = 0xf;
-
-const OPCODE_ADD: u32 = 0x00;
-const OPCODE_AND: u32 = 0x01;
-const OPCODE_GE: u32 = 0x1d;
-const OPCODE_MAD: u32 = 0x32;
-const OPCODE_MOV: u32 = 0x36;
-const OPCODE_MUL: u32 = 0x38;
-const OPCODE_SAMPLE: u32 = 0x45;
-const OPCODE_SAMPLE_L: u32 = 0x48;
-
-/// The instruction-length field of an opcode token.
-const LENGTH_MASK: u32 = 0x7f00_0000;
-
-const OPERAND_TYPE_TEMP: u32 = 0;
-const OPERAND_TYPE_INPUT: u32 = 1;
-const OPERAND_TYPE_RESOURCE: u32 = 7;
-const OPERAND_TYPE_CONSTANT_BUFFER: u32 = 8;
-
-const SELECTION_MASK: u32 = 0;
-const SELECTION_SWIZZLE: u32 = 1;
-const SELECTION_SELECT_1: u32 = 2;
-
-/// The identity swizzle, `.xyzw`.
-const SWIZZLE_XYZW: u32 = 0xe4;
-
-/// `rN.xyxx` as a source, followed by the register index.
-const TEMP_XYXX_SOURCE: u32 = 0x0010_0046;
-
-/// The extended operand token for a negated source.
-const MODIFIER_NEG: u32 = 0x41;
-
-/// The opcode token for `opcode` with an instruction of `length` tokens.
-fn instruction(opcode: u32, length: usize) -> Result<u32, DxbcError> {
-    let length = u32::try_from(length)
-        .ok()
-        .filter(|length| *length <= LENGTH_MASK >> 24)
-        .ok_or(DxbcError::InstructionTooLong)?;
-    Ok(opcode | length << 24)
-}
-
-/// A four-component, one-dimensional operand token of `operand_type` selecting `component`.
-fn select(operand_type: u32, component: u32) -> u32 {
-    2 | SELECTION_SELECT_1 << 2 | component << 4 | operand_type << 12 | 1 << 20
-}
-
-/// `rN.c` as a destination.
-fn dst(register: u32, component: u32) -> [u32; 2] {
-    dst_mask(register, 1 << component)
-}
-
-/// `rN` with write mask `mask` as a destination.
-fn dst_mask(register: u32, mask: u32) -> [u32; 2] {
-    [
-        2 | SELECTION_MASK << 2 | mask << 4 | OPERAND_TYPE_TEMP << 12 | 1 << 20,
-        register,
-    ]
-}
-
-/// `rN.c` as a source.
-fn src(register: u32, component: u32) -> [u32; 2] {
-    [select(OPERAND_TYPE_TEMP, component), register]
-}
-
-/// `rN.xyzw` as a source.
-fn src_xyzw(register: u32) -> [u32; 2] {
-    [
-        2 | SELECTION_SWIZZLE << 2 | SWIZZLE_XYZW << 4 | OPERAND_TYPE_TEMP << 12 | 1 << 20,
-        register,
-    ]
-}
-
-/// `rN.c` as a source with an operand modifier.
-fn src_mod(register: u32, component: u32, modifier: u32) -> [u32; 3] {
-    [
-        select(OPERAND_TYPE_TEMP, component) | 1 << 31,
-        modifier,
-        register,
-    ]
-}
-
-/// `vN.c` as a source.
-fn input(register: u32, component: u32) -> [u32; 2] {
-    [select(OPERAND_TYPE_INPUT, component), register]
-}
 
 /// `cb13[rEye.y + row].xyzw` as a source: the eye's copy of `row`.
 fn eye_row(row: u32, eye: u32) -> [u32; 5] {
@@ -660,15 +579,4 @@ fn eye_row(row: u32, eye: u32) -> [u32; 5] {
         select(OPERAND_TYPE_TEMP, Y),
         eye,
     ]
-}
-
-/// A one-component immediate holding `bits`.
-fn imm(bits: u32) -> [u32; 2] {
-    [0x4001, bits]
-}
-
-/// A four-component immediate.
-fn imm4(values: [f32; 4]) -> [u32; 5] {
-    let [x, y, z, w] = values.map(f32::to_bits);
-    [0x4002, x, y, z, w]
 }

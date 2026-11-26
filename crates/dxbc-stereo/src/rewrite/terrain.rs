@@ -8,18 +8,22 @@
 
 use crate::{
     container::{Dxbc, DxbcError},
+    isa::{
+        OPCODE_AND, OPCODE_DCL_CONSTANT_BUFFER, OPCODE_DCL_INPUT, OPCODE_DCL_INPUT_SGV,
+        OPCODE_DCL_OUTPUT, OPCODE_DCL_OUTPUT_SGV, OPCODE_DCL_OUTPUT_SIV, OPCODE_DCL_TEMPS,
+        OPCODE_HS_CONTROL_POINT_PHASE, OPCODE_HS_FORK_PHASE, OPCODE_HS_JOIN_PHASE, OPCODE_IMUL,
+        OPCODE_MOV, OPERAND_IMM32_SCALAR, OPERAND_INPUT_SELECT_X, OPERAND_TEMP_MASK_X,
+        OPERAND_TEMP_SELECT_X, OPERAND_TYPE_INPUT, OPERAND_TYPE_OUTPUT, SB_NAME_POSITION,
+    },
     rewrite::{
         common::{
-            CB_ACCESS_DYNAMIC_INDEXED, OPCODE_AND, OPCODE_DCL_CONSTANT_BUFFER, OPCODE_DCL_INPUT,
-            OPCODE_DCL_INPUT_SGV, OPCODE_DCL_OUTPUT, OPCODE_DCL_OUTPUT_SGV, OPCODE_DCL_OUTPUT_SIV,
-            OPCODE_DCL_TEMPS, OPCODE_IMUL, OPCODE_MOV, OPERAND_CB_2D_IMM, OPERAND_IMM32_SCALAR,
-            OPERAND_INPUT_MASK_X, OPERAND_INPUT_SELECT_X, OPERAND_NULL, OPERAND_OUTPUT_MASK_X,
-            OPERAND_OUTPUT_MASK_Z, OPERAND_TEMP_MASK_X, OPERAND_TEMP_SELECT_X, OPERAND_TYPE_OUTPUT,
-            SB_NAME_INSTANCE_ID, SB_NAME_POSITION, SB_NAME_VIEWPORT_ARRAY_INDEX,
-            SIGNATURE_COMPONENT_UINT32, SIGNATURE_SYSVALUE_INSTANCE_ID,
-            SIGNATURE_SYSVALUE_VIEWPORT_ARRAY_INDEX, STEREO_CB_REGISTER, STEREO_CB_ROWS,
-            STEREO_SELECT_CB_ROWS, SignatureElement, append_signature_element, declared_register,
-            max_signature_register, reassemble, signature_register, widen_signature_mask,
+            CB_ACCESS_DYNAMIC_INDEXED, OPERAND_CB_2D_IMM, OPERAND_INPUT_MASK_X, OPERAND_NULL,
+            OPERAND_OUTPUT_MASK_X, OPERAND_OUTPUT_MASK_Z, SB_NAME_INSTANCE_ID,
+            SB_NAME_VIEWPORT_ARRAY_INDEX, SIGNATURE_COMPONENT_UINT32,
+            SIGNATURE_SYSVALUE_INSTANCE_ID, SIGNATURE_SYSVALUE_VIEWPORT_ARRAY_INDEX,
+            STEREO_CB_REGISTER, STEREO_CB_ROWS, STEREO_SELECT_CB_ROWS, SignatureElement,
+            append_signature_element, declared_register, max_signature_register, reassemble,
+            signature_register, widen_signature_mask,
         },
         domain_rows::{
             EYE_ROW_TEMPS, RowBase, emit_select_rows, reads_terrain_view_projection,
@@ -41,17 +45,7 @@ const MASK_BIT_Z: u32 = 0x40;
 /// SM5 operand type: domain-shader input control point (`vicp[cp][reg]`). Identifies the lane
 /// declaration to widen in the terrain domain reprojection.
 const OPERAND_TYPE_INPUT_CONTROL_POINT: u32 = 25;
-/// SM4/5 operand type: input register (`vN`, or `v[cp][reg]` in the hull control-point phase).
-/// Identifies the lane declaration to widen in the hull shader.
-const OPERAND_TYPE_INPUT: u32 = 1;
 
-/// SM5 hull-shader phase markers. The control-point phase forwards each output control point from the
-/// matching input control point (where the eye lane is widened); the fork and join phases compute
-/// tessellation factors and must be left untouched (they reuse the same `o` registers for unrelated
-/// system values).
-const OPCODE_HS_CONTROL_POINT_PHASE: u32 = 0x72;
-const OPCODE_HS_FORK_PHASE: u32 = 0x73;
-const OPCODE_HS_JOIN_PHASE: u32 = 0x74;
 /// The two-bit component selector for `.z` in an operand's swizzle field (component 2, at bits `[9:8]`
 /// of the operand token). The hull passthrough copies the lane with a swizzle; widening it to carry
 /// the eye means forcing its third swizzle component to `.z`.

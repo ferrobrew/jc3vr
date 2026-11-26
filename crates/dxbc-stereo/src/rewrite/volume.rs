@@ -41,15 +41,25 @@ use std::collections::HashSet;
 
 use crate::{
     container::{Dxbc, DxbcError},
+    isa::{
+        IDX_IMM32_PLUS_RELATIVE, INTERPOLATION_LINEAR_NOPERSPECTIVE, LENGTH_MASK, OPCODE_AND,
+        OPCODE_DCL_CONSTANT_BUFFER, OPCODE_DCL_INPUT_PS_SIV, OPCODE_DCL_TEMPS, OPCODE_DIV,
+        OPCODE_DP4, OPCODE_GE, OPCODE_MAD, OPCODE_MOV, OPCODE_MUL, OPCODE_SAMPLE, OPCODE_SAMPLE_L,
+        OPERAND_CB_2D_SELECT_X, OPERAND_IMM32_SCALAR, OPERAND_INPUT_MASK_XY,
+        OPERAND_INPUT_SELECT_X, OPERAND_INPUT_SWIZZLE_XYXX, OPERAND_TEMP_MASK_X,
+        OPERAND_TEMP_MASK_XY, OPERAND_TEMP_SELECT_X, OPERAND_TEMP_SWIZZLE_XYXX,
+        OPERAND_TEMP_SWIZZLE_XYZW, OPERAND_TYPE_CONSTANT_BUFFER, OPERAND_TYPE_RESOURCE,
+        OPERAND_TYPE_TEMP, SB_NAME_POSITION, SELECTION_MASK, SELECTION_SELECT_1, SELECTION_SWIZZLE,
+        W, X, Y, Z, instruction,
+    },
     rewrite::{
         common::{
-            CB_ACCESS_DYNAMIC_INDEXED, OPCODE_AND, OPCODE_DCL_CONSTANT_BUFFER, OPCODE_DCL_TEMPS,
-            OPCODE_DP4, OPCODE_MOV, OPERAND_CB_2D_IMM, OPERAND_IMM32_SCALAR, OPERAND_TEMP_MASK_X,
-            OPERAND_TEMP_SELECT_X, declared_register, reassemble, signature_register,
+            CB_ACCESS_DYNAMIC_INDEXED, OPERAND_CB_2D_IMM, declared_register, reassemble,
+            signature_register,
         },
         planar::{BINDING_TEXTURE, binding, constant_location},
     },
-    tokens::{IDX_IMM32_PLUS_RELATIVE, Instruction, ShaderStage, TokenStream},
+    tokens::{Instruction, ShaderStage, TokenStream},
 };
 
 /// The pixel-stage constant-buffer slot the rewritten shader reads each eye's mapping, the depth UV,
@@ -287,7 +297,7 @@ impl Rewriter<'_> {
             OPCODE_MAD,
             &[
                 &[OPERAND_TEMP_MASK_XY, uv],
-                &[OPERAND_INPUT_XYXX, position],
+                &[OPERAND_INPUT_SWIZZLE_XYXX, position],
                 &[
                     OPERAND_CB_2D_XYXX,
                     AMBIENT_OCCLUSION_VOLUME_CB_REGISTER,
@@ -305,7 +315,7 @@ impl Rewriter<'_> {
             OPCODE_MOV,
             &[
                 &[OPERAND_TEMP_MASK_XY, point],
-                &[OPERAND_INPUT_XYXX, position],
+                &[OPERAND_INPUT_SWIZZLE_XYXX, position],
             ],
         );
         emit(
@@ -372,7 +382,8 @@ impl Rewriter<'_> {
                 .extend_from_slice(&tokens[insn.start..insn.operands_start()]);
             for index in 0..offsets.len() {
                 if index == 1 {
-                    self.out.extend([OPERAND_TEMP_XYXX, self.registers.uv]);
+                    self.out
+                        .extend([OPERAND_TEMP_SWIZZLE_XYXX, self.registers.uv]);
                 } else {
                     self.out.extend_from_slice(&tokens[span(index)]);
                 }
@@ -461,7 +472,7 @@ impl Rewriter<'_> {
                         OPERAND_TEMP_SELECT_X,
                         eye,
                     ],
-                    &[OPERAND_TEMP_XYZW, point],
+                    &[OPERAND_TEMP_SWIZZLE_XYZW, point],
                 ],
             );
         }
@@ -470,12 +481,12 @@ impl Rewriter<'_> {
             OPCODE_DIV,
             &[
                 &[temp_mask(0b0111), mapped],
-                &[OPERAND_TEMP_XYZW, mapped],
+                &[OPERAND_TEMP_SWIZZLE_XYZW, mapped],
                 &[temp_swizzle(W * 0x55), mapped],
             ],
         );
         let destination = [temp_mask(dst_mask), dst_register];
-        let accumulated = [OPERAND_TEMP_XYZW, dst_register];
+        let accumulated = [OPERAND_TEMP_SWIZZLE_XYZW, dst_register];
         let matrix_row = |row: u32| [row_token, self.matrix.slot, row];
         let first = self.matrix.first_row;
         emit(
@@ -576,55 +587,17 @@ fn replicated_temp(operand: &[u32]) -> Option<(u32, u32)> {
         .then_some((*register, component))
 }
 
-const X: u32 = 0;
-const Y: u32 = 1;
-const Z: u32 = 2;
-const W: u32 = 3;
-
-const OPCODE_DIV: u32 = 0x0e;
-const OPCODE_GE: u32 = 0x1d;
-const OPCODE_MAD: u32 = 0x32;
-const OPCODE_MUL: u32 = 0x38;
-const OPCODE_SAMPLE: u32 = 0x45;
-const OPCODE_SAMPLE_L: u32 = 0x48;
-const OPCODE_DCL_INPUT_PS_SIV: u32 = 0x64;
-
-/// `D3D_NAME_POSITION`, the trailing system-value token of the position declaration, and the
-/// signature's system-value code for it.
-const SB_NAME_POSITION: u32 = 1;
+/// The signature's system-value code for `SV_Position`, as the element offset arithmetic reads it.
 const SIGNATURE_SYSVALUE_POSITION: usize = 1;
-/// The interpolation mode the position input is declared with.
-const INTERPOLATION_LINEAR_NOPERSPECTIVE: u32 = 4;
 /// The bytes of one signature element.
 const SIGNATURE_ELEMENT_LEN: usize = 24;
 
-/// The instruction-length field of an opcode token, and its saturate bit.
-const LENGTH_MASK: u32 = 0x7f00_0000;
+/// The saturate bit of an opcode token.
 const SATURATE: u32 = 1 << 13;
 
-const OPERAND_TYPE_TEMP: u32 = 0;
-const OPERAND_TYPE_RESOURCE: u32 = 7;
-const OPERAND_TYPE_CONSTANT_BUFFER: u32 = 8;
-
-const SELECTION_MASK: u32 = 0;
-const SELECTION_SWIZZLE: u32 = 1;
-const SELECTION_SELECT_1: u32 = 2;
-
-/// A constant-buffer operand with two immediate indices selecting `.x`.
-const OPERAND_CB_2D_SELECT_X: u32 = 0x0020_800A;
 /// A constant-buffer operand with two immediate indices, swizzled `.xyxx` and `.zwzz`.
 const OPERAND_CB_2D_XYXX: u32 = 0x0020_8046;
 const OPERAND_CB_2D_ZWZZ: u32 = 0x0020_8AE6;
-/// An input register declaration operand masking `.xy`.
-const OPERAND_INPUT_MASK_XY: u32 = 0x0010_1032;
-/// An input register operand selecting `.x`, and swizzled `.xyxx`.
-const OPERAND_INPUT_SELECT_X: u32 = 0x0010_100A;
-const OPERAND_INPUT_XYXX: u32 = 0x0010_1046;
-/// A temporary register operand writing `.xy`.
-const OPERAND_TEMP_MASK_XY: u32 = 0x0010_0032;
-/// A temporary register source swizzled `.xyxx` and `.xyzw`.
-const OPERAND_TEMP_XYXX: u32 = 0x0010_0046;
-const OPERAND_TEMP_XYZW: u32 = 0x0010_0E46;
 
 /// A temporary register destination writing the components of `mask`.
 fn temp_mask(mask: u32) -> u32 {
@@ -639,13 +612,4 @@ fn temp_swizzle(swizzle: u32) -> u32 {
 /// A temporary register source selecting `component`.
 fn temp_select(component: u32) -> u32 {
     2 | SELECTION_SELECT_1 << 2 | component << 4 | OPERAND_TYPE_TEMP << 12 | 1 << 20
-}
-
-/// The opcode token for `opcode` with an instruction of `length` tokens.
-fn instruction(opcode: u32, length: usize) -> Result<u32, DxbcError> {
-    let length = u32::try_from(length)
-        .ok()
-        .filter(|length| *length <= LENGTH_MASK >> 24)
-        .ok_or(DxbcError::InstructionTooLong)?;
-    Ok(opcode | length << 24)
 }

@@ -55,17 +55,24 @@
 
 use crate::{
     container::{Dxbc, DxbcError},
+    isa::{
+        INTERPOLATION_LINEAR_NOPERSPECTIVE, MODIFIER_NEG, OPCODE_ADD, OPCODE_DCL_CONSTANT_BUFFER,
+        OPCODE_DCL_INPUT_PS, OPCODE_DCL_INPUT_PS_SIV, OPCODE_DCL_TEMPS, OPCODE_DIV, OPCODE_DP4,
+        OPCODE_GE, OPCODE_MAD, OPCODE_MOV, OPCODE_MOVC, OPERAND_CB_2D_SELECT_X,
+        OPERAND_CB_2D_SELECT_Z, OPERAND_EXTENDED, OPERAND_IMM32_VECTOR, OPERAND_INPUT_MASK_XY,
+        OPERAND_INPUT_SELECT_X, OPERAND_INPUT_SELECT_Y, OPERAND_INPUT_SWIZZLE_XYXX,
+        OPERAND_TEMP_MASK_X, OPERAND_TEMP_MASK_XY, OPERAND_TEMP_MASK_XYZW, OPERAND_TEMP_MASK_Y,
+        OPERAND_TEMP_MASK_Z, OPERAND_TEMP_MASK_ZW, OPERAND_TEMP_SELECT_X,
+        OPERAND_TEMP_SWIZZLE_XYXX, OPERAND_TEMP_SWIZZLE_XYZW, OPERAND_TEMP_SWIZZLE_ZWZZ,
+        SB_NAME_POSITION, SIGNATURE_SYSVALUE_POSITION,
+    },
     rewrite::{
         camera::{
             EYE_CAMERA_BOUNDARY_ROW, EYE_CAMERA_CB_REGISTER, EYE_CAMERA_CB_ROWS,
             VELOCITY_ORIGIN_ROW, VELOCITY_PIXEL_ROW, VELOCITY_REPROJECTION_ROW,
             VELOCITY_REPROJECTION_ROWS_PER_EYE,
         },
-        common::{
-            OPCODE_DCL_CONSTANT_BUFFER, OPCODE_DCL_TEMPS, OPCODE_DP4, OPCODE_MOV,
-            OPERAND_CB_2D_IMM, OPERAND_INPUT_SELECT_X, OPERAND_TEMP_MASK_X, OPERAND_TEMP_SELECT_X,
-            SB_NAME_POSITION, declared_register, reassemble, signature_register,
-        },
+        common::{OPERAND_CB_2D_IMM, declared_register, reassemble, signature_register},
     },
     tokens::{Instruction, ShaderStage, TokenStream},
 };
@@ -262,8 +269,8 @@ fn encoding_site(
         ADD_8,
         OPERAND_TEMP_MASK_XY,
         positions,
-        OPERAND_TEMP_SWIZZLE_XYXX | EXTENDED,
-        MODIFIER_NEGATE,
+        OPERAND_TEMP_SWIZZLE_XYXX | OPERAND_EXTENDED,
+        MODIFIER_NEG,
         positions,
         OPERAND_TEMP_SWIZZLE_ZWZZ,
         positions,
@@ -412,8 +419,8 @@ fn emit_correction(out: &mut Vec<u32>, scratch: u32, site: Site, position: u32) 
     out.extend([(8 << 24) | OPCODE_ADD, OPERAND_TEMP_MASK_XYZ, row0]);
     out.extend([OPERAND_TEMP_SWIZZLE_XYZW, row0]);
     out.extend([
-        OPERAND_INPUT_SWIZZLE_XYWW | EXTENDED,
-        MODIFIER_NEGATE,
+        OPERAND_INPUT_SWIZZLE_XYWW | OPERAND_EXTENDED,
+        MODIFIER_NEG,
         previous,
     ]);
     out.extend([(10 << 24) | OPCODE_MAD, OPERAND_TEMP_MASK_XYZ, row0]);
@@ -442,8 +449,8 @@ fn emit_correction(out: &mut Vec<u32>, scratch: u32, site: Site, position: u32) 
     out.extend([ADD_8, OPERAND_TEMP_MASK_XY, eye]);
     out.extend([OPERAND_TEMP_SWIZZLE_XYXX, eye]);
     out.extend([
-        OPERAND_TEMP_SWIZZLE_ZWZZ | EXTENDED,
-        MODIFIER_NEGATE,
+        OPERAND_TEMP_SWIZZLE_ZWZZ | OPERAND_EXTENDED,
+        MODIFIER_NEG,
         positions,
     ]);
     out.extend([(10 << 24) | OPCODE_MAD, OPERAND_TEMP_MASK_ZW, positions]);
@@ -459,13 +466,6 @@ fn emit_correction(out: &mut Vec<u32>, scratch: u32, site: Site, position: u32) 
 /// The temps the correction computes in: the eye and its NDC, then the eye's three matrix rows.
 const SCRATCH_TEMPS: u32 = 4;
 
-const OPCODE_ADD: u32 = 0x00;
-const OPCODE_DIV: u32 = 0x0e;
-const OPCODE_GE: u32 = 0x1d;
-const OPCODE_MAD: u32 = 0x32;
-const OPCODE_MOVC: u32 = 0x37;
-const OPCODE_DCL_INPUT_PS: u32 = 0x62;
-const OPCODE_DCL_INPUT_PS_SIV: u32 = 0x64;
 /// The opcode tokens of a five-token `mov`, a seven-token `div`, an eight-token `add`, and a
 /// fifteen-token `mad`.
 const MOV_5: u32 = (5 << 24) | OPCODE_MOV;
@@ -475,48 +475,22 @@ const MAD_15: u32 = (15 << 24) | OPCODE_MAD;
 /// `0.5` and `-0.5` as immediate lanes.
 const HALF: u32 = 0x3f00_0000;
 const NEGATIVE_HALF: u32 = 0xbf00_0000;
-/// A four-component 32-bit immediate operand, its values following inline.
-const OPERAND_IMM32_VECTOR: u32 = 0x0000_4002;
-/// The bit of an operand token announcing an extended operand token.
-const EXTENDED: u32 = 1 << 31;
-/// An extended operand token carrying the negate modifier.
-const MODIFIER_NEGATE: u32 = 0x41;
-/// The linear, no-perspective interpolation mode of a pixel-shader input declaration.
-const INTERPOLATION_LINEAR_NOPERSPECTIVE: u32 = 4;
 /// The `.xy` and `.xyzw` component-mask bits of a masked operand token.
 const MASK_XY: u32 = 0x30;
 const MASK_XYZW: u32 = 0xf0;
-/// Input register operands writing `.xy` (a declaration's mask), selecting `.y`, and reading
-/// `.xyxx`, `.xyzw`, and `.xyww`.
-const OPERAND_INPUT_MASK_XY: u32 = 0x0010_1032;
-const OPERAND_INPUT_SELECT_Y: u32 = 0x0010_101A;
-const OPERAND_INPUT_SWIZZLE_XYXX: u32 = 0x0010_1046;
+/// Input register operands reading `.xyzw` and `.xyww`.
 const OPERAND_INPUT_SWIZZLE_XYZW: u32 = 0x0010_1e46;
 const OPERAND_INPUT_SWIZZLE_XYWW: u32 = 0x0010_1f46;
-/// Temp register operands writing `.y`, `.z`, `.xy`, `.zw`, `.xyz`, and `.xyzw`.
-const OPERAND_TEMP_MASK_Y: u32 = 0x0010_0022;
-const OPERAND_TEMP_MASK_Z: u32 = 0x0010_0042;
-const OPERAND_TEMP_MASK_XY: u32 = 0x0010_0032;
-const OPERAND_TEMP_MASK_ZW: u32 = 0x0010_00c2;
+/// A temp register operand writing `.xyz`.
 const OPERAND_TEMP_MASK_XYZ: u32 = 0x0010_0072;
-const OPERAND_TEMP_MASK_XYZW: u32 = 0x0010_00f2;
-/// Temp register operands selecting `.y` and reading `.xyzw`, `.xxxx`, `.zzzz`, `.xxxy`, `.xyxx`,
-/// `.zwzz`, and `.zzzw`.
+/// Temp register operands selecting `.y` and reading `.xxxx`, `.zzzz`, `.xxxy`, and `.zzzw`.
 const OPERAND_TEMP_SELECT_Y: u32 = 0x0010_001A;
-const OPERAND_TEMP_SWIZZLE_XYZW: u32 = 0x0010_0e46;
 const OPERAND_TEMP_SWIZZLE_XXXX: u32 = 0x0010_0006;
 const OPERAND_TEMP_SWIZZLE_ZZZZ: u32 = 0x0010_0aa6;
 const OPERAND_TEMP_SWIZZLE_XXXY: u32 = 0x0010_0406;
-const OPERAND_TEMP_SWIZZLE_XYXX: u32 = 0x0010_0046;
-const OPERAND_TEMP_SWIZZLE_ZWZZ: u32 = 0x0010_0ae6;
 const OPERAND_TEMP_SWIZZLE_ZZZW: u32 = 0x0010_0ea6;
-/// Constant-buffer operands with two immediate indices selecting `.x`, `.y`, and `.z`, and reading
-/// `.wwww`.
-const OPERAND_CB_2D_SELECT_X: u32 = 0x0020_800A;
+/// Constant-buffer operands with two immediate indices selecting `.y` and reading `.wwww`.
 const OPERAND_CB_2D_SELECT_Y: u32 = 0x0020_801A;
-const OPERAND_CB_2D_SELECT_Z: u32 = 0x0020_802A;
 const OPERAND_CB_2D_SWIZZLE_WWWW: u32 = 0x0020_8ff6;
-/// The signature system-value code of `SV_Position`.
-const SIGNATURE_SYSVALUE_POSITION: u32 = 1;
 /// The fixed size of a signature element record.
 const SIGNATURE_ELEMENT_LEN: usize = 24;

@@ -9,20 +9,21 @@
 
 use crate::{
     container::{Dxbc, DxbcError},
+    isa::{
+        IDX_IMM32_PLUS_RELATIVE, OPCODE_AND, OPCODE_DCL_CONSTANT_BUFFER, OPCODE_DCL_INPUT_SGV,
+        OPCODE_DCL_OUTPUT_SIV, OPCODE_DCL_TEMPS, OPCODE_IMUL, OPCODE_MOV, OPCODE_RET, OPCODE_RETC,
+        OPCODE_USHR, OPERAND_IMM32_SCALAR, OPERAND_INPUT_SELECT_X, OPERAND_TEMP_MASK_X,
+        OPERAND_TEMP_SELECT_X, OPERAND_TYPE_INPUT, SB_NAME_POSITION,
+    },
     rewrite::common::{
-        CB_ACCESS_DYNAMIC_INDEXED, FULL_VIEW_PROJECTION_ROW_BASE, OPCODE_AND,
-        OPCODE_DCL_CONSTANT_BUFFER, OPCODE_DCL_INPUT_SGV, OPCODE_DCL_OUTPUT_SIV, OPCODE_DCL_TEMPS,
-        OPCODE_IMUL, OPCODE_MOV, OPCODE_RET, OPCODE_RETC, OPERAND_CB_2D_IMM, OPERAND_IMM32_SCALAR,
-        OPERAND_INPUT_MASK_X, OPERAND_INPUT_SELECT_X, OPERAND_NULL, OPERAND_OUTPUT_MASK_X,
-        OPERAND_TEMP_MASK_X, OPERAND_TEMP_SELECT_X, SB_NAME_INSTANCE_ID, SB_NAME_POSITION,
+        CB_ACCESS_DYNAMIC_INDEXED, FULL_VIEW_PROJECTION_ROW_BASE, OPERAND_CB_2D_IMM,
+        OPERAND_INPUT_MASK_X, OPERAND_NULL, OPERAND_OUTPUT_MASK_X, SB_NAME_INSTANCE_ID,
         SB_NAME_VIEWPORT_ARRAY_INDEX, SIGNATURE_COMPONENT_UINT32, SIGNATURE_SYSVALUE_INSTANCE_ID,
         SIGNATURE_SYSVALUE_VIEWPORT_ARRAY_INDEX, STEREO_CB_REGISTER, STEREO_FULL_CB_ROWS,
         STEREO_REPROJ_CB_ROWS, SignatureElement, append_signature_element, declared_register,
         emit_meye_epilogue, max_signature_register, reassemble, rewrite_reproject_instruction,
     },
-    tokens::{
-        IDX_IMM32_PLUS_RELATIVE, Instruction, OperandKind, ShaderStage, TokenStream, parse_operand,
-    },
+    tokens::{Instruction, OperandKind, ShaderStage, TokenStream, parse_operand},
 };
 
 /// Rewrites a vertex shader for single-pass stereo by **reprojection**: instead of remapping `cb0`
@@ -471,8 +472,3 @@ fn substitute_full_view_projection(
     out[opcode_at] = (out[opcode_at] & !(0x7F << 24)) | (new_len << 24);
     Ok(())
 }
-
-/// SM4/5 operand type: input register (`vN`).
-const OPERAND_TYPE_INPUT: u32 = 1;
-/// SM4/5 `ushr`.
-const OPCODE_USHR: u32 = 0x55;

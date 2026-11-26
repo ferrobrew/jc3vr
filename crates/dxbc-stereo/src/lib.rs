@@ -13,6 +13,7 @@
 
 mod checksum;
 mod container;
+mod isa;
 mod rewrite;
 mod tokens;
 

@@ -38,14 +38,20 @@
 
 use crate::{
     container::{Dxbc, DxbcError},
+    isa::{
+        INTERPOLATION_LINEAR_NOPERSPECTIVE, MODIFIER_NEG, OPCODE_ADD, OPCODE_AND,
+        OPCODE_DCL_CONSTANT_BUFFER, OPCODE_DCL_INPUT_PS_SIV, OPCODE_DCL_OUTPUT,
+        OPCODE_DCL_OUTPUT_SIV, OPCODE_DCL_TEMPS, OPCODE_DIV, OPCODE_DP2, OPCODE_GE, OPCODE_LT,
+        OPCODE_MAD, OPCODE_MIN, OPCODE_MOV, OPCODE_MOVC, OPCODE_RCP, OPERAND_CB_2D_SELECT_X,
+        OPERAND_CB_2D_SELECT_Z, OPERAND_EXTENDED, OPERAND_IMM32_SCALAR, OPERAND_IMM32_VECTOR,
+        OPERAND_INPUT_MASK_XY, OPERAND_INPUT_SELECT_X, OPERAND_INPUT_SELECT_Y, OPERAND_TEMP_MASK_W,
+        OPERAND_TEMP_MASK_X, OPERAND_TEMP_MASK_XY, OPERAND_TEMP_MASK_Y, OPERAND_TEMP_MASK_Z,
+        OPERAND_TEMP_MASK_ZW, OPERAND_TEMP_SELECT_X, OPERAND_TEMP_SWIZZLE_XYXX,
+        OPERAND_TEMP_SWIZZLE_ZWZZ, OPERAND_TYPE_INPUT, SB_NAME_POSITION, SELECTION_SWIZZLE,
+    },
     rewrite::{
         camera::{EYE_CAMERA_BOUNDARY_ROW, EYE_CAMERA_CB_REGISTER, EYE_CAMERA_CB_ROWS},
-        common::{
-            OPCODE_AND, OPCODE_DCL_CONSTANT_BUFFER, OPCODE_DCL_OUTPUT, OPCODE_DCL_OUTPUT_SIV,
-            OPCODE_DCL_TEMPS, OPCODE_MOV, OPERAND_CB_2D_IMM, OPERAND_IMM32_SCALAR,
-            OPERAND_INPUT_SELECT_X, OPERAND_TEMP_MASK_X, OPERAND_TEMP_SELECT_X, SB_NAME_POSITION,
-            declared_register, reassemble, signature_register,
-        },
+        common::{OPERAND_CB_2D_IMM, declared_register, reassemble, signature_register},
     },
     tokens::{Instruction, ShaderStage, TokenStream, parse_operand},
 };
@@ -249,30 +255,14 @@ fn emit_injection(out: &mut Vec<u32>, plan: &Plan, position: u32) {
     out.extend(boundary);
     out.extend([(8 << 24) | OPCODE_ADD, OPERAND_TEMP_MASK_X, local]);
     out.extend([OPERAND_INPUT_SELECT_X, position]);
-    out.extend([OPERAND_TEMP_SELECT_X | EXTENDED, MODIFIER_NEGATE, local]);
+    out.extend([
+        OPERAND_TEMP_SELECT_X | OPERAND_EXTENDED,
+        MODIFIER_NEG,
+        local,
+    ]);
     out.extend([(5 << 24) | OPCODE_MOV, OPERAND_TEMP_MASK_Y, local]);
     out.extend([OPERAND_INPUT_SELECT_Y, position]);
 }
-
-const OPCODE_ADD: u32 = 0x00;
-const OPCODE_DP2: u32 = 0x0f;
-const OPCODE_GE: u32 = 0x1d;
-/// The operand type of a shader input register.
-const OPERAND_TYPE_INPUT: u32 = 1;
-/// The swizzle selection mode of a four-component operand.
-const SELECTION_SWIZZLE: u32 = 1;
-/// A four-component 32-bit immediate operand, its values following inline.
-const OPERAND_IMM32_VECTOR: u32 = 0x0000_4002;
-/// A constant-buffer operand with two immediate indices selecting its `.x`.
-const OPERAND_CB_2D_SELECT_X: u32 = 0x0020_800A;
-/// A temp register operand writing `.y`.
-const OPERAND_TEMP_MASK_Y: u32 = 0x0010_0022;
-/// An input register operand selecting `.y`.
-const OPERAND_INPUT_SELECT_Y: u32 = 0x0010_101A;
-/// The bit of an operand token announcing an extended operand token.
-const EXTENDED: u32 = 1 << 31;
-/// An extended operand token carrying the negate modifier.
-const MODIFIER_NEGATE: u32 = 0x41;
 
 /// Rewrite a pixel shader whose screen-door pattern is hashed from its own projected position,
 /// rather than from `SV_Position`, to hash the eye-local pixel position instead.
@@ -558,7 +548,11 @@ fn emit_projected_offset(out: &mut Vec<u32>, local: u32, engine: u32, position: 
     out.extend(boundary);
     out.extend([(8 << 24) | OPCODE_ADD, OPERAND_TEMP_MASK_X, local]);
     out.extend([OPERAND_INPUT_SELECT_X, position]);
-    out.extend([OPERAND_TEMP_SELECT_X | EXTENDED, MODIFIER_NEGATE, local]);
+    out.extend([
+        OPERAND_TEMP_SELECT_X | OPERAND_EXTENDED,
+        MODIFIER_NEG,
+        local,
+    ]);
     out.extend([(8 << 24) | OPCODE_MIN, OPERAND_TEMP_MASK_Z, local]);
     out.extend([OPERAND_TEMP_SELECT_Z, local]);
     out.extend(boundary);
@@ -571,7 +565,11 @@ fn emit_projected_offset(out: &mut Vec<u32>, local: u32, engine: u32, position: 
     out.extend([(10 << 24) | OPCODE_MAD, OPERAND_TEMP_MASK_Y, local]);
     out.extend([OPERAND_TEMP_SELECT_Z, local]);
     out.extend([OPERAND_IMM32_SCALAR, 0.5f32.to_bits()]);
-    out.extend([OPERAND_INPUT_SELECT_Y | EXTENDED, MODIFIER_NEGATE, position]);
+    out.extend([
+        OPERAND_INPUT_SELECT_Y | OPERAND_EXTENDED,
+        MODIFIER_NEG,
+        position,
+    ]);
     out.extend([(9 << 24) | OPCODE_MOVC, OPERAND_TEMP_MASK_XY, local]);
     out.extend([OPERAND_TEMP_SWIZZLE_WWWW, local]);
     out.extend([OPERAND_TEMP_SWIZZLE_XYXX, local]);
@@ -586,34 +584,15 @@ const TARGET_SIZE_ROW: u32 = 8;
 const SCREEN_DOOR_X: u32 = 0x3eef_965b;
 /// The screen-door vector's `y`, `-0.703648`.
 const SCREEN_DOOR_Y: u32 = 0xbf34_2246;
-const OPCODE_DIV: u32 = 0x0e;
-const OPCODE_MAD: u32 = 0x32;
-const OPCODE_MIN: u32 = 0x33;
-const OPCODE_LT: u32 = 0x31;
-const OPCODE_MOVC: u32 = 0x37;
-const OPCODE_RCP: u32 = 0x81;
-const OPCODE_DCL_INPUT_PS_SIV: u32 = 0x64;
 /// The opcode token of a seven-token `add`, `div`, and ten-token `dp2`.
 const ADD_7: u32 = (9 << 24) | OPCODE_ADD;
 const DIV_7: u32 = (7 << 24) | OPCODE_DIV;
 const DP2_10: u32 = (10 << 24) | OPCODE_DP2;
-/// The linear, no-perspective interpolation mode of a pixel-shader input declaration.
-const INTERPOLATION_LINEAR_NOPERSPECTIVE: u32 = 4;
 /// The `.xy` component-mask bits of a masked operand token.
 const MASK_XY: u32 = 0x30;
-/// A temp register operand writing `.xy`, `.z`, `.w`, and `.zw`.
-const OPERAND_TEMP_MASK_XY: u32 = 0x0010_0032;
-const OPERAND_TEMP_MASK_Z: u32 = 0x0010_0042;
-const OPERAND_TEMP_MASK_W: u32 = 0x0010_0082;
-const OPERAND_TEMP_MASK_ZW: u32 = 0x0010_00c2;
-/// A temp register operand reading `.xyxx`, `.zwzz`, `.z`, and `.wwww`.
-const OPERAND_TEMP_SWIZZLE_XYXX: u32 = 0x0010_0046;
-const OPERAND_TEMP_SWIZZLE_ZWZZ: u32 = 0x0010_0ae6;
+/// A temp register operand selecting `.z` and reading `.wwww`.
 const OPERAND_TEMP_SELECT_Z: u32 = 0x0010_002a;
 const OPERAND_TEMP_SWIZZLE_WWWW: u32 = 0x0010_0ff6;
-/// An input register operand writing `.xy` (a declaration's mask).
-const OPERAND_INPUT_MASK_XY: u32 = 0x0010_1032;
-/// A constant-buffer operand with two immediate indices reading `.zzzw`, `.z`, and `.w`.
+/// A constant-buffer operand with two immediate indices reading `.zzzw` and selecting `.w`.
 const CB_ZZZW: u32 = 0x0020_8ea6;
-const OPERAND_CB_2D_SELECT_Z: u32 = 0x0020_802a;
 const OPERAND_CB_2D_SELECT_W: u32 = 0x0020_803a;

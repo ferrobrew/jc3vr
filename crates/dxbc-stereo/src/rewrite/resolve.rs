@@ -1,5 +1,6 @@
 use crate::{
     Dxbc, DxbcError, ShaderStage, TokenStream,
+    isa::{OPERAND_IMM32_SCALAR, OPERAND_IMM32_VECTOR},
     rewrite::common::{
         SignatureElement, append_signature_element, max_signature_register, reassemble,
     },
@@ -44,8 +45,22 @@ pub fn trace_deferred_samples(blob: &[u8], shadow: bool) -> Result<Vec<u8>, Dxbc
                 [0x7000038, 0x100082, 7, 0x10003a, 7, 0x10003a, 9] => {
                     out.extend([0x5000036, 0x102012, 5, 0x10003a, 7]);
                     out.extend([
-                        0x8000036, 0x1020e2, 5, 0x4002, 0, 0, 0, 0, 0x8000036, 0x1020f2, 6, 0x4002,
-                        0, 0, 0, 0,
+                        0x8000036,
+                        0x1020e2,
+                        5,
+                        OPERAND_IMM32_VECTOR,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0x8000036,
+                        0x1020f2,
+                        6,
+                        OPERAND_IMM32_VECTOR,
+                        0,
+                        0,
+                        0,
+                        0,
                     ]);
                     shadow_sites.push(0);
                 }
@@ -70,7 +85,15 @@ pub fn trace_deferred_samples(blob: &[u8], shadow: bool) -> Result<Vec<u8>, Dxbc
                     ]);
                     shadow_sites.push(1);
                 }
-                [0x7000038, 0x100042, 10, 0x10001a, 10, 0x4001, 0x3d800000] => {
+                [
+                    0x7000038,
+                    0x100042,
+                    10,
+                    0x10001a,
+                    10,
+                    OPERAND_IMM32_SCALAR,
+                    0x3d800000,
+                ] => {
                     out.extend([0x5000036, 0x102042, 5, 0x10002a, 10]);
                     shadow_sites.push(2);
                 }
@@ -114,8 +137,8 @@ pub fn trace_deferred_samples(blob: &[u8], shadow: bool) -> Result<Vec<u8>, Dxbc
                 for (target, xyz, source, w, scalar) in [
                     (1, 0x100396, 11, 0x10003a, 9),
                     (2, 0x100396, 12, 0x10003a, 7),
-                    (3, 0x100246, 9, 0x4001, 1f32.to_bits()),
-                    (4, 0x100246, 6, 0x4001, 1f32.to_bits()),
+                    (3, 0x100246, 9, OPERAND_IMM32_SCALAR, 1f32.to_bits()),
+                    (4, 0x100246, 6, OPERAND_IMM32_SCALAR, 1f32.to_bits()),
                 ] {
                     out.extend([
                         0x5000036, 0x102072, target, xyz, source, 0x5000036, 0x102082, target, w,
@@ -215,7 +238,7 @@ pub fn trace_ssr_ray(
                         0x208e46,
                         2,
                         12,
-                        0x4002,
+                        OPERAND_IMM32_VECTOR,
                         0.5f32.to_bits(),
                         1f32.to_bits(),
                         2f32.to_bits(),
@@ -223,7 +246,7 @@ pub fn trace_ssr_ray(
                     ]);
                 }
                 for i in 2..8 {
-                    mov(&mut out, i, 15, 0x4001, 0);
+                    mov(&mut out, i, 15, OPERAND_IMM32_SCALAR, 0);
                 }
                 sites.push(1);
             }
@@ -239,12 +262,12 @@ pub fn trace_ssr_ray(
                 2,
                 0x106000,
                 0,
-                0x4001,
+                OPERAND_IMM32_SCALAR,
                 0,
             ] => {
                 mov(&mut out, 2, 3, 0x101046, 1);
                 mov(&mut out, 2, 4, 0x10000a, 0);
-                mov(&mut out, 2, 8, 0x4001, 1f32.to_bits());
+                mov(&mut out, 2, 8, OPERAND_IMM32_SCALAR, 1f32.to_bits());
                 sites.push(2);
             }
             [
@@ -259,7 +282,7 @@ pub fn trace_ssr_ray(
                 1,
                 0x106000,
                 0,
-                0x4001,
+                OPERAND_IMM32_SCALAR,
                 0,
             ] => {
                 mov(&mut out, 3, 15, 0x100e46, 1);
@@ -302,7 +325,7 @@ pub fn trace_ssr_ray(
                 2,
                 0x106000,
                 0,
-                0x4001,
+                OPERAND_IMM32_SCALAR,
                 0,
             ] => {
                 pack_sample(&mut out, words, 10, march_eye);
@@ -328,13 +351,13 @@ pub fn trace_ssr_ray(
                 0,
                 0x106000,
                 0,
-                0x4001,
+                OPERAND_IMM32_SCALAR,
                 0,
             ] => {
                 pack_sample(&mut out, words, 1, march_eye.filter(|_| pack_veto));
                 mov(&mut out, 7, 3, 0x100046, 1);
                 mov(&mut out, 7, 4, 0x10003a, 0);
-                mov(&mut out, 7, 8, 0x4001, 1f32.to_bits());
+                mov(&mut out, 7, 8, OPERAND_IMM32_SCALAR, 1f32.to_bits());
                 sites.push(8);
             }
             [
@@ -349,7 +372,7 @@ pub fn trace_ssr_ray(
                 3,
                 0x106000,
                 0,
-                0x4001,
+                OPERAND_IMM32_SCALAR,
                 0,
             ] if history => {
                 out.truncate(out.len() - words.len());
@@ -361,16 +384,16 @@ pub fn trace_ssr_ray(
                         0,
                         0x10001a,
                         0,
-                        0x4001,
+                        OPERAND_IMM32_SCALAR,
                         if right { 0.25f32 } else { -0.25f32 }.to_bits(),
                     ]);
                 }
                 mov(&mut out, 4, 3, 0x100596, 0);
                 mov(&mut out, 4, 4, 0x10000a, 0);
-                mov(&mut out, 4, 8, 0x4001, 1f32.to_bits());
+                mov(&mut out, 4, 8, OPERAND_IMM32_SCALAR, 1f32.to_bits());
                 out.extend_from_slice(words);
                 mov(&mut out, 5, 7, 0x100396, 0);
-                mov(&mut out, 5, 8, 0x4001, 1f32.to_bits());
+                mov(&mut out, 5, 8, OPERAND_IMM32_SCALAR, 1f32.to_bits());
                 history_sites += 1;
             }
             _ => {}
@@ -402,9 +425,9 @@ fn pack_sample(out: &mut Vec<u32>, sample: &[u32], reg: u32, right: Option<bool>
             reg,
             0x10000a,
             reg,
-            0x4001,
+            OPERAND_IMM32_SCALAR,
             0.5f32.to_bits(),
-            0x4001,
+            OPERAND_IMM32_SCALAR,
             if right { 0.5f32.to_bits() } else { 0 },
         ]);
         out.extend_from_slice(sample);
@@ -441,7 +464,7 @@ pub fn local_bark_dither(blob: &[u8], origin: f32, color: bool) -> Result<Vec<u8
                 0,
                 0x101046,
                 0,
-                0x4002,
+                OPERAND_IMM32_VECTOR,
                 0x3eef965b,
                 0xbf342246,
                 0,
@@ -453,14 +476,23 @@ pub fn local_bark_dither(blob: &[u8], origin: f32, color: bool) -> Result<Vec<u8
                     tmp,
                     0x101046,
                     0,
-                    0x4002,
+                    OPERAND_IMM32_VECTOR,
                     (-origin).to_bits(),
                     0,
                     0,
                     0,
                 ]);
                 out.extend([
-                    0xa00000f, dest, 0, 0x100046, tmp, 0x4002, 0x3eef965b, 0xbf342246, 0, 0,
+                    0xa00000f,
+                    dest,
+                    0,
+                    0x100046,
+                    tmp,
+                    OPERAND_IMM32_VECTOR,
+                    0x3eef965b,
+                    0xbf342246,
+                    0,
+                    0,
                 ]);
                 sites.push(1);
             }
@@ -494,7 +526,16 @@ pub fn physical_impostor_fade(blob: &[u8]) -> Result<Vec<u8>, DxbcError> {
         let op = op?;
         if stream.tokens()[op.start..op.end]
             == [
-                0xa00000f, 0x100012, 0, 0x100046, 0, 0x4002, 0x3eef965b, 0xbf342246, 0, 0,
+                0xa00000f,
+                0x100012,
+                0,
+                0x100046,
+                0,
+                OPERAND_IMM32_VECTOR,
+                0x3eef965b,
+                0xbf342246,
+                0,
+                0,
             ]
             && site
                 .replace(chunk.body_offset + 4 * (op.start + 6))
@@ -557,7 +598,7 @@ pub fn impostor_atlas_scale(
                     6,
                     0x10100a,
                     0,
-                    0x4001,
+                    OPERAND_IMM32_SCALAR,
                     right_origin.to_bits(),
                 ]);
                 out.extend([
@@ -566,9 +607,9 @@ pub fn impostor_atlas_scale(
                     6,
                     0x10000a,
                     6,
-                    0x4001,
+                    OPERAND_IMM32_SCALAR,
                     0.5f32.to_bits(),
-                    0x4001,
+                    OPERAND_IMM32_SCALAR,
                     if left { 0.5f32 } else { 1f32 }.to_bits(),
                 ]);
                 out.extend([0x7000038, 0x100012, 6, 0x10000a, 6, 0x10103a, 5]);
@@ -624,7 +665,7 @@ pub fn local_fog_reconstruction(blob: &[u8]) -> Result<Vec<u8>, DxbcError> {
                 0,
                 0x10000a,
                 0,
-                0x4001,
+                OPERAND_IMM32_SCALAR,
                 2f32.to_bits(),
                 0x500001a,
                 0x100012,
@@ -694,7 +735,7 @@ pub fn local_dof_edge(blob: &[u8]) -> Result<Vec<u8>, DxbcError> {
                     4,
                     0x10000a,
                     4,
-                    0x4001,
+                    OPERAND_IMM32_SCALAR,
                     2f32.to_bits(),
                     0x500001a,
                     0x100012,
@@ -757,7 +798,7 @@ pub fn local_aa_neighbor(blob: &[u8]) -> Result<Vec<u8>, DxbcError> {
                 0,
                 0x106000,
                 0,
-                0x4001,
+                OPERAND_IMM32_SCALAR,
                 0,
             ] => {
                 out.extend([
@@ -771,21 +812,21 @@ pub fn local_aa_neighbor(blob: &[u8]) -> Result<Vec<u8>, DxbcError> {
                     4,
                     0x10100a,
                     1,
-                    0x4001,
+                    OPERAND_IMM32_SCALAR,
                     0.5f32.to_bits(),
                     0x07000033,
                     0x100082,
                     4,
                     0x10000a,
                     4,
-                    0x4001,
+                    OPERAND_IMM32_SCALAR,
                     (319.5f32 / 640.).to_bits(),
                     0x07000034,
                     0x100012,
                     4,
                     0x10000a,
                     4,
-                    0x4001,
+                    OPERAND_IMM32_SCALAR,
                     (320.5f32 / 640.).to_bits(),
                     0x09000037,
                     0x100012,

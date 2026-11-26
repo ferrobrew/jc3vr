@@ -5,26 +5,29 @@ use std::collections::HashSet;
 
 use crate::{
     container::DxbcError,
+    isa::{
+        IDX_IMM32_PLUS_RELATIVE, INTERPOLATION_LINEAR_NOPERSPECTIVE, LENGTH_MASK, MODIFIER_ABS,
+        MODIFIER_NEG, OPCODE_ADD, OPCODE_AND, OPCODE_DCL_CONSTANT_BUFFER, OPCODE_DCL_INPUT_PS_SIV,
+        OPCODE_DERIV_RTX, OPCODE_DIV, OPCODE_GE, OPCODE_MAD, OPCODE_MAX, OPCODE_MIN, OPCODE_MOV,
+        OPCODE_MUL, OPCODE_RESINFO, OPCODE_ROUND_NE, OPCODE_ROUND_NI, OPCODE_SAMPLE,
+        OPCODE_SAMPLE_L, OPERAND_IMM32_SCALAR, OPERAND_IMM32_VECTOR, OPERAND_INPUT_MASK_XY,
+        OPERAND_TEMP_SWIZZLE_XYXX, OPERAND_TYPE_CONSTANT_BUFFER, OPERAND_TYPE_INPUT,
+        OPERAND_TYPE_TEMP, RESOURCE_XXXX, SB_NAME_POSITION, W, X, Y, Z, dst, imm, input, input_mod,
+        instruction, select, src, src_mod,
+    },
     rewrite::{
         ambient::{
             AMBIENT_OCCLUSION_CB_REGISTER, AMBIENT_OCCLUSION_ROWS_PER_EYE,
             AmbientOcclusionSampling, BASIS_ROW, CENTRE_NUDGE, CLAMP_INSET, LoadKind, Pass,
             ROTATION_ROWS, SizeSource,
             operands::{
-                IMMEDIATE_VECTOR, INTERPOLATION_LINEAR_NOPERSPECTIVE, LENGTH_MASK, MODIFIER_ABS,
-                MODIFIER_NEG, OPCODE_ADD, OPCODE_AND, OPCODE_DCL_INPUT_PS_SIV, OPCODE_DERIV_RTX,
-                OPCODE_DIV, OPCODE_GE, OPCODE_MAD, OPCODE_MAX, OPCODE_MIN, OPCODE_MOV, OPCODE_MUL,
-                OPCODE_RESINFO, OPCODE_ROUND_NE, OPCODE_ROUND_NI, OPCODE_SAMPLE, OPCODE_SAMPLE_L,
-                OPERAND_INPUT_MASK_XY, OPERAND_TYPE_CONSTANT_BUFFER, OPERAND_TYPE_INPUT,
-                OPERAND_TYPE_TEMP, RESOURCE_XXXX, RESOURCE_XXXY, SB_NAME_POSITION, SourceKind,
-                TEMP_XYXX_SOURCE, W, X, Y, Z, dst, imm, input, input_mod, instruction,
-                mask_destination, plain_source, resource_register, select, src, src_mod,
+                RESOURCE_XXXY, SourceKind, mask_destination, plain_source, resource_register,
                 swizzle_source, temp_destination,
             },
         },
-        common::{CB_ACCESS_DYNAMIC_INDEXED, OPCODE_DCL_CONSTANT_BUFFER, OPERAND_CB_2D_IMM},
+        common::{CB_ACCESS_DYNAMIC_INDEXED, OPERAND_CB_2D_IMM},
     },
-    tokens::{IDX_IMM32_PLUS_RELATIVE, Instruction},
+    tokens::Instruction,
 };
 
 /// The register numbers the rewrite reads and writes.
@@ -227,7 +230,7 @@ impl Rewriter<'_> {
             &[
                 mask_destination(0b1100),
                 local,
-                0x4001,
+                OPERAND_IMM32_SCALAR,
                 0,
                 RESOURCE_XXXY,
                 size.texture,
@@ -240,7 +243,7 @@ impl Rewriter<'_> {
                 local,
                 swizzle_source([2, 2, 2, 3]),
                 local,
-                IMMEDIATE_VECTOR,
+                OPERAND_IMM32_VECTOR,
                 0,
                 0,
                 size.width_scale.to_bits(),
@@ -392,7 +395,7 @@ impl Rewriter<'_> {
         };
         self.emit(OPCODE_MOV, &[&dst(coordinate, X), &read(u)]);
         self.emit(OPCODE_MOV, &[&dst(coordinate, Y), &read(v)]);
-        Ok([TEMP_XYXX_SOURCE, coordinate])
+        Ok([OPERAND_TEMP_SWIZZLE_XYXX, coordinate])
     }
 
     /// Emit the halving of a tap's offset and the clamp to the eye's half, returning the coordinate
@@ -419,7 +422,7 @@ impl Rewriter<'_> {
             );
             self.emit(OPCODE_MOV, &[&dst(coordinate, Y), &src(local, v)]);
             self.counts.redirected += 1;
-            return Ok(Some([TEMP_XYXX_SOURCE, coordinate]));
+            return Ok(Some([OPERAND_TEMP_SWIZZLE_XYXX, coordinate]));
         }
         let read = |component| match source.kind {
             SourceKind::Temp => src(source.register, component),
@@ -514,7 +517,7 @@ impl Rewriter<'_> {
         );
         self.emit(OPCODE_MOV, &[&dst(coordinate, Y), &row]);
         self.counts.clamps += 1;
-        Ok(Some([TEMP_XYXX_SOURCE, coordinate]))
+        Ok(Some([OPERAND_TEMP_SWIZZLE_XYXX, coordinate]))
     }
 
     /// Copy an operand, redirecting the pixel position to its eye-local temporary and the basis and

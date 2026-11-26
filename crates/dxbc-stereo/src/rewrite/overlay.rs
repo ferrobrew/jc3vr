@@ -24,6 +24,12 @@
 
 use crate::{
     container::{Dxbc, DxbcError},
+    isa::{
+        LENGTH_MASK, OPCODE_DCL_TEMPS, OPCODE_FRC, OPCODE_MAD, OPCODE_MOV, OPCODE_MUL,
+        OPCODE_SAMPLE, OPERAND_IMM32_SCALAR, OPERAND_IMM32_VECTOR, OPERAND_TEMP_MASK_X,
+        OPERAND_TEMP_MASK_XY, OPERAND_TEMP_SELECT_X, OPERAND_TEMP_SWIZZLE_XYXX, OPERAND_TYPE_INPUT,
+        OPERAND_TYPE_RESOURCE, OPERAND_TYPE_TEMP, instruction,
+    },
     rewrite::common::reassemble,
     tokens::{ShaderStage, TokenStream},
 };
@@ -67,16 +73,17 @@ pub fn localize_screen_overlays(blob: &[u8]) -> Result<Vec<u8>, DxbcError> {
         };
         let localized = match (insn.opcode, operands.len()) {
             (OPCODE_SAMPLE, 4)
-                if register_of(span(2), OPERAND_RESOURCE).is_some_and(|r| overlays.contains(r)) =>
+                if register_of(span(2), OPERAND_TYPE_RESOURCE)
+                    .is_some_and(|r| overlays.contains(r)) =>
             {
                 // The mirrored vignette's lookup reads the temporary the centred coordinate was
                 // folded into, which is already eye-local.
-                let folded = register_of(span(2), OPERAND_RESOURCE) == overlays.vignette
-                    && register_of(span(1), OPERAND_TEMP).is_some();
+                let folded = register_of(span(2), OPERAND_TYPE_RESOURCE) == overlays.vignette
+                    && register_of(span(1), OPERAND_TYPE_TEMP).is_some();
                 (!folded).then_some(1)
             }
             (OPCODE_MAD, 4)
-                if register_of(span(1), OPERAND_INPUT).is_some()
+                if register_of(span(1), OPERAND_TYPE_INPUT).is_some()
                     && span(2) == centre_scale()
                     && span(3) == centre_bias() =>
             {
@@ -85,7 +92,8 @@ pub fn localize_screen_overlays(blob: &[u8]) -> Result<Vec<u8>, DxbcError> {
             _ if insn.opcode != OPCODE_SAMPLE
                 && !insn.is_declaration()
                 && (0..operands.len()).any(|index| {
-                    register_of(span(index), OPERAND_RESOURCE).is_some_and(|r| overlays.contains(r))
+                    register_of(span(index), OPERAND_TYPE_RESOURCE)
+                        .is_some_and(|r| overlays.contains(r))
                 }) =>
             {
                 return Err(DxbcError::NoScreenOverlay);
@@ -99,25 +107,25 @@ pub fn localize_screen_overlays(blob: &[u8]) -> Result<Vec<u8>, DxbcError> {
         let scratch = scratch.ok_or(DxbcError::NoScreenOverlay)?;
         let source = span(index);
         out.push(instruction(OPCODE_MOV, 3 + source.len())?);
-        out.extend([TEMP_XY_DEST, scratch]);
+        out.extend([OPERAND_TEMP_MASK_XY, scratch]);
         out.extend_from_slice(source);
         out.extend([
             instruction(OPCODE_MUL, 7)?,
-            TEMP_X_DEST,
+            OPERAND_TEMP_MASK_X,
             scratch,
-            TEMP_X_SOURCE,
+            OPERAND_TEMP_SELECT_X,
             scratch,
-            IMMEDIATE_SCALAR,
+            OPERAND_IMM32_SCALAR,
             2f32.to_bits(),
             instruction(OPCODE_FRC, 5)?,
-            TEMP_X_DEST,
+            OPERAND_TEMP_MASK_X,
             scratch,
-            TEMP_X_SOURCE,
+            OPERAND_TEMP_SELECT_X,
             scratch,
         ]);
         let start = out.len();
         out.extend_from_slice(&tokens[insn.start..operands[index]]);
-        out.extend([TEMP_XYXX_SOURCE, scratch]);
+        out.extend([OPERAND_TEMP_SWIZZLE_XYXX, scratch]);
         out.extend_from_slice(&tokens[operands[index] + source.len()..insn.end]);
         let length = out.len() - start;
         out[start] = (out[start] & !LENGTH_MASK) | instruction(0, length)?;
@@ -161,54 +169,19 @@ impl Overlays {
     }
 }
 
-const OPCODE_FRC: u32 = 0x1a;
-const OPCODE_MAD: u32 = 0x32;
-const OPCODE_MOV: u32 = 0x36;
-const OPCODE_MUL: u32 = 0x38;
-const OPCODE_SAMPLE: u32 = 0x45;
-const OPCODE_DCL_TEMPS: u32 = 0x68;
-
-/// The instruction-length field of an opcode token.
-const LENGTH_MASK: u32 = 0x7f00_0000;
-
-const OPERAND_TEMP: u32 = 0;
-const OPERAND_INPUT: u32 = 1;
-const OPERAND_RESOURCE: u32 = 7;
-
-/// `rN.xy` as a destination, `rN.x` as a destination and as a source, and `rN.xyxx` as a source; each
-/// is followed by the register index.
-const TEMP_XY_DEST: u32 = 0x0010_0032;
-const TEMP_X_DEST: u32 = 0x0010_0012;
-const TEMP_X_SOURCE: u32 = 0x0010_000a;
-const TEMP_XYXX_SOURCE: u32 = 0x0010_0046;
-
-/// A one-component immediate, followed by its value.
-const IMMEDIATE_SCALAR: u32 = 0x4001;
-/// A four-component immediate, followed by its values.
-const IMMEDIATE_VECTOR: u32 = 0x4002;
-
 /// The resource table's binding type for a texture, and the size of one binding entry in bytes.
 const BINDING_TEXTURE: usize = 2;
 const BINDING_SIZE: usize = 32;
 
-/// The opcode token for `opcode` with an instruction of `length` tokens.
-fn instruction(opcode: u32, length: usize) -> Result<u32, DxbcError> {
-    let length = u32::try_from(length)
-        .ok()
-        .filter(|length| *length <= LENGTH_MASK >> 24)
-        .ok_or(DxbcError::InstructionTooLong)?;
-    Ok(opcode | length << 24)
-}
-
 /// `l(2, 2, 0, 0)` and `l(-1, -1, 0, 0)`: the scale and bias that turn a `[0, 1]` UV into a
 /// coordinate centred on the screen.
 fn centre_scale() -> [u32; 5] {
-    [IMMEDIATE_VECTOR, 2f32.to_bits(), 2f32.to_bits(), 0, 0]
+    [OPERAND_IMM32_VECTOR, 2f32.to_bits(), 2f32.to_bits(), 0, 0]
 }
 
 fn centre_bias() -> [u32; 5] {
     let minus_one = (-1f32).to_bits();
-    [IMMEDIATE_VECTOR, minus_one, minus_one, 0, 0]
+    [OPERAND_IMM32_VECTOR, minus_one, minus_one, 0, 0]
 }
 
 /// The register index of a one-dimensional, immediately indexed operand of type `kind`, or `None`

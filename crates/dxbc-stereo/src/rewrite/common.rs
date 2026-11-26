@@ -2,13 +2,17 @@
 //!
 //! Holds the pieces two or more of the transform modules lean on: the `cb13` layout constants, the
 //! container reassembly and checksum refresh, the `M_eye` reprojection epilogue and its
-//! `SV_Position`-rename helper, the `ISGN`/`OSGN` signature surgery, and the SM4/5 token vocabulary
-//! the injected code is spelled in. The terrain-only vocabulary lives in `terrain` instead.
+//! `SV_Position`-rename helper, the `ISGN`/`OSGN` signature surgery, and the operand tokens only the
+//! remap and reprojection rewrites emit. The vocabulary every rewrite shares lives in `crate::isa`.
 
 use crate::{
     checksum::refresh_checksum,
     container::{Dxbc, DxbcError},
-    tokens::{IDX_IMM32_PLUS_RELATIVE, Instruction, parse_operand},
+    isa::{
+        IDX_IMM32, IDX_IMM32_PLUS_RELATIVE, OPCODE_DP4, OPERAND_TEMP_SELECT_X,
+        OPERAND_TEMP_SWIZZLE_XYZW, OPERAND_TYPE_OUTPUT,
+    },
+    tokens::{Instruction, parse_operand},
 };
 
 /// The constant-buffer slot the stereo constants bind to. `b13` is free across the game's vertex
@@ -147,7 +151,7 @@ pub(super) fn rewrite_reproject_instruction(
         // non-dp4 writer and fail the test.
         let is_position_write = operand_type == OPERAND_TYPE_OUTPUT
             && index_dim == 1
-            && rep == 0 // IDX_IMM32
+            && rep == IDX_IMM32
             && tokens.get(reg_at) == Some(&pos_register);
         if is_position_write {
             // OUTPUT (2) -> TEMP (0): clear the operand-type field, keep the mask/swizzle; swap the
@@ -382,28 +386,6 @@ fn build_container(chunks: &[([u8; 4], Vec<u8>)]) -> Result<Vec<u8>, DxbcError> 
     Ok(out)
 }
 
-// SM4/5 opcodes.
-pub(super) const OPCODE_AND: u32 = 0x01;
-pub(super) const OPCODE_IMUL: u32 = 0x26;
-pub(super) const OPCODE_MOV: u32 = 0x36;
-pub(super) const OPCODE_DCL_CONSTANT_BUFFER: u32 = 0x59;
-pub(super) const OPCODE_DCL_INPUT: u32 = 0x5F;
-pub(super) const OPCODE_DCL_INPUT_SGV: u32 = 0x60;
-pub(super) const OPCODE_DCL_OUTPUT: u32 = 0x65;
-pub(super) const OPCODE_DCL_OUTPUT_SGV: u32 = 0x66;
-pub(super) const OPCODE_DCL_OUTPUT_SIV: u32 = 0x67;
-pub(super) const OPCODE_DCL_TEMPS: u32 = 0x68;
-// Reprojection opcodes.
-pub(super) const OPCODE_DP4: u32 = 0x11;
-pub(super) const OPCODE_RET: u32 = 0x3E;
-pub(super) const OPCODE_RETC: u32 = 0x25;
-
-/// SM4/5 operand type: output register (`oN`). Reprojection renames `SV_Position` writes (which are
-/// output-register destinations) to a temp by clearing this type field to `0` (TEMP).
-pub(super) const OPERAND_TYPE_OUTPUT: u32 = 2;
-/// `D3D_NAME_POSITION`, the `dcl_output_siv` trailing system-value name for `SV_Position`.
-pub(super) const SB_NAME_POSITION: u32 = 1;
-
 /// The `dynamicIndexed` access pattern, bit 11 of a `dcl_constantbuffer` opcode token. Required
 /// because `cb13` is indexed through a register, unlike the game's `immediateIndexed` `cb0`.
 pub(super) const CB_ACCESS_DYNAMIC_INDEXED: u32 = 1 << 11;
@@ -417,11 +399,9 @@ pub(super) const SIGNATURE_SYSVALUE_VIEWPORT_ARRAY_INDEX: u32 = 5;
 pub(super) const SIGNATURE_SYSVALUE_INSTANCE_ID: u32 = 8;
 pub(super) const SIGNATURE_COMPONENT_UINT32: u32 = 1;
 
-// Operand tokens for the injected code, byte-identical to what fxc emits (see the module docs).
+// Operand tokens for the injected code, byte-identical to what fxc emits.
 /// `cbN[a][b]`: constant buffer, 2D immediate indices, 4-component swizzle `.xyzw`.
 pub(super) const OPERAND_CB_2D_IMM: u32 = 0x0020_8E46;
-/// `vN.x` as a source: input register, 1D immediate index, select-1 component `.x`.
-pub(super) const OPERAND_INPUT_SELECT_X: u32 = 0x0010_100A;
 /// `vN.x` in a declaration: input register, 1D immediate index, write-mask-form `.x` (declarations
 /// use the mask form, not a swizzle).
 pub(super) const OPERAND_INPUT_MASK_X: u32 = 0x0010_1012;
@@ -432,15 +412,6 @@ pub(super) const OPERAND_OUTPUT_MASK_X: u32 = 0x0010_2012;
 pub(super) const OPERAND_OUTPUT_MASK_Y: u32 = 0x0010_2022;
 pub(super) const OPERAND_OUTPUT_MASK_Z: u32 = 0x0010_2042;
 pub(super) const OPERAND_OUTPUT_MASK_W: u32 = 0x0010_2082;
-/// `rN.xyzw` as a source: temp register, 1D immediate index, full `.xyzw` swizzle (the saved clip
-/// position each `M_eye` row dots against).
-pub(super) const OPERAND_TEMP_SWIZZLE_XYZW: u32 = 0x0010_0E46;
-/// `rN.x` as a destination: temp register, 1D immediate index, write mask `.x`.
-pub(super) const OPERAND_TEMP_MASK_X: u32 = 0x0010_0012;
-/// `rN.x` as a source (and as a relative index): temp register, 1D immediate index, select-1 `.x`.
-pub(super) const OPERAND_TEMP_SELECT_X: u32 = 0x0010_000A;
-/// A scalar 32-bit immediate (`l(k)`).
-pub(super) const OPERAND_IMM32_SCALAR: u32 = 0x0000_4001;
 /// The null destination (`imul`'s unused high-half result).
 pub(super) const OPERAND_NULL: u32 = 0x0000_D000;
 

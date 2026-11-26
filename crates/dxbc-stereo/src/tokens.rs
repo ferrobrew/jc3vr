@@ -5,7 +5,14 @@
 //! custom length); operand tokens encode an operand type at bits `[19:12]`, an index dimension at
 //! `[21:20]`, and per-dimension index representations at `[24:22]`/`[27:25]`/`[30:28]`.
 
-use crate::container::DxbcError;
+use crate::{
+    container::DxbcError,
+    isa::{
+        IDX_IMM32, IDX_IMM32_PLUS_RELATIVE, IDX_IMM64, IDX_IMM64_PLUS_RELATIVE, IDX_RELATIVE,
+        OPCODE_CUSTOMDATA, OPCODE_MASK, OPERAND_TYPE_CONSTANT_BUFFER, OPERAND_TYPE_IMMEDIATE32,
+        OPERAND_TYPE_IMMEDIATE64,
+    },
+};
 
 /// The shader stage a DXBC chunk targets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -70,11 +77,6 @@ impl TokenStream {
         &self.tokens
     }
 }
-
-/// The opcode field of an opcode token (`[10:0]`).
-const OPCODE_MASK: u32 = 0x7FF;
-/// The custom-data opcode, whose length lives in the *next* dword rather than the opcode token.
-const OPCODE_CUSTOMDATA: u32 = 0x35;
 
 /// An iterator over a token stream's instructions.
 pub struct Instructions<'a> {
@@ -245,19 +247,6 @@ pub enum OperandKind {
     /// Any other operand type (registers, inputs, outputs, samplers, ...).
     Other,
 }
-
-/// D3D10/11 operand type: constant buffer.
-const OPERAND_TYPE_CONSTANT_BUFFER: u32 = 8;
-/// D3D10/11 operand types: inline immediates.
-const OPERAND_TYPE_IMMEDIATE32: u32 = 4;
-const OPERAND_TYPE_IMMEDIATE64: u32 = 5;
-
-// Index representations (per dimension).
-const IDX_IMM32: u32 = 0;
-const IDX_IMM64: u32 = 1;
-const IDX_RELATIVE: u32 = 2;
-pub(crate) const IDX_IMM32_PLUS_RELATIVE: u32 = 3;
-const IDX_IMM64_PLUS_RELATIVE: u32 = 4;
 
 /// Parses one operand starting at `tokens[pos]`; returns the decoded operand and the token index
 /// just past it. Recurses into relative-index operands, bounded by `depth` to prevent runaway

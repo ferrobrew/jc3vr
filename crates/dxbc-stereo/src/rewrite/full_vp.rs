@@ -10,9 +10,10 @@
 
 use crate::{
     container::{Dxbc, DxbcError},
+    isa::OPCODE_DCL_CONSTANT_BUFFER,
     rewrite::common::{
-        CB_ACCESS_DYNAMIC_INDEXED, FULL_VIEW_PROJECTION_ROW_BASE, OPCODE_DCL_CONSTANT_BUFFER,
-        OPERAND_CB_2D_IMM, STEREO_CB_REGISTER, STEREO_FULL_CB_ROWS, declared_register, reassemble,
+        CB_ACCESS_DYNAMIC_INDEXED, FULL_VIEW_PROJECTION_ROW_BASE, OPERAND_CB_2D_IMM,
+        STEREO_CB_REGISTER, STEREO_FULL_CB_ROWS, declared_register, reassemble,
     },
     tokens::{OperandKind, ShaderStage, TokenStream},
 };

@@ -11,11 +11,13 @@
 
 use crate::{
     container::{Dxbc, DxbcError},
+    isa::{
+        OPCODE_DCL_CONSTANT_BUFFER, OPCODE_DCL_OUTPUT_SIV, OPCODE_DCL_TEMPS, OPCODE_MOV,
+        OPCODE_RET, OPCODE_RETC, OPERAND_IMM32_SCALAR, OPERAND_TEMP_MASK_X, SB_NAME_POSITION,
+    },
     rewrite::{
         common::{
-            CB_ACCESS_DYNAMIC_INDEXED, OPCODE_DCL_CONSTANT_BUFFER, OPCODE_DCL_OUTPUT_SIV,
-            OPCODE_DCL_TEMPS, OPCODE_MOV, OPCODE_RET, OPCODE_RETC, OPERAND_CB_2D_IMM,
-            OPERAND_IMM32_SCALAR, OPERAND_TEMP_MASK_X, SB_NAME_POSITION, STEREO_CB_REGISTER,
+            CB_ACCESS_DYNAMIC_INDEXED, OPERAND_CB_2D_IMM, STEREO_CB_REGISTER,
             STEREO_REPROJ_CB_ROWS, STEREO_SELECT_CB_ROWS, declared_register, emit_meye_epilogue,
             reassemble, rewrite_reproject_instruction,
         },

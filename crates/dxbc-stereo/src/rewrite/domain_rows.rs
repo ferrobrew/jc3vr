@@ -15,10 +15,9 @@
 
 use crate::{
     container::DxbcError,
-    rewrite::common::{
-        EYE_ROWS_SELECT_ROW, OPERAND_CB_2D_IMM, OPERAND_TEMP_SELECT_X, STEREO_CB_REGISTER,
-    },
-    tokens::{IDX_IMM32_PLUS_RELATIVE, Instruction, OperandKind, TokenStream, parse_operand},
+    isa::{IDX_IMM32_PLUS_RELATIVE, OPCODE_MOVC, OPERAND_TEMP_MASK_XYZW, OPERAND_TEMP_SELECT_X},
+    rewrite::common::{EYE_ROWS_SELECT_ROW, OPERAND_CB_2D_IMM, STEREO_CB_REGISTER},
+    tokens::{Instruction, OperandKind, TokenStream, parse_operand},
 };
 
 /// How many temps the chosen rows occupy: the four offset view-projection rows and the camera
@@ -145,10 +144,6 @@ pub(super) fn rewrite_rows_instruction(
 /// The terrain constants' register (`cb1`) in the terrain domain shaders.
 const TERRAIN_CB_REGISTER: u32 = 1;
 
-/// `movc`.
-const OPCODE_MOVC: u32 = 0x37;
-/// `rN.xyzw` as a destination: temp register, 1D immediate index, write mask `.xyzw`.
-const OPERAND_TEMP_MASK_XYZW: u32 = 0x0010_00F2;
 /// `cbN[a][b].xxxx`: [`OPERAND_CB_2D_IMM`] with the swizzle replicating `.x`.
 const OPERAND_CB_2D_IMM_SWIZZLE_XXXX: u32 = 0x0020_8006;
 

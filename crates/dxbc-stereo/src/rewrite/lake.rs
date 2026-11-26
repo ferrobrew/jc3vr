@@ -1,5 +1,6 @@
 use crate::{
     Dxbc, DxbcError, ShaderStage, TokenStream,
+    isa::{OPERAND_IMM32_SCALAR, OPERAND_IMM32_VECTOR},
     rewrite::common::{
         SignatureElement, append_signature_element, max_signature_register, reassemble,
     },
@@ -67,9 +68,9 @@ fn edit_planar(blob: &[u8], right: bool, lookup: PlanarLookup) -> Result<Vec<u8>
                 5,
                 0x0010000a,
                 5,
-                0x00004001,
+                OPERAND_IMM32_SCALAR,
                 2.0_f32.to_bits(),
-                0x00004001,
+                OPERAND_IMM32_SCALAR,
                 if right { (-1.0_f32).to_bits() } else { 0 },
             ],
         );
@@ -84,7 +85,7 @@ fn edit_planar(blob: &[u8], right: bool, lookup: PlanarLookup) -> Result<Vec<u8>
             5,
             0x0010000a,
             5,
-            0x00004001,
+            OPERAND_IMM32_SCALAR,
             shift.to_bits(),
         ],
     );
@@ -98,7 +99,7 @@ fn edit_planar(blob: &[u8], right: bool, lookup: PlanarLookup) -> Result<Vec<u8>
                 5,
                 0x0010000a,
                 5,
-                0x00004001,
+                OPERAND_IMM32_SCALAR,
                 (-0.25_f32).to_bits(),
                 0x0500001a,
                 0x00100012,
@@ -110,7 +111,7 @@ fn edit_planar(blob: &[u8], right: bool, lookup: PlanarLookup) -> Result<Vec<u8>
                 5,
                 0x0010000a,
                 5,
-                0x00004001,
+                OPERAND_IMM32_SCALAR,
                 (-0.5_f32).to_bits(),
                 0x08000000,
                 0x00100012,
@@ -118,7 +119,7 @@ fn edit_planar(blob: &[u8], right: bool, lookup: PlanarLookup) -> Result<Vec<u8>
                 0x8010000a,
                 0xc1,
                 5,
-                0x00004001,
+                OPERAND_IMM32_SCALAR,
                 0.75_f32.to_bits(),
             ],
         );
@@ -132,7 +133,7 @@ fn edit_planar(blob: &[u8], right: bool, lookup: PlanarLookup) -> Result<Vec<u8>
                 6,
                 0x0010000a,
                 6,
-                0x00004001,
+                OPERAND_IMM32_SCALAR,
                 0.5_f32.to_bits(),
             ],
         );
@@ -171,14 +172,14 @@ pub fn capture_lake_planar_uv(blob: &[u8]) -> Result<Vec<u8>, DxbcError> {
         6,
         0x001000c6,
         5,
-        0x00004001,
+        OPERAND_IMM32_SCALAR,
         0,
         0x0a000001,
         0x00100032,
         6,
         0x00100046,
         6,
-        0x00004002,
+        OPERAND_IMM32_VECTOR,
         1f32.to_bits(),
         2f32.to_bits(),
         0,
@@ -195,12 +196,12 @@ pub fn capture_lake_planar_uv(blob: &[u8]) -> Result<Vec<u8>, DxbcError> {
         0,
         0x0010002a,
         6,
-        0x00004001,
+        OPERAND_IMM32_SCALAR,
         16f32.to_bits(),
         0x05000036,
         0x00102082,
         0,
-        0x00004001,
+        OPERAND_IMM32_SCALAR,
         1f32.to_bits(),
         0x0100003e,
     ]);
@@ -269,7 +270,7 @@ pub fn bound_lake_candidate_depth(displacement: &[u8]) -> Result<Vec<u8>, DxbcEr
                     16,
                     0x10000a,
                     10,
-                    0x4001,
+                    OPERAND_IMM32_SCALAR,
                     (319.5_f32 / 640.).to_bits(),
                     0x05000036,
                     0x100082,
@@ -315,7 +316,7 @@ pub fn mirror_lake_color_overflow(depth_bounded: &[u8]) -> Result<Vec<u8>, DxbcE
                 0x07000031,
                 0x100012,
                 15,
-                0x4001,
+                OPERAND_IMM32_SCALAR,
                 0.5_f32.to_bits(),
                 0x10000a,
                 2,
@@ -332,7 +333,7 @@ pub fn mirror_lake_color_overflow(depth_bounded: &[u8]) -> Result<Vec<u8>, DxbcE
                 0x08000000,
                 0x100022,
                 16,
-                0x4001,
+                OPERAND_IMM32_SCALAR,
                 1_f32.to_bits(),
                 0x8010000a,
                 0x41,
@@ -557,7 +558,15 @@ fn trace_lake_operands(response: &[u8], normals: bool) -> Result<Vec<u8>, DxbcEr
                     out.extend([0x5000036, 0x102072, 7, 0x100346, 2]);
                     sites.push(2);
                 }
-                [0x700000e, 0x100012, 7, 0x4001, 0x43960000, 0x10000a, 7] => {
+                [
+                    0x700000e,
+                    0x100012,
+                    7,
+                    OPERAND_IMM32_SCALAR,
+                    0x43960000,
+                    0x10000a,
+                    7,
+                ] => {
                     out.extend([0x5000036, 0x102082, 7, 0x10000a, 7]);
                     sites.push(3);
                 }
@@ -714,7 +723,7 @@ fn trace_lake(blob: &[u8], inner_edge: bool, trace: LakeTrace) -> Result<Vec<u8>
                         0x07000031,
                         0x100012,
                         15,
-                        0x4001,
+                        OPERAND_IMM32_SCALAR,
                         0.5_f32.to_bits(),
                         0x10000a,
                         2,
@@ -723,7 +732,7 @@ fn trace_lake(blob: &[u8], inner_edge: bool, trace: LakeTrace) -> Result<Vec<u8>
                         15,
                         0x10000a,
                         2,
-                        0x4001,
+                        OPERAND_IMM32_SCALAR,
                         (319.5_f32 / 640.).to_bits(),
                         0x09000037,
                         0x100012,
@@ -753,7 +762,7 @@ fn trace_lake(blob: &[u8], inner_edge: bool, trace: LakeTrace) -> Result<Vec<u8>
                         3,
                         0x10000a,
                         5,
-                        0x4001,
+                        OPERAND_IMM32_SCALAR,
                         0x3f800000,
                     ] => {
                         out.extend([
@@ -771,7 +780,7 @@ fn trace_lake(blob: &[u8], inner_edge: bool, trace: LakeTrace) -> Result<Vec<u8>
                         3,
                         0x10001a,
                         5,
-                        0x4001,
+                        OPERAND_IMM32_SCALAR,
                         0x3f800000,
                     ] => {
                         out.extend([0x5000036, 0x102082, 2, 0x10002a, 3]);
@@ -799,7 +808,7 @@ fn trace_lake(blob: &[u8], inner_edge: bool, trace: LakeTrace) -> Result<Vec<u8>
                             0x5000036,
                             0x102082,
                             4,
-                            0x4001,
+                            OPERAND_IMM32_SCALAR,
                             1_f32.to_bits(),
                             0x5000036,
                             0x1020f2,
@@ -809,7 +818,7 @@ fn trace_lake(blob: &[u8], inner_edge: bool, trace: LakeTrace) -> Result<Vec<u8>
                             0x5000036,
                             0x102082,
                             1,
-                            0x4001,
+                            OPERAND_IMM32_SCALAR,
                             1_f32.to_bits(),
                         ]);
                         sites.push(5);
@@ -876,7 +885,13 @@ fn trace_lake(blob: &[u8], inner_edge: bool, trace: LakeTrace) -> Result<Vec<u8>
                     let mut final_color = words.to_vec();
                     final_color[2] = 4;
                     out.extend(final_color);
-                    out.extend([0x5000036, 0x102082, 4, 0x4001, 1_f32.to_bits()]);
+                    out.extend([
+                        0x5000036,
+                        0x102082,
+                        4,
+                        OPERAND_IMM32_SCALAR,
+                        1_f32.to_bits(),
+                    ]);
                     sites.push(5);
                 }
                 _ => {}
@@ -917,7 +932,7 @@ fn trace_lake(blob: &[u8], inner_edge: bool, trace: LakeTrace) -> Result<Vec<u8>
                 0x5000036,
                 0x102082,
                 3,
-                0x4001,
+                OPERAND_IMM32_SCALAR,
                 1_f32.to_bits(),
             ]);
             sites.push(4);

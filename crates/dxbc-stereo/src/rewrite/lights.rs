@@ -31,9 +31,14 @@ use std::collections::HashMap;
 
 use crate::{
     container::DxbcError,
+    isa::{
+        IDX_IMM32_PLUS_RELATIVE, IDX_RELATIVE, MODIFIER_NEG, OPCODE_ADD, OPCODE_ENDLOOP,
+        OPCODE_LOOP, OPCODE_MAD, OPCODE_MUL, OPERAND_EXTENDED, OPERAND_TEMP_MASK_XYZW,
+        OPERAND_TEMP_SELECT_X, OPERAND_TYPE_CONSTANT_BUFFER, OPERAND_TYPE_INPUT, OPERAND_TYPE_TEMP,
+        SELECTION_MASK, SELECTION_SELECT_1, SELECTION_SWIZZLE,
+    },
     rewrite::{
         camera::{EYE_CAMERA_CB_REGISTER, EYE_CAMERA_LIGHT_OFFSET_ROW, EYE_CAMERA_SOURCE_ROWS},
-        common::OPERAND_TEMP_SELECT_X,
         planar::constant_location,
     },
     tokens::{Instruction, OperandKind, TokenStream, parse_operand},
@@ -146,15 +151,15 @@ pub(super) fn emit(
 ) -> Result<Vec<u32>, DxbcError> {
     let (start, end) = operand_span(tokens, insn, correction.operand)?;
     let source = &tokens[start..end];
-    if source[0] & EXTENDED != 0 {
+    if source[0] & OPERAND_EXTENDED != 0 {
         return Err(DxbcError::UnsupportedOperandEncoding);
     }
     let full = |base_delta: i64| -> Result<Vec<u32>, DxbcError> {
         let mut operand = source.to_vec();
         operand[0] = (operand[0] & !SELECTION_BITS) | SWIZZLE_XYZW;
-        if (operand[0] >> 25) & 7 == INDEX_RELATIVE {
+        if (operand[0] >> 25) & 7 == IDX_RELATIVE {
             // A relative index with no base: give it a zero base to offset.
-            operand[0] = (operand[0] & !(7 << 25)) | (INDEX_IMMEDIATE_PLUS_RELATIVE << 25);
+            operand[0] = (operand[0] & !(7 << 25)) | (IDX_IMM32_PLUS_RELATIVE << 25);
             operand.insert(BASE_INDEX, 0);
         }
         let base = operand
@@ -167,8 +172,8 @@ pub(super) fn emit(
     let offset = |selection: u32, negate: bool| -> Vec<u32> {
         let mut operand = vec![OPERAND_CB_DYNAMIC | selection];
         if negate {
-            operand[0] |= EXTENDED;
-            operand.push(EXTENDED_NEGATE);
+            operand[0] |= OPERAND_EXTENDED;
+            operand.push(MODIFIER_NEG);
         }
         operand.extend([
             EYE_CAMERA_CB_REGISTER,
@@ -223,27 +228,11 @@ const PROJECTIONS: &[u8] = b"Projections";
 /// A projection's translation row, counted from its first row.
 const TRANSLATION_ROW: i64 = 3;
 
-const OPCODE_ADD: u32 = 0x00;
-const OPCODE_ENDLOOP: u32 = 0x16;
-const OPCODE_LOOP: u32 = 0x30;
-const OPCODE_MAD: u32 = 0x32;
-const OPCODE_MUL: u32 = 0x38;
-
-const OPERAND_TYPE_TEMP: u32 = 0;
-const OPERAND_TYPE_INPUT: u32 = 1;
-const OPERAND_TYPE_CONSTANT_BUFFER: u32 = 8;
-/// The index representations of a dynamically indexed operand's element: a relative index alone, or
-/// an immediate base plus a relative index.
-const INDEX_RELATIVE: u32 = 2;
-const INDEX_IMMEDIATE_PLUS_RELATIVE: u32 = 3;
-const SELECTION_MASK: u32 = 0;
-const SELECTION_SWIZZLE: u32 = 1;
-const SELECTION_SELECT_1: u32 = 2;
-const EXTENDED: u32 = 1 << 31;
+/// An extended operand token's type field for a modifier, and its modifier field's negate and
+/// absolute-negate values.
 const EXTENDED_TYPE_MODIFIER: u32 = 1;
 const MODIFIER_NEGATE: u32 = 1;
 const MODIFIER_ABSOLUTE_NEGATE: u32 = 3;
-const EXTENDED_NEGATE: u32 = EXTENDED_TYPE_MODIFIER | (MODIFIER_NEGATE << 6);
 
 /// The component-count, selection-mode, and swizzle bits of an operand token.
 const COMPONENT_AND_SELECTION_BITS: u32 = 0xFFF;
@@ -255,8 +244,6 @@ const SWIZZLE_YYYY: u32 = (SELECTION_SWIZZLE << 2) | (0x55 << 4);
 const SWIZZLE_ZZZZ: u32 = (SELECTION_SWIZZLE << 2) | (0xAA << 4);
 /// A four-component temp with a one-dimensional immediate index; the selection bits are added.
 const OPERAND_TEMP_1D: u32 = 2 | (OPERAND_TYPE_TEMP << 12) | (1 << 20);
-/// A temp destination writing all four components.
-const OPERAND_TEMP_MASK_XYZW: u32 = OPERAND_TEMP_1D | (SELECTION_MASK << 2) | (0xF << 4);
 /// A four-component constant-buffer operand indexed by an immediate slot and an immediate plus a
 /// relative element; the selection bits are added.
 const OPERAND_CB_DYNAMIC: u32 = 2 | (OPERAND_TYPE_CONSTANT_BUFFER << 12) | (2 << 20) | (3 << 25);
@@ -322,7 +309,7 @@ fn decode(tokens: &[u32], insn: &Instruction<'_>) -> Result<Vec<Decoded>, DxbcEr
         let operand = operand?;
         let at = operand.token_offset;
         let token = tokens[at];
-        let extended = usize::from(token & EXTENDED != 0);
+        let extended = usize::from(token & OPERAND_EXTENDED != 0);
         let negated = extended == 1
             && tokens[at + 1] & 0x3F == EXTENDED_TYPE_MODIFIER
             && matches!(
@@ -335,10 +322,10 @@ fn decode(tokens: &[u32], insn: &Instruction<'_>) -> Result<Vec<Decoded>, DxbcEr
             .then(|| tokens.get(at + 1 + extended).copied())
             .flatten();
         let base = match (operand.kind, (token >> 25) & 7) {
-            (OperandKind::ConstantBufferDynamic { .. }, INDEX_IMMEDIATE_PLUS_RELATIVE) => {
+            (OperandKind::ConstantBufferDynamic { .. }, IDX_IMM32_PLUS_RELATIVE) => {
                 tokens.get(at + 2 + extended).copied()
             }
-            (OperandKind::ConstantBufferDynamic { .. }, INDEX_RELATIVE) => Some(0),
+            (OperandKind::ConstantBufferDynamic { .. }, IDX_RELATIVE) => Some(0),
             _ => None,
         };
         decoded.push(Decoded {

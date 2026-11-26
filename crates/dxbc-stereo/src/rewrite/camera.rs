@@ -36,18 +36,20 @@
 
 use crate::{
     container::{Dxbc, DxbcError},
+    isa::{
+        IDX_IMM32_PLUS_RELATIVE, INTERPOLATION_LINEAR_NOPERSPECTIVE, OPCODE_AND,
+        OPCODE_DCL_CONSTANT_BUFFER, OPCODE_DCL_INPUT_PS_SIV, OPCODE_DCL_TEMPS, OPCODE_GE,
+        OPERAND_CB_2D_SELECT_X, OPERAND_IMM32_SCALAR, OPERAND_INPUT_SELECT_X, OPERAND_TEMP_MASK_X,
+        OPERAND_TEMP_SELECT_X, SB_NAME_POSITION, SIGNATURE_SYSVALUE_POSITION,
+    },
     rewrite::{
         common::{
-            CB_ACCESS_DYNAMIC_INDEXED, OPCODE_AND, OPCODE_DCL_CONSTANT_BUFFER, OPCODE_DCL_TEMPS,
-            OPERAND_CB_2D_IMM, OPERAND_IMM32_SCALAR, OPERAND_INPUT_MASK_X, OPERAND_INPUT_SELECT_X,
-            OPERAND_TEMP_MASK_X, OPERAND_TEMP_SELECT_X, SB_NAME_POSITION, declared_register,
+            CB_ACCESS_DYNAMIC_INDEXED, OPERAND_CB_2D_IMM, OPERAND_INPUT_MASK_X, declared_register,
             reassemble,
         },
         lights::{self, Correction},
     },
-    tokens::{
-        IDX_IMM32_PLUS_RELATIVE, Instruction, OperandKind, ShaderStage, TokenStream, parse_operand,
-    },
+    tokens::{Instruction, OperandKind, ShaderStage, TokenStream, parse_operand},
 };
 
 /// The pixel-stage constant-buffer slot the rewritten shader reads each eye's camera rows and the
@@ -404,15 +406,7 @@ fn rewrite_instruction(
     Ok(())
 }
 
-const OPCODE_GE: u32 = 0x1d;
-const OPCODE_DCL_INPUT_PS_SIV: u32 = 0x64;
-/// The interpolation mode `SV_Position` is declared with.
-const INTERPOLATION_LINEAR_NOPERSPECTIVE: u32 = 4;
-/// A constant-buffer operand with two immediate indices selecting its `.x`.
-const OPERAND_CB_2D_SELECT_X: u32 = 0x0020_800A;
 /// The `.x` bit of an operand's component mask.
 const MASK_X: u32 = 1 << 4;
-/// The signature system-value code of `SV_Position`.
-const SIGNATURE_SYSVALUE_POSITION: u32 = 1;
 /// The fixed size of a signature element record.
 const SIGNATURE_ELEMENT_LEN: usize = 24;

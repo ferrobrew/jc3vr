@@ -26,6 +26,10 @@ use std::ops::Range;
 
 use crate::{
     container::{Dxbc, DxbcError},
+    isa::{
+        LENGTH_MASK, OPCODE_DIV, OPCODE_MAD, OPERAND_EXTENDED, OPERAND_IMM32_SCALAR,
+        OPERAND_TYPE_TEMP, SELECTION_MASK, SELECTION_SELECT_1, instruction,
+    },
     rewrite::common::reassemble,
     tokens::{OperandKind, ShaderStage, TokenStream},
 };
@@ -95,9 +99,9 @@ pub fn localize_planar_reflection(blob: &[u8], right: bool) -> Result<Vec<u8>, D
     splice.extend_from_slice(numerator);
     let bias = if right { -1f32 } else { 0f32 };
     splice.extend([
-        IMMEDIATE_SCALAR,
+        OPERAND_IMM32_SCALAR,
         2f32.to_bits(),
-        IMMEDIATE_SCALAR,
+        OPERAND_IMM32_SCALAR,
         bias.to_bits(),
     ]);
     let divide_start = splice.len();
@@ -148,37 +152,13 @@ pub(super) struct ConstantLocation {
     pub(super) component: u32,
 }
 
-const OPCODE_DIV: u32 = 0x0e;
-const OPCODE_MAD: u32 = 0x32;
-
-/// The instruction-length field of an opcode token, and the opcode's extended-token flag.
-const LENGTH_MASK: u32 = 0x7f00_0000;
-const EXTENDED: u32 = 0x8000_0000;
-
-/// A one-component immediate, followed by its value.
-const IMMEDIATE_SCALAR: u32 = 0x4001;
-
 /// The resource table's binding types for a constant buffer and a texture.
 const BINDING_CBUFFER: u32 = 0;
 pub(super) const BINDING_TEXTURE: u32 = 2;
 
-/// The operand token's fields this rewrite reads or writes.
-const OPERAND_TYPE_TEMP: u32 = 0;
-const SELECTION_MODE_MASK: u32 = 0;
-const SELECTION_MODE_SELECT_1: u32 = 2;
-
-/// The opcode token for `opcode` with an instruction of `length` tokens.
-fn instruction(opcode: u32, length: usize) -> Result<u32, DxbcError> {
-    let length = u32::try_from(length)
-        .ok()
-        .filter(|length| *length <= LENGTH_MASK >> 24)
-        .ok_or(DxbcError::InstructionTooLong)?;
-    Ok(opcode | length << 24)
-}
-
 /// The component a select-1 source operand reads.
 fn selected_component(token: u32) -> Option<u32> {
-    ((token >> 2) & 0x3 == SELECTION_MODE_SELECT_1).then_some((token >> 4) & 0x3)
+    ((token >> 2) & 0x3 == SELECTION_SELECT_1).then_some((token >> 4) & 0x3)
 }
 
 /// The component of a one-dimensional, immediately indexed temporary destination that writes exactly
@@ -193,15 +173,15 @@ fn single_temp_component(token: u32, opcode_token: u32) -> Option<u32> {
     let plain = operand_type == OPERAND_TYPE_TEMP
         && dimensions == 1
         && representation == 0
-        && token & EXTENDED == 0
-        && (token >> 2) & 0x3 == SELECTION_MODE_MASK
-        && opcode_token & (EXTENDED | 1 << 13) == 0;
+        && token & OPERAND_EXTENDED == 0
+        && (token >> 2) & 0x3 == SELECTION_MASK
+        && opcode_token & (OPERAND_EXTENDED | 1 << 13) == 0;
     (plain && mask.count_ones() == 1).then(|| mask.trailing_zeros())
 }
 
 /// A destination operand token rewritten to read its own `component` as a select-1 source.
 fn select_component(destination: u32, component: u32) -> u32 {
-    (destination & !0xffc) | SELECTION_MODE_SELECT_1 << 2 | component << 4
+    (destination & !0xffc) | SELECTION_SELECT_1 << 2 | component << 4
 }
 
 fn word(rdef: &[u8], offset: usize) -> Option<usize> {

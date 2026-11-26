@@ -29,7 +29,16 @@
 
 use crate::{
     container::{Dxbc, DxbcError},
-    rewrite::common::{OPCODE_DCL_TEMPS, reassemble, signature_register},
+    isa::{
+        LENGTH_MASK, MODIFIER_NEG, OPCODE_ADD, OPCODE_AND, OPCODE_DCL_RESOURCE, OPCODE_DCL_TEMPS,
+        OPCODE_DIV, OPCODE_GATHER4, OPCODE_GATHER4_C, OPCODE_GE, OPCODE_IADD, OPCODE_IGE,
+        OPCODE_ILT, OPCODE_LD, OPCODE_MAX, OPCODE_MIN, OPCODE_MOV, OPCODE_RESINFO, OPCODE_SAMPLE,
+        OPCODE_SAMPLE_B, OPCODE_SAMPLE_C, OPCODE_SAMPLE_C_LZ, OPCODE_SAMPLE_D, OPCODE_SAMPLE_L,
+        OPCODE_USHR, OPERAND_TEMP_SWIZZLE_XYXX, OPERAND_TEMP_SWIZZLE_XYZW, OPERAND_TYPE_INPUT,
+        OPERAND_TYPE_RESOURCE, OPERAND_TYPE_TEMP, RESOURCE_XXXX, SELECTION_MASK, SELECTION_SWIZZLE,
+        W, X, Y, Z, dst, dst_mask, imm, input, instruction, select, src, src_mod,
+    },
+    rewrite::common::{reassemble, signature_register},
     tokens::{Instruction, ShaderStage, TokenStream},
 };
 
@@ -239,8 +248,6 @@ fn rewrite(
 const BINDING_TEXTURE: usize = 2;
 const BINDING_SIZE: usize = 32;
 
-/// `dcl_resource`, and the resource-dimension field value its opcode token carries for a `Texture2D`.
-const OPCODE_DCL_RESOURCE: u32 = 0x58;
 const RESOURCE_DIMENSION_TEXTURE2D: u32 = 3;
 
 /// The temporaries the rewrite adds after the shader's own.
@@ -337,7 +344,7 @@ impl Rewriter<'_> {
                 let start = self.out.len();
                 self.out.extend_from_slice(&tokens[insn.start..offsets[1]]);
                 self.out
-                    .extend([TEMP_XYXX_SOURCE, self.registers.coordinate]);
+                    .extend([OPERAND_TEMP_SWIZZLE_XYXX, self.registers.coordinate]);
                 self.out.extend_from_slice(&tokens[offsets[2]..insn.end]);
                 let length = self.out.len() - start;
                 self.out[start] = (self.out[start] & !LENGTH_MASK) | instruction(0, length)?;
@@ -352,7 +359,7 @@ impl Rewriter<'_> {
                     OPCODE_AND,
                     &[
                         &dst_mask(register, write_mask),
-                        &[TEMP_XYZW_SOURCE, register],
+                        &[OPERAND_TEMP_SWIZZLE_XYZW, register],
                         &src(mask, X),
                     ],
                 );
@@ -496,105 +503,5 @@ fn temp_destination(operand: &[u32]) -> Option<(u32, u32)> {
         .then_some((*register, (token >> 4) & 0xf))
 }
 
-const X: u32 = 0;
-const Y: u32 = 1;
-const Z: u32 = 2;
-const W: u32 = 3;
-
-const OPCODE_ADD: u32 = 0x00;
-const OPCODE_AND: u32 = 0x01;
-const OPCODE_DIV: u32 = 0x0e;
-const OPCODE_GE: u32 = 0x1d;
-const OPCODE_IADD: u32 = 0x1e;
-const OPCODE_IGE: u32 = 0x21;
-const OPCODE_ILT: u32 = 0x22;
-const OPCODE_LD: u32 = 0x2d;
-const OPCODE_MIN: u32 = 0x33;
-const OPCODE_MAX: u32 = 0x34;
-const OPCODE_MOV: u32 = 0x36;
-const OPCODE_RESINFO: u32 = 0x3d;
-const OPCODE_SAMPLE: u32 = 0x45;
-const OPCODE_SAMPLE_C: u32 = 0x46;
-const OPCODE_SAMPLE_C_LZ: u32 = 0x47;
-const OPCODE_SAMPLE_L: u32 = 0x48;
-const OPCODE_SAMPLE_D: u32 = 0x49;
-const OPCODE_SAMPLE_B: u32 = 0x4a;
-const OPCODE_USHR: u32 = 0x55;
-const OPCODE_GATHER4: u32 = 0x6d;
-const OPCODE_GATHER4_C: u32 = 0x7e;
-
 /// The `resinfo` return-type field selecting an unsigned-integer result.
 const RESINFO_RETURN_UINT: u32 = 2 << 11;
-
-/// The instruction-length field of an opcode token.
-const LENGTH_MASK: u32 = 0x7f00_0000;
-
-const OPERAND_TYPE_TEMP: u32 = 0;
-const OPERAND_TYPE_INPUT: u32 = 1;
-const OPERAND_TYPE_RESOURCE: u32 = 7;
-
-const SELECTION_MASK: u32 = 0;
-const SELECTION_SWIZZLE: u32 = 1;
-const SELECTION_SELECT_1: u32 = 2;
-
-/// `tN.xxxx` as a resource operand, followed by the register index: a `resinfo` through it writes the
-/// texture's width to every component of its destination.
-const RESOURCE_XXXX: u32 = 2 | SELECTION_SWIZZLE << 2 | OPERAND_TYPE_RESOURCE << 12 | 1 << 20;
-
-/// `rN.xyxx` and `rN.xyzw` as sources, each followed by the register index.
-const TEMP_XYXX_SOURCE: u32 = 0x0010_0046;
-const TEMP_XYZW_SOURCE: u32 = 0x0010_0e46;
-
-/// The extended operand token for a negated source.
-const MODIFIER_NEG: u32 = 0x41;
-
-/// The opcode token for `opcode` with an instruction of `length` tokens.
-fn instruction(opcode: u32, length: usize) -> Result<u32, DxbcError> {
-    let length = u32::try_from(length)
-        .ok()
-        .filter(|length| *length <= LENGTH_MASK >> 24)
-        .ok_or(DxbcError::InstructionTooLong)?;
-    Ok(opcode | length << 24)
-}
-
-/// A four-component, one-dimensional operand token of `operand_type` selecting `component`.
-fn select(operand_type: u32, component: u32) -> u32 {
-    2 | SELECTION_SELECT_1 << 2 | component << 4 | operand_type << 12 | 1 << 20
-}
-
-/// `rN.c` as a destination.
-fn dst(register: u32, component: u32) -> [u32; 2] {
-    dst_mask(register, 1 << component)
-}
-
-/// `rN` with write mask `mask` as a destination.
-fn dst_mask(register: u32, mask: u32) -> [u32; 2] {
-    [
-        2 | SELECTION_MASK << 2 | mask << 4 | OPERAND_TYPE_TEMP << 12 | 1 << 20,
-        register,
-    ]
-}
-
-/// `rN.c` as a source.
-fn src(register: u32, component: u32) -> [u32; 2] {
-    [select(OPERAND_TYPE_TEMP, component), register]
-}
-
-/// `rN.c` as a source with an operand modifier.
-fn src_mod(register: u32, component: u32, modifier: u32) -> [u32; 3] {
-    [
-        select(OPERAND_TYPE_TEMP, component) | 1 << 31,
-        modifier,
-        register,
-    ]
-}
-
-/// `vN.c` as a source.
-fn input(register: u32, component: u32) -> [u32; 2] {
-    [select(OPERAND_TYPE_INPUT, component), register]
-}
-
-/// A one-component immediate holding `bits`.
-fn imm(bits: u32) -> [u32; 2] {
-    [0x4001, bits]
-}
