@@ -22,12 +22,14 @@
 //! [`decide`] is the pure rule; [`hide_game_reticles`] reads the mode, the settings, and the aim's
 //! latest results, and holds the reticle clips hidden through [`crate::hud::scaleform`].
 
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use jc3vr_body::controllers::{aim, mode, mode::Mode, scheme};
 use jc3vr_gameplay::controllers::config::CONTROLLERS_CONFIG;
 use jc3vr_vehicles::controllers::vehicles;
 use parking_lot::Mutex;
+
+use crate::hud::tuning::HUD;
 
 /// Which of the game's reticles to hide.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
@@ -125,18 +127,18 @@ pub(crate) unsafe fn hide_game_reticles() {
     unsafe { crate::hud::scaleform::apply_reticle_suppression(hidden.weapon, hidden.grapple) };
 }
 
-/// How long the aim's results count as recent after its update count last moved.
-const AIM_MAX_AGE: Duration = Duration::from_millis(250);
-
 /// The aim's update count when it was last seen to change, and when.
 static LAST_AIM_UPDATE: Mutex<Option<(u64, Instant)>> = Mutex::new(None);
 
-/// Whether the aim's update count `updates` has moved within [`AIM_MAX_AGE`].
+/// Whether the aim's update count `updates` has moved within the tuning's
+/// `game_reticle.aim_max_age_ms`.
 fn aim_fresh(updates: u64) -> bool {
     let now = Instant::now();
     let mut last = LAST_AIM_UPDATE.lock();
     match *last {
-        Some((seen, at)) if seen == updates => now.duration_since(at) < AIM_MAX_AGE,
+        Some((seen, at)) if seen == updates => {
+            now.duration_since(at) < HUD.get().game_reticle.aim_max_age()
+        }
         _ => {
             *last = Some((updates, now));
             true

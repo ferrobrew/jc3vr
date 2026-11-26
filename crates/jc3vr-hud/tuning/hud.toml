@@ -1,0 +1,148 @@
+# The HUD's tuning: `HudTuning` in `src/hud/tuning.rs`, whose fields say what each value does.
+# Every key is required and no other is accepted. Lengths are metres, angles degrees, and times
+# seconds, or milliseconds where a key ends in `_ms`; a share is a fraction of a range, in `0..1`.
+
+[panel]
+hud_aspect = 1.3
+render_scale = 1.5
+follow_rotation_halflife_s = 0.2
+stage_safe_area_stale_ms = 1000
+
+[panel.depth_shift]
+near_distance_m = 1.1
+halflife_s = 0.35
+
+[cursor]
+size = 0.014
+lift_m = 0.03
+
+[aim]
+min_depth_m = 0.5
+max_depth_m = 150.0
+rest_distance_m = 3.0
+stale_after_s = 0.5
+halflife_s = 0.15
+
+[egui_panel]
+summon_distance_m = 2.5
+scale = 0.85
+min_distance_m = 0.2
+max_push_depth_m = 10.0
+push_rate_per_s = 1.5
+click_duration_s = 2.0
+controller_move_uv = 0.02
+
+[map]
+click_slop_uv = 0.025
+zoom_engage = 0.6
+zoom_release = 0.4
+zoom_repeat_delay_ms = 450
+zoom_repeat_interval_ms = 200
+
+[anchored]
+snap_m = 0.5
+sight_fade_s = 0.15
+sight_reach_m = 0.4
+sight_cone_deg = 15.0
+upright_blend = [0.95, 0.995]
+
+[anchored.ammo]
+gun_clearance_m = 0.04
+clearance_m = 0.10
+width_m = 0.08
+
+[anchored.tether]
+back_m = 0.12
+clearance_m = 0.06
+width_m = 0.08
+follow_halflife_s = 0.05
+
+[anchored.cross]
+width_m = 0.18
+pull_m = 0.08
+
+# The wrist's offset is in the grip frame, +X out of the palm and +Z back along the forearm.
+[anchored.wrist]
+offset_m = [0.04, 0.0, 0.16]
+width_m = 0.08
+gap_m = 0.006
+grenades_height_m = 0.04
+fade_s = 0.15
+after_damage_s = 4.0
+low_health = 0.35
+
+[anchored.wrist.glance]
+view_cone_deg = 30.0
+facing_deg = 45.0
+hysteresis_deg = 10.0
+dwell_s = 0.15
+linger_s = 0.4
+
+[anchored.health_trail]
+hold_s = 0.5
+drain_per_s = 0.6
+
+[world_markers]
+min_distance_m = 0.5
+surface_min_m = 1.2
+surface_pull_m = 0.3
+surface_engage = 0.9
+surface_release = 0.97
+depth_halflife_s = 0.15
+max_distance_m = 300.0
+forget_s = 2.0
+probe_ttl_s = 0.25
+raycast_ttl_s = 1.0
+probe_spread_px = 2.0
+block_fraction = 0.97
+fallback_half_fov_deg = 50.0
+fov_inset_deg = 2.0
+
+[mark_labels]
+height_m = 0.03
+gap_m = 0.01
+stale_ms = 250
+
+[lost_weapons]
+near_m = 1.5
+fade_m = 1.0
+max_drawn = 8
+angular_height = 0.03
+raise_m = 0.3
+stale_ms = 500
+
+# The grab hints' lengths are shares of the panel's height.
+[grab_hint]
+height = 0.11
+drop = 0.2
+gap = 0.03
+spread = 0.45
+stale_ms = 250
+fade_s = 0.1
+
+[game_reticle]
+aim_max_age_ms = 250
+
+[summary]
+show_on_mode_change_ms = 3000
+fade_s = 0.15
+page_dwell_s = 8.0
+trackpad_pin_delay_s = 0.2
+
+[summary.glance]
+view_cone_deg = 30.0
+facing_deg = 45.0
+hysteresis_deg = 10.0
+dwell_s = 0.15
+linger_s = 0.4
+
+# The summary panel's offset is in the grip frame, -X out of the back of the hand and +Z back
+# along the forearm.
+[summary.placement]
+offset_m = [-0.05, 0.0, 0.12]
+width_m = 0.12
+
+# The restart notice's offset is in the head's frame (+X right, +Y up, -Z ahead).
+[restart_notice]
+width_m = 0.8
+offset_m = [0.0, -0.35, -1.4]

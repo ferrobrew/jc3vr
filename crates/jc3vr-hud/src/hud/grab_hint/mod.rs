@@ -19,10 +19,7 @@ mod layout;
 mod paint;
 pub mod register_gate;
 
-use std::{
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::{sync::Arc, time::Instant};
 
 use anyhow::Context as _;
 use glam::Vec4;
@@ -50,6 +47,7 @@ use crate::{
         log_once::LogOnce,
         quad::HudQuad,
         target::{HudTarget, KeyedTexture},
+        tuning::HUD,
         world_quads_active,
     },
 };
@@ -75,13 +73,6 @@ pub(crate) fn draw(
     }
     state.draw(context, device, target);
 }
-
-/// How long a published hint stays current without a newer one: the input tick stopped publishing
-/// (a menu, or the weapon handling skipping its tick), so the hint no longer says what a grip does.
-const STALE: Duration = Duration::from_millis(250);
-
-/// The hint's fade in and out, seconds.
-const FADE_S: f32 = 0.1;
 
 static STATE: Mutex<State> = Mutex::new(State::new());
 
@@ -190,7 +181,7 @@ impl State {
             self.hands = [HandHint::new(); 2];
             return;
         };
-        let wanted = feed::fresh(now, STALE);
+        let wanted = feed::fresh(now, HUD.get().grab_hint.stale());
         if wanted.iter().all(Option::is_none) && self.hands.iter().all(|h| h.alpha <= 0.0) {
             self.hands = [HandHint::new(); 2];
             return;
@@ -225,7 +216,7 @@ impl State {
                 gpu.textures[hand.index()].paint(context, *hint, icons);
                 state.shown = Some(*hint);
             }
-            state.alpha = fade(state.alpha, ready.is_some(), dt, FADE_S);
+            state.alpha = fade(state.alpha, ready.is_some(), dt, HUD.get().grab_hint.fade_s);
             if state.alpha <= 0.0 {
                 state.shown = None;
             }

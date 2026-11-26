@@ -3,7 +3,10 @@
 //! the full-screen vignette, which the floating HUD suppresses), so the bar is the player's only
 //! health display in VR.
 
-use crate::hud::palette::{ACCENT, ALERT, BACKING, FRAME, Rgba8, TEXT, premultiply, with_alpha};
+use crate::hud::{
+    palette::{ACCENT, ALERT, BACKING, FRAME, Rgba8, TEXT, premultiply, with_alpha},
+    tuning::HealthTrailTuning,
+};
 
 /// The bar texture's size, texels. Small: the bar is a few centimetres on the wrist.
 pub(crate) const BAR_TEXELS: (u32, u32) = (320, 32);
@@ -18,11 +21,6 @@ pub(crate) struct HealthTrail {
 }
 
 impl HealthTrail {
-    /// How long the trail holds after a hit before draining, seconds.
-    pub const HOLD_S: f32 = 0.5;
-    /// How fast the trail drains, in health fractions per second.
-    pub const DRAIN_PER_S: f32 = 0.6;
-
     pub const fn new() -> Self {
         Self {
             trail: None,
@@ -32,15 +30,15 @@ impl HealthTrail {
 
     /// Advance by `dt` seconds with the health fraction `health`, and return the trail, never below
     /// the health.
-    pub fn step(&mut self, health: f32, dt: f32) -> f32 {
+    pub fn step(&mut self, health: f32, dt: f32, tuning: &HealthTrailTuning) -> f32 {
         let dt = if dt.is_finite() { dt.max(0.0) } else { 0.0 };
         let trail = match self.trail {
             Some(trail) if trail > health => {
-                if self.held_s < Self::HOLD_S {
+                if self.held_s < tuning.hold_s {
                     self.held_s += dt;
                     trail
                 } else {
-                    (trail - Self::DRAIN_PER_S * dt).max(health)
+                    (trail - tuning.drain_per_s * dt).max(health)
                 }
             }
             _ => {
@@ -116,24 +114,26 @@ const TRAIL: Rgba8 = with_alpha(ACCENT, 200);
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::hud::tuning::HUD;
 
     #[test]
     fn the_trail_holds_then_drains_to_the_health() {
+        let tuning = &HUD.get().anchored.health_trail;
         let mut trail = HealthTrail::new();
-        assert_eq!(trail.step(1.0, 0.016), 1.0);
+        assert_eq!(trail.step(1.0, 0.016, tuning), 1.0);
         trail.hit();
         // The hit: the trail holds where the bar stood.
-        assert_eq!(trail.step(0.6, 0.1), 1.0);
-        assert_eq!(trail.step(0.6, HealthTrail::HOLD_S), 1.0);
+        assert_eq!(trail.step(0.6, 0.1, tuning), 1.0);
+        assert_eq!(trail.step(0.6, tuning.hold_s, tuning), 1.0);
         // Then drains.
-        let drained = trail.step(0.6, 0.1);
-        assert!((drained - (1.0 - HealthTrail::DRAIN_PER_S * 0.1)).abs() < 1e-5);
+        let drained = trail.step(0.6, 0.1, tuning);
+        assert!((drained - (1.0 - tuning.drain_per_s * 0.1)).abs() < 1e-5);
         for _ in 0..100 {
-            trail.step(0.6, 0.1);
+            trail.step(0.6, 0.1, tuning);
         }
-        assert_eq!(trail.step(0.6, 0.1), 0.6);
+        assert_eq!(trail.step(0.6, 0.1, tuning), 0.6);
         // Healing moves the trail with the health.
-        assert_eq!(trail.step(0.9, 0.1), 0.9);
+        assert_eq!(trail.step(0.9, 0.1, tuning), 0.9);
     }
 
     #[test]

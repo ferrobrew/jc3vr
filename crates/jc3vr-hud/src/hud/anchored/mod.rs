@@ -36,7 +36,7 @@ use jc3gi::{
     heat_manager::HeatManager,
 };
 use jc3vr_body::controllers::{hands::late, scheme};
-use jc3vr_gameplay::controllers::{config::CONTROLLERS_CONFIG, summary::config::GlanceConfig};
+use jc3vr_gameplay::controllers::config::CONTROLLERS_CONFIG;
 use jc3vr_input::frame::{Hand, Pose};
 use jc3vr_weapons::controllers::weapons::{
     hud_feed::hand_ammo as ammo_sample, wheel, wheel::CROSS_LINGER,
@@ -63,6 +63,7 @@ use crate::{
         log_once::LogOnce,
         quad::HudQuad,
         target::KeyedTexture,
+        tuning::HUD,
         world_quads_active,
     },
 };
@@ -143,71 +144,6 @@ struct StatusSample {
 static SAMPLE: Mutex<Option<StatusSample>> = Mutex::new(None);
 
 static STATE: Mutex<State> = Mutex::new(State::new());
-
-/// How far the forearm may jump in a frame before the tether readout snaps instead of easing, metres.
-const SNAP_M: f32 = 0.5;
-
-/// How long the weapon readout takes to fade out as the gun is raised to the eye, and back in,
-/// seconds.
-const SIGHT_FADE_S: f32 = 0.15;
-
-/// The gap between the health bar and the heat readout on the wrist, metres.
-const WRIST_GAP_M: f32 = 0.006;
-
-/// The gap above the model's local top, measured along the rendered gun's up axis, metres.
-const AMMO_GUN_CLEARANCE_M: f32 = 0.04;
-
-/// The gap above the rendered gun's origin when its model box is unknown, metres.
-const AMMO_CLEARANCE_M: f32 = 0.10;
-
-/// The width of an ammunition counter, metres; its height follows the texture's aspect.
-const COUNT_WIDTH_M: f32 = 0.08;
-
-/// How far back along the forearm from the wrist the tether readout sits, metres.
-const TETHER_BACK_M: f32 = 0.12;
-
-/// How far above the forearm the tether readout's lower edge sits, metres, straight up in the
-/// world.
-const TETHER_CLEARANCE_M: f32 = 0.06;
-
-/// The tether readout's width, metres; its height follows the cell's aspect.
-const TETHER_WIDTH_M: f32 = 0.08;
-
-/// The halflife of the tether readout's follow of the forearm, seconds.
-const TETHER_FOLLOW_HALFLIFE_S: f32 = 0.05;
-
-/// The selection cross's width, metres; its height follows the cell's aspect.
-const CROSS_WIDTH_M: f32 = 0.18;
-
-/// How far the selection cross is pulled from the hand toward the head, metres, so the hand does
-/// not cover it.
-const CROSS_PULL_M: f32 = 0.08;
-
-/// The wrist panel's centre in the grip frame, metres: +X out of the palm, +Z back along the
-/// forearm (mirrored on X between the hands, so +X is the palm side of either).
-const WRIST_OFFSET_M: Vec3 = Vec3::new(0.04, 0.0, 0.16);
-
-/// The wrist panel's width, metres.
-const WRIST_WIDTH_M: f32 = 0.08;
-
-/// The health bar's width over its height.
-const WRIST_BAR_ASPECT: f32 = 10.0;
-
-/// The grenade readout's height on the wrist, metres; its width follows the cell's aspect. The
-/// readout is a narrow column of icons, so it is sized by its height rather than the wrist's width.
-const WRIST_GRENADES_HEIGHT_M: f32 = 0.04;
-
-/// The glance at the inside of the wrist that shows the wrist readout.
-const WRIST_GLANCE: GlanceConfig = GlanceConfig::new();
-
-/// The wrist readout's fade in and out, seconds.
-const WRIST_FADE_S: f32 = 0.15;
-
-/// How long the wrist readout shows on its own after damage, seconds.
-const WRIST_AFTER_DAMAGE_S: f32 = 4.0;
-
-/// The health fraction at and below which the wrist readout shows on its own.
-const WRIST_LOW_HEALTH: f32 = 0.35;
 
 struct State {
     last_prepare: Option<Instant>,
@@ -300,6 +236,7 @@ impl State {
         active: bool,
         dominant: Hand,
     ) {
+        let tuning = &HUD.get().anchored;
         let now = Instant::now();
         let dt = self
             .last_prepare
@@ -352,12 +289,12 @@ impl State {
                 count.alpha = 1.0;
                 continue;
             };
-            let width = COUNT_WIDTH_M;
+            let width = tuning.ammo.width_m;
             let height = width * COUNT_TEXELS.1 as f32 / COUNT_TEXELS.0 as f32;
             let clearance = if ammo.model.is_some() {
-                AMMO_GUN_CLEARANCE_M
+                tuning.ammo.gun_clearance_m
             } else {
-                AMMO_CLEARANCE_M
+                tuning.ammo.clearance_m
             };
             count.corners =
                 gun_ammo_corners(gun.matrix, ammo.model, Vec2::new(width, height), clearance)
@@ -370,7 +307,7 @@ impl State {
                     head.orientation * Vec3::NEG_Z,
                 )
             });
-            count.alpha = fade(count.alpha, !sighted, dt, SIGHT_FADE_S);
+            count.alpha = fade(count.alpha, !sighted, dt, tuning.sight_fade_s);
             if let Some(gpu) = self.gpu.as_mut() {
                 gpu.counts[hand.index()].update(context, CountKey::new(&ammo), |key| {
                     hand_ammo::paint(COUNT_TEXELS.0, COUNT_TEXELS.1, key)
@@ -386,15 +323,20 @@ impl State {
             && let Some(wrist) = hands[off.index()].map(|h| h.wrist)
             && let Some(cell) = atlas::part_texture(Part::Tether, |part| part.cell)
         {
-            let width = TETHER_WIDTH_M;
+            let width = tuning.tether.width_m;
             let height = width * cell.rect.size.y / cell.rect.size.x.max(1.0);
-            let target = forearm_anchor(wrist, TETHER_BACK_M, TETHER_CLEARANCE_M, height);
+            let target = forearm_anchor(
+                wrist,
+                tuning.tether.back_m,
+                tuning.tether.clearance_m,
+                height,
+            );
             let position = follow(
                 self.tether_position,
                 target,
                 dt,
-                TETHER_FOLLOW_HALFLIFE_S,
-                SNAP_M,
+                tuning.tether.follow_halflife_s,
+                tuning.snap_m,
             );
             self.tether_position = Some(position);
             self.tether_corners = upright_corners(
@@ -419,7 +361,8 @@ impl State {
             (Some(anchor), Some(head), Some(cell)) => {
                 if anchor.open && (!self.cross_open || self.cross_offset.is_none()) {
                     self.cross_offset = grip(anchor.hand).map(|grip| {
-                        pull_toward(grip.position, head.position, CROSS_PULL_M) - head.position
+                        pull_toward(grip.position, head.position, tuning.cross.pull_m)
+                            - head.position
                     });
                 }
                 self.cross_open = anchor.open;
@@ -429,7 +372,7 @@ impl State {
                     fade_out(anchor.closed_s, CROSS_LINGER.as_secs_f32())
                 };
                 if let Some(offset) = self.cross_offset {
-                    let width = CROSS_WIDTH_M;
+                    let width = tuning.cross.width_m;
                     let height = width * cell.rect.size.y / cell.rect.size.x.max(1.0);
                     self.cross_corners = facing_corners(
                         head.position + offset,
@@ -449,7 +392,7 @@ impl State {
         }
 
         // The wrist: the health bar and the heat and grenade readouts.
-        let pose = grip(off).map(|grip| inner_wrist_pose(grip, off, WRIST_OFFSET_M));
+        let pose = grip(off).map(|grip| inner_wrist_pose(grip, off, tuning.wrist.offset_m));
         let fraction = sample
             .filter(|s| s.max_health > 0)
             .map(|s| (f32::from(s.health) / f32::from(s.max_health)).clamp(0.0, 1.0));
@@ -468,19 +411,21 @@ impl State {
                     .map(|at| now.duration_since(at).as_secs_f32()),
                 heat_level: sample.map_or(0, |s| s.heat_level),
             },
-            WRIST_LOW_HEALTH,
-            WRIST_AFTER_DAMAGE_S,
+            tuning.wrist.low_health,
+            tuning.wrist.after_damage_s,
         );
         let looked = match (head, pose) {
-            (Some(head), Some(pose)) => looking(head, &pose, &WRIST_GLANCE, self.glance.shown()),
+            (Some(head), Some(pose)) => {
+                looking(head, &pose, &tuning.wrist.glance, self.glance.shown())
+            }
             _ => false,
         };
-        let glance = self.glance.step(looked, dt, &WRIST_GLANCE);
+        let glance = self.glance.step(looked, dt, &tuning.wrist.glance);
         // The wrist shows on a glance, and also on its own while the player's state wants
         // attention.
         let shown = pose.is_some() && (glance || attention);
-        self.wrist_alpha = fade(self.wrist_alpha, shown, dt, WRIST_FADE_S);
-        let trail = fraction.map(|f| self.trail.step(f, dt));
+        self.wrist_alpha = fade(self.wrist_alpha, shown, dt, tuning.wrist.fade_s);
+        let trail = fraction.map(|f| self.trail.step(f, dt, &tuning.health_trail));
         self.status.health = fraction.zip(trail);
         self.status.heat_level = sample.map_or(0, |s| s.heat_level);
         self.status.wrist_alpha = self.wrist_alpha;
@@ -491,21 +436,22 @@ impl State {
         let Some(pose) = pose.filter(|_| self.wrist_alpha > 0.0) else {
             return;
         };
-        let width = WRIST_WIDTH_M;
-        let bar = fraction
-            .is_some()
-            .then_some(Vec2::new(width, width / WRIST_BAR_ASPECT));
+        let width = tuning.wrist.width_m;
+        let bar = fraction.is_some().then_some(Vec2::new(
+            width,
+            width / (BAR_TEXELS.0 as f32 / BAR_TEXELS.1 as f32),
+        ));
         let heat = atlas::part_texture(Part::Heat, |part| part.cell)
             .map(|cell| Vec2::new(width, width * cell.rect.size.y / cell.rect.size.x.max(1.0)));
         let grenades = atlas::part_texture(Part::Grenades, |part| part.cell).map(|cell| {
-            let height = WRIST_GRENADES_HEIGHT_M;
+            let height = tuning.wrist.grenades_height_m;
             Vec2::new(
                 height * cell.rect.size.x / cell.rect.size.y.max(1.0),
                 height,
             )
         });
         let sizes: Vec<Vec2> = bar.into_iter().chain(heat).chain(grenades).collect();
-        let mut quads = stacked_corners(&pose, &sizes, WRIST_GAP_M)
+        let mut quads = stacked_corners(&pose, &sizes, tuning.wrist.gap_m)
             .into_iter()
             .map(|corners| corners.map(|c| c.extend(1.0)));
         if bar.is_some() {
@@ -520,7 +466,7 @@ impl State {
             self.status.grenades_drawn = true;
         }
         if let (Some(gpu), Some(fraction), Some(trail)) = (self.gpu.as_mut(), fraction, trail) {
-            let low = fraction <= WRIST_LOW_HEALTH;
+            let low = fraction <= tuning.wrist.low_health;
             gpu.bar.update(
                 context,
                 BarKey::new(BAR_TEXELS.0, fraction, trail, low),

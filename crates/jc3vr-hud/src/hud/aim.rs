@@ -17,19 +17,20 @@ use body_rig::smooth::half_life_factor;
 use glam::Vec3;
 use parking_lot::Mutex;
 
-/// The nearest recorded aim depth, in meters.
-pub const MIN_DEPTH: f32 = 0.5;
+use crate::hud::tuning::HUD;
 
-/// The farthest recorded aim depth, in meters: beyond it, disparity is indistinguishable from
-/// infinity.
-pub const MAX_DEPTH: f32 = 150.0;
-
-/// The distance the aim depth eases back to while nothing has been aimed at recently, in meters.
-pub const REST_DISTANCE: f32 = 3.0;
+/// The distance the aim depth eases back to while nothing has been aimed at recently, in meters:
+/// the tuning's `aim.rest_distance_m`.
+pub fn rest_distance() -> f32 {
+    HUD.get().aim.rest_distance_m
+}
 
 /// Record the aim point (game thread, from the grapple-reticle hook's first call of the frame).
-/// `depth` is the distance from the panel anchor to `point`, in meters.
+/// `depth` is the distance from the panel anchor to `point`, in meters, which is clamped to the
+/// tuning's `aim.min_depth_m` and `aim.max_depth_m`.
 pub fn record(point: Vec3, depth: f32) {
+    let tuning = &HUD.get().aim;
+    let depth = depth.clamp(tuning.min_depth_m, tuning.max_depth_m);
     let mut state = STATE.lock();
     state.point = point;
     state.target = depth;
@@ -55,14 +56,16 @@ pub fn current(base_distance: f32) -> f32 {
     state.updated_at = Some(now);
 
     // Holden's critically-damped exponential, like the panel follow.
-    let alpha = half_life_factor(dt, HALFLIFE_SECONDS);
-    state.smoothed += (target - state.smoothed) * alpha;
-    state.smoothed
+    let alpha = half_life_factor(dt, HUD.get().aim.halflife_s);
+    let previous = state.smoothed.unwrap_or_else(rest_distance);
+    let smoothed = previous + (target - previous) * alpha;
+    state.smoothed = Some(smoothed);
+    smoothed
 }
 
 /// The smoothed aim depth as the last [`current`] call left it, without advancing it.
 pub fn smoothed() -> f32 {
-    STATE.lock().smoothed
+    STATE.lock().smoothed.unwrap_or_else(rest_distance)
 }
 
 /// The last recorded aim point, while the recording is fresh.
@@ -71,19 +74,12 @@ pub fn point() -> Option<Vec3> {
     state.fresh().then_some(state.point)
 }
 
-/// How long a recorded aim point stays authoritative. Beyond this, the smoothed depth eases back to
-/// the caller's base distance and [`point`] reports none (the reticle is not targeting anything).
-const STALE_AFTER_SECONDS: f32 = 0.5;
-
-/// The smoothing halflife, in seconds: long enough to swallow surface noise as the aim sweeps
-/// across geometry, short enough to track a real target change quickly.
-const HALFLIFE_SECONDS: f32 = 0.15;
-
 /// The damped aim-depth state.
 struct AimState {
-    /// The smoothed depth, in meters.
-    smoothed: f32,
-    /// The most recently recorded aim depth.
+    /// The smoothed depth, in meters, or `None` before the first [`current`] call, which starts it
+    /// at the rest distance.
+    smoothed: Option<f32>,
+    /// The most recently recorded aim depth, read only while the recording is fresh.
     target: f32,
     /// The most recently recorded aim point.
     point: Vec3,
@@ -96,13 +92,13 @@ struct AimState {
 impl AimState {
     fn fresh(&self) -> bool {
         self.recorded_at
-            .is_some_and(|t| t.elapsed().as_secs_f32() <= STALE_AFTER_SECONDS)
+            .is_some_and(|t| t.elapsed().as_secs_f32() <= HUD.get().aim.stale_after_s)
     }
 }
 
 static STATE: Mutex<AimState> = Mutex::new(AimState {
-    smoothed: REST_DISTANCE,
-    target: REST_DISTANCE,
+    smoothed: None,
+    target: 0.0,
     point: Vec3::ZERO,
     recorded_at: None,
     updated_at: None,

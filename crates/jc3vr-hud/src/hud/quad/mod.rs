@@ -36,7 +36,7 @@ use windows::Win32::Graphics::{
     },
 };
 
-use crate::hud::cursor::{CursorFrame, LIFT, SIZE};
+use crate::hud::{cursor::CursorFrame, tuning::HUD};
 
 /// The committed, precompiled quad shaders (entry point `main`).
 const VERTEX_DXBC: &[u8] = include_bytes!(concat!(
@@ -447,10 +447,9 @@ pub(crate) fn compute_world_corners(params: &PanelParams) -> Option<[Vec4; 4]> {
 }
 
 /// Compute the virtual mouse cursor's world-space corners: a small square quad centered on the
-/// cursor's UV position on the panel, lifted off the panel surface toward the camera
-/// ([`LIFT`](crate::hud::cursor::LIFT)), sized as a fraction of the panel distance
-/// ([`SIZE`](crate::hud::cursor::SIZE)) so it keeps a constant apparent (angular) size like the
-/// panel. Call once per frame
+/// cursor's UV position on the panel, lifted off the panel surface toward the camera (the
+/// tuning's `cursor.lift_m`), sized as a fraction of the panel distance (`cursor.size`) so it keeps
+/// a constant apparent (angular) size like the panel. Call once per frame
 /// (eye 0) with the same [`PanelParams`] the panel's own corners were built from, so the cursor
 /// rides exactly the surface the UI is drawn on. Returns `None` for a degenerate panel or position.
 pub(crate) fn compute_cursor_corners(
@@ -461,6 +460,7 @@ pub(crate) fn compute_cursor_corners(
         return None;
     }
 
+    let cursor = &HUD.get().cursor;
     let forward = params.rot * Vec3::NEG_Z;
     let right = params.rot * Vec3::X;
     let up = params.rot * Vec3::Y;
@@ -473,9 +473,9 @@ pub(crate) fn compute_cursor_corners(
     let point = panel_center
         + right * ((frame.u - 0.5) * 2.0 * half_w)
         + up * ((0.5 - frame.v) * 2.0 * half_h)
-        - forward * LIFT;
+        - forward * cursor.lift_m;
 
-    let half = SIZE * params.distance * 0.5;
+    let half = cursor.size * params.distance * 0.5;
     let layout = [(-half, half), (half, half), (-half, -half), (half, -half)];
     let corners = layout.map(|(dx, dy)| (point + right * dx + up * dy).extend(1.0));
     corners

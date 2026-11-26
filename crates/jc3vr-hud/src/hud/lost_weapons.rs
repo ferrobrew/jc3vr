@@ -16,7 +16,7 @@
 //! the table keeps the weapon, which forgets one left far away (the pins' forget distance). It fades in past arm's length, where the grip's own markers take over, keeps
 //! a constant angular size, and only the nearest few are drawn.
 
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use glam::{Vec3, Vec4};
 use jc3gi::graphics_engine::{device::Device, texture::Texture};
@@ -36,6 +36,7 @@ use crate::hud::{
     log_once::LogOnce,
     quad::HudQuad,
     target::{HudTarget, TextureCache},
+    tuning::HUD,
     world_quads_active,
 };
 
@@ -60,54 +61,37 @@ pub(crate) struct Placed {
     pub alpha: f32,
 }
 
-/// Place the markers for `weapons` seen from `head` (with `head_up`, the head's up): the nearest
-/// [`MAX_DRAWN`] beyond [`NEAR_M`], each an upright card [`ANGULAR_HEIGHT`] tall at its distance,
-/// its lower edge [`RAISE_M`] above the weapon, fading in over [`FADE_M`] past [`NEAR_M`]. The
-/// nearest is first.
+/// Place the markers for `weapons` seen from `head` (with `head_up`, the head's up), by the
+/// tuning's `lost_weapons` section: the nearest `max_drawn` beyond `near_m`, each an upright card
+/// `angular_height` tall at its distance, its lower edge `raise_m` above the weapon, fading in over
+/// `fade_m` past `near_m`. The nearest is first.
 pub(crate) fn place(head: Vec3, head_up: Vec3, weapons: &[LostWeapon]) -> Vec<Placed> {
+    let tuning = &HUD.get().lost_weapons;
     let mut near: Vec<(f32, &LostWeapon)> = weapons
         .iter()
         .filter(|w| w.position.is_finite())
         .map(|w| (w.position.distance(head), w))
-        .filter(|(distance, _)| *distance > NEAR_M)
+        .filter(|(distance, _)| *distance > tuning.near_m)
         .collect();
     near.sort_by(|a, b| a.0.total_cmp(&b.0));
     near.into_iter()
-        .take(MAX_DRAWN)
+        .take(tuning.max_drawn)
         .filter_map(|(distance, weapon)| {
-            let height = distance * ANGULAR_HEIGHT;
+            let height = distance * tuning.angular_height;
             let width = height * MARKER_TEXELS.0 as f32 / MARKER_TEXELS.1 as f32;
-            let centre = weapon.position + Vec3::Y * (RAISE_M + height * 0.5);
+            let centre = weapon.position + Vec3::Y * (tuning.raise_m + height * 0.5);
             Some(Placed {
                 icon: weapon.icon,
                 corners: upright_corners(centre, head, head_up, width, height)?,
-                alpha: ((distance - NEAR_M) / FADE_M).clamp(0.0, 1.0),
+                alpha: ((distance - tuning.near_m) / tuning.fade_m).clamp(0.0, 1.0),
             })
         })
         .collect()
 }
 
-/// A marker is not drawn this near the eye, metres: within reach the grip's own markers show the
-/// weapon.
-const NEAR_M: f32 = 1.5;
-
-/// How far past [`NEAR_M`] a marker takes to fade in, metres.
-const FADE_M: f32 = 1.0;
-
-/// The most markers drawn, the nearest first.
-const MAX_DRAWN: usize = 8;
-
-/// A marker's height over its distance: its angular height, radians.
-const ANGULAR_HEIGHT: f32 = 0.03;
-
-/// How far above the weapon a marker's lower edge sits, metres.
-const RAISE_M: f32 = 0.3;
-
-/// The most distinct icons kept as textures; a new one replaces one no longer shown.
-const MAX_TEXTURES: usize = 16;
-
-/// How long a published list stays current without a newer one.
-const STALE: Duration = Duration::from_millis(500);
+/// The most distinct icons kept as textures; a new one replaces one no longer shown. The tuning's
+/// `lost_weapons.max_drawn` stays within it.
+pub(crate) const MAX_TEXTURES: usize = 16;
 
 static STATE: Mutex<State> = Mutex::new(State {
     placed: Vec::new(),
@@ -138,9 +122,11 @@ impl State {
             return;
         };
         let now = Instant::now();
-        let Some(placed) = lost_weapons::with_fresh(now, STALE, |weapons| {
-            place(head, rotation * Vec3::Y, weapons)
-        }) else {
+        let Some(placed) =
+            lost_weapons::with_fresh(now, HUD.get().lost_weapons.stale(), |weapons| {
+                place(head, rotation * Vec3::Y, weapons)
+            })
+        else {
             return;
         };
         if placed.is_empty() {
@@ -221,6 +207,11 @@ static FAILURES: LogOnce = LogOnce::new("hud lost weapons");
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::hud::tuning::LostWeaponsTuning;
+
+    fn tuning() -> &'static LostWeaponsTuning {
+        &HUD.get().lost_weapons
+    }
 
     fn weapon(x: f32, z: f32, icon: i16) -> LostWeapon {
         LostWeapon {
@@ -255,18 +246,23 @@ mod tests {
             let corners = placed[0].corners;
             let height = (corners[0] - corners[2]).length();
             assert!(
-                (height / distance - ANGULAR_HEIGHT).abs() < 1e-3,
+                (height / distance - tuning().angular_height).abs() < 1e-3,
                 "{distance}"
             );
             let bottom = corners[2].y.min(corners[3].y);
-            assert!(bottom >= RAISE_M - 1e-3);
+            assert!(bottom >= tuning().raise_m - 1e-3);
         }
     }
 
     #[test]
     fn a_marker_fades_in_past_arms_length() {
         let head = Vec3::ZERO;
-        let half = place(head, Vec3::Y, &[weapon(0.0, -(NEAR_M + FADE_M * 0.5), 1)]);
+        let tuning = tuning();
+        let half = place(
+            head,
+            Vec3::Y,
+            &[weapon(0.0, -(tuning.near_m + tuning.fade_m * 0.5), 1)],
+        );
         assert!((half[0].alpha - 0.5).abs() < 1e-3);
         assert!(place(head, Vec3::Y, &[weapon(f32::NAN, 0.0, 1)]).is_empty());
     }
@@ -274,6 +270,9 @@ mod tests {
     #[test]
     fn only_the_nearest_few_are_drawn() {
         let weapons: Vec<LostWeapon> = (0..20).map(|i| weapon(0.0, -3.0 - i as f32, 1)).collect();
-        assert_eq!(place(Vec3::ZERO, Vec3::Y, &weapons).len(), MAX_DRAWN);
+        assert_eq!(
+            place(Vec3::ZERO, Vec3::Y, &weapons).len(),
+            tuning().max_drawn
+        );
     }
 }

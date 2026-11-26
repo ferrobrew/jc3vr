@@ -24,6 +24,7 @@ use crate::hud::{
     HudMode,
     atlas::layout::{AtlasLayout, MarkerSlots},
     scaleform::value_display_info,
+    tuning::HUD,
     world_markers::{
         CaptureLayout, MAX_MARKERS, MarkerRecord,
         layout::{FovTangents, clamp_into},
@@ -148,14 +149,6 @@ struct Move {
     origin: Vec2,
 }
 
-/// The half-angle of the classification field of view, in degrees, used when no headset frame
-/// supplies one (the flat desktop).
-const FALLBACK_HALF_FOV_DEG: f32 = 50.0;
-
-/// How far inside the headset's field of view a marker must be to count as on screen, in degrees,
-/// so a marker at the very edge of the lenses keeps its arrow.
-const FOV_INSET_DEG: f32 = 2.0;
-
 /// A world point's exact bit pattern: `UpdatePOIs` projects a copy of the POI's transform
 /// translation, so the capture seam's read of the same translation matches it exactly.
 fn world_key(world: Vec3) -> [u32; 3] {
@@ -163,12 +156,14 @@ fn world_key(world: Vec3) -> [u32; 3] {
 }
 
 /// Whether `world` is inside the headset's field of view (both eyes' together) from the game
-/// camera, falling back to [`FALLBACK_HALF_FOV_DEG`] without a headset frame. Deciding on the
+/// camera, falling back to the tuning's `world_markers.fallback_half_fov_deg` without a headset
+/// frame. Deciding on the
 /// headset's field of view rather than the panel's narrower subtense keeps a marker the player can
 /// see in the world from being demoted to an edge arrow; markers outside it stay edge arrows on the
 /// panel.
 fn in_headset_fov(camera: &Matrix4, world: Vec3) -> bool {
-    let inset = FOV_INSET_DEG.to_radians();
+    let tuning = &HUD.get().world_markers;
+    let inset = tuning.fov_inset_deg.to_radians();
     let fov = jc3vr_view::vr::capture_views()
         .map(|views| {
             let [a, b] = views.eyes.map(|eye| {
@@ -176,7 +171,9 @@ fn in_headset_fov(camera: &Matrix4, world: Vec3) -> bool {
             });
             a.union(b)
         })
-        .unwrap_or_else(|| FovTangents::symmetric(FALLBACK_HALF_FOV_DEG.to_radians(), inset));
+        .unwrap_or_else(|| {
+            FovTangents::symmetric(tuning.fallback_half_fov_deg.to_radians(), inset)
+        });
     let m = &camera.data;
     let row = |i: usize| Vec3::new(m[i * 4], m[i * 4 + 1], m[i * 4 + 2]);
     fov.contains(row(3), row(0), row(1), row(2), world)

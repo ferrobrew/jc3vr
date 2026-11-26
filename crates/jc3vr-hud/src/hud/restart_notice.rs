@@ -10,7 +10,7 @@
 
 use anyhow::Context as _;
 use egui::{FontId, Pos2, Rect, Vec2, text::LayoutJob};
-use glam::{Vec3, Vec4};
+use glam::Vec4;
 use jc3gi::graphics_engine::{device::Device, texture::Texture};
 use jc3vr_view::vr::input::{restart, restart::RestartReason};
 use parking_lot::Mutex;
@@ -23,6 +23,7 @@ use crate::{
         palette::{PANEL_ACCENT, PANEL_BACKGROUND, PANEL_DIM, PANEL_TEXT},
         quad::HudQuad,
         target::HudTarget,
+        tuning::HUD,
     },
 };
 
@@ -83,12 +84,13 @@ impl Notice {
             self.failed = true;
             return;
         }
+        let tuning = &HUD.get().restart_notice;
         let pose = PanelPose {
-            center: head + orientation * OFFSET_M,
+            center: head + orientation * tuning.offset_m,
             rotation: orientation,
         };
-        let height = WIDTH_M * HEIGHT_PX as f32 / WIDTH_PX as f32;
-        self.corners = Some(pose.corners(WIDTH_M, height).map(|c| c.extend(1.0)));
+        let height = tuning.width_m * HEIGHT_PX as f32 / WIDTH_PX as f32;
+        self.corners = Some(pose.corners(tuning.width_m, height).map(|c| c.extend(1.0)));
     }
 
     fn draw(&self, context: &ID3D11DeviceContext, device: &Device, target: &Texture) {
@@ -165,11 +167,6 @@ impl Gpu {
 /// The texture's size, pixels.
 const WIDTH_PX: u32 = 1024;
 const HEIGHT_PX: u32 = 256;
-/// The panel's width, metres.
-const WIDTH_M: f32 = 0.8;
-/// Where the panel's centre sits in the head's frame, metres: ahead, and low enough to leave the
-/// centre of the view clear.
-const OFFSET_M: Vec3 = Vec3::new(0.0, -0.35, -1.4);
 const MARGIN_PX: f32 = 28.0;
 const HEADLINE_PX: f32 = 44.0;
 const DETAIL_PX: f32 = 30.0;

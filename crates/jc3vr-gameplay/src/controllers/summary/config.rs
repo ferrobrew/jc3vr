@@ -1,4 +1,5 @@
-//! The controls summary's glance and wrist placement parameter types.
+//! The controls summary's glance and wrist placement parameter types. The HUD's tuning file
+//! holds their values.
 
 use glam::Vec3;
 use serde::Deserialize;
@@ -21,24 +22,6 @@ pub struct GlanceConfig {
     pub linger_s: f32,
 }
 
-impl GlanceConfig {
-    pub const fn new() -> Self {
-        Self {
-            view_cone_deg: 30.0,
-            facing_deg: 45.0,
-            hysteresis_deg: 10.0,
-            dwell_s: 0.15,
-            linger_s: 0.4,
-        }
-    }
-}
-
-impl Default for GlanceConfig {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 /// The panel's place on the off-hand.
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -48,19 +31,4 @@ pub struct WristPlacement {
     pub offset_m: Vec3,
     /// The panel's width, metres.
     pub width_m: f32,
-}
-
-impl WristPlacement {
-    pub const fn new() -> Self {
-        Self {
-            offset_m: Vec3::new(-0.05, 0.0, 0.12),
-            width_m: 0.12,
-        }
-    }
-}
-
-impl Default for WristPlacement {
-    fn default() -> Self {
-        Self::new()
-    }
 }

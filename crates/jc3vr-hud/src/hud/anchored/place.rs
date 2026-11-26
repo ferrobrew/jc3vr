@@ -5,7 +5,7 @@ use glam::{Mat3, Mat4, Quat, Vec2, Vec3};
 use jc3vr_input::frame::{Hand, Pose};
 use jc3vr_weapons::controllers::weapons::hud_feed::hand_ammo::ModelBox;
 
-use crate::controllers::summary::glance::PanelPose;
+use crate::{controllers::summary::glance::PanelPose, hud::tuning::HUD};
 
 /// The ammunition quad's corners in the rendered gun's frame, with its lower edge `clearance`
 /// above the model's local top and centred along its length. Its text axes follow the gun's +X
@@ -55,21 +55,18 @@ pub(crate) fn gun_ammo_corners(
     ])
 }
 
-/// Whether the gun is raised to the eye to sight along it: the gun hand's `grip` within
-/// [`SIGHT_REACH_M`] of the `eye`, and the hand's aim `aim_forward` within [`SIGHT_CONE_DEG`] of
-/// the `gaze`. A counter above the hand would then sit in the sight picture.
+/// Whether the gun is raised to the eye to sight along it: the gun hand's `grip` within the
+/// tuning's `anchored.sight_reach_m` of the `eye`, and the hand's aim `aim_forward` within
+/// `anchored.sight_cone_deg` of the `gaze`. A counter above the hand would then sit in the sight
+/// picture.
 pub(crate) fn sighting(grip: Vec3, aim_forward: Vec3, eye: Vec3, gaze: Vec3) -> bool {
     let (Some(aim), Some(gaze)) = (aim_forward.try_normalize(), gaze.try_normalize()) else {
         return false;
     };
-    grip.distance(eye) <= SIGHT_REACH_M && aim.dot(gaze) >= SIGHT_CONE_DEG.to_radians().cos()
+    let tuning = &HUD.get().anchored;
+    grip.distance(eye) <= tuning.sight_reach_m
+        && aim.dot(gaze) >= tuning.sight_cone_deg.to_radians().cos()
 }
-
-/// How near the eye the gun hand's grip is when the gun is raised to sight along it, metres.
-pub(crate) const SIGHT_REACH_M: f32 = 0.4;
-
-/// How far off the gaze the gun may point and still be sighted along, degrees.
-pub(crate) const SIGHT_CONE_DEG: f32 = 15.0;
 
 /// The tether readout's centre for a quad `height` metres tall: `back` metres along the forearm
 /// from the `wrist` (whose +Z points toward the elbow), then straight up in the world until the
@@ -120,7 +117,8 @@ pub(crate) fn facing_corners(
 /// The corners of a `width` by `height` quad centred on `center`, facing `eye` and upright: its top
 /// edge stays level in the world, so it reads like a sign held up rather than rolling with the
 /// head. Seen from nearly straight above or below, where the world's up leaves no level to keep,
-/// its up blends to `head_up`. `None` when the eye is at the centre.
+/// its up blends to `head_up` (over the tuning's `anchored.upright_blend`). `None` when the eye is
+/// at the centre.
 pub(crate) fn upright_corners(
     center: Vec3,
     eye: Vec3,
@@ -129,7 +127,7 @@ pub(crate) fn upright_corners(
     height: f32,
 ) -> Option<[Vec3; 4]> {
     let back = (eye - center).try_normalize()?;
-    let (level, vertical) = UPRIGHT_BLEND;
+    let (level, vertical) = HUD.get().anchored.upright_blend;
     let steep = ((back.y.abs() - level) / (vertical - level)).clamp(0.0, 1.0);
     facing_corners(center, eye, WORLD_UP.lerp(head_up, steep), width, height)
 }
@@ -204,10 +202,6 @@ pub(crate) fn fade_out(closed_s: f32, linger_s: f32) -> f32 {
 
 /// The world's up.
 const WORLD_UP: Vec3 = Vec3::Y;
-
-/// The range of the vertical component of the direction to the eye over which an upright quad's up
-/// blends from the world's up to the head's: from about 18 degrees off vertical to about 6.
-const UPRIGHT_BLEND: (f32, f32) = (0.95, 0.995);
 
 /// The inner-wrist readout's rotation in the grip frame: +X along its text, +Y up its page, +Z out
 /// of its face. With the palm turned up toward the face, out of the palm is grip +X for the left
