@@ -15,6 +15,8 @@
 //! - `profiler` (with the `profiler` feature): the puffin scopes, the frame advance, and the trace
 //!   capture.
 //! - [`session`] and [`logging`]: the session folder and the log.
+//! - [`game_tick`]: the token that proves code runs on the game thread at one of the frame's
+//!   serial points, which the handles to game objects borrow.
 //! - [`thread_role`], [`cpu_placement`], [`module`], [`hash`], [`util`], and
 //!   [`director::clean_view`]: small process-wide services.
 //!
@@ -25,6 +27,7 @@ pub mod config;
 pub mod cpu_placement;
 pub mod director;
 pub mod frame_timing;
+pub mod game_tick;
 pub mod hash;
 pub mod hooks;
 pub mod lifecycle;
