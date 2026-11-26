@@ -74,7 +74,6 @@ features! {
         GripFingers => ("hands.grip-fingers", "Grip and fingers"),
         PhysicalHands => ("hands.physical", "Physical hands"),
         CharactersDoors => ("hands.characters-doors", "Characters and doors"),
-        Snatch => ("hands.snatch", "Snatch"),
         Feedback => ("hands.feedback", "Feedback"),
     },
     Weapons {

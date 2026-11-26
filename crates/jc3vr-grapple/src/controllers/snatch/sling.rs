@@ -5,10 +5,9 @@
 
 use glam::Vec3;
 use jc3vr_body::controllers::physics::rigid::RigidBody;
-use jc3vr_weapons::controllers::weapons::config::SwingConfig;
 
 use crate::{
-    controllers::snatch::config::REFERENCE_MASS_KG,
+    controllers::snatch::config::{REFERENCE_MASS_KG, SwingTuning},
     grapple::{
         rope,
         rope::{Rope, RopeEnd, RopeFault, RopeOutput, RopeTuning},
@@ -17,7 +16,6 @@ use crate::{
 
 /// The owner facts required before continuing any snatch phase.
 pub(super) struct Continuation {
-    pub enabled: bool,
     pub available: bool,
     pub tracked: bool,
     pub same_hand: bool,
@@ -31,8 +29,8 @@ impl Continuation {
             Some("the grapple hand lost tracking")
         } else if !self.same_hand || !self.empty_hand {
             Some("the grapple hand is no longer available")
-        } else if !self.enabled || !self.available {
-            Some("the snatch is off or the player context is unavailable")
+        } else if !self.available {
+            Some("the player context is unavailable")
         } else if !self.grip_held {
             Some("the grip opened")
         } else {
@@ -47,22 +45,15 @@ pub(super) enum AttachedMode {
     Swing,
     Resume,
     Pull,
-    Cancel,
 }
 
-/// What the attached target does this tick: `enabled` is the swing's switch, `button_held` the
-/// snatch's hold of B, `swinging` whether the line holds it already, and `tethered` whether it is
-/// too heavy to come to the hand, which swings it whatever B does.
-pub(super) fn attached_mode(
-    enabled: bool,
-    button_held: bool,
-    swinging: bool,
-    tethered: bool,
-) -> AttachedMode {
-    match (enabled, button_held, swinging, tethered) {
-        (false, _, _, true) | (false, _, true, _) => AttachedMode::Cancel,
-        (true, _, _, true) | (true, true, _, _) => AttachedMode::Swing,
-        (_, false, true, _) => AttachedMode::Resume,
+/// What the attached target does this tick: `button_held` is the snatch's hold of B, `swinging`
+/// whether the line holds it already, and `tethered` whether it is too heavy to come to the hand,
+/// which swings it whatever B does.
+pub(super) fn attached_mode(button_held: bool, swinging: bool, tethered: bool) -> AttachedMode {
+    match (button_held, swinging, tethered) {
+        (_, _, true) | (true, _, _) => AttachedMode::Swing,
+        (false, true, _) => AttachedMode::Resume,
         _ => AttachedMode::Pull,
     }
 }
@@ -132,7 +123,7 @@ pub(super) struct LineTuning {
 
 impl LineTuning {
     /// The tuning of `config` for a target of `mass_kg`, braced or not.
-    pub fn of(config: &SwingConfig, mass_kg: f32, braced: bool) -> Self {
+    pub fn of(config: &SwingTuning, mass_kg: f32, braced: bool) -> Self {
         let single = line_strength_n(mass_kg, config.strength_n, config.mass_scaling);
         Self {
             stiffness_per_s2: config.stiffness_per_s2,
@@ -269,6 +260,7 @@ mod tests {
     use jc3vr_body::controllers::physics::rigid::{BodyPose, Velocities};
 
     use super::*;
+    use crate::controllers::snatch::config::SWING;
 
     #[test]
     fn a_rotating_detached_panel_uses_its_selected_surface_and_point_velocity() {
@@ -312,9 +304,8 @@ mod tests {
 
     #[test]
     fn grip_tracking_context_and_hand_ownership_loss_cancel_before_driving() {
-        for lost in 0..6 {
+        for lost in 0..5 {
             let mut input = Continuation {
-                enabled: true,
                 available: true,
                 tracked: true,
                 same_hand: true,
@@ -323,11 +314,10 @@ mod tests {
             };
             assert_eq!(input.cancellation(), None);
             match lost {
-                0 => input.enabled = false,
-                1 => input.available = false,
-                2 => input.tracked = false,
-                3 => input.same_hand = false,
-                4 => input.empty_hand = false,
+                0 => input.available = false,
+                1 => input.tracked = false,
+                2 => input.same_hand = false,
+                3 => input.empty_hand = false,
                 _ => input.grip_held = false,
             }
             assert!(input.cancellation().is_some());
@@ -335,36 +325,18 @@ mod tests {
     }
 
     #[test]
-    fn hold_bypasses_arrival_and_stall_until_resume_and_disable_cancels() {
-        assert_eq!(attached_mode(true, true, false, false), AttachedMode::Swing);
-        assert_eq!(attached_mode(true, true, true, false), AttachedMode::Swing);
-        assert_eq!(
-            attached_mode(true, false, true, false),
-            AttachedMode::Resume
-        );
-        assert_eq!(attached_mode(true, false, false, false), AttachedMode::Pull);
-        assert_eq!(
-            attached_mode(false, true, true, false),
-            AttachedMode::Cancel
-        );
-        assert_eq!(
-            attached_mode(false, false, false, false),
-            AttachedMode::Pull
-        );
+    fn hold_bypasses_arrival_and_stall_until_resume() {
+        assert_eq!(attached_mode(true, false, false), AttachedMode::Swing);
+        assert_eq!(attached_mode(true, true, false), AttachedMode::Swing);
+        assert_eq!(attached_mode(false, true, false), AttachedMode::Resume);
+        assert_eq!(attached_mode(false, false, false), AttachedMode::Pull);
     }
 
     #[test]
     fn a_tethered_target_swings_whatever_b_does_and_never_resumes_the_pull() {
         for button in [false, true] {
             for swinging in [false, true] {
-                assert_eq!(
-                    attached_mode(true, button, swinging, true),
-                    AttachedMode::Swing
-                );
-                assert_eq!(
-                    attached_mode(false, button, swinging, true),
-                    AttachedMode::Cancel
-                );
+                assert_eq!(attached_mode(button, swinging, true), AttachedMode::Swing);
             }
         }
     }
@@ -459,7 +431,6 @@ mod tests {
         assert!((before.x - after.b_velocity.x - 1.2).abs() < 1e-5);
         assert_eq!(after.tension_n, 120.0);
         let released = Continuation {
-            enabled: true,
             available: true,
             tracked: true,
             same_hand: true,
@@ -541,7 +512,7 @@ mod tests {
         // A 100 kg target hanging 2.5 m out along +X from a hand holding the line ahead; the hand
         // sweeps 0.6 m along +Z over a fifth of a second.
         let mass_kg = 100.0;
-        let tuning = LineTuning::of(&SwingConfig::new(), mass_kg, true);
+        let tuning = LineTuning::of(&SWING, mass_kg, true);
         let mut rope = Sling::new(Vec3::X * 2.5, Vec3::ZERO).unwrap();
         let (mut centre, mut velocity) = (Vec3::X * 2.5, Vec3::ZERO);
         let dt = 1.0 / 60.0;
@@ -583,7 +554,7 @@ mod tests {
     fn a_hand_whirling_a_heavy_target_brings_it_up_to_speed() {
         // A 100 kg target at rest 3 m off, the hand circling at 0.4 m and 1.5 turns a second.
         let mass_kg = 100.0;
-        let config = SwingConfig::new();
+        let config = SWING;
         let tuning = LineTuning::of(&config, mass_kg, false);
         let hand = |t: f32| {
             let a = t * std::f32::consts::TAU * 1.5;
@@ -613,7 +584,7 @@ mod tests {
     #[test]
     fn the_line_reels_a_far_target_in_no_faster_than_the_reel() {
         let mass_kg = 100.0;
-        let config = SwingConfig::new();
+        let config = SWING;
         let tuning = LineTuning::of(&config, mass_kg, false);
         let mut rope = Sling::new(Vec3::X * 12.0, Vec3::ZERO).unwrap();
         let (mut centre, mut velocity) = (Vec3::X * 12.0, Vec3::ZERO);

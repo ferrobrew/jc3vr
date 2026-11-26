@@ -70,8 +70,7 @@ fn swing() -> Line {
 }
 
 fn snatch() -> Line {
-    let enabled = read(&CONTROLLERS_CONFIG, |c| c.weapons.snatch.enabled);
-    snatch_line(enabled, &snatch::status())
+    snatch_line(&snatch::status())
 }
 
 fn haptics() -> Line {
@@ -82,10 +81,7 @@ fn haptics() -> Line {
     Line::ok(format_smolstr!("{:.2}", status.haptic))
 }
 
-fn snatch_line(enabled: bool, status: &SnatchStatus) -> Line {
-    if !enabled {
-        return Line::off("");
-    }
+fn snatch_line(status: &SnatchStatus) -> Line {
     if !status.live {
         return Line::waiting(prose("No hand input"));
     }
@@ -451,8 +447,7 @@ mod tests {
     #[test]
     fn the_snatch_row_reads_the_readout() {
         let idle = SnatchStatus::default();
-        assert_eq!(snatch_line(false, &idle).text(), "OFF");
-        assert_eq!(snatch_line(true, &idle).text(), "WAITING, NO HAND INPUT");
+        assert_eq!(snatch_line(&idle).text(), "WAITING, NO HAND INPUT");
         let aimed = SnatchStatus {
             live: true,
             phase: "ARMED",
@@ -466,7 +461,7 @@ mod tests {
             last_refusal: Some("snatch: the weapon snagged".to_owned()),
             ..SnatchStatus::default()
         };
-        let line = snatch_line(true, &aimed);
+        let line = snatch_line(&aimed);
         assert_eq!(
             line.text(),
             "OK, ARMED, WEAPON ON THE GROUND, 10.0 M, 2 TAKEN OF 3"
@@ -492,7 +487,7 @@ mod tests {
             ..SnatchStatus::default()
         };
         assert_eq!(
-            snatch_line(true, &swinging).text(),
+            snatch_line(&swinging).text(),
             "OK, SWINGING, 150 KG, HELD 3.0 M, 1200 OF 5810 N, BRACED, 0 TAKEN OF 0"
         );
         let busy = SnatchStatus {
@@ -502,7 +497,7 @@ mod tests {
             ..SnatchStatus::default()
         };
         assert_eq!(
-            snatch_line(true, &busy).text(),
+            snatch_line(&busy).text(),
             "OK, IDLE, HAND NOT EMPTY, 0 TAKEN OF 0"
         );
     }

@@ -4,7 +4,7 @@ use jc3vr_core::config::engine::ConfigSlot;
 use serde::{Deserialize, Serialize};
 
 use crate::controllers::weapons::{
-    config::{HoldConfig, HolstersConfig, RecoilConfig, SnatchConfig},
+    config::{HoldConfig, HolstersConfig, RecoilConfig},
     reload::config::ReloadConfig,
     wheel::config::WheelConfig,
 };
@@ -29,9 +29,6 @@ pub struct WeaponsConfig {
     /// The weapon wheel: the game's selection cross, opened with a held input and steered by the
     /// hand.
     pub wheel: WheelConfig,
-    /// The grapple snatch: a grip of the empty grapple hand at a weapon out of reach, and a yank,
-    /// pull it into the hand on the game's hook.
-    pub snatch: SnatchConfig,
 }
 
 impl WeaponsConfig {
@@ -42,7 +39,6 @@ impl WeaponsConfig {
             hold: HoldConfig::new(),
             reload: ReloadConfig::new(),
             wheel: WheelConfig::new(),
-            snatch: SnatchConfig::new(),
         }
     }
 }

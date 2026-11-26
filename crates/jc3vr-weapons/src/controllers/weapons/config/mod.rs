@@ -1,18 +1,16 @@
 //! The weapon-handling settings (the sockets, the recoil, and the hands' hold), held in
 //! [`WeaponsConfig`] beside the other weapon-handling subsystems' toggles. The reload's are in
-//! [`crate::controllers::weapons::reload::config`], and the grapple snatch's in [`SnatchConfig`].
+//! [`crate::controllers::weapons::reload::config`].
 //! Each feature keeps its switches here; its fixed tuning is a constant in the module that owns it.
 
 mod group;
 mod settings;
-mod snatch;
 
 use serde::{Deserialize, Serialize};
 
 pub use self::{
     group::{WEAPONS_CONFIG, WeaponsConfig},
     settings::WeaponSettings,
-    snatch::{SnatchConfig, SwingConfig},
 };
 
 /// The body's sockets (see [`crate::controllers::weapons::docks`]), whose fixed tuning is

@@ -178,10 +178,6 @@ settle_s = [1.0]
 
 [controllers.body.rig.yaw]
 moving_deadzone_deg = [15.0]
-
-[controllers.weapons.snatch.yank]
-min_distance_m = [0.12]
-min_speed_mps = [1.5, 1.0]
 "#;
 
 /// The superseded defaults, by path: [`SUPERSEDED`], and the director's key bindings as they stood

@@ -1,22 +1,72 @@
-//! The grapple snatch's fixed tuning. Its settings, held as `weapons.snatch`, live with the
-//! weapon-handling settings ([`SnatchConfig`]).
+//! The grapple snatch's fixed tuning.
 
-use jc3vr_body::controllers::overlay::config::OverlayConfig;
-pub use jc3vr_weapons::controllers::weapons::config::{SnatchConfig, SwingConfig};
+use jc3vr_body::controllers::{intent::yank::YankConfig, overlay::config::OverlayConfig};
 
 use crate::controllers::snatch::landing::LandingTuning;
 
-/// The settings one snatch tick reads: its own group and the fields of the other groups it
-/// consults. The bindings fill it from the snapshot of the settings they take for the tick.
+/// The settings one snatch tick reads: the fields of the groups it consults. The bindings fill it
+/// from the snapshot of the settings they take for the tick.
 #[derive(Copy, Clone)]
 pub struct SnatchSettings {
-    /// The snatch's own settings.
-    pub snatch: SnatchConfig,
     /// The world-space overlay, which draws the armed snatch's latch.
     pub overlay: OverlayConfig,
 }
 
-/// The mass the line's [`strength_n`](SwingConfig::strength_n) is given at, kilograms.
+/// The yank that fires the snatch, measured along the grapple hand's aim at the grip edge
+/// ([`reach_along`](jc3vr_body::controllers::intent::yank::reach_along)).
+pub const SNATCH_YANK: YankConfig = YankConfig {
+    enabled: true,
+    min_distance_m: 0.1,
+    min_speed_mps: 0.7,
+    window_s: 0.25,
+    cooldown_s: 0.5,
+};
+
+/// The held line's tuning, fixed at [`SWING`].
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct SwingTuning {
+    /// The heaviest loose object the snatch offers, kilograms. One a hand can carry is pulled into
+    /// the hand; one heavier, up to this, is swung on the line and never comes to the hand.
+    pub ceiling_kg: f32,
+    /// The line's stiffness: the pull per metre it is stretched past its held length, per second
+    /// squared, so the same stretch asks the same acceleration of any mass, up to its strength.
+    pub stiffness_per_s2: f32,
+    /// The line's damping of the target's speed away from the hand, per second.
+    pub damping_per_s: f32,
+    /// The most tension the line holds on a target of [`REFERENCE_MASS_KG`], newtons.
+    pub strength_n: f32,
+    /// How the line's strength grows with the target's mass, `0..=1`: the strength is
+    /// [`strength_n`](Self::strength_n) times the mass over [`REFERENCE_MASS_KG`] to this power
+    /// (`line_strength_n`). At 1 every mass
+    /// swings alike; at 0 the line pulls every mass equally hard, so a heavy one barely moves.
+    pub mass_scaling: f32,
+    /// The line's strength while the other hand braces the grapple hand's wrist, as a multiple of
+    /// one hand's.
+    pub brace_factor: f32,
+    /// The length the line reels in to once the hook bites, metres: a target bitten farther off
+    /// is drawn in to it and then swung around the hand. A target bitten nearer keeps its length.
+    pub swing_length_m: f32,
+    /// How fast the line reels in to [`swing_length_m`](Self::swing_length_m), metres per second.
+    /// The line cannot push, so a target reeled in keeps its speed once the reel stops and coasts
+    /// on toward the hand until friction, gravity, or a swing takes it; zero keeps the length the
+    /// hook bit at.
+    pub reel_mps: f32,
+}
+
+/// The held line's tuning: the swing of a heavy object, and of a weapon or a light object while B
+/// is held (`controllers::snatch::sling`).
+pub const SWING: SwingTuning = SwingTuning {
+    ceiling_kg: 300.0,
+    stiffness_per_s2: 400.0,
+    damping_per_s: 30.0,
+    strength_n: 1500.0,
+    mass_scaling: 0.5,
+    brace_factor: 1.75,
+    swing_length_m: 3.0,
+    reel_mps: 4.0,
+};
+
+/// The mass the line's [`strength_n`](SwingTuning::strength_n) is given at, kilograms.
 pub const REFERENCE_MASS_KG: f32 = 10.0;
 
 /// The grapple snatch's tuning, fixed at [`SNATCH`].
@@ -163,11 +213,10 @@ mod tests {
     const DT: f32 = 1.0 / 30.0;
 
     fn yanks(distances: &[f32]) -> usize {
-        let config = SnatchConfig::new().yank;
         let mut detector = YankDetector::new();
         distances
             .iter()
-            .filter(|&&d| detector.step(DT, Some(d), true, &config).is_some())
+            .filter(|&&d| detector.step(DT, Some(d), true, &SNATCH_YANK).is_some())
             .count()
     }
 

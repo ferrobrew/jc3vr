@@ -169,9 +169,7 @@ pub(super) fn capture(game: &GameTick<'_>, input: Refresh<'_>) -> Eligibility {
     let hint = snatch::hint().filter(|hint| {
         input.ready[hint.hand.index()]
             && matches!(input.owners[hint.hand.index()].mode, Mode::OnFoot(_))
-            && input.config.weapons.snatch.enabled
     });
-    let modifier_enabled = input.config.weapons.snatch.sling;
     let mut input = input;
     let routes = std::mem::take(&mut input.grapple_routes);
     let mut eligibility = capture_current(
@@ -192,7 +190,7 @@ pub(super) fn capture(game: &GameTick<'_>, input: Refresh<'_>) -> Eligibility {
     eligibility.snatch = hint.map(|hint| SnatchHint {
         hand: hint.hand,
         swinging: hint.swinging,
-        modifier_enabled: modifier_enabled && hint.modifier,
+        modifier_enabled: hint.modifier,
         routes,
     });
     eligibility

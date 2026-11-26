@@ -30,7 +30,6 @@ mod scope;
 mod semantic;
 mod settings;
 mod sights;
-mod snatch;
 mod stunt;
 mod summary;
 mod torso;
@@ -82,9 +81,6 @@ pub(crate) fn controls(id: FeatureId) -> Option<FeatureBody> {
             ui.separator();
             glass::glass_settings(ui, &mut CONTROLLERS_CONFIG.edit().glass);
         },
-        FeatureId::Snatch => {
-            |ui, _| snatch::snatch_settings(ui, &mut CONTROLLERS_CONFIG.edit().weapons.snatch)
-        }
         FeatureId::Aim => |ui, _| {
             let mut c = CONTROLLERS_CONFIG.edit();
             aim::aim_settings(ui, &mut c);

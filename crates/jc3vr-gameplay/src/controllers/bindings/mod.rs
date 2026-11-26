@@ -533,7 +533,6 @@ fn tick(game: &GameTick<'_>, dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>)
                     released: edges.released(grapple_hand, Button::SqueezePress),
                 },
                 dt: real_dt,
-                config: &snatch_settings(&config),
             },
         ));
         provided.extend(grapple::line_grab::targets(
@@ -660,7 +659,7 @@ fn tick(game: &GameTick<'_>, dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>)
     );
     let snatch_button_owned = state.bindings.claim_snatch(
         raw_grapple_button,
-        snatch::can_claim_button() && config.weapons.snatch.sling,
+        snatch::can_claim_button(),
         semantic.is_some()
             && !controls.masked_hands.contains(&true)
             && snatch::available_in(game, &detection),
@@ -1395,7 +1394,6 @@ fn line_attached() -> bool {
 /// The settings the snatch reads this tick, from the bindings' snapshot of the controllers' settings.
 fn snatch_settings(config: &ControllersConfig) -> SnatchSettings {
     SnatchSettings {
-        snatch: config.weapons.snatch,
         overlay: config.overlay,
     }
 }

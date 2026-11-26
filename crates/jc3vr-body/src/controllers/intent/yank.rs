@@ -34,8 +34,8 @@ pub const GRAPPLE_YANK: YankConfig = YankConfig {
     cooldown_s: 0.6,
 };
 
-/// A yank detector's settings: the grapple's ([`GRAPPLE_YANK`]), or the snatch's, held in
-/// `SnatchConfig`.
+/// A yank detector's settings: the grapple's ([`GRAPPLE_YANK`]), or the snatch's (`SNATCH_YANK` in
+/// the grapple crate's snatch).
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct YankConfig {
     pub enabled: bool,

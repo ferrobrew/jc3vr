@@ -57,7 +57,6 @@ pub(crate) fn route(id: FeatureId) -> FeatureRoute {
         | FeatureId::GripFingers
         | FeatureId::PhysicalHands
         | FeatureId::CharactersDoors
-        | FeatureId::Snatch
         | FeatureId::Feedback
         | FeatureId::Hold
         | FeatureId::Support
