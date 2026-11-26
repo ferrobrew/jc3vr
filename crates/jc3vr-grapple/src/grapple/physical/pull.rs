@@ -137,12 +137,12 @@ mod tests {
     use glam::Vec3;
 
     use super::*;
-    use crate::grapple::physical::config::GRAPPLE;
+    use crate::grapple::tuning::GRAPPLE;
 
     const DT: f32 = 1.0 / 30.0;
 
     fn run(tracker: &mut PullTracker, distances: &[f32]) -> Vec<PullReading> {
-        let config = GRAPPLE.pull;
+        let config = GRAPPLE.get().physical.pull;
         distances
             .iter()
             .map(|&d| tracker.step(DT, Some(d), &config))
@@ -222,7 +222,7 @@ mod tests {
 
     #[test]
     fn a_seated_pull_past_the_side_pulls_along_the_armed_aim() {
-        let config = GRAPPLE.pull;
+        let config = GRAPPLE.get().physical.pull;
         let mut pull = LinePull::new();
         let along = peak(SEATED_PULL.iter().map(|&grip| {
             pull.step(
@@ -236,7 +236,10 @@ mod tests {
             )
         }));
         assert!(along.speed_mps > 0.7, "{along:?}");
-        assert!(along.depth_m > GRAPPLE.tether.deadzone_m, "{along:?}");
+        assert!(
+            along.depth_m > GRAPPLE.get().physical.tether.deadzone_m,
+            "{along:?}"
+        );
         // The same pull hardly nears a point below the head.
         let below_head = SEATED_HEAD - Vec3::Y * 0.3;
         let mut tracker = PullTracker::new();
@@ -250,7 +253,7 @@ mod tests {
 
     #[test]
     fn a_disarmed_pull_reads_nothing_and_rearms_from_the_hand() {
-        let config = GRAPPLE.pull;
+        let config = GRAPPLE.get().physical.pull;
         let mut pull = LinePull::new();
         let hand = |z: f32| {
             Some(HandLine {
@@ -284,7 +287,7 @@ mod tests {
     fn an_untracked_hand_forgets_the_pull() {
         let mut t = PullTracker::new();
         run(&mut t, &[0.6, 0.4]);
-        let config = GRAPPLE.pull;
+        let config = GRAPPLE.get().physical.pull;
         assert_eq!(t.step(DT, None, &config), PullReading::default());
         let resumed = run(&mut t, &[0.2]);
         assert_eq!(resumed[0], PullReading::default());

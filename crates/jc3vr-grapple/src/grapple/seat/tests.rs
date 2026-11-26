@@ -4,8 +4,9 @@ use glam::Vec3;
 use jc3vr_body::controllers::intent::grapple_button::{SeatRequest, TAP_S};
 use jc3vr_input::frame::Hand;
 
-use crate::grapple::seat::{
-    Act, FLIGHT_S, Pending, Phase, Refusal, SeatTickInput, Target, WireReading, step,
+use crate::grapple::{
+    seat::{Act, Pending, Phase, Refusal, SeatTickInput, Target, WireReading, step},
+    tuning::GRAPPLE,
 };
 
 #[test]
@@ -205,7 +206,7 @@ fn a_wire_that_ends_before_the_hook_holds_is_a_miss() {
 fn a_hook_that_flies_too_long_or_outlives_the_seat_is_called_back() {
     assert_eq!(
         step(
-            flying(FLIGHT_S - DT * 0.5),
+            flying(GRAPPLE.get().seat.flight_s - DT * 0.5),
             &input(true, false, None),
             Some(WireReading::Flying)
         ),

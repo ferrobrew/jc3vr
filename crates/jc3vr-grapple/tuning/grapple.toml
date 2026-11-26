@@ -1,0 +1,85 @@
+# The grapple's tuning: `GrappleTuning` in `src/grapple/tuning.rs`, whose fields say what each value
+# does. Every key is required and no other is accepted. Lengths are metres, angles degrees, times
+# seconds (or milliseconds where the key ends in `_ms`), and accelerations named `_g` multiples of
+# gravity; a share is a fraction of a range, in `0..1`.
+
+[comfort]
+release_s = 0.4
+handoff_timeout_s = 1.5
+handoff_converged_deg = 3.0
+retarget_fresh_s = 2.0
+anchor_snap_m = 0.4
+anchor_snap_ease_s = 0.15
+anchor_teleport_m = 5.0
+anchor_offset_max_m = 1.0
+
+[line]
+min_ahead_m = 0.15
+max_ahead_m = 1.0
+far_margin_m = 0.5
+take_m = 0.12
+palm_from_wrist_m = [0.0, 0.0, -0.07]
+
+[rope]
+min_held_length_m = 0.5
+
+[seat]
+flight_s = 2.0
+ray_past_m = 0.25
+hit_within_m = 0.5
+
+[lock]
+stiffness_per_s2 = 65.0
+damping_per_s = 11.0
+max_accel_g = 4.0
+break_stretch_m = 3.0
+reel_in_mps = 3.0
+min_length_m = 1.5
+reaction = 1.0
+hang_length_m = 3.5
+coast_brake_g = 3.0
+coast_strength_share = 0.8
+pay_out_take_in_m = 0.05
+pay_out_mps = 3.0
+hang_swing_damping_s = 1.0
+moving_hook_mps = 0.5
+handback_for_s = 0.35
+handback_settle_s = 0.15
+handback_carried = 0.8
+entering_ms = 3000
+hang_wanted_ms = 250
+hang_refused_ms = 2000
+level_min = 0.25
+
+[lock.pump]
+accel_g = 0.35
+taut_m = 0.05
+max_step_m = 0.4
+max_speed_mps = 8.0
+stale_ms = 100
+frame_stale_ms = 100
+
+[physical]
+status_max_age_ms = 500
+
+[physical.pull]
+speed_hold_s = 0.8
+relax_mps = 0.25
+
+[physical.reel]
+min_scale = 1.0
+max_scale = 1.5
+full_speed_mps = 2.5
+boost_s = 0.6
+drive_max_age_ms = 250
+
+[physical.tether]
+deadzone_m = 0.08
+full_m = 0.35
+
+[physical.swing]
+deadzone_mps = 0.3
+full_mps = 1.5
+scale = 1.5
+max_scale = 2.0
+smoothing_s = 0.05

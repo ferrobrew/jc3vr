@@ -18,6 +18,8 @@ use jc3vr_core::game_tick::GameTick;
 use jc3vr_input::{frame::Hand, haptics::cues::Event};
 use parking_lot::Mutex;
 
+use crate::grapple::tuning::GRAPPLE;
+
 /// What the bindings hand the seat grapple's tick.
 pub struct SeatTickInput {
     /// The seat grapple is switched on and stands in for the game's ([`stands_in`]).
@@ -197,10 +199,6 @@ pub fn stand_down(_game: &GameTick<'_>) {
     }
 }
 
-/// How long the hook may fly from the seat before it is called back, game seconds. The hook flies
-/// the grapple's range in well under a second.
-pub(crate) const FLIGHT_S: f32 = 2.0;
-
 /// The seat grapple between ticks.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub(crate) enum Phase {
@@ -334,7 +332,7 @@ pub(crate) fn step(
                 ),
                 Some(WireReading::Flying) => {
                     let flown_s = flown_s + dt;
-                    if flown_s >= FLIGHT_S {
+                    if flown_s >= GRAPPLE.get().seat.flight_s {
                         cancel(None)
                     } else {
                         (

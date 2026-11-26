@@ -82,11 +82,12 @@ use re_utilities::hook_library::HookLibrary;
 
 use crate::grapple::{
     physical::{
-        config::{GRAPPLE, LOCK, SwingTuning},
+        config::SwingTuning,
         lock::model::{FreeHand, Held, Pump, PumpSample, SwingInput, TakeIn},
     },
     rope,
     rope::RopeFault,
+    tuning::GRAPPLE,
 };
 
 /// The lock's hooks, aggregated by [`crate::grapple::physical::hook_library`].
@@ -229,7 +230,7 @@ pub fn entering_helicopter() -> bool {
     HANG_GATE
         .lock()
         .entering
-        .is_some_and(|at| at.elapsed() <= ENTERING_FOR)
+        .is_some_and(|at| at.elapsed() <= Duration::from_millis(GRAPPLE.get().lock.entering_ms))
 }
 
 /// Whether the lock could take hold now: the local player's hook reels in along an attached line to
@@ -308,6 +309,7 @@ pub fn lock_tick(game: &GameTick<'_>, input: &LockTickInput) {
     // or the parachute.
     let release_velocity = SHARED.lock().release_velocity;
     if let Some((velocity, at)) = release_velocity {
+        let lock = &GRAPPLE.get().lock;
         let elapsed = at.elapsed().as_secs_f32();
         let expected = velocity - Vec3::Y * GRAVITY_MPS2 * elapsed;
         let measured = Vec3::from(character.m_MeasuredWorldVelocity);
@@ -315,15 +317,15 @@ pub fn lock_tick(game: &GameTick<'_>, input: &LockTickInput) {
         // of it however fast it goes.
         let carried = measured.is_finite()
             && expected.try_normalize().is_none_or(|direction| {
-                measured.dot(direction) >= expected.length() * HANDBACK_CARRIED
+                measured.dot(direction) >= expected.length() * lock.handback_carried
             });
         // Until the cancel has had its world update, a character still carrying the velocity
         // proves nothing.
-        let settled = elapsed >= HANDBACK_SETTLE_S && carried;
+        let settled = elapsed >= lock.handback_settle_s && carried;
         let taken_over = input.deployed
             || unsafe { engine::supported(character) }
             || unsafe { engine::reeling_far_end(hook) }.is_some();
-        if elapsed > HANDBACK_FOR_S || settled || taken_over {
+        if elapsed > lock.handback_for_s || settled || taken_over {
             let mut shared = SHARED.lock();
             if shared
                 .release_velocity
@@ -356,7 +358,7 @@ pub fn lock_tick(game: &GameTick<'_>, input: &LockTickInput) {
             .lock()
             .wanted
             .take()
-            .filter(|at| at.elapsed() <= HANG_WANTED_FOR)
+            .filter(|at| at.elapsed() <= Duration::from_millis(GRAPPLE.get().lock.hang_wanted_ms))
             .is_some();
         let kind = if hang {
             Some(Hold::Hang)
@@ -387,6 +389,7 @@ pub fn lock_tick(game: &GameTick<'_>, input: &LockTickInput) {
             end(Some((character, hook)), why, input.hand)
         }
         None => {
+            let lock = &GRAPPLE.get().lock;
             let (share, free_held) = {
                 let mut shared = SHARED.lock();
                 let Some(active) = shared.active.as_mut() else {
@@ -395,7 +398,7 @@ pub fn lock_tick(game: &GameTick<'_>, input: &LockTickInput) {
                 let (free_taken, changed) =
                     active
                         .free
-                        .step(input.real_dt, input.free_hand, LOCK.reel_in_mps);
+                        .step(input.real_dt, input.free_hand, lock.reel_in_mps);
                 let free_held = active.free.held();
                 if changed {
                     tracing::info!(
@@ -410,12 +413,12 @@ pub fn lock_tick(game: &GameTick<'_>, input: &LockTickInput) {
                 }
                 let taken = active
                     .take_in
-                    .step(input.real_dt, input.line, LOCK.reel_in_mps)
+                    .step(input.real_dt, input.line, lock.reel_in_mps)
                     + free_taken;
                 active.pump.sample(pump_sample, input.real_dt, &pump_tuning);
                 active.pump_tuning = pump_tuning;
                 active.pump_at = Instant::now();
-                active.held.take_in(taken, input.real_dt, &LOCK);
+                active.held.take_in(taken, input.real_dt, lock);
                 let length_m = active.held.rope.length_m;
                 let braking = active.held.coasting();
                 shared.status.length_m = length_m;
@@ -487,11 +490,12 @@ pub(crate) unsafe fn drive(
         SHARED.lock().fault = Some(BreakCause::TargetGone);
         return false;
     };
+    let lock = &GRAPPLE.get().lock;
     let rider = Vec3::from_array(position.data);
     let target_inverse_mass = active
         .target
-        .map_or(0.0, |t| t.inverse_mass * LOCK.reaction);
-    if active.pump_at.elapsed() > Duration::from_millis(100) {
+        .map_or(0.0, |t| t.inverse_mass * lock.reaction);
+    if active.pump_at.elapsed() > Duration::from_millis(lock.pump.stale_ms) {
         active.pump.expire();
     }
     let pump_velocity = active.pump.take(
@@ -514,7 +518,7 @@ pub(crate) unsafe fn drive(
             target_inverse_mass,
             dt,
         },
-        &LOCK,
+        lock,
     );
     let mut shared = SHARED.lock();
     let out = match swung {
@@ -540,7 +544,7 @@ pub(crate) unsafe fn drive(
             impulse: Vec3::ZERO,
             at: hook_point,
         });
-        pending.impulse += out.target_impulse * LOCK.reaction;
+        pending.impulse += out.target_impulse * lock.reaction;
         pending.at = hook_point;
     }
     let status = &mut shared.status;
@@ -557,10 +561,11 @@ pub(crate) unsafe fn drive(
 
 fn pump_sample(input: &LockTickInput) -> (Option<PumpSample>, SwingTuning) {
     let scale = VR_CONFIG.lock().world_scale;
-    let tuning = GRAPPLE.swing;
+    let tuning = GRAPPLE.get().physical.swing;
     let fresh = frame::with_latest(|frame| {
         frame.focused
-            && frame.published_at.elapsed() <= Duration::from_millis(100)
+            && frame.published_at.elapsed()
+                <= Duration::from_millis(GRAPPLE.get().lock.pump.frame_stale_ms)
             && frame.hand(input.hand).active
             && frame.hand(input.hand).grip.is_tracked()
     })
@@ -607,10 +612,10 @@ fn want_hang() {
 fn hang_takes_over() -> bool {
     let gate = HANG_GATE.lock();
     gate.ticked
-        .is_some_and(|at| at.elapsed() <= HANG_WANTED_FOR)
-        && gate
-            .refused
-            .is_none_or(|at| at.elapsed() > HANG_REFUSED_FOR)
+        .is_some_and(|at| at.elapsed() <= Duration::from_millis(GRAPPLE.get().lock.hang_wanted_ms))
+        && gate.refused.is_none_or(|at| {
+            at.elapsed() > Duration::from_millis(GRAPPLE.get().lock.hang_refused_ms)
+        })
 }
 
 /// How the lock took hold.
@@ -655,9 +660,10 @@ unsafe fn start(
         return refuse("the character's mass could not be read");
     };
     let rider = character_position(character);
+    let lock = &GRAPPLE.get().lock;
     let held = match hold {
-        Hold::Swing => Held::new(hook_point, rider, &LOCK),
-        Hold::Hang => Held::hang(hook_point, rider, LOCK.hang_length_m, &LOCK),
+        Hold::Swing => Held::new(hook_point, rider, lock),
+        Hold::Hang => Held::hang(hook_point, rider, lock.hang_length_m, lock),
     };
     let Some(held) = held else {
         return refuse("the line's length is not finite");
@@ -676,7 +682,7 @@ unsafe fn start(
     let mut pump = Pump::default();
     pump.sample(pump_sample, input.real_dt, &pump_tuning);
     let mut take_in = TakeIn::default();
-    take_in.step(input.real_dt, input.line, LOCK.reel_in_mps);
+    take_in.step(input.real_dt, input.line, lock.reel_in_mps);
     let lock_target = LockTarget {
         kind: kind_label(kind),
         mass_kg: target.map(|t| 1.0 / t.inverse_mass),
@@ -914,18 +920,6 @@ struct Shared {
     armed: bool,
 }
 
-/// How long after a release its velocity is handed back while the character is slower than it,
-/// seconds: past the reel's cancel and the state change after it.
-const HANDBACK_FOR_S: f32 = 0.35;
-
-/// How long after a release a character carrying its velocity counts as having kept it, seconds:
-/// a few input ticks, past the world update in which the reel's cancel scales it.
-const HANDBACK_SETTLE_S: f32 = 0.15;
-
-/// The share of the release's velocity, carried on under gravity, at which the character counts
-/// as carrying it.
-const HANDBACK_CARRIED: f32 = 0.8;
-
 /// A leaf lock: nothing else is taken while it is held. The input tick and the reel task both run
 /// on the game thread, so it is never contended in play.
 static SHARED: Mutex<Shared> = Mutex::new(Shared {
@@ -974,14 +968,3 @@ struct HangGate {
     /// When Y under a helicopter let the reel resume into the game's hang.
     entering: Option<Instant>,
 }
-
-/// How long after Y under a helicopter its pull up to the door lasts, for the log of its arrival
-/// and the bindings' hold on the wingsuit: the pull and the door-side arrival's clip.
-const ENTERING_FOR: Duration = Duration::from_secs(3);
-
-/// How long an arrival's ask for a hang stands: the arrival asks again on every reel tick it
-/// arrives, so an ask older than a few ticks belongs to a reel that has ended.
-const HANG_WANTED_FOR: Duration = Duration::from_millis(250);
-
-/// How long after a refused hang the reel's arrival is left to the game, so that the reel ends.
-const HANG_REFUSED_FOR: Duration = Duration::from_secs(2);

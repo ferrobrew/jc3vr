@@ -13,7 +13,7 @@ use body_rig::smooth::follow_factor;
 use glam::Vec2;
 use jc3vr_body::controllers::hands::anchor::HangPump;
 
-use crate::grapple::physical::config::{GRAPPLE, SwingTuning};
+use crate::grapple::{physical::config::SwingTuning, tuning::GRAPPLE};
 
 /// The pump as the hands' anchor calls it, with the fixed tuning.
 pub const HANG_PUMP: HangPump = HangPump {
@@ -53,15 +53,15 @@ pub fn smooth_velocity(previous: Vec2, sample: Vec2, dt: f32, config: &SwingTuni
 }
 
 fn anchor_smooth_velocity(previous: Vec2, sample: Vec2, dt: f32) -> Vec2 {
-    smooth_velocity(previous, sample, dt, &GRAPPLE.swing)
+    smooth_velocity(previous, sample, dt, &GRAPPLE.get().physical.swing)
 }
 
 fn anchor_pump_impulse(velocity: Vec2, full_impulse: f32) -> Vec2 {
-    pump_impulse(velocity, full_impulse, &GRAPPLE.swing)
+    pump_impulse(velocity, full_impulse, &GRAPPLE.get().physical.swing)
 }
 
 fn anchor_combine(hold: Vec2, pumped: Vec2, full_impulse: f32) -> Vec2 {
-    combine(hold, pumped, full_impulse, &GRAPPLE.swing)
+    combine(hold, pumped, full_impulse, &GRAPPLE.get().physical.swing)
 }
 
 #[cfg(test)]
@@ -70,7 +70,7 @@ mod tests {
 
     #[test]
     fn the_pump_pushes_against_the_motion_and_saturates() {
-        let config = GRAPPLE.swing;
+        let config = GRAPPLE.get().physical.swing;
         assert_eq!(pump_impulse(Vec2::new(0.1, 0.0), 10.0, &config), Vec2::ZERO);
         let half_speed = (config.deadzone_mps + config.full_mps) / 2.0;
         let half = pump_impulse(Vec2::new(0.0, half_speed), 10.0, &config);
@@ -85,7 +85,7 @@ mod tests {
 
     #[test]
     fn the_sum_is_capped() {
-        let config = GRAPPLE.swing;
+        let config = GRAPPLE.get().physical.swing;
         let total = combine(Vec2::new(10.0, 0.0), Vec2::new(30.0, 0.0), 10.0, &config);
         assert!((total.length() - 10.0 * config.max_scale).abs() < 1e-3);
         let small = combine(Vec2::new(1.0, 0.0), Vec2::new(0.0, 1.0), 10.0, &config);
@@ -98,7 +98,7 @@ mod tests {
 
     #[test]
     fn the_velocity_settles_on_the_samples() {
-        let config = GRAPPLE.swing;
+        let config = GRAPPLE.get().physical.swing;
         let mut v = Vec2::ZERO;
         for _ in 0..30 {
             v = smooth_velocity(v, Vec2::new(1.0, 0.0), 1.0 / 30.0, &config);

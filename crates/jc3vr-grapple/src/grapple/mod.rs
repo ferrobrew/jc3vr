@@ -17,7 +17,8 @@
 //!   [`GrappleComfortMode`] — by default the frame the previous render composed with, held from
 //!   fire to landing so the view stays world-stable. The hold engages the moment a fire is
 //!   committed (the fire act whips the body toward the target before the wire even spawns) and
-//!   releases by blending the accumulated rotation back over [`RELEASE_S`].
+//!   releases by blending the accumulated rotation back over the tuning's
+//!   [`release_s`](tuning::ComfortTuning::release_s).
 //! - **The yaw handoff**: an on-foot landing would otherwise return 10–25° of accumulated yaw to
 //!   the view through the release blend. Instead the held heading is posted for the VR body-turn
 //!   accumulator ([`take_body_yaw_retarget`]), the character turns to face where the player is
@@ -25,8 +26,9 @@
 //!   heading converges — the view never sweeps through the yaw.
 //! - **The landing-snap absorber** ([`filter_anchor`]): the attach/landing animation teleports the
 //!   head anchor up to a metre against the root in one sim tick. A tick's change in the anchor's
-//!   offset from the root beyond [`ANCHOR_SNAP_M`] is absorbed into an offset that decays out of
-//!   the view; the root's own motion, at any speed, passes through 1:1, and the filtered anchor is
+//!   offset from the root beyond the tuning's
+//!   [`anchor_snap_m`](tuning::ComfortTuning::anchor_snap_m) is absorbed into an offset that
+//!   decays out of the view; the root's own motion, at any speed, passes through 1:1, and the filtered anchor is
 //!   always `raw + offset`, so the engine's tick interpolation is undisturbed.
 //!
 //! The filter advances on the engine's input tick and again on every rendered VR frame
@@ -58,12 +60,15 @@ pub mod physical;
 pub mod rope;
 pub mod seat;
 pub mod telemetry;
+pub mod tuning;
 
 use jc3vr_body::controllers::physics::{grapple_hook as hook, grapple_hook::HookRead};
 use jc3vr_view::{
     headpose,
     headpose::config::{GrappleComfortConfig, GrappleComfortMode},
 };
+
+use crate::grapple::tuning::GRAPPLE;
 
 /// Advance the filter one step: read the hook's phase, run the engage/hold/handoff/release state
 /// machine, and update the anchor absorber. `body` is the raw body rotation as of this advance,
@@ -76,6 +81,7 @@ use jc3vr_view::{
 /// input-tick caller already holds the sim lock, and reading `sim::mode()` here would deadlock (SIM
 /// → FILTER is the only legal lock order).
 pub fn advance(body: Quat, rooted: Option<Vec3>, on_foot: bool, config: &GrappleComfortConfig) {
+    let tuning = &GRAPPLE.get().comfort;
     let mut s = FILTER.lock();
     let now = Instant::now();
     let dt = s
@@ -100,7 +106,8 @@ pub fn advance(body: Quat, rooted: Option<Vec3>, on_foot: bool, config: &Grapple
         && headpose::source() == headpose::Source::Vr
     {
         s.pending_retarget = Some((headpose::sim::body_yaw_of(s.held), now));
-        s.handoff_deadline = Some(now + std::time::Duration::from_secs_f32(HANDOFF_TIMEOUT_S));
+        s.handoff_deadline =
+            Some(now + std::time::Duration::from_secs_f32(tuning.handoff_timeout_s));
     }
     s.was_active = active;
 
@@ -110,7 +117,11 @@ pub fn advance(body: Quat, rooted: Option<Vec3>, on_foot: bool, config: &Grapple
     if let Some(deadline) = s.handoff_deadline {
         let dyaw =
             wrap(headpose::sim::body_yaw_of(body) - headpose::sim::body_yaw_of(s.held)).abs();
-        if active || !on_foot || now >= deadline || dyaw < HANDOFF_CONVERGED_RAD {
+        if active
+            || !on_foot
+            || now >= deadline
+            || dyaw < tuning.handoff_converged_deg * std::f32::consts::PI / 180.0
+        {
             s.handoff_deadline = None;
         }
     }
@@ -134,7 +145,7 @@ pub fn advance(body: Quat, rooted: Option<Vec3>, on_foot: bool, config: &Grapple
     let tau = if target > s.factor {
         ENGAGE_S
     } else {
-        RELEASE_S
+        tuning.release_s
     };
     s.factor = s.factor + (target - s.factor) * follow_factor(dt, tau);
     // The release decay is exponential and never truly reaches zero; snap the tail off so the
@@ -176,7 +187,7 @@ pub fn blend_factor() -> f32 {
 pub fn take_body_yaw_retarget() -> Option<f32> {
     let mut s = FILTER.lock();
     let (yaw, at) = s.pending_retarget.take()?;
-    (at.elapsed().as_secs_f32() <= RETARGET_FRESH_S).then_some(yaw)
+    (at.elapsed().as_secs_f32() <= GRAPPLE.get().comfort.retarget_fresh_s).then_some(yaw)
 }
 
 /// The landing-snap absorber step (see the module docs). The detection runs on the anchor's offset
@@ -192,20 +203,23 @@ fn advance_absorber(s: &mut GrappleFilter, rooted: Option<Vec3>, reeling: bool, 
         s.anchor_offset = absorb_step(s.anchor_offset, rooted - previous, armed);
     }
     s.prev_rooted = rooted;
-    s.anchor_offset *= (-dt / ANCHOR_SNAP_EASE_S).exp();
+    s.anchor_offset *= (-dt / GRAPPLE.get().comfort.anchor_snap_ease_s).exp();
 }
 
 /// The absorbed offset after the anchor's offset from the root moved by `step` in one advance:
-/// while `armed`, a step beyond [`ANCHOR_SNAP_M`] is taken out of the view, and anything else
-/// passes. A step beyond [`ANCHOR_TELEPORT_M`] is no animation and resets the offset.
+/// while `armed`, a step beyond [`anchor_snap_m`](tuning::ComfortTuning::anchor_snap_m) is taken
+/// out of the view, and anything else passes. A step beyond
+/// [`anchor_teleport_m`](tuning::ComfortTuning::anchor_teleport_m) is no animation and resets the
+/// offset.
 fn absorb_step(offset: Vec3, step: Vec3, armed: bool) -> Vec3 {
+    let tuning = &GRAPPLE.get().comfort;
     let length = step.length();
-    if length > ANCHOR_TELEPORT_M {
+    if length > tuning.anchor_teleport_m {
         Vec3::ZERO
-    } else if armed && length > ANCHOR_SNAP_M {
+    } else if armed && length > tuning.anchor_snap_m {
         // Hard-capped so a mis-detection degrades into a bounded, decaying lag, never a runaway
         // detach from the body.
-        (offset - step).clamp_length_max(ANCHOR_OFFSET_MAX_M)
+        (offset - step).clamp_length_max(tuning.anchor_offset_max_m)
     } else {
         offset
     }
@@ -216,41 +230,9 @@ fn absorb_step(offset: Vec3, step: Vec3, armed: bool) -> Vec3 {
 /// grapple's opening rotation leak through.
 const ENGAGE_S: f32 = 0.0;
 
-/// The blend-out time constant (seconds) when the grapple ends, easing the body rotation
-/// accumulated over the reel back into the view instead of snapping to it. Under the yaw handoff
-/// this carries only the small pitch and roll residual.
-const RELEASE_S: f32 = 0.4;
-
-/// How long (seconds) the post-reel yaw handoff may hold the view while the body turns toward it,
-/// before falling back to the blend release (the body can be blocked from turning).
-const HANDOFF_TIMEOUT_S: f32 = 1.5;
-
-/// The change in one tick (metres) of the head anchor's offset from the root beyond which the change
-/// is treated as a landing or attach snap and absorbed. The snap moves the head half a metre to
-/// a metre and a half against the root in one tick; a clip's own motion moves it a few
-/// centimetres a tick, and a canopy's opening up to about a quarter of a metre. The absorbed
-/// change decays over [`ANCHOR_SNAP_EASE_S`]. The HMD's own tracking is unaffected.
-const ANCHOR_SNAP_M: f32 = 0.4;
-
-/// How long (seconds) an absorbed landing snap takes to ease back out of the view.
-const ANCHOR_SNAP_EASE_S: f32 = 0.15;
-
-/// The heading convergence (radians) below which the post-reel yaw handoff completes.
-const HANDOFF_CONVERGED_RAD: f32 = 3.0 * std::f32::consts::PI / 180.0;
-
-/// How long (seconds) a pending yaw-handoff heading stays valid awaiting an on-foot tick.
-const RETARGET_FRESH_S: f32 = 2.0;
-
 /// The blend below which a releasing filter snaps to fully disarmed (its rotational effect is long
 /// imperceptible there).
 const FACTOR_DISARM: f32 = 1e-3;
-
-/// Steps of the anchor's offset from the root beyond this (metres) are no animation: passed
-/// through, with the absorbed offset reset.
-const ANCHOR_TELEPORT_M: f32 = 5.0;
-
-/// The absorbed offset never exceeds this (metres).
-const ANCHOR_OFFSET_MAX_M: f32 = 1.0;
 
 /// The filter's state: written by [`advance`] in the input tick's poll stage (the engine's
 /// input job in play) and the render thread's frame loop, read per-eye on the render thread.
@@ -416,7 +398,7 @@ mod tests {
         assert_eq!(absorb_step(Vec3::ZERO, snap, true), -snap);
         assert_eq!(absorb_step(Vec3::ZERO, snap, false), Vec3::ZERO);
         let capped = absorb_step(Vec3::ZERO, Vec3::new(0.0, 3.0, 0.0), true);
-        assert!((capped.length() - ANCHOR_OFFSET_MAX_M).abs() < 1e-5);
+        assert!((capped.length() - GRAPPLE.get().comfort.anchor_offset_max_m).abs() < 1e-5);
         assert_eq!(
             absorb_step(capped, Vec3::new(10.0, 0.0, 0.0), true),
             Vec3::ZERO
