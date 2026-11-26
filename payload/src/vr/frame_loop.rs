@@ -17,10 +17,7 @@ use parking_lot::MutexGuard;
 use crate::{
     config::Config,
     controllers::{
-        body::rig::{
-            live_observation::{self, LocatedTracking},
-            origin_provenance::{self, OriginEvidence, OriginUnavailable, TrackingReceipt},
-        },
+        body::rig::origin_provenance::{self, OriginEvidence, OriginUnavailable, TrackingReceipt},
         frame as controller_frame,
     },
     frame_timing::{self, Slot},
@@ -30,7 +27,11 @@ use crate::{
     vr::{
         Fov, FreezeMode, OffAxisProjection, VIEW_TYPE, VrConfig,
         convert::{self, posef, quat, vec3},
-        input::flight_pose::{self, LocatedHead},
+        input::{
+            config::{HapticOutput, SamplingConfig},
+            flight_pose::{self, LocatedHead},
+        },
+        live_tracking::{self, LocatedTracking},
         pose_control,
         recenter::mid_pose,
         stage,
@@ -51,7 +52,7 @@ use crate::{
 /// frame's `xrWaitFrame` follow the previous frame's `xrBeginFrame` without waiting for its
 /// `xrEndFrame`. Called from `hooks::game::game_update_render`.
 pub fn frame_wait() -> Option<WaitedFrame> {
-    live_observation::tracking_unavailable();
+    live_tracking::tracking_unavailable();
     let mut guard = lock_state();
 
     // No controller frame is sampled on either early return, so the last one published must not
@@ -533,14 +534,21 @@ impl VrState {
         // The controllers are sampled at the same predicted display time and re-based against the
         // same baseline as the eye views, so a hand and the head it is drawn beside agree.
         if let Some(input) = self.input.as_mut() {
-            let controllers = Config::lock_query(|c| c.controllers.clone());
+            let sampling = Config::lock_query(|c| SamplingConfig {
+                enabled: c.controllers.enabled,
+                input: c.controllers.input,
+                haptics: HapticOutput {
+                    enabled: c.controllers.haptics.enabled,
+                    intensity: c.controllers.haptics.intensity,
+                },
+            });
             let _timing = frame_timing::scope(Slot::VrInput);
             let sampled = input.update(
                 &session.handle,
                 &session.local,
                 frame_state.predicted_display_time,
                 self.baseline,
-                &controllers,
+                &sampling,
                 flight_head,
             );
             tracking_receipt = sampled.as_ref().map(TrackingReceipt::from_frame);
@@ -552,7 +560,7 @@ impl VrState {
             if let Some(head) = body_head.as_mut() {
                 head.origin = tracking_origin;
             }
-            live_observation::publish_tracking(body_head, sampled);
+            live_tracking::publish_tracking(body_head, sampled);
         } else {
             flight_pose::unavailable();
             tracking_origin = OriginEvidence::Unavailable(OriginUnavailable::SourceAbsent);

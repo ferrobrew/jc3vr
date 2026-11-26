@@ -7,11 +7,9 @@ use glam::{Mat4, Quat, Vec3};
 use parking_lot::Mutex;
 
 use crate::{
-    controllers::body::{
-        procedural::skeleton::SkeletonKey,
-        rig::{live_observation, origin_provenance::OriginEvidence},
-    },
-    headpose::{Anchors, Source},
+    controllers::body::rig::origin_provenance::OriginEvidence,
+    headpose::{Anchors, Source, participants::head_participants, skeleton::SkeletonKey, teleport},
+    vr::live_tracking,
 };
 
 #[cfg(test)]
@@ -149,8 +147,7 @@ pub(crate) struct Context {
 impl Context {
     pub(crate) fn current() -> Self {
         let now = Instant::now();
-        let tracking = live_observation::status()
-            .raw
+        let tracking = live_tracking::status()
             .packet
             .filter(|packet| {
                 packet.focused
@@ -168,9 +165,8 @@ impl Context {
             });
         Self {
             source: crate::headpose::source(),
-            gameplay: crate::hooks::in_gameplay()
-                && crate::controllers::mode::current().mode != crate::controllers::mode::Mode::Ui,
-            teleport: crate::controllers::roomscale::teleport::epoch(),
+            gameplay: crate::hooks::in_gameplay() && !(head_participants().ui_mode)(),
+            teleport: teleport::epoch(),
             recenter: crate::vr::recenter_count(),
             world_scale: crate::config::Config::lock_query(|c| c.vr.world_scale),
             tracking,

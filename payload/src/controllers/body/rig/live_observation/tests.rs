@@ -1,8 +1,75 @@
+use std::time::{Duration, Instant};
+
+use openxr as xr;
+
 use super::*;
-use crate::controllers::{
-    body::rig::root::{owner::RootOwner, test_source, test_source_with_root},
-    frame::ActionSetKind,
+use crate::{
+    controllers::{
+        body::rig::root::{owner::RootOwner, test_source, test_source_with_root},
+        frame::{ActionSetKind, ControllerFrame},
+    },
+    vr::live_tracking::{LocatedTracking, RawAvailability, make_raw_packet},
 };
+
+/// A [`Publisher`] with its own raw tracking publication, standing in for the VR runtime's
+/// ([`crate::vr::live_tracking`]).
+struct TestPublisher {
+    raw: Result<RawPacket, Unavailable>,
+    publisher: Publisher,
+}
+
+impl TestPublisher {
+    fn new() -> Self {
+        Self {
+            raw: Err(Unavailable::NotCaptured),
+            publisher: Publisher::new(),
+        }
+    }
+
+    fn publish_tracking(
+        &mut self,
+        located: Option<LocatedTracking>,
+        controllers: Option<ControllerFrame>,
+    ) {
+        self.raw = make_raw_packet(located, controllers);
+    }
+
+    fn publish_native(&mut self, capture: NativeCapture, at: Instant, origin: OriginCounters) {
+        self.publisher.publish_native(capture, at, origin);
+    }
+
+    fn clear_native(&mut self) {
+        self.publisher.clear_native();
+    }
+
+    fn publish_composition(
+        &mut self,
+        source: FrameSourceSnapshot,
+        at: Instant,
+        origin: OriginCounters,
+    ) {
+        self.publisher.publish_composition(source, at, origin);
+    }
+
+    fn clear_composition(&mut self) {
+        self.publisher.clear_composition();
+    }
+
+    fn read(&self, now: Instant, max_age: Duration, origin: OriginCounters) -> ObservationStatus {
+        self.publisher.read(self.raw, now, max_age, origin)
+    }
+
+    fn read_completion_status(
+        &self,
+        now: Instant,
+        max_age: Duration,
+        origin: OriginCounters,
+        completion: CompletionSnapshot,
+    ) -> ObservationStatus {
+        self.publisher
+            .read_completion_status(self.raw, now, max_age, origin, completion)
+    }
+}
 
 #[test]
 fn raw_packet_retains_actual_receipt_and_independent_hand_validity() {
@@ -13,7 +80,7 @@ fn raw_packet_retains_actual_receipt_and_independent_hand_validity() {
     controllers.hands[0].grip.pose.position = Vec3::X;
     let mut located = located();
     located.flags = xr::ViewStateFlags::POSITION_VALID;
-    let mut publisher = Publisher::new();
+    let mut publisher = TestPublisher::new();
     publisher.publish_tracking(Some(located), Some(controllers));
 
     let status = publisher.read(now, Duration::ZERO, origin());
@@ -40,7 +107,7 @@ fn raw_packet_retains_actual_receipt_and_independent_hand_validity() {
 #[test]
 fn mismatched_or_missing_live_source_replaces_the_previous_packet() {
     let now = Instant::now();
-    let mut publisher = Publisher::new();
+    let mut publisher = TestPublisher::new();
     publisher.publish_tracking(Some(located()), Some(controllers(now)));
     let mut mismatch = controllers(now);
     mismatch.display_time_ns += 1;
@@ -64,7 +131,7 @@ fn mismatched_or_missing_live_source_replaces_the_previous_packet() {
 fn independent_source_ages_do_not_create_a_temporal_pair() {
     let now = Instant::now();
     let earlier = now - Duration::from_millis(20);
-    let mut publisher = Publisher::new();
+    let mut publisher = TestPublisher::new();
     publisher.publish_native(native(), earlier, origin());
     publisher.publish_tracking(Some(located()), Some(controllers(now)));
     let status = publisher.read(now, Duration::from_millis(10), origin());
@@ -99,7 +166,7 @@ fn independent_source_ages_do_not_create_a_temporal_pair() {
 #[test]
 fn future_publications_and_changed_origin_counters_are_unavailable() {
     let now = Instant::now();
-    let mut publisher = Publisher::new();
+    let mut publisher = TestPublisher::new();
     publisher.publish_tracking(Some(located()), Some(controllers(now)));
     publisher.publish_native(native(), now, origin());
     let before = publisher.read(now - Duration::from_nanos(1), Duration::MAX, origin());
@@ -135,7 +202,7 @@ fn future_publications_and_changed_origin_counters_are_unavailable() {
 #[test]
 fn latest_native_capture_is_owned_and_invalid_capture_does_not_reuse_the_old_one() {
     let now = Instant::now();
-    let mut publisher = Publisher::new();
+    let mut publisher = TestPublisher::new();
     let first = native();
     publisher.publish_native(first, now, origin());
     let held = publisher.read(now, Duration::ZERO, origin());
@@ -169,7 +236,7 @@ fn latest_native_capture_is_owned_and_invalid_capture_does_not_reuse_the_old_one
 #[test]
 fn repeated_status_reads_preserve_owned_raw_evidence_without_mutating_the_publication() {
     let now = Instant::now();
-    let mut publisher = Publisher::new();
+    let mut publisher = TestPublisher::new();
     publisher.publish_tracking(Some(located()), Some(controllers(now)));
     let held = publisher.read(now, Duration::ZERO, origin());
     assert_eq!(publisher.read(now, Duration::ZERO, origin()), held);
@@ -230,7 +297,7 @@ fn completion_freshness_is_read_only_and_does_not_join_equal_host_times() {
     assert_eq!(read_completion(snapshot, now, Duration::ZERO), observed);
     assert_eq!(snapshot.completion(), Some(completion));
 
-    let mut publisher = Publisher::new();
+    let mut publisher = TestPublisher::new();
     publisher.publish_native(native(), now, origin());
     publisher.publish_tracking(Some(located()), Some(controllers(now)));
     let status = publisher.read_completion_status(now, Duration::ZERO, origin(), snapshot);
@@ -300,7 +367,7 @@ fn production_publisher_matches_exact_identity_across_independent_times_and_repe
     let (token, source) = test_source(7, completed_at);
     let native_at = completed_at + Duration::from_millis(1);
     let frame_at = completed_at + Duration::from_millis(3);
-    let mut publisher = Publisher::new();
+    let mut publisher = TestPublisher::new();
     let capture = NativeCapture {
         completion: Some(token),
         ..native()
@@ -340,7 +407,7 @@ fn equal_clocks_missing_tokens_and_new_completions_do_not_match_the_held_frame()
     let now = Instant::now();
     let (first, source) = test_source(1, now);
     let (second, replacement) = test_source(2, now);
-    let mut publisher = Publisher::new();
+    let mut publisher = TestPublisher::new();
     publisher.publish_composition(source, now, origin());
     publisher.publish_native(
         NativeCapture {
@@ -403,7 +470,7 @@ fn equal_clocks_missing_tokens_and_new_completions_do_not_match_the_held_frame()
 fn clears_teleports_and_unavailable_sources_replace_a_previously_matched_result() {
     let now = Instant::now();
     let (token, source) = test_source(1, now);
-    let mut publisher = Publisher::new();
+    let mut publisher = TestPublisher::new();
     publisher.publish_native(
         NativeCapture {
             completion: Some(token),
@@ -458,7 +525,7 @@ fn clears_teleports_and_unavailable_sources_replace_a_previously_matched_result(
 fn frame_age_and_origin_counters_reject_without_joining_sources() {
     let now = Instant::now();
     let (token, source) = test_source(1, now);
-    let mut publisher = Publisher::new();
+    let mut publisher = TestPublisher::new();
     publisher.publish_native(
         NativeCapture {
             completion: Some(token),
@@ -504,7 +571,7 @@ fn tracking_origin_matches_held_sources_without_native_or_latest_global_labels()
     let [first, second] = crate::controllers::body::rig::origin_provenance::test_origins();
     let mut head = located();
     head.origin = first;
-    let mut publisher = Publisher::new();
+    let mut publisher = TestPublisher::new();
     publisher.publish_tracking(Some(head), Some(controllers(now)));
     let receipt = Some(TrackingReceipt::from_frame(&controllers(now)));
     let source = test_source(1, now).1.with_tracking_origin(first, receipt);

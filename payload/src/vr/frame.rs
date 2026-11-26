@@ -16,12 +16,11 @@ use parking_lot::Mutex;
 use crate::{
     config,
     controllers::body::rig::origin_provenance::{OriginEvidence, TrackingReceipt},
-    headpose,
+    headpose::{self, FrameTelemetry, participants::head_participants},
     render_frame::RenderFrameSlot,
     testing::visual::headset::{self, HeadsetRig},
     vr::{
-        EyeView, Fov, FrameInputs, FrameTelemetry, FreezeMode, LocatedFrame, OffAxisProjection,
-        VrConfig,
+        EyeView, Fov, FrameInputs, FreezeMode, LocatedFrame, OffAxisProjection, VrConfig,
         config::ProjectionConvention,
         convert::{quat, vec3},
         participants::frame_participants,
@@ -336,8 +335,9 @@ fn render_frame(
         |f| f.anchor,
     );
     let participants = frame_participants();
+    let head_participants = head_participants();
     let headpose_config = config::Config::lock_query(|c| c.headpose);
-    (participants.advance_grapple)(
+    (head_participants.advance_grapple)(
         headpose::xr::body_rotation_followed(),
         frozen
             .is_none()
@@ -360,7 +360,7 @@ fn render_frame(
     let body_rotation = frozen.map_or_else(headpose::xr::body_rotation, |f| f.body_rotation);
     // The anchor goes through the grapple filter's landing rate limit; the previous-tick anchor is
     // offset by the same amount so the pair keeps the true tick delta for the engine's `dtf` lerp.
-    let anchor = (participants.filter_anchor)(anchor_raw);
+    let anchor = (head_participants.filter_anchor)(anchor_raw);
     let anchor_prev_raw = frozen.map_or_else(
         || anchor_pair.map_or(anchor_raw, |pair| pair[0].view_head()),
         |f| f.anchor,
@@ -418,7 +418,7 @@ fn render_frame(
         (cfg.freeze_mode == FreezeMode::Off).then(|| (tracking_origin.finish(), tracking_receipt)),
     );
 
-    (participants.log_grapple_frame)(&FrameTelemetry {
+    (head_participants.log_grapple_frame)(&FrameTelemetry {
         cockpit_orientation: center_orientation,
         cockpit_position: center_position,
         body_raw: headpose::xr::body_rotation_raw(),

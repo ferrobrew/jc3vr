@@ -60,6 +60,7 @@ pub mod foveation;
 mod frame;
 mod frame_loop;
 pub mod input;
+pub(crate) mod live_tracking;
 mod loader;
 mod mirror;
 mod participants;
@@ -92,8 +93,8 @@ pub use mirror::{MirrorDraw, MirrorFrame, present_mirror, toggle_stereo_pair};
 pub(crate) use mirror::{
     MirrorLayers, MirrorObserver, latest_present, register_mirror_layers, register_mirror_observer,
 };
+pub use participants::FrameInputs;
 pub(crate) use participants::{CockpitPositions, FrameParticipants, register_frame_participants};
-pub use participants::{FrameInputs, FrameTelemetry};
 pub use recenter::{
     RecenterCause, RecenterKind, auto_recenter_tick, recenter, recenter_count, request_recenter,
     request_seat_recenter, request_seat_yaw_rebase,

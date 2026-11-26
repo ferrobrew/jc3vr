@@ -8,7 +8,7 @@ use jc3gi::character::character::Character;
 use parking_lot::Mutex;
 
 use crate::{
-    controllers::roomscale::teleport,
+    headpose::teleport,
     hooks::camera::authored::{
         Limit, Refusal, STATUS, Status,
         composition::{

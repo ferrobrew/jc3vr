@@ -17,7 +17,7 @@ use std::{
 use glam::{Quat, Vec3};
 use parking_lot::Mutex;
 
-pub use crate::vr::FrameTelemetry;
+pub use crate::headpose::FrameTelemetry;
 use crate::{grapple::filter_snapshot, session::CaptureFile};
 
 /// Whether the capture is running.

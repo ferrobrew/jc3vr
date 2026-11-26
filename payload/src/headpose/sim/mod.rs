@@ -29,24 +29,17 @@
 //! the step to the next frame's update left the render lerping a stale pair at `dtf ≈ 0` on every
 //! tick frame — a per-tick jerk.)
 
-use std::{sync::atomic::Ordering, time::Instant};
-
 use body_rig::angle::{direction, wrap};
 use glam::{Quat, Vec3};
 use parking_lot::Mutex;
 
 use crate::{
     config::Config,
-    controllers::{
-        body::procedural::{authority::Case, published_status},
-        roomscale::{frame_shared, seat::SeatPhase},
-    },
-    grapple,
     headpose::{
         HeadPose,
+        participants::head_participants,
         xr::{YawTick, advance_body_yaw, follow_turn},
     },
-    hooks::input::locomotion,
 };
 
 /// The latch state (on-foot only).
@@ -79,8 +72,9 @@ pub fn on_input_tick(look_x: f32, look_y: f32, look_x_delta: bool, dt: f32) {
     if !config.enabled {
         return;
     }
+    let participants = head_participants();
     // Read before the SIM lock: it takes the config lock and the torso estimate's slot.
-    let follow = crate::controllers::body::rig::follow_settings();
+    let follow = (participants.follow_settings)();
 
     let mut s = SIM.lock();
 
@@ -95,7 +89,7 @@ pub fn on_input_tick(look_x: f32, look_y: f32, look_x_delta: bool, dt: f32) {
     // is read by `head_decoupled_idle` (the body-turn suppression gate), so freezing it under VR
     // left the game's aim-relative body turn permanently unsuppressed, which the body-relative pose
     // composition (`body × cockpit`) turns into a runaway head spin.
-    let evals = locomotion::ORIENTATION_EVAL_CALLS.load(Ordering::Relaxed);
+    let evals = (participants.orientation_evals)();
     s.mode = detect_mode(s.last_orientation_evals, evals);
     s.last_orientation_evals = evals;
 
@@ -108,8 +102,8 @@ pub fn on_input_tick(look_x: f32, look_y: f32, look_x_delta: bool, dt: f32) {
     // the body toward the camera-relative stick; the view rides the body, so the camera turns with
     // it, and the next tick re-seeds the accumulator from the turned body, which compounds into a
     // circle.
-    let swim_evals = crate::hooks::input::swim::SWIM_EVAL_CALLS.load(Ordering::Relaxed);
-    let swimming = swim_evals > s.last_swim_evals || crate::hooks::input::swim::swimming();
+    let swim_evals = (participants.swim_evals)();
+    let swimming = swim_evals > s.last_swim_evals || (participants.swimming)();
     s.last_swim_evals = swim_evals;
 
     // Advance the grapple reel-in body-frame filter on this tick, likewise before the VR
@@ -125,8 +119,8 @@ pub fn on_input_tick(look_x: f32, look_y: f32, look_x_delta: bool, dt: f32) {
             .map(|pair| pair[1].view_head() - pair[1].root.w_axis.truncate());
         // `on_foot` is passed in rather than read back via `sim::mode()`: the SIM lock is held
         // here, and re-locking it inside `advance` deadlocks the input tick.
-        grapple::advance(body, rooted, s.mode == HeadMode::OnFoot, &config.grapple);
-        grapple::telemetry::log_tick(body, dt);
+        (participants.advance_grapple)(body, rooted, s.mode == HeadMode::OnFoot, &config.grapple);
+        (participants.log_grapple_tick)(body, dt);
     }
 
     // The VR source owns the pose while an OpenXR session is running (it publishes a fresh HMD pose
@@ -138,13 +132,8 @@ pub fn on_input_tick(look_x: f32, look_y: f32, look_x_delta: bool, dt: f32) {
         // Swimming keeps the accumulator seeded: the swim yaw override
         // (`crate::hooks::input::swim`) consumes the same body-yaw target, and clearing the
         // accumulator in water would hand the body back to the game's act-quantized turns.
-        let vehicle_transition = frame_shared()
-            .filter(|shared| shared.fresh(Instant::now()))
-            .is_some_and(|shared| matches!(shared.seat, SeatPhase::Entering | SeatPhase::Exiting));
-        let body_thrown = matches!(
-            published_status().case,
-            Case::Ragdoll | Case::GettingUp | Case::Dead
-        );
+        let vehicle_transition = (participants.vehicle_transition)();
+        let body_thrown = (participants.body_thrown)();
         advance_body_yaw(
             YawTick {
                 look_x,
@@ -214,9 +203,10 @@ pub fn on_input_tick(look_x: f32, look_y: f32, look_x_delta: bool, dt: f32) {
     let head_offset = Quat::from_euler(glam::EulerRot::YXZ, s.yaw, s.pitch, s.roll);
     // The grapple filter cancels the body rotation the reel adds while reeling in (issue #36), so
     // the alignment toward the target never reaches the composed view; see `crate::grapple`.
-    let body_rotation = grapple::filter_body_rotation(body_rotation.unwrap_or(Quat::IDENTITY));
+    let body_rotation =
+        (participants.filter_body_rotation)(body_rotation.unwrap_or(Quat::IDENTITY));
     let orientation = body_rotation * head_offset;
-    let anchor = grapple::filter_anchor(crate::headpose::anchor().unwrap_or(Vec3::ZERO));
+    let anchor = (participants.filter_anchor)(crate::headpose::anchor().unwrap_or(Vec3::ZERO));
     let position = anchor;
     drop(s);
     crate::headpose::set_pose(HeadPose {
@@ -349,7 +339,7 @@ fn update_latch(latch: LatchState, relative_yaw_deg: f32, mode: HeadMode) -> Lat
 /// Compose the latest input state in a captured current body frame without advancing input.
 pub(crate) fn orientation_at(root: glam::Mat4) -> Quat {
     let (_, body, _) = root.to_scale_rotation_translation();
-    let body = grapple::filter_body_rotation(body);
+    let body = (head_participants().filter_body_rotation)(body);
     let state = SIM.lock();
     body * Quat::from_euler(glam::EulerRot::YXZ, state.yaw, state.pitch, state.roll)
 }

@@ -46,6 +46,7 @@ impl Drop for FixtureState {
 
 #[test]
 fn replacement_before_measure_cannot_seed_new_or_deferred_plans_with_old_arms() {
+    crate::controllers::register_head_participants_for_tests();
     let _config = crate::config::test_fixture();
     // Plan admission is under test, not the live controller and world-rotation adapters.
     crate::config::CONFIG.lock().controllers.enabled = false;

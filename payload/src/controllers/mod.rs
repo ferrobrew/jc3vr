@@ -88,6 +88,7 @@ pub mod overlay;
 pub mod physical_hands;
 pub mod presentation;
 pub mod presets;
+mod register_head_pose;
 mod register_lifecycle;
 mod register_render;
 mod register_vr_frame;
@@ -106,9 +107,18 @@ pub use config::ControllersConfig;
 /// removal steps. Runs before the hooks are installed; an error refuses hook installation, and the
 /// refusal is already logged.
 pub(crate) fn install() -> Result<(), RegistrationError> {
+    register_head_pose::register();
     register_vr_frame::register();
     register_render::register();
     register_lifecycle::register()
+}
+
+/// Register the head pose's participants once, for a test that drives the head composition
+/// without the install that registers them.
+#[cfg(test)]
+pub(crate) fn register_head_participants_for_tests() {
+    static REGISTERED: std::sync::Once = std::sync::Once::new();
+    REGISTERED.call_once(register_head_pose::register);
 }
 
 /// The controller subsystems' hooks, aggregated into the payload's hook library by

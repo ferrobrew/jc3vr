@@ -49,14 +49,13 @@ use parking_lot::Mutex;
 
 use crate::{
     controllers::{cockpit::CockpitTransform, frame::Pose},
-    grapple,
     headpose::{
         HeadPose, anchor_pair,
         config::{HeadPoseConfig, VrTurnMode},
         follow::{BodyFollow, FollowTick},
+        participants::head_participants,
         sim,
     },
-    hooks::input::swim::swimming,
 };
 
 /// Compose a world-space head pose from a cockpit-frame center pose and the body frame. Pure and
@@ -188,7 +187,7 @@ pub fn advance_body_yaw(tick: YawTick, config: &HeadPoseConfig, follow: &FollowS
 
     // The grapple's yaw handoff may want the body turned toward a specific heading (the held view
     // heading at a landing); it overrides the accumulator and the raw-facing seed below.
-    if let Some(yaw) = grapple::take_body_yaw_retarget() {
+    if let Some(yaw) = (head_participants().take_body_yaw_retarget)() {
         s.yaw = Some(yaw);
     }
 
@@ -376,7 +375,8 @@ pub fn follow_status() -> (bool, f32) {
 /// filter holds the view or the swim levelling drops the body's tilt: both compose with the turned
 /// body frame, so folding the turn out of it then would turn the view.
 pub fn pending_bank() -> Option<f32> {
-    if grapple::blend_factor() > 0.0 || swimming() {
+    let participants = head_participants();
+    if (participants.grapple_blend)() > 0.0 || (participants.swimming)() {
         return None;
     }
     let s = BODY_YAW.lock();
@@ -453,7 +453,9 @@ struct VrBodyYaw {
 /// The body's turn under the view ([`follow_turn`]) is taken out first, so the view keeps its
 /// heading while the body follows the torso.
 pub fn body_rotation() -> Quat {
-    level_while_swimming(grapple::filter_body_rotation(body_rotation_followed()))
+    level_while_swimming((head_participants().filter_body_rotation)(
+        body_rotation_followed(),
+    ))
 }
 
 /// The synthetic head frame before the grapple filter and swim levelling: the captured root
@@ -480,7 +482,9 @@ pub fn body_rotation_prev() -> Quat {
         || body_rotation_from(|character| glam::Mat4::from(character.m_WorldMatrixT0)),
         |pair| pair[0].previous_endpoint(pair[0], pair[1]).view_frame(),
     );
-    level_while_swimming(grapple::filter_body_rotation(frame * follow_turn(false)))
+    level_while_swimming((head_participants().filter_body_rotation)(
+        frame * follow_turn(false),
+    ))
 }
 
 /// Drop the body's pitch and roll from the view frame while swimming, leaving its yaw, so the camera
@@ -490,7 +494,7 @@ pub fn body_rotation_prev() -> Quat {
 /// costs the surface bob. Deliberately scoped to swimming: a banking wingsuit wants its pitch and
 /// roll in the view.
 fn level_while_swimming(rotation: Quat) -> Quat {
-    if !swimming() {
+    if !(head_participants().swimming)() {
         return rotation;
     }
     level(rotation)

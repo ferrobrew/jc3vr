@@ -40,7 +40,6 @@ ui::capture input
 
 # Render: the OpenXR runtime, the head pose, stereo, FSR, the far field, the engine-pipeline hooks,
 # and the render diagnostics.
-controllers::body::rig::live_observation render
 controllers::body::rig::origin_provenance render
 controllers::cockpit render
 controllers::overlay::pass render

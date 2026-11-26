@@ -34,10 +34,15 @@ pub(crate) mod anchors;
 pub(crate) mod animation;
 pub mod config;
 pub mod follow;
+pub(crate) mod participants;
 pub mod sim;
+pub(crate) mod skeleton;
+pub mod teleport;
 pub mod xr;
 
 pub use config::HeadPoseConfig;
+pub use participants::FrameTelemetry;
+pub(crate) use participants::{HeadParticipants, register_head_participants};
 
 use crate::config::Config;
 

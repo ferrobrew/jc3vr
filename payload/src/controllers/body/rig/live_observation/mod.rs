@@ -1,6 +1,6 @@
 //! Bounded read-only tracking, native pre-IK, and movement-completion evidence.
 //!
-//! The raw packet uses the head locate and controller publication receipt from one OpenXR frame.
+//! The raw packet is the VR runtime's live tracking publication ([`crate::vr::live_tracking`]).
 //! Native and completion captures remain independent of it; host times never join simulation sides.
 //! Exact completion tokens match frame movement and shift evidence, without historical basis sides.
 //! Tracking-origin evidence covers only the acquired live packet through its exact frame receipt.
@@ -8,49 +8,25 @@
 
 use std::time::{Duration, Instant};
 
-use glam::{Mat4, Quat, Vec3};
-use openxr as xr;
+use glam::{Mat4, Vec3};
 use parking_lot::Mutex;
 
 use crate::{
-    controllers::{
-        body::rig::{
-            origin_provenance::{OriginEvidence, OriginToken, OriginUnavailable, TrackingReceipt},
-            root::{
-                self, CompletionSnapshot, CompletionSnapshotAvailability, CompletionToken,
-                CompletionUnavailable, FrameSourceSnapshot, MovementCompletion,
-            },
+    controllers::body::rig::{
+        origin_provenance::{OriginEvidence, OriginToken, OriginUnavailable, TrackingReceipt},
+        root::{
+            self, CompletionSnapshot, CompletionSnapshotAvailability, CompletionToken,
+            CompletionUnavailable, FrameSourceSnapshot, MovementCompletion,
         },
-        frame::{ControllerFrame, Pose, TrackedPose},
-        roomscale::teleport,
     },
-    vr::{self, convert},
+    headpose::teleport,
+    vr::{
+        self,
+        live_tracking::{
+            self, DIAGNOSTIC_MAX_AGE, RawObservation, RawPacket, Unavailable, age_at, unit_rotation,
+        },
+    },
 };
-
-/// The located head, with the exact transform used to rebase grips.
-/// `cockpit_from_local` is a transform value, not a complete origin-generation identity.
-#[derive(Clone, Copy)]
-pub(crate) struct LocatedTracking {
-    pub head: xr::Posef,
-    pub flags: xr::ViewStateFlags,
-    pub display_time_ns: i64,
-    pub cockpit_from_local: xr::Posef,
-    pub origin: OriginEvidence,
-}
-
-/// Raw cockpit-space poses with the controller publisher's actual sequence and host time.
-/// Invalid components retain their runtime flags; inactive grips remain absent.
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub(crate) struct RawPacket {
-    pub head: TrackedPose,
-    pub grips: [Option<TrackedPose>; 2],
-    pub focused: bool,
-    pub sequence: u64,
-    pub display_time_ns: i64,
-    pub published_at: Instant,
-    pub cockpit_from_local: Pose,
-    pub origin: OriginEvidence,
-}
 
 /// Values read together before the local character's procedural IK writes.
 /// The previous anchor retains the preceding pre-override capture when its native tick is adjacent.
@@ -78,49 +54,6 @@ pub(crate) enum MissingEvidence {
     AuthorityEpoch,
     PreviousNativePose,
     SupportIdentity,
-}
-
-/// Why one source is unavailable for current diagnostic inspection.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) enum Unavailable {
-    NotCaptured,
-    NoLiveTracking,
-    MixedDisplayTimes,
-    InvalidCapture,
-    FuturePublication,
-    Stale { age: Duration },
-    OriginCountersChanged,
-}
-
-/// Raw tracking availability, independent of native capture and body-work eligibility.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) enum RawAvailability {
-    Unavailable(Unavailable),
-    Observed { age: Duration },
-}
-
-/// A fixed-size owned snapshot with no allocation on publication or status reads.
-/// Unavailable snapshots omit the packet rather than retaining previously observed tracking.
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub(crate) struct RawObservation {
-    pub availability: RawAvailability,
-    pub packet: Option<RawPacket>,
-}
-
-impl RawObservation {
-    fn unavailable(reason: Unavailable) -> Self {
-        Self {
-            availability: RawAvailability::Unavailable(reason),
-            packet: None,
-        }
-    }
-
-    fn observed(packet: RawPacket, age: Duration) -> Self {
-        Self {
-            availability: RawAvailability::Observed { age },
-            packet: Some(packet),
-        }
-    }
 }
 
 /// Native capture availability, independent of its owned record.
@@ -285,20 +218,6 @@ pub(crate) struct ObservationStatus {
     pub missing: &'static [MissingEvidence],
 }
 
-/// Publish only the sampler-owned controller frame returned with its real publication receipt.
-/// No latest-value global controller is paired with the located live head.
-pub(crate) fn publish_tracking(
-    located: Option<LocatedTracking>,
-    controllers: Option<ControllerFrame>,
-) {
-    SLOT.lock().publish_tracking(located, controllers);
-}
-
-/// Clear tracking before acquisition, including every early return and locate failure.
-pub(crate) fn tracking_unavailable() {
-    SLOT.lock().raw = Err(Unavailable::NoLiveTracking);
-}
-
 /// Replace the single owned capture. Host time is not a simulation-step identity.
 pub(crate) fn publish_native(capture: NativeCapture) {
     SLOT.lock()
@@ -322,10 +241,16 @@ pub(crate) fn composition_unavailable() {
 }
 
 /// Read current diagnostic availability without reading engine pointers or composing a pose.
+#[expect(
+    dead_code,
+    reason = "no checked body observation reads the joined evidence yet"
+)]
 pub(crate) fn status() -> ObservationStatus {
     let completion = root::completion_snapshot();
+    let raw = live_tracking::publication();
     let now = Instant::now();
     SLOT.lock().read_completion_status(
+        raw,
         now,
         DIAGNOSTIC_MAX_AGE,
         OriginCounters::current(),
@@ -333,7 +258,6 @@ pub(crate) fn status() -> ObservationStatus {
     )
 }
 
-const DIAGNOSTIC_MAX_AGE: Duration = Duration::from_millis(500);
 const MISSING: &[MissingEvidence] = &[
     MissingEvidence::CompletedLedgerAndShiftPair,
     MissingEvidence::CompositionBasisPair,
@@ -373,11 +297,6 @@ impl OriginCounters {
 }
 
 #[derive(Debug, Copy, Clone)]
-struct RawPublication {
-    packet: RawPacket,
-}
-
-#[derive(Debug, Copy, Clone)]
 struct NativePublication {
     capture: NativeCapture,
     observed_at: Instant,
@@ -392,7 +311,6 @@ struct CompositionPublication {
 }
 
 struct Publisher {
-    raw: Result<RawPublication, Unavailable>,
     native: Option<NativePublication>,
     composition: Option<CompositionPublication>,
 }
@@ -400,18 +318,9 @@ struct Publisher {
 impl Publisher {
     const fn new() -> Self {
         Self {
-            raw: Err(Unavailable::NotCaptured),
             native: None,
             composition: None,
         }
-    }
-
-    fn publish_tracking(
-        &mut self,
-        located: Option<LocatedTracking>,
-        controllers: Option<ControllerFrame>,
-    ) {
-        self.raw = make_raw_packet(located, controllers).map(|packet| RawPublication { packet });
     }
 
     fn publish_native(
@@ -449,8 +358,15 @@ impl Publisher {
     }
 
     #[cfg(test)]
-    fn read(&self, now: Instant, max_age: Duration, origin: OriginCounters) -> ObservationStatus {
+    fn read(
+        &self,
+        raw: Result<RawPacket, Unavailable>,
+        now: Instant,
+        max_age: Duration,
+        origin: OriginCounters,
+    ) -> ObservationStatus {
         self.read_completion_status(
+            raw,
             now,
             max_age,
             origin,
@@ -460,6 +376,7 @@ impl Publisher {
 
     fn read_completion_status(
         &self,
+        raw: Result<RawPacket, Unavailable>,
         now: Instant,
         max_age: Duration,
         origin: OriginCounters,
@@ -469,19 +386,11 @@ impl Publisher {
         let completion = read_completion(completion, now, max_age);
         let frame_match = self.read_frame_match(now, max_age, origin, completion, native);
         ObservationStatus {
-            raw: match self.raw {
-                Err(reason) => RawObservation::unavailable(reason),
-                Ok(publication) => {
-                    match age_at(publication.packet.published_at, now, max_age, true) {
-                        Ok(age) => RawObservation::observed(publication.packet, age),
-                        Err(reason) => RawObservation::unavailable(reason),
-                    }
-                }
-            },
+            raw: live_tracking::observe(raw, now, max_age),
             native,
             completion,
             frame_match,
-            tracking_origin: self.read_tracking_origin(now, max_age),
+            tracking_origin: self.read_tracking_origin(raw, now, max_age),
             missing: if frame_match.matched_source().is_some() {
                 MISSING_AFTER_MATCH
             } else {
@@ -490,23 +399,27 @@ impl Publisher {
         }
     }
 
-    fn read_tracking_origin(&self, now: Instant, max_age: Duration) -> TrackingOriginAvailability {
+    fn read_tracking_origin(
+        &self,
+        raw: Result<RawPacket, Unavailable>,
+        now: Instant,
+        max_age: Duration,
+    ) -> TrackingOriginAvailability {
         let absent = TrackingOriginAvailability::Unavailable(OriginUnavailable::SourceAbsent);
-        let (Ok(raw), Some(composition)) = (self.raw, self.composition) else {
+        let (Ok(packet), Some(composition)) = (raw, self.composition) else {
             return absent;
         };
-        if age_at(raw.packet.published_at, now, max_age, true).is_err()
+        if age_at(packet.published_at, now, max_age, true).is_err()
             || age_at(composition.observed_at, now, max_age, true).is_err()
         {
             return TrackingOriginAvailability::Unavailable(OriginUnavailable::DiagnosticExpired);
         }
-        let origin =
-            match_tracking_origins(raw.packet.origin, composition.source.tracking_origin());
+        let origin = match_tracking_origins(packet.origin, composition.source.tracking_origin());
         if matches!(origin, TrackingOriginAvailability::SameOrigin(_)) {
             let receipt = TrackingReceipt::from_receipt(
-                raw.packet.sequence,
-                raw.packet.display_time_ns,
-                raw.packet.published_at,
+                packet.sequence,
+                packet.display_time_ns,
+                packet.published_at,
             );
             if composition.source.tracking_receipt() != Some(receipt) {
                 return TrackingOriginAvailability::DifferentTrackingPacket;
@@ -656,92 +569,6 @@ fn read_completion(
         ));
     }
     CompletionObservation::observed(completion, age)
-}
-
-pub(crate) fn make_raw_packet(
-    located: Option<LocatedTracking>,
-    controllers: Option<ControllerFrame>,
-) -> Result<RawPacket, Unavailable> {
-    let (Some(located), Some(controllers)) = (located, controllers) else {
-        return Err(Unavailable::NoLiveTracking);
-    };
-    if located.display_time_ns != controllers.display_time_ns {
-        return Err(Unavailable::MixedDisplayTimes);
-    }
-    let packet = RawPacket {
-        head: TrackedPose {
-            pose: convert::pose(located.head),
-            position_valid: located.flags.contains(xr::ViewStateFlags::POSITION_VALID),
-            orientation_valid: located
-                .flags
-                .contains(xr::ViewStateFlags::ORIENTATION_VALID),
-            position_tracked: located.flags.contains(xr::ViewStateFlags::POSITION_TRACKED),
-            orientation_tracked: located
-                .flags
-                .contains(xr::ViewStateFlags::ORIENTATION_TRACKED),
-            linear_velocity: None,
-            angular_velocity: None,
-        },
-        grips: controllers
-            .hands
-            .map(|hand| hand.active.then_some(hand.grip)),
-        focused: controllers.focused,
-        sequence: controllers.sequence,
-        display_time_ns: controllers.display_time_ns,
-        published_at: controllers.published_at,
-        cockpit_from_local: convert::pose(located.cockpit_from_local),
-        origin: located.origin,
-    };
-    if packet.sequence == 0
-        || !valid_pose(packet.cockpit_from_local)
-        || !valid_tracking(packet.head)
-        || packet
-            .grips
-            .iter()
-            .flatten()
-            .any(|grip| !valid_tracking(*grip))
-    {
-        return Err(Unavailable::InvalidCapture);
-    }
-    Ok(packet)
-}
-
-fn age_at(
-    published_at: Instant,
-    now: Instant,
-    max_age: Duration,
-    same_origin_counters: bool,
-) -> Result<Duration, Unavailable> {
-    if !same_origin_counters {
-        return Err(Unavailable::OriginCountersChanged);
-    }
-    if now < published_at {
-        return Err(Unavailable::FuturePublication);
-    }
-    let age = now.saturating_duration_since(published_at);
-    if age > max_age {
-        return Err(Unavailable::Stale { age });
-    }
-    Ok(age)
-}
-
-fn valid_tracking(tracked: TrackedPose) -> bool {
-    (!tracked.position_valid || tracked.pose.position.is_finite())
-        && (!tracked.orientation_valid || unit_rotation(tracked.pose.orientation))
-        && tracked
-            .linear_velocity
-            .is_none_or(|velocity| velocity.is_finite())
-        && tracked
-            .angular_velocity
-            .is_none_or(|velocity| velocity.is_finite())
-}
-
-fn valid_pose(pose: Pose) -> bool {
-    pose.position.is_finite() && unit_rotation(pose.orientation)
-}
-
-fn unit_rotation(rotation: Quat) -> bool {
-    rotation.is_finite() && (rotation.length_squared() - 1.0).abs() <= 1.0e-4
 }
 
 fn valid_capture(capture: NativeCapture) -> bool {
