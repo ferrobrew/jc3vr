@@ -60,16 +60,11 @@ const REPROJECT_NAME_PREFIXES: &[&str] = &[
 /// per-eye row and reaches it directly.
 const CLOUD_REPROJECT_NAMES: &[&str] = &["clouds", "cirrusclouds", "cloudflythrough", "softclouds"];
 
-/// The stars' vertex shader, gated by the
-/// [`stars_per_eye`](jc3vr_view::stereo::config::SinglePassConfig::stars_per_eye) flag: a billboard per
-/// star, placed by a baked view-projection at vertex `cb1` with its clip depth pinned to the far
+/// The stars' vertex shader: a billboard per star, placed by a baked view-projection at vertex `cb1` with its clip depth pinned to the far
 /// plane, which the promoted draw keeps through the reprojection.
 const STARS_REPROJECT_NAME: &str = "starsshader";
 
-/// Whether a no-`cb0` vertex shader named `name` should be reprojected for single-pass: the
-/// Vertex-shader name prefixes of the far-distance tree impostors (`CTreeImpostorRB`), gated by the
-/// separate [`single_pass_tree_impostors`](jc3vr_view::stereo::config::StereoConfig::single_pass_tree_impostors)
-/// flag. The impostor VS writes `SV_Position` from the global billboard view-projection and draws a
+/// Vertex-shader name prefixes of the far-distance tree impostors (`CTreeImpostorRB`). The impostor VS writes `SV_Position` from the global billboard view-projection and draws a
 /// single non-instanced `DrawIndexed` -- no GPU-indirect path shares it -- so the same reprojection
 /// rewrite the scene families take covers it completely. The other vegetation families
 /// (`vegetationfoliage*`, `vegetationbark*`, `grass`, `leaves`) are deliberately absent: their dominant
@@ -77,9 +72,7 @@ const STARS_REPROJECT_NAME: &str = "starsshader";
 /// the coordinated indirect handling (see `docs/mod/stereo/single-pass-render-blocks.md`).
 const VEGETATION_REPROJECT_NAME_PREFIXES: &[&str] = &["treeimpostor"];
 
-/// Vertex-shader name prefixes of the static light sprites (`RenderBlockTypeLights`), gated by the
-/// separate [`static_lights_per_eye`](jc3vr_view::stereo::config::SinglePassConfig::static_lights_per_eye)
-/// flag. Unlike the other screen-space effects, `lightsource` and `lightsource_fakelight` project a
+/// Vertex-shader name prefixes of the static light sprites (`RenderBlockTypeLights`). Unlike the other screen-space effects, `lightsource` and `lightsource_fakelight` project a
 /// world position through the scene view-projection and only then expand the sprite in clip space, by
 /// a size scaled by the clip `w`; post-multiplying that clip position by `M_eye` moves the whole
 /// sprite into the eye, offset included, because `M_eye` is linear. Their draw is non-indexed, which
@@ -94,20 +87,17 @@ const STATIC_LIGHT_REPROJECT_NAME_PREFIXES: &[&str] = &["lightsource"];
 const AO_VOLUME_REPROJECT_NAME: &str = "aobox";
 
 /// The vertex shader of the water reflection planes' proxy quad and the water mask volumes
-/// (`CRenderBlockWaterReflectionPlane`, `CRenderBlockWaterMask`), gated by the
-/// [`water_plane_per_eye`](jc3vr_view::stereo::config::SinglePassConfig::water_plane_per_eye) flag. Both
+/// (`CRenderBlockWaterReflectionPlane`, `CRenderBlockWaterMask`). Both
 /// blocks stage an offset world-view-projection at vertex `cb1[0..3]` and the shader is a bare
 /// multiply-add chain over it, so the reprojection moves either into each eye.
 const WATER_PLANE_REPROJECT_NAME: &str = "watermask";
 
 /// Whether a no-`cb0` vertex shader named `name` should be reprojected for single-pass: the
-/// `single_pass_reproject` flag is on and the name is on [`REPROJECT_NAME_PREFIXES`], the
-/// `single_pass_tree_impostors` flag is on and the name is on [`VEGETATION_REPROJECT_NAME_PREFIXES`],
-/// the static-light flag is on and the name is on [`STATIC_LIGHT_REPROJECT_NAME_PREFIXES`], or the
-/// ambient-occlusion volume flag is on and the name is [`AO_VOLUME_REPROJECT_NAME`], or the water
-/// plane flag is on and the name is [`WATER_PLANE_REPROJECT_NAME`], or the cloud flag is on and the
-/// name is one of [`CLOUD_REPROJECT_NAMES`], or the star flag is on and the name is
-/// [`STARS_REPROJECT_NAME`].
+/// `reproject` switch is on and the name is on [`REPROJECT_NAME_PREFIXES`], the name is on
+/// [`VEGETATION_REPROJECT_NAME_PREFIXES`] or [`STATIC_LIGHT_REPROJECT_NAME_PREFIXES`], the
+/// ambient-occlusion volume switch is on and the name is [`AO_VOLUME_REPROJECT_NAME`], the name is
+/// [`WATER_PLANE_REPROJECT_NAME`] or [`STARS_REPROJECT_NAME`], or the cloud switch is on and the name
+/// is one of [`CLOUD_REPROJECT_NAMES`].
 /// Called from the `CreateVertexProgram` hook when `patch_vertex_shader` reports no per-eye `cb0`
 /// operands.
 pub fn should_reproject(name: Option<&str>) -> bool {
@@ -116,18 +106,16 @@ pub fn should_reproject(name: Option<&str>) -> bool {
     };
     let flags = config_flags();
     (flags.has(Flag::Reproject) && REPROJECT_NAME_PREFIXES.iter().any(|p| name.starts_with(p)))
-        || (flags.has(Flag::TreeImpostors)
-            && VEGETATION_REPROJECT_NAME_PREFIXES
-                .iter()
-                .any(|p| name.starts_with(p)))
-        || (flags.has(Flag::StaticLights)
-            && STATIC_LIGHT_REPROJECT_NAME_PREFIXES
-                .iter()
-                .any(|p| name.starts_with(p)))
+        || VEGETATION_REPROJECT_NAME_PREFIXES
+            .iter()
+            .any(|p| name.starts_with(p))
+        || STATIC_LIGHT_REPROJECT_NAME_PREFIXES
+            .iter()
+            .any(|p| name.starts_with(p))
         || (flags.has(Flag::AoVolumes) && name == AO_VOLUME_REPROJECT_NAME)
-        || (flags.has(Flag::WaterPlane) && name == WATER_PLANE_REPROJECT_NAME)
+        || name == WATER_PLANE_REPROJECT_NAME
         || (flags.has(Flag::Clouds) && CLOUD_REPROJECT_NAMES.contains(&name))
-        || (flags.has(Flag::Stars) && name == STARS_REPROJECT_NAME)
+        || name == STARS_REPROJECT_NAME
 }
 
 /// Whether a scene family the `cb0` remap *claims* should be reprojected instead, because the only

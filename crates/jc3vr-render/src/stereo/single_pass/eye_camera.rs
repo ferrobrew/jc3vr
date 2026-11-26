@@ -33,7 +33,7 @@
 //! with both slots holding the staged rows when the camera rows are not moved per eye.
 //!
 //! [`dxbc_stereo::localize_velocity`] reads the same boundary, and two rows after it, to write the
-//! velocity pass's motion vectors in each eye's screen space (`single_pass.velocity_per_eye`): in an
+//! velocity pass's motion vectors in each eye's screen space: in an
 //! eye-split pass the rows map a pixel position to the clip space of the eye whose half it lies in,
 //! and carry each eye's map from the render camera's previous clip space to its own (the `M_eye` the
 //! `cb13` reprojection reads, corrected for the camera's previous projection), which the previous
@@ -189,7 +189,7 @@ pub fn velocity_counts() -> (usize, usize) {
 }
 
 /// Each eye's map from the render camera's previous clip space to its own, as the last eye-split
-/// pass published it to the velocity rewrite (`single_pass.velocity_per_eye`): what FSR's velocity
+/// pass published it to the velocity rewrite: what FSR's velocity
 /// decode needs to know which previous camera the motion vectors were encoded against.
 pub(crate) fn velocity_maps() -> Option<[glam::Mat4; 2]> {
     *LAST_VELOCITY_MAPS.lock()
@@ -227,11 +227,10 @@ pub(crate) fn sync(engine: &RenderEngine) {
     }
     let staged = &engine.m_FPGlobalConstData;
     let mirrored = block(EYE_CAMERA_SOURCE_ROWS.map(|row| staged[row as usize]), ZERO);
-    let (pixel_camera, local_lights, velocity) = STEREO_CONFIG.query(|c| {
+    let (pixel_camera, local_lights) = STEREO_CONFIG.query(|c| {
         (
             c.single_pass.pixel_camera_per_eye,
             c.single_pass.local_lights_per_eye,
-            c.single_pass.velocity_per_eye,
         )
     });
     let eye_block = |eye: usize| -> Option<[Vector4; EYE_ROWS]> {
@@ -255,17 +254,11 @@ pub(crate) fn sync(engine: &RenderEngine) {
         state.mirrored = mirrored;
         state.split = split;
         state.per_eye = per_eye;
-        state.velocity = velocity
-            .then(|| *CURRENT_M_EYE.lock())
-            .flatten()
-            .and_then(previous_reprojection);
+        state.velocity = (*CURRENT_M_EYE.lock()).and_then(previous_reprojection);
         if split && state.velocity.is_some() {
             *LAST_VELOCITY_MAPS.lock() = state.velocity;
         }
-        if split
-            && velocity
-            && state.velocity.is_none()
-            && !VELOCITY_UNPUBLISHED.swap(true, Ordering::Relaxed)
+        if split && state.velocity.is_none() && !VELOCITY_UNPUBLISHED.swap(true, Ordering::Relaxed)
         {
             tracing::warn!(
                 target: "single_pass",
@@ -462,7 +455,7 @@ struct State {
     /// Each eye's rows, while the current pass is an eye-split one and the camera rows move per eye.
     per_eye: Option<[[Vector4; EYE_ROWS]; 2]>,
     /// Each eye's map from the render camera's previous clip space to its own, while an eye-split
-    /// pass publishes the velocity rows (`single_pass.velocity_per_eye`).
+    /// pass publishes the velocity rows.
     velocity: Option<[glam::Mat4; 2]>,
     /// What the live buffer holds.
     uploaded: [Vector4; ROWS],

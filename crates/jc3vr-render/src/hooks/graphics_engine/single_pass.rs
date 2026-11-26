@@ -10,19 +10,17 @@
 //!
 //! The render-block detours below cover the blocks that bake their view-projection into a constant
 //! buffer inside their own `Draw` (bark, foliage, occluder), across draw kinds that can't be
-//! instance-doubled. When the block's flag is on and the collapse is active, the block's `Draw` is
-//! re-issued once per eye with that baked constant reprojected by the eye's `M_eye`
+//! instance-doubled. When the collapse is active, the block's `Draw` is re-issued once per eye with
+//! that baked constant reprojected by the eye's `M_eye`
 //! ([`reproject_baked_cb_per_eye`](crate::stereo::single_pass::reproject_baked_cb_per_eye)); otherwise
-//! it draws once, unchanged. Each is gated by its own config flag. The bark and foliage blocks are
+//! it draws once, unchanged. The bark and foliage blocks are
 //! first offered to [`vegetation_once`](crate::stereo::single_pass::vegetation_once), which draws
 //! them once for both eyes when it can, and fall back to the re-issue when it cannot.
 //!
-//! The two vegetation flags do double duty: while one is on, its family's vertex shaders are also
-//! declined by the `cb0` remap at creation
+//! The two vegetation families' vertex shaders are also declined by the `cb0` remap at creation
 //! ([`baked_cb_block_owns_vs`](crate::stereo::single_pass::baked_cb_block_owns_vs)), because the remap
 //! would claim them on a `cb0[4]` reference that is not their position path and then leave both eyes
-//! on the collapsed centre view. The decline and the intercept only make sense together, so they share
-//! a flag.
+//! on the collapsed centre view. The decline and the intercept only make sense together.
 
 use std::sync::atomic::{AtomicPtr, Ordering};
 
@@ -39,15 +37,13 @@ use re_utilities::hook_library::HookLibrary;
 
 use crate::{
     hooks::graphics_engine::probes::{self, scoped},
-    stereo::single_pass::{BlockIntercept, BoundVsGate, EyeDisplayWidth, EyeLightWidth},
+    stereo::single_pass::{BoundVsGate, EyeDisplayWidth, EyeLightWidth},
 };
 
-/// Where a render block's baked view-projection lives, and how its intercept is gated: the four values
+/// Where a render block's baked view-projection lives, and how its intercept is gated: the values
 /// that vary between the render-block detours below, pinned in one place so a block's buffer layout is
 /// stated once and stays greppable.
 struct BakedCbBlock {
-    /// The config flag that turns this block's reprojection on.
-    intercept: BlockIntercept,
     /// The vertex constant buffer the block bakes its view-projection into.
     cb_index: i32,
     /// The first of the four consecutive registers the view-projection occupies within `cb_index`.
@@ -61,10 +57,10 @@ struct BakedCbBlock {
     once: bool,
 }
 
-/// Runs the shared re-issue dance for a render-block detour: if the block's flag is on, draw it once
-/// for both eyes when the block allows it and the single draw's preconditions hold, else hand the
-/// original `Draw` off to [`reproject_baked_cb_per_eye`] so it runs once per eye against a reprojected
-/// constant; otherwise (or if the re-issue declines) fall back to a single unmodified `Draw`.
+/// Runs the shared re-issue dance for a render-block detour: draw it once for both eyes when the block
+/// allows it and the single draw's preconditions hold, else hand the original `Draw` off to
+/// [`reproject_baked_cb_per_eye`] so it runs once per eye against a reprojected constant; if the
+/// re-issue declines, fall back to a single unmodified `Draw`.
 ///
 /// # Safety
 ///
@@ -75,10 +71,6 @@ unsafe fn intercept_render_block(
     rc: *mut RenderContext,
     mut draw: impl FnMut(),
 ) {
-    if !crate::stereo::single_pass::block_intercept_enabled(block.intercept) {
-        draw();
-        return;
-    }
     // SAFETY: forwarded from this function's own contract.
     if block.once
         && unsafe { crate::stereo::single_pass::vegetation_once::draw_block(rc, &mut draw) }
@@ -152,7 +144,6 @@ fn proxy_draw(
 
 /// The tree-trunk/branch block bakes its world-view-projection into vertex `cb1` registers 0..3.
 const BARK: BakedCbBlock = BakedCbBlock {
-    intercept: BlockIntercept::Bark,
     cb_index: 1,
     reg_offset: 0,
     gate: BoundVsGate::Owned,
@@ -162,7 +153,6 @@ const BARK: BakedCbBlock = BakedCbBlock {
 /// The grass/foliage block bakes its view-projection into vertex `cb2` registers 4..7 (register 0 is
 /// the per-draw world matrix).
 const FOLIAGE: BakedCbBlock = BakedCbBlock {
-    intercept: BlockIntercept::Foliage,
     cb_index: 2,
     reg_offset: 4,
     gate: BoundVsGate::Owned,
@@ -175,7 +165,6 @@ const FOLIAGE: BakedCbBlock = BakedCbBlock {
 /// Its shaders read no `cb0[4]`, so the remap never claims them and nothing declines them at creation;
 /// the bound-shader check stays as the guard against a patched neighbour's geometry being re-issued.
 const OCCLUDER: BakedCbBlock = BakedCbBlock {
-    intercept: BlockIntercept::Occluder,
     cb_index: 1,
     reg_offset: 0,
     gate: BoundVsGate::Checked,

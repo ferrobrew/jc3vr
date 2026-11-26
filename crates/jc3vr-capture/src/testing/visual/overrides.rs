@@ -543,7 +543,7 @@ mod tests {
     fn overrides_are_independent() {
         let overrides = parse(
             "sun_shadows = 'disabled'\nscreen_space_reflections = 'enabled'\n\
-             [single_pass]\nssr_per_eye = false\nglare_per_eye = true\n",
+             [single_pass]\nssr_per_eye = false\nfsr_per_eye = true\n",
         )
         .unwrap();
         assert_eq!(overrides.sun_shadows, Some(SunShadowsOverride::Disabled));
@@ -555,7 +555,7 @@ mod tests {
             overrides.single_pass.iter().collect::<Vec<_>>(),
             [
                 (SinglePassSwitch::SsrPerEye, false),
-                (SinglePassSwitch::GlarePerEye, true)
+                (SinglePassSwitch::FsrPerEye, true)
             ]
         );
     }

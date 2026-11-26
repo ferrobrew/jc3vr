@@ -30,32 +30,17 @@ pub(super) enum Flag {
     Reproject,
     Terrain,
     TerrainPatchPerEye,
-    TreeImpostors,
-    TreeImpostorPixelSize,
-    StaticLights,
-    Moon,
-    WaterPlane,
     Clouds,
-    Stars,
     AoVolumes,
-    Bark,
-    Foliage,
     VegetationOnce,
-    Occluder,
-    WaterScreenUv,
     NvWater,
     InstancedPerEye,
     HwInstancedOnce,
     IndirectPerEye,
-    VertexGlobalsPerEye,
-    UniformViewportSlots,
     ViewportFollowsTarget,
     Slot13PerEye,
-    NonIndexedGeometryOnce,
-    TerrainDetailEyeRows,
     TerrainCullBothEyes,
     ViewportBindCache,
-    SkipUnreadEffectDepthCopy,
 }
 
 /// The single-pass config flags, sampled once per frame and pinned for the duration of a dispatch.
@@ -167,41 +152,20 @@ fn store_config_flags() -> u64 {
             | bit(s.reproject, Flag::Reproject)
             | bit(s.terrain, Flag::Terrain)
             | bit(s.terrain_patch_per_eye, Flag::TerrainPatchPerEye)
-            | bit(s.tree_impostors, Flag::TreeImpostors)
-            | bit(
-                s.tree_impostor_pixel_size_per_eye,
-                Flag::TreeImpostorPixelSize,
-            )
-            | bit(s.static_lights_per_eye, Flag::StaticLights)
-            | bit(s.moon_per_eye, Flag::Moon)
-            | bit(s.water_plane_per_eye, Flag::WaterPlane)
             | bit(s.clouds_per_eye, Flag::Clouds)
-            | bit(s.stars_per_eye, Flag::Stars)
             | bit(s.ao_volumes_per_eye, Flag::AoVolumes)
-            | bit(s.bark, Flag::Bark)
-            | bit(s.foliage, Flag::Foliage)
             | bit(s.vegetation_once, Flag::VegetationOnce)
-            | bit(s.occluder, Flag::Occluder)
-            | bit(s.water_uv_per_eye, Flag::WaterScreenUv)
             | bit(s.nvwater_per_eye, Flag::NvWater)
             | bit(s.instanced_per_eye, Flag::InstancedPerEye)
             | bit(s.hw_instanced_once, Flag::HwInstancedOnce)
             | bit(s.indirect_per_eye, Flag::IndirectPerEye)
-            | bit(s.vertex_globals_per_eye, Flag::VertexGlobalsPerEye)
-            | bit(s.uniform_viewport_slots, Flag::UniformViewportSlots)
             | bit(
                 s.collapse_viewport_follows_target,
                 Flag::ViewportFollowsTarget,
             )
             | bit(s.slot13_per_eye, Flag::Slot13PerEye)
-            | bit(s.non_indexed_geometry_once, Flag::NonIndexedGeometryOnce)
-            | bit(s.terrain_detail_eye_rows, Flag::TerrainDetailEyeRows)
             | bit(s.terrain_cull_both_eyes, Flag::TerrainCullBothEyes)
             | bit(s.viewport_bind_cache, Flag::ViewportBindCache)
-            | bit(
-                s.skip_unread_effect_depth_copy,
-                Flag::SkipUnreadEffectDepthCopy,
-            )
     }) | CONFIG_FLAGS_VALID;
     CONFIG_FLAGS.store(snapshot, Ordering::Relaxed);
     layout::publish_frame_layout(ConfigFlags(snapshot).layout());

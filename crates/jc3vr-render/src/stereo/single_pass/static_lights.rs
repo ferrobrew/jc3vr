@@ -14,7 +14,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 
 use jc3vr_view::stereo::layout::double_wide_active;
 
-use crate::stereo::single_pass::{Flag, collapse_eye_width, config_flags, in_gbuffer_range};
+use crate::stereo::single_pass::{collapse_eye_width, in_gbuffer_range};
 
 /// The constant buffer the light type stages its sprite constants into.
 pub(super) const LIGHT_CONSTANTS_CB: i32 = 1;
@@ -28,10 +28,10 @@ const INVERSE_WIDTH_COMPONENT: usize = 1;
 pub struct EyeLightWidth(());
 
 impl EyeLightWidth {
-    /// Arm the substitution when the double-wide collapse is drawing its routed range and
-    /// `single_pass.static_lights_per_eye` is on; `None` leaves the upload untouched.
+    /// Arm the substitution when the double-wide collapse is drawing its routed range; `None` leaves
+    /// the upload untouched.
     pub fn stage() -> Option<Self> {
-        if !double_wide_active() || !in_gbuffer_range() || !config_flags().has(Flag::StaticLights) {
+        if !double_wide_active() || !in_gbuffer_range() {
             return None;
         }
         let eye_width = collapse_eye_width().filter(|width| *width > 0.0)?;

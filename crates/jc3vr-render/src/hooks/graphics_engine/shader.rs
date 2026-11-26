@@ -246,17 +246,14 @@ fn create_fragment_program(
     // The screen-space decal permutations' depth-UV bias, the one rewrite here that *grows* the blob.
     let bias_ssdecal = ss_decal::shader_rewrite_enabled();
     // The final composite's vignette and lens dirt, mapped over one eye instead of the whole
-    // double-wide target. Baked into the bytecode, so it is only right while the collapse is live;
-    // the debug UI requests a reload when the switch changes.
-    let localize_overlays = jc3vr_view::stereo::layout::collapse_active()
-        && STEREO_CONFIG.query(|c| c.single_pass.composite_overlays_per_eye);
+    // double-wide target. Baked into the bytecode, so it is only right while the collapse is live.
+    let localize_overlays = jc3vr_view::stereo::layout::collapse_active();
     // The ambient-occlusion generation pass computed for each eye's half. Baked into the bytecode
     // like the overlays, and decided for every fragment program so the SSAO block knows whether the
     // generation shader it will run carries it.
     // The composite's bloom lookups, kept to each eye's half. Baked into the bytecode like the
     // overlays.
-    let localize_bloom = jc3vr_view::stereo::layout::collapse_active()
-        && STEREO_CONFIG.query(|c| c.single_pass.glare_per_eye);
+    let localize_bloom = jc3vr_view::stereo::layout::collapse_active();
     let localize_ambient_occlusion = jc3vr_view::stereo::layout::collapse_active()
         && STEREO_CONFIG.query(|c| c.single_pass.ssao_per_eye);
     // The SSAO passes' sampling computed in the shader, in every mode: under the collapse as part of
@@ -291,12 +288,10 @@ fn create_fragment_program(
         && STEREO_CONFIG.query(|c| c.single_pass.screen_door_per_eye);
     // The tree impostors hash theirs from their own projected position; the same buffer's boundary
     // lays it out per eye.
-    let localize_projected_screen_door = jc3vr_view::stereo::layout::collapse_active()
-        && STEREO_CONFIG.query(|c| c.single_pass.tree_impostor_screen_door_per_eye);
+    let localize_projected_screen_door = jc3vr_view::stereo::layout::collapse_active();
     // The velocity pass's motion vectors are written in each eye's screen space, from rows of the
     // same buffer. Applied after the screen-door rewrites, whose buffer declaration it reads.
-    let localize_velocity = jc3vr_view::stereo::layout::collapse_active()
-        && STEREO_CONFIG.query(|c| c.single_pass.velocity_per_eye);
+    let localize_velocity = jc3vr_view::stereo::layout::collapse_active();
     let mut rewritten_screen_pass = None;
     if !jc3vr_core::is_shutting_down()
         && let Some(p) = unsafe { params.as_ref() }

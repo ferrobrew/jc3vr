@@ -7,8 +7,7 @@ use crate::vr::VR_CONFIG;
 
 /// Turn the whole single-pass feature on or off together, as the debug UI's one button does: the
 /// master switch (which carries the dual-eye split, the collapse, and the double-wide target), the
-/// reprojected scene families, the terrain, the tree impostors, and the bark, foliage, and occluder
-/// re-issues, along with the native resolution the double-wide target needs, which turning the
+/// reprojected scene families, and the terrain, along with the native resolution the double-wide target needs, which turning the
 /// feature off leaves as it is. The defaults are the feature turned on, so applying this with `on`
 /// to a default configuration changes nothing. The caller requests the shader reload that applies the
 /// change.
@@ -17,10 +16,6 @@ pub fn set_single_pass_feature(config: &mut impl Parts, on: bool) {
     sps.enabled = on;
     sps.reproject = on;
     sps.terrain = on;
-    sps.tree_impostors = on;
-    sps.bark = on;
-    sps.foliage = on;
-    sps.occluder = on;
     if on {
         config.part_mut(&VR_CONFIG).native_resolution = true;
     }
@@ -71,54 +66,6 @@ pub struct SinglePassConfig {
     /// tessellation factors, the patch culling, and the distance fades stay centre-derived. A shader
     /// rewrite, so it needs a shader reload to apply. On by default.
     pub terrain_patch_per_eye: bool,
-    /// Single-pass the far-distance tree impostors (`CTreeImpostorRB`): the impostor vertex shader
-    /// writes its clip position from the global billboard view-projection and draws non-instanced, with
-    /// no GPU-indirect path sharing it, so the reprojection rewrite plus instance-doubling covers it
-    /// completely (unlike the other vegetation families, whose dominant draw is GPU-indirect). When on,
-    /// the `treeimpostor*` vertex shaders take the same `M_eye` post-multiply as the reprojected scene
-    /// families. Requires [`single_pass`](Self::enabled); independent so it can be A/B'd.
-    pub tree_impostors: bool,
-    /// Stage the tree impostors' `PixelSize` at one eye's width under the double-wide collapse. The
-    /// impostor type's `Setup` takes it from the render context's display width, which is both eyes'
-    /// there, so each card's pixel footprint came out twice its size and the pixel shader's
-    /// derivative-scaled atlas offset moved the cards' alpha-tested silhouettes. The display width is
-    /// halved for the length of that call. Applies without a shader reload. On by default.
-    pub tree_impostor_pixel_size_per_eye: bool,
-    /// Lay the tree impostors' screen door out from each eye's own origin.
-    ///
-    /// The impostor permutations dissolve their cards across the distance fade by a screen-door
-    /// pattern hashed from their own projected position over the target size, not from the pixel
-    /// position, so `screen_door_per_eye` does not reach them. Under the double-wide collapse the
-    /// projected position is the centred camera's and the target both eyes wide, so the pattern came
-    /// out twice as wide and centred between the eyes, and the cards in the fade band kept a different
-    /// set of pixels than in an eye rendered on its own. `dxbc_stereo::localize_projected_screen_door`
-    /// rewrites the hash to read the eye-local pixel position. A shader rewrite, so changing it needs
-    /// a shader reload. On by default.
-    pub tree_impostor_screen_door_per_eye: bool,
-    /// Draw the static light sprites (`RenderBlockTypeLights`, the distant town and street lights)
-    /// once for both eyes under the double-wide collapse. Their non-indexed `Draw` was drawn once
-    /// across the whole double-wide target from the centred camera, so each light landed at twice
-    /// its distance from the target's centre and was depth-tested against another pixel's depth, and
-    /// lights the terrain hides came out in front of it. The `lightsource*` vertex shaders take the
-    /// `M_eye` reprojection, their draw is promoted to two instances routed to the eye halves, and
-    /// the type's `Setup` stages the sprites' inverse screen width at one eye's width. The
-    /// reprojection needs a shader reload; the rest applies at once. On by default.
-    pub static_lights_per_eye: bool,
-    /// Draw the moon (the `open` model in `RP_MOON`) once for both eyes under the double-wide
-    /// collapse. Its non-indexed draw was drawn once across the whole double-wide target with eye 0's
-    /// transform, so it was missing from eye 0 and stretched to twice its width in eye 1. The draw is
-    /// promoted to two instances routed to the eye halves, with the reprojection keeping the moon's
-    /// far-plane depth. It needs the `open` reprojection, which `reproject` gates, and applies at
-    /// once. On by default.
-    pub moon_per_eye: bool,
-    /// Draw the water reflection planes' proxy quads (`RenderBlockWaterReflectionPlane`, the depth the
-    /// screen-space reflections trace water against) once for both eyes under the double-wide
-    /// collapse. The quad's non-indexed draw was drawn once across the whole double-wide target from
-    /// the centred camera, so each eye's water depth was the other half of a stretched quad. The
-    /// `watermask` vertex shader takes the `M_eye` reprojection (the water mask volumes share it, and
-    /// their indexed draws are promoted like any patched draw), and the proxy draw is promoted to two
-    /// instances routed to the eye halves. The reprojection needs a shader reload. On by default.
-    pub water_plane_per_eye: bool,
     /// Draw the cloud layers from each eye under the double-wide collapse. The cloud vertex shaders
     /// (`clouds`, `cirrusclouds`, `cloudflythrough`, `softclouds`) take their clip position from the
     /// full view-projection, which the `cb0` remap does not make per eye, so both eye halves drew the
@@ -127,34 +74,8 @@ pub struct SinglePassConfig {
     /// in both eyes under canted ones. They take the `M_eye` reprojection instead. Needs a shader
     /// reload. On by default.
     pub clouds_per_eye: bool,
-    /// Draw the stars (`RP_STARS`) once for both eyes under the double-wide collapse. The stars are
-    /// one non-indexed draw, so the draw path treated it as a fullscreen triangle and drew it once
-    /// across the whole double-wide target through the centred camera, stretched over both halves.
-    /// The `starsshader` vertex shader takes the `M_eye` reprojection and the draw is promoted to two
-    /// instances routed to the eye halves, with the stars' far-plane depth kept as the moon's is. The
-    /// reprojection needs a shader reload. On by default.
-    pub stars_per_eye: bool,
-    /// Single-pass the tree-trunk/branch render block (`CRenderBlockBark`, "VegetationBark"). Its vertex
-    /// shader reads a CPU-baked world-view-projection from `cb1` (not `cb0`) and draws via one of three
-    /// kinds (plain, CPU-instanced, or GPU-indirect), so it can't ride the reprojection rewrite; instead
-    /// the block's `Draw`/`DrawZ` is re-issued once per eye with the baked `cb1` reprojected by that eye's
-    /// `M_eye`. While this is on, the `vegetationbark*` vertex shaders are also declined by the `cb0`
-    /// remap, which would otherwise claim them on a `cb0[4]` camera-position reference that is not their
-    /// position path. Requires the collapse; independent so it can be A/B'd. On by default: without it
-    /// the trunks render at the centre view in both eyes, i.e. at zero disparity, which reads as them
-    /// drifting in world space as the camera moves.
-    pub bark: bool,
-    /// Single-pass the grass/foliage render block (`CRenderBlockFoliage`, "VegetationFoliage"). Its vertex
-    /// shader reads a baked view-projection from `cb2` (registers 4..7); the block's `Draw` and `DrawZ`
-    /// are re-issued once per eye with that `cb2` copy reprojected by `M_eye`. The dominant grass path is
-    /// GPU-indirect, so re-issue (not instance-doubling) is the only option. While this is on, the
-    /// `vegetationfoliage*` vertex shaders are also declined by the `cb0` remap, which would otherwise
-    /// claim them on the `cb0[4]` reference their wind-noise lookup makes. Does not address the separate
-    /// forward-clustered-lighting black-in-VR issue. Requires the collapse. On by default, for the same
-    /// reason as [`single_pass_bark`](Self::bark).
-    pub foliage: bool,
-    /// Draw the bark and foliage blocks once for both eyes instead of re-issuing them per eye, while
-    /// [`bark`](Self::bark) or [`foliage`](Self::foliage) is on for the block. The block's `Draw` runs
+    /// Draw the bark and foliage blocks once for both eyes instead of re-issuing them per eye. The
+    /// block's `Draw` runs
     /// once with each draw's vertex shader swapped for a reprojected variant (built when the engine
     /// creates the shader, while single-pass is enabled): a plain draw is promoted to two instances,
     /// a GPU-indirect draw is issued against a copy of its argument buffer with every instance count
@@ -163,11 +84,6 @@ pub struct SinglePassConfig {
     /// otherwise. A block whose vertex shader has no variant keeps the whole-block re-issue (see
     /// `jc3vr_render::stereo::single_pass::vegetation_once`). On by default; applies at once.
     pub vegetation_once: bool,
-    /// Single-pass the occluder depth-prime render block (`CRenderBlockOccluder`). Its non-instanced path
-    /// bakes a world-view-projection into `cb1`; the block's `DrawZ` is re-issued once per eye with `cb1`
-    /// reprojected by `M_eye`, so each eye's depth is primed with its own projection. Requires the
-    /// collapse.
-    pub occluder: bool,
     /// Re-issue an **already-instanced** draw once per eye under the collapse, instead of letting the
     /// patched vertex shader read the game's own instance ids as an eye parity. A `DrawIndexedInstanced`
     /// with a patched shader bound in the G-buffer range sends instance `i` to eye `i & 1` -- half the
@@ -196,19 +112,6 @@ pub struct SinglePassConfig {
     /// `DrawIndexed` re-issue, the geometry is then present and correctly sized in both eyes but has no
     /// parallax. Requires the collapse. On by default: it fixes a confirmed visible artifact.
     pub indirect_per_eye: bool,
-    /// Give an unpatched draw the collapse re-issues once per eye (the `DrawIndexed` and GPU-indirect
-    /// re-issues, and the non-indexed geometry re-issue) that eye's copy of the vertex
-    /// `GlobalConstants`: its full and offset view-projections, camera position and axis, and render
-    /// camera position, as an eye-sized render of that eye stages them. Without it such a draw reads
-    /// the centred render camera, which carries eye 0's projection and no display cant, so whatever it
-    /// places from those rows has no parallax and, under asymmetric frusta or canted displays, lands
-    /// in the wrong place within an eye's own image. Skipped for draws whose shaders read `cb13` pinned
-    /// to the eye. Applies at once. Off by default: at night in the capital (run 292) it moved a few
-    /// re-issued draws away from the isolated eyes (13 and 20 pixels per eye against none with it
-    /// off), and no scene measured has shown a family it corrects, so a shader that pairs a baked
-    /// centred transform with the camera rows is the likely casualty and the binding is not safe as
-    /// a blanket treatment.
-    pub vertex_globals_per_eye: bool,
     /// Run the deferred clustered-lighting resolve once per eye under the collapse, each run masked to
     /// that eye's half of the double-wide target and reconstructing with that eye's own basis.
     ///
@@ -269,20 +172,6 @@ pub struct SinglePassConfig {
     /// position relative to the eye boundary `stereo::single_pass::eye_camera` publishes. A shader
     /// rewrite, so changing it needs a shader reload. On by default.
     pub screen_door_per_eye: bool,
-    /// Write the velocity pass's motion vectors in each eye's own screen space.
-    ///
-    /// The velocity pixel shaders subtract the previous frame's screen position from the current
-    /// one. Under the double-wide collapse the current position is in the eye's half only where the
-    /// vertex shader takes the remap's per-eye rows (the reprojected and drawn-once families leave
-    /// it the centred camera's), and the previous one comes through the centred camera's previous
-    /// view-projection over the double-wide target. Every eye's motion then carries a horizontal
-    /// ramp of half a pixel per pixel from its centre, plus the parallax between the eye and the
-    /// centred camera, which the motion blur and FSR read. `dxbc_stereo::localize_velocity` rebuilds
-    /// the current position from the pixel's position in its eye's half and takes the previous one
-    /// through the eye's `M_eye` corrected for the render camera's double-wide previous projection,
-    /// from rows `stereo::single_pass::eye_camera` publishes in the eye-split passes. A shader rewrite, so turning it on needs a shader reload; turning it off
-    /// zeroes the rows at once. On by default.
-    pub velocity_per_eye: bool,
     /// Read the render camera's position per eye in the remapped shaders that subtract it, rather
     /// than the pass camera's, before the translation-free view-projection.
     ///
@@ -294,12 +183,6 @@ pub struct SinglePassConfig {
     /// texturing does not. `dxbc_stereo::ClipOrigin::PerEye` reads the row from each eye's copy in
     /// `cb13`. A shader rewrite, so changing it needs a shader reload. On by default.
     pub clip_origin_per_eye: bool,
-    /// Build each eye's terrain-detail `cb1` from that eye's own `cb13` rows, as the block builds it
-    /// for a separately rendered eye, rather than reprojecting the centre's by `M_eye`. The
-    /// reprojection is exact only in real arithmetic: in floats it moved one eye's terrain depth by
-    /// up to about one part in ten thousand over the whole ground. Applies without a shader reload.
-    /// On by default.
-    pub terrain_detail_eye_rows: bool,
     /// Cull the terrain's tessellated patches against a frustum that bounds both eyes under the
     /// collapse. The terrain's hull programs discard a patch outside the offset view-projection the
     /// block types bake once per frame per slot from the render context
@@ -314,53 +197,10 @@ pub struct SinglePassConfig {
     /// each eye's own rows there, so only the cull sees the substitution. Applies without a shader
     /// reload. On by default.
     pub terrain_cull_both_eyes: bool,
-    /// The same per-eye split for the **atmospheric-scattering / aerial-perspective** pass, the other
-    /// fullscreen consumer of the reconstruction basis.
-    ///
-    /// That pass reconstructs the whole screen from depth -- sky included -- and ray-marches the sun
-    /// shadow cascade and aerial perspective over the reconstructed positions, so under the collapse it
-    /// carries exactly the defect
-    /// [`single_pass_reconstruct_per_eye`](Self::reconstruct_per_eye) describes, and
-    /// splitting only the deferred resolve leaves this pass painting the same sliding error back over
-    /// it. On by default, for the same reason.
-    pub atmospheric_per_eye: bool,
-    /// The same per-eye split for the **volumetric fog generation** pass (`RP_FOG_VOLUME_GENERATE`).
-    ///
-    /// That pass reconstructs world positions from depth into its own half-resolution target and
-    /// ray-marches the sun shadow cascade towards them, but it builds its basis by inverting the render
-    /// context's view-projection rather than through `PerspectiveFovInverse`, so the substituted
-    /// inverse never reaches it. Each run instead hands the render context that eye's view-projection,
-    /// mapped onto that eye's half of the target, for the length of the call. On by default.
-    pub fog_volume_per_eye: bool,
-    /// Bias the legacy (non-WaveWorks) water blocks' screen-space reflection/refraction lookup into
-    /// each eye's half of the double-wide target, by re-issuing their `Draw` once per eye.
-    ///
-    /// The `Water*` family -- selected at the lower water-quality settings, in place of the
-    /// `NvWater*` WaveWorks path -- does not sample its reflection, refraction, and depth buffers by
-    /// pixel coordinate. Its block type stages a world→screen-UV matrix on vertex `cb1` once per
-    /// pass (the view-projection with the NDC→UV `x·0.5 + w·0.5` already folded in), the vertex
-    /// shader hands the result on as a projective `TEXCOORD1`, and the pixel shader divides by `w`.
-    /// That UV is normalized over the **viewport**, i.e. over one eye's half, while the buffers it
-    /// indexes are the whole double-wide target -- so each eye reads the entire two-eye image
-    /// stretched across its water, and since the error is a fixed 2x scale it is a 2x motion gain
-    /// too: the reflections slide over the water as the camera moves.
-    ///
-    /// The correction is one more bias per eye, `u' = (u + eye) · 0.5`, composed onto the rows the
-    /// type staged -- no shader change, because the water vertex shaders take their clip position
-    /// from the global `cb0` that the collapse already handles. It needs the per-eye re-issue only to
-    /// know which eye it is for. Deliberately *not* reprojected by `M_eye`: the geometry still
-    /// rasterizes from the collapsed centre view, so the UV must describe where it actually landed.
-    ///
-    /// Requires the collapse. On by default, but the hardest of the re-issues to A/B in practice: the
-    /// affected family may not even be on screen at the water-quality setting in use, which makes a
-    /// headset comparison the only way to tell the fix from a no-op, and unlike the other re-issues
-    /// this one recomputes a constant the engine staged rather than transforming it in flight.
-    pub water_uv_per_eye: bool,
     /// Give the WaveWorks water blocks (`NvWater*`) a per-eye view under the collapse, so the water
     /// surface has parallax instead of being one eye's view shown to both.
     ///
-    /// These blocks are not affected by the projective-UV defect
-    /// ([`single_pass_water_uv_per_eye`](Self::water_uv_per_eye)): their shaders derive
+    /// These blocks are not affected by the legacy water's projective-UV defect: their shaders derive
     /// the screen UV from `SV_Position` and the inverse screen size, which is already consistent with
     /// a double-wide target. Their defect is the other one — the vertex shader writes clip position
     /// from a baked model-view-projection in its own constant buffer rather than from the render
@@ -369,36 +209,6 @@ pub struct SinglePassConfig {
     /// headset, which makes the defect easy to miss. On by default -- the flag stays so a suspected regression can be
     /// isolated without rebuilding.
     pub nvwater_per_eye: bool,
-    /// Look the WaveWorks water's planar reflection up by an eye-local coordinate in each eye's
-    /// re-issue of the water surface, on top of [`nvwater_per_eye`](Self::nvwater_per_eye).
-    ///
-    /// The reflection pass renders one eye-sized frame, but the water pixel shaders read it by the
-    /// screen UV, which under the collapse spans both eyes: each eye gets half of the reflection
-    /// stretched over its own half, a colour shift across the whole water surface with opposite sign
-    /// in the two eyes. The re-issue binds a per-eye rewrite of the shader
-    /// (`dxbc_stereo::localize_planar_reflection`), built when the shader is created, so the switch
-    /// applies without a shader reload. On by default.
-    pub water_reflection_per_eye: bool,
-    /// Size the water's planar reflection camera to one eye under the double-wide collapse.
-    ///
-    /// `WaterPatchManager::UpdateReflectionCamera` copies the active camera's dimensions and the
-    /// camera manager's aspect ratio to the reflection camera every frame. Under the double-wide
-    /// collapse both are the double-wide target's, so the reflection passes render twice an eye's
-    /// horizontal field into the same reflection texture, and the eye-local lookup
-    /// [`water_reflection_per_eye`](Self::water_reflection_per_eye) gives each eye then reads a
-    /// reflection squeezed to half its width. The fix halves the width and the aspect ratio after the
-    /// engine sets them, which is the camera an eye rendered on its own reflects from. Applies at
-    /// once. On by default.
-    pub water_reflection_eye_size: bool,
-    /// Move the fragment `GlobalConstants` camera position to each eye for that eye's re-issue of the
-    /// WaveWorks water, on top of [`nvwater_per_eye`](Self::nvwater_per_eye).
-    ///
-    /// The engine stages those rows once per pass from the centred camera, and the water pixel
-    /// shaders measure the view vector of their Fresnel, reflection, and specular terms from them, so
-    /// both eyes shade the surface as seen from between them. The same staging
-    /// [`fullscreen_camera_per_eye`](Self::fullscreen_camera_per_eye) gives a split fullscreen pass,
-    /// including the matching sun-shadow cascade translation. On by default.
-    pub water_camera_per_eye: bool,
     /// Reproject the screen-space decal *box geometry* per eye, on top of
     /// [`single_pass_ssdecal_per_eye`](Self::ssdecal_per_eye), which fixes only where the
     /// decal reconstructs from.
@@ -426,12 +236,6 @@ pub struct SinglePassConfig {
     /// geometry is a visibly wrong frame, while missing a geometry pass is only the status quo -- so
     /// a pass is added when it is evidenced, never on suspicion.
     pub slot13_per_eye: bool,
-    /// Draw the non-indexed geometry in those passes once for both eyes when its vertex shader is
-    /// patched: one two-instance `DrawInstanced` with the viewport split, the promotion the indexed
-    /// path gives a patched draw, instead of the per-eye re-issue `slot13_per_eye` gives it. A
-    /// patched shader resolves its eye from the instance parity, so the second submission buys
-    /// nothing. On by default; applies at once.
-    pub non_indexed_geometry_once: bool,
     /// Derive the collapse's eye-half viewports from the render target the engine currently has
     /// bound, rather than always from the scene's double-wide viewport.
     ///
@@ -503,19 +307,6 @@ pub struct SinglePassConfig {
     /// keep its taps to the eye's half (`stereo::single_pass::screen_space_reflection`). A shader
     /// rewrite: changing it requests a shader reload. On by default.
     pub ssr_per_eye: bool,
-    /// Run the **screen-space subsurface-scattering** (skin) pass once per eye under the collapse.
-    ///
-    /// Same reconstruction defect. This block calls the inverse **twice**, once per blur axis, so a
-    /// per-eye split would have to mask both -- but they are in mutually exclusive branches, so exactly one
-    /// fires per draw. On by default.
-    pub subsurface_per_eye: bool,
-    /// Apply the per-eye reconstruction basis to the **depth-of-field** post pass under the collapse.
-    ///
-    /// `DOFUtil::GetViewProjInverse` is the seventh and last consumer of the reconstruction basis. DoF
-    /// is a post pass rather than a render block, so it may want the basis substituted rather than the
-    /// pass re-issued: its compute prologue is basis-independent, so it runs once whole-target while the
-    /// closing draw is split. On by default.
-    pub dof_per_eye: bool,
     /// Give **screen-space decals** a per-eye block intercept under the collapse.
     ///
     /// `CRenderBlockSSDecal` is not a `PerspectiveFovInverse` consumer: its type-level `Setup` builds
@@ -529,25 +320,6 @@ pub struct SinglePassConfig {
     /// matrix (which wants the per-eye value) and the depth fetch (which wants the double-wide one), so
     /// they must stay separate. On by default.
     pub ssdecal_per_eye: bool,
-    /// Map the final composite's screen-space overlays, the edge-fade vignette and the lens dirt,
-    /// over each eye rather than over the whole double-wide target.
-    ///
-    /// The composite permutations look both up by the screen UV, which under the collapse spans both
-    /// eyes, so each eye gets half of the overlay stretched to twice its width: a vignette that
-    /// darkens each eye's outer edge and brightens the seam. A shader rewrite, so it needs a shader
-    /// reload to apply. On by default.
-    pub composite_overlays_per_eye: bool,
-    /// Keep the **glare** (bloom) chain and the composite's bloom lookups inside each eye's half of the
-    /// double-wide target under the collapse.
-    ///
-    /// The glare chain's blurs, downsamples, upsamples, and opening read their sources by the screen
-    /// UV with taps that, near the seam, reach into the other eye, so a bright sky or sun near one
-    /// eye's inner edge brightens the other eye's inner half and is missing from its own edge. While
-    /// the chain runs, each of its pixel shaders is swapped for a rewrite whose reads clamp to the
-    /// eye's half (`stereo::single_pass::post_filters`), which applies without a reload; the
-    /// composite's bloom lookups are a shader rewrite, so changing this requests a shader reload. On by
-    /// default.
-    pub glare_per_eye: bool,
     /// Lay the static **foveation** out over each eye's half of the double-wide target under the
     /// collapse.
     ///
@@ -619,49 +391,10 @@ pub struct SinglePassConfig {
     /// On by default: the un-split grid mislights every forward-lit family, and the flag remains so
     /// the two can be compared in the headset.
     pub clustered_per_eye: bool,
-    /// Requires [`single_pass_clustered_per_eye`](Self::clustered_per_eye): also assign
-    /// each eye's lights from **that eye's** position rather than from the collapsed (cyclopean)
-    /// camera's.
-    ///
-    /// The light-assignment vertex shader transforms proxies that the CPU has already made relative
-    /// to the render camera's world position, and under the collapse that is the centre head pose --
-    /// the per-eye offset lives in the patched vertex shaders, not in the render context. Folding the
-    /// eye's world offset into the translation row of the uploaded view matrix restores it. The
-    /// per-eye display canting is *not* applied, only the positional offset.
-    ///
-    /// On by default, as the more faithful assignment. Whether the difference is visible at 64-pixel
-    /// tile granularity is a judgement call, which is why it stays its own flag: turn it off to A/B
-    /// against [`single_pass_clustered_per_eye`](Self::clustered_per_eye) alone.
-    pub clustered_per_eye_light_view: bool,
-    /// Keep both viewport slots bound to the same region outside the G-buffer range, so a patched
-    /// vertex shader's `SV_ViewportArrayIndex = SV_InstanceID & 1` resolves to the same place whichever
-    /// parity it computes. The rewrite writes that index unconditionally -- the bytecode cannot tell
-    /// which pass it is in -- but only the G-buffer geometry ever binds an eye-half pair, and the
-    /// collapse's per-draw split leaves the two slots holding *different* halves after the range ends.
-    /// Until the next engine viewport bind, every odd-numbered instance of an already-instanced draw
-    /// then rasterises into the other half. Slot 0 is never touched, so this can only make dropped
-    /// instances reappear, never move what already rendered. Requires the collapse. On by default.
-    pub uniform_viewport_slots: bool,
     /// Skip the per-draw viewport bind of a routed draw when the two viewport slots already hold
     /// what it wants: every bind of the slots is recorded, the engine's and the mod's, so a pass's
     /// patched draws bind the split once rather than once each. Applies at once. On by default.
     pub viewport_bind_cache: bool,
-    /// Skip the engine's per-dispatch copy of the reflection-proxy depth into the effect
-    /// depth-history slots (`GraphicsEngine::m_EffectInfo`): nothing in the game reads those
-    /// textures (see the pyxis def), so the copy is a whole-surface `CopyResource` at the render
-    /// size spent on nothing. Only the copy is skipped; the slots' lifecycle state advances as the
-    /// engine drives it. Applies at once. On by default.
-    pub skip_unread_effect_depth_copy: bool,
-    /// While stereo forces the SSAO pass's `m_FirstPass` (`hooks/graphics_engine/screen/ssao.rs`),
-    /// also clear its `m_EnableTemporalFilter`, so the render block skips the temporal resolve that
-    /// would copy the blurred occlusion unchanged into the history and has the composite read the
-    /// blurred occlusion directly. Applies at once. On by default.
-    pub ssao_skip_temporal: bool,
-    /// Under the collapse, blit each eye into its swapchain slice straight from its half of the
-    /// double-wide back buffer in the post-draw (`vr.direct_eye_blit`'s direct route), and copy the
-    /// half into its eye capture only for a reader of the capture, instead of copying both halves
-    /// and blitting the copies at the frame submit. Applies from the next frame. On by default.
-    pub collapse_direct_blit: bool,
 }
 
 /// The stereo settings, at `stereo` in the settings file; the payload binds the slot at startup.
@@ -721,63 +454,34 @@ impl SinglePassConfig {
             reproject: true,
             terrain: true,
             terrain_patch_per_eye: true,
-            tree_impostors: true,
-            tree_impostor_pixel_size_per_eye: true,
-            tree_impostor_screen_door_per_eye: true,
-            static_lights_per_eye: true,
-            moon_per_eye: true,
-            water_plane_per_eye: true,
             clouds_per_eye: true,
-            stars_per_eye: true,
-            bark: true,
-            foliage: true,
-            occluder: true,
             instanced_per_eye: true,
             hw_instanced_once: true,
             vegetation_once: true,
             indirect_per_eye: true,
-            vertex_globals_per_eye: false,
             reconstruct_per_eye: true,
             fullscreen_camera_per_eye: true,
             pixel_camera_per_eye: true,
             local_lights_per_eye: true,
             screen_door_per_eye: true,
-            velocity_per_eye: true,
             clip_origin_per_eye: true,
-            terrain_detail_eye_rows: true,
             terrain_cull_both_eyes: true,
-            atmospheric_per_eye: true,
-            fog_volume_per_eye: true,
-            water_uv_per_eye: true,
             nvwater_per_eye: true,
-            water_reflection_per_eye: true,
-            water_reflection_eye_size: true,
-            water_camera_per_eye: true,
             ssdecal_geometry_per_eye: true,
             slot13_per_eye: true,
-            non_indexed_geometry_once: true,
             collapse_viewport_follows_target: true,
             ssao_per_eye: true,
             ssao_exact_sampling: true,
             ao_volumes_per_eye: true,
             ssr_per_eye: true,
-            subsurface_per_eye: true,
-            dof_per_eye: true,
             ssdecal_per_eye: true,
-            composite_overlays_per_eye: true,
-            glare_per_eye: true,
             foveation_per_eye: true,
             foveation_gbuffer: true,
             foveation_lighting: true,
             foveation_quads: true,
             fsr_per_eye: true,
             clustered_per_eye: true,
-            clustered_per_eye_light_view: true,
-            uniform_viewport_slots: true,
             viewport_bind_cache: true,
-            skip_unread_effect_depth_copy: true,
-            ssao_skip_temporal: true,
-            collapse_direct_blit: true,
         }
     }
 }

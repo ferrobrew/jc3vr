@@ -12,9 +12,7 @@ pub(crate) mod ssr;
 pub(crate) mod velocity;
 pub(crate) use lake_samples::LakeSampleTargets;
 mod lake_projection;
-pub(crate) use lake_projection::{
-    capture_producer_context, eye_width_snapshot, observe_producer_draw,
-};
+pub(crate) use lake_projection::{capture_producer_context, observe_producer_draw};
 pub(crate) mod aa;
 pub(crate) mod dof;
 mod late_sky;

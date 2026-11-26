@@ -37,10 +37,7 @@ use jc3gi::{
     },
     types::math::{Matrix4, Vector3},
 };
-use jc3vr_view::{
-    stereo::{STEREO_STATE, config::STEREO_CONFIG},
-    vr::render_params,
-};
+use jc3vr_view::{stereo::STEREO_STATE, vr::render_params};
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{
@@ -70,11 +67,10 @@ fn fog_volume_draw(
     if context.m_ActiveRenderPass != RenderPassId::RP_FOG_VOLUME_GENERATE as i32 {
         return call();
     }
-    let enabled = STEREO_CONFIG.lock().single_pass.fog_volume_per_eye;
     let ctx = Some(context.m_Context);
     let outcome = reconstruction::split_fullscreen_pass_policy(
         SplitPolicy::at_entry(DispatchPhase::Both),
-        enabled,
+        true,
         ctx,
         |eye| {
             // Only a masked run draws one eye's half; the degenerate unmasked second run covers the

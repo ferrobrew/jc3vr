@@ -344,14 +344,8 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
         // Each eye's post-draw blits it straight into the swapchain when this frame's image is
         // acquired now (see `vr::blit`); under the collapse the one dispatch blits each eye from its
         // half of the double-wide back buffer.
-        let direct_route = !layout::collapse_active()
-            || Config::lock_query(|c| c.stereo.single_pass.collapse_direct_blit);
         match vr_frame.as_mut() {
-            Some(frame)
-                if frame.should_render()
-                    && direct_route
-                    && render_mode.selected_eye().is_none() =>
-            {
+            Some(frame) if frame.should_render() && render_mode.selected_eye().is_none() => {
                 vr::arm_direct(frame);
             }
             _ => vr::disarm_direct(),

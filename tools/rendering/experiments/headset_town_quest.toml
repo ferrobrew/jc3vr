@@ -43,9 +43,5 @@ mode = "single_pass"
 name = "repeat"
 
 [[single_pass_variants]]
-name = "vglobals-on"
-switches = { vertex_globals_per_eye = true }
-
-[[single_pass_variants]]
 name = "clouds-off"
 switches = { clouds_per_eye = false }

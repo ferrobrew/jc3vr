@@ -23,7 +23,6 @@ use jc3gi::graphics_engine::{
     graphics_engine::RenderContext,
     render_block::{RBIInfo, RenderBlockAtmosphericScattering},
 };
-use jc3vr_view::stereo::config::STEREO_CONFIG;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::hooks::graphics_engine::{
@@ -43,7 +42,6 @@ fn atmospheric_scattering_draw(
     rc: *mut RenderContext,
     info: *const RBIInfo,
 ) {
-    let enabled = STEREO_CONFIG.lock().single_pass.atmospheric_per_eye;
     let call = || {
         ATMOSPHERIC_SCATTERING_DRAW
             .get()
@@ -61,7 +59,7 @@ fn atmospheric_scattering_draw(
     // SAFETY: `rc` is the live render context for this dispatch; the caller (the engine's draw
     // dispatch) guarantees it is valid for the duration of `Draw`.
     let ctx = unsafe { rc.as_ref() }.map(|rc| rc.m_Context);
-    if reconstruction::split_fullscreen_pass(enabled, ctx, |_eye| call())
+    if reconstruction::split_fullscreen_pass(true, ctx, |_eye| call())
         == reconstruction::SplitOutcome::NotTaken
     {
         call();

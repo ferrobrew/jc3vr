@@ -382,8 +382,6 @@ enabled = false
     fn a_format_zero_file_takes_the_single_pass_group_whole() {
         let mut old = Config::new();
         set_single_pass_feature(&mut old, false);
-        old.stereo.single_pass.bark = true;
-        old.stereo.single_pass.foliage = true;
         old.stereo.single_pass.enabled = true;
         let loaded = parse(&toml::to_string(&old).unwrap()).unwrap();
         assert_eq!(

@@ -267,7 +267,7 @@ fn clear(ctx: *mut c_void, flags: u32, color: *mut c_void, depth: f32, stencil: 
 }
 
 /// Records the VFX depth copy, which happens once per dispatch, mid-frame, and skips it under
-/// `single_pass.skip_unread_effect_depth_copy` when it targets one of the effect depth-history
+/// single-pass is active and it targets one of the effect depth-history
 /// slots, which nothing reads ([`GraphicsEngine::m_EffectInfo`]).
 #[detour(address = jc3gi::graphics_engine::draw::CopySurfaceToTexture_ADDRESS)]
 fn copy_surface_to_texture(ctx: *mut c_void, dst: *mut c_void, src: *mut c_void) {

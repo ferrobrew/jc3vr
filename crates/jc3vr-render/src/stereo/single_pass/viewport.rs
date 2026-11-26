@@ -221,9 +221,7 @@ pub(super) fn set_viewport_slots_uniform(uniform: bool) {
 /// -- the only difference it makes is that the odd-parity ones stop being routed somewhere else. The
 /// device read is behind the flag, so the common (already uniform) case costs a relaxed load.
 pub(super) fn unify_viewport_slots() {
-    if VIEWPORT_SLOTS_UNIFORM.load(Ordering::Relaxed)
-        || !config_flags().has(Flag::UniformViewportSlots)
-    {
+    if VIEWPORT_SLOTS_UNIFORM.load(Ordering::Relaxed) {
         return;
     }
     let (Some(d3d), Some(detour)) = (EngineContext::get(), RS_SET_VIEWPORTS.get()) else {

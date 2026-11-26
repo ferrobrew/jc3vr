@@ -135,9 +135,8 @@ fn subsurface_draw(
     rc: *mut RenderContext,
     info: *const RBIInfo,
 ) {
-    let enabled = STEREO_CONFIG.lock().single_pass.subsurface_per_eye;
     let call = || SUBSURFACE_DRAW.get().unwrap().call(this, rc, info);
-    split_or_issue(enabled, render_context_ctx(rc), call);
+    split_or_issue(render_context_ctx(rc), call);
 }
 
 /// `CDownScale2x2PackFocus::Apply`, the bokeh downscale prepass, split per eye with its compute
@@ -166,19 +165,13 @@ fn dof_downscale_apply(
     pec: *mut PostEffectContext,
     mgr: *mut PostEffectsManager,
 ) {
-    let enabled = STEREO_CONFIG.lock().single_pass.dof_per_eye;
     let call = || DOF_DOWNSCALE_APPLY.get().unwrap().call(this, ctx, pec, mgr);
-    split_or_issue_with(
-        reconstruction::DispatchPhase::FirstRun,
-        enabled,
-        Some(ctx),
-        call,
-    );
+    split_or_issue_with(reconstruction::DispatchPhase::FirstRun, Some(ctx), call);
 }
 
 /// [`split_or_issue_with`] for a block that issues no dispatches.
-fn split_or_issue(enabled: bool, ctx: Option<*mut HContext_t>, draw: impl FnMut()) {
-    split_or_issue_with(reconstruction::DispatchPhase::Both, enabled, ctx, draw);
+fn split_or_issue(ctx: Option<*mut HContext_t>, draw: impl FnMut()) {
+    split_or_issue_with(reconstruction::DispatchPhase::Both, ctx, draw);
 }
 
 /// Run `draw` once per eye half under the collapse, falling back to issuing it exactly once.
@@ -193,13 +186,12 @@ fn split_or_issue(enabled: bool, ctx: Option<*mut HContext_t>, draw: impl FnMut(
 /// must not run again.
 fn split_or_issue_with(
     dispatches: reconstruction::DispatchPhase,
-    enabled: bool,
     ctx: Option<*mut HContext_t>,
     mut draw: impl FnMut(),
 ) {
     let outcome = reconstruction::split_fullscreen_pass_policy(
         reconstruction::SplitPolicy::at_entry(dispatches),
-        enabled,
+        true,
         ctx,
         |_eye| draw(),
     );

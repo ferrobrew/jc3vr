@@ -11,7 +11,6 @@ use windows::Win32::Graphics::Direct3D11::{ID3D11DomainShader, ID3D11GeometrySha
 
 use crate::stereo::single_pass::{
     detour_timing,
-    eye_vertex_globals::EyeVertexGlobals,
     pinned_eye::Cb13EyePin,
     probes,
     probes::{RawDrawKind, SinglePassProbes},
@@ -113,16 +112,12 @@ pub(super) unsafe extern "system" fn draw_indexed_detour(
                 // eye with both slots pinned to that eye's half. It still reads the centred `cb0`, so
                 // there is no parallax on it -- but it is present, in both eyes, at the right size.
                 // A pinned-eye shader in the pipeline does get the parallax, from `cb13` pinned to
-                // the eye being drawn; any other gets it from that eye's copy of the vertex globals.
+                // the eye being drawn.
                 let pin = Cb13EyePin::begin(context);
-                let globals = pin.is_none().then(EyeVertexGlobals::begin).flatten();
                 for eye in 0..2 {
                     ensure_collapse_viewport(context, CollapseViewport::Eye(eye));
                     if let Some(pin) = &pin {
                         pin.pin(eye);
-                    }
-                    if let Some(globals) = &globals {
-                        globals.bind(eye);
                     }
                     probes::submit(
                         probes,
@@ -139,7 +134,6 @@ pub(super) unsafe extern "system" fn draw_indexed_detour(
                     );
                 }
                 ensure_collapse_viewport(context, CollapseViewport::Full);
-                drop(globals);
                 drop(pin);
                 return;
             }
@@ -204,10 +198,7 @@ pub(super) unsafe extern "system" fn draw_detour(
             // A patched shader resolves its eye from the instance parity and routes itself to that
             // eye's half, so one two-instance draw covers both eyes, as the indexed path promotes
             // its draws.
-            if patched
-                && flags.has(Flag::NonIndexedGeometryOnce)
-                && promote_non_indexed(probes, context, vertex_count, start_vertex)
-            {
+            if patched && promote_non_indexed(probes, context, vertex_count, start_vertex) {
                 return;
             }
             // Any other geometry on this entry point is not the fullscreen triangle the `Full`
@@ -218,7 +209,7 @@ pub(super) unsafe extern "system" fn draw_detour(
             }
         }
         if patched
-            && promotes_non_indexed(pass, flags)
+            && promotes_non_indexed(pass)
             && promote_non_indexed(probes, context, vertex_count, start_vertex)
         {
             return;
@@ -227,8 +218,7 @@ pub(super) unsafe extern "system" fn draw_detour(
         // each takes the same two-instance promotion, with its far-plane depth kept through the
         // reprojection.
         if patched
-            && ((pass == RenderPassId::RP_MOON as u8 && flags.has(Flag::Moon))
-                || (pass == RenderPassId::RP_STARS as u8 && flags.has(Flag::Stars)))
+            && (pass == RenderPassId::RP_MOON as u8 || pass == RenderPassId::RP_STARS as u8)
             && let Some(_depth) = FarDepthRows::begin()
             && promote_non_indexed(probes, context, vertex_count, start_vertex)
         {
@@ -360,7 +350,7 @@ pub(super) const GEOMETRY_SLOT13_PASSES: &[u8] = &[
 ];
 
 /// Render passes whose non-indexed draws with a patched vertex shader are the static light sprites,
-/// promoted to one two-instance draw under `single_pass.static_lights_per_eye`.
+/// promoted to one two-instance draw.
 ///
 /// [`RenderBlockTypeLights::Setup`](jc3gi::graphics_engine::render_block::RenderBlockTypeLights::Setup)
 /// selects its fake-light programs by [`RenderPassId::RP_DEFERRED_LIGHTS`], and the draw census
@@ -369,8 +359,7 @@ pub(super) const GEOMETRY_SLOT13_PASSES: &[u8] = &[
 /// patched non-indexed draw because the census also records patched shaders on non-indexed draws
 /// that are not scene geometry routed to the eye halves (the light-propagation-volume
 /// initialisation, which writes a volume texture through its own geometry shader), and splitting
-/// those would change what they write. The moon takes its own promotion, gated on
-/// `single_pass.moon_per_eye`.
+/// those would change what they write. The moon takes its own promotion.
 const STATIC_LIGHT_PASSES: &[u8] = &[
     RenderPassId::RP_DEFERRED_LIGHTS as u8,
     RenderPassId::RP_LENSFLARE as u8,
@@ -411,13 +400,11 @@ impl Drop for FarDepthRows {
 }
 
 /// Whether a non-indexed draw with a patched vertex shader in `pass` is promoted to one
-/// two-instance draw routed to the eye halves: the static light sprites' passes under
-/// `single_pass.static_lights_per_eye`, and the water reflection planes' pass under
-/// `single_pass.water_plane_per_eye`, whose proxy quad the `watermask` reprojection moves into each
-/// eye. The moon's promotion is separate, since it also has to keep its far-plane depth.
-fn promotes_non_indexed(pass: u8, flags: ConfigFlags) -> bool {
-    (STATIC_LIGHT_PASSES.contains(&pass) && flags.has(Flag::StaticLights))
-        || (pass == RenderPassId::RP_REFLECTIVE_WATER_PLANES as u8 && flags.has(Flag::WaterPlane))
+/// two-instance draw routed to the eye halves: the static light sprites' passes, and the water
+/// reflection planes' pass, whose proxy quad the `watermask` reprojection moves into each eye. The
+/// moon's promotion is separate, since it also has to keep its far-plane depth.
+fn promotes_non_indexed(pass: u8) -> bool {
+    STATIC_LIGHT_PASSES.contains(&pass) || pass == RenderPassId::RP_REFLECTIVE_WATER_PLANES as u8
 }
 
 /// Submit a non-indexed draw with a patched vertex shader as one two-instance `DrawInstanced` routed
@@ -623,18 +610,13 @@ pub(super) fn indirect_per_eye(context: *mut c_void, submit: &dyn Fn(Option<usiz
         return false;
     }
     let pin = Cb13EyePin::begin(context);
-    let globals = pin.is_none().then(EyeVertexGlobals::begin).flatten();
     for eye in 0..2 {
         ensure_collapse_viewport(context, CollapseViewport::Eye(eye));
         if let Some(pin) = &pin {
             pin.pin(eye);
         }
-        if let Some(globals) = &globals {
-            globals.bind(eye);
-        }
         submit(Some(eye));
     }
-    drop(globals);
     drop(pin);
     // Unconditional, as on every other path that pins a viewport: a leaked eye-half would clip the
     // rest of the frame -- including the fullscreen passes -- to half the target.
@@ -849,11 +831,6 @@ pub(super) fn instanced_per_eye(submit: &dyn Fn()) -> bool {
         return false;
     };
     let saved = capture_viewport_slots(d3d);
-    // An unpatched shader reads neither `cb13` slot, so it takes the eye from that eye's copy of the
-    // vertex globals instead.
-    let globals = (!BOUND_VS_PATCHED.load(Ordering::Relaxed))
-        .then(EyeVertexGlobals::begin)
-        .flatten();
 
     let mut submitted = 0;
     for eye in 0..2 {
@@ -862,9 +839,6 @@ pub(super) fn instanced_per_eye(submit: &dyn Fn()) -> bool {
         let _reissue = PerEyeReissue::enter(eye, full);
         if !write_cb13_rows(d3d, &pin_rows_to_eye(&rows, eye)) {
             break;
-        }
-        if let Some(globals) = &globals {
-            globals.bind(eye);
         }
         bind_both_viewport_slots(d3d, eye_half_viewport(full, eye));
         submit();
@@ -878,7 +852,6 @@ pub(super) fn instanced_per_eye(submit: &dyn Fn()) -> bool {
             "cb13 restore failed after per-eye pin; geometry may render from one eye for the rest of the pass"
         );
     }
-    drop(globals);
     restore_viewport_slots(d3d, saved);
     // A map failure before the first submission leaves the draw undrawn, so the caller must still
     // submit it; one after leaves it partially drawn, where a further submission would only duplicate

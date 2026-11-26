@@ -50,15 +50,13 @@ fn draw_clustered(
     a3: *mut c_void,
     a4: *mut HTexture_t,
 ) {
-    let (per_eye, clustered, light_view) = STEREO_CONFIG.query(|c| {
+    let (per_eye, clustered) = STEREO_CONFIG.query(|c| {
         (
             c.single_pass.reconstruct_per_eye,
             c.single_pass.clustered_per_eye,
-            c.single_pass.clustered_per_eye_light_view,
         )
     });
-    let run =
-        |eye: Option<usize>| run_draw_clustered(RunRequest { eye, light_view }, this, rc, a3, a4);
+    let run = |eye: Option<usize>| run_draw_clustered(RunRequest { eye }, this, rc, a3, a4);
 
     // SAFETY: `rc` is the live render context for this dispatch; the caller (the engine's draw
     // dispatch) guarantees it is valid for the duration of `DrawClustered`.
@@ -128,8 +126,6 @@ struct RunRequest {
     /// The eye whose half of the tile grid this run should assign lights into, or `None` to build the
     /// whole grid as the un-split pass does.
     eye: Option<usize>,
-    /// Whether to also assign that eye's lights from that eye's world position.
-    light_view: bool,
 }
 
 /// One `DrawClustered`, with the off-axis tile-bounds override armed around it, and the per-eye
@@ -181,20 +177,15 @@ fn run_draw_clustered(
                     grid.exact_y,
                     eye,
                 ),
-                light_view: request
-                    .light_view
-                    .then(|| {
-                        jc3vr_view::hud::render_camera_pose().map(|(position, orientation)| {
-                            LightView {
-                                offset: params.world_offset(glam::Mat4::from_rotation_translation(
-                                    orientation,
-                                    position,
-                                )),
-                                turn: params.orientation_delta,
-                            }
-                        })
-                    })
-                    .flatten(),
+                light_view: jc3vr_view::hud::render_camera_pose().map(|(position, orientation)| {
+                    LightView {
+                        offset: params.world_offset(glam::Mat4::from_rotation_translation(
+                            orientation,
+                            position,
+                        )),
+                        turn: params.orientation_delta,
+                    }
+                }),
                 binds: 0,
                 viewport_pinned: false,
                 saved_viewport: None,

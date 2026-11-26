@@ -42,7 +42,7 @@ from tools.rendering.tests.test_experiment import (
 REPOSITORY = Path(__file__).resolve().parents[3]
 CANONICAL = ("left_only", "right_only", "multipass", "single_pass")
 # The creation-time switches the fake payload reports in its shader build.
-REBUILDING = ("ssr_per_eye", "pixel_camera_per_eye", "static_lights_per_eye")
+REBUILDING = ("ssr_per_eye", "pixel_camera_per_eye", "screen_door_per_eye")
 DEFAULTS = {name: True for name in SINGLE_PASS_SWITCHES}
 CHANGED_PIXELS = 7
 
@@ -164,11 +164,11 @@ class VariantConfigTests(ExperimentTestCase):
 
     def test_the_variant_overrides_compose_with_the_experiment_overrides(self):
         base = VisualOverrides(screen_space_reflections="enabled",
-                               single_pass=(("glare_per_eye", False),))
-        variant = SinglePassVariant("x", (("ssr_per_eye", False), ("glare_per_eye", True)))
+                               single_pass=(("ssdecal_per_eye", False),))
+        variant = SinglePassVariant("x", (("ssr_per_eye", False), ("ssdecal_per_eye", True)))
         self.assertEqual(variant.overrides(base), VisualOverrides(
             screen_space_reflections="enabled",
-            single_pass=(("glare_per_eye", True), ("ssr_per_eye", False))))
+            single_pass=(("ssdecal_per_eye", True), ("ssr_per_eye", False))))
         self.assertEqual(variant.overrides(None), VisualOverrides(single_pass=variant.switches))
         self.assertIs(SinglePassVariant("repeat").overrides(base), base)
         self.assertIsNone(SinglePassVariant("repeat").overrides(None))
@@ -189,11 +189,11 @@ class VariantProtocolTests(unittest.TestCase):
 
     def test_overrides_round_trip_through_the_request_file(self):
         overrides = VisualOverrides(SunShadows.DISABLED, "enabled",
-                                    (("ssr_per_eye", False), ("glare_per_eye", True)))
+                                    (("ssr_per_eye", False), ("ssdecal_per_eye", True)))
         request = Request(Command.CONFIGURE, "cfg", Mode.SINGLE_PASS, 30, visual_overrides=overrides)
         table = tomllib.loads(request.to_toml())["visual_overrides"]
         self.assertEqual(table, {"sun_shadows": "disabled", "screen_space_reflections": "enabled",
-                                 "single_pass": {"glare_per_eye": True, "ssr_per_eye": False}})
+                                 "single_pass": {"ssdecal_per_eye": True, "ssr_per_eye": False}})
         self.assertEqual(VisualOverrides.from_wire(table), overrides)
         self.assertEqual(VisualOverrides.from_wire(overrides.to_wire()), overrides)
         only = VisualOverrides(single_pass=(("ssr_per_eye", False),))
@@ -227,15 +227,15 @@ class VariantVerificationTests(unittest.TestCase):
 
     def test_a_capture_must_carry_the_requested_switches_in_its_config_and_shaders(self):
         overrides = VisualOverrides(single_pass=(("ssr_per_eye", False),))
-        verify_switches("shot", self.metadata({"ssr_per_eye": False, "glare_per_eye": True},
-                                              {"ssr_per_eye": False, "glare_per_eye": True}), overrides)
+        verify_switches("shot", self.metadata({"ssr_per_eye": False, "ssdecal_per_eye": True},
+                                              {"ssr_per_eye": False, "ssdecal_per_eye": True}), overrides)
         with self.assertRaisesRegex(VariantError, "without the requested"):
             verify_switches("shot", self.metadata({"ssr_per_eye": True}, {"ssr_per_eye": True}), overrides)
         with self.assertRaisesRegex(VariantError, "built with other values"):
             verify_switches("shot", self.metadata({"ssr_per_eye": False}, {"ssr_per_eye": True}), overrides)
         with self.assertRaisesRegex(VariantError, "built with other values"):
-            verify_switches("shot", self.metadata({"ssr_per_eye": True, "glare_per_eye": True},
-                                                  {"ssr_per_eye": True, "glare_per_eye": False}), None)
+            verify_switches("shot", self.metadata({"ssr_per_eye": True, "ssdecal_per_eye": True},
+                                                  {"ssr_per_eye": True, "ssdecal_per_eye": False}), None)
         with self.assertRaisesRegex(VariantError, "not built for single-pass"):
             verify_switches("shot", self.metadata({"ssr_per_eye": False}, {"ssr_per_eye": False},
                                                   active=False), overrides)

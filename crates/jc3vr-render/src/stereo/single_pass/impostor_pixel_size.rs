@@ -12,7 +12,7 @@
 use jc3gi::graphics_engine::graphics_engine::RenderContext;
 use jc3vr_view::stereo::layout::double_wide_active;
 
-use crate::stereo::single_pass::{Flag, config_flags, in_gbuffer_range};
+use crate::stereo::single_pass::in_gbuffer_range;
 
 /// The render context's display width, held at one eye's for the life of the guard.
 pub struct EyeDisplayWidth {
@@ -22,17 +22,14 @@ pub struct EyeDisplayWidth {
 
 impl EyeDisplayWidth {
     /// Halve `rc`'s display width to one eye's when the double-wide collapse is drawing its routed
-    /// range and `single_pass.tree_impostor_pixel_size_per_eye` is on; `None` leaves it untouched.
+    /// range; `None` leaves it untouched.
     ///
     /// # Safety
     ///
     /// `rc` must be the live render context the engine passed to the impostor type's `Setup`, and the
     /// guard must be dropped before that call returns to the engine.
     pub unsafe fn stage(rc: *mut RenderContext) -> Option<Self> {
-        if !double_wide_active()
-            || !in_gbuffer_range()
-            || !config_flags().has(Flag::TreeImpostorPixelSize)
-        {
+        if !double_wide_active() || !in_gbuffer_range() {
             return None;
         }
         // SAFETY: the caller guarantees `rc` is live for the guard's lifetime.

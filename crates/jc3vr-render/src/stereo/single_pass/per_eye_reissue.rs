@@ -33,12 +33,11 @@ pub(super) struct TerrainDetailEyePass {
 /// the render block's `Draw` is re-issued once per eye with a per-eye `cb1`. The detail VS builds clip
 /// with a multiply-add chain over `cb1[0..3]` (`clip = Σ_i P_local[i] · cb1[i]`), and the block stages
 /// those rows as `T_patch · OffsetVP` (`T_patch` translating the patch origin relative to the camera).
-/// With `single_pass.terrain_detail_eye_rows` on, each eye's buffer is built the same way from that
-/// eye's own `cb13` rows (its offset view-projection and camera position), through the engine's own
-/// product, so it is the buffer an isolated render of the eye stages, bit for bit. Off, the centre's
-/// buffer is reprojected column by column (`cb1_eye[k] = M_eye · cb1_center[k]`), which is exact
-/// only in real arithmetic: in floats it moved one eye's terrain depth by up to about one part in
-/// ten thousand over the whole ground.
+/// Each eye's buffer is built the same way from that eye's own `cb13` rows (its offset
+/// view-projection and camera position), through the engine's own product, so it is the buffer an
+/// isolated render of the eye stages, bit for bit. Reprojecting the centre's buffer by `M_eye`
+/// instead is exact only in real arithmetic: in floats it moves one eye's terrain depth by up to
+/// about one part in ten thousand over the whole ground.
 /// `cb1[4]` (the LOD-fade position) is left untouched. `this` and `rc` are the
 /// [`RenderBlockTerrainDetail`] and [`RenderContext`] the block's `Draw` received.
 ///
@@ -57,12 +56,8 @@ pub(super) unsafe fn terrain_detail_eye_passes(
     if !terrain_active() {
         return None;
     }
-    let (m_eye, full, d3d) = baked_cb_intercept_ready("terrain-detail", BoundVsGate::Checked)?;
-    let eye_rows = if config_flags().has(Flag::TerrainDetailEyeRows) {
-        Some(live_cb13_rows()?)
-    } else {
-        None
-    };
+    let (_, full, d3d) = baked_cb_intercept_ready("terrain-detail", BoundVsGate::Checked)?;
+    let eye_rows = live_cb13_rows()?;
 
     // SAFETY: caller guarantees live pointers.
     let ovp = unsafe { (*rc).m_OffsetViewProjection.data };
@@ -79,13 +74,6 @@ pub(super) unsafe fn terrain_detail_eye_passes(
     let cb1_center = [r0, r1, r2, r3 + tx * r0 + ty * r1 + tz * r2];
 
     let passes = std::array::from_fn(|eye| {
-        let Some(eye_rows) = eye_rows else {
-            let mut cb1 = [0.0f32; 16];
-            for (k, center) in cb1_center.iter().enumerate() {
-                cb1[k * 4..k * 4 + 4].copy_from_slice(&m_eye[eye].mul_vec4(*center).to_array());
-            }
-            return TerrainDetailEyePass { cb1 };
-        };
         let base = eye * cb13::PER_EYE_ROW_COUNT;
         let mut eye_ovp = Matrix4::default();
         for r in 0..4 {

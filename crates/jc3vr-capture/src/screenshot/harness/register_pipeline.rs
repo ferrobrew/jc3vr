@@ -78,7 +78,7 @@ impl PipelineProbes for CaptureProbes {
 
     unsafe fn pass_draw_scope(
         &self,
-        pass: *mut RenderPass,
+        _pass: *mut RenderPass,
         pass_id: Option<i16>,
         body: &mut dyn FnMut(),
     ) {
@@ -86,17 +86,8 @@ impl PipelineProbes for CaptureProbes {
             stages::capture_before_fog_apply(id);
         }
         draw_census::begin_pass();
-        let snapshot = pass_id
-            .filter(|id| {
-                (RenderPassId::PRE_RP_REFLECTION_ATMOSPHERE as i16
-                    ..=RenderPassId::PRE_RP_REFLECTION_CLOUDS as i16)
-                    .contains(id)
-            })
-            // SAFETY: `pass` is the live render pass being drawn, per the caller contract.
-            .and_then(|_| unsafe { stages::eye_width_snapshot(pass) });
         body();
         draw_census::end_pass();
-        drop(snapshot);
         if let Some(id) = pass_id {
             stages::capture_late_sky(id);
         }

@@ -103,14 +103,6 @@ pub fn mirror_and_bind_cb13(engine: &RenderEngine) -> bool {
         let result = CB13
             .lock()
             .upload_and_bind(&device.m_Device, &context.m_Context, &rows);
-        // The unpatched per-eye re-issues read each eye's copy of the vertex globals, which only a
-        // dual-eye upload can derive; any other upload leaves them stale.
-        match dual {
-            Some(rows) => {
-                eye_vertex_globals::sync(engine, &rows, &device.m_Device, &context.m_Context)
-            }
-            None => eye_vertex_globals::invalidate(),
-        }
         LeaveCriticalSection(context.m_Mutex);
         if let Err(e) = result {
             tracing::warn!("single-pass cb13: {e}");

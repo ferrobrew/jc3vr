@@ -30,7 +30,6 @@ use std::{
 };
 
 use anyhow::Context as _;
-use jc3vr_view::stereo::config::STEREO_CONFIG;
 use windows::{
     Win32::Graphics::Direct3D11::{ID3D11DeviceContext, ID3D11PixelShader},
     core::{GUID, IUnknown, Interface},
@@ -61,16 +60,14 @@ pub fn registered_count() -> usize {
     REGISTERED.load(Ordering::Relaxed)
 }
 
-/// Marks the glare chain as running for its lifetime, when the collapse is live and
-/// `single_pass.glare_per_eye` is on. Entered on the render thread around `GlareEffect::Apply`.
+/// Marks the glare chain as running for its lifetime, when the collapse is live. Entered on the render thread around `GlareEffect::Apply`.
 pub(crate) struct Scope {
     entered: bool,
 }
 
 impl Scope {
     pub(crate) fn enter() -> Scope {
-        let entered = jc3vr_view::stereo::layout::collapse_active()
-            && STEREO_CONFIG.query(|c| c.single_pass.glare_per_eye);
+        let entered = jc3vr_view::stereo::layout::collapse_active();
         if entered {
             IN_GLARE.store(true, Ordering::Relaxed);
         }

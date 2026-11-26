@@ -12,10 +12,9 @@
 //! depth-buffer slot, so the still-advancing index causes no cross-eye depth contamination.
 //!
 //! With `m_FirstPass` forced, the temporal resolve only copies the blurred occlusion into the history
-//! slot the composite then reads. Under `single_pass.ssao_skip_temporal` the hook also clears
-//! `m_EnableTemporalFilter`, which skips that resolve: the composite sits outside the flag's branch
-//! and reads the blurred occlusion directly instead. The game's own value of the flag is kept and put
-//! back once stereo or the switch is off.
+//! slot the composite then reads, so in stereo the hook also clears `m_EnableTemporalFilter`, which
+//! skips that resolve: the composite sits outside the flag's branch and reads the blurred occlusion
+//! directly instead. The game's own value of the flag is kept and put back once stereo is off.
 
 use std::{
     ptr,
@@ -98,10 +97,9 @@ fn ssao_draw(this: *mut SSAOPass) {
         return;
     }
 
-    let skip_temporal = stereo && STEREO_CONFIG.query(|c| c.single_pass.ssao_skip_temporal);
     if let Some(pass) = unsafe { this.as_mut() } {
         pass.m_FirstPass |= stereo;
-        override_temporal_filter(pass, skip_temporal);
+        override_temporal_filter(pass, stereo);
     }
     TraceState::record_eye(TraceEvent::SsaoDraw {
         forced_first_pass: stereo,

@@ -1,25 +1,22 @@
-use std::{cell::Cell, ffi::c_void, mem::MaybeUninit};
+use std::{cell::Cell, ffi::c_void};
 
 use anyhow::{Context, ensure};
 use jc3gi::{
-    camera::camera::{Camera, CameraState},
     graphics_engine::{
         graphics_engine::RenderContext, render_engine::RenderPassId, render_pass::RenderPass,
     },
-    types::math::Matrix4,
     water_patch_manager::WaterPatchManager,
 };
 use jc3vr_render::stereo::single_pass::vertex_identity_lookup;
-use jc3vr_view::stereo::{config::STEREO_CONFIG, draw_index};
+use jc3vr_view::stereo::draw_index;
 use parking_lot::Mutex;
 use serde::Serialize;
 use windows::{Win32::Graphics::Direct3D11::ID3D11DeviceContext, core::Interface};
 
 use crate::screenshot::harness::{
-    WaterReflection,
     bound_buffer::{ShaderStage, read_bound_constant_buffer},
     diagnostic_capture_id, frame_identity, lake_producer_requested, patch_draw,
-    screenshot_wants_eyes, water_reflection_requested, water_surface_inputs_requested,
+    screenshot_wants_eyes, water_surface_inputs_requested,
 };
 
 #[derive(Clone, Debug, Serialize)]
@@ -109,88 +106,6 @@ struct Producer {
 
 static PRODUCERS: Mutex<Vec<Producer>> = Mutex::new(Vec::new());
 thread_local! { static RECORDING: Cell<Option<usize>> = const { Cell::new(None) }; }
-
-pub(crate) struct SnapshotGuard {
-    camera: *mut Camera,
-    original: MaybeUninit<Camera>,
-}
-
-impl Drop for SnapshotGuard {
-    fn drop(&mut self) {
-        unsafe {
-            self.original
-                .as_ptr()
-                .copy_to_nonoverlapping(self.camera, 1)
-        };
-    }
-}
-
-pub(crate) unsafe fn eye_width_snapshot(pass: *mut RenderPass) -> Option<SnapshotGuard> {
-    if !screenshot_wants_eyes()
-        || draw_index() != 0
-        || !jc3vr_view::stereo::layout::double_wide_active()
-        // The production switch already sizes the reflection camera to one eye.
-        || STEREO_CONFIG.query(|c| c.single_pass.water_reflection_eye_size)
-        || !water_surface_inputs_requested()
-        || !matches!(
-            water_reflection_requested(),
-            Some(
-                WaterReflection::EyeWidthPlanar
-                    | WaterReflection::LakeSamples
-                    | WaterReflection::LakeLighting
-                    | WaterReflection::LakeSky
-                    | WaterReflection::LakeSkyBuffer
-                    | WaterReflection::LakeResponse
-            )
-        )
-    {
-        return None;
-    }
-    let pass = unsafe { pass.as_ref() }?;
-    let manager = unsafe { WaterPatchManager::get() }?;
-    if pass.ExternalCamera.is_null()
-        || pass.ExternalCamera != manager.m_ReflectionCamera
-        || pass.ExternalCamera == pass.ExternalRenderCamera
-    {
-        return None;
-    }
-    let camera = unsafe { pass.ExternalRenderCamera.as_mut() }?;
-    let width = camera.m_Width;
-    let height = camera.m_Height;
-    let prepared = camera
-        .m_StateBitfield
-        .contains(CameraState::m_IsRenderCamera);
-    tracing::info!(target: "water_probe", pass = pass.m_Index, width, height, prepared, aspect = camera.m_AspectRatio, "reflection snapshot at Draw");
-    if width <= 0
-        || width % 2 != 0
-        || height <= 0
-        || camera
-            .m_StateBitfield
-            .intersects(CameraState::m_Ortho | CameraState::m_UseOffCenter)
-        || camera.m_AspectRatio != width as f32 / height as f32
-    {
-        return None;
-    }
-    let mut guard = SnapshotGuard {
-        camera,
-        original: MaybeUninit::uninit(),
-    };
-    unsafe {
-        std::ptr::copy_nonoverlapping(camera, guard.original.as_mut_ptr(), 1);
-        camera.SetWidthHeight(width / 2, height);
-        camera.SetAspectRatio(camera.m_AspectRatio * 0.5);
-        camera.RecalcProjection();
-        if prepared {
-            Matrix4::Multiply4x4(
-                &camera.m_View,
-                &camera.m_Projection,
-                &mut camera.m_ViewProjection,
-            );
-            camera.m_ViewProjectionF = camera.m_ViewProjection;
-        }
-    }
-    Some(guard)
-}
 
 pub(crate) struct ProducerScope;
 

@@ -53,7 +53,7 @@ use jc3gi::{
     types::math::Matrix4,
     water_patch_manager::WaterPatchManager,
 };
-use jc3vr_view::stereo::{config::STEREO_CONFIG, draw_index, layout::double_wide_active};
+use jc3vr_view::stereo::{draw_index, layout::double_wide_active};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 use windows::Win32::System::Threading::GetCurrentThreadId;
@@ -61,9 +61,9 @@ use windows::Win32::System::Threading::GetCurrentThreadId;
 use crate::{
     hooks::graphics_engine::probes::{PipelinePoint, capture_point},
     stereo::single_pass::{
-        BlockIntercept, WaterGpuProbe, begin_water_input_capture, begin_water_surface,
-        block_intercept_enabled, draw_per_eye_half_ignoring_bound_vs, eye_globals,
-        screen_uv_cb_per_eye, with_wave_simulation_viewports,
+        WaterGpuProbe, begin_water_input_capture, begin_water_surface,
+        draw_per_eye_half_ignoring_bound_vs, eye_globals, screen_uv_cb_per_eye,
+        with_wave_simulation_viewports,
     },
 };
 
@@ -190,14 +190,14 @@ extern "system" fn wave_works_simulation_step(
 }
 
 /// The water reflection camera's projection parameters, sized to one eye under the double-wide
-/// collapse (`single_pass.water_reflection_eye_size`).
+/// collapse.
 ///
 /// [`WaterPatchManager::UpdateReflectionCamera`] copies the active camera's dimensions, field of view,
 /// and clip distances, and the camera manager's aspect ratio, to the reflection camera, and its caller
 /// rebuilds the projection from them right after. Under the double-wide collapse the dimensions and
 /// the aspect ratio are the double-wide target's, so the reflection passes render twice an eye's
 /// horizontal field into the reflection texture, while each eye's water run looks the texture up as
-/// one eye's frame (`single_pass.water_reflection_per_eye`). In its place this sets the same
+/// one eye's frame (the eye-local planar lookup). In its place this sets the same
 /// parameters with the width and the aspect ratio halved, which is the camera an eye rendered on its
 /// own reflects from.
 ///
@@ -205,13 +205,10 @@ extern "system" fn wave_works_simulation_step(
 /// reflection camera is live, and with the frame tail deferred the draw thread can be rendering the
 /// previous frame's reflection passes from it while this runs; a correction after the call leaves a
 /// window in which the camera holds the double-wide parameters with its projection marked dirty, and
-/// with one the reflection kept the double-wide field for several seconds at a time. Turning the
-/// switch off takes effect on the next frame, since the engine's own call then sets every parameter
-/// again.
+/// with one the reflection kept the double-wide field for several seconds at a time.
 #[detour(address = jc3gi::water_patch_manager::WaterPatchManager::UpdateReflectionCamera_ADDRESS)]
 fn update_reflection_camera(this: *mut WaterPatchManager) {
-    let eye_size =
-        double_wide_active() && STEREO_CONFIG.query(|c| c.single_pass.water_reflection_eye_size);
+    let eye_size = double_wide_active();
     // SAFETY: `this` is the live manager the engine passed in, whose caller has checked the
     // reflection camera pointer, and the camera manager is the live singleton.
     if !eye_size || !unsafe { set_eye_sized_reflection_camera(this) } {
@@ -327,7 +324,7 @@ const HIGH_END_REGISTER: u32 = 1;
 const BOX_REGISTER: u32 = 4;
 
 /// Re-issue `draw` once per eye with the eye-half-biased screen-UV matrix, or return `false` when the
-/// flag is off, the render context is unreadable, or the collapse intercept declines.
+/// render context is unreadable, or the collapse intercept declines.
 ///
 /// `view_projection` picks the render-context matrix the block type bakes the matrix from; this
 /// recomputes the type's staged rows rather than intercepting them, because the type stages them once
@@ -343,9 +340,6 @@ unsafe fn per_eye(
     view_projection: impl Fn(&RenderContext) -> [f32; 16],
     draw: impl FnMut(),
 ) -> bool {
-    if !block_intercept_enabled(BlockIntercept::WaterScreenUv) {
-        return false;
-    }
     // SAFETY: `rc` is live per the caller contract.
     let Some(view_projection) = (unsafe { rc.as_ref() }).map(view_projection) else {
         return false;
@@ -421,7 +415,7 @@ unsafe fn nv_water_per_eye(
     rc: *mut RenderContext,
     mut draw: impl FnMut(),
 ) -> bool {
-    if !block_intercept_enabled(BlockIntercept::NvWater) {
+    if !crate::stereo::single_pass::nv_water_per_eye() {
         return false;
     }
     // SAFETY: `rc` is the live render context per the caller contract.
@@ -446,7 +440,6 @@ unsafe fn nv_water_per_eye(
         capture_point(PipelinePoint::BeforeWater);
     }
     let replay = water_surface.then(begin_water_surface);
-    let stage_camera = STEREO_CONFIG.lock().single_pass.water_camera_per_eye;
 
     draw_per_eye_half_ignoring_bound_vs(|eye| {
         if let Some(replay) = &replay {
@@ -466,7 +459,7 @@ unsafe fn nv_water_per_eye(
             None
         };
         let input_capture = water_surface.then(|| begin_water_input_capture(eye));
-        let _camera = stage_camera.then(|| EyeGlobals::stage(eye));
+        let _camera = EyeGlobals::stage(eye);
         draw();
         drop(input_capture);
         if let Some(probe) = probe {

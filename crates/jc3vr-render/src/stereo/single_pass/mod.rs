@@ -60,7 +60,6 @@ pub mod detour_timing;
 mod draw_detours;
 pub mod eye_camera;
 pub(crate) mod eye_globals;
-mod eye_vertex_globals;
 mod frame_diagnostics;
 pub mod hw_instanced;
 mod impostor_pixel_size;
@@ -137,11 +136,13 @@ pub fn active() -> bool {
         && !detour_lifecycle::com_detours_failed()
 }
 
-/// Whether the engine's copy into the effect depth-history slots is skipped: single-pass is
-/// [`active`] and `single_pass.skip_unread_effect_depth_copy` is on. See
-/// [`SinglePassConfig::skip_unread_effect_depth_copy`](jc3vr_view::stereo::config::SinglePassConfig::skip_unread_effect_depth_copy).
+/// Whether the engine's per-dispatch copy of the reflection-proxy depth into the effect
+/// depth-history slots (`GraphicsEngine::m_EffectInfo`) is skipped: whenever single-pass is
+/// [`active`]. Nothing in the game reads those textures (see the pyxis def), so the copy is a
+/// whole-surface `CopyResource` at the render size spent on nothing. Only the copy is skipped; the
+/// slots' lifecycle state advances as the engine drives it.
 pub(crate) fn skip_unread_effect_depth_copy() -> bool {
-    active() && config_flags().has(Flag::SkipUnreadEffectDepthCopy)
+    active()
 }
 
 /// The terrain block types whose hull programs cull against the baked offset view-projection.
@@ -171,30 +172,24 @@ pub(crate) fn terrain_cull_both_eyes(block: TerrainCullBlock) -> bool {
         && domain_reads_eye_rows
 }
 
-/// Whether the per-eye re-issue intercept for one of the intercepted render blocks is enabled. Read
-/// from the frame's config snapshot, so the block `Draw` detours -- which fire for every draw of
-/// their type whether or not single-pass is on -- cost a relaxed load rather than a mutex
-/// acquisition.
-pub fn block_intercept_enabled(block: BlockIntercept) -> bool {
-    config_flags().has(match block {
-        BlockIntercept::Bark => Flag::Bark,
-        BlockIntercept::Foliage => Flag::Foliage,
-        BlockIntercept::Occluder => Flag::Occluder,
-        BlockIntercept::WaterScreenUv => Flag::WaterScreenUv,
-        BlockIntercept::NvWater => Flag::NvWater,
-    })
+/// Whether the WaveWorks water blocks take their per-eye re-issue
+/// ([`nvwater_per_eye`](jc3vr_view::stereo::config::SinglePassConfig::nvwater_per_eye)). Read from
+/// the frame's config snapshot, so the block `Draw` detour, which fires for every draw of its type
+/// whether or not single-pass is on, costs a relaxed load rather than a mutex acquisition.
+pub fn nv_water_per_eye() -> bool {
+    config_flags().has(Flag::NvWater)
 }
 
 /// Vertex-shader name prefixes whose draws a baked-view-projection block intercept owns end to end,
-/// with the intercept's own flag. Names come from `CreateVertexProgramParams.m_Name`; matched by
+/// and whether the intercept is the WaveWorks water's, which [`nv_water_per_eye`] gates. Names come from `CreateVertexProgramParams.m_Name`; matched by
 /// prefix to cover each family's permutations, all of which are issued by the block's `Draw`/`DrawZ`.
 ///
 /// The occluder is deliberately absent: its shader has no `cb0[4]` reference, so the remap never
 /// claims it and there is nothing to decline.
-const BAKED_CB_VS_NAME_PREFIXES: &[(&str, BlockIntercept)] = &[
-    ("vegetationbark", BlockIntercept::Bark),
-    ("vegetationfoliage", BlockIntercept::Foliage),
-    ("nvwater", BlockIntercept::NvWater),
+const BAKED_CB_VS_NAME_PREFIXES: &[(&str, bool)] = &[
+    ("vegetationbark", false),
+    ("vegetationfoliage", false),
+    ("nvwater", true),
 ];
 
 /// Whether a baked-view-projection block intercept owns this vertex shader, so the `cb0` remap must
@@ -210,9 +205,9 @@ const BAKED_CB_VS_NAME_PREFIXES: &[(&str, BlockIntercept)] = &[
 /// ([`reproject_baked_cb_per_eye`]), because a patched shader is supposed to be producing both eyes
 /// already.
 ///
-/// So the two go together, exactly as they are gated: while the block's flag is on, its `Draw`/`DrawZ`
-/// is re-issued per eye with the baked matrix reprojected, and its shaders are declined here. With the
-/// flag off both halves revert and the family is remapped as before.
+/// So the two go together: the block's `Draw`/`DrawZ` is re-issued per eye with the baked matrix
+/// reprojected, and its shaders are declined here. The WaveWorks water's pair follows its switch:
+/// with it off both halves revert and the family is remapped.
 ///
 /// The bytecode is the final say, not the name: a permutation that really does read the global
 /// view-projection is left to the remap, so a future bundle that moves one of these families onto
@@ -223,41 +218,21 @@ const BAKED_CB_VS_NAME_PREFIXES: &[(&str, BlockIntercept)] = &[
 /// shaders this declined.
 pub fn baked_cb_block_owns_vs(name: Option<&str>, code: &[u8]) -> bool {
     let reads = dxbc_stereo::reads_global_view_projection(code);
-    baked_cb_vs_owned(
-        name,
-        reads.is_ok_and(|reads| !reads),
-        block_intercept_enabled,
-    )
+    baked_cb_vs_owned(name, reads.is_ok_and(|reads| !reads), nv_water_per_eye())
 }
 
 fn baked_cb_vs_owned(
     name: Option<&str>,
     no_global_view_projection: bool,
-    enabled: impl Fn(BlockIntercept) -> bool,
+    nv_water_per_eye: bool,
 ) -> bool {
     let Some(name) = name else {
         return false;
     };
     BAKED_CB_VS_NAME_PREFIXES
         .iter()
-        .any(|(prefix, block)| name.starts_with(prefix) && enabled(*block))
+        .any(|&(prefix, nv_water)| name.starts_with(prefix) && (!nv_water || nv_water_per_eye))
         && no_global_view_projection
-}
-
-/// A render block with a per-eye re-issue intercept: the baked-view-projection blocks, and the two
-/// water families, whose per-eye state is restaged around the re-issue rather than transformed in
-/// flight.
-#[derive(Clone, Copy)]
-pub enum BlockIntercept {
-    Bark,
-    Foliage,
-    Occluder,
-    /// The legacy water blocks' projective screen UV
-    /// ([`water_uv_per_eye`](jc3vr_view::stereo::config::SinglePassConfig::water_uv_per_eye)).
-    WaterScreenUv,
-    /// The WaveWorks water blocks' per-eye camera
-    /// ([`nvwater_per_eye`](jc3vr_view::stereo::config::SinglePassConfig::nvwater_per_eye)).
-    NvWater,
 }
 
 /// The eye whose viewport + view-projection the collapse UI overlays (HUD panel, egui panel) should
@@ -675,7 +650,6 @@ pub fn uninstall_com_detours() -> bool {
     drop(CREATE_VERTEX_SHADER.take());
     drop(SET_VERTEX_PROGRAM_CONSTANTS.take());
     release_cb13();
-    eye_vertex_globals::release();
     ambient_occlusion::release();
     ao_volumes::release();
     screen_space_reflection::release();
@@ -895,25 +869,18 @@ mod tests {
 
     const CAPTURE_VS: &[u8] = jc3vr_view::CAPTURE_VS;
 
-    fn only_nv_water(block: BlockIntercept) -> bool {
-        matches!(block, BlockIntercept::NvWater)
-    }
-
     #[test]
     fn waveworks_permutations_are_owned_when_the_intercept_is_on() {
         for name in ["nvwaterbox", "nvwaterbox_tess"] {
-            assert!(baked_cb_vs_owned(Some(name), true, only_nv_water), "{name}");
-            assert!(!baked_cb_vs_owned(Some(name), true, |_| false), "{name}");
+            assert!(baked_cb_vs_owned(Some(name), true, true), "{name}");
+            assert!(!baked_cb_vs_owned(Some(name), true, false), "{name}");
         }
     }
 
     #[test]
     fn global_view_projection_reads_are_left_to_the_remap() {
         for name in ["nvwaterbox", "nvwaterbox_tess"] {
-            assert!(
-                !baked_cb_vs_owned(Some(name), false, only_nv_water),
-                "{name}"
-            );
+            assert!(!baked_cb_vs_owned(Some(name), false, true), "{name}");
         }
     }
 
@@ -925,9 +892,9 @@ mod tests {
             "waterhighend",
             "watershader_lod0",
         ] {
-            assert!(!baked_cb_vs_owned(Some(name), true, |_| true), "{name}");
+            assert!(!baked_cb_vs_owned(Some(name), true, true), "{name}");
         }
-        assert!(!baked_cb_vs_owned(None, true, |_| true));
+        assert!(!baked_cb_vs_owned(None, true, true));
     }
 
     #[test]
@@ -936,7 +903,7 @@ mod tests {
         for name in ["nvwaterbox", "nvwaterbox_tess"] {
             assert_eq!(
                 baked_cb_block_owns_vs(Some(name), CAPTURE_VS),
-                block_intercept_enabled(BlockIntercept::NvWater),
+                nv_water_per_eye(),
                 "{name}"
             );
         }

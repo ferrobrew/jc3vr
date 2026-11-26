@@ -10,7 +10,7 @@
 //!   the eye-relative distance on a double-wide target; its packed variant halves it.
 //! - The planar reflection texture covers one eye-sized frame, so each eye reads half of it
 //!   stretched over its own half; the per-eye variants look it up by an eye-local coordinate
-//!   (`dxbc_stereo::localize_planar_reflection`, behind `single_pass.water_reflection_per_eye`).
+//!   (`dxbc_stereo::localize_planar_reflection`).
 //!
 //! The variants are built once, when the engine creates the original shader, and hang off it as
 //! private data, so binding one during the re-issue is a lookup. The per-eye reflection variants are
@@ -20,7 +20,6 @@ use std::mem::size_of;
 
 use anyhow::Context as _;
 use dxbc_stereo::DxbcError;
-use jc3vr_view::stereo::config::STEREO_CONFIG;
 use sha2::{Digest, Sha256};
 use windows::{
     Win32::Graphics::Direct3D11::{ID3D11DeviceContext, ID3D11PixelShader},
@@ -88,14 +87,13 @@ impl Drop for Restore<'_> {
 }
 
 /// Bind the bound pixel shader's variant for the eye being re-issued: the eye's reflection variant
-/// while `single_pass.water_reflection_per_eye` is on, otherwise the packed refraction variant.
+/// inside a per-eye re-issue, otherwise the packed refraction variant.
 /// `None`, binding nothing, when the bound shader has no applicable variant.
 pub(super) fn bind(ctx: &ID3D11DeviceContext) -> Option<Restore<'_>> {
     let mut shader = None;
     unsafe { ctx.PSGetShader(&mut shader, None, None) };
     let shader = shader?;
     let variant = per_eye_reissue_eye()
-        .filter(|_| STEREO_CONFIG.query(|c| c.single_pass.water_reflection_per_eye))
         .and_then(|eye| EYE_VARIANTS.get(eye))
         .and_then(|key| variant(&shader, key))
         .or_else(|| variant(&shader, &PACKED_VARIANT))?;

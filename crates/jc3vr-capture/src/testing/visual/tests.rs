@@ -67,7 +67,7 @@ fn single_pass_switch_overrides_survive_the_profile_and_reset_with_it() {
     crate::test_config::register();
     let overrides = VisualOverrides::try_from(
         toml::from_str::<VisualOverridesTable>(
-            "[single_pass]\nssr_per_eye = false\ntree_impostors = false\n",
+            "[single_pass]\nssr_per_eye = false\nclouds_per_eye = false\n",
         )
         .unwrap(),
     )
@@ -76,11 +76,11 @@ fn single_pass_switch_overrides_survive_the_profile_and_reset_with_it() {
     apply_profile_with_overrides(&mut config, Mode::SinglePass, Some(overrides));
     let sps = config.part(&STEREO_CONFIG).single_pass;
     assert!(sps.enabled && sps.reproject);
-    assert!(!sps.ssr_per_eye && !sps.tree_impostors);
+    assert!(!sps.ssr_per_eye && !sps.clouds_per_eye);
     apply_profile_with_overrides(&mut config, Mode::SinglePass, None);
     assert!(
         config.part(&STEREO_CONFIG).single_pass.ssr_per_eye
-            && config.part(&STEREO_CONFIG).single_pass.tree_impostors
+            && config.part(&STEREO_CONFIG).single_pass.clouds_per_eye
     );
 }
 
@@ -429,8 +429,6 @@ fn profile_keeps_per_eye_native_resolution_across_modes() {
         assert_eq!(sps.enabled, on);
         assert_eq!(sps.reproject, on);
         assert_eq!(sps.terrain, on);
-        assert_eq!(sps.tree_impostors, on);
-        assert_eq!(sps.bark && sps.foliage && sps.occluder, on);
     }
 }
 
