@@ -2,21 +2,22 @@
 //! (`docs/mod/tuning.md`). A file added to a crate's `tuning/` directory is listed here; the test
 //! below fails until it is.
 
-use jc3vr_body::controllers::body::rig::tuning::RIG;
-use jc3vr_body::controllers::grab::tuning::GRAB;
-use jc3vr_body::controllers::hands::tuning::HANDS;
-use jc3vr_body::controllers::intent::tuning::CONTROLS;
-use jc3vr_body::controllers::locomotion::tuning::LOCOMOTION;
-use jc3vr_body::controllers::presentation::tuning::PRESENTATION;
-use jc3vr_body::controllers::roomscale::tuning::ROOMSCALE;
-use jc3vr_body::hooks::character::tuning::CHARACTER;
-use jc3vr_body::hooks::input::tuning::INPUT_HOOKS;
 use jc3vr_body::{
     controllers::{
         aim::tuning_file::AIM,
-        body::{ik_body::tuning::IK_BODY, procedural::tuning::PROCEDURAL, tuning::BODY},
+        body::{
+            ik_body::tuning::IK_BODY, procedural::tuning::PROCEDURAL, rig::tuning::RIG,
+            tuning::BODY,
+        },
         fingers::tuning::FINGERS_TUNING,
+        grab::tuning::GRAB,
+        hands::tuning::HANDS,
+        intent::tuning::CONTROLS,
+        locomotion::tuning::LOCOMOTION,
+        presentation::tuning::PRESENTATION,
+        roomscale::tuning::ROOMSCALE,
     },
+    hooks::{character::tuning::CHARACTER, input::tuning::INPUT_HOOKS},
     tuning::FRESHNESS,
 };
 pub(crate) use jc3vr_core::tuning::{Source, shutdown, tick};
