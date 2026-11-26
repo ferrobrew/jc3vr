@@ -134,7 +134,6 @@ payload/src/debug/stereo_diff.rs -> payload
 payload/src/debug/texture_census.rs -> payload
 payload/src/debug/trace.rs -> payload
 payload/src/director/clean_view.rs -> payload
-payload/src/director/clean_view.rs -> tooling
 payload/src/director/keymap.rs -> payload
 payload/src/director/mod.rs -> payload
 payload/src/far_field/mod.rs -> payload
