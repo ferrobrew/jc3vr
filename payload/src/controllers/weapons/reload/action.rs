@@ -20,10 +20,11 @@ use crate::controllers::{
             insert::{InsertStage, InsertionSource},
             plan::ReloadPlan,
             render,
-            steps::chambering,
+            steps::{self, chambering},
             travel::{ActionTravel, TravelEvents, TravelInputs},
             tuning::Reload,
         },
+        sounds::GunSound,
     },
 };
 
@@ -41,6 +42,10 @@ pub(super) trait ActionEngine {
             })
     }
     fn cycled(&mut self, weapon: usize, kind: ActionKind, clip: bool);
+    /// Whether the bolt rifle at `weapon` has fired since its bolt was last worked.
+    fn bolt_fired(&self, weapon: usize) -> bool;
+    /// Play `sound` at gun `gun` of the weapon at `weapon`.
+    fn sound(&mut self, weapon: usize, gun: usize, sound: GunSound);
 }
 
 struct NativeAction;
@@ -80,6 +85,16 @@ impl ActionEngine for NativeAction {
     fn cycled(&mut self, weapon: usize, kind: ActionKind, clip: bool) {
         // SAFETY: action work uses the current input tick's owned weapon.
         unsafe { engine::cycled(weapon, kind, clip) };
+    }
+
+    fn bolt_fired(&self, weapon: usize) -> bool {
+        // SAFETY: action work uses the current input tick's owned weapon.
+        unsafe { engine::bolt_fired(weapon) }
+    }
+
+    fn sound(&mut self, weapon: usize, gun: usize, sound: GunSound) {
+        // SAFETY: action work uses the current input tick's owned weapon.
+        unsafe { steps::gun_sound(weapon, gun, sound) };
     }
 }
 
@@ -308,6 +323,12 @@ impl State {
             record.chambers[gun.entry()] = Chamber::Empty;
             haptics::play(felt, Event::Rack);
             self.event(format!("{} at the rear", kind.label()));
+            // The game's clips voice the pump and the bolt going back, and its bolt act throws a
+            // fired rifle's casing; with the hand moving the part, neither runs.
+            engine.sound(weapon.address, gun.index, GunSound::ActionBack);
+            if kind == ActionKind::Bolt && engine.bolt_fired(weapon.address) {
+                engine.sound(weapon.address, gun.index, GunSound::BoltOpened);
+            }
         }
         if events.locked_back {
             self.status.counts.lock_backs += 1;
@@ -321,6 +342,7 @@ impl State {
         }
         if events.home {
             haptics::play(felt, Event::ActionDetent);
+            engine.sound(weapon.address, gun.index, GunSound::ActionHome);
         }
         if events.let_go {
             self.event(format!("{} let go", kind.label()));

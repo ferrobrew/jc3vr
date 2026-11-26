@@ -25,6 +25,8 @@
 //! - [`opening`]: when a hand holding a grenade or a charge lets it go: when its fingers open;
 //! - [`c4`]: the C4 throw from the chest pouch and the wrist detonator;
 //! - [`reload`]: the true reload: eject, load from the belt pouch, and chamber by hand;
+//! - [`sounds`]: the sounds at the gun for the hands' own work: seats, action cycles, draws, and
+//!   holsters;
 //! - [`empty`]: the game's automatic switch away from an empty weapon suppressed, and the dry fire
 //!   pulsed;
 //! - [`unarmed_fire`]: the fire input with nothing in the hands kept from drawing a weapon;
@@ -88,6 +90,7 @@ pub mod regions;
 pub mod reload;
 pub mod scope;
 mod self_hits;
+pub(crate) mod sounds;
 mod state;
 mod types;
 pub mod unarmed_fire;

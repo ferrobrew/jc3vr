@@ -43,6 +43,7 @@ use crate::controllers::{
             tuning::{LooseTuning, Reload},
             wells,
         },
+        sounds::GunSound,
     },
 };
 
@@ -1115,6 +1116,22 @@ pub(super) unsafe fn seat_sound(weapon: usize, gun: usize) {
 pub(super) unsafe fn refuse_sound(weapon: usize, gun: usize) {
     let sound = unsafe { engine::play_refuse_sound(weapon, gun) };
     tracing::debug!(target: "controllers", ?sound, "reload: played the refusal's sound");
+}
+
+/// Play `sound` at gun `gun` of the weapon at `weapon`, for a move of the hands the game's clips
+/// would have voiced.
+///
+/// # Safety
+///
+/// As [`engine::play_sound`].
+pub(super) unsafe fn gun_sound(weapon: usize, gun: usize, sound: GunSound) {
+    let usage = unsafe { engine::play_sound(weapon, gun, sound) };
+    tracing::debug!(
+        target: "controllers",
+        ?sound,
+        played = usage.is_some(),
+        "reload: played the gun's sound"
+    );
 }
 
 /// The point of `weapon`'s gun pushed onto the belt pouch, its well at `well`: the base of a

@@ -136,7 +136,7 @@ Each volume's reach is its kind's, fixed at `SOCKETS` in `controllers::weapons::
 
 ### Drawing and docking as one object
 
-A draw and a dock take no act: the gun is the same object throughout, and slides between the socket and the hand over `SNAP_S` (0.12 s, in `controllers::weapons::hold`), eased in and out (`hold::act`).
+A draw and a dock take no act: the gun is the same object throughout, and slides between the socket and the hand over `SNAP_S` (0.12 s, in `controllers::weapons::hold`), eased in and out (`hold::act`). Since no draw or holster clip plays, the draw plays the gun's draw sound as it leaves the socket and the dock its holster sound as it lands there ([reload.md, "Sounds"](reload.md#sounds)).
 
 A draw checks that the animation allows one ([`Inventory::GetAnimationAllowsDrawing`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::inventory::Inventory##func-GetAnimationAllowsDrawing)), measures how the gun sits on the socket's bone (its placement relative to the bone's current pose in the skeleton), and tells the table, whose reconcile wields the weapon when the hand is now the primary ([`WeaponBase::OnEquip`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::WeaponBase##vfunc-OnEquip)) or arms it in the hand beside the other hand's weapon (below). Its gun rides the hand's attach bone at once; for the snap's duration the rigid grip places that bone part of the way from where the gun sat (the bone's current pose composed with the measured offset, so the start follows the body) toward the hand's grip (`hands::grip::docked_grip`). The log line is `hold: drew the weapon off the right shoulder into the left hand`.
 

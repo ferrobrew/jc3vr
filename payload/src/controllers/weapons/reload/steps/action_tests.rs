@@ -18,6 +18,8 @@ struct FakeAction {
     discarded: usize,
     cycles: usize,
     reads: usize,
+    fired: bool,
+    sounds: Vec<GunSound>,
 }
 
 impl ActionEngine for FakeAction {
@@ -44,6 +46,14 @@ impl ActionEngine for FakeAction {
             "physical travel must not replay a native action clip"
         );
         self.cycles += 1;
+    }
+
+    fn bolt_fired(&self, _: usize) -> bool {
+        self.fired
+    }
+
+    fn sound(&mut self, _: usize, _: usize, sound: GunSound) {
+        self.sounds.push(sound);
     }
 }
 
@@ -84,6 +94,8 @@ fn fixture(
         discarded: 0,
         cycles: 0,
         reads: 0,
+        fired: false,
+        sounds: Vec::new(),
     };
     (config, state, tick, engine)
 }
@@ -626,4 +638,71 @@ fn action_return_uses_the_current_native_ammo_not_the_old_tick_snapshot() {
     assert_eq!(chamber(&mut state, &tick, Hand::Right), Chamber::Chambered);
     assert_eq!(engine.rounds, 8);
     assert_eq!(engine.discarded, 0);
+}
+
+#[test]
+fn a_hand_worked_slide_sounds_at_the_rear_and_at_home() {
+    let (config, mut state, mut tick, mut engine) = fixture(ActionKind::Slide, Hand::Right, 5);
+    let rear = Vec3::Z * tick.weapons[0].unwrap().plan.travel_m;
+    step(
+        &mut state,
+        &mut tick,
+        &mut engine,
+        &config,
+        Vec3::ZERO,
+        (true, true),
+    );
+    assert!(engine.sounds.is_empty());
+    step(
+        &mut state,
+        &mut tick,
+        &mut engine,
+        &config,
+        rear,
+        (false, true),
+    );
+    assert_eq!(engine.sounds, [GunSound::ActionBack]);
+    step(
+        &mut state,
+        &mut tick,
+        &mut engine,
+        &config,
+        rear,
+        (false, false),
+    );
+    assert_eq!(engine.sounds, [GunSound::ActionBack, GunSound::ActionHome]);
+}
+
+#[test]
+fn a_bolt_opened_after_a_shot_throws_the_casing_and_one_not_fired_does_not() {
+    for fired in [true, false] {
+        let (config, mut state, mut tick, mut engine) = fixture(ActionKind::Bolt, Hand::Right, 3);
+        engine.fired = fired;
+        let rear = Vec3::Z * tick.weapons[0].unwrap().plan.travel_m;
+        let lifted = Vec3::new(
+            -RELOAD.action.bolt_radius_m,
+            RELOAD.action.bolt_radius_m,
+            0.0,
+        );
+        for (position, grip) in [
+            (Vec3::ZERO, (true, true)),
+            (lifted, (false, true)),
+            (lifted + rear, (false, true)),
+            (lifted, (false, true)),
+            (Vec3::ZERO, (false, true)),
+        ] {
+            step(&mut state, &mut tick, &mut engine, &config, position, grip);
+        }
+        let expected: &[GunSound] = if fired {
+            &[
+                GunSound::ActionBack,
+                GunSound::BoltOpened,
+                GunSound::ActionHome,
+            ]
+        } else {
+            &[GunSound::ActionBack, GunSound::ActionHome]
+        };
+        assert_eq!(engine.sounds, expected, "fired: {fired}");
+        assert_eq!(engine.cycles, 1);
+    }
 }

@@ -26,7 +26,6 @@ use jc3gi::{
         DoActWeaponComponent, ModelAttachementWeaponComponent, ReloadType, SniperWeapon,
         WeaponBase, WeaponComponentType, WeaponData, WeaponInputs,
     },
-    physics::GameMaterialId,
     spawn_system::SpawnSystem,
     types::math::{Matrix4, Vector3},
 };
@@ -59,6 +58,7 @@ use crate::{
                 loose::{self, EjectRounds, Loose, Retention},
                 render, wells,
             },
+            sounds::{self, GunSound},
         },
     },
     hooks::character::acts::resolve_act_id,
@@ -718,50 +718,51 @@ pub unsafe fn cycled(address: usize, kind: ActionKind, clip: bool) {
     }
 }
 
-/// Play the magazine-in sound on gun `index` of the weapon at `address`, where the round seats: the
-/// gun's own insert sound where its effects have one, the end of a reload otherwise, or failing
-/// both the dry-fire click, borrowed as a click of the magazine catching. Returns the usage played.
+/// Play `sound` on gun `index` of the weapon at `address` ([`sounds::play`]). Returns the usage
+/// played.
 ///
 /// # Safety
 ///
 /// The weapon must be owned and live on the input thread, outside the world update.
-pub(super) unsafe fn play_seat_sound(address: usize, index: usize) -> Option<u32> {
+pub(super) unsafe fn play_sound(address: usize, index: usize, sound: GunSound) -> Option<u32> {
     let source = unsafe { owned_handle(address) }?;
-    let mut gun = unsafe { gun_ptr(source.as_ref(), index) }?;
-    let effects = unsafe { &mut gun.as_mut().m_AttachedEffects };
-    let material = GameMaterialId::EGameMaterialId_Default;
-    SEAT_SOUNDS.into_iter().find(|&hash| {
-        let usage = unsafe { effects.FindAttachedEffectUsage(hash) };
-        !usage.is_null()
-            && !unsafe { effects.IsAttachedEffectLooping(usage, material) }
-            && unsafe { effects.ActivateAttachedEffect(usage, true, material) }
-    })
+    unsafe { sounds::play(source.as_ref(), index, sound) }
 }
 
-/// The usages a seat plays, the first a gun has: the insert sound, the reload's end, and the
-/// dry-fire click.
-const SEAT_SOUNDS: [u32; 3] = [
-    WeaponData::RELOAD_INSERT_AMMO_USAGE,
-    WeaponData::RELOAD_END_USAGE,
-    WeaponData::OUT_OF_AMMO_FIRE_USAGE,
-];
-
-/// Play the dry-fire click on gun `index` of the weapon at `address`, as the refusal of an action
-/// the gun will not take. Returns the usage played.
+/// Play the magazine-in sound on gun `index` of the weapon at `address`, where the round seats
+/// ([`GunSound::Seat`]). Returns the usage played.
 ///
 /// # Safety
 ///
-/// The weapon must be owned and live on the input thread, outside the world update.
+/// As [`play_sound`].
+pub(super) unsafe fn play_seat_sound(address: usize, index: usize) -> Option<u32> {
+    unsafe { play_sound(address, index, GunSound::Seat) }
+}
+
+/// Play the dry-fire click on gun `index` of the weapon at `address`, as the refusal of an action
+/// the gun will not take ([`GunSound::Refuse`]). Returns the usage played.
+///
+/// # Safety
+///
+/// As [`play_sound`].
 pub(super) unsafe fn play_refuse_sound(address: usize, index: usize) -> Option<u32> {
-    let source = unsafe { owned_handle(address) }?;
-    let mut gun = unsafe { gun_ptr(source.as_ref(), index) }?;
-    let effects = unsafe { &mut gun.as_mut().m_AttachedEffects };
-    let material = GameMaterialId::EGameMaterialId_Default;
-    let usage = unsafe { effects.FindAttachedEffectUsage(WeaponData::OUT_OF_AMMO_FIRE_USAGE) };
-    (!usage.is_null()
-        && !unsafe { effects.IsAttachedEffectLooping(usage, material) }
-        && unsafe { effects.ActivateAttachedEffect(usage, true, material) })
-    .then_some(WeaponData::OUT_OF_AMMO_FIRE_USAGE)
+    unsafe { play_sound(address, index, GunSound::Refuse) }
+}
+
+/// Whether the bolt rifle at `address` has fired since its bolt was last worked: its bolt lock
+/// ([`SniperWeapon::m_HasFiredThisInput`]), which the worked bolt clears ([`cycled`]). `false` for
+/// any other weapon.
+///
+/// # Safety
+///
+/// As [`play_sound`].
+pub(super) unsafe fn bolt_fired(address: usize) -> bool {
+    let Some(source) = (unsafe { owned_handle(address) }) else {
+        return false;
+    };
+    let weapon = unsafe { source.as_ref() };
+    is_sniper(weapon)
+        && unsafe { &*(weapon as *const WeaponBase).cast::<SniperWeapon>() }.m_HasFiredThisInput
 }
 
 /// The address of gun `index` of the weapon at `address`, whose skeleton the action's bone rides.

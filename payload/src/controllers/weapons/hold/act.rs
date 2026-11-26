@@ -59,6 +59,7 @@ use crate::{
                 },
             },
             inventory::{self, reconcile, sockets, traversal},
+            sounds::{self, GunSound},
         },
     },
     headpose, hooks,
@@ -126,6 +127,9 @@ pub(crate) unsafe fn draw(hand: Hand, socket: Socket, snap_s: f32) -> Result<(),
             state.slide_out(seat, hand, snap_s);
             state.watches[hand.index()].pending = true;
             drop(state);
+            // SAFETY: the hand holds the drawn weapon, and its slot or the carry set keeps it
+            // alive; the game thread, before the world update.
+            unsafe { gun_sound(seat.weapon, GunSound::Draw) };
             tracing::info!(
                 target: "controllers",
                 hand = hand.label(),
@@ -1079,6 +1083,8 @@ unsafe fn finish_dock(hand: Hand, socket: Socket, weapon: usize) -> Result<(), D
     state.draw_rearm.docked();
     state.intents[hand.index()] = None;
     drop(state);
+    // SAFETY: the socket's slot or the carry set keeps the docked weapon alive.
+    unsafe { gun_sound(weapon, GunSound::Holster) };
     tracing::info!(
         target: "controllers",
         hand = hand.label(),
@@ -1088,6 +1094,28 @@ unsafe fn finish_dock(hand: Hand, socket: Socket, weapon: usize) -> Result<(), D
         socket.label()
     );
     Ok(())
+}
+
+/// Play `sound` at the first gun of the weapon at `weapon`: the draw's and the holster's sounds,
+/// which the game's draw and holster clips play and the hands' draws and docks, playing no clip,
+/// otherwise lack.
+///
+/// # Safety
+///
+/// `weapon` must be a weapon a slot or the carry set keeps alive, on the game thread before the
+/// world update.
+unsafe fn gun_sound(weapon: usize, sound: GunSound) {
+    // SAFETY: forwarded from the caller.
+    let Some(base) = (unsafe { (weapon as *const WeaponBase).as_ref() }) else {
+        return;
+    };
+    let usage = unsafe { sounds::play(base, 0, sound) };
+    tracing::debug!(
+        target: "controllers",
+        ?sound,
+        played = usage.is_some(),
+        "hold: played the gun's sound"
+    );
 }
 
 /// Drop the weapon `hand` holds: the wielded weapon through its slot, a weapon armed in the hand
