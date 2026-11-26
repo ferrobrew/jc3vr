@@ -42,6 +42,10 @@ pub(crate) fn install() {
     hud::register_render::register();
     recorder::register_render::register();
     register_desktop_overlay::register();
+    // What the debug tools and the graphics-engine hooks contribute to the VR runtime and the
+    // camera hooks below them.
+    debug::register_view::register();
+    graphics_engine::register_vr_teardown::register();
     // What the input tick reads from the HUD and the recorder, registered before any tick runs.
     hud::pointer::register_pointer::register();
     recorder::register_mark::register();

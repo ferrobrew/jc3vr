@@ -5,6 +5,7 @@ pub mod camera;
 pub mod coord_frame;
 pub mod pipeline_probes;
 pub mod register_unpatch;
+pub mod register_view;
 pub mod rt_hash;
 pub mod stereo_diff;
 pub mod texture_census;

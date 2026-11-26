@@ -23,7 +23,6 @@ use windows::{
 
 use crate::{
     controllers::body::rig::{origin_provenance, origin_provenance::ReferenceSpaceChanges},
-    hooks::graphics_engine::graphics_engine,
     vr::{
         VIEW_TYPE, VR_CONFIG, VrConfig, blit,
         eye_resolution::scaled_eye_size,
@@ -36,6 +35,7 @@ use crate::{
         },
         loader::{LoaderUnavailable, load_entry},
         mirror,
+        participants::teardown_participant,
         persist::{
             acquire_instance, acquire_session, clear_persisted, persist_session, stash_instance,
         },
@@ -52,6 +52,9 @@ use crate::{
 /// via the module declaration wiring). The cleanup fully tears the runtime down so the OpenXR
 /// instance never outlives the DLL on uninject → reinject.
 pub fn install() {
+    // Checked here rather than at the first teardown, so a composition that forgot it fails at
+    // startup instead of leaving the flip blocked when a session ends.
+    teardown_participant();
     // Register the native-resolution shutdown restore: the deferred resize back to the pre-VR display
     // size is requested while the hooks are still live, so the delayed hook uninstall (lib.rs
     // `shutdown_startup`) leaves the `Draw` prologue time to service it before teardown.
@@ -59,7 +62,7 @@ pub fn install() {
     jc3vr_core::lifecycle::on_cleanup(|_renderer| {
         blit::teardown();
         foveation::teardown();
-        crate::far_field::share::teardown();
+        (teardown_participant().release_resources)();
         mirror::teardown();
         uninstall();
     });
@@ -698,7 +701,7 @@ impl VrState {
                 self.end_session_cleanly();
             }
         }
-        graphics_engine::BLOCK_FLIP.store(false, std::sync::atomic::Ordering::Relaxed);
+        (teardown_participant().release_flip)();
 
         // The controller input goes before the session and the instance it belongs to: stashed
         // alongside them when persisting, destroyed with them otherwise.

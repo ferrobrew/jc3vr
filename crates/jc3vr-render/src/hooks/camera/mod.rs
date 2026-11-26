@@ -21,7 +21,6 @@ use re_utilities::hook_library::HookLibrary;
 
 use crate::{
     controllers::cockpit::CockpitTransform,
-    debug::trace::{TraceEvent, TraceState},
     fsr::FSR_CONFIG,
     hooks::camera::config::CAMERA_CONFIG,
     stereo::{STEREO_STATE, config::STEREO_CONFIG},
@@ -34,7 +33,8 @@ mod participants;
 pub use config::{CameraConfig, SCENE_NEAR_CLIP_M};
 use jc3vr_core::hooks::in_gameplay;
 pub use participants::{
-    CameraParticipants, register_camera_participants, register_render_camera_observer,
+    CameraDebugTaps, CameraParticipants, register_camera_debug_taps, register_camera_participants,
+    register_render_camera_observer,
 };
 
 use crate::headpose::{
@@ -104,7 +104,7 @@ fn setup_render_camera(camera: *mut Camera, jitter: bool) -> *mut c_void {
     };
     let mut first_dispatch = false;
     if is_render_camera {
-        TraceState::record_eye(TraceEvent::SetupRenderCamera);
+        participants::tap_setup_entered();
         let mut stereo = STEREO_STATE.lock();
         // Clear the shadow-anchor delta; the parallax block below sets it when disparity is on, so a
         // stale value can't leak into the sun-shadow cascade correction when disparity is off.
@@ -182,7 +182,7 @@ fn setup_render_camera(camera: *mut Camera, jitter: bool) -> *mut c_void {
         // center camera's basis + travel direction before the per-eye offset below mutates
         // m_TransformF, once per real frame (every dispatch sees the same center).
         if first_dispatch {
-            crate::debug::coord_frame::record_render_camera_frame(camera);
+            participants::tap_centre_rebuilt(camera);
         }
 
         {
@@ -752,7 +752,7 @@ static LAST_DTF: RenderFrameSlot<f32> = RenderFrameSlot::new();
 static LAST_CAMERA_WORLD: Mutex<Option<Matrix4>> = Mutex::new(None);
 
 /// The active (main) camera's near/far clip planes (`m_Near`/`m_Far`), captured each frame from the
-/// engine. The reconstruction override ([`crate::hooks::graphics_engine::reconstruction`]) keys on
+/// engine. The graphics-engine hooks' reconstruction override keys on
 /// these to recognize the main-view depth passes -- whose off-axis inverse it must substitute -- and
 /// skip auxiliary cameras (reflections) with different planes. The engine writes a runtime far that
 /// differs from the `Camera` constructor default (~40 km vs the constructor's 38.4 km), so gating that

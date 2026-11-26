@@ -1,12 +1,14 @@
-//! The gameplay work the VR frame drives without owning it: the roomscale cockpit composition, the
-//! composition's evidence publication, and the observers of a recenter. The grapple's body-frame
-//! filter, which the frame also advances, reaches it through the head pose's participants
-//! ([`crate::headpose::HeadParticipants`]).
+//! The work the VR runtime drives without owning it: the roomscale cockpit composition, the
+//! composition's evidence publication, and the observers of a recenter; the render resources and
+//! flip state its teardown releases; and the observer of the engine resizes it requests. The
+//! grapple's body-frame filter, which the frame also advances, reaches it through the head pose's
+//! participants ([`crate::headpose::HeadParticipants`]).
 //!
-//! The frame ([`crate::vr::frame`]) and the recenter ([`crate::vr::recenter`]) call these at fixed
-//! points of their own sequence, so the order is theirs. The owners live above the VR runtime, so
-//! they hand it one [`FrameParticipants`] table at install ([`register_frame_participants`]),
-//! before any hook can start a frame.
+//! The frame ([`crate::vr::frame`]), the recenter ([`crate::vr::recenter`]), the teardown, and the
+//! native-resolution driver call these at fixed points of their own sequence, so the order is
+//! theirs. The owners live above the VR runtime, so they hand it their tables at install
+//! ([`register_frame_participants`], [`register_teardown_participant`], and
+//! [`register_resize_observer`]), before any hook can start a frame.
 
 use std::sync::OnceLock;
 
@@ -53,6 +55,25 @@ pub struct CockpitPositions {
     pub cur: Vec3,
 }
 
+/// The render-side state the VR runtime's teardown releases. Both run on the game thread.
+pub struct TeardownParticipant {
+    /// Release the flip block, so the game's own present path resumes. Runs whenever the runtime
+    /// tears down, after the GPU is drained.
+    pub release_flip: fn(),
+    /// Release the render resources a session's frames built. Runs once, at payload shutdown.
+    pub release_resources: fn(),
+}
+
+/// The observer of the engine resizes the native-resolution driver requests. Both run on the game
+/// thread.
+pub struct ResizeObserver {
+    /// The engine is initialized and the driver is about to inspect its display size. Runs every
+    /// frame the driver runs against an initialized engine.
+    pub engine_ready: fn(),
+    /// The engine serviced a requested resize to `width` by `height`.
+    pub resized: fn(width: u32, height: u32),
+}
+
 /// Hand the VR frame its participants. Called once at install; a second table is ignored.
 pub fn register_frame_participants(participants: &'static FrameParticipants) {
     if PARTICIPANTS.set(participants).is_err() {
@@ -71,4 +92,43 @@ pub(crate) fn frame_participants() -> &'static FrameParticipants {
         .expect("frame participants: the table is registered before the hooks are installed")
 }
 
+/// Hand the VR teardown its participant. Called once at install; a second one is ignored.
+pub fn register_teardown_participant(participant: &'static TeardownParticipant) {
+    if TEARDOWN.set(participant).is_err() {
+        tracing::warn!(
+            target: "vr",
+            "teardown participant: one is already registered; the new one is ignored"
+        );
+    }
+}
+
+/// The registered teardown participant. The teardown releases state the runtime cannot release
+/// itself, so a runtime without it would leave the flip blocked: [`crate::vr::install`] checks it is
+/// present before the runtime can bring a session up.
+pub(crate) fn teardown_participant() -> &'static TeardownParticipant {
+    TEARDOWN
+        .get()
+        .expect("teardown participant: registered before the VR runtime is installed")
+}
+
+/// Hand the native-resolution driver its resize observer. Called once at install; a second one is
+/// ignored.
+pub fn register_resize_observer(observer: &'static ResizeObserver) {
+    if RESIZE_OBSERVER.set(observer).is_err() {
+        tracing::warn!(
+            target: "vr",
+            "resize observer: one is already registered; the new one is ignored"
+        );
+    }
+}
+
+/// The registered resize observer, or `None` when nobody observes the resizes.
+pub(crate) fn resize_observer() -> Option<&'static ResizeObserver> {
+    RESIZE_OBSERVER.get().copied()
+}
+
 static PARTICIPANTS: OnceLock<&'static FrameParticipants> = OnceLock::new();
+
+static TEARDOWN: OnceLock<&'static TeardownParticipant> = OnceLock::new();
+
+static RESIZE_OBSERVER: OnceLock<&'static ResizeObserver> = OnceLock::new();

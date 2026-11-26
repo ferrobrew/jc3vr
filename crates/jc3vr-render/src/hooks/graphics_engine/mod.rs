@@ -22,6 +22,8 @@ mod declaration_replay;
 pub mod graphics_engine;
 // The registrations the post-draw, the UI redirect, and the flip run for the layers above.
 pub mod post_draw;
+// The VR runtime's teardown participant: the flip block and the far-field share pipeline.
+pub mod register_vr_teardown;
 mod render_pass;
 // `shader` is public so the debug UI can read its patched-shader count.
 pub mod shader;

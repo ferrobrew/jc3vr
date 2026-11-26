@@ -54,7 +54,7 @@ use jc3gi::{
 use jc3vr_core::config::engine::{Switch, disable_automatically};
 use parking_lot::Mutex;
 
-use crate::vr::{VR_CONFIG, back_buffer};
+use crate::vr::{VR_CONFIG, back_buffer, participants::resize_observer};
 
 /// How many frames to wait for a requested deferred resize to be serviced before treating it as a
 /// fault. A resize is serviced in the very next `Draw` prologue, so this is a generous ceiling that
@@ -122,7 +122,9 @@ pub fn apply_native_resolution() {
     if !ge.m_HasBeenInitialized {
         return;
     }
-    crate::debug::texture_census::ensure_armed();
+    if let Some(observer) = resize_observer() {
+        (observer.engine_ready)();
+    }
     let Some(device) = (unsafe { ge.m_Device.as_ref() }) else {
         return;
     };
@@ -153,7 +155,9 @@ pub fn apply_native_resolution() {
                 aspect_ratio = aspect,
                 "native resolution: engine resize serviced",
             );
-            crate::debug::texture_census::report(&format!("resize {}x{}", current.0, current.1));
+            if let Some(observer) = resize_observer() {
+                (observer.resized)(current.0, current.1);
+            }
             if !window_ok {
                 tracing::error!(
                     target: "vr",

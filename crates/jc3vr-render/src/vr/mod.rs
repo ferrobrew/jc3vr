@@ -98,7 +98,8 @@ pub use mirror::{
     register_mirror_observer, toggle_stereo_pair,
 };
 pub use participants::{
-    CockpitPositions, FrameInputs, FrameParticipants, register_frame_participants,
+    CockpitPositions, FrameInputs, FrameParticipants, ResizeObserver, TeardownParticipant,
+    register_frame_participants, register_resize_observer, register_teardown_participant,
 };
 pub use recenter::{
     RecenterCause, RecenterKind, auto_recenter_tick, recenter, recenter_count, request_recenter,
