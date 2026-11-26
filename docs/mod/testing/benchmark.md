@@ -69,7 +69,7 @@ Each metric's median, 99th percentile (the "1% low" as a frame time), and worst 
 
 ### The draw detours' own cost
 
-`--detour-timing` arms timers in the five draw entry detours (`stereo::single_pass::draw_detours`) and around the forwarding call in the submission funnel (`stages::velocity::submit`): the outermost detour on a thread adds its whole length, and each forward its own (`testing::benchmark::detour_timing`). The difference is what the detours spend around the draws, the mod's bookkeeping and the state changes it makes for a draw (viewport splits, pinned constants, bound variants) included. Each timed detour and forward costs a clock-read pair, which the payload measures at the end of the run (`clock_pair_ns`) and the summary takes out. The timing inflates the frame it measures, so it is a run of its own and its frame times are not comparable with the others'.
+`--detour-timing` arms timers in the five draw entry detours (`stereo::single_pass::draw_detours`) and around the forwarding call in the submission funnel (`stereo::single_pass::probes::submit`, or the harness's submission trace while a capture is armed): the outermost detour on a thread adds its whole length, and each forward its own (`stereo::single_pass::detour_timing`). The difference is what the detours spend around the draws, the mod's bookkeeping and the state changes it makes for a draw (viewport splits, pinned constants, bound variants) included. Each timed detour and forward costs a clock-read pair, which the payload measures at the end of the run (`clock_pair_ns`) and the summary takes out. The timing inflates the frame it measures, so it is a run of its own and its frame times are not comparable with the others'.
 
 ### Where the draw task's time goes
 

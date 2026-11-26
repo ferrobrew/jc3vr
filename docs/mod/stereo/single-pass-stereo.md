@@ -292,6 +292,8 @@ is split by concern:
 | `static_lights` | the static light sprites' inverse screen width at one eye's width |
 | `config_snapshot` | the per-frame and per-dispatch flag snapshots, and the collapse and double-wide bits they publish to `stereo::layout` for the code outside single-pass |
 | `instanced_exposure`, `frame_diagnostics` | measurement only; nothing here changes a draw |
+| `probes` | the capture harness's probes into the draw path, registered by the harness at install and skipped behind one relaxed flag until the first capture or snapshot request |
+| `detour_timing` | the draw detours' own cost, armed by a benchmark run |
 
 ### Hook points
 
