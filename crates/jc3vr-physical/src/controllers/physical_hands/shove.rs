@@ -17,9 +17,13 @@
 use body_rig::smooth::follow_factor;
 use glam::Vec3;
 use jc3vr_body::controllers::physics::rigid::RigidBody;
+use serde::Deserialize;
 
-/// The contact's tuning, fixed at [`SHOVE`].
-#[derive(Debug, Copy, Clone, PartialEq)]
+/// The contact's tuning: a palm pressed into a dynamic body pushes the point it touches along with
+/// the hand, within the hand's strength. The shipped values are the tuning file's `shove`
+/// ([`PHYSICAL_HANDS`](crate::controllers::physical_hands::tuning::PHYSICAL_HANDS)).
+#[derive(Debug, Copy, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ShoveTuning {
     /// The speed into the body per metre of press past the deadband, per second.
     pub stiffness_per_s: f32,
@@ -33,18 +37,10 @@ pub struct ShoveTuning {
     pub friction: f32,
     /// How long the measure of how much a body gives is smoothed over, seconds.
     pub give_smoothing_s: f32,
+    /// The slowest asked speed whose outcome measures the give, metres per second: below it, a body
+    /// at rest says nothing about how freely it moves.
+    pub min_asked_mps: f32,
 }
-
-/// The palms' soft contact with loose objects: a palm pressed into a dynamic body pushes the point
-/// it touches along with the hand, within the hand's strength.
-pub const SHOVE: ShoveTuning = ShoveTuning {
-    stiffness_per_s: 12.0,
-    deadband_m: 0.005,
-    max_speed_mps: 4.0,
-    max_force_n: 600.0,
-    friction: 0.6,
-    give_smoothing_s: 0.08,
-};
 
 /// One tick's shove of a body.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
@@ -150,17 +146,18 @@ impl Give {
         *self = Self::new();
     }
 
-    /// Fold a tick's shove of the body `body`, over `dt` seconds, smoothed over `smoothing_s`,
-    /// and return the resistance, `0..=1`: one for a body that gives nothing.
-    pub fn update(&mut self, body: u32, shove: &Shove, dt: f32, smoothing_s: f32) -> f32 {
+    /// Fold a tick's shove of the body `body`, over `dt` seconds, smoothed over
+    /// [`ShoveTuning::give_smoothing_s`], and return the resistance, `0..=1`: one for a body that
+    /// gives nothing.
+    pub fn update(&mut self, body: u32, shove: &Shove, dt: f32, tuning: &ShoveTuning) -> f32 {
         let measured = match self.last {
-            Some((last, asked)) if last == body && asked > MIN_ASKED_MPS => {
+            Some((last, asked)) if last == body && asked > tuning.min_asked_mps => {
                 Some((1.0 - shove.speed_mps / asked).clamp(0.0, 1.0))
             }
             _ => None,
         };
         let raw = measured.map_or(shove.saturation, |m| m.max(shove.saturation));
-        let share = follow_factor(dt, smoothing_s);
+        let share = follow_factor(dt, tuning.give_smoothing_s);
         self.resistance = if self.last.is_some_and(|(last, _)| last == body) {
             self.resistance + (raw - self.resistance) * share
         } else {
@@ -174,26 +171,31 @@ impl Give {
     }
 }
 
-/// The slowest asked speed whose outcome measures the give, metres per second: below it, a body
-/// at rest says nothing about how freely it moves.
-const MIN_ASKED_MPS: f32 = 0.05;
-
 #[cfg(test)]
 mod tests {
     use glam::Quat;
     use jc3vr_body::controllers::physics::rigid::test_support::crate_body;
 
     use super::*;
+    use crate::controllers::physical_hands::tuning::PHYSICAL_HANDS;
 
     const DT: f32 = 1.0 / 60.0;
-    const TUNING: ShoveTuning = ShoveTuning {
-        stiffness_per_s: 10.0,
-        deadband_m: 0.005,
-        max_speed_mps: 4.0,
-        max_force_n: 600.0,
-        friction: 0.5,
-        give_smoothing_s: 0.08,
-    };
+
+    fn tuning() -> ShoveTuning {
+        ShoveTuning {
+            stiffness_per_s: 10.0,
+            friction: 0.5,
+            ..PHYSICAL_HANDS.get().shove
+        }
+    }
+
+    /// The tuning with the give smoothed over `smoothing_s`.
+    fn smoothed(smoothing_s: f32) -> ShoveTuning {
+        ShoveTuning {
+            give_smoothing_s: smoothing_s,
+            ..tuning()
+        }
+    }
 
     #[test]
     fn a_slow_press_moves_a_light_crate_at_the_hands_speed() {
@@ -207,7 +209,7 @@ mod tests {
             0.005,
             Vec3::new(0.3, 0.0, 0.0),
             DT,
-            &TUNING,
+            &tuning(),
         );
         let mut moved = body;
         moved.apply_impulse(s.impulse, at);
@@ -219,11 +221,11 @@ mod tests {
     fn a_deeper_press_asks_more() {
         let body = crate_body(5.0, Vec3::splat(0.5), Vec3::ZERO, Quat::IDENTITY);
         let at = Vec3::new(-0.25, 0.0, 0.0);
-        let shallow = shove(&body, at, Vec3::NEG_X, 0.01, Vec3::ZERO, DT, &TUNING);
-        let deep = shove(&body, at, Vec3::NEG_X, 0.05, Vec3::ZERO, DT, &TUNING);
+        let shallow = shove(&body, at, Vec3::NEG_X, 0.01, Vec3::ZERO, DT, &tuning());
+        let deep = shove(&body, at, Vec3::NEG_X, 0.05, Vec3::ZERO, DT, &tuning());
         assert!(deep.asked_mps > shallow.asked_mps && shallow.asked_mps > 0.0);
         // Inside the deadband and still, nothing.
-        let resting = shove(&body, at, Vec3::NEG_X, 0.004, Vec3::ZERO, DT, &TUNING);
+        let resting = shove(&body, at, Vec3::NEG_X, 0.004, Vec3::ZERO, DT, &tuning());
         assert_eq!(resting.impulse, Vec3::ZERO);
     }
 
@@ -238,9 +240,9 @@ mod tests {
             0.05,
             Vec3::new(0.0, 0.0, -1.0),
             DT,
-            &TUNING,
+            &tuning(),
         );
-        assert!((s.impulse.length() - TUNING.max_force_n * DT).abs() < 1e-3);
+        assert!((s.impulse.length() - tuning().max_force_n * DT).abs() < 1e-3);
         assert_eq!(s.load, 1.0);
         assert!(s.saturation > 0.9);
         let mut moved = car;
@@ -259,7 +261,7 @@ mod tests {
             0.02,
             Vec3::new(0.5, 0.0, 0.0),
             DT,
-            &TUNING,
+            &tuning(),
         );
         let mut moved = tall;
         moved.apply_impulse(s.impulse, at);
@@ -278,7 +280,7 @@ mod tests {
             0.02,
             Vec3::new(0.5, 0.0, 0.0),
             DT,
-            &TUNING,
+            &tuning(),
         );
         assert_eq!(s.impulse, Vec3::ZERO);
         assert_eq!(s.saturation, 0.0);
@@ -296,11 +298,11 @@ mod tests {
             0.02,
             Vec3::new(1.0, -0.1, 0.0),
             DT,
-            &TUNING,
+            &tuning(),
         );
         let normal = -s.impulse.y;
         assert!(s.impulse.x > 0.0);
-        assert!(s.impulse.x <= TUNING.friction * normal + 1e-5);
+        assert!(s.impulse.x <= tuning().friction * normal + 1e-5);
     }
 
     #[test]
@@ -318,19 +320,19 @@ mod tests {
                 0.03,
                 Vec3::new(0.3, 0.0, 0.0),
                 DT,
-                &TUNING,
+                &tuning(),
             )
         };
         // In the open the crate keeps up with what was asked: little resistance.
         let mut free = Give::new();
         let asked = press(0.0).asked_mps;
-        free.update(1, &press(0.0), DT, 0.0);
-        assert!(free.update(1, &press(asked), DT, 0.0) < 0.05);
+        free.update(1, &press(0.0), DT, &smoothed(0.0));
+        assert!(free.update(1, &press(asked), DT, &smoothed(0.0)) < 0.05);
         // Against a wall it never moves: full resistance.
-        give.update(1, &press(0.0), DT, 0.0);
-        assert!(give.update(1, &press(0.0), DT, 0.0) > 0.99);
+        give.update(1, &press(0.0), DT, &smoothed(0.0));
+        assert!(give.update(1, &press(0.0), DT, &smoothed(0.0)) > 0.99);
         // Another body starts afresh.
-        assert!(give.update(2, &press(0.0), DT, 0.0) < 0.01);
+        assert!(give.update(2, &press(0.0), DT, &smoothed(0.0)) < 0.01);
     }
 
     #[test]
@@ -343,14 +345,14 @@ mod tests {
             0.03,
             Vec3::new(0.3, 0.0, 0.0),
             DT,
-            &TUNING,
+            &tuning(),
         );
         let mut give = Give::new();
-        give.update(1, &s, DT, 0.1);
-        let once = give.update(1, &s, DT, 0.1);
+        give.update(1, &s, DT, &smoothed(0.1));
+        let once = give.update(1, &s, DT, &smoothed(0.1));
         assert!(once > 0.0 && once < 0.5);
         // A step of no time does not move it.
-        assert_eq!(give.update(1, &s, 0.0, 0.1), once);
+        assert_eq!(give.update(1, &s, 0.0, &smoothed(0.1)), once);
         give.reset();
         assert_eq!(give, Give::new());
     }

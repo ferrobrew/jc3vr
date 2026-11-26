@@ -18,7 +18,7 @@ use crate::controllers::physical_hands::{
     shove::ShoveTuning,
     sounds,
     sounds::{Impact, ImpactKind},
-    tuning::PALMS,
+    tuning::{PHYSICAL_HANDS, PalmTuning, PressureHapticsTuning},
 };
 
 /// A palm meeting a solid surface on a tick.
@@ -54,8 +54,11 @@ impl State {
             hit,
             velocity,
         } = touch;
+        let tuning = PHYSICAL_HANDS.get();
+        let palms = &tuning.palms;
         let impact = impact_speed(velocity, hit.normal);
-        if let Some(scale) = touch_haptic_scale(impact, self.door_press[hand.index()].engaged()) {
+        let pressure_owned = self.door_press[hand.index()].engaged();
+        if let Some(scale) = touch_haptic_scale(impact, pressure_owned, palms, &tuning.haptics) {
             haptics::play_scaled(hand, Event::PalmTouch, scale);
         }
         let material = match hit.surface {
@@ -83,13 +86,14 @@ impl State {
             return;
         };
         let (Some(strength), Some(melee_impulse)) = (
-            strength(impact, PALMS.min_object_speed_mps, PALMS.full_hit_speed_mps),
+            strength(impact, palms.min_object_speed_mps, palms.full_hit_speed_mps),
             melee_impulse,
         ) else {
             return;
         };
         let direction = velocity.try_normalize().unwrap_or(-hit.normal);
-        let impulse = direction * (melee_impulse * PALMS.object_impulse * strength.max(0.1));
+        let impulse = direction
+            * (melee_impulse * palms.object_impulse * strength.max(palms.min_object_strength));
         // SAFETY: forwarded from the caller.
         match unsafe { engine::push_body(body, impulse, hit.position) } {
             Ok(()) => self.status.object_pushes += 1,
@@ -141,7 +145,7 @@ impl State {
             input.dt,
             tuning,
         );
-        let resistance = self.gives[i].update(body, &shove, input.dt, tuning.give_smoothing_s);
+        let resistance = self.gives[i].update(body, &shove, input.dt, tuning);
         if shove.impulse != Vec3::ZERO {
             // SAFETY: forwarded from the caller.
             match unsafe { bodies::shove(body, object, shove.impulse, input.hit.position) } {
@@ -161,17 +165,20 @@ impl State {
 /// Vibrate each hand that presses or pulls hard, in proportion to its load: the shove of what its
 /// palm presses into, or the pull and twist of what it holds.
 pub(super) fn pressure_haptics(hands: &[HandStatus; 2]) {
+    let tuning = &PHYSICAL_HANDS.get().haptics;
     for hand in Hand::BOTH {
         let status = &hands[hand.index()];
         let (load, source) = match (status.held, status.shove) {
             (Some(held), _) => (held.load.max(held.twist), Sustain::HeldLoad),
             (None, Some(shove)) => (
-                shove.load.max(shove.resistance * 0.5),
+                shove
+                    .load
+                    .max(shove.resistance * tuning.pressure_resistance_share),
                 Sustain::PalmPressure,
             ),
             (None, None) => continue,
         };
-        if load >= MIN_PRESSURE_LOAD {
+        if load >= tuning.min_pressure_load {
             haptics::sustain(hand, source, load);
         }
     }
@@ -197,15 +204,22 @@ pub fn impact_speed(velocity: Vec3, normal: Vec3) -> f32 {
     if into.is_finite() { into.max(0.0) } else { 0.0 }
 }
 
-/// The least load that pulses a hand: a tenth of its strength.
-const MIN_PRESSURE_LOAD: f32 = 0.1;
-
-fn touch_haptic_scale(impact: f32, pressure_owned: bool) -> Option<f32> {
+/// The strength of the pulse of a palm touch at `impact` metres per second, from
+/// [`PressureHapticsTuning::min_touch_scale`] still to one at
+/// [`PalmTuning::full_hit_speed_mps`]; `None` while the door pressure owns the hand's cues
+/// (`pressure_owned`).
+fn touch_haptic_scale(
+    impact: f32,
+    pressure_owned: bool,
+    palms: &PalmTuning,
+    haptics: &PressureHapticsTuning,
+) -> Option<f32> {
     if pressure_owned {
         return None;
     }
-    let share = (impact / PALMS.full_hit_speed_mps.max(1e-3)).clamp(0.0, 1.0);
-    Some(0.25 + 0.75 * share)
+    let share = (impact / palms.full_hit_speed_mps.max(1e-3)).clamp(0.0, 1.0);
+    let min = haptics.min_touch_scale;
+    Some(min + (1.0 - min) * share)
 }
 
 #[cfg(test)]
@@ -214,30 +228,26 @@ mod tests {
 
     #[test]
     fn pressure_ownership_suppresses_only_that_hands_touch_cue() {
+        let palms = &PHYSICAL_HANDS.get().palms;
+        let haptics = &PHYSICAL_HANDS.get().haptics;
+        let scale = |speed: f32, owned: bool| touch_haptic_scale(speed, owned, palms, haptics);
         for owned in Hand::BOTH {
             for speed in [
                 0.0,
-                PALMS.full_hit_speed_mps * 0.5,
-                PALMS.full_hit_speed_mps * 2.0,
+                palms.full_hit_speed_mps * 0.5,
+                palms.full_hit_speed_mps * 2.0,
             ] {
-                let cues = Hand::BOTH.map(|hand| touch_haptic_scale(speed, hand == owned));
+                let cues = Hand::BOTH.map(|hand| scale(speed, hand == owned));
                 assert_eq!(cues[owned.index()], None);
-                assert_eq!(
-                    cues[owned.other().index()],
-                    touch_haptic_scale(speed, false)
-                );
+                assert_eq!(cues[owned.other().index()], scale(speed, false));
                 assert!(cues[owned.other().index()].is_some());
             }
         }
-        assert_eq!(touch_haptic_scale(0.0, false), Some(0.25));
-        assert_eq!(
-            touch_haptic_scale(PALMS.full_hit_speed_mps * 0.5, false),
-            Some(0.625)
-        );
-        assert_eq!(
-            touch_haptic_scale(PALMS.full_hit_speed_mps * 2.0, false),
-            Some(1.0)
-        );
+        let min = haptics.min_touch_scale;
+        assert_eq!(scale(0.0, false), Some(min));
+        let half = scale(palms.full_hit_speed_mps * 0.5, false).unwrap();
+        assert!((half - (min + 1.0) * 0.5).abs() < 1e-6);
+        assert_eq!(scale(palms.full_hit_speed_mps * 2.0, false), Some(1.0));
     }
 
     #[test]

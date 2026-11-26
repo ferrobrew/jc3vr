@@ -16,7 +16,7 @@ use jc3vr_body::controllers::{
 };
 use jc3vr_input::frame::Pose;
 
-use crate::controllers::physical_hands::pickup::PickupTuning;
+use crate::controllers::physical_hands::{pickup::PickupTuning, tuning::PHYSICAL_HANDS};
 
 /// The nearest of `reaches`.
 pub fn nearest(reaches: impl IntoIterator<Item = Reach>) -> Option<Reach> {
@@ -133,12 +133,16 @@ pub struct StrainSample {
 }
 
 impl Strain {
+    /// The strain of a grip just taken on a body of `mass_kg` moving at `speed_mps` against the
+    /// hand, which stops it with `force_n`: not judged caught while it stops
+    /// ([`GraspTuning`](crate::controllers::physical_hands::tuning::GraspTuning)).
     pub(crate) fn acquired(speed_mps: f32, mass_kg: f32, force_n: f32) -> Self {
+        let tuning = &PHYSICAL_HANDS.get().grasp;
         let stopping_s = mass_kg * speed_mps / force_n;
         Self {
             stuck_s: 0.0,
             acquisition_s: if stopping_s.is_finite() && stopping_s > 0.0 {
-                (stopping_s * 2.0).min(0.12)
+                (stopping_s * tuning.acquisition_stopping_scale).min(tuning.max_acquisition_s)
             } else {
                 0.0
             },
@@ -306,13 +310,15 @@ impl AngularTracker {
 mod tests {
     use std::{f32::consts::FRAC_PI_2, num::NonZeroUsize};
 
-    use super::*;
-    use crate::controllers::physical_hands::pickup::PICKUP;
+    use jc3vr_body::controllers::physics::GRAVITY_MPS2;
 
-    /// Whether `hands` hands can lift a body of `mass_kg` against gravity with their strength.
-    fn can_lift(mass_kg: f32, hands: usize, config: &PickupTuning) -> bool {
-        let strength = hands as f32 * config.hand_force_n.max(0.0);
-        mass_kg.is_finite() && mass_kg > 0.0 && mass_kg * config.gravity_mps2.max(0.0) <= strength
+    use super::*;
+    use crate::controllers::physical_hands::pickup::{HandStrength, PICKUP};
+
+    /// Whether `hands` hands at a strength of one can lift a body of `mass_kg` against gravity.
+    fn can_lift(mass_kg: f32, hands: usize) -> bool {
+        let strength = hands as f32 * HandStrength::full().force_n;
+        mass_kg.is_finite() && mass_kg > 0.0 && mass_kg * GRAVITY_MPS2 <= strength
     }
 
     #[test]
@@ -340,42 +346,43 @@ mod tests {
     #[test]
     fn ragdoll_and_motorcycle_scale_loads_fit_strength_without_making_cars_liftable() {
         for mass_kg in [75.0, 200.0, 300.0] {
-            assert!(can_lift(mass_kg, 1, &PICKUP));
+            assert!(can_lift(mass_kg, 1));
         }
-        assert!(!can_lift(1500.0, 2, &PICKUP));
-        assert!(!can_hold(f32::INFINITY, &PICKUP));
-        assert!(!can_lift(f32::NAN, 2, &PICKUP));
+        assert!(!can_lift(1500.0, 2));
+        assert!(!can_hold(f32::INFINITY, PICKUP.get()));
+        assert!(!can_lift(f32::NAN, 2));
     }
 
     #[test]
     fn acquisition_is_bounded_and_never_bypasses_the_hard_tear_limit() {
         let sample = StrainSample {
             anchor: Vec3::ZERO,
-            target: Vec3::X * (PICKUP.break_distance_m + 0.1),
+            target: Vec3::X * (PICKUP.get().break_distance_m + 0.1),
             velocity: Vec3::ZERO,
             hand_velocity: Vec3::ZERO,
             liftable: true,
             own_body: false,
         };
-        let mut strain = Strain::acquired(11.0, 10.0, PICKUP.hand_force_n);
-        assert!(strain.acquisition_s <= 0.12);
+        let max_acquisition_s = PHYSICAL_HANDS.get().grasp.max_acquisition_s;
+        let mut strain = Strain::acquired(11.0, 10.0, HandStrength::full().force_n);
+        assert!(strain.acquisition_s <= max_acquisition_s);
         let mut torn_at = None;
         for tick in 0..100 {
-            if strain.torn(&sample, 0.01, 1.0, &PICKUP) {
+            if strain.torn(&sample, 0.01, 1.0, PICKUP.get()) {
                 torn_at = Some(tick as f32 * 0.01);
                 break;
             }
         }
-        assert!(torn_at.unwrap() <= PICKUP.stuck_s + 0.12);
+        assert!(torn_at.unwrap() <= PICKUP.get().stuck_s + max_acquisition_s);
         let mut strain = Strain::acquired(100.0, 10.0, 1.0);
         assert!(strain.torn(
             &StrainSample {
-                target: Vec3::X * (PICKUP.tear_distance_m + 0.01),
+                target: Vec3::X * (PICKUP.get().tear_distance_m + 0.01),
                 ..sample
             },
             0.01,
             1.0,
-            &PICKUP
+            PICKUP.get()
         ));
     }
 
@@ -445,13 +452,13 @@ mod tests {
 
     #[test]
     fn the_lift_follows_the_hands_strength() {
-        let config = PICKUP;
-        let one = config.hand_force_n / config.gravity_mps2;
-        assert!(can_lift(one * 0.9, 1, &config));
-        assert!(!can_lift(one * 1.1, 1, &config));
-        assert!(can_lift(one * 1.1, 2, &config));
-        assert!(!can_lift(one, 0, &config));
-        assert!(!can_lift(f32::INFINITY, 2, &config));
+        let config = *PICKUP.get();
+        let one = HandStrength::full().force_n / GRAVITY_MPS2;
+        assert!(can_lift(one * 0.9, 1));
+        assert!(!can_lift(one * 1.1, 1));
+        assert!(can_lift(one * 1.1, 2));
+        assert!(!can_lift(one, 0));
+        assert!(!can_lift(f32::INFINITY, 2));
         assert!(can_hold(config.max_mass_kg, &config));
         assert!(!can_hold(config.max_mass_kg * 1.01, &config));
         // A hinged object is taken far heavier, since its hinge carries it.
@@ -486,31 +493,31 @@ mod tests {
     fn ticks_held(sample: &StrainSample, time_scale: f32, limit: usize) -> usize {
         let mut strain = Strain::default();
         (0..limit)
-            .take_while(|_| !strain.torn(sample, TICK, time_scale, &PICKUP))
+            .take_while(|_| !strain.torn(sample, TICK, time_scale, PICKUP.get()))
             .count()
     }
 
     #[test]
     fn a_heavy_object_dragged_behind_the_hand_stays_held() {
         // Past the break distance, but coming toward the hand at a walk's drag.
-        let lag = Vec3::new(0.0, 0.0, -(PICKUP.break_distance_m + 0.2));
+        let lag = Vec3::new(0.0, 0.0, -(PICKUP.get().break_distance_m + 0.2));
         let dragged = sample(lag, lag.normalize() * 0.8, true);
         assert_eq!(ticks_held(&dragged, 1.0, 300), 300);
     }
 
     #[test]
     fn a_caught_grab_point_is_torn_away_after_the_stuck_time() {
-        let lag = Vec3::new(PICKUP.break_distance_m + 0.1, 0.0, 0.0);
+        let lag = Vec3::new(PICKUP.get().break_distance_m + 0.1, 0.0, 0.0);
         let caught = sample(lag, Vec3::ZERO, true);
         let ticks = ticks_held(&caught, 1.0, 300);
-        let expected = (PICKUP.stuck_s / TICK).ceil() as usize;
+        let expected = (PICKUP.get().stuck_s / TICK).ceil() as usize;
         assert!(ticks.abs_diff(expected) <= 1, "{ticks} vs {expected}");
         // Moving away from the hand is no better than standing still.
         let pulled_away = sample(lag, -lag.normalize(), true);
         assert!(ticks_held(&pulled_away, 1.0, 300).abs_diff(expected) <= 1);
         // Inside the break distance nothing is caught, however still.
         let near = sample(
-            lag.normalize() * PICKUP.break_distance_m * 0.9,
+            lag.normalize() * PICKUP.get().break_distance_m * 0.9,
             Vec3::ZERO,
             true,
         );
@@ -519,7 +526,7 @@ mod tests {
 
     #[test]
     fn a_grab_point_held_back_by_the_players_own_body_is_not_caught() {
-        let lag = Vec3::new(PICKUP.break_distance_m + 0.1, 0.0, 0.0);
+        let lag = Vec3::new(PICKUP.get().break_distance_m + 0.1, 0.0, 0.0);
         let resting = StrainSample {
             own_body: true,
             ..sample(lag, Vec3::ZERO, true)
@@ -528,16 +535,16 @@ mod tests {
         // The time it spends against the body does not count toward a snag once it leaves.
         let caught = sample(lag, Vec3::ZERO, true);
         let mut strain = Strain::default();
-        for _ in 0..((PICKUP.stuck_s / TICK) as usize - 2) {
-            assert!(!strain.torn(&caught, TICK, 1.0, &PICKUP));
+        for _ in 0..((PICKUP.get().stuck_s / TICK) as usize - 2) {
+            assert!(!strain.torn(&caught, TICK, 1.0, PICKUP.get()));
         }
-        assert!(!strain.torn(&resting, TICK, 1.0, &PICKUP));
-        for _ in 0..((PICKUP.stuck_s / TICK) as usize - 2) {
-            assert!(!strain.torn(&caught, TICK, 1.0, &PICKUP));
+        assert!(!strain.torn(&resting, TICK, 1.0, PICKUP.get()));
+        for _ in 0..((PICKUP.get().stuck_s / TICK) as usize - 2) {
+            assert!(!strain.torn(&caught, TICK, 1.0, PICKUP.get()));
         }
         // Past the tear distance it is still torn at once.
         let far = StrainSample {
-            target: Vec3::X * (PICKUP.tear_distance_m + 0.05),
+            target: Vec3::X * (PICKUP.get().tear_distance_m + 0.05),
             ..resting
         };
         assert_eq!(ticks_held(&far, 1.0, 10), 0);
@@ -545,15 +552,15 @@ mod tests {
 
     #[test]
     fn following_again_restarts_the_stuck_time() {
-        let lag = Vec3::new(PICKUP.break_distance_m + 0.1, 0.0, 0.0);
+        let lag = Vec3::new(PICKUP.get().break_distance_m + 0.1, 0.0, 0.0);
         let caught = sample(lag, Vec3::ZERO, true);
         let following = sample(lag, lag.normalize(), true);
         let mut strain = Strain::default();
         for _ in 0..200 {
-            for _ in 0..((PICKUP.stuck_s / TICK) as usize - 2) {
-                assert!(!strain.torn(&caught, TICK, 1.0, &PICKUP));
+            for _ in 0..((PICKUP.get().stuck_s / TICK) as usize - 2) {
+                assert!(!strain.torn(&caught, TICK, 1.0, PICKUP.get()));
             }
-            assert!(!strain.torn(&following, TICK, 1.0, &PICKUP));
+            assert!(!strain.torn(&following, TICK, 1.0, PICKUP.get()));
         }
     }
 
@@ -561,7 +568,7 @@ mod tests {
     fn following_is_judged_against_the_hands_motion() {
         // A door held while riding a car at 40 m/s: the hand and the door both move fast across
         // the lag's line, and the door closes on the hand at half a metre a second.
-        let lag = Vec3::new(PICKUP.break_distance_m + 0.2, 0.0, 0.0);
+        let lag = Vec3::new(PICKUP.get().break_distance_m + 0.2, 0.0, 0.0);
         let ride = Vec3::new(-40.0, 0.0, 15.0);
         let riding = StrainSample {
             velocity: ride + lag.normalize() * 0.5,
@@ -574,7 +581,7 @@ mod tests {
             velocity: ride,
             ..riding
         };
-        let expected = (PICKUP.stuck_s / TICK).ceil() as usize;
+        let expected = (PICKUP.get().stuck_s / TICK).ceil() as usize;
         assert!(ticks_held(&caught, 1.0, 300).abs_diff(expected) <= 1);
         // Coming toward a hand that pulls away faster still falls behind: caught.
         let outrun = StrainSample {
@@ -587,7 +594,7 @@ mod tests {
 
     #[test]
     fn past_the_tear_distance_the_hold_is_torn_at_once() {
-        let far = Vec3::new(0.0, 0.0, PICKUP.tear_distance_m + 0.05);
+        let far = Vec3::new(0.0, 0.0, PICKUP.get().tear_distance_m + 0.05);
         assert_eq!(ticks_held(&sample(far, far.normalize(), true), 1.0, 10), 0);
         assert_eq!(ticks_held(&sample(Vec3::NAN, Vec3::ZERO, true), 1.0, 10), 0);
     }
@@ -595,25 +602,29 @@ mod tests {
     #[test]
     fn an_object_too_heavy_to_lift_sags_without_being_torn() {
         // Hanging well below the hand, still, with its weight on the ground.
-        let sag = Vec3::new(0.0, PICKUP.tear_distance_m + 0.3, 0.0);
+        let sag = Vec3::new(0.0, PICKUP.get().tear_distance_m + 0.3, 0.0);
         assert_eq!(ticks_held(&sample(sag, Vec3::ZERO, false), 1.0, 300), 300);
         // The same lag on one the hands can lift is a snag.
         assert_eq!(ticks_held(&sample(sag, Vec3::ZERO, true), 1.0, 300), 0);
         // Its drag across the ground still counts.
-        let snagged = Vec3::new(PICKUP.break_distance_m + 0.1, 0.8, 0.0);
+        let snagged = Vec3::new(PICKUP.get().break_distance_m + 0.1, 0.8, 0.0);
         assert!(ticks_held(&sample(snagged, Vec3::ZERO, false), 1.0, 300) < 300);
     }
 
     #[test]
     fn the_stuck_time_and_the_follow_run_in_real_time() {
-        let lag = Vec3::new(PICKUP.break_distance_m + 0.1, 0.0, 0.0);
+        let lag = Vec3::new(PICKUP.get().break_distance_m + 0.1, 0.0, 0.0);
         let caught = sample(lag, Vec3::ZERO, true);
         let full = ticks_held(&caught, 1.0, 300);
         let slow = ticks_held(&caught, 0.5, 300);
         assert!(slow.abs_diff(full / 2) <= 1, "{slow} vs {full}");
         // A grab point following at the real-time threshold in game time is, at half speed,
         // following at half of it in real time.
-        let creeping = sample(lag, lag.normalize() * PICKUP.stuck_speed_mps * 1.5, true);
+        let creeping = sample(
+            lag,
+            lag.normalize() * PICKUP.get().stuck_speed_mps * 1.5,
+            true,
+        );
         assert_eq!(ticks_held(&creeping, 1.0, 300), 300);
         assert!(ticks_held(&creeping, 0.5, 300) < 300);
     }
@@ -623,7 +634,7 @@ mod tests {
         let config = PickupTuning {
             throw_scale: 2.0,
             max_throw_speed_mps: 10.0,
-            ..PICKUP
+            ..*PICKUP.get()
         };
         assert!(
             (throw_velocity(Vec3::new(1.0, 2.0, 0.0), &config) - Vec3::new(2.0, 4.0, 0.0)).length()

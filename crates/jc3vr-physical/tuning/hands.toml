@@ -1,0 +1,64 @@
+# The physical hands' tuning: `HandsTuning` in `src/controllers/physical_hands/tuning.rs`, whose
+# fields say what each value does (the shove's in `shove.rs`, the impact sounds' in `sounds.rs`).
+# Every key is required and no other is accepted. Lengths are metres, times seconds unless the key
+# names milliseconds, speeds metres per second, forces newtons, and masses kilograms; a share is a
+# fraction, in `0..1`.
+
+[palms]
+palm_half_extents_m = [0.045, 0.02, 0.05]
+push_deadband_m = 0.02
+push_stiffness_per_s = 10.0
+max_push_speed_mps = 2.5
+min_push_horizontal = 0.3
+full_hit_speed_mps = 7.0
+min_object_speed_mps = 1.0
+object_impulse = 1.0
+min_object_strength = 0.1
+carry_resist_deadband_m = 0.15
+resist_onset_load = 0.85
+
+[state]
+stale_after_ms = 200
+velocity_smoothing_s = 0.03
+
+[shove]
+stiffness_per_s = 12.0
+deadband_m = 0.005
+max_speed_mps = 4.0
+max_force_n = 600.0
+friction = 0.6
+give_smoothing_s = 0.08
+min_asked_mps = 0.05
+
+[sounds]
+min_touch_speed_mps = 1.5
+min_strike_share = 0.35
+hand_cooldown_s = 0.25
+min_interval_s = 0.06
+
+[hold]
+max_correction = 0.8
+iterations = 8
+
+[grasp]
+acquisition_stopping_scale = 2.0
+max_acquisition_s = 0.12
+
+[haptics]
+min_pressure_load = 0.1
+pressure_resistance_share = 0.5
+min_touch_scale = 0.25
+
+[carry_collision]
+release_margin_m = 0.01
+release_grace_s = 1.0
+
+[remote]
+ragdoll_lead_share = 0.3
+max_near_bodies = 48
+
+[articulated]
+max_assembly_bodies = 32
+
+[targets]
+held_mark_m = 0.03

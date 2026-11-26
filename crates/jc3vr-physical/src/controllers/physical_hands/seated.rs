@@ -20,7 +20,7 @@ use crate::controllers::physical_hands::{
     config::PHYSICAL_HANDS_CONFIG,
     contact::{HandContact, PointContact, Surface, SurfaceHit},
     doors,
-    doors::{acquisition::PanelReach, config::TEARING},
+    doors::{acquisition::PanelReach, tuning::DOORS},
     grab_view,
     grab_view::model::{RayOutcome, ReachRay},
     grasp,
@@ -32,11 +32,11 @@ use crate::controllers::physical_hands::{
         diagnostics::{ConsumerResult, scan::Scan},
     },
     query,
-    state::{STATE, VELOCITY_SMOOTHING_S, stand_down},
+    state::{STATE, stand_down},
     status::{HandStatus, Idle},
     tick::{declare_grips, free_hands},
     touch::pressure_haptics,
-    tuning::PALMS,
+    tuning::PHYSICAL_HANDS,
 };
 
 pub(super) unsafe fn run(owner: &Character, dt: f32) {
@@ -50,6 +50,8 @@ pub(super) unsafe fn run(owner: &Character, dt: f32) {
     };
     let config = *PHYSICAL_HANDS_CONFIG.lock();
     let time_scale = unsafe { TimeScale::current() };
+    let hand_tuning = PHYSICAL_HANDS.get();
+    let smoothing_s = time_scale.game_s(hand_tuning.state.velocity_smoothing_s);
     let xf = CockpitTransform::current(active.head.position, active.world_scale);
     let shoulders = body::shoulder_positions(
         active.head.position,
@@ -105,22 +107,14 @@ pub(super) unsafe fn run(owner: &Character, dt: f32) {
         };
         let wrist = xf.pose_to_world(cockpit.wrist);
         wrists[i] = Some(wrist);
-        let palm = PalmBox::from_wrist(wrist, active.world_scale, &PALMS);
+        let palm = PalmBox::from_wrist(wrist, active.world_scale, &hand_tuning.palms);
         let motion = PalmMotion {
             pose: Pose {
                 position: palm.centre,
                 orientation: palm.orientation,
             },
-            velocity: state.motion[i].0.update(
-                palm.centre,
-                dt,
-                time_scale.game_s(VELOCITY_SMOOTHING_S),
-            ),
-            angular_velocity: state.motion[i].1.update(
-                palm.orientation,
-                dt,
-                time_scale.game_s(VELOCITY_SMOOTHING_S),
-            ),
+            velocity: state.motion[i].0.update(palm.centre, dt, smoothing_s),
+            angular_velocity: state.motion[i].1.update(palm.orientation, dt, smoothing_s),
         };
         palms[i] = Some(motion);
         hand_status[i] = HandStatus {
@@ -144,7 +138,7 @@ pub(super) unsafe fn run(owner: &Character, dt: f32) {
             .filter_map(|contact| match contact {
                 PointContact::Pressed { hit, .. }
                     if palm.centre.distance(hit.position)
-                        <= doors::pressure::REACH_M * active.world_scale =>
+                        <= DOORS.get().pressure.reach_m * active.world_scale =>
                 {
                     Some(*hit)
                 }
@@ -168,7 +162,7 @@ pub(super) unsafe fn run(owner: &Character, dt: f32) {
                 vehicle,
                 hit,
                 &palm,
-                PanelReach::uniform(doors::pressure::REACH_M * active.world_scale),
+                PanelReach::uniform(DOORS.get().pressure.reach_m * active.world_scale),
                 &mut scans[i],
             )
         });
@@ -198,7 +192,7 @@ pub(super) unsafe fn run(owner: &Character, dt: f32) {
         }
         let mut reaches: Vec<Reach> = panel.into_iter().collect();
         let origin = palm.point(Vec3::Y);
-        let length = PICKUP.reach_m * active.world_scale + 2.0 * palm.half_extents.y;
+        let length = PICKUP.get().reach_m * active.world_scale + 2.0 * palm.half_extents.y;
         scans[i].ray_ran = true;
         for direction in pickup::REACH_DIRECTIONS {
             let to = origin + (palm.orientation * direction).normalize_or_zero() * length;
@@ -224,24 +218,16 @@ pub(super) unsafe fn run(owner: &Character, dt: f32) {
             clamp[i] = xf.offset_to_cockpit(contact.clamp_offset());
         }
     }
-    let strength = if config.bodies.strength.is_finite() {
-        config.bodies.strength.max(0.0)
-    } else {
-        0.0
-    };
-    let tuning = pickup::PickupTuning {
-        hand_force_n: PICKUP.hand_force_n * strength,
-        hand_torque_nm: PICKUP.hand_torque_nm * strength,
-        ..PICKUP
-    };
+    let tuning = PICKUP.get();
     let inputs = pickup::TickInputs {
         palms,
         space: None,
         joints: pickup::JointInputs::default(),
+        strength: pickup::HandStrength::at(config.bodies.strength),
         dt,
         time_scale: time_scale.get(),
-        unlatch_pull_m: doors::UNLATCH_PULL_M * active.world_scale,
-        tearing: TEARING,
+        unlatch_pull_m: DOORS.get().grip.unlatch_pull_m * active.world_scale,
+        tearing: DOORS.get().tearing,
         world_scale: active.world_scale,
         reaches: hand_status.map(|hand| hand.reach),
         carrier_velocity: Some(Vec3::from_array(owner.m_MeasuredWorldVelocity.data)),
@@ -250,7 +236,7 @@ pub(super) unsafe fn run(owner: &Character, dt: f32) {
             orientation: xf.body,
         }),
     };
-    let mut outcome = unsafe { pickup::tick(&mut state.pickup, inputs, &tuning) };
+    let mut outcome = unsafe { pickup::tick(&mut state.pickup, inputs, tuning) };
     scope(&mut state.pickup, vehicle);
     for hand in Hand::BOTH {
         let i = hand.index();
@@ -265,7 +251,7 @@ pub(super) unsafe fn run(owner: &Character, dt: f32) {
                 });
             if let Some(target) = target {
                 clamp[i] = xf.offset_to_cockpit(
-                    (target - palm.pose.position).clamp_length_max(PICKUP.tear_distance_m),
+                    (target - palm.pose.position).clamp_length_max(tuning.tear_distance_m),
                 );
             }
         }
@@ -350,8 +336,8 @@ unsafe fn panel_reach(
             hit,
             palm,
             PanelReach {
-                box_m: doors::REACH_M * world_scale,
-                handle_m: doors::HANDLE_REACH_M * world_scale,
+                box_m: DOORS.get().grip.box_reach_m * world_scale,
+                handle_m: DOORS.get().grip.handle_reach_m * world_scale,
             },
             scan,
         )

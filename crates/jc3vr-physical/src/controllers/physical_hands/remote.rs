@@ -8,7 +8,7 @@ use glam::Vec3;
 use jc3gi::character::character::Character;
 use jc3vr_body::controllers::{
     grab::world_reach::{DoorTarget, Reach, TargetKind},
-    physics::{bodies, bodies::BodyError},
+    physics::{GRAVITY_MPS2, bodies, bodies::BodyError},
 };
 use jc3vr_input::frame::Hand;
 
@@ -22,7 +22,8 @@ use crate::controllers::physical_hands::{
     doors,
     doors::{acquisition::PanelReach, engine as door_engine},
     engine, grasp,
-    pickup::{PICKUP, Request},
+    pickup::{HandStrength, PICKUP, Request},
+    tuning::PHYSICAL_HANDS,
 };
 
 /// The mass of `object`'s body `body`, when it is a loose object by the reach's own classification
@@ -122,12 +123,15 @@ pub unsafe fn push(
 }
 
 /// Pull the ragdoll of `character` by `impulse` at `at` on its body `body` of `owner`, world space:
-/// the line's pull on a ragdoll, sized for the whole ragdoll's mass. [`RAGDOLL_LEAD_SHARE`] of it
-/// goes to the hooked body at the hook, so the body comes by the limb the hook holds, and the rest
-/// is spread over every body of the ragdoll by its mass ([`spread_pull`]). The whole pull given to
-/// the one limb would ask the ragdoll's constraints to pass a whole body's momentum along the
-/// chain of bones in one physics step, which they do not: the limb would be flung and the body
-/// would barely move. A character whose ragdoll cannot be read is pulled by the hooked body alone.
+/// the line's pull on a ragdoll, sized for the whole ragdoll's mass. The tuning's
+/// [`ragdoll_lead_share`] of it goes to the hooked body at the hook, so the body comes by the limb
+/// the hook holds, and the rest is spread over every body of the ragdoll by its mass
+/// ([`spread_pull`]). The whole pull given to the one limb would ask the ragdoll's constraints to
+/// pass a whole body's momentum along the chain of bones in one physics step, which they do not:
+/// the limb would be flung and the body would barely move. A character whose ragdoll cannot be
+/// read is pulled by the hooked body alone.
+///
+/// [`ragdoll_lead_share`]: crate::controllers::physical_hands::tuning::RemoteTuning::ragdoll_lead_share
 ///
 /// # Safety
 ///
@@ -146,7 +150,8 @@ pub unsafe fn pull_ragdoll(
     let Some(ragdoll) = ragdoll.filter(|r| r.bone(body).is_some()) else {
         return unsafe { push(body, owner, impulse, at) };
     };
-    let pull = spread_pull(ragdoll.bones(), body, impulse, at, RAGDOLL_LEAD_SHARE);
+    let lead = PHYSICAL_HANDS.get().remote.ragdoll_lead_share;
+    let pull = spread_pull(ragdoll.bones(), body, impulse, at, lead);
     // The hooked body's share first: its failure is the line's.
     if let Some(lead) = pull.lead {
         unsafe { push(lead.body, lead.owner, lead.impulse, lead.at) }?;
@@ -157,9 +162,6 @@ pub unsafe fn pull_ragdoll(
     }
     Ok(())
 }
-
-/// The share of the line's pull on a ragdoll the hooked body takes at the hook, `0..=1`.
-pub(crate) const RAGDOLL_LEAD_SHARE: f32 = 0.3;
 
 /// One body's share of a pull spread over a ragdoll.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -222,11 +224,12 @@ pub(crate) fn spread_pull(
 /// The heaviest loose object one hand lifts and carries, kilograms: within the pickup's heaviest,
 /// and no heavier than one hand's strongest pull holds up.
 pub fn carry_max_kg() -> f32 {
-    let lifted = PICKUP.hand_force_n / PICKUP.gravity_mps2;
-    if grasp::can_hold(lifted, &PICKUP) {
+    let pickup = PICKUP.get();
+    let lifted = HandStrength::full().force_n / GRAVITY_MPS2;
+    if grasp::can_hold(lifted, pickup) {
         lifted
     } else {
-        PICKUP.max_mass_kg
+        pickup.max_mass_kg
     }
 }
 
@@ -251,16 +254,19 @@ pub enum NearKind {
 }
 
 /// The weapons lying in the world and the loose objects whose dynamic bodies' boxes `keep` accepts,
-/// at most [`MAX_NEAR_BODIES`] boxes considered. A weapon's body is on a layer the ordinary casts
-/// never meet, and a small object far off subtends too little for a cast to be asked to hit it, so
-/// either is found by its box and then checked by the reach's classification on a body that still
-/// reads as its owner's.
+/// at most the tuning's [`max_near_bodies`] boxes considered. A weapon's body is on a layer the
+/// ordinary casts never meet, and a small object far off subtends too little for a cast to be asked
+/// to hit it, so either is found by its box and then checked by the reach's classification on a
+/// body that still reads as its owner's.
+///
+/// [`max_near_bodies`]: crate::controllers::physical_hands::tuning::RemoteTuning::max_near_bodies
 ///
 /// # Safety
 ///
 /// The main thread, outside the physics step.
 pub unsafe fn dynamic_near(keep: impl FnMut(&Aabb) -> bool) -> Vec<NearBody> {
-    let Ok(boxes) = (unsafe { collider_view::dynamic_boxes(keep, MAX_NEAR_BODIES) }) else {
+    let max = PHYSICAL_HANDS.get().remote.max_near_bodies;
+    let Ok(boxes) = (unsafe { collider_view::dynamic_boxes(keep, max) }) else {
         return Vec::new();
     };
     boxes
@@ -284,10 +290,6 @@ pub unsafe fn dynamic_near(keep: impl FnMut(&Aabb) -> bool) -> Vec<NearBody> {
         })
         .collect()
 }
-
-/// The most boxes [`dynamic_near`] considers: its filter keeps only boxes near the aim, so this
-/// bounds a pathological pile of debris, not an ordinary scene.
-const MAX_NEAR_BODIES: usize = 48;
 
 /// The closed door of the vehicle `object` (or the vehicle a part of it belongs to) whose handle
 /// area is within `reach_m` of `point`, a point the grapple's aim hit on its body `body` with the

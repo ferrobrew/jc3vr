@@ -20,7 +20,7 @@
 //! - [`grab_view`]: the grab view, a diagnostic of what the grip and the reach saw;
 //! - [`world`]: the Havok world, lent out for one call at a time (in
 //!   [`jc3vr_body::controllers::physics`]);
-//! - [`config`]: the settings, and [`tuning`] the palms' fixed tuning.
+//! - [`config`]: the settings, and [`tuning`] the tuning read from the shipped `hands.toml`.
 //!
 //! A hand its body drives ([`physics::drives`]) meets the world through its body. Otherwise, the
 //! palms are probed rather than simulated: no body is added to the physics world. Each simulation
@@ -83,6 +83,7 @@ mod tick;
 mod touch;
 pub mod tuning;
 pub mod vault;
+pub mod views;
 
 mod status;
 
@@ -92,7 +93,7 @@ pub use config::PhysicalHandsConfig;
 use glam::Vec3;
 use jc3gi::{character::character::Character, physics::hknpWorld, types::math::Vector3};
 use jc3vr_body::controllers::physics::{line_body, world};
-use state::{STALE_AFTER, State};
+use state::{State, stale_after};
 pub use status::{HandStatus, Idle, PhysicalHandsStatus, ShoveReport, status};
 pub(crate) use status::{PalmReadout, palm_readout, press_summary};
 #[cfg(any(test, feature = "test-support"))]
@@ -154,10 +155,9 @@ use jc3vr_body::controllers::hands::DrawTime;
 /// body's hand at its body, for `at`. Called by [`jc3vr_body::controllers::hands::active_hands`] and
 /// its `active_hands_from_frame`.
 pub fn apply(cockpit: &mut [Option<CockpitHand>; 2], at: DrawTime) {
-    let palm_offset = palm_centre_m();
     match at {
-        DrawTime::Tick => physics::apply(cockpit, palm_offset),
-        DrawTime::Render => physics::apply_at_render(cockpit, palm_offset),
+        DrawTime::Tick => physics::apply(cockpit, palm_centre_m()),
+        DrawTime::Render => physics::apply_at_render(cockpit, palm_centre_m()),
     }
     let offsets = {
         let state = STATE.lock();

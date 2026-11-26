@@ -15,7 +15,7 @@ use jc3vr_body::controllers::grab::{
 use jc3vr_input::frame::Hand;
 
 use crate::controllers::physical_hands::{
-    STATE, climb, pickup::diagnostics::scan::Scan, state::State, stunt,
+    STATE, climb, pickup::diagnostics::scan::Scan, state::State, stunt, tuning::PHYSICAL_HANDS,
 };
 
 /// Whether `offer` still stands for `hand`: the same fresh sample of the same source, and the door
@@ -30,6 +30,7 @@ pub fn door_offer_current(offer: DoorEligibility, hand: Hand) -> bool {
 pub fn targets(world_scale: f32, scans: &mut [Option<Scan>; 2]) -> Provided {
     *scans = [None; 2];
     let scale = world_scale.max(1e-3);
+    let held_mark_m = PHYSICAL_HANDS.get().targets.held_mark_m;
     let mut out = Provided::default();
     let palms = {
         let state = STATE.lock();
@@ -49,7 +50,7 @@ pub fn targets(world_scale: f32, scans: &mut [Option<Scan>; 2]) -> Provided {
                         GrabVolume::Pickup(kind),
                         hand,
                         0.0,
-                        Mark::ring(MarkAt::World(held.anchor), HELD_MARK_M),
+                        Mark::ring(MarkAt::World(held.anchor), held_mark_m),
                     )
                     .held(hand),
                 );
@@ -178,9 +179,6 @@ pub(super) fn kind_of(kind: &TargetKind) -> PickupKind {
         TargetKind::Character(_) => PickupKind::Character,
     }
 }
-
-/// The marker on the grab point of what a hand holds, metres.
-const HELD_MARK_M: f32 = 0.03;
 
 #[cfg(any(test, feature = "test-support"))]
 pub mod test_support;

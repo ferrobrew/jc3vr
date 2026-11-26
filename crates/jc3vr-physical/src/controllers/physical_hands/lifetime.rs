@@ -20,7 +20,7 @@ use windows::Win32::System::Threading::{
     CRITICAL_SECTION, EnterCriticalSection, LeaveCriticalSection,
 };
 
-use crate::controllers::physical_hands::{STALE_AFTER, climb::engine::body_identity};
+use crate::controllers::physical_hands::{climb::engine::body_identity, stale_after};
 
 pub fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&UPDATE_REMOVE_QUEUE_BINDER)
@@ -119,7 +119,7 @@ fn held_proofs(now: Instant) -> Vec<(usize, usize)> {
 fn active(state: &State, now: Instant) -> bool {
     state
         .published
-        .is_some_and(|at| now.saturating_duration_since(at) <= STALE_AFTER)
+        .is_some_and(|at| now.saturating_duration_since(at) <= stale_after())
         && jc3vr_core::hooks::in_gameplay()
         && !jc3vr_core::is_shutting_down()
         && scheme::is_controllers()

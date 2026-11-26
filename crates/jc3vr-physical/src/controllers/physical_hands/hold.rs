@@ -26,11 +26,16 @@ use glam::{Vec2, Vec3};
 use jc3vr_body::controllers::{
     body::procedural::solver::arms::TorsoKeepOut,
     clock::TimeScale,
-    physics::rigid::{RigidBody, Velocities},
+    physics::{
+        GRAVITY_MPS2,
+        rigid::{RigidBody, Velocities},
+    },
 };
 
 use crate::controllers::physical_hands::{
-    grasp::GripTarget, pickup::PickupTuning, tuning::PalmTuning,
+    grasp::GripTarget,
+    pickup::{HandStrength, PickupTuning},
+    tuning::{PHYSICAL_HANDS, PalmTuning},
 };
 
 /// The hold's tuning.
@@ -53,16 +58,17 @@ pub struct HoldTuning {
 }
 
 impl HoldTuning {
-    pub fn of(config: &PickupTuning) -> Self {
+    /// The hold of hands of `strength` with the pickups' `config`.
+    pub fn of(config: &PickupTuning, strength: HandStrength) -> Self {
         Self {
             stiffness_per_s: config.stiffness_per_s.max(0.0),
             angular_stiffness_per_s: config.angular_stiffness_per_s.max(0.0),
             max_speed_mps: config.max_speed_mps.max(0.0),
             max_angular_speed_rps: config.max_angular_speed_rps.max(0.0),
-            hand_force_n: config.hand_force_n.max(0.0),
-            hand_torque_nm: config.hand_torque_nm.max(0.0),
+            hand_force_n: strength.force_n.max(0.0),
+            hand_torque_nm: strength.torque_nm.max(0.0),
             two_hand_angular_share: config.two_hand_angular_share.clamp(0.0, 1.0),
-            gravity: Vec3::new(0.0, -config.gravity_mps2.max(0.0), 0.0),
+            gravity: Vec3::new(0.0, -GRAVITY_MPS2, 0.0),
         }
     }
 
@@ -91,10 +97,11 @@ impl HoldTuning {
 
     pub(crate) fn carrying(
         config: &PickupTuning,
+        strength: HandStrength,
         _mass_kg: f32,
         _holds: &[Option<HandHold>; 2],
     ) -> Self {
-        Self::of(config)
+        Self::of(config, strength)
     }
 }
 
@@ -146,6 +153,7 @@ pub fn solve_in_frame(
             ..HoldSolution::default()
         };
     }
+    let solver = &PHYSICAL_HANDS.get().hold;
     let carrier = Velocities {
         linear: finite(carrier.linear),
         angular: finite(carrier.angular),
@@ -156,8 +164,10 @@ pub fn solve_in_frame(
     } else {
         1.0
     };
-    let stiffness = tuning.stiffness_per_s.min(MAX_CORRECTION / dt);
-    let angular_stiffness = tuning.angular_stiffness_per_s.min(MAX_CORRECTION / dt);
+    let stiffness = tuning.stiffness_per_s.min(solver.max_correction / dt);
+    let angular_stiffness = tuning
+        .angular_stiffness_per_s
+        .min(solver.max_correction / dt);
     let wanted = holds.map(|hold| {
         hold.map(|h| {
             let frame_point = carrier.linear + carrier.angular.cross(h.anchor - body.pose.centre);
@@ -180,7 +190,7 @@ pub fn solve_in_frame(
     let inertia = solved.inertia_world();
     let mut impulses = [Vec3::ZERO; 2];
     let mut twists = [Vec3::ZERO; 2];
-    for _ in 0..ITERATIONS {
+    for _ in 0..solver.iterations {
         for (i, hold) in holds.iter().enumerate() {
             let (Some(hold), Some((linear, angular))) = (hold, wanted[i]) else {
                 continue;
@@ -233,9 +243,9 @@ pub fn solve_in_frame(
 
 /// The push of a hand that holds what it cannot move: the body is moved toward where the grab
 /// point is, as it is pushed off a wall, once the hand pulls at near its strength and the grab
-/// point lags the hand by more than `deadband_m` ([`resist_deadband_m`]). `anchor` is the grab
-/// point, `target` where the hand would have it, and `load` the hand's [`HoldSolution::loads`].
-/// World `(x, z)` metres per second.
+/// point lags the hand by more than `deadband_m` ([`resist_deadband_m`]), past
+/// [`PalmTuning::resist_onset_load`]. `anchor` is the grab point, `target` where the hand would
+/// have it, and `load` the hand's [`HoldSolution::loads`]. World `(x, z)` metres per second.
 pub fn resist_push(
     anchor: Vec3,
     target: Vec3,
@@ -248,7 +258,8 @@ pub fn resist_push(
     let Some(direction) = horizontal.try_normalize() else {
         return Vec2::ZERO;
     };
-    let engage = ((load - RESIST_ONSET_LOAD) / (1.0 - RESIST_ONSET_LOAD)).clamp(0.0, 1.0);
+    let onset = config.resist_onset_load;
+    let engage = ((load - onset) / (1.0 - onset)).clamp(0.0, 1.0);
     let press = horizontal.length() - deadband_m.max(0.0);
     if !(press > 0.0 && engage > 0.0) {
         return Vec2::ZERO;
@@ -262,12 +273,12 @@ pub fn resist_push(
 /// something hinged, a door, or a character pushes past the palms' own deadband, as a wall does.
 /// A carried loose object (`prop`) trails the hand a little whenever it is carried near the hands'
 /// strength, which must not drift the player, so it pushes only once it lags by
-/// [`CARRY_RESIST_DEADBAND_M`]: a heavy object the hands cannot keep up with holds the player back
-/// well before it trails past [`PickupTuning::break_distance_m`], where a hold that stops
-/// following is torn away.
+/// [`PalmTuning::carry_resist_deadband_m`]: a heavy object the hands cannot keep up with holds the
+/// player back well before it trails past [`PickupTuning::break_distance_m`], where a hold that
+/// stops following is torn away.
 pub fn resist_deadband_m(prop: bool, config: &PalmTuning) -> f32 {
     if prop {
-        CARRY_RESIST_DEADBAND_M
+        config.carry_resist_deadband_m
     } else {
         config.push_deadband_m
     }
@@ -323,17 +334,6 @@ pub fn keep_out(point: Vec3, space: &BodySpace) -> Vec3 {
     direction * (space.radius_m - distance)
 }
 
-/// The most of its error a constraint closes in one tick: below one, so that a stiff hold settles
-/// rather than overshoots at a slow tick.
-const MAX_CORRECTION: f32 = 0.8;
-/// The solver's passes over the hands.
-const ITERATIONS: usize = 8;
-/// The lag a carried loose object leaves alone before it pushes the player, metres: past what a
-/// carry near the hands' strength trails by, and well short of the break distance.
-const CARRY_RESIST_DEADBAND_M: f32 = 0.15;
-/// The load from which a hold that cannot move its body starts pushing the player.
-const RESIST_ONSET_LOAD: f32 = 0.85;
-
 fn finite(v: Vec3) -> Vec3 {
     if v.is_finite() { v } else { Vec3::ZERO }
 }
@@ -352,7 +352,7 @@ mod tests {
     };
 
     use super::*;
-    use crate::controllers::physical_hands::{pickup::PICKUP, tuning::PALMS};
+    use crate::controllers::physical_hands::pickup::{HandStrength, PICKUP};
 
     const DT: f32 = 1.0 / 60.0;
 
@@ -365,7 +365,7 @@ mod tests {
     }
 
     fn tuning() -> HoldTuning {
-        HoldTuning::of(&PICKUP)
+        HoldTuning::of(PICKUP.get(), HandStrength::full())
     }
 
     fn hold(anchor: Vec3, point: Vec3, orientation: Quat) -> HandHold {
@@ -414,15 +414,15 @@ mod tests {
 
     #[test]
     fn separated_two_hand_grips_lift_a_barrel_with_configured_strength() {
-        let config = PICKUP;
+        let config = *PICKUP.get();
         let mut body = crate_body(100.0, Vec3::new(0.6, 0.9, 0.6), Vec3::ZERO, Quat::IDENTITY);
         let ends = [Vec3::new(-0.3, 0.0, 0.0), Vec3::new(0.3, 0.0, 0.0)];
         let goals = ends.map(|p| p + Vec3::Y * 0.3);
         for _ in 0..180 {
             let holds =
                 [0, 1].map(|i| Some(hold(body.pose.point(ends[i]), goals[i], Quat::IDENTITY)));
-            let tuning = HoldTuning::carrying(&config, 100.0, &holds);
-            assert_eq!(tuning.hand_force_n, config.hand_force_n);
+            let tuning = HoldTuning::carrying(&config, HandStrength::full(), 100.0, &holds);
+            assert_eq!(tuning.hand_force_n, HandStrength::full().force_n);
             let solution = solve(&body, holds, DT, &tuning);
             step(&mut body, solution.velocities, &tuning);
         }
@@ -479,7 +479,8 @@ mod tests {
                     ..hold(body.pose.point(ends[i]), ends[i] + raised, Quat::IDENTITY)
                 })
             });
-            let tuning = HoldTuning::carrying(&PICKUP, mass, &holds).in_real_time(time_scale);
+            let tuning = HoldTuning::carrying(PICKUP.get(), HandStrength::full(), mass, &holds)
+                .in_real_time(time_scale);
             let solution = solve(&body, holds, game_dt, &tuning);
             body.velocities = solution.velocities;
             body.velocities.linear += tuning.gravity * game_dt;
@@ -494,7 +495,7 @@ mod tests {
     fn a_heavy_barrel_follows_a_lift_in_slow_motion_as_at_full_speed() {
         let full = barrel_trail(1.0);
         let slow = barrel_trail(0.25);
-        assert!(full < PICKUP.break_distance_m * 0.5, "full {full}");
+        assert!(full < PICKUP.get().break_distance_m * 0.5, "full {full}");
         assert!(slow <= full + 0.01, "full {full} slow {slow}");
     }
 
@@ -519,26 +520,41 @@ mod tests {
 
     #[test]
     fn carrying_keeps_configured_strength_for_any_mass_or_grip_count() {
-        let config = PICKUP;
+        let config = *PICKUP.get();
         let left = hold(Vec3::NEG_X * 0.3, Vec3::NEG_X * 0.3, Quat::IDENTITY);
         let right = hold(Vec3::X * 0.3, Vec3::X * 0.3, Quat::IDENTITY);
-        let baseline = HoldTuning::of(&config);
+        let baseline = HoldTuning::of(&config, HandStrength::full());
         assert_eq!(
-            HoldTuning::carrying(&config, 100.0, &[Some(left), None]),
+            HoldTuning::carrying(&config, HandStrength::full(), 100.0, &[Some(left), None]),
             baseline
         );
         assert_eq!(
-            HoldTuning::carrying(&config, 100.0, &[Some(left), Some(left)]),
+            HoldTuning::carrying(
+                &config,
+                HandStrength::full(),
+                100.0,
+                &[Some(left), Some(left)]
+            ),
             baseline
         );
         for mass in [1.0, 100.0, config.max_mass_kg, f32::INFINITY] {
             assert_eq!(
-                HoldTuning::carrying(&config, mass, &[Some(left), Some(right)]),
+                HoldTuning::carrying(
+                    &config,
+                    HandStrength::full(),
+                    mass,
+                    &[Some(left), Some(right)]
+                ),
                 baseline
             );
         }
         assert_eq!(
-            HoldTuning::carrying(&config, f32::NAN, &[Some(left), Some(right)]),
+            HoldTuning::carrying(
+                &config,
+                HandStrength::full(),
+                f32::NAN,
+                &[Some(left), Some(right)]
+            ),
             baseline
         );
     }
@@ -552,15 +568,14 @@ mod tests {
         assert!(body.pose.point(on_body).distance(point) < 0.01);
         assert!(body.pose.orientation.angle_between(Quat::IDENTITY) < 0.02);
         // Holding it up takes its weight and no more.
-        let weight = 3.0 * PICKUP.gravity_mps2;
-        let expected = weight / PICKUP.hand_force_n;
+        let weight = 3.0 * GRAVITY_MPS2;
+        let expected = weight / HandStrength::full().force_n;
         assert!((solution.loads[0] - expected).abs() < 0.05);
     }
 
     #[test]
     fn a_body_too_heavy_to_lift_sinks() {
-        let config = PICKUP;
-        let mass = 2.0 * config.hand_force_n / config.gravity_mps2;
+        let mass = 2.0 * HandStrength::full().force_n / GRAVITY_MPS2;
         let mut body = crate_body(mass, Vec3::splat(0.6), Vec3::ZERO, Quat::IDENTITY);
         let on_body = Vec3::new(0.0, 0.3, 0.0);
         let point = body.pose.point(on_body);
@@ -571,7 +586,7 @@ mod tests {
 
     #[test]
     fn a_plank_held_by_its_end_droops_from_the_hand() {
-        let mass = PICKUP.hand_torque_nm * 1.5 / (PICKUP.gravity_mps2 * 0.58);
+        let mass = HandStrength::full().torque_nm * 1.5 / (GRAVITY_MPS2 * 0.58);
         let mut plank = crate_body(mass, Vec3::new(0.1, 0.05, 1.2), Vec3::ZERO, Quat::IDENTITY);
         let on_body = Vec3::new(0.0, 0.0, 0.58);
         let point = plank.pose.point(on_body);
@@ -610,9 +625,8 @@ mod tests {
 
     #[test]
     fn two_hands_carry_a_long_body_between_them_and_tilt_it() {
-        let config = PICKUP;
         let tuning = tuning();
-        let mass = 1.5 * config.hand_force_n / config.gravity_mps2;
+        let mass = 1.5 * HandStrength::full().force_n / GRAVITY_MPS2;
         let mut pole = crate_body(mass, Vec3::new(2.0, 0.1, 0.1), Vec3::ZERO, Quat::IDENTITY);
         let ends = [Vec3::new(-0.9, 0.0, 0.0), Vec3::new(0.9, 0.0, 0.0)];
         // One hand raised: the pole should tilt to join the hands.
@@ -638,7 +652,7 @@ mod tests {
             );
         }
         // Too heavy for one hand, the pair shares it.
-        let weight = mass * config.gravity_mps2 / config.hand_force_n;
+        let weight = mass * GRAVITY_MPS2 / HandStrength::full().force_n;
         assert!(last.loads.iter().all(|&l| l > 0.3), "{last:?}");
         assert!(last.loads[0] + last.loads[1] >= weight * 0.95, "{last:?}");
     }
@@ -822,7 +836,7 @@ mod tests {
 
     #[test]
     fn a_stuck_hold_pushes_the_player_toward_the_grab_point() {
-        let config = PALMS;
+        let config = PHYSICAL_HANDS.get().palms;
         let deadband = config.push_deadband_m;
         // The hand pushed 20 cm past a heavy crate's grab point along -Z: the body moves back +Z.
         let push = resist_push(
@@ -867,10 +881,10 @@ mod tests {
 
     #[test]
     fn a_carried_prop_holds_the_player_back_before_it_is_torn_away() {
-        let config = PALMS;
+        let config = PHYSICAL_HANDS.get().palms;
         let carry = resist_deadband_m(true, &config);
         assert_eq!(resist_deadband_m(false, &config), config.push_deadband_m);
-        assert!(carry > config.push_deadband_m && carry < PICKUP.break_distance_m);
+        assert!(carry > config.push_deadband_m && carry < PICKUP.get().break_distance_m);
         // A heavy barrel carried at full strength, trailing the hands by a few centimetres: the
         // player is left alone.
         assert_eq!(
@@ -881,7 +895,7 @@ mod tests {
         // toward it at full speed.
         let walked = resist_push(
             Vec3::ZERO,
-            Vec3::new(0.0, 0.0, -PICKUP.break_distance_m * 0.8),
+            Vec3::new(0.0, 0.0, -PICKUP.get().break_distance_m * 0.8),
             1.0,
             carry,
             &config,

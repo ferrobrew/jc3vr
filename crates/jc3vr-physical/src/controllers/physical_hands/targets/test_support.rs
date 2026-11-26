@@ -15,7 +15,7 @@ use crate::controllers::physical_hands::{
     palm::PROBE_POINTS,
     pickup::{HeldReport, PickupState, Request},
     shove::Give,
-    state::{STALE_AFTER, State},
+    state::{State, stale_after},
     status::PhysicalHandsStatus,
     targets::{door_offer_current_in, provided_reach},
 };
@@ -89,7 +89,7 @@ impl DoorProvider {
     }
 
     pub fn expire(&mut self) {
-        self.now += STALE_AFTER + std::time::Duration::from_millis(1);
+        self.now += stale_after() + std::time::Duration::from_millis(1);
     }
 
     pub fn replace_source(&mut self) {

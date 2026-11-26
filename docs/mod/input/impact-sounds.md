@@ -8,16 +8,16 @@ The player character's melee impact usage ([`AttachedEffectContainer::MELEE_IMPA
 
 Two sources raise impacts:
 
-- A palm's touch ([physical-hands.md](physical-hands.md)), when the palm meets a surface at `SOUNDS.min_touch_speed_mps` (1.5 m/s) or faster. The palm's cast reads the hit shape's material ([`CastRayInfo::GetHitMaterial`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/physics::CastRayInfo##func-GetHitMaterial), only while the sounds are on), so a slap on metal, wood, or concrete sounds like a punch on it; a character plays flesh.
-- A hand body's contact ([physical-hands.md, "Hits"](physical-hands.md)), when it carries `SOUNDS.min_strike_share` (0.35) of the strongest hit pulse. A contact with a character other than the player plays flesh (the character is found again as the blows find it); any other plays the default material, since a contact does not carry the struck shape.
+- A palm's touch ([physical-hands.md](physical-hands.md)), when the palm meets a surface at `sounds.min_touch_speed_mps` in the physical hands' [tuning](../tuning.md) or faster. The palm's cast reads the hit shape's material ([`CastRayInfo::GetHitMaterial`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/physics::CastRayInfo##func-GetHitMaterial), only while the sounds are on), so a slap on metal, wood, or concrete sounds like a punch on it; a character plays flesh.
+- A hand body's contact ([physical-hands.md, "Hits"](physical-hands.md)), when it carries `sounds.min_strike_share` of the strongest hit pulse. A contact with a character other than the player plays flesh (the character is found again as the blows find it); any other plays the default material, since a contact does not carry the struck shape.
 
-The game's sound events take no loudness, so an impact's strength only decides whether it sounds. A hand sounds at most once every `SOUNDS.hand_cooldown_s` (0.25 s), and the two hands together at most once every `SOUNDS.min_interval_s` (0.06 s): one slap, which the palm's cast and the hand body may both report, sounds once, and a hand resting against a wall does not repeat. An impact the cooldowns hold back does not restart them.
+The game's sound events take no loudness, so an impact's strength only decides whether it sounds. A hand sounds at most once every `sounds.hand_cooldown_s`, and the two hands together at most once every `sounds.min_interval_s`: one slap, which the palm's cast and the hand body may both report, sounds once, and a hand resting against a wall does not repeat. An impact the cooldowns hold back does not restart them.
 
 Grabbing a ledge or a door sounds when the hand arrives fast enough to count as a touch or a strike; a gentle grip makes no sound. A magazine seating, a grenade's pin, and other weapon handling are not covered: their sounds are the weapons' own animation-driven attached effects, whose usage names were not found, and playing a punch for them would be wrong.
 
 ## Settings, readout, and log
 
-The sounds are always on under the controller scheme. The debug UI's Feedback feature shows them under the `IMPACT SOUNDS` status row with the counts, and with the last sound's kind and material. The thresholds and the cooldowns are fixed in `physical_hands::sounds::SOUNDS`.
+The sounds are always on under the controller scheme. The debug UI's Feedback feature shows them under the `IMPACT SOUNDS` status row with the counts, and with the last sound's kind and material. The thresholds and the cooldowns are the `sounds` section of `hands.toml`.
 
 The debug UI's Status page has `IMPACT SOUNDS` under FEEDBACK: the sounds played, the impacts the cooldowns held back, and the impacts whose material has no melee impact sound (`SILENT`).
 
@@ -29,7 +29,7 @@ Both sources run on the game thread outside the physics step: the palms' tick (t
 
 ## In the headset
 
-1. Open the debug UI's Status page: `IMPACT SOUNDS` reads `WAITING`. Slap a concrete wall with an open hand: a punch-on-concrete sound at the wall, `a hand made the melee impact sound` with `kind=touch` (or `strike`), and the row counts one played. Slap it again at once: nothing until a quarter second has passed, and `HELD BACK` counts up.
+1. Open the debug UI's Status page: `IMPACT SOUNDS` reads `WAITING`. Slap a concrete wall with an open hand: a punch-on-concrete sound at the wall, `a hand made the melee impact sound` with `kind=touch` (or `strike`), and the row counts one played. Slap it again at once: nothing until `sounds.hand_cooldown_s` has passed, and `HELD BACK` counts up.
 2. Touch the wall slowly: no sound.
 3. Slap a car, a wooden crate, and the ground: each sounds like a punch on its material. Report a material that is silent (`SILENT` counts up and the log names the material).
 4. Punch a soldier: a punch-on-flesh sound with the blow.

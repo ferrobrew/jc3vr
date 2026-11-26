@@ -15,7 +15,11 @@ use jc3vr_body::controllers::{
 use parking_lot::Mutex;
 
 use crate::controllers::physical_hands::{
-    STALE_AFTER, doors::engine::is_vehicle_part, physics::drawn_body, world::World,
+    doors::engine::is_vehicle_part,
+    physics::drawn_body,
+    stale_after,
+    tuning::{CarryCollisionTuning, PHYSICAL_HANDS},
+    world::World,
 };
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -51,10 +55,11 @@ pub(super) unsafe fn step() {
         && jc3vr_core::hooks::in_gameplay()
         && !jc3vr_core::is_shutting_down();
     let now = Instant::now();
+    let tuning = &PHYSICAL_HANDS.get().carry_collision;
     let mut state = STATE.lock();
     let fresh = state
         .published
-        .is_some_and(|at| now.saturating_duration_since(at) <= STALE_AFTER);
+        .is_some_and(|at| now.saturating_duration_since(at) <= stale_after());
     let wanted = if enabled && fresh {
         state.wanted
     } else {
@@ -145,9 +150,16 @@ pub(super) unsafe fn step() {
         }
         let current = unsafe { lease.a.current(world.world()) && lease.b.current(world.world()) };
         let held = current && carried.contains(&lease.a) && players.contains(&lease.b);
-        let overlapping =
-            current && !held && !unsafe { separated(world.world(), lease.a.body, lease.b.body) };
-        if lease.retain(held, now, overlapping, jc3vr_core::is_shutting_down()) {
+        let overlapping = current
+            && !held
+            && !unsafe { separated(world.world(), lease.a.body, lease.b.body, tuning) };
+        if lease.retain(
+            held,
+            now,
+            overlapping,
+            jc3vr_core::is_shutting_down(),
+            tuning,
+        ) {
             return true;
         }
         unsafe { filter.enableCollisionsBetween(world.world_mut(), lease.a.body, lease.b.body) };
@@ -301,7 +313,14 @@ struct Lease {
 }
 
 impl Lease {
-    fn retain(&mut self, held: bool, now: Instant, overlapping: bool, force: bool) -> bool {
+    fn retain(
+        &mut self,
+        held: bool,
+        now: Instant,
+        overlapping: bool,
+        force: bool,
+        tuning: &CarryCollisionTuning,
+    ) -> bool {
         if force {
             return false;
         }
@@ -310,7 +329,8 @@ impl Lease {
             return true;
         }
         let released = *self.released.get_or_insert(now);
-        overlapping && now.saturating_duration_since(released).as_secs_f32() < RELEASE_GRACE_S
+        overlapping
+            && now.saturating_duration_since(released).as_secs_f32() < tuning.release_grace_s
     }
 }
 
@@ -389,17 +409,17 @@ unsafe fn live_body(world: &hknpWorld, body: u32) -> Option<&hknpBody> {
         .then_some(slot)
 }
 
-unsafe fn separated(world: &hknpWorld, a: u32, b: u32) -> bool {
+unsafe fn separated(world: &hknpWorld, a: u32, b: u32, tuning: &CarryCollisionTuning) -> bool {
     let (Some(a), Some(b)) = (unsafe { bounds(world, a) }, unsafe { bounds(world, b) }) else {
         return false;
     };
-    disjoint(&a, &b)
+    disjoint(&a, &b, tuning.release_margin_m)
 }
 
-fn disjoint(a: &hkAabb, b: &hkAabb) -> bool {
+fn disjoint(a: &hkAabb, b: &hkAabb, margin_m: f32) -> bool {
     (0..3).any(|axis| {
-        a.m_min.data[axis] > b.m_max.data[axis] + RELEASE_MARGIN_M
-            || b.m_min.data[axis] > a.m_max.data[axis] + RELEASE_MARGIN_M
+        a.m_min.data[axis] > b.m_max.data[axis] + margin_m
+            || b.m_min.data[axis] > a.m_max.data[axis] + margin_m
     })
 }
 
@@ -418,8 +438,6 @@ unsafe fn bounds(world: &hknpWorld, body: u32) -> Option<hkAabb> {
 }
 
 const MAX_CONSTRAINTS: u32 = 1 << 16;
-const RELEASE_MARGIN_M: f32 = 0.01;
-const RELEASE_GRACE_S: f32 = 1.0;
 static STATE: Mutex<State> = Mutex::new(State {
     wanted: [None; 2],
     published: None,
@@ -462,13 +480,15 @@ mod tests {
             },
             released: None,
         };
+        let tuning = &PHYSICAL_HANDS.get().carry_collision;
         let now = Instant::now();
-        assert!(lease.retain(true, now, true, false));
-        assert!(lease.retain(false, now, true, false));
-        assert!(!lease.retain(false, now + Duration::from_secs(2), true, false));
-        assert!(lease.retain(true, now + Duration::from_secs(2), true, false));
-        assert!(!lease.retain(false, now + Duration::from_secs(2), false, false));
-        assert!(!lease.retain(true, now, true, true));
+        let past_grace = now + Duration::from_secs_f32(tuning.release_grace_s * 2.0);
+        assert!(lease.retain(true, now, true, false, tuning));
+        assert!(lease.retain(false, now, true, false, tuning));
+        assert!(!lease.retain(false, past_grace, true, false, tuning));
+        assert!(lease.retain(true, past_grace, true, false, tuning));
+        assert!(!lease.retain(false, past_grace, false, false, tuning));
+        assert!(!lease.retain(true, now, true, true, tuning));
     }
 
     #[test]
@@ -501,17 +521,18 @@ mod tests {
 
     #[test]
     fn release_bounds_require_clearance_on_one_axis() {
+        let margin = PHYSICAL_HANDS.get().carry_collision.release_margin_m;
         let mut a = hkAabb::default();
         let mut b = hkAabb::default();
         a.m_min.data = [0.0; 3];
         a.m_max.data = [1.0; 3];
         b.m_min.data = [0.5; 3];
         b.m_max.data = [1.5; 3];
-        assert!(!disjoint(&a, &b));
-        b.m_min.data[0] = 1.005;
-        assert!(!disjoint(&a, &b));
-        b.m_min.data[0] = 1.02;
-        assert!(disjoint(&a, &b));
-        assert!(disjoint(&b, &a));
+        assert!(!disjoint(&a, &b, margin));
+        b.m_min.data[0] = 1.0 + margin * 0.5;
+        assert!(!disjoint(&a, &b, margin));
+        b.m_min.data[0] = 1.0 + margin * 2.0;
+        assert!(disjoint(&a, &b, margin));
+        assert!(disjoint(&b, &a, margin));
     }
 }

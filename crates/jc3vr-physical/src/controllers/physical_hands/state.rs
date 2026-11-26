@@ -21,6 +21,7 @@ use crate::controllers::physical_hands::{
     pickup::{PickupState, PickupStatus},
     shove::Give,
     status::{HandStatus, Idle, PhysicalHandsStatus},
+    tuning::PHYSICAL_HANDS,
 };
 
 /// Stop: forget the probes and the push, and say why.
@@ -72,7 +73,7 @@ pub(super) struct State {
 impl State {
     pub(super) fn fresh(&self, now: Instant) -> bool {
         self.at
-            .is_some_and(|at| now.saturating_duration_since(at) <= STALE_AFTER)
+            .is_some_and(|at| now.saturating_duration_since(at) <= stale_after())
     }
 
     pub(super) fn reset_probes(&mut self) {
@@ -141,13 +142,12 @@ impl State {
     }
 }
 
-/// How long a tick's results stay current: the aim update runs every simulation tick while the
-/// palms act, so an older result means they have stopped.
-pub(super) const STALE_AFTER: Duration = Duration::from_millis(200);
-
-/// How long the palms' velocities are smoothed over, seconds: short, so that a throw keeps the
-/// flick. The aim update's trackers and the hand bodies' trackers both smooth over it.
-pub(super) const VELOCITY_SMOOTHING_S: f32 = 0.03;
+/// How long a tick's results stay current ([`StateTuning::stale_after_ms`]).
+///
+/// [`StateTuning::stale_after_ms`]: crate::controllers::physical_hands::tuning::StateTuning::stale_after_ms
+pub(super) fn stale_after() -> Duration {
+    Duration::from_millis(PHYSICAL_HANDS.get().state.stale_after_ms)
+}
 
 pub(super) static STATE: Mutex<State> = Mutex::new(State {
     status: PhysicalHandsStatus {

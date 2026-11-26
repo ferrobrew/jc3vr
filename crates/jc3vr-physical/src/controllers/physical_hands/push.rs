@@ -41,43 +41,45 @@ pub fn combine(pushes: [Vec2; 2], config: &PalmTuning) -> Vec2 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::controllers::physical_hands::tuning::PALMS;
+    use crate::controllers::physical_hands::tuning::PHYSICAL_HANDS;
 
-    const CONFIG: PalmTuning = PALMS;
+    fn config() -> &'static PalmTuning {
+        &PHYSICAL_HANDS.get().palms
+    }
 
     #[test]
     fn a_press_into_a_wall_pushes_the_body_away() {
         // A wall ahead (-Z), its normal toward the player.
-        let push = hand_push(Vec3::Z, 0.1, &CONFIG);
-        let expected = (0.1 - CONFIG.push_deadband_m) * CONFIG.push_stiffness_per_s;
+        let push = hand_push(Vec3::Z, 0.1, config());
+        let expected = (0.1 - config().push_deadband_m) * config().push_stiffness_per_s;
         assert!((push - Vec2::new(0.0, expected)).length() < 1e-5);
     }
 
     #[test]
     fn a_light_touch_does_not_push() {
         assert_eq!(
-            hand_push(Vec3::Z, CONFIG.push_deadband_m * 0.5, &CONFIG),
+            hand_push(Vec3::Z, config().push_deadband_m * 0.5, config()),
             Vec2::ZERO
         );
-        assert_eq!(hand_push(Vec3::Z, f32::NAN, &CONFIG), Vec2::ZERO);
+        assert_eq!(hand_push(Vec3::Z, f32::NAN, config()), Vec2::ZERO);
     }
 
     #[test]
     fn pressing_down_on_the_floor_does_not_push() {
-        assert_eq!(hand_push(Vec3::Y, 0.3, &CONFIG), Vec2::ZERO);
+        assert_eq!(hand_push(Vec3::Y, 0.3, config()), Vec2::ZERO);
         // A slope steep enough pushes along its horizontal share.
-        let push = hand_push(Vec3::new(1.0, 1.0, 0.0), 0.3, &CONFIG);
+        let push = hand_push(Vec3::new(1.0, 1.0, 0.0), 0.3, config());
         assert!(push.x > 0.0 && push.y.abs() < 1e-6);
     }
 
     #[test]
     fn the_push_never_exceeds_the_fastest() {
-        let deep = hand_push(Vec3::Z, 10.0, &CONFIG);
-        assert!((deep.length() - CONFIG.max_push_speed_mps).abs() < 1e-5);
-        let both = combine([deep, deep], &CONFIG);
-        assert!((both.length() - CONFIG.max_push_speed_mps).abs() < 1e-5);
+        let deep = hand_push(Vec3::Z, 10.0, config());
+        assert!((deep.length() - config().max_push_speed_mps).abs() < 1e-5);
+        let both = combine([deep, deep], config());
+        assert!((both.length() - config().max_push_speed_mps).abs() < 1e-5);
         // Opposed palms cancel.
-        assert_eq!(combine([deep, -deep], &CONFIG), Vec2::ZERO);
+        assert_eq!(combine([deep, -deep], config()), Vec2::ZERO);
     }
 
     #[test]
@@ -86,12 +88,12 @@ mod tests {
         let mut depth = 0.3;
         let mut last = depth;
         for _ in 0..120 {
-            let push = hand_push(Vec3::Z, depth, &CONFIG);
+            let push = hand_push(Vec3::Z, depth, config());
             depth -= push.length() * dt;
-            assert!(depth >= CONFIG.push_deadband_m - 1e-6);
+            assert!(depth >= config().push_deadband_m - 1e-6);
             assert!(depth <= last);
             last = depth;
         }
-        assert!(depth - CONFIG.push_deadband_m < 0.01);
+        assert!(depth - config().push_deadband_m < 0.01);
     }
 }

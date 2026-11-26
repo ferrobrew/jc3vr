@@ -27,7 +27,7 @@ use jc3vr_body::controllers::physics::rigid;
 
 use crate::controllers::{
     physical_hands,
-    physical_hands::{physics::drawn_body, remote, world::World},
+    physical_hands::{physics::drawn_body, remote, tuning::PHYSICAL_HANDS, world::World},
 };
 
 /// A constraint slot, as far as an articulation cares.
@@ -143,7 +143,8 @@ pub(crate) unsafe fn damp_assembly(
         unsafe { physical_hands::line_body(other) }
             .is_some_and(|(_, state)| state.mass_kg.is_some())
     };
-    let ids = assembly(&slots, body, dynamic, excluded, MAX_ASSEMBLY_BODIES);
+    let max_bodies = PHYSICAL_HANDS.get().articulated.max_assembly_bodies;
+    let ids = assembly(&slots, body, dynamic, excluded, max_bodies);
     let members: Vec<Member> = ids
         .into_iter()
         .filter_map(|body| {
@@ -205,10 +206,6 @@ unsafe fn live_slots() -> Option<impl Iterator<Item = ConstraintSlot>> {
         disabled: s.m_flags & hknpConstraint::IS_DISABLED != 0,
     }))
 }
-
-/// The most bodies one assembly's damping takes: a rack or a hinged contraption has a handful, so
-/// this bounds a walk into something far larger, not a real assembly.
-const MAX_ASSEMBLY_BODIES: usize = 32;
 
 /// The most constraint slots read, against a corrupt manager.
 const MAX_CONSTRAINTS: u32 = 1 << 16;

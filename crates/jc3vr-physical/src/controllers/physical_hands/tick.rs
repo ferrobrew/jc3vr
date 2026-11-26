@@ -34,7 +34,7 @@ use jc3vr_body::controllers::{
     held::HeldItem,
     mode,
     mode::{AirborneVariant, Detection, Mode, OnFootVariant},
-    physics::local_player::LocalPlayer,
+    physics::{GRAVITY_MPS2, local_player::LocalPlayer},
     scheme,
 };
 use jc3vr_core::{
@@ -54,7 +54,7 @@ use crate::controllers::physical_hands::{
     config::PHYSICAL_HANDS_CONFIG,
     contact::{HandContact, PointContact, PointProbe, Surface, SurfaceHit},
     doors,
-    doors::{acquisition::PanelReach, config::TEARING},
+    doors::{acquisition::PanelReach, tuning::DOORS},
     engine, grab_view, grasp,
     grasp::PalmMotion,
     hold,
@@ -64,11 +64,10 @@ use crate::controllers::physical_hands::{
     physics, pickup,
     pickup::PICKUP,
     push, query, seated,
-    shove::SHOVE,
-    state::{STATE, VELOCITY_SMOOTHING_S, stand_down},
+    state::{STATE, stand_down},
     status::{HandStatus, Idle},
     touch::{ShoveInput, Touch, pressure_haptics},
-    tuning::PALMS,
+    tuning::PHYSICAL_HANDS,
 };
 
 /// Note that a palms' tick is due, `dt` seconds of simulation after the last: called from the
@@ -131,7 +130,7 @@ fn run(player: &LocalPlayer<'_>, dt: f32) {
             .flatten()
             .map(|h| h.body)
             .collect();
-        unsafe { doors::hinge::tick(dt, &held, gate.active, PICKUP.gravity_mps2) };
+        unsafe { doors::hinge::tick(dt, &held, gate.active, GRAVITY_MPS2) };
     }
     if seated_vehicle.is_some() {
         unsafe { seated::run(owner, dt) };
@@ -157,6 +156,9 @@ fn run(player: &LocalPlayer<'_>, dt: f32) {
     };
     let xf = CockpitTransform::current(active.head.position, active.world_scale);
     let body_rotation = xf.body;
+    let tuning = PHYSICAL_HANDS.get();
+    let palms_tuning = &tuning.palms;
+    let smoothing_s = time_scale.game_s(tuning.state.velocity_smoothing_s);
     let compose = |pose: Pose| xf.pose_to_world(pose);
     let at = |point: Vec3| {
         compose(Pose {
@@ -173,13 +175,14 @@ fn run(player: &LocalPlayer<'_>, dt: f32) {
     .map(at);
     let free = free_hands();
     let to_world = Mat4::from(owner.m_WorldMatrixT1);
-    let space = (PICKUP.keep_out_radius_m > 0.0).then(|| {
+    let pickup_tuning = PICKUP.get();
+    let space = (pickup_tuning.keep_out_radius_m > 0.0).then(|| {
         body::procedural::torso_keep_out(to_world).map_or_else(
             || {
                 PlayerKeepOut::Cylinder(BodySpace {
                     base: to_world.w_axis.truncate(),
                     height_m: body::player().height * active.world_scale,
-                    radius_m: PICKUP.keep_out_radius_m * active.world_scale,
+                    radius_m: pickup_tuning.keep_out_radius_m * active.world_scale,
                     forward: body_rotation * Vec3::NEG_Z,
                 })
             },
@@ -194,10 +197,12 @@ fn run(player: &LocalPlayer<'_>, dt: f32) {
         .into_iter()
         .filter(|hand| free[hand.index()])
         .filter_map(|hand| active.hands[hand.index()])
-        .map(|hand| PalmBox::from_wrist(compose(hand.wrist), active.world_scale, &PALMS).centre)
+        .map(|hand| {
+            PalmBox::from_wrist(compose(hand.wrist), active.world_scale, palms_tuning).centre
+        })
         .collect();
-    let floor_radius =
-        (PICKUP.reach_m + PALMS.palm_half_extents_m.abs().length()) * active.world_scale;
+    let floor_radius = (pickup_tuning.reach_m + palms_tuning.palm_half_extents_m.abs().length())
+        * active.world_scale;
     // SAFETY: this input phase runs outside the world step, before holding the hand-state lock.
     let floor_weapons = unsafe { pickup::floor_weapons(&floor_hands, floor_radius) };
 
@@ -242,7 +247,7 @@ fn run(player: &LocalPlayer<'_>, dt: f32) {
     let reach_tuning = pickup::ReachTuning {
         floor_weapons: &floor_weapons,
         world_scale: active.world_scale,
-        pickup: &PICKUP,
+        pickup: pickup_tuning,
         hand_bodies: physics::status().hands.map(|h| h.body_id),
     };
     // The vehicles whose doors the free palms might reach, offered by their handles; each hand adds
@@ -288,22 +293,14 @@ fn run(player: &LocalPlayer<'_>, dt: f32) {
             state.motion[i].1.reset();
             continue;
         };
-        let palm = PalmBox::from_wrist(compose(cockpit.wrist), active.world_scale, &PALMS);
+        let palm = PalmBox::from_wrist(compose(cockpit.wrist), active.world_scale, palms_tuning);
         let motion = PalmMotion {
             pose: Pose {
                 position: palm.centre,
                 orientation: palm.orientation,
             },
-            velocity: state.motion[i].0.update(
-                palm.centre,
-                dt,
-                time_scale.game_s(VELOCITY_SMOOTHING_S),
-            ),
-            angular_velocity: state.motion[i].1.update(
-                palm.orientation,
-                dt,
-                time_scale.game_s(VELOCITY_SMOOTHING_S),
-            ),
+            velocity: state.motion[i].0.update(palm.centre, dt, smoothing_s),
+            angular_velocity: state.motion[i].1.update(palm.orientation, dt, smoothing_s),
         };
         palms[i] = Some(motion);
         wrists[i] = Some(compose(cockpit.wrist));
@@ -344,7 +341,7 @@ fn run(player: &LocalPlayer<'_>, dt: f32) {
                     body,
                     &hit,
                     palm.centre,
-                    PanelReach::uniform(doors::pressure::REACH_M * active.world_scale),
+                    PanelReach::uniform(DOORS.get().pressure.reach_m * active.world_scale),
                 )
             }
         });
@@ -419,7 +416,7 @@ fn run(player: &LocalPlayer<'_>, dt: f32) {
             interaction_scans[i].selected = reach;
             // The palm in the rig: its tracking-space place turned and scaled as the world
             // palm is, but not carried by the head's world position, which the climb moves.
-            let rig = PalmBox::from_wrist(cockpit.wrist, 1.0, &PALMS).centre;
+            let rig = PalmBox::from_wrist(cockpit.wrist, 1.0, palms_tuning).centre;
             climb_palms[i] = Some(xf.offset_to_world(rig));
             climb_pressing[i] = physics::pressing(hand);
             // A loose object in reach wins over the world it rests on.
@@ -428,7 +425,7 @@ fn run(player: &LocalPlayer<'_>, dt: f32) {
                 unsafe {
                     climb::reach(
                         &body_palm,
-                        climb::config::CLIMB.reach_m * active.world_scale,
+                        climb::tuning::CLIMB.get().climb.reach_m * active.world_scale,
                         &mut |from, to| cast(from, to, true),
                     )
                 }
@@ -475,7 +472,7 @@ fn run(player: &LocalPlayer<'_>, dt: f32) {
                             hand_velocity: motion.velocity,
                             dt,
                         },
-                        &SHOVE,
+                        &tuning.shove,
                     )
                 }
             }
@@ -486,7 +483,7 @@ fn run(player: &LocalPlayer<'_>, dt: f32) {
         };
         let resistance = shove.map_or(1.0, |s| s.resistance);
         let hand_push = contact.press.map_or(Vec2::ZERO, |(hit, depth)| {
-            push::hand_push(hit.normal, depth, &PALMS) * resistance
+            push::hand_push(hit.normal, depth, palms_tuning) * resistance
         });
         let offset = contact.clamp_offset();
         clamp[i] = xf.offset_to_cockpit(offset);
@@ -547,25 +544,16 @@ fn run(player: &LocalPlayer<'_>, dt: f32) {
         };
     }
 
-    let strength = if config.bodies.strength.is_finite() {
-        config.bodies.strength.max(0.0)
-    } else {
-        0.0
-    };
-    let pickup_tuning = pickup::PickupTuning {
-        hand_force_n: PICKUP.hand_force_n * strength,
-        hand_torque_nm: PICKUP.hand_torque_nm * strength,
-        ..PICKUP
-    };
     let inputs = pickup::TickInputs {
         palms,
         space,
         joints: joint_inputs(),
+        strength: pickup::HandStrength::at(config.bodies.strength),
         dt,
         // SAFETY: the clock singleton is read on the game thread.
         time_scale: time_scale.get(),
-        unlatch_pull_m: doors::UNLATCH_PULL_M * active.world_scale,
-        tearing: TEARING,
+        unlatch_pull_m: DOORS.get().grip.unlatch_pull_m * active.world_scale,
+        tearing: DOORS.get().tearing,
         world_scale: active.world_scale,
         reaches: hand_status.map(|h| h.reach),
         carrier_velocity: Some(Vec3::from_array(owner.m_MeasuredWorldVelocity.data)),
@@ -575,7 +563,7 @@ fn run(player: &LocalPlayer<'_>, dt: f32) {
         }),
     };
     // SAFETY: the simulation phase outside the physics step.
-    let outcome = unsafe { pickup::tick(&mut state.pickup, inputs, &pickup_tuning) };
+    let outcome = unsafe { pickup::tick(&mut state.pickup, inputs, pickup_tuning) };
     let joined = outcome.joints;
     let pins = outcome.pins;
     let refused = outcome.refused.clone();
@@ -588,7 +576,7 @@ fn run(player: &LocalPlayer<'_>, dt: f32) {
         if let (Some(pin), Some(palm)) = (pins[i], palms[i])
             && !physics::drives(hand)
         {
-            let offset = (pin - palm.pose.position).clamp_length_max(PICKUP.tear_distance_m);
+            let offset = (pin - palm.pose.position).clamp_length_max(pickup_tuning.tear_distance_m);
             clamp[i] = xf.offset_to_cockpit(offset);
         }
     }
@@ -599,14 +587,15 @@ fn run(player: &LocalPlayer<'_>, dt: f32) {
         };
         // Physical hand bodies follow carry pins; only nonphysical hands need this offset.
         if !physics::drives(hand) {
-            let offset = (held.anchor - held.target).clamp_length_max(PICKUP.tear_distance_m);
+            let offset =
+                (held.anchor - held.target).clamp_length_max(pickup_tuning.tear_distance_m);
             clamp[i] = xf.offset_to_cockpit(offset);
         }
-        let deadband = hold::resist_deadband_m(state.pickup.props()[i].is_some(), &PALMS);
+        let deadband = hold::resist_deadband_m(state.pickup.props()[i].is_some(), palms_tuning);
         let lag = state.pickup.held[i].map_or(Vec3::ZERO, |body| {
             impacts::obstruction(body.body, body.object, held.anchor - held.target)
         });
-        hand_status[i].push = hold::resist_push(lag, Vec3::ZERO, held.load, deadband, &PALMS);
+        hand_status[i].push = hold::resist_push(lag, Vec3::ZERO, held.load, deadband, palms_tuning);
     }
     declare_grips(&state.pickup, &hand_status, wrists, &mut |from, to| {
         cast(from, to, false)
@@ -620,7 +609,7 @@ fn run(player: &LocalPlayer<'_>, dt: f32) {
         }
     }
     pressure_haptics(&pressure_status);
-    let push = push::combine(hand_status.map(|h| h.push), &PALMS);
+    let push = push::combine(hand_status.map(|h| h.push), palms_tuning);
     for touch in touches {
         // SAFETY: the game tick; the touches' objects were found by this tick's casts.
         unsafe { state.touch(touch, melee_impulse) };

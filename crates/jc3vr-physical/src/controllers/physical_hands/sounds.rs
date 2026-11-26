@@ -31,9 +31,14 @@ use jc3gi::{
 };
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
+use serde::Deserialize;
 
-/// The impact sounds' tuning, fixed at [`SOUNDS`].
-#[derive(Copy, Clone, Debug, PartialEq)]
+use crate::controllers::physical_hands::tuning::PHYSICAL_HANDS;
+
+/// The impact sounds' tuning. The shipped values are the tuning file's `sounds`
+/// ([`PHYSICAL_HANDS`]).
+#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SoundsTuning {
     /// The slowest a palm may meet a surface and still sound, metres per second.
     pub min_touch_speed_mps: f32,
@@ -44,14 +49,6 @@ pub struct SoundsTuning {
     /// The least time between two sounds of either hand, seconds.
     pub min_interval_s: f32,
 }
-
-/// The impact sounds' tuning.
-pub const SOUNDS: SoundsTuning = SoundsTuning {
-    min_touch_speed_mps: 1.5,
-    min_strike_share: 0.35,
-    hand_cooldown_s: 0.25,
-    min_interval_s: 0.06,
-};
 
 /// What a sound is for.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -158,7 +155,8 @@ pub const fn strike_material(character: bool) -> u32 {
 ///
 /// The game thread, outside the physics step.
 pub(super) unsafe fn play(impact: Impact) {
-    if !strong_enough(&impact, &SOUNDS) {
+    let tuning = &PHYSICAL_HANDS.get().sounds;
+    if !strong_enough(&impact, tuning) {
         return;
     }
     let mut state = STATE.lock();
@@ -167,7 +165,7 @@ pub(super) unsafe fn play(impact: Impact) {
         .get_or_insert_with(Instant::now)
         .elapsed()
         .as_secs_f64();
-    if !state.limiter.admit(impact.hand, now_s, &SOUNDS) {
+    if !state.limiter.admit(impact.hand, now_s, tuning) {
         state.status.limited += 1;
         return;
     }
@@ -298,7 +296,9 @@ fn vector(v: Vec3) -> Vector3 {
 mod tests {
     use super::*;
 
-    const CONFIG: SoundsTuning = SOUNDS;
+    fn config() -> &'static SoundsTuning {
+        &PHYSICAL_HANDS.get().sounds
+    }
 
     fn impact(kind: ImpactKind, strength: f32) -> Impact {
         Impact {
@@ -313,38 +313,38 @@ mod tests {
 
     #[test]
     fn a_gentle_meeting_makes_no_sound() {
-        assert!(!strong_enough(&impact(ImpactKind::Touch, 0.5), &CONFIG));
-        assert!(strong_enough(&impact(ImpactKind::Touch, 3.0), &CONFIG));
-        assert!(!strong_enough(&impact(ImpactKind::Strike, 0.1), &CONFIG));
-        assert!(strong_enough(&impact(ImpactKind::Strike, 0.8), &CONFIG));
+        assert!(!strong_enough(&impact(ImpactKind::Touch, 0.5), config()));
+        assert!(strong_enough(&impact(ImpactKind::Touch, 3.0), config()));
+        assert!(!strong_enough(&impact(ImpactKind::Strike, 0.1), config()));
+        assert!(strong_enough(&impact(ImpactKind::Strike, 0.8), config()));
         assert!(!strong_enough(
             &impact(ImpactKind::Touch, f32::NAN),
-            &CONFIG
+            config()
         ));
     }
 
     #[test]
     fn a_hand_sounds_once_per_cooldown() {
         let mut limiter = Limiter::new();
-        assert!(limiter.admit(Hand::Left, 0.0, &CONFIG));
-        assert!(!limiter.admit(Hand::Left, 0.1, &CONFIG));
-        assert!(limiter.admit(Hand::Left, 0.3, &CONFIG));
+        assert!(limiter.admit(Hand::Left, 0.0, config()));
+        assert!(!limiter.admit(Hand::Left, 0.1, config()));
+        assert!(limiter.admit(Hand::Left, 0.3, config()));
     }
 
     #[test]
     fn the_other_hand_waits_only_the_shared_interval() {
         let mut limiter = Limiter::new();
-        assert!(limiter.admit(Hand::Left, 0.0, &CONFIG));
-        assert!(!limiter.admit(Hand::Right, 0.02, &CONFIG));
-        assert!(limiter.admit(Hand::Right, 0.1, &CONFIG));
+        assert!(limiter.admit(Hand::Left, 0.0, config()));
+        assert!(!limiter.admit(Hand::Right, 0.02, config()));
+        assert!(limiter.admit(Hand::Right, 0.1, config()));
     }
 
     #[test]
     fn a_held_back_impact_does_not_restart_the_cooldown() {
         let mut limiter = Limiter::new();
-        assert!(limiter.admit(Hand::Left, 0.0, &CONFIG));
-        assert!(!limiter.admit(Hand::Left, 0.2, &CONFIG));
-        assert!(limiter.admit(Hand::Left, 0.26, &CONFIG));
+        assert!(limiter.admit(Hand::Left, 0.0, config()));
+        assert!(!limiter.admit(Hand::Left, 0.2, config()));
+        assert!(limiter.admit(Hand::Left, 0.26, config()));
     }
 
     #[test]
