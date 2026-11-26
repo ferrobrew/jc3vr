@@ -4,10 +4,10 @@
 use glam::{Quat, Vec2, Vec3};
 
 use crate::{
-    angle::{forward, head_heading, head_pitch},
     body::{PlayerBody, neck_pivot},
     estimate::BodyEstimate,
     height::StandingHeight,
+    math::angle::{forward, head_heading, head_pitch},
     pelvis::{PelvisInput, PelvisSolve, PelvisTuning, solve},
     step::{StepCommit, StepInput, StepPhase, StepTuning},
     tuning::CoreTuning,

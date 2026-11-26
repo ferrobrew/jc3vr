@@ -20,32 +20,31 @@
 //! - [`tuning`]: the tuning of all of them that the player's settings do not hold, which the body
 //!   crate's `tuning/rig.toml` gives.
 //!
-//! [`angle`], [`rotation`], [`geometry`], and [`smooth`] hold the heading, rotation, geometry, and
-//! smoothing primitives the payload shares.
+//! [`math`] holds the primitives the payload shares: headings, rotations, geometry, smoothing, axis
+//! shaping, the two-bone solve, the shoulder model, the body's sides, and the rigid [`Pose`].
 //!
 //! Everything works in the room frame: metres over the floor, +X right, +Y up, -Z forward, with
-//! headings as yaws about +Y ([`angle`]).
+//! headings as yaws about +Y ([`math::angle`]).
 
-pub mod angle;
 pub mod body;
 pub mod brace;
 pub mod contact;
 pub mod estimate;
 pub mod fk;
-pub mod geometry;
 pub mod height;
 pub mod ik_weight;
+pub mod math;
 pub mod pelvis;
 pub mod rig;
-pub mod rotation;
-pub mod smooth;
 pub mod step;
 pub mod tuning;
 pub mod yaw;
 
+// The math modules at their earlier root paths, for the consumers that still name them there.
 pub use crate::{
     body::PlayerBody,
     estimate::{BodyEstimate, EstimateTuning},
+    math::{Pose, Side, angle, geometry, rotation, smooth},
     pelvis::{Bend, PelvisSolve, PelvisTuning},
     rig::{GroundedRig, RigFrame, RigOutput, RigTuning},
     step::{StepPhase, StepTuning, drive_velocity},

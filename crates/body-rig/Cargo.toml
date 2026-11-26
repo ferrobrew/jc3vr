@@ -2,7 +2,7 @@
 name = "body-rig"
 version = "0.1.0"
 edition = "2024"
-description = "The grounded body rig's pure core: the pelvis solver, the body's yaw follow, and the step commit, shared by the payload and the offline evaluator."
+description = "The grounded body rig's pure core: the pelvis solver, the body's yaw follow, and the step commit, shared by the payload and the offline evaluator, and the math the payload's crates share."
 publish = false
 
 # Pure and portable, like `tracking-format`, so that the offline evaluator in `tools/tracking-synth`

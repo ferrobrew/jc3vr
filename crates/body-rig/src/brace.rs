@@ -14,9 +14,8 @@
 use glam::Vec3;
 
 use crate::{
-    angle::forward,
     contact::{SupportFrame, SupportId},
-    smooth::smoothstep,
+    math::{angle::forward, smooth::smoothstep},
 };
 
 /// A cast's hit on a surface a foot might brace on, in the model's frame.

@@ -1,5 +1,6 @@
 //! Smoothing primitives: the share of the way an exponential follow closes in a step, a critically
-//! damped spring step, and the smoothstep ease.
+//! damped spring step (of a value, of each axis of a vector, and of a heading), and the smoothstep
+//! ease.
 //!
 //! The degenerate inputs are settled once here, so every caller agrees on them:
 //!
@@ -11,6 +12,10 @@
 //!   start.
 
 use std::f32::consts::LN_2;
+
+use glam::Vec3;
+
+use crate::math::angle::wrap;
 
 /// The share of the way, `0..=1`, from a value to its target that an exponential follow with the
 /// time constant `tau` seconds closes over `dt` seconds: `1 - exp(-dt / tau)`.
@@ -70,6 +75,27 @@ pub fn critically_damped(value: f32, rate: f32, target: f32, smooth_s: f32, dt: 
     // short step's error is no more than the final rounding of the value.
     let next_value = value + rate * (dt * decay) - change * (curve * decay);
     (next_value, next_rate)
+}
+
+/// [`critically_damped`] on each axis of `value`, changing at `rate`, toward `target`: the new
+/// value and rate.
+pub fn damp(value: Vec3, rate: Vec3, target: Vec3, smooth_s: f32, dt: f32) -> (Vec3, Vec3) {
+    let axis = |i: usize| critically_damped(value[i], rate[i], target[i], smooth_s, dt);
+    let (x, y, z) = (axis(0), axis(1), axis(2));
+    (Vec3::new(x.0, y.0, z.0), Vec3::new(x.1, y.1, z.1))
+}
+
+/// [`critically_damped`] from the heading `from`, turning at `rate`, toward `to` the short way
+/// round: the new heading, wrapped, and rate. It never overshoots: a step that would carry the
+/// heading past `to` lands on it at rest.
+pub fn damp_heading(from: f32, to: f32, rate: f32, smooth_s: f32, dt: f32) -> (f32, f32) {
+    let change = wrap(from - to);
+    let (mut offset, mut rate) = critically_damped(change, rate, 0.0, smooth_s, dt);
+    if (change > 0.0) != (offset > 0.0) && change != 0.0 {
+        offset = 0.0;
+        rate = 0.0;
+    }
+    (wrap(to + offset), rate)
 }
 
 /// The smoothstep ease `3t² - 2t³` of `t` clamped to `0..=1`; zero for a NaN `t`.
@@ -210,6 +236,30 @@ mod tests {
             (1.0, 0.0)
         );
         assert_eq!(critically_damped(0.5, 3.0, 1.0, 0.2, f32::MAX), (1.0, 0.0));
+    }
+
+    #[test]
+    fn damp_steps_each_axis_alone() {
+        let (value, rate) = damp(Vec3::ZERO, Vec3::X, Vec3::new(1.0, -2.0, 0.0), 0.2, 0.05);
+        for i in 0..3 {
+            let alone = critically_damped(0.0, Vec3::X[i], [1.0, -2.0, 0.0][i], 0.2, 0.05);
+            assert_eq!((value[i], rate[i]), alone);
+        }
+    }
+
+    #[test]
+    fn the_heading_spring_goes_the_short_way_and_settles_without_overshooting() {
+        let (mut heading, mut rate) = (3.0f32, 0.0f32);
+        for _ in 0..200 {
+            let last = heading;
+            (heading, rate) = damp_heading(heading, -3.0, rate, 0.15, 1.0 / 90.0);
+            // Across the seam at a half turn, never back through zero.
+            assert!(
+                heading.abs() >= last.abs().min(3.0) - 1e-5,
+                "{last} to {heading}"
+            );
+        }
+        assert!(wrap(heading + 3.0).abs() < 1e-3);
     }
 
     #[test]

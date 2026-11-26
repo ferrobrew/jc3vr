@@ -19,9 +19,11 @@
 use glam::{Vec2, Vec3};
 
 use crate::{
-    angle::{wrap, yaw_of_flat},
     estimate::{BodyEstimate, EstimateFollow, EstimateTuning, blend_legs},
-    smooth::critically_damped,
+    math::{
+        angle::{wrap, yaw_of_flat},
+        smooth::damp_heading,
+    },
 };
 
 /// The yaw's tuning.
@@ -496,7 +498,7 @@ impl YawFollow {
         let goal = wrap(yaw + wrap(wanted - yaw).clamp(-clamp, clamp));
         let chest = self.chest.unwrap_or(goal);
         let goal = wrap(chest + wrap(goal - chest) * look_down_follow(input.head_pitch, tuning));
-        let (moved, rate) = smooth_damp(chest, goal, self.chest_rate, tuning.chest_follow_s, dt);
+        let (moved, rate) = damp_heading(chest, goal, self.chest_rate, tuning.chest_follow_s, dt);
         // The clamp holds however fast the legs turn under the chest.
         let chest = wrap(yaw + wrap(moved - yaw).clamp(-clamp, clamp));
         self.chest = Some(chest);
@@ -520,20 +522,6 @@ pub(crate) fn look_down_follow(pitch: f32, tuning: &YawTuning) -> f32 {
     } else {
         1.0 - (down - start) / (full - start)
     }
-}
-
-/// The [`critically_damped`] spring from the heading `from`, turning at `rate`, toward `to` the
-/// short way round, over `dt` seconds with a smoothing time of `smooth_s`: the new heading and
-/// rate. It never overshoots.
-pub(crate) fn smooth_damp(from: f32, to: f32, rate: f32, smooth_s: f32, dt: f32) -> (f32, f32) {
-    let change = wrap(from - to);
-    let (mut offset, mut rate) = critically_damped(change, rate, 0.0, smooth_s, dt);
-    // Arriving past the goal from either side lands on it.
-    if (change > 0.0) != (offset > 0.0) && change != 0.0 {
-        offset = 0.0;
-        rate = 0.0;
-    }
-    (wrap(to + offset), rate)
 }
 
 #[cfg(test)]
@@ -849,18 +837,6 @@ mod tests {
         follow.rotate(0.5);
         assert!((follow.yaw().unwrap() - 0.8).abs() < 1e-6);
         assert!((follow.chest().unwrap() - 0.8).abs() < 1e-6);
-    }
-
-    #[test]
-    fn the_spring_settles_without_overshooting() {
-        let (mut heading, mut rate) = (0.0f32, 0.0f32);
-        let mut furthest = 0.0f32;
-        for _ in 0..200 {
-            (heading, rate) = smooth_damp(heading, 1.0, rate, 0.15, DT);
-            furthest = furthest.max(heading);
-        }
-        assert!(furthest <= 1.0 + 1e-5);
-        assert!((heading - 1.0).abs() < 1e-3);
     }
 
     proptest! {

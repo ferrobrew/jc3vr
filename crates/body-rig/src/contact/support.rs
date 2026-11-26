@@ -9,8 +9,8 @@
 use glam::{Quat, Vec3};
 
 use crate::{
-    angle::{wrap, yaw_of},
     contact::FootPose,
+    math::angle::{wrap, yaw_of},
 };
 
 /// What a foot stands on: an identity the caller can find the support's frame by.

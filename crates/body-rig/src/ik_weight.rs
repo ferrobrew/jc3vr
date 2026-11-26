@@ -14,7 +14,7 @@
 
 use glam::{Quat, Vec3};
 
-use crate::rotation::shortest;
+use crate::math::rotation::shortest;
 
 /// What the character is doing, as the IK body's table reads it.
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]

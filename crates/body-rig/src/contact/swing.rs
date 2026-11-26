@@ -7,13 +7,12 @@
 use glam::{Vec2, Vec3};
 
 use crate::{
-    angle::wrap,
     contact::{
         ContactFrame, ContactTuning, FootPose, Ground, Probe, Release, Side, Surroundings,
         stance_spot,
         support::{SupportFrame, SupportId},
     },
-    smooth::smoothstep,
+    math::{angle::wrap, smooth::smoothstep},
 };
 
 /// A foot on its way to a landing.

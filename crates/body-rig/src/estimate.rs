@@ -23,7 +23,10 @@
 //! the head's moving turn decides where Rico faces. The caller blends the legs' change between the
 //! head's rules and the estimate's by it, so nothing snaps as the estimate comes and goes.
 
-use crate::{angle::wrap, smooth::smoothstep, yaw::smooth_damp};
+use crate::math::{
+    angle::wrap,
+    smooth::{damp_heading, smoothstep},
+};
 
 /// The learned estimator's latest reading of the body, in the room frame.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -243,7 +246,7 @@ impl EstimateFollow {
     /// still.
     fn follow_estimate(&mut self, estimate: &BodyEstimate, dt: f32, tuning: &EstimateTuning) {
         let smooth = |state: Option<f32>, rate: f32, to: f32| match state {
-            Some(from) => smooth_damp(from, wrap(to), rate, tuning.smooth_s, dt),
+            Some(from) => damp_heading(from, wrap(to), rate, tuning.smooth_s, dt),
             None => (wrap(to), 0.0),
         };
         let (pelvis, pelvis_rate) = smooth(self.pelvis, self.pelvis_rate, estimate.pelvis_yaw);

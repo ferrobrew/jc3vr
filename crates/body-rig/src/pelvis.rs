@@ -27,8 +27,8 @@
 use glam::{Quat, Vec2, Vec3};
 
 use crate::{
-    angle::{forward, right},
     body::neck_pivot,
+    math::angle::{forward, right},
 };
 
 /// The pelvis solver's tuning.

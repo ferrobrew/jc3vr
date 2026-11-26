@@ -1,9 +1,18 @@
 //! Headings and their arithmetic.
 //!
 //! Positions use +X right, +Y up, and -Z forward, in metres. A heading is a yaw about +Y in
-//! radians, zero facing -Z, positive turning -Z toward -X, as the payload's body yaw reads it.
+//! radians, zero facing -Z, positive turning -Z toward -X: the angle [`Quat::from_rotation_y`]
+//! takes.
+//!
+//! The heading of a rotation is [`heading`]: its forward axis on the ground, blended with its up
+//! axis as it pitches ([`head_heading`]). Where a rotation is not both pitched and rolled, it
+//! agrees with the Euler yaw (`EulerRot::YXZ`), the ground projection of the forward axis
+//! ([`crate::math::rotation::level`]), and the twist about +Y
+//! ([`crate::math::rotation::twist_about_y`]); a pitched and rolled rotation, such as a head
+//! looking down with a tilt, is where the four differ, and [`heading`] is the one that stays
+//! defined and continuous looking straight down or up.
 
-use glam::{Quat, Vec2, Vec3};
+use glam::{EulerRot, Quat, Vec2, Vec3};
 
 /// `angle` wrapped to `-π..=π`. A non-finite angle wraps to zero.
 pub fn wrap(angle: f32) -> f32 {
@@ -64,6 +73,15 @@ pub fn head_heading(orientation: Quat) -> Option<f32> {
     yaw_of_flat(flat(forward) - flat(up) * forward.y)
 }
 
+/// The heading of `rotation`: [`head_heading`], or, for a rotation whose forward and up axes leave
+/// it no horizontal direction, its Euler yaw. Zero for a non-finite rotation.
+pub fn heading(rotation: Quat) -> f32 {
+    head_heading(rotation).unwrap_or_else(|| {
+        let yaw = rotation.to_euler(EulerRot::YXZ).0;
+        if yaw.is_finite() { yaw } else { 0.0 }
+    })
+}
+
 /// How far the head's forward axis is pitched from level, radians, positive looking up.
 pub fn head_pitch(orientation: Quat) -> f32 {
     let forward = orientation * Vec3::NEG_Z;
@@ -117,7 +135,38 @@ mod tests {
         assert!(head_pitch(down) < -1.4);
     }
 
+    #[test]
+    fn a_rotation_rolled_without_pitch_keeps_its_heading() {
+        let rolled = Quat::from_rotation_y(-2.1) * Quat::from_rotation_z(0.9);
+        assert!((heading(rolled) + 2.1).abs() < 1e-5);
+        assert_eq!(heading(Quat::from_xyzw(f32::NAN, 0.0, 0.0, 1.0)), 0.0);
+    }
+
+    #[test]
+    fn a_pitched_and_rolled_rotation_leans_toward_its_up() {
+        // Looking down with the head tilted to the right: the up axis leans right, so the heading
+        // turns right of where the nose points on the ground.
+        let rotation = Quat::from_rotation_x(-0.8) * Quat::from_rotation_z(-0.5);
+        let nose = yaw_of(rotation * Vec3::NEG_Z).unwrap();
+        assert!(heading(rotation) < nose - 0.05);
+    }
+
     proptest! {
+        #[test]
+        fn heading_is_the_euler_yaw_without_roll(
+            yaw in -3.1f32..3.1,
+            pitch in -1.5f32..1.5,
+        ) {
+            let rotation = Quat::from_euler(EulerRot::YXZ, yaw, pitch, 0.0);
+            prop_assert!(wrap(heading(rotation) - yaw).abs() < 1e-4);
+        }
+
+        #[test]
+        fn heading_is_the_euler_yaw_without_pitch(yaw in -3.1f32..3.1, roll in -3.1f32..3.1) {
+            let rotation = Quat::from_euler(EulerRot::YXZ, yaw, 0.0, roll);
+            prop_assert!(wrap(heading(rotation) - yaw).abs() < 1e-4);
+        }
+
         #[test]
         fn wrap_stays_in_range(angle in -100.0f32..100.0) {
             let w = wrap(angle);

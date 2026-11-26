@@ -2,18 +2,19 @@
 //! an axis, and a rotation taken the short way round: its angle, limited, or as a rotation vector
 //! or an angular velocity.
 //!
-//! Axes and headings are as in [`crate::angle`].
+//! Axes and headings are as in [`crate::math::angle`].
 
 use glam::{EulerRot, Quat, Vec3};
 
-use crate::angle::{wrap, yaw_of};
+use crate::math::angle::{wrap, yaw_of};
 
 /// `rotation` with its pitch and roll removed: the turn about +Y that takes -Z to the ground
 /// projection of `rotation`'s forward. With the forward vertical, which has no projection, the
 /// Euler yaw stands in.
 ///
 /// This keeps where the forward axis points on the ground; [`twist_about_y`] keeps the rotation's
-/// part about the vertical instead, and the two differ for a rolled rotation.
+/// part about the vertical instead, and [`crate::math::angle::heading`] blends in the up axis. The
+/// three agree unless the rotation is both pitched and rolled.
 pub fn level(rotation: Quat) -> Quat {
     let yaw = yaw_of(rotation * Vec3::NEG_Z).unwrap_or_else(|| rotation.to_euler(EulerRot::YXZ).0);
     Quat::from_rotation_y(yaw)

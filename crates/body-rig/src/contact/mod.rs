@@ -32,60 +32,22 @@ mod tests;
 
 use glam::{Vec2, Vec3};
 
-pub use crate::contact::{
-    rate::StepRate,
-    rules::{outside_support, support_points},
-    support::{SupportFrame, SupportId, SupportMotion},
-    swing::Swing,
+pub use crate::{
+    contact::{
+        rate::StepRate,
+        rules::{outside_support, support_points},
+        support::{SupportFrame, SupportId, SupportMotion},
+        swing::Swing,
+    },
+    math::side::Side,
 };
 use crate::{
-    angle::{right, wrap},
     contact::{
         rules::{Need, needs},
         swing::{Landing, Plan, plan},
     },
+    math::angle::{right, wrap},
 };
-
-/// A foot.
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum Side {
-    Left,
-    Right,
-}
-
-impl Side {
-    pub const BOTH: [Side; 2] = [Side::Left, Side::Right];
-
-    pub const fn index(self) -> usize {
-        match self {
-            Side::Left => 0,
-            Side::Right => 1,
-        }
-    }
-
-    pub const fn other(self) -> Side {
-        match self {
-            Side::Left => Side::Right,
-            Side::Right => Side::Left,
-        }
-    }
-
-    /// Which way along the body's right the foot stands from the centre: -1 left, 1 right.
-    pub const fn across(self) -> f32 {
-        match self {
-            Side::Left => -1.0,
-            Side::Right => 1.0,
-        }
-    }
-
-    pub const fn label(self) -> &'static str {
-        match self {
-            Side::Left => "left",
-            Side::Right => "right",
-        }
-    }
-}
 
 /// A foot's pose: the ankle, and the heading the foot points along.
 #[derive(Debug, Copy, Clone, PartialEq)]

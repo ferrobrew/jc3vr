@@ -4,7 +4,7 @@ use glam::{Quat, Vec2, Vec3};
 use proptest::prelude::*;
 
 use super::*;
-use crate::{angle::yaw_of, tuning::shipped};
+use crate::{math::angle::yaw_of, tuning::shipped};
 
 const DT: f32 = 1.0 / 60.0;
 const TUNING: ContactTuning = ContactTuning::new();

@@ -25,7 +25,7 @@ A lower crate reaches a higher one through a registration the higher one makes, 
 Libraries shared by the payload and the offline tools live in `crates/` too:
 
 - **body-estimator**: EgoPoser's full-body estimate from head and hand poses, on the CPU and through Direct3D 11 compute shaders.
-- **body-rig**: The grounded body rig's pure core (pelvis solver, yaw follow, step commit), run by the payload live and by `tracking-synth` over recordings.
+- **body-rig**: The grounded body rig's pure core (pelvis solver, yaw follow, step commit), run by the payload live and by `tracking-synth` over recordings, and the shared math in `body_rig::math` (headings, rotations, smoothing, axis shaping, the two-bone solve, the shoulder model, `Side`, and the rigid `Pose`).
 - **dxbc-stereo**: DXBC bytecode rewriting for single-pass stereo.
 - **fsr-sys**: FFI bindings to FSR 2 with its Direct3D 11 backend, built from the submodule in `vendor/`.
 - **tracking-format**: The `.jc3trk` tracking recording's data model and codec.

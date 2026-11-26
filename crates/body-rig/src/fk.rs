@@ -20,9 +20,11 @@
 use glam::{Quat, Vec3};
 
 use crate::{
-    angle::{line_yaw, wrap},
     body::PlayerBody,
-    smooth::critically_damped,
+    math::{
+        angle::{line_yaw, wrap},
+        smooth::{critically_damped, smoothstep},
+    },
 };
 
 /// The estimate's global rotations of the joints the FK reads, in the room frame's axes.
@@ -370,7 +372,7 @@ impl FkFollower {
         let (body, source) = match self.followed {
             Some((followed, _)) if self.weight >= 1.0 => (followed, PelvisSource::Estimate),
             Some((followed, _)) if self.weight > 0.0 => (
-                fallback.lerp(&followed, crate::smooth::smoothstep(self.weight)),
+                fallback.lerp(&followed, smoothstep(self.weight)),
                 PelvisSource::Blending,
             ),
             _ => (fallback, PelvisSource::Fallback),
