@@ -1,27 +1,24 @@
 //! The capture probes the single-pass draw path calls: one table the capture harness registers at
-//! install, read behind one flag the harness raises when it first receives a request.
+//! install, read behind the capture arming flag ([`crate::capture_arming`]).
 //!
 //! The draw detours, the sun's re-driven pass, the FSR resolve, and the water block call into the
 //! harness at fixed points of a draw (stage captures, the draw census, the water and sun treatments,
-//! the submission trace). Each of those points is inert outside a capture, so the path reads
-//! [`CAPTURE_ARMED`] with one relaxed load and skips the table while nothing has asked for a capture.
-//! The flag is raised at the first capture or snapshot request and stays up for the session: a probe
-//! that brackets a draw (a guard taken before the submission and dropped after it) then never sees
-//! the flag fall between its two halves.
+//! the submission trace). Each of those points is inert outside a capture, so the path reads the
+//! flag with one relaxed load and skips the table while nothing has asked for a capture.
 
 use std::{
     any::Any,
     ffi::c_void,
-    sync::{
-        OnceLock,
-        atomic::{AtomicBool, Ordering},
-    },
+    sync::OnceLock,
 };
 
 use jc3gi::{graphics_engine::graphics_engine::RenderContext, types::math::Vector4};
 use windows::Win32::Graphics::Direct3D11::ID3D11Resource;
 
-use crate::stereo::single_pass::{cb13::STEREO_CB_TOTAL_ROWS, detour_timing};
+use crate::{
+    capture_arming::capture_armed,
+    stereo::single_pass::{cb13::STEREO_CB_TOTAL_ROWS, detour_timing},
+};
 
 /// The device-context draw entry a submission arrived at.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -64,7 +61,7 @@ pub(crate) type ProbeGuard = Box<dyn Any>;
 pub(crate) type Cb13Rows = [Vector4; STEREO_CB_TOTAL_ROWS];
 
 /// The capture harness's probes into the single-pass draw path. Each method is the harness side of
-/// one point of a draw; the draw path calls it only while [`CAPTURE_ARMED`] is up.
+/// one point of a draw; the draw path calls it only while a capture has armed the probes.
 pub(crate) trait SinglePassProbes: Sync {
     /// A submission arriving at a device-context draw entry.
     ///
@@ -233,15 +230,10 @@ pub(crate) fn register_single_pass_probes(probes: &'static dyn SinglePassProbes)
     }
 }
 
-/// Raise [`CAPTURE_ARMED`]: a capture or snapshot has been requested. It stays raised.
-pub(crate) fn arm_capture() {
-    CAPTURE_ARMED.store(true, Ordering::Relaxed);
-}
-
 /// The registered probes while a capture may be running, `None` otherwise.
 #[inline]
 pub(crate) fn armed() -> Option<&'static dyn SinglePassProbes> {
-    if !CAPTURE_ARMED.load(Ordering::Relaxed) {
+    if !capture_armed() {
         return None;
     }
     PROBES.get().copied()
@@ -321,8 +313,5 @@ pub(crate) fn begin_water_input_capture(eye: usize) -> Option<ProbeGuard> {
 pub(crate) fn reflection_producer(pass: i32) -> Option<ProbeGuard> {
     armed()?.reflection_producer(pass)
 }
-
-/// Whether a capture or snapshot has been requested this session.
-static CAPTURE_ARMED: AtomicBool = AtomicBool::new(false);
 
 static PROBES: OnceLock<&'static dyn SinglePassProbes> = OnceLock::new();

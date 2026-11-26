@@ -22,6 +22,7 @@
 //! The layers above reach these modules by path. [`CAPTURE_VS`] is the full-screen vertex shader
 //! every capture pass draws with, exported for the passes that live above.
 
+mod capture_arming;
 pub mod controllers;
 pub mod debug;
 pub mod far_field;

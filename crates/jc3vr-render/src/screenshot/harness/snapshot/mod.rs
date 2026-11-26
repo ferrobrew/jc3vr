@@ -37,6 +37,7 @@ use windows::{
 };
 
 use crate::{
+    capture_arming::{Arming, arm},
     screenshot::{
         CaptureSource,
         harness::{
@@ -60,7 +61,7 @@ use crate::{
 
 /// Admit a snapshot request. Game thread. A request that cannot start is acknowledged as failed.
 pub fn request(request: SnapshotRequest) {
-    crate::stereo::single_pass::probes::arm_capture();
+    arm(Arming::Capture);
     let Some(folder) = captures_folder() else {
         tracing::error!("snapshot: no configuration directory");
         return;

@@ -29,6 +29,7 @@ use jc3vr_core::config::engine::Snapshot;
 use windows::Win32::Graphics::Direct3D11::{ID3D11Device, ID3D11DeviceContext};
 
 use crate::{
+    capture_arming::{Arming, arm},
     image_writer,
     image_writer::{ImageTarget, WriteOutcome},
     screenshot::{
@@ -455,7 +456,7 @@ pub fn request_motion(id: RequestId, phase: u32, options: CaptureRequest) {
 }
 
 fn request_with_phase(id: RequestId, target_phase: Option<u32>, options: CaptureRequest) {
-    crate::stereo::single_pass::probes::arm_capture();
+    arm(Arming::Capture);
     let Some(folder) = jc3vr_core::config::engine::paths::dir().map(|dir| dir.join("captures"))
     else {
         tracing::error!("screenshot harness: no configuration directory");
