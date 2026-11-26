@@ -40,7 +40,7 @@ use crate::{
     hooks::graphics_engine::{shader, tone_mapping},
     stereo::{
         config::{SinglePassConfig, set_single_pass_feature},
-        dispatch, single_pass,
+        dispatch, single_pass, sun_shadows,
         switches::ShaderBuild,
     },
     vr::{
@@ -352,8 +352,8 @@ pub(crate) fn process_pending() {
             // Every configuration accumulates FSR's history from its own warm-up, so modes compared
             // against each other start from the same number of frames.
             crate::fsr::request_history_reset();
-            state.shadow_sync_required |= sun_shadows_overridden(visual_overrides.as_ref())
-                || crate::hooks::game::sun_shadow_override_active();
+            state.shadow_sync_required |=
+                sun_shadows_overridden(visual_overrides.as_ref()) || sun_shadows::override_active();
             state.visual_overrides = visual_overrides;
             headset::set_active(visual_overrides.and_then(|overrides| overrides.headset));
             crate::screenshot::harness::stages::set_geometry_only(
@@ -1087,12 +1087,7 @@ fn shadow_override_ready(disable: bool) -> bool {
             .map(|shadow| shadow.m_Enabled)
     };
     let live = unsafe { *get_shadow_system_enabled() };
-    shadow_state_matches(
-        disable,
-        setting,
-        live,
-        crate::hooks::game::sun_shadow_override_active(),
-    )
+    shadow_state_matches(disable, setting, live, sun_shadows::override_active())
 }
 
 /// Whether both horizon-map slices are loaded for both frame parities.

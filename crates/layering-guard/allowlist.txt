@@ -241,4 +241,3 @@ payload/src/vr/recenter.rs -> gameplay
 payload/src/vr/recenter.rs -> payload
 payload/src/vr/resolution.rs -> payload
 payload/src/vr/state.rs -> payload
-payload/src/vr/tail.rs -> payload

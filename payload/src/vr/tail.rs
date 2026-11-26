@@ -32,10 +32,12 @@ use std::{
 };
 
 use jc3gi::{cpu_fragment::CpuPrimaryCount, graphics_engine::graphics_engine::GraphicsEngine};
+use parking_lot::Mutex;
 use windows::Win32::{Foundation::HANDLE, System::Threading::WaitForSingleObject};
 
 use crate::{
     frame_timing::{self, Slot},
+    stereo::dispatch,
     thread_role::{self, ThreadRole},
     vr::{FrameContext, config::VrConfig},
 };
@@ -56,6 +58,37 @@ enum Message {
 }
 
 static SENDER: OnceLock<mpsc::Sender<Message>> = OnceLock::new();
+
+/// Emit a VR frame-loop health line about once every [`VR_HEALTH_INTERVAL`]: the mean submitted
+/// frame time over the window and the fraction of frames the runtime asked to render. Logs are the
+/// only diagnostics a headset playtest has, so this stays cheap and steady rather than per-frame.
+pub(crate) fn log_vr_frame_health(should_render: bool) {
+    let mut health = VR_FRAME_HEALTH.lock();
+    let now = Instant::now();
+    health.frames += 1;
+    if should_render {
+        health.rendered += 1;
+    }
+    let last = *health.last_log.get_or_insert(now);
+    let elapsed = now.duration_since(last);
+    if elapsed < VR_HEALTH_INTERVAL {
+        return;
+    }
+    let frames = health.frames.max(1);
+    let mean_frame_ms = elapsed.as_secs_f32() * 1000.0 / frames as f32;
+    tracing::info!(
+        target: "vr",
+        frames,
+        rendered = health.rendered,
+        mean_frame_ms,
+        "VR frame-loop health",
+    );
+    *health = VrFrameHealth {
+        last_log: Some(now),
+        frames: 0,
+        rendered: 0,
+    };
+}
 
 /// Hands the frame tail to the worker, spawning it on first use. Returns the job back to the
 /// caller (to run inline) if the worker is unavailable (shutting down).
@@ -192,7 +225,7 @@ fn run_tail(job: TailJob) {
     // The final dispatch is now fully drained, so the per-dispatch stereo state it read is no
     // longer live: reset it here rather than on the main thread, which would race the in-flight
     // eye-1 render (freezing the right eye -- see the deferred-reset note in `game_update_render`).
-    crate::hooks::game::reset_dispatch_state();
+    dispatch::reset_dispatch_state();
 
     // Mirror before the submit: both must be recorded before the submit side is released, and
     // the submit releasing it is what keeps the next frame off the capture textures. The
@@ -212,5 +245,21 @@ fn run_tail(job: TailJob) {
         let _timing = frame_timing::scope(Slot::Submit);
         crate::vr::present_and_submit(job.frame, &job.vr_cfg);
     }
-    crate::hooks::game::log_vr_frame_health(should_render);
+    log_vr_frame_health(should_render);
 }
+
+/// Rolling counters for [`log_vr_frame_health`].
+struct VrFrameHealth {
+    last_log: Option<Instant>,
+    frames: u32,
+    rendered: u32,
+}
+
+static VR_FRAME_HEALTH: Mutex<VrFrameHealth> = Mutex::new(VrFrameHealth {
+    last_log: None,
+    frames: 0,
+    rendered: 0,
+});
+
+/// How often [`log_vr_frame_health`] emits a health line.
+const VR_HEALTH_INTERVAL: Duration = Duration::from_secs(5);

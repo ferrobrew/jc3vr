@@ -3,6 +3,8 @@
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
+use crate::stereo::STEREO_STATE;
+
 /// A frame's render dispatch policy. Explicit modes are diagnostic overrides of the native plan.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -108,6 +110,19 @@ pub(crate) fn later_scene_dispatch(
     ordinal: usize,
 ) -> bool {
     active && !far_phase && ordinal > usize::from(share_frame)
+}
+
+/// Reset the per-dispatch stereo state ([`STEREO_STATE`]) to the frame's baseline: eye 0, no far
+/// phase, no share frame, ordinal 0 — so state from a share frame's last dispatch never leaks into
+/// the next frame's first dispatch (or into a non-stereo frame). Called on the main thread inline,
+/// or from the tail worker after it drains the final dispatch (see [`crate::vr::tail`]).
+pub(crate) fn reset_dispatch_state() {
+    let mut state = STEREO_STATE.lock();
+    state.draw_index = 0;
+    state.far_phase = false;
+    state.share_frame = false;
+    state.dispatch_ordinal = 0;
+    state.last_near_dispatch = true;
 }
 
 static MODE: Mutex<RenderMode> = Mutex::new(RenderMode::Native);

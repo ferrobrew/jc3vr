@@ -1,7 +1,4 @@
-use std::{
-    sync::atomic::{AtomicBool, AtomicU32, Ordering},
-    time::{Duration, Instant},
-};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use detours_macro::detour;
 use jc3gi::{
@@ -16,7 +13,6 @@ use jc3gi::{
         render_pass::get_current_add_buffer,
     },
 };
-use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{
@@ -39,9 +35,11 @@ use crate::{
     },
     stereo::{
         STEREO_STATE,
-        dispatch::{DispatchPlan, RenderMode},
+        dispatch::{DispatchPlan, RenderMode, reset_dispatch_state},
+        sun_shadows,
     },
     thread_role::{self, ThreadRole},
+    vr::tail,
 };
 
 pub(crate) fn hook_library() -> HookLibrary {
@@ -145,7 +143,7 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
 
         // Apply the sun-shadow diagnostic override before the original runs, so this frame's
         // sim-side CShadowManager::UpdateRender sees it and drives the engine's own SetEnabled path.
-        apply_sun_shadow_override(Config::lock_query(|c| c.stereo.disable_sun_shadows));
+        sun_shadows::apply_override(Config::lock_query(|c| c.stereo.disable_sun_shadows));
 
         // Point the far-regime render-block types' enable checks at the far field's gate, as the
         // configuration lists them, before this frame's draws.
@@ -575,12 +573,12 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
         // worker instead, and this thread returns straight to the next frame's sim.
         let mut vr_frame = vr_frame.take();
         if defer_tail && let Some(frame) = vr_frame.take() {
-            let job = Box::new(crate::vr::tail::TailJob {
+            let job = Box::new(tail::TailJob {
                 frame,
                 vr_cfg: vr_cfg.clone(),
                 mirror: vr_running && vr_cfg.mirror,
             });
-            if let Err(job) = crate::vr::tail::submit(job) {
+            if let Err(job) = tail::submit(job) {
                 // The worker is shutting down: fall back to the inline tail (drain first -- the
                 // final dispatch's drain was skipped above).
                 if let Some(ge) = GraphicsEngine::get() {
@@ -601,7 +599,7 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
                 let _timing = frame_timing::scope(Slot::Submit);
                 crate::vr::present_and_submit(frame, &vr_cfg);
             }
-            log_vr_frame_health(should_render);
+            tail::log_vr_frame_health(should_render);
         }
 
         mark(Phase::Present);
@@ -637,19 +635,6 @@ static GAME_UPDATE_RENDER_THREAD: AtomicU32 = AtomicU32::new(0);
 
 /// Snapshot of the reflection-proxy depth-history lifecycle (the 5 slot counters + the picked
 /// index). Advanced once per scene dispatch, so we restore it between the two stereo Draws.
-/// Reset the per-dispatch stereo state to the frame's baseline: eye 0, no far phase, no share
-/// frame, ordinal 0 — so state from a share frame's last dispatch never leaks into the next
-/// frame's first dispatch (or into a non-stereo frame). Called on the main thread inline, or from
-/// the tail worker after it drains the final dispatch (see [`crate::vr::tail`]).
-pub(crate) fn reset_dispatch_state() {
-    let mut state = STEREO_STATE.lock();
-    state.draw_index = 0;
-    state.far_phase = false;
-    state.share_frame = false;
-    state.dispatch_ordinal = 0;
-    state.last_near_dispatch = true;
-}
-
 struct EffectInfoState {
     frame_index: [u8; 5],
     index: u32,
@@ -748,85 +733,6 @@ fn restore_gi_cascade_index(saved: u32) {
         }
     }
 }
-
-/// The pre-override value of the shadow manager's settings-side enabled flag, captured when the
-/// diagnostic engages so releasing it restores whatever the game's own settings had. `u8::MAX` =
-/// no override active.
-static SAVED_SHADOWS_ENABLED: std::sync::atomic::AtomicU8 =
-    std::sync::atomic::AtomicU8::new(u8::MAX);
-
-pub(crate) fn sun_shadow_override_active() -> bool {
-    SAVED_SHADOWS_ENABLED.load(Ordering::Relaxed) != u8::MAX
-}
-
-/// Force the sun-shadow system off (or restore it) through the engine's own settings path:
-/// `ShadowManager::m_Enabled`, which the sim-side `UpdateRender` syncs the engine to via
-/// `SetEnabled` -- the same route the graphics menu takes, so resources are torn down and recreated
-/// cleanly.
-fn apply_sun_shadow_override(disable: bool) {
-    // SAFETY: the graphics-engine singleton and its shadow manager are live once the engine is
-    // initialised; both are null-checked, and the flag is a plain settings toggle.
-    unsafe {
-        let Some(manager) = GraphicsEngine::get().and_then(|ge| ge.m_ShadowManager.as_mut()) else {
-            return;
-        };
-        let saved = SAVED_SHADOWS_ENABLED.load(Ordering::Relaxed);
-        if disable && saved == u8::MAX {
-            SAVED_SHADOWS_ENABLED.store(u8::from(manager.m_Enabled), Ordering::Relaxed);
-            manager.m_Enabled = false;
-        } else if !disable && saved != u8::MAX {
-            manager.m_Enabled = saved != 0;
-            SAVED_SHADOWS_ENABLED.store(u8::MAX, Ordering::Relaxed);
-        }
-    }
-}
-
-/// Emit a VR frame-loop health line about once every [`VR_HEALTH_INTERVAL`]: the mean submitted
-/// frame time over the window and the fraction of frames the runtime asked to render. Logs are the
-/// only diagnostics a headset playtest has, so this stays cheap and steady rather than per-frame.
-pub(crate) fn log_vr_frame_health(should_render: bool) {
-    let mut health = VR_FRAME_HEALTH.lock();
-    let now = Instant::now();
-    health.frames += 1;
-    if should_render {
-        health.rendered += 1;
-    }
-    let last = *health.last_log.get_or_insert(now);
-    let elapsed = now.duration_since(last);
-    if elapsed < VR_HEALTH_INTERVAL {
-        return;
-    }
-    let frames = health.frames.max(1);
-    let mean_frame_ms = elapsed.as_secs_f32() * 1000.0 / frames as f32;
-    tracing::info!(
-        target: "vr",
-        frames,
-        rendered = health.rendered,
-        mean_frame_ms,
-        "VR frame-loop health",
-    );
-    *health = VrFrameHealth {
-        last_log: Some(now),
-        frames: 0,
-        rendered: 0,
-    };
-}
-
-/// Rolling counters for [`log_vr_frame_health`].
-struct VrFrameHealth {
-    last_log: Option<Instant>,
-    frames: u32,
-    rendered: u32,
-}
-
-static VR_FRAME_HEALTH: Mutex<VrFrameHealth> = Mutex::new(VrFrameHealth {
-    last_log: None,
-    frames: 0,
-    rendered: 0,
-});
-
-/// How often [`log_vr_frame_health`] emits a health line.
-const VR_HEALTH_INTERVAL: Duration = Duration::from_secs(5);
 
 fn snapshot_frame_counters() -> RenderFrameCounters {
     unsafe { *get_render_frame_counters() }
