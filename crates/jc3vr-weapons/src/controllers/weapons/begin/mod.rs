@@ -35,7 +35,7 @@ use crate::controllers::{
         c4,
         capabilities::{Capabilities, gun_hands_now, tracked_hands, trigger_claims},
         collide,
-        config::{WEAPONS_CONFIG, WeaponSettings},
+        config::WeaponSettings,
         docks,
         docks::{SocketInputs, SocketUse, attachments::Sample, attract, attract::ATTRACTION},
         engine,
@@ -43,9 +43,9 @@ use crate::controllers::{
         foregrip,
         foregrip::FOREGRIP,
         grenade,
-        grenade::tuning::GrenadeTuning,
+        grenade::tuning::GRENADE,
         grip_watch, gun_bodies, heft,
-        heft::Heft,
+        heft::tuning::HEFT,
         hold,
         hold::armed,
         hud_feed::hand_ammo,
@@ -137,7 +137,7 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickStart {
                     )
                 });
             let docked_long = match &snapshot {
-                Some(snapshot) if config.weapons.regions.enabled && capabilities.dock => {
+                Some(snapshot) if capabilities.dock => {
                     region_engine::docked_long_guns(owner, snapshot, config.dominant)
                 }
                 _ => Vec::new(),
@@ -209,8 +209,7 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickStart {
     let braced_geometry = braced
         .and_then(|w| w.holder)
         .and_then(|hand| geometries[hand.index()]);
-    let regions_config = config.weapons.regions;
-    let long = braced.filter(|_| regions_config.enabled);
+    let long = braced;
     // SAFETY: the weapon was read this tick, on the game thread before the world update.
     let shape = long.and_then(|w| unsafe {
         region_engine::shape(
@@ -220,7 +219,7 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickStart {
     });
     regions::observe(&Observed {
         guns: guns.map(|g| {
-            g.filter(|w| regions_config.enabled && capabilities.support && w.two_handed)
+            g.filter(|w| capabilities.support && w.two_handed)
                 .map(|w| w.address)
         }),
         lone: long.map(|w| (w.address, shape)),
@@ -345,14 +344,12 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickStart {
             gun_hands[h.index()] || armed_hands[h.index()] || ticked.table_hands[h.index()]
         }));
         // A pouch with nothing to give is neither offered nor drawn.
-        if config.weapons.grenade_throw
-            && grenade::in_stock()
+        if grenade::in_stock()
             && let Some(pouch) = volumes::grenade_pouch(body, pouches, config.dominant, grabbers)
         {
             targets.extend(place.pouch(&pouch, pouches.reach_margin_m));
         }
-        if config.weapons.c4_throw
-            && c4::pouch_offered()
+        if c4::pouch_offered()
             && let Some(pouch) = volumes::c4_pouch(body, pouches, config.dominant, grabbers)
         {
             targets.extend(place.pouch(&pouch, pouches.reach_margin_m));
@@ -367,13 +364,11 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickStart {
     };
     pouch_return::observe(&pouch_return::Inputs {
         grenade_pouch: return_body
-            .filter(|_| config.weapons.grenade_throw)
             .and_then(|body| {
                 volumes::grenade_pouch(body, &POUCHES, config.dominant, ChestGrabbers::Either)
             })
             .map(as_pouch),
         charge_pouch: return_body
-            .filter(|_| config.weapons.c4_throw)
             .and_then(|body| {
                 volumes::c4_pouch(body, &POUCHES, config.dominant, ChestGrabbers::Either)
             })
@@ -387,36 +382,31 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickStart {
         volumes::reserve_long_guns(&mut docked, config.dominant, empty_handed);
         targets.extend(docked.iter().map(|c| place.touch(c)));
     }
-    if config.weapons.grenade_throw {
-        let charge = c4::throwing_hand();
-        let detonator = c4::detonator_hand();
-        let inputs = grenade::BeginInputs {
+    let charge = c4::throwing_hand();
+    let detonator = c4::detonator_hand();
+    let inputs = grenade::BeginInputs {
+        active: &active,
+        free: Hand::BOTH.map(|h| {
+            free[h.index()] && !grenade::holds(h) && charge != Some(h) && detonator != Some(h)
+        }),
+        acting: pouches_act,
+    };
+    let grenades = grenade::begin_tick(game, &inputs, &GRENADE);
+    targets.extend(grenades.iter().map(|c| place.world(c)));
+    targets.extend(
+        grenade::pin_candidates(&inputs, &GRENADE)
+            .iter()
+            .map(|(holder, c)| place.grenade_pin(c, *holder)),
+    );
+    let placed = c4::placed::begin_tick(
+        game,
+        &c4::placed::BeginInputs {
             active: &active,
-            free: Hand::BOTH.map(|h| {
-                free[h.index()] && !grenade::holds(h) && charge != Some(h) && detonator != Some(h)
-            }),
+            free: Hand::BOTH.map(|h| free[h.index()] && !grenade::holds(h)),
             acting: pouches_act,
-        };
-        let tuning = GrenadeTuning::of(&config.weapons.grenade);
-        let grenades = grenade::begin_tick(game, &inputs, &tuning);
-        targets.extend(grenades.iter().map(|c| place.world(c)));
-        targets.extend(
-            grenade::pin_candidates(&inputs, &tuning)
-                .iter()
-                .map(|(holder, c)| place.grenade_pin(c, *holder)),
-        );
-    }
-    if config.weapons.c4_throw {
-        let placed = c4::placed::begin_tick(
-            game,
-            &c4::placed::BeginInputs {
-                active: &active,
-                free: Hand::BOTH.map(|h| free[h.index()] && !grenade::holds(h)),
-                acting: pouches_act,
-            },
-        );
-        targets.extend(placed.iter().map(|c| place.world(c)));
-    }
+        },
+    );
+    targets.extend(placed.iter().map(|c| place.world(c)));
     let taken = hold::take::begin_tick(
         game,
         &hold::take::TakeInputs {
@@ -462,7 +452,7 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickStart {
             }
             shown
         });
-    pouch_models::input_tick(game, &config.weapons.pouches.models, frames, &shown);
+    pouch_models::input_tick(game, frames, &shown);
     if let Some((gun_hand, mouth, radius, occupied)) =
         reload::well(&reload::tuning::Reload::of(&config.weapons.reload))
     {
@@ -538,7 +528,7 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickStart {
                         ));
                     }
                 }
-                (Some((touch, centre)), Some(holder)) if config.weapons.foregrip.enabled => {
+                (Some((touch, centre)), Some(holder)) => {
                     targets.push(place.on_hand(
                         &Candidate {
                             volume: GrabVolume::Foregrip,
@@ -561,8 +551,7 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickStart {
             }
         }
         None => {
-            if config.weapons.foregrip.enabled
-                && hold.is_none()
+            if hold.is_none()
                 && let (Some(g), Some(w), Some(off)) = (braced_geometry, braced, foregrip_hand)
                 && let Some(holder) = w.holder
                 && let Some(holding_hand) = weighted_hands(&active)[holder.index()]
@@ -857,19 +846,16 @@ fn shown_props(body: &BodyFrame, config: &WeaponSettings) -> Vec<ShownPouch> {
         weapon: None,
     };
     let mut out = Vec::new();
-    if config.weapons.grenade_throw
-        && grenade::in_stock()
+    if grenade::in_stock()
         && let Some(pouch) = volumes::grenade_pouch(body, pouches, dominant, ChestGrabbers::Either)
     {
         out.push(on_chest(Prop::Grenade, pouch, sides.grenade));
     }
-    if config.weapons.c4_throw
-        && c4::in_stock()
+    if c4::in_stock()
         && let Some(pouch) = volumes::c4_pouch(body, pouches, dominant, ChestGrabbers::Either)
     {
         out.push(on_chest(Prop::Charge, pouch, sides.c4));
-    } else if config.weapons.c4_throw
-        && !c4::in_stock()
+    } else if !c4::in_stock()
         && c4::detonator_hand().is_none()
         && let Some(pouch) = volumes::c4_pouch(body, pouches, dominant, ChestGrabbers::Either)
     {
@@ -939,11 +925,7 @@ pub(super) fn pouches(mode: Mode) -> bool {
 pub(super) fn weighted_hands(active: &ActiveHands) -> [Option<CockpitHand>; 2] {
     let mut hands = active.hands;
     foregrip::apply(&mut hands, &FOREGRIP);
-    heft::apply(
-        &mut hands,
-        active.head.position,
-        &Heft::of(&WEAPONS_CONFIG.query(|c| c.heft)),
-    );
+    heft::apply(&mut hands, active.head.position, &HEFT);
     hands
 }
 

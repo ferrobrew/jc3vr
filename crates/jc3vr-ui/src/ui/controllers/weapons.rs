@@ -58,7 +58,7 @@ use crate::{
     },
     ui::{
         controllers::{
-            explosives::{ExplosivesReadout, explosives_readout, explosives_settings},
+            explosives::{ExplosivesReadout, explosives_readout},
             reload::{reload_readout, reload_settings},
             vec3, yes_no,
         },
@@ -579,29 +579,10 @@ pub(super) fn hold_feature_settings(ui: &mut Ui, w: &mut WeaponsConfig) {
              longer picks a weapon up. A hand's grab picks weapons up. The gamepad scheme keeps \
              the game's own prompt and button.",
         );
-    ui.checkbox(&mut w.regions.enabled, "Grab long guns anywhere")
-        .on_hover_text(
-            "A second hand braces a long gun wherever it closes on it. A lone hand takes a gun \
-             by its grip wherever it touches it, and a bracing hand left alone slides onto the grip.",
-        );
 }
 
 pub(super) fn support_settings(ui: &mut Ui, c: &mut ControllersConfig) {
     let w = &mut c.weapons;
-    ui.checkbox(&mut w.foregrip.enabled, "Foregrip")
-        .on_hover_text("Let the off-hand grab a two-handed weapon's foregrip.");
-    ui.checkbox(&mut w.recoil.enabled, "Recoil")
-        .on_hover_text("Kick the gun hand away from the controller on each shot.");
-    ui.checkbox(&mut w.heft.enabled, "One-handed weight")
-        .on_hover_text(
-            "Held in one hand, a long gun sags, trails the hand, sways, kicks harder, and shoots \
-             wider, by its class. Bracing it on the foregrip takes it all away.",
-        );
-    ui.checkbox(&mut w.heft.braced.enabled, "Two-handed weight")
-        .on_hover_text(
-            "Braced on the foregrip, a long gun lags a quick swing a little and settles, and sags \
-             a little, by its class; the hands stay on it. Pistols carry none.",
-        );
     ui.checkbox(&mut w.separate_pistols, "Separate pistols")
         .on_hover_text(
             "Make the game's pistol pair two weapons, each picked up, held, dropped, reloaded, and \
@@ -628,17 +609,4 @@ pub(super) fn support_settings(ui: &mut Ui, c: &mut ControllersConfig) {
 
 pub(super) fn reload_feature_settings(ui: &mut Ui, w: &mut WeaponsConfig) {
     reload_settings(ui, &mut w.reload);
-}
-
-/// The switches of the grenade throw and catch, and the C4 throw and press.
-pub(super) fn explosive_feature_settings(ui: &mut Ui, w: &mut WeaponsConfig) {
-    ui.checkbox(&mut w.grenade_throw, "Physical grenade throw").on_hover_text(
-        "A grip press at the grenade pouch primes a grenade; opening the grip throws it. The fuse \
-         runs from the prime.",
-    );
-    ui.checkbox(&mut w.grenade.catch.enabled, "Catch live grenades")
-        .on_hover_text(
-            "A grip press at a live grenade near the player catches it; opening the grip throws it.",
-        );
-    explosives_settings(ui, w);
 }

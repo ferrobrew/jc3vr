@@ -44,7 +44,7 @@ use crate::controllers::{
     weapons::{
         begin::with_holder,
         c4,
-        c4::tuning::C4Tuning,
+        c4::tuning::C4,
         capabilities::{
             Capabilities, GunHand, gun_hands_now, gun_owners_now, tracked_hands, trigger_claims,
         },
@@ -145,7 +145,7 @@ pub fn finish_tick(
     // Taken every tick, so a break left over from an ended hold never lets go of the next.
     let support_broke = Hand::BOTH.map(jc3vr_body::controllers::held::guns::take_support_break);
     let inputs = Inputs {
-        active: config.weapons.foregrip.enabled && active.is_some(),
+        active: active.is_some(),
         hands: active.as_ref().map_or([None; 2], |a| a.hands),
         weapon: two_handed,
         grab_pressed: foregrip_grab
@@ -155,9 +155,7 @@ pub fn finish_tick(
         support_broke: two_handed.is_some_and(|w| support_broke[w.holder.other().index()]),
     };
     let transition = foregrip::tick(&inputs, dt, &FOREGRIP);
-    if let (Some(Transition::Grabbed), Some(w)) = (transition, two_handed)
-        && config.weapons.regions.enabled
-    {
+    if let (Some(Transition::Grabbed), Some(w)) = (transition, two_handed) {
         regions::braced(w.holder.other(), w.region);
     }
     if slide.is_some() {
@@ -285,7 +283,7 @@ pub fn finish_tick(
     grenade::input_tick(
         game,
         &grenade::TickInputs {
-            acting: config.weapons.grenade_throw && pouches && active.is_some(),
+            acting: pouches && active.is_some(),
             // The pin is on the grenade in the other hand.
             pin_grabs: Hand::BOTH
                 .map(|holder| grabs[holder.other().index()] == Some(GrabVolume::GrenadePin)),
@@ -305,7 +303,6 @@ pub fn finish_tick(
             opened: grenade_opened,
             dt,
         },
-        &config,
         desired,
     );
     // A hand holds nothing when it holds no gun (the C4 the game's planting mode wields is not one),
@@ -330,7 +327,7 @@ pub fn finish_tick(
     c4::input_tick(
         game,
         &c4::TickInputs {
-            acting: config.weapons.c4_throw && pouches && active.is_some(),
+            acting: pouches && active.is_some(),
             pouch_grab: Hand::BOTH
                 .into_iter()
                 .find(|h| grabs[h.index()] == Some(GrabVolume::C4Pouch)),
@@ -342,7 +339,7 @@ pub fn finish_tick(
             free: c4::wheel::WheelHands::available(free, unavailable, config.dominant).free,
             dominant: config.dominant,
         },
-        &C4Tuning::of(&config.weapons.c4),
+        &C4,
     );
     let reload_finish = reload::finish_tick(
         game,
@@ -467,7 +464,7 @@ pub fn finish_tick(
         hold_fire_back(desired);
     }
     declare_grips(Hand::BOTH.map(|h| gun_hands[h.index()] || armed_hands[h.index()]));
-    record_hands(&config);
+    record_hands();
 
     let mut state = STATE.lock();
     state.status.fire_blocked = fire_blocked;
@@ -571,11 +568,7 @@ fn leave_in_brace(
 
 /// Record the hands on the long guns for the readout: each hand holding one at its grip, and the
 /// bracing hand at its part.
-fn record_hands(config: &WeaponSettings) {
-    if !config.weapons.regions.enabled {
-        regions::record([None; 2]);
-        return;
-    }
+fn record_hands() {
     let holders = Hand::BOTH.map(|hand| live::in_hand(hand).is_some());
     let brace = foregrip::status()
         .hold
@@ -897,7 +890,6 @@ fn release(
         Release::LetGo => {
             // A gun the other hand braces passes to that hand, which slides onto its grip.
             let braced = pending.is_none()
-                && config.weapons.regions.enabled
                 && weapon.is_some_and(|w| w.address == object)
                 && active.is_some_and(|a| leave_in_brace(game, object, hand, a, world_scale));
             if braced {

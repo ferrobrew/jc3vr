@@ -64,7 +64,6 @@ pub struct Features {
     /// The yank gesture.
     pub yank: bool,
     pub holsters: bool,
-    pub foregrip: bool,
     /// The true reload's pouch and well.
     pub magazine: bool,
     /// The true reload's belt reload.
@@ -73,10 +72,6 @@ pub struct Features {
     pub flick_eject: bool,
     /// The true reload's chamber, worked by hand.
     pub work_action: bool,
-    /// The physical grenade throw.
-    pub grenade_throw: bool,
-    /// The C4 throw from the chest pouch.
-    pub c4_throw: bool,
     /// The sight tuning capture chord is armed.
     pub sight_chord: bool,
     /// The weapon-select trackpad press opens the weapon wheel.
@@ -572,13 +567,11 @@ fn outside_rows(ctx: &DescribeCtx, bindings: Bindings) -> Vec<Row> {
                 modded(ModAction::Holster),
             );
         }
-        if features.foregrip {
-            add(
-                Control::Grip(off),
-                Gesture::Press,
-                modded(ModAction::Foregrip),
-            );
-        }
+        add(
+            Control::Grip(off),
+            Gesture::Press,
+            modded(ModAction::Foregrip),
+        );
         if features.magazine {
             add(
                 Control::Grip(off),
@@ -612,21 +605,17 @@ fn outside_rows(ctx: &DescribeCtx, bindings: Bindings) -> Vec<Row> {
                 modded(ModAction::FlickEject),
             );
         }
-        if features.grenade_throw {
-            add(
-                Control::Grip(dom),
-                Gesture::Press,
-                modded(ModAction::Grenade),
-            );
-            add(
-                Control::Trigger(dom),
-                Gesture::Press,
-                modded(ModAction::PullPin),
-            );
-        }
-        if features.c4_throw {
-            add(Control::EitherGrip, Gesture::Press, modded(ModAction::C4));
-        }
+        add(
+            Control::Grip(dom),
+            Gesture::Press,
+            modded(ModAction::Grenade),
+        );
+        add(
+            Control::Trigger(dom),
+            Gesture::Press,
+            modded(ModAction::PullPin),
+        );
+        add(Control::EitherGrip, Gesture::Press, modded(ModAction::C4));
     }
     // The weapon wheel acts where the weapon handling does: not while swimming.
     let wheel = matches!(

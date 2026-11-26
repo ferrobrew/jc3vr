@@ -74,13 +74,11 @@ fn aim_down_sights(c: &mut HandComposition) {
 }
 
 fn synthetic_recoil(c: &mut HandComposition) {
-    let config = WEAPONS_CONFIG.query(|w| w.recoil);
-    recoil::apply(&mut c.hands, &config);
+    recoil::apply(&mut c.hands);
 }
 
 fn wall_probe(c: &mut HandComposition) {
-    let config = WEAPONS_CONFIG.query(|w| w.collide);
-    collide::apply(&mut c.hands, c.head, c.world_scale, &config);
+    collide::apply(&mut c.hands, c.head, c.world_scale);
 }
 
 fn hand_bodies(c: &mut HandComposition) {

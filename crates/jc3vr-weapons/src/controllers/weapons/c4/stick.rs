@@ -30,8 +30,7 @@ use jc3vr_input::frame::Pose;
 
 use crate::controllers::weapons::{
     c4,
-    c4::tuning::{C4Tuning, StickTuning},
-    config::WEAPONS_CONFIG,
+    c4::tuning::{C4, StickTuning},
 };
 
 /// A surface touching the held charge.
@@ -63,12 +62,7 @@ pub struct StickAt {
 ///
 /// The simulation thread outside the physics step, with a live local player character.
 pub unsafe fn probe() {
-    let (c4_throw, c4) = WEAPONS_CONFIG.query(|c| (c.c4_throw, c.c4));
-    let tuning = &C4Tuning::of(&c4);
-    if !(c4_throw && tuning.stick.enabled) {
-        c4::publish_preview(None);
-        return;
-    }
+    let tuning = &C4;
     let Some((hand, grip)) = c4::stick_candidate(tuning) else {
         c4::publish_preview(None);
         return;

@@ -110,19 +110,13 @@ pub(crate) fn controls(id: FeatureId) -> Option<FeatureBody> {
         FeatureId::Aim => |ui, _| {
             let mut c = CONTROLLERS_CONFIG.edit();
             aim::aim_settings(ui, &mut c);
-            let w = &mut c.weapons;
-            scope::scope_settings(ui, &mut w.scopes);
-            scope::ads_settings(ui, &mut w.ads);
-            scope::collide_settings(ui, &mut w.collide);
+            scope::ads_settings(ui, &mut c.weapons.ads);
         },
         FeatureId::Reload => {
             |ui, _| weapons::reload_feature_settings(ui, &mut CONTROLLERS_CONFIG.edit().weapons)
         }
         FeatureId::Inventory => {
             |ui, _| inventory::inventory_settings(ui, &mut CONTROLLERS_CONFIG.edit().weapons)
-        }
-        FeatureId::Explosives => {
-            |ui, _| weapons::explosive_feature_settings(ui, &mut CONTROLLERS_CONFIG.edit().weapons)
         }
         FeatureId::WeaponSelection => {
             |ui, _| weapon_selection::selection_settings(ui, &mut CONTROLLERS_CONFIG.edit().weapons)

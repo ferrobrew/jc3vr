@@ -314,7 +314,7 @@ Everything a hand holds is in the table. Each input tick the table is fed what t
 
 What a hand holds is then one condition, read from the table (`loadout::live::held_kind`): a hand holding a prop, a grenade, or a charge draws nothing off a socket, takes nothing from the pouches, takes no gun out of a character's hands or off a rack, is not offered the other hand's gun, and is not pinned to the grapple line; a hand holding a weapon, a grenade, or a charge has no palm, and one carrying a prop keeps the palm it holds the prop with, which neither probes nor pushes. The physical hands, the throws, and the catch keep their own state of how they hold it (the pickup's joint or carry, the stage, the pin), as per-hand runtime state beside the table.
 
-The props, the grenades, and the charges are behind their own switches (`physical_hands.pickup.enabled`, `weapons.grenade_throw`, `weapons.grenade.catch.enabled`, `weapons.c4_throw`); off, the hands hold none, and nothing enters the table.
+The props are behind their own switch (`physical_hands.pickup.enabled`); off, the hands hold none, and nothing enters the table.
 
 Decisions taken here:
 

@@ -60,7 +60,6 @@ use parking_lot::Mutex;
 
 use crate::controllers::weapons::{
     c4::detonator::trigger_model,
-    config::PouchModelsConfig,
     mirror::pouches_rendered,
     pouch_models::{
         attachments::{RenderSample, Sample, placement},
@@ -243,13 +242,8 @@ pub(crate) fn render_character(character: [Mat4; 2], dtf: f32) -> Option<Mat4> {
 
 /// Place the pouches' models for the tick: show each prop in `shown` on its pouch, carried into the
 /// character's model space by `frames`, and hide the rest.
-pub(crate) fn input_tick(
-    game: &GameTick<'_>,
-    config: &PouchModelsConfig,
-    frames: Option<Frames>,
-    shown: &[ShownPouch],
-) {
-    let owner = if config.enabled && jc3vr_core::hooks::in_gameplay() {
+pub(crate) fn input_tick(game: &GameTick<'_>, frames: Option<Frames>, shown: &[ShownPouch]) {
+    let owner = if jc3vr_core::hooks::in_gameplay() {
         LocalPlayer::get(game)
     } else {
         None

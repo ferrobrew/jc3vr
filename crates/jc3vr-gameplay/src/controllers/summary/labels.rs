@@ -527,13 +527,10 @@ mod tests {
         let features = Features {
             yank: true,
             holsters: true,
-            foregrip: true,
             magazine: true,
             belt_reload: true,
             flick_eject: true,
             work_action: true,
-            grenade_throw: true,
-            c4_throw: true,
             sight_chord: true,
             wheel_trackpad: true,
             wheel_stick: true,

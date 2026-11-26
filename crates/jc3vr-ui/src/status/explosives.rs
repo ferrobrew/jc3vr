@@ -19,9 +19,6 @@ pub(crate) const GUN_AGAINST_WALLS: Row =
     Row::new("GUN AGAINST WALLS", "Gun against walls", gun_against_walls);
 
 fn gun_against_walls() -> Line {
-    if !read(&CONTROLLERS_CONFIG, |c| c.weapons.collide.enabled) {
-        return Line::off("");
-    }
     let s = collide::status();
     if !s.weapon() {
         return Line::waiting(prose("No long gun measured"));
@@ -99,9 +96,6 @@ fn magazines() -> Line {
 }
 
 fn c4_by_hand() -> Line {
-    if !read(&CONTROLLERS_CONFIG, |c| c.weapons.c4_throw) {
-        return Line::off("");
-    }
     let status = c4::status();
     Line::ok(text!(
         (status.thrown - status.stuck.min(status.thrown)).to_string(),
@@ -109,21 +103,11 @@ fn c4_by_hand() -> Line {
         status.stuck.to_string(),
         " pressed on, ",
         status.stuck_on_objects.to_string(),
-        " on objects",
-        if read(&CONTROLLERS_CONFIG, |c| c.weapons.c4.stick.enabled) {
-            Text::default()
-        } else {
-            prose(", pressing off")
-        }
+        " on objects"
     ))
 }
 
 fn live_grenades() -> Line {
-    if !read(&CONTROLLERS_CONFIG, |c| {
-        c.weapons.grenade_throw && c.weapons.grenade.catch.enabled
-    }) {
-        return Line::off("");
-    }
     let status = grenade::status();
     let c = status.catch;
     let caught = status.caught_hand.map_or_else(Text::default, |h| {

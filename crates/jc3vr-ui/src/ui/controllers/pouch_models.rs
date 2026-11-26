@@ -1,19 +1,12 @@
-//! The pouches' models: whether they are drawn, and which are.
+//! The pouches' models: which are drawn.
 
 use egui::Ui;
-use jc3vr_weapons::controllers::weapons::{
-    config::PouchModelsConfig, pouch_models, pouch_models::Prop,
-};
+use jc3vr_weapons::controllers::weapons::{pouch_models, pouch_models::Prop};
 
-/// The pouches' models' switch and readout.
-pub(super) fn pouch_model_settings(ui: &mut Ui, m: &mut PouchModelsConfig) {
-    ui.checkbox(&mut m.enabled, "Draw the pouches' models")
-        .on_hover_text(
-            "The game's grenade, C4 charge (or detonator, once no charge is left), and the held \
-             gun's magazine, drawn on their pouches on Rico's body, and the magazine a hand \
-             takes from the pouch, drawn in the hand. A shell or a revolver's rounds, which the \
-             game has no model of, are drawn in the hand with the casing the gun ejects.",
-        );
+/// The pouches' models' readout: the game's grenade, C4 charge (or detonator, once no charge is
+/// left), and the held gun's magazine, drawn on their pouches on Rico's body, and the magazine a
+/// hand takes from the pouch, drawn in the hand.
+pub(super) fn pouch_model_readout(ui: &mut Ui) {
     let status = pouch_models::status();
     let mut shown: Vec<String> = Prop::ALL
         .into_iter()

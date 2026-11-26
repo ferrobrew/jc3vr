@@ -31,7 +31,7 @@ use crate::{
                 loadout::{LoadoutInputs, loadout_section},
                 mismatch::Mismatches,
             },
-            pouch_models::pouch_model_settings,
+            pouch_models::pouch_model_readout,
         },
         status_row::headlines,
     },
@@ -103,6 +103,7 @@ pub(super) fn inventory_view(ui: &mut Ui, view: &InventoryView) {
             Ok(readout) => game::game_section(ui, readout, table, &mismatches),
             Err(reason) => unavailable(ui, *reason),
         });
+    pouch_model_readout(ui);
 }
 
 pub(super) fn inventory_settings(ui: &mut Ui, w: &mut WeaponsConfig) {
@@ -129,7 +130,6 @@ pub(super) fn inventory_settings(ui: &mut Ui, w: &mut WeaponsConfig) {
             "Keep the carried weapons across saves and loads",
         );
     });
-    pouch_model_settings(ui, &mut w.pouches.models);
 }
 
 fn unavailable(ui: &mut Ui, reason: StatusUnavailable) {

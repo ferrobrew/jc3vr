@@ -1,6 +1,5 @@
-//! The weapon-handling settings (the sockets, the pouches, the foregrip, the recoil, the weight, the
-//! hands' hold, the grenade throw, and the C4 throw), held in [`WeaponsConfig`] beside the other
-//! weapon-handling subsystems' toggles. The reload's are in
+//! The weapon-handling settings (the sockets, the recoil, and the hands' hold), held in
+//! [`WeaponsConfig`] beside the other weapon-handling subsystems' toggles. The reload's are in
 //! [`crate::controllers::weapons::reload::config`], and the grapple snatch's in [`SnatchConfig`].
 //! Each feature keeps its switches here; its fixed tuning is a constant in the module that owns it.
 
@@ -43,141 +42,23 @@ impl Default for HolstersConfig {
     }
 }
 
-/// The pouches on the front of the body (see [`crate::controllers::weapons::volumes`]), whose fixed
-/// placement is [`POUCHES`](crate::controllers::weapons::volumes::POUCHES).
-#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct PouchesConfig {
-    /// The game's models of what the pouches hold, drawn on them.
-    pub models: PouchModelsConfig,
-}
-
-impl PouchesConfig {
-    pub const fn new() -> Self {
-        Self {
-            models: PouchModelsConfig::new(),
-        }
-    }
-}
-
-impl Default for PouchesConfig {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// The game's models of what the pouches hold, drawn on the body where the pouches are (see
-/// [`crate::controllers::weapons::pouch_models`]).
-#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct PouchModelsConfig {
-    pub enabled: bool,
-}
-
-impl PouchModelsConfig {
-    pub const fn new() -> Self {
-        Self { enabled: true }
-    }
-}
-
-impl Default for PouchModelsConfig {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// The two-handed weapon's foregrip (see [`crate::controllers::weapons::foregrip`]). Acts only under
-/// the controller scheme, so it defaults on. Its fixed tuning is
-/// [`FOREGRIP`](crate::controllers::weapons::foregrip::FOREGRIP).
-#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct ForegripConfig {
-    /// Let the off-hand grab a two-handed weapon's foregrip, which then sets the weapon's direction.
-    pub enabled: bool,
-}
-
-impl ForegripConfig {
-    pub const fn new() -> Self {
-        Self { enabled: true }
-    }
-}
-
-impl Default for ForegripConfig {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 /// The recoil offset (see [`crate::controllers::weapons::recoil`]): each shot kicks the gun hand
 /// away from the controller pose, and a damped spring returns it. Acts only under the controller
-/// scheme, so it defaults on.
+/// scheme.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct RecoilConfig {
-    pub enabled: bool,
     /// Scales the kick taken from the game's per-shot recoil.
     pub kick_scale: f32,
 }
 
 impl RecoilConfig {
     pub const fn new() -> Self {
-        Self {
-            enabled: true,
-            kick_scale: 1.0,
-        }
+        Self { kick_scale: 1.0 }
     }
 }
 
 impl Default for RecoilConfig {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// The weight of a long weapon (see [`crate::controllers::weapons::heft`]): held in one hand, a
-/// long gun sags, trails the hand on a spring, and sways, its kick grows, and its spread widens,
-/// all scaled by the weapon's class; braced on the foregrip, it keeps a lighter weight of its own.
-/// Acts only under the controller scheme, so it defaults on. Its fixed tuning is
-/// [`HEFT`](crate::controllers::weapons::heft::tuning::HEFT).
-#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct HeftConfig {
-    /// The one-handed weight.
-    pub enabled: bool,
-    /// The weight of a gun braced in both hands.
-    pub braced: BracedHeftConfig,
-}
-
-impl HeftConfig {
-    pub const fn new() -> Self {
-        Self {
-            enabled: true,
-            braced: BracedHeftConfig::new(),
-        }
-    }
-}
-
-impl Default for HeftConfig {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// The weight of a long gun braced in both hands, on the foregrip. Pistols and revolvers carry
-/// none. Acts only under the controller scheme, so it defaults on.
-#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct BracedHeftConfig {
-    pub enabled: bool,
-}
-
-impl BracedHeftConfig {
-    pub const fn new() -> Self {
-        Self { enabled: true }
-    }
-}
-
-impl Default for BracedHeftConfig {
     fn default() -> Self {
         Self::new()
     }
@@ -220,94 +101,6 @@ impl HoldConfig {
 }
 
 impl Default for HoldConfig {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// The physical grenade throw (see [`crate::controllers::weapons::grenade`]), whose fixed tuning is
-/// [`GRENADE`](crate::controllers::weapons::grenade::tuning::GRENADE).
-#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct GrenadeConfig {
-    /// Catching live grenades.
-    pub catch: GrenadeCatchConfig,
-}
-
-impl GrenadeConfig {
-    pub const fn new() -> Self {
-        Self {
-            catch: GrenadeCatchConfig::new(),
-        }
-    }
-}
-
-impl Default for GrenadeConfig {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// Catching a live grenade near the player and throwing it on. Acts only under the controller
-/// scheme, so it defaults on.
-#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct GrenadeCatchConfig {
-    /// Let a free hand catch a live grenade with a grip press at it.
-    pub enabled: bool,
-}
-
-impl GrenadeCatchConfig {
-    pub const fn new() -> Self {
-        Self { enabled: true }
-    }
-}
-
-impl Default for GrenadeCatchConfig {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// The C4 throw and the press onto surfaces (see [`crate::controllers::weapons::c4`]), whose fixed
-/// tuning is [`C4`](crate::controllers::weapons::c4::tuning::C4).
-#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct C4Config {
-    /// Pressing a held charge onto a surface sticks it there.
-    pub stick: C4StickConfig,
-}
-
-impl C4Config {
-    pub const fn new() -> Self {
-        Self {
-            stick: C4StickConfig::new(),
-        }
-    }
-}
-
-impl Default for C4Config {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// Pressing a held charge onto a surface sticks it there. Acts only under the controller scheme,
-/// so it defaults on.
-#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct C4StickConfig {
-    /// Stick a held charge to the surface it is pressed onto.
-    pub enabled: bool,
-}
-
-impl C4StickConfig {
-    pub const fn new() -> Self {
-        Self { enabled: true }
-    }
-}
-
-impl Default for C4StickConfig {
     fn default() -> Self {
         Self::new()
     }

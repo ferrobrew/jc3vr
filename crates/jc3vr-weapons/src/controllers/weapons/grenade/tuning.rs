@@ -1,12 +1,9 @@
-//! The grenade throw's and the catch's fixed tuning, and the feature switch the catch takes from the
-//! configuration ([`GrenadeConfig`]).
+//! The grenade throw's and the catch's fixed tuning.
 
 use glam::Vec3;
 use jc3vr_body::controllers::hands::held::HoldPlacement;
 
-use crate::controllers::weapons::config::GrenadeConfig;
-
-/// The grenade throw's tuning with the catch switched on.
+/// The grenade throw's tuning.
 pub const GRENADE: GrenadeTuning = GrenadeTuning::new();
 
 /// The physical grenade throw: its hold, its release, its fuse warning, and the catch.
@@ -43,24 +40,11 @@ impl GrenadeTuning {
             catch: CatchTuning::new(),
         }
     }
-
-    /// The fixed tuning with the switches `config` sets.
-    pub const fn of(config: &GrenadeConfig) -> Self {
-        Self {
-            catch: CatchTuning {
-                enabled: config.catch.enabled,
-                ..GRENADE.catch
-            },
-            ..GRENADE
-        }
-    }
 }
 
 /// Catching a live grenade near the player and throwing it on.
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct CatchTuning {
-    /// Let a free hand catch a live grenade with a grip press at it.
-    pub enabled: bool,
     /// The radius of a live grenade's grab volume, metres. A grenade in flight moves several
     /// centimetres between two ticks, so it is larger than a pouch's.
     pub radius_m: f32,
@@ -76,7 +60,6 @@ pub struct CatchTuning {
 impl CatchTuning {
     const fn new() -> Self {
         Self {
-            enabled: true,
             radius_m: 0.18,
             range_m: 4.0,
             own_grace_s: 0.4,

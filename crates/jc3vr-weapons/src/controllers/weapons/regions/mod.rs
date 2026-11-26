@@ -27,7 +27,6 @@
 //! braced ([`crate::controllers::weapons::engine::lone_gun`]).
 
 pub mod action;
-pub mod config;
 pub(crate) mod engine;
 pub mod shape;
 

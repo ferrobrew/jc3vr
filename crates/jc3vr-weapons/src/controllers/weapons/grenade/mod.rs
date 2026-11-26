@@ -66,7 +66,6 @@ use re_utilities::hook_library::HookLibrary;
 use crate::controllers::{
     loadout::{ItemId, Place, TakeSource, live, safe_items::SafeItemView},
     weapons::{
-        config::{WEAPONS_CONFIG, WeaponSettings},
         docks, engine,
         grenade::{
             catch::{CatchCounts, Caught, Sighting},
@@ -377,7 +376,7 @@ pub(super) fn begin_tick(
             }
         }
     }
-    if tuning.catch.enabled && catch::caught().is_none() {
+    if catch::caught().is_none() {
         let seen = unsafe {
             catch::sightings(player.w_axis.truncate(), &tuning.catch, |point| {
                 frames.cockpit.point_to_cockpit(point)
@@ -426,17 +425,12 @@ pub(super) struct TickInputs {
 }
 
 /// Consume the resolved pouch grab and grip opening in the actual input tick.
-pub(super) fn input_tick(
-    game: &GameTick<'_>,
-    inputs: &TickInputs,
-    config: &WeaponSettings,
-    desired: &mut Vec<Desired>,
-) {
+pub(super) fn input_tick(game: &GameTick<'_>, inputs: &TickInputs, desired: &mut Vec<Desired>) {
     if !inputs.acting {
         stand_down();
         return;
     }
-    let tuning = &GrenadeTuning::of(&config.weapons.grenade);
+    let tuning = &GRENADE;
     let grips = STATE.lock().grips;
     beacon::input_tick(inputs, grips);
     for hand in Hand::BOTH {
@@ -591,8 +585,7 @@ pub(super) fn input_tick(
     let mut state = STATE.lock();
     state.status.fuse = urgent.map(|(_, fuse)| fuse);
     state.status.stock = stock::last();
-    let (mut primitives, pulse) =
-        warning(&mut state, urgent, inputs.dt, config).unwrap_or_default();
+    let (mut primitives, pulse) = warning(&mut state, urgent, inputs.dt).unwrap_or_default();
     drop(state);
     if primitives.is_empty() {
         store::clear(Source::GrenadeWarning);
@@ -638,10 +631,7 @@ pub(super) fn stand_down() {
 /// Note tracked controller world poses for safe rendering and live catches.
 pub fn observe_hands(grips: [Option<Pose>; 2]) {
     STATE.lock().grips = grips;
-    safe::observe(
-        grips,
-        &GrenadeTuning::of(&WEAPONS_CONFIG.query(|config| config.grenade)),
-    );
+    safe::observe(grips, &GRENADE);
 }
 
 /// Draw the items' native actors at the frame's interpolation fraction `dtf`; their own render
@@ -652,13 +642,12 @@ pub fn observe_hands(grips: [Option<Pose>; 2]) {
 /// The game thread, before the world update.
 pub unsafe fn render_frame(dtf: f32) {
     unsafe { beacon::render_frame() };
-    let tuning = GrenadeTuning::of(&WEAPONS_CONFIG.query(|config| config.grenade));
+    let tuning = GRENADE;
     unsafe { safe::render_frame(dtf, &tuning) };
 }
 
 pub fn fallback_target(dominant_target: Option<Vec3>) -> Option<Vec3> {
-    let grenade_throw = WEAPONS_CONFIG.query(|c| c.grenade_throw);
-    dominant_target.filter(|_| grenade_throw && GRENADE.hand_aimed_fallback)
+    dominant_target.filter(|_| GRENADE.hand_aimed_fallback)
 }
 
 pub(super) fn report_native_throw(hand: Hand, release: Release) {
@@ -841,9 +830,8 @@ fn warning(
     state: &mut State,
     caught: Option<(Hand, Fuse)>,
     dt: f32,
-    config: &WeaponSettings,
 ) -> Option<(Vec<Primitive>, Option<Hand>)> {
-    let tuning = &GrenadeTuning::of(&config.weapons.grenade);
+    let tuning = &GRENADE;
     let Some((hand, fuse)) = caught else {
         state.next_pulse_s = 0.0;
         return None;

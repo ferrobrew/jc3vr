@@ -1,11 +1,10 @@
-//! C4 by hand: the throw from the chest pouch, the placed charges, the detonator, the detonations,
-//! and their switches.
+//! C4 by hand: the throw from the chest pouch, the placed charges, the detonator, and the
+//! detonations.
 
 use egui::Ui;
 use jc3vr_weapons::controllers::weapons::{
     c4,
     c4::{C4Status, detonator},
-    config::WeaponsConfig,
 };
 
 use crate::ui::controllers::{vec3, yes_no};
@@ -98,15 +97,4 @@ pub(super) fn explosives_readout(ui: &mut Ui, readout: &ExplosivesReadout) {
             }
         ))
     ));
-}
-
-/// The switches of the C4 throw and the press onto surfaces.
-pub(super) fn explosives_settings(ui: &mut Ui, w: &mut WeaponsConfig) {
-    ui.checkbox(&mut w.c4_throw, "Physical C4 throw").on_hover_text(
-        "A grip press at the chest pouch primes a C4 charge; opening the grip throws it, and it \
-         sticks where it lands. The trigger of a hand holding a charge swaps it for the detonator, \
-         whose trigger detonates the placed charges.",
-    );
-    ui.checkbox(&mut w.c4.stick.enabled, "Press C4 onto surfaces")
-        .on_hover_text("A held charge pressed onto a surface sticks there.");
 }

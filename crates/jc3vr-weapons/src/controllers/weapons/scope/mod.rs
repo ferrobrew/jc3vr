@@ -52,10 +52,7 @@ use jc3vr_view::controllers::weapons::scope::lens_frame::{self, LensFrame};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::controllers::weapons::{
-    config::WEAPONS_CONFIG,
-    scope::lens::{LENS, Lens, LensTuning, SightAnchor},
-};
+use crate::controllers::weapons::scope::lens::{LENS, Lens, LensTuning, SightAnchor};
 
 /// The scope hooks, aggregated by [`crate::controllers::weapons::hook_library`].
 pub(crate) fn hook_library() -> HookLibrary {
@@ -158,7 +155,7 @@ pub fn tick(eye: usize) {
     if !jc3vr_view::stereo::dispatch::first_ui_eye(eye) {
         return;
     }
-    let enabled = scheme::enabled() && WEAPONS_CONFIG.query(|c| c.scopes);
+    let enabled = scheme::enabled();
     let mut state = STATE.lock();
     let plan = plan(enabled, &LENS, &mut state.anchors);
     let mut status = STATUS.lock();

@@ -17,7 +17,6 @@
 //! hands ([`jc3vr_body::controllers::hands::active_hands`]), after the sights and the recoil, so the
 //! drawn gun, its sight line, and the IK targets all see the gun where the wall stops it.
 
-pub mod config;
 pub mod solve;
 
 use std::time::{Duration, Instant};
@@ -33,10 +32,7 @@ use parking_lot::Mutex;
 
 use crate::controllers::weapons::{
     ads::solve::RigidMove,
-    collide::{
-        config::CollideConfig,
-        solve::{Barrel, Wall},
-    },
+    collide::solve::{Barrel, Wall},
     foregrip,
 };
 
@@ -108,15 +104,7 @@ pub(crate) fn measured(hand: Hand) -> Option<CollideWeapon> {
 
 /// Push each hand's gun out of the wall its probe last met. `head` is the head's cockpit pose and
 /// `world_scale` the VR world scale the cockpit composes with.
-pub fn apply(
-    hands: &mut [Option<CockpitHand>; 2],
-    head: Pose,
-    world_scale: f32,
-    config: &CollideConfig,
-) {
-    if !config.enabled {
-        return;
-    }
+pub fn apply(hands: &mut [Option<CockpitHand>; 2], head: Pose, world_scale: f32) {
     let frame = CockpitTransform::current(head.position, world_scale);
     let support = foregrip::status().hold.filter(|h| h.engaged);
     for hand in Hand::BOTH {

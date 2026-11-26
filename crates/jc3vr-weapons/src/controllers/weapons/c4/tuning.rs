@@ -1,12 +1,9 @@
-//! The C4 throw's and the press's fixed tuning, and the switches they take from the configuration
-//! ([`C4Config`]).
+//! The C4 throw's and the press's fixed tuning.
 
 use glam::Vec3;
 use jc3vr_body::controllers::hands::held::HoldPlacement;
 
-use crate::controllers::weapons::config::C4Config;
-
-/// The C4 tuning with its default switches.
+/// The C4 tuning.
 pub const C4: C4Tuning = C4Tuning::new();
 
 /// The throw of a charge from the C4 pouch (see [`crate::controllers::weapons::c4`]); the pouch
@@ -31,17 +28,6 @@ impl C4Tuning {
             stick: StickTuning::new(),
         }
     }
-
-    /// The fixed tuning with the switches `config` sets.
-    pub const fn of(config: &C4Config) -> Self {
-        Self {
-            stick: StickTuning {
-                enabled: config.stick.enabled,
-                ..C4.stick
-            },
-            ..C4
-        }
-    }
 }
 
 /// The charge's hold, derived from the C4 weapon's in-hand model: a flat square brick lying in the
@@ -61,8 +47,6 @@ pub const CHARGE_TOP_M: f32 = 0.029;
 /// Pressing a held charge onto a surface sticks it there.
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct StickTuning {
-    /// Stick a held charge to the surface it is pressed onto.
-    pub enabled: bool,
     /// How far from the held charge's centre a surface counts as touching it, metres: about half
     /// the charge's thickness.
     pub contact_m: f32,
@@ -82,7 +66,6 @@ pub struct StickTuning {
 impl StickTuning {
     const fn new() -> Self {
         Self {
-            enabled: true,
             contact_m: 0.04,
             standoff_m: 0.03,
             push_mps: 1.5,

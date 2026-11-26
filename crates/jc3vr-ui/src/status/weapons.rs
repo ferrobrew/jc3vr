@@ -118,9 +118,6 @@ fn right_hand_on_gun() -> Line {
 /// Where `hand` holds the wielded gun, and what it does there: fires it from the grip, braces it,
 /// or carries it by another part, unable to fire.
 fn hand_on_gun(hand: Hand) -> Line {
-    if !read(&CONTROLLERS_CONFIG, |c| c.weapons.regions.enabled) {
-        return Line::off("");
-    }
     let status = regions::status();
     let shape = status.shape.map(|s| {
         format!(

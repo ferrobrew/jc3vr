@@ -58,7 +58,7 @@ use test_support::TestWeight;
 
 use self::pose::{Weight, sway, unbraced_share};
 pub use self::tuning::{BracedHeft, BracedTuning, Heft, HeftTuning};
-use crate::controllers::weapons::{config::WEAPONS_CONFIG, foregrip, recoil::Motion};
+use crate::controllers::weapons::{foregrip, heft::tuning::HEFT, recoil::Motion};
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&GET_CURRENT_SCATTER_VALUE_BINDER)
@@ -142,14 +142,13 @@ pub fn apply(hands: &mut [Option<CockpitHand>; 2], head: Vec3, config: &Heft) {
     let mut guard = STATE.lock();
     let state = &mut *guard;
     let dt = advance_clock(&mut state.at, now);
-    let acting = config.enabled || config.braced.enabled;
     let t = epoch().elapsed().as_secs_f32();
     let mut motions = [None; 2];
     for hand in Hand::BOTH {
         let h = &mut state.hands[hand.index()];
         let target = h
             .target
-            .filter(|(_, at)| acting && now.saturating_duration_since(*at) < MAX_AGE)
+            .filter(|(_, at)| now.saturating_duration_since(*at) < MAX_AGE)
             .map(|(t, _)| t);
         let Some(target) = target else {
             h.rest();
@@ -200,21 +199,13 @@ pub fn apply(hands: &mut [Option<CockpitHand>; 2], head: Vec3, config: &Heft) {
 /// for a gun the weight acts on in that hand, one otherwise. The recoil blends it toward its own
 /// two-hand kick scale by the foregrip's weight.
 pub fn one_hand_kick(hand: Hand) -> f32 {
-    let config = Heft::of(&WEAPONS_CONFIG.query(|c| c.heft));
     let target = STATE.lock().hands[hand.index()].target.map(|(t, _)| t);
-    match target {
-        Some(t) if config.enabled => config.tuning(t.class).kick_scale,
-        _ => 1.0,
-    }
+    target.map_or(1.0, |t| HEFT.tuning(t.class).kick_scale)
 }
 
 /// The multiplier on the scatter of a shot from `weapon`: the class's spread scale, scaled by the
 /// unbraced share, for a weapon the weight acts on in either hand, one otherwise.
 pub fn spread_scale(weapon: usize) -> f32 {
-    let config = Heft::of(&WEAPONS_CONFIG.query(|c| c.heft));
-    if !config.enabled {
-        return 1.0;
-    }
     let target = STATE
         .lock()
         .hands
@@ -225,7 +216,7 @@ pub fn spread_scale(weapon: usize) -> f32 {
     };
     let share = unbraced_share(foregrip::two_hand_grip(), target.hand);
     // The share is clamped to `0..=1` where it is made.
-    1.0_f32.lerp(config.tuning(target.class).spread_scale, share)
+    1.0_f32.lerp(HEFT.tuning(target.class).spread_scale, share)
 }
 
 /// How long a published weapon stays in effect without a new input tick.
@@ -406,7 +397,7 @@ mod tests {
     use crate::controllers::weapons::{
         foregrip,
         heft::{
-            BracedHeft, BracedTuning, Heft, HeftTuning, TestWeight,
+            BracedTuning, Heft, HeftTuning, TestWeight,
             pose::{RotSpring, Weight, WeightedPose, sway, unbraced_share, weighted_pose},
             tuning::HEFT,
         },
@@ -827,10 +818,6 @@ mod tests {
         assert!((double.stiffness.sqrt() * 2.0 - rifle.stiffness.sqrt()).abs() < 1e-3);
         assert_eq!(rifle.at_strength(0.0), BracedTuning::NONE);
         assert_eq!(rifle.at_strength(f32::NAN), BracedTuning::NONE);
-        let mut off = config();
-        off.braced.enabled = false;
-        let weight = Weight::of(HeftClass::Heavy, &off, 0.0);
-        assert_eq!((weight.sag_deg, weight.stiffness), (0.0, 0.0));
     }
 
     #[test]
@@ -996,20 +983,6 @@ mod tests {
                 );
             }
             assert!((shown.wrist.orientation * Vec3::NEG_Z).y > one_hand_pitch + 0.1);
-            let disabled = Heft {
-                enabled: false,
-                braced: BracedHeft {
-                    enabled: false,
-                    ..config.braced
-                },
-                ..config
-            };
-            let raw = square_hand(Vec3::new(0.0, -0.2, -0.6));
-            let mut no_weight = TestWeight::default();
-            assert_eq!(
-                no_weight.apply(raw, HeftClass::Heavy, 1.0, &disabled, 0.0),
-                raw
-            );
         }
     }
 }

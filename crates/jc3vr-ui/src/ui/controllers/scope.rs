@@ -12,7 +12,7 @@ use jc3vr_weapons::controllers::weapons::{
         config::{AdsConfig, AimingEye},
     },
     collide,
-    collide::{HandCollideStatus, config::CollideConfig},
+    collide::HandCollideStatus,
     scope,
     scope::{ScopeStatus, suppress, suppress::SuppressCounters},
 };
@@ -114,11 +114,6 @@ pub(super) fn scope_readout(ui: &mut Ui, readout: &ScopeReadout) {
     }
 }
 
-pub(super) fn scope_settings(ui: &mut Ui, scopes: &mut bool) {
-    ui.checkbox(scopes, "Scope lenses")
-        .on_hover_text("Draw a magnified image on a scoped weapon's lens while it is at an eye.");
-}
-
 /// The settings of aiming a long gun down its sights.
 pub(super) fn ads_settings(ui: &mut Ui, a: &mut AdsConfig) {
     ui.checkbox(&mut a.enabled, "Line the sights up with the eye")
@@ -137,9 +132,4 @@ pub(super) fn ads_settings(ui: &mut Ui, a: &mut AdsConfig) {
         ui.checkbox(&mut a.shoulder, "Seat the stock in the shoulder");
         ui.checkbox(&mut a.cheek_weld, "Cheek weld for scopes");
     });
-}
-
-/// The settings of held guns against walls.
-pub(super) fn collide_settings(ui: &mut Ui, c: &mut CollideConfig) {
-    ui.checkbox(&mut c.enabled, "Held long guns stop at walls");
 }

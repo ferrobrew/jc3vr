@@ -274,9 +274,7 @@ pub(super) fn begin_tick(inputs: &BeginInputs) -> Vec<Candidate> {
     let stocked = loaded.is_some_and(WeaponTick::has_ammo);
     // The pouch where its model is drawn, on `side` of the body.
     let displayed = |mut pouch: Candidate, side: Hand| {
-        if config.weapons.pouches.models.enabled
-            && let Some(body) = body
-        {
+        if let Some(body) = body {
             pouch.centre = pouch_models::display_centre(
                 Pose {
                     position: pouch.centre,

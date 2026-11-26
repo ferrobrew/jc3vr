@@ -123,7 +123,6 @@ use crate::controllers::{
             tuning::{C4, C4Tuning},
             wheel::{WheelHands, WheelStep},
         },
-        config::WEAPONS_CONFIG,
         engine,
         grenade::{Release, catch::body_of, throw_release},
         pouch_return,
@@ -848,8 +847,7 @@ fn update_from_user_serial(
         return original();
     };
     let enabled = scheme::enabled();
-    let config = WEAPONS_CONFIG.query(|c| c.c4);
-    let tuning = C4Tuning::of(&config);
+    let tuning = C4;
     let acting = enabled && scheme::is_controllers();
 
     // SAFETY: the weapon and its user are live, on the thread that updates the weapon; the

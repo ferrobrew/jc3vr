@@ -165,10 +165,7 @@ impl Motion {
 /// Move the hands by their recoil offsets. `hands` are the cockpit-frame hands, already in any
 /// two-handed pose, indexed by [`Hand::index`]. The off-hand of an engaged two-hand grip moves with
 /// the holding hand.
-pub fn apply(hands: &mut [Option<CockpitHand>; 2], config: &RecoilConfig) {
-    if !config.enabled {
-        return;
-    }
+pub fn apply(hands: &mut [Option<CockpitHand>; 2]) {
     let grip = foregrip::two_hand_grip();
     let offsets = advance(Instant::now(), grip);
     for hand in Hand::BOTH {
@@ -192,9 +189,6 @@ pub fn apply(hands: &mut [Option<CockpitHand>; 2], config: &RecoilConfig) {
 /// Kick `hand`'s offset by a shot's recoil, `pitch` and `yaw` radians, with `one_hand_scale` the
 /// one-handed multiplier ([`kick_offset`]). Returns the kick applied.
 pub fn kick(hand: Hand, pitch: f32, yaw: f32, config: &RecoilConfig, one_hand_scale: f32) -> Vec3 {
-    if !config.enabled {
-        return Vec3::ZERO;
-    }
     let grip = foregrip::two_hand_grip();
     let now = Instant::now();
     advance(now, grip);

@@ -59,7 +59,7 @@ A heavy weapon the table carries is holstered when it is taken, which takes its 
 
 ## Grabbing a gun anywhere
 
-A hand holding a gun on its own always holds it by its pistol grip, ready to shoot. Any other hold (the stock, the handguard, the barrel) is support for a gun the other hand holds by its grip. With `weapons.regions.enabled` (on; the debug UI's Weapons > Hold, transfer, and grab regions), a second hand braces a long gun (the two-handed, special, and heavy slots) wherever it closes on it, with or without the gun bodies above. A pistol keeps its grip. A brace and a touch along the gun need the other hand free, so they act on the long gun held in one hand while the other is free ([two-handed-inventory.md, "The gun in either hand"](two-handed-inventory.md#the-gun-in-either-hand)). The code is `crates/jc3vr-weapons/src/controllers/weapons/regions/`.
+A hand holding a gun on its own always holds it by its pistol grip, ready to shoot. Any other hold (the stock, the handguard, the barrel) is support for a gun the other hand holds by its grip. A second hand braces a long gun (the two-handed, special, and heavy slots) wherever it closes on it, with or without the gun bodies above. A pistol keeps its grip. A brace and a touch along the gun need the other hand free, so they act on the long gun held in one hand while the other is free ([two-handed-inventory.md, "The gun in either hand"](two-handed-inventory.md#the-gun-in-either-hand)). The code is `crates/jc3vr-weapons/src/controllers/weapons/regions/`.
 
 ### The regions
 
@@ -92,7 +92,7 @@ The fingers take each region's pose ([grip-poses.md](grip-poses.md)): the pistol
 
 ### Its settings, readout, and log
 
-The setting is `controllers.weapons.regions.enabled`, and the reach, the grip's radius, and the slide onto the grip are `REACH_M`, `GRIP_RADIUS_M`, and `GRIP_SLIDE` in `controllers::weapons::regions`. The switch is in the debug UI's Weapons > Hold, transfer, and grab regions, whose readout opens with the two rows below and adds the slides and the wielded long gun's shape (its length and which known points it has). The `WEAPONS IN HAND` section of the debug UI's Status page has `LEFT HAND ON GUN` and `RIGHT HAND ON GUN`: the region, `FIRING` or `BRACING`, and the counts, with the gun's length and known points in the log's note; `NOT ON A GUN` while waiting, and `GUN'S SHAPE NOT READ` fails.
+The reach, the grip's radius, and the slide onto the grip are `REACH_M`, `GRIP_RADIUS_M`, and `GRIP_SLIDE` in `controllers::weapons::regions`. The debug UI's Weapons > Hold, transfer, and grab regions has a readout that opens with the two rows below and adds the slides and the wielded long gun's shape (its length and which known points it has). The `WEAPONS IN HAND` section of the debug UI's Status page has `LEFT HAND ON GUN` and `RIGHT HAND ON GUN`: the region, `FIRING` or `BRACING`, and the counts, with the gun's length and known points in the log's note; `NOT ON A GUN` while waiting, and `GUN'S SHAPE NOT READ` fails.
 
 The log has, at info level, `regions: the left hand braced the gun at its handguard` (or right, and the region); `regions: the holding hand let go, and the left hand slides from the stock onto the grip` with the anchor it slid from; and the refused trigger's line above.
 
@@ -124,7 +124,7 @@ With the hand bodies on:
 14. Switch the hand bodies off with a rifle in hand: the gun body goes, the hands' bodies are destroyed, and the rifle sags and sways as before.
 15. Hold a rocket launcher: no gun body (`NO GUN BODY`), and its kinematic weight and recoil act.
 
-With `weapons.regions.enabled` on, once with the hand bodies off and once with them on:
+Once with the hand bodies off and once with them on:
 
 16. Draw a rifle and look at `RIGHT HAND ON GUN`: `GRIP, FIRING`, with the gun's length and its known points in the note. A rifle without a foregrip, a magazine well, or an action in the note still has its handguard and barrel.
 17. Take the rifle's handguard with the left hand behind the native foregrip, then well ahead of it near the muzzle: each time `regions: the left hand braced the gun at its handguard` (then `barrel`), the hand stays where it closed on the gun rather than jumping to the foregrip, the rifle points along the line between the hands, and `LEFT HAND ON GUN` reads `HANDGUARD, BRACING` (then `BARREL`). The fingers wrap the handguard, then close tighter round the barrel.
@@ -143,7 +143,6 @@ With `weapons.regions.enabled` on, once with the hand bodies off and once with t
 30. Brace the UPU-210's handguard and the rifle's barrel, and swing the gun about and against a wall: the drawn bracing hand stays closed on the gun where it took hold, with no gap between hand and gun and no wobble, whether or not `HELD+BRACED` shows.
 30. Empty a pistol and pull its trigger: one dead click per pull, not two, and `trigger: the trigger fired nothing: the action is open` while the slide is locked back. Work the slide forward on the empty magazine and pull again: `the chamber and the magazine are empty`. Drop the magazine: `the magazine is out`.
 30. Hold a pistol: `GRIP, FIRING`, and no part of it but the grip takes it.
-31. Switch `weapons.regions.enabled` off while bracing a rifle on its barrel: the foregrip braces only at its own point again.
 
 ## Support and weight regression checks
 

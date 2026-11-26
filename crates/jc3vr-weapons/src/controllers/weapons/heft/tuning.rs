@@ -1,13 +1,9 @@
-//! The weight's fixed tuning, by weapon class, and the one feature switch each weight has from the
-//! configuration ([`HeftConfig`]).
+//! The weight's fixed tuning, by weapon class.
 
 use jc3vr_body::controllers::held::guns::HeftClass;
 
-use crate::controllers::weapons::config::HeftConfig;
-
-/// The weight's tuning with both weights switched on.
+/// The weight's tuning.
 pub const HEFT: Heft = Heft {
-    enabled: true,
     reach_near_m: 0.3,
     reach_far_m: 0.65,
     sway_hz: 0.35,
@@ -32,7 +28,6 @@ pub const HEFT: Heft = Heft {
         spread_scale: 2.5,
     },
     braced: BracedHeft {
-        enabled: true,
         strength: 1.0,
         max_angle_deg: 8.0,
         smg: BracedTuning {
@@ -55,8 +50,6 @@ pub const HEFT: Heft = Heft {
 /// the foregrip, it keeps a lighter weight of its own ([`BracedHeft`]).
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Heft {
-    /// The one-handed weight.
-    pub enabled: bool,
     /// The hand's distance from the head at which the reach sag starts, metres.
     pub reach_near_m: f32,
     /// The hand's distance from the head at which the reach sag is full, metres.
@@ -76,18 +69,6 @@ pub struct Heft {
 }
 
 impl Heft {
-    /// The fixed tuning with the switches `config` sets.
-    pub const fn of(config: &HeftConfig) -> Self {
-        Self {
-            enabled: config.enabled,
-            braced: BracedHeft {
-                enabled: config.braced.enabled,
-                ..HEFT.braced
-            },
-            ..HEFT
-        }
-    }
-
     /// The one-handed tuning of a gun of `class`.
     pub fn tuning(&self, class: HeftClass) -> HeftTuning {
         match class {
@@ -104,7 +85,6 @@ impl Heft {
 /// it. Pistols and revolvers carry none.
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct BracedHeft {
-    pub enabled: bool,
     /// How heavy a braced gun feels: one is the classes' tuning, zero carries no weight, and two
     /// lags twice as long and sags twice as far.
     pub strength: f32,
