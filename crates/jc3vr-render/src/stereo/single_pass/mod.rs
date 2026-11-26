@@ -120,7 +120,8 @@ pub fn live_cb13_rows() -> Option<[Vector4; dxbc_stereo::STEREO_REPROJ_CB_ROWS a
 }
 
 /// Whether single-pass rendering should actually run this frame: the master switch is on, a VR
-/// session is running, the census-only dry-run is off, and the device supports viewport routing.
+/// session is running, the census-only dry-run is off, the device supports viewport routing, and the
+/// draw-path COM detours did not fail to install.
 /// The VS-substitution and cb13 paths gate on this; when it is false the double-draw path is left
 /// untouched. The shader set follows it: the frame driver re-creates the shaders whenever it
 /// changes ([`crate::hooks::graphics_engine::shader::reconcile_single_pass`]).
@@ -132,7 +133,10 @@ pub fn active() -> bool {
         return false;
     }
     let flags = config_flags();
-    flags.has(Flag::SinglePass) && !flags.has(Flag::DryRun) && capability() == Capability::Supported
+    flags.has(Flag::SinglePass)
+        && !flags.has(Flag::DryRun)
+        && capability() == Capability::Supported
+        && !detour_lifecycle::com_detours_failed()
 }
 
 /// Whether the eyes are made to diverge (in addition to [`active`]): distinct per-eye `cb13`,

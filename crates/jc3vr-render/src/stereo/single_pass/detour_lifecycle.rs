@@ -7,6 +7,7 @@
 
 use std::{
     ffi::c_void,
+    fmt,
     sync::atomic::{AtomicBool, AtomicPtr, Ordering},
 };
 
@@ -133,8 +134,8 @@ pub fn ensure_viewport_detours() {
     // other -- a silent, permanent hang. `uninstall_com_detours` takes the same lock so an eject cannot
     // interleave with an install.
     let _install = DETOUR_INSTALL.lock();
-    if RS_SET_VIEWPORTS.get().is_some() || jc3vr_core::is_shutting_down() {
-        return; // already installed, or tearing down -- never (re)install during eject
+    if RS_SET_VIEWPORTS.get().is_some() || com_detours_failed() || jc3vr_core::is_shutting_down() {
+        return; // already installed, failed, or tearing down -- never (re)install during eject
     }
     // SAFETY: reads the live immediate-context vtable; the two slots are the standard D3D11 layout.
     unsafe {
@@ -202,7 +203,10 @@ pub fn ensure_viewport_detours() {
             GenericDetour::new(set_vs_consts_target, set_vertex_program_constants_detour),
         )
         else {
-            tracing::warn!("single-pass: COM detour construction failed");
+            COM_DETOURS_FAILED.store(true, Ordering::Release);
+            tracing::error!(
+                "single-pass: COM detour construction failed; single-pass rendering stays off for this session"
+            );
             return;
         };
 
@@ -218,37 +222,55 @@ pub fn ensure_viewport_detours() {
         VS_SET_SHADER.set(vs_set_shader_detour_handle);
         CREATE_VERTEX_SHADER.set(create_vertex_shader_detour_handle);
         SET_VERTEX_PROGRAM_CONSTANTS.set(set_vs_consts_detour_handle);
-        let _ = jc3vr_core::hooks::suspend::for_block(|| {
-            RS_SET_VIEWPORTS.get().expect("just set").enable().ok();
-            RS_SET_SCISSOR_RECTS.get().expect("just set").enable().ok();
-            DRAW_INDEXED.get().expect("just set").enable().ok();
-            DRAW.get().expect("just set").enable().ok();
-            DRAW_INDEXED_INSTANCED
-                .get()
-                .expect("just set")
-                .enable()
-                .ok();
-            DRAW_INDEXED_INSTANCED_INDIRECT
-                .get()
-                .expect("just set")
-                .enable()
-                .ok();
-            DRAW_INSTANCED_INDIRECT
-                .get()
-                .expect("just set")
-                .enable()
-                .ok();
-            VS_SET_SHADER.get().expect("just set").enable().ok();
-            CREATE_VERTEX_SHADER.get().expect("just set").enable().ok();
-            SET_VERTEX_PROGRAM_CONSTANTS
-                .get()
-                .expect("just set")
-                .enable()
-                .ok();
-            Ok::<(), Box<dyn std::error::Error + Send + Sync>>(())
+        let batch: [(&'static str, &dyn BatchDetour); 10] = [
+            ("RSSetViewports", &RS_SET_VIEWPORTS),
+            ("RSSetScissorRects", &RS_SET_SCISSOR_RECTS),
+            ("DrawIndexed", &DRAW_INDEXED),
+            ("Draw", &DRAW),
+            ("DrawIndexedInstanced", &DRAW_INDEXED_INSTANCED),
+            (
+                "DrawIndexedInstancedIndirect",
+                &DRAW_INDEXED_INSTANCED_INDIRECT,
+            ),
+            ("DrawInstancedIndirect", &DRAW_INSTANCED_INDIRECT),
+            ("VSSetShader", &VS_SET_SHADER),
+            ("CreateVertexShader", &CREATE_VERTEX_SHADER),
+            ("SetVertexProgramConstants", &SET_VERTEX_PROGRAM_CONSTANTS),
+        ];
+        // The failure is carried out of the block rather than returned through it: boxing it into
+        // the block's error allocates, and an allocation with the other threads suspended can wait
+        // on a heap lock one of them holds.
+        let mut failure = None;
+        let suspension = jc3vr_core::hooks::suspend::for_block(|| {
+            failure = enable_batch(&batch).err();
+            Ok(())
         });
-        tracing::info!("single-pass: viewport + draw + shader-tracking COM detours installed");
+        let error = match (suspension, failure) {
+            (Ok(()), None) => {
+                tracing::info!(
+                    "single-pass: viewport + draw + shader-tracking COM detours installed"
+                );
+                return;
+            }
+            (Err(error), _) => format!("single-pass: COM detours: {error}"),
+            (Ok(()), Some(failure)) => failure.to_string(),
+        };
+        // A partly enabled draw path would double some draws and not others, so single-pass stays
+        // off for the session and the frame renders through the multipass path. Disabled detours
+        // are reclaimed here, outside the suspension; one the rollback could not disable stays in
+        // its slot, a pass-through while single-pass is off, for the eject to remove.
+        COM_DETOURS_FAILED.store(true, Ordering::Release);
+        for (_, detour) in batch {
+            detour.drop_if_disabled();
+        }
+        tracing::error!("{error}; single-pass rendering stays off for this session");
     }
+}
+
+/// Whether installing the draw-path COM detours failed. Single-pass rendering stays off for the rest
+/// of the session once it has.
+pub(super) fn com_detours_failed() -> bool {
+    COM_DETOURS_FAILED.load(Ordering::Acquire)
 }
 
 pub fn vertex_identity_detour_ready() -> bool {
@@ -314,5 +336,197 @@ const PINNED_BY_PIXEL_SHADER_DETOUR: &str =
 
 pub(super) static PIXEL_SHADER_EVER_ENABLED: AtomicBool = AtomicBool::new(false);
 
+static COM_DETOURS_FAILED: AtomicBool = AtomicBool::new(false);
+
 /// Serializes COM detour installation and removal across threads.
 pub(super) static DETOUR_INSTALL: Mutex<()> = Mutex::new(());
+
+/// A detour in an install batch, enabled and rolled back as one.
+trait BatchDetour {
+    /// # Safety
+    ///
+    /// Every other thread is suspended, and the detour's slot is published.
+    unsafe fn enable(&self) -> retour::Result<()>;
+
+    /// # Safety
+    ///
+    /// As [`BatchDetour::enable`].
+    unsafe fn disable(&self) -> retour::Result<()>;
+
+    /// Empty the slot unless its detour is enabled. Frees the trampoline, so never under suspension.
+    fn drop_if_disabled(&self);
+}
+
+impl<T: Function> BatchDetour for DetourSlot<T> {
+    unsafe fn enable(&self) -> retour::Result<()> {
+        unsafe { self.get().expect("published before enable").enable() }
+    }
+
+    unsafe fn disable(&self) -> retour::Result<()> {
+        unsafe { self.get().expect("published before enable").disable() }
+    }
+
+    fn drop_if_disabled(&self) {
+        if self.get().is_some_and(|detour| !detour.is_enabled()) {
+            drop(self.take());
+        }
+    }
+}
+
+/// Why a batch did not enable: the detour that failed, and any detour the rollback left enabled.
+#[derive(Debug)]
+struct BatchFailure<const N: usize> {
+    name: &'static str,
+    source: retour::Error,
+    stuck: [Option<&'static str>; N],
+}
+
+impl<const N: usize> fmt::Display for BatchFailure<N> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "single-pass: could not enable the {} detour: {}",
+            self.name, self.source
+        )?;
+        let mut stuck = self.stuck.iter().flatten();
+        if let Some(first) = stuck.next() {
+            write!(f, "; the rollback left {first}")?;
+            for name in stuck {
+                write!(f, ", {name}")?;
+            }
+            write!(f, " enabled")?;
+        }
+        Ok(())
+    }
+}
+
+/// Enable `batch` in order. On the first failure, disable the detours already enabled, newest first,
+/// so the batch is all or nothing unless a disable fails too. Allocates nothing, since it runs with
+/// the other threads suspended.
+///
+/// # Safety
+///
+/// As [`BatchDetour::enable`], for every detour in `batch`.
+unsafe fn enable_batch<const N: usize>(
+    batch: &[(&'static str, &dyn BatchDetour); N],
+) -> Result<(), BatchFailure<N>> {
+    for (index, (name, detour)) in batch.iter().enumerate() {
+        if let Err(source) = unsafe { detour.enable() } {
+            let mut stuck = [None; N];
+            for (slot, (enabled, detour)) in batch[..index].iter().rev().enumerate() {
+                if unsafe { detour.disable() }.is_err() {
+                    stuck[slot] = Some(*enabled);
+                }
+            }
+            return Err(BatchFailure {
+                name,
+                source,
+                stuck,
+            });
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cell::{Cell, RefCell};
+
+    use super::*;
+
+    struct Fake<'a> {
+        name: &'static str,
+        fail_enable: bool,
+        fail_disable: bool,
+        enabled: Cell<bool>,
+        log: &'a RefCell<Vec<String>>,
+    }
+
+    impl<'a> Fake<'a> {
+        fn new(name: &'static str, log: &'a RefCell<Vec<String>>) -> Self {
+            Self {
+                name,
+                fail_enable: false,
+                fail_disable: false,
+                enabled: Cell::new(false),
+                log,
+            }
+        }
+    }
+
+    impl BatchDetour for Fake<'_> {
+        unsafe fn enable(&self) -> retour::Result<()> {
+            self.log.borrow_mut().push(format!("enable {}", self.name));
+            if self.fail_enable {
+                return Err(retour::Error::NotExecutable);
+            }
+            self.enabled.set(true);
+            Ok(())
+        }
+
+        unsafe fn disable(&self) -> retour::Result<()> {
+            self.log.borrow_mut().push(format!("disable {}", self.name));
+            if self.fail_disable {
+                return Err(retour::Error::NotInitialized);
+            }
+            self.enabled.set(false);
+            Ok(())
+        }
+
+        fn drop_if_disabled(&self) {}
+    }
+
+    #[test]
+    fn a_batch_that_enables_leaves_every_detour_enabled() {
+        let log = RefCell::new(Vec::new());
+        let (a, b) = (Fake::new("a", &log), Fake::new("b", &log));
+        let batch: [(&'static str, &dyn BatchDetour); 2] = [("a", &a), ("b", &b)];
+        assert!(unsafe { enable_batch(&batch) }.is_ok());
+        assert!(a.enabled.get() && b.enabled.get());
+    }
+
+    #[test]
+    fn a_failed_enable_rolls_back_the_enabled_detours_newest_first() {
+        let log = RefCell::new(Vec::new());
+        let (a, b, d) = (
+            Fake::new("a", &log),
+            Fake::new("b", &log),
+            Fake::new("d", &log),
+        );
+        let c = Fake {
+            fail_enable: true,
+            ..Fake::new("c", &log)
+        };
+        let batch: [(&'static str, &dyn BatchDetour); 4] =
+            [("a", &a), ("b", &b), ("c", &c), ("d", &d)];
+        let failure = unsafe { enable_batch(&batch) }.expect_err("c fails");
+        assert_eq!(failure.name, "c");
+        assert_eq!(failure.stuck, [None; 4]);
+        assert!(!a.enabled.get() && !b.enabled.get() && !d.enabled.get());
+        assert_eq!(
+            *log.borrow(),
+            ["enable a", "enable b", "enable c", "disable b", "disable a"]
+        );
+    }
+
+    #[test]
+    fn a_detour_the_rollback_cannot_disable_is_reported() {
+        let log = RefCell::new(Vec::new());
+        let a = Fake {
+            fail_disable: true,
+            ..Fake::new("a", &log)
+        };
+        let b = Fake {
+            fail_enable: true,
+            ..Fake::new("b", &log)
+        };
+        let batch: [(&'static str, &dyn BatchDetour); 2] = [("a", &a), ("b", &b)];
+        let failure = unsafe { enable_batch(&batch) }.expect_err("b fails");
+        assert!(a.enabled.get());
+        assert_eq!(
+            failure.to_string(),
+            "single-pass: could not enable the b detour: Address is not executable; the rollback \
+             left a enabled"
+        );
+    }
+}
