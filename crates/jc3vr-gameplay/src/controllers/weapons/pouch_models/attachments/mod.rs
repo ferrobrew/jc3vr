@@ -5,6 +5,7 @@ use std::time::Instant;
 use glam::{Mat4, Quat};
 use jc3vr_input::frame::{Hand, Pose};
 
+pub use crate::controllers::body::mirror::SampleId;
 use crate::controllers::{
     body::rig::frames::Frames,
     weapons::{
@@ -32,14 +33,6 @@ pub(crate) struct Attachment {
     pub pouch: Result<Pose, Missing>,
     pub local: Result<Mat4, Missing>,
     pub visible: bool,
-}
-
-/// A producer-local identity, not an engine frame number or a host-time join.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct SampleId {
-    pub owner: usize,
-    pub epoch: u64,
-    pub sequence: u64,
 }
 
 /// One bounded input-tick observation. Poses are in the character's model space.

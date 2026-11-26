@@ -82,6 +82,7 @@ pub mod heft;
 pub mod hold;
 pub mod hud_feed;
 pub mod inventory;
+pub(crate) mod mirror;
 pub mod opening;
 pub(crate) mod permission;
 pub mod pouch_models;

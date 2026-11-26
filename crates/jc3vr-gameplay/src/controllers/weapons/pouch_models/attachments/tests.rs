@@ -11,8 +11,11 @@ use jc3vr_render::controllers::{
 
 use super::*;
 use crate::controllers::{
-    body::mirror::{PouchRenderContext, PouchRenderStatus, pouch_render_markers},
-    weapons::pouch_models::{render_character, render_matrix},
+    body::mirror::PouchRenderStatus,
+    weapons::{
+        mirror::{PouchRenderContext, pouch_render_markers},
+        pouch_models::{render_character, render_matrix},
+    },
 };
 
 fn frames() -> Frames {

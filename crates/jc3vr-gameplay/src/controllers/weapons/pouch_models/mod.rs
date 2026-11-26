@@ -59,6 +59,7 @@ use crate::controllers::{
         c4::detonator::trigger_model,
         config::PouchModelsConfig,
         engine,
+        mirror::pouches_rendered,
         pouch_models::{
             attachments::{RenderSample, Sample, SampleId, placement},
             owned::{OwnedModel, magazine_source, without_magazine_prop},
@@ -504,7 +505,7 @@ pub unsafe fn render_frame(dtf: f32) {
     state.status.drawn += u64::from(drew);
     drop(state);
     if let Some(sample) = sample {
-        mirror::pouches_rendered(&sample);
+        pouches_rendered(&sample);
     }
 }
 

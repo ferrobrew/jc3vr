@@ -9,9 +9,10 @@ use jc3vr_render::controllers::{
 
 use super::*;
 use crate::controllers::{
-    body::mirror::{Plane, attachment_markers},
+    body::mirror::Plane,
     weapons::{
         docks::attachments::{Attachment, MAX_AGE, Missing, Occupancy, PoseSource},
+        mirror::attachment_markers,
         volumes::{self, SOCKETS},
     },
 };

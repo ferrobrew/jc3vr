@@ -5,9 +5,9 @@ use jc3vr_render::controllers::{
 };
 
 use super::*;
-use crate::controllers::body::{
-    mirror::{Plane, attachment_markers},
-    rig::frames::Frames,
+use crate::controllers::{
+    body::{mirror::Plane, rig::frames::Frames},
+    weapons::mirror::attachment_markers,
 };
 
 #[test]

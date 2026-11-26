@@ -12,8 +12,16 @@
 //! misalignment. The primitives are submitted from the pass's thread to the overlay's retained
 //! slot, anchored to the head at an offset, so the figure rides with a player moving fast (a
 //! vehicle, the wingsuit) instead of trailing at the tick's rate.
+//!
+//! The weapon handling draws what it owns on the body: the sockets' interaction targets on each
+//! pass, through the sampler it registers ([`register_attachment_sampler`]), and the pouches'
+//! render placement after each render publication ([`submit_pouch_render`]), with the drawing
+//! helpers and colours here.
 
-use std::time::{Duration, Instant};
+use std::{
+    sync::OnceLock,
+    time::{Duration, Instant},
+};
 
 use glam::{Mat4, Vec3};
 use jc3gi::character::character::{AnimationController, Character, Joint};
@@ -32,13 +40,6 @@ use crate::controllers::{
     body::procedural::{head::head_bone_world, joints::from_joint, skeleton},
     hands::ik::tick_records,
     overlay::config::OVERLAY_CONFIG,
-    weapons::{
-        docks::{
-            self, SocketUse,
-            attachments::{Occupancy, PoseSource, Sample},
-        },
-        pouch_models::attachments::{RenderSample as PouchRenderSample, SampleId},
-    },
 };
 
 /// What the mirror drew on its last pass.
@@ -75,6 +76,14 @@ pub fn attachment_status() -> AttachmentStatus {
     status
 }
 
+/// A producer-local identity, not an engine frame number or a host-time join.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct SampleId {
+    pub owner: usize,
+    pub epoch: u64,
+    pub sequence: u64,
+}
+
 /// Identities for the last render-time comparison, separate from the skeleton's solve pass.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
 pub struct PouchRenderStatus {
@@ -97,35 +106,46 @@ pub fn pouch_render_status() -> PouchRenderStatus {
     }
 }
 
-/// A plane derived from the same render publication as the applied model matrices.
+/// What a sampler drew of the attachments on the body, for the mirror's status.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
+pub struct AttachmentCounts {
+    /// Socket observations without a pose, counted once per socket.
+    pub missing: usize,
+    pub markers: usize,
+    pub offers: usize,
+    pub occupied: usize,
+}
+
+/// What the mirror draws the attachments with: the character's owner, its world transform, and the
+/// moment of the pass, the mirror's plane, and the head the primitives are anchored to.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub(crate) struct PouchRenderContext {
-    pub id: SampleId,
+pub struct AttachmentPass {
+    pub owner: usize,
+    pub character: Mat4,
+    pub now: Instant,
     pub plane: Plane,
+    pub head: Vec3,
 }
 
-impl PouchRenderContext {
-    pub(crate) fn new(sample: &PouchRenderSample, distance: f32) -> Option<Self> {
-        Some(Self {
-            id: sample.id,
-            plane: Plane::ahead_of(&sample.character, distance)?,
-        })
+/// A sampler of the attachments on the body ([`register_attachment_sampler`]).
+pub type AttachmentSampler = fn(&AttachmentPass, &mut Vec<Primitive>) -> Option<AttachmentCounts>;
+
+/// Register the sampler of the attachments on the body: called on each mirror pass, it adds the
+/// reflected attachments' primitives to `out` and returns what it drew, or `None` without a current
+/// sample. One sampler: a second registration is refused and logged.
+///
+/// The sampler runs on the thread running the local player's pose finalization, and reads only
+/// copied observations.
+pub fn register_attachment_sampler(sampler: AttachmentSampler) {
+    if ATTACHMENT_SAMPLER.set(sampler).is_err() {
+        tracing::error!("mirror: an attachment sampler is already registered; keeping the first");
     }
 }
 
-/// Publish only copied values after the model producer applies this render's matrices.
-pub(crate) fn pouches_rendered(sample: &PouchRenderSample) {
-    clear_pouch_render();
-    let (enabled, distance) = OVERLAY_CONFIG.query(|c| (c.body_mirror, c.body_mirror_distance_m));
-    if !enabled {
-        return;
-    }
-    let Some(context) = PouchRenderContext::new(sample, distance) else {
-        return;
-    };
-    let mut primitives = Vec::new();
-    let status = pouch_render_markers(sample, context, &mut primitives);
-    store::submit(Source::BodyMirrorPouches, &mut primitives, TTL);
+/// Submit the reflected pouches of a render publication, drawn by the weapon handling from the
+/// matrices it applied, with what was drawn.
+pub(crate) fn submit_pouch_render(primitives: &mut Vec<Primitive>, status: PouchRenderStatus) {
+    store::submit(Source::BodyMirrorPouches, primitives, TTL);
     *POUCH_RENDER_STATUS.lock() = (Some(Instant::now()), status);
 }
 
@@ -187,23 +207,17 @@ pub(crate) unsafe fn after_solve(character: *mut Character) {
         &mut primitives,
     );
     let now = Instant::now();
-    let attachments = docks::attachment_sample(character as *const Character as usize, world, now);
-    if let Some(sample) = &attachments {
-        attachment_markers(sample, plane, head, &mut primitives);
-    }
-    let attachments_missing = attachments.as_ref().map_or(0, |sample| {
-        sample
-            .attachments
-            .iter()
-            .filter(|attachment| {
-                attachment.hand.is_none()
-                    && (attachment.pose.is_err()
-                        || sample
-                            .attachments
-                            .iter()
-                            .any(|offer| offer.socket == attachment.socket && offer.pose.is_err()))
-            })
-            .count()
+    let attachments = ATTACHMENT_SAMPLER.get().and_then(|sampler| {
+        sampler(
+            &AttachmentPass {
+                owner: character as *const Character as usize,
+                character: world,
+                now,
+                plane,
+                head,
+            },
+            &mut primitives,
+        )
     });
     let submitted = primitives.len();
     store::submit(Source::BodyMirror, &mut primitives, TTL);
@@ -215,24 +229,10 @@ pub(crate) unsafe fn after_solve(character: *mut Character) {
     *ATTACHMENT_STATUS.lock() = AttachmentStatus {
         at: Some(now),
         sockets_current: attachments.is_some(),
-        sockets_missing: attachments_missing,
-        socket_markers: attachments
-            .as_ref()
-            .map_or(0, |sample| sample.markers().count()),
-        socket_offers: attachments.as_ref().map_or(0, |sample| {
-            sample
-                .attachments
-                .iter()
-                .filter(|attachment| attachment.hand.is_some())
-                .count()
-        }),
-        occupied_sockets: attachments.as_ref().map_or(0, |sample| {
-            sample
-                .attachments
-                .iter()
-                .filter(|attachment| attachment.hand.is_none() && attachment.item.is_some())
-                .count()
-        }),
+        sockets_missing: attachments.map_or(0, |counts| counts.missing),
+        socket_markers: attachments.map_or(0, |counts| counts.markers),
+        socket_offers: attachments.map_or(0, |counts| counts.offers),
+        occupied_sockets: attachments.map_or(0, |counts| counts.occupied),
         pouches_current: false,
         pouches_missing: 0,
     };
@@ -331,7 +331,7 @@ pub fn figure(figure: &Figure, head: Vec3, out: &mut Vec<Primitive>) {
 
 /// How long a submission is drawn without another: a few ticks, so a paused or skipped pass
 /// clears the mirror.
-const TTL: Duration = Duration::from_millis(150);
+pub(crate) const TTL: Duration = Duration::from_millis(150);
 
 /// How long a direction laid flat must be to have a heading of its own.
 const MIN_FLAT: f32 = 0.2;
@@ -402,107 +402,25 @@ fn side_of(name: &str) -> Option<BoneSide> {
     }
 }
 
-const BONE_WIDTH: f32 = 0.025;
+pub(crate) const BONE_WIDTH: f32 = 0.025;
 const FRAME_WIDTH: f32 = 0.01;
 const HEAD_RING_M: f32 = 0.22;
-const TARGET_RING_M: f32 = 0.08;
+pub(crate) const TARGET_RING_M: f32 = 0.08;
 const FRAME_WIDTH_M: f32 = 1.2;
 const FRAME_HEIGHT_M: f32 = 2.2;
 
 const SPINE: Rgba = [0.95, 0.95, 0.95, 0.9];
 const LEFT: Rgba = [0.3, 0.6, 1.0, 0.9];
 const RIGHT: Rgba = [1.0, 0.55, 0.25, 0.9];
-const TARGET: Rgba = [0.3, 1.0, 0.4, 0.9];
-const FRAME: Rgba = [0.7, 0.7, 0.8, 0.5];
-const OCCUPIED: Rgba = [0.9, 0.7, 0.2, 0.9];
-const EMPTY: Rgba = [0.4, 0.8, 0.8, 0.7];
-const NO_FIT: Rgba = [1.0, 0.2, 0.2, 0.9];
-const ATTACHMENT_RING_M: f32 = 0.10;
-const ATTACHMENT_AXIS_M: f32 = 0.08;
+pub(crate) const TARGET: Rgba = [0.3, 1.0, 0.4, 0.9];
+pub(crate) const FRAME: Rgba = [0.7, 0.7, 0.8, 0.5];
+pub(crate) const OCCUPIED: Rgba = [0.9, 0.7, 0.2, 0.9];
+pub(crate) const EMPTY: Rgba = [0.4, 0.8, 0.8, 0.7];
+pub(crate) const NO_FIT: Rgba = [1.0, 0.2, 0.2, 0.9];
+pub(crate) const ATTACHMENT_RING_M: f32 = 0.10;
+pub(crate) const ATTACHMENT_AXIS_M: f32 = 0.08;
 
-/// Draw copied interaction targets; landmark rings do not represent native weapon placement.
-pub(crate) fn attachment_markers(
-    sample: &Sample,
-    plane: Plane,
-    head: Vec3,
-    out: &mut Vec<Primitive>,
-) {
-    for attachment in sample.markers() {
-        let Ok(pose) = attachment.pose else {
-            continue;
-        };
-        let color = if attachment.usage == Some(SocketUse::NoFit) {
-            NO_FIT
-        } else if attachment.hand.is_none()
-            && matches!(attachment.source, PoseSource::OffsetBone { object: None })
-        {
-            FRAME
-        } else {
-            match attachment.occupancy {
-                Occupancy::Empty => EMPTY,
-                Occupancy::Occupied { .. } => OCCUPIED,
-            }
-        };
-        let at = |point| Anchor::Head(plane.reflect(point) - head);
-        out.push(ring(at(pose.position), ATTACHMENT_RING_M, color));
-        out.push(line(
-            at(pose.position),
-            at(pose.position + pose.orientation * Vec3::NEG_Z * ATTACHMENT_AXIS_M),
-            BONE_WIDTH,
-            color,
-        ));
-    }
-}
-
-/// Compare the applied render matrix with the copied input target, without native reads.
-/// World anchors avoid joining the render plane to a head pose from another phase.
-pub(crate) fn pouch_render_markers(
-    sample: &PouchRenderSample,
-    context: PouchRenderContext,
-    out: &mut Vec<Primitive>,
-) -> PouchRenderStatus {
-    if context.id != sample.id {
-        return PouchRenderStatus::default();
-    }
-    let mut status = PouchRenderStatus {
-        render: Some(sample.id),
-        input: Some(sample.input.id),
-        ..PouchRenderStatus::default()
-    };
-    let at = |point| Anchor::World(context.plane.reflect(point));
-    for attachment in &sample.input.attachments {
-        let displayed = sample.displayed(attachment);
-        let target = attachment
-            .pouch
-            .ok()
-            .map(|pose| sample.input.character.transform_point3(pose.position))
-            .filter(|point| point.is_finite());
-        if let Some(target) = target {
-            let color = if displayed.is_some() { EMPTY } else { NO_FIT };
-            out.push(ring(at(target), ATTACHMENT_RING_M, color));
-            status.targets += 1;
-        }
-        if let Some(matrix) = displayed {
-            let origin = matrix.w_axis.truncate();
-            out.push(ring(at(origin), TARGET_RING_M, TARGET));
-            out.push(line(
-                at(origin),
-                at(matrix.transform_point3(Vec3::NEG_Z * ATTACHMENT_AXIS_M)),
-                BONE_WIDTH,
-                TARGET,
-            ));
-            if let Some(target) = target {
-                out.push(line(at(target), at(origin), BONE_WIDTH, EMPTY));
-            }
-            status.displayed += 1;
-        } else if attachment.side.is_some() {
-            status.missing += 1;
-        }
-    }
-    status
-}
-
-fn line(from: Anchor, to: Anchor, width: f32, color: Rgba) -> Primitive {
+pub(crate) fn line(from: Anchor, to: Anchor, width: f32, color: Rgba) -> Primitive {
     Primitive::Line {
         from,
         to,
@@ -512,7 +430,7 @@ fn line(from: Anchor, to: Anchor, width: f32, color: Rgba) -> Primitive {
     }
 }
 
-fn ring(at: Anchor, size: f32, color: Rgba) -> Primitive {
+pub(crate) fn ring(at: Anchor, size: f32, color: Rgba) -> Primitive {
     Primitive::Sprite {
         at,
         size: SpriteSize::World(size),
@@ -585,6 +503,8 @@ impl FigureCache {
 }
 
 static CACHE: Mutex<FigureCache> = Mutex::new(FigureCache { entry: None });
+
+static ATTACHMENT_SAMPLER: OnceLock<AttachmentSampler> = OnceLock::new();
 
 static STATUS: Mutex<MirrorStatus> = Mutex::new(MirrorStatus {
     at: None,
