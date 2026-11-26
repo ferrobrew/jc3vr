@@ -6,7 +6,8 @@
 
 use egui::Ui;
 use jc3vr_body::controllers::grab::cockpit::ControlKind;
-use jc3vr_gameplay::controllers::{
+use jc3vr_input::frame::Hand;
+use jc3vr_vehicles::controllers::{
     vehicles,
     vehicles::{
         VehiclesStatus,
@@ -25,7 +26,6 @@ use jc3vr_gameplay::controllers::{
         wingsuit_evade::EvadeStatus,
     },
 };
-use jc3vr_input::frame::Hand;
 
 use crate::{
     status::vehicles::{COCKPIT_BUTTONS, FLIGHT_CONTROLS, MOUNTED_GUN, PASSENGER_AIM},

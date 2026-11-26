@@ -16,6 +16,7 @@ jc3vr-render = { path = "../jc3vr-render" }
 jc3vr-view = { path = "../jc3vr-view" }
 jc3vr-body = { path = "../jc3vr-body" }
 jc3vr-physical = { path = "../jc3vr-physical" }
+jc3vr-vehicles = { path = "../jc3vr-vehicles" }
 jc3vr-gameplay = { path = "../jc3vr-gameplay" }
 jc3vr-capture = { path = "../jc3vr-capture" }
 tracking-format = { path = "../tracking-format" }

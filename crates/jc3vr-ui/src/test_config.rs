@@ -49,7 +49,6 @@ use jc3vr_gameplay::{
     controllers::{
         config::{CONTROLLERS_CONFIG, ControllersConfig, validate},
         summary::config::SUMMARY_CONFIG,
-        vehicles::config::VEHICLES_CONFIG,
     },
     grapple::physical::config::GRAPPLE_CONFIG,
 };
@@ -68,6 +67,7 @@ use jc3vr_tooling::{
     recorder::{RECORDER_CONFIG, RecorderConfig},
     testing::{TESTING_CONFIG, TestingConfig},
 };
+use jc3vr_vehicles::controllers::vehicles::config::VEHICLES_CONFIG;
 use jc3vr_view::{
     far_field::{FAR_FIELD_CONFIG, FarFieldConfig},
     fsr::{FSR_CONFIG, FsrConfig},

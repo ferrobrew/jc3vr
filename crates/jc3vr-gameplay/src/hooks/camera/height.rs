@@ -20,10 +20,9 @@ use jc3vr_body::controllers::{
     roomscale,
     roomscale::{RoomscaleStatus, SeatPhase, posture::HeadHeight},
 };
+use jc3vr_vehicles::controllers::vehicles::driving_view;
 use jc3vr_view::headpose::{anchor, eye_arm, neck_delta};
 use parking_lot::Mutex;
-
-use crate::controllers::vehicles::driving_view;
 
 /// One sample of the camera height and what explains it.
 #[derive(Debug, Copy, Clone, PartialEq)]

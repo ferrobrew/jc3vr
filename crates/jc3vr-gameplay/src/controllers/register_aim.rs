@@ -17,6 +17,7 @@ use jc3vr_body::controllers::{
     facts::mounted,
 };
 use jc3vr_physical::controllers::physical_hands;
+use jc3vr_vehicles::controllers::vehicles;
 use jc3vr_weapons::controllers::weapons::{
     c4, collide,
     dual_wield::single,
@@ -24,8 +25,6 @@ use jc3vr_weapons::controllers::weapons::{
     hold::{button_pickup, tick as hold_tick, use_item},
     unarmed_fire,
 };
-
-use crate::controllers::vehicles;
 
 pub(super) fn register() {
     hooks::register_aim_hooks(AimHooks {

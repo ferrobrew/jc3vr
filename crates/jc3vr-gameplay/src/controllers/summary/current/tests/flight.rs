@@ -1,10 +1,8 @@
 use jc3vr_body::controllers::mode::AirborneVariant;
+use jc3vr_vehicles::controllers::vehicles::wingsuit_gestures::GestureAvailability;
 
 use super::*;
-use crate::controllers::{
-    bindings::tables::describe::flight_mechanics, summary::labels::ModText,
-    vehicles::wingsuit_gestures::GestureAvailability,
-};
+use crate::controllers::{bindings::tables::describe::flight_mechanics, summary::labels::ModText};
 
 #[test]
 fn current_flight_projects_only_physical_mode_specific_labels() {

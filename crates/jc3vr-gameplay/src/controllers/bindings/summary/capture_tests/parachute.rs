@@ -3,6 +3,10 @@ use jc3vr_body::controllers::{
     grab,
     grab::{Mark, MarkAt},
 };
+use jc3vr_vehicles::controllers::vehicles::{
+    parachute,
+    parachute::{HandleState, StepInputs},
+};
 use jc3vr_view::vr::input::semantic::bound::SourceTable;
 
 use super::*;
@@ -12,10 +16,6 @@ use crate::controllers::{
         current,
         current::{CellKind, CurrentSummary, Source},
         labels::{ModText, Text},
-    },
-    vehicles::{
-        parachute,
-        parachute::{HandleState, StepInputs},
     },
 };
 

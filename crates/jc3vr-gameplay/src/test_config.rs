@@ -43,6 +43,7 @@ use jc3vr_core::{
 use jc3vr_physical::controllers::{
     glass::config::GLASS_CONFIG, physical_hands::config::PHYSICAL_HANDS_CONFIG,
 };
+use jc3vr_vehicles::controllers::vehicles::config::VEHICLES_CONFIG;
 use jc3vr_view::{
     far_field::{FAR_FIELD_CONFIG, FarFieldConfig},
     fsr::{FSR_CONFIG, FsrConfig},
@@ -64,7 +65,6 @@ use crate::{
     controllers::{
         config::{CONTROLLERS_CONFIG, ControllersConfig},
         summary::config::SUMMARY_CONFIG,
-        vehicles::config::VEHICLES_CONFIG,
     },
     grapple::physical::config::GRAPPLE_CONFIG,
 };

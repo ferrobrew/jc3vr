@@ -26,21 +26,19 @@ use jc3vr_input::{
     frame::Hand,
     semantic::vocabulary::{ActionId, GlobalAction, MenuAction, OnFootAction},
 };
+use jc3vr_vehicles::controllers::vehicles::wingsuit_gestures::GestureAvailability;
 use jc3vr_view::vr::input::semantic::{
     bound::{Layout, PhysicalSet, SourceName, SourceTable},
     defaults::{Component, default_binding},
 };
 
-use crate::controllers::{
-    bindings::{
-        intents::{Mask, YANK_ACTIONS},
-        tables::{
-            body_turn_action, context_masks,
-            declare::{TableCtx, declare, vehicle_weapon_actions},
-            sink::{Axis, Direction, Gate, Input, PadLayout, Press, Sink, pad_of},
-        },
+use crate::controllers::bindings::{
+    intents::{Mask, YANK_ACTIONS},
+    tables::{
+        body_turn_action, context_masks,
+        declare::{TableCtx, declare, vehicle_weapon_actions},
+        sink::{Axis, Direction, Gate, Input, PadLayout, Press, Sink, pad_of},
     },
-    vehicles::wingsuit_gestures::GestureAvailability,
 };
 
 /// Physical rows supplied only by the flight recognizer's current availability.

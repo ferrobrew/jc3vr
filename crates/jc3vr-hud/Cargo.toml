@@ -16,6 +16,7 @@ jc3vr-render = { path = "../jc3vr-render" }
 jc3vr-view = { path = "../jc3vr-view" }
 jc3vr-body = { path = "../jc3vr-body" }
 jc3vr-weapons = { path = "../jc3vr-weapons" }
+jc3vr-vehicles = { path = "../jc3vr-vehicles" }
 jc3vr-gameplay = { path = "../jc3vr-gameplay" }
 # The UI and controls map detours. The detour macro emits `::re_utilities` paths, so a crate that
 # defines detours depends on `re-utilities` directly.

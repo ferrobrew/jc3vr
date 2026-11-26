@@ -3,20 +3,18 @@
 
 use std::collections::BTreeSet;
 
+use jc3vr_vehicles::controllers::vehicles::{
+    config::WingsuitGesturesConfig,
+    wingsuit_gestures::{
+        FlightPose, GestureInput, HandClaims, Stage, WingsuitGestures, desired_for,
+    },
+};
 use jc3vr_view::vr::input::flight_pose::GestureSample;
 
 use super::*;
-use crate::controllers::{
-    bindings::tables::{
-        coverage::{all_contexts, all_modes, injected, injected_with},
-        tests::equivalence::legacy_layout,
-    },
-    vehicles::{
-        config::WingsuitGesturesConfig,
-        wingsuit_gestures::{
-            FlightPose, GestureInput, HandClaims, Stage, WingsuitGestures, desired_for,
-        },
-    },
+use crate::controllers::bindings::tables::{
+    coverage::{all_contexts, all_modes, injected, injected_with},
+    tests::equivalence::legacy_layout,
 };
 
 /// The game actions the new layout leaves without a button: grenades come from their pouch and
@@ -35,7 +33,7 @@ const DROPPED: [Action; 6] = [
 ];
 
 /// The horn and the magnet in a vehicle: the controllers leave the horn action unbound by default,
-/// and the cockpit's horn button carries both (`crate::controllers::vehicles::axis_output`).
+/// and the cockpit's horn button carries both (`jc3vr_vehicles::controllers::vehicles::axis_output`).
 const VEHICLE_DROPPED: [Action; 3] = [SOUND_HORN_SIREN, TOGGLE_MAGNET_1, L3];
 
 // Suit gestures use the narrow native actions, not the broad button aliases.

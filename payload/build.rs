@@ -19,6 +19,7 @@ fn main() {
     println!("cargo:rerun-if-changed=../crates/jc3vr-body/src");
     println!("cargo:rerun-if-changed=../crates/jc3vr-weapons/src");
     println!("cargo:rerun-if-changed=../crates/jc3vr-physical/src");
+    println!("cargo:rerun-if-changed=../crates/jc3vr-vehicles/src");
     println!("cargo:rerun-if-changed=../crates/jc3vr-gameplay/src");
     println!("cargo:rerun-if-changed=../crates/jc3vr-hud/src");
     println!("cargo:rerun-if-changed=../crates/jc3vr-hud/shaders");

@@ -11,10 +11,9 @@ use jc3gi::{
     types::math::Vector3,
 };
 use jc3vr_body::controllers::{aim::gun, held::native::weapon_at};
+use jc3vr_vehicles::controllers::vehicles::mounted;
 use jc3vr_weapons::controllers::weapons::hold::armed;
 use re_utilities::hook_library::HookLibrary;
-
-use crate::controllers::vehicles::mounted;
 
 pub fn hook_library() -> HookLibrary {
     HookLibrary::new()

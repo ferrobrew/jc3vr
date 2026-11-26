@@ -43,8 +43,10 @@ jc3vr-weapons = { path = "../crates/jc3vr-weapons" }
 jc3vr-capture = { path = "../crates/jc3vr-capture" }
 # The physical layer: the physical hands and breaking window glass.
 jc3vr-physical = { path = "../crates/jc3vr-physical" }
-# The gameplay layer: the vehicles, the bindings, the summary model, the grapple, and the look,
-# equipment, and sim detours.
+# The vehicles layer: vehicles, mounted guns, the wingsuit, and the parachute.
+jc3vr-vehicles = { path = "../crates/jc3vr-vehicles" }
+# The gameplay layer: the bindings, the summary model, the grapple, and the look, equipment, and sim
+# detours.
 jc3vr-gameplay = { path = "../crates/jc3vr-gameplay" }
 # The HUD layer: the floating panel and its layers, the summary's presentation, the controls map,
 # the UI detours, and the egui renderer.

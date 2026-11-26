@@ -21,6 +21,9 @@ use jc3vr_body::controllers::{
 };
 use jc3vr_input::{frame::Hand, semantic::vocabulary::ActionId};
 use jc3vr_physical::controllers::physical_hands::door_offer_current;
+use jc3vr_vehicles::controllers::vehicles::{
+    parachute::HandleHold, wingsuit_gestures::GestureAvailability,
+};
 use jc3vr_view::vr::input::semantic::bound::PhysicalSet;
 use jc3vr_weapons::controllers::{
     weapons,
@@ -43,7 +46,6 @@ use crate::controllers::{
         current::{CurrentRouting, TriggerUse},
         eligibility::{Eligibility, SnatchHint},
     },
-    vehicles::{parachute::HandleHold, wingsuit_gestures::GestureAvailability},
 };
 
 /// State that can invalidate an offer between the provider pass and final publication.

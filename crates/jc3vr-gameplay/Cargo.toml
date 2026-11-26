@@ -2,7 +2,7 @@
 name = "jc3vr-gameplay"
 version = "0.1.0"
 edition = "2024"
-description = "The gameplay layer of the payload: the controller subsystems built on the body, weapons, and physical layers (the bindings, the vehicles, the snatch, and the summary model), the grapple, and the look, equipment, and sim detours."
+description = "The gameplay layer of the payload: the controller subsystems built on the body, weapons, physical, and vehicles layers (the bindings, the snatch, and the summary model), the grapple, and the look, equipment, and sim detours."
 publish = false
 
 [features]
@@ -24,6 +24,8 @@ jc3vr-body = { path = "../jc3vr-body" }
 jc3vr-weapons = { path = "../jc3vr-weapons" }
 # The physical layer beside the weapons: the physical hands and the glass.
 jc3vr-physical = { path = "../jc3vr-physical" }
+# The vehicles layer below: vehicles, mounted guns, the wingsuit, and the parachute.
+jc3vr-vehicles = { path = "../jc3vr-vehicles" }
 # The gameplay detours. The detour macro emits `::re_utilities` paths, so a crate that defines
 # detours depends on `re-utilities` directly.
 re-utilities = { workspace = true }

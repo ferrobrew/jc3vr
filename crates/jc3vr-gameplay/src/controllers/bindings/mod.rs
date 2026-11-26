@@ -102,6 +102,7 @@ use jc3vr_input::{
     },
 };
 use jc3vr_physical::controllers::physical_hands;
+use jc3vr_vehicles::controllers::vehicles;
 use jc3vr_view::{
     controllers::cockpit::CockpitTransform,
     headpose,
@@ -141,7 +142,6 @@ use crate::{
         config::{CONTROLLERS_CONFIG, ControllersConfig},
         snatch,
         snatch::config::SnatchSettings,
-        vehicles,
     },
     grapple,
 };

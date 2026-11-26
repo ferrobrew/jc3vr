@@ -22,7 +22,7 @@
 //! - in a passenger seat, while the aim's latest results aimed the wielded weapon by hand.
 //!
 //! A gun the gaze still aims keeps the reticle: the driver's weapons with
-//! [`VehiclesConfig::driver_weapons_by_hand`](jc3vr_gameplay::controllers::vehicles::config::VehiclesConfig::driver_weapons_by_hand)
+//! [`VehiclesConfig::driver_weapons_by_hand`](jc3vr_vehicles::controllers::vehicles::config::VehiclesConfig::driver_weapons_by_hand)
 //! off, and a mounted gun with its hand aim off. The world-space overlay's gun readout stands in
 //! for the hidden weapon reticle.
 //!
@@ -32,7 +32,8 @@
 use std::time::{Duration, Instant};
 
 use jc3vr_body::controllers::{aim, mode, mode::Mode, scheme};
-use jc3vr_gameplay::controllers::{config::CONTROLLERS_CONFIG, vehicles};
+use jc3vr_gameplay::controllers::config::CONTROLLERS_CONFIG;
+use jc3vr_vehicles::controllers::vehicles;
 use parking_lot::Mutex;
 
 /// Which of the game's reticles to hide.

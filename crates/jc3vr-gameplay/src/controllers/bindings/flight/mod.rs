@@ -20,6 +20,13 @@ use jc3vr_body::controllers::{
     physics::grapple_hook as hook,
 };
 use jc3vr_input::frame::{Button, ControllerFrame, Hand};
+use jc3vr_vehicles::controllers::vehicles::{
+    config::WingsuitGesturesConfig,
+    wingsuit_gestures::{
+        Blocked, FlightCalibration, FlightPose, GestureAvailability, GestureCommands, GestureInput,
+        GesturePhase, HandClaims, Stage, SuitTransition, WingsuitGestures, desired_for,
+    },
+};
 use jc3vr_view::{
     recorder::tracking::{events, events::EventKind},
     vr::input::flight_pose,
@@ -27,17 +34,7 @@ use jc3vr_view::{
 use jc3vr_weapons::controllers::weapons;
 use tracking_format::event::{Label, WingsuitGesture};
 
-use crate::controllers::{
-    config::ControllersConfig,
-    vehicles::{
-        config::WingsuitGesturesConfig,
-        wingsuit_gestures::{
-            Blocked, FlightCalibration, FlightPose, GestureAvailability, GestureCommands,
-            GestureInput, GesturePhase, HandClaims, Stage, SuitTransition, WingsuitGestures,
-            desired_for,
-        },
-    },
-};
+use crate::controllers::config::ControllersConfig;
 
 /// Recognition and the calibration that interprets its pose history belong to one binding state.
 #[derive(Debug, Default)]

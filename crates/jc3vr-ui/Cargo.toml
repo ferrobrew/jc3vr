@@ -21,6 +21,7 @@ jc3vr-view = { path = "../jc3vr-view" }
 jc3vr-body = { path = "../jc3vr-body" }
 jc3vr-physical = { path = "../jc3vr-physical" }
 jc3vr-weapons = { path = "../jc3vr-weapons" }
+jc3vr-vehicles = { path = "../jc3vr-vehicles" }
 jc3vr-gameplay = { path = "../jc3vr-gameplay" }
 jc3vr-hud = { path = "../jc3vr-hud" }
 jc3vr-tooling = { path = "../jc3vr-tooling" }

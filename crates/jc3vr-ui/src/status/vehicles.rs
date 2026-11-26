@@ -5,8 +5,8 @@ use jc3vr_body::controllers::{
     grab::cockpit::ControlKind,
     mode::{VehicleClass, VehicleSeat},
 };
-use jc3vr_gameplay::controllers::{
-    config::CONTROLLERS_CONFIG,
+use jc3vr_gameplay::controllers::config::CONTROLLERS_CONFIG;
+use jc3vr_vehicles::controllers::{
     vehicles,
     vehicles::{
         VehicleSummary,
@@ -198,7 +198,7 @@ fn flight_controls_line(on: bool, summary: &VehicleSummary) -> Line {
 
 #[cfg(test)]
 mod tests {
-    use jc3vr_gameplay::controllers::vehicles::{physical::Outputs, tuning::PHYSICAL};
+    use jc3vr_vehicles::controllers::vehicles::{physical::Outputs, tuning::PHYSICAL};
 
     use super::*;
 
