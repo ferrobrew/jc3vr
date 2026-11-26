@@ -46,7 +46,7 @@ pub fn egui_debug_performance(ui: &mut egui::Ui) {
     // The profiler (issue #34): a collapsible with the live flame graph and trace capture, below
     // the frame-rate readout.
     #[cfg(feature = "profiler")]
-    crate::profiler::ui::egui_profiler(ui);
+    crate::profiler::egui_profiler(ui);
 }
 
 /// The always-on frame breakdown (`jc3vr_core::frame_timing`) over the last second: the game thread's

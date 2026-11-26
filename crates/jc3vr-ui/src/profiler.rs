@@ -1,5 +1,6 @@
 //! The profiler's Performance-tab UI: a collapsible holding the enable toggle, the trace-capture
-//! control, and — when scope collection is on — puffin's live flame graph.
+//! control, and — when scope collection is on — puffin's live flame graph. The profiler core lives
+//! in the core crate and the GPU timestamp lane in the render crate.
 
 use jc3vr_core::profiler::{capture, capture::DEFAULT_CAPTURE_SECS, ui_enabled};
 

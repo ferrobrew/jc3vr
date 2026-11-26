@@ -86,7 +86,7 @@ The payload's code lives in the layer crates under `crates/`, each a library who
 - `jc3vr-gameplay`: `controllers`, `grapple`, and the gameplay detours (`hooks::{character, animation, input, equipment, sim, camera}`, the last holding the camera height).
 - `jc3vr-hud`: `hud`, `egui_impl`, the UI detours (`hooks::ui`), the controls map (`controllers::map`), and the summary's presentation (`controllers::summary`).
 - `jc3vr-tooling`: `recorder`, `director`, `testing`, and `diagnostics`.
-- `jc3vr-ui`: `ui`, `status`, `pause_menu`, the VR pages (`controllers::{menu, presets, body::menu}`), and the profiler's panel (`profiler::ui`).
+- `jc3vr-ui`: `ui`, `status`, `pause_menu`, the VR pages (`controllers::{menu, presets, body::menu}`), and the profiler's panel (`profiler`).
 - `jc3vr_payload`: `lib.rs` (the entry points, startup, shutdown, and the per-frame update), `composition`, `allocator`, `eject_gpu`, `config` (the settings aggregate, its schema, slot table, format, and load), and the game's frame entry points and the window procedure (`hooks::{game, wndproc}`).
 
 | Domain | Modules | Responsibility | Owning docs |
