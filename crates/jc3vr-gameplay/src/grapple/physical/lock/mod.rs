@@ -73,7 +73,7 @@ use re_utilities::hook_library::HookLibrary;
 pub use crate::controllers::bindings::grapple_button::LockButton;
 use crate::{
     controllers::{
-        bindings::yank::HandLine, facts, haptics, physical_hands::remote,
+        bindings::yank::HandLine, facts, haptics, physical_hands::remote, physics::GRAVITY_MPS2,
         weapons::engine::character_position,
     },
     grapple::{
@@ -305,7 +305,7 @@ pub(crate) unsafe fn lock_tick(input: &LockTickInput) {
     let release_velocity = SHARED.lock().release_velocity;
     if let Some((velocity, at)) = release_velocity {
         let elapsed = at.elapsed().as_secs_f32();
-        let expected = velocity - Vec3::Y * rope::GRAVITY_MPS2 * elapsed;
+        let expected = velocity - Vec3::Y * GRAVITY_MPS2 * elapsed;
         let measured = Vec3::from(character.m_MeasuredWorldVelocity);
         // Measured along the release's direction: a character turned aside by a wall carries less
         // of it however fast it goes.

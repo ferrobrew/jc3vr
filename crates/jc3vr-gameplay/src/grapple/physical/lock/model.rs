@@ -8,10 +8,11 @@ use crate::{
             yank::{ArmedLine, HandLine},
         },
         physical_hands::physics::drive::rig_jumped,
+        physics::GRAVITY_MPS2,
     },
     grapple::{
         physical::config::{LockConfig, SwingTuning},
-        rope::{GRAVITY_MPS2, Rope, RopeEnd, RopeFault, RopeStep, RopeTuning, held_floor},
+        rope::{Rope, RopeEnd, RopeFault, RopeStep, RopeTuning, held_floor},
     },
 };
 

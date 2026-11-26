@@ -1,13 +1,16 @@
 use glam::{Quat, Vec3};
 
 use crate::{
-    controllers::bindings::{grapple_button::LockButton, yank::HandLine},
+    controllers::{
+        bindings::{grapple_button::LockButton, yank::HandLine},
+        physics::GRAVITY_MPS2,
+    },
     grapple::{
         physical::{
             config::{GRAPPLE, LockConfig},
             lock::model::{FreeHand, Held, Pump, PumpSample, SwingInput, TakeIn, armed, swing},
         },
-        rope::{GRAVITY_MPS2, RopeFault},
+        rope::RopeFault,
     },
 };
 

@@ -173,9 +173,6 @@ pub fn held_floor(floor_m: f32) -> f32 {
     floor_m.max(MIN_HELD_LENGTH_M)
 }
 
-/// Standard gravity, metres per second squared: what the lines, and the throws and holds beside
-/// them, work against.
-pub const GRAVITY_MPS2: f32 = 9.81;
 
 /// `tension_n` as a share of the rope's strength `max_tension_n`, `0..=1`: none for a strength
 /// that is not positive or a tension that is not finite.
