@@ -6,7 +6,7 @@
 //! the system that owns it ([`register_weapon_observer`]) and runs, in the enum's order, before the
 //! correction.
 
-use std::{ffi::c_void, time::Instant};
+use std::ffi::c_void;
 
 use detours_macro::detour;
 use glam::Mat4;
@@ -16,7 +16,7 @@ use jc3gi::{
     game::GameObjectRenderContext,
     types::math::Matrix4,
 };
-use jc3vr_core::render_frame::RenderFrameSlot;
+use jc3vr_core::{published::Stamp, render_frame::RenderFrameSlot};
 use jc3vr_input::frame::Hand;
 use re_utilities::hook_library::HookLibrary;
 
@@ -89,7 +89,7 @@ pub struct RenderedGun {
     pub weapon: usize,
     pub matrix: Mat4,
     pub fraction: f32,
-    pub at: Instant,
+    pub at: Stamp,
 }
 
 pub fn rendered_guns() -> [Option<RenderedGun>; 2] {
@@ -247,7 +247,7 @@ unsafe fn late_update_weapon(game_object: *mut c_void, context: *const GameObjec
             weapon: weapon as *const WeaponBase as usize,
             matrix: rendered,
             fraction: dtf,
-            at: Instant::now(),
+            at: Stamp::now(),
         };
         RENDERED_GUNS.update([None; 2], |guns| guns[hand.index()] = Some(gun));
     }

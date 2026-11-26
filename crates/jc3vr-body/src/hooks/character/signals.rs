@@ -4,10 +4,11 @@
 //! pre-call drops the wingsuit's barrel roll, which the air physics also queues there directly
 //! (`hooks::input::wingsuit`).
 
-use std::{ffi::c_void, time::Instant};
+use std::ffi::c_void;
 
 use detours_macro::detour;
 use jc3gi::{character::character::AnimatedModel, state::StateContext};
+use jc3vr_core::published::Stamp;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{
@@ -28,7 +29,7 @@ fn ledge_climb_update(ctx: *mut StateContext, p1: *mut c_void, p2: *mut c_void) 
     LEDGE_CLIMB_UPDATE.get().unwrap().call(ctx, p1, p2);
     // SAFETY: the task's context names its character, on the thread running its state machines.
     if unsafe { character_from_context(ctx) }.is_some_and(|c| c.m_IsLocalCharacter) {
-        note_ledge_climb(Instant::now());
+        note_ledge_climb(Stamp::now());
     }
 }
 

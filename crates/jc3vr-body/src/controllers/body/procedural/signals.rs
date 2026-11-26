@@ -22,13 +22,13 @@ use std::{
         OnceLock,
         atomic::{AtomicUsize, Ordering},
     },
-    time::Instant,
 };
 
 use jc3gi::{
     animation::symbol_table::EventIdSymbolTable,
     character::character::{AnimatedModel, Character},
 };
+use jc3vr_core::published::Stamp;
 use parking_lot::Mutex;
 
 use crate::{
@@ -41,17 +41,22 @@ use crate::{
 /// every tick; one not refreshed within the freshness tuning's `body.procedural_local_ms` is not
 /// matched, so a model freed with its character (a death, a respawn) cannot pass for the player's
 /// when another character comes to live at its address.
-pub(crate) fn set_local_character(character: &Character, now: Instant) {
+pub(crate) fn set_local_character(character: &Character, now: Stamp) {
     let model = character as *const Character as usize + offset_of!(Character, m_AnimatedModel);
     LOCAL_MODEL.store(model, Ordering::Relaxed);
     STATE.lock().local_at = Some(now);
 }
 
 /// Stamp a tick of the local player's ledge climb. Called from the climb's motion task.
-pub(crate) fn note_ledge_climb(now: Instant) {
+pub(crate) fn note_ledge_climb(now: Stamp) {
     let mut state = STATE.lock();
     let started = state.ledge_climb_at.is_none_or(|at| {
-        now.saturating_duration_since(at) > FRESHNESS.get().body.procedural_climb_task_ms.duration()
+        !FRESHNESS
+            .get()
+            .body
+            .procedural_climb_task_ms
+            .window()
+            .holds(at, now)
     });
     state.ledge_climb_at = Some(now);
     drop(state);
@@ -73,7 +78,7 @@ pub(crate) fn note_act(model: *const AnimatedModel, act: i32) {
     let Some(&(_, name)) = ids.iter().find(|(id, _)| *id == act) else {
         return;
     };
-    let now = Instant::now();
+    let now = Stamp::now();
     let mut state = STATE.lock();
     if !fresh(&state, now) {
         return;
@@ -92,19 +97,23 @@ pub(crate) fn note_act(model: *const AnimatedModel, act: i32) {
 /// is turned away with one atomic load before the clock or a lock is touched, so the act queue may
 /// ask for every model's act.
 pub(crate) fn is_local_model(model: *const AnimatedModel) -> bool {
-    matches_local_address(model) && fresh(&STATE.lock(), Instant::now())
+    matches_local_address(model) && fresh(&STATE.lock(), Stamp::now())
 }
 
 /// Whether the grapple's ledge climb ran within the last tick or two.
-pub fn in_ledge_climb(now: Instant) -> bool {
+pub fn in_ledge_climb(now: Stamp) -> bool {
     STATE.lock().ledge_climb_at.is_some_and(|at| {
-        now.saturating_duration_since(at)
-            <= FRESHNESS.get().body.procedural_climb_task_ms.duration()
+        FRESHNESS
+            .get()
+            .body
+            .procedural_climb_task_ms
+            .window()
+            .holds(at, now)
     })
 }
 
 /// Whether a hit reaction's act was queued within the tuning's last `hit_reaction.hold_ms`.
-pub fn in_hit_reaction(now: Instant) -> bool {
+pub fn in_hit_reaction(now: Stamp) -> bool {
     let hold = PROCEDURAL.get().hit_reaction.hold_ms.duration();
     STATE
         .lock()
@@ -123,9 +132,9 @@ const HIT_REACTION_ACTS: [&CStr; 4] = [
 
 struct State {
     /// When the local model was last published.
-    local_at: Option<Instant>,
-    ledge_climb_at: Option<Instant>,
-    hit_reaction_at: Option<Instant>,
+    local_at: Option<Stamp>,
+    ledge_climb_at: Option<Stamp>,
+    hit_reaction_at: Option<Stamp>,
 }
 
 static STATE: Mutex<State> = Mutex::new(State {
@@ -143,10 +152,13 @@ fn matches_local_address(model: *const AnimatedModel) -> bool {
 }
 
 /// Whether the local model was published recently enough to still be the player's.
-fn fresh(state: &State, now: Instant) -> bool {
-    state.local_at.is_some_and(|at| {
-        now.saturating_duration_since(at) <= FRESHNESS.get().body.procedural_local_ms.duration()
-    })
+fn fresh(state: &State, now: Stamp) -> bool {
+    FRESHNESS
+        .get()
+        .body
+        .procedural_local_ms
+        .window()
+        .holds(state.local_at, now)
 }
 
 /// The runtime ids of [`HIT_REACTION_ACTS`] with their names, resolved once the act table is live.

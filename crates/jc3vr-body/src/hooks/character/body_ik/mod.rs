@@ -7,7 +7,7 @@ pub(crate) mod tuning;
 
 use std::{
     sync::atomic::{AtomicBool, Ordering},
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use body_rig::math::angle::heading;
@@ -18,6 +18,7 @@ use jc3gi::{
     },
     types::math::Vector3,
 };
+use jc3vr_core::published::Stamp;
 use jc3vr_input::frame::Hand;
 use jc3vr_view::{headpose, vr::VR_CONFIG};
 use parking_lot::Mutex;
@@ -888,10 +889,10 @@ fn log_unmapped_effector(effector: i32) {
 }
 
 /// Return `true` at most once per `interval`, updating the last-fire time stored in `at`.
-fn throttle(at: &Mutex<Option<Instant>>, interval: Duration) -> bool {
+fn throttle(at: &Mutex<Option<Stamp>>, interval: Duration) -> bool {
     let mut guard = at.lock();
-    let now = Instant::now();
-    if guard.is_none_or(|last| now.duration_since(last) >= interval) {
+    let now = Stamp::now();
+    if guard.is_none_or(|last| now.saturating_duration_since(last) >= interval) {
         *guard = Some(now);
         true
     } else {
@@ -899,7 +900,7 @@ fn throttle(at: &Mutex<Option<Instant>>, interval: Duration) -> bool {
     }
 }
 
-static BODY_IK_LOG_AT: Mutex<Option<Instant>> = Mutex::new(None);
+static BODY_IK_LOG_AT: Mutex<Option<Stamp>> = Mutex::new(None);
 static GATE_SKIP_LOGGED: AtomicBool = AtomicBool::new(false);
 static UNMAPPED_LOGGED: AtomicBool = AtomicBool::new(false);
 static SHOULDERS_DRIVEN: Mutex<[bool; 2]> = Mutex::new([false; 2]);

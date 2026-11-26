@@ -24,10 +24,9 @@
 //! or forward past the torso crosses. The casts run in the simulation phase, where the engine casts
 //! its own rays.
 
-use std::time::{Duration, Instant};
-
 use body_rig::math::{geometry::cast_segment, smooth::smoothstep_between};
 use glam::Vec3;
+use jc3vr_core::published::{Stamp, Window};
 
 use crate::{
     controllers::{
@@ -158,15 +157,15 @@ pub fn fade_for_depth(depth: f32, start_m: f32, full_m: f32) -> f32 {
 }
 
 /// How long a probe result stays current: the freshness tuning's `rig.probe_ms`.
-pub fn stale_after() -> Duration {
-    FRESHNESS.get().rig.probe_ms.duration()
+pub fn stale_after() -> Window {
+    FRESHNESS.get().rig.probe_ms.window()
 }
 
 /// A probe result with the time it was taken.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct TimedProbe {
     pub result: ProbeResult,
-    pub at: Instant,
+    pub at: Stamp,
 }
 
 /// Cast from `from` to `to` against the scene with `options`, and return the hit.

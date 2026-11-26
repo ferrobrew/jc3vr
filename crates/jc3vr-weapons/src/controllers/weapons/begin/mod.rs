@@ -16,7 +16,7 @@ use jc3vr_body::controllers::{
     mode::{AirborneVariant, Mode, OnFootVariant},
     physics::local_player::LocalPlayer,
 };
-use jc3vr_core::game_tick::GameTick;
+use jc3vr_core::{game_tick::GameTick, published::Stamp};
 use jc3vr_input::{
     frame::{Hand, Pose},
     haptics::cues::Event,
@@ -236,7 +236,7 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickStart {
 
     let moving = {
         let locomotion = locomotion::status();
-        locomotion.fresh(Instant::now()) && !locomotion.standing_still()
+        locomotion.fresh(Stamp::now()) && !locomotion.standing_still()
     };
     let placed = skeleton::skeleton_in_cockpit(active.head.position, active.world_scale)
         .map(|(landmarks, source)| (stride_steady(landmarks, moving), source))

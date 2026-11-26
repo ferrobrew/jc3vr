@@ -12,8 +12,9 @@
 //! that rides with the player to the render-time head, one on a held gun to its hand's render-time
 //! grip, and only a point that lies in the world to the world.
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
+use jc3vr_core::published::{Published, Stage, Stamp, Window};
 use jc3vr_input::frame::Hand;
 use jc3vr_view::controllers::{
     cockpit::CockpitTransform,
@@ -22,7 +23,6 @@ use jc3vr_view::controllers::{
         store,
     },
 };
-use parking_lot::Mutex;
 
 use crate::{
     controllers::{
@@ -71,13 +71,13 @@ pub fn clear() {
 
 /// The labels published no longer than `stale` before `now`, or none when the latest list is
 /// older or none was published.
-pub fn published_labels(now: Instant, stale: Duration) -> Vec<MarkLabel> {
-    LABELS
-        .lock()
-        .as_ref()
-        .filter(|(_, at)| now.duration_since(*at) <= stale)
-        .map(|(labels, _)| labels.clone())
-        .unwrap_or_default()
+pub fn published_labels(now: Stamp, stale: Duration) -> Vec<MarkLabel> {
+    LABELS.read(|latest| {
+        latest
+            .and_then(|latest| latest.fresh(now, Window::new(stale)))
+            .cloned()
+            .unwrap_or_default()
+    })
 }
 
 /// The labels of `targets`' labelled markers that a hand is within reach of, takes, or holds:
@@ -216,7 +216,7 @@ struct MarkState {
 
 /// Publish the labels to draw. Called each input tick of the markers.
 fn publish_labels(labels: Vec<MarkLabel>) {
-    *LABELS.lock() = Some((labels, Instant::now()));
+    LABELS.publish(labels);
 }
 
 fn state_of(index: usize, target: &GripTarget, resolved: &[Resolved; 2]) -> MarkState {
@@ -299,4 +299,4 @@ pub fn test_frame() -> MarkerFrame {
 }
 
 /// The labels to draw, published at the input tick's rate with when they were published.
-static LABELS: Mutex<Option<(Vec<MarkLabel>, Instant)>> = Mutex::new(None);
+static LABELS: Published<Vec<MarkLabel>> = Published::new(Stage::InputGame);

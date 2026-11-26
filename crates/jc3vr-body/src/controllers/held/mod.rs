@@ -40,13 +40,14 @@
 //! - [`pickup`]: the hand-off of a weapon a hand reaches in the world to the weapon handling's take,
 //!   through a sink the weapon handling registers apart from its source.
 
-use std::{sync::OnceLock, time::Instant};
+use std::sync::OnceLock;
 
 use glam::{Mat4, Vec3};
 use jc3gi::{
     character::{character::Character, inventory::Inventory},
     equipment::weapon::{ModelAttachementWeaponComponent, WeaponBase},
 };
+use jc3vr_core::published::Stamp;
 use jc3vr_input::frame::{Hand, Pose};
 
 pub mod guns;
@@ -111,7 +112,7 @@ pub struct HeldSource {
     /// The character whose gun the last input tick offered a hand, as an address.
     pub steal_offer: fn(Hand) -> Option<usize>,
     /// The reload's zones on the held guns, with a knock's flash judged at the given instant.
-    pub reload_views: fn(Instant) -> ReloadViews,
+    pub reload_views: fn(Stamp) -> ReloadViews,
     /// Whether a weapon is a single pistol: one pistol of the dual-wield pair split off to be held
     /// on its own, which shows and fires only its first gun.
     pub is_single_pistol: fn(usize) -> bool,
@@ -267,7 +268,7 @@ pub fn steal_offer(hand: Hand) -> Option<usize> {
 
 /// The reload's zones on the held guns, with a knock's flash judged at `now`.
 #[inline]
-pub fn reload_views(now: Instant) -> ReloadViews {
+pub fn reload_views(now: Stamp) -> ReloadViews {
     (source().reload_views)(now)
 }
 

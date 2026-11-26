@@ -1,10 +1,9 @@
 //! The rig's torso: the player's estimated torso, the body turning under the view, the chest turn,
 //! and how far the character's skeleton is from the player's body.
 
-use std::time::Instant;
-
 use egui::Ui;
 use jc3vr_body::controllers::body::rig::{TorsoStatus, skeleton::SkeletonStatus};
+use jc3vr_core::published::Stamp;
 
 use crate::ui::controllers::{vec3, yes_no};
 
@@ -42,7 +41,7 @@ pub(super) fn torso_readout(ui: &mut Ui, status: &TorsoStatus, skeleton: &Skelet
         "Holsters ride: {}",
         skeleton.volume_anchor.unwrap_or("nothing yet")
     ));
-    match (&skeleton.divergence, skeleton.fresh(Instant::now())) {
+    match (&skeleton.divergence, skeleton.fresh(Stamp::now())) {
         (Some(d), true) => {
             ui.label(
                 "Divergence after the solve, the player less Rico, in his model space (+Y up, -Z \

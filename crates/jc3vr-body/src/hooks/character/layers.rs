@@ -15,15 +15,12 @@
 
 use std::{
     ptr,
-    sync::{
-        LazyLock,
-        atomic::{AtomicU64, AtomicUsize, Ordering},
-    },
-    time::Instant,
+    sync::atomic::{AtomicU64, AtomicUsize, Ordering},
 };
 
 use detours_macro::detour;
 use jc3gi::animation::pose_producer::{Blender, QsTransform};
+use jc3vr_core::published::Stamp;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{controllers::body::unarmed::MASKABLE_LAYERS, tuning::FRESHNESS};
@@ -37,7 +34,7 @@ pub(crate) fn publish(blenders: [usize; MASKABLE_LAYERS.len()]) {
     for (slot, blender) in MASKED.iter().zip(blenders) {
         slot.store(blender, Ordering::Relaxed);
     }
-    PUBLISHED_AT_MS.store(now_ms(), Ordering::Release);
+    PUBLISHED_AT.store(Stamp::now().as_nanos(), Ordering::Release);
 }
 
 /// How many times each of [`MASKABLE_LAYERS`] was left out of the pose, since injection.
@@ -100,8 +97,8 @@ static MASKED: [AtomicUsize; MASKABLE_LAYERS.len()] =
     [const { AtomicUsize::new(0) }; MASKABLE_LAYERS.len()];
 static SKIPPED: [AtomicU64; MASKABLE_LAYERS.len()] =
     [const { AtomicU64::new(0) }; MASKABLE_LAYERS.len()];
-static PUBLISHED_AT_MS: AtomicU64 = AtomicU64::new(0);
-static EPOCH: LazyLock<Instant> = LazyLock::new(Instant::now);
+/// When the blenders were last published, as a [`Stamp`]'s nanoseconds.
+static PUBLISHED_AT: AtomicU64 = AtomicU64::new(0);
 
 /// The slot `blender` is published in, while the publication is fresh.
 fn masked_slot(blender: *mut Blender) -> Option<usize> {
@@ -112,10 +109,12 @@ fn masked_slot(blender: *mut Blender) -> Option<usize> {
     let slot = MASKED
         .iter()
         .position(|masked| masked.load(Ordering::Relaxed) == address)?;
-    let age_ms = now_ms().saturating_sub(PUBLISHED_AT_MS.load(Ordering::Acquire));
-    (age_ms <= FRESHNESS.get().hooks.layer_mask_ms.0).then_some(slot)
-}
-
-fn now_ms() -> u64 {
-    EPOCH.elapsed().as_millis() as u64
+    let published = Stamp::from_nanos(PUBLISHED_AT.load(Ordering::Acquire));
+    FRESHNESS
+        .get()
+        .hooks
+        .layer_mask_ms
+        .window()
+        .holds(published, Stamp::now())
+        .then_some(slot)
 }

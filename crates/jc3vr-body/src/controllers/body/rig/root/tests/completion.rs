@@ -1,6 +1,7 @@
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use glam::{Mat4, Vec2, Vec3};
+use jc3vr_core::published::Stamp;
 
 use crate::controllers::{
     body::rig::root::{
@@ -96,7 +97,7 @@ fn teleport_at_completion_discards_pending_credit() {
 
 #[test]
 fn stale_frame_boundary_settles_the_running_totals() {
-    let now = Instant::now();
+    let now = Stamp::now();
     let mut sim = Sim::new();
     sim.status.at = Some(now);
     sim.movement

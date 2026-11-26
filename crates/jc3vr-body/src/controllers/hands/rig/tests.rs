@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use jc3gi::animation::skeleton::{HkaSkeleton, Skeleton};
+use jc3vr_core::published::Stamp;
 
 use super::*;
 
@@ -17,7 +18,7 @@ fn key(
 
 #[test]
 fn unavailable_measurements_do_not_resolve_a_native_view() {
-    let now = Instant::now();
+    let now = Stamp::from_nanos(1_000_000_000);
     let mut state = State::EMPTY;
     let read = |state: &State, at| {
         assert_eq!(
@@ -38,7 +39,7 @@ fn unavailable_measurements_do_not_resolve_a_native_view() {
     read(&state, now);
     state.resolved = [true; 2];
     read(&state, now + Duration::from_secs(1));
-    read(&state, now - Duration::from_millis(1));
+    read(&state, Stamp::from_nanos(now.as_nanos() - 1_000_000));
 }
 
 #[test]
@@ -47,7 +48,7 @@ fn replacement_failure_expiry_and_view_changes_do_not_reuse_authoritative_old_ar
     let mut skeleton: Skeleton = unsafe { std::mem::zeroed() };
     let mut havok: HkaSkeleton = unsafe { std::mem::zeroed() };
     let initial_key = key(&mut controller, &mut skeleton, &mut havok);
-    let now = Instant::now();
+    let now = Stamp::now();
     let sample = ArmSample {
         shoulder: Vec3::new(0.2, 1.4, 0.0),
         elbow: Vec3::new(0.5, 1.4, 0.0),

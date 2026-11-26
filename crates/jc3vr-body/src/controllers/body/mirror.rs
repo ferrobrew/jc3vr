@@ -22,6 +22,7 @@ use std::{sync::OnceLock, time::Instant};
 
 use glam::{Mat4, Vec3};
 use jc3gi::character::character::{AnimationController, Character, Joint};
+use jc3vr_core::published::Stamp;
 use jc3vr_view::{
     controllers::overlay::{
         primitive::{Anchor, DepthMode, Facing, Primitive, Rgba, Shape, Source, SpriteSize},
@@ -45,7 +46,7 @@ use crate::{
 /// What the mirror drew on its last pass.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct MirrorStatus {
-    pub at: Option<Instant>,
+    pub at: Option<Stamp>,
     /// How many of the figure's bones the skeleton has; `None` before a skeleton is read.
     pub bones: Option<usize>,
     /// How many primitives the last pass submitted.
@@ -55,7 +56,7 @@ pub struct MirrorStatus {
 /// Whether the mirror has current copied attachment observations on its last pass.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct AttachmentStatus {
-    pub at: Option<Instant>,
+    pub at: Option<Stamp>,
     pub sockets_current: bool,
     /// Socket observations without a pose, counted once per socket.
     pub sockets_missing: usize,
@@ -96,9 +97,12 @@ pub struct PouchRenderStatus {
 
 pub fn pouch_render_status() -> PouchRenderStatus {
     let (at, status) = *POUCH_RENDER_STATUS.lock();
-    if at
-        .and_then(|at| Instant::now().checked_duration_since(at))
-        .is_some_and(|age| age <= FRESHNESS.get().body.mirror_ms.duration())
+    if FRESHNESS
+        .get()
+        .body
+        .mirror_ms
+        .window()
+        .holds(at, Stamp::now())
     {
         status
     } else {
@@ -155,7 +159,7 @@ pub fn submit_pouch_render(primitives: &mut Vec<Primitive>, status: PouchRenderS
         primitives,
         FRESHNESS.get().body.mirror_ms.duration(),
     );
-    *POUCH_RENDER_STATUS.lock() = (Some(Instant::now()), status);
+    *POUCH_RENDER_STATUS.lock() = (Some(Stamp::now()), status);
 }
 
 /// Clear the render source without replacing the skeleton and socket submission.
@@ -214,13 +218,13 @@ pub(crate) unsafe fn after_solve(character: *mut Character) {
         head,
         &mut primitives,
     );
-    let now = Instant::now();
+    let now = Stamp::now();
     let attachments = ATTACHMENT_SAMPLER.get().and_then(|sampler| {
         sampler(
             &AttachmentPass {
                 owner: character as *const Character as usize,
                 character: world,
-                now,
+                now: Instant::now(),
                 plane,
                 head,
             },
@@ -520,7 +524,7 @@ static STATUS: Mutex<MirrorStatus> = Mutex::new(MirrorStatus {
     primitives: 0,
 });
 
-static POUCH_RENDER_STATUS: Mutex<(Option<Instant>, PouchRenderStatus)> = Mutex::new((
+static POUCH_RENDER_STATUS: Mutex<(Option<Stamp>, PouchRenderStatus)> = Mutex::new((
     None,
     PouchRenderStatus {
         render: None,

@@ -3,8 +3,6 @@
 //! shift, and the ledger's attribution; and the body fit's switches, tuning, and the recenter
 //! button, the IK body's among them.
 
-use std::time::Instant;
-
 use egui::Ui;
 use jc3vr_body::controllers::body::{
     config::BodyRemapConfig,
@@ -12,20 +10,21 @@ use jc3vr_body::controllers::body::{
     ik_body::IkBodyConfig,
     rig::{collision::probe::stale_after, grounded, root::RootStatus},
 };
+use jc3vr_core::published::Stamp;
 
 use crate::ui::controllers::{vec3, yes_no};
 
 pub(super) fn rig_readout(ui: &mut Ui, status: &RootStatus) {
     let f = &status.frame;
     let s = &status.sim;
-    let now = Instant::now();
+    let now = Stamp::now();
     if !f.fresh(now) {
         ui.label("Inactive: no VR frame is rendering.");
     }
     ui.label(format!(
         "Owner: {} · on-foot tick {}",
         s.owner.map_or("none yet", |o| o.label()),
-        yes_no(s.at.is_some_and(|at| now.saturating_duration_since(at) < stale_after())),
+        yes_no(stale_after().holds(s.at, now)),
     ));
     let grounded = grounded::status();
     match f.rig {

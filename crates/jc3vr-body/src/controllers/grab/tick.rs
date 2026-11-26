@@ -5,9 +5,10 @@
 //! The readout is a leaf slot that any thread may read ([`status`]), as the status rows (`status`)
 //! do in the middle of a frame (`docs/mod/threading.md`).
 
-use std::{fmt::Write as _, sync::OnceLock, time::Instant};
+use std::{fmt::Write as _, sync::OnceLock};
 
 use glam::Vec3;
+use jc3vr_core::published::Stamp;
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
@@ -64,7 +65,7 @@ pub fn resolve(
     let grips = active.map_or([None; 2], hand_grips);
     let mut resolved = resolve::resolve(&targets, grips);
     let mut notes = notes;
-    let now = Instant::now();
+    let now = Stamp::now();
     let slow = step_speeds(grips, now);
     recall_body_slots(&targets, grips, &mut resolved, &mut notes, now);
     Tick {
@@ -97,7 +98,7 @@ fn recall_body_slots(
     grips: [Option<Vec3>; 2],
     resolved: &mut [Resolved; 2],
     notes: &mut [Vec<String>; 2],
-    now: Instant,
+    now: Stamp,
 ) {
     let recall_s = GRAB.get().reach.recall_s;
     let mut recent = RECENT.lock();
@@ -170,7 +171,7 @@ pub fn finish(finish: &Finish) {
         None => markers::clear(),
     }
     let mut published = STATUS.lock();
-    published.1 = Some(Instant::now());
+    published.1 = Some(Stamp::now());
     let status = &mut published.0;
     status.live = true;
     status.targets = tick.targets.len();
@@ -222,7 +223,12 @@ pub fn status() -> GrabStatus {
     let (status, at) = *STATUS.lock();
     GrabStatus {
         live: status.live
-            && at.is_some_and(|at| at.elapsed() < FRESHNESS.get().hands.grab_status_ms.duration()),
+            && FRESHNESS
+                .get()
+                .hands
+                .grab_status_ms
+                .window()
+                .holds(at, Stamp::now()),
         ..status
     }
 }
@@ -302,7 +308,7 @@ fn describe(reach: Reach) -> String {
 }
 
 /// Advance the hands' speeds from their drawn grips at `now`, and return whether each is slow.
-fn step_speeds(grips: [Option<Vec3>; 2], now: Instant) -> [bool; 2] {
+fn step_speeds(grips: [Option<Vec3>; 2], now: Stamp) -> [bool; 2] {
     let mut speeds = SPEEDS.lock();
     Hand::BOTH.map(|hand| {
         let i = hand.index();
@@ -314,7 +320,7 @@ fn step_speeds(grips: [Option<Vec3>; 2], now: Instant) -> [bool; 2] {
 
 /// Whether a hand that moved from `last` to `now` (each a point and when) moves slowly. A hand with
 /// no motion to measure counts as slow.
-fn slow_between(last: Option<(Vec3, Instant)>, now: Option<(Vec3, Instant)>) -> bool {
+fn slow_between(last: Option<(Vec3, Stamp)>, now: Option<(Vec3, Stamp)>) -> bool {
     let (Some((from, then)), Some((to, at))) = (last, now) else {
         return true;
     };
@@ -328,14 +334,14 @@ fn slow_between(last: Option<(Vec3, Instant)>, now: Option<(Vec3, Instant)>) -> 
 
 static PALM_SUMMARY: OnceLock<fn(Hand) -> String> = OnceLock::new();
 
-static SPEEDS: Mutex<[Option<(Vec3, Instant)>; 2]> = Mutex::new([None; 2]);
+static SPEEDS: Mutex<[Option<(Vec3, Stamp)>; 2]> = Mutex::new([None; 2]);
 
 /// The body slots each hand was in reach of over the last `reach.recall_s`, oldest first, by
 /// [`Hand::index`].
-static RECENT: Mutex<[Vec<(GrabVolume, Instant)>; 2]> = Mutex::new([Vec::new(), Vec::new()]);
+static RECENT: Mutex<[Vec<(GrabVolume, Stamp)>; 2]> = Mutex::new([Vec::new(), Vec::new()]);
 
 /// The published readout and when it was published.
-static STATUS: Mutex<(GrabStatus, Option<Instant>)> = Mutex::new((
+static STATUS: Mutex<(GrabStatus, Option<Stamp>)> = Mutex::new((
     GrabStatus {
         live: false,
         targets: 0,
@@ -357,7 +363,7 @@ mod tests {
 
     #[test]
     fn a_hand_is_slow_below_the_speed_a_fist_takes_things_at() {
-        let t0 = Instant::now();
+        let t0 = Stamp::now();
         let t1 = t0 + Duration::from_millis(100);
         let at = |x: f32, t| Some((Vec3::new(x, 0.0, 0.0), t));
         assert!(slow_between(at(0.0, t0), at(0.05, t1)), "0.5 m/s");

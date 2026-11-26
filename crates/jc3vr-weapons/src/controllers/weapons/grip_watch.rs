@@ -22,7 +22,7 @@
 //! gun's rotation on the wrist is constant, so a warning means the pin did not act; the fields say
 //! why. Warnings are rate-limited per hand.
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use body_rig::math::rotation::angle_between;
 use glam::Quat;
@@ -38,6 +38,7 @@ use jc3vr_body::{
     hooks::animation,
     tuning::Millis,
 };
+use jc3vr_core::published::Stamp;
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 use serde::Deserialize;
@@ -102,7 +103,7 @@ pub fn change_deg(previous: Quat, current: Quat) -> f32 {
 ///
 /// `weapon` must be live, read on the game thread before the world update.
 pub(super) unsafe fn observe(weapon: &WeaponBase, class: HeftClass) {
-    let now = Instant::now();
+    let now = Stamp::now();
     let record_age = HANDLING.get().grip_watch.record_ms.duration();
     let records = grip::status().hands;
     let address = weapon as *const WeaponBase as usize;
@@ -199,7 +200,7 @@ struct HandWatch {
     previous: Option<HandGrip>,
     /// When the gun went past [`GripWatchTuning::sweep_deg`], and whether that excursion was
     /// reported.
-    away_since: Option<(Instant, bool)>,
+    away_since: Option<(Stamp, bool)>,
     limiter: Limiter,
 }
 
@@ -213,7 +214,7 @@ impl HandWatch {
         }
     }
 
-    fn observe(&mut self, record: Option<HandGrip>, now: Instant) -> Events {
+    fn observe(&mut self, record: Option<HandGrip>, now: Stamp) -> Events {
         let tuning = &HANDLING.get().grip_watch;
         let Some(record) = record else {
             self.grab = None;
@@ -330,7 +331,7 @@ fn gun_in_target(record: &HandGrip) -> Option<Quat> {
 /// Allows one log line per [`LOG_INTERVAL`], counting the ones it holds back.
 #[derive(Debug, Copy, Clone)]
 struct Limiter {
-    last: Option<Instant>,
+    last: Option<Stamp>,
     suppressed: u64,
 }
 
@@ -342,7 +343,7 @@ impl Limiter {
         }
     }
 
-    fn allow(&mut self, now: Instant) -> bool {
+    fn allow(&mut self, now: Stamp) -> bool {
         if self
             .last
             .is_some_and(|last| now.saturating_duration_since(last) < LOG_INTERVAL)
@@ -439,7 +440,7 @@ static STATE: Mutex<State> = Mutex::new(State {
 mod tests {
     use super::*;
 
-    fn record(at: Instant, gun_in_wrist: Quat, bone: u32) -> HandGrip {
+    fn record(at: Stamp, gun_in_wrist: Quat, bone: u32) -> HandGrip {
         HandGrip {
             at,
             weapon: 1,
@@ -471,7 +472,7 @@ mod tests {
     #[test]
     fn a_blended_sweep_is_caught_once_after_the_hold() {
         let mut watch = HandWatch::new();
-        let start = Instant::now();
+        let start = Stamp::now();
         // The gun turns about its pitch axis by twenty degrees a tick: no single tick is a snap.
         let mut events = Vec::new();
         for tick in 0..12u32 {
@@ -488,7 +489,7 @@ mod tests {
     #[test]
     fn a_short_excursion_is_not_a_sweep() {
         let mut watch = HandWatch::new();
-        let start = Instant::now();
+        let start = Stamp::now();
         let angles = [0.0f32, 70.0, 0.0, 0.0];
         let events: Vec<_> = angles
             .iter()
@@ -507,7 +508,7 @@ mod tests {
     #[test]
     fn a_snap_and_a_bone_change_are_reported_and_start_a_new_grab() {
         let mut watch = HandWatch::new();
-        let start = Instant::now();
+        let start = Stamp::now();
         watch.observe(Some(record(start, Quat::IDENTITY, 1)), start);
         let at = start + TICK;
         let flipped = Quat::from_rotation_x(170.0f32.to_radians());
@@ -525,7 +526,7 @@ mod tests {
     #[test]
     fn the_pin_taking_hold_starts_a_new_grab() {
         let mut watch = HandWatch::new();
-        let start = Instant::now();
+        let start = Stamp::now();
         watch.observe(Some(record(start, Quat::from_rotation_x(1.2), 1)), start);
         let at = start + TICK;
         let pinned = HandGrip {
@@ -539,7 +540,7 @@ mod tests {
     #[test]
     fn a_gun_turned_with_a_wrist_left_behind_its_target_is_seen() {
         let mut watch = HandWatch::new();
-        let start = Instant::now();
+        let start = Stamp::now();
         // The gun holds still on the solved wrist, but the wrist turns away from the controller's
         // target over a few ticks, which turns the gun in the hand the player holds still.
         let mut events = Vec::new();
@@ -559,7 +560,7 @@ mod tests {
     #[test]
     fn the_slide_into_the_grip_is_not_a_sweep_and_the_grab_is_taken_where_it_ends() {
         let mut watch = HandWatch::new();
-        let start = Instant::now();
+        let start = Stamp::now();
         // A snatch's slide turns the gun 120 degrees onto the grip over eight ticks, and the gun
         // then rests there.
         let mut events = Vec::new();
@@ -595,7 +596,7 @@ mod tests {
 
     #[test]
     fn a_hold_ending_forgets_the_grab_of_a_gun_held_again() {
-        let start = Instant::now();
+        let start = Stamp::now();
         STATE.lock().hands[Hand::Left.index()]
             .observe(Some(record(start, Quat::IDENTITY, 1)), start);
         // The gun is thrown and snatched back: with no gun held in between, the watch is cleared,
@@ -618,7 +619,7 @@ mod tests {
     #[test]
     fn the_limiter_holds_back_and_counts() {
         let mut limiter = Limiter::new();
-        let start = Instant::now();
+        let start = Stamp::now();
         assert!(limiter.allow(start));
         assert!(!limiter.allow(start + Duration::from_millis(10)));
         assert_eq!(limiter.suppressed, 1);

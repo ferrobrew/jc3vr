@@ -6,10 +6,9 @@
 //! anchored to the head by its offset from the eyes in the rig's room frame, carried into the world
 //! by the view's rotation and the world scale. It is drawn in every mode the estimator runs in.
 
-use std::time::Instant;
-
 use body_rig::math::angle::{direction, wrap};
 use glam::{Quat, Vec3};
+use jc3vr_core::published::Stamp;
 use jc3vr_view::controllers::overlay::primitive::{Anchor, DepthMode, Primitive, Rgba};
 
 use crate::controllers::body::{
@@ -24,7 +23,7 @@ pub(crate) fn diagnostics(view: Quat, scale: f32, out: &mut Vec<Primitive>) {
     let Some(estimate) = latest() else {
         return;
     };
-    let Some(eyes) = producer::eyes(Instant::now()) else {
+    let Some(eyes) = producer::eyes(Stamp::now()) else {
         return;
     };
     let rig = grounded::body_yaw().zip(grounded::torso().map(|torso| torso.yaw));

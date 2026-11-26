@@ -18,7 +18,6 @@ use std::{
     cell::Cell,
     num::NonZeroUsize,
     sync::atomic::{AtomicBool, Ordering},
-    time::Instant,
 };
 
 use detours_macro::detour;
@@ -29,6 +28,7 @@ use jc3gi::{
     physics::{CastRayInfo, PfxLayer},
     types::math::Vector3,
 };
+use jc3vr_core::published::Stamp;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
@@ -84,7 +84,13 @@ pub fn set_enabled(enabled: bool) {
 pub fn aimed() -> Option<(Aimed, Strong)> {
     let aimed = AIMED.lock();
     let (weapon, weak, at) = aimed.as_ref()?;
-    if at.elapsed() > FRESHNESS.get().aim.grapple_weapons_ms.duration() {
+    if !FRESHNESS
+        .get()
+        .aim
+        .grapple_weapons_ms
+        .window()
+        .holds(*at, Stamp::now())
+    {
         return None;
     }
     Some((*weapon, weak.lock()?))
@@ -122,7 +128,7 @@ fn unowned_dropped(state: i32, no_holder: bool, no_user: bool) -> bool {
 }
 
 static ENABLED: AtomicBool = AtomicBool::new(false);
-static AIMED: Mutex<Option<(Aimed, Weak, Instant)>> = Mutex::new(None);
+static AIMED: Mutex<Option<(Aimed, Weak, Stamp)>> = Mutex::new(None);
 
 thread_local! {
     /// Whether this thread is in the grapple's pass of the direct-aim raycast.
@@ -195,7 +201,7 @@ unsafe fn merge_weapon(
             distance: hit.distance,
         },
         weak,
-        Instant::now(),
+        Stamp::now(),
     ));
 }
 
@@ -209,7 +215,7 @@ unsafe fn aimed_hit(
     info: *mut CastRayInfo,
     ray_start: *const Vector3,
     ray_dir: *const Vector3,
-) -> Option<(Aimed, Weak, Instant)> {
+) -> Option<(Aimed, Weak, Stamp)> {
     let aim = unsafe { aim.as_ref() }?;
     let info = unsafe { info.as_ref() }?;
     let object = NonZeroUsize::new(info.m_GameObject as usize)?;
@@ -235,7 +241,7 @@ unsafe fn aimed_hit(
             distance,
         },
         weak,
-        Instant::now(),
+        Stamp::now(),
     ))
 }
 

@@ -4,11 +4,9 @@
 //! per sim tick, with the animated anchors it measured. The pure parts are in
 //! [`crate::controllers::locomotion::view`].
 
-use std::time::Instant;
-
 use glam::{Mat4, Vec3};
 use jc3gi::character::character::{AimState, Character};
-use jc3vr_core::hooks::in_gameplay;
+use jc3vr_core::{hooks::in_gameplay, published::Stamp};
 use jc3vr_view::{
     headpose::{
         Anchors, Source,
@@ -91,7 +89,7 @@ pub(crate) unsafe fn stabilize(
     let tuning = &LOCOMOTION.get().anchor;
     let controllers_enabled = scheme::enabled();
     let world_scale = VR_CONFIG.lock().world_scale;
-    let now = Instant::now();
+    let now = Stamp::now();
     let locomotion = locomotion_status();
     let grounded = locomotion.fresh(now);
     let detection = current_mode();
@@ -316,7 +314,7 @@ struct State {
     face_clear: Handover,
     /// The hand-over table's history for the anchor's own reads, apart from the procedural body's.
     tracker: StateTracker,
-    grounded_at: Option<Instant>,
+    grounded_at: Option<Stamp>,
     /// Whether the root-fixed anchor had any weight last tick, for the handover log.
     stable: bool,
     /// The held view's head, over the root or following the animated head.

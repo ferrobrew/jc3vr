@@ -116,7 +116,7 @@ pub unsafe fn step() {
     let pins = if fresh && ordinary { pins } else { [None; 2] };
     // The hands on a gun act to hold it, with a holding hand's strength.
     let gun_holds = if fresh && guns::mode_allows_bodies(detection) {
-        guns::holds_for_step(step_number.count())
+        guns::holds_for_step(step_number)
     } else {
         held_guns::GunHolds::default()
     };

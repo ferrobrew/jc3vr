@@ -11,10 +11,7 @@
 //!
 //! [`solver::wings`]: crate::controllers::body::procedural::solver::wings
 
-use std::{
-    sync::atomic::{AtomicU8, Ordering},
-    time::Instant,
-};
+use std::sync::atomic::{AtomicU8, Ordering};
 
 use body_rig::{
     body::EYES_TO_NECK,
@@ -26,6 +23,7 @@ use body_rig::{
 };
 use glam::{Mat4, Quat, Vec3};
 use jc3gi::character::character::Character;
+use jc3vr_core::published::Stamp;
 use jc3vr_input::frame::{self, Hand, Pose};
 use jc3vr_view::{headpose, headpose::Source};
 use parking_lot::Mutex;
@@ -120,7 +118,7 @@ pub(super) fn read_player_arms() -> Option<PlayerArms> {
 /// estimate of the player's shoulders reads this one follower, so the arms, the hands' shoulders,
 /// the arm remap, and the ripcord agree.
 pub(crate) fn airborne_torso_heading(head: Quat, wrists: [Option<Vec3>; 2]) -> Quat {
-    WING_HEADING.lock().update(head, wrists, Instant::now())
+    WING_HEADING.lock().update(head, wrists, Stamp::now())
 }
 
 impl State {
@@ -235,7 +233,7 @@ static WING_HANDS: AtomicU8 = AtomicU8::new(0);
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub(crate) struct WingHeading {
     follow: YawFollow,
-    last: Option<Instant>,
+    last: Option<Stamp>,
 }
 
 impl WingHeading {
@@ -249,12 +247,9 @@ impl WingHeading {
     /// The torso's heading for the head's cockpit orientation `head` and the tracked wrists
     /// `wrists` (cockpit frame, by [`Hand::index`]) at `now`. A gap longer than the freshness
     /// tuning's `body.wings_gap_ms` starts again from the head's heading.
-    pub(crate) fn update(&mut self, head: Quat, wrists: [Option<Vec3>; 2], now: Instant) -> Quat {
+    pub(crate) fn update(&mut self, head: Quat, wrists: [Option<Vec3>; 2], now: Stamp) -> Quat {
         let dt = match self.last {
-            Some(last)
-                if now.saturating_duration_since(last)
-                    <= FRESHNESS.get().body.wings_gap_ms.duration() =>
-            {
+            Some(last) if FRESHNESS.get().body.wings_gap_ms.window().holds(last, now) => {
                 now.saturating_duration_since(last).as_secs_f32()
             }
             _ => {
@@ -325,12 +320,12 @@ mod tests {
         follower: &mut WingHeading,
         head: Quat,
         wrists: [Option<Vec3>; 2],
-        at: &mut Instant,
+        at: &mut Stamp,
         s: f32,
     ) -> f32 {
         let mut yaw = 0.0;
         for _ in 0..(s / DT.as_secs_f32()) as usize {
-            *at += DT;
+            *at = *at + DT;
             yaw = heading(follower.update(head, wrists, *at));
         }
         yaw
@@ -344,7 +339,7 @@ mod tests {
     #[test]
     fn spread_arms_hold_the_heading_through_a_look_at_one() {
         let mut follower = WingHeading::new();
-        let mut at = Instant::now();
+        let mut at = Stamp::now();
         run(&mut follower, Quat::IDENTITY, SPREAD, &mut at, 0.5);
         // Looking at the right hand, a right angle round, for seconds.
         let look = Quat::from_rotation_y(-1.4) * Quat::from_rotation_x(-0.3);
@@ -355,7 +350,7 @@ mod tests {
     #[test]
     fn a_glance_with_the_arms_in_turns_nothing() {
         let mut follower = WingHeading::new();
-        let mut at = Instant::now();
+        let mut at = Stamp::now();
         let tucked = [
             Some(Vec3::new(-0.25, 1.1, 0.0)),
             Some(Vec3::new(0.25, 1.1, 0.0)),

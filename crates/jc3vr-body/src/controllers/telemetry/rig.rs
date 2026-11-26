@@ -3,10 +3,11 @@
 //! stretch of a recording opens with them. With these, `tracking-synth rig-eval` can run a
 //! candidate rig on the recorded inputs and diff it against what the game ran.
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use body_rig::{PlayerBody, RigFrame, RigOutput, RigTuning};
 use glam::{Vec2, Vec3};
+use jc3vr_core::published::Stamp;
 use jc3vr_view::recorder::tracking::{events, events::EventKind};
 use parking_lot::Mutex;
 use tracking_format::event::{Label, RigConfig, RigInput, RigResult, RigSample};
@@ -22,7 +23,7 @@ pub(crate) struct RigRun<'a> {
     pub body: PlayerBody,
     pub dimensions: &'a BodyDimensions,
     pub tuning: &'a RigTuning,
-    pub now: Instant,
+    pub now: Stamp,
 }
 
 /// Note one grounded-rig frame, and the calibration and tuning when they changed or are due again.
@@ -75,7 +76,7 @@ pub(crate) fn note_rig(run: RigRun<'_>) {
 const CONFIG_REPEAT: Duration = Duration::from_secs(5);
 
 /// The last noted calibration and tuning, and when.
-static LAST_CONFIG: Mutex<Option<(Vec3, RigTuning, Instant)>> = Mutex::new(None);
+static LAST_CONFIG: Mutex<Option<(Vec3, RigTuning, Stamp)>> = Mutex::new(None);
 
 fn note_config(run: &RigRun<'_>) {
     let key = Vec3::new(

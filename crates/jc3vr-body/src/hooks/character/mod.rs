@@ -25,11 +25,12 @@
 //! - `stunt`: the refusals of the automatic entry into a vehicle's stunt area below the player, and
 //!   the observer of a body destruction, which the subsystems register.
 
-use std::time::Instant;
-
 use detours_macro::detour;
 use jc3gi::{character::character::Character, game::GameObjectUpdateContext};
-use jc3vr_core::frame_timing::{self, Slot};
+use jc3vr_core::{
+    frame_timing::{self, Slot},
+    published::Stamp,
+};
 use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
@@ -121,7 +122,7 @@ fn character_update_pass_finalize_pose_parallel(
         unsafe { character.as_ref() }.filter(|c| c.m_IsLocalCharacter && pose_ready)
     {
         unsafe { skeleton::dump_once(character) };
-        set_local_character(character, Instant::now());
+        set_local_character(character, Stamp::now());
         gate::begin_pass(dt);
     }
     if pose_ready {

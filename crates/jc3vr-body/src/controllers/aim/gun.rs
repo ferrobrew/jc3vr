@@ -16,10 +16,7 @@
 //! update and the weapon updates run one after the other on the same thread, aim first, so the
 //! points are always the current tick's.
 
-use std::{
-    sync::atomic::{AtomicU64, Ordering},
-    time::Instant,
-};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use detours_macro::detour;
 use glam::{Mat4, Vec3};
@@ -30,6 +27,7 @@ use jc3gi::{
     },
     types::math::Vector3,
 };
+use jc3vr_core::published::Stamp;
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
@@ -163,7 +161,7 @@ pub(super) fn publish(held: Option<HeldWeapon>, targets: [Option<Vec3>; 2]) {
     *SNAPSHOT.lock() = held.map(|weapon| Snapshot {
         weapon,
         targets,
-        at: Instant::now(),
+        at: Stamp::now(),
     });
 }
 
@@ -251,14 +249,19 @@ fn hand_target(weapon: &WeaponBase) -> Option<Vec3> {
 struct Snapshot {
     weapon: HeldWeapon,
     targets: [Option<Vec3>; 2],
-    at: Instant,
+    at: Stamp,
 }
 
 impl Snapshot {
     /// Whether the snapshot is from a recent aim update. The aim update runs every simulation tick
     /// while the player exists, so an older one belongs to a paused or departed player.
     fn fresh(&self) -> bool {
-        self.at.elapsed() < FRESHNESS.get().aim.gun_ms.duration()
+        FRESHNESS
+            .get()
+            .aim
+            .gun_ms
+            .window()
+            .holds(self.at, Stamp::now())
     }
 }
 

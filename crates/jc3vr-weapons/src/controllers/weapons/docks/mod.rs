@@ -39,6 +39,7 @@ use jc3vr_body::controllers::{
     roomscale,
     roomscale::{SeatPhase, posture::EffectivePosture},
 };
+use jc3vr_core::published::Stamp;
 use jc3vr_input::frame::Hand;
 use jc3vr_view::{controllers::cockpit::CockpitTransform, vr::input::flight_pose};
 use parking_lot::Mutex;
@@ -384,7 +385,7 @@ pub(crate) unsafe fn place_waist(owner: &Character) {
 
 fn seated_waist(owner: &Character) -> Option<[Option<Mat4>; Socket::COUNT]> {
     let frame = roomscale::frame_shared()?;
-    if !frame.fresh(Instant::now())
+    if !frame.fresh(Stamp::now())
         || !(frame.posture == EffectivePosture::Seated || frame.seat == SeatPhase::Locked)
     {
         *SEATED_NECK.lock() = None;

@@ -7,11 +7,10 @@
 //! foot's candidate brace ([`body_rig::brace`]), named with its support
 //! ([`crate::controllers::body::ik_body::support`]) so a brace on a moving body is carried with it.
 
-use std::time::Instant;
-
 use body_rig::{brace::BraceHit, math::Side};
 use glam::Vec3;
 use jc3gi::character::character::Character;
+use jc3vr_core::published::Stamp;
 use parking_lot::Mutex;
 
 use crate::{
@@ -36,7 +35,7 @@ pub(crate) struct BraceCast {
 }
 
 /// Ask for `side`'s casts `casts`, and return the latest answer while it is fresh.
-pub(crate) fn ask(side: Side, casts: [BraceCast; 2], now: Instant) -> Option<BraceHit> {
+pub(crate) fn ask(side: Side, casts: [BraceCast; 2], now: Stamp) -> Option<BraceHit> {
     let mut slots = SLOTS.lock();
     let slot = &mut slots[side.index()];
     slot.request = casts
@@ -45,8 +44,12 @@ pub(crate) fn ask(side: Side, casts: [BraceCast; 2], now: Instant) -> Option<Bra
         .then_some(casts);
     slot.answer
         .filter(|answer| {
-            now.saturating_duration_since(answer.when)
-                <= FRESHNESS.get().body.ik_brace_answer_ms.duration()
+            FRESHNESS
+                .get()
+                .body
+                .ik_brace_answer_ms
+                .window()
+                .holds(answer.when, now)
         })
         .and_then(|answer| answer.hit)
 }
@@ -57,7 +60,7 @@ pub(crate) fn ask(side: Side, casts: [BraceCast; 2], now: Instant) -> Option<Bra
 ///
 /// `character` must be the live local character, in the simulation phase outside the physics
 /// step.
-pub(crate) unsafe fn tick(character: &Character, now: Instant) {
+pub(crate) unsafe fn tick(character: &Character, now: Stamp) {
     let requests = {
         let mut slots = SLOTS.lock();
         slots.each_mut().map(|slot| slot.request.take())
@@ -91,11 +94,7 @@ pub(crate) fn forget() {
 /// # Safety
 ///
 /// As [`tick`]; the ignored objects are the live local character and the vehicle it rides, or zero.
-unsafe fn cast_one(
-    cast: &BraceCast,
-    options: &CastOptions,
-    now: Instant,
-) -> Option<(f32, BraceHit)> {
+unsafe fn cast_one(cast: &BraceCast, options: &CastOptions, now: Stamp) -> Option<(f32, BraceHit)> {
     let ray = Ray::new(cast.from, cast.direction)?;
     let hit = match unsafe { raycast::cast(&ray, cast.length, options) } {
         Ok(hit) => hit?,
@@ -123,7 +122,7 @@ unsafe fn cast_one(
 #[derive(Debug, Copy, Clone, PartialEq)]
 struct Answer {
     hit: Option<BraceHit>,
-    when: Instant,
+    when: Stamp,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -150,7 +149,7 @@ mod tests {
     #[test]
     fn a_cast_that_is_not_finite_asks_for_nothing_and_no_answer_is_stale() {
         forget();
-        let now = Instant::now();
+        let now = Stamp::now();
         let bad = BraceCast {
             from: Vec3::NAN,
             direction: Vec3::NEG_Z,

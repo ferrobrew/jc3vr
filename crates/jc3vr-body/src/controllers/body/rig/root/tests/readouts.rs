@@ -1,6 +1,5 @@
-use std::time::Instant;
-
 use glam::{Vec2, Vec3};
+use jc3vr_core::published::Stamp;
 use parking_lot::Mutex;
 
 use crate::controllers::{
@@ -19,7 +18,7 @@ use crate::controllers::{
 #[test]
 fn the_readout_projects_current_counts_without_mutating_the_simulation() {
     let frame_status = FrameReadout {
-        at: Some(Instant::now()),
+        at: Some(Stamp::now()),
         snaps: 3,
         world_scale: 2.0,
         shift: Vec3::new(1.0, 2.0, 3.0),
@@ -65,7 +64,7 @@ fn local_frame(status: FrameReadout) -> Mutex<FrameState> {
 }
 
 fn local_sim() -> Mutex<Sim> {
-    let now = Instant::now();
+    let now = Stamp::now();
     let mut sim = Sim::new();
     sim.status = SimStatus {
         at: Some(now),

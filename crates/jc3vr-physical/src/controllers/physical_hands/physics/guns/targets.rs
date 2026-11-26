@@ -11,8 +11,8 @@ use glam::Vec3;
 use jc3vr_body::controllers::{
     hands::CockpitHand,
     held::{guns as held_guns, guns::GunHolds},
-    physics::steps::steps,
 };
+use jc3vr_core::published::Step;
 use jc3vr_input::frame::Hand;
 
 /// Register the vehicle controls' targets: called with the cockpit-frame hands, it draws a hand
@@ -31,7 +31,7 @@ pub fn vehicle_targets_registered() -> bool {
 /// Give the physical drive the support and weight targets of the currently published guns.
 /// Reads no native objects and does not compose active hands recursively.
 pub(crate) fn apply_physical(hands: &mut [Option<CockpitHand>; 2], head: Vec3) {
-    let holds = held_guns::holds_at(steps()).unwrap_or_default();
+    let holds = held_guns::holds_at(Step::now()).unwrap_or_default();
     let raw = *hands;
     if let Some(vehicle_targets) = VEHICLE_TARGETS.get() {
         vehicle_targets(hands);
@@ -60,10 +60,7 @@ mod tests {
     use std::num::NonZeroUsize;
 
     use glam::Quat;
-    use jc3vr_body::controllers::{
-        hands::pose as hand_pose,
-        held::guns::{HeftClass, HeldGun},
-    };
+    use jc3vr_body::controllers::held::guns::{HeftClass, HeldGun};
     use jc3vr_input::frame::Pose;
 
     use super::*;
@@ -103,7 +100,7 @@ mod tests {
                 position: Vec3::new(0.0, -0.02, -0.04),
                 orientation: Quat::IDENTITY,
             };
-            let drawn_gun = hand_pose::mul(shown.wrist, gun_on_wrist);
+            let drawn_gun = shown.wrist.compose(gun_on_wrist);
             let seat = intended_seat(palm, drawn_gun);
             let body = seated(palm, seat);
             assert!(body.position.abs_diff_eq(drawn_gun.position, 1e-5));

@@ -1,12 +1,11 @@
 //! Synthetic head-frame capture at the pre-IK publication seam.
 
-use std::time::Instant;
-
 use glam::{Mat4, Quat, Vec3};
 use jc3gi::{
     animation::pose_producer::QsTransform, character::character::AnimationController,
     types::math::Matrix4,
 };
+use jc3vr_core::published::Stamp;
 use jc3vr_view::headpose::{
     Source,
     anchors::{Context, Identity, Sample},
@@ -29,7 +28,7 @@ pub(super) fn capture(
     dt: f32,
 ) {
     let mut state = STATE.lock();
-    let now = Instant::now();
+    let now = Stamp::now();
     let continuous = state.identity == Some(identity)
         && state.tick.and_then(|tick| tick.checked_add(1)) == Some(tick)
         && state.root.is_some_and(|root| {
@@ -38,10 +37,12 @@ pub(super) fn capture(
         && state
             .context
             .is_some_and(|previous| previous.continuous(context))
-        && state.at.is_some_and(|at| {
-            now.saturating_duration_since(at)
-                <= FRESHNESS.get().hooks.body_ik_animation_gap_ms.duration()
-        });
+        && FRESHNESS
+            .get()
+            .hooks
+            .body_ik_animation_gap_ms
+            .window()
+            .holds(state.at, now);
     if !continuous {
         state.filter.clear();
     }
@@ -103,7 +104,7 @@ pub(super) unsafe fn bind_rotation(controller: &AnimationController, index: u32)
 struct State {
     identity: Option<Identity>,
     context: Option<Context>,
-    at: Option<Instant>,
+    at: Option<Stamp>,
     tick: Option<u64>,
     root: Option<Vec3>,
     filter: RotationFilter,

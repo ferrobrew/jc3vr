@@ -8,10 +8,11 @@ mod game;
 mod loadout;
 mod mismatch;
 
-use std::{sync::Arc, time::Instant};
+use std::sync::Arc;
 
 use egui::{CollapsingHeader, Ui};
 use jc3vr_body::controllers::fingers::{grip, grip::GripSource};
+use jc3vr_core::published::Stamp;
 use jc3vr_input::frame::Hand;
 use jc3vr_physical::controllers::{physical_hands, physical_hands::PhysicalHandsStatus};
 use jc3vr_weapons::controllers::{
@@ -47,7 +48,7 @@ pub(super) struct InventoryView {
 
 impl InventoryView {
     pub(super) fn read() -> Self {
-        let now = Instant::now();
+        let now = Stamp::now();
         Self {
             inventory: controller_inventory::peek_status(),
             live: live::status(),

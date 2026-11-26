@@ -18,18 +18,16 @@
 
 mod class;
 
-use std::{num::NonZeroUsize, sync::OnceLock, time::Instant};
+use std::{num::NonZeroUsize, sync::OnceLock};
 
 use glam::Vec3;
+use jc3vr_core::published::{Stamp, Step};
 use jc3vr_input::frame::{Hand, Pose};
 use parking_lot::Mutex;
 
 pub use self::class::HeftClass;
 use crate::{
-    controllers::{
-        hands::CockpitHand,
-        physics::steps::{current_at, steps},
-    },
+    controllers::{hands::CockpitHand, physics::steps},
     tuning::FRESHNESS,
 };
 
@@ -152,7 +150,7 @@ pub struct GunsStatus {
 /// What one step did to the gun bodies, recorded at its end ([`record_step`]).
 pub struct StepRecord {
     /// When the step ran.
-    pub at: Instant,
+    pub at: Stamp,
     /// Each holding hand's gun body, by the holding hand.
     pub statuses: [Option<GunBodyStatus>; 2],
     /// Each holding hand's weapon and its gun body's deviation, held to the drawn gun's limits.
@@ -174,11 +172,11 @@ pub fn status() -> GunsStatus {
 pub fn publish(holds: GunHolds) {
     let mut shared = SHARED.lock();
     shared.holds = holds;
-    shared.published = Some(steps());
+    shared.published = Some(Step::now());
 }
 
 /// The guns in the hands as last published, while the publication is current at step `step`.
-pub fn holds_at(step: u64) -> Option<GunHolds> {
+pub fn holds_at(step: Step) -> Option<GunHolds> {
     SHARED.lock().fresh_holds(step)
 }
 
@@ -187,7 +185,7 @@ pub fn holds_at(step: u64) -> Option<GunHolds> {
 /// leave those hands alone.
 pub fn physical_hands() -> [bool; 2] {
     let shared = SHARED.lock();
-    if !shared.stepped_lately(Instant::now()) {
+    if !shared.stepped_lately(Stamp::now()) {
         return [false; 2];
     }
     let mut hands = [false; 2];
@@ -206,7 +204,7 @@ pub fn physical_hands() -> [bool; 2] {
 /// `None` without a joined gun body for that weapon in that hand.
 pub fn deviation(hand: Hand, weapon: usize) -> Option<Pose> {
     let shared = SHARED.lock();
-    if !shared.stepped_lately(Instant::now()) {
+    if !shared.stepped_lately(Stamp::now()) {
         return None;
     }
     shared.deviations[hand.index()]
@@ -316,28 +314,33 @@ pub fn apply_targets(hands: &mut [Option<CockpitHand>; 2], head: Vec3) {
 /// What the input tick, the step, and the readers share.
 struct Shared {
     holds: GunHolds,
-    /// The step the holds were published at ([`steps`]).
-    published: Option<u64>,
+    /// The step the holds were published at.
+    published: Option<Step>,
     /// Shots queued since the last step: each hand's weapon and the count.
     shots: [Option<(usize, u32)>; 2],
     /// Each holding hand's weapon and its gun body's deviation, from the last step.
     deviations: [Option<(usize, Pose)>; 2],
     /// Each bracing hand whose brace broke since the foregrip last looked, by the bracing hand.
     support_broke: [bool; 2],
-    stepped: Option<Instant>,
+    stepped: Option<Stamp>,
     status: GunsStatus,
 }
 
 impl Shared {
     /// The holds while their publication is current at step `step`.
-    fn fresh_holds(&self, step: u64) -> Option<GunHolds> {
-        current_at(self.published, step).then_some(self.holds)
+    fn fresh_holds(&self, step: Step) -> Option<GunHolds> {
+        steps::window()
+            .holds(self.published, step)
+            .then_some(self.holds)
     }
 
-    fn stepped_lately(&self, now: Instant) -> bool {
-        self.stepped.is_some_and(|at| {
-            now.saturating_duration_since(at) <= FRESHNESS.get().held.guns_ms.duration()
-        })
+    fn stepped_lately(&self, now: Stamp) -> bool {
+        FRESHNESS
+            .get()
+            .held
+            .guns_ms
+            .window()
+            .holds(self.stepped, now)
     }
 }
 

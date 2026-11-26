@@ -7,18 +7,22 @@
 //! it, and then calls [`crate::controllers::body::ik_body::effectors::queue`] to hold the seeded
 //! pelvis and place the feet through HumanIK's effectors for the solve that follows.
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use body_rig::{
     contact::{
-        ContactEvent, ContactFrame, FootContacts, FootPose, FootTarget, Handover, Probe, Side,
-        Stance, StepRate, SupportFrame, SupportId, Surroundings,
+        ContactEvent, ContactFrame, FootContacts, FootPose, FootTarget, Handover, Probe, Stance,
+        StepRate, SupportFrame, SupportId, Surroundings,
     },
     fk::PelvisSource,
     ik_weight::{IkBlend, IkState, IkWeights},
-    math::angle::{line_yaw, wrap, yaw_of},
+    math::{
+        Side,
+        angle::{line_yaw, wrap, yaw_of},
+    },
 };
 use glam::{Mat4, Vec2, Vec3};
+use jc3vr_core::published::Stamp;
 use jc3vr_view::headpose::{teleport, xr};
 
 use crate::controllers::{
@@ -120,7 +124,7 @@ impl FootLabel {
 /// What the IK body did at its last gate, for the debug UI.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct IkStatus {
-    pub at: Option<Instant>,
+    pub at: Option<Stamp>,
     pub state: IkState,
     pub stand_down: Option<StandDown>,
     pub case: Case,
@@ -176,11 +180,11 @@ pub(crate) struct GateState {
 /// One spell of the standing body, for its summary in the log.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub(crate) struct Episode {
-    pub began: Option<Instant>,
+    pub began: Option<Stamp>,
     pub steps: u64,
     pub handovers: u64,
     /// When the spell's state was last logged.
-    pub logged_at: Option<Instant>,
+    pub logged_at: Option<Stamp>,
 }
 
 /// A hand-over to the walk, held until Rico stands still again.
@@ -239,7 +243,7 @@ impl GateState {
     }
 
     /// Drop the contacts on a teleport or a recenter.
-    fn check_resets(&mut self, now: Instant) {
+    fn check_resets(&mut self, now: Stamp) {
         let epoch = teleport::epoch();
         let snaps = grounded::status().snaps;
         if epoch == self.epoch && snaps == self.snaps {
@@ -291,7 +295,7 @@ impl GateState {
         });
     }
 
-    fn begin_episode(&mut self, now: Instant) {
+    fn begin_episode(&mut self, now: Stamp) {
         self.in_idle = true;
         self.episode = Episode {
             began: Some(now),
@@ -304,7 +308,7 @@ impl GateState {
 
     /// Log the standing body's state every [`STANDING_LOG`], for judging the controlled stand
     /// from the session log.
-    fn log_standing(&mut self, now: Instant, estimate_weight: f32) {
+    fn log_standing(&mut self, now: Stamp, estimate_weight: f32) {
         if self
             .episode
             .logged_at
@@ -332,7 +336,7 @@ impl GateState {
         );
     }
 
-    fn end_episode(&mut self, now: Instant) {
+    fn end_episode(&mut self, now: Stamp) {
         self.in_idle = false;
         let Some(began) = self.episode.began.take() else {
             return;
@@ -505,7 +509,7 @@ pub(crate) struct GateInput<'a> {
     pub torso_target: f32,
     pub config: IkBodyConfig,
     pub dt: f32,
-    pub now: Instant,
+    pub now: Stamp,
 }
 
 /// What [`prepare`] hands back.
@@ -850,7 +854,7 @@ const STANDING_LOG: Duration = Duration::from_secs(10);
 /// The world as the contact model asks of it at `now`: each support's frame from its last snapshot
 /// ([`support`]), and the ground probed through the mailbox ([`probe`]).
 struct GameWorld {
-    now: Instant,
+    now: Stamp,
 }
 
 impl Surroundings for GameWorld {

@@ -2,13 +2,12 @@
 //! face ([`body_rig::brace`]), and the targets the effectors place the ankle, the toe, and the knee
 //! on, in Rico's model space. A foot with nothing in reach hangs in the air pose the gate gives it.
 
-use std::time::Instant;
-
 use body_rig::{
     brace::{BraceEvent, BraceFoot, BraceLeg, BraceTarget, BraceTuning},
     math::{Side, angle::direction},
 };
 use glam::{Mat4, Vec3};
+use jc3vr_core::published::Stamp;
 
 use crate::controllers::{
     body::ik_body::{
@@ -50,7 +49,7 @@ pub(crate) struct ClimbFeet {
 /// One climb, for its summary in the log.
 #[derive(Debug, Copy, Clone, PartialEq)]
 struct Spell {
-    began: Instant,
+    began: Stamp,
     moves: u64,
     /// Seconds each foot held a brace.
     braced_s: [f32; 2],
@@ -81,7 +80,7 @@ impl ClimbFeet {
         legs: &ClimbLegs<'_>,
         tuning: &BraceTuning,
         dt: f32,
-        now: Instant,
+        now: Stamp,
     ) -> [Option<ModelBrace>; 2] {
         let spell = self.spell.get_or_insert(Spell {
             began: now,
@@ -156,7 +155,7 @@ impl ClimbFeet {
     }
 
     /// The climb is over, or the IK left it: let go of the face, and log the spell.
-    pub(crate) fn stop(&mut self, now: Instant) {
+    pub(crate) fn stop(&mut self, now: Stamp) {
         for foot in &mut self.feet {
             foot.reset();
         }

@@ -6,20 +6,19 @@
 //! its freshness from that moment. The latch holds until the next arrival or until a reader clears
 //! it.
 
-use std::time::Instant;
-
+use jc3vr_core::published::Stamp;
 use parking_lot::Mutex;
 
 /// The body of the last door-side arrival's airframe and the moment it arrived, if one was noted
 /// and not cleared since.
-pub fn noted() -> Option<(u32, Instant)> {
+pub fn noted() -> Option<(u32, Stamp)> {
     *NOTED.lock()
 }
 
 /// Publish the body of the airframe a reel arriving at a helicopter's door side was attached to,
 /// stamped now.
 pub fn publish(body: u32) {
-    *NOTED.lock() = Some((body, Instant::now()));
+    *NOTED.lock() = Some((body, Stamp::now()));
 }
 
 /// Forget the noted airframe.
@@ -27,4 +26,4 @@ pub fn clear() {
     *NOTED.lock() = None;
 }
 
-static NOTED: Mutex<Option<(u32, Instant)>> = Mutex::new(None);
+static NOTED: Mutex<Option<(u32, Stamp)>> = Mutex::new(None);

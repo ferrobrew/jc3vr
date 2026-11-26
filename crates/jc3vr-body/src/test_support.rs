@@ -6,11 +6,9 @@
 //! participants themselves, and stand-ins for the grapple's that act as the grapple's own do while
 //! no grapple runs, which no body test starts.
 
-use std::{
-    sync::{Once, atomic::Ordering},
-    time::Instant,
-};
+use std::sync::{Once, atomic::Ordering};
 
+use jc3vr_core::published::Stamp;
 use jc3vr_view::{headpose, headpose::HeadParticipants};
 
 use crate::{
@@ -46,7 +44,7 @@ static PARTICIPANTS: HeadParticipants = HeadParticipants {
     swimming: swim::swimming,
     vehicle_transition: || {
         frame_shared()
-            .filter(|shared| shared.fresh(Instant::now()))
+            .filter(|shared| shared.fresh(Stamp::now()))
             .is_some_and(|shared| matches!(shared.seat, SeatPhase::Entering | SeatPhase::Exiting))
     },
     body_thrown: || {

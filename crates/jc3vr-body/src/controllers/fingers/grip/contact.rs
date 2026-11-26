@@ -16,9 +16,8 @@
 //! `refit_ms` ([`ContactFitTuning`](crate::controllers::fingers::tuning::ContactFitTuning)), since
 //! the hand holds the body still in its own frame. A new body or a new pose starts the fit over.
 
-use std::time::Instant;
-
 use glam::Vec3;
+use jc3vr_core::published::Stamp;
 use jc3vr_input::frame::{Hand, Pose};
 use parking_lot::Mutex;
 
@@ -109,7 +108,7 @@ pub fn fit_contacts(
     cast: &mut dyn FnMut(Vec3, Vec3) -> Option<CastHit>,
 ) -> Option<[Option<f32>; 5]> {
     let tuning = &FINGERS_TUNING.get().contact;
-    let now = Instant::now();
+    let now = Stamp::now();
     let mut fit = FIT.lock();
     let geometry = fit.geometry[hand.index()]?;
     let cache = &mut fit.hands[hand.index()];
@@ -251,7 +250,7 @@ struct FitCache {
     key: Option<(u32, GripPose)>,
     curls: [Option<f32>; 5],
     swept: [bool; 5],
-    done_at: Option<Instant>,
+    done_at: Option<Stamp>,
 }
 
 impl FitCache {

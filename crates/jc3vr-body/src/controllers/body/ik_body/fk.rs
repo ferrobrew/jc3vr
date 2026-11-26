@@ -7,8 +7,6 @@
 //! published relative to the neck pivot, in room axes and the player's metres; the gate carries it
 //! into Rico's model space and scales it to his proportions.
 
-use std::time::Instant;
-
 use body_estimator::smpl::JOINT_COUNT;
 use body_rig::{
     PlayerBody,
@@ -16,6 +14,7 @@ use body_rig::{
     fk::{BodyRotations, FkBody, FkFollower, FkFrame, FkSkeleton, FkTuning, PelvisSource},
 };
 use glam::{Quat, Vec2, Vec3};
+use jc3vr_core::published::Stamp;
 use parking_lot::Mutex;
 
 use crate::{controllers::body::estimator::Estimate, tuning::FRESHNESS};
@@ -38,7 +37,7 @@ pub(crate) struct FkInput {
     pub yaw: f32,
     pub tuning: FkTuning,
     pub dt: f32,
-    pub now: Instant,
+    pub now: Stamp,
 }
 
 /// The followed body as last published.
@@ -51,7 +50,7 @@ pub struct FkPose {
     pub skeleton: FkSkeleton,
     pub source: PelvisSource,
     pub estimate_weight: f32,
-    pub at: Instant,
+    pub at: Stamp,
 }
 
 impl FkPose {
@@ -96,8 +95,12 @@ pub(crate) fn frame(input: &FkInput) -> FkPose {
 /// The latest published body, while it is fresh.
 pub fn latest() -> Option<FkPose> {
     STATE.lock().latest.filter(|pose| {
-        Instant::now().saturating_duration_since(pose.at)
-            <= FRESHNESS.get().body.ik_fk_ms.duration()
+        FRESHNESS
+            .get()
+            .body
+            .ik_fk_ms
+            .window()
+            .holds(pose.at, Stamp::now())
     })
 }
 
@@ -177,7 +180,7 @@ mod tests {
             skeleton,
             source: PelvisSource::Fallback,
             estimate_weight: 0.0,
-            at: Instant::now(),
+            at: Stamp::now(),
         };
         assert!((pose.pelvis_floor() - Vec2::new(1.1, -1.8)).length() < 1e-6);
     }

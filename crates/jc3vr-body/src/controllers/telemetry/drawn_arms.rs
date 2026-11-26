@@ -2,10 +2,11 @@
 //! elbows, and wrists where the presentation's edited bone palette draws them, in model space, so a
 //! recording can compare what rendered with the pose the solves left.
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use glam::Vec3;
 use jc3gi::graphics_engine::render_block::Matrix3x4;
+use jc3vr_core::published::Stamp;
 use jc3vr_view::{
     hooks::graphics_engine::palette_edit::PaletteLayout,
     recorder::tracking::{events, events::EventKind},
@@ -55,7 +56,7 @@ pub(crate) fn sample_drawn_arms(sequence: u64, dtf: f32, joints: [[Vec3; 3]; 2])
     if !collecting && !trace_enabled {
         return;
     }
-    let now = Instant::now();
+    let now = Stamp::now();
     let trace = {
         let mut sampled = DRAWN.lock();
         if sampled.sequence.is_some_and(|last| sequence <= last) {
@@ -111,7 +112,7 @@ const DRAWN_TRACE_INTERVAL: Duration = Duration::from_millis(500);
 
 struct DrawnSample {
     sequence: Option<u64>,
-    traced_at: Option<Instant>,
+    traced_at: Option<Stamp>,
 }
 
 static DRAWN: Mutex<DrawnSample> = Mutex::new(DrawnSample {

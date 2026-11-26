@@ -46,7 +46,7 @@ pub mod trace;
 #[cfg(test)]
 mod tests;
 
-use std::{ffi::c_void, sync::OnceLock, time::Instant};
+use std::{ffi::c_void, sync::OnceLock};
 
 use detours_macro::detour;
 use glam::{Mat4, Quat, Vec2, Vec3};
@@ -56,6 +56,7 @@ use jc3gi::{
     state::StateContext,
     types::math::Vector3,
 };
+use jc3vr_core::published::Stamp;
 use jc3vr_view::{
     headpose,
     vr::{RecenterCause, RecenterKind},
@@ -163,7 +164,7 @@ pub struct FrameOutput {
 pub fn frame(inputs: &FrameInputs) -> FrameOutput {
     let config = inputs.config;
     let epoch = headpose::teleport::epoch();
-    let now = Instant::now();
+    let now = Stamp::now();
     let basis = CockpitBasis {
         body: inputs.view,
         world_scale: inputs.world_scale,
@@ -339,7 +340,7 @@ pub struct RootStatus {
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct FrameReadout {
     /// When the frame half last ran.
-    pub at: Option<Instant>,
+    pub at: Option<Stamp>,
     /// The grounded rig's frame, while Rico is grounded.
     pub rig: Option<GroundedFrame>,
     pub world_scale: f32,
@@ -361,10 +362,13 @@ pub struct FrameReadout {
 
 impl FrameReadout {
     /// Whether the frame half ran recently.
-    pub fn fresh(&self, now: Instant) -> bool {
-        self.at.is_some_and(|at| {
-            now.saturating_duration_since(at) < FRESHNESS.get().rig.root_frame_gap_ms.duration()
-        })
+    pub fn fresh(&self, now: Stamp) -> bool {
+        FRESHNESS
+            .get()
+            .rig
+            .root_frame_gap_ms
+            .window()
+            .holds(self.at, now)
     }
 
     /// How far the neck is out over the pelvis, world metres.
@@ -384,7 +388,7 @@ impl FrameReadout {
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct SimStatus {
     /// When the last on-foot tick ran.
-    pub at: Option<Instant>,
+    pub at: Option<Stamp>,
     /// Who owned the root on the last tick; `None` before the first.
     pub owner: Option<RootOwner>,
     /// The gap left after the drive completed since the frame, world `(x, z)`, metres.
@@ -440,7 +444,7 @@ struct FrameState {
     last_seat: SeatPhase,
     pushback: Pushback,
     /// The latest step frame for the simulation half, and when it was taken.
-    published: Option<(StepFrame, Instant)>,
+    published: Option<(StepFrame, Stamp)>,
     status: FrameReadout,
 }
 
@@ -471,12 +475,9 @@ static FRAME: Mutex<FrameState> = Mutex::new(FrameState {
 
 /// Who owned the root on the latest on-foot tick, while the simulation half runs, and whether the
 /// ledger finds the drive obstructed.
-fn owner_and_obstruction(now: Instant) -> (Option<RootOwner>, bool) {
+fn owner_and_obstruction(now: Stamp) -> (Option<RootOwner>, bool) {
     let sim = SIM.lock();
-    let fresh = sim
-        .status
-        .at
-        .is_some_and(|at| now.saturating_duration_since(at) <= probe::stale_after());
+    let fresh = probe::stale_after().holds(sim.status.at, now);
     if fresh {
         (sim.status.owner, sim.movement.obstructed())
     } else {
@@ -485,12 +486,17 @@ fn owner_and_obstruction(now: Instant) -> (Option<RootOwner>, bool) {
 }
 
 /// The latest frame's step for the simulation half, while it is fresh.
-fn published_step(now: Instant) -> Option<StepFrame> {
+fn published_step(now: Stamp) -> Option<StepFrame> {
     FRAME
         .lock()
         .published
         .filter(|(_, at)| {
-            now.saturating_duration_since(*at) < FRESHNESS.get().rig.root_frame_gap_ms.duration()
+            FRESHNESS
+                .get()
+                .rig
+                .root_frame_gap_ms
+                .window()
+                .holds(*at, now)
         })
         .map(|(frame, _)| frame)
 }
@@ -573,18 +579,14 @@ fn locomotion_task_update(ctx: *mut StateContext, properties: *mut c_void, state
 /// The simulation half, for the local player after the locomotion task.
 unsafe fn after_locomotion(character: &mut Character, dt: f32) {
     let rig = BODY_REMAP_CONFIG.query(|c| c.rig);
-    let now = Instant::now();
+    let now = Stamp::now();
     let shared = roomscale::frame_shared();
     let step_frame = published_step(now);
     let climbing = climb::climbing();
     let mut sim = SIM.lock();
     // A gap means the task stopped running (a vehicle, a swim, a fall), and the body may have moved
     // any distance in between, which is no warp.
-    if sim
-        .status
-        .at
-        .is_none_or(|at| now.duration_since(at) > probe::stale_after())
-    {
+    if !probe::stale_after().holds(sim.status.at, now) {
         sim.last_position = None;
         sim.tracer.forget();
         sim.movement.clear();

@@ -1,7 +1,8 @@
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use body_estimator::{EgoPoserOutput, smpl::to_6d};
 use glam::{DMat3, DQuat, DVec3, Quat, Vec3};
+use jc3vr_core::published::Stamp;
 
 use super::*;
 use crate::controllers::body::estimator::producer::Producer;
@@ -22,7 +23,7 @@ fn facing(yaw: f64) -> EgoPoserOutput {
     }
 }
 
-fn reading(yaw: f64, window_end: Instant) -> Reading {
+fn reading(yaw: f64, window_end: Stamp) -> Reading {
     Reading {
         output: facing(yaw),
         window_end,
@@ -34,7 +35,7 @@ fn reading(yaw: f64, window_end: Instant) -> Reading {
 
 #[test]
 fn a_reading_turns_into_the_cockpit_frame_as_it_stands() {
-    let now = Instant::now();
+    let now = Stamp::now();
     let r = reading(0.7, now);
     let still = r.estimate(DQuat::IDENTITY, now + Duration::from_millis(40));
     assert!(
@@ -62,7 +63,7 @@ fn a_reading_turns_into_the_cockpit_frame_as_it_stands() {
 #[test]
 fn the_rig_takes_a_fresh_estimate_whole_and_a_stale_one_not_at_all() {
     let tuning = body_rig::EstimateTuning::new();
-    let now = Instant::now();
+    let now = Stamp::now();
     let fresh = reading(0.2, now).estimate(DQuat::IDENTITY, now);
     let rig = for_rig(Some(&fresh), &tuning).unwrap();
     assert_eq!(rig.confidence, 1.0);
@@ -76,7 +77,7 @@ fn the_rig_takes_a_fresh_estimate_whole_and_a_stale_one_not_at_all() {
     assert_eq!(for_rig(None, &tuning), None);
 }
 
-fn observation(now: Instant, posture: EffectivePosture) -> Observation {
+fn observation(now: Stamp, posture: EffectivePosture) -> Observation {
     let head = Quat::IDENTITY;
     let eyes = Vec3::new(0.0, 1.7, 0.0);
     Observation {
@@ -94,7 +95,7 @@ fn observation(now: Instant, posture: EffectivePosture) -> Observation {
 #[test]
 fn the_producer_posts_at_the_submit_rate_once_the_window_is_full() {
     let mut producer = Producer::new();
-    let start = Instant::now();
+    let start = Stamp::now();
     let frame = Duration::from_secs_f64(1.0 / 90.0);
     let mut posted = Vec::new();
     for i in 0..(90 * 3) {
@@ -113,7 +114,7 @@ fn the_producer_posts_at_the_submit_rate_once_the_window_is_full() {
     );
     let rate = (posted.len() - 1) as f64
         / posted[posted.len() - 1]
-            .duration_since(posted[0])
+            .saturating_duration_since(posted[0])
             .as_secs_f64();
     assert!((28.0..=31.0).contains(&rate), "{rate}");
 }
@@ -121,7 +122,7 @@ fn the_producer_posts_at_the_submit_rate_once_the_window_is_full() {
 #[test]
 fn a_change_of_posture_starts_the_window_again() {
     let mut producer = Producer::new();
-    let start = Instant::now();
+    let start = Stamp::now();
     let frame = Duration::from_secs_f64(1.0 / 90.0);
     for i in 0..200 {
         producer.observe(&observation(start + frame * i, EffectivePosture::Standing));

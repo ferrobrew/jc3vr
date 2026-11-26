@@ -21,14 +21,13 @@
 //! the standing height afresh, and the root's cockpit point is put where the pelvis stands under
 //! the neck, so the view moves to the body and the body never moves through a wall.
 
-use std::time::Instant;
-
 use body_rig::{
     BodyEstimate, GroundedRig, PlayerBody, RigFrame, RigOutput, RigTuning, StepPhase,
     body::EYES_TO_NECK,
     math::angle::{forward, head_heading, right, wrap},
 };
 use glam::{Quat, Vec2, Vec3};
+use jc3vr_core::published::Stamp;
 use parking_lot::Mutex;
 
 use crate::{
@@ -75,7 +74,7 @@ pub struct GroundedInput {
     pub dimensions: BodyDimensions,
     pub tuning: RigTuning,
     pub dt: f32,
-    pub now: Instant,
+    pub now: Stamp,
 }
 
 /// One frame's result.
@@ -95,7 +94,12 @@ pub fn frame(input: &GroundedInput) -> Option<GroundedFrame> {
     let mut state = STATE.lock();
     state.rig.set_body(player_body(&input.dimensions));
     let snap = std::mem::take(&mut state.snap).filter(|at| {
-        input.now.saturating_duration_since(*at) <= FRESHNESS.get().rig.snap_wait_ms.duration()
+        FRESHNESS
+            .get()
+            .rig
+            .snap_wait_ms
+            .window()
+            .holds(*at, input.now)
     });
     if !input.grounded {
         state.rig.stand();
@@ -181,7 +185,7 @@ pub fn standing_eye_height() -> f32 {
 /// Snap on the next grounded frame: face the head, measure the standing height afresh, and put the
 /// pelvis under the neck. The recenter's, and the debug UI's button.
 pub fn request_snap() {
-    STATE.lock().snap = Some(Instant::now());
+    STATE.lock().snap = Some(Stamp::now());
 }
 
 /// Turn the rig's room frame with the cockpit frame, by `turn` (new frame from old): a recenter's
@@ -204,7 +208,7 @@ pub fn forget() {
 /// tuning's `grounded.walk_stick` of the way, in the frame of the head's heading, as the stick
 /// locomotion reads the stick.
 pub fn add_step_walk(desired: &mut Vec<Desired>) {
-    let now = Instant::now();
+    let now = Stamp::now();
     let walk = fresh(now)
         .and_then(|published| walk_for(&published))
         .unwrap_or(Vec2::ZERO);
@@ -220,23 +224,30 @@ pub fn add_step_walk(desired: &mut Vec<Desired>) {
 pub(crate) fn step_stick() -> Vec2 {
     STEP_STICK
         .lock()
-        .filter(|(_, at)| at.elapsed() <= FRESHNESS.get().rig.grounded_ms.duration())
+        .filter(|(_, at)| {
+            FRESHNESS
+                .get()
+                .rig
+                .grounded_ms
+                .window()
+                .holds(*at, Stamp::now())
+        })
         .map_or(Vec2::ZERO, |(walk, _)| walk)
 }
 
 /// The body's heading in the cockpit frame, while the rig is grounded and fresh.
 pub fn body_yaw() -> Option<f32> {
-    fresh(Instant::now()).map(|p| p.frame.output.body_yaw)
+    fresh(Stamp::now()).map(|p| p.frame.output.body_yaw)
 }
 
 pub(crate) fn turning() -> bool {
-    fresh(Instant::now()).is_some_and(|p| p.frame.output.turning)
+    fresh(Stamp::now()).is_some_and(|p| p.frame.output.turning)
 }
 
 /// The player's torso in the cockpit frame, as the rig places it: the neck pivot, the spine down to
 /// the waist pivot, the shoulders across it by the chest's heading, and the hips by the legs'.
 pub fn torso() -> Option<TorsoEstimate> {
-    let published = fresh(Instant::now())?;
+    let published = fresh(Stamp::now())?;
     let output = published.frame.output;
     let solve = output.solve;
     let lift = Vec3::Y * published.floor;
@@ -287,7 +298,7 @@ pub struct Diagnostics {
 
 /// The latest grounded frame's diagnostics, while fresh.
 pub fn diagnostics() -> Option<Diagnostics> {
-    let published = fresh(Instant::now())?;
+    let published = fresh(Stamp::now())?;
     let solve = published.frame.output.solve;
     let pelvis = published.frame.pelvis;
     Some(Diagnostics {
@@ -305,7 +316,7 @@ pub fn diagnostics() -> Option<Diagnostics> {
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct GroundedStatus {
     /// The latest grounded frame and when it ran.
-    pub latest: Option<(GroundedFrame, Instant)>,
+    pub latest: Option<(GroundedFrame, Stamp)>,
     /// How many standing-height samples are held.
     pub height_samples: usize,
     /// Recenter snaps since the payload loaded.
@@ -337,7 +348,7 @@ fn walk_for(published: &Published) -> Option<Vec2> {
 }
 
 /// The walk last added to the move stick, and when.
-static STEP_STICK: Mutex<Option<(Vec2, Instant)>> = Mutex::new(None);
+static STEP_STICK: Mutex<Option<(Vec2, Stamp)>> = Mutex::new(None);
 
 /// The player's body as the pure core measures it.
 fn player_body(dimensions: &BodyDimensions) -> PlayerBody {
@@ -350,10 +361,11 @@ fn arm(yaw: f32) -> Vec2 {
     Vec2::new(v.x, v.z)
 }
 
-fn fresh(now: Instant) -> Option<Published> {
-    STATE.lock().latest.filter(|p| {
-        now.saturating_duration_since(p.at) <= FRESHNESS.get().rig.grounded_ms.duration()
-    })
+fn fresh(now: Stamp) -> Option<Published> {
+    STATE
+        .lock()
+        .latest
+        .filter(|p| FRESHNESS.get().rig.grounded_ms.window().holds(p.at, now))
 }
 
 /// Log each change of the step phase at debug level, with what committed it.
@@ -382,15 +394,15 @@ struct Published {
     head: Quat,
     dimensions: BodyDimensions,
     lean_radius_m: f32,
-    at: Instant,
+    at: Stamp,
 }
 
 struct State {
     rig: GroundedRig,
     latest: Option<Published>,
-    grounded_at: Option<Instant>,
+    grounded_at: Option<Stamp>,
     /// When a snap was asked for, until it is taken or expires.
-    snap: Option<Instant>,
+    snap: Option<Stamp>,
     snaps: u64,
     height_samples: usize,
     logged_phase: StepPhase,
@@ -431,7 +443,7 @@ mod tests {
             head,
             dimensions: BodyDimensions::GENERIC_ADULT,
             lean_radius_m: 0.2,
-            at: Instant::now(),
+            at: Stamp::now(),
         }
     }
 

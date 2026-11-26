@@ -209,8 +209,7 @@ pub fn submit(tick: &Tick, frame: Option<&MarkerFrame>) {
         Some(at) if tuning.candidate_max_age().holds(at, now) => &state.candidates,
         _ => &[],
     };
-    // The held guns' readouts still run on `Instant`.
-    let reload = held::reload_views(std::time::Instant::now());
+    let reload = held::reload_views(now);
     let drawn = draw::build(
         &DrawInputs {
             frame,

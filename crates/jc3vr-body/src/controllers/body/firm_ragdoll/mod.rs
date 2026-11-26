@@ -32,10 +32,7 @@
 mod stand_in;
 pub(crate) mod target;
 
-use std::{
-    sync::atomic::{AtomicBool, Ordering},
-    time::Instant,
-};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use detours_macro::detour;
 use jc3gi::{
@@ -46,7 +43,7 @@ use jc3gi::{
     character::character::Character,
     types::math::Matrix4,
 };
-use jc3vr_core::game_tick::GameTick;
+use jc3vr_core::{game_tick::GameTick, published::Stamp};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
@@ -112,7 +109,7 @@ pub(crate) fn owns_legs() -> bool {
 
 /// Publish the bones the muscle target is composed on and the IK body's legs, from the solve gate
 /// while the physics owns the legs.
-pub(crate) fn publish_source(bones: TargetBones, legs: Option<IkLegs>, now: Instant) {
+pub(crate) fn publish_source(bones: TargetBones, legs: Option<IkLegs>, now: Stamp) {
     *SOURCE.lock() = Some(Source {
         bones,
         legs,
@@ -138,8 +135,12 @@ pub(crate) unsafe fn feed(character: &Character, producer: *mut PoseProducer) ->
             .is_some_and(|preset| character.m_CurrentRagdollParamsID == preset)
     };
     let source = SOURCE.lock().filter(|source| {
-        Instant::now().saturating_duration_since(source.at)
-            <= FRESHNESS.get().body.firm_ragdoll_source_ms.duration()
+        FRESHNESS
+            .get()
+            .body
+            .firm_ragdoll_source_ms
+            .window()
+            .holds(source.at, Stamp::now())
     });
     let (Some(source), true, Some(live)) = (source, in_mode, unsafe { producer.as_ref() }) else {
         return producer;
@@ -182,7 +183,7 @@ pub fn input_tick(game: &GameTick<'_>, want: Want) {
 /// Step the firm mode for the local `player`.
 fn tick(player: &mut LocalPlayer<'_>, want: Want) {
     let character = player.character_mut();
-    let now = Instant::now();
+    let now = Stamp::now();
     let mut state = STATE.lock();
     let current = character.m_CurrentRagdollParamsID;
     match (state.mode, want) {
@@ -283,7 +284,7 @@ fn post_physics_update_ragdoll(character: *mut Character, dt: f32) {
     if let Some(character) = unsafe { character.as_mut() }.filter(|c| c.m_IsLocalCharacter) {
         let (weight, preset) = {
             let state = STATE.lock();
-            (state.mode.weight(Instant::now()), state.mode.preset())
+            (state.mode.weight(Stamp::now()), state.mode.preset())
         };
         if let Some(preset) = preset
             && character.m_CurrentRagdollParamsID == preset
@@ -329,18 +330,18 @@ enum Mode {
     /// In on `preset`, ramping in since `since`.
     In {
         preset: u32,
-        since: Instant,
+        since: Stamp,
     },
     /// Ramping out of `preset` from the weight `from` since `since`.
     Out {
         preset: u32,
-        since: Instant,
+        since: Stamp,
         from: f32,
     },
 }
 
 impl Mode {
-    fn weight(self, now: Instant) -> f32 {
+    fn weight(self, now: Stamp) -> f32 {
         match self {
             Mode::Off => 0.0,
             Mode::In { since, .. } => {
@@ -395,7 +396,7 @@ static STATE: Mutex<State> = Mutex::new(State {
 struct Source {
     bones: TargetBones,
     legs: Option<IkLegs>,
-    at: Instant,
+    at: Stamp,
 }
 
 static SOURCE: Mutex<Option<Source>> = Mutex::new(None);
@@ -413,7 +414,7 @@ mod tests {
 
     #[test]
     fn the_weight_ramps_in_and_out_from_where_it_was() {
-        let start = Instant::now();
+        let start = Stamp::now();
         let at = |s: f32| start + Duration::from_secs_f32(s);
         let FirmRagdollTuning {
             blend_in_s,

@@ -27,8 +27,9 @@ pub mod blend;
 pub mod catalogue;
 pub mod contact;
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
+use jc3vr_core::published::Stamp;
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
@@ -250,11 +251,11 @@ impl Grip {
 /// Declare what `hand` holds on this tick. Call it on every tick of the source while the hand
 /// holds the thing; a hand whose declarations stop is let go.
 pub fn declare(hand: Hand, grip: Grip) {
-    DECLARED.lock()[hand.index()][grip.source.index()] = Some((grip, Instant::now()));
+    DECLARED.lock()[hand.index()][grip.source.index()] = Some((grip, Stamp::now()));
 }
 
 /// The grip `hand` holds now: the winning declaration made within `max_age`.
-pub fn current(hand: Hand, now: Instant, max_age: Duration) -> Option<Grip> {
+pub fn current(hand: Hand, now: Stamp, max_age: Duration) -> Option<Grip> {
     let declared = DECLARED.lock()[hand.index()];
     winner(&declared, now, max_age)
 }
@@ -262,7 +263,7 @@ pub fn current(hand: Hand, now: Instant, max_age: Duration) -> Option<Grip> {
 /// Every source declaring for `hand` at `now`, in the order the declarations win, for the
 /// readouts. A declaration counts within the longest age [`max_age`] gives, since the readouts do
 /// not know the finger curls' tick interval.
-pub fn declared(hand: Hand, now: Instant) -> Vec<GripSource> {
+pub fn declared(hand: Hand, now: Stamp) -> Vec<GripSource> {
     let declared = DECLARED.lock()[hand.index()];
     fresh(
         &declared,
@@ -298,7 +299,7 @@ pub(crate) struct SourceChange {
 pub(crate) struct SourceLog {
     logged: Option<GripSource>,
     seen: Option<GripSource>,
-    at: Option<Instant>,
+    at: Option<Stamp>,
     unlogged: u32,
 }
 
@@ -313,7 +314,7 @@ impl SourceLog {
     /// Note the hand's source `current` at `now`, and return the change to log, if any.
     pub(crate) fn observe(
         &mut self,
-        now: Instant,
+        now: Stamp,
         current: Option<GripSource>,
     ) -> Option<SourceChange> {
         if current != self.seen {
@@ -344,21 +345,21 @@ impl SourceLog {
 /// The shortest gap between two logged changes of one hand's grip source.
 pub(crate) const LOG_INTERVAL: Duration = Duration::from_millis(500);
 
-type Declarations = [Option<(Grip, Instant)>; GripSource::ALL.len()];
+type Declarations = [Option<(Grip, Stamp)>; GripSource::ALL.len()];
 
 /// Each hand's latest declaration per source, indexed by [`Hand::index`] and
 /// [`GripSource::index`].
 static DECLARED: Mutex<[Declarations; 2]> = Mutex::new([[None; GripSource::ALL.len()]; 2]);
 
 /// The first source's declaration made within `max_age` of `now`.
-fn winner(declared: &Declarations, now: Instant, max_age: Duration) -> Option<Grip> {
+fn winner(declared: &Declarations, now: Stamp, max_age: Duration) -> Option<Grip> {
     fresh(declared, now, max_age).next()
 }
 
 /// The declarations made within `max_age` of `now`, in the order they win.
 fn fresh(
     declared: &Declarations,
-    now: Instant,
+    now: Stamp,
     max_age: Duration,
 ) -> impl Iterator<Item = Grip> + '_ {
     declared
@@ -382,15 +383,13 @@ mod tests {
 
     #[test]
     fn the_first_fresh_source_wins() {
-        let now = Instant::now();
+        let earlier = Stamp::from_nanos(1_000_000_000);
+        let now = earlier + Duration::from_millis(80);
         let age = Duration::from_millis(50);
         let mut declared: Declarations = [None; GripSource::ALL.len()];
         assert_eq!(winner(&declared, now, age), None);
         declared[GripSource::Pickup.index()] = Some((Grip::new(GripSource::Pickup), now));
-        declared[GripSource::Grenade.index()] = Some((
-            Grip::new(GripSource::Grenade),
-            now - Duration::from_millis(80),
-        ));
+        declared[GripSource::Grenade.index()] = Some((Grip::new(GripSource::Grenade), earlier));
         assert_eq!(
             winner(&declared, now, age).map(|g| g.source),
             Some(GripSource::Pickup),
@@ -406,13 +405,13 @@ mod tests {
 
     #[test]
     fn every_fresh_source_is_listed_in_winning_order() {
-        let now = Instant::now();
+        let earlier = Stamp::from_nanos(1_000_000_000);
+        let now = earlier + Duration::from_millis(80);
         let age = Duration::from_millis(50);
         let mut declared: Declarations = [None; GripSource::ALL.len()];
         declared[GripSource::Climb.index()] = Some((Grip::new(GripSource::Climb), now));
         declared[GripSource::Magazine.index()] = Some((Grip::new(GripSource::Magazine), now));
-        declared[GripSource::Door.index()] =
-            Some((Grip::new(GripSource::Door), now - Duration::from_millis(80)));
+        declared[GripSource::Door.index()] = Some((Grip::new(GripSource::Door), earlier));
         let sources: Vec<GripSource> = fresh(&declared, now, age).map(|g| g.source).collect();
         assert_eq!(sources, [GripSource::Magazine, GripSource::Climb]);
     }
@@ -471,7 +470,7 @@ mod tests {
 
     #[test]
     fn source_changes_are_logged_at_most_twice_a_second() {
-        let start = Instant::now();
+        let start = Stamp::now();
         let mut log = SourceLog::NEW;
         assert_eq!(log.observe(start, None), None, "an empty hand is not news");
         let first = log.observe(start, Some(GripSource::Gun)).unwrap();

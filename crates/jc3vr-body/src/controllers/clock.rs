@@ -3,12 +3,12 @@
 //! The game runs its world on a clock that its slow motion slows down ([`Clock::m_UpdateSpeed`],
 //! game seconds per real second), while the player's body moves in real time. The bindings tick's
 //! step is the game's (the update context's scaled delta), as are the velocities of the physics
-//! bodies and the characters; the controllers' poses, their display times, and [`Instant`] are
-//! real. A quantity that measures the player's body (a swing, a pull, a gesture's dwell, a grip's
-//! timing) is measured in real time, and one that drives the game world is in game time, converted
-//! where the two meet with a [`TimeScale`].
+//! bodies and the characters; the controllers' poses, their display times, and the mod's wall
+//! clock ([`Stamp`]) are real. A quantity that measures the player's body (a swing, a pull, a
+//! gesture's dwell, a grip's timing) is measured in real time, and one that drives the game world
+//! is in game time, converted where the two meet with a [`TimeScale`].
 //!
-//! [`Instant`]: std::time::Instant
+//! [`Stamp`]: jc3vr_core::published::Stamp
 
 use glam::Vec3;
 use jc3gi::clock::Clock;

@@ -1,7 +1,7 @@
 //! The gameplay participants of the head pose ([`jc3vr_view::headpose::HeadParticipants`]): the
 //! grapple's comfort filter and the character's state the head composition reads.
 
-use std::{sync::atomic::Ordering, time::Instant};
+use std::sync::atomic::Ordering;
 
 use jc3vr_body::{
     controllers::{
@@ -15,6 +15,7 @@ use jc3vr_body::{
     },
     hooks::input::{locomotion::ORIENTATION_EVAL_CALLS, swim},
 };
+use jc3vr_core::published::Stamp;
 use jc3vr_grapple::grapple;
 use jc3vr_view::headpose::{HeadParticipants, register_head_participants};
 
@@ -36,7 +37,7 @@ static PARTICIPANTS: HeadParticipants = HeadParticipants {
     swimming: swim::swimming,
     vehicle_transition: || {
         frame_shared()
-            .filter(|shared| shared.fresh(Instant::now()))
+            .filter(|shared| shared.fresh(Stamp::now()))
             .is_some_and(|shared| matches!(shared.seat, SeatPhase::Entering | SeatPhase::Exiting))
     },
     body_thrown: || {

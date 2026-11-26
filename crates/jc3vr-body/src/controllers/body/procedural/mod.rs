@@ -52,12 +52,9 @@ pub mod tuning;
 pub mod twist;
 pub mod wings;
 
-use std::{
-    sync::{
-        LazyLock,
-        atomic::{AtomicU32, Ordering},
-    },
-    time::Instant,
+use std::sync::{
+    LazyLock,
+    atomic::{AtomicU32, Ordering},
 };
 
 use body_rig::math::{Side, angle::line_yaw};
@@ -66,7 +63,7 @@ use jc3gi::{
     animation::ik::{Effector, HumanIK},
     character::character::Character,
 };
-use jc3vr_core::hash::StateSet;
+use jc3vr_core::{hash::StateSet, published::Stamp};
 use jc3vr_view::{
     controllers::cockpit::CockpitTransform,
     headpose::{body_relative_rotation, xr},
@@ -111,7 +108,7 @@ use crate::{
 /// What the procedural body did at its last gate.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct ProceduralStatus {
-    pub at: Option<Instant>,
+    pub at: Option<Stamp>,
     /// The torso's weight of the procedural pose against the animation.
     pub weight: f32,
     /// The hand-over table's case at the last gate.
@@ -137,10 +134,8 @@ pub struct ProceduralStatus {
 impl ProceduralStatus {
     /// Whether the local player's gate ran recently: the body is being solved now, not left as it
     /// was when the gate last ran.
-    pub fn fresh(&self, now: Instant) -> bool {
-        self.at.is_some_and(|at| {
-            now.saturating_duration_since(at) <= FRESHNESS.get().body.procedural_gate_ms.duration()
-        })
+    pub fn fresh(&self, now: Stamp) -> bool {
+        FRESHNESS.get().body.gate_ms.window().holds(self.at, now)
     }
 }
 
@@ -264,7 +259,7 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
     let config = PROCEDURAL.get();
     let ik_config = BODY_REMAP_CONFIG.query(|c| c.ik);
     let scale = VR_CONFIG.lock().world_scale;
-    let now = Instant::now();
+    let now = Stamp::now();
     // Read before the gate's own state too: it takes the configuration and the controller frame.
     let mode = current_mode().mode;
     let player_arms = matches!(

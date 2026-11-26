@@ -37,16 +37,14 @@ pub mod rig;
 pub mod solve;
 pub mod tuning;
 
-use std::{
-    sync::atomic::{AtomicBool, AtomicU8, AtomicU32, AtomicU64, Ordering},
-    time::Instant,
-};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, AtomicU64, Ordering};
 
 use body_rig::body::EYES_TO_NECK;
 use glam::{Mat4, Quat, Vec3};
 use jc3gi::character::character::{AnimationController, Character, Joint};
 use jc3vr_core::{
     frame_timing::{self, Slot},
+    published::Stamp,
     render_frame::RenderFrameSlot,
 };
 use jc3vr_input::frame::{Hand, Pose};
@@ -227,7 +225,7 @@ pub(crate) unsafe fn after_solve(character: *mut Character) {
         torso: procedural::torso_weight(),
         key,
         groups: rig.groups,
-        at: Instant::now(),
+        at: Stamp::now(),
     };
     let mut ticks = TICKS.lock();
     ticks.previous = ticks.current.filter(|previous| previous.key == key);
@@ -239,14 +237,19 @@ pub(crate) unsafe fn after_solve(character: *mut Character) {
 /// settings. Called once per rendered frame from `Game::UpdateRender`, after the head pose pair is
 /// published and before the engine's render update and the draws.
 pub fn begin_frame() {
-    let start = Instant::now();
+    let start = Stamp::now();
     let _timing = frame_timing::scope(Slot::Presentation);
     roll_cost();
     let world_scale = VR_CONFIG.lock().world_scale;
     let rig_failed = RIG.lock().as_ref().is_some_and(|(_, rig)| rig.is_err());
     let ticks = *TICKS.lock();
     let fresh = ticks.current.filter(|t| {
-        start.saturating_duration_since(t.at) <= FRESHNESS.get().hands.presentation_ms.duration()
+        FRESHNESS
+            .get()
+            .hands
+            .presentation_ms
+            .window()
+            .holds(t.at, start)
     });
     let (idle, frame) =
         if headpose::source() != headpose::Source::Vr || !jc3vr_core::hooks::in_gameplay() {
@@ -293,7 +296,7 @@ pub fn begin_frame() {
 /// the interpolation fraction `dtf`: the upper body re-posed when the layer is active, or else the
 /// late update's hands; `None` when nothing is re-posed.
 pub(crate) fn draw_edit(instance: Mat4, dtf: f32) -> Option<DrawEdit> {
-    let start = Instant::now();
+    let start = Stamp::now();
     let _timing = frame_timing::scope(Slot::Presentation);
     let body = body_edit(instance, dtf);
     if body.is_some() {
@@ -324,7 +327,7 @@ struct TickPose {
     drive: [f32; 2],
     key: SkeletonKey,
     groups: GroupMap,
-    at: Instant,
+    at: Stamp,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -341,7 +344,7 @@ struct Frame {
     /// What the smoothed elbow poles belong to.
     poles: PoleContext,
     /// When the frame was snapshot.
-    at: Instant,
+    at: Stamp,
     /// The neck pivot from the eyes, in the head's frame, at the world scale.
     pivot_offset: Vec3,
     /// The render-time head pose pair, previous then current, as the camera interpolates it.
@@ -623,7 +626,7 @@ struct PoleMemory {
 #[derive(Debug, Copy, Clone)]
 struct SolvedPoles {
     sequence: u64,
-    at: Instant,
+    at: Stamp,
     context: PoleContext,
     /// Each arm's smoothed pole, model space; `None` for an arm with none.
     poles: [Option<Vec3>; 2],
@@ -643,7 +646,7 @@ impl PoleMemory {
             .map_or(([None; 2], 0.0), |settled| {
                 (
                     settled.poles,
-                    frame.at.duration_since(settled.at).as_secs_f32(),
+                    frame.at.saturating_duration_since(settled.at).as_secs_f32(),
                 )
             })
     }
@@ -692,7 +695,7 @@ fn roll_cost() {
     }
 }
 
-fn add_cost(start: Instant) {
+fn add_cost(start: Stamp) {
     let ns = u64::try_from(start.elapsed().as_nanos()).unwrap_or(u64::MAX);
     FRAME_NS.fetch_add(ns, Ordering::Relaxed);
 }

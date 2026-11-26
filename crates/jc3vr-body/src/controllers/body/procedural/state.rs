@@ -7,10 +7,10 @@
 //! engine itself reads from the pose-finalization pass (`Character::IsInStuntPosition` and
 //! `Character::IsGrappleHanging` among them).
 
-use std::{sync::OnceLock, time::Instant};
+use std::sync::OnceLock;
 
 use jc3gi::{character::character::Character, state::StateBitFlag};
-use jc3vr_core::{hash::hashlittle, hooks::in_gameplay};
+use jc3vr_core::{hash::hashlittle, hooks::in_gameplay, published::Stamp};
 use jc3vr_view::headpose::{Source, source};
 
 use crate::{
@@ -36,7 +36,7 @@ use crate::{
 /// # Safety
 ///
 /// `character` must be the live local character, on the thread running its update.
-pub(crate) unsafe fn animation_moves_body(character: &Character, now: Instant) -> bool {
+pub(crate) unsafe fn animation_moves_body(character: &Character, now: Stamp) -> bool {
     let bits = unsafe { StateBits::of(character) };
     bits.authored_motion() || in_hit_reaction(now)
 }
@@ -45,10 +45,10 @@ pub(crate) unsafe fn animation_moves_body(character: &Character, now: Instant) -
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct StateTracker {
     /// When Rico was last on the ground with the movement task running, for the jump's grace.
-    grounded_at: Option<Instant>,
+    grounded_at: Option<Stamp>,
     /// When the movement task had last run as of the previous gate, so this gate can tell whether
     /// it ran since.
-    task_seen_at: Option<Instant>,
+    task_seen_at: Option<Stamp>,
     /// How long the proxy has been off its support without a pause, seconds.
     in_air_s: f32,
 }
@@ -72,7 +72,7 @@ impl StateTracker {
         &mut self,
         character: &Character,
         locomotion: &LocomotionStatus,
-        now: Instant,
+        now: Stamp,
         dt: f32,
         jump_grace_s: f32,
     ) -> CharacterState {

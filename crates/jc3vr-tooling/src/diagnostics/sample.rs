@@ -4,8 +4,6 @@
 //! controllers' poses, validity and tracking flags, focus, and action set, and the STAGE
 //! information, so none of those are read here.
 
-use std::time::Instant;
-
 use jc3gi::character::character::Character;
 use jc3vr_body::{
     controllers::{
@@ -25,6 +23,7 @@ use jc3vr_body::{
     },
     hooks::animation::body_rule_system,
 };
+use jc3vr_core::published::Stamp;
 use jc3vr_input::{
     frame::{self, Hand},
     scheme::Scheme,
@@ -65,7 +64,7 @@ pub(super) fn snapshot(character: Option<&Character>) -> ControllerState {
         late: late_state(late::status()),
         aim: aim_state(aim::status()),
         roomscale: roomscale_state(roomscale_status),
-        root: fresh_trace(&roomscale_status.root.sim, Instant::now()).map(root_tick),
+        root: fresh_trace(&roomscale_status.root.sim, Stamp::now()).map(root_tick),
         character: character.map(character_motion),
         view: world_state::view_state(),
         grapple: character.and_then(world_state::grapple_state),
@@ -192,11 +191,8 @@ fn roomscale_state(status: roomscale::RoomscaleStatus) -> RoomscaleState {
 }
 
 /// The last on-foot tick's trace, while the root's hook still runs.
-fn fresh_trace(sim: &SimStatus, now: Instant) -> Option<RootTrace> {
-    sim.trace.filter(|_| {
-        sim.at
-            .is_some_and(|at| now.saturating_duration_since(at) <= trace_stale_after())
-    })
+fn fresh_trace(sim: &SimStatus, now: Stamp) -> Option<RootTrace> {
+    sim.trace.filter(|_| trace_stale_after().holds(sim.at, now))
 }
 
 fn root_tick(trace: RootTrace) -> RootTick {

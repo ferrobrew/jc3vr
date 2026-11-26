@@ -177,8 +177,7 @@ pub(crate) unsafe fn step(hands: &mut Hands, input: GunStep<'_>) {
         }
     }
     held_guns::record_step(StepRecord {
-        // The held guns' readouts still run on `Instant`.
-        at: std::time::Instant::now(),
+        at: now,
         statuses,
         deviations,
         support_broke: broken,

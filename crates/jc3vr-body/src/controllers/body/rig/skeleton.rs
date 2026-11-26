@@ -8,7 +8,7 @@
 
 use std::{
     sync::atomic::{AtomicBool, Ordering},
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use glam::{Mat4, Vec3};
@@ -16,6 +16,7 @@ use jc3gi::{
     animation::ik::Effector,
     character::character::{AnimationController, Character, Joint, SafeBoneIndex},
 };
+use jc3vr_core::published::Stamp;
 use jc3vr_view::{controllers::cockpit::CockpitTransform, headpose, vr::VR_CONFIG};
 use parking_lot::Mutex;
 
@@ -40,7 +41,7 @@ pub fn skeleton_in_cockpit(
     head_cockpit: Vec3,
     world_scale: f32,
 ) -> Option<(SkeletonLandmarks, SkeletonSource)> {
-    let (skeleton, character, source) = STATE.lock().memory.body(Instant::now())?;
+    let (skeleton, character, source) = STATE.lock().memory.body(Stamp::now())?;
     let frames = Frames {
         cockpit: CockpitTransform::current(head_cockpit, world_scale),
         character,
@@ -81,7 +82,7 @@ pub struct SkeletonStatus {
     /// The latest divergence between the estimate and the skeleton after the solves.
     pub divergence: Option<Divergence>,
     /// When the skeleton was last read.
-    pub at: Option<Instant>,
+    pub at: Option<Stamp>,
     /// Which body the holsters rode on the latest input tick.
     pub volume_anchor: Option<&'static str>,
 }
@@ -89,10 +90,8 @@ pub struct SkeletonStatus {
 impl SkeletonStatus {
     /// Whether the skeleton was read recently enough to place the holsters, which is when its
     /// divergence describes the body now.
-    pub fn fresh(&self, now: Instant) -> bool {
-        self.at.is_some_and(|at| {
-            now.saturating_duration_since(at) <= FRESHNESS.get().rig.skeleton_ms.duration()
-        })
+    pub fn fresh(&self, now: Stamp) -> bool {
+        FRESHNESS.get().rig.skeleton_ms.window().holds(self.at, now)
     }
 }
 
@@ -121,7 +120,7 @@ pub unsafe fn after_solve(character: *mut Character) {
     }
     let skeleton = unsafe { read_skeleton(character) };
     let world = Mat4::from(character.m_WorldMatrixT1);
-    let now = Instant::now();
+    let now = Stamp::now();
     let measured = match (skeleton, rig::estimate(), headpose::xr::cockpit_pose()) {
         (Some(skeleton), Some(estimate), Some(cockpit)) => {
             let frames = Frames {
@@ -158,7 +157,7 @@ struct State {
     unusable: Option<Unusable>,
     divergence: Option<Divergence>,
     volume_anchor: Option<&'static str>,
-    last_log: Option<Instant>,
+    last_log: Option<Stamp>,
 }
 
 static STATE: Mutex<State> = Mutex::new(State {
@@ -187,7 +186,7 @@ struct SkeletonRead {
     landmarks: Option<SkeletonLandmarks>,
     /// The character's model-to-world transform at the read.
     character: Mat4,
-    at: Instant,
+    at: Stamp,
 }
 
 /// Why a read cannot place the volumes itself.
@@ -206,7 +205,7 @@ impl SkeletonMemory {
         &mut self,
         landmarks: Option<SkeletonLandmarks>,
         character: Mat4,
-        at: Instant,
+        at: Stamp,
     ) -> Option<Unusable> {
         self.latest = Some(SkeletonRead {
             landmarks,
@@ -230,9 +229,15 @@ impl SkeletonMemory {
     /// the latest read's transform. `None` while the latest read is older than the freshness
     /// tuning's `rig.skeleton_ms`, since then the character's pose is not being solved, or before
     /// any plausible read.
-    fn body(&self, now: Instant) -> Option<(SkeletonLandmarks, Mat4, SkeletonSource)> {
+    fn body(&self, now: Stamp) -> Option<(SkeletonLandmarks, Mat4, SkeletonSource)> {
         let latest = self.latest.as_ref()?;
-        if now.saturating_duration_since(latest.at) > FRESHNESS.get().rig.skeleton_ms.duration() {
+        if !FRESHNESS
+            .get()
+            .rig
+            .skeleton_ms
+            .window()
+            .holds(latest.at, now)
+        {
             return None;
         }
         match latest.landmarks.filter(frames::plausible) {
@@ -301,7 +306,7 @@ fn log(measured: Option<Divergence>) {
     let estimate = rig::estimate();
     let anchor = {
         let mut state = STATE.lock();
-        let now = Instant::now();
+        let now = Stamp::now();
         if state
             .last_log
             .is_some_and(|at| now.saturating_duration_since(at) < LOG_INTERVAL)
@@ -368,7 +373,7 @@ mod tests {
     #[test]
     fn a_plausible_read_places_the_volumes() {
         let mut memory = memory();
-        let now = Instant::now();
+        let now = Stamp::now();
         let character = Mat4::from_translation(Vec3::new(5.0, 0.0, 2.0));
         assert_eq!(memory.record(Some(standing()), character, now), None);
         assert_eq!(
@@ -380,7 +385,7 @@ mod tests {
     #[test]
     fn a_bad_read_falls_back_to_the_last_good_skeleton_carried_by_the_body() {
         let mut memory = memory();
-        let now = Instant::now();
+        let now = Stamp::now();
         memory.record(Some(standing()), Mat4::IDENTITY, now);
         // The character has walked on and turned since the good read.
         let moved =
@@ -408,7 +413,7 @@ mod tests {
     #[test]
     fn nothing_is_placed_before_a_good_read_or_once_the_pose_goes_stale() {
         let mut memory = memory();
-        let now = Instant::now();
+        let now = Stamp::now();
         assert_eq!(memory.body(now), None);
         memory.record(None, Mat4::IDENTITY, now);
         assert_eq!(memory.body(now), None);

@@ -1,7 +1,7 @@
 //! The calibration flow's shared state: the running [`Calibration`], the stance choice, the
 //! button and lifecycle handlers that drive it, and the rate-limited logging of its notices.
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use jc3vr_body::controllers::{
     body,
@@ -9,6 +9,7 @@ use jc3vr_body::controllers::{
     roomscale,
     roomscale::posture::{DetectedPosture, EffectivePosture},
 };
+use jc3vr_core::published::Stamp;
 use jc3vr_gameplay::controllers::config::CONTROLLERS_CONFIG;
 use parking_lot::Mutex;
 
@@ -33,7 +34,7 @@ pub(super) fn chosen_stance() -> Stance {
 /// The stance the posture setting implies, with the automatic posture's current detection.
 pub(super) fn posture_stance() -> Stance {
     let detected = roomscale::frame_shared()
-        .filter(|f| f.fresh(Instant::now()))
+        .filter(|f| f.fresh(Stamp::now()))
         .map(|f| match f.posture {
             EffectivePosture::Seated => DetectedPosture::Seated,
             EffectivePosture::Standing => DetectedPosture::Standing,
@@ -52,7 +53,7 @@ pub(super) fn stance_index(stance: Stance) -> usize {
 /// capture was refused.
 pub(super) fn measure(live: Result<f32, Unavailable>) -> ButtonOutcome {
     let mut calibration = CALIBRATION.lock();
-    calibration.measure(Instant::now(), live);
+    calibration.measure(Stamp::now(), live);
     log_notice(&calibration);
     ButtonOutcome::Stay
 }
@@ -86,7 +87,7 @@ pub(super) fn on_frame() -> ButtonOutcome {
         Step::Summary | Step::Review => return ButtonOutcome::Stay,
     };
     let mut calibration = CALIBRATION.lock();
-    let changed = calibration.tick(Instant::now(), live);
+    let changed = calibration.tick(Stamp::now(), live);
     log_notice(&calibration);
     rebuild_if(changed)
 }
@@ -113,7 +114,7 @@ pub(super) fn log_notice(calibration: &Calibration) {
     };
     let suppressed = NOTICE_LOG
         .lock()
-        .take(calibration.notice_count(), Instant::now());
+        .take(calibration.notice_count(), Stamp::now());
     match suppressed {
         Some(0) => tracing::warn!(target: "controllers", "{notice}"),
         Some(suppressed) => {
@@ -134,7 +135,7 @@ pub(super) struct NoticeLog {
     /// The notice count last seen.
     seen: u32,
     /// When a notice was last logged.
-    logged_at: Option<Instant>,
+    logged_at: Option<Stamp>,
     /// New notices not logged since then.
     suppressed: u32,
 }
@@ -151,7 +152,7 @@ impl NoticeLog {
     /// Given the flow's notice count at `now`, whether to log its notice: `Some` with the number
     /// of notices skipped since the last one logged, or `None` when there is no new notice or the
     /// last was logged too recently.
-    pub(super) fn take(&mut self, count: u32, now: Instant) -> Option<u32> {
+    pub(super) fn take(&mut self, count: u32, now: Stamp) -> Option<u32> {
         let new = count.wrapping_sub(self.seen);
         self.seen = count;
         if new == 0 {

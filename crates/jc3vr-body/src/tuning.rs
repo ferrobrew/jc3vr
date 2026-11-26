@@ -8,6 +8,7 @@ use std::time::Duration;
 
 use jc3vr_core::{
     config::engine::{Invalid, positive, range},
+    published::Window,
     tuning::Tuning,
 };
 use serde::Deserialize;
@@ -25,6 +26,11 @@ pub struct Millis(pub u64);
 impl Millis {
     pub const fn duration(self) -> Duration {
         Duration::from_millis(self.0)
+    }
+
+    /// The duration as a freshness window on the wall clock.
+    pub const fn window(self) -> Window {
+        Window::from_millis(self.0)
     }
 
     /// Check that the duration is above zero and at most `max_ms`.
@@ -87,8 +93,7 @@ impl Tuning for FreshnessTuning {
             ("body.estimate_ms", self.body.estimate_ms),
             ("body.ik_support_ms", self.body.ik_support_ms),
             ("body.ik_fk_ms", self.body.ik_fk_ms),
-            ("body.ik_gate_ms", self.body.ik_gate_ms),
-            ("body.procedural_gate_ms", self.body.procedural_gate_ms),
+            ("body.gate_ms", self.body.gate_ms),
             ("body.procedural_local_ms", self.body.procedural_local_ms),
             (
                 "body.firm_ragdoll_source_ms",
@@ -185,10 +190,9 @@ pub struct BodyFreshness {
     /// The IK body's published FK pose stops standing for the player after this long: a few
     /// rendered frames.
     pub ik_fk_ms: Millis,
-    /// How long after the IK body's gate last ran its status still stands: a few ticks.
-    pub ik_gate_ms: Millis,
-    /// How long after the procedural gate last ran the body still counts as solved: a few ticks.
-    pub procedural_gate_ms: Millis,
+    /// How long after the procedural body's solve gate last ran its status, and the IK body's
+    /// status written in the same gate, still stand: a few ticks.
+    pub gate_ms: Millis,
     /// How long the published local model counts as the player's after it was last refreshed: a
     /// few ticks.
     pub procedural_local_ms: Millis,

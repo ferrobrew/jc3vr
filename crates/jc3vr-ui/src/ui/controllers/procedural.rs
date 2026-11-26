@@ -1,13 +1,12 @@
 //! The procedural torso: its status rows, its weight against the animation, the neck's error, the
 //! clavicles, and the wingsuit's arm targets; and the IK body's state, weights, and feet.
 
-use std::time::Instant;
-
 use egui::Ui;
 use jc3vr_body::controllers::body::{
     ik_body,
     procedural::{ProceduralStatus, owns_body},
 };
+use jc3vr_core::published::Stamp;
 
 use crate::{
     status::{
@@ -31,7 +30,7 @@ pub(super) fn procedural_readout(ui: &mut Ui, status: &ProceduralStatus) {
             &ROOF_TORSO,
         ],
     );
-    if !status.fresh(Instant::now()) {
+    if !status.fresh(Stamp::now()) {
         ui.label("Inactive: the local player's solve gate has not run recently.");
     }
     ui.label(format!(

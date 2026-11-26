@@ -10,10 +10,9 @@
 //! aim control's post-simulation update, outside the physics step), and the gate carries the
 //! snapshot forward to its own moment by the body's velocities ([`SupportFrame::predict`]).
 
-use std::time::Instant;
-
 use body_rig::contact::{SupportFrame, SupportId, SupportMotion};
 use glam::Quat;
+use jc3vr_core::published::Stamp;
 use parking_lot::Mutex;
 
 use crate::{
@@ -30,7 +29,7 @@ use crate::{
 /// # Safety
 ///
 /// The game thread, outside the physics step.
-pub(crate) unsafe fn identify(body: u32, now: Instant) -> SupportId {
+pub(crate) unsafe fn identify(body: u32, now: Stamp) -> SupportId {
     let Some(frame) = (unsafe { body_frame(body) }) else {
         return SupportId::WORLD;
     };
@@ -72,10 +71,15 @@ pub(crate) unsafe fn identify(body: u32, now: Instant) -> SupportId {
 /// # Safety
 ///
 /// The game thread, outside the physics step.
-pub(crate) unsafe fn tick(now: Instant) {
+pub(crate) unsafe fn tick(now: Stamp) {
     let mut supports = SUPPORTS.lock();
     supports.retain(|s| {
-        now.saturating_duration_since(s.asked) <= FRESHNESS.get().body.ik_support_kept_ms.duration()
+        FRESHNESS
+            .get()
+            .body
+            .ik_support_kept_ms
+            .window()
+            .holds(s.asked, now)
     });
     for support in supports.iter_mut() {
         support.snapshot = unsafe { snapshot(support, now) };
@@ -83,7 +87,7 @@ pub(crate) unsafe fn tick(now: Instant) {
 }
 
 /// The frame of `support` at `now`, or `None` once it is gone.
-pub(crate) fn frame(support: SupportId, now: Instant) -> Option<SupportFrame> {
+pub(crate) fn frame(support: SupportId, now: Stamp) -> Option<SupportFrame> {
     if support == SupportId::WORLD {
         return Some(SupportFrame::IDENTITY);
     }
@@ -121,7 +125,7 @@ fn support_id(body: u32, lifetime: u64) -> SupportId {
 /// # Safety
 ///
 /// The game thread, outside the physics step.
-unsafe fn snapshot(support: &Tracked, now: Instant) -> Option<Snapshot> {
+unsafe fn snapshot(support: &Tracked, now: Stamp) -> Option<Snapshot> {
     let identity = unsafe { body_identity(support.body) }?;
     if identity.owner != support.owner || identity.lifetime != support.lifetime {
         return None;
@@ -155,7 +159,7 @@ const MAX_SUPPORTS: usize = 8;
 struct Snapshot {
     frame: SupportFrame,
     motion: SupportMotion,
-    at: Instant,
+    at: Stamp,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -165,7 +169,7 @@ struct Tracked {
     owner: usize,
     lifetime: u64,
     /// When the gate last asked for its frame, or the probe found it.
-    asked: Instant,
+    asked: Stamp,
     snapshot: Option<Snapshot>,
 }
 
@@ -184,7 +188,7 @@ mod tests {
 
     #[test]
     fn the_world_needs_no_snapshot_and_an_unknown_support_is_gone() {
-        let now = Instant::now();
+        let now = Stamp::now();
         assert_eq!(frame(SupportId::WORLD, now), Some(SupportFrame::IDENTITY));
         assert_eq!(frame(support_id(9_999, 77), now), None);
     }

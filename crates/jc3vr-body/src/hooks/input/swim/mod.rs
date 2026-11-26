@@ -33,7 +33,6 @@
 use std::{
     cell::Cell,
     sync::atomic::{AtomicU64, Ordering},
-    time::Instant,
 };
 
 use detours_macro::detour;
@@ -47,6 +46,7 @@ use jc3gi::{
     physics,
     types::math::{Matrix4, Vector2, Vector3},
 };
+use jc3vr_core::published::Stamp;
 use jc3vr_view::headpose::body_yaw_target;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
@@ -421,7 +421,7 @@ fn with_swim_window(character: *mut Character, core: SwimCore, dt: f32, call: im
 ///
 /// `character` must be the live local character, right after its swim core ran.
 unsafe fn propel_strokes(character: &mut Character, core: SwimCore) {
-    let Some(speed) = strokes::propulsion(Instant::now()) else {
+    let Some(speed) = strokes::propulsion(Stamp::now()) else {
         return;
     };
     let Some(proxy) = (unsafe { character.m_PfxCharacter.px.as_ref() }) else {

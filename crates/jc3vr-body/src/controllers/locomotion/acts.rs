@@ -30,14 +30,10 @@
 //! a stop), so when it has acted without a break for the locomotion tuning's `acts.watchdog_s` the
 //! watchdog lets every act through for `acts.release_s` and logs a warning.
 
-use std::{
-    ffi::CStr,
-    sync::OnceLock,
-    time::{Duration, Instant},
-};
+use std::{ffi::CStr, sync::OnceLock, time::Duration};
 
 use jc3gi::{animation::symbol_table::EventIdSymbolTable, character::character::Character};
-use jc3vr_core::hooks::in_gameplay;
+use jc3vr_core::{hooks::in_gameplay, published::Stamp};
 use jc3vr_view::headpose::{Source, source};
 use parking_lot::Mutex;
 
@@ -152,7 +148,7 @@ pub(crate) unsafe fn filter(
     }
     let mut state = STATE.lock();
     if scope.watched() {
-        let now = Instant::now();
+        let now = Stamp::now();
         if !state.watchdog.admit(now) {
             state.status.released = true;
             return ActDecision::Pass;
@@ -195,11 +191,11 @@ pub(crate) unsafe fn filter(
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct Watchdog {
     /// When the current burst began.
-    burst_start: Option<Instant>,
+    burst_start: Option<Stamp>,
     /// When the filter last acted.
-    last: Option<Instant>,
+    last: Option<Stamp>,
     /// When the current release ends.
-    released_until: Option<Instant>,
+    released_until: Option<Stamp>,
 }
 
 /// A release the watchdog decided on.
@@ -219,7 +215,7 @@ impl Watchdog {
     }
 
     /// Whether the filter may act at `now`, or is released.
-    pub fn admit(&mut self, now: Instant) -> bool {
+    pub fn admit(&mut self, now: Stamp) -> bool {
         match self.released_until {
             Some(until) if now < until => false,
             Some(_) => {
@@ -234,7 +230,7 @@ impl Watchdog {
 
     /// Record that the filter is about to act at `now`, and decide whether this is a burst that has
     /// gone on too long.
-    pub fn record(&mut self, now: Instant) -> Option<Release> {
+    pub fn record(&mut self, now: Stamp) -> Option<Release> {
         let tuning = &LOCOMOTION.get().acts;
         let continues = self.last.is_some_and(|last| {
             now.saturating_duration_since(last) <= tuning.burst_gap_ms.duration()
@@ -510,7 +506,7 @@ mod tests {
     #[test]
     fn short_bursts_never_release() {
         let mut dog = Watchdog::new();
-        let start = Instant::now();
+        let start = Stamp::now();
         // A start's worth of filtering every two seconds, with quiet between.
         for burst in 0..10u64 {
             for tick in 0..10u64 {
@@ -524,7 +520,7 @@ mod tests {
     #[test]
     fn an_unbroken_burst_releases_then_rearms() {
         let mut dog = Watchdog::new();
-        let start = Instant::now();
+        let start = Stamp::now();
         let mut released_at = None;
         for tick in 0..200u64 {
             let now = start + Duration::from_millis(tick * 33);
@@ -537,7 +533,7 @@ mod tests {
             }
         }
         let released_at = released_at.expect("the watchdog never released");
-        let acted = released_at.duration_since(start).as_secs_f32();
+        let acted = released_at.saturating_duration_since(start).as_secs_f32();
         let tuning = &LOCOMOTION.get().acts;
         assert!((tuning.watchdog_s..tuning.watchdog_s + 0.1).contains(&acted));
         let during = released_at + Duration::from_secs_f32(tuning.release_s / 2.0);

@@ -19,6 +19,7 @@ use jc3vr_body::controllers::{
     mode::{AirborneVariant, Detection, Mode, OnFootVariant, Traversal},
     physics::grapple_hook as hook,
 };
+use jc3vr_core::published::Stamp;
 use jc3vr_input::frame::{Button, ControllerFrame, Hand};
 use jc3vr_vehicles::controllers::vehicles::{
     tuning::WingsuitGesturesTuning,
@@ -342,7 +343,7 @@ fn observation(tick: &Tick<'_>, desired: &[Desired], now: Instant) -> Option<Ges
             },
             now,
         ),
-        claims: claims(tick, now),
+        claims: claims(tick, Stamp::now()),
     })
 }
 
@@ -440,7 +441,7 @@ fn cancel_without_tracking(state: &mut FlightState, tick: &Tick<'_>, desired: &[
         || (!matches!(stage, Stage::Fall | Stage::Parachute)
             && !deploy_grapple(tick.detection, tick.airborne, tick.grapple))
         || canopy(desired)
-        || claims(tick, Instant::now()) != [HandClaims::default(); 2]
+        || claims(tick, Stamp::now()) != [HandClaims::default(); 2]
     {
         state.reset();
     }
@@ -469,7 +470,7 @@ fn canopy(desired: &[Desired]) -> bool {
         .any(|input| input.target.map == MapKind::Player && input.target.action == OPEN_PARACHUTE)
 }
 
-fn claims(tick: &Tick<'_>, now: Instant) -> [HandClaims; 2] {
+fn claims(tick: &Tick<'_>, now: Stamp) -> [HandClaims; 2] {
     let reload = weapons::reload::status();
     let foregrip = weapons::foregrip::two_hand_grip();
     Hand::BOTH.map(|hand| {

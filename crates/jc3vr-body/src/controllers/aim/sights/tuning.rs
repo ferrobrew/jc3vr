@@ -17,9 +17,10 @@
 //! the gun's fire point and the head in the world; a request that waits longer than a few ticks
 //! (the aim is idle) is dropped rather than acting later on a pose the player no longer holds.
 
-use std::{fmt, time::Instant};
+use std::fmt;
 
 use glam::{Mat4, Vec2, Vec3};
+use jc3vr_core::published::Stamp;
 use jc3vr_input::frame::{Hand, Pose};
 use parking_lot::Mutex;
 
@@ -90,7 +91,7 @@ impl std::error::Error for LineUpError {}
 
 /// Place the marker ahead of the head on the next aim update, replacing any.
 pub fn place_marker() {
-    STATE.lock().place = Some(Instant::now());
+    STATE.lock().place = Some(Stamp::now());
 }
 
 /// Stop lining up: remove the marker and drop any waiting request.
@@ -103,7 +104,7 @@ pub fn clear_marker() {
 
 /// Capture the held weapon's offset on the next aim update.
 pub fn request_capture() {
-    STATE.lock().capture = Some(Instant::now());
+    STATE.lock().capture = Some(Stamp::now());
 }
 
 /// Whether a marker is placed, which arms the capture chord.
@@ -146,8 +147,13 @@ pub(crate) fn service(
             *state = State::EMPTY;
             return;
         }
-        let fresh = |at: Option<Instant>| {
-            at.is_some_and(|at| at.elapsed() < FRESHNESS.get().aim.sight_request_ms.duration())
+        let fresh = |at: Option<Stamp>| {
+            FRESHNESS
+                .get()
+                .aim
+                .sight_request_ms
+                .window()
+                .holds(at, Stamp::now())
         };
         let place = fresh(state.place.take());
         let capture = fresh(state.capture.take());
@@ -244,8 +250,8 @@ fn round(value: f32, places: i32) -> f64 {
 }
 
 struct State {
-    place: Option<Instant>,
-    capture: Option<Instant>,
+    place: Option<Stamp>,
+    capture: Option<Stamp>,
     status: TuningStatus,
 }
 

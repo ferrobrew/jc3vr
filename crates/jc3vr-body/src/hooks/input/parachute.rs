@@ -27,10 +27,7 @@
 //!
 //! [`UpdateParachutePhysics`]: jc3gi::input::parachute::UpdateParachutePhysics
 
-use std::{
-    sync::atomic::{AtomicU64, Ordering},
-    time::Instant,
-};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use body_rig::math::angle::{wrap, yaw_of_flat};
 use detours_macro::detour;
@@ -41,6 +38,7 @@ use jc3gi::{
     input::parachute::{CharacterAirMovementSettings, CharacterParachuteSettings},
     types::math::{Vector2, Vector3},
 };
+use jc3vr_core::published::Stamp;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
@@ -123,12 +121,16 @@ fn get_parachute_steering_values(
 ///
 /// `character` is the live local player.
 unsafe fn yaw_alignment_held(character: &Character) -> bool {
-    let now = Instant::now();
+    let now = Stamp::now();
     let opened = {
         let mut state = ALIGN_STATE.lock();
         let gap = state.last_call.is_none_or(|last| {
-            now.saturating_duration_since(last)
-                > FRESHNESS.get().hooks.parachute_align_gap_ms.duration()
+            !FRESHNESS
+                .get()
+                .hooks
+                .parachute_align_gap_ms
+                .window()
+                .holds(last, now)
         });
         if gap {
             state.opened_at = Some(now);
@@ -153,8 +155,8 @@ unsafe fn yaw_alignment_held(character: &Character) -> bool {
 
 /// When the canopy steering was last called, and when the canopy opened.
 struct AlignState {
-    last_call: Option<Instant>,
-    opened_at: Option<Instant>,
+    last_call: Option<Stamp>,
+    opened_at: Option<Stamp>,
 }
 
 static ALIGN_STATE: Mutex<AlignState> = Mutex::new(AlignState {

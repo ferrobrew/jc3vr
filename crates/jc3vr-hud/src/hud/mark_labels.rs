@@ -7,8 +7,6 @@
 //! ([`published_labels`]); the draw places them at render time from the same anchors the overlay
 //! resolves, so a label rides with its marker.
 
-use std::time::Instant;
-
 use glam::{Quat, Vec3, Vec4};
 use jc3gi::graphics_engine::{device::Device, texture::Texture};
 use jc3vr_body::controllers::{
@@ -16,6 +14,7 @@ use jc3vr_body::controllers::{
     overlay::render_poses,
     scheme,
 };
+use jc3vr_core::published::Stamp;
 use jc3vr_view::controllers::overlay::{
     primitive::Anchor,
     resolve::{HandPoses, anchor_position},
@@ -100,7 +99,7 @@ impl State {
         let Some((head, rotation)) = head else {
             return;
         };
-        let now = Instant::now();
+        let now = Stamp::now();
         let labels = published_labels(now, HUD.get().mark_labels.stale());
         if labels.is_empty() {
             return;

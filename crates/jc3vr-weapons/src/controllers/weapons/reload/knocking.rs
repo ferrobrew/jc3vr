@@ -2,9 +2,8 @@
 //! the held pouch magazine's tip against the inserted magazine of the gun in the other hand, the
 //! drop a strike queues, and the knocked magazine's impulse once it is in the world.
 
-use std::time::Instant;
-
 use jc3vr_body::controllers::haptics;
+use jc3vr_core::published::Stamp;
 use jc3vr_input::{frame::Hand, haptics::cues::Event};
 
 use crate::controllers::weapons::{
@@ -188,7 +187,7 @@ impl State {
             return false;
         }
         self.knocks.strikes[holder.index()] = Some(strike);
-        self.knocks.knocked_at = Some(Instant::now());
+        self.knocks.knocked_at = Some(Stamp::now());
         self.status.counts.knocks += 1;
         self.event(format!(
             "{:?} knocked the magazine out at {:.1} m/s",

@@ -4,7 +4,7 @@
 //! status, which the pause stops updating, so a row shows what the body did just before the menu
 //! opened.
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use jc3vr_body::controllers::{
     body::{
@@ -16,6 +16,7 @@ use jc3vr_body::controllers::{
     presentation,
     presentation::{ElbowReadout, PresentationStatus},
 };
+use jc3vr_core::published::Stamp;
 use jc3vr_gameplay::controllers::config::CONTROLLERS_CONFIG;
 
 use crate::{
@@ -122,12 +123,12 @@ fn body_mirror() -> Line {
         return Line::off(prose("Switch on in debug UI"))
             .with_note("the visualization drawer's Body mirror");
     }
-    mirror_line(&mirror::status(), Instant::now())
+    mirror_line(&mirror::status(), Stamp::now())
 }
 
 /// The body mirror: the bones it found, and whether it drew recently. The pause stops the pass, so
 /// a mirror that drew before the menu opened still reads as drawing.
-fn mirror_line(status: &MirrorStatus, now: Instant) -> Line {
+fn mirror_line(status: &MirrorStatus, now: Stamp) -> Line {
     match (status.bones, status.at) {
         (Some(0), _) => Line::failed(prose("No bones found")),
         (Some(bones), Some(at)) => {
@@ -249,7 +250,7 @@ mod tests {
 
     #[test]
     fn the_mirror_reads_its_bones() {
-        let now = Instant::now();
+        let now = Stamp::now();
         let drawn = MirrorStatus {
             at: Some(now),
             bones: Some(21),

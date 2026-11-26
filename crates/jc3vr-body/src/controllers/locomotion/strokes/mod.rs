@@ -28,9 +28,8 @@ pub mod model;
 #[cfg(test)]
 mod tests;
 
-use std::time::Instant;
-
 use jc3gi::state::StateBitFlag;
+use jc3vr_core::published::Stamp;
 use jc3vr_input::{frame::Hand, haptics::cues::Event};
 use jc3vr_view::headpose;
 use parking_lot::Mutex;
@@ -50,7 +49,7 @@ use crate::{
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct StrokeStatus {
     /// When the strokes last ran in the water.
-    pub at: Option<Instant>,
+    pub at: Option<Stamp>,
     /// The last tick's step.
     pub step: StrokeStep,
     /// The speed along the swimmer's facing the swim core wrote, and the speed written in its
@@ -63,10 +62,13 @@ pub struct StrokeStatus {
 
 impl StrokeStatus {
     /// Whether the strokes ran in the water recently enough that their motion still counts.
-    pub fn fresh(&self, now: Instant) -> bool {
-        self.at.is_some_and(|at| {
-            now.saturating_duration_since(at) <= FRESHNESS.get().locomotion.strokes_ms.duration()
-        })
+    pub fn fresh(&self, now: Stamp) -> bool {
+        FRESHNESS
+            .get()
+            .locomotion
+            .strokes_ms
+            .window()
+            .holds(self.at, now)
     }
 }
 
@@ -79,7 +81,7 @@ pub fn status() -> StrokeStatus {
 /// swim cores' detours to join to the velocity the cores wrote. `None` while the strokes are not
 /// swimming: out of the water, switched off, without tracked hands, gliding to a stop, or with no
 /// stroke tick recent enough to trust.
-pub fn propulsion(now: Instant) -> Option<f32> {
+pub fn propulsion(now: Stamp) -> Option<f32> {
     let state = STATE.lock();
     (state.status.fresh(now) && state.status.step.speed > 0.0).then_some(state.status.step.speed)
 }
@@ -104,7 +106,7 @@ pub fn tick(active: Option<&ActiveHands>, armed: [bool; 2], dt: f32) {
     };
     // A pause in the ticks (a menu, a hitch, the panel) forgets the hands' motion, so the first
     // tick back does not read the whole gap as one fast stroke.
-    if !state.status.fresh(Instant::now()) {
+    if !state.status.fresh(Stamp::now()) {
         state.model = StrokeModel::new();
     }
     let underwater = mode::last_snapshot()
@@ -135,7 +137,7 @@ pub fn tick(active: Option<&ActiveHands>, armed: [bool; 2], dt: f32) {
             haptics::play_scaled(hand, Event::SwimStroke, strength);
         }
     }
-    state.status.at = Some(Instant::now());
+    state.status.at = Some(Stamp::now());
     state.status.step = step;
 }
 

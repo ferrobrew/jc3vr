@@ -3,8 +3,6 @@
 //! C4, and long gun, the steal offer, rack and slide state, the reload's zones, and the rigid
 //! grip's placement reads.
 
-use std::time::Instant;
-
 use glam::Vec3;
 use jc3vr_body::controllers::{
     held,
@@ -13,6 +11,7 @@ use jc3vr_body::controllers::{
         zones::{GunZones, KnockZone, ReloadViews, ZoneAxis},
     },
 };
+use jc3vr_core::published::Stamp;
 use jc3vr_input::frame::Hand;
 
 use crate::controllers::{
@@ -98,7 +97,7 @@ fn long_gun_muzzle(hand: Hand) -> Option<Vec3> {
 }
 
 /// The reload's zones and knock zone from the last input tick, the knock's flash judged at `now`.
-fn reload_views(now: Instant) -> ReloadViews {
+fn reload_views(now: Stamp) -> ReloadViews {
     ReloadViews {
         zones: zones::views().map(|view| {
             view.map(|view| GunZones {

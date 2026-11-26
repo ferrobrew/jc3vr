@@ -32,7 +32,7 @@ pub mod tuning;
 pub mod view;
 pub mod view_follow;
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use glam::{Vec2, Vec3};
 use jc3gi::{
@@ -41,6 +41,7 @@ use jc3gi::{
     input::input_action_map::{Action, LocalPlayerActionMap},
     types::math::Vector3,
 };
+use jc3vr_core::published::Stamp;
 use jc3vr_view::headpose;
 use parking_lot::Mutex;
 
@@ -56,7 +57,7 @@ use crate::{
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct LocomotionStatus {
     /// When the movement task last ran for the local player.
-    pub at: Option<Instant>,
+    pub at: Option<Stamp>,
     /// The move stick, `(right, forward)`.
     pub stick: Vec2,
     /// The game's target speed for the stick, metres per second, when it has one.
@@ -72,12 +73,15 @@ pub struct LocomotionStatus {
 }
 
 impl LocomotionStatus {
-    /// Whether the movement task ran within the last few ticks: Rico is on foot on the ground.
-    pub fn fresh(&self, now: Instant) -> bool {
-        self.at.is_some_and(|at| {
-            now.saturating_duration_since(at)
-                <= FRESHNESS.get().locomotion.movement_task_ms.duration()
-        })
+    /// Whether the movement task ran within the last few ticks before `now`: Rico is on foot on
+    /// the ground.
+    pub fn fresh(&self, now: Stamp) -> bool {
+        FRESHNESS
+            .get()
+            .locomotion
+            .movement_task_ms
+            .window()
+            .holds(self.at, now)
     }
 
     /// Whether Rico is standing still: no stick, and no motion from the task or from the stick.
@@ -107,7 +111,7 @@ pub fn status() -> LocomotionStatus {
 pub(crate) unsafe fn after_task(character: &mut Character, dt: f32) {
     let config = LOCOMOTION_CONFIG.lock().stick;
     let tuning = &LOCOMOTION.get().stick;
-    let now = Instant::now();
+    let now = Stamp::now();
     // A committed step of the body rig walks the game's animation through the move stick; its
     // speed is the rig's drive, so its share of the stick moves nothing here.
     let stick = player_stick(unsafe { stick_vector() }, grounded::step_stick());
@@ -183,7 +187,7 @@ const LOG_INTERVAL: Duration = Duration::from_secs(1);
 struct State {
     status: LocomotionStatus,
     speeds: SpeedLog,
-    log_at: Option<Instant>,
+    log_at: Option<Stamp>,
 }
 
 static STATE: Mutex<State> = Mutex::new(State {

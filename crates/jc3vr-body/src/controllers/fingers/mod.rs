@@ -32,10 +32,9 @@ pub mod pose;
 pub mod target;
 pub mod tuning;
 
-use std::time::Instant;
-
 use glam::{Quat, Vec3};
 use jc3gi::character::character::{AnimationController, Character, Joint};
+use jc3vr_core::published::Stamp;
 use jc3vr_input::frame::{self, Hand};
 use parking_lot::Mutex;
 
@@ -98,10 +97,10 @@ pub(crate) unsafe fn after_solve(character: *mut Character) {
         return;
     }
 
-    let now = Instant::now();
-    let dt = state
-        .last_tick
-        .map_or(0.0, |last| now.duration_since(last).as_secs_f32());
+    let now = Stamp::now();
+    let dt = state.last_tick.map_or(0.0, |last| {
+        now.saturating_duration_since(last).as_secs_f32()
+    });
     state.last_tick = Some(now);
 
     let weights = ik::tick_records()
@@ -258,7 +257,7 @@ struct FingerState {
     smoothed: [Option<HandShape>; 2],
     memory: [GripMemory; 2],
     logs: [SourceLog; 2],
-    last_tick: Option<Instant>,
+    last_tick: Option<Stamp>,
     status: [HandFingersStatus; 2],
 }
 

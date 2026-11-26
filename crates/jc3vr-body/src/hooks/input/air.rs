@@ -15,10 +15,7 @@
 //!
 //! [`NAirMovement_UpdateAirPhysics`]: jc3gi::input::parachute::NAirMovement_UpdateAirPhysics
 
-use std::{
-    sync::atomic::{AtomicU64, Ordering},
-    time::Instant,
-};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use body_rig::math::smooth::smoothstep;
 use detours_macro::detour;
@@ -26,6 +23,7 @@ use jc3gi::{
     character::character::Character, input::parachute::CharacterAirMovementSettings,
     types::math::Vector2,
 };
+use jc3vr_core::published::Stamp;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
@@ -42,7 +40,7 @@ pub fn carry_speed(speed_mps: f32) {
     if speed_mps.is_finite() && speed_mps > 0.0 {
         *CARRY.lock() = Some(Carry {
             speed_mps,
-            since: Instant::now(),
+            since: Stamp::now(),
         });
         tracing::info!(
             target: "controllers",
@@ -108,7 +106,7 @@ fn carried_cap() -> Option<f32> {
 #[derive(Debug, Copy, Clone, PartialEq)]
 struct Carry {
     speed_mps: f32,
-    since: Instant,
+    since: Stamp,
 }
 
 static CARRY: Mutex<Option<Carry>> = Mutex::new(None);

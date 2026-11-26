@@ -35,10 +35,9 @@ pub(crate) mod seed;
 pub(crate) mod support;
 pub mod tuning;
 
-use std::time::Instant;
-
 use body_rig::{PlayerBody, body::EYES_TO_NECK, ik_weight::IkState};
 use glam::{Quat, Vec2, Vec3};
+use jc3vr_core::published::Stamp;
 use parking_lot::Mutex;
 
 pub use crate::controllers::body::ik_body::{
@@ -87,7 +86,7 @@ pub fn status() -> IkStatus {
 
 /// Advance the FK pelvis by one rendered frame: the root's frame half calls it before the grounded
 /// rig. `eyes` and `head` are the room frame's, as the rig takes them.
-pub(crate) fn frame(eyes: Vec3, head: Quat, dimensions: &BodyDimensions, dt: f32, now: Instant) {
+pub(crate) fn frame(eyes: Vec3, head: Quat, dimensions: &BodyDimensions, dt: f32, now: Stamp) {
     let diagnostics = grounded::diagnostics();
     let input = FkInput {
         eyes,
@@ -138,9 +137,12 @@ pub(crate) fn forget() {
 
 /// Whether the last gate ran recently.
 fn fresh(status: &IkStatus) -> bool {
-    status.at.is_some_and(|at| {
-        Instant::now().saturating_duration_since(at) <= FRESHNESS.get().body.ik_gate_ms.duration()
-    })
+    FRESHNESS
+        .get()
+        .body
+        .gate_ms
+        .window()
+        .holds(status.at, Stamp::now())
 }
 
 /// The gate's state. Taken by the gate, the effectors, and the readers of the status; nothing is

@@ -1,14 +1,13 @@
 //! The row text the calibration flow and its readouts show: measurements in metres, the live and
 //! review statuses, and the notice and refusal reasons.
 
-use std::time::Instant;
-
 use jc3vr_body::controllers::body::{
     BodyDimensions,
     calibration::{
         Calibration, CalibrationError, CaptureStatus, Notice, Unavailable, span_out_of_proportion,
     },
 };
+use jc3vr_core::published::Stamp;
 use jc3vr_input::frame::Hand;
 use smol_str::{SmolStr, format_smolstr};
 
@@ -49,7 +48,7 @@ pub(super) fn review_status() -> SmolStr {
 pub(super) fn status(live: Result<f32, Unavailable>) -> SmolStr {
     let calibration = CALIBRATION.lock();
     status_text(
-        calibration.capture_status(Instant::now()),
+        calibration.capture_status(Stamp::now()),
         calibration.notice(),
         live,
     )

@@ -25,7 +25,6 @@
 use std::{
     ffi::c_void,
     sync::atomic::{AtomicU64, Ordering},
-    time::Instant,
 };
 
 use detours_macro::detour;
@@ -35,6 +34,7 @@ use jc3gi::{
     game::GameObjectRenderContext,
     types::math::Matrix4,
 };
+use jc3vr_core::published::Stamp;
 use jc3vr_input::frame::{Hand, Pose};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
@@ -129,7 +129,7 @@ pub const fn away_from_palm(hand: Hand) -> Vec3 {
 
 /// Register what `slot` holds this tick, or clear it with `None`.
 pub fn hold(slot: Slot, held: Option<Held>) {
-    HELD.lock()[slot.index()] = held.map(|held| (held, Instant::now()));
+    HELD.lock()[slot.index()] = held.map(|held| (held, Stamp::now()));
 }
 
 /// Explosive models re-pushed at render time since the payload loaded.
@@ -215,27 +215,31 @@ unsafe fn target(
 /// The matrix to draw `explosive` with at `dtf`, when one of `slots` holds it and its hand has a
 /// render-time grip.
 fn render_matrix(explosive: usize, slots: [Slot; 2], dtf: f32) -> Option<Mat4> {
-    let held = current(explosive, slots, Instant::now())?;
+    let held = current(explosive, slots, Stamp::now())?;
     let grip = late::drawn_hands(dtf)[held.hand.index()]?.grip;
     let matrix = held_matrix(grip, held.local);
     matrix.is_finite().then_some(matrix)
 }
 
 /// The registration of `slots` that holds `explosive` and has not lapsed by `now`.
-fn current(explosive: usize, slots: [Slot; 2], now: Instant) -> Option<Held> {
+fn current(explosive: usize, slots: [Slot; 2], now: Stamp) -> Option<Held> {
     let held = HELD.lock();
     slots.into_iter().find_map(|slot| {
         held[slot.index()]
             .filter(|(h, at)| {
                 h.explosive == explosive
-                    && now.saturating_duration_since(*at)
-                        <= FRESHNESS.get().hands.held_registration_ms.duration()
+                    && FRESHNESS
+                        .get()
+                        .hands
+                        .held_registration_ms
+                        .window()
+                        .holds(*at, now)
             })
             .map(|(h, _)| h)
     })
 }
 
-static HELD: Mutex<[Option<(Held, Instant)>; Slot::COUNT]> = Mutex::new([None; Slot::COUNT]);
+static HELD: Mutex<[Option<(Held, Stamp)>; Slot::COUNT]> = Mutex::new([None; Slot::COUNT]);
 static UPDATED: AtomicU64 = AtomicU64::new(0);
 
 #[cfg(test)]
@@ -312,7 +316,7 @@ mod tests {
             local: Pose::IDENTITY,
         };
         hold(Slot::CaughtGrenade, Some(held));
-        let now = Instant::now();
+        let now = Stamp::now();
         let slots = [Slot::Grenade, Slot::CaughtGrenade];
         assert_eq!(current(0x4000, slots, now), Some(held));
         assert_eq!(current(0x5000, slots, now), None);

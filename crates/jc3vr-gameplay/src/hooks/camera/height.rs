@@ -11,7 +11,7 @@
 //! agree. The debug UI reads the latest sample through [`readout`], and while Rico is on foot or in
 //! a vehicle seat the readout is logged at most every [`LOG_INTERVAL`].
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use glam::{Mat4, Vec3};
 use jc3vr_body::controllers::{
@@ -20,6 +20,7 @@ use jc3vr_body::controllers::{
     roomscale,
     roomscale::{RoomscaleStatus, SeatPhase, posture::HeadHeight},
 };
+use jc3vr_core::published::Stamp;
 use jc3vr_vehicles::controllers::vehicles::driving_view;
 use jc3vr_view::headpose::{anchor, eye_arm, neck_delta};
 use parking_lot::Mutex;
@@ -48,17 +49,13 @@ pub struct HeightReadout {
     /// The roomscale state the offset comes from.
     pub roomscale: RoomscaleStatus,
     /// When the camera sample was taken.
-    pub at: Instant,
+    pub at: Stamp,
 }
 
 impl HeightReadout {
     /// Whether Rico was on foot at the sample: the on-foot locomotion tick ran recently.
     pub fn on_foot(&self) -> bool {
-        self.roomscale
-            .root
-            .sim
-            .at
-            .is_some_and(|at| self.at.saturating_duration_since(at) < probe::stale_after())
+        probe::stale_after().holds(self.roomscale.root.sim.at, self.at)
     }
 
     /// Whether Rico was in a vehicle seat at the sample.
@@ -98,7 +95,7 @@ pub(crate) fn record(character: Mat4, camera: Vec3) {
     };
     let (_, rotation, root) = character.to_scale_rotation_translation();
     let rico_eyes = head + neck_delta() + rotation * eye_arm();
-    let now = Instant::now();
+    let now = Stamp::now();
     let sample = Sample {
         root,
         rico_eyes,
@@ -130,7 +127,7 @@ struct Sample {
     root: Vec3,
     rico_eyes: Vec3,
     camera: Vec3,
-    at: Instant,
+    at: Stamp,
 }
 
 impl Sample {
@@ -157,7 +154,7 @@ impl Sample {
 
 static SAMPLE: Mutex<Option<Sample>> = Mutex::new(None);
 
-static LAST_LOG: Mutex<Option<Instant>> = Mutex::new(None);
+static LAST_LOG: Mutex<Option<Stamp>> = Mutex::new(None);
 
 fn log(r: &HeightReadout) {
     let frame = &r.roomscale.frame;

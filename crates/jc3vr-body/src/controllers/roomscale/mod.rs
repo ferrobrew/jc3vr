@@ -33,14 +33,11 @@ pub mod seated;
 pub mod teleport;
 pub mod tuning;
 
-use std::{
-    collections::HashSet,
-    sync::OnceLock,
-    time::{Duration, Instant},
-};
+use std::{collections::HashSet, sync::OnceLock, time::Duration};
 
 use glam::{Quat, Vec3};
 use jc3gi::character::character::Character;
+use jc3vr_core::published::Stamp;
 use jc3vr_input::frame as controllers_frame;
 use jc3vr_view::{
     headpose, vr,
@@ -122,7 +119,7 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
     let tuning = ROOMSCALE.get();
     let stage = vr::stage::stage();
     let player = body::player();
-    let now = Instant::now();
+    let now = Stamp::now();
     let in_gameplay = jc3vr_core::hooks::in_gameplay();
     let on_foot = headpose::sim::mode() == headpose::sim::HeadMode::OnFoot;
     let moving = {
@@ -133,7 +130,7 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
     let mut frame = FRAME.lock();
     let dt = frame
         .last_at
-        .map_or(0.0, |t| now.duration_since(t).as_secs_f32());
+        .map_or(0.0, |t| now.saturating_duration_since(t).as_secs_f32());
     if dt
         > FRESHNESS
             .get()
@@ -312,7 +309,7 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
 
     let sim = rig_root::status().sim;
     let probe = collision::latest()
-        .filter(|p| now.duration_since(p.at) < probe::stale_after())
+        .filter(|p| probe::stale_after().holds(p.at, now))
         .map(|p| p.result);
     // Seated in a vehicle the head leans against cockpit glass and cabin trim the probe reads as
     // walls, and darkening there blinds a pilot mid-flight; the seat keeps the head where it
@@ -327,9 +324,7 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
     fade::set_target(FadeSource::HeadInGeometry, head_fade);
     fade::advance(dt, &tuning.fade);
 
-    let sim_stale = sim
-        .at
-        .is_none_or(|at| now.duration_since(at) > probe::stale_after());
+    let sim_stale = !probe::stale_after().holds(sim.at, now);
     if sim.capsule_owned && sim_stale {
         // SAFETY: the game thread, outside the world update.
         unsafe { rig_root::release_capsule() };
@@ -481,7 +476,7 @@ fn classifier_input(stage: &StageInfo, player: &BodyDimensions) -> ClassifierInp
 /// the pelvis under the neck by re-basing the cockpit shift, and the full re-base otherwise
 /// ([`recenter_kind`]).
 pub fn manual_recenter_kind() -> RecenterKind {
-    let frame = frame_shared().filter(|f| f.fresh(Instant::now()));
+    let frame = frame_shared().filter(|f| f.fresh(Stamp::now()));
     recenter_kind(frame.map(|f| f.seat))
 }
 
@@ -517,13 +512,18 @@ pub struct FrameShared {
     /// How far the eyes sit below the character's standing eye height, metres.
     pub eye_drop_m: f32,
     pub seat: SeatPhase,
-    pub at: Instant,
+    pub at: Stamp,
 }
 
 impl FrameShared {
-    /// Whether the frame half ran recently enough for its values to hold.
-    pub fn fresh(&self, now: Instant) -> bool {
-        now.saturating_duration_since(self.at) < FRESHNESS.get().roomscale.frame_gap_ms.duration()
+    /// Whether the frame half ran recently enough before `now` for its values to hold.
+    pub fn fresh(&self, now: Stamp) -> bool {
+        FRESHNESS
+            .get()
+            .roomscale
+            .frame_gap_ms
+            .window()
+            .holds(self.at, now)
     }
 }
 
@@ -578,7 +578,7 @@ pub struct FrameStatus {
 pub fn status() -> RoomscaleStatus {
     let (frame, active) = {
         let f = FRAME.lock();
-        let active = f.shared.is_some_and(|s| s.fresh(Instant::now()));
+        let active = f.shared.is_some_and(|s| s.fresh(Stamp::now()));
         (f.status, active)
     };
     RoomscaleStatus {
@@ -595,7 +595,7 @@ pub fn status() -> RoomscaleStatus {
 const UNKNOWN_STATE_LOG_LIMIT: usize = 32;
 
 struct FrameState {
-    last_at: Option<Instant>,
+    last_at: Option<Stamp>,
     seated_crouch: bool,
     classifier: PostureClassifier,
     /// The automatic posture's last logged detection, and whether the head was at floor level.
@@ -605,7 +605,7 @@ struct FrameState {
     seat: SeatTracker,
     last_seat_event: Option<SeatEvent>,
     /// A seat fade target waiting out its hold, and when it applies.
-    seat_fade_release: Option<(f32, Instant)>,
+    seat_fade_release: Option<(f32, Stamp)>,
     /// Vehicle states seen in none of the seat tables, already logged.
     unknown_states: Option<HashSet<u32>>,
     shared: Option<FrameShared>,
@@ -660,7 +660,7 @@ static FRAME: Mutex<FrameState> = Mutex::new(FrameState {
 ///
 /// Must run on the game thread outside the world update: it reads the rule system's current state
 /// and the interaction graph.
-unsafe fn seat_tick(frame: &mut FrameState, config: &RoomscaleConfig, now: Instant) {
+unsafe fn seat_tick(frame: &mut FrameState, config: &RoomscaleConfig, now: Stamp) {
     let character = unsafe { Character::GetLocalPlayerCharacter().as_ref() };
     let state = character.and_then(|c| unsafe { active_state_type_id(c) });
     let previous = frame.seat.phase();

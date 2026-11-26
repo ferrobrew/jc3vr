@@ -517,7 +517,7 @@ fn a_body_slot_claims_the_hand_only_while_its_grip_is_squeezed() {
             reaches: [&hips[..1], &hips[1..]],
             dt: 0.01,
         };
-        let claims = claims(&tick, Instant::now());
+        let claims = claims(&tick, Stamp::now());
         assert!(!claims[Hand::Left.index()].slot, "the left grip is open");
         assert_eq!(claims[Hand::Right.index()].slot, squeezed);
     }

@@ -30,7 +30,7 @@
 //!
 //! [`NStateTask_GrapplingHangTask::Update`]: jc3gi::equipment::grappling_hook::NStateTask_GrapplingHangTask::Update
 
-use std::{ffi::c_void, sync::OnceLock, time::Instant};
+use std::{ffi::c_void, sync::OnceLock};
 
 use detours_macro::detour;
 use glam::{Quat, Vec2, Vec3};
@@ -40,6 +40,7 @@ use jc3gi::{
     state::StateContext,
     types::math::Vector3,
 };
+use jc3vr_core::published::Stamp;
 use jc3vr_input::{
     frame::{Hand, Pose},
     haptics::cues::Event,
@@ -198,7 +199,7 @@ pub unsafe fn input_tick(dominant: Hand) {
     let attached = anchor.is_some() && state.status.anchor.is_none();
     state.status.wire = wire;
     state.status.anchor = anchor;
-    state.anchor_at = anchor.map(|_| Instant::now());
+    state.anchor_at = anchor.map(|_| Stamp::now());
     drop(state);
     declare_line_grip(dominant.other());
 
@@ -230,10 +231,10 @@ const CURRENT_TICK: f32 = 1.0;
 
 struct State {
     status: AnchorStatus,
-    anchor_at: Option<Instant>,
+    anchor_at: Option<Stamp>,
     /// Where the grapple hand held the line, relative to the head, when the hang began.
     hang_reference: Option<Vec2>,
-    hang_at: Option<Instant>,
+    hang_at: Option<Stamp>,
     /// The grapple hand's offset from the head on the last hang tick, for the pump's velocity.
     hang_offset: Option<Vec2>,
     /// The grapple hand's smoothed velocity relative to the head, metres per second.
@@ -264,7 +265,14 @@ fn line_anchor() -> Option<Vec3> {
     let state = STATE.lock();
     state
         .anchor_at
-        .filter(|at| at.elapsed() < FRESHNESS.get().hands.anchor_ms.duration())
+        .filter(|at| {
+            FRESHNESS
+                .get()
+                .hands
+                .anchor_ms
+                .window()
+                .holds(*at, Stamp::now())
+        })
         .and(state.status.anchor)
 }
 
@@ -293,7 +301,7 @@ fn hang_task_update(ctx: *mut StateContext, p1: *mut c_void, p2: *mut c_void) {
 unsafe fn swing(character: &mut Character) {
     let pump_fns = HANG_PUMP.get();
     let hand = scheme::acting_hand().other();
-    let now = Instant::now();
+    let now = Stamp::now();
     // Read before this module's state is locked, so that no other lock is taken while it is held.
     let anchored = tiers::status().effective[hand.index()] == tiers::HandTier::Anchored;
     let offset = hands::active_hands_raw()
@@ -308,7 +316,7 @@ unsafe fn swing(character: &mut Character) {
     let mut state = STATE.lock();
     let dt = state
         .hang_at
-        .map(|at| now.duration_since(at))
+        .map(|at| now.saturating_duration_since(at))
         .filter(|gap| *gap <= FRESHNESS.get().hands.hang_gap_ms.duration());
     if dt.is_none() {
         state.hang_reference = None;

@@ -9,9 +9,10 @@
 //! something else (a collision, a depenetration, a proxy shape change, a moving surface the
 //! surface velocity misses), and the trace's split names what the tick did ask for.
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use glam::{Vec2, Vec3};
+use jc3vr_core::published::{Stamp, Window};
 
 use crate::{controllers::body::rig::tuning::RIG, tuning::FRESHNESS};
 
@@ -117,7 +118,7 @@ pub struct Tracer {
     previous: Option<RootTrace>,
     ticks: u64,
     jumps: u64,
-    logged_at: Option<Instant>,
+    logged_at: Option<Stamp>,
     suppressed: u64,
 }
 
@@ -134,7 +135,7 @@ impl Tracer {
 
     /// Trace a tick from what it read and asked for. Returns the trace and, at most once per
     /// [`LOG_INTERVAL`], a jump to log.
-    pub fn step(&mut self, input: TickInput, now: Instant) -> (RootTrace, Option<Jump>) {
+    pub fn step(&mut self, input: TickInput, now: Stamp) -> (RootTrace, Option<Jump>) {
         self.ticks += 1;
         let dt = if input.dt.is_finite() {
             input.dt.max(0.0)
@@ -212,8 +213,8 @@ pub const LOG_INTERVAL: Duration = Duration::from_millis(500);
 
 /// How old the latest tick's trace may be for the recorder to sample it: the freshness tuning's
 /// `rig.root_trace_ms`.
-pub fn stale_after() -> Duration {
-    FRESHNESS.get().rig.root_trace_ms.duration()
+pub fn stale_after() -> Window {
+    FRESHNESS.get().rig.root_trace_ms.window()
 }
 
 /// A move against what explains it.
@@ -270,7 +271,7 @@ mod tests {
     #[test]
     fn a_move_the_wanted_velocity_explains_is_no_jump() {
         let mut tracer = Tracer::new();
-        let now = Instant::now();
+        let now = Stamp::now();
         let wanted = Vec3::new(0.0, 0.0, -3.0);
         let mut position = Vec3::ZERO;
         for _ in 0..10 {
@@ -285,7 +286,7 @@ mod tests {
     #[test]
     fn a_move_the_wanted_velocity_does_not_explain_is_a_jump_with_the_asking_split() {
         let mut tracer = Tracer::new();
-        let now = Instant::now();
+        let now = Stamp::now();
         let asked = TickInput {
             split: Split {
                 palms: Vec2::new(0.0, 0.5),
@@ -306,7 +307,7 @@ mod tests {
     #[test]
     fn falling_short_of_the_wanted_velocity_is_no_jump() {
         let mut tracer = Tracer::new();
-        let now = Instant::now();
+        let now = Stamp::now();
         // Walking into a wall: asked for five metres a second, went nowhere.
         let wanted = Vec3::new(5.0, 0.0, 0.0);
         tracer.step(input(Vec3::ZERO, wanted), now);
@@ -319,7 +320,7 @@ mod tests {
     #[test]
     fn the_ground_velocity_explains_a_moving_platform() {
         let mut tracer = Tracer::new();
-        let now = Instant::now();
+        let now = Stamp::now();
         let platform = Vec3::new(10.0, 0.0, 0.0);
         let on_deck = |position| TickInput {
             proxy: ProxyRead {
@@ -336,7 +337,7 @@ mod tests {
     #[test]
     fn jumps_are_logged_at_most_once_per_interval_and_count_what_was_held_back() {
         let mut tracer = Tracer::new();
-        let start = Instant::now();
+        let start = Stamp::now();
         let mut logged = Vec::new();
         for i in 0..12u32 {
             let z = if i % 2 == 0 { 0.0 } else { -0.11 };
@@ -353,7 +354,7 @@ mod tests {
     #[test]
     fn a_gap_forgets_the_previous_tick() {
         let mut tracer = Tracer::new();
-        let now = Instant::now();
+        let now = Stamp::now();
         tracer.step(input(Vec3::ZERO, Vec3::ZERO), now);
         tracer.forget();
         let (trace, jump) = tracer.step(input(Vec3::new(50.0, 0.0, 0.0), Vec3::ZERO), now);

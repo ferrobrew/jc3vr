@@ -1,8 +1,7 @@
 //! The calibration flow: its steps, the capture that samples a live measurement, and what went
 //! wrong.
 
-use std::time::Instant;
-
+use jc3vr_core::published::Stamp;
 use jc3vr_input::frame::Hand;
 
 use crate::controllers::{
@@ -248,7 +247,7 @@ impl Calibration {
     }
 
     /// What the capture is doing at `now`.
-    pub fn capture_status(&self, now: Instant) -> CaptureStatus {
+    pub fn capture_status(&self, now: Stamp) -> CaptureStatus {
         match self.capture {
             Capture::Idle => CaptureStatus::Idle,
             Capture::Countdown { ends } => {
@@ -303,7 +302,7 @@ impl Calibration {
 
     /// Start a capture on a measuring step, given the live measurement at `now`. Refuses, with a
     /// notice, when the measurement is unavailable. Returns whether a capture started.
-    pub fn measure(&mut self, now: Instant, live: Result<f32, Unavailable>) -> bool {
+    pub fn measure(&mut self, now: Stamp, live: Result<f32, Unavailable>) -> bool {
         if !matches!(self.step, Step::EyeHeight | Step::Span) || self.capture != Capture::Idle {
             return false;
         }
@@ -323,7 +322,7 @@ impl Calibration {
     /// controller out of sight for a frame); the window then counts only the samples it got. A
     /// finished capture moves to the next step when the value is plausible. Returns whether the
     /// step changed.
-    pub fn tick(&mut self, now: Instant, live: Result<f32, Unavailable>) -> bool {
+    pub fn tick(&mut self, now: Stamp, live: Result<f32, Unavailable>) -> bool {
         match &mut self.capture {
             Capture::Idle => false,
             Capture::Countdown { ends } => {
@@ -477,8 +476,8 @@ impl Default for Calibration {
 #[derive(Debug, Copy, Clone, PartialEq)]
 enum Capture {
     Idle,
-    Countdown { ends: Instant },
-    Sampling { ends: Instant, samples: Samples },
+    Countdown { ends: Stamp },
+    Sampling { ends: Stamp, samples: Samples },
 }
 
 /// The samples of one sampling window.
@@ -526,7 +525,7 @@ mod tests {
     }
 
     /// Run a capture from MEASURE to the end of its sampling window with a constant value.
-    fn capture(calibration: &mut Calibration, t0: Instant, value: f32) -> bool {
+    fn capture(calibration: &mut Calibration, t0: Stamp, value: f32) -> bool {
         assert!(calibration.measure(t0, Ok(value)));
         let sampling = t0 + countdown();
         assert!(!calibration.tick(sampling, Ok(value)));
@@ -544,7 +543,7 @@ mod tests {
 
     #[test]
     fn a_full_calibration() {
-        let t0 = Instant::now();
+        let t0 = Stamp::now();
         let mut calibration = Calibration::new();
         assert_eq!(calibration.step(), Step::Summary);
         assert!(calibration.result().is_none());
@@ -567,7 +566,7 @@ mod tests {
 
     #[test]
     fn the_countdown_counts_whole_seconds() {
-        let t0 = Instant::now();
+        let t0 = Stamp::now();
         let mut calibration = Calibration::new();
         calibration.start(Stance::Standing, None);
         assert_eq!(calibration.capture_status(t0), CaptureStatus::Idle);
@@ -577,7 +576,7 @@ mod tests {
             CaptureStatus::Countdown(countdown().as_secs_f32().ceil() as u32)
         );
         assert_eq!(
-            calibration.capture_status(t0 + countdown() - Duration::from_millis(500)),
+            calibration.capture_status(t0 + (countdown() - Duration::from_millis(500))),
             CaptureStatus::Countdown(1)
         );
         // A lost measurement during the countdown is tolerated.
@@ -590,7 +589,7 @@ mod tests {
 
     #[test]
     fn measure_refuses_without_a_measurement() {
-        let t0 = Instant::now();
+        let t0 = Stamp::now();
         let mut calibration = Calibration::new();
         calibration.start(Stance::Standing, None);
         assert!(!calibration.measure(t0, Err(Unavailable::NoFloor)));
@@ -609,16 +608,16 @@ mod tests {
     #[test]
     fn measure_does_nothing_outside_the_measuring_steps() {
         let mut calibration = Calibration::new();
-        assert!(!calibration.measure(Instant::now(), Ok(1.6)));
+        assert!(!calibration.measure(Stamp::now(), Ok(1.6)));
         assert_eq!(
-            calibration.capture_status(Instant::now()),
+            calibration.capture_status(Stamp::now()),
             CaptureStatus::Idle
         );
     }
 
     #[test]
     fn missed_samples_are_skipped() {
-        let t0 = Instant::now();
+        let t0 = Stamp::now();
         let mut calibration = Calibration::new();
         calibration.start(Stance::Standing, None);
         calibration.measure(t0, Ok(1.6));
@@ -636,7 +635,7 @@ mod tests {
 
     #[test]
     fn a_window_of_missed_samples_says_why() {
-        let t0 = Instant::now();
+        let t0 = Stamp::now();
         let mut calibration = Calibration::new();
         calibration.start(Stance::Standing, None);
         capture(&mut calibration, t0, player().eye_height);
@@ -657,7 +656,7 @@ mod tests {
 
     #[test]
     fn too_few_samples_do_not_count() {
-        let t0 = Instant::now();
+        let t0 = Stamp::now();
         let mut calibration = Calibration::new();
         calibration.start(Stance::Standing, None);
         calibration.measure(t0, Ok(1.6));
@@ -672,7 +671,7 @@ mod tests {
 
     #[test]
     fn an_implausible_capture_stays_on_its_step() {
-        let t0 = Instant::now();
+        let t0 = Stamp::now();
         let mut calibration = Calibration::new();
         calibration.start(Stance::Standing, None);
         assert!(!capture(&mut calibration, t0, 0.8));
@@ -713,7 +712,7 @@ mod tests {
 
     #[test]
     fn a_seated_calibration_saves_a_standing_height_and_the_seated_eyes() {
-        let t0 = Instant::now();
+        let t0 = Stamp::now();
         let mut calibration = Calibration::new();
         assert!(calibration.start(Stance::Seated, None));
         assert_eq!(calibration.stance(), Stance::Seated);
@@ -741,7 +740,7 @@ mod tests {
 
     #[test]
     fn a_seated_review_takes_a_height_correction_until_the_span_is_measured_again() {
-        let t0 = Instant::now();
+        let t0 = Stamp::now();
         let mut calibration = Calibration::new();
         calibration.start(Stance::Seated, None);
         // No height to set before the review.
@@ -787,7 +786,7 @@ mod tests {
 
     #[test]
     fn a_seated_step_refuses_a_standing_eye_height_and_a_standing_step_a_seated_one() {
-        let t0 = Instant::now();
+        let t0 = Stamp::now();
         let mut seated = Calibration::new();
         seated.start(Stance::Seated, None);
         assert!(!capture(&mut seated, t0, player().eye_height));
@@ -810,7 +809,7 @@ mod tests {
 
     #[test]
     fn a_standing_calibration_keeps_the_seated_eye_height_and_has_no_height_to_set() {
-        let t0 = Instant::now();
+        let t0 = Stamp::now();
         let mut calibration = Calibration::new();
         calibration.start(Stance::Standing, Some(SEATED_EYE_HEIGHT));
         assert_eq!(
@@ -835,7 +834,7 @@ mod tests {
 
     #[test]
     fn a_standing_calibration_taken_seated_is_still_flagged() {
-        let t0 = Instant::now();
+        let t0 = Stamp::now();
         let mut calibration = Calibration::new();
         calibration.start(Stance::Standing, None);
         assert!(capture(&mut calibration, t0, SEATED_EYE_HEIGHT));
@@ -848,7 +847,7 @@ mod tests {
 
     #[test]
     fn every_notice_is_counted() {
-        let t0 = Instant::now();
+        let t0 = Stamp::now();
         let mut calibration = Calibration::new();
         calibration.start(Stance::Standing, None);
         assert_eq!(calibration.notice_count(), 0);
@@ -869,7 +868,7 @@ mod tests {
 
     #[test]
     fn the_span_takes_the_widest_sample_and_the_height_the_mean() {
-        let t0 = Instant::now();
+        let t0 = Stamp::now();
         let mut calibration = Calibration::new();
         calibration.start(Stance::Standing, None);
         calibration.measure(t0, Ok(1.0));
@@ -896,7 +895,7 @@ mod tests {
 
     #[test]
     fn back_retry_and_cancel() {
-        let t0 = Instant::now();
+        let t0 = Stamp::now();
         let mut calibration = Calibration::new();
         assert!(!calibration.back());
         assert!(!calibration.retry());

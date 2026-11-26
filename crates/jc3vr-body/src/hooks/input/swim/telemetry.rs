@@ -9,13 +9,11 @@
 //! turned since the last line, the turn input, the swim counters' advance, the core's last rotation
 //! (its own target and what it returned), and the procedural body's swim torso and the hand tiers.
 
-use std::{
-    sync::atomic::Ordering,
-    time::{Duration, Instant},
-};
+use std::{sync::atomic::Ordering, time::Duration};
 
 use body_rig::math::angle::{heading, wrap, yaw_of};
 use glam::Vec3;
+use jc3vr_core::published::Stamp;
 use jc3vr_view::headpose;
 use parking_lot::Mutex;
 
@@ -51,7 +49,7 @@ pub fn log_tick(look_x: f32) {
         *STATE.lock() = TelemetryState::NEW;
         return;
     }
-    let now = Instant::now();
+    let now = Stamp::now();
     let counters = Counters::now();
     let body = headpose::xr::body_rotation_raw();
     let body_forward = body * Vec3::NEG_Z;
@@ -204,7 +202,7 @@ impl Counters {
 struct TelemetryState {
     /// When the last line was logged, with the counters, the body's euler yaw, and the target's
     /// heading then.
-    logged: Option<(Instant, Counters, f32, Option<f32>)>,
+    logged: Option<(Stamp, Counters, f32, Option<f32>)>,
     /// The largest turn input since the last line.
     look_x_peak: f32,
 }

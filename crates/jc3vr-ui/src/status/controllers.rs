@@ -1,8 +1,6 @@
 //! The status rows for the controller systems: the gun in the hand, the hand bodies, the
 //! locomotion, and the procedural body.
 
-use std::time::Instant;
-
 use jc3vr_body::controllers::{
     body::{
         procedural,
@@ -16,6 +14,7 @@ use jc3vr_body::controllers::{
     locomotion,
     locomotion::{acts, acts::ActFilterStatus, anchor, anchor::AnchorStatus},
 };
+use jc3vr_core::published::Stamp;
 use jc3vr_gameplay::controllers::config::CONTROLLERS_CONFIG;
 use jc3vr_input::frame::Hand;
 use jc3vr_physical::controllers::physical_hands::{
@@ -214,7 +213,7 @@ fn neutral_head() -> Line {
 }
 
 fn procedural_mode() -> Line {
-    procedural_mode_line(&procedural::published_status(), Instant::now())
+    procedural_mode_line(&procedural::published_status(), Stamp::now())
 }
 
 fn hand_over() -> Line {
@@ -410,7 +409,7 @@ fn steady_view_line(status: &AnchorStatus) -> Line {
     }
 }
 
-fn procedural_mode_line(status: &ProceduralStatus, now: Instant) -> Line {
+fn procedural_mode_line(status: &ProceduralStatus, now: Stamp) -> Line {
     let label = prose("Full body");
     if let Some(error) = status.rig_error {
         return Line::failed(prose("Rig, see log")).with_note(error.to_string());
@@ -707,7 +706,7 @@ mod tests {
 
     #[test]
     fn the_procedural_mode_must_have_run_in_it() {
-        let now = Instant::now();
+        let now = Stamp::now();
         let ran = ProceduralStatus {
             at: Some(now),
             ..ProceduralStatus::default()

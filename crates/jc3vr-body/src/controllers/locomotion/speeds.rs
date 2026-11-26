@@ -3,7 +3,9 @@
 //! stick holds it. The stick locomotion takes the target speed as its own, so these lines say how
 //! closely the clips' real speed matched it.
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
+
+use jc3vr_core::published::Stamp;
 
 /// Watches the target speed and the root speed, and logs each target speed once.
 #[derive(Debug, Clone, PartialEq)]
@@ -24,7 +26,7 @@ impl SpeedLog {
     }
 
     /// Fold in one tick, and log a target speed held long enough that has not been logged yet.
-    pub fn observe(&mut self, now: Instant, stick: f32, target: Option<f32>, root_speed: f32) {
+    pub fn observe(&mut self, now: Stamp, stick: f32, target: Option<f32>, root_speed: f32) {
         if let Some(measured) = self.fold(now, stick, target, root_speed) {
             tracing::info!(
                 target: "controllers",
@@ -38,7 +40,7 @@ impl SpeedLog {
 
     fn fold(
         &mut self,
-        now: Instant,
+        now: Stamp,
         stick: f32,
         target: Option<f32>,
         root_speed: f32,
@@ -90,7 +92,7 @@ impl Default for SpeedLog {
 #[derive(Debug, Copy, Clone, PartialEq)]
 struct Held {
     key: i32,
-    since: Instant,
+    since: Stamp,
     sum: f32,
     count: u32,
 }
@@ -119,7 +121,7 @@ mod tests {
     #[test]
     fn a_held_speed_is_measured_once() {
         let mut log = SpeedLog::new();
-        let start = Instant::now();
+        let start = Stamp::now();
         let mut measured = vec![];
         for tick in 0..300u64 {
             let now = start + Duration::from_millis(tick * 33);
@@ -136,7 +138,7 @@ mod tests {
     #[test]
     fn releasing_the_stick_restarts_the_hold() {
         let mut log = SpeedLog::new();
-        let start = Instant::now();
+        let start = Stamp::now();
         for tick in 0..60u64 {
             let now = start + Duration::from_millis(tick * 33);
             let stick = if tick % 20 == 19 { 0.0 } else { 1.0 };

@@ -14,13 +14,14 @@ use std::{
     path::PathBuf,
     sync::mpsc::{self, Receiver, TryRecvError},
     thread::JoinHandle,
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use body_estimator::{
     EgoPoser, WeightsError,
     egoposer::gpu::{GpuEgoPoser, GpuError, Readback, WeightPrecision},
 };
+use jc3vr_core::published::Stamp;
 use parking_lot::Mutex;
 use windows::Win32::Graphics::Direct3D11::{ID3D11Device, ID3D11DeviceContext};
 
@@ -128,7 +129,7 @@ pub fn render_tick(context: &ID3D11DeviceContext, device: &ID3D11Device) {
         return;
     }
     let path = config.weights(jc3vr_core::module::get_path());
-    let now = Instant::now();
+    let now = Stamp::now();
     if executor.path != path {
         executor.path = path.clone();
         executor.stage = Stage::Off;
@@ -153,7 +154,7 @@ pub fn render_tick(context: &ID3D11DeviceContext, device: &ID3D11Device) {
             return;
         }
         if let (Stage::Ready(gpu), Some(submission)) = (&mut executor.stage, submission) {
-            let started = Instant::now();
+            let started = Stamp::now();
             let inference = gpu.submit(context, &submission.window);
             let record = started.elapsed();
             executor.record = Some(record);
@@ -226,9 +227,9 @@ enum Stage {
 #[derive(Debug, Copy, Clone)]
 struct InFlight {
     inference: u64,
-    window_end: Instant,
+    window_end: Stamp,
     posture: EffectivePosture,
-    submitted_at: Instant,
+    submitted_at: Stamp,
 }
 
 struct Executor {
@@ -337,7 +338,7 @@ impl Executor {
     }
 
     /// Publish a finished inference, matched to its submission.
-    fn finish(&mut self, readback: Readback, now: Instant) {
+    fn finish(&mut self, readback: Readback, now: Stamp) {
         self.read += 1;
         while let Some(front) = self.in_flight.front().copied() {
             if front.inference > readback.inference {
@@ -360,7 +361,7 @@ impl Executor {
 }
 
 fn wait(handle: JoinHandle<()>, budget: Duration) -> bool {
-    let started = Instant::now();
+    let started = Stamp::now();
     loop {
         if handle.is_finished() {
             return join_loader(handle);
@@ -393,7 +394,7 @@ fn stop(executor: &Mutex<Executor>, budget: Duration) -> bool {
         executor.stage = Stage::Off;
         executor.in_flight.clear();
     }
-    let started = Instant::now();
+    let started = Stamp::now();
     loop {
         let handles = {
             let mut executor = executor.lock();
@@ -576,7 +577,7 @@ mod tests {
         let executor = executor_with(vec![blocked_until(running.clone())]);
         assert!(!stop(&executor, Duration::ZERO));
         assert_eq!(executor.lock().stopped, LoaderShutdown::Failed);
-        let started = Instant::now();
+        let started = Stamp::now();
         assert!(!stop(&executor, Duration::from_secs(30)));
         assert!(started.elapsed() < Duration::from_secs(1));
         running.store(false, Ordering::SeqCst);

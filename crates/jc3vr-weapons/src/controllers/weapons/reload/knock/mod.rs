@@ -16,10 +16,11 @@
 //! driven body would, so a base strike sends it out along the well and a strike on its side near
 //! the well turns it as it goes ([`knocked`]).
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use glam::{Quat, Vec3};
 use jc3vr_body::controllers::physics::rigid::{RigidBody, Velocities};
+use jc3vr_core::published::Stamp;
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
@@ -118,7 +119,7 @@ pub(super) struct Knocks {
     /// The knocked magazine's impulse, while it waits on a readable body.
     pub impulse: Option<PendingImpulse>,
     /// When a magazine was last knocked out.
-    pub knocked_at: Option<Instant>,
+    pub knocked_at: Option<Stamp>,
     /// The gun whose magazine part stays drawn while its knocked prop appears.
     pub linger: Option<Linger>,
     gun_approaches: [Option<GunApproach>; 2],
@@ -374,12 +375,12 @@ pub(crate) struct KnockView {
     /// relative to the gun is at least the threshold.
     pub fast: bool,
     /// When the magazine was last knocked out.
-    pub knocked_at: Option<Instant>,
+    pub knocked_at: Option<Stamp>,
 }
 
 impl KnockView {
     /// Whether the knock is recent enough to flash.
-    pub(crate) fn flashing(&self, now: Instant) -> bool {
+    pub(crate) fn flashing(&self, now: Stamp) -> bool {
         self.knocked_at.is_some_and(|at| {
             now.saturating_duration_since(at) <= Duration::from_millis(RELOAD.get().knock.flash_ms)
         })
@@ -388,7 +389,7 @@ impl KnockView {
 
 /// The last input tick's knock zone, while one is in play or its knock still flashes.
 pub(crate) fn view() -> Option<KnockView> {
-    let now = Instant::now();
+    let now = Stamp::now();
     match *VIEW.lock() {
         Some((at, view))
             if now.saturating_duration_since(at)
@@ -404,7 +405,7 @@ pub(crate) fn view() -> Option<KnockView> {
 /// Publish the tick's zone. A tick without one keeps the last zone while its knock flashes, since
 /// the knocked magazine leaves the well, and the zone with it, within a tick or two.
 pub(super) fn publish(view: Option<KnockView>) {
-    let now = Instant::now();
+    let now = Stamp::now();
     let mut published = VIEW.lock();
     match view {
         Some(view) => *published = Some((now, view)),
@@ -421,7 +422,7 @@ const MIN_DT: f32 = 1e-4;
 /// The most points the tip's path between two ticks is tested at.
 const MAX_SWEEP_STEPS: u32 = 32;
 
-static VIEW: Mutex<Option<(Instant, KnockView)>> = Mutex::new(None);
+static VIEW: Mutex<Option<(Stamp, KnockView)>> = Mutex::new(None);
 
 #[cfg(test)]
 mod tests;

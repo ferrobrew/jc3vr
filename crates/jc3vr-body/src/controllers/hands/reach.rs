@@ -26,14 +26,11 @@
 //!   small threshold and up to a cap. With the reach limited, only a body that moves against the
 //!   hands within a tick leaves a shortfall for it.
 
-use body_rig::{
-    body::{EYES_TO_NECK, neck_pivot},
-    math::{
-        angle::heading,
-        geometry::within_sphere,
-        shoulders,
-        smooth::{follow_factor, smoothstep_between},
-    },
+use body_rig::math::{
+    angle::heading,
+    geometry::within_sphere,
+    shoulders,
+    smooth::{follow_factor, smoothstep_between},
 };
 use glam::{FloatExt, Quat, Vec3};
 use jc3vr_core::config::engine::{Invalid, nonnegative, positive, range};
@@ -373,6 +370,8 @@ const MAX_SEGMENT_M: f32 = 0.6;
 
 #[cfg(test)]
 mod tests {
+    use body_rig::body::{EYES_TO_NECK, neck_pivot};
+
     use super::*;
 
     const EPS: f32 = 1e-4;

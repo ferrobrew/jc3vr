@@ -10,10 +10,11 @@
 //! height by the remap's difference, so it starts the window again rather than feed the network a
 //! jump.
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use body_estimator::{GripOffset, LiveFrame, SparseWindow, WindowBuilder};
 use glam::{DQuat, Quat, Vec3};
+use jc3vr_core::published::Stamp;
 use jc3vr_view::vr;
 use parking_lot::Mutex;
 
@@ -29,7 +30,7 @@ use crate::{
 /// One rendered frame's tracking, in the rig's room frame.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Observation {
-    pub now: Instant,
+    pub now: Stamp,
     /// The eyes, metres over the floor.
     pub eyes: Vec3,
     /// The head's cockpit orientation.
@@ -84,13 +85,18 @@ pub(crate) fn room_from_cockpit() -> DQuat {
 }
 
 /// The latest eyes the window took, in the rig's room frame, while recent.
-pub(crate) fn eyes(now: Instant) -> Option<Vec3> {
+pub(crate) fn eyes(now: Stamp) -> Option<Vec3> {
     STATE
         .lock()
         .as_ref()
         .and_then(|p| p.eyes)
         .filter(|(_, at)| {
-            now.saturating_duration_since(*at) <= FRESHNESS.get().body.estimator_eyes_ms.duration()
+            FRESHNESS
+                .get()
+                .body
+                .estimator_eyes_ms
+                .window()
+                .holds(*at, now)
         })
         .map(|(eyes, _)| eyes)
 }
@@ -110,7 +116,7 @@ pub(crate) fn take_submission() -> Option<Submission> {
 pub(crate) struct Submission {
     pub window: Box<SparseWindow>,
     /// When the window's last pose was taken.
-    pub window_end: Instant,
+    pub window_end: Stamp,
     pub posture: EffectivePosture,
 }
 
@@ -119,11 +125,11 @@ pub(crate) struct Submission {
 pub(crate) struct Producer {
     pub(crate) builder: WindowBuilder,
     /// The instant the window's clock counts seconds from.
-    epoch: Option<Instant>,
+    epoch: Option<Stamp>,
     posture: Option<EffectivePosture>,
     /// When the next window is due.
-    next_submit: Option<Instant>,
-    eyes: Option<(Vec3, Instant)>,
+    next_submit: Option<Stamp>,
+    eyes: Option<(Vec3, Stamp)>,
 }
 
 impl Producer {
@@ -183,7 +189,10 @@ impl Producer {
         });
         Some(Submission {
             window: Box::new(window),
-            window_end: now.checked_sub(behind).unwrap_or(now),
+            window_end: Stamp::from_nanos(
+                now.as_nanos()
+                    .saturating_sub(u64::try_from(behind.as_nanos()).unwrap_or(u64::MAX)),
+            ),
             posture: observation.posture,
         })
     }

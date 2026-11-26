@@ -58,8 +58,8 @@ pub mod targets;
 use jc3vr_body::controllers::{
     held::{guns as held_guns, guns::GunHolds},
     mode::{AirborneVariant, Detection, Mode, OnFootVariant},
-    physics::steps::steps,
 };
+use jc3vr_core::published::Step;
 
 pub(crate) fn mode_allows_bodies(detection: Detection) -> bool {
     matches!(
@@ -70,14 +70,14 @@ pub(crate) fn mode_allows_bodies(detection: Detection) -> bool {
 
 /// The guns in the hands for step `step`: the last publication while it is current, and none
 /// otherwise.
-pub(super) fn holds_for_step(step: u64) -> GunHolds {
+pub(super) fn holds_for_step(step: Step) -> GunHolds {
     held_guns::holds_at(step).unwrap_or_default()
 }
 
 /// The hands that act because they hold or brace a gun, from the last publication: their bodies
 /// are driven and joined to the gun's.
 pub(crate) fn acting_hands() -> [bool; 2] {
-    held_guns::holds_at(steps()).map_or([false; 2], |h| h.hands())
+    held_guns::holds_at(Step::now()).map_or([false; 2], |h| h.hands())
 }
 
 #[cfg(test)]

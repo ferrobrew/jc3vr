@@ -38,10 +38,7 @@
 //! animated attach bone sat relative to the canonical grip before the pin, and how the gun sits on
 //! the wrist after the placement, for the weapon handling's grip watch.
 
-use std::{
-    sync::atomic::{AtomicU8, AtomicU64, Ordering},
-    time::Instant,
-};
+use std::sync::atomic::{AtomicU8, AtomicU64, Ordering};
 
 use body_rig::math::rotation::angle_between;
 use glam::{Mat4, Quat, Vec3};
@@ -53,6 +50,7 @@ use jc3gi::{
     equipment::weapon::{WeaponBase, WeaponData, WeaponState},
     types::math::Matrix4,
 };
+use jc3vr_core::published::Stamp;
 use jc3vr_input::frame::{Hand, Pose};
 use parking_lot::Mutex;
 
@@ -69,7 +67,7 @@ use crate::controllers::{
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct HandGrip {
     /// When the placement ran.
-    pub at: Instant,
+    pub at: Stamp,
     /// The weapon's address and the gun's index in it.
     pub weapon: usize,
     pub gun: usize,
@@ -299,7 +297,7 @@ pub unsafe fn after_placement(character: *const Character, placement: Placement)
     };
     let to_world = Mat4::from(character.m_WorldMatrixT1);
     let (_, body, _) = to_world.to_scale_rotation_translation();
-    let now = Instant::now();
+    let now = Stamp::now();
     let mut last = LAST.lock();
     for hand in Hand::BOTH {
         // A hand this placement put no gun in holds none now: a record left from before would name

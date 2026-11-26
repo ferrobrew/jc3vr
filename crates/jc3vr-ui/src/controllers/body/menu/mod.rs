@@ -55,7 +55,7 @@ fn build() -> Page {
 
 #[cfg(test)]
 mod tests {
-    use std::time::{Duration, Instant};
+    use std::time::Duration;
 
     use glam::{Vec2, Vec3};
     use jc3vr_body::controllers::{
@@ -68,6 +68,7 @@ mod tests {
         },
         roomscale::config::Posture,
     };
+    use jc3vr_core::published::Stamp;
     use jc3vr_gameplay::controllers::config::CONTROLLERS_CONFIG;
     use jc3vr_input::frame::{Hand, Pose, TrackedPose};
     use jc3vr_view::vr::stage::StageInfo;
@@ -300,7 +301,7 @@ mod tests {
 
     #[test]
     fn notices_are_logged_once_and_rate_limited() {
-        let t0 = Instant::now();
+        let t0 = Stamp::now();
         let mut log = NoticeLog::new();
         assert_eq!(log.take(0, t0), None);
         assert_eq!(log.take(1, t0), Some(0));

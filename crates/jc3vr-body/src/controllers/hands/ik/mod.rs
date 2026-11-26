@@ -42,7 +42,7 @@
 use std::{
     cell::{Cell, RefCell},
     sync::atomic::{AtomicBool, AtomicUsize, Ordering},
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use body_rig::math::Side;
@@ -54,7 +54,7 @@ use jc3gi::{
     },
     types::math::Vector3,
 };
-use jc3vr_core::hash::hashlittle;
+use jc3vr_core::{hash::hashlittle, published::Stamp};
 use jc3vr_input::frame::{Hand, Pose};
 use jc3vr_view::{
     controllers::cockpit::CockpitTransform, headpose, headpose::skeleton::SkeletonKey,
@@ -1059,7 +1059,7 @@ pub(crate) fn knuckle_names(hand: Hand) -> [&'static str; 2] {
 
 /// Log, at most every [`KEEP_OUT_LOG_INTERVAL`], that the torso kept a wrist target out.
 fn log_kept_out(hand: Hand, distance: f32) {
-    let now = Instant::now();
+    let now = Stamp::now();
     let mut last = KEEP_OUT_LOGGED_AT.lock();
     if last.is_some_and(|at| now.saturating_duration_since(at) < KEEP_OUT_LOG_INTERVAL) {
         return;
@@ -1075,7 +1075,7 @@ fn log_kept_out(hand: Hand, distance: f32) {
 
 const KEEP_OUT_LOG_INTERVAL: Duration = Duration::from_secs(2);
 
-static KEEP_OUT_LOGGED_AT: Mutex<Option<Instant>> = Mutex::new(None);
+static KEEP_OUT_LOGGED_AT: Mutex<Option<Stamp>> = Mutex::new(None);
 
 fn log_once(flag: &AtomicBool, message: &str) {
     if !flag.swap(true, Ordering::Relaxed) {

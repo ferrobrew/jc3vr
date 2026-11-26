@@ -10,10 +10,9 @@
 
 pub mod probe;
 
-use std::time::Instant;
-
 use glam::Vec3;
 use jc3gi::character::character::Character;
+use jc3vr_core::published::Stamp;
 use jc3vr_view::{
     headpose,
     headpose::{Source, teleport},
@@ -71,7 +70,7 @@ pub(crate) unsafe fn tick(character: &Character) {
     let result = probe::with_terrain(scene, terrain);
     state.latest = Some(TimedProbe {
         result,
-        at: Instant::now(),
+        at: Stamp::now(),
     });
 }
 

@@ -8,14 +8,13 @@
 //! eye bones, the point the view is anchored at. All are read before the solve, so they are the
 //! animated pose, never the previous tick's IK.
 
-use std::time::Instant;
-
 use body_rig::math::angle::line_yaw;
 use glam::{Mat4, Quat, Vec3};
 use jc3gi::{
     animation::ik::Effector,
     character::character::{AnimationController, Character},
 };
+use jc3vr_core::published::Stamp;
 use jc3vr_input::frame::Hand;
 use jc3vr_view::{headpose, headpose::skeleton::SkeletonKey};
 use parking_lot::Mutex;
@@ -51,7 +50,7 @@ pub fn arms() -> [Option<MeasuredArm>; 2] {
     }
     STATE
         .lock()
-        .arms_with(Instant::now(), headpose::xr::body_rotation)
+        .arms_with(Stamp::now(), headpose::xr::body_rotation)
 }
 
 /// Check the current native identity before composing any hand targets from retained measurements.
@@ -158,13 +157,13 @@ pub(crate) unsafe fn measure(
         shoulder(Effector::RIGHT_SHOULDER),
     );
 
-    let now = Instant::now();
+    let now = Stamp::now();
     let mut state = STATE.lock();
     let key = (pose.key(), pose.producer());
     state.prepare(key, character_rotation);
-    let dt = state
-        .last
-        .map_or(0.0, |last| now.duration_since(last).as_secs_f32());
+    let dt = state.last.map_or(0.0, |last| {
+        now.saturating_duration_since(last).as_secs_f32()
+    });
     state.last = Some(now);
 
     Hand::BOTH.map(|hand| {
@@ -226,7 +225,7 @@ fn chest_rotation(left: Option<Vec3>, right: Option<Vec3>) -> Option<Quat> {
 struct State {
     trackers: [ArmTracker; 2],
     resolved: [bool; 2],
-    last: Option<Instant>,
+    last: Option<Stamp>,
     key: Option<(SkeletonKey, usize)>,
     character_rotation: Quat,
 }
@@ -253,15 +252,20 @@ impl State {
     }
 
     #[cfg(test)]
-    fn arms(&self, now: Instant, view: Quat) -> [Option<MeasuredArm>; 2] {
+    fn arms(&self, now: Stamp, view: Quat) -> [Option<MeasuredArm>; 2] {
         self.arms_with(now, || view)
     }
 
-    fn arms_with(&self, now: Instant, view: impl FnOnce() -> Quat) -> [Option<MeasuredArm>; 2] {
+    fn arms_with(&self, now: Stamp, view: impl FnOnce() -> Quat) -> [Option<MeasuredArm>; 2] {
         let fresh = self.key.is_some()
             && self.last.is_some_and(|last| {
                 now >= last
-                    && now.duration_since(last) <= FRESHNESS.get().hands.measured_arms_ms.duration()
+                    && FRESHNESS
+                        .get()
+                        .hands
+                        .measured_arms_ms
+                        .window()
+                        .holds(last, now)
             });
         if !fresh || !self.resolved.iter().any(|resolved| *resolved) {
             return [None; 2];
@@ -283,13 +287,13 @@ static STATE: Mutex<State> = Mutex::new(State::EMPTY);
 
 #[cfg(test)]
 pub(crate) fn test_arms(view: Quat) -> [Option<MeasuredArm>; 2] {
-    STATE.lock().arms(Instant::now(), view)
+    STATE.lock().arms(Stamp::now(), view)
 }
 
 #[cfg(test)]
 pub(crate) fn seed_test_measurement() {
     let mut state = STATE.lock();
-    state.last = Some(Instant::now());
+    state.last = Some(Stamp::now());
     state.resolved = [true; 2];
     for tracker in &mut state.trackers {
         tracker.update(

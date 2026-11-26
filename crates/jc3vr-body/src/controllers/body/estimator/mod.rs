@@ -26,7 +26,7 @@ pub(crate) mod visual;
 #[cfg(test)]
 mod tests;
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use body_estimator::{
     EgoPoserOutput,
@@ -37,6 +37,7 @@ use body_rig::{
     math::angle::{heading, wrap},
 };
 use glam::{DMat3, DQuat, Quat};
+use jc3vr_core::published::Stamp;
 use parking_lot::Mutex;
 
 pub use crate::controllers::body::estimator::{
@@ -76,7 +77,7 @@ impl Estimate {
 pub fn latest() -> Option<Estimate> {
     let reading = (*LATEST.lock())?;
     let room_from_cockpit = producer::room_from_cockpit();
-    Some(reading.estimate(room_from_cockpit, Instant::now()))
+    Some(reading.estimate(room_from_cockpit, Stamp::now()))
 }
 
 /// The rig's view of `estimate`: its headings with a confidence that falls with its age under
@@ -96,15 +97,15 @@ pub fn for_rig(estimate: Option<&Estimate>, tuning: &EstimateTuning) -> Option<B
 pub(crate) struct Reading {
     pub output: EgoPoserOutput,
     /// When the window's last pose was taken.
-    pub window_end: Instant,
+    pub window_end: Stamp,
     pub posture: EffectivePosture,
-    pub submitted_at: Instant,
-    pub read_at: Instant,
+    pub submitted_at: Stamp,
+    pub read_at: Stamp,
 }
 
 impl Reading {
     /// The reading in the cockpit frame `room_from_cockpit` maps into the room frame, at `now`.
-    pub(crate) fn estimate(&self, room_from_cockpit: DQuat, now: Instant) -> Estimate {
+    pub(crate) fn estimate(&self, room_from_cockpit: DQuat, now: Stamp) -> Estimate {
         let global = self.output.global_rotations();
         let cockpit_from_room = DMat3::from_quat(room_from_cockpit.inverse());
         let turn = room_from_cockpit_yaw(room_from_cockpit);

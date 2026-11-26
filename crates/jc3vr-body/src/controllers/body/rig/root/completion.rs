@@ -1,8 +1,7 @@
 //! The movement completed at the pose-finalization boundary and copied at the frame's.
 
-use std::time::Instant;
-
 use glam::Mat4;
+use jc3vr_core::published::Stamp;
 
 use crate::controllers::body::rig::{
     collision::probe,
@@ -15,12 +14,8 @@ use crate::controllers::body::rig::{
 impl Sim {
     /// The running totals the frame folds into the cockpit shift, settled first when the
     /// simulation half has not run within the staleness window.
-    pub(super) fn frame_movement(&mut self, now: Instant) -> CompletedMovement {
-        if self
-            .status
-            .at
-            .is_none_or(|at| now.saturating_duration_since(at) > probe::stale_after())
-        {
+    pub(super) fn frame_movement(&mut self, now: Stamp) -> CompletedMovement {
+        if !probe::stale_after().holds(self.status.at, now) {
             self.movement.clear();
         }
         self.movement.completed()

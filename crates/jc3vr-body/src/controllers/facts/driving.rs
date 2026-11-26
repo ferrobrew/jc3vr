@@ -7,10 +7,9 @@
 //! (`controllers::vehicles::driving_view`). A correction the input tick stopped publishing
 //! goes stale, and the view eases back.
 
-use std::time::Instant;
-
 use body_rig::math::smooth::smoothstep;
 use glam::Vec3;
+use jc3vr_core::published::Stamp;
 use parking_lot::Mutex;
 
 use crate::{controllers::roomscale::tuning::ROOMSCALE, tuning::FRESHNESS};
@@ -20,7 +19,7 @@ use crate::{controllers::roomscale::tuning::ROOMSCALE, tuning::FRESHNESS};
 pub fn publish(applied: Option<Vec3>) {
     let mut shared = SHARED.lock();
     shared.target = applied;
-    shared.published_at = Some(Instant::now());
+    shared.published_at = Some(Stamp::now());
 }
 
 /// The frame half's inputs to [`advance`].
@@ -35,11 +34,14 @@ pub struct FrameInputs {
 /// Ease the correction toward the published target and return it, cockpit frame, metres, to add
 /// to the composed cockpit position. Called once per rendered VR frame by the pose composition,
 /// under the roomscale frame lock; takes only this module's slot.
-pub fn advance(enabled: bool, inputs: FrameInputs, now: Instant) -> Vec3 {
+pub fn advance(enabled: bool, inputs: FrameInputs, now: Stamp) -> Vec3 {
     let mut shared = SHARED.lock();
-    let fresh = shared.published_at.is_some_and(|at| {
-        now.saturating_duration_since(at) < FRESHNESS.get().facts.driving_ms.duration()
-    });
+    let fresh = FRESHNESS
+        .get()
+        .facts
+        .driving_ms
+        .window()
+        .holds(shared.published_at, now);
     let goal = match shared.target {
         Some(applied) if enabled && inputs.seated && fresh => applied,
         _ => Vec3::ZERO,
@@ -111,7 +113,7 @@ impl Ease {
 
 struct Shared {
     target: Option<Vec3>,
-    published_at: Option<Instant>,
+    published_at: Option<Stamp>,
     ease: Ease,
     goal: Vec3,
     offset: Vec3,

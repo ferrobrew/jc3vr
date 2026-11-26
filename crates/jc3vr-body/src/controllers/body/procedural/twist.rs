@@ -10,10 +10,9 @@
 //! body poses the torso, and the legs' while it poses the legs, each by that region's weight, so
 //! the animation's own twist bones come back as the body hands back.
 
-use std::time::Instant;
-
 use glam::Quat;
 use jc3gi::character::character::{AnimationController, Character, Joint};
+use jc3vr_core::published::Stamp;
 use jc3vr_view::headpose::skeleton::SkeletonKey;
 use parking_lot::Mutex;
 
@@ -26,7 +25,7 @@ use crate::controllers::body::procedural::{
 /// What the twist distribution did on its last pass.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct TwistStatus {
-    pub at: Option<Instant>,
+    pub at: Option<Stamp>,
     /// How many twist bones the skeleton has, on how many segments; `None` before a skeleton is
     /// read.
     pub bones: Option<(usize, usize)>,
@@ -54,7 +53,7 @@ pub(crate) unsafe fn after_solve(character: *mut Character) {
     let body = published_status();
     let weights = [body.weight, leg_weight()];
     let mut status = TwistStatus {
-        at: Some(Instant::now()),
+        at: Some(Stamp::now()),
         ..*STATUS.lock()
     };
     status.wrote = false;

@@ -28,15 +28,13 @@
 //! it applies, it switches the game's off-hand weapon grip off for both hands, driven or not, so
 //! that only the foregrip grab puts a hand on a two-handed weapon.
 
-use std::{
-    sync::{
-        LazyLock,
-        atomic::{AtomicBool, AtomicU64, Ordering},
-    },
-    time::Instant,
+use std::sync::{
+    LazyLock,
+    atomic::{AtomicBool, AtomicU64, Ordering},
 };
 
 use jc3gi::character::character::{AnimationLayer, Character};
+use jc3vr_core::published::Stamp;
 use jc3vr_view::headpose;
 use parking_lot::Mutex;
 
@@ -173,7 +171,7 @@ pub fn count_relaxed_wielded() {
 /// What the unarmed body decided on its last tick, for the debug UI.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct UnarmedStatus {
-    pub at: Option<Instant>,
+    pub at: Option<Stamp>,
     pub verdict: UnarmedVerdict,
     /// Which of [`MASKABLE_LAYERS`] were published for masking.
     pub masked: [bool; MASKABLE_LAYERS.len()],
@@ -231,7 +229,7 @@ pub unsafe fn tick(character: *mut Character) {
     WIELDED_RELAXED.store(relaxed, Ordering::Relaxed);
     let mut state = STATE.lock();
     *state = UnarmedStatus {
-        at: Some(Instant::now()),
+        at: Some(Stamp::now()),
         verdict,
         masked: published.map(|b| b != 0),
         layers: blenders.len(),
@@ -253,9 +251,12 @@ pub fn record_modifiers(weapon_suppressed: bool) {
 pub fn applies() -> bool {
     let status = *STATE.lock();
     status.verdict == UnarmedVerdict::Applies
-        && status
-            .at
-            .is_some_and(|at| at.elapsed() < FRESHNESS.get().body.unarmed_ms.duration())
+        && FRESHNESS
+            .get()
+            .body
+            .unarmed_ms
+            .window()
+            .holds(status.at, Stamp::now())
 }
 
 /// Whether the game's off-hand weapon grip is switched off for both hands this tick.
