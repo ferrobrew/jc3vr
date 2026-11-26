@@ -47,9 +47,6 @@ fn gun_against_walls() -> Line {
 }
 
 fn down_the_sights() -> Line {
-    if !read(&CONTROLLERS_CONFIG, |c| c.weapons.ads.enabled) {
-        return Line::off("");
-    }
     let s = ads::status();
     if !s.weapon {
         return Line::waiting(prose("No long gun measured"));

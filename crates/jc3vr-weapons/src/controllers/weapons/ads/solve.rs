@@ -28,8 +28,6 @@ use glam::{Quat, Vec3};
 use jc3vr_body::controllers::hands::CockpitHand;
 use jc3vr_input::frame::Pose;
 
-use crate::controllers::weapons::ads::config::AdsConfig;
-
 /// How far the eye may be off the sight line for the line to start turning onto it, metres.
 pub const ENGAGE_M: f32 = 0.06;
 /// How far off the sight line the eye is when the line passes through it fully, metres.
@@ -187,10 +185,9 @@ impl AdsSolution {
 }
 
 /// Solve the pose.
-pub fn solve(inputs: &AdsInputs, config: &AdsConfig) -> AdsSolution {
+pub fn solve(inputs: &AdsInputs) -> AdsSolution {
     let mut solution = AdsSolution::NONE;
-    if config.shoulder
-        && let Some(pocket) = inputs.pocket
+    if let Some(pocket) = inputs.pocket
         && let Some((step, weight)) = shoulder_move(inputs, pocket)
     {
         solution.moved = step;
@@ -203,11 +200,9 @@ pub fn solve(inputs: &AdsInputs, config: &AdsConfig) -> AdsSolution {
     };
     solution.eye_offset_m = Some(view.offset.length());
     let step = if inputs.scoped {
-        config.cheek_weld.then(|| {
-            let weight = fade(view.offset.length(), WELD_LOCK_M, WELD_ENGAGE_M) * view.gate;
-            solution.weld = weight;
-            weld_move(view, weight)
-        })
+        let weight = fade(view.offset.length(), WELD_LOCK_M, WELD_ENGAGE_M) * view.gate;
+        solution.weld = weight;
+        Some(weld_move(view, weight))
     } else {
         let weight = fade(view.offset.length(), LOCK_M, ENGAGE_M) * view.gate;
         solution.eye = weight;
@@ -361,10 +356,9 @@ mod tests {
 
     #[test]
     fn an_eye_close_to_the_line_is_brought_onto_it() {
-        let config = AdsConfig::new();
         // The line runs at y = 1.58, x = 0.03; the eye is 1 cm off it, behind the grip.
         let i = inputs(Vec3::new(0.04, 1.58, -0.05));
-        let s = solve(&i, &config);
+        let s = solve(&i);
         assert!(s.eye > 0.99, "{s:?}");
         assert!(line_distance(&s, &i, i.eye) < 1e-4);
         // The pivot ahead of the grip stays put.
@@ -374,30 +368,27 @@ mod tests {
 
     #[test]
     fn an_eye_far_from_the_line_leaves_the_gun_alone() {
-        let config = AdsConfig::new();
         let i = inputs(Vec3::new(0.2, 1.58, -0.05));
-        let s = solve(&i, &config);
+        let s = solve(&i);
         assert_eq!(s.eye, 0.0);
         assert_eq!(s.moved.point(Vec3::ONE), Vec3::ONE);
     }
 
     #[test]
     fn a_gun_the_head_does_not_look_along_is_not_aimed() {
-        let config = AdsConfig::new();
         let mut i = inputs(Vec3::new(0.04, 1.58, -0.05));
         i.forward = Vec3::X;
-        assert_eq!(solve(&i, &config).eye_offset_m, None);
+        assert_eq!(solve(&i).eye_offset_m, None);
         // An eye in front of the grip is not behind the sights.
         let i = inputs(Vec3::new(0.04, 1.58, -0.6));
-        assert_eq!(solve(&i, &config).eye_offset_m, None);
+        assert_eq!(solve(&i).eye_offset_m, None);
     }
 
     #[test]
     fn a_scope_is_welded_across_its_axis_without_turning() {
-        let config = AdsConfig::new();
         let mut i = inputs(Vec3::new(0.04, 1.585, -0.1));
         i.scoped = true;
-        let s = solve(&i, &config);
+        let s = solve(&i);
         assert!(s.weld > 0.99);
         assert_eq!(s.eye, 0.0);
         assert!(s.moved.rotation.angle_between(Quat::IDENTITY) < 1e-5);
@@ -406,12 +397,11 @@ mod tests {
 
     #[test]
     fn the_butt_is_seated_in_the_pocket() {
-        let config = AdsConfig::new();
         let mut i = inputs(Vec3::new(0.5, 3.0, 0.0));
         let butt = i.holder.grip.position + Vec3::Z * BUTT_BEHIND_GRIP_M;
         let pocket = butt + Vec3::new(0.02, -0.02, 0.0);
         i.pocket = Some(pocket);
-        let s = solve(&i, &config);
+        let s = solve(&i);
         assert!(s.shoulder > 0.99);
         // The grip stays, and the line from it back to the pocket is the gun's.
         let grip = i.holder.grip.position;
@@ -423,10 +413,9 @@ mod tests {
 
     #[test]
     fn a_butt_away_from_the_shoulder_is_left_alone() {
-        let config = AdsConfig::new();
         let mut i = inputs(Vec3::new(0.5, 3.0, 0.0));
         i.pocket = Some(Vec3::new(1.0, 0.0, 0.0));
-        assert_eq!(solve(&i, &config).shoulder, 0.0);
+        assert_eq!(solve(&i).shoulder, 0.0);
     }
 
     #[test]
@@ -441,11 +430,8 @@ mod tests {
     /// The largest change of the solved move between neighbouring inputs along a sweep, as the
     /// distance a point a metre ahead of the pivot moves, metres.
     fn largest_step(sweep: impl Iterator<Item = AdsInputs>) -> f32 {
-        let config = AdsConfig::new();
         let probe = Vec3::new(0.03, 1.58, -1.5);
-        let points: Vec<Vec3> = sweep
-            .map(|i| solve(&i, &config).moved.point(probe))
-            .collect();
+        let points: Vec<Vec3> = sweep.map(|i| solve(&i).moved.point(probe)).collect();
         points
             .windows(2)
             .map(|w| w[0].distance(w[1]))
@@ -468,7 +454,7 @@ mod tests {
         assert!(largest_step(sweep) < 0.002);
         let mut looking = inputs(eye);
         looking.forward = Quat::from_rotation_y(FULL_VIEW_ANGLE_DEG.to_radians()) * Vec3::NEG_Z;
-        assert!(solve(&looking, &AdsConfig::new()).eye > 0.99);
+        assert!(solve(&looking).eye > 0.99);
     }
 
     #[test]

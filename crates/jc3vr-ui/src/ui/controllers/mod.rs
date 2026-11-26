@@ -100,7 +100,6 @@ pub(crate) fn controls(id: FeatureId) -> Option<FeatureBody> {
         FeatureId::Aim => |ui, _| {
             let mut c = CONTROLLERS_CONFIG.edit();
             aim::aim_settings(ui, &mut c);
-            scope::ads_settings(ui, &mut c.weapons.ads);
         },
         FeatureId::Reload => {
             |ui, _| weapons::reload_feature_settings(ui, &mut CONTROLLERS_CONFIG.edit().weapons)

@@ -26,7 +26,7 @@ use jc3vr_physical::controllers::{physical_hands, physical_hands::physics};
 use jc3vr_vehicles::controllers::vehicles;
 use jc3vr_weapons::controllers::{
     weapons,
-    weapons::{ads, collide, config::WEAPONS_CONFIG, grenade, gun_bodies, hold::rack, recoil},
+    weapons::{ads, collide, grenade, gun_bodies, hold::rack, recoil},
 };
 
 pub(super) fn register() {
@@ -69,8 +69,7 @@ fn gun_targets(c: &mut HandComposition) {
 }
 
 fn aim_down_sights(c: &mut HandComposition) {
-    let config = WEAPONS_CONFIG.query(|w| w.ads);
-    ads::apply(&mut c.hands, c.head, c.shoulders, c.torso, &config);
+    ads::apply(&mut c.hands, c.head, c.shoulders, c.torso);
 }
 
 fn synthetic_recoil(c: &mut HandComposition) {

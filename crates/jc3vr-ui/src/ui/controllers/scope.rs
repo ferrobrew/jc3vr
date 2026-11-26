@@ -1,16 +1,13 @@
 //! Scoped weapons: the aiming rows, each hand against walls, the shares down the sights, whether a
-//! scope is detected, the eyepiece's distance from the nearest eye, the lens's eyes, the
-//! precision-aim suppression's counts, and the aim-and-sights switches.
+//! scope is detected, the eyepiece's distance from the nearest eye, the lens's eyes, and the
+//! precision-aim suppression's counts.
 
 use egui::Ui;
 use jc3vr_body::controllers::aim::sights::SightSource;
 use jc3vr_input::frame::Hand;
 use jc3vr_weapons::controllers::weapons::{
     ads,
-    ads::{
-        AdsStatus,
-        config::{AdsConfig, AimingEye},
-    },
+    ads::AdsStatus,
     collide,
     collide::HandCollideStatus,
     scope,
@@ -112,24 +109,4 @@ pub(super) fn scope_readout(ui: &mut Ui, readout: &ScopeReadout) {
     if let Some(error) = &status.error {
         ui.colored_label(egui::Color32::LIGHT_RED, error);
     }
-}
-
-/// The settings of aiming a long gun down its sights.
-pub(super) fn ads_settings(ui: &mut Ui, a: &mut AdsConfig) {
-    ui.checkbox(&mut a.enabled, "Line the sights up with the eye")
-        .on_hover_text(
-            "A long gun raised to the eye turns so its sight line passes through the aiming eye; \
-             the shot follows the sights.",
-        );
-    ui.add_enabled_ui(a.enabled, |ui| {
-        egui::ComboBox::from_label("Aiming eye")
-            .selected_text(a.eye.label())
-            .show_ui(ui, |ui| {
-                for eye in AimingEye::ALL {
-                    ui.selectable_value(&mut a.eye, eye, eye.label());
-                }
-            });
-        ui.checkbox(&mut a.shoulder, "Seat the stock in the shoulder");
-        ui.checkbox(&mut a.cheek_weld, "Cheek weld for scopes");
-    });
 }

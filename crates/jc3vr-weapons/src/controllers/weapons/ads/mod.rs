@@ -24,7 +24,6 @@
 //! it: the one raised to it ([`raised`]), whose sights take the most hold of the eye. The other
 //! hand's gun stays where its hand holds it.
 
-pub mod config;
 pub mod solve;
 
 use std::time::Instant;
@@ -35,10 +34,7 @@ use jc3vr_input::frame::{Hand, Pose};
 use parking_lot::Mutex;
 
 use crate::controllers::weapons::{
-    ads::{
-        config::{AdsConfig, AimingEye},
-        solve::{AdsInputs, AdsSolution, RigidMove, WristSight},
-    },
+    ads::solve::{AdsInputs, AdsSolution, RigidMove, WristSight},
     foregrip,
 };
 
@@ -106,12 +102,7 @@ pub fn apply(
     head: Pose,
     shoulders: [Option<Vec3>; 2],
     torso: glam::Quat,
-    config: &AdsConfig,
 ) {
-    if !config.enabled {
-        settle();
-        return;
-    }
     let weapons = STATE.lock().weapons;
     if weapons.iter().all(Option::is_none) {
         settle();
@@ -134,13 +125,13 @@ pub fn apply(
             holder,
             sight: weapon.sight,
             support,
-            eye: aiming_eye(head, hand, config),
+            eye: aiming_eye(head, hand),
             forward: head.orientation * Vec3::NEG_Z,
             pocket: shoulders[hand.index()]
                 .map(|s| s + torso * hand.mirror_from_right(POCKET_OFFSET_M)),
             scoped: weapon.scoped,
         };
-        Some(solve::solve(&inputs, config))
+        Some(solve::solve(&inputs))
     });
     let raised = raised(solutions);
     record(
@@ -202,14 +193,10 @@ pub fn raised(solutions: [Option<AdsSolution>; 2]) -> Option<Hand> {
         .map(|(hand, _)| hand)
 }
 
-/// The aiming eye's position: the eyes' midpoint moved half the eyes' spacing to the chosen side.
-pub fn aiming_eye(head: Pose, holder: Hand, config: &AdsConfig) -> Vec3 {
-    let side = match config.eye {
-        AimingEye::HolderSide => holder,
-        AimingEye::Left => Hand::Left,
-        AimingEye::Right => Hand::Right,
-    };
-    let sign = match side {
+/// The aiming eye's position: the eyes' midpoint moved half the eyes' spacing to the side of
+/// `holder`, the hand that holds the gun.
+pub fn aiming_eye(head: Pose, holder: Hand) -> Vec3 {
+    let sign = match holder {
         Hand::Left => -1.0,
         Hand::Right => 1.0,
     };
@@ -320,19 +307,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_aiming_eye_is_on_the_chosen_side() {
+    fn the_aiming_eye_is_on_the_holding_hands_side() {
         let head = Pose {
             position: Vec3::new(0.0, 1.7, 0.0),
             orientation: Quat::IDENTITY,
         };
-        let config = AdsConfig::new();
-        assert!(aiming_eye(head, Hand::Right, &config).x > 0.0);
-        assert!(aiming_eye(head, Hand::Left, &config).x < 0.0);
-        let left = AdsConfig {
-            eye: AimingEye::Left,
-            ..config
-        };
-        assert!(aiming_eye(head, Hand::Right, &left).x < 0.0);
+        assert!(aiming_eye(head, Hand::Right).x > 0.0);
+        assert!(aiming_eye(head, Hand::Left).x < 0.0);
     }
 
     fn holding(eye: f32, weld: f32, shoulder: f32, offset: Option<f32>) -> AdsSolution {
