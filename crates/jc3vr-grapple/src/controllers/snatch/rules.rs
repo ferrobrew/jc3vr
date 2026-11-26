@@ -335,6 +335,7 @@ pub fn prop_handling(mass_kg: f32, carry_max_kg: f32, ceiling_kg: f32) -> Option
 
 #[cfg(test)]
 mod tests {
+    use body_rig::math::constants::{GRAVITY_MPS2, SEATED_TICK_S};
     use jc3vr_body::controllers::intent::yank::{YankDetector, reach_along};
 
     use super::*;
@@ -360,12 +361,11 @@ mod tests {
     ];
     const SEATED_AIM: Vec3 = Vec3::new(0.51, -0.46, -0.73);
     const SEATED_HEAD: Vec3 = Vec3::new(0.07, -0.046, 0.0);
-    const SEATED_DT: f32 = 0.0266;
 
     fn fires(reaches: impl Iterator<Item = Option<f32>>) -> bool {
         let mut detector = YankDetector::new();
         reaches
-            .map(|reach| detector.step(SEATED_DT, reach, true, &snatch_yank()))
+            .map(|reach| detector.step(SEATED_TICK_S, reach, true, &snatch_yank()))
             .any(|yank| yank.is_some())
     }
 
@@ -671,7 +671,7 @@ mod tests {
 
     #[test]
     fn a_toss_lands_where_it_was_aimed() {
-        let gravity = Vec3::new(0.0, -9.81, 0.0);
+        let gravity = Vec3::new(0.0, -GRAVITY_MPS2, 0.0);
         let from = Vec3::new(0.0, 0.2, -8.0);
         let to = Vec3::new(0.0, 0.0, -1.0);
         let t = 0.8;

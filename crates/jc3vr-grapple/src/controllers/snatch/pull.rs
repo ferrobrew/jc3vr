@@ -5,6 +5,7 @@
 
 use std::num::NonZeroUsize;
 
+use body_rig::math::constants::GRAVITY_MPS2;
 use glam::{Mat4, Vec3};
 use jc3gi::{character::inventory::WeaponSlot, equipment::weapon::WeaponBase};
 use jc3vr_body::controllers::{
@@ -12,7 +13,7 @@ use jc3vr_body::controllers::{
     grab::latch::GripLatch,
     hands::ik,
     haptics, physics,
-    physics::{GRAVITY_MPS2, grapple_hook::BodyHit, refs::Weak, rigid::Velocities},
+    physics::{grapple_hook::BodyHit, refs::Weak, rigid::Velocities},
 };
 use jc3vr_core::game_tick::GameTick;
 use jc3vr_input::{frame::Hand, haptics::cues::Sustain};

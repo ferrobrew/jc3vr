@@ -1,11 +1,8 @@
-use body_rig::smooth::follow_factor;
+use body_rig::math::{constants::GRAVITY_MPS2, smooth::follow_factor};
 use glam::{Quat, Vec3};
-use jc3vr_body::controllers::{
-    intent::{
-        grapple_button::LockButton,
-        yank::{ArmedLine, HandLine},
-    },
-    physics::GRAVITY_MPS2,
+use jc3vr_body::controllers::intent::{
+    grapple_button::LockButton,
+    yank::{ArmedLine, HandLine},
 };
 use jc3vr_physical::controllers::physical_hands::physics::drive::rig_jumped;
 

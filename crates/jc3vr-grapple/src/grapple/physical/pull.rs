@@ -134,6 +134,7 @@ impl PullTracker {
 
 #[cfg(test)]
 mod tests {
+    use body_rig::math::constants::SEATED_TICK_S;
     use glam::Vec3;
 
     use super::*;
@@ -198,7 +199,7 @@ mod tests {
     }
 
     /// A seated player's grapple hand, the line out ahead and to the right, pulled back and out past
-    /// their left side at the game's tick, with its aim at the arming and the head; cockpit frame.
+    /// their left side, sampled every other tick, with its aim at the arming and the head; cockpit frame.
     /// The shape of a recorded seated pull.
     const SEATED_PULL: [Vec3; 7] = [
         Vec3::new(-0.029, -0.274, -0.390),
@@ -211,7 +212,6 @@ mod tests {
     ];
     const SEATED_AIM: Vec3 = Vec3::new(0.51, -0.46, -0.73);
     const SEATED_HEAD: Vec3 = Vec3::new(0.07, -0.046, 0.0);
-    const SEATED_DT: f32 = 0.053;
 
     fn peak(readings: impl Iterator<Item = PullReading>) -> PullReading {
         readings.fold(PullReading::default(), |peak, r| PullReading {
@@ -226,7 +226,7 @@ mod tests {
         let mut pull = LinePull::new();
         let along = peak(SEATED_PULL.iter().map(|&grip| {
             pull.step(
-                SEATED_DT,
+                2.0 * SEATED_TICK_S,
                 Some(HandLine {
                     grip,
                     aim: SEATED_AIM,
@@ -243,11 +243,13 @@ mod tests {
         // The same pull hardly nears a point below the head.
         let below_head = SEATED_HEAD - Vec3::Y * 0.3;
         let mut tracker = PullTracker::new();
-        let body = peak(
-            SEATED_PULL
-                .iter()
-                .map(|&grip| tracker.step(SEATED_DT, Some(grip.distance(below_head)), &config)),
-        );
+        let body = peak(SEATED_PULL.iter().map(|&grip| {
+            tracker.step(
+                2.0 * SEATED_TICK_S,
+                Some(grip.distance(below_head)),
+                &config,
+            )
+        }));
         assert!(body.depth_m < 0.03, "{body:?}");
     }
 

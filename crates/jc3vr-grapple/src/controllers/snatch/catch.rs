@@ -9,7 +9,7 @@
 //! holds its grip throughout the line's flight, so it catches only as the receiver; the other free
 //! hand catches whenever its grip closes on the target.
 
-use body_rig::geometry::segment_distance;
+use body_rig::math::geometry::segment_distance;
 use glam::Vec3;
 use jc3vr_input::frame::Hand;
 

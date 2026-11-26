@@ -9,7 +9,7 @@
 //! are measured against the game's own continuous stick swing at full deflection, and their sum is
 //! capped per hang tick so that a flailing hand cannot fling the body.
 
-use body_rig::smooth::follow_factor;
+use body_rig::math::smooth::follow_factor;
 use glam::Vec2;
 use jc3vr_body::controllers::hands::anchor::HangPump;
 

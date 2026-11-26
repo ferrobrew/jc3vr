@@ -36,6 +36,7 @@
 
 use std::{collections::VecDeque, fmt};
 
+use body_rig::math::Side;
 use glam::Vec2;
 use jc3gi::input::input_action_map::Action::{WINGSUIT_AIRBRAKE, WINGSUIT_EVADE};
 use jc3vr_body::controllers::{
@@ -62,10 +63,7 @@ pub struct EvadeDirection {
 impl EvadeDirection {
     /// The move stick the throw writes (+X right, +Y forward), of unit length.
     pub fn stick(self) -> Vec2 {
-        let x = match self.side {
-            Side::Left => -1.0,
-            Side::Right => 1.0,
-        };
+        let x = self.side.across();
         let y = match self.pitch {
             None => 0.0,
             Some(Pitch::Forward) => 1.0,
@@ -77,22 +75,13 @@ impl EvadeDirection {
 
 impl fmt::Display for EvadeDirection {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let side = match self.side {
-            Side::Left => "left",
-            Side::Right => "right",
-        };
+        let side = self.side.label();
         match self.pitch {
             None => f.write_str(side),
             Some(Pitch::Forward) => write!(f, "{side} with the stick forward"),
             Some(Pitch::Back) => write!(f, "{side} with the stick back"),
         }
     }
-}
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum Side {
-    Left,
-    Right,
 }
 
 /// The stick's vertical half the arms pitch toward, in the move stick's convention.

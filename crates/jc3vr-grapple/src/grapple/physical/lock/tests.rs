@@ -1,8 +1,6 @@
+use body_rig::math::constants::GRAVITY_MPS2;
 use glam::{Quat, Vec3};
-use jc3vr_body::controllers::{
-    intent::{grapple_button::LockButton, yank::HandLine},
-    physics::GRAVITY_MPS2,
-};
+use jc3vr_body::controllers::intent::{grapple_button::LockButton, yank::HandLine};
 
 use crate::grapple::{
     physical::{

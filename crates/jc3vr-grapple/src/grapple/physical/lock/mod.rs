@@ -53,6 +53,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use body_rig::math::constants::GRAVITY_MPS2;
 use glam::Vec3;
 use jc3gi::{
     character::character::Character,
@@ -63,7 +64,7 @@ use jc3vr_body::{
     controllers::{
         facts, haptics,
         intent::{grapple_button::LockButton, yank::HandLine},
-        physics::{GRAVITY_MPS2, characters::character_position, local_player::LocalPlayer},
+        physics::{characters::character_position, local_player::LocalPlayer},
     },
     hooks::input::air,
 };

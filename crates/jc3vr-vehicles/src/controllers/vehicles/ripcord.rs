@@ -15,6 +15,7 @@
 //! ([`step`]): a ripcord comes out and forward, or out and up, as the arm swings, never along one
 //! line. A hold pulls once; the hand lets go and takes it again to pull again.
 
+use body_rig::body::HIP_HEIGHT_SHARE;
 use glam::{Quat, Vec3};
 use jc3vr_body::controllers::{
     body::BodyDimensions,
@@ -75,7 +76,7 @@ pub struct StepInputs {
 /// mirrored for the left.
 pub fn centre(shoulders: [Vec3; 2], torso: Quat, body: &BodyDimensions, side: Hand) -> Vec3 {
     let shoulder = shoulders[side.index()];
-    let drop = (body.shoulder_height - body.height * HIP_HEIGHT_FRACTION).max(0.0);
+    let drop = (body.shoulder_height - body.height * HIP_HEIGHT_SHARE).max(0.0);
     let hip = shoulder - Vec3::Y * drop;
     hip + torso * side.mirror_from_right(VEHICLES.get().ripcord.from_hip_m)
 }
@@ -161,11 +162,6 @@ pub fn step(state: &mut RipcordState, inputs: &StepInputs, events: &mut Vec<Ripc
 pub fn release_all(state: &mut RipcordState, events: &mut Vec<RipcordEvent>) {
     release(state, Release::Gone, events);
 }
-
-/// The standing height of the hip joints as a fraction of the standing height: a generic
-/// anthropometric figure, which the body dimensions do not carry because it varies little between
-/// adults.
-pub const HIP_HEIGHT_FRACTION: f32 = 0.53;
 
 /// The shortest pull distance the tuning can ask for, metres: shorter, the hand's own tremor on
 /// taking the ripcord would pull it.

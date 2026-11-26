@@ -11,7 +11,7 @@
 //! moves away after the line goes slack still misses. The hand it steers toward is the line's
 //! receiver ([`receiver`](crate::controllers::snatch::catch::receiver)).
 
-use body_rig::rotation::{angular_velocity, rotation_error};
+use body_rig::math::rotation::{angular_velocity, rotation_error};
 use glam::{Quat, Vec3};
 use serde::Deserialize;
 

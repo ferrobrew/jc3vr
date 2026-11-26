@@ -13,7 +13,7 @@
 //! turbo jump when tapped, as it does the gamepad's button. On the handlebars the triggers are the
 //! throttle and the brake.
 
-use body_rig::rotation::twist_angle;
+use body_rig::math::rotation::twist_angle;
 use glam::{Quat, Vec3};
 use jc3vr_body::controllers::grab::cockpit::{Button, ControlKind};
 use jc3vr_input::frame::Hand;
