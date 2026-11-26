@@ -9,7 +9,10 @@
 
 use jc3gi::input::input_action_map::Action::{self, *};
 use jc3vr_body::controllers::{
-    intent::controls::{Controls, PadZone},
+    intent::{
+        controls::{Controls, PadZone},
+        grapple_button::{GRAPPLE, GRAPPLE_VEHICLE, PAD_B},
+    },
     mode::{AirborneVariant, Mode, VehicleClass, VehicleSeat},
 };
 use jc3vr_input::{
@@ -61,11 +64,9 @@ pub fn declare<S: Sink>(sink: &mut S, mode: Mode, ctx: &TableCtx) {
     }
 }
 
-/// The virtual gamepad buttons: the gameplay actions the default gamepad keymap puts on each.
-/// `PUSH_GRAPPLE` is left off B: under the hammer ability it is melee, and on B it would melee on
-/// every tether release.
+/// The virtual gamepad buttons: the gameplay actions the default gamepad keymap puts on each. B's
+/// are the grapple's release on foot ([`PAD_B`]).
 pub const PAD_A: &[Action] = &[JUMP, OPEN_PARACHUTE, STUNT_JUMP, BTN_A];
-pub const PAD_B: &[Action] = &[RELEASE_GRAPPLE, CANCEL, BYPASS_FALL_PREVENTION, BTN_B];
 pub const PAD_X_ON_FOOT: &[Action] = &[RELOAD, BTN_X];
 pub const PAD_Y_ON_FOOT: &[Action] = &[USE_ITEM, ENTER_VEHICLE, OPEN_WINGSUIT, BTN_Y];
 /// What the gamepad's B does held, beyond the tethers' release, which the grapple button's double
@@ -88,10 +89,6 @@ pub const DETONATE: &[Action] = &[DETONATE_EXPLOSIVE];
 /// The gamepad's LB in a vehicle, without the grapple it also fires there: the grapple has a button
 /// of its own ([`GRAPPLE_VEHICLE`]).
 pub const PAD_LB_VEHICLE: &[Action] = &[FIRE_VEHICLE_WEAPON_SECONDARY, MC_RELOAD, L1];
-/// The grapple in a vehicle.
-pub const GRAPPLE_VEHICLE: &[Action] = &[FIRE_GRAPPLE];
-/// The grapple on foot, falling, and in the wingsuit: the gamepad's LB.
-pub const GRAPPLE: &[Action] = &[FIRE_GRAPPLE, L1];
 pub const PAD_L3_VEHICLE: &[Action] = &[SOUND_HORN_SIREN, TOGGLE_MAGNET_1, L3];
 /// The weapon slots on the gamepad's d-pad, by direction: the selection cross the game shows
 /// while one is held lays them out the same way, and the release commits.

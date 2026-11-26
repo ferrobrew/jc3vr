@@ -54,8 +54,8 @@ use jc3vr_body::controllers::{
         config::BindingsConfig,
         controls::{ButtonControl, Controls},
         grapple_button::{
-            GrappleActions, GrappleButton, GrappleContext, GrapplePermissions, GrappleTick,
-            LockButton, SeatRequest,
+            GrappleButton, GrappleContext, GrapplePermissions, GrappleTick, LockButton,
+            SeatRequest, grapple_press,
         },
         hold::{Desired, MapKind, Target, Want},
     },
@@ -725,49 +725,6 @@ const MASKABLE: [Physical; 8] = [
     Physical::UpperFace,
     Physical::System,
 ];
-
-/// The grapple's semantic actions in `mode`, and the game actions its gestures drive there.
-pub(crate) const fn grapple_press(mode: Mode) -> Option<(&'static [ActionId], GrappleActions)> {
-    // On foot and in the wingsuit the release is the gamepad's B, which the grapple's button
-    // took. In a vehicle it is the vehicle's own release, which the vehicle reads for a tether
-    // fired from it, with the character's for one fired from a passenger's seat.
-    const ON_FOOT: GrappleActions = GrappleActions {
-        fire: declare::GRAPPLE,
-        release: declare::PAD_B,
-    };
-    const VEHICLE: GrappleActions = GrappleActions {
-        fire: declare::GRAPPLE_VEHICLE,
-        release: &[Action::VEHICLE_RELEASE_GRAPPLE, Action::RELEASE_GRAPPLE],
-    };
-    match mode {
-        Mode::OnFoot(_) | Mode::Airborne(AirborneVariant::Falling | AirborneVariant::Parachute) => {
-            Some((&ON_FOOT_GRAPPLE, ON_FOOT))
-        }
-        Mode::Airborne(AirborneVariant::Wingsuit) => Some((&WINGSUIT_GRAPPLE, ON_FOOT)),
-        Mode::Vehicle(seat) => Some((
-            match seat.class {
-                VehicleClass::Helicopter => &HELICOPTER_GRAPPLE,
-                VehicleClass::Plane => &PLANE_GRAPPLE,
-                VehicleClass::Car
-                | VehicleClass::Motorcycle
-                | VehicleClass::Sea
-                | VehicleClass::Mech
-                | VehicleClass::Unknown => &LAND_GRAPPLE,
-            },
-            VEHICLE,
-        )),
-        Mode::Ui => None,
-    }
-}
-
-const ON_FOOT_GRAPPLE: [ActionId; 2] = [OnFootAction::Grapple.id(), OnFootAction::FireGrapple.id()];
-const WINGSUIT_GRAPPLE: [ActionId; 2] = [
-    WingsuitAction::Grapple.id(),
-    WingsuitAction::FireGrapple.id(),
-];
-const LAND_GRAPPLE: [ActionId; 1] = [LandVehicleAction::Grapple.id()];
-const HELICOPTER_GRAPPLE: [ActionId; 1] = [HelicopterAction::Grapple.id()];
-const PLANE_GRAPPLE: [ActionId; 1] = [PlaneAction::Grapple.id()];
 
 /// Two presses of one gesture as one: held while either is, with either's edges.
 pub(crate) fn merge_buttons(a: ButtonControl, b: ButtonControl) -> ButtonControl {

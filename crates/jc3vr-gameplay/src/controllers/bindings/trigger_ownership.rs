@@ -4,6 +4,7 @@ use jc3gi::input::input_action_map::Action;
 use jc3vr_body::controllers::{
     intent::{
         controls::{ButtonControl, Controls},
+        grapple_button::grapple_press,
         hold::{Desired, MapKind},
     },
     mode::{AirborneVariant, Mode},
@@ -22,7 +23,6 @@ use crate::controllers::{
         intents::{Intent, SemanticInput},
         tables::{
             declare::{TableCtx, declare},
-            grapple_press,
             sink::{Axis, Press, Sink},
         },
     },

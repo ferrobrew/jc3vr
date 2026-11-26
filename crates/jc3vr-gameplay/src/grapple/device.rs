@@ -24,7 +24,7 @@ use jc3vr_body::controllers::{hands::late, physics::grapple_hook as hook};
 use jc3vr_input::frame::Hand;
 use re_utilities::hook_library::HookLibrary;
 
-/// The device's render hook, registered by `crate::hooks`.
+/// The device's render hook, which the payload enables in its hook order.
 pub fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&RIGID_OBJECT_UPDATE_RENDER_BINDER)
 }

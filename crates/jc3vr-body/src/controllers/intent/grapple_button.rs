@@ -37,10 +37,16 @@
 //! game sees no fire input; the double tap and the tightening hold stay as they are.
 
 use jc3gi::input::input_action_map::Action;
+use jc3vr_input::semantic::vocabulary::{
+    ActionId, HelicopterAction, LandVehicleAction, OnFootAction, PlaneAction, WingsuitAction,
+};
 
-use crate::controllers::intent::{
-    controls::ButtonControl,
-    hold::{Desired, MapKind, Target, Want},
+use crate::controllers::{
+    intent::{
+        controls::ButtonControl,
+        hold::{Desired, MapKind, Target, Want},
+    },
+    mode::{AirborneVariant, Mode, VehicleClass},
 };
 
 /// What the grapple's gestures need to know of the game.
@@ -523,6 +529,62 @@ pub struct GrappleActions {
     /// What a double tap clicks to release the tethers.
     pub release: &'static [Action],
 }
+
+/// The grapple's semantic actions in `mode`, and the game actions its gestures drive there.
+pub const fn grapple_press(mode: Mode) -> Option<(&'static [ActionId], GrappleActions)> {
+    // On foot and in the wingsuit the release is the gamepad's B, which the grapple's button
+    // took. In a vehicle it is the vehicle's own release, which the vehicle reads for a tether
+    // fired from it, with the character's for one fired from a passenger's seat.
+    const ON_FOOT: GrappleActions = GrappleActions {
+        fire: GRAPPLE,
+        release: PAD_B,
+    };
+    const VEHICLE: GrappleActions = GrappleActions {
+        fire: GRAPPLE_VEHICLE,
+        release: &[Action::VEHICLE_RELEASE_GRAPPLE, Action::RELEASE_GRAPPLE],
+    };
+    match mode {
+        Mode::OnFoot(_) | Mode::Airborne(AirborneVariant::Falling | AirborneVariant::Parachute) => {
+            Some((&ON_FOOT_GRAPPLE, ON_FOOT))
+        }
+        Mode::Airborne(AirborneVariant::Wingsuit) => Some((&WINGSUIT_GRAPPLE, ON_FOOT)),
+        Mode::Vehicle(seat) => Some((
+            match seat.class {
+                VehicleClass::Helicopter => &HELICOPTER_GRAPPLE,
+                VehicleClass::Plane => &PLANE_GRAPPLE,
+                VehicleClass::Car
+                | VehicleClass::Motorcycle
+                | VehicleClass::Sea
+                | VehicleClass::Mech
+                | VehicleClass::Unknown => &LAND_GRAPPLE,
+            },
+            VEHICLE,
+        )),
+        Mode::Ui => None,
+    }
+}
+
+/// The grapple on foot, falling, and in the wingsuit: the gamepad's LB.
+pub const GRAPPLE: &[Action] = &[Action::FIRE_GRAPPLE, Action::L1];
+/// The grapple in a vehicle.
+pub const GRAPPLE_VEHICLE: &[Action] = &[Action::FIRE_GRAPPLE];
+/// The gamepad's B: the gameplay actions the default gamepad keymap puts on it. `PUSH_GRAPPLE` is
+/// left off: under the hammer ability it is melee, and on B it would melee on every tether release.
+pub const PAD_B: &[Action] = &[
+    Action::RELEASE_GRAPPLE,
+    Action::CANCEL,
+    Action::BYPASS_FALL_PREVENTION,
+    Action::BTN_B,
+];
+
+const ON_FOOT_GRAPPLE: [ActionId; 2] = [OnFootAction::Grapple.id(), OnFootAction::FireGrapple.id()];
+const WINGSUIT_GRAPPLE: [ActionId; 2] = [
+    WingsuitAction::Grapple.id(),
+    WingsuitAction::FireGrapple.id(),
+];
+const LAND_GRAPPLE: [ActionId; 1] = [LandVehicleAction::Grapple.id()];
+const HELICOPTER_GRAPPLE: [ActionId; 1] = [HelicopterAction::Grapple.id()];
+const PLANE_GRAPPLE: [ActionId; 1] = [PlaneAction::Grapple.id()];
 
 /// The retract `held_s` into a tightening hold.
 fn tighten_at(held_s: f32) -> f32 {

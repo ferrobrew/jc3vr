@@ -1,6 +1,9 @@
 //! Semantic button reads shared by input-tick consumers outside the binding tables.
 
-use jc3vr_body::controllers::{intent::controls::ButtonControl, mode::Mode};
+use jc3vr_body::controllers::{
+    intent::{controls::ButtonControl, grapple_button::grapple_press},
+    mode::Mode,
+};
 use jc3vr_input::semantic::vocabulary::OnFootAction;
 
 use crate::controllers::bindings::{intents::SemanticInput, tables};
@@ -26,7 +29,7 @@ pub(super) fn grapple_button_held(semantic: &SemanticInput, mode: Mode) -> bool 
 }
 
 pub(super) fn grapple_button(semantic: &SemanticInput, mode: Mode) -> ButtonControl {
-    tables::grapple_press(mode).map_or_else(ButtonControl::default, |(actions, _)| {
+    grapple_press(mode).map_or_else(ButtonControl::default, |(actions, _)| {
         actions
             .iter()
             .filter_map(|&action| semantic.get(action))

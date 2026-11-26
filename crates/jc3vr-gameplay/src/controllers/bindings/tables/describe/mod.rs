@@ -17,6 +17,7 @@ use jc3gi::input::input_action_map::Action;
 use jc3vr_body::controllers::{
     intent::{
         controls::PadZone,
+        grapple_button::grapple_press,
         rows::{Control, Effect, Gesture, ModAction, Row, StickDir},
     },
     mode::{AirborneVariant, Mode, OnFootVariant, VehicleClass},
@@ -36,7 +37,6 @@ use crate::controllers::{
         tables::{
             body_turn_action, context_masks,
             declare::{TableCtx, declare, vehicle_weapon_actions},
-            grapple_press,
             sink::{Axis, Direction, Gate, Input, PadLayout, Press, Sink, pad_of},
         },
     },

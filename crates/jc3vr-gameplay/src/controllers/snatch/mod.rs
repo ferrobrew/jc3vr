@@ -85,6 +85,7 @@ use jc3vr_body::controllers::{
     haptics,
     intent::{
         controls::ButtonControl,
+        grapple_button::grapple_press,
         hold::Desired,
         yank::{ArmedLine, HandLine, YankConfig, YankDetector},
     },
@@ -100,7 +101,6 @@ pub use crate::controllers::snatch::{
     refusal::Refusal,
 };
 use crate::controllers::{
-    bindings::tables,
     loadout::slot_label,
     physical_hands,
     snatch::{
@@ -403,7 +403,7 @@ pub(crate) unsafe fn finish_tick(input: &FinishInput, desired: &mut Vec<Desired>
     line::publish(line_out);
     state.status.phase = state.phase.label();
     drop(state);
-    if line_out && let Some((_, actions)) = tables::grapple_press(input.detection.mode) {
+    if line_out && let Some((_, actions)) = grapple_press(input.detection.mode) {
         desired.retain(|d| !actions.fire.contains(&d.target.action));
     }
 }

@@ -14,7 +14,7 @@ use jc3vr_body::controllers::{
     },
     intent::{
         controls::Controls,
-        grapple_button::GrapplePermissions,
+        grapple_button::{GrapplePermissions, grapple_press},
         rows::{Control, Effect, Gesture, ModAction, Row},
     },
     mode::{AirborneVariant, Detection, Mode},
@@ -97,7 +97,7 @@ pub(super) fn grapple_routes(
     policy: &Tick,
     triggers: [TriggerMask; 2],
 ) -> Vec<(ActionId, Hand)> {
-    let Some((actions, _)) = tables::grapple_press(mode) else {
+    let Some((actions, _)) = grapple_press(mode) else {
         return Vec::new();
     };
     if !tables::Bindings::grapple_gate_open(mode, controls) {
