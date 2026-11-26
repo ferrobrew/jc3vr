@@ -29,7 +29,6 @@ pub struct SnatchSettings {
 pub fn snatch_yank() -> YankConfig {
     let yank = &SNATCH.get().yank;
     YankConfig {
-        enabled: true,
         min_distance_m: yank.min_distance_m,
         min_speed_mps: yank.min_speed_mps,
         window_s: yank.window_s,

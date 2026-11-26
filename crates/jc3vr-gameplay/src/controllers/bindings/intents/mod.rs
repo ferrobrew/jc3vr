@@ -28,7 +28,7 @@ mod tests;
 
 use glam::Vec2;
 use jc3vr_body::controllers::intent::{
-    config::{BindingsConfig, TRIGGER_DEADZONE},
+    config::{BindingsConfig, trigger_deadzone},
     controls::{ButtonControl, radial_deadzone, scalar_deadzone},
 };
 use jc3vr_input::{
@@ -346,7 +346,7 @@ pub(crate) fn shape(
         ActionValue::Float(raw) => {
             intent.raw = raw;
             intent.value = match component {
-                Some(Component::TriggerValue) => scalar_deadzone(raw, TRIGGER_DEADZONE),
+                Some(Component::TriggerValue) => scalar_deadzone(raw, trigger_deadzone()),
                 Some(Component::ThumbstickX | Component::ThumbstickY) => {
                     signed_deadzone(raw, config.move_deadzone)
                 }

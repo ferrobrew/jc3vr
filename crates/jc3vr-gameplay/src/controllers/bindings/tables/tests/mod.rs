@@ -4,7 +4,7 @@ use glam::Vec2;
 use jc3gi::input::input_action_map::Action::{self, *};
 use jc3vr_body::controllers::{
     intent::{
-        config::{BindingsConfig, LONG_PRESS_S, MENU_STICK_PUSH},
+        config::{BindingsConfig, long_press_s, menu_stick_push},
         controls::HandControls,
     },
     mode::{OnFootVariant, VehicleSeat},

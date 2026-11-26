@@ -3,12 +3,17 @@
 use jc3vr_core::config::engine::ConfigSlot;
 use serde::{Deserialize, Serialize};
 
+use crate::controllers::intent::tuning::CONTROLS;
+
 /// The world-space overlay layer's settings, at `controllers.overlay` in the settings file; the
 /// payload binds the slot at startup.
 pub static OVERLAY_CONFIG: ConfigSlot<OverlayConfig> = ConfigSlot::new("controllers.overlay");
 
-/// How far ahead of Rico the body mirror stands, metres.
-pub const BODY_MIRROR_DISTANCE_M: f32 = 1.2;
+/// How far ahead of Rico the body mirror stands, metres (the controls tuning's
+/// `overlay.body_mirror_distance_m`).
+pub fn body_mirror_distance_m() -> f32 {
+    CONTROLS.get().overlay.body_mirror_distance_m
+}
 
 /// The world-space overlay layer's switches: the grip markers and the in-world diagnostics. The
 /// layer acts only under the controller scheme.

@@ -229,7 +229,7 @@ Every vehicle class shares one scheme. The grips carry nothing binary: they grip
 | Motorcycle lean and tilt | L stick; handlebar lean |
 | Motorcycle throttle | R trigger |
 
-A gun takes over its hand's vehicle weapon action, not a button: rebinding `fire_primary` or `fire_secondary` in the runtime moves the vehicle weapon and the held gun together. In the driver's seat the triggers stay the pedals with a gun in either hand. The exit is a tap of the gamepad's Y at the moment the press becomes long (`intent::config::LONG_PRESS_S`), however long the press goes on, since the game exits only on a release of Y that was held briefly ([input.md, "Leaving and changing seats"](../../engine/gameplay/input.md#leaving-and-changing-seats)). The game's hold of Y, which moves to the gunner seat or the cargo bay where there is one, is not offered: it would have to be told apart from the exit before the exit is sent, and a player holding the button to exit holds it well past the game's hold time.
+A gun takes over its hand's vehicle weapon action, not a button: rebinding `fire_primary` or `fire_secondary` in the runtime moves the vehicle weapon and the held gun together. In the driver's seat the triggers stay the pedals with a gun in either hand. The exit is a tap of the gamepad's Y at the moment the press becomes long (the controls [tuning](../tuning.md)'s `bindings.long_press_s`), however long the press goes on, since the game exits only on a release of Y that was held briefly ([input.md, "Leaving and changing seats"](../../engine/gameplay/input.md#leaving-and-changing-seats)). The game's hold of Y, which moves to the gunner seat or the cargo bay where there is one, is not offered: it would have to be told apart from the exit before the exit is sent, and a player holding the button to exit holds it well past the game's hold time.
 
 #### Helicopter
 
@@ -393,7 +393,7 @@ In the seated posture, the crouch toggle moves the eye height between the standi
 JC3 vehicles are entered through animations in which Rico crosses metres of world, opens doors, and hijacks drivers. Under a head-anchored camera the entry is a forced camera movement that ends at an arbitrary yaw, which is a strong vection source. Bonelab avoids the problem (its vehicles are mount-in-place with trigger-volume seats and no entry animation), and LukeRoss's R.E.A.L. GTA V mod, a seated camera-only port, advises players to accept the ride or close their eyes. The mode enum below shares one seat re-base mechanism: the seated head reference is the character's own head and eye bones, which ride the vehicle through `m_AttachBone` and `m_AttachOffset`. The game's vehicle predicates do not separate an entry, a locked seat, and an exit, so the seat phase is classified from the body rule system's current state by name, against the entry, exit, seated, and seat-change states of Rico's base animation graph (`controllers::roomscale::seat`).
 
 - Instant: at seat lock the cockpit re-bases immediately and the world stays live. The player's real posture is tolerated, and the player can recenter with F7. The entry animation is hidden by a fade that clears at the lock; the exit plays live and re-bases yaw and height once the character is out.
-- Fade: fade out when the entry animation takes the camera, and fade in seated once the re-based view has settled (`roomscale::seat::SEAT_FADE_HOLD_S`). The exit also plays behind a fade.
+- Fade: fade out when the entry animation takes the camera, and fade in seated once the re-based view has settled (the roomscale tuning's `seat.fade_hold_s`). The exit also plays behind a fade.
 - Ride: the head stays anchored through the full animation with nothing hidden, and at seat lock only the cockpit's yaw re-bases, by the head's offset from the body when the body stopped following ([controllers.md, "Posture and roomscale"](controllers.md#posture-and-roomscale)). It is the default until the other modes are proven in the headset, because it is the mod's existing behaviour, and it stays as the intense option.
 - Ceremony, deferred with the rest of the mod UI because it needs a confirmation prompt: the entry animation plays; at seat lock the game clock freezes and the floating panel asks the player to take their seat and confirm; on confirmation the mod re-bases, unfreezes, and enables the `vehicle` action set. The freeze is a mod-side clock freeze through the hooked `CClock::Update` (zero game dt, skipped sim tick), never the game's own pause, because `UpdateRenderPaused` does not run `CameraTree::UpdateRenderContexts`, and a real pause freezes the camera under head motion. Exit reverses the sequence. Whether the frozen world dims is decided in the headset.
 
@@ -472,7 +472,7 @@ A setting marked "off" below is off by default and has to be switched on to test
 | OpenXR actions, poses, haptics queue, and hand tracking | `enabled`, `input.hand_tracking`; the press thresholds are fixed in `vr::input::config` | Built. The hand-tracking joints are published for the finger curls. |
 | Scheme selection | `enabled`; the controller scheme is in effect while a controller is active | Built. |
 | Body dimensions and remap | the settings file's `[body]` section; `body.remap_hands` (on), `body.remap_head` (on) | Built. The head remap feeds the view through the posture (milestone 2). |
-| Mode detection | none (`mode::DEBOUNCE_TICKS`) | Built. The headpose sim keeps its own on-foot test. |
+| Mode detection | none (the controls tuning's `mode.debounce_ticks`) | Built. The headpose sim keeps its own on-foot test. |
 | Bindings and injection | `bindings.move_deadzone`, `dominant_hand`, `locomotion.direction` (`Head` or `OffHand`) | Built for every mode. An off-hand grip press inside a grab volume (milestone 3) grabs, and elsewhere fires the grapple. Falling and under the parachute the dominant hand keeps the on-foot fire, reload, and grenade bindings. The wingsuit's evade is unbound. |
 | Gamepad semantics | none; always on under the controller scheme | Built. |
 | Aim-state pin and mental-state cuts | The arm aim IK skip, the pins, the neutral aim point, the wall-block clear, and the mental-state cuts act whenever the controller scheme is in effect | Built, except the strafe reference correction (see "The aim-state pin"). |
@@ -487,12 +487,12 @@ The settings are under `roomscale`, except the head remap (`body.remap_head`). T
 
 | Part | Settings | State |
 |---|---|---|
-| Posture and STAGE space | `posture` (`Auto`, `Seated`, or `Standing`) | Built. `Auto` detects seated from the head height (`roomscale::posture::AUTO_POSTURE`). |
+| Posture and STAGE space | `posture` (`Auto`, `Seated`, or `Standing`) | Built. `Auto` detects seated from the head height (the roomscale tuning's `posture`). |
 | Head height remap | `body.remap_head` (on) | Built. |
-| Seated crouch toggle | No settings; the flick is `CROUCH_FLICK` in `intent::config` | Built. It works with or without the head remap. |
+| Seated crouch toggle | No settings; the flick is the controls tuning's `bindings.crouch_flick` | Built. It works with or without the head remap. |
 | The body following the head and the teleport re-base | `body.rig.steps` (on) | Built ([rig.md](../body/rig.md)). |
 | The head-through-geometry fade | `head_fade.enabled` (on) | Built. The fade darkens the image in the VR blit. |
-| The crouch capsule | No settings; the depths are `CROUCH_ENTER_DROP_M` and `CROUCH_EXIT_DROP_M` in `roomscale::crouch` | Built. The AI response to a lowered head is not measured. |
+| The crouch capsule | No settings; the depths are the roomscale tuning's `crouch.enter_drop_m` and `crouch.exit_drop_m` | Built. The AI response to a lowered head is not measured. |
 | Seat transitions | `seat_transition` (`Ride` by default, `Instant`, or `Fade`) | Built. Ceremony is deferred with the mod UI. |
 
 ### Milestone 3: holding
@@ -508,7 +508,7 @@ The settings are under `weapons` unless named otherwise. The description is in [
 | Haptics | `haptics.enabled`, `haptics.intensity`, and `haptics.game_rumble` ([haptics.md](haptics.md)) | Built. |
 | Separate pistols | none | Built, as part of the two-handed inventory: each pistol its own weapon, a pistol in each hand ([physical-weapons.md, "Separate pistols"](physical-weapons.md#separate-pistols)). |
 | The anchored tier for the grapple line and the hang push | No settings; the swing tuning is fixed in `controllers::hands::anchor` | Built for the reel and hang states. A grapple hand that holds anything (a gun, a prop, a grenade, or a charge) stays free. |
-| The yank gesture | No settings; the detector is fixed at `GRAPPLE_YANK` | Built. It is disarmed while the line carries the character (the reel-in and the hang). |
+| The yank gesture | No settings; the detector is the controls tuning's `grapple_yank` | Built. It is disarmed while the line carries the character (the reel-in and the hang). |
 | F7 on foot | none | Re-bases yaw and height only out of a vehicle seat, and the rig snaps the pelvis under the neck ([rig.md, "Recentering"](../body/rig.md#recentering)). |
 
 ### Milestone 4: vehicles and flight

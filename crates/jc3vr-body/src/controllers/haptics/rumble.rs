@@ -37,6 +37,7 @@ use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
     haptics::{self, HapticsConfig, config::HAPTICS_CONFIG, shot},
+    intent::tuning::CONTROLS,
     scheme,
 };
 
@@ -67,13 +68,13 @@ impl Motors {
 
 /// A shot's amplitude: its rumble's strength raised by its recoil kick (radians).
 pub fn shot_amplitude(strength: f32, kick_rad: f32) -> f32 {
-    (strength + kick_rad.abs() * KICK_AMPLITUDE_PER_RAD).clamp(0.0, 1.0)
+    (strength + kick_rad.abs() * CONTROLS.get().rumble.kick_amplitude_per_rad).clamp(0.0, 1.0)
 }
 
 /// The length a weapon's fire rumble plays for on a controller.
 pub fn shot_duration(time: f32) -> f32 {
     if time.is_finite() {
-        time.clamp(0.0, MAX_SHOT_S)
+        time.clamp(0.0, CONTROLS.get().rumble.max_shot_s)
     } else {
         0.0
     }
@@ -86,7 +87,7 @@ pub fn kick(hand: Hand, kick_rad: f32) {
         return;
     }
     let scale = shot_amplitude(0.0, kick_rad);
-    if scale > MIN_AMPLITUDE {
+    if scale > CONTROLS.get().rumble.min_amplitude {
         haptics::play_scaled(hand, Event::Kick, scale);
     }
 }
@@ -127,13 +128,6 @@ pub struct ContinuousMotor {
 }
 
 const WEAPON_FIRE: &str = "WeaponFire";
-/// Below this, a kick plays nothing.
-const MIN_AMPLITUDE: f32 = 0.01;
-/// How much a shot's recoil kick adds to its pulse's amplitude, per radian of kick.
-const KICK_AMPLITUDE_PER_RAD: f32 = 6.0;
-/// The longest a weapon's fire rumble plays on a controller, seconds: the game's rumbles can last
-/// long enough to blur into one another.
-const MAX_SHOT_S: f32 = 0.4;
 
 fn acting() -> Option<HapticsConfig> {
     let enabled = scheme::enabled();
@@ -288,7 +282,7 @@ mod tests {
 
     #[test]
     fn long_rumbles_are_capped() {
-        assert_eq!(shot_duration(5.0), MAX_SHOT_S);
+        assert_eq!(shot_duration(5.0), CONTROLS.get().rumble.max_shot_s);
         assert_eq!(shot_duration(0.1), 0.1);
         assert_eq!(shot_duration(f32::NAN), 0.0);
     }

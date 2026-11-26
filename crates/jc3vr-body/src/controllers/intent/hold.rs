@@ -21,6 +21,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use jc3gi::input::input_action_map::Action;
 
+use crate::controllers::intent::tuning::CONTROLS;
+
 /// The action map a write goes to.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum MapKind {
@@ -63,8 +65,8 @@ impl Target {
 pub enum Want {
     /// Held down with this value, `0..=1`.
     Hold(f32),
-    /// An analog half-axis with this value, `0..=1`: pressed above [`ANALOG_PRESS`], a bare value
-    /// below it.
+    /// An analog half-axis with this value, `0..=1`: pressed above the controls tuning's
+    /// `hold.analog_press`, a bare value below it.
     Analog(f32),
     /// A one-tick click with no hold.
     Click,
@@ -126,10 +128,6 @@ pub struct ActionWrite {
     pub phase: Phase,
 }
 
-/// The analog value above which an analog action also reads as pressed. The game's devices press
-/// at their own button threshold, which is not read; this stands in for it.
-pub const ANALOG_PRESS: f32 = 0.2;
-
 /// The hold timers of every action the bindings hold, and the other effectors they wrote on the
 /// last tick.
 #[derive(Debug, Clone, Default)]
@@ -178,7 +176,7 @@ impl HoldTracker {
         );
         for (&target, m) in &merged {
             let analog = sanitize(m.analog);
-            let pressed = m.hold.is_some() || analog > ANALOG_PRESS;
+            let pressed = m.hold.is_some() || analog > CONTROLS.get().hold.analog_press;
             let value = m.hold.map_or(analog, |h| sanitize(h).max(analog));
             let previous = self.held.get(&target).copied();
             let phase = match (pressed, previous) {
@@ -319,7 +317,9 @@ impl Merged {
     /// Whether the merged want writes a pressed state this tick, overwriting a click left from the
     /// last tick.
     fn writes_a_press(&self) -> bool {
-        self.click || self.hold.is_some() || sanitize(self.analog) > ANALOG_PRESS
+        self.click
+            || self.hold.is_some()
+            || sanitize(self.analog) > CONTROLS.get().hold.analog_press
     }
 }
 

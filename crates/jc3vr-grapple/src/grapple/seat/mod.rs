@@ -11,7 +11,7 @@ use glam::Vec3;
 use jc3vr_body::controllers::{
     facts::seat::stands_in,
     haptics,
-    intent::grapple_button::{SeatRequest, TAP_S},
+    intent::grapple_button::{SeatRequest, tap_s},
     physics::local_player::LocalPlayer,
 };
 use jc3vr_core::game_tick::GameTick;
@@ -308,7 +308,7 @@ pub(crate) fn step(
                 second
             };
             let released = released || !input.held;
-            let long_hold = held_s >= TAP_S;
+            let long_hold = held_s >= tap_s();
             if released && long_hold && second.is_none() {
                 return cancel(None);
             }
@@ -380,7 +380,7 @@ impl Pending {
             target: input.target.filter(|at| at.point.is_finite())?,
             request,
             held_s: if request == SeatRequest::Hold {
-                TAP_S
+                tap_s()
             } else {
                 0.0
             },
@@ -399,7 +399,7 @@ impl Pending {
                 self.second = input.target.filter(|at| at.point.is_finite());
             }
         }
-        (!(self.released && self.held_s >= TAP_S && self.second.is_none())).then_some(self)
+        (!(self.released && self.held_s >= tap_s() && self.second.is_none())).then_some(self)
     }
 }
 

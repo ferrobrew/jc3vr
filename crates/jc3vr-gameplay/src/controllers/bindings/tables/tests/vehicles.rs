@@ -220,10 +220,10 @@ fn the_right_a_taps_for_the_stunt_and_holds_to_exit() {
                 let mut b = Bindings::default();
                 let mut t = 0.0;
                 let mut exits = 0;
-                while t < LONG_PRESS_S * 4.0 {
+                while t < long_press_s() * 4.0 {
                     let step = b.sim_step(mode, &held, DT);
                     let exit = player(&step, EXIT_VEHICLE).is_some();
-                    let becomes_long = t >= LONG_PRESS_S && t - DT < LONG_PRESS_S;
+                    let becomes_long = t >= long_press_s() && t - DT < long_press_s();
                     assert_eq!(exit, becomes_long, "{mode:?} at {t} s");
                     for action in [ENTER_VEHICLE, BTN_Y] {
                         assert_eq!(player(&step, action).is_some(), exit, "{action:?} at {t} s");
@@ -255,7 +255,7 @@ fn long_exit(mode: Mode, mut bail: impl FnMut(f32, bool) -> bool) -> Vec<(f32, b
     let mut ticks = Vec::new();
     let mut t = 0.0;
     let mut step = |b: &mut Bindings, c: &mut Controls, t: f32| {
-        c.bail = bail(t, b.exit_press_long(seat, LONG_PRESS_S));
+        c.bail = bail(t, b.exit_press_long(seat, long_press_s()));
         let step = b.sim_step(mode, c, DT);
         (
             t,
@@ -263,7 +263,7 @@ fn long_exit(mode: Mode, mut bail: impl FnMut(f32, bool) -> bool) -> Vec<(f32, b
             player(&step, EXIT_VEHICLE).is_some() || player(&step, BTN_Y).is_some(),
         )
     };
-    while t < LONG_PRESS_S * 4.0 {
+    while t < long_press_s() * 4.0 {
         ticks.push(step(&mut b, &mut c, t));
         t += DT;
     }
@@ -287,7 +287,7 @@ fn a_long_right_a_that_bails_holds_open_parachute() {
         let (last, held) = ticks.split_last().expect("ticks");
         for &(t, parachute, exit) in held {
             assert!(!exit, "{mode:?} exits at {t} s");
-            assert_eq!(parachute, t >= LONG_PRESS_S, "{mode:?} at {t} s");
+            assert_eq!(parachute, t >= long_press_s(), "{mode:?} at {t} s");
         }
         assert_eq!(*last, (last.0, false, false), "{mode:?} on the release");
     }
@@ -364,7 +364,7 @@ fn a_long_right_a_that_does_not_bail_exits() {
 /// on the way from `from` to `to` just after it becomes long.
 fn crossing(from: f32, to: f32) -> impl Fn(f32) -> f32 {
     move |t| {
-        if t < LONG_PRESS_S + DT * 1.5 {
+        if t < long_press_s() + DT * 1.5 {
             from
         } else {
             to
@@ -418,7 +418,7 @@ fn the_bail_or_the_exit_is_chosen_once_per_press() {
         let ticks = run(speed);
         let (_, held) = ticks.split_last().expect("ticks");
         for &(t, parachute, exit) in held {
-            let long = t >= LONG_PRESS_S;
+            let long = t >= long_press_s();
             assert_eq!(parachute, bails && long, "{name}: the parachute at {t} s");
             if bails {
                 assert!(!exit, "{name}: an exit at {t} s");
@@ -483,7 +483,7 @@ fn a_long_hold_writes_the_exit_as_a_tap() {
             .map(|w| w.phase)
     };
     let mut phases = Vec::new();
-    let ticks = (LONG_PRESS_S * 4.0 / DT) as usize;
+    let ticks = (long_press_s() * 4.0 / DT) as usize;
     for _ in 0..ticks {
         let step = b.sim_step(mode, &c, DT);
         phases.extend(exit(&tracker.resolve(&step.desired, DT)));

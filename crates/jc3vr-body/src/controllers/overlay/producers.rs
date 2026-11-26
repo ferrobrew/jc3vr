@@ -36,6 +36,7 @@ use crate::controllers::{
         estimator,
         rig::{grounded, visual},
     },
+    intent::tuning::CONTROLS,
     overlay::config::OVERLAY_CONFIG,
     scheme,
 };
@@ -121,7 +122,9 @@ fn ticked_grapple_point(point: Vec3) -> Anchor {
     let mut ticks = GRAPPLE_TICKS.lock();
     let (_, current) = *ticks;
     let (previous, current) = match current {
-        Some(current) if current.distance(point) < TICKED_JUMP_M => (current, point),
+        Some(current) if current.distance(point) < CONTROLS.get().overlay.ticked_jump_m => {
+            (current, point)
+        }
         _ => (point, point),
     };
     *ticks = (Some(previous), Some(current));
@@ -130,10 +133,6 @@ fn ticked_grapple_point(point: Vec3) -> Anchor {
 
 /// The grapple's aim point on the tick before last and the last tick.
 static GRAPPLE_TICKS: Mutex<(Option<Vec3>, Option<Vec3>)> = Mutex::new((None, None));
-
-/// A move of the aim point beyond this between ticks is a new target, metres, drawn there at once
-/// rather than swept across.
-const TICKED_JUMP_M: f32 = 3.0;
 
 pub fn grapple_highlight(
     g: &GrappleAim,
@@ -144,8 +143,9 @@ pub fn grapple_highlight(
     if !g.valid {
         return;
     }
+    let overlay = &CONTROLS.get().overlay;
     let facing = off_hit
-        .filter(|hit| hit.position.distance(g.point) < SURFACE_MATCH_M)
+        .filter(|hit| hit.position.distance(g.point) < overlay.surface_match_m)
         .map_or(Facing::Billboard, |hit| Facing::Surface {
             normal: hit.normal,
         });
@@ -157,7 +157,7 @@ pub fn grapple_highlight(
     };
     out.push(Primitive::Sprite {
         at,
-        size: SpriteSize::Angular(GRAPPLE_RING_RAD),
+        size: SpriteSize::Angular(overlay.grapple_ring_rad),
         facing,
         shape: Shape::Ring { thickness: 0.3 },
         color,
@@ -166,7 +166,7 @@ pub fn grapple_highlight(
     if g.assist.is_some() {
         out.push(Primitive::Sprite {
             at,
-            size: SpriteSize::Angular(GRAPPLE_RING_RAD * ASSIST_RING_SCALE),
+            size: SpriteSize::Angular(overlay.grapple_ring_rad * overlay.assist_ring_scale),
             facing: Facing::Billboard,
             shape: Shape::Ring { thickness: 0.12 },
             color: with_alpha(color, 0.6),
@@ -176,7 +176,7 @@ pub fn grapple_highlight(
     if g.tetherable {
         out.push(Primitive::Sprite {
             at,
-            size: SpriteSize::Angular(GRAPPLE_RING_RAD * 0.3),
+            size: SpriteSize::Angular(overlay.grapple_ring_rad * 0.3),
             facing,
             shape: Shape::Disc,
             color,
@@ -188,9 +188,10 @@ pub fn grapple_highlight(
 /// The sight tuning marker: a ring and a centre dot at the marker, over the scene, and a dot where
 /// the dominant hand's sight line passes closest to it, while that hand aims a gun.
 pub fn sight_marker(marker: Vec3, dominant: Option<HandAim>, out: &mut Vec<Primitive>) {
+    let overlay = &CONTROLS.get().overlay;
     for (shape, size) in [
-        (Shape::Ring { thickness: 0.25 }, MARKER_RING_RAD),
-        (Shape::Disc, MARKER_DOT_RAD),
+        (Shape::Ring { thickness: 0.25 }, overlay.marker_ring_rad),
+        (Shape::Disc, overlay.marker_dot_rad),
     ] {
         out.push(Primitive::Sprite {
             at: Anchor::World(marker),
@@ -210,7 +211,7 @@ pub fn sight_marker(marker: Vec3, dominant: Option<HandAim>, out: &mut Vec<Primi
     }
     out.push(Primitive::Sprite {
         at: Anchor::World(aim.ray.at(along)),
-        size: SpriteSize::Angular(MARKER_DOT_RAD),
+        size: SpriteSize::Angular(overlay.marker_dot_rad),
         facing: Facing::Billboard,
         shape: Shape::Disc,
         color: LASER,
@@ -237,15 +238,6 @@ const GRAPPLE: Rgba = [0.3, 0.9, 1.0, 0.9];
 const TETHER: Rgba = [1.0, 0.65, 0.15, 0.95];
 const LASER: Rgba = [1.0, 0.15, 0.1, 0.95];
 const MARKER: Rgba = [1.0, 0.9, 0.2, 0.95];
-
-/// How close the off-hand's hit must be to the grapple's point for the highlight to take its
-/// surface normal.
-const SURFACE_MATCH_M: f32 = 0.5;
-const GRAPPLE_RING_RAD: f32 = 0.035;
-/// The aim assist's lock ring's size against the grapple's ring.
-const ASSIST_RING_SCALE: f32 = 1.6;
-const MARKER_RING_RAD: f32 = 0.02;
-const MARKER_DOT_RAD: f32 = 0.003;
 
 /// Build `source`'s primitives into `buffer` and submit them while `enabled`, or clear the slot.
 fn submit_or_clear(

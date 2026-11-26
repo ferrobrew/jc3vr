@@ -12,7 +12,7 @@ use jc3vr_view::vr::input::{
 use crate::controllers::{
     grab::GrabVolume,
     intent::{
-        config::{BindingsConfig, TRIGGER_DEADZONE},
+        config::{BindingsConfig, trigger_deadzone},
         grapple_button::GrappleContext,
     },
 };
@@ -151,7 +151,7 @@ impl Controls {
             let hand = frame.hand(which);
             let button = |b| ButtonControl::of(hand, edges, which, b);
             HandControls {
-                trigger: scalar_deadzone(hand.inputs.trigger, TRIGGER_DEADZONE),
+                trigger: scalar_deadzone(hand.inputs.trigger, trigger_deadzone()),
                 trigger_press: button(Button::TriggerPress),
                 grip: button(Button::SqueezePress),
                 hold: button(Button::SqueezePress),

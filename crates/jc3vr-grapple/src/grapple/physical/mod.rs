@@ -37,7 +37,7 @@ use jc3gi::equipment::grappling_hook::GrapplingHookState;
 use jc3vr_body::controllers::{
     hands::anchor,
     haptics,
-    intent::yank::{GRAPPLE_YANK, HandLine, LineYank},
+    intent::yank::{HandLine, LineYank, grapple_yank},
     mode::{Detection, Traversal},
     physics::{grapple_hook as hook, grapple_hook::HookRead},
 };
@@ -218,7 +218,7 @@ pub fn input_tick(game: &GameTick<'_>, input: &TickInput) -> TickOutput {
         input.line,
         headpose::xr::cockpit_pose().map(|pose| pose.position),
         drive_reel,
-        &GRAPPLE_YANK,
+        grapple_yank(),
     );
     let locked = lock::holds();
     let lock_yank = locked && boost.is_some();

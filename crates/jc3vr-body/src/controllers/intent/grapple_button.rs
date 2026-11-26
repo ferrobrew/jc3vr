@@ -12,7 +12,7 @@
 //!   gamepad's B, which also cancels and steps off a ledge, since the grapple took that button;
 //! - a hold with a grapple target under the aim is the game's hold, a new tether;
 //! - a hold with nothing new under the aim tightens the tethers, the retract rising from
-//!   [`TIGHTEN_START`] to [`TIGHTEN_HELD`] over [`TIGHTEN_RAMP_S`]; pulling the hand back while
+//!   `grapple_button.tighten_start` to `tighten_held` over `tighten_ramp_s`; pulling the hand back while
 //!   holding tightens harder, by the physical grapple's pull (`grapple::physical`),
 //!   which the bindings merge with this retract, the larger winning;
 //! - a sharp pull of the hand while the button is held, with a line attached, zips along the
@@ -24,7 +24,7 @@
 //! While the hook reels in along a line to a target the lock can hold
 //! ([`GrappleContext::reeling`]), from the reel's wind-up on, the button is the lock's
 //! (`grapple::physical::lock`): a press locks the line's length at once, or, in the
-//! wind-up, as soon as the reel carries the character; a release within [`TAP_S`] unlocks it and
+//! wind-up, as soon as the reel carries the character; a release within `grapple_button.tap_s` unlocks it and
 //! resumes the reel, firing nothing, since a fire onto the attached line can release it; a release
 //! after a longer hold lets go of the line; and a yank of the grapple hand while it is held unlocks
 //! it and resumes the reel. The game sees no held fire input through any of it. A press that
@@ -45,6 +45,7 @@ use crate::controllers::{
     intent::{
         controls::ButtonControl,
         hold::{Desired, MapKind, Target, Want},
+        tuning::CONTROLS,
     },
     mode::{AirborneVariant, Mode, VehicleClass},
 };
@@ -131,7 +132,7 @@ pub enum LockButton {
     Pressed,
     /// The button is held into the lock.
     Held,
-    /// The button came up within [`TAP_S`]: unlock, the reel resuming. Nothing is fired onto the
+    /// The button came up within the controls tuning's `grapple_button.tap_s`: unlock, the reel resuming. Nothing is fired onto the
     /// attached line.
     Tapped,
     /// The button came up after a longer hold: let go of the line.
@@ -170,16 +171,11 @@ pub struct GrappleButton {
     traversal_spent: bool,
 }
 
-/// How long a press may be held and still be a tap, seconds.
-pub const TAP_S: f32 = 0.25;
-/// How soon a second tap must follow a first for a double tap, seconds.
-pub const DOUBLE_TAP_S: f32 = 0.3;
-/// The retract a tightening hold starts at.
-pub const TIGHTEN_START: f32 = 0.35;
-/// The retract a tightening hold rises to on its own; the hand's pull tightens past it.
-pub const TIGHTEN_HELD: f32 = 0.7;
-/// How long a tightening hold takes to rise to [`TIGHTEN_HELD`], seconds.
-pub const TIGHTEN_RAMP_S: f32 = 1.0;
+/// How long a press may be held and still be a tap, seconds (the controls tuning's
+/// `grapple_button.tap_s`).
+pub fn tap_s() -> f32 {
+    CONTROLS.get().grapple_button.tap_s
+}
 
 impl GrappleButton {
     pub const fn new() -> Self {
@@ -313,7 +309,7 @@ impl GrappleButton {
                 // release with the aim on a new target fires the hook again at it, which the game
                 // takes from the reel; with the aim on the attached line it fires nothing, since a
                 // fire onto the line can release it.
-                let tapped = held_s < TAP_S;
+                let tapped = held_s < tap_s();
                 out.lock = Some(if tapped {
                     LockButton::Tapped
                 } else {
@@ -348,7 +344,7 @@ impl GrappleButton {
             },
             Phase::TapWaiting { waited_s } => {
                 let waited_s = waited_s + dt;
-                if waited_s >= DOUBLE_TAP_S {
+                if waited_s >= CONTROLS.get().grapple_button.double_tap_s {
                     out.fire = Some(Want::Click);
                     Phase::Idle
                 } else {
@@ -390,13 +386,13 @@ impl GrappleButton {
             }
             Phase::Pressed { held_s, second } => {
                 let held_s = held_s + dt;
-                if held_s < TAP_S {
+                if held_s < tap_s() {
                     Phase::Pressed { held_s, second }
                 } else if context.aim_target || !context.tethers {
                     out.fire = Some(Want::Hold(1.0));
                     Phase::Firing
                 } else {
-                    out.tighten = Some(TIGHTEN_START);
+                    out.tighten = Some(CONTROLS.get().grapple_button.tighten_start);
                     Phase::Tightening { held_s: 0.0 }
                 }
             }
@@ -588,13 +584,15 @@ const PLANE_GRAPPLE: [ActionId; 1] = [PlaneAction::Grapple.id()];
 
 /// The retract `held_s` into a tightening hold.
 fn tighten_at(held_s: f32) -> f32 {
-    let t = (held_s / TIGHTEN_RAMP_S.max(1e-3)).clamp(0.0, 1.0);
-    TIGHTEN_START + (TIGHTEN_HELD - TIGHTEN_START) * t
+    let tuning = &CONTROLS.get().grapple_button;
+    let t = (held_s / tuning.tighten_ramp_s.max(1e-3)).clamp(0.0, 1.0);
+    tuning.tighten_start + (tuning.tighten_held - tuning.tighten_start) * t
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::controllers::intent::tuning::GrappleButtonTuning;
 
     #[test]
     fn snatch_consumes_cancelled_press_and_release_until_observed_neutral() {
@@ -635,6 +633,10 @@ mod tests {
     }
 
     const DT: f32 = 1.0 / 30.0;
+
+    fn button() -> &'static GrappleButtonTuning {
+        &CONTROLS.get().grapple_button
+    }
     const UP: ButtonControl = ButtonControl {
         down: false,
         pressed: false,
@@ -703,7 +705,7 @@ mod tests {
     fn hold(g: &mut GrappleButton, context: GrappleContext) -> GrappleOutput {
         apply(g, PRESS, context);
         let mut out = GrappleOutput::default();
-        for _ in 0..(TAP_S / DT).ceil() as usize + 2 {
+        for _ in 0..(button().tap_s / DT).ceil() as usize + 2 {
             out = apply(g, HELD, context);
         }
         out
@@ -793,7 +795,7 @@ mod tests {
             assert!(permissions.release);
             assert_eq!(permissions.tighten, !context.aim_target);
             let mut out = GrappleOutput::default();
-            for _ in 0..(TAP_S / DT).ceil() as usize + 2 {
+            for _ in 0..(button().tap_s / DT).ceil() as usize + 2 {
                 out = apply(&mut g, HELD, context);
             }
             assert_eq!(out.tighten.is_some(), permissions.tighten);
@@ -915,7 +917,7 @@ mod tests {
         let mut g = GrappleButton::new();
         let out = run(&mut g, TETHERS, &[PRESS, RELEASE]);
         assert!(fires(&out).is_empty(), "it waits for a second tap");
-        let wait = (DOUBLE_TAP_S / DT).ceil() as usize + 1;
+        let wait = (button().double_tap_s / DT).ceil() as usize + 1;
         let out = run(&mut g, TETHERS, &vec![UP; wait]);
         assert_eq!(fires(&out), vec![Want::Click]);
         assert!(out.iter().all(|o| !o.release));
@@ -926,7 +928,7 @@ mod tests {
         let mut g = GrappleButton::new();
         let out = run(&mut g, TETHERS, &[PRESS, RELEASE, UP, PRESS, RELEASE, UP]);
         assert_eq!(out.iter().filter(|o| o.release).count(), 1);
-        let wait = (DOUBLE_TAP_S / DT).ceil() as usize + 1;
+        let wait = (button().double_tap_s / DT).ceil() as usize + 1;
         let later = run(&mut g, TETHERS, &vec![UP; wait]);
         assert!(fires(&out).is_empty() && fires(&later).is_empty());
     }
@@ -939,7 +941,7 @@ mod tests {
             reeling: false,
             ..TETHERS
         };
-        let hold = (TAP_S / DT).ceil() as usize + 2;
+        let hold = (button().tap_s / DT).ceil() as usize + 2;
         let mut buttons = vec![PRESS];
         buttons.extend(vec![HELD; hold]);
         let out = run(&mut g, aimed, &buttons);
@@ -954,15 +956,17 @@ mod tests {
     #[test]
     fn a_hold_with_nothing_new_under_the_aim_tightens_and_ramps() {
         let mut g = GrappleButton::new();
-        let hold = (TAP_S / DT).ceil() as usize + (TIGHTEN_RAMP_S / DT).ceil() as usize + 4;
+        let hold = (button().tap_s / DT).ceil() as usize
+            + (button().tighten_ramp_s / DT).ceil() as usize
+            + 4;
         let mut buttons = vec![PRESS];
         buttons.extend(vec![HELD; hold]);
         let out = run(&mut g, TETHERS, &buttons);
         let tighten: Vec<f32> = out.iter().filter_map(|o| o.tighten).collect();
         assert!(!tighten.is_empty());
-        assert!((tighten[0] - TIGHTEN_START).abs() < 1e-6);
+        assert!((tighten[0] - button().tighten_start).abs() < 1e-6);
         assert!(tighten.windows(2).all(|w| w[1] >= w[0]), "it ramps up");
-        assert!((tighten.last().unwrap() - TIGHTEN_HELD).abs() < 1e-6);
+        assert!((tighten.last().unwrap() - button().tighten_held).abs() < 1e-6);
         assert!(fires(&out).is_empty(), "a tightening hold fires nothing");
         let out = run(&mut g, TETHERS, &[RELEASE]);
         assert!(out[0].tighten.is_none());
@@ -1052,7 +1056,7 @@ mod tests {
 
         let mut g = GrappleButton::new();
         assert_eq!(g.step(tick(PRESS, REELING)).lock, Some(LockButton::Pressed));
-        for _ in 0..(TAP_S / DT).ceil() as usize + 1 {
+        for _ in 0..(button().tap_s / DT).ceil() as usize + 1 {
             assert_eq!(g.step(tick(HELD, REELING)).lock, Some(LockButton::Held));
         }
         assert_eq!(g.step(tick(RELEASE, REELING)).lock, Some(LockButton::LetGo));
@@ -1121,7 +1125,7 @@ mod tests {
     fn a_long_hold_lets_go_of_the_line_on_release_and_fires_nothing() {
         let mut g = GrappleButton::new();
         let mut buttons = vec![PRESS];
-        buttons.extend(vec![HELD; (TAP_S / DT).ceil() as usize + 2]);
+        buttons.extend(vec![HELD; (button().tap_s / DT).ceil() as usize + 2]);
         buttons.extend([RELEASE, UP]);
         let out = run(&mut g, REELING, &buttons);
         assert_eq!(locks(&out).last(), Some(&LockButton::LetGo));
@@ -1149,7 +1153,7 @@ mod tests {
         // The reel ending under the lock (a landing, a break) does not hand the held button back.
         let mut g = GrappleButton::new();
         run(&mut g, REELING, &[PRESS]);
-        let mut buttons = vec![HELD; (TAP_S / DT).ceil() as usize + 2];
+        let mut buttons = vec![HELD; (button().tap_s / DT).ceil() as usize + 2];
         buttons.push(RELEASE);
         let out = run(&mut g, GrappleContext::default(), &buttons);
         assert_eq!(locks(&out).last(), Some(&LockButton::LetGo));
@@ -1169,7 +1173,7 @@ mod tests {
         );
         assert!(fire.iter().all(|o| !o.gestures));
         let mut buttons = vec![UP, UP, PRESS];
-        buttons.extend(vec![HELD; (TAP_S / DT).ceil() as usize + 10]);
+        buttons.extend(vec![HELD; (button().tap_s / DT).ceil() as usize + 10]);
         buttons.extend([RELEASE, UP]);
         let out = run(&mut g, REELING, &buttons);
         assert!(out.iter().all(|o| o.gestures));
@@ -1216,7 +1220,7 @@ mod tests {
         let first = g.step(tick(PRESS, attached));
         assert!(first.seat_fire.is_none());
         let threshold = g.step(GrappleTick {
-            dt: TAP_S,
+            dt: button().tap_s,
             ..tick(HELD, attached)
         });
         assert_eq!(threshold.seat_fire, Some(SeatRequest::Hold));
@@ -1241,7 +1245,7 @@ mod tests {
         assert_eq!(seat_fires(&out), 0);
         let mut g = GrappleButton::new();
         let mut buttons = vec![PRESS, RELEASE];
-        buttons.extend(vec![UP; (DOUBLE_TAP_S / DT).ceil() as usize + 1]);
+        buttons.extend(vec![UP; (button().double_tap_s / DT).ceil() as usize + 1]);
         let out = run(&mut g, tethered, &buttons);
         assert_eq!(seat_fires(&out), 1);
         assert!(out.iter().all(|o| o.fire.is_none()));

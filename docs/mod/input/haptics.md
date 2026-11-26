@@ -16,7 +16,7 @@ Seven primitives. Five play once (one-off cues) and two follow a level that thei
 | hum | sustained | - | the game's rumble, the reel's speed |
 | tension | sustained | - | a pull, a press, a hang |
 
-A cue's strength places it between the primitive's soft and full amplitudes; a source whose cue follows how hard something happened (a palm's speed, a climb's fling, a recoil kick) scales that strength by its share. A sustained cue's amplitude is its strength times the level its source sends, so a level of zero is still. The length is how long a one-off cue plays, and for a sustained one how long a level holds without being sent again. A cue whose length is `Long` (the detonation, the snatch's catch, and the full grenade pouch) plays `long_factor` times its primitive's length. The shot plays for the length the game's fire rumble sets, capped at 0.4 s (`haptics::rumble::MAX_SHOT_S`).
+A cue's strength places it between the primitive's soft and full amplitudes; a source whose cue follows how hard something happened (a palm's speed, a climb's fling, a recoil kick) scales that strength by its share. A sustained cue's amplitude is its strength times the level its source sends, so a level of zero is still. The length is how long a one-off cue plays, and for a sustained one how long a level holds without being sent again. A cue whose length is `Long` (the detonation, the snatch's catch, and the full grenade pouch) plays `long_factor` times its primitive's length. The shot plays for the length the game's fire rumble sets, capped at the controls tuning's `rumble.max_shot_s`.
 
 The frequency is a hint (OpenXR's `XrHapticVibration::frequency`); a runtime may ignore it. Every vibration carries its primitive's hint.
 

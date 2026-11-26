@@ -2,7 +2,7 @@
 
 use jc3gi::input::input_action_map::Action;
 use jc3vr_body::controllers::{
-    intent::{config::LONG_PRESS_S, controls::Controls, grapple_button::GrappleContext},
+    intent::{config::long_press_s, controls::Controls, grapple_button::GrappleContext},
     mode::{Mode, OnFootVariant},
 };
 use jc3vr_input::frame::{HandFrame, InteractionProfile, TrackedPose};
@@ -407,7 +407,7 @@ fn system_loss_before_long_threshold_cannot_pause_and_real_hold_still_does() {
             lose(&mut group, PAUSE, Hand::Left, Loss::Route);
         }
         let tick = batch(&mut runtime, &[group]);
-        let step = tables(&mut bindings, &tick, context, LONG_PRESS_S + 0.1);
+        let step = tables(&mut bindings, &tick, context, long_press_s() + 0.1);
         if loss {
             no_derived(&step);
         } else {

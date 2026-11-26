@@ -12,7 +12,7 @@
 
 use std::time::{Duration, Instant};
 
-use jc3vr_body::controllers::intent::config::{BindingsConfig, TRIGGER_DEADZONE};
+use jc3vr_body::controllers::intent::config::{BindingsConfig, trigger_deadzone};
 use jc3vr_input::frame::{Button, ButtonSet, ControllerFrame, Edges, Hand, HandFrame};
 use jc3vr_view::{
     headpose::config::{VrTurnConfig, VrTurnMode},
@@ -219,7 +219,7 @@ fn blocker(hand: &HandFrame, config: &NeutralPolicy, index: usize) -> Option<Blo
     if !(input.trigger.is_finite()
         && input.trigger >= 0.0
         && input.trigger < VIEW.get().press.trigger.release
-        && input.trigger <= TRIGGER_DEADZONE)
+        && input.trigger <= trigger_deadzone())
     {
         return Some(Blocker::Trigger(input.trigger));
     }

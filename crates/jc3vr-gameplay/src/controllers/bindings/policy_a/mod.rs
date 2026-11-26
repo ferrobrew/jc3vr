@@ -18,7 +18,7 @@ pub(crate) mod runtime;
 use std::{error::Error, fmt, time::Duration};
 
 use jc3vr_body::controllers::intent::config::{
-    PANEL_CHORD_WINDOW_S, RECENTER_HOLD_S, STICK_CHORD_WINDOW_S,
+    panel_chord_window_s, recenter_hold_s, stick_chord_window_s,
 };
 
 /// How many physical controls the arbiter covers, the recorded decision's width.
@@ -95,14 +95,14 @@ pub(crate) struct PolicyAConfig {
 }
 
 /// The policy's timings: the chord windows and the recenter hold of the bindings
-/// ([`STICK_CHORD_WINDOW_S`], [`PANEL_CHORD_WINDOW_S`], [`RECENTER_HOLD_S`]). The developer
+/// ([`stick_chord_window_s`], [`panel_chord_window_s`], [`recenter_hold_s`]). The developer
 /// chords are always withheld in a vehicle; a recording from before that was fixed replays with
 /// them, through the recorded timing.
 pub(crate) fn effective_config() -> PolicyAConfig {
     PolicyAConfig {
-        recenter_join: Duration::from_secs_f32(STICK_CHORD_WINDOW_S),
-        panel_join: Duration::from_secs_f32(PANEL_CHORD_WINDOW_S),
-        recenter_hold: Duration::from_secs_f32(RECENTER_HOLD_S),
+        recenter_join: Duration::from_secs_f32(stick_chord_window_s()),
+        panel_join: Duration::from_secs_f32(panel_chord_window_s()),
+        recenter_hold: Duration::from_secs_f32(recenter_hold_s()),
         suppress_developer_chords_in_vehicles: true,
     }
 }

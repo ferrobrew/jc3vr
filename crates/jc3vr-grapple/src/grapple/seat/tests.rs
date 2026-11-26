@@ -1,7 +1,7 @@
 use std::num::NonZeroUsize;
 
 use glam::Vec3;
-use jc3vr_body::controllers::intent::grapple_button::{SeatRequest, TAP_S};
+use jc3vr_body::controllers::intent::grapple_button::{SeatRequest, tap_s};
 use jc3vr_input::frame::Hand;
 
 use crate::grapple::{
@@ -331,7 +331,7 @@ fn a_delayed_hold_does_not_need_a_second_hold_threshold() {
     let (_, Act::Fire(pending)) = step(Phase::Idle, &input, None) else {
         panic!("the hold fires")
     };
-    assert_eq!(pending.held_s, TAP_S);
+    assert_eq!(pending.held_s, tap_s());
     input.fire = None;
     input.held = false;
     let second = AT + Vec3::X * 5.0;
@@ -361,7 +361,7 @@ fn cancellation_latches_the_first_hold_release_including_an_empty_target() {
             };
             assert!(pending.released);
             assert_eq!(pending.second, Some(target_at(second)));
-            assert!(pending.held_s >= TAP_S);
+            assert!(pending.held_s >= tap_s());
         } else {
             assert_eq!(act, Act::None);
         }

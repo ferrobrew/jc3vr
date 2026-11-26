@@ -75,12 +75,12 @@ use jc3vr_body::controllers::{
     hands::tiers,
     haptics, intent,
     intent::{
-        config::{LONG_PRESS_S, TRIGGER_DEADZONE},
+        config::{long_press_s, trigger_deadzone},
         controls::{ButtonControl, ClosedHand, Controls},
         finish::FinishInputs,
         grapple_button::GrappleContext,
         hold::{ActionWrite, Desired, DevicePoll, HoldTracker, MapKind, Target, Want},
-        yank::{GRAPPLE_YANK, HandLine, LineYank, Yank},
+        yank::{HandLine, LineYank, Yank, grapple_yank},
     },
     locomotion,
     locomotion::config::LocomotionDirection,
@@ -585,7 +585,7 @@ fn tick(game: &GameTick<'_>, dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>)
         Mode::Vehicle(seat) => {
             let mounted_gun = LocalPlayer::get(game).is_some_and(|p| p.in_mounted_gun_state());
             let seat_bails = bails_by_parachute(seat, mounted_gun);
-            let press_long = state.bindings.exit_press_long(seat, LONG_PRESS_S);
+            let press_long = state.bindings.exit_press_long(seat, long_press_s());
             state.bail.step(BailTick {
                 seat_bails,
                 speed_mps: seat_bails
@@ -622,7 +622,7 @@ fn tick(game: &GameTick<'_>, dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>)
     let trigger_blocked =
         state
             .trigger_ownership
-            .observe(trigger_owners, raw_triggers, TRIGGER_DEADZONE);
+            .observe(trigger_owners, raw_triggers, trigger_deadzone());
     let trigger_routes = semantic_input.clone();
     state.bindings.cancel_trigger_gestures(trigger_blocked);
     trigger_ownership::mask_routes(
@@ -670,7 +670,7 @@ fn tick(game: &GameTick<'_>, dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>)
         grapple_line,
         headpose::xr::cockpit_pose().map(|pose| pose.position),
         yank_armed_in(line, &detection) && grapple_held,
-        &GRAPPLE_YANK,
+        grapple_yank(),
     );
     if let Some(yank) = yank {
         controls.yank = true;

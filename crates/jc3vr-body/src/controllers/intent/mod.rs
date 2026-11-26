@@ -13,6 +13,7 @@ pub mod hold;
 pub mod localise;
 pub mod rows;
 pub mod stage;
+pub mod tuning;
 pub mod yank;
 
 use std::sync::atomic::{AtomicBool, Ordering};

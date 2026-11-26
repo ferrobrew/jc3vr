@@ -5,7 +5,7 @@ use std::time::Duration;
 use std::{collections::VecDeque, time::Instant};
 
 use jc3vr_body::controllers::intent::{
-    config::{BindingsConfig, TRIGGER_DEADZONE},
+    config::{BindingsConfig, trigger_deadzone},
     controls::ButtonControl,
 };
 use jc3vr_input::{
@@ -691,7 +691,7 @@ fn neutral_value(value: ValueBits, config: &BindingsConfig) -> bool {
         ValueBits::Bool(value) => !value,
         ValueBits::Float(value) => {
             f32::from_bits(value).is_finite()
-                && f32::from_bits(value).abs() <= TRIGGER_DEADZONE.min(config.move_deadzone)
+                && f32::from_bits(value).abs() <= trigger_deadzone().min(config.move_deadzone)
         }
         ValueBits::Vec2(value) => value.into_iter().all(|value| {
             f32::from_bits(value).is_finite() && f32::from_bits(value).abs() <= config.move_deadzone

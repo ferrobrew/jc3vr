@@ -40,7 +40,7 @@ pub mod producers;
 
 use jc3vr_view::controllers::overlay::{inputs::DrawSettings, resolve::HandPoses};
 
-use crate::controllers::{hands::late, scheme};
+use crate::controllers::{hands::late, intent::tuning::CONTROLS, scheme};
 
 /// Run the overlay's producers. Called once per render dispatch at the end of
 /// `RenderEngine::PostDraw`, before the engine's context lock is taken; it acts only on the
@@ -67,15 +67,12 @@ pub fn render_poses() -> [Option<HandPoses>; 2] {
 
 /// How the overlay draws, or `None` while the controllers are off.
 pub fn draw_settings() -> Option<DrawSettings> {
-    scheme::enabled().then_some(DRAW)
+    scheme::enabled().then(|| {
+        let tuning = &CONTROLS.get().overlay;
+        DrawSettings {
+            min_line_px: tuning.min_line_px,
+            depth_tolerance_m: tuning.depth_tolerance_m,
+            depth_tolerance_rel: tuning.depth_tolerance_rel,
+        }
+    })
 }
-
-/// The overlay's draw tuning. A primitive this far behind the scene's depth still counts as
-/// visible, so that a marker on a surface is not hidden by that surface; the relative tolerance
-/// takes over at a distance, where the depth buffer's precision falls. A line thinner than the
-/// minimum fades instead.
-const DRAW: DrawSettings = DrawSettings {
-    min_line_px: 1.5,
-    depth_tolerance_m: 0.05,
-    depth_tolerance_rel: 0.01,
-};

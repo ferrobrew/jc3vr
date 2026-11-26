@@ -13,7 +13,7 @@ use jc3vr_body::controllers::{
             TARGET_RING_M, line, ring,
         },
     },
-    overlay::config::{BODY_MIRROR_DISTANCE_M, OVERLAY_CONFIG},
+    overlay::config::{OVERLAY_CONFIG, body_mirror_distance_m},
 };
 use jc3vr_view::controllers::overlay::primitive::{Anchor, Primitive};
 
@@ -67,7 +67,7 @@ pub(crate) fn pouches_rendered(sample: &PouchRenderSample) {
     if !OVERLAY_CONFIG.query(|c| c.body_mirror) {
         return;
     }
-    let Some(context) = PouchRenderContext::new(sample, BODY_MIRROR_DISTANCE_M) else {
+    let Some(context) = PouchRenderContext::new(sample, body_mirror_distance_m()) else {
         return;
     };
     let mut primitives = Vec::new();

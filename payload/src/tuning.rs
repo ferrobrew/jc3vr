@@ -2,6 +2,7 @@
 //! (`docs/mod/tuning.md`). A file added to a crate's `tuning/` directory is listed here; the test
 //! below fails until it is.
 
+use jc3vr_body::controllers::intent::tuning::CONTROLS;
 use jc3vr_body::controllers::locomotion::tuning::LOCOMOTION;
 use jc3vr_body::controllers::roomscale::tuning::ROOMSCALE;
 use jc3vr_body::{
@@ -52,6 +53,7 @@ static FILES: &[&dyn AnyTuningFile] = &[
     &VIEW,
     &LOCOMOTION,
     &ROOMSCALE,
+    &CONTROLS,
 ];
 
 #[cfg(test)]

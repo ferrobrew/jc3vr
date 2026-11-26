@@ -295,7 +295,7 @@ impl Sink for ChangedRoutes<'_> {
 mod tests {
     use jc3vr_body::controllers::{
         intent::{
-            config::TRIGGER_DEADZONE,
+            config::trigger_deadzone,
             grapple_button::GrappleContext,
             hold::{Target, Want},
         },
@@ -474,7 +474,7 @@ mod tests {
                 value: hand.trigger,
                 usable: true,
             }),
-            TRIGGER_DEADZONE,
+            trigger_deadzone(),
         );
         bindings.cancel_trigger_gestures(blocked);
         mask_routes(&mut input, WINGSUIT, masks(owners, blocked));
@@ -527,7 +527,7 @@ mod tests {
             for hand in Hand::BOTH {
                 let mut gate = TriggerOwnership::new();
                 let mut bindings = Bindings::new();
-                gate.observe(owners, [raw(false); 2], TRIGGER_DEADZONE);
+                gate.observe(owners, [raw(false); 2], trigger_deadzone());
                 let tick = wingsuit_tick(
                     &mut gate,
                     &mut bindings,
@@ -576,7 +576,7 @@ mod tests {
                     let mut owners = WINGSUIT_EMPTY;
                     let mut gate = TriggerOwnership::new();
                     let mut bindings = Bindings::new();
-                    let deadzone = TRIGGER_DEADZONE;
+                    let deadzone = trigger_deadzone();
                     gate.observe(owners, [raw(false); 2], deadzone);
                     let held = wingsuit_controls(dominant, [raw(true); 2]);
                     let unclaimed = wingsuit_tick(&mut gate, &mut bindings, held, owners);
@@ -661,7 +661,7 @@ mod tests {
                     owners[hand.index()].gun = if starts_with_gun { gun } else { None };
                     let mut gate = TriggerOwnership::new();
                     let mut bindings = Bindings::new();
-                    gate.observe(owners, [raw(false); 2], TRIGGER_DEADZONE);
+                    gate.observe(owners, [raw(false); 2], trigger_deadzone());
                     let controls = wingsuit_controls(dominant, [raw(true); 2]);
                     let mut tick = wingsuit_tick(&mut gate, &mut bindings, controls, owners);
                     assert_wingsuit_routes(
@@ -853,9 +853,12 @@ mod tests {
                     for after_table in [false, true] {
                         let mut gate = TriggerOwnership::new();
                         let mut owners = [owner(None, GunHand::Empty); 2];
-                        gate.observe(owners, [raw(false); 2], TRIGGER_DEADZONE);
+                        gate.observe(owners, [raw(false); 2], trigger_deadzone());
                         let raw_held = Hand::BOTH.map(|h| raw(h == hand));
-                        assert_eq!(gate.observe(owners, raw_held, TRIGGER_DEADZONE), [false; 2]);
+                        assert_eq!(
+                            gate.observe(owners, raw_held, trigger_deadzone()),
+                            [false; 2]
+                        );
                         let mut bindings = Bindings::new();
                         let mut input = simulate(&controls, SemanticSet::OnFoot, default_binding);
                         let action = input.get_mut(OnFootAction::Grapple.id()).unwrap();
@@ -897,7 +900,7 @@ mod tests {
                             assert_eq!(changed, Hand::BOTH.map(|h| h == hand));
                             bindings.cancel_trigger_gestures(changed);
                         } else {
-                            let blocked = gate.observe(owners, raw_held, TRIGGER_DEADZONE);
+                            let blocked = gate.observe(owners, raw_held, trigger_deadzone());
                             assert_eq!(blocked, Hand::BOTH.map(|h| h == hand));
                             bindings.cancel_trigger_gestures(blocked);
                             mask_routes(&mut input, mode, masks(owners, blocked));
@@ -939,9 +942,12 @@ mod tests {
         };
         let owners = [owner(None, GunHand::Empty); 2];
         let mut gate = TriggerOwnership::new();
-        gate.observe(owners, [raw(false); 2], TRIGGER_DEADZONE);
+        gate.observe(owners, [raw(false); 2], trigger_deadzone());
         let raw_held = Hand::BOTH.map(|h| raw(h == hand));
-        assert_eq!(gate.observe(owners, raw_held, TRIGGER_DEADZONE), [false; 2]);
+        assert_eq!(
+            gate.observe(owners, raw_held, trigger_deadzone()),
+            [false; 2]
+        );
         let mut bindings = Bindings::new();
         let mut input = simulate(&controls, SemanticSet::OnFoot, default_binding);
         let action = input.get_mut(OnFootAction::Grapple.id()).unwrap();
@@ -954,7 +960,7 @@ mod tests {
         bindings.step(mode, &controls, &input, 0.01);
         let mut raw_lost = raw_held;
         raw_lost[hand.index()].usable = false;
-        let blocked = gate.observe(owners, raw_lost, TRIGGER_DEADZONE);
+        let blocked = gate.observe(owners, raw_lost, trigger_deadzone());
         assert_eq!(blocked, [true, false]);
         bindings.cancel_trigger_gestures(blocked);
         mask_routes(&mut input, mode, masks(owners, blocked));

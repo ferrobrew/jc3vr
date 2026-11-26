@@ -51,7 +51,7 @@ use jc3vr_body::controllers::{
         latch::{GripLatch, LatchTick},
     },
     intent::{
-        config::{CROUCH_FLICK, LONG_PRESS_S, MENU_STICK_PUSH},
+        config::{crouch_flick, long_press_s, menu_stick_push},
         controls::{ButtonControl, Controls},
         grapple_button::{
             GrappleButton, GrappleContext, GrapplePermissions, GrappleTick, LockButton,
@@ -379,7 +379,7 @@ impl Bindings {
         );
         for hand in Hand::BOTH {
             let i = hand.index();
-            menu::step(&mut self.menu[i], &intents, hand, MENU_STICK_PUSH);
+            menu::step(&mut self.menu[i], &intents, hand, menu_stick_push());
             menu::step_pad(&mut self.pads[i], &intents, hand);
         }
         let (immediate_exit, exit_click) = if let Mode::Vehicle(seat) = mode {
@@ -396,7 +396,7 @@ impl Bindings {
             self.exit = ExitLatch::new();
             (false, false)
         };
-        let mut timed = self.step_timers(mode, &ctx, &intents, dt, LONG_PRESS_S);
+        let mut timed = self.step_timers(mode, &ctx, &intents, dt, long_press_s());
         if immediate_exit {
             for latch in &mut timed {
                 for (_, press) in latch.presses.iter_mut().flatten() {
@@ -516,7 +516,7 @@ impl Bindings {
             }
         }
         self.system
-            .step(&mut out.desired, intents.button(pause), dt, LONG_PRESS_S);
+            .step(&mut out.desired, intents.button(pause), dt, long_press_s());
         if self.system.held.is_none() {
             self.system_routes.clear();
         }
@@ -533,7 +533,7 @@ impl Bindings {
             && flick_down(
                 &mut self.crouch_flicked,
                 intents.raw(OnFootAction::CrouchFlick.id()),
-                CROUCH_FLICK,
+                crouch_flick(),
             );
         let select = OnFootAction::WeaponSelectPress.id();
         let wheel = Hand::BOTH.map(|hand| WheelPress {

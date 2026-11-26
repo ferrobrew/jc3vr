@@ -1,0 +1,52 @@
+# The controls' tuning: `ControlsTuning` in crates/jc3vr-body/src/controllers/intent/tuning.rs, where
+# each value's meaning is documented. Every key is required and no other is accepted. Units: metres
+# (`_m`), seconds (`_s`), metres per second (`_mps`), radians (`_rad`), and pixels (`_px`); trigger
+# pulls, stick pushes, retracts, amplitudes, and shares are in `0..1`.
+
+[bindings]
+trigger_deadzone = 0.05
+long_press_s = 0.5
+crouch_flick = 0.8
+menu_stick_push = 0.5
+stick_chord_window_s = 0.1
+recenter_hold_s = 1.0
+panel_chord_window_s = 0.35
+
+[grapple_button]
+tap_s = 0.25
+double_tap_s = 0.3
+tighten_start = 0.35
+tighten_held = 0.7
+tighten_ramp_s = 1.0
+
+[yank]
+outward_share = 0.35
+
+[grapple_yank]
+min_distance_m = 0.15
+min_speed_mps = 1.8
+window_s = 0.2
+cooldown_s = 0.6
+
+[hold]
+analog_press = 0.2
+
+[mode]
+debounce_ticks = 2
+
+[rumble]
+min_amplitude = 0.01
+kick_amplitude_per_rad = 6.0
+max_shot_s = 0.4
+
+[overlay]
+min_line_px = 1.5
+depth_tolerance_m = 0.05
+depth_tolerance_rel = 0.01
+body_mirror_distance_m = 1.2
+ticked_jump_m = 3.0
+surface_match_m = 0.5
+grapple_ring_rad = 0.035
+assist_ring_scale = 1.6
+marker_ring_rad = 0.02
+marker_dot_rad = 0.003

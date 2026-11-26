@@ -205,7 +205,7 @@ fn a_held_stick_holds_its_step_for_the_game_to_repeat() {
         );
     }
     // Easing off past half the push still holds the step; resting lets go.
-    let eased = stick(Hand::Left, 0.0, -MENU_STICK_PUSH * 0.6, false);
+    let eased = stick(Hand::Left, 0.0, -menu_stick_push() * 0.6, false);
     let step = b.sim_step(Mode::Ui, &eased, DT);
     assert_eq!(
         wants(&step, MapKind::Ui, GUI_LSTICK_DOWN),
@@ -282,7 +282,7 @@ fn a_tap_between_ticks_still_opens_the_commlink() {
 fn a_long_system_press_pauses_once() {
     let mut b = Bindings::default();
     let held = system(true, false, false);
-    let ticks = (LONG_PRESS_S / DT).ceil() as usize + 1;
+    let ticks = (long_press_s() / DT).ceil() as usize + 1;
     let mut pauses = 0;
     for _ in 0..ticks * 2 {
         let step = b.sim_step(ON_FOOT, &held, DT);
