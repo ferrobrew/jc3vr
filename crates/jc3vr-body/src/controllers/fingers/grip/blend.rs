@@ -11,7 +11,7 @@
 //! trigger, and a finger hand tracking measures where the pose leaves it free
 //! ([`FingerRole::LiveWhenTracked`]).
 
-use body_rig::smooth::follow_factor;
+use body_rig::math::smooth::follow_factor;
 
 use crate::controllers::fingers::{
     curl::{CurlSource, FingerCurls},

@@ -9,7 +9,7 @@
 
 use std::sync::OnceLock;
 
-use body_rig::geometry::point_velocity;
+use body_rig::math::geometry::point_velocity;
 use glam::{Affine3A, Vec3};
 
 /// The climb's readers, registered by the physical hands.

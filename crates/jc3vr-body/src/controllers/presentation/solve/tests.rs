@@ -147,23 +147,23 @@ fn without_the_torso_the_spine_stays_and_the_head_s_travel_is_capped() {
 }
 
 #[test]
-fn the_two_bone_elbow_keeps_the_lengths_and_reproduces_the_drawn_arm() {
+fn the_middle_joint_keeps_the_lengths_and_reproduces_the_drawn_arm() {
     let a = arm(1.0);
     let upper = a.shoulder.distance(a.elbow);
     let fore = a.elbow.distance(a.wrist);
-    let elbow = two_bone_elbow(a.shoulder, a.wrist, upper, fore, a.elbow - a.shoulder).unwrap();
+    let elbow = middle_joint(a.shoulder, a.wrist, upper, fore, a.elbow - a.shoulder).unwrap();
     assert!(elbow.abs_diff_eq(a.elbow, 1e-5), "{elbow:?}");
     let wrist = a.wrist + Vec3::new(0.05, 0.08, -0.03);
-    let elbow = two_bone_elbow(a.shoulder, wrist, upper, fore, a.elbow - a.shoulder).unwrap();
+    let elbow = middle_joint(a.shoulder, wrist, upper, fore, a.elbow - a.shoulder).unwrap();
     assert!((elbow.distance(a.shoulder) - upper).abs() < 1e-5);
     assert!((elbow.distance(wrist) - fore).abs() < 1e-4);
     // Out of reach, the arm straightens toward the wrist.
     let far = a.shoulder + Vec3::new(0.0, 0.0, -2.0);
-    let elbow = two_bone_elbow(a.shoulder, far, upper, fore, a.elbow - a.shoulder).unwrap();
+    let elbow = middle_joint(a.shoulder, far, upper, fore, a.elbow - a.shoulder).unwrap();
     let toward = (far - a.shoulder).normalize();
     assert!((elbow - a.shoulder).normalize().dot(toward) > 0.999);
     // A pole along the reach decides nothing.
-    assert!(two_bone_elbow(a.shoulder, wrist, upper, fore, wrist - a.shoulder).is_none());
+    assert!(middle_joint(a.shoulder, wrist, upper, fore, wrist - a.shoulder).is_none());
 }
 
 #[test]

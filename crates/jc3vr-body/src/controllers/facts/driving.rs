@@ -9,7 +9,7 @@
 
 use std::time::Instant;
 
-use body_rig::smooth::smoothstep;
+use body_rig::math::smooth::smoothstep;
 use glam::Vec3;
 use parking_lot::Mutex;
 

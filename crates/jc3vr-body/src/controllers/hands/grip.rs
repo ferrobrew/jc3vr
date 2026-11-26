@@ -43,7 +43,7 @@ use std::{
     time::Instant,
 };
 
-use body_rig::rotation::angle_between;
+use body_rig::math::rotation::angle_between;
 use glam::{Mat4, Quat, Vec3};
 use jc3gi::{
     character::{
@@ -165,10 +165,7 @@ pub fn mirror_pose(pose: Pose, axis: usize) -> Pose {
 pub fn mirrored_grip(right_wrist: Mat4, left_attach: Mat4, axis: usize) -> Option<Pose> {
     let attach = relative_pose(Mat4::IDENTITY, left_attach)?;
     let mirrored = mirror_pose(attach, axis);
-    relative_pose(
-        right_wrist,
-        Mat4::from_rotation_translation(mirrored.orientation, mirrored.position),
-    )
+    relative_pose(right_wrist, mirrored.to_mat4())
 }
 
 /// The grip the right hand takes, from its own bind-pose grip `own` and the left's mirrored, and
@@ -408,7 +405,7 @@ pub fn pinned_attach(wrist: Pose, wrist_scale: Vec3, offset: Pose) -> Pose {
 /// its seat on the holding hand's body, in the gun's own frame: where the gun body is, drawn on the
 /// hand.
 pub fn seat_on_body(held: Pose, deviation: Pose) -> Pose {
-    hand_pose::mul(held, deviation)
+    held.compose(deviation)
 }
 
 /// The attach bone's pose for a hand at `weight` between the animation (`0`) and the controller
@@ -580,7 +577,7 @@ unsafe fn pin(
         // Without the wrist frame's place on the bone, a slide's turn cannot be placed: the gun
         // stays at the grip rather than at a turn meant for another frame.
         if let Some(frame) = unsafe { wrist_frame_on_bone(controller, hand, wrist_index) } {
-            held = hand_pose::mul(held, slide_offset(&slide_on_bone(slide, frame), offset));
+            held = held.compose(slide_offset(&slide_on_bone(slide, frame), offset));
         }
     }
     if let Some(deviation) = deviation {
@@ -638,13 +635,13 @@ pub unsafe fn canonical_on_wrist_frame(character: &Character, hand: Hand) -> Opt
     };
     let frame = unsafe { wrist_frame_on_bone(controller, hand, wrist_index) }?;
     // The wrist bone is the wrist frame turned back by the frame's place on the bone.
-    Some(hand_pose::mul(
+    Some(
         Pose {
             position: Vec3::ZERO,
             orientation: frame.inverse(),
-        },
-        offset,
-    ))
+        }
+        .compose(offset),
+    )
 }
 
 /// Where a snap's far end is in `character`'s model space: the gun's pose on its dock bone as the
@@ -653,12 +650,11 @@ unsafe fn snap_start(character: &Character, start: SnapStart) -> Option<Pose> {
     match start {
         SnapStart::Dock { dock, offset } => {
             let bone = unsafe { bone_model_pose(character, dock) }?;
-            Some(hand_pose::mul(bone, offset))
+            Some(bone.compose(offset))
         }
-        SnapStart::World(world) => relative_pose(
-            Mat4::from(character.m_WorldMatrixT1),
-            Mat4::from_rotation_translation(world.orientation, world.position),
-        ),
+        SnapStart::World(world) => {
+            relative_pose(Mat4::from(character.m_WorldMatrixT1), world.to_mat4())
+        }
     }
 }
 
@@ -870,15 +866,14 @@ mod tests {
     fn the_pinned_attach_rides_the_wrist_at_the_bind_offset() {
         let bind_wrist = Mat4::from_rotation_translation(Quat::from_rotation_y(0.4), Vec3::Y);
         let offset = pose(Vec3::new(0.1, 0.0, 0.02), Quat::from_rotation_x(0.3));
-        let bind_attach =
-            bind_wrist * Mat4::from_rotation_translation(offset.orientation, offset.position);
+        let bind_attach = bind_wrist * offset.to_mat4();
         let grip = relative_pose(bind_wrist, bind_attach).unwrap();
         assert!(grip.position.distance(offset.position) < 1e-5);
         assert!(angle_between(grip.orientation, offset.orientation).to_degrees() < 1e-2);
 
         let wrist = pose(Vec3::new(3.0, 1.0, -2.0), Quat::from_rotation_z(1.2));
         let attach = pinned_attach(wrist, Vec3::ONE, grip);
-        let back = hand_pose::mul(hand_pose::inverse(wrist), attach);
+        let back = wrist.inverse().compose(attach);
         assert!(back.position.distance(offset.position) < 1e-5);
         assert!(angle_between(back.orientation, offset.orientation).to_degrees() < 1e-2);
     }
@@ -928,7 +923,7 @@ mod tests {
         let a = pinned_attach(wrist, Vec3::ONE, grip);
         let turned = pose(Vec3::ZERO, Quat::from_rotation_x(1.0) * wrist.orientation);
         let c = pinned_attach(turned, Vec3::ONE, grip);
-        let in_wrist = |w: Pose, p: Pose| hand_pose::mul(hand_pose::inverse(w), p);
+        let in_wrist = |w: Pose, p: Pose| w.inverse().compose(p);
         assert!(
             angle_between(
                 in_wrist(wrist, a).orientation,
@@ -944,7 +939,7 @@ mod tests {
         let dock = pose(Vec3::new(0.2, 1.2, -0.1), Quat::from_rotation_z(0.6));
         let offset = pose(Vec3::new(0.0, 0.1, 0.0), Quat::from_rotation_x(0.3));
         let held = pose(Vec3::new(0.4, 1.0, 0.3), Quat::from_rotation_y(1.0));
-        let on_dock = hand_pose::mul(dock, offset);
+        let on_dock = dock.compose(offset);
         let at = |t| slide_grip(on_dock, held, t);
         assert!(at(0.0).position.distance(on_dock.position) < 1e-5);
         assert!(angle_between(at(0.0).orientation, on_dock.orientation).to_degrees() < 1e-2);
@@ -980,7 +975,7 @@ mod tests {
     }
 
     fn matrix(p: Pose) -> Mat4 {
-        Mat4::from_rotation_translation(p.orientation, p.position)
+        p.to_mat4()
     }
 
     /// A rig symmetric across X: the left side's pose and the right's, its mirror.
@@ -1037,7 +1032,7 @@ mod tests {
             Vec3::new(0.0628, -0.0340, 0.0037),
             Quat::from_axis_angle(Vec3::new(1.0, 1.0, 1.0).normalize(), 120f32.to_radians()),
         );
-        flipped_axes(left_wrist, hand_pose::mul(left_wrist, grip))
+        flipped_axes(left_wrist, left_wrist.compose(grip))
     }
 
     #[test]

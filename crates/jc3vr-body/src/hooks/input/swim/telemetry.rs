@@ -14,9 +14,9 @@ use std::{
     time::{Duration, Instant},
 };
 
-use body_rig::angle::{wrap, yaw_of};
+use body_rig::math::angle::{heading, wrap, yaw_of};
 use glam::Vec3;
-use jc3vr_view::{headpose, headpose::sim::body_yaw_of};
+use jc3vr_view::headpose;
 use parking_lot::Mutex;
 
 use crate::{
@@ -55,7 +55,7 @@ pub fn log_tick(look_x: f32) {
     let counters = Counters::now();
     let body = headpose::xr::body_rotation_raw();
     let body_forward = body * Vec3::NEG_Z;
-    let body_euler_yaw = body_yaw_of(body);
+    let body_yaw = heading(body);
     let target = headpose::body_yaw_target().and_then(yaw_of);
     let mut state = STATE.lock();
     state.look_x_peak = state.look_x_peak.max(look_x.abs());
@@ -66,9 +66,7 @@ pub fn log_tick(look_x: f32) {
         return;
     }
     let look_x_peak = std::mem::take(&mut state.look_x_peak);
-    let previous = state
-        .logged
-        .replace((now, counters, body_euler_yaw, target));
+    let previous = state.logged.replace((now, counters, body_yaw, target));
     drop(state);
     let Some((at, before, body_before, target_before)) = previous else {
         return;
@@ -87,10 +85,10 @@ pub fn log_tick(look_x: f32) {
         target: "swim",
         target_yaw_deg = target.map(f32::to_degrees),
         target_turn_deg_s = target.zip(target_before).map(|(now, then)| rate(now, then)),
-        body_yaw_deg = body_euler_yaw.to_degrees(),
+        body_yaw_deg = body_yaw.to_degrees(),
         body_heading_deg = yaw_of(body_forward).map(f32::to_degrees),
         body_forward_y = body_forward.y,
-        body_turn_deg_s = rate(body_euler_yaw, body_before),
+        body_turn_deg_s = rate(body_yaw, body_before),
         look_x,
         look_x_peak,
         motion_state = signals.motion_state,

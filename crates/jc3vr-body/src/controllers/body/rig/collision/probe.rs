@@ -26,7 +26,7 @@
 
 use std::time::{Duration, Instant};
 
-use body_rig::{geometry::cast_segment, smooth::smoothstep_between};
+use body_rig::math::{geometry::cast_segment, smooth::smoothstep_between};
 use glam::Vec3;
 
 use crate::{

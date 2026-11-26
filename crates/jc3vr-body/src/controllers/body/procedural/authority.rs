@@ -43,7 +43,7 @@
 //! grace, and the canopy closed and opened again around a grapple's reel, then never hand the torso
 //! to the animation and back within a second; a flight that outlasts the hold hands it over once.
 
-use body_rig::smooth::critically_damped;
+use body_rig::math::smooth::critically_damped;
 
 use crate::controllers::body::procedural::tuning::ProceduralTuning;
 

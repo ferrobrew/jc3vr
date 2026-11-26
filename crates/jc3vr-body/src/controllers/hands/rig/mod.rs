@@ -10,7 +10,7 @@
 
 use std::time::Instant;
 
-use body_rig::angle::line_yaw;
+use body_rig::math::angle::line_yaw;
 use glam::{Mat4, Quat, Vec3};
 use jc3gi::{
     animation::ik::Effector,

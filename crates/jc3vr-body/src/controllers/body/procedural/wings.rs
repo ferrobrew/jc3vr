@@ -17,8 +17,11 @@ use std::{
 };
 
 use body_rig::{
-    angle::{head_heading, line_yaw, wrap},
     body::EYES_TO_NECK,
+    math::{
+        Side,
+        angle::{head_heading, line_yaw, wrap},
+    },
     yaw::{YawFollow, YawInput, YawTuning},
 };
 use glam::{Mat4, Quat, Vec3};
@@ -36,7 +39,6 @@ use crate::{
                 gate_state::State,
                 rig::{Rig, RigBone},
                 solver::{
-                    arms::Side,
                     clavicles::shoulder_joint,
                     pose::RigPose,
                     wings::{PlayerArms, RicoArms, WingTarget, flight_heading, wing_targets},
@@ -309,7 +311,7 @@ static WING_HEADING: Mutex<WingHeading> = Mutex::new(WingHeading::new());
 mod tests {
     use std::time::Duration;
 
-    use body_rig::angle::yaw_of;
+    use body_rig::math::angle::yaw_of;
 
     use super::*;
 

@@ -30,7 +30,7 @@
 //!
 //! The legs are not touched.
 
-use body_rig::{
+use body_rig::math::{
     angle::{direction, head_heading, line_yaw, wrap},
     smooth::smoothstep_between,
 };
@@ -250,7 +250,7 @@ fn upright_share_with(upright: Vec3, torso: &TorsoTuning) -> f32 {
 
 #[cfg(test)]
 mod tests {
-    use body_rig::angle::line_yaw;
+    use body_rig::math::angle::line_yaw;
 
     use super::*;
     use crate::controllers::body::procedural::{

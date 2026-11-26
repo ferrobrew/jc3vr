@@ -3,10 +3,11 @@
 //! door, or a character), and the offer of a latched door that the controls summary checks. The
 //! physical hands find and act on them (`controllers::physical_hands`). Pure.
 
-use std::{num::NonZeroUsize, time::Instant};
+use std::num::NonZeroUsize;
 
 use glam::Vec3;
 use jc3gi::vehicle::vehicle::DoorSlot;
+use jc3vr_core::published::Stamp;
 use jc3vr_input::frame::Hand;
 
 /// An object within a hand's reach.
@@ -115,14 +116,14 @@ impl SeatAccess {
 pub struct DoorEligibility {
     hand: Hand,
     epoch: u64,
-    at: Instant,
+    at: Stamp,
     reach: Reach,
 }
 
 impl DoorEligibility {
     /// The offer `hand` takes of the door `reach` found, from the provider's sample `at` of its
     /// source `epoch`.
-    pub const fn new(hand: Hand, epoch: u64, at: Instant, reach: Reach) -> Self {
+    pub const fn new(hand: Hand, epoch: u64, at: Stamp, reach: Reach) -> Self {
         Self {
             hand,
             epoch,
@@ -141,7 +142,7 @@ impl DoorEligibility {
     }
 
     /// The provider's sample the offer came from.
-    pub const fn at(self) -> Instant {
+    pub const fn at(self) -> Stamp {
         self.at
     }
 

@@ -25,8 +25,8 @@ use std::time::Instant;
 
 use body_rig::{
     BodyEstimate, GroundedRig, PlayerBody, RigFrame, RigOutput, RigTuning, StepPhase,
-    angle::{forward, head_heading, right, wrap},
     body::EYES_TO_NECK,
+    math::angle::{forward, head_heading, right, wrap},
 };
 use glam::{Quat, Vec2, Vec3};
 use parking_lot::Mutex;
@@ -187,7 +187,7 @@ pub fn request_snap() {
 /// Turn the rig's room frame with the cockpit frame, by `turn` (new frame from old): a recenter's
 /// yaw re-base or a follow bank. The body keeps facing where it faces in the world.
 pub fn rotate(turn: Quat) {
-    let yaw = body_rig::angle::yaw_of(turn * Vec3::NEG_Z).unwrap_or(0.0);
+    let yaw = body_rig::math::angle::yaw_of(turn * Vec3::NEG_Z).unwrap_or(0.0);
     STATE.lock().rig.rotate(yaw);
 }
 

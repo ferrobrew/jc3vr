@@ -35,7 +35,7 @@ use crate::controllers::{
     body::{BodyDimensions, config::BODY_REMAP_CONFIG, rig as body_rig},
     hands::{
         config::{HANDS_CONFIG, HandsConfig},
-        reach::{ArmRemap, ReachLimit},
+        reach::{ArmRemap, ReachLimit, level_eyes},
         stages::HandComposition,
     },
     scheme,
@@ -232,7 +232,7 @@ pub(crate) fn ik_owned() -> [bool; 2] {
 
 /// Each shoulder joint of the character the hands are drawn on, in the cockpit frame, by
 /// [`Hand::index`]: the remap's shoulder where the hands are remapped, else the player's estimated
-/// shoulders.
+/// shoulders, hung from the levelled eyes as the reach's are ([`level_eyes`]).
 fn shoulder_joints(
     config: &HandSettings,
     head: Pose,
@@ -240,7 +240,7 @@ fn shoulder_joints(
     torso: Quat,
 ) -> [Option<Vec3>; 2] {
     let remaps = arm_remaps(config, head, torso, world_scale);
-    let estimated = body::shoulder_positions(head.position, torso, &body::player());
+    let estimated = body::shoulder_positions(level_eyes(head, torso), torso, &body::player());
     Hand::BOTH.map(|hand| {
         Some(remaps[hand.index()].map_or(estimated[hand.index()], |r| r.character_shoulder))
     })

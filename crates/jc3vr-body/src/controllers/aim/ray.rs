@@ -87,7 +87,7 @@ pub fn grapple_ray(wrist: Pose, aim: Pose, origin_offset: Vec3) -> Option<Ray> {
 /// now, as the render-time late update does for the rendered gun.
 pub fn corrected_gun(gun: Mat4, correction: Option<Pose>) -> Mat4 {
     match correction {
-        Some(d) => Mat4::from_rotation_translation(d.orientation, d.position) * gun,
+        Some(d) => d.to_mat4() * gun,
         None => gun,
     }
 }

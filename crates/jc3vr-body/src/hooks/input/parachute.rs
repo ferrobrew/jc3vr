@@ -28,13 +28,13 @@
 //! [`UpdateParachutePhysics`]: jc3gi::input::parachute::UpdateParachutePhysics
 
 use std::{
-    f32::consts::{PI, TAU},
     sync::atomic::{AtomicU64, Ordering},
     time::Instant,
 };
 
+use body_rig::math::angle::{wrap, yaw_of_flat};
 use detours_macro::detour;
-use glam::{Mat4, Vec3};
+use glam::{Mat4, Vec2, Vec3};
 use jc3gi::{
     character::character::Character,
     equipment::grappling_hook::GrapplingHookState,
@@ -256,8 +256,8 @@ unsafe fn turn_toward_line(
 /// It mirrors the block's yaw half: the yaw from the wanted heading to the look, past
 /// `m_LookSteerDeadZone`, over `m_LookSteerMaxYaw`, raised to `m_LookSteerExponential`, clamped,
 /// and scaled to `m_LookSteerMaxSpeed`, opposite in sign to the yaw. The block yields nothing while
-/// the stick steers across, and so does this. Headings are the game's: the yaw of a direction
-/// `(x, z)` is `atan2(-x, -z)`.
+/// the stick steers across, and so does this. Headings are the game's, which are
+/// [`yaw_of_flat`]'s.
 fn line_turn(
     air: &CharacterAirMovementSettings,
     direction: [f32; 3],
@@ -271,16 +271,11 @@ fn line_turn(
     if stick_x.abs() >= STICK_STEERS || air.m_LookSteerMaxYaw <= 0.0 {
         return Some(0.0);
     }
-    let delta_deg = wrap_pi((-x).atan2(-z) - wanted_yaw).to_degrees();
+    let delta_deg = wrap(yaw_of_flat(Vec2::new(x, z))? - wanted_yaw).to_degrees();
     let past = (delta_deg.abs() - air.m_LookSteerDeadZone[0]).max(0.0) / air.m_LookSteerMaxYaw;
     let shaped = past.powf(air.m_LookSteerExponential[0]).clamp(0.0, 1.0);
     let yaw = -delta_deg.signum() * shaped * air.m_LookSteerMaxSpeed[0];
     yaw.is_finite().then_some(yaw)
-}
-
-/// `angle` wrapped into `-PI..PI`.
-fn wrap_pi(angle: f32) -> f32 {
-    (angle + PI).rem_euclid(TAU) - PI
 }
 
 /// The stick's across reading from which the look-steer block leaves the yaw to the stick, as the
@@ -292,6 +287,8 @@ const MIN_HEADING_XZ: f32 = 1e-3;
 
 #[cfg(test)]
 mod tests {
+    use std::f32::consts::PI;
+
     use super::*;
 
     fn look_settings() -> CharacterParachuteSettings {

@@ -32,8 +32,11 @@ use body_estimator::{
     EgoPoserOutput,
     smpl::{AMASS_FROM_ROOM, JOINT_COUNT, PELVIS, SPINE3, room_yaw},
 };
-use body_rig::{BodyEstimate, EstimateTuning, angle::wrap};
-use glam::{DMat3, DQuat, DVec3, Quat};
+use body_rig::{
+    BodyEstimate, EstimateTuning,
+    math::angle::{heading, wrap},
+};
+use glam::{DMat3, DQuat, Quat};
 use parking_lot::Mutex;
 
 pub use crate::controllers::body::estimator::{
@@ -121,10 +124,9 @@ impl Reading {
     }
 }
 
-/// The yaw a rotation about +Y turns a heading by, in `body-rig`'s convention.
+/// The yaw a rotation about +Y turns a heading by, in `body-rig`'s convention ([`heading`]).
 fn room_from_cockpit_yaw(rotation: DQuat) -> f64 {
-    let forward = rotation * DVec3::NEG_Z;
-    (-forward.x).atan2(-forward.z)
+    f64::from(heading(rotation.as_quat()))
 }
 
 /// The latest estimate read back, until a newer one replaces it or the estimator stops.

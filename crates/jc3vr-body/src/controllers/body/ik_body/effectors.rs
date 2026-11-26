@@ -15,7 +15,7 @@
 //! ([`HumanIK::UpdateEffectorsFromTargets`]), which is the seeded pose, so a zero offset with full
 //! reach and resistance keeps the seeded pelvis's orientation through the solve.
 
-use body_rig::angle::forward;
+use body_rig::math::angle::forward;
 use glam::Vec3;
 use jc3gi::{
     animation::ik::{HumanIK, Pass, SolveStep},

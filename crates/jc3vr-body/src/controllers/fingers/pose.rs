@@ -22,7 +22,7 @@
 //! bone then turns by the shortest arc from its animated direction to its target direction, which
 //! keeps the bone's animated roll about its length.
 
-use body_rig::smooth::follow_factor;
+use body_rig::math::smooth::follow_factor;
 use glam::{Quat, Vec3};
 use jc3vr_input::frame::Hand;
 

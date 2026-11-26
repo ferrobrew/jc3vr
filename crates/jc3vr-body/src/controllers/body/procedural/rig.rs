@@ -13,11 +13,12 @@
 
 use std::fmt;
 
+use body_rig::math::Side;
 use glam::Vec3;
 
 use crate::controllers::body::procedural::{
     skeleton::{SkeletonSnapshot, Transform},
-    solver::arms::Side,
+    solver::arms::arm_bones,
 };
 
 /// A bone the procedural body drives.
@@ -178,7 +179,7 @@ impl Rig {
             length: 0.0,
         }; 2];
         for side in Side::BOTH {
-            let (clavicle, names) = side.arm_bones();
+            let (clavicle, names) = arm_bones(side);
             let mut parent = bones[clavicle.index()];
             let mut chain = [0; 3];
             for (link, name) in chain.iter_mut().zip(names) {

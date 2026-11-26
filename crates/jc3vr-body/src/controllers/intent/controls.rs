@@ -2,6 +2,7 @@
 //! per-hand buttons with their edges, deadzoned sticks and triggers, what each hand's grip would
 //! take, and whether a hand that closed on a hold is still closed ([`ClosedHand`]). Pure.
 
+use body_rig::math::axis::{past_deadzone, radial_past_deadzone};
 use glam::Vec2;
 use jc3vr_input::frame::{Button, ControllerFrame, Edges, Hand, HandFrame};
 use jc3vr_view::vr::input::{
@@ -276,23 +277,13 @@ pub fn holds_unseen(pressed: bool, squeeze: Option<f32>, value_release: f32) -> 
 /// magnitude runs from zero at the deadzone's edge to one at full deflection, keeping the
 /// direction.
 pub fn radial_deadzone(stick: Vec2, deadzone: f32) -> Vec2 {
-    let magnitude = stick.length();
-    let deadzone = deadzone.clamp(0.0, 0.99);
-    if magnitude <= deadzone || !magnitude.is_finite() {
-        return Vec2::ZERO;
-    }
-    let scaled = (magnitude.min(1.0) - deadzone) / (1.0 - deadzone);
-    stick * (scaled / magnitude)
+    radial_past_deadzone(stick, deadzone.clamp(0.0, 0.99), 1.0)
 }
 
 /// A `0..=1` axis with a deadzone at zero, rescaled so that it still reaches one.
 #[inline]
 pub fn scalar_deadzone(value: f32, deadzone: f32) -> f32 {
-    let deadzone = deadzone.clamp(0.0, 0.99);
-    if !value.is_finite() || value <= deadzone {
-        return 0.0;
-    }
-    ((value.min(1.0) - deadzone) / (1.0 - deadzone)).clamp(0.0, 1.0)
+    past_deadzone(value.max(0.0), deadzone.clamp(0.0, 0.99), 1.0)
 }
 
 /// Rotate a stick vector (+X right, +Y forward) counter-clockwise, seen from above, by `angle`

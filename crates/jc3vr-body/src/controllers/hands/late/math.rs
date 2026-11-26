@@ -1,7 +1,7 @@
 //! The pure pose and transform math the late update builds its correction from, independent of any
 //! frame state.
 
-use body_rig::{geometry::within_sphere, rotation::angle};
+use body_rig::math::{geometry::within_sphere, rotation::angle};
 use glam::{Mat4, Quat, Vec3};
 use jc3vr_input::frame::Pose;
 
@@ -53,14 +53,12 @@ pub(crate) fn interpolate_attached(parent: [Mat4; 2], attachment: [Mat4; 2], t: 
 /// `d`'s turn is kept; a degenerate arm or a non-finite input leaves `d` as it is.
 pub(crate) fn keep_on_forearm(d: Pose, elbow: Vec3, wrist: Vec3, max_stretch: f32) -> Pose {
     let reach = elbow.distance(wrist) * max_stretch;
-    let drawn = hand_pose::mul(
-        d,
-        Pose {
+    let drawn = d
+        .compose(Pose {
             position: wrist,
             orientation: Quat::IDENTITY,
-        },
-    )
-    .position;
+        })
+        .position;
     if !(reach > f32::EPSILON && drawn.is_finite()) {
         return d;
     }
@@ -71,7 +69,7 @@ pub(crate) fn keep_on_forearm(d: Pose, elbow: Vec3, wrist: Vec3, max_stretch: f3
 }
 
 pub(crate) fn pose_matrix(p: Pose) -> Mat4 {
-    Mat4::from_rotation_translation(p.orientation, p.position)
+    p.to_mat4()
 }
 
 /// The physical wrist displacement and relative rotation, or `None` for a non-finite pose.
@@ -106,7 +104,7 @@ mod tests {
             ..reference
         };
         let d = correction(now, reference, 0.5).unwrap();
-        let carried = hand_pose::mul(d, reference);
+        let carried = d.compose(reference);
         assert!(carried.position.distance(reference.position) < 1e-5);
         assert!(
             (carried
@@ -164,13 +162,10 @@ mod tests {
             orientation: turn,
         };
         let kept = keep_on_forearm(far, elbow, wrist, 1.5);
-        let drawn = hand_pose::mul(
-            kept,
-            Pose {
-                position: wrist,
-                orientation: Quat::IDENTITY,
-            },
-        );
+        let drawn = kept.compose(Pose {
+            position: wrist,
+            orientation: Quat::IDENTITY,
+        });
         assert!((drawn.position.distance(elbow) - 0.36).abs() < 1e-4);
         assert!(kept.orientation.angle_between(turn) < 1e-5);
         // A correction the stretch covers, or a sideways one within reach, is left alone.

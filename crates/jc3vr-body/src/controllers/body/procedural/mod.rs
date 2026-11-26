@@ -60,7 +60,7 @@ use std::{
     time::Instant,
 };
 
-use body_rig::angle::line_yaw;
+use body_rig::math::{Side, angle::line_yaw};
 use glam::{Mat4, Quat, Vec3};
 use jc3gi::{
     animation::ik::{Effector, HumanIK},
@@ -88,7 +88,7 @@ use crate::{
                 solver::{
                     SolveInput,
                     anchored::{clear_clavicle_offset, solve_anchored, upright_share},
-                    arms::{Side, TorsoKeepOut},
+                    arms::{TorsoKeepOut, arm_bones},
                     clavicles::{self, ClavicleTurn},
                     pose::RigPose,
                 },
@@ -566,7 +566,7 @@ unsafe fn pose_torso(
             if let Some(target) = gate.arm_shoulders[side.index()] {
                 // The chest clearance ran before this, so the clavicle's own move toward the
                 // camera is held to it as well.
-                let clavicle = side.arm_bones().0;
+                let clavicle = arm_bones(side).0;
                 let joint = clavicles::shoulder_joint(&solved, rig, side);
                 let offset = clear_clavicle_offset(
                     [solved.position(clavicle), joint],

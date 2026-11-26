@@ -18,7 +18,7 @@
 //! Switching between the two sources never jumps the view: the follower starts where the view is,
 //! and on the way back to the root the difference winds down to nothing ([`HeadFollower`]).
 
-use body_rig::smooth::critically_damped;
+use body_rig::math::smooth::damp;
 use glam::Vec3;
 
 use crate::controllers::locomotion::tuning::LOCOMOTION;
@@ -129,13 +129,6 @@ impl HeadFollower {
             }
         }
     }
-}
-
-/// The critically damped step of each axis of `value` toward `target`.
-fn damp(value: Vec3, rate: Vec3, target: Vec3, smooth_s: f32, dt: f32) -> (Vec3, Vec3) {
-    let axis = |i: usize| critically_damped(value[i], rate[i], target[i], smooth_s, dt);
-    let (x, y, z) = (axis(0), axis(1), axis(2));
-    (Vec3::new(x.0, y.0, z.0), Vec3::new(x.1, y.1, z.1))
 }
 
 /// Whether a landing or a one-off has carried Rico's head far enough from the root, for long

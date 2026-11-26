@@ -6,16 +6,18 @@
 //! hand's own thickness, is pushed straight out of it, so a hand held against the belly rests on
 //! it rather than in it, and an arm folded across the body goes around it.
 //!
-//! An elbow hint is where an arm's elbow naturally sits for a wrist target: at the middle of the
-//! shoulder-to-wrist line, out along a pole that points down, out to the arm's side, and a little
-//! back, as far as the arm's length bends it. The side and the back are the chest's, so a chest
-//! turned toward the player's torso carries the elbows round with it. The pole is chosen from the
+//! An elbow hint is where an arm's elbow naturally sits for a wrist target: the middle joint of an
+//! arm of two equal halves ([`middle_joint`]), bent along a pole that points down, out to the arm's
+//! side, and a little back. The side and the back are the chest's, so a chest turned toward the
+//! player's torso carries the elbows round with it. The pole is chosen from the
 //! reach: a hand reaching up or across the body lifts the elbow out to the side, as a person's
 //! does, rather than leaving it hanging under a raised arm. Where the reach runs along the pole (a
 //! hand reaching down, out, and back toward a hip holster), the pole's part across the reach
 //! vanishes, so a second pole, straight back, takes over smoothly as it does rather than at once.
 
-use body_rig::{geometry::closest_on_segment, smooth::smoothstep};
+use body_rig::math::{
+    Side, geometry::closest_on_segment, smooth::smoothstep, two_bone::middle_joint,
+};
 use glam::{Mat4, Quat, Vec3};
 
 use crate::controllers::body::procedural::{
@@ -97,37 +99,19 @@ impl TorsoKeepOut {
     }
 }
 
-/// Which side of the body an arm is on.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum Side {
-    Left,
-    Right,
-}
-
-impl Side {
-    /// The arm's bones on this side: the clavicle (a rig bone), and the names of the upper arm, the
-    /// forearm, and the hand under it.
-    pub const fn arm_bones(self) -> (RigBone, [&'static str; 3]) {
-        match self {
-            Self::Left => (
-                RigBone::LeftShoulder,
-                ["LeftArm", "LeftForeArm", "LeftHand"],
-            ),
-            Self::Right => (
-                RigBone::RightShoulder,
-                ["RightArm", "RightForeArm", "RightHand"],
-            ),
-        }
+/// The arm's bones on `side`: the clavicle (a rig bone), and the names of the upper arm, the
+/// forearm, and the hand under it.
+pub const fn arm_bones(side: Side) -> (RigBone, [&'static str; 3]) {
+    match side {
+        Side::Left => (
+            RigBone::LeftShoulder,
+            ["LeftArm", "LeftForeArm", "LeftHand"],
+        ),
+        Side::Right => (
+            RigBone::RightShoulder,
+            ["RightArm", "RightForeArm", "RightHand"],
+        ),
     }
-
-    pub const fn index(self) -> usize {
-        match self {
-            Self::Left => 0,
-            Self::Right => 1,
-        }
-    }
-
-    pub const BOTH: [Self; 2] = [Self::Left, Self::Right];
 }
 
 /// The elbow hint for an arm of `length` (upper arm and forearm together) from `shoulder` to the
@@ -145,10 +129,7 @@ pub fn elbow_hint(
         return None;
     }
     let along = reach / distance;
-    let out = match side {
-        Side::Left => Vec3::NEG_X,
-        Side::Right => Vec3::X,
-    };
+    let out = Vec3::X * side.across();
     let chest = Quat::from_rotation_y(if chest_yaw.is_finite() {
         chest_yaw
     } else {
@@ -168,9 +149,7 @@ pub fn elbow_hint(
     let pole = (primary.normalize_or_zero() * keep + fallback * (1.0 - keep))
         .try_normalize()
         .unwrap_or(out);
-    let half = length * 0.5;
-    let bend = (half * half - (distance * 0.5).powi(2)).max(0.0).sqrt();
-    Some(shoulder + reach * 0.5 + pole * bend)
+    middle_joint(shoulder, wrist, length * 0.5, length * 0.5, pole)
 }
 
 #[cfg(test)]

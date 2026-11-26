@@ -10,12 +10,15 @@
 //! [`wanted`] measures the turn for a hand target, [`ClavicleFollower`] eases it over time, and
 //! [`apply`] turns the clavicle (and the arm under it) about its own joint.
 
-use body_rig::smooth::{follow_factor, smoothstep_between};
+use body_rig::math::{
+    Side,
+    smooth::{follow_factor, smoothstep_between},
+};
 use glam::{Quat, Vec3};
 
 use crate::controllers::body::procedural::{
     rig::{Rig, RigBone},
-    solver::{arms::Side, pose::RigPose},
+    solver::{arms::arm_bones, pose::RigPose},
     tuning::ClavicleTuning,
 };
 
@@ -66,7 +69,7 @@ pub fn wanted(
     let Some(forward) = chest_forward(pose) else {
         return ClavicleTurn::ZERO;
     };
-    let outward = (shoulder - pose.get(side.arm_bones().0).translation)
+    let outward = (shoulder - pose.get(arm_bones(side).0).translation)
         .with_y(0.0)
         .normalize_or_zero();
 
@@ -99,7 +102,7 @@ pub fn apply(pose: &mut RigPose, rig: &Rig, side: Side, turn: ClavicleTurn) {
     if !turn.is_finite() || turn == ClavicleTurn::ZERO {
         return;
     }
-    let (clavicle, _) = side.arm_bones();
+    let (clavicle, _) = arm_bones(side);
     let pivot = pose.position(clavicle);
     let out = shoulder_joint(pose, rig, side) - pivot;
     let Some(forward) = chest_forward(pose) else {
@@ -154,7 +157,7 @@ impl ClavicleFollower {
 
 /// Where the shoulder joint on `side` is in `pose`: carried by its clavicle.
 pub fn shoulder_joint(pose: &RigPose, rig: &Rig, side: Side) -> Vec3 {
-    let clavicle = pose.get(side.arm_bones().0);
+    let clavicle = pose.get(arm_bones(side).0);
     clavicle.translation + clavicle.rotation * rig.arm(side).shoulder_local
 }
 

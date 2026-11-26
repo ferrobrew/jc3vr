@@ -56,6 +56,8 @@ pub mod rig;
 pub mod tuning;
 pub mod unarmed;
 
+pub use body_rig::math::shoulders::EYES_FORWARD_OF_SHOULDERS;
+use body_rig::math::shoulders::{eyes_to_right_shoulder, shoulders};
 use glam::{Quat, Vec3};
 use jc3vr_core::config::engine::{ConfigSlot, Invalid, SlotOptions, load::Reset};
 use serde::{Deserialize, Serialize};
@@ -296,33 +298,25 @@ pub fn remap_head_translation(
     Vec3::new(delta.x, delta.y * height_ratio(player, character), delta.z)
 }
 
-/// Estimate the shoulder joints `[left, right]` of a body from its eye position and torso heading.
-/// The shoulders sit `eye_height - shoulder_height` below the eyes, spread by the shoulder width
-/// along the torso's right axis, and [`EYES_FORWARD_OF_SHOULDERS`] behind the eyes. Only the yaw of
-/// `torso` matters to a standing body, so the caller passes the torso's yaw rather than the head's
-/// full orientation (the shoulders do not pitch when the head nods). Axes are OpenXR's: +X right,
-/// +Y up, -Z forward.
+/// Estimate the shoulder joints `[left, right]` of a body from its eye position and torso heading
+/// ([`shoulders`]): `eye_height - shoulder_height` below the eyes, spread by the shoulder width
+/// along the torso's right axis, and [`EYES_FORWARD_OF_SHOULDERS`] behind the eyes. `torso` is a
+/// heading, a turn about +Y, so the shoulders do not pitch when the head nods.
 pub fn shoulder_positions(eye_position: Vec3, torso: Quat, body: &BodyDimensions) -> [Vec3; 2] {
-    let right = torso * Vec3::X;
-    let back = torso * Vec3::Z;
-    let centre = eye_position - Vec3::Y * (body.eye_height - body.shoulder_height)
-        + back * EYES_FORWARD_OF_SHOULDERS;
-    let half = right * (body.shoulder_width * 0.5);
-    [centre - half, centre + half]
+    let drop = body.eye_height - body.shoulder_height;
+    shoulders(
+        eye_position,
+        torso,
+        eyes_to_right_shoulder(drop, body.shoulder_width),
+    )
 }
 
-/// How far the eyes sit in front of the shoulder joints, metres. A generic anthropometric figure;
-/// the settings do not carry it because it varies little between adults.
-pub const EYES_FORWARD_OF_SHOULDERS: f32 = 0.09;
-
 /// The character's shoulder joints `[left, right]` for eyes at `eye_position` and a torso facing
-/// `torso`: [`CHARACTER_EYES_TO_RIGHT_SHOULDER`] turned by the torso's yaw, mirrored across the
-/// torso for the left. The character counterpart of [`shoulder_positions`], from his skeleton
-/// rather than from generic ratios.
+/// `torso`: [`CHARACTER_EYES_TO_RIGHT_SHOULDER`] turned by the torso's heading, mirrored for the
+/// left. The character counterpart of [`shoulder_positions`], from his skeleton rather than from
+/// generic ratios.
 pub fn character_shoulder_positions(eye_position: Vec3, torso: Quat) -> [Vec3; 2] {
-    let right = CHARACTER_EYES_TO_RIGHT_SHOULDER;
-    let left = Vec3::new(-right.x, right.y, right.z);
-    [eye_position + torso * left, eye_position + torso * right]
+    shoulders(eye_position, torso, CHARACTER_EYES_TO_RIGHT_SHOULDER)
 }
 
 /// The character's right shoulder joint (`RightArm`, the joint HumanIK reaches from) relative to

@@ -7,7 +7,7 @@
 //! velocity by the inverse inertia times the impulse's moment about the centre of mass, as the
 //! engine's own impulse does (`physical_hands::engine::push_body`).
 
-use body_rig::geometry::point_velocity;
+use body_rig::math::geometry::point_velocity;
 use glam::{Mat3, Quat, Vec3};
 
 /// A body's place: its centre of mass and the orientation of its motion's frame, world space.

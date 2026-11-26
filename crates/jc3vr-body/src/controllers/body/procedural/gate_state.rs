@@ -2,6 +2,7 @@
 //! followers, the wingsuit's arms, and the status, behind one lock, with the steps of the gate that
 //! read and update them.
 
+use body_rig::math::{Side, constants::GRAVITY_MPS2};
 use glam::{Quat, Vec3};
 use jc3gi::character::character::{AnimationController, Character};
 use parking_lot::Mutex;
@@ -15,7 +16,6 @@ use crate::controllers::{
         rig::{Rig, RigBone},
         skeleton::Transform,
         solver::{
-            arms::Side,
             clavicles::{self, ClavicleFollower, ClavicleTurn},
             pose::RigPose,
             wings::WingTarget,
@@ -232,7 +232,7 @@ impl LegSwing {
         let steps = (dt / tuning.substep_s).ceil() as u32;
         let step = dt / steps as f32;
         for _ in 0..steps {
-            self.speed += (-self.offset * (GRAVITY / tuning.length_m)
+            self.speed += (-self.offset * (GRAVITY_MPS2 / tuning.length_m)
                 - self.speed * tuning.damping
                 - acceleration / tuning.length_m)
                 * step;
@@ -251,9 +251,6 @@ impl LegSwing {
         (Vec3::NEG_Y + self.offset).normalize()
     }
 }
-
-/// The pendulum's gravity, metres per second squared.
-const GRAVITY: f32 = 9.81;
 
 pub(super) static STATE: Mutex<State> = Mutex::new(State {
     rig: RigCache::new(),

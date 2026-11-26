@@ -5,9 +5,8 @@
 use std::time::Instant;
 
 use body_rig::{
-    angle::direction,
     brace::{BraceEvent, BraceFoot, BraceLeg, BraceTarget, BraceTuning},
-    contact::Side,
+    math::{Side, angle::direction},
 };
 use glam::{Mat4, Vec3};
 

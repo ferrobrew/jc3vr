@@ -12,7 +12,7 @@
 //!   own joint, and whatever of the head's travel the spine's bend did not cover moves it, up to
 //!   `solve.max_head_residual_m`.
 //! - Each arm is solved again from its shoulder, carried by the torso's bend, to its hand: two-bone
-//!   IK ([`two_bone_elbow`]) with the upper arm's and the forearm's lengths as drawn. An arm the
+//!   IK ([`middle_joint`]) with the upper arm's and the forearm's lengths as drawn. An arm the
 //!   controllers drive bends toward the elbow pole ([`crate::controllers::presentation::elbow`]),
 //!   smoothed across frames, by how much the controllers drive it; any other arm bends toward
 //!   where the drawn elbow is (the solve's own elbow, which its hint shaped), or toward the elbow
@@ -24,11 +24,15 @@
 //! move a pose the simulation already agrees with; the pole turns only a driven arm's elbow about
 //! the line from its shoulder to its hand.
 
-use body_rig::geometry::within_sphere;
+use body_rig::math::{
+    Side,
+    geometry::within_sphere,
+    two_bone::{interior_cos, middle_joint},
+};
 use glam::{Mat4, Quat, Vec3};
 
 use crate::controllers::{
-    body::procedural::solver::arms::{Side, elbow_hint},
+    body::procedural::solver::arms::elbow_hint,
     hands::{palette::forearm_reach, tuning::HANDS},
     presentation::{
         elbow::{self, PoleInput},
@@ -328,36 +332,6 @@ pub fn chain_swing<const N: usize>(
     chain_edits(&joints, &turns)
 }
 
-/// The elbow of an arm whose upper arm is `upper` long and forearm `fore` long, reaching from
-/// `shoulder` toward `wrist`, bent toward `pole` (a direction from the shoulder). A wrist out of
-/// reach straightens the arm toward it, and one nearer than the arm folds to is held at that.
-/// `None` for a degenerate arm or a pole along the reach.
-pub fn two_bone_elbow(
-    shoulder: Vec3,
-    wrist: Vec3,
-    upper: f32,
-    fore: f32,
-    pole: Vec3,
-) -> Option<Vec3> {
-    let reach = wrist - shoulder;
-    let axis = reach.try_normalize()?;
-    if !(upper > 1e-4 && fore > 1e-4 && pole.is_finite()) {
-        return None;
-    }
-    let side = pole - axis * pole.dot(axis);
-    if side.length() < POLE_EPSILON_M {
-        return None;
-    }
-    let side = side.normalize();
-    let shortest = (upper - fore).abs() + 1e-4;
-    let longest = upper + fore - 1e-4;
-    let distance = reach.length().clamp(shortest.min(longest), longest);
-    let cos = ((upper * upper + distance * distance - fore * fore) / (2.0 * upper * distance))
-        .clamp(-1.0, 1.0);
-    let sin = (1.0 - cos * cos).max(0.0).sqrt();
-    Some(shoulder + axis * (upper * cos) + side * (upper * sin))
-}
-
 fn clavicle_edit(torso: Mat4, arm: &ArmJoints, hand: Mat4, stretch: bool) -> Mat4 {
     let pivot = torso.transform_point3(arm.clavicle);
     let shoulder = torso.transform_point3(arm.shoulder);
@@ -373,10 +347,7 @@ fn clavicle_edit(torso: Mat4, arm: &ArmJoints, hand: Mat4, stretch: bool) -> Mat
         return torso;
     };
     let (length, distance) = (offset.length(), toward.length());
-    let needed = ((length * length + distance * distance - reach * reach)
-        / (2.0 * length * distance))
-        .clamp(-1.0, 1.0)
-        .acos();
+    let needed = interior_cos(length, distance, reach).acos();
     let angle = from.angle_between(to);
     let max_turn = PRESENTATION.get().solve.clavicle_max_turn_deg.to_radians();
     let turn = (angle - needed).clamp(0.0, max_turn);
@@ -430,10 +401,10 @@ fn arm_edits(
             Some(blend_drawn_pole(drawn, fallback, axis, 1.0))
         })
         .unwrap_or(carried_elbow - shoulder);
-    let elbow = two_bone_elbow(shoulder, wrist, upper, fore, pole)
+    let elbow = middle_joint(shoulder, wrist, upper, fore, pole)
         .or_else(|| {
             let hint = elbow_hint(shoulder, wrist, upper + fore, side, 0.0)?;
-            two_bone_elbow(shoulder, wrist, upper, fore, hint - shoulder)
+            middle_joint(shoulder, wrist, upper, fore, hint - shoulder)
         })
         .filter(|e| e.is_finite())
         .unwrap_or(carried_elbow);
@@ -586,9 +557,6 @@ fn rotation_of(m: &Mat4) -> Quat {
 /// The least the shares' scale-up is taken to be, so a chain folded back on itself is not turned by
 /// many times its swing.
 const MIN_CHAIN_GAIN: f32 = 0.25;
-
-/// How far the pole must stand off the reach for its side to count, metres.
-const POLE_EPSILON_M: f32 = 1e-3;
 
 #[cfg(test)]
 mod tests;

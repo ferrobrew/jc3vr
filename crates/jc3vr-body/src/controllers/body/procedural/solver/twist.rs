@@ -24,7 +24,7 @@
 //! Twists are measured against the reference pose's, so a limb at its reference twist leaves its
 //! twist bones at theirs.
 
-use body_rig::rotation::twist_angle;
+use body_rig::math::rotation::twist_angle;
 use glam::{Quat, Vec3};
 use smol_str::SmolStr;
 

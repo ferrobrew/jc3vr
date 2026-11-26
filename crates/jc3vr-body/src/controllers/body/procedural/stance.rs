@@ -12,7 +12,8 @@
 //! stands still and out as soon as he moves, so the walk's first step and the walk's stop start
 //! from the clip's feet.
 
-use body_rig::{
+use body_rig::math::{
+    Side,
     angle::{forward, right, wrap},
     smooth::follow_factor,
 };
@@ -24,7 +25,7 @@ use jc3gi::{
 
 use crate::controllers::body::procedural::{
     rig::{Rig, RigBone},
-    solver::{arms::Side, pose::RigPose},
+    solver::pose::RigPose,
     tuning::PROCEDURAL,
 };
 
@@ -199,7 +200,7 @@ unsafe fn live_target(hik: &HumanIK, effector: i32) -> Option<Vec3> {
 
 #[cfg(test)]
 mod tests {
-    use body_rig::angle::{line_yaw, yaw_of_flat};
+    use body_rig::math::angle::{line_yaw, yaw_of_flat};
     use glam::Quat;
 
     use super::*;

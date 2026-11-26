@@ -528,14 +528,14 @@ impl LateFrame {
                         ..reference
                     };
                     self.hand_delta(hand, dtf)
-                        .map_or(solved, |d| hand_pose::mul(d, solved))
+                        .map_or(solved, |d| d.compose(solved))
                 })
             });
-        let to_drawn = hand_pose::mul(drawn, hand_pose::inverse(wrist));
+        let to_drawn = drawn.compose(wrist.inverse());
         Some(DrawnHand {
             wrist: drawn,
-            grip: hand_pose::mul(to_drawn, grip),
-            aim: hand_pose::mul(to_drawn, aim),
+            grip: to_drawn.compose(grip),
+            aim: to_drawn.compose(aim),
         })
     }
 

@@ -3,7 +3,7 @@
 //! wrote ([`propel`]). The hands are in the cockpit frame (+X right, +Y up, +Z back, metres),
 //! which rides the body.
 
-use body_rig::smooth::follow_factor;
+use body_rig::math::smooth::follow_factor;
 use glam::{Vec2, Vec3};
 use serde::Deserialize;
 

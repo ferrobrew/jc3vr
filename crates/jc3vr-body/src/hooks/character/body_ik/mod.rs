@@ -10,6 +10,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use body_rig::math::angle::heading;
 use jc3gi::{
     animation::ik::{Effector, HumanIK, Pass, RotationAxis, SolveStep},
     character::character::{
@@ -559,9 +560,8 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
         //
         // The chest turns to the player's estimated torso instead while the rig has one: the
         // head's turn is a poor stand-in for the chest's once the player looks over a shoulder.
-        let torso_yaw = rig::chest_turn(character_rotation).unwrap_or_else(|| {
-            headpose::sim::body_yaw_of(headpose::body_relative_rotation()) * tuning.yaw_share
-        });
+        let torso_yaw = rig::chest_turn(character_rotation)
+            .unwrap_or_else(|| heading(headpose::body_relative_rotation()) * tuning.yaw_share);
         let torso = lean * glam::Quat::from_rotation_y(torso_yaw);
 
         // While aiming, the torso targets and hand pins stand down wholesale (the head target

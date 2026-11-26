@@ -21,7 +21,7 @@ pub mod torso;
 pub mod tuning;
 pub(crate) mod visual;
 
-use body_rig::angle::{direction, wrap, yaw_of};
+use body_rig::math::angle::{direction, wrap, yaw_of};
 use glam::{Quat, Vec3};
 use jc3vr_input::frame::Pose;
 use jc3vr_view::{headpose, headpose::xr::FollowSettings};

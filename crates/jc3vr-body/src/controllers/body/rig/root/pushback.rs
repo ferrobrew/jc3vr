@@ -19,7 +19,7 @@
 //!
 //! Vectors are world `(x, z)`, metres.
 
-use body_rig::smooth::smoothstep;
+use body_rig::math::smooth::smoothstep;
 use glam::Vec2;
 
 use crate::controllers::body::rig::{

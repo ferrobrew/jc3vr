@@ -55,7 +55,7 @@ fn a_reading_turns_into_the_cockpit_frame_as_it_stands() {
     );
     // The pelvis joint's forward (+Z) lies along that heading in the cockpit frame.
     let forward = turned.joints[0] * Vec3::Z;
-    let expected = body_rig::angle::direction(1.0);
+    let expected = body_rig::math::angle::direction(1.0);
     assert!((forward - expected).length() < 1e-4, "{forward} {expected}");
 }
 

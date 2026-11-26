@@ -4,7 +4,7 @@
 //! A curl runs from 0 (the finger straight) to 1 (the finger closed into a fist). A splay is the
 //! finger's sideways turn at its knuckle toward the thumb side, in radians.
 
-use body_rig::rotation::twist_angle;
+use body_rig::math::rotation::twist_angle;
 use glam::{FloatExt, Quat, Vec3};
 use jc3vr_input::frame::{
     HAND_JOINT_COUNT, Hand, HandFrame, HandInputs, HandJoint, InteractionProfile,

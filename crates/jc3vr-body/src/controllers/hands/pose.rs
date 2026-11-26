@@ -20,7 +20,7 @@
 //! rotation target is the delta between the two ([`wrist_rotation_delta`]), which never needs to
 //! know how the game's hand bone is oriented at rest.
 
-use body_rig::rotation::shortest;
+use body_rig::math::rotation::shortest;
 use glam::{EulerRot, Mat3, Quat, Vec3};
 use jc3vr_input::frame::{Hand, Pose};
 
@@ -57,7 +57,7 @@ pub fn cockpit_hand(
     offset: &GripOffset,
     remap: Option<ArmRemap>,
 ) -> CockpitHand {
-    let wrist = mul(grip, grip_to_wrist(hand, offset));
+    let wrist = grip.compose(grip_to_wrist(hand, offset));
     let shift = remap.map_or(Vec3::ZERO, |remap| {
         remap.apply(wrist.position) - wrist.position
     });
@@ -146,21 +146,15 @@ pub fn wrist_rotation_delta(target: Quat, animated: Quat) -> (Vec3, f32) {
     shortest(target * animated.inverse()).to_axis_angle()
 }
 
-/// `a` then `b`, as rigid transforms: `b` expressed in `a`'s frame.
+/// `a` then `b`, as rigid transforms: [`Pose::compose`], kept for the crates that still call it
+/// here.
 pub fn mul(a: Pose, b: Pose) -> Pose {
-    Pose {
-        position: a.position + a.orientation * b.position,
-        orientation: (a.orientation * b.orientation).normalize(),
-    }
+    a.compose(b)
 }
 
-/// The inverse rigid transform.
+/// The inverse rigid transform: [`Pose::inverse`], kept for the crates that still call it here.
 pub fn inverse(p: Pose) -> Pose {
-    let orientation = p.orientation.inverse();
-    Pose {
-        position: orientation * -p.position,
-        orientation,
-    }
+    p.inverse()
 }
 
 /// Interpolate between two poses: a linear position and a spherical orientation.
@@ -173,7 +167,7 @@ pub fn interp(a: Pose, b: Pose, t: f32) -> Pose {
 
 /// The world-space correction that carries `reference` onto `now`: `now × reference⁻¹`.
 pub fn delta(now: Pose, reference: Pose) -> Pose {
-    mul(now, inverse(reference))
+    now.compose(reference.inverse())
 }
 
 /// The correction for a weighted move from `reference` toward `now`.
@@ -287,20 +281,16 @@ mod tests {
         };
         let right = right_grip_on_vertical_handle();
         let left = left_grip_on_vertical_handle();
-        let r = mul(
-            Pose {
-                position: Vec3::ZERO,
-                orientation: right,
-            },
-            grip_to_wrist(Hand::Right, &offset),
-        );
-        let l = mul(
-            Pose {
-                position: Vec3::ZERO,
-                orientation: left,
-            },
-            grip_to_wrist(Hand::Left, &offset),
-        );
+        let r = Pose {
+            position: Vec3::ZERO,
+            orientation: right,
+        }
+        .compose(grip_to_wrist(Hand::Right, &offset));
+        let l = Pose {
+            position: Vec3::ZERO,
+            orientation: left,
+        }
+        .compose(grip_to_wrist(Hand::Left, &offset));
         let mirror = |v: Vec3| Vec3::new(-v.x, v.y, v.z);
         assert!(close(l.position, mirror(r.position)));
         // Mirrored hands: the fingers and the back of the hand mirror; the wrist's X flips too.
@@ -418,7 +408,7 @@ mod tests {
             orientation: Quat::from_rotation_z(0.5) * Quat::from_rotation_x(0.1),
         };
         let d = delta(now, reference);
-        let carried = mul(d, reference);
+        let carried = d.compose(reference);
         assert!(close(carried.position, now.position));
         assert!(same_rotation(carried.orientation, now.orientation));
 
@@ -441,7 +431,7 @@ mod tests {
             ..reference
         };
         let correction = weighted_delta(now, reference, 0.5);
-        let carried = mul(correction, reference);
+        let carried = correction.compose(reference);
         assert!(close(carried.position, reference.position));
         assert!(same_rotation(
             carried.orientation,

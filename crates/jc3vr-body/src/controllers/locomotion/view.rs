@@ -18,7 +18,7 @@
 
 use body_rig::{
     body::EYES_TO_NECK,
-    smooth::{critically_damped, smoothstep},
+    math::smooth::{critically_damped, smoothstep},
 };
 use glam::{Mat4, Vec3};
 use jc3vr_view::headpose::Anchors;

@@ -45,6 +45,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use body_rig::math::Side;
 use glam::{Mat4, Quat, Vec3};
 use jc3gi::{
     animation::ik::{Effector, Pass, SolveStep},
@@ -63,10 +64,7 @@ use parking_lot::Mutex;
 use crate::{
     controllers::{
         body::{
-            procedural::{
-                ArmContext, arm_context, owns_body,
-                solver::arms::{Side, elbow_hint},
-            },
+            procedural::{ArmContext, arm_context, owns_body, solver::arms::elbow_hint},
             unarmed,
         },
         hands::{
@@ -1022,9 +1020,8 @@ fn wrist_target(character: &Character, active: &ActiveHands, cockpit: &CockpitHa
     let world = CockpitTransform::current(active.head.position, active.world_scale)
         .pose_to_world(cockpit.wrist);
     let to_world = Mat4::from(character.m_WorldMatrixT1);
-    let (_, rotation, position) = (to_world.inverse()
-        * Mat4::from_rotation_translation(world.orientation, world.position))
-    .to_scale_rotation_translation();
+    let (_, rotation, position) =
+        (to_world.inverse() * world.to_mat4()).to_scale_rotation_translation();
     WristTarget {
         world,
         rotation,

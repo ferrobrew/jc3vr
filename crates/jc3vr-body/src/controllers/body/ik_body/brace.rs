@@ -9,7 +9,7 @@
 
 use std::time::Instant;
 
-use body_rig::{brace::BraceHit, contact::Side};
+use body_rig::{brace::BraceHit, math::Side};
 use glam::Vec3;
 use jc3gi::character::character::Character;
 use parking_lot::Mutex;

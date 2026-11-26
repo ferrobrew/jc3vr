@@ -4,7 +4,7 @@
 //! The gate measures the upper-leg line before IK while on foot. Brief hand-over cases retain
 //! the follower; losing grounded authority resets it.
 
-use body_rig::angle::{line_yaw, wrap};
+use body_rig::math::angle::{line_yaw, wrap};
 use glam::Quat;
 
 use crate::controllers::body::procedural::{

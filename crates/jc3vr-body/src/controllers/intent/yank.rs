@@ -276,6 +276,8 @@ impl YankDetector {
 
 #[cfg(test)]
 mod tests {
+    use body_rig::math::constants::SEATED_TICK_S;
+
     use super::*;
 
     const DT: f32 = 1.0 / 30.0;
@@ -300,7 +302,6 @@ mod tests {
     ];
     const SEATED_AIM: Vec3 = Vec3::new(0.51, -0.46, -0.73);
     const SEATED_HEAD: Vec3 = Vec3::new(0.07, -0.046, 0.0);
-    const SEATED_DT: f32 = 0.0266;
 
     fn zip_hand(grip: Vec3, aim: Vec3) -> Option<HandLine> {
         Some(HandLine { grip, aim })
@@ -363,7 +364,7 @@ mod tests {
             .iter()
             .filter(|&&grip| {
                 zip.step_from(
-                    SEATED_DT,
+                    SEATED_TICK_S,
                     zip_hand(grip, SEATED_AIM),
                     Some(SEATED_HEAD),
                     true,
@@ -384,7 +385,7 @@ mod tests {
             .enumerate()
             .filter_map(|(k, &grip)| {
                 let aim = SEATED_AIM + Vec3::new(-0.1, 0.1, 0.0) * k as f32;
-                zip.step(SEATED_DT, zip_hand(grip, aim), true, grapple_yank())
+                zip.step(SEATED_TICK_S, zip_hand(grip, aim), true, grapple_yank())
             })
             .count();
         assert_eq!(fired, 1);
@@ -393,7 +394,12 @@ mod tests {
         let mut detector = YankDetector::new();
         assert!(SEATED_ZIP.iter().all(|grip| {
             detector
-                .step(SEATED_DT, Some(grip.distance(body)), true, grapple_yank())
+                .step(
+                    SEATED_TICK_S,
+                    Some(grip.distance(body)),
+                    true,
+                    grapple_yank(),
+                )
                 .is_none()
         }));
     }
@@ -405,12 +411,17 @@ mod tests {
         for k in 0..6 {
             let grip = Vec3::new(0.06 * k as f32, -0.25, -0.4);
             assert!(
-                zip.step(SEATED_DT, zip_hand(grip, Vec3::NEG_Z), true, grapple_yank())
-                    .is_none()
+                zip.step(
+                    SEATED_TICK_S,
+                    zip_hand(grip, Vec3::NEG_Z),
+                    true,
+                    grapple_yank()
+                )
+                .is_none()
             );
         }
         zip.step(
-            SEATED_DT,
+            SEATED_TICK_S,
             zip_hand(Vec3::ZERO, Vec3::NEG_Z),
             false,
             grapple_yank(),
@@ -419,8 +430,13 @@ mod tests {
         let fired = (0..6)
             .filter(|&k| {
                 let grip = Vec3::new(0.06 * k as f32, -0.25, -0.4);
-                zip.step(SEATED_DT, zip_hand(grip, Vec3::NEG_X), true, grapple_yank())
-                    .is_some()
+                zip.step(
+                    SEATED_TICK_S,
+                    zip_hand(grip, Vec3::NEG_X),
+                    true,
+                    grapple_yank(),
+                )
+                .is_some()
             })
             .count();
         assert_eq!(fired, 1);
@@ -429,12 +445,20 @@ mod tests {
     #[test]
     fn an_untracked_arming_takes_its_line_from_the_first_tracked_tick() {
         let mut zip = LineYank::new();
-        assert!(zip.step(SEATED_DT, None, true, grapple_yank()).is_none());
+        assert!(
+            zip.step(SEATED_TICK_S, None, true, grapple_yank())
+                .is_none()
+        );
         let fired = SEATED_ZIP
             .iter()
             .filter(|&&grip| {
-                zip.step(SEATED_DT, zip_hand(grip, SEATED_AIM), true, grapple_yank())
-                    .is_some()
+                zip.step(
+                    SEATED_TICK_S,
+                    zip_hand(grip, SEATED_AIM),
+                    true,
+                    grapple_yank(),
+                )
+                .is_some()
             })
             .count();
         assert_eq!(fired, 1);

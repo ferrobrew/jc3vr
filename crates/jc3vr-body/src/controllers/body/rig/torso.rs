@@ -2,9 +2,9 @@
 //! live torso ([`crate::controllers::body::rig::grounded::torso`]).
 //!
 //! Positions use +X right, +Y up, and -Z forward, in metres. A heading is a yaw about +Y,
-//! positive turning -Z toward -X, as in [`jc3vr_view::headpose::sim::body_yaw_of`].
+//! positive turning -Z toward -X, as in [`body_rig::math::angle`].
 
-use body_rig::angle::yaw_of;
+use body_rig::math::angle::yaw_of;
 use glam::{Quat, Vec3};
 
 /// The estimated torso, in the cockpit frame.
@@ -55,7 +55,7 @@ pub(crate) fn relative_heading(torso: Quat, view: Quat, character: Quat) -> Opti
 
 #[cfg(test)]
 mod tests {
-    use body_rig::angle::{direction, head_heading, wrap, yaw_of};
+    use body_rig::math::angle::{direction, head_heading, heading, wrap, yaw_of};
 
     use super::*;
 
@@ -101,9 +101,7 @@ mod tests {
         }
         // Turning -Z toward -X is positive, as the body yaw is.
         assert!(yaw_of(Vec3::NEG_X).unwrap() > 0.0);
-        assert!(
-            (jc3vr_view::headpose::sim::body_yaw_of(Quat::from_rotation_y(0.4)) - 0.4).abs() < 1e-6
-        );
+        assert!((heading(Quat::from_rotation_y(0.4)) - 0.4).abs() < 1e-6);
     }
 
     #[test]

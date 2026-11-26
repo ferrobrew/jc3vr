@@ -28,9 +28,12 @@
 
 use body_rig::{
     body::{EYES_TO_NECK, neck_pivot},
-    geometry::within_sphere,
-    rotation::level,
-    smooth::{follow_factor, smoothstep_between},
+    math::{
+        angle::heading,
+        geometry::within_sphere,
+        shoulders,
+        smooth::{follow_factor, smoothstep_between},
+    },
 };
 use glam::{FloatExt, Quat, Vec3};
 use jc3vr_core::config::engine::{Invalid, nonnegative, positive, range};
@@ -345,7 +348,7 @@ pub fn detach_offset(miss: Vec3, threshold: f32, cap: f32) -> Vec3 {
 /// The torso's heading the player's shoulders are estimated at: the estimated torso's `torso` when
 /// there is one, and the head's heading otherwise.
 pub fn torso_heading(head: Pose, torso: Option<Quat>) -> Quat {
-    torso.unwrap_or_else(|| level(head.orientation))
+    torso.unwrap_or_else(|| Quat::from_rotation_y(heading(head.orientation)))
 }
 
 fn shoulders(head: Pose, torso: Quat, dimensions: &BodyDimensions) -> [Vec3; 2] {
@@ -356,11 +359,10 @@ fn character_shoulders(head: Pose, torso: Quat) -> [Vec3; 2] {
     body::character_shoulder_positions(level_eyes(head, torso), torso)
 }
 
-/// Where the eyes of `head` would be with the head facing the torso's heading `torso` and level,
-/// about the same neck pivot: the point both bodies' shoulders hang from, so a nod or a glance
-/// does not move them.
-fn level_eyes(head: Pose, torso: Quat) -> Vec3 {
-    neck_pivot(head.position, head.orientation) - torso * EYES_TO_NECK
+/// Where the eyes of `head` would be with the head facing the torso's heading `torso` and level:
+/// the point both bodies' shoulders hang from ([`shoulders::level_eyes`]).
+pub fn level_eyes(head: Pose, torso: Quat) -> Vec3 {
+    shoulders::level_eyes(head.position, head.orientation, torso)
 }
 
 /// The shortest player or character arm the measured remap accepts, metres.

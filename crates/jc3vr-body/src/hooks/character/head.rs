@@ -3,6 +3,7 @@
 //! at the very end of the pose-finalization pass, after the HumanIK solve and the model-space pose
 //! computation.
 
+use body_rig::math::angle::heading;
 use glam::Quat;
 use jc3gi::character::character::{AnimatedModel, Character, Joint, SafeBoneIndex};
 use jc3vr_view::{headpose, headpose::Source, hooks::graphics_engine::player_draw, vr::VR_CONFIG};
@@ -172,7 +173,7 @@ pub(crate) unsafe fn override_head(character: *mut Character) {
         // model-space neck orientation captured above — no rest-frame knowledge needed, and the
         // neck's translation (its own origin) is untouched.
         if in_gameplay && headpose::is_active() && headpose::anchor().is_some() {
-            let yaw = headpose::sim::body_yaw_of(headpose::body_relative_rotation());
+            let yaw = heading(headpose::body_relative_rotation());
             let neck = &CHARACTER.get().neck;
             let excess_deg =
                 (yaw.abs().to_degrees() - neck.twist_start_deg).clamp(0.0, neck.twist_max_deg);
@@ -213,7 +214,7 @@ mod tests {
     use super::*;
 
     fn assert_rotation(actual: Quat, expected: Quat) {
-        assert!(body_rig::rotation::angle_between(actual, expected) < 0.001);
+        assert!(body_rig::math::rotation::angle_between(actual, expected) < 0.001);
     }
 
     #[test]

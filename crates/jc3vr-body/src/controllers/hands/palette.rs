@@ -7,7 +7,7 @@
 //! that follows the corrected wrist, optionally stretched along the forearm so its far end reaches
 //! a hand detached from the arm, so the forearm stays attached at both ends.
 
-use body_rig::rotation::twist_angle;
+use body_rig::math::rotation::twist_angle;
 use glam::{Mat3, Mat4, Quat, Vec3, Vec4};
 use jc3vr_view::hooks::graphics_engine::palette_edit::PaletteLayout;
 

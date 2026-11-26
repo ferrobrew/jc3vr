@@ -8,7 +8,7 @@
 
 use std::fmt;
 
-use body_rig::angle::{direction, line_yaw, wrap, yaw_of};
+use body_rig::math::angle::{direction, line_yaw, wrap, yaw_of};
 use glam::{Mat4, Quat, Vec3};
 use jc3vr_view::controllers::cockpit::CockpitTransform;
 

@@ -21,13 +21,10 @@
 //! share, against the elbow HumanIK drew; `docs/mod/rendering/presentation-layer.md` has the
 //! numbers.
 
-use body_rig::smooth::follow_factor;
+use body_rig::math::{Side, smooth::follow_factor};
 use glam::{Quat, Vec3};
 
-use crate::{
-    controllers::{body::procedural::solver::arms::Side, presentation::tuning::PRESENTATION},
-    tuning::FRESHNESS,
-};
+use crate::{controllers::presentation::tuning::PRESENTATION, tuning::FRESHNESS};
 
 /// One arm's inputs, model space.
 #[derive(Debug, Copy, Clone, PartialEq)]

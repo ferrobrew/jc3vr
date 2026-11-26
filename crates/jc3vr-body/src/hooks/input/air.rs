@@ -20,7 +20,7 @@ use std::{
     time::Instant,
 };
 
-use body_rig::smooth::smoothstep;
+use body_rig::math::smooth::smoothstep;
 use detours_macro::detour;
 use jc3gi::{
     character::character::Character, input::parachute::CharacterAirMovementSettings,

@@ -28,13 +28,10 @@ pub mod world;
 
 use std::num::NonZeroUsize;
 
+pub use body_rig::math::constants::GRAVITY_MPS2;
 use glam::{Quat, Vec3};
 
 use crate::controllers::physics::bodies::{BodyError, BodyState};
-
-/// Standard gravity, metres per second squared: what the grapple's lines, and the throws and holds
-/// beside them, work against.
-pub const GRAVITY_MPS2: f32 = 9.81;
 
 /// Give the dynamic body `body` the velocities `linear` and `angular`, world space, after checking
 /// it still belongs to `owner`: a dropped weapon leaving the hand with the hand's motion.
