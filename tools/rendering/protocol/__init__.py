@@ -233,7 +233,7 @@ class SunShadows(StrEnum):
 # The single-pass production switches a configuration may override, by their configuration field
 # names. Mirrors `SinglePassSwitch` in `crates/jc3vr-render/src/stereo/switches.rs`; a test keeps the two equal.
 SINGLE_PASS_SWITCHES = (
-    "reproject", "reproject_camera_only", "terrain", "terrain_patch_per_eye", "terrain_eye_rows", "full_view_projection_rows", "tree_impostors",
+    "reproject", "terrain", "terrain_patch_per_eye", "tree_impostors",
     "tree_impostor_pixel_size_per_eye", "tree_impostor_screen_door_per_eye", "static_lights_per_eye", "moon_per_eye", "water_plane_per_eye", "clouds_per_eye", "stars_per_eye", "bark", "foliage",
     "vegetation_once", "occluder",
     "instanced_per_eye", "hw_instanced_once", "indirect_per_eye", "vertex_globals_per_eye", "reconstruct_per_eye", "fullscreen_camera_per_eye",
@@ -248,7 +248,7 @@ SINGLE_PASS_SWITCHES = (
     "ssao_per_eye", "ssao_exact_sampling", "ao_volumes_per_eye", "ssr_per_eye", "subsurface_per_eye", "dof_per_eye", "ssdecal_per_eye",
     "composite_overlays_per_eye", "glare_per_eye", "foveation_per_eye", "foveation_gbuffer", "foveation_lighting", "foveation_quads", "fsr_per_eye", "clustered_per_eye",
     "clustered_per_eye_light_view", "uniform_viewport_slots", "viewport_bind_cache",
-    "skip_unread_effect_depth_copy", "ssao_far_early_out", "ssao_skip_temporal",
+    "skip_unread_effect_depth_copy", "ssao_skip_temporal",
     "collapse_direct_blit",
 )
 

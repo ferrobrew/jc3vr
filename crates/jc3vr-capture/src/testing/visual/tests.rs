@@ -75,7 +75,7 @@ fn single_pass_switch_overrides_survive_the_profile_and_reset_with_it() {
     let mut config = Snapshot::defaults();
     apply_profile_with_overrides(&mut config, Mode::SinglePass, Some(overrides));
     let sps = config.part(&STEREO_CONFIG).single_pass;
-    assert!(sps.enabled && sps.collapse && sps.reproject);
+    assert!(sps.enabled && sps.reproject);
     assert!(!sps.ssr_per_eye && !sps.tree_impostors);
     apply_profile_with_overrides(&mut config, Mode::SinglePass, None);
     assert!(
@@ -379,10 +379,6 @@ fn profile_states_single_pass_for_every_mode() {
         let on = mode == Mode::SinglePass;
         let sps = &config.part(&STEREO_CONFIG).single_pass;
         assert_eq!(sps.enabled, on, "{mode:?}");
-        assert_eq!(sps.dual_eye, on, "{mode:?}");
-        assert_eq!(sps.collapse, on, "{mode:?}");
-        assert_eq!(sps.double_wide, on, "{mode:?}");
-        assert!(!sps.patch_dryrun, "{mode:?}");
     }
 }
 
@@ -431,14 +427,10 @@ fn profile_keeps_per_eye_native_resolution_across_modes() {
         let on = mode == Mode::SinglePass;
         let sps = &config.part(&STEREO_CONFIG).single_pass;
         assert_eq!(sps.enabled, on);
-        assert_eq!(sps.dual_eye, on);
-        assert_eq!(sps.double_wide, on);
-        assert_eq!(sps.collapse, on);
         assert_eq!(sps.reproject, on);
         assert_eq!(sps.terrain, on);
         assert_eq!(sps.tree_impostors, on);
         assert_eq!(sps.bark && sps.foliage && sps.occluder, on);
-        assert!(!sps.patch_dryrun);
     }
 }
 

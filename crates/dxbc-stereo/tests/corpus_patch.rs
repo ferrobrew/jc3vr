@@ -267,7 +267,7 @@ fn corpus_vegetation_reads_the_camera_position_but_never_the_view_projection() {
 }
 
 /// The *allowlisted* scene families the remap claims on a camera-position reference alone, which the
-/// payload's `single_pass_reproject_camera_only` sends to the reprojection instead. They share one
+/// payload sends to the reprojection instead. They share one
 /// vertex-shader body: `clip = cb1[0..3] · objectPosition` from a baked world-view-projection, a
 /// distance fade off `cb0[4]` (`add rN.xyz, rM.xyzx, -cb0[4].xyzx` into a `dp3` and then a
 /// `mad_sat ... l(-0.0001), l(1.0)`), and a depth bias applied after the projection

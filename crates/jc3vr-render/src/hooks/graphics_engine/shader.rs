@@ -136,8 +136,7 @@ fn create_vertex_program(
     // times there is a multi-second freeze on every F5, on a path already racing teardown, and it buys
     // nothing: the substitution is inert during shutdown, so the rewrite's only product is a tally
     // nobody will read.
-    let census = !jc3vr_core::is_shutting_down()
-        && STEREO_CONFIG.query(|c| c.single_pass.enabled || c.single_pass.patch_dryrun);
+    let census = !jc3vr_core::is_shutting_down() && STEREO_CONFIG.query(|c| c.single_pass.enabled);
     if census
         && let Some(p) = unsafe { params.as_mut() }
         && !p.m_Code.is_null()
@@ -157,7 +156,7 @@ fn create_vertex_program(
         } else {
             crate::stereo::single_pass::remap_vertex_shader(code)
         };
-        crate::stereo::single_pass::record_patch_outcome(&outcome, name.as_deref());
+        crate::stereo::single_pass::record_patch_outcome(&outcome);
         // Which transform this shader gets is decided here, because here is the only place its engine
         // name exists. The decision is then remembered against the bytecode, so the `CreateVertexShader`
         // detour re-applies *this* decision to a shader re-created through a path that skips this hook,
@@ -298,7 +297,6 @@ fn create_fragment_program(
     // same buffer. Applied after the screen-door rewrites, whose buffer declaration it reads.
     let localize_velocity = jc3vr_view::stereo::layout::collapse_active()
         && STEREO_CONFIG.query(|c| c.single_pass.velocity_per_eye);
-    let ssao_far_early_out = STEREO_CONFIG.lock().single_pass.ssao_far_early_out;
     let mut rewritten_screen_pass = None;
     if !jc3vr_core::is_shutting_down()
         && let Some(p) = unsafe { params.as_ref() }
@@ -318,14 +316,6 @@ fn create_fragment_program(
         })
         .or_else(|| screen_space_reflection::rewrite_fragment_program(code, localize_reflections))
         .or_else(|| ao_volumes::rewrite_fragment_program(code, localize_ao_volumes));
-        // The SSAO generation's far quads skip the taps, over whichever rewrite above it carries.
-        if ssao_far_early_out
-            && let Some(skipped) = ambient_occlusion::skip_far_fragment_program(
-                rewritten_screen_pass.as_deref().unwrap_or(code),
-            )
-        {
-            rewritten_screen_pass = Some(skipped);
-        }
     }
     // Skip patching once eject begins, so the shader restore's bounce re-creates pristine fragment
     // shaders (matching the vertex side) and the clean game keeps none of the mod's edits.
@@ -548,10 +538,10 @@ fn create_hull_program(
 }
 
 /// Detour on `Graphics::CreateDomainProgram` for the single-pass terrain path: when terrain single-pass
-/// is active, reproject the domain shader's clip by the per-eye `M_eye` and route to the eye's viewport
-/// ([`dxbc_stereo::reproject_domain_shader`]), reading the eye off the `TEXCOORD3.z` lane the vertex and
+/// is active, have the domain shader read the eye's camera rows and route to the eye's viewport
+/// ([`dxbc_stereo::rebase_domain_shader`]), reading the eye off the `TEXCOORD3.z` lane the vertex and
 /// hull stages carried. Gated structurally like the hull hook. A terrain domain shader with no free
-/// lane takes the pinned-eye reprojection instead ([`dxbc_stereo::reproject_pinned_eye`], under
+/// lane reads the pinned eye's rows instead ([`dxbc_stereo::rebase_pinned_domain_shader`], under
 /// [`crate::stereo::single_pass::should_pin_terrain`]), and its D3D object is tagged so the per-eye
 /// re-issue knows to pin `cb13` for its draws. The domain shader reads `cb13`, which is bound to the
 /// domain stage in [`crate::stereo::single_pass`]'s per-view upload.
@@ -572,33 +562,22 @@ fn create_domain_program(
         // a per-eye viewport that does not exist in the shadow pass) corrupts the shadow map.
         if !is_terrain_shadow_pass(name.as_deref()) {
             let code = unsafe { std::slice::from_raw_parts(p.m_Code, p.m_Size as usize) };
-            // A terrain domain shader with no free eye lane is drawn once per eye instead, and takes
-            // the pinned-eye reprojection that reads whichever eye that re-issue pins `cb13` to.
-            // With the eye-row switch on, either path reads the eye's camera rows rather than
-            // reprojecting the centre's clip position.
-            let eye_rows = crate::stereo::single_pass::terrain_eye_rows();
-            let lane = if eye_rows {
-                dxbc_stereo::rebase_domain_shader(code)
-            } else {
-                dxbc_stereo::reproject_domain_shader(code)
-            };
-            let rewrite = match lane {
+            // A terrain domain shader with no free eye lane is drawn once per eye instead, and reads
+            // the camera rows of whichever eye that re-issue pins `cb13` to.
+            let rewrite = match dxbc_stereo::rebase_domain_shader(code) {
                 Ok(blob) => Some((blob, "lane")),
                 Err(dxbc_stereo::DxbcError::NoEyeLane)
                     if crate::stereo::single_pass::should_pin_terrain(name.as_deref()) =>
                 {
-                    let pinned = if eye_rows {
-                        dxbc_stereo::rebase_pinned_domain_shader(code)
-                    } else {
-                        dxbc_stereo::reproject_pinned_eye(code)
-                    };
-                    pinned.ok().map(|blob| (blob, "pinned"))
+                    dxbc_stereo::rebase_pinned_domain_shader(code)
+                        .ok()
+                        .map(|blob| (blob, "pinned"))
                 }
                 Err(_) => None,
             };
             if let Some((blob, path)) = rewrite {
                 let len = blob.len() as u64;
-                tracing::info!(target: "single_pass", stage = "domain", name = ?name, path, eye_rows, "terrain: reprojected");
+                tracing::info!(target: "single_pass", stage = "domain", name = ?name, path, "terrain: reprojected");
                 pinned = path == "pinned";
                 saved = Some((p.m_Code, p.m_Size, blob));
                 p.m_Code = saved.as_ref().expect("just set").2.as_ptr();
@@ -821,9 +800,6 @@ fn bounce_shader_bundle() -> Result<(), ReloadError> {
             "shader reload: '{current_name}' (bounced via '{other}'); {} PCF sites patched total",
             patched_count(),
         );
-        // A no-op unless the const census switch is on; then the `back` pass has re-created every
-        // shader through the census hook, so the name census is complete -- dump it.
-        crate::stereo::single_pass::dump_vs_name_census();
     }
     Ok(())
 }

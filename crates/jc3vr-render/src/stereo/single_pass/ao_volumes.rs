@@ -83,7 +83,7 @@ pub(crate) unsafe fn bind_rows(rc: *const RenderContext) -> Option<RowsBound> {
         size: [full.Width, full.Height],
         uv_scale,
     };
-    let split = dual_eye_active() && collapse_active() && in_gbuffer_range();
+    let split = active() && collapse_active() && in_gbuffer_range();
     let reprojection = split.then(|| *CURRENT_M_EYE.lock()).flatten();
     let rows = rows(target, reprojection);
     if rows

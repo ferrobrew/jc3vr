@@ -13,10 +13,9 @@
 //!   no video recording running).
 //! - [`CaptureFile`]: one file per capture, `<folder>/<stamp>.<ext>`: `profiles/<stamp>.json`
 //!   (profiler captures), `screenshots/<stamp>.png` with a `<stamp>.json` sidecar (F12),
-//!   `grapple-logs/<stamp>.csv` (grapple telemetry), and `shader-dumps/<stamp>.txt` (the
-//!   vertex-shader name census).
+//!   and `grapple-logs/<stamp>.csv` (grapple telemetry).
 //! - [`CaptureFolder`]: several files per capture, `<folder>/<stamp>/` holding files named by role:
-//!   `traces/<stamp>/` (a render trace's `trace.ndjson` and its `frameNNN_eye<N>.png` images) and
+//!   `traces/<stamp>/` (a render trace's `trace.ndjson`) and
 //!   `recordings/<stamp>/` (a recording's halves, named by [`RecordingFile`]: the tracking
 //!   recording or lookback save and the video's `frames.jsonl` sidecar, beside the capture host's
 //!   `video.mkv` and `stream.json`, which the host writes there itself).
@@ -70,8 +69,6 @@ pub enum CaptureFile {
     Screenshot,
     /// A grapple telemetry capture.
     GrappleLog,
-    /// The vertex-shader name census.
-    ShaderDump,
 }
 
 impl CaptureFile {
@@ -80,7 +77,6 @@ impl CaptureFile {
             Self::Profile => "profiles",
             Self::Screenshot => "screenshots",
             Self::GrappleLog => "grapple-logs",
-            Self::ShaderDump => "shader-dumps",
         }
     }
 
@@ -89,7 +85,6 @@ impl CaptureFile {
             Self::Profile => "json",
             Self::Screenshot => "png",
             Self::GrappleLog => "csv",
-            Self::ShaderDump => "txt",
         }
     }
 
@@ -327,11 +322,10 @@ mod tests {
 
     use super::*;
 
-    const ALL_FILES: [CaptureFile; 4] = [
+    const ALL_FILES: [CaptureFile; 3] = [
         CaptureFile::Profile,
         CaptureFile::Screenshot,
         CaptureFile::GrappleLog,
-        CaptureFile::ShaderDump,
     ];
     const ALL_FOLDERS: [CaptureFolder; 2] = [CaptureFolder::Trace, CaptureFolder::Recording];
     const ALL_RECORDING_FILES: [RecordingFile; 4] = [

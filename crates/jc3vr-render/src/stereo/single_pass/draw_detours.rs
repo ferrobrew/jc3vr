@@ -77,7 +77,7 @@ pub(super) unsafe extern "system" fn draw_indexed_detour(
     {
         return;
     }
-    if dual_eye_active() && in_gbuffer_range() && per_eye_reissue_eye().is_none() {
+    if active() && in_gbuffer_range() && per_eye_reissue_eye().is_none() {
         let patched = BOUND_VS_PATCHED.load(Ordering::Relaxed);
         if patched {
             if collapse_active() {

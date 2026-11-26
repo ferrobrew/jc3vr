@@ -27,16 +27,9 @@ use jc3vr_view::stereo::{config::STEREO_CONFIG, layout, layout::LayoutFlags};
 #[derive(Clone, Copy)]
 pub(super) enum Flag {
     SinglePass,
-    DryRun,
-    DualEye,
-    Collapse,
-    DoubleWide,
     Reproject,
-    ReprojectCameraOnly,
     Terrain,
     TerrainPatchPerEye,
-    TerrainEyeRows,
-    FullViewProjectionRows,
     TreeImpostors,
     TreeImpostorPixelSize,
     StaticLights,
@@ -76,13 +69,7 @@ impl ConfigFlags {
 
     /// The stereo layout these flags ask for, as [`layout`] publishes it.
     fn layout(self) -> LayoutFlags {
-        LayoutFlags::new(
-            self.has(Flag::SinglePass)
-                && !self.has(Flag::DryRun)
-                && self.has(Flag::DualEye)
-                && self.has(Flag::Collapse),
-            self.has(Flag::DoubleWide),
-        )
+        LayoutFlags::new(self.has(Flag::SinglePass))
     }
 }
 
@@ -177,16 +164,9 @@ fn store_config_flags() -> u64 {
     let snapshot = STEREO_CONFIG.query(|c| {
         let s = &c.single_pass;
         bit(s.enabled && session_live, Flag::SinglePass)
-            | bit(s.patch_dryrun, Flag::DryRun)
-            | bit(s.dual_eye, Flag::DualEye)
-            | bit(s.collapse, Flag::Collapse)
-            | bit(s.double_wide, Flag::DoubleWide)
             | bit(s.reproject, Flag::Reproject)
-            | bit(s.reproject_camera_only, Flag::ReprojectCameraOnly)
             | bit(s.terrain, Flag::Terrain)
             | bit(s.terrain_patch_per_eye, Flag::TerrainPatchPerEye)
-            | bit(s.terrain_eye_rows, Flag::TerrainEyeRows)
-            | bit(s.full_view_projection_rows, Flag::FullViewProjectionRows)
             | bit(s.tree_impostors, Flag::TreeImpostors)
             | bit(
                 s.tree_impostor_pixel_size_per_eye,

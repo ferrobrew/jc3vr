@@ -27,8 +27,7 @@
 mod ambient;
 pub use ambient::{
     AMBIENT_OCCLUSION_CB_REGISTER, AMBIENT_OCCLUSION_ROWS_PER_EYE, AmbientOcclusionSampling,
-    localize_ambient_occlusion, localize_ambient_occlusion_filter, skip_far_ambient_occlusion,
-    snap_ambient_occlusion_uv,
+    localize_ambient_occlusion, localize_ambient_occlusion_filter, snap_ambient_occlusion_uv,
 };
 mod camera;
 pub use camera::{
@@ -89,7 +88,6 @@ pub use reproject::{
 pub use ssdecal::{SSDECAL_EYE_BIAS_REGISTER, bias_ssdecal_depth_uv};
 pub use terrain::{
     forward_eye_hull_shader, inject_eye_forward_vertex_shader, rebase_domain_shader,
-    reproject_domain_shader,
 };
 pub use volume::{
     AMBIENT_OCCLUSION_VOLUME_BOUNDARY_ROW, AMBIENT_OCCLUSION_VOLUME_CB_REGISTER,

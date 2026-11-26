@@ -4,7 +4,7 @@
 use dxbc_stereo::{
     AMBIENT_OCCLUSION_CB_REGISTER, AmbientOcclusionSampling, Dxbc, DxbcError, ShaderStage,
     TokenStream, localize_ambient_occlusion, localize_ambient_occlusion_filter,
-    skip_far_ambient_occlusion, snap_ambient_occlusion_uv,
+    snap_ambient_occlusion_uv,
 };
 
 mod common;
@@ -315,62 +315,5 @@ fn snap_covers_exactly_the_occlusion_passes() {
             "sh_0628_00251390.dxbc",
             "sh_0631_00256ab0.dxbc"
         ]
-    );
-}
-
-/// The far early-out applies to the generation family as the game ships it and over every rewrite
-/// the payload may have applied first, adds one quad-uniform branch ahead of the taps (two more
-/// `if`s in all, counting the original far branch), and declines every other shader.
-#[test]
-fn far_early_out_covers_the_generation_pass_in_every_form() {
-    let Some(dir) = shader_dir() else {
-        return;
-    };
-    let mut paths: Vec<_> = std::fs::read_dir(dir)
-        .expect("read the shader directory")
-        .map(|entry| entry.expect("read a directory entry").path())
-        .collect();
-    paths.sort();
-    let mut rewritten = Vec::new();
-    for path in &paths {
-        let blob = std::fs::read(path).expect("read a shader");
-        match skip_far_ambient_occlusion(&blob) {
-            Ok(_) => {
-                rewritten.push(path.file_name().expect("a file name").to_owned());
-                let forms = [
-                    blob.clone(),
-                    snap_ambient_occlusion_uv(&blob).expect("snap"),
-                    localize_ambient_occlusion(&blob, AmbientOcclusionSampling::Exact)
-                        .expect("localize exact"),
-                    localize_ambient_occlusion(&blob, AmbientOcclusionSampling::DoubleWide)
-                        .expect("localize double-wide"),
-                ];
-                for form in forms {
-                    let before = instructions(&form);
-                    let after = instructions(
-                        &skip_far_ambient_occlusion(&form).expect("the early-out applies"),
-                    );
-                    let ifs = |insns: &[Vec<u32>]| {
-                        insns.iter().filter(|insn| insn[0] & 0x7ff == 0x1f).count()
-                    };
-                    assert_eq!(ifs(&after), ifs(&before) + 1);
-                    // The movc, two derivative steps of three instructions, the if, the copied body
-                    // (its moves and ret), and the endif.
-                    let body = before.len() + 1;
-                    assert!(after.len() > body + 8, "{}", path.display());
-                }
-            }
-            Err(DxbcError::NoAmbientOcclusion) => {}
-            Err(error) => panic!("{}: {error}", path.display()),
-        }
-    }
-    assert_eq!(
-        rewritten,
-        [
-            "sh_0620_00240810.dxbc",
-            "sh_0627_0024c410.dxbc",
-            "sh_0628_00251390.dxbc",
-            "sh_0631_00256ab0.dxbc"
-        ],
     );
 }

@@ -29,8 +29,7 @@ use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
 use dxbc_stereo::{
     AMBIENT_OCCLUSION_CB_REGISTER, AMBIENT_OCCLUSION_ROWS_PER_EYE, AmbientOcclusionSampling,
-    localize_ambient_occlusion, localize_ambient_occlusion_filter, skip_far_ambient_occlusion,
-    snap_ambient_occlusion_uv,
+    localize_ambient_occlusion, localize_ambient_occlusion_filter, snap_ambient_occlusion_uv,
 };
 use jc3gi::types::math::{Matrix4, Vector4};
 use jc3vr_view::{
@@ -93,21 +92,6 @@ pub(crate) fn snap_fragment_program(code: &[u8]) -> Option<Vec<u8>> {
     REWRITTEN.store(BuiltWith::Unrewritten as u8, Ordering::Relaxed);
     Some(snapped)
 }
-
-/// An ambient-occlusion generation pass's bytecode (pristine or already rewritten) with its far
-/// quads skipping the taps (`single_pass.ssao_far_early_out`), or `None` for any other shader.
-pub(crate) fn skip_far_fragment_program(code: &[u8]) -> Option<Vec<u8>> {
-    let skipped = skip_far_ambient_occlusion(code).ok()?;
-    if !FAR_EARLY_OUT_LOGGED.swap(true, Ordering::Relaxed) {
-        tracing::info!(
-            target: "single_pass",
-            "ssao: the generation pass skips its taps for quads wholly beyond its range",
-        );
-    }
-    Some(skipped)
-}
-
-static FAR_EARLY_OUT_LOGGED: AtomicBool = AtomicBool::new(false);
 
 /// Bind each eye's reconstruction rows for the generation pass, for as long as the returned guard
 /// lives. `None`, with nothing bound, when the generation shader is not a rewritten one or an eye's

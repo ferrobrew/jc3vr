@@ -157,7 +157,7 @@ pub fn duplicate_current_viewport() {
 /// this reads that bound viewport and re-sets it as left/right halves.
 pub fn apply_eye_split_viewport() {
     // Collapse routes per draw (`ensure_collapse_viewport`), so the pass-level pre-split is off there.
-    if collapse_active() || !(dual_eye_active() && in_gbuffer_range()) {
+    if collapse_active() || !(active() && in_gbuffer_range()) {
         return;
     }
     // SAFETY: runs on the render thread at the G-buffer range boundary; the device/context pointers
@@ -336,7 +336,7 @@ pub(super) unsafe extern "system" fn rs_set_viewports_detour(
             unsafe { detour.call(context, 2, [vp, vp].as_ptr()) };
             return;
         }
-        let (slot0, slot1) = if dual_eye_active() && in_gbuffer_range() {
+        let (slot0, slot1) = if active() && in_gbuffer_range() {
             // Route the two eyes to the left/right halves of the (double-wide) target.
             VIEWPORT_SPLIT.fetch_add(1, Ordering::Relaxed);
             let half = vp.Width / 2.0;

@@ -1,12 +1,12 @@
 //! Validates the terrain tessellation eye-lane rewrites, which ride the single-pass eye index through
 //! the `TEXCOORD3.z` lane VS -> HS -> DS: the VS originator ([`inject_eye_forward_vertex_shader`]),
-//! the hull forwarder ([`forward_eye_hull_shader`]), and the domain reprojection
-//! ([`reproject_domain_shader`]). The game shaders are a git-ignored local extract, so these tests
+//! the hull forwarder ([`forward_eye_hull_shader`]), and the domain rewrite
+//! ([`rebase_domain_shader`]). The game shaders are a git-ignored local extract, so these tests
 //! skip when absent.
 
 use dxbc_stereo::{
     Dxbc, ShaderStage, TokenStream, forward_eye_hull_shader, inject_eye_forward_vertex_shader,
-    reproject_domain_shader,
+    rebase_domain_shader,
 };
 
 mod common;
@@ -87,15 +87,15 @@ fn eye_injected_vs_declares_the_lane_interface() {
     assert_eq!(lane.mask & 0x7, 0x7, "TEXCOORD3 widened to .xyz");
 }
 
-/// The terrain tessellation DS (`sh_1513`), reprojected -- or `None` when the extract is absent.
+/// The terrain tessellation DS (`sh_1513`), rewritten -- or `None` when the extract is absent.
 fn reprojected_terrain_ds() -> Option<Vec<u8>> {
     let dir = shader_dir()?;
     let blob = std::fs::read(dir.join("sh_1513_00a8d600.dxbc")).expect("read sh_1513");
-    Some(reproject_domain_shader(&blob).expect("reproject sh_1513"))
+    Some(rebase_domain_shader(&blob).expect("rebase sh_1513"))
 }
 
-/// The reprojected DS must re-parse cleanly, and every instruction (including the injected prologue,
-/// the widened lane input, and the `M_eye` epilogue) must decode with a length that lands exactly on
+/// The rewritten DS must re-parse cleanly, and every instruction (including the injected prologue,
+/// the widened lane input, and the eye-row selection) must decode with a length that lands exactly on
 /// the chunk boundary -- the guard against the instruction-length miscount that made D3DDisassemble
 /// loop.
 #[test]
@@ -127,7 +127,7 @@ fn reprojected_ds_reparses_cleanly() {
     );
 }
 
-/// The reprojected DS must widen its `TEXCOORD3` input lane to `.xyz` (the eye rides `.z`) and gain an
+/// The rewritten DS must widen its `TEXCOORD3` input lane to `.xyz` (the eye rides `.z`) and gain an
 /// `SV_ViewportArrayIndex` output at a register free of the existing signature (not merely free of the
 /// body's `dcl_output`s -- the shader has a declared-but-unwritten `TEXCOORD2` output).
 #[test]

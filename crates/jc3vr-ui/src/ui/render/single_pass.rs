@@ -1,5 +1,5 @@
-//! Single-pass stereo: the whole-feature switch, the bring-up levers, the shader-rewrite census, and the
-//! instanced eye-parity exposure readout.
+//! Single-pass stereo: the whole-feature switch, the production switches, the shader-rewrite census,
+//! and the instanced eye-parity exposure readout.
 
 use std::sync::atomic::Ordering;
 
@@ -16,8 +16,6 @@ use jc3vr_view::stereo::{
 pub(super) fn section(ui: &mut egui::Ui, cfg: &mut impl Parts) {
     // Single-pass stereo (on by default while a VR session runs): render the G-buffer geometry once,
     // emitting both eyes via instancing + SV_ViewportArrayIndex routing, instead of the double-draw.
-    // The census dry-run below is safe (no rendering change) and reports how the vertex-shader
-    // rewriter fares against the game's real shader set.
     ui.collapsing("Single-pass stereo", |ui| {
         // All-in/all-out toggle: flip the whole configuration together, so the one button is the
         // normal way to switch between single-pass and multipass. The individual levers below stay
@@ -32,10 +30,10 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut impl Parts) {
         if ui
             .button(toggle_label)
             .on_hover_text(
-                "Flips the whole feature -- single-pass, dual-eye, collapse, double-wide, the \
-                 reprojected scene families, terrain, tree impostors, and the bark/foliage/occluder \
-                 re-issue -- on or off together, along with native resolution. Clears the census \
-                 dry-run and reloads the shaders.",
+                "Flips the whole feature -- single-pass (the collapse into the double-wide target), \
+                 the reprojected scene families, terrain, tree impostors, and the bark/foliage/occluder \
+                 re-issue -- on or off together, along with native resolution, and reloads the \
+                 shaders.",
             )
             .clicked()
         {
@@ -51,62 +49,8 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut impl Parts) {
             "Master switch. Renders the G-buffer once with stereo-rewritten vertex shaders. \
              Forced inert without the DXVK viewport-routing capability (below).",
         );
-        ui.checkbox(
-            &mut cfg.part_mut(&STEREO_CONFIG).single_pass.patch_dryrun,
-            "Census only (dry-run: patch + tally, do not substitute -- safe)",
-        )
-        .on_hover_text(
-            "Runs the vertex-shader stereo rewrite on every shader at creation and counts the \
-             outcomes, without changing rendering. Validates the rewriter against real shaders.",
-        );
-        ui.checkbox(
-            &mut cfg.part_mut(&STEREO_CONFIG).single_pass.dump_vs_name_census,
-            "Dump the vertex-shader name census on the next shader reload",
-        )
-        .on_hover_text(
-            "Records each vertex shader's name against its rewrite class and writes them to the \
-             session directory when the shaders next reload. The census only sees shaders created \
-             while it is on, so turn it on, visit the area whose families you want, and reload.",
-        );
         ui.separator();
-        ui.label("Enable top-to-bottom; all are needed together for a clean image:");
         ui.add_enabled_ui(cfg.part_mut(&STEREO_CONFIG).single_pass.enabled, |ui| {
-            ui.checkbox(
-                &mut cfg.part_mut(&STEREO_CONFIG).single_pass.dual_eye,
-                "Dual-eye: distinct per-eye cb13 + eye-half viewports + instance doubling",
-            )
-            .on_hover_text(
-                "Makes the eyes diverge. On its own (no double-wide, no collapse) each eye \
-                 renders into half of a per-eye target -- squished; a bisection step.",
-            );
-            ui.add_enabled_ui(cfg.part_mut(&STEREO_CONFIG).single_pass.dual_eye, |ui| {
-                ui.checkbox(
-                    &mut cfg.part_mut(&STEREO_CONFIG).single_pass.double_wide,
-                    "Double-wide render target (full per-eye resolution)",
-                )
-                .on_hover_text(
-                    "Renders the scene targets at 2x per-eye width so each eye-half is full \
-                     resolution instead of squished. Needs Collapse and native resolution on.",
-                );
-                let collapse_changed = ui
-                    .checkbox(
-                        &mut cfg.part_mut(&STEREO_CONFIG).single_pass.collapse,
-                        "Collapse to a single game.Draw walk (the actual perf win; riskiest)",
-                    )
-                    .on_hover_text(
-                        "One walk renders both eyes: centered camera, no between-eye restore, the \
-                         back buffer split into the two eye textures. Without double-wide each eye \
-                         is squished/half-filled; unpatched geometry and the HUD reach the left eye \
-                         only. Reloads shaders, since some rewrites only apply while the collapse is on.",
-                    )
-                    .changed();
-                if collapse_changed {
-                    // Some shader rewrites are gated on the collapse being active -- the screen-space
-                    // decal depth-UV bias is only correct against a double-wide target -- so a shader
-                    // created under one setting is wrong under the other. Only the reload retracts or
-                    // applies them.
-                    shader::request_reload();
-                }
                 if ui
                     .checkbox(
                         &mut cfg.part_mut(&STEREO_CONFIG).single_pass.reproject,
@@ -116,23 +60,6 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut impl Parts) {
                         "Rewrites the baked-WVP scene shaders (characters, props, buildings, roads) \
                          to post-multiply their clip by the per-eye M_eye, instead of leaving them \
                          double-drawn. Reloads shaders to apply. Sky/UI/post are excluded.",
-                    )
-                    .changed()
-                {
-                    shader::request_reload();
-                }
-                if ui
-                    .checkbox(
-                        &mut cfg.part_mut(&STEREO_CONFIG).single_pass.reproject_camera_only,
-                        "...including the ones claimed on a cb0[4] reference alone",
-                    )
-                    .on_hover_text(
-                        "Extends the reprojection to allowlisted families the cb0 remap claims on a \
-                         camera-position reference that is not their position path: generaljc3, \
-                         landmark, layered and layeredblend all read cb0[4] for a LOD fade and build \
-                         clip from a baked cb1. Without it they get viewport routing but no per-eye \
-                         clip, so both eye halves are drawn from the collapsed centre viewpoint. \
-                         Requires the reprojection above. Reloads shaders to apply.",
                     )
                     .changed()
                 {
@@ -167,39 +94,6 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut impl Parts) {
                          pipelines, which cannot carry an eye index, by pinning cb13 to each eye in \
                          the per-eye re-issue their draws already take. Off, both eyes of those \
                          draws come from the centred camera. Adds no draws. Reloads shaders to apply.",
-                    )
-                    .changed()
-                {
-                    shader::request_reload();
-                }
-                if ui
-                    .add_enabled(
-                        cfg.part_mut(&STEREO_CONFIG).single_pass.terrain,
-                        egui::Checkbox::new(
-                            &mut cfg.part_mut(&STEREO_CONFIG).single_pass.terrain_eye_rows,
-                            "Terrain domain shaders from each eye's own rows",
-                        ),
-                    )
-                    .on_hover_text(
-                        "The terrain domain shaders read each eye's camera position and \
-                         view-projection instead of reprojecting the centre's clip position, so they \
-                         round as a separately rendered eye does. Off, each patch's surface lands a \
-                         few to a few hundred floats of depth away. Reloads shaders to apply.",
-                    )
-                    .changed()
-                {
-                    shader::request_reload();
-                }
-                if ui
-                    .checkbox(
-                        &mut cfg.part_mut(&STEREO_CONFIG).single_pass.full_view_projection_rows,
-                        "Full view-projection from each eye's own rows",
-                    )
-                    .on_hover_text(
-                        "Shaders that project through the full view-projection (the tree impostors, \
-                         the light sprites, the ambient-occlusion volumes, the terrain basemesh) read \
-                         each eye's copy of it instead of reprojecting the centre's clip position, so \
-                         they round as a separately rendered eye does. Reloads shaders to apply.",
                     )
                     .changed()
                 {
@@ -716,22 +610,6 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut impl Parts) {
                 {
                     shader::request_reload();
                 }
-                if ui
-                    .checkbox(
-                        &mut cfg.part_mut(&STEREO_CONFIG).single_pass.ssao_far_early_out,
-                        "SSAO far early-out",
-                    )
-                    .on_hover_text(
-                        "Lets a 2x2 pixel quad that lies wholly beyond the ambient occlusion's range \
-                         (sky, distant sea and terrain) write its constant result without running \
-                         the depth taps. The output is bit-identical, but the pass measured slower \
-                         than without it, so it ships off. Also changes multipass. Reloads shaders \
-                         to apply.",
-                    )
-                    .changed()
-                {
-                    shader::request_reload();
-                }
                 ui.checkbox(
                     &mut cfg.part_mut(&STEREO_CONFIG).single_pass.ssao_skip_temporal,
                     "SSAO without the temporal copy",
@@ -904,7 +782,6 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut impl Parts) {
                      effect depth-history textures, which nothing in the game reads. A whole-surface \
                      copy at the render size, about half a millisecond of GPU time at the headset's.",
                 );
-            });
         });
 
         let capability = layout::probe_if_needed();

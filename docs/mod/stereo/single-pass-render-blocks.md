@@ -38,8 +38,8 @@ Every scene draw falls into one of these:
   convention: the rewriter's epilogue is a `dp4` chain, so those rows are rows.)
 - **(c) hull/domain tessellation eye-inject.** The clip transform is built in the domain shader from
   an `m_OffsetViewProjection` constant. The DS is rewritten to read that eye's offset view-projection
-  and camera position from `cb13` (bound on the domain stage) in place of its own constants, under
-  `single_pass.terrain_eye_rows`, or to reproject by `M_eye` with it off; the paired VS forwards the
+  and camera position from `cb13` (bound on the domain stage) in place of its own constants; the
+  paired VS forwards the
   eye index on a free interpolant. This is the base VolumetricTerrain path. The patch system's domain
   shaders, which have no free interpolant, read the pinned eye's slot the same way (see "Pipelines
   that cannot carry the eye: the pinned-eye reprojection" in [single-pass-stereo.md](single-pass-stereo.md)).
@@ -275,8 +275,7 @@ clip from:
   `cb0[4]` differenced into a `dp3` for a LOD fade (`mad_sat o3.w, r0.x, l(-0.0001), l(1.0)`), and a
   post-projection depth bias `mad o0.z, cb2[0].x, r0.w, r0.z`. None of them is an NDC writer: each
   multiplies an object-space position by a 4×4 matrix. All four are on `REPROJECT_NAME_PREFIXES`
-  and take `single_pass.reproject_camera_only` (on by default, requires `single_pass.reproject`), at no
-  extra draw cost. The vegetation families and `terrainshadowsimple` are also in this group but are
+  and take the reprojection under `single_pass.reproject`, at no extra draw cost. The vegetation families and `terrainshadowsimple` are also in this group but are
   owned elsewhere — the block intercepts and the shadow atlas respectively.
 - **The global full view-projection, `cb0[0..3]`.** [`RenderContext::m_ViewProjectionF`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::RenderContext##field-m_ViewProjectionF)
   (translation-bearing, mapping *absolute* world to clip), staged into `m_VPGlobalConstData[0..3]` by

@@ -5,7 +5,7 @@
 
 use dxbc_stereo::{
     Dxbc, DxbcError, STEREO_REPROJ_CB_ROWS, ShaderStage, TokenStream, patch_vertex_shader,
-    refresh_checksum, reproject_domain_shader, reproject_pinned_eye, reproject_vertex_shader,
+    rebase_domain_shader, refresh_checksum, reproject_pinned_eye, reproject_vertex_shader,
 };
 
 mod common;
@@ -36,7 +36,7 @@ const INSTANCED_BASEMESH_SHADERS: [&str; 2] = [
 ];
 
 /// The shaders the pinned rewrite exists for are exactly the ones the existing transforms decline:
-/// the eye-lane domain reprojection refuses the patch domain shaders for want of a lane (and takes
+/// the eye-lane domain rewrite refuses the patch domain shaders for want of a lane (and takes
 /// the others), and both vertex transforms refuse the instanced basemesh shaders on their instance
 /// input.
 #[test]
@@ -47,15 +47,15 @@ fn pinned_targets_are_the_shaders_the_other_transforms_decline() {
     let read = |name: &str| std::fs::read(dir.join(name)).expect("read shader");
     for name in PATCH_DOMAIN_SHADERS {
         assert_eq!(
-            reproject_domain_shader(&read(name)).err(),
+            rebase_domain_shader(&read(name)).err(),
             Some(DxbcError::NoEyeLane),
-            "{name}: the eye-lane reprojection declines it"
+            "{name}: the eye-lane rewrite declines it"
         );
     }
     for name in LANE_DOMAIN_SHADERS {
         assert!(
-            reproject_domain_shader(&read(name)).is_ok(),
-            "{name}: the eye-lane reprojection takes it"
+            rebase_domain_shader(&read(name)).is_ok(),
+            "{name}: the eye-lane rewrite takes it"
         );
     }
     for name in INSTANCED_BASEMESH_SHADERS {

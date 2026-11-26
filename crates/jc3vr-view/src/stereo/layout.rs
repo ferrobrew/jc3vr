@@ -88,22 +88,20 @@ pub fn capability() -> Capability {
 /// Whether the per-eye double-draw has been collapsed to a single G-buffer walk: one `game.Draw`
 /// produces both eyes (via the single-pass dual-eye `cb13` + viewport routing + instance doubling),
 /// the render camera stays centered (no per-eye offset -- both eyes come from `cb13`), and the
-/// capture splits the one back buffer into the two eye textures. Requires single-pass to be active
-/// with its dual-eye path on; independent of `single_pass_double_wide`, which only upgrades each
-/// eye-half from squished to full resolution.
+/// capture splits the one back buffer into the two eye textures. Live whenever single-pass is.
 #[inline]
 pub fn collapse_active() -> bool {
     routing_live() && sampled().collapse()
 }
 
 /// Whether the scene render targets are re-created at 2x per-eye width so each eye-half is full
-/// resolution (instead of a squished half of a per-eye-sized target). Requires [`collapse_active`] --
-/// it only makes sense for the single walk whose capture split reads one full-width half per eye.
-/// Drives the engine render resolution ([`crate::vr::engine_render_resolution`]) and the per-eye
-/// capture-texture width (`ui::render`); the XR swapchain stays per-eye width.
+/// resolution. The single walk always renders into the double-wide target, so this is
+/// [`collapse_active`]; it is named apart for the code that sizes by the layout. Drives the engine
+/// render resolution ([`crate::vr::engine_render_resolution`]) and the per-eye capture-texture
+/// width (`ui::render`); the XR swapchain stays per-eye width.
 #[inline]
 pub fn double_wide_active() -> bool {
-    routing_live() && sampled().double_wide()
+    collapse_active()
 }
 
 /// The layout bits of one sample of the single-pass configuration.
@@ -111,29 +109,16 @@ pub fn double_wide_active() -> bool {
 pub struct LayoutFlags(u8);
 
 impl LayoutFlags {
-    /// The layout a configuration sample asks for: `collapse` when single-pass is switched on for a
-    /// live session, out of its dry run, with the dual-eye path and the collapse on; double-wide
-    /// when the collapse is and `double_wide` is on too.
+    /// The layout a configuration sample asks for: the collapse into the double-wide target when
+    /// single-pass is switched on for a live session.
     #[inline]
-    pub fn new(collapse: bool, double_wide: bool) -> Self {
-        let mut bits = 0;
-        if collapse {
-            bits |= COLLAPSE;
-            if double_wide {
-                bits |= DOUBLE_WIDE;
-            }
-        }
-        Self(bits)
+    pub fn new(single_pass: bool) -> Self {
+        Self(if single_pass { COLLAPSE } else { 0 })
     }
 
     #[inline]
     fn collapse(self) -> bool {
         self.0 & COLLAPSE != 0
-    }
-
-    #[inline]
-    fn double_wide(self) -> bool {
-        self.0 & DOUBLE_WIDE != 0
     }
 }
 
@@ -156,7 +141,6 @@ pub fn unpin_dispatch_layout() {
 }
 
 const COLLAPSE: u8 = 1 << 0;
-const DOUBLE_WIDE: u8 = 1 << 1;
 
 /// Whether the layout can take effect at all: the device routes viewports from the vertex shader,
 /// and eject has not begun (single-pass goes inert the instant it does, `jc3vr_core::is_shutting_down`).

@@ -185,7 +185,7 @@ fn draw_render_pass_range(
     // extends to the whole camera scene so the later geometry passes (water, sky, transparents) route
     // to the eyes too -- there the viewport split moves to draw time (patched geometry only), so the
     // interleaved fullscreen lighting/post passes keep the full width. A no-op unless dual-eye is on.
-    let scene_geometry = crate::stereo::single_pass::dual_eye_active()
+    let scene_geometry = crate::stereo::single_pass::active()
         && first >= RP_Z_OCCLUDERS
         && (jc3vr_view::stereo::layout::collapse_active() || last <= RP_FIRST_SCENE);
     let range = scene_geometry.then(|| {

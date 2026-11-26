@@ -15,8 +15,7 @@
 //!
 //! The rest of the pipeline (cb13 dual-eye upload, the double-wide render-setup re-init, the
 //! draw-doubling) runs under [`jc3vr_view::stereo::config::StereoConfig::single_pass`] and the per-step flags
-//! beside it. [`jc3vr_view::stereo::config::StereoConfig::single_pass_patch_dryrun`] runs the census alone, with
-//! no rendering change.
+//! beside it.
 
 use std::{
     cell::Cell,
@@ -134,18 +133,8 @@ pub fn active() -> bool {
     }
     let flags = config_flags();
     flags.has(Flag::SinglePass)
-        && !flags.has(Flag::DryRun)
         && capability() == Capability::Supported
         && !detour_lifecycle::com_detours_failed()
-}
-
-/// Whether the eyes are made to diverge (in addition to [`active`]): distinct per-eye `cb13`,
-/// left/right-half viewport routing, and instance doubling of the G-buffer geometry. With it off the
-/// patched shaders still run, but both `cb13` eye slots hold the same view, so the two eyes render
-/// identically -- the shape the substitution was brought up in, and still the fallback whenever
-/// [`compute_dual_eye_rows`] cannot produce per-eye data.
-pub fn dual_eye_active() -> bool {
-    active() && config_flags().has(Flag::DualEye)
 }
 
 /// Whether the engine's copy into the effect depth-history slots is skipped: single-pass is
@@ -172,7 +161,6 @@ pub(crate) enum TerrainCullBlock {
 pub(crate) fn terrain_cull_both_eyes(block: TerrainCullBlock) -> bool {
     let flags = config_flags();
     let domain_reads_eye_rows = flags.has(Flag::Terrain)
-        && flags.has(Flag::TerrainEyeRows)
         && match block {
             TerrainCullBlock::Base => true,
             TerrainCullBlock::Patch => flags.has(Flag::TerrainPatchPerEye),

@@ -82,7 +82,7 @@ pub fn mirror_and_bind_cb13(engine: &RenderEngine) -> bool {
     // view-projections so the eyes diverge. Everywhere else (the shadow and reflection passes, and
     // whenever divergence is off) mirror the current view into both slots -- diverging those would be
     // wrong, since they render from the sun or reflection camera, not the eye camera.
-    let dual = (dual_eye_active() && in_gbuffer_range())
+    let dual = (active() && in_gbuffer_range())
         .then(|| compute_dual_eye_rows(engine))
         .flatten();
     let rows = dual.unwrap_or_else(|| mirror_rows(engine));
@@ -308,7 +308,7 @@ fn compute_dual_eye_rows(engine: &RenderEngine) -> Option<[Vector4; STEREO_CB_TO
             });
         *LAST_FRAME_DIAG.lock() = Some(FrameDiagnostics {
             single_pass: active(),
-            dual_eye: dual_eye_active(),
+            dual_eye: active(),
             collapse: collapse_active(),
             double_wide: double_wide_active(),
             capability: match capability() {

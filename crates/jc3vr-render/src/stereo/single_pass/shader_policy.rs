@@ -10,7 +10,6 @@
 use std::{collections::BTreeMap, sync::atomic::Ordering};
 
 use dxbc_stereo::DxbcError;
-use jc3vr_core::session::CaptureFile;
 use jc3vr_view::stereo::config::STEREO_CONFIG;
 use parking_lot::Mutex;
 
@@ -164,8 +163,7 @@ pub fn should_reproject(name: Option<&str>) -> bool {
 /// identity so it survives approximately, and it is the first thing to suspect if z-fighting shows up
 /// on any of them.
 pub fn should_reproject_camera_only(name: Option<&str>, code: &[u8]) -> bool {
-    config_flags().has(Flag::ReprojectCameraOnly)
-        && should_reproject(name)
+    should_reproject(name)
         && dxbc_stereo::reads_global_view_projection(code).is_ok_and(|reads| !reads)
 }
 
@@ -213,32 +211,15 @@ pub fn should_pin_terrain(name: Option<&str>) -> bool {
         && !is_terrain_shadow_pass(name)
 }
 
-/// The reprojection of a vertex shader whose clip position comes from a scene view-projection: with
-/// [`full_view_projection_rows`](jc3vr_view::stereo::config::SinglePassConfig::full_view_projection_rows)
-/// on, a shader that projects through the full view-projection (`cb0[0..3]`) reads the eye's copy of
-/// it from `cb13` instead (`dxbc_stereo::remap_full_view_projection`), and any other shader takes the
-/// `M_eye` reprojection.
+/// The reprojection of a vertex shader whose clip position comes from a scene view-projection: a
+/// shader that projects through the full view-projection (`cb0[0..3]`) reads the eye's copy of it
+/// from `cb13` (`dxbc_stereo::remap_full_view_projection`), and any other shader takes the `M_eye`
+/// reprojection.
 fn reproject_or_remap_full_view_projection(code: &[u8]) -> Result<Vec<u8>, DxbcError> {
-    if full_view_projection_rows() {
-        match dxbc_stereo::remap_full_view_projection(code) {
-            Err(DxbcError::NoFullViewProjection) => {}
-            result => return result,
-        }
+    match dxbc_stereo::remap_full_view_projection(code) {
+        Err(DxbcError::NoFullViewProjection) => dxbc_stereo::reproject_vertex_shader(code),
+        result => result,
     }
-    dxbc_stereo::reproject_vertex_shader(code)
-}
-
-/// Whether a vertex shader that projects through the full view-projection reads the eye's copy of it
-/// from `cb13` rather than reprojecting its clip position by `M_eye`.
-pub fn full_view_projection_rows() -> bool {
-    config_flags().has(Flag::FullViewProjectionRows)
-}
-
-/// Whether the terrain domain shaders take their camera rows from the eye's `cb13` slot
-/// (`dxbc_stereo::rebase_domain_shader`, `dxbc_stereo::rebase_pinned_domain_shader`) rather than
-/// reprojecting their clip position by `M_eye`.
-pub fn terrain_eye_rows() -> bool {
-    config_flags().has(Flag::TerrainEyeRows)
 }
 
 /// Whether a terrain shader named `name` is a shadow-pass variant. Shadow passes render the terrain
@@ -392,14 +373,8 @@ pub fn apply_vs_transform(
             out
         }
         VsTransform::Pinned => {
-            // With the eye-row switch on, the pinned slot's full view-projection replaces the
-            // reprojection.
-            let out = if full_view_projection_rows() {
-                dxbc_stereo::remap_pinned_full_view_projection(code)
-            } else {
-                dxbc_stereo::reproject_pinned_eye(code)
-            }
-            .ok();
+            // The pinned slot's full view-projection replaces the reprojection.
+            let out = dxbc_stereo::remap_pinned_full_view_projection(code).ok();
             tracing::info!(
                 target: "single_pass", stage = "vertex", name = ?name, path = "pinned",
                 transformed = out.is_some(), "terrain: VS transform",
@@ -481,90 +456,14 @@ pub(super) fn vs_blob_key(code: &[u8]) -> (usize, u64) {
 /// `SV_InstanceID`-already-declared deferral (shaders that instance themselves, whose `>> 1` consumer
 /// rewrite is a later phase -- also expected, left double-drawn); and genuinely errored (an
 /// unexpected shape the rewriter could not handle -- worth investigating, should be zero).
-pub fn record_patch_outcome(outcome: &Result<Vec<u8>, DxbcError>, name: Option<&str>) {
-    let (counter, class) = match outcome {
-        Ok(_) => (&PATCHED, PatchClass::Patched),
-        Err(DxbcError::NoPerEyeReferences) => (&NO_REFS, PatchClass::NoRefs),
-        Err(DxbcError::InstanceIdAlreadyDeclared) => (&DEFERRED, PatchClass::Deferred),
-        Err(_) => (&ERRORED, PatchClass::Errored),
+pub fn record_patch_outcome(outcome: &Result<Vec<u8>, DxbcError>) {
+    let counter = match outcome {
+        Ok(_) => &PATCHED,
+        Err(DxbcError::NoPerEyeReferences) => &NO_REFS,
+        Err(DxbcError::InstanceIdAlreadyDeclared) => &DEFERRED,
+        Err(_) => &ERRORED,
     };
     counter.fetch_add(1, Ordering::Relaxed);
-    if vs_name_census_enabled()
-        && let Some(name) = name
-    {
-        VS_NAME_CENSUS.lock().insert(name.to_string(), class);
-    }
-}
-
-/// Whether to record every vertex shader's name against its rewrite class, for
-/// [`dump_vs_name_census`] to write out on the next shader reload.
-///
-/// Read live rather than pinned into the frame snapshot: this runs at shader creation, not on a draw
-/// path, and the census is armed by turning it on and reloading the shaders, which is the same action.
-fn vs_name_census_enabled() -> bool {
-    STEREO_CONFIG.query(|c| c.single_pass.dump_vs_name_census)
-}
-
-/// The rewrite outcome class of a vertex shader, tracked per shader name in [`VS_NAME_CENSUS`] so the
-/// name census can group the reprojection candidates (no-per-eye-refs) apart from the `cb0`-remap set.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum PatchClass {
-    Patched,
-    NoRefs,
-    Deferred,
-    Errored,
-}
-
-/// Every censused vertex shader's name and its rewrite class (populated only while
-/// [`vs_name_census_enabled`] is on), dumped to the session's shader dumps on a shader reload to build the
-/// reprojection allowlist from real data.
-static VS_NAME_CENSUS: Mutex<BTreeMap<String, PatchClass>> = Mutex::new(BTreeMap::new());
-
-/// Write the vertex-shader name census (see [`VS_NAME_CENSUS`]) to a new session shader dump, grouped by
-/// rewrite class with the reprojection candidates first. A no-op unless [`vs_name_census_enabled`] was on
-/// (the census is empty otherwise). Called after a shader reload, once the bounce has re-created every
-/// shader through the census hook.
-pub fn dump_vs_name_census() {
-    let census = VS_NAME_CENSUS.lock();
-    if census.is_empty() {
-        return;
-    }
-    let path = match jc3vr_core::session::capture_file(
-        CaptureFile::ShaderDump,
-        &jc3vr_core::session::stamp(),
-    ) {
-        Ok(path) => path,
-        Err(e) => {
-            tracing::warn!("vs name census: {e}");
-            return;
-        }
-    };
-    let mut out = String::new();
-    for (label, class) in [
-        (
-            "no-per-eye-refs (reprojection candidates)",
-            PatchClass::NoRefs,
-        ),
-        ("patched (cb0 remap)", PatchClass::Patched),
-        ("instance-id deferred", PatchClass::Deferred),
-        ("errored", PatchClass::Errored),
-    ] {
-        let names: Vec<&str> = census
-            .iter()
-            .filter(|(_, c)| **c == class)
-            .map(|(n, _)| n.as_str())
-            .collect();
-        out.push_str(&format!("## {label} -- {}\n", names.len()));
-        for name in names {
-            out.push_str(name);
-            out.push('\n');
-        }
-        out.push('\n');
-    }
-    match std::fs::write(&path, out) {
-        Ok(()) => tracing::info!("vs name census -> {}", path.display()),
-        Err(e) => tracing::warn!("vs name census: failed to write {}: {e}", path.display()),
-    }
 }
 
 /// Vertex shaders successfully rewritten for single-pass since injection.
@@ -599,5 +498,4 @@ pub fn reset_census() {
     ERRORED.store(0, Ordering::Relaxed);
     TERRAIN_HS_FORWARDED.store(0, Ordering::Relaxed);
     TERRAIN_DS_REPROJECTED.store(0, Ordering::Relaxed);
-    VS_NAME_CENSUS.lock().clear();
 }

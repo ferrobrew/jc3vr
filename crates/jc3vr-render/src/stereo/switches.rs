@@ -54,11 +54,8 @@ macro_rules! single_pass_switches {
 
 single_pass_switches! {
     Reproject => reproject, true;
-    ReprojectCameraOnly => reproject_camera_only, true;
     Terrain => terrain, true;
     TerrainPatchPerEye => terrain_patch_per_eye, true;
-    TerrainEyeRows => terrain_eye_rows, true;
-    FullViewProjectionRows => full_view_projection_rows, true;
     TreeImpostors => tree_impostors, true;
     TreeImpostorPixelSizePerEye => tree_impostor_pixel_size_per_eye, false;
     TreeImpostorScreenDoorPerEye => tree_impostor_screen_door_per_eye, true;
@@ -114,7 +111,6 @@ single_pass_switches! {
     UniformViewportSlots => uniform_viewport_slots, false;
     ViewportBindCache => viewport_bind_cache, false;
     SkipUnreadEffectDepthCopy => skip_unread_effect_depth_copy, false;
-    SsaoFarEarlyOut => ssao_far_early_out, true;
     SsaoSkipTemporal => ssao_skip_temporal, false;
     CollapseDirectBlit => collapse_direct_blit, false;
 }

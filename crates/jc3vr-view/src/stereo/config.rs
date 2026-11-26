@@ -6,26 +6,21 @@ use serde::{Deserialize, Serialize};
 use crate::vr::VR_CONFIG;
 
 /// Turn the whole single-pass feature on or off together, as the debug UI's one button does: the
-/// master switch, the dual-eye split, the collapse, the double-wide target, the reprojected scene
-/// families, the terrain, the tree impostors, and the bark, foliage, and occluder re-issues, along
-/// with the native resolution the double-wide target needs, which turning the feature off leaves as
-/// it is. The defaults are the feature turned on, so applying this with `on` to a
-/// default configuration changes nothing. The caller requests the shader reload that applies the
+/// master switch (which carries the dual-eye split, the collapse, and the double-wide target), the
+/// reprojected scene families, the terrain, the tree impostors, and the bark, foliage, and occluder
+/// re-issues, along with the native resolution the double-wide target needs, which turning the
+/// feature off leaves as it is. The defaults are the feature turned on, so applying this with `on`
+/// to a default configuration changes nothing. The caller requests the shader reload that applies the
 /// change.
 pub fn set_single_pass_feature(config: &mut impl Parts, on: bool) {
     let sps = &mut config.part_mut(&STEREO_CONFIG).single_pass;
     sps.enabled = on;
-    sps.dual_eye = on;
-    sps.collapse = on;
-    sps.double_wide = on;
     sps.reproject = on;
-    sps.reproject_camera_only = on;
     sps.terrain = on;
     sps.tree_impostors = on;
     sps.bark = on;
     sps.foliage = on;
     sps.occluder = on;
-    sps.patch_dryrun = false;
     if on {
         config.part_mut(&VR_CONFIG).native_resolution = true;
     }
@@ -40,55 +35,16 @@ pub fn set_single_pass_feature(config: &mut impl Parts, on: bool) {
 #[derive(Copy, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SinglePassConfig {
     /// Master switch for single-pass stereo (see `docs/mod/stereo/single-pass-stereo.md`). Instead
-    /// of the double-draw (two full `game.Draw` walks, one per eye), render the G-buffer geometry
-    /// once with the vertex shaders patched to emit both eyes via instancing +
-    /// `SV_ViewportArrayIndex` routing into a double-wide render target. On by default, together
+    /// of the double-draw (two full `game.Draw` walks, one per eye), render the camera scene in one
+    /// walk (the collapse) with the vertex shaders patched to emit both eyes via instancing,
+    /// distinct per-eye `cb13` rows, and `SV_ViewportArrayIndex` routing into a render target twice
+    /// an eye's width (the double-wide target, which needs
+    /// [`vr.native_resolution`](crate::vr::VrConfig::native_resolution)). On by default, together
     /// with the rest of the group [`set_single_pass_feature`] switches; the double-draw is what
     /// turning the group off leaves. Live only while a VR session runs (see
     /// `jc3vr_render::stereo::single_pass::active`), and requires the DXVK viewport-routing capability
     /// (see [`crate::stereo::layout::capability`]); forced off if absent.
     pub enabled: bool,
-    /// Requires [`single_pass`](Self::enabled): make the two eyes actually diverge. Fills `cb13` with **distinct** per-eye view-projections (slot 0 = eye 0, slot 1 =
-    /// eye 1) instead of both = the current view, splits the bound viewport into left/right **halves**
-    /// for `SV_ViewportArrayIndex` routing instead of two identical copies, and **doubles** the
-    /// instance count of the G-buffer geometry draws (so `SV_InstanceID & 1` selects the eye). On its
-    /// own -- without [`single_pass_double_wide`](Self::double_wide) and the collapse --
-    /// this renders each eye into half of a per-eye-sized target (squished), so it is a bring-up /
-    /// bisection step, not a finished look.
-    pub dual_eye: bool,
-    /// Requires [`single_pass_collapse`](Self::collapse) and
-    /// [`vr.native_resolution`](crate::vr::VrConfig::native_resolution)): re-create the scene
-    /// render targets at **2× per-eye width** so each eye's half is full resolution instead of a
-    /// squished half of a per-eye target. Drives the engine render resolution
-    /// ([`crate::vr::engine_render_resolution`]) via the same deferred `ApplyResize` the per-eye
-    /// native-resolution path uses; the XR swapchain and per-eye capture textures stay per-eye width,
-    /// so the collapse's capture split copies each full-width half straight into its eye texture.
-    pub double_wide: bool,
-    /// Requires [`single_pass_dual_eye`](Self::dual_eye): **collapse**
-    /// the per-eye double-draw to a single `game.Draw` walk -- the actual draw-submission win. One
-    /// walk produces both eyes (via the dual-eye `cb13` + viewport routing + instance doubling); the
-    /// render camera stays centered, the between-eye snapshot/restore is dropped, and the capture
-    /// splits the one back buffer into both eye textures. Works without
-    /// [`single_pass_double_wide`](Self::double_wide) (each eye-half is then squished);
-    /// with it, each half is full resolution. The riskiest step; last to enable during bring-up.
-    pub collapse: bool,
-    /// Census-only mode for [`single_pass`](Self::enabled): run the vertex-shader stereo rewrite
-    /// on every shader at creation and tally the outcomes (patched / no per-eye references / errored)
-    /// **without** substituting the patched bytecode, so rendering is unchanged. Safe to inject: it
-    /// validates the DXBC rewriter against the game's real shader set and reports the true census in
-    /// the debug UI, before the rest of the single-pass pipeline is wired up.
-    pub patch_dryrun: bool,
-    /// Record every vertex shader's name against its rewrite class and dump the result to the session
-    /// directory on a shader reload.
-    ///
-    /// The reprojection allowlist is baked in and the census it was built from is committed to
-    /// `docs/mod/stereo/single-pass-stereo.md`, so this is off by default. It earns a runtime flag rather
-    /// than a rebuild because a census only sees the shaders created while it runs: an area that
-    /// never loaded a family leaves that family out, and re-censusing is the way to catch one --
-    /// which is a thing to do in a session, not a thing to recompile for. For the same reason it is
-    /// not saved.
-    #[serde(skip)]
-    pub dump_vs_name_census: bool,
     /// Reproject the no-`cb0` scene-geometry families (skinned characters/NPCs, props, buildings,
     /// roads, ...) for single-pass, instead of leaving them double-drawn. When on, a vertex shader
     /// with no per-eye `cb0` operand whose name is on the reprojection allowlist is rewritten to
@@ -96,27 +52,6 @@ pub struct SinglePassConfig {
     /// `jc3vr_render::stereo::single_pass`); NDC writers (sky, UI, post) are excluded by the allowlist.
     /// Requires [`single_pass`](Self::enabled); independent of the others so it can be A/B'd.
     pub reproject: bool,
-    /// Extend [`single_pass_reproject`](Self::reproject) to the allowlisted families the
-    /// `cb0` remap claims on a **camera-position** reference alone. The remap's candidacy test is
-    /// "references one of `cb0[{4, 29..32}]`", but `cb0[4]` is a camera position a shader may read for
-    /// a view vector or a distance fade while taking its clip from a baked matrix -- `generaljc3` reads
-    /// it for a LOD fade and builds clip from `cb1[0..3]`. Claimed by the remap, such a family gets
-    /// viewport routing but no per-eye clip, so under the collapse's centred render camera *both* eye
-    /// halves are drawn from the centre viewpoint and the family sits at a rigid half-IPD offset from
-    /// its surroundings -- visible in one eye, not only in stereo. This routes it to the reprojection
-    /// it should have had, at no extra draw cost. Only ever moves a shader between two per-eye
-    /// transforms: an unallowlisted family keeps the remap. Requires
-    /// [`single_pass_reproject`](Self::reproject). On by default.
-    ///
-    /// The families it reaches in the shipped bundle are `generaljc3`, `landmark`, `layered` and
-    /// `layeredblend` -- one shared body, confirmed from the bytecode rather than the name.
-    ///
-    /// Caveat worth an A/B: all four apply a depth bias *after* their projection
-    /// (`o0.z += cb2[0].x · o0.w`), and that bias is folded into the clip position the reprojection
-    /// then transforms by `M_eye`, rather than left as a post-projection offset. `M_eye` is near
-    /// identity, so the bias survives approximately; if decal or shadow z-fighting appears on those
-    /// families, this is the first thing to switch off.
-    pub reproject_camera_only: bool,
     /// Single-pass the tessellated base terrain (VS → HS → DS): the vertex shader originates the eye
     /// index on the free `TEXCOORD3.z` lane, the hull shader forwards it, and the domain shader reads
     /// it to reproject its clip by the per-eye `M_eye` and route to the eye's viewport. Covers the
@@ -129,31 +64,13 @@ pub struct SinglePassConfig {
     /// carry an eye index, inside the per-eye re-issue their draws already take. The patch system's
     /// tessellated domain shaders get no eye lane (their vertex shaders fill all of `TEXCOORD3`), and
     /// its GPU-indirect basemesh vertex shaders already read `SV_InstanceID`, so both were drawn once
-    /// per eye from the centred camera. Each is rewritten to post-multiply its clip position by the
-    /// `M_eye` in `cb13`'s first eye slot (`dxbc_stereo::reproject_pinned_eye`), and each per-eye
-    /// re-issue that finds one bound pins `cb13` to the eye it is drawing. No draw is added. The
+    /// per eye from the centred camera. Each is rewritten to read its camera rows from `cb13`'s
+    /// first eye slot (`dxbc_stereo::rebase_pinned_domain_shader` for the domain shaders, and
+    /// `dxbc_stereo::remap_pinned_full_view_projection` for the basemesh), and each per-eye re-issue
+    /// that finds one bound pins `cb13` to the eye it is drawing. No draw is added. The
     /// tessellation factors, the patch culling, and the distance fades stay centre-derived. A shader
     /// rewrite, so it needs a shader reload to apply. On by default.
     pub terrain_patch_per_eye: bool,
-    /// On top of [`terrain`](Self::terrain): the terrain domain shaders read their camera rows (the
-    /// offset view-projection and camera position of their terrain constants) from the eye's slot of
-    /// `cb13` instead of reprojecting the centre's clip position by `M_eye`
-    /// (`dxbc_stereo::rebase_domain_shader` on the eye-lane path, and
-    /// `dxbc_stereo::rebase_pinned_domain_shader` on the pinned-eye path under
-    /// [`terrain_patch_per_eye`](Self::terrain_patch_per_eye)). The reprojection is exact only in real
-    /// arithmetic: in floats it moved each patch's surface by a few to a few hundred floats of depth.
-    /// The shader's distance outputs and fades move to the eye with the rows, as in a separately
-    /// rendered eye; the hull shader's tessellation factors and culling stay centre-derived. A shader
-    /// rewrite, so it needs a shader reload to apply. On by default.
-    pub terrain_eye_rows: bool,
-    /// A vertex shader that projects an absolute world position through the full view-projection
-    /// (`cb0[0..3]`), and that the collapse would otherwise reproject by `M_eye`, reads the eye's copy
-    /// of those rows from `cb13` instead (`dxbc_stereo::remap_full_view_projection`, and
-    /// `dxbc_stereo::remap_pinned_full_view_projection` for the terrain patch basemesh drawn once per
-    /// eye): the tree impostors, the static light sprites, the ambient-occlusion volumes, and the
-    /// terrain's non-tessellated basemesh. The reprojection is exact only in real arithmetic. A shader
-    /// rewrite, so it needs a shader reload to apply. On by default.
-    pub full_view_projection_rows: bool,
     /// Single-pass the far-distance tree impostors (`CTreeImpostorRB`): the impostor vertex shader
     /// writes its clip position from the global billboard view-projection and draws non-instanced, with
     /// no GPU-indirect path sharing it, so the reprojection rewrite plus instance-doubling covers it
@@ -394,8 +311,8 @@ pub struct SinglePassConfig {
     /// eye (the right eye's outer side lies inside the double-wide target's clip range). With this on,
     /// the bake inside the G-buffer range takes its horizontal and vertical rows from the projection
     /// bounding both eyes ([`crate::vr::eyes_union_projection_standard`]); the domain programs read
-    /// each eye's own rows there (`terrain_eye_rows`), so only the cull sees the substitution, and it
-    /// needs that switch. Applies without a shader reload. On by default.
+    /// each eye's own rows there, so only the cull sees the substitution. Applies without a shader
+    /// reload. On by default.
     pub terrain_cull_both_eyes: bool,
     /// The same per-eye split for the **atmospheric-scattering / aerial-perspective** pass, the other
     /// fullscreen consumer of the reconstruction basis.
@@ -735,14 +652,6 @@ pub struct SinglePassConfig {
     /// size spent on nothing. Only the copy is skipped; the slots' lifecycle state advances as the
     /// engine drives it. Applies at once. On by default.
     pub skip_unread_effect_depth_copy: bool,
-    /// Rewrite the ambient-occlusion generation shader so a 2x2 quad whose four pixels all lie beyond
-    /// the occlusion range writes its constant output without running the depth taps
-    /// ([`dxbc_stereo::skip_far_ambient_occlusion`]); the output is bit-identical. Applied in every
-    /// mode, over whichever of the other SSAO rewrites the shader carries. Baked into the bytecode,
-    /// so a change needs a shader reload. Off by default: at the headset's size the rewritten
-    /// generation pass measured about 0.04 to 0.14 ms slower than the shader without it in every
-    /// scene, sky and sea included (`docs/mod/performance/frame-budget.md`).
-    pub ssao_far_early_out: bool,
     /// While stereo forces the SSAO pass's `m_FirstPass` (`hooks/graphics_engine/screen/ssao.rs`),
     /// also clear its `m_EnableTemporalFilter`, so the render block skips the temporal resolve that
     /// would copy the blurred occlusion unchanged into the history and has the composite read the
@@ -809,17 +718,9 @@ impl SinglePassConfig {
     pub const fn new() -> Self {
         Self {
             enabled: true,
-            dual_eye: true,
-            double_wide: true,
-            collapse: true,
-            patch_dryrun: false,
-            dump_vs_name_census: false,
             reproject: true,
-            reproject_camera_only: true,
             terrain: true,
             terrain_patch_per_eye: true,
-            terrain_eye_rows: true,
-            full_view_projection_rows: true,
             tree_impostors: true,
             tree_impostor_pixel_size_per_eye: true,
             tree_impostor_screen_door_per_eye: true,
@@ -875,7 +776,6 @@ impl SinglePassConfig {
             uniform_viewport_slots: true,
             viewport_bind_cache: true,
             skip_unread_effect_depth_copy: true,
-            ssao_far_early_out: false,
             ssao_skip_temporal: true,
             collapse_direct_blit: true,
         }
@@ -932,19 +832,5 @@ mod tests {
             )
         };
         assert_eq!(value(&turned_on), value(&defaults));
-    }
-
-    /// Turning the feature off leaves the double-draw: every structural switch is off, so nothing
-    /// single-pass runs.
-    #[test]
-    fn turning_the_feature_off_clears_the_master_switch_and_the_collapse() {
-        crate::test_config::register();
-        let mut config = Snapshot::defaults();
-        set_single_pass_feature(&mut config, false);
-        let sps = &config.part(&STEREO_CONFIG).single_pass;
-        assert!(!sps.enabled);
-        assert!(!sps.dual_eye);
-        assert!(!sps.collapse);
-        assert!(!sps.double_wide);
     }
 }

@@ -250,11 +250,9 @@ interpolant:
   fork and join phases (tessellation factors) untouched — they reuse the same `o` registers for
   unrelated system values;
 - the **DS** reads the eye from `vicp[0][lane].z` and writes `SV_ViewportArrayIndex` — legal from
-  the last pre-rasterization stage under the capability. With `single_pass.terrain_eye_rows` (**on**)
-  it then reads its camera rows, the offset view-projection and camera position of its terrain
-  constants, from that eye's `cb13` slot (`dxbc_stereo::rebase_domain_shader`); off, it reprojects
-  its own `SV_Position` by `M_eye` exactly as the VS reprojection does (`reproject_domain_shader`).
-  `cb13` is bound on the domain stage for this.
+  the last pre-rasterization stage under the capability. It then reads its camera rows, the offset
+  view-projection and camera position of its terrain constants, from that eye's `cb13` slot
+  (`dxbc_stereo::rebase_domain_shader`). `cb13` is bound on the domain stage for this.
 
 The hull and domain shaders are gated *structurally* (only shaders carrying the free lane transform;
 the rest return an error and are left untouched), since they are created without a paired-VS identity.
@@ -266,7 +264,7 @@ draw.
 
 The terrain patch system ([`RenderBlockTerrainPatch`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::RenderBlockTerrainPatch)) has two pipelines the lane path cannot reach. Its tessellated permutations (`volumetricterrain4*`, with the `volumetricterrain4`, `volumetricterrain4near`, and `volumetricterrain4silhouette` domain shaders) use vertex shaders that write all four components of `TEXCOORD3`, so there is no free lane, the eye-inject declines, and the domain shader builds clip as `(world − camera) · m_OffsetViewProjection` from its own `cb1` (the [`RenderContext::m_OffsetViewProjection`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::RenderContext##field-m_OffsetViewProjection) the block type bakes there) with no eye to choose by. Its GPU-indirect basemesh permutations (`volumetricterrain4notessellation*instanced`) project through the full view-projection in `cb0` rows 0 to 3, which the remap does not cover, and already read `SV_InstanceID`, so neither the remap nor the instance-parity reprojection takes them. Neither kind of draw can be instance-doubled either: the near passes are GPU-indirect, and the far tessellated ones have unpatched vertex shaders. Every one of them was already submitted once per eye (the indirect re-issue and the unpatched `DrawIndexed` re-issue), but both submissions were drawn from the centred camera. At the midday shore-lake view that was the near terrain under the whole lower half of each eye: about 4,400 pixels per eye whose G-buffer differed from an isolated render of that eye, at a depth that matched the isolated render shifted by exactly the half-IPD parallax.
 
-`dxbc_stereo::reproject_pinned_eye` rewrites such a shader to post-multiply its own `SV_Position` by the `M_eye` in `cb13`'s first eye slot, with no instance input and no viewport output: the same epilogue as the reprojection, with the row base held at zero. That is exact only in real arithmetic (see "Exact only in real arithmetic"), so by default the two shapes take the eye's own rows instead: a patch domain shader reads its camera rows from the first slot (`dxbc_stereo::rebase_pinned_domain_shader`, under `single_pass.terrain_eye_rows`), and a basemesh vertex shader reads the first slot's full view-projection in place of `cb0` rows 0 to 3 (`dxbc_stereo::remap_pinned_full_view_projection`, under `single_pass.full_view_projection_rows`). The creation hooks apply it to a terrain domain shader that the lane reprojection declines for want of a lane, and to a terrain vertex shader that already declares `SV_InstanceID`, and tag the resulting D3D object with a private-data marker. The vertex shader stays out of the patched set, so its draws keep their per-eye submission. Both per-eye re-issues check the bound vertex and domain shader for the marker and, when one carries it, pin both `cb13` eye slots to the eye being drawn for each submission (`stereo::single_pass::pinned_eye`), the pin the already-instanced re-issue uses, and restore the dual-eye rows afterwards. The domain shader's `cb13` binding is the one the lane path already relies on.
+`dxbc_stereo::reproject_pinned_eye` rewrites such a shader to post-multiply its own `SV_Position` by the `M_eye` in `cb13`'s first eye slot, with no instance input and no viewport output: the same epilogue as the reprojection, with the row base held at zero. That is exact only in real arithmetic (see "Exact only in real arithmetic"), so the two terrain shapes take the eye's own rows instead: a patch domain shader reads its camera rows from the first slot (`dxbc_stereo::rebase_pinned_domain_shader`), and a basemesh vertex shader reads the first slot's full view-projection in place of `cb0` rows 0 to 3 (`dxbc_stereo::remap_pinned_full_view_projection`). The creation hooks apply it to a terrain domain shader that the lane reprojection declines for want of a lane, and to a terrain vertex shader that already declares `SV_InstanceID`, and tag the resulting D3D object with a private-data marker. The vertex shader stays out of the patched set, so its draws keep their per-eye submission. Both per-eye re-issues check the bound vertex and domain shader for the marker and, when one carries it, pin both `cb13` eye slots to the eye being drawn for each submission (`stereo::single_pass::pinned_eye`), the pin the already-instanced re-issue uses, and restore the dual-eye rows afterwards. The domain shader's `cb13` binding is the one the lane path already relies on.
 
 What stays centre-derived is what should: the hull shader's tessellation factors and its patch culling (`TessOrigin` and the culling direction in the hull `cb1`), and the patch selection. The tessellation origin is the active camera's position, which is the centred head camera in every mode, so an isolated eye tessellates from the same origin; a hull shader made to read its eye's camera position for it moved the tunnel's patches further from the isolated eyes, not closer. Under the eye rows the domain shader's distance outputs and LOD fade are the eye's, as in an isolated render. Outside the routed range `cb13`'s `M_eye` is the identity, so the reflection passes that reuse these shaders are unchanged, and the shadow permutations are excluded by name as on the lane path. No draw is added and none is removed. Instance-doubling these draws instead would need an eye index in their instance count, which for the GPU-indirect passes lives in an argument buffer the CPU never sees (the same blocker as the vegetation's, under "Known gaps"), and for the far tessellated ones a new interpolant forwarded through the hull stage.
 
@@ -351,7 +349,7 @@ the opposite convention, because the rewriter's epilogue *is* a `dp4` chain. See
 
 ### Collapse
 
-With `single_pass.collapse`, `hooks/game.rs` runs one `game.Draw` (dispatch list `&[(0, false)]`)
+Under single-pass, `hooks/game.rs` runs one `game.Draw` (dispatch list `&[0]`)
 instead of the per-eye loop, so the between-eye snapshot and restore (gated on `ordinal > 0`) is
 skipped for free; `hooks/camera.rs` keeps the render camera centred, since both eyes come from `cb13`
 and the shadow-anchor delta is zeroed to match; and `render_engine_post_draw` splits the one back
@@ -359,7 +357,7 @@ buffer into the two eye textures. This is the actual draw-submission win.
 
 ### Double-wide
 
-With `single_pass.double_wide`, `vr::engine_render_resolution` returns **2x the per-eye width**, which
+Under single-pass, `vr::engine_render_resolution` returns **2x the per-eye width**, which
 the deferred-`ApplyResize` native-resolution driver (`vr::resolution`) targets — so the whole scene RT
 set (back buffer, `m_BackBufferLinear`, the G-buffers) is re-created double-wide and the per-pass
 viewport follows the RT size automatically. The **XR swapchain stays per-eye width**, and the per-eye
@@ -856,22 +854,15 @@ with its actual default.
 
 | Flag | Default | Effect |
 |---|---|---|
-| `single_pass` | On | Master switch. Substitutes the rewritten shaders and installs the routing. Forced inert without the viewport-routing capability. |
-| `single_pass.patch_dryrun` | Off | Runs the rewrite and tallies the outcomes at shader creation without substituting anything. No rendering change; validates the rewriter against the live shader set. |
-| `single_pass.dual_eye` | On | Makes the eyes diverge: distinct per-eye `cb13`, eye-half viewports, instance doubling. On its own (no collapse, no double-wide) each eye renders into half a per-eye target — squished; a bisection step. |
-| `single_pass.collapse` | On | Collapses the per-eye double-draw to one `game.Draw` walk. Requires `single_pass.dual_eye`. |
-| `single_pass.double_wide` | On | Re-creates the scene targets at 2x per-eye width so each eye half is full resolution. Requires `single_pass.collapse` and `vr.native_resolution`. |
+| `single_pass` | On | Master switch. Substitutes the rewritten shaders, installs the routing, makes the eyes diverge (distinct per-eye `cb13`, eye-half viewports, instance doubling), collapses the per-eye double-draw to one `game.Draw` walk, and re-creates the scene targets at 2x per-eye width (which needs `vr.native_resolution`). Forced inert without the viewport-routing capability. |
 
 ### Shader rewrites (need a shader reload to apply)
 
 | Flag | Default | Effect |
 |---|---|---|
 | `single_pass.reproject` | On | Reprojects the no-`cb0` scene families (characters, props, buildings, roads) instead of leaving them double-drawn. |
-| `single_pass.reproject_camera_only` | On | Extends that to the allowlisted families the `cb0` remap claims on a camera-position reference alone (`generaljc3`, `landmark`, `layered`, `layeredblend`), which otherwise get viewport routing but no per-eye clip. |
 | `single_pass.terrain` | On | Rides the eye index through the terrain tessellation pipeline (VS → HS → DS); also gates the render-block re-issue that reprojects the GPU-indirect terrain-detail pass. |
 | `single_pass.terrain_patch_per_eye` | On | On top of `single_pass.terrain`: the terrain patch system's tessellated and GPU-indirect basemesh pipelines, which cannot carry an eye index, take the pinned-eye reprojection, and their per-eye re-issues pin `cb13` to each eye (see "Pipelines that cannot carry the eye"). |
-| `single_pass.terrain_eye_rows` | On | On top of `single_pass.terrain`: the terrain domain shaders, on the eye-lane and the pinned-eye paths, read their camera rows from the eye's `cb13` slot instead of reprojecting their clip position by `M_eye` (see "Each eye's own rows, not the centre's reprojected"). |
-| `single_pass.full_view_projection_rows` | On | The vertex shaders the collapse would reproject that project through the full view-projection (`cb0` rows 0 to 3) read the eye's copy of it from `cb13` instead: the tree impostors, the static light sprites, the ambient-occlusion volumes, and the terrain's non-tessellated basemesh, on the instance-parity and the pinned-eye paths. |
 | `single_pass.tree_impostors` | On | Reprojects the far-distance tree impostors. |
 | `single_pass.pixel_camera_per_eye` | On | Every pixel shader that reads the camera position picks the rows of the eye whose half its pixel lies in (see "Each eye's camera position in the pixel shaders"). Turning it off applies at once; turning it on needs a shader reload. |
 | `single_pass.local_lights_per_eye` | On | In the same rewritten shaders, every local point and spot light position, and every spot projection, is measured from the pixel's eye rather than the centred camera the engine built them from (see "The local lights, from each eye"). Turning it off applies at once; turning it on needs a shader reload. |
@@ -929,7 +920,6 @@ with its actual default.
 | `single_pass.fog_volume_per_eye` | On | Volumetric fog generation (mechanism 2): the eye's view-projection, remapped onto its half of the block's half-resolution target, is substituted into the render context for each masked run. |
 | `single_pass.ssao_per_eye` | On | SSAO, computed for each eye in the block's single run: the generation, blur, and composite pixel shaders are rewritten (`dxbc_stereo::localize_ambient_occlusion` and `localize_ambient_occlusion_filter`) and the block binds each eye's basis and view rotation for the generation pass. No split, so the temporal history advances once per frame as in an eye-sized render. Needs a shader reload. |
 | `single_pass.ssao_exact_sampling` | On | The SSAO passes' coordinates, texels, and filter weights computed in the shader in every mode, so the left eye's occlusion is the isolated eye's wherever their inputs agree (see "The ambient occlusion's sampling, the same in every mode"). Changes multipass and the isolated eyes too. Needs a shader reload. |
-| `single_pass.ssao_far_early_out` | Off | The SSAO generation shader rewritten (`dxbc_stereo::skip_far_ambient_occlusion`) so a 2 by 2 quad wholly beyond the occlusion range writes its constant output without its depth taps, in every mode; bit-identical output. Off by default: it measured slower than the shader without it ([frame-budget.md](../performance/frame-budget.md#toward-120-hz-runs-338-and-339)). Needs a shader reload. |
 | `single_pass.ssao_skip_temporal` | On | In stereo, also clears the SSAO pass's `m_EnableTemporalFilter` while `m_FirstPass` is forced, so the block skips the temporal resolve that only copies the blurred occlusion and the composite reads the blur directly; identical image. The game's value is put back when stereo or the switch is off. Applies at once. |
 | `single_pass.ssr_per_eye` | On | Screen-space reflections, traced for each eye in the block's single run: the ray march is rewritten (`dxbc_stereo::localize_screen_space_reflection`) to read each eye's view ray, view, projection, camera transform, and view-projections from rows the block binds, and to march in the eye's own pixels; the blur's taps are clamped to the eye's half (`dxbc_stereo::localize_reflection_blur`). Needs a shader reload. |
 | `single_pass.subsurface_per_eye` | On | Screen-space subsurface skin. |
@@ -1361,11 +1351,11 @@ The right half's depth differs by one to three floats almost everywhere it diffe
 Runs 309 to 311 replaced the `M_eye` reprojection with the eye's own rows wherever the shader's arithmetic allows it (see "Exact only in real arithmetic"):
 
 - **The terrain domain shaders** (`volumetricterrain4`, `volumetricterrain4near`, and `volumetricterrain4silhouette` on the pinned-eye path, `volumetricterrain2`, `volumetricterrainpow2`, and `volumetricterrainsilhouette` on the eye-lane path) build clip as `(world − camera) · m_OffsetViewProjection` from their terrain constants, which [`RenderBlockTypeTerrainPatch::SetupConstantBuffers`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::RenderBlockTypeTerrainPatch##func-SetupConstantBuffers) copies from the render context's offset view-projection and camera position, the values `cb13`'s slots hold for each eye. `single_pass.terrain_eye_rows` rewrites them to choose, in a prologue, between the eye's `cb13` rows and their own by the selector row, so outside the routed range (the reflection passes that reuse them) they read their own constants, and every later read of those rows reads the choice. The distance outputs and the LOD fade move to the eye with the rows.
-- **The full view-projection's readers.** `single_pass.full_view_projection_rows` gives the shaders that project an absolute world position through `cb0` rows 0 to 3 the eye's copy of those rows: `treeimpostor*`, `lightsource*`, `aobox`, and the non-tessellated basemesh `volumetricterrain4notessellation*` on the instance-parity path (`dxbc_stereo::remap_full_view_projection`), and its GPU-indirect permutations on the pinned-eye path (`dxbc_stereo::remap_pinned_full_view_projection`). Outside the routed range both copies mirror `cb0`, so the substitution reads the same values there.
+- **The full view-projection's readers.** The shaders that project an absolute world position through `cb0` rows 0 to 3 the eye's copy of those rows: `treeimpostor*`, `lightsource*`, `aobox`, and the non-tessellated basemesh `volumetricterrain4notessellation*` on the instance-parity path (`dxbc_stereo::remap_full_view_projection`), and its GPU-indirect permutations on the pinned-eye path (`dxbc_stereo::remap_pinned_full_view_projection`). Outside the routed range both copies mirror `cb0`, so the substitution reads the same values there.
 
-Same schedule, at 3584 by 3561 per eye (run 310), the variant with the switch off against the default, depth beyond 64 floats (changed) and albedo, left / right:
+Same schedule, at 3584 by 3561 per eye (run 310), with each change reverted to the `M_eye` reprojection against the default, depth beyond 64 floats (changed) and albedo, left / right (the switches that reverted them have since been removed with the older rewrites):
 
-| Scene | Default | `full_view_projection_rows` off | `terrain_eye_rows` off |
+| Scene | Default | Full view-projection reprojected | Terrain domain reprojected |
 |---|---|---|---|
 | Meadow, depth | 617,227 (3,870,733) / 622,354 (4,261,998) | 920,365 (3,889,724) / 930,456 (4,282,992) | 620,886 (3,979,125) / 622,972 (4,353,360) |
 | Meadow, albedo | 174,300 / 218,009 | 297,402 / 341,675 | 179,266 / 221,286 |
@@ -1488,8 +1478,7 @@ Against run 311 the canted rigs' left-eye depth fell from 74,744 (`index`) and 1
 
 ## The non-`cb0` shader census
 
-From a census of the shipped set (`m_Name` against the rewrite outcome; the payload re-dumps it on the next
-shader reload with `single_pass.dump_vs_name_census`). **The census only sees shaders an area actually loads, so this list
+From a census of the shipped set (`m_Name` against the rewrite outcome). **The census only sees shaders an area actually loads, so this list
 may miss families from biomes or weather not visited; it is a floor, not a complete set.**
 
 **Reprojected — the scene-geometry allowlist** (`REPROJECT_NAME_PREFIXES`, matched by name prefix):

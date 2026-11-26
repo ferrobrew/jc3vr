@@ -27,7 +27,6 @@ What lands where is fixed per kind of output, in `crates/jc3vr-core/src/session/
 | `screenshots/<stamp>.png` and `<stamp>.json` | an F12 screenshot and its single-pass sidecar | |
 | `grapple-logs/<stamp>.csv` | a grapple telemetry capture ([grapple-comfort.md](body/grapple-comfort.md)) | |
 | `recordings/<stamp>/` | a recording, holding whichever halves it has (below) | |
-| `shader-dumps/<stamp>.txt` | the vertex-shader name census, after a shader reload with the census on | |
 | `traces/<stamp>/` | a render trace: `trace.ndjson` ([render-trace.md](rendering/render-trace.md)) | `tools/analysis/analyze_trace_frames.py` |
 
 A recording's folder holds:

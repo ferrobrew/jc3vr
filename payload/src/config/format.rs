@@ -397,7 +397,6 @@ enabled = false
     fn a_format_zero_file_takes_the_single_pass_group_whole() {
         let mut old = Config::new();
         set_single_pass_feature(&mut old, false);
-        old.stereo.single_pass.reproject_camera_only = true;
         old.stereo.single_pass.bark = true;
         old.stereo.single_pass.foliage = true;
         old.stereo.single_pass.enabled = true;
@@ -408,7 +407,7 @@ enabled = false
         );
         let migrated = paths(&loaded.report.migrated);
         assert!(
-            migrated.contains(&"stereo.single_pass.collapse"),
+            migrated.contains(&"stereo.single_pass.reproject"),
             "{migrated:?}"
         );
         assert!(
@@ -426,7 +425,6 @@ enabled = false
         assert!(text.contains("enabled = false"), "{text}");
         let loaded = parse(&text).unwrap();
         assert!(!loaded.config.stereo.single_pass.enabled);
-        assert!(!loaded.config.stereo.single_pass.collapse);
 
         let partial = parse("version = 1\n[stereo.single_pass]\nenabled = true\n").unwrap();
         assert_eq!(
