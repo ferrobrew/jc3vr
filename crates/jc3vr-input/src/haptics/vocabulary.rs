@@ -2,7 +2,9 @@
 //! amplitude range, the duration, and the frequency hint) each one has.
 //!
 //! A cue picks a primitive and a strength within it, so a tick is always faint and short and a thud
-//! always heavy and low, whatever raised it. The shapes are tuned here, once, rather than per cue.
+//! always heavy and low, whatever raised it. The shapes are tuned once
+//! ([`HapticsTuning::vocabulary`](crate::haptics::tuning::HapticsTuning::vocabulary)), rather than
+//! per cue.
 
 use serde::{Deserialize, Serialize};
 
@@ -67,7 +69,8 @@ impl Primitive {
 }
 
 /// How one primitive plays.
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Shape {
     /// The amplitude at strength zero, `0..=1`. Zero for a sustained primitive, so that a level of
     /// zero is still.
@@ -93,8 +96,9 @@ impl Shape {
     }
 }
 
-/// The shape of every primitive, fixed at [`VOCABULARY`].
-#[derive(Copy, Clone, Debug, PartialEq)]
+/// The shape of every primitive.
+#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Vocabulary {
     pub tick: Shape,
     pub click: Shape,
@@ -106,53 +110,6 @@ pub struct Vocabulary {
 }
 
 impl Vocabulary {
-    pub(crate) const fn new() -> Self {
-        Self {
-            tick: Shape {
-                soft: 0.06,
-                full: 0.25,
-                duration_s: 0.008,
-                frequency_hz: 320.0,
-            },
-            click: Shape {
-                soft: 0.15,
-                full: 0.55,
-                duration_s: 0.02,
-                frequency_hz: 250.0,
-            },
-            bump: Shape {
-                soft: 0.12,
-                full: 0.75,
-                duration_s: 0.04,
-                frequency_hz: 160.0,
-            },
-            thud: Shape {
-                soft: 0.4,
-                full: 1.0,
-                duration_s: 0.07,
-                frequency_hz: 90.0,
-            },
-            buzz: Shape {
-                soft: 0.2,
-                full: 0.6,
-                duration_s: 0.14,
-                frequency_hz: 200.0,
-            },
-            hum: Shape {
-                soft: 0.0,
-                full: 0.7,
-                duration_s: 0.1,
-                frequency_hz: 70.0,
-            },
-            tension: Shape {
-                soft: 0.0,
-                full: 0.6,
-                duration_s: 0.06,
-                frequency_hz: 130.0,
-            },
-        }
-    }
-
     pub const fn shape(&self, primitive: Primitive) -> &Shape {
         match primitive {
             Primitive::Tick => &self.tick,
@@ -166,16 +123,14 @@ impl Vocabulary {
     }
 }
 
-/// The primitives' shapes.
-pub const VOCABULARY: Vocabulary = Vocabulary::new();
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::haptics::tuning::tests::shipped;
 
     #[test]
     fn strength_spans_the_shape() {
-        let shape = VOCABULARY.bump;
+        let shape = shipped().vocabulary.bump;
         assert_eq!(shape.amplitude(0.0), shape.soft);
         assert_eq!(shape.amplitude(1.0), shape.full);
         assert_eq!(shape.amplitude(5.0), shape.full);
@@ -184,7 +139,7 @@ mod tests {
 
     #[test]
     fn the_default_primitives_rise_in_weight() {
-        let v = VOCABULARY;
+        let v = shipped().vocabulary;
         let weights = [v.tick, v.click, v.bump, v.thud].map(|s| (s.full, s.duration_s));
         for pair in weights.windows(2) {
             assert!(pair[0].0 < pair[1].0 && pair[0].1 < pair[1].1);

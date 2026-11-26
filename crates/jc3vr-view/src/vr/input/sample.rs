@@ -22,26 +22,29 @@ use tracking_format::input::{
     DiscontinuityReason, InputRoute, RouteSample, ValueBits, policy::PROTECTED_CONTROLS,
 };
 
-use crate::vr::{
-    convert,
-    input::{
-        PROFILES_DIRTY, STATUS,
-        actions::{SetId, State},
-        active_action_set,
-        config::{SamplingConfig, press_rules},
-        flight_pose,
-        flight_pose::PendingHead,
-        layout::{BoolInput, FloatInput, HandsAction, Vec2Input},
-        self_check::CheckFrame,
-        semantic::{
-            admission, frame as semantic_frame,
-            frame::{ActionState, ActionValue, SemanticFrame, SetState},
-            history,
+use crate::{
+    tuning::HAPTICS,
+    vr::{
+        convert,
+        input::{
+            PROFILES_DIRTY, STATUS,
+            actions::{SetId, State},
+            active_action_set,
+            config::{SamplingConfig, press_rules},
+            flight_pose,
+            flight_pose::PendingHead,
+            layout::{BoolInput, FloatInput, HandsAction, Vec2Input},
+            self_check::CheckFrame,
+            semantic::{
+                admission, frame as semantic_frame,
+                frame::{ActionState, ActionValue, SemanticFrame, SetState},
+                history,
+            },
+            sources,
+            state::InputState,
         },
-        sources,
-        state::InputState,
+        recenter::Baseline,
     },
-    recenter::Baseline,
 };
 
 impl InputState {
@@ -457,7 +460,7 @@ impl InputState {
             haptic_output::clear();
             return Ok(());
         }
-        let pending = haptic_output::mix(Instant::now());
+        let pending = haptic_output::mix(Instant::now(), &HAPTICS.get().mix);
         for hand in Hand::BOTH {
             if let Some(pulse) = pending[hand.index()] {
                 let vibration = vibration(pulse, haptics_cfg.intensity);
