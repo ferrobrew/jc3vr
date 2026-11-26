@@ -34,8 +34,8 @@ pub mod view;
 pub use crate::controllers::overlay::pass::{OverlayStatus, status};
 pub(crate) use crate::controllers::overlay::pass::{draw, release_on_eject};
 use crate::{
-    config::Config,
     controllers::{
+        config::CONTROLLERS_CONFIG,
         hands::late,
         overlay::{pass::DrawSettings, resolve::HandPoses},
         scheme,
@@ -50,7 +50,7 @@ pub(crate) fn tick(eye: usize) {
     if !crate::stereo::dispatch::first_ui_eye(eye) || crate::stereo::far_phase() {
         return;
     }
-    let active = Config::lock_query(|c| c.controllers.enabled && c.controllers.overlay.enabled)
+    let active = CONTROLLERS_CONFIG.query(|c| c.enabled && c.overlay.enabled)
         && scheme::is_controllers()
         && hooks::in_gameplay();
     producers::tick(active, &render_poses());
@@ -70,9 +70,9 @@ pub(crate) fn render_poses() -> [Option<HandPoses>; 2] {
 
 /// How the overlay draws, or `None` while it or the controllers are off.
 pub(crate) fn draw_settings() -> Option<DrawSettings> {
-    Config::lock_query(|c| {
-        let overlay = &c.controllers.overlay;
-        (c.controllers.enabled && overlay.enabled).then_some(DrawSettings {
+    CONTROLLERS_CONFIG.query(|c| {
+        let overlay = &c.overlay;
+        (c.enabled && overlay.enabled).then_some(DrawSettings {
             min_line_px: overlay.min_line_px,
             depth_tolerance_m: overlay.depth_tolerance_m,
             depth_tolerance_rel: overlay.depth_tolerance_rel,

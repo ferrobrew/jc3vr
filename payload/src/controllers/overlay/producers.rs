@@ -23,7 +23,6 @@ use glam::Vec3;
 use parking_lot::Mutex;
 
 use crate::{
-    config::Config,
     controllers::{
         aim::{
             self, GRAPPLE_ORIGIN_M, GrappleAim, HandAim, HandSource, raycast::RayHit,
@@ -33,7 +32,7 @@ use crate::{
             estimator,
             rig::{grounded, visual},
         },
-        config::{GunReadout, OverlayConfig},
+        config::{CONTROLLERS_CONFIG, GunReadout, OverlayConfig},
         frame::Hand,
         hands::tiers,
         mode,
@@ -47,20 +46,21 @@ use crate::{
         },
     },
     headpose,
+    vr::VR_CONFIG,
 };
 
 /// Build and submit every producer's primitives for this frame, given the render-time hand poses.
 /// Every producer's slot is cleared while `active` is false.
 pub fn tick(active: bool, hands: &[Option<HandPoses>; 2]) {
-    let (config, dominant, grapple_origin, sight_tuning, world_scale) = Config::lock_query(|c| {
+    let (config, dominant, grapple_origin, sight_tuning) = CONTROLLERS_CONFIG.query(|c| {
         (
-            c.controllers.overlay,
-            c.controllers.acting_hand(),
+            c.overlay,
+            c.acting_hand(),
             GRAPPLE_ORIGIN_M,
-            c.controllers.aim.sight_tuning.enabled,
-            c.vr.world_scale,
+            c.aim.sight_tuning.enabled,
         )
     });
+    let world_scale = VR_CONFIG.lock().world_scale;
     if !active {
         for source in PRODUCED {
             store::clear(source);

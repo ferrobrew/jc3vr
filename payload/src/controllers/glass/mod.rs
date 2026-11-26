@@ -45,13 +45,13 @@ use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{
-    config::Config,
     controllers::{
         aim::{
             ray::Ray,
             raycast::{self, CastOptions, RaycastError},
         },
         cockpit::CockpitTransform,
+        config::CONTROLLERS_CONFIG,
         frame::{Hand, Pose},
         glass::{
             engine::{HideRefusal, Pane},
@@ -142,7 +142,7 @@ pub fn status() -> GlassStatus {
 ///
 /// The game thread, outside the world update and the physics step.
 pub(crate) unsafe fn main_thread_tick() {
-    let config = Config::lock_query(|c| c.controllers.glass);
+    let config = CONTROLLERS_CONFIG.lock().glass;
     let active = config.enabled && scheme::is_controllers() && hooks::in_gameplay();
     let idle = if !active {
         Some(Idle::Disabled)

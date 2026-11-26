@@ -27,9 +27,8 @@ use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{
-    config::Config,
     controllers::{
-        config::ControllersConfig,
+        config::{CONTROLLERS_CONFIG, ControllersConfig},
         diagnostics,
         frame::Hand,
         haptics::{
@@ -195,7 +194,7 @@ static STATUS: Mutex<HapticsStatus> = Mutex::new(HapticsStatus {
 
 /// Whether the haptics act and `category` plays.
 fn acting(category: Category) -> bool {
-    let config = Config::lock_query(|c| c.controllers.clone());
+    let config = CONTROLLERS_CONFIG.lock().clone();
     acts(&config) && config.haptics.category(category)
 }
 

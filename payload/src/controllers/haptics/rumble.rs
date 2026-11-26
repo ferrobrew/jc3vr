@@ -32,14 +32,12 @@ use jc3gi::{
 };
 use re_utilities::hook_library::HookLibrary;
 
-use crate::{
-    config::Config,
-    controllers::{
-        frame::Hand,
-        haptics::{self, Event, HapticsConfig, Sustain},
-        scheme,
-        weapons::fire,
-    },
+use crate::controllers::{
+    config::CONTROLLERS_CONFIG,
+    frame::Hand,
+    haptics::{self, Event, HapticsConfig, Sustain},
+    scheme,
+    weapons::fire,
 };
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -83,7 +81,7 @@ pub fn shot_duration(time: f32) -> f32 {
 
 /// Play a shot of a weapon with no fire rumble on `hand`: the kick alone, as [`Event::Kick`].
 pub(crate) fn kick(hand: Hand, kick_rad: f32) {
-    let config = Config::lock_query(|c| c.controllers.haptics);
+    let config = CONTROLLERS_CONFIG.lock().haptics;
     if !config.game_rumble {
         return;
     }
@@ -147,7 +145,7 @@ const KICK_AMPLITUDE_PER_RAD: f32 = 6.0;
 const MAX_SHOT_S: f32 = 0.4;
 
 fn acting() -> Option<HapticsConfig> {
-    let config = Config::lock_query(|c| c.controllers.clone());
+    let config = CONTROLLERS_CONFIG.lock().clone();
     (config.enabled && config.haptics.enabled && scheme::is_controllers()).then_some(config.haptics)
 }
 
