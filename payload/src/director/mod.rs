@@ -16,6 +16,7 @@ pub mod clean_view;
 pub mod heat;
 pub mod keymap;
 pub mod markers;
+pub(crate) mod register_tracking;
 pub mod safety;
 pub mod spawn;
 pub mod teleport;

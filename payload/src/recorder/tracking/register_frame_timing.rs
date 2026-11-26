@@ -2,7 +2,7 @@
 //! closed debug-UI window lands in a recording ([`note_frame_timing`]) without `frame_timing`
 //! naming the recorder.
 
-use crate::{controllers::diagnostics::note_frame_timing, frame_timing};
+use crate::{frame_timing, recorder::tracking::notes::note_frame_timing};
 
 /// Hand every closed frame-timing window to [`note_frame_timing`]. Call once, before the first
 /// window closes.

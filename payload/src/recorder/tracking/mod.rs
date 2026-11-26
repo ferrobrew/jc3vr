@@ -22,8 +22,11 @@
 pub(crate) mod events;
 pub(crate) mod format;
 pub(crate) mod lookback;
+mod notes;
 #[cfg(test)]
 mod query_tests;
+mod register_frame_timing;
+mod start_source;
 #[cfg(test)]
 mod tests;
 mod writer;
@@ -40,6 +43,11 @@ use tracking_format::{
     input::{CapturedInput, DiscontinuityReason, InputRecord},
 };
 
+pub(crate) use crate::recorder::tracking::{
+    notes::note_settings,
+    register_frame_timing::register_frame_timing,
+    start_source::{NamedPlace, StartSource, register_start_source},
+};
 use crate::{
     config::Config,
     controllers::frame as controller_frame,
@@ -418,7 +426,8 @@ pub(crate) fn shutdown() -> bool {
 /// start rather than discarding an owner.
 const MAX_WRITERS: usize = 3;
 
-/// How close to a director bookmark the player must stand for the start marker to name it.
+/// How close to a named place ([`start_source`]) the player must stand for the start marker to name
+/// it.
 const BOOKMARK_RADIUS_M: f32 = 2.0;
 
 const REQUEST_NONE: u8 = 0;
@@ -586,7 +595,7 @@ fn begin(stamp: String) -> Result<PathBuf, StartError> {
     if !Config::lock_query(|c| c.testing.enabled) {
         return Err(StartError::Disabled);
     }
-    let transform = crate::director::teleport::player_transform().ok_or(StartError::NoPlayer)?;
+    let transform = start_source::player_transform().ok_or(StartError::NoPlayer)?;
     let hand_joints = Config::lock_query(|c| c.testing.record_hand_joints);
     let header = header_at(transform, stamp.clone());
     let path = crate::session::recording_file(RecordingFile::Tracking, &stamp)
@@ -610,7 +619,7 @@ fn begin(stamp: String) -> Result<PathBuf, StartError> {
     RECORDING.store(true, Ordering::Relaxed);
     drop(state);
     if let Some(toml) = settings_toml() {
-        crate::controllers::diagnostics::note_settings(&toml);
+        note_settings(&toml);
     }
     if let Some(name) = &header.start.bookmark {
         tracing::info!("recorder: tracking: the start marker is at the bookmark {name:?}");
@@ -624,11 +633,11 @@ fn header_at(transform: [f32; 16], stamp: String) -> Header {
         transform,
         bookmark: None,
     };
-    let bookmark = crate::director::teleport::bookmarks()
+    let bookmark = start_source::places()
         .into_iter()
-        .map(|b| {
-            let p = b.position();
-            (b.name, (glam::Vec3::from(p) - marker.position()).length())
+        .map(|place| {
+            let distance = (glam::Vec3::from(place.position) - marker.position()).length();
+            (place.name, distance)
         })
         .filter(|(_, distance)| *distance <= BOOKMARK_RADIUS_M)
         .min_by(|a, b| a.1.total_cmp(&b.1))
@@ -662,9 +671,7 @@ fn lookback_tick() {
     let (enabled, hand_joints) =
         Config::lock_query(|c| (c.controllers.enabled, c.testing.record_hand_joints));
     let run = enabled && crate::vr::published_status().runtime_up;
-    let transform = run
-        .then(crate::director::teleport::player_transform)
-        .flatten();
+    let transform = run.then(start_source::player_transform).flatten();
     let save = lookback::take_save_request();
     {
         let mut state = STATE.lock();
@@ -706,7 +713,7 @@ fn save_lookback() -> Result<PathBuf, StartError> {
         .ok_or(StartError::LookbackEmpty)?;
     let transform = snapshot
         .transform
-        .or_else(crate::director::teleport::player_transform)
+        .or_else(start_source::player_transform)
         .ok_or(StartError::NoPlayer)?;
     let stamp = crate::session::stamp();
     let header = header_at(transform, stamp.clone());

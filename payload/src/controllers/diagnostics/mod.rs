@@ -13,15 +13,14 @@
 //!
 //! The rest of the recording's evidence is noted where it happens: Rico's pose before and after the
 //! solves ([`pose`]), the grounded rig's frames ([`rig`]), the bodies near Rico and what his hands
-//! hold after each simulation step ([`bodies`]), and the refusals, forces, injected actions, haptic
-//! cues, settings, and frame timing ([`notes`]).
+//! hold after each simulation step ([`bodies`]), and the refusals, forces, injected actions, and
+//! haptic cues ([`notes`]). The settings and the frame timing are the tracking recorder's own notes.
 
 mod bodies;
 mod body_state;
 mod moments;
 mod notes;
 mod pose;
-mod register_frame_timing;
 mod rig;
 mod sample;
 mod state_names;
@@ -34,14 +33,11 @@ use jc3gi::character::character::Character;
 pub(crate) use crate::controllers::diagnostics::{
     bodies::after_step,
     moments::{Released, Thrown, note_release, note_throw, note_throw_at},
-    notes::{
-        Applied, BodyBefore, Cue, Write, note_force, note_frame_timing, note_haptic, note_injected,
-        note_settings, report,
-    },
+    notes::{Applied, BodyBefore, Cue, Write, note_force, note_haptic, note_injected, report},
     pose::{drawn_arm_joints, sample_drawn_arms, sample_final, sample_pre_ik},
-    register_frame_timing::register_frame_timing,
     rig::{RigRun, note_rig},
 };
+pub(crate) use crate::recorder::tracking::{note_settings, register_frame_timing};
 use crate::{
     controllers::body::procedural,
     hooks::animation::active_state_type_id,

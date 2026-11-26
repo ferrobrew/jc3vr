@@ -1,19 +1,17 @@
 //! The diagnostic notes a recording carries: refusals and other moments a playtest needs
 //! explained, the forces the mod applies to bodies, the actions it injects, the haptic cues it
-//! plays, the settings in effect, and the frame-time breakdown. Each producer calls in where it
-//! acts; nothing is built unless a recording or the lookback collects.
+//! plays. Each producer calls in where it acts; nothing is built unless a recording or the lookback
+//! collects.
 
 use std::panic::Location;
 
 use glam::Vec3;
 use tracking_format::event::{
-    Diagnostic, Force, ForceKind, FrameTiming, Haptic, Injected, InjectedWrite, Label, Settings,
-    SlotTiming, WorldMotion,
+    Diagnostic, Force, ForceKind, Haptic, Injected, InjectedWrite, Label, WorldMotion,
 };
 
 use crate::{
     controllers::frame::Hand,
-    frame_timing::{Report, Slot, ns_to_ms},
     recorder::tracking::{
         events::{self, EventKind},
         format::hand_to_file,
@@ -147,41 +145,6 @@ pub(crate) fn note_haptic(cue: Cue) {
             amplitude: cue.amplitude,
             duration_s: cue.duration_s,
             frequency_hz: cue.frequency_hz,
-        }))
-    });
-}
-
-/// Note the settings file's text, as a save writes it or a recording starts with it.
-pub(crate) fn note_settings(toml: &str) {
-    events::note_with(|| {
-        EventKind::Settings(Box::new(Settings {
-            toml: Label::Owned(toml.to_owned()),
-        }))
-    });
-}
-
-/// Note a closed reporting window of the frame-time breakdown.
-pub(crate) fn note_frame_timing(report: &Report) {
-    events::note_with(|| {
-        let totals = &report.totals;
-        let slots = Slot::ALL
-            .iter()
-            .zip(&totals.slots)
-            .filter(|(_, slot)| slot.calls > 0)
-            .map(|(slot, totals_of)| SlotTiming {
-                name: Label::Borrowed(slot.name()),
-                self_ms: totals.per_frame_ms(totals_of.self_ns) as f32,
-                max_ms: ns_to_ms(totals_of.max_ns) as f32,
-                calls: u32::try_from(totals_of.calls).unwrap_or(u32::MAX),
-            })
-            .collect();
-        EventKind::FrameTiming(Box::new(FrameTiming {
-            window_s: report.window_s as f32,
-            frames: u32::try_from(totals.frames).unwrap_or(u32::MAX),
-            sim_ticks: u32::try_from(totals.sim_ticks).unwrap_or(u32::MAX),
-            frame_ms: totals.mean_frame_ms() as f32,
-            frame_max_ms: ns_to_ms(totals.frame_max_ns) as f32,
-            slots,
         }))
     });
 }

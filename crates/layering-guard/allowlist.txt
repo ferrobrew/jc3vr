@@ -184,9 +184,7 @@ payload/src/image_writer.rs -> payload
 payload/src/profiler/mod.rs -> render
 payload/src/recorder/mod.rs -> payload
 payload/src/recorder/session_recording.rs -> payload
-payload/src/recorder/tracking/mod.rs -> gameplay
 payload/src/recorder/tracking/mod.rs -> payload
-payload/src/recorder/tracking/mod.rs -> tooling
 payload/src/screenshot/harness/mod.rs -> payload
 payload/src/screenshot/harness/stages/lake_projection.rs -> payload
 payload/src/screenshot/harness/types.rs -> payload
