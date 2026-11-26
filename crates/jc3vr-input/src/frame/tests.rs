@@ -91,8 +91,11 @@ fn rules(grip: GripPress) -> PressRules {
         trigger: THRESHOLDS,
         grip,
         trackpad: FORCE,
+        trackpad_half_margin: MARGIN,
     }
 }
+
+const MARGIN: f32 = 0.2;
 
 #[test]
 fn derived_presses_follow_the_analog_values() {
@@ -170,27 +173,30 @@ fn pad(x: f32, force: f32) -> HandInputs {
 #[test]
 fn a_trackpad_press_picks_the_half_under_the_thumb() {
     assert_eq!(
-        trackpad_press(None, &pad(-0.6, 0.5), FORCE),
+        trackpad_press(None, &pad(-0.6, 0.5), FORCE, MARGIN),
         Some(TrackpadHalf::Left)
     );
     assert_eq!(
-        trackpad_press(None, &pad(0.6, 0.5), FORCE),
+        trackpad_press(None, &pad(0.6, 0.5), FORCE, MARGIN),
         Some(TrackpadHalf::Right)
     );
     // A touch without force, or a press on the centre line, is no press.
-    assert_eq!(trackpad_press(None, &pad(0.6, 0.2), FORCE), None);
-    assert_eq!(trackpad_press(None, &pad(0.1, 1.0), FORCE), None);
-    assert_eq!(trackpad_press(None, &pad(-0.1, 1.0), FORCE), None);
-    assert_eq!(trackpad_press(None, &pad(0.6, f32::NAN), FORCE), None);
+    assert_eq!(trackpad_press(None, &pad(0.6, 0.2), FORCE, MARGIN), None);
+    assert_eq!(trackpad_press(None, &pad(0.1, 1.0), FORCE, MARGIN), None);
+    assert_eq!(trackpad_press(None, &pad(-0.1, 1.0), FORCE, MARGIN), None);
+    assert_eq!(
+        trackpad_press(None, &pad(0.6, f32::NAN), FORCE, MARGIN),
+        None
+    );
 }
 
 #[test]
 fn a_trackpad_press_keeps_its_half_until_released() {
     let left = Some(TrackpadHalf::Left);
     // The thumb slides across under pressure: the press stays on its half.
-    assert_eq!(trackpad_press(left, &pad(0.8, 0.2), FORCE), left);
-    assert_eq!(trackpad_press(left, &pad(0.8, 0.1), FORCE), left);
-    assert_eq!(trackpad_press(left, &pad(0.8, 0.09), FORCE), None);
+    assert_eq!(trackpad_press(left, &pad(0.8, 0.2), FORCE, MARGIN), left);
+    assert_eq!(trackpad_press(left, &pad(0.8, 0.1), FORCE, MARGIN), left);
+    assert_eq!(trackpad_press(left, &pad(0.8, 0.09), FORCE, MARGIN), None);
 }
 
 #[test]

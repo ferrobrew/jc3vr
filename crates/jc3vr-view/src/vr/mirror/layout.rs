@@ -1,7 +1,7 @@
 //! The mirror's layout math: where each eye lands in the back buffer for a [`MirrorView`],
 //! compensated for the buffer→window stretch (see the parent module's framing note).
 
-use crate::vr::MirrorView;
+use crate::{tuning::VIEW, vr::MirrorView};
 
 /// A width/height pair whose aspect (`width / height`) is preserved by the letterbox fit.
 #[derive(Copy, Clone)]
@@ -29,11 +29,6 @@ pub(super) enum MirrorFraming {
     Fit,
 }
 
-/// The extra magnification applied to a single-eye mirror image on top of its fill, about the
-/// centre. `1.0` is the plain fill; above that crops in further, tightening the desktop view onto
-/// the middle of the eye render.
-const MIRROR_ZOOM: f32 = 1.0;
-
 /// One eye's draw in the mirror: which capture, and where it lands in the back buffer.
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub(super) struct EyeDraw {
@@ -60,11 +55,12 @@ impl MirrorLayout {
 }
 
 /// Lay `view` out in the back buffer. A single eye fills the window (cropping its overflow, like
-/// other VR titles' desktop views) at [`MIRROR_ZOOM`]. The stereo pair is fitted as one image twice
+/// other VR titles' desktop views) at the tuning's zoom
+/// ([`MirrorTuning`](crate::tuning::MirrorTuning)). The stereo pair is fitted as one image twice
 /// the eye's width, so it is letterboxed and never cropped (a crop would cut the outer edge of each
-/// eye differently and break the fusion), then split down the middle with the right eye in the
-/// left half and the left eye in the right half: the cross-eyed order. Halving in buffer space
-/// halves in window space, since the buffer→window stretch is linear per axis.
+/// eye differently and break the fusion), then split down the middle with the right eye in the left
+/// half and the left eye in the right half: the cross-eyed order. Halving in buffer space halves in
+/// window space, since the buffer→window stretch is linear per axis.
 pub(super) fn mirror_layout(
     view: MirrorView,
     eye_size: AspectSize,
@@ -74,7 +70,13 @@ pub(super) fn mirror_layout(
     let mono = |eye| {
         MirrorLayout::Mono(EyeDraw {
             eye,
-            viewport: mirror_viewport(eye_size, buffer, window, MirrorFraming::Fill, MIRROR_ZOOM),
+            viewport: mirror_viewport(
+                eye_size,
+                buffer,
+                window,
+                MirrorFraming::Fill,
+                VIEW.get().mirror.zoom,
+            ),
         })
     };
     match view {
@@ -480,7 +482,13 @@ mod tests {
             height: 1920,
         };
         let (buffer, window) = ((1920, 1080), (1920, 1080));
-        let fill = mirror_viewport(eye, buffer, window, MirrorFraming::Fill, MIRROR_ZOOM);
+        let fill = mirror_viewport(
+            eye,
+            buffer,
+            window,
+            MirrorFraming::Fill,
+            VIEW.get().mirror.zoom,
+        );
         for (view, want_eye) in [(MirrorView::Left, 0), (MirrorView::Right, 1)] {
             assert_eq!(
                 mirror_layout(view, eye, buffer, window),

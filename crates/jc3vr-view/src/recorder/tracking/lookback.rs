@@ -1,4 +1,4 @@
-//! The lookback: a rolling window of the last [`WINDOW`] of capture batches, kept while motion
+//! The lookback: a rolling window of the last [`window`] of capture batches, kept while motion
 //! controllers are enabled, so that the moments before something went wrong can be saved as a
 //! tracking recording after the fact ([`request_save`]).
 //!
@@ -21,8 +21,12 @@ use std::{
     time::{Duration, Instant},
 };
 
+use crate::tuning::VIEW;
+
 /// How far back the lookback reaches.
-pub const WINDOW: Duration = Duration::from_secs(10);
+pub fn window() -> Duration {
+    Duration::from_secs(VIEW.get().recorder.lookback_window_s)
+}
 
 /// Whether the lookback is collecting. Any thread.
 #[inline]
@@ -101,7 +105,7 @@ impl Ring {
         self.bytes += entry.bytes.len();
         let newest = entry.time_ns;
         self.entries.push_back(entry);
-        let window = u64::try_from(WINDOW.as_nanos()).unwrap_or(u64::MAX);
+        let window = u64::try_from(window().as_nanos()).unwrap_or(u64::MAX);
         while self.entries.len() > 1
             && let Some(front) = self.entries.front()
             && (newest.saturating_sub(front.time_ns) > window || self.bytes > self.max_bytes)
@@ -202,7 +206,7 @@ mod tests {
         }
         // Frames 200..=1200 are within ten seconds of the newest.
         assert_eq!(ring.len(), 1001);
-        assert_eq!(ring.span(), WINDOW);
+        assert_eq!(ring.span(), window());
         assert_eq!(ring.bytes(), 1001 * 4);
         let snapshot = ring.snapshot().unwrap();
         assert_eq!(snapshot.first_time_ns, 200 * 10 * MS);

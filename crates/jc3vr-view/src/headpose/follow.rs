@@ -21,12 +21,13 @@
 //!
 //! - **Stepping** (off foot, through a vehicle's entry or exit animation): the view's heading is
 //!   held as while following, so the clip's turn of the body does not swing the view, and every
-//!   [`STEP_INTERVAL_S`] it steps toward the body's heading by up to [`STEP_RAD`], in one hard step
-//!   rather than a turn the eyes would track. It keeps stepping past the animation until the view
-//!   faces within [`STEP_SETTLED_RAD`] of the body, so the seat and everything off foot meet the
-//!   body's forward; what is left is frozen and banked as below. Past the animation the vehicle
-//!   carries the body, so there the view rides the body's turn and steps only the difference the
-//!   animation left: a vehicle that drives off turning turns the view with it.
+//!   step interval ([`FollowTuning`](crate::tuning::FollowTuning)) it steps toward the body's
+//!   heading by up to the step angle, in one hard step rather than a turn the eyes would track. It
+//!   keeps stepping past the animation until the view faces within the settled angle of the body,
+//!   so the seat and everything off foot meet the body's forward; what is left is frozen and banked
+//!   as below. Past the animation the vehicle carries the body, so there the view rides the body's
+//!   turn and steps only the difference the animation left: a vehicle that drives off turning turns
+//!   the view with it.
 //! - **Holding** (off foot, through a ragdoll, its get-up, or a death): the view's heading is held
 //!   as while stepping, but it never steps: the get-up's pose matching turns the root by up to
 //!   half a turn to wherever the ragdoll fell, and a view riding the body turned with it. Once the
@@ -42,6 +43,8 @@
 //! Headings are world yaws about +Y in radians, as [`crate::headpose::sim::body_yaw_of`] reads them.
 
 use body_rig::angle::wrap;
+
+use crate::tuning::VIEW;
 
 /// The follow state, owned by the VR body-yaw accumulator.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
@@ -179,8 +182,9 @@ impl BodyFollow {
             Some(stepping) if !tick.step => wrap(held + wrap(tick.body - stepping.body)),
             _ => held,
         };
+        let tuning = &VIEW.get().follow;
         let remaining = wrap(tick.body - current);
-        let settled = remaining.abs() <= STEP_SETTLED_RAD;
+        let settled = remaining.abs() <= tuning.step_settled_rad;
         if !tick.step && (self.stepping.is_none() || settled) {
             if self.stepping.is_some() {
                 self.view = Some((current, current));
@@ -193,9 +197,9 @@ impl BodyFollow {
             0.0
         };
         let since = self.stepping.map_or(0.0, |stepping| stepping.since + dt);
-        let (heading, since) = if since >= STEP_INTERVAL_S && !settled {
+        let (heading, since) = if since >= tuning.step_interval_s && !settled {
             (
-                wrap(current + remaining.signum() * remaining.abs().min(STEP_RAD)),
+                wrap(current + remaining.signum() * remaining.abs().min(tuning.step_rad)),
                 0.0,
             )
         } else {
@@ -244,16 +248,6 @@ impl BodyFollow {
         }
     }
 }
-
-/// How long the view holds its heading between steps toward a vehicle's turn of the body,
-/// seconds.
-pub const STEP_INTERVAL_S: f32 = 0.5;
-
-/// The largest step toward the body, radians: 30 degrees.
-pub const STEP_RAD: f32 = std::f32::consts::FRAC_PI_6;
-
-/// How close the view must face the body for the steps to end, radians: about 3 degrees.
-pub const STEP_SETTLED_RAD: f32 = 0.05;
 
 #[cfg(test)]
 mod tests {
@@ -355,7 +349,7 @@ mod tests {
         }
         assert!(!follow.is_stepping());
         assert!(!follow.following());
-        assert!(follow.frozen().abs() <= STEP_SETTLED_RAD);
+        assert!(follow.frozen().abs() <= VIEW.get().follow.step_settled_rad);
     }
 
     #[test]
@@ -376,7 +370,7 @@ mod tests {
             }
         }
         assert!(!follow.is_stepping(), "the steps settle: {gap:?}");
-        assert!(follow.frozen().abs() <= STEP_SETTLED_RAD);
+        assert!(follow.frozen().abs() <= VIEW.get().follow.step_settled_rad);
         // The view's offset from the body only ever closes, a step at a time: the vehicle's own
         // turn never opens it.
         assert!(

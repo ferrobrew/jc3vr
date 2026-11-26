@@ -24,6 +24,7 @@ use crate::{
     fsr::FSR_CONFIG,
     hooks::camera::config::CAMERA_CONFIG,
     stereo::STEREO_STATE,
+    tuning::VIEW,
     vr::{FreezeMode, VR_CONFIG, harness, pose_control},
 };
 
@@ -88,10 +89,6 @@ pub fn head_to_eye_point() -> glam::Vec3 {
     let current = query();
     eye_points([query_prev(), current])[1] - current.position
 }
-
-/// The interpupillary distance, in metres, of the flatscreen stereo per-eye camera offset. A VR
-/// session takes each eye's offset from the runtime's eye poses instead.
-const FLATSCREEN_IPD: f32 = 0.068;
 
 /// The scene render camera is the engine-owned copy (`GraphicsEngine::m_RenderCamera`), rebuilt
 /// each Draw by `SetupRenderCamera` (reverse-Z + jitter, then `m_ViewProjection`/`m_ViewProjectionF`
@@ -242,7 +239,7 @@ fn setup_render_camera(camera: *mut Camera, jitter: bool) -> *mut c_void {
             unsafe {
                 if let Some(camera) = camera.as_mut() {
                     let eye1 = crate::stereo::draw_index() == 1;
-                    let half_ipd = FLATSCREEN_IPD * 0.5;
+                    let half_ipd = VIEW.get().camera.flatscreen_ipd_m * 0.5;
                     // Eye 0 is the LEFT eye (shift -right), eye 1 the RIGHT (shift +right), so view 0
                     // == left (OpenXR convention). The reverse assignment fuses the debug pair
                     // cross-eyed when the "parallel" toggle is off.
@@ -896,7 +893,7 @@ fn camera_tree_update_render_contexts(
         context.m_CameraTransform = Matrix4::from(world);
         context.m_AlternateAimTransform = context.m_CameraTransform;
         context.m_ListenerTransform = context.m_CameraTransform;
-        context.m_FOV = 90.0_f32.to_radians();
+        context.m_FOV = VIEW.get().camera.context_fov_deg.to_radians();
         clear_blurs(context);
     }
 
@@ -918,7 +915,7 @@ fn camera_tree_update_render_contexts(
         }
         context.m_AlternateAimTransform = context.m_CameraTransform;
         context.m_ListenerTransform = context.m_CameraTransform;
-        context.m_FOV = 90.0_f32.to_radians();
+        context.m_FOV = VIEW.get().camera.context_fov_deg.to_radians();
         clear_blurs(context);
     }
 

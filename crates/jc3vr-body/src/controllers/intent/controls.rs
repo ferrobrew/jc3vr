@@ -219,11 +219,11 @@ impl Controls {
 /// when the press ends. A force-sensing grip (the Index's) presses on a deliberate squeeze, and its
 /// force sags toward nothing while the hand stays wrapped round the handle, so there the hand is
 /// still closed while the grip's squeeze value, the capacitive sense of the fingers round the
-/// handle, stays at or above the value grips release at ([`SQUEEZE_PRESS`]), and
-/// opens when the fingers come off. Only a press closes the hand: fingers resting round the handle
-/// keep a hold, but never start one.
+/// handle, stays at or above the value grips release at (the tuning's `press.squeeze`,
+/// [`PressTuning`]), and opens when the fingers come off. Only a press closes the hand: fingers
+/// resting round the handle keep a hold, but never start one.
 ///
-/// [`SQUEEZE_PRESS`]: jc3vr_view::vr::input::config::SQUEEZE_PRESS
+/// [`PressTuning`]: jc3vr_view::tuning::PressTuning
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
 pub struct ClosedHand {
     closed: bool,

@@ -61,9 +61,9 @@ pub enum VrTurnMode {
 pub struct VrTurnConfig {
     /// Smooth (continuous) or snap (discrete step) turning.
     pub mode: VrTurnMode,
-    /// Smooth-turn scale: the per-tick body yaw is the look delta times
-    /// [`MOUSE_SENSITIVITY`](crate::headpose::sim::MOUSE_SENSITIVITY) times this, so `1.0` turns the
-    /// body with the look input exactly as flatscreen turned the head.
+    /// Smooth-turn scale: the per-tick body yaw is the look delta times the flatscreen look's
+    /// mouse sensitivity ([`FlatscreenLookTuning`](crate::tuning::FlatscreenLookTuning)) times
+    /// this, so `1.0` turns the body with the look input exactly as flatscreen turned the head.
     pub smooth_scale: f32,
     /// Snap-turn step (degrees), applied once per look flick past [`snap_threshold`](Self::snap_threshold).
     pub snap_angle_deg: f32,

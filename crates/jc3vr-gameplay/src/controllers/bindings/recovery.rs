@@ -16,10 +16,8 @@ use jc3vr_body::controllers::intent::config::{BindingsConfig, TRIGGER_DEADZONE};
 use jc3vr_input::frame::{Button, ButtonSet, ControllerFrame, Edges, Hand, HandFrame};
 use jc3vr_view::{
     headpose::config::{VrTurnConfig, VrTurnMode},
-    vr::input::{
-        config::{TRIGGER_PRESS, grip_press},
-        semantic::admission::hand_usable,
-    },
+    tuning::VIEW,
+    vr::input::{config::grip_press, semantic::admission::hand_usable},
 };
 
 use crate::controllers::tuning::GAMEPLAY;
@@ -220,7 +218,7 @@ fn blocker(hand: &HandFrame, config: &NeutralPolicy, index: usize) -> Option<Blo
     // Both digital release and analog deadzones matter: a released trigger can still accelerate.
     if !(input.trigger.is_finite()
         && input.trigger >= 0.0
-        && input.trigger < TRIGGER_PRESS.release
+        && input.trigger < VIEW.get().press.trigger.release
         && input.trigger <= TRIGGER_DEADZONE)
     {
         return Some(Blocker::Trigger(input.trigger));
@@ -294,7 +292,7 @@ mod tests {
         yank::LineYank,
     };
     use jc3vr_input::frame::{ActionSetKind, Button, Hand, InteractionProfile, derive_buttons};
-    use jc3vr_view::vr::input::config::{SQUEEZE_FORCE_PRESS, SQUEEZE_PRESS, press_rules};
+    use jc3vr_view::vr::input::config::press_rules;
 
     use super::*;
     use crate::controllers::bindings::{State, TickReport, tables::Bindings};
@@ -523,10 +521,10 @@ mod tests {
         hand.inputs.trackpad = Vec2::ONE;
         hand.buttons.set(Button::TrackpadTouch, true);
         assert!(neutral(hand, &config, Hand::Left));
-        hand.inputs.squeeze = SQUEEZE_PRESS.release;
+        hand.inputs.squeeze = VIEW.get().press.squeeze.release;
         assert!(!neutral(hand, &config, Hand::Left));
         hand.inputs.squeeze = 0.4;
-        hand.inputs.trigger = TRIGGER_PRESS.release;
+        hand.inputs.trigger = VIEW.get().press.trigger.release;
         assert!(!neutral(hand, &config, Hand::Left));
         hand.inputs.trigger = 0.04;
         hand.inputs.thumbstick = Vec2::X;
@@ -544,12 +542,12 @@ mod tests {
         hand.profile = InteractionProfile::ValveIndex;
         // The hand closed round the capacitive grip reads a full squeeze value, and is at rest.
         hand.inputs.squeeze = 1.0;
-        hand.inputs.squeeze_force = SQUEEZE_FORCE_PRESS.release * 0.5;
+        hand.inputs.squeeze_force = VIEW.get().press.squeeze_force.release * 0.5;
         assert!(neutral(&hand, &config, Hand::Left));
-        hand.inputs.squeeze_force = SQUEEZE_FORCE_PRESS.release;
+        hand.inputs.squeeze_force = VIEW.get().press.squeeze_force.release;
         assert_eq!(
             blocker(&hand, &config, Hand::Left.index()),
-            Some(Blocker::Squeeze(SQUEEZE_FORCE_PRESS.release))
+            Some(Blocker::Squeeze(VIEW.get().press.squeeze_force.release))
         );
         // The same reading on a value grip is a held squeeze.
         hand.profile = InteractionProfile::OculusTouch;

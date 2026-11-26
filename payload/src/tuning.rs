@@ -22,7 +22,7 @@ use jc3vr_render::tuning::RENDER;
 use jc3vr_tooling::tuning::TOOLING;
 use jc3vr_ui::tuning::UI;
 use jc3vr_vehicles::controllers::vehicles::tuning::VEHICLES;
-use jc3vr_view::tuning::HAPTICS;
+use jc3vr_view::tuning::{HAPTICS, VIEW};
 
 /// Loads every tuning file from `source` and starts watching them.
 pub(crate) fn init(source: Source) -> Result<(), StartupError> {
@@ -47,6 +47,7 @@ static FILES: &[&dyn AnyTuningFile] = &[
     &FINGERS_TUNING,
     &AIM,
     &PROCEDURAL,
+    &VIEW,
 ];
 
 #[cfg(test)]

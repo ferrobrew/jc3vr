@@ -112,9 +112,10 @@ use jc3vr_view::{
     controllers::cockpit::CockpitTransform,
     headpose,
     headpose::config::HEADPOSE_CONFIG,
+    tuning::VIEW,
     vr,
     vr::input::{
-        config::{SQUEEZE_PRESS, grip_press},
+        config::grip_press,
         semantic::{frame as semantic_frame, history},
     },
 };
@@ -562,7 +563,7 @@ fn tick(game: &GameTick<'_>, dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>)
         controls.hands[i].hold = state.closed[i].step(
             controls.hands[i].grip,
             (force && source.active).then_some(source.inputs.squeeze),
-            SQUEEZE_PRESS.release,
+            VIEW.get().press.squeeze.release,
         );
         intent::record_hand_closed(hand, controls.hands[i].hold.down);
     }

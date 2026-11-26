@@ -33,11 +33,14 @@ use body_rig::angle::{direction, wrap};
 use glam::{Quat, Vec3};
 use parking_lot::Mutex;
 
-use crate::headpose::{
-    HeadPose,
-    config::HEADPOSE_CONFIG,
-    participants::head_participants,
-    xr::{YawTick, advance_body_yaw, follow_turn},
+use crate::{
+    headpose::{
+        HeadPose,
+        config::HEADPOSE_CONFIG,
+        participants::head_participants,
+        xr::{YawTick, advance_body_yaw, follow_turn},
+    },
+    tuning::VIEW,
 };
 
 /// The latch state (on-foot only).
@@ -157,8 +160,9 @@ pub fn on_input_tick(look_x: f32, look_y: f32, look_x_delta: bool, dt: f32) {
 
     // Negated: a positive net LOOK_RIGHT delta must turn the head clockwise from above, which is
     // a negative rotation about +Y (established in-game; the unnegated form turned the wrong way).
-    let yaw_delta = -(look_x * MOUSE_SENSITIVITY).to_radians();
-    let pitch_delta = (look_y * MOUSE_SENSITIVITY).to_radians();
+    let look = &VIEW.get().flatscreen_look;
+    let yaw_delta = -(look_x * look.mouse_sensitivity).to_radians();
+    let pitch_delta = (look_y * look.mouse_sensitivity).to_radians();
 
     match s.mode {
         HeadMode::OnFoot => {
@@ -171,13 +175,13 @@ pub fn on_input_tick(look_x: f32, look_y: f32, look_x_delta: bool, dt: f32) {
             s.yaw = wrap(s.yaw + yaw_delta);
         }
         HeadMode::Other => {
-            let yaw_limit = FREE_LOOK_YAW_LIMIT_DEG.to_radians();
+            let yaw_limit = look.free_look_yaw_limit_deg.to_radians();
             s.yaw = (s.yaw + yaw_delta).clamp(-yaw_limit, yaw_limit);
         }
     }
     // The pitch is clamped in every mode: a real head cannot pitch past vertical, and letting the
     // euler pitch cross ±90° flips the yaw/roll decomposition.
-    let pitch_limit = FREE_LOOK_PITCH_LIMIT_DEG.to_radians();
+    let pitch_limit = look.free_look_pitch_limit_deg.to_radians();
     s.pitch = (s.pitch + pitch_delta).clamp(-pitch_limit, pitch_limit);
     s.last_body_yaw = body_yaw;
 
@@ -267,25 +271,6 @@ struct SimState {
     body_yaw_target: Option<Vec3>,
 }
 
-/// Mouse-look sensitivity, degrees per unit of look-effector delta.
-pub(crate) const MOUSE_SENSITIVITY: f32 = 7.5;
-
-/// On foot: the half-angle, degrees, of the decoupled cone. Beyond it, body yaw begins following
-/// the head.
-const LATCH_THRESHOLD_DEG: f32 = 75.0;
-
-/// On foot: the half-angle, degrees, below which the latch disengages. Lower than
-/// [`LATCH_THRESHOLD_DEG`] to provide hysteresis and prevent jitter at the boundary.
-const LATCH_DISENGAGE_THRESHOLD_DEG: f32 = 65.0;
-
-/// Off foot: the most body-relative yaw, degrees, in either direction. Ranges beyond a real head's
-/// ~80° are made anatomically plausible by the neck twist in [`crate::hooks::character::head`].
-const FREE_LOOK_YAW_LIMIT_DEG: f32 = 135.0;
-
-/// The most pitch, degrees, in either direction, applied in every mode: a real head cannot pitch
-/// past vertical, and letting the euler pitch cross ±90° flips the yaw/roll decomposition.
-const FREE_LOOK_PITCH_LIMIT_DEG: f32 = 70.0;
-
 const SIM_DEFAULT: SimState = SimState {
     yaw: 0.0,
     pitch: 0.0,
@@ -316,16 +301,17 @@ fn update_latch(latch: LatchState, relative_yaw_deg: f32, mode: HeadMode) -> Lat
     if mode != HeadMode::OnFoot {
         return LatchState::Decoupled;
     }
+    let look = &VIEW.get().flatscreen_look;
     match latch {
         LatchState::Decoupled => {
-            if relative_yaw_deg.abs() >= LATCH_THRESHOLD_DEG {
+            if relative_yaw_deg.abs() >= look.latch_threshold_deg {
                 LatchState::BodyFollowing
             } else {
                 LatchState::Decoupled
             }
         }
         LatchState::BodyFollowing => {
-            if relative_yaw_deg.abs() <= LATCH_DISENGAGE_THRESHOLD_DEG {
+            if relative_yaw_deg.abs() <= look.latch_disengage_threshold_deg {
                 LatchState::Decoupled
             } else {
                 LatchState::BodyFollowing

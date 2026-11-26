@@ -23,6 +23,7 @@ use windows::{
 
 use crate::{
     controllers::body::rig::{origin_provenance, origin_provenance::ReferenceSpaceChanges},
+    tuning::VIEW,
     vr::{
         VIEW_TYPE, VR_CONFIG, VrConfig, blit,
         eye_resolution::scaled_eye_size,
@@ -192,10 +193,6 @@ pub fn published_status() -> PublishedStatus {
     }
 }
 
-/// How often, in seconds, OpenXR bring-up is retried after a failure while `vr.enabled` is on. The
-/// mod runs in flatscreen stereo between attempts.
-const RETRY_INTERVAL_SECS: u64 = 10;
-
 /// Tear the runtime down and clear all state. Idempotent. Registered with [`jc3vr_core::lifecycle`], so it
 /// runs on uninject — where the instance and session are kept alive (their handles stashed in the
 /// game process environment, the wrappers leaked) for a reinject to reuse, sidestepping the
@@ -364,7 +361,7 @@ impl VrState {
     fn try_bring_up(&mut self, cfg: &VrConfig) {
         let now = Instant::now();
         if let Some(last) = self.last_attempt
-            && now.duration_since(last).as_secs() < RETRY_INTERVAL_SECS
+            && now.duration_since(last).as_secs() < VIEW.get().runtime.retry_interval_s
         {
             return;
         }
@@ -390,7 +387,7 @@ impl VrState {
             tracing::warn!(
                 target: "vr",
                 "OpenXR bring-up failed (staying in flatscreen stereo, retrying in {}s): {e:#}",
-                RETRY_INTERVAL_SECS,
+                VIEW.get().runtime.retry_interval_s,
             );
             // Keep any successfully-reused/created handles for the next retry; a stale stashed
             // handle was already cleared by the acquire path.

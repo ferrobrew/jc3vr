@@ -80,17 +80,6 @@ const STENCIL_INDEX_MASK: u64 = 0x0000_00FF_7FFF_FFC0;
 /// stencil for its own purpose and is left alone.
 const STENCIL_ENABLE_BIT: u64 = 1 << 6;
 
-/// Foveal radius as a fraction of an eye's half-diagonal from its foveal centre: inside it the scene
-/// renders at full rate.
-pub const INNER_FRACTION: f32 = 0.35;
-
-/// The radius, in the units of [`INNER_FRACTION`], at which the peripheral drop reaches
-/// [`MAX_DROP`]; the drop ramps from zero at the inner radius to the maximum here.
-pub const OUTER_FRACTION: f32 = 0.55;
-
-/// The fraction of peripheral pixels dropped (and reconstructed) at [`OUTER_FRACTION`] and beyond.
-pub const MAX_DROP: f32 = 0.8;
-
 /// The stencil bit the mask tags dropped pixels with: bit 7, which the engine's own stencil use
 /// leaves free.
 pub const MASK_BIT: u32 = 0x80;

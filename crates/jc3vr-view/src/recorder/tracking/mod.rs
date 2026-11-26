@@ -63,6 +63,7 @@ use crate::{
         lookback::{Entry, Lookback, LookbackStatus},
         writer::{CaptureBatch, SendOutcome, Writer},
     },
+    tuning::VIEW,
     vr::{
         VR_CONFIG,
         input::{
@@ -440,10 +441,6 @@ pub fn shutdown() -> bool {
 /// start rather than discarding an owner.
 const MAX_WRITERS: usize = 3;
 
-/// How close to a named place ([`start_source`]) the player must stand for the start marker to name
-/// it.
-const BOOKMARK_RADIUS_M: f32 = 2.0;
-
 const REQUEST_NONE: u8 = 0;
 const REQUEST_START: u8 = 1;
 const REQUEST_STOP: u8 = 2;
@@ -653,7 +650,7 @@ fn header_at(transform: [f32; 16], stamp: String) -> Header {
             let distance = (glam::Vec3::from(place.position) - marker.position()).length();
             (place.name, distance)
         })
-        .filter(|(_, distance)| *distance <= BOOKMARK_RADIUS_M)
+        .filter(|(_, distance)| *distance <= VIEW.get().recorder.bookmark_radius_m)
         .min_by(|a, b| a.1.total_cmp(&b.1))
         .map(|(name, _)| name);
     let dominant_hand = *DOMINANT_HAND.lock();

@@ -21,6 +21,7 @@ use crate::{
             AcceptedRun, Frame, GraphState, NamedCase, NativeContribution, Owner, Phase, Policy,
         },
     },
+    tuning::VIEW,
 };
 
 /// The ordinary camera and the tracked-only displacement on one side of the pose pair.
@@ -156,7 +157,8 @@ impl Runtime {
                 return Err(Refusal::Policy(InvalidPair::SourceChanged));
             }
             if previous.teleport_epoch != current.teleport_epoch
-                || previous.root.translation.distance(current.root.translation) > MAX_ROOT_STEP
+                || previous.root.translation.distance(current.root.translation)
+                    > VIEW.get().handback.max_root_step_m
             {
                 return Err(Refusal::Policy(InvalidPair::Teleport));
             }
@@ -297,7 +299,7 @@ impl Runtime {
                 .transform
                 .translation
                 .distance(native.root.translation)
-                > MAX_ROOT_STEP
+                > VIEW.get().handback.max_root_step_m
         {
             self.policy.teleport();
             return Err(Refusal::Policy(InvalidPair::Teleport));
@@ -515,15 +517,13 @@ fn handback_duration(correction: Trs) -> Duration {
         .normalize()
         .angle_between(Quat::IDENTITY);
     let distance = correction.translation.length();
+    let tuning = &VIEW.get().handback;
     if !angle.is_finite() || !distance.is_finite() {
-        return HANDBACK_MAX_DURATION;
+        return Duration::from_secs_f32(tuning.max_s);
     }
-    let seconds = (angle / HANDBACK_ROTATION_RATE)
-        .max(distance / HANDBACK_TRANSLATION_RATE)
-        .clamp(
-            HANDBACK_MIN_DURATION.as_secs_f32(),
-            HANDBACK_MAX_DURATION.as_secs_f32(),
-        );
+    let seconds = (angle / tuning.rotation_rate_rad_per_s)
+        .max(distance / tuning.translation_rate_m_per_s)
+        .clamp(tuning.min_s, tuning.max_s);
     Duration::from_secs_f32(seconds)
 }
 
@@ -547,16 +547,6 @@ fn compose_tracked(
     };
     compose_view(base, delta, head).map_err(Refusal::Policy)
 }
-
-// A mod-side discontinuity limit, not a native movement threshold.
-const MAX_ROOT_STEP: f32 = 8.0;
-const HANDBACK_MIN_DURATION: Duration = Duration::from_millis(250);
-const HANDBACK_MAX_DURATION: Duration = Duration::from_millis(1500);
-/// The average handback rotation rate in radians per second; the smoothstep peak is half again
-/// as fast.
-const HANDBACK_ROTATION_RATE: f32 = std::f32::consts::FRAC_PI_2 / 0.75;
-/// The average handback translation rate in metres per second.
-const HANDBACK_TRANSLATION_RATE: f32 = 1.0;
 
 static STATE: Mutex<Runtime> = Mutex::new(Runtime {
     policy: Policy::new(),
@@ -593,6 +583,14 @@ mod tests {
         evidence::{Animation, ClipSource},
         policy::{HangingState, LandingState, RecoveryState},
     };
+
+    fn handback_min() -> Duration {
+        Duration::from_secs_f32(VIEW.get().handback.min_s)
+    }
+
+    fn handback_max() -> Duration {
+        Duration::from_secs_f32(VIEW.get().handback.max_s)
+    }
 
     fn native(buffer: u64, state: GraphState, translation: Vec3) -> NativeSample {
         let graph_serial: u64 = match state {
@@ -802,7 +800,7 @@ mod tests {
             rotation: Quat::from_rotation_z(angle),
             ..Trs::IDENTITY
         };
-        assert_eq!(handback_duration(Trs::IDENTITY), HANDBACK_MIN_DURATION);
+        assert_eq!(handback_duration(Trs::IDENTITY), handback_min());
         let quarter = handback_duration(rotated(std::f32::consts::FRAC_PI_2));
         let half = handback_duration(rotated(std::f32::consts::PI));
         assert!((quarter.as_secs_f32() - 0.75).abs() < 0.001);
@@ -811,17 +809,17 @@ mod tests {
             handback_duration(rotated(3.0 * std::f32::consts::PI / 2.0)),
             quarter
         );
-        assert!(half <= HANDBACK_MAX_DURATION);
+        assert!(half <= handback_max());
         let far = Trs {
             translation: Vec3::X * 10.0,
             ..Trs::IDENTITY
         };
-        assert_eq!(handback_duration(far), HANDBACK_MAX_DURATION);
+        assert_eq!(handback_duration(far), handback_max());
         let nan = Trs {
             translation: Vec3::NAN,
             ..Trs::IDENTITY
         };
-        assert_eq!(handback_duration(nan), HANDBACK_MAX_DURATION);
+        assert_eq!(handback_duration(nan), handback_max());
     }
 
     #[test]
@@ -888,7 +886,10 @@ mod tests {
                 }
                 let mut next_epoch = epoch;
                 match change {
-                    0 => exit.root.translation = Vec3::X * (MAX_ROOT_STEP + 1.0),
+                    0 => {
+                        exit.root.translation =
+                            Vec3::X * (VIEW.get().handback.max_root_step_m + 1.0)
+                    }
                     1 => exit.source.producer += 1,
                     2 => next_epoch += 1,
                     3 => exit.root.translation.x = f32::NAN,
@@ -896,7 +897,7 @@ mod tests {
                 }
                 assert!(
                     state
-                        .capture(Ok(exit), views, now + HANDBACK_MIN_DURATION / 4, next_epoch,)
+                        .capture(Ok(exit), views, now + handback_min() / 4, next_epoch,)
                         .is_none()
                 );
                 assert!(state.selected.is_none());

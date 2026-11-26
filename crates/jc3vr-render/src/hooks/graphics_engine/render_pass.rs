@@ -21,11 +21,12 @@ use jc3gi::graphics_engine::{
 };
 use jc3vr_view::{
     stereo::{STEREO_STATE, config::STEREO_CONFIG, is_second_eye},
+    tuning::VIEW,
     vr::{
         FOVEATION_CONFIG,
         foveation::{
-            EyeLayout, FORCE_STENCIL_TEST, FoveatedPasses, FoveationParams, INNER_FRACTION,
-            MASK_BIT, MAX_DROP, OUTER_FRACTION, packed_stencil_test,
+            EyeLayout, FORCE_STENCIL_TEST, FoveatedPasses, FoveationParams, MASK_BIT,
+            packed_stencil_test,
         },
     },
 };
@@ -323,11 +324,12 @@ fn foveation_params(
     layout: EyeLayout,
     quads: bool,
 ) -> FoveationParams {
+    let tuning = &VIEW.get().foveation;
     FoveationParams {
         layout,
-        inner_fraction: INNER_FRACTION,
-        outer_fraction: OUTER_FRACTION,
-        max_drop: MAX_DROP,
+        inner_fraction: tuning.inner_fraction,
+        outer_fraction: tuning.outer_fraction,
+        max_drop: tuning.max_drop,
         mask_bit: MASK_BIT,
         debug_show_mask: cfg.debug_show_mask,
         cell_px: if quads { 2 } else { 1 },

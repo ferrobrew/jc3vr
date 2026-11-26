@@ -73,7 +73,7 @@ fn recording_ui(ui: &mut egui::Ui) {
 fn lookback_ui(ui: &mut egui::Ui) {
     let status = tracking::lookback_status();
     ui.horizontal(|ui| {
-        let label = format!("Save the last {} s", tracking::lookback::WINDOW.as_secs());
+        let label = format!("Save the last {} s", tracking::lookback::window().as_secs());
         if ui
             .add_enabled(status.frames > 0, egui::Button::new(label))
             .on_hover_text(

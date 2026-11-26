@@ -1,8 +1,17 @@
 use super::*;
+use crate::tuning::FlatscreenLookTuning;
+
+fn look() -> &'static FlatscreenLookTuning {
+    &VIEW.get().flatscreen_look
+}
 
 #[test]
 fn test_latch_engages_at_threshold() {
-    let latch = update_latch(LatchState::Decoupled, LATCH_THRESHOLD_DEG, HeadMode::OnFoot);
+    let latch = update_latch(
+        LatchState::Decoupled,
+        look().latch_threshold_deg,
+        HeadMode::OnFoot,
+    );
     assert_eq!(latch, LatchState::BodyFollowing);
 }
 
@@ -10,7 +19,7 @@ fn test_latch_engages_at_threshold() {
 fn test_latch_does_not_engage_below_threshold() {
     let latch = update_latch(
         LatchState::Decoupled,
-        LATCH_THRESHOLD_DEG - 1.0,
+        look().latch_threshold_deg - 1.0,
         HeadMode::OnFoot,
     );
     assert_eq!(latch, LatchState::Decoupled);
@@ -20,7 +29,7 @@ fn test_latch_does_not_engage_below_threshold() {
 fn test_latch_engages_at_negative_threshold() {
     let latch = update_latch(
         LatchState::Decoupled,
-        -LATCH_THRESHOLD_DEG,
+        -look().latch_threshold_deg,
         HeadMode::OnFoot,
     );
     assert_eq!(latch, LatchState::BodyFollowing);
@@ -30,7 +39,7 @@ fn test_latch_engages_at_negative_threshold() {
 fn test_latch_disengages_below_hysteresis() {
     let latch = update_latch(
         LatchState::BodyFollowing,
-        LATCH_DISENGAGE_THRESHOLD_DEG,
+        look().latch_disengage_threshold_deg,
         HeadMode::OnFoot,
     );
     assert_eq!(latch, LatchState::Decoupled);
@@ -39,7 +48,7 @@ fn test_latch_disengages_below_hysteresis() {
 #[test]
 fn test_latch_hysteresis_prevents_jitter() {
     // Between disengage and engage thresholds: should stay in current state.
-    let mid = (LATCH_DISENGAGE_THRESHOLD_DEG + LATCH_THRESHOLD_DEG) / 2.0;
+    let mid = (look().latch_disengage_threshold_deg + look().latch_threshold_deg) / 2.0;
     let latch = update_latch(LatchState::BodyFollowing, mid, HeadMode::OnFoot);
     assert_eq!(latch, LatchState::BodyFollowing);
     let latch = update_latch(LatchState::Decoupled, mid, HeadMode::OnFoot);
@@ -50,7 +59,7 @@ fn test_latch_hysteresis_prevents_jitter() {
 fn test_latch_always_decoupled_in_other_mode() {
     let latch = update_latch(
         LatchState::BodyFollowing,
-        LATCH_THRESHOLD_DEG + 10.0,
+        look().latch_threshold_deg + 10.0,
         HeadMode::Other,
     );
     assert_eq!(latch, LatchState::Decoupled);
@@ -58,7 +67,7 @@ fn test_latch_always_decoupled_in_other_mode() {
 
 #[test]
 fn test_free_look_clamping_yaw() {
-    let limit = FREE_LOOK_YAW_LIMIT_DEG.to_radians();
+    let limit = look().free_look_yaw_limit_deg.to_radians();
     let clamped = (limit + 1.0).clamp(-limit, limit);
     assert_eq!(clamped, limit);
     let clamped = (-limit - 1.0).clamp(-limit, limit);
@@ -67,7 +76,7 @@ fn test_free_look_clamping_yaw() {
 
 #[test]
 fn test_free_look_clamping_pitch() {
-    let limit = FREE_LOOK_PITCH_LIMIT_DEG.to_radians();
+    let limit = look().free_look_pitch_limit_deg.to_radians();
     let clamped = (limit + 1.0).clamp(-limit, limit);
     assert_eq!(clamped, limit);
     let clamped = (-limit - 1.0).clamp(-limit, limit);

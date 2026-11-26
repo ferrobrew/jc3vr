@@ -17,6 +17,7 @@ use crate::{
     controllers::body::rig::origin_provenance,
     headpose::xr::{bank, on_recenter, pending_bank, stepping},
     recorder::tracking::format::RecenterEvent,
+    tuning::VIEW,
     vr::{
         convert::{posef, quat, vec3},
         input::{
@@ -92,19 +93,12 @@ pub fn request_seat_recenter(kind: RecenterKind) {
 /// the head's heading against the body when the body last stopped following it (the latest follow
 /// bank), so the offset the head had from the body then does not carry into the seat as a look off
 /// the vehicle's axis. Only the yaw changes; the position and the height stay. A bank older than
-/// [`SEAT_YAW_BANK_WINDOW`], or one a recenter has since spent, is not used. While the view steps
-/// toward the body through the entry, the re-base waits for the steps to settle and bank.
+/// the tuning's seat-yaw bank window ([`RecenterTuning`](crate::tuning::RecenterTuning)), or one a
+/// recenter has since spent, is not used. While the view steps toward the body through the entry,
+/// the re-base waits for the steps to settle and bank.
 pub fn request_seat_yaw_rebase() {
     PENDING_SEAT_YAW.store(true, Ordering::Relaxed);
 }
-
-/// How recent the follow bank must be for the seat lock's yaw re-base to use it: a vehicle entry,
-/// a hijack, or a stunt position into a seat takes a few seconds from the moment the body stops
-/// following.
-pub const SEAT_YAW_BANK_WINDOW: Duration = Duration::from_secs(15);
-
-/// A yaw re-base smaller than this is not worth turning the view for, radians: about a degree.
-const SEAT_YAW_MIN: f32 = 0.017;
 
 fn request(kind: RecenterKind, manual: bool) {
     let kind_bit = match kind {
@@ -239,22 +233,23 @@ fn service_follow_bank() {
     );
 }
 
-/// Service a [`request_seat_yaw_rebase`] and advance the re-base it starts: the baseline's yaw turns
-/// by the latest follow bank's head offset, eased in over [`SEAT_YAW_BLEND_S`] rather than in one
-/// frame, since the turn reaches the displayed view. Each frame's share is a small re-base of its
-/// own, so every consumer of the cockpit frame turns with it. A recenter in the meantime ends the
-/// blend where it is. Called at the top of the frame, after the follow bank, so a bank in the same
-/// frame as the seat lock is used, and before the frame takes the runtime lock.
+/// Service a [`request_seat_yaw_rebase`] and advance the re-base it starts: the baseline's yaw
+/// turns by the latest follow bank's head offset, eased in over the tuning's blend time rather than
+/// in one frame, since the turn reaches the displayed view. Each frame's share is a small re-base
+/// of its own, so every consumer of the cockpit frame turns with it. A recenter in the meantime
+/// ends the blend where it is. Called at the top of the frame, after the follow bank, so a bank in
+/// the same frame as the seat lock is used, and before the frame takes the runtime lock.
 fn service_seat_yaw() {
     // The entry's steps own the view's yaw until they settle, and their settling banks what is
     // left: the re-base waits for that bank rather than turning the view under the steps with an
     // older one.
     if !stepping() && PENDING_SEAT_YAW.swap(false, Ordering::Relaxed) {
         let bank = LAST_BANK.lock().take();
+        let tuning = &VIEW.get().recenter;
         if let Some(yaw) = bank
-            .filter(|(_, at)| at.elapsed() <= SEAT_YAW_BANK_WINDOW)
+            .filter(|(_, at)| at.elapsed() <= Duration::from_millis(tuning.seat_yaw_bank_window_ms))
             .map(|(yaw, _)| yaw)
-            .filter(|yaw| yaw.is_finite() && yaw.abs() >= SEAT_YAW_MIN)
+            .filter(|yaw| yaw.is_finite() && yaw.abs() >= tuning.seat_yaw_min_rad)
         {
             *SEAT_YAW_BLEND.lock() = Some(SeatYawBlend {
                 total: yaw,
@@ -308,16 +303,14 @@ fn service_seat_yaw() {
 }
 
 /// The share of the seat lock's yaw re-base applied `elapsed_s` seconds in: eased in and out, so
-/// the view's turn starts and ends without a jolt, and complete at [`SEAT_YAW_BLEND_S`].
+/// the view's turn starts and ends without a jolt, and complete at the tuning's blend time.
 fn seat_yaw_progress(elapsed_s: f32) -> f32 {
     if !elapsed_s.is_finite() {
         return 1.0;
     }
-    body_rig::smooth::smoothstep((elapsed_s / SEAT_YAW_BLEND_S).clamp(0.0, 1.0))
+    let blend_s = VIEW.get().recenter.seat_yaw_blend_s;
+    body_rig::smooth::smoothstep((elapsed_s / blend_s).clamp(0.0, 1.0))
 }
-
-/// How long the seat lock's yaw re-base takes to turn the view, seconds.
-const SEAT_YAW_BLEND_S: f32 = 1.0;
 
 /// A seat lock's yaw re-base in progress.
 #[derive(Copy, Clone)]
@@ -510,30 +503,27 @@ impl AutoRecenterState {
         if self.last_sample == Some(sample) {
             return false;
         }
+        let tuning = &VIEW.get().recenter;
         let continuous = self.last_sample.is_none_or(|last| {
             last.epoch == sample.epoch
                 && sample.sequence > last.sequence
                 && sample.time_ns > last.time_ns
-                && sample.time_ns.saturating_sub(last.time_ns) <= 250_000_000
+                && sample.time_ns.saturating_sub(last.time_ns)
+                    <= tuning.anchor_sample_gap_ms * 1_000_000
         });
         self.last_sample = Some(sample);
         let settled = continuous
             && self
                 .last_anchor
-                .is_some_and(|last| (anchor - last).length() < ANCHOR_SETTLE_EPS);
+                .is_some_and(|last| (anchor - last).length() < tuning.anchor_settle_m);
         if !settled {
             self.settled_since = None;
         }
         self.last_anchor = Some(anchor);
         let since = *self.settled_since.get_or_insert(now);
-        now.saturating_duration_since(since) >= ANCHOR_SETTLE_TIME
+        now.saturating_duration_since(since) >= Duration::from_millis(tuning.anchor_settle_ms)
     }
 }
-
-const ANCHOR_SETTLE_TIME: Duration = Duration::from_millis(400);
-/// Per-frame head-anchor movement (metres) below which the pose counts as settled: above idle sway,
-/// below any scripted or locomotion motion.
-const ANCHOR_SETTLE_EPS: f32 = 0.01;
 
 #[cfg(test)]
 mod tests {
@@ -623,8 +613,9 @@ mod tests {
     #[test]
     fn the_seat_yaw_rebase_eases_in_and_out() {
         assert_eq!(seat_yaw_progress(0.0), 0.0);
-        assert_eq!(seat_yaw_progress(SEAT_YAW_BLEND_S), 1.0);
-        assert_eq!(seat_yaw_progress(SEAT_YAW_BLEND_S * 3.0), 1.0);
+        let blend_s = VIEW.get().recenter.seat_yaw_blend_s;
+        assert_eq!(seat_yaw_progress(blend_s), 1.0);
+        assert_eq!(seat_yaw_progress(blend_s * 3.0), 1.0);
         assert_eq!(seat_yaw_progress(f32::NAN), 1.0);
         let frame = 1.0 / 90.0;
         let largest = (0..100)

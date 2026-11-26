@@ -2,10 +2,11 @@
 
 use glam::{Quat, Vec3};
 
+use crate::tuning::VIEW;
+
 /// A first-order quaternion low-pass with unit gain at steady state.
 pub struct RotationFilter {
     rotation: Option<Quat>,
-    time_constant_s: f32,
 }
 
 impl Default for RotationFilter {
@@ -16,10 +17,7 @@ impl Default for RotationFilter {
 
 impl RotationFilter {
     pub const fn new() -> Self {
-        Self {
-            rotation: None,
-            time_constant_s: TIME_CONSTANT_S,
-        }
+        Self { rotation: None }
     }
 
     pub fn clear(&mut self) {
@@ -29,9 +27,10 @@ impl RotationFilter {
     pub(crate) fn step(&mut self, target: Quat, dt: f32, reset: bool) -> Quat {
         let target = target.normalize();
         let previous = self.rotation.filter(|_| !reset);
+        let tuning = &VIEW.get().head_animation;
         let rotation = match previous {
-            Some(previous) if dt.is_finite() && dt > 0.0 && dt <= MAX_STEP_S => previous
-                .slerp(target, -(-dt / self.time_constant_s).exp_m1())
+            Some(previous) if dt.is_finite() && dt > 0.0 && dt <= tuning.max_step_s => previous
+                .slerp(target, -(-dt / tuning.time_constant_s).exp_m1())
                 .normalize(),
             _ => target,
         };
@@ -63,9 +62,6 @@ pub fn synthetic_rotation(
 pub fn eye_arm(root: Quat, filtered: Quat, neck_to_eyes_world: Vec3) -> Vec3 {
     (root * filtered).inverse() * neck_to_eyes_world
 }
-
-const TIME_CONSTANT_S: f32 = 0.10;
-const MAX_STEP_S: f32 = 0.25;
 
 #[cfg(test)]
 mod tests {

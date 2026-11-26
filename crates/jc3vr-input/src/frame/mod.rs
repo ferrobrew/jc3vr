@@ -378,6 +378,7 @@ impl ButtonSet {
 /// button presses when the value reaches `press` and releases when it falls below `release`, which
 /// is lower, so a value resting near one threshold does not chatter.
 #[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PressThresholds {
     pub press: f32,
     pub release: f32,
@@ -427,6 +428,10 @@ pub struct PressRules {
     /// The trackpad force thresholds of [`Button::TrackpadPressLeft`] and
     /// [`Button::TrackpadPressRight`].
     pub trackpad: PressThresholds,
+    /// How far from the trackpad's vertical centre line, in its `-1..=1` horizontal axis, a press
+    /// must land to count for a half. A press on the centre line names neither half, and waits for
+    /// the thumb to move off it.
+    pub trackpad_half_margin: f32,
 }
 
 /// A half of the trackpad, left or right of its vertical centre line.
@@ -446,18 +451,14 @@ impl TrackpadHalf {
     }
 }
 
-/// How far from the trackpad's vertical centre line, in its `-1..=1` horizontal axis, a press must
-/// land to count for a half. A press on the centre line names neither half, and waits for the thumb
-/// to move off it.
-pub const TRACKPAD_HALF_MARGIN: f32 = 0.2;
-
 /// The half of the trackpad pressed after observing `inputs`, given the half pressed before, if
-/// any. The half is decided at the press and kept, wherever the thumb slides, until the force falls
-/// below the release threshold.
+/// any, with `margin` the [`PressRules::trackpad_half_margin`]. The half is decided at the press
+/// and kept, wherever the thumb slides, until the force falls below the release threshold.
 pub fn trackpad_press(
     previous: Option<TrackpadHalf>,
     inputs: &HandInputs,
     thresholds: PressThresholds,
+    margin: f32,
 ) -> Option<TrackpadHalf> {
     let force = inputs.trackpad_force;
     if !force.is_finite() {
@@ -470,9 +471,9 @@ pub fn trackpad_press(
         return None;
     }
     let x = inputs.trackpad.x;
-    if x <= -TRACKPAD_HALF_MARGIN {
+    if x <= -margin {
         Some(TrackpadHalf::Left)
-    } else if x >= TRACKPAD_HALF_MARGIN {
+    } else if x >= margin {
         Some(TrackpadHalf::Right)
     } else {
         None
@@ -499,7 +500,12 @@ pub fn derive_buttons(inputs: &HandInputs, previous: ButtonSet, rules: &PressRul
     let previous_half = [TrackpadHalf::Left, TrackpadHalf::Right]
         .into_iter()
         .find(|half| previous.contains(half.button()));
-    if let Some(half) = trackpad_press(previous_half, inputs, rules.trackpad) {
+    if let Some(half) = trackpad_press(
+        previous_half,
+        inputs,
+        rules.trackpad,
+        rules.trackpad_half_margin,
+    ) {
         set.set(half.button(), true);
     }
     set.set(Button::ThumbstickClick, inputs.thumbstick_click);

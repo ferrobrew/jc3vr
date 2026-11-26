@@ -6,7 +6,7 @@ The engine has several independent visibility gates, which test against three di
 
 ## The union projection
 
-`begin_render_frame` (`crates/jc3vr-view/src/vr/frame.rs`) builds one cull projection per VR frame and publishes it through `cull_projection_standard()`. It takes the outermost tangent of the two eyes' fields of view on each side, scales each outward by `1 + CULL_FOV_PADDING` (`0.4`), and adds an eye-shift margin of half the IPD over the near plane. Each resulting half-angle is clamped to 85 degrees so that a wide-FOV headset cannot produce a degenerate frustum. The near and far planes come from the live active camera. The padding covers motion: the engine culls at a single interpolated pose, so under fast motion, especially flying, geometry can otherwise pop in at the edges before the cull catches up. It applies to the vertical axis too, which flying pitch shifts.
+`begin_render_frame` (`crates/jc3vr-view/src/vr/frame.rs`) builds one cull projection per VR frame and publishes it through `cull_projection_standard()`. It takes the outermost tangent of the two eyes' fields of view on each side, scales each outward by one plus the view tuning's `frame.cull_fov_padding` ([tuning.md](../tuning.md)), and adds an eye-shift margin of half the IPD over the near plane. Each resulting half-angle is clamped to 85 degrees so that a wide-FOV headset cannot produce a degenerate frustum. The near and far planes come from the live active camera. The padding covers motion: the engine culls at a single interpolated pose, so under fast motion, especially flying, geometry can otherwise pop in at the edges before the cull catches up. It applies to the vertical axis too, which flying pitch shifts.
 
 ## The scene cull
 

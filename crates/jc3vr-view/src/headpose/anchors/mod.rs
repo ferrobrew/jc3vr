@@ -9,6 +9,7 @@ use parking_lot::Mutex;
 use crate::{
     controllers::body::rig::origin_provenance::OriginEvidence,
     headpose::{Anchors, Source, participants::head_participants, skeleton::SkeletonKey, teleport},
+    tuning::VIEW,
     vr::{VR_CONFIG, live_tracking},
 };
 
@@ -156,7 +157,9 @@ impl Context {
                     && packet.head.is_valid()
                     && now
                         .checked_duration_since(packet.published_at)
-                        .is_some_and(|age| age <= Duration::from_millis(250))
+                        .is_some_and(|age| {
+                            age <= Duration::from_millis(VIEW.get().anchors.max_tracking_age_ms)
+                        })
                     && matches!(packet.origin.finish(), OriginEvidence::Known(_))
             })
             .map(|packet| Publication {
@@ -361,7 +364,7 @@ impl History {
                     .w_axis
                     .truncate()
                     .distance(current.root.w_axis.truncate())
-                    < 10.0
+                    < VIEW.get().anchors.max_root_step_m
         });
         let pair = Pair {
             collapsed: retained.is_none(),

@@ -18,7 +18,7 @@ pub mod yank;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use jc3vr_input::frame::{self, Button, GripPress, Hand};
-use jc3vr_view::vr::input::config::{SQUEEZE_PRESS, grip_press};
+use jc3vr_view::{tuning::VIEW, vr::input::config::grip_press};
 
 use crate::controllers::intent::controls::holds_unseen;
 
@@ -56,7 +56,7 @@ pub fn grip_holds_now(hand: Hand) -> Option<bool> {
             holds_unseen(
                 source.buttons.contains(Button::SqueezePress),
                 force.then_some(source.inputs.squeeze),
-                SQUEEZE_PRESS.release,
+                VIEW.get().press.squeeze.release,
             )
         })
     })

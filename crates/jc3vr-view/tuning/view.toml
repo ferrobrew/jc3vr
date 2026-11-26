@@ -1,0 +1,77 @@
+# The view crate's tuning: `ViewTuning` in `src/tuning.rs`, whose fields say what each value does.
+# Every key is required and no other is accepted. Lengths are metres, angles degrees unless the key
+# says radians, times seconds unless the key says milliseconds, and a fraction or a share is in
+# `0..1`.
+
+[turn]
+mouse_turn_scale = 5.0
+max_body_lead_deg = 120.0
+swim_turn_scale = 0.5
+
+[follow]
+step_interval_s = 0.5
+step_rad = 0.5235988
+step_settled_rad = 0.05
+
+[flatscreen_look]
+mouse_sensitivity = 7.5
+latch_threshold_deg = 75.0
+latch_disengage_threshold_deg = 65.0
+free_look_yaw_limit_deg = 135.0
+free_look_pitch_limit_deg = 70.0
+
+[head_animation]
+time_constant_s = 0.1
+max_step_s = 0.25
+
+[anchors]
+max_tracking_age_ms = 250
+max_root_step_m = 10.0
+
+[camera]
+flatscreen_ipd_m = 0.068
+context_fov_deg = 90.0
+
+[handback]
+max_root_step_m = 8.0
+min_s = 0.25
+max_s = 1.5
+rotation_rate_rad_per_s = 2.0943952
+translation_rate_m_per_s = 1.0
+
+[recorder]
+lookback_window_s = 10
+bookmark_radius_m = 2.0
+
+[foveation]
+inner_fraction = 0.35
+outer_fraction = 0.55
+max_drop = 0.8
+
+[frame]
+cull_fov_padding = 0.4
+
+[recenter]
+seat_yaw_bank_window_ms = 15000
+seat_yaw_min_rad = 0.017
+seat_yaw_blend_s = 1.0
+anchor_settle_ms = 400
+anchor_settle_m = 0.01
+anchor_sample_gap_ms = 250
+
+[stage]
+floor_watch_ms = 5000
+max_head_step_m = 0.08
+
+[runtime]
+retry_interval_s = 10
+
+[press]
+trackpad_half_margin = 0.2
+trigger = { press = 0.7, release = 0.55 }
+squeeze = { press = 0.75, release = 0.5 }
+squeeze_force = { press = 0.3, release = 0.1 }
+trackpad = { press = 0.4, release = 0.2 }
+
+[mirror]
+zoom = 1.0

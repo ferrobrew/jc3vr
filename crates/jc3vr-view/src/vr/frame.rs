@@ -18,6 +18,7 @@ use crate::{
     controllers::body::rig::origin_provenance::{OriginEvidence, TrackingReceipt},
     headpose,
     headpose::{FrameTelemetry, config::HEADPOSE_CONFIG, participants::head_participants},
+    tuning::VIEW,
     vr::{
         EyeView, Fov, FrameInputs, FreezeMode, LocatedFrame, OffAxisProjection, VrConfig,
         config::ProjectionConvention,
@@ -183,8 +184,8 @@ struct FrozenEyeParams {
 static CULL_PROJECTION: RenderFrameSlot<Option<Matrix4>> = RenderFrameSlot::new();
 
 /// The standard-depth, symmetric projection that bounds both eyes' off-axis frusta exactly, without
-/// the cull's [`CULL_FOV_PADDING`], for the sun-shadow cascade fit (see
-/// [`shadow_fit_projection_standard`]). `None` when no VR frame is rendering.
+/// the cull's padding ([`FrameTuning`](crate::tuning::FrameTuning)), for the sun-shadow cascade fit
+/// (see [`shadow_fit_projection_standard`]). `None` when no VR frame is rendering.
 static SHADOW_FIT_PROJECTION: RenderFrameSlot<Option<Matrix4>> = RenderFrameSlot::new();
 
 /// The standard-depth, symmetric projection that bounds both eyes' off-axis frusta exactly this
@@ -290,13 +291,6 @@ pub fn begin_render_frame(frame: &LocatedFrame, cfg: &VrConfig) {
         cfg,
     );
 }
-
-/// The extra fraction the union-FOV cull frustum is expanded by on every side, on top of the
-/// per-eye FOV union and the lateral eye-shift margin. The engine culls at a single interpolated
-/// pose, so under fast motion (especially flying) geometry can otherwise pop in at the outer edges
-/// before the cull catches up. Each side's tangent is padded outward (`0.4` is 40% wider per side),
-/// the vertical axis included, at the cost of some over-draw of just-off-screen geometry.
-const CULL_FOV_PADDING: f32 = 0.4;
 
 /// The body of [`begin_render_frame`], over the frame's views. `display_time` is the VR frame's
 /// predicted display time.
@@ -444,7 +438,7 @@ fn render_frame(
     // superset bounds the wider of the two on each side (in tangent space) plus a near-plane margin
     // `s = (IPD/2) / near` for the lateral eye shift. `s·z` covers the shift exactly at the near plane
     // and over-covers (harmlessly) with distance, so nothing either eye can see is culled. The engine
-    // culls at a single interpolated pose, so `CULL_FOV_PADDING` pads each side's tangent outward on
+    // culls at a single interpolated pose, so the cull padding pads each side's tangent outward on
     // top of that to hide edge pop-in under fast motion; the eye-shift margin and the padding are both
     // applied on the vertical axis too (flying pitch shifts the eyes vertically). Written standard-depth
     // to match the cull camera's `m_ProjectionF`.
@@ -452,7 +446,7 @@ fn render_frame(
         crate::hooks::camera::main_camera_planes_or(Camera::DEFAULT_FAR_PLANE);
     let ipd = (pos1 - pos0).length();
     let margin = 0.5 * ipd / near_clip.max(1e-3);
-    let pad = 1.0 + CULL_FOV_PADDING;
+    let pad = 1.0 + VIEW.get().frame.cull_fov_padding;
     // Widen each side in tangent space: scale the half-extent outward by `pad`, then push out by the
     // eye-shift margin in the side's own direction (`copysign` keeps left/down negative, right/up
     // positive). Vertical uses tangents here (not raw angles) so it receives the same treatment.

@@ -2,10 +2,13 @@
 //! ([`InputConfig`], stored as `controllers.input`), and the frame's [`SamplingConfig`].
 
 use jc3vr_core::config::engine::ConfigSlot;
-use jc3vr_input::frame::{GripPress, Hand, InteractionProfile, PressRules, PressThresholds};
+use jc3vr_input::frame::{GripPress, Hand, InteractionProfile, PressRules};
 use serde::{Deserialize, Serialize};
 
-use crate::vr::input::layout::{FloatInput, Input, provides};
+use crate::{
+    tuning::VIEW,
+    vr::input::layout::{FloatInput, Input, provides},
+};
 
 /// The raw input interpretation, at `controllers.input` in the settings file. The payload binds
 /// this slot and the four below to their fields in the controller settings at startup.
@@ -43,58 +46,25 @@ pub(crate) struct HapticOutput {
     pub intensity: f32,
 }
 
-/// The trigger values that press and release
-/// [`Button::TriggerPress`](jc3vr_input::frame::Button::TriggerPress).
-pub const TRIGGER_PRESS: PressThresholds = PressThresholds {
-    press: 0.7,
-    release: 0.55,
-};
-
-/// The squeeze values that press and release
-/// [`Button::SqueezePress`](jc3vr_input::frame::Button::SqueezePress) on a controller without a
-/// force-sensing grip (Touch, or a profile the runtime emulates). The grip is used only as an
-/// edge, so the press threshold sits high enough that resting a hand on the grip does not press
-/// it.
-pub const SQUEEZE_PRESS: PressThresholds = PressThresholds {
-    press: 0.75,
-    release: 0.5,
-};
-
-/// The squeeze forces that press and release
-/// [`Button::SqueezePress`](jc3vr_input::frame::Button::SqueezePress) on a controller whose
-/// profile provides the grip force (the Index). The Index grip's value is capacitive and reads a
-/// full squeeze with the hand merely closed round the handle, so the press waits for a deliberate
-/// squeeze, and the release sits low enough that a held grab does not need a hard squeeze to keep.
-pub const SQUEEZE_FORCE_PRESS: PressThresholds = PressThresholds {
-    press: 0.3,
-    release: 0.1,
-};
-
-/// The trackpad forces that press and release
-/// [`Button::TrackpadPressLeft`](jc3vr_input::frame::Button::TrackpadPressLeft) and
-/// [`Button::TrackpadPressRight`](jc3vr_input::frame::Button::TrackpadPressRight), on a
-/// controller with a trackpad. A resting thumb reads no force, so a light press is enough.
-pub const TRACKPAD_PRESS: PressThresholds = PressThresholds {
-    press: 0.4,
-    release: 0.2,
-};
-
 /// How `hand`'s grip presses on `profile`: by its force where the profile provides one, and
 /// otherwise by its value.
 pub fn grip_press(profile: InteractionProfile, hand: Hand) -> GripPress {
+    let press = &VIEW.get().press;
     if provides(profile, hand, Input::Float(FloatInput::SqueezeForce)) {
-        GripPress::Force(SQUEEZE_FORCE_PRESS)
+        GripPress::Force(press.squeeze_force)
     } else {
-        GripPress::Value(SQUEEZE_PRESS)
+        GripPress::Value(press.squeeze)
     }
 }
 
 /// The press rules of `hand` on `profile`.
 pub fn press_rules(profile: InteractionProfile, hand: Hand) -> PressRules {
+    let press = &VIEW.get().press;
     PressRules {
-        trigger: TRIGGER_PRESS,
+        trigger: press.trigger,
         grip: grip_press(profile, hand),
-        trackpad: TRACKPAD_PRESS,
+        trackpad: press.trackpad,
+        trackpad_half_margin: press.trackpad_half_margin,
     }
 }
 

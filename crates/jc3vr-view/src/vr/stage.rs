@@ -8,12 +8,12 @@
 //! loses nothing but the floor height.
 //!
 //! The floor is not trusted blindly across a reference space change. When the runtime announces
-//! one, the head's height above the floor is watched for [`FLOOR_WATCH`]: a step between two
-//! frames larger than a head moves in one ([`MAX_HEAD_STEP_M`]) is the floor moving under the
-//! player, not the player moving, and is taken back out ([`FloorWatch`]), so the published height
-//! stays continuous and the view and the body keep their standing height. Each such jump is counted
-//! ([`StageInfo::floor_jumps`]), which the body takes as the prompt to measure the player's standing
-//! height afresh.
+//! one, the head's height above the floor is watched for a few seconds: a step between two frames
+//! larger than a head moves in one ([`StageTuning`](crate::tuning::StageTuning)) is the floor
+//! moving under the player, not the player moving, and is taken back out ([`FloorWatch`]), so the
+//! published height stays continuous and the view and the body keep their standing height. Each
+//! such jump is counted ([`StageInfo::floor_jumps`]), which the body takes as the prompt to measure
+//! the player's standing height afresh.
 
 use std::{
     sync::atomic::{AtomicBool, Ordering},
@@ -24,7 +24,10 @@ use glam::Vec2;
 use openxr as xr;
 use parking_lot::Mutex;
 
-use crate::vr::convert::{quat, vec3};
+use crate::{
+    tuning::VIEW,
+    vr::convert::{quat, vec3},
+};
 
 /// What the runtime reports about its STAGE space, published once per frame.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
@@ -180,7 +183,7 @@ impl FloorWatch {
 
     /// The runtime announced a reference space change at `now`.
     pub fn changed(&mut self, now: Instant) {
-        self.watch_until = Some(now + FLOOR_WATCH);
+        self.watch_until = Some(now + Duration::from_millis(VIEW.get().stage.floor_watch_ms));
     }
 
     /// Take the uncorrected head height `raw` located at `now`. Returns the jump taken out, metres,
@@ -196,7 +199,7 @@ impl FloorWatch {
             return None;
         }
         let step = raw - last;
-        if step.abs() <= MAX_HEAD_STEP_M {
+        if step.abs() <= VIEW.get().stage.max_head_step_m {
             return None;
         }
         self.shift_m += step;
@@ -210,13 +213,6 @@ impl Default for FloorWatch {
         Self::new()
     }
 }
-
-/// How long after a reference space change a step in the head's height may be the floor's.
-pub const FLOOR_WATCH: Duration = Duration::from_secs(5);
-
-/// The largest step in the head's height between two frames that is the head's own, metres: a
-/// head dropping as fast as a player can duck covers a few centimetres in a frame.
-pub const MAX_HEAD_STEP_M: f32 = 0.08;
 
 static WATCH: Mutex<FloorWatch> = Mutex::new(FloorWatch::new());
 
@@ -267,7 +263,8 @@ mod tests {
         assert!((2.28 - watch.shift_m - 1.93).abs() < 1e-5);
         assert_eq!(watch.observe(2.25, start + frame * 3), None);
         // Past the watch, a large step is the head's again.
-        let late = start + FLOOR_WATCH + Duration::from_secs(1);
+        let late =
+            start + Duration::from_millis(VIEW.get().stage.floor_watch_ms) + Duration::from_secs(1);
         assert_eq!(watch.observe(1.9, late), None);
         assert_eq!(watch.jumps, 1);
         assert_eq!(watch.observe(f32::NAN, late), None);
