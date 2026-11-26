@@ -5,7 +5,7 @@ render it once per frame and share it between the eyes. The engine-side ground t
 dead-end record live in [`../issues/32-monoscopic-far-field.md`](../../issues/32-monoscopic-far-field.md);
 this is the mod design.
 
-## Increment 1 — classification (shipped, `payload/src/far_field.rs`)
+## Increment 1 — classification (shipped, `crates/jc3vr-render/src/far_field/`)
 
 Two mechanisms, matched to how the engine organizes the work:
 

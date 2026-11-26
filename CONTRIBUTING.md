@@ -7,10 +7,21 @@ jc3vr is a VR mod for Just Cause 3. It renders the game in stereo for an HMD via
 jc3vr is a Cargo workspace. The runtime crates sit at the top level:
 
 - **injector**: DLL injection using `re-utilities`. Launches the JC3 process and injects the payload.
-- **payload**: The injected mod code. Runs inside the JC3 process and contains all the hooks for rendering, input, camera manipulation, and post-processing effects.
-- **jc3gi**: Generated Rust bindings to JC3's internal structures. Consumed by `payload` to read and write game state.
+- **payload**: The injected DLL (`jc3vr_payload`, the workspace's only `cdylib`). It holds the entry points, the startup and shutdown order, the composition of every layer crate's hooks and shutdown participants, the game's frame entry points and the window procedure, and the settings aggregate. The rest of the mod's code lives in the layer crates below.
+- **jc3gi**: Generated Rust bindings to JC3's internal structures. Consumed by the payload and the layer crates to read and write game state.
 
-Libraries shared by the payload and the offline tools live in `crates/`:
+The mod's code is split into seven layer crates in `crates/`, each of which may depend only on the crates below it (`docs/architecture.md`, "Crate layering", has the order and what each holds):
+
+- **jc3vr-core**: the lifecycle, the configuration engine, the hook plumbing, frame timing, and the profiler core.
+- **jc3vr-input**: the pure controller frame, motion, scheme, haptic mix, and input-capture policy. It depends on no layer crate and builds on any host.
+- **jc3vr-render**: the OpenXR runtime, the head pose, stereo, FSR, the far field, the engine-pipeline hooks, and the render diagnostics.
+- **jc3vr-gameplay**: the controllers, the grapple, and the gameplay detours.
+- **jc3vr-hud** and **jc3vr-tooling**, siblings with no edge between them: the floating panel and its layers, and the recorder, directing tools, and capture harness.
+- **jc3vr-ui**: the debug UI, the status rows, and the pause menu.
+
+A lower crate reaches a higher one through a registration the higher one makes, never by naming it, and the payload's `composition::install` runs the registrations in their load-bearing order.
+
+Libraries shared by the payload and the offline tools live in `crates/` too:
 
 - **body-estimator**: EgoPoser's full-body estimate from head and hand poses, on the CPU and through Direct3D 11 compute shaders.
 - **body-rig**: The grounded body rig's pure core (pelvis solver, yaw follow, step commit), run by the payload live and by `tracking-synth` over recordings.
@@ -18,7 +29,7 @@ Libraries shared by the payload and the offline tools live in `crates/`:
 - **fsr-sys**: FFI bindings to FSR 2 with its Direct3D 11 backend, built from the submodule in `vendor/`.
 - **tracking-format**: The `.jc3trk` tracking recording's data model and codec.
 
-`crates/layering-guard` is not a library but a test crate: it enforces the planned crate layering of the payload while the payload is split into crates (`docs/architecture.md`, "Crate layering"). A new reference from a lower module to a higher one fails it; invert the reference rather than adding it to the guard's allowlist, and delete the allowlist line the guard names when a change removes a known back-edge.
+`crates/layering-guard` is not a library but a test crate: Cargo forbids cycles between the layer crates, and the guard checks the rest of the layering (`docs/architecture.md`, "Crate layering"). A dependency that points up the order or across between the HUD and tooling crates, a layer crate that depends on the payload, a second `cdylib`, or the render crate's hooks naming the gameplay or HUD crates fails it, and the message says how to fix it. Move the code down or invert the edge with a registration; do not change the order to admit the edge.
 
 Offline tools live in `tools/`: the Rust crates `shadergen` (compiles the committed `.dxbc` shaders), `tracking-synth` (synthesizes, prints, and evaluates tracking recordings), `dxbc-tool`, and `scaleform-gfx-examine`, alongside Python tooling for the capture harness (`tools/rendering/`), session analysis (`tools/analysis/`), and asset extraction. The rest of the root holds `scripts/` (shell entry points for building, testing, and launching under wine and Proton), `vendor/` (third-party source), and `docs/`.
 
@@ -48,9 +59,9 @@ A def's doc-comments describe the game **as it is**: what a function does, what 
 - **Platform**: Targeting the Windows DX11 build of JC3, run through Proton/Wine.
 - **Debugging**: Primarily log review via `tracing`. Attaching a debugger is difficult due to the Proton/Wine virtualization layers.
 - **A known game crash to ignore**: an access violation in `cudart64_55.dll` under `gfsdk_waveworks.win64.dll` (the WaveWorks ocean's CUDA path), typically shortly after a session's recording stops or the game loses focus, is the game's own fault and recurs with or without the mod's involvement. A crash log or session review that shows it needs no investigation; note it as this known crash and move on.
-- **Hook placement**: New hooks should generally follow the `pyxis-defs` hierarchy for a 1:1 connection between defined types and hooked code.
+- **Hook placement**: New hooks should generally follow the `pyxis-defs` hierarchy for a 1:1 connection between defined types and hooked code. A hook lives in the `hooks` module of the layer crate that owns its engine system, and its library is added to `composition::libraries` in the payload, whose order is the enable order.
 - **The wine prefix**: every tool that runs a Windows binary on Linux shares one prefix, resolved and provisioned by `scripts/wine_prefix.sh` (source it, call `jc3vr_ensure_wine_prefix`). It lives under `target/`, so it is disposable — delete it and the next run rebuilds it — and it is provisioned with a native `d3dcompiler_47.dll`, because wine's built-in reimplementation mis-parses some of the game's shaders. One prefix rather than one per tool: the requirements differ, and a prefix that satisfies only some of them fails in ways that look like a bug in the caller. The game's own Proton prefix is separate and belongs to Steam; reach it through `scripts/proton_run.sh`.
-- **Unit tests**: The payload targets Windows, so its tests are cross-compiled and run under wine. On Linux use `./scripts/xwin_test.sh` (which forwards its arguments to `cargo xwin test`), not `cargo test` — the payload does not build for a Linux target. Much of the payload needs a live game to exercise, so the tests cover the pure logic that does not: projection and viewport math, pose composition, and similar. The layering guard is host-native and also runs alone with `cargo test -p layering-guard --target x86_64-unknown-linux-gnu`.
+- **Unit tests**: The payload and the layer crates target Windows, so their tests are cross-compiled and run under wine. On Linux use `./scripts/xwin_test.sh` (which forwards its arguments to `cargo xwin test`), not `cargo test` — they do not build for a Linux target. Much of the mod needs a live game to exercise, so the tests cover the pure logic that does not: projection and viewport math, pose composition, and similar. A test belongs to the crate that owns the code under test; the payload's own tests cover the settings aggregate and the hook composition order. The input crate and the layering guard are host-native and also run alone with `cargo test -p jc3vr-input --target x86_64-unknown-linux-gnu` and `cargo test -p layering-guard --target x86_64-unknown-linux-gnu`.
 - **Documentation**: The `docs/` directory is organized by nature, then by subject. The top split is `docs/engine/` for reverse-engineered ground truth about the game as it is, `docs/mod/` for the mod's design and implementation, and `docs/issues/` for issue-scoped investigations; within `engine/` and `mod/`, subject subdirectories mirror each other and the payload's module map (`rendering/`, `performance/`, `stereo/`, `body/`, `input/`, ...), with single-doc subjects staying at the split's root. `docs/README.md` is the index. New findings go in the directory matching their nature and subject, and a doc that would mix engine and mod material should be split along the nature line.
 - **Reverse-engineering**: Done through IDA Pro with its MCP integration, alongside a folder of decompiler output from a debug build of the game. The IDB and decompiler output locations can be provided on request.
 - **Shader compilation**: The mod's shaders (`.hlsl` files in the `shaders/` directory of the crate that draws with them, such as `crates/jc3vr-render/shaders/`) are compiled to `.dxbc` bytecode and committed alongside their sources. After modifying a shader, recompile with:
