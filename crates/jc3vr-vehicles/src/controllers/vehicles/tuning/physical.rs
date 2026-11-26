@@ -1,56 +1,15 @@
-//! The vehicles' tuning, read from the shipped `tuning/vehicles.toml` ([`VEHICLES`]): the physical
-//! controls' placement and motion, with the wheel settings they take from the configuration
-//! ([`PhysicalControlsConfig`]), the wingsuit's arm steering, gestures, and evade, the parachute's
-//! handles and ripcord, and the helicopter's skid.
-//!
-//! The physical controls are placed in the seated character's body frame (+X right, +Y up, +Z back,
-//! metres) with the character's eyes at the origin: the cockpit frame, whose origin the head pose
-//! pins to the character's animated head, which rides the seat. Offsets are given for a
-//! right-handed layout, and the sticks' and levers' X is mirrored for a left-handed one, so the
-//! stick that sits by the dominant knee moves with the dominant hand. The wheel and the handlebars
-//! are centred on the vehicle and never mirrored; where the vehicle's own wheel or handlebars are
-//! found, they are placed from it instead ([`crate::controllers::vehicles::wheel`]), and the specs
-//! here are the fallback.
+//! The physical controls' tuning: where the controls of the driver's seat sit and how they move,
+//! the wheel's steering, the fit of the vehicle's own wheel and handlebars, and the controls'
+//! haptic cues.
 
 use glam::Vec3;
-use jc3vr_core::{
-    config::engine::{Invalid, nonnegative, positive, range, vec3},
-    tuning::Tuning,
-};
+use jc3vr_core::config::engine::{Invalid, nonnegative, positive, range, vec3};
 use serde::Deserialize;
 
-use crate::controllers::vehicles::config::{PhysicalControlsConfig, WheelConfig, WheelTracking};
-
-jc3vr_core::tuning_file! {
-    /// The vehicles' tuning file.
-    pub static VEHICLES: VehiclesTuning = "vehicles.toml";
-}
-
-/// The vehicles' tuning file's root.
-#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct VehiclesTuning {
-    /// The physical controls, short of the wheel settings the configuration holds.
-    pub physical: PhysicalTuning,
-    pub arm_steering: ArmSteeringTuning,
-    pub wingsuit_gestures: WingsuitGesturesTuning,
-    pub wingsuit_evade: WingsuitEvadeTuning,
-    pub parachute_handles: ParachuteHandlesTuning,
-    pub ripcord: RipcordTuning,
-    pub rail: RailTuning,
-}
-
-impl Tuning for VehiclesTuning {
-    fn validate(&self) -> Result<(), Invalid> {
-        self.physical.validate()?;
-        self.arm_steering.validate()?;
-        self.wingsuit_gestures.validate()?;
-        self.wingsuit_evade.validate()?;
-        self.parachute_handles.validate()?;
-        positive("ripcord.pull_m", self.ripcord.pull_m, 2.0)?;
-        self.rail.validate()
-    }
-}
+use crate::controllers::vehicles::{
+    config::{PhysicalControlsConfig, WheelConfig, WheelTracking},
+    tuning::VEHICLES,
+};
 
 /// The physical controls as the tuning file holds them.
 pub type PhysicalTuning = PhysicalControls<SteeringWheelTuning>;
@@ -191,6 +150,11 @@ pub struct HandlebarsSpec {
     /// metres: wider than the other controls', since the bars are where a reaching hand expects
     /// them less exactly than a wheel's rim.
     pub grab_radius_m: f32,
+    /// The share of the half width from the middle where a hand's half of the bars starts to grab.
+    pub grab_from_middle: f32,
+    /// The share of the half width from the middle to where a hand's half of the bars stops
+    /// grabbing.
+    pub grab_past_end: f32,
 }
 
 /// A joystick whose top moves in the horizontal plane. Let go, a spring returns it to centre.
@@ -241,9 +205,22 @@ pub struct CockpitButtonsTuning {
     pub nitrous_radius_m: f32,
     /// How far past a button's face a hand pushes to press it, metres.
     pub press_depth_m: f32,
+    /// The share of the press depth a pressed button gives before it lets go, so a hand resting on
+    /// it does not chatter.
+    pub release_depth: f32,
+    /// How far, as a multiple of its radius, a hand may slide across a pressed button and keep it
+    /// pressed.
+    pub held_radius: f32,
+    /// How far in front of a push button's face a hand may be to arm it, metres.
+    pub arm_reach_m: f32,
+    /// How far past a push button's face a hand may be and still press it, metres: further is a
+    /// hand through the dash.
+    pub max_push_m: f32,
     /// How far the collective's grip is twisted from where the hand took it to burn the nitrous,
     /// degrees: well past the roll a wrist makes while it raises and lowers the lever.
     pub twist_deg: f32,
+    /// How far a twist grip comes back from its engaging twist before it lets go, degrees.
+    pub twist_hysteresis_deg: f32,
 }
 
 /// The plane's flight stick and throttle beyond a plain stick and lever (see
@@ -308,110 +285,80 @@ impl LeverAxis {
     }
 }
 
-/// The arm steering's thresholds (see [`crate::controllers::vehicles::arm_steering`]).
+/// How the wheel turns and returns (see [`crate::controllers::vehicles::steering`]).
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct ArmSteeringTuning {
-    /// Height differences and offsets below this steer nothing, metres. The bank, and the height
-    /// and sweep pitches, share it.
-    pub deadzone_m: f32,
-    /// The height difference between the hands that banks fully, metres.
-    pub full_bank_m: f32,
+pub struct SteeringTuning {
+    /// Over this last stretch of its return, the released wheel slows, degrees.
+    pub return_ease_deg: f32,
+    /// The slowest the easing lets the return go, as a share of the return rate.
+    pub return_ease_floor: f32,
+    /// A returning wheel this close to centre is at centre, degrees.
+    pub settled_deg: f32,
+    /// How far the wheel must leave its stop or centre before that cue may fire again, degrees.
+    pub cue_rearm_deg: f32,
+    /// A hand closer to the hub than this share of the radius turns nothing by its travel; one past
+    /// twice it counts fully.
+    pub hub_share: f32,
 }
 
-/// The bilateral wingsuit gestures: fresh-pose deployment, bilateral withdrawal, and palms-forward
-/// braking (see [`crate::controllers::vehicles::wingsuit_gestures`]). Distances are shares of the
-/// calibrated arm span.
+/// How the sticks, the yoke, and the handlebars move beyond their specs (see
+/// [`crate::controllers::vehicles::physical`]).
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct WingsuitGesturesTuning {
-    /// Each wrist's minimum outward distance from its own shoulder for a flight pose.
-    pub flight_lateral_span: f32,
-    /// Maximum arm angle away from the outward horizontal direction for a fresh flight pose.
-    pub flight_angle_deg: f32,
-    /// Each wrist must be this close laterally before withdrawal qualifies.
-    pub withdraw_lateral_span: f32,
-    /// Each wrist qualifies as withdrawn when lowered this far below its shoulder.
-    pub withdraw_lowered_span: f32,
-    /// A tucked wrist also qualifies within this shoulder distance, without lowering the arm.
-    pub withdraw_reach_span: f32,
-    /// How far inside the flight pose's spread a held brake's arms may come before it releases.
-    pub pose_hysteresis_span: f32,
-    /// Each wrist's largest roll from palm-flat, either way, for a flight pose. Both palms back
-    /// within it release a held brake.
-    pub flight_roll_deg: f32,
-    /// Each wrist's smallest roll toward palm-forward to enter braking.
-    pub brake_roll_deg: f32,
-    /// Each wrist's largest roll toward palm-forward to enter braking, short of palm-up. A held
-    /// brake ignores it.
-    pub brake_roll_max_deg: f32,
-    pub neutral_dwell_s: f32,
-    pub flight_dwell_s: f32,
-    pub close_dwell_s: f32,
-    pub brake_dwell_s: f32,
-    /// A larger pose-time gap invalidates all pending gestures.
-    pub max_sample_gap_s: f32,
+pub struct ControlMotionTuning {
+    /// How long the handlebars stay in a hand whose grip has opened, seconds: long enough for
+    /// fingers lifted off the handle a moment to close again.
+    pub bars_grip_grace_s: f32,
+    /// A returning stick closer to centre than this, metres, is at centre.
+    pub stick_settled_m: f32,
+    /// A hand nearer the yoke's column than this, metres, has no angle about it to turn the yoke
+    /// by.
+    pub yoke_min_radius_m: f32,
+    /// A returning yoke within this turn of centre, radians, and [`Self::yoke_settled_m`] along its
+    /// column, is at centre.
+    pub yoke_settled_rad: f32,
+    pub yoke_settled_m: f32,
+    /// Where a helicopter's missing collective sits from its cyclic's grip, in the cockpit part's
+    /// own space (+X to the pilot's right, +Y up, +Z back), metres: by the pilot's left thigh, left
+    /// of the cyclic, below it, and further back. A placement, not a measurement.
+    pub collective_from_cyclic_m: Vec3,
 }
 
-/// The boost wingsuit's barrel-roll evade's throw (see
-/// [`crate::controllers::vehicles::wingsuit_evade`]). The bank is the angle of the line between
-/// the hands from level, positive with the left hand above the right.
+/// When the sticks' and levers' haptic cues fire (see
+/// [`crate::controllers::vehicles::physical::cues`]).
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct WingsuitEvadeTuning {
-    /// The bank, either way, a throw must reach, degrees.
-    pub throw_bank_deg: f32,
-    /// How far the bank must swing toward the throw's side within [`Self::throw_window_s`],
-    /// degrees.
-    pub throw_sweep_deg: f32,
-    /// The time the swing must happen in, seconds.
-    pub throw_window_s: f32,
-    /// The bank, either way, the arms must come back within before another throw counts, degrees.
-    pub rearm_bank_deg: f32,
-    /// The time after a throw before another is taken, seconds.
-    pub cooldown_s: f32,
-    /// The arms' pitch, as a share of a full pitch, that turns the throw's side roll into its
-    /// diagonal: below it the evade rolls straight to the side.
-    pub diagonal_pitch: f32,
+pub struct ControlCuesTuning {
+    /// How far a control must leave a stop, a detent, or the gate, as a share of its travel, before
+    /// the cue may fire again.
+    pub rearm: f32,
+    /// The share of the travel that counts as at the stop.
+    pub at_stop: f32,
+    /// The share of the travel from centre that counts as at centre.
+    pub at_centre: f32,
 }
 
-/// How the parachute's handles pull (see [`crate::controllers::vehicles::parachute`]).
+/// What the box fit of a vehicle's own wheel and handlebars accepts and where it puts the grips
+/// (see [`crate::controllers::vehicles::wheel`]).
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct ParachuteHandlesTuning {
-    /// How far down from where it was taken a handle is pulled to act fully, metres.
-    pub full_pull_m: f32,
-    /// How far both handles must be pulled, as a share of a full pull, before they brake. Below it,
-    /// both pulled together only bank by their difference.
-    pub brake_threshold: f32,
-}
-
-/// The ripcord (see [`crate::controllers::vehicles::ripcord`]).
-#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct RipcordTuning {
-    /// How far the holding hand must come from where it took the ripcord to pull it, metres.
-    pub pull_m: f32,
-}
-
-/// The helicopter skid (see [`crate::controllers::vehicles::rail`]).
-#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct RailTuning {
-    /// How far the skid's line reaches either way from where Rico lands on it, metres.
-    pub half_length_m: f32,
-    /// How far off the line, level, the feet go before Rico has stepped off, metres.
-    pub step_off_m: f32,
-    /// The sticky pull's time constant: the offset off the line closes at this rate, seconds.
-    /// Longer is less sticky.
-    pub pull_s: f32,
+pub struct WheelFitTuning {
+    /// The steepest tilt the box fit gives, degrees: a bus's wheel lies about this flat.
+    pub max_tilt_deg: f32,
+    /// The smallest wheel the box fit accepts, metres.
+    pub min_wheel_radius_m: f32,
+    /// How far in from the bars' ends and rear the grips sit, metres.
+    pub grip_inset_m: f32,
+    /// The narrowest handlebars the box fit accepts, metres from the middle to a grip.
+    pub min_bars_half_width_m: f32,
 }
 
 /// The largest offset from the eyes any control may sit at, metres.
 const MAX_OFFSET_M: f32 = 2.0;
 
 impl PhysicalTuning {
-    fn validate(&self) -> Result<(), Invalid> {
+    pub(super) fn validate(&self) -> Result<(), Invalid> {
         let wheel = &self.wheel;
         vec3("physical.wheel.centre_m", wheel.centre_m, MAX_OFFSET_M)?;
         positive("physical.wheel.radius_m", wheel.radius_m, 1.0)?;
@@ -440,6 +387,18 @@ impl PhysicalTuning {
         )?;
         positive("physical.handlebars.response", bars.response, 10.0)?;
         positive("physical.handlebars.grab_radius_m", bars.grab_radius_m, 1.0)?;
+        range(
+            "physical.handlebars.grab_from_middle",
+            bars.grab_from_middle,
+            0.0,
+            1.0,
+        )?;
+        range(
+            "physical.handlebars.grab_past_end",
+            bars.grab_past_end,
+            1.0,
+            2.0,
+        )?;
 
         self.cyclic.validate("physical.cyclic")?;
         self.flight_stick.validate("physical.flight_stick")?;
@@ -488,7 +447,32 @@ impl PhysicalTuning {
             1.0,
         )?;
         positive("physical.buttons.press_depth_m", buttons.press_depth_m, 1.0)?;
+        range(
+            "physical.buttons.release_depth",
+            buttons.release_depth,
+            0.0,
+            1.0,
+        )?;
+        range(
+            "physical.buttons.held_radius",
+            buttons.held_radius,
+            1.0,
+            5.0,
+        )?;
+        positive("physical.buttons.arm_reach_m", buttons.arm_reach_m, 1.0)?;
+        range(
+            "physical.buttons.max_push_m",
+            buttons.max_push_m,
+            buttons.press_depth_m,
+            1.0,
+        )?;
         positive("physical.buttons.twist_deg", buttons.twist_deg, 180.0)?;
+        range(
+            "physical.buttons.twist_hysteresis_deg",
+            buttons.twist_hysteresis_deg,
+            0.0,
+            buttons.twist_deg,
+        )?;
 
         positive("physical.grab_radius_m", self.grab_radius_m, 1.0)
     }
@@ -515,110 +499,53 @@ impl LeverSpec {
     }
 }
 
-impl ArmSteeringTuning {
-    fn validate(&self) -> Result<(), Invalid> {
-        positive("arm_steering.full_bank_m", self.full_bank_m, 2.0)?;
+impl SteeringTuning {
+    pub(super) fn validate(&self) -> Result<(), Invalid> {
+        nonnegative("steering.return_ease_deg", self.return_ease_deg, 180.0)?;
         range(
-            "arm_steering.deadzone_m",
-            self.deadzone_m,
-            0.0,
-            self.full_bank_m,
-        )
-    }
-}
-
-impl WingsuitGesturesTuning {
-    fn validate(&self) -> Result<(), Invalid> {
-        for (name, span) in [
-            ("flight_lateral_span", self.flight_lateral_span),
-            ("withdraw_lateral_span", self.withdraw_lateral_span),
-            ("withdraw_lowered_span", self.withdraw_lowered_span),
-            ("withdraw_reach_span", self.withdraw_reach_span),
-            ("pose_hysteresis_span", self.pose_hysteresis_span),
-        ] {
-            nonnegative(&format!("wingsuit_gestures.{name}"), span, 2.0)?;
-        }
-        for (name, angle) in [
-            ("flight_angle_deg", self.flight_angle_deg),
-            ("flight_roll_deg", self.flight_roll_deg),
-            ("brake_roll_deg", self.brake_roll_deg),
-        ] {
-            nonnegative(&format!("wingsuit_gestures.{name}"), angle, 180.0)?;
-        }
-        range(
-            "wingsuit_gestures.brake_roll_max_deg",
-            self.brake_roll_max_deg,
-            self.brake_roll_deg,
-            180.0,
-        )?;
-        for (name, dwell) in [
-            ("neutral_dwell_s", self.neutral_dwell_s),
-            ("flight_dwell_s", self.flight_dwell_s),
-            ("close_dwell_s", self.close_dwell_s),
-            ("brake_dwell_s", self.brake_dwell_s),
-        ] {
-            nonnegative(&format!("wingsuit_gestures.{name}"), dwell, 5.0)?;
-        }
-        positive(
-            "wingsuit_gestures.max_sample_gap_s",
-            self.max_sample_gap_s,
-            5.0,
-        )
-    }
-}
-
-impl WingsuitEvadeTuning {
-    fn validate(&self) -> Result<(), Invalid> {
-        positive("wingsuit_evade.throw_bank_deg", self.throw_bank_deg, 180.0)?;
-        positive(
-            "wingsuit_evade.throw_sweep_deg",
-            self.throw_sweep_deg,
-            360.0,
-        )?;
-        positive("wingsuit_evade.throw_window_s", self.throw_window_s, 5.0)?;
-        range(
-            "wingsuit_evade.rearm_bank_deg",
-            self.rearm_bank_deg,
-            0.0,
-            self.throw_bank_deg,
-        )?;
-        nonnegative("wingsuit_evade.cooldown_s", self.cooldown_s, 30.0)?;
-        range(
-            "wingsuit_evade.diagonal_pitch",
-            self.diagonal_pitch,
+            "steering.return_ease_floor",
+            self.return_ease_floor,
             0.0,
             1.0,
+        )?;
+        nonnegative("steering.settled_deg", self.settled_deg, 10.0)?;
+        nonnegative("steering.cue_rearm_deg", self.cue_rearm_deg, 90.0)?;
+        range("steering.hub_share", self.hub_share, 0.0, 0.5)
+    }
+}
+
+impl ControlMotionTuning {
+    pub(super) fn validate(&self) -> Result<(), Invalid> {
+        nonnegative("controls.bars_grip_grace_s", self.bars_grip_grace_s, 5.0)?;
+        nonnegative("controls.stick_settled_m", self.stick_settled_m, 0.1)?;
+        nonnegative("controls.yoke_min_radius_m", self.yoke_min_radius_m, 0.5)?;
+        nonnegative("controls.yoke_settled_rad", self.yoke_settled_rad, 0.5)?;
+        nonnegative("controls.yoke_settled_m", self.yoke_settled_m, 0.1)?;
+        vec3(
+            "controls.collective_from_cyclic_m",
+            self.collective_from_cyclic_m,
+            MAX_OFFSET_M,
         )
     }
 }
 
-impl ParachuteHandlesTuning {
-    fn validate(&self) -> Result<(), Invalid> {
-        positive("parachute_handles.full_pull_m", self.full_pull_m, 2.0)?;
-        range(
-            "parachute_handles.brake_threshold",
-            self.brake_threshold,
-            0.0,
+impl ControlCuesTuning {
+    pub(super) fn validate(&self) -> Result<(), Invalid> {
+        range("cues.rearm", self.rearm, 0.0, 0.5)?;
+        range("cues.at_stop", self.at_stop, 0.5, 1.0)?;
+        range("cues.at_centre", self.at_centre, 0.0, 0.5)
+    }
+}
+
+impl WheelFitTuning {
+    pub(super) fn validate(&self) -> Result<(), Invalid> {
+        range("wheel_fit.max_tilt_deg", self.max_tilt_deg, 0.0, 90.0)?;
+        positive("wheel_fit.min_wheel_radius_m", self.min_wheel_radius_m, 1.0)?;
+        nonnegative("wheel_fit.grip_inset_m", self.grip_inset_m, 0.5)?;
+        positive(
+            "wheel_fit.min_bars_half_width_m",
+            self.min_bars_half_width_m,
             1.0,
         )
-    }
-}
-
-impl RailTuning {
-    fn validate(&self) -> Result<(), Invalid> {
-        positive("rail.half_length_m", self.half_length_m, 10.0)?;
-        positive("rail.step_off_m", self.step_off_m, 5.0)?;
-        nonnegative("rail.pull_s", self.pull_s, 10.0)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn the_shipped_file_loads_and_validates() {
-        let tuning = VEHICLES.get();
-        assert_eq!(tuning.validate(), Ok(()));
     }
 }

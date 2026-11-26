@@ -43,7 +43,10 @@ use glam::{Vec2, Vec3};
 use jc3vr_body::controllers::grab::{Candidate, GrabVolume};
 use jc3vr_input::frame::Hand;
 
-use crate::controllers::vehicles::{physical::Release, tuning::ParachuteHandlesTuning};
+use crate::controllers::vehicles::{
+    physical::Release,
+    tuning::{ParachuteHandlesTuning, VEHICLES},
+};
 
 /// A held handle.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -82,19 +85,6 @@ pub struct StepInputs {
     pub grabs: [bool; 2],
 }
 
-/// How far from a handle's centre a hand's grip may be for a grip press to take it, metres. Within
-/// it, the handle and any other target in reach go to the nearer, so a press right at a shoulder
-/// socket takes the socket.
-pub const RADIUS_M: f32 = 0.20;
-
-/// How far from a handle's centre a grip press outside every other volume still takes it rather
-/// than firing the grapple, metres. At least [`RADIUS_M`]. It reaches past the other handle's
-/// volume at the usual spacing, which only that handle's own hand can take.
-pub const REACH_M: f32 = 0.43;
-
-/// Pulls shorter than this act on nothing, metres.
-pub const DEADZONE_M: f32 = 0.03;
-
 /// The handles' grab volumes: a free hand's handle at its place by the shoulder, a held one where
 /// the hand holds it, each for its own side's hand only.
 pub fn candidates(
@@ -109,7 +99,7 @@ pub fn candidates(
         Candidate {
             volume: GrabVolume::ParachuteHandle(hand),
             centre: held.unwrap_or(centres[i]),
-            radius: RADIUS_M,
+            radius: config.radius_m,
             hand: Some(hand),
         }
     })
@@ -121,13 +111,14 @@ pub fn reach_candidates(
     state: &HandleState,
     centres: [Vec3; 2],
 ) -> impl Iterator<Item = Candidate> {
+    let radius = VEHICLES.get().parachute_handles.reach_m;
     Hand::BOTH
         .into_iter()
         .filter(move |hand| state.holds[hand.index()].is_none())
         .map(move |hand| Candidate {
             volume: GrabVolume::ParachuteHandle(hand),
             centre: centres[hand.index()],
-            radius: REACH_M,
+            radius,
             hand: Some(hand),
         })
 }
@@ -177,17 +168,18 @@ pub fn release_all(state: &mut HandleState, events: &mut Vec<HandleEvent>) {
 /// or, with no drop, the rise above it or the travel forward of it (the cockpit's -Z), whichever is
 /// further, the same way, negative.
 pub fn pull(config: &ParachuteHandlesTuning, hold: HandleHold, grip: Vec3) -> f32 {
-    let span = (config.full_pull_m - DEADZONE_M).max(1e-3);
-    let share = |travel: f32| ((travel - DEADZONE_M) / span).min(1.0);
+    let deadzone = config.deadzone_m;
+    let span = (config.full_pull_m - deadzone).max(1e-3);
+    let share = |travel: f32| ((travel - deadzone) / span).min(1.0);
     let drop = hold.rest.y - grip.y;
     if !drop.is_finite() {
         return 0.0;
     }
-    if drop > DEADZONE_M {
+    if drop > deadzone {
         return share(drop);
     }
     let push = (grip.y - hold.rest.y).max(hold.rest.z - grip.z);
-    if push.is_finite() && push > DEADZONE_M {
+    if push.is_finite() && push > deadzone {
         -share(push)
     } else {
         0.0
@@ -239,7 +231,7 @@ mod tests {
     use jc3vr_weapons::controllers::{loadout::Socket, weapons::volumes::SOCKETS};
 
     use super::*;
-    use crate::controllers::vehicles::{arm_steering::combine, tuning::VEHICLES};
+    use crate::controllers::vehicles::arm_steering::combine;
 
     fn config() -> &'static ParachuteHandlesTuning {
         &VEHICLES.get().parachute_handles
@@ -304,9 +296,9 @@ mod tests {
         let centres = centres();
         let c = candidates(config(), &HandleState::new(), centres, [None; 2]);
         let reach: Vec<_> = reach_candidates(&HandleState::new(), centres).collect();
-        assert!(c.iter().all(|c| c.radius == RADIUS_M));
-        assert!(reach.iter().all(|c| c.radius == REACH_M));
-        assert!(REACH_M * 2.0 > centres[0].distance(centres[1]));
+        assert!(c.iter().all(|c| c.radius == config().radius_m));
+        assert!(reach.iter().all(|c| c.radius == config().reach_m));
+        assert!(config().reach_m * 2.0 > centres[0].distance(centres[1]));
         let middle = (centres[0] + centres[1]) * 0.5;
         assert_eq!(
             grab_volume(middle, Hand::Left, &reach),
@@ -327,7 +319,7 @@ mod tests {
             radius: SOCKETS.shoulder_radius_m,
             hand: Some(Hand::Right),
         };
-        assert!(socket.centre.distance(centres[1]) < RADIUS_M);
+        assert!(socket.centre.distance(centres[1]) < config().radius_m);
         let mut c = candidates(config(), &HandleState::new(), centres, [None; 2]).to_vec();
         c.push(socket);
         assert_eq!(
@@ -344,7 +336,7 @@ mod tests {
     fn a_press_near_a_free_handle_reaches_it_but_not_over_the_body() {
         let centres = centres();
         let state = HandleState::new();
-        let near = centres[1] + Vec3::X * (RADIUS_M + REACH_M) * 0.5;
+        let near = centres[1] + Vec3::X * (config().radius_m + config().reach_m) * 0.5;
         let placed = candidates(config(), &state, centres, [None; 2]);
         assert_eq!(grab_volume(near, Hand::Right, &placed), None);
         let reach: Vec<_> = reach_candidates(&state, centres).collect();
@@ -353,7 +345,7 @@ mod tests {
             Some(GrabVolume::ParachuteHandle(Hand::Right))
         );
         assert_eq!(grab_volume(near, Hand::Left, &reach), None);
-        let far = centres[1] + Vec3::X * REACH_M * 1.1;
+        let far = centres[1] + Vec3::X * config().reach_m * 1.1;
         assert_eq!(grab_volume(far, Hand::Right, &reach), None);
         // A held handle has no reach of its own: its hand is in its volume already.
         let (state, _) = both_taken();
@@ -421,7 +413,7 @@ mod tests {
     fn the_pull_is_measured_from_where_the_handle_was_taken() {
         let hold = HandleHold { rest: Vec3::ZERO };
         assert_eq!(
-            pull(config(), hold, Vec3::Y * DEADZONE_M),
+            pull(config(), hold, Vec3::Y * config().deadzone_m),
             0.0,
             "a small raise is slack"
         );
@@ -431,8 +423,8 @@ mod tests {
             "reaching forward pushes"
         );
         assert_eq!(pull(config(), hold, Vec3::Y), -1.0);
-        assert_eq!(pull(config(), hold, -Vec3::Y * DEADZONE_M), 0.0);
-        let half = DEADZONE_M + (config().full_pull_m - DEADZONE_M) * 0.5;
+        assert_eq!(pull(config(), hold, -Vec3::Y * config().deadzone_m), 0.0);
+        let half = config().deadzone_m + (config().full_pull_m - config().deadzone_m) * 0.5;
         assert!((pull(config(), hold, -Vec3::Y * half) - 0.5).abs() < 1e-5);
         assert_eq!(pull(config(), hold, -Vec3::Y), 1.0);
         assert_eq!(pull(config(), hold, Vec3::NAN), 0.0);

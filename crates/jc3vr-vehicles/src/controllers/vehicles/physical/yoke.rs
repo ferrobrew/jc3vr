@@ -16,7 +16,7 @@ use crate::controllers::vehicles::{
         ControlState, Holding,
         cues::{self, ControlCue, TravelCues},
     },
-    tuning::YokeSpec,
+    tuning::{VEHICLES, YokeSpec},
 };
 
 /// The yoke at rest in the cockpit frame.
@@ -92,7 +92,8 @@ impl YokeFrame {
     fn angle(&self, point: Vec3, pitch: f32) -> Option<f32> {
         let v = point - self.hub_at(pitch);
         let (x, y) = (v.dot(self.right), v.dot(self.up()));
-        (x * x + y * y > MIN_RADIUS_M * MIN_RADIUS_M).then(|| y.atan2(x))
+        let min_radius = VEHICLES.get().controls.yoke_min_radius_m;
+        (x * x + y * y > min_radius * min_radius).then(|| y.atan2(x))
     }
 }
 
@@ -221,7 +222,9 @@ pub(super) fn step_yoke(
         };
         yoke.roll *= decay;
         yoke.pitch *= decay;
-        if yoke.roll.abs() < SETTLED_RAD && yoke.pitch.abs() < SETTLED_M {
+        let controls = &VEHICLES.get().controls;
+        if yoke.roll.abs() < controls.yoke_settled_rad && yoke.pitch.abs() < controls.yoke_settled_m
+        {
             yoke.roll = 0.0;
             yoke.pitch = 0.0;
         }
@@ -281,12 +284,6 @@ fn wrap(angle: f32) -> f32 {
     let tau = std::f32::consts::TAU;
     angle - tau * ((angle + std::f32::consts::PI) / tau).floor()
 }
-
-/// A hand nearer the column than this, metres, has no angle about it to turn the yoke by.
-const MIN_RADIUS_M: f32 = 0.03;
-/// A returning yoke within these of centre is at centre.
-const SETTLED_RAD: f32 = 0.005;
-const SETTLED_M: f32 = 0.001;
 
 #[cfg(test)]
 mod tests {

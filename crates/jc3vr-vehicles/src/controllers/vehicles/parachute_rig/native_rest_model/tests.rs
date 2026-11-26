@@ -7,7 +7,7 @@ use jc3vr_input::frame::Hand;
 
 use super::*;
 use crate::controllers::vehicles::{
-    parachute::{HandleEvent, HandleHold, HandleState, RADIUS_M, REACH_M, StepInputs},
+    parachute::{HandleEvent, HandleHold, HandleState, StepInputs},
     physical::Release,
     tuning::{ParachuteHandlesTuning, VEHICLES},
 };
@@ -31,7 +31,7 @@ mod parachute {
             centre.is_finite().then_some(Candidate {
                 volume: GrabVolume::ParachuteHandle(hand),
                 centre,
-                radius: RADIUS_M,
+                radius: config.radius_m,
                 hand: Some(hand),
             })
         })
@@ -41,7 +41,7 @@ mod parachute {
         state: &HandleState,
         centres: [Option<Vec3>; 2],
     ) -> impl Iterator<Item = Candidate> {
-        let radius = REACH_M;
+        let radius = super::config().reach_m;
         Hand::BOTH
             .into_iter()
             .filter(move |hand| state.holds[hand.index()].is_none())

@@ -65,9 +65,12 @@ pub(super) fn targets(
     state.side = Some(side);
     let grips = active.hands.map(|h| h.map(|h| h.grip.position));
     let placed = ripcord::candidate(&state.ripcord, centre, side, grips);
-    let mark = Mark::ring(MarkAt::Cockpit(placed.centre), ripcord::RADIUS_M)
-        .styled(MarkStyle::Handle)
-        .showing(Shown::Always);
+    let mark = Mark::ring(
+        MarkAt::Cockpit(placed.centre),
+        VEHICLES.get().ripcord.radius_m,
+    )
+    .styled(MarkStyle::Handle)
+    .showing(Shown::Always);
     let mut targets = Vec::with_capacity(2);
     match state.ripcord.hold {
         Some(hold) => {

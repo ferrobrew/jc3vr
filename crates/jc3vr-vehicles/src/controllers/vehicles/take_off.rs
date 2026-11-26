@@ -1,23 +1,21 @@
 //! The boost wingsuit's take-off from the ground along the head's heading.
 //!
 //! The take-off from the ground (`S_JC_WINGSUIT_BOOST_TRANSITION_FROM_GROUND_INTO`, then
-//! `..._FROM_GROUND`) launches the suit along the character's facing. In VR the body faces where the
-//! grounded rig puts it, under the view, not where the head looks, so the suit left off to one side
-//! of the player's gaze. A take-off is a movement action, so it may turn the body: the head's
+//! `..._FROM_GROUND`) launches the suit along the character's facing. In VR the body faces where
+//! the grounded rig puts it, under the view, not where the head looks, so the suit left off to one
+//! side of the player's gaze. A take-off is a movement action, so it may turn the body: the head's
 //! heading relative to the view stands in for the torso's as the body's follow target
-//! ([`jc3vr_view::headpose::xr::set_take_off_heading`]), and the game's own turn brings the body around
-//! under the view, so the view does not move.
+//! ([`jc3vr_view::headpose::xr::set_take_off_heading`]), and the game's own turn brings the body
+//! around under the view, so the view does not move.
 //!
-//! The game turns the body only while its movement task runs, which it stops for the wind-up, so the
-//! turn starts with the hold that leads to it: once the use button (`OPEN_WINGSUIT`, with the other
-//! actions on the gamepad's button) has been held on the ground for [`TURN_AFTER_S`], the follow
-//! target tracks the head's heading. On entering the take-off the heading is held where it was
-//! until the take-off ends. Letting go of the button before the wind-up lets the target go.
+//! The game turns the body only while its movement task runs, which it stops for the wind-up, so
+//! the turn starts with the hold that leads to it: once the use button (`OPEN_WINGSUIT`, with the
+//! other actions on the gamepad's button) has been held on the ground for the tuning's
+//! `take_off.turn_after_s`, the follow target tracks the head's heading. On entering the take-off
+//! the heading is held where it was until the take-off ends. Letting go of the button before the
+//! wind-up lets the target go.
 
-use std::{
-    sync::LazyLock,
-    time::{Duration, Instant},
-};
+use std::{sync::LazyLock, time::Instant};
 
 use jc3gi::{
     character::character::Character,
@@ -33,6 +31,8 @@ use jc3vr_body::{
 use jc3vr_core::hash::StateSet;
 use jc3vr_view::{headpose, headpose::sim::body_yaw_of};
 use parking_lot::Mutex;
+
+use crate::controllers::vehicles::tuning::VEHICLES;
 
 /// Track the take-off for this game tick.
 ///
@@ -81,7 +81,7 @@ pub(crate) unsafe fn tick() {
 /// A change in the take-off's hold or in whether the take-off runs.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) enum Edge {
-    /// The use button has been held on the ground for [`TURN_AFTER_S`].
+    /// The use button has been held on the ground for the tuning's `take_off.turn_after_s`.
     Held,
     /// The button was let go after [`Edge::Held`], without a take-off.
     Released,
@@ -117,7 +117,7 @@ impl Tracker {
         self.phase = match (taking_off, holding, was) {
             (true, _, _) => Phase::TakingOff,
             (false, true, Phase::Pressed(since))
-                if now.saturating_duration_since(since) >= TURN_AFTER =>
+                if now.saturating_duration_since(since) >= VEHICLES.get().take_off.turn_after() =>
             {
                 Phase::Held
             }
@@ -137,13 +137,6 @@ impl Tracker {
         }
     }
 }
-
-/// How long the use button must be held on the ground before the body turns, seconds: long enough
-/// that a tap to pick something up or use it does not turn the body, and well short of the hold
-/// that starts the take-off's wind-up, so the body has the rest of the hold to come around.
-pub(crate) const TURN_AFTER_S: f32 = 0.2;
-
-const TURN_AFTER: Duration = Duration::from_millis((TURN_AFTER_S * 1000.0) as u64);
 
 static TRACKER: Mutex<Tracker> = Mutex::new(Tracker { phase: Phase::Idle });
 
@@ -177,6 +170,8 @@ fn is_take_off_state(state: u32) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use jc3vr_core::hash::hashlittle;
 
     use super::*;
@@ -193,7 +188,11 @@ mod tests {
         assert_eq!(tracker.step(true, false, after(start, 0.1)), None);
         assert_eq!(tracker.step(true, false, after(start, 0.2)), None);
         assert_eq!(
-            tracker.step(true, false, after(start, 0.11 + TURN_AFTER_S)),
+            tracker.step(
+                true,
+                false,
+                after(start, 0.11 + VEHICLES.get().take_off.turn_after_s)
+            ),
             Some(Edge::Held)
         );
         assert_eq!(tracker.step(true, false, after(start, 0.8)), None);
@@ -221,7 +220,11 @@ mod tests {
         assert_eq!(tracker.phase, Phase::Idle);
         assert_eq!(tracker.step(true, false, after(start, 1.0)), None);
         assert_eq!(
-            tracker.step(true, false, after(start, 1.01 + TURN_AFTER_S)),
+            tracker.step(
+                true,
+                false,
+                after(start, 1.01 + VEHICLES.get().take_off.turn_after_s)
+            ),
             Some(Edge::Held)
         );
         assert_eq!(

@@ -73,7 +73,12 @@ pub enum PushPhase {
 }
 
 /// `phase` for a hand whose grip is now at `point`, `None` while untracked.
-pub fn push_step(phase: PushPhase, button: &PushButton, point: Option<Vec3>) -> PushPhase {
+pub fn push_step(
+    phase: PushPhase,
+    button: &PushButton,
+    point: Option<Vec3>,
+    config: &CockpitButtonsTuning,
+) -> PushPhase {
     let Some(point) = point.filter(|p| p.is_finite()) else {
         return PushPhase::Out;
     };
@@ -81,10 +86,11 @@ pub fn push_step(phase: PushPhase, button: &PushButton, point: Option<Vec3>) -> 
     let along = d.dot(button.normal);
     let lateral = d.reject_from_normalized(button.normal).length();
     let depth = button.depth.max(0.005);
-    let in_front = (0.0..=ARM_REACH_M).contains(&along) && lateral <= button.radius;
-    let pushed = along <= -depth && along >= -MAX_PUSH_M && lateral <= button.radius;
-    // A pressed button gives a little before it lets go, so a hand resting on it does not chatter.
-    let held = along <= -depth * 0.5 && along >= -MAX_PUSH_M && lateral <= button.radius * 1.5;
+    let in_front = (0.0..=config.arm_reach_m).contains(&along) && lateral <= button.radius;
+    let pushed = along <= -depth && along >= -config.max_push_m && lateral <= button.radius;
+    let held = along <= -depth * config.release_depth
+        && along >= -config.max_push_m
+        && lateral <= button.radius * config.held_radius;
     match phase {
         PushPhase::Armed if pushed => PushPhase::Pressed,
         PushPhase::Pressed if held => PushPhase::Pressed,
@@ -118,7 +124,7 @@ pub fn grip_twist(grab: Quat, now: Quat) -> f32 {
 /// tick: past the twist to engage, and until it comes back by a margin.
 pub fn twist_engaged(twist: f32, was: bool, config: &CockpitButtonsTuning) -> bool {
     let engage = config.twist_deg.to_radians();
-    let release = (config.twist_deg - TWIST_HYSTERESIS_DEG)
+    let release = (config.twist_deg - config.twist_hysteresis_deg)
         .max(0.0)
         .to_radians();
     if was {
@@ -256,7 +262,7 @@ pub fn step_buttons(
             let was = state.phases[button.index()][i];
             let free = inputs.holds[i].is_none();
             let now = match placed.filter(|_| free) {
-                Some(b) => push_step(was, &b, inputs.grips[i]),
+                Some(b) => push_step(was, &b, inputs.grips[i], inputs.config),
                 None => PushPhase::Out,
             };
             state.phases[button.index()][i] = now;
@@ -296,13 +302,3 @@ pub fn step_buttons(
             || state.twists.contains(&Some(TwistGrip::Collective)),
     }
 }
-
-/// How far in front of a push button's face a hand may be to arm it, metres.
-const ARM_REACH_M: f32 = 0.12;
-
-/// How far past a push button's face a hand may be and still press it, metres: further is a hand
-/// through the dash.
-const MAX_PUSH_M: f32 = 0.12;
-
-/// How far a twist grip comes back from its engaging twist before it lets go, degrees.
-const TWIST_HYSTERESIS_DEG: f32 = 8.0;

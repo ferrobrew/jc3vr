@@ -70,7 +70,7 @@ use crate::controllers::vehicles::{
         yoke::{YokeFrame, YokeState, grab_yoke, nearest_horn, step_yoke},
     },
     steering::{CueArming, WheelCue, WheelGrip},
-    tuning::{LeverSpec, PhysicalControlsTuning, StickSpec},
+    tuning::{LeverSpec, PhysicalControlsTuning, StickSpec, VEHICLES},
     wheel::{BarsFrame, WheelFrame},
 };
 
@@ -136,7 +136,7 @@ pub struct ControlState {
     /// Which of the bars' haptic cues may fire.
     bars_cues: CueArming,
     /// How long each hand's grip on the handlebars has been open, by [`Hand::index`], while the
-    /// grace keeps the bars in it ([`BARS_GRIP_GRACE_S`]).
+    /// grace keeps the bars in it (the tuning's `controls.bars_grip_grace_s`).
     bars_grace: [Option<f32>; 2],
     /// The stick's deflection in the horizontal plane (+X right, +Y back), metres.
     pub stick: Vec2,
@@ -422,7 +422,13 @@ impl Placement {
                 let angle = self.wheel.hand_angle(point).unwrap_or(0.0);
                 Some(self.wheel.rim_point(angle))
             }
-            ControlKind::Handlebars => Some(bar_grab_point(&self.bars, state.bars, hand, point)),
+            ControlKind::Handlebars => Some(bar_grab_point(
+                &self.bars,
+                &self.config.handlebars,
+                state.bars,
+                hand,
+                point,
+            )),
             ControlKind::Yoke => Some(nearest_horn(&self.yoke()?, &state.yoke, point)),
             kind => {
                 if let Some(handle) = self.stick_handle(kind, state.stick) {
@@ -488,10 +494,6 @@ pub struct StepInputs<'a> {
     pub dt: f32,
 }
 
-/// How long the handlebars stay in a hand whose grip has opened, seconds: long enough for fingers
-/// lifted off the handle a moment to close again.
-pub const BARS_GRIP_GRACE_S: f32 = 0.25;
-
 /// Advance the controls by one input tick: act on the grabs and the releases, move the held controls
 /// with their hands, and return the outputs.
 pub fn step(
@@ -521,7 +523,7 @@ pub fn step(
             let bars = held.is_some_and(|h| h.kind == ControlKind::Handlebars);
             if held.is_some() && !inputs.held[i] {
                 let open_s = state.bars_grace[i].map_or(0.0, |s| s + dt);
-                if bars && open_s < BARS_GRIP_GRACE_S {
+                if bars && open_s < VEHICLES.get().controls.bars_grip_grace_s {
                     state.bars_grace[i] = Some(open_s);
                 } else {
                     state.bars_grace[i] = None;
@@ -753,7 +755,13 @@ pub fn anchor_point(
                 placement,
                 grips_holding(state, ControlKind::Handlebars, grips),
             );
-            Some(bar_grab_point(&placement.bars, bars, hand, point))
+            Some(bar_grab_point(
+                &placement.bars,
+                &placement.config.handlebars,
+                bars,
+                hand,
+                point,
+            ))
         }
         kind => {
             if let Some(spec) = placement.stick(kind) {

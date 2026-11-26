@@ -12,10 +12,7 @@
 //! [`NStateTask_InputVehicleEnterTask::Update`]: jc3gi::vehicle::vehicle::NStateTask_InputVehicleEnterTask::Update
 //! [`NStateTask_InputVehicleEnterTask::HasAvailableGunnerDestination`]: jc3gi::vehicle::vehicle::NStateTask_InputVehicleEnterTask::HasAvailableGunnerDestination
 
-use std::{
-    num::NonZeroUsize,
-    time::{Duration, Instant},
-};
+use std::{num::NonZeroUsize, time::Instant};
 
 use glam::{Vec2, Vec3};
 use jc3gi::{
@@ -31,7 +28,10 @@ use jc3vr_input::frame::Hand;
 use jc3vr_physical::controllers::physical_hands::doors::engine::vehicle_of;
 use parking_lot::Mutex;
 
-use crate::controllers::vehicles::mounted::{handle, pivot_and_barrel};
+use crate::controllers::vehicles::{
+    mounted::{handle, pivot_and_barrel},
+    tuning::VEHICLES,
+};
 
 /// Where the gunner of an unmanned vehicle gun stands: behind the handles' midpoint, along the
 /// barrel's level direction.
@@ -44,14 +44,17 @@ pub(super) struct GunnerSpot {
 }
 
 impl GunnerSpot {
-    /// Whether a head at `head` stands at the spot: within [`SPOT_RADIUS_M`] of the point
-    /// [`SPOT_BEHIND_M`] behind the handles on the level, and not below them.
+    /// Whether a head at `head` stands at the spot: within the tuning's `gunner_seat.spot_radius_m`
+    /// of the point `gunner_seat.spot_behind_m` behind the handles on the level, and not below
+    /// them.
     pub(super) fn holds(&self, head: Vec3) -> bool {
-        let spot = Vec2::new(self.handles_mid.x, self.handles_mid.z) - self.forward * SPOT_BEHIND_M;
+        let tuning = &VEHICLES.get().gunner_seat;
+        let spot =
+            Vec2::new(self.handles_mid.x, self.handles_mid.z) - self.forward * tuning.spot_behind_m;
         let flat = Vec2::new(head.x, head.z);
         head.is_finite()
-            && flat.distance(spot) <= SPOT_RADIUS_M
-            && head.y >= self.handles_mid.y - SPOT_BELOW_M
+            && flat.distance(spot) <= tuning.spot_radius_m
+            && head.y >= self.handles_mid.y - tuning.spot_below_m
     }
 }
 
@@ -96,7 +99,7 @@ pub(super) fn decide(entry: &mut Entry, seen: Observation, now: Instant) -> (boo
                 *entry = Entry::Spent { weapon };
                 return (false, Change::Seated);
             }
-            if now.duration_since(since) >= HOLD_TIMEOUT {
+            if now.duration_since(since) >= VEHICLES.get().gunner_seat.hold_timeout() {
                 *entry = Entry::Spent { weapon };
                 return (false, Change::TimedOut);
             }
@@ -109,7 +112,7 @@ pub(super) fn decide(entry: &mut Entry, seen: Observation, now: Instant) -> (boo
             (false, Change::None)
         }
         Entry::Standing { weapon, since } if seen.spot == Some(weapon) && !seen.manning => {
-            if seen.offered && now.duration_since(since) >= DWELL {
+            if seen.offered && now.duration_since(since) >= VEHICLES.get().gunner_seat.dwell() {
                 *entry = Entry::Holding { weapon, since: now };
                 return (true, Change::Started);
             }
@@ -174,7 +177,7 @@ pub(super) unsafe fn step(
         ),
         Change::TimedOut => tracing::info!(
             target: "controllers",
-            timeout_s = HOLD_TIMEOUT.as_secs_f32(),
+            timeout_s = VEHICLES.get().gunner_seat.hold_timeout().as_secs_f32(),
             "gunner seat: the entry did not seat the player"
         ),
     }
@@ -228,22 +231,14 @@ unsafe fn unmanned_vehicle_gun(object: usize, weak: &Weak) -> Option<GunnerSpot>
 
 static ENTRY: Mutex<Entry> = Mutex::new(Entry::Idle);
 
-/// How far behind the handles, on the level, the gunner stands, metres.
-const SPOT_BEHIND_M: f32 = 0.35;
-/// How far from the gunner's spot, on the level, the head may be, metres.
-const SPOT_RADIUS_M: f32 = 0.4;
-/// How far below the handles the head may be and still stand at the spot, metres.
-const SPOT_BELOW_M: f32 = 0.3;
-/// How long the head stands at the spot before the entry starts, so a player walking across a
-/// vehicle's roof is not seated.
-const DWELL: Duration = Duration::from_millis(400);
-/// How long the entry action is held at most: past the game's hold time for a seat change, and
-/// long enough for the entry to begin.
-const HOLD_TIMEOUT: Duration = Duration::from_millis(1500);
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::controllers::vehicles::tuning::GunnerSeatTuning;
+
+    fn seat() -> &'static GunnerSeatTuning {
+        &VEHICLES.get().gunner_seat
+    }
 
     fn seen(spot: Option<usize>, offered: bool, manning: bool) -> Observation {
         Observation {
@@ -262,19 +257,35 @@ mod tests {
             (false, Change::None)
         );
         assert_eq!(
-            decide(&mut entry, seen(Some(1), true, false), start + DWELL / 2),
+            decide(
+                &mut entry,
+                seen(Some(1), true, false),
+                start + seat().dwell() / 2
+            ),
             (false, Change::None)
         );
         assert_eq!(
-            decide(&mut entry, seen(Some(1), true, false), start + DWELL),
+            decide(
+                &mut entry,
+                seen(Some(1), true, false),
+                start + seat().dwell()
+            ),
             (true, Change::Started)
         );
         assert_eq!(
-            decide(&mut entry, seen(None, false, false), start + DWELL * 2),
+            decide(
+                &mut entry,
+                seen(None, false, false),
+                start + seat().dwell() * 2
+            ),
             (true, Change::None)
         );
         assert_eq!(
-            decide(&mut entry, seen(None, false, true), start + DWELL * 3),
+            decide(
+                &mut entry,
+                seen(None, false, true),
+                start + seat().dwell() * 3
+            ),
             (false, Change::Seated)
         );
     }
@@ -284,15 +295,27 @@ mod tests {
         let start = Instant::now();
         let mut entry = Entry::Idle;
         decide(&mut entry, seen(Some(1), true, false), start);
-        decide(&mut entry, seen(None, false, false), start + DWELL / 2);
+        decide(
+            &mut entry,
+            seen(None, false, false),
+            start + seat().dwell() / 2,
+        );
         assert_eq!(
-            decide(&mut entry, seen(Some(1), true, false), start + DWELL),
+            decide(
+                &mut entry,
+                seen(Some(1), true, false),
+                start + seat().dwell()
+            ),
             (false, Change::None)
         );
         let mut entry = Entry::Idle;
         decide(&mut entry, seen(Some(1), false, false), start);
         assert_eq!(
-            decide(&mut entry, seen(Some(1), false, false), start + DWELL * 2),
+            decide(
+                &mut entry,
+                seen(Some(1), false, false),
+                start + seat().dwell() * 2
+            ),
             (false, Change::None)
         );
     }
@@ -305,21 +328,25 @@ mod tests {
             since: start,
         };
         assert_eq!(
-            decide(&mut entry, seen(Some(1), true, false), start + HOLD_TIMEOUT),
+            decide(
+                &mut entry,
+                seen(Some(1), true, false),
+                start + seat().hold_timeout()
+            ),
             (false, Change::TimedOut)
         );
         assert_eq!(
             decide(
                 &mut entry,
                 seen(Some(1), true, false),
-                start + HOLD_TIMEOUT * 3
+                start + seat().hold_timeout() * 3
             ),
             (false, Change::None)
         );
         decide(
             &mut entry,
             seen(None, true, false),
-            start + HOLD_TIMEOUT * 4,
+            start + seat().hold_timeout() * 4,
         );
         assert_eq!(entry, Entry::Idle);
     }
@@ -331,10 +358,10 @@ mod tests {
             handles_mid: Vec3::new(0.0, 2.0, 0.0),
             forward: Vec2::new(0.0, -1.0),
         };
-        assert!(spot.holds(Vec3::new(0.0, 2.6, SPOT_BEHIND_M)));
-        assert!(spot.holds(Vec3::new(0.0, 3.4, SPOT_BEHIND_M + 0.3)));
-        assert!(!spot.holds(Vec3::new(0.0, 2.6, -SPOT_BEHIND_M)));
-        assert!(!spot.holds(Vec3::new(0.0, 1.5, SPOT_BEHIND_M)));
-        assert!(!spot.holds(Vec3::new(0.6, 2.6, SPOT_BEHIND_M)));
+        assert!(spot.holds(Vec3::new(0.0, 2.6, seat().spot_behind_m)));
+        assert!(spot.holds(Vec3::new(0.0, 3.4, seat().spot_behind_m + 0.3)));
+        assert!(!spot.holds(Vec3::new(0.0, 2.6, -seat().spot_behind_m)));
+        assert!(!spot.holds(Vec3::new(0.0, 1.5, seat().spot_behind_m)));
+        assert!(!spot.holds(Vec3::new(0.6, 2.6, seat().spot_behind_m)));
     }
 }

@@ -7,6 +7,8 @@
 
 use glam::Vec3;
 
+use crate::controllers::vehicles::tuning::VEHICLES;
+
 /// A mounted weapon a hand can take: its own game object, the object holding it, and a point on
 /// the gun the hand's body must be near when it holds a part of the holder's vehicle.
 ///
@@ -57,12 +59,9 @@ pub(crate) fn matches(
     let Some(centre) = held.centre.filter(|centre| centre.is_finite()) else {
         return false;
     };
-    mount.centre.is_finite() && centre.distance(mount.centre) <= HANDLE_REACH_M
+    mount.centre.is_finite()
+        && centre.distance(mount.centre) <= VEHICLES.get().mounted.handle_reach_m
 }
-
-/// How far a held part of the holder's vehicle may be from the gun's centre to count as its
-/// handle, metres.
-const HANDLE_REACH_M: f32 = 1.5;
 
 #[cfg(test)]
 mod tests {

@@ -13,7 +13,7 @@ use jc3vr_input::frame::Hand;
 use jc3vr_view::controllers::cockpit::CockpitTransform;
 
 use crate::controllers::vehicles::{
-    mounted, mounted::MountedTarget, state::STATE, types::MountedReadout,
+    mounted, mounted::MountedTarget, state::STATE, tuning::VEHICLES, types::MountedReadout,
 };
 
 /// What the mounted-gun half of the input tick produced.
@@ -55,7 +55,7 @@ pub(super) fn mounted_tick(
             .as_ref()
             .and_then(|owner| mounted::read(owner.character()))
     })
-    .or_else(|| unsafe { mounted::nearby(hands_world, NEARBY_REACH_M) }) else {
+    .or_else(|| unsafe { mounted::nearby(hands_world, VEHICLES.get().mounted.nearby_reach_m) }) else {
         let mut state = STATE.lock();
         state.mounted_reference = None;
         state.mounted_last = None;
@@ -85,7 +85,7 @@ pub(super) fn mounted_tick(
                 to_cockpit(gun.pivot),
                 handles_mid,
                 body.inverse() * gun.barrel,
-                MIN_LEVER_M,
+                VEHICLES.get().mounted.min_lever_m,
             )
         });
         state.mounted_reference = reference;
@@ -155,11 +155,3 @@ pub(super) fn offered(seat: Option<VehicleSeat>, fork: bool, yoke: bool) -> &'st
         None => &[],
     }
 }
-
-/// The shortest lever from the handles to the gun's pivot, metres. A gun whose handles the game
-/// does not place, or places at the pivot, swings about a pivot this far ahead of them.
-const MIN_LEVER_M: f32 = 0.4;
-
-/// How near a hand must be to a mounted gun's handles or pivot to select it without the native
-/// mounted state, metres.
-const NEARBY_REACH_M: f32 = 2.0;

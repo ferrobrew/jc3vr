@@ -173,7 +173,7 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickVolumes {
                 handle_target(
                     GrabVolume::MountedHandle(hand),
                     mounted.handle_points[i].unwrap_or(point),
-                    mounted_grip::GRAB_RADIUS_M,
+                    VEHICLES.get().mounted.grab_radius_m,
                     hand,
                 )
                 .held(hand),
