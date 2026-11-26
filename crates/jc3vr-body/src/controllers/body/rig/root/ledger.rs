@@ -11,7 +11,7 @@
 
 use glam::{Vec2, Vec3};
 
-use crate::controllers::body::rig::root::owner::RootOwner;
+use crate::controllers::body::rig::{root::owner::RootOwner, tuning::RIG};
 
 /// The requested displacement split before the proxy's single collision solve.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
@@ -150,13 +150,14 @@ impl Requests {
         }
     }
 
-    /// Whether something stopped the drive: over the last two completed steps, less than half of
-    /// the drive they asked for was credited. A wall the root slides along at a shallow angle
+    /// Whether something stopped the drive: over the last two completed steps, less than the rig
+    /// tuning's `ledger.obstructed_share` of the drive they asked for was credited. A wall the root slides along at a shallow angle
     /// leaves most of the drive credited, so it is no obstruction.
     pub fn obstructed(&self) -> bool {
         let requested: f32 = self.recent.iter().map(|(r, _)| r).sum();
         let credited: f32 = self.recent.iter().map(|(_, c)| c).sum();
-        requested > MIN_OBSTRUCTED_REQUEST_M && credited < requested * OBSTRUCTED_SHARE
+        requested > MIN_OBSTRUCTED_REQUEST_M
+            && credited < requested * RIG.get().ledger.obstructed_share
     }
 
     /// The running total at the last two completed steps.
@@ -245,9 +246,6 @@ pub const MAX_COMBINED_SPEED_MPS: f32 = 12.0;
 /// The least drive two steps must ask for, metres, before their shortfall counts as an
 /// obstruction.
 const MIN_OBSTRUCTED_REQUEST_M: f32 = 1e-3;
-
-/// The share of the requested drive below which the credited drive means an obstruction.
-const OBSTRUCTED_SHARE: f32 = 0.5;
 
 /// The absolute part of the exact-match tolerance, metres.
 const EXACT_ABSOLUTE_M: f32 = 1e-4;

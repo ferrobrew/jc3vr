@@ -8,8 +8,10 @@
 //! the obstruction. This is a translation of the room against the world, never a rotation.
 //!
 //! The slide is capped per episode (the debt). With the cap spent, the view fades to black over a
-//! span past the threshold. The episode ends once the gap has stayed under half the threshold for a
-//! moment; the slide it applied stays, as the room's new place against the world.
+//! span past the threshold. The episode ends once the gap has stayed under a share of the threshold
+//! for a moment; the slide it applied stays, as the room's new place against the world. The
+//! thresholds, the cap, the span, and the episode's end are the rig tuning's `pushback` section
+//! ([`PushbackTuning`]).
 //!
 //! The thresholds depend on the root's owner: tight while the player's step drive is obstructed, seated
 //! or standing, loose while the animation carries the body (only a runaway gap), and an arm's
@@ -20,7 +22,10 @@
 use body_rig::smooth::smoothstep;
 use glam::Vec2;
 
-use crate::controllers::body::rig::root::owner::RootOwner;
+use crate::controllers::body::rig::{
+    root::owner::RootOwner,
+    tuning::{PushbackTuning, RIG},
+};
 
 /// One frame's inputs.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -53,7 +58,7 @@ pub struct PushbackOutcome {
 pub struct Pushback {
     /// How far the view has been slid back in this episode, metres.
     debt: f32,
-    /// How long the gap has stayed under half the threshold, seconds.
+    /// How long the gap has stayed under the calm share of the threshold, seconds.
     calm_s: f32,
     /// Episodes started since the payload loaded.
     episodes: u64,
@@ -85,6 +90,7 @@ impl Pushback {
 
     /// Advance one frame.
     pub fn step(&mut self, input: &PushbackInput) -> PushbackOutcome {
+        let tuning = &RIG.get().pushback;
         let gap = if input.gap.is_finite() {
             input.gap
         } else {
@@ -92,13 +98,13 @@ impl Pushback {
         };
         let r = gap.length();
         let obstructed =
-            input.owner.is_some_and(RootOwner::drives) && input.stopped && r > MIN_GAP_M;
-        let threshold = threshold(input.owner, obstructed);
+            input.owner.is_some_and(RootOwner::drives) && input.stopped && r > tuning.min_gap_m;
+        let threshold = threshold(input.owner, obstructed, tuning);
 
         // The episode ends once the gap has been calm for a moment, measured against the tight
         // threshold when none is in force, so a slide that flickers in and out of obstruction does
         // not start a fresh episode each time.
-        let calm_below = threshold.unwrap_or(OBSTRUCTED_M) * 0.5;
+        let calm_below = threshold.unwrap_or(tuning.obstructed_m) * tuning.calm_share;
         let dt = if input.dt.is_finite() {
             input.dt.max(0.0)
         } else {
@@ -106,7 +112,7 @@ impl Pushback {
         };
         if r < calm_below {
             self.calm_s += dt;
-            if self.calm_s >= RESET_S {
+            if self.calm_s >= tuning.reset_s {
                 self.debt = 0.0;
             }
         } else {
@@ -119,7 +125,7 @@ impl Pushback {
                 ..PushbackOutcome::default()
             };
         };
-        let cap = DEBT_CAP_M;
+        let cap = tuning.debt_cap_m;
         let mut push = Vec2::ZERO;
         let mut left = r;
         if r > t && self.debt < cap {
@@ -132,7 +138,7 @@ impl Pushback {
             left = r - p;
         }
         let fade = if self.debt >= cap - CAP_EPSILON_M {
-            smoothstep((left - t) / FADE_SPAN_M)
+            smoothstep((left - t) / tuning.fade_span_m)
         } else {
             0.0
         };
@@ -147,36 +153,18 @@ impl Pushback {
 
 /// The threshold for the root's owner, metres, or `None` when the step drive owns the gap or the game
 /// owns the root.
-pub fn threshold(owner: Option<RootOwner>, obstructed: bool) -> Option<f32> {
+pub fn threshold(
+    owner: Option<RootOwner>,
+    obstructed: bool,
+    tuning: &PushbackTuning,
+) -> Option<f32> {
     match owner? {
-        RootOwner::Player | RootOwner::Seated => obstructed.then_some(OBSTRUCTED_M),
-        RootOwner::Authored => Some(AUTHORED_M),
-        RootOwner::Climb => Some(REACH_M),
+        RootOwner::Player | RootOwner::Seated => obstructed.then_some(tuning.obstructed_m),
+        RootOwner::Authored => Some(tuning.authored_m),
+        RootOwner::Climb => Some(tuning.reach_m),
         RootOwner::Game => None,
     }
 }
-
-/// How far past the root the view may go while the player's step drive is obstructed, metres.
-const OBSTRUCTED_M: f32 = 0.10;
-
-/// How far while the animation carries the body and the drive is suspended, metres: only a runaway
-/// gap.
-const AUTHORED_M: f32 = 0.30;
-
-/// How far while climbing, metres: about an arm's-length lean.
-const REACH_M: f32 = 0.45;
-
-/// The smallest gap that counts as obstructed, metres.
-const MIN_GAP_M: f32 = 0.05;
-
-/// The most the view is slid back in one episode, metres; past it the view fades.
-const DEBT_CAP_M: f32 = 0.30;
-
-/// How far past the threshold, with the cap spent, the fade reaches black, metres.
-const FADE_SPAN_M: f32 = 0.15;
-
-/// How long the gap must stay under half the threshold for the episode to end, seconds.
-const RESET_S: f32 = 0.2;
 
 /// How close to the cap the debt counts as spent, metres.
 const CAP_EPSILON_M: f32 = 1e-5;
@@ -268,11 +256,25 @@ mod tests {
 
     #[test]
     fn the_thresholds_follow_the_owner() {
-        assert_eq!(threshold(Some(RootOwner::Player), true), Some(0.10));
+        let tuning = &RIG.get().pushback;
+        let threshold = |owner, obstructed| threshold(owner, obstructed, tuning);
+        assert_eq!(
+            threshold(Some(RootOwner::Player), true),
+            Some(tuning.obstructed_m)
+        );
         assert_eq!(threshold(Some(RootOwner::Player), false), None);
-        assert_eq!(threshold(Some(RootOwner::Authored), false), Some(0.30));
-        assert_eq!(threshold(Some(RootOwner::Climb), false), Some(0.45));
-        assert_eq!(threshold(Some(RootOwner::Seated), true), Some(0.10));
+        assert_eq!(
+            threshold(Some(RootOwner::Authored), false),
+            Some(tuning.authored_m)
+        );
+        assert_eq!(
+            threshold(Some(RootOwner::Climb), false),
+            Some(tuning.reach_m)
+        );
+        assert_eq!(
+            threshold(Some(RootOwner::Seated), true),
+            Some(tuning.obstructed_m)
+        );
         assert_eq!(threshold(Some(RootOwner::Seated), false), None);
         assert_eq!(threshold(Some(RootOwner::Game), true), None);
         assert_eq!(threshold(None, true), None);

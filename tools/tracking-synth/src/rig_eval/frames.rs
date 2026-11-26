@@ -82,7 +82,7 @@ pub(crate) fn run_frames(
                 RecenterCause::Manual | RecenterCause::SeatTransition => true,
             } || recenter.kind == RecenterKind::Full;
             if snaps {
-                rig.recenter(head.eyes, head.orientation);
+                rig.recenter(head.eyes, head.orientation, &options.file.core);
                 if let PelvisDrive::Simulated = run.drive {
                     let neck = body_rig::body::neck_pivot(head.eyes, head.orientation);
                     pelvis = Some(Vec2::new(neck.x, neck.z));
@@ -94,7 +94,9 @@ pub(crate) fn run_frames(
             velocity = Vec2::ZERO;
             // A short spell off the ground (a hop, a stair's bump) keeps the rig where it was; a
             // long one starts it again under the neck.
-            if last_grounded.is_some_and(|at| frame.time_ns.saturating_sub(at) > RESUME_AFTER_NS) {
+            if last_grounded
+                .is_some_and(|at| frame.time_ns.saturating_sub(at) > options.file.resume_after_ns)
+            {
                 pelvis = None;
             }
             continue;
@@ -143,6 +145,7 @@ pub(crate) fn run_frames(
                 dt,
             },
             &tuning,
+            &options.file.core,
         );
         let moved = match run.drive {
             PelvisDrive::Simulated => {
@@ -180,9 +183,6 @@ pub(crate) fn run_frames(
     }
     (rows, summary.finish(), comparison)
 }
-
-/// A spell off the ground longer than this starts the rig again under the neck, nanoseconds.
-const RESUME_AFTER_NS: u64 = 1_000_000_000;
 
 /// The off hand's stick past this deflection moves the body.
 const MOVING_STICK: f32 = 0.2;

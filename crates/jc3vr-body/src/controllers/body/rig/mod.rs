@@ -8,7 +8,8 @@
 //! - [`collision`]: the head-through-geometry probe;
 //! - [`skeleton`] and [`frames`]: Rico's solved skeleton for the body's volumes, and its divergence
 //!   from the player's torso;
-//! - [`visual`]: the grounded rig's in-world diagnostics.
+//! - [`visual`]: the grounded rig's in-world diagnostics;
+//! - [`tuning`]: the rig's tuning file.
 
 pub mod collision;
 pub mod config;
@@ -18,6 +19,7 @@ pub(crate) mod live_observation;
 pub mod root;
 pub mod skeleton;
 pub mod torso;
+pub mod tuning;
 pub(crate) mod visual;
 
 use body_rig::angle::{direction, wrap, yaw_of};
@@ -30,7 +32,7 @@ pub use crate::controllers::body::rig::config::RigConfig;
 use crate::controllers::{
     body::{
         procedural::wings::airborne_torso_heading,
-        rig::torso::{CHEST_LIMIT_DEG, TorsoEstimate},
+        rig::{torso::TorsoEstimate, tuning::RIG},
     },
     hands::reach,
     mode::{self, Mode},
@@ -74,7 +76,7 @@ pub fn torso_turn(character_rotation: Quat) -> Option<f32> {
 
 /// The torso's turn, bounded for the remaining pre-solve IK consumers.
 pub fn chest_turn(character_rotation: Quat) -> Option<f32> {
-    let limit = CHEST_LIMIT_DEG.to_radians();
+    let limit = RIG.get().torso.chest_limit_deg.to_radians();
     let turn = torso_turn(character_rotation).map(|turn| wrap(turn).clamp(-limit, limit));
     *CHEST_TURN.lock() = turn;
     turn

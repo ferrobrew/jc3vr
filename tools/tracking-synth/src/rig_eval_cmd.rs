@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use body_rig::contact::ContactTuning;
 use tracking_synth::rig_eval::{
-    self, EvalOptions, Evaluation, PelvisSource, ReplayOptions, ik::IkEvalOptions,
+    self, EvalOptions, Evaluation, PelvisSource, ReplayOptions, RigFile, ik::IkEvalOptions,
 };
 
 use crate::{
@@ -64,7 +64,12 @@ pub(crate) fn parse(mut args: impl Iterator<Item = String>) -> Result<Command, C
     let recorded_body = height.is_none() && eye_height.is_none();
     let recorded_tuning = tuning.is_none();
     let height = height.unwrap_or(DEFAULT_HEIGHT_M);
-    let mut eval = EvalOptions::new(height, eye_height.unwrap_or(height * DEFAULT_EYE_SHARE));
+    let file = RigFile::load().map_err(CliError::RigFile)?;
+    let mut eval = EvalOptions::new(
+        height,
+        eye_height.unwrap_or(height * DEFAULT_EYE_SHARE),
+        file,
+    );
     if let Some(tuning) = tuning {
         eval.tuning = tuning;
     }
@@ -161,7 +166,7 @@ pub(crate) fn run(request: RigEvalRequest) -> Result<(), CliError> {
         );
     }
     if let (Some(tunings), Some(estimate)) = (ik, estimate.as_ref()) {
-        let mut ik_options = IkEvalOptions::for_body(options.eval.body);
+        let mut ik_options = IkEvalOptions::for_body(options.eval.body, &options.eval.file);
         for (index, contact) in tunings.into_iter().enumerate() {
             ik_options.contact = contact;
             let summary = rig_eval::ik::evaluate_ik(&recording, &ik_options, estimate);

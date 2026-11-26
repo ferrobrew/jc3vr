@@ -14,6 +14,8 @@
 use body_rig::StepPhase;
 use glam::{Quat, Vec2, Vec3};
 
+use crate::controllers::body::rig::tuning::RootTuning;
+
 /// What the frame half publishes for the simulation half.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct StepFrame {
@@ -49,25 +51,23 @@ pub fn to_cockpit(v: Vec2, view: Quat, world_scale: f32) -> Vec3 {
     if flat.is_finite() { flat } else { Vec3::ZERO }
 }
 
-/// The shortest single-tick jump of the body, metres, that counts as a teleport the game made
-/// without announcing it. The threshold also grows with the body's speed ([`is_warp`]).
-pub const WARP_MIN_M: f32 = 8.0;
-
 /// Whether a single-tick body displacement of `distance` metres, at `speed` metres per second over
-/// `dt` seconds, is a teleport rather than movement: further than `min_m`, and further than three
-/// times what the speed covers, so that fast vehicles and dives never trip it.
-pub fn is_warp(distance: f32, speed: f32, dt: f32, min_m: f32) -> bool {
+/// `dt` seconds, is a teleport rather than movement: further than `tuning`'s `warp_min_m`, and
+/// further than its `warp_speed_factor` times what the speed covers, so that fast vehicles and
+/// dives never trip it.
+pub fn is_warp(distance: f32, speed: f32, dt: f32, tuning: &RootTuning) -> bool {
     let travelled = if speed.is_finite() && dt.is_finite() {
-        3.0 * speed.abs() * dt.max(0.0)
+        tuning.warp_speed_factor * speed.abs() * dt.max(0.0)
     } else {
         0.0
     };
-    distance.is_finite() && distance > min_m.max(travelled)
+    distance.is_finite() && distance > tuning.warp_min_m.max(travelled)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::controllers::body::rig::tuning::RIG;
 
     const DT: f32 = 1.0 / 30.0;
 
@@ -93,10 +93,11 @@ mod tests {
 
     #[test]
     fn a_warp_is_far_and_faster_than_the_body_moves() {
-        assert!(!is_warp(0.5, 5.0, DT, 8.0));
-        assert!(is_warp(20.0, 5.0, DT, 8.0));
+        let tuning = &RIG.get().root;
+        assert!(!is_warp(0.5, 5.0, DT, tuning));
+        assert!(is_warp(20.0, 5.0, DT, tuning));
         // A diving wingsuit covers ten metres a tick at 300 m/s.
-        assert!(!is_warp(10.0, 300.0, DT, 8.0));
-        assert!(!is_warp(f32::NAN, 0.0, 0.0, 8.0));
+        assert!(!is_warp(10.0, 300.0, DT, tuning));
+        assert!(!is_warp(f32::NAN, 0.0, 0.0, tuning));
     }
 }

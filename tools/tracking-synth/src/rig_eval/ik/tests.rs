@@ -45,7 +45,11 @@ fn standing_still_in_an_upright_estimate_takes_no_step() {
     let end = recording.frames.last().unwrap().time_ns as f64 / 1.0e9;
     let summary = evaluate_ik(
         &recording,
-        &IkEvalOptions::new(1.8, 1.68),
+        &IkEvalOptions::new(
+            1.8,
+            1.68,
+            &RigFile::load().expect("the rig tuning file reads"),
+        ),
         &upright(end + 1.0),
     );
     assert!(summary.standing_s > end * 0.5, "{summary:?}");
@@ -61,7 +65,11 @@ fn without_an_estimate_the_replay_stands_for_nothing() {
     let recording = synthetic("stand_still");
     let summary = evaluate_ik(
         &recording,
-        &IkEvalOptions::new(1.8, 1.68),
+        &IkEvalOptions::new(
+            1.8,
+            1.68,
+            &RigFile::load().expect("the rig tuning file reads"),
+        ),
         &EstimateTrack::default(),
     );
     assert_eq!(summary.standing_s, 0.0);

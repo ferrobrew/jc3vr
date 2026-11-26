@@ -322,11 +322,7 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
     let seated = matches!(current_mode().mode, Mode::Vehicle(_));
     let head_fade = match probe {
         Some(result) if config.head_fade.enabled && in_gameplay && !seated => {
-            probe::fade_for_depth(
-                result.depth(),
-                probe::HEAD_FADE_START_DEPTH_M,
-                probe::HEAD_FADE_FULL_DEPTH_M,
-            )
+            probe::head_fade(result.depth())
         }
         _ => 0.0,
     };

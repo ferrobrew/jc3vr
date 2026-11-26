@@ -92,6 +92,7 @@ use crate::{
                     shift::{CockpitBasis, CockpitShift},
                     trace::{Jump, ProxyRead, RootTrace, Split, Support, TickInput, Tracer},
                 },
+                tuning::RIG,
             },
         },
         clock::TimeScale,
@@ -231,7 +232,7 @@ pub fn frame(inputs: &FrameInputs) -> FrameOutput {
     let exited = state.last_seat == SeatPhase::Exiting && inputs.seat == SeatPhase::Out;
     state.last_seat = inputs.seat;
     let gap_m = rig.map_or(0.0, |r| r.output.solve.offset.length() * inputs.world_scale);
-    if exited && gap_m >= EXIT_REBASE_M {
+    if exited && gap_m >= RIG.get().root.exit_rebase_m {
         state.shift.rebase_horizontal(inputs.raw);
         state.status.exit_rebases += 1;
         grounded::request_snap();
@@ -455,10 +456,6 @@ fn status_from(frame: &Mutex<FrameState>, sim: &Mutex<Sim>) -> RootStatus {
     RootStatus { frame, sim }
 }
 
-/// The gap at a seat exit past which the head is put back over the body instead of the body
-/// stepping to it, world metres.
-const EXIT_REBASE_M: f32 = 1.0;
-
 /// The fastest the drive and the task together may ask the proxy to move, world metres per second:
 /// a sanity bound, not a tuning.
 const MAX_WANTED_MPS: f32 = 12.0;
@@ -640,7 +637,7 @@ unsafe fn after_locomotion(character: &mut Character, dt: f32) {
     let teleported = headpose::teleport::epoch() != sim.seen_epoch;
     if let (Some(last), false) = (sim.last_position, teleported) {
         let speed = proxy.map_or(0.0, |p| unsafe { velocity(p) }.length());
-        if drive::is_warp((position - last).length(), speed, dt, drive::WARP_MIN_M) {
+        if drive::is_warp((position - last).length(), speed, dt, &RIG.get().root) {
             teleport::record_warp();
         }
     }
@@ -876,7 +873,7 @@ unsafe fn capsule_tick(sim: &mut Sim, character: &mut Character, crouched: bool,
 /// Whether something above the crouched character would stop it standing: a ray up from knee
 /// height to the top of a standing character.
 unsafe fn headroom_blocked(feet: Vec3) -> bool {
-    let from = feet + Vec3::Y * HEADROOM_RAY_START_M;
+    let from = feet + Vec3::Y * RIG.get().root.headroom_ray_start_m;
     let to = feet + Vec3::Y * BodyDimensions::CHARACTER_ESTIMATE.height;
     // SAFETY: the game thread.
     let options = unsafe { CastOptions::ignoring_player(0) };
@@ -886,9 +883,6 @@ unsafe fn headroom_blocked(feet: Vec3) -> bool {
         Ok(Some(_))
     )
 }
-
-/// Where the headroom ray starts above the feet, metres: above a step the character stands on.
-const HEADROOM_RAY_START_M: f32 = 0.5;
 
 unsafe fn velocity(proxy: &PfxCharacterInstance) -> Vec3 {
     let mut out = Vector3 { data: [0.0; 3] };

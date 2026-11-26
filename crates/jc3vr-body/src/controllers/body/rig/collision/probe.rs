@@ -9,8 +9,9 @@
 //! hit drives the comfort fade.
 //!
 //! A single ray through the eye centre lets the head's sides through a corner or a door frame, so
-//! the pair is cast three times, through the eye centre and [`FAN_HALF_WIDTH_M`] to either side of
-//! it across the view, and the deepest hit counts. The fan stands in for a swept sphere.
+//! the pair is cast three times, through the eye centre and the rig tuning's
+//! `probe.fan_half_width_m` to either side of it across the view, and the deepest hit counts. The
+//! fan stands in for a swept sphere.
 //!
 //! The animated head is a poor witness when the clip itself has put it in the world (a wingsuit
 //! flight ending in the ground carries the head and the eyes under the terrain together), so the
@@ -29,9 +30,12 @@ use body_rig::{geometry::cast_segment, smooth::smoothstep_between};
 use glam::Vec3;
 
 use crate::{
-    controllers::aim::{
-        ray::Ray,
-        raycast::{self, CastOptions, RaycastError},
+    controllers::{
+        aim::{
+            ray::Ray,
+            raycast::{self, CastOptions, RaycastError},
+        },
+        body::rig::tuning::RIG,
     },
     tuning::FRESHNESS,
 };
@@ -83,9 +87,10 @@ impl HeadProbe {
     ) -> ProbeResult {
         let right = if right.is_finite() { right } else { Vec3::ZERO };
         let start = self.last_clear.unwrap_or(anchor);
+        let fan_half_width = RIG.get().probe.fan_half_width_m;
         let mut deepest: Option<f32> = None;
         for side in [0.0, 1.0, -1.0] {
-            let offset = right * (side * FAN_HALF_WIDTH_M);
+            let offset = right * (side * fan_half_width);
             let (from, to, anchor) = (start + offset, head + offset, anchor + offset);
             let hit = cast_segment(from, to, &mut cast)
                 .filter(|_| from == anchor || cast_segment(anchor, to, &mut cast).is_some());
@@ -105,20 +110,17 @@ impl HeadProbe {
 }
 
 /// How far below the terrain's surface the eyes are, metres, or `None` when they are above it or
-/// further below than [`TERRAIN_REACH_M`]. `cast` returns the first terrain hit between two points.
+/// further below than the rig tuning's `probe.terrain_reach_m`. `cast` returns the first terrain
+/// hit between two points.
 pub fn below_terrain(eyes: Vec3, mut cast: impl FnMut(Vec3, Vec3) -> Option<Vec3>) -> Option<f32> {
     if !eyes.is_finite() {
         return None;
     }
-    let above = eyes + Vec3::Y * TERRAIN_REACH_M;
+    let above = eyes + Vec3::Y * RIG.get().probe.terrain_reach_m;
     cast(above, eyes)
         .map(|surface| surface.y - eyes.y)
         .filter(|depth| depth.is_finite() && *depth > 0.0)
 }
-
-/// How far above the eyes the terrain check starts, metres: deeper than the full fade, and short
-/// enough that the heightfield over a tunnel or a bunker is never in reach.
-pub const TERRAIN_REACH_M: f32 = 1.0;
 
 /// The deeper of a scene probe's result and a terrain check's depth.
 pub fn with_terrain(result: ProbeResult, terrain: Option<f32>) -> ProbeResult {
@@ -140,11 +142,12 @@ pub unsafe fn terrain_cast(from: Vec3, to: Vec3) -> Result<Option<Vec3>, Raycast
     unsafe { raycast::cast_terrain(&ray, (to - from).length()) }
 }
 
-/// How deep, metres, past the obstruction the head may go before the view starts to darken.
-pub const HEAD_FADE_START_DEPTH_M: f32 = 0.05;
-
-/// How deep, metres, past the obstruction the view is fully dark.
-pub const HEAD_FADE_FULL_DEPTH_M: f32 = 0.25;
+/// The head fade for a head `depth` metres into geometry, between the rig tuning's
+/// `probe.head_fade_start_m` and `probe.head_fade_full_m`.
+pub fn head_fade(depth: f32) -> f32 {
+    let probe = &RIG.get().probe;
+    fade_for_depth(depth, probe.head_fade_start_m, probe.head_fade_full_m)
+}
 
 /// The fade for a head `depth` metres into geometry: clear up to `start_m`, black from `full_m`,
 /// smooth between.
@@ -181,10 +184,6 @@ pub unsafe fn scene_cast(
     };
     Ok(unsafe { raycast::cast(&ray, (to - from).length(), options) }?.map(|hit| hit.position))
 }
-
-/// How far to either side of the eye centre the outer rays of the fan run, metres: about the
-/// head's half-width.
-pub const FAN_HALF_WIDTH_M: f32 = 0.08;
 
 #[cfg(test)]
 mod tests {
@@ -275,7 +274,10 @@ mod tests {
         let depth = below_terrain(Vec3::new(3.0, -0.3, 1.0), ground).unwrap();
         assert!((depth - 0.3).abs() < 1e-5, "{depth}");
         assert_eq!(
-            below_terrain(Vec3::new(0.0, -TERRAIN_REACH_M - 0.5, 0.0), ground),
+            below_terrain(
+                Vec3::new(0.0, -RIG.get().probe.terrain_reach_m - 0.5, 0.0),
+                ground,
+            ),
             None
         );
         assert_eq!(

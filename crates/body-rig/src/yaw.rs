@@ -20,7 +20,7 @@ use glam::{Vec2, Vec3};
 
 use crate::{
     angle::{wrap, yaw_of_flat},
-    estimate::{BodyEstimate, EstimateFollow, EstimateTuning, TURNING_DEG_S, blend_legs},
+    estimate::{BodyEstimate, EstimateFollow, EstimateTuning, blend_legs},
     smooth::critically_damped,
 };
 
@@ -73,7 +73,7 @@ pub struct YawTuning {
     /// as a share of the angle between them.
     pub hand_bias: f32,
     /// How far out from the neck a hand must be held to count at all, metres; it counts fully a
-    /// further [`HAND_FULL_M`] out.
+    /// further [`YawFileTuning::hand_full_m`] out.
     pub hand_min_m: f32,
     /// How the learned body estimate drives the legs and pulls the chest, where it runs.
     pub estimate: EstimateTuning,
@@ -110,8 +110,20 @@ impl Default for YawTuning {
     }
 }
 
-/// How much further out than [`YawTuning::hand_min_m`] the hands must be to count fully, metres.
-pub const HAND_FULL_M: f32 = 0.25;
+/// The yaw's tuning from the file, beside the settings' [`YawTuning`].
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Deserialize),
+    serde(deny_unknown_fields)
+)]
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct YawFileTuning {
+    /// How much further out than [`YawTuning::hand_min_m`] the hands must be to count fully,
+    /// metres.
+    pub hand_full_m: f32,
+    /// The legs above this turn rate under the estimate count as turning, degrees per second.
+    pub turning_deg_s: f32,
+}
 
 /// The hands' pull on the chest.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -128,6 +140,7 @@ pub fn hands_heading(
     neck: Vec3,
     hands: &[Option<Vec3>; 2],
     tuning: &YawTuning,
+    file: &YawFileTuning,
 ) -> Option<HandsHeading> {
     let (sum, count) = hands
         .iter()
@@ -142,7 +155,7 @@ pub fn hands_heading(
     }
     let mean = sum / count as f32;
     let out = mean.length();
-    let weight = ((out - tuning.hand_min_m) / HAND_FULL_M).clamp(0.0, 1.0);
+    let weight = ((out - tuning.hand_min_m) / file.hand_full_m).clamp(0.0, 1.0);
     let yaw = yaw_of_flat(mean)?;
     (weight > 0.0).then_some(HandsHeading { yaw, weight })
 }
@@ -298,9 +311,10 @@ impl YawFollow {
         self.estimate.rotate(turn);
     }
 
-    /// Advance one frame and return the legs' heading.
+    /// Advance one frame and return the legs' heading, for a follower that is never handed an
+    /// estimate.
     pub fn update(&mut self, input: &YawInput, tuning: &YawTuning) -> f32 {
-        self.update_with(input, None, false, tuning)
+        self.advance(input, None, false, tuning, 0.0)
     }
 
     /// Advance one frame with the learned body estimate `estimate`, absent when the estimator does
@@ -313,6 +327,20 @@ impl YawFollow {
         estimate: Option<&BodyEstimate>,
         stick: bool,
         tuning: &YawTuning,
+        file: &YawFileTuning,
+    ) -> f32 {
+        self.advance(input, estimate, stick, tuning, file.turning_deg_s)
+    }
+
+    /// [`update_with`](Self::update_with), with the legs counting as turning under the estimate
+    /// above `turning_deg_s`.
+    fn advance(
+        &mut self,
+        input: &YawInput,
+        estimate: Option<&BodyEstimate>,
+        stick: bool,
+        tuning: &YawTuning,
+        turning_deg_s: f32,
     ) -> f32 {
         if !input.head_yaw.is_finite() {
             return self.yaw.unwrap_or(0.0);
@@ -339,7 +367,7 @@ impl YawFollow {
                 &tuning.estimate,
             );
             self.estimate_turning =
-                wrap(step.legs - yaw).abs() > TURNING_DEG_S.to_radians() * dt && dt > 0.0;
+                wrap(step.legs - yaw).abs() > turning_deg_s.to_radians() * dt && dt > 0.0;
             blend_legs(yaw, by_head, step.legs, step.weight)
         } else {
             self.estimate_turning = false;
@@ -513,6 +541,7 @@ mod tests {
     use proptest::prelude::*;
 
     use super::*;
+    use crate::tuning::shipped;
 
     const TUNING: YawTuning = YawTuning::new();
     const DT: f32 = 1.0 / 90.0;
@@ -796,7 +825,7 @@ mod tests {
             Some(Vec3::new(-0.6, 1.3, -0.1)),
             Some(Vec3::new(-0.55, 1.3, 0.05)),
         ];
-        let heading = hands_heading(neck, &hands, &TUNING).unwrap();
+        let heading = hands_heading(neck, &hands, &TUNING, &shipped().yaw).unwrap();
         assert!(heading.yaw > 1.3 && heading.weight > 0.9);
         let mut follow = YawFollow::new();
         follow.update(&look(0.0), &TUNING);
@@ -810,7 +839,7 @@ mod tests {
             Some(Vec3::new(-0.2, 0.9, 0.0)),
             Some(Vec3::new(0.2, 0.9, 0.0)),
         ];
-        assert_eq!(hands_heading(neck, &down, &TUNING), None);
+        assert_eq!(hands_heading(neck, &down, &TUNING, &shipped().yaw), None);
     }
 
     #[test]

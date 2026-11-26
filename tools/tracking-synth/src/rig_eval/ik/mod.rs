@@ -23,8 +23,9 @@ use body_rig::{
     PlayerBody, angle,
     body::neck_pivot,
     contact::{
-        ContactEvent, ContactFrame, ContactTuning, FootContacts, FootPose, FootTarget, Ground,
-        Probe, Side, Stance, SupportFrame, SupportId, Surroundings, stance_spot,
+        ContactEvent, ContactFileTuning, ContactFrame, ContactTuning, FootContacts, FootPose,
+        FootTarget, Ground, Probe, Side, Stance, SupportFrame, SupportId, Surroundings,
+        stance_spot,
     },
     fk::{ANKLE_HEIGHT_M, BodyRotations, FkFollower, FkFrame, FkSkeleton, FkTuning, PelvisSource},
 };
@@ -36,6 +37,7 @@ use tracking_format::{
 
 pub use crate::rig_eval::ik::stats::{IkSummary, RELEASES};
 use crate::rig_eval::{
+    RigFile,
     estimate::EstimateTrack,
     frames::{body_cases, grounded, head_pose, stick_moving},
     ik::stats::IkAccumulator,
@@ -46,6 +48,8 @@ use crate::rig_eval::{
 pub struct IkEvalOptions {
     pub body: PlayerBody,
     pub contact: ContactTuning,
+    /// The contact model's tuning from the rig's tuning file.
+    pub contact_file: ContactFileTuning,
     pub fk: FkTuning,
     /// The stance a step lands in: the square stance's defaults.
     pub stance: Stance,
@@ -54,16 +58,18 @@ pub struct IkEvalOptions {
 }
 
 impl IkEvalOptions {
-    /// The defaults for a player `height` tall with the eyes at `eye_height`.
-    pub fn new(height: f32, eye_height: f32) -> Self {
-        Self::for_body(PlayerBody::from_heights(height, eye_height))
+    /// The defaults for a player `height` tall with the eyes at `eye_height`, with the tuning
+    /// file's `file`.
+    pub fn new(height: f32, eye_height: f32, file: &RigFile) -> Self {
+        Self::for_body(PlayerBody::from_heights(height, eye_height), file)
     }
 
-    /// The defaults for the player `body`.
-    pub fn for_body(body: PlayerBody) -> Self {
+    /// The defaults for the player `body`, with the tuning file's `file`.
+    pub fn for_body(body: PlayerBody, file: &RigFile) -> Self {
         Self {
             body,
             contact: ContactTuning::new(),
+            contact_file: file.core.contact,
             fk: FkTuning::new(),
             stance: DEFAULT_STANCE,
             max_pelvis_drop_m: DEFAULT_MAX_PELVIS_DROP_M,
@@ -168,7 +174,12 @@ pub fn evaluate_ik(
                 yaw,
             }
         });
-        let out = contacts.update(&contact_frame, &mut FlatFloor, &options.contact);
+        let out = contacts.update(
+            &contact_frame,
+            &mut FlatFloor,
+            &options.contact,
+            &options.contact_file,
+        );
         for event in &out.events {
             if let ContactEvent::Released { reason, .. } = event {
                 stats.step(time_s, *reason);

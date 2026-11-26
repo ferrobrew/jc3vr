@@ -17,6 +17,8 @@
 //! - [`brace`]: the IK body's feet braced on the face while the hands climb.
 //! - [`ik_weight`]: the IK body's weight per state and channel, and its blend.
 //! - [`rig`]: all of them advanced together.
+//! - [`tuning`]: the tuning of all of them that the player's settings do not hold, which the body
+//!   crate's `tuning/rig.toml` gives.
 //!
 //! [`angle`], [`rotation`], [`geometry`], and [`smooth`] hold the heading, rotation, geometry, and
 //! smoothing primitives the payload shares.
@@ -38,6 +40,7 @@ pub mod rig;
 pub mod rotation;
 pub mod smooth;
 pub mod step;
+pub mod tuning;
 pub mod yaw;
 
 pub use crate::{
@@ -46,5 +49,6 @@ pub use crate::{
     pelvis::{Bend, PelvisSolve, PelvisTuning},
     rig::{GroundedRig, RigFrame, RigOutput, RigTuning},
     step::{StepPhase, StepTuning, drive_velocity},
+    tuning::CoreTuning,
     yaw::{TurnCause, YawTuning},
 };

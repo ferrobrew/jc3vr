@@ -112,9 +112,6 @@ impl Default for EstimateTuning {
     }
 }
 
-/// The legs above this turn rate under the estimate count as turning, degrees per second.
-pub const TURNING_DEG_S: f32 = 20.0;
-
 /// The estimate's state in the yaw.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct EstimateFollow {
@@ -294,7 +291,10 @@ mod tests {
     use proptest::prelude::*;
 
     use super::*;
-    use crate::yaw::{YawFollow, YawInput, YawTuning};
+    use crate::{
+        tuning::shipped,
+        yaw::{YawFollow, YawInput, YawTuning},
+    };
 
     const TUNING: YawTuning = YawTuning::new();
     const DT: f32 = 1.0 / 90.0;
@@ -328,7 +328,13 @@ mod tests {
             .map(|i| {
                 let (head, estimate) = at(i as f32 * DT);
                 follow
-                    .update_with(&look(head), estimate.as_ref(), false, &TUNING)
+                    .update_with(
+                        &look(head),
+                        estimate.as_ref(),
+                        false,
+                        &TUNING,
+                        &shipped().yaw,
+                    )
                     .to_degrees()
             })
             .collect()
@@ -416,15 +422,15 @@ mod tests {
         follow.snap(0.0);
         let mut half = estimate(0.0, 0.0);
         half.confidence = 0.5;
-        follow.update_with(&look(0.0), Some(&half), false, &TUNING);
+        follow.update_with(&look(0.0), Some(&half), false, &TUNING, &shipped().yaw);
         let first = follow.estimate().weight();
         assert!(first > 0.0 && first < 0.5 * DT / TUNING.estimate.blend_s + 1e-6);
         for _ in 0..200 {
-            follow.update_with(&look(0.0), Some(&half), false, &TUNING);
+            follow.update_with(&look(0.0), Some(&half), false, &TUNING, &shipped().yaw);
         }
         assert!((follow.estimate().weight() - 0.5).abs() < 1e-5);
         for _ in 0..200 {
-            follow.update_with(&look(0.0), Some(&half), true, &TUNING);
+            follow.update_with(&look(0.0), Some(&half), true, &TUNING, &shipped().yaw);
         }
         assert_eq!(follow.estimate().weight(), 0.0);
     }
@@ -470,7 +476,7 @@ mod tests {
                     ..look(head)
                 };
                 let a = plain.update(&input, &TUNING);
-                let b = with.update_with(&input, None, moving, &TUNING);
+                let b = with.update_with(&input, None, moving, &TUNING, &shipped().yaw);
                 prop_assert_eq!(a.to_bits(), b.to_bits());
                 prop_assert_eq!(plain.chest().map(f32::to_bits), with.chest().map(f32::to_bits));
                 prop_assert_eq!(plain.turn_cause(), with.turn_cause());

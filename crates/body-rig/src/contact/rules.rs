@@ -4,7 +4,7 @@ use glam::{Vec2, Vec3};
 
 use crate::{
     angle::{forward, wrap},
-    contact::{ContactFrame, ContactTuning, FootPose, Release, Side, off_stance},
+    contact::{ContactFrame, FootPose, Release, Rules, Side, off_stance},
 };
 
 /// What the rules found this frame.
@@ -31,8 +31,9 @@ pub(crate) fn needs(
     twist_held: &mut f32,
     tidy_held: &mut [f32; 2],
     dt: f32,
-    tuning: &ContactTuning,
+    rules: Rules,
 ) -> Need {
+    let tuning = rules.tuning;
     let mut need = Need::default();
     let both = planted[0].is_some() && planted[1].is_some();
     let off = |side: Side| {
@@ -63,7 +64,11 @@ pub(crate) fn needs(
     }
 
     if both {
-        let points = support_points(planted.iter().flatten().copied(), tuning.foot_m);
+        let points = support_points(
+            planted.iter().flatten().copied(),
+            tuning.foot_m,
+            rules.file.heel_m,
+        );
         let neck = Vec2::new(frame.neck.x, frame.neck.z);
         let pelvis = Vec2::new(frame.pelvis.x, frame.pelvis.z);
         let com = pelvis.lerp(neck, tuning.com_neck_share.clamp(0.0, 1.0));
@@ -137,14 +142,18 @@ pub(crate) fn needs(
     need
 }
 
-/// The support polygon's points of the feet `feet`, `(x, z)`: each foot's heel, a little behind
+/// The support polygon's points of the feet `feet`, `(x, z)`: each foot's heel, `heel_m` behind
 /// the ankle, and its toe, `foot_m` ahead of it along its heading.
-pub fn support_points(feet: impl IntoIterator<Item = FootPose>, foot_m: f32) -> Vec<Vec2> {
+pub fn support_points(
+    feet: impl IntoIterator<Item = FootPose>,
+    foot_m: f32,
+    heel_m: f32,
+) -> Vec<Vec2> {
     feet.into_iter()
         .flat_map(|foot| {
             let ahead = forward(foot.yaw);
             [
-                foot.flat() - ahead * HEEL_M,
+                foot.flat() - ahead * heel_m.max(0.0),
                 foot.flat() + ahead * foot_m.max(0.0),
             ]
         })
@@ -178,9 +187,6 @@ pub fn outside_support(point: Vec2, points: &[Vec2]) -> f32 {
         }
     }
 }
-
-/// How far behind the ankle the heel reaches, metres: a generic anthropometric figure.
-const HEEL_M: f32 = 0.05;
 
 /// Give `side` the reason `reason` unless it already has a stronger one.
 fn want(reasons: &mut [Option<Release>; 2], side: Side, reason: Release) {
@@ -287,7 +293,7 @@ mod tests {
                 yaw: 0.0,
             },
         ];
-        let points = support_points(feet, 0.18);
+        let points = support_points(feet, 0.18, 0.05);
         assert_eq!(points.len(), 4);
         // Between the ankles, a little ahead: inside.
         assert_eq!(outside_support(Vec2::new(0.0, -0.05), &points), 0.0);

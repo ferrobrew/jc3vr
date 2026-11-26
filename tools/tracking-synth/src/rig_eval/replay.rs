@@ -5,15 +5,15 @@
 //! What the payload does to its rig between frames is taken from the recording: a recenter turns
 //! the rig with the cockpit frame (the frames' recenters), a recenter's snap faces the head before
 //! the frame that carries it (`snapped_to`), and a gap between rig frames is a spell off the ground,
-//! which stops any step, and past [`RESUME_AFTER_NS`] forgets the heading as the payload does. A
-//! teleport's forget leaves no trace in the recording.
+//! which stops any step, and past the tuning file's restart ([`RigFile::resume_after_ns`]) forgets
+//! the heading as the payload does. A teleport's forget leaves no trace in the recording.
 
 use body_rig::{GroundedRig, RigFrame, angle};
 use glam::{Vec2, Vec3};
 use tracking_format::{Frame, Recording, event::EventKind};
 
 use crate::rig_eval::{
-    ComparedRow, EvalRow, EvalSummary, VideoClock,
+    ComparedRow, EvalRow, EvalSummary, RigFile, VideoClock,
     compare::{ComparisonAccumulator, RecordedOutput},
     config::ConfigResolver,
     estimate::EstimateTrack,
@@ -24,6 +24,7 @@ use crate::rig_eval::{
 pub(crate) fn run_recorded(
     recording: &Recording,
     configs: &ConfigResolver,
+    file: &RigFile,
     clock: Option<&VideoClock>,
     estimate: Option<&EstimateTrack>,
 ) -> (Vec<ComparedRow>, EvalSummary, ComparisonAccumulator) {
@@ -53,14 +54,14 @@ pub(crate) fn run_recorded(
         let (body, tuning) = configs.at(time_ns);
         rig.set_body(body);
         let gap = last.map(|(at, _)| time_ns.saturating_sub(at));
-        if gap.is_some_and(|gap| gap > RESUME_AFTER_NS) {
+        if gap.is_some_and(|gap| gap > file.resume_after_ns) {
             rig.forget();
         } else if gap.is_some_and(|gap| gap > OFF_GROUND_NS) {
             rig.stand();
         }
         let input = &sample.input;
         if sample.snapped_to.is_some() {
-            rig.recenter(input.eyes, input.head);
+            rig.recenter(input.eyes, input.head, &file.core);
         }
         let estimate = estimate.and_then(|track| track.at(time_ns, turned, &tuning.yaw.estimate));
         let output = rig.update(
@@ -77,6 +78,7 @@ pub(crate) fn run_recorded(
                 dt: input.dt_s,
             },
             &tuning,
+            &file.core,
         );
         let speed_mps = match (last, gap) {
             (Some((_, pelvis)), Some(gap)) if gap > 0 && gap <= OFF_GROUND_NS => {
@@ -119,7 +121,3 @@ pub(crate) fn run_recorded(
 /// A gap between rig frames longer than this was a spell off the ground, nanoseconds: longer than
 /// any rendered frame.
 const OFF_GROUND_NS: u64 = 200_000_000;
-
-/// A spell off the ground longer than this forgets the body's heading, nanoseconds, as the
-/// payload's rig resumes.
-const RESUME_AFTER_NS: u64 = 1_000_000_000;

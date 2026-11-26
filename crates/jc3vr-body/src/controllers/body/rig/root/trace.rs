@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 
 use glam::{Vec2, Vec3};
 
-use crate::tuning::FRESHNESS;
+use crate::{controllers::body::rig::tuning::RIG, tuning::FRESHNESS};
 
 /// The wanted horizontal velocity at each stage of a tick, world `(x, z)` metres per second, and
 /// the full wanted velocity the tick left.
@@ -207,10 +207,6 @@ pub struct TickInput {
     pub capsule_blocked: bool,
 }
 
-/// How far the root may move beyond what the wanted velocity explains in a tick before the move
-/// counts as a jump, metres: above a stair's pop and the proxy's own settling.
-pub const JUMP_M: f32 = 0.04;
-
 /// How often a jump is logged at most.
 pub const LOG_INTERVAL: Duration = Duration::from_millis(500);
 
@@ -235,7 +231,8 @@ impl Accounting {
     /// Whether the root went further than the wanted velocity explains. A move that falls short
     /// (a wall, a slope the proxy will not climb) is the proxy doing its job, not a jump.
     fn jumped(&self) -> bool {
-        self.moved.length() - self.expected.length() > JUMP_M && self.unexplained_m() > JUMP_M
+        let jump_m = RIG.get().trace.jump_m;
+        self.moved.length() - self.expected.length() > jump_m && self.unexplained_m() > jump_m
     }
 }
 
@@ -315,7 +312,7 @@ mod tests {
         tracer.step(input(Vec3::ZERO, wanted), now);
         let (trace, jump) = tracer.step(input(Vec3::ZERO, wanted), now);
         assert_eq!(jump, None);
-        assert!(trace.unexplained_m > JUMP_M);
+        assert!(trace.unexplained_m > RIG.get().trace.jump_m);
         assert_eq!(trace.jumps, 0);
     }
 

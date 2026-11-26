@@ -244,7 +244,7 @@ mod tests {
 
     use super::*;
     use crate::controllers::body::{
-        BodyDimensions, procedural::head::head_bone_target, rig::torso::HIP_SPACING_FRACTION,
+        BodyDimensions, procedural::head::head_bone_target, rig::tuning::RIG,
     };
 
     fn deg(d: f32) -> f32 {
@@ -258,7 +258,7 @@ mod tests {
         let chest = neck - Vec3::Y * (dims.eye_height + EYES_TO_NECK.y - dims.shoulder_height);
         let pelvis = chest - Vec3::Y * 0.5;
         let half = Vec3::X * dims.shoulder_width * 0.5;
-        let hip = half * HIP_SPACING_FRACTION;
+        let hip = half * RIG.get().torso.hip_spacing_share;
         TorsoEstimate {
             yaw: 0.0,
             head_yaw: 0.0,

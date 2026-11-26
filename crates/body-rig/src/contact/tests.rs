@@ -4,7 +4,7 @@ use glam::{Quat, Vec2, Vec3};
 use proptest::prelude::*;
 
 use super::*;
-use crate::angle::yaw_of;
+use crate::{angle::yaw_of, tuning::shipped};
 
 const DT: f32 = 1.0 / 60.0;
 const TUNING: ContactTuning = ContactTuning::new();
@@ -15,6 +15,10 @@ const HIP_DROP_M: f32 = 0.09;
 /// The pelvis's height that stands the legs straight over ankles on the floor.
 const STANDING_M: f32 = ANKLE_M + LEG_M + HIP_DROP_M;
 const PLATFORM: SupportId = SupportId(7);
+
+fn file() -> &'static ContactFileTuning {
+    &shipped().contact
+}
 
 /// Flat ground at zero; past `ledge_x` (if any) there is none; a platform support moves.
 #[derive(Default)]
@@ -118,7 +122,7 @@ fn run(
     let mut last: Option<ContactOutput> = None;
     let mut handover = None;
     for i in 0..(seconds / DT).round() as usize {
-        let out = contacts.update(&at(i as f32 * DT), world, &TUNING);
+        let out = contacts.update(&at(i as f32 * DT), world, &TUNING, file());
         let swinging = out
             .feet
             .iter()
@@ -294,7 +298,7 @@ fn walking_away_hands_over_to_the_walk_and_drops_the_contacts() {
     assert!(out.planted() <= 2);
     let mut after = FootContacts::new();
     let mut world = World::default();
-    let first = after.update(&standing_at(0.0, 0.0, 0.0), &mut world, &TUNING);
+    let first = after.update(&standing_at(0.0, 0.0, 0.0), &mut world, &TUNING, file());
     assert_eq!(first.planted(), 2);
 }
 
@@ -361,18 +365,18 @@ fn a_moving_support_carries_its_planted_foot() {
         ..World::default()
     };
     let up = |x: f32| frame(Vec3::new(x, STANDING_M + 0.5, 0.0), 0.0);
-    let first = contacts.update(&up(0.0), &mut world, &TUNING);
+    let first = contacts.update(&up(0.0), &mut world, &TUNING, file());
     // The animated feet stand on the floor's height; acquired, they are on the platform's.
     let left = first.feet[0].pose().unwrap();
     assert!((left.ankle.y - (0.5 + ANKLE_M)).abs() < 1e-5);
     world.platform.as_mut().unwrap().translation.x += 0.05;
-    let moved = contacts.update(&up(0.05), &mut world, &TUNING);
+    let moved = contacts.update(&up(0.05), &mut world, &TUNING, file());
     let carried = moved.feet[0].pose().unwrap();
     assert!((carried.ankle.x - left.ankle.x - 0.05).abs() < 1e-5);
     // The platform leaves: its feet are lost.
     world.platform = None;
     world.on_platform = false;
-    let gone = contacts.update(&up(0.05), &mut world, &TUNING);
+    let gone = contacts.update(&up(0.05), &mut world, &TUNING, file());
     assert!(
         gone.events
             .iter()
@@ -432,7 +436,7 @@ fn a_reset_drops_the_contacts_and_they_are_acquired_where_the_feet_stand() {
     });
     contacts.reset();
     assert!(matches!(contacts.state(Side::Left), FootState::Unsupported));
-    let out = contacts.update(&standing_at(2.0, 0.0, 0.0), &mut world, &TUNING);
+    let out = contacts.update(&standing_at(2.0, 0.0, 0.0), &mut world, &TUNING, file());
     assert_eq!(out.planted(), 2);
     assert!(
         out.events
@@ -465,7 +469,7 @@ fn a_player_standing_tall_is_kept_in_reach_by_the_reach_drop() {
             .flat_map(|i| {
                 released(
                     &contacts
-                        .update(&raised(i as f32 * DT), &mut world, &tuning)
+                        .update(&raised(i as f32 * DT), &mut world, &tuning, file())
                         .events,
                 )
             })
@@ -487,7 +491,7 @@ fn a_step_too_long_hands_over() {
     // be a walk's speed.
     let mut hitch = standing_at(0.0, -0.9, 0.0);
     hitch.dt = 2.0;
-    let out = contacts.update(&hitch, &mut world, &TUNING);
+    let out = contacts.update(&hitch, &mut world, &TUNING, file());
     assert_eq!(out.handover, Some(Handover::StepTooLong));
     assert_eq!(out.planted(), 0);
 }
@@ -541,7 +545,7 @@ fn ride(
             animated: local.animated.map(|foot| on.to_model(foot)),
             ..local
         };
-        let out = contacts.update(&carried, world, &TUNING);
+        let out = contacts.update(&carried, world, &TUNING, file());
         if let Some(previous) = &last {
             let before = deck(t - DT);
             for side in Side::BOTH {

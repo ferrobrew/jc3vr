@@ -35,7 +35,7 @@ use crate::{
     controllers::{
         body::{
             BodyDimensions,
-            rig::torso::{HIP_SPACING_FRACTION, TorsoEstimate},
+            rig::{torso::TorsoEstimate, tuning::RIG},
         },
         intent::hold::Desired,
         locomotion::axis_output::{read_move, write_move},
@@ -91,16 +91,16 @@ pub struct GroundedFrame {
 
 /// Advance the rig by one frame. `None` while Rico is not grounded.
 pub fn frame(input: &GroundedInput) -> Option<GroundedFrame> {
+    let tuning = RIG.get();
     let mut state = STATE.lock();
     state.rig.set_body(player_body(&input.dimensions));
     let snap = std::mem::take(&mut state.snap)
         .filter(|at| input.now.saturating_duration_since(*at) <= SNAP_WAIT);
     if !input.grounded {
         state.rig.stand();
-        if state
-            .grounded_at
-            .is_none_or(|at| input.now.saturating_duration_since(at) > RESUME_AFTER)
-        {
+        if state.grounded_at.is_none_or(|at| {
+            input.now.saturating_duration_since(at) > tuning.grounded.resume_after_ms.duration()
+        }) {
             state.rig.forget();
         }
         state.latest = None;
@@ -111,7 +111,7 @@ pub fn frame(input: &GroundedInput) -> Option<GroundedFrame> {
     }
     state.grounded_at = Some(input.now);
     let snap_to = if snap.is_some() {
-        state.rig.recenter(input.eyes, input.head);
+        state.rig.recenter(input.eyes, input.head, &tuning.core);
         state.snaps += 1;
         let yaw = state.rig.body_yaw().unwrap_or(0.0);
         let neck = body_rig::body::neck_pivot(input.eyes, input.head);
@@ -139,7 +139,7 @@ pub fn frame(input: &GroundedInput) -> Option<GroundedFrame> {
         ik_pelvis: input.ik_pelvis.filter(|_| snap_to.is_none()),
         dt: input.dt,
     };
-    let output = state.rig.update(&rig_frame, &input.tuning);
+    let output = state.rig.update(&rig_frame, &input.tuning, &tuning.core);
     note_rig(RigRun {
         frame: &rig_frame,
         output: &output,
@@ -199,9 +199,9 @@ pub fn forget() {
 
 /// Add a committed step's walk to the move stick the tables wrote this tick, so the game's
 /// animation walks Rico while the step drive moves him, and publish what was added for the stick
-/// locomotion to take back out of its velocity ([`step_stick`]). The walk pushes the stick
-/// [`WALK_STICK`] of the way, in the frame of the head's heading, as the stick locomotion reads the
-/// stick.
+/// locomotion to take back out of its velocity ([`step_stick`]). The walk pushes the stick the rig
+/// tuning's `grounded.walk_stick` of the way, in the frame of the head's heading, as the stick
+/// locomotion reads the stick.
 pub fn add_step_walk(desired: &mut Vec<Desired>) {
     let now = Instant::now();
     let walk = fresh(now)
@@ -251,7 +251,7 @@ pub fn torso() -> Option<TorsoEstimate> {
     };
     let (shoulder_side, hip_side) = (across(output.chest_yaw), across(output.body_yaw));
     let half = d.shoulder_width * 0.5;
-    let hip_half = half * HIP_SPACING_FRACTION;
+    let hip_half = half * RIG.get().torso.hip_spacing_share;
     let head_yaw = head_heading(published.head).unwrap_or(output.chest_yaw);
     Some(TorsoEstimate {
         yaw: output.chest_yaw,
@@ -324,30 +324,22 @@ pub fn status() -> GroundedStatus {
 /// committed and far enough from arriving that the drive walks rather than shuffles.
 fn walk_for(published: &Published) -> Option<Vec2> {
     let output = published.frame.output;
-    if output.phase != StepPhase::Stepping || output.gap.length() < WALK_GAP_M {
+    let tuning = &RIG.get().grounded;
+    if output.phase != StepPhase::Stepping || output.gap.length() < tuning.walk_gap_m {
         return None;
     }
     let direction = output.gap.try_normalize()?;
     let yaw = head_heading(published.head)?;
-    let walk = Vec2::new(direction.dot(right(yaw)), direction.dot(forward(yaw))) * WALK_STICK;
+    let walk =
+        Vec2::new(direction.dot(right(yaw)), direction.dot(forward(yaw))) * tuning.walk_stick;
     walk.is_finite().then_some(walk)
 }
-
-/// How far a committed step pushes the move stick for the game's animation, `0..=1`: a walk. The
-/// velocity is the drive's whatever this is; it only picks the clip.
-const WALK_STICK: f32 = 0.45;
-
-/// A step closer than this to arriving shuffles under the drive rather than walking, metres.
-const WALK_GAP_M: f32 = 0.08;
 
 /// The walk last added to the move stick, and when.
 static STEP_STICK: Mutex<Option<(Vec2, Instant)>> = Mutex::new(None);
 
 /// How long a snap waits for Rico to be grounded before it expires.
 const SNAP_WAIT: Duration = Duration::from_secs(1);
-
-/// A spell off the ground longer than this starts the rig again facing the head.
-const RESUME_AFTER: Duration = Duration::from_secs(1);
 
 /// The player's body as the pure core measures it.
 fn player_body(dimensions: &BodyDimensions) -> PlayerBody {
@@ -451,13 +443,13 @@ mod tests {
         let head = Quat::from_rotation_y(std::f32::consts::FRAC_PI_2);
         let walk = walk_for(&published(StepPhase::Stepping, Vec2::new(-0.3, 0.0), head)).unwrap();
         assert!(
-            (walk - Vec2::new(0.0, WALK_STICK)).length() < 1e-5,
+            (walk - Vec2::new(0.0, RIG.get().grounded.walk_stick)).length() < 1e-5,
             "{walk}"
         );
         // A gap to the head's right is a strafe right.
         let right = walk_for(&published(StepPhase::Stepping, Vec2::new(0.0, -0.3), head)).unwrap();
         assert!(
-            (right - Vec2::new(WALK_STICK, 0.0)).length() < 1e-5,
+            (right - Vec2::new(RIG.get().grounded.walk_stick, 0.0)).length() < 1e-5,
             "{right}"
         );
     }

@@ -42,7 +42,7 @@ use crate::controllers::{
             solver::pose::RigPose,
             tuning::PROCEDURAL,
         },
-        rig::grounded,
+        rig::{grounded, tuning::RIG},
     },
     locomotion::LocomotionStatus,
     scheme,
@@ -397,6 +397,7 @@ impl GateState {
             &frame,
             &mut GameWorld { now: input.now },
             &input.config.contact,
+            &RIG.get().core.contact,
         );
         let mut stepped = 0;
         for event in &out.events {

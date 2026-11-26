@@ -2,6 +2,7 @@
 //! (`docs/mod/tuning.md`). A file added to a crate's `tuning/` directory is listed here; the test
 //! below fails until it is.
 
+use jc3vr_body::controllers::body::rig::tuning::RIG;
 use jc3vr_body::controllers::hands::tuning::HANDS;
 use jc3vr_body::controllers::intent::tuning::CONTROLS;
 use jc3vr_body::controllers::locomotion::tuning::LOCOMOTION;
@@ -60,6 +61,7 @@ static FILES: &[&dyn AnyTuningFile] = &[
     &CHARACTER,
     &INPUT_HOOKS,
     &HANDS,
+    &RIG,
 ];
 
 #[cfg(test)]

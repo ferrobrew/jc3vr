@@ -299,6 +299,31 @@ impl Default for ContactTuning {
     }
 }
 
+/// The contact model's tuning from the file, beside the settings' [`ContactTuning`].
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Deserialize),
+    serde(deny_unknown_fields)
+)]
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct ContactFileTuning {
+    /// The smoothing time of the pelvis's velocity, seconds.
+    pub velocity_smoothing_s: f32,
+    /// How far behind the ankle the heel reaches, for the support polygon, metres: a generic
+    /// anthropometric figure.
+    pub heel_m: f32,
+    /// The share of the tidy's distance or angle past which the other foot steps at once after
+    /// one lands.
+    pub follow_up_share: f32,
+}
+
+/// The settings' and the file's tuning together, as the rules read them.
+#[derive(Debug, Copy, Clone)]
+pub(crate) struct Rules<'a> {
+    pub tuning: &'a ContactTuning,
+    pub file: &'a ContactFileTuning,
+}
+
 /// One frame's inputs, in the model's frame.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct ContactFrame {
@@ -459,12 +484,13 @@ impl FootContacts {
         self.carrier.map(|(support, _)| support)
     }
 
-    /// Advance one frame.
+    /// Advance one frame with the settings' `tuning` and the file's `file`.
     pub fn update(
         &mut self,
         frame: &ContactFrame,
         world: &mut impl Surroundings,
         tuning: &ContactTuning,
+        file: &ContactFileTuning,
     ) -> ContactOutput {
         let dt = if frame.dt.is_finite() {
             frame.dt.max(0.0)
@@ -472,11 +498,12 @@ impl FootContacts {
             0.0
         };
         let mut events = Vec::new();
-        self.travel(frame, world, dt);
+        self.travel(frame, world, dt, file.velocity_smoothing_s);
         let mut poses = self.resolve(world, &mut events);
         self.advance_swings(frame, world, tuning, dt, &mut poses, &mut events);
         self.acquire(frame, world, &mut poses, &mut events);
-        if let Some(handover) = self.release(frame, world, tuning, dt, &mut poses, &mut events) {
+        let rules = Rules { tuning, file };
+        if let Some(handover) = self.release(frame, world, rules, dt, &mut poses, &mut events) {
             self.reset();
             return ContactOutput {
                 feet: [FootTarget::Unsupported; 2],
@@ -503,9 +530,15 @@ impl FootContacts {
     }
 
     /// Take the root's and the pelvis's travel since the last frame, less what the carrier's
-    /// motion carried them: the pelvis's own velocity, and the root's drift the pelvis did not
-    /// make.
-    fn travel(&mut self, frame: &ContactFrame, world: &impl Surroundings, dt: f32) {
+    /// motion carried them: the pelvis's own velocity, smoothed over `smoothing_s` seconds, and the
+    /// root's drift the pelvis did not make.
+    fn travel(
+        &mut self,
+        frame: &ContactFrame,
+        world: &impl Surroundings,
+        dt: f32,
+        smoothing_s: f32,
+    ) {
         let now = Travel {
             root: frame.root,
             pelvis: frame.pelvis,
@@ -532,7 +565,7 @@ impl FootContacts {
             self.drift += drift;
         }
         if dt > 0.0 {
-            let blend = (dt / (VELOCITY_SMOOTHING_S + dt)).clamp(0.0, 1.0);
+            let blend = (dt / (smoothing_s + dt)).clamp(0.0, 1.0);
             let velocity = flat(pelvis) / dt;
             if velocity.is_finite() {
                 self.velocity += (velocity - self.velocity) * blend;
@@ -695,11 +728,12 @@ impl FootContacts {
         &mut self,
         frame: &ContactFrame,
         world: &mut impl Surroundings,
-        tuning: &ContactTuning,
+        rules: Rules,
         dt: f32,
         poses: &mut [Option<FootPose>; 2],
         events: &mut Vec<ContactEvent>,
     ) -> Option<Handover> {
+        let tuning = rules.tuning;
         let planted = Side::BOTH.map(|side| match self.feet[side.index()] {
             FootState::Planted { .. } => poses[side.index()],
             _ => None,
@@ -711,7 +745,7 @@ impl FootContacts {
             &mut self.twist_held,
             &mut self.tidy_held,
             dt,
-            tuning,
+            rules,
         );
         let swinging = Side::BOTH
             .into_iter()
@@ -727,7 +761,13 @@ impl FootContacts {
         }
         let follow_up = self.follow_up.take().filter(|side| {
             planted[side.index()].is_some()
-                && off_stance(frame, *side, planted[side.index()], tuning, 0.5)
+                && off_stance(
+                    frame,
+                    *side,
+                    planted[side.index()],
+                    tuning,
+                    rules.file.follow_up_share,
+                )
         });
         let (side, reason) = match follow_up {
             Some(side) => (side, Release::FollowUp),
@@ -791,9 +831,6 @@ impl Default for FootContacts {
         Self::new()
     }
 }
-
-/// The smoothing time of the pelvis's velocity, seconds.
-const VELOCITY_SMOOTHING_S: f32 = 0.1;
 
 /// The spot `side`'s ankle stands on in the stance under the pelvis, `(x, z)`, and the foot's
 /// heading there.

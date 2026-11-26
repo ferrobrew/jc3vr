@@ -53,13 +53,6 @@ pub(crate) fn relative_heading(torso: Quat, view: Quat, character: Quat) -> Opti
     yaw_of(character.normalize().inverse() * view.normalize() * torso.normalize() * Vec3::NEG_Z)
 }
 
-/// The distance between the hip joints as a fraction of the distance between the shoulder joints.
-/// A generic anthropometric figure.
-pub const HIP_SPACING_FRACTION: f32 = 0.45;
-
-/// The furthest the chest is turned from the character's facing, degrees.
-pub const CHEST_LIMIT_DEG: f32 = 45.0;
-
 #[cfg(test)]
 mod tests {
     use body_rig::angle::{direction, head_heading, wrap, yaw_of};

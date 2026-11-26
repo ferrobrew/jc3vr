@@ -26,7 +26,7 @@ use crate::{
         registration::Placement,
         scene, view,
     },
-    rig_eval::EvalOptions,
+    rig_eval::{EvalOptions, RigFile},
     schema::Schema,
     scripts,
     synth::{self, Options},
@@ -44,7 +44,11 @@ fn a_version_8_recording_exports_with_the_cockpit_placed_by_its_view() {
     let options = ExportOptions {
         range: Range::default(),
         video: None,
-        eval: EvalOptions::new(1.8, 1.68),
+        eval: EvalOptions::new(
+            1.8,
+            1.68,
+            RigFile::load().expect("the rig tuning file reads"),
+        ),
         source: PathBuf::from("synthetic.jc3trk"),
         blueprint: true,
         recording_id: None,

@@ -10,6 +10,7 @@ use crate::{
     height::StandingHeight,
     pelvis::{PelvisInput, PelvisSolve, PelvisTuning, solve},
     step::{StepCommit, StepInput, StepPhase, StepTuning},
+    tuning::CoreTuning,
     yaw::{TurnCause, YawFollow, YawInput, YawTuning, hands_heading},
 };
 
@@ -36,13 +37,21 @@ impl RigTuning {
     }
 }
 
-/// The gaze is level enough to sample the standing height within this pitch, degrees: a look at
-/// the floor carries the eyes down and forward about the neck, which the neck pivot takes out, but
-/// a player looking down also tends to bow.
-pub const LEVEL_GAZE_DEG: f32 = 20.0;
-
-/// The smoothing time of the head's speed for the idle drift, seconds.
-const HEAD_SPEED_SMOOTHING_S: f32 = 0.2;
+/// The grounded rig's own tuning from the file.
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Deserialize),
+    serde(deny_unknown_fields)
+)]
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct GroundedTuning {
+    /// The gaze is level enough to sample the standing height within this pitch, degrees: a look
+    /// at the floor carries the eyes down and forward about the neck, which the neck pivot takes
+    /// out, but a player looking down also tends to bow.
+    pub level_gaze_deg: f32,
+    /// The smoothing time of the head's speed for the idle drift, seconds.
+    pub head_speed_smoothing_s: f32,
+}
 
 /// One frame's inputs, in the room frame: metres over the floor, +Y up, -Z forward.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -191,9 +200,9 @@ impl GroundedRig {
 
     /// Recenter on the head: the body faces the head's heading, the standing height starts again
     /// from the neck's height now, and any step stops. The caller puts the pelvis under the neck.
-    pub fn recenter(&mut self, eyes: Vec3, head: Quat) {
+    pub fn recenter(&mut self, eyes: Vec3, head: Quat, core: &CoreTuning) {
         let neck = neck_pivot(eyes, head);
-        self.height.restart_at(neck.y);
+        self.height.restart_at(neck.y, &core.height);
         self.step.stand();
         self.slip_seen = None;
         self.slip_gap = Vec2::ZERO;
@@ -203,8 +212,9 @@ impl GroundedRig {
         }
     }
 
-    /// Fold the neck's horizontal motion since the last frame into the smoothed head speed.
-    fn observe_head_speed(&mut self, neck: Vec3, dt: f32) {
+    /// Fold the neck's horizontal motion since the last frame into the head speed, smoothed over
+    /// `smoothing_s` seconds.
+    fn observe_head_speed(&mut self, neck: Vec3, dt: f32, smoothing_s: f32) {
         if !neck.is_finite() {
             return;
         }
@@ -213,7 +223,7 @@ impl GroundedRig {
             && dt > 0.0
         {
             let speed = Vec2::new(neck.x - last.x, neck.z - last.z).length() / dt;
-            let blend = (dt / (HEAD_SPEED_SMOOTHING_S + dt)).clamp(0.0, 1.0);
+            let blend = (dt / (smoothing_s + dt)).clamp(0.0, 1.0);
             if speed.is_finite() {
                 self.head_speed_mps += (speed - self.head_speed_mps) * blend;
             }
@@ -242,14 +252,14 @@ impl GroundedRig {
         own - body_forward * own.dot(body_forward).max(0.0) + self.slip_gap
     }
 
-    /// Advance one frame.
-    pub fn update(&mut self, frame: &RigFrame, tuning: &RigTuning) -> RigOutput {
+    /// Advance one frame with the settings' `tuning` and the file's `core`.
+    pub fn update(&mut self, frame: &RigFrame, tuning: &RigTuning, core: &CoreTuning) -> RigOutput {
         let neck = neck_pivot(frame.eyes, frame.head);
-        self.observe_head_speed(neck, frame.dt);
-        let level = head_pitch(frame.head).abs() <= LEVEL_GAZE_DEG.to_radians();
-        let standing_neck = self
-            .height
-            .observe(neck.y, frame.sample_height && level, frame.dt);
+        self.observe_head_speed(neck, frame.dt, core.grounded.head_speed_smoothing_s);
+        let level = head_pitch(frame.head).abs() <= core.grounded.level_gaze_deg.to_radians();
+        let standing_neck =
+            self.height
+                .observe(neck.y, frame.sample_height && level, frame.dt, &core.height);
         let head_yaw = head_heading(frame.head);
         let body_yaw = self.yaw.yaw().or(head_yaw).unwrap_or(0.0);
         let mut solve = solve(
@@ -292,13 +302,14 @@ impl GroundedRig {
                 &YawInput {
                     head_yaw,
                     head_pitch: head_pitch(frame.head),
-                    hands: hands_heading(neck, &frame.hands, &tuning.yaw),
+                    hands: hands_heading(neck, &frame.hands, &tuning.yaw, &core.yaw),
                     moving: frame.moving || phase.steps(),
                     dt: frame.dt,
                 },
                 frame.estimate.as_ref(),
                 frame.moving,
                 &tuning.yaw,
+                &core.yaw,
             ),
             None => body_yaw,
         };
@@ -323,7 +334,7 @@ impl GroundedRig {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::body::EYES_TO_NECK;
+    use crate::{body::EYES_TO_NECK, tuning::shipped};
 
     const DT: f32 = 1.0 / 90.0;
 
@@ -357,7 +368,7 @@ mod tests {
         let tuning = RigTuning::new();
         let mut out = RigOutput::default();
         for i in 0..(seconds / DT) as usize {
-            out = rig.update(&frame(neck(i as f32 * DT), pelvis), &tuning);
+            out = rig.update(&frame(neck(i as f32 * DT), pelvis), &tuning, shipped());
             pelvis += crate::step::drive_velocity(out.phase, out.gap, DT, &tuning.step) * DT;
         }
         (pelvis, out)
@@ -394,14 +405,18 @@ mod tests {
             let neck = Vec3::new(0.0, standing - 0.3, -0.6 * (t / 0.5).min(1.0));
             let mut input = frame(neck, pelvis);
             input.ik_pelvis = Some(target * (t / 0.5).min(1.0));
-            out = rig.update(&input, &tuning);
+            out = rig.update(&input, &tuning, shipped());
             assert_eq!(out.phase, StepPhase::Following);
             pelvis += crate::step::drive_velocity(out.phase, out.gap, DT, &tuning.step) * DT;
         }
         assert!((pelvis - target).length() < 0.01, "{pelvis:?}");
         assert_eq!(out.steps, 0);
         // Handed back, the commit takes over from the neck.
-        out = rig.update(&frame(Vec3::new(0.0, standing, -0.6), pelvis), &tuning);
+        out = rig.update(
+            &frame(Vec3::new(0.0, standing, -0.6), pelvis),
+            &tuning,
+            shipped(),
+        );
         assert_ne!(out.phase, StepPhase::Following);
     }
 
@@ -451,7 +466,7 @@ mod tests {
             let slip = slip(i as f32 * DT);
             let mut input = frame(neck, driven + slip);
             input.slip = slip;
-            out = rig.update(&input, &tuning);
+            out = rig.update(&input, &tuning, shipped());
             driven += crate::step::drive_velocity(out.phase, out.gap, DT, &tuning.step) * DT;
         }
         (driven + slip(seconds), out)
@@ -500,9 +515,9 @@ mod tests {
     fn a_recenter_faces_the_head() {
         let mut rig = GroundedRig::new(body());
         let neck = Vec3::new(0.0, body().standing_neck(), 0.0);
-        rig.update(&frame(neck, Vec2::ZERO), &RigTuning::new());
+        rig.update(&frame(neck, Vec2::ZERO), &RigTuning::new(), shipped());
         let head = Quat::from_rotation_y(1.0);
-        rig.recenter(neck - head * EYES_TO_NECK, head);
+        rig.recenter(neck - head * EYES_TO_NECK, head, shipped());
         assert!((rig.body_yaw().unwrap() - 1.0).abs() < 1e-5);
     }
 }

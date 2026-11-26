@@ -44,8 +44,12 @@ fn with_events(events: Vec<Event>) -> Recording {
     recording
 }
 
+fn file() -> RigFile {
+    RigFile::load().expect("the repository's rig tuning file reads")
+}
+
 fn options() -> EvalOptions {
-    EvalOptions::new(1.8, 1.68)
+    EvalOptions::new(1.8, 1.68, file())
 }
 
 fn replay(source: PelvisSource) -> ReplayOptions {
@@ -86,15 +90,16 @@ fn run_reference(
     frames: &[RigFrame],
     snap: usize,
 ) -> Vec<RigOutput> {
+    let core = file().core;
     let mut rig = GroundedRig::new(body);
     frames
         .iter()
         .enumerate()
         .map(|(i, frame)| {
             if i == snap {
-                rig.recenter(frame.eyes, frame.head);
+                rig.recenter(frame.eyes, frame.head, &core);
             }
-            rig.update(frame, tuning)
+            rig.update(frame, tuning, &core)
         })
         .collect()
 }

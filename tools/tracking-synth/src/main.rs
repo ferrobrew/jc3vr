@@ -24,7 +24,9 @@
 //! pelvis under the game's pre-IK hips; a recording with rig frames defaults to its recorded inputs
 //! and compares every row with them. `--tuning` takes the rig's tuning as JSON, any field left out
 //! keeping its default, and it and `--height` and `--eye-height` override the calibration and
-//! tuning a recording notes. `--weights`, for `rig-eval` and `export-rerun`, runs EgoPoser over
+//! tuning a recording notes. The rest of the rig's tuning, which a recording does not carry, is read
+//! from the repository's `crates/jc3vr-body/tuning/rig.toml` each time `rig-eval` or `export-rerun`
+//! runs. `--weights`, for `rig-eval` and `export-rerun`, runs EgoPoser over
 //! the whole recording first and hands the rig its estimate at the game's cadence, as the payload's
 //! rig takes it. `--ik` also replays the IK body's FK pelvis and foot contacts over that estimate
 //! (`rig_eval::ik`) and logs its summary, once for each `--contact` tuning given (the contact
@@ -50,7 +52,10 @@ use tracking_synth::rerun_export::{self, DEFAULT_VIDEO_HEIGHT, ExportOptions, Vi
 use tracking_synth::{
     dump::{self, Bound, DumpFormat, Range},
     estimate,
-    rig_eval::{EstimateCadence, EstimateTrack, EvalOptions, RigEvalError, VideoClock},
+    rig_eval::{
+        EstimateCadence, EstimateTrack, EvalOptions, RigEvalError, RigFile, RigFileError,
+        VideoClock,
+    },
     script::Script,
     scripts,
     synth::{DEFAULT_RATE_HZ, Options, SynthError},
@@ -167,6 +172,8 @@ enum CliError {
     BadPelvis(String),
     /// A `rig-eval` source the recording cannot feed.
     RigEval(RigEvalError),
+    /// The body rig's tuning file could not be read.
+    RigFile(RigFileError),
     /// `rig-eval --ik` without the estimator's weights.
     IkWithoutWeights,
     /// `export-rerun` without a recording and an output, or with more.
@@ -234,6 +241,7 @@ impl fmt::Display for CliError {
                  or pre-ik"
             ),
             CliError::RigEval(error) => write!(f, "{error}"),
+            CliError::RigFile(error) => write!(f, "{error}"),
             CliError::IkWithoutWeights => write!(
                 f,
                 "rig-eval: `--ik` replays the learned estimate, so it needs `--weights`"
@@ -473,7 +481,12 @@ fn parse_export_rerun(mut args: impl Iterator<Item = String>) -> Result<Command,
             path => paths.push(PathBuf::from(path)),
         }
     }
-    let mut options = EvalOptions::new(height, eye_height.unwrap_or(height * DEFAULT_EYE_SHARE));
+    let file = RigFile::load().map_err(CliError::RigFile)?;
+    let mut options = EvalOptions::new(
+        height,
+        eye_height.unwrap_or(height * DEFAULT_EYE_SHARE),
+        file,
+    );
     if let Some(tuning) = tuning {
         options.tuning = tuning;
     }

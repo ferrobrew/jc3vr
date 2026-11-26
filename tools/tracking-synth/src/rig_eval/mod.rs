@@ -31,7 +31,8 @@
 //!
 //! A recording from version 8 also notes the payload's rig frames, which each row is compared with
 //! (`compare`), and the calibration and tuning in use, which the evaluation runs where the command
-//! line leaves them out (`config`).
+//! line leaves them out (`config`). The rest of the rig's tuning is not recorded: it comes from the
+//! repository's tuning file as it is when the evaluation runs ([`RigFile`]).
 
 mod clock;
 mod compare;
@@ -43,6 +44,7 @@ pub mod ik;
 mod pre_ik;
 mod replay;
 mod summary;
+mod tuning_file;
 
 use std::fmt;
 
@@ -56,6 +58,7 @@ pub use crate::rig_eval::{
     config::{ConfigError, ConfigErrorKind, ConfigNote, RecordedConfig},
     csv::{write_compared_csv, write_csv},
     estimate::{EstimateCadence, EstimateTrack},
+    tuning_file::{RigFile, RigFileError, RigFileErrorKind, repository_path},
 };
 use crate::rig_eval::{
     compare::RecordedTrack,
@@ -70,16 +73,20 @@ use crate::rig_eval::{
 pub struct EvalOptions {
     pub body: PlayerBody,
     pub tuning: RigTuning,
+    /// The rig's tuning that the settings do not hold, from its tuning file.
+    pub file: RigFile,
     /// How fast the simulated character's velocity reaches the drive's, metres per second squared.
     pub accel_mps2: f32,
 }
 
 impl EvalOptions {
-    /// The defaults for a player `height` tall with the eyes at `eye_height`.
-    pub fn new(height: f32, eye_height: f32) -> Self {
+    /// The defaults for a player `height` tall with the eyes at `eye_height`, with the tuning
+    /// file's `file`.
+    pub fn new(height: f32, eye_height: f32, file: RigFile) -> Self {
         Self {
             body: PlayerBody::from_heights(height, eye_height),
             tuning: RigTuning::new(),
+            file,
             accel_mps2: DEFAULT_ACCEL_MPS2,
         }
     }
@@ -306,7 +313,7 @@ pub fn evaluate_replay(
                     version: recording.version,
                 });
             }
-            run_recorded(recording, &configs, clock, estimate)
+            run_recorded(recording, &configs, &options.eval.file, clock, estimate)
         }
         PelvisSource::Simulated | PelvisSource::PreIk => {
             let track = (source == PelvisSource::PreIk).then(|| pre_ik_track(recording));

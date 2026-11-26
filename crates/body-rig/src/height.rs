@@ -3,23 +3,30 @@
 //! The calibrated eye height and the runtime's floor disagree by a few centimetres from session to
 //! session, and near vertical a few centimetres of drop are a large lean, so the standing neck
 //! height is measured rather than assumed: the height nine in ten of the recent level-gaze samples
-//! lie below, seeded at the calibration and held within [`MAX_DRIFT_M`] of it, so that half a
-//! minute crouched behind cover never becomes the standing height.
+//! lie below, seeded at the calibration and held within [`HeightTuning::max_drift_m`] of it, so
+//! that half a minute crouched behind cover never becomes the standing height.
 
-/// How often a sample is taken, seconds.
-pub const SAMPLE_S: f32 = 0.125;
-
-/// How many samples are held: half a minute of them.
+/// How many samples are held: half a minute of them at the shipped
+/// [`HeightTuning::sample_s`].
 pub const WINDOW: usize = 240;
 
-/// How many samples are needed before they replace the seed.
-pub const MIN_SAMPLES: usize = 16;
-
-/// The furthest the measure may stray from the seed, metres.
-pub const MAX_DRIFT_M: f32 = 0.15;
-
-/// The share of the samples the standing height is above.
-pub const PERCENTILE: f32 = 0.9;
+/// How the standing height is sampled.
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Deserialize),
+    serde(deny_unknown_fields)
+)]
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct HeightTuning {
+    /// How often a sample is taken, seconds.
+    pub sample_s: f32,
+    /// How many samples are needed before they replace the seed, at most [`WINDOW`].
+    pub min_samples: usize,
+    /// The furthest the measure may stray from the seed, metres.
+    pub max_drift_m: f32,
+    /// The share of the samples the standing height is above.
+    pub percentile: f32,
+}
 
 /// The standing neck height.
 #[derive(Debug, Clone, PartialEq)]
@@ -68,10 +75,10 @@ impl StandingHeight {
 
     /// Start over from where the neck stands now, held within the drift of the current seed: a
     /// recenter, taken standing upright.
-    pub fn restart_at(&mut self, height: f32) {
+    pub fn restart_at(&mut self, height: f32, tuning: &HeightTuning) {
         let seed = self.seed;
         let height = if height.is_finite() {
-            height.clamp(seed - MAX_DRIFT_M, seed + MAX_DRIFT_M)
+            height.clamp(seed - tuning.max_drift_m, seed + tuning.max_drift_m)
         } else {
             seed
         };
@@ -87,20 +94,22 @@ impl StandingHeight {
     }
 
     /// Advance by `dt` seconds with the neck at `height`, taking a sample when `sample`.
-    pub fn observe(&mut self, height: f32, sample: bool, dt: f32) -> f32 {
+    pub fn observe(&mut self, height: f32, sample: bool, dt: f32, tuning: &HeightTuning) -> f32 {
         if dt.is_finite() && dt > 0.0 {
             self.since_sample += dt;
         }
-        if sample && height.is_finite() && self.since_sample >= SAMPLE_S {
+        if sample && height.is_finite() && self.since_sample >= tuning.sample_s {
             self.since_sample = 0.0;
             self.push(height);
-            if self.count >= MIN_SAMPLES {
+            if self.count >= tuning.min_samples {
                 let mut sorted = self.samples;
                 let sorted = &mut sorted[..self.count];
                 sorted.sort_by(f32::total_cmp);
-                let index = ((sorted.len() - 1) as f32 * PERCENTILE).round() as usize;
-                self.reference =
-                    sorted[index].clamp(self.seed - MAX_DRIFT_M, self.seed + MAX_DRIFT_M);
+                let index = ((sorted.len() - 1) as f32 * tuning.percentile).round() as usize;
+                self.reference = sorted[index].clamp(
+                    self.seed - tuning.max_drift_m,
+                    self.seed + tuning.max_drift_m,
+                );
             }
         }
         self.reference
@@ -111,13 +120,17 @@ impl StandingHeight {
 mod tests {
     use super::*;
 
+    fn tuning() -> &'static HeightTuning {
+        &crate::tuning::shipped().height
+    }
+
     #[test]
     fn it_settles_on_the_upper_samples() {
         let mut height = StandingHeight::new(1.6);
         for i in 0..400 {
             // A standing head that bobs between 1.55 and 1.57.
             let h = 1.55 + 0.02 * ((i % 10) as f32 / 9.0);
-            height.observe(h, true, SAMPLE_S);
+            height.observe(h, true, tuning().sample_s, tuning());
         }
         assert!(
             (height.reference() - 1.568).abs() < 0.005,
@@ -130,16 +143,16 @@ mod tests {
     fn a_long_crouch_stays_within_the_drift() {
         let mut height = StandingHeight::new(1.6);
         for _ in 0..400 {
-            height.observe(1.1, true, SAMPLE_S);
+            height.observe(1.1, true, tuning().sample_s, tuning());
         }
-        assert!((height.reference() - (1.6 - MAX_DRIFT_M)).abs() < 1e-5);
+        assert!((height.reference() - (1.6 - tuning().max_drift_m)).abs() < 1e-5);
     }
 
     #[test]
     fn unsampled_frames_leave_it() {
         let mut height = StandingHeight::new(1.6);
         for _ in 0..400 {
-            height.observe(1.0, false, SAMPLE_S);
+            height.observe(1.0, false, tuning().sample_s, tuning());
         }
         assert_eq!(height.reference(), 1.6);
     }
@@ -147,9 +160,9 @@ mod tests {
     #[test]
     fn a_restart_takes_the_current_height() {
         let mut height = StandingHeight::new(1.6);
-        height.restart_at(1.55);
+        height.restart_at(1.55, tuning());
         assert_eq!(height.reference(), 1.55);
-        height.restart_at(1.0);
-        assert_eq!(height.reference(), 1.6 - MAX_DRIFT_M);
+        height.restart_at(1.0, tuning());
+        assert_eq!(height.reference(), 1.6 - tuning().max_drift_m);
     }
 }

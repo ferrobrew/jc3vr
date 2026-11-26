@@ -1,0 +1,65 @@
+# The body rig's tuning: `BodyRigTuning` in `src/controllers/body/rig/tuning.rs` and the structs
+# under it, whose fields say what each value does. Every key is required and no other is accepted.
+# Lengths are metres, angles degrees, speeds per second, and times seconds, or milliseconds where
+# the key ends in `_ms`; a share is a fraction of a range, in `0..1`.
+#
+# `core` is the pure core's (`body-rig`'s `CoreTuning`), which `tools/tracking-synth` also reads
+# from this file when it replays a recording. The pelvis, step, and yaw tuning and the feet's
+# contact tuning are the player's settings (`controllers.body.rig` and `controllers.body.ik`), not
+# this file's.
+
+[core.grounded]
+level_gaze_deg = 20.0
+head_speed_smoothing_s = 0.2
+
+[core.height]
+sample_s = 0.125
+min_samples = 16
+max_drift_m = 0.15
+percentile = 0.9
+
+[core.yaw]
+hand_full_m = 0.25
+turning_deg_s = 20.0
+
+[core.contact]
+velocity_smoothing_s = 0.1
+heel_m = 0.05
+follow_up_share = 0.5
+
+[grounded]
+walk_stick = 0.45
+walk_gap_m = 0.08
+resume_after_ms = 1000
+
+[torso]
+hip_spacing_share = 0.45
+chest_limit_deg = 45.0
+
+[probe]
+terrain_reach_m = 1.0
+head_fade_start_m = 0.05
+head_fade_full_m = 0.25
+fan_half_width_m = 0.08
+
+[root]
+exit_rebase_m = 1.0
+headroom_ray_start_m = 0.5
+warp_min_m = 8.0
+warp_speed_factor = 3.0
+
+[trace]
+jump_m = 0.04
+
+[ledger]
+obstructed_share = 0.5
+
+[pushback]
+obstructed_m = 0.10
+authored_m = 0.30
+reach_m = 0.45
+min_gap_m = 0.05
+debt_cap_m = 0.30
+fade_span_m = 0.15
+reset_s = 0.2
+calm_share = 0.5
