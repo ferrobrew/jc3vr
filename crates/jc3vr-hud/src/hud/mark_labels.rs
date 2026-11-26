@@ -1,5 +1,5 @@
 //! The grip markers' labels: a short name drawn upright above a labelled marker
-//! ([`crate::controllers::grab::Mark::label`]), such as the cockpit's nitrous button, while a hand
+//! ([`jc3vr_gameplay::controllers::grab::Mark::label`]), such as the cockpit's nitrous button, while a hand
 //! is at it. The overlay that draws the markers has no text, so the HUD draws each label as a quad
 //! of the grab hint's haloed text ([`crate::hud::grab_hint`]), with no backing.
 //!
@@ -11,38 +11,36 @@ use std::time::{Duration, Instant};
 
 use glam::{Quat, Vec3, Vec4};
 use jc3gi::graphics_engine::{device::Device, texture::Texture};
+use jc3vr_gameplay::controllers::{
+    grab::markers::{MarkLabel, published_labels},
+    overlay::render_poses,
+    scheme,
+};
+use jc3vr_render::controllers::overlay::{
+    primitive::Anchor,
+    resolve::{HandPoses, anchor_position},
+};
 use parking_lot::Mutex;
 use windows::Win32::Graphics::Direct3D11::ID3D11DeviceContext;
 
-use crate::{
-    controllers::{
-        grab::markers::{MarkLabel, published_labels},
-        overlay::{
-            primitive::Anchor,
-            render_poses,
-            resolve::{HandPoses, anchor_position},
-        },
-        scheme,
-    },
-    hud::{
-        anchored::place::upright_corners,
-        config::HUD_CONFIG,
-        grab_hint::{TAG_TEXELS, paint_tag, tag_fits},
-        log_once::LogOnce,
-        quad::HudQuad,
-        target::{HudTarget, TextureCache},
-        world_quads_active,
-    },
+use crate::hud::{
+    anchored::place::upright_corners,
+    config::HUD_CONFIG,
+    grab_hint::{TAG_TEXELS, paint_tag, tag_fits},
+    log_once::LogOnce,
+    quad::HudQuad,
+    target::{HudTarget, TextureCache},
+    world_quads_active,
 };
 
 /// Draw the labels for `eye` over `target`. Called from the HUD's draw, with the engine context
 /// mutex held.
 pub(crate) fn draw(context: &ID3D11DeviceContext, device: &Device, target: &Texture, eye: usize) {
     let mut state = STATE.lock();
-    if crate::stereo::dispatch::first_ui_eye(eye) {
+    if jc3vr_render::stereo::dispatch::first_ui_eye(eye) {
         let cfg = *HUD_CONFIG.lock();
         let active = world_quads_active(&cfg) && scheme::is_controllers();
-        let head = active.then(crate::hud::render_camera_pose).flatten();
+        let head = active.then(jc3vr_render::hud::render_camera_pose).flatten();
         state.prepare(context, device, head);
     }
     state.draw(context, device, target);
@@ -184,8 +182,10 @@ static FAILURES: LogOnce = LogOnce::new("hud marker labels");
 
 #[cfg(test)]
 mod tests {
+    use jc3vr_input::frame::Hand;
+    use jc3vr_render::controllers::overlay::primitive::HandPose;
+
     use super::*;
-    use crate::controllers::{frame::Hand, overlay::primitive::HandPose};
 
     fn label(at: Anchor) -> MarkLabel {
         MarkLabel {

@@ -2,7 +2,7 @@
 //! over each eye, the flat mirror overlay's offscreen pass, the textures the desktop mirror
 //! composites, and the render camera the panel and the pointer share.
 
-use crate::{
+use jc3vr_render::{
     hooks::{
         camera::register_render_camera_observer,
         graphics_engine::post_draw::{
@@ -10,13 +10,15 @@ use crate::{
             register_ui_redirect,
         },
     },
-    hud::{
-        self, egui_panel, mirror_overlay, pointer::publish_camera, restart_notice, summary_panel,
-    },
     vr::{MirrorLayers, register_mirror_layers},
 };
 
-pub(crate) fn register() {
+use crate::{
+    hud,
+    hud::{egui_panel, mirror_overlay, pointer::publish_camera, restart_notice, summary_panel},
+};
+
+pub fn register() {
     register_ui_redirect(UiRedirect {
         maintain: hud::tick,
         applied: hud::redirect_applied,

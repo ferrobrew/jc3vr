@@ -8,11 +8,8 @@
 //! it shows, so that it does not flicker at the edge.
 
 use glam::{Mat3, Quat, Vec3};
-
-use crate::controllers::{
-    frame::{Hand, Pose},
-    summary::config::{GlanceConfig, WristPlacement},
-};
+use jc3vr_gameplay::controllers::summary::config::{GlanceConfig, WristPlacement};
+use jc3vr_input::frame::{Hand, Pose};
 
 /// The panel's pose in the world: its centre, and the rotation whose +X runs along its text, +Y up
 /// its page, and +Z out of its face toward the reader.

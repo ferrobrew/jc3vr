@@ -26,9 +26,9 @@ use std::{
 };
 
 pub(crate) use avtx::Image;
+pub(crate) use jc3vr_gameplay::controllers::weapons::hud_feed::icon::IconId;
 use parking_lot::Mutex;
 
-pub(crate) use crate::controllers::weapons::hud_feed::icon::IconId;
 use crate::hud::game_icons::archive::ArchiveIndex;
 
 /// Where an icon's loading stands.
@@ -47,7 +47,7 @@ pub(crate) fn lookup(id: IconId) -> Lookup {
 }
 
 #[must_use = "a loader that did not stop means the payload must stay mapped"]
-pub(crate) fn shutdown() -> bool {
+pub fn shutdown() -> bool {
     CACHE.shutdown()
 }
 

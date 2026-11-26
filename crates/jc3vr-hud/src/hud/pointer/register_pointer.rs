@@ -1,15 +1,16 @@
-//! The HUD's side of the controller pointers ([`crate::controllers::bindings::pointer::register_hud`]).
+//! The HUD's side of the controller pointers ([`jc3vr_gameplay::controllers::bindings::pointer::register_hud`]).
 //!
 //! The pointers run on the input tick, below the HUD. They read the HUD's settings, whether the
 //! desktop mouse holds the game UI ([`crate::hud::pointer::route`]), and the egui panel's state,
 //! and they move and toggle the egui panel ([`crate::hud::egui_panel`]), all through this table.
 
-use crate::{
-    controllers::bindings::pointer::{EguiPointerSettings, PointerHud, register_hud},
-    hud::{config::HUD_CONFIG, egui_panel, pointer::route},
+use jc3vr_gameplay::controllers::bindings::pointer::{
+    EguiPointerSettings, PointerHud, register_hud,
 };
 
-pub(crate) fn register() {
+use crate::hud::{config::HUD_CONFIG, egui_panel, pointer::route};
+
+pub fn register() {
     register_hud(&POINTER_HUD);
 }
 

@@ -14,37 +14,37 @@ use crate::{
 
 /// The map dispatches seen so far, and what the latest one did.
 #[derive(Debug, Clone, Default)]
-pub(crate) struct MapReport {
+pub struct MapReport {
     /// How many times the map handled its input with the mod's hooks installed.
-    pub(crate) dispatches: u64,
+    pub dispatches: u64,
     /// Controller primary releases the map took as a selection.
-    pub(crate) selections: u64,
+    pub selections: u64,
     /// Controller primary releases that ended a drag instead.
-    pub(crate) drags: u64,
+    pub drags: u64,
     /// Confirms the shim answered with the context action at the cursor.
-    pub(crate) context_actions: u64,
-    pub(crate) last: Option<DispatchReport>,
+    pub context_actions: u64,
+    pub last: Option<DispatchReport>,
 }
 
 /// One map input dispatch.
 #[derive(Debug, Copy, Clone)]
-pub(crate) struct DispatchReport {
-    pub(crate) at: Instant,
-    pub(crate) outcome: DispatchOutcome,
+pub struct DispatchReport {
+    pub at: Instant,
+    pub outcome: DispatchOutcome,
     /// The pointer route prepared for the dispatch; `None` while the mod does not route the mouse.
-    pub(crate) route: Option<RoutedPointer>,
-    pub(crate) delivery: Option<MapDelivery>,
+    pub route: Option<RoutedPointer>,
+    pub delivery: Option<MapDelivery>,
     /// The map cursor in stage coordinates, while the controller drives it.
-    pub(crate) cursor_stage: Option<Vec2>,
+    pub cursor_stage: Option<Vec2>,
     /// Whether the map read a clicked confirm, which became the context action at the cursor.
-    pub(crate) context_from_confirm: bool,
+    pub context_from_confirm: bool,
     /// The map's own state after the dispatch.
-    pub(crate) map: Option<MapFields>,
+    pub map: Option<MapFields>,
 }
 
 /// Whether, and why not, the controller drove a map dispatch.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) enum DispatchOutcome {
+pub enum DispatchOutcome {
     /// The controller drove the map's mouse branch.
     Driven,
     /// The dispatch released the controller's ownership.
@@ -61,7 +61,7 @@ pub(crate) enum DispatchOutcome {
 
 impl DispatchOutcome {
     /// A short explanation for the readout.
-    pub(crate) fn describe(self) -> &'static str {
+    pub fn describe(self) -> &'static str {
         match self {
             Self::Driven => "the controller drives the map's mouse input",
             Self::Cancelled => "the controller's ownership ended (a neutral release)",
@@ -77,22 +77,22 @@ impl DispatchOutcome {
 
 /// The map fields the readout shows, read after the dispatch.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub(crate) struct MapFields {
-    pub(crate) dragging: bool,
+pub struct MapFields {
+    pub dragging: bool,
     /// Whether the dispatch selected, at [`selection`](Self::selection).
-    pub(crate) selected: bool,
-    pub(crate) context_menu: bool,
+    pub selected: bool,
+    pub context_menu: bool,
     /// The map's selection point, in stage coordinates.
-    pub(crate) selection: Vec2,
+    pub selection: Vec2,
 }
 
 /// A copy of the readout.
-pub(crate) fn report() -> MapReport {
+pub fn report() -> MapReport {
     REPORT.lock().clone()
 }
 
 /// A label for a zoom step.
-pub(crate) fn zoom_label(zoom: ZoomStep) -> &'static str {
+pub fn zoom_label(zoom: ZoomStep) -> &'static str {
     match zoom {
         ZoomStep::None => "none",
         ZoomStep::In => "in",

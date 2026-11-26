@@ -18,27 +18,28 @@ use jc3gi::{
     graphics_engine::{device::Device, graphics_engine::GraphicsEngine, texture::Texture},
     ui::ui_manager::UIManager,
 };
+use jc3vr_gameplay::controllers::aim::{
+    marker_rays as raycast,
+    marker_rays::{Sight, Timed},
+};
 use parking_lot::Mutex;
 use windows::Win32::Graphics::Direct3D11::{D3D11_BOX, ID3D11DeviceContext};
 
-use crate::{
-    controllers::aim::marker_rays::{self as raycast, Sight, Timed},
-    hud::{
-        config::HUD_CONFIG,
-        log_once::LogOnce,
-        quad::HudQuad,
-        target::HudTarget,
-        world_markers::{
-            CROP, DistanceSource, LABEL_CROP, MarkerStatus, STATUS, Status,
-            depth::{DepthPoint, DepthProbe, RESULT_TTL_S},
-            layout::{
-                Billboard, Crop, StageFrame, billboard_corners, crop, placement_distance,
-                radians_per_texel, slot_size, smooth_distance, surface_sight,
-            },
-            layout_for,
+use crate::hud::{
+    config::HUD_CONFIG,
+    log_once::LogOnce,
+    quad::HudQuad,
+    target::HudTarget,
+    world_markers::{
+        CROP, DistanceSource, LABEL_CROP, MarkerStatus, STATUS, Status,
+        depth::{DepthPoint, DepthProbe, RESULT_TTL_S},
+        layout::{
+            Billboard, Crop, StageFrame, billboard_corners, crop, placement_distance,
+            radians_per_texel, slot_size, smooth_distance, surface_sight,
         },
-        world_quads_active,
+        layout_for,
     },
+    world_quads_active,
 };
 
 /// The eye-0 inputs for placing the frame's markers.
@@ -60,7 +61,7 @@ pub(crate) fn prepare_frame(
     device: &Device,
     inputs: &FrameInputs<'_>,
 ) {
-    let _timing = crate::frame_timing::scope(crate::frame_timing::Slot::WorldMarkers);
+    let _timing = jc3vr_core::frame_timing::scope(jc3vr_core::frame_timing::Slot::WorldMarkers);
     let cfg = *HUD_CONFIG.lock();
     let mut renderer = RENDERER.lock();
     let active = cfg.world_markers.enabled && world_quads_active(&cfg);
@@ -387,7 +388,7 @@ impl Renderer {
         };
         // Under the collapsed single walk the depth buffer is double-wide: sample eye 0's half
         // through eye 0's own view-projection, as the panel draw does.
-        let (vp, viewport) = match crate::stereo::single_pass::collapse_ui_eye_override() {
+        let (vp, viewport) = match jc3vr_render::stereo::single_pass::collapse_ui_eye_override() {
             Some((viewport, vp)) => (vp, Some(viewport)),
             None => match crate::hud::quad::fetch_view_projection() {
                 Some(vp) => (vp, None),

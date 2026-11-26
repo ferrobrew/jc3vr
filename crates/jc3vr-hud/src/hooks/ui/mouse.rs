@@ -23,6 +23,7 @@ use jc3gi::{
         ui_manager::UIManager,
     },
 };
+use jc3vr_input::capture::debug_ui_capture;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
@@ -30,14 +31,13 @@ use crate::{
     controllers::map,
     hud::{
         config::HUD_CONFIG,
-        cursor,
-        pointer::{self, PendingRoute, RoutedPointer},
+        cursor, pointer,
+        pointer::{PendingRoute, RoutedPointer},
     },
-    input_core::capture::debug_ui_capture,
 };
 
 /// Cancel input on the game thread before ownership changes or shutdown removes the UI hooks.
-pub(crate) fn cancel_pointer_on_game_thread() {
+pub fn cancel_pointer_on_game_thread() {
     map::cancel();
     // SAFETY: callers run on the game thread while engine singletons are live.
     unsafe {
@@ -273,7 +273,7 @@ fn get_movie_space_mouse_cursor(
 /// the redirect's mapping geometry is published, egui does not own input, and the payload is not
 /// shutting down. The UI input boundary and the mouse delivery share this one gate.
 fn mouse_route_active() -> bool {
-    !crate::is_shutting_down()
+    !jc3vr_core::is_shutting_down()
         && HUD_CONFIG.query(|c| c.redirect)
         && debug_ui_capture().is_none_or(|snapshot| snapshot.gameplay_effective)
         && cursor::geometry().is_some()

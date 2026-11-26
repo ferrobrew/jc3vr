@@ -39,12 +39,24 @@ use windows::Win32::Graphics::{
 use crate::hud::cursor::{CursorFrame, LIFT, SIZE};
 
 /// The committed, precompiled quad shaders (entry point `main`).
-const VERTEX_DXBC: &[u8] = include_bytes!("../../shaders/hud_quad_vs.dxbc");
-const PIXEL_DXBC: &[u8] = include_bytes!("../../shaders/hud_quad_ps.dxbc");
+const VERTEX_DXBC: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/shaders/hud_quad_vs.dxbc"
+));
+const PIXEL_DXBC: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/shaders/hud_quad_ps.dxbc"
+));
 /// The cursor-dot pixel shader (an analytic circle with a stroke; shares the quad vertex shader).
-const CURSOR_PIXEL_DXBC: &[u8] = include_bytes!("../../shaders/cursor_ps.dxbc");
+const CURSOR_PIXEL_DXBC: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/shaders/cursor_ps.dxbc"
+));
 /// The textured pixel shader with an opacity, for quads that fade (shares the quad vertex shader).
-const FADE_PIXEL_DXBC: &[u8] = include_bytes!("../../shaders/hud_quad_fade_ps.dxbc");
+const FADE_PIXEL_DXBC: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/shaders/hud_quad_fade_ps.dxbc"
+));
 
 /// Constant buffer uploaded per draw: view-projection matrix, four world-space corners, and the
 /// tint. Matches the HLSL `cbuffer Quad` layout: `row_major float4x4 ViewProjection` (64 bytes) +
@@ -287,7 +299,7 @@ impl HudQuad {
         // draw this overlay into the current eye's half with that eye's own VP -- otherwise a
         // head/world-locked quad projects at the centre and stretches across both halves. Outside
         // collapse: the render camera's VP and the full target viewport, unchanged.
-        let ui_override = crate::stereo::single_pass::collapse_ui_eye_override();
+        let ui_override = jc3vr_render::stereo::single_pass::collapse_ui_eye_override();
         let view_proj = match &ui_override {
             Some((_, vp)) => *vp,
             None => match fetch_view_projection() {
@@ -341,7 +353,7 @@ impl HudQuad {
                 // Collapse: bind this eye's half via the un-detoured RSSetViewports (so the collapse
                 // detour does not dup it back to full width).
                 Some((viewport, _)) => {
-                    crate::stereo::single_pass::set_ui_viewport_raw(context, viewport);
+                    jc3vr_render::stereo::single_pass::set_ui_viewport_raw(context, viewport);
                 }
                 None => {
                     context.RSSetViewports(Some(&[D3D11_VIEWPORT {
@@ -382,7 +394,7 @@ impl HudQuad {
 
 /// Geometry parameters for computing the panel's world-space corners. Bundled into a struct to keep
 /// the argument list under `clippy::too_many_arguments`.
-pub(crate) struct PanelParams {
+pub struct PanelParams {
     /// The panel's anchor position (the eye/head position the panel is placed in front of). In
     /// [`HudMode::Hud`](crate::hud::HudMode::Hud) this tracks the head; in
     /// [`HudMode::Movie`](crate::hud::HudMode::Movie) it is the latched world-static position.
@@ -495,7 +507,7 @@ pub(super) fn fetch_view_projection() -> Option<Matrix4> {
         (camera.m_View, camera.m_ViewProjectionF)
     };
     Some(
-        match crate::vr::render_params(crate::stereo::draw_index()) {
+        match jc3vr_render::vr::render_params(jc3vr_render::stereo::draw_index()) {
             Some(params) if params.jitter.is_some() => view * params.unjittered_camera_projection(),
             _ => view_projection,
         },

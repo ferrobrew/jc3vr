@@ -2,12 +2,10 @@
 
 use body_rig::smooth::half_life_factor;
 use glam::{Mat3, Mat4, Quat, Vec2, Vec3};
+pub(crate) use jc3vr_gameplay::controllers::weapons::hud_feed::hand_ammo::ModelBox;
+use jc3vr_input::frame::{Hand, Pose};
 
-pub(crate) use crate::controllers::weapons::hud_feed::hand_ammo::ModelBox;
-use crate::controllers::{
-    frame::{Hand, Pose},
-    summary::glance::PanelPose,
-};
+use crate::controllers::summary::glance::PanelPose;
 
 /// The ammunition quad's corners in the rendered gun's frame, with its lower edge `clearance`
 /// above the model's local top and centred along its length. Its text axes follow the gun's +X

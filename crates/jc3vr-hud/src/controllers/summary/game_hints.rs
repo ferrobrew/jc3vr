@@ -1,5 +1,5 @@
 //! Hiding the game's own context button hints under the controller scheme
-//! ([`SummaryConfig::hide_game_hints`](crate::controllers::summary::SummaryConfig::hide_game_hints)).
+//! ([`SummaryConfig::hide_game_hints`](jc3vr_gameplay::controllers::summary::SummaryConfig::hide_game_hints)).
 //!
 //! The HUD shows the hints it raises in context (release the tethers, reel in, the gunner seat, a
 //! mission's prompts) with a gamepad glyph per action
@@ -10,7 +10,7 @@
 //! game's hint queue keeps running, so its timing and cooldowns behave as normal. The controls
 //! summary stands in for them.
 
-use crate::controllers::{config::CONTROLLERS_CONFIG, scheme};
+use jc3vr_gameplay::controllers::{config::CONTROLLERS_CONFIG, scheme};
 
 /// Whether to hide the hints: the toggle, with the controllers' master switch, and the controller
 /// scheme.

@@ -8,7 +8,7 @@ use crate::hud::world_markers::layout::{CropExtents, StageFrame, TexelRect};
 
 /// A rectangle in stage coordinates.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub(crate) struct StageRect {
+pub struct StageRect {
     pub min: Vec2,
     pub size: Vec2,
 }
@@ -22,7 +22,7 @@ impl StageRect {
 /// One part's cell: the rectangle its content fills, where its clip's origin goes, and the scale
 /// it is captured at, all in stage coordinates.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub(crate) struct Cell {
+pub struct Cell {
     pub rect: StageRect,
     /// The clip's origin, in whole stage pixels.
     pub origin: Vec2,
@@ -64,7 +64,7 @@ pub(crate) struct LayoutRequest {
 
 /// The cells of one capture. Fixed for a given request, so consecutive captures agree.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct AtlasLayout {
+pub struct AtlasLayout {
     /// The stage size the layout was made for.
     pub stage: Vec2,
     /// The bands above and below the stage.

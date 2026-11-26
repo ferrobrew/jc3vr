@@ -12,7 +12,7 @@
 //! being where the weapon is.
 //!
 //! The inventory's input tick publishes the weapons and their places
-//! ([`crate::controllers::weapons::hud_feed::lost_weapons`]); the marker is kept for as long as
+//! ([`jc3vr_gameplay::controllers::weapons::hud_feed::lost_weapons`]); the marker is kept for as long as
 //! the table keeps the weapon, which forgets one left far away (the pins' forget distance). It fades in past arm's length, where the grip's own markers take over, keeps
 //! a constant angular size, and only the nearest few are drawn.
 
@@ -20,38 +20,34 @@ use std::time::{Duration, Instant};
 
 use glam::{Vec3, Vec4};
 use jc3gi::graphics_engine::{device::Device, texture::Texture};
+use jc3vr_gameplay::controllers::{
+    scheme,
+    weapons::hud_feed::{icon::IconId, lost_weapons, lost_weapons::LostWeapon},
+};
 use parking_lot::Mutex;
 use windows::Win32::Graphics::Direct3D11::ID3D11DeviceContext;
 
-use crate::{
-    controllers::{
-        scheme,
-        weapons::hud_feed::{
-            icon::IconId,
-            lost_weapons::{self, LostWeapon},
-        },
-    },
-    hud::{
-        anchored::place::upright_corners,
-        config::HUD_CONFIG,
-        game_icons::{self, Lookup},
-        grab_hint::{MARKER_TEXELS, paint_marker},
-        log_once::LogOnce,
-        quad::HudQuad,
-        target::{HudTarget, TextureCache},
-        world_quads_active,
-    },
+use crate::hud::{
+    anchored::place::upright_corners,
+    config::HUD_CONFIG,
+    game_icons,
+    game_icons::Lookup,
+    grab_hint::{MARKER_TEXELS, paint_marker},
+    log_once::LogOnce,
+    quad::HudQuad,
+    target::{HudTarget, TextureCache},
+    world_quads_active,
 };
 
 /// Draw the markers for `eye` over `target`. Called from the HUD's draw, with the engine context
 /// mutex held.
 pub(crate) fn draw(context: &ID3D11DeviceContext, device: &Device, target: &Texture, eye: usize) {
     let mut state = STATE.lock();
-    if crate::stereo::dispatch::first_ui_eye(eye) {
+    if jc3vr_render::stereo::dispatch::first_ui_eye(eye) {
         let cfg = *HUD_CONFIG.lock();
         let active =
             cfg.lost_weapons.enabled && world_quads_active(&cfg) && scheme::is_controllers();
-        let head = active.then(crate::hud::render_camera_pose).flatten();
+        let head = active.then(jc3vr_render::hud::render_camera_pose).flatten();
         state.prepare(context, device, head);
     }
     state.draw(context, device, target);

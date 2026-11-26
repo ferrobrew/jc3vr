@@ -11,7 +11,7 @@
 //! - the heat readout (`MCI_heat_container`) and the grenade readout (`MCI_grenade_parent`), drawn
 //!   on the off-hand's wrist;
 //! - the weapon selection cross (`MCI_weapon_selection_wheel`), drawn at the hand steering the
-//!   weapon wheel ([`crate::controllers::weapons::wheel`]) while the wheel shows it;
+//!   weapon wheel ([`jc3vr_gameplay::controllers::weapons::wheel`]) while the wheel shows it;
 //! - the tether readout (`MCI_dual_tether`), drawn above the off-hand's forearm, where the
 //!   grapple sits;
 //! - the aim part: the weapon reticle group, the grapple reticle, and the hit marker
@@ -51,7 +51,7 @@ use crate::hud::{
 
 /// The atlas's counters and the last frame's readout, for the debug UI.
 #[derive(Debug, Clone, Default)]
-pub(crate) struct AtlasStatus {
+pub struct AtlasStatus {
     /// Clips moved into cells, since the payload loaded.
     pub moves: u64,
     /// Clips moved back after their capture.
@@ -69,7 +69,7 @@ pub(crate) struct AtlasStatus {
 
 /// The layout the last frame drew.
 #[derive(Debug, Clone)]
-pub(crate) struct FrameStatus {
+pub struct FrameStatus {
     pub snapshot: u64,
     pub displayed_snapshot: u64,
     /// Whether the layout's snapshot is the displayed one (otherwise the newest layout is used).
@@ -87,11 +87,11 @@ pub(crate) struct FrameStatus {
 
 /// The latest status.
 /// Release the atlas's GPU resources, for eject.
-pub(crate) fn release_on_eject() {
+pub fn release_on_eject() {
     render::release_on_eject();
 }
 
-pub(crate) fn status() -> AtlasStatus {
+pub fn status() -> AtlasStatus {
     STATUS.lock().clone()
 }
 

@@ -1,5 +1,5 @@
 //! Arbitration of the egui debug panel's pointer between the desktop mouse and the controller
-//! pointer ([`crate::controllers::bindings::pointer`]), and the egui events it produces.
+//! pointer ([`jc3vr_gameplay::controllers::bindings::pointer`]), and the egui events it produces.
 //!
 //! Whichever source was used last owns the pointer. The desktop mouse is used when it moves,
 //! clicks, or scrolls. The controller is used when its ray lands on the panel, moves on it beyond
@@ -12,12 +12,12 @@
 //! [`crate::egui_impl::EguiState::set_panel_mode`] is active.
 
 use glam::Vec2;
+use jc3vr_gameplay::controllers::bindings::pointer::{
+    ControllerUpdate, reset_egui_controller, take_updates,
+};
 use parking_lot::Mutex;
 
-use crate::{
-    controllers::bindings::pointer::{ControllerUpdate, reset_egui_controller, take_updates},
-    hud::{cursor, pointer::window_uv},
-};
+use crate::hud::{cursor, pointer::window_uv};
 
 /// Build this frame's egui pointer events for the VR panel of `panel_size` pixels from the desktop
 /// mouse and the controller updates queued since the last call. Call once per frame from the game

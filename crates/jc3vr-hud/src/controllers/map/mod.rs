@@ -34,33 +34,34 @@ use jc3gi::{
     },
     ui::{comm_map_ui::CommMapUI, ui_manager::UIManager},
 };
-use parking_lot::Mutex;
-use re_utilities::hook_library::HookLibrary;
-
-pub(crate) use crate::controllers::map::{
-    controller::{CLICK_SLOP, MapDelivery},
-    report::{MapReport, report, zoom_label},
-};
-use crate::{
-    controllers::{
-        frame::{self, MAX_FRAME_AGE},
-        map::{
-            controller::{ControllerSample, MapController, prepare_delivery},
-            lookup::{SyntheticLookupScope, observe_effector, synthetic_effector},
-            report::{DispatchOutcome, DispatchReport, MapFields, record},
-        },
-    },
-    hud::pointer::{ControllerPointer, RoutedPointer},
-    vr::input::semantic::{
-        self, SemanticSet,
+use jc3vr_input::{frame, frame::MAX_FRAME_AGE};
+use jc3vr_render::vr::input::{
+    semantic,
+    semantic::{
+        SemanticSet,
         frame::{ActionValue, SemanticFrame},
         vocabulary::MenuAction,
     },
 };
+use parking_lot::Mutex;
+use re_utilities::hook_library::HookLibrary;
+
+pub use crate::controllers::map::{
+    controller::{CLICK_SLOP, MapDelivery},
+    report::{MapReport, report, zoom_label},
+};
+use crate::{
+    controllers::map::{
+        controller::{ControllerSample, MapController, prepare_delivery},
+        lookup::{SyntheticLookupScope, observe_effector, synthetic_effector},
+        report::{DispatchOutcome, DispatchReport, MapFields, record},
+    },
+    hud::pointer::{ControllerPointer, RoutedPointer},
+};
 
 /// The map hooks: the map's input handler and per-frame update, and the action lookup the shim
 /// answers. Unmatched maps, actions, and devices continue through the engine trampoline.
-pub(crate) fn hook_library() -> HookLibrary {
+pub fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_static_binder(&ON_MANAGE_INPUT_BINDER)
         .with_static_binder(&MAP_UPDATE_BINDER)
@@ -332,8 +333,9 @@ impl ModeDepth {
 
 #[cfg(test)]
 mod tests {
+    use jc3vr_input::frame::{ActionSetKind, Hand};
+
     use super::*;
-    use crate::controllers::frame::{ActionSetKind, Hand};
 
     fn set(set: SemanticSet) -> semantic::frame::SetState {
         semantic::frame::SetState {

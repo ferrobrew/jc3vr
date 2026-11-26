@@ -1,5 +1,5 @@
 //! Hiding the game's own HUD reticles under the controller scheme
-//! ([`OverlayConfig::hide_game_reticle`](crate::controllers::config::OverlayConfig::hide_game_reticle)).
+//! ([`OverlayConfig::hide_game_reticle`](jc3vr_gameplay::controllers::config::OverlayConfig::hide_game_reticle)).
 //!
 //! The HUD movie draws a weapon reticle at the centre of the screen and a grapple reticle at the
 //! grapple slot's projected aim point, pinned to the centre when the grapple aims at a direct
@@ -8,7 +8,7 @@
 //! at, or a point the panel cannot show where it is.
 //!
 //! The grapple reticle is hidden everywhere under the controller scheme while the grapple aims by
-//! hand ([`AimConfig::grapple`](crate::controllers::config::AimConfig::grapple)): on foot, in the
+//! hand ([`AimConfig::grapple`](jc3vr_gameplay::controllers::config::AimConfig::grapple)): on foot, in the
 //! air, in the water, and in every seat. The world-space overlay's grapple highlight and gauntlet
 //! beam mark the grapple's target in the world instead, and a flat cursor on the panel adds nothing
 //! to them. With the grapple's hand aim off, the gaze aims it, and the reticle marks where it goes.
@@ -22,7 +22,7 @@
 //! - in a passenger seat, while the aim's latest results aimed the wielded weapon by hand.
 //!
 //! A gun the gaze still aims keeps the reticle: the driver's weapons with
-//! [`VehiclesConfig::driver_weapons_by_hand`](crate::controllers::vehicles::config::VehiclesConfig::driver_weapons_by_hand)
+//! [`VehiclesConfig::driver_weapons_by_hand`](jc3vr_gameplay::controllers::vehicles::config::VehiclesConfig::driver_weapons_by_hand)
 //! off, and a mounted gun with its hand aim off. The world-space overlay's gun readout stands in
 //! for the hidden weapon reticle.
 //!
@@ -31,14 +31,10 @@
 
 use std::time::{Duration, Instant};
 
-use parking_lot::Mutex;
-
-use crate::controllers::{
-    aim,
-    config::CONTROLLERS_CONFIG,
-    mode::{self, Mode},
-    scheme, vehicles,
+use jc3vr_gameplay::controllers::{
+    aim, config::CONTROLLERS_CONFIG, mode, mode::Mode, scheme, vehicles,
 };
+use parking_lot::Mutex;
 
 /// Which of the game's reticles to hide.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
@@ -84,9 +80,9 @@ pub struct ReticleInputs {
     /// Whether the controller scheme is in effect.
     pub controllers_scheme: bool,
     pub place: AimPlace,
-    /// Whether the guns aim by hand ([`crate::controllers::config::AimConfig::gun`]).
+    /// Whether the guns aim by hand ([`jc3vr_gameplay::controllers::config::AimConfig::gun`]).
     pub guns_by_hand: bool,
-    /// Whether the grapple aims by hand ([`crate::controllers::config::AimConfig::grapple`]).
+    /// Whether the grapple aims by hand ([`jc3vr_gameplay::controllers::config::AimConfig::grapple`]).
     pub grapple_by_hand: bool,
     /// Whether the driver's built-in weapons aim by hand.
     pub driver_weapons_by_hand: bool,
@@ -174,8 +170,11 @@ fn aim_fresh(updates: u64) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use jc3vr_gameplay::controllers::mode::{
+        AirborneVariant, OnFootVariant, VehicleClass, VehicleSeat,
+    };
+
     use super::*;
-    use crate::controllers::mode::{AirborneVariant, OnFootVariant, VehicleClass, VehicleSeat};
 
     /// On foot under the controller scheme with every hand aim on, and nothing aimed.
     const ON_FOOT: ReticleInputs = ReticleInputs {

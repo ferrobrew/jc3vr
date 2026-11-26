@@ -24,7 +24,7 @@
 //! egui is tessellated exactly once per frame (the single-use `RendererOutput`), on eye 0, into the
 //! panel texture; both eyes then draw the same cached world-space corners through their own per-eye VP
 //! (the same compute-on-eye-0 rule as the gameplay HUD), and the desktop mirror composites the same
-//! panel texture (see [`crate::vr::mirror`]). There is never a second egui pass.
+//! panel texture (see [`jc3vr_render::vr::mirror`]). There is never a second egui pass.
 
 mod placement;
 mod slot;
@@ -33,12 +33,16 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use glam::Vec4;
 use jc3gi::graphics_engine::{device::Device, texture::Texture};
+use jc3vr_input::{
+    capture::PanelRequest,
+    frame,
+    frame::{Hand, Pose},
+};
 use parking_lot::Mutex;
 use windows::Win32::Graphics::Direct3D11::{ID3D11DeviceContext, ID3D11ShaderResourceView};
 
-pub(crate) use crate::hud::egui_panel::slot::{end_grab, is_placed, recall};
+pub use crate::hud::egui_panel::slot::{end_grab, is_placed, recall};
 use crate::{
-    controllers::frame::{self, Hand, Pose},
     egui_impl::{EguiState, debug_ui_capture, request_debug_ui},
     hud::{
         config::{EguiPanelConfig, HUD_CONFIG},
@@ -47,11 +51,11 @@ use crate::{
             placement::world_panel,
             slot::{ResolveInput, Summon},
         },
-        pointer::{self, RenderedPanel},
+        pointer,
+        pointer::RenderedPanel,
         quad::{HudQuad, compute_cursor_corners, compute_world_corners},
         target::HudTarget,
     },
-    ui::capture::PanelRequest,
 };
 
 /// How far in front of the head the panel is placed when it is summoned, in meters. The panel's
@@ -67,7 +71,7 @@ const SCALE: f32 = 0.85;
 static EGUI_PANEL: Mutex<EguiPanelState> = Mutex::new(EguiPanelState::new());
 
 /// Release the panel texture and quad pipeline, for eject.
-pub(crate) fn release_on_eject() {
+pub fn release_on_eject() {
     *EGUI_PANEL.lock() = EguiPanelState::new();
 }
 
@@ -82,18 +86,18 @@ static WAS_ACTIVE: AtomicBool = AtomicBool::new(false);
 /// locks: the frame holds the submit side across the eye draws (`FrameContext`), so a blocking lock
 /// here (as an earlier `vr::is_running()` was) deadlocks the draw against `WaitForCPUDrawToFinish`
 /// -- even with the panel disabled, since the config check came second. The enabled flag is checked first (cheap, and
-/// `CONFIG` is never held across a draw), and the VR-frame signal is the draw-safe [`crate::vr::render_params`]
+/// `CONFIG` is never held across a draw), and the VR-frame signal is the draw-safe [`jc3vr_render::vr::render_params`]
 /// slot (a separate lock, published per frame precisely so draw-thread hooks can read it), not the
 /// runtime lock.
-pub(crate) fn is_active() -> bool {
+pub fn is_active() -> bool {
     HUD_CONFIG.query(|c| c.egui_panel.enabled)
-        && !crate::director::clean_view::hides_everything()
-        && crate::vr::render_params(0).is_some()
+        && !jc3vr_core::director::clean_view::hides_everything()
+        && jc3vr_render::vr::render_params(0).is_some()
 }
 
 /// Show or hide the panel through the existing F8/controller route.
 /// Reopening enters Editing; a visible ReadOnly panel cannot edit itself.
-pub(crate) fn toggle() -> bool {
+pub fn toggle() -> bool {
     let enabled = {
         let mut hud = HUD_CONFIG.edit();
         hud.egui_panel.enabled = !hud.egui_panel.enabled;
@@ -115,11 +119,11 @@ pub(crate) fn toggle() -> bool {
 
 /// Hide the current debug surface without changing the independent desktop/panel preference.
 /// This queues ownership work because the top-bar callback holds the egui state lock.
-pub(crate) fn hide() {
+pub fn hide() {
     if is_active() {
         HUD_CONFIG.edit().egui_panel.enabled = false;
     } else {
-        crate::director::clean_view::hide();
+        jc3vr_core::director::clean_view::hide();
     }
     request_debug_ui(PanelRequest::Hide);
 }
@@ -143,7 +147,7 @@ pub(crate) fn hold_grab(hand: Hand, aim: Option<Pose>, rate: f32, dt: f32) {
 
 /// The panel texture size when the panel is active, or `None` otherwise. The egui layout is sized to
 /// this ([`crate::egui_impl::EguiState::set_panel_mode`]) and the pointer maps into it.
-pub(crate) fn active_size() -> Option<(u32, u32)> {
+pub fn active_size() -> Option<(u32, u32)> {
     is_active().then(|| HUD_CONFIG.query(|c| c.egui_panel.resolution))
 }
 
@@ -180,7 +184,7 @@ pub(crate) fn draw_quad(
     }
     let cfg = HUD_CONFIG.lock().egui_panel;
     let mut panel = EGUI_PANEL.lock();
-    if crate::stereo::dispatch::first_ui_eye(eye) {
+    if jc3vr_render::stereo::dispatch::first_ui_eye(eye) {
         panel.prepare(context, device, &cfg);
     }
     panel.draw(context, device, target);
@@ -252,7 +256,7 @@ impl EguiPanelState {
             head: camera.cockpit_head,
             distance: SUMMON_DISTANCE,
             held,
-            recenters: crate::vr::recenter_count(),
+            recenters: jc3vr_render::vr::recenter_count(),
         });
         let aspect = cfg.aspect.max(f32::EPSILON);
         // The panel's physical size is the size that gives the configured apparent size at the

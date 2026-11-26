@@ -5,6 +5,9 @@ pub(crate) use jc3vr_core::{
     cpu_placement, crash, frame_timing, hash, is_shutting_down, lifecycle, logging, module,
     render_frame, session, thread_role, util,
 };
+// The HUD layer lives in its own crate; the old paths keep working until the final cleanup pass.
+pub use jc3vr_hud::egui_impl;
+pub(crate) use jc3vr_hud::hud;
 use windows::Win32::{
     Foundation::HMODULE,
     System::{LibraryLoader::DisableThreadLibraryCalls, SystemServices::DLL_PROCESS_ATTACH},
@@ -13,7 +16,6 @@ use windows::Win32::{
 
 use crate::egui_impl::EguiState;
 
-pub mod egui_impl;
 pub mod ui;
 // The render layer lives in its own crate; the old paths keep working until the final cleanup pass.
 pub use jc3vr_render::vr;
@@ -29,7 +31,6 @@ mod eject_gpu;
 // The gameplay layer lives in its own crate; the old paths keep working until the final cleanup pass.
 pub(crate) use jc3vr_gameplay::grapple;
 mod hooks;
-mod hud;
 // The input layer lives in its own crate; the old path keeps working until the final cleanup pass.
 pub(crate) use jc3vr_input as input_core;
 mod pause_menu;

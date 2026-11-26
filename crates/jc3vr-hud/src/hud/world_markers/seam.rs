@@ -3,7 +3,7 @@
 //!
 //! Both run on the thread that runs `CUIManager::PreRender` (the HUD update, then the movie's
 //! advance and capture), in that order, once per capture. Neither locks the VR runtime state: the
-//! headset's field of view comes from the per-frame view record ([`crate::vr::capture_views`]).
+//! headset's field of view comes from the per-frame view record ([`jc3vr_render::vr::capture_views`]).
 
 use std::{cell::Cell, collections::HashMap};
 
@@ -170,7 +170,7 @@ fn world_key(world: Vec3) -> [u32; 3] {
 /// panel.
 fn in_headset_fov(camera: &Matrix4, world: Vec3) -> bool {
     let inset = FOV_INSET_DEG.to_radians();
-    let fov = crate::vr::capture_views()
+    let fov = jc3vr_render::vr::capture_views()
         .map(|views| {
             let [a, b] = views.eyes.map(|eye| {
                 FovTangents::from_angles(eye.fov[0], eye.fov[1], eye.fov[2], eye.fov[3], inset)

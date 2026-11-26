@@ -1,11 +1,10 @@
 //! Registers the debug UI as the input layer's capture driver
-//! ([`crate::input_core::capture::CaptureDriver`]): the policy step runs against the live
+//! ([`jc3vr_input::capture::CaptureDriver`]): the policy step runs against the live
 //! [`EguiState`](crate::egui_impl::EguiState), and the desktop sample is the native one.
 
-use crate::{
-    egui_impl::{desktop_input::sample_desktop_input, update_debug_ui_capture},
-    input_core::capture::{CaptureDriver, register_driver},
-};
+use jc3vr_input::capture::{CaptureDriver, register_driver};
+
+use crate::egui_impl::{desktop_input::sample_desktop_input, update_debug_ui_capture};
 
 /// Register the driver. Runs before the debug UI's state exists, which is harmless: the step
 /// returns `None` until the state is installed.

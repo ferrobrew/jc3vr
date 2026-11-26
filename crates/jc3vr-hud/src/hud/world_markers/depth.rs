@@ -11,6 +11,7 @@
 use anyhow::Context as _;
 use glam::{Mat4, Vec3};
 use jc3gi::graphics_engine::{device::Device, graphics_engine::GraphicsEngine};
+use jc3vr_gameplay::controllers::aim::marker_rays::Sight;
 use windows::Win32::Graphics::{
     Direct3D11::{
         D3D11_BIND_CONSTANT_BUFFER, D3D11_BIND_UNORDERED_ACCESS, D3D11_BUFFER_DESC,
@@ -24,8 +25,6 @@ use windows::Win32::Graphics::{
     },
     Dxgi::Common::DXGI_FORMAT_R32_FLOAT,
 };
-
-use crate::controllers::aim::marker_rays::Sight;
 
 /// One point to sample: a marker id and its world point.
 #[derive(Clone, Copy)]
@@ -347,7 +346,10 @@ impl DepthProbe {
 pub(super) const RESULT_TTL_S: f32 = 0.25;
 
 /// The committed, precompiled probe shader (entry point `main`).
-const COMPUTE_DXBC: &[u8] = include_bytes!("../../shaders/marker_depth_cs.dxbc");
+const COMPUTE_DXBC: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/shaders/marker_depth_cs.dxbc"
+));
 
 /// The shader's point capacity (matches `MAX_POINTS` in the HLSL).
 const MAX_POINTS: usize = 32;

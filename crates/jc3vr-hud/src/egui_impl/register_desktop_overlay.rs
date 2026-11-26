@@ -1,8 +1,10 @@
 //! Registers the flat debug UI as the desktop overlay the engine's flip presents.
 
-use crate::{egui_impl::EguiState, hooks::graphics_engine::post_draw::register_desktop_overlay};
+use jc3vr_render::hooks::graphics_engine::post_draw::register_desktop_overlay;
 
-pub(crate) fn register() {
+use crate::egui_impl::EguiState;
+
+pub fn register() {
     register_desktop_overlay(render_flat);
 }
 
@@ -10,7 +12,7 @@ pub(crate) fn register() {
 /// mirror-overlay path in `crate::hud::mirror_overlay` honours the same switch).
 fn render_flat() {
     if let Some(egui_state) = EguiState::get().as_mut()
-        && !crate::director::clean_view::hides_desktop()
+        && !jc3vr_core::director::clean_view::hides_desktop()
     {
         egui_state.render();
     }

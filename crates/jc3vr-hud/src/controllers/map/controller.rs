@@ -5,11 +5,9 @@
 use std::time::{Duration, Instant};
 
 use glam::Vec2;
+use jc3vr_input::frame::{Hand, MAX_FRAME_AGE};
 
-use crate::{
-    controllers::frame::{Hand, MAX_FRAME_AGE},
-    hud::pointer::RoutedPointer,
-};
+use crate::hud::pointer::RoutedPointer;
 
 /// A controller sample that is eligible for native map input.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -29,7 +27,7 @@ pub(crate) struct ControllerSample {
 
 /// One zoom step for a dispatch.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) enum ZoomStep {
+pub enum ZoomStep {
     None,
     In,
     Out,
@@ -37,30 +35,30 @@ pub(crate) enum ZoomStep {
 
 /// The values to deliver to the native map for one dispatch.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub(crate) struct MapDelivery {
+pub struct MapDelivery {
     /// Absolute panel UV for the map cursor. On cancellation this is the last delivered UV. While a
     /// press is held at its press point (see [`held_at_press`](Self::held_at_press)), this is the
     /// press point rather than the ray.
-    pub(crate) uv: Vec2,
+    pub uv: Vec2,
     /// Whether the cursor is held at the primary press point: the press has not wandered past
     /// [`CLICK_SLOP`], or this is the release of such a press.
-    pub(crate) held_at_press: bool,
+    pub held_at_press: bool,
     /// The primary button level for this dispatch.
-    pub(crate) primary: bool,
+    pub primary: bool,
     /// The secondary button level for this dispatch.
-    pub(crate) secondary: bool,
+    pub secondary: bool,
     /// The zoom step for this dispatch; none during source transitions and cancellation.
-    pub(crate) zoom: ZoomStep,
+    pub zoom: ZoomStep,
     /// Whether this dispatch ends the controller's ownership rather than continuing it.
-    pub(crate) cancelled: bool,
+    pub cancelled: bool,
     /// Whether the primary button began in this dispatch.
-    pub(crate) primary_pressed: bool,
+    pub primary_pressed: bool,
     /// Whether the primary button ended in this dispatch.
-    pub(crate) primary_released: bool,
+    pub primary_released: bool,
     /// Whether the secondary button began in this dispatch.
-    pub(crate) secondary_pressed: bool,
+    pub secondary_pressed: bool,
     /// Whether the secondary button ended in this dispatch.
-    pub(crate) secondary_released: bool,
+    pub secondary_released: bool,
 }
 
 impl MapDelivery {
@@ -263,7 +261,7 @@ pub(crate) fn prepare_delivery(
 /// stage pixels, and a hand-held ray moves further than that from tremor and from the trigger pull
 /// itself, so without the slop nearly every trigger pull would start a drag, and its release would
 /// end the drag instead of selecting.
-pub(crate) const CLICK_SLOP: f32 = 0.025;
+pub const CLICK_SLOP: f32 = 0.025;
 
 /// The press point to hold the cursor at for one delivery, if any. A press anchors at its own UV;
 /// a held press keeps the anchor while the ray stays within [`CLICK_SLOP`] of it and loses it for

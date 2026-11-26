@@ -15,7 +15,7 @@ pub(crate) const DEPTH_SHIFT: DepthShiftTuning = DepthShiftTuning {
 
 /// How the panel distance follows the vehicle state (see the module docs).
 #[derive(Copy, Clone)]
-pub(crate) struct DepthShiftTuning {
+pub struct DepthShiftTuning {
     /// The panel distance while the near shift is engaged, in meters.
     pub near_distance: f32,
     /// The easing halflife between distances, in seconds.

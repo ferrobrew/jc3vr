@@ -4,7 +4,8 @@
 //! detours (the graphics engine, the camera, the clock, the draw counts, the window focus, and the
 //! profiler's engine scopes) live in the render crate, and the gameplay detours (the character,
 //! the animation graph, the input tick, the equipment, and the sim step) in the gameplay crate.
-//! Both crates' modules are re-exported through shim files at their old paths.
+//! Both crates' modules are re-exported through shim files at their old paths. The UI detours live
+//! in the HUD crate and are re-exported as [`ui`].
 
 pub(crate) use jc3vr_core::hooks::{in_gameplay, install, online, patcher, uninstall};
 
@@ -20,6 +21,6 @@ pub mod input;
 #[cfg(feature = "profiler")]
 pub mod profiler;
 pub mod sim;
-pub mod ui;
+pub(crate) use jc3vr_hud::hooks::ui;
 pub mod window_focus;
 pub mod wndproc;

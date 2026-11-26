@@ -21,19 +21,19 @@ use jc3gi::{
         ui_manager::{ScreenPos, UIManager},
     },
 };
+use jc3vr_core::{frame_timing, frame_timing::Slot};
 use re_utilities::hook_library::HookLibrary;
 
-pub(crate) use crate::hooks::ui::mouse::cancel_pointer_on_game_thread;
+pub use crate::hooks::ui::mouse::cancel_pointer_on_game_thread;
 use crate::{
     controllers::summary::game_hints::hide_game_hints,
-    frame_timing::{self, Slot},
     hud::{
         HUD_STATE, aim, compute_panel_vp, config::HUD_CONFIG, current_aspect,
         game_reticle::hide_game_reticles,
     },
 };
 
-pub(crate) fn hook_library() -> HookLibrary {
+pub fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_static_binder(&GET_2D_INFO_BINDER)
         .with_static_binder(&CONVERT_3D_COORDS_DEFAULT_BINDER)

@@ -1,0 +1,27 @@
+[package]
+name = "jc3vr-hud"
+version = "0.1.0"
+edition = "2024"
+description = "The HUD layer of the payload: the floating panel and its layers, the summary's presentation, the controls map, the UI detours, and the egui renderer."
+publish = false
+
+[dependencies]
+windows = { workspace = true }
+glam = { workspace = true }
+anyhow = { workspace = true }
+jc3gi = { path = "../../jc3gi" }
+jc3vr-core = { path = "../jc3vr-core" }
+jc3vr-input = { path = "../jc3vr-input" }
+jc3vr-render = { path = "../jc3vr-render" }
+jc3vr-gameplay = { path = "../jc3vr-gameplay" }
+# The UI and controls map detours. The detour macro emits `::re_utilities` paths, so a crate that
+# defines detours depends on `re-utilities` directly.
+re-utilities = { workspace = true }
+detours-macro = { workspace = true }
+body-rig = { path = "../body-rig" }
+tracing = "0.1"
+parking_lot = "0.12.5"
+serde = { version = "1", features = ["derive"] }
+egui = "0.35"
+egui-directx11 = "0.13"
+clipboard-win = "5.4.1"

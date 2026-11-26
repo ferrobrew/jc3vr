@@ -36,33 +36,33 @@
 //! that carry a label, such as the nitrous button.
 
 pub mod aim;
-pub(crate) mod anchored;
-pub(crate) mod atlas;
+pub mod anchored;
+pub mod atlas;
 mod binding;
-pub(crate) mod config;
+pub mod config;
 pub mod cursor;
 pub mod depth;
-pub(crate) mod egui_panel;
-pub(crate) mod game_icons;
+pub mod egui_panel;
+pub mod game_icons;
 pub(crate) mod game_reticle;
-pub(crate) mod grab_hint;
+pub mod grab_hint;
 mod label;
 mod log_once;
 pub(crate) mod lost_weapons;
 pub(crate) mod mark_labels;
-pub(crate) mod mirror_overlay;
+pub mod mirror_overlay;
 mod offscreen_egui;
 mod palette;
-pub(crate) mod pointer;
+pub mod pointer;
 mod quad;
-pub(crate) mod register_render;
+pub mod register_render;
 pub(crate) mod restart_notice;
 mod reticle;
 pub mod scaleform;
 mod state;
-pub(crate) mod summary_panel;
+pub mod summary_panel;
 mod target;
-pub(crate) mod world_markers;
+pub mod world_markers;
 
 use std::{
     sync::atomic::{AtomicBool, Ordering},
@@ -80,20 +80,16 @@ use jc3gi::{
         ui_manager::{GetIUIManager, UIManager},
     },
 };
-// The render camera's pose lives in the render crate; the old path keeps working until the final
-// cleanup pass.
-pub(crate) use jc3vr_render::hud::render_camera_pose;
-pub use state::HUD_STATE;
-use state::{StageSafeArea, publish_stage_safe_area};
-pub(crate) use state::{StageSafeAreaReadout, stage_safe_area_readout};
-use windows::Win32::Graphics::Direct3D11::ID3D11DeviceContext;
-
-use crate::{
+use jc3vr_core::{
     config::engine::{Switch, disable_automatically},
     hooks::in_gameplay,
-    hud::config::HUD_CONFIG,
-    stereo::single_pass::collapse_active,
 };
+use jc3vr_render::{hud::render_camera_pose, stereo::single_pass::collapse_active};
+pub use state::{HUD_STATE, StageSafeAreaReadout, stage_safe_area_readout};
+use state::{StageSafeArea, publish_stage_safe_area};
+use windows::Win32::Graphics::Direct3D11::ID3D11DeviceContext;
+
+use crate::hud::config::HUD_CONFIG;
 
 /// Which presentation the HUD is in this frame. Drives the panel's aspect (gameplay vs full-screen
 /// UI). Placement (head-following vs world-locked) is chosen separately by
@@ -107,7 +103,7 @@ pub enum HudMode {
 }
 
 /// Determine the current [`HudMode`] from the game state and UI. Any state other than in-game play
-/// ([`crate::hooks::in_gameplay`] is false -- so loading screens, the frontend, and install/startup) is
+/// ([`jc3vr_core::hooks::in_gameplay`] is false -- so loading screens, the frontend, and install/startup) is
 /// full-screen, as is an in-game modal menu (the pause / mission / reward screens, detected via the
 /// UI's static background grab).
 pub fn current_mode() -> HudMode {
@@ -135,7 +131,7 @@ pub(crate) fn world_quads_active(cfg: &HudConfig) -> bool {
     cfg.redirect
         && cfg.quad
         && current_mode() == HudMode::Hud
-        && !crate::director::clean_view::hides_everything()
+        && !jc3vr_core::director::clean_view::hides_everything()
 }
 
 pub(crate) fn gameplay_hints_active() -> bool {
@@ -266,19 +262,19 @@ pub(crate) fn redirect_applied() -> bool {
 /// `window_width`/`window_height` are the swapchain back buffer's dimensions, used only as the
 /// cursor mapping's window basis (its fallback for the client rect). Everything sized against the
 /// *render* -- the reset proxy and the engine-binding restore -- reads
-/// [`crate::stereo::render_size`] instead, because the two diverge once the mod substitutes its own
+/// [`jc3vr_render::stereo::render_size`] instead, because the two diverge once the mod substitutes its own
 /// back buffer (`docs/mod/stereo/swapchain-ownership.md`). The HUD texture's own size is neither: it is the
 /// mod's choice (see [`hud_target_size`]), as is its aspect.
 pub fn tick(device: &Device, window_width: u32, window_height: u32) {
     let mut hud = HUD_STATE.lock();
     let cfg = *HUD_CONFIG.lock();
-    let render = crate::stereo::render_size().unwrap_or((window_width, window_height));
+    let render = jc3vr_render::stereo::render_size().unwrap_or((window_width, window_height));
     if cfg.redirect {
         let aspect = aspect_for(current_mode());
         // Size against one eye's render target: under single-pass the render target is double-wide,
         // and keying off it whole would inflate the HUD by 2x for a target only ever viewed one eye
         // at a time.
-        let (eye_width, eye_height) = crate::stereo::per_eye_render_size().unwrap_or(render);
+        let (eye_width, eye_height) = jc3vr_render::stereo::per_eye_render_size().unwrap_or(render);
         let (width, height) = hud_target_size(
             RENDER_SCALE,
             RENDER_RESOLUTION,
@@ -353,7 +349,7 @@ pub fn draw_quad(context: &ID3D11DeviceContext, device: &Device, target: &Textur
     // per-eye view (VP = Inverse(Transform) · Projection), collapsing the panel to view space
     // (head-locked, zero disparity, appears at infinity).
     let pointer_camera = pointer::rendered_camera();
-    if crate::stereo::dispatch::first_ui_eye(eye)
+    if jc3vr_render::stereo::dispatch::first_ui_eye(eye)
         && let Some((head_pos, head_rotation)) = pointer_camera
             .map(|camera| (camera.head.position, camera.head.orientation))
             .or_else(render_camera_pose)
@@ -428,7 +424,7 @@ pub fn draw_quad(context: &ID3D11DeviceContext, device: &Device, target: &Textur
         let cursor_corners = cursor::frame()
             .and_then(|frame| quad::compute_cursor_corners(&params_at(panel_distance), frame));
         hud.set_cursor_corners(cursor_corners);
-    } else if crate::stereo::dispatch::first_ui_eye(eye) {
+    } else if jc3vr_render::stereo::dispatch::first_ui_eye(eye) {
         // No panel pose this frame: the previous corners are not what the player sees.
         pointer::publish_panel(None);
         world_markers::clear_frame();
@@ -446,7 +442,7 @@ pub fn draw_quad(context: &ID3D11DeviceContext, device: &Device, target: &Textur
         world_markers::prepare_eye(context, hud.redirected_target());
         atlas::prepare_eye(context, hud.redirected_target());
     }
-    if !crate::director::clean_view::hides_everything() {
+    if !jc3vr_core::director::clean_view::hides_everything() {
         world_markers::draw_billboards(context, device, target);
     }
     lost_weapons::draw(context, device, target, eye);
@@ -538,8 +534,8 @@ pub fn compute_panel_vp() -> Option<(Matrix4, Matrix4)> {
 /// frames, so without it the target (a colour and a depth texture at one and a half times the eye
 /// size) stays allocated after the payload is gone. Call after the engine is back at its native
 /// size, which [`restore`](state::HudState::restore) binds the UI to.
-pub(crate) fn release_on_eject() {
-    let Some((width, height)) = crate::stereo::render_size() else {
+pub fn release_on_eject() {
+    let Some((width, height)) = jc3vr_render::stereo::render_size() else {
         return;
     };
     HUD_STATE.lock().restore(width, height);
@@ -550,7 +546,7 @@ pub(crate) fn release_on_eject() {
 /// and releases the egui preview registrations when the owning renderer is available. This requests
 /// render-thread restoration; it does not acknowledge native restoration or establish unload safety.
 pub fn install() {
-    crate::lifecycle::on_cleanup(|renderer| {
+    jc3vr_core::lifecycle::on_cleanup(|renderer| {
         // Automatically, so that a save during the teardown keeps the redirect the user chose.
         disable_automatically(Switch {
             path: "hud.redirect",

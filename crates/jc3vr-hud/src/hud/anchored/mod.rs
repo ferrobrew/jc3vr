@@ -35,25 +35,19 @@ use jc3gi::{
     graphics_engine::{device::Device, texture::Texture},
     heat_manager::HeatManager,
 };
+use jc3vr_gameplay::controllers::{
+    config::CONTROLLERS_CONFIG,
+    hands::late,
+    scheme,
+    summary::config::GlanceConfig,
+    weapons::{hud_feed::hand_ammo as ammo_sample, wheel, wheel::CROSS_LINGER},
+};
+use jc3vr_input::frame::{Hand, Pose};
 use parking_lot::Mutex;
 use windows::Win32::Graphics::Direct3D11::ID3D11DeviceContext;
 
 use crate::{
-    controllers::{
-        config::CONTROLLERS_CONFIG,
-        frame::{Hand, Pose},
-        hands::late,
-        scheme,
-        summary::{
-            config::GlanceConfig,
-            glance::{Glance, fade, looking},
-        },
-        weapons::{
-            hud_feed::hand_ammo as ammo_sample,
-            wheel::{self, CROSS_LINGER},
-        },
-    },
-    hooks,
+    controllers::summary::glance::{Glance, fade, looking},
     hud::{
         HudMode,
         anchored::{
@@ -65,7 +59,8 @@ use crate::{
                 wants_attention,
             },
         },
-        atlas::{self, Part},
+        atlas,
+        atlas::Part,
         config::{AtlasConfig, HUD_CONFIG, HudConfig},
         log_once::LogOnce,
         quad::HudQuad,
@@ -103,13 +98,13 @@ pub(crate) unsafe fn sample_status(cfg: &HudConfig) {
 /// with the engine context mutex held.
 pub(crate) fn draw(context: &ID3D11DeviceContext, device: &Device, target: &Texture, eye: usize) {
     let mut state = STATE.lock();
-    if crate::stereo::dispatch::first_ui_eye(eye) {
+    if jc3vr_render::stereo::dispatch::first_ui_eye(eye) {
         let cfg = *HUD_CONFIG.lock();
         let dominant = CONTROLLERS_CONFIG.lock().acting_hand();
         let active = cfg.atlas.enabled
             && world_quads_active(&cfg)
             && scheme::is_controllers()
-            && crate::vr::render_params(0).is_some();
+            && jc3vr_render::vr::render_params(0).is_some();
         state.prepare(context, device, active, dominant, &cfg.atlas);
     }
     state.draw(context, device, target);
@@ -117,7 +112,7 @@ pub(crate) fn draw(context: &ID3D11DeviceContext, device: &Device, target: &Text
 
 /// The readouts' state, for the debug UI.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
-pub(crate) struct AnchoredStatus {
+pub struct AnchoredStatus {
     /// The hands with an ammunition counter, by [`Hand::index`].
     pub counts: [bool; 2],
     /// The health fraction and the trail, when sampled.
@@ -136,7 +131,7 @@ pub(crate) struct AnchoredStatus {
     pub tether_drawn: bool,
 }
 
-pub(crate) fn status() -> AnchoredStatus {
+pub fn status() -> AnchoredStatus {
     STATE.lock().status
 }
 
@@ -341,11 +336,11 @@ impl State {
                 }
             }
         }
-        let head = crate::hud::render_camera_pose().map(|(position, orientation)| Pose {
+        let head = jc3vr_render::hud::render_camera_pose().map(|(position, orientation)| Pose {
             position,
             orientation,
         });
-        let dtf = hooks::camera::last_dtf();
+        let dtf = jc3vr_render::hooks::camera::last_dtf();
         let hands = late::drawn_hands(dtf);
         let grip = |hand: Hand| hands[hand.index()].map(|h| h.grip);
 

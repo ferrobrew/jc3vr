@@ -14,28 +14,25 @@ use jc3gi::ui::{
     scaleform::{DisplayInfo, MovieImpl, Value},
     ui_manager::UIManager,
 };
+use jc3vr_gameplay::controllers::scheme;
 use parking_lot::Mutex;
 
-use crate::{
-    controllers::scheme,
-    hud::{
-        HudMode,
-        atlas::{
-            AtlasCapture, STATUS,
-            layout::{
-                AtlasLayout, Cell, LayoutRequest, PartRequest, Placement, carried_placement,
-                compose, extents_from_edges, layout, local_placement,
-            },
-            publish,
+use crate::hud::{
+    HudMode,
+    atlas::{
+        AtlasCapture, STATUS,
+        layout::{
+            AtlasLayout, Cell, LayoutRequest, PartRequest, Placement, carried_placement, compose,
+            extents_from_edges, layout, local_placement,
         },
-        config::HudConfig,
-        scaleform::{self, AtlasClip, CLIP_HANDLES, ClipHandle},
-        state::applied_redirect,
-        world_markers::{
-            self,
-            layout::{CropExtents, StageFrame},
-        },
+        publish,
     },
+    config::HudConfig,
+    scaleform,
+    scaleform::{AtlasClip, CLIP_HANDLES, ClipHandle},
+    state::applied_redirect,
+    world_markers,
+    world_markers::layout::{CropExtents, StageFrame},
 };
 
 /// Lay out the atlas for this capture and move the readouts into their cells. Returns the layout
@@ -102,7 +99,7 @@ pub(crate) unsafe fn begin_capture(cfg: &HudConfig) -> Option<AtlasLayout> {
     // The selection cross moves only while the wheel shows it at a hand; otherwise it stays where
     // the wheel or the game placed it on the panel.
     if let Some(cell) = layout.cross
-        && crate::controllers::weapons::wheel::cross_anchor().is_some()
+        && jc3vr_gameplay::controllers::weapons::wheel::cross_anchor().is_some()
         // SAFETY: the HUD is a live singleton in gameplay, read on the capture thread.
         && let Some(hud) = unsafe { HUDUI::get() }
         && hud.m_SelectionWheelUi.value_type() != 0

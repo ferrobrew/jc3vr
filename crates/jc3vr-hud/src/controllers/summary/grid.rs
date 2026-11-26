@@ -2,7 +2,7 @@
 
 use std::ops::Range;
 
-use crate::controllers::summary::{
+use jc3vr_gameplay::controllers::summary::{
     content::{Metrics, metrics},
     current::{CellKind, CurrentSummary},
 };
@@ -43,7 +43,7 @@ pub(crate) fn layout(
     width: u32,
     max_height: u32,
     row_px: f32,
-    measure: &dyn Fn(&crate::controllers::summary::current::Hint, f32, Metrics) -> f32,
+    measure: &dyn Fn(&jc3vr_gameplay::controllers::summary::current::Hint, f32, Metrics) -> f32,
 ) -> Grid {
     let m = metrics(row_px);
     let margin = m.margin;

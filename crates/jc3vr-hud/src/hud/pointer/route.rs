@@ -12,9 +12,10 @@
 //! [`PendingRoute::commit`] only when the delivery happens, so a frame without a delivery cannot
 //! consume a transition.
 
+use jc3vr_gameplay::controllers::bindings::pointer::ControllerPointer;
 use parking_lot::Mutex;
 
-use crate::{controllers::bindings::pointer::ControllerPointer, hud::cursor};
+use crate::hud::cursor;
 
 /// The source selected for one game-UI mouse delivery.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -203,8 +204,9 @@ static ROUTER: Mutex<RouterState> = Mutex::new(RouterState::new());
 
 #[cfg(test)]
 mod tests {
+    use jc3vr_input::frame::Hand;
+
     use super::*;
-    use crate::controllers::frame::Hand;
 
     const REST: Option<(i32, i32)> = Some((10, 20));
 

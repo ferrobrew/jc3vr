@@ -11,13 +11,13 @@
 //! left hand's on the left ([`layout`]).
 //!
 //! The weapon handling's input tick publishes each hand's hint
-//! ([`crate::controllers::weapons::hud_feed::grab_hint`]), with the icons named by weapon id. The
+//! ([`jc3vr_gameplay::controllers::weapons::hud_feed::grab_hint`]), with the icons named by weapon id. The
 //! draw reads the icons from the archives ([`crate::hud::game_icons`]), paints a texture per hand
 //! when its hint changes, and draws it on the panel's plane after the panel, with a short fade. A hint whose icons are not all loaded is not drawn: it never falls back to text.
 
 mod layout;
 mod paint;
-pub(crate) mod register_gate;
+pub mod register_gate;
 
 use std::{
     sync::Arc,
@@ -27,6 +27,11 @@ use std::{
 use anyhow::Context as _;
 use glam::Vec4;
 use jc3gi::graphics_engine::{device::Device, texture::Texture};
+use jc3vr_gameplay::controllers::{
+    scheme,
+    weapons::hud_feed::{grab_hint as feed, grab_hint::Hint},
+};
+use jc3vr_input::frame::Hand;
 pub(crate) use paint::{
     MARKER_TEXELS, TAG_TEXELS, marker as paint_marker, tag as paint_tag, tag_fits,
 };
@@ -34,15 +39,11 @@ use parking_lot::Mutex;
 use windows::Win32::Graphics::Direct3D11::ID3D11DeviceContext;
 
 use crate::{
-    controllers::{
-        frame::Hand,
-        scheme,
-        summary::glance::fade,
-        weapons::hud_feed::grab_hint::{self as feed, Hint},
-    },
+    controllers::summary::glance::fade,
     hud::{
         config::HUD_CONFIG,
-        game_icons::{self, Image, Lookup},
+        game_icons,
+        game_icons::{Image, Lookup},
         gameplay_hints_active,
         grab_hint::{
             layout::{hint_corners, panel_frame},
@@ -65,7 +66,7 @@ pub(crate) fn draw(
     panel: Option<[Vec4; 4]>,
 ) {
     let mut state = STATE.lock();
-    if crate::stereo::dispatch::first_ui_eye(eye) {
+    if jc3vr_render::stereo::dispatch::first_ui_eye(eye) {
         let cfg = *HUD_CONFIG.lock();
         let active = cfg.grab_hint.enabled
             && world_quads_active(&cfg)
@@ -271,11 +272,10 @@ static FAILURES: LogOnce = LogOnce::new("hud grab hint");
 
 #[cfg(test)]
 mod tests {
+    use jc3vr_gameplay::controllers::{loadout::Socket, weapons::hud_feed::grab_hint::Place};
+
     use super::*;
-    use crate::{
-        controllers::{loadout::Socket, weapons::hud_feed::grab_hint::Place},
-        hud::label,
-    };
+    use crate::hud::label;
 
     /// Every place's name fits across a take's texture, the narrower of the two, with room for its
     /// halo.

@@ -171,7 +171,7 @@ fn adapter_focus_loss_while_held_clears_keys_but_keeps_the_pointer() {
     );
     assert_eq!(
         update.snapshot.blocker,
-        Some(crate::input_core::capture::OwnershipBlocker::Editing)
+        Some(jc3vr_input::capture::OwnershipBlocker::Editing)
     );
     assert!(update.snapshot.edit_capture.pointer);
     assert!(!update.snapshot.edit_capture.keyboard);

@@ -38,7 +38,7 @@ pub(crate) struct FrameInputs {
 pub(crate) fn prepare_frame(device: &Device, inputs: &FrameInputs) {
     let mut state = STATE.lock();
     state.corners = None;
-    if crate::director::clean_view::hides_everything() {
+    if jc3vr_core::director::clean_view::hides_everything() {
         return;
     }
     let Some((cell, anchor, hud_texture, size)) = atlas::part_texture(Part::Aim, |part| {

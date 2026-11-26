@@ -40,7 +40,7 @@ pub(crate) fn applied_redirect() -> Option<AppliedRedirect> {
 
 /// Owned UI layout values copied at the main movie's capture boundary.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) struct StageSafeArea {
+pub struct StageSafeArea {
     pub bounds: [f32; 4],
     pub percentage: f32,
     pub stage: Vec2,
@@ -49,14 +49,14 @@ pub(crate) struct StageSafeArea {
 
 /// A main-movie capture sample; it contains no engine pointers or renderer resources.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) struct StageSafeAreaSample {
+pub struct StageSafeAreaSample {
     pub at: Instant,
     pub layout: Option<StageSafeArea>,
 }
 
 /// Availability of the most recent safe-area publication.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) enum StageSafeAreaReadout {
+pub enum StageSafeAreaReadout {
     Unavailable,
     Busy,
     Captured(StageSafeAreaSample),
@@ -81,7 +81,7 @@ impl StageSafeAreaSample {
         }
     }
 
-    pub(crate) fn fresh(self, now: Instant) -> bool {
+    pub fn fresh(self, now: Instant) -> bool {
         now.saturating_duration_since(self.at) < STAGE_SAFE_AREA_STALE
     }
 }
@@ -92,7 +92,7 @@ pub(crate) fn publish_stage_safe_area(layout: StageSafeArea, at: Instant) {
 }
 
 /// Copy the publication without waiting for the capture producer or accessing the engine.
-pub(crate) fn stage_safe_area_readout() -> StageSafeAreaReadout {
+pub fn stage_safe_area_readout() -> StageSafeAreaReadout {
     copy_stage_safe_area(&STAGE_SAFE_AREA)
 }
 
@@ -352,7 +352,7 @@ impl HudState {
     ) {
         // The clean view hides the HUD by skipping the quad: the redirect keeps drawing the game's
         // HUD into the offscreen texture, so switching it off shows the live HUD at once.
-        if crate::director::clean_view::hides_everything() {
+        if jc3vr_core::director::clean_view::hides_everything() {
             return;
         }
         self.draw_panel(context, device, target);
@@ -443,7 +443,7 @@ impl HudState {
         self.drain_preview_retirements(renderer);
     }
 
-    pub(crate) fn drain_preview_retirements(&mut self, renderer: &mut egui_directx11::Renderer) {
+    pub fn drain_preview_retirements(&mut self, renderer: &mut egui_directx11::Renderer) {
         resources::drain(&mut self.pending_unregisters, |id| {
             renderer.unregister_user_texture(id);
         });

@@ -15,7 +15,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::hash::hashlittle;
+use jc3vr_core::hash::hashlittle;
 
 /// Every file in the base and patch archives, by name hash.
 pub(crate) struct ArchiveIndex {

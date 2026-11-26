@@ -1,5 +1,5 @@
 pub(crate) mod desktop_input;
-pub(crate) mod register_desktop_overlay;
+pub mod register_desktop_overlay;
 mod register_input_capture;
 
 use anyhow::Context as _;
@@ -8,6 +8,12 @@ use jc3gi::{
     graphics_engine::graphics_engine::{ActiveCursor, GraphicsEngine, get_graphics_params},
     input::input_device_manager::InputDeviceManager,
 };
+use jc3vr_core::director::clean_view::hides_desktop;
+use jc3vr_input::capture::{
+    CapturePolicy, CaptureUpdate, DeviceEffect, InputObservation, OwnershipSnapshot, PanelMode,
+    PanelRequest, publish_capture,
+};
+pub use jc3vr_input::capture::{DebugUiInput, debug_ui_capture};
 use parking_lot::{Mutex, MutexGuard};
 use windows::Win32::{
     Foundation::{HWND, LPARAM, WPARAM},
@@ -32,27 +38,17 @@ use windows::Win32::{
     },
 };
 
-use crate::{
-    director::clean_view::hides_desktop,
-    hud::{egui_panel, pointer},
-    input_core::capture::{
-        CapturePolicy, CaptureUpdate, DeviceEffect, InputObservation, OwnershipSnapshot, PanelMode,
-        PanelRequest, publish_capture,
-    },
-};
-pub(crate) use crate::{
-    egui_impl::desktop_input::{consume_desktop_shortcut, observe_desktop_message},
-    input_core::capture::{DebugUiInput, debug_ui_capture},
-};
+pub use crate::egui_impl::desktop_input::{consume_desktop_shortcut, observe_desktop_message};
+use crate::hud::{egui_panel, pointer};
 
 /// Queue a UI request without re-entering the renderer lock from an egui callback.
-pub(crate) fn request_debug_ui(request: PanelRequest) {
+pub fn request_debug_ui(request: PanelRequest) {
     REQUESTS.lock().push(request);
 }
 
 /// Step capture before mode detection, pointer routing, and gameplay output on the input thread.
 /// The capture driver registers it as its step
-/// ([`crate::input_core::capture::update_debug_ui_capture`]).
+/// ([`jc3vr_input::capture::update_debug_ui_capture`]).
 pub(crate) fn update_debug_ui_capture(input: DebugUiInput) -> Option<CaptureUpdate> {
     let mut state = EguiState::get();
     state.as_mut().map(|state| {
@@ -308,7 +304,7 @@ impl EguiState {
     /// to the game window (the flat back-buffer overlay). Call from the game thread before [`run`].
     pub fn set_panel_mode(&mut self, size: Option<(u32, u32)>) {
         let desktop_visible = crate::hud::mirror_overlay::is_active()
-            || (crate::vr::render_params(0).is_none() && !hides_desktop());
+            || (jc3vr_render::vr::render_params(0).is_none() && !hides_desktop());
         self.reconcile_surfaces(size.is_some() || desktop_visible);
         if size.is_some()
             && self.panel.is_none()
@@ -329,7 +325,7 @@ impl EguiState {
     }
 
     /// The clean view (F4) changed the desktop surface; a live VR panel retains its own ownership.
-    pub(crate) fn desktop_visibility_changed(&mut self, visible: bool) {
+    pub fn desktop_visibility_changed(&mut self, visible: bool) {
         if !egui_panel::is_active() {
             self.request_capture(PanelRequest::Hide);
             if visible {
@@ -367,10 +363,12 @@ impl EguiState {
             // only refreshes on mouse movement, and this layout has to match the texture the overlay
             // is rendered into. Before the window rect is known at all, the overlay texture falls
             // back to the back buffer's size, so the layout follows it there.
-            None if crate::hud::mirror_overlay::is_active() => crate::vr::window::client_size()
-                .or_else(crate::hud::cursor::client_size)
-                .map(|(w, h)| (w as f32, h as f32))
-                .unwrap_or_else(flat_buffer_size),
+            None if crate::hud::mirror_overlay::is_active() => {
+                jc3vr_render::vr::window::client_size()
+                    .or_else(crate::hud::cursor::client_size)
+                    .map(|(w, h)| (w as f32, h as f32))
+                    .unwrap_or_else(flat_buffer_size)
+            }
             None => flat_buffer_size(),
         };
         let mut input = egui::RawInput {
@@ -669,7 +667,7 @@ impl EguiState {
 /// one eye's half, so report the per-eye width; else the whole UI comes out half-relative-width.
 fn flat_buffer_size() -> (f32, f32) {
     let params = unsafe { get_graphics_params() };
-    let width = if crate::stereo::single_pass::double_wide_active() {
+    let width = if jc3vr_render::stereo::single_pass::double_wide_active() {
         params.m_Width as f32 / 2.0
     } else {
         params.m_Width as f32

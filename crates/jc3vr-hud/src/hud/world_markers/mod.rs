@@ -16,23 +16,20 @@
 //!   cut out of the panel, and each slot is drawn as a billboard facing the head at the marker's
 //!   world point, with the angular size it had on the panel. The scene depth at each marker's pixel
 //!   ([`depth`]) places it on the nearest visible surface along its line of sight.
-//! - [`crate::controllers::aim::marker_rays`] (the game thread, in the player aim's simulation
+//! - [`jc3vr_gameplay::controllers::aim::marker_rays`] (the game thread, in the player aim's simulation
 //!   update): a physics raycast for the markers that had no recent depth sample.
 //!
-//! [`layout`] holds the pure geometry, and [`stage_frame`] the stage's mapping onto the texture. The whole prototype is behind
+//! [`layout`] holds the pure geometry, and [`stage_frame`](jc3vr_render::hud::world_markers::stage_frame), in the render crate, the stage's mapping onto the texture. The whole prototype is behind
 //! [`WorldMarkersConfig::enabled`](crate::hud::config::WorldMarkersConfig::enabled). See
 //! `docs/mod/rendering/ui-decoupling.md`.
 
 mod depth;
-pub(crate) mod layout;
+pub mod layout;
 mod render;
 mod seam;
-// The render layer's half lives in the render crate; the old path keeps working until the final
-// cleanup pass.
 use std::collections::VecDeque;
 
 use glam::{Vec2, Vec3};
-pub(crate) use jc3vr_render::hud::world_markers::stage_frame;
 use parking_lot::Mutex;
 pub(crate) use render::{FrameInputs, clear_frame, draw_billboards, prepare_eye, prepare_frame};
 pub(crate) use seam::{
@@ -60,7 +57,7 @@ pub(crate) const LABEL_CROP: CropExtents = CropExtents {
 
 /// A live snapshot of the prototype for the debug UI.
 #[derive(Clone, Default)]
-pub(crate) struct Status {
+pub struct Status {
     /// The snapshot id of the layout drawn last, and whether it matched the displayed snapshot (a
     /// mismatch falls back to the newest layout).
     pub layout_snapshot: Option<u64>,
@@ -78,7 +75,7 @@ pub(crate) struct Status {
 
 /// One drawn marker, for the debug UI.
 #[derive(Clone, Copy)]
-pub(crate) struct MarkerStatus {
+pub struct MarkerStatus {
     pub id: u32,
     pub world: Vec3,
     pub origin: Vec2,
@@ -93,7 +90,7 @@ pub(crate) struct MarkerStatus {
 
 /// What set a marker's drawn distance.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum DistanceSource {
+pub enum DistanceSource {
     /// The true point: surface placement is off, or nothing is nearer.
     Point,
     /// The scene depth at the marker's pixel.
@@ -104,11 +101,11 @@ pub(crate) enum DistanceSource {
 
 /// The latest status, or `None` while the prototype is not drawing.
 /// Release the markers' GPU resources, for eject.
-pub(crate) fn release_on_eject() {
+pub fn release_on_eject() {
     render::release_on_eject();
 }
 
-pub(crate) fn status() -> Option<Status> {
+pub fn status() -> Option<Status> {
     STATUS.lock().clone()
 }
 

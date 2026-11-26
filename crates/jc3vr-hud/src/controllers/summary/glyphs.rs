@@ -1,11 +1,9 @@
-//! The button glyphs: Kenney's Input Prompts (CC0, `payload/assets/glyphs/kenney-input-prompts`),
+//! The button glyphs: Kenney's Input Prompts (CC0, `crates/jc3vr-hud/assets/glyphs/kenney-input-prompts`),
 //! the Valve Index set, with the grips from the same pack's Steam Frame set, since the Index set has
 //! no grip glyph. Test-only asset and physical-source mapping compatibility coverage.
 
-use crate::controllers::{
-    bindings::tables::describe::{Control, StickDir},
-    frame::Hand,
-};
+use jc3vr_gameplay::controllers::bindings::tables::describe::{Control, StickDir};
+use jc3vr_input::frame::Hand;
 
 /// Embed a glyph PNG by its file stem.
 macro_rules! glyph {
@@ -149,7 +147,7 @@ pub fn glyphs(control: Control) -> &'static [Glyph] {
         Control::BothStickClicks => &[Glyph::StickLeftPress, Glyph::StickRightPress],
         Control::System => &[Glyph::System],
         Control::LeftStickClickAndRightB => &[Glyph::StickLeftPress, Glyph::ButtonB],
-        // Shown as text instead ([`crate::controllers::summary::content::Line::source`]).
+        // Shown as text instead ([`jc3vr_gameplay::controllers::summary::content::Line::source`]).
         Control::Named(..) | Control::Unbound => &[],
     }
 }

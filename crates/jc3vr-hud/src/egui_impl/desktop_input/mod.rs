@@ -9,6 +9,9 @@ use std::{
 };
 
 use jc3gi::graphics_engine::graphics_engine::get_graphics_params;
+pub(crate) use jc3vr_input::capture::desktop::{
+    DesktopInputEvidence, DesktopInputObservation, DesktopInputUnavailable, DesktopModifiers,
+};
 use parking_lot::Mutex;
 use windows::{
     Win32::{
@@ -36,10 +39,6 @@ use windows::{
     core::{s, w},
 };
 
-pub(crate) use crate::input_core::capture::desktop::{
-    DesktopInputEvidence, DesktopInputObservation, DesktopInputUnavailable, DesktopModifiers,
-};
-
 /// Sample once before the capture policy, including while editing disables game-device polling.
 /// The native calls use the window thread's keyboard state and the asynchronous held-state bit.
 pub(crate) fn sample_desktop_input() -> DesktopInputObservation {
@@ -56,14 +55,14 @@ pub(crate) fn sample_desktop_input() -> DesktopInputObservation {
 }
 
 /// Observe before any shortcut, egui, or game filtering. Returns true for a consumed key release.
-pub(crate) fn observe_desktop_message(msg: u32, wparam: WPARAM, lparam: LPARAM) -> bool {
+pub fn observe_desktop_message(msg: u32, wparam: WPARAM, lparam: LPARAM) -> bool {
     DESKTOP_INPUT
         .lock()
         .message_with_lparam(msg, wparam.0, lparam.0)
 }
 
 /// Retain the shortcut episode even when its key-down never reaches egui or the game.
-pub(crate) fn consume_desktop_shortcut(virtual_key: usize) {
+pub fn consume_desktop_shortcut(virtual_key: usize) {
     DESKTOP_INPUT.lock().consume_shortcut(virtual_key);
 }
 

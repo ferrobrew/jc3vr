@@ -1,11 +1,10 @@
 //! Floating-HUD configuration types. See `docs/mod/hud.md`.
 
+use jc3vr_core::config::engine::{ConfigSlot, Invalid, positive};
 use serde::{Deserialize, Serialize};
 
-use crate::config::engine::{ConfigSlot, Invalid, positive};
-
 /// The HUD settings, at `hud` in the settings file; the payload binds the slot at startup.
-pub(crate) static HUD_CONFIG: ConfigSlot<HudConfig> = ConfigSlot::new("hud");
+pub static HUD_CONFIG: ConfigSlot<HudConfig> = ConfigSlot::new("hud");
 
 /// Floating-HUD settings. See `docs/mod/hud.md`.
 #[derive(Copy, Clone, Serialize, Deserialize)]
@@ -68,7 +67,7 @@ pub(crate) fn dimension(name: &str, value: u32) -> Result<(), Invalid> {
 impl HudConfig {
     /// Check the panel geometry and surfaces loaded from settings, returning the first setting
     /// that is out of range. Paths are relative to `hud`.
-    pub(crate) fn validate(&self) -> Result<(), Invalid> {
+    pub fn validate(&self) -> Result<(), Invalid> {
         positive("distance", self.distance, 1000.0)?;
         positive("panel_scale", self.panel_scale, 100.0)?;
         let e = &self.egui_panel;
@@ -90,6 +89,12 @@ impl HudConfig {
             grab_hint: IconFeatureConfig::new(),
             lost_weapons: IconFeatureConfig::new(),
         }
+    }
+}
+
+impl Default for HudConfig {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

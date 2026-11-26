@@ -12,11 +12,11 @@
 //!   that has none, or that was recalled, or that the cockpit frame was re-based under, in front of
 //!   the head, and it carries a grabbed panel with the grabbing hand's latest pose.
 
+use jc3vr_input::frame::{Hand, Pose};
 use parking_lot::Mutex;
 
-use crate::{
-    controllers::frame::{Hand, Pose},
-    hud::egui_panel::placement::{grab_offset, held_pose, in_front_of, is_behind, push_along_ray},
+use crate::hud::egui_panel::placement::{
+    grab_offset, held_pose, in_front_of, is_behind, push_along_ray,
 };
 
 /// Why the panel is being summoned.
@@ -39,14 +39,14 @@ pub(crate) fn summon(summon: Summon) {
 
 /// Ask for the panel in front of the head on the next drawn frame. Ends a grab in progress, whose
 /// hand would otherwise carry the panel straight back.
-pub(crate) fn recall() {
+pub fn recall() {
     let mut slot = SLOT.lock();
     slot.summon = Some(Summon::Recall);
     slot.grab = None;
 }
 
 /// Whether the panel has a placement a grab can take hold of.
-pub(crate) fn is_placed() -> bool {
+pub fn is_placed() -> bool {
     SLOT.lock().pose.is_some()
 }
 
@@ -80,7 +80,7 @@ pub(crate) fn hold_grab(hand: Hand, aim: Option<Pose>, rate: f32, dt: f32) {
 }
 
 /// End the grab, leaving the panel where it was last carried to.
-pub(crate) fn end_grab() {
+pub fn end_grab() {
     SLOT.lock().grab = None;
 }
 
@@ -99,7 +99,7 @@ pub(crate) struct ResolveInput {
     /// The grabbing hand and its latest cockpit-frame aim pose, when a hand holds the panel and
     /// its pose is known.
     pub(crate) held: Option<(Hand, Pose)>,
-    /// The count of the cockpit frame's re-bases ([`crate::vr::recenter_count`]).
+    /// The count of the cockpit frame's re-bases ([`jc3vr_render::vr::recenter_count`]).
     pub(crate) recenters: u32,
 }
 

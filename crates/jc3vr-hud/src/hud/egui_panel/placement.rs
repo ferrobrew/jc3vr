@@ -8,15 +8,11 @@
 
 use body_rig::angle::{direction, head_heading, yaw_of};
 use glam::{Quat, Vec3};
+use jc3vr_gameplay::controllers::hands::pose::{body_of_head, inverse, mul};
+use jc3vr_input::frame::Pose;
+use jc3vr_render::controllers::cockpit::CockpitTransform;
 
-use crate::{
-    controllers::{
-        cockpit::CockpitTransform,
-        frame::Pose,
-        hands::pose::{body_of_head, inverse, mul},
-    },
-    hud::{pointer::RenderedCamera, quad::PanelParams},
-};
+use crate::hud::{pointer::RenderedCamera, quad::PanelParams};
 
 /// The nearest a summoned or grabbed panel is placed, metres.
 pub(crate) const MIN_DISTANCE_M: f32 = 0.2;

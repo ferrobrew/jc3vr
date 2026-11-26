@@ -1,6 +1,6 @@
 //! Short labels rasterised on the CPU, for the HUD textures the mod paints texel by texel (the grab
 //! hint's socket name, a cockpit button's name). The text is set in Libre Franklin SemiBold (SIL
-//! OFL, `payload/assets/fonts/libre-franklin`), the face the controls summary uses for its
+//! OFL, `crates/jc3vr-hud/assets/fonts/libre-franklin`), the face the controls summary uses for its
 //! headings, laid out and rasterised by egui's own text engine without a renderer: the glyphs it
 //! packs into its font atlas are copied out of the atlas into a coverage mask.
 
@@ -82,9 +82,10 @@ fn definitions() -> FontDefinitions {
     let mut fonts = FontDefinitions::empty();
     fonts.font_data.insert(
         FACE.to_owned(),
-        Arc::new(FontData::from_static(include_bytes!(
-            "../../assets/fonts/libre-franklin/LibreFranklin-SemiBold.ttf"
-        ))),
+        Arc::new(FontData::from_static(include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/assets/fonts/libre-franklin/LibreFranklin-SemiBold.ttf"
+        )))),
     );
     fonts
         .families

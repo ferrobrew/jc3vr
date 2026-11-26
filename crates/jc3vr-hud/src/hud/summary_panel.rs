@@ -1,6 +1,6 @@
 //! The controls summary's floating panel: the third egui-to-texture panel, after the gameplay HUD
 //! and the debug panel ([`crate::hud::egui_panel`]), anchored to the off-hand wrist rather than the
-//! head ([`crate::controllers::summary`]).
+//! head ([`jc3vr_gameplay::controllers::summary`]).
 //!
 //! It has its own egui context and renderer, so that it never shares input, output, fonts, or
 //! textures with the debug UI, and it takes no input. On eye 0 the glance and the fade are
@@ -25,27 +25,28 @@ use egui::{
 };
 use glam::Vec4;
 use jc3gi::graphics_engine::{device::Device, texture::Texture};
+use jc3vr_gameplay::controllers::{
+    bindings::tables::describe::{Control, StickDir},
+    config::CONTROLLERS_CONFIG,
+    hands::late,
+    scheme, summary,
+    summary::{
+        Published, SummaryConfig,
+        config::{GlanceConfig, WristPlacement},
+        content::Metrics,
+        current::{CellKind, CurrentSummary, Hint},
+    },
+};
+use jc3vr_input::{frame, frame::Pose};
 use parking_lot::Mutex;
 use windows::Win32::Graphics::Direct3D11::ID3D11DeviceContext;
 
 use crate::{
-    controllers::{
-        bindings::tables::describe::{Control, StickDir},
-        config::CONTROLLERS_CONFIG,
-        frame::{self, Pose},
-        hands::late,
-        scheme,
-        summary::{
-            self, Published, SummaryConfig,
-            config::{GlanceConfig, WristPlacement},
-            content::Metrics,
-            current::{CellKind, CurrentSummary, Hint},
-            glance::{Glance, TrackpadPin, fade, looking, wrist_pose},
-            grid::{Bounds, Grid, layout},
-            page_clock::{PageClock, PageTime},
-        },
+    controllers::summary::{
+        glance::{Glance, TrackpadPin, fade, looking, wrist_pose},
+        grid::{Bounds, Grid, layout},
+        page_clock::{PageClock, PageTime},
     },
-    hooks,
     hud::{
         offscreen_egui::OffscreenEgui,
         palette::{PANEL_ACCENT, PANEL_BACKGROUND, PANEL_DIM, PANEL_TEXT},
@@ -58,13 +59,13 @@ use crate::{
 /// after the other panels, with the engine context mutex held.
 pub(crate) fn draw(context: &ID3D11DeviceContext, device: &Device, target: &Texture, eye: usize) {
     let mut panel = PANEL.lock();
-    if crate::stereo::dispatch::first_ui_eye(eye) {
+    if jc3vr_render::stereo::dispatch::first_ui_eye(eye) {
         let (enabled, dominant, config) = CONTROLLERS_CONFIG
             .query(|c| (c.enabled && c.summary.enabled, c.acting_hand(), c.summary));
         let active = enabled
             && scheme::is_controllers()
-            && !crate::director::clean_view::hides_everything()
-            && crate::vr::render_params(0).is_some();
+            && !jc3vr_core::director::clean_view::hides_everything()
+            && jc3vr_render::vr::render_params(0).is_some();
         panel.prepare(context, device, active, dominant.other(), &config);
     }
     panel.draw(context, device, target);
@@ -104,7 +105,7 @@ const GLANCE: GlanceConfig = GlanceConfig::new();
 const PLACEMENT: WristPlacement = WristPlacement::new();
 
 /// How long the panel shows after the mode changes to one the player settles in. Falling does not
-/// count ([`shows_mode_change`](crate::controllers::summary::shows_mode_change)).
+/// count ([`shows_mode_change`](jc3vr_gameplay::controllers::summary::shows_mode_change)).
 const SHOW_ON_MODE_CHANGE: Duration = Duration::from_secs(3);
 
 /// The fade in and out, seconds.
@@ -172,11 +173,12 @@ impl Panel {
         self.last_prepare = Some(now);
         self.corners = None;
 
-        let head = crate::hud::render_camera_pose().map(|(position, orientation)| Pose {
+        let head = jc3vr_render::hud::render_camera_pose().map(|(position, orientation)| Pose {
             position,
             orientation,
         });
-        let grip = late::drawn_hands(hooks::camera::last_dtf())[off.index()].map(|h| h.grip);
+        let grip =
+            late::drawn_hands(jc3vr_render::hooks::camera::last_dtf())[off.index()].map(|h| h.grip);
         let pose = grip.map(|grip| wrist_pose(grip, off, &PLACEMENT));
         let published = summary::published();
 
@@ -532,22 +534,24 @@ fn paint_text(painter: &egui::Painter, text: &str, bounds: Bounds, size: f32, co
     painter.galley(Pos2::new(bounds.x, bounds.y), galley, color);
 }
 
-/// The fonts: Libre Franklin (SIL OFL, `payload/assets/fonts/libre-franklin`), a revival of the
+/// The fonts: Libre Franklin (SIL OFL, `crates/jc3vr-hud/assets/fonts/libre-franklin`), a revival of the
 /// Franklin Gothic the game's own UI is set in, before egui's bundled fonts, which cover the
 /// Cyrillic it lacks.
 fn fonts() -> egui::FontDefinitions {
     let mut fonts = egui::FontDefinitions::default();
     fonts.font_data.insert(
         REGULAR.to_owned(),
-        Arc::new(egui::FontData::from_static(include_bytes!(
-            "../../assets/fonts/libre-franklin/LibreFranklin-Regular.ttf"
-        ))),
+        Arc::new(egui::FontData::from_static(include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/assets/fonts/libre-franklin/LibreFranklin-Regular.ttf"
+        )))),
     );
     fonts.font_data.insert(
         SEMIBOLD.to_owned(),
-        Arc::new(egui::FontData::from_static(include_bytes!(
-            "../../assets/fonts/libre-franklin/LibreFranklin-SemiBold.ttf"
-        ))),
+        Arc::new(egui::FontData::from_static(include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/assets/fonts/libre-franklin/LibreFranklin-SemiBold.ttf"
+        )))),
     );
     let proportional = fonts.families.entry(FontFamily::Proportional).or_default();
     proportional.insert(0, REGULAR.to_owned());
@@ -570,8 +574,10 @@ const SOURCE: Color32 = Color32::from_rgb(235, 200, 120);
 
 #[cfg(test)]
 mod tests {
+    use jc3vr_gameplay::controllers::summary::current::Source;
+    use jc3vr_input::frame::Hand;
+
     use super::*;
-    use crate::controllers::{frame::Hand, summary::current::Source};
 
     #[test]
     fn compact_source_names_preserve_stick_directions() {

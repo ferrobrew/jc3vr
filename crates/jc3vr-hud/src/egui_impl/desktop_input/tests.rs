@@ -1,8 +1,7 @@
+use jc3vr_input::capture::{InputObservation, PanelRequest};
+
 use super::*;
-use crate::{
-    egui_impl::EguiCaptureAdapter,
-    input_core::capture::{InputObservation, PanelRequest},
-};
+use crate::egui_impl::EguiCaptureAdapter;
 
 fn native(keys: &[usize]) -> Result<NativeSnapshot, DesktopInputUnavailable> {
     let mut held = Keys::default();

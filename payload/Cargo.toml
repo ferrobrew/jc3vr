@@ -32,6 +32,9 @@ jc3vr-render = { path = "../crates/jc3vr-render" }
 # The gameplay layer: the controller subsystems, the grapple, and the character, animation, input,
 # equipment, and sim detours.
 jc3vr-gameplay = { path = "../crates/jc3vr-gameplay" }
+# The HUD layer: the floating panel and its layers, the summary's presentation, the controls map,
+# the UI detours, and the egui renderer.
+jc3vr-hud = { path = "../crates/jc3vr-hud" }
 # Runtime-loaded (`loaded` default feature): the OpenXR loader is opened at runtime via
 # `xr::Entry::load_from`, not linked, so an `openxr_loader.dll` must sit beside the payload DLL (see
 # the `vr` module docs). The `static` feature would build the loader in and drop that DLL, but it does
