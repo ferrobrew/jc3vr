@@ -2,9 +2,11 @@
 //! (`docs/mod/tuning.md`). A file added to a crate's `tuning/` directory is listed here; the test
 //! below fails until it is.
 
-use jc3vr_body::controllers::fingers::tuning::FINGERS_TUNING;
 use jc3vr_body::{
-    controllers::body::{ik_body::tuning::IK_BODY, tuning::BODY},
+    controllers::{
+        body::{ik_body::tuning::IK_BODY, procedural::tuning::PROCEDURAL, tuning::BODY},
+        fingers::tuning::FINGERS_TUNING,
+    },
     tuning::FRESHNESS,
 };
 pub(crate) use jc3vr_core::tuning::{Source, shutdown, tick};
@@ -42,6 +44,7 @@ static FILES: &[&dyn AnyTuningFile] = &[
     &IK_BODY,
     &HUD,
     &FINGERS_TUNING,
+    &PROCEDURAL,
 ];
 
 #[cfg(test)]

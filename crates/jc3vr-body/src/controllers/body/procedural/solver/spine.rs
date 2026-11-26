@@ -4,7 +4,9 @@
 
 use glam::{Quat, Vec3};
 
-use crate::controllers::body::procedural::{rig::RigBone, solver::pose::RigPose};
+use crate::controllers::body::procedural::{
+    rig::RigBone, solver::pose::RigPose, tuning::TorsoTuning,
+};
 
 /// The swing that turns the spine's base-to-neck line toward `neck_target`, or `None` when it is
 /// already there. A lean past `limit` from `upright` (a unit direction: +Y on foot, the clip's own
@@ -35,43 +37,26 @@ pub(super) fn swing_toward(
     (axis.is_finite() && angle.abs() >= 1e-5).then_some((axis, angle))
 }
 
-/// How far the chest pitches forward for a head turned by `head_rotation` (body-relative): a share
-/// of how far the head looks down, at most [`MAX_CHEST_PITCH`]. Looking up leaves it.
-pub(super) fn chest_pitch(head_rotation: Quat) -> f32 {
+/// How far the chest pitches forward for a head turned by `head_rotation` (body-relative): the
+/// torso tuning's `chest_pitch_share` of how far the head looks down, at most its
+/// `max_chest_pitch_rad`. Looking up leaves it.
+pub(super) fn chest_pitch(head_rotation: Quat, torso: &TorsoTuning) -> f32 {
     let forward = head_rotation * Vec3::NEG_Z;
     let down = (-forward.y).clamp(-1.0, 1.0).asin();
     if down.is_finite() && down > 0.0 {
-        (down * CHEST_PITCH_SHARE).min(MAX_CHEST_PITCH)
+        (down * torso.chest_pitch_share).min(torso.max_chest_pitch_rad)
     } else {
         0.0
     }
 }
 
-/// The share of the head's look down the chest pitches by.
-const CHEST_PITCH_SHARE: f32 = 0.35;
-
-/// The furthest the chest pitches forward for a look down, radians: about twenty-five degrees.
-const MAX_CHEST_PITCH: f32 = 0.44;
-
-/// Each spine bone's share of the chest's pitch: the upper back takes it.
-pub(super) const PITCH_SHARES: [f32; 4] = [0.0, 0.2, 0.4, 0.4];
-
-/// The share of the head's turn against the chest the neck takes.
-pub(super) const NECK_SHARE: f32 = 0.3;
-
-/// The spine bones the bend is shared along, from the base.
+/// The spine bones the bend is shared along, from the base: the torso tuning's shares are by these.
 pub(super) const SPINE: [RigBone; 4] = [
     RigBone::Spine,
     RigBone::Spine1,
     RigBone::Spine2,
     RigBone::Sternum,
 ];
-
-/// Each spine bone's share of the swing toward the neck target.
-pub(super) const SWING_SHARES: [f32; 4] = [0.2, 0.25, 0.3, 0.25];
-
-/// Each spine bone's share of the chest's twist, more of it higher up as in a real spine.
-pub(super) const TWIST_SHARES: [f32; 4] = [0.15, 0.2, 0.3, 0.35];
 
 /// The swing is applied about the four joints rather than the base, so it is repeated to converge.
 pub(super) const SWING_ITERATIONS: usize = 3;

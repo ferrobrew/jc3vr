@@ -16,14 +16,14 @@ use crate::controllers::{
         skeleton::Transform,
         solver::{
             arms::Side,
-            clavicles::{self, ClavicleFollower, ClavicleTuning, ClavicleTurn},
+            clavicles::{self, ClavicleFollower, ClavicleTurn},
             pose::RigPose,
             wings::WingTarget,
         },
         stance::StanceBlend,
         state::StateTracker,
         targets::TargetFade,
-        tuning::ProceduralTuning,
+        tuning::{PROCEDURAL, ProceduralTuning},
         wings::WingQueue,
     },
     hands::ik::deferred_wrist_targets,
@@ -97,19 +97,13 @@ impl State {
     ) -> [ClavicleTurn; 2] {
         let wanted = {
             let targets = unsafe { deferred_wrist_targets(character) };
-            let tuning = ClavicleTuning {
-                elevation: config.clavicle_elevation_deg.to_radians(),
-                depression: config.clavicle_depression_deg.to_radians(),
-                protraction: config.clavicle_protraction_deg.to_radians(),
-                reach_start: config.clavicle_reach_start,
-            };
             Side::BOTH.map(|side| {
                 targets[side.index()].map_or(ClavicleTurn::ZERO, |(target, weight)| {
-                    clavicles::wanted(pose, rig, side, target, weight, &tuning)
+                    clavicles::wanted(pose, rig, side, target, weight, &config.clavicles)
                 })
             })
         };
-        let turns = self.clavicles.step(wanted, dt, config.clavicle_follow_s);
+        let turns = self.clavicles.step(wanted, dt, config.clavicles.follow_s);
         self.status.clavicles = turns;
         turns
     }
@@ -207,7 +201,13 @@ impl LegSwing {
     }
 
     pub(super) fn step(&mut self, root: Vec3, active: bool, dt: f32) -> Vec3 {
-        if !active || !root.is_finite() || !dt.is_finite() || !(0.0..=0.1).contains(&dt) {
+        let procedural = PROCEDURAL.get();
+        let tuning = &procedural.leg_swing;
+        if !active
+            || !root.is_finite()
+            || !dt.is_finite()
+            || !(0.0..=procedural.blend.max_step_s).contains(&dt)
+        {
             *self = Self::new();
             return Vec3::NEG_Y;
         }
@@ -219,25 +219,27 @@ impl LegSwing {
             return self.direction();
         };
         let delta = root - previous;
-        if delta.length() > 8.0 || dt < 1e-4 {
+        if delta.length() > tuning.jump_m || dt < 1e-4 {
             *self = Self::new();
             self.root = Some(root);
             return Vec3::NEG_Y;
         }
         let velocity = delta / dt;
         let acceleration = self.velocity.replace(velocity).map_or(Vec3::ZERO, |old| {
-            ((velocity - old) / dt).clamp_length_max(45.0)
+            ((velocity - old) / dt).clamp_length_max(tuning.max_acceleration)
         });
         let acceleration = Vec3::new(acceleration.x, 0.0, acceleration.z);
-        let steps = (dt / (1.0 / 120.0)).ceil() as u32;
+        let steps = (dt / tuning.substep_s).ceil() as u32;
         let step = dt / steps as f32;
         for _ in 0..steps {
-            self.speed +=
-                (-self.offset * (9.81 / 0.8) - self.speed * 2.2 - acceleration / 0.8) * step;
-            self.speed = self.speed.clamp_length_max(6.0);
+            self.speed += (-self.offset * (GRAVITY / tuning.length_m)
+                - self.speed * tuning.damping
+                - acceleration / tuning.length_m)
+                * step;
+            self.speed = self.speed.clamp_length_max(tuning.max_rate);
             self.offset += self.speed * step;
-            if self.offset.length() > 1.4 {
-                self.offset = self.offset.normalize() * 1.4;
+            if self.offset.length() > tuning.max_offset {
+                self.offset = self.offset.normalize() * tuning.max_offset;
                 let outward = self.speed.dot(self.offset.normalize()).max(0.0);
                 self.speed -= self.offset.normalize() * outward;
             }
@@ -249,6 +251,9 @@ impl LegSwing {
         (Vec3::NEG_Y + self.offset).normalize()
     }
 }
+
+/// The pendulum's gravity, metres per second squared.
+const GRAVITY: f32 = 9.81;
 
 pub(super) static STATE: Mutex<State> = Mutex::new(State {
     rig: RigCache::new(),

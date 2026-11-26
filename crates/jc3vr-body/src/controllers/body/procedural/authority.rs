@@ -38,10 +38,10 @@
 //! [`TorsoBlend`] eases the torso's weight toward its case's with a critically damped spring,
 //! quicker toward the animation than back, and at once where the case says so. A flight keeps the
 //! torso for a while: a fall, a grapple traversal, or a takeoff not yet classified that follows a
-//! jump or the parachute leaves it procedural for [`FLIGHT_HOLD_S`] of the simulation's time, which
-//! each jump or spell under the parachute renews. A jump that outlasts its grace, and the canopy
-//! closed and opened again around a grapple's reel, then never hand the torso to the animation and
-//! back within a second; a flight that outlasts the hold hands it over once.
+//! jump or the parachute leaves it procedural for the tuning's `blend.flight_hold_s` of the
+//! simulation's time, which each jump or spell under the parachute renews. A jump that outlasts its
+//! grace, and the canopy closed and opened again around a grapple's reel, then never hand the torso
+//! to the animation and back within a second; a flight that outlasts the hold hands it over once.
 
 use body_rig::smooth::critically_damped;
 
@@ -365,10 +365,6 @@ pub(super) fn relaxes_legs(case: Case) -> bool {
     )
 }
 
-/// How long a flight keeps the torso procedural after a jump or the parachute, seconds of the
-/// simulation's time.
-pub const FLIGHT_HOLD_S: f32 = 1.5;
-
 /// The torso's weight, eased toward its case's.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct TorsoBlend {
@@ -391,7 +387,7 @@ impl TorsoBlend {
     /// Ease toward `case`'s weight over `dt` seconds, or toward the procedural pose while a flight
     /// holds the torso.
     pub fn step(&mut self, case: Case, dt: f32, config: &ProceduralTuning) -> f32 {
-        let target = self.hold(case, dt);
+        let target = self.hold(case, dt, config.blend.flight_hold_s);
         self.target = target;
         if case.snaps() {
             self.spring = Spring {
@@ -400,9 +396,9 @@ impl TorsoBlend {
             };
         } else {
             let time = if target < self.spring.value {
-                config.blend_out_s
+                config.blend.out_s
             } else {
-                config.blend_s
+                config.blend.in_s
             };
             self.spring.step(target, dt, time);
         }
@@ -420,10 +416,10 @@ impl TorsoBlend {
 
     /// The weight `case` asks for, through the hold: a jump or the parachute renews it, and the
     /// cases a flight passes through spend it on the procedural pose until it runs out. Any other
-    /// case ends it.
-    fn hold(&mut self, case: Case, dt: f32) -> f32 {
+    /// case ends it. A renewed hold lasts `flight_hold_s`.
+    fn hold(&mut self, case: Case, dt: f32, flight_hold_s: f32) -> f32 {
         if case.renews_flight_hold() {
-            self.hold_s = FLIGHT_HOLD_S;
+            self.hold_s = flight_hold_s;
         } else if case.within_flight_hold() && self.hold_s > 0.0 {
             self.hold_s = (self.hold_s - dt).max(0.0);
             return 1.0;
@@ -505,7 +501,7 @@ const SETTLE: f32 = 1e-3;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::controllers::body::procedural::tuning::TUNING;
+    use crate::controllers::body::procedural::tuning::PROCEDURAL;
 
     fn on_foot() -> CharacterState {
         CharacterState {
@@ -851,28 +847,28 @@ mod tests {
 
     #[test]
     fn the_torso_eases_in_smoothly_and_reaches_its_target() {
-        let config = TUNING;
+        let config = PROCEDURAL.get();
         let mut blend = TorsoBlend::new();
         let mut last = 0.0;
         for _ in 0..90 {
-            let w = blend.step(Case::OnFoot, 1.0 / 30.0, &config);
+            let w = blend.step(Case::OnFoot, 1.0 / 30.0, config);
             assert!(w >= last && w <= 1.0);
             last = w;
         }
         assert_eq!(blend.weight(), 1.0);
-        assert_eq!(blend.step(Case::Jump, 1.0 / 30.0, &config), 1.0);
+        assert_eq!(blend.step(Case::Jump, 1.0 / 30.0, config), 1.0);
     }
 
     #[test]
     fn leaving_is_quicker_than_arriving() {
-        let config = TUNING;
+        let config = PROCEDURAL.get();
         let ticks_to = |from: Case, to: Case, done: fn(f32) -> bool| {
             let mut blend = TorsoBlend::new();
             for _ in 0..300 {
-                blend.step(from, 1.0 / 60.0, &config);
+                blend.step(from, 1.0 / 60.0, config);
             }
             (0..300)
-                .position(|_| done(blend.step(to, 1.0 / 60.0, &config)))
+                .position(|_| done(blend.step(to, 1.0 / 60.0, config)))
                 .unwrap()
         };
         let arrive = ticks_to(Case::Vehicle, Case::OnFoot, |w| w > 0.9);
@@ -880,11 +876,15 @@ mod tests {
         assert!(leave < arrive, "{leave} >= {arrive}");
     }
 
+    fn flight_hold_s() -> f32 {
+        PROCEDURAL.get().blend.flight_hold_s
+    }
+
     /// The weights over `seconds` of `case` at 60 Hz.
     fn ease(blend: &mut TorsoBlend, case: Case, seconds: f32) -> Vec<f32> {
-        let config = TUNING;
+        let config = PROCEDURAL.get();
         (0..(seconds * 60.0) as usize)
-            .map(|_| blend.step(case, 1.0 / 60.0, &config))
+            .map(|_| blend.step(case, 1.0 / 60.0, config))
             .collect()
     }
 
@@ -893,12 +893,12 @@ mod tests {
         let mut blend = TorsoBlend::new();
         ease(&mut blend, Case::OnFoot, 2.0);
         ease(&mut blend, Case::Jump, 1.0);
-        let held = ease(&mut blend, Case::Flight, FLIGHT_HOLD_S * 0.9);
+        let held = ease(&mut blend, Case::Flight, flight_hold_s() * 0.9);
         assert!(held.iter().all(|&w| w == 1.0), "{held:?}");
         assert_eq!(ease(&mut blend, Case::OnFoot, 0.5).last(), Some(&1.0));
 
         ease(&mut blend, Case::Jump, 1.0);
-        let fall = ease(&mut blend, Case::Flight, FLIGHT_HOLD_S + 1.0);
+        let fall = ease(&mut blend, Case::Flight, flight_hold_s() + 1.0);
         assert_eq!(fall.last(), Some(&0.0));
         assert_eq!(blend.target(), 0.0);
     }
@@ -935,11 +935,11 @@ mod tests {
 
     #[test]
     fn a_ragdoll_snaps_to_the_animation() {
-        let config = TUNING;
+        let config = PROCEDURAL.get();
         let mut blend = TorsoBlend::new();
         for _ in 0..60 {
-            blend.step(Case::OnFoot, 1.0 / 30.0, &config);
+            blend.step(Case::OnFoot, 1.0 / 30.0, config);
         }
-        assert_eq!(blend.step(Case::Ragdoll, 1.0 / 30.0, &config), 0.0);
+        assert_eq!(blend.step(Case::Ragdoll, 1.0 / 30.0, config), 0.0);
     }
 }

@@ -15,11 +15,11 @@
 //!   the skin at the shoulder or the hip stays with the body while the limb rolls under it.
 //!
 //! A forearm can only pronate or supinate so far before the rest comes from the shoulder rolling the
-//! upper arm, so a hand turned past [`FOREARM_TWIST_LIMIT`] from the forearm passes
-//! [`UPPER_ARM_SHARE`] of the excess up to the upper arm ([`passed_up`]): the upper arm's twist
-//! bones take it rising toward the elbow, and the forearm's start from it at the elbow, so the skin
-//! turns continuously from the shoulder to the wrist and the forearm carries less of a large turn.
-//! The bones of the arm themselves are not turned; the elbow stays where the solve put it.
+//! upper arm, so a hand turned past the tuning's `twist.forearm_limit_rad` from the forearm passes
+//! its `twist.upper_arm_share` of the excess up to the upper arm ([`passed_up`]): the upper arm's
+//! twist bones take it rising toward the elbow, and the forearm's start from it at the elbow, so the
+//! skin turns continuously from the shoulder to the wrist and the forearm carries less of a large
+//! turn. The bones of the arm themselves are not turned; the elbow stays where the solve put it.
 //!
 //! Twists are measured against the reference pose's, so a limb at its reference twist leaves its
 //! twist bones at theirs.
@@ -28,7 +28,7 @@ use body_rig::rotation::twist_angle;
 use glam::{Quat, Vec3};
 use smol_str::SmolStr;
 
-use crate::controllers::body::procedural::skeleton::SkeletonSnapshot;
+use crate::controllers::body::procedural::{skeleton::SkeletonSnapshot, tuning::PROCEDURAL};
 
 /// The region of the body a segment belongs to, for its weight against the animation.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -201,20 +201,15 @@ impl Segment {
     }
 }
 
-/// How far a hand turns from its forearm before the upper arm takes a share, radians: about the
-/// forearm's own range of pronation from the reference.
-pub const FOREARM_TWIST_LIMIT: f32 = std::f32::consts::FRAC_PI_2;
-
-/// The share of a hand's turn past [`FOREARM_TWIST_LIMIT`] the upper arm takes.
-pub const UPPER_ARM_SHARE: f32 = 0.5;
-
-/// The part of a forearm's twist `twist` handed up to the upper arm: [`UPPER_ARM_SHARE`] of what
-/// is past [`FOREARM_TWIST_LIMIT`], in the twist's own direction.
+/// The part of a forearm's twist `twist` handed up to the upper arm: the tuning's
+/// `twist.upper_arm_share` of what is past its `twist.forearm_limit_rad`, in the twist's own
+/// direction.
 pub fn passed_up(twist: f32) -> f32 {
     if !twist.is_finite() {
         return 0.0;
     }
-    (twist.abs() - FOREARM_TWIST_LIMIT).max(0.0) * UPPER_ARM_SHARE * twist.signum()
+    let tuning = &PROCEDURAL.get().twist;
+    (twist.abs() - tuning.forearm_limit_rad).max(0.0) * tuning.upper_arm_share * twist.signum()
 }
 
 impl TwistRig {
@@ -362,13 +357,16 @@ mod tests {
     fn a_large_hand_turn_passes_part_of_it_to_the_upper_arm() {
         let rig = TwistRig::from_skeleton(&with_rolls());
         let (upper, fore) = (&rig.segments[0], &rig.segments[1]);
+        let tuning = &PROCEDURAL.get().twist;
         // Within the forearm's range nothing passes.
-        assert_eq!(passed_up(1.0), 0.0);
-        assert_eq!(rig.passes(&[0.0, 1.0]), vec![0.0, 0.0]);
-        // A 130 degree turn passes half of the 40 past the limit.
-        let twist = 130f32.to_radians();
+        let within = tuning.forearm_limit_rad * 0.6;
+        assert_eq!(passed_up(within), 0.0);
+        assert_eq!(rig.passes(&[0.0, within]), vec![0.0, 0.0]);
+        // A turn 40 degrees past the limit passes the upper arm's share of the 40.
+        let past = 40f32.to_radians();
+        let twist = tuning.forearm_limit_rad + past;
         let passed = passed_up(twist);
-        assert!((passed - 20f32.to_radians()).abs() < 1e-5);
+        assert!((passed - past * tuning.upper_arm_share).abs() < 1e-5);
         assert_eq!(passed_up(-twist), -passed);
         let passes = rig.passes(&[0.0, twist]);
         assert!((passes[0] - passed).abs() < 1e-6 && (passes[1] - passed).abs() < 1e-6);
