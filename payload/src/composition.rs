@@ -13,9 +13,10 @@ use jc3vr_body::hooks::{animation, character};
 use jc3vr_capture::screenshot::harness::{register_pipeline, register_single_pass};
 use jc3vr_core::hooks::{self as core_hooks, online};
 use jc3vr_gameplay::{
-    controllers, grapple,
+    controllers,
     hooks::{equipment, input, sim},
 };
+use jc3vr_grapple::grapple;
 use jc3vr_hud::{controllers::map, egui_impl::register_desktop_overlay, hooks::ui, hud};
 use jc3vr_physical::controllers::physical_hands::human_hull;
 #[cfg(feature = "profiler")]

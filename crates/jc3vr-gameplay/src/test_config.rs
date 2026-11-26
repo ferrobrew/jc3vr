@@ -40,6 +40,7 @@ use jc3vr_core::{
     director::clean_view::{CLEAN_VIEW_CONFIG, CleanViewConfig},
     hooks::online::{ONLINE_CONFIG, OnlineConfig},
 };
+use jc3vr_grapple::grapple::physical::config::GRAPPLE_CONFIG;
 use jc3vr_physical::controllers::{
     glass::config::GLASS_CONFIG, physical_hands::config::PHYSICAL_HANDS_CONFIG,
 };
@@ -61,12 +62,9 @@ use jc3vr_view::{
 };
 use jc3vr_weapons::controllers::weapons::config::WEAPONS_CONFIG;
 
-use crate::{
-    controllers::{
-        config::{CONTROLLERS_CONFIG, ControllersConfig},
-        summary::config::SUMMARY_CONFIG,
-    },
-    grapple::physical::config::GRAPPLE_CONFIG,
+use crate::controllers::{
+    config::{CONTROLLERS_CONFIG, ControllersConfig},
+    summary::config::SUMMARY_CONFIG,
 };
 
 jc3vr_core::test_root! {

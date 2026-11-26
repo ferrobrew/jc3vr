@@ -28,6 +28,7 @@ use jc3vr_body::controllers::{
     overlay::config::OverlayConfig, roomscale::config::RoomscaleConfig, scheme,
 };
 use jc3vr_core::config::engine::ConfigSlot;
+use jc3vr_grapple::grapple::physical::PhysicalGrappleConfig;
 use jc3vr_input::frame::Hand;
 use jc3vr_physical::controllers::{glass::GlassConfig, physical_hands::PhysicalHandsConfig};
 use jc3vr_vehicles::controllers::vehicles::config::VehiclesConfig;
@@ -35,7 +36,7 @@ use jc3vr_view::vr::input::config::InputConfig;
 pub use jc3vr_weapons::controllers::weapons::config::WeaponsConfig;
 use serde::{Deserialize, Serialize};
 
-use crate::{controllers::summary::SummaryConfig, grapple::physical::PhysicalGrappleConfig};
+use crate::controllers::summary::SummaryConfig;
 
 /// The controller settings, at `controllers` in the settings file; the payload binds the slot at
 /// startup.

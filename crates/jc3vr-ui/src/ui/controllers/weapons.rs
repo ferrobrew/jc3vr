@@ -16,7 +16,8 @@ use jc3vr_body::controllers::{
     },
     intent::yank::Yank,
 };
-use jc3vr_gameplay::controllers::{bindings, config::ControllersConfig, snatch};
+use jc3vr_gameplay::controllers::{bindings, config::ControllersConfig};
+use jc3vr_grapple::controllers::snatch;
 use jc3vr_input::frame::Hand;
 use jc3vr_weapons::controllers::{
     loadout::slot_label,
@@ -415,7 +416,7 @@ fn grapple_readout(ui: &mut Ui, a: &AnchorStatus, (yanks, last): (u64, Option<Ya
         None => "Hang: not swinging".to_owned(),
     });
     ui.label(format!("Hang pump: ({:+.1}, {:+.1})", a.pump.x, a.pump.y));
-    let pull = jc3vr_gameplay::grapple::physical::status().pull;
+    let pull = jc3vr_grapple::grapple::physical::status().pull;
     ui.label(format!(
         "Hand pull: {:.2} m/s, {:.2} m deep",
         pull.speed_mps, pull.depth_m

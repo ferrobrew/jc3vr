@@ -45,13 +45,11 @@ use jc3vr_core::{
     director::clean_view::CLEAN_VIEW_CONFIG,
     hooks::online::{ONLINE_CONFIG, OnlineConfig},
 };
-use jc3vr_gameplay::{
-    controllers::{
-        config::{CONTROLLERS_CONFIG, ControllersConfig, validate},
-        summary::config::SUMMARY_CONFIG,
-    },
-    grapple::physical::config::GRAPPLE_CONFIG,
+use jc3vr_gameplay::controllers::{
+    config::{CONTROLLERS_CONFIG, ControllersConfig, validate},
+    summary::config::SUMMARY_CONFIG,
 };
+use jc3vr_grapple::grapple::physical::config::GRAPPLE_CONFIG;
 use jc3vr_hud::hud::config::{HUD_CONFIG, HudConfig};
 use jc3vr_physical::controllers::{
     glass::config::GLASS_CONFIG, physical_hands::config::PHYSICAL_HANDS_CONFIG,

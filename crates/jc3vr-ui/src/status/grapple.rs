@@ -3,8 +3,9 @@
 //! the grapple hand's vibration.
 
 use jc3vr_body::controllers::hands::anchor;
-use jc3vr_gameplay::{
-    controllers::{config::CONTROLLERS_CONFIG, snatch, snatch::SnatchStatus},
+use jc3vr_gameplay::controllers::config::CONTROLLERS_CONFIG;
+use jc3vr_grapple::{
+    controllers::{snatch, snatch::SnatchStatus},
     grapple::{
         physical,
         physical::{GrapplePhase, GrappleStatus, lock, lock::LockStatus},
@@ -360,7 +361,7 @@ fn snatch_reason(reason: &str) -> Text {
 #[cfg(test)]
 mod tests {
     use glam::Vec3;
-    use jc3vr_gameplay::grapple::physical::TargetReadout;
+    use jc3vr_grapple::grapple::physical::TargetReadout;
 
     use super::*;
 

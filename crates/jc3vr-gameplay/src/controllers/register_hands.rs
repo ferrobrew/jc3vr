@@ -21,14 +21,13 @@ use jc3vr_body::controllers::{
     held,
     held::guns,
 };
+use jc3vr_grapple::grapple::physical::swing;
 use jc3vr_physical::controllers::{physical_hands, physical_hands::physics};
 use jc3vr_vehicles::controllers::vehicles;
 use jc3vr_weapons::controllers::{
     weapons,
     weapons::{ads, collide, config::WEAPONS_CONFIG, grenade, gun_bodies, hold::rack, recoil},
 };
-
-use crate::grapple::physical::swing;
 
 pub(super) fn register() {
     for (stage, run) in STAGES {

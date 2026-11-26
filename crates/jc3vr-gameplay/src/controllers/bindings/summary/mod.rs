@@ -19,6 +19,7 @@ use jc3vr_body::controllers::{
     },
     mode::{AirborneVariant, Detection, Mode},
 };
+use jc3vr_grapple::controllers::snatch;
 use jc3vr_input::{frame::Hand, semantic::vocabulary::ActionId};
 use jc3vr_physical::controllers::physical_hands::door_offer_current;
 use jc3vr_vehicles::controllers::vehicles::{
@@ -41,7 +42,6 @@ use crate::controllers::{
         trigger_ownership::{Owner, TriggerMask},
     },
     config::ControllersConfig,
-    snatch,
     summary::{
         current::{CurrentRouting, TriggerUse},
         eligibility::{Eligibility, SnatchHint},

@@ -16,7 +16,7 @@
 //!   pull that zips;
 //! - [`yank`](jc3vr_body::controllers::intent::yank) detects the yank gesture on the grapple hand, a sharp pull while the grapple button is
 //!   held, and the snatch's own yank while the grip holds a remote target
-//!   ([`crate::controllers::snatch`]);
+//!   ([`jc3vr_grapple::controllers::snatch`]);
 //! - `recovery` masks a hand after a loss of its pose or of injection until its controls rest
 //!   ([`HandRecovery`]): its raw controls, and every semantic action on it;
 //! - [`inject`] applies the writes to the player and UI action maps;
@@ -89,6 +89,10 @@ use jc3vr_body::controllers::{
     mode::{AirborneVariant, Detection, Mode, Traversal, VehicleClass},
     roomscale, scheme,
 };
+use jc3vr_grapple::{
+    controllers::{snatch, snatch::config::SnatchSettings},
+    grapple,
+};
 use jc3vr_input::{
     capture::{
         CaptureUpdate, DebugUiInput, OwnershipBlocker, debug_ui_capture, desktop_input_observation,
@@ -117,33 +121,28 @@ pub use crate::controllers::bindings::{
     recovery::{Blocker, HandRecovery},
     report::{Idle, ReportedWrite, TickReport, recovery_status},
 };
-use crate::{
-    controllers::{
-        bindings::{
-            bail::{BailLatch, BailTick, bails_by_parachute},
-            buttons::{grapple_button, grapple_button_held, reload_button},
-            capture_wait::CaptureWait,
-            intents::{Intent, SemanticInput},
-            pointer::{
-                clear_controller, owns_menu_trigger, toggle_panel, update_controller,
-                update_egui_controller,
-            },
-            policy_a::{
-                SystemCommand,
-                runtime::{GroupBlocker, Runtime, TickInput},
-            },
-            recovery::{MaskEvent, MaskLog, NeutralPolicy, Recovery},
-            report::{publish_recovery_status, report_writes},
-            stage::{Delivery, GameStageOutput, LandedSegment, PollRecord, Segment},
-            summary::yank_armed_in,
-            tables::Bindings,
-            trigger_ownership::{Owner as TriggerOwner, RawTrigger, TriggerOwnership},
+use crate::controllers::{
+    bindings::{
+        bail::{BailLatch, BailTick, bails_by_parachute},
+        buttons::{grapple_button, grapple_button_held, reload_button},
+        capture_wait::CaptureWait,
+        intents::{Intent, SemanticInput},
+        pointer::{
+            clear_controller, owns_menu_trigger, toggle_panel, update_controller,
+            update_egui_controller,
         },
-        config::{CONTROLLERS_CONFIG, ControllersConfig},
-        snatch,
-        snatch::config::SnatchSettings,
+        policy_a::{
+            SystemCommand,
+            runtime::{GroupBlocker, Runtime, TickInput},
+        },
+        recovery::{MaskEvent, MaskLog, NeutralPolicy, Recovery},
+        report::{publish_recovery_status, report_writes},
+        stage::{Delivery, GameStageOutput, LandedSegment, PollRecord, Segment},
+        summary::yank_armed_in,
+        tables::Bindings,
+        trigger_ownership::{Owner as TriggerOwner, RawTrigger, TriggerOwnership},
     },
-    grapple,
+    config::{CONTROLLERS_CONFIG, ControllersConfig},
 };
 
 /// The bindings' game stage ([`stage::game_stage`]): take in where the last writes landed, detect

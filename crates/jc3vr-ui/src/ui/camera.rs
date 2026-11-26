@@ -4,7 +4,7 @@
 
 use jc3gi::types::math::Matrix4;
 use jc3vr_core::config::engine::{Parts, edit_parts};
-use jc3vr_gameplay::grapple;
+use jc3vr_grapple::grapple;
 use jc3vr_view::{
     headpose, hooks,
     hooks::camera::config::CAMERA_CONFIG,

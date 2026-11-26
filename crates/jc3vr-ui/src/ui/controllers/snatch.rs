@@ -1,7 +1,7 @@
 //! The grapple snatch's switches, the held line's tuning, and the yank that fires it.
 
 use egui::{Slider, Ui};
-use jc3vr_gameplay::controllers::snatch::{SnatchConfig, SwingConfig};
+use jc3vr_grapple::controllers::snatch::{SnatchConfig, SwingConfig};
 
 pub(super) fn snatch_settings(ui: &mut Ui, s: &mut SnatchConfig) {
     ui.checkbox(&mut s.enabled, "Grapple snatch").on_hover_text(

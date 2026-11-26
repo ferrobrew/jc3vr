@@ -13,15 +13,14 @@
 //! crate's, under [`jc3vr_body::controllers`]. Physical weapon handling with the loadout table is
 //! the weapons crate's, under [`jc3vr_weapons::controllers`], the physical hands and the glass are
 //! the physical crate's, under [`jc3vr_physical::controllers`], and the vehicles, mounted guns, the
-//! wingsuit, and the parachute are the vehicles crate's, under [`jc3vr_vehicles::controllers`]. This
-//! module owns what builds on them:
+//! wingsuit, and the parachute are the vehicles crate's, under [`jc3vr_vehicles::controllers`]. The
+//! grapple snatch is the grapple crate's, under [`jc3vr_grapple::controllers::snatch`]. This module
+//! owns what builds on them:
 //!
 //! - [`config`]: [`ControllersConfig`], the controllers' settings assembled from each subsystem's
 //!   group;
 //! - [`bindings`]: the per-mode mapping from the controllers to the game's actions, and its
 //!   injection on the input tick;
-//! - [`snatch`]: the grapple snatch: the empty grapple hand pulls a weapon out of reach into itself
-//!   on the game's hook;
 //! - [`summary`]: the controls summary's model, which the HUD draws on the off-hand wrist.
 //!
 //! [`install`] registers what these contribute to the body crate's registrations, and
@@ -35,6 +34,7 @@
 
 use jc3vr_body::controllers::{aim, aim_state, body, hands, haptics, roomscale};
 use jc3vr_core::lifecycle::RegistrationError;
+use jc3vr_grapple::controllers::snatch;
 use jc3vr_physical::controllers::{glass, physical_hands};
 use jc3vr_vehicles::controllers::vehicles;
 use jc3vr_weapons::controllers::weapons;
@@ -50,7 +50,6 @@ mod register_lifecycle;
 mod register_render;
 mod register_siblings;
 mod register_vr_frame;
-pub mod snatch;
 pub mod summary;
 
 pub use config::ControllersConfig;

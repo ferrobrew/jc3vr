@@ -15,9 +15,8 @@ use jc3vr_body::{
     },
     hooks::input::{locomotion::ORIENTATION_EVAL_CALLS, swim},
 };
+use jc3vr_grapple::grapple;
 use jc3vr_view::headpose::{HeadParticipants, register_head_participants};
-
-use crate::grapple;
 
 pub(super) fn register() {
     register_head_participants(&PARTICIPANTS);

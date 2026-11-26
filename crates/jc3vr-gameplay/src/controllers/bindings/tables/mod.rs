@@ -110,9 +110,9 @@ pub struct Step {
     pub wheel: [WheelPress; 2],
     /// The grapple's button is held this tick, in a mode with a grapple: the hand is aiming it.
     pub grapple_held: bool,
-    /// What the grapple's button asks of the lock this tick ([`crate::grapple::physical::lock`]).
+    /// What the grapple's button asks of the lock this tick ([`jc3vr_grapple::grapple::physical::lock`]).
     pub grapple_lock: Option<LockButton>,
-    /// The grapple's button fired the seat grapple this tick ([`crate::grapple::seat`]).
+    /// The grapple's button fired the seat grapple this tick ([`jc3vr_grapple::grapple::seat`]).
     pub grapple_seat_fire: Option<SeatRequest>,
 }
 
