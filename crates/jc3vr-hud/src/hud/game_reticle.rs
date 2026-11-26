@@ -1,5 +1,4 @@
-//! Hiding the game's own HUD reticles under the controller scheme
-//! ([`OverlayConfig::hide_game_reticle`](jc3vr_body::controllers::overlay::config::OverlayConfig::hide_game_reticle)).
+//! Hiding the game's own HUD reticles under the controller scheme.
 //!
 //! The HUD movie draws a weapon reticle at the centre of the screen and a grapple reticle at the
 //! grapple slot's projected aim point, pinned to the centre when the grapple aims at a direct
@@ -123,7 +122,7 @@ pub fn decide(inputs: ReticleInputs) -> HiddenReticles {
 pub(crate) unsafe fn hide_game_reticles() {
     let (enabled, guns, grapple, driver) = CONTROLLERS_CONFIG.query(|controllers| {
         (
-            controllers.enabled && controllers.overlay.hide_game_reticle,
+            controllers.enabled,
             controllers.aim.gun,
             controllers.aim.grapple,
             controllers.vehicles.driver_weapons_by_hand,

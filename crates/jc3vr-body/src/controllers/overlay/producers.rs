@@ -1,15 +1,12 @@
-//! The overlay's own producers: the grapple highlight and gauntlet beam, the guns' dot or laser,
-//! the ghosts of yielded hands, the controller gizmos, the sight tuning marker, and the grounded body
-//! rig's diagnostics. Each builds its primitives from a published readout, behind its toggle in
-//! [`OverlayConfig`].
+//! The overlay's own producers: the grapple highlight, the sight tuning marker, and the grounded
+//! body rig's diagnostics. Each builds its primitives from a published readout; the diagnostics are
+//! behind their toggles in [`OverlayConfig`](crate::controllers::overlay::config::OverlayConfig).
 //!
 //! [`tick`] runs once per rendered frame on the render thread, before the first eye's draw. The
-//! aim's readouts change at the sim tick's rate, so the grapple and gun producers submit only when
-//! the aim has run since their last submission, and their slots expire on their own when it stops
-//! (a menu, the gamepad scheme, an idle update). Their hand-attached ends are anchored to the hand,
-//! so they still follow the controller at frame rate. The ghost hands and the gizmos follow the
-//! render-time hand poses and submit every frame, as does the sight tuning marker, which stays
-//! where it was placed, and the body rig, which the grounded rig publishes once per rendered frame.
+//! aim's readouts change at the sim tick's rate, so the grapple highlight submits only when the aim
+//! has run since its last submission, and its slot expires on its own when it stops (a menu, the
+//! gamepad scheme, an idle update). The sight tuning marker, which stays where it was placed, and
+//! the body rig, which the grounded rig publishes once per rendered frame, submit every frame.
 //!
 //! The grip targets' markers are the grip model's to produce, into [`Source::GrabMarkers`]
 //! ([`crate::controllers::grab::markers`]).
@@ -20,14 +17,11 @@ use std::{
 };
 
 use glam::Vec3;
-use jc3vr_input::frame::Hand;
 use jc3vr_view::{
     controllers::overlay::{
         primitive::{
-            Anchor, DepthMode, Facing, HandPose, Primitive, Rgba, Shape, Source, SpriteSize,
-            with_alpha,
+            Anchor, DepthMode, Facing, Primitive, Rgba, Shape, Source, SpriteSize, with_alpha,
         },
-        resolve::HandPoses,
         store,
     },
     headpose,
@@ -37,26 +31,20 @@ use parking_lot::Mutex;
 
 use crate::controllers::{
     aim,
-    aim::{
-        GRAPPLE_ORIGIN_M, GrappleAim, HandAim, HandSource, config::AIM_CONFIG, raycast::RayHit,
-        sights::tuning,
-    },
+    aim::{GrappleAim, HandAim, HandSource, config::AIM_CONFIG, raycast::RayHit, sights::tuning},
     body::{
         estimator,
         rig::{grounded, visual},
     },
-    hands::tiers,
-    mode,
-    overlay::config::{GunReadout, OVERLAY_CONFIG, OverlayConfig},
+    overlay::config::OVERLAY_CONFIG,
     scheme,
 };
 
-/// Build and submit every producer's primitives for this frame, given the render-time hand poses.
-/// Every producer's slot is cleared while `active` is false.
-pub fn tick(active: bool, hands: &[Option<HandPoses>; 2]) {
+/// Build and submit every producer's primitives for this frame. Every producer's slot is cleared
+/// while `active` is false.
+pub fn tick(active: bool) {
     let config = *OVERLAY_CONFIG.lock();
     let dominant = scheme::acting_hand();
-    let grapple_origin = GRAPPLE_ORIGIN_M;
     let sight_tuning = AIM_CONFIG.query(|c| c.sight_tuning.enabled);
     let world_scale = VR_CONFIG.lock().world_scale;
     if !active {
@@ -69,8 +57,7 @@ pub fn tick(active: bool, hands: &[Option<HandPoses>; 2]) {
 
     let status = aim::status();
     if LAST_AIM_UPDATE.swap(status.updates, Ordering::Relaxed) != status.updates {
-        let off = dominant.other();
-        let off_hit = status.hands[off.index()].and_then(|h| h.hit);
+        let off_hit = status.hands[dominant.other().index()].and_then(|h| h.hit);
         let grapple_at = match status.grapple.as_ref() {
             Some(g) => Some(ticked_grapple_point(g.point)),
             None => {
@@ -81,7 +68,7 @@ pub fn tick(active: bool, hands: &[Option<HandPoses>; 2]) {
         };
         submit_or_clear(
             Source::GrappleHighlight,
-            config.grapple_highlight,
+            true,
             SIM_TTL,
             |out| {
                 if let (Some(g), Some(at)) = (&status.grapple, grapple_at) {
@@ -90,52 +77,8 @@ pub fn tick(active: bool, hands: &[Option<HandPoses>; 2]) {
             },
             &mut prims,
         );
-        // A line already out is its own beam: the hint would draw a second one beside it. The
-        // highlight's ring stays, since a tap from the reel fires again at it.
-        let line_out = mode::last_snapshot()
-            .and_then(|snapshot| snapshot.character)
-            .is_some_and(|character| character.grapple_wire);
-        submit_or_clear(
-            Source::GrappleBeam,
-            config.grapple_beam && !line_out,
-            SIM_TTL,
-            |out| {
-                if let (Some(g), Some(at)) = (&status.grapple, grapple_at) {
-                    grapple_beam(g, at, off, grapple_origin, out);
-                }
-            },
-            &mut prims,
-        );
-        let readout = config.gun_readout;
-        submit_or_clear(
-            Source::GunReadout,
-            readout != GunReadout::None,
-            SIM_TTL,
-            |out| {
-                gun_readout(readout, &status.hands, hands, out);
-            },
-            &mut prims,
-        );
     }
 
-    submit_or_clear(
-        Source::GhostHands,
-        config.ghost_hands,
-        FRAME_TTL,
-        |out| {
-            ghost_hands(tiers::weights(), hands, &config, out);
-        },
-        &mut prims,
-    );
-    submit_or_clear(
-        Source::DebugGizmos,
-        config.debug_gizmos,
-        FRAME_TTL,
-        |out| {
-            gizmos(hands, out);
-        },
-        &mut prims,
-    );
     submit_or_clear(
         Source::SightTuning,
         sight_tuning,
@@ -242,160 +185,6 @@ pub fn grapple_highlight(
     }
 }
 
-/// The gauntlet beam from the grapple's origin on the off-hand's wrist to the grapple's point: in
-/// the highlight's colour while the target is valid, and faint otherwise.
-pub fn grapple_beam(
-    g: &GrappleAim,
-    at: Anchor,
-    off: Hand,
-    origin_offset: Vec3,
-    out: &mut Vec<Primitive>,
-) {
-    // A point that is not current is not refreshed, so a beam to it would freeze.
-    if !g.current {
-        return;
-    }
-    let color = match (g.valid, g.tetherable) {
-        (true, true) => with_alpha(TETHER, 0.7),
-        (true, false) => with_alpha(GRAPPLE, 0.7),
-        (false, _) => [1.0, 1.0, 1.0, 0.2],
-    };
-    out.push(Primitive::Line {
-        from: Anchor::Hand {
-            hand: off,
-            pose: HandPose::Wrist,
-            offset: origin_offset,
-        },
-        to: at,
-        width: BEAM_WIDTH_M,
-        color,
-        depth: DepthMode::XRay {
-            occluded_alpha: 0.25,
-        },
-    });
-}
-
-/// The guns' readout for each hand aiming a gun: a dot at the hit point, or a laser from the sight
-/// line's origin to the hit point (to the aim point when nothing is hit). The laser's origin is
-/// anchored to the hand's render-time wrist at the offset it has now, so it stays on the gun
-/// between sim ticks.
-pub fn gun_readout(
-    readout: GunReadout,
-    aims: &[Option<HandAim>; 2],
-    hands: &[Option<HandPoses>; 2],
-    out: &mut Vec<Primitive>,
-) {
-    for hand in Hand::BOTH {
-        let Some(aim) = aims[hand.index()] else {
-            continue;
-        };
-        if !matches!(aim.source, HandSource::Gun { .. }) {
-            continue;
-        }
-        match readout {
-            GunReadout::None => {}
-            GunReadout::Dot => {
-                if let Some(hit) = aim.hit {
-                    out.push(Primitive::Sprite {
-                        at: Anchor::World(hit.position),
-                        size: SpriteSize::Angular(GUN_DOT_RAD),
-                        facing: Facing::Billboard,
-                        shape: Shape::Disc,
-                        color: LASER,
-                        depth: DepthMode::Tested,
-                    });
-                }
-            }
-            GunReadout::Laser => {
-                let from = hands[hand.index()].map_or(Anchor::World(aim.ray.origin), |poses| {
-                    let wrist = poses.wrist;
-                    Anchor::Hand {
-                        hand,
-                        pose: HandPose::Wrist,
-                        offset: wrist.orientation.inverse() * (aim.ray.origin - wrist.position),
-                    }
-                });
-                let end = aim.hit.map_or(aim.target, |hit| hit.position);
-                out.push(Primitive::Line {
-                    from,
-                    to: Anchor::World(end),
-                    width: LASER_WIDTH_M,
-                    color: with_alpha(LASER, 0.8),
-                    depth: DepthMode::Tested,
-                });
-            }
-        }
-    }
-}
-
-/// A ghost at each controller whose hand the animation owns: a ring at the grip and a short pointer
-/// along the aim, fading in as the hand yields.
-pub fn ghost_hands(
-    weights: [f32; 2],
-    hands: &[Option<HandPoses>; 2],
-    config: &OverlayConfig,
-    out: &mut Vec<Primitive>,
-) {
-    for hand in Hand::BOTH {
-        let yielded = 1.0 - weights[hand.index()].clamp(0.0, 1.0);
-        if yielded <= 0.0 || hands[hand.index()].is_none() {
-            continue;
-        }
-        let color = with_alpha(GHOST, GHOST[3] * yielded);
-        let depth = DepthMode::XRay {
-            occluded_alpha: config.xray_alpha,
-        };
-        out.push(Primitive::Sprite {
-            at: Anchor::hand(hand, HandPose::Grip),
-            size: SpriteSize::World(GHOST_RING_M),
-            facing: Facing::Billboard,
-            shape: Shape::Ring { thickness: 0.35 },
-            color,
-            depth,
-        });
-        out.push(Primitive::Line {
-            from: Anchor::hand(hand, HandPose::Aim),
-            to: Anchor::Hand {
-                hand,
-                pose: HandPose::Aim,
-                offset: Vec3::NEG_Z * GHOST_POINTER_M,
-            },
-            width: GHOST_POINTER_WIDTH_M,
-            color,
-            depth,
-        });
-    }
-}
-
-/// Red, green, and blue axes at each tracked hand's grip and aim poses, over the scene.
-pub fn gizmos(hands: &[Option<HandPoses>; 2], out: &mut Vec<Primitive>) {
-    const AXES: [(Vec3, Rgba); 3] = [
-        (Vec3::X, [1.0, 0.2, 0.2, 1.0]),
-        (Vec3::Y, [0.2, 1.0, 0.2, 1.0]),
-        (Vec3::Z, [0.3, 0.4, 1.0, 1.0]),
-    ];
-    for hand in Hand::BOTH {
-        if hands[hand.index()].is_none() {
-            continue;
-        }
-        for pose in [HandPose::Grip, HandPose::Aim] {
-            for (axis, color) in AXES {
-                out.push(Primitive::Line {
-                    from: Anchor::hand(hand, pose),
-                    to: Anchor::Hand {
-                        hand,
-                        pose,
-                        offset: axis * GIZMO_AXIS_M,
-                    },
-                    width: GIZMO_WIDTH_M,
-                    color,
-                    depth: DepthMode::Always,
-                });
-            }
-        }
-    }
-}
-
 /// The sight tuning marker: a ring and a centre dot at the marker, over the scene, and a dot where
 /// the dominant hand's sight line passes closest to it, while that hand aims a gun.
 pub fn sight_marker(marker: Vec3, dominant: Option<HandAim>, out: &mut Vec<Primitive>) {
@@ -430,12 +219,8 @@ pub fn sight_marker(marker: Vec3, dominant: Option<HandAim>, out: &mut Vec<Primi
 }
 
 /// The sources [`tick`] produces.
-const PRODUCED: [Source; 7] = [
+const PRODUCED: [Source; 3] = [
     Source::GrappleHighlight,
-    Source::GrappleBeam,
-    Source::GunReadout,
-    Source::GhostHands,
-    Source::DebugGizmos,
     Source::SightTuning,
     Source::BodyRig,
 ];
@@ -451,7 +236,6 @@ static LAST_AIM_UPDATE: AtomicU64 = AtomicU64::new(u64::MAX);
 const GRAPPLE: Rgba = [0.3, 0.9, 1.0, 0.9];
 const TETHER: Rgba = [1.0, 0.65, 0.15, 0.95];
 const LASER: Rgba = [1.0, 0.15, 0.1, 0.95];
-const GHOST: Rgba = [0.85, 0.92, 1.0, 0.6];
 const MARKER: Rgba = [1.0, 0.9, 0.2, 0.95];
 
 /// How close the off-hand's hit must be to the grapple's point for the highlight to take its
@@ -460,14 +244,6 @@ const SURFACE_MATCH_M: f32 = 0.5;
 const GRAPPLE_RING_RAD: f32 = 0.035;
 /// The aim assist's lock ring's size against the grapple's ring.
 const ASSIST_RING_SCALE: f32 = 1.6;
-const GUN_DOT_RAD: f32 = 0.006;
-const BEAM_WIDTH_M: f32 = 0.008;
-const LASER_WIDTH_M: f32 = 0.003;
-const GHOST_RING_M: f32 = 0.08;
-const GHOST_POINTER_M: f32 = 0.12;
-const GHOST_POINTER_WIDTH_M: f32 = 0.012;
-const GIZMO_AXIS_M: f32 = 0.08;
-const GIZMO_WIDTH_M: f32 = 0.004;
 const MARKER_RING_RAD: f32 = 0.02;
 const MARKER_DOT_RAD: f32 = 0.003;
 
@@ -494,14 +270,6 @@ mod tests {
         grapple_highlight(g, Anchor::World(g.point), off_hit, out);
     }
 
-    fn beam(g: &GrappleAim, off: Hand, origin_offset: Vec3, out: &mut Vec<Primitive>) {
-        grapple_beam(g, Anchor::World(g.point), off, origin_offset, out);
-    }
-
-    use glam::Quat;
-    use jc3vr_input::frame::Pose;
-    use jc3vr_view::controllers::overlay::resolve::anchor_position;
-
     use super::*;
     use crate::controllers::aim::{assist::GrappleAssist, ray::Ray};
 
@@ -515,32 +283,6 @@ mod tests {
             current: true,
             seat: false,
             assist: None,
-        }
-    }
-
-    #[test]
-    fn no_beam_is_drawn_to_a_point_that_is_not_current() {
-        let mut out = Vec::new();
-        beam(&grapple(false, false), Hand::Left, Vec3::ZERO, &mut out);
-        assert_eq!(out.len(), 1, "an invalid aim still shows the faint beam");
-        out.clear();
-        let seated = GrappleAim {
-            current: false,
-            ..grapple(false, false)
-        };
-        beam(&seated, Hand::Left, Vec3::ZERO, &mut out);
-        assert!(out.is_empty());
-    }
-
-    fn poses(position: Vec3) -> HandPoses {
-        let pose = Pose {
-            position,
-            orientation: Quat::from_rotation_x(0.4),
-        };
-        HandPoses {
-            wrist: pose,
-            grip: pose,
-            aim: pose,
         }
     }
 
@@ -626,77 +368,6 @@ mod tests {
                 ..
             }
         ));
-    }
-
-    #[test]
-    fn the_laser_starts_at_the_sight_origin_and_follows_the_hand() {
-        let origin = Vec3::new(0.3, 1.1, -0.4);
-        let aim = HandAim {
-            source: HandSource::Gun { gun: 0 },
-            ray: Ray::new(origin, Vec3::NEG_Z).unwrap(),
-            hit: Some(hit(Vec3::new(0.3, 1.1, -12.0))),
-            target: Vec3::new(0.3, 1.1, -12.0),
-        };
-        let hands = [None, Some(poses(Vec3::new(0.25, 1.0, -0.3)))];
-        let mut out = Vec::new();
-        gun_readout(GunReadout::Laser, &[None, Some(aim)], &hands, &mut out);
-        let Primitive::Line { from, .. } = out[0] else {
-            panic!("the laser is a line");
-        };
-        assert!(anchor_position(from, &hands).unwrap().distance(origin) < 1e-5);
-
-        let mut moved = hands;
-        moved[1] = Some(poses(Vec3::new(0.35, 1.0, -0.3)));
-        let shifted = anchor_position(from, &moved).unwrap();
-        assert!(shifted.distance(origin + Vec3::X * 0.1) < 1e-5);
-    }
-
-    #[test]
-    fn the_dot_needs_a_hit_and_a_gun() {
-        let mut aim = HandAim {
-            source: HandSource::Gun { gun: 0 },
-            ray: Ray::new(Vec3::ZERO, Vec3::NEG_Z).unwrap(),
-            hit: None,
-            target: Vec3::new(0.0, 0.0, -50.0),
-        };
-        let mut out = Vec::new();
-        gun_readout(GunReadout::Dot, &[Some(aim), None], &[None; 2], &mut out);
-        assert!(out.is_empty());
-        aim.hit = Some(hit(Vec3::new(0.0, 0.0, -8.0)));
-        aim.source = HandSource::AimPose;
-        gun_readout(GunReadout::Dot, &[Some(aim), None], &[None; 2], &mut out);
-        assert!(out.is_empty());
-        aim.source = HandSource::Gun { gun: 0 };
-        gun_readout(GunReadout::Dot, &[Some(aim), None], &[None; 2], &mut out);
-        assert_eq!(out.len(), 1);
-        gun_readout(GunReadout::None, &[Some(aim), None], &[None; 2], &mut out);
-        assert_eq!(out.len(), 1);
-    }
-
-    #[test]
-    fn ghosts_appear_only_for_yielding_hands() {
-        let hands = [Some(poses(Vec3::ZERO)), Some(poses(Vec3::X))];
-        let mut out = Vec::new();
-        ghost_hands([1.0, 1.0], &hands, &OverlayConfig::new(), &mut out);
-        assert!(out.is_empty());
-        ghost_hands([1.0, 0.25], &hands, &OverlayConfig::new(), &mut out);
-        assert_eq!(out.len(), 2);
-        assert!(out.iter().all(|p| match p {
-            Primitive::Sprite { at, .. } | Primitive::Line { from: at, .. } => matches!(
-                at,
-                Anchor::Hand {
-                    hand: Hand::Right,
-                    ..
-                }
-            ),
-        }));
-    }
-
-    #[test]
-    fn gizmos_draw_three_axes_per_pose() {
-        let mut out = Vec::new();
-        gizmos(&[Some(poses(Vec3::ZERO)), None], &mut out);
-        assert_eq!(out.len(), 6);
     }
 
     #[test]

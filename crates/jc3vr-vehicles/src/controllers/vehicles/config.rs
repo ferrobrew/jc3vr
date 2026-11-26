@@ -3,7 +3,7 @@
 //! physical controls' fixed placement and tuning are [`crate::controllers::vehicles::tuning`]'s.
 
 use jc3vr_body::controllers::{
-    body::config::BODY_REMAP_CONFIG, overlay::config::OVERLAY_CONFIG, scheme,
+    body::config::BODY_REMAP_CONFIG, scheme,
 };
 use jc3vr_core::config::engine::ConfigSlot;
 use jc3vr_input::frame::Hand;
@@ -23,9 +23,6 @@ pub(crate) struct VehicleSettings {
     /// Whether the hands are remapped onto the character's arms
     /// ([`BodyRemapConfig::remap_hands`](jc3vr_body::controllers::body::config::BodyRemapConfig::remap_hands)).
     pub(crate) remap_hands: bool,
-    /// Whether the world-space overlay draws
-    /// ([`OverlayConfig::enabled`](jc3vr_body::controllers::overlay::config::OverlayConfig::enabled)).
-    pub(crate) overlay: bool,
 }
 
 impl VehicleSettings {
@@ -34,12 +31,10 @@ impl VehicleSettings {
         let vehicles = *VEHICLES_CONFIG.lock();
         let dominant = scheme::acting_hand();
         let remap_hands = BODY_REMAP_CONFIG.query(|c| c.remap_hands);
-        let overlay = OVERLAY_CONFIG.query(|c| c.enabled);
         Self {
             vehicles,
             dominant,
             remap_hands,
-            overlay,
         }
     }
 }

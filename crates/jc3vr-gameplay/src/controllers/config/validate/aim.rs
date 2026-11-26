@@ -1,9 +1,6 @@
-//! Checks for the controller-owned hands, per-hand aiming, and the world-space
-//! overlay.
+//! Checks for the controller-owned hands and per-hand aiming.
 
-use jc3vr_body::controllers::{
-    aim::config::AimConfig, hands::config::HandsConfig, overlay::config::OverlayConfig,
-};
+use jc3vr_body::controllers::{aim::config::AimConfig, hands::config::HandsConfig};
 use jc3vr_core::config::engine::{Invalid, nonnegative, positive, range, vec3};
 
 /// Check the controller-owned hands' settings. Paths are relative to `controllers.hands`.
@@ -27,12 +24,4 @@ pub(super) fn aim(c: &AimConfig) -> Result<(), Invalid> {
         0.0,
         30.0,
     )
-}
-
-/// Check the world-space overlay's settings. Paths are relative to `controllers.overlay`.
-pub(super) fn overlay(c: &OverlayConfig) -> Result<(), Invalid> {
-    nonnegative("overlay.depth_tolerance_m", c.depth_tolerance_m, 100.0)?;
-    nonnegative("overlay.depth_tolerance_rel", c.depth_tolerance_rel, 100.0)?;
-    positive("overlay.min_line_px", c.min_line_px, 10_000.0)?;
-    range("overlay.xray_alpha", c.xray_alpha, 0.0, 1.0)
 }

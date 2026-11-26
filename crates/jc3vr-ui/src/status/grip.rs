@@ -23,9 +23,7 @@ fn right_grip() -> Line {
 }
 
 fn markers() -> Line {
-    let on = read(&CONTROLLERS_CONFIG, |c| {
-        c.overlay.enabled && c.overlay.markers
-    });
+    let on = read(&CONTROLLERS_CONFIG, |c| c.overlay.markers);
     markers_line(on, &tick::status())
 }
 

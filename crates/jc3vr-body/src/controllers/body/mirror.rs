@@ -5,7 +5,7 @@
 //! At the end of the local player's pose-finalization pass (the post-call `UpdatePropEffects`
 //! detour, after the head override and the limbs' twist), [`after_solve`] reads the bones of a
 //! stick figure from the finalized pose, carries them into the world, and reflects them across a
-//! plane `body_mirror_distance_m` ahead of Rico's facing. The reflection is drawn as lines between
+//! plane [`BODY_MIRROR_DISTANCE_M`] ahead of Rico's facing. The reflection is drawn as lines between
 //! the bones, with the mirror's frame, a ring at the reflected head bone, and smaller rings at the
 //! reflected targets the body was posed toward: the player's head, and each controller's wrist
 //! target. A wrist ring away from the reflected hand, or the head ring away from the head, is a
@@ -39,7 +39,7 @@ use parking_lot::Mutex;
 use crate::controllers::{
     body::procedural::{head::head_bone_world, joints::from_joint, skeleton},
     hands::ik::tick_records,
-    overlay::config::OVERLAY_CONFIG,
+    overlay::config::{BODY_MIRROR_DISTANCE_M, OVERLAY_CONFIG},
 };
 
 /// What the mirror drew on its last pass.
@@ -175,8 +175,7 @@ pub(crate) unsafe fn after_solve(character: *mut Character) {
     let Some(character) = (unsafe { character.as_ref() }).filter(|c| c.m_IsLocalCharacter) else {
         return;
     };
-    let (enabled, distance) = OVERLAY_CONFIG.query(|c| (c.body_mirror, c.body_mirror_distance_m));
-    if !enabled {
+    if !OVERLAY_CONFIG.query(|c| c.body_mirror) {
         return;
     }
     let Some(controller) = (unsafe { character.m_AnimatedModel.m_AnimationController.as_ref() })
@@ -196,7 +195,7 @@ pub(crate) unsafe fn after_solve(character: *mut Character) {
     let targets = tick_records()
         .current
         .map(|t| t.map(|t| t.wrist.position).filter(|p| p.is_finite()));
-    let Some(plane) = Plane::ahead_of(&world, distance) else {
+    let Some(plane) = Plane::ahead_of(&world, BODY_MIRROR_DISTANCE_M) else {
         return;
     };
     let mut primitives = Vec::new();

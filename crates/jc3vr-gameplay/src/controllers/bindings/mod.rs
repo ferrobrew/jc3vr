@@ -832,12 +832,12 @@ fn tick(game: &GameTick<'_>, dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>)
         grabs: step.grabs,
         markers: active
             .as_ref()
-            .filter(|_| config.overlay.enabled && config.overlay.markers && !in_menu)
+            .filter(|_| config.overlay.markers && !in_menu)
             .map(marker_frame),
     });
     let view_frame = active
         .as_ref()
-        .filter(|_| config.overlay.enabled && !in_menu)
+        .filter(|_| !in_menu)
         .map(marker_frame);
     physical_hands::grab_view::submit(&targets, view_frame.as_ref());
     if step.crouch_toggle {

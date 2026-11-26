@@ -387,9 +387,8 @@ pub fn finish_tick(game: &GameTick<'_>, input: &FinishInput, desired: &mut Vec<D
     let to = state.phase.label();
     let hand = hand.or(state.phase.hand());
     state.moment.note(hand, from, to);
-    let overlay = &input.config.overlay;
     match (&state.phase, state.status.swing) {
-        _ if !(overlay.enabled && overlay.markers) => latch::clear(),
+        _ if !input.config.overlay.markers => latch::clear(),
         (Phase::Armed { hand, offer, .. }, _) => latch::submit(*hand, offer.point),
         (Phase::Pulling { hand, .. }, Some(swing)) => latch::submit_line(*hand, &swing),
         _ => latch::clear(),

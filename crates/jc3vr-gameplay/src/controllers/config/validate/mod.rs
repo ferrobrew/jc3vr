@@ -37,7 +37,6 @@ pub fn controllers(c: &ControllersConfig) -> Result<(), Invalid> {
     input::bindings(&c.bindings)?;
     aim::hands(&c.hands)?;
     aim::aim(&c.aim)?;
-    aim::overlay(&c.overlay)?;
     weapons::weapons(&c.weapons)?;
     roomscale::roomscale(&c.roomscale)?;
     vehicles::vehicles(&c.vehicles)?;

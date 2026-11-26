@@ -39,13 +39,6 @@ pub fn apply_preset(c: &mut ControllersConfig, preset: Preset) {
     c.aim.gun = on;
     c.aim.grapple = on;
     c.aim.sight_tuning.enabled = false;
-    c.overlay.enabled = on;
-    c.overlay.gun_readout = GunReadout::None;
-    c.overlay.grapple_highlight = on;
-    c.overlay.grapple_beam = false;
-    c.overlay.hide_game_reticle = on;
-    c.weapons.foregrip.enabled = on;
-    c.weapons.recoil.enabled = on;
     c.haptics.enabled = on;
     c.haptics.game_rumble = on;
     c.weapons.reload.enabled = on;
@@ -92,19 +85,6 @@ mod tests {
     use jc3vr_body::controllers::aim::sights::config::SightOverride;
 
     use super::*;
-
-    #[test]
-    fn controller_preset_keeps_highlights_without_the_preview_beam() {
-        let mut c = ControllersConfig::new();
-        assert!(!c.overlay.grapple_beam);
-        assert!(c.overlay.grapple_highlight);
-        c.overlay.grapple_beam = true;
-        apply_preset(&mut c, Preset::Controllers);
-        assert!(!c.overlay.grapple_beam);
-        assert!(c.overlay.grapple_highlight);
-        apply_preset(&mut c, Preset::GamepadBaseline);
-        assert!(!c.overlay.grapple_beam);
-    }
 
     #[test]
     fn presets_preserve_tuning_and_calibration() {

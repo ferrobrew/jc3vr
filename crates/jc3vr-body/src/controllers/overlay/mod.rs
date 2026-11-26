@@ -1,8 +1,7 @@
 //! The world-space overlay layer: the plan of record's "The world-space overlay layer"
 //! (`docs/mod/input/controllers-and-roomscale.md`). Sprites and lines drawn into the scene per eye,
 //! tested against the scene's depth, for readouts that need their own depths: the grapple's
-//! highlight and beam, the guns' dot or laser, the grab-volume highlights, the ghosts of yielded
-//! hands, and the controller gizmos.
+//! highlight, the grab-volume highlights, and the in-world diagnostics.
 //!
 //! The overlay's data model lives in [`jc3vr_view::controllers::overlay`], and its render half in
 //! the render crate's `controllers::overlay`; this module holds the producers and the inputs the
@@ -41,7 +40,7 @@ pub mod producers;
 
 use jc3vr_view::controllers::overlay::{inputs::DrawSettings, resolve::HandPoses};
 
-use crate::controllers::{hands::late, overlay::config::OVERLAY_CONFIG, scheme};
+use crate::controllers::{hands::late, scheme};
 
 /// Run the overlay's producers. Called once per render dispatch at the end of
 /// `RenderEngine::PostDraw`, before the engine's context lock is taken; it acts only on the
@@ -50,11 +49,8 @@ pub fn tick(eye: usize) {
     if !jc3vr_view::stereo::dispatch::first_ui_eye(eye) {
         return;
     }
-    let active = scheme::enabled()
-        && OVERLAY_CONFIG.query(|c| c.enabled)
-        && scheme::is_controllers()
-        && jc3vr_core::hooks::in_gameplay();
-    producers::tick(active, &render_poses());
+    let active = scheme::enabled() && scheme::is_controllers() && jc3vr_core::hooks::in_gameplay();
+    producers::tick(active);
 }
 
 /// Each hand's world poses as it is drawn at the camera's interpolation fraction, so what is
@@ -69,14 +65,17 @@ pub fn render_poses() -> [Option<HandPoses>; 2] {
     })
 }
 
-/// How the overlay draws, or `None` while it or the controllers are off.
+/// How the overlay draws, or `None` while the controllers are off.
 pub fn draw_settings() -> Option<DrawSettings> {
-    let enabled = scheme::enabled();
-    OVERLAY_CONFIG.query(|overlay| {
-        (enabled && overlay.enabled).then_some(DrawSettings {
-            min_line_px: overlay.min_line_px,
-            depth_tolerance_m: overlay.depth_tolerance_m,
-            depth_tolerance_rel: overlay.depth_tolerance_rel,
-        })
-    })
+    scheme::enabled().then_some(DRAW)
 }
+
+/// The overlay's draw tuning. A primitive this far behind the scene's depth still counts as
+/// visible, so that a marker on a surface is not hidden by that surface; the relative tolerance
+/// takes over at a distance, where the depth buffer's precision falls. A line thinner than the
+/// minimum fades instead.
+const DRAW: DrawSettings = DrawSettings {
+    min_line_px: 1.5,
+    depth_tolerance_m: 0.05,
+    depth_tolerance_rel: 0.01,
+};

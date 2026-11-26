@@ -1,9 +1,8 @@
 //! Shared visualization switches, known draw blockers, and the global drawer.
 
 use egui::Ui;
-use jc3vr_body::controllers::{overlay::config::GunReadout, scheme};
+use jc3vr_body::controllers::scheme;
 use jc3vr_gameplay::controllers::config::{CONTROLLERS_CONFIG, ControllersConfig};
-use jc3vr_physical::controllers::physical_hands::collider_view::ColliderViewConfig;
 use jc3vr_render::controllers::overlay;
 use jc3vr_view::controllers::overlay::{primitive::Source, store, store::SourceMask};
 use parking_lot::Mutex;
@@ -71,12 +70,6 @@ impl Snapshot {
         if !self.config.enabled {
             return ViewState::Blocked(Blocker::Controllers);
         }
-        if !self.config.overlay.enabled {
-            return ViewState::Blocked(Blocker::Overlay);
-        }
-        if id.grab_child() && !self.config.physical_hands.grab_view.enabled {
-            return ViewState::Blocked(Blocker::GrabView);
-        }
         if self.runtime.clean_view {
             return ViewState::Blocked(Blocker::CleanView);
         }
@@ -103,7 +96,7 @@ pub(crate) fn snapshot() -> Snapshot {
     Snapshot { config, runtime }
 }
 
-/// Render the drawer's switches, shared settings, the collider view's contents, and readouts, without navigation
+/// Render the drawer's switches, the overlay's readout, and the views' readouts, without navigation
 /// changes. The caller supplies the snapshot before entering any configuration edit boundary.
 pub(crate) fn controls(ui: &mut Ui, snapshot: &Snapshot) {
     let id = ui.id().with("visualization-filter");
@@ -129,13 +122,13 @@ pub(crate) fn controls(ui: &mut Ui, snapshot: &Snapshot) {
             if entries.is_empty() {
                 ui.label("No matching visualization switches.");
             }
-            let mut previous_group = None;
+            let mut previous_requested = None;
             for entry in entries {
-                let group = (entry.id.requested(&snapshot.config), entry.group);
-                if previous_group != Some(group) {
+                let requested = entry.id.requested(&snapshot.config);
+                if previous_requested != Some(requested) {
                     ui.separator();
-                    ui.label(format!("{} / {}", if group.0 { "Requested" } else { "Off" }, entry.group.label()));
-                    previous_group = Some(group);
+                    ui.label(if requested { "Requested" } else { "Off" });
+                    previous_requested = Some(requested);
                 }
                 ui.push_id(entry.id, |ui| {
                     switch_control(ui, snapshot, entry, &mut edits);
@@ -146,8 +139,7 @@ pub(crate) fn controls(ui: &mut Ui, snapshot: &Snapshot) {
                 });
             }
             ui.separator();
-            ui.collapsing("Shared overlay settings", |ui| shared_settings(ui, snapshot, &mut edits));
-            ui.collapsing("Collider view contents", |ui| collider_settings(ui, snapshot, &mut edits));
+            ui.collapsing("Overlay readout", |ui| overlay_readout(ui, snapshot));
             ui.collapsing("View readouts", controllers::view_readouts);
             ui.separator();
             temporary_controls(ui, snapshot);
@@ -163,19 +155,8 @@ enum ViewId {
     BodyMirror,
     BodyRig,
     BodyEstimate,
-    ControllerGizmos,
-    GhostHands,
-    GrappleHighlight,
-    GrappleBeam,
     GrabView,
-    GrabRays,
-    GrabTargets,
-    GrabWrist,
-    GrabRefusals,
-    GrabCandidates,
-    GrabZones,
     ColliderView,
-    PalmBoxes,
     DockedGuns,
 }
 
@@ -184,115 +165,44 @@ impl ViewId {
         match self {
             Self::BodyMirror => Source::BodyMirror,
             Self::BodyRig | Self::BodyEstimate => Source::BodyRig,
-            Self::ControllerGizmos => Source::DebugGizmos,
-            Self::GhostHands => Source::GhostHands,
-            Self::GrappleHighlight => Source::GrappleHighlight,
-            Self::GrappleBeam => Source::GrappleBeam,
-            Self::GrabView
-            | Self::GrabRays
-            | Self::GrabTargets
-            | Self::GrabWrist
-            | Self::GrabRefusals
-            | Self::GrabCandidates
-            | Self::GrabZones => Source::GrabView,
+            Self::GrabView => Source::GrabView,
             Self::ColliderView => Source::ColliderView,
-            Self::PalmBoxes => Source::PhysicalHands,
             Self::DockedGuns => Source::DockedGuns,
         }
     }
 
     fn requested(self, config: &ControllersConfig) -> bool {
         let overlay = &config.overlay;
-        let grab = &config.physical_hands.grab_view;
         match self {
             Self::BodyMirror => overlay.body_mirror,
             Self::BodyRig => overlay.body_rig,
             Self::BodyEstimate => overlay.body_estimate,
-            Self::ControllerGizmos => overlay.debug_gizmos,
-            Self::GhostHands => overlay.ghost_hands,
-            Self::GrappleHighlight => overlay.grapple_highlight,
-            Self::GrappleBeam => overlay.grapple_beam,
-            Self::GrabView => grab.enabled,
-            Self::GrabRays => grab.rays,
-            Self::GrabTargets => grab.targets,
-            Self::GrabWrist => grab.wrist,
-            Self::GrabRefusals => grab.refusals,
-            Self::GrabCandidates => grab.candidates,
-            Self::GrabZones => grab.zones,
+            Self::GrabView => config.physical_hands.grab_view.enabled,
             Self::ColliderView => config.physical_hands.collider_view.enabled,
-            Self::PalmBoxes => config.physical_hands.show_boxes,
             Self::DockedGuns => overlay.docked_guns,
         }
     }
 
     fn set(self, config: &mut ControllersConfig, requested: bool) {
         let overlay = &mut config.overlay;
-        let grab = &mut config.physical_hands.grab_view;
         match self {
             Self::BodyMirror => overlay.body_mirror = requested,
             Self::BodyRig => overlay.body_rig = requested,
             Self::BodyEstimate => overlay.body_estimate = requested,
-            Self::ControllerGizmos => overlay.debug_gizmos = requested,
-            Self::GhostHands => overlay.ghost_hands = requested,
-            Self::GrappleHighlight => overlay.grapple_highlight = requested,
-            Self::GrappleBeam => overlay.grapple_beam = requested,
-            Self::GrabView => grab.enabled = requested,
-            Self::GrabRays => grab.rays = requested,
-            Self::GrabTargets => grab.targets = requested,
-            Self::GrabWrist => grab.wrist = requested,
-            Self::GrabRefusals => grab.refusals = requested,
-            Self::GrabCandidates => grab.candidates = requested,
-            Self::GrabZones => grab.zones = requested,
+            Self::GrabView => config.physical_hands.grab_view.enabled = requested,
             Self::ColliderView => config.physical_hands.collider_view.enabled = requested,
-            Self::PalmBoxes => config.physical_hands.show_boxes = requested,
             Self::DockedGuns => overlay.docked_guns = requested,
         }
     }
 
-    fn grab_child(self) -> bool {
-        matches!(
-            self,
-            Self::GrabRays
-                | Self::GrabTargets
-                | Self::GrabWrist
-                | Self::GrabRefusals
-                | Self::GrabCandidates
-                | Self::GrabZones
-        )
-    }
-
     fn overlay_producer(self) -> bool {
-        matches!(
-            self,
-            Self::BodyRig
-                | Self::BodyEstimate
-                | Self::ControllerGizmos
-                | Self::GhostHands
-                | Self::GrappleHighlight
-                | Self::GrappleBeam
-        )
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-enum Group {
-    DebugGeometry,
-    GameplayCues,
-}
-
-impl Group {
-    fn label(self) -> &'static str {
-        match self {
-            Self::DebugGeometry => "Debug geometry",
-            Self::GameplayCues => "Gameplay cues",
-        }
+        matches!(self, Self::BodyRig | Self::BodyEstimate)
     }
 }
 
 struct Entry {
     id: ViewId,
     label: &'static str,
-    group: Group,
     feature: FeatureId,
 }
 
@@ -300,103 +210,31 @@ const ENTRIES: &[Entry] = &[
     Entry {
         id: ViewId::BodyMirror,
         label: "Body mirror",
-        group: Group::DebugGeometry,
         feature: FeatureId::BodyFit,
     },
     Entry {
         id: ViewId::BodyRig,
         label: "Body rig",
-        group: Group::DebugGeometry,
         feature: FeatureId::BodyFit,
     },
     Entry {
         id: ViewId::BodyEstimate,
         label: "Body estimate",
-        group: Group::DebugGeometry,
         feature: FeatureId::BodyFit,
-    },
-    Entry {
-        id: ViewId::ControllerGizmos,
-        label: "Controller gizmos",
-        group: Group::DebugGeometry,
-        feature: FeatureId::BodyFit,
-    },
-    Entry {
-        id: ViewId::GhostHands,
-        label: "Ghost hands",
-        group: Group::DebugGeometry,
-        feature: FeatureId::PhysicalHands,
     },
     Entry {
         id: ViewId::GrabView,
         label: "Grab view",
-        group: Group::DebugGeometry,
-        feature: FeatureId::PhysicalHands,
-    },
-    Entry {
-        id: ViewId::GrabRays,
-        label: "Grab view: reach rays",
-        group: Group::DebugGeometry,
-        feature: FeatureId::PhysicalHands,
-    },
-    Entry {
-        id: ViewId::GrabTargets,
-        label: "Grab view: target lines",
-        group: Group::DebugGeometry,
-        feature: FeatureId::PhysicalHands,
-    },
-    Entry {
-        id: ViewId::GrabWrist,
-        label: "Grab view: palm state on wrists",
-        group: Group::DebugGeometry,
-        feature: FeatureId::PhysicalHands,
-    },
-    Entry {
-        id: ViewId::GrabRefusals,
-        label: "Grab view: refused grabs",
-        group: Group::DebugGeometry,
-        feature: FeatureId::PhysicalHands,
-    },
-    Entry {
-        id: ViewId::GrabCandidates,
-        label: "Grab view: nearby candidates",
-        group: Group::DebugGeometry,
-        feature: FeatureId::PhysicalHands,
-    },
-    Entry {
-        id: ViewId::GrabZones,
-        label: "Grab view: held gun's grab zones",
-        group: Group::DebugGeometry,
         feature: FeatureId::PhysicalHands,
     },
     Entry {
         id: ViewId::ColliderView,
         label: "Collider view",
-        group: Group::DebugGeometry,
         feature: FeatureId::PhysicalHands,
-    },
-    Entry {
-        id: ViewId::PalmBoxes,
-        label: "Palm boxes",
-        group: Group::DebugGeometry,
-        feature: FeatureId::PhysicalHands,
-    },
-    Entry {
-        id: ViewId::GrappleHighlight,
-        label: "Grapple target highlight",
-        group: Group::GameplayCues,
-        feature: FeatureId::Grapple,
-    },
-    Entry {
-        id: ViewId::GrappleBeam,
-        label: "Grapple beam",
-        group: Group::GameplayCues,
-        feature: FeatureId::Grapple,
     },
     Entry {
         id: ViewId::DockedGuns,
         label: "Docked guns",
-        group: Group::DebugGeometry,
         feature: FeatureId::Inventory,
     },
 ];
@@ -450,7 +288,7 @@ fn temporary_controls(ui: &mut Ui, snapshot: &Snapshot) {
     if ui
         .add_enabled(
             !hidden,
-            egui::Button::new("Hide registered views (including Gameplay cues)"),
+            egui::Button::new("Hide registered views"),
         )
         .on_hover_text("Suppress only this inventory's rendered output. Saved switches, producers, grip, and grapple behavior remain unchanged.")
         .clicked()
@@ -467,12 +305,12 @@ fn temporary_controls(ui: &mut Ui, snapshot: &Snapshot) {
     }
     if let Some(requested) = requested_at_hide {
         ui.small(format!(
-            "Temporarily hidden: all registered output, including Gameplay cues. {} switches were requested at Hide; this is not a draw count.",
+            "Temporarily hidden: all registered output. {} switches were requested at Hide; this is not a draw count.",
             requested.count()
         ));
     }
     ui.small("Hide also covers switches enabled while hidden. It lasts until Restore or payload teardown; closing this drawer does not restore output. Restore keeps configuration edits made while hidden.");
-    ui.small("Gun readout, sight tuning, and other non-inventory output remain unchanged.");
+    ui.small("The grapple highlight, the sight tuning marker, and other non-inventory output remain unchanged.");
 }
 
 #[derive(Default)]
@@ -507,8 +345,6 @@ impl ViewState {
 enum Blocker {
     TemporaryHide,
     Controllers,
-    Overlay,
-    GrabView,
     CleanView,
     Scheme,
     Gameplay,
@@ -519,8 +355,6 @@ impl Blocker {
         match self {
             Self::TemporaryHide => "Requested; temporarily hidden until Restore.",
             Self::Controllers => "Requested; blocked: controllers are disabled.",
-            Self::Overlay => "Requested; blocked: the world-space overlay is disabled.",
-            Self::GrabView => "Requested; blocked: the grab view is disabled.",
             Self::CleanView => "Requested; blocked: the clean view hides every overlay.",
             Self::Scheme => "Requested; blocked: the controller scheme is inactive.",
             Self::Gameplay => "Requested; blocked: gameplay is inactive.",
@@ -535,7 +369,6 @@ fn matching<'a>(config: &ControllersConfig, filter: &str) -> Vec<&'a Entry> {
         .filter(|entry| {
             filter.is_empty()
                 || entry.label.to_lowercase().contains(&filter)
-                || entry.group.label().to_lowercase().contains(&filter)
                 || entry
                     .feature
                     .definition()
@@ -544,7 +377,7 @@ fn matching<'a>(config: &ControllersConfig, filter: &str) -> Vec<&'a Entry> {
                     .contains(&filter)
         })
         .collect();
-    entries.sort_by_key(|entry| (!entry.id.requested(config), entry.group));
+    entries.sort_by_key(|entry| !entry.id.requested(config));
     entries
 }
 
@@ -552,15 +385,6 @@ fn matching<'a>(config: &ControllersConfig, filter: &str) -> Vec<&'a Entry> {
 enum Edit {
     Switch(ViewId, bool),
     Controllers(bool),
-    Overlay(bool),
-    GunReadout(GunReadout),
-    MirrorDistance(f32),
-    DepthTolerance(f32),
-    RelativeDepthTolerance(f32),
-    MinimumLineWidth(f32),
-    XrayAlpha(f32),
-    HideGameReticle(bool),
-    ColliderViewContents(ColliderViewConfig),
 }
 
 fn switch_control(ui: &mut Ui, snapshot: &Snapshot, entry: &Entry, edits: &mut Vec<Edit>) {
@@ -573,8 +397,6 @@ fn switch_control(ui: &mut Ui, snapshot: &Snapshot, entry: &Entry, edits: &mut V
 fn unblock_control(ui: &mut Ui, blocker: Blocker, edits: &mut Vec<Edit>) {
     let action = match blocker {
         Blocker::Controllers => Some(("Enable controllers", Edit::Controllers(true))),
-        Blocker::Overlay => Some(("Enable the world-space overlay", Edit::Overlay(true))),
-        Blocker::GrabView => Some(("Enable the grab view", Edit::Switch(ViewId::GrabView, true))),
         _ => None,
     };
     if let Some((label, edit)) = action
@@ -584,77 +406,7 @@ fn unblock_control(ui: &mut Ui, blocker: Blocker, edits: &mut Vec<Edit>) {
     }
 }
 
-fn shared_settings(ui: &mut Ui, snapshot: &Snapshot, edits: &mut Vec<Edit>) {
-    let mut overlay = snapshot.config.overlay;
-    if ui
-        .checkbox(
-            &mut overlay.hide_game_reticle,
-            "Hide the game's reticles while the hands aim",
-        )
-        .on_hover_text(
-            "Hide the HUD's weapon reticle while the guns aim by hand, and its grapple reticle \
-             always: both mark where the gaze aims, and the overlay marks the grapple's target.",
-        )
-        .changed()
-    {
-        edits.push(Edit::HideGameReticle(overlay.hide_game_reticle));
-    }
-    if ui
-        .checkbox(&mut overlay.enabled, "World-space overlay enabled")
-        .changed()
-    {
-        edits.push(Edit::Overlay(overlay.enabled));
-    }
-    ui.horizontal_wrapped(|ui| {
-        ui.label("Gun readout");
-        let before = overlay.gun_readout;
-        ui.selectable_value(&mut overlay.gun_readout, GunReadout::None, "None");
-        ui.selectable_value(&mut overlay.gun_readout, GunReadout::Dot, "Dot");
-        ui.selectable_value(&mut overlay.gun_readout, GunReadout::Laser, "Laser");
-        if before != overlay.gun_readout {
-            edits.push(Edit::GunReadout(overlay.gun_readout));
-        }
-    });
-    ui.small("The gun readout selector is not included in the Boolean-switch counts.");
-    if ui
-        .add(
-            egui::Slider::new(&mut overlay.body_mirror_distance_m, 0.5..=4.0)
-                .text("Body mirror distance (m)"),
-        )
-        .changed()
-    {
-        edits.push(Edit::MirrorDistance(overlay.body_mirror_distance_m));
-    }
-    if ui
-        .add(
-            egui::Slider::new(&mut overlay.depth_tolerance_m, 0.0..=0.5)
-                .text("Depth tolerance (m)"),
-        )
-        .changed()
-    {
-        edits.push(Edit::DepthTolerance(overlay.depth_tolerance_m));
-    }
-    if ui
-        .add(
-            egui::Slider::new(&mut overlay.depth_tolerance_rel, 0.0..=0.05)
-                .text("Depth tolerance (fraction of distance)"),
-        )
-        .changed()
-    {
-        edits.push(Edit::RelativeDepthTolerance(overlay.depth_tolerance_rel));
-    }
-    if ui
-        .add(egui::Slider::new(&mut overlay.min_line_px, 0.5..=4.0).text("Minimum line width (px)"))
-        .changed()
-    {
-        edits.push(Edit::MinimumLineWidth(overlay.min_line_px));
-    }
-    if ui
-        .add(egui::Slider::new(&mut overlay.xray_alpha, 0.0..=1.0).text("Ghost x-ray alpha"))
-        .changed()
-    {
-        edits.push(Edit::XrayAlpha(overlay.xray_alpha));
-    }
+fn overlay_readout(ui: &mut Ui, snapshot: &Snapshot) {
     let status = &snapshot.runtime.overlay;
     ui.label(format!(
         "Last overlay snapshot, all sources: {} retained primitives; {} collected after suppression and the cap; {} temporarily suppressed; {} uploaded per eye.",
@@ -669,40 +421,11 @@ fn shared_settings(ui: &mut Ui, snapshot: &Snapshot, edits: &mut Vec<Edit>) {
     }
 }
 
-/// What the collider view draws, edited on a copy. Only the contents are written back, so the
-/// view's switch edited in the same frame keeps its value.
-fn collider_settings(ui: &mut Ui, snapshot: &Snapshot, edits: &mut Vec<Edit>) {
-    let current = snapshot.config.physical_hands.collider_view;
-    let mut collider = current;
-    controllers::collider_view_settings(ui, &mut collider);
-    if collider != current {
-        edits.push(Edit::ColliderViewContents(collider));
-    }
-}
-
 fn apply_edits(config: &mut ControllersConfig, edits: &[Edit]) {
     for edit in edits {
         match *edit {
             Edit::Switch(id, requested) => id.set(config, requested),
             Edit::Controllers(enabled) => config.enabled = enabled,
-            Edit::Overlay(enabled) => config.overlay.enabled = enabled,
-            Edit::GunReadout(readout) => config.overlay.gun_readout = readout,
-            Edit::MirrorDistance(distance) => config.overlay.body_mirror_distance_m = distance,
-            Edit::DepthTolerance(tolerance) => config.overlay.depth_tolerance_m = tolerance,
-            Edit::RelativeDepthTolerance(tolerance) => {
-                config.overlay.depth_tolerance_rel = tolerance
-            }
-            Edit::MinimumLineWidth(width) => config.overlay.min_line_px = width,
-            Edit::XrayAlpha(alpha) => config.overlay.xray_alpha = alpha,
-            Edit::HideGameReticle(hide) => config.overlay.hide_game_reticle = hide,
-            Edit::ColliderViewContents(contents) => {
-                // The view's switch is a registered switch; the contents edit leaves it alone.
-                let view = &mut config.physical_hands.collider_view;
-                *view = ColliderViewConfig {
-                    enabled: view.enabled,
-                    ..contents
-                };
-            }
         }
     }
 }

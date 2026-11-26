@@ -106,7 +106,7 @@ Each scripted state that wants the hands is assigned one of four tiers. A state 
 1. Free. The hand follows its controller and nothing is attached to it.
 2. Action runs. The game performs the action, such as a reload timer and the weapon model's own magazine and bolt animation, while the hands stay on the controllers.
 3. Anchored. The hand is attached to a world point, and its movement drives something in the game.
-4. Yielded. The animation owns the hands, blending out from the controllers and back. With `overlay.ghost_hands` (off by default), a translucent ghost of the controller-driven hands stays visible in the world-space overlay, so that the player keeps sight of their real hands.
+4. Yielded. The animation owns the hands, blending out from the controllers and back.
 
 The starting assignments are as follows.
 
@@ -304,7 +304,7 @@ The dominant hand's ray reaches each held weapon's `m_AimTargetPosition` through
 
 The per-weapon sight offsets are derived and then tuned. The fire-point matrices (`m_InternalFirePositions`) give the muzzle origin and the barrel axis: `GetShotMatrix` treats the composed fire-point matrix's -Z axis as the barrel. An offline tool, `tools/sights/`, reads the weapon models from the game archives, derives the sight line from the model geometry above the fire point, and emits `tools/sights/sights.json`, keyed by the weapon name hash, with a confidence grade per weapon ([weapon-data.md](../../engine/gameplay/weapon-data.md) has the files it reads). Scoped sights and pistols derive reliably; iron sights on rifles with rails, muzzle devices, or carry handles do not, and are graded uncertain. The payload embeds the table and uses only its trusted grades; a per-weapon config entry overrides it, and a weapon with neither aims along its fire point. A tuning tool in the debug UI writes the config entry: the player lines up the sights on a marker and captures, and the entry can be copied into the table ([controllers.md, "Sight lines"](controllers.md#sight-lines)).
 
-Guns show no reticle by default. The options are a dot at the hit point, at the hit point's true depth so that it fuses in stereo, and a laser line from the muzzle to the hit point. Both are drawn by the world-space overlay layer. The game's own weapon reticle, which marks the gaze's aim point, is hidden wherever the guns aim by hand (on foot whether or not a gun is out, and in a vehicle while its weapons aim by hand), and its grapple reticle everywhere under the controller scheme while the grapple aims by hand (`overlay.hide_game_reticle`, on). With the grapple's hand aim off (`aim.grapple`), the gaze aims the grapple and its reticle stays.
+Guns show no reticle. The game's own weapon reticle, which marks the gaze's aim point, is hidden wherever the guns aim by hand (on foot whether or not a gun is out, and in a vehicle while its weapons aim by hand), and its grapple reticle everywhere under the controller scheme while the grapple aims by hand. With the grapple's hand aim off (`aim.grapple`), the gaze aims the grapple and its reticle stays.
 
 ### The grapple
 
@@ -370,7 +370,7 @@ Precision aim adds a camera-tree FOV hint, shows a 2D sniper overlay, and hides 
 
 ## The world-space overlay layer
 
-A world-space overlay layer draws sprites and lines into the scene with depth, per eye. It carries the grapple highlight and beam, the optional gun dot and laser, the grip targets' markers, the ghost hands of the yielded tier, and debug controller gizmos. The floating HUD panel cannot do this, because it draws a 2D texture on one plane, and the per-hand readouts need their own depths. The layer draws after post-processing and before the HUD, and tests against the scene depth in its pixel shader ([controllers.md, "The world-space overlay"](controllers.md#the-world-space-overlay)).
+A world-space overlay layer draws sprites and lines into the scene with depth, per eye. It carries the grapple highlight, the grip targets' markers, and the in-world diagnostics. The floating HUD panel cannot do this, because it draws a 2D texture on one plane, and the per-hand readouts need their own depths. The layer draws after post-processing and before the HUD, and tests against the scene depth in its pixel shader ([controllers.md, "The world-space overlay"](controllers.md#the-world-space-overlay)).
 
 ## Roomscale design
 
@@ -422,8 +422,8 @@ Author the pyxis definitions for the seams milestone 1 uses, and verify each off
 - Controller-owned hands: wrist IK to the controllers, the weapon on the dominant hand's attach bone, the game's arm IK skipped, and the render-time late update for the weapon and the hand bones. The body dimensions come from config.
 - Gun aiming from the dominant hand, with sight axes derived from the fire-point matrices only (milestone 5 adds the table derived from the models).
 - Grapple aiming from the left hand, with the game's own targeting and target scoring run along the hand's ray.
-- The world-space overlay layer, with the grapple highlight and beam, the optional gun dot and laser, and debug controller gizmos.
-- The free and yielded hand tiers; every scripted state starts as yielded unless its table entry is free, and the overlay draws ghost hands for the yielded ones.
+- The world-space overlay layer, with the grapple highlight.
+- The free and yielded hand tiers; every scripted state starts as yielded unless its table entry is free.
 - Weapon slots cycle from the L stick click. Milestone 3's holsters replace the cycle, which stays on as a fallback.
 
 ### 2. Posture and roomscale
@@ -479,7 +479,7 @@ A setting marked "off" below is off by default and has to be switched on to test
 | Hands | `hands.ik`, `hands.late_update`, `hands.grip`; the tier table is fixed at `HandTierTable::PLAN` | The free and yielded tiers are built; milestones 3 and 4 add the action-runs and anchored tiers. A state assigned a tier that is not built for it yields. A left-handed layout mirrors the bindings but does not move a single gun to the left hand: the gun stays on the attach bone the game gives it, and the pouches are laid out around whichever hand holds it rather than the dominant hand. Swapping a single gun's attach bone to the dominant hand, as the dual-wield layout already does for the pistols, is a future item; it needs the two-handed weapons' foregrip geometry and the sight corrections checked for the mirrored hold. The grapple wire's render-time correction and elbow pole hints are not built. |
 | Gun aiming | `aim.gun`, `aim.sights`; the ray length is `RAY_LENGTH_M` in `controllers::aim` | Built. The sight line starts from the fire point, corrected by the config entry or the embedded table (milestone 5). |
 | Grapple aiming | `aim.grapple`, `aim.grapple_assist_strength`, `aim.grapple_assist_cone_deg`; the ray's origin is `GRAPPLE_ORIGIN_M` in `controllers::aim` | Built. |
-| World-space overlay | `overlay.enabled`, `overlay.gun_readout` (`None` by default, `Dot`, or `Laser`), `overlay.grapple_highlight`, `overlay.grapple_beam`, `overlay.hide_game_reticle`, `overlay.markers` (on), `overlay.body_rig` (on), `overlay.ghost_hands`, `overlay.debug_gizmos`, and `overlay.body_mirror` with `overlay.body_mirror_distance_m` (the last three debugging aids, off), `overlay.depth_tolerance_m`, `overlay.depth_tolerance_rel`, `overlay.min_line_px`, `overlay.xray_alpha` | Built. |
+| World-space overlay | `overlay.markers` (on), and the diagnostics `overlay.body_rig` (on), `overlay.docked_guns` (on), `overlay.body_mirror` (off), and `overlay.body_estimate` (off) | Built. |
 
 ### Milestone 2: posture and roomscale
 
@@ -597,8 +597,6 @@ The overlay:
 
 - The producers run on the render thread. The sim-rate readouts expire 150 ms after their last submission, and the per-frame ones after 100 ms.
 - The grapple highlight takes its surface normal from the off-hand ray's hit when that hit is within 0.5 m of the target, and otherwise faces the head.
-- The laser starts at the sight's origin, pinned to the wrist.
-- The ghost hand is a ring and a pointer.
 - The colours, sizes, and depth tolerances need tuning.
 
 ### Unverified in milestones 2 to 5

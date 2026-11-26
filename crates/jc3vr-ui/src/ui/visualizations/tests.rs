@@ -23,25 +23,11 @@ fn each_inventory_switch_edits_only_its_concrete_config_field() {
         (ViewId::BodyMirror, "/overlay/body_mirror"),
         (ViewId::BodyRig, "/overlay/body_rig"),
         (ViewId::BodyEstimate, "/overlay/body_estimate"),
-        (ViewId::ControllerGizmos, "/overlay/debug_gizmos"),
-        (ViewId::GhostHands, "/overlay/ghost_hands"),
-        (ViewId::GrappleHighlight, "/overlay/grapple_highlight"),
-        (ViewId::GrappleBeam, "/overlay/grapple_beam"),
         (ViewId::GrabView, "/physical_hands/grab_view/enabled"),
-        (ViewId::GrabRays, "/physical_hands/grab_view/rays"),
-        (ViewId::GrabTargets, "/physical_hands/grab_view/targets"),
-        (ViewId::GrabWrist, "/physical_hands/grab_view/wrist"),
-        (ViewId::GrabRefusals, "/physical_hands/grab_view/refusals"),
-        (
-            ViewId::GrabCandidates,
-            "/physical_hands/grab_view/candidates",
-        ),
-        (ViewId::GrabZones, "/physical_hands/grab_view/zones"),
         (
             ViewId::ColliderView,
             "/physical_hands/collider_view/enabled",
         ),
-        (ViewId::PalmBoxes, "/physical_hands/show_boxes"),
         (ViewId::DockedGuns, "/overlay/docked_guns"),
     ];
     assert_eq!(paths.len(), ENTRIES.len());
@@ -58,13 +44,10 @@ fn each_inventory_switch_edits_only_its_concrete_config_field() {
 }
 
 #[test]
-fn filtering_names_groups_and_feature_names_preserves_the_saved_config() {
+fn filtering_names_and_feature_names_preserves_the_saved_config() {
     let config = ControllersConfig::new();
     let before = serialized(&config);
     assert_eq!(matching(&config, "BODY MIRROR")[0].id, ViewId::BodyMirror);
-    let cues = matching(&config, "gameplay cues");
-    assert!(!cues.is_empty());
-    assert!(cues.iter().all(|entry| entry.group == Group::GameplayCues));
     let hands = matching(&config, "physical hands");
     assert!(!hands.is_empty());
     assert!(
@@ -107,35 +90,14 @@ fn drawer_shows_every_switch_once_with_the_global_controls() {
         );
     }
     for label in [
-        "Shared overlay settings",
-        "Collider view contents",
-        "Hide registered views (including Gameplay cues)",
+        "Overlay readout",
+        "Hide registered views",
         "Restore registered views",
     ] {
         assert!(labels.iter().any(|text| text == label), "{label}");
     }
     assert!(labels.iter().any(|text| text.starts_with("Inventory:")));
     assert_eq!(serialized(&snapshot.config), before);
-}
-
-#[test]
-fn collider_contents_edits_leave_the_registered_switch_alone() {
-    let mut config = ControllersConfig::new();
-    let collider_switch = !config.physical_hands.collider_view.enabled;
-    let mut collider = config.physical_hands.collider_view;
-    collider.boxes = !collider.boxes;
-    collider.gaze = !collider.gaze;
-    apply_edits(
-        &mut config,
-        &[
-            Edit::Switch(ViewId::ColliderView, collider_switch),
-            Edit::ColliderViewContents(collider),
-        ],
-    );
-    let view = &config.physical_hands.collider_view;
-    assert_eq!(view.enabled, collider_switch);
-    assert_eq!(view.boxes, collider.boxes);
-    assert_eq!(view.gaze, collider.gaze);
 }
 
 fn collect_text(shape: &egui::Shape, labels: &mut Vec<String>) {
@@ -157,10 +119,10 @@ fn requested_switches_precede_disabled_switches() {
         entry.id.set(&mut config, false);
     }
     config.overlay.body_mirror = true;
-    config.overlay.grapple_beam = true;
+    config.overlay.docked_guns = true;
     let entries = matching(&config, "");
     assert_eq!(entries[0].id, ViewId::BodyMirror);
-    assert_eq!(entries[1].id, ViewId::GrappleBeam);
+    assert_eq!(entries[1].id, ViewId::DockedGuns);
     assert!(
         entries[2..]
             .iter()
@@ -169,40 +131,16 @@ fn requested_switches_precede_disabled_switches() {
 }
 
 #[test]
-fn checked_children_report_the_actual_parent_blocker() {
-    let mut snapshot = snapshot_with(ControllersConfig::new());
-    snapshot.config.enabled = true;
-    snapshot.config.overlay.enabled = true;
-    snapshot.config.physical_hands.grab_view.enabled = false;
-    snapshot.config.physical_hands.grab_view.rays = true;
-    assert_eq!(
-        snapshot.state(ViewId::GrabRays),
-        ViewState::Blocked(Blocker::GrabView)
-    );
-    snapshot.config.overlay.enabled = false;
-    assert_eq!(
-        snapshot.state(ViewId::GrabRays),
-        ViewState::Blocked(Blocker::Overlay)
-    );
-    snapshot.config.enabled = false;
-    assert_eq!(
-        snapshot.state(ViewId::GrabRays),
-        ViewState::Blocked(Blocker::Controllers)
-    );
-}
-
-#[test]
 fn requested_does_not_imply_a_verified_draw_or_active_count() {
     let mut snapshot = snapshot_with(ControllersConfig::new());
     snapshot.config.enabled = true;
-    snapshot.config.overlay.enabled = true;
     snapshot.config.overlay.body_mirror = true;
     assert_eq!(
         snapshot.state(ViewId::BodyMirror),
         ViewState::DrawUnverified
     );
     assert_eq!(snapshot.summary().active_count(), None);
-    snapshot.config.overlay.enabled = false;
+    snapshot.config.enabled = false;
     assert_eq!(snapshot.summary().active_count(), Some(0));
     assert_eq!(snapshot.summary().blocked, snapshot.summary().requested);
 }
@@ -214,14 +152,13 @@ fn retained_overlay_error_does_not_block_requested_visualizations() {
         entry.id.set(&mut config, false);
     }
     config.enabled = true;
-    config.overlay.enabled = true;
-    config.overlay.debug_gizmos = true;
+    config.overlay.body_rig = true;
     let before = serialized(&config);
     let mut snapshot = snapshot_with(config);
     snapshot.runtime.overlay.error = Some("previous draw failure".to_owned());
 
     assert_eq!(
-        snapshot.state(ViewId::ControllerGizmos),
+        snapshot.state(ViewId::BodyRig),
         ViewState::DrawUnverified
     );
     assert_eq!(snapshot.summary().requested, 1);
@@ -232,48 +169,22 @@ fn retained_overlay_error_does_not_block_requested_visualizations() {
 }
 
 #[test]
-fn the_inventory_maps_every_switch_to_the_exact_ten_output_sources() {
+fn the_inventory_maps_every_switch_to_its_output_source() {
     let expected = [
         (ViewId::BodyMirror, Source::BodyMirror),
         (ViewId::BodyRig, Source::BodyRig),
         (ViewId::BodyEstimate, Source::BodyRig),
-        (ViewId::ControllerGizmos, Source::DebugGizmos),
-        (ViewId::GhostHands, Source::GhostHands),
-        (ViewId::GrappleHighlight, Source::GrappleHighlight),
-        (ViewId::GrappleBeam, Source::GrappleBeam),
         (ViewId::GrabView, Source::GrabView),
-        (ViewId::GrabRays, Source::GrabView),
-        (ViewId::GrabTargets, Source::GrabView),
-        (ViewId::GrabWrist, Source::GrabView),
-        (ViewId::GrabRefusals, Source::GrabView),
-        (ViewId::GrabCandidates, Source::GrabView),
-        (ViewId::GrabZones, Source::GrabView),
         (ViewId::ColliderView, Source::ColliderView),
-        (ViewId::PalmBoxes, Source::PhysicalHands),
         (ViewId::DockedGuns, Source::DockedGuns),
     ];
-    assert_eq!(ENTRIES.len(), 17);
     assert_eq!(expected.len(), ENTRIES.len());
     for (id, source) in expected {
         assert_eq!(ENTRIES.iter().filter(|entry| entry.id == id).count(), 1);
         assert_eq!(id.source(), source);
     }
-    assert_eq!(
-        ENTRIES
-            .iter()
-            .filter(|entry| entry.id.source() == Source::GrabView)
-            .count(),
-        7
-    );
     let config = ControllersConfig::new();
     let mask = TemporaryHide::default().hide(&config);
-    assert_eq!(
-        Source::ALL
-            .into_iter()
-            .filter(|source| mask.contains(*source))
-            .count(),
-        11
-    );
     for source in Source::ALL {
         assert_eq!(
             mask.contains(source),
@@ -306,7 +217,6 @@ fn hide_and_restore_leave_configuration_and_intervening_edits_unchanged() {
         &[
             Edit::Switch(ViewId::BodyMirror, false),
             Edit::Switch(ViewId::ColliderView, true),
-            Edit::GunReadout(GunReadout::Laser),
         ],
     );
     let after_edit = serialized(&config);
@@ -318,7 +228,7 @@ fn hide_and_restore_leave_configuration_and_intervening_edits_unchanged() {
         1
     );
     assert!(mask.contains(ViewId::ColliderView.source()));
-    assert!(!mask.contains(Source::GunReadout));
+    assert!(!mask.contains(Source::GrappleHighlight));
     let restored = temporary.restore();
     assert_eq!(restored, SourceMask::NONE);
     assert!(temporary.requested_at_hide.is_none());
@@ -342,7 +252,7 @@ fn requested_at_hide_is_diagnostic_and_new_requests_remain_hidden() {
             .count(),
         0
     );
-    ViewId::GrappleBeam.set(&mut config, true);
+    ViewId::DockedGuns.set(&mut config, true);
     assert_eq!(temporary.hide(&config), mask);
     assert_eq!(
         temporary
@@ -354,7 +264,7 @@ fn requested_at_hide_is_diagnostic_and_new_requests_remain_hidden() {
     let mut snapshot = snapshot_with(config);
     snapshot.runtime.temporarily_hidden = true;
     assert_eq!(
-        snapshot.state(ViewId::GrappleBeam),
+        snapshot.state(ViewId::DockedGuns),
         ViewState::Blocked(Blocker::TemporaryHide)
     );
     assert_eq!(snapshot.summary().blocked, 1);
@@ -365,23 +275,22 @@ fn requested_at_hide_is_diagnostic_and_new_requests_remain_hidden() {
 fn runtime_blockers_do_not_rewrite_requested_settings() {
     let mut snapshot = snapshot_with(ControllersConfig::new());
     snapshot.config.enabled = true;
-    snapshot.config.overlay.enabled = true;
-    snapshot.config.overlay.debug_gizmos = true;
+    snapshot.config.overlay.body_rig = true;
     snapshot.runtime.controllers_scheme = false;
     assert_eq!(
-        snapshot.state(ViewId::ControllerGizmos),
+        snapshot.state(ViewId::BodyRig),
         ViewState::Blocked(Blocker::Scheme)
     );
     snapshot.runtime.controllers_scheme = true;
     snapshot.runtime.gameplay = false;
     assert_eq!(
-        snapshot.state(ViewId::ControllerGizmos),
+        snapshot.state(ViewId::BodyRig),
         ViewState::Blocked(Blocker::Gameplay)
     );
     snapshot.runtime.clean_view = true;
     assert_eq!(
-        snapshot.state(ViewId::ControllerGizmos),
+        snapshot.state(ViewId::BodyRig),
         ViewState::Blocked(Blocker::CleanView)
     );
-    assert!(snapshot.config.overlay.debug_gizmos);
+    assert!(snapshot.config.overlay.body_rig);
 }

@@ -354,7 +354,7 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickVolumes {
             grip::declare(hand, Grip::new(GripSource::Surface));
         }
     }
-    wing_guide::submit(config.overlay && arms_act(mode, &config), arms_engaged);
+    wing_guide::submit(arms_act(mode, &config), arms_engaged);
     TickVolumes { targets }
 }
 
