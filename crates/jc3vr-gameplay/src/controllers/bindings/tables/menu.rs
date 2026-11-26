@@ -13,12 +13,9 @@ use glam::Vec2;
 use jc3vr_body::controllers::intent::controls::ButtonControl;
 use jc3vr_input::{frame::Hand, semantic::vocabulary::MenuAction};
 
-use crate::controllers::{
-    bindings::{
-        intents::Intents,
-        tables::sink::{Direction, MenuLatch, PadLatch, pad_of, pad_press_of},
-    },
-    tuning::GAMEPLAY,
+use crate::controllers::bindings::{
+    intents::Intents,
+    tables::sink::{Direction, MenuLatch, PadLatch, pad_of, pad_press_of},
 };
 
 /// Advance `latch` by one tick of `hand`'s menu actions. `push` is how far the stick must be
@@ -81,8 +78,8 @@ fn latch_button(latched: Option<bool>, button: ButtonControl, gripped: bool) -> 
     }
 }
 
-/// The stick's latch: the latched direction holds while the push along it stays at or above the
-/// tuning's `bindings.menu_stick_hold_share` of `push`; otherwise a push of at least `push` along the stick's larger axis latches that axis's
+/// The stick's latch: the latched direction holds while the push along it stays at or above half of
+/// `push`; otherwise a push of at least `push` along the stick's larger axis latches that axis's
 /// direction, with the grip as it is now.
 fn latch_stick(
     latched: Option<(Direction, bool)>,
@@ -95,7 +92,7 @@ fn latch_stick(
         return None;
     }
     if let Some((direction, _)) = latched
-        && along(stick, direction) >= push * GAMEPLAY.get().bindings.menu_stick_hold_share
+        && along(stick, direction) >= push * 0.5
     {
         return latched;
     }

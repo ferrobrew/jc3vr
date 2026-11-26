@@ -25,8 +25,6 @@ use jc3vr_view::controllers::cockpit::CockpitTransform;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::controllers::vehicles::tuning::VEHICLES;
-
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_static_binder(&SYNC_BONES_BINDER)
@@ -61,7 +59,7 @@ pub(super) fn centres(active: bool, cockpit: &CockpitTransform) -> [Option<Vec3>
                 && sample.generation == native.generation
                 && now
                     .checked_duration_since(sample.sampled_at)
-                    .is_some_and(|age| age <= stale_after())
+                    .is_some_and(|age| age <= STALE_AFTER)
         })
         .map_or([None; 2], |sample| {
             sample.world.map(|point| {
@@ -79,7 +77,7 @@ pub fn handles_unplaced() -> u64 {
 /// Which handles to put back while the handle controls acted recently.
 pub fn unplaced(holds: Option<([bool; 2], Instant)>, now: Instant) -> [bool; 2] {
     match holds {
-        Some((held, at)) if now.saturating_duration_since(at) <= stale_after() => held.map(|h| !h),
+        Some((held, at)) if now.saturating_duration_since(at) <= STALE_AFTER => held.map(|h| !h),
         _ => [false; 2],
     }
 }
@@ -105,7 +103,7 @@ fn sync_bones(
             (native.owner == Some(local)
                 && native
                     .requested_at
-                    .is_some_and(|at| now.saturating_duration_since(at) <= stale_after()))
+                    .is_some_and(|at| now.saturating_duration_since(at) <= STALE_AFTER))
             .then_some(native.generation)
         })
         .flatten();
@@ -426,6 +424,7 @@ const BONE_NAMES: [[&str; 3]; 2] = [
 ];
 const ATTACH_NAMES: [&str; 2] = ["LeftHandleAttach", "RightHandleAttach"];
 const HAND_ATTACH_NAMES: [&str; 2] = ["LeftHandAttach2", "RightHandAttach2"];
+const STALE_AFTER: Duration = Duration::from_millis(250);
 
 static HOLDS: Mutex<Option<([bool; 2], Instant)>> = Mutex::new(None);
 static UNPLACED: AtomicU64 = AtomicU64::new(0);
@@ -439,11 +438,6 @@ static NATIVE: Mutex<NativeState> = Mutex::new(NativeState {
 
 thread_local! {
     static CAPTURE: RefCell<Option<Capture>> = const { RefCell::new(None) };
-}
-
-/// How old the rig's published holds and native samples may be and still stand.
-fn stale_after() -> Duration {
-    VEHICLES.get().parachute_rig.stale_after()
 }
 
 #[cfg(test)]
@@ -504,7 +498,7 @@ mod tests {
         assert_eq!(unplaced(None, now), [false; 2]);
         assert_eq!(unplaced(Some(([false, true], now)), now), [true, false]);
         assert_eq!(
-            unplaced(Some(([false; 2], now)), now + stale_after() * 2),
+            unplaced(Some(([false; 2], now)), now + STALE_AFTER * 2),
             [false; 2]
         );
     }

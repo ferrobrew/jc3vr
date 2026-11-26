@@ -1,12 +1,8 @@
-//! The physical grapple's tuning, read from the grapple's tuning file
-//! ([`GRAPPLE`](crate::grapple::tuning::GRAPPLE)). Every part acts only under the controller
-//! scheme with a tracked grapple hand, so none has a switch.
-
-use serde::Deserialize;
+//! The physical grapple's fixed tuning. Every part acts only under the controller scheme with a
+//! tracked grapple hand, so none has a switch.
 
 /// The lock's tuning ([`crate::grapple::physical::lock`]).
-#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct LockTuning {
     /// The line's pull per metre it is stretched past its held length, per second squared, for
     /// the character and the target's reduced mass.
@@ -26,76 +22,25 @@ pub struct LockTuning {
     /// The hang's line, from the hook to the character's root, metres: about a metre and a half of
     /// line above the raised grapple hand.
     pub hang_length_m: f32,
-    /// The deceleration toward the hook beyond which the coast is braked, in multiples of gravity:
-    /// about what the line holds, so a coast that would otherwise carry in too far stops at the
-    /// shortest length the line bears instead.
-    pub coast_brake_g: f32,
-    /// The share of the line's strength a coast leaves the swing to turn on the length it
-    /// reaches, `0..=1`: the rest is the margin for the pump and the hook's motion.
-    pub coast_strength_share: f32,
-    /// How much line the hand must take in during a hang's pay-out to end it, metres: a deliberate
-    /// pull, past a hand's drift back along the aim. The tally leaks at this many metres per
-    /// second, so a drift back and forth does not add up.
-    pub pay_out_take_in_m: f32,
-    /// How fast a hang pays line out to its length, or takes it in, metres per second.
-    pub pay_out_mps: f32,
-    /// How long a hang's swing across the line under a moving hook takes to die away, seconds: the
-    /// time constant of its damping.
-    pub hang_swing_damping_s: f32,
-    /// The hook speed above which a hang counts as hung from a moving body, metres per second.
-    pub moving_hook_mps: f32,
-    /// How long after a release its velocity is handed back while the character is slower than
-    /// it, seconds: past the reel's cancel and the state change after it.
-    pub handback_for_s: f32,
-    /// How long after a release a character carrying its velocity counts as having kept it,
-    /// seconds: a few input ticks, past the world update in which the reel's cancel scales it.
-    pub handback_settle_s: f32,
-    /// The share of the release's velocity, carried on under gravity, at which the character
-    /// counts as carrying it.
-    pub handback_carried: f32,
-    /// How long after Y under a helicopter its pull up to the door lasts, milliseconds, for the
-    /// log of its arrival and the bindings' hold on the wingsuit: the pull and the door-side
-    /// arrival's clip.
-    pub entering_ms: u64,
-    /// How long an arrival's ask for a hang stands, milliseconds: the arrival asks again on every
-    /// reel tick it arrives, so an ask older than a few ticks belongs to a reel that has ended.
-    pub hang_wanted_ms: u64,
-    /// How long after a refused hang the reel's arrival is left to the game, milliseconds, so that
-    /// the reel ends.
-    pub hang_refused_ms: u64,
-    /// The least level share of the reel's direction that faces the character along it rather
-    /// than keeping its own facing.
-    pub level_min: f32,
-    /// The grapple hand pumping a held line's swing.
-    pub pump: LockPumpTuning,
 }
 
-/// The grapple hand's pump of a held line's swing (`Pump` in the lock's model): the hand's speed
-/// across the line, past the hang swing's deadzone ([`SwingTuning`]), pushes the character along
-/// the swing.
-#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct LockPumpTuning {
-    /// The pump's acceleration at full strength on a taut line, in multiples of gravity.
-    pub accel_g: f32,
-    /// How far past its held length the line must be stretched for the pump's full strength,
-    /// metres: a slack line pumps nothing.
-    pub taut_m: f32,
-    /// A hand's step against the head in one tick longer than this is a tracking jump, not a
-    /// pump, metres.
-    pub max_step_m: f32,
-    /// A hand's speed against the head faster than this is a tracking jump, not a pump, metres
-    /// per second.
-    pub max_speed_mps: f32,
-    /// How long a pump sample lasts without a fresh one before the pump stops, milliseconds.
-    pub stale_ms: u64,
-    /// How old the latest controller frame may be for the hand to pump, milliseconds.
-    pub frame_stale_ms: u64,
-}
+/// The lock's tuning.
+pub const LOCK: LockTuning = LockTuning {
+    stiffness_per_s2: 65.0,
+    damping_per_s: 11.0,
+    max_accel_g: 4.0,
+    break_stretch_m: 3.0,
+    reel_in_mps: 3.0,
+    min_length_m: 1.5,
+    reaction: 1.0,
+    hang_length_m: 3.5,
+};
 
-/// The physical grapple's pull, reel, tether retract, and hang swing.
-#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
-#[serde(deny_unknown_fields)]
+/// The physical grapple's tuning.
+pub const GRAPPLE: PhysicalGrappleTuning = PhysicalGrappleTuning::new();
+
+/// The physical grapple's fixed tuning.
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct PhysicalGrappleTuning {
     /// How the grapple hand's pull is measured, for the reel and the tether retract.
     pub pull: PullTuning,
@@ -105,15 +50,23 @@ pub struct PhysicalGrappleTuning {
     pub tether: TetherTuning,
     /// The hang swing pumped by the grapple hand's motion.
     pub swing: SwingTuning,
-    /// How long the physical grapple's readout counts as live after its last tick, milliseconds.
-    pub status_max_age_ms: u64,
+}
+
+impl PhysicalGrappleTuning {
+    const fn new() -> Self {
+        Self {
+            pull: PullTuning::new(),
+            reel: ReelPullTuning::new(),
+            tether: TetherTuning::new(),
+            swing: SwingTuning::new(),
+        }
+    }
 }
 
 /// How the grapple hand's pull toward the body is measured
 /// ([`crate::grapple::physical::pull`]). The hand's distance from the body point is the yank's
 /// ([`GRAPPLE_YANK`](jc3vr_body::controllers::intent::yank::GRAPPLE_YANK)).
-#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct PullTuning {
     /// How long a pull's speed is remembered after the hand stops, seconds: the time constant of
     /// the peak-held speed's decay.
@@ -123,9 +76,17 @@ pub struct PullTuning {
     pub relax_mps: f32,
 }
 
+impl PullTuning {
+    const fn new() -> Self {
+        Self {
+            speed_hold_s: 0.8,
+            relax_mps: 0.25,
+        }
+    }
+}
+
 /// The reel by pulling ([`crate::grapple::physical::reel`]).
-#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct ReelPullTuning {
     /// The reel's scale with no pull.
     pub min_scale: f32,
@@ -133,17 +94,27 @@ pub struct ReelPullTuning {
     pub max_scale: f32,
     /// The pull speed at which the scale reaches [`max_scale`](Self::max_scale), metres per second.
     pub full_speed_mps: f32,
-    /// How long a yank during the reel boosts it, seconds. The boost applies only when the game's
-    /// own retract boost would: the retract reel-in boost upgrade is purchased.
+    /// How long a yank during the reel boosts it, seconds.
     pub boost_s: f32,
-    /// How long the hand's last ask of the reel stands, milliseconds: the reel task runs on its
-    /// own cadence, and an older ask belongs to a pull that has stopped.
-    pub drive_max_age_ms: u64,
+    /// Boost only when the game's own retract boost would apply: the retract reel-in boost upgrade
+    /// is purchased.
+    pub boost_needs_upgrade: bool,
+}
+
+impl ReelPullTuning {
+    const fn new() -> Self {
+        Self {
+            min_scale: 1.0,
+            max_scale: 1.5,
+            full_speed_mps: 2.5,
+            boost_s: 0.6,
+            boost_needs_upgrade: true,
+        }
+    }
 }
 
 /// The tether retract by pulling ([`crate::grapple::physical::tether`]).
-#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct TetherTuning {
     /// The pull below which nothing retracts, metres.
     pub deadzone_m: f32,
@@ -151,9 +122,17 @@ pub struct TetherTuning {
     pub full_m: f32,
 }
 
+impl TetherTuning {
+    const fn new() -> Self {
+        Self {
+            deadzone_m: 0.08,
+            full_m: 0.35,
+        }
+    }
+}
+
 /// The hang swing's pump ([`crate::grapple::physical::swing`]).
-#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct SwingTuning {
     /// The hand speed below which the hand does not pump, metres per second.
     pub deadzone_mps: f32,
@@ -167,4 +146,16 @@ pub struct SwingTuning {
     pub max_scale: f32,
     /// The time constant of the hand's smoothed velocity, seconds.
     pub smoothing_s: f32,
+}
+
+impl SwingTuning {
+    const fn new() -> Self {
+        Self {
+            deadzone_mps: 0.3,
+            full_mps: 1.5,
+            scale: 1.5,
+            max_scale: 2.0,
+            smoothing_s: 0.05,
+        }
+    }
 }

@@ -13,7 +13,7 @@ use jc3vr_body::controllers::{
 };
 use jc3vr_input::frame::Hand;
 
-use crate::controllers::vehicles::{physical::Release, tuning::VEHICLES};
+use crate::controllers::vehicles::physical::Release;
 
 /// The hands' hold on the handles.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
@@ -74,7 +74,7 @@ pub fn candidates(handles: [Option<Vec3>; 2]) -> Vec<Candidate> {
             Some(Candidate {
                 volume: GrabVolume::MountedHandle(hand),
                 centre: handles[hand.index()]?,
-                radius: VEHICLES.get().mounted.grab_radius_m,
+                radius: GRAB_RADIUS_M,
                 hand: Some(hand),
             })
         })
@@ -115,6 +115,9 @@ pub fn step(state: &mut MountedGrip, inputs: &GripStep, events: &mut Vec<Mounted
         );
     }
 }
+
+/// How far from a handle a hand's grip may be for a grip press to take it, metres.
+pub(super) const GRAB_RADIUS_M: f32 = 0.12;
 
 #[cfg(test)]
 mod tests {

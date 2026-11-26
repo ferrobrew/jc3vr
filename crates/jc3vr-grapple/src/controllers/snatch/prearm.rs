@@ -2,8 +2,6 @@
 
 use jc3vr_body::controllers::intent::controls::ButtonControl;
 
-use crate::controllers::snatch::config::SNATCH;
-
 /// A recent offer that a grip press freezes until the consumer takes it.
 pub(super) struct Prearm<T> {
     target: Option<T>,
@@ -32,11 +30,10 @@ impl<T> Prearm<T> {
         dt: f32,
         valid: impl FnOnce(&mut T) -> bool,
     ) -> Option<&T> {
-        let retain_s = SNATCH.get().retain_s;
         self.age_s += if dt.is_finite() {
             dt.max(0.0)
         } else {
-            retain_s + 1.0
+            RETAIN_S + 1.0
         };
         let fresh = !self.closed || (grip.pressed && grip.released && !grip.down);
         if !grip.held() {
@@ -47,14 +44,14 @@ impl<T> Prearm<T> {
             }
         } else if fresh {
             self.closed = true;
-            if (self.target.is_none() || self.age_s > retain_s)
+            if (self.target.is_none() || self.age_s > RETAIN_S)
                 && let Some(current) = current
             {
                 self.target = Some(current);
                 self.age_s = 0.0;
             }
         }
-        if self.age_s > retain_s || !self.target.as_mut().is_some_and(valid) {
+        if self.age_s > RETAIN_S || !self.target.as_mut().is_some_and(valid) {
             self.target = None;
         }
         self.target.as_ref()
@@ -64,6 +61,9 @@ impl<T> Prearm<T> {
         self.target.take()
     }
 }
+
+/// Covers a short aim miss at the grip edge without offering an old target indefinitely.
+const RETAIN_S: f32 = 0.2;
 
 #[cfg(test)]
 mod tests {

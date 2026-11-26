@@ -6,8 +6,8 @@ use std::time::Instant;
 use egui::Ui;
 use jc3vr_gameplay::controllers::bindings::pointer::ControllerPointer;
 use jc3vr_hud::{
-    controllers::map::{MapDelivery, MapReport, zoom_label},
-    hud::{pointer::RoutedPointer, tuning::HUD},
+    controllers::map::{CLICK_SLOP, MapDelivery, MapReport, zoom_label},
+    hud::pointer::RoutedPointer,
 };
 use jc3vr_input::frame::Hand;
 
@@ -84,10 +84,7 @@ fn delivery_readout(ui: &mut Ui, delivery: &MapDelivery) {
         delivery.uv.x,
         delivery.uv.y,
         if delivery.held_at_press {
-            format!(
-                " held at the press point (slop {} UV)",
-                HUD.get().map.click_slop_uv
-            )
+            format!(" held at the press point (slop {CLICK_SLOP} UV)")
         } else {
             String::new()
         },

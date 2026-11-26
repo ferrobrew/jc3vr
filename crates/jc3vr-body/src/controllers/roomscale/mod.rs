@@ -80,7 +80,6 @@ use crate::{
         },
     },
     hooks::animation::active_state_type_id,
-    tuning::FRESHNESS,
 };
 
 /// The roomscale hooks, aggregated by `controllers::hook_library`.
@@ -133,14 +132,7 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
     let dt = frame
         .last_at
         .map_or(0.0, |t| now.duration_since(t).as_secs_f32());
-    if dt
-        > FRESHNESS
-            .get()
-            .roomscale
-            .frame_gap_ms
-            .duration()
-            .as_secs_f32()
-    {
+    if dt > FRAME_GAP.as_secs_f32() {
         fade::reset();
     }
     frame.last_at = Some(now);
@@ -305,7 +297,7 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
 
     let sim = rig_root::status().sim;
     let probe = collision::latest()
-        .filter(|p| now.duration_since(p.at) < probe::stale_after())
+        .filter(|p| now.duration_since(p.at) < probe::STALE_AFTER)
         .map(|p| p.result);
     // Seated in a vehicle the head leans against cockpit glass and cabin trim the probe reads as
     // walls, and darkening there blinds a pilot mid-flight; the seat keeps the head where it
@@ -326,7 +318,7 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
 
     let sim_stale = sim
         .at
-        .is_none_or(|at| now.duration_since(at) > probe::stale_after());
+        .is_none_or(|at| now.duration_since(at) > probe::STALE_AFTER);
     if sim.capsule_owned && sim_stale {
         // SAFETY: the game thread, outside the world update.
         unsafe { rig_root::release_capsule() };
@@ -539,7 +531,7 @@ pub struct FrameShared {
 impl FrameShared {
     /// Whether the frame half ran recently enough for its values to hold.
     pub fn fresh(&self, now: Instant) -> bool {
-        now.saturating_duration_since(self.at) < FRESHNESS.get().roomscale.frame_gap_ms.duration()
+        now.saturating_duration_since(self.at) < FRAME_GAP
     }
 }
 
@@ -606,6 +598,10 @@ pub fn status() -> RoomscaleStatus {
         warps: headpose::teleport::warps(),
     }
 }
+
+/// A gap between rendered frames longer than this means the headset stopped rendering: the fade
+/// resets, and the frame half's values stop holding for the simulation half.
+const FRAME_GAP: Duration = Duration::from_millis(500);
 
 /// How many unknown vehicle states are logged, so that a long session cannot fill the log.
 const UNKNOWN_STATE_LOG_LIMIT: usize = 32;

@@ -22,7 +22,7 @@ use jc3vr_body::controllers::{
 };
 use jc3vr_input::frame::Hand;
 
-use crate::controllers::vehicles::{physical::Release, tuning::VEHICLES};
+use crate::controllers::vehicles::physical::Release;
 
 /// The ripcord's hold, while a hand has it.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -71,13 +71,13 @@ pub struct StepInputs {
 
 /// Where the ripcord's volume is centred, in the cockpit frame, for shoulder joints at
 /// `shoulders` (by [`Hand::index`]) on a torso turned by `torso`, a body of `body`'s dimensions,
-/// and the ripcord on `side`: the tuning's `ripcord.from_hip_m` from the hip joint on that side,
-/// mirrored for the left.
+/// and the ripcord on `side`: [`FROM_HIP_M`] from the hip joint on that side, mirrored for the
+/// left.
 pub fn centre(shoulders: [Vec3; 2], torso: Quat, body: &BodyDimensions, side: Hand) -> Vec3 {
     let shoulder = shoulders[side.index()];
     let drop = (body.shoulder_height - body.height * HIP_HEIGHT_FRACTION).max(0.0);
     let hip = shoulder - Vec3::Y * drop;
-    hip + torso * side.mirror_from_right(VEHICLES.get().ripcord.from_hip_m)
+    hip + torso * side.mirror_from_right(FROM_HIP_M)
 }
 
 /// The ripcord's grab volume, for its side's hand only: at `centre` while it is free, and on the
@@ -95,7 +95,7 @@ pub fn candidate(
     Candidate {
         volume: GrabVolume::Ripcord,
         centre: held.unwrap_or(centre),
-        radius: VEHICLES.get().ripcord.radius_m,
+        radius: RADIUS_M,
         hand: Some(side),
     }
 }
@@ -105,7 +105,7 @@ pub fn reach_candidate(state: &RipcordState, centre: Vec3, side: Hand) -> Option
     state.hold.is_none().then_some(Candidate {
         volume: GrabVolume::Ripcord,
         centre,
-        radius: VEHICLES.get().ripcord.reach_m,
+        radius: REACH_M,
         hand: Some(side),
     })
 }
@@ -162,12 +162,25 @@ pub fn release_all(state: &mut RipcordState, events: &mut Vec<RipcordEvent>) {
     release(state, Release::Gone, events);
 }
 
+/// The ripcord's centre from the hip joint along the torso's axes (+X out, +Y up, +Z back),
+/// metres: a little outside, above, and behind the joint, at the back of the hip, behind the
+/// holster.
+pub const FROM_HIP_M: Vec3 = Vec3::new(0.06, 0.06, 0.12);
+
 /// The standing height of the hip joints as a fraction of the standing height: a generic
 /// anthropometric figure, which the body dimensions do not carry because it varies little between
 /// adults.
 pub const HIP_HEIGHT_FRACTION: f32 = 0.53;
 
-/// The shortest pull distance the tuning can ask for, metres: shorter, the hand's own tremor on
+/// How far from the ripcord's centre a hand's grip may be for a grip press to take it over every
+/// other volume, metres.
+pub const RADIUS_M: f32 = 0.12;
+
+/// How far from the ripcord's centre a grip press outside every other volume still takes it,
+/// metres. At least [`RADIUS_M`].
+pub const REACH_M: f32 = 0.22;
+
+/// The shortest pull distance a setting can ask for, metres: shorter, the hand's own tremor on
 /// taking the ripcord would pull it.
 pub const MIN_PULL_M: f32 = 0.05;
 
@@ -250,8 +263,7 @@ mod tests {
             Some(GrabVolume::Ripcord)
         );
         assert_eq!(grab_volume(at, Hand::Left, &placed), None);
-        let near =
-            at + Vec3::X * (VEHICLES.get().ripcord.radius_m + VEHICLES.get().ripcord.reach_m) * 0.5;
+        let near = at + Vec3::X * (RADIUS_M + REACH_M) * 0.5;
         assert_eq!(grab_volume(near, Hand::Right, &placed), None);
         let reach: Vec<_> = reach_candidate(&state, at, Hand::Right)
             .into_iter()

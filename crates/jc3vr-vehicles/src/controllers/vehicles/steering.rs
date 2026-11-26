@@ -43,11 +43,7 @@
 use body_rig::{angle::wrap, rotation::twist_angle};
 use glam::{Quat, Vec3};
 
-use crate::controllers::vehicles::{
-    config::WheelTracking,
-    tuning::{VEHICLES, WheelSpec},
-    wheel::WheelFrame,
-};
+use crate::controllers::vehicles::{config::WheelTracking, tuning::WheelSpec, wheel::WheelFrame};
 
 /// A hand on the wheel: the wheel as it took hold, and where the hand was on the last tick.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -258,11 +254,10 @@ pub fn cue_at_lock(arming: &mut CueArming, before: f32, after: f32, lock: f32) -
     if !before.is_finite() || !after.is_finite() || !lock.is_finite() {
         return None;
     }
-    let rearm = VEHICLES.get().steering.cue_rearm_deg.to_radians();
-    if after.abs() < lock - rearm {
+    if after.abs() < lock - CUE_REARM_DEG.to_radians() {
         arming.stop = true;
     }
-    if after.abs() > rearm {
+    if after.abs() > CUE_REARM_DEG.to_radians() {
         arming.centre = true;
     }
     if arming.stop && after.abs() >= lock {
@@ -283,12 +278,10 @@ pub fn return_step(angle: f32, spec: &WheelSpec, dt: f32) -> f32 {
     if !angle.is_finite() {
         return 0.0;
     }
-    let tuning = &VEHICLES.get().steering;
-    let ease =
-        (angle.abs() / tuning.return_ease_deg.to_radians()).clamp(tuning.return_ease_floor, 1.0);
+    let ease = (angle.abs() / RETURN_EASE_DEG.to_radians()).clamp(RETURN_EASE_FLOOR, 1.0);
     let step = spec.return_deg_per_s.to_radians().max(0.0) * ease * dt.max(0.0);
     let next = angle - angle.clamp(-step, step);
-    if next.abs() < tuning.settled_deg.to_radians() {
+    if next.abs() < SETTLED_DEG.to_radians() {
         0.0
     } else {
         next
@@ -317,6 +310,22 @@ pub fn angle_for_steer(steer: f32, spec: &WheelSpec) -> f32 {
     steer.signum() * (deadzone + share * (lock(spec) - deadzone).max(0.0))
 }
 
+/// Over this last stretch of its return, the released wheel slows, degrees.
+const RETURN_EASE_DEG: f32 = 30.0;
+
+/// The slowest the easing lets the return go, as a share of the return rate.
+const RETURN_EASE_FLOOR: f32 = 0.2;
+
+/// A returning wheel this close to centre is at centre, degrees.
+const SETTLED_DEG: f32 = 0.25;
+
+/// How far the wheel must leave its stop or centre before that cue may fire again, degrees.
+const CUE_REARM_DEG: f32 = 5.0;
+
+/// A hand closer to the hub than this share of the radius turns nothing by its travel; one past
+/// twice it counts fully.
+const HUB_SHARE: f32 = 0.25;
+
 fn lock(spec: &WheelSpec) -> f32 {
     spec.lock_deg.to_radians().abs().max(1e-3)
 }
@@ -334,13 +343,12 @@ fn response(spec: &WheelSpec) -> f32 {
 }
 
 /// How much a hand at `position` counts by its travel around the hub: nothing near the hub, fully
-/// from twice the steering's `hub_share` of the radius out.
+/// from twice [`HUB_SHARE`] of the radius out.
 fn position_weight(frame: &WheelFrame, position: Vec3) -> f32 {
     let d = position - frame.centre;
     let r = Vec3::new(d.dot(frame.right), d.dot(frame.up), 0.0).length();
     let share = r / frame.radius.max(0.05);
-    let hub = VEHICLES.get().steering.hub_share;
-    ((share - hub) / hub).clamp(0.0, 1.0)
+    ((share - HUB_SHARE) / HUB_SHARE).clamp(0.0, 1.0)
 }
 
 #[cfg(test)]

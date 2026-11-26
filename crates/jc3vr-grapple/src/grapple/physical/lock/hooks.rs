@@ -37,11 +37,8 @@ use jc3vr_body::controllers::facts::airframe;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::grapple::{
-    physical::lock::{
-        engine, entering_helicopter, hang_takes_over, holds, last_velocity, want_hang,
-    },
-    tuning::GRAPPLE,
+use crate::grapple::physical::lock::{
+    engine, entering_helicopter, hang_takes_over, holds, last_velocity, want_hang,
 };
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -130,9 +127,7 @@ pub(super) fn forget_motion() {
 fn level_direction(character: &Character, target: Option<Vec3>) -> Option<Vec3> {
     let level = |v: Vec3| Vec3::new(v.x, 0.0, v.z).try_normalize();
     target
-        .filter(|t| {
-            t.is_finite() && Vec3::new(t.x, 0.0, t.z).length() > GRAPPLE.get().lock.level_min
-        })
+        .filter(|t| t.is_finite() && Vec3::new(t.x, 0.0, t.z).length() > LEVEL_MIN)
         .and_then(level)
         .or_else(|| {
             let (_, rotation, _) =
@@ -140,6 +135,10 @@ fn level_direction(character: &Character, target: Option<Vec3>) -> Option<Vec3> 
             level(rotation * Vec3::NEG_Z)
         })
 }
+
+/// The least level share of the reel's direction that faces the character along it rather than
+/// keeping its own facing.
+const LEVEL_MIN: f32 = 0.25;
 
 #[detour(address = jc3gi::equipment::grappling_hook::GrapplingHook::StartReelUpsideDown_ADDRESS)]
 fn start_reel_upside_down(hook: *mut GrapplingHook, holder: *const SharedPtr<Character>) {

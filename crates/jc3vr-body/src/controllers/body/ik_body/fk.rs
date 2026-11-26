@@ -7,7 +7,7 @@
 //! published relative to the neck pivot, in room axes and the player's metres; the gate carries it
 //! into Rico's model space and scales it to his proportions.
 
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use body_estimator::smpl::JOINT_COUNT;
 use body_rig::{
@@ -18,7 +18,7 @@ use body_rig::{
 use glam::{Quat, Vec2, Vec3};
 use parking_lot::Mutex;
 
-use crate::{controllers::body::estimator::Estimate, tuning::FRESHNESS};
+use crate::controllers::body::estimator::Estimate;
 
 /// One rendered frame's inputs.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -95,10 +95,10 @@ pub(crate) fn frame(input: &FkInput) -> FkPose {
 
 /// The latest published body, while it is fresh.
 pub fn latest() -> Option<FkPose> {
-    STATE.lock().latest.filter(|pose| {
-        Instant::now().saturating_duration_since(pose.at)
-            <= FRESHNESS.get().body.ik_fk_ms.duration()
-    })
+    STATE
+        .lock()
+        .latest
+        .filter(|pose| Instant::now().saturating_duration_since(pose.at) <= FRESH_FOR)
 }
 
 /// Forget the followed body, for a teleport: the next estimate is taken whole.
@@ -132,6 +132,9 @@ const RIGHT_KNEE: usize = 5;
 const SPINE2: usize = 6;
 const SPINE3: usize = body_estimator::smpl::SPINE3;
 const NECK: usize = 12;
+
+/// The published body stops standing for the player after this long: a few rendered frames.
+const FRESH_FOR: Duration = Duration::from_millis(250);
 
 struct State {
     follower: FkFollower,

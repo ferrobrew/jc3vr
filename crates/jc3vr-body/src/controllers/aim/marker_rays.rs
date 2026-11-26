@@ -15,7 +15,6 @@ use parking_lot::Mutex;
 use crate::controllers::aim::{
     ray::Ray,
     raycast::{CastOptions, cast},
-    tuning_file::AIM,
 };
 
 /// What a depth or ray probe says about the line of sight to a marker.
@@ -50,9 +49,8 @@ pub(crate) unsafe fn resolve_rays(owner: &Character) {
     // SAFETY: the owner is the live local player; its vehicle pointer is live or null.
     let options = unsafe { CastOptions::ignoring_rider(owner) }.seeing_through();
     let now = Instant::now();
-    let max_casts = AIM.get().marker_rays.max_casts_per_tick;
-    let mut results = Vec::with_capacity(requests.len().min(max_casts));
-    for (id, world) in requests.into_iter().take(max_casts) {
+    let mut results = Vec::with_capacity(requests.len().min(MAX_CASTS_PER_TICK));
+    for (id, world) in requests.into_iter().take(MAX_CASTS_PER_TICK) {
         let offset = world - head;
         let distance = offset.length();
         let Some(ray) = Ray::new(head, offset) else {
@@ -86,6 +84,9 @@ pub fn expire(ttl_s: f32) {
         table.retain(|_, timed| timed.at.elapsed().as_secs_f32() < ttl_s);
     }
 }
+
+/// The most rays cast per simulation update; the rest wait for a later update.
+const MAX_CASTS_PER_TICK: usize = 8;
 
 /// The markers awaiting a raycast: id and world point.
 static REQUESTS: Mutex<Vec<(u32, Vec3)>> = Mutex::new(Vec::new());

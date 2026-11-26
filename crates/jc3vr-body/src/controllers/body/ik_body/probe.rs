@@ -23,7 +23,7 @@ use crate::controllers::{
         ray::Ray,
         raycast::{self, CastOptions},
     },
-    body::ik_body::{brace, support, tuning::IK_BODY},
+    body::ik_body::{brace, support},
 };
 
 /// The probe for `side` at the world floor point `at`, near the height `near`: its answer, once a
@@ -33,12 +33,11 @@ pub(crate) fn ask(side: Side, at: Vec2, near: f32) -> Probe {
         return Probe::Miss;
     }
     let now = Instant::now();
-    let tuning = &IK_BODY.get().probe;
     let mut probes = PROBES.lock();
     let slot = &mut probes[side.index()];
     if let Some(answer) = slot.answer
-        && answer.at.distance(at) <= tuning.same_point_m
-        && (answer.near - near).abs() <= tuning.same_height_m
+        && answer.at.distance(at) <= SAME_POINT_M
+        && (answer.near - near).abs() <= SAME_HEIGHT_M
         && now.saturating_duration_since(answer.when) <= ANSWER_FOR
     {
         return match answer.ground {
@@ -48,7 +47,7 @@ pub(crate) fn ask(side: Side, at: Vec2, near: f32) -> Probe {
     }
     let same = slot
         .request
-        .is_some_and(|r| r.at.distance(at) <= tuning.same_point_m);
+        .is_some_and(|r| r.at.distance(at) <= SAME_POINT_M);
     if !same {
         slot.request = Some(Request { at, near });
     }
@@ -90,14 +89,13 @@ pub(crate) fn forget() {
 /// As [`tick`].
 unsafe fn cast(character: &Character, requests: [Option<Request>; 2], now: Instant) {
     let options = cast_options(character);
-    let tuning = &IK_BODY.get().probe;
     for (index, request) in requests.into_iter().enumerate() {
         let Some(request) = request else {
             continue;
         };
-        let from = Vec3::new(request.at.x, request.near + tuning.above_m, request.at.y);
+        let from = Vec3::new(request.at.x, request.near + ABOVE_M, request.at.y);
         let ground = Ray::new(from, Vec3::NEG_Y).and_then(|ray| {
-            match unsafe { raycast::cast(&ray, tuning.above_m + tuning.below_m, &options) } {
+            match unsafe { raycast::cast(&ray, ABOVE_M + BELOW_M, &options) } {
                 Ok(hit) => hit.map(|hit| Ground {
                     height: hit.position.y,
                     // SAFETY: the simulation phase, outside the physics step.
@@ -129,6 +127,18 @@ fn cast_options(character: *const Character) -> CastOptions {
         ..CastOptions::default()
     }
 }
+
+/// How far above the height asked about a probe starts, metres: a step up.
+const ABOVE_M: f32 = 0.6;
+
+/// How far below it a probe reaches, metres: a step down; past it, the foot is unsupported.
+const BELOW_M: f32 = 0.9;
+
+/// A request this close to an answer's point is answered by it, metres.
+const SAME_POINT_M: f32 = 0.01;
+
+/// ...and this close to its height, metres.
+const SAME_HEIGHT_M: f32 = 0.3;
 
 /// An answer stands for its point this long.
 const ANSWER_FOR: Duration = Duration::from_millis(500);

@@ -16,8 +16,6 @@ use jc3vr_body::{
 };
 use jc3vr_core::game_tick::GameTick;
 
-use crate::controllers::tuning::GAMEPLAY;
-
 /// The vehicle speed, metres per second, from which the game's driver, rider, and spinning mounted
 /// gun states take a long `OPEN_PARACHUTE` hold as the parachute bail: the minimum of the animation
 /// graph's `C_VEHICLE_IS_FAST_ENOUGH_FOR_PARA_TRANSITION` condition (a
@@ -29,6 +27,16 @@ use crate::controllers::tuning::GAMEPLAY;
 /// ([`jc3vr_vehicles::controllers::vehicles::seat_vehicle_speed_mps`]) against its squared bounds; the unit
 /// is unverified, and taken to be metres per second.
 pub const PARACHUTE_BAIL_MIN_SPEED_MPS: f32 = 6.0;
+
+/// The speed above [`PARACHUTE_BAIL_MIN_SPEED_MPS`] at which the vehicle starts to count as fast
+/// enough to bail. The game checks the speed only once its own hold time has passed after the
+/// press became long, so the margin leaves room to slow a little in between.
+pub const BAIL_ENTER_MARGIN_MPS: f32 = 1.0;
+
+/// The speed above [`PARACHUTE_BAIL_MIN_SPEED_MPS`] below which a fast vehicle stops counting as
+/// fast enough to bail. Smaller than [`BAIL_ENTER_MARGIN_MPS`], for the hysteresis, and not below
+/// the game's minimum, where the bail would be refused.
+pub const BAIL_LEAVE_MARGIN_MPS: f32 = 0.5;
 
 /// Whether the game's states for `seat` bail out by parachute at speed: the car's driver, the
 /// motorcycle's rider, and a mounted gun's gunner (`mounted_gun`, the game's mounted gun state,
@@ -133,12 +141,11 @@ impl BailLatch {
     /// parachute this tick. While the press that became long goes on, the choice made on the tick
     /// it became long stands.
     pub fn step(&mut self, tick: BailTick) -> bool {
-        let tuning = &GAMEPLAY.get().bindings.bail;
         let threshold = PARACHUTE_BAIL_MIN_SPEED_MPS
             + if self.fast {
-                tuning.leave_margin_mps
+                BAIL_LEAVE_MARGIN_MPS
             } else {
-                tuning.enter_margin_mps
+                BAIL_ENTER_MARGIN_MPS
             };
         self.fast = tick
             .speed_mps
@@ -213,9 +220,8 @@ mod tests {
 
     #[test]
     fn the_speed_counts_through_a_band_above_the_games_minimum() {
-        let tuning = &GAMEPLAY.get().bindings.bail;
-        let enter = PARACHUTE_BAIL_MIN_SPEED_MPS + tuning.enter_margin_mps;
-        let leave = PARACHUTE_BAIL_MIN_SPEED_MPS + tuning.leave_margin_mps;
+        let enter = PARACHUTE_BAIL_MIN_SPEED_MPS + BAIL_ENTER_MARGIN_MPS;
+        let leave = PARACHUTE_BAIL_MIN_SPEED_MPS + BAIL_LEAVE_MARGIN_MPS;
         assert!(leave >= PARACHUTE_BAIL_MIN_SPEED_MPS);
         let mut latch = BailLatch::new();
         assert!(!latch.step(tick(enter - 0.01, false)));

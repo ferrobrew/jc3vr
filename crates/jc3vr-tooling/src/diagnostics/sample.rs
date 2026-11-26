@@ -15,7 +15,7 @@ use jc3vr_body::{
             collision::probe::ProbeResult,
             root::{
                 SimStatus,
-                trace::{RootTrace, stale_after as trace_stale_after},
+                trace::{RootTrace, STALE_AFTER as TRACE_STALE_AFTER},
             },
         },
         hands::{ik, late, tiers},
@@ -195,7 +195,7 @@ fn roomscale_state(status: roomscale::RoomscaleStatus) -> RoomscaleState {
 fn fresh_trace(sim: &SimStatus, now: Instant) -> Option<RootTrace> {
     sim.trace.filter(|_| {
         sim.at
-            .is_some_and(|at| now.saturating_duration_since(at) <= trace_stale_after())
+            .is_some_and(|at| now.saturating_duration_since(at) <= TRACE_STALE_AFTER)
     })
 }
 

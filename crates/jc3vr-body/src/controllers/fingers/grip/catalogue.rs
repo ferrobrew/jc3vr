@@ -4,12 +4,9 @@
 //! A pose's curls are on the finger curls' scale (0 straight, 1 a fist), its hooks and opposition on
 //! the [`HandShape`](crate::controllers::fingers::pose::HandShape) scale. The values are judged by
 //! eye against a hand holding the thing, not measured, so the headset checklist in
-//! `docs/mod/input/grip-poses.md` is where they are tuned; they live in the finger curls' tuning
-//! ([`FINGERS_TUNING`]'s `poses`).
+//! `docs/mod/input/grip-poses.md` is where they are tuned.
 
-use serde::Deserialize;
-
-use crate::controllers::fingers::tuning::FINGERS_TUNING;
+use crate::controllers::fingers::grip::catalogue::FingerRole::{LiveWhenTracked, Posed, Trigger};
 
 /// A named finger pose for what a hand holds.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -69,46 +66,136 @@ impl GripPose {
 
     /// The pose's shape.
     pub fn shape(self) -> PoseShape {
-        let poses = &FINGERS_TUNING.get().poses;
         match self {
-            GripPose::PistolGrip => poses.pistol_grip,
-            GripPose::Foregrip => poses.foregrip,
-            GripPose::MagazinePinch => poses.magazine_pinch,
-            GripPose::MagazineCup => poses.magazine_cup,
-            GripPose::SlidePinch => poses.slide_pinch,
-            GripPose::GrenadePalm => poses.grenade_palm,
-            GripPose::ChargePalm => poses.charge_palm,
-            GripPose::LedgeHook => poses.ledge_hook,
-            GripPose::FlatPalm => poses.flat_palm,
-            GripPose::Wrap => poses.wrap,
+            GripPose::PistolGrip => PoseShape {
+                curl: [0.7, 0.45, 0.85, 0.88, 0.9],
+                splay: [0.0, 0.0, 0.0, -0.03, -0.06],
+                hook: [0.0, 0.0, -0.1, -0.1, 0.0],
+                opposition: 0.55,
+                thumb_spread_deg: Some(30.0),
+                roles: [
+                    Posed,
+                    Trigger {
+                        rest: 0.45,
+                        pulled: 0.62,
+                    },
+                    Posed,
+                    Posed,
+                    Posed,
+                ],
+            },
+            GripPose::Foregrip => PoseShape {
+                curl: [0.5, 0.72, 0.75, 0.78, 0.8],
+                splay: [0.0, 0.04, 0.0, -0.03, -0.06],
+                hook: [0.0, 0.1, 0.1, 0.1, 0.1],
+                opposition: 0.7,
+                thumb_spread_deg: Some(45.0),
+                roles: [Posed; 5],
+            },
+            GripPose::MagazinePinch => PoseShape {
+                curl: [0.4, 0.42, 0.5, 0.62, 0.68],
+                splay: [0.0, 0.0, 0.0, -0.04, -0.08],
+                hook: [0.0, -0.4, -0.3, 0.0, 0.0],
+                opposition: 1.0,
+                thumb_spread_deg: Some(35.0),
+                roles: [Posed; 5],
+            },
+            GripPose::MagazineCup => PoseShape {
+                curl: [0.45, 0.55, 0.6, 0.62, 0.65],
+                splay: [0.0, 0.04, 0.0, -0.04, -0.08],
+                hook: [0.0, 0.25, 0.25, 0.25, 0.25],
+                opposition: 0.6,
+                thumb_spread_deg: Some(40.0),
+                roles: [Posed; 5],
+            },
+            GripPose::SlidePinch => PoseShape {
+                curl: [0.45, 0.55, 0.6, 0.85, 0.9],
+                splay: [0.0, 0.0, 0.0, -0.03, -0.06],
+                hook: [0.0, -0.5, -0.4, 0.0, 0.0],
+                opposition: 1.0,
+                thumb_spread_deg: Some(30.0),
+                roles: [Posed; 5],
+            },
+            GripPose::GrenadePalm => PoseShape {
+                curl: [0.45, 0.55, 0.55, 0.57, 0.6],
+                splay: [0.0, 0.12, 0.0, -0.1, -0.2],
+                hook: [0.0, 0.2, 0.2, 0.2, 0.2],
+                opposition: 0.85,
+                thumb_spread_deg: Some(50.0),
+                roles: [Posed; 5],
+            },
+            GripPose::ChargePalm => PoseShape {
+                curl: [0.35, 0.62, 0.64, 0.66, 0.68],
+                splay: [0.0; 5],
+                hook: [0.0, -0.2, -0.2, -0.2, -0.2],
+                opposition: 0.3,
+                thumb_spread_deg: Some(20.0),
+                roles: [Posed; 5],
+            },
+            GripPose::LedgeHook => PoseShape {
+                curl: [0.25, 0.6, 0.62, 0.64, 0.66],
+                splay: [0.0; 5],
+                hook: [0.0, 0.85, 0.85, 0.85, 0.85],
+                opposition: 0.0,
+                thumb_spread_deg: Some(15.0),
+                roles: [Posed; 5],
+            },
+            GripPose::FlatPalm => PoseShape {
+                curl: [0.12, 0.12, 0.12, 0.14, 0.16],
+                splay: [0.0, 0.06, 0.0, -0.05, -0.1],
+                hook: [0.0; 5],
+                opposition: 0.2,
+                thumb_spread_deg: None,
+                roles: [LiveWhenTracked, Posed, Posed, Posed, Posed],
+            },
+            GripPose::Wrap => PoseShape {
+                curl: [0.5, 0.6, 0.62, 0.64, 0.66],
+                splay: [0.0, 0.06, 0.0, -0.05, -0.1],
+                hook: [0.0; 5],
+                opposition: 0.6,
+                thumb_spread_deg: Some(45.0),
+                roles: [Posed; 5],
+            },
             GripPose::Cylinder { diameter_m } => {
-                let cylinder = &poses.cylinder;
                 let finger = cylinder_curl(diameter_m);
                 PoseShape {
                     curl: [
-                        (finger - cylinder.thumb_less).max(cylinder.thumb_min),
+                        (finger - 0.15).max(0.3),
                         finger,
                         finger,
-                        (finger + cylinder.ring_more).min(1.0),
-                        (finger + cylinder.little_more).min(1.0),
+                        (finger + 0.02).min(1.0),
+                        (finger + 0.04).min(1.0),
                     ],
-                    splay: cylinder.splay,
+                    splay: [0.0, 0.0, 0.0, -0.03, -0.06],
                     hook: [0.0; 5],
-                    opposition: cylinder.opposition,
-                    thumb_spread_deg: Some(cylinder.thumb_spread_deg),
-                    roles: cylinder.roles,
+                    opposition: 0.5,
+                    thumb_spread_deg: Some(35.0),
+                    roles: [LiveWhenTracked, Posed, Posed, Posed, Posed],
                 }
             }
-            GripPose::DoorHandle => poses.door_handle,
-            GripPose::CollarGrab => poses.collar_grab,
+            GripPose::DoorHandle => PoseShape {
+                curl: [0.35, 0.78, 0.8, 0.82, 0.84],
+                splay: [0.0; 5],
+                hook: [0.0, 0.2, 0.2, 0.2, 0.2],
+                opposition: 0.3,
+                thumb_spread_deg: Some(25.0),
+                roles: [Posed; 5],
+            },
+            GripPose::CollarGrab => PoseShape {
+                curl: [0.65, 0.85, 0.92, 0.94, 0.95],
+                splay: [0.0; 5],
+                hook: [0.0, 0.3, 0.3, 0.3, 0.3],
+                opposition: 0.9,
+                thumb_spread_deg: Some(20.0),
+                roles: [Posed; 5],
+            },
         }
     }
 }
 
 /// A pose's target for every finger, indexed by
 /// [`Finger::index`](crate::controllers::fingers::curl::Finger::index).
-#[derive(Debug, Copy, Clone, PartialEq, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub struct PoseShape {
     pub curl: [f32; 5],
     /// Radians toward the thumb side; the thumb's is unused.
@@ -116,14 +203,13 @@ pub struct PoseShape {
     pub hook: [f32; 5],
     /// The thumb's opposition, `0..=1`.
     pub opposition: f32,
-    /// The open thumb's spread, degrees, or `None` (the key left out of the tuning file) for the
-    /// configured spread.
+    /// The open thumb's spread, degrees, or `None` for the configured spread.
     pub thumb_spread_deg: Option<f32>,
     pub roles: [FingerRole; 5],
 }
 
 /// The part a finger plays in a pose.
-#[derive(Debug, Copy, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum FingerRole {
     /// The finger takes the pose's curl, or the contact fit's where the fit found the held thing.
     Posed,
@@ -140,24 +226,33 @@ pub enum FingerRole {
 /// handle, and an open hand round a thick beam. Interpolated between judged points, and monotonic:
 /// a thicker bar never closes the fingers further.
 pub fn cylinder_curl(diameter_m: f32) -> f32 {
-    let curls = &FINGERS_TUNING.get().poses.cylinder.curls;
     let d = if diameter_m.is_finite() {
         diameter_m.max(0.0)
     } else {
-        curls[2][0]
+        CYLINDER_CURLS[2].0
     };
-    let first = curls[0];
-    if d <= first[0] {
-        return first[1];
+    let first = CYLINDER_CURLS[0];
+    if d <= first.0 {
+        return first.1;
     }
-    for pair in curls.windows(2) {
-        let ([d0, c0], [d1, c1]) = (pair[0], pair[1]);
+    for pair in CYLINDER_CURLS.windows(2) {
+        let ((d0, c0), (d1, c1)) = (pair[0], pair[1]);
         if d <= d1 {
             return c0 + (c1 - c0) * (d - d0) / (d1 - d0);
         }
     }
-    curls[curls.len() - 1][1]
+    CYLINDER_CURLS[CYLINDER_CURLS.len() - 1].1
 }
+
+/// The fingers' curl at judged bar diameters, metres, thinnest first.
+const CYLINDER_CURLS: [(f32, f32); 6] = [
+    (0.015, 0.97),
+    (0.025, 0.88),
+    (0.035, 0.78),
+    (0.05, 0.66),
+    (0.08, 0.48),
+    (0.15, 0.28),
+];
 
 #[cfg(test)]
 mod tests {
@@ -214,18 +309,16 @@ mod tests {
 
     #[test]
     fn a_thinner_bar_closes_the_fingers_further() {
-        let curls = FINGERS_TUNING.get().poses.cylinder.curls;
         let mut previous = cylinder_curl(0.0);
-        assert_eq!(previous, curls[0][1]);
+        assert_eq!(previous, CYLINDER_CURLS[0].1);
         for step in 1..=60 {
             let curl = cylinder_curl(step as f32 * 0.003);
             assert!(curl <= previous + 1e-6, "{step}");
             previous = curl;
         }
-        assert_eq!(cylinder_curl(1.0), curls[5][1]);
-        assert!((cylinder_curl(curls[2][0]) - curls[2][1]).abs() < 1e-6);
-        let midway = (curls[1][0] + curls[2][0]) / 2.0;
-        assert!((cylinder_curl(midway) - (curls[1][1] + curls[2][1]) / 2.0).abs() < 1e-5);
+        assert_eq!(cylinder_curl(1.0), CYLINDER_CURLS[5].1);
+        assert!((cylinder_curl(0.035) - 0.78).abs() < 1e-6);
+        assert!((cylinder_curl(0.03) - 0.83).abs() < 1e-5);
         assert!(cylinder_curl(f32::NAN).is_finite());
         assert!(cylinder_curl(-1.0) <= 1.0);
     }

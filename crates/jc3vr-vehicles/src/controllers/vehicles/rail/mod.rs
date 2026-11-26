@@ -37,7 +37,7 @@ use std::{
         LazyLock,
         atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
     },
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use detours_macro::detour;
@@ -125,7 +125,7 @@ pub fn input_tick(game: &GameTick<'_>, jump: bool, on_foot: bool) {
     }
     let held = { STATE.lock().active.map(|a| (a.character, a.since)) };
     if let Some((held, since)) = held {
-        let settled = since.elapsed() >= VEHICLES.get().rail.mode_grace();
+        let settled = since.elapsed() >= MODE_GRACE;
         let reason = if held != std::ptr::from_mut(character) as usize {
             Some("the local player changed")
         } else if jump {
@@ -265,9 +265,9 @@ fn motion(config: &RailTuning) -> RailMotion {
     RailMotion {
         step_off_m: config.step_off_m,
         pull_s: config.pull_s,
-        height_s: config.height_s,
-        max_walk_mps: config.max_walk_mps,
-        max_drop_m: config.max_drop_m,
+        height_s: HEIGHT_S,
+        max_walk_mps: MAX_WALK_MPS,
+        max_drop_m: MAX_DROP_M,
     }
 }
 
@@ -279,7 +279,7 @@ fn motion(config: &RailTuning) -> RailMotion {
 /// `character` is the live local player, on the game thread before the world update.
 unsafe fn enter(character: &mut Character, config: &RailTuning) {
     let airframe = airframe::noted()
-        .filter(|(_, at)| at.elapsed() <= config.airframe_fresh())
+        .filter(|(_, at)| at.elapsed() <= AIRFRAME_FRESH)
         .map(|(body, _)| body);
     let Some((body, frame)) =
         airframe.and_then(|body| unsafe { engine::body_frame(body) }.map(|f| (body, f)))
@@ -459,6 +459,22 @@ static DOOR_SIDE: LazyLock<[u32; 2]> = LazyLock::new(|| {
 
 /// The interaction graph user's inactive state.
 const GRAPH_USER_INACTIVE: i32 = 0;
+
+/// How long after its arrival a noted airframe stands for the door side's, seconds.
+const AIRFRAME_FRESH: Duration = Duration::from_secs(30);
+
+/// How long after the rail takes Rico the input tick's mode is trusted: the mode reads the fall
+/// the graph's exit starts until the first carried step lands him.
+const MODE_GRACE: Duration = Duration::from_millis(500);
+
+/// The time constant that holds the feet at the skid's height, seconds.
+const HEIGHT_S: f32 = 0.1;
+
+/// The fastest walk the rail passes on, metres per second.
+const MAX_WALK_MPS: f32 = 3.0;
+
+/// How far below the skid's line the feet go before the rail lets them go, metres.
+const MAX_DROP_M: f32 = 0.5;
 
 #[cfg(test)]
 mod tests {

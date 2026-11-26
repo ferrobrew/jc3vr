@@ -11,8 +11,6 @@ use glam::{Mat3, Quat, Vec3};
 use jc3vr_gameplay::controllers::summary::config::{GlanceConfig, WristPlacement};
 use jc3vr_input::frame::{Hand, Pose};
 
-use crate::hud::tuning::HUD;
-
 /// The panel's pose in the world: its centre, and the rotation whose +X runs along its text, +Y up
 /// its page, and +Z out of its face toward the reader.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -119,10 +117,10 @@ impl Glance {
     }
 }
 
-/// The trackpad touch's pin across frames. A touch held for the tuning's
-/// `summary.trackpad_pin_delay_s` pins the panel until the thumb lifts; a press during the touch
-/// (which pages the menu tabs) cancels the pin for the rest of that touch, and the delay keeps a
-/// touch that is about to press from flashing the panel first.
+/// The trackpad touch's pin across frames. A touch held for [`TrackpadPin::DELAY_S`] pins the
+/// panel until the thumb lifts; a press during the touch (which pages the menu tabs) cancels the
+/// pin for the rest of that touch, and the delay keeps a touch that is about to press from
+/// flashing the panel first.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct TrackpadPin {
     /// How long the current touch has held, seconds, or `None` without a touch.
@@ -132,6 +130,9 @@ pub struct TrackpadPin {
 }
 
 impl TrackpadPin {
+    /// How long a touch holds before it pins, seconds.
+    pub const DELAY_S: f32 = 0.2;
+
     pub const fn new() -> Self {
         Self {
             touched_s: None,
@@ -150,7 +151,7 @@ impl TrackpadPin {
         let held = self.touched_s.map_or(0.0, |s| s + dt);
         self.touched_s = Some(held);
         self.pressed |= pressed;
-        !self.pressed && held >= HUD.get().summary.trackpad_pin_delay_s
+        !self.pressed && held >= Self::DELAY_S
     }
 }
 
@@ -174,17 +175,8 @@ mod tests {
 
     use super::*;
 
-    fn placement() -> &'static WristPlacement {
-        &HUD.get().summary.placement
-    }
-
-    fn glance_config() -> &'static GlanceConfig {
-        &HUD.get().summary.glance
-    }
-
-    fn delay_s() -> f32 {
-        HUD.get().summary.trackpad_pin_delay_s
-    }
+    const PLACEMENT: WristPlacement = WristPlacement::new();
+    const GLANCE: GlanceConfig = GlanceConfig::new();
 
     /// A head `distance` metres in front of the panel's face, looking at it.
     fn head_facing(panel: &PanelPose, distance: f32) -> Pose {
@@ -199,16 +191,16 @@ mod tests {
     #[test]
     fn the_panel_faces_out_of_the_back_of_either_hand() {
         for hand in Hand::BOTH {
-            let panel = wrist_pose(Pose::IDENTITY, hand, placement());
+            let panel = wrist_pose(Pose::IDENTITY, hand, &PLACEMENT);
             assert!(panel.normal().abs_diff_eq(Vec3::NEG_X, 1e-5), "{hand:?}");
-            assert!(panel.center.abs_diff_eq(placement().offset_m, 1e-5));
+            assert!(panel.center.abs_diff_eq(PLACEMENT.offset_m, 1e-5));
             // A proper rotation: the text, the page, and the face form a right-handed frame.
             let (x, y) = (panel.rotation * Vec3::X, panel.rotation * Vec3::Y);
             assert!(x.cross(y).abs_diff_eq(panel.normal(), 1e-5));
         }
         // The text runs toward the left hand's fingers and the right hand's elbow.
-        let left = wrist_pose(Pose::IDENTITY, Hand::Left, placement());
-        let right = wrist_pose(Pose::IDENTITY, Hand::Right, placement());
+        let left = wrist_pose(Pose::IDENTITY, Hand::Left, &PLACEMENT);
+        let right = wrist_pose(Pose::IDENTITY, Hand::Right, &PLACEMENT);
         assert!((left.rotation * Vec3::X).abs_diff_eq(Vec3::NEG_Z, 1e-5));
         assert!((right.rotation * Vec3::X).abs_diff_eq(Vec3::Z, 1e-5));
     }
@@ -219,8 +211,8 @@ mod tests {
             position: Vec3::new(1.0, 2.0, 3.0),
             orientation: Quat::from_rotation_y(FRAC_PI_2),
         };
-        let panel = wrist_pose(grip, Hand::Left, placement());
-        let expected = grip.position + grip.orientation * placement().offset_m;
+        let panel = wrist_pose(grip, Hand::Left, &PLACEMENT);
+        let expected = grip.position + grip.orientation * PLACEMENT.offset_m;
         assert!(panel.center.abs_diff_eq(expected, 1e-5));
         assert!(
             panel
@@ -231,15 +223,15 @@ mod tests {
 
     #[test]
     fn a_look_needs_the_panel_in_view_and_facing_the_head() {
-        let panel = wrist_pose(Pose::IDENTITY, Hand::Left, placement());
+        let panel = wrist_pose(Pose::IDENTITY, Hand::Left, &PLACEMENT);
         let head = head_facing(&panel, 0.4);
-        assert!(looking(head, &panel, glance_config(), false));
+        assert!(looking(head, &panel, &GLANCE, false));
         // The head turned well away.
         let away = Pose {
             orientation: head.orientation * Quat::from_rotation_y(1.2),
             ..head
         };
-        assert!(!looking(away, &panel, glance_config(), false));
+        assert!(!looking(away, &panel, &GLANCE, false));
         // The head behind the panel, looking at its back.
         let behind = head_facing(
             &PanelPose {
@@ -248,21 +240,20 @@ mod tests {
             },
             0.4,
         );
-        assert!(!looking(behind, &panel, glance_config(), false));
+        assert!(!looking(behind, &panel, &GLANCE, false));
     }
 
     #[test]
     fn the_hysteresis_widens_the_look_once_shown() {
-        let panel = wrist_pose(Pose::IDENTITY, Hand::Left, placement());
+        let panel = wrist_pose(Pose::IDENTITY, Hand::Left, &PLACEMENT);
         let head = head_facing(&panel, 0.4);
-        let edge =
-            (glance_config().view_cone_deg + glance_config().hysteresis_deg * 0.5).to_radians();
+        let edge = (GLANCE.view_cone_deg + GLANCE.hysteresis_deg * 0.5).to_radians();
         let off = Pose {
             orientation: head.orientation * Quat::from_rotation_x(edge),
             ..head
         };
-        assert!(!looking(off, &panel, glance_config(), false));
-        assert!(looking(off, &panel, glance_config(), true));
+        assert!(!looking(off, &panel, &GLANCE, false));
+        assert!(looking(off, &panel, &GLANCE, true));
     }
 
     #[test]
@@ -271,7 +262,7 @@ mod tests {
         // How long the glance takes to flip to `to`, seconds, holding the look at `to`.
         let flip = |glance: &mut Glance, to: bool| {
             let mut elapsed = 0.0;
-            while glance.step(to, dt, glance_config()) != to {
+            while glance.step(to, dt, &GLANCE) != to {
                 elapsed += dt;
                 assert!(elapsed < 10.0, "never flipped");
             }
@@ -279,17 +270,17 @@ mod tests {
         };
         let mut glance = Glance::default();
         // A look broken before the dwell starts over.
-        glance.step(true, glance_config().dwell_s * 0.8, glance_config());
-        assert!(!glance.step(false, dt, glance_config()));
+        glance.step(true, GLANCE.dwell_s * 0.8, &GLANCE);
+        assert!(!glance.step(false, dt, &GLANCE));
         let shown_after = flip(&mut glance, true);
         assert!(
-            (shown_after - glance_config().dwell_s).abs() <= dt * 1.5,
+            (shown_after - GLANCE.dwell_s).abs() <= dt * 1.5,
             "{shown_after}"
         );
         assert!(glance.shown());
         let hidden_after = flip(&mut glance, false);
         assert!(
-            (hidden_after - glance_config().linger_s).abs() <= dt * 1.5,
+            (hidden_after - GLANCE.linger_s).abs() <= dt * 1.5,
             "{hidden_after}"
         );
         assert!(!glance.shown());
@@ -320,8 +311,8 @@ mod tests {
     fn a_held_touch_pins_after_the_delay_until_lifted() {
         let mut pin = TrackpadPin::new();
         assert!(!pin.step(true, false, 0.0));
-        assert!(!pin.step(true, false, delay_s() * 0.5));
-        assert!(pin.step(true, false, delay_s()));
+        assert!(!pin.step(true, false, TrackpadPin::DELAY_S * 0.5));
+        assert!(pin.step(true, false, TrackpadPin::DELAY_S));
         assert!(!pin.step(false, false, 0.01));
         assert!(!pin.step(true, false, 0.01));
     }
@@ -335,6 +326,6 @@ mod tests {
         assert!(!pin.step(false, false, 0.01));
         // The next touch pins again.
         pin.step(true, false, 0.0);
-        assert!(pin.step(true, false, delay_s()));
+        assert!(pin.step(true, false, TrackpadPin::DELAY_S));
     }
 }

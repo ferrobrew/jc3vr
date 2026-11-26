@@ -21,7 +21,6 @@ use jc3vr_gameplay::controllers::config::CONTROLLERS_CONFIG;
 use crate::{
     controllers::menu::read,
     status::{Line, Row, prose, text},
-    tuning::UI,
 };
 
 pub(crate) const RENDER_RATE_BODY: Row =
@@ -132,9 +131,7 @@ fn mirror_line(status: &MirrorStatus, now: Instant) -> Line {
         (Some(0), _) => Line::failed(prose("No bones found")),
         (Some(bones), Some(at)) => {
             let detail = text!(bones.to_string(), " bones");
-            if now.saturating_duration_since(at)
-                < Duration::from_secs_f32(UI.get().readouts.mirror_stale_s)
-            {
+            if now.saturating_duration_since(at) < MIRROR_STALE {
                 Line::ok(detail)
             } else {
                 Line::waiting(detail).with_note("not drawn since the menu opened or the pass ran")
@@ -143,6 +140,9 @@ fn mirror_line(status: &MirrorStatus, now: Instant) -> Line {
         _ => Line::waiting(prose("Not drawn yet")),
     }
 }
+
+/// How long after its last pass the mirror reads as drawing.
+const MIRROR_STALE: Duration = Duration::from_secs(30);
 
 fn render_rate_body() -> Line {
     presentation_line(&presentation::status())

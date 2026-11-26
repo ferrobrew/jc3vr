@@ -24,10 +24,7 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     VK_NUMPAD8, VK_NUMPAD9, VK_SHIFT, VK_SUBTRACT,
 };
 
-use crate::{
-    director::{DIRECTOR_CONFIG, heat, markers, teleport, teleport::TeleportMode, time},
-    tuning::TOOLING,
-};
+use crate::director::{DIRECTOR_CONFIG, heat, markers, teleport, teleport::TeleportMode, time};
 
 /// Everything a key can trigger.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -209,14 +206,8 @@ pub fn run(action: Action) {
             let mut director = DIRECTOR_CONFIG.edit();
             director.paused = !director.paused;
         }
-        Action::TimeScaleUp => time::step_time_scale(
-            &mut DIRECTOR_CONFIG.edit(),
-            TOOLING.get().director.time_scale_step,
-        ),
-        Action::TimeScaleDown => time::step_time_scale(
-            &mut DIRECTOR_CONFIG.edit(),
-            TOOLING.get().director.time_scale_step.recip(),
-        ),
+        Action::TimeScaleUp => time::step_time_scale(&mut DIRECTOR_CONFIG.edit(), 2.0),
+        Action::TimeScaleDown => time::step_time_scale(&mut DIRECTOR_CONFIG.edit(), 0.5),
         Action::TakeMarker => markers::mark(""),
         Action::SaveBookmark => {
             teleport::save_current("");

@@ -13,11 +13,9 @@
 
 use body_rig::rotation::{angular_velocity, rotation_error};
 use glam::{Quat, Vec3};
-use serde::Deserialize;
 
 /// The landing's tuning.
-#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct LandingTuning {
     /// How far into the final approach the drive takes to come to full strength, metres.
     pub ramp_m: f32,
@@ -38,12 +36,12 @@ pub struct LandingTuning {
     pub hysteresis_m: f32,
     /// How far ahead the hand's pose is extrapolated by its motion, at most, seconds.
     pub max_extrapolate_s: f32,
-    /// The residual below which the arrival puts the gun in the hand at once: an angle, degrees,
+    /// The residual below which the arrival puts the gun in the hand at once: an angle, radians,
     /// and a distance, metres, both under.
-    pub settled_deg: f32,
+    pub settled_rad: f32,
     pub settled_m: f32,
-    /// The residual angle at which the arrival takes its full slide, degrees.
-    pub full_slide_deg: f32,
+    /// The residual angle at which the arrival takes its full slide, radians.
+    pub full_slide_rad: f32,
 }
 
 /// The time left until a body at `at` flying at `velocity` comes within `reach` metres of
@@ -150,12 +148,11 @@ pub fn arrival_slide(
     if !(angle.is_finite() && distance.is_finite()) {
         return slide_s;
     }
-    let full_slide_rad = tuning.full_slide_deg * DEGREE;
-    if angle < tuning.settled_deg * DEGREE && distance < tuning.settled_m {
+    if angle < tuning.settled_rad && distance < tuning.settled_m {
         return 0.0;
     }
-    let by_angle = if full_slide_rad > 0.0 {
-        slide_s * angle / full_slide_rad
+    let by_angle = if tuning.full_slide_rad > 0.0 {
+        slide_s * angle / tuning.full_slide_rad
     } else {
         slide_s
     };
@@ -192,9 +189,6 @@ pub fn extrapolate(
     (now.0 + velocity * ahead, rotation, angular)
 }
 
-/// One degree, radians.
-const DEGREE: f32 = std::f32::consts::PI / 180.0;
-
 #[cfg(test)]
 mod tests {
     use pretty_assertions::assert_eq;
@@ -216,7 +210,7 @@ mod tests {
     }
 
     fn tuning() -> LandingTuning {
-        SNATCH.get().landing
+        SNATCH.landing
     }
 
     /// Integrate the turn drive from `orientation` spinning at `spin` toward a still `target`
@@ -306,13 +300,7 @@ mod tests {
     fn the_arrival_slides_only_what_is_left() {
         let tuning = tuning();
         assert_eq!(arrival_slide(0.01, 0.005, 12.0, 0.12, &tuning), 0.0);
-        let half = arrival_slide(
-            tuning.full_slide_deg * DEGREE / 2.0,
-            0.0,
-            12.0,
-            0.12,
-            &tuning,
-        );
+        let half = arrival_slide(tuning.full_slide_rad / 2.0, 0.0, 12.0, 0.12, &tuning);
         assert!((half - 0.06).abs() < 1e-6);
         assert_eq!(arrival_slide(3.0, 0.0, 12.0, 0.12, &tuning), 0.12);
         // A gun aligned but 20 cm out at 12 m/s flies the rest in under a fiftieth of a second.

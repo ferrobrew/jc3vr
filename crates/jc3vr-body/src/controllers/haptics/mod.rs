@@ -32,10 +32,9 @@ use jc3vr_input::{
         cues::{Category, Event, Sustain},
         mixer::{MixStats, Sustained, Transient},
         output,
-        vocabulary::Primitive,
+        vocabulary::{Primitive, VOCABULARY},
     },
 };
-use jc3vr_view::tuning::HAPTICS;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
@@ -65,15 +64,14 @@ pub fn play_scaled(hand: Hand, event: Event, scale: f32) {
     if scale.is_nan() || scale <= 0.0 {
         return;
     }
-    let tuning = HAPTICS.get();
-    let cue = tuning.event(event);
+    let cue = event.cue();
     if !acting(cue.category) {
         return;
     }
-    let shape = tuning.shape(cue.primitive);
+    let shape = VOCABULARY.shape(cue.primitive);
     let transient = Transient {
         amplitude: shape.amplitude(cue.strength * scale.min(1.0)),
-        duration: seconds(shape.duration_s * tuning.duration_factor(cue.length)),
+        duration: seconds(shape.duration_s * cue.length.factor()),
         frequency_hz: frequency(cue.primitive),
         priority: cue.primitive.priority(),
     };
@@ -84,12 +82,11 @@ pub fn play_scaled(hand: Hand, event: Event, scale: f32) {
 /// every tick it lasts; a level of zero ends it at once, and one not sent again ends when its
 /// primitive's hold runs out.
 pub fn sustain(hand: Hand, source: Sustain, level: f32) {
-    let tuning = HAPTICS.get();
-    let cue = tuning.sustain(source);
+    let cue = source.cue();
     if !acting(cue.category) {
         return;
     }
-    let shape = tuning.shape(cue.primitive);
+    let shape = VOCABULARY.shape(cue.primitive);
     let level = if level.is_finite() {
         level.clamp(0.0, 1.0)
     } else {
@@ -111,7 +108,7 @@ pub fn cancel_sustain(hand: Hand, source: Sustain) {
 /// Play a weapon's fire rumble on `hand` as [`Event::Shot`], at the amplitude and for the length
 /// the game's rumble sets.
 pub(crate) fn play_shot(hand: Hand, amplitude: f32, duration_s: f32) {
-    let cue = HAPTICS.get().event(Event::Shot);
+    let cue = Event::Shot.cue();
     if !acting(cue.category) {
         return;
     }
@@ -127,7 +124,7 @@ pub(crate) fn play_shot(hand: Hand, amplitude: f32, duration_s: f32) {
 /// Play `primitive` on `hand` at full strength, for the debug UI, whatever the switches say; the
 /// master switch still applies when the frame loop plays it.
 pub fn test(hand: Hand, primitive: Primitive) {
-    let shape = HAPTICS.get().shape(primitive);
+    let shape = VOCABULARY.shape(primitive);
     // A sustained primitive tests as a one-off a little longer than its hold, so it is felt alone.
     let duration_s = if primitive.is_sustained() {
         TEST_SUSTAIN_S
@@ -210,7 +207,7 @@ fn acts(enabled: bool, haptics: &HapticsConfig) -> bool {
 }
 
 fn frequency(primitive: Primitive) -> Option<f32> {
-    let hz = HAPTICS.get().shape(primitive).frequency_hz;
+    let hz = VOCABULARY.shape(primitive).frequency_hz;
     (hz > 0.0 && hz.is_finite()).then_some(hz)
 }
 
@@ -220,7 +217,7 @@ fn seconds(s: f32) -> Duration {
 
 fn queue(hand: Hand, event: Event, transient: Transient) {
     output::with_mixer(|mixer| mixer.transient(hand, transient));
-    let cue = HAPTICS.get().event(event);
+    let cue = event.cue();
     telemetry::note_haptic(telemetry::Cue {
         hand,
         event: event.label(),

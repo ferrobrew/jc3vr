@@ -20,7 +20,7 @@
 use glam::{Mat4, Quat, Vec3};
 use jc3vr_view::controllers::cockpit::CockpitTransform;
 
-use crate::controllers::vehicles::tuning::{HandlebarsSpec, VEHICLES, WheelSpec};
+use crate::controllers::vehicles::tuning::{HandlebarsSpec, WheelSpec};
 
 /// A steering wheel in the cockpit frame: its hub, its in-plane axes, and its rim's radius.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -114,9 +114,8 @@ pub fn wheel_from_box(min: Vec3, max: Vec3) -> Option<PartWheel> {
     if !(min.is_finite() && max.is_finite()) || extent.min_element() < 0.0 {
         return None;
     }
-    let fit = &VEHICLES.get().wheel_fit;
     let radius = extent.x * 0.5;
-    if radius < fit.min_wheel_radius_m || extent.y < 1e-3 {
+    if radius < MIN_WHEEL_RADIUS_M || extent.y < 1e-3 {
         return None;
     }
     // A disc tilted back by `t` spans `2r cos t` up and `2r sin t` deep, plus its thickness, so
@@ -124,7 +123,7 @@ pub fn wheel_from_box(min: Vec3, max: Vec3) -> Option<PartWheel> {
     let tilt = extent
         .z
         .atan2(extent.y)
-        .clamp(0.0, fit.max_tilt_deg.to_radians());
+        .clamp(0.0, MAX_TILT_DEG.to_radians());
     Some(PartWheel {
         hub: (min + max) * 0.5,
         radius,
@@ -140,15 +139,14 @@ pub fn bars_from_box(min: Vec3, max: Vec3) -> Option<(Vec3, f32)> {
     if !(min.is_finite() && max.is_finite()) || extent.min_element() < 0.0 {
         return None;
     }
-    let fit = &VEHICLES.get().wheel_fit;
-    let half_width = extent.x * 0.5 - fit.grip_inset_m;
-    if half_width < fit.min_bars_half_width_m {
+    let half_width = extent.x * 0.5 - GRIP_INSET_M;
+    if half_width < MIN_BARS_HALF_WIDTH_M {
         return None;
     }
     let centre = Vec3::new(
         (min.x + max.x) * 0.5,
         (min.y + max.y) * 0.5,
-        max.z - fit.grip_inset_m,
+        max.z - GRIP_INSET_M,
     );
     Some((centre, half_width))
 }
@@ -386,6 +384,18 @@ impl CockpitParts for CockpitTransform {
     }
 }
 
+/// The steepest tilt the box fit gives, degrees: a bus's wheel lies about this flat.
+const MAX_TILT_DEG: f32 = 60.0;
+
+/// The smallest wheel the box fit accepts, metres.
+const MIN_WHEEL_RADIUS_M: f32 = 0.05;
+
+/// How far in from the bars' ends and rear the grips sit, metres.
+const GRIP_INSET_M: f32 = 0.04;
+
+/// The narrowest handlebars the box fit accepts, metres from the middle to a grip.
+const MIN_BARS_HALF_WIDTH_M: f32 = 0.1;
+
 /// The in-plane right and up axes of a wheel whose face tilts back by `tilt` radians.
 fn tilted_axes(tilt: f32) -> (Vec3, Vec3) {
     let (sin, cos) = tilt.sin_cos();
@@ -433,9 +443,7 @@ mod tests {
         let upright = wheel_from_box(Vec3::new(-0.2, -0.2, -0.01), Vec3::new(0.2, 0.2, 0.01));
         assert!(upright.unwrap().tilt.to_degrees() < 3.0);
         let deep = wheel_from_box(Vec3::new(-0.2, -0.1, -1.0), Vec3::new(0.2, 0.1, 1.0));
-        assert!(
-            (deep.unwrap().tilt.to_degrees() - VEHICLES.get().wheel_fit.max_tilt_deg).abs() < 1e-3
-        );
+        assert!((deep.unwrap().tilt.to_degrees() - MAX_TILT_DEG).abs() < 1e-3);
     }
 
     #[test]
@@ -450,11 +458,8 @@ mod tests {
         // The ATV's steering fork's box, about its hinge pivot.
         let (centre, half) =
             bars_from_box(Vec3::new(-0.41, -0.06, -0.33), Vec3::new(0.41, 0.1, 0.0)).unwrap();
-        assert!(close(
-            centre,
-            Vec3::new(0.0, 0.02, -VEHICLES.get().wheel_fit.grip_inset_m)
-        ));
-        assert!((half - (0.41 - VEHICLES.get().wheel_fit.grip_inset_m)).abs() < 1e-5);
+        assert!(close(centre, Vec3::new(0.0, 0.02, -GRIP_INSET_M)));
+        assert!((half - (0.41 - GRIP_INSET_M)).abs() < 1e-5);
         assert_eq!(bars_from_box(Vec3::ZERO, Vec3::new(0.1, 0.1, 0.1)), None);
     }
 

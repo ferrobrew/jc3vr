@@ -3,7 +3,7 @@
 
 mod resources;
 
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use body_rig::smooth::half_life_factor;
 use glam::{Quat, Vec2, Vec3, Vec4};
@@ -16,11 +16,10 @@ use windows::Win32::Graphics::Direct3D11::{
 
 use crate::hud::{
     HudMode, binding,
-    depth::{DepthShift, DepthShiftStatus},
+    depth::{DEPTH_SHIFT, DepthShift, DepthShiftStatus},
     quad::{HudQuad, PanelParams},
     state::resources::{Native, Retry, Surface},
     target::HudTarget,
-    tuning::HUD,
 };
 
 /// Global HUD state. Locked briefly on the render thread.
@@ -83,7 +82,7 @@ impl StageSafeAreaSample {
     }
 
     pub fn fresh(self, now: Instant) -> bool {
-        now.saturating_duration_since(self.at) < HUD.get().panel.stage_safe_area_stale()
+        now.saturating_duration_since(self.at) < STAGE_SAFE_AREA_STALE
     }
 }
 
@@ -136,6 +135,9 @@ pub struct HudState {
     cursor_corners: Option<[Vec4; 4]>,
 }
 
+/// The floating panel's rotation follow halflife, in seconds. Lower is a snappier follow.
+const FOLLOW_ROTATION_HALFLIFE_S: f32 = 0.2;
+
 /// Damped follow state: tracks the panel's eased orientation via quaternion slerp.
 struct FollowState {
     /// Damped panel rotation (quaternion).
@@ -164,7 +166,7 @@ impl FollowState {
         self.last_time = Some(Instant::now());
         let dt = dt.min(0.1);
 
-        let alpha = half_life_factor(dt, HUD.get().panel.follow_rotation_halflife_s);
+        let alpha = half_life_factor(dt, FOLLOW_ROTATION_HALFLIFE_S);
         self.rotation = self.rotation.slerp(head_rotation, alpha);
 
         self.rotation
@@ -257,7 +259,7 @@ impl HudState {
     pub fn depth_distance(&mut self, mode: HudMode, base: f32) -> f32 {
         self.depth_shift
             .get_or_insert_with(DepthShift::default)
-            .distance(&HUD.get().panel.depth_shift, mode, base)
+            .distance(&DEPTH_SHIFT, mode, base)
     }
 
     /// The dynamic-distance state's live snapshot, for the debug UI.
@@ -452,6 +454,7 @@ impl HudState {
 /// The applied redirect, written by [`HudState`] on the render thread (a leaf lock).
 static APPLIED_REDIRECT: Mutex<Option<AppliedRedirect>> = Mutex::new(None);
 
+const STAGE_SAFE_AREA_STALE: Duration = Duration::from_secs(1);
 static STAGE_SAFE_AREA: Mutex<Option<StageSafeAreaSample>> = Mutex::new(None);
 
 fn copy_stage_safe_area(source: &Mutex<Option<StageSafeAreaSample>>) -> StageSafeAreaReadout {
@@ -466,8 +469,6 @@ fn copy_stage_safe_area(source: &Mutex<Option<StageSafeAreaSample>>) -> StageSaf
 
 #[cfg(test)]
 mod test_stage_safe_area {
-    use std::time::Duration;
-
     use super::*;
 
     #[test]
@@ -491,10 +492,9 @@ mod test_stage_safe_area {
     fn capture_freshness_expires_at_the_boundary() {
         let at = Instant::now();
         let sample = StageSafeAreaSample::new(layout(), at);
-        let stale = HUD.get().panel.stage_safe_area_stale();
         assert!(sample.fresh(at));
-        assert!(sample.fresh(at + stale - Duration::from_nanos(1)));
-        assert!(!sample.fresh(at + stale));
+        assert!(sample.fresh(at + STAGE_SAFE_AREA_STALE - Duration::from_nanos(1)));
+        assert!(!sample.fresh(at + STAGE_SAFE_AREA_STALE));
     }
 
     #[test]

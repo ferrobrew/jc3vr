@@ -13,18 +13,6 @@
 //! velocities it is handed.
 
 use glam::Vec3;
-use serde::Deserialize;
-
-use crate::grapple::tuning::GRAPPLE;
-
-/// The least length any line is held at.
-#[derive(Debug, Copy, Clone, PartialEq, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct RopeFloorTuning {
-    /// The shortest any line is held at by taking line in, metres, whatever its own least length
-    /// is set to.
-    pub min_held_length_m: f32,
-}
 
 /// One end of the rope, world space.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -179,11 +167,10 @@ impl Rope {
     }
 }
 
-/// A line's least held length `floor_m`, raised to the tuning's
-/// [`min_held_length_m`](RopeFloorTuning::min_held_length_m); a floor that is not finite is that
-/// least length.
+/// A line's least held length `floor_m`, raised to [`MIN_HELD_LENGTH_M`]; a floor that is not
+/// finite is that least length.
 pub fn held_floor(floor_m: f32) -> f32 {
-    floor_m.max(GRAPPLE.get().rope.min_held_length_m)
+    floor_m.max(MIN_HELD_LENGTH_M)
 }
 
 /// `tension_n` as a share of the rope's strength `max_tension_n`, `0..=1`: none for a strength
@@ -198,6 +185,10 @@ pub fn tension_share(tension_n: f32, max_tension_n: f32) -> f32 {
 
 /// The longest step the rope takes, seconds: a longer one is a hitch, not a tick.
 const MAX_DT_S: f32 = 0.1;
+
+/// The shortest any line is held at by taking line in, metres, whatever its own least length is
+/// set to.
+const MIN_HELD_LENGTH_M: f32 = 0.5;
 
 /// The shortest length a rope can be held at all, metres: a rope needs a direction between its
 /// ends.
@@ -367,12 +358,11 @@ mod tests {
         assert_eq!(rope.length_m, 1.5);
         rope.shorten(5.0, 0.0);
         assert_eq!(
-            rope.length_m,
-            GRAPPLE.get().rope.min_held_length_m,
+            rope.length_m, MIN_HELD_LENGTH_M,
             "the floor is never below the least"
         );
         rope.shorten(5.0, f32::NAN);
-        assert_eq!(rope.length_m, GRAPPLE.get().rope.min_held_length_m);
+        assert_eq!(rope.length_m, MIN_HELD_LENGTH_M);
         let mut short = Rope::new(1.0).unwrap();
         short.shorten(0.5, 2.0);
         assert_eq!(

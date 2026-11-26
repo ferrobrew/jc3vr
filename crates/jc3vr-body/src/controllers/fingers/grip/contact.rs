@@ -5,18 +5,17 @@
 //! ([`publish_geometry`]): each finger's root and its bones' lengths, in the palm's frame, read
 //! from the animated bones. The holding source then sweeps each finger in the world
 //! ([`fit_contacts`]) through the same bend the curls give it ([`pose`](crate::controllers::fingers::pose)):
-//! from straight toward a fist in the contact tuning's `sweep_steps` steps, casting the chord the
-//! fingertip and the middle joint each move along over a step. The first chord that meets the held body ends the
+//! from straight toward a fist in [`SWEEP_STEPS`] steps, casting the chord the fingertip and the
+//! middle joint each move along over a step. The first chord that meets the held body ends the
 //! finger's sweep at the curl where it met it; a finger that meets nothing keeps the pose's own
 //! curl. A cast that meets something else (the hand's own body, the world) is passed over, so a
 //! finger is never stopped short by what it is not holding.
 //!
-//! The casts are bounded: the contact tuning's `fingers_per_tick` fingers of a hand are swept per
-//! tick, so a fresh hold is fitted over a few ticks, and a fitted hold is swept again only every
-//! `refit_ms` ([`ContactFitTuning`](crate::controllers::fingers::tuning::ContactFitTuning)), since
+//! The casts are bounded: [`FINGERS_PER_TICK`] fingers of a hand are swept per tick, so a fresh
+//! hold is fitted over three ticks, and a fitted hold is swept again only every [`REFIT`], since
 //! the hand holds the body still in its own frame. A new body or a new pose starts the fit over.
 
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use glam::Vec3;
 use jc3vr_input::frame::{Hand, Pose};
@@ -28,7 +27,7 @@ use crate::controllers::fingers::{
     pose::{
         BoneJoint, PalmFrame, bone_directions, finger_axes, joint_angles, thumb_axis, thumb_open,
     },
-    tuning::{FINGERS_TUNING, FingerTuning},
+    tuning::FingerTuning,
 };
 
 /// A hand's proportions: each finger's root and bone lengths, indexed by [`Finger::index`]. The
@@ -38,8 +37,7 @@ use crate::controllers::fingers::{
 pub struct HandGeometry {
     pub roots: [Vec3; 5],
     /// The proximal, middle, and distal bones' lengths, metres. The distal bone has no joint
-    /// beyond it, so its length is a share of the middle bone's
-    /// ([`ContactFitTuning::distal_share`](crate::controllers::fingers::tuning::ContactFitTuning::distal_share)).
+    /// beyond it, so its length is a share of the middle bone's ([`DISTAL_SHARE`]).
     pub lengths: [[f32; 3]; 5],
 }
 
@@ -47,7 +45,6 @@ impl HandGeometry {
     /// The proportions of the animated `chains` (root outward, indexed by [`Finger::index`]) in
     /// the frame `palm`, or `None` for a chain with coincident joints.
     pub fn measure(palm: &PalmFrame, chains: &[[BoneJoint; 3]; 5]) -> Option<Self> {
-        let distal_share = FINGERS_TUNING.get().contact.distal_share;
         let mut roots = [Vec3::ZERO; 5];
         let mut lengths = [[0.0; 3]; 5];
         for (i, chain) in chains.iter().enumerate() {
@@ -62,7 +59,7 @@ impl HandGeometry {
             if !(proximal > 1e-4 && middle > 1e-4) {
                 return None;
             }
-            lengths[i] = [proximal, middle, middle * distal_share];
+            lengths[i] = [proximal, middle, middle * DISTAL_SHARE];
         }
         Some(Self { roots, lengths })
     }
@@ -73,6 +70,9 @@ impl HandGeometry {
         palm.wrist + palm.toward_thumb * r.x + palm.palm * r.y + palm.forward * r.z
     }
 }
+
+/// The distal bone's length as a share of the middle bone's.
+pub const DISTAL_SHARE: f32 = 0.8;
 
 /// Publish `hand`'s proportions. Called by the finger curls each tick they write the fingers.
 pub fn publish_geometry(hand: Hand, geometry: HandGeometry) {
@@ -99,8 +99,7 @@ pub struct FitTarget {
 
 /// The contact fit of `hand` on `target`: each finger's curl where it meets the body, `None` for a
 /// finger that met nothing or is not swept yet; `None` as a whole before the finger curls have
-/// published the hand's proportions. Sweeps at most the contact tuning's `fingers_per_tick` fingers
-/// with `cast`,
+/// published the hand's proportions. Sweeps at most [`FINGERS_PER_TICK`] fingers with `cast`,
 /// which casts the chord between two world points and reports the first hit.
 pub fn fit_contacts(
     hand: Hand,
@@ -108,7 +107,6 @@ pub fn fit_contacts(
     config: &FingerTuning,
     cast: &mut dyn FnMut(Vec3, Vec3) -> Option<CastHit>,
 ) -> Option<[Option<f32>; 5]> {
-    let tuning = &FINGERS_TUNING.get().contact;
     let now = Instant::now();
     let mut fit = FIT.lock();
     let geometry = fit.geometry[hand.index()]?;
@@ -122,7 +120,7 @@ pub fn fit_contacts(
     if cache.swept == [true; 5] {
         if cache
             .done_at
-            .is_some_and(|at| now.saturating_duration_since(at) < tuning.refit_ms.duration())
+            .is_some_and(|at| now.saturating_duration_since(at) < REFIT)
         {
             return Some(cache.curls);
         }
@@ -147,7 +145,7 @@ pub fn fit_contacts(
     let mut swept = 0;
     for finger in Finger::ALL {
         let i = finger.index();
-        if cache.swept[i] || swept == tuning.fingers_per_tick {
+        if cache.swept[i] || swept == FINGERS_PER_TICK {
             continue;
         }
         cache.curls[i] = sweep(finger, &finger_shape(finger), &palm, config, &mut |a, b| {
@@ -199,11 +197,13 @@ pub fn sweep(
     config: &FingerTuning,
     cast: &mut dyn FnMut(Vec3, Vec3) -> Option<CastHit>,
 ) -> Option<f32> {
-    let steps = FINGERS_TUNING.get().contact.sweep_steps;
     let points = |curl: f32| finger_points(finger, shape, palm, config, curl);
     let mut previous = points(0.0)?;
-    for step in 1..=steps {
-        let (from, to) = ((step - 1) as f32 / steps as f32, step as f32 / steps as f32);
+    for step in 1..=SWEEP_STEPS {
+        let (from, to) = (
+            (step - 1) as f32 / SWEEP_STEPS as f32,
+            step as f32 / SWEEP_STEPS as f32,
+        );
         let next = points(to)?;
         for joint in [3, 2] {
             if let Some(hit) = cast(previous[joint], next[joint]) {
@@ -244,6 +244,13 @@ pub fn finger_points(
     Some(points)
 }
 
+/// The steps a sweep takes from straight to a fist.
+pub const SWEEP_STEPS: u32 = 5;
+/// The fingers of a hand swept per tick.
+pub const FINGERS_PER_TICK: usize = 2;
+/// How long a fitted hold keeps its fit before it is swept again.
+pub const REFIT: Duration = Duration::from_millis(500);
+
 /// One hand's fit across ticks.
 #[derive(Debug, Copy, Clone, PartialEq)]
 struct FitCache {
@@ -278,11 +285,7 @@ mod tests {
     use glam::Quat;
 
     use super::*;
-    use crate::controllers::fingers::tuning::FINGERS_TUNING;
-
-    fn fingers() -> FingerTuning {
-        FINGERS_TUNING.get().curls
-    }
+    use crate::controllers::fingers::tuning::FINGERS;
 
     /// A right hand at the origin in the wrist frame's convention.
     fn right_palm() -> PalmFrame {
@@ -323,7 +326,7 @@ mod tests {
 
     #[test]
     fn a_straight_finger_lies_along_its_open_direction() {
-        let config = fingers();
+        let config = FINGERS;
         let points = finger_points(
             Finger::Middle,
             &middle_finger(),
@@ -352,7 +355,7 @@ mod tests {
 
     #[test]
     fn a_finger_stops_where_it_meets_the_surface() {
-        let config = fingers();
+        let config = FINGERS;
         let near = sweep(
             Finger::Middle,
             &middle_finger(),
@@ -385,7 +388,7 @@ mod tests {
 
     #[test]
     fn a_finger_that_meets_nothing_has_no_fit() {
-        let config = fingers();
+        let config = FINGERS;
         let mut calls = 0;
         let mut miss = |_: Vec3, _: Vec3| {
             calls += 1;
@@ -401,16 +404,12 @@ mod tests {
             ),
             None
         );
-        assert_eq!(
-            calls,
-            2 * FINGERS_TUNING.get().contact.sweep_steps,
-            "two chords a step, bounded"
-        );
+        assert_eq!(calls, 2 * SWEEP_STEPS, "two chords a step, bounded");
     }
 
     #[test]
     fn the_thumb_sweeps_across_the_palm() {
-        let config = fingers();
+        let config = FINGERS;
         let thumb = FingerSweep {
             root: Vec3::new(-0.025, -0.01, -0.02),
             lengths: [0.035, 0.03, 0.024],
@@ -447,10 +446,7 @@ mod tests {
         for (i, finger) in Finger::ALL.into_iter().enumerate() {
             assert!(geometry.root_in(finger, &palm).abs_diff_eq(roots[i], 1e-6));
             assert!((geometry.lengths[i][0] - 0.04).abs() < 1e-6);
-            assert!(
-                (geometry.lengths[i][2] - 0.025 * FINGERS_TUNING.get().contact.distal_share).abs()
-                    < 1e-6
-            );
+            assert!((geometry.lengths[i][2] - 0.025 * DISTAL_SHARE).abs() < 1e-6);
         }
         let flat = [BoneJoint {
             position: Vec3::ZERO,

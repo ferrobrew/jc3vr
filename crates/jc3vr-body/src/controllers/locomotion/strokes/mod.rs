@@ -28,7 +28,7 @@ pub mod model;
 #[cfg(test)]
 mod tests;
 
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use jc3gi::state::StateBitFlag;
 use jc3vr_input::{frame::Hand, haptics::cues::Event};
@@ -43,7 +43,6 @@ use crate::{
         mode,
     },
     hooks::input::swim,
-    tuning::FRESHNESS,
 };
 
 /// What the strokes did on the last tick, for the debug UI.
@@ -64,9 +63,8 @@ pub struct StrokeStatus {
 impl StrokeStatus {
     /// Whether the strokes ran in the water recently enough that their motion still counts.
     pub fn fresh(&self, now: Instant) -> bool {
-        self.at.is_some_and(|at| {
-            now.saturating_duration_since(at) <= FRESHNESS.get().locomotion.strokes_ms.duration()
-        })
+        self.at
+            .is_some_and(|at| now.saturating_duration_since(at) <= STALE_AFTER)
     }
 }
 
@@ -138,6 +136,9 @@ pub fn tick(active: Option<&ActiveHands>, armed: [bool; 2], dt: f32) {
     state.status.at = Some(Instant::now());
     state.status.step = step;
 }
+
+/// How long the strokes may go without a tick before they forget the hands' motion.
+const STALE_AFTER: Duration = Duration::from_millis(250);
 
 struct State {
     model: StrokeModel,

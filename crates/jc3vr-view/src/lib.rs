@@ -17,7 +17,6 @@
 //!   provenance, the render camera's pose, the panel math, and the stage frame.
 //! - [`recorder::tracking`]: the `.jc3trk` tracking recorder.
 //! - [`testing::benchmark::gpu_passes`]: the benchmark's per-pass GPU totals.
-//! - [`tuning`]: the crate's tuning files, and the input crate's haptics file it loads.
 //!
 //! The layers above reach these modules by path. [`CAPTURE_VS`] is the full-screen vertex shader
 //! every capture pass draws with, exported for the passes that live above.
@@ -30,7 +29,6 @@ pub mod hud;
 pub mod recorder;
 pub mod stereo;
 pub mod testing;
-pub mod tuning;
 pub mod vr;
 
 #[cfg(test)]

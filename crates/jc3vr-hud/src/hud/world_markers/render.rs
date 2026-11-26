@@ -31,10 +31,9 @@ use crate::hud::{
     log_once::LogOnce,
     quad::HudQuad,
     target::HudTarget,
-    tuning::HUD,
     world_markers::{
         CROP, DistanceSource, LABEL_CROP, MarkerStatus, STATUS, Status,
-        depth::{DepthPoint, DepthProbe},
+        depth::{DepthPoint, DepthProbe, RESULT_TTL_S},
         layout::{
             Billboard, Crop, billboard_corners, crop, placement_distance, radians_per_texel,
             slot_size, smooth_distance, surface_sight,
@@ -245,8 +244,7 @@ impl Renderer {
         let mut ray_requests = Vec::new();
         let mut statuses = Vec::with_capacity(layout.markers.len());
         let mut next_plain = 0;
-        let tuning = &HUD.get().world_markers;
-        raycast::expire(tuning.raycast_ttl_s);
+        raycast::expire(RESULT_TTL_S * 4.0);
         for marker in &layout.markers {
             let labelled = marker.id != 0 && marker.id == layout.labelled_id;
             let (slot, size, extents) = if labelled {
@@ -275,20 +273,15 @@ impl Renderer {
                 ray_requests.push((marker.id, marker.world));
             }
             let held = self.on_surface.contains(&marker.id);
-            let sight = surface_sight(sight, true_distance, tuning.surface_min_m, held);
+            let sight = surface_sight(sight, true_distance, SURFACE_MIN_M, held);
             if matches!(sight, Sight::Surface(_)) {
                 self.on_surface.insert(marker.id);
             } else {
                 self.on_surface.remove(&marker.id);
             }
-            let target = placement_distance(
-                true_distance,
-                sight,
-                tuning.surface_pull_m,
-                tuning.min_distance_m,
-            );
-            let distance = self.smoothed(marker.id, target, tuning.depth_halflife_s, now);
-            let drawn = distance.min(tuning.max_distance_m);
+            let target = placement_distance(true_distance, sight, SURFACE_PULL_M, MIN_DISTANCE_M);
+            let distance = self.smoothed(marker.id, target, DEPTH_HALFLIFE_S, now);
+            let drawn = distance.min(MAX_DISTANCE_M);
             let billboard = Billboard {
                 head: inputs.head,
                 head_rotation: inputs.head_rotation,
@@ -327,11 +320,11 @@ impl Renderer {
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
         self.distances
-            .retain(|_, (_, at)| now.duration_since(*at).as_secs_f32() < tuning.forget_s);
+            .retain(|_, (_, at)| now.duration_since(*at).as_secs_f32() < FORGET_S);
         let distances = &self.distances;
         self.on_surface.retain(|id| distances.contains_key(id));
         self.depth_results
-            .retain(|_, timed| now.duration_since(timed.at).as_secs_f32() < tuning.forget_s);
+            .retain(|_, timed| now.duration_since(timed.at).as_secs_f32() < FORGET_S);
 
         self.sample_depth(context, device, inputs, &depth_points, now);
         raycast::request(ray_requests);
@@ -351,8 +344,7 @@ impl Renderer {
     /// The freshest line-of-sight result for a marker: the depth probe's, else the raycast's, else
     /// clear.
     fn sight(&self, id: u32, now: Instant) -> (Sight, DistanceSource) {
-        let ttl_s = HUD.get().world_markers.probe_ttl_s;
-        let fresh = |timed: &Timed| now.duration_since(timed.at).as_secs_f32() < ttl_s;
+        let fresh = |timed: &Timed| now.duration_since(timed.at).as_secs_f32() < RESULT_TTL_S;
         if let Some(timed) = self.depth_results.get(&id).filter(|t| fresh(t)) {
             return (timed.sight, DistanceSource::Depth);
         }
@@ -510,5 +502,28 @@ impl Renderer {
         *STATUS.lock() = Some(status);
     }
 }
+
+/// The nearest a marker is drawn, in metres.
+const MIN_DISTANCE_M: f32 = 0.5;
+
+/// Surfaces nearer the eye than this are ignored for the placement, in metres: the player's own
+/// gun and hands, and foliage brushing the head, would otherwise pull every marker behind them
+/// onto them.
+const SURFACE_MIN_M: f32 = 1.2;
+
+/// How far a surface-placed marker is pulled toward the eye from the surface, in metres, so it is
+/// not coplanar with it.
+const SURFACE_PULL_M: f32 = 0.3;
+
+/// The halflife of the placement distance's smoothing, in seconds, so a flickering occluder does
+/// not make the marker pop.
+const DEPTH_HALFLIFE_S: f32 = 0.15;
+
+/// The farthest a billboard is placed, in metres. A farther marker is drawn at this distance along
+/// its direction, where its stereo disparity is already indistinguishable from infinity.
+const MAX_DISTANCE_M: f32 = 300.0;
+
+/// How long a marker's placement state outlives its last sighting, in seconds.
+const FORGET_S: f32 = 2.0;
 
 static FAILURES: LogOnce = LogOnce::new("hud world markers");

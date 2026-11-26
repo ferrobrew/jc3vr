@@ -33,7 +33,7 @@ use std::{
         LazyLock,
         atomic::{AtomicBool, AtomicU64, Ordering},
     },
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use jc3gi::character::character::{AnimationLayer, Character};
@@ -46,7 +46,6 @@ use crate::{
         scheme,
     },
     hooks,
-    tuning::FRESHNESS,
 };
 
 /// Whether the unarmed body applies, and why not when it does not.
@@ -252,16 +251,16 @@ pub fn record_modifiers(weapon_suppressed: bool) {
 /// to hold for the next tick's modifier pass.
 pub fn applies() -> bool {
     let status = *STATE.lock();
-    status.verdict == UnarmedVerdict::Applies
-        && status
-            .at
-            .is_some_and(|at| at.elapsed() < FRESHNESS.get().body.unarmed_ms.duration())
+    status.verdict == UnarmedVerdict::Applies && status.at.is_some_and(|at| at.elapsed() < FRESH)
 }
 
 /// Whether the game's off-hand weapon grip is switched off for both hands this tick.
 pub fn release_grip() -> bool {
     applies()
 }
+
+/// How long a decision holds for the modifier pass, which runs earlier in the next tick.
+const FRESH: Duration = Duration::from_millis(250);
 
 static STATE: LazyLock<Mutex<UnarmedStatus>> =
     LazyLock::new(|| Mutex::new(UnarmedStatus::default()));

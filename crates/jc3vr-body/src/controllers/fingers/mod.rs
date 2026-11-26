@@ -8,7 +8,7 @@
 //! - [`grip`]: what each hand holds, as its sources declare it, and the pose for it;
 //! - [`target`]: a hand's target shape for the tick, from its curls and its grip;
 //! - [`pose`]: the shape turned into joint angles and the angles into model-space finger joints;
-//! - [`tuning`]: the tuning, read from the shipped `tuning/fingers.toml`.
+//! - [`tuning`]: the fixed tuning.
 //!
 //! The curls are written once per sim tick, at the end of the pose-finalization pass (the post-call
 //! `UpdatePropEffects` detour), with `AnimationController::SetJoint` over the finalized model-space
@@ -48,7 +48,7 @@ use crate::controllers::{
         },
         pose::{BoneJoint, HandShape, PalmFrame},
         target::{GripMemory, GripReport, TargetInputs},
-        tuning::FINGERS_TUNING,
+        tuning::FINGERS,
     },
     hands::ik,
     scheme,
@@ -115,7 +115,6 @@ pub(crate) unsafe fn after_solve(character: *mut Character) {
     })
     .unwrap_or([None; 2]);
     let max_age = grip::max_age(dt);
-    let config = &FINGERS_TUNING.get().curls;
     let mut controller = unsafe { character.m_AnimatedModel.m_AnimationController.as_mut() };
 
     for hand in Hand::BOTH {
@@ -139,7 +138,7 @@ pub(crate) unsafe fn after_solve(character: *mut Character) {
         };
         let target = target::hand_target(
             &TargetInputs {
-                config,
+                config: &FINGERS,
                 declared,
                 measured: &measured,
                 source,
@@ -149,10 +148,10 @@ pub(crate) unsafe fn after_solve(character: *mut Character) {
             &mut state.memory[i],
         );
         let shape = state.smoothed[i].map_or(target.shape, |previous| {
-            previous.smooth(target.shape, dt, config.smoothing_s)
+            previous.smooth(target.shape, dt, FINGERS.smoothing_s)
         });
         state.smoothed[i] = Some(shape);
-        let bend = pose::hand_bend(&shape, config, weight, target.driven);
+        let bend = pose::hand_bend(&shape, &FINGERS, weight, target.driven);
         let outcome = match controller.as_deref_mut() {
             Some(controller) => unsafe { apply_hand(controller, hand, &bend) },
             None => ApplyOutcome::NoController,

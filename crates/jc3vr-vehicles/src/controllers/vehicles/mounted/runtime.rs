@@ -5,7 +5,11 @@
 //! on its handles leaves the seat and tears it off; the player steps into an empty gunner seat by
 //! standing behind its gun ([`gunner_seat`]).
 
-use std::{ffi::c_void, num::NonZeroUsize, time::Instant};
+use std::{
+    ffi::c_void,
+    num::NonZeroUsize,
+    time::{Duration, Instant},
+};
 
 use glam::Vec3;
 use jc3gi::{
@@ -49,7 +53,6 @@ use crate::controllers::vehicles::{
         vehicle_hold::VehicleHold,
     },
     summary as vehicles_summary,
-    tuning::VEHICLES,
 };
 
 /// Record a mounted weapon the late weapon update saw, so the next input tick can find it.
@@ -451,7 +454,7 @@ unsafe fn tear_off(
                     weapon,
                     admitted,
                     pickup::TakeOptions {
-                        slide_s: VEHICLES.get().mounted.take_slide_s,
+                        slide_s: 0.15,
                         source: TakeSource::World,
                         delivery: Delivery::Local,
                     },
@@ -558,13 +561,13 @@ unsafe fn finish_seat_tear(local: &mut Character, desired: &mut Vec<Desired>) {
         return;
     };
     if seated {
-        if asked.elapsed() >= VEHICLES.get().mounted.seat_exit_timeout() {
+        if asked.elapsed() >= SEAT_EXIT_TIMEOUT {
             *slot = None;
             tracing::info!(
                 target: "controllers",
                 "mounted gun: the player did not leave the gunner seat; the tear is given up"
             );
-        } else if !retried && asked.elapsed() >= VEHICLES.get().mounted.seat_exit_retry() {
+        } else if !retried && asked.elapsed() >= SEAT_EXIT_RETRY {
             if let Some(tear) = slot.as_mut() {
                 tear.exit = Some((asked, hand, true));
             }
@@ -621,6 +624,11 @@ fn exit_click() -> Desired {
 }
 
 static SEAT_TEAR: Mutex<Option<SeatTear>> = Mutex::new(None);
+
+/// How long after asking for the seat exit it is asked again if the player is still seated.
+const SEAT_EXIT_RETRY: Duration = Duration::from_millis(1500);
+/// How long a tear from the seat waits for the player to leave it.
+const SEAT_EXIT_TIMEOUT: Duration = Duration::from_secs(4);
 
 /// Release every retained gun, for a paused game, a mode change, a stand-down of the bindings, or a
 /// shutdown, the way the tick does when the runtime is off.

@@ -90,7 +90,7 @@ impl Landing {
 
     /// One tick of the landing.
     pub(super) fn tick(&mut self, game: &GameTick<'_>, input: &LandingInput) -> LandingTick {
-        let tuning = &SNATCH.get().landing;
+        let tuning = &SNATCH.landing;
         let body = Pose {
             position: input.body.centre,
             orientation: input.body.orientation,
@@ -106,7 +106,7 @@ impl Landing {
             let previous = records.previous[hand.index()].map(|t| t.wrist);
             Some((current, previous, canonical))
         });
-        let catch_reach = SNATCH.get().catch_zone_m;
+        let catch_reach = SNATCH.catch_zone_m;
         let targets = Hand::BOTH.map(|hand| {
             let (current, previous, canonical) = wrists[hand.index()]?;
             let now = hand_pose::mul(current, canonical);
@@ -131,7 +131,7 @@ impl Landing {
             angular: None,
             shift: Vec3::ZERO,
         };
-        if distance > SNATCH.get().approach_m && self.start_m.is_none() {
+        if distance > SNATCH.approach_m && self.start_m.is_none() {
             return tick;
         }
         let start = *self.start_m.get_or_insert(distance);
@@ -206,7 +206,7 @@ impl ArrivalWatch {
     pub(super) unsafe fn tick(&mut self) -> bool {
         let elapsed = self.since.elapsed();
         let in_hand = live::in_hand(self.hand) == Some(self.weapon);
-        if elapsed > Duration::from_millis(SNATCH.get().watch_ms) || !in_hand {
+        if elapsed > WATCH || !in_hand {
             if self.shown > 0 {
                 tracing::info!(
                     target: "controllers",
@@ -248,3 +248,6 @@ impl ArrivalWatch {
         true
     }
 }
+
+/// How long the watch follows a caught weapon.
+const WATCH: Duration = Duration::from_millis(300);

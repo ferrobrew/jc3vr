@@ -42,24 +42,21 @@ use glam::{Vec2, Vec3};
 use jc3vr_input::frame::{Button, ControllerFrame, Edges, Hand, Pose};
 use jc3vr_view::{
     controllers::overlay::{
-        primitive::{Anchor, DepthMode, HandPose, Primitive, Source},
+        primitive::{Anchor, DepthMode, HandPose, Primitive, Rgba, Source},
         store,
     },
     hud::pointer::panel::{PanelHit, aim_at_egui_panel, intersect_panel},
 };
 use parking_lot::Mutex;
 
-use crate::controllers::{
-    bindings::{
-        intents::Intent,
-        pointer::{
-            EguiPointerSettings, PointerHud,
-            controller::{ControllerState, TriggerSample},
-            egui_grab::{GrabSample, GrabStep, GrabTracker},
-            registered_hud,
-        },
+use crate::controllers::bindings::{
+    intents::Intent,
+    pointer::{
+        EguiPointerSettings, PointerHud,
+        controller::{ControllerState, TriggerSample},
+        egui_grab::{GrabSample, GrabStep, GrabTracker},
+        registered_hud,
     },
-    tuning::GAMEPLAY,
 };
 
 /// One input tick of the controller pointer, as the egui pump consumes it.
@@ -123,7 +120,7 @@ pub fn update_egui_controller(
         return;
     };
     let slop = ClickSlop {
-        radius: GAMEPLAY.get().pointer.click_slop,
+        radius: CLICK_SLOP,
         aspect,
     };
     let dt = state.last_tick.map_or(0.0, |last| {
@@ -159,19 +156,32 @@ pub fn reset_egui_controller() {
     UPDATES.lock().clear();
 }
 
+/// The deadzone of each thumbstick axis before it scrolls, as a fraction of full deflection.
+pub(crate) const SCROLL_DEADZONE: f32 = 0.2;
+
+/// The scroll speed at full deflection, egui points per second.
+pub(crate) const SCROLL_SPEED: f32 = 1200.0;
+
+/// The longest interval one tick's scroll covers, seconds, so a hitch does not jump the view.
+pub(crate) const MAX_SCROLL_DT: f32 = 0.1;
+
 /// The wheel motion for a thumbstick deflection held for `dt` seconds: each axis scrolls past
-/// the tuning's `pointer.scroll.deadzone` at a speed proportional to its deflection beyond it, up
-/// to `pointer.scroll.speed`.
+/// [`SCROLL_DEADZONE`] at a speed proportional to its deflection beyond it, up to [`SCROLL_SPEED`].
 /// Pushing the stick up or right reveals what lies above or to the right, so the stick's Y keeps
 /// its sign and its X flips in egui's content-motion convention.
 pub(crate) fn scroll_delta(stick: Vec2, dt: f32) -> Vec2 {
     if !dt.is_finite() || dt <= 0.0 {
         return Vec2::ZERO;
     }
-    let tuning = &GAMEPLAY.get().pointer.scroll;
-    let dt = dt.min(tuning.max_dt_s);
-    Vec2::new(-axis_rate(stick.x), axis_rate(stick.y)) * tuning.speed * dt
+    let dt = dt.min(MAX_SCROLL_DT);
+    Vec2::new(-axis_rate(stick.x), axis_rate(stick.y)) * SCROLL_SPEED * dt
 }
+
+/// How far a controller's held trigger press may wander from where it began, as a fraction of the
+/// panel's height, and still click: until the hit leaves this radius the pointer stays at the
+/// press, so a hand's tremor never turns a press into a drag. Past it the press drags from the
+/// live hit.
+const CLICK_SLOP: f32 = 0.03;
 
 /// How far a held press's hit may wander from where the press began and still click.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -310,12 +320,11 @@ fn axis_rate(value: f32) -> f32 {
     if !value.is_finite() {
         return 0.0;
     }
-    let deadzone = GAMEPLAY.get().pointer.scroll.deadzone;
     let magnitude = value.abs().min(1.0);
-    if magnitude <= deadzone {
+    if magnitude <= SCROLL_DEADZONE {
         0.0
     } else {
-        value.signum() * (magnitude - deadzone) / (1.0 - deadzone)
+        value.signum() * (magnitude - SCROLL_DEADZONE) / (1.0 - SCROLL_DEADZONE)
     }
 }
 
@@ -327,7 +336,6 @@ fn draw_laser(hand: Hand, distance: Option<f32>) {
         store::clear(Source::PanelPointer);
         return;
     };
-    let laser = &GAMEPLAY.get().pointer.laser;
     let mut prims = vec![Primitive::Line {
         from: Anchor::hand(hand, HandPose::Aim),
         to: Anchor::Hand {
@@ -335,18 +343,21 @@ fn draw_laser(hand: Hand, distance: Option<f32>) {
             pose: HandPose::Aim,
             offset: Vec3::new(0.0, 0.0, -distance),
         },
-        width: laser.width_m,
-        color: laser.color,
+        width: LASER_WIDTH_M,
+        color: LASER_COLOR,
         depth: DepthMode::XRay {
-            occluded_alpha: laser.occluded_alpha,
+            occluded_alpha: 0.25,
         },
     }];
-    store::submit(
-        Source::PanelPointer,
-        &mut prims,
-        Duration::from_millis(laser.ttl_ms),
-    );
+    store::submit(Source::PanelPointer, &mut prims, LASER_TTL);
 }
+
+const LASER_WIDTH_M: f32 = 0.004;
+
+const LASER_COLOR: Rgba = [1.0, 1.0, 1.0, 0.6];
+
+/// The laser's time to live: a few input ticks, so it disappears on its own when they stop.
+const LASER_TTL: Duration = Duration::from_millis(150);
 
 /// The pointing hand and its press state.
 struct EguiControllerState {
@@ -776,7 +787,7 @@ mod tests {
         let half = scroll_delta(Vec2::new(0.0, 0.6), 0.1);
         let full = scroll_delta(Vec2::new(0.0, 1.0), 0.1);
         assert!(half.y > 0.0 && full.y > half.y);
-        assert!((full.y - GAMEPLAY.get().pointer.scroll.speed * 0.1).abs() < 1e-3);
+        assert!((full.y - SCROLL_SPEED * 0.1).abs() < 1e-3);
         assert!((half.y - full.y * 0.5).abs() < 1e-3);
         assert!(scroll_delta(Vec2::new(1.0, 0.0), 0.1).x < 0.0);
     }
@@ -788,7 +799,7 @@ mod tests {
         assert_eq!(scroll_delta(Vec2::new(f32::NAN, 0.0), 0.1), Vec2::ZERO);
         assert_eq!(
             scroll_delta(Vec2::new(0.0, 1.0), 5.0),
-            scroll_delta(Vec2::new(0.0, 1.0), GAMEPLAY.get().pointer.scroll.max_dt_s)
+            scroll_delta(Vec2::new(0.0, 1.0), MAX_SCROLL_DT)
         );
     }
 

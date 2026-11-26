@@ -51,7 +51,6 @@ use crate::controllers::{
         ray::DIRECT_AIM_START_OFFSET,
         raycast::{self, CastOptions},
         targets,
-        tuning_file::AIM,
     },
     physics::refs::null_weak,
 };
@@ -215,14 +214,7 @@ unsafe fn visible_from_view(
     let view = Mat4::from(view);
     let origin = view.w_axis.truncate() - view.z_axis.truncate() * DIRECT_AIM_START_OFFSET;
     let options = unsafe { CastOptions::ignoring_rider(owner) }.seeing_through();
-    unsafe {
-        raycast::line_of_sight(
-            origin,
-            end,
-            AIM.get().assist.body_sight_tolerance_m,
-            &options,
-        )
-    }
+    unsafe { raycast::line_of_sight(origin, end, targets::BODY_SIGHT_TOLERANCE_M, &options) }
 }
 
 /// Everything the direct-aim distribution writes for the grapple slot.

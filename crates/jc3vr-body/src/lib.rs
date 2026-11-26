@@ -26,7 +26,6 @@
 
 pub mod controllers;
 pub mod hooks;
-pub mod tuning;
 
 #[cfg(test)]
 mod test_config;

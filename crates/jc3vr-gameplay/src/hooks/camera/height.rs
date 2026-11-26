@@ -58,7 +58,7 @@ impl HeightReadout {
             .root
             .sim
             .at
-            .is_some_and(|at| self.at.saturating_duration_since(at) < probe::stale_after())
+            .is_some_and(|at| self.at.saturating_duration_since(at) < probe::STALE_AFTER)
     }
 
     /// Whether Rico was in a vehicle seat at the sample.

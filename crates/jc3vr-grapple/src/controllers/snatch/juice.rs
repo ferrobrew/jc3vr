@@ -33,7 +33,7 @@ use jc3vr_body::controllers::{
 };
 use re_utilities::hook_library::HookLibrary;
 
-use crate::controllers::snatch::{config::SNATCH, engine};
+use crate::controllers::snatch::engine;
 
 /// The juice's hooks, aggregated by [`crate::controllers::snatch::hook_library`].
 pub(super) fn hook_library() -> HookLibrary {
@@ -67,7 +67,7 @@ pub(super) unsafe fn impact(wire: NonZeroUsize, object: NonZeroUsize, from: Vec3
         return;
     };
     let at = Vec3::from_array(end.m_WorldPositionT1.data);
-    let reach = from.distance(at) + SNATCH.get().impact_overshoot_m;
+    let reach = from.distance(at) + IMPACT_OVERSHOOT_M;
     let Some(ray) = Ray::new(from, at - from) else {
         return;
     };
@@ -128,6 +128,10 @@ pub(super) unsafe fn fire() {
 
 /// The hook's local player hook the reel's loop is held on, by address, or zero.
 static REELING: AtomicUsize = AtomicUsize::new(0);
+
+/// How far past the hook's end the impact cast reaches, metres: the end sits on the target's
+/// surface or inside it.
+const IMPACT_OVERSHOOT_M: f32 = 0.5;
 
 /// Play `usage` once on `hook`'s container, unless it loops, as the hook's own message playback
 /// refuses to: a looping usage would play until it is stopped, which only its owner does. Returns

@@ -41,7 +41,9 @@ use jc3vr_weapons::controllers::weapons::{
 };
 
 use crate::controllers::snatch::{
-    OfferInput, Refusal, SNATCH, engine, rules,
+    OfferInput, Refusal, SNATCH,
+    config::SWING,
+    engine, rules,
     rules::{Candidate, PropHandling},
 };
 
@@ -185,7 +187,7 @@ pub(super) unsafe fn refresh(offer: &mut Offer, ray: &Ray) -> bool {
             let Some(_alive) = weak.lock() else {
                 return false;
             };
-            if unsafe { remote::door_moving(door, SNATCH.get().door_max_vehicle_speed_mps) } {
+            if unsafe { remote::door_moving(door, SNATCH.door_max_vehicle_speed_mps) } {
                 return false;
             }
             let Some(body) = door.vehicle_body else {
@@ -197,7 +199,7 @@ pub(super) unsafe fn refresh(offer: &mut Offer, ray: &Ray) -> bool {
                     body,
                     *handle,
                     door.outward,
-                    SNATCH.get().door_reach_m,
+                    SNATCH.door_reach_m,
                 )
             }) else {
                 return false;
@@ -245,14 +247,17 @@ pub(super) unsafe fn refresh(offer: &mut Offer, ray: &Ray) -> bool {
     let chosen = rules::choose(
         ray,
         [Candidate { kind: (), point }],
-        |_, distance| cone(ground, distance) + SNATCH.get().retain_cone_deg.to_radians(),
-        SNATCH.get().range_m,
+        |_, distance| cone(ground, distance) + RETAIN_CONE_DEG.to_radians(),
+        SNATCH.range_m,
     );
     let Some(chosen) = chosen else { return false };
     offer.point = point;
     offer.distance = chosen.distance;
     true
 }
+
+/// Extra angular tolerance while retaining a recent aimed identity across a grip press.
+const RETAIN_CONE_DEG: f32 = 4.0;
 
 /// A remote target offered to the grip.
 pub(super) struct Offer {
@@ -541,7 +546,7 @@ pub(super) unsafe fn choose(ray: &Ray) -> Option<Offer> {
                 distance,
             )
         },
-        SNATCH.get().range_m,
+        SNATCH.range_m,
     )?;
     let mut point = chosen.candidate.point;
     let direct = matches!(chosen.candidate.kind, Kind::Aimed);
@@ -656,7 +661,7 @@ pub(super) unsafe fn choose(ray: &Ray) -> Option<Offer> {
         let surface = unsafe {
             raycast::cast_on(
                 &surface_ray,
-                ray.origin.distance(point) + SNATCH.get().sight_tolerance_m,
+                ray.origin.distance(point) + SIGHT_TOLERANCE_M,
                 &CastOptions::ignoring_player(0).seeing_through(),
                 surface_layer(matches!(
                     kind,
@@ -708,16 +713,20 @@ fn surface_layer(weapon: bool) -> i32 {
     }
 }
 
+/// How far short of a gun on a character its line of sight may be blocked, metres: the line ends
+/// inside the character.
+const SIGHT_TOLERANCE_M: f32 = 0.3;
+
 /// The cone, radians, of a candidate `distance` metres off: a weapon lying in the world's widens
 /// with its distance ([`rules::floor_cone`]), and every other's is the snatch's cone.
 fn cone(on_ground: bool, distance: f32) -> f32 {
-    let base = SNATCH.get().cone_deg.to_radians();
+    let base = SNATCH.cone_deg.to_radians();
     if on_ground {
         rules::floor_cone(
             distance,
             base,
-            SNATCH.get().floor_cone_widen_deg.to_radians(),
-            SNATCH.get().range_m,
+            SNATCH.floor_cone_widen_deg.to_radians(),
+            SNATCH.range_m,
         )
     } else {
         base
@@ -736,21 +745,21 @@ fn near_aim(ray: &Ray, aabb: &Aabb) -> bool {
         // The box's centre is at the ray's origin, so the box holds it, or is not finite.
         return aabb.centre().is_finite();
     };
-    if offset.distance - half_size > SNATCH.get().range_m {
+    if offset.distance - half_size > SNATCH.range_m {
         return false;
     }
     if offset.distance <= half_size {
         return true;
     }
     let slack = (half_size / offset.distance).asin();
-    offset.angle <= cone(true, SNATCH.get().range_m) + slack
+    offset.angle <= cone(true, SNATCH.range_m) + slack
 }
 
 /// Whether `point` could be a candidate [`choose`] would take from `ray`: within the range and the
 /// widest floor cone.
 fn near_point(ray: &Ray, point: Vec3) -> bool {
     ray.offset(point)
-        .is_some_and(|offset| offset.within(SNATCH.get().range_m, cone(true, SNATCH.get().range_m)))
+        .is_some_and(|offset| offset.within(SNATCH.range_m, cone(true, SNATCH.range_m)))
 }
 
 /// What the object under the aim is to the snatch: a weapon lying in the world, a loose object a
@@ -827,10 +836,10 @@ unsafe fn aimed_offer(aimed: &grapple_weapons::Aimed) -> Option<OfferKind> {
             aimed.body,
             aimed.point,
             aimed.normal,
-            SNATCH.get().door_reach_m,
+            SNATCH.door_reach_m,
         )
     }?;
-    if unsafe { remote::door_moving(&door, SNATCH.get().door_max_vehicle_speed_mps) } {
+    if unsafe { remote::door_moving(&door, SNATCH.door_max_vehicle_speed_mps) } {
         return None;
     }
     // SAFETY: the door's vehicle is the object under the aim, or the vehicle of a part of it,
@@ -864,7 +873,7 @@ pub(super) unsafe fn aimed_mass() -> Option<f32> {
 /// The game thread, before the world update; the object must be held alive.
 unsafe fn ragdoll_offer(object: NonZeroUsize, body: u32, point: Vec3) -> Option<RagdollTarget> {
     let ragdoll = unsafe { remote::ragdoll_target(object, body, point) }?;
-    (ragdoll.mass_kg <= SNATCH.get().swing.ceiling_kg).then_some(ragdoll)
+    (ragdoll.mass_kg <= SWING.ceiling_kg).then_some(ragdoll)
 }
 
 /// The mass of `object`'s body `body` and what the snatch does with it, when it is a loose object
@@ -881,11 +890,7 @@ unsafe fn prop_handling(object: NonZeroUsize, body: u32) -> Option<(f32, PropHan
 /// What the snatch does with a loose object of `mass_kg`: carried when one hand could carry it,
 /// swung up to the swing's ceiling.
 fn handling(mass_kg: f32) -> Option<PropHandling> {
-    rules::prop_handling(
-        mass_kg,
-        remote::carry_max_kg(),
-        SNATCH.get().swing.ceiling_kg,
-    )
+    rules::prop_handling(mass_kg, remote::carry_max_kg(), SWING.ceiling_kg)
 }
 
 /// A weak reference to the physics game object at `object`, from its own.
@@ -905,7 +910,7 @@ pub(super) unsafe fn weak_of(object: NonZeroUsize) -> Weak {
 /// The game thread, before the world update.
 unsafe fn in_sight(ray: &Ray, point: Vec3, object: usize) -> bool {
     let options = unsafe { CastOptions::ignoring_player(object) }.seeing_through();
-    unsafe { raycast::line_of_sight(ray.origin, point, SNATCH.get().sight_tolerance_m, &options) }
+    unsafe { raycast::line_of_sight(ray.origin, point, SIGHT_TOLERANCE_M, &options) }
 }
 
 #[cfg(test)]

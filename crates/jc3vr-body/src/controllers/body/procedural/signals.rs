@@ -30,13 +30,13 @@ use jc3gi::{
 };
 use parking_lot::Mutex;
 
-use crate::{hooks::character::resolve_act_id, tuning::FRESHNESS};
+use crate::hooks::character::resolve_act_id;
 
 /// Publish the local player's character, whose animated model's acts [`note_act`] watches. Called
 /// at the entry of every pose-finalization pass of the local player, so the address is refreshed
-/// every tick; one not refreshed within the freshness tuning's `body.procedural_local_ms` is not
-/// matched, so a model freed with its character (a death, a respawn) cannot pass for the player's
-/// when another character comes to live at its address.
+/// every tick; one not refreshed within [`LOCAL_FRESH`] is not matched, so a model freed with its
+/// character (a death, a respawn) cannot pass for the player's when another character comes to
+/// live at its address.
 pub(crate) fn set_local_character(character: &Character, now: Instant) {
     let model = character as *const Character as usize + offset_of!(Character, m_AnimatedModel);
     LOCAL_MODEL.store(model, Ordering::Relaxed);
@@ -84,9 +84,8 @@ pub(crate) fn note_act(model: *const AnimatedModel, act: i32) {
 }
 
 /// Whether `model` is the local player's animated model, as published by
-/// [`set_local_character`] within the freshness tuning's `body.procedural_local_ms`. Anything else
-/// is turned away with one atomic load before the clock or a lock is touched, so the act queue may
-/// ask for every model's act.
+/// [`set_local_character`] within [`LOCAL_FRESH`]. Anything else is turned away with one atomic
+/// load before the clock or a lock is touched, so the act queue may ask for every model's act.
 pub(crate) fn is_local_model(model: *const AnimatedModel) -> bool {
     matches_local_address(model) && fresh(&STATE.lock(), Instant::now())
 }
@@ -114,6 +113,10 @@ const HIT_REACTION_HOLD: Duration = Duration::from_millis(1200);
 
 /// How long after the climb's task last ran it still counts as running: a tick or two.
 const TASK_GAP: Duration = Duration::from_millis(100);
+
+/// How long the published local model counts as the player's after it was last refreshed: a few
+/// ticks.
+const LOCAL_FRESH: Duration = Duration::from_millis(250);
 
 /// The acts that start a hit reaction the animation plays out: the stumbles and the knock-back.
 /// The flinch is a partial the body keeps.
@@ -147,9 +150,9 @@ fn matches_local_address(model: *const AnimatedModel) -> bool {
 
 /// Whether the local model was published recently enough to still be the player's.
 fn fresh(state: &State, now: Instant) -> bool {
-    state.local_at.is_some_and(|at| {
-        now.saturating_duration_since(at) <= FRESHNESS.get().body.procedural_local_ms.duration()
-    })
+    state
+        .local_at
+        .is_some_and(|at| now.saturating_duration_since(at) <= LOCAL_FRESH)
 }
 
 /// The runtime ids of [`HIT_REACTION_ACTS`] with their names, resolved once the act table is live.

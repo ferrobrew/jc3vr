@@ -2,12 +2,12 @@
 //! map sees, where the map's cursor sits during a press, and the zoom steps from the off-hand
 //! stick. Pure; the hooks in the parent module feed it one sample per map input dispatch.
 
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use glam::Vec2;
 use jc3vr_input::frame::{Hand, MAX_FRAME_AGE};
 
-use crate::hud::{pointer::RoutedPointer, tuning::HUD};
+use crate::hud::pointer::RoutedPointer;
 
 /// A controller sample that is eligible for native map input.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -41,7 +41,7 @@ pub struct MapDelivery {
     /// press point rather than the ray.
     pub uv: Vec2,
     /// Whether the cursor is held at the primary press point: the press has not wandered past
-    /// the tuning's `map.click_slop_uv`, or this is the release of such a press.
+    /// [`CLICK_SLOP`], or this is the release of such a press.
     pub held_at_press: bool,
     /// The primary button level for this dispatch.
     pub primary: bool,
@@ -111,8 +111,7 @@ pub(crate) struct MapController {
     secondary_held: bool,
     /// The last delivered cursor, once there has been one.
     last_uv: Option<Vec2>,
-    /// Where the held primary press began, while the ray has stayed within the tuning's
-    /// `map.click_slop_uv` of it.
+    /// Where the held primary press began, while the ray has stayed within [`CLICK_SLOP`] of it.
     press_anchor: Option<Vec2>,
     zoom: ZoomRepeat,
     /// When the map last received a delivery or a cancellation.
@@ -257,9 +256,15 @@ pub(crate) fn prepare_delivery(
     }
 }
 
+/// How far, in panel UV, the ray may wander from a primary press before the map sees the cursor
+/// move. The map turns a held press into a drag once its cursor leaves the press point by a few
+/// stage pixels, and a hand-held ray moves further than that from tremor and from the trigger pull
+/// itself, so without the slop nearly every trigger pull would start a drag, and its release would
+/// end the drag instead of selecting.
+pub const CLICK_SLOP: f32 = 0.025;
+
 /// The press point to hold the cursor at for one delivery, if any. A press anchors at its own UV;
-/// a held press keeps the anchor while the ray stays within the tuning's `map.click_slop_uv` of it
-/// ([`MapTuning::click_slop_uv`](crate::hud::tuning::MapTuning::click_slop_uv)) and loses it for
+/// a held press keeps the anchor while the ray stays within [`CLICK_SLOP`] of it and loses it for
 /// good once the ray leaves, which hands the map the live ray and lets it start a drag; a release
 /// is delivered at the anchor it still has, so a click selects where it was pressed even when
 /// letting go of the trigger jerks the ray.
@@ -273,7 +278,7 @@ fn press_anchor(
     if primary_pressed {
         Some(uv)
     } else if primary {
-        anchor.filter(|anchor| anchor.distance(uv) <= HUD.get().map.click_slop_uv)
+        anchor.filter(|anchor| anchor.distance(uv) <= CLICK_SLOP)
     } else if primary_released {
         anchor
     } else {
@@ -281,8 +286,18 @@ fn press_anchor(
     }
 }
 
+/// How far the stick must be pushed to start zooming.
+const ZOOM_ENGAGE: f32 = 0.6;
+/// How far the stick must return before a new push counts; the gap to [`ZOOM_ENGAGE`] is the
+/// hysteresis that keeps a stick resting near the threshold from chattering.
+const ZOOM_RELEASE: f32 = 0.4;
+/// How long a held push waits before it repeats.
+const ZOOM_REPEAT_DELAY: Duration = Duration::from_millis(450);
+/// The interval between repeated steps while the push is held.
+const ZOOM_REPEAT_INTERVAL: Duration = Duration::from_millis(200);
+
 /// Turns a stick axis into discrete zoom steps: one per push, then repeating at a fixed rate while
-/// the push is held (the tuning's `map.zoom_*` keys). The map moves one snapped zoom level per clicked zoom action, so an axis fed
+/// the push is held. The map moves one snapped zoom level per clicked zoom action, so an axis fed
 /// through every dispatch would run through all the levels in a few frames, and stick drift would
 /// pin the map at a limit.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -300,13 +315,12 @@ impl ZoomRepeat {
     }
 
     fn step(&mut self, axis: f32, now: Instant) -> ZoomStep {
-        let tuning = &HUD.get().map;
         let axis = if axis.is_finite() { axis } else { 0.0 };
         let direction = match self.held {
-            ZoomStep::In if axis > tuning.zoom_release => ZoomStep::In,
-            ZoomStep::Out if axis < -tuning.zoom_release => ZoomStep::Out,
-            _ if axis >= tuning.zoom_engage => ZoomStep::In,
-            _ if axis <= -tuning.zoom_engage => ZoomStep::Out,
+            ZoomStep::In if axis > ZOOM_RELEASE => ZoomStep::In,
+            ZoomStep::Out if axis < -ZOOM_RELEASE => ZoomStep::Out,
+            _ if axis >= ZOOM_ENGAGE => ZoomStep::In,
+            _ if axis <= -ZOOM_ENGAGE => ZoomStep::Out,
             _ => ZoomStep::None,
         };
         if direction == ZoomStep::None {
@@ -315,12 +329,12 @@ impl ZoomRepeat {
         }
         if direction != self.held {
             self.held = direction;
-            self.next = Some(now + tuning.zoom_repeat_delay());
+            self.next = Some(now + ZOOM_REPEAT_DELAY);
             return direction;
         }
         match self.next {
             Some(next) if now >= next => {
-                self.next = Some(now + tuning.zoom_repeat_interval());
+                self.next = Some(now + ZOOM_REPEAT_INTERVAL);
                 direction
             }
             _ => ZoomStep::None,
@@ -330,15 +344,9 @@ impl ZoomRepeat {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
-
     use super::*;
 
     const UV: Vec2 = Vec2::new(0.25, 0.5);
-
-    fn click_slop() -> f32 {
-        HUD.get().map.click_slop_uv
-    }
 
     fn sample(hand: Hand, uv: Vec2, primary: bool, zoom_axis: f32) -> Option<ControllerSample> {
         Some(ControllerSample {
@@ -517,7 +525,7 @@ mod tests {
     fn a_press_that_leaves_the_slop_drags_with_the_live_ray() {
         let (mut map, now) = armed();
         map.step(sample(Hand::Right, UV, true, 0.0), now);
-        let far = UV + Vec2::new(click_slop() * 2.0, 0.0);
+        let far = UV + Vec2::new(CLICK_SLOP * 2.0, 0.0);
         let dragging = map.step(sample(Hand::Right, far, true, 0.0), now).unwrap();
         assert_eq!(dragging.uv, far);
         assert!(!dragging.held_at_press);
@@ -535,7 +543,7 @@ mod tests {
         assert_eq!(
             press_anchor(
                 Some(UV),
-                UV + Vec2::new(click_slop() * 0.99, 0.0),
+                UV + Vec2::new(CLICK_SLOP * 0.99, 0.0),
                 true,
                 false,
                 false
@@ -545,7 +553,7 @@ mod tests {
         assert_eq!(
             press_anchor(
                 Some(UV),
-                UV + Vec2::new(click_slop() * 1.01, 0.0),
+                UV + Vec2::new(CLICK_SLOP * 1.01, 0.0),
                 true,
                 false,
                 false
@@ -583,12 +591,8 @@ mod tests {
             zoom.step(0.9, start + Duration::from_millis(16)),
             ZoomStep::None
         );
-        let tuning = &HUD.get().map;
-        assert_eq!(
-            zoom.step(0.9, start + tuning.zoom_repeat_delay()),
-            ZoomStep::In
-        );
-        let repeat = start + tuning.zoom_repeat_delay() + tuning.zoom_repeat_interval();
+        assert_eq!(zoom.step(0.9, start + ZOOM_REPEAT_DELAY), ZoomStep::In);
+        let repeat = start + ZOOM_REPEAT_DELAY + ZOOM_REPEAT_INTERVAL;
         assert_eq!(
             zoom.step(0.9, repeat - Duration::from_millis(1)),
             ZoomStep::None

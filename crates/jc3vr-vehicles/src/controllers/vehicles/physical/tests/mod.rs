@@ -402,7 +402,7 @@ fn grabbing_the_handlebars_off_their_ends_neither_jumps_nor_biases_them() {
         [Some(left), Some(pulled)],
     )
     .unwrap();
-    let drawn = bar_grab_point(&p.bars, &p.config.handlebars, turned, Hand::Left, left);
+    let drawn = bar_grab_point(&p.bars, turned, Hand::Left, left);
     assert!(anchored.distance(drawn) < 1e-4);
     // The drawn hand sits on the turned bars' left half.
     let end = bar_ends(p.bars.centre, p.bars.half_width, turned)[0];

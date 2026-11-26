@@ -19,8 +19,8 @@
 //! untouched, and every correction is scoped to the main cull camera by its exact identity
 //! ([`camera == this + OccluderCollectionManager::CULLING_CAMERA_OFFSET`]) -- shadow and reflection
 //! culls use different functions, and any other
-//! camera through this hook fails the check. See [`widen_main_cull_camera`], the tuning's
-//! [`crate::tuning::CullingTuning::size_cull_fov_deg`], and [`relax_main_view_occlusion`].
+//! camera through this hook fails the check. See [`widen_main_cull_camera`], [`CULL_SIZE_FOV_DEG`],
+//! and [`relax_main_view_occlusion`].
 //!
 //! A second path widens the active camera's projection for callers that pass `m_ActiveCamera` instead
 //! of the cull camera -- `CSpawnSystem::Update` and
@@ -51,8 +51,6 @@ use jc3gi::{
 use jc3vr_view::vr::cull_projection_standard;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::tuning::RENDER;
-
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_static_binder(&GET_BFBC_FRUSTUM_PARAMS_BINDER)
@@ -60,6 +58,14 @@ pub(super) fn hook_library() -> HookLibrary {
         .with_static_binder(&CAMERA_UPDATE_FRUSTUM_BINDER)
         .with_static_binder(&SPAWN_SYSTEM_UPDATE_BINDER)
 }
+
+/// The FOV (degrees) the scene size-cull uses, overriding the mod's injected 90° on the main cull
+/// camera. The engine's screen-space size cull drops an object whose angular size falls below a
+/// threshold that scales with `tan(FOV/2)`, and the injected 90° camera FOV makes it about twice as
+/// aggressive as flat JC3's, dropping small and distant geometry and vehicle sub-meshes at double
+/// the distance. A flatter FOV on the cull camera's size-cull field restores flat-equivalent
+/// density; `0` would leave it untouched.
+const CULL_SIZE_FOV_DEG: f32 = 50.0;
 
 #[detour(
     address = jc3gi::graphics_engine::graphics_engine::OccluderCollectionManager::GetBFBCFrustumParamsForCameraAndTime_ADDRESS
@@ -167,12 +173,14 @@ fn widen_main_cull_camera(camera: *const Camera) {
     stamp_union_projection(camera);
     // Relax the screen-space size cull, which reads `m_FOVT1` and is otherwise ~2x too aggressive under
     // the mod's injected 90 deg FOV -- dropping small/distant geometry and vehicle sub-meshes at double
-    // the distance (see the tuning's `culling.size_cull_fov_deg`). `m_FOVT1` is radians, matching
-    // the injected `context.m_FOV`. Only the size and AO-volume culls read it on the cull camera, so this
-    // leaves the frustum cull and LOD untouched.
-    // SAFETY: `camera` is the live main cull camera; only the `m_FOVT1` field is written.
-    if let Some(cam) = unsafe { (camera as *mut Camera).as_mut() } {
-        cam.m_FOVT1 = RENDER.get().culling.size_cull_fov_deg.to_radians();
+    // the distance (see [`CULL_SIZE_FOV_DEG`]). `m_FOVT1` is radians, matching the injected
+    // `context.m_FOV`. Only the size and AO-volume culls read it on the cull camera, so this leaves the
+    // frustum cull and LOD untouched.
+    if CULL_SIZE_FOV_DEG > 0.0 {
+        // SAFETY: `camera` is the live main cull camera; only the `m_FOVT1` field is written.
+        if let Some(cam) = unsafe { (camera as *mut Camera).as_mut() } {
+            cam.m_FOVT1 = CULL_SIZE_FOV_DEG.to_radians();
+        }
     }
 }
 
@@ -256,14 +264,18 @@ fn camera_update_frustum(this: *mut Camera, transform: *const Matrix4) {
 // highest-despawn-rank object is despawned. Under VR's wider FOV, the despawn rank's view-direction
 // weighting can cause vehicles in front of the player to be despawned when the budget is pressed. This
 // detour patches every budget entry's `m_Budget` field once (via the patcher, so it auto-reverts on
-// uninject), scaling it by the tuning's `culling.spawn_budget_scale`.
+// uninject), doubling it.
 #[detour(address = jc3gi::spawn_system::SpawnSystem::Update_ADDRESS)]
 fn spawn_system_update(this: *mut SpawnSystem) {
     if !BUDGETS_SCALED.swap(true, Ordering::Relaxed) {
-        patch_spawn_budgets(this, RENDER.get().culling.spawn_budget_scale);
+        patch_spawn_budgets(this, SPAWN_BUDGET_SCALE);
     }
     SPAWN_SYSTEM_UPDATE.get().unwrap().call(this);
 }
+
+/// The factor every spawn budget is scaled by, so the wider field of view does not despawn the
+/// vehicles and characters in front of the player.
+const SPAWN_BUDGET_SCALE: f32 = 2.0;
 
 /// Guard so the one-time budget patch only fires on the first `Update` call.
 static BUDGETS_SCALED: AtomicBool = AtomicBool::new(false);

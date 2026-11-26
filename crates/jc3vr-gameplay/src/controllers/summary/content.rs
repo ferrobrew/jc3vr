@@ -8,11 +8,8 @@ use jc3vr_body::controllers::{
 use jc3vr_input::frame::Hand;
 use jc3vr_view::vr::input::semantic::bound::SourceName;
 
-use crate::controllers::{
-    summary::labels::{
-        ActionLabel, HOLD_KEY, ModText, Text, action_label, gesture_prefix, heading, mod_action,
-    },
-    tuning::GAMEPLAY,
+use crate::controllers::summary::labels::{
+    ActionLabel, HOLD_KEY, ModText, Text, action_label, gesture_prefix, heading, mod_action,
 };
 
 /// The labelled summary of one mode.
@@ -173,21 +170,25 @@ pub struct Metrics {
 
 /// The sizes for rows `row_px` tall, within readable bounds.
 pub fn metrics(row_px: f32) -> Metrics {
-    let tuning = &GAMEPLAY.get().summary;
     let row_px = if row_px.is_finite() {
-        row_px.clamp(tuning.min_row_px, tuning.max_row_px)
+        row_px.clamp(MIN_ROW_PX, MAX_ROW_PX)
     } else {
-        tuning.min_row_px
+        MIN_ROW_PX
     };
     Metrics {
-        margin: row_px * tuning.margin_rows,
-        heading_px: row_px * tuning.heading_rows,
-        group_px: row_px * tuning.group_rows,
+        margin: row_px * 0.4,
+        heading_px: row_px * 1.5,
+        group_px: row_px * 0.75,
         row_px,
-        glyph_px: row_px * tuning.glyph_rows,
-        font_px: row_px * tuning.font_rows,
+        glyph_px: row_px * 0.85,
+        font_px: row_px * 0.5,
     }
 }
+
+/// The smallest row the panel stays readable at, pixels.
+pub const MIN_ROW_PX: f32 = 20.0;
+/// The largest row worth drawing, pixels.
+pub const MAX_ROW_PX: f32 = 64.0;
 
 #[cfg(test)]
 mod tests {
@@ -375,15 +376,10 @@ mod tests {
 
     #[test]
     fn metrics_scale_with_the_row_within_readable_bounds() {
-        let tuning = &GAMEPLAY.get().summary;
-        let row = (tuning.min_row_px + tuning.max_row_px) * 0.5;
-        let m = metrics(row);
-        assert_eq!(
-            (m.row_px, m.font_px, m.heading_px),
-            (row, row * tuning.font_rows, row * tuning.heading_rows)
-        );
-        assert_eq!(metrics(1.0).row_px, tuning.min_row_px);
-        assert_eq!(metrics(1000.0).row_px, tuning.max_row_px);
-        assert_eq!(metrics(f32::NAN).row_px, tuning.min_row_px);
+        let m = metrics(32.0);
+        assert_eq!((m.row_px, m.font_px, m.heading_px), (32.0, 16.0, 48.0));
+        assert_eq!(metrics(1.0).row_px, MIN_ROW_PX);
+        assert_eq!(metrics(1000.0).row_px, MAX_ROW_PX);
+        assert_eq!(metrics(f32::NAN).row_px, MIN_ROW_PX);
     }
 }

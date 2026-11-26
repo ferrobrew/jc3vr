@@ -18,7 +18,6 @@
 //!   forward to the gate, so a moving deck carries the planted feet.
 //! - [`seed`]: the geometry of the seeded pose (pure).
 //! - [`config`]: the firm ragdoll's target switch and the contacts' tuning.
-//! - [`tuning`]: the IK body's tuning file.
 //!
 //! The rest of the mod reads [`owns_idle`] (the act filter drops the game's turn-in-place acts
 //! while the IK turns the feet itself) and [`root_target`] (the grounded rig's drive follows the FK
@@ -33,11 +32,10 @@ pub mod gate;
 pub(crate) mod probe;
 pub(crate) mod seed;
 pub(crate) mod support;
-pub mod tuning;
 
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
-use body_rig::{PlayerBody, body::EYES_TO_NECK, ik_weight::IkState};
+use body_rig::{PlayerBody, body::EYES_TO_NECK, fk::FkTuning, ik_weight::IkState};
 use glam::{Quat, Vec2, Vec3};
 use parking_lot::Mutex;
 
@@ -49,13 +47,10 @@ pub(crate) use crate::controllers::body::ik_body::{
     effectors::queue,
     gate::{GateInput, prepare},
 };
-use crate::{
-    controllers::body::{
-        BodyDimensions, estimator,
-        ik_body::{fk::FkInput, gate::GateState, tuning::IK_BODY},
-        rig::grounded,
-    },
-    tuning::FRESHNESS,
+use crate::controllers::body::{
+    BodyDimensions, estimator,
+    ik_body::{fk::FkInput, gate::GateState},
+    rig::grounded,
 };
 
 /// Whether the IK body owns the standing body now: its feet are planted by IK, so the game's
@@ -72,7 +67,7 @@ pub fn root_target() -> Option<Vec2> {
         let state = STATE.lock();
         fresh(&state.status)
             && state.status.state == IkState::Idle
-            && state.status.weights.pelvis_position >= IK_BODY.get().gate.root_follow_weight
+            && state.status.weights.pelvis_position >= ROOT_WEIGHT
     };
     if !owns {
         return None;
@@ -97,7 +92,7 @@ pub(crate) fn frame(eyes: Vec3, head: Quat, dimensions: &BodyDimensions, dt: f32
         standing_neck: grounded::standing_eye_height() + EYES_TO_NECK.y,
         waist: diagnostics.map(|d| d.waist),
         yaw: grounded::body_yaw().unwrap_or(0.0),
-        tuning: IK_BODY.get().fk,
+        tuning: FkTuning::new(),
         dt,
         now,
     };
@@ -138,10 +133,17 @@ pub(crate) fn forget() {
 
 /// Whether the last gate ran recently.
 fn fresh(status: &IkStatus) -> bool {
-    status.at.is_some_and(|at| {
-        Instant::now().saturating_duration_since(at) <= FRESHNESS.get().body.ik_gate_ms.duration()
-    })
+    status
+        .at
+        .is_some_and(|at| Instant::now().saturating_duration_since(at) <= GATE_FRESH)
 }
+
+/// The pelvis position's weight from which the root follows the FK pelvis: past half way into the
+/// standing body, so the step commit keeps the root through the start of the blend.
+const ROOT_WEIGHT: f32 = 0.5;
+
+/// How long after the gate last ran its status still stands: a few ticks.
+const GATE_FRESH: Duration = Duration::from_millis(250);
 
 /// The gate's state. Taken by the gate, the effectors, and the readers of the status; nothing is
 /// locked under it.

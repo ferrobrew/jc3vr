@@ -14,8 +14,6 @@ use jc3gi::input::input_action_map::Action;
 use jc3vr_body::controllers::intent::hold::{Desired, MapKind, Want};
 use jc3vr_grapple::grapple::physical::lock;
 
-use crate::controllers::tuning::GAMEPLAY;
-
 /// Rework `desired` for a hang below a helicopter; returns whether Y was pressed in the hang.
 pub(super) fn step(desired: &mut Vec<Desired>) -> bool {
     let hanging = lock::hangs_under_helicopter();
@@ -49,9 +47,7 @@ fn is_player(desired: &Desired, action: Action) -> bool {
 fn presses(want: Want) -> bool {
     match want {
         Want::Click => true,
-        Want::Hold(value) | Want::Analog(value) => {
-            value.is_finite() && value >= GAMEPLAY.get().bindings.heli_hang.press
-        }
+        Want::Hold(value) | Want::Analog(value) => value.is_finite() && value >= 0.5,
     }
 }
 

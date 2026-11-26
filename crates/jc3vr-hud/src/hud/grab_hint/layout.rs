@@ -4,7 +4,7 @@
 
 use glam::{Vec3, Vec4};
 
-use crate::hud::{grab_hint::paint::ICON_ROW_TEXELS, tuning::HUD};
+use crate::hud::grab_hint::paint::ICON_ROW_TEXELS;
 
 /// The panel's plane, from its world corners.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -34,33 +34,31 @@ pub(crate) fn panel_frame(corners: &[Vec4; 4]) -> Option<PanelFrame> {
 }
 
 /// The corners of each hand's hint, by hand index (left first), from each hint's texture size in
-/// texels (`None` for a hand without a hint), by the tuning's `grab_hint` section. The icons' row of
-/// every hint is `height` of the panel's height tall, so the textures share one scale, and is
-/// centred `drop` of it below the panel's centre, a label's row rising above it. A lone hint is
-/// centred across the panel; two sit apart toward their hands' sides, each centred `spread` of the
-/// panel's height from the middle, or farther when they are too wide for that (`gap` apart at the
-/// least), so it is plain which hand's each is.
+/// texels (`None` for a hand without a hint). The icons' row of every hint is [`HEIGHT`] of the
+/// panel's height tall, so the textures share one scale, and is centred [`DROP`] of it below the
+/// panel's centre, a label's row rising above it. A lone hint is centred across the panel; two sit
+/// apart toward their hands' sides, each centred [`SPREAD`] of the panel's height from the middle,
+/// or farther when they are too wide for that, so it is plain which hand's each is.
 pub(crate) fn hint_corners(
     frame: &PanelFrame,
     sizes: [Option<(u32, u32)>; 2],
 ) -> [Option<[Vec4; 4]>; 2] {
-    let tuning = &HUD.get().grab_hint;
-    let texel = frame.height * tuning.height / ICON_ROW_TEXELS as f32;
+    let texel = frame.height * HEIGHT / ICON_ROW_TEXELS as f32;
     let extents = sizes.map(|size| {
         size.filter(|(w, h)| *w > 0 && *h > 0)
             .map(|(w, h)| (w as f32 * texel, h as f32 * texel))
     });
-    let gap = frame.height * tuning.gap;
+    let gap = frame.height * GAP;
     let offsets = match extents {
         [Some((left, _)), Some((right, _))] => {
             let apart = (left + right) * 0.5 + gap;
-            let half = (frame.height * tuning.spread).max(apart * 0.5);
+            let half = (frame.height * SPREAD).max(apart * 0.5);
             [-half, half]
         }
         _ => [0.0; 2],
     };
-    let icon_row = frame.height * tuning.height;
-    let row = frame.centre - frame.up * (frame.height * tuning.drop);
+    let icon_row = frame.height * HEIGHT;
+    let row = frame.centre - frame.up * (frame.height * DROP);
     let mut corners = [None; 2];
     for (slot, (extent, offset)) in corners.iter_mut().zip(extents.into_iter().zip(offsets)) {
         let Some((width, height)) = extent else {
@@ -82,14 +80,23 @@ pub(crate) fn hint_corners(
     corners
 }
 
+/// The height of a hint's icons' row, as a share of the panel's height.
+const HEIGHT: f32 = 0.11;
+
+/// How far below the panel's centre the icons' row sits, as a share of the panel's height, clear
+/// of the reticle.
+const DROP: f32 = 0.2;
+
+/// The least gap between two hints, as a share of the panel's height.
+const GAP: f32 = 0.03;
+
+/// How far from the panel's middle each of two hints is centred, as a share of the panel's height:
+/// about a quarter of a 16:9 panel's width.
+const SPREAD: f32 = 0.45;
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::hud::tuning::GrabHintTuning;
-
-    fn tuning() -> &'static GrabHintTuning {
-        &HUD.get().grab_hint
-    }
 
     fn frame() -> PanelFrame {
         // A panel 2 m tall, 3 m in front, facing the origin.
@@ -133,11 +140,11 @@ mod tests {
             let quad = corners.iter().flatten().next().unwrap();
             let c = centre(quad);
             assert!(c.x.abs() < 1e-6);
-            assert!((c.y + 2.0 * tuning().drop).abs() < 1e-6);
+            assert!((c.y + 2.0 * DROP).abs() < 1e-6);
             assert_eq!(c.z, -3.0);
             let height = (quad[0] - quad[2]).length();
             let width = (quad[1] - quad[0]).length();
-            assert!((height - 2.0 * tuning().height).abs() < 1e-6);
+            assert!((height - 2.0 * HEIGHT).abs() < 1e-6);
             assert!((width - 2.0 * height).abs() < 1e-2);
         }
     }
@@ -152,8 +159,8 @@ mod tests {
         let quad = quad.unwrap();
         let bottom = quad[2].y;
         let top = quad[0].y;
-        let row_height = 2.0 * tuning().height;
-        assert!((bottom - (-2.0 * tuning().drop - row_height * 0.5)).abs() < 1e-5);
+        let row_height = 2.0 * HEIGHT;
+        assert!((bottom - (-2.0 * DROP - row_height * 0.5)).abs() < 1e-5);
         assert!((top - bottom - row_height * 1.5).abs() < 1e-5);
     }
 
@@ -162,9 +169,9 @@ mod tests {
         let frame = frame();
         let [left, right] = hint_corners(&frame, [size(2.0, 0), size(2.4, 0)]);
         let (left, right) = (left.unwrap(), right.unwrap());
-        assert!((centre(&left).x + 2.0 * tuning().spread).abs() < 1e-5);
-        assert!((centre(&right).x - 2.0 * tuning().spread).abs() < 1e-5);
-        assert!(right[0].x - left[1].x >= 2.0 * tuning().gap - 1e-5);
+        assert!((centre(&left).x + 2.0 * SPREAD).abs() < 1e-5);
+        assert!((centre(&right).x - 2.0 * SPREAD).abs() < 1e-5);
+        assert!(right[0].x - left[1].x >= 2.0 * GAP - 1e-5);
     }
 
     #[test]
@@ -174,7 +181,7 @@ mod tests {
         let (left, right) = (left.unwrap(), right.unwrap());
         assert!(centre(&left).x < 0.0 && centre(&right).x > 0.0);
         let gap = right[0].x - left[1].x;
-        assert!((gap - 2.0 * tuning().gap).abs() < 1e-4, "{gap}");
+        assert!((gap - 2.0 * GAP).abs() < 1e-4, "{gap}");
         assert!((left[0].x + right[1].x).abs() < 1e-4);
     }
 

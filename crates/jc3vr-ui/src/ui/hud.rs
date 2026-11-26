@@ -77,7 +77,7 @@ pub(crate) fn status(ui: &mut egui::Ui) {
     ui.label(format!(
         "Live: {:.2} m (rests at {:.1} m while nothing is aimed at)",
         aim::smoothed(),
-        aim::rest_distance(),
+        aim::REST_DISTANCE,
     ));
     ui.separator();
     ui.heading("World markers");

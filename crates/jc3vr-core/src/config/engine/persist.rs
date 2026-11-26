@@ -1,15 +1,15 @@
 //! Loading the settings file at startup and saving it as the user changes settings.
 //!
-//! The save has explicit write points: an edit ([`crate::config::engine::ConfigSlot::edit`]) marks
-//! the configuration changed ([`note_edit`]), and the game thread's per-frame [`tick`] saves once
-//! the changes settle (the core tuning's `settings_save`), at most a few seconds after the first
-//! unsaved one so that a control held through every frame (an open debug UI tab edits each frame)
-//! still saves. A save serializes a snapshot (the settings that differ from their defaults,
-//! [`format::to_text`]) and compares it with the text the file was last given; only a difference is
-//! written, by a short-lived writer thread, so the frame never waits on the disk. Writes are
-//! serialized and numbered: a writer that finds a newer save already written skips its own. A
-//! failed save is retried after a backoff that grows with each failure, without waiting for another
-//! change. [`shutdown`] flushes a pending save, and one that failed.
+//! The save has explicit write points: an edit ([`crate::config::engine::ConfigSlot::edit`]) marks the configuration changed
+//! ([`note_edit`]), and the game thread's per-frame [`tick`] saves once the changes settle, at
+//! most [`MAX_DELAY`] after the first unsaved one so that a control held through every frame (an
+//! open debug UI tab edits each frame) still saves. A save serializes a snapshot (the settings
+//! that differ from their defaults, [`format::to_text`]) and compares it with the text the file
+//! was last given; only a difference is written, by a short-lived writer thread, so the frame
+//! never waits on the disk. Writes are serialized and numbered: a writer that
+//! finds a newer save already written skips its own. A failed save is retried after a backoff
+//! that grows with each failure, without waiting for another change. [`shutdown`] flushes a
+//! pending save, and one that failed.
 //!
 //! A file of format zero is rewritten in the current format on the first tick, without waiting for
 //! a change, so that its upgrade runs once and a default changed later reaches every setting the
@@ -31,15 +31,12 @@ use std::{
 
 use parking_lot::Mutex;
 
-use crate::{
-    config::engine::{
-        automatic,
-        format::{self, Format},
-        load, paths,
-        store::{self, Root, Schema},
-        write::{self, WriteError},
-    },
-    core_tuning::CORE,
+use crate::config::engine::{
+    automatic,
+    format::{self, Format},
+    load, paths,
+    store::{self, Root, Schema},
+    write::{self, WriteError},
 };
 
 /// The state of the settings file, for a readout.
@@ -179,6 +176,22 @@ pub fn status() -> SaveStatus {
         changed: EDITS.lock().pending() && !saver.unchanged,
     })
 }
+
+/// How long the changes must be quiet before a save.
+const QUIET: Duration = Duration::from_secs(1);
+
+/// The longest a change waits for the changes after it to settle.
+const MAX_DELAY: Duration = Duration::from_secs(5);
+
+/// How long the first retry of a failed save waits. Each further failure doubles it, up to
+/// [`RETRY_MAX`].
+const RETRY_FIRST: Duration = Duration::from_secs(2);
+
+/// The longest a retry of a failed save waits.
+const RETRY_MAX: Duration = Duration::from_secs(60);
+
+/// How often a change that has not settled is compared with the file, for [`status`].
+const COMPARE_INTERVAL: Duration = Duration::from_secs(1);
 
 /// How long shutdown waits for the writers.
 const SHUTDOWN_BUDGET: Duration = Duration::from_secs(10);
@@ -357,27 +370,21 @@ fn status_of(inputs: StatusInputs) -> SaveStatus {
 #[derive(Debug)]
 struct Retry {
     at: Option<Instant>,
-    /// How long the next retry waits, or `None` before the first failure, whose retry waits the
-    /// tuning's first delay.
-    delay: Option<Duration>,
+    delay: Duration,
 }
 
 impl Retry {
     const fn new() -> Self {
         Self {
             at: None,
-            delay: None,
+            delay: RETRY_FIRST,
         }
     }
 
     /// Schedule a retry after a failure at `now`.
     fn fail(&mut self, now: Instant) {
-        let tuning = &CORE.get().settings_save;
-        let delay = self
-            .delay
-            .unwrap_or(Duration::from_millis(tuning.retry_first_ms));
-        self.at = Some(now + delay);
-        self.delay = Some((delay * 2).min(Duration::from_millis(tuning.retry_max_ms)));
+        self.at = Some(now + self.delay);
+        self.delay = (self.delay * 2).min(RETRY_MAX);
     }
 
     /// Forget the failures after a save succeeds.
@@ -427,11 +434,9 @@ impl Edits {
 
     /// Clear the changes and return `true` when a save is due at `now`.
     fn take_if_due(&mut self, now: Instant) -> bool {
-        let tuning = &CORE.get().settings_save;
         let due = match (self.first, self.last) {
             (Some(first), Some(last)) => {
-                now.duration_since(last) >= Duration::from_millis(tuning.quiet_ms)
-                    || now.duration_since(first) >= Duration::from_millis(tuning.max_delay_ms)
+                now.duration_since(last) >= QUIET || now.duration_since(first) >= MAX_DELAY
             }
             _ => false,
         };
@@ -489,10 +494,8 @@ impl Saver {
 
     /// Whether a change that has not settled is due a comparison with the file at `now`.
     fn comparison_due(&self, now: Instant) -> bool {
-        self.compared.is_none_or(|compared| {
-            now.duration_since(compared)
-                >= Duration::from_millis(CORE.get().settings_save.compare_interval_ms)
-        })
+        self.compared
+            .is_none_or(|compared| now.duration_since(compared) >= COMPARE_INTERVAL)
     }
 
     /// Hand `text` to a writer thread, unless the file already holds it.
@@ -793,25 +796,19 @@ mod tests {
         tests::{SAMPLE, Sample},
     };
 
-    fn retry_first() -> Duration {
-        Duration::from_millis(CORE.get().settings_save.retry_first_ms)
-    }
-
-    fn retry_max() -> Duration {
-        Duration::from_millis(CORE.get().settings_save.retry_max_ms)
-    }
-
     #[test]
     fn a_retry_waits_and_backs_off_up_to_the_cap() {
-        let (first, max) = (retry_first(), retry_max());
         let start = Instant::now();
         let mut retry = Retry::new();
-        assert!(!retry.take_if_due(start + max * 10));
+        assert!(!retry.take_if_due(start + RETRY_MAX * 10));
 
         retry.fail(start);
-        assert!(!retry.take_if_due(start + first / 2));
-        assert!(retry.take_if_due(start + first));
-        assert!(!retry.take_if_due(start + first), "a retry is taken once");
+        assert!(!retry.take_if_due(start + RETRY_FIRST / 2));
+        assert!(retry.take_if_due(start + RETRY_FIRST));
+        assert!(
+            !retry.take_if_due(start + RETRY_FIRST),
+            "a retry is taken once"
+        );
 
         let mut now = start;
         let mut last_delay = Duration::ZERO;
@@ -819,16 +816,20 @@ mod tests {
             retry.fail(now);
             let at = retry.at.expect("a failure schedules a retry");
             let delay = at - now;
-            assert!(delay >= last_delay && delay <= max);
+            assert!(delay >= last_delay && delay <= RETRY_MAX);
             last_delay = delay;
             now = at;
             assert!(retry.take_if_due(now));
         }
-        assert_eq!(last_delay, max);
+        assert_eq!(last_delay, RETRY_MAX);
 
         retry.succeed();
         retry.fail(now);
-        assert_eq!(retry.at, Some(now + first), "a success resets the backoff");
+        assert_eq!(
+            retry.at,
+            Some(now + RETRY_FIRST),
+            "a success resets the backoff"
+        );
     }
 
     fn inputs() -> StatusInputs {
@@ -954,8 +955,7 @@ mod tests {
         let mut saver = Saver::new();
         assert!(saver.comparison_due(start));
         saver.compared = Some(start);
-        let interval = Duration::from_millis(CORE.get().settings_save.compare_interval_ms);
-        assert!(!saver.comparison_due(start + interval / 2));
-        assert!(saver.comparison_due(start + interval));
+        assert!(!saver.comparison_due(start + COMPARE_INTERVAL / 2));
+        assert!(saver.comparison_due(start + COMPARE_INTERVAL));
     }
 }

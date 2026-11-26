@@ -106,11 +106,11 @@ impl<T: Tuning> TuningFile<T> {
     #[cold]
     #[inline(never)]
     fn unpublished(&'static self) -> &'static T {
-        #[cfg(any(test, feature = "test-support"))]
+        #[cfg(feature = "test-support")]
         {
             self.load_for_tests()
         }
-        #[cfg(not(any(test, feature = "test-support")))]
+        #[cfg(not(feature = "test-support"))]
         {
             panic!(
                 "tuning: {}: read before startup loaded the tuning",
@@ -121,7 +121,7 @@ impl<T: Tuning> TuningFile<T> {
 
     /// Loads the file from the source tree and publishes it, for tests, which read the tuning the
     /// repository holds without a startup.
-    #[cfg(any(test, feature = "test-support"))]
+    #[cfg(feature = "test-support")]
     fn load_for_tests(&'static self) -> &'static T {
         let path = crate::tuning::Source::SourceTree
             .path(&self.location, Path::new(""))

@@ -1,6 +1,6 @@
 //! Synthetic head-frame capture at the pre-IK publication seam.
 
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use glam::{Mat4, Quat, Vec3};
 use jc3gi::{
@@ -13,8 +13,6 @@ use jc3vr_view::headpose::{
     animation::{RotationFilter, eye_arm, head_frame, synthetic_rotation},
 };
 use parking_lot::Mutex;
-
-use crate::tuning::FRESHNESS;
 
 /// All gameplay modes share this history. A mode switch does not reseed the view from a transient
 /// entry pose; pause, tracking loss, recenter, teleport, and skeleton changes break continuity.
@@ -38,10 +36,9 @@ pub(super) fn capture(
         && state
             .context
             .is_some_and(|previous| previous.continuous(context))
-        && state.at.is_some_and(|at| {
-            now.saturating_duration_since(at)
-                <= FRESHNESS.get().hooks.body_ik_animation_gap_ms.duration()
-        });
+        && state
+            .at
+            .is_some_and(|at| now.saturating_duration_since(at) <= MAX_GAP);
     if !continuous {
         state.filter.clear();
     }
@@ -109,6 +106,7 @@ struct State {
     filter: RotationFilter,
 }
 
+const MAX_GAP: Duration = Duration::from_millis(250);
 const MAX_ROOT_STEP_M: f32 = 10.0;
 static STATE: Mutex<State> = Mutex::new(State {
     identity: None,

@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 
 use body_rig::{
     angle::{line_yaw, wrap, yaw_of},
+    brace::BraceTuning,
     contact::{
         ContactEvent, ContactFrame, FootContacts, FootPose, FootTarget, Handover, Probe, Side,
         Stance, StepRate, SupportFrame, SupportId, Surroundings,
@@ -34,7 +35,6 @@ use crate::controllers::{
             probe,
             seed::{self, ModelBody, Proportions},
             support,
-            tuning::IK_BODY,
         },
         procedural::{
             authority::Case,
@@ -550,10 +550,9 @@ pub(crate) fn prepare(input: &GateInput<'_>) -> Prepared {
             input.now,
         );
     }
-    let tuning = &IK_BODY.get().gate;
     let weights = state
         .blend
-        .step(target.weights(tuning.walk_weight), input.dt, tuning.blend_s);
+        .step(target.weights(WALK_WEIGHT), input.dt, BLEND_S);
     state.status.state = target;
     state.status.stand_down = reason;
     state.status.weights = weights;
@@ -607,7 +606,7 @@ pub(crate) fn prepare(input: &GateInput<'_>) -> Prepared {
         ],
         model_feet.map(|foot| foot.map(|pose| pose.ankle)),
         geometry.rico.leg,
-        tuning.max_pelvis_drop_m,
+        MAX_PELVIS_DROP_M,
     );
     let pose = seed::seed(input.animated, &geometry.body, &weights, drop);
     state.status.pelvis_drop_m = drop * weights.feet;
@@ -626,7 +625,7 @@ pub(crate) fn prepare(input: &GateInput<'_>) -> Prepared {
     let air = (weights.air_legs > 0.0)
         .then(|| seed::ik_frame(&geometry.body))
         .flatten()
-        .map(|frame| seed::air_legs(&geometry.body, frame, geometry.rico.leg, tuning.air_relax));
+        .map(|frame| seed::air_legs(&geometry.body, frame, geometry.rico.leg, AIR_RELAX));
     // The knees hint along the estimate's thighs, or the air pose's in the air, from the seeded
     // hips at Rico's thigh length.
     let thigh_knees = air.map_or(geometry.body.knees, |[_, knees]| knees);
@@ -653,9 +652,7 @@ pub(crate) fn prepare(input: &GateInput<'_>) -> Prepared {
             ankle_height_m: geometry.rico.ankle_height,
             toe_height_m: geometry.rico.toe_height,
         };
-        state
-            .climb
-            .step(&legs, &IK_BODY.get().brace, input.dt, input.now)
+        state.climb.step(&legs, &BRACE, input.dt, input.now)
     } else {
         [None; 2]
     };
@@ -685,12 +682,7 @@ fn ragdoll_legs(input: &GateInput<'_>, fk: &FkPose) -> Option<IkLegs> {
     }
     let geometry = Geometry::of(input, fk);
     let frame = seed::ik_frame(&geometry.body)?;
-    let [ankles, knees] = seed::air_legs(
-        &geometry.body,
-        frame,
-        geometry.rico.leg,
-        IK_BODY.get().gate.air_relax,
-    );
+    let [ankles, knees] = seed::air_legs(&geometry.body, frame, geometry.rico.leg, AIR_RELAX);
     Some(IkLegs {
         hips: geometry.body.hips,
         knees,
@@ -728,7 +720,7 @@ fn classify(
                 } else {
                     held.still_s = 0.0;
                 }
-                if held.still_s < IK_BODY.get().gate.resume_s {
+                if held.still_s < RESUME_S {
                     return (IkState::Walk, Some(StandDown::HandedOver(held.why)));
                 }
                 *hold = None;
@@ -819,7 +811,6 @@ impl RicoMeasures {
         let ankle = at(RigBone::LeftFoot);
         let toe = at(RigBone::LeftToeBase);
         let foot = Vec2::new(toe.x - ankle.x, toe.z - ankle.z).length();
-        let toe_height = IK_BODY.get().gate.toe_height_m;
         let valid = |v: f32, fallback: f32, min: f32, max: f32| {
             if v.is_finite() && (min..=max).contains(&v) {
                 v
@@ -837,11 +828,29 @@ impl RicoMeasures {
             leg: valid(thigh + shin, 0.85, 0.4, 1.4),
             thigh: valid(thigh, 0.42, 0.2, 0.7),
             foot: valid(foot, 0.14, 0.05, 0.3),
-            ankle_height: valid(ankle.y - toe.y + toe_height, 0.09, 0.04, 0.16),
-            toe_height,
+            ankle_height: valid(ankle.y - toe.y + TOE_HEIGHT_M, 0.09, 0.04, 0.16),
+            toe_height: TOE_HEIGHT_M,
         }
     }
 }
+
+/// The IK pose's share of the pelvis's turn and the spine on the walk.
+const WALK_WEIGHT: f32 = 0.2;
+/// How long a hand-over between the IK pose and a clip takes, seconds.
+const BLEND_S: f32 = 0.25;
+/// How long after a hand-over to the walk the IK waits before it takes the standing body back,
+/// seconds, once Rico stands still again.
+const RESUME_S: f32 = 0.4;
+/// The furthest the pelvis is lowered so that the planted feet stay within the legs' reach,
+/// metres.
+const MAX_PELVIS_DROP_M: f32 = 0.2;
+/// In the air, the share of the way from the estimate's legs to the light air pose.
+const AIR_RELAX: f32 = 0.5;
+/// The climbing feet's braces.
+const BRACE: BraceTuning = BraceTuning::new();
+
+/// The toe joint's height over the ground, metres: a generic anthropometric figure.
+const TOE_HEIGHT_M: f32 = 0.025;
 
 /// How often the standing body's state is logged while it lasts.
 const STANDING_LOG: Duration = Duration::from_secs(10);

@@ -77,18 +77,13 @@ fn a_fast_bank_that_stays_shallow_never_throws() {
 fn a_throw_holds_its_direction_then_lets_go() {
     let mut recognizer = EvadeRecognizer::default();
     let mut held = swing(&mut recognizer, 0.0, 70.0, 0.1);
-    held.extend(swing(
-        &mut recognizer,
-        70.0,
-        0.0,
-        config().direction_hold_s + 0.1,
-    ));
+    held.extend(swing(&mut recognizer, 70.0, 0.0, DIRECTION_HOLD_S + 0.1));
     let holding = held
         .iter()
         .skip_while(|outcome| !matches!(outcome, Outcome::Throw(_)))
         .filter(|outcome| matches!(outcome, Outcome::Holding(_)))
         .count();
-    let expected = (config().direction_hold_s / DT) as usize;
+    let expected = (DIRECTION_HOLD_S / DT) as usize;
     assert!(holding.abs_diff(expected) <= 1, "{holding} vs {expected}");
     assert_eq!(held.last(), Some(&Outcome::Idle));
 }

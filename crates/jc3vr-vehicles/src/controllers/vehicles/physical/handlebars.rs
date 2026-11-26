@@ -147,20 +147,20 @@ pub fn bar_ends(centre: Vec3, half_width: f32, turn: f32) -> [Vec3; 2] {
 
 /// Where `hand`'s grip at `point` grabs the bars turned by `turn`: the nearest point on the hand's
 /// half of the bars, from near the middle to a little past the end, so a hand that reaches for the
-/// grip a hand's width off it still takes the bars, as `spec` bounds the half.
-pub(super) fn bar_grab_point(
-    bars: &BarsFrame,
-    spec: &HandlebarsSpec,
-    turn: f32,
-    hand: Hand,
-    point: Vec3,
-) -> Vec3 {
+/// grip a hand's width off it still takes the bars.
+pub(super) fn bar_grab_point(bars: &BarsFrame, turn: f32, hand: Hand, point: Vec3) -> Vec3 {
     let end = bar_ends(bars.centre, bars.half_width, turn)[hand.index()];
     let outward = end - bars.centre;
     let along = (point - bars.centre).dot(outward) / outward.length_squared().max(1e-6);
     let along = if along.is_finite() { along } else { 1.0 };
-    bars.centre + outward * along.clamp(spec.grab_from_middle, spec.grab_past_end)
+    bars.centre + outward * along.clamp(GRAB_FROM_MIDDLE, GRAB_PAST_END)
 }
+
+/// The share of the half width from the middle where a hand's half of the bars starts to grab.
+const GRAB_FROM_MIDDLE: f32 = 0.35;
+
+/// The share of the half width from the middle to where a hand's half of the bars stops grabbing.
+const GRAB_PAST_END: f32 = 1.15;
 
 fn lock(spec: &HandlebarsSpec) -> f32 {
     spec.max_steer_deg.to_radians().abs().max(1e-3)

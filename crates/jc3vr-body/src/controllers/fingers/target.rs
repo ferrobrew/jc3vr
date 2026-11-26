@@ -134,11 +134,7 @@ const RELEASED_SHARE: f32 = 1e-3;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::controllers::fingers::tuning::FINGERS_TUNING;
-
-    fn fingers() -> FingerTuning {
-        FINGERS_TUNING.get().curls
-    }
+    use crate::controllers::fingers::tuning::FINGERS;
 
     fn inputs<'a>(
         config: &'a FingerTuning,
@@ -158,7 +154,7 @@ mod tests {
 
     #[test]
     fn a_free_hand_keeps_its_measured_curls() {
-        let config = fingers();
+        let config = FINGERS;
         let measured = FingerCurls {
             curl: [0.3; 5],
             splay: [0.0; 5],
@@ -173,7 +169,7 @@ mod tests {
 
     #[test]
     fn a_hold_eases_the_pose_in_and_a_release_eases_it_out() {
-        let config = fingers();
+        let config = FINGERS;
         let measured = FingerCurls::default();
         let hand = HandInputs::default();
         let wheel = Some(Grip::new(GripSource::Wheel));
@@ -201,7 +197,7 @@ mod tests {
 
     #[test]
     fn a_light_grip_takes_part_of_the_pose() {
-        let mut config = fingers();
+        let mut config = FINGERS;
         config.grip.blend_s = 0.0;
         let measured = FingerCurls::default();
         let mut hand = HandInputs::default();
@@ -218,7 +214,7 @@ mod tests {
 
     #[test]
     fn a_fit_replaces_the_posed_curl() {
-        let mut config = fingers();
+        let mut config = FINGERS;
         config.grip.blend_s = 0.0;
         let measured = FingerCurls::default();
         let hand = HandInputs {

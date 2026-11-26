@@ -55,9 +55,16 @@ use crate::{
         pointer,
         quad::{HudQuad, compute_cursor_corners, compute_world_corners},
         target::HudTarget,
-        tuning::HUD,
     },
 };
+
+/// How far in front of the head the panel is placed when it is summoned, in meters. The panel's
+/// physical size is the one that gives it the apparent size [`SCALE`] at this distance.
+const SUMMON_DISTANCE: f32 = 2.5;
+
+/// Apparent-size multiplier for the panel at the summoning distance; `1.0` is the comfortable
+/// baseline (see [`crate::hud::panel_height`]).
+const SCALE: f32 = 0.85;
 
 /// The panel pipeline and per-frame cache. Locked briefly on the render thread (and, for the SRV
 /// handoff, on the game thread from the mirror).
@@ -244,18 +251,17 @@ impl EguiPanelState {
         let Some(camera) = rendered_camera() else {
             return;
         };
-        let tuning = &HUD.get().egui_panel;
         let held = slot::grabbing().and_then(|hand| Some((hand, latest_aim(hand)?)));
         let pose = slot::resolve(ResolveInput {
             head: camera.cockpit_head,
-            distance: tuning.summon_distance_m,
+            distance: SUMMON_DISTANCE,
             held,
             recenters: jc3vr_view::vr::recenter_count(),
         });
         let aspect = cfg.aspect.max(f32::EPSILON);
         // The panel's physical size is the size that gives the configured apparent size at the
         // summoning distance, so pushing it away shrinks it in view as a real window would.
-        let panel_height = crate::hud::panel_height(tuning.scale, tuning.summon_distance_m, aspect);
+        let panel_height = crate::hud::panel_height(SCALE, SUMMON_DISTANCE, aspect);
         let params = world_panel(&camera, pose, panel_height, aspect);
         self.cached_corners = compute_world_corners(&params);
         publish_egui_panel(self.cached_corners.map(|corners| RenderedPanel {

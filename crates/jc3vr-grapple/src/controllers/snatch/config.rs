@@ -1,19 +1,8 @@
-//! The grapple snatch's tuning, read from the shipped `tuning/snatch.toml` ([`SNATCH`]), and the
-//! settings one snatch tick reads.
+//! The grapple snatch's fixed tuning.
 
 use jc3vr_body::controllers::{intent::yank::YankConfig, overlay::config::OverlayConfig};
-use jc3vr_core::{
-    config::engine::{Invalid, nonnegative, positive, range},
-    tuning::Tuning,
-};
-use serde::Deserialize;
 
 use crate::controllers::snatch::landing::LandingTuning;
-
-jc3vr_core::tuning_file! {
-    /// The grapple snatch's tuning file.
-    pub static SNATCH: SnatchTuning = "snatch.toml";
-}
 
 /// The settings one snatch tick reads: the fields of the groups it consults. The bindings fill it
 /// from the snapshot of the settings they take for the tick.
@@ -24,37 +13,17 @@ pub struct SnatchSettings {
 }
 
 /// The yank that fires the snatch, measured along the grapple hand's aim at the grip edge
-/// ([`reach_along`](jc3vr_body::controllers::intent::yank::reach_along)), from the tuning's
-/// [`yank`](SnatchTuning::yank).
-pub fn snatch_yank() -> YankConfig {
-    let yank = &SNATCH.get().yank;
-    YankConfig {
-        enabled: true,
-        min_distance_m: yank.min_distance_m,
-        min_speed_mps: yank.min_speed_mps,
-        window_s: yank.window_s,
-        cooldown_s: yank.cooldown_s,
-    }
-}
+/// ([`reach_along`](jc3vr_body::controllers::intent::yank::reach_along)).
+pub const SNATCH_YANK: YankConfig = YankConfig {
+    enabled: true,
+    min_distance_m: 0.1,
+    min_speed_mps: 0.7,
+    window_s: 0.25,
+    cooldown_s: 0.5,
+};
 
-/// The yank that fires the snatch (see [`YankConfig`]).
-#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct SnatchYankTuning {
-    /// The shortest pull back along the aim that counts, metres.
-    pub min_distance_m: f32,
-    /// The slowest average speed of the pull that counts, metres per second.
-    pub min_speed_mps: f32,
-    /// How far back the pull is measured from, seconds.
-    pub window_s: f32,
-    /// How long after a yank before another can count, seconds.
-    pub cooldown_s: f32,
-}
-
-/// The held line's tuning: the swing of a heavy object, and of a weapon or a light object while B
-/// is held (`controllers::snatch::sling`).
-#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
-#[serde(deny_unknown_fields)]
+/// The held line's tuning, fixed at [`SWING`].
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct SwingTuning {
     /// The heaviest loose object the snatch offers, kilograms. One a hand can carry is pulled into
     /// the hand; one heavier, up to this, is swung on the line and never comes to the hand.
@@ -64,12 +33,10 @@ pub struct SwingTuning {
     pub stiffness_per_s2: f32,
     /// The line's damping of the target's speed away from the hand, per second.
     pub damping_per_s: f32,
-    /// The most tension the line holds on a target of
-    /// [`reference_mass_kg`](Self::reference_mass_kg), newtons.
+    /// The most tension the line holds on a target of [`REFERENCE_MASS_KG`], newtons.
     pub strength_n: f32,
     /// How the line's strength grows with the target's mass, `0..=1`: the strength is
-    /// [`strength_n`](Self::strength_n) times the mass over
-    /// [`reference_mass_kg`](Self::reference_mass_kg) to this power
+    /// [`strength_n`](Self::strength_n) times the mass over [`REFERENCE_MASS_KG`] to this power
     /// (`line_strength_n`). At 1 every mass
     /// swings alike; at 0 the line pulls every mass equally hard, so a heavy one barely moves.
     pub mass_scaling: f32,
@@ -84,48 +51,26 @@ pub struct SwingTuning {
     /// on toward the hand until friction, gravity, or a swing takes it; zero keeps the length the
     /// hook bit at.
     pub reel_mps: f32,
-    /// The mass the line's [`strength_n`](Self::strength_n) is given at, kilograms.
-    pub reference_mass_kg: f32,
-    /// How far inside the target the reel may take the line in, metres: at the default stiffness,
-    /// a pull of about the strength of any line up to a few hundred kilograms.
-    pub reel_lead_m: f32,
-    /// How far the target may be stretched past the held length before the line breaks, metres.
-    pub max_stretch_m: f32,
-    /// The line's anchor moving faster than this is a jump of the hand's tracking, not a swing,
-    /// metres per second: the step is refused.
-    pub max_anchor_speed_mps: f32,
 }
 
-/// A ragdoll's line: reeled in hard toward the grapple hand, not swung.
-#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct RagdollYankTuning {
-    /// The length the line reels in to, metres: about an arm's reach from the grapple hand.
-    pub length_m: f32,
-    /// How fast the line reels in, metres per second: a yank, not the swing's draw.
-    pub mps: f32,
-    /// How fast the reel slows toward its length, per second: the reel's speed is what is left of
-    /// the line times this, between the swing's reel and [`mps`](Self::mps), so a body bitten far
-    /// off comes at the yank's speed and eases in over its last two metres.
-    pub ease_per_s: f32,
-}
+/// The held line's tuning: the swing of a heavy object, and of a weapon or a light object while B
+/// is held (`controllers::snatch::sling`).
+pub const SWING: SwingTuning = SwingTuning {
+    ceiling_kg: 300.0,
+    stiffness_per_s2: 400.0,
+    damping_per_s: 30.0,
+    strength_n: 1500.0,
+    mass_scaling: 0.5,
+    brace_factor: 1.75,
+    swing_length_m: 3.0,
+    reel_mps: 4.0,
+};
 
-/// A gun tossed to the player's feet when no hand can catch it.
-#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct TossTuning {
-    /// Where the gun lands, metres in front of the player toward where it came from.
-    pub land_m: f32,
-    /// The toss's speed over the ground, metres per second.
-    pub speed_mps: f32,
-    /// The toss's shortest and longest flight, seconds.
-    pub min_flight_s: f32,
-    pub max_flight_s: f32,
-}
+/// The mass the line's [`strength_n`](SwingTuning::strength_n) is given at, kilograms.
+pub const REFERENCE_MASS_KG: f32 = 10.0;
 
-/// The grapple snatch's tuning file's root.
-#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
-#[serde(deny_unknown_fields)]
+/// The grapple snatch's tuning, fixed at [`SNATCH`].
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct SnatchTuning {
     /// How near the grapple hand's wrist the other hand's wrist must be for its grip to brace it,
     /// metres.
@@ -209,146 +154,55 @@ pub struct SnatchTuning {
     /// How a snatched gun is steered into the pose the catching hand will hold it in over its
     /// final approach.
     pub landing: LandingTuning,
-    /// How long a target aimed at just before the grip closes is still offered to it, seconds:
-    /// covers a short aim miss at the grip edge without offering an old target indefinitely.
-    pub retain_s: f32,
-    /// The extra angular tolerance while retaining a recent aimed identity across a grip press,
-    /// degrees.
-    pub retain_cone_deg: f32,
-    /// How far short of a gun on a character its line of sight may be blocked, metres: the line
-    /// ends inside the character.
-    pub sight_tolerance_m: f32,
-    /// How near the attach point the engine's attachment proxy's visual position may be for the
-    /// hook to count as on the selected body, metres.
-    pub attach_tolerance_m: f32,
-    /// How far past the hook's end the impact cast reaches, metres: the end sits on the target's
-    /// surface or inside it.
-    pub impact_overshoot_m: f32,
-    /// How long the watch follows a caught weapon, milliseconds.
-    pub watch_ms: u64,
-    /// How many times the stall window ([`stall_window_s`](Self::stall_window_s)) a placed charge
-    /// has before it counts as snagged.
-    pub charge_stall_scale: f32,
-    /// The yank that fires the snatch.
-    pub yank: SnatchYankTuning,
-    /// The held line.
-    pub swing: SwingTuning,
-    /// A ragdoll's line.
-    pub ragdoll: RagdollYankTuning,
-    /// A gun tossed to the player's feet.
-    pub toss: TossTuning,
 }
 
-impl Tuning for SnatchTuning {
-    fn validate(&self) -> Result<(), Invalid> {
-        nonnegative("brace_take_m", self.brace_take_m, 1.0)?;
-        range("brace_break_m", self.brace_break_m, self.brace_take_m, 2.0)?;
-        positive("range_m", self.range_m, 1_000.0)?;
-        nonnegative("cone_deg", self.cone_deg, 90.0)?;
-        nonnegative("floor_cone_widen_deg", self.floor_cone_widen_deg, 90.0)?;
-        positive("line_speed_mps", self.line_speed_mps, 1_000.0)?;
-        range(
-            "arrival_speed_mps",
-            self.arrival_speed_mps,
-            0.0,
-            self.line_speed_mps,
-        )?;
-        nonnegative("line_accel_mps2", self.line_accel_mps2, 10_000.0)?;
-        nonnegative("approach_m", self.approach_m, 100.0)?;
-        nonnegative("arc", self.arc, 1.0)?;
-        nonnegative("coast_s", self.coast_s, 10.0)?;
-        nonnegative("slack_max_m", self.slack_max_m, 100.0)?;
-        range("slack_min_m", self.slack_min_m, 0.0, self.slack_max_m)?;
-        nonnegative("catch_zone_m", self.catch_zone_m, 10.0)?;
-        nonnegative("heavy_mass_kg", self.heavy_mass_kg, 10_000.0)?;
-        nonnegative("heavy_catch_zone_m", self.heavy_catch_zone_m, 10.0)?;
-        range("heavy_speed_share", self.heavy_speed_share, 0.0, 1.0)?;
-        nonnegative("catch_grace_s", self.catch_grace_s, 10.0)?;
-        nonnegative("max_slack_s", self.max_slack_s, 10.0)?;
-        nonnegative("max_spin_rps", self.max_spin_rps, 1_000.0)?;
-        nonnegative("stall_distance_m", self.stall_distance_m, 100.0)?;
-        nonnegative("stall_window_s", self.stall_window_s, 60.0)?;
-        nonnegative("attach_timeout_s", self.attach_timeout_s, 60.0)?;
-        nonnegative("free_timeout_s", self.free_timeout_s, 60.0)?;
-        nonnegative("door_reach_m", self.door_reach_m, 10.0)?;
-        nonnegative(
-            "door_max_vehicle_speed_mps",
-            self.door_max_vehicle_speed_mps,
-            1_000.0,
-        )?;
-        nonnegative("door_swing_mps", self.door_swing_mps, 1_000.0)?;
-        nonnegative("retain_s", self.retain_s, 10.0)?;
-        nonnegative("retain_cone_deg", self.retain_cone_deg, 90.0)?;
-        nonnegative("sight_tolerance_m", self.sight_tolerance_m, 10.0)?;
-        nonnegative("attach_tolerance_m", self.attach_tolerance_m, 10.0)?;
-        nonnegative("impact_overshoot_m", self.impact_overshoot_m, 100.0)?;
-        nonnegative("watch_ms", self.watch_ms as f32, 60_000.0)?;
-        positive("charge_stall_scale", self.charge_stall_scale, 100.0)?;
+/// The grapple snatch's tuning.
+pub const SNATCH: SnatchTuning = SnatchTuning {
+    brace_take_m: 0.15,
+    brace_break_m: 0.3,
+    range_m: 20.0,
+    cone_deg: 6.0,
+    floor_cone_widen_deg: 4.0,
+    line_speed_mps: 18.0,
+    arrival_speed_mps: 12.0,
+    line_accel_mps2: 240.0,
+    approach_m: 2.5,
+    arc: 0.08,
+    coast_s: 0.07,
+    slack_min_m: 0.4,
+    slack_max_m: 1.0,
+    catch_zone_m: 0.4,
+    heavy_mass_kg: 60.0,
+    heavy_catch_zone_m: 0.8,
+    heavy_speed_share: 0.7,
+    catch_grace_s: 0.15,
+    max_slack_s: 0.5,
+    max_spin_rps: 25.0,
+    stall_distance_m: 0.1,
+    stall_window_s: 0.5,
+    attach_timeout_s: 2.5,
+    free_timeout_s: 0.5,
+    door_reach_m: 0.5,
+    door_max_vehicle_speed_mps: 2.0,
+    door_swing_mps: 3.0,
+    landing: LandingTuning {
+        ramp_m: 0.25,
+        ramp_ticks: 1.0,
+        min_t_go_s: 1.0 / 30.0,
+        max_t_go_s: 0.5,
+        max_spin_rps: 40.0,
+        max_angular_accel: 1200.0,
+        lateral_window_m: 0.3,
+        hysteresis_m: 0.1,
+        max_extrapolate_s: 0.1,
+        settled_rad: 5.0 * DEGREE,
+        settled_m: 0.02,
+        full_slide_rad: 30.0 * DEGREE,
+    },
+};
 
-        let landing = &self.landing;
-        nonnegative("landing.ramp_m", landing.ramp_m, 100.0)?;
-        nonnegative("landing.ramp_ticks", landing.ramp_ticks, 1_000.0)?;
-        positive("landing.max_t_go_s", landing.max_t_go_s, 10.0)?;
-        range(
-            "landing.min_t_go_s",
-            landing.min_t_go_s,
-            f32::EPSILON,
-            landing.max_t_go_s,
-        )?;
-        nonnegative("landing.max_spin_rps", landing.max_spin_rps, 1_000.0)?;
-        nonnegative(
-            "landing.max_angular_accel",
-            landing.max_angular_accel,
-            100_000.0,
-        )?;
-        nonnegative("landing.lateral_window_m", landing.lateral_window_m, 10.0)?;
-        nonnegative("landing.hysteresis_m", landing.hysteresis_m, 10.0)?;
-        nonnegative("landing.max_extrapolate_s", landing.max_extrapolate_s, 10.0)?;
-        nonnegative("landing.settled_deg", landing.settled_deg, 180.0)?;
-        nonnegative("landing.settled_m", landing.settled_m, 10.0)?;
-        nonnegative("landing.full_slide_deg", landing.full_slide_deg, 180.0)?;
-
-        let yank = &self.yank;
-        nonnegative("yank.min_distance_m", yank.min_distance_m, 2.0)?;
-        nonnegative("yank.min_speed_mps", yank.min_speed_mps, 100.0)?;
-        positive("yank.window_s", yank.window_s, 10.0)?;
-        nonnegative("yank.cooldown_s", yank.cooldown_s, 10.0)?;
-
-        let swing = &self.swing;
-        nonnegative("swing.ceiling_kg", swing.ceiling_kg, 100_000.0)?;
-        nonnegative("swing.stiffness_per_s2", swing.stiffness_per_s2, 100_000.0)?;
-        nonnegative("swing.damping_per_s", swing.damping_per_s, 10_000.0)?;
-        nonnegative("swing.strength_n", swing.strength_n, 1_000_000.0)?;
-        range("swing.mass_scaling", swing.mass_scaling, 0.0, 1.0)?;
-        range("swing.brace_factor", swing.brace_factor, 1.0, 10.0)?;
-        nonnegative("swing.swing_length_m", swing.swing_length_m, 100.0)?;
-        nonnegative("swing.reel_mps", swing.reel_mps, 100.0)?;
-        positive("swing.reference_mass_kg", swing.reference_mass_kg, 10_000.0)?;
-        nonnegative("swing.reel_lead_m", swing.reel_lead_m, 10.0)?;
-        nonnegative("swing.max_stretch_m", swing.max_stretch_m, 100.0)?;
-        positive(
-            "swing.max_anchor_speed_mps",
-            swing.max_anchor_speed_mps,
-            1_000.0,
-        )?;
-
-        let ragdoll = &self.ragdoll;
-        nonnegative("ragdoll.length_m", ragdoll.length_m, 100.0)?;
-        nonnegative("ragdoll.mps", ragdoll.mps, 100.0)?;
-        nonnegative("ragdoll.ease_per_s", ragdoll.ease_per_s, 100.0)?;
-
-        let toss = &self.toss;
-        nonnegative("toss.land_m", toss.land_m, 100.0)?;
-        positive("toss.speed_mps", toss.speed_mps, 100.0)?;
-        positive("toss.max_flight_s", toss.max_flight_s, 10.0)?;
-        range(
-            "toss.min_flight_s",
-            toss.min_flight_s,
-            0.0,
-            toss.max_flight_s,
-        )
-    }
-}
+/// One degree, radians.
+const DEGREE: f32 = std::f32::consts::PI / 180.0;
 
 #[cfg(test)]
 mod tests {
@@ -358,16 +212,11 @@ mod tests {
 
     const DT: f32 = 1.0 / 30.0;
 
-    #[test]
-    fn the_shipped_file_loads_and_validates() {
-        assert_eq!(SNATCH.get().validate(), Ok(()));
-    }
-
     fn yanks(distances: &[f32]) -> usize {
         let mut detector = YankDetector::new();
         distances
             .iter()
-            .filter(|&&d| detector.step(DT, Some(d), true, &snatch_yank()).is_some())
+            .filter(|&&d| detector.step(DT, Some(d), true, &SNATCH_YANK).is_some())
             .count()
     }
 

@@ -29,6 +29,14 @@ use std::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 
 use parking_lot::Mutex;
 
+/// The cursor's diameter as a fraction of the panel distance, so it keeps a constant apparent
+/// (angular) size like the panel itself.
+pub(crate) const SIZE: f32 = 0.014;
+
+/// How far the cursor floats off the panel surface toward the camera, in meters. The offset gives
+/// it depth separation from the UI beneath it.
+pub(crate) const LIFT: f32 = 0.03;
+
 /// A mouse button, indexed the way Scaleform's button bitmask expects.
 #[derive(Clone, Copy)]
 pub enum Button {

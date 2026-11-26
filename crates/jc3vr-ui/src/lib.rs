@@ -29,7 +29,7 @@
 //! The panels, on the other hand, reach deep into the layers below: they read and edit the
 //! settings of every subsystem through its slot and show its live state, so most of the public
 //! surface of the gameplay, render, HUD, and tooling crates exists for this crate. The crate owns
-//! no settings of its own, only its tuning file ([`tuning`]), and its build script embeds the newest session's checklist
+//! no settings of its own, and its build script embeds the newest session's checklist
 //! (`docs/sessions/<stamp>/next-session.md`) for [`ui`]'s session checklist.
 
 pub mod controllers;
@@ -37,7 +37,6 @@ pub mod pause_menu;
 #[cfg(feature = "profiler")]
 pub mod profiler;
 pub mod status;
-pub mod tuning;
 pub mod ui;
 
 #[cfg(test)]

@@ -12,12 +12,12 @@
 //! the hub's offset from the standard place, limited in length, or a [`SEAT_OVERRIDES`] entry's.
 //!
 //! The input tick publishes the correction for the vehicle ([`publish`]). The frame half of the
-//! pose composition ([`jc3vr_body::controllers::roomscale::compose_cockpit`]) eases toward it, and
-//! back to nothing through a seat transition ([`facts::driving::advance`]), and adds it to the
-//! composed cockpit position after the posture, the seated reference, and the crouch have been
-//! resolved, so it neither feeds them nor is undone by them. The view, the hands, and the grab
-//! volumes are all composed from the eye point the head pose places, so they move together, and the
-//! correction is in the body frame, which rides the seat and so the vehicle.
+//! pose composition ([`jc3vr_body::controllers::roomscale::compose_cockpit`]) eases toward it, and back
+//! to nothing through a seat transition ([`facts::driving::advance`]), and adds it to the composed cockpit
+//! position after the posture, the seated reference, and the crouch have been resolved, so it
+//! neither feeds them nor is undone by them. The view, the hands, and the grab volumes are all
+//! composed from the eye point the head pose places, so they move together, and the correction is in the body frame,
+//! which rides the seat and so the vehicle.
 //!
 //! Only a wheel fitted from the vehicle's own part, or the part's override, is measured: the
 //! fallback wheel says nothing about the seat. Only cars are corrected, since some boats are driven
@@ -26,7 +26,7 @@
 //! A vehicle's gunner seat is corrected the same way from the manned gun's handles: the turret's
 //! animation puts the head right over them, so on the 14 November take the view looked down at the
 //! handles from a few centimetres and the player stepped back to reach them. Their midpoint is put
-//! at the tuning's `driving_view.handles_from_eyes_m` ([`derive_handles`]).
+//! at [`HANDLES_FROM_EYES_M`] ([`derive_handles`]).
 
 use std::time::Duration;
 
@@ -34,7 +34,18 @@ use glam::Vec3;
 use jc3vr_body::controllers::facts;
 use parking_lot::Mutex;
 
-use crate::controllers::vehicles::tuning::VEHICLES;
+use crate::controllers::vehicles::fit::SETTLE;
+
+/// Where the hub sits from the eyes in the standard driving position, cockpit frame (+X right, +Y
+/// up, +Z back), metres. The standard is the middle of a road car's ergonomic range: the wheel's
+/// centre about a quarter to a third of a metre below the driver's eyes and about half a metre
+/// ahead of them. It is a little nearer than a road car's, because a VR rim holds no weight and a
+/// long reach tires the arms.
+pub const HUB_FROM_EYES_M: Vec3 = Vec3::new(0.0, -0.30, -0.45);
+
+/// Where a manned gun's handles' midpoint sits from the eyes in the standard gunner position,
+/// cockpit frame, metres: ahead of the chest and below the eyes, as a two-handled gun is held.
+pub const HANDLES_FROM_EYES_M: Vec3 = Vec3::new(0.0, -0.30, -0.42);
 
 /// A seat whose derived correction is replaced, keyed by the wheel part's name (see
 /// [`SEAT_OVERRIDES`]).
@@ -43,7 +54,7 @@ pub struct SeatOverride {
     /// The steering wheel part's name.
     pub part: &'static str,
     /// The correction to apply instead of the derived one, cockpit frame, metres, still limited to
-    /// the tuning's `driving_view.max_correction_m`; `None` leaves the seat's view where it is.
+    /// [`MAX_M`]; `None` leaves the seat's view where it is.
     pub correction: Option<Vec3>,
 }
 
@@ -103,21 +114,13 @@ impl CorrectionOrigin {
 /// Moving the view by `c` moves the hub by `-c` relative to it, so the correction that puts the
 /// hub at the standard place is the hub's offset from it.
 pub fn derive(hub_from_eyes: Vec3, seat_override: Option<&SeatOverride>) -> Correction {
-    derive_from(
-        hub_from_eyes,
-        VEHICLES.get().driving_view.hub_from_eyes_m,
-        seat_override,
-    )
+    derive_from(hub_from_eyes, HUB_FROM_EYES_M, seat_override)
 }
 
 /// The correction for a gunner seat whose gun's handles' midpoint sits at `handles_from_eyes`
 /// from the character's eyes, as [`derive`] for a wheel's hub.
 pub fn derive_handles(handles_from_eyes: Vec3) -> Correction {
-    derive_from(
-        handles_from_eyes,
-        VEHICLES.get().driving_view.handles_from_eyes_m,
-        None,
-    )
+    derive_from(handles_from_eyes, HANDLES_FROM_EYES_M, None)
 }
 
 /// The correction that puts a control measured at `from_eyes` at `standard`.
@@ -137,7 +140,7 @@ fn derive_from(
         Some(Some(fixed)) if fixed.is_finite() => (fixed, CorrectionOrigin::Override),
         Some(_) => (Vec3::ZERO, CorrectionOrigin::Skipped),
     };
-    let applied = unlimited.clamp_length_max(VEHICLES.get().driving_view.max_correction_m);
+    let applied = unlimited.clamp_length_max(MAX_M);
     let origin = if origin == CorrectionOrigin::Derived && applied != unlimited {
         CorrectionOrigin::Limited
     } else {
@@ -152,7 +155,7 @@ fn derive_from(
 }
 
 /// One vehicle entry's measurement of the hub: nothing until the driver has settled, then the
-/// mean over the tuning's `driving_view.sample_window_ms`, kept for the rest of the entry.
+/// mean over [`SAMPLE_WINDOW`], kept for the rest of the entry.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Entry {
     sampler: Sampler,
@@ -173,15 +176,13 @@ impl Entry {
     /// measured (no anchor yet, or a fallback wheel). Returns whether the window closed on this
     /// tick, which happens once per entry.
     pub fn observe(&mut self, elapsed: Duration, hub_from_eyes: Option<Vec3>) -> bool {
-        let tuning = &VEHICLES.get().driving_view;
-        let settle = tuning.settle();
-        if self.closed || elapsed < settle {
+        if self.closed || elapsed < SETTLE {
             return false;
         }
         if let Some(hub) = hub_from_eyes {
             self.sampler.add(hub);
         }
-        if elapsed < settle + tuning.sample_window() {
+        if elapsed < SETTLE + SAMPLE_WINDOW {
             return false;
         }
         self.closed = true;
@@ -200,6 +201,9 @@ impl Default for Entry {
         Self::new()
     }
 }
+
+/// How long after the driver has settled the hub is averaged over.
+pub const SAMPLE_WINDOW: Duration = Duration::from_millis(500);
 
 /// The correction the input tick asks for in the vehicle the player drives.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -238,6 +242,9 @@ pub fn status() -> DrivingViewStatus {
     }
 }
 
+/// The longest correction applied, metres; a longer one is shortened to this along its direction.
+const MAX_M: f32 = 0.25;
+
 /// A running mean of the measured hub.
 #[derive(Debug, Copy, Clone, PartialEq)]
 struct Sampler {
@@ -270,17 +277,12 @@ static TARGET: Mutex<Option<Target>> = Mutex::new(None);
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::controllers::vehicles::tuning::DrivingViewTuning;
 
     const EPS: f32 = 1e-5;
 
-    fn view() -> &'static DrivingViewTuning {
-        &VEHICLES.get().driving_view
-    }
-
     #[test]
     fn a_seat_at_the_standard_is_left_alone() {
-        let correction = derive(view().hub_from_eyes_m, None);
+        let correction = derive(HUB_FROM_EYES_M, None);
         assert!(correction.applied.length() < EPS);
         assert_eq!(correction.origin, CorrectionOrigin::Derived);
     }
@@ -288,9 +290,9 @@ mod tests {
     /// Moving the view by the correction puts the hub at the standard place.
     #[test]
     fn the_correction_puts_the_hub_at_the_standard() {
-        let hub = view().hub_from_eyes_m + Vec3::new(0.02, -0.08, -0.06);
+        let hub = HUB_FROM_EYES_M + Vec3::new(0.02, -0.08, -0.06);
         let correction = derive(hub, None);
-        assert!((hub - correction.applied - view().hub_from_eyes_m).length() < EPS);
+        assert!((hub - correction.applied - HUB_FROM_EYES_M).length() < EPS);
         assert_eq!(correction.origin, CorrectionOrigin::Derived);
     }
 
@@ -298,8 +300,8 @@ mod tests {
     #[test]
     fn a_long_correction_is_limited_along_its_direction() {
         let off = Vec3::new(0.0, 0.3, -0.4);
-        let correction = derive(view().hub_from_eyes_m + off, None);
-        assert!((correction.applied.length() - view().max_correction_m).abs() < EPS);
+        let correction = derive(HUB_FROM_EYES_M + off, None);
+        assert!((correction.applied.length() - MAX_M).abs() < EPS);
         assert!(correction.applied.normalize().dot(off.normalize()) > 1.0 - EPS);
         assert!((correction.wanted - off).length() < EPS);
         assert_eq!(correction.origin, CorrectionOrigin::Limited);
@@ -307,7 +309,7 @@ mod tests {
 
     #[test]
     fn overrides_replace_or_skip_the_correction() {
-        let hub = view().hub_from_eyes_m + Vec3::new(0.0, -0.1, 0.0);
+        let hub = HUB_FROM_EYES_M + Vec3::new(0.0, -0.1, 0.0);
         let seat = |correction| SeatOverride {
             part: "a_steeringwheel",
             correction,
@@ -316,7 +318,7 @@ mod tests {
         assert!((fixed.applied - Vec3::new(0.0, 0.05, 0.0)).length() < EPS);
         assert_eq!(fixed.origin, CorrectionOrigin::Override);
         let too_far = derive(hub, Some(&seat(Some(Vec3::new(0.0, 1.0, 0.0)))));
-        assert!((too_far.applied.length() - view().max_correction_m).abs() < EPS);
+        assert!((too_far.applied.length() - MAX_M).abs() < EPS);
         let skipped = derive(hub, Some(&seat(None)));
         assert_eq!(skipped.applied, Vec3::ZERO);
         assert_eq!(skipped.origin, CorrectionOrigin::Skipped);
@@ -333,21 +335,18 @@ mod tests {
     fn the_entry_averages_over_the_window_once() {
         let mut entry = Entry::new();
         assert!(!entry.observe(Duration::ZERO, Some(Vec3::splat(9.0))));
-        assert!(!entry.observe(view().settle(), Some(Vec3::new(0.0, -0.2, -0.4))));
-        assert!(!entry.observe(view().settle() + view().sample_window() / 2, None));
-        assert!(entry.observe(
-            view().settle() + view().sample_window(),
-            Some(Vec3::new(0.0, -0.4, -0.6))
-        ));
+        assert!(!entry.observe(SETTLE, Some(Vec3::new(0.0, -0.2, -0.4))));
+        assert!(!entry.observe(SETTLE + SAMPLE_WINDOW / 2, None));
+        assert!(entry.observe(SETTLE + SAMPLE_WINDOW, Some(Vec3::new(0.0, -0.4, -0.6))));
         assert!((entry.mean().unwrap() - Vec3::new(0.0, -0.3, -0.5)).length() < EPS);
-        assert!(!entry.observe(view().settle() * 4, Some(Vec3::splat(9.0))));
+        assert!(!entry.observe(SETTLE * 4, Some(Vec3::splat(9.0))));
         assert!((entry.mean().unwrap() - Vec3::new(0.0, -0.3, -0.5)).length() < EPS);
     }
 
     #[test]
     fn an_entry_without_samples_has_no_mean() {
         let mut entry = Entry::new();
-        assert!(entry.observe(view().settle() + view().sample_window(), None));
+        assert!(entry.observe(SETTLE + SAMPLE_WINDOW, None));
         assert_eq!(entry.mean(), None);
     }
 }

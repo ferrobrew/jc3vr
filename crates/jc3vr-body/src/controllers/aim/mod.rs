@@ -40,7 +40,6 @@ pub mod ray;
 pub mod raycast;
 pub mod sights;
 pub mod targets;
-pub mod tuning_file;
 
 use std::num::NonZeroUsize;
 
@@ -66,7 +65,6 @@ use crate::controllers::{
         hooks::hooks,
         ray::Ray,
         raycast::{CastOptions, RayHit, RaycastError},
-        tuning_file::AIM,
     },
     facts::{
         mounted,
@@ -79,6 +77,11 @@ use crate::controllers::{
     scheme,
 };
 
+/// The nearest a gun's aim point may be to the sight's origin, metres. A nearer hit is pushed out
+/// along the ray, because the game fires along the barrel instead of at an aim point near the
+/// muzzle, and skips the weapon's update entirely for one almost at the muzzle.
+const MIN_TARGET_DISTANCE_M: f32 = 2.0;
+
 /// The aiming hooks, aggregated by `controllers::hook_library`.
 pub fn hook_library() -> HookLibrary {
     HookLibrary::new()
@@ -88,16 +91,14 @@ pub fn hook_library() -> HookLibrary {
         .with_hook_library(gun::hook_library())
 }
 
-/// How far the hand rays are cast, metres: the aim tuning's `ray.length_m`.
-pub fn ray_length_m() -> f32 {
-    AIM.get().ray.length_m
-}
+/// How far the hand rays are cast, metres. A gun ray that hits nothing aims at this distance along
+/// the ray.
+pub const RAY_LENGTH_M: f32 = 500.0;
 
-/// Where the grapple ray starts relative to the off-hand's wrist, in the wrist frame: the aim
-/// tuning's `ray.grapple_origin_m`.
-pub fn grapple_origin_m() -> Vec3 {
-    AIM.get().ray.grapple_origin_m
-}
+/// Where the grapple ray starts relative to the off-hand's wrist, in the wrist frame (-Z toward the
+/// fingers, +Y out of the back of the hand), metres: at the wrist, where the gauntlet's line leaves
+/// the forearm.
+pub const GRAPPLE_ORIGIN_M: Vec3 = Vec3::ZERO;
 
 /// Which ray a hand's aim follows.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -113,7 +114,7 @@ pub enum HandSource {
 pub struct HandAim {
     pub source: HandSource,
     pub ray: Ray,
-    /// The closest hit along the ray, within [`ray_length_m`], or `None` for a miss.
+    /// The closest hit along the ray, within [`RAY_LENGTH_M`], or `None` for a miss.
     pub hit: Option<RayHit>,
     /// The point a gun in this hand aims at: the hit, or the far point along the ray, never nearer
     /// than the configured minimum.
@@ -263,7 +264,7 @@ fn update_post_sim(aim: *mut PlayerAimControl, dt: f32, character: *mut Characte
 
     let off = tick.dominant.other();
     let grapple_ray =
-        tick.hands[off.index()].and_then(|h| ray::grapple_ray(h.wrist, h.aim, grapple_origin_m()));
+        tick.hands[off.index()].and_then(|h| ray::grapple_ray(h.wrist, h.aim, GRAPPLE_ORIGIN_M));
     // The grapple's aim assist turns the ray before the game's own targeting runs along it.
     let grapple_assist = match (grapple_ray, owner) {
         (Some(ray), Some(owner)) => {
@@ -372,23 +373,21 @@ unsafe fn finish(
     // SAFETY: the owner is the live local player character, on the thread updating it.
     let options = unsafe { CastOptions::ignoring_rider(owner) }.seeing_through();
     let mut raycast_error = None;
-    let ray_tuning = &AIM.get().ray;
     let hands = Hand::BOTH.map(|hand| {
         let world = tick.hands[hand.index()]?;
         let (source, ray) = match gun_rays[hand.index()] {
             Some((gun, ray)) => (HandSource::Gun { gun }, ray),
             None => (HandSource::AimPose, ray::pose_ray(world.aim)?),
         };
-        let hit =
-            unsafe { raycast::cast(&ray, ray_tuning.length_m, &options) }.unwrap_or_else(|error| {
-                raycast_error = Some(error);
-                None
-            });
+        let hit = unsafe { raycast::cast(&ray, RAY_LENGTH_M, &options) }.unwrap_or_else(|error| {
+            raycast_error = Some(error);
+            None
+        });
         let (target, _) = ray::aim_point(
             &ray,
             hit.map(|h| h.distance),
-            ray_tuning.length_m,
-            ray_tuning.min_target_distance_m,
+            RAY_LENGTH_M,
+            MIN_TARGET_DISTANCE_M,
         );
         Some(HandAim {
             source,

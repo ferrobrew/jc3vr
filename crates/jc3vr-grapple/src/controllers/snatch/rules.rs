@@ -338,7 +338,7 @@ mod tests {
     use jc3vr_body::controllers::intent::yank::{YankDetector, reach_along};
 
     use super::*;
-    use crate::controllers::snatch::config::snatch_yank;
+    use crate::controllers::snatch::config::SNATCH_YANK;
 
     /// A seated player's grip on a weapon on the ground ahead and to the right, then a pull of the
     /// hand back and out past their left side at about 0.9 m/s, sampled at the game's tick, with the
@@ -365,7 +365,7 @@ mod tests {
     fn fires(reaches: impl Iterator<Item = Option<f32>>) -> bool {
         let mut detector = YankDetector::new();
         reaches
-            .map(|reach| detector.step(SEATED_DT, reach, true, &snatch_yank()))
+            .map(|reach| detector.step(SEATED_DT, reach, true, &SNATCH_YANK))
             .any(|yank| yank.is_some())
     }
 

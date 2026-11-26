@@ -15,20 +15,28 @@ use jc3vr_view::{
     hud::pointer::panel::RenderedCamera,
 };
 
-use crate::hud::{quad::PanelParams, tuning::HUD};
+use crate::hud::quad::PanelParams;
+
+/// The nearest a summoned or grabbed panel is placed, metres.
+pub(crate) const MIN_DISTANCE_M: f32 = 0.2;
+
+/// The farthest the thumbstick pushes a grabbed panel along the hand's aim ray, metres.
+pub(crate) const MAX_PUSH_DEPTH_M: f32 = 10.0;
+
+/// How fast a full deflection pushes or pulls a grabbed panel, as a fraction of its depth along
+/// the ray per second, so the push is as quick to read at arm's length as across a room.
+pub(crate) const PUSH_RATE_PER_S: f32 = 1.5;
 
 /// The longest interval one push covers, seconds, so a hitch does not throw the panel.
 pub(crate) const MAX_PUSH_DT: f32 = 0.1;
 
 /// The panel pose `distance` metres in front of `head`, along the gaze, facing the head, with no
-/// roll: the panel's up is in the vertical plane through the gaze. It is never nearer than the
-/// tuning's `egui_panel.min_distance_m`.
+/// roll: the panel's up is in the vertical plane through the gaze.
 pub(crate) fn in_front_of(head: Pose, distance: f32) -> Pose {
-    let min_distance = HUD.get().egui_panel.min_distance_m;
     let distance = if distance.is_finite() {
-        distance.max(min_distance)
+        distance.max(MIN_DISTANCE_M)
     } else {
-        min_distance
+        MIN_DISTANCE_M
     };
     let forward = head.orientation * Vec3::NEG_Z;
     let yaw = gaze_heading(head.orientation);
@@ -62,10 +70,9 @@ pub(crate) fn held_pose(aim: Pose, offset: Pose) -> Pose {
 
 /// The grab's `offset` after the thumbstick pushes (`rate` above zero) or pulls (below zero) the
 /// panel for `dt` seconds. The panel moves along the aim ray, the hand frame's -Z, so the point the
-/// ray holds stays on it. Its depth along the ray changes in proportion to itself, up to the
-/// tuning's `egui_panel.push_rate_per_s` at a full deflection, and stops at
-/// `egui_panel.min_distance_m` and `egui_panel.max_push_depth_m`; a panel already beyond a bound
-/// is never moved further past it.
+/// ray holds stays on it. Its depth along the ray changes in proportion to itself, up to
+/// [`PUSH_RATE_PER_S`] at a full deflection, and stops at [`MIN_DISTANCE_M`] and
+/// [`MAX_PUSH_DEPTH_M`]; a panel already beyond a bound is never moved further past it.
 pub(crate) fn push_along_ray(offset: Pose, rate: f32, dt: f32) -> Pose {
     if !rate.is_finite() || !dt.is_finite() || dt <= 0.0 || rate == 0.0 {
         return offset;
@@ -74,16 +81,13 @@ pub(crate) fn push_along_ray(offset: Pose, rate: f32, dt: f32) -> Pose {
     if !depth.is_finite() {
         return offset;
     }
-    let tuning = &HUD.get().egui_panel;
-    let step = rate.clamp(-1.0, 1.0)
-        * tuning.push_rate_per_s
-        * depth.max(tuning.min_distance_m)
-        * dt.min(MAX_PUSH_DT);
+    let step =
+        rate.clamp(-1.0, 1.0) * PUSH_RATE_PER_S * depth.max(MIN_DISTANCE_M) * dt.min(MAX_PUSH_DT);
     let pushed = depth + step;
     let pushed = if step > 0.0 {
-        pushed.min(depth.max(tuning.max_push_depth_m))
+        pushed.min(depth.max(MAX_PUSH_DEPTH_M))
     } else {
-        pushed.max(depth.min(tuning.min_distance_m))
+        pushed.max(depth.min(MIN_DISTANCE_M))
     };
     Pose {
         position: Vec3::new(offset.position.x, offset.position.y, -pushed),
@@ -183,10 +187,7 @@ mod tests {
         let head = pose(Vec3::ZERO, Quat::IDENTITY);
         for distance in [0.0, -1.0, f32::NAN, f32::INFINITY] {
             let panel = in_front_of(head, distance);
-            assert_near(
-                panel.position,
-                Vec3::NEG_Z * HUD.get().egui_panel.min_distance_m,
-            );
+            assert_near(panel.position, Vec3::NEG_Z * MIN_DISTANCE_M);
         }
     }
 
@@ -258,7 +259,7 @@ mod tests {
         assert!(pushed.position.z < offset.position.z);
         assert_eq!(pushed.position.truncate(), offset.position.truncate());
         assert_eq!(pushed.orientation, offset.orientation);
-        let expected = 1.0 + HUD.get().egui_panel.push_rate_per_s * 0.05;
+        let expected = 1.0 + PUSH_RATE_PER_S * 0.05;
         assert!((-pushed.position.z - expected).abs() < 1e-5);
         let pulled = push_along_ray(offset, -0.5, 0.05);
         assert!(-pulled.position.z < 1.0 && -pulled.position.z > 0.9);
@@ -271,12 +272,12 @@ mod tests {
         for _ in 0..100 {
             pulled = push_along_ray(pulled, -1.0, 0.1);
         }
-        assert_eq!(-pulled.position.z, HUD.get().egui_panel.min_distance_m);
+        assert_eq!(-pulled.position.z, MIN_DISTANCE_M);
         let mut pushed = offset;
         for _ in 0..200 {
             pushed = push_along_ray(pushed, 1.0, 0.1);
         }
-        assert_eq!(-pushed.position.z, HUD.get().egui_panel.max_push_depth_m);
+        assert_eq!(-pushed.position.z, MAX_PUSH_DEPTH_M);
     }
 
     #[test]

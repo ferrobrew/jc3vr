@@ -13,8 +13,6 @@ use std::time::{Duration, Instant};
 
 use glam::{Vec2, Vec3};
 
-use crate::tuning::FRESHNESS;
-
 /// The wanted horizontal velocity at each stage of a tick, world `(x, z)` metres per second, and
 /// the full wanted velocity the tick left.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
@@ -214,11 +212,8 @@ pub const JUMP_M: f32 = 0.04;
 /// How often a jump is logged at most.
 pub const LOG_INTERVAL: Duration = Duration::from_millis(500);
 
-/// How old the latest tick's trace may be for the recorder to sample it: the freshness tuning's
-/// `rig.root_trace_ms`.
-pub fn stale_after() -> Duration {
-    FRESHNESS.get().rig.root_trace_ms.duration()
-}
+/// How old the latest tick's trace may be for the recorder to sample it.
+pub const STALE_AFTER: Duration = Duration::from_millis(250);
 
 /// A move against what explains it.
 #[derive(Debug, Copy, Clone, PartialEq)]

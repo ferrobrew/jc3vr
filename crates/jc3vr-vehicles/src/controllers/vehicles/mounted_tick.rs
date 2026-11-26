@@ -5,7 +5,7 @@ use std::time::Instant;
 
 use glam::Vec3;
 use jc3vr_body::controllers::{
-    aim::ray_length_m, grab::cockpit::ControlKind, hands::ActiveHands, mode::VehicleSeat,
+    aim::RAY_LENGTH_M, grab::cockpit::ControlKind, hands::ActiveHands, mode::VehicleSeat,
     physics::local_player::LocalPlayer,
 };
 use jc3vr_core::game_tick::GameTick;
@@ -13,7 +13,7 @@ use jc3vr_input::frame::Hand;
 use jc3vr_view::controllers::cockpit::CockpitTransform;
 
 use crate::controllers::vehicles::{
-    mounted, mounted::MountedTarget, state::STATE, tuning::VEHICLES, types::MountedReadout,
+    mounted, mounted::MountedTarget, state::STATE, types::MountedReadout,
 };
 
 /// What the mounted-gun half of the input tick produced.
@@ -55,7 +55,7 @@ pub(super) fn mounted_tick(
             .as_ref()
             .and_then(|owner| mounted::read(owner.character()))
     })
-    .or_else(|| unsafe { mounted::nearby(hands_world, VEHICLES.get().mounted.nearby_reach_m) }) else {
+    .or_else(|| unsafe { mounted::nearby(hands_world, NEARBY_REACH_M) }) else {
         let mut state = STATE.lock();
         state.mounted_reference = None;
         state.mounted_last = None;
@@ -85,7 +85,7 @@ pub(super) fn mounted_tick(
                 to_cockpit(gun.pivot),
                 handles_mid,
                 body.inverse() * gun.barrel,
-                VEHICLES.get().mounted.min_lever_m,
+                MIN_LEVER_M,
             )
         });
         state.mounted_reference = reference;
@@ -107,7 +107,7 @@ pub(super) fn mounted_tick(
     };
     let target = direction.map(|d| MountedTarget {
         weapon: gun.address,
-        point: gun.pivot + d * ray_length_m(),
+        point: gun.pivot + d * RAY_LENGTH_M,
         at: Instant::now(),
     });
     MountedTick {
@@ -155,3 +155,11 @@ pub(super) fn offered(seat: Option<VehicleSeat>, fork: bool, yoke: bool) -> &'st
         None => &[],
     }
 }
+
+/// The shortest lever from the handles to the gun's pivot, metres. A gun whose handles the game
+/// does not place, or places at the pivot, swings about a pivot this far ahead of them.
+const MIN_LEVER_M: f32 = 0.4;
+
+/// How near a hand must be to a mounted gun's handles or pivot to select it without the native
+/// mounted state, metres.
+const NEARBY_REACH_M: f32 = 2.0;

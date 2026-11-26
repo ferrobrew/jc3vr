@@ -17,7 +17,7 @@ use crate::controllers::vehicles::{
         ControlState, Holding, Placement, cues,
         cues::{ControlCue, TravelCues},
     },
-    tuning::{FlightControlsTuning, StickSpec, VEHICLES},
+    tuning::{FlightControlsTuning, StickSpec},
 };
 
 /// A stick's deflection (+X right, +Y back) for its top pulled to `top_now`, limited to the full
@@ -50,7 +50,7 @@ pub fn spring_back(spec: &StickSpec, deflection: Vec2, dt: f32) -> Vec2 {
         return Vec2::ZERO;
     }
     let next = deflection * (-dt.max(0.0) / spec.return_s).exp();
-    if next.length() < VEHICLES.get().controls.stick_settled_m {
+    if next.length() < SETTLED_M {
         Vec2::ZERO
     } else {
         next
@@ -143,6 +143,9 @@ fn twist_rudder_about_axis(
     let past = (twist.abs() - deadzone).max(0.0);
     twist.signum() * (past / (full - deadzone)).min(1.0)
 }
+
+/// A returning stick closer to centre than this, metres, is at centre.
+const SETTLED_M: f32 = 0.002;
 
 #[cfg(test)]
 mod tests {

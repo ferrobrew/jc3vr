@@ -155,12 +155,16 @@ pub fn joint_angles(finger: Finger, curl: f32, hook: f32, config: &FingerTuning)
         0.0
     };
     std::array::from_fn(|k| {
-        let shifted = share * (1.0 + hook * config.hook_shift[k]);
+        let shifted = share * (1.0 + hook * HOOK_SHIFT[k]);
         (config.rest_offset_deg[i][k] + full[k] * shifted)
             .clamp(-MAX_HYPEREXTENSION_DEG, MAX_FLEXION_DEG)
             .to_radians()
     })
 }
+
+/// How a full hook scales each joint's share of the bend, root outward: the knuckle nearly
+/// straight and the outer joints bent about half again as far.
+const HOOK_SHIFT: [f32; 3] = [-0.9, 0.45, 0.55];
 
 /// The open thumb's direction: in the palm's plane, turned `spread` radians from the fingers toward
 /// the thumb side, then `opposition` radians out of the plane toward the palm side.
@@ -328,11 +332,7 @@ fn rotate_from(chain: &mut [BoneJoint; 3], from: usize, rotation: Quat) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::controllers::fingers::tuning::{CurlRange, FINGERS_TUNING};
-
-    fn fingers() -> FingerTuning {
-        FINGERS_TUNING.get().curls
-    }
+    use crate::controllers::fingers::tuning::{CurlRange, FINGERS};
 
     /// The trigger finger alone driven.
     const TRIGGER_FINGER_ONLY: [bool; 5] = [false, true, false, false, false];
@@ -414,7 +414,7 @@ mod tests {
     }
 
     fn shape(curls: &FingerCurls) -> HandShape {
-        HandShape::of_curls(curls, &fingers())
+        HandShape::of_curls(curls, &FINGERS)
     }
 
     #[test]
@@ -430,12 +430,7 @@ mod tests {
         let palm = palm(Hand::Right);
         let chain = animated_finger(RIGHT_MIDDLE, 0.9);
         let open = RIGHT_MIDDLE.normalize();
-        let bend = hand_bend(
-            &shape(&FingerCurls::default()),
-            &fingers(),
-            1.0,
-            ALL_FINGERS,
-        );
+        let bend = hand_bend(&shape(&FingerCurls::default()), &FINGERS, 1.0, ALL_FINGERS);
         let posed = bend_finger(chain, &palm, bend.bend[Finger::Middle.index()], 0.0, 1.0);
         assert_eq!(posed[0].position, chain[0].position, "the knuckle stays");
         for k in 0..3 {
@@ -455,7 +450,7 @@ mod tests {
     #[test]
     fn the_pose_does_not_depend_on_the_animated_curl() {
         let palm = palm(Hand::Right);
-        let bend = hand_bend(&shape(&full_curl()), &fingers(), 1.0, ALL_FINGERS);
+        let bend = hand_bend(&shape(&full_curl()), &FINGERS, 1.0, ALL_FINGERS);
         let angles = bend.bend[Finger::Index.index()];
         let from_straight = bend_finger(animated_finger(RIGHT_INDEX, 0.0), &palm, angles, 0.0, 1.0);
         let from_curled = bend_finger(animated_finger(RIGHT_INDEX, 1.2), &palm, angles, 0.0, 1.0);
@@ -472,7 +467,7 @@ mod tests {
     #[test]
     fn a_full_curl_stays_within_the_joint_range() {
         let palm = palm(Hand::Right);
-        let mut config = fingers();
+        let mut config = FINGERS;
         let check = |config: &FingerTuning| {
             let bend = hand_bend(&shape(&full_curl()), config, 1.0, ALL_FINGERS);
             for finger in Finger::ALL {
@@ -503,7 +498,7 @@ mod tests {
 
     #[test]
     fn the_left_hand_mirrors_the_right() {
-        let config = fingers();
+        let config = FINGERS;
         let curls = FingerCurls {
             curl: [0.6, 0.4, 0.7, 0.8, 0.9],
             splay: [0.0, 0.15, 0.0, -0.1, -0.2],
@@ -588,7 +583,7 @@ mod tests {
         for k in 0..3 {
             assert!(direction(&open, k).abs_diff_eq(expected, EPS), "bone {k}");
         }
-        let bend = hand_bend(&shape(&full_curl()), &fingers(), 1.0, ALL_FINGERS);
+        let bend = hand_bend(&shape(&full_curl()), &FINGERS, 1.0, ALL_FINGERS);
         let closed = bend_thumb(
             thumb,
             &palm,
@@ -620,7 +615,7 @@ mod tests {
 
     #[test]
     fn a_holding_hand_drives_only_the_trigger_finger() {
-        let mut config = fingers();
+        let mut config = FINGERS;
         config.curl_ranges = [CurlRange {
             open: 0.0,
             closed: 1.0,
@@ -643,7 +638,7 @@ mod tests {
 
     #[test]
     fn the_rest_offset_shifts_the_open_pose() {
-        let mut config = fingers();
+        let mut config = FINGERS;
         config.rest_offset_deg[Finger::Ring.index()] = [10.0, -5.0, 0.0];
         let bend = hand_bend(&shape(&FingerCurls::default()), &config, 1.0, ALL_FINGERS);
         let ring = bend.bend[Finger::Ring.index()].map(f32::to_degrees);
@@ -653,7 +648,7 @@ mod tests {
 
     #[test]
     fn the_splay_is_clamped() {
-        let config = fingers();
+        let config = FINGERS;
         let curls = FingerCurls {
             curl: [0.0; 5],
             splay: [1.0; 5],
@@ -666,7 +661,7 @@ mod tests {
 
     #[test]
     fn a_hook_moves_the_bend_from_the_knuckle_to_the_outer_joints() {
-        let config = fingers();
+        let config = FINGERS;
         let even = joint_angles(Finger::Middle, 0.6, 0.0, &config);
         let hooked = joint_angles(Finger::Middle, 0.6, 1.0, &config);
         let pinched = joint_angles(Finger::Middle, 0.6, -1.0, &config);
@@ -692,7 +687,7 @@ mod tests {
         assert!((opposed.dot(palm.palm) - 50f32.to_radians().sin()).abs() < 1e-4);
         assert!((opposed.length() - 1.0).abs() < 1e-5);
         assert!(thumb_axis(&palm, opposed).is_some());
-        let mut config = fingers();
+        let mut config = FINGERS;
         config.grip.max_opposition_deg = 50.0;
         let shaped = HandShape {
             opposition: 2.0,
@@ -707,7 +702,7 @@ mod tests {
 
     #[test]
     fn shapes_blend_and_smooth_toward_their_target() {
-        let config = fingers();
+        let config = FINGERS;
         let open = shape(&FingerCurls::default());
         let closed = HandShape {
             hook: [1.0; 5],

@@ -3,9 +3,9 @@
 //!
 //! Whichever source was used last owns the pointer. The desktop mouse is used when it moves,
 //! clicks, or scrolls. The controller is used when its ray lands on the panel, moves on it beyond
-//! the tuning's `egui_panel.controller_move_uv` (so tracking jitter of a controller at rest never
-//! takes the pointer from the mouse), clicks, or scrolls. Ownership changes only while the owner
-//! holds no button, so a drag always ends where it began. A source taking over with a button already held has that button
+//! [`CONTROLLER_MOVE_UV`] (so tracking jitter of a controller at rest never takes the pointer from
+//! the mouse), clicks, or scrolls. Ownership changes only while the owner holds no button, so a drag
+//! always ends where it began. A source taking over with a button already held has that button
 //! withheld until it is released, so the takeover itself never clicks.
 //!
 //! Positions are `uv * panel_size`, the panel texture's space, which egui lays out in while
@@ -17,7 +17,7 @@ use jc3vr_gameplay::controllers::bindings::pointer::{
 };
 use parking_lot::Mutex;
 
-use crate::hud::{cursor, pointer::window_uv, tuning::HUD};
+use crate::hud::{cursor, pointer::window_uv};
 
 /// Build this frame's egui pointer events for the VR panel of `panel_size` pixels from the desktop
 /// mouse and the controller updates queued since the last call. Call once per frame from the game
@@ -55,17 +55,26 @@ pub fn egui_cursor_uv() -> Option<(f32, f32)> {
 }
 
 /// Set egui's click options for the panel: while the panel is shown, a press held up to
-/// the tuning's `egui_panel.click_duration_s` still clicks; otherwise egui's own default applies. Call from the
+/// [`PANEL_CLICK_DURATION_S`] still clicks; otherwise egui's own default applies. Call from the
 /// egui frame on the game thread.
 #[inline]
 pub fn apply_panel_input_options(ctx: &egui::Context, panel: bool) {
     let duration = if panel {
-        HUD.get().egui_panel.click_duration_s
+        PANEL_CLICK_DURATION_S
     } else {
         egui::InputOptions::default().max_click_duration
     };
     ctx.options_mut(|options| options.input_options.max_click_duration = duration);
 }
+
+/// How long a press may be held and still click, seconds (egui's
+/// [`max_click_duration`](egui::InputOptions::max_click_duration)), while the panel is shown.
+/// egui's own default is under a second, which a deliberate press in the headset outlasts.
+const PANEL_CLICK_DURATION_S: f64 = 2.0;
+
+/// How far, in panel UV, the controller's ray must move from where it rested while the desktop
+/// owned the pointer before the controller takes the pointer over.
+pub(crate) const CONTROLLER_MOVE_UV: f32 = 0.02;
 
 /// The desktop mouse on one frame.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -183,7 +192,7 @@ impl EguiRouter {
         let pressed = update.buttons & !self.controller.buttons != 0;
         let moved = match (update.uv, self.anchor) {
             (Some((u, v)), Some((au, av))) => {
-                Vec2::new(u - au, v - av).length() > HUD.get().egui_panel.controller_move_uv
+                Vec2::new(u - au, v - av).length() > CONTROLLER_MOVE_UV
             }
             _ => false,
         };

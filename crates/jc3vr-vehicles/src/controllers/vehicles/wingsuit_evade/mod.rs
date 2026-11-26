@@ -10,12 +10,11 @@
 //! throw the arms must come back within [`WingsuitEvadeTuning::rearm_bank_deg`], and the cooldown
 //! must pass, before the next counts, so one throw is one roll.
 //!
-//! The throw clicks the action and, for [`WingsuitEvadeTuning::direction_hold_s`], writes the move
-//! stick as the throw's direction over the arms' own: full to the side the arms banked toward, the
-//! side the lower hand is on, and, while the arms pitch past
-//! [`WingsuitEvadeTuning::diagonal_pitch`], as far up or down the stick as the arms pitch, so the
-//! game picks the roll toward the throw (one of its side or diagonal rolls) rather than one from
-//! whatever the arms steered with as the throw began.
+//! The throw clicks the action and, for [`DIRECTION_HOLD_S`], writes the move stick as the throw's
+//! direction over the arms' own: full to the side the arms banked toward, the side the lower hand
+//! is on, and, while the arms pitch past [`WingsuitEvadeTuning::diagonal_pitch`], as far up or down
+//! the stick as the arms pitch, so the game picks the roll toward the throw (one of its side or
+//! diagonal rolls) rather than one from whatever the arms steered with as the throw began.
 //!
 //! The recognizer reads the arm steering's pose, so it runs while the arm steering does: in the
 //! wingsuit, with the arm steering on. It takes no throw while the air brake is held (by the brake
@@ -31,8 +30,7 @@
 //! body. Switched off, no throw is taken and the player's barrel rolls are dropped
 //! ([`jc3vr_body::hooks::input::wingsuit`]).
 //!
-//! [`ACT_BOOST_WINGSUIT_BARREL_ROLL`]:
-//! jc3gi::animation::symbol_table::EventIdSymbolTable::ACT_BOOST_WINGSUIT_BARREL_ROLL
+//! [`ACT_BOOST_WINGSUIT_BARREL_ROLL`]: jc3gi::animation::symbol_table::EventIdSymbolTable::ACT_BOOST_WINGSUIT_BARREL_ROLL
 
 use std::{collections::VecDeque, fmt};
 
@@ -228,7 +226,7 @@ impl EvadeRecognizer {
                 return Outcome::Refused(throw, blocked);
             }
             self.cooldown = config.cooldown_s;
-            self.holding = Some((throw.direction, config.direction_hold_s));
+            self.holding = Some((throw.direction, DIRECTION_HOLD_S));
             return Outcome::Throw(throw);
         }
         match self.holding {
@@ -265,14 +263,12 @@ impl EvadeRecognizer {
 
 /// The arms' bank, degrees, positive with the left hand above the right, from the hands' height
 /// difference and horizontal separation, or `None` while the hands are closer together than
-/// [`WingsuitEvadeTuning::min_separation`] of the arm span, where a height difference is no bank.
+/// [`MIN_SEPARATION`] of the arm span, where a height difference is no bank.
 pub fn bank_deg(bank_m: f32, spread: f32, arm_span: f32) -> Option<f32> {
     let span = arm_span.max(0.1);
     let across = spread * span;
     let separation = across.hypot(bank_m) / span;
-    (bank_m.is_finite()
-        && spread.is_finite()
-        && separation >= tuning::VEHICLES.get().wingsuit_evade.min_separation)
+    (bank_m.is_finite() && spread.is_finite() && separation >= MIN_SEPARATION)
         .then(|| bank_m.atan2(across).to_degrees())
 }
 
@@ -296,8 +292,7 @@ pub fn status() -> EvadeStatus {
 
 /// The arm-steered tick's evade: read the arms' pose, and on a throw click the evade and write its
 /// direction over the move stick the arm steering wrote. `arms` is the arm steering's readout,
-/// `None` while it does not act. `desired` holds the tick's inputs so far, the air brake's among
-/// them.
+/// `None` while it does not act. `desired` holds the tick's inputs so far, the air brake's among them.
 pub(super) fn tick(
     game: &GameTick<'_>,
     arms: Option<&ArmReadout>,
@@ -378,6 +373,14 @@ pub(super) fn tick(
         }
     }
 }
+
+/// How long a throw's direction is written over the move stick, seconds: long enough for the
+/// animation graph to pick the roll from it on the ticks after the click.
+pub const DIRECTION_HOLD_S: f32 = 0.3;
+
+/// The hands' smallest separation, as a share of the arm span, at which their height difference
+/// reads as a bank: the arms spread as wings, not drawn in.
+pub const MIN_SEPARATION: f32 = 0.6;
 
 impl EvadeRecognizer {
     /// Take back the throw this tick's [`Self::step`] returned, which a gate after the recognizer

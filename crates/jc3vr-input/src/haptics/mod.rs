@@ -3,14 +3,12 @@
 //! `controllers::haptics` in the payload, and the VR runtime sends what the mixer gives each hand.
 //!
 //! - [`vocabulary`]: the named primitives and the shape each one plays with;
-//! - [`cues`]: every source, as a one-off event or a sustained level, with the category it plays
-//!   in;
+//! - [`cues`]: every source, as a one-off event or a sustained level, with the primitive,
+//!   strength, and category it plays;
 //! - [`mixer`]: what each hand plays when several sources reach it at once;
-//! - [`output`]: the one mixer the sources queue into and the VR frame loop drains;
-//! - [`tuning`]: the shapes, the mix, and every source's cue, as the tuning file gives them.
+//! - [`output`]: the one mixer the sources queue into and the VR frame loop drains.
 
 pub mod cues;
 pub mod mixer;
 pub mod output;
-pub mod tuning;
 pub mod vocabulary;

@@ -9,9 +9,9 @@ use serde::{Deserialize, Serialize};
 pub static HAPTICS_CONFIG: ConfigSlot<HapticsConfig> = ConfigSlot::new("controllers.haptics");
 
 /// Controller vibration (see [`crate::controllers::haptics`]), as `controllers.haptics`. The
-/// primitives' shapes, the mixer's rules, and the cues are tuning
-/// ([`HAPTICS`](jc3vr_view::tuning::HAPTICS)); every category of the mod's own cues plays, each
-/// with its primitive's frequency.
+/// primitives' shapes are fixed at [`VOCABULARY`](jc3vr_input::haptics::vocabulary::VOCABULARY)
+/// and the mixer's rules at [`MIX`](jc3vr_input::haptics::mixer::MIX); every category of the
+/// mod's own cues plays, each with its primitive's frequency.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct HapticsConfig {

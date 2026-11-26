@@ -260,7 +260,7 @@ impl Freeing {
     /// or two, and one being made spawns a few frames later.
     pub(super) fn timeout_s(&self) -> f32 {
         match self {
-            Freeing::Freed(_) => SNATCH.get().free_timeout_s,
+            Freeing::Freed(_) => SNATCH.free_timeout_s,
             Freeing::Making(..) => copy::COPY_WAIT.as_secs_f32(),
         }
     }

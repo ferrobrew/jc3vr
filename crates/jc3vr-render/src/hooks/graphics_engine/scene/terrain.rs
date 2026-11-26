@@ -10,11 +10,10 @@
 //! VR's wide FOV admits roughly 2–3x the quads and oversubscribes them.
 //!
 //! The fix scales the budget: the five buffer-size immediates in the terrain setup types' `Create`
-//! functions are patched to the tuning's `terrain.detail_budget_scale` times their shipped values
-//! (through the patcher, so they auto-revert on uninject), and the two setup types are destroyed
-//! and re-created so the larger buffers go live — required because injection happens after the
-//! engine has already created them, and these types' `Recreate` is a no-op. Applied once, at the
-//! first frame start after injection.
+//! functions are patched to [`BUDGET_SCALE`] times their shipped values (through the patcher, so
+//! they auto-revert on uninject), and the two setup types are destroyed and re-created so the larger
+//! buffers go live — required because injection happens after the engine has already created them,
+//! and these types' `Recreate` is a no-op. Applied once, at the first frame start after injection.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -28,8 +27,6 @@ use jc3gi::graphics_engine::{
     },
 };
 use re_utilities::hook_library::HookLibrary;
-
-use crate::tuning::RENDER;
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&TERRAIN_DETAIL_DRAW_BINDER)
@@ -57,6 +54,9 @@ fn terrain_detail_draw(
         detour.call(this, rc, info);
     }
 }
+
+/// The multiplier on the shipped detail-budget buffer sizes, enough for the headset's field of view.
+const BUDGET_SCALE: u32 = 4;
 
 /// Whether the once-per-session apply has run.
 static APPLIED: AtomicBool = AtomicBool::new(false);
@@ -87,8 +87,8 @@ const BUDGET_SITES: [(u64, u32); 5] = [
     ),
 ];
 
-/// Once per session, patch the detail-budget buffer sizes to the tuning's
-/// [`crate::tuning::TerrainTuning::detail_budget_scale`] times their shipped values and re-create the two terrain setup types so the new sizes take effect. Their `Recreate`
+/// Once per session, patch the detail-budget buffer sizes to [`BUDGET_SCALE`] times their shipped
+/// values and re-create the two terrain setup types so the new sizes take effect. Their `Recreate`
 /// is a no-op, so this goes through the same `Destroy` + `Create` pair `RegisterType` runs at
 /// startup, with the render engine's own resource context. Call once per frame on the game thread
 /// with no draw in flight; the immediates auto-revert on uninject.
@@ -97,7 +97,6 @@ pub fn apply_detail_budget_once() {
     if APPLIED.load(Ordering::Relaxed) {
         return;
     }
-    let scale = RENDER.get().terrain.detail_budget_scale;
     {
         let Some(mut patcher) = jc3vr_core::hooks::patcher() else {
             tracing::warn!("terrain detail budget: patcher unavailable; skipping");
@@ -108,7 +107,7 @@ pub fn apply_detail_budget_once() {
             // types' `Create` functions (verified); the patcher restores the shipped
             // bytes on uninject.
             unsafe {
-                patcher.patch(site as usize, &(shipped * scale).to_le_bytes());
+                patcher.patch(site as usize, &(shipped * BUDGET_SCALE).to_le_bytes());
             }
         }
     }
@@ -144,7 +143,7 @@ pub fn apply_detail_budget_once() {
             }
         }
         tracing::info!(
-            scale,
+            scale = BUDGET_SCALE,
             recreated,
             "terrain detail budget applied (#40): buffer sizes scaled and setup types re-created"
         );

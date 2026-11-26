@@ -13,7 +13,10 @@
 //! rows at a readable size and paginates overflow without shrinking. A visible-time clock cycles
 //! pages with a page indicator; no controller input is assigned to this panel.
 
-use std::{sync::Arc, time::Instant};
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use anyhow::Context as _;
 use egui::{
@@ -32,6 +35,7 @@ use jc3vr_gameplay::controllers::{
     summary,
     summary::{
         Published,
+        config::{GlanceConfig, WristPlacement},
         content::Metrics,
         current::{CellKind, CurrentSummary, Hint},
     },
@@ -51,7 +55,6 @@ use crate::{
         palette::{PANEL_ACCENT, PANEL_BACKGROUND, PANEL_DIM, PANEL_TEXT},
         quad::HudQuad,
         target::HudTarget,
-        tuning::HUD,
     },
 };
 
@@ -96,6 +99,19 @@ pub struct PanelLayout {
 pub fn status() -> PanelStatus {
     PANEL.lock().status
 }
+
+/// When a look at the wrist counts as a glance.
+const GLANCE: GlanceConfig = GlanceConfig::new();
+
+/// The panel's place on the off-hand.
+const PLACEMENT: WristPlacement = WristPlacement::new();
+
+/// How long the panel shows after the mode changes to one the player settles in. Falling does not
+/// count ([`shows_mode_change`](jc3vr_gameplay::controllers::summary::shows_mode_change)).
+const SHOW_ON_MODE_CHANGE: Duration = Duration::from_secs(3);
+
+/// The fade in and out, seconds.
+const FADE_S: f32 = 0.15;
 
 /// The panel texture's width, pixels. The texture's height follows the summary's content, and the
 /// panel's height in metres follows the texture's aspect.
@@ -151,7 +167,6 @@ impl Panel {
         active: bool,
         off: frame::Hand,
     ) {
-        let tuning = &HUD.get().summary;
         let now = Instant::now();
         let dt = self
             .last_prepare
@@ -165,16 +180,14 @@ impl Panel {
         });
         let grip =
             late::drawn_hands(jc3vr_view::hooks::camera::last_dtf())[off.index()].map(|h| h.grip);
-        let pose = grip.map(|grip| wrist_pose(grip, off, &tuning.placement));
+        let pose = grip.map(|grip| wrist_pose(grip, off, &PLACEMENT));
         let published = summary::published();
 
         let looked = match (active, head, pose) {
-            (true, Some(head), Some(pose)) => {
-                looking(head, &pose, &tuning.glance, self.glance.shown())
-            }
+            (true, Some(head), Some(pose)) => looking(head, &pose, &GLANCE, self.glance.shown()),
             _ => false,
         };
-        let glance = self.glance.step(looked, dt, &tuning.glance);
+        let glance = self.glance.step(looked, dt, &GLANCE);
         let (touched, pressed) = if active {
             summary::hold::current()
         } else {
@@ -182,14 +195,14 @@ impl Panel {
         };
         let pinned = self.trackpad_pin.step(touched, pressed, dt);
         let mode_recent = active
-            && published.as_ref().is_some_and(|p| {
-                summary::mode_changed_within(p, now, tuning.show_on_mode_change())
-            });
+            && published
+                .as_ref()
+                .is_some_and(|p| summary::mode_changed_within(p, now, SHOW_ON_MODE_CHANGE));
         let shown = active && pose.is_some() && (glance || pinned || mode_recent);
         if !shown || published.is_none() {
             self.pages.pause();
         }
-        self.alpha = fade(self.alpha, shown, dt, tuning.fade_s);
+        self.alpha = fade(self.alpha, shown, dt, FADE_S);
         self.status = PanelStatus {
             alpha: self.alpha,
             glance,
@@ -239,7 +252,7 @@ impl Panel {
         };
         self.status.layout = Some(layout);
         let (width, height) = layout.size;
-        let panel_width = tuning.placement.width_m;
+        let panel_width = PLACEMENT.width_m;
         let panel_height = panel_width * height as f32 / width as f32;
         self.corners = Some(
             pose.corners(panel_width, panel_height)

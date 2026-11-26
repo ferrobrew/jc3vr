@@ -1,8 +1,6 @@
 //! The haptic stops and detents of the sticks and levers: each fires once as the control reaches
 //! it, and is re-armed only once the control has left it by a margin, so that a hand resting at a
-//! stop or wobbling about a detent does not buzz. The margins come from the tuning's `cues`.
-
-use crate::controllers::vehicles::tuning::{ControlCuesTuning, VEHICLES};
+//! stop or wobbling about a detent does not buzz. Pure.
 
 /// A cue a stick or a lever gives the hand holding it.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -80,12 +78,12 @@ pub fn lever_cue(arming: &mut TravelCues, after: f32, gate: Option<f32>) -> Opti
         arming.neutral_due = true;
         arming.neutral_side = None;
     }
-    if after.abs() > cues().rearm {
+    if after.abs() > REARM {
         arming.neutral_side = Some(after.signum());
     }
     if let Some(gate) = gate {
         let entered = !arming.in_gate && after >= gate;
-        let left = arming.in_gate && after < gate - cues().rearm;
+        let left = arming.in_gate && after < gate - REARM;
         if entered || left {
             arming.in_gate = entered;
             return Some(ControlCue::Gate);
@@ -107,7 +105,7 @@ pub fn stick_cue(arming: &mut TravelCues, share: f32) -> Option<ControlCue> {
     if !share.is_finite() {
         return None;
     }
-    if share > cues().rearm {
+    if share > REARM {
         arming.neutral_due = true;
     }
     if let Some(cue) = stop_cue(arming, share) {
@@ -117,12 +115,12 @@ pub fn stick_cue(arming: &mut TravelCues, share: f32) -> Option<ControlCue> {
 }
 
 /// The centre cue of a control at `share` of its travel from centre: armed once the control has
-/// left centre by the margin, it fires on coming back within the tuning's `at_centre`.
+/// left centre by the margin, it fires on coming back within [`AT_CENTRE`].
 pub fn centre_cue(arming: &mut TravelCues, share: f32) -> Option<ControlCue> {
-    if share > cues().rearm {
+    if share > REARM {
         arming.neutral_due = true;
     }
-    if arming.neutral_due && share <= cues().at_centre {
+    if arming.neutral_due && share <= AT_CENTRE {
         arming.neutral_due = false;
         return Some(ControlCue::Centre);
     }
@@ -194,7 +192,7 @@ pub fn throttle_cue(
         arming.zero = false;
         return Some(ControlCue::ReverseGate);
     }
-    if forward > cues().rearm * 0.5 || reverse > cues().rearm * 0.5 {
+    if forward > REARM * 0.5 || reverse > REARM * 0.5 {
         arming.zero = true;
     }
     if arming.zero && forward <= 0.0 && reverse <= 0.0 {
@@ -203,32 +201,38 @@ pub fn throttle_cue(
     }
     if let Some(gate) = gate {
         let entered = !arming.in_gate && forward >= gate;
-        let left = arming.in_gate && forward < gate - cues().rearm;
+        let left = arming.in_gate && forward < gate - REARM;
         if entered || left {
             arming.in_gate = entered;
             return Some(ControlCue::Gate);
         }
     }
     let at_end = forward.max(reverse);
-    if at_end < 1.0 - cues().rearm {
+    if at_end < 1.0 - REARM {
         arming.stop = true;
     }
-    if arming.stop && at_end >= cues().at_stop {
+    if arming.stop && at_end >= AT_STOP {
         arming.stop = false;
         return Some(ControlCue::Stop);
     }
     stepped.then_some(ControlCue::Step)
 }
 
-fn cues() -> &'static ControlCuesTuning {
-    &VEHICLES.get().cues
-}
+/// How far a control must leave a stop, a detent, or the gate, as a share of its travel, before
+/// the cue may fire again.
+const REARM: f32 = 0.1;
+
+/// The share of the travel that counts as at the stop.
+const AT_STOP: f32 = 0.995;
+
+/// The share of the travel from centre that counts as at centre.
+const AT_CENTRE: f32 = 0.03;
 
 fn stop_cue(arming: &mut TravelCues, share: f32) -> Option<ControlCue> {
-    if share < 1.0 - cues().rearm {
+    if share < 1.0 - REARM {
         arming.stop = true;
     }
-    if arming.stop && share >= cues().at_stop {
+    if arming.stop && share >= AT_STOP {
         arming.stop = false;
         return Some(ControlCue::Stop);
     }

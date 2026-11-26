@@ -43,12 +43,9 @@ use jc3gi::{
 use jc3vr_view::headpose;
 use parking_lot::Mutex;
 
-use crate::{
-    controllers::{
-        body::{procedural::state::animation_moves_body, rig::grounded},
-        locomotion::{accel::Rates, config::LOCOMOTION_CONFIG, speeds::SpeedLog},
-    },
-    tuning::FRESHNESS,
+use crate::controllers::{
+    body::{procedural::state::animation_moves_body, rig::grounded},
+    locomotion::{accel::Rates, config::LOCOMOTION_CONFIG, speeds::SpeedLog},
 };
 
 /// What the stick locomotion did on its last tick.
@@ -73,10 +70,8 @@ pub struct LocomotionStatus {
 impl LocomotionStatus {
     /// Whether the movement task ran within the last few ticks: Rico is on foot on the ground.
     pub fn fresh(&self, now: Instant) -> bool {
-        self.at.is_some_and(|at| {
-            now.saturating_duration_since(at)
-                <= FRESHNESS.get().locomotion.movement_task_ms.duration()
-        })
+        self.at
+            .is_some_and(|at| now.saturating_duration_since(at) <= STALE_AFTER)
     }
 
     /// Whether Rico is standing still: no stick, and no motion from the task or from the stick.
@@ -171,6 +166,9 @@ pub(crate) unsafe fn after_task(character: &mut Character, dt: f32) {
         );
     }
 }
+
+/// Ticks of the movement task further apart than this are separate runs of it.
+const STALE_AFTER: Duration = Duration::from_millis(200);
 
 /// Below these, Rico is standing still.
 const STILL_STICK: f32 = 0.05;

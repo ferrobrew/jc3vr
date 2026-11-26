@@ -17,13 +17,10 @@ use glam::{DQuat, Quat, Vec3};
 use jc3vr_view::vr;
 use parking_lot::Mutex;
 
-use crate::{
-    controllers::{
-        body::{config::BODY_REMAP_CONFIG, estimator::withdraw, tuning::BODY},
-        roomscale::posture::EffectivePosture,
-        scheme,
-    },
-    tuning::FRESHNESS,
+use crate::controllers::{
+    body::{config::BODY_REMAP_CONFIG, estimator::withdraw},
+    roomscale::posture::EffectivePosture,
+    scheme,
 };
 
 /// One rendered frame's tracking, in the rig's room frame.
@@ -89,9 +86,7 @@ pub(crate) fn eyes(now: Instant) -> Option<Vec3> {
         .lock()
         .as_ref()
         .and_then(|p| p.eyes)
-        .filter(|(_, at)| {
-            now.saturating_duration_since(*at) <= FRESHNESS.get().body.estimator_eyes_ms.duration()
-        })
+        .filter(|(_, at)| now.saturating_duration_since(*at) <= EYES_FRESH_FOR)
         .map(|(eyes, _)| eyes)
 }
 
@@ -143,8 +138,7 @@ impl Producer {
         self.posture = None;
     }
 
-    /// Fold `observation` in and return the window to post, at most the body tuning's
-    /// `estimator.submit_hz` times a second.
+    /// Fold `observation` in and return the window to post, at most [`SUBMIT_HZ`] times a second.
     pub(crate) fn observe(&mut self, observation: &Observation) -> Option<Submission> {
         let now = observation.now;
         if self.posture.is_some_and(|p| p != observation.posture) {
@@ -162,15 +156,11 @@ impl Producer {
                 .map(|grip| grip.map(|(p, q)| (p.as_dvec3(), q.as_dquat().normalize()))),
         });
         self.eyes = Some((observation.eyes, now));
-        let tuning = &BODY.get().estimator;
-        let interval = Duration::from_secs_f32(1.0 / tuning.submit_hz);
+        let interval = Duration::from_secs_f32(1.0 / SUBMIT_HZ);
         // A frame a little early for the due time takes it, and the next is due an interval after
         // the due time rather than the frame, so the rate does not fall to the frames' next
         // divisor; a due time an interval behind starts the schedule again.
-        if self
-            .next_submit
-            .is_some_and(|due| now + tuning.submit_early_ms.duration() < due)
-        {
+        if self.next_submit.is_some_and(|due| now + SUBMIT_EARLY < due) {
             return None;
         }
         let window = self.builder.window()?;
@@ -188,6 +178,15 @@ impl Producer {
         })
     }
 }
+
+/// How many windows a second go to the GPU.
+const SUBMIT_HZ: f32 = 30.0;
+
+/// How early a frame may take a submission's due time: a frame's jitter.
+const SUBMIT_EARLY: Duration = Duration::from_millis(2);
+
+/// The eyes stand for the window's position this long after the last frame.
+const EYES_FRESH_FOR: Duration = Duration::from_millis(250);
 
 static STATE: Mutex<Option<Producer>> = Mutex::new(None);
 

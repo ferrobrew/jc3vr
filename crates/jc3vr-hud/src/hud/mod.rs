@@ -21,7 +21,7 @@
 //! The panel has two modes (see [`HudMode`], chosen per frame by [`current_mode`]): the gameplay HUD
 //! lazily follows the head's orientation with critically-damped quaternion slerp, while full-screen
 //! UI (movies, loading screens, menus) is world-static -- latched in place so the head can look away
-//! from it. Each mode also has its own aspect (the tuning's `panel.hud_aspect` / [`MOVIE_ASPECT`]).
+//! from it. Each mode also has its own aspect ([`HUD_ASPECT`] / [`MOVIE_ASPECT`]).
 //! The panel's world-space corners are computed once per frame (eye 0) and projected through each
 //! eye's own per-eye VP, so it sits at a finite world position with correct stereo depth rather than
 //! being head-locked at infinity.
@@ -62,7 +62,6 @@ pub mod scaleform;
 mod state;
 pub mod summary_panel;
 mod target;
-pub mod tuning;
 pub mod world_markers;
 
 use std::{
@@ -96,14 +95,14 @@ pub use state::{HUD_STATE, StageSafeAreaReadout, stage_safe_area_readout};
 use state::{StageSafeArea, publish_stage_safe_area};
 use windows::Win32::Graphics::Direct3D11::ID3D11DeviceContext;
 
-use crate::hud::{config::HUD_CONFIG, tuning::HUD};
+use crate::hud::config::HUD_CONFIG;
 
 /// Which presentation the HUD is in this frame. Drives the panel's aspect (gameplay vs full-screen
 /// UI). Placement (head-following vs world-locked) is chosen separately by
 /// [`menu_world_lock`], which only freezes for in-game menus with a valid camera.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum HudMode {
-    /// Gameplay HUD: rendered at the tuning's `panel.hud_aspect`, head-following.
+    /// Gameplay HUD: rendered at [`HUD_ASPECT`], head-following.
     Hud,
     /// Full-screen UI -- movies, loading screens, and menus: rendered at [`MOVIE_ASPECT`].
     Movie,
@@ -168,17 +167,41 @@ pub fn menu_world_lock() -> bool {
         }
 }
 
+/// Aspect ratio (width / height) for the gameplay HUD; `1.0` is square. The effective aspect for
+/// the current frame ([`HUD_ASPECT`] or [`MOVIE_ASPECT`], per the [`HudMode`]) is the single source
+/// of truth for the HUD's shape: the render-target dimensions, the floating panel, the marker
+/// projection ([`compute_panel_vp`]), and the Scaleform viewport all derive from it, so they cannot
+/// drift out of sync.
+pub(crate) const HUD_ASPECT: f32 = 1.3;
+
 /// Aspect ratio (width / height) for full-screen UI -- movies, loading screens, and menus
-/// ([`HudMode::Movie`]); `16:9`. The gameplay HUD's is the tuning's `panel.hud_aspect`
-/// ([`tuning::PanelTuning::hud_aspect`]), which says why the effective aspect is the single source
-/// of truth for the HUD's shape.
+/// ([`HudMode::Movie`]); `16:9`. See [`HUD_ASPECT`].
 pub(crate) const MOVIE_ASPECT: f32 = 16.0 / 9.0;
 
-/// The effective HUD aspect (width / height) for `mode`: the tuning's `panel.hud_aspect` in
-/// gameplay, [`MOVIE_ASPECT`] for full-screen UI.
+/// HUD render-target scale, applied to the geometric mean of the **per-eye** render resolution.
+/// The texture's longer axis is `RENDER_SCALE * sqrt(eye_width * eye_height)` pixels; the shorter
+/// axis follows from the effective aspect. Ignored when [`RENDER_RESOLUTION`] pins the size
+/// outright.
+///
+/// The geometric mean, rather than the larger axis, keeps the HUD's pixel budget stable as the
+/// render target's shape changes: a per-eye target is much taller than it is wide, and keying off
+/// the longer axis would inflate the HUD for a shape the HUD does not share.
+const RENDER_SCALE: f32 = 1.5;
+
+/// A pin for the HUD render target's longer axis, in pixels, ignoring [`RENDER_SCALE`] and the
+/// render resolution entirely. `None` derives the size as described on [`RENDER_SCALE`].
+///
+/// The HUD is a flat panel viewed at a fixed apparent size, so what it actually needs is enough
+/// texels to look crisp at that size -- a property of the headset and the panel's angular size,
+/// not of how many pixels the scene happens to be rendered at. A pin makes that budget explicit
+/// and immune to render-resolution changes.
+const RENDER_RESOLUTION: Option<u32> = None;
+
+/// The effective HUD aspect (width / height) for `mode`: [`HUD_ASPECT`] in gameplay,
+/// [`MOVIE_ASPECT`] for full-screen UI.
 fn aspect_for(mode: HudMode) -> f32 {
     match mode {
-        HudMode::Hud => HUD.get().panel.hud_aspect,
+        HudMode::Hud => HUD_ASPECT,
         HudMode::Movie => MOVIE_ASPECT,
     }
 }
@@ -257,8 +280,13 @@ pub fn tick(device: &Device, window_width: u32, window_height: u32) {
         // and keying off it whole would inflate the HUD by 2x for a target only ever viewed one eye
         // at a time.
         let (eye_width, eye_height) = jc3vr_view::stereo::per_eye_render_size().unwrap_or(render);
-        let (width, height) =
-            hud_target_size(HUD.get().panel.render_scale, aspect, eye_width, eye_height);
+        let (width, height) = hud_target_size(
+            RENDER_SCALE,
+            RENDER_RESOLUTION,
+            aspect,
+            eye_width,
+            eye_height,
+        );
         // The atlas lays the gameplay HUD out inside the stage only, so the bands above and below
         // it are free for cells; menus keep the full layout, and a mode change re-applies the
         // redirect with the right one.
@@ -273,12 +301,21 @@ pub fn tick(device: &Device, window_width: u32, window_height: u32) {
     cursor::set_geometry((window_width, window_height), hud.redirected_size());
 }
 
-/// Compute the HUD texture dimensions from the render scale, the aspect (width / height), and the
-/// per-eye render size, as described on [`tuning::PanelTuning::render_scale`]; the shorter axis
-/// follows from the aspect. Both axes are clamped to at least 1 pixel so a zero-sized back buffer
-/// or a degenerate aspect never reaches texture creation.
-fn hud_target_size(render_scale: f32, aspect: f32, eye_width: u32, eye_height: u32) -> (u32, u32) {
-    let base = render_scale * (f64::from(eye_width) * f64::from(eye_height)).sqrt() as f32;
+/// Compute the HUD texture dimensions from the render scale (or the pinned resolution), the aspect
+/// (width / height), and the per-eye render size, as described on [`RENDER_SCALE`]; the shorter
+/// axis follows from the aspect. Both axes are clamped to at least 1 pixel so a zero-sized
+/// back buffer or a degenerate aspect never reaches texture creation.
+fn hud_target_size(
+    render_scale: f32,
+    render_resolution: Option<u32>,
+    aspect: f32,
+    eye_width: u32,
+    eye_height: u32,
+) -> (u32, u32) {
+    let base = match render_resolution {
+        Some(pinned) => pinned.max(1) as f32,
+        None => render_scale * (f64::from(eye_width) * f64::from(eye_height)).sqrt() as f32,
+    };
     let aspect = aspect.max(f32::EPSILON);
     let (width, height) = if aspect >= 1.0 {
         (base, base / aspect)
@@ -535,7 +572,7 @@ mod tests {
     #[test]
     fn derived_size_uses_the_geometric_mean() {
         // 2015x2240 per eye: sqrt(2015 * 2240) = 2124.4, x1.5 = 3186.7.
-        let (w, h) = hud_target_size(1.5, 1.0, 2015, 2240);
+        let (w, h) = hud_target_size(1.5, None, 1.0, 2015, 2240);
         assert_eq!((w, h), (3187, 3187));
         // Keying off the longer axis would have given 1.5 * 2240 = 3360.
         assert!(w < 3360, "{w} should be below the longer-axis basis");
@@ -544,18 +581,29 @@ mod tests {
     /// The aspect shapes the target, and the longer axis carries the budget either way.
     #[test]
     fn aspect_applies_to_the_derived_size() {
-        let (w, h) = hud_target_size(1.5, 4.0 / 3.0, 2015, 2240);
+        let (w, h) = hud_target_size(1.5, None, 4.0 / 3.0, 2015, 2240);
         assert_eq!(w, 3187);
         assert_eq!(h, 2390);
-        let (tall_w, tall_h) = hud_target_size(1.5, 0.75, 2015, 2240);
+        let (tall_w, tall_h) = hud_target_size(1.5, None, 0.75, 2015, 2240);
         assert_eq!(tall_h, 3187);
         assert_eq!(tall_w, 2390);
     }
 
-    /// Degenerate inputs still yield a usable target rather than a zero-sized texture.
+    /// A pinned resolution ignores both the scale and the render resolution entirely.
+    #[test]
+    fn pinned_resolution_ignores_the_render_resolution() {
+        let pinned = hud_target_size(1.5, Some(3072), 1.0, 2015, 2240);
+        assert_eq!(pinned, (3072, 3072));
+        // Same pin, wildly different render resolution and scale: unchanged.
+        assert_eq!(hud_target_size(0.25, Some(3072), 1.0, 640, 480), pinned);
+    }
+
+    /// A degenerate pin still yields a usable target rather than a zero-sized texture.
     #[test]
     fn degenerate_inputs_stay_positive() {
-        let (w, h) = hud_target_size(0.0, 0.0, 1, 1);
+        let (w, h) = hud_target_size(1.5, Some(0), 1.0, 2015, 2240);
+        assert!(w >= 1 && h >= 1, "{w}x{h}");
+        let (w, h) = hud_target_size(0.0, None, 0.0, 1, 1);
         assert!(w >= 1 && h >= 1, "{w}x{h}");
     }
 }

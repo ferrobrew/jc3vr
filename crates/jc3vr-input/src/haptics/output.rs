@@ -5,17 +5,17 @@ use std::time::Instant;
 
 use parking_lot::Mutex;
 
-use crate::haptics::mixer::{HapticPulse, MixTuning, Mixer};
+use crate::haptics::mixer::{HapticPulse, MIX, Mixer};
 
 /// Run `f` on the shared mixer, for a source queueing a cue or a readout reading its counters.
 pub fn with_mixer<R>(f: impl FnOnce(&mut Mixer) -> R) -> R {
     f(&mut MIXER.lock())
 }
 
-/// What each hand plays from `now` under `config`, indexed by hand, for the VR frame loop to send.
-/// Notes each hand's amplitude for [`last_output`].
-pub fn mix(now: Instant, config: &MixTuning) -> [Option<HapticPulse>; 2] {
-    let out = MIXER.lock().mix(now, config);
+/// What each hand plays from `now`, indexed by hand, for the VR frame loop to send. Notes each
+/// hand's amplitude for [`last_output`].
+pub fn mix(now: Instant) -> [Option<HapticPulse>; 2] {
+    let out = MIXER.lock().mix(now, &MIX);
     *LAST_OUTPUT.lock() = out.map(|pulse| pulse.map(|p| p.amplitude));
     out
 }

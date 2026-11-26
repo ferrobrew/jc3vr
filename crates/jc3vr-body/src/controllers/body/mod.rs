@@ -53,7 +53,6 @@ pub mod ik_body;
 pub mod mirror;
 pub mod procedural;
 pub mod rig;
-pub mod tuning;
 pub mod unarmed;
 
 use glam::{Quat, Vec3};

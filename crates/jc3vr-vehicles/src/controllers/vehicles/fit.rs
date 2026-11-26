@@ -17,7 +17,10 @@
 //! eyes, for the driving view's per-vehicle correction
 //! ([`crate::controllers::vehicles::driving_view`]), and logs the driving position once per entry.
 
-use std::{ffi::CStr, time::Instant};
+use std::{
+    ffi::CStr,
+    time::{Duration, Instant},
+};
 
 use glam::{Mat4, Vec3};
 use jc3gi::{
@@ -42,7 +45,7 @@ use crate::controllers::vehicles::{
         calibration, native,
         native::{CockpitFit, NativeStick},
     },
-    tuning::{PhysicalControlsTuning, VEHICLES},
+    tuning::PhysicalControlsTuning,
     wheel,
     wheel::{BarsFrame, CockpitParts as _, PartWheel, WheelFrame, WheelPartView, WheelSource},
     wheel_render::RenderWheel,
@@ -184,6 +187,10 @@ pub(super) fn fit(
     fit
 }
 
+/// How long after entering a vehicle the fallback wheel is carried into its space and the driving
+/// view begins measuring the hub: by then the driver has settled into the seat.
+pub(crate) const SETTLE: Duration = Duration::from_millis(1500);
+
 /// # Safety
 ///
 /// `vehicle` must be the live vehicle the local player drives, on the game thread before the
@@ -228,9 +235,7 @@ unsafe fn fit_vehicle(
             }
             let frame = match latch.as_mut() {
                 Some(l) => {
-                    if l.local.is_none()
-                        && l.since.elapsed() >= VEHICLES.get().driving_view.settle()
-                    {
+                    if l.local.is_none() && l.since.elapsed() >= SETTLE {
                         l.local = xf.wheel_into(world, &specs.wheel);
                     }
                     fallback_latched = l.local.is_some();
@@ -454,7 +459,7 @@ fn log_driving_position(p: &DrivingPosition) {
         source = p.source.label(),
         hub_from_eyes = ?c.map(|c| c.hub_from_eyes),
         hub_from_head = ?p.seat.hub_from_head,
-        standard = ?VEHICLES.get().driving_view.hub_from_eyes_m,
+        standard = ?driving_view::HUB_FROM_EYES_M,
         wanted = ?c.map(|c| c.wanted),
         applied = ?c.filter(|_| p.corrected).map(|c| c.applied),
         origin = c.map(|c| c.origin.label()),

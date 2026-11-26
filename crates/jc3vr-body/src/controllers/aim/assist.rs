@@ -17,7 +17,7 @@
 //! The grapple has an assist of its own ([`grapple_assist`]), run before the aim update so that
 //! the game's own grapple targeting runs along the assisted ray. When the grapple hand's ray does
 //! not already hit an object, the candidates in every set within
-//! the aim tuning's `assist.grapple_cone_deg` of the ray that the game's grapple scoring
+//! [`GRAPPLE_CONE_DEG`] of the ray that the game's grapple scoring
 //! ([`PlayerAimControl::SetTargetGrappleFitness`]) accepts (an object the grapple attaches to, in
 //! range, not the one the wire holds) and that are in sight are ranked by their angle from the
 //! ray, and the ray turns onto the nearest.
@@ -35,8 +35,15 @@ use jc3gi::{
 
 use crate::controllers::aim::{
     config::AimConfig, grapple, ray, ray::Ray, raycast, raycast::CastOptions, targets,
-    targets::TargetSet, tuning_file::AIM,
+    targets::TargetSet,
 };
+
+/// The farthest a candidate may be from the hand for aim assist, metres.
+const MAX_DISTANCE_M: f32 = 150.0;
+
+/// The half-angle of the cone around the grapple hand's ray that the grapple's aim assist looks for
+/// a target in, degrees.
+const GRAPPLE_CONE_DEG: f32 = 5.0;
 
 /// One hand's correction on the last aim update.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -113,8 +120,8 @@ pub struct GrappleAssist {
 }
 
 /// The grapple's ray turned onto the valid grapple target nearest `ray` within
-/// the aim tuning's `assist.grapple_cone_deg`, and the turn made, or `None` when the ray already
-/// hits an object or no candidate qualifies.
+/// [`GRAPPLE_CONE_DEG`], and the turn made, or `None` when the ray already hits an object or no
+/// candidate qualifies.
 ///
 /// # Safety
 ///
@@ -125,11 +132,10 @@ pub(super) unsafe fn grapple_assist(
     ray: &Ray,
     options: &CastOptions,
 ) -> Option<(Ray, GrappleAssist)> {
-    let tuning = &AIM.get().assist;
-    let cone = tuning.grapple_cone_deg.to_radians();
+    let cone = GRAPPLE_CONE_DEG.to_radians();
     // A ray on an object already has the game's own grapple target, which the assist would only
     // take away.
-    let hit = unsafe { raycast::cast(ray, tuning.max_distance_m, options) }.ok()?;
+    let hit = unsafe { raycast::cast(ray, MAX_DISTANCE_M, options) }.ok()?;
     if hit.is_some_and(|h| h.object.is_some()) {
         return None;
     }
@@ -161,7 +167,7 @@ pub fn assisted_ray(ray: &Ray, target: Vec3, strength: f32) -> Option<Ray> {
 /// angle from the ray when it does.
 fn angle_in_cone(ray: &Ray, position: Vec3, cone: f32) -> Option<f32> {
     ray.offset(position)
-        .filter(|offset| offset.within(AIM.get().assist.max_distance_m, cone))
+        .filter(|offset| offset.within(MAX_DISTANCE_M, cone))
         .map(|offset| offset.angle)
 }
 
@@ -196,11 +202,15 @@ unsafe fn first_in_sight(
         ranked
     });
     ranked.sort_by(|a, b| a.0.total_cmp(&b.0));
-    let tolerance = AIM.get().assist.body_sight_tolerance_m;
     ranked
         .into_iter()
         .find(|(_, position)| unsafe {
-            raycast::line_of_sight(ray.origin, *position, tolerance, options)
+            raycast::line_of_sight(
+                ray.origin,
+                *position,
+                targets::BODY_SIGHT_TOLERANCE_M,
+                options,
+            )
         })
         .map(|(_, position)| position)
 }
@@ -266,9 +276,9 @@ unsafe fn score(aim: &mut PlayerAimControl, target: *mut Target, ray: &Ray) -> O
         return None;
     }
     let position = unsafe { targets::body_position(target) }?;
-    let ahead = ray.offset(position).is_some_and(|offset| {
-        offset.distance <= AIM.get().assist.max_distance_m && offset.angle < FRAC_PI_2
-    });
+    let ahead = ray
+        .offset(position)
+        .is_some_and(|offset| offset.distance <= MAX_DISTANCE_M && offset.angle < FRAC_PI_2);
     if !ahead {
         return None;
     }
@@ -333,8 +343,7 @@ mod tests {
         assert!(angle_in_cone(&ray, Vec3::new(5.0, 0.0, -20.0), cone).is_none());
         assert!(angle_in_cone(&ray, Vec3::new(0.0, 0.0, 20.0), cone).is_none());
         assert!(angle_in_cone(&ray, Vec3::ZERO, cone).is_none());
-        let beyond = Vec3::NEG_Z * (AIM.get().assist.max_distance_m + 1.0);
-        assert!(angle_in_cone(&ray, beyond, cone).is_none());
+        assert!(angle_in_cone(&ray, Vec3::NEG_Z * (MAX_DISTANCE_M + 1.0), cone).is_none());
         // The nearer to the ray ranks first.
         let near = angle_in_cone(&ray, Vec3::new(0.5, 0.0, -20.0), cone).unwrap();
         let far = angle_in_cone(&ray, Vec3::new(1.5, 0.0, -20.0), cone).unwrap();

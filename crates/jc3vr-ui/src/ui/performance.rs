@@ -11,7 +11,7 @@ use jc3vr_core::{
 };
 use parking_lot::Mutex;
 
-use crate::{tuning::UI, ui::util::patchbox};
+use crate::ui::util::patchbox;
 
 pub fn egui_debug_performance(ui: &mut egui::Ui) {
     unsafe {
@@ -145,16 +145,18 @@ fn online_controls(ui: &mut egui::Ui) {
 /// chart window. Sampled once per UI frame (the overlay runs once per real frame).
 static FRAME_TIME_SAMPLES: Mutex<VecDeque<(Instant, f32)>> = Mutex::new(VecDeque::new());
 
+/// Seconds of history the chart keeps and displays.
+const CHART_WINDOW_S: f32 = 20.0;
+
 /// A rolling frame-time chart, for judging the impact of render features where instantaneous
 /// numbers mislead — the VR runtime clamps the frame rate for reprojection, so a cost change often
 /// shows as a *stability* change rather than a mean change.
 fn frame_time_chart(ui: &mut egui::Ui, current_ms: f32) {
-    let tuning = &UI.get().performance;
     let now = Instant::now();
     let mut samples = FRAME_TIME_SAMPLES.lock();
     samples.push_back((now, current_ms));
     while let Some(&(t, _)) = samples.front() {
-        if now.duration_since(t).as_secs_f32() > tuning.chart_window_s {
+        if now.duration_since(t).as_secs_f32() > CHART_WINDOW_S {
             samples.pop_front();
         } else {
             break;
@@ -180,8 +182,8 @@ fn frame_time_chart(ui: &mut egui::Ui, current_ms: f32) {
     // trace rides mid-chart instead of hugging the ceiling.
     let scale_ms = [8.0f32, 16.0, 24.0, 33.0, 50.0, 100.0, 200.0]
         .into_iter()
-        .find(|&s| s >= p99_ms * tuning.chart_scale_headroom)
-        .unwrap_or(p99_ms * tuning.chart_scale_headroom);
+        .find(|&s| s >= p99_ms * 1.3)
+        .unwrap_or(p99_ms * 1.3);
 
     let (response, painter) = ui.allocate_painter(
         egui::vec2(ui.available_width().max(160.0), 72.0),
@@ -224,7 +226,7 @@ fn frame_time_chart(ui: &mut egui::Ui, current_ms: f32) {
     let mut column_worst = vec![None::<f32>; columns];
     for &(t, ms) in samples.iter() {
         let age = now.duration_since(t).as_secs_f32();
-        let x = ((1.0 - age / tuning.chart_window_s) * columns as f32) as usize;
+        let x = ((1.0 - age / CHART_WINDOW_S) * columns as f32) as usize;
         if let Some(slot) = column_worst.get_mut(x.min(columns - 1)) {
             *slot = Some(slot.map_or(ms, |prev: f32| prev.max(ms)));
         }

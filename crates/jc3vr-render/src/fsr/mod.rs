@@ -49,10 +49,7 @@ use windows::{
     core::Interface,
 };
 
-use crate::{
-    stereo::single_pass::{probes, probes::FsrPlane},
-    tuning::RENDER,
-};
+use crate::stereo::single_pass::{probes, probes::FsrPlane};
 
 /// How the post chain's textures hold the eyes one FSR resolve covers.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -256,25 +253,25 @@ fn encoded_previous_view_projection(eye: usize, side_by_side: bool) -> Option<gl
 }
 
 /// Whether the eye's clip-to-previous-clip reprojection is a camera cut rather than motion: the
-/// view centre, at the infinite far plane (the rotation) or at the tuning's near probe depth (the
-/// rotation and the translation), lands further than the tuning's share of the half-screen away in
-/// the previous frame ([`crate::tuning::CameraCutTuning`]). No head moves that far in one frame; a
-/// teleport or a camera switch does.
+/// view centre, at the infinite far plane (the rotation) or at [`CUT_PROBE_DEPTH_M`] (the rotation
+/// and the translation), lands more than [`CUT_NDC`] of the half-screen away in the previous frame.
+/// No head moves that far in one frame; a teleport or a camera switch does.
 fn camera_cut(eye_reprojection: &Matrix4) -> bool {
-    let tuning = &RENDER.get().camera_cut;
     let matrix = glam::Mat4::from(*eye_reprojection);
     // Reverse-Z with an infinite far plane: the depth is the near distance over the view depth.
-    [0.0, SCENE_NEAR_CLIP_M / tuning.probe_depth_m]
+    [0.0, SCENE_NEAR_CLIP_M / CUT_PROBE_DEPTH_M]
         .into_iter()
         .any(|depth| {
             let previous = matrix * glam::Vec4::new(0.0, 0.0, depth, 1.0);
             let ndc = previous.truncate().truncate() / previous.w;
-            previous.w.is_nan()
-                || previous.w <= 0.0
-                || !ndc.is_finite()
-                || ndc.length() > tuning.ndc
+            previous.w.is_nan() || previous.w <= 0.0 || !ndc.is_finite() || ndc.length() > CUT_NDC
         })
 }
+
+/// How far, in NDC, the view centre may move between frames before [`camera_cut`] calls it a cut.
+const CUT_NDC: f32 = 0.5;
+/// The view depth of [`camera_cut`]'s near probe, in metres.
+const CUT_PROBE_DEPTH_M: f32 = 2.0;
 
 /// Global FSR state. Locked briefly on the render thread at the AA hook.
 pub static FSR_STATE: Mutex<FsrState> = Mutex::new(FsrState::new());

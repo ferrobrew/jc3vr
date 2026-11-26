@@ -28,12 +28,9 @@ use std::time::{Duration, Instant};
 use body_rig::{geometry::cast_segment, smooth::smoothstep_between};
 use glam::Vec3;
 
-use crate::{
-    controllers::aim::{
-        ray::Ray,
-        raycast::{self, CastOptions, RaycastError},
-    },
-    tuning::FRESHNESS,
+use crate::controllers::aim::{
+    ray::Ray,
+    raycast::{self, CastOptions, RaycastError},
 };
 
 /// The probe's result for one tick.
@@ -154,10 +151,9 @@ pub fn fade_for_depth(depth: f32, start_m: f32, full_m: f32) -> f32 {
     smoothstep_between(start, full, depth)
 }
 
-/// How long a probe result stays current: the freshness tuning's `rig.probe_ms`.
-pub fn stale_after() -> Duration {
-    FRESHNESS.get().rig.probe_ms.duration()
-}
+/// How long a probe result stays current. The probe runs every simulation tick in gameplay under
+/// the headset, so a stale result means the probe has stopped, and its fade must clear.
+pub const STALE_AFTER: Duration = Duration::from_millis(200);
 
 /// A probe result with the time it was taken.
 #[derive(Debug, Copy, Clone, PartialEq)]

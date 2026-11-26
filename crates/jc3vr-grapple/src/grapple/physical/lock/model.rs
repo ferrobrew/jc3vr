@@ -12,7 +12,6 @@ use jc3vr_physical::controllers::physical_hands::physics::drive::rig_jumped;
 use crate::grapple::{
     physical::config::{LockTuning, SwingTuning},
     rope::{Rope, RopeEnd, RopeFault, RopeStep, RopeTuning, held_floor},
-    tuning::GRAPPLE,
 };
 
 /// Whether a press asks the lock to take hold, given whether it asked last tick (`armed`, cleared
@@ -38,11 +37,11 @@ pub(crate) struct Held {
     /// Whether the take keeps the character's motion, letting the line go taut where its approach
     /// ends, or stops the character against the hook's point at once (a hang).
     keeps_speed: bool,
-    /// The length the line pays out to, at [`LockTuning::pay_out_mps`], until the hand takes line
-    /// in: a hang lowers the character from the hook to its length.
+    /// The length the line pays out to, at [`PAY_OUT_MPS`], until the hand takes line in: a hang
+    /// lowers the character from the hook to its length.
     pay_out_to_m: Option<f32>,
     /// The line the hand has taken in since the pay-out last ran, metres: a pull past
-    /// [`LockTuning::pay_out_take_in_m`] ends the pay-out, and a hand's drift does not.
+    /// [`PAY_OUT_TAKE_IN_M`] ends the pay-out, and a hand's drift does not.
     taken_since_pay_out_m: f32,
 }
 
@@ -96,7 +95,7 @@ impl Held {
         self.take_in_mps = (taken / dt).min(config.reel_in_mps.max(0.0));
         if self.pay_out_to_m.is_some() && taken > 0.0 {
             self.taken_since_pay_out_m += taken;
-            if self.taken_since_pay_out_m > config.pay_out_take_in_m {
+            if self.taken_since_pay_out_m > PAY_OUT_TAKE_IN_M {
                 self.pay_out_to_m = None;
             }
         }
@@ -104,7 +103,7 @@ impl Held {
 
     /// Pay line out toward the hang's length over a tick of `dt` seconds, or take it in toward it
     /// for a hang that took hold further out (under a helicopter, at the reel's distance).
-    fn pay_out(&mut self, dt: f32, config: &LockTuning) {
+    fn pay_out(&mut self, dt: f32, min_length_m: f32) {
         let Some(target) = self.pay_out_to_m else {
             return;
         };
@@ -112,17 +111,16 @@ impl Held {
             return;
         }
         // A hand's drift back and forth along the aim adds up its pulls; the leak lets it go.
-        self.taken_since_pay_out_m =
-            (self.taken_since_pay_out_m - config.pay_out_take_in_m * dt).max(0.0);
+        self.taken_since_pay_out_m = (self.taken_since_pay_out_m - PAY_OUT_TAKE_IN_M * dt).max(0.0);
         if self.rope.length_m > target {
-            let taken = (self.rope.length_m - target).min(config.pay_out_mps * dt);
-            self.rope.shorten(taken, config.min_length_m);
+            let taken = (self.rope.length_m - target).min(PAY_OUT_MPS * dt);
+            self.rope.shorten(taken, min_length_m);
             if self.rope.length_m <= target + 1e-4 {
                 self.pay_out_to_m = None;
             }
             return;
         }
-        self.rope.length_m = (self.rope.length_m + config.pay_out_mps * dt).min(target);
+        self.rope.length_m = (self.rope.length_m + PAY_OUT_MPS * dt).min(target);
         if self.rope.length_m >= target {
             self.pay_out_to_m = None;
         }
@@ -139,13 +137,12 @@ impl Held {
         hook: Vec3,
         hook_velocity: Vec3,
         dt: f32,
-        config: &LockTuning,
     ) {
         if self.keeps_speed
             || !dt.is_finite()
             || dt <= 0.0
             || hook_velocity.length().is_nan()
-            || hook_velocity.length() <= config.moving_hook_mps
+            || hook_velocity.length() <= MOVING_HOOK_MPS
         {
             return;
         }
@@ -154,7 +151,7 @@ impl Held {
         };
         let relative = *velocity - hook_velocity;
         let across = relative - direction * relative.dot(direction);
-        *velocity -= across * follow_factor(dt, config.hang_swing_damping_s);
+        *velocity -= across * follow_factor(dt, HANG_SWING_DAMPING_S);
     }
 
     /// The take: while the character still closes on the hook's point (measured against the hook's
@@ -201,7 +198,7 @@ impl Held {
         // growth meets the line's strength. The coast stops short of it, as of the least length:
         // a shorter line would only break.
         let across = (relative - direction * along).length();
-        let bearable = (config.max_accel_g * config.coast_strength_share - 1.0) * GRAVITY_MPS2;
+        let bearable = (config.max_accel_g * COAST_STRENGTH_SHARE - 1.0) * GRAVITY_MPS2;
         let shortest = if bearable > 0.0 {
             ((across * distance).powi(2) / bearable).cbrt()
         } else {
@@ -217,7 +214,7 @@ impl Held {
         } else {
             f32::INFINITY
         };
-        if stopping > config.coast_brake_g * GRAVITY_MPS2 {
+        if stopping > COAST_BRAKE_MPS2 {
             let braked = (along + stopping.min(along.abs() / dt) * dt).min(0.0);
             *velocity += direction * (braked - along);
         }
@@ -227,6 +224,29 @@ impl Held {
         }
     }
 }
+
+/// The deceleration toward the hook beyond which the coast is braked, metres per second squared:
+/// about what the line holds, so a coast that would otherwise carry in too far stops at the
+/// shortest length the line bears instead.
+const COAST_BRAKE_MPS2: f32 = 3.0 * GRAVITY_MPS2;
+
+/// The share of the line's strength a coast leaves the swing to turn on the length it reaches:
+/// the rest is the margin for the pump and the hook's motion.
+const COAST_STRENGTH_SHARE: f32 = 0.8;
+
+/// How much line the hand must take in during a hang's pay-out to end it, metres: a deliberate
+/// pull, past a hand's drift back along the aim.
+const PAY_OUT_TAKE_IN_M: f32 = 0.05;
+
+/// How long a hang's swing across the line under a moving hook takes to die away, seconds: the
+/// time constant of its damping.
+const HANG_SWING_DAMPING_S: f32 = 1.0;
+
+/// The hook speed above which a hang counts as hung from a moving body, metres per second.
+const MOVING_HOOK_MPS: f32 = 0.5;
+
+/// How fast a hang pays line out to its length, or takes it in, metres per second.
+const PAY_OUT_MPS: f32 = 3.0;
 
 /// One reel tick of the swing, world space.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -276,8 +296,8 @@ pub(crate) fn swing(
     }
     let mut velocity = rider_velocity - Vec3::Y * GRAVITY_MPS2 * dt;
     held.take(&mut velocity, rider, hook, hook_velocity, dt, config);
-    held.damp_hang(&mut velocity, rider, hook, hook_velocity, dt, config);
-    held.pay_out(dt, config);
+    held.damp_hang(&mut velocity, rider, hook, hook_velocity, dt);
+    held.pay_out(dt, config.min_length_m);
     let take_in_velocity = (rider - hook).normalize_or_zero() * held.take_in_mps;
     let max_tension_n = config.max_accel_g.max(0.0) * GRAVITY_MPS2 * rider_mass_kg;
     let out = held.rope.step(RopeStep {
@@ -354,11 +374,7 @@ impl Pump {
         }
         let displacement = (sample.hand - sample.head) - (previous.hand - previous.head);
         let velocity = sample.rotation * (displacement * sample.world_scale / dt);
-        let pump = &GRAPPLE.get().lock.pump;
-        if displacement.length() > pump.max_step_m
-            || !velocity.is_finite()
-            || velocity.length() > pump.max_speed_mps
-        {
+        if displacement.length() > 0.4 || !velocity.is_finite() || velocity.length() > 8.0 {
             self.velocity = Vec3::ZERO;
             return;
         }
@@ -389,10 +405,9 @@ impl Pump {
         let strength = ((speed - tuning.deadzone_mps)
             / (tuning.full_mps - tuning.deadzone_mps).max(1e-3))
         .clamp(0.0, 1.0);
-        let pump = &GRAPPLE.get().lock.pump;
-        let tautness = ((distance - length_m) / pump.taut_m).clamp(0.0, 1.0);
+        let tautness = ((distance - length_m) / 0.05).clamp(0.0, 1.0);
         let acceleration =
-            -tangent.normalize_or_zero() * strength * tautness * (pump.accel_g * GRAVITY_MPS2);
+            -tangent.normalize_or_zero() * strength * tautness * (0.35 * GRAVITY_MPS2);
         acceleration * seconds
     }
 

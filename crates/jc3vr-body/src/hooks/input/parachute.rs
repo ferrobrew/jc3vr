@@ -30,7 +30,7 @@
 use std::{
     f32::consts::{PI, TAU},
     sync::atomic::{AtomicU64, Ordering},
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use detours_macro::detour;
@@ -44,9 +44,7 @@ use jc3gi::{
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::{
-    controllers::physics::grapple_hook, hooks::input::locomotion::head_decoupled, tuning::FRESHNESS,
-};
+use crate::{controllers::physics::grapple_hook, hooks::input::locomotion::head_decoupled};
 
 pub fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&GET_PARACHUTE_STEERING_VALUES_BINDER)
@@ -124,10 +122,9 @@ unsafe fn yaw_alignment_held(character: &Character) -> bool {
     let now = Instant::now();
     let opened = {
         let mut state = ALIGN_STATE.lock();
-        let gap = state.last_call.is_none_or(|last| {
-            now.saturating_duration_since(last)
-                > FRESHNESS.get().hooks.parachute_align_gap_ms.duration()
-        });
+        let gap = state
+            .last_call
+            .is_none_or(|last| now.saturating_duration_since(last) > Duration::from_millis(250));
         if gap {
             state.opened_at = Some(now);
         }

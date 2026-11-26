@@ -30,10 +30,7 @@ use jc3vr_body::controllers::{
 use jc3vr_input::frame::{ControllerFrame, Hand, Pose};
 use jc3vr_view::vr::input::flight_pose::{FlightPacket, GestureHead, GestureSample};
 
-use crate::controllers::vehicles::{
-    arm_steering::wrist_tilt,
-    tuning::{VEHICLES, WingsuitGesturesTuning},
-};
+use crate::controllers::vehicles::{arm_steering::wrist_tilt, tuning::WingsuitGesturesTuning};
 
 /// A single transition request. The binding owner emits it once, never as a held toggle.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -351,10 +348,9 @@ impl FlightPose {
     }
 
     /// Whether the pose deploys the suit from `stage`. A fall takes the spread arms alone: a player
-    /// spreading their arms to fly turns the palms any way, often forward into the wind, and
-    /// nothing else in a fall reads the palms. A canopy takes the flight pose, since the canopy's
-    /// own pose (the arms out with the hands turned up on the toggles) is a spread with rolled
-    /// palms.
+    /// spreading their arms to fly turns the palms any way, often forward into the wind, and nothing
+    /// else in a fall reads the palms. A canopy takes the flight pose, since the canopy's own pose
+    /// (the arms out with the hands turned up on the toggles) is a spread with rolled palms.
     fn deploys_from(self, stage: Stage, config: &WingsuitGesturesTuning) -> bool {
         match stage {
             Stage::Fall => self.spread(config),
@@ -570,9 +566,10 @@ impl WingsuitGestures {
             self.deploy_since_ns = None;
             self.retry_at_ns = None;
         }
-        if self.deploy_since_ns.is_some_and(|since| {
-            elapsed_s(since, input.sample.time_ns) >= f64::from(config.deploy_intent_s)
-        }) {
+        if self
+            .deploy_since_ns
+            .is_some_and(|since| elapsed_s(since, input.sample.time_ns) >= DEPLOY_INTENT_S)
+        {
             self.deploy_since_ns = None;
             self.retry_at_ns = None;
             self.ready = false;
@@ -620,7 +617,7 @@ impl WingsuitGestures {
                 input
                     .sample
                     .time_ns
-                    .saturating_add((f64::from(config.deploy_retry_s) * 1e9) as i64),
+                    .saturating_add((DEPLOY_RETRY_S * 1e9) as i64),
             );
             self.clear_pose();
             return GestureCommands {
@@ -679,7 +676,7 @@ impl WingsuitGestures {
                     input
                         .sample
                         .time_ns
-                        .saturating_add((f64::from(config.deploy_retry_s) * 1e9) as i64),
+                        .saturating_add((DEPLOY_RETRY_S * 1e9) as i64),
                 );
                 return GestureCommands {
                     transition: Some(SuitTransition::Deploy),
@@ -840,26 +837,41 @@ impl HandClaims {
     }
 }
 
-/// The way the player's body faces for the arm measures: the horizontal normal to the line from the
-/// left wrist to the right while the wrists are apart and that normal is within
-/// [`WingsuitGesturesTuning::max_arms_from_head_deg`] of the head's heading, and the head's heading
-/// otherwise (wrists together, crossed, or behind the player).
+/// The way the player's body faces for the arm measures: the horizontal normal to the line from
+/// the left wrist to the right while the wrists are apart and that normal is within
+/// [`MAX_ARMS_FROM_HEAD_DEG`] of the head's heading, and the head's heading otherwise (wrists
+/// together, crossed, or behind the player).
 fn flight_heading(wrists: [Pose; 2], head: Pose) -> Quat {
-    let tuning = &VEHICLES.get().wingsuit_gestures;
     let head_heading = level(head.orientation);
     let across = (wrists[1].position - wrists[0].position).with_y(0.0);
-    if across.length() < tuning.min_arms_separation_m {
+    if across.length() < MIN_ARMS_SEPARATION_M {
         return head_heading;
     }
     let Some(forward) = Vec3::Y.cross(across).try_normalize() else {
         return head_heading;
     };
-    if forward.dot(head_heading * Vec3::NEG_Z) < tuning.max_arms_from_head_deg.to_radians().cos() {
+    if forward.dot(head_heading * Vec3::NEG_Z) < MAX_ARMS_FROM_HEAD_DEG.to_radians().cos() {
         return head_heading;
     }
     // About the vertical alone, so a player turned to face the cockpit's back still stands upright.
     yaw_of(forward).map_or(head_heading, Quat::from_rotation_y)
 }
+
+/// How long after a deploy request another may follow in the same fall, seconds. The suit's entry
+/// reaches the mode detection within a few ticks, so a fall still running this long after a request
+/// is one the game refused it in (still rising from a jump, or too near the ground), and a repeat
+/// never lands in the suit, where the same action closes it.
+const DEPLOY_RETRY_S: f64 = 0.5;
+const DEPLOY_INTENT_S: f64 = 1.5;
+
+/// The wrists' smallest horizontal separation that gives the body's facing, metres. Closer, the
+/// line between them turns with any small movement of either hand.
+const MIN_ARMS_SEPARATION_M: f32 = 0.15;
+
+/// The largest angle between the arms' facing and the head's heading that is still read as the
+/// body's facing, degrees. A head turns about as far on the shoulders; past it the arms are
+/// crossed or reaching behind the player, and their line says nothing about the body.
+const MAX_ARMS_FROM_HEAD_DEG: f32 = 75.0;
 
 #[derive(Debug, Default)]
 struct Dwell {

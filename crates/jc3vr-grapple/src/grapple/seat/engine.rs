@@ -35,7 +35,7 @@ use jc3vr_input::frame::Hand;
 use jc3vr_physical::controllers::physical_hands::doors::engine::vehicle_body;
 use jc3vr_view::controllers::cockpit::CockpitTransform;
 
-use crate::grapple::{seat::Refusal, tuning::GRAPPLE};
+use crate::grapple::seat::Refusal;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum WireReading {
@@ -66,11 +66,9 @@ impl Target {
         let aim = aim::status().grapple?;
         let ray = Ray::new(aim.ray.origin, at - aim.ray.origin)?;
         let options = unsafe { CastOptions::ignoring_rider(character) }.seeing_through();
-        let seat = &GRAPPLE.get().seat;
-        let hit =
-            unsafe { raycast::cast(&ray, ray.origin.distance(at) + seat.ray_past_m, &options) }
-                .ok()?
-                .filter(|hit| hit.position.distance(at) <= seat.hit_within_m)?;
+        let hit = unsafe { raycast::cast(&ray, ray.origin.distance(at) + 0.25, &options) }
+            .ok()?
+            .filter(|hit| hit.position.distance(at) <= 0.5)?;
         let body = hit
             .object
             .and_then(|owner| unsafe { BodyHit::at(hit.body, owner, hit.position) });

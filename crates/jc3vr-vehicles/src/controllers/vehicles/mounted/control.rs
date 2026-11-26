@@ -4,8 +4,6 @@ use std::time::Instant;
 
 use jc3vr_physical::controllers::physical_hands::pickup::HeldReport;
 
-use crate::controllers::vehicles::tuning::VEHICLES;
-
 /// Which weapon and body the grips belong to, so a recycled address is not mistaken for the gun
 /// the record was made for.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -61,29 +59,27 @@ impl Tear {
             self.pull_s = 0.0;
             return false;
         }
-        let tuning = &VEHICLES.get().mounted;
-        if lag_m >= tuning.tear_lag_m && load >= tuning.tear_load {
+        if lag_m >= TEAR_LAG_M && load >= TEAR_LOAD {
             self.pull_s += dt;
         } else {
             self.pull_s = 0.0;
         }
-        self.pull_s >= tuning.tear_hold_s
+        self.pull_s >= TEAR_HOLD_S
     }
 }
+
+/// How far past the hand's target the gun must sit before the pull counts, metres.
+const TEAR_LAG_M: f32 = 0.3;
+/// The share of the hand's strongest pull the tear needs.
+const TEAR_LOAD: f32 = 0.8;
+/// How long the pull must be held, seconds.
+const TEAR_HOLD_S: f32 = 0.4;
 
 #[cfg(test)]
 mod tests {
     use glam::Vec3;
 
     use super::*;
-
-    fn tear_lag() -> f32 {
-        VEHICLES.get().mounted.tear_lag_m
-    }
-
-    fn tear_load() -> f32 {
-        VEHICLES.get().mounted.tear_load
-    }
 
     fn report(lag_m: f32, load: f32) -> HeldReport {
         HeldReport {
@@ -105,25 +101,25 @@ mod tests {
         let mut tear = Tear::default();
         let dt = 0.1;
         for _ in 0..3 {
-            assert!(!tear.step(dt, Some(report(tear_lag(), tear_load()))));
+            assert!(!tear.step(dt, Some(report(TEAR_LAG_M, TEAR_LOAD))));
         }
-        assert!(tear.step(dt, Some(report(tear_lag(), tear_load()))));
-        assert!(tear.step(dt, Some(report(tear_lag(), tear_load()))));
+        assert!(tear.step(dt, Some(report(TEAR_LAG_M, TEAR_LOAD))));
+        assert!(tear.step(dt, Some(report(TEAR_LAG_M, TEAR_LOAD))));
     }
 
     #[test]
     fn letting_go_or_easing_the_pull_resets_the_tear() {
         let mut tear = Tear::default();
         for _ in 0..3 {
-            tear.step(0.1, Some(report(tear_lag(), tear_load())));
+            tear.step(0.1, Some(report(TEAR_LAG_M, TEAR_LOAD)));
         }
-        assert!(!tear.step(0.1, Some(report(tear_lag() * 0.5, tear_load()))));
+        assert!(!tear.step(0.1, Some(report(TEAR_LAG_M * 0.5, TEAR_LOAD))));
         for _ in 0..3 {
-            assert!(!tear.step(0.1, Some(report(tear_lag(), tear_load()))));
+            assert!(!tear.step(0.1, Some(report(TEAR_LAG_M, TEAR_LOAD))));
         }
         assert!(!tear.step(0.1, None));
         for _ in 0..3 {
-            assert!(!tear.step(0.1, Some(report(tear_lag(), tear_load()))));
+            assert!(!tear.step(0.1, Some(report(TEAR_LAG_M, TEAR_LOAD))));
         }
     }
 
@@ -131,12 +127,12 @@ mod tests {
     fn an_invalid_report_or_tick_never_tears() {
         let mut tear = Tear::default();
         for dt in [f32::NAN, f32::INFINITY, 0.0, -1.0] {
-            assert!(!tear.step(dt, Some(report(tear_lag(), tear_load()))));
+            assert!(!tear.step(dt, Some(report(TEAR_LAG_M, TEAR_LOAD))));
         }
         for report in [
-            report(f32::NAN, tear_load()),
-            report(tear_lag(), f32::NAN),
-            report(tear_lag(), f32::INFINITY),
+            report(f32::NAN, TEAR_LOAD),
+            report(TEAR_LAG_M, f32::NAN),
+            report(TEAR_LAG_M, f32::INFINITY),
         ] {
             assert!(!tear.step(0.1, Some(report)));
         }
@@ -146,27 +142,27 @@ mod tests {
     fn a_native_handle_pulled_past_the_reach_tears_on_the_same_hold_time() {
         let mut tear = Tear::default();
         for _ in 0..3 {
-            assert!(!tear.step_pull(0.1, tear_lag(), 1.0));
+            assert!(!tear.step_pull(0.1, TEAR_LAG_M, 1.0));
         }
-        assert!(tear.step_pull(0.1, tear_lag(), 1.0));
-        assert!(tear.step_pull(0.1, tear_lag(), 1.0));
+        assert!(tear.step_pull(0.1, TEAR_LAG_M, 1.0));
+        assert!(tear.step_pull(0.1, TEAR_LAG_M, 1.0));
     }
 
     #[test]
     fn a_native_handle_eased_back_or_untracked_resets_the_tear() {
         let mut tear = Tear::default();
         for _ in 0..3 {
-            tear.step_pull(0.1, tear_lag(), 1.0);
+            tear.step_pull(0.1, TEAR_LAG_M, 1.0);
         }
-        assert!(!tear.step_pull(0.1, tear_lag() * 0.5, 1.0));
+        assert!(!tear.step_pull(0.1, TEAR_LAG_M * 0.5, 1.0));
         for _ in 0..3 {
-            assert!(!tear.step_pull(0.1, tear_lag(), 1.0));
+            assert!(!tear.step_pull(0.1, TEAR_LAG_M, 1.0));
         }
         for lag in [f32::NAN, f32::INFINITY] {
             assert!(!tear.step_pull(0.1, lag, 1.0));
         }
         for load in [f32::NAN, f32::INFINITY] {
-            assert!(!tear.step_pull(0.1, tear_lag(), load));
+            assert!(!tear.step_pull(0.1, TEAR_LAG_M, load));
         }
     }
 

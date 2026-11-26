@@ -32,7 +32,7 @@ pub mod tether;
 
 use std::time::{Duration, Instant};
 
-pub use config::PhysicalGrappleTuning;
+pub use config::{GRAPPLE, PhysicalGrappleTuning};
 use jc3gi::equipment::grappling_hook::GrapplingHookState;
 use jc3vr_body::controllers::{
     hands::anchor,
@@ -50,13 +50,10 @@ use jc3vr_view::headpose;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::grapple::{
-    physical::{
-        pull::{LinePull, PullReading},
-        reel::ReelDrive,
-        tether::TetherTick,
-    },
-    tuning::GRAPPLE,
+use crate::grapple::physical::{
+    pull::{LinePull, PullReading},
+    reel::ReelDrive,
+    tether::TetherTick,
 };
 
 /// The physical grapple's hooks, aggregated by `hooks`.
@@ -176,9 +173,7 @@ pub struct GrappleStatus {
 pub fn status() -> GrappleStatus {
     let status = STATUS.lock();
     GrappleStatus {
-        live: status.1.is_some_and(|at| {
-            at.elapsed() < Duration::from_millis(GRAPPLE.get().physical.status_max_age_ms)
-        }),
+        live: status.1.is_some_and(|at| at.elapsed() < STATUS_MAX_AGE),
         ..status.0
     }
 }
@@ -186,7 +181,7 @@ pub fn status() -> GrappleStatus {
 /// Run the physical grapple's part of the input tick. Called in the game stage while the bindings
 /// inject.
 pub fn input_tick(game: &GameTick<'_>, input: &TickInput) -> TickOutput {
-    let config = &GRAPPLE.get().physical;
+    let config = &GRAPPLE;
     let hand = input.dominant.other();
     let hook = unsafe { read_hook() };
     let anchor = anchor::status().anchor;
@@ -238,6 +233,7 @@ pub fn input_tick(game: &GameTick<'_>, input: &TickInput) -> TickOutput {
     let drive = drive_reel.then(|| ReelDrive {
         scale: reel::scale_for(pull.speed_mps, &config.reel),
         boost: boosted,
+        boost_needs_upgrade: config.reel.boost_needs_upgrade,
     });
     reel::publish(drive);
     match (drive, state.reel_peak) {
@@ -394,6 +390,9 @@ fn count_down(left_s: Option<f32>, dt: f32) -> Option<f32> {
     let left = left_s? - dt;
     (dt.is_finite() && left > 0.0).then_some(left)
 }
+
+/// How long the readout counts as live after the last input tick.
+const STATUS_MAX_AGE: Duration = Duration::from_millis(500);
 
 /// The input tick's state.
 struct State {
