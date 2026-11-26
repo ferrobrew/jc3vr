@@ -82,16 +82,79 @@ In the order of the feedback. Before the moving-vehicle checks, repeat checks 69
 
 73. Session checklist: mark a check as not working, edit its note, and select Works or Untested while the note still has focus. The selected mark remains and the latest note persists after restarting. Back up the results file, make it malformed outside the game, and restart: the error remains visible and marks cannot overwrite the file. Repair or move it, then use the reload button: results become writable again.
 
-Added with the work on issues #69 to #76, in the order of the issues. None of it has been tried in the headset.
+Added with the work on issues #69 to #76. None of it has been tried in the headset.
 
-74. Gun sounds (#69). Turn on the manual action under Weapons, Reload and gun action. Fire the U-Rys 96 and rack the pump by hand: a pump-back sound at the rear and a pump-forward sound at home, both from the gun (`reload: played the gun's sound`, `ActionBack` then `ActionHome`). Fire the Archangel or Final Argument and work the bolt: the cock sound at the rear and a casing leaves the port; rack it again without firing and there is no casing. Pistol slides and rifle charging handles stay silent apart from the haptics (`played=false`). Draw a pistol from the hip and a rifle from the back, then dock both, including one pulled in by socket attraction: the draw sound plays at the gun, and the holster sound plays when the gun lands rather than when it is let go. Eject and knock out a magazine: no gun sound, so note whether the dropped magazine sounds when it lands. Seat a magazine and refuse a round: the same sounds as before.
-75. Grenade pin (#70). Draw a grenade into one hand with the other empty: a faint red ring sits on top of the grenade and brightens with "pull pin" when the empty hand nears. Squeeze inside it: the pin comes out, both hands bump, and the log says `by="the other hand"`. Squeeze on the body or the bottom of the fist: the grenade changes hands and the pin stays in. Squeeze at the ring's edge: the pin should win; note whether the ring is easy to hit or swallows too much of the grenade. With a pistol in one hand and the grenade in the other, hold the grenade's top at your mouth: the pin pulls after a moment (`by="the teeth"`), once per visit, and a quick pass of the face does nothing. With the other hand empty, the mouth does nothing. The trigger on the holding hand still pulls it. With a grenade in each hand neither shows a ring. Mounted guns' handles still beat the gun's body.
-76. Free hand on the grapple line (#71). Lock onto a hook and put the free hand on the line about half a metre ahead of the grapple wrist: a ring shows, and squeezing logs `grapple lock: the free hand took hold of the line`. Pull the line toward the chest: it shortens by the pull, stops at the shortest line setting, and re-grabbing keeps the reel going hand over hand. Repeat while hanging under a ceiling. Snatch a heavy barrel so it swings and take the line ahead with the free hand (`snatch: the free hand took hold of the line`): pulling the hand back draws the barrel in, and letting go keeps the shorter length. Swing the held line sideways a few times and note how much one flick does. Brace at the wrist, then grip ahead: the two never run together and nothing jumps at the switch. With a pistol in the free hand no ring shows. If the grapple button is released while the free hand holds the line, that hand does not catch again until its grip opens and closes.
-77. Holstered guns by hand (#73). Reach a free hand to a soldier's hip pistol and squeeze: the pistol comes off the holster into the hand by its grip, ready to fire, and he staggers (`hold: took the gun off a character's holster`). Do the same for a rifle on his back from over the shoulder. Grab a soldier by the collar and the upper arm while he carries a rifle on his back: note whether the grip takes him or the rifle. An open hand moving slowly to a holster does not punch him. Close both hands on one holstered pistol: one takes it and the other is not offered it. Hold a gun in one hand and take a holstered gun with the other: the first keeps its gun. Grapple-snatch a holstered gun from range as before.
-78. Heavy weapons and native refills (#76). Take a special weapon into the off hand while the primary holds a rifle and fire it dry: about 1.5 seconds later it refills (`reload: the game's reload refilled a weapon armed in a hand`) and the reserve drops by a magazine. With the true reload off, an emptied rifle in the off hand refills the same way. A held minigun or .50 cal fires until the reserve is empty and never logs a refill. Take a heavy weapon off a rack, snatch one with the grapple, and take the minigun out of an enemy's hands: each lands in a hand and the other hand keeps its gun. With hand bodies on, a held heavy weapon collides along its length and kicks per shot. Swim, hand-climb, fire the grapple, and enter a car with one held: it stays in the hand. Pick up a minigun with the table off, turn it on, then grapple or jump into water: the game drops it as it does in vanilla.
-79. Wingsuit air brake (#72). With both wingsuit gear mods, glide in low over flat ground and roll both palms to the wind without holding them flat first: `braking` within about 0.12 seconds, a flare, and below 5 m and 10 m/s the slide landing. Roll the palms on toward palm-up during the approach: it stays braking. Flatten both palms, or pull one arm in: it leaves braking. Open the suit from a fall with the palms already rolled to the wind: it does not brake until the palms go flat or the arms come in once. Reset the wingsuit bindings (the action's type changed), then hold the left lower face button (A on Index, X on Touch) with the arms down: it brakes and lands like the gesture, for either dominant hand. Gamepad-only: B still brakes.
-80. Wingsuit barrel roll (#74). In the boost wingsuit with the arms spread, throw them hard into a steep bank to the right: Rico rolls right and the view rolls with him (`wingsuit evade: the arms threw a right evade`). Repeat to the left. A second throw straight away is refused for the cooldown, and rolls again after about 1.5 seconds with the arms back near level. Banking slowly and holding a steep turn never rolls. A throw while pitched hard rolls diagonally. Refusals: with the air brake held, with the grapple aiming, in the plain suit, and with the boost charge empty and no missile lock. Switch it off in the Air feature: nothing happens and the gamepad's evade is dropped again. Note whether the 360 degree view roll is bearable, whether the roll's direction follows the throw rather than the steering before it, and whether there is a delay between the throw and the roll. The gamepad's own evade rolls again by default.
-81. Seated characters through broken glass (#75). Stand on a car's hood with the driver in and shatter the windshield; reach down through it: a violet ring shows and the readout says the character sits behind a window the glass brought down. With the windshield intact there is no ring. Grip the driver and yank back: `a hand pulled an occupant out of the seat through a broken window`, the driver goes limp, and the hand regrips the ragdoll; drag him over the hood and watch for snagging on the frame. If the log says `an occupant reached through a broken window stays in the seat` with the seat taking no full ragdoll, car seats refuse the act. Reaching through the roof rather than the windshield shows no ring. Shatter a side window and punch a passenger hard: he is knocked out of the seat, and an intact window gives no knockdown. Opening a door by hand and hijacking through it, and punching a rider off a motorcycle, work as before.
+Gun sounds. Turn on Work the action by hand first.
+
+74. Gun sounds: with Work the action by hand on, rack the U-Rys 96 pump by hand after a shot: a back sound at the rear and a forward sound at home, from the gun.
+75. Gun sounds: work the Archangel or Final Argument bolt after a shot: a cock sound and a casing leaves the port. Rack it again unfired: the sound, no casing.
+76. Gun sounds: rack a pistol slide or a rifle charging handle: silent apart from the haptics.
+77. Gun sounds: draw a pistol from the hip and a rifle from the back: the draw sound plays at the gun.
+78. Gun sounds: dock a gun, also one pulled in by socket attraction: the holster sound plays when it lands, not when it is let go.
+79. Gun sounds: eject and knock out a magazine: no gun sound. Note whether the dropped magazine sounds when it lands.
+80. Gun sounds: seat a magazine and refuse a round: the same sounds as before.
+
+Grenade pin.
+
+81. Grenade pin: hold a grenade with the other hand empty: a faint red ring sits on top and brightens with "pull pin" when the empty hand nears.
+82. Grenade pin: squeeze inside the ring: the pin comes out and both hands bump.
+83. Grenade pin: squeeze on the body or the bottom of the fist: the grenade changes hands and the pin stays in.
+84. Grenade pin: squeeze at the ring's edge: the pin wins. Note whether the ring is easy to hit or swallows too much of the grenade.
+85. Grenade pin: with a pistol in the other hand, hold the grenade's top at your mouth: the pin pulls after a moment, once per visit. A quick pass of the face does nothing.
+86. Grenade pin: the trigger on the holding hand still pulls it. A mounted gun's handles still beat its body.
+
+Free hand on the grapple line.
+
+87. Grapple line: lock onto a hook and put the free hand on the line half a metre ahead of the wrist: a ring shows, and a squeeze takes hold.
+88. Grapple line: pull the held line to the chest: it shortens by the pull and stops at the shortest setting. Let go and grab again: the reel continues.
+89. Grapple line: repeat the pull while hanging under a ceiling.
+90. Grapple line: swing a snatched barrel and take its line with the free hand: pulling draws the barrel in, and letting go keeps the shorter length.
+91. Grapple line: flick the held snatch line sideways a few times and note how much one flick does.
+92. Grapple line: brace at the wrist, then grip ahead: the two never run together and nothing jumps.
+93. Grapple line: with a pistol in the free hand no ring shows. Release the grapple button while the free hand holds the line: that hand catches again only after its grip opens and closes.
+
+Holstered guns by hand.
+
+94. Holstered guns: squeeze a soldier's hip pistol with a free hand: it comes off into the hand ready to fire, and he staggers.
+95. Holstered guns: take a rifle off a soldier's back from over his shoulder.
+96. Holstered guns: grab a soldier with a rifle on his back by the collar and the upper arm: note whether the grip takes him or the rifle.
+97. Holstered guns: move an open hand slowly to a holster: no punch. A brisk punch still strikes.
+98. Holstered guns: close both hands on one holstered pistol: one takes it. Hold a gun in one hand and take another with the other: the first keeps its gun.
+
+Heavy weapons and native refills.
+
+99. Refill: fire a special weapon in the off hand dry while the primary holds a rifle: about 1.5 seconds later it refills and the reserve drops by a magazine.
+100. Refill: with the true reload off, an emptied rifle in the off hand refills the same way.
+101. Heavy weapons: a held minigun or .50 cal fires until the reserve is empty and never refills.
+102. Heavy weapons: take one off a rack, snatch one with the grapple, and take the minigun out of an enemy's hands: each lands in a hand and the other hand keeps its gun.
+103. Heavy weapons: with hand bodies on, a held one collides along its length and kicks per shot.
+104. Heavy weapons: swim, hand-climb, grapple, and enter a car with one held: it stays in the hand.
+105. Heavy weapons: pick up a minigun with the table off, turn it on, then grapple or jump into water: the game drops it.
+
+Wingsuit air brake. Reset the wingsuit bindings first.
+
+106. Air brake: after resetting the wingsuit bindings, glide in low over flat ground and roll both palms to the wind without flattening them first: it brakes within about 0.12 seconds and flares.
+107. Air brake: below 5 m and 10 m/s the brake lands in the slide.
+108. Air brake: roll the palms on toward palm-up during the approach: it stays braking.
+109. Air brake: flatten both palms, or pull one arm in: it leaves braking.
+110. Air brake: open the suit from a fall with the palms already rolled to the wind: it does not brake until the palms go flat or the arms come in once.
+111. Air brake: hold the left lower face button (A on Index, X on Touch) with the arms down: it brakes and lands, for either dominant hand. Gamepad: B still brakes.
+
+Wingsuit barrel roll.
+
+112. Barrel roll: in the boost wingsuit throw the spread arms hard into a steep bank to the right: Rico rolls right and the view rolls with him. Repeat to the left.
+113. Barrel roll: a second throw straight away is refused. After about 1.5 seconds with the arms near level it rolls again.
+114. Barrel roll: banking slowly and holding a steep turn never rolls. A throw while pitched hard rolls diagonally.
+115. Barrel roll: it is refused with the air brake held, with the grapple aiming, in the plain suit, and with the boost empty and no missile lock.
+116. Barrel roll: switched off in the Air feature, a throw does nothing and the gamepad evade is dropped. Switched on, the gamepad evade rolls again.
+117. Barrel roll: note whether the 360 degree view roll is bearable, whether its direction follows the throw, and whether there is a delay.
+
+Seated characters through broken glass.
+
+118. Broken glass: stand on a car's hood with the driver in and shatter the windshield: reaching down through it shows a violet ring. Intact glass shows none, and neither does reaching through the roof.
+119. Broken glass: grip the driver through the broken windshield and yank back: he goes limp and you regrip the ragdoll. Watch for snagging on the frame as you drag him over the hood.
+120. Broken glass: shatter a side window and punch a passenger hard: he is knocked out of the seat. An intact window gives no knockdown.
+121. Broken glass: hijacking through a hand-opened door and punching a rider off a motorcycle work as before.
 
 ## What was built for the deferred work
 
