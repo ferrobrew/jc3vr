@@ -201,16 +201,19 @@ impl LockStatus {
 }
 
 /// The lock's readout. Safe from any thread: it takes only a leaf lock.
+#[inline]
 pub fn status() -> LockStatus {
     SHARED.lock().status
 }
 
 /// Whether the lock holds the line.
+#[inline]
 pub fn holds() -> bool {
     facts::lock::holds()
 }
 
 /// Whether the lock hangs the character below a helicopter, where Y enters it.
+#[inline]
 pub fn hangs_under_helicopter() -> bool {
     holds()
         && SHARED
@@ -220,6 +223,7 @@ pub fn hangs_under_helicopter() -> bool {
 }
 
 /// Whether Y under a helicopter has just pointed the resumed reel at its door side.
+#[inline]
 pub fn entering_helicopter() -> bool {
     HANG_GATE
         .lock()

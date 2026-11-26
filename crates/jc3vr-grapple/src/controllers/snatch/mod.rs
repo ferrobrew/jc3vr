@@ -124,6 +124,7 @@ pub fn hook_library() -> HookLibrary {
         .with_hook_library(juice::hook_library())
 }
 
+#[inline]
 pub fn available_in(detection: &Detection) -> bool {
     if detection.traversal.is_some() {
         return false;
@@ -143,6 +144,7 @@ pub fn available_in(detection: &Detection) -> bool {
 /// hook out to it or its line pulling it in, so that a press after the yank holds the line (the
 /// swing) as a press before it does. A heavy object swings without it, and the claimed press does
 /// nothing to it, rather than firing the game's grapple from under the snatch.
+#[inline]
 pub fn can_claim_button() -> bool {
     matches!(
         STATE.lock().phase,
@@ -228,6 +230,7 @@ pub fn reserved_hands() -> [bool; 2] {
 
 /// The hand other than the grapple hand that caught the snatch's target on the last tick, with the
 /// grab its grip now holds the target by, as the grapple hand's grip holds a snatched target.
+#[inline]
 pub fn take_other_catch() -> Option<(Hand, GrabVolume)> {
     STATE.lock().other_catch.take()
 }

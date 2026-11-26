@@ -74,11 +74,13 @@ impl Refusal {
 /// # Safety
 ///
 /// The game thread.
+#[inline]
 pub unsafe fn stands_in_for_local() -> bool {
     unsafe { local() }.is_some_and(|(character, hook)| unsafe { stands_in(character, hook) })
 }
 
 /// The seat grapple's readout. Safe from any thread: it takes only a leaf lock.
+#[inline]
 pub fn status() -> SeatStatus {
     STATE.lock().status
 }
