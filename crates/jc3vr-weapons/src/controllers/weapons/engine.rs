@@ -118,6 +118,7 @@ pub(crate) unsafe fn slot_of(weapon: &WeaponBase) -> Option<WeaponSlot> {
 /// # Safety
 ///
 /// `weapon` must be live.
+#[inline]
 pub unsafe fn is_hand_grenade(weapon: &WeaponBase) -> bool {
     (unsafe { slot_of(weapon) }) == Some(WeaponSlot::E_SLOT_HAND_GRENADE)
 }

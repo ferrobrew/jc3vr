@@ -337,6 +337,7 @@ pub(crate) fn clear() {
 }
 
 /// The hand holding `weapon`, while the mod owns its attach bones.
+#[inline]
 pub fn owned_holder(weapon: usize) -> Option<Hand> {
     ENABLED
         .load(Ordering::Relaxed)

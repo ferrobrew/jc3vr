@@ -247,6 +247,7 @@ impl Insertion {
         }
     }
 
+    #[inline]
     pub fn holding(&self) -> bool {
         self.stage != InsertStage::Idle
     }

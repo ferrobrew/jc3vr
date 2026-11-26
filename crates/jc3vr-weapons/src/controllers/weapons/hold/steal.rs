@@ -78,6 +78,7 @@ use crate::controllers::{
 /// Note characters' guns out to `range_m` from the player rather than within reach: the grapple's
 /// snatch takes them from range (`controllers::snatch`). Zero keeps the notice to reach.
 /// Called every input tick.
+#[inline]
 pub fn widen_notice(range_m: f32) {
     let range = if range_m.is_finite() { range_m } else { 0.0 };
     NOTICE_RANGE.store(range.max(NOTICE_RANGE_M).to_bits(), Ordering::Relaxed);

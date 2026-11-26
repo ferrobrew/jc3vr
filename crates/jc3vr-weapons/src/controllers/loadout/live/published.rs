@@ -38,6 +38,7 @@ pub fn held_kind(hand: Hand) -> Option<ItemKind> {
 }
 
 /// The weapon in `hand`, when the table has one there.
+#[inline]
 pub fn in_hand(hand: Hand) -> Option<usize> {
     match HANDS[hand.index()].load(Ordering::Relaxed) {
         0 => None,

@@ -245,6 +245,7 @@ pub fn snatched_from_world(hand: Hand, weapon: Weak) {
 /// dropped: a grenade the snatch can bring to the hand and the world's drop replaces, rather than a
 /// grenade on a display ([`WeaponBase::m_InfinitePickup`]), which stays where it is until a hand
 /// takes it.
+#[inline]
 pub fn finite_world_pickup(weapon: &WeaponBase) -> bool {
     // Read as the raw value: a state the enum does not name is not dropped.
     let state = unsafe { (&raw const weapon.m_State).cast::<i32>().read() };
@@ -292,17 +293,20 @@ unsafe fn consume_world_pickup(weapon: &mut WeaponBase) {
 
 /// Whether the physics game object `owner`'s body `body` is an inert grenade lying in the world,
 /// which the snatch brings to the hand as a grenade rather than as a loose object.
+#[inline]
 pub fn inert_in_world(owner: NonZeroUsize, body: u32) -> bool {
     safe::inert_in_world(owner, body).is_some()
 }
 
 /// The inert grenades lying in the world, each with its physics game object, its body, and its
 /// grab point in the world, for the snatch to offer near its aim as it offers weapons lying there.
+#[inline]
 pub fn inert_lying() -> Vec<(NonZeroUsize, u32, Vec3)> {
     safe::loose_bodies()
 }
 
 /// Whether `hand` holds a grenade from the pouch whose pin is still in.
+#[inline]
 pub fn pin_in_hand(hand: Hand) -> bool {
     safe::pin_in(hand)
 }

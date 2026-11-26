@@ -113,6 +113,7 @@ pub(crate) fn per_hand() -> bool {
 
 /// Publish each hand's fire input for the tick's updates, by [`Hand::index`]: its trigger pulled
 /// while nothing of the mod's holds its gun back.
+#[inline]
 pub fn publish_fire(fire: [bool; 2]) {
     for hand in Hand::BOTH {
         FIRE[hand.index()].store(fire[hand.index()], Ordering::Relaxed);

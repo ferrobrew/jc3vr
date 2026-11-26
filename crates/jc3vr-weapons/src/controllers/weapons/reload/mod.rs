@@ -868,6 +868,7 @@ pub(crate) fn adjust_part(
 /// # Safety
 ///
 /// The game thread, outside the world update.
+#[inline]
 pub unsafe fn render_frame() {
     unsafe { casings::render_frame() };
 }

@@ -198,6 +198,7 @@ pub fn cross_anchor() -> Option<CrossAnchor> {
 
 /// Close an open wheel as a cancel while a game menu is up: the menu takes the slot-select inputs
 /// away, and the game would commit the pending selection when it resumes.
+#[inline]
 pub fn pause() {
     close_as_cancel();
 }
