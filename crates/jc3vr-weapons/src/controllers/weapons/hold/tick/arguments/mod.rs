@@ -1,9 +1,8 @@
 //! The arguments used by both native armed-weapon update phases.
 
-use std::time::Instant;
-
 use glam::Vec3;
 use jc3gi::{equipment::weapon::WeaponInputs, types::math::Vector3};
+use jc3vr_core::published::{Stamp, Window};
 
 use crate::controllers::weapons::hold::tuning::HOLD;
 
@@ -12,7 +11,7 @@ pub(super) struct HandTarget {
     pub owner: usize,
     pub weapon: usize,
     pub point: Vec3,
-    pub at: Instant,
+    pub at: Stamp,
 }
 
 pub(super) struct UpdateFacts {
@@ -20,7 +19,7 @@ pub(super) struct UpdateFacts {
     pub weapon: usize,
     pub hand_target: Option<HandTarget>,
     pub native_target: Option<Vec3>,
-    pub now: Instant,
+    pub now: Stamp,
     pub loaded: bool,
     pub fire: bool,
     pub reload_held: bool,
@@ -37,14 +36,14 @@ pub(super) enum UpdateArguments {
 }
 
 pub(super) fn update_arguments(facts: UpdateFacts) -> UpdateArguments {
+    let window = Window::new(HOLD.get().hold.target_max_age_ms.duration());
     let target = facts
         .hand_target
         .filter(|target| {
             target.owner == facts.owner
                 && target.weapon == facts.weapon
                 && target.point.is_finite()
-                && facts.now.saturating_duration_since(target.at)
-                    <= HOLD.get().hold.target_max_age_ms.duration()
+                && window.holds(target.at, facts.now)
         })
         .map(|target| target.point)
         .or(facts.native_target.filter(|target| target.is_finite()));

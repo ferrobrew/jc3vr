@@ -37,8 +37,6 @@
 pub mod lens;
 pub mod suppress;
 
-use std::time::Instant;
-
 use glam::{Mat4, Vec3};
 use jc3gi::equipment::weapon::{WeaponBase, WeaponClass};
 use jc3vr_body::{
@@ -50,6 +48,7 @@ use jc3vr_body::{
     },
     tuning::Millis,
 };
+use jc3vr_core::published::{Published, Stage, Window};
 use jc3vr_input::frame::{Hand, Pose};
 use jc3vr_view::controllers::weapons::scope::lens_frame::{self, LensFrame};
 use parking_lot::Mutex;
@@ -157,14 +156,14 @@ pub(crate) fn input_tick(guns: [Option<usize>; 2]) {
             })
         })
     });
-    *SCOPED.lock() = Some((scoped, Instant::now()));
+    SCOPED.publish(scoped);
 }
 
 /// Whether the weapon at `address` is a scoped weapon in a hand, as the last input tick identified.
 pub(crate) fn is_scoped(address: usize) -> bool {
     SCOPED
-        .lock()
-        .is_some_and(|(scoped, _)| scoped.contains(&Some(address)))
+        .latest()
+        .is_some_and(|scoped| scoped.value.contains(&Some(address)))
 }
 
 /// Plan the frame's lens. Called once per render dispatch at the end of `RenderEngine::PostDraw`,
@@ -220,8 +219,8 @@ static STATUS: Mutex<ScopeStatus> = Mutex::new(ScopeStatus {
     error: None,
 });
 
-/// The gun in each hand the last input tick found scoped, by [`Hand::index`], and when.
-static SCOPED: Mutex<Option<([Option<usize>; 2], Instant)>> = Mutex::new(None);
+/// The gun in each hand the last input tick found scoped, by [`Hand::index`].
+static SCOPED: Published<[Option<usize>; 2]> = Published::new(Stage::InputGame);
 
 /// Plan the frame's lens, re-anchoring each scoped gun's sight line to its wrist when the aim has
 /// run since its anchor was taken, and taking the lens of the scope raised to the eye.
@@ -240,9 +239,8 @@ fn plan(
         return idle(LensIdle::Inactive);
     }
     let scoped = SCOPED
-        .lock()
-        .filter(|(_, at)| at.elapsed() < config.scoped_ms.duration())
-        .map_or([None; 2], |(scoped, _)| scoped);
+        .fresh(Window::new(config.scoped_ms.duration()))
+        .unwrap_or([None; 2]);
     let aim = aim::status();
     let frame = FrameInputs {
         aim: &aim,

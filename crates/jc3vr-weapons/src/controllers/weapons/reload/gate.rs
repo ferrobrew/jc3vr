@@ -23,6 +23,7 @@
 
 use std::time::{Duration, Instant};
 
+use jc3vr_core::published::{Stamp, Window};
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
@@ -55,7 +56,7 @@ pub(super) fn publish(published: Option<Published>) {
     match published {
         Some(p) => {
             shared.published = p;
-            shared.at = Some(Instant::now());
+            shared.at = Some(Stamp::now());
         }
         None => {
             shared.published = Published::default();
@@ -210,7 +211,7 @@ const ALLOWED_LOG_INTERVAL: Duration = Duration::from_secs(1);
 
 struct Shared {
     published: Published,
-    at: Option<Instant>,
+    at: Option<Stamp>,
     shots: Vec<Shot>,
     refused: u64,
     /// When a reload start the stop let through was last logged.
@@ -221,10 +222,9 @@ impl Shared {
     /// The published state, while it is newer than the tuning's `gate.stale_ms`
     /// ([`GateTuning::stale_ms`](crate::controllers::weapons::reload::tuning::GateTuning::stale_ms)).
     fn fresh(&self) -> Option<Published> {
-        let stale = Duration::from_millis(RELOAD.get().gate.stale_ms);
-        self.at
-            .filter(|at| at.elapsed() < stale)
-            .map(|_| self.published)
+        Window::from_millis(RELOAD.get().gate.stale_ms)
+            .holds(self.at, Stamp::now())
+            .then_some(self.published)
     }
 }
 

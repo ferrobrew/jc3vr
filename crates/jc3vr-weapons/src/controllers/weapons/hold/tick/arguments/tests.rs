@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use super::*;
 
-fn facts(now: Instant) -> UpdateFacts {
+fn facts(now: Stamp) -> UpdateFacts {
     UpdateFacts {
         owner: 11,
         weapon: 22,
@@ -28,7 +28,7 @@ fn tick(arguments: UpdateArguments) -> (f32, Vec3) {
 
 #[test]
 fn disabled_aim_ticks_both_phases_and_delivers_trigger_release() {
-    let now = Instant::now();
+    let now = Stamp::now();
     for _phase in 0..2 {
         let mut input = facts(now);
         assert_eq!(
@@ -42,7 +42,7 @@ fn disabled_aim_ticks_both_phases_and_delivers_trigger_release() {
 
 #[test]
 fn recovered_aim_uses_the_hand_point_and_expiry_returns_to_native() {
-    let now = Instant::now();
+    let now = Stamp::now();
     let mut input = facts(now);
     let point = Vec3::new(8.0, 9.0, 10.0);
     let target = HandTarget {
@@ -62,7 +62,7 @@ fn recovered_aim_uses_the_hand_point_and_expiry_returns_to_native() {
 
 #[test]
 fn replacement_never_reuses_a_previous_characters_or_weapons_target() {
-    let now = Instant::now();
+    let now = Stamp::now();
     for (owner, weapon) in [(12, 22), (11, 23)] {
         let mut input = facts(now);
         input.hand_target = Some(HandTarget {
@@ -78,7 +78,7 @@ fn replacement_never_reuses_a_previous_characters_or_weapons_target() {
 
 #[test]
 fn traversal_reload_and_ammunition_withhold_fire_without_withholding_ticks() {
-    let now = Instant::now();
+    let now = Stamp::now();
     for gate in 0..3 {
         let mut input = facts(now);
         match gate {
@@ -92,7 +92,7 @@ fn traversal_reload_and_ammunition_withhold_fire_without_withholding_ticks() {
 
 #[test]
 fn unavailable_or_invalid_targets_request_native_stop_even_with_fire_held() {
-    let now = Instant::now();
+    let now = Stamp::now();
     for native in [None, Some(Vec3::NAN)] {
         let mut input = facts(now);
         input.native_target = native;

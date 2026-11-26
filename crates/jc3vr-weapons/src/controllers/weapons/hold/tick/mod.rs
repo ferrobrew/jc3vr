@@ -39,10 +39,7 @@
 //! The detours run on the simulation's worker threads; they read only the published inputs and
 //! the armed weapons' addresses, and lock nothing but this module's short locks.
 
-use std::{
-    sync::atomic::{AtomicBool, AtomicU64, Ordering},
-    time::Instant,
-};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use detours_macro::detour;
 use glam::Vec3;
@@ -53,6 +50,7 @@ use jc3gi::{
     equipment::weapon::{WeaponBase, WeaponInputs, WeaponState},
     types::math::Vector3,
 };
+use jc3vr_core::published::Stamp;
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
@@ -122,7 +120,7 @@ pub fn publish_fire(fire: [bool; 2]) {
 
 /// Publish each hand's aim point, from its gun's sight line, at the aim update, by [`Hand::index`].
 pub fn publish_targets(owner: usize, targets: [Option<(usize, Vec3)>; 2]) {
-    let now = Instant::now();
+    let now = Stamp::now();
     *TARGETS.lock() = targets.map(|target| {
         let (weapon, point) = target?;
         point.is_finite().then_some(HandTarget {
@@ -265,7 +263,7 @@ unsafe fn update_facts(
         weapon: address,
         hand_target: TARGETS.lock()[hand.index()],
         native_target,
-        now: Instant::now(),
+        now: Stamp::now(),
         loaded,
         fire: FIRE[hand.index()].load(Ordering::Relaxed),
         reload_held: reload::holds_fire(address, hand),

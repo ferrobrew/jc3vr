@@ -19,7 +19,7 @@
 //! placement after the capture, so this stays the placement the game sees and the fallback
 //! whenever the atlas does not draw the cross.
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use detours_macro::detour;
 use glam::{Quat, Vec2, Vec3, Vec4};
@@ -31,6 +31,7 @@ use jc3gi::{
         ui_manager::{StageRect, UIManager},
     },
 };
+use jc3vr_core::published::Stamp;
 use jc3vr_input::frame::Pose;
 use jc3vr_view::hud::{
     pointer::panel::{aim_at_panel, intersect_panel},
@@ -73,7 +74,7 @@ pub fn panel_point(head: Vec3, hand: Vec3) -> Option<PanelPoint> {
 /// Publish where the cross goes while the wheel is open, or after it closes (`open` false) for a
 /// short linger; `None` withdraws it at once.
 pub fn publish(point: Option<PanelPoint>, open: bool) {
-    let now = Instant::now();
+    let now = Stamp::now();
     let mut slot = PLACED.lock();
     *slot = match (point, open) {
         (Some(point), true) => Some((point, now + OPEN_TTL)),
@@ -121,10 +122,10 @@ const OPEN_TTL: Duration = Duration::from_millis(250);
 /// How long the point lasts after the wheel closes: the length of the cross's hide animation.
 const LINGER: Duration = Duration::from_millis(500);
 
-static PLACED: Mutex<Option<(PanelPoint, Instant)>> = Mutex::new(None);
+static PLACED: Mutex<Option<(PanelPoint, Stamp)>> = Mutex::new(None);
 
 /// The published point, while it lasts.
-fn current(now: Instant) -> Option<PanelPoint> {
+fn current(now: Stamp) -> Option<PanelPoint> {
     PLACED
         .lock()
         .filter(|(_, until)| now <= *until)
@@ -137,7 +138,7 @@ fn update_weapon_selection_placement(hud: *mut HUDUI, character: *mut Character,
         .get()
         .unwrap()
         .call(hud, character, dt);
-    let Some(point) = current(Instant::now()) else {
+    let Some(point) = current(Stamp::now()) else {
         return;
     };
     // SAFETY: the HUD is the live one the engine is updating, on the thread that runs the UI

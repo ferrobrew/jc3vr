@@ -15,11 +15,9 @@
 //! The zones of the last input tick are published for the grab view's in-world drawing
 //! ([`views`]).
 
-use std::time::{Duration, Instant};
-
 use glam::Vec3;
+use jc3vr_core::published::{Published, Stage, Window};
 use jc3vr_input::frame::Hand;
-use parking_lot::Mutex;
 
 use crate::controllers::weapons::reload::{
     plan::{LoadKind, WellFrame},
@@ -116,21 +114,16 @@ pub(crate) struct ZoneView {
 /// The last input tick's zones, by the holding hand's [`Hand::index`]; none once the weapon
 /// handling has stopped resolving them.
 pub(crate) fn views() -> [Option<ZoneView>; 2] {
-    match *VIEWS.lock() {
-        Some((at, views))
-            if at.elapsed() <= Duration::from_millis(RELOAD.get().zones.view_max_age_ms) =>
-        {
-            views
-        }
-        _ => [None; 2],
-    }
+    VIEWS
+        .fresh(Window::from_millis(RELOAD.get().zones.view_max_age_ms))
+        .unwrap_or([None; 2])
 }
 
 pub(super) fn publish(views: [Option<ZoneView>; 2]) {
-    *VIEWS.lock() = Some((Instant::now(), views));
+    VIEWS.publish(views);
 }
 
-static VIEWS: Mutex<Option<(Instant, [Option<ZoneView>; 2])>> = Mutex::new(None);
+static VIEWS: Published<[Option<ZoneView>; 2]> = Published::new(Stage::InputGame);
 
 #[cfg(test)]
 mod tests {

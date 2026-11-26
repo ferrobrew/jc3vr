@@ -40,13 +40,12 @@ mod pose;
 #[cfg(test)]
 mod test_support;
 pub mod tuning;
-use std::{sync::OnceLock, time::Instant};
-
-use body_rig::rotation::{angle, clamp_angle};
+use body_rig::math::rotation::{angle, clamp_angle};
 use detours_macro::detour;
 use glam::{FloatExt, Quat, Vec2, Vec3};
 use jc3gi::equipment::weapon::WeaponBase;
 use jc3vr_body::controllers::{hands::CockpitHand, held::guns::HeftClass, scheme};
+use jc3vr_core::published::{Stamp, Window};
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
@@ -105,7 +104,7 @@ pub fn status() -> HeftStatus {
 /// Publish the weapon the weight acts on in each hand for this input tick, by [`Hand::index`], or
 /// `None` for a hand to let go of its weapon. A target is taken only in its own hand's place.
 pub fn observe(targets: [Option<HeftTarget>; 2]) {
-    let now = Instant::now();
+    let now = Stamp::now();
     let mut guard = STATE.lock();
     let state = &mut *guard;
     for hand in Hand::BOTH {
@@ -134,18 +133,19 @@ pub fn freeze(hands: [bool; 2]) {
 /// any two-handed pose, indexed by [`Hand::index`]; `head` is the head's cockpit position. The
 /// off-hand of an engaged foregrip moves with the gun by the grip's weight, so the gun carries it.
 pub fn apply(hands: &mut [Option<CockpitHand>; 2], head: Vec3, config: &Heft) {
-    let now = Instant::now();
+    let now = Stamp::now();
     let grip = foregrip::two_hand_grip();
     let mut guard = STATE.lock();
     let state = &mut *guard;
     let dt = advance_clock(&mut state.at, now);
-    let t = epoch().elapsed().as_secs_f32();
+    let t = now.since_epoch().as_secs_f32();
+    let target_window = Window::new(config.target_ms.duration());
     let mut motions = [None; 2];
     for hand in Hand::BOTH {
         let h = &mut state.hands[hand.index()];
         let target = h
             .target
-            .filter(|(_, at)| now.saturating_duration_since(*at) < config.target_ms.duration())
+            .filter(|&(_, at)| target_window.holds(at, now))
             .map(|(t, _)| t);
         let Some(target) = target else {
             h.rest();
@@ -219,7 +219,7 @@ pub fn spread_scale(weapon: usize) -> f32 {
 /// One hand's weight: its gun, its spring, and its freeze.
 #[derive(Debug, Copy, Clone, PartialEq)]
 struct HandHeft {
-    target: Option<(HeftTarget, Instant)>,
+    target: Option<(HeftTarget, Stamp)>,
     spring: Option<pose::RotSpring>,
     /// The turn the weight last put on the gun, relative to the controller's grip.
     offset: Quat,
@@ -316,7 +316,7 @@ impl HandHeft {
 
 struct State {
     hands: [HandHeft; 2],
-    at: Option<Instant>,
+    at: Option<Stamp>,
     status: HeftStatus,
 }
 
@@ -343,18 +343,12 @@ static STATE: Mutex<State> = Mutex::new(State {
 /// it. The hands are read on several threads, each taking its time before the lock, so a reader
 /// can arrive with an older time than the last one; moving the clock back would count the time
 /// between the two again on the next read.
-fn advance_clock(at: &mut Option<Instant>, now: Instant) -> f32 {
+fn advance_clock(at: &mut Option<Stamp>, now: Stamp) -> f32 {
     let dt = at.map_or(0.0, |at| now.saturating_duration_since(at).as_secs_f32());
     if at.is_none_or(|at| now > at) {
         *at = Some(now);
     }
     dt
-}
-
-/// The sway's clock.
-fn epoch() -> Instant {
-    static EPOCH: OnceLock<Instant> = OnceLock::new();
-    *EPOCH.get_or_init(Instant::now)
 }
 
 /// The scatter the game gives a shot, multiplied by the one-handed spread for the local player's
@@ -378,12 +372,13 @@ fn get_current_scatter_value(weapon: *const WeaponBase) -> f32 {
 
 #[cfg(test)]
 mod tests {
-    use std::time::{Duration, Instant};
+    use std::time::Duration;
 
-    use body_rig::rotation::angle;
+    use body_rig::math::rotation::angle;
     use glam::{Quat, Vec2, Vec3};
     use jc3gi::equipment::weapon::WeaponClass;
     use jc3vr_body::controllers::hands::{CockpitHand, config::GripOffset, pose as hand_pose};
+    use jc3vr_core::published::Stamp;
     use jc3vr_input::frame::{Hand, Pose};
 
     use super::{HeftClass, HeftTarget, advance_clock, apply, freeze, observe};
@@ -896,7 +891,7 @@ mod tests {
 
     #[test]
     fn a_late_reader_does_not_turn_the_clock_back() {
-        let start = Instant::now();
+        let start = Stamp::now();
         let later = start + Duration::from_millis(20);
         let mut at = None;
         assert_eq!(advance_clock(&mut at, later), 0.0);
@@ -914,7 +909,7 @@ mod tests {
         // The physical drive's tick and every render-path reader advance the one spring; however
         // their reads interleave, the steps they take add up to the time that passed, not to a
         // multiple of it.
-        let start = Instant::now();
+        let start = Stamp::now();
         let mut at = Some(start);
         let mut total = 0.0;
         for frame in 1..=90_u64 {
@@ -924,10 +919,10 @@ mod tests {
             // with a time taken before the other's.
             total += advance_clock(&mut at, tick);
             total += advance_clock(&mut at, render);
-            total += advance_clock(&mut at, render - Duration::from_micros(1_000));
+            total += advance_clock(&mut at, tick + Duration::from_micros(2_000));
         }
         let elapsed = (start + Duration::from_micros(90 * 11_111 + 3_000))
-            .duration_since(start)
+            .saturating_duration_since(start)
             .as_secs_f32();
         assert!((total - elapsed).abs() < 1e-4, "{total} against {elapsed}");
     }
