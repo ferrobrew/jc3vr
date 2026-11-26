@@ -76,12 +76,7 @@ fn convert_3d_coords_default(
         && let Some((anchor, _)) = HUD_STATE.lock().panel_pose()
     {
         let world = glam::Vec3::new(world.data[0], world.data[1], world.data[2]);
-        aim::record(
-            world,
-            (world - anchor)
-                .length()
-                .clamp(aim::MIN_DEPTH, aim::MAX_DEPTH),
-        );
+        aim::record(world, (world - anchor).length());
     }
 
     let aspect = current_aspect();

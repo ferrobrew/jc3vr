@@ -1,0 +1,12 @@
+# The core crate's tuning: `CoreTuning` in `src/core_tuning.rs`, whose fields say what each value
+# does. Every key is required and no other is accepted. Times are whole milliseconds.
+
+[settings_save]
+quiet_ms = 1000
+max_delay_ms = 5000
+retry_first_ms = 2000
+retry_max_ms = 60000
+compare_interval_ms = 1000
+
+[hotkey]
+repeat_lockout_ms = 250

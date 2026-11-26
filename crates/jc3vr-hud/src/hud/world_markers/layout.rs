@@ -7,6 +7,8 @@ use glam::{Quat, Vec2, Vec3, Vec4};
 use jc3vr_body::controllers::aim::marker_rays::Sight;
 use jc3vr_view::hud::world_markers::stage_frame::StageFrame;
 
+use crate::hud::tuning::HUD;
+
 /// A rectangle around a point, as its extents on each side, in stage pixels.
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub(crate) struct CropExtents {
@@ -219,10 +221,10 @@ pub(crate) fn clamp_into(point: Vec2, min: Vec2, max: Vec2) -> Vec2 {
 /// The sight a marker is placed by, filtered against near geometry and with hysteresis. A surface
 /// nearer than `min_surface` metres is ignored: it is the player's own gun, hands, or a leaf
 /// brushing the head, not a wall the marker shows through. A marker not on a surface (`held`
-/// false) moves onto one only when the surface is well in front of its point (nearer than
-/// [`SURFACE_ENGAGE`] of its distance), and a marker on one stays there until the surface is
-/// nearly at its point ([`SURFACE_RELEASE`]), so a surface near the threshold does not make the
-/// marker hop between the two.
+/// false) moves onto one only when the surface is well in front of its point (nearer than the
+/// tuning's `world_markers.surface_engage` of its distance), and a marker on one stays there until
+/// the surface is nearly at its point (`world_markers.surface_release`), so a surface near the
+/// threshold does not make the marker hop between the two.
 pub(crate) fn surface_sight(
     sight: Sight,
     true_distance: f32,
@@ -232,10 +234,11 @@ pub(crate) fn surface_sight(
     let Sight::Surface(surface) = sight else {
         return Sight::Clear;
     };
+    let tuning = &HUD.get().world_markers;
     let limit = if held {
-        SURFACE_RELEASE
+        tuning.surface_release
     } else {
-        SURFACE_ENGAGE
+        tuning.surface_engage
     };
     if surface.is_finite() && surface >= min_surface.max(0.0) && surface < true_distance * limit {
         sight
@@ -243,12 +246,6 @@ pub(crate) fn surface_sight(
         Sight::Clear
     }
 }
-
-/// The share of a marker's distance a surface must be nearer than for the marker to move onto it.
-pub(crate) const SURFACE_ENGAGE: f32 = 0.9;
-
-/// The share of a marker's distance a surface must reach for a marker on it to leave it.
-pub(crate) const SURFACE_RELEASE: f32 = 0.97;
 
 /// The distance to draw a marker at: its true distance when the line of sight is clear (or the
 /// surface is not meaningfully nearer), otherwise the surface's distance pulled `pull` toward the

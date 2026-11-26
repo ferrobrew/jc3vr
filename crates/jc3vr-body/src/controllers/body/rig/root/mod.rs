@@ -46,11 +46,7 @@ pub mod trace;
 #[cfg(test)]
 mod tests;
 
-use std::{
-    ffi::c_void,
-    sync::OnceLock,
-    time::{Duration, Instant},
-};
+use std::{ffi::c_void, sync::OnceLock, time::Instant};
 
 use detours_macro::detour;
 use glam::{Mat4, Quat, Vec2, Vec3};
@@ -75,36 +71,39 @@ pub(crate) use crate::controllers::body::rig::root::completion::{
 pub(crate) use crate::controllers::body::rig::root::completion::{
     test_source, test_source_with_root,
 };
-use crate::controllers::{
-    aim::raycast::CastOptions,
-    body::{
-        BodyDimensions,
-        config::BODY_REMAP_CONFIG,
-        estimator, ik_body,
-        procedural::state::animation_moves_body,
-        rig::{
-            collision::probe,
-            config::RigConfig,
-            grounded,
-            grounded::{GroundedFrame, GroundedInput},
-            root::{
-                drive::{StepFrame, to_cockpit, to_world},
-                ledger::{CompletedMovement, LedgerCounts, Movement, Requests},
-                owner::{OwnerInput, RootOwner},
-                pushback::{Pushback, PushbackInput, PushbackOutcome},
-                shift::{CockpitBasis, CockpitShift},
-                trace::{Jump, ProxyRead, RootTrace, Split, Support, TickInput, Tracer},
+use crate::{
+    controllers::{
+        aim::raycast::CastOptions,
+        body::{
+            BodyDimensions,
+            config::BODY_REMAP_CONFIG,
+            estimator, ik_body,
+            procedural::state::animation_moves_body,
+            rig::{
+                collision::probe,
+                config::RigConfig,
+                grounded,
+                grounded::{GroundedFrame, GroundedInput},
+                root::{
+                    drive::{StepFrame, to_cockpit, to_world},
+                    ledger::{CompletedMovement, LedgerCounts, Movement, Requests},
+                    owner::{OwnerInput, RootOwner},
+                    pushback::{Pushback, PushbackInput, PushbackOutcome},
+                    shift::{CockpitBasis, CockpitShift},
+                    trace::{Jump, ProxyRead, RootTrace, Split, Support, TickInput, Tracer},
+                },
             },
         },
+        clock::TimeScale,
+        facts::climb,
+        locomotion::after_task,
+        roomscale,
+        roomscale::{
+            SeatPhase, crouch::capsule_step, fade, fade::FadeSource, posture::EffectivePosture,
+            teleport,
+        },
     },
-    clock::TimeScale,
-    facts::climb,
-    locomotion::after_task,
-    roomscale,
-    roomscale::{
-        SeatPhase, crouch::capsule_step, fade, fade::FadeSource, posture::EffectivePosture,
-        teleport,
-    },
+    tuning::FRESHNESS,
 };
 
 pub fn hook_library() -> HookLibrary {
@@ -388,8 +387,9 @@ pub struct FrameReadout {
 impl FrameReadout {
     /// Whether the frame half ran recently.
     pub fn fresh(&self, now: Instant) -> bool {
-        self.at
-            .is_some_and(|at| now.saturating_duration_since(at) < FRAME_GAP)
+        self.at.is_some_and(|at| {
+            now.saturating_duration_since(at) < FRESHNESS.get().rig.root_frame_gap_ms.duration()
+        })
     }
 
     /// How far the neck is out over the pelvis, world metres.
@@ -455,10 +455,6 @@ fn status_from(frame: &Mutex<FrameState>, sim: &Mutex<Sim>) -> RootStatus {
     RootStatus { frame, sim }
 }
 
-/// A gap between rendered frames longer than this means the headset stopped rendering, and the
-/// frame half's measurement stops holding for the simulation half.
-const FRAME_GAP: Duration = Duration::from_millis(500);
-
 /// The gap at a seat exit past which the head is put back over the body instead of the body
 /// stepping to it, world metres.
 const EXIT_REBASE_M: f32 = 1.0;
@@ -509,7 +505,7 @@ fn owner_and_obstruction(now: Instant) -> (Option<RootOwner>, bool) {
     let fresh = sim
         .status
         .at
-        .is_some_and(|at| now.saturating_duration_since(at) <= probe::STALE_AFTER);
+        .is_some_and(|at| now.saturating_duration_since(at) <= probe::stale_after());
     if fresh {
         (sim.status.owner, sim.movement.obstructed())
     } else {
@@ -522,7 +518,9 @@ fn published_step(now: Instant) -> Option<StepFrame> {
     FRAME
         .lock()
         .published
-        .filter(|(_, at)| now.saturating_duration_since(*at) < FRAME_GAP)
+        .filter(|(_, at)| {
+            now.saturating_duration_since(*at) < FRESHNESS.get().rig.root_frame_gap_ms.duration()
+        })
         .map(|(frame, _)| frame)
 }
 
@@ -618,7 +616,7 @@ unsafe fn after_locomotion(character: &mut Character, dt: f32) {
     if sim
         .status
         .at
-        .is_none_or(|at| now.duration_since(at) > probe::STALE_AFTER)
+        .is_none_or(|at| now.duration_since(at) > probe::stale_after())
     {
         sim.last_position = None;
         sim.tracer.forget();

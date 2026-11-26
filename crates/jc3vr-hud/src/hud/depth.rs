@@ -5,22 +5,7 @@
 
 use body_rig::smooth::half_life_factor;
 
-use crate::hud::HudMode;
-
-/// The dynamic distance's fixed tuning.
-pub(crate) const DEPTH_SHIFT: DepthShiftTuning = DepthShiftTuning {
-    near_distance: 1.1,
-    halflife: 0.35,
-};
-
-/// How the panel distance follows the vehicle state (see the module docs).
-#[derive(Copy, Clone)]
-pub struct DepthShiftTuning {
-    /// The panel distance while the near shift is engaged, in meters.
-    pub near_distance: f32,
-    /// The easing halflife between distances, in seconds.
-    pub halflife: f32,
-}
+use crate::hud::{HudMode, tuning::DepthShiftTuning};
 
 /// Whether the local player is attached to a vehicle, polled on the game thread (the accessor
 /// walks game-thread animation state) and read by the render-side policy.
@@ -58,7 +43,7 @@ pub struct DepthShift {
 
 impl DepthShift {
     /// The frame's panel distance: the policy target eased with a critically-damped exponential
-    /// (`halflife` seconds). Call once per frame (eye 0).
+    /// (`halflife_s` seconds). Call once per frame (eye 0).
     pub fn distance(&mut self, cfg: &DepthShiftTuning, mode: HudMode, base: f32) -> f32 {
         let target = self.target(cfg, mode, base);
         let dt = self
@@ -67,7 +52,7 @@ impl DepthShift {
             .unwrap_or(0.016)
             .min(0.1);
         self.last_update = Some(std::time::Instant::now());
-        let alpha = half_life_factor(dt, cfg.halflife.max(0.01));
+        let alpha = half_life_factor(dt, cfg.halflife_s.max(0.01));
         let mut smoothed = self.smoothed.unwrap_or(target);
         smoothed += (target - smoothed) * alpha;
         self.smoothed = Some(smoothed);
@@ -85,7 +70,7 @@ impl DepthShift {
         }
         self.near_engaged = IN_VEHICLE.load(std::sync::atomic::Ordering::Relaxed);
         if self.near_engaged {
-            cfg.near_distance
+            cfg.near_distance_m
         } else {
             base
         }

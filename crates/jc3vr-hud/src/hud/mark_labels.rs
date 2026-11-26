@@ -7,7 +7,7 @@
 //! ([`published_labels`]); the draw places them at render time from the same anchors the overlay
 //! resolves, so a label rides with its marker.
 
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use glam::{Quat, Vec3, Vec4};
 use jc3gi::graphics_engine::{device::Device, texture::Texture};
@@ -30,6 +30,7 @@ use crate::hud::{
     log_once::LogOnce,
     quad::HudQuad,
     target::{HudTarget, TextureCache},
+    tuning::HUD,
     world_quads_active,
 };
 
@@ -47,8 +48,8 @@ pub(crate) fn draw(context: &ID3D11DeviceContext, device: &Device, target: &Text
 }
 
 /// The corners of `label`'s quad, seen from `head` (with `head_up`, the head's up), with the
-/// hands' render-time poses `hands`: upright and facing the eye, [`HEIGHT_M`] tall, its lower edge
-/// [`GAP_M`] above the marker's edge. `None` when the anchor's hand has no pose.
+/// hands' render-time poses `hands`: upright and facing the eye, the tuning's
+/// `mark_labels.height_m` tall, its lower edge `mark_labels.gap_m` above the marker's edge. `None` when the anchor's hand has no pose.
 pub(crate) fn place(
     label: &MarkLabel,
     head: Vec3,
@@ -59,22 +60,14 @@ pub(crate) fn place(
         Anchor::Head(offset) => head + offset,
         anchor => anchor_position(anchor, hands)?,
     };
-    let width = HEIGHT_M * TAG_TEXELS.0 as f32 / TAG_TEXELS.1 as f32;
-    let centre = at + Vec3::Y * (label.clearance.max(0.0) + GAP_M + HEIGHT_M * 0.5);
+    let tuning = &HUD.get().mark_labels;
+    let width = tuning.height_m * TAG_TEXELS.0 as f32 / TAG_TEXELS.1 as f32;
+    let centre = at + Vec3::Y * (label.clearance.max(0.0) + tuning.gap_m + tuning.height_m * 0.5);
     centre
         .is_finite()
-        .then(|| upright_corners(centre, head, head_up, width, HEIGHT_M))
+        .then(|| upright_corners(centre, head, head_up, width, tuning.height_m))
         .flatten()
 }
-
-/// A label's height, metres.
-const HEIGHT_M: f32 = 0.03;
-
-/// The gap between the marker's edge and the label's lower edge, metres.
-const GAP_M: f32 = 0.01;
-
-/// How long a published list stays current without a newer one.
-const STALE: Duration = Duration::from_millis(250);
 
 /// The most distinct labels kept as textures; a new one replaces one no longer shown.
 const MAX_TEXTURES: usize = 8;
@@ -108,7 +101,7 @@ impl State {
             return;
         };
         let now = Instant::now();
-        let labels = published_labels(now, STALE);
+        let labels = published_labels(now, HUD.get().mark_labels.stale());
         if labels.is_empty() {
             return;
         }
@@ -206,11 +199,12 @@ mod tests {
         let head = Vec3::new(5.0, 1.7, 2.0);
         let offset = Vec3::new(0.3, -0.4, -0.5);
         let corners = place(&label(Anchor::Head(offset)), head, Vec3::Y, &[None; 2]).unwrap();
-        let expected = head + offset + Vec3::Y * (0.045 + GAP_M + HEIGHT_M * 0.5);
+        let tuning = &HUD.get().mark_labels;
+        let expected = head + offset + Vec3::Y * (0.045 + tuning.gap_m + tuning.height_m * 0.5);
         assert!(centre(&corners).abs_diff_eq(expected, 1e-5));
         let [tl, tr, bl, _] = corners;
         assert!((tl.y - tr.y).abs() < 1e-6, "level");
-        assert!(((tl - bl).length() - HEIGHT_M).abs() < 1e-5);
+        assert!(((tl - bl).length() - tuning.height_m).abs() < 1e-5);
     }
 
     /// Every label a marker is given fits its texture: the cockpit's nitrous button's, named in

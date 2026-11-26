@@ -21,6 +21,8 @@ use jc3gi::{character::character::Character, game_world::GameWorld, types::math:
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
+use crate::tuning::TOOLING;
+
 /// A saved player transform.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Bookmark {
@@ -38,7 +40,9 @@ impl Bookmark {
 /// How a jump reaches its destination.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub enum TeleportMode {
-    /// Instant within [`INSTANT_RANGE_M`] of the character, deferred with streaming beyond it.
+    /// Instant within the tuning's
+    /// [`instant_teleport_range_m`](crate::tuning::DirectorTuning::instant_teleport_range_m) of the
+    /// character, deferred with streaming beyond it.
     Auto,
     /// Place the character synchronously. The destination must already be streamed in.
     Instant,
@@ -198,7 +202,7 @@ pub(super) fn service_pending() {
         let instant = match request.mode {
             TeleportMode::Instant => true,
             TeleportMode::Streamed => false,
-            TeleportMode::Auto => distance <= INSTANT_RANGE_M,
+            TeleportMode::Auto => distance <= TOOLING.get().director.instant_teleport_range_m,
         };
         let matrix = Matrix4 {
             data: request.transform,
@@ -232,11 +236,6 @@ pub(super) fn service_pending() {
         }
     }
 }
-
-/// The farthest an instant jump reaches before the streamed path is used. The engine warns about a
-/// teleport without the load state past 500 m from the camera; this leaves a margin for the
-/// character standing away from the camera.
-pub const INSTANT_RANGE_M: f32 = 400.0;
 
 struct Request {
     transform: [f32; 16],

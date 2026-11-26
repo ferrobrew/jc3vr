@@ -25,7 +25,7 @@ use jc3vr_input::{
     },
 };
 
-use crate::controllers::bindings::intents::Intents;
+use crate::controllers::{bindings::intents::Intents, tuning::GAMEPLAY};
 
 /// A digital input of the tables.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
@@ -83,19 +83,20 @@ pub enum PadLayout {
 
 impl PadLayout {
     /// The zone of the pad at `position` (+X right, +Y up), or `None` within
-    /// [`PAD_ZONE_MARGIN`] of the lines between the zones, where a press waits for the thumb to
+    /// the tuning's `bindings.pad_zone_margin` of the lines between the zones, where a press waits for the thumb to
     /// move off.
     pub fn zone(self, position: Vec2) -> Option<PadZone> {
         if !position.is_finite() {
             return None;
         }
         let (x, y) = (position.x, position.y);
+        let margin = GAMEPLAY.get().bindings.pad_zone_margin;
         match self {
-            PadLayout::Halves if x <= -PAD_ZONE_MARGIN => Some(PadZone::Left),
-            PadLayout::Halves if x >= PAD_ZONE_MARGIN => Some(PadZone::Right),
+            PadLayout::Halves if x <= -margin => Some(PadZone::Left),
+            PadLayout::Halves if x >= margin => Some(PadZone::Right),
             PadLayout::Halves => None,
             PadLayout::Quadrants => {
-                if x.abs().max(y.abs()) < PAD_ZONE_MARGIN || (x.abs() - y.abs()).abs() < 1e-6 {
+                if x.abs().max(y.abs()) < margin || (x.abs() - y.abs()).abs() < 1e-6 {
                     None
                 } else if y.abs() > x.abs() {
                     Some(if y > 0.0 { PadZone::Up } else { PadZone::Down })
@@ -110,10 +111,6 @@ impl PadLayout {
         }
     }
 }
-
-/// How far from the line between two pad zones, in the pad's `-1..=1` axes, a press must land to
-/// count for a zone.
-pub const PAD_ZONE_MARGIN: f32 = 0.2;
 
 /// The position action that goes with a pad press action, and how the press divides the pad, for
 /// the pad press actions.

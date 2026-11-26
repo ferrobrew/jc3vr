@@ -2,7 +2,9 @@ use glam::{Mat4, Quat, Vec2, Vec3};
 use jc3vr_body::controllers::grab::cockpit::ControlKind;
 
 use crate::controllers::vehicles::{
-    physical::yoke::YokeFrame, tuning::PhysicalControlsTuning, wheel_render::RenderWheel,
+    physical::yoke::YokeFrame,
+    tuning::{PhysicalControlsTuning, VEHICLES},
+    wheel_render::RenderWheel,
 };
 
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -111,7 +113,10 @@ impl CockpitFit {
         // left side and below the grip: from the eyes and clamped to the airframe's bounds, which
         // take in the skids, it landed by the door in the utility helicopter.
         let fallback_lever = missing.map(|(kind, spec)| match kind {
-            ControlKind::Collective => (kind, asset.stick_grip + COLLECTIVE_FROM_CYCLIC_M),
+            ControlKind::Collective => (
+                kind,
+                asset.stick_grip + VEHICLES.get().controls.collective_from_cyclic_m,
+            ),
             _ => {
                 let rest = part_to_cockpit.inverse().transform_point3(spec.rest_m);
                 (kind, rest.clamp(bounds.0, bounds.1))
@@ -174,12 +179,6 @@ impl CockpitFit {
             || self.fallback_lever.is_some_and(|(lever, _)| lever == kind)
     }
 }
-
-/// Where a helicopter's missing collective sits from its cyclic's grip, in the cockpit part's own
-/// space (+X to the pilot's right, +Y up, +Z back), metres: by the pilot's left thigh, a quarter of
-/// a metre left of the cyclic, a third of a metre below it, and a quarter of a metre further back.
-/// A placement, not a measurement.
-const COLLECTIVE_FROM_CYCLIC_M: Vec3 = Vec3::new(-0.25, -0.35, 0.25);
 
 /// Measure the merged cockpit in its part's coordinates. The pilot selects a physical seat;
 /// controller handedness does not change which seat's controls are offered.
@@ -531,7 +530,12 @@ mod tests {
             // The missing lever is placed from the measured cyclic, by the pilot's left thigh, and
             // it stays inside the part.
             let (_, part_rest) = fit.fallback_lever.unwrap();
-            assert!((part_rest - (driver.stick_grip + COLLECTIVE_FROM_CYCLIC_M)).length() < 1e-5);
+            assert!(
+                (part_rest
+                    - (driver.stick_grip + VEHICLES.get().controls.collective_from_cyclic_m))
+                    .length()
+                    < 1e-5
+            );
             assert!(part_rest.cmpge(bounds.0).all() && part_rest.cmple(bounds.1).all());
             assert!(collective.x < fit.stick_top().x);
             assert!(part_rest.x > bounds.0.x + 0.1);

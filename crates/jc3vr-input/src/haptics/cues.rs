@@ -1,6 +1,6 @@
 //! Every haptic source the mod has, and the cue each one plays: a primitive of the vocabulary, a
-//! strength within it, and the category whose switch gates it. `docs/mod/input/haptics.md` keeps the
-//! same table for the headset.
+//! strength within it, and the category whose switch gates it. The category is fixed here; the
+//! primitive and the strength are tuning ([`crate::haptics::tuning::HapticsTuning`]).
 
 use serde::{Deserialize, Serialize};
 
@@ -51,21 +51,13 @@ impl Category {
 }
 
 /// How long a one-off cue plays against its primitive's duration.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Deserialize)]
 pub enum Length {
     Normal,
-    /// Several times the primitive's duration, for the one cue that marks an event far bigger than
-    /// the hand: a detonation.
+    /// Several times the primitive's duration
+    /// ([`HapticsTuning::long_factor`](crate::haptics::tuning::HapticsTuning::long_factor)), for a
+    /// cue that marks an event far bigger than the hand: a detonation.
     Long,
-}
-
-impl Length {
-    pub const fn factor(self) -> f32 {
-        match self {
-            Length::Normal => 1.0,
-            Length::Long => 3.5,
-        }
-    }
 }
 
 /// What a source plays.
@@ -78,26 +70,9 @@ pub struct Cue {
     pub length: Length,
 }
 
-impl Cue {
-    const fn new(primitive: Primitive, strength: f32, category: Category) -> Self {
-        Self {
-            primitive,
-            strength,
-            category,
-            length: Length::Normal,
-        }
-    }
-
-    const fn long(self) -> Self {
-        Self {
-            length: Length::Long,
-            ..self
-        }
-    }
-}
-
 /// A one-off haptic source.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Event {
     // Contact.
     /// A palm meeting a surface, scaled by how fast it met it.
@@ -123,9 +98,12 @@ pub enum Event {
     /// A draw, a holster, or a foregrip grab or release.
     VolumeGrab,
     /// A hand holding a weapon coming into a free socket's attraction: letting go there docks it.
+    /// Its cue is firmer than a volume's tick, as it is felt with the hand out of sight behind the
+    /// head, and lighter than the dock's click that follows the release.
     DockAttraction,
     /// A weapon let go of over a taken socket on the back swapped for the one docked there, which
     /// falls clear.
+    /// Its cue is a knock rather than the dock's click, so a swap is told from a dock by feel.
     SocketSwap,
     /// The magazine or the rounds ejected.
     Eject,
@@ -136,6 +114,7 @@ pub enum Event {
     /// A round or a magazine caught by the well.
     WellCatch,
     /// A magazine seated.
+    /// The heaviest cue on the gun hand, as the magazine's seat is the knock the gun takes.
     MagazineSeat,
     /// The inserted magazine knocked out of the well by a held one.
     MagazineKnock,
@@ -194,10 +173,13 @@ pub enum Event {
     /// The held throttle reaching its afterburner gate.
     ThrottleGate,
     /// The held throttle passing a step of its forward section.
+    /// Its cue is light enough to count through a push without drowning the stops.
     ThrottleStep,
     /// The held throttle pulled back to zero, stopping at its reverse gate.
+    /// The hardest cue on the throttle, so zero is found without looking.
     ThrottleZero,
     /// The held throttle going through its zero gate into reverse or back out.
+    /// A buzz rather than a knock, so going into reverse is told from the zero stop.
     ThrottleReverse,
     /// A cockpit button pressed, or a twist grip twisted far enough to act.
     ButtonPress,
@@ -250,8 +232,8 @@ pub enum Event {
 }
 
 impl Event {
-    #[cfg(test)]
-    pub const ALL: [Event; 69] = [
+    /// Every event, in declaration order, so an event's index in it is its discriminant.
+    pub const ALL: [Event; 70] = [
         Event::PalmTouch,
         Event::HandStrike,
         Event::Take,
@@ -321,91 +303,84 @@ impl Event {
         Event::StuntEnter,
         Event::StuntRelease,
         Event::SwimStroke,
+        Event::Chord,
     ];
 
-    pub const fn cue(self) -> Cue {
+    pub const COUNT: usize = Self::ALL.len();
+
+    /// The category whose switch gates the event's cue.
+    pub const fn category(self) -> Category {
         match self {
-            Event::PalmTouch | Event::HandStrike => {
-                Cue::new(Primitive::Bump, 0.4, Category::Contact)
-            }
-            Event::Take => Cue::new(Primitive::Bump, 0.6, Category::Contact),
-            Event::LetGo => Cue::new(Primitive::Click, 0.25, Category::Contact),
-            Event::Unlatch => Cue::new(Primitive::Bump, 0.9, Category::Contact),
-            Event::DoorPressureContact => Cue::new(Primitive::Tick, 0.2, Category::Contact),
-            Event::Shot => Cue::new(Primitive::Thud, 1.0, Category::Weapons),
-            Event::Kick => Cue::new(Primitive::Bump, 1.0, Category::Weapons),
-            Event::DryFire => Cue::new(Primitive::Click, 0.4, Category::Weapons),
-            Event::VolumeEnter => Cue::new(Primitive::Tick, 0.3, Category::Weapons),
-            Event::VolumeGrab => Cue::new(Primitive::Click, 0.5, Category::Weapons),
-            // Firmer than a volume's tick, as it is felt with the hand out of sight behind the
-            // head, and lighter than the dock's click that follows the release.
-            Event::DockAttraction => Cue::new(Primitive::Tick, 0.4, Category::Weapons),
-            // A knock rather than the dock's click, so a swap is told from a dock by feel.
-            Event::SocketSwap => Cue::new(Primitive::Bump, 0.7, Category::Weapons),
-            Event::Eject => Cue::new(Primitive::Click, 0.6, Category::Weapons),
-            Event::PouchTake => Cue::new(Primitive::Click, 0.25, Category::Weapons),
-            Event::PouchEmpty => Cue::new(Primitive::Tick, 0.75, Category::Weapons),
-            Event::WellCatch => Cue::new(Primitive::Click, 0.4, Category::Weapons),
-            // The heaviest cue on the gun hand, as the magazine's seat is the knock the gun takes.
-            Event::MagazineSeat => Cue::new(Primitive::Thud, 1.0, Category::Weapons),
-            Event::MagazineKnock => Cue::new(Primitive::Thud, 1.0, Category::Weapons),
-            Event::BeltSeat => Cue::new(Primitive::Thud, 1.0, Category::Weapons),
-            Event::Rack => Cue::new(Primitive::Click, 0.9, Category::Weapons),
-            Event::ActionDetent => Cue::new(Primitive::Click, 0.35, Category::Weapons),
-            Event::Chambered => Cue::new(Primitive::Click, 0.5, Category::Weapons),
-            // Played twice in quick succession by the reload's ready cue, so it is not taken for
-            // the seat's thud or a chambering click.
-            Event::ReadyToFire => Cue::new(Primitive::Bump, 0.8, Category::Weapons),
-            Event::GrenadePrime => Cue::new(Primitive::Click, 0.4, Category::Weapons),
-            Event::GrenadePin => Cue::new(Primitive::Bump, 0.8, Category::Weapons),
-            Event::GrenadeWarning => Cue::new(Primitive::Click, 0.75, Category::Weapons),
-            Event::GrenadeCatch => Cue::new(Primitive::Bump, 0.75, Category::Weapons),
-            Event::PouchRefused => Cue::new(Primitive::Buzz, 0.75, Category::Weapons),
-            Event::PouchFull => Cue::new(Primitive::Buzz, 1.0, Category::Weapons).long(),
-            Event::PouchReturn => Cue::new(Primitive::Click, 0.5, Category::Weapons),
-            Event::C4Prime => Cue::new(Primitive::Click, 0.4, Category::Weapons),
-            Event::C4Throw => Cue::new(Primitive::Click, 0.6, Category::Weapons),
-            Event::C4Stick => Cue::new(Primitive::Bump, 0.6, Category::Weapons),
-            Event::C4Detonate => Cue::new(Primitive::Thud, 1.0, Category::Weapons).long(),
-            Event::DetonatorPress => Cue::new(Primitive::Click, 1.0, Category::Weapons),
-            Event::DetonatorEmpty => Cue::new(Primitive::Buzz, 0.1, Category::Weapons),
-            Event::WheelTick => Cue::new(Primitive::Tick, 0.75, Category::Weapons),
-            Event::WheelCommit => Cue::new(Primitive::Click, 0.75, Category::Weapons),
-            Event::SteeringStop | Event::ControlStop => {
-                Cue::new(Primitive::Bump, 0.6, Category::Vehicles)
-            }
-            Event::SteeringCentre | Event::ControlNeutral | Event::ButtonRelease => {
-                Cue::new(Primitive::Tick, 0.5, Category::Vehicles)
-            }
-            Event::ThrottleGate => Cue::new(Primitive::Bump, 0.9, Category::Vehicles),
-            // Light enough to count through a push without drowning the stops.
-            Event::ThrottleStep => Cue::new(Primitive::Tick, 0.3, Category::Vehicles),
-            // The hardest cue on the throttle, so zero is found without looking.
-            Event::ThrottleZero => Cue::new(Primitive::Thud, 1.0, Category::Vehicles),
-            // A buzz rather than a knock, so going into reverse is told from the zero stop.
-            Event::ThrottleReverse => Cue::new(Primitive::Buzz, 0.8, Category::Vehicles),
-            Event::ButtonPress => Cue::new(Primitive::Click, 0.75, Category::Vehicles),
-            Event::HandleGrab => Cue::new(Primitive::Click, 0.5, Category::Vehicles),
-            Event::MountedKick => Cue::new(Primitive::Bump, 0.6, Category::Vehicles),
-            Event::GrappleFire => Cue::new(Primitive::Bump, 0.4, Category::Traversal),
-            Event::GrappleAttach => Cue::new(Primitive::Thud, 0.5, Category::Traversal),
-            Event::Yank => Cue::new(Primitive::Bump, 0.6, Category::Traversal),
-            Event::SnatchArm => Cue::new(Primitive::Bump, 0.6, Category::Traversal),
-            Event::SnatchFire => Cue::new(Primitive::Thud, 0.8, Category::Traversal),
-            Event::SnatchHit => Cue::new(Primitive::Thud, 0.7, Category::Traversal),
-            Event::SnatchCatch => Cue::new(Primitive::Thud, 1.0, Category::Contact).long(),
-            Event::SnatchRefused => Cue::new(Primitive::Buzz, 0.6, Category::Traversal),
-            Event::TetherRetract => Cue::new(Primitive::Bump, 0.75, Category::Traversal),
-            Event::LineLock => Cue::new(Primitive::Thud, 0.7, Category::Traversal),
-            Event::LineRelease => Cue::new(Primitive::Click, 0.4, Category::Traversal),
-            Event::LineSnap => Cue::new(Primitive::Buzz, 0.8, Category::Traversal),
-            Event::ClimbGrip => Cue::new(Primitive::Bump, 0.75, Category::Traversal),
-            Event::ClimbRelease => Cue::new(Primitive::Click, 0.25, Category::Traversal),
-            Event::ClimbFling => Cue::new(Primitive::Thud, 0.85, Category::Traversal),
-            Event::StuntEnter => Cue::new(Primitive::Thud, 0.65, Category::Traversal),
-            Event::StuntRelease => Cue::new(Primitive::Click, 0.5, Category::Traversal),
-            Event::SwimStroke => Cue::new(Primitive::Bump, 0.45, Category::Traversal),
-            Event::Chord => Cue::new(Primitive::Bump, 0.6, Category::Interface),
+            Event::PalmTouch
+            | Event::HandStrike
+            | Event::Take
+            | Event::LetGo
+            | Event::Unlatch
+            | Event::DoorPressureContact
+            | Event::SnatchCatch => Category::Contact,
+            Event::Shot
+            | Event::Kick
+            | Event::DryFire
+            | Event::VolumeEnter
+            | Event::VolumeGrab
+            | Event::DockAttraction
+            | Event::SocketSwap
+            | Event::Eject
+            | Event::PouchTake
+            | Event::PouchEmpty
+            | Event::WellCatch
+            | Event::MagazineSeat
+            | Event::MagazineKnock
+            | Event::BeltSeat
+            | Event::Rack
+            | Event::ActionDetent
+            | Event::Chambered
+            | Event::ReadyToFire
+            | Event::GrenadePrime
+            | Event::GrenadePin
+            | Event::GrenadeWarning
+            | Event::GrenadeCatch
+            | Event::PouchRefused
+            | Event::PouchFull
+            | Event::PouchReturn
+            | Event::C4Prime
+            | Event::C4Throw
+            | Event::C4Stick
+            | Event::C4Detonate
+            | Event::DetonatorPress
+            | Event::DetonatorEmpty
+            | Event::WheelTick
+            | Event::WheelCommit => Category::Weapons,
+            Event::SteeringStop
+            | Event::ControlStop
+            | Event::SteeringCentre
+            | Event::ControlNeutral
+            | Event::ButtonRelease
+            | Event::ThrottleGate
+            | Event::ThrottleStep
+            | Event::ThrottleZero
+            | Event::ThrottleReverse
+            | Event::ButtonPress
+            | Event::HandleGrab
+            | Event::MountedKick => Category::Vehicles,
+            Event::GrappleFire
+            | Event::GrappleAttach
+            | Event::Yank
+            | Event::SnatchArm
+            | Event::SnatchFire
+            | Event::SnatchHit
+            | Event::SnatchRefused
+            | Event::TetherRetract
+            | Event::LineLock
+            | Event::LineRelease
+            | Event::LineSnap
+            | Event::ClimbGrip
+            | Event::ClimbRelease
+            | Event::ClimbFling
+            | Event::StuntEnter
+            | Event::StuntRelease
+            | Event::SwimStroke => Category::Traversal,
+            Event::Chord => Category::Interface,
         }
     }
 
@@ -486,7 +461,8 @@ impl Event {
 }
 
 /// A sustained haptic source: one that sends its level every tick it lasts.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Sustain {
     /// A palm pressing into an object, by its shove's load.
     PalmPressure,
@@ -507,7 +483,7 @@ pub enum Sustain {
 }
 
 impl Sustain {
-    #[cfg(test)]
+    /// Every source, in declaration order, so a source's index in it is its discriminant.
     pub const ALL: [Sustain; 8] = [
         Sustain::PalmPressure,
         Sustain::HeldLoad,
@@ -519,16 +495,17 @@ impl Sustain {
         Sustain::GameRumble,
     ];
 
-    pub const fn cue(self) -> Cue {
+    pub const COUNT: usize = Self::ALL.len();
+
+    /// The category whose switch gates the source's cue.
+    pub const fn category(self) -> Category {
         match self {
-            Sustain::PalmPressure | Sustain::HeldLoad | Sustain::BodyPressure => {
-                Cue::new(Primitive::Tension, 0.5, Category::Contact)
-            }
-            Sustain::ClimbStrain => Cue::new(Primitive::Tension, 0.5, Category::Traversal),
-            Sustain::StuntHang => Cue::new(Primitive::Tension, 0.35, Category::Traversal),
-            Sustain::GrappleTension => Cue::new(Primitive::Tension, 0.75, Category::Traversal),
-            Sustain::GrappleReel => Cue::new(Primitive::Hum, 0.35, Category::Traversal),
-            Sustain::GameRumble => Cue::new(Primitive::Hum, 1.0, Category::Game),
+            Sustain::PalmPressure | Sustain::HeldLoad | Sustain::BodyPressure => Category::Contact,
+            Sustain::ClimbStrain
+            | Sustain::StuntHang
+            | Sustain::GrappleTension
+            | Sustain::GrappleReel => Category::Traversal,
+            Sustain::GameRumble => Category::Game,
         }
     }
 
@@ -558,11 +535,12 @@ mod tests {
     use std::collections::HashSet;
 
     use super::*;
+    use crate::haptics::tuning::tests::shipped;
 
     #[test]
     fn door_pressure_contact_is_a_subtle_one_shot_distinct_from_unlatch() {
-        let contact = Event::DoorPressureContact.cue();
-        let unlatch = Event::Unlatch.cue();
+        let contact = shipped().event(Event::DoorPressureContact);
+        let unlatch = shipped().event(Event::Unlatch);
         assert!(!contact.primitive.is_sustained());
         assert_eq!(contact.primitive, Primitive::Tick);
         assert_eq!(contact.length, Length::Normal);
@@ -571,31 +549,20 @@ mod tests {
     }
 
     #[test]
-    fn every_event_plays_once_and_every_sustain_follows_a_level() {
+    fn no_event_is_the_games_rumble() {
         for event in Event::ALL {
-            let cue = event.cue();
-            assert!(!cue.primitive.is_sustained(), "{}", event.label());
-            assert!((0.0..=1.0).contains(&cue.strength), "{}", event.label());
-            assert_ne!(cue.category, Category::Game, "{}", event.label());
-        }
-        for sustain in Sustain::ALL {
-            let cue = sustain.cue();
-            assert!(cue.primitive.is_sustained(), "{}", sustain.label());
-            assert!((0.0..=1.0).contains(&cue.strength), "{}", sustain.label());
-            assert_eq!(cue.length, Length::Normal);
+            assert_ne!(event.category(), Category::Game, "{}", event.label());
         }
     }
 
     #[test]
-    fn the_lists_hold_every_source_once() {
-        assert_eq!(
-            Event::ALL.iter().collect::<HashSet<_>>().len(),
-            Event::ALL.len()
-        );
-        assert_eq!(
-            Sustain::ALL.iter().collect::<HashSet<_>>().len(),
-            Sustain::ALL.len()
-        );
+    fn the_lists_hold_every_source_once_in_declaration_order() {
+        for (i, event) in Event::ALL.into_iter().enumerate() {
+            assert_eq!(event as usize, i, "{}", event.label());
+        }
+        for (i, sustain) in Sustain::ALL.into_iter().enumerate() {
+            assert_eq!(sustain as usize, i, "{}", sustain.label());
+        }
         let labels: HashSet<_> = Event::ALL.iter().map(|e| e.label()).collect();
         assert_eq!(labels.len(), Event::ALL.len());
     }
@@ -604,7 +571,7 @@ mod tests {
     fn only_the_game_rumble_is_the_game_category() {
         for sustain in Sustain::ALL {
             assert_eq!(
-                sustain.cue().category == Category::Game,
+                sustain.category() == Category::Game,
                 sustain == Sustain::GameRumble
             );
             assert_eq!(sustain.ducks_fully(), sustain == Sustain::GameRumble);

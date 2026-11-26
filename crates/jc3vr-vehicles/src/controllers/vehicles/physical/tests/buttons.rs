@@ -5,8 +5,13 @@ use jc3vr_body::controllers::grab::cockpit::Button;
 use super::*;
 use crate::controllers::vehicles::{
     physical::buttons::{ButtonEvent, PushButton, PushPhase, grip_twist, push_step},
+    tuning::{CockpitButtonsTuning, VEHICLES},
     write_outputs,
 };
+
+fn config() -> &'static CockpitButtonsTuning {
+    &VEHICLES.get().physical.buttons
+}
 
 fn button() -> PushButton {
     PushButton {
@@ -21,31 +26,49 @@ fn button() -> PushButton {
 fn a_push_from_the_front_presses_and_coming_back_out_lets_go() {
     let b = button();
     let mut phase = PushPhase::Out;
-    phase = push_step(phase, &b, Some(Vec3::new(0.0, 0.0, 0.08)));
+    phase = push_step(phase, &b, Some(Vec3::new(0.0, 0.0, 0.08)), config());
     assert_eq!(phase, PushPhase::Armed);
-    phase = push_step(phase, &b, Some(Vec3::new(0.01, 0.0, -0.01)));
+    phase = push_step(phase, &b, Some(Vec3::new(0.01, 0.0, -0.01)), config());
     assert_eq!(phase, PushPhase::Out, "short of the press depth");
-    phase = push_step(PushPhase::Armed, &b, Some(Vec3::new(0.0, 0.0, -0.03)));
+    phase = push_step(
+        PushPhase::Armed,
+        &b,
+        Some(Vec3::new(0.0, 0.0, -0.03)),
+        config(),
+    );
     assert_eq!(phase, PushPhase::Pressed);
     // It gives a little before it lets go.
-    phase = push_step(phase, &b, Some(Vec3::new(0.0, 0.0, -0.015)));
+    phase = push_step(phase, &b, Some(Vec3::new(0.0, 0.0, -0.015)), config());
     assert_eq!(phase, PushPhase::Pressed);
-    phase = push_step(phase, &b, Some(Vec3::new(0.0, 0.0, 0.02)));
+    phase = push_step(phase, &b, Some(Vec3::new(0.0, 0.0, 0.02)), config());
     assert_eq!(phase, PushPhase::Armed);
-    assert_eq!(push_step(PushPhase::Pressed, &b, None), PushPhase::Out);
+    assert_eq!(
+        push_step(PushPhase::Pressed, &b, None, config()),
+        PushPhase::Out
+    );
 }
 
 #[test]
 fn a_hand_reaching_the_button_from_behind_or_the_side_presses_nothing() {
     let b = button();
     // From behind the face, as through the dash.
-    let phase = push_step(PushPhase::Out, &b, Some(Vec3::new(0.0, 0.0, -0.03)));
+    let phase = push_step(
+        PushPhase::Out,
+        &b,
+        Some(Vec3::new(0.0, 0.0, -0.03)),
+        config(),
+    );
     assert_eq!(phase, PushPhase::Out);
     // From the side, outside the radius in front, then slid in behind the face.
-    let phase = push_step(PushPhase::Out, &b, Some(Vec3::new(0.2, 0.0, 0.05)));
+    let phase = push_step(
+        PushPhase::Out,
+        &b,
+        Some(Vec3::new(0.2, 0.0, 0.05)),
+        config(),
+    );
     assert_eq!(phase, PushPhase::Out);
     assert_eq!(
-        push_step(phase, &b, Some(Vec3::new(0.0, 0.0, -0.03))),
+        push_step(phase, &b, Some(Vec3::new(0.0, 0.0, -0.03)), config()),
         PushPhase::Out
     );
 }
@@ -125,7 +148,7 @@ fn the_nitrous_button_sits_beside_the_wheel_and_holds_the_vehicle_mod() {
     assert!(out.nitrous && !out.horn);
 
     let mut off = placement();
-    off.config.buttons.nitrous_button = false;
+    off.nitrous = false;
     let mut state = ControlState::default();
     step_with(
         &mut state,

@@ -14,7 +14,7 @@
 
 use glam::Vec3;
 use jc3vr_body::controllers::{
-    aim::GRAPPLE_ORIGIN_M,
+    aim::grapple_origin_m,
     grab::{GrabVolume, GripTarget, Mark, MarkAt, Provided, latch::GripLatch},
     hands,
     hands::ik,
@@ -23,16 +23,18 @@ use jc3vr_body::controllers::{
 use jc3vr_input::frame::{Hand, Pose};
 use jc3vr_physical::controllers::physical_hands;
 use jc3vr_view::headpose::xr;
+use serde::Deserialize;
 
 use crate::{
     controllers::snatch,
-    grapple::{physical::lock, rope::held_floor},
+    grapple::{physical::lock, rope::held_floor, tuning::GRAPPLE},
 };
 
 /// Where the free hand may take the line, metres: how far ahead of the grapple hand's wrist along
 /// the line, and how near the line the hand's palm must come.
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub(crate) struct LineReach {
+#[derive(Debug, Copy, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LineReach {
     /// The nearest point to the grapple hand's wrist the free hand takes the line at: past the
     /// reach of the snatch's brace at the wrist.
     pub min_ahead_m: f32,
@@ -42,15 +44,10 @@ pub(crate) struct LineReach {
     pub far_margin_m: f32,
     /// How near the line the palm must be.
     pub take_m: f32,
+    /// The palm's centre in the wrist's frame, where a hand holds the line: along the fingers'
+    /// -Z.
+    pub palm_from_wrist_m: Vec3,
 }
-
-/// The free hand's reach for the line.
-pub(crate) const REACH: LineReach = LineReach {
-    min_ahead_m: 0.15,
-    max_ahead_m: 1.0,
-    far_margin_m: 0.5,
-    take_m: 0.12,
-};
 
 /// Where the free hand would take the line.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -115,7 +112,8 @@ pub(crate) fn handed_back_m(
 
 /// The line's grab target for the free hand this tick, when the lock holds the line or the snatch's
 /// line swings its target from `grapple_hand`, and the other hand is free and empty and within
-/// [`REACH`] of the line. `world_scale` turns the reach into the player's scale for the resolver.
+/// the tuning's reach ([`LineReach`]) of the line. `world_scale` turns the reach into the player's
+/// scale for the resolver.
 pub fn targets(grapple_hand: Hand, world_scale: f32) -> Provided {
     let mut out = Provided::default();
     let Some(far) = far_end(grapple_hand) else {
@@ -131,7 +129,7 @@ pub fn targets(grapple_hand: Hand, world_scale: f32) -> Provided {
         return out;
     };
     let origin = line_origin(grapple.wrist);
-    let Some(spot) = spot(origin, far, palm(other.wrist), &REACH) else {
+    let Some(spot) = spot(origin, far, palm(other.wrist), &GRAPPLE.get().line) else {
         return out;
     };
     out.targets.push(GripTarget::measured(
@@ -170,13 +168,13 @@ pub fn lock_hand(grapple_hand: Hand, latch: GripLatch) -> Option<HandLine> {
 
 /// The line's origin on the grapple hand, from its wrist frame in the world.
 pub(crate) fn line_origin(wrist: Pose) -> Vec3 {
-    wrist.position + wrist.orientation * GRAPPLE_ORIGIN_M
+    wrist.position + wrist.orientation * grapple_origin_m()
 }
 
 /// Where a hand holds the line, from its wrist frame in the world: the palm, ahead of the wrist
 /// toward the fingers.
 pub(crate) fn palm(wrist: Pose) -> Vec3 {
-    wrist.position + wrist.orientation * PALM_FROM_WRIST_M
+    wrist.position + wrist.orientation * GRAPPLE.get().line.palm_from_wrist_m
 }
 
 /// Whether `hand` is free and holds nothing.
@@ -195,17 +193,18 @@ fn far_end(grapple_hand: Hand) -> Option<Vec3> {
     }
 }
 
-/// The palm's centre in the wrist's frame, metres: along the fingers' -Z.
-const PALM_FROM_WRIST_M: Vec3 = Vec3::new(0.0, 0.0, -0.07);
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    fn reach() -> &'static LineReach {
+        &GRAPPLE.get().line
+    }
+
     #[test]
     fn a_palm_beside_the_line_ahead_of_the_wrist_takes_it_at_its_nearest_point() {
         let far = Vec3::new(0.0, 0.0, -10.0);
-        let spot = spot(Vec3::ZERO, far, Vec3::new(0.05, 0.0, -0.5), &REACH).unwrap();
+        let spot = spot(Vec3::ZERO, far, Vec3::new(0.05, 0.0, -0.5), reach()).unwrap();
         assert!(spot.point.distance(Vec3::new(0.0, 0.0, -0.5)) < 1e-6);
         assert!((spot.ahead_m - 0.5).abs() < 1e-6);
         assert!((spot.distance_m - 0.05).abs() < 1e-6);
@@ -220,16 +219,16 @@ mod tests {
             Vec3::new(0.0, 0.0, -1.2),
             Vec3::new(0.2, 0.0, -0.5),
         ] {
-            assert_eq!(spot(Vec3::ZERO, far, palm, &REACH), None, "{palm}");
+            assert_eq!(spot(Vec3::ZERO, far, palm, reach()), None, "{palm}");
         }
     }
 
     #[test]
     fn a_short_line_keeps_the_spot_off_the_far_end() {
         let far = Vec3::new(0.0, 0.0, -0.8);
-        assert!(spot(Vec3::ZERO, far, Vec3::new(0.0, 0.0, -0.25), &REACH).is_some());
+        assert!(spot(Vec3::ZERO, far, Vec3::new(0.0, 0.0, -0.25), reach()).is_some());
         assert_eq!(
-            spot(Vec3::ZERO, far, Vec3::new(0.0, 0.0, -0.4), &REACH),
+            spot(Vec3::ZERO, far, Vec3::new(0.0, 0.0, -0.4), reach()),
             None
         );
     }
@@ -237,10 +236,10 @@ mod tests {
     #[test]
     fn degenerate_and_invalid_lines_are_never_taken() {
         let palm = Vec3::new(0.0, 0.0, -0.5);
-        assert_eq!(spot(Vec3::ZERO, Vec3::ZERO, palm, &REACH), None);
-        assert_eq!(spot(Vec3::NAN, Vec3::NEG_Z * 10.0, palm, &REACH), None);
+        assert_eq!(spot(Vec3::ZERO, Vec3::ZERO, palm, reach()), None);
+        assert_eq!(spot(Vec3::NAN, Vec3::NEG_Z * 10.0, palm, reach()), None);
         assert_eq!(
-            spot(Vec3::ZERO, Vec3::NEG_Z * 10.0, Vec3::NAN, &REACH),
+            spot(Vec3::ZERO, Vec3::NEG_Z * 10.0, Vec3::NAN, reach()),
             None
         );
         assert_eq!(ahead_m(Vec3::ZERO, Vec3::ZERO, palm), None);

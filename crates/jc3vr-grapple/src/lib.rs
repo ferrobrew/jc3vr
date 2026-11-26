@@ -21,8 +21,9 @@
 //! The hook libraries are enabled in their established order with the other layers' (the order is
 //! load-bearing): [`controllers::snatch::hook_library`] inside the gameplay crate's controllers
 //! library, and [`grapple::physical::hook_library`] and [`grapple::device::hook_library`] in the
-//! payload's composition. The grapple has no settings group: its tuning is fixed in
-//! [`grapple::physical::config`].
+//! payload's composition. The grapple has no settings group: its tuning is read from the crate's
+//! tuning files, `tuning/grapple.toml` ([`grapple::tuning::GRAPPLE`]) and `tuning/snatch.toml`
+//! ([`controllers::snatch::config::SNATCH`]).
 //!
 //! The crate's own tests register a configuration root of their own (`test_config`), since the
 //! payload's aggregate is not there, and use the body crate's `test-support` fixtures. The

@@ -32,7 +32,7 @@ use jc3vr_body::controllers::{
 use jc3vr_core::game_tick::GameTick;
 use jc3vr_weapons::controllers::weapons::{engine, grenade};
 
-use crate::controllers::snatch::{Refusal, sling_hooks};
+use crate::controllers::snatch::{Refusal, config::SNATCH, sling_hooks};
 
 /// Why the hook cannot fire now, if it cannot: a line is out, or a fire or a reel is under way.
 pub(super) fn busy(hook: &GrapplingHook) -> Option<Refusal> {
@@ -115,9 +115,6 @@ unsafe fn fire_target(
     }
     Ok((wire, attached))
 }
-
-/// How near the attach point the proxy's visual position may be, metres.
-const ATTACH_TOLERANCE_M: f32 = 0.02;
 
 /// How the engine's attachment proxy compares with the body hit the snatch selected.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -232,7 +229,7 @@ unsafe fn attach_body(
         hit.body,
         body,
         offset_m,
-        ATTACH_TOLERANCE_M,
+        SNATCH.get().attach_tolerance_m,
         proxy_body_owned,
     );
     tracing::info!(

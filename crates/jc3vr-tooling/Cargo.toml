@@ -29,5 +29,6 @@ toml = "1.1.6"
 jiff = "0.2.29"
 
 [dev-dependencies]
+jc3vr-core = { path = "../jc3vr-core", features = ["test-support"] }
 pretty_assertions = "1.4.1"
 test-case = "3.3.1"

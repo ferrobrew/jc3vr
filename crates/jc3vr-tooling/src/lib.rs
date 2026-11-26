@@ -16,6 +16,7 @@
 //!   ([`jc3vr_capture::testing`]).
 //! - [`diagnostics`]: the samplers that note the controller subsystems' state, Rico's pose, and
 //!   the bodies around him into a tracking recording.
+//! - [`tuning`]: the tooling's tuning file ([`tuning::TOOLING`], `docs/mod/tuning.md`).
 //!
 //! # The public surface
 //!
@@ -36,3 +37,4 @@ pub mod diagnostics;
 pub mod director;
 pub mod recorder;
 pub mod testing;
+pub mod tuning;

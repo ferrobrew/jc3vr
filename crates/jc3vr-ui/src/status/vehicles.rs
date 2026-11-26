@@ -7,11 +7,7 @@ use jc3vr_body::controllers::{
 };
 use jc3vr_vehicles::controllers::{
     vehicles,
-    vehicles::{
-        VehicleSummary, mounted_recoil, passenger,
-        passenger::PassengerStatus,
-        tuning::{CockpitButtonsTuning, VEHICLES},
-    },
+    vehicles::{VehicleSummary, mounted_recoil, passenger, passenger::PassengerStatus},
 };
 
 use crate::status::{Health, Line, Row, Text, prose, text};
@@ -74,27 +70,20 @@ fn passenger_aim_line(seat: Option<VehicleSeat>, status: PassengerStatus) -> Lin
 }
 
 fn cockpit_buttons() -> Line {
-    cockpit_buttons_line(&VEHICLES.get().physical.buttons, &vehicles::summary())
+    cockpit_buttons_line(&vehicles::summary())
 }
 
-fn cockpit_buttons_line(config: &CockpitButtonsTuning, summary: &VehicleSummary) -> Line {
-    if !config.any() {
-        return Line::off("");
-    }
+fn cockpit_buttons_line(summary: &VehicleSummary) -> Line {
     if !(summary.active && summary.seat.is_some_and(|s| s.driver)) {
         return Line::new(Health::Waiting, prose("Not driving"));
     }
     let offers = |kind| summary.offered.contains(&kind);
     let mut here = Vec::new();
     if offers(ControlKind::Wheel) {
-        if config.horn {
-            here.push(prose("horn"));
-        }
-        if config.nitrous_button {
-            here.push(prose("nitrous button"));
-        }
+        here.push(prose("horn"));
+        here.push(prose("nitrous button"));
     }
-    if config.twist_nitrous && offers(ControlKind::Collective) {
+    if offers(ControlKind::Collective) {
         here.push(prose("twist grip"));
     }
     if here.is_empty() {
@@ -239,16 +228,8 @@ mod tests {
 
     #[test]
     fn the_cockpit_buttons_name_what_the_seat_has() {
-        let config = VEHICLES.get().physical.buttons;
-        let off = CockpitButtonsTuning {
-            horn: false,
-            nitrous_button: false,
-            twist_nitrous: false,
-            ..config
-        };
-        assert_eq!(cockpit_buttons_line(&off, &flying()).health, Health::Off);
         assert_eq!(
-            cockpit_buttons_line(&config, &flying()).text(),
+            cockpit_buttons_line(&flying()).text(),
             "WAITING, NONE IN THIS SEAT"
         );
         let car = VehicleSummary {
@@ -264,7 +245,7 @@ mod tests {
             ..flying()
         };
         assert_eq!(
-            cockpit_buttons_line(&config, &car).text(),
+            cockpit_buttons_line(&car).text(),
             "OK, HORN, NITROUS BUTTON, HORN ON, 2 PRESSES"
         );
         let passenger = VehicleSummary {
@@ -274,10 +255,7 @@ mod tests {
             }),
             ..car
         };
-        assert_eq!(
-            cockpit_buttons_line(&config, &passenger).health,
-            Health::Waiting
-        );
+        assert_eq!(cockpit_buttons_line(&passenger).health, Health::Waiting);
     }
 
     #[test]

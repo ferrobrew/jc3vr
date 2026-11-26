@@ -67,14 +67,12 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickVolumes {
         Mode::Vehicle(seat) => Some(seat),
         _ => None,
     };
-    let mut physical_config = PhysicalControlsTuning::of(&config.vehicles.physical);
+    let physical_config = PhysicalControlsTuning::of(&config.vehicles.physical);
     let xf = CockpitTransform::current(active.head.position, active.world_scale);
     let entry = seat.and_then(|_| VehicleEntry::read(game));
     // The nitrous button is only on a vehicle with nitrous, where the game's own nitrous meter
     // shows: elsewhere it would be a marker and a press that do nothing.
-    if !entry.as_ref().is_some_and(VehicleEntry::has_nitrous) {
-        physical_config.buttons.nitrous_button = false;
-    }
+    let nitrous = entry.as_ref().is_some_and(VehicleEntry::has_nitrous);
     let mut events = Vec::new();
     let mut state = STATE.lock();
     let mut latch = prepare_entry(
@@ -115,6 +113,7 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickVolumes {
         bars: fit.bars,
         native_stick: fit.native_stick,
         cockpit: fit.cockpit,
+        nitrous,
         ..Placement::new(physical_config, config.dominant)
     };
     let grips = active.hands.map(|h| h.map(|h| h.grip.position));
@@ -174,7 +173,7 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickVolumes {
                 handle_target(
                     GrabVolume::MountedHandle(hand),
                     mounted.handle_points[i].unwrap_or(point),
-                    mounted_grip::GRAB_RADIUS_M,
+                    VEHICLES.get().mounted.grab_radius_m,
                     hand,
                 )
                 .held(hand),
@@ -220,7 +219,12 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickVolumes {
             .filter(|c| c.hand.is_none_or(|h| !holding[h.index()]))
             .map(|c| handle_target(c.volume, c.centre, c.radius, c.hand.unwrap_or(Hand::Right))),
     );
-    let buttons = ButtonPlacement::for_seat(offered, &physical_config.buttons, &placement.wheel);
+    let buttons = ButtonPlacement::for_seat(
+        offered,
+        &physical_config.buttons,
+        &placement.wheel,
+        placement.nitrous,
+    );
     for button in Button::ALL {
         let Some(at) = buttons.button(button) else {
             continue;

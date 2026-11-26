@@ -5,25 +5,24 @@
 //! The readout is a leaf slot that any thread may read ([`status`]), as the status rows (`status`)
 //! do in the middle of a frame (`docs/mod/threading.md`).
 
-use std::{
-    fmt::Write as _,
-    sync::OnceLock,
-    time::{Duration, Instant},
-};
+use std::{fmt::Write as _, sync::OnceLock, time::Instant};
 
 use glam::Vec3;
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
-use crate::controllers::{
-    grab::{
-        GrabVolume, GripTarget, Reach, Resolved, Tier,
-        latch::GripLatch,
-        markers::{self, MarkerFrame},
-        resolve::{self, losers, nearest_miss},
+use crate::{
+    controllers::{
+        grab::{
+            GrabVolume, GripTarget, Reach, Resolved, Tier,
+            latch::GripLatch,
+            markers::{self, MarkerFrame},
+            resolve::{self, losers, nearest_miss},
+        },
+        hands::ActiveHands,
+        intent::controls::ButtonControl,
     },
-    hands::ActiveHands,
-    intent::controls::ButtonControl,
+    tuning::FRESHNESS,
 };
 
 /// One input tick's targets and how each hand stands among them.
@@ -222,13 +221,11 @@ pub struct HandStatus {
 pub fn status() -> GrabStatus {
     let (status, at) = *STATUS.lock();
     GrabStatus {
-        live: status.live && at.is_some_and(|at| at.elapsed() < STATUS_MAX_AGE),
+        live: status.live
+            && at.is_some_and(|at| at.elapsed() < FRESHNESS.get().hands.grab_status_ms.duration()),
         ..status
     }
 }
-
-/// How long the readout counts as live after the last input tick.
-const STATUS_MAX_AGE: Duration = Duration::from_millis(500);
 
 /// The fastest a hand may move for a closed fist to take what it comes to, metres per second at the
 /// player's scale: a hand laid on a handle is slower, and a punch is far faster.
@@ -358,6 +355,8 @@ static STATUS: Mutex<(GrabStatus, Option<Instant>)> = Mutex::new((
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use super::*;
 
     #[test]

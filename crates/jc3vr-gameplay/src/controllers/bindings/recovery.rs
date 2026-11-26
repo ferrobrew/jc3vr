@@ -22,6 +22,8 @@ use jc3vr_view::{
     },
 };
 
+use crate::controllers::tuning::GAMEPLAY;
+
 /// One hand's recovery state, for the tick report.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub enum HandRecovery {
@@ -82,9 +84,10 @@ impl NeutralPolicy {
             VrTurnMode::Snap => turn.snap_threshold * 0.5,
         };
         let dominant_stick = move_deadzone.min(finite_or_zero(turn_threshold).max(0.0));
+        let floor = GAMEPLAY.get().bindings.stick_neutral_floor;
         let mut stick_neutral = [0.0; 2];
-        stick_neutral[dominant.index()] = dominant_stick.max(STICK_NEUTRAL_FLOOR);
-        stick_neutral[dominant.other().index()] = move_deadzone.max(STICK_NEUTRAL_FLOOR);
+        stick_neutral[dominant.index()] = dominant_stick.max(floor);
+        stick_neutral[dominant.other().index()] = move_deadzone.max(floor);
         Self { stick_neutral }
     }
 }
@@ -201,11 +204,6 @@ impl MaskLog {
         std::array::from_fn(|i| self.hands[i].step(status[i], now))
     }
 }
-
-/// A resting stick magnitude that always counts as neutral, even when a consumer's deadzone is
-/// smaller. Worn sticks rest this far off centre, and a stick this close to centre can only feed a
-/// continuous consumer (a slow walk or turn), never an edge.
-const STICK_NEUTRAL_FLOOR: f32 = 0.1;
 
 fn finite_or_zero(value: f32) -> f32 {
     if value.is_finite() { value } else { 0.0 }
@@ -632,9 +630,10 @@ mod tests {
         let config = NeutralPolicy::new(&bindings, &turn, Hand::Right);
         let mut hand = published(1, [true, true], [0.0; 2]).hands[0].clone();
         for which in Hand::BOTH {
-            hand.inputs.thumbstick = Vec2::new(0.0, STICK_NEUTRAL_FLOOR * 0.9);
+            hand.inputs.thumbstick =
+                Vec2::new(0.0, GAMEPLAY.get().bindings.stick_neutral_floor * 0.9);
             assert!(neutral(&hand, &config, which));
-            hand.inputs.thumbstick = Vec2::new(0.0, STICK_NEUTRAL_FLOOR);
+            hand.inputs.thumbstick = Vec2::new(0.0, GAMEPLAY.get().bindings.stick_neutral_floor);
             assert!(!neutral(&hand, &config, which));
             hand.inputs.thumbstick = Vec2::new(f32::NAN, 0.0);
             assert!(!neutral(&hand, &config, which));

@@ -22,6 +22,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+use serde::Deserialize;
+
 use crate::{frame::Hand, haptics::cues::Sustain};
 
 /// A vibration for one controller.
@@ -53,8 +55,10 @@ pub struct Sustained {
     pub hold: Duration,
 }
 
-/// How the mixer combines what arrives, fixed at [`MIX`].
-#[derive(Copy, Clone, Debug, PartialEq)]
+/// How the mixer combines what arrives
+/// ([`HapticsTuning::mix`](crate::haptics::tuning::HapticsTuning::mix)).
+#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct MixTuning {
     /// The sustained sum passes unchanged up to this amplitude, then bends toward
     /// [`MixTuning::sustain_ceiling`].
@@ -73,16 +77,6 @@ pub struct MixTuning {
     /// enough to bridge a frame hitch, short enough to stop soon after the sources do.
     pub refresh_s: f32,
 }
-
-/// The mixer's tuning.
-pub const MIX: MixTuning = MixTuning {
-    sustain_knee: 0.45,
-    sustain_ceiling: 0.7,
-    knee: 0.85,
-    stack_share: 0.35,
-    duck_share: 0.5,
-    refresh_s: 0.1,
-};
 
 /// What the mixer did, since it was created or cleared.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
@@ -315,8 +309,11 @@ impl HandMix {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::haptics::tuning::tests::shipped;
 
-    const CONFIG: MixTuning = MIX;
+    fn config() -> &'static MixTuning {
+        &shipped().mix
+    }
 
     fn ms(n: u64) -> Duration {
         Duration::from_millis(n)
@@ -345,7 +342,7 @@ mod tests {
         let mut mixer = Mixer::new();
         let t0 = Instant::now();
         mixer.transient(Hand::Left, transient(0.4, 30, 2));
-        let out = mixer.mix(t0, &CONFIG);
+        let out = mixer.mix(t0, config());
         assert_eq!(
             out[0],
             Some(HapticPulse {
@@ -361,7 +358,7 @@ mod tests {
     #[test]
     fn nothing_queued_plays_nothing() {
         let mut mixer = Mixer::new();
-        assert_eq!(mixer.mix(Instant::now(), &CONFIG), [None, None]);
+        assert_eq!(mixer.mix(Instant::now(), config()), [None, None]);
     }
 
     #[test]
@@ -370,10 +367,10 @@ mod tests {
         let t0 = Instant::now();
         mixer.transient(Hand::Right, transient(0.3, 20, 1));
         mixer.transient(Hand::Right, transient(0.5, 70, 4));
-        let out = mixer.mix(t0, &CONFIG)[1].unwrap();
+        let out = mixer.mix(t0, config())[1].unwrap();
         assert_eq!(out.duration, ms(70));
         assert_eq!(out.frequency_hz, Some(104.0));
-        let expected = 0.5 + CONFIG.stack_share * 0.3;
+        let expected = 0.5 + config().stack_share * 0.3;
         assert!((out.amplitude - expected).abs() < 1e-6);
         assert_eq!(mixer.stats().stacked, 1);
     }
@@ -384,9 +381,9 @@ mod tests {
         for _ in 0..20 {
             mixer.transient(Hand::Left, transient(0.9, 40, 2));
         }
-        let out = mixer.mix(Instant::now(), &CONFIG)[0].unwrap();
+        let out = mixer.mix(Instant::now(), config())[0].unwrap();
         assert!(out.amplitude <= 1.0);
-        assert!(out.amplitude > CONFIG.knee);
+        assert!(out.amplitude > config().knee);
         assert_eq!(mixer.stats().limited, 1);
     }
 
@@ -395,11 +392,11 @@ mod tests {
         let mut mixer = Mixer::new();
         let t0 = Instant::now();
         mixer.sustain(Hand::Left, sustained(Sustain::ClimbStrain, 0.3), t0);
-        let out = mixer.mix(t0, &CONFIG)[0].unwrap();
+        let out = mixer.mix(t0, config())[0].unwrap();
         assert_eq!(out.amplitude, 0.3);
         assert!(out.duration.abs_diff(ms(100)) < Duration::from_micros(1));
-        assert!(mixer.mix(t0 + ms(50), &CONFIG)[0].is_some());
-        assert_eq!(mixer.mix(t0 + ms(150), &CONFIG)[0], None);
+        assert!(mixer.mix(t0 + ms(50), config())[0].is_some());
+        assert_eq!(mixer.mix(t0 + ms(150), config())[0], None);
     }
 
     #[test]
@@ -408,7 +405,7 @@ mod tests {
         let t0 = Instant::now();
         mixer.sustain(Hand::Left, sustained(Sustain::GameRumble, 0.5), t0);
         mixer.sustain(Hand::Left, sustained(Sustain::GameRumble, 0.0), t0);
-        assert_eq!(mixer.mix(t0, &CONFIG)[0], None);
+        assert_eq!(mixer.mix(t0, config())[0], None);
     }
 
     #[test]
@@ -423,11 +420,11 @@ mod tests {
             }
             mixer.cancel_sustain(owned, Sustain::BodyPressure);
             mixer.cancel_sustain(owned, Sustain::PalmPressure);
-            let out = mixer.mix(t0 + ms(50), &CONFIG);
+            let out = mixer.mix(t0 + ms(50), config());
             assert_eq!(out[owned.index()].unwrap().amplitude, 0.1);
-            let expected = soft_limit(0.5, CONFIG.sustain_knee, CONFIG.sustain_ceiling);
+            let expected = soft_limit(0.5, config().sustain_knee, config().sustain_ceiling);
             assert!((out[owned.other().index()].unwrap().amplitude - expected).abs() < 1e-6);
-            assert_eq!(mixer.mix(t0 + ms(151), &CONFIG), [None; 2]);
+            assert_eq!(mixer.mix(t0 + ms(151), config()), [None; 2]);
         }
     }
 
@@ -438,7 +435,7 @@ mod tests {
         let t0 = Instant::now();
         for mixer in [&mut mixer, &mut expected] {
             mixer.transient(Hand::Left, transient(0.4, 40, 2));
-            mixer.mix(t0, &CONFIG);
+            mixer.mix(t0, config());
             mixer.transient(Hand::Right, transient(0.3, 20, 1));
         }
         mixer.sustain(Hand::Left, sustained(Sustain::BodyPressure, 0.2), t0);
@@ -446,14 +443,14 @@ mod tests {
         mixer.cancel_sustain(Hand::Left, Sustain::BodyPressure);
         mixer.cancel_sustain(Hand::Right, Sustain::PalmPressure);
         assert_eq!(
-            mixer.mix(t0 + ms(10), &CONFIG),
-            expected.mix(t0 + ms(10), &CONFIG)
+            mixer.mix(t0 + ms(10), config()),
+            expected.mix(t0 + ms(10), config())
         );
         mixer.transient(Hand::Left, transient(0.2, 8, 0));
         expected.transient(Hand::Left, transient(0.2, 8, 0));
         assert_eq!(
-            mixer.mix(t0 + ms(20), &CONFIG),
-            expected.mix(t0 + ms(20), &CONFIG)
+            mixer.mix(t0 + ms(20), config()),
+            expected.mix(t0 + ms(20), config())
         );
         assert_eq!(mixer.stats(), expected.stats());
     }
@@ -465,13 +462,13 @@ mod tests {
         for source in Sustain::ALL {
             mixer.sustain(Hand::Right, sustained(source, 0.5), t0);
         }
-        let out = mixer.mix(t0, &CONFIG)[1].unwrap();
-        assert!(out.amplitude <= CONFIG.sustain_ceiling);
-        assert!(out.amplitude > CONFIG.sustain_knee);
+        let out = mixer.mix(t0, config())[1].unwrap();
+        assert!(out.amplitude <= config().sustain_ceiling);
+        assert!(out.amplitude > config().sustain_knee);
         let mut two = Mixer::new();
         two.sustain(Hand::Right, sustained(Sustain::ClimbStrain, 0.2), t0);
         two.sustain(Hand::Right, sustained(Sustain::GrappleReel, 0.2), t0);
-        assert!((two.mix(t0, &CONFIG)[1].unwrap().amplitude - 0.4).abs() < 1e-6);
+        assert!((two.mix(t0, config())[1].unwrap().amplitude - 0.4).abs() < 1e-6);
     }
 
     #[test]
@@ -480,21 +477,21 @@ mod tests {
         let t0 = Instant::now();
         mixer.sustain(Hand::Left, sustained(Sustain::ClimbStrain, 0.3), t0);
         mixer.transient(Hand::Left, transient(0.5, 40, 2));
-        let onset = mixer.mix(t0, &CONFIG)[0].unwrap();
-        let expected = 0.5 + CONFIG.duck_share * 0.3;
+        let onset = mixer.mix(t0, config())[0].unwrap();
+        let expected = 0.5 + config().duck_share * 0.3;
         assert!((onset.amplitude - expected).abs() < 1e-6);
         mixer.sustain(
             Hand::Left,
             sustained(Sustain::ClimbStrain, 0.3),
             t0 + ms(20),
         );
-        assert_eq!(mixer.mix(t0 + ms(20), &CONFIG)[0], None);
+        assert_eq!(mixer.mix(t0 + ms(20), config())[0], None);
         mixer.sustain(
             Hand::Left,
             sustained(Sustain::ClimbStrain, 0.3),
             t0 + ms(45),
         );
-        let resumed = mixer.mix(t0 + ms(45), &CONFIG)[0].unwrap();
+        let resumed = mixer.mix(t0 + ms(45), config())[0].unwrap();
         assert_eq!(resumed.amplitude, 0.3);
     }
 
@@ -504,7 +501,7 @@ mod tests {
         let t0 = Instant::now();
         mixer.sustain(Hand::Right, sustained(Sustain::GameRumble, 0.4), t0);
         mixer.transient(Hand::Right, transient(0.5, 70, 4));
-        assert_eq!(mixer.mix(t0, &CONFIG)[1].unwrap().amplitude, 0.5);
+        assert_eq!(mixer.mix(t0, config())[1].unwrap().amplitude, 0.5);
     }
 
     #[test]
@@ -512,9 +509,9 @@ mod tests {
         let mut mixer = Mixer::new();
         let t0 = Instant::now();
         mixer.transient(Hand::Left, transient(0.8, 70, 4));
-        mixer.mix(t0, &CONFIG);
+        mixer.mix(t0, config());
         mixer.transient(Hand::Left, transient(0.2, 8, 0));
-        assert_eq!(mixer.mix(t0 + ms(10), &CONFIG)[0], None);
+        assert_eq!(mixer.mix(t0 + ms(10), config())[0], None);
         assert_eq!(mixer.stats().masked, 1);
     }
 
@@ -523,11 +520,11 @@ mod tests {
         let mut mixer = Mixer::new();
         let t0 = Instant::now();
         mixer.transient(Hand::Left, transient(0.3, 100, 3));
-        mixer.mix(t0, &CONFIG);
+        mixer.mix(t0, config());
         mixer.transient(Hand::Left, transient(0.6, 20, 2));
-        let out = mixer.mix(t0 + ms(10), &CONFIG)[0].unwrap();
+        let out = mixer.mix(t0 + ms(10), config())[0].unwrap();
         assert_eq!(out.duration, ms(90));
-        let expected = soft_limit(0.6 + CONFIG.stack_share * 0.3, CONFIG.knee, 1.0);
+        let expected = soft_limit(0.6 + config().stack_share * 0.3, config().knee, 1.0);
         assert!((out.amplitude - expected).abs() < 1e-6);
         assert_eq!(mixer.stats().stacked, 1);
     }
@@ -538,7 +535,7 @@ mod tests {
         let t0 = Instant::now();
         mixer.transient(Hand::Left, transient(0.5, 40, 2));
         mixer.sustain(Hand::Right, sustained(Sustain::GrappleReel, 0.2), t0);
-        let out = mixer.mix(t0, &CONFIG);
+        let out = mixer.mix(t0, config());
         assert_eq!(out[0].unwrap().amplitude, 0.5);
         assert_eq!(out[1].unwrap().amplitude, 0.2);
     }
@@ -550,7 +547,7 @@ mod tests {
         mixer.transient(Hand::Left, transient(0.5, 40, 2));
         mixer.sustain(Hand::Left, sustained(Sustain::GrappleReel, 0.2), t0);
         mixer.clear();
-        assert_eq!(mixer.mix(t0, &CONFIG), [None, None]);
+        assert_eq!(mixer.mix(t0, config()), [None, None]);
     }
 
     #[test]
@@ -597,7 +594,7 @@ mod tests {
                     transient(amplitude, 1 + u64::from(i) * 25, i % 5),
                 );
             }
-            if let Some(out) = mixer.mix(t0, &CONFIG)[0] {
+            if let Some(out) = mixer.mix(t0, config())[0] {
                 assert!((0.0..=1.0).contains(&out.amplitude));
                 assert!(!out.duration.is_zero());
             }

@@ -51,6 +51,7 @@ mod register_render;
 mod register_siblings;
 mod register_vr_frame;
 pub mod summary;
+pub mod tuning;
 
 pub use config::ControllersConfig;
 

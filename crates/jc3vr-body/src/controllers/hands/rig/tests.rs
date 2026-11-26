@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use jc3gi::animation::skeleton::{HkaSkeleton, Skeleton};
 
 use super::*;

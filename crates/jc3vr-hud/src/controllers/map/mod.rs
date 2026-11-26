@@ -8,9 +8,9 @@
 //! slot untouched. The map's cursor comes from [`cursor_uv`] through the UI manager's coordinate
 //! hook.
 //!
-//! The trigger is the map's primary button and selects where it was pressed (see
-//! [`controller::CLICK_SLOP`]), and the confirm the map reads becomes the mouse's context action at
-//! the cursor (see [`lookup`]), so both act at the controller's cursor.
+//! The trigger is the map's primary button and selects where it was pressed (see the tuning's
+//! `map.click_slop_uv`), and the confirm the map reads becomes the mouse's context action at the
+//! cursor (see [`lookup`]), so both act at the controller's cursor.
 //!
 //! - [`controller`] is the pure owner, button-edge, press-point, and zoom-step state machine;
 //! - [`lookup`] is the scoped effector shim;
@@ -48,7 +48,7 @@ use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
 pub use crate::controllers::map::{
-    controller::{CLICK_SLOP, MapDelivery},
+    controller::MapDelivery,
     report::{MapReport, report, zoom_label},
 };
 use crate::{

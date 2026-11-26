@@ -10,6 +10,8 @@ use jc3vr_input::frame::{
     HAND_JOINT_COUNT, Hand, HandFrame, HandInputs, HandJoint, InteractionProfile,
 };
 
+use crate::controllers::fingers::tuning::FINGERS_TUNING;
+
 /// A finger of the hand.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Finger {
@@ -90,6 +92,7 @@ pub fn select(hand: Hand, frame: &HandFrame) -> Option<(CurlSource, FingerCurls)
 /// curl is the sum of its three flexions (at the knuckle, the middle, and the last joint) over
 /// their sum at a full fist; the thumb's is the sum of its two outer flexions over theirs.
 pub fn from_joints(hand: Hand, joints: &[HandJoint; HAND_JOINT_COUNT]) -> Option<FingerCurls> {
+    let tracked = &FINGERS_TUNING.get().tracked;
     let mut curls = FingerCurls::default();
     for finger in Finger::ALL {
         let chain = chain(finger);
@@ -99,8 +102,11 @@ pub fn from_joints(hand: Hand, joints: &[HandJoint; HAND_JOINT_COUNT]) -> Option
         let orientation = |k: usize| joints[chain[k]].pose.orientation;
         let flexion = |k: usize| flexion(orientation(k), orientation(k + 1));
         let (bent, full) = match finger {
-            Finger::Thumb => (flexion(0) + flexion(1), THUMB_FULL_FLEX_RAD),
-            _ => (flexion(0) + flexion(1) + flexion(2), FINGER_FULL_FLEX_RAD),
+            Finger::Thumb => (flexion(0) + flexion(1), tracked.thumb_full_flex_rad()),
+            _ => (
+                flexion(0) + flexion(1) + flexion(2),
+                tracked.finger_full_flex_rad(),
+            ),
         };
         curls.curl[finger.index()] = (bent / full).clamp(0.0, 1.0);
         if finger != Finger::Thumb {
@@ -126,15 +132,16 @@ pub fn from_joints(hand: Hand, joints: &[HandJoint; HAND_JOINT_COUNT]) -> Option
 ///   follows the fingers closing around the handle and its force carries them to a fist; on a
 ///   Touch controller the grip value is a pull, from fingers resting on the handle to a fist.
 pub fn estimate(inputs: &HandInputs, profile: InteractionProfile) -> FingerCurls {
+    let tuning = &FINGERS_TUNING.get().estimate;
     let pressed = inputs.thumbstick_click
         || inputs.a_click
         || inputs.b_click
-        || inputs.trackpad_force > TRACKPAD_PRESSED_FORCE;
+        || inputs.trackpad_force > tuning.trackpad_pressed_force;
     let resting = [
-        (inputs.thumbstick_touch, THUMB_ON_STICK),
-        (inputs.trackpad_touch, THUMB_ON_TRACKPAD),
-        (inputs.a_touch || inputs.a_click, THUMB_ON_A),
-        (inputs.b_touch || inputs.b_click, THUMB_ON_B),
+        (inputs.thumbstick_touch, tuning.thumb_on_stick),
+        (inputs.trackpad_touch, tuning.thumb_on_trackpad),
+        (inputs.a_touch || inputs.a_click, tuning.thumb_on_a),
+        (inputs.b_touch || inputs.b_click, tuning.thumb_on_b),
     ]
     .into_iter()
     .filter(|&(touched, _)| touched)
@@ -143,22 +150,22 @@ pub fn estimate(inputs: &HandInputs, profile: InteractionProfile) -> FingerCurls
         Some(most.map_or(curl, |m| m.max(curl)))
     });
     let thumb = match (resting, pressed) {
-        (Some(curl), true) => curl + THUMB_PRESS_EXTRA,
+        (Some(curl), true) => curl + tuning.thumb_press_extra,
         (Some(curl), false) => curl,
-        (None, true) => THUMB_ON_A + THUMB_PRESS_EXTRA,
+        (None, true) => tuning.thumb_on_a + tuning.thumb_press_extra,
         (None, false) => 0.0,
     };
 
     let trigger = inputs.trigger.clamp(0.0, 1.0);
     let index = if inputs.trigger_touch || trigger > 0.0 {
-        TRIGGER_REST.lerp(1.0, trigger)
+        tuning.trigger_rest.lerp(1.0, trigger)
     } else {
         0.0
     };
 
     let squeeze = inputs.squeeze.clamp(0.0, 1.0);
     let grip = match profile {
-        InteractionProfile::OculusTouch => TOUCH_GRIP_REST.lerp(1.0, squeeze),
+        InteractionProfile::OculusTouch => tuning.touch_grip_rest.lerp(1.0, squeeze),
         _ => squeeze.lerp(1.0, inputs.squeeze_force.clamp(0.0, 1.0)),
     };
 
@@ -167,25 +174,6 @@ pub fn estimate(inputs: &HandInputs, profile: InteractionProfile) -> FingerCurls
         splay: [0.0; 5],
     }
 }
-
-/// The sum of a finger's knuckle, middle, and last joint flexions at a full fist.
-const FINGER_FULL_FLEX_RAD: f32 = (90.0 + 105.0 + 75.0) * std::f32::consts::PI / 180.0;
-/// The sum of the thumb's two outer flexions at a full bend.
-const THUMB_FULL_FLEX_RAD: f32 = (55.0 + 80.0) * std::f32::consts::PI / 180.0;
-
-/// The estimated thumb curl resting on each surface of the face. The face buttons sit nearer the
-/// palm than the thumbstick, so the thumb bends further to reach them.
-const THUMB_ON_STICK: f32 = 0.45;
-const THUMB_ON_TRACKPAD: f32 = 0.5;
-const THUMB_ON_A: f32 = 0.6;
-const THUMB_ON_B: f32 = 0.55;
-/// The extra curl of a thumb pressing down.
-const THUMB_PRESS_EXTRA: f32 = 0.15;
-const TRACKPAD_PRESSED_FORCE: f32 = 0.2;
-/// The index finger's curl resting on the trigger.
-const TRIGGER_REST: f32 = 0.35;
-/// The curl of fingers resting on a Touch controller's grip without pulling it.
-const TOUCH_GRIP_REST: f32 = 0.4;
 
 /// The `XR_EXT_hand_tracking` joints of a finger, from its root to the last joint before the tip:
 /// the thumb's metacarpal, proximal, and distal, and a finger's metacarpal, proximal,
@@ -212,6 +200,11 @@ mod tests {
     use jc3vr_input::frame::Pose;
 
     use super::*;
+    use crate::controllers::fingers::tuning::EstimatedCurlsTuning;
+
+    fn estimated() -> &'static EstimatedCurlsTuning {
+        &FINGERS_TUNING.get().estimate
+    }
 
     /// A hand skeleton with every finger's joints bent by `flex` radians each, and each knuckle
     /// turned by `turn` radians about +Y.
@@ -253,9 +246,9 @@ mod tests {
     #[test]
     fn a_partial_bend_is_a_partial_curl() {
         let curls = from_joints(Hand::Left, &skeleton(0.5, 0.0)).unwrap();
-        let finger = 1.5 / FINGER_FULL_FLEX_RAD;
+        let finger = 1.5 / FINGERS_TUNING.get().tracked.finger_full_flex_rad();
         assert!((curls.curl[Finger::Index.index()] - finger).abs() < 1e-4);
-        let thumb = 1.0 / THUMB_FULL_FLEX_RAD;
+        let thumb = 1.0 / FINGERS_TUNING.get().tracked.thumb_full_flex_rad();
         assert!((curls.curl[Finger::Thumb.index()] - thumb).abs() < 1e-4);
     }
 
@@ -320,7 +313,10 @@ mod tests {
         assert_eq!(off.curl[Finger::Index.index()], 0.0);
         inputs.trigger_touch = true;
         let resting = estimate(&inputs, InteractionProfile::ValveIndex);
-        assert_eq!(resting.curl[Finger::Index.index()], TRIGGER_REST);
+        assert_eq!(
+            resting.curl[Finger::Index.index()],
+            estimated().trigger_rest
+        );
         inputs.trigger = 1.0;
         let pulled = estimate(&inputs, InteractionProfile::ValveIndex);
         assert_eq!(pulled.curl[Finger::Index.index()], 1.0);
@@ -336,16 +332,16 @@ mod tests {
         inputs.thumbstick_touch = true;
         assert_eq!(
             estimate(&inputs, InteractionProfile::ValveIndex).curl[0],
-            THUMB_ON_STICK
+            estimated().thumb_on_stick
         );
         inputs.a_touch = true;
         assert_eq!(
             estimate(&inputs, InteractionProfile::ValveIndex).curl[0],
-            THUMB_ON_A
+            estimated().thumb_on_a
         );
         inputs.a_click = true;
         let pressed = estimate(&inputs, InteractionProfile::ValveIndex).curl[0];
-        assert!((pressed - (THUMB_ON_A + THUMB_PRESS_EXTRA)).abs() < 1e-6);
+        assert!((pressed - (estimated().thumb_on_a + estimated().thumb_press_extra)).abs() < 1e-6);
     }
 
     #[test]
@@ -354,7 +350,10 @@ mod tests {
         let index_open = estimate(&inputs, InteractionProfile::ValveIndex);
         assert_eq!(index_open.curl[Finger::Middle.index()], 0.0);
         let touch_rest = estimate(&inputs, InteractionProfile::OculusTouch);
-        assert_eq!(touch_rest.curl[Finger::Ring.index()], TOUCH_GRIP_REST);
+        assert_eq!(
+            touch_rest.curl[Finger::Ring.index()],
+            estimated().touch_grip_rest
+        );
         inputs.squeeze = 0.5;
         inputs.squeeze_force = 1.0;
         let forced = estimate(&inputs, InteractionProfile::ValveIndex);

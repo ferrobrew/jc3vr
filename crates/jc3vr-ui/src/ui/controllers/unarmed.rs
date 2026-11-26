@@ -9,10 +9,13 @@ use jc3vr_body::controllers::{
 };
 use jc3vr_input::frame::Hand;
 
-use crate::ui::controllers::yes_no;
+use crate::{tuning::UI, ui::controllers::yes_no};
 
 pub(super) fn unarmed_readout(ui: &mut Ui, unarmed: &UnarmedStatus, hand_ik: &[HandIkStatus; 2]) {
-    if !unarmed.at.is_some_and(|at| at.elapsed() < STALE) {
+    if !unarmed
+        .at
+        .is_some_and(|at| at.elapsed() < Duration::from_secs_f32(UI.get().readouts.unarmed_stale_s))
+    {
         ui.label("Weapon animations: the local player's pose finalization has not run recently.");
         return;
     }
@@ -53,6 +56,3 @@ pub(super) fn unarmed_readout(ui: &mut Ui, unarmed: &UnarmedStatus, hand_ik: &[H
         yes_no(hand_ik[Hand::Right.index()].secondary_grip_off),
     ));
 }
-
-/// How old a readout may be before it counts as inactive.
-const STALE: Duration = Duration::from_millis(500);

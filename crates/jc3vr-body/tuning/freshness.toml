@@ -1,0 +1,57 @@
+# The body's freshness windows: how long each publication the body's subsystems read from one
+# another stays current. Root: `FreshnessTuning` in crates/jc3vr-body/src/tuning.rs, which documents
+# each value. Durations in milliseconds (`_ms`) or seconds (`_s`).
+
+[aim]
+gun_ms = 250
+
+[body]
+unarmed_ms = 250
+estimator_eyes_ms = 250
+estimate_ms = 500
+ik_support_ms = 250
+ik_fk_ms = 250
+ik_gate_ms = 250
+procedural_gate_ms = 500
+procedural_local_ms = 250
+firm_ragdoll_source_ms = 250
+
+[rig]
+grounded_ms = 250
+skeleton_ms = 250
+probe_ms = 200
+root_trace_ms = 250
+root_frame_gap_ms = 500
+
+[hands]
+anchor_ms = 250
+hang_gap_ms = 300
+measured_arms_ms = 250
+presentation_ms = 250
+grab_status_ms = 500
+
+[fingers]
+grip_min_s = 0.03
+grip_max_s = 0.15
+grip_ticks = 2.5
+
+[held]
+guns_ms = 200
+
+[locomotion]
+movement_task_ms = 200
+strokes_ms = 250
+
+[roomscale]
+frame_gap_ms = 500
+
+[facts]
+driving_ms = 500
+
+[hooks]
+layer_mask_ms = 250
+body_ik_animation_gap_ms = 250
+parachute_align_gap_ms = 250
+
+[physics]
+stale_steps = 6

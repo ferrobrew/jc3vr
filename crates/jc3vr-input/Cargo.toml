@@ -19,3 +19,7 @@ parking_lot = "0.12.5"
 body-rig = { path = "../body-rig" }
 # The capture policy filters the debug UI's raw egui input.
 egui = "0.35"
+
+[dev-dependencies]
+# The haptics' tests read the shipped tuning file, which the view crate loads in the payload.
+toml = "1.1.6"

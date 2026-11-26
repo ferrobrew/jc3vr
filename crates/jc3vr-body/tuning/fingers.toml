@@ -1,0 +1,179 @@
+# The finger curls' tuning: `FingersTuning` in `src/controllers/fingers/tuning.rs` and the structs
+# under it, whose fields say what each value does. Every key is required and no other is accepted,
+# except a pose's `thumb_spread_deg`, which a pose that keeps the configured spread leaves out.
+# Angles are degrees, lengths metres, and times seconds, or milliseconds where the key ends in
+# `_ms`. Curls are on the finger curls' scale (0 straight, 1 a fist), and a splay is radians toward
+# the thumb side. Per-finger arrays run thumb, index, middle, ring, little.
+
+[curls]
+curl_ranges = [
+    { open = 0.0, closed = 1.0 },
+    { open = 0.0, closed = 1.0 },
+    { open = 0.0, closed = 1.0 },
+    { open = 0.0, closed = 1.0 },
+    { open = 0.0, closed = 1.0 },
+]
+finger_bend_deg = [85.0, 100.0, 70.0]
+thumb_bend_deg = [25.0, 45.0, 60.0]
+rest_offset_deg = [
+    [0.0, 0.0, 0.0],
+    [0.0, 0.0, 0.0],
+    [0.0, 0.0, 0.0],
+    [0.0, 0.0, 0.0],
+    [0.0, 0.0, 0.0],
+]
+hook_shift = [-0.9, 0.45, 0.55]
+thumb_spread_deg = 40.0
+splay_scale = 1.0
+max_splay_deg = 20.0
+smoothing_s = 0.04
+
+[curls.grip]
+light_share = 0.6
+firm_squeeze = 0.85
+blend_s = 0.06
+max_opposition_deg = 55.0
+
+[tracked]
+finger_full_flex_deg = [90.0, 105.0, 75.0]
+thumb_full_flex_deg = [55.0, 80.0]
+
+[estimate]
+thumb_on_stick = 0.45
+thumb_on_trackpad = 0.5
+thumb_on_a = 0.6
+thumb_on_b = 0.55
+thumb_press_extra = 0.15
+trackpad_pressed_force = 0.2
+trigger_rest = 0.35
+touch_grip_rest = 0.4
+
+[poses.pistol_grip]
+curl = [0.7, 0.45, 0.85, 0.88, 0.9]
+splay = [0.0, 0.0, 0.0, -0.03, -0.06]
+hook = [0.0, 0.0, -0.1, -0.1, 0.0]
+opposition = 0.55
+thumb_spread_deg = 30.0
+roles = ["Posed", { Trigger = { rest = 0.45, pulled = 0.62 } }, "Posed", "Posed", "Posed"]
+
+[poses.foregrip]
+curl = [0.5, 0.72, 0.75, 0.78, 0.8]
+splay = [0.0, 0.04, 0.0, -0.03, -0.06]
+hook = [0.0, 0.1, 0.1, 0.1, 0.1]
+opposition = 0.7
+thumb_spread_deg = 45.0
+roles = ["Posed", "Posed", "Posed", "Posed", "Posed"]
+
+[poses.magazine_pinch]
+curl = [0.4, 0.42, 0.5, 0.62, 0.68]
+splay = [0.0, 0.0, 0.0, -0.04, -0.08]
+hook = [0.0, -0.4, -0.3, 0.0, 0.0]
+opposition = 1.0
+thumb_spread_deg = 35.0
+roles = ["Posed", "Posed", "Posed", "Posed", "Posed"]
+
+[poses.magazine_cup]
+curl = [0.45, 0.55, 0.6, 0.62, 0.65]
+splay = [0.0, 0.04, 0.0, -0.04, -0.08]
+hook = [0.0, 0.25, 0.25, 0.25, 0.25]
+opposition = 0.6
+thumb_spread_deg = 40.0
+roles = ["Posed", "Posed", "Posed", "Posed", "Posed"]
+
+[poses.slide_pinch]
+curl = [0.45, 0.55, 0.6, 0.85, 0.9]
+splay = [0.0, 0.0, 0.0, -0.03, -0.06]
+hook = [0.0, -0.5, -0.4, 0.0, 0.0]
+opposition = 1.0
+thumb_spread_deg = 30.0
+roles = ["Posed", "Posed", "Posed", "Posed", "Posed"]
+
+[poses.grenade_palm]
+curl = [0.45, 0.55, 0.55, 0.57, 0.6]
+splay = [0.0, 0.12, 0.0, -0.1, -0.2]
+hook = [0.0, 0.2, 0.2, 0.2, 0.2]
+opposition = 0.85
+thumb_spread_deg = 50.0
+roles = ["Posed", "Posed", "Posed", "Posed", "Posed"]
+
+[poses.charge_palm]
+curl = [0.35, 0.62, 0.64, 0.66, 0.68]
+splay = [0.0, 0.0, 0.0, 0.0, 0.0]
+hook = [0.0, -0.2, -0.2, -0.2, -0.2]
+opposition = 0.3
+thumb_spread_deg = 20.0
+roles = ["Posed", "Posed", "Posed", "Posed", "Posed"]
+
+[poses.ledge_hook]
+curl = [0.25, 0.6, 0.62, 0.64, 0.66]
+splay = [0.0, 0.0, 0.0, 0.0, 0.0]
+hook = [0.0, 0.85, 0.85, 0.85, 0.85]
+opposition = 0.0
+thumb_spread_deg = 15.0
+roles = ["Posed", "Posed", "Posed", "Posed", "Posed"]
+
+[poses.flat_palm]
+curl = [0.12, 0.12, 0.12, 0.14, 0.16]
+splay = [0.0, 0.06, 0.0, -0.05, -0.1]
+hook = [0.0, 0.0, 0.0, 0.0, 0.0]
+opposition = 0.2
+roles = ["LiveWhenTracked", "Posed", "Posed", "Posed", "Posed"]
+
+[poses.wrap]
+curl = [0.5, 0.6, 0.62, 0.64, 0.66]
+splay = [0.0, 0.06, 0.0, -0.05, -0.1]
+hook = [0.0, 0.0, 0.0, 0.0, 0.0]
+opposition = 0.6
+thumb_spread_deg = 45.0
+roles = ["Posed", "Posed", "Posed", "Posed", "Posed"]
+
+[poses.cylinder]
+curls = [
+    [0.015, 0.97],
+    [0.025, 0.88],
+    [0.035, 0.78],
+    [0.05, 0.66],
+    [0.08, 0.48],
+    [0.15, 0.28],
+]
+thumb_less = 0.15
+thumb_min = 0.3
+ring_more = 0.02
+little_more = 0.04
+splay = [0.0, 0.0, 0.0, -0.03, -0.06]
+opposition = 0.5
+thumb_spread_deg = 35.0
+roles = ["LiveWhenTracked", "Posed", "Posed", "Posed", "Posed"]
+
+[poses.door_handle]
+curl = [0.35, 0.78, 0.8, 0.82, 0.84]
+splay = [0.0, 0.0, 0.0, 0.0, 0.0]
+hook = [0.0, 0.2, 0.2, 0.2, 0.2]
+opposition = 0.3
+thumb_spread_deg = 25.0
+roles = ["Posed", "Posed", "Posed", "Posed", "Posed"]
+
+[poses.collar_grab]
+curl = [0.65, 0.85, 0.92, 0.94, 0.95]
+splay = [0.0, 0.0, 0.0, 0.0, 0.0]
+hook = [0.0, 0.3, 0.3, 0.3, 0.3]
+opposition = 0.9
+thumb_spread_deg = 20.0
+roles = ["Posed", "Posed", "Posed", "Posed", "Posed"]
+
+[contact]
+distal_share = 0.8
+sweep_steps = 5
+fingers_per_tick = 2
+refit_ms = 500
+
+[diameters]
+articulated_m = 0.04
+stunt_m = 0.05
+wheel_m = 0.035
+handlebars_m = 0.032
+stick_m = 0.038
+lever_m = 0.04
+parachute_handle_m = 0.025
+mounted_gun_m = 0.035
+grapple_line_m = 0.015

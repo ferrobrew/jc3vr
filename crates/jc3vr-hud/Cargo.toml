@@ -29,3 +29,6 @@ serde = { version = "1", features = ["derive"] }
 egui = "0.35"
 egui-directx11 = "0.13"
 clipboard-win = "5.4.1"
+
+[dev-dependencies]
+jc3vr-core = { path = "../jc3vr-core", features = ["test-support"] }

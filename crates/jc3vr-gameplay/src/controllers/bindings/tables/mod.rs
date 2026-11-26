@@ -74,17 +74,20 @@ use jc3vr_input::{
 use jc3vr_view::vr::input::semantic::bound::{Physical, PhysicalSet};
 use jc3vr_weapons::controllers::weapons::wheel::select::WheelPress;
 
-use crate::controllers::bindings::{
-    bail::ExitLatch,
-    intents::{Gestures, Intents, Mask, MaskScope, SemanticInput},
-    policy_a::runtime::Tick,
-    tables::{
-        declare::{PAD_Y_VEHICLE, TableCtx, declare, exit_action, stunt_action},
-        sink::{
-            Axis, EvalSink, Input, Latches, MAX_TIMED, MenuLatch, PadLatch, Press, PressTimer,
-            Sink, TimedLatch,
+use crate::controllers::{
+    bindings::{
+        bail::ExitLatch,
+        intents::{Gestures, Intents, Mask, MaskScope, SemanticInput},
+        policy_a::runtime::Tick,
+        tables::{
+            declare::{PAD_Y_VEHICLE, TableCtx, declare, exit_action, stunt_action},
+            sink::{
+                Axis, EvalSink, Input, Latches, MAX_TIMED, MenuLatch, PadLatch, Press, PressTimer,
+                Sink, TimedLatch,
+            },
         },
     },
+    tuning::GAMEPLAY,
 };
 
 /// One tick's output of the tables.
@@ -586,9 +589,6 @@ impl Bindings {
     }
 }
 
-const BAIL_HOLD_MIN_S: f32 = 0.4;
-const BAIL_HOLD_MAX_S: f32 = 2.0;
-
 #[derive(Debug, Clone, Default)]
 struct BailHold {
     active: Option<(VehicleSeat, f32)>,
@@ -628,7 +628,8 @@ impl BailHold {
         if !beginning {
             *elapsed += dt;
         }
-        if *elapsed >= BAIL_HOLD_MAX_S || (!held && *elapsed >= BAIL_HOLD_MIN_S) {
+        let tuning = &GAMEPLAY.get().bindings.bail;
+        if *elapsed >= tuning.hold_max_s || (!held && *elapsed >= tuning.hold_min_s) {
             self.active = None;
             self.spent = held;
             return false;

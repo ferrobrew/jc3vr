@@ -8,7 +8,7 @@
 //! eye bones, the point the view is anchored at. All are read before the solve, so they are the
 //! animated pose, never the previous tick's IK.
 
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use body_rig::angle::line_yaw;
 use glam::{Mat4, Quat, Vec3};
@@ -26,6 +26,7 @@ use crate::{
         body_ik,
         pose::{self, LivePose},
     },
+    tuning::FRESHNESS,
 };
 
 /// The measured arms, indexed by [`Hand::index`]; `None` for an arm not yet measured.
@@ -259,7 +260,8 @@ impl State {
     fn arms_with(&self, now: Instant, view: impl FnOnce() -> Quat) -> [Option<MeasuredArm>; 2] {
         let fresh = self.key.is_some()
             && self.last.is_some_and(|last| {
-                now >= last && now.duration_since(last) <= Duration::from_millis(250)
+                now >= last
+                    && now.duration_since(last) <= FRESHNESS.get().hands.measured_arms_ms.duration()
             });
         if !fresh || !self.resolved.iter().any(|resolved| *resolved) {
             return [None; 2];

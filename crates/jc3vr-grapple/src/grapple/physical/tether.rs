@@ -67,7 +67,7 @@ mod tests {
     };
 
     use super::*;
-    use crate::grapple::physical::{config::GRAPPLE, pull::LinePull};
+    use crate::grapple::{physical::pull::LinePull, tuning::GRAPPLE};
 
     fn tick(tethers: u32) -> TetherTick {
         TetherTick {
@@ -131,9 +131,9 @@ mod tests {
                             aim: Vec3::NEG_Z,
                         }),
                         armed(&tick),
-                        &GRAPPLE.pull,
+                        &GRAPPLE.get().physical.pull,
                     );
-                    retract_value(reading.depth_m, &GRAPPLE.tether)
+                    retract_value(reading.depth_m, &GRAPPLE.get().physical.tether)
                 };
                 assert_eq!(sample(false, -0.6), 0.0);
                 assert_eq!(sample(false, -0.3), 0.0);
@@ -152,7 +152,7 @@ mod tests {
 
     #[test]
     fn the_squeeze_follows_the_pull_in_proportion() {
-        let config = GRAPPLE.tether;
+        let config = GRAPPLE.get().physical.tether;
         assert_eq!(retract_value(0.0, &config), 0.0);
         assert_eq!(retract_value(config.deadzone_m, &config), 0.0);
         assert_eq!(retract_value(f32::NAN, &config), 0.0);

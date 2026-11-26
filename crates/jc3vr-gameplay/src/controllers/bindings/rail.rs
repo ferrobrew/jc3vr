@@ -4,6 +4,8 @@ use glam::{Quat, Vec3};
 use jc3gi::input::input_action_map::Action;
 use jc3vr_body::controllers::intent::hold::{Desired, MapKind, Target, Want};
 
+use crate::controllers::tuning::GAMEPLAY;
+
 #[derive(Debug, Default)]
 pub(super) struct RailRelease {
     origin: Option<(u64, Vec3, Vec3)>,
@@ -26,12 +28,13 @@ impl RailRelease {
         if self.spent {
             return false;
         }
+        let tuning = &GAMEPLAY.get().bindings.rail;
         let lateral = desired.iter().any(|d| {
             d.target.map == MapKind::Player
                 && matches!(d.target.action, Action::MOVE_LEFT | Action::MOVE_RIGHT)
                 && match d.want {
-                    Want::Analog(value) => value.is_finite() && value.abs() >= STICK_PUSH,
-                    Want::Hold(value) => value.is_finite() && value.abs() >= STICK_PUSH,
+                    Want::Analog(value) => value.is_finite() && value.abs() >= tuning.stick_push,
+                    Want::Hold(value) => value.is_finite() && value.abs() >= tuning.stick_push,
                     Want::Click => true,
                 }
         });
@@ -50,7 +53,7 @@ impl RailRelease {
                 *origin = (input.epoch, position, right);
                 return false;
             }
-            (position - origin.1).dot(origin.2).abs() >= STEP_M
+            (position - origin.1).dot(origin.2).abs() >= tuning.step_m
         });
         if input.head.is_none() {
             self.origin = None;
@@ -77,9 +80,6 @@ pub(super) struct RailInput {
     /// Raw tracking-space metres and heading, before the vehicle or body composition.
     pub head: Option<(Vec3, Quat)>,
 }
-
-const STEP_M: f32 = 0.2;
-const STICK_PUSH: f32 = 0.35;
 
 #[cfg(test)]
 mod tests {

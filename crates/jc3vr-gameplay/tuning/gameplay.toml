@@ -1,0 +1,52 @@
+# The gameplay layer's tuning: `GameplayTuning` in `src/controllers/tuning.rs`, whose fields say
+# what each value does. Every key is required and no other is accepted. Lengths are metres, speeds
+# metres per second, and times seconds unless a key says otherwise; a share is a fraction of a
+# range, in `0..1`, and a stick, pad, or trigger value is in the control's `-1..=1` or `0..=1`.
+
+[bindings]
+pad_zone_margin = 0.2
+menu_stick_hold_share = 0.5
+stick_neutral_floor = 0.1
+grapple_retarget_m = 2.0
+
+[bindings.rail]
+step_m = 0.2
+stick_push = 0.35
+
+[bindings.heli_hang]
+press = 0.5
+
+[bindings.bail]
+enter_margin_mps = 1.0
+leave_margin_mps = 0.5
+hold_min_s = 0.4
+hold_max_s = 2.0
+
+[pointer]
+click_slop = 0.03
+
+[pointer.aim_hold]
+pin_press = 0.1
+pin_release = 0.05
+click_press = 0.95
+click_release = 0.8
+
+[pointer.scroll]
+deadzone = 0.2
+speed = 1200.0
+max_dt_s = 0.1
+
+[pointer.laser]
+width_m = 0.004
+color = [1.0, 1.0, 1.0, 0.6]
+occluded_alpha = 0.25
+ttl_ms = 150
+
+[summary]
+min_row_px = 20.0
+max_row_px = 64.0
+margin_rows = 0.4
+heading_rows = 1.5
+group_rows = 0.75
+glyph_rows = 0.85
+font_rows = 0.5

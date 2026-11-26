@@ -36,6 +36,7 @@ use crate::controllers::{
     aim::{
         ray::Ray,
         raycast::{self, CastOptions, RayHit},
+        tuning_file::AIM,
     },
     physics::{
         bodies::game_object_of,
@@ -119,11 +120,6 @@ fn unowned_dropped(state: i32, no_holder: bool, no_user: bool) -> bool {
 
 /// How long a published aim stays current.
 const AIMED_FOR: Duration = Duration::from_millis(250);
-/// The most hits the weapon cast steps past (a character's capsule, a projectile, a vehicle's
-/// collision body) on its way to a weapon.
-const MAX_STEPS: usize = 3;
-/// How far past a hit the next step of the weapon cast starts, metres.
-const STEP_PAST_M: f32 = 0.02;
 
 static ENABLED: AtomicBool = AtomicBool::new(false);
 static AIMED: Mutex<Option<(Aimed, Weak, Instant)>> = Mutex::new(None);
@@ -272,7 +268,8 @@ unsafe fn find_weapon(
     let owner = unsafe { aim.m_Owner.as_ref() }?;
     let options = unsafe { CastOptions::ignoring_rider(owner) }.seeing_through();
     let mut from = 0.0;
-    for _ in 0..MAX_STEPS {
+    let tuning = &AIM.get().grapple_weapons;
+    for _ in 0..tuning.max_steps {
         let remaining = reach - from;
         if remaining <= 0.0 {
             return None;
@@ -293,7 +290,7 @@ unsafe fn find_weapon(
         {
             return Some((hit, object, length));
         }
-        from = hit.distance + STEP_PAST_M;
+        from = hit.distance + tuning.step_past_m;
     }
     None
 }

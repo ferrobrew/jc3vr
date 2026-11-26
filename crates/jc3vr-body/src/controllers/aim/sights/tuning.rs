@@ -31,10 +31,8 @@ use crate::controllers::aim::{
     gun::HeldWeapon,
     ray, sights,
     sights::config::{SightOverride, SightTuningConfig},
+    tuning_file::AIM,
 };
-
-/// How far ahead of the head the line-up marker is placed, metres.
-const MARKER_DISTANCE_M: f32 = 10.0;
 
 /// The tuning tool's readout.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
@@ -152,7 +150,10 @@ pub(crate) fn service(
         let place = fresh(state.place.take());
         let capture = fresh(state.capture.take());
         if place {
-            state.status.marker = Some(marker_position(head, MARKER_DISTANCE_M));
+            state.status.marker = Some(marker_position(
+                head,
+                AIM.get().sight_tool.marker_distance_m,
+            ));
         }
         (place, capture, state.status.marker)
     };

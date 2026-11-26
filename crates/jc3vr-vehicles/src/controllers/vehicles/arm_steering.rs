@@ -28,7 +28,7 @@
 //! either way.
 //!
 //! The arms take over once they are spread past the engaging share of the arm span, and let go only
-//! once they come in past a narrower share ([`SPREAD_HYSTERESIS`]), so a wing held near the
+//! once they come in past a narrower share (the tuning's `arm_steering.spread_hysteresis`), so a wing held near the
 //! threshold does not flicker in and out.
 
 use glam::{Quat, Vec2, Vec3};
@@ -133,9 +133,9 @@ pub fn steer(pose: &ArmPose, config: &ArmSteeringConfig, engaged: bool) -> Optio
     let tuning = &VEHICLES.get().arm_steering;
     let bank = shape(pose.bank_m, tuning.deadzone_m, tuning.full_bank_m);
     let pitch = match pitch_input(pose, config) {
-        PitchInput::Height(height) => shape(-height, tuning.deadzone_m, FULL_PITCH_M),
-        PitchInput::TiltDeg(tilt) => shape(tilt, TILT_DEADZONE_DEG, FULL_TILT_DEG),
-        PitchInput::Sweep(sweep) => shape(-sweep, tuning.deadzone_m, FULL_SWEEP_M),
+        PitchInput::Height(height) => shape(-height, tuning.deadzone_m, tuning.full_pitch_m),
+        PitchInput::TiltDeg(tilt) => shape(tilt, tuning.tilt_deadzone_deg, tuning.full_tilt_deg),
+        PitchInput::Sweep(sweep) => shape(-sweep, tuning.deadzone_m, tuning.full_sweep_m),
     };
     let pitch = if config.invert_pitch { -pitch } else { pitch };
     Some(Vec2::new(bank, pitch))
@@ -144,10 +144,11 @@ pub fn steer(pose: &ArmPose, config: &ArmSteeringConfig, engaged: bool) -> Optio
 /// The spread, as a share of the arm span, the arms need to steer: the engaging spread, or the
 /// narrower one while they already steer (`engaged`).
 pub fn needed_spread(engaged: bool) -> f32 {
+    let tuning = &VEHICLES.get().arm_steering;
     if engaged {
-        MIN_SPREAD - SPREAD_HYSTERESIS
+        tuning.min_spread - tuning.spread_hysteresis
     } else {
-        MIN_SPREAD
+        tuning.min_spread
     }
 }
 
@@ -164,29 +165,6 @@ pub fn hold_while_aiming(fresh: Option<Vec2>, held: Option<Vec2>, aiming: bool) 
 pub fn combine(stick: Vec2, arms: Option<Vec2>) -> Vec2 {
     (stick + arms.unwrap_or(Vec2::ZERO)).clamp(Vec2::NEG_ONE, Vec2::ONE)
 }
-
-/// How far apart the hands must be, as a share of the arm span, for the arms to count as spread.
-/// Closer together, the arms steer nothing and the stick steers alone.
-pub const MIN_SPREAD: f32 = 0.5;
-
-/// How much narrower than the engaging spread the arms may come in, as a share of the arm span,
-/// before they stop steering.
-pub const SPREAD_HYSTERESIS: f32 = 0.1;
-
-/// How far both hands must be above or below the shoulders to pitch fully, metres, under
-/// [`ArmPitch::Height`].
-pub const FULL_PITCH_M: f32 = 0.30;
-
-/// How far the wrists must tilt from the neutral to pitch fully, degrees, under
-/// [`ArmPitch::WristTilt`].
-pub const FULL_TILT_DEG: f32 = 30.0;
-
-/// Wrist tilts within this of the neutral pitch nothing, degrees.
-pub const TILT_DEADZONE_DEG: f32 = 5.0;
-
-/// How far both hands must be swept ahead of or behind the shoulders to pitch fully, metres, under
-/// [`ArmPitch::Sweep`].
-pub const FULL_SWEEP_M: f32 = 0.35;
 
 /// The tilt of a wrist at `wrist`, radians: its roll about the fingers' axis from the pose with the
 /// back of the hand as near straight up as that axis allows, positive with the leading edge down.
@@ -218,6 +196,11 @@ mod tests {
     use std::f32::consts::FRAC_PI_2;
 
     use super::*;
+    use crate::controllers::vehicles::tuning::ArmSteeringTuning;
+
+    fn tuning() -> &'static ArmSteeringTuning {
+        &VEHICLES.get().arm_steering
+    }
 
     const CONFIG: ArmSteeringConfig = ArmSteeringConfig::new();
 
@@ -301,18 +284,18 @@ mod tests {
 
     #[test]
     fn the_leading_edges_tilted_down_dive_and_up_climb() {
-        let full = FULL_TILT_DEG.to_radians();
+        let full = tuning().full_tilt_deg.to_radians();
         let dive = steer(&tilted(0.0, 0.0, 1.6, full), &CONFIG, false).unwrap();
         assert!((dive.y - 1.0).abs() < 1e-4, "{dive}");
         assert!(dive.x.abs() < 1e-5, "a level tilt banks nothing: {dive}");
         let climb = steer(&tilted(0.0, 0.0, 1.6, -full), &CONFIG, false).unwrap();
         assert!((climb.y + 1.0).abs() < 1e-4, "{climb}");
         // Halfway between the deadzone and full deflection pitches half.
-        let half = (TILT_DEADZONE_DEG + FULL_TILT_DEG) * 0.5;
+        let half = (tuning().tilt_deadzone_deg + tuning().full_tilt_deg) * 0.5;
         let v = steer(&tilted(0.0, 0.0, 1.6, half.to_radians()), &CONFIG, false).unwrap();
         assert!((v.y - 0.5).abs() < 1e-3, "{v}");
         // Inside the deadzone, nothing.
-        let small = (TILT_DEADZONE_DEG * 0.5).to_radians();
+        let small = (tuning().tilt_deadzone_deg * 0.5).to_radians();
         let v = steer(&tilted(0.0, 0.0, 1.6, small), &CONFIG, false).unwrap();
         assert_eq!(v.y, 0.0);
         let inverted = ArmSteeringConfig {
@@ -386,9 +369,9 @@ mod tests {
             let level = at(0.0, facing);
             assert!(level.sweep_m.abs() < 1e-4, "{level:?}");
             assert_eq!(steer(&level, &sweep, false).unwrap().y, 0.0);
-            let back = steer(&at(FULL_SWEEP_M, facing), &sweep, false).unwrap();
+            let back = steer(&at(tuning().full_sweep_m, facing), &sweep, false).unwrap();
             assert!((back.y - 1.0).abs() < 1e-4, "{back}");
-            let forward = steer(&at(-FULL_SWEEP_M, facing), &sweep, false).unwrap();
+            let forward = steer(&at(-tuning().full_sweep_m, facing), &sweep, false).unwrap();
             assert!((forward.y + 1.0).abs() < 1e-4, "{forward}");
         }
     }
@@ -405,12 +388,12 @@ mod tests {
 
     #[test]
     fn spread_arms_keep_steering_until_they_come_in_past_the_hysteresis() {
-        let between = MIN_SPREAD - SPREAD_HYSTERESIS * 0.5;
+        let between = tuning().min_spread - tuning().spread_hysteresis * 0.5;
         let arm_span = BODY.arm_span;
         let at = |spread: f32| pose(0.0, 0.0, spread * arm_span);
         assert_eq!(steer(&at(between), &CONFIG, false), None);
         assert!(steer(&at(between), &CONFIG, true).is_some());
-        let narrow = MIN_SPREAD - SPREAD_HYSTERESIS * 1.5;
+        let narrow = tuning().min_spread - tuning().spread_hysteresis * 1.5;
         assert_eq!(steer(&at(narrow), &CONFIG, true), None);
     }
 
@@ -430,7 +413,7 @@ mod tests {
             |x: f32, z: f32| hand(Vec3::new(x, shoulder_y, z), x.signum(), 0.0, Quat::IDENTITY);
         for config in [CONFIG, HEIGHT] {
             let level = arm_pose([flat(-half, 0.0), flat(half, 0.0)], &body);
-            assert!(level.spread > MIN_SPREAD, "{level:?}");
+            assert!(level.spread > tuning().min_spread, "{level:?}");
             assert_eq!(steer(&level, &config, false), Some(Vec2::ZERO));
             // Elbows bent, hands out to the sides of a chair: still a wing.
             let bent = arm_pose([flat(-0.5, -0.1), flat(0.5, -0.1)], &body);

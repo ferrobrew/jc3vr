@@ -1,0 +1,139 @@
+# The haptics' tuning: `HapticsTuning` in `crates/jc3vr-input/src/haptics/tuning.rs`, whose fields
+# say what each value does, loaded by the view crate (`HAPTICS` in `src/tuning.rs`). Every key is
+# required and no other is accepted. Amplitudes, strengths, and shares are in `0..1`, durations
+# seconds, and frequencies hertz. A primitive is `Tick`, `Click`, `Bump`, `Thud`, `Buzz`, `Hum`, or
+# `Tension`; a one-off cue's length is `Normal` or `Long`.
+
+long_factor = 3.5
+
+[vocabulary.tick]
+soft = 0.06
+full = 0.25
+duration_s = 0.008
+frequency_hz = 320.0
+
+[vocabulary.click]
+soft = 0.15
+full = 0.55
+duration_s = 0.02
+frequency_hz = 250.0
+
+[vocabulary.bump]
+soft = 0.12
+full = 0.75
+duration_s = 0.04
+frequency_hz = 160.0
+
+[vocabulary.thud]
+soft = 0.4
+full = 1.0
+duration_s = 0.07
+frequency_hz = 90.0
+
+[vocabulary.buzz]
+soft = 0.2
+full = 0.6
+duration_s = 0.14
+frequency_hz = 200.0
+
+[vocabulary.hum]
+soft = 0.0
+full = 0.7
+duration_s = 0.1
+frequency_hz = 70.0
+
+[vocabulary.tension]
+soft = 0.0
+full = 0.6
+duration_s = 0.06
+frequency_hz = 130.0
+
+[mix]
+sustain_knee = 0.45
+sustain_ceiling = 0.7
+knee = 0.85
+stack_share = 0.35
+duck_share = 0.5
+refresh_s = 0.1
+
+[events]
+palm_touch = { primitive = "Bump", strength = 0.4, length = "Normal" }
+hand_strike = { primitive = "Bump", strength = 0.4, length = "Normal" }
+take = { primitive = "Bump", strength = 0.6, length = "Normal" }
+let_go = { primitive = "Click", strength = 0.25, length = "Normal" }
+unlatch = { primitive = "Bump", strength = 0.9, length = "Normal" }
+door_pressure_contact = { primitive = "Tick", strength = 0.2, length = "Normal" }
+shot = { primitive = "Thud", strength = 1.0, length = "Normal" }
+kick = { primitive = "Bump", strength = 1.0, length = "Normal" }
+dry_fire = { primitive = "Click", strength = 0.4, length = "Normal" }
+volume_enter = { primitive = "Tick", strength = 0.3, length = "Normal" }
+volume_grab = { primitive = "Click", strength = 0.5, length = "Normal" }
+dock_attraction = { primitive = "Tick", strength = 0.4, length = "Normal" }
+socket_swap = { primitive = "Bump", strength = 0.7, length = "Normal" }
+eject = { primitive = "Click", strength = 0.6, length = "Normal" }
+pouch_take = { primitive = "Click", strength = 0.25, length = "Normal" }
+pouch_empty = { primitive = "Tick", strength = 0.75, length = "Normal" }
+well_catch = { primitive = "Click", strength = 0.4, length = "Normal" }
+magazine_seat = { primitive = "Thud", strength = 1.0, length = "Normal" }
+magazine_knock = { primitive = "Thud", strength = 1.0, length = "Normal" }
+belt_seat = { primitive = "Thud", strength = 1.0, length = "Normal" }
+rack = { primitive = "Click", strength = 0.9, length = "Normal" }
+action_detent = { primitive = "Click", strength = 0.35, length = "Normal" }
+chambered = { primitive = "Click", strength = 0.5, length = "Normal" }
+ready_to_fire = { primitive = "Bump", strength = 0.8, length = "Normal" }
+grenade_prime = { primitive = "Click", strength = 0.4, length = "Normal" }
+grenade_pin = { primitive = "Bump", strength = 0.8, length = "Normal" }
+grenade_warning = { primitive = "Click", strength = 0.75, length = "Normal" }
+grenade_catch = { primitive = "Bump", strength = 0.75, length = "Normal" }
+pouch_refused = { primitive = "Buzz", strength = 0.75, length = "Normal" }
+pouch_full = { primitive = "Buzz", strength = 1.0, length = "Long" }
+pouch_return = { primitive = "Click", strength = 0.5, length = "Normal" }
+c4_prime = { primitive = "Click", strength = 0.4, length = "Normal" }
+c4_throw = { primitive = "Click", strength = 0.6, length = "Normal" }
+c4_stick = { primitive = "Bump", strength = 0.6, length = "Normal" }
+c4_detonate = { primitive = "Thud", strength = 1.0, length = "Long" }
+detonator_press = { primitive = "Click", strength = 1.0, length = "Normal" }
+detonator_empty = { primitive = "Buzz", strength = 0.1, length = "Normal" }
+wheel_tick = { primitive = "Tick", strength = 0.75, length = "Normal" }
+wheel_commit = { primitive = "Click", strength = 0.75, length = "Normal" }
+steering_stop = { primitive = "Bump", strength = 0.6, length = "Normal" }
+control_stop = { primitive = "Bump", strength = 0.6, length = "Normal" }
+steering_centre = { primitive = "Tick", strength = 0.5, length = "Normal" }
+control_neutral = { primitive = "Tick", strength = 0.5, length = "Normal" }
+button_release = { primitive = "Tick", strength = 0.5, length = "Normal" }
+throttle_gate = { primitive = "Bump", strength = 0.9, length = "Normal" }
+throttle_step = { primitive = "Tick", strength = 0.3, length = "Normal" }
+throttle_zero = { primitive = "Thud", strength = 1.0, length = "Normal" }
+throttle_reverse = { primitive = "Buzz", strength = 0.8, length = "Normal" }
+button_press = { primitive = "Click", strength = 0.75, length = "Normal" }
+handle_grab = { primitive = "Click", strength = 0.5, length = "Normal" }
+mounted_kick = { primitive = "Bump", strength = 0.6, length = "Normal" }
+grapple_fire = { primitive = "Bump", strength = 0.4, length = "Normal" }
+grapple_attach = { primitive = "Thud", strength = 0.5, length = "Normal" }
+yank = { primitive = "Bump", strength = 0.6, length = "Normal" }
+snatch_arm = { primitive = "Bump", strength = 0.6, length = "Normal" }
+snatch_fire = { primitive = "Thud", strength = 0.8, length = "Normal" }
+snatch_hit = { primitive = "Thud", strength = 0.7, length = "Normal" }
+snatch_catch = { primitive = "Thud", strength = 1.0, length = "Long" }
+snatch_refused = { primitive = "Buzz", strength = 0.6, length = "Normal" }
+tether_retract = { primitive = "Bump", strength = 0.75, length = "Normal" }
+line_lock = { primitive = "Thud", strength = 0.7, length = "Normal" }
+line_release = { primitive = "Click", strength = 0.4, length = "Normal" }
+line_snap = { primitive = "Buzz", strength = 0.8, length = "Normal" }
+climb_grip = { primitive = "Bump", strength = 0.75, length = "Normal" }
+climb_release = { primitive = "Click", strength = 0.25, length = "Normal" }
+climb_fling = { primitive = "Thud", strength = 0.85, length = "Normal" }
+stunt_enter = { primitive = "Thud", strength = 0.65, length = "Normal" }
+stunt_release = { primitive = "Click", strength = 0.5, length = "Normal" }
+swim_stroke = { primitive = "Bump", strength = 0.45, length = "Normal" }
+chord = { primitive = "Bump", strength = 0.6, length = "Normal" }
+
+[sustains]
+palm_pressure = { primitive = "Tension", strength = 0.5 }
+held_load = { primitive = "Tension", strength = 0.5 }
+body_pressure = { primitive = "Tension", strength = 0.5 }
+climb_strain = { primitive = "Tension", strength = 0.5 }
+stunt_hang = { primitive = "Tension", strength = 0.35 }
+grapple_tension = { primitive = "Tension", strength = 0.75 }
+grapple_reel = { primitive = "Hum", strength = 0.35 }
+game_rumble = { primitive = "Hum", strength = 1.0 }

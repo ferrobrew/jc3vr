@@ -32,7 +32,13 @@ use std::time::{Duration, Instant};
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
-use crate::controllers::{fingers::grip::catalogue::GripPose, grab::cockpit::ControlKind};
+use crate::{
+    controllers::{
+        fingers::{grip::catalogue::GripPose, tuning::FINGERS_TUNING},
+        grab::cockpit::ControlKind,
+    },
+    tuning::FRESHNESS,
+};
 
 /// What put something in a hand, in the order the declarations win.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -134,7 +140,9 @@ impl GripSource {
     }
 
     /// The pose a hand takes on what this source puts in it.
-    pub const fn pose(self) -> GripPose {
+    pub fn pose(self) -> GripPose {
+        let diameters = &FINGERS_TUNING.get().diameters;
+        let bar = |diameter_m| GripPose::Cylinder { diameter_m };
         match self {
             GripSource::Magazine => GripPose::MagazinePinch,
             GripSource::Grenade => GripPose::GrenadePalm,
@@ -143,17 +151,17 @@ impl GripSource {
             GripSource::Foregrip => GripPose::Foregrip,
             GripSource::Character => GripPose::CollarGrab,
             GripSource::Door => GripPose::DoorHandle,
-            GripSource::Articulated => GripPose::Cylinder { diameter_m: 0.04 },
+            GripSource::Articulated => bar(diameters.articulated_m),
             GripSource::Pickup => GripPose::Wrap,
-            GripSource::Stunt => GripPose::Cylinder { diameter_m: 0.05 },
+            GripSource::Stunt => bar(diameters.stunt_m),
             GripSource::Climb => GripPose::LedgeHook,
-            GripSource::Wheel => GripPose::Cylinder { diameter_m: 0.035 },
-            GripSource::Handlebars => GripPose::Cylinder { diameter_m: 0.032 },
-            GripSource::Stick => GripPose::Cylinder { diameter_m: 0.038 },
-            GripSource::Lever => GripPose::Cylinder { diameter_m: 0.04 },
-            GripSource::ParachuteHandle => GripPose::Cylinder { diameter_m: 0.025 },
-            GripSource::MountedGun => GripPose::Cylinder { diameter_m: 0.035 },
-            GripSource::GrappleLine => GripPose::Cylinder { diameter_m: 0.015 },
+            GripSource::Wheel => bar(diameters.wheel_m),
+            GripSource::Handlebars => bar(diameters.handlebars_m),
+            GripSource::Stick => bar(diameters.stick_m),
+            GripSource::Lever => bar(diameters.lever_m),
+            GripSource::ParachuteHandle => bar(diameters.parachute_handle_m),
+            GripSource::MountedGun => bar(diameters.mounted_gun_m),
+            GripSource::GrappleLine => bar(diameters.grapple_line_m),
             GripSource::Surface => GripPose::FlatPalm,
         }
     }
@@ -201,7 +209,7 @@ pub struct Grip {
 impl Grip {
     /// The source's default pose and firmness, at the whole share, with no fit.
     #[inline]
-    pub const fn new(source: GripSource) -> Self {
+    pub fn new(source: GripSource) -> Self {
         Self {
             source,
             pose: source.pose(),
@@ -256,17 +264,22 @@ pub fn current(hand: Hand, now: Instant, max_age: Duration) -> Option<Grip> {
 /// not know the finger curls' tick interval.
 pub fn declared(hand: Hand, now: Instant) -> Vec<GripSource> {
     let declared = DECLARED.lock()[hand.index()];
-    fresh(&declared, now, Duration::from_secs_f32(MAX_AGE_S))
-        .map(|grip| grip.source)
-        .collect()
+    fresh(
+        &declared,
+        now,
+        Duration::from_secs_f32(FRESHNESS.get().fingers.grip_max_s),
+    )
+    .map(|grip| grip.source)
+    .collect()
 }
 
 /// How long a declaration lasts after the finger curls' tick interval `dt` in seconds: a few of
 /// their ticks, so that a source ticking at another rate (the input tick, once a frame) is not lost
 /// between two of them, and short enough that a hand let go opens at once.
 pub fn max_age(dt: f32) -> Duration {
+    let tuning = &FRESHNESS.get().fingers;
     let dt = if dt.is_finite() { dt } else { 0.0 };
-    Duration::from_secs_f32((dt * 2.5).clamp(MIN_AGE_S, MAX_AGE_S))
+    Duration::from_secs_f32((dt * tuning.grip_ticks).clamp(tuning.grip_min_s, tuning.grip_max_s))
 }
 
 /// A change of a hand's grip source, for the log.
@@ -330,9 +343,6 @@ impl SourceLog {
 
 /// The shortest gap between two logged changes of one hand's grip source.
 pub(crate) const LOG_INTERVAL: Duration = Duration::from_millis(500);
-
-const MIN_AGE_S: f32 = 0.03;
-const MAX_AGE_S: f32 = 0.15;
 
 type Declarations = [Option<(Grip, Instant)>; GripSource::ALL.len()];
 
@@ -409,10 +419,22 @@ mod tests {
 
     #[test]
     fn a_declaration_lasts_a_few_ticks() {
-        assert_eq!(max_age(0.0), Duration::from_secs_f32(MIN_AGE_S));
-        assert!((max_age(0.016).as_secs_f32() - 0.04).abs() < 1e-6);
-        assert_eq!(max_age(1.0), Duration::from_secs_f32(MAX_AGE_S));
-        assert_eq!(max_age(f32::NAN), Duration::from_secs_f32(MIN_AGE_S));
+        assert_eq!(
+            max_age(0.0),
+            Duration::from_secs_f32(FRESHNESS.get().fingers.grip_min_s)
+        );
+        assert!(
+            (max_age(0.016).as_secs_f32() - 0.016 * FRESHNESS.get().fingers.grip_ticks).abs()
+                < 1e-6
+        );
+        assert_eq!(
+            max_age(1.0),
+            Duration::from_secs_f32(FRESHNESS.get().fingers.grip_max_s)
+        );
+        assert_eq!(
+            max_age(f32::NAN),
+            Duration::from_secs_f32(FRESHNESS.get().fingers.grip_min_s)
+        );
     }
 
     #[test]

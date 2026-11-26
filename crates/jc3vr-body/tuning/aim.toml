@@ -1,0 +1,25 @@
+# The aim's tuning: `AimTuning` in `src/controllers/aim/tuning_file.rs`, whose fields say what each
+# value does. Every key is required and no other is accepted. Lengths are metres and angles degrees.
+
+[ray]
+length_m = 500.0
+grapple_origin_m = [0.0, 0.0, 0.0]
+min_target_distance_m = 2.0
+
+[assist]
+max_distance_m = 150.0
+grapple_cone_deg = 5.0
+body_sight_tolerance_m = 0.75
+
+[grapple_weapons]
+max_steps = 3
+step_past_m = 0.02
+
+[marker_rays]
+max_casts_per_tick = 8
+
+[neutral]
+distance_m = 25.0
+
+[sight_tool]
+marker_distance_m = 10.0

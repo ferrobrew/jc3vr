@@ -26,7 +26,10 @@ use jc3vr_input::{frame::Hand, haptics::cues::Event};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
-use crate::controllers::vehicles::physical::native::{CockpitAsset, YokeAsset};
+use crate::controllers::vehicles::{
+    physical::native::{CockpitAsset, YokeAsset},
+    tuning::VEHICLES,
+};
 
 /// The calibration file's name, in the configuration directory.
 pub const FILE_NAME: &str = "cockpit_calibration.toml";
@@ -59,7 +62,7 @@ pub fn status() -> CalibrationStatus {
         countdown_s: state
             .pending
             .and_then(|p| p.armed)
-            .map(|at| (COUNTDOWN.saturating_sub(at.elapsed())).as_secs_f32()),
+            .map(|at| (countdown().saturating_sub(at.elapsed())).as_secs_f32()),
         current: state.current.clone(),
         current_calibrated: state
             .current
@@ -118,7 +121,7 @@ pub(crate) fn fit(part: &str, asset: &mut CockpitAsset, hands_in_part: [Option<V
             tracing::info!(
                 target: "controllers",
                 key,
-                countdown_s = COUNTDOWN.as_secs_f32(),
+                countdown_s = countdown().as_secs_f32(),
                 "vehicles: cockpit calibration: hold the left hand at the lever and the right at \
                  the stick"
             );
@@ -127,7 +130,7 @@ pub(crate) fn fit(part: &str, asset: &mut CockpitAsset, hands_in_part: [Option<V
         let whole = armed.elapsed().as_secs() as u32;
         if whole > pending.ticks {
             pending.ticks = whole;
-            if armed.elapsed() < COUNTDOWN {
+            if armed.elapsed() < countdown() {
                 haptics::play_hands(Hand::BOTH, Event::VolumeEnter);
             }
         }
@@ -135,7 +138,7 @@ pub(crate) fn fit(part: &str, asset: &mut CockpitAsset, hands_in_part: [Option<V
     if state
         .pending
         .and_then(|p| p.armed)
-        .is_some_and(|at| at.elapsed() >= COUNTDOWN)
+        .is_some_and(|at| at.elapsed() >= countdown())
     {
         state.pending = None;
         state.last = Some(match hands_in_part {
@@ -181,10 +184,9 @@ pub(crate) fn fit(part: &str, asset: &mut CockpitAsset, hands_in_part: [Option<V
 pub(crate) fn expire() {
     let mut guard = STATE.lock();
     let state = guard.loaded();
-    if state
-        .pending
-        .is_some_and(|p| p.armed.is_none() && p.requested.elapsed() >= EXPIRE_AFTER)
-    {
+    if state.pending.is_some_and(|p| {
+        p.armed.is_none() && p.requested.elapsed() >= VEHICLES.get().calibration.expire_after()
+    }) {
         state.pending = None;
         state.last = Some("not seated at a cockpit's controls; nothing captured".to_owned());
         tracing::warn!(
@@ -373,10 +375,9 @@ static STATE: Mutex<State> = Mutex::new(State {
 });
 
 /// How long the player has to put the hands on the controls after a request.
-const COUNTDOWN: Duration = Duration::from_secs(3);
-
-/// How long a request waits for the player to sit at a cockpit's controls before it is dropped.
-const EXPIRE_AFTER: Duration = Duration::from_secs(60);
+fn countdown() -> Duration {
+    VEHICLES.get().calibration.countdown()
+}
 
 #[cfg(test)]
 mod tests {
@@ -398,13 +399,13 @@ mod tests {
         };
         state.leave();
         assert_eq!(state.current, None);
-        let resumed = requested + COUNTDOWN + Duration::from_secs(1);
+        let resumed = requested + countdown() + Duration::from_secs(1);
         let pending = state.pending.as_mut().unwrap();
         assert_eq!(pending.armed, None);
         assert_eq!(pending.ticks, 0);
         let armed = pending.arm(resumed);
         assert_eq!(resumed.duration_since(armed), Duration::ZERO);
-        assert!(resumed.duration_since(armed) < COUNTDOWN);
+        assert!(resumed.duration_since(armed) < countdown());
         assert_eq!(pending.requested, requested);
     }
 

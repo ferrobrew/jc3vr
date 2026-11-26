@@ -38,7 +38,7 @@ pub mod solve;
 
 use std::{
     sync::atomic::{AtomicBool, AtomicU8, AtomicU32, AtomicU64, Ordering},
-    time::{Duration, Instant},
+    time::Instant,
 };
 
 use body_rig::body::EYES_TO_NECK;
@@ -58,16 +58,19 @@ use parking_lot::Mutex;
 use smol_str::{SmolStr, ToSmolStr};
 
 pub use crate::controllers::presentation::edit::{BodyEdit, DrawEdit, PlayerBodyEdits};
-use crate::controllers::{
-    body::procedural::{self, skeleton},
-    hands::{ik, late, pose as hand_pose, reach::REACH},
-    mode::{self, Mode},
-    presentation::{
-        edit::{DrawnArms, PaletteRegistration},
-        elbow::{PALM_WEIGHT, SMOOTHING_S},
-        rig::{Group, GroupMap, PresentationRig},
-        solve::{ArmDrive, ArmJoints, ElbowDrive, Motion, UpperBody, head_motion, solve},
+use crate::{
+    controllers::{
+        body::procedural::{self, skeleton},
+        hands::{ik, late, pose as hand_pose, reach::REACH},
+        mode::{self, Mode},
+        presentation::{
+            edit::{DrawnArms, PaletteRegistration},
+            elbow::{PALM_WEIGHT, SMOOTHING_S},
+            rig::{Group, GroupMap, PresentationRig},
+            solve::{ArmDrive, ArmJoints, ElbowDrive, Motion, UpperBody, head_motion, solve},
+        },
     },
+    tuning::FRESHNESS,
 };
 
 /// Why the layer is or is not re-posing the body.
@@ -241,9 +244,9 @@ pub fn begin_frame() {
     let world_scale = VR_CONFIG.lock().world_scale;
     let rig_failed = RIG.lock().as_ref().is_some_and(|(_, rig)| rig.is_err());
     let ticks = *TICKS.lock();
-    let fresh = ticks
-        .current
-        .filter(|t| start.saturating_duration_since(t.at) <= STALE_AFTER);
+    let fresh = ticks.current.filter(|t| {
+        start.saturating_duration_since(t.at) <= FRESHNESS.get().hands.presentation_ms.duration()
+    });
     let (idle, frame) =
         if headpose::source() != headpose::Source::Vr || !jc3vr_core::hooks::in_gameplay() {
             (Idle::NotInHeadset, None)
@@ -693,10 +696,6 @@ fn add_cost(start: Instant) {
     let ns = u64::try_from(start.elapsed().as_nanos()).unwrap_or(u64::MAX);
     FRAME_NS.fetch_add(ns, Ordering::Relaxed);
 }
-
-/// How old the latest tick may be for the layer to pose from it: a few ticks. Past it the pose
-/// pass has stopped running for the player (a cutscene, a load), and the body is left as drawn.
-const STALE_AFTER: Duration = Duration::from_millis(250);
 
 /// The share of each frame's cost the smoothed mean takes: about a second's worth of frames.
 const COST_SMOOTHING: f32 = 1.0 / 90.0;

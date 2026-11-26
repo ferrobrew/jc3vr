@@ -20,6 +20,7 @@ use smol_str::SmolStr;
 use crate::{
     controllers::menu::{comfort, edit, read},
     pause_menu::model::page::{Button, ButtonOutcome, Item, Page, PageDef},
+    tuning::UI,
 };
 
 /// The `VR: CONTROLS` page.
@@ -157,15 +158,12 @@ fn pitch_rows(page: Page) -> Page {
 fn capture_neutral_tilt() -> ButtonOutcome {
     if let Some(tilt) = vehicles::wrist_tilt_now_deg() {
         edit(&CONTROLLERS_CONFIG, |c| {
-            c.vehicles.arm_steering.tilt_neutral_deg =
-                tilt.clamp(-NEUTRAL_TILT_LIMIT_DEG, NEUTRAL_TILT_LIMIT_DEG);
+            let limit = UI.get().controls.neutral_tilt_limit_deg;
+            c.vehicles.arm_steering.tilt_neutral_deg = tilt.clamp(-limit, limit);
         });
     }
     ButtonOutcome::Stay
 }
-
-/// The furthest from flat a captured neutral tilt may be, degrees.
-const NEUTRAL_TILT_LIMIT_DEG: f32 = 45.0;
 
 /// The wingsuit pitch measure the page's rows were last built for.
 #[cfg(not(test))]

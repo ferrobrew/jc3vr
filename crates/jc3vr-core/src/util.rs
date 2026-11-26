@@ -3,12 +3,13 @@ use std::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use parking_lot::Mutex;
 use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VIRTUAL_KEY};
 
+use crate::core_tuning::CORE;
+
 pub fn is_pressed(key: VIRTUAL_KEY) -> bool {
     static LAST_INPUT: Mutex<Option<std::time::Instant>> = Mutex::new(None);
-    if LAST_INPUT
-        .lock()
-        .is_some_and(|last_input| last_input.elapsed() < std::time::Duration::from_millis(250))
-    {
+    if LAST_INPUT.lock().is_some_and(|last_input| {
+        last_input.elapsed() < std::time::Duration::from_millis(CORE.get().hotkey.repeat_lockout_ms)
+    }) {
         return false;
     }
 

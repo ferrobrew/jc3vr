@@ -13,8 +13,9 @@
 //! squeezed by it.
 //!
 //! The drive is published by the input tick ([`publish`]) and read by the detour on the same
-//! thread's character update; a drive older than [`DRIVE_MAX_AGE`] is ignored, so the reel returns
-//! to the game's own as soon as the input tick stops publishing. While the lock holds the line,
+//! thread's character update; a drive older than the tuning's
+//! [`drive_max_age_ms`](crate::grapple::physical::config::ReelPullTuning::drive_max_age_ms) is
+//! ignored, so the reel returns to the game's own as soon as the input tick stops publishing. While the lock holds the line,
 //! the detour hands the reel the lock's velocity instead ([`lock::drive`]).
 //!
 //! [`NStateTask_ReelIn::UpdateReelVelocity`]: jc3gi::equipment::grappling_hook::NStateTask_ReelIn::UpdateReelVelocity
@@ -31,7 +32,10 @@ use jc3gi::{
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::grapple::physical::{config::ReelPullTuning, lock};
+use crate::grapple::{
+    physical::{config::ReelPullTuning, lock},
+    tuning::GRAPPLE,
+};
 
 /// The reel's hooks, aggregated by [`crate::grapple::physical::hook_library`].
 pub(super) fn hook_library() -> HookLibrary {
@@ -43,10 +47,9 @@ pub(super) fn hook_library() -> HookLibrary {
 pub struct ReelDrive {
     /// The scale of the reel's speeds and accelerations.
     pub scale: f32,
-    /// Whether a yank's boost is running.
+    /// Whether a yank's boost is running. It applies only with the game's own retract boost
+    /// upgrade.
     pub boost: bool,
-    /// Whether the boost needs the game's own retract boost upgrade.
-    pub boost_needs_upgrade: bool,
 }
 
 /// What the reel did on its last tick, for the readout and the haptics.
@@ -139,9 +142,6 @@ pub(super) fn readout() -> ReelReadout {
     SHARED.lock().readout
 }
 
-/// How long a published drive stays current.
-const DRIVE_MAX_AGE: Duration = Duration::from_millis(250);
-
 struct Shared {
     drive: Option<(ReelDrive, Instant)>,
     readout: ReelReadout,
@@ -161,7 +161,9 @@ fn current_drive() -> Option<ReelDrive> {
     SHARED
         .lock()
         .drive
-        .filter(|(_, at)| at.elapsed() < DRIVE_MAX_AGE)
+        .filter(|(_, at)| {
+            at.elapsed() < Duration::from_millis(GRAPPLE.get().physical.reel.drive_max_age_ms)
+        })
         .map(|(drive, _)| drive)
 }
 
@@ -214,7 +216,7 @@ fn update_reel_velocity(
     }) else {
         return call(tuning);
     };
-    let boost = drive.boost && (!drive.boost_needs_upgrade || unsafe { boost_unlocked(hook) });
+    let boost = drive.boost && unsafe { boost_unlocked(hook) };
     let mut driven = *base;
     let reel = ReelTuning::of(base).driven(drive.scale, boost);
     reel.apply(&mut driven);
@@ -257,7 +259,6 @@ unsafe fn speed_along(velocity: *const Vector3, direction: *const Vector3) -> Op
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::grapple::physical::config::GRAPPLE;
 
     const BASE: ReelTuning = ReelTuning {
         speed_max: 30.0,
@@ -268,7 +269,7 @@ mod tests {
 
     #[test]
     fn the_scale_rises_with_the_pull_and_saturates() {
-        let config = GRAPPLE.reel;
+        let config = GRAPPLE.get().physical.reel;
         assert_eq!(scale_for(0.0, &config), config.min_scale);
         assert_eq!(scale_for(-3.0, &config), config.min_scale);
         assert_eq!(scale_for(f32::NAN, &config), config.min_scale);

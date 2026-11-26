@@ -7,7 +7,8 @@
 //! the rain or snow has fallen for the whole settle. The stage then runs from the game thread's
 //! update ([`update`]) in three phases: the teleport (through
 //! the director's teleport, which streams the destination in when it is far), the spawns (through
-//! the director's spawner, once the player has stood at the destination for [`ARRIVED_FRAMES`]),
+//! the director's spawner, once the player has stood at the destination for the tuning's
+//! [`arrived_frames`](crate::tuning::StageTuning::arrived_frames)),
 //! and the settle (wall-clock seconds with the game running, so streaming, physics, and the
 //! spawned entities come to rest). It then writes `visual/<id>.json` with `state = "staged"` and
 //! the player's landed position, or `state = "failed"` and why.
@@ -37,7 +38,10 @@ use jc3vr_capture::testing::visual::{
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
-use crate::director::teleport::{self, TeleportMode};
+use crate::{
+    director::teleport::{self, TeleportMode},
+    tuning::TOOLING,
+};
 
 /// A checked stage request.
 #[derive(Debug, Clone, PartialEq)]
@@ -253,7 +257,7 @@ pub(crate) fn update() {
         Phase::Teleporting { arrived } => {
             let settled = !teleport::in_flight() && jc3vr_core::hooks::in_gameplay();
             let arrived = if settled { arrived + 1 } else { 0 };
-            run.phase = if arrived >= ARRIVED_FRAMES {
+            run.phase = if arrived >= TOOLING.get().stage.arrived_frames {
                 Phase::Spawning
             } else {
                 Phase::Teleporting { arrived }
@@ -354,9 +358,6 @@ const MAX_SETTLE_SECONDS: f32 = 300.0;
 const MAX_REUSE_METRES: f32 = 50.0;
 /// The most spawns one stage may submit.
 const MAX_SPAWNS: usize = 16;
-/// How many consecutive frames the player must stand in gameplay with no teleport in flight before
-/// the spawns are submitted: long enough for the landing to settle.
-const ARRIVED_FRAMES: u32 = 60;
 /// How long a stage may take in all, including its settle.
 const TIMEOUT: Duration = Duration::from_secs(420);
 

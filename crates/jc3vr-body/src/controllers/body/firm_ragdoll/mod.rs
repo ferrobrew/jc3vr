@@ -13,10 +13,10 @@
 //! (as the game's canopy update writes it), so the next pre-physics pass makes the ragdoll, and the
 //! ragdoll's blend weight, which nothing in that sync raises, is written each tick just before the
 //! post-physics pass blends the simulated pose into the animated one
-//! ([`Character::PostPhysicsUpdateRagdoll`]). The weight ramps in over [`BLEND_IN_S`] and out over
-//! [`BLEND_OUT_S`], and the saved preset id comes back once it is out. The blend lands before the
-//! HumanIK solve, so the head, the hands, and the chest stay the mod's; the procedural legs stand
-//! down while the mode is in, so the physics owns them.
+//! ([`Character::PostPhysicsUpdateRagdoll`]). The weight ramps in over the body tuning's
+//! `firm_ragdoll.blend_in_s` and out over its `blend_out_s`, and the saved preset id comes back
+//! once it is out. The blend lands before the HumanIK solve, so the head, the hands, and the chest
+//! stay the mod's; the procedural legs stand down while the mode is in, so the physics owns them.
 //!
 //! The ragdoll's pre-physics step reads its muscle target from the raw animation, before the mod's
 //! solve. [`feed`] builds the producer to hand it instead ([`stand_in`]), whose current pose is the
@@ -34,7 +34,7 @@ pub(crate) mod target;
 
 use std::{
     sync::atomic::{AtomicBool, Ordering},
-    time::{Duration, Instant},
+    time::Instant,
 };
 
 use detours_macro::detour;
@@ -51,12 +51,18 @@ use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
 pub use crate::controllers::body::firm_ragdoll::stand_in::TargetReport;
-use crate::controllers::{
-    body::firm_ragdoll::{
-        stand_in::StandIn,
-        target::{IkLegs, TargetBones},
+use crate::{
+    controllers::{
+        body::{
+            firm_ragdoll::{
+                stand_in::StandIn,
+                target::{IkLegs, TargetBones},
+            },
+            tuning::BODY,
+        },
+        physics::local_player::LocalPlayer,
     },
-    physics::local_player::LocalPlayer,
+    tuning::FRESHNESS,
 };
 
 pub fn hook_library() -> HookLibrary {
@@ -131,9 +137,10 @@ pub(crate) unsafe fn feed(character: &Character, producer: *mut PoseProducer) ->
             .preset()
             .is_some_and(|preset| character.m_CurrentRagdollParamsID == preset)
     };
-    let source = SOURCE
-        .lock()
-        .filter(|source| Instant::now().saturating_duration_since(source.at) <= SOURCE_FRESH);
+    let source = SOURCE.lock().filter(|source| {
+        Instant::now().saturating_duration_since(source.at)
+            <= FRESHNESS.get().body.firm_ragdoll_source_ms.duration()
+    });
     let (Some(source), true, Some(live)) = (source, in_mode, unsafe { producer.as_ref() }) else {
         return producer;
     };
@@ -227,7 +234,9 @@ fn tick(player: &mut LocalPlayer<'_>, want: Want) {
             }
         }
         (Mode::Out { since, .. }, Want::Off) => {
-            if now.saturating_duration_since(since).as_secs_f32() >= BLEND_OUT_S {
+            if now.saturating_duration_since(since).as_secs_f32()
+                >= BODY.get().firm_ragdoll.blend_out_s
+            {
                 if let Some(saved) = state.saved.take()
                     && character.m_CurrentRagdollParamsID != saved
                 {
@@ -335,10 +344,12 @@ impl Mode {
         match self {
             Mode::Off => 0.0,
             Mode::In { since, .. } => {
-                (now.saturating_duration_since(since).as_secs_f32() / BLEND_IN_S).clamp(0.0, 1.0)
+                let blend_in_s = BODY.get().firm_ragdoll.blend_in_s;
+                (now.saturating_duration_since(since).as_secs_f32() / blend_in_s).clamp(0.0, 1.0)
             }
             Mode::Out { since, from, .. } => {
-                let out = now.saturating_duration_since(since).as_secs_f32() / BLEND_OUT_S;
+                let blend_out_s = BODY.get().firm_ragdoll.blend_out_s;
+                let out = now.saturating_duration_since(since).as_secs_f32() / blend_out_s;
                 (from * (1.0 - out)).clamp(0.0, 1.0)
             }
         }
@@ -389,35 +400,31 @@ struct Source {
 
 static SOURCE: Mutex<Option<Source>> = Mutex::new(None);
 
-/// A published source stands this long: a few ticks.
-const SOURCE_FRESH: Duration = Duration::from_millis(250);
-
 static STAND_IN: Mutex<StandIn> = Mutex::new(StandIn::new());
 
 static OWNS_LEGS: AtomicBool = AtomicBool::new(false);
-
-/// How long the physics takes to come in, seconds.
-const BLEND_IN_S: f32 = 0.15;
-
-/// How long the physics takes to go out, seconds.
-const BLEND_OUT_S: f32 = 0.2;
 
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
 
     use super::*;
+    use crate::controllers::body::tuning::FirmRagdollTuning;
 
     #[test]
     fn the_weight_ramps_in_and_out_from_where_it_was() {
         let start = Instant::now();
         let at = |s: f32| start + Duration::from_secs_f32(s);
+        let FirmRagdollTuning {
+            blend_in_s,
+            blend_out_s,
+        } = BODY.get().firm_ragdoll;
         let entering = Mode::In {
             preset: 7,
             since: start,
         };
         assert_eq!(entering.weight(start), 0.0);
-        assert!((entering.weight(at(BLEND_IN_S * 0.5)) - 0.5).abs() < 1e-3);
+        assert!((entering.weight(at(blend_in_s * 0.5)) - 0.5).abs() < 1e-3);
         assert_eq!(entering.weight(at(1.0)), 1.0);
         let leaving = Mode::Out {
             preset: 7,
@@ -425,7 +432,7 @@ mod tests {
             from: 0.6,
         };
         assert!((leaving.weight(start) - 0.6).abs() < 1e-6);
-        assert_eq!(leaving.weight(at(BLEND_OUT_S)), 0.0);
+        assert_eq!(leaving.weight(at(blend_out_s)), 0.0);
         assert_eq!(Mode::Off.weight(start), 0.0);
         assert_eq!(leaving.preset(), Some(7));
     }

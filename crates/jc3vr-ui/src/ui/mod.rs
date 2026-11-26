@@ -12,6 +12,8 @@ use jc3vr_core::config::{engine, engine::SaveStatus};
 use jc3vr_hud::{egui_impl::request_debug_ui, hud::egui_panel};
 use jc3vr_input::capture::{OwnershipBlocker, PanelMode, PanelRequest, debug_ui_capture};
 
+use crate::tuning::UI;
+
 pub mod camera;
 pub(crate) mod catalog;
 mod checklist;
@@ -184,7 +186,7 @@ pub fn startup_banner(ctx: &egui::Context) {
         .get_or_init(Instant::now)
         .elapsed()
         .as_secs_f32();
-    if age > BANNER_SECONDS {
+    if age > UI.get().banner.startup_s {
         return;
     }
     egui::Area::new(egui::Id::new("jc3vr_build_banner"))
@@ -206,9 +208,6 @@ pub fn startup_banner(ctx: &egui::Context) {
                 });
         });
 }
-
-/// How long (seconds) the startup banner stays up.
-const BANNER_SECONDS: f32 = 15.0;
 
 /// The restart notice ([`jc3vr_view::vr::input::restart`]) on whatever surface the egui overlay renders
 /// to, for as long as it holds. The headset has its own panel for it

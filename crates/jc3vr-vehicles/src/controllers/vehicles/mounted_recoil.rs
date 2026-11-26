@@ -25,6 +25,8 @@ use jc3vr_input::{frame::Hand, haptics::cues::Event};
 use jc3vr_weapons::controllers::weapons::recoil::Spring;
 use parking_lot::Mutex;
 
+use crate::controllers::vehicles::tuning::VEHICLES;
+
 /// Kick the handles by one shot of the mounted gun, and pulse the hands holding them.
 pub(crate) fn on_shot() {
     SHOTS.fetch_add(1, Ordering::Relaxed);
@@ -32,10 +34,12 @@ pub(crate) fn on_shot() {
         let mut kick = KICK.lock();
         let now = Instant::now();
         advance(&mut kick, now);
-        let peak = Vec3::new(KICK_BACK_M, KICK_DIP_M, 0.0);
-        kick.spring.kick(peak, STIFFNESS);
-        let cap = peak * MAX_SHOTS;
-        kick.spring.velocity = kick.spring.velocity.clamp(-cap * 40.0, cap * 40.0);
+        let recoil = &VEHICLES.get().mounted.recoil;
+        let peak = Vec3::new(recoil.kick_back_m, recoil.kick_dip_m, 0.0);
+        kick.spring.kick(peak, recoil.stiffness);
+        let cap = peak * recoil.max_shots;
+        let max_velocity = cap * recoil.max_speed_per_s;
+        kick.spring.velocity = kick.spring.velocity.clamp(-max_velocity, max_velocity);
         kick.spring.position = kick.spring.position.clamp(-cap, cap);
     }
     let holds = HOLDS.load(Ordering::Relaxed);
@@ -95,24 +99,13 @@ static KICK: Mutex<Kick> = Mutex::new(Kick {
 static HOLDS: AtomicU8 = AtomicU8::new(0);
 static SHOTS: AtomicU64 = AtomicU64::new(0);
 
-/// How far a shot kicks the handles back along the barrel, metres.
-const KICK_BACK_M: f32 = 0.02;
-
-/// How far a shot kicks the handles down as the muzzle climbs, metres.
-const KICK_DIP_M: f32 = 0.008;
-
-/// The handles' spring: stiff, so a single shot settles within a tenth of a second or so.
-const STIFFNESS: f32 = 900.0;
-const DAMPING_RATIO: f32 = 0.6;
-/// How many shots' kick the handles can carry at once.
-const MAX_SHOTS: f32 = 3.0;
-
 fn advance(kick: &mut Kick, now: Instant) {
     if let Some(at) = kick.at {
+        let recoil = &VEHICLES.get().mounted.recoil;
         kick.spring.step(
             now.duration_since(at).as_secs_f32(),
-            STIFFNESS,
-            DAMPING_RATIO,
+            recoil.stiffness,
+            recoil.damping_ratio,
         );
     }
     kick.at = Some(now);
@@ -142,11 +135,12 @@ mod tests {
 
     #[test]
     fn a_kick_settles() {
+        let recoil = &VEHICLES.get().mounted.recoil;
         let mut spring = Spring::default();
-        spring.kick(Vec3::new(0.02, 0.01, 0.0), STIFFNESS);
+        spring.kick(Vec3::new(0.02, 0.01, 0.0), recoil.stiffness);
         let mut peak: f32 = 0.0;
         for _ in 0..30 {
-            spring.step(0.01, STIFFNESS, DAMPING_RATIO);
+            spring.step(0.01, recoil.stiffness, recoil.damping_ratio);
             peak = peak.max(spring.position.x);
         }
         assert!(peak > 0.01 && peak < 0.03, "{peak}");

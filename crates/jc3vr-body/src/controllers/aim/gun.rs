@@ -18,7 +18,7 @@
 
 use std::{
     sync::atomic::{AtomicU64, Ordering},
-    time::{Duration, Instant},
+    time::Instant,
 };
 
 use detours_macro::detour;
@@ -34,16 +34,20 @@ use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::controllers::{
-    aim::{
-        TickHands, config::AimConfig, hooks::hooks, ray, ray::Ray, sights, sights::ResolvedSight,
+use crate::{
+    controllers::{
+        aim::{
+            TickHands, config::AimConfig, hooks::hooks, ray, ray::Ray, sights,
+            sights::ResolvedSight,
+        },
+        facts::mounted,
+        hands::late,
+        held::{
+            is_single_pistol,
+            native::{gun_count, gun_ptr},
+        },
     },
-    facts::mounted,
-    hands::late,
-    held::{
-        is_single_pistol,
-        native::{gun_count, gun_ptr},
-    },
+    tuning::FRESHNESS,
 };
 
 /// The gun hooks, aggregated by [`crate::controllers::aim::hook_library`].
@@ -254,11 +258,9 @@ impl Snapshot {
     /// Whether the snapshot is from a recent aim update. The aim update runs every simulation tick
     /// while the player exists, so an older one belongs to a paused or departed player.
     fn fresh(&self) -> bool {
-        self.at.elapsed() < MAX_AGE
+        self.at.elapsed() < FRESHNESS.get().aim.gun_ms.duration()
     }
 }
-
-const MAX_AGE: Duration = Duration::from_millis(250);
 
 static SNAPSHOT: Mutex<Option<Snapshot>> = Mutex::new(None);
 static AIMED: AtomicU64 = AtomicU64::new(0);

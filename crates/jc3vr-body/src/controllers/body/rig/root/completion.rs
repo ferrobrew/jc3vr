@@ -182,7 +182,7 @@ impl Sim {
         if self
             .status
             .at
-            .is_none_or(|at| now.saturating_duration_since(at) > probe::STALE_AFTER)
+            .is_none_or(|at| now.saturating_duration_since(at) > probe::stale_after())
         {
             self.clear_movement(CompletionUnavailable::SourceUnavailable);
         }

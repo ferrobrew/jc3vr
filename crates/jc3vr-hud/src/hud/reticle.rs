@@ -60,7 +60,7 @@ pub(crate) fn prepare_frame(device: &Device, inputs: &FrameInputs) {
         head: inputs.head,
         head_rotation: inputs.head_rotation,
         direction: aim_direction(point, inputs.head, inputs.head_rotation),
-        distance: aim::current(aim::REST_DISTANCE),
+        distance: aim::current(aim::rest_distance()),
     };
     // The cell holds the reticles at its scale, so each of its texels covers that much less of the
     // stage than a panel texel does.

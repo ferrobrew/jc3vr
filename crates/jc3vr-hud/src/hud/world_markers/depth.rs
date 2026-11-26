@@ -26,6 +26,8 @@ use windows::Win32::Graphics::{
     Dxgi::Common::DXGI_FORMAT_R32_FLOAT,
 };
 
+use crate::hud::tuning::HUD;
+
 /// One point to sample: a marker id and its world point.
 #[derive(Clone, Copy)]
 pub(super) struct DepthPoint {
@@ -213,7 +215,7 @@ impl DepthProbe {
                             proj_a,
                             proj_b,
                             count: queued.len() as u32,
-                            spread: SPREAD_PIXELS,
+                            spread: HUD.get().world_markers.probe_spread_px,
                             _pad: [0.0; 2],
                             points: pixels,
                         },
@@ -342,9 +344,6 @@ impl DepthProbe {
     }
 }
 
-/// The time a probe result stays usable, after which the marker falls back to the raycast.
-pub(super) const RESULT_TTL_S: f32 = 0.25;
-
 /// The committed, precompiled probe shader (entry point `main`).
 const COMPUTE_DXBC: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -360,14 +359,6 @@ const RING_DEPTH: usize = 3;
 /// The oldest a readback may be, in frames since its dispatch, before it is discarded: the ring's
 /// depth, and a couple of frames for a GPU running behind.
 const MAX_RESULT_AGE_CALLS: u64 = RING_DEPTH as u64 + 2;
-
-/// The probe footprint's neighbour spacing, in depth-buffer pixels.
-const SPREAD_PIXELS: f32 = 2.0;
-
-/// How much nearer than the marker a sampled surface must be to count as blocking its line of
-/// sight, as a fraction of the marker's depth: a surface at the marker (the object it is attached
-/// to) does not move it.
-const BLOCK_FRACTION: f32 = 0.97;
 
 /// Constant buffer, matching the HLSL `Params`.
 #[repr(C)]
@@ -402,10 +393,12 @@ fn is_stale(dispatched: u64, now: u64) -> bool {
     now.saturating_sub(dispatched) > MAX_RESULT_AGE_CALLS
 }
 
-/// What a sampled view depth says about a marker at clip depth `clip_w`, `true_distance` away.
+/// What a sampled view depth says about a marker at clip depth `clip_w`, `true_distance` away: a
+/// surface when it is nearer than the tuning's `world_markers.block_fraction` of the marker's
+/// depth.
 fn sight(depth: f32, clip_w: f32, true_distance: f32) -> Sight {
     let ratio = depth / clip_w;
-    if ratio.is_finite() && ratio > 0.0 && ratio < BLOCK_FRACTION {
+    if ratio.is_finite() && ratio > 0.0 && ratio < HUD.get().world_markers.block_fraction {
         Sight::Surface(ratio * true_distance)
     } else {
         Sight::Clear

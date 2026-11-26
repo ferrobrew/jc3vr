@@ -30,11 +30,7 @@
 //!
 //! [`NStateTask_GrapplingHangTask::Update`]: jc3gi::equipment::grappling_hook::NStateTask_GrapplingHangTask::Update
 
-use std::{
-    ffi::c_void,
-    sync::OnceLock,
-    time::{Duration, Instant},
-};
+use std::{ffi::c_void, sync::OnceLock, time::Instant};
 
 use detours_macro::detour;
 use glam::{Quat, Vec2, Vec3};
@@ -61,6 +57,7 @@ use crate::{
         scheme,
     },
     hooks::input::locomotion::character_from_context,
+    tuning::FRESHNESS,
 };
 
 /// How long the hand takes to turn onto the line and back off it, seconds. The vehicle controls'
@@ -241,10 +238,6 @@ fn declare_line_grip(hand: Hand) {
     }
 }
 
-/// How long the input tick's attach point stays current.
-const ANCHOR_MAX_AGE: Duration = Duration::from_millis(250);
-/// A gap in the hang task's ticks longer than this begins a new hang.
-const HANG_GAP: Duration = Duration::from_millis(300);
 /// The hands' interpolation fraction for the attach point: the current tick's end.
 const CURRENT_TICK: f32 = 1.0;
 
@@ -284,7 +277,7 @@ fn line_anchor() -> Option<Vec3> {
     let state = STATE.lock();
     state
         .anchor_at
-        .filter(|at| at.elapsed() < ANCHOR_MAX_AGE)
+        .filter(|at| at.elapsed() < FRESHNESS.get().hands.anchor_ms.duration())
         .and(state.status.anchor)
 }
 
@@ -329,7 +322,7 @@ unsafe fn swing(character: &mut Character) {
     let dt = state
         .hang_at
         .map(|at| now.duration_since(at))
-        .filter(|gap| *gap <= HANG_GAP);
+        .filter(|gap| *gap <= FRESHNESS.get().hands.hang_gap_ms.duration());
     if dt.is_none() {
         state.hang_reference = None;
         state.hang_offset = None;
