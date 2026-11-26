@@ -33,6 +33,10 @@
 # only pass JC3_BUS_NAME here if it was also passed at launch.
 # `--release` builds and injects the release profile (e.g. for representative
 # profiler captures); any other args are forwarded to the injector.
+#
+# The payload is started reading its tuning from this checkout's crates
+# (`--source-tuning`), so editing a crate's tuning/*.toml applies live; see
+# docs/mod/tuning.md.
 set -euo pipefail
 
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -63,4 +67,4 @@ nix-shell "$DIR/shell.nix" --run \
 # container's environment (STEAM_COMPAT_DATA_PATH etc.), so `proton runinprefix`
 # targets the right prefix and connects to the running game's wineserver.
 exec steam-run "$LAUNCH_CLIENT" --bus-name="$BUS" -- \
-  "$PROTON/proton" runinprefix "$INJECTOR" ${ARGS[@]+"${ARGS[@]}"}
+  "$PROTON/proton" runinprefix "$INJECTOR" --source-tuning ${ARGS[@]+"${ARGS[@]}"}

@@ -18,4 +18,6 @@ if (-not (Test-Path "./target/x86_64-pc-windows-msvc/debug/ffmpeg.exe")) {
     Write-Warning "No ffmpeg.exe beside the injector, so recordings will have no video; run scripts/fetch_ffmpeg.ps1"
 }
 
-& "./target/x86_64-pc-windows-msvc/debug/jc3vr_injector.exe" @args
+# The payload reads its tuning from this checkout's crates rather than the copies the build staged
+# beside it, so editing a crate's tuning/*.toml applies live; see docs/mod/tuning.md.
+& "./target/x86_64-pc-windows-msvc/debug/jc3vr_injector.exe" --source-tuning @args

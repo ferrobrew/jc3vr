@@ -1,7 +1,8 @@
 //! The injector: loads the payload into a running Just Cause 3 and then, unless told not to, stays
 //! running as the capture host that encodes the payload's recordings ([`capture`]).
 //!
-//! Usage: `jc3vr_injector [--eject | --reload] [--no-capture-host] [--capture-port PORT]`.
+//! Usage: `jc3vr_injector [--eject | --reload] [--source-tuning] [--no-capture-host]
+//! [--capture-port PORT]`.
 
 mod capture;
 
@@ -36,6 +37,10 @@ const EJECT_EXPORT: &str = "eject";
 
 /// The export the injector calls to start a freshly injected payload.
 const RUN_EXPORT: &str = "run";
+
+/// The export that starts the payload reading its tuning from the source tree it was built from
+/// rather than from beside the DLL (`docs/mod/tuning.md`).
+const RUN_SOURCE_TUNING_EXPORT: &str = "run_source_tuning";
 
 /// How long the injector waits for a requested ejection to unmap the payload.
 const UNLOAD_TIMEOUT: Duration = Duration::from_secs(30);
@@ -134,14 +139,27 @@ fn main() -> anyhow::Result<()> {
     let payload_base = injector::get_remote_module_base(pid, &payload_path)
         .context("injector: could not find the payload's base")?
         .context("injector: the payload's base is null")?;
+    let run_export = if options.source_tuning {
+        RUN_SOURCE_TUNING_EXPORT
+    } else {
+        RUN_EXPORT
+    };
     injector::call_remote_export(
         *handle,
         payload_base,
-        RUN_EXPORT,
+        run_export,
         Some(REMOTE_EXPORT_TIMEOUT),
     )
     .context("injector: could not run the payload")?;
     drop(handle);
+    // A payload that cannot start (a tuning file missing or invalid) unloads itself before the
+    // call returns.
+    if remote_module_base(pid, &loaded_path)?.is_none() {
+        anyhow::bail!(
+            "injector: the payload stopped its startup and unloaded itself; the session log says \
+             why"
+        );
+    }
 
     if options.capture_host {
         capture::serve(options.capture_port, pid)?;
@@ -533,6 +551,8 @@ fn wait_until_unloaded(
 struct Options {
     /// What to do with the payload.
     action: Action,
+    /// Start the payload reading its tuning from the source tree it was built from.
+    source_tuning: bool,
     /// Stay running as the capture host after the injection.
     capture_host: bool,
     capture_port: u16,
@@ -542,6 +562,7 @@ impl Options {
     fn parse(mut args: impl Iterator<Item = String>) -> anyhow::Result<Self> {
         let mut options = Self {
             action: Action::Inject,
+            source_tuning: false,
             capture_host: true,
             capture_port: capture::DEFAULT_PORT,
         };
@@ -549,6 +570,7 @@ impl Options {
             match arg.as_str() {
                 "--eject" => options.action = choose_action(options.action, Action::Eject)?,
                 "--reload" => options.action = choose_action(options.action, Action::Reload)?,
+                "--source-tuning" => options.source_tuning = true,
                 "--no-capture-host" => options.capture_host = false,
                 "--capture-port" => {
                     let port = args
@@ -560,7 +582,8 @@ impl Options {
                 }
                 other => anyhow::bail!(
                     "injector: unknown argument {other:?}; usage: jc3vr_injector \
-                     [--eject | --reload] [--no-capture-host] [--capture-port PORT]"
+                     [--eject | --reload] [--source-tuning] [--no-capture-host] \
+                     [--capture-port PORT]"
                 ),
             }
         }
@@ -631,6 +654,7 @@ mod tests {
             parse(&[]).unwrap(),
             Options {
                 action: Action::Inject,
+                source_tuning: false,
                 capture_host: true,
                 capture_port: 47172
             }
@@ -639,6 +663,7 @@ mod tests {
             parse(&["--no-capture-host", "--capture-port", "5000"]).unwrap(),
             Options {
                 action: Action::Inject,
+                source_tuning: false,
                 capture_host: false,
                 capture_port: 5000
             }
@@ -646,6 +671,16 @@ mod tests {
         assert!(parse(&["--capture-port"]).is_err());
         assert!(parse(&["--capture-port", "big"]).is_err());
         assert!(parse(&["--frobnicate"]).is_err());
+    }
+
+    #[test]
+    fn the_tuning_is_read_beside_the_payload_unless_the_source_tree_is_asked_for() {
+        assert!(!parse(&[]).unwrap().source_tuning);
+        assert!(
+            parse(&["--reload", "--source-tuning"])
+                .unwrap()
+                .source_tuning
+        );
     }
 
     #[test]

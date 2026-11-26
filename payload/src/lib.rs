@@ -26,6 +26,7 @@ mod config;
 mod crash;
 mod eject_gpu;
 mod hooks;
+mod tuning;
 
 #[unsafe(no_mangle)]
 #[allow(non_snake_case)]
@@ -39,11 +40,22 @@ pub extern "system" fn DllMain(module: HMODULE, reason: u32, _unk: *mut c_void) 
     true
 }
 
+/// Starts the payload, reading the tuning packaged beside the DLL.
+///
+/// When the startup cannot continue (a tuning file is missing or invalid), the payload logs why and
+/// unloads itself from this thread, so the injector finds it gone once the call returns.
 #[unsafe(no_mangle)]
 #[allow(non_snake_case)]
 pub extern "system" fn run(_: *mut c_void) {
-    lifecycle::set_build_stamp(BUILD_STAMP);
-    initialize_startup();
+    start(tuning::Source::Packaged);
+}
+
+/// Starts the payload as [`run`] does, reading the tuning from the source tree it was built from,
+/// so that an edit to the repository's files applies live. The development launchers start the
+/// payload with this export.
+#[unsafe(no_mangle)]
+pub extern "system" fn run_source_tuning(_: *mut c_void) {
+    start(tuning::Source::SourceTree);
 }
 
 /// Asks the game thread to eject the payload, for an injector that cannot signal it any other way.
@@ -56,8 +68,17 @@ pub extern "system" fn eject(_: *mut c_void) {
     lifecycle::request_shutdown();
 }
 
-/// Called when the DLL is loaded
-fn initialize_startup() {
+fn start(source: tuning::Source) {
+    lifecycle::set_build_stamp(BUILD_STAMP);
+    if !initialize_startup(source) {
+        logging::uninstall();
+        module::exit();
+    }
+}
+
+/// Called when the DLL is loaded. Returns `false` when the startup stopped before installing
+/// anything, in which case the caller unloads the payload.
+fn initialize_startup(source: tuning::Source) -> bool {
     // Resolve this run's output directory first, so the log, crash dumps, and every other artifact
     // land under the same timestamped session folder.
     session::init();
@@ -98,6 +119,13 @@ fn initialize_startup() {
     logging::install();
     tracing::info!(build = lifecycle::build_stamp(), "jc3vr startup");
     session::log_location();
+    // Before anything that reads the tuning, and before anything that would need undoing: a
+    // payload without its tuning stops here and unloads.
+    if let Err(error) = tuning::init(source) {
+        tracing::error!("{error}");
+        tracing::error!("startup: stopped; the payload unloads itself");
+        return false;
+    }
     crash::install();
     // Before the hooks: VR initialization, on the game thread's first frame, reads the configuration
     // (the dominant hand and the input layout among it), so it must already hold the saved settings.
@@ -105,6 +133,7 @@ fn initialize_startup() {
     tracing::info!("startup: config init complete");
     composition::install();
     tracing::info!("startup: hook installation returned");
+    true
 }
 
 /// Called to undo `initialize_startup` and eject
@@ -151,6 +180,11 @@ fn shutdown_startup() {
     }
 
     if !ui::layout::shutdown() {
+        module::pin();
+    }
+
+    // And for the tuning's file watcher.
+    if !tuning::shutdown() {
         module::pin();
     }
 
@@ -299,6 +333,9 @@ fn update() {
             commit_shutdown();
             return;
         }
+
+        // First, so the whole frame reads one version of each tuning file.
+        tuning::tick();
 
         // The directing tools' reconciliation pass (time scale, god mode, heat, queued teleports and
         // spawns) runs before the debug UI so a hotkey and a panel click in the same frame land in
