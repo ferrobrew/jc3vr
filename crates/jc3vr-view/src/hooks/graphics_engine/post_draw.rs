@@ -1,7 +1,7 @@
 //! The post-draw composition seam: what the layers above the render hooks contribute to
 //! `RenderEngine::PostDraw`, to the draw task's UI redirect, and to the engine's flip.
 //!
-//! The post-draw ([`crate::hooks::graphics_engine::graphics_engine`]) runs, per dispatch: the
+//! The post-draw (`jc3vr_render::hooks::graphics_engine::graphics_engine`) runs, per dispatch: the
 //! [`DispatchTick`]s, outside the engine's context lock; then, under it, the scene capture, the
 //! [`EyeLayer`]s in their order, and on the frame's last near dispatch the [`FramePass`]es; and
 //! after the eye copies, the [`EyeFrameRecorder`]. Each contribution is registered once at startup
@@ -133,22 +133,17 @@ pub fn register_desktop_overlay(draw: fn()) {
     set_once(&DESKTOP_OVERLAY, draw, "desktop overlay");
 }
 
-pub(super) fn run_dispatch_ticks(index: usize) {
+pub fn run_dispatch_ticks(index: usize) {
     DISPATCH_TICKS.each().for_each(|tick| tick(index));
 }
 
-pub(super) fn capture_scene(
-    context: &ID3D11DeviceContext,
-    device: &Device,
-    target: &Texture,
-    eye: usize,
-) {
+pub fn capture_scene(context: &ID3D11DeviceContext, device: &Device, target: &Texture, eye: usize) {
     if let Some(capture) = SCENE_CAPTURE.get() {
         capture(context, device, target, eye);
     }
 }
 
-pub(super) fn draw_eye_layers(
+pub fn draw_eye_layers(
     context: &ID3D11DeviceContext,
     device: &Device,
     target: &Texture,
@@ -159,35 +154,35 @@ pub(super) fn draw_eye_layers(
         .for_each(|draw| draw(context, device, target, eye));
 }
 
-pub(super) fn run_frame_passes(context: &ID3D11DeviceContext, device: &Device, target: &Texture) {
+pub fn run_frame_passes(context: &ID3D11DeviceContext, device: &Device, target: &Texture) {
     FRAME_PASSES
         .each()
         .for_each(|draw| draw(context, device, target));
 }
 
-pub(super) fn maintain_ui_redirect(device: &Device, width: u32, height: u32) {
+pub fn maintain_ui_redirect(device: &Device, width: u32, height: u32) {
     if let Some(redirect) = UI_REDIRECT.get() {
         (redirect.maintain)(device, width, height);
     }
 }
 
-pub(super) fn ui_redirect_applied() -> bool {
+pub fn ui_redirect_applied() -> bool {
     UI_REDIRECT
         .get()
         .is_some_and(|redirect| (redirect.applied)())
 }
 
-pub(super) fn eye_frame_recorder() -> Option<&'static EyeFrameRecorder> {
+pub fn eye_frame_recorder() -> Option<&'static EyeFrameRecorder> {
     RECORDER.get()
 }
 
-pub(super) fn recorder_wants_eye_captures() -> bool {
+pub fn recorder_wants_eye_captures() -> bool {
     RECORDER
         .get()
         .is_some_and(|recorder| (recorder.wants_eye_captures)())
 }
 
-pub(super) fn draw_desktop_overlay() {
+pub fn draw_desktop_overlay() {
     if let Some(draw) = DESKTOP_OVERLAY.get() {
         draw();
     }

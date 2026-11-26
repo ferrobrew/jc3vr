@@ -267,13 +267,13 @@ pub fn status() -> ResolutionStatus {
 /// The last driver observation, including a restore target and any unserviced resize.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ResolutionProgress {
-    pub(crate) engine: Option<(u32, u32)>,
-    pub(crate) desired: Option<(u32, u32)>,
-    pub(crate) pending: bool,
+    pub engine: Option<(u32, u32)>,
+    pub desired: Option<(u32, u32)>,
+    pub pending: bool,
 }
 
 impl ResolutionProgress {
-    pub(crate) fn settled(self) -> bool {
+    pub fn settled(self) -> bool {
         !self.pending
             && self
                 .engine

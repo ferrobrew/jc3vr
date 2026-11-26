@@ -1,7 +1,7 @@
 //! GPU timing of the frame tail's swapchain blit, for a benchmark run that times passes.
 //!
 //! The submit's blit (`crate::vr::blit`) runs on the frame tail, outside every dispatch, so the
-//! dispatch timestamp layer (`crate::profiler::gpu`) cannot bracket it. While a benchmark run asks
+//! dispatch timestamp layer (`jc3vr_render::profiler::gpu`) cannot bracket it. While a benchmark run asks
 //! for per-pass times, [`TailBlitTimer`] brackets it with a timestamp pair inside a disjoint query of
 //! its own, reads the result back a few frames later without waiting, and files it into the run's
 //! totals (`crate::testing::benchmark::gpu_passes`) as the detail `frame tail: swapchain blit` on

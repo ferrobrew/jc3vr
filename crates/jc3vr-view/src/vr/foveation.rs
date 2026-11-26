@@ -2,7 +2,7 @@
 //! expensive scene shading passes run, then reconstruct them, so the GPU shades fewer fragments where the
 //! HMD's optics blur detail anyway.
 //!
-//! Three cooperating pieces, driven from `crate::hooks::graphics_engine::render_pass`:
+//! Three cooperating pieces, driven from `jc3vr_render::hooks::graphics_engine::render_pass`:
 //!
 //! 1. **Mask-write** ([`mask_write`]): a full-screen pass over the main depth-stencil surface that tags a
 //!    radial, dithered set of peripheral pixels with a free stencil bit (the mask bit), via a
@@ -765,7 +765,7 @@ unsafe fn create_params_cb(d3d: &ID3D11Device) -> anyhow::Result<ID3D11Buffer> {
 /// restoring would leave the following passes rendering into the wrong (or no) target -- whole passes
 /// vanish. The per-draw state (shaders, input layout, constant buffers, shader resources) is re-bound by
 /// every engine draw, so it is not captured.
-pub(crate) struct StateBackup {
+pub struct StateBackup {
     blend_state: Option<ID3D11BlendState>,
     blend_factor: [f32; 4],
     sample_mask: u32,
@@ -781,7 +781,7 @@ pub(crate) struct StateBackup {
 ///
 /// # Safety
 /// `context` must be the live engine immediate context, held under its mutex.
-pub(crate) unsafe fn capture_state(context: &ID3D11DeviceContext) -> StateBackup {
+pub unsafe fn capture_state(context: &ID3D11DeviceContext) -> StateBackup {
     let mut render_targets: [Option<ID3D11RenderTargetView>; 8] = std::array::from_fn(|_| None);
     let mut depth_stencil_view: Option<ID3D11DepthStencilView> = None;
     let mut depth_stencil_state: Option<ID3D11DepthStencilState> = None;
@@ -822,7 +822,7 @@ pub(crate) unsafe fn capture_state(context: &ID3D11DeviceContext) -> StateBackup
 ///
 /// # Safety
 /// `context` must be the live engine immediate context, held under its mutex.
-pub(crate) unsafe fn restore_state(context: &ID3D11DeviceContext, backup: &StateBackup) {
+pub unsafe fn restore_state(context: &ID3D11DeviceContext, backup: &StateBackup) {
     unsafe {
         context.OMSetRenderTargets(
             Some(&backup.render_targets),
@@ -844,7 +844,7 @@ pub(crate) unsafe fn restore_state(context: &ID3D11DeviceContext, backup: &State
 /// Borrow a COM view stored inline in an engine `Texture` (its `m_SRV`/`m_RTV`/`m_DSV` fields) as an owned
 /// (AddRef'd) handle, returning `None` if the slot is null. The field is read as a raw pointer so a null
 /// slot never materializes a non-null-invariant `windows` interface.
-pub(crate) fn view_ptr<T: windows::core::Interface>(field: *const T) -> Option<T> {
+pub fn view_ptr<T: windows::core::Interface>(field: *const T) -> Option<T> {
     // SAFETY: `field` addresses a live `Texture`'s inline COM slot; reading it as a raw pointer and
     // borrowing (no AddRef) is sound, and `.map(Clone::clone)` AddRefs only a non-null handle.
     let raw = unsafe { *(field as *const *mut c_void) };
@@ -853,7 +853,7 @@ pub(crate) fn view_ptr<T: windows::core::Interface>(field: *const T) -> Option<T
 
 /// Borrow the engine `Texture`'s inline `ID3D11Resource` (`m_Texture`) and query it to `ID3D11Texture2D`,
 /// returning `None` if the slot is null or the cast fails.
-pub(crate) fn resource_as_texture(
+pub fn resource_as_texture(
     field: *const jc3gi::graphics_engine::texture::ID3D11Resource,
 ) -> Option<ID3D11Texture2D> {
     let raw = unsafe { *(field as *const *mut c_void) };

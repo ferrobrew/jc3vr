@@ -108,13 +108,13 @@ pub fn double_wide_active() -> bool {
 
 /// The layout bits of one sample of the single-pass configuration.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(crate) struct LayoutFlags(u8);
+pub struct LayoutFlags(u8);
 
 impl LayoutFlags {
     /// The layout a configuration sample asks for: `collapse` when single-pass is switched on for a
     /// live session, out of its dry run, with the dual-eye path and the collapse on; double-wide
     /// when the collapse is and `double_wide` is on too.
-    pub(crate) fn new(collapse: bool, double_wide: bool) -> Self {
+    pub fn new(collapse: bool, double_wide: bool) -> Self {
         let mut bits = 0;
         if collapse {
             bits |= COLLAPSE;
@@ -135,17 +135,17 @@ impl LayoutFlags {
 }
 
 /// Publish the game thread's frame sample, read by every thread outside a dispatch.
-pub(crate) fn publish_frame_layout(flags: LayoutFlags) {
+pub fn publish_frame_layout(flags: LayoutFlags) {
     FRAME_LAYOUT.store(flags.0, Ordering::Relaxed);
 }
 
 /// Pin the sample of the dispatch this thread is opening, for the rest of the dispatch.
-pub(crate) fn pin_dispatch_layout(flags: LayoutFlags) {
+pub fn pin_dispatch_layout(flags: LayoutFlags) {
     DISPATCH_LAYOUT.set(Some(flags));
 }
 
 /// Drop this thread's dispatch pin, so whatever it runs between dispatches reads the frame sample.
-pub(crate) fn unpin_dispatch_layout() {
+pub fn unpin_dispatch_layout() {
     DISPATCH_LAYOUT.set(None);
 }
 

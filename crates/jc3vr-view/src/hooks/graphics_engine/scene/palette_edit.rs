@@ -2,7 +2,7 @@
 //! block's palette stores its matrices, the edit a draw applies to the palette copy, and the
 //! provider that settles the edit for each draw of the body.
 //!
-//! The render blocks ([`crate::hooks::graphics_engine::render_block`]) only apply the edit. What it
+//! The render blocks (`jc3vr_render::hooks::graphics_engine::render_block`) only apply the edit. What it
 //! re-poses, and from what tracking, is the provider's, which registers itself at startup; until it
 //! does, the body draws with the engine's palette.
 
@@ -12,7 +12,7 @@ use glam::Mat4;
 use jc3gi::graphics_engine::render_block::Matrix3x4;
 
 /// How a block's palette stores a 3x4 affine matrix (see the layout detection in
-/// [`crate::hooks::graphics_engine::render_block`]).
+/// `jc3vr_render::hooks::graphics_engine::render_block`).
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum PaletteLayout {
     /// Four 3-float columns: the images of the X, Y, and Z axes, then the translation.
@@ -57,7 +57,7 @@ pub fn register_player_draw_edits(edits: &'static dyn PlayerDrawEdits) {
     }
 }
 
-pub(crate) fn player_draw_edits() -> Option<&'static dyn PlayerDrawEdits> {
+pub fn player_draw_edits() -> Option<&'static dyn PlayerDrawEdits> {
     PROVIDER.get().copied()
 }
 

@@ -53,7 +53,7 @@ pub struct SinglePassConfig {
     /// `SV_ViewportArrayIndex` routing into a double-wide render target. On by default, together
     /// with the rest of the group [`set_single_pass_feature`] switches; the double-draw is what
     /// turning the group off leaves. Live only while a VR session runs (see
-    /// [`crate::stereo::single_pass::active`]), and requires the DXVK viewport-routing capability
+    /// `jc3vr_render::stereo::single_pass::active`), and requires the DXVK viewport-routing capability
     /// (see [`crate::stereo::layout::capability`]); forced off if absent.
     pub enabled: bool,
     /// Requires [`single_pass`](Self::enabled): make the two eyes actually diverge. Fills `cb13` with **distinct** per-eye view-projections (slot 0 = eye 0, slot 1 =
@@ -101,7 +101,7 @@ pub struct SinglePassConfig {
     /// roads, ...) for single-pass, instead of leaving them double-drawn. When on, a vertex shader
     /// with no per-eye `cb0` operand whose name is on the reprojection allowlist is rewritten to
     /// post-multiply its own clip position by the per-eye `M_eye` (see
-    /// [`crate::stereo::single_pass`]); NDC writers (sky, UI, post) are excluded by the allowlist.
+    /// `jc3vr_render::stereo::single_pass`); NDC writers (sky, UI, post) are excluded by the allowlist.
     /// Requires [`single_pass`](Self::enabled); independent of the others so it can be A/B'd.
     pub reproject: bool,
     /// Extend [`single_pass_reproject`](Self::reproject) to the allowlisted families the
@@ -252,7 +252,7 @@ pub struct SinglePassConfig {
     /// doubled (the variant halves the instance id it fetches by), and a hardware-instanced draw takes
     /// a step-rate-doubled layout twin when there is one and a per-eye re-issue of that one draw
     /// otherwise. A block whose vertex shader has no variant keeps the whole-block re-issue (see
-    /// `crate::stereo::single_pass::vegetation_once`). On by default; applies at once.
+    /// `jc3vr_render::stereo::single_pass::vegetation_once`). On by default; applies at once.
     pub vegetation_once: bool,
     /// Single-pass the occluder depth-prime render block (`CRenderBlockOccluder`). Its non-instanced path
     /// bakes a world-view-projection into `cb1`; the block's `DrawZ` is re-issued once per eye with `cb1`
@@ -272,7 +272,7 @@ pub struct SinglePassConfig {
     /// its input layout has a step-rate-doubled twin: the twin is bound, the instance count doubled,
     /// and the viewport split, so each pair of instances reads one element and the instance parity
     /// picks the eye. The twins are built after injection by replaying `GeneralMkIII`'s declaration
-    /// creation (see `crate::stereo::single_pass::hw_instanced`), so this covers the buildings'
+    /// creation (see `jc3vr_render::stereo::single_pass::hw_instanced`), so this covers the buildings'
     /// `generalmkiiihwinstanced` family; a draw with any other layout keeps `instanced_per_eye`'s
     /// re-issue. On by default; applies at once.
     pub hw_instanced_once: bool,
@@ -786,12 +786,12 @@ pub struct StereoConfig {
     /// Diagnostic: while a render trace collects, record each eye's per-pass GPU-op count during a
     /// stereo frame and trace the diff -- which passes draw identically between eyes (replayable
     /// from one walk) and which diverge (the per-eye special-casing burden). The feasibility probe
-    /// for single-pass stereo; see [`crate::debug::stereo_diff`].
+    /// for single-pass stereo; see `jc3vr_render::debug::stereo_diff`.
     pub diagnose_stereo_draw_diff: bool,
     /// Diagnostic: hash a curated set of engine render targets after each eye's Draw and record the
     /// per-eye hashes into the active render trace. Run with `cameras` off (both eyes share one
     /// camera) so any RT whose two eyes' hashes differ is being accumulated across the two Draws --
-    /// the "stronger in one eye" bug. See [`crate::debug::rt_hash`].
+    /// the "stronger in one eye" bug. See `jc3vr_render::debug::rt_hash`.
     pub diagnose_rt_hashes: bool,
     /// Diagnostic: while a render trace collects, encode each eye's final `BackBufferLinear` to a PNG
     /// each frame into the trace's session folder (alongside `trace.ndjson`), named by
@@ -864,7 +864,7 @@ pub struct StereoConfig {
     /// Patch the screen-space PCF rotation hash out of the sun-shadow shaders at creation, so both
     /// eyes use the same unrotated 38-tap PCF (removes the per-eye shadow shimmer + foliage grain).
     /// Applies only to shaders created after the hook installs; trigger a shader reload (e.g. change
-    /// shadow quality) if injected mid-session. See [`crate::hooks::graphics_engine::shader`].
+    /// shadow quality) if injected mid-session. See `jc3vr_render::hooks::graphics_engine::shader`.
     pub patch_shadow_pcf_hash: bool,
     /// Close a leaked G-buffer range from the **draw thread**, in the dispatch prologue
     /// (`RenderEngine::PreDraw`), instead of from the game thread at frame start.

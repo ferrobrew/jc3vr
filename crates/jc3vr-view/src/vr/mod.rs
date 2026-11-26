@@ -86,7 +86,7 @@ pub use blit::{
     DirectArm, DirectStatus, arm_direct, blit_direct, direct_status, disarm_direct, fade_level,
     present_and_submit, set_fade_level, texture_size,
 };
-pub(crate) use blit_region::BlitSource;
+pub use blit_region::BlitSource;
 pub use eye_resolution::{engine_render_resolution, native_eye_resolution};
 pub use frame_loop::{
     EyeImage, EyeView, FrameContext, LocatedFrame, WaitedFrame, frame_wait, head_tracked,

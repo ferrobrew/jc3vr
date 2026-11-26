@@ -146,7 +146,7 @@ pub fn full_camera_transform(capture: impl FnOnce() -> glam::Mat4) -> glam::Mat4
 /// edits returned to it. The full-camera freeze then never captures the live camera while the pin
 /// stands. A pin of the base already held only returns the edits to it, so re-pinning every
 /// configuration leaves the rendered stamp in place.
-pub(crate) fn pin_full_camera(base: PoseValues) {
+pub fn pin_full_camera(base: PoseValues) {
     let mut state = STATE.lock();
     match state.as_mut() {
         Some(held) if held.cockpit.is_none() && held.base == base => held.current = base,
@@ -189,14 +189,14 @@ pub fn current() -> Option<PoseValues> {
     STATE.lock().as_ref().map(|s| s.current)
 }
 
-pub(crate) fn current_full_camera() -> Option<PoseValues> {
+pub fn current_full_camera() -> Option<PoseValues> {
     STATE
         .lock()
         .as_ref()
         .and_then(FrozenState::current_full_camera)
 }
 
-pub(crate) fn rendered_full_camera(frame: i64) -> Option<(PoseValues, PoseValues)> {
+pub fn rendered_full_camera(frame: i64) -> Option<(PoseValues, PoseValues)> {
     STATE
         .lock()
         .as_ref()

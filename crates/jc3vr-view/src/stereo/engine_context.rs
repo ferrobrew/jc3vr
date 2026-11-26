@@ -18,11 +18,11 @@ use windows::Win32::{
 /// is cutting per-draw cost. The engine owns the context for the process's life, so a `'static`
 /// borrow is sound for as long as the engine is up -- which the render thread guarantees.
 #[derive(Clone, Copy)]
-pub(crate) struct EngineContext(&'static jc3gi::graphics_engine::device::Context);
+pub struct EngineContext(&'static jc3gi::graphics_engine::device::Context);
 
 impl EngineContext {
     /// The engine's immediate context, or `None` if the device/context is not live yet.
-    pub(crate) fn get() -> Option<Self> {
+    pub fn get() -> Option<Self> {
         // SAFETY: read on the render thread, where the engine device/context pointers are stable.
         unsafe {
             let ge = GraphicsEngine::get()?;
@@ -33,7 +33,7 @@ impl EngineContext {
 
     /// Run `f` on the D3D immediate context under the engine's own context mutex, which every other
     /// path in the mod that touches the context also takes.
-    pub(crate) fn with_lock<R>(self, f: impl FnOnce(&ID3D11DeviceContext) -> R) -> R {
+    pub fn with_lock<R>(self, f: impl FnOnce(&ID3D11DeviceContext) -> R) -> R {
         // SAFETY: `m_Mutex` is the engine's live critical section for this context. The guard releases
         // it on drop, so the critical section is left even if `f` unwinds.
         unsafe {

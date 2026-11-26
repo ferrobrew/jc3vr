@@ -2,7 +2,7 @@
 //!
 //! The profiler's GPU layer brackets each render pass a dispatch draws with a timestamp pair, and a
 //! few stretches of work that are not render passes (each post effect, the mod's foveation passes)
-//! with a pair of their own (`crate::profiler::gpu::pass_interval` and `detail_interval`). While a
+//! with a pair of their own (`jc3vr_render::profiler::gpu::pass_interval` and `detail_interval`). While a
 //! run records with this switch on, every resolved interval is added to a total keyed by the
 //! dispatch's lane and the interval's label, and the acknowledgement carries the totals: what each
 //! pass cost over the recording, which divided by the frames is its cost per frame. The totals are
@@ -27,25 +27,25 @@ use serde::Serialize;
 
 /// What a GPU interval timed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(crate) enum GpuPassLabel {
+pub enum GpuPassLabel {
     /// A render pass, by the engine's debug name for it. Only the profiler's GPU lane times one.
     #[cfg(feature = "profiler")]
     RenderPass(&'static str),
     /// A stretch of work that is not a render pass, by a name the payload gives it.
     Detail(&'static str),
-    /// A hole between the timed intervals, by where it lies (`crate::profiler::gpu::GapAt`). Only
+    /// A hole between the timed intervals, by where it lies (`jc3vr_render::profiler::gpu::GapAt`). Only
     /// the profiler's GPU lane finds one.
     #[cfg(feature = "profiler")]
     Gap(&'static str),
 }
 
 /// Whether the GPU layer should time every pass for the recording run.
-pub(crate) fn armed() -> bool {
+pub fn armed() -> bool {
     ARMED.load(Ordering::Relaxed)
 }
 
 /// Add one resolved dispatch's pass intervals to the run's totals, while a run records them.
-pub(crate) fn record(lane: u8, intervals: impl Iterator<Item = (GpuPassLabel, i64)>) {
+pub fn record(lane: u8, intervals: impl Iterator<Item = (GpuPassLabel, i64)>) {
     if !RECORDING.load(Ordering::Relaxed) {
         return;
     }
@@ -59,12 +59,12 @@ pub(crate) fn record(lane: u8, intervals: impl Iterator<Item = (GpuPassLabel, i6
 }
 
 /// Arm the pass timestamps for a run's warm-up and recording, or disarm them.
-pub(super) fn set_armed(armed: bool) {
+pub fn set_armed(armed: bool) {
     ARMED.store(armed, Ordering::Relaxed);
 }
 
 /// Start or stop adding resolved intervals to the totals. Starting clears them.
-pub(super) fn set_recording(recording: bool) {
+pub fn set_recording(recording: bool) {
     if recording {
         *TOTALS.lock() = None;
     }
@@ -72,7 +72,7 @@ pub(super) fn set_recording(recording: bool) {
 }
 
 /// The totals the recording gathered, largest first, and clear them.
-pub(super) fn take() -> Vec<GpuPassTotal> {
+pub fn take() -> Vec<GpuPassTotal> {
     let totals = TOTALS.lock().take().unwrap_or_default();
     let mut totals: Vec<GpuPassTotal> = totals
         .into_iter()
@@ -99,7 +99,7 @@ pub(super) fn take() -> Vec<GpuPassTotal> {
 
 /// One label's GPU time over a recording, on one dispatch lane.
 #[derive(Debug, Serialize)]
-pub(super) struct GpuPassTotal {
+pub struct GpuPassTotal {
     /// The dispatch's eye (0 or 1) or 2 for a far-field dispatch.
     lane: u8,
     /// `render_pass`, `detail`, or `gap`.

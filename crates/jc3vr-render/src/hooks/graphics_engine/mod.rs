@@ -8,9 +8,6 @@
 
 use re_utilities::hook_library::HookLibrary;
 
-// The eye and preview captures the post-draw and the post chain fill, which the VR blit, the
-// mirror, the recorder, the screenshots, and the Previews tab read.
-pub mod capture;
 // Exposure and post-effect config structs, accessed by `tone_mapping` and `post_effects` via
 // `Config::lock_query`.
 pub mod config;
@@ -20,8 +17,6 @@ mod declaration_replay;
 // jc3gi (CGraphicsEngine in its own module), hence the module_inception allow.
 #[allow(clippy::module_inception)]
 pub mod graphics_engine;
-// The registrations the post-draw, the UI redirect, and the flip run for the layers above.
-pub mod post_draw;
 // What the capture tooling observes at the pipeline's seams, registered by the capture side.
 pub(crate) mod probes;
 // The VR runtime's teardown participant: the flip block and the far-field share pipeline.
@@ -38,7 +33,7 @@ mod screen;
 
 pub use post::{post_effects, tone_mapping};
 pub use render_pass::shadow_fit_gap_m;
-pub use scene::{palette_edit, player_draw, render_block, terrain};
+pub use scene::{render_block, terrain};
 pub use screen::{clustered_lighting, reconstruction, ss_decal, ssao};
 pub(crate) use single_pass::upload_global_constants;
 

@@ -2335,7 +2335,7 @@ dependencies = [
  "jc3gi",
  "jc3vr-core",
  "jc3vr-input",
- "jc3vr-render",
+ "jc3vr-view",
  "openxr",
  "parking_lot",
  "pretty_assertions",
@@ -2368,6 +2368,7 @@ dependencies = [
  "jc3vr-gameplay",
  "jc3vr-input",
  "jc3vr-render",
+ "jc3vr-view",
  "parking_lot",
  "re-utilities",
  "serde",
@@ -2391,11 +2392,8 @@ name = "jc3vr-render"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "body-rig",
  "detours-macro",
  "dxbc-stereo",
- "egui",
- "egui-directx11",
  "flate2",
  "fsr-sys",
  "glam",
@@ -2403,7 +2401,7 @@ dependencies = [
  "jc3gi",
  "jc3vr-core",
  "jc3vr-input",
- "openxr",
+ "jc3vr-view",
  "parking_lot",
  "pretty_assertions",
  "puffin 0.20.0 (git+https://github.com/EmbarkStudios/puffin?rev=d06bed0fcb8c8e4c78643d4ead7cf1de9b76fd3b)",
@@ -2415,7 +2413,6 @@ dependencies = [
  "test-case",
  "toml 1.1.6+spec-1.1.0",
  "tracing",
- "tracking-format",
  "windows 0.62.2",
 ]
 
@@ -2430,6 +2427,7 @@ dependencies = [
  "jc3vr-gameplay",
  "jc3vr-input",
  "jc3vr-render",
+ "jc3vr-view",
  "jiff",
  "parking_lot",
  "pretty_assertions",
@@ -2460,6 +2458,7 @@ dependencies = [
  "jc3vr-input",
  "jc3vr-render",
  "jc3vr-tooling",
+ "jc3vr-view",
  "jiff",
  "openxr",
  "parking_lot",
@@ -2471,6 +2470,33 @@ dependencies = [
  "test-case",
  "toml 1.1.6+spec-1.1.0",
  "tracing",
+ "windows 0.62.2",
+]
+
+[[package]]
+name = "jc3vr-view"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "body-rig",
+ "detours-macro",
+ "egui",
+ "egui-directx11",
+ "fsr-sys",
+ "glam",
+ "jc3gi",
+ "jc3vr-core",
+ "jc3vr-input",
+ "openxr",
+ "parking_lot",
+ "pretty_assertions",
+ "puffin 0.20.0 (git+https://github.com/EmbarkStudios/puffin?rev=d06bed0fcb8c8e4c78643d4ead7cf1de9b76fd3b)",
+ "re-utilities",
+ "serde",
+ "test-case",
+ "toml 1.1.6+spec-1.1.0",
+ "tracing",
+ "tracking-format",
  "windows 0.62.2",
 ]
 
@@ -2506,6 +2532,7 @@ dependencies = [
  "jc3vr-render",
  "jc3vr-tooling",
  "jc3vr-ui",
+ "jc3vr-view",
  "jiff",
  "pretty_assertions",
  "puffin 0.20.0 (git+https://github.com/EmbarkStudios/puffin?rev=d06bed0fcb8c8e4c78643d4ead7cf1de9b76fd3b)",
