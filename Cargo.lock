@@ -2342,7 +2342,6 @@ dependencies = [
  "tracing-appender",
  "tracing-subscriber",
  "tracking-format",
- "tracking-synth",
  "windows 0.62.2",
 ]
 
