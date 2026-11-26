@@ -205,10 +205,15 @@ fn _StateBitFlag_size_check() {
 /// The per-task state-machine context (`SStateContext`) passed to character and task update
 /// functions. Only the leading members are bound.
 pub struct StateContext {
-    /// The object the state machine runs for: the `CGameObject` base subobject of a character,
-    /// which sits [`Character::GAME_OBJECT_BASE_OFFSET`](crate::character::character::Character::GAME_OBJECT_BASE_OFFSET)
-    /// bytes into the character.
-    pub m_User: *mut ::std::ffi::c_void,
+    /// The object the state machine runs for, as its [`GameObject`](crate::game::GameObject) subobject. For a character's
+    /// state machines that subobject sits
+    /// [`Character::GAME_OBJECT_BASE_OFFSET`](crate::character::character::Character::GAME_OBJECT_BASE_OFFSET)
+    /// bytes into the character: the character tasks test it against
+    /// [`Character::TYPE_ID`](crate::character::character::Character::TYPE_ID) through
+    /// [`GameObject::IsType`](crate::game::GameObject::IsType) and subtract that offset to recover the character (as
+    /// [`NStateTask_InputLocoAimRelativeTask::Update`](crate::input::locomotion::NStateTask_InputLocoAimRelativeTask::Update)
+    /// does). The context's constructor clears it to null.
+    pub m_User: *mut crate::game::GameObject,
     _field_8: [u8; 12],
     /// The sub-frame interpolation fraction of the update.
     pub m_Dtf: f32,

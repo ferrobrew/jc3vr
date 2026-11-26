@@ -174,21 +174,21 @@ fn update_fall_steering(
     result
 }
 
-/// Recover the [`Character`] from a state-task context. The context's first pointer addresses a
-/// sub-object at character + 8; the game type-checks that sub-object against `CCharacter::TYPE_ID`
-/// through its vtable and then subtracts (see `NStateTask_InputLocoMoveTask::Update` in the IDB).
-/// The RTTI check is not replicated here: the hooked tasks only run on character state machines.
+/// Recover the [`Character`] from a state-task context's [`StateContext::m_User`], the way the
+/// character tasks do. The game's `IsType` test against `Character::TYPE_ID` is not replicated: the
+/// hooked tasks only run on character state machines.
 ///
 /// # Safety
 ///
 /// `ctx` must be a live state-task context of a character's state machine.
 pub unsafe fn character_from_context(ctx: *mut StateContext) -> Option<&'static mut Character> {
     unsafe {
-        let sub_object = *(ctx as *const *mut u8);
-        if sub_object.is_null() {
+        let game_object = (*ctx).m_User;
+        if game_object.is_null() {
             return None;
         }
-        (sub_object.sub(8) as *mut Character).as_mut()
+        (game_object.byte_sub(Character::GAME_OBJECT_BASE_OFFSET as usize) as *mut Character)
+            .as_mut()
     }
 }
 
