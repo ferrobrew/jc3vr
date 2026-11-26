@@ -208,7 +208,7 @@ mod tests {
     use jc3vr_gameplay::controllers::config::SightOverride;
     use jc3vr_hud::hud::config::HUD_CONFIG;
     use jc3vr_input::frame::Hand;
-    use jc3vr_render::headpose::config::{GrappleComfortMode, HEADPOSE_CONFIG};
+    use jc3vr_view::headpose::config::{GrappleComfortMode, HEADPOSE_CONFIG};
 
     use super::{
         sections::{

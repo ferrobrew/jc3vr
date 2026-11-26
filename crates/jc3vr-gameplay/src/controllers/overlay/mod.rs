@@ -4,27 +4,28 @@
 //! highlight and beam, the guns' dot or laser, the grab-volume highlights, the ghosts of yielded
 //! hands, and the controller gizmos.
 //!
-//! The overlay's render half lives in [`jc3vr_render::controllers::overlay`]; this module holds
-//! the producers and the inputs the draw reads.
+//! The overlay's data model lives in [`jc3vr_view::controllers::overlay`], and its render half in
+//! the render crate's `controllers::overlay`; this module holds the producers and the inputs the
+//! draw reads.
 //!
 //! - [`primitive`]: what a producer submits;
 //! - [`store`]: the retained per-source slots, replaced by each submission and expiring on their
 //!   own, which any thread may submit to ([`store::submit`], [`store::clear`]);
 //! - [`producers`]: the overlay's own producers, run once per rendered frame;
 //! - [`resolve`]: anchors placed and primitives packed for the frame, relative to its origin;
-//! - [`view`]: each eye's camera-relative view, in two-pass stereo and under the collapse;
-//! - [`renderer`]: the D3D11 pipeline;
-//! - [`pass`]: the draw, which reads the overlay's settings and the hands' render-time poses
-//!   through the inputs the controllers register (`crate::controllers::register_render`).
+//! - the render crate's `view`: each eye's camera-relative view, in two-pass stereo and under the
+//!   collapse;
+//! - the render crate's `renderer`: the D3D11 pipeline;
+//! - the render crate's `pass`: the draw, which reads the overlay's settings and the hands'
+//!   render-time poses through the [`inputs`] the controllers register
+//!   (`crate::controllers::register_render`).
 //!
-//! [`primitive`]: jc3vr_render::controllers::overlay::primitive
-//! [`store`]: jc3vr_render::controllers::overlay::store
-//! [`store::submit`]: jc3vr_render::controllers::overlay::store::submit
-//! [`store::clear`]: jc3vr_render::controllers::overlay::store::clear
-//! [`resolve`]: jc3vr_render::controllers::overlay::resolve
-//! [`view`]: jc3vr_render::controllers::overlay::view
-//! [`renderer`]: jc3vr_render::controllers::overlay::renderer
-//! [`pass`]: jc3vr_render::controllers::overlay::pass
+//! [`primitive`]: jc3vr_view::controllers::overlay::primitive
+//! [`store`]: jc3vr_view::controllers::overlay::store
+//! [`store::submit`]: jc3vr_view::controllers::overlay::store::submit
+//! [`store::clear`]: jc3vr_view::controllers::overlay::store::clear
+//! [`resolve`]: jc3vr_view::controllers::overlay::resolve
+//! [`inputs`]: jc3vr_view::controllers::overlay::inputs
 //!
 //! The game's own HUD reticles, hidden while the hands aim, are the HUD's
 //! (`hud::game_reticle`).
@@ -38,7 +39,7 @@
 pub mod config;
 pub mod producers;
 
-use jc3vr_render::controllers::overlay::{pass::DrawSettings, resolve::HandPoses};
+use jc3vr_view::controllers::overlay::{inputs::DrawSettings, resolve::HandPoses};
 
 use crate::controllers::{hands::late, overlay::config::OVERLAY_CONFIG, scheme};
 
@@ -46,7 +47,7 @@ use crate::controllers::{hands::late, overlay::config::OVERLAY_CONFIG, scheme};
 /// `RenderEngine::PostDraw`, before the engine's context lock is taken; it acts only on the
 /// frame's first eye.
 pub(crate) fn tick(eye: usize) {
-    if !jc3vr_render::stereo::dispatch::first_ui_eye(eye) || jc3vr_render::stereo::far_phase() {
+    if !jc3vr_view::stereo::dispatch::first_ui_eye(eye) || jc3vr_view::stereo::far_phase() {
         return;
     }
     let active = scheme::enabled()
@@ -59,7 +60,7 @@ pub(crate) fn tick(eye: usize) {
 /// Each hand's world poses as it is drawn at the camera's interpolation fraction, so what is
 /// anchored to a hand stays on the hand the late update and the presentation layer draw.
 pub fn render_poses() -> [Option<HandPoses>; 2] {
-    late::drawn_hands(jc3vr_render::hooks::camera::last_dtf()).map(|hand| {
+    late::drawn_hands(jc3vr_view::hooks::camera::last_dtf()).map(|hand| {
         hand.map(|h| HandPoses {
             wrist: h.wrist,
             grip: h.grip,

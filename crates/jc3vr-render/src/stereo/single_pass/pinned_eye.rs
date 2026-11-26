@@ -15,13 +15,14 @@
 use std::{ffi::c_void, sync::atomic::Ordering};
 
 use jc3gi::types::math::Vector4;
+use jc3vr_view::stereo::engine_context::EngineContext;
 use windows::{
     Win32::Graphics::Direct3D11::{ID3D11DeviceChild, ID3D11DeviceContext},
     core::{GUID, Interface},
 };
 
 use crate::stereo::single_pass::{
-    BOUND_VS, CB13, EngineContext, STEREO_CB_TOTAL_ROWS, pin_rows_to_eye, write_cb13_rows,
+    BOUND_VS, CB13, STEREO_CB_TOTAL_ROWS, pin_rows_to_eye, write_cb13_rows,
 };
 
 /// Mark `shader` as created from a pinned-eye rewrite.

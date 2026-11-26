@@ -66,7 +66,7 @@ pub(crate) fn draw(
     panel: Option<[Vec4; 4]>,
 ) {
     let mut state = STATE.lock();
-    if jc3vr_render::stereo::dispatch::first_ui_eye(eye) {
+    if jc3vr_view::stereo::dispatch::first_ui_eye(eye) {
         let cfg = *HUD_CONFIG.lock();
         let active = cfg.grab_hint.enabled
             && world_quads_active(&cfg)

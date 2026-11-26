@@ -3,7 +3,7 @@
 
 use egui::{RichText, Ui};
 use jc3vr_input::{frame::Hand, semantic::SemanticSet};
-use jc3vr_render::vr::input::{
+use jc3vr_view::vr::input::{
     actions::SetId,
     layout::{BoolInput, FloatInput, HandsAction, Vec2Input},
     self_check,

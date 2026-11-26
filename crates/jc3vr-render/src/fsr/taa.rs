@@ -20,6 +20,10 @@ use jc3gi::{
     graphics_engine::{device::Device, texture::Texture},
     types::math::Matrix4,
 };
+use jc3vr_view::{
+    fsr::{FSR_CONFIG, TaaConfig, jitter},
+    stereo::config::STEREO_CONFIG,
+};
 use parking_lot::Mutex;
 use windows::{
     Win32::Graphics::{
@@ -39,12 +43,9 @@ use windows::{
     core::Interface,
 };
 
-use crate::{
-    fsr::{
-        Build, ChainTextures, EyeLayout, EyeMotion, EyeViewProjections, FSR_CONFIG, TaaConfig,
-        camera_cut, jitter, velocity_decode::depth_srv,
-    },
-    stereo::config::STEREO_CONFIG,
+use crate::fsr::{
+    Build, ChainTextures, EyeLayout, EyeMotion, EyeViewProjections, camera_cut,
+    velocity_decode::depth_srv,
 };
 
 /// The live resolve state (render thread only).
@@ -142,7 +143,7 @@ pub fn dispatch(
     };
 
     jitter::publish_eye_size(build.eye_width, build.height);
-    let stereo = crate::stereo::active();
+    let stereo = jc3vr_view::stereo::active();
     let cameras = STEREO_CONFIG.lock().cameras;
     let (correction, hybrid) = FSR_CONFIG.query(|fsr| {
         (

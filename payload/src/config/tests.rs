@@ -12,8 +12,8 @@ use jc3vr_core::{
 };
 use jc3vr_gameplay::controllers::config::{LocomotionDirection, Posture, SightOverride};
 use jc3vr_input::frame::Hand;
-use jc3vr_render::vr::MirrorView;
 use jc3vr_tooling::director::keymap::{Action, Binding, Chord};
+use jc3vr_view::vr::MirrorView;
 use pretty_assertions::assert_eq;
 use toml::{Table, Value};
 

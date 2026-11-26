@@ -2,25 +2,25 @@ use std::ffi::c_void;
 
 use anyhow::{Context, Result, ensure};
 use jc3gi::graphics_engine::{graphics_engine::GraphicsEngine, render_engine::RenderPassId};
+use jc3vr_view::stereo::draw_index;
 use windows::{
     Win32::Graphics::{Direct3D::D3D_SRV_DIMENSION_TEXTURE2D, Direct3D11::*},
     core::Interface,
 };
 
 use crate::{
-    screenshot::harness::{
-        self,
-        bound_buffer::{ShaderStage, read_bound_constant_buffer},
-        late_sky_stages_requested,
-        stages::{
-            HdrStage, STATE, Stage, StageArtifact, StageImage, StageRecord, capture_hdr,
-            capture_raster_state, empty_stage_record, read_texture,
+    screenshot::{
+        harness,
+        harness::{
+            bound_buffer::{ShaderStage, read_bound_constant_buffer},
+            late_sky_stages_requested,
+            stages::{
+                HdrStage, STATE, Stage, StageArtifact, StageImage, StageRecord, capture_hdr,
+                capture_raster_state, empty_stage_record, read_texture,
+            },
         },
     },
-    stereo::{
-        draw_index,
-        single_pass::{shader_identity, vertex_identity_lookup},
-    },
+    stereo::single_pass::{shader_identity, vertex_identity_lookup},
 };
 
 pub(crate) unsafe fn capture_fog_inputs(context: *mut c_void) {
@@ -176,7 +176,8 @@ pub(crate) unsafe fn capture_fog_generation(context: *mut c_void, draw: &dyn Fn(
             let mut desc = D3D11_TEXTURE2D_DESC::default();
             unsafe { target.GetDesc(&mut desc) };
             ensure!(
-                crate::stereo::dispatch::mode() == crate::stereo::dispatch::RenderMode::SinglePass
+                jc3vr_view::stereo::dispatch::mode()
+                    == jc3vr_view::stereo::dispatch::RenderMode::SinglePass
                     && input.viewports.len() == 2
                     && input
                         .viewports

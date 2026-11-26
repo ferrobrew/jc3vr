@@ -68,7 +68,7 @@ use jc3gi::{
     character::character::Character,
 };
 use jc3vr_core::hash::StateSet;
-use jc3vr_render::{
+use jc3vr_view::{
     controllers::cockpit::CockpitTransform,
     headpose::{body_relative_rotation, xr},
     vr::VR_CONFIG,

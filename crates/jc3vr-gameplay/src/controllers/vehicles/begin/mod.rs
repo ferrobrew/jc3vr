@@ -7,7 +7,7 @@ use std::{sync::atomic::Ordering, time::Instant};
 
 use glam::Vec3;
 use jc3vr_input::frame::Hand;
-use jc3vr_render::{controllers::cockpit::CockpitTransform, headpose};
+use jc3vr_view::{controllers::cockpit::CockpitTransform, headpose};
 use parking_lot::Mutex;
 
 use crate::controllers::{
@@ -77,7 +77,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
     drop(state);
     drop(retired_owner);
     let view_eyes =
-        headpose::anchor().map(|anchor| anchor + jc3vr_render::hooks::camera::head_to_eye_point());
+        headpose::anchor().map(|anchor| anchor + jc3vr_view::hooks::camera::head_to_eye_point());
     let fit = fit::fit(
         &FitInputs {
             physical: &physical_config,

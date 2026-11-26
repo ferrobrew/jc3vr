@@ -29,6 +29,7 @@ use anyhow::{Context as _, bail};
 use jc3gi::graphics_engine::{
     graphics_engine::GraphicsEngine, post_effects::PostEffectsManager, texture::Texture,
 };
+use jc3vr_view::stereo::{draw_index, engine_context::EngineContext};
 use parking_lot::Mutex;
 use serde::Serialize;
 pub(crate) use sun_inputs::{
@@ -71,7 +72,6 @@ use windows::{
 use crate::{
     image_writer::{ChannelOrder, Image},
     screenshot::{create_staging, harness::screenshot_wants_eyes},
-    stereo::{draw_index, engine_context::EngineContext},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -564,7 +564,7 @@ fn capture(stage: Stage, texture: impl Fn() -> anyhow::Result<*mut Texture>) {
     if GEOMETRY_ONLY.load(Ordering::Relaxed) && !GEOMETRY_STAGES.contains(&stage) {
         return;
     }
-    let Some(frame) = crate::vr::capture_views().map(|v| v.predicted_display_time_ns) else {
+    let Some(frame) = jc3vr_view::vr::capture_views().map(|v| v.predicted_display_time_ns) else {
         return;
     };
     let eye = draw_index();
@@ -623,7 +623,7 @@ const GEOMETRY_STAGES: [Stage; 4] = [
 ];
 
 pub(crate) fn record_camera_submission(eye: usize, secondary: bool) {
-    if let Some(frame) = crate::vr::capture_views().map(|v| v.predicted_display_time_ns) {
+    if let Some(frame) = jc3vr_view::vr::capture_views().map(|v| v.predicted_display_time_ns) {
         let mut state = STATE.lock();
         if state.frame == Some(frame) {
             state.records.push(empty_stage_record(

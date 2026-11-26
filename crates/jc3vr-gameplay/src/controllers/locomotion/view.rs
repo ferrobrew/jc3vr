@@ -21,7 +21,7 @@ use body_rig::{
     smooth::{critically_damped, smoothstep},
 };
 use glam::{Mat4, Vec3};
-use jc3vr_render::headpose::Anchors;
+use jc3vr_view::headpose::Anchors;
 
 use crate::controllers::body::procedural::authority::Case;
 

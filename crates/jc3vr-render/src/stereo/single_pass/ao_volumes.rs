@@ -36,13 +36,14 @@ use dxbc_stereo::{
 };
 use glam::{Mat4, Vec4};
 use jc3gi::{graphics_engine::graphics_engine::RenderContext, types::math::Vector4};
+use jc3vr_view::stereo::layout::collapse_active;
 use parking_lot::Mutex;
 use windows::Win32::Graphics::Direct3D11::{
     D3D11_BIND_CONSTANT_BUFFER, D3D11_BUFFER_DESC, D3D11_CPU_ACCESS_WRITE, D3D11_MAP_WRITE_DISCARD,
     D3D11_MAPPED_SUBRESOURCE, D3D11_USAGE_DYNAMIC, ID3D11Buffer, ID3D11DeviceContext,
 };
 
-use crate::stereo::{layout::collapse_active, single_pass::*};
+use crate::stereo::single_pass::*;
 
 /// An ambient-occlusion volume pixel shader rewritten for the collapse, or `None` for any other
 /// shader or when `enabled` is off.

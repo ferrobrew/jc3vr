@@ -7,14 +7,11 @@ use jc3vr_core::{
 use jc3vr_gameplay::controllers;
 use jc3vr_hud::{egui_impl::EguiState, hooks::ui::cancel_pointer_on_game_thread, hud};
 use jc3vr_render::{
-    far_field,
-    hooks::graphics_engine::{capture, shader::restore_original_shaders_on_eject},
-    image_writer,
-    recorder::tracking,
-    vr,
+    far_field, hooks::graphics_engine::shader::restore_original_shaders_on_eject, image_writer,
 };
 use jc3vr_tooling::{director, recorder, testing};
 use jc3vr_ui::ui;
+use jc3vr_view::{hooks::graphics_engine::capture, recorder::tracking, vr};
 use windows::Win32::{
     Foundation::HMODULE,
     System::{LibraryLoader::DisableThreadLibraryCalls, SystemServices::DLL_PROCESS_ATTACH},

@@ -14,7 +14,7 @@
 use std::time::{Duration, Instant};
 
 use glam::{Mat4, Vec3};
-use jc3vr_render::headpose::{anchor, eye_arm, neck_delta};
+use jc3vr_view::headpose::{anchor, eye_arm, neck_delta};
 use parking_lot::Mutex;
 
 use crate::controllers::{

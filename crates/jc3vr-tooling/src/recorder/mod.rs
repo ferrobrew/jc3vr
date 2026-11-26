@@ -18,7 +18,7 @@
 //!
 //! With it off, the host records the game's mirror window on screen with the desktop's audio
 //! (protocol version 1, which only the relay speaks). What the video shows is then what the desktop
-//! mirror shows (`jc3vr_render::vr::mirror`), at the window's size, so the mirror view decides what is
+//! mirror shows (`jc3vr_view::vr::mirror`), at the window's size, so the mirror view decides what is
 //! recorded and the window must be on screen.
 //!
 //! The payload writes the take's sidecar, `frames.jsonl`: one line per rendered frame with the wall
@@ -44,7 +44,7 @@ use std::{
 };
 
 use jc3vr_core::{config::engine::ConfigSlot, session::CaptureFolder};
-use jc3vr_render::vr::MirrorFrame;
+use jc3vr_view::vr::MirrorFrame;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use windows::Win32::Graphics::Direct3D11::{
@@ -206,8 +206,8 @@ pub fn start_stamped(stamp: &str) {
     // Read before the state lock: neither call takes it, and the title read sends no message to the
     // window's thread.
     let window = WindowHint {
-        title: jc3vr_render::vr::window::title(),
-        client_size: jc3vr_render::vr::window::client_size().map(|(w, h)| [w, h]),
+        title: jc3vr_view::vr::window::title(),
+        client_size: jc3vr_view::vr::window::client_size().map(|(w, h)| [w, h]),
     };
     let mut state = STATE.lock();
     state.reap();
@@ -361,7 +361,7 @@ pub fn frame_rendered() -> Option<u32> {
     let unix_ms = jiff::Timestamp::now().as_millisecond();
     // SAFETY: a read of the clock singleton's counters, which the render thread only reads.
     let game_run_time_us = unsafe { jc3gi::clock::Clock::get().map(|c| c.m_GameRunTimeMicro) };
-    let views = jc3vr_render::vr::capture_views();
+    let views = jc3vr_view::vr::capture_views();
     let mut state = STATE.lock();
     let frame = state.frame_index;
     let take = state.takes.active().filter(|_| state.recording)?;

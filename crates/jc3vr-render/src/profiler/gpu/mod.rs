@@ -169,9 +169,9 @@ pub unsafe fn begin_dispatch(ctx: *mut HContext_t) {
     };
     // The far dispatch of a share frame gets its own lane label; it reports eye 0 but is a
     // different workload (the G-buffer-only far-field render).
-    let lane = if crate::stereo::far_phase() {
+    let lane = if jc3vr_view::stereo::far_phase() {
         DispatchLane::Far
-    } else if crate::stereo::draw_index() == 0 {
+    } else if jc3vr_view::stereo::draw_index() == 0 {
         DispatchLane::Eye0
     } else {
         DispatchLane::Eye1
@@ -272,9 +272,9 @@ pub fn nested_seam(seam: GpuSeam) -> Option<IntervalGuard> {
 }
 
 /// Whether the per-pass and detail intervals should be recorded: while puffin collects, or while a
-/// benchmark run asks for them (`crate::testing::benchmark::gpu_passes`).
+/// benchmark run asks for them (`jc3vr_view::testing::benchmark::gpu_passes`).
 pub fn passes_wanted() -> bool {
-    puffin::are_scopes_on() || crate::testing::benchmark::gpu_passes::armed()
+    puffin::are_scopes_on() || jc3vr_view::testing::benchmark::gpu_passes::armed()
 }
 
 /// Brackets one render pass with a GPU timestamp pair, nested inside the seam that is drawing it.

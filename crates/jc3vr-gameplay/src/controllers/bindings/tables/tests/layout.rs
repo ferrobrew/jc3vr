@@ -3,7 +3,7 @@
 
 use std::collections::BTreeSet;
 
-use jc3vr_render::vr::input::flight_pose::GestureSample;
+use jc3vr_view::vr::input::flight_pose::GestureSample;
 
 use super::*;
 use crate::controllers::{

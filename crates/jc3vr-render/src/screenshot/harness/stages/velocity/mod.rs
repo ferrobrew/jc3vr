@@ -7,6 +7,7 @@ use anyhow::{Context, Result, ensure};
 use jc3gi::graphics_engine::graphics_engine::GraphicsEngine;
 #[cfg(feature = "profiler")]
 use jc3gi::graphics_engine::render_engine::RenderBlockTypeBase;
+use jc3vr_view::stereo::{dispatch::RenderMode, draw_index};
 use serde::Serialize;
 use windows::{
     Win32::Graphics::{
@@ -18,9 +19,8 @@ use windows::{
 
 use crate::{
     screenshot::{
-        create_staging,
+        create_staging, harness,
         harness::{
-            self,
             bound_buffer::{ShaderStage, read_bound_constant_buffer},
             patch_draw,
             stages::{
@@ -29,11 +29,7 @@ use crate::{
             },
         },
     },
-    stereo::{
-        dispatch::RenderMode,
-        draw_index,
-        single_pass::{shader_identity, vertex_identity_lookup},
-    },
+    stereo::single_pass::{shader_identity, vertex_identity_lookup},
 };
 
 const POINTS: [[u32; 2]; 6] = [

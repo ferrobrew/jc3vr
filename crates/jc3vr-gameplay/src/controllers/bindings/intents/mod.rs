@@ -34,7 +34,7 @@ use jc3vr_input::{
         vocabulary::{ActionId, OnFootAction, WingsuitAction},
     },
 };
-use jc3vr_render::vr::input::{
+use jc3vr_view::vr::input::{
     semantic::{
         bound::{BoundSet, Physical, PhysicalSet},
         defaults::{Component, default_binding},

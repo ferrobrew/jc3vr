@@ -17,7 +17,7 @@ pub fn hook_library() -> HookLibrary {
 
 #[detour(address = jc3gi::clock::Clock::Update_ADDRESS)]
 fn clock_update(clock: *mut Clock) {
-    if crate::stereo::active() && UPDATED_THIS_FRAME.swap(true, Ordering::Relaxed) {
+    if jc3vr_view::stereo::active() && UPDATED_THIS_FRAME.swap(true, Ordering::Relaxed) {
         return;
     }
     CLOCK_UPDATE.get().unwrap().call(clock);

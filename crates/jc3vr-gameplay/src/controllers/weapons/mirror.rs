@@ -4,7 +4,7 @@
 //! after each render publication ([`pouches_rendered`]).
 
 use glam::Vec3;
-use jc3vr_render::controllers::overlay::primitive::{Anchor, Primitive};
+use jc3vr_view::controllers::overlay::primitive::{Anchor, Primitive};
 
 use crate::controllers::{
     body::mirror::{

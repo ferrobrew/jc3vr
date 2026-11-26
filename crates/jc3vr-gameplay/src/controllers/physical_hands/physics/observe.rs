@@ -12,7 +12,7 @@ use jc3vr_input::{
     frame::{Hand, Pose},
     haptics::cues::Sustain,
 };
-use jc3vr_render::{headpose, headpose::teleport, vr::recenter_count};
+use jc3vr_view::{headpose, headpose::teleport, vr::recenter_count};
 use parking_lot::Mutex;
 
 use crate::controllers::{

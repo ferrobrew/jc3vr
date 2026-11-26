@@ -6,13 +6,12 @@
 //! camera constants, how they are uploaded and bound, and how they are pinned to one eye for a
 //! re-issue that has to submit each eye separately.
 
-use crate::{
-    stereo::{
-        layout::{Capability, capability},
-        single_pass::*,
-    },
+use jc3vr_view::{
+    stereo::layout::{Capability, capability, collapse_active, double_wide_active},
     vr::render_params,
 };
+
+use crate::stereo::single_pass::*;
 
 #[cfg(test)]
 mod tests;
@@ -166,7 +165,7 @@ fn write_meye(rows: &mut [Vector4; STEREO_CB_TOTAL_ROWS], eye: usize, m_eye: gla
 }
 
 /// Compute distinct per-eye `cb13` rows from the pristine center render-camera transform and the
-/// per-eye [`EyeRenderParams`](crate::vr::frame::EyeRenderParams), replicating the double-draw's
+/// per-eye [`EyeRenderParams`](jc3vr_view::vr::frame::EyeRenderParams), replicating the double-draw's
 /// per-eye camera math (`hooks/camera.rs`) purely in mod code -- so the single walk produces both
 /// eyes. Returns `None` (falling back to the mirror) if the center transform or per-eye params are
 /// not available this frame.
@@ -177,7 +176,7 @@ fn write_meye(rows: &mut [Vector4; STEREO_CB_TOTAL_ROWS], eye: usize, m_eye: gla
 /// The engine `Matrix4` <-> `glam::Mat4` bridge is a transpose, so the math is done in glam
 /// column-vector form and converted back once (see the `Matrix4` doc-comment).
 fn compute_dual_eye_rows(engine: &RenderEngine) -> Option<[Vector4; STEREO_CB_TOTAL_ROWS]> {
-    let center_transform = crate::stereo::STEREO_STATE.lock().center_transform?;
+    let center_transform = jc3vr_view::stereo::STEREO_STATE.lock().center_transform?;
     let center_world = glam::Mat4::from(center_transform);
     let center_campos = engine.m_VPGlobalConstData[4];
 
@@ -291,7 +290,7 @@ fn compute_dual_eye_rows(engine: &RenderEngine) -> Option<[Vector4; STEREO_CB_TO
             }
             m
         };
-        let eye_diag = |p: &crate::vr::EyeRenderParams, i: usize| EyeDiagnostics {
+        let eye_diag = |p: &jc3vr_view::vr::EyeRenderParams, i: usize| EyeDiagnostics {
             world_offset: p.world_offset(center_world).to_array(),
             orientation_delta_quat: p.orientation_delta.to_array(),
             orientation_delta_deg: p.orientation_delta.to_axis_angle().1.to_degrees(),

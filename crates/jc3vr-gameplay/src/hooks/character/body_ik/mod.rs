@@ -18,7 +18,7 @@ use jc3gi::{
     types::math::Vector3,
 };
 use jc3vr_input::frame::Hand;
-use jc3vr_render::{headpose, vr::VR_CONFIG};
+use jc3vr_view::{headpose, vr::VR_CONFIG};
 use parking_lot::Mutex;
 
 use crate::{

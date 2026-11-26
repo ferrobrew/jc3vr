@@ -42,15 +42,14 @@ use jc3gi::{
     graphics_engine::{graphics_engine::RenderContext, render_engine::RenderEngine},
     types::math::{Matrix4, Vector4},
 };
+use jc3vr_view::{
+    stereo::{STEREO_STATE, engine_context::EngineContext},
+    vr::render_params,
+};
 use parking_lot::Mutex;
 use windows::Win32::Graphics::Direct3D11::{
     D3D11_BIND_CONSTANT_BUFFER, D3D11_BUFFER_DESC, D3D11_CPU_ACCESS_WRITE, D3D11_MAP_WRITE_DISCARD,
     D3D11_MAPPED_SUBRESOURCE, D3D11_USAGE_DYNAMIC, ID3D11Buffer, ID3D11DeviceContext,
-};
-
-use crate::{
-    stereo::{STEREO_STATE, engine_context::EngineContext},
-    vr::render_params,
 };
 
 /// A reflection pass's bytecode rewritten for the collapse, or `None` for any other shader.

@@ -11,7 +11,7 @@ use jc3vr_core::{
 use jc3vr_gameplay::controllers::config::CONTROLLERS_CONFIG;
 use jc3vr_hud::hud::{atlas, config::HUD_CONFIG, world_markers, world_markers::DistanceSource};
 use jc3vr_input::frame::Hand;
-use jc3vr_render::{
+use jc3vr_view::{
     vr,
     vr::{
         DirectArm, DirectStatus, PublishedStatus, ResolutionStatus, VR_CONFIG, input as vr_input,
@@ -286,7 +286,7 @@ fn fingerprint(hand: Hand) -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use jc3vr_render::vr::input::restart::RestartReason;
+    use jc3vr_view::vr::input::restart::RestartReason;
 
     use super::*;
     use crate::status::Health;

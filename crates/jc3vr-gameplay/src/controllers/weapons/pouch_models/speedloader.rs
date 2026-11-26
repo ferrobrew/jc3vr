@@ -209,7 +209,7 @@ impl Group {
 #[cfg(test)]
 mod tests {
     use jc3vr_input::frame::{Hand, Pose};
-    use jc3vr_render::controllers::cockpit::CockpitTransform;
+    use jc3vr_view::controllers::cockpit::CockpitTransform;
 
     use super::*;
     use crate::controllers::weapons::reload::plan;

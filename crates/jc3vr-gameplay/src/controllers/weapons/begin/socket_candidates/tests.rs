@@ -2,7 +2,7 @@ use std::time::{Duration, Instant};
 
 use glam::{Quat, Vec3};
 use jc3vr_input::frame::{Hand, Pose};
-use jc3vr_render::controllers::{
+use jc3vr_view::controllers::{
     cockpit::CockpitTransform,
     overlay::primitive::{Anchor, Primitive},
 };

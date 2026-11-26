@@ -17,9 +17,10 @@
 use glam::Quat;
 use glam::{Mat4, Vec3, Vec4};
 use jc3gi::camera::camera_manager::CameraManager;
+use jc3vr_view::stereo::STEREO_STATE;
 use windows::Win32::Graphics::Direct3D11::D3D11_VIEWPORT;
 
-use crate::stereo::{STEREO_STATE, single_pass::collapse_ui_eye_override};
+use crate::stereo::single_pass::collapse_ui_eye_override;
 
 /// One eye's camera.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -70,7 +71,7 @@ impl EyeView {
 /// The current draw's eye, and the viewport to draw it into when it is not the whole target (one
 /// half of the collapse's shared target). `None` when no camera is readable.
 pub fn current(eye: usize) -> Option<(EyeView, Option<D3D11_VIEWPORT>)> {
-    let vr = crate::vr::render_params(eye);
+    let vr = jc3vr_view::vr::render_params(eye);
     if let Some((viewport, _)) = collapse_ui_eye_override() {
         let center = STEREO_STATE.lock().center_transform?;
         let params = vr?;
@@ -171,12 +172,12 @@ mod tests {
         let offset = Vec3::new(0.032, 0.0, 0.004);
         let delta = Quat::from_rotation_y(0.087);
         let projection = reverse_z(NEAR, FAR);
-        let params = crate::vr::EyeRenderParams {
+        let params = jc3vr_view::vr::EyeRenderParams {
             projection_standard: projection.into(),
             projection_reverse_z: projection.into(),
             local_offset: center.inverse().transform_vector3(offset),
             orientation_delta: delta,
-            convention: crate::vr::ProjectionConvention::ManualReverseZ,
+            convention: jc3vr_view::vr::ProjectionConvention::ManualReverseZ,
             jitter: None,
         };
         let eye_world = params.resolve(center);

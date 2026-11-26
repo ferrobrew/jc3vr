@@ -3,7 +3,7 @@
 //! Normally the flat egui overlay is drawn straight onto the mirror's back buffer by
 //! [`EguiState::render`](crate::egui_impl::EguiState::render). That call mutates the shared
 //! `EguiState` and issues D3D work, so it is only safe on the game thread after the frame's egui
-//! pass — which the deferred frame tail ([`jc3vr_render::vr::tail`]) is not. So when the tail is deferred,
+//! pass — which the deferred frame tail ([`jc3vr_view::vr::tail`]) is not. So when the tail is deferred,
 //! render the overlay once on the draw thread, into an offscreen texture, and let the mirror composite
 //! that texture from whichever thread runs it — the model the floating panel (issue #24) uses.
 //!
@@ -38,9 +38,9 @@ pub fn release_on_eject() {
 /// gate) and the mirror thread (the composite gate), so it uses the draw-safe render-params signal,
 /// not the VR runtime lock (see [`crate::hud::egui_panel::is_active`] for why).
 pub fn is_active() -> bool {
-    jc3vr_render::vr::render_params(0).is_some()
+    jc3vr_view::vr::render_params(0).is_some()
         && !jc3vr_core::director::clean_view::hides_desktop()
-        && jc3vr_render::vr::VR_CONFIG.query(|vr| vr.mirror)
+        && jc3vr_view::vr::VR_CONFIG.query(|vr| vr.mirror)
         && !crate::hud::config::HUD_CONFIG.query(|hud| hud.egui_panel.enabled)
 }
 
@@ -99,7 +99,7 @@ pub(crate) fn render(context: &ID3D11DeviceContext, device: &Device, target: &Te
 /// texture using the *live* rect, so a stale size here stretches the UI by exactly the resize ratio,
 /// which is the distortion this overlay is sized to avoid.
 fn live_client_size() -> Option<(u32, u32)> {
-    jc3vr_render::vr::window::client_size().or_else(crate::hud::cursor::client_size)
+    jc3vr_view::vr::window::client_size().or_else(crate::hud::cursor::client_size)
 }
 
 /// A clone of the overlay texture's shader-resource view for the desktop mirror composite, or `None`

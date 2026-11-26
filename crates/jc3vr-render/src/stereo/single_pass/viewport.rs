@@ -12,9 +12,10 @@
 
 use std::cell::Cell;
 
+use jc3vr_view::stereo::layout::collapse_active;
 use windows::Win32::Foundation::RECT;
 
-use crate::stereo::{layout::collapse_active, single_pass::*};
+use crate::stereo::single_pass::*;
 
 thread_local! {
     static WAVE_SIMULATION: Cell<bool> = const { Cell::new(false) };
@@ -86,11 +87,11 @@ pub(super) fn restore_viewport_slots(d3d: EngineContext, saved: ViewportSlots) {
 }
 
 /// Whether `viewport` covers the scene render target, as opposed to one of the reduced-resolution
-/// post-effect targets. Compared against [`crate::stereo::render_size`] -- the engine's
+/// post-effect targets. Compared against [`jc3vr_view::stereo::render_size`] -- the engine's
 /// `m_BackBufferLinear`, which under the collapse's double-wide is the full two-eye width -- with a
 /// pixel of slack for the engine's own rounding.
 pub(super) fn is_scene_sized(viewport: D3D11_VIEWPORT) -> bool {
-    let Some((width, height)) = crate::stereo::render_size() else {
+    let Some((width, height)) = jc3vr_view::stereo::render_size() else {
         // Without a render size to compare against, take the viewport: the alternative is never
         // recording one and losing the eye split entirely.
         return true;

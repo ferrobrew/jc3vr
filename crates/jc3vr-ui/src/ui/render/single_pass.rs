@@ -5,12 +5,14 @@ use std::sync::atomic::Ordering;
 
 use jc3vr_core::config::engine::Parts;
 use jc3vr_render::{
-    far_field::{FAR_FIELD_CONFIG, FarFieldMode},
     hooks::{draw_count::EFFECT_DEPTH_COPIES_SKIPPED, graphics_engine::shader},
+    stereo::single_pass,
+};
+use jc3vr_view::{
+    far_field::{FAR_FIELD_CONFIG, FarFieldMode},
     stereo::{
         config::{STEREO_CONFIG, StereoConfig, set_single_pass_feature},
-        single_pass,
-        single_pass::Capability,
+        layout::{self, Capability},
     },
 };
 
@@ -915,7 +917,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut impl Parts) {
             });
         });
 
-        let capability = single_pass::probe_if_needed();
+        let capability = layout::probe_if_needed();
         ui.label(match capability {
             Capability::Supported => "Viewport routing: supported ✓",
             Capability::Unsupported => "Viewport routing: UNSUPPORTED (single-pass will stay inert)",
@@ -966,7 +968,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut impl Parts) {
 }
 
 /// Whether the config asks for the single-pass collapse, ignoring the runtime gates
-/// ([`jc3vr_render::stereo::single_pass::collapse_active`] also requires the device capability and a live
+/// ([`jc3vr_view::stereo::layout::collapse_active`] also requires the device capability and a live
 /// session). The UI needs the *intent*, so a mutually-exclusive option greys out as soon as the boxes
 /// are ticked rather than only once the collapse is running.
 pub(super) fn collapse_configured(stereo: &StereoConfig) -> bool {

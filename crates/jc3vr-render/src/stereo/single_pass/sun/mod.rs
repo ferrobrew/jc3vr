@@ -22,27 +22,22 @@ use jc3gi::{
     graphics_engine::{graphics_engine::RenderContext, render_engine::RenderPassId},
     types::math::Vector4,
 };
+use jc3vr_view::stereo::{engine_context::EngineContext, layout::collapse_active};
 use windows::{
     Win32::Graphics::Direct3D11::{ID3D11Buffer, ID3D11DeviceContext, ID3D11VertexShader},
     core::Interface,
 };
 
-use crate::stereo::{
-    layout::collapse_active,
-    single_pass::{
-        CB13, EngineContext, PATCHED_VS_NAMES,
-        cb13::{
-            STEREO_CB_TOTAL_ROWS, pin_rows_to_eye, preserve_reprojection_depth, write_cb13_rows,
-        },
-        eye_split_state, in_gbuffer_range,
-        per_eye_reissue::PerEyeReissue,
-        per_eye_reissue_eye, probes,
-        viewport::{
-            bind_both_viewport_slots, capture_viewport_slots, eye_half_viewport,
-            restore_viewport_slots,
-        },
-        viewport_record,
+use crate::stereo::single_pass::{
+    CB13, PATCHED_VS_NAMES,
+    cb13::{STEREO_CB_TOTAL_ROWS, pin_rows_to_eye, preserve_reprojection_depth, write_cb13_rows},
+    eye_split_state, in_gbuffer_range,
+    per_eye_reissue::PerEyeReissue,
+    per_eye_reissue_eye, probes,
+    viewport::{
+        bind_both_viewport_slots, capture_viewport_slots, eye_half_viewport, restore_viewport_slots,
     },
+    viewport_record,
 };
 
 /// Whether `pass` is the sun's render pass.

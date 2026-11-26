@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use glam::{Quat, Vec3};
-use jc3vr_render::controllers::overlay::{
+use jc3vr_view::controllers::overlay::{
     primitive::{Anchor, DepthMode, HandPose, Primitive, Source},
     store,
 };

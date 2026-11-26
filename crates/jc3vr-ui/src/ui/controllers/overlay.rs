@@ -3,7 +3,8 @@
 
 use egui::Ui;
 use jc3vr_gameplay::controllers::body::mirror;
-use jc3vr_render::controllers::overlay::{pass::OverlayStatus, primitive::Source};
+use jc3vr_render::controllers::overlay::pass::OverlayStatus;
+use jc3vr_view::controllers::overlay::primitive::Source;
 
 pub(super) fn overlay_readout(ui: &mut Ui, status: &OverlayStatus) {
     ui.label(format!(

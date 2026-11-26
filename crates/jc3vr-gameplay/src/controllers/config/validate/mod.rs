@@ -19,7 +19,7 @@ mod vehicles;
 mod weapons;
 
 use jc3vr_core::config::engine::{Invalid, range, vec2, vec3};
-use jc3vr_render::headpose::config::VrTurnConfig;
+use jc3vr_view::headpose::config::VrTurnConfig;
 
 use crate::controllers::{
     config::{ControllersConfig, SightTable},

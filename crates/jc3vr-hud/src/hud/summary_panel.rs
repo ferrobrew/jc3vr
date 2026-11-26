@@ -59,13 +59,13 @@ use crate::{
 /// after the other panels, with the engine context mutex held.
 pub(crate) fn draw(context: &ID3D11DeviceContext, device: &Device, target: &Texture, eye: usize) {
     let mut panel = PANEL.lock();
-    if jc3vr_render::stereo::dispatch::first_ui_eye(eye) {
+    if jc3vr_view::stereo::dispatch::first_ui_eye(eye) {
         let (enabled, dominant, config) = CONTROLLERS_CONFIG
             .query(|c| (c.enabled && c.summary.enabled, c.acting_hand(), c.summary));
         let active = enabled
             && scheme::is_controllers()
             && !jc3vr_core::director::clean_view::hides_everything()
-            && jc3vr_render::vr::render_params(0).is_some();
+            && jc3vr_view::vr::render_params(0).is_some();
         panel.prepare(context, device, active, dominant.other(), &config);
     }
     panel.draw(context, device, target);
@@ -173,12 +173,12 @@ impl Panel {
         self.last_prepare = Some(now);
         self.corners = None;
 
-        let head = jc3vr_render::hud::render_camera_pose().map(|(position, orientation)| Pose {
+        let head = jc3vr_view::hud::render_camera_pose().map(|(position, orientation)| Pose {
             position,
             orientation,
         });
         let grip =
-            late::drawn_hands(jc3vr_render::hooks::camera::last_dtf())[off.index()].map(|h| h.grip);
+            late::drawn_hands(jc3vr_view::hooks::camera::last_dtf())[off.index()].map(|h| h.grip);
         let pose = grip.map(|grip| wrist_pose(grip, off, &PLACEMENT));
         let published = summary::published();
 

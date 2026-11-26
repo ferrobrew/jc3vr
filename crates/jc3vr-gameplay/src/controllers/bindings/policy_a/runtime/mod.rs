@@ -11,12 +11,13 @@ use jc3vr_input::{
         vocabulary::{ActionId, GlobalAction, MenuAction},
     },
 };
-use jc3vr_render::vr::input::semantic::{
+use jc3vr_view::vr::input::semantic::{
     SCHEMA_VERSION,
     bound::Physical,
     defaults::{Component, default_binding},
     frame::ActionValue,
-    history::{self, Publication},
+    history,
+    history::Publication,
 };
 #[cfg(test)]
 use tracking_format::input::policy::PolicyOutcome;

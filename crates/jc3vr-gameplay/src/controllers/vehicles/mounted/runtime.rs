@@ -18,7 +18,7 @@ use jc3gi::{
     input::input_action_map::Action,
 };
 use jc3vr_input::frame::Hand;
-use jc3vr_render::controllers::cockpit::CockpitTransform;
+use jc3vr_view::controllers::cockpit::CockpitTransform;
 use parking_lot::Mutex;
 
 use crate::controllers::{

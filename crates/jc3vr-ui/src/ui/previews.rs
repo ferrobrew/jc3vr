@@ -1,12 +1,13 @@
 //! The Previews and performance feature's controls: the per-eye pipeline thumbnails, the fusable
 //! stereo pair, and the live render-target views, all fed by the capture state in
-//! [`jc3vr_render::hooks::graphics_engine::capture`]. The performance readout is in
+//! [`jc3vr_view::hooks::graphics_engine::capture`]. The performance readout is in
 //! [`crate::ui::performance`].
 
 use std::sync::atomic::Ordering;
 
-use jc3vr_render::hooks::graphics_engine::capture::{
-    self, EGUI_DEBUG_RENDER_STATE, EguiDebugRenderState,
+use jc3vr_view::hooks::graphics_engine::{
+    capture,
+    capture::{EGUI_DEBUG_RENDER_STATE, EguiDebugRenderState},
 };
 use parking_lot::Mutex;
 use windows::core::Interface;

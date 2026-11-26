@@ -507,7 +507,7 @@ pub(super) fn fetch_view_projection() -> Option<Matrix4> {
         (camera.m_View, camera.m_ViewProjectionF)
     };
     Some(
-        match jc3vr_render::vr::render_params(jc3vr_render::stereo::draw_index()) {
+        match jc3vr_view::vr::render_params(jc3vr_view::stereo::draw_index()) {
             Some(params) if params.jitter.is_some() => view * params.unjittered_camera_projection(),
             _ => view_projection,
         },

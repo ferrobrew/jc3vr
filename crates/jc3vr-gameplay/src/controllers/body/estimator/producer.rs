@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 
 use body_estimator::{GripOffset, LiveFrame, SparseWindow, WindowBuilder};
 use glam::{DQuat, Quat, Vec3};
-use jc3vr_render::vr;
+use jc3vr_view::vr;
 use parking_lot::Mutex;
 
 use crate::controllers::{

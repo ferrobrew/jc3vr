@@ -11,7 +11,7 @@
 //! single sim-side *center* previous view-projection while each eye rasterizes with its own, so every
 //! static pixel carries a spurious depth-dependent parallax vector of opposite sign per eye, and FSR
 //! mis-reprojects each eye's temporal history (the per-eye shadow-edge flicker of issue #10). Given
-//! the two clip-to-previous-clip reprojection matrices from [`crate::stereo::VpHistory`], the shader
+//! the two clip-to-previous-clip reprojection matrices from [`jc3vr_view::stereo::VpHistory`], the shader
 //! reconstructs each pixel from the raster depth and re-anchors its vector at the eye's own previous
 //! pose; see `velocity_decode.hlsl` for the math.
 //!

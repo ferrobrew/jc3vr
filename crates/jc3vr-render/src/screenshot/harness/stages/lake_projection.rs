@@ -9,6 +9,7 @@ use jc3gi::{
     types::math::Matrix4,
     water_patch_manager::WaterPatchManager,
 };
+use jc3vr_view::stereo::{config::STEREO_CONFIG, draw_index};
 use parking_lot::Mutex;
 use serde::Serialize;
 use windows::{Win32::Graphics::Direct3D11::ID3D11DeviceContext, core::Interface};
@@ -20,7 +21,7 @@ use crate::{
         diagnostic_capture_id, frame_identity, lake_producer_requested, patch_draw,
         screenshot_wants_eyes, water_reflection_requested, water_surface_inputs_requested,
     },
-    stereo::{config::STEREO_CONFIG, draw_index, single_pass::vertex_identity_lookup},
+    stereo::single_pass::vertex_identity_lookup,
 };
 
 #[derive(Clone, Debug, Serialize)]
@@ -129,7 +130,7 @@ impl Drop for SnapshotGuard {
 pub(crate) unsafe fn eye_width_snapshot(pass: *mut RenderPass) -> Option<SnapshotGuard> {
     if !screenshot_wants_eyes()
         || draw_index() != 0
-        || !crate::stereo::layout::double_wide_active()
+        || !jc3vr_view::stereo::layout::double_wide_active()
         // The production switch already sizes the reflection camera to one eye.
         || STEREO_CONFIG.query(|c| c.single_pass.water_reflection_eye_size)
         || !water_surface_inputs_requested()

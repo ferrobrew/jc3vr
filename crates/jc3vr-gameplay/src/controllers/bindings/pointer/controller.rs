@@ -9,7 +9,7 @@
 use std::time::Instant;
 
 use jc3vr_input::frame::{ActionSetKind, ControllerFrame, Hand, MAX_FRAME_AGE};
-use jc3vr_render::{
+use jc3vr_view::{
     headpose,
     hud::pointer::panel::{PanelHit, aim_at_panel, intersect_panel},
 };

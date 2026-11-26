@@ -6,7 +6,7 @@ use std::time::Instant;
 use glam::Vec3;
 use jc3gi::character::character::Character;
 use jc3vr_input::frame::Hand;
-use jc3vr_render::controllers::cockpit::CockpitTransform;
+use jc3vr_view::controllers::cockpit::CockpitTransform;
 
 use crate::controllers::{
     aim::RAY_LENGTH_M,

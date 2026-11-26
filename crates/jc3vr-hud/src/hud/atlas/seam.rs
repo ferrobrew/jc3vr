@@ -15,7 +15,7 @@ use jc3gi::ui::{
     ui_manager::UIManager,
 };
 use jc3vr_gameplay::controllers::scheme;
-use jc3vr_render::hud::world_markers::stage_frame::StageFrame;
+use jc3vr_view::hud::world_markers::stage_frame::StageFrame;
 use parking_lot::Mutex;
 
 use crate::hud::{

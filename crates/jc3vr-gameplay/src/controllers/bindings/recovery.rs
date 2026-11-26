@@ -13,7 +13,7 @@
 use std::time::{Duration, Instant};
 
 use jc3vr_input::frame::{Button, ButtonSet, ControllerFrame, Edges, Hand, HandFrame};
-use jc3vr_render::{
+use jc3vr_view::{
     headpose::config::{VrTurnConfig, VrTurnMode},
     vr::input::{config::InputConfig, semantic::admission::hand_usable},
 };

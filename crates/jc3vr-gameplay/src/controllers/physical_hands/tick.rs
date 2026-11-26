@@ -19,7 +19,7 @@ use jc3vr_input::{
     frame::{Hand, Pose},
     haptics::cues::{Event, Sustain},
 };
-use jc3vr_render::{controllers::cockpit::CockpitTransform, headpose::teleport};
+use jc3vr_view::{controllers::cockpit::CockpitTransform, headpose::teleport};
 use parking_lot::Mutex;
 use windows::Win32::System::Threading::GetCurrentThreadId;
 

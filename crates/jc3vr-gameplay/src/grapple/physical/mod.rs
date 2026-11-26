@@ -38,7 +38,7 @@ use jc3vr_input::{
     frame::Hand,
     haptics::cues::{Event, Sustain},
 };
-use jc3vr_render::headpose;
+use jc3vr_view::headpose;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 

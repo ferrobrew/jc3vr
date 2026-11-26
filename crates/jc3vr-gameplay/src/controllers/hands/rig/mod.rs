@@ -17,7 +17,7 @@ use jc3gi::{
     character::character::{AnimationController, Character},
 };
 use jc3vr_input::frame::Hand;
-use jc3vr_render::{headpose, headpose::skeleton::SkeletonKey};
+use jc3vr_view::{headpose, headpose::skeleton::SkeletonKey};
 use parking_lot::Mutex;
 
 use crate::{

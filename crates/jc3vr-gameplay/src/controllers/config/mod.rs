@@ -10,7 +10,7 @@
 //!
 //! Stick turning is not configured here: the controller scheme's right stick drives the same body
 //! yaw as the gamepad's look input, so it shares
-//! [`VrTurnConfig`](jc3vr_render::headpose::config::VrTurnConfig) (`headpose.vr_turn`) rather than keeping
+//! [`VrTurnConfig`](jc3vr_view::headpose::config::VrTurnConfig) (`headpose.vr_turn`) rather than keeping
 //! a second copy of the smooth and snap settings.
 //!
 //! Each group's type and its slot live beside the subsystem that owns them (`WEAPONS_CONFIG` beside
@@ -23,7 +23,7 @@ pub mod validate;
 
 use jc3vr_core::config::engine::ConfigSlot;
 use jc3vr_input::frame::Hand;
-use jc3vr_render::vr::input::config::InputConfig;
+use jc3vr_view::vr::input::config::InputConfig;
 use serde::{Deserialize, Serialize};
 
 pub use crate::controllers::{

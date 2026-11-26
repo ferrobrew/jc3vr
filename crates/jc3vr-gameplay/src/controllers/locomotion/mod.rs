@@ -40,7 +40,7 @@ use jc3gi::{
     input::input_action_map::{Action, LocalPlayerActionMap},
     types::math::Vector3,
 };
-use jc3vr_render::headpose;
+use jc3vr_view::headpose;
 use parking_lot::Mutex;
 
 use crate::controllers::{

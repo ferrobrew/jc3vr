@@ -33,7 +33,7 @@ use std::{
 
 use anyhow::Context as _;
 use jc3vr_core::session::RecordingFile;
-use jc3vr_render::vr::{CaptureEyeView, CaptureViews, MirrorDraw, MirrorFrame, MirrorView};
+use jc3vr_view::vr::{CaptureEyeView, CaptureViews, MirrorDraw, MirrorFrame, MirrorView};
 use parking_lot::Mutex;
 use serde::Serialize;
 

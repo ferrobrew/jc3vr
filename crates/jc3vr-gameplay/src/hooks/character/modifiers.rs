@@ -23,7 +23,7 @@ use jc3gi::{
         Character, get_Character_StuntCombatModifier, get_Character_StuntNoncombatModifier,
     },
 };
-use jc3vr_render::headpose::{Source, source};
+use jc3vr_view::headpose::{Source, source};
 use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::body::unarmed::{self, ModifierSuppression, keeps_weapon_modifier};

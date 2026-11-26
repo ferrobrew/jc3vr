@@ -2,7 +2,7 @@
 //! the default bindings stand in as the attribution, and the raw protected routes are taken at
 //! their fixed location.
 
-use jc3vr_render::vr::input::semantic::bound::opaque;
+use jc3vr_view::vr::input::semantic::bound::opaque;
 
 use super::*;
 

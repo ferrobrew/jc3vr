@@ -3,7 +3,7 @@
 //! scene's depth.
 //!
 //! The draw reads what it needs from the controllers through the [`OverlayInputs`] they register
-//! ([`crate::controllers::overlay::inputs`]).
+//! ([`jc3vr_view::controllers::overlay::inputs`]).
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -11,21 +11,23 @@ use glam::Vec3;
 use jc3gi::graphics_engine::{device::Device, graphics_engine::GraphicsEngine, texture::Texture};
 use jc3vr_core::hooks::in_gameplay;
 use jc3vr_input::frame::Pose;
+use jc3vr_view::controllers::overlay::{
+    inputs,
+    inputs::{DrawSettings, OverlayInputs},
+    primitive::{Primitive, Source},
+    resolve,
+    resolve::{Frame, GpuPrimitive},
+    store,
+};
 use parking_lot::Mutex;
 use windows::{
     Win32::Graphics::Direct3D11::{D3D11_VIEWPORT, ID3D11DeviceContext},
     core::Interface as _,
 };
 
-// The gameplay overlay names `DrawSettings` here until its import moves to the inputs module.
-pub use crate::controllers::overlay::inputs::DrawSettings;
 use crate::controllers::overlay::{
-    inputs::{self, OverlayInputs},
-    primitive::{Primitive, Source},
     renderer::{EyeConstants, EyeDraw, Renderer},
-    resolve,
-    resolve::{Frame, GpuPrimitive},
-    store, view,
+    view,
     view::EyeView,
 };
 
@@ -61,7 +63,7 @@ pub fn status() -> OverlayStatus {
 /// engine's context lock and, under the collapse, has selected the eye with
 /// `set_collapse_ui_eye`.
 pub fn draw(context: &ID3D11DeviceContext, device: &Device, target: &Texture, eye: usize) {
-    if crate::stereo::far_phase() || jc3vr_core::director::clean_view::hides_everything() {
+    if jc3vr_view::stereo::far_phase() || jc3vr_core::director::clean_view::hides_everything() {
         return;
     }
     let Some(inputs) = inputs::registered() else {
@@ -71,7 +73,7 @@ pub fn draw(context: &ID3D11DeviceContext, device: &Device, target: &Texture, ey
         STATUS.lock().drawn = 0;
         return;
     };
-    let frame = crate::stereo::dispatch::first_ui_eye(eye).then(|| frame_inputs(inputs));
+    let frame = jc3vr_view::stereo::dispatch::first_ui_eye(eye).then(|| frame_inputs(inputs));
     let camera = view::current(eye);
     // SAFETY: the engine singleton and its main depth texture are live while the engine renders.
     let depth = unsafe { GraphicsEngine::get().and_then(|g| g.m_MainDepthTexture.as_ref()) };
@@ -171,9 +173,9 @@ static DRAW_ERROR_LOGGED: AtomicBool = AtomicBool::new(false);
 
 /// The frame's resolution inputs, with the head as the origin; `None` when no camera is readable.
 /// The head-anchored primitives ride the render camera, whose position is the eye midpoint the
-/// tick measured their offsets from ([`crate::hooks::camera::eye_point`]).
+/// tick measured their offsets from ([`jc3vr_view::hooks::camera::eye_point`]).
 fn frame_inputs(inputs: &OverlayInputs) -> Option<Frame> {
-    let (position, orientation) = crate::hud::render_camera_pose()?;
+    let (position, orientation) = jc3vr_view::hud::render_camera_pose()?;
     Some(Frame {
         origin: position,
         head: Pose {

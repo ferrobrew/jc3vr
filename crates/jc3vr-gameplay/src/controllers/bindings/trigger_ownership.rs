@@ -8,7 +8,7 @@ use jc3vr_input::{
         vocabulary::{ActionId, HelicopterAction, LandVehicleAction, OnFootAction, PlaneAction},
     },
 };
-use jc3vr_render::vr::input::semantic::bound::{Physical, PhysicalSet};
+use jc3vr_view::vr::input::semantic::bound::{Physical, PhysicalSet};
 
 use crate::controllers::{
     bindings::{
@@ -292,7 +292,7 @@ impl Sink for ChangedRoutes<'_> {
 #[cfg(test)]
 mod tests {
     use jc3vr_input::semantic::vocabulary::WingsuitAction;
-    use jc3vr_render::vr::input::semantic::{bound::PhysicalSet, defaults::default_binding};
+    use jc3vr_view::vr::input::semantic::{bound::PhysicalSet, defaults::default_binding};
 
     use super::*;
     use crate::controllers::{

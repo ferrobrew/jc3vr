@@ -63,7 +63,7 @@ use jc3vr_input::{
     frame::{self, Hand},
     haptics::cues::{Event, Sustain},
 };
-use jc3vr_render::{
+use jc3vr_view::{
     headpose::xr,
     vr::{VR_CONFIG, recenter_count},
 };

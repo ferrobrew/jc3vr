@@ -6,7 +6,7 @@
 
 use jc3gi::graphics_engine::{device::Device, texture::Texture};
 use jc3vr_core::frame_timing::{self, Slot};
-use jc3vr_render::{
+use jc3vr_view::{
     controllers::overlay::inputs::{OverlayInputs, register_overlay_inputs},
     hooks::{
         camera::{CameraParticipants, register_camera_participants},

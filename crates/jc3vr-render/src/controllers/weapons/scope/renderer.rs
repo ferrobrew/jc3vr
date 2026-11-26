@@ -11,6 +11,7 @@ use std::time::Instant;
 
 use anyhow::Context as _;
 use jc3gi::graphics_engine::texture::Texture;
+use jc3vr_view::controllers::weapons::scope::lens_frame::{EyeCamera, LensConstants};
 use windows::{
     Win32::Graphics::{
         Direct3D::{D3D_PRIMITIVE_TOPOLOGY, D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP},
@@ -32,8 +33,6 @@ use windows::{
     },
     core::Interface as _,
 };
-
-use crate::controllers::weapons::scope::lens_frame::{EyeCamera, LensConstants};
 
 /// One eye's copied image and the camera it was rendered with.
 pub struct EyeCopy {

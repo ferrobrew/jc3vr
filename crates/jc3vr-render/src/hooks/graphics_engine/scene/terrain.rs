@@ -15,7 +15,7 @@
 //! required because injection happens after the engine has already created them, and these types'
 //! `Recreate` is a no-op. Applied automatically at the first frame start after
 //! injection and re-appliable from the debug UI. See
-//! [`StereoConfig::terrain_detail_budget_scale`](crate::stereo::config::StereoConfig).
+//! [`StereoConfig::terrain_detail_budget_scale`](jc3vr_view::stereo::config::StereoConfig).
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -28,9 +28,8 @@ use jc3gi::graphics_engine::{
         TerrainDetailBudgetValues,
     },
 };
+use jc3vr_view::stereo::config::STEREO_CONFIG;
 use re_utilities::hook_library::HookLibrary;
-
-use crate::stereo::config::STEREO_CONFIG;
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&TERRAIN_DETAIL_DRAW_BINDER)

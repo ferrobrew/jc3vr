@@ -407,7 +407,7 @@ fn profile_keeps_per_eye_native_resolution_across_modes() {
         assert!(*config.part(&PAUSED));
         assert_eq!(
             config.part(&FSR_CONFIG).antialiasing,
-            crate::fsr::AntiAliasing::Engine
+            jc3vr_view::fsr::AntiAliasing::Engine
         );
         assert!(!config.part(&FOVEATION_CONFIG).enabled);
         assert!(!config.part(&FAR_FIELD_CONFIG).enabled);

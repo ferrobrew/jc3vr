@@ -1,6 +1,6 @@
 //! Snatch ownership through the production binding tables and native hook gate.
 
-use jc3vr_render::vr::input::semantic::defaults::{Component, DefaultBinding};
+use jc3vr_view::vr::input::semantic::defaults::{Component, DefaultBinding};
 
 use super::*;
 use crate::controllers::{

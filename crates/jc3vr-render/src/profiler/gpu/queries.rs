@@ -6,19 +6,18 @@ use std::collections::VecDeque;
 use jc3gi::graphics_engine::graphics_engine::{
     self, FrequencyStatus, HContext_t, HDevice_t, HTimeStampDisjointQuery_t, HTimeStampQuery_t,
 };
+use jc3vr_view::testing::benchmark::{gpu_passes, gpu_passes::GpuPassLabel};
 use puffin::{GlobalProfiler, ScopeDetails, ScopeId};
 
-use crate::{
-    profiler::{
-        gpu::{
-            GpuSeam,
-            gaps::{Resolved, named_gaps, starvation_gaps},
-            lane::{GpuScope, report_gpu_frame},
-            stats::{DispatchMetrics, Stats, ms},
-        },
-        gpu_samples::{self, GpuDispatchSample},
+use crate::profiler::{
+    gpu::{
+        GpuSeam,
+        gaps::{Resolved, named_gaps, starvation_gaps},
+        lane::{GpuScope, report_gpu_frame},
+        stats::{DispatchMetrics, Stats, ms},
     },
-    testing::benchmark::gpu_passes::{self, GpuPassLabel},
+    gpu_samples,
+    gpu_samples::GpuDispatchSample,
 };
 
 /// A raw handle wrapper asserting [`Send`]. Sound because every handle is created, recorded, and

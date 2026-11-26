@@ -22,7 +22,7 @@
 //! A writer thread outliving the payload is the hazard this buys: a thread still executing when
 //! [`jc3vr_core::module::exit`] unmaps the image parks forever holding whatever it took. [`shutdown`]
 //! closes admission, lets the queue drain, and waits for the thread, the same way
-//! [`crate::vr::tail::shutdown`] and the profiler's capture writer do.
+//! [`jc3vr_view::vr::tail::shutdown`] and the profiler's capture writer do.
 
 use std::{
     any::Any,
@@ -205,7 +205,7 @@ pub(crate) fn try_submit(
 
 /// Close admission, let the queued images drain, and wait for the writer thread, up to a bounded
 /// budget. Returns whether the thread is confirmed stopped (or never ran). A `false` return means the
-/// caller must not unload -- see [`crate::vr::tail::shutdown`]'s doc comment for the full argument.
+/// caller must not unload -- see [`jc3vr_view::vr::tail::shutdown`]'s doc comment for the full argument.
 #[must_use = "a writer that did not finish means the payload must stay mapped"]
 pub fn shutdown() -> bool {
     let handle = {

@@ -13,7 +13,7 @@ use jc3vr_input::{
     frame,
     frame::{Button, GripPress, Hand, PressThresholds},
 };
-use jc3vr_render::vr::input::config::{InputConfig, validate_thresholds};
+use jc3vr_view::vr::input::config::{InputConfig, validate_thresholds};
 
 use crate::ui::controllers::{locomotion, unarmed};
 

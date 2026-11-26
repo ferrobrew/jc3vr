@@ -1,7 +1,7 @@
 //! The test tools the capture harness (`tools/rendering`) drives: the visual configurations
 //! ([`visual`]), the staging of a scene for them ([`stage`]), and the benchmark ([`benchmark`]),
 //! started through the request file a script drops into the configuration directory ([`request`]),
-//! which also starts and stops a tracking recording ([`jc3vr_render::recorder::tracking`]).
+//! which also starts and stops a tracking recording ([`jc3vr_view::recorder::tracking`]).
 //! `testing.enabled` switches the request file and the tracking recorder off.
 //!
 //! [`update`] drives the tools from the top of the game's update on the game thread.

@@ -9,7 +9,7 @@ use std::{
 
 use glam::{Quat, Vec2, Vec3};
 use jc3vr_input::frame::Hand;
-use jc3vr_render::controllers::cockpit::CockpitTransform;
+use jc3vr_view::controllers::cockpit::CockpitTransform;
 use parking_lot::Mutex;
 
 // The step counter moved down to the physics substrate; re-exported here so the hand bodies keep

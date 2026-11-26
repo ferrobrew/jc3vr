@@ -1,7 +1,7 @@
 //! The near/far draw-list split (#32): its levers and the per-pass split counters.
 
 use jc3vr_core::config::engine::Parts;
-use jc3vr_render::{
+use jc3vr_view::{
     far_field::{FAR_FIELD_CONFIG, FarFieldMode},
     stereo::config::STEREO_CONFIG,
 };

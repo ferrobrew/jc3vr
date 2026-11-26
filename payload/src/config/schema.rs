@@ -30,12 +30,12 @@ impl ConfigRoot for Config {
 
     /// Note the settings for a tracking recording.
     fn note_saved(text: &str) {
-        jc3vr_render::recorder::tracking::note_settings(text);
+        jc3vr_view::recorder::tracking::note_settings(text);
     }
 }
 
 /// A configuration value is itself the parts of one root, so code that changes several groups
-/// together ([`set_single_pass_feature`](jc3vr_render::stereo::config::set_single_pass_feature)) runs on a
+/// together ([`set_single_pass_feature`](jc3vr_view::stereo::config::set_single_pass_feature)) runs on a
 /// `Config` as it does on the live configuration.
 impl Parts for Config {
     fn root(&self) -> &Root {

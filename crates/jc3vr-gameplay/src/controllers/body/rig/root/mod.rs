@@ -60,7 +60,7 @@ use jc3gi::{
     state::StateContext,
     types::math::Vector3,
 };
-use jc3vr_render::{
+use jc3vr_view::{
     headpose,
     vr::{RecenterCause, RecenterKind},
 };

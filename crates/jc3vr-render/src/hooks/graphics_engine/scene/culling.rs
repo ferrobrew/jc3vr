@@ -10,7 +10,7 @@
 //!
 //! This detour makes three main-view-only corrections, all at the same hook. Before the engine builds
 //! the frustum it overwrites the cull camera's `m_ProjectionF` with a symmetric union-FOV projection
-//! that bounds both eyes' frusta (built per frame in [`crate::vr::cull_projection_standard`]), so the
+//! that bounds both eyes' frusta (built per frame in [`jc3vr_view::vr::cull_projection_standard`]), so the
 //! visible set covers everything either eye can see, and relaxes the camera's `m_FOVT1` so the
 //! separate *screen-space size cull* (which scales with `tan(FOV/2)` and is ~2x too aggressive under
 //! the mod's injected 90 deg FOV) stops dropping small/distant geometry and vehicle sub-meshes. After
@@ -28,7 +28,7 @@
 //! active camera, so the cull-camera widen does not reach them. The active camera's `m_ProjectionF`
 //! is widened before the original call and fully restored (all 16 floats) after, so the per-eye
 //! render projections are untouched. See
-//! [`StereoConfig::widen_spawn_cull`](crate::stereo::config::StereoConfig).
+//! [`StereoConfig::widen_spawn_cull`](jc3vr_view::stereo::config::StereoConfig).
 //!
 //! Terrain patches are decided by a separate landscape system that does not read this cull frustum;
 //! [`terrain_patch_system_update`] widens its camera instead. Model render blocks re-cull against the
@@ -49,9 +49,8 @@ use jc3gi::{
     spawn_system::SpawnSystem,
     types::math::Matrix4,
 };
+use jc3vr_view::{stereo::config::STEREO_CONFIG, vr::cull_projection_standard};
 use re_utilities::hook_library::HookLibrary;
-
-use crate::{stereo::config::STEREO_CONFIG, vr::cull_projection_standard};
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new()
@@ -211,7 +210,7 @@ fn terrain_patch_system_update(handle: *mut STerrainPatchSystem, ctx: *mut c_voi
 /// Make `camera` represent the binocular union view: stamp the union projection and rebuild every
 /// frustum field derived from it -- the view-projection and the six world-space frustum planes that
 /// precomputed-plane cull consumers (terrain patches) read. The union projection is
-/// [`crate::vr::cull_projection_standard`], synthesised from both eyes' FOVs plus the lateral IPD
+/// [`jc3vr_view::vr::cull_projection_standard`], synthesised from both eyes' FOVs plus the lateral IPD
 /// margin. `UpdateFrustum` reads the standard-depth `m_ViewProjection`, so rebuild it from the union
 /// first (`m_ViewProjection = m_View * union`).
 fn make_union_camera(camera: &mut Camera, union: Matrix4) {

@@ -5,11 +5,7 @@
 
 use glam::Quat;
 use jc3gi::character::character::{AnimatedModel, Character, Joint, SafeBoneIndex};
-use jc3vr_render::{
-    headpose::{self, Source},
-    hooks::graphics_engine::player_draw,
-    vr::VR_CONFIG,
-};
+use jc3vr_view::{headpose, headpose::Source, hooks::graphics_engine::player_draw, vr::VR_CONFIG};
 
 use crate::{
     controllers::body::procedural::head::head_bone_world,

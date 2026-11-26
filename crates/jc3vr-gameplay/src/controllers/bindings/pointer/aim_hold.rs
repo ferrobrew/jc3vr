@@ -8,7 +8,7 @@
 //! again, offset by where it was pinned, so a drag carries on from the pinned point rather than
 //! jumping to the live ray. Letting the trigger go frees the cursor.
 
-use jc3vr_render::hud::pointer::panel::PanelHit;
+use jc3vr_view::hud::pointer::panel::PanelHit;
 
 /// The trigger values that pin and free the cursor.
 const PIN_PRESS: f32 = 0.1;

@@ -14,7 +14,6 @@
 //! the game's update. The GPU records arrive from the draw thread through [`record_gpu_dispatch`],
 //! and the draw-thread naming through [`note_draw_thread`].
 
-pub(crate) mod gpu_passes;
 mod request;
 mod sample;
 pub(crate) mod sampler;
@@ -32,6 +31,19 @@ use jc3vr_core::{
     frame_timing,
     frame_timing::Slot,
 };
+use jc3vr_view::{
+    far_field::FAR_FIELD_CONFIG,
+    fsr::{AntiAliasing, FSR_CONFIG, FsrConfig},
+    stereo::{
+        config::{STEREO_CONFIG, set_single_pass_feature},
+        layout,
+    },
+    testing::benchmark::gpu_passes::{self, GpuPassTotal},
+    vr::{
+        FOVEATION_CONFIG, FoveationConfig, FreezeMode, VR_CONFIG, pose_control,
+        pose_control::PoseValues,
+    },
+};
 use parking_lot::Mutex;
 use serde::Serialize;
 use windows::{
@@ -42,31 +54,26 @@ use windows::{
 pub use crate::testing::benchmark::request::{BenchmarkError, BenchmarkRequest, BenchmarkTable};
 use crate::{
     capture_arming::{Arming, arm},
-    far_field::FAR_FIELD_CONFIG,
-    fsr::{AntiAliasing, FSR_CONFIG, FsrConfig},
     hooks::{
         draw_count,
         graphics_engine::{post::post_effects::vr_forces_blurs_off, shader},
     },
-    profiler::gpu_samples::{self, GPU_SEAM_NAMES, GpuDispatchSample},
+    profiler::{
+        gpu_samples,
+        gpu_samples::{GPU_SEAM_NAMES, GpuDispatchSample},
+    },
     stereo::{
-        config::{STEREO_CONFIG, set_single_pass_feature},
-        layout,
-        single_pass::{self, detour_timing, probes::submission_total},
+        single_pass,
+        single_pass::{detour_timing, probes::submission_total},
         switches::ShaderBuild,
     },
     testing::{
         benchmark::{
-            gpu_passes::GpuPassTotal,
             request::{BenchmarkMode, CameraPath},
             sample::{COLUMN_COUNT, COLUMNS, Reading, frame_row},
             sampler::{DrawTaskSamples, Sampler},
         },
         visual::{OrientationOffset, TranslationOffset, overrides::SinglePassOverrides},
-    },
-    vr::{
-        FOVEATION_CONFIG, FoveationConfig, FreezeMode, VR_CONFIG, pose_control,
-        pose_control::PoseValues,
     },
 };
 
@@ -236,7 +243,7 @@ struct RunResult {
 }
 
 fn start(state: &mut State, request: BenchmarkRequest, now: Instant) -> Result<Run, String> {
-    if !jc3vr_core::hooks::in_gameplay() || !crate::vr::is_running_published() {
+    if !jc3vr_core::hooks::in_gameplay() || !jc3vr_view::vr::is_running_published() {
         return Err("benchmark: the game is not in gameplay with a VR session running".to_owned());
     }
     let single_pass_on = request.mode == BenchmarkMode::SinglePass;
@@ -421,14 +428,14 @@ impl Run {
         let shaders = !self.reloaded || shader::built_with() == Some(ShaderBuild::current());
         let sps = single_pass::active() == single_pass_on
             && layout::double_wide_active() == single_pass_on;
-        let resolution = crate::vr::resolution_status();
+        let resolution = jc3vr_view::vr::resolution_status();
         let sized = resolution.target.is_none() || resolution.engine == resolution.target;
         let held = pose_control::current_full_camera().is_some();
         self.settle_frames >= MIN_SETTLE_FRAMES && shaders && sps && sized && held
     }
 
     fn settle_state(&self) -> String {
-        let resolution = crate::vr::resolution_status();
+        let resolution = jc3vr_view::vr::resolution_status();
         format!(
             "shaders current {}, single-pass active {}, double-wide {}, engine size {:?}, target \
              size {:?}, camera held {}",
@@ -486,7 +493,7 @@ fn read() -> Reading {
         engine: draw_count::engine_call_totals(),
         submissions: submission_total(),
         detours: detour_timing::totals(),
-        pose_age: crate::vr::pose_age_totals(),
+        pose_age: jc3vr_view::vr::pose_age_totals(),
     }
 }
 
@@ -560,7 +567,7 @@ struct Environment {
 
 impl Environment {
     fn current() -> Self {
-        let resolution = crate::vr::resolution_status();
+        let resolution = jc3vr_view::vr::resolution_status();
         let (resolution_scale, native_resolution, overlap) = VR_CONFIG.query(|vr| {
             (
                 vr.resolution_scale,

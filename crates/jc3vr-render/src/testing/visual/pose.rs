@@ -1,10 +1,8 @@
 use glam::{Quat, Vec3};
+use jc3vr_view::vr::{pose_control, pose_control::PoseValues};
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    testing::visual::RequestId,
-    vr::pose_control::{self, PoseValues},
-};
+use crate::testing::visual::RequestId;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PoseError {

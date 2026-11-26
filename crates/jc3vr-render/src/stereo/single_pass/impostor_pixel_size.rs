@@ -10,11 +10,9 @@
 //! one eye's, then put back.
 
 use jc3gi::graphics_engine::graphics_engine::RenderContext;
+use jc3vr_view::stereo::layout::double_wide_active;
 
-use crate::stereo::{
-    layout::double_wide_active,
-    single_pass::{Flag, config_flags, in_gbuffer_range},
-};
+use crate::stereo::single_pass::{Flag, config_flags, in_gbuffer_range};
 
 /// The render context's display width, held at one eye's for the life of the guard.
 pub struct EyeDisplayWidth {

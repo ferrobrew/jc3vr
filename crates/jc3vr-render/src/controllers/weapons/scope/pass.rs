@@ -2,27 +2,26 @@
 //! lens drawn on the sighting eye, with the constants of the lens shaders.
 //!
 //! The lens's plan is the scopes': once per frame they hand over the frame's [`LensFrame`]
-//! ([`crate::controllers::weapons::scope::lens_frame`]), which the capture and the draw of every
+//! ([`jc3vr_view::controllers::weapons::scope::lens_frame`]), which the capture and the draw of every
 //! dispatch read.
 
 use std::time::Duration;
 
 use glam::Mat4;
 use jc3gi::graphics_engine::{device::Device, texture::Texture};
+use jc3vr_view::{
+    controllers::weapons::scope::{
+        lens_frame,
+        lens_frame::{EyeCamera, LensFrame},
+    },
+    stereo::{STEREO_STATE, layout::collapse_active},
+};
 use parking_lot::Mutex;
 use windows::Win32::Graphics::Direct3D11::{D3D11_VIEWPORT, ID3D11DeviceContext};
 
-// The gameplay scopes name these here until their import moves to the lens frame's module.
-pub use crate::controllers::weapons::scope::lens_frame::{LensFrame, draw_status, set_frame};
-use crate::{
-    controllers::{
-        overlay::view::{self, EyeView},
-        weapons::scope::{
-            lens_frame::{self, EyeCamera},
-            renderer::{EyeRegion, Renderer},
-        },
-    },
-    stereo::{STEREO_STATE, layout::collapse_active},
+use crate::controllers::{
+    overlay::{view, view::EyeView},
+    weapons::scope::renderer::{EyeRegion, Renderer},
 };
 
 /// The eye whose image the lens reads: the other eye when its image is available, since the scope
@@ -47,7 +46,7 @@ pub fn release_on_eject() {
 /// engine's context lock, before the world-space overlay draws, with `target` the dispatch's final
 /// back buffer.
 pub fn capture(context: &ID3D11DeviceContext, device: &Device, target: &Texture, eye: usize) {
-    if crate::stereo::far_phase() {
+    if jc3vr_view::stereo::far_phase() {
         return;
     }
     if !lens_frame::frame().armed {
@@ -92,7 +91,7 @@ pub fn capture(context: &ID3D11DeviceContext, device: &Device, target: &Texture,
 /// context lock after the world-space overlay; under the collapse, the caller has selected the eye
 /// with `set_collapse_ui_eye`.
 pub fn draw(context: &ID3D11DeviceContext, device: &Device, target: &Texture, eye: usize) {
-    if crate::stereo::far_phase() || jc3vr_core::director::clean_view::hides_everything() {
+    if jc3vr_view::stereo::far_phase() || jc3vr_core::director::clean_view::hides_everything() {
         return;
     }
     let LensFrame {
@@ -192,7 +191,7 @@ const MAX_COPY_AGE: Duration = Duration::from_millis(100);
 /// An eye's camera under the collapse, which keeps the render camera centred.
 fn collapse_camera(eye: usize) -> Option<EyeCamera> {
     let center = STEREO_STATE.lock().center_transform?;
-    let params = crate::vr::render_params(eye)?;
+    let params = jc3vr_view::vr::render_params(eye)?;
     let eye_world = params.resolve(Mat4::from(center));
     // The lens is drawn after FSR has resolved the eye, so it takes the projection without FSR's
     // jitter, as `view::current` does.

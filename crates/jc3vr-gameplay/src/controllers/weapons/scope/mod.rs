@@ -4,8 +4,10 @@
 //!   the character) refused under the controller scheme;
 //! - [`lens`]: the lens's geometry: the eyepiece on the sight line, the sighting eye, and the
 //!   magnification;
-//! - [`renderer`]: the D3D11 pipeline that copies the eyes' images and draws the lens;
-//! - [`pass`]: the capture and the draw, which read the frame's lens this module plans.
+//! - the render layer's `controllers::weapons::scope::renderer`: the D3D11 pipeline that copies the
+//!   eyes' images and draws the lens;
+//! - the render layer's `controllers::weapons::scope::pass`: the capture and the draw, which read
+//!   the frame's lens this module plans through the view layer's [`lens_frame`].
 //!
 //! The lens is a magnified resample of a rendered eye image, drawn as a disc at the scope's eyepiece
 //! while an eye is within [`LensTuning::max_eye_distance_m`](lens::LensTuning::max_eye_distance_m)
@@ -21,18 +23,16 @@
 //!
 //! 1. [`tick`], once per frame on the first eye, outside the engine's context lock: the scoped
 //!    weapon, its sight line anchored to the holding wrist, the lens placed from the render-time
-//!    wrist, and the sighting eye, handed to the [`pass`];
-//! 2. [`pass::capture`], every dispatch, before the overlay draws: the dispatch's eye images copied
-//!    while a scoped weapon is held;
-//! 3. [`pass::draw`], for each eye after the overlay: the lens, on the sighting eye only.
+//!    wrist, and the sighting eye, handed to the pass through [`lens_frame::set_frame`];
+//! 2. the pass's `capture`, every dispatch, before the overlay draws: the dispatch's eye images
+//!    copied while a scoped weapon is held;
+//! 3. the pass's `draw`, for each eye after the overlay: the lens, on the sighting eye only.
 //!
 //! The scoped weapons are identified on the input tick ([`input_tick`]) by their class, the sniper
 //! class, which is what the game gives its scoped rifles: the gun in either hand, the wielded weapon
 //! or one armed beside it. There is one lens, so with a scoped gun in each hand the lens is the one
 //! raised to the eye ([`chosen`]): a scope an eye is at, then the one whose eyepiece is nearest an
 //! eye.
-//!
-//! [`renderer`]: jc3vr_render::controllers::weapons::scope::renderer
 
 pub mod lens;
 pub mod suppress;
@@ -42,7 +42,7 @@ use std::time::{Duration, Instant};
 use glam::{Mat4, Vec3};
 use jc3gi::equipment::weapon::{WeaponBase, WeaponClass};
 use jc3vr_input::frame::{Hand, Pose};
-use jc3vr_render::controllers::weapons::scope::pass::{self, LensFrame};
+use jc3vr_view::controllers::weapons::scope::lens_frame::{self, LensFrame};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
@@ -119,7 +119,7 @@ pub struct ScopeStatus {
 
 /// The latest readout: the frame's plan, with what the [`pass`] drew.
 pub fn status() -> ScopeStatus {
-    let drawn = pass::draw_status();
+    let drawn = lens_frame::draw_status();
     ScopeStatus {
         eyes: drawn.eyes,
         frames: drawn.frames,
@@ -154,7 +154,7 @@ pub(crate) fn is_scoped(address: usize) -> bool {
 /// Plan the frame's lens. Called once per render dispatch at the end of `RenderEngine::PostDraw`,
 /// before the engine's context lock is taken; it acts only on the frame's first eye.
 pub(crate) fn tick(eye: usize) {
-    if !jc3vr_render::stereo::dispatch::first_ui_eye(eye) || jc3vr_render::stereo::far_phase() {
+    if !jc3vr_view::stereo::dispatch::first_ui_eye(eye) || jc3vr_view::stereo::far_phase() {
         return;
     }
     let enabled = scheme::enabled() && WEAPONS_CONFIG.query(|c| c.scopes);
@@ -165,7 +165,7 @@ pub(crate) fn tick(eye: usize) {
     status.eyepiece_distance_m = plan.eyepiece_distance_m;
     status.idle = plan.idle;
     // A plan is idle exactly when no eye sights, which is when the pass clears the drawn eyes.
-    pass::set_frame(LensFrame {
+    lens_frame::set_frame(LensFrame {
         armed: plan.armed,
         sighting: plan.sighting,
         lens: plan.lens.map(|lens| lens::draw_of(&lens, &LENS)),
@@ -230,7 +230,7 @@ fn plan(enabled: bool, config: &LensTuning, anchors: &mut [Option<(u64, SightAnc
     let aim = aim::status();
     let frame = FrameInputs {
         aim: &aim,
-        wrists: late::drawn_hands(jc3vr_render::hooks::camera::last_dtf())
+        wrists: late::drawn_hands(jc3vr_view::hooks::camera::last_dtf())
             .map(|h| h.map(|h| h.wrist)),
         eyes: eye_positions(),
         config,
@@ -346,13 +346,12 @@ fn chosen(plans: &[Option<Plan>; 2]) -> Option<Hand> {
 /// Both eyes' world positions this frame: the centre camera moved by each eye's offset. `None`
 /// for an eye without a VR frame's render parameters.
 fn eye_positions() -> [Option<Vec3>; 2] {
-    let Some((head, orientation)) = jc3vr_render::hud::render_camera_pose() else {
+    let Some((head, orientation)) = jc3vr_view::hud::render_camera_pose() else {
         return [None; 2];
     };
     let center = Mat4::from_rotation_translation(orientation, head);
-    [0, 1].map(|eye| {
-        jc3vr_render::vr::render_params(eye).map(|p| p.resolve(center).w_axis.truncate())
-    })
+    [0, 1]
+        .map(|eye| jc3vr_view::vr::render_params(eye).map(|p| p.resolve(center).w_axis.truncate()))
 }
 
 #[cfg(test)]

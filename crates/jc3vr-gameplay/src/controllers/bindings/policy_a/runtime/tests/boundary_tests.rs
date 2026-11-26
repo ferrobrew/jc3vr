@@ -5,7 +5,7 @@ use jc3vr_input::{
     frame::{HandFrame, InteractionProfile, TrackedPose},
     semantic::vocabulary::WingsuitAction,
 };
-use jc3vr_render::vr::input::semantic::{
+use jc3vr_view::vr::input::semantic::{
     admission,
     bound::of_sources,
     frame::{ActionValue, digital},
@@ -251,7 +251,7 @@ fn captured_loss_round_trips_through_the_recording() {
 
 #[test]
 fn queued_live_publications_keep_middle_loss_through_capture() {
-    let _flight = jc3vr_render::vr::input::flight_pose::test_guard();
+    let _flight = jc3vr_view::vr::input::flight_pose::test_guard();
     let _serial = history::TEST_LOCK.lock();
     history::take_gameplay();
     history::begin_capture();

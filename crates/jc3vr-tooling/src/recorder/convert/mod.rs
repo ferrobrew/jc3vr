@@ -306,7 +306,7 @@ impl Converter {
 
 /// The committed, precompiled pack shaders (entry point `main`). The vertex shader is the capture
 /// composite's fullscreen triangle.
-const VERTEX_DXBC: &[u8] = jc3vr_render::CAPTURE_VS;
+const VERTEX_DXBC: &[u8] = jc3vr_view::CAPTURE_VS;
 const PIXEL_DXBC: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/shaders/i420_pack_ps.dxbc"

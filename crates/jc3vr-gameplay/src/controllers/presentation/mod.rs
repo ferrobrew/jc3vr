@@ -50,7 +50,7 @@ use jc3vr_core::{
     render_frame::RenderFrameSlot,
 };
 use jc3vr_input::frame::{Hand, Pose};
-use jc3vr_render::{
+use jc3vr_view::{
     headpose,
     headpose::{skeleton::SkeletonKey, teleport},
     vr::VR_CONFIG,

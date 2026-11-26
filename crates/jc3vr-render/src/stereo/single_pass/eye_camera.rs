@@ -58,6 +58,10 @@ use jc3gi::{
     graphics_engine::{graphics_engine::GraphicsEngine, render_engine::RenderEngine},
     types::math::Vector4,
 };
+use jc3vr_view::{
+    stereo::{config::STEREO_CONFIG, engine_context::EngineContext, layout::collapse_active},
+    vr::render_params,
+};
 use parking_lot::Mutex;
 use windows::Win32::Graphics::Direct3D11::{
     D3D11_BIND_CONSTANT_BUFFER, D3D11_BUFFER_DESC, D3D11_CPU_ACCESS_WRITE, D3D11_MAP_WRITE_DISCARD,
@@ -65,17 +69,9 @@ use windows::Win32::Graphics::Direct3D11::{
     ID3D11DeviceContext,
 };
 
-use crate::{
-    stereo::{
-        config::STEREO_CONFIG,
-        engine_context::EngineContext,
-        layout::collapse_active,
-        single_pass::{
-            CURRENT_M_EYE, collapse_full_viewport, eye_globals, in_gbuffer_range,
-            viewport::eye_half_viewport,
-        },
-    },
-    vr::render_params,
+use crate::stereo::single_pass::{
+    CURRENT_M_EYE, collapse_full_viewport, eye_globals, in_gbuffer_range,
+    viewport::eye_half_viewport,
 };
 
 /// A pixel shader's bytecode rewritten to read each eye's camera rows, and with

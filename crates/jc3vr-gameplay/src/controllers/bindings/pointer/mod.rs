@@ -10,7 +10,7 @@
 //! - [`egui_grab`] decides which hand's grip holds the panel.
 //!
 //! The rays are intersected with the panels the renderer last drew
-//! ([`jc3vr_render::hud::pointer::panel`]). The HUD reads the results: it routes the game UI's mouse from
+//! ([`jc3vr_view::hud::pointer::panel`]). The HUD reads the results: it routes the game UI's mouse from
 //! [`selected_controller`] and drains the egui updates ([`take_updates`]). What the pointers need
 //! from the HUD (its settings, the desktop mouse's capture, and the debug panel's placement) comes
 //! through the [`PointerHud`] table the HUD registers at install.

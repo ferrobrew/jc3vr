@@ -16,18 +16,18 @@ fn array<T>(values: &mut [T]) -> HkArray<T> {
 #[test]
 fn failed_required_bone_capture_withdraws_current_anchor_authority() {
     crate::test_support::register_head_participants();
-    jc3vr_render::headpose::set_anchors(jc3vr_render::headpose::Anchors {
+    jc3vr_view::headpose::set_anchors(jc3vr_view::headpose::Anchors {
         head: glam::Vec3::Y,
         head_prev: glam::Vec3::Y,
         neck: glam::Vec3::Y * 0.9,
         eye_arm: glam::Vec3::Z * 0.1,
     });
-    assert!(jc3vr_render::headpose::anchor().is_some());
+    assert!(jc3vr_view::headpose::anchor().is_some());
     crate::hooks::character::body_ik::capture_unavailable();
-    assert!(jc3vr_render::headpose::anchor().is_none());
-    assert!(jc3vr_render::headpose::anchor_prev().is_none());
-    assert_eq!(jc3vr_render::headpose::neck_delta(), glam::Vec3::ZERO);
-    assert_eq!(jc3vr_render::headpose::eye_arm(), glam::Vec3::ZERO);
+    assert!(jc3vr_view::headpose::anchor().is_none());
+    assert!(jc3vr_view::headpose::anchor_prev().is_none());
+    assert_eq!(jc3vr_view::headpose::neck_delta(), glam::Vec3::ZERO);
+    assert_eq!(jc3vr_view::headpose::eye_arm(), glam::Vec3::ZERO);
 }
 
 #[test]

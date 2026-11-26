@@ -24,7 +24,7 @@ use body_rig::{
 use glam::{Mat4, Quat, Vec3};
 use jc3gi::character::character::Character;
 use jc3vr_input::frame::{self, Hand, Pose};
-use jc3vr_render::headpose::{self, Source};
+use jc3vr_view::{headpose, headpose::Source};
 use parking_lot::Mutex;
 
 use crate::controllers::{

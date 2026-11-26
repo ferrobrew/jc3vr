@@ -37,7 +37,7 @@ use jc3vr_input::{
     haptics::cues::Event,
     motion,
 };
-use jc3vr_render::controllers::overlay::{
+use jc3vr_view::controllers::overlay::{
     primitive::{Anchor, DepthMode, Facing, HandPose, Primitive, Rgba, Shape, Source, SpriteSize},
     store,
 };

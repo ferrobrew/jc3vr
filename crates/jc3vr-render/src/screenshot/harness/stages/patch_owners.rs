@@ -2,14 +2,14 @@ use std::cell::RefCell;
 
 use anyhow::{Context, Result, ensure};
 use jc3gi::graphics_engine::graphics_engine::GraphicsEngine;
+use jc3vr_view::stereo::{draw_index, engine_context::EngineContext};
 use windows::Win32::Graphics::Dxgi::Common::{DXGI_FORMAT_R32_UINT, DXGI_FORMAT_R32G8X24_TYPELESS};
 
-use crate::{
-    screenshot::harness::{
-        self,
-        stages::{STATE, Source, Stage, StageArtifact, StageImage, empty_stage_record, read_stage},
+use crate::screenshot::{
+    harness,
+    harness::stages::{
+        STATE, Source, Stage, StageArtifact, StageImage, empty_stage_record, read_stage,
     },
-    stereo::{draw_index, engine_context::EngineContext},
 };
 
 thread_local! { static ACTIVE: RefCell<Option<Atlas>> = const { RefCell::new(None) }; }

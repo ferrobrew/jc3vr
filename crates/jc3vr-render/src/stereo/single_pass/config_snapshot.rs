@@ -12,7 +12,7 @@
 //! frame refresh: single-pass renders both eyes into the halves of a double-wide target sized from
 //! the headset's views, so without a session it stays inert and the game renders as it ships.
 //!
-//! Each sample also publishes the stereo layout its flags settle ([`crate::stereo::layout`]), to the
+//! Each sample also publishes the stereo layout its flags settle ([`jc3vr_view::stereo::layout`]), to the
 //! frame snapshot and the dispatch pin alike, for the code that sizes and poses by the layout
 //! without reading the single-pass flags.
 
@@ -21,10 +21,7 @@ use std::{
     sync::atomic::{AtomicBool, AtomicU64, Ordering},
 };
 
-use crate::stereo::{
-    config::STEREO_CONFIG,
-    layout::{self, LayoutFlags},
-};
+use jc3vr_view::stereo::{config::STEREO_CONFIG, layout, layout::LayoutFlags};
 
 /// One flag in the per-frame single-pass config snapshot.
 #[derive(Clone, Copy)]
@@ -135,7 +132,7 @@ pub(super) fn config_flags() -> ConfigFlags {
 /// that starts or stops takes effect from the next frame's refresh, for every reader of that frame
 /// at once.
 pub fn refresh_config_flags() {
-    SESSION_LIVE.store(crate::vr::is_running_published(), Ordering::Relaxed);
+    SESSION_LIVE.store(jc3vr_view::vr::is_running_published(), Ordering::Relaxed);
     store_config_flags();
 }
 

@@ -14,7 +14,7 @@ use jc3vr_gameplay::{
     grapple::physical::lock,
 };
 use jc3vr_input::frame::Hand;
-use jc3vr_render::{
+use jc3vr_view::{
     headpose,
     hooks::camera::{eye_point, last_dtf},
     recorder::tracking::format::debug_label,
@@ -29,7 +29,7 @@ use tracking_format::{
 };
 
 /// The cockpit's placement in the world, from the rendered eye midpoint the hands compose from
-/// ([`jc3vr_render::controllers::cockpit::CockpitTransform::current`]), and the active camera,
+/// ([`jc3vr_view::controllers::cockpit::CockpitTransform::current`]), and the active camera,
 /// while the cockpit is placed.
 pub(super) fn view_state() -> Option<ViewState> {
     let cockpit = headpose::xr::cockpit_pose()?;
@@ -148,7 +148,7 @@ pub(super) fn frame_state() -> FrameState {
     let played = haptics::status().last_output;
     FrameState {
         render_frame: Some(render_frame),
-        mirror_frame: jc3vr_render::vr::latest_present().map(u64::from),
+        mirror_frame: jc3vr_view::vr::latest_present().map(u64::from),
         interval_ms: interval.map(|d| d.as_secs_f32() * 1000.0),
         ticks,
         haptics: Hand::BOTH.map(|hand| played[hand.index()]),

@@ -258,10 +258,10 @@ mod tests {
         format::{Upgrade, VERSION, VERSION_KEY},
         load::LoadReport,
     };
-    use jc3vr_render::{
+    use jc3vr_tooling::director::keymap::Binding;
+    use jc3vr_view::{
         far_field::FarFieldMode, fsr::AntiAliasing, stereo::config::set_single_pass_feature,
     };
-    use jc3vr_tooling::director::keymap::Binding;
     use pretty_assertions::assert_eq;
 
     use super::*;

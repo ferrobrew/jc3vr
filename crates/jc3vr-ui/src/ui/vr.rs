@@ -1,6 +1,6 @@
 //! Runtime controls and a separate read-only OpenXR status snapshot.
 
-use jc3vr_render::{
+use jc3vr_view::{
     headpose, vr,
     vr::{EyeMask, MaskStatus, MirrorView, VR_CONFIG},
 };

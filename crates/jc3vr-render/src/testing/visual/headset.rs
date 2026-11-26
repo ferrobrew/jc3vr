@@ -14,13 +14,12 @@
 //! the session's, never the rig's.
 
 use glam::{EulerRot, Quat};
-use parking_lot::Mutex;
-use serde::{Deserialize, Serialize};
-
-use crate::vr::{
+use jc3vr_view::vr::{
     Fov, harness,
     harness::{EyeOffset, HeadsetSubstitute},
 };
+use parking_lot::Mutex;
+use serde::{Deserialize, Serialize};
 
 /// A named headset-like rig.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
@@ -154,11 +153,11 @@ fn mirrored(
 #[cfg(test)]
 mod tests {
     use glam::Vec3;
+    use jc3vr_view::vr::{OffAxisProjection, harness::EyeSubstitute};
     use pretty_assertions::assert_eq;
     use test_case::test_case;
 
     use super::*;
-    use crate::vr::{OffAxisProjection, harness::EyeSubstitute};
 
     const RIGS: [HeadsetRig; 4] = [
         HeadsetRig::Index,

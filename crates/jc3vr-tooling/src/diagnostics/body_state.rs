@@ -8,7 +8,7 @@
 use std::time::{Duration, Instant};
 
 use jc3vr_gameplay::controllers::body::procedural::authority::Case;
-use jc3vr_render::recorder::tracking::events::{self, EventKind};
+use jc3vr_view::recorder::tracking::{events, events::EventKind};
 use parking_lot::Mutex;
 use tracking_format::event::{BodyState, Label};
 

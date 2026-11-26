@@ -417,7 +417,7 @@ impl TraceState {
     /// Append a per-dispatch record tagged with the current eye while a trace is active (auto-locks).
     pub fn record_eye(event: TraceEvent) {
         if tracing_active() {
-            let eye = crate::stereo::draw_index();
+            let eye = jc3vr_view::stereo::draw_index();
             TRACE_STATE.lock().push_event(Some(eye), event);
         }
     }

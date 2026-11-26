@@ -181,7 +181,7 @@ pub(crate) fn capture_water_inputs(
     draw_index: usize,
     tess_index: Option<usize>,
 ) {
-    let Some(frame) = crate::vr::capture_views().map(|v| v.predicted_display_time_ns) else {
+    let Some(frame) = jc3vr_view::vr::capture_views().map(|v| v.predicted_display_time_ns) else {
         return;
     };
     let surface = crate::screenshot::harness::water_surface_inputs_requested();
@@ -329,7 +329,7 @@ pub(crate) fn capture_water_inputs(
 }
 
 pub(crate) fn record_water_treatment(eye: usize, id: &str, error: Option<&str>) {
-    let Some(frame) = crate::vr::capture_views().map(|v| v.predicted_display_time_ns) else {
+    let Some(frame) = jc3vr_view::vr::capture_views().map(|v| v.predicted_display_time_ns) else {
         return;
     };
     let mut state = STATE.lock();

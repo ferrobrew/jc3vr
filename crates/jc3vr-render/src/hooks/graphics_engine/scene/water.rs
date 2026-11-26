@@ -53,21 +53,17 @@ use jc3gi::{
     types::math::Matrix4,
     water_patch_manager::WaterPatchManager,
 };
+use jc3vr_view::stereo::{config::STEREO_CONFIG, draw_index, layout::double_wide_active};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 use windows::Win32::System::Threading::GetCurrentThreadId;
 
 use crate::{
     hooks::graphics_engine::probes::{PipelinePoint, capture_point},
-    stereo::{
-        config::STEREO_CONFIG,
-        draw_index,
-        layout::double_wide_active,
-        single_pass::{
-            BlockIntercept, WaterGpuProbe, begin_water_input_capture, begin_water_surface,
-            block_intercept_enabled, draw_per_eye_half_ignoring_bound_vs, eye_globals,
-            screen_uv_cb_per_eye, with_wave_simulation_viewports,
-        },
+    stereo::single_pass::{
+        BlockIntercept, WaterGpuProbe, begin_water_input_capture, begin_water_surface,
+        block_intercept_enabled, draw_per_eye_half_ignoring_bound_vs, eye_globals,
+        screen_uv_cb_per_eye, with_wave_simulation_viewports,
     },
 };
 
@@ -541,12 +537,12 @@ struct EyeCamera {
 
 /// The two eyes' view and projection matrices, derived from the collapse's centre view the same way
 /// the `SetupRenderCamera` hook derives the double-draw path's per-eye camera
-/// ([`EyeRenderParams::resolve`](crate::vr::EyeRenderParams::resolve)). `None` when no VR frame is in
+/// ([`EyeRenderParams::resolve`](jc3vr_view::vr::EyeRenderParams::resolve)). `None` when no VR frame is in
 /// flight.
 fn eye_cameras(center_view: Matrix4) -> Option<[EyeCamera; 2]> {
     let center_world = glam::Mat4::from(center_view).inverse();
     let eye = |eye| {
-        crate::vr::render_params(eye).map(|params| EyeCamera {
+        jc3vr_view::vr::render_params(eye).map(|params| EyeCamera {
             view: Matrix4::from(params.resolve(center_world).inverse()),
             // The reverse-Z form, which is what the render camera's `m_ProjectionF` holds by the
             // time a render context is filled from it, under either projection convention.

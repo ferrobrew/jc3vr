@@ -45,7 +45,7 @@
 //! frustum unconditionally. So inside the G-buffer range under the collapse, both block types' bakes
 //! ([`RenderBlockTypeTerrain::SetupConstantBuffers`](jc3gi::graphics_engine::render_block::RenderBlockTypeTerrain::SetupConstantBuffers)
 //! and the patch type's) take the offset view-projection's horizontal, vertical, and `w` columns from
-//! the projection bounding both eyes ([`crate::vr::eyes_union_projection_standard`]), keeping the
+//! the projection bounding both eyes ([`jc3vr_view::vr::eyes_union_projection_standard`]), keeping the
 //! engine's depth column. The domain programs read each eye's own rows there, so only the cull sees
 //! the substitution ([`crate::stereo::single_pass::terrain_cull_both_eyes`] holds the gate). The bake
 //! is cached per slot per frame, so a change of substitution between two bakes in one frame stamps
@@ -80,7 +80,7 @@ fn terrain_patch_setup_constant_buffers(
     render_context: *mut RenderContext,
 ) {
     let original = TERRAIN_PATCH_SETUP_CONSTANT_BUFFERS.get().unwrap();
-    if !crate::stereo::active() || this.is_null() {
+    if !jc3vr_view::stereo::active() || this.is_null() {
         original.call(this, render_context);
         return;
     }
@@ -111,7 +111,7 @@ fn base_terrain_setup_constant_buffers(
     render_context: *mut RenderContext,
 ) {
     let original = BASE_TERRAIN_SETUP_CONSTANT_BUFFERS.get().unwrap();
-    if this.is_null() || !crate::stereo::active() {
+    if this.is_null() || !jc3vr_view::stereo::active() {
         original.call(this, render_context);
         return;
     }
@@ -134,7 +134,7 @@ fn bake(
     call: impl FnOnce(),
 ) {
     let union = terrain_cull_both_eyes(block)
-        .then(crate::vr::eyes_union_projection_standard)
+        .then(jc3vr_view::vr::eyes_union_projection_standard)
         .flatten();
     let mode = if union.is_some() {
         BakeMode::Union

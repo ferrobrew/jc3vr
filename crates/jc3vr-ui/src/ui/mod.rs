@@ -210,11 +210,11 @@ pub fn startup_banner(ctx: &egui::Context) {
 /// How long (seconds) the startup banner stays up.
 const BANNER_SECONDS: f32 = 15.0;
 
-/// The restart notice ([`jc3vr_render::vr::input::restart`]) on whatever surface the egui overlay renders
+/// The restart notice ([`jc3vr_view::vr::input::restart`]) on whatever surface the egui overlay renders
 /// to, for as long as it holds. The headset has its own panel for it
 /// ([`jc3vr_hud::hud::restart_notice`]); this is the desktop window's copy.
 pub fn restart_banner(ctx: &egui::Context) {
-    let Some(reason) = jc3vr_render::vr::input::restart::current() else {
+    let Some(reason) = jc3vr_view::vr::input::restart::current() else {
         return;
     };
     egui::Area::new(egui::Id::new("jc3vr_restart_banner"))

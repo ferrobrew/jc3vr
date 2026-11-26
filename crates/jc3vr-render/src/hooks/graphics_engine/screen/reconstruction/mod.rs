@@ -49,6 +49,10 @@ use std::{
 
 use detours_macro::detour;
 use jc3gi::{graphics_engine::graphics_engine::HContext_t, types::math::Matrix4};
+use jc3vr_view::{
+    stereo::{config::STEREO_CONFIG, engine_context::EngineContext},
+    vr::{EyeRenderParams, VR_CONFIG, render_params},
+};
 use re_utilities::hook_library::HookLibrary;
 use windows::Win32::{
     Foundation::RECT,
@@ -57,8 +61,7 @@ use windows::Win32::{
 
 use crate::{
     debug::trace::{TraceEvent, TraceState},
-    stereo::{config::STEREO_CONFIG, engine_context::EngineContext, single_pass::eye_globals},
-    vr::{EyeRenderParams, VR_CONFIG, render_params},
+    stereo::single_pass::eye_globals,
 };
 
 mod scissor;
@@ -307,7 +310,7 @@ pub(super) fn split_fullscreen_pass_policy(
     ctx: Option<*mut HContext_t>,
     mut draw: impl FnMut(usize),
 ) -> SplitOutcome {
-    if !enabled || !crate::stereo::layout::collapse_active() {
+    if !enabled || !jc3vr_view::stereo::layout::collapse_active() {
         return SplitOutcome::NotTaken;
     }
     let Some(ctx) = ctx else {
@@ -430,15 +433,15 @@ fn offaxis_inverse(near: f32, far: f32) -> Option<Matrix4> {
     // A per-eye half run reconstructs for *its* eye, not for the collapse's single dispatch index
     // (which is always eye 0); everything else keeps reading the dispatch's own eye.
     let half = PER_EYE.get();
-    let eye = half.map_or_else(crate::stereo::draw_index, |state| state.eye);
+    let eye = half.map_or_else(jc3vr_view::stereo::draw_index, |state| state.eye);
     let params = render_params(eye);
     // Recognize the main-view depth passes by the engine's ACTUAL active-camera planes, the single
-    // source of truth ([`crate::hooks::camera::main_camera_planes_or`]), not a hardcoded config value:
+    // source of truth ([`jc3vr_view::hooks::camera::main_camera_planes_or`]), not a hardcoded config value:
     // the engine writes a runtime far (~40 km) that differs from the constructor default the config
     // mirrors (38.4 km), so comparing against the config rejected every main pass and the off-axis
     // inverse never engaged. A pass whose near/far differ from the live main camera belongs to another
     // camera (e.g. a reflection) whose symmetric rebuild is already correct, so leave it untouched.
-    let (near_ref, far_ref) = crate::hooks::camera::main_camera_planes_or(far_fallback);
+    let (near_ref, far_ref) = jc3vr_view::hooks::camera::main_camera_planes_or(far_fallback);
     let near_ok = (near - near_ref).abs() <= near_ref.abs().max(0.01) * 0.1;
     let far_ok = (far - far_ref).abs() <= far_ref.abs() * 0.01;
 
@@ -631,7 +634,7 @@ fn arm_eye_half_scissor(state: &PerEyeState) -> bool {
         // double-wide one -- a pass that binds anything else is not the one we can split. A pixel of
         // slack for the engine's own rounding, matching the scene-size check the collapse's viewport
         // routing uses.
-        let Some((width, _)) = crate::stereo::render_size() else {
+        let Some((width, _)) = jc3vr_view::stereo::render_size() else {
             return false;
         };
         if (full.Width - width as f32).abs() > 1.0 {
@@ -758,9 +761,9 @@ pub(super) fn with_immediate_context<R>(f: impl FnOnce(&ID3D11DeviceContext) -> 
 #[cfg(test)]
 mod tests {
     use jc3gi::camera::camera::Camera;
+    use jc3vr_view::vr::projection::{Fov, OffAxisProjection};
 
     use super::*;
-    use crate::vr::projection::{Fov, OffAxisProjection};
 
     /// The remap must send each eye's half of the full target's NDC onto that eye's own full NDC
     /// range, and leave the other components alone.
@@ -865,7 +868,7 @@ mod tests {
                 projection_reverse_z: projection.reverse_z,
                 local_offset: glam::Vec3::ZERO,
                 orientation_delta: glam::Quat::from_rotation_y(cant.to_radians()),
-                convention: crate::vr::ProjectionConvention::EnginePreReverseZ,
+                convention: jc3vr_view::vr::ProjectionConvention::EnginePreReverseZ,
                 jitter: None,
             };
             let inverse = glam::Mat4::from(vr.projection_reverse_z).inverse();

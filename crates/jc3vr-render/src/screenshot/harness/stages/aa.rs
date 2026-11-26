@@ -1,15 +1,16 @@
 use std::{cell::RefCell, ffi::c_void};
 
 use jc3gi::graphics_engine::{post_effects::AAMode, render_engine::RenderPassId};
+use jc3vr_view::stereo::draw_index;
 use serde::Serialize;
 use windows::{Win32::Graphics::Direct3D11::*, core::Interface};
 
 use crate::{
-    screenshot::harness::{
-        self,
-        stages::{STATE, Stage},
+    screenshot::{
+        harness,
+        harness::stages::{STATE, Stage},
     },
-    stereo::{draw_index, single_pass::shader_identity},
+    stereo::single_pass::shader_identity,
 };
 
 #[derive(Clone, Debug, Serialize)]

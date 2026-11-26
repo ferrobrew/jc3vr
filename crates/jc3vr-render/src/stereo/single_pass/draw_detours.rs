@@ -6,20 +6,19 @@
 //! the engine already instanced for its own reasons, and the GPU-indirect draws whose instance count
 //! lives in a buffer the CPU never sees -- each of which has to be submitted once per eye instead.
 
+use jc3vr_view::stereo::layout::collapse_active;
 use windows::Win32::Graphics::Direct3D11::{ID3D11DomainShader, ID3D11GeometryShader};
 
-use crate::stereo::{
-    layout::collapse_active,
-    single_pass::{
-        detour_timing,
-        eye_vertex_globals::EyeVertexGlobals,
-        pinned_eye::Cb13EyePin,
-        probes::{self, RawDrawKind, SinglePassProbes},
-        sun::preserve_far_depth,
-        vegetation_once,
-        water_fragment_state::packed_water_context,
-        *,
-    },
+use crate::stereo::single_pass::{
+    detour_timing,
+    eye_vertex_globals::EyeVertexGlobals,
+    pinned_eye::Cb13EyePin,
+    probes,
+    probes::{RawDrawKind, SinglePassProbes},
+    sun::preserve_far_depth,
+    vegetation_once,
+    water_fragment_state::packed_water_context,
+    *,
 };
 
 /// `ID3D11DeviceContext` vtable slots for the two indexed-draw entry points (verified against

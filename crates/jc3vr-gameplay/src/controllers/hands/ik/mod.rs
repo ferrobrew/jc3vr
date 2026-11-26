@@ -55,7 +55,7 @@ use jc3gi::{
 };
 use jc3vr_core::hash::hashlittle;
 use jc3vr_input::frame::{Hand, Pose};
-use jc3vr_render::{
+use jc3vr_view::{
     controllers::cockpit::CockpitTransform, headpose, headpose::skeleton::SkeletonKey,
 };
 use parking_lot::Mutex;

@@ -62,7 +62,7 @@ const fn triggers_fire_guns(mode: Mode) -> bool {
 #[cfg(test)]
 mod tests {
     use jc3vr_input::semantic::SemanticSet;
-    use jc3vr_render::vr::input::semantic::defaults::default_binding;
+    use jc3vr_view::vr::input::semantic::defaults::default_binding;
     use test_case::test_case;
 
     use super::*;

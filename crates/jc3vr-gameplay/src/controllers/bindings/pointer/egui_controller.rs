@@ -40,7 +40,7 @@ use std::{
 
 use glam::{Vec2, Vec3};
 use jc3vr_input::frame::{Button, ControllerFrame, Edges, Hand, Pose};
-use jc3vr_render::{
+use jc3vr_view::{
     controllers::overlay::{
         primitive::{Anchor, DepthMode, HandPose, Primitive, Rgba, Source},
         store,
@@ -521,7 +521,7 @@ mod tests {
         frame::ActionSetKind,
         semantic::{ActionKind, SemanticSet, vocabulary::GlobalAction},
     };
-    use jc3vr_render::vr::input::semantic::{SCHEMA_VERSION, history::Publication};
+    use jc3vr_view::vr::input::semantic::{SCHEMA_VERSION, history::Publication};
     use tracking_format::input::{
         ClockDomain, GroupOrder, InputGroup, InputRecord, InputRoute, InputStamp, RouteSample,
         SourceQuery, ValueBits,

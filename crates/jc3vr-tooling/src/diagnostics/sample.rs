@@ -27,7 +27,7 @@ use jc3vr_input::{
     frame::{self, Hand},
     scheme::Scheme,
 };
-use jc3vr_render::{recorder::tracking::format::hand_to_file, vr::input as vr_input};
+use jc3vr_view::{recorder::tracking::format::hand_to_file, vr::input as vr_input};
 use tracking_format::event::{
     AimState, CharacterMotion, ControllerState, GrappleAim, GroundHeight, HandAim, HandLate,
     HandTier, IkState, Label, LateState, RoomscaleState, RootTick, TierState, WeaponAim,

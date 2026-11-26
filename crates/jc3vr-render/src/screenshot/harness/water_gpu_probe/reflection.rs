@@ -21,6 +21,7 @@ use std::{
 };
 
 use jc3gi::graphics_engine::render_engine::RenderPassId;
+use jc3vr_view::stereo::{draw_index, engine_context::EngineContext};
 use windows::{
     Win32::Graphics::Direct3D11::{
         D3D11_TEXTURE2D_DESC, D3D11_VIEWPORT, ID3D11DepthStencilView, ID3D11DeviceContext,
@@ -31,10 +32,7 @@ use windows::{
 
 use crate::{
     screenshot::harness::water_gpu_probe::{pointer, viewport_text},
-    stereo::{
-        draw_index,
-        single_pass::{EngineContext, RawDrawKind},
-    },
+    stereo::single_pass::RawDrawKind,
 };
 
 /// A scene costs fifteen records across its four modes (three isolated, six double-draw, three
@@ -89,7 +87,7 @@ pub(crate) fn reflection_producer(pass: i32) -> Option<ReflectionProbe> {
     let capture = PassCapture {
         pass,
         invocation,
-        display_time: crate::vr::capture_views()
+        display_time: jc3vr_view::vr::capture_views()
             .map(|views| views.predicted_display_time_ns)
             .map_or_else(|| "none".to_owned(), |ns| ns.to_string()),
         generation: visual.generation,

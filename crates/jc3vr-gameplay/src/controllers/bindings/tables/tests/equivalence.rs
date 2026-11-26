@@ -27,7 +27,7 @@ use jc3vr_input::semantic::vocabulary::{
     GlobalAction, HelicopterAction, LandVehicleAction, MenuAction, OnFootAction, PlaneAction,
     WingsuitAction,
 };
-use jc3vr_render::vr::input::semantic::defaults::{Component, DefaultBinding, Side};
+use jc3vr_view::vr::input::semantic::defaults::{Component, DefaultBinding, Side};
 
 use super::*;
 use crate::controllers::{

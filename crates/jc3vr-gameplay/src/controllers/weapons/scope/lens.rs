@@ -1,5 +1,5 @@
 //! The lens's geometry, all pure: where the eyepiece is, which eye sights through it, and the lens
-//! draw it hands the pass ([`jc3vr_render::controllers::weapons::scope::lens_frame`]), which holds
+//! draw it hands the pass ([`jc3vr_view::controllers::weapons::scope::lens_frame`]), which holds
 //! the draw's constants.
 //!
 //! The sight line is kept in the holding hand's wrist frame between aim updates, so the lens follows
@@ -14,7 +14,7 @@
 
 use glam::Vec3;
 use jc3vr_input::frame::{Hand, Pose};
-use jc3vr_render::controllers::weapons::scope::lens_frame::LensDraw;
+use jc3vr_view::controllers::weapons::scope::lens_frame::LensDraw;
 
 use crate::controllers::{aim::ray::Ray, hands::pose as hand_pose};
 
@@ -135,7 +135,7 @@ const MIN_FOCUS_M: f32 = 1.0;
 #[cfg(test)]
 mod tests {
     use glam::{Mat4, Quat, Vec2, Vec4};
-    use jc3vr_render::controllers::weapons::scope::lens_frame::{
+    use jc3vr_view::controllers::weapons::scope::lens_frame::{
         EyeCamera, LensConstants, field_tangent, lens_basis,
     };
 

@@ -12,10 +12,9 @@
 
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use crate::stereo::{
-    layout::double_wide_active,
-    single_pass::{Flag, collapse_eye_width, config_flags, in_gbuffer_range},
-};
+use jc3vr_view::stereo::layout::double_wide_active;
+
+use crate::stereo::single_pass::{Flag, collapse_eye_width, config_flags, in_gbuffer_range};
 
 /// The constant buffer the light type stages its sprite constants into.
 pub(super) const LIGHT_CONSTANTS_CB: i32 = 1;

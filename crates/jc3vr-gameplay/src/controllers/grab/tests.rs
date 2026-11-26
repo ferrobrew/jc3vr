@@ -1,5 +1,5 @@
 use glam::Vec3;
-use jc3vr_render::controllers::overlay::primitive::{Anchor, Primitive};
+use jc3vr_view::controllers::overlay::primitive::{Anchor, Primitive};
 
 use super::{
     latch::{GripLatch, LatchTick},

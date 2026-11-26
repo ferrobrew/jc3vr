@@ -25,7 +25,7 @@ use std::{
 
 use glam::{Mat4, Vec3};
 use jc3gi::character::character::{AnimationController, Character, Joint};
-use jc3vr_render::{
+use jc3vr_view::{
     controllers::overlay::{
         primitive::{Anchor, DepthMode, Facing, Primitive, Rgba, Shape, Source, SpriteSize},
         store,

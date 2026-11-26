@@ -10,7 +10,7 @@ use std::time::Instant;
 
 use body_rig::angle::{direction, wrap};
 use glam::{Quat, Vec3};
-use jc3vr_render::controllers::overlay::primitive::{Anchor, DepthMode, Primitive, Rgba};
+use jc3vr_view::controllers::overlay::primitive::{Anchor, DepthMode, Primitive, Rgba};
 
 use crate::controllers::body::{
     estimator::{latest, producer},

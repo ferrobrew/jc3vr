@@ -7,7 +7,7 @@ use jc3vr_input::{
     frame,
     frame::{Hand, TrackedPose},
 };
-use jc3vr_render::{vr, vr::stage::StageInfo};
+use jc3vr_view::{vr, vr::stage::StageInfo};
 
 /// The head's height above the floor now.
 pub(super) fn live_eye_height() -> Result<f32, Unavailable> {

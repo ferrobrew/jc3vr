@@ -8,7 +8,7 @@
 //! once and the image the headset is sent after a restart.
 
 use jc3vr_hud::hud::config::HUD_CONFIG;
-use jc3vr_render::{
+use jc3vr_view::{
     fsr::FSR_CONFIG,
     vr::{FOVEATION_CONFIG, VR_CONFIG},
 };

@@ -2,7 +2,7 @@
 
 use jc3gi::input::input_action_map::Action;
 use jc3vr_input::frame::{HandFrame, InteractionProfile, TrackedPose};
-use jc3vr_render::vr::input::semantic::{admission, bound::of_sources};
+use jc3vr_view::vr::input::semantic::{admission, bound::of_sources};
 
 use super::*;
 use crate::controllers::{

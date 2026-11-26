@@ -13,7 +13,7 @@ use jc3vr_input::{
     frame::{Hand, InteractionProfile},
     semantic::SemanticSet,
 };
-use jc3vr_render::vr::input::semantic::{
+use jc3vr_view::vr::input::semantic::{
     bound::{BoundSet, Layout},
     defaults::Component,
 };

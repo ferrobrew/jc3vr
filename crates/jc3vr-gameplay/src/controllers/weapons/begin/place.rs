@@ -1,7 +1,7 @@
 //! How the weapon handling's candidates become grip targets, and where their markers go.
 
 use jc3vr_input::frame::Hand;
-use jc3vr_render::controllers::cockpit::CockpitTransform;
+use jc3vr_view::controllers::cockpit::CockpitTransform;
 
 use crate::controllers::{
     grab::{Candidate, GrabVolume, GripTarget, Mark, MarkAt, MarkStyle, Shown, Tier},

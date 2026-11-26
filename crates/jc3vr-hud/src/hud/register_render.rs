@@ -2,7 +2,7 @@
 //! over each eye, the flat mirror overlay's offscreen pass, the textures the desktop mirror
 //! composites, and the render camera the panel and the pointer share.
 
-use jc3vr_render::{
+use jc3vr_view::{
     hooks::{
         camera::register_render_camera_observer,
         graphics_engine::post_draw::{

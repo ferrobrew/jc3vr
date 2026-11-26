@@ -9,6 +9,8 @@ fn main() {
     // built from count as its source.
     println!("cargo:rerun-if-changed=src");
     println!("cargo:rerun-if-changed=../crates/jc3vr-core/src");
+    println!("cargo:rerun-if-changed=../crates/jc3vr-view/src");
+    println!("cargo:rerun-if-changed=../crates/jc3vr-view/shaders");
     println!("cargo:rerun-if-changed=../crates/jc3vr-render/src");
     println!("cargo:rerun-if-changed=../crates/jc3vr-render/shaders");
     println!("cargo:rerun-if-changed=../crates/jc3vr-gameplay/src");

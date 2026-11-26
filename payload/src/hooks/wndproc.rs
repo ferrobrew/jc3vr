@@ -6,8 +6,9 @@ use jc3vr_hud::{
     egui_impl::{EguiState, consume_desktop_shortcut, observe_desktop_message},
     hud::{cursor, egui_panel},
 };
-use jc3vr_render::{headpose, hooks::graphics_engine::shader, screenshot, vr};
+use jc3vr_render::{hooks::graphics_engine::shader, screenshot};
 use jc3vr_tooling::{director, recorder};
+use jc3vr_view::{headpose, vr};
 use re_utilities::hook_library::HookLibrary;
 #[cfg(feature = "profiler")]
 use windows::Win32::UI::Input::KeyboardAndMouse::VK_F9;
@@ -118,7 +119,7 @@ fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     }
 
     // F10 switches the desktop mirror between the stereo pair and the last single eye
-    // (`jc3vr_render::vr::toggle_stereo_pair`). Edge-detected; consumed, which also keeps the system's
+    // (`jc3vr_view::vr::toggle_stereo_pair`). Edge-detected; consumed, which also keeps the system's
     // menu activation off it.
     if (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) && wparam.0 == VK_F10.0 as usize {
         consume_desktop_shortcut(wparam.0);
@@ -214,7 +215,7 @@ fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
 
 /// Log the game window gaining or losing the foreground, and being minimized or restored. Outside a
 /// VR session the engine's main loop skips `Game::Update` for as long as the window is in the
-/// background (`window::AVAMainLoop`, `jc3vr_render::hooks::window_focus`), which the frame breakdown can
+/// background (`window::AVAMainLoop`, `jc3vr_view::hooks::window_focus`), which the frame breakdown can
 /// only report as untracked time, so these lines are what places a long frame against what the
 /// window was doing. The engine itself ignores these messages and polls the foreground window.
 fn log_window_state(msg: u32, wparam: WPARAM) {

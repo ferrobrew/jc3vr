@@ -7,7 +7,7 @@
 use std::time::{Duration, Instant};
 
 use glam::{Mat4, Vec3};
-use jc3vr_render::controllers::cockpit::CockpitTransform;
+use jc3vr_view::controllers::cockpit::CockpitTransform;
 
 use crate::controllers::body::rig::frames::Frames;
 

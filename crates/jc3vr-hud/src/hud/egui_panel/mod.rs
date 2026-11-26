@@ -24,7 +24,7 @@
 //! egui is tessellated exactly once per frame (the single-use `RendererOutput`), on eye 0, into the
 //! panel texture; both eyes then draw the same cached world-space corners through their own per-eye VP
 //! (the same compute-on-eye-0 rule as the gameplay HUD), and the desktop mirror composites the same
-//! panel texture (see [`jc3vr_render::vr::mirror`]). There is never a second egui pass.
+//! panel texture (see [`jc3vr_view::vr::mirror`]). There is never a second egui pass.
 
 mod placement;
 mod slot;
@@ -38,7 +38,7 @@ use jc3vr_input::{
     frame,
     frame::{Hand, Pose},
 };
-use jc3vr_render::hud::pointer::panel::{RenderedPanel, publish_egui_panel, rendered_camera};
+use jc3vr_view::hud::pointer::panel::{RenderedPanel, publish_egui_panel, rendered_camera};
 use parking_lot::Mutex;
 use windows::Win32::Graphics::Direct3D11::{ID3D11DeviceContext, ID3D11ShaderResourceView};
 
@@ -86,13 +86,13 @@ static WAS_ACTIVE: AtomicBool = AtomicBool::new(false);
 /// locks: the frame holds the submit side across the eye draws (`FrameContext`), so a blocking lock
 /// here (as an earlier `vr::is_running()` was) deadlocks the draw against `WaitForCPUDrawToFinish`
 /// -- even with the panel disabled, since the config check came second. The enabled flag is checked first (cheap, and
-/// `CONFIG` is never held across a draw), and the VR-frame signal is the draw-safe [`jc3vr_render::vr::render_params`]
+/// `CONFIG` is never held across a draw), and the VR-frame signal is the draw-safe [`jc3vr_view::vr::render_params`]
 /// slot (a separate lock, published per frame precisely so draw-thread hooks can read it), not the
 /// runtime lock.
 pub fn is_active() -> bool {
     HUD_CONFIG.query(|c| c.egui_panel.enabled)
         && !jc3vr_core::director::clean_view::hides_everything()
-        && jc3vr_render::vr::render_params(0).is_some()
+        && jc3vr_view::vr::render_params(0).is_some()
 }
 
 /// Show or hide the panel through the existing F8/controller route.
@@ -184,7 +184,7 @@ pub(crate) fn draw_quad(
     }
     let cfg = HUD_CONFIG.lock().egui_panel;
     let mut panel = EGUI_PANEL.lock();
-    if jc3vr_render::stereo::dispatch::first_ui_eye(eye) {
+    if jc3vr_view::stereo::dispatch::first_ui_eye(eye) {
         panel.prepare(context, device, &cfg);
     }
     panel.draw(context, device, target);
@@ -256,7 +256,7 @@ impl EguiPanelState {
             head: camera.cockpit_head,
             distance: SUMMON_DISTANCE,
             held,
-            recenters: jc3vr_render::vr::recenter_count(),
+            recenters: jc3vr_view::vr::recenter_count(),
         });
         let aspect = cfg.aspect.max(f32::EPSILON);
         // The panel's physical size is the size that gives the configured apparent size at the

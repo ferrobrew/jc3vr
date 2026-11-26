@@ -8,9 +8,8 @@ use std::{
 };
 
 use anyhow::Context as _;
+use jc3vr_view::vr::VR_CONFIG;
 use parking_lot::Mutex;
-
-use crate::vr::VR_CONFIG;
 pub(crate) mod bound_buffer;
 pub(crate) mod constants;
 pub(crate) mod draw_census;
@@ -26,6 +25,7 @@ pub(crate) mod types;
 pub(crate) mod water_gpu_probe;
 
 use jc3vr_core::config::engine::Snapshot;
+use jc3vr_view::stereo::{dispatch, dispatch::RenderMode};
 use windows::Win32::Graphics::Direct3D11::{ID3D11Device, ID3D11DeviceContext};
 
 use crate::{
@@ -43,7 +43,6 @@ use crate::{
         },
         read_back,
     },
-    stereo::{dispatch, dispatch::RenderMode},
     testing::visual::{HISTORY_FRAMES, VisualMetadata},
 };
 
@@ -743,8 +742,8 @@ pub(crate) fn diagnostic_capture_id() -> Option<String> {
     if !screenshot_wants_eyes()
         || !crate::testing::visual::ready()
         || !jc3vr_core::hooks::in_gameplay()
-        || !crate::vr::is_running_published()
-        || !crate::stereo::active()
+        || !jc3vr_view::vr::is_running_published()
+        || !jc3vr_view::stereo::active()
     {
         return None;
     }
@@ -1339,7 +1338,7 @@ pub(crate) fn capture(
         return;
     }
     let frame = frame_identity();
-    let running = crate::vr::is_running_published();
+    let running = jc3vr_view::vr::is_running_published();
     let gameplay = jc3vr_core::hooks::in_gameplay();
     let effective_config = Snapshot::take();
     let mode = dispatch::mode();
@@ -1387,7 +1386,7 @@ pub(crate) fn capture(
     if !eligible(
         running,
         gameplay,
-        crate::stereo::active(),
+        jc3vr_view::stereo::active(),
         frame,
         active.after,
         fresh,
@@ -1745,7 +1744,7 @@ fn fail_unwritten_stages(result: &mut CaptureMetadata, error: &str) {
 }
 
 pub(crate) fn frame_identity() -> Option<i64> {
-    crate::vr::capture_views().map(|views| views.predicted_display_time_ns)
+    jc3vr_view::vr::capture_views().map(|views| views.predicted_display_time_ns)
 }
 
 fn eligible(
@@ -1831,13 +1830,13 @@ fn comparison_inputs(
             orientation: pose.applied.orientation,
         })
     } else {
-        crate::vr::pose_control::current().map(|pose| CameraInput {
+        jc3vr_view::vr::pose_control::current().map(|pose| CameraInput {
             position: pose.position.to_array(),
             orientation: pose.orientation().to_array(),
         })
     };
     let eyes = [0, 1].map(|eye| {
-        crate::vr::render_params(eye).map(|params| EyeInput {
+        jc3vr_view::vr::render_params(eye).map(|params| EyeInput {
             offset: params.local_offset.to_array(),
             orientation_delta: params.orientation_delta.to_array(),
             projection_standard: glam::Mat4::from(params.projection_standard).to_cols_array(),
@@ -1858,7 +1857,7 @@ fn comparison_inputs(
 fn readiness() -> Readiness {
     Readiness {
         gameplay_ready: jc3vr_core::hooks::in_gameplay(),
-        xr_session_running: crate::vr::is_running_published(),
+        xr_session_running: jc3vr_view::vr::is_running_published(),
         xr_frame_rendering: frame_identity().is_some(),
         build_stamp: jc3vr_core::lifecycle::build_stamp(),
     }

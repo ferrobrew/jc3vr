@@ -6,7 +6,7 @@
 use std::time::Duration;
 
 use jc3vr_input::frame::Hand;
-use jc3vr_render::controllers::overlay::{
+use jc3vr_view::controllers::overlay::{
     primitive::{Anchor, DepthMode, Facing, HandPose, Primitive, Rgba, Shape, Source, SpriteSize},
     store,
 };

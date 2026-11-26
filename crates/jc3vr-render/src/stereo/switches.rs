@@ -7,9 +7,8 @@
 //! [`ShaderBuild`] is the state the live shaders were created under, so a caller can tell whether
 //! the bytecode matches the configuration.
 
+use jc3vr_view::stereo::config::{STEREO_CONFIG, SinglePassConfig};
 use serde::{Serialize, Serializer, ser::SerializeMap as _};
-
-use crate::stereo::config::{STEREO_CONFIG, SinglePassConfig};
 
 macro_rules! single_pass_switches {
     ($($variant:ident => $field:ident, $rebuilds:literal;)*) => {
@@ -150,7 +149,7 @@ impl ShaderBuild {
     pub(crate) fn current() -> Self {
         Self::from_config(
             crate::stereo::single_pass::active(),
-            crate::stereo::layout::collapse_active(),
+            jc3vr_view::stereo::layout::collapse_active(),
             &STEREO_CONFIG.query(|config| config.single_pass),
         )
     }

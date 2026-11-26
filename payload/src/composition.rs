@@ -20,12 +20,13 @@ use jc3vr_render::hooks::profiler;
 use jc3vr_render::{
     controllers::register_passes,
     debug,
-    hooks::{camera, clock, draw_count, graphics_engine, window_focus},
+    hooks::{clock, draw_count, graphics_engine},
     screenshot::harness::{register_pipeline, register_single_pass},
     stereo,
 };
 use jc3vr_tooling::{diagnostics, director, recorder};
 use jc3vr_ui::pause_menu;
+use jc3vr_view::hooks::{camera, window_focus};
 use re_utilities::hook_library::HookLibrary;
 
 use crate::hooks::{game, wndproc};

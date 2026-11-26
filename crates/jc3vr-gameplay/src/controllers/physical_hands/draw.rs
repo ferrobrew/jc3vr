@@ -11,7 +11,7 @@
 use std::time::Duration;
 
 use glam::Vec3;
-use jc3vr_render::{
+use jc3vr_view::{
     controllers::overlay::{
         primitive::{Anchor, DepthMode, Facing, Primitive, Rgba, Shape, Source, SpriteSize},
         store,

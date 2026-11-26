@@ -1,14 +1,14 @@
 use std::time::{Duration, Instant};
 
 use jc3vr_input::frame::{ActionSetKind, ControllerFrame};
-use jc3vr_render::vr::live_tracking::{LocatedTracking, RawAvailability, make_raw_packet};
+use jc3vr_view::vr::live_tracking::{LocatedTracking, RawAvailability, make_raw_packet};
 use openxr as xr;
 
 use super::*;
 use crate::controllers::body::rig::root::{owner::RootOwner, test_source, test_source_with_root};
 
 /// A [`Publisher`] with its own raw tracking publication, standing in for the VR runtime's
-/// ([`jc3vr_render::vr::live_tracking`]).
+/// ([`jc3vr_view::vr::live_tracking`]).
 struct TestPublisher {
     raw: Result<RawPacket, Unavailable>,
     publisher: Publisher,
@@ -564,7 +564,7 @@ fn frame_age_and_origin_counters_reject_without_joining_sources() {
 #[test]
 fn tracking_origin_matches_held_sources_without_native_or_latest_global_labels() {
     let now = Instant::now();
-    let [first, second] = jc3vr_render::controllers::body::rig::origin_provenance::test_origins();
+    let [first, second] = jc3vr_view::controllers::body::rig::origin_provenance::test_origins();
     let mut head = located();
     head.origin = first;
     let mut publisher = TestPublisher::new();

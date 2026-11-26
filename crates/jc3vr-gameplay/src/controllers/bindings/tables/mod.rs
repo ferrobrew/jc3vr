@@ -3,8 +3,8 @@
 //! the timed presses, what each grip press is doing ([`GripLatch`]), the wingsuit's evade press,
 //! and the menu and pad latches).
 //!
-//! Each mode reads the semantic actions of its action set ([`jc3vr_render::vr::input::semantic`]), which
-//! the player can rebind in the runtime; [`jc3vr_render::vr::input::semantic::defaults`] suggests the
+//! Each mode reads the semantic actions of its action set ([`jc3vr_view::vr::input::semantic`]), which
+//! the player can rebind in the runtime; [`jc3vr_view::vr::input::semantic::defaults`] suggests the
 //! layout. The gestures, the grabs, the chords, and the pointers read the raw controls instead, and
 //! what they claim of a hand is masked from the semantic actions bound there
 //! ([`crate::controllers::bindings::intents`]).
@@ -55,7 +55,7 @@ use jc3vr_input::{
         },
     },
 };
-use jc3vr_render::vr::input::semantic::bound::{Physical, PhysicalSet};
+use jc3vr_view::vr::input::semantic::bound::{Physical, PhysicalSet};
 
 use crate::controllers::{
     bindings::{

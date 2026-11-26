@@ -19,7 +19,7 @@ use body_rig::{
     ik_weight::{IkBlend, IkState, IkWeights},
 };
 use glam::{Mat4, Vec2, Vec3};
-use jc3vr_render::headpose::{teleport, xr};
+use jc3vr_view::headpose::{teleport, xr};
 
 use crate::controllers::{
     body::{

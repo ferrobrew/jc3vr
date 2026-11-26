@@ -13,6 +13,14 @@ use jc3gi::{
     ui::ui_manager::{GetIUIManager, UIManager},
 };
 use jc3vr_core::{frame_timing, frame_timing::Slot};
+use jc3vr_view::{
+    hooks::graphics_engine::{
+        capture::{EGUI_DEBUG_RENDER_STATE, eye_capture_fresh, mark_eye_capture, previews_visible},
+        post_draw,
+    },
+    stereo::layout::collapse_active,
+    vr::{BlitSource, VR_CONFIG},
+};
 use re_utilities::hook_library::HookLibrary;
 use windows::Win32::{
     Graphics::Direct3D11::{D3D11_BOX, ID3D11Texture2D},
@@ -23,14 +31,9 @@ use windows::Win32::{
 
 use crate::{
     debug::trace::{TraceEvent, TraceState},
-    hooks::graphics_engine::{
-        capture::{EGUI_DEBUG_RENDER_STATE, eye_capture_fresh, mark_eye_capture, previews_visible},
-        post_draw,
-        probes::{self, scoped},
-    },
+    hooks::graphics_engine::{probes, probes::scoped},
     screenshot::CaptureSource,
-    stereo::{layout::collapse_active, single_pass::set_collapse_ui_eye},
-    vr::{BlitSource, VR_CONFIG},
+    stereo::single_pass::set_collapse_ui_eye,
 };
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -52,13 +55,13 @@ pub(super) fn hook_library() -> HookLibrary {
 ///
 /// The first is whether `render_engine_post_draw` runs apart from `crate::update`, which is what this
 /// hook's shared state has to assume. `crate::update` takes the `EguiState` lock and then
-/// `crate::hooks::graphics_engine::capture::EGUI_DEBUG_RENDER_STATE` inside it, so `render_engine_post_draw` does not hold
+/// `jc3vr_view::hooks::graphics_engine::capture::EGUI_DEBUG_RENDER_STATE` inside it, so `render_engine_post_draw` does not hold
 /// `EGUI_DEBUG_RENDER_STATE` across the registered post-draw layers and passes, of which the debug
 /// panel and the mirror overlay take the `EguiState` lock: it clones the captures under a brief lock, as everywhere
 /// else. Two blocking mutexes in opposite orders deadlock if and only if the two sides run on
 /// different threads.
 ///
-/// The second is whether [`crate::vr::back_buffer`]'s safety argument holds: it is built on
+/// The second is whether [`jc3vr_view::vr::back_buffer`]'s safety argument holds: it is built on
 /// `CreateRenderSetups` running on the render thread under the drained idle context while the
 /// game-thread hooks transition its `BACKING` mutex from elsewhere.
 ///
@@ -107,7 +110,7 @@ pub fn log_hook_thread(hook: &'static str, last_thread_id: &AtomicU32) {
 fn device_resize_buffers(device: *mut HDevice_t, width: u32, height: u32) -> bool {
     // The mod drives a real resize of its own once the substitution is installed, to bring an
     // already-oversized swapchain down to the window; stand aside for that one.
-    if !crate::vr::back_buffer_owned() || crate::vr::resize_substitute_bypassed() {
+    if !jc3vr_view::vr::back_buffer_owned() || jc3vr_view::vr::resize_substitute_bypassed() {
         return DEVICE_RESIZE_BUFFERS
             .get()
             .unwrap()
@@ -139,7 +142,7 @@ fn device_resize_buffers(device: *mut HDevice_t, width: u32, height: u32) -> boo
 /// The back-buffer substitution point: every path that rebuilds the engine's swapchain-derived render
 /// setups funnels through `CreateRenderSetups` (its only callers are `InitializeSystem` and
 /// `ApplyResize`), so an epilogue here cannot be missed. Inert unless the mod owns the back buffer;
-/// see [`crate::vr::back_buffer`] and `docs/mod/stereo/swapchain-ownership.md`.
+/// see [`jc3vr_view::vr::back_buffer`] and `docs/mod/stereo/swapchain-ownership.md`.
 #[detour(
     address = jc3gi::graphics_engine::graphics_engine::GraphicsEngine::CreateRenderSetups_ADDRESS
 )]
@@ -155,7 +158,7 @@ fn create_render_setups(this: *mut GraphicsEngine, device_info: *const DeviceInf
     // SAFETY: the engine has just rebuilt its own render setups, on the drained idle context that
     // `CreateRenderSetups` runs under (the `Draw` prologue).
     if let Some(engine) = unsafe { this.as_mut() } {
-        unsafe { crate::vr::substitute_render_setups(engine) };
+        unsafe { jc3vr_view::vr::substitute_render_setups(engine) };
     }
     returned
 }
@@ -439,9 +442,9 @@ fn mod_post_draw(context: *mut Context) {
             let lock = EGUI_DEBUG_RENDER_STATE.lock();
             [lock.texture(0).cloned(), lock.texture(1).cloned()]
         };
-        let index = crate::stereo::draw_index();
+        let index = jc3vr_view::stereo::draw_index();
         // The frame's last near dispatch: after it, every eye image of the frame is final.
-        let last_near_dispatch = crate::stereo::last_near_dispatch();
+        let last_near_dispatch = jc3vr_view::stereo::last_near_dispatch();
         // The dispatch ticks (the world-space overlay's producers and the scope lens's plan, each
         // acting once per frame), outside the context lock: they read the controller subsystems'
         // published state under those subsystems' own locks.
@@ -494,7 +497,7 @@ fn mod_post_draw(context: *mut Context) {
         // start of the post chain, before it gets read and recycled -- see capture_main_color.)
         //
         // On the direct route the eye is blitted straight into its swapchain slice here, and the
-        // copy into its capture is made only for a reader of the capture (see `crate::vr::blit`).
+        // copy into its capture is made only for a reader of the capture (see `jc3vr_view::vr::blit`).
         // Either way this is the image the copy would have captured: everything the eye shows is
         // drawn by now, and nothing the engine draws after this hook reaches the headset.
         if let Some(src) = graphics_engine.m_BackBufferLinear.as_ref() {
@@ -512,9 +515,9 @@ fn mod_post_draw(context: *mut Context) {
                 let half_w = u32::from(src.m_Width) / 2;
                 let height = u32::from(src.m_Height);
                 for eye in 0..2u32 {
-                    let blitted = !crate::stereo::far_phase()
+                    let blitted = !jc3vr_view::stereo::far_phase()
                         && graphics_engine.m_Device.as_ref().is_some_and(|device| {
-                            crate::vr::blit_direct(
+                            jc3vr_view::vr::blit_direct(
                                 device,
                                 &context.m_Context,
                                 &src.m_Texture,
@@ -527,7 +530,10 @@ fn mod_post_draw(context: *mut Context) {
                         .filter(|_| !blitted || eye_capture_wanted(eye as usize));
                     mark_eye_capture(eye as usize, dst.is_some());
                     if let Some(probes) = probes::armed() {
-                        probes.note_eye(eye as usize, !crate::stereo::far_phase() && dst.is_some());
+                        probes.note_eye(
+                            eye as usize,
+                            !jc3vr_view::stereo::far_phase() && dst.is_some(),
+                        );
                     }
                     if let Some(dst) = dst {
                         let region = D3D11_BOX {
@@ -553,9 +559,9 @@ fn mod_post_draw(context: *mut Context) {
             } else {
                 // A share frame's far dispatch is not an eye image; its capture is overwritten by
                 // the near dispatch of the same eye.
-                let blitted = !crate::stereo::far_phase()
+                let blitted = !jc3vr_view::stereo::far_phase()
                     && graphics_engine.m_Device.as_ref().is_some_and(|device| {
-                        crate::vr::blit_direct(
+                        jc3vr_view::vr::blit_direct(
                             device,
                             &context.m_Context,
                             &src.m_Texture,
@@ -572,7 +578,7 @@ fn mod_post_draw(context: *mut Context) {
                 };
                 mark_eye_capture(index, copied);
                 if let Some(probes) = probes::armed() {
-                    probes.note_eye(index, copied && !crate::stereo::far_phase());
+                    probes.note_eye(index, copied && !jc3vr_view::stereo::far_phase());
                 }
             }
             #[cfg(feature = "profiler")]
@@ -602,7 +608,7 @@ fn mod_post_draw(context: *mut Context) {
                 && let Some(probes) = probes::armed()
                 && let Some(device) = graphics_engine.m_Device.as_ref()
             {
-                if collapse_active() || crate::stereo::dispatch::selected_eye().is_some() {
+                if collapse_active() || jc3vr_view::stereo::dispatch::selected_eye().is_some() {
                     probes.capture_frame(
                         &device.m_Device,
                         &context.m_Context,
@@ -623,9 +629,9 @@ fn mod_post_draw(context: *mut Context) {
             // textures (copied just above) are stitched instead, after the last near dispatch,
             // when both hold the current frame. An isolated mode uses its one physical eye's buffer.
             if let Some(device) = graphics_engine.m_Device.as_ref() {
-                let two_pass_stereo = crate::stereo::active() && !collapse_active();
+                let two_pass_stereo = jc3vr_view::stereo::active() && !collapse_active();
                 let source =
-                    if !two_pass_stereo || crate::stereo::dispatch::selected_eye().is_some() {
+                    if !two_pass_stereo || jc3vr_view::stereo::dispatch::selected_eye().is_some() {
                         Some(CaptureSource::Full(&src.m_Texture))
                     } else if !last_near_dispatch {
                         None

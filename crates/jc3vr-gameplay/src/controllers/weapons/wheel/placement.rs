@@ -32,7 +32,7 @@ use jc3gi::{
     },
 };
 use jc3vr_input::frame::Pose;
-use jc3vr_render::hud::{
+use jc3vr_view::hud::{
     pointer::panel::{aim_at_panel, intersect_panel},
     world_markers::stage_frame::StageFrame,
 };

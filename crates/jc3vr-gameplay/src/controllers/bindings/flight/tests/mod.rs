@@ -2,7 +2,7 @@ mod current;
 
 use jc3gi::input::input_action_map::Action::{CANCEL, OPEN_WINGSUIT, WINGSUIT_AIRBRAKE};
 use jc3vr_input::frame::ActionSetKind;
-use jc3vr_render::vr::input::flight_pose::GestureSample;
+use jc3vr_view::vr::input::flight_pose::GestureSample;
 
 use super::*;
 use crate::controllers::{

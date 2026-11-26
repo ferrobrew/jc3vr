@@ -4,7 +4,7 @@
 //! player resets the camera through `GameCameraManager::ResetCamera` right after the move: the
 //! instant teleport, the deferred teleport's placement, the respawn after death, the load's start
 //! position, and a playlist commit. A post-call detour on it counts the teleport epoch
-//! ([`jc3vr_render::headpose::teleport`]) that the pose consumers compare against the epoch they last
+//! ([`jc3vr_view::headpose::teleport`]) that the pose consumers compare against the epoch they last
 //! saw. Writers that bypass the game world
 //! (a vehicle teleport carrying its seated driver, scripted warps) are caught by the root hook's
 //! per-tick distance test instead ([`crate::controllers::body::rig::root::drive::is_warp`]), which
@@ -12,7 +12,7 @@
 
 use detours_macro::detour;
 use jc3gi::{camera::game_camera_manager::GameCameraManager, types::math::Matrix4};
-use jc3vr_render::{controllers::body::rig::origin_provenance, headpose::teleport};
+use jc3vr_view::{controllers::body::rig::origin_provenance, headpose::teleport};
 use re_utilities::hook_library::HookLibrary;
 
 pub(super) fn hook_library() -> HookLibrary {

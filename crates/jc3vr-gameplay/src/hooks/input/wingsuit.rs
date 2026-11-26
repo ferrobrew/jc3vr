@@ -37,7 +37,7 @@ use jc3gi::{
     input::parachute::get_WingsuitBlendState_StallFlagSet,
 };
 use jc3vr_core::config::engine::ConfigSlot;
-use jc3vr_render::headpose::{self, Source};
+use jc3vr_view::{headpose, headpose::Source};
 
 use crate::{
     controllers::body::procedural::signals::is_local_model, hooks::character::resolve_act_id,

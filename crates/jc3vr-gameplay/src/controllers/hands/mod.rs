@@ -26,7 +26,7 @@
 
 use glam::{Quat, Vec3};
 use jc3vr_input::frame::{self, ControllerFrame, Hand, Pose};
-use jc3vr_render::{headpose, vr::VR_CONFIG};
+use jc3vr_view::{headpose, vr::VR_CONFIG};
 use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{

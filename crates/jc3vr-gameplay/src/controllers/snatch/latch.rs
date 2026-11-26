@@ -14,7 +14,7 @@ use std::time::Duration;
 
 use glam::Vec3;
 use jc3vr_input::frame::Hand;
-use jc3vr_render::controllers::overlay::{
+use jc3vr_view::controllers::overlay::{
     primitive::{Anchor, DepthMode, Facing, HandPose, Primitive, Shape, Source, SpriteSize},
     store,
 };

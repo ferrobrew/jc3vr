@@ -20,6 +20,7 @@ use std::{
 #[cfg(feature = "profiler")]
 use jc3gi::graphics_engine::render_engine::RenderBlockTypeBase;
 use jc3gi::graphics_engine::render_engine::RenderPassId;
+use jc3vr_view::stereo::draw_index;
 use parking_lot::Mutex;
 use serde::Serialize;
 use windows::{
@@ -29,12 +30,9 @@ use windows::{
 
 use crate::{
     hooks::graphics_engine::reconstruction::split_run_eye,
-    stereo::{
-        draw_index,
-        single_pass::{
-            RawDrawKind, bound_vertex_shader_patched, current_pass_id, per_eye_reissue_eye,
-            shader_identity, shader_identity::IdentityResult, vertex_identity_lookup,
-        },
+    stereo::single_pass::{
+        RawDrawKind, bound_vertex_shader_patched, current_pass_id, per_eye_reissue_eye,
+        shader_identity, shader_identity::IdentityResult, vertex_identity_lookup,
     },
 };
 

@@ -52,16 +52,23 @@ use jc3vr_gameplay::{
 use jc3vr_hud::hud::config::{HUD_CONFIG, HudConfig};
 use jc3vr_render::{
     debug::texture_census::TEXTURE_CENSUS,
+    hooks::graphics_engine::config::{
+        EXPOSURE_CONFIG, ExposureConfig, POST_FX_CONFIG, PostFxConfig,
+    },
+    testing::visual::PAUSED,
+};
+use jc3vr_tooling::{
+    director::{DIRECTOR_CONFIG, DirectorConfig},
+    recorder::{RECORDER_CONFIG, RecorderConfig},
+    testing::{TESTING_CONFIG, TestingConfig},
+};
+use jc3vr_view::{
     far_field::{FAR_FIELD_CONFIG, FarFieldConfig},
     fsr::{FSR_CONFIG, FsrConfig},
     headpose::config::{HEADPOSE_CONFIG, HeadPoseConfig, VrTurnConfig},
-    hooks::{
-        camera::config::{CAMERA_CONFIG, CameraConfig},
-        graphics_engine::config::{EXPOSURE_CONFIG, ExposureConfig, POST_FX_CONFIG, PostFxConfig},
-    },
+    hooks::camera::config::{CAMERA_CONFIG, CameraConfig},
     recorder::tracking::{RECORD_HAND_JOINTS, TESTING_ENABLED, TIME_SCALE},
     stereo::config::{STEREO_CONFIG, StereoConfig},
-    testing::visual::PAUSED,
     vr::{
         FOVEATION_CONFIG, FoveationConfig, PANEL_ENABLED, PANEL_ON_MIRROR, PANEL_RESOLUTION,
         VR_CONFIG, VrConfig,
@@ -69,11 +76,6 @@ use jc3vr_render::{
             CONTROLLERS_ENABLED, DOMINANT_HAND, HAPTICS_ENABLED, HAPTICS_INTENSITY, INPUT_CONFIG,
         },
     },
-};
-use jc3vr_tooling::{
-    director::{DIRECTOR_CONFIG, DirectorConfig},
-    recorder::{RECORDER_CONFIG, RecorderConfig},
-    testing::{TESTING_CONFIG, TestingConfig},
 };
 
 jc3vr_core::test_root! {

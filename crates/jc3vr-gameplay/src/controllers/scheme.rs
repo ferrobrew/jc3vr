@@ -50,7 +50,7 @@ pub fn acting_hand() -> Hand {
 /// [`acting_hand`] for a configured `dominant` hand already read from the settings.
 #[inline]
 pub fn acting_hand_for(dominant: Hand) -> Hand {
-    resolve_acting_hand(dominant, jc3vr_render::vr::input::bound_hand())
+    resolve_acting_hand(dominant, jc3vr_view::vr::input::bound_hand())
 }
 
 /// The hand the roles follow for a configured `dominant` hand and the hand the attached bindings

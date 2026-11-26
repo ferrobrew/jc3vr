@@ -16,7 +16,7 @@
 use std::sync::LazyLock;
 
 use jc3vr_core::hash::StateTable;
-use jc3vr_render::vr::RecenterKind;
+use jc3vr_view::vr::RecenterKind;
 
 use crate::controllers::config::SeatTransition;
 
@@ -124,7 +124,7 @@ pub struct SeatAction {
     /// The recenter to request.
     pub recenter: Option<RecenterKind>,
     /// Re-base the cockpit's yaw by the head's offset from the body when it stopped following
-    /// ([`jc3vr_render::vr::request_seat_yaw_rebase`]), in place of a recenter.
+    /// ([`jc3vr_view::vr::request_seat_yaw_rebase`]), in place of a recenter.
     pub rebase_yaw: bool,
 }
 

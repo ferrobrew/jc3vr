@@ -11,7 +11,7 @@ use jc3vr_core::config::engine::{
 };
 use jc3vr_gameplay::controllers::config::{ControllersConfig, SightTable, validate};
 use jc3vr_hud::hud::HudConfig;
-use jc3vr_render::headpose::config::VrTurnConfig;
+use jc3vr_view::headpose::config::VrTurnConfig;
 
 use crate::config::Config;
 #[cfg(test)]

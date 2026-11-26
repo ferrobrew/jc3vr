@@ -3,7 +3,7 @@
 use glam::Vec2;
 use jc3gi::input::input_action_map::Action::{self, *};
 use jc3vr_input::semantic::SemanticSet;
-use jc3vr_render::vr::input::semantic::defaults::default_binding;
+use jc3vr_view::vr::input::semantic::defaults::default_binding;
 
 use super::*;
 use crate::controllers::{

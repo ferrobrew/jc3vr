@@ -5,7 +5,7 @@
 //! grounded rig puts it, under the view, not where the head looks, so the suit left off to one side
 //! of the player's gaze. A take-off is a movement action, so it may turn the body: the head's
 //! heading relative to the view stands in for the torso's as the body's follow target
-//! ([`jc3vr_render::headpose::xr::set_take_off_heading`]), and the game's own turn brings the body around
+//! ([`jc3vr_view::headpose::xr::set_take_off_heading`]), and the game's own turn brings the body around
 //! under the view, so the view does not move.
 //!
 //! The game turns the body only while its movement task runs, which it stops for the wind-up, so the
@@ -24,7 +24,7 @@ use jc3gi::{
     input::input_action_map::{Action, LocalPlayerActionMap},
 };
 use jc3vr_core::hash::StateSet;
-use jc3vr_render::headpose::{self, sim::body_yaw_of};
+use jc3vr_view::{headpose, headpose::sim::body_yaw_of};
 use parking_lot::Mutex;
 
 use crate::{

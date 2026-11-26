@@ -16,7 +16,7 @@ pub mod yank;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use jc3vr_input::frame::{self, Button, GripPress, Hand};
-use jc3vr_render::vr::input::config::INPUT_CONFIG;
+use jc3vr_view::vr::input::config::INPUT_CONFIG;
 
 use crate::controllers::intent::controls::holds_unseen;
 

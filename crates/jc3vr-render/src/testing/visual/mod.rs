@@ -10,16 +10,18 @@ use jc3gi::{
     clock::Clock,
     graphics_engine::{graphics_engine::GraphicsEngine, shadow_manager::get_shadow_system_enabled},
 };
+use jc3vr_view::{
+    far_field::FAR_FIELD_CONFIG,
+    fsr::FSR_CONFIG,
+    stereo::config::STEREO_CONFIG,
+    vr::{FOVEATION_CONFIG, VR_CONFIG},
+};
 use parking_lot::Mutex;
 use serde::Serialize;
 
 use crate::{
     capture_arming::{Arming, arm},
-    far_field::FAR_FIELD_CONFIG,
-    fsr::FSR_CONFIG,
     hooks::graphics_engine::config::{EXPOSURE_CONFIG, POST_FX_CONFIG},
-    stereo::config::STEREO_CONFIG,
-    vr::{FOVEATION_CONFIG, VR_CONFIG},
 };
 
 pub mod environment;
@@ -36,6 +38,15 @@ use jc3vr_core::{
     config::engine::{ConfigSlot, Parts, Snapshot, lock_parts},
     director::clean_view::{CLEAN_VIEW_CONFIG, CleanViewScope},
 };
+pub use jc3vr_view::stereo::dispatch::RenderMode;
+use jc3vr_view::{
+    fsr::AntiAliasing,
+    stereo::{
+        config::{SinglePassConfig, set_single_pass_feature},
+        dispatch, layout,
+    },
+    vr::{FreezeMode, ResolutionProgress, harness, pose_control, pose_control::PoseValues},
+};
 pub use motion::{
     AdvanceOutcome, HISTORY_FRAMES, MotionError, MotionMetadata, MotionRequest, MotionState,
     MotionTable, anchor_matches,
@@ -46,16 +57,9 @@ pub use pose::{
     PoseTable, PoseTransform, TranslationOffset, pose_frame, pose_matches,
 };
 
-pub use crate::stereo::dispatch::RenderMode;
 use crate::{
-    fsr::AntiAliasing,
     hooks::graphics_engine::{shader, tone_mapping},
-    stereo::{
-        config::{SinglePassConfig, set_single_pass_feature},
-        dispatch, layout, single_pass, sun_shadows,
-        switches::ShaderBuild,
-    },
-    vr::{FreezeMode, ResolutionProgress, harness, pose_control, pose_control::PoseValues},
+    stereo::{single_pass, sun_shadows, switches::ShaderBuild},
 };
 
 /// Whether the game is paused, `director.paused` in the settings file, which a capture pins. The
@@ -447,7 +451,7 @@ pub fn frame_complete() {
     state.refresh_environment_observation();
     if state.mode.is_none() {
         if matches!(state.operation, Operation::Restoring(_)) {
-            let resolution = crate::vr::resolution_progress();
+            let resolution = jc3vr_view::vr::resolution_progress();
             let config = lock_parts();
             let paused = unsafe { Clock::get().map(|clock| clock.m_Stop) };
             let shadow_ready = !state.shadow_sync_required
@@ -469,11 +473,12 @@ pub fn frame_complete() {
     if matches!(state.operation, Operation::Configuring(_)) {
         state.configure_frames = state.configure_frames.saturating_add(1);
     }
-    let resolution = crate::vr::resolution_status();
-    let frame_identity = (jc3vr_core::hooks::in_gameplay() && crate::vr::is_running_published())
-        .then(crate::vr::capture_views)
-        .flatten()
-        .map(|views| views.predicted_display_time_ns);
+    let resolution = jc3vr_view::vr::resolution_status();
+    let frame_identity = (jc3vr_core::hooks::in_gameplay()
+        && jc3vr_view::vr::is_running_published())
+    .then(jc3vr_view::vr::capture_views)
+    .flatten()
+    .map(|views| views.predicted_display_time_ns);
     let rendered = frame_identity.and_then(pose_control::rendered_full_camera);
     let live = pose_control::current();
     let paused = unsafe {
@@ -906,7 +911,7 @@ impl State {
                 // The motion's phases then fall on the same FSR jitter offsets in every
                 // configuration, for a period that is a whole number of the jitter's sequences
                 // (the configs' 120 frames are fifteen of them).
-                crate::fsr::jitter::reset_phase();
+                jc3vr_view::fsr::jitter::reset_phase();
                 pose_control::set_current(request.target(base, 0));
                 self.pose = Some(request.evidence(base, 0, applied));
                 self.ready = true;

@@ -28,6 +28,7 @@ use std::{
 
 use anyhow::Context as _;
 use jc3gi::graphics_engine::{graphics_engine::GraphicsEngine, texture::Texture};
+use jc3vr_view::stereo::{dispatch, dispatch::RenderMode, engine_context::EngineContext};
 use parking_lot::Mutex;
 pub use request::{Plane, SnapshotError, SnapshotRequest, SnapshotTable};
 use serde::Serialize;
@@ -51,10 +52,6 @@ use crate::{
             },
             stages::Stage,
         },
-    },
-    stereo::{
-        dispatch::{self, RenderMode},
-        engine_context::EngineContext,
     },
     testing::visual::VisualMetadata,
 };
@@ -232,7 +229,7 @@ fn plane_source_hook(
     let Some(frame) = crate::screenshot::harness::frame_identity() else {
         return;
     };
-    let eye = explicit_eye.unwrap_or_else(crate::stereo::draw_index);
+    let eye = explicit_eye.unwrap_or_else(jc3vr_view::stereo::draw_index);
     let Some(context) = EngineContext::get() else {
         return;
     };
@@ -330,16 +327,16 @@ pub(crate) fn capture(
     };
     // At a still camera, a snapshot that names a jitter index waits for a frame at it, so every
     // configuration's snapshot takes the same sub-pixel offset whatever its warm-up's length.
-    let jitter_phase = crate::vr::render_params(0).and_then(|params| params.jitter);
+    let jitter_phase = jc3vr_view::vr::render_params(0).and_then(|params| params.jitter);
     if let (Some(wanted), Some(jitter)) = (pending.request.jitter_phase, jitter_phase)
         && pending.request.phase.is_none()
         && jitter.phase != wanted % jitter.phase_count.max(1)
     {
         return;
     }
-    if !crate::vr::is_running_published()
+    if !jc3vr_view::vr::is_running_published()
         || !jc3vr_core::hooks::in_gameplay()
-        || !crate::stereo::active()
+        || !jc3vr_view::stereo::active()
         || pending.after == Some(frame)
         || !crate::screenshot::harness::eyes_fresh(frame, selected)
     {

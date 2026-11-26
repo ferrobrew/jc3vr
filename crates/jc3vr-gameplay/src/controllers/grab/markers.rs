@@ -15,7 +15,7 @@
 use std::time::{Duration, Instant};
 
 use jc3vr_input::frame::Hand;
-use jc3vr_render::controllers::{
+use jc3vr_view::controllers::{
     cockpit::CockpitTransform,
     overlay::{
         primitive::{Anchor, DepthMode, Facing, HandPose, Primitive, Shape, Source, SpriteSize},

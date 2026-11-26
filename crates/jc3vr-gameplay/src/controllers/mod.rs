@@ -2,7 +2,7 @@
 //! locomotion, following the plan of record in `docs/mod/input/controllers-and-roomscale.md`.
 //!
 //! The OpenXR side (action sets, suggested bindings, locating the controller spaces, haptics
-//! output, hand tracking) lives in [`jc3vr_render::vr::input`], which publishes one
+//! output, hand tracking) lives in [`jc3vr_view::vr::input`], which publishes one
 //! [`ControllerFrame`](jc3vr_input::frame::ControllerFrame) per rendered frame; the snapshot, the
 //! hands' recent motion, and the scheme rule are the input crate's ([`jc3vr_input`]). This module
 //! owns everything built on that snapshot:

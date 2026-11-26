@@ -6,7 +6,7 @@ use jc3gi::{
     character::character::{CharacterInitializationFlags, DamageStateFlags},
 };
 use jc3vr_core::thread_role::{self, ThreadRole};
-use jc3vr_render::headpose::Anchors;
+use jc3vr_view::headpose::Anchors;
 
 use super::*;
 use crate::controllers::{

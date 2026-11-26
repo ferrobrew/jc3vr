@@ -12,7 +12,7 @@
 //! 4. Held within the character's arm length of his solved shoulder ([`limit_reach`]), so the arm
 //!    can always reach the hand.
 //! 5. Into the world through the head's transform
-//!    ([`CockpitTransform`](jc3vr_render::controllers::cockpit::CockpitTransform)), the same composition
+//!    ([`CockpitTransform`](jc3vr_view::controllers::cockpit::CockpitTransform)), the same composition
 //!    the head pose uses, so that the hands and the view agree.
 //!
 //! On the character's side, the same wrist frame is built from the animated bones
@@ -199,7 +199,7 @@ fn right_wrist_in_grip() -> Mat3 {
 
 #[cfg(test)]
 mod tests {
-    use jc3vr_render::controllers::cockpit::{CockpitTransform, body_of_head};
+    use jc3vr_view::controllers::cockpit::{CockpitTransform, body_of_head};
 
     use super::*;
 

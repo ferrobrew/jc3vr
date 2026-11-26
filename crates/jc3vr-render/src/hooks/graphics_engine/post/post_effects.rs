@@ -23,24 +23,30 @@ use jc3gi::graphics_engine::{
         AAMode, AntiAliasingEffect, PostEffectContext, PostEffectsManager, SunHaloEffect,
     },
 };
+use jc3vr_view::{
+    fsr::{AntiAliasing, FSR_CONFIG, TaaConfig},
+    hooks::graphics_engine::capture::{
+        POST_STAGE_DOF, POST_STAGE_MB, capture_post_stage, previews_visible,
+    },
+    stereo,
+    stereo::{config::STEREO_CONFIG, draw_index, far_phase, later_scene},
+};
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{
     debug::trace::{TraceEvent, TraceState},
-    fsr::{AntiAliasing, FSR_CONFIG, TaaConfig},
     hooks::graphics_engine::{
-        capture::{POST_STAGE_DOF, POST_STAGE_MB, capture_post_stage, previews_visible},
         config::POST_FX_CONFIG,
-        probes::{self, AntiAliasingSide, PipelinePoint, capture_point, scoped},
+        probes,
+        probes::{AntiAliasingSide, PipelinePoint, capture_point, scoped},
     },
-    stereo::{self, config::STEREO_CONFIG, draw_index, far_phase, later_scene},
 };
 
 /// Whether the motion blur and the depth of field are forced off: while a VR session runs, whatever
 /// the `post_fx` switches say. The eye images then go to the headset, where both effects would blur
 /// the view with the player's own head motion and gaze.
 pub fn vr_forces_blurs_off() -> bool {
-    crate::vr::is_running_published()
+    jc3vr_view::vr::is_running_published()
 }
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -95,7 +101,7 @@ fn temporal_dispatch(mgr: *mut c_void, slot: u32, resolve: TemporalResolve) -> b
         ) else {
             return false;
         };
-        let layout = if crate::stereo::layout::double_wide_active()
+        let layout = if jc3vr_view::stereo::layout::double_wide_active()
             && STEREO_CONFIG.query(|c| c.single_pass.fsr_per_eye)
         {
             crate::fsr::EyeLayout::SideBySide

@@ -6,7 +6,7 @@
 //!
 //! - [`recorder`]: the video recorder: a take's sidecar, the eye views streamed to the capture
 //!   host, and the session recording's take markers. The tracking recorder is the render crate's
-//!   ([`jc3vr_render::recorder::tracking`]).
+//!   ([`jc3vr_view::recorder::tracking`]).
 //! - [`director`]: the directing tools: time control, actor safety, heat, the teleport bookmarks,
 //!   the take markers, and the key bindings that drive them. Its pass also drives the core crate's
 //!   clean view ([`jc3vr_core::director::clean_view`]) and the gameplay crate's spawner

@@ -15,6 +15,7 @@ profiler = [
     "dep:puffin",
     "jc3vr-core/profiler",
     "jc3vr-render/profiler",
+    "jc3vr-view/profiler",
     "jc3vr-gameplay/profiler",
     "jc3vr-ui/profiler",
 ]
@@ -30,6 +31,7 @@ jc3vr-core = { path = "../crates/jc3vr-core" }
 # The render layer: the OpenXR runtime, the head pose, stereo, FSR, the far field, the
 # engine-pipeline hooks, and the render diagnostics.
 jc3vr-render = { path = "../crates/jc3vr-render" }
+jc3vr-view = { path = "../crates/jc3vr-view" }
 # The gameplay layer: the controller subsystems, the grapple, and the character, animation, input,
 # equipment, and sim detours.
 jc3vr-gameplay = { path = "../crates/jc3vr-gameplay" }
@@ -60,5 +62,5 @@ glam = { workspace = true }
 jc3vr-input = { path = "../crates/jc3vr-input" }
 serde_json = "1"
 jc3vr-core = { path = "../crates/jc3vr-core", features = ["test-support"] }
-jc3vr-render = { path = "../crates/jc3vr-render", features = ["test-support"] }
+jc3vr-view = { path = "../crates/jc3vr-view", features = ["test-support"] }
 pretty_assertions = "1.4.1"

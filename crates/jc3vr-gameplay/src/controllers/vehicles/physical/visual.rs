@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use glam::Vec3;
 use jc3vr_input::frame::Hand;
-use jc3vr_render::controllers::{
+use jc3vr_view::controllers::{
     cockpit::CockpitTransform,
     overlay::{
         primitive::{Anchor, DepthMode, Facing, Primitive, Rgba, Shape, Source, SpriteSize},

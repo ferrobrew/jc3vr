@@ -11,12 +11,11 @@
 //! `M_eye` on its way through, and pins the eye's half-viewport around the call. The block's shader
 //! stays pristine, which is also why it must not be rewritten -- see `shader_policy`.
 
+use jc3vr_view::stereo::layout::collapse_active;
+
 use crate::{
     hooks::graphics_engine::clustered_lighting,
-    stereo::{
-        layout::collapse_active,
-        single_pass::{static_lights, *},
-    },
+    stereo::single_pass::{static_lights, *},
 };
 
 /// One eye's re-issue of a terrain-detail draw: the reprojected `cb1` (four float4 rows) to stage on

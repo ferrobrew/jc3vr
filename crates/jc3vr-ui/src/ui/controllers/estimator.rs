@@ -7,7 +7,7 @@ use jc3vr_gameplay::controllers::{
     body::{estimator, estimator::config::DEFAULT_WEIGHTS_FILE, rig::root::RootStatus},
     config::ControllersConfig,
 };
-use jc3vr_render::headpose;
+use jc3vr_view::headpose;
 
 pub(super) fn estimator_readout(ui: &mut Ui, root: &RootStatus) {
     let executor = estimator::executor_status();

@@ -2,13 +2,14 @@
 //! trace and the coordinate-frame verification on the render camera's setup, and the texture census
 //! on the engine resizes the native-resolution driver requests.
 
-use crate::{
-    debug::{
-        coord_frame, texture_census,
-        trace::{TraceEvent, TraceState},
-    },
+use jc3vr_view::{
     hooks::camera::{CameraDebugTaps, register_camera_debug_taps},
     vr::{ResizeObserver, register_resize_observer},
+};
+
+use crate::debug::{
+    coord_frame, texture_census,
+    trace::{TraceEvent, TraceState},
 };
 
 pub fn register() {

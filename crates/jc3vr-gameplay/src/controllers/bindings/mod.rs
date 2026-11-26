@@ -83,13 +83,12 @@ use jc3vr_input::{
         vocabulary::{MenuAction, OnFootAction},
     },
 };
-use jc3vr_render::{
+use jc3vr_view::{
     controllers::cockpit::CockpitTransform,
-    headpose::{self, config::HEADPOSE_CONFIG},
-    vr::{
-        self,
-        input::semantic::{frame as semantic_frame, history},
-    },
+    headpose,
+    headpose::config::HEADPOSE_CONFIG,
+    vr,
+    vr::input::semantic::{frame as semantic_frame, history},
 };
 use parking_lot::Mutex;
 
@@ -793,7 +792,7 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
     let summary_masks = state
         .bindings
         .effective_masks(detection.mode, &controls, &semantic_input);
-    let (_, summary_sources) = jc3vr_render::vr::input::sources::table();
+    let (_, summary_sources) = jc3vr_view::vr::input::sources::table();
     let (summary_hold, summary_cancel) = crate::controllers::summary::hold::accepted(
         &semantic_input,
         &routed,
@@ -959,8 +958,7 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
             grabs_for(step.grabs, Consumer::Climb),
         );
         physical_hands::stunt::finish_tick(finish.grips.map(|g| g.held()), &mut step.desired);
-        let rail_packet =
-            jc3vr_render::vr::input::flight_pose::for_frame(&original, Instant::now());
+        let rail_packet = jc3vr_view::vr::input::flight_pose::for_frame(&original, Instant::now());
         if state.rail.step(
             rail::RailInput {
                 hanging: physical_hands::stunt::hanging()

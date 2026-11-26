@@ -6,9 +6,9 @@
 //! the rows.
 //!
 //! The tables name semantic actions; each is described on the physical inputs the runtime reports
-//! it bound to ([`jc3vr_render::vr::input::semantic::bound::SourceTable`]), or, for an action whose
+//! it bound to ([`jc3vr_view::vr::input::semantic::bound::SourceTable`]), or, for an action whose
 //! sources are not known, on those its default binding
-//! ([`jc3vr_render::vr::input::semantic::defaults`]) puts it on, less the inputs the table context masks
+//! ([`jc3vr_view::vr::input::semantic::defaults`]) puts it on, less the inputs the table context masks
 //! ([`crate::controllers::bindings::tables::context_masks`]). A source the mod does not recognise
 //! is described by the runtime's name for it ([`Control::Named`]), and an action bound to nothing
 //! as [`Control::Unbound`].
@@ -18,7 +18,7 @@ use jc3vr_input::{
     frame::Hand,
     semantic::vocabulary::{ActionId, GlobalAction, MenuAction, OnFootAction},
 };
-use jc3vr_render::vr::input::semantic::{
+use jc3vr_view::vr::input::semantic::{
     bound::{Layout, PhysicalSet, SourceName, SourceTable},
     defaults::{Component, default_binding},
 };

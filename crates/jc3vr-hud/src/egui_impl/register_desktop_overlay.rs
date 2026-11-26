@@ -1,6 +1,6 @@
 //! Registers the flat debug UI as the desktop overlay the engine's flip presents.
 
-use jc3vr_render::hooks::graphics_engine::post_draw::register_desktop_overlay;
+use jc3vr_view::hooks::graphics_engine::post_draw::register_desktop_overlay;
 
 use crate::egui_impl::EguiState;
 

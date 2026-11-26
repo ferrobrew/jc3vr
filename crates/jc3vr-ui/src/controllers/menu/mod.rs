@@ -143,7 +143,7 @@ pub(crate) mod tests {
     use std::cell::RefCell;
 
     use jc3vr_core::config::engine::{Snapshot, store};
-    use jc3vr_render::vr::FOVEATION_CONFIG;
+    use jc3vr_view::vr::FOVEATION_CONFIG;
 
     use super::*;
     use crate::pause_menu::model::page::{Item, Page};

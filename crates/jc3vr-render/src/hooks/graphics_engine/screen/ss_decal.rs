@@ -31,7 +31,7 @@
 //! target -- which is also why both viewport slots are pinned, so a permutation that routed to either
 //! slot still lands in this eye.
 //!
-//! Behind [`StereoConfig::single_pass_ssdecal_per_eye`](crate::stereo::config::StereoConfig). The two halves
+//! Behind [`StereoConfig::single_pass_ssdecal_per_eye`](jc3vr_view::stereo::config::StereoConfig). The two halves
 //! are decided at different points in the frame -- the rewrite when a shader is created, the staging
 //! when a decal is drawn -- so the flag cannot switch them together: flipping it off leaves
 //! already-rewritten permutations bound, fetching depth through an offset the draw path has stopped
@@ -50,7 +50,7 @@
 //! The decal therefore lands on the right surface in both eyes and at the same screen position in
 //! both -- correct-looking in a screenshot, flat in a headset.
 //!
-//! Behind [`StereoConfig::single_pass_ssdecal_geometry_per_eye`](crate::stereo::config::StereoConfig), the
+//! Behind [`StereoConfig::single_pass_ssdecal_geometry_per_eye`](jc3vr_view::stereo::config::StereoConfig), the
 //! per-eye re-issue becomes
 //! [`reproject_baked_cb_per_eye_staged`](crate::stereo::single_pass::reproject_baked_cb_per_eye_staged),
 //! which post-multiplies that vertex upload by the eye's `M_eye` on its way through as the block
@@ -72,9 +72,8 @@ use jc3gi::{
     },
     types::math::Matrix4,
 };
+use jc3vr_view::{stereo::config::STEREO_CONFIG, vr::render_params};
 use re_utilities::hook_library::HookLibrary;
-
-use crate::{stereo::config::STEREO_CONFIG, vr::render_params};
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&SS_DECAL_DRAW_BINDER)
@@ -94,7 +93,7 @@ pub(super) fn hook_library() -> HookLibrary {
 /// reload; the debug UI requests one when the flag changes, and [`ss_decal_draw`] keeps the interval
 /// in between bounded.
 pub(crate) fn shader_rewrite_enabled() -> bool {
-    let enabled = crate::stereo::layout::collapse_active()
+    let enabled = jc3vr_view::stereo::layout::collapse_active()
         && STEREO_CONFIG.query(|c| c.single_pass.ssdecal_per_eye);
     if enabled {
         // Sticky, never cleared: this is the same gate `create_fragment_program` reads to decide
@@ -348,9 +347,9 @@ const UV_TO_NDC: [f32; 16] = [
 #[cfg(test)]
 mod tests {
     use jc3gi::camera::camera::Camera;
+    use jc3vr_view::vr::projection::{Fov, OffAxisProjection};
 
     use super::*;
-    use crate::vr::projection::{Fov, OffAxisProjection};
 
     fn asymmetric() -> Matrix4 {
         OffAxisProjection::new(

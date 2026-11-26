@@ -8,7 +8,7 @@ use std::num::NonZeroUsize;
 use glam::{Mat4, Vec3};
 use jc3gi::{character::inventory::WeaponSlot, equipment::weapon::WeaponBase};
 use jc3vr_input::{frame::Hand, haptics::cues::Sustain};
-use jc3vr_render::hooks::camera;
+use jc3vr_view::hooks::camera;
 
 pub(super) use crate::controllers::snatch::acquisition::{
     Fired, Freeing, Grabbed, Pulled, collect, fire_at,

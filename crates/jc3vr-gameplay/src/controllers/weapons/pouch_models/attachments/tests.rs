@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use glam::{Quat, Vec3};
-use jc3vr_render::controllers::{
+use jc3vr_view::controllers::{
     cockpit::CockpitTransform,
     overlay::{
         primitive::{Anchor, Primitive, Source},

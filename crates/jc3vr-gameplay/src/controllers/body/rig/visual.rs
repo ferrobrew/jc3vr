@@ -7,11 +7,11 @@
 //! and the world scale. The overlay's producers draw it into [`Source::BodyRig`] once per rendered
 //! frame ([`crate::controllers::overlay::producers`]).
 //!
-//! [`Source::BodyRig`]: jc3vr_render::controllers::overlay::primitive::Source::BodyRig
+//! [`Source::BodyRig`]: jc3vr_view::controllers::overlay::primitive::Source::BodyRig
 
 use body_rig::StepPhase;
 use glam::{Quat, Vec3};
-use jc3vr_render::controllers::overlay::primitive::{
+use jc3vr_view::controllers::overlay::primitive::{
     Anchor, DepthMode, Facing, Primitive, Rgba, Shape, SpriteSize,
 };
 

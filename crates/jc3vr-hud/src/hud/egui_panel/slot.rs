@@ -99,7 +99,7 @@ pub(crate) struct ResolveInput {
     /// The grabbing hand and its latest cockpit-frame aim pose, when a hand holds the panel and
     /// its pose is known.
     pub(crate) held: Option<(Hand, Pose)>,
-    /// The count of the cockpit frame's re-bases ([`jc3vr_render::vr::recenter_count`]).
+    /// The count of the cockpit frame's re-bases ([`jc3vr_view::vr::recenter_count`]).
     pub(crate) recenters: u32,
 }
 

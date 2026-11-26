@@ -1,20 +1,21 @@
 //! The payload's gameplay layer: everything that changes how the game plays in the headset, built
-//! on the render layer's runtime and the input layer's controller frame, and naming nothing above
+//! on the view layer's runtime and the input layer's controller frame, and naming nothing above
 //! it.
 //!
-//! The crate sits above the core, input, and render crates (`docs/architecture.md`, "Crate
+//! The crate sits above the core, input, and view crates (`docs/architecture.md`, "Crate
 //! layering") and owns:
 //!
 //! - [`controllers`]: the controller subsystems: the bindings and the mode detector, the
 //!   configuration and the clock, the haptics, the weapons with the loadout and the glass, the
 //!   physical hands, the body, the vehicles, the hands, fingers, presentation, grab, and aim,
 //!   locomotion and roomscale, the snatch, the overlay producers, the scope state, the summary
-//!   model, the telemetry notes, and the spawn table. The render halves of the overlay and the
-//!   scope (the passes) and the cockpit transform live in the render crate, under
-//!   [`jc3vr_render::controllers`], and are named there.
+//!   model, the telemetry notes, and the spawn table. The data the render halves of the overlay
+//!   and the scope read, and the cockpit transform, live in the view crate, under
+//!   [`jc3vr_view::controllers`]; the passes that draw them live in the render crate's
+//!   `controllers`, which this crate does not depend on.
 //! - [`grapple`]: the grapple's device, its physical rope and swing, and its seats.
 //! - [`hooks`]: the gameplay detours (the character and its pose, the animation graph, the input
-//!   tick, the equipment, and the sim step) and the stance height the render crate's camera adjust
+//!   tick, the equipment, and the sim step) and the stance height the view crate's camera adjust
 //!   applies.
 //!
 //! # The public surface

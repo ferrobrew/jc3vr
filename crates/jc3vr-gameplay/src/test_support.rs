@@ -11,7 +11,7 @@ use std::{
     time::Instant,
 };
 
-use jc3vr_render::headpose::{self, HeadParticipants};
+use jc3vr_view::{headpose, headpose::HeadParticipants};
 
 use crate::{
     controllers::{

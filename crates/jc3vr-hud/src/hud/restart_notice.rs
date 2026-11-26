@@ -1,5 +1,5 @@
 //! The restart notice: a head-locked panel telling the player that the game must restart for the
-//! controller input to match the settings ([`jc3vr_render::vr::input::restart`]). It shows for as long as
+//! controller input to match the settings ([`jc3vr_view::vr::input::restart`]). It shows for as long as
 //! that holds: until the game restarts, or, for a changed dominant hand, until the hand is changed
 //! back. The desktop mirror shows it through the eyes' images.
 //!
@@ -12,7 +12,7 @@ use anyhow::Context as _;
 use egui::{FontId, Pos2, Rect, Vec2, text::LayoutJob};
 use glam::{Vec3, Vec4};
 use jc3gi::graphics_engine::{device::Device, texture::Texture};
-use jc3vr_render::vr::input::{restart, restart::RestartReason};
+use jc3vr_view::vr::input::{restart, restart::RestartReason};
 use parking_lot::Mutex;
 use windows::Win32::Graphics::Direct3D11::ID3D11DeviceContext;
 
@@ -30,7 +30,7 @@ use crate::{
 /// the render-thread post-draw hook with the engine context mutex held.
 pub(crate) fn draw(context: &ID3D11DeviceContext, device: &Device, target: &Texture, eye: usize) {
     let mut notice = NOTICE.lock();
-    if jc3vr_render::stereo::dispatch::first_ui_eye(eye) {
+    if jc3vr_view::stereo::dispatch::first_ui_eye(eye) {
         notice.prepare(context, device);
     }
     notice.draw(context, device, target);
@@ -54,13 +54,13 @@ impl Notice {
     /// of the head.
     fn prepare(&mut self, context: &ID3D11DeviceContext, device: &Device) {
         self.corners = None;
-        if self.failed || jc3vr_render::vr::render_params(0).is_none() {
+        if self.failed || jc3vr_view::vr::render_params(0).is_none() {
             return;
         }
         let Some(reason) = restart::current() else {
             return;
         };
-        let Some((head, orientation)) = jc3vr_render::hud::render_camera_pose() else {
+        let Some((head, orientation)) = jc3vr_view::hud::render_camera_pose() else {
             return;
         };
         if self.gpu.is_none() {

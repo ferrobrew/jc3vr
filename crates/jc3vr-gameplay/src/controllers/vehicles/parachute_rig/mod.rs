@@ -20,7 +20,7 @@ use jc3gi::{
     types::math::Matrix4,
 };
 use jc3vr_input::frame::Hand;
-use jc3vr_render::controllers::cockpit::CockpitTransform;
+use jc3vr_view::controllers::cockpit::CockpitTransform;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 

@@ -7,10 +7,7 @@ use std::panic::Location;
 
 use glam::Vec3;
 use jc3vr_input::frame::Hand;
-use jc3vr_render::recorder::tracking::{
-    events::{self, EventKind},
-    format::hand_to_file,
-};
+use jc3vr_view::recorder::tracking::{events, events::EventKind, format::hand_to_file};
 use tracking_format::event::{
     Diagnostic, Force, ForceKind, Haptic, Injected, InjectedWrite, Label, WorldMotion,
 };

@@ -13,6 +13,7 @@ jc3gi = { path = "../../jc3gi" }
 jc3vr-core = { path = "../jc3vr-core" }
 jc3vr-input = { path = "../jc3vr-input" }
 jc3vr-render = { path = "../jc3vr-render" }
+jc3vr-view = { path = "../jc3vr-view" }
 jc3vr-gameplay = { path = "../jc3vr-gameplay" }
 tracking-format = { path = "../tracking-format" }
 tracing = "0.1"

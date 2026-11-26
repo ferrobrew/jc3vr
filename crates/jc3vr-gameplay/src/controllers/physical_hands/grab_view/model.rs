@@ -4,7 +4,7 @@
 
 use glam::Vec3;
 use jc3vr_input::frame::Hand;
-use jc3vr_render::controllers::overlay::primitive::Rgba;
+use jc3vr_view::controllers::overlay::primitive::Rgba;
 
 use crate::controllers::physical_hands::{PalmReadout, collider_view::model::Aabb, status::Idle};
 

@@ -393,7 +393,7 @@ pub(crate) fn tick() -> Detection {
         tracing::debug!(target: "controllers", ?before, after = ?detection.mode, "mode change");
     }
     *LAST_SNAPSHOT.lock() = Some(snapshot);
-    jc3vr_render::vr::input::set_active_action_set(detection.mode.action_set());
+    jc3vr_view::vr::input::set_active_action_set(detection.mode.action_set());
     detection
 }
 

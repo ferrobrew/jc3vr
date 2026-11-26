@@ -16,7 +16,7 @@ use jc3gi::{
     animation::ik::Effector,
     character::character::{AnimationController, Character, Joint, SafeBoneIndex},
 };
-use jc3vr_render::{controllers::cockpit::CockpitTransform, headpose, vr::VR_CONFIG};
+use jc3vr_view::{controllers::cockpit::CockpitTransform, headpose, vr::VR_CONFIG};
 use parking_lot::Mutex;
 
 use crate::{

@@ -32,7 +32,7 @@ use std::{
 };
 
 use jc3gi::character::character::{AnimationLayer, Character};
-use jc3vr_render::headpose;
+use jc3vr_view::headpose;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 

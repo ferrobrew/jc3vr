@@ -3,7 +3,7 @@
 use std::time::Duration;
 
 use jc3vr_input::frame::ActionSetKind;
-use jc3vr_render::vr::input::semantic::{SCHEMA_VERSION, history};
+use jc3vr_view::vr::input::semantic::{SCHEMA_VERSION, history};
 use tracking_format::input::{GroupOrder, InputGroup, InputStamp};
 
 #[cfg(test)]

@@ -39,13 +39,12 @@ use jc3gi::graphics_engine::{
     render_engine::{RenderBlockTypeRegistry, RenderPassId},
     render_pass::{RBILists, RenderInstance, RenderPass, RenderPassSortMethod, SortContext},
 };
-use parking_lot::Mutex;
-
-mod config;
-pub use config::{FAR_FIELD_CONFIG, FarFieldConfig, FarFieldMode};
 use jc3vr_core::hooks::patcher;
-
-use crate::stereo::{far_phase, is_second_eye, share_frame};
+use jc3vr_view::{
+    far_field::{FAR_FIELD_CONFIG, FarFieldMode},
+    stereo::{far_phase, is_second_eye, share_frame},
+};
+use parking_lot::Mutex;
 
 pub mod share;
 
@@ -351,7 +350,7 @@ unsafe extern "system" fn far_gated_type_is_enabled(_this: *mut ::core::ffi::c_v
 /// G-buffer marking entirely -- leaving `cb13` mirrored and the viewport unsplit, so both eyes get
 /// the same mono image cropped in half.
 pub fn share_configured() -> bool {
-    !crate::stereo::layout::collapse_active()
+    !jc3vr_view::stereo::layout::collapse_active()
         && FAR_FIELD_CONFIG.query(|c| c.enabled && c.mode == FarFieldMode::Share)
 }
 

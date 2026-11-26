@@ -1,5 +1,5 @@
 use glam::Vec3;
-use jc3vr_render::vr::input::semantic::bound::SourceTable;
+use jc3vr_view::vr::input::semantic::bound::SourceTable;
 
 use super::*;
 use crate::controllers::{

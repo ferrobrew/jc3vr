@@ -15,7 +15,7 @@ use jc3vr_input::{
     frame::{self, ControllerFrame, Hand},
     motion::{self, MotionSample, RELEASE_ESTIMATE},
 };
-use jc3vr_render::{
+use jc3vr_view::{
     controllers::cockpit::CockpitTransform,
     recorder::tracking::format::{debug_label, hand_to_file},
 };

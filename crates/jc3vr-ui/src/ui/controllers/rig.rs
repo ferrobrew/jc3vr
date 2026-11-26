@@ -103,7 +103,7 @@ pub(super) fn rig_settings(ui: &mut Ui, body: &mut BodyRemapConfig) {
         )
         .clicked()
     {
-        jc3vr_render::vr::recenter();
+        jc3vr_view::vr::recenter();
     }
     let mut procedural = body.procedural.mode == ProceduralMode::Full;
     if ui

@@ -11,19 +11,13 @@ use jc3vr_core::{
     hooks::online::{ONLINE_CONFIG, OnlineConfig},
 };
 use jc3vr_input::frame::Hand;
-
-use crate::{
-    debug::texture_census::TEXTURE_CENSUS,
+use jc3vr_view::{
     far_field::{FAR_FIELD_CONFIG, FarFieldConfig},
     fsr::{FSR_CONFIG, FsrConfig},
     headpose::config::{HEADPOSE_CONFIG, HeadPoseConfig},
-    hooks::{
-        camera::config::{CAMERA_CONFIG, CameraConfig},
-        graphics_engine::config::{EXPOSURE_CONFIG, ExposureConfig, POST_FX_CONFIG, PostFxConfig},
-    },
+    hooks::camera::config::{CAMERA_CONFIG, CameraConfig},
     recorder::tracking::{RECORD_HAND_JOINTS, TESTING_ENABLED, TIME_SCALE},
     stereo::config::{STEREO_CONFIG, StereoConfig},
-    testing::visual::PAUSED,
     vr::{
         FOVEATION_CONFIG, FoveationConfig, PANEL_ENABLED, PANEL_ON_MIRROR, PANEL_RESOLUTION,
         VR_CONFIG, VrConfig,
@@ -32,6 +26,14 @@ use crate::{
             InputConfig,
         },
     },
+};
+
+use crate::{
+    debug::texture_census::TEXTURE_CENSUS,
+    hooks::graphics_engine::config::{
+        EXPOSURE_CONFIG, ExposureConfig, POST_FX_CONFIG, PostFxConfig,
+    },
+    testing::visual::PAUSED,
 };
 
 jc3vr_core::test_root! {

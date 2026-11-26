@@ -6,7 +6,7 @@ use jc3gi::input::input_action_map::Action::{
     HELI_TURN_LEFT, HELI_TURN_RIGHT, TURN_LEFT, TURN_RIGHT,
 };
 use jc3vr_input::{frame::Hand, haptics::cues::Event};
-use jc3vr_render::controllers::cockpit::CockpitTransform;
+use jc3vr_view::controllers::cockpit::CockpitTransform;
 
 use crate::controllers::{
     bindings::{

@@ -48,7 +48,7 @@ pub(crate) unsafe fn resolve_rays(owner: &Character, enabled: bool) {
     if requests.is_empty() {
         return;
     }
-    let head = jc3vr_render::headpose::query().position;
+    let head = jc3vr_view::headpose::query().position;
     // SAFETY: the owner is the live local player; its vehicle pointer is live or null.
     let options = unsafe { CastOptions::ignoring_rider(owner) }.seeing_through();
     let now = Instant::now();

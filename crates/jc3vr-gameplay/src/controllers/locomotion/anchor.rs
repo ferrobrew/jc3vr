@@ -9,7 +9,7 @@ use std::time::Instant;
 use glam::{Mat4, Vec3};
 use jc3gi::character::character::{AimState, Character};
 use jc3vr_core::hooks::in_gameplay;
-use jc3vr_render::{
+use jc3vr_view::{
     headpose::{
         Anchors, Source,
         sim::{HeadMode, mode as head_mode},

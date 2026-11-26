@@ -111,7 +111,7 @@ fn trial(
     let tex: ID3D11Texture2D = unsafe { rt.context("proxy RTV missing")?.GetResource()? }.cast()?;
     let mut desc = D3D11_TEXTURE2D_DESC::default();
     unsafe { tex.GetDesc(&mut desc) };
-    let (w, h) = crate::stereo::render_size().context("proxy size missing")?;
+    let (w, h) = jc3vr_view::stereo::render_size().context("proxy size missing")?;
     let vps = || {
         let mut n = 2;
         let mut v = [D3D11_VIEWPORT::default(); 2];

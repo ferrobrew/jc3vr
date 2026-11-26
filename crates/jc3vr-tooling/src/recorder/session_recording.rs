@@ -9,7 +9,7 @@
 
 use std::time::{Duration, Instant};
 
-use jc3vr_render::recorder::tracking::{self, lookback};
+use jc3vr_view::recorder::{tracking, tracking::lookback};
 use parking_lot::Mutex;
 
 use crate::{

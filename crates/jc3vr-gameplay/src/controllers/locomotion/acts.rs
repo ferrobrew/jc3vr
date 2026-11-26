@@ -38,7 +38,7 @@ use std::{
 
 use jc3gi::{animation::symbol_table::EventIdSymbolTable, character::character::Character};
 use jc3vr_core::hooks::in_gameplay;
-use jc3vr_render::headpose::{Source, source};
+use jc3vr_view::headpose::{Source, source};
 use parking_lot::Mutex;
 
 use crate::{

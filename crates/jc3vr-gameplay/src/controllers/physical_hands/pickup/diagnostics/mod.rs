@@ -13,8 +13,9 @@ pub(crate) mod scan;
 mod tests;
 
 use jc3vr_input::frame::Hand;
-use jc3vr_render::recorder::tracking::{
-    events::{self, EventKind},
+use jc3vr_view::recorder::tracking::{
+    events,
+    events::EventKind,
     format::{debug_label, hand_to_file},
 };
 use parking_lot::Mutex;

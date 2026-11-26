@@ -3,7 +3,7 @@
 //!
 //! The published head is the view's anchor plus the HMD's travel from where it was at the
 //! recenter; the camera renders from an eye point hung ahead of it
-//! ([`jc3vr_render::hooks::camera::eye_point`]), which the cockpit composes the hands from. A head that
+//! ([`jc3vr_view::hooks::camera::eye_point`]), which the cockpit composes the hands from. A head that
 //! looks down turns the eyes about the neck, so the HMD's travel, and with it the published head,
 //! drops and comes forward although nothing below the neck moved. The torso swings toward the neck
 //! pivot instead, where the head bone goes, and the body IK's head target is the same point
@@ -20,7 +20,7 @@
 
 use body_rig::body::EYES_TO_NECK;
 use glam::{Mat4, Quat, Vec3};
-use jc3vr_render::{
+use jc3vr_view::{
     headpose::{anchor_pair, animation_rotation, body_relative_rotation, eye_arm, query},
     hooks::camera::eye_point,
 };

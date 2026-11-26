@@ -817,7 +817,7 @@ unsafe fn slot_weapon(owner: &Character, slot: WeaponSlot) -> Option<&WeaponBase
 
 #[cfg(test)]
 mod tests {
-    use jc3vr_render::controllers::cockpit::CockpitTransform;
+    use jc3vr_view::controllers::cockpit::CockpitTransform;
 
     use super::*;
 

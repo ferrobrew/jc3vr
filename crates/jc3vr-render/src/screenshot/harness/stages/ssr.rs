@@ -1,6 +1,7 @@
 use std::{cell::Cell, ffi::c_void};
 
 use anyhow::{Context as _, ensure};
+use jc3vr_view::stereo::{dispatch, dispatch::RenderMode, draw_index};
 use windows::{
     Win32::Graphics::{
         Direct3D11::{
@@ -13,18 +14,14 @@ use windows::{
 };
 
 use crate::{
-    screenshot::harness::{
-        self,
-        stages::{
+    screenshot::{
+        harness,
+        harness::stages::{
             LakeSampleTargets, STATE, Stage, StageImage, capture_raster_state, empty_stage_record,
             read_texture,
         },
     },
-    stereo::{
-        dispatch::{self, RenderMode},
-        draw_index,
-        single_pass::shader_identity,
-    },
+    stereo::single_pass::shader_identity,
 };
 thread_local! {static ORDINAL:Cell<Option<u8>>=const{Cell::new(None)};}
 
@@ -140,7 +137,7 @@ fn bind_ray(
     eye: usize,
     id: &str,
 ) -> anyhow::Result<RayGuard> {
-    let (w, h) = crate::stereo::render_size().context("missing SSR size")?;
+    let (w, h) = jc3vr_view::stereo::render_size().context("missing SSR size")?;
     ensure!(
         eye < 2 && u64::from(w) * u64::from(h) <= 1024 * 1024,
         "unexpected SSR target size"
@@ -294,7 +291,7 @@ fn log_rows(
             .map(|w| u32::from_le_bytes(*w))
             .collect();
         if n == 1 && slot == 2 && harness::grid_eye(frame).is_some() {
-            let (w, h) = crate::stereo::render_size().context("missing grid extent")?;
+            let (w, h) = jc3vr_view::stereo::render_size().context("missing grid extent")?;
             let (w, h) = ((w / 2) as f32, (h / 2) as f32);
             ensure!(
                 words.get(48..52)
@@ -438,7 +435,7 @@ impl Producer<'_> {
             let tex = tex.context("SSR texture unbound or unsupported view")?;
             let mut desc = D3D11_TEXTURE2D_DESC::default();
             unsafe { tex.GetDesc(&mut desc) };
-            let (w, h) = crate::stereo::render_size().context("SSR render size missing")?;
+            let (w, h) = jc3vr_view::stereo::render_size().context("SSR render size missing")?;
             ensure!(
                 format.is_none_or(|f| desc.Format == f)
                     && ((desc.Width * 2 == w && desc.Height * 2 == h)

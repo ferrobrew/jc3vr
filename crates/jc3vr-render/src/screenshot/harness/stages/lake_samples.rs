@@ -227,7 +227,7 @@ impl LakeSampleTargets {
                 unsafe { views[1].as_ref().unwrap().GetResource()? }.cast()?;
             let mut alpha = D3D11_TEXTURE2D_DESC::default();
             unsafe { tex.GetDesc(&mut alpha) };
-            let (w, h) = crate::stereo::render_size().context("SSR render size missing")?;
+            let (w, h) = jc3vr_view::stereo::render_size().context("SSR render size missing")?;
             ensure!(
                 desc.Width * 2 == w
                     && desc.Height * 2 == h

@@ -17,6 +17,7 @@
 
 use anyhow::Context as _;
 use jc3gi::graphics_engine::device::Device;
+use jc3vr_view::vr::{foveation::resource_as_texture, render_params};
 use parking_lot::Mutex;
 use windows::Win32::{
     Graphics::{
@@ -47,8 +48,6 @@ use windows::Win32::{
     },
     System::Threading::{EnterCriticalSection, LeaveCriticalSection},
 };
-
-use crate::vr::{foveation::resource_as_texture, render_params};
 
 /// Capture the far dispatch's G-buffer: copy MainDepth + GBuffer0..3 into the share pipeline's own
 /// textures (recreated on size/format change). Called from the render-pass-range hook after the
@@ -91,10 +90,7 @@ pub fn teardown() {
 
 /// The committed, precompiled shaders: the shared fullscreen-triangle vertex shader and the
 /// G-buffer composite pixel shader.
-const VERTEX_DXBC: &[u8] = include_bytes!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/shaders/capture_vs.dxbc"
-));
+const VERTEX_DXBC: &[u8] = jc3vr_view::CAPTURE_VS;
 const COMPOSITE_DXBC: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/shaders/far_field_composite_ps.dxbc"
@@ -356,7 +352,7 @@ impl SharePipeline {
         }
         let depth_tex = unsafe { ge.m_MainDepthTexture.as_ref() }
             .context("far field: MainDepth is unavailable")?;
-        let dsv = crate::vr::foveation::view_ptr(&raw const depth_tex.m_DSV)
+        let dsv = jc3vr_view::vr::foveation::view_ptr(&raw const depth_tex.m_DSV)
             .context("far field: MainDepth has no DSV")?;
         let (width, height) = (depth_tex.m_Width as f32, depth_tex.m_Height as f32);
 
@@ -393,7 +389,7 @@ impl SharePipeline {
         // SAFETY: standard full-screen pass against the live context; all prior pipeline state the
         // pass overwrites is captured and restored.
         unsafe {
-            let backup = crate::vr::foveation::capture_state(context);
+            let backup = jc3vr_view::vr::foveation::capture_state(context);
             context.OMSetRenderTargets(Some(&rtvs), Some(&dsv));
             context.OMSetDepthStencilState(Some(&self.depth_merge_state), 0);
             context.OMSetBlendState(Some(&self.opaque_blend), None, 0xFFFF_FFFF);
@@ -416,7 +412,7 @@ impl SharePipeline {
             // Unbind our SRVs before the geometry passes rebind these textures as targets.
             let null_srvs: [Option<ID3D11ShaderResourceView>; 5] = std::array::from_fn(|_| None);
             context.PSSetShaderResources(0, Some(&null_srvs));
-            crate::vr::foveation::restore_state(context, &backup);
+            jc3vr_view::vr::foveation::restore_state(context, &backup);
         }
         Ok(())
     }

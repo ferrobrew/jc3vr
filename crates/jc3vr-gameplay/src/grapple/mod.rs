@@ -35,7 +35,7 @@
 //!
 //! The filtered rotation's yaw does not track the real body while the hold is engaged, so
 //! consumers that steer the actual character (the VR body-turn accumulator) read the raw rotation
-//! ([`jc3vr_render::headpose::xr::body_rotation_raw`]), never the filtered one. Lock order across the
+//! ([`jc3vr_view::headpose::xr::body_rotation_raw`]), never the filtered one. Lock order across the
 //! headpose is SIM → BODY_YAW → FILTER: this module's lock is innermost, so nothing under it may
 //! call back into a locking `headpose` accessor.
 //!
@@ -59,7 +59,7 @@ pub mod rope;
 pub mod seat;
 pub mod telemetry;
 
-use jc3vr_render::{
+use jc3vr_view::{
     headpose,
     headpose::config::{GrappleComfortConfig, GrappleComfortMode},
 };
@@ -71,7 +71,7 @@ use crate::controllers::physics::grapple_hook::{self as hook, HookRead};
 /// and `rooted` the head anchor's offset from the character's root (`None` without anchors);
 /// `on_foot` gates the yaw handoff.
 ///
-/// Called from both cadences — the input tick ([`jc3vr_render::headpose::sim::on_input_tick`], the poll
+/// Called from both cadences — the input tick ([`jc3vr_view::headpose::sim::on_input_tick`], the poll
 /// stage, in the engine's input job in play) and the VR frame loop (render thread) — under one
 /// mutex, with the step `dt` measured internally. `on_foot` arrives as a parameter because the
 /// input-tick caller already holds the sim lock, and reading `sim::mode()` here would deadlock (SIM

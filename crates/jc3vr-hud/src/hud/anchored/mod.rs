@@ -98,13 +98,13 @@ pub(crate) unsafe fn sample_status(cfg: &HudConfig) {
 /// with the engine context mutex held.
 pub(crate) fn draw(context: &ID3D11DeviceContext, device: &Device, target: &Texture, eye: usize) {
     let mut state = STATE.lock();
-    if jc3vr_render::stereo::dispatch::first_ui_eye(eye) {
+    if jc3vr_view::stereo::dispatch::first_ui_eye(eye) {
         let cfg = *HUD_CONFIG.lock();
         let dominant = CONTROLLERS_CONFIG.lock().acting_hand();
         let active = cfg.atlas.enabled
             && world_quads_active(&cfg)
             && scheme::is_controllers()
-            && jc3vr_render::vr::render_params(0).is_some();
+            && jc3vr_view::vr::render_params(0).is_some();
         state.prepare(context, device, active, dominant, &cfg.atlas);
     }
     state.draw(context, device, target);
@@ -336,11 +336,11 @@ impl State {
                 }
             }
         }
-        let head = jc3vr_render::hud::render_camera_pose().map(|(position, orientation)| Pose {
+        let head = jc3vr_view::hud::render_camera_pose().map(|(position, orientation)| Pose {
             position,
             orientation,
         });
-        let dtf = jc3vr_render::hooks::camera::last_dtf();
+        let dtf = jc3vr_view::hooks::camera::last_dtf();
         let hands = late::drawn_hands(dtf);
         let grip = |hand: Hand| hands[hand.index()].map(|h| h.grip);
 

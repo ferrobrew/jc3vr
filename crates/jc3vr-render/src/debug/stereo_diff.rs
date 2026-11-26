@@ -23,12 +23,12 @@ use std::{
 };
 
 use jc3gi::graphics_engine::render_engine::GetRenderPassName_ADDRESS;
+use jc3vr_view::stereo::config::STEREO_CONFIG;
 use parking_lot::Mutex;
 
 use crate::{
     debug::trace::{TraceEvent, TraceState, tracing_active},
     hooks::draw_count::DRAW_COUNTS,
-    stereo::config::STEREO_CONFIG,
 };
 
 /// One traced stereo frame's draw-sequence diff, aligned **by pass id**, not position: eye 1

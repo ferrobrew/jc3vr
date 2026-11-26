@@ -154,7 +154,7 @@ mod tests {
         frame::Hand,
         semantic::{SemanticSet, vocabulary::OnFootAction},
     };
-    use jc3vr_render::vr::input::semantic::bound::{EnumeratedSource, SourceTable};
+    use jc3vr_view::vr::input::semantic::bound::{EnumeratedSource, SourceTable};
 
     use super::*;
     use crate::controllers::{

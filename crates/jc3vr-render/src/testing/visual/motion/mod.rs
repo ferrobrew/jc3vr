@@ -1,12 +1,10 @@
 use std::collections::VecDeque;
 
+use jc3vr_view::vr::pose_control::PoseValues;
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    testing::visual::{
-        OrientationOffset, PoseEvidence, PoseTransform, RequestId, TranslationOffset, pose_matches,
-    },
-    vr::pose_control::PoseValues,
+use crate::testing::visual::{
+    OrientationOffset, PoseEvidence, PoseTransform, RequestId, TranslationOffset, pose_matches,
 };
 
 pub(crate) const MIN_PERIOD_FRAMES: u32 = 32;

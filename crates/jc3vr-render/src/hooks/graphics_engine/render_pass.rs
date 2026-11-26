@@ -19,6 +19,13 @@ use jc3gi::graphics_engine::{
     render_pass::{RenderPass, RenderPassState},
     shadow_manager::ShadowManager,
 };
+use jc3vr_view::{
+    stereo::{STEREO_STATE, config::STEREO_CONFIG, draw_index, is_second_eye},
+    vr::{
+        FOVEATION_CONFIG,
+        foveation::{EyeLayout, FORCE_STENCIL_TEST, FoveatedPasses, FoveationParams},
+    },
+};
 use re_utilities::hook_library::HookLibrary;
 
 #[cfg(feature = "profiler")]
@@ -29,19 +36,11 @@ use crate::{
         trace::{TraceEvent, TraceState, tracing_active},
     },
     hooks::graphics_engine::{
-        probes::{self, PipelinePoint, capture_point, scoped},
+        probes,
+        probes::{PipelinePoint, capture_point, scoped},
         screen::reconstruction,
     },
-    stereo::{
-        STEREO_STATE,
-        config::STEREO_CONFIG,
-        draw_index, is_second_eye,
-        single_pass::{ao_volumes, is_sun_pass, reissue_sun_pass},
-    },
-    vr::{
-        FOVEATION_CONFIG,
-        foveation::{EyeLayout, FORCE_STENCIL_TEST, FoveatedPasses, FoveationParams},
-    },
+    stereo::single_pass::{ao_volumes, is_sun_pass, reissue_sun_pass},
 };
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -96,8 +95,8 @@ const SWEEP_PASS_RANGE: std::ops::RangeInclusive<i16> =
 // `current_add_buffer` between eyes in `game::game_update_render`).
 #[detour(address = jc3gi::graphics_engine::render_pass::RenderPass::SetupRenderFrameData_ADDRESS)]
 fn setup_render_frame_data(a1: *mut c_void, count: i32, a3: *mut c_void, items: *mut c_void) {
-    let gated =
-        crate::stereo::later_scene() && STEREO_CONFIG.query(|c| c.gate_setup_render_frame_data);
+    let gated = jc3vr_view::stereo::later_scene()
+        && STEREO_CONFIG.query(|c| c.gate_setup_render_frame_data);
     TraceState::record_eye(TraceEvent::SetupRenderFrameData { gated });
     if gated {
         return;
@@ -112,7 +111,8 @@ fn setup_render_frame_data(a1: *mut c_void, count: i32, a3: *mut c_void, items: 
 // pool. Suppressing it on eye 1 starves the second render of constant buffers. Off by default.
 #[detour(address = jc3gi::graphics_engine::render_pass::ConstantBufferPool::HandBackBuffers_ADDRESS)]
 fn hand_back_buffers(this: *mut c_void) {
-    let gated = crate::stereo::later_scene() && STEREO_CONFIG.query(|c| c.gate_hand_back_buffers);
+    let gated =
+        jc3vr_view::stereo::later_scene() && STEREO_CONFIG.query(|c| c.gate_hand_back_buffers);
     TraceState::record_eye(TraceEvent::HandBackBuffers { gated });
     if gated {
         return;
@@ -302,7 +302,7 @@ fn draw_render_pass_range(
     // interleaved fullscreen lighting/post passes keep the full width. A no-op unless dual-eye is on.
     let scene_geometry = crate::stereo::single_pass::dual_eye_active()
         && first >= RP_Z_OCCLUDERS
-        && (crate::stereo::layout::collapse_active() || last <= RP_FIRST_SCENE);
+        && (jc3vr_view::stereo::layout::collapse_active() || last <= RP_FIRST_SCENE);
     let range = scene_geometry.then(|| {
         let range = crate::stereo::single_pass::enter_gbuffer_range();
         // The main G-buffer viewport was bound before this range flag went up, so re-split it now.
@@ -354,7 +354,7 @@ fn run_scene_range(first: i32, last: i32, draw: &dyn Fn(i32, i32)) {
     while start < last {
         if fill_before == Some(start) {
             run_foveation_pass(
-                crate::vr::foveation::fill_in_dropped,
+                jc3vr_view::vr::foveation::fill_in_dropped,
                 plan.params,
                 "foveation fill-in",
             );
@@ -366,7 +366,7 @@ fn run_scene_range(first: i32, last: i32, draw: &dyn Fn(i32, i32)) {
         if foveated {
             if start == plan.passes.first() {
                 run_foveation_pass(
-                    crate::vr::foveation::mask_write,
+                    jc3vr_view::vr::foveation::mask_write,
                     plan.params,
                     "foveation mask-write",
                 );
@@ -391,7 +391,7 @@ struct FoveationPlan {
 
 /// Build the [`FoveationPlan`] for a draw-range call, or `None` when foveation is disabled, this is not a
 /// VR eye render, or no foveated pass lies in `[first, last)`. Publishes the per-draw stencil test bits
-/// ([`crate::vr::foveation::STENCIL_TEST_BITS`]) when active.
+/// ([`jc3vr_view::vr::foveation::STENCIL_TEST_BITS`]) when active.
 fn foveation_plan(first: i32, last: i32) -> Option<FoveationPlan> {
     let cfg = FOVEATION_CONFIG.lock().clone();
     let (passes, quads) = STEREO_CONFIG.query(|c| {
@@ -415,8 +415,8 @@ fn foveation_plan(first: i32, last: i32) -> Option<FoveationPlan> {
         return None;
     }
     let layout = foveation_layout()?;
-    crate::vr::foveation::STENCIL_TEST_BITS.store(
-        crate::vr::foveation::packed_stencil_test(cfg.mask_bit),
+    jc3vr_view::vr::foveation::STENCIL_TEST_BITS.store(
+        jc3vr_view::vr::foveation::packed_stencil_test(cfg.mask_bit),
         Ordering::Relaxed,
     );
     Some(FoveationPlan {
@@ -430,7 +430,7 @@ fn foveation_plan(first: i32, last: i32) -> Option<FoveationPlan> {
 /// eyes side by side; otherwise it holds the dispatch's eye (eye 0's under the collapse, whose one
 /// fovea then lands on the seam). `None` when no VR frame is in flight.
 fn foveation_layout() -> Option<EyeLayout> {
-    if crate::stereo::layout::double_wide_active()
+    if jc3vr_view::stereo::layout::double_wide_active()
         && STEREO_CONFIG.query(|c| c.single_pass.foveation_per_eye)
     {
         return Some(EyeLayout::SideBySide {
@@ -444,7 +444,7 @@ fn foveation_layout() -> Option<EyeLayout> {
 
 /// Build the pass parameters from the config and the eyes' layout.
 fn foveation_params(
-    cfg: &crate::vr::FoveationConfig,
+    cfg: &jc3vr_view::vr::FoveationConfig,
     layout: EyeLayout,
     quads: bool,
 ) -> FoveationParams {
@@ -466,7 +466,7 @@ fn foveation_params(
 /// eye's pixels while the scene jitters under it.
 fn foveal_center_uv(eye: usize) -> Option<glam::Vec2> {
     // The glam bridge's `z_axis` is the engine layout's `m02`/`m12` row.
-    let m = crate::vr::render_params(eye)?.unjittered_projection_standard();
+    let m = jc3vr_view::vr::render_params(eye)?.unjittered_projection_standard();
     Some(glam::Vec2::new(
         (0.5 - 0.5 * m.z_axis.x).clamp(0.0, 1.0),
         (0.5 + 0.5 * m.z_axis.y).clamp(0.0, 1.0),
@@ -498,7 +498,7 @@ fn draw_posteffects(this: *mut c_void, ctx: *mut c_void, setup: *mut c_void) {
     // The share frame's far dispatch produces only the captured G-buffer; its post chain is
     // skipped outright (the pass range beyond the G-buffer is already suppressed), so it records
     // no post-effects seam either.
-    if crate::stereo::far_phase() {
+    if jc3vr_view::stereo::far_phase() {
         return;
     }
     #[cfg(feature = "profiler")]
@@ -514,7 +514,7 @@ fn draw_posteffects(this: *mut c_void, ctx: *mut c_void, setup: *mut c_void) {
         && let Some(layout) = foveation_layout()
     {
         run_foveation_pass(
-            crate::vr::foveation::fill_in,
+            jc3vr_view::vr::foveation::fill_in,
             foveation_params(&cfg, layout, quads),
             "foveation fill-in",
         );
@@ -526,11 +526,11 @@ fn draw_posteffects(this: *mut c_void, ctx: *mut c_void, setup: *mut c_void) {
 // index on the context and issues the underlying D3D `OMSet*State` binds. While foveation forces the
 // peripheral stencil test (issue #29), rewrite the staged depth-stencil index of each non-stencil draw to
 // add an `EQUAL 0` test against the mask bit, so the GPU skips the pixels the mask pass tagged. Patched
-// before the original flushes; a no-op unless foveation is mid-range (see `crate::vr::foveation`).
+// before the original flushes; a no-op unless foveation is mid-range (see `jc3vr_view::vr::foveation`).
 #[detour(address = jc3gi::graphics_engine::graphics_engine::SetupRenderStates_ADDRESS)]
 fn setup_render_states(context: *mut HContext_t, a2: *mut c_void) {
     // SAFETY: `context` is the live render context the game passed to its own state flush.
-    unsafe { crate::vr::foveation::apply_force_test(context) };
+    unsafe { jc3vr_view::vr::foveation::apply_force_test(context) };
     reconstruction::before_render_states();
     SETUP_RENDER_STATES.get().unwrap().call(context, a2);
     reconstruction::after_render_states();
@@ -571,9 +571,9 @@ fn shadow_manager_update_render(this: *mut c_void, dt: f32, dtf: f32) -> u64 {
     // The widen uses the eyes' exact union (or the padded cull projection with the switch off);
     // `None` on flatscreen, so widening is VR-only.
     let union = if STEREO_CONFIG.query(|c| c.shadow_fit_unpadded) {
-        crate::vr::shadow_fit_projection_standard()
+        jc3vr_view::vr::shadow_fit_projection_standard()
     } else {
-        crate::vr::cull_projection_standard()
+        jc3vr_view::vr::cull_projection_standard()
     };
     // SAFETY: the camera-manager singleton and the active camera are live on the game thread for
     // the duration of this call; the projection and transform writes are scoped save/restore.
@@ -692,7 +692,7 @@ fn pre_draw(this: *mut RenderEngine, ctx: *mut HContext_t) -> u64 {
     // deferred.
     crate::stereo::single_pass::begin_dispatch();
     let original = PRE_DRAW.get().unwrap();
-    if crate::stereo::dispatch_ordinal() > 0 && crate::stereo::active() {
+    if jc3vr_view::stereo::dispatch_ordinal() > 0 && jc3vr_view::stereo::active() {
         // SAFETY: `this` is the live render engine; its per-category `m_RenderPasses` vectors hold
         // engine-owned, null-checked pass pointers; the `m_Enabled` flag write mirrors the shadow
         // scheduler's own store in `commit_render_pass_settings`.
@@ -785,7 +785,7 @@ fn set_global_shader_constants(this: *mut c_void, ctx: *mut c_void) {
 /// from the render camera's centre, plus, with `anchor_to_fit` (`stereo.shadow_anchor_to_fit`), the centre's offset
 /// from the camera position the fit read. The second gap is published as
 /// [`shadow_fit_gap_m`] for the debug UI.
-fn shadow_lookup_delta(state: &crate::stereo::StereoState, anchor_to_fit: bool) -> glam::Vec3 {
+fn shadow_lookup_delta(state: &jc3vr_view::stereo::StereoState, anchor_to_fit: bool) -> glam::Vec3 {
     let to_fit = match (state.center_transform, state.shadow_fit_position) {
         (Some(center), Some(fit)) => {
             let center = glam::Vec3::new(center.data[12], center.data[13], center.data[14]);
@@ -855,7 +855,7 @@ fn record_shadow_state(ctx: &RenderContext, anchor_delta: glam::Vec3) {
         active_cascades: u32::from(ctx.m_ActiveCascadeCount),
         anchor_delta: anchor_delta.to_array(),
         shadow_fade,
-        dtf: crate::hooks::camera::last_dtf(),
+        dtf: jc3vr_view::hooks::camera::last_dtf(),
         cam_translation,
         cam_forward,
     });

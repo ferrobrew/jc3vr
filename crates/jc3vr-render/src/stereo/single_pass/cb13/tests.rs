@@ -1,13 +1,11 @@
 use glam::{DMat4, DVec3, EulerRot, Mat4, Quat, Vec3, Vec4};
 use jc3gi::types::math::Vector4;
+use jc3vr_view::vr::{EyeRenderParams, Fov, OffAxisProjection, ProjectionConvention};
 use test_case::test_case;
 
-use crate::{
-    stereo::single_pass::cb13::{
-        MEYE_ROW_BASE, STEREO_CB_TOTAL_ROWS, clip_origin_row, pin_rows_to_eye,
-        relative_reprojection, write_meye,
-    },
-    vr::{EyeRenderParams, Fov, OffAxisProjection, ProjectionConvention},
+use crate::stereo::single_pass::cb13::{
+    MEYE_ROW_BASE, STEREO_CB_TOTAL_ROWS, clip_origin_row, pin_rows_to_eye, relative_reprojection,
+    write_meye,
 };
 
 #[test_case(10_000.0, 0; "left at ten thousand")]

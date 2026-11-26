@@ -18,7 +18,7 @@
 //! - its turn about the head, the hands' offsets crossed with their pushes, is smoothed over about
 //!   half a second, so the alternate arms of a crawl cancel while a stroke on one side alone turns
 //!   the body away from it, and the turn is added to the heading the right stick owns
-//!   ([`jc3vr_render::headpose::xr::add_swim_turn`]).
+//!   ([`jc3vr_view::headpose::xr::add_swim_turn`]).
 //!
 //! A hand is in the water when it is below the head by
 //! [`SwimStrokeConfig::water_below_eyes_m`], or anywhere underwater. A hand holding a gun strokes
@@ -32,7 +32,7 @@ use std::time::{Duration, Instant};
 
 use jc3gi::state::StateBitFlag;
 use jc3vr_input::{frame::Hand, haptics::cues::Event};
-use jc3vr_render::headpose;
+use jc3vr_view::headpose;
 use parking_lot::Mutex;
 
 use crate::{

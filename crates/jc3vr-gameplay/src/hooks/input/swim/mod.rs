@@ -48,7 +48,7 @@ use jc3gi::{
     physics,
     types::math::{Matrix4, Vector2, Vector3},
 };
-use jc3vr_render::headpose::body_yaw_target;
+use jc3vr_view::headpose::body_yaw_target;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
@@ -501,7 +501,7 @@ fn advance_swim_pitch(dt: f32) -> f32 {
         SWIM_PITCH_LIMIT_DEG.to_radians(),
         SWIM_PITCH_RATE_DEG_S.to_radians(),
     );
-    let head = jc3vr_render::headpose::body_relative_rotation() * Vec3::NEG_Z;
+    let head = jc3vr_view::headpose::body_relative_rotation() * Vec3::NEG_Z;
     let head_pitch = head.normalize_or_zero().y.clamp(-1.0, 1.0).asin();
     let wanted =
         ((head_pitch.abs() - deadzone).max(0.0) * head_pitch.signum()).clamp(-limit, limit);

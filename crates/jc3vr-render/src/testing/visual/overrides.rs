@@ -9,18 +9,20 @@
 use std::collections::BTreeMap;
 
 use jc3vr_core::config::engine::Parts;
-use serde::{Deserialize, Serialize, Serializer, ser::SerializeMap as _};
-
-use crate::{
+use jc3vr_view::{
     fsr::{AntiAliasing, FSR_CONFIG, FsrConfig},
-    hooks::graphics_engine::config::{EXPOSURE_CONFIG, ExposureConfig, POST_FX_CONFIG},
     stereo::{
         config::{STEREO_CONFIG, SinglePassConfig},
         dispatch::RenderMode,
-        switches::SinglePassSwitch,
     },
-    testing::visual::headset::HeadsetRig,
     vr::{FOVEATION_CONFIG, FoveationConfig, VR_CONFIG},
+};
+use serde::{Deserialize, Serialize, Serializer, ser::SerializeMap as _};
+
+use crate::{
+    hooks::graphics_engine::config::{EXPOSURE_CONFIG, ExposureConfig, POST_FX_CONFIG},
+    stereo::switches::SinglePassSwitch,
+    testing::visual::headset::HeadsetRig,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]

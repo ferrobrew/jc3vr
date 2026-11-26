@@ -16,7 +16,7 @@ use std::{
 
 use body_rig::angle::{wrap, yaw_of};
 use glam::Vec3;
-use jc3vr_render::headpose::{self, sim::body_yaw_of};
+use jc3vr_view::{headpose, headpose::sim::body_yaw_of};
 use parking_lot::Mutex;
 
 use crate::{

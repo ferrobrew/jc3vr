@@ -798,7 +798,7 @@ static CLEANUP: AtomicBool = AtomicBool::new(false);
 #[cfg(test)]
 mod tests {
     use glam::Quat;
-    use jc3vr_render::controllers::cockpit::CockpitTransform;
+    use jc3vr_view::controllers::cockpit::CockpitTransform;
 
     use super::*;
     use crate::controllers::loadout::{BodyLayout, Loadout};

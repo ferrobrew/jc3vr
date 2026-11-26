@@ -40,7 +40,7 @@ use jc3vr_input::{
     frame::MAX_FRAME_AGE,
     semantic::{SemanticSet, vocabulary::MenuAction},
 };
-use jc3vr_render::vr::input::{
+use jc3vr_view::vr::input::{
     semantic,
     semantic::frame::{ActionValue, SemanticFrame},
 };

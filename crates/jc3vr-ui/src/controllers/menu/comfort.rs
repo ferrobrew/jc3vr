@@ -8,7 +8,7 @@ use jc3vr_gameplay::controllers::{
     config::{CONTROLLERS_CONFIG, Posture, SeatTransition},
     roomscale::manual_recenter_kind,
 };
-use jc3vr_render::{
+use jc3vr_view::{
     headpose::config::{GrappleComfortMode, HEADPOSE_CONFIG, VrTurnConfig, VrTurnMode},
     vr::request_recenter,
 };

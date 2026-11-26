@@ -9,7 +9,7 @@
 
 use body_rig::rotation::twist_angle;
 use glam::{Mat3, Mat4, Quat, Vec3, Vec4};
-use jc3vr_render::hooks::graphics_engine::palette_edit::PaletteLayout;
+use jc3vr_view::hooks::graphics_engine::palette_edit::PaletteLayout;
 
 /// Read a palette entry as a transform.
 pub fn entry_to_matrix(m: &[f32; 12], layout: PaletteLayout) -> Mat4 {

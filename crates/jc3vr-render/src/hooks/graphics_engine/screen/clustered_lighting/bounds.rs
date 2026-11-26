@@ -81,12 +81,10 @@ pub(super) fn tile_bounds_from_projection(
 #[cfg(test)]
 mod tests {
     use jc3gi::camera::camera::Camera;
+    use jc3vr_view::vr::projection::{Fov, OffAxisProjection};
 
     use super::*;
-    use crate::{
-        hooks::graphics_engine::clustered_lighting::split::TILE_SIZE,
-        vr::projection::{Fov, OffAxisProjection},
-    };
+    use crate::hooks::graphics_engine::clustered_lighting::split::TILE_SIZE;
 
     /// Extract the frustum bounds (right, left, top, bottom) from a row-major projection matrix.
     fn frustum_bounds(projection: &Matrix4) -> (f32, f32, f32, f32) {

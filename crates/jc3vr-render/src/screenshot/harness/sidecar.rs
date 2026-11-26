@@ -541,7 +541,7 @@ mod tests {
             fresh_eyes: [true; 2],
             rendered_eyes: [true; 2],
             selected_eye: None,
-            mode: crate::stereo::dispatch::RenderMode::Multipass,
+            mode: jc3vr_view::stereo::dispatch::RenderMode::Multipass,
             visual: visual::metadata(),
             comparison_inputs: ComparisonInputs {
                 build_stamp: "test-build",

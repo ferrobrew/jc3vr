@@ -10,7 +10,7 @@ use glam::{Mat4, Vec3};
 use jc3gi::{character::character::Character, graphics_engine::render_block::Matrix3x4};
 use jc3vr_core::render_frame::RenderFrameSlot;
 use jc3vr_input::frame::{self, Hand, Pose};
-use jc3vr_render::{
+use jc3vr_view::{
     controllers::cockpit::{CockpitTransform, body_of_head},
     headpose,
     hooks::{camera::eye_points, graphics_engine::palette_edit::PaletteLayout},
@@ -185,7 +185,7 @@ pub struct LateStatus {
 /// The late update's readout.
 pub fn status() -> LateStatus {
     let frame = FRAME.get().flatten();
-    let dtf = jc3vr_render::hooks::camera::last_dtf();
+    let dtf = jc3vr_view::hooks::camera::last_dtf();
     let hands = frame.map_or([HandLateStatus::default(); 2], |frame| {
         Hand::BOTH.map(|hand| frame.hand_status(hand, dtf))
     });

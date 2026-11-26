@@ -14,7 +14,7 @@
 
 use glam::Vec3;
 use jc3vr_input::frame::{Hand, Pose};
-use jc3vr_render::headpose::xr;
+use jc3vr_view::headpose::xr;
 
 use crate::{
     controllers::{

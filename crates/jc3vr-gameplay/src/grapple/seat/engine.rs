@@ -15,7 +15,7 @@ use jc3gi::{
     },
 };
 use jc3vr_input::frame::Hand;
-use jc3vr_render::controllers::cockpit::CockpitTransform;
+use jc3vr_view::controllers::cockpit::CockpitTransform;
 
 use crate::{
     controllers::{

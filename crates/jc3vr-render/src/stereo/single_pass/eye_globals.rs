@@ -24,10 +24,9 @@ use std::cell::Cell;
 
 use glam::Vec3;
 use jc3gi::{graphics_engine::render_engine::RenderEngine, types::math::Vector4};
+use jc3vr_view::{stereo::STEREO_STATE, vr::render_params};
 
-use crate::{
-    hooks::graphics_engine::upload_global_constants, stereo::STEREO_STATE, vr::render_params,
-};
+use crate::hooks::graphics_engine::upload_global_constants;
 
 /// Move the staged fragment camera rows to `eye` and upload them, for one per-eye run on this
 /// thread. A no-op when a run is already staged, or when the eye's offset or the engine is

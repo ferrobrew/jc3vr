@@ -1,7 +1,7 @@
 //! The notes the controller subsystems write into a tracking recording as they act, for diagnosing
 //! tracking and hand-control problems after the fact. Each producer calls in where it acts, and
 //! nothing is built unless a recording or the lookback collects
-//! ([`jc3vr_render::recorder::tracking::events::collecting`]).
+//! ([`jc3vr_view::recorder::tracking::events::collecting`]).
 //!
 //! The refusals, forces, injected actions, and haptic cues are [`notes`]; a throw's or a release's
 //! moment is [`moments`]; the grounded rig's frames are [`rig`]; and the arm joints of the drawn

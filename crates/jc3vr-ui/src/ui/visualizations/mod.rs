@@ -6,7 +6,8 @@ use jc3vr_gameplay::controllers::{
     physical_hands::collider_view::ColliderViewConfig,
     scheme,
 };
-use jc3vr_render::controllers::overlay::{self, primitive::Source, store, store::SourceMask};
+use jc3vr_render::controllers::overlay;
+use jc3vr_view::controllers::overlay::{primitive::Source, store, store::SourceMask};
 use parking_lot::Mutex;
 
 use crate::ui::{catalog::FeatureId, controllers};

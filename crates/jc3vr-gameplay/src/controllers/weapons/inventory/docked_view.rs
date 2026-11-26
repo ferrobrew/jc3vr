@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use glam::Vec3;
 use jc3gi::{character::character::Character, graphics_engine::model_instance::ModelInstanceFlags};
-use jc3vr_render::controllers::overlay::{
+use jc3vr_view::controllers::overlay::{
     primitive::{Anchor, DepthMode, Facing, Primitive, Rgba, Shape, Source, SpriteSize},
     store,
 };

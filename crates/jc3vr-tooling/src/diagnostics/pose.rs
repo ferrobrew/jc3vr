@@ -18,9 +18,9 @@ use jc3vr_core::{
     hooks,
 };
 use jc3vr_gameplay::hooks::character::pose::LivePose;
-use jc3vr_render::{
+use jc3vr_view::{
     headpose::skeleton::SkeletonKey,
-    recorder::tracking::events::{self, EventKind},
+    recorder::tracking::{events, events::EventKind},
 };
 use parking_lot::Mutex;
 use tracking_format::{

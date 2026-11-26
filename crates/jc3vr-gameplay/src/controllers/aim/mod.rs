@@ -56,7 +56,7 @@ use jc3vr_core::{
     frame_timing::{self, Slot},
 };
 use jc3vr_input::frame::{Hand, Pose};
-use jc3vr_render::controllers::cockpit::CockpitTransform;
+use jc3vr_view::controllers::cockpit::CockpitTransform;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 

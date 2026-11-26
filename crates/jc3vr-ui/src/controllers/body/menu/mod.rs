@@ -69,7 +69,7 @@ mod tests {
         config::{CONTROLLERS_CONFIG, Posture},
     };
     use jc3vr_input::frame::{Hand, Pose, TrackedPose};
-    use jc3vr_render::vr::stage::StageInfo;
+    use jc3vr_view::vr::stage::StageInfo;
     use smol_str::SmolStr;
 
     use super::*;

@@ -5,7 +5,7 @@
 
 use jc3gi::input::input_action_map::Action;
 use jc3vr_input::frame::Hand;
-use jc3vr_render::vr::input::semantic::bound::SourceName;
+use jc3vr_view::vr::input::semantic::bound::SourceName;
 
 /// Which way a stick is pushed for a row.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]

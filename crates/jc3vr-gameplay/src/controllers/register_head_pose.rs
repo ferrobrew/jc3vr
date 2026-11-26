@@ -1,9 +1,9 @@
-//! The gameplay participants of the head pose ([`jc3vr_render::headpose::HeadParticipants`]): the
+//! The gameplay participants of the head pose ([`jc3vr_view::headpose::HeadParticipants`]): the
 //! grapple's comfort filter and the character's state the head composition reads.
 
 use std::{sync::atomic::Ordering, time::Instant};
 
-use jc3vr_render::headpose::{HeadParticipants, register_head_participants};
+use jc3vr_view::headpose::{HeadParticipants, register_head_participants};
 
 use crate::{
     controllers::{

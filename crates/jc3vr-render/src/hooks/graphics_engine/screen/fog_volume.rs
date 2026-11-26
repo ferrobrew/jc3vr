@@ -37,14 +37,18 @@ use jc3gi::{
     },
     types::math::{Matrix4, Vector3},
 };
+use jc3vr_view::{
+    stereo::{STEREO_STATE, config::STEREO_CONFIG},
+    vr::render_params,
+};
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{
-    hooks::graphics_engine::reconstruction::{
-        self, DispatchPhase, SplitOutcome, SplitPolicy, half_target_view_projection,
+    hooks::graphics_engine::{
+        reconstruction,
+        reconstruction::{DispatchPhase, SplitOutcome, SplitPolicy, half_target_view_projection},
     },
-    stereo::{STEREO_STATE, config::STEREO_CONFIG, single_pass::full_eye_view_projection},
-    vr::render_params,
+    stereo::single_pass::full_eye_view_projection,
 };
 
 pub(super) fn hook_library() -> HookLibrary {

@@ -31,7 +31,7 @@ use jc3gi::{
     types::math::Matrix4,
 };
 use jc3vr_input::frame::Hand;
-use jc3vr_render::{controllers::cockpit::CockpitTransform, vr::input::flight_pose};
+use jc3vr_view::{controllers::cockpit::CockpitTransform, vr::input::flight_pose};
 use parking_lot::Mutex;
 
 use crate::controllers::{

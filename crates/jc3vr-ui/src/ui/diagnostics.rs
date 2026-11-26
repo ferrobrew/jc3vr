@@ -21,8 +21,8 @@ use jc3vr_core::config::engine::{Parts, edit_parts};
 use jc3vr_render::{
     debug::camera::{CAMERA_SNAPSHOTS, CameraSnapshot},
     hooks::graphics_engine::{config::EXPOSURE_CONFIG, terrain},
-    stereo::config::STEREO_CONFIG,
 };
+use jc3vr_view::stereo::config::STEREO_CONFIG;
 
 use crate::ui::camera::matrix_grid;
 
@@ -112,7 +112,7 @@ fn trace_options(ui: &mut egui::Ui) {
 fn diagnostics_controls(ui: &mut egui::Ui) {
     let mut cfg = edit_parts();
     // The #31 flicker-isolation A/B levers -- all default off; enable one at a time to localize the
-    // whole-terrain sun-shadow flicker. See `jc3vr_render::stereo::config::StereoConfig`.
+    // whole-terrain sun-shadow flicker. See `jc3vr_view::stereo::config::StereoConfig`.
     ui.collapsing("Flicker isolation (#31)", |ui| {
             ui.checkbox(
                 &mut cfg.part_mut(&STEREO_CONFIG).symmetrize_eye_frusta,

@@ -1,6 +1,7 @@
 use std::{cell::Cell, ffi::c_void};
 
 use anyhow::{Context as _, Result, ensure};
+use jc3vr_view::stereo::draw_index;
 use sha2::{Digest, Sha256};
 use windows::{
     Win32::Graphics::Direct3D11::{
@@ -12,14 +13,14 @@ use windows::{
 };
 
 use crate::{
-    screenshot::harness::{
-        self, WaterReflection,
-        bound_buffer::{ShaderStage, read_bound_constant_buffer},
+    screenshot::{
+        harness,
+        harness::{
+            WaterReflection,
+            bound_buffer::{ShaderStage, read_bound_constant_buffer},
+        },
     },
-    stereo::{
-        draw_index,
-        single_pass::{patch_camera_sources, shader_identity, vertex_identity_lookup},
-    },
+    stereo::single_pass::{patch_camera_sources, shader_identity, vertex_identity_lookup},
 };
 
 const TAG: GUID = GUID::from_u128(0x8cb3b9e3_ad4d_41e7_bdc3_cdc6611f1238);

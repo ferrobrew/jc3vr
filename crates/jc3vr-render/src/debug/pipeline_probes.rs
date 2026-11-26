@@ -20,6 +20,7 @@
 
 use anyhow::Context as _;
 use jc3gi::graphics_engine::graphics_engine::GraphicsEngine;
+use jc3vr_view::stereo::config::STEREO_CONFIG;
 use windows::{
     Win32::{
         Graphics::Direct3D11::{
@@ -31,10 +32,7 @@ use windows::{
     core::Interface,
 };
 
-use crate::{
-    debug::trace::{CAPTURE_FRAMES, TraceEvent, TraceState, tracing_active},
-    stereo::config::STEREO_CONFIG,
-};
+use crate::debug::trace::{CAPTURE_FRAMES, TraceEvent, TraceState, tracing_active};
 
 /// Record the render engine's CPU staging copies of the global shader constant buffers into the
 /// active trace, tagged with the sample point. The staging blocks are re-staged per pass, so

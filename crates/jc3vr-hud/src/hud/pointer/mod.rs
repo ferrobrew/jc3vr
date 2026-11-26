@@ -4,7 +4,7 @@
 //! and primary-button state as the desktop mouse, and [`crate::hooks::ui`] feeds both through the
 //! engine's `MovieImpl::NotifyMouseState` route.
 //!
-//! - [`jc3vr_render::hud::pointer::panel`] holds the rendered panels and the ray intersection
+//! - [`jc3vr_view::hud::pointer::panel`] holds the rendered panels and the ray intersection
 //!   against them;
 //! - the input tick turns the controllers into pointer samples
 //!   ([`jc3vr_gameplay::controllers::bindings::pointer`]);

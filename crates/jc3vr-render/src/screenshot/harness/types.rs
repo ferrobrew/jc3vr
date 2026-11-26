@@ -1,10 +1,11 @@
 use std::path::PathBuf;
 
 use jc3vr_core::config::engine::Snapshot;
+use jc3vr_view::stereo::dispatch::RenderMode;
 use serde::Serialize;
 
 use crate::{
-    stereo::{dispatch::RenderMode, single_pass::FrameDiagnostics},
+    stereo::single_pass::FrameDiagnostics,
     testing::visual::{DiagnosticProfile, VisualMetadata},
 };
 

@@ -13,6 +13,7 @@
 
 use anyhow::Context as _;
 use jc3gi::graphics_engine::texture::Texture;
+use jc3vr_view::controllers::overlay::resolve::GpuPrimitive;
 use windows::{
     Win32::Graphics::{
         Direct3D::{D3D_PRIMITIVE_TOPOLOGY, D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP},
@@ -31,8 +32,6 @@ use windows::{
     },
     core::Interface as _,
 };
-
-use crate::controllers::overlay::resolve::GpuPrimitive;
 
 /// The per-eye constants, matching the HLSL `cbuffer Eye` of both overlay shaders.
 #[repr(C)]

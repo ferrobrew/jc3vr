@@ -12,6 +12,7 @@ use std::{
     sync::atomic::{AtomicBool, AtomicUsize, Ordering},
 };
 
+use jc3vr_view::stereo::engine_context::EngineContext;
 use windows::{
     Win32::{
         Foundation::RECT,
@@ -28,7 +29,7 @@ use windows::{
     core::{Error as WindowsError, HRESULT, Interface},
 };
 
-use crate::stereo::single_pass::{EngineContext, RawDrawKind};
+use crate::stereo::single_pass::RawDrawKind;
 
 mod constants;
 mod ia;
@@ -123,7 +124,7 @@ impl WaterGpuProbe {
             eye,
             invocation,
             frame: FrameStamp {
-                predicted_display_time_ns: crate::vr::capture_views()
+                predicted_display_time_ns: jc3vr_view::vr::capture_views()
                     .map(|views| views.predicted_display_time_ns),
                 visual_generation: visual.generation,
             },

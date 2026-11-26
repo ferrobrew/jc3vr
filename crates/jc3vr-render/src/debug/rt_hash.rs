@@ -26,6 +26,7 @@
 
 use anyhow::Context as _;
 use jc3gi::graphics_engine::{graphics_engine::GraphicsEngine, texture::Texture};
+use jc3vr_view::stereo::config::STEREO_CONFIG;
 use windows::{
     Win32::{
         Graphics::Direct3D11::{
@@ -39,8 +40,8 @@ use windows::{
 
 use crate::{
     debug::trace::{RtKind, TraceEvent, TraceState, tracing_active},
-    image_writer::{self, ChannelOrder, Image, ImageTarget},
-    stereo::config::STEREO_CONFIG,
+    image_writer,
+    image_writer::{ChannelOrder, Image, ImageTarget},
 };
 
 /// Hash the curated engine render targets for the eye that just finished drawing, recording each into
@@ -71,7 +72,7 @@ unsafe fn hash_inner(want_hashes: bool, want_shots: bool) -> anyhow::Result<()> 
     let d3d = &device.m_Device;
     let context = unsafe { device.m_Context.as_ref() }.context("graphics context unavailable")?;
     let ctx = &context.m_Context;
-    let eye = crate::stereo::draw_index();
+    let eye = jc3vr_view::stereo::draw_index();
 
     // Depth targets are deliberately excluded: a CPU readback (staging copy + map) of a depth/stencil
     // or typeless-format texture is an awkward and fault-prone D3D path under the translation layers,

@@ -9,7 +9,7 @@
 use std::collections::HashMap;
 
 use glam::{Affine3A, Vec3};
-use jc3vr_render::controllers::overlay::primitive::{
+use jc3vr_view::controllers::overlay::primitive::{
     Anchor, DepthMode, Facing, Primitive, Rgba, Shape, SpriteSize, scale_alpha,
 };
 

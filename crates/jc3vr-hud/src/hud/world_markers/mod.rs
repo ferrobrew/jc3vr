@@ -19,7 +19,7 @@
 //! - [`jc3vr_gameplay::controllers::aim::marker_rays`] (the game thread, in the player aim's simulation
 //!   update): a physics raycast for the markers that had no recent depth sample.
 //!
-//! [`layout`] holds the pure geometry, and [`stage_frame`](jc3vr_render::hud::world_markers::stage_frame), in the render crate, the stage's mapping onto the texture. The whole prototype is behind
+//! [`layout`] holds the pure geometry, and [`stage_frame`](jc3vr_view::hud::world_markers::stage_frame), in the render crate, the stage's mapping onto the texture. The whole prototype is behind
 //! [`WorldMarkersConfig::enabled`](crate::hud::config::WorldMarkersConfig::enabled). See
 //! `docs/mod/rendering/ui-decoupling.md`.
 

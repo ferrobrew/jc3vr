@@ -27,7 +27,7 @@ use std::{
 
 use glam::Vec3;
 use jc3vr_input::frame::Hand;
-use jc3vr_render::controllers::overlay::{
+use jc3vr_view::controllers::overlay::{
     primitive::{Anchor, Primitive, Source},
     store,
 };

@@ -11,7 +11,7 @@
 
 use glam::Vec3;
 use jc3vr_input::frame::Hand;
-use jc3vr_render::controllers::overlay::primitive::{
+use jc3vr_view::controllers::overlay::primitive::{
     Anchor, DepthMode, Facing, HandPose, Primitive, Rgba, Shape, SpriteSize,
 };
 

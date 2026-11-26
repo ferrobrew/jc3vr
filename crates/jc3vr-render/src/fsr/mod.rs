@@ -19,9 +19,6 @@
 //! Each VR frame's projections carry a sub-pixel jitter ([`jitter`]), which FSR is told per eye in
 //! its own pixels; the motion vectors it is handed are free of it ([`jitter::jitter_free_reprojection`]).
 
-mod config;
-pub use config::{AntiAliasing, FSR_CONFIG, FsrConfig, TaaConfig};
-pub mod jitter;
 pub mod taa;
 mod velocity_decode;
 
@@ -31,6 +28,11 @@ use fsr_sys::{Context, DispatchInfo, Extent, init_flags};
 use jc3gi::{
     graphics_engine::{device::Device, graphics_engine::GraphicsEngine, texture::Texture},
     types::math::Matrix4,
+};
+use jc3vr_view::{
+    fsr::{FSR_CONFIG, jitter},
+    hooks::camera::SCENE_NEAR_CLIP_M,
+    stereo::{STEREO_STATE, config::STEREO_CONFIG},
 };
 use parking_lot::Mutex;
 use serde::Serialize;
@@ -47,14 +49,7 @@ use windows::{
     core::Interface,
 };
 
-use crate::{
-    hooks::camera::SCENE_NEAR_CLIP_M,
-    stereo::{
-        STEREO_STATE,
-        config::STEREO_CONFIG,
-        single_pass::probes::{self, FsrPlane},
-    },
-};
+use crate::stereo::single_pass::{probes, probes::FsrPlane};
 
 /// How the post chain's textures hold the eyes one FSR resolve covers.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -147,7 +142,7 @@ impl EyeViewProjections {
     /// centred and each eye's view-projection comes from the VR frame's per-eye parameters.
     fn current(eye: usize) -> Option<Self> {
         let center = glam::Mat4::from(STEREO_STATE.lock().center_transform?);
-        let params = crate::vr::render_params(eye)?;
+        let params = jc3vr_view::vr::render_params(eye)?;
         let projection = params.unjittered_projection_reverse_z();
         Some(Self {
             center: projection * center.inverse(),
@@ -229,7 +224,7 @@ impl EyeMotion {
 }
 
 /// The stereo correction's clip-to-previous-clip matrices (centre, eye) from `previous` to
-/// `current`, formed in `f64` as [`crate::stereo::VpHistory::reprojection_matrices`] forms them for
+/// `current`, formed in `f64` as [`jc3vr_view::stereo::VpHistory::reprojection_matrices`] forms them for
 /// an eye rendered on its own.
 fn side_by_side_reprojection(
     previous: EyeViewProjections,
@@ -355,7 +350,7 @@ pub fn dispatch(
         }
         EyeLayout::SideBySide => (&EYES, [Some(0), Some(build.eye_width)]),
     };
-    let stereo = crate::stereo::active();
+    let stereo = jc3vr_view::stereo::active();
     let cameras = STEREO_CONFIG.lock().cameras;
     let (correction, hybrid) = FSR_CONFIG.query(|fsr| {
         (
@@ -363,7 +358,7 @@ pub fn dispatch(
             fsr.hybrid_velocity && stereo,
         )
     });
-    let frame = crate::vr::capture_views().map(|views| views.predicted_display_time_ns);
+    let frame = jc3vr_view::vr::capture_views().map(|views| views.predicted_display_time_ns);
     let mut ran = false;
     for &eye in eyes {
         let EyeMotion {
@@ -437,7 +432,7 @@ pub fn dispatch(
             encoded_previous: encoded_previous.map(|matrix| matrix.to_cols_array()),
             jitter_pixels: jitter_pixels.to_array(),
             jitter_ndc: jitter_ndc.to_array(),
-            jitter_phase: crate::vr::render_params(eye)
+            jitter_phase: jc3vr_view::vr::render_params(eye)
                 .and_then(|params| params.jitter)
                 .map(|jitter| jitter.phase),
         });
@@ -515,7 +510,7 @@ pub struct RecordedViews {
 
 impl RecordedViews {
     /// The render camera's history for `eye`, when it holds both frames.
-    fn of_history(history: &crate::stereo::VpHistory, eye: usize) -> Option<Self> {
+    fn of_history(history: &jc3vr_view::stereo::VpHistory, eye: usize) -> Option<Self> {
         Some(Self {
             current_eye: history.cur_eye.get(eye).copied()??.to_cols_array(),
             previous_eye: history.prev_eye.get(eye).copied()??.to_cols_array(),

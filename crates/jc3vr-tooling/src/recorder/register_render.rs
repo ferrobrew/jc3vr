@@ -1,7 +1,7 @@
 //! Registers the recorder with the render layer: as the observer of the desktop mirror's presents,
 //! and as the post-draw's eye-frame recorder.
 
-use jc3vr_render::{
+use jc3vr_view::{
     hooks::graphics_engine::post_draw::{EyeFrameRecorder, register_eye_frame_recorder},
     vr::{MirrorObserver, register_mirror_observer},
 };

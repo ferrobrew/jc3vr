@@ -24,13 +24,10 @@ use std::{
 
 use detours_macro::detour;
 use jc3gi::graphics_engine::ssao::SSAOPass;
+use jc3vr_view::{stereo, stereo::config::STEREO_CONFIG};
 use re_utilities::hook_library::HookLibrary;
 
-use crate::{
-    debug::trace::{TraceEvent, TraceState},
-    stereo,
-    stereo::config::STEREO_CONFIG,
-};
+use crate::debug::trace::{TraceEvent, TraceState};
 
 /// The live `CSSAOPass` instance, captured from [`ssao_draw`]. The between-eye SSAO history-index
 /// restore in `game.rs` needs this pointer but has no singleton path to it, so the pass records itself

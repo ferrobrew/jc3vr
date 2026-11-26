@@ -23,7 +23,7 @@ use jc3gi::input::{
 };
 use jc3vr_core::frame_timing::{self, Slot};
 use jc3vr_input::capture::input_captured;
-use jc3vr_render::headpose;
+use jc3vr_view::headpose;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{

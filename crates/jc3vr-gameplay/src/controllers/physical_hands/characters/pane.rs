@@ -38,7 +38,7 @@ pub(crate) unsafe fn reached_through(
 
 /// The point the camera renders the player's eyes from, where the hand's way in starts.
 pub(crate) fn eyes() -> Vec3 {
-    jc3vr_render::hooks::camera::eye_point()
+    jc3vr_view::hooks::camera::eye_point()
 }
 
 /// Whether any leg of the path through `points` crosses, by `crosses`, skipping a leg too short or

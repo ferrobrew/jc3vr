@@ -3,7 +3,7 @@
 use std::time::Instant;
 
 use glam::Mat4;
-use jc3vr_render::controllers::body::rig::origin_provenance::{
+use jc3vr_view::controllers::body::rig::origin_provenance::{
     OriginEvidence, OriginUnavailable, TrackingReceipt,
 };
 

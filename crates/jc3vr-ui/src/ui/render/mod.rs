@@ -2,7 +2,7 @@
 //! far field, and post-FX controls, plus render-thread capture state.
 //!
 //! The feature bodies use one section module per concern. The capture state lives in
-//! [`jc3vr_render::hooks::graphics_engine::capture`], beside the render hooks that fill it.
+//! [`jc3vr_view::hooks::graphics_engine::capture`], beside the render hooks that fill it.
 
 mod far_field;
 mod passes;
@@ -12,7 +12,8 @@ mod single_pass;
 mod stereo;
 
 use jc3vr_core::config::engine::{Parts, edit_parts};
-use jc3vr_render::{hooks::graphics_engine::config::POST_FX_CONFIG, vr::FOVEATION_CONFIG};
+use jc3vr_render::hooks::graphics_engine::config::POST_FX_CONFIG;
+use jc3vr_view::vr::FOVEATION_CONFIG;
 
 use crate::ui::{catalog::FeatureId, dispatch::FeatureBody};
 

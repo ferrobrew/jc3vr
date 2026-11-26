@@ -48,7 +48,7 @@ use jc3vr_input::{
     frame::{Hand, Pose},
     haptics::cues::Event,
 };
-use jc3vr_render::{controllers::cockpit::CockpitTransform, headpose};
+use jc3vr_view::{controllers::cockpit::CockpitTransform, headpose};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 use serde::{Deserialize, Serialize};

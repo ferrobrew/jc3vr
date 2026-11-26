@@ -1,6 +1,6 @@
 //! The static foveated rendering tuning (issue #29).
 
-use jc3vr_render::vr::FoveationConfig;
+use jc3vr_view::vr::FoveationConfig;
 
 pub(super) fn section(ui: &mut egui::Ui, foveation: &mut FoveationConfig) {
     ui.add(

@@ -4,6 +4,10 @@ use std::{cell::Cell, ffi::c_void};
 
 use anyhow::Context as _;
 use cascade::{CascadeGuard, CascadeTrial};
+use jc3vr_view::{
+    stereo::{dispatch, draw_index, far_phase},
+    vr,
+};
 use parking_lot::Mutex;
 use serde::Serialize;
 use windows::{
@@ -19,12 +23,8 @@ use windows::{
 
 use crate::{
     screenshot::harness::{diagnostic_capture_id, resolve_inputs_requested},
-    stereo::{
-        dispatch, draw_index, far_phase,
-        single_pass::shader_identity::{self, IdentityResult},
-    },
+    stereo::single_pass::{shader_identity, shader_identity::IdentityResult},
     testing::visual,
-    vr,
 };
 
 const PS_SRV_SLOTS: [u32; 28] = [
@@ -274,7 +274,7 @@ pub(crate) unsafe fn on_draw(
         let id = diagnostic_capture_id()?;
         let source =
             crate::screenshot::harness::patch_draw::resolve_camera_source(frame, eye, &id)?;
-        let (w, h) = crate::stereo::render_size()?;
+        let (w, h) = jc3vr_view::stereo::render_size()?;
         let mut rects = [windows::Win32::Foundation::RECT::default(); 2];
         let mut n = 2;
         let mut desc = windows::Win32::Graphics::Direct3D11::D3D11_RASTERIZER_DESC::default();

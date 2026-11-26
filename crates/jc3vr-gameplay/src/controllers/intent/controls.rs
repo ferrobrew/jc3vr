@@ -4,7 +4,7 @@
 
 use glam::Vec2;
 use jc3vr_input::frame::{Button, ControllerFrame, Edges, Hand, HandFrame};
-use jc3vr_render::vr::input::{
+use jc3vr_view::vr::input::{
     layout::{Input, Vec2Input, provides},
     semantic::bound::PhysicalSet,
 };
@@ -220,7 +220,7 @@ impl Controls {
 /// opens when the fingers come off. Only a press closes the hand: fingers resting round the handle
 /// keep a hold, but never start one.
 ///
-/// [`InputConfig::squeeze_press`]: jc3vr_render::vr::input::config::InputConfig::squeeze_press
+/// [`InputConfig::squeeze_press`]: jc3vr_view::vr::input::config::InputConfig::squeeze_press
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
 pub struct ClosedHand {
     closed: bool,

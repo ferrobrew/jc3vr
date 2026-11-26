@@ -10,21 +10,20 @@ use jc3gi::graphics_engine::{
     render_block::RenderBlockDeferredLighting,
     render_engine::RenderPassId,
 };
+use jc3vr_view::stereo::config::STEREO_CONFIG;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::{
-    hooks::graphics_engine::{
-        clustered_lighting::{
-            bounds::tile_bounds_from_projection,
-            split::{
-                LightView, SPLIT, SplitState, TileGrid, assignment_transform,
-                decline_split_for_context, decline_warning, restore_viewport, unsplittable_context,
-            },
+use crate::hooks::graphics_engine::{
+    clustered_lighting::{
+        bounds::tile_bounds_from_projection,
+        split::{
+            LightView, SPLIT, SplitState, TileGrid, assignment_transform,
+            decline_split_for_context, decline_warning, restore_viewport, unsplittable_context,
         },
-        probes::{self, PipelinePoint, capture_point, scoped},
-        reconstruction,
     },
-    stereo::config::STEREO_CONFIG,
+    probes,
+    probes::{PipelinePoint, capture_point, scoped},
+    reconstruction,
 };
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -156,8 +155,8 @@ fn run_draw_clustered(
     let grid = rc_ref.map(TileGrid::of);
     let ctx = rc_ref.map(|rc| rc.m_Context as usize).unwrap_or(0);
     // Un-split runs keep reading the collapse's single dispatch index, which is always eye 0.
-    let dispatch_eye = request.eye.unwrap_or_else(crate::stereo::draw_index);
-    let params = crate::vr::render_params(dispatch_eye);
+    let dispatch_eye = request.eye.unwrap_or_else(jc3vr_view::stereo::draw_index);
+    let params = jc3vr_view::vr::render_params(dispatch_eye);
 
     let whole_grid_cb1 = grid.zip(params).map(|(grid, params)| {
         tile_bounds_from_projection(&params.projection_standard, grid.exact_x, grid.exact_y, 0)
@@ -187,12 +186,14 @@ fn run_draw_clustered(
                 light_view: request
                     .light_view
                     .then(|| {
-                        crate::hud::render_camera_pose().map(|(position, orientation)| LightView {
-                            offset: params.world_offset(glam::Mat4::from_rotation_translation(
-                                orientation,
-                                position,
-                            )),
-                            turn: params.orientation_delta,
+                        jc3vr_view::hud::render_camera_pose().map(|(position, orientation)| {
+                            LightView {
+                                offset: params.world_offset(glam::Mat4::from_rotation_translation(
+                                    orientation,
+                                    position,
+                                )),
+                                turn: params.orientation_delta,
+                            }
                         })
                     })
                     .flatten(),

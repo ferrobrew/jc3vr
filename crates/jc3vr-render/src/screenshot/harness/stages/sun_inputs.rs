@@ -36,7 +36,7 @@ pub(crate) fn capture_before_sun(ctx: &ID3D11DeviceContext, eye: usize) {
     let Some(id) = diagnostic_capture_id() else {
         return;
     };
-    let Some(frame) = crate::vr::capture_views().map(|views| views.predicted_display_time_ns)
+    let Some(frame) = jc3vr_view::vr::capture_views().map(|views| views.predicted_display_time_ns)
     else {
         return;
     };
@@ -90,7 +90,7 @@ fn treatment_record(eye: usize, error: Option<&str>) {
     let Some(id) = diagnostic_capture_id() else {
         return;
     };
-    let Some(frame) = crate::vr::capture_views().map(|views| views.predicted_display_time_ns)
+    let Some(frame) = jc3vr_view::vr::capture_views().map(|views| views.predicted_display_time_ns)
     else {
         return;
     };

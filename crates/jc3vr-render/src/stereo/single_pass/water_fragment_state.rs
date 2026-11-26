@@ -53,7 +53,7 @@ pub(crate) unsafe fn packed_water_context(context: &*mut c_void) -> Option<&ID3D
         Phase::Restore => unsafe { restore_draw(ctx) },
         Phase::Idle => {}
     }
-    crate::stereo::layout::double_wide_active().then_some(ctx)
+    jc3vr_view::stereo::layout::double_wide_active().then_some(ctx)
 }
 
 thread_local! {

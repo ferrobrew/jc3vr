@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use jc3vr_core::config::engine::{Snapshot, test_fixture};
-use jc3vr_render::{headpose, vr::recenter_count};
+use jc3vr_view::{headpose, vr::recenter_count};
 
 use super::*;
 use crate::ui::{

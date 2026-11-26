@@ -30,7 +30,7 @@ use jc3gi::{
         vehicle::Vehicle,
     },
 };
-use jc3vr_render::controllers::cockpit::CockpitTransform;
+use jc3vr_view::controllers::cockpit::CockpitTransform;
 use smol_str::SmolStr;
 
 use crate::controllers::{
@@ -84,7 +84,7 @@ pub struct FitInputs<'a> {
     pub xf: &'a CockpitTransform,
     /// The character's eyes, world space: the head pose's anchor (his animated head) with the
     /// camera's offset to the eye point hung off it
-    /// ([`jc3vr_render::hooks::camera::head_to_eye_point`]), where the view puts the eyes before the
+    /// ([`jc3vr_view::hooks::camera::head_to_eye_point`]), where the view puts the eyes before the
     /// player's posture or the driving view's correction moves them. `None` until the anchor is
     /// published.
     pub eyes: Option<Vec3>,

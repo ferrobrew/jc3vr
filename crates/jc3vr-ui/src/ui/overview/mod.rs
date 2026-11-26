@@ -15,12 +15,12 @@ use jc3vr_input::{
     capture::{OwnershipBlocker, OwnershipSnapshot, PanelMode, debug_ui_capture},
     frame,
 };
-use jc3vr_render::{
-    controllers::overlay,
+use jc3vr_render::controllers::overlay;
+use jc3vr_tooling::recorder;
+use jc3vr_view::{
     recorder::{tracking, tracking::TrackingStatus},
     vr::{input, input::InputStatus},
 };
-use jc3vr_tooling::recorder;
 
 use crate::{
     status,

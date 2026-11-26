@@ -13,7 +13,7 @@ use std::io::Write as _;
 
 use jc3gi::clock::Clock;
 use jc3vr_core::session::SessionFile;
-use jc3vr_render::recorder::tracking::events::{self, EventKind};
+use jc3vr_view::recorder::tracking::{events, events::EventKind};
 use parking_lot::Mutex;
 use serde::Serialize;
 use tracking_format::event::{Label, TakeMarker};

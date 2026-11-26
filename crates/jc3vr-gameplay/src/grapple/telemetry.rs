@@ -16,7 +16,7 @@ use std::{
 
 use glam::{Quat, Vec3};
 use jc3vr_core::session::CaptureFile;
-use jc3vr_render::headpose::FrameTelemetry;
+use jc3vr_view::headpose::FrameTelemetry;
 use parking_lot::Mutex;
 
 use crate::grapple::filter_snapshot;
@@ -35,7 +35,7 @@ pub fn set_log_enabled(enabled: bool) {
 }
 
 /// Log one input tick's filter state (no-op when disabled). Called from
-/// [`jc3vr_render::headpose::sim::on_input_tick`] after [`crate::grapple::advance`]; `dt` is the engine's tick
+/// [`jc3vr_view::headpose::sim::on_input_tick`] after [`crate::grapple::advance`]; `dt` is the engine's tick
 /// delta.
 pub fn log_tick(body: Quat, dt: f32) {
     if !log_enabled() {

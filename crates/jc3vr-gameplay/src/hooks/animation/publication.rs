@@ -8,7 +8,7 @@ use jc3gi::{
     animation::pose_producer::Blender, character::character::AnimationController,
     types::shared_ptr::SharedPtr,
 };
-use jc3vr_render::headpose::skeleton::SkeletonKey;
+use jc3vr_view::headpose::skeleton::SkeletonKey;
 use parking_lot::Mutex;
 
 use crate::hooks::character::pose;
@@ -124,7 +124,7 @@ static STORE: Mutex<Store> = Mutex::new(Store {
 
 #[cfg(test)]
 mod tests {
-    use jc3vr_render::headpose::anchors::test_support::identity_fixture;
+    use jc3vr_view::headpose::anchors::test_support::identity_fixture;
 
     use super::*;
 

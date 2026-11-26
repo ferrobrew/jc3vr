@@ -7,7 +7,7 @@ use jc3gi::{
     animation::pose_producer::QsTransform, character::character::AnimationController,
     types::math::Matrix4,
 };
-use jc3vr_render::headpose::{
+use jc3vr_view::headpose::{
     Source,
     anchors::{Context, Identity, Sample},
     animation::{RotationFilter, eye_arm, head_frame, synthetic_rotation},

@@ -11,9 +11,10 @@ use std::{collections::BTreeMap, sync::atomic::Ordering};
 
 use dxbc_stereo::DxbcError;
 use jc3vr_core::session::CaptureFile;
+use jc3vr_view::stereo::config::STEREO_CONFIG;
 use parking_lot::Mutex;
 
-use crate::stereo::{config::STEREO_CONFIG, single_pass::*};
+use crate::stereo::single_pass::*;
 
 /// Vertex-shader name prefixes whose no-`cb0` shaders are reprojected for single-pass: the scene
 /// geometry that writes clip as `scene-VP · world` (skinned characters/NPCs, static and dynamic
@@ -51,7 +52,7 @@ const REPROJECT_NAME_PREFIXES: &[&str] = &[
 ];
 
 /// The cloud layers' vertex shaders, gated by the
-/// [`clouds_per_eye`](crate::stereo::config::SinglePassConfig::clouds_per_eye) flag. Each takes its
+/// [`clouds_per_eye`](jc3vr_view::stereo::config::SinglePassConfig::clouds_per_eye) flag. Each takes its
 /// clip position from the full view-projection (`cb0[0..3]`), which the remap leaves alone, so under
 /// the collapse both eyes drew the clouds through the centred render camera. Matched by exact name,
 /// because the `cloud` name space also holds the cloud-shadow pass. `clouds` and `cirrusclouds` also
@@ -61,14 +62,14 @@ const REPROJECT_NAME_PREFIXES: &[&str] = &[
 const CLOUD_REPROJECT_NAMES: &[&str] = &["clouds", "cirrusclouds", "cloudflythrough", "softclouds"];
 
 /// The stars' vertex shader, gated by the
-/// [`stars_per_eye`](crate::stereo::config::SinglePassConfig::stars_per_eye) flag: a billboard per
+/// [`stars_per_eye`](jc3vr_view::stereo::config::SinglePassConfig::stars_per_eye) flag: a billboard per
 /// star, placed by a baked view-projection at vertex `cb1` with its clip depth pinned to the far
 /// plane, which the promoted draw keeps through the reprojection.
 const STARS_REPROJECT_NAME: &str = "starsshader";
 
 /// Whether a no-`cb0` vertex shader named `name` should be reprojected for single-pass: the
 /// Vertex-shader name prefixes of the far-distance tree impostors (`CTreeImpostorRB`), gated by the
-/// separate [`single_pass_tree_impostors`](crate::stereo::config::StereoConfig::single_pass_tree_impostors)
+/// separate [`single_pass_tree_impostors`](jc3vr_view::stereo::config::StereoConfig::single_pass_tree_impostors)
 /// flag. The impostor VS writes `SV_Position` from the global billboard view-projection and draws a
 /// single non-instanced `DrawIndexed` -- no GPU-indirect path shares it -- so the same reprojection
 /// rewrite the scene families take covers it completely. The other vegetation families
@@ -78,7 +79,7 @@ const STARS_REPROJECT_NAME: &str = "starsshader";
 const VEGETATION_REPROJECT_NAME_PREFIXES: &[&str] = &["treeimpostor"];
 
 /// Vertex-shader name prefixes of the static light sprites (`RenderBlockTypeLights`), gated by the
-/// separate [`static_lights_per_eye`](crate::stereo::config::SinglePassConfig::static_lights_per_eye)
+/// separate [`static_lights_per_eye`](jc3vr_view::stereo::config::SinglePassConfig::static_lights_per_eye)
 /// flag. Unlike the other screen-space effects, `lightsource` and `lightsource_fakelight` project a
 /// world position through the scene view-projection and only then expand the sprite in clip space, by
 /// a size scaled by the clip `w`; post-multiplying that clip position by `M_eye` moves the whole
@@ -87,7 +88,7 @@ const VEGETATION_REPROJECT_NAME_PREFIXES: &[&str] = &["treeimpostor"];
 const STATIC_LIGHT_REPROJECT_NAME_PREFIXES: &[&str] = &["lightsource"];
 
 /// The vertex shader of the ambient-occlusion volumes (`CRenderBlockAOBox`), gated by the
-/// [`ao_volumes_per_eye`](crate::stereo::config::SinglePassConfig::ao_volumes_per_eye) flag. It
+/// [`ao_volumes_per_eye`](jc3vr_view::stereo::config::SinglePassConfig::ao_volumes_per_eye) flag. It
 /// projects the box's corners through the full view-projection (`cb0[0..3]`), which the remap leaves
 /// alone, and hands the pixel shader a projective screen UV derived from that clip position; the
 /// reprojection moves the box into each eye, and the pixel-shader rewrite stops reading that UV.
@@ -95,7 +96,7 @@ const AO_VOLUME_REPROJECT_NAME: &str = "aobox";
 
 /// The vertex shader of the water reflection planes' proxy quad and the water mask volumes
 /// (`CRenderBlockWaterReflectionPlane`, `CRenderBlockWaterMask`), gated by the
-/// [`water_plane_per_eye`](crate::stereo::config::SinglePassConfig::water_plane_per_eye) flag. Both
+/// [`water_plane_per_eye`](jc3vr_view::stereo::config::SinglePassConfig::water_plane_per_eye) flag. Both
 /// blocks stage an offset world-view-projection at vertex `cb1[0..3]` and the shader is a bare
 /// multiply-add chain over it, so the reprojection moves either into each eye.
 const WATER_PLANE_REPROJECT_NAME: &str = "watermask";
@@ -213,7 +214,7 @@ pub fn should_pin_terrain(name: Option<&str>) -> bool {
 }
 
 /// The reprojection of a vertex shader whose clip position comes from a scene view-projection: with
-/// [`full_view_projection_rows`](crate::stereo::config::SinglePassConfig::full_view_projection_rows)
+/// [`full_view_projection_rows`](jc3vr_view::stereo::config::SinglePassConfig::full_view_projection_rows)
 /// on, a shader that projects through the full view-projection (`cb0[0..3]`) reads the eye's copy of
 /// it from `cb13` instead (`dxbc_stereo::remap_full_view_projection`), and any other shader takes the
 /// `M_eye` reprojection.
@@ -322,7 +323,7 @@ pub enum VsTransform {
 
 /// The `cb0` per-eye remap of a vertex shader, reading the render camera's position per eye where
 /// the shader takes its clip origin from it and
-/// [`clip_origin_per_eye`](crate::stereo::config::SinglePassConfig::clip_origin_per_eye) is on.
+/// [`clip_origin_per_eye`](jc3vr_view::stereo::config::SinglePassConfig::clip_origin_per_eye) is on.
 /// Decided at shader creation, so a change to the switch applies at the next shader reload.
 pub fn remap_vertex_shader(code: &[u8]) -> Result<Vec<u8>, DxbcError> {
     let origin = if STEREO_CONFIG.query(|c| c.single_pass.clip_origin_per_eye) {

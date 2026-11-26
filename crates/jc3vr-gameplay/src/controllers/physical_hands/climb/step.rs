@@ -6,7 +6,7 @@ use std::time::Instant;
 use glam::{Quat, Vec3};
 use jc3gi::character::character::Character;
 use jc3vr_input::frame::Hand;
-use jc3vr_render::headpose::teleport;
+use jc3vr_view::headpose::teleport;
 
 use crate::controllers::physical_hands::{
     climb::{

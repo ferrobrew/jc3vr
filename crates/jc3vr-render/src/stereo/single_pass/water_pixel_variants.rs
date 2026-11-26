@@ -20,19 +20,14 @@ use std::mem::size_of;
 
 use anyhow::Context as _;
 use dxbc_stereo::DxbcError;
+use jc3vr_view::stereo::config::STEREO_CONFIG;
 use sha2::{Digest, Sha256};
 use windows::{
     Win32::Graphics::Direct3D11::{ID3D11DeviceContext, ID3D11PixelShader},
     core::{GUID, IUnknown, Interface},
 };
 
-use crate::stereo::{
-    config::STEREO_CONFIG,
-    single_pass::{
-        per_eye_reissue_eye,
-        shader_identity::{self, LAKE_PS},
-    },
-};
+use crate::stereo::single_pass::{per_eye_reissue_eye, shader_identity, shader_identity::LAKE_PS};
 
 /// Build and attach the variants of a newly created pixel shader. A shader with neither the lake's
 /// refraction displacement nor a planar reflection gets none.

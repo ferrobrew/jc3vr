@@ -30,12 +30,13 @@ use std::{
 };
 
 use anyhow::Context as _;
+use jc3vr_view::stereo::config::STEREO_CONFIG;
 use windows::{
     Win32::Graphics::Direct3D11::{ID3D11DeviceContext, ID3D11PixelShader},
     core::{GUID, IUnknown, Interface},
 };
 
-use crate::stereo::{config::STEREO_CONFIG, single_pass::shader_identity};
+use crate::stereo::single_pass::shader_identity;
 
 /// Build and attach the eye-half variant of a newly created pixel shader. A shader that is not one
 /// of the glare chain's filters gets none.
@@ -68,7 +69,7 @@ pub(crate) struct Scope {
 
 impl Scope {
     pub(crate) fn enter() -> Scope {
-        let entered = crate::stereo::layout::collapse_active()
+        let entered = jc3vr_view::stereo::layout::collapse_active()
             && STEREO_CONFIG.query(|c| c.single_pass.glare_per_eye);
         if entered {
             IN_GLARE.store(true, Ordering::Relaxed);

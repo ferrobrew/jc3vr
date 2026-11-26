@@ -1,5 +1,5 @@
 use jc3vr_input::semantic::vocabulary::{MenuAction, OnFootAction};
-use jc3vr_render::vr::input::semantic::defaults::default_binding;
+use jc3vr_view::vr::input::semantic::defaults::default_binding;
 
 use super::*;
 use crate::controllers::bindings::controls::{Controls, HandControls};

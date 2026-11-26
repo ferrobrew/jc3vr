@@ -60,7 +60,7 @@ fn the_trajectory_is_the_phase_angle_not_wall_time() {
         assert_eq!(target.position, anchor.position);
         let expected = anchor.orientation()
             * Quat::from_euler(
-                crate::vr::pose_control::EULER,
+                jc3vr_view::vr::pose_control::EULER,
                 request.offset(phase).yaw_deg.to_radians(),
                 request.offset(phase).pitch_deg.to_radians(),
                 request.offset(phase).roll_deg.to_radians(),

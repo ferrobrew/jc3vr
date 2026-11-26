@@ -17,7 +17,7 @@
 //! The rows come from the binding tables themselves
 //! ([`crate::controllers::bindings::tables::describe`]), so the summary cannot drift from what the
 //! controllers inject, and each row's control from the sources the runtime bound its actions to
-//! ([`jc3vr_render::vr::input::sources::table`]): a compact control label for a known source, the runtime's
+//! ([`jc3vr_view::vr::input::sources::table`]): a compact control label for a known source, the runtime's
 //! name otherwise, and "unbound" in the reference for an action bound to nothing. The input tick
 //! rebuilds the summary when the mode, the table context, the enabled gestures, the game's
 //! language, or the bound sources change ([`refresh`]), resolving the strings on the game thread;
@@ -47,7 +47,7 @@ use std::{
 };
 
 use jc3gi::ui::locator::Locale;
-use jc3vr_render::vr::input::sources;
+use jc3vr_view::vr::input::sources;
 use parking_lot::Mutex;
 
 pub use crate::controllers::summary::config::SummaryConfig;

@@ -3,7 +3,7 @@
 //! space, and which texels a cell covers.
 
 use glam::Vec2;
-use jc3vr_render::hud::world_markers::stage_frame::StageFrame;
+use jc3vr_view::hud::world_markers::stage_frame::StageFrame;
 
 use crate::hud::world_markers::layout::{CropExtents, TexelRect};
 

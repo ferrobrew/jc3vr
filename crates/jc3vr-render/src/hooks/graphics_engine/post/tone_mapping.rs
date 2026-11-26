@@ -17,15 +17,15 @@ use jc3gi::graphics_engine::{
     post_effects::PostEffectContext,
     tone_mapping::{HistogramGeneration, ToneMappingEffect},
 };
+use jc3vr_view::{
+    hooks::graphics_engine::capture::{capture_main_color, previews_visible},
+    stereo::{draw_index, later_scene},
+};
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{
     debug::trace::{TraceEvent, TraceState},
-    hooks::graphics_engine::{
-        capture::{capture_main_color, previews_visible},
-        config::{EXPOSURE_CONFIG, POST_FX_CONFIG},
-    },
-    stereo::{draw_index, later_scene},
+    hooks::graphics_engine::config::{EXPOSURE_CONFIG, POST_FX_CONFIG},
 };
 
 pub(super) fn hook_library() -> HookLibrary {

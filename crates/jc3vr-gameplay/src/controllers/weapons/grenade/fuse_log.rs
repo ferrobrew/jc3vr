@@ -69,7 +69,7 @@ pub(super) fn lit(hand: Hand, by: PinSource) {
 /// detonation to measure against. Runs every input tick.
 pub(super) fn observe(grips: [Option<Pose>; 2]) {
     let held = Hand::BOTH.map(|hand| safe::explosive_in_hand(hand).map(|e| e as usize));
-    let head = jc3vr_render::hud::render_camera_pose().map(|(position, _)| position);
+    let head = jc3vr_view::hud::render_camera_pose().map(|(position, _)| position);
     let mut log = LOG.lock();
     log.grips = grips.map(|grip| grip.map(|grip| grip.position));
     log.head = head;

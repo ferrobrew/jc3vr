@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use glam::Vec3;
 use jc3vr_input::frame::{Hand, Pose};
-use jc3vr_render::controllers::overlay::{primitive::Source, store};
+use jc3vr_view::controllers::overlay::{primitive::Source, store};
 use parking_lot::Mutex;
 
 use crate::controllers::{

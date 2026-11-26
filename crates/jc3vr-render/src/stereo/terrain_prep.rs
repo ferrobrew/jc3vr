@@ -23,8 +23,7 @@ use jc3gi::{
     },
     types::math::Vector4,
 };
-
-use crate::{stereo, stereo::config::STEREO_CONFIG};
+use jc3vr_view::{stereo, stereo::config::STEREO_CONFIG};
 
 /// Stage the centre camera's position into the vertex globals for a terrain patch prep pass in an
 /// eye-at-a-time stereo dispatch. Returns the eye's staged row for [`restore`] when it changed

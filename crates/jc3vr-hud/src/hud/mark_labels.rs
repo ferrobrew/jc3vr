@@ -16,7 +16,7 @@ use jc3vr_gameplay::controllers::{
     overlay::render_poses,
     scheme,
 };
-use jc3vr_render::controllers::overlay::{
+use jc3vr_view::controllers::overlay::{
     primitive::Anchor,
     resolve::{HandPoses, anchor_position},
 };
@@ -37,10 +37,10 @@ use crate::hud::{
 /// mutex held.
 pub(crate) fn draw(context: &ID3D11DeviceContext, device: &Device, target: &Texture, eye: usize) {
     let mut state = STATE.lock();
-    if jc3vr_render::stereo::dispatch::first_ui_eye(eye) {
+    if jc3vr_view::stereo::dispatch::first_ui_eye(eye) {
         let cfg = *HUD_CONFIG.lock();
         let active = world_quads_active(&cfg) && scheme::is_controllers();
-        let head = active.then(jc3vr_render::hud::render_camera_pose).flatten();
+        let head = active.then(jc3vr_view::hud::render_camera_pose).flatten();
         state.prepare(context, device, head);
     }
     state.draw(context, device, target);
@@ -183,7 +183,7 @@ static FAILURES: LogOnce = LogOnce::new("hud marker labels");
 #[cfg(test)]
 mod tests {
     use jc3vr_input::frame::Hand;
-    use jc3vr_render::controllers::overlay::primitive::HandPose;
+    use jc3vr_view::controllers::overlay::primitive::HandPose;
 
     use super::*;
 

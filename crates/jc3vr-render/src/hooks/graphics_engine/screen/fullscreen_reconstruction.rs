@@ -58,17 +58,12 @@ use jc3gi::graphics_engine::{
         RenderBlockScreenSpaceSubSurfaceSkin,
     },
 };
+use jc3vr_view::stereo::config::STEREO_CONFIG;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{
-    hooks::graphics_engine::{
-        probes::{self, scoped},
-        reconstruction,
-    },
-    stereo::{
-        config::STEREO_CONFIG,
-        single_pass::{ambient_occlusion, screen_space_reflection},
-    },
+    hooks::graphics_engine::{probes, probes::scoped, reconstruction},
+    stereo::single_pass::{ambient_occlusion, screen_space_reflection},
 };
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -87,7 +82,7 @@ pub(super) fn hook_library() -> HookLibrary {
 #[detour(address = jc3gi::graphics_engine::render_block::RenderBlockSSAO::Draw_ADDRESS)]
 fn ssao_block_draw(this: *mut RenderBlockSSAO, rc: *mut RenderContext, info: *const RBIInfo) {
     let enabled = STEREO_CONFIG.query(|c| c.single_pass.ssao_per_eye)
-        && crate::stereo::layout::collapse_active();
+        && jc3vr_view::stereo::layout::collapse_active();
     let _rows = enabled.then(ambient_occlusion::bind_eye_rows).flatten();
     scoped(
         probes::armed(),
@@ -113,7 +108,7 @@ fn ssr_draw(
     info: *const RBIInfo,
 ) {
     let enabled = STEREO_CONFIG.query(|c| c.single_pass.ssr_per_eye)
-        && crate::stereo::layout::collapse_active();
+        && jc3vr_view::stereo::layout::collapse_active();
     // SAFETY: the engine hands the block its live render context for the length of the call.
     let context = unsafe { rc.as_ref() };
     let _rows = context

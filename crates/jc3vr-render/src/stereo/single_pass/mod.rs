@@ -14,8 +14,8 @@
 //!   guessing a different one.
 //!
 //! The rest of the pipeline (cb13 dual-eye upload, the double-wide render-setup re-init, the
-//! draw-doubling) runs under [`crate::stereo::config::StereoConfig::single_pass`] and the per-step flags
-//! beside it. [`crate::stereo::config::StereoConfig::single_pass_patch_dryrun`] runs the census alone, with
+//! draw-doubling) runs under [`jc3vr_view::stereo::config::StereoConfig::single_pass`] and the per-step flags
+//! beside it. [`jc3vr_view::stereo::config::StereoConfig::single_pass_patch_dryrun`] runs the census alone, with
 //! no rendering change.
 
 use std::{
@@ -99,6 +99,8 @@ use draw_detours::*;
 pub use frame_diagnostics::*;
 pub use impostor_pixel_size::EyeDisplayWidth;
 pub use instanced_exposure::*;
+pub(crate) use jc3vr_view::stereo::engine_context::EngineContext;
+use jc3vr_view::stereo::layout::{Capability, capability, collapse_active};
 pub use per_eye_reissue::*;
 pub(crate) use pinned_eye::tag_pinned_eye;
 pub(crate) use probes::{
@@ -110,11 +112,6 @@ pub use static_lights::EyeLightWidth;
 pub use sun::*;
 pub use viewport::*;
 pub(crate) use water_fragment_state::begin_water_surface;
-
-pub(crate) use crate::stereo::engine_context::EngineContext;
-use crate::stereo::layout::capability;
-// The crates above reach the stereo layout at this path until the view crate is cut.
-pub use crate::stereo::layout::{Capability, collapse_active, double_wide_active, probe_if_needed};
 
 /// The live `cb13` rows the remap and reprojection blocks occupy (the clip-origin rows after them
 /// are left out).
@@ -150,7 +147,7 @@ pub fn dual_eye_active() -> bool {
 
 /// Whether the engine's copy into the effect depth-history slots is skipped: single-pass is
 /// [`active`] and `single_pass.skip_unread_effect_depth_copy` is on. See
-/// [`SinglePassConfig::skip_unread_effect_depth_copy`](crate::stereo::config::SinglePassConfig::skip_unread_effect_depth_copy).
+/// [`SinglePassConfig::skip_unread_effect_depth_copy`](jc3vr_view::stereo::config::SinglePassConfig::skip_unread_effect_depth_copy).
 pub(crate) fn skip_unread_effect_depth_copy() -> bool {
     active() && config_flags().has(Flag::SkipUnreadEffectDepthCopy)
 }
@@ -168,7 +165,7 @@ pub(crate) enum TerrainCullBlock {
 /// collapse, inside the G-buffer range, with `single_pass.terrain_cull_both_eyes` on and the domain
 /// programs of `block` reading each eye's own rows, so that only the hull's cull reads the baked
 /// offset view-projection. See
-/// [`SinglePassConfig::terrain_cull_both_eyes`](crate::stereo::config::SinglePassConfig::terrain_cull_both_eyes).
+/// [`SinglePassConfig::terrain_cull_both_eyes`](jc3vr_view::stereo::config::SinglePassConfig::terrain_cull_both_eyes).
 pub(crate) fn terrain_cull_both_eyes(block: TerrainCullBlock) -> bool {
     let flags = config_flags();
     let domain_reads_eye_rows = flags.has(Flag::Terrain)
@@ -265,10 +262,10 @@ pub enum BlockIntercept {
     Foliage,
     Occluder,
     /// The legacy water blocks' projective screen UV
-    /// ([`water_uv_per_eye`](crate::stereo::config::SinglePassConfig::water_uv_per_eye)).
+    /// ([`water_uv_per_eye`](jc3vr_view::stereo::config::SinglePassConfig::water_uv_per_eye)).
     WaterScreenUv,
     /// The WaveWorks water blocks' per-eye camera
-    /// ([`nvwater_per_eye`](crate::stereo::config::SinglePassConfig::nvwater_per_eye)).
+    /// ([`nvwater_per_eye`](jc3vr_view::stereo::config::SinglePassConfig::nvwater_per_eye)).
     NvWater,
 }
 
@@ -300,8 +297,8 @@ pub fn collapse_ui_eye_override() -> Option<(D3D11_VIEWPORT, Matrix4)> {
         ..full
     };
     // The UI draws after FSR has resolved the eyes, so its view-projection leaves out FSR's jitter.
-    let center_transform = crate::stereo::STEREO_STATE.lock().center_transform?;
-    let params = crate::vr::render_params(eye)?;
+    let center_transform = jc3vr_view::stereo::STEREO_STATE.lock().center_transform?;
+    let params = jc3vr_view::vr::render_params(eye)?;
     let eye_world = params.resolve(glam::Mat4::from(center_transform));
     let view_projection = params.unjittered_projection_reverse_z() * eye_world.inverse();
     Some((viewport, Matrix4::from(view_projection)))
@@ -326,8 +323,8 @@ pub fn set_ui_viewport_raw(context: &ID3D11DeviceContext, viewport: &D3D11_VIEWP
 /// takes [`collapse_ui_eye_override`]'s, which leaves the jitter out. `None` if the centre transform
 /// or per-eye params are unavailable.
 pub(crate) fn full_eye_view_projection(eye: usize) -> Option<Matrix4> {
-    let center_transform = crate::stereo::STEREO_STATE.lock().center_transform?;
-    let params = crate::vr::render_params(eye)?;
+    let center_transform = jc3vr_view::stereo::STEREO_STATE.lock().center_transform?;
+    let params = jc3vr_view::vr::render_params(eye)?;
     let eye_world = params.resolve(glam::Mat4::from(center_transform));
     let vp = glam::Mat4::from(params.projection_reverse_z) * eye_world.inverse();
     Some(Matrix4::from(vp))
@@ -905,10 +902,7 @@ mod tests {
         assert!(!allow_com_reclamation(true, false, 1));
     }
 
-    const CAPTURE_VS: &[u8] = include_bytes!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/shaders/capture_vs.dxbc"
-    ));
+    const CAPTURE_VS: &[u8] = jc3vr_view::CAPTURE_VS;
 
     fn only_nv_water(block: BlockIntercept) -> bool {
         matches!(block, BlockIntercept::NvWater)

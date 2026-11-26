@@ -3,8 +3,8 @@
 //! ([`DescribeSink`](crate::controllers::bindings::tables::describe::DescribeSink)).
 //!
 //! Each table names the semantic actions of its mode's action set
-//! ([`jc3vr_render::vr::input::semantic`]); which physical input drives each is the player's binding,
-//! suggested by [`jc3vr_render::vr::input::semantic::defaults`]. The module documentation of
+//! ([`jc3vr_view::vr::input::semantic`]); which physical input drives each is the player's binding,
+//! suggested by [`jc3vr_view::vr::input::semantic::defaults`]. The module documentation of
 //! [`crate::controllers::bindings::tables`] explains the virtual gamepad buttons.
 
 use jc3gi::input::input_action_map::Action::{self, *};

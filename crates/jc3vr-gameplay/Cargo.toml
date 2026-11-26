@@ -8,7 +8,7 @@ publish = false
 [features]
 # The in-game profiler's gameplay half (issue #34): the sim step's scopes. The payload's `profiler`
 # feature forwards here.
-profiler = ["dep:puffin", "jc3vr-core/profiler", "jc3vr-render/profiler"]
+profiler = ["dep:puffin", "jc3vr-core/profiler", "jc3vr-view/profiler"]
 
 [dependencies]
 windows = { workspace = true }
@@ -16,7 +16,7 @@ glam = { workspace = true }
 jc3gi = { path = "../../jc3gi" }
 jc3vr-core = { path = "../jc3vr-core" }
 jc3vr-input = { path = "../jc3vr-input" }
-jc3vr-render = { path = "../jc3vr-render" }
+jc3vr-view = { path = "../jc3vr-view" }
 # The gameplay detours. The detour macro emits `::re_utilities` paths, so a crate that defines
 # detours depends on `re-utilities` directly.
 re-utilities = { workspace = true }
@@ -37,7 +37,7 @@ toml = "1.1.6"
 
 [dev-dependencies]
 jc3vr-core = { path = "../jc3vr-core", features = ["test-support"] }
-jc3vr-render = { path = "../jc3vr-render", features = ["test-support"] }
+jc3vr-view = { path = "../jc3vr-view", features = ["test-support"] }
 # The tests build the OpenXR poses and times the published tracking carries.
 openxr = "0.21"
 pretty_assertions = "1.4.1"

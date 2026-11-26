@@ -22,7 +22,7 @@ use body_rig::{angle::yaw_of, rotation::level};
 pub(crate) use commands::desired_for;
 use glam::{Quat, Vec3};
 use jc3vr_input::frame::{ControllerFrame, Hand, Pose};
-use jc3vr_render::vr::input::flight_pose::{FlightPacket, GestureHead, GestureSample};
+use jc3vr_view::vr::input::flight_pose::{FlightPacket, GestureHead, GestureSample};
 
 use crate::controllers::{
     body::{self, BodyDimensions},

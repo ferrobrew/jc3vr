@@ -344,7 +344,7 @@ unsafe fn capture_unwrapped_draw(context: *mut c_void) {
     else {
         return;
     };
-    let eye = crate::stereo::draw_index();
+    let eye = jc3vr_view::stereo::draw_index();
     harness::stages::capture_before_sun(ctx, eye);
     let capture = Capture {
         eye,
@@ -458,7 +458,7 @@ fn begin_gpu_query(ctx: &ID3D11DeviceContext, capture: &Capture, draw: usize) {
             eye: capture.eye,
             invocation: capture.invocation,
             draw,
-            frame: crate::vr::capture_views().map(|v| v.predicted_display_time_ns),
+            frame: jc3vr_view::vr::capture_views().map(|v| v.predicted_display_time_ns),
         })
     };
     GPU_QUERY.with(|slot| {
@@ -515,7 +515,7 @@ pub(super) unsafe fn after_raw_draw(context: *mut c_void) {
 }
 
 fn log_bound_cb13(ctx: &ID3D11DeviceContext, capture: &Capture, index: usize) {
-    let frame = crate::vr::capture_views().map(|views| views.predicted_display_time_ns);
+    let frame = jc3vr_view::vr::capture_views().map(|views| views.predicted_display_time_ns);
     match read_bound_constant_buffer(ctx, ShaderStage::Vertex, 13, STEREO_CB_TOTAL_ROWS as u32) {
         Ok(readback) => {
             let actual = readback.values.as_deref();

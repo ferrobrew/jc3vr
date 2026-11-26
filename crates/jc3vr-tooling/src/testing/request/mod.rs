@@ -1189,8 +1189,8 @@ fn act(request: Request) {
                 None => jc3vr_render::screenshot::harness::request(id, options),
             }
         }
-        Request::Record => jc3vr_render::recorder::tracking::request_start(),
-        Request::StopRecording => jc3vr_render::recorder::tracking::request_stop(),
+        Request::Record => jc3vr_view::recorder::tracking::request_start(),
+        Request::StopRecording => jc3vr_view::recorder::tracking::request_stop(),
     }
 }
 

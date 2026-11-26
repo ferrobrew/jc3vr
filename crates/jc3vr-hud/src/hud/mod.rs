@@ -84,12 +84,12 @@ use jc3vr_core::{
     config::engine::{Switch, disable_automatically},
     hooks::in_gameplay,
 };
-use jc3vr_render::{
+use jc3vr_view::{
     hud::{
         pointer::panel::{RenderedPanel, publish_panel, rendered_camera},
         render_camera_pose,
     },
-    stereo::single_pass::collapse_active,
+    stereo::layout::collapse_active,
 };
 pub use state::{HUD_STATE, StageSafeAreaReadout, stage_safe_area_readout};
 use state::{StageSafeArea, publish_stage_safe_area};
@@ -268,19 +268,19 @@ pub(crate) fn redirect_applied() -> bool {
 /// `window_width`/`window_height` are the swapchain back buffer's dimensions, used only as the
 /// cursor mapping's window basis (its fallback for the client rect). Everything sized against the
 /// *render* -- the reset proxy and the engine-binding restore -- reads
-/// [`jc3vr_render::stereo::render_size`] instead, because the two diverge once the mod substitutes its own
+/// [`jc3vr_view::stereo::render_size`] instead, because the two diverge once the mod substitutes its own
 /// back buffer (`docs/mod/stereo/swapchain-ownership.md`). The HUD texture's own size is neither: it is the
 /// mod's choice (see [`hud_target_size`]), as is its aspect.
 pub fn tick(device: &Device, window_width: u32, window_height: u32) {
     let mut hud = HUD_STATE.lock();
     let cfg = *HUD_CONFIG.lock();
-    let render = jc3vr_render::stereo::render_size().unwrap_or((window_width, window_height));
+    let render = jc3vr_view::stereo::render_size().unwrap_or((window_width, window_height));
     if cfg.redirect {
         let aspect = aspect_for(current_mode());
         // Size against one eye's render target: under single-pass the render target is double-wide,
         // and keying off it whole would inflate the HUD by 2x for a target only ever viewed one eye
         // at a time.
-        let (eye_width, eye_height) = jc3vr_render::stereo::per_eye_render_size().unwrap_or(render);
+        let (eye_width, eye_height) = jc3vr_view::stereo::per_eye_render_size().unwrap_or(render);
         let (width, height) = hud_target_size(
             RENDER_SCALE,
             RENDER_RESOLUTION,
@@ -355,7 +355,7 @@ pub fn draw_quad(context: &ID3D11DeviceContext, device: &Device, target: &Textur
     // per-eye view (VP = Inverse(Transform) · Projection), collapsing the panel to view space
     // (head-locked, zero disparity, appears at infinity).
     let pointer_camera = rendered_camera();
-    if jc3vr_render::stereo::dispatch::first_ui_eye(eye)
+    if jc3vr_view::stereo::dispatch::first_ui_eye(eye)
         && let Some((head_pos, head_rotation)) = pointer_camera
             .map(|camera| (camera.head.position, camera.head.orientation))
             .or_else(render_camera_pose)
@@ -430,7 +430,7 @@ pub fn draw_quad(context: &ID3D11DeviceContext, device: &Device, target: &Textur
         let cursor_corners = cursor::frame()
             .and_then(|frame| quad::compute_cursor_corners(&params_at(panel_distance), frame));
         hud.set_cursor_corners(cursor_corners);
-    } else if jc3vr_render::stereo::dispatch::first_ui_eye(eye) {
+    } else if jc3vr_view::stereo::dispatch::first_ui_eye(eye) {
         // No panel pose this frame: the previous corners are not what the player sees.
         publish_panel(None);
         world_markers::clear_frame();
@@ -541,7 +541,7 @@ pub fn compute_panel_vp() -> Option<(Matrix4, Matrix4)> {
 /// size) stays allocated after the payload is gone. Call after the engine is back at its native
 /// size, which [`restore`](state::HudState::restore) binds the UI to.
 pub fn release_on_eject() {
-    let Some((width, height)) = jc3vr_render::stereo::render_size() else {
+    let Some((width, height)) = jc3vr_view::stereo::render_size() else {
         return;
     };
     HUD_STATE.lock().restore(width, height);

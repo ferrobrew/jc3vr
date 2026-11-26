@@ -1,7 +1,7 @@
 //! Runtime configuration: every user-facing toggle, consolidated into one mutex-guarded struct with
 //! sub-structs by concern. The debug UI reads and writes the whole struct; hooks copy out the
 //! field(s) they need at the top of a detour. Live engine-interface state (the current eye, frame
-//! counters, the trace arm-flag) does not live here; see [`jc3vr_render::stereo::StereoState`] and the
+//! counters, the trace arm-flag) does not live here; see [`jc3vr_view::stereo::StereoState`] and the
 //! per-subsystem runtime statics. A field that is configuration-shaped but holds state for the
 //! session (a value discovered at runtime, a diagnostic armed for one capture) is `#[serde(skip)]`.
 //!
@@ -30,26 +30,26 @@
 //! TOML has no null, so a `None` is left out of the file. An optional setting defaults to `None`:
 //! the load then reads a missing key as `None` and a present one as `Some`. A setting whose value is
 //! kept while it is switched off is a switch beside the value instead (see
-//! [`FsrConfig::sharpen`](jc3vr_render::fsr::FsrConfig::sharpen)).
+//! [`FsrConfig::sharpen`](jc3vr_view::fsr::FsrConfig::sharpen)).
 //!
 //! The trace manifest and screenshot sidecar also serialize the capture's configuration.
 //!
 //! The sub-structs are defined in their owning modules:
-//! [`StereoConfig`](jc3vr_render::stereo::config::StereoConfig) and
-//! [`SinglePassConfig`](jc3vr_render::stereo::config::SinglePassConfig) in `stereo::config`,
+//! [`StereoConfig`](jc3vr_view::stereo::config::StereoConfig) and
+//! [`SinglePassConfig`](jc3vr_view::stereo::config::SinglePassConfig) in `stereo::config`,
 //! [`ExposureConfig`](jc3vr_render::hooks::graphics_engine::config::ExposureConfig) and
 //! [`PostFxConfig`](jc3vr_render::hooks::graphics_engine::config::PostFxConfig) in
 //! `hooks::graphics_engine::config`,
-//! [`FarFieldConfig`](jc3vr_render::far_field::FarFieldConfig) in `far_field`,
-//! [`FoveationConfig`](jc3vr_render::vr::FoveationConfig) in `vr::config`,
-//! [`CameraConfig`](jc3vr_render::hooks::camera::CameraConfig) in `hooks::camera::config`,
+//! [`FarFieldConfig`](jc3vr_view::far_field::FarFieldConfig) in `far_field`,
+//! [`FoveationConfig`](jc3vr_view::vr::FoveationConfig) in `vr::config`,
+//! [`CameraConfig`](jc3vr_view::hooks::camera::CameraConfig) in `hooks::camera::config`,
 //! [`BodyIkConfig`](jc3vr_gameplay::hooks::character::BodyIkConfig) in `hooks::character::config`,
 //! [`MovementConfig`](jc3vr_gameplay::hooks::input::MovementConfig) in `hooks::input::config`,
 //! [`OnlineConfig`](jc3vr_core::hooks::online::OnlineConfig) in `hooks::online`,
-//! [`FsrConfig`](jc3vr_render::fsr::FsrConfig) in `fsr::config`,
+//! [`FsrConfig`](jc3vr_view::fsr::FsrConfig) in `fsr::config`,
 //! [`HudConfig`](jc3vr_hud::hud::HudConfig) in `hud::config`,
-//! [`HeadPoseConfig`](jc3vr_render::headpose::HeadPoseConfig) in `headpose::config`,
-//! [`VrConfig`](jc3vr_render::vr::VrConfig) in `vr::config`, and
+//! [`HeadPoseConfig`](jc3vr_view::headpose::HeadPoseConfig) in `headpose::config`,
+//! [`VrConfig`](jc3vr_view::vr::VrConfig) in `vr::config`, and
 //! [`DirectorConfig`](jc3vr_tooling::director::DirectorConfig) in `director`,
 //! [`RecorderConfig`](jc3vr_tooling::recorder::RecorderConfig) in `recorder`,
 //! [`ControllersConfig`](jc3vr_gameplay::controllers::ControllersConfig) in `controllers::config`,
@@ -75,18 +75,16 @@ use jc3vr_gameplay::{
     hooks::{character::BodyIkConfig, input::MovementConfig},
 };
 use jc3vr_hud::hud::HudConfig;
-use jc3vr_render::{
+use jc3vr_render::hooks::graphics_engine::config::{ExposureConfig, PostFxConfig};
+use jc3vr_tooling::{director::DirectorConfig, recorder::RecorderConfig, testing::TestingConfig};
+use jc3vr_view::{
     far_field::FarFieldConfig,
     fsr::FsrConfig,
     headpose::HeadPoseConfig,
-    hooks::{
-        camera::CameraConfig,
-        graphics_engine::config::{ExposureConfig, PostFxConfig},
-    },
+    hooks::camera::CameraConfig,
     stereo::config::StereoConfig,
     vr::{FoveationConfig, VrConfig},
 };
-use jc3vr_tooling::{director::DirectorConfig, recorder::RecorderConfig, testing::TestingConfig};
 use serde::{Deserialize, Serialize};
 
 /// The global runtime configuration. Cheap to lock (an uncontended `parking_lot::Mutex`); read it

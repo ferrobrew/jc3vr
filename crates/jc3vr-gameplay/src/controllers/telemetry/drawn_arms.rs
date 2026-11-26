@@ -6,9 +6,9 @@ use std::time::{Duration, Instant};
 
 use glam::Vec3;
 use jc3gi::graphics_engine::render_block::Matrix3x4;
-use jc3vr_render::{
+use jc3vr_view::{
     hooks::graphics_engine::palette_edit::PaletteLayout,
-    recorder::tracking::events::{self, EventKind},
+    recorder::tracking::{events, events::EventKind},
     stereo,
 };
 use parking_lot::Mutex;

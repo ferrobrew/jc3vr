@@ -15,7 +15,7 @@ pub(crate) struct Reading {
     pub(crate) submissions: u64,
     pub(crate) detours: DetourTotals,
     /// The submitted frames' summed head-pose age at `xrEndFrame`, and their count
-    /// ([`crate::vr::pose_age_totals`]).
+    /// ([`jc3vr_view::vr::pose_age_totals`]).
     pub(crate) pose_age: (u64, u64),
 }
 

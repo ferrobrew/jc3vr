@@ -9,7 +9,7 @@ use jc3vr_input::{
     frame::Hand,
     haptics::cues::{self, Sustain},
 };
-use jc3vr_render::vr::recenter_count;
+use jc3vr_view::vr::recenter_count;
 
 use crate::controllers::{
     haptics,

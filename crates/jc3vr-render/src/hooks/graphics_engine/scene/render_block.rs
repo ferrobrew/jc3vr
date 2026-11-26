@@ -25,7 +25,7 @@
 //!
 //! Ownership is settled by pointer identity: every draw receives its owning model instance's
 //! embedded `CRBIInfo` as the `info` argument, and the character hook publishes the player's
-//! instance-info pointers slot-for-slot ([`crate::hooks::graphics_engine::player_draw`]) — the hide
+//! instance-info pointers slot-for-slot ([`jc3vr_view::hooks::graphics_engine::player_draw`]) — the hide
 //! matches the body-model slot only. Character
 //! draws run concurrently on multiple render worker threads, so the spoof flag and the palette
 //! copy are thread-local.
@@ -44,15 +44,14 @@ use jc3gi::{
     },
     types::math::Matrix4,
 };
-use re_utilities::hook_library::HookLibrary;
-
-use crate::{
+use jc3vr_view::{
     hooks::graphics_engine::{
         palette_edit::{BodyPaletteEdit, PaletteLayout, player_draw_edits},
         player_draw,
     },
     stereo::STEREO_STATE,
 };
+use re_utilities::hook_library::HookLibrary;
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new()
@@ -174,7 +173,7 @@ thread_local! {
 
     /// Set around the original `Draw`/`DrawZ` call for the local player's body in every pass,
     /// shadows included, while the registered provider holds an edit of it for this thread
-    /// ([`crate::hooks::graphics_engine::palette_edit`]): the palette hooks then re-pose the bones
+    /// ([`jc3vr_view::hooks::graphics_engine::palette_edit`]): the palette hooks then re-pose the bones
     /// the edit names. Thread-local for the same reason as the hide flag.
     static HAND_EDIT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 
@@ -220,7 +219,10 @@ unsafe fn begin_hand_palette_edit(rc: *mut RenderContext, info: *const RBIInfo) 
     };
     let mut instance = Matrix4::default();
     unsafe { info.GetMatrix(&mut instance, rc.m_RenderFrameIndex as i32) };
-    edits.begin(glam::Mat4::from(instance), crate::hooks::camera::last_dtf())
+    edits.begin(
+        glam::Mat4::from(instance),
+        jc3vr_view::hooks::camera::last_dtf(),
+    )
 }
 
 /// Whether this draw belongs to the local player's body model in a non-shadow pass. Ownership is
@@ -413,7 +415,7 @@ unsafe fn spoof(
         // shares with them, as it should.
         if let Some(edit) = hands.filter(|_| hand_hits > 0) {
             edit.apply(&mut buf[..=max_index], source, layout);
-            if HIDE_ACTIVE.with(|flag| flag.get()) && crate::stereo::draw_index() == 0 {
+            if HIDE_ACTIVE.with(|flag| flag.get()) && jc3vr_view::stereo::draw_index() == 0 {
                 edit.sample_drawn_arms(&buf[..=max_index], layout);
             }
         }
@@ -487,7 +489,7 @@ struct SavedRenderContextMatrices {
 /// Replace `rc`'s view/projection matrices with this eye's per-eye patched values if they are
 /// available. Returns the original matrices so the caller can restore them.
 fn light_glow_patch_render_context(rc: &mut RenderContext) -> Option<SavedRenderContextMatrices> {
-    if !crate::stereo::active() || crate::stereo::layout::collapse_active() {
+    if !jc3vr_view::stereo::active() || jc3vr_view::stereo::layout::collapse_active() {
         return None;
     }
     let stereo = STEREO_STATE.lock();

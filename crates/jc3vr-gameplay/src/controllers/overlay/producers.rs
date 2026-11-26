@@ -21,7 +21,7 @@ use std::{
 
 use glam::Vec3;
 use jc3vr_input::frame::Hand;
-use jc3vr_render::{
+use jc3vr_view::{
     controllers::overlay::{
         primitive::{
             Anchor, DepthMode, Facing, HandPose, Primitive, Rgba, Shape, Source, SpriteSize,
@@ -500,7 +500,7 @@ mod tests {
 
     use glam::Quat;
     use jc3vr_input::frame::Pose;
-    use jc3vr_render::controllers::overlay::resolve::anchor_position;
+    use jc3vr_view::controllers::overlay::resolve::anchor_position;
 
     use super::*;
     use crate::controllers::aim::{assist::GrappleAssist, ray::Ray};

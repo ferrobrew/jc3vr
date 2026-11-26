@@ -31,10 +31,10 @@ use jc3vr_input::{
     frame::{self, Hand, Pose},
     motion,
 };
-use jc3vr_render::{
+use jc3vr_view::{
     headpose,
     headpose::teleport,
-    recorder::tracking::events::{self, EventKind},
+    recorder::tracking::{events, events::EventKind},
     vr::{VR_CONFIG, recenter_count},
 };
 use parking_lot::Mutex;
@@ -836,7 +836,7 @@ static STATE: Mutex<State> = Mutex::new(State {
 fn sample_release_transport(dt: f32) {
     let scale = VR_CONFIG.lock().world_scale;
     let frame = headpose::xr::cockpit_pose().map(|head_cockpit| {
-        let head_world = jc3vr_render::hooks::camera::eye_point();
+        let head_world = jc3vr_view::hooks::camera::eye_point();
         ReleaseFrame {
             origin: head_world,
             rotation: headpose::xr::body_rotation(),

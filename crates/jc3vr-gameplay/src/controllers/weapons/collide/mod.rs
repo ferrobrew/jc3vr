@@ -24,7 +24,7 @@ use std::time::{Duration, Instant};
 
 use glam::Vec3;
 use jc3vr_input::frame::{Hand, Pose};
-use jc3vr_render::controllers::cockpit::CockpitTransform;
+use jc3vr_view::controllers::cockpit::CockpitTransform;
 use parking_lot::Mutex;
 
 use crate::controllers::{

@@ -11,7 +11,7 @@ use std::{sync::OnceLock, time::Instant};
 
 use jc3gi::{character::character::Character, state::StateBitFlag};
 use jc3vr_core::{hash::hashlittle, hooks::in_gameplay};
-use jc3vr_render::headpose::{Source, source};
+use jc3vr_view::headpose::{Source, source};
 
 use crate::{
     controllers::{

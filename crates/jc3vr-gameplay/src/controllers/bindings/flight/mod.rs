@@ -11,8 +11,8 @@ use jc3gi::input::input_action_map::Action::{
     CANCEL, FIRE_GRAPPLE, OPEN_PARACHUTE, PUSH_GRAPPLE, RETRACT_GRAPPLE,
 };
 use jc3vr_input::frame::{Button, ControllerFrame, Hand};
-use jc3vr_render::{
-    recorder::tracking::events::{self, EventKind},
+use jc3vr_view::{
+    recorder::tracking::{events, events::EventKind},
     vr::input::flight_pose,
 };
 use tracking_format::event::{Label, WingsuitGesture};

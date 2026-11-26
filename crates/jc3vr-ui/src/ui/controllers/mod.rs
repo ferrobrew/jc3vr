@@ -55,7 +55,8 @@ use jc3vr_gameplay::controllers::{
 };
 use jc3vr_hud::{controllers::map as controller_map, hud::summary_panel};
 use jc3vr_input::{frame as controller_frame, frame::InteractionProfile};
-use jc3vr_render::{controllers::overlay::pass as overlay_pass, vr::input as vr_input};
+use jc3vr_render::controllers::overlay::pass as overlay_pass;
+use jc3vr_view::vr::input as vr_input;
 
 use crate::{
     status::{

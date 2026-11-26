@@ -30,7 +30,7 @@ use jc3vr_render::{
         camera::capture_render_camera,
         trace::{TraceEvent, TraceState, tracing_active},
     },
-    far_field, headpose,
+    far_field,
     hooks::{
         clock,
         draw_count::DRAW_COUNTS,
@@ -39,20 +39,24 @@ use jc3vr_render::{
             graphics_engine::{BLOCK_FLIP, log_hook_thread},
             ssao,
         },
-        window_focus,
     },
-    recorder::tracking,
     stereo,
+    stereo::sun_shadows,
+    testing::visual,
+};
+use jc3vr_tooling::diagnostics;
+use jc3vr_view::{
+    headpose,
+    hooks::window_focus,
+    recorder::tracking,
     stereo::{
         STEREO_STATE,
-        dispatch::{DispatchPlan, RenderMode, reset_dispatch_state},
-        sun_shadows,
+        dispatch::{self, DispatchPlan, RenderMode, reset_dispatch_state},
+        layout,
     },
-    testing::visual,
     vr,
     vr::tail,
 };
-use jc3vr_tooling::diagnostics;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{
@@ -145,7 +149,7 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
         // range flag is raised around a re-entrant engine call, so an interrupted frame (a torn-down
         // session, a dispatch that never returned) could otherwise leave it up and have every shadow
         // and reflection draw of this frame instance-doubled and eye-split.
-        stereo::single_pass::probe_if_needed();
+        layout::probe_if_needed();
         stereo::single_pass::begin_frame();
         // Sample the single-pass config for this frame's game-thread consumers: the render-resolution
         // and camera decisions below, and the shader-creation hooks the reload a few lines down drives
@@ -337,7 +341,7 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
         });
         // A running VR session always renders both eyes (the XR swapchain has a slice per eye), so
         // force the stereo double-Draw on regardless of the flatscreen stereo toggle.
-        let render_mode = stereo::dispatch::mode();
+        let render_mode = dispatch::mode();
         let stereo = stereo || vr_running || render_mode != RenderMode::Native;
         STEREO_STATE.lock().active = stereo;
 
@@ -360,7 +364,7 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
         // Each eye's post-draw blits it straight into the swapchain when this frame's image is
         // acquired now (see `vr::blit`); under the collapse the one dispatch blits each eye from its
         // half of the double-wide back buffer.
-        let direct_route = !stereo::single_pass::collapse_active()
+        let direct_route = !layout::collapse_active()
             || Config::lock_query(|c| c.stereo.single_pass.collapse_direct_blit);
         match vr_frame.as_mut() {
             Some(frame)
@@ -430,7 +434,7 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
             // dispatch at eye 0's pose: it renders the far draw-list runs and the gated far-regime
             // types into the G-buffer, which the render-pass-range hook captures for the two near
             // dispatches to composite.
-            let collapsed = stereo::single_pass::collapse_active();
+            let collapsed = layout::collapse_active();
             let plan = DispatchPlan::new(render_mode, collapsed, far_field::share_configured());
             let share_frame = plan.share_frame();
             let present_eye = render_mode
@@ -621,7 +625,7 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
         // present it ourselves -- the only present this frame. This must come after the XR submit
         // (the compositor paces the loop), so the mirror never delays the HMD path. The present is
         // unsynced by mandate: a vsynced mirror on a 60 Hz monitor would throttle the 90 Hz HMD loop (see
-        // `jc3vr_render::vr::mirror::present_mirror`). When no session runs the engine presents normally, so
+        // `jc3vr_view::vr::mirror::present_mirror`). When no session runs the engine presents normally, so
         // the mirror is skipped and flatscreen behaviour (including present_eye_0) is unchanged.
         if !tail_deferred && vr_running && vr_cfg.mirror {
             #[cfg(feature = "profiler")]

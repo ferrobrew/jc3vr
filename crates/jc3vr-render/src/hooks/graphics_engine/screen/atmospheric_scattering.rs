@@ -23,6 +23,7 @@ use jc3gi::graphics_engine::{
     graphics_engine::RenderContext,
     render_block::{RBIInfo, RenderBlockAtmosphericScattering},
 };
+use jc3vr_view::stereo::config::STEREO_CONFIG;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{
@@ -31,7 +32,6 @@ use crate::{
         probes::{PipelinePoint, capture_point},
         reconstruction,
     },
-    stereo::config::STEREO_CONFIG,
 };
 
 pub(super) fn hook_library() -> HookLibrary {

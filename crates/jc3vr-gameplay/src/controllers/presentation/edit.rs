@@ -5,7 +5,7 @@ use std::cell::RefCell;
 
 use glam::{Mat4, Vec3};
 use jc3gi::graphics_engine::render_block::Matrix3x4;
-use jc3vr_render::hooks::graphics_engine::palette_edit::{
+use jc3vr_view::hooks::graphics_engine::palette_edit::{
     BodyPaletteEdit, PaletteLayout, PlayerDrawEdits,
 };
 

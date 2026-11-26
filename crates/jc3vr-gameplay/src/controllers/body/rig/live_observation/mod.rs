@@ -1,6 +1,6 @@
 //! Bounded read-only tracking, native pre-IK, and movement-completion evidence.
 //!
-//! The raw packet is the VR runtime's live tracking publication ([`jc3vr_render::vr::live_tracking`]).
+//! The raw packet is the VR runtime's live tracking publication ([`jc3vr_view::vr::live_tracking`]).
 //! Native and completion captures remain independent of it; host times never join simulation sides.
 //! Exact completion tokens match frame movement and shift evidence, without historical basis sides.
 //! Tracking-origin evidence covers only the acquired live packet through its exact frame receipt.
@@ -9,15 +9,16 @@
 use std::time::{Duration, Instant};
 
 use glam::{Mat4, Vec3};
-use jc3vr_render::{
+use jc3vr_view::{
     controllers::body::rig::origin_provenance::{
         OriginEvidence, OriginToken, OriginUnavailable, TrackingReceipt,
     },
     headpose::teleport,
+    vr,
     vr::{
-        self,
+        live_tracking,
         live_tracking::{
-            self, DIAGNOSTIC_MAX_AGE, RawObservation, RawPacket, Unavailable, age_at, unit_rotation,
+            DIAGNOSTIC_MAX_AGE, RawObservation, RawPacket, Unavailable, age_at, unit_rotation,
         },
     },
 };

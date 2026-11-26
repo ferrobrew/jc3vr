@@ -24,10 +24,7 @@ use jc3vr_gameplay::controllers::physical_hands::{
     physics,
 };
 use jc3vr_input::frame::Hand;
-use jc3vr_render::recorder::tracking::{
-    events::{self, EventKind},
-    format::hand_to_file,
-};
+use jc3vr_view::recorder::tracking::{events, events::EventKind, format::hand_to_file};
 use parking_lot::Mutex;
 use tracking_format::{
     event::{BodiesSample, BodyIntro, BodySample, HeldMotion, HeldSample, HoldReport, Label},

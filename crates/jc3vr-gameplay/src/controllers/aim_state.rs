@@ -60,7 +60,7 @@ use jc3gi::{
     types::math::Vector3,
 };
 use jc3vr_core::config::engine::ConfigSlot;
-use jc3vr_render::headpose;
+use jc3vr_view::headpose;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 use serde::{Deserialize, Serialize};

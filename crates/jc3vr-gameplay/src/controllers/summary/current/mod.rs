@@ -2,7 +2,7 @@
 
 use jc3gi::input::input_action_map::Action;
 use jc3vr_input::frame::Hand;
-use jc3vr_render::vr::input::semantic::bound::SourceName;
+use jc3vr_view::vr::input::semantic::bound::SourceName;
 
 use crate::controllers::{
     bindings::tables::describe::{Control, Effect, Gesture, ModAction, Row},
