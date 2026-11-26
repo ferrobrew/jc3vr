@@ -21,7 +21,7 @@ python3 extract_door_handles.py --game "$JC3_GAME_DIR" --gibbed-tools "$JC3_GIBB
 python3 extract_door_handles.py --self-check
 ```
 
-`--output` defaults to `door_handles.json` beside the script. A run takes about 20 seconds and logs one line per door of each vehicle model to stderr, saying how its handle was placed and any doubt about it. Like `sights.json`, the table is generated but kept in the repository, and the payload embeds it at build time (`payload/src/controllers/physical_hands/doors/table.rs`).
+`--output` defaults to `door_handles.json` beside the script. A run takes about 20 seconds and logs one line per door of each vehicle model to stderr, saying how its handle was placed and any doubt about it. Like `sights.json`, the table is generated but kept in the repository, and the payload embeds it at build time (`crates/jc3vr-gameplay/src/controllers/physical_hands/doors/table.rs`).
 
 ## Output
 

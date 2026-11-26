@@ -1,6 +1,6 @@
 # Swimming with the arms
 
-In water the player can swim by stroking with their arms, alongside the left stick: a hand sweeping back through the water, palm first, swims forward, and a stroke on one side alone turns the swimmer away from it. The code is `payload/src/controllers/locomotion/strokes/`, run from the bindings' finish stage while the swim gate reads swimming (`hooks::input::swim::swimming`, the motion state or the swim state bits; see [swim-yaw.md, "What swimming means"](swim-yaw.md#what-swimming-means)). It acts only under the controller scheme with tracked hands, so gamepad play and head-tracked gamepad play swim as before.
+In water the player can swim by stroking with their arms, alongside the left stick: a hand sweeping back through the water, palm first, swims forward, and a stroke on one side alone turns the swimmer away from it. The code is `crates/jc3vr-gameplay/src/controllers/locomotion/strokes/`, run from the bindings' finish stage while the swim gate reads swimming (`hooks::input::swim::swimming`, the motion state or the swim state bits; see [swim-yaw.md, "What swimming means"](swim-yaw.md#what-swimming-means)). It acts only under the controller scheme with tracked hands, so gamepad play and head-tracked gamepad play swim as before.
 
 ## What moves the swimmer
 

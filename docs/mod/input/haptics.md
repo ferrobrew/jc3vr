@@ -1,6 +1,6 @@
 # Haptics
 
-Every vibration the mod sends to the controllers is one of a few named primitives, played at a strength within that primitive's range, and every source of one goes through the same mixer. A tick always feels like a tick and a thud like a thud, whatever raised it, and a hand that several sources reach at once feels the strongest of them clearly rather than a saturated buzz. The data and the mixer are in `crates/jc3vr-input/src/haptics/`: `vocabulary.rs` (the primitives), `cues.rs` (every source and its cue), and `mixer.rs` (what each hand plays). The sources' side is in `payload/src/controllers/haptics/`: `rumble.rs` (the game's own rumble) and `mod.rs` (the entry points and the readout).
+Every vibration the mod sends to the controllers is one of a few named primitives, played at a strength within that primitive's range, and every source of one goes through the same mixer. A tick always feels like a tick and a thud like a thud, whatever raised it, and a hand that several sources reach at once feels the strongest of them clearly rather than a saturated buzz. The data and the mixer are in `crates/jc3vr-input/src/haptics/`: `vocabulary.rs` (the primitives), `cues.rs` (every source and its cue), and `mixer.rs` (what each hand plays). The sources' side is in `crates/jc3vr-gameplay/src/controllers/haptics/`: `rumble.rs` (the game's own rumble) and `mod.rs` (the entry points and the readout).
 
 ## The vocabulary
 

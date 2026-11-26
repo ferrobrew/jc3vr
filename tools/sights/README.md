@@ -1,6 +1,6 @@
 # Weapon sight lines
 
-`extract_sights.py` derives each player weapon's sight line from the game's own models and writes it as a table of sight overrides, `sights.json`. Each entry gives the sight line's origin and direction relative to the weapon's fire point, which is the frame the payload's `SightOverride` (`payload/src/controllers/config.rs`) is expressed in. The engine facts behind the tool (where the files are, the weapon object, fire points, and model parts) are in [`docs/engine/gameplay/weapon-data.md`](../../docs/engine/gameplay/weapon-data.md).
+`extract_sights.py` derives each player weapon's sight line from the game's own models and writes it as a table of sight overrides, `sights.json`. Each entry gives the sight line's origin and direction relative to the weapon's fire point, which is the frame the payload's `SightOverride` (`crates/jc3vr-gameplay/src/controllers/aim/sights/config.rs`) is expressed in. The engine facts behind the tool (where the files are, the weapon object, fire points, and model parts) are in [`docs/engine/gameplay/weapon-data.md`](../../docs/engine/gameplay/weapon-data.md).
 
 The tool reads the archives directly and uses only the Python standard library. Plots are the exception and need matplotlib.
 
@@ -28,7 +28,7 @@ python3 extract_sights.py \
 
 `--game` defaults to `$JC3_GAME_DIR`, then to the default Steam library path. `--gibbed-tools` defaults to `$JC3_GIBBED_TOOLS`. `--output` defaults to `sights.json` beside the script. `--dump DIR` writes every file embedded in each entity archive, plus the `.epe` in use, under `DIR/<weapon>/`. `--plots DIR` writes a side view and a top view per weapon: centreline vertices in red, the bore in blue, and the derived sight line and its two defining points in green. The run takes a couple of seconds and logs one line per weapon to stderr, including the reason for each doubtful or failed result.
 
-`sights.json` is generated but kept in the repository, like `payload/src/controllers/spawn/spawn_defs.json`: it is small, it is derived from game data that does not change, and regenerating it needs the game install. The payload embeds it at build time (`payload/src/controllers/aim/sights/table.rs`), so a change to it takes effect on the next payload build. The `--dump` and `--plots` outputs are game content and review material, so write them outside the repository.
+`sights.json` is generated but kept in the repository, like `crates/jc3vr-gameplay/src/controllers/spawn/spawn_defs.json`: it is small, it is derived from game data that does not change, and regenerating it needs the game install. The payload embeds it at build time (`crates/jc3vr-gameplay/src/controllers/aim/sights/table.rs`), so a change to it takes effect on the next payload build. The `--dump` and `--plots` outputs are game content and review material, so write them outside the repository.
 
 ## Output
 
@@ -92,7 +92,7 @@ Two refinements would help the iron-sight cases: take the front sight as the tal
 
 ## Magazine wells
 
-`extract_wells.py` derives each player weapon's reload geometry from the same models and writes it as `wells.json`: where the magazine, shell, or round goes in, which way it travels, and where the hand grabs to chamber. It covers the same weapons as `sights.json`, reads the archives the same way, and has the same prerequisites. The payload embeds the table at build time (`payload/src/controllers/weapons/reload/wells.rs`), so a change to it takes effect on the next payload build.
+`extract_wells.py` derives each player weapon's reload geometry from the same models and writes it as `wells.json`: where the magazine, shell, or round goes in, which way it travels, and where the hand grabs to chamber. It covers the same weapons as `sights.json`, reads the archives the same way, and has the same prerequisites. The payload embeds the table at build time (`crates/jc3vr-gameplay/src/controllers/weapons/reload/wells.rs`), so a change to it takes effect on the next payload build.
 
 ### Usage
 

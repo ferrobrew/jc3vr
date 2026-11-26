@@ -1,6 +1,6 @@
 # Impact sounds
 
-A hand that meets something hard enough makes the sound the game's own melee hit makes there: a slap on a wall, a punch on a crate, a blow on a soldier. The code is `payload/src/controllers/physical_hands/sounds.rs`, and the engine side is in [melee-and-damage.md, "The impact effect and sound"](../../engine/gameplay/melee-and-damage.md#the-impact-effect-and-sound).
+A hand that meets something hard enough makes the sound the game's own melee hit makes there: a slap on a wall, a punch on a crate, a blow on a soldier. The code is `crates/jc3vr-gameplay/src/controllers/physical_hands/sounds.rs`, and the engine side is in [melee-and-damage.md, "The impact effect and sound"](../../engine/gameplay/melee-and-damage.md#the-impact-effect-and-sound).
 
 ## What plays
 

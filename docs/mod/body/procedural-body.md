@@ -1,6 +1,6 @@
 # The procedural torso
 
-Without it, Rico's body is the game's animation with corrections on top: HumanIK targets for the head, the torso, and the hands ([head-and-body.md](head-and-body.md)). The procedural torso poses the spine, the neck, and the clavicles from the player instead, on the hips the game's animation keeps. The hips, the pelvis, and the legs are the game's in every case: the body rig moves Rico by driving the game's own movement, so the legs walk, stand, and land the way the game's clips put them ([rig.md](rig.md)). The code is in `payload/src/controllers/body/procedural/`, its settings are `controllers.body.procedural`, and the debug UI's Body fit feature has the switch (`Procedural torso`, on by default).
+Without it, Rico's body is the game's animation with corrections on top: HumanIK targets for the head, the torso, and the hands ([head-and-body.md](head-and-body.md)). The procedural torso poses the spine, the neck, and the clavicles from the player instead, on the hips the game's animation keeps. The hips, the pelvis, and the legs are the game's in every case: the body rig moves Rico by driving the game's own movement, so the legs walk, stand, and land the way the game's clips put them ([rig.md](rig.md)). The code is in `crates/jc3vr-gameplay/src/controllers/body/procedural/`, its settings are `controllers.body.procedural`, and the debug UI's Body fit feature has the switch (`Procedural torso`, on by default).
 
 ## Where the pose is written
 

@@ -21,7 +21,7 @@ Besides the windows, every slot's self time and calls and every thread bucket ar
 
 ## The sim tick
 
-The sim tick is timed apart from the rest of `Game::Update`, and split into its largest phases, so a capture-free log answers what a tick costs and where. The hooks are in `payload/src/hooks/sim.rs`; they time and count, and change nothing.
+The sim tick is timed apart from the rest of `Game::Update`, and split into its largest phases, so a capture-free log answers what a tick costs and where. The hooks are in `crates/jc3vr-gameplay/src/hooks/sim.rs`; they time and count, and change nothing.
 
 - `sim_tick`: each [`Game::UpdateGame`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/game::Game##func-UpdateGame), less the phases below. With the head and tail taken out, what is left is the short stretches between the game world's queues, the physics phase, and the streaming block.
 - `sim_head`: the run state's tick from its start to the game world's pre-simulation queue, less the scopes inside it. It holds the managers before the world update (the settings, the world time, the dialogue, the missions, heat, spawning, and the rest) and the spin on the input job's completion signal. Nothing marks its end with a function of its own, so it is timed as a `frame_timing::interval` of `sim_tick`: it opens when the tick opens and closes when the pre-simulation hook is entered.

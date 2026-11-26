@@ -122,7 +122,7 @@ The core (`mod.rs`, `blocks.rs`, `capture.rs`, and `chrome_trace.rs`) lives in t
 - `crates/jc3vr-render/src/hooks/profiler.rs` — the profiler-only detours (`DrawGBuffer`,
   `RenderEngine::Draw`, `ChangeRenderBlockType`); seams the mod already hooks
   for other reasons are instrumented inline in those hooks under `#[cfg(feature = "profiler")]`,
-  among them the sim tick and its phases in `payload/src/hooks/sim.rs`, which the frame breakdown times in every build.
+  among them the sim tick and its phases in `crates/jc3vr-gameplay/src/hooks/sim.rs`, which the frame breakdown times in every build.
 
 ## Deliberate omissions
 

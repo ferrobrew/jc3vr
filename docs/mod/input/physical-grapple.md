@@ -1,10 +1,10 @@
 # Physical grapple
 
-The grapple hand works the line: a pull back along it starts and speeds the reel, a yank during the reel boosts it, pulling back with tethers attached tightens them, the arm's motion pumps the swing while hanging, and the hand feels the line's tension. Every part sits on top of the existing bindings, so the buttons keep working and the hand adds to them. The implementation is `payload/src/grapple/physical/`, with the hang swing in `payload/src/controllers/hands/anchor.rs`; the engine side is in [grapple-pipeline.md](../../engine/gameplay/grapple-pipeline.md), "The reel's speed and the tether squeeze".
+The grapple hand works the line: a pull back along it starts and speeds the reel, a yank during the reel boosts it, pulling back with tethers attached tightens them, the arm's motion pumps the swing while hanging, and the hand feels the line's tension. Every part sits on top of the existing bindings, so the buttons keep working and the hand adds to them. The implementation is `crates/jc3vr-gameplay/src/grapple/physical/`, with the hang swing in `crates/jc3vr-gameplay/src/controllers/hands/anchor.rs`; the engine side is in [grapple-pipeline.md](../../engine/gameplay/grapple-pipeline.md), "The reel's speed and the tether squeeze".
 
 ## The grapple button
 
-The grapple is the off-hand's upper face button (Y on the left Touch controller, B on the left Index controller), not the grip, which takes what the hand reaches ([grip.md](grip.md)). With nothing attached the button is the gamepad's grapple button, passed to the game as it is pressed: a tap fires (a zip, or a grab of what the hook hits), and a hold on a target, then aiming at a second and letting go, tethers the two. With tethers or a line attached, the bindings read the button's gestures before the game sees it (`payload/src/controllers/bindings/grapple_button.rs`):
+The grapple is the off-hand's upper face button (Y on the left Touch controller, B on the left Index controller), not the grip, which takes what the hand reaches ([grip.md](grip.md)). With nothing attached the button is the gamepad's grapple button, passed to the game as it is pressed: a tap fires (a zip, or a grab of what the hook hits), and a hold on a target, then aiming at a second and letting go, tethers the two. With tethers or a line attached, the bindings read the button's gestures before the game sees it (`crates/jc3vr-gameplay/src/controllers/bindings/grapple_button.rs`):
 
 | Press | Effect |
 |---|---|

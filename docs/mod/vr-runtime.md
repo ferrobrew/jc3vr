@@ -118,7 +118,7 @@ Everything below needs a headset in the loop; the desktop build could not settle
 
 **Body IK.**
 
-- With `body_ik.enabled`, confirm the spine and neck bend toward where the player looks without fighting the head-bone override or the game's aim IK (`docs/engine/character/humanik.md` open risks); the reach weights are `BODY_IK_TUNING` constants (`payload/src/hooks/character/body_ik/tuning.rs`).
+- With `body_ik.enabled`, confirm the spine and neck bend toward where the player looks without fighting the head-bone override or the game's aim IK (`docs/engine/character/humanik.md` open risks); the reach weights are `BODY_IK_TUNING` constants (`crates/jc3vr-gameplay/src/hooks/character/body_ik/tuning.rs`).
 
 ## The hidden-area mask
 

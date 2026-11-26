@@ -2,7 +2,7 @@
 
 The rig keeps Rico's body plausibly under the player's head. The player's real head is ground truth, and the camera stays on it throughout: the body follows the head, never the other way round. On the walk and wherever the learned estimate is missing, the legs and the pelvis are the game's own animation, so the feet touch the ground the way the game's clips put them there; standing on foot with a fresh estimate, the IK body poses them instead, the feet planted by HumanIK ([ik-body.md](ik-body.md)). Either way the rig moves Rico by driving the game's own character movement. The upper body follows the player's real posture: the spine bends toward the head, the neck carries the rest of the head's turn, and the arms reach for the controllers. When the rig and the player disagree, the result is an extra step, never a broken skeleton.
 
-The rig's pure core (the pelvis solver, the step commit, the yaw follow, and the standing height) is the `body-rig` crate, which the payload runs once per rendered frame and the offline evaluator runs over recordings ([Offline evaluation](#offline-evaluation)). The game-facing parts are in `payload/src/controllers/body/rig/`, and the settings are `controllers.body.rig`.
+The rig's pure core (the pelvis solver, the step commit, the yaw follow, and the standing height) is the `body-rig` crate, which the payload runs once per rendered frame and the offline evaluator runs over recordings ([Offline evaluation](#offline-evaluation)). The game-facing parts are in `crates/jc3vr-gameplay/src/controllers/body/rig/`, and the settings are `controllers.body.rig`.
 
 ## States
 
