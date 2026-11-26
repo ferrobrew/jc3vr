@@ -1,0 +1,68 @@
+# The vehicle doors' tuning: `DoorsTuning` in `src/controllers/physical_hands/doors/tuning.rs`,
+# whose fields say what each value does. Every key is required and no other is accepted. Lengths
+# are metres of the player's hand, angles degrees or radians as the key's suffix says, speeds per
+# second, and times seconds; a share is a fraction of a range, in `0..1`.
+
+[grip]
+box_reach_m = 0.06
+handle_reach_m = 0.30
+handle_share = 0.4
+panel_slack_m = 0.03
+unlatch_pull_m = 0.05
+body_wait_s = 0.3
+
+[handle]
+pivot_near_end = 0.25
+inset = 0.1
+
+[scan]
+near_m = 6.0
+max_vehicles = 8
+noted_m = 1.0
+max_handles_seen = 8
+max_notes = 12
+cast_past_m = 0.1
+
+[hinge]
+latch_speed_deg_s = 60.0
+settle_s = 1.0
+damping_per_s = 1.5
+strut_fraction = 0.3
+strut_rising_rad_s = 0.2
+resting_rad_s = 0.05
+
+[hinge.canopy]
+yield_s = 0.25
+quiet_s = 0.15
+restore_per_s = 4.0
+restore_mps = 0.5
+restore_rad_s = 1.0
+
+[pressure]
+reach_m = 0.18
+max_dt_s = 0.25
+contact_grace_s = 0.08
+gap_drift_m = 0.025
+proof_depth_m = 0.04
+min_open_mps = 0.2
+max_open_mps = 1.0
+max_impulse_ns = 80.0
+inner_face_max_cos = -0.25
+retreat_m = 0.005
+max_push_mps = 0.25
+push_depth_m = 0.06
+
+[tearing]
+settle_s = 0.2
+settle_speed_mps = 0.15
+direction_cos = 0.8660254
+yank_lag_m = 0.16
+yank_speed_mps = 0.6
+wrench_lag_m = 0.28
+wrench_s = 0.18
+free_swing_share = 0.85
+push_lag_m = 0.14
+push_hold_s = 0.35
+push_load = 0.65
+limit_margin_rad = 0.08
+max_dt_s = 0.1

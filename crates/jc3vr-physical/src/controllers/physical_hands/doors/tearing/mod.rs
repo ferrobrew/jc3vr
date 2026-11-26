@@ -8,7 +8,7 @@ use jc3vr_body::controllers::{
     grab::world_reach::DoorTarget, physics::bodies::owner_of, telemetry::report,
 };
 
-use crate::controllers::physical_hands::doors::{config::TearTuning, engine};
+use crate::controllers::physical_hands::doors::{engine, tuning::TearTuning};
 
 /// The native identity and gesture history of an open door grip.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -377,7 +377,7 @@ impl Intent {
         } = input;
         if !dt.is_finite()
             || dt <= 0.0
-            || dt > 0.1
+            || dt > c.max_dt_s
             || !lag_m.is_finite()
             || lag_m < 0.0
             || !lag_direction.is_finite()

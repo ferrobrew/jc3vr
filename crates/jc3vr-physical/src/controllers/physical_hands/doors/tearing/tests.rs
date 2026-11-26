@@ -1,5 +1,9 @@
 use super::*;
-use crate::controllers::physical_hands::doors::config::TEARING;
+use crate::controllers::physical_hands::doors::tuning::DOORS;
+
+fn config() -> &'static TearTuning {
+    &DOORS.get().tearing
+}
 
 fn target(vehicle_body: Option<u32>) -> DoorTarget {
     DoorTarget {
@@ -201,7 +205,7 @@ fn armed_at_limit() -> Intent {
 fn settled(input: Gesture) -> Intent {
     let mut intent = Intent::default();
     for _ in 0..15 {
-        assert!(!tears(&mut intent, input, &TEARING));
+        assert!(!tears(&mut intent, input, config()));
     }
     intent
 }
@@ -236,7 +240,7 @@ fn opening_pull_and_unsettled_handoff_never_tear() {
                 separating_speed_mps: 4.0,
                 ..quiet()
             },
-            &TEARING
+            config()
         ));
     }
 }
@@ -249,15 +253,15 @@ fn sharp_yank_requires_new_lag_and_does_not_repeat() {
         separating_speed_mps: 3.0,
         ..quiet()
     };
-    assert!(tears(&mut intent, yank, &TEARING));
-    assert!(!tears(&mut intent, yank, &TEARING));
+    assert!(tears(&mut intent, yank, config()));
+    assert!(!tears(&mut intent, yank, config()));
     assert!(!tears(
         &mut armed(),
         Gesture {
             separating_speed_mps: 0.5,
             ..yank
         },
-        &TEARING
+        config()
     ));
 }
 
@@ -270,7 +274,7 @@ fn push_requires_limit_direction_and_duration() {
         at_limit: true,
         ..quiet()
     };
-    let c = TEARING;
+    let c = *config();
     let mut intent = armed_at_limit();
     for _ in 0..17 {
         assert!(!tears(&mut intent, push, &c));
@@ -304,7 +308,7 @@ fn stale_tracking_resets_intent() {
     assert!(!tears(
         &mut intent,
         Gesture { dt: 0.5, ..quiet() },
-        &TEARING
+        config()
     ));
     assert!(intent.settled_lag.is_none());
 }
@@ -323,7 +327,7 @@ fn a_firm_pull_on_a_door_that_does_not_give_tears_it() {
             separating_speed_mps: 0.8,
             ..quiet()
         };
-        if let Some(kind) = intent.step(gesture, &TEARING) {
+        if let Some(kind) = intent.step(gesture, config()) {
             torn = Some((kind, lag));
             break;
         }
@@ -342,7 +346,7 @@ fn a_grip_settled_far_off_the_hand_measures_from_its_settled_lag() {
         ..quiet()
     };
     for _ in 0..15 {
-        assert!(!tears(&mut intent, hanging, &TEARING));
+        assert!(!tears(&mut intent, hanging, config()));
     }
     assert_eq!(intent.settled_lag, Some(0.12));
     // The old absolute threshold would read this as a yank already; above the settled lag it
@@ -352,10 +356,10 @@ fn a_grip_settled_far_off_the_hand_measures_from_its_settled_lag() {
         separating_speed_mps: 3.0,
         ..quiet()
     };
-    assert!(!tears(&mut intent, small, &TEARING));
+    assert!(!tears(&mut intent, small, config()));
     let mut intent = Intent::default();
     for _ in 0..15 {
-        tears(&mut intent, hanging, &TEARING);
+        tears(&mut intent, hanging, config());
     }
     assert!(tears(
         &mut intent,
@@ -363,7 +367,7 @@ fn a_grip_settled_far_off_the_hand_measures_from_its_settled_lag() {
             lag_m: 0.32,
             ..small
         },
-        &TEARING
+        config()
     ));
 }
 
@@ -381,7 +385,7 @@ fn a_slow_hard_pull_tears_and_a_slower_creep_settles_instead() {
                 separating_speed_mps: speed,
                 ..quiet()
             };
-            if let Some(kind) = intent.step(gesture, &TEARING) {
+            if let Some(kind) = intent.step(gesture, config()) {
                 return Some((kind, lag, tick));
             }
         }
@@ -410,7 +414,7 @@ fn a_pull_along_a_free_swing_never_tears() {
             free_swing: true,
             ..quiet()
         };
-        assert!(!tears(&mut intent, gesture, &TEARING));
+        assert!(!tears(&mut intent, gesture, config()));
     }
 }
 
@@ -427,7 +431,7 @@ fn settled_opening_cannot_carry_a_baseline_into_the_stop(dt: f32) {
         ..quiet()
     };
     for _ in 0..(1.0 / dt) as usize {
-        assert_eq!(intent.step(opening, &TEARING), None);
+        assert_eq!(intent.step(opening, config()), None);
         assert!(intent.settled_lag.is_none());
     }
     for tick in 1..=10 {
@@ -443,7 +447,7 @@ fn settled_opening_cannot_carry_a_baseline_into_the_stop(dt: f32) {
                     load: 1.0,
                     ..quiet()
                 },
-                &TEARING
+                config()
             ),
             None
         );
@@ -459,7 +463,7 @@ fn settled_opening_cannot_carry_a_baseline_into_the_stop(dt: f32) {
                     load: 1.0,
                     ..quiet()
                 },
-                &TEARING
+                config()
             ),
             None
         );
@@ -477,10 +481,10 @@ fn stop_arrival_and_departure_require_fresh_settling_even_without_free_swing() {
             separating_speed_mps: 3.0,
             ..quiet()
         };
-        assert_eq!(intent.step(arrival, &TEARING), None);
+        assert_eq!(intent.step(arrival, config()), None);
         assert!(intent.settled_lag.is_none());
         for _ in 0..30 {
-            assert_eq!(intent.step(arrival, &TEARING), None);
+            assert_eq!(intent.step(arrival, config()), None);
         }
         assert!(intent.settled_lag.is_none());
         let resting = Gesture {
@@ -488,7 +492,7 @@ fn stop_arrival_and_departure_require_fresh_settling_even_without_free_swing() {
             ..arrival
         };
         for _ in 0..15 {
-            assert_eq!(intent.step(resting, &TEARING), None);
+            assert_eq!(intent.step(resting, config()), None);
         }
         assert_eq!(intent.settled_lag, Some(0.35));
         assert_eq!(
@@ -498,7 +502,7 @@ fn stop_arrival_and_departure_require_fresh_settling_even_without_free_swing() {
                     separating_speed_mps: 3.0,
                     ..resting
                 },
-                &TEARING
+                config()
             ),
             Some(TearGesture::Yank)
         );
@@ -516,12 +520,12 @@ fn an_opening_aligned_yank_at_the_stop_must_use_the_sustained_push_gate() {
         load: 1.0,
         ..quiet()
     };
-    assert_eq!(intent.step(push, &TEARING), None);
+    assert_eq!(intent.step(push, config()), None);
     assert_eq!(intent.wrench_s, 0.0);
     for _ in 0..16 {
-        assert_eq!(intent.step(push, &TEARING), None);
+        assert_eq!(intent.step(push, config()), None);
     }
-    assert_eq!(intent.step(push, &TEARING), Some(TearGesture::LimitPush));
+    assert_eq!(intent.step(push, config()), Some(TearGesture::LimitPush));
 }
 
 #[test]
@@ -535,7 +539,7 @@ fn a_resting_loaded_stop_needs_additional_push_not_absolute_lag() {
     };
     let mut intent = settled(resting);
     for _ in 0..100 {
-        assert_eq!(intent.step(resting, &TEARING), None);
+        assert_eq!(intent.step(resting, config()), None);
     }
     let push = Gesture {
         lag_m: 0.34,
@@ -543,11 +547,11 @@ fn a_resting_loaded_stop_needs_additional_push_not_absolute_lag() {
         ..resting
     };
     for _ in 0..17 {
-        assert_eq!(intent.step(push, &TEARING), None);
+        assert_eq!(intent.step(push, config()), None);
     }
-    assert_eq!(intent.step(push, &TEARING), Some(TearGesture::LimitPush));
+    assert_eq!(intent.step(push, config()), Some(TearGesture::LimitPush));
     for _ in 0..50 {
-        assert_eq!(intent.step(push, &TEARING), None);
+        assert_eq!(intent.step(push, config()), None);
     }
 }
 
@@ -564,7 +568,7 @@ fn a_large_sideways_lag_with_a_small_opening_component_does_not_count_as_push() 
                     load: 1.0,
                     ..quiet()
                 },
-                &TEARING
+                config()
             ),
             None
         );
@@ -579,12 +583,12 @@ fn a_brief_wrist_sized_lag_spike_does_not_become_a_hard_pull() {
         ..quiet()
     };
     for _ in 0..6 {
-        assert_eq!(intent.step(snag, &TEARING), None);
+        assert_eq!(intent.step(snag, config()), None);
     }
-    assert_eq!(intent.step(quiet(), &TEARING), None);
+    assert_eq!(intent.step(quiet(), config()), None);
     assert_eq!(intent.wrench_s, 0.0);
     for _ in 0..30 {
-        assert_eq!(intent.step(quiet(), &TEARING), None);
+        assert_eq!(intent.step(quiet(), config()), None);
     }
 }
 
@@ -596,10 +600,10 @@ fn a_sustained_hard_pull_is_not_resettled_away() {
         ..quiet()
     };
     for _ in 0..8 {
-        assert_eq!(intent.step(pull, &TEARING), None);
+        assert_eq!(intent.step(pull, config()), None);
     }
     assert_eq!(
-        intent.step(Gesture { dt: 0.03, ..pull }, &TEARING),
+        intent.step(Gesture { dt: 0.03, ..pull }, config()),
         Some(TearGesture::HardPull)
     );
 }
@@ -614,14 +618,14 @@ fn wrist_direction_changes_discard_the_old_lag_baseline() {
             separating_speed_mps: 3.0,
             ..quiet()
         };
-        assert_eq!(intent.step(adjusted, &TEARING), None);
+        assert_eq!(intent.step(adjusted, config()), None);
         assert!(intent.settled_lag.is_none());
         let resting = Gesture {
             separating_speed_mps: 0.0,
             ..adjusted
         };
         for _ in 0..30 {
-            assert_eq!(intent.step(resting, &TEARING), None);
+            assert_eq!(intent.step(resting, config()), None);
         }
         assert_eq!(intent.settled_lag, Some(0.32));
         assert_eq!(
@@ -630,7 +634,7 @@ fn wrist_direction_changes_discard_the_old_lag_baseline() {
                     lag_m: 0.50,
                     ..adjusted
                 },
-                &TEARING
+                config()
             ),
             Some(TearGesture::Yank)
         );
@@ -650,7 +654,7 @@ fn gradual_wrist_rotation_cannot_keep_an_old_baseline() {
                     separating_speed_mps: 0.3,
                     ..quiet()
                 },
-                &TEARING
+                config()
             ),
             None
         );
@@ -680,12 +684,12 @@ fn low_load_or_leaving_the_stop_clears_partial_push_intent() {
     ] {
         let mut intent = armed_at_limit();
         for _ in 0..10 {
-            assert_eq!(intent.step(push, &TEARING), None);
+            assert_eq!(intent.step(push, config()), None);
         }
-        assert_eq!(intent.step(interruption, &TEARING), None);
+        assert_eq!(intent.step(interruption, config()), None);
         assert_eq!(intent.push_s, 0.0);
         for _ in 0..10 {
-            assert_eq!(intent.step(push, &TEARING), None);
+            assert_eq!(intent.step(push, config()), None);
         }
     }
 }
@@ -728,7 +732,7 @@ fn invalid_samples_clear_the_armed_baseline_and_partial_effort() {
         },
     ] {
         let mut intent = armed();
-        assert_eq!(intent.step(invalid, &TEARING), None);
+        assert_eq!(intent.step(invalid, config()), None);
         assert_eq!(intent, Intent::default());
         assert_eq!(
             intent.step(
@@ -737,7 +741,7 @@ fn invalid_samples_clear_the_armed_baseline_and_partial_effort() {
                     separating_speed_mps: 3.0,
                     ..quiet()
                 },
-                &TEARING
+                config()
             ),
             None
         );

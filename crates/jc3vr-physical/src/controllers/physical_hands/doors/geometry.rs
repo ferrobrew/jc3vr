@@ -17,7 +17,10 @@
 
 use glam::{Mat4, Vec3};
 
-use crate::controllers::physical_hands::doors::table::{HandleGrade, TableEntry};
+use crate::controllers::physical_hands::doors::{
+    table::{HandleGrade, TableEntry},
+    tuning::DOORS,
+};
 
 /// A door's box in the world.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -98,11 +101,13 @@ impl DoorBox {
             }
         };
         // The hinge's end of the door's run: the end the pivot is near, or the kind's own.
+        let tuning = &DOORS.get().handle;
         let length = size[along];
         let pivot = (0.0 - self.min[along]) / length.max(1e-4);
-        let hinge_at_min = if pivot <= PIVOT_NEAR_END {
+        let near_end = tuning.pivot_near_end;
+        let hinge_at_min = if pivot <= near_end {
             true
-        } else if pivot >= 1.0 - PIVOT_NEAR_END {
+        } else if pivot >= 1.0 - near_end {
             false
         } else {
             let toward = match kind {
@@ -116,9 +121,9 @@ impl DoorBox {
         };
         let mut local = centre;
         local[along] = if hinge_at_min {
-            self.max[along] - length * HANDLE_INSET
+            self.max[along] - length * tuning.inset
         } else {
-            self.min[along] + length * HANDLE_INSET
+            self.min[along] + length * tuning.inset
         };
         local[across] = centre[across];
         let outward_sign = if out[thickness] >= 0.0 { 1.0 } else { -1.0 };
@@ -138,7 +143,7 @@ impl DoorBox {
             point,
             normal,
             source: HandleSource::Box {
-                hinge_from_pivot: pivot <= PIVOT_NEAR_END || pivot >= 1.0 - PIVOT_NEAR_END,
+                hinge_from_pivot: pivot <= near_end || pivot >= 1.0 - near_end,
             },
         })
     }
@@ -283,12 +288,6 @@ impl HandleSource {
         }
     }
 }
-
-/// The share of the door's run within which the pivot counts as at one end, where the hinge is.
-const PIVOT_NEAR_END: f32 = 0.25;
-
-/// How far in from the edge across from the hinge the handle sits, as a share of the door's run.
-const HANDLE_INSET: f32 = 0.1;
 
 /// The box axis (0, 1, or 2) most nearly along `direction`, among those not in `taken`.
 fn axis_along(direction: Vec3, taken: &[usize]) -> usize {

@@ -14,7 +14,9 @@ fn tick() -> HingeTick {
     }
 }
 
-const CONFIG: HingeTuning = HINGE;
+fn config() -> &'static HingeTuning {
+    &DOORS.get().hinge
+}
 
 #[test]
 fn damping_preserves_vehicle_translation_and_rotation_at_the_door_com() {
@@ -212,7 +214,7 @@ fn a_held_door_never_latches() {
         rested_s: 10.0,
         ..tick()
     };
-    assert_eq!(swing(&held, &CONFIG), Swing::Held);
+    assert_eq!(swing(&held, config()), Swing::Held);
 }
 
 #[test]
@@ -220,41 +222,41 @@ fn a_rebound_does_not_latch_but_a_shove_does() {
     // The controller's own latch would take a door closing at a tenth of this.
     let rebound = HingeTick {
         angle_rad: 0.01,
-        rate_rad_s: Some(-(CONFIG.latch_speed_deg_s * 0.5).to_radians()),
+        rate_rad_s: Some(-(config().latch_speed_deg_s * 0.5).to_radians()),
         ..tick()
     };
-    assert!(matches!(swing(&rebound, &CONFIG), Swing::Damped(_)));
+    assert!(matches!(swing(&rebound, config()), Swing::Damped(_)));
     let shove = HingeTick {
-        rate_rad_s: Some(-(CONFIG.latch_speed_deg_s * 2.0).to_radians()),
+        rate_rad_s: Some(-(config().latch_speed_deg_s * 2.0).to_radians()),
         ..rebound
     };
-    assert_eq!(swing(&shove, &CONFIG), Swing::Latch(LatchCause::Shoved));
+    assert_eq!(swing(&shove, config()), Swing::Latch(LatchCause::Shoved));
     // Fast but well open is just a swing.
     let swinging = HingeTick {
         angle_rad: 0.5,
         ..shove
     };
-    assert!(matches!(swing(&swinging, &CONFIG), Swing::Damped(_)));
+    assert!(matches!(swing(&swinging, config()), Swing::Damped(_)));
 }
 
 #[test]
 fn a_door_resting_shut_latches_after_a_while() {
     let resting = HingeTick {
         angle_rad: 0.01,
-        rested_s: CONFIG.settle_s * 0.5,
+        rested_s: config().settle_s * 0.5,
         ..tick()
     };
-    assert!(matches!(swing(&resting, &CONFIG), Swing::Damped(_)));
+    assert!(matches!(swing(&resting, config()), Swing::Damped(_)));
     let settled = HingeTick {
-        rested_s: CONFIG.settle_s,
+        rested_s: config().settle_s,
         ..resting
     };
-    assert_eq!(swing(&settled, &CONFIG), Swing::Latch(LatchCause::Settled));
+    assert_eq!(swing(&settled, config()), Swing::Latch(LatchCause::Settled));
 }
 
 #[test]
 fn a_side_door_is_damped() {
-    let Swing::Damped(factor) = swing(&tick(), &CONFIG) else {
+    let Swing::Damped(factor) = swing(&tick(), config()) else {
         panic!("a free side door is damped");
     };
     assert!(factor > 0.9 && factor < 1.0, "{factor}");
@@ -266,22 +268,22 @@ fn a_lid_stays_up_above_the_strut_and_falls_below_it() {
         lid: true,
         ..tick()
     };
-    assert_eq!(swing(&lid, &CONFIG), Swing::Strut);
+    assert_eq!(swing(&lid, config()), Swing::Strut);
     let falling = HingeTick {
         rate_rad_s: Some(-1.0),
         ..lid
     };
-    assert_eq!(swing(&falling, &CONFIG), Swing::Strut);
+    assert_eq!(swing(&falling, config()), Swing::Strut);
     let thrown = HingeTick {
         rate_rad_s: Some(2.0),
         ..lid
     };
-    assert!(matches!(swing(&thrown, &CONFIG), Swing::Damped(_)));
+    assert!(matches!(swing(&thrown, config()), Swing::Damped(_)));
     let low = HingeTick {
-        angle_rad: CONFIG.strut_fraction * lid.range_rad * 0.5,
+        angle_rad: config().strut_fraction * lid.range_rad * 0.5,
         ..lid
     };
-    assert_eq!(swing(&low, &CONFIG), Swing::Free);
+    assert_eq!(swing(&low, config()), Swing::Free);
 }
 
 #[test]
@@ -298,12 +300,12 @@ fn a_known_canopy_in_the_front_left_slot_gets_lid_support() {
         lid: is_lid(DoorSlot::FRONT_LEFT, Some(canopy.part_hash)),
         ..tick()
     };
-    assert_eq!(swing(&lid, &CONFIG), Swing::Strut);
+    assert_eq!(swing(&lid, config()), Swing::Strut);
     let side = HingeTick {
         lid: is_lid(DoorSlot::FRONT_LEFT, None),
         ..tick()
     };
-    assert!(matches!(swing(&side, &CONFIG), Swing::Damped(_)));
+    assert!(matches!(swing(&side, config()), Swing::Damped(_)));
 }
 
 #[test]
@@ -313,11 +315,11 @@ fn canopy_support_does_not_drop_out_at_the_angle_or_rising_threshold() {
         lid: true,
         ..tick()
     };
-    assert_eq!(support.swing(&canopy, &CONFIG), Swing::Strut);
+    assert_eq!(support.swing(&canopy, config()), Swing::Strut);
     for (angle, rate) in [(0.35, 0.3), (0.37, -0.03), (0.34, 0.0)] {
         canopy.angle_rad = angle;
         canopy.rate_rad_s = Some(rate);
-        assert_eq!(support.swing(&canopy, &CONFIG), Swing::Strut);
+        assert_eq!(support.swing(&canopy, config()), Swing::Strut);
     }
 }
 
@@ -328,25 +330,25 @@ fn a_palm_impulse_yields_support_until_closing_has_stopped() {
         lid: true,
         ..tick()
     };
-    assert_eq!(support.swing(&canopy, &CONFIG), Swing::Strut);
-    support.yield_for_input();
+    assert_eq!(support.swing(&canopy, config()), Swing::Strut);
+    support.yield_for_input(&config().canopy);
     for _ in 0..60 {
         canopy.rate_rad_s = Some(-0.4);
-        assert_eq!(support.swing(&canopy, &CONFIG), Swing::Free);
+        assert_eq!(support.swing(&canopy, config()), Swing::Free);
     }
     canopy.rate_rad_s = Some(0.0);
     for _ in 0..3 {
-        assert_eq!(support.swing(&canopy, &CONFIG), Swing::Free);
+        assert_eq!(support.swing(&canopy, config()), Swing::Free);
     }
     canopy.rate_rad_s = Some(-0.1);
-    assert_eq!(support.swing(&canopy, &CONFIG), Swing::Free);
+    assert_eq!(support.swing(&canopy, config()), Swing::Free);
     canopy.rate_rad_s = None;
-    assert_eq!(support.swing(&canopy, &CONFIG), Swing::Free);
+    assert_eq!(support.swing(&canopy, config()), Swing::Free);
     canopy.rate_rad_s = Some(0.0);
     for _ in 0..4 {
-        assert_eq!(support.swing(&canopy, &CONFIG), Swing::Free);
+        assert_eq!(support.swing(&canopy, config()), Swing::Free);
     }
-    assert_eq!(support.swing(&canopy, &CONFIG), Swing::Strut);
+    assert_eq!(support.swing(&canopy, config()), Swing::Strut);
 }
 
 #[test]
@@ -357,13 +359,13 @@ fn renewed_palm_input_extends_the_minimum_yield_time() {
         ..tick()
     };
     for _ in 0..30 {
-        support.yield_for_input();
-        assert_eq!(support.swing(&canopy, &CONFIG), Swing::Free);
+        support.yield_for_input(&config().canopy);
+        assert_eq!(support.swing(&canopy, config()), Swing::Free);
     }
     for _ in 0..6 {
-        assert_eq!(support.swing(&canopy, &CONFIG), Swing::Free);
+        assert_eq!(support.swing(&canopy, config()), Swing::Free);
     }
-    assert_eq!(support.swing(&canopy, &CONFIG), Swing::Strut);
+    assert_eq!(support.swing(&canopy, config()), Swing::Strut);
 }
 
 #[test]
@@ -374,14 +376,14 @@ fn a_closing_release_or_hold_does_not_lock_the_canopy_open() {
         rate_rad_s: Some(-0.5),
         ..tick()
     };
-    assert_eq!(support.swing(&canopy, &CONFIG), Swing::Free);
+    assert_eq!(support.swing(&canopy, config()), Swing::Free);
     let closed = HingeTick {
         angle_rad: 0.01,
-        rested_s: CONFIG.settle_s,
+        rested_s: config().settle_s,
         ..canopy
     };
     assert_eq!(
-        support.swing(&closed, &CONFIG),
+        support.swing(&closed, config()),
         Swing::Latch(LatchCause::Settled)
     );
     let held = HingeTick {
@@ -389,9 +391,9 @@ fn a_closing_release_or_hold_does_not_lock_the_canopy_open() {
         ..canopy
     };
     support = CanopySupport::Supported { pose: None };
-    assert_eq!(support.swing(&held, &CONFIG), Swing::Held);
+    assert_eq!(support.swing(&held, config()), Swing::Held);
     assert_eq!(support, CanopySupport::Free);
-    assert_eq!(support.swing(&canopy, &CONFIG), Swing::Free);
+    assert_eq!(support.swing(&canopy, config()), Swing::Free);
 }
 
 #[test]
@@ -402,23 +404,23 @@ fn supported_canopy_yields_to_physical_closing_but_retains_small_drift() {
         rate_rad_s: Some(-0.02),
         ..tick()
     };
-    assert_eq!(support.swing(&canopy, &CONFIG), Swing::Strut);
+    assert_eq!(support.swing(&canopy, config()), Swing::Strut);
     let closing = HingeTick {
         rate_rad_s: Some(-0.5),
         ..canopy
     };
-    assert_eq!(support.swing(&closing, &CONFIG), Swing::Free);
+    assert_eq!(support.swing(&closing, config()), Swing::Free);
     assert!(matches!(support, CanopySupport::Yielding { .. }));
     for _ in 0..30 {
-        assert_eq!(support.swing(&closing, &CONFIG), Swing::Free);
+        assert_eq!(support.swing(&closing, config()), Swing::Free);
     }
     let closed = HingeTick {
         angle_rad: 0.01,
-        rested_s: CONFIG.settle_s,
+        rested_s: config().settle_s,
         ..closing
     };
     assert_eq!(
-        support.swing(&closed, &CONFIG),
+        support.swing(&closed, config()),
         Swing::Latch(LatchCause::Settled)
     );
 }
@@ -429,7 +431,7 @@ fn canopy_pose_correction_is_carrier_relative_bounded_and_cleared_by_input() {
     let mut door = state(Vec3::Y, Velocities::default());
     let mut support = CanopySupport::Supported { pose: None };
     assert_velocities(
-        support.correction(&door, &chassis, 0.1),
+        support.correction(&door, &chassis, 0.1, &config().canopy),
         Velocities::default(),
     );
     let mut moved = chassis;
@@ -438,21 +440,24 @@ fn canopy_pose_correction_is_carrier_relative_bounded_and_cleared_by_input() {
     door.pose.centre = moved.pose.centre + moved.pose.orientation * Vec3::Y;
     door.pose.orientation = moved.pose.orientation;
     assert_velocities(
-        support.correction(&door, &moved, 0.1),
+        support.correction(&door, &moved, 0.1, &config().canopy),
         Velocities::default(),
     );
     door.pose.centre += Vec3::X * 10.0;
     door.pose.orientation *= Quat::from_rotation_x(1.0);
-    let correction = support.correction(&door, &moved, 0.1);
-    assert!((correction.linear.length() - CANOPY_RESTORE_MPS).abs() < 1e-5);
-    assert!((correction.angular.length() - CANOPY_RESTORE_RAD_S).abs() < 1e-5);
+    let correction = support.correction(&door, &moved, 0.1, &config().canopy);
+    assert!((correction.linear.length() - config().canopy.restore_mps).abs() < 1e-5);
+    assert!((correction.angular.length() - config().canopy.restore_rad_s).abs() < 1e-5);
     assert!(correction.linear.x < 0.0);
     for dt in [0.0, -0.1] {
-        assert_velocities(support.correction(&door, &moved, dt), Velocities::default());
+        assert_velocities(
+            support.correction(&door, &moved, dt, &config().canopy),
+            Velocities::default(),
+        );
     }
-    support.yield_for_input();
+    support.yield_for_input(&config().canopy);
     assert_velocities(
-        support.correction(&door, &moved, 0.1),
+        support.correction(&door, &moved, 0.1, &config().canopy),
         Velocities::default(),
     );
 }
@@ -464,7 +469,7 @@ fn canopy_target_bounds_accumulated_closing_drift_while_the_carrier_turns() {
         let mut chassis = state(Vec3::ZERO, Velocities::default());
         let mut door = state(Vec3::Y, Velocities::default());
         let mut support = CanopySupport::Supported { pose: None };
-        support.correction(&door, &chassis, dt);
+        support.correction(&door, &chassis, dt, &config().canopy);
         let mut offset = Vec3::ZERO;
         let mut angle = 0.0;
         for step in 0..hz * 20 {
@@ -472,7 +477,7 @@ fn canopy_target_bounds_accumulated_closing_drift_while_the_carrier_turns() {
             chassis.pose.orientation = Quat::from_rotation_y(step as f32 * dt);
             door.pose.centre = chassis.pose.centre + chassis.pose.orientation * (Vec3::Y + offset);
             door.pose.orientation = chassis.pose.orientation * Quat::from_rotation_x(angle);
-            let correction = support.correction(&door, &chassis, dt);
+            let correction = support.correction(&door, &chassis, dt, &config().canopy);
             offset += chassis.pose.orientation.inverse() * correction.linear * dt;
             offset.y -= 0.01 * dt;
             angle += (chassis.pose.orientation.inverse() * correction.angular).x * dt;
@@ -486,14 +491,14 @@ fn canopy_target_bounds_accumulated_closing_drift_while_the_carrier_turns() {
 #[test]
 fn yielded_support_does_not_reengage_below_its_opening_threshold() {
     let mut support = CanopySupport::Supported { pose: None };
-    support.yield_for_input();
+    support.yield_for_input(&config().canopy);
     let low = HingeTick {
         lid: true,
-        angle_rad: CONFIG.strut_fraction * tick().range_rad * 0.5,
+        angle_rad: config().strut_fraction * tick().range_rad * 0.5,
         ..tick()
     };
     for _ in 0..30 {
-        assert_eq!(support.swing(&low, &CONFIG), Swing::Free);
+        assert_eq!(support.swing(&low, config()), Swing::Free);
     }
     assert_eq!(support, CanopySupport::Free);
     assert_eq!(
@@ -502,7 +507,7 @@ fn yielded_support_does_not_reengage_below_its_opening_threshold() {
                 angle_rad: 1.0,
                 ..low
             },
-            &CONFIG
+            config()
         ),
         Swing::Strut
     );
@@ -514,11 +519,14 @@ fn canopy_restore_uses_the_shortest_rotation_for_both_quaternion_signs() {
     for angle in [0.0, 0.1, -0.1, 3.5, -3.5] {
         let mut support = CanopySupport::Supported { pose: None };
         let mut door = state(Vec3::Y, Velocities::default());
-        support.correction(&door, &chassis, 0.1);
+        support.correction(&door, &chassis, 0.1, &config().canopy);
         door.pose.orientation = Quat::from_rotation_x(angle);
-        let positive = support.correction(&door, &chassis, 0.1);
+        let positive = support.correction(&door, &chassis, 0.1, &config().canopy);
         door.pose.orientation = -door.pose.orientation;
-        assert_velocities(support.correction(&door, &chassis, 0.1), positive);
+        assert_velocities(
+            support.correction(&door, &chassis, 0.1, &config().canopy),
+            positive,
+        );
         let shortest = if angle > std::f32::consts::PI {
             angle - std::f32::consts::TAU
         } else if angle < -std::f32::consts::PI {
@@ -528,8 +536,10 @@ fn canopy_restore_uses_the_shortest_rotation_for_both_quaternion_signs() {
         };
         assert!(
             (positive.angular.x
-                + (shortest * CANOPY_RESTORE_PER_S)
-                    .clamp(-CANOPY_RESTORE_RAD_S, CANOPY_RESTORE_RAD_S))
+                + (shortest * config().canopy.restore_per_s).clamp(
+                    -config().canopy.restore_rad_s,
+                    config().canopy.restore_rad_s
+                ))
             .abs()
                 < 1e-5
         );
@@ -543,7 +553,10 @@ fn invalid_or_replaced_bodies_discard_the_cached_support_target() {
         let mut support = CanopySupport::Supported {
             pose: Some(body.pose),
         };
-        assert_eq!(support.velocities(door, chassis, 0.1, 9.81), None);
+        assert_eq!(
+            support.velocities(door, chassis, 0.1, 9.81, &config().canopy),
+            None
+        );
         assert_eq!(support, CanopySupport::Free);
     }
     let original = (NonZeroUsize::new(1).unwrap(), 10);

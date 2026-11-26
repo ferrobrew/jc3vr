@@ -5,7 +5,7 @@
 //! parts in a vehicle's door controller work the same way. The design is in
 //! `docs/mod/input/vehicle-doors.md`, the engine side in `docs/engine/gameplay/vehicle-doors.md`.
 //!
-//! - [`config`]: the settings;
+//! - [`tuning`]: the tuning, from the shipped `tuning/doors.toml`;
 //! - [`geometry`]: a door's box, its handle area, its handle, and the pull on its latch, pure;
 //! - [`table`]: the door handle table derived offline from the game's files;
 //! - [`engine`]: a vehicle's doors as its door controller keeps them, and the latch;
@@ -17,11 +17,10 @@
 //! door as a loose object; a palm at a closed door's handle area, found from the vehicle's door
 //! boxes, takes it as latched. The pickup tick ([`crate::controllers::physical_hands::pickup::tick`])
 //! keeps a latched grip ([`Latch`]): the hand stays at the grab point on the vehicle ([`LatchStep::Pin`])
-//! until it has pulled outward past [`UNLATCH_PULL_M`], when the latch gives
+//! until it has pulled outward past the tuning's `grip.unlatch_pull_m`, when the latch gives
 //! ([`engine::unlatch`]) and the hold becomes an ordinary one of the door's own body.
 
 pub(crate) mod acquisition;
-pub mod config;
 pub mod engine;
 pub mod geometry;
 pub mod hinge;
@@ -29,6 +28,7 @@ pub mod pressure;
 pub(crate) mod scan;
 pub mod table;
 pub(crate) mod tearing;
+pub mod tuning;
 
 use std::{num::NonZeroUsize, time::Instant};
 
@@ -43,20 +43,10 @@ use crate::controllers::physical_hands::{
         acquisition::{PanelBody, PanelReach},
         engine::DoorError,
         geometry::pull,
+        tuning::DOORS,
     },
     pickup::diagnostics::scan::{Branch, Scan, ScanEntry, ScanResult},
 };
-
-/// How far outside a door's box a palm still reaches it, metres of the player's hand.
-pub(crate) const REACH_M: f32 = 0.06;
-
-/// How far a hand gripping a closed door must pull it outward before the latch gives, metres of
-/// the player's hand.
-pub(crate) const UNLATCH_PULL_M: f32 = 0.05;
-
-/// How far from a door's handle a palm takes the door, whatever the reach's rays hit, metres of the
-/// player's hand.
-pub(crate) const HANDLE_REACH_M: f32 = 0.30;
 
 /// What a hand reaches of a vehicle through the ray hit `hit` on `object`'s body `body`, from a
 /// palm centred at `palm`: an open door it touches within `reach`'s box reach, or a closed door
@@ -97,12 +87,13 @@ pub(crate) unsafe fn observed_reach(
     let vehicle = unsafe { engine::vehicle_of(object) }?;
     let doors = unsafe { engine::doors(vehicle) };
     let origin = unsafe { engine::vehicle_frame(vehicle) }.w_axis.truncate();
+    let tuning = &DOORS.get().grip;
     if unsafe { engine::is_vehicle_part(object) } {
         // An open door's own body: the door is held where the hand touched it.
         let door = doors
             .iter()
             .find(|d| d.body.is_some_and(|(owner, _)| owner == object))?;
-        if !panel_hit(door, hit) {
+        if !panel_hit(door, hit, tuning.panel_slack_m) {
             return None;
         }
         let (owner, door_body) = door.body?;
@@ -125,13 +116,13 @@ pub(crate) unsafe fn observed_reach(
     // The vehicle's own body: a door, closed or open, taken anywhere the hand reaches it.
     doors
         .iter()
-        .filter(|d| panel_hit(d, hit))
+        .filter(|d| panel_hit(d, hit, tuning.panel_slack_m))
         .filter_map(|d| {
             let mut acquired = acquisition::observed_panel(
                 d,
                 palm,
                 reach,
-                HANDLE_SHARE,
+                tuning.handle_share,
                 origin,
                 ScanEntry {
                     branch: Branch::DoorPanel,
@@ -174,12 +165,14 @@ pub(crate) unsafe fn observed_reach(
         .min_by(|a, b| a.distance.total_cmp(&b.distance))
 }
 
-pub(crate) fn panel_hit(door: &engine::DoorRead, hit: &SurfaceHit) -> bool {
+/// Whether `hit` is on `door`'s panel: within `slack_m` of its box, and not on glass unless the
+/// door is a canopy.
+pub(crate) fn panel_hit(door: &engine::DoorRead, hit: &SurfaceHit, slack_m: f32) -> bool {
     (hit.material != Some(GameMaterialId::EGameMaterialId_Glass as u32)
         || table::is_canopy(door.part_hash))
         && door
             .door_box
-            .is_some_and(|bounds| bounds.reach(hit.position, 0.03).is_some())
+            .is_some_and(|bounds| bounds.reach(hit.position, slack_m).is_some())
 }
 
 /// A door slot's name, for the readouts and the log.
@@ -311,6 +304,7 @@ impl Latch {
                     result,
                     grab,
                     now.saturating_duration_since(opening_at).as_secs_f32(),
+                    DOORS.get().grip.body_wait_s,
                 ) {
                     LatchStep::Pin(_) => LatchStep::Pin(self.handle_palm(world).position),
                     step => step,
@@ -336,23 +330,20 @@ pub enum LatchStep {
     Lost(DoorError),
 }
 
+/// What a latch that gave with `result` does, `elapsed_s` after the first attempt, waiting up to
+/// `body_wait_s` for the door's loose body.
 fn opened_step(
     result: Result<(NonZeroUsize, u32), DoorError>,
     grab: Vec3,
     elapsed_s: f32,
+    body_wait_s: f32,
 ) -> LatchStep {
     match result {
         Ok((object, body)) => LatchStep::Opened { object, body, grab },
-        Err(DoorError::NoLooseBody) if elapsed_s < BODY_WAIT_S => LatchStep::Pin(grab),
+        Err(DoorError::NoLooseBody) if elapsed_s < body_wait_s => LatchStep::Pin(grab),
         Err(error) => LatchStep::Lost(error),
     }
 }
-
-const BODY_WAIT_S: f32 = 0.3;
-
-/// Where on a closed door its handle area starts, as a share of the way from the door's hinge to
-/// its far edge, `0..=1`: a grip nearer the hinge than this takes nothing.
-const HANDLE_SHARE: f32 = 0.4;
 
 /// Whether a latched grip holds or gives, pure.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -410,9 +401,10 @@ mod tests {
             },
             material: None,
         };
-        assert!(panel_hit(&door, &hit));
+        let slack_m = DOORS.get().grip.panel_slack_m;
+        assert!(panel_hit(&door, &hit, slack_m));
         hit.material = Some(GameMaterialId::EGameMaterialId_Glass as u32);
-        assert!(!panel_hit(&door, &hit));
+        assert!(!panel_hit(&door, &hit, slack_m));
         door.part_hash = table::parse(include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../tools/door_handles/door_handles.json"
@@ -421,9 +413,9 @@ mod tests {
         .into_iter()
         .find(|entry| entry.part == "fighterjet_door_f")
         .map(|entry| entry.part_hash);
-        assert!(panel_hit(&door, &hit));
+        assert!(panel_hit(&door, &hit, slack_m));
         hit.position = Vec3::splat(2.0);
-        assert!(!panel_hit(&door, &hit));
+        assert!(!panel_hit(&door, &hit, slack_m));
     }
 
     fn latch() -> Latch {
@@ -490,20 +482,21 @@ mod tests {
     #[test]
     fn a_native_body_wait_is_bounded_and_a_real_unlatch_refusal_is_immediate() {
         let grab = Vec3::X;
+        let wait_s = DOORS.get().grip.body_wait_s;
         assert_eq!(
-            opened_step(Err(DoorError::NoLooseBody), grab, 0.0),
+            opened_step(Err(DoorError::NoLooseBody), grab, 0.0, wait_s),
             LatchStep::Pin(grab)
         );
         assert_eq!(
-            opened_step(Err(DoorError::NoLooseBody), grab, BODY_WAIT_S),
+            opened_step(Err(DoorError::NoLooseBody), grab, wait_s, wait_s),
             LatchStep::Lost(DoorError::NoLooseBody)
         );
         assert_eq!(
-            opened_step(Err(DoorError::StayedLatched), grab, 0.0),
+            opened_step(Err(DoorError::StayedLatched), grab, 0.0, wait_s),
             LatchStep::Lost(DoorError::StayedLatched)
         );
         assert_eq!(
-            opened_step(Ok((NonZeroUsize::new(16).unwrap(), 7)), grab, 0.1),
+            opened_step(Ok((NonZeroUsize::new(16).unwrap(), 7)), grab, 0.1, wait_s),
             LatchStep::Opened {
                 object: NonZeroUsize::new(16).unwrap(),
                 body: 7,

@@ -3,7 +3,7 @@ use std::num::NonZeroUsize;
 use jc3gi::vehicle::vehicle::DoorSlot;
 use jc3vr_body::controllers::{grab::world_reach::DoorTarget, physics::bodies::BodyError};
 
-use crate::controllers::physical_hands::doors::{UNLATCH_PULL_M, engine::DoorError, slot_label};
+use crate::controllers::physical_hands::doors::{engine::DoorError, slot_label, tuning::DOORS};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Reason {
@@ -41,7 +41,6 @@ pub struct Readout {
     pub reason: Reason,
     pub slot: Option<DoorSlot>,
     pub displacement_m: f32,
-    pub required_m: f32,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -58,7 +57,6 @@ impl Diagnostics {
                 reason: Reason::NoContact,
                 slot: None,
                 displacement_m: 0.0,
-                required_m: UNLATCH_PULL_M,
             },
             target: None,
             failure: None,
@@ -97,7 +95,7 @@ impl Diagnostics {
         if let Some((vehicle, part, slot)) = self.target {
             tracing::info!(target: "controllers", vehicle = vehicle.get(), part,
                 slot = slot_label(slot), displacement_m = self.readout.displacement_m,
-                required_m = self.readout.required_m, "door pressure: opened");
+                required_m = DOORS.get().grip.unlatch_pull_m, "door pressure: opened");
         }
     }
 
@@ -108,7 +106,7 @@ impl Diagnostics {
                 part = self.target.map(|(_, part, _)| part),
                 slot = self.readout.slot.map(slot_label), %error, ?body_error,
                 displacement_m = self.readout.displacement_m,
-                required_m = self.readout.required_m, "door pressure: native failure");
+                required_m = DOORS.get().grip.unlatch_pull_m, "door pressure: native failure");
         }
     }
 
@@ -164,7 +162,6 @@ mod tests {
         assert_eq!(diagnostics.readout.reason, Reason::ContactLost);
         assert_eq!(diagnostics.readout.slot, Some(DoorSlot::FRONT_LEFT));
         assert_eq!(diagnostics.readout.displacement_m, 0.03);
-        assert_eq!(diagnostics.readout.required_m, UNLATCH_PULL_M);
         diagnostics.idle(Reason::NoContact);
         assert_eq!(diagnostics.readout.slot, None);
         assert_eq!(diagnostics.readout.displacement_m, 0.0);

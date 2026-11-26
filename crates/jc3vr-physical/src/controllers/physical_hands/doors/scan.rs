@@ -1,7 +1,7 @@
 //! The doors near the hands, offered by their handles whatever the reach's rays hit: every door of
 //! every vehicle near the player is a target at its handle ([`door_handle`]: the embedded table's,
-//! or the box guess for a door the table lacks) for a palm within
-//! [`HANDLE_REACH_M`] of it. A latched door is merged into its vehicle's body, so the
+//! or the box guess for a door the table lacks) for a palm within the tuning's
+//! `grip.handle_reach_m` of it. A latched door is merged into its vehicle's body, so the
 //! grip that takes it needs that body, which proves the vehicle alive while the hand holds the
 //! latch: a short cast from the palm to the handle finds it. What each door near a palm was, and
 //! why it was not offered, is noted for the grip press's log.
@@ -29,25 +29,26 @@ use parking_lot::Mutex;
 use crate::controllers::physical_hands::{
     contact::{Surface, SurfaceHit},
     doors::{
-        HANDLE_REACH_M,
         acquisition::PanelReach,
         engine,
         engine::DoorRead,
         geometry::{DoorKind, door_handle},
         observed_reach, slot_label, table,
+        tuning::{DOORS, ScanTuning},
     },
     grab_view::model::{HandleOutcome, HandleSeen},
     pickup::diagnostics::scan::{Branch, Scan, ScanEntry, ScanResult},
 };
 
 /// The vehicles whose doors a palm at any of `palms` might reach: those in the target system's
-/// vehicle set within [`NEAR_M`] of one, at the VR world scale `world_scale`.
+/// vehicle set within the tuning's `scan.near_m` of one, at the VR world scale `world_scale`.
 ///
 /// # Safety
 ///
 /// The thread that runs the player's aim update, outside the physics step.
 pub(crate) unsafe fn near(palms: &[Vec3], world_scale: f32) -> Vec<NonZeroUsize> {
-    let range = NEAR_M * world_scale.max(1e-3);
+    let tuning = &DOORS.get().scan;
+    let range = tuning.near_m * world_scale.max(1e-3);
     let mut out = Vec::new();
     for target in unsafe { targets::targets(TargetSet::Vehicles) } {
         let Some(game_object) = (unsafe { targets::game_object(target) }) else {
@@ -66,7 +67,7 @@ pub(crate) unsafe fn near(palms: &[Vec3], world_scale: f32) -> Vec<NonZeroUsize>
         if palms.iter().any(|p| p.distance(at) <= range) {
             out.push(object);
         }
-        if out.len() >= MAX_VEHICLES {
+        if out.len() >= tuning.max_vehicles {
             break;
         }
     }
@@ -102,18 +103,21 @@ pub(crate) unsafe fn handle_reach(
         scan,
     } = observations;
     scan.handles_ran = true;
+    let doors_tuning = DOORS.get();
+    let tuning = &doors_tuning.scan;
     if let Some(handles) = handles.as_deref_mut() {
         handles.clear();
     }
     let mut seen = |at: Vec3, outcome: HandleOutcome| {
         if let Some(handles) = handles.as_deref_mut()
-            && handles.len() < MAX_HANDLES_SEEN
+            && handles.len() < tuning.max_handles_seen
         {
             handles.push(HandleSeen { at, outcome });
         }
     };
     let scale = world_scale.max(1e-3);
-    let reach_m = HANDLE_REACH_M * scale;
+    let handle_reach_m = doors_tuning.grip.handle_reach_m;
+    let reach_m = handle_reach_m * scale;
     let mut best: Option<Reach> = None;
     for &vehicle in vehicles {
         let doors = unsafe { engine::doors(vehicle) };
@@ -138,11 +142,15 @@ pub(crate) unsafe fn handle_reach(
             let Some(door_box) = door.door_box else {
                 entry.result = ScanResult::NoBox;
                 scan.push(entry);
-                note(notes, format!("{what}: no model box to find its handle on"));
+                note(
+                    notes,
+                    format!("{what}: no model box to find its handle on"),
+                    tuning,
+                );
                 continue;
             };
             if table::is_canopy(door.part_hash) {
-                let candidate = canopy_hits(&door, palm, reach_m, cast)
+                let candidate = canopy_hits(&door, palm, reach_m, tuning.cast_past_m, cast)
                     .into_iter()
                     .flatten()
                     .filter_map(|hit| {
@@ -177,7 +185,11 @@ pub(crate) unsafe fn handle_reach(
                     entry.point = Some(reached.point);
                     entry.distance = Some(reached.distance);
                     seen(reached.point, HandleOutcome::InReach);
-                    note(notes, format!("{what}: the canopy surface is in reach"));
+                    note(
+                        notes,
+                        format!("{what}: the canopy surface is in reach"),
+                        tuning,
+                    );
                     if best.is_none_or(|b| reached.distance < b.distance) {
                         best = Some(reached);
                     }
@@ -194,6 +206,7 @@ pub(crate) unsafe fn handle_reach(
                 note(
                     notes,
                     format!("{what}: its box has no faces to find its handle on"),
+                    tuning,
                 );
                 continue;
             };
@@ -204,21 +217,28 @@ pub(crate) unsafe fn handle_reach(
             if distance > reach_m {
                 entry.result = ScanResult::OutOfReach;
                 scan.push(entry);
-                if distance <= NOTED_M * scale {
+                if distance <= tuning.noted_m * scale {
                     seen(handle.point, HandleOutcome::OutOfReach);
                     note(
                         notes,
                         format!(
                             "{what}: handle {:.0} mm away, past the {:.0} mm reach",
                             mm(distance),
-                            HANDLE_REACH_M * 1000.0
+                            handle_reach_m * 1000.0
                         ),
+                        tuning,
                     );
                 }
                 continue;
             }
+            let at = HandleAt {
+                point: handle.point,
+                normal: handle.normal,
+                palm,
+                cast_past_m: tuning.cast_past_m,
+            };
             let Some((object, body, vehicle_body)) =
-                (unsafe { holdable(vehicle, &door, handle.point, handle.normal, palm, cast) })
+                (unsafe { holdable(vehicle, &door, at, cast) })
             else {
                 entry.result = ScanResult::NoBody;
                 scan.push(entry);
@@ -229,6 +249,7 @@ pub(crate) unsafe fn handle_reach(
                         "{what}: handle {:.0} mm away, but no body was found at it",
                         mm(distance)
                     ),
+                    tuning,
                 );
                 continue;
             };
@@ -243,6 +264,7 @@ pub(crate) unsafe fn handle_reach(
                     mm(distance),
                     handle.source.label()
                 ),
+                tuning,
             );
             let reach = Reach {
                 object,
@@ -268,24 +290,8 @@ pub(crate) unsafe fn handle_reach(
     best
 }
 
-/// How far from a palm the vehicles whose doors it might reach are looked for, metres at the
-/// player's scale: past the end of the longest vehicle's door from its middle.
-const NEAR_M: f32 = 6.0;
-
-/// The most vehicles a tick looks at, a bound against a crowded street.
-const MAX_VEHICLES: usize = 8;
-
-/// How far from a palm a door out of reach is still noted, metres at the player's scale.
-const NOTED_M: f32 = 1.0;
-
-/// The most door handles a hand records for the grab view per tick.
-const MAX_HANDLES_SEEN: usize = 8;
-
-/// The most door notes a hand keeps per tick.
-const MAX_NOTES: usize = 12;
-
-fn note(notes: &mut Vec<String>, note: String) {
-    if notes.len() < MAX_NOTES {
+fn note(notes: &mut Vec<String>, note: String, tuning: &ScanTuning) {
+    if notes.len() < tuning.max_notes {
         notes.push(note);
     }
 }
@@ -357,10 +363,20 @@ pub(crate) fn kind_of(slot: DoorSlot) -> DoorKind {
     }
 }
 
-/// What a hand takes of `door` at its handle `point` (outer face `normal`): an open door's own body,
-/// or a latched door's vehicle and the vehicle's body under the handle, found by a cast from the
-/// palm at `palm` and, failing that, across the face at the handle. The native vehicle body is a
-/// fallback when the handle lies outside the collision shape; its current owner must be the vehicle.
+/// A door's handle as a palm reaches for it, with how far past it the casts reach.
+#[derive(Debug, Copy, Clone)]
+struct HandleAt {
+    point: Vec3,
+    /// The outer face's normal.
+    normal: Vec3,
+    palm: Vec3,
+    cast_past_m: f32,
+}
+
+/// What a hand takes of `door` at its handle `at`: an open door's own body, or a latched door's
+/// vehicle and the vehicle's body under the handle, found by a cast from the palm and, failing
+/// that, across the face at the handle. The native vehicle body is a fallback when the handle lies
+/// outside the collision shape; its current owner must be the vehicle.
 ///
 /// # Safety
 ///
@@ -368,17 +384,21 @@ pub(crate) fn kind_of(slot: DoorSlot) -> DoorKind {
 unsafe fn holdable(
     vehicle: NonZeroUsize,
     door: &DoorRead,
-    point: Vec3,
-    normal: Vec3,
-    palm: Vec3,
+    at: HandleAt,
     cast: &mut impl FnMut(Vec3, Vec3) -> Option<SurfaceHit>,
 ) -> Option<(NonZeroUsize, u32, Option<u32>)> {
     if !door.latched {
         let (owner, body) = door.body?;
         return Some((owner, body, None));
     }
-    let past = point + (point - palm).normalize_or_zero() * CAST_PAST_M;
-    let across = (point + normal * CAST_PAST_M, point - normal * CAST_PAST_M);
+    let HandleAt {
+        point,
+        normal,
+        palm,
+        cast_past_m,
+    } = at;
+    let past = point + (point - palm).normalize_or_zero() * cast_past_m;
+    let across = (point + normal * cast_past_m, point - normal * cast_past_m);
     let mut body = None;
     for (from, to) in [(palm, past), across] {
         let Some(hit) = cast(from, to) else {
@@ -400,6 +420,7 @@ fn canopy_hits(
     door: &DoorRead,
     palm: Vec3,
     reach_m: f32,
+    cast_past_m: f32,
     cast: &mut impl FnMut(Vec3, Vec3) -> Option<SurfaceHit>,
 ) -> [Option<SurfaceHit>; 2] {
     let Some(door_box) = door.door_box.filter(|_| table::is_canopy(door.part_hash)) else {
@@ -416,7 +437,7 @@ fn canopy_hits(
         if direction == Vec3::ZERO {
             return None;
         }
-        cast(palm, point + direction * CAST_PAST_M)
+        cast(palm, point + direction * cast_past_m)
     })
 }
 
@@ -433,15 +454,16 @@ fn vehicle_hit(vehicle: NonZeroUsize, hit: &SurfaceHit) -> Option<u32> {
     }
 }
 
-/// How far past the handle the casts that find a latched door's vehicle body reach, metres.
-const CAST_PAST_M: f32 = 0.1;
-
 #[cfg(test)]
 mod tests {
     use glam::Mat4;
 
     use super::*;
     use crate::controllers::physical_hands::doors::geometry::DoorBox;
+
+    fn cast_past_m() -> f32 {
+        DOORS.get().scan.cast_past_m
+    }
 
     fn canopy() -> DoorRead {
         let entry = table::parse(include_str!(concat!(
@@ -491,7 +513,7 @@ mod tests {
             material: Some(GameMaterialId::EGameMaterialId_Glass as u32),
         };
         let mut rays = Vec::new();
-        let hits = canopy_hits(&door, palm, 0.1, &mut |from, to| {
+        let hits = canopy_hits(&door, palm, 0.1, cast_past_m(), &mut |from, to| {
             rays.push((from, to));
             Some(hit)
         });
@@ -504,7 +526,13 @@ mod tests {
     fn a_canopy_box_with_no_ray_hit_offers_no_surface() {
         let door = canopy();
         assert_eq!(
-            canopy_hits(&door, Vec3::new(-1.05, 1.5, 1.5), 0.1, &mut |_, _| None),
+            canopy_hits(
+                &door,
+                Vec3::new(-1.05, 1.5, 1.5),
+                0.1,
+                cast_past_m(),
+                &mut |_, _| None
+            ),
             [None; 2]
         );
     }
@@ -514,12 +542,24 @@ mod tests {
         let mut door = canopy();
         let mut unexpected_cast = |_, _| panic!("no panel probes outside a nearby known canopy");
         assert_eq!(
-            canopy_hits(&door, Vec3::new(-2.0, 1.5, 1.5), 0.1, &mut unexpected_cast),
+            canopy_hits(
+                &door,
+                Vec3::new(-2.0, 1.5, 1.5),
+                0.1,
+                cast_past_m(),
+                &mut unexpected_cast
+            ),
             [None; 2]
         );
         door.part_hash = None;
         assert_eq!(
-            canopy_hits(&door, Vec3::new(-1.05, 1.5, 1.5), 0.1, &mut unexpected_cast),
+            canopy_hits(
+                &door,
+                Vec3::new(-1.05, 1.5, 1.5),
+                0.1,
+                cast_past_m(),
+                &mut unexpected_cast
+            ),
             [None; 2]
         );
     }
@@ -548,9 +588,12 @@ mod tests {
             holdable(
                 vehicle,
                 &door,
-                Vec3::ZERO,
-                Vec3::X,
-                Vec3::X * 0.05,
+                HandleAt {
+                    point: Vec3::ZERO,
+                    normal: Vec3::X,
+                    palm: Vec3::X * 0.05,
+                    cast_past_m: cast_past_m(),
+                },
                 &mut |_, _| {
                     Some(SurfaceHit {
                         surface: Surface::Solid {

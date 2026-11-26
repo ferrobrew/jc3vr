@@ -24,11 +24,12 @@ pub use crate::controllers::physical_hands::doors::pressure::diagnostics::{Reado
 use crate::controllers::physical_hands::{
     contact::{Surface, SurfaceHit},
     doors::{
-        UNLATCH_PULL_M, engine,
+        engine,
         engine::{DoorError, DoorRead},
         hinge, panel_hit,
         pressure::diagnostics::Diagnostics,
         table,
+        tuning::{DOORS, PressureTuning},
     },
     engine as contact_engine,
     palm::PalmBox,
@@ -170,12 +171,14 @@ impl Press {
             world_scale,
             options,
         } = input;
-        if !valid_timing(dt, world_scale) || !palm.is_finite() {
+        let doors = DOORS.get();
+        let tuning = &doors.pressure;
+        if !valid_timing(dt, world_scale, tuning) || !palm.is_finite() {
             self.reject(Reason::InvalidSample);
             return Ok(None);
         }
         if hit.is_some_and(|hit| {
-            !hit.position.is_finite() || hit.position.distance(palm) > REACH_M * world_scale
+            !hit.position.is_finite() || hit.position.distance(palm) > tuning.reach_m * world_scale
         }) {
             self.reject(Reason::NoPanel);
             return Ok(None);
@@ -193,20 +196,23 @@ impl Press {
         {
             self.contact = None;
             return unsafe {
-                self.push_open(OpenInput {
-                    reach,
-                    hit,
-                    target,
-                    palm,
-                    dt,
-                    scale: world_scale,
-                })
+                self.push_open(
+                    OpenInput {
+                        reach,
+                        hit,
+                        target,
+                        palm,
+                        dt,
+                        scale: world_scale,
+                    },
+                    tuning,
+                )
             };
         }
         let Some((reach, hit, target, vehicle_body)) = candidate(reach, hit) else {
             if reach.is_none()
                 && hit.is_none()
-                && unsafe { self.retain(palm, dt, world_scale, options) }
+                && unsafe { self.retain(palm, dt, world_scale, options, tuning) }
             {
                 return Ok(None);
             }
@@ -223,7 +229,7 @@ impl Press {
             return Err(self.native_failure(DoorError::NoDoor));
         };
         let world = unsafe { engine::vehicle_frame(target.vehicle) };
-        if !panel_hit(&door, &hit) {
+        if !panel_hit(&door, &hit, doors.grip.panel_slack_m) {
             self.reject(panel_rejection(door, hit));
             return Ok(None);
         }
@@ -232,7 +238,7 @@ impl Press {
             return Ok(None);
         }
         let sample = Sample::new(reach, hit, door, world, palm);
-        let Some(opening) = self.intent(sample, dt, world_scale) else {
+        let Some(opening) = self.intent(sample, dt, world_scale, tuning) else {
             return Ok(None);
         };
         let (owner, body) = unsafe { engine::unlatch(target.vehicle, target.part_index) }
@@ -244,7 +250,7 @@ impl Press {
         }
         let state = unsafe { bodies::read(body, owner) }
             .map_err(|error| self.body_failure(error, DoorError::NoLooseBody))?;
-        let impulse = opening_impulse(opening.outward, state.mass_kg, opening.speed);
+        let impulse = opening_impulse(opening.outward, state.mass_kg, opening.speed, tuning);
         if impulse != Vec3::ZERO {
             unsafe { bodies::shove(body, owner, impulse, opening.point) }
                 .map_err(|error| self.body_failure(error, DoorError::NoLooseBody))?;
@@ -253,7 +259,14 @@ impl Press {
         Ok(Some(target.slot))
     }
 
-    unsafe fn retain(&mut self, palm: Vec3, dt: f32, scale: f32, options: &CastOptions) -> bool {
+    unsafe fn retain(
+        &mut self,
+        palm: Vec3,
+        dt: f32,
+        scale: f32,
+        options: &CastOptions,
+        tuning: &PressureTuning,
+    ) -> bool {
         let Some(contact) = self.contact else {
             return false;
         };
@@ -268,18 +281,19 @@ impl Press {
         };
         let world = unsafe { engine::vehicle_frame(target.vehicle) };
         let local = world.inverse().transform_point3(palm);
-        if !contact.near(local, scale) || !valid_frame(world) {
+        if !contact.near(local, scale, tuning) || !valid_frame(world) {
             return false;
         }
         if !door
             .door_box
-            .is_some_and(|bounds| bounds.reach(palm, REACH_M * scale).is_some())
+            .is_some_and(|bounds| bounds.reach(palm, tuning.reach_m * scale).is_some())
         {
             return false;
         }
         let projected = local - contact.outward * (local - contact.point).dot(contact.outward);
-        let from = world.transform_point3(projected - contact.outward * PROOF_DEPTH_M * scale);
-        let to = world.transform_point3(projected + contact.outward * PROOF_DEPTH_M * scale);
+        let depth = contact.outward * tuning.proof_depth_m * scale;
+        let from = world.transform_point3(projected - depth);
+        let to = world.transform_point3(projected + depth);
         let Ok(Probe::Visible(hit)) = (unsafe { raw_probe(from, to, options) }) else {
             return false;
         };
@@ -298,10 +312,21 @@ impl Press {
                 outward: world.transform_vector3(contact.outward),
             }),
         };
-        self.retain_sample(Sample::new(reach, hit, door, world, palm), dt, scale)
+        self.retain_sample(
+            Sample::new(reach, hit, door, world, palm),
+            dt,
+            scale,
+            tuning,
+        )
     }
 
-    fn retain_sample(&mut self, sample: Option<Sample>, dt: f32, scale: f32) -> bool {
+    fn retain_sample(
+        &mut self,
+        sample: Option<Sample>,
+        dt: f32,
+        scale: f32,
+        tuning: &PressureTuning,
+    ) -> bool {
         let Some(sample) = sample else {
             return false;
         };
@@ -309,15 +334,16 @@ impl Press {
             return false;
         };
         let local = sample.world.inverse().transform_point3(sample.palm);
-        if !valid_timing(dt, scale)
+        if !valid_timing(dt, scale, tuning)
             || contact.target != sample.target
             || contact.fired
-            || !contact.near(local, scale)
-            || contact.gap_s + dt > CONTACT_GRACE_S
+            || !contact.near(local, scale, tuning)
+            || contact.gap_s + dt > tuning.contact_grace_s
             || sample.hit.material.is_none()
             || glass_hit(sample.hit)
-            || sample.hit.normal.normalize_or_zero().dot(sample.outward) >= -0.25
-            || sample.hit.position.distance(sample.palm) > REACH_M * scale
+            || sample.hit.normal.normalize_or_zero().dot(sample.outward)
+                >= tuning.inner_face_max_cos
+            || sample.hit.position.distance(sample.palm) > tuning.reach_m * scale
         {
             return false;
         }
@@ -326,7 +352,11 @@ impl Press {
         true
     }
 
-    unsafe fn push_open(&mut self, input: OpenInput) -> Result<Option<DoorSlot>, DoorError> {
+    unsafe fn push_open(
+        &mut self,
+        input: OpenInput,
+        tuning: &PressureTuning,
+    ) -> Result<Option<DoorSlot>, DoorError> {
         let OpenInput {
             reach,
             hit,
@@ -356,7 +386,7 @@ impl Press {
         };
         if door.latched
             || door.slot != target.slot
-            || !panel_hit(&door, &hit)
+            || !panel_hit(&door, &hit, DOORS.get().grip.panel_slack_m)
             || !door_body(
                 door.body,
                 reach.object,
@@ -391,7 +421,7 @@ impl Press {
         let displacement = world.transform_vector3(local - previous.palm);
         self.diagnostics
             .movement(-displacement.dot(hit.normal.normalize_or_zero()), scale);
-        let speed = push_speed(displacement, hit.normal, dt, scale);
+        let speed = push_speed(displacement, hit.normal, dt, scale, tuning);
         if speed == 0.0 {
             return Ok(None);
         }
@@ -399,7 +429,7 @@ impl Press {
             .map_err(|error| self.body_failure(error, DoorError::NoLooseBody))?;
         let normal = hit.normal.normalize_or_zero();
         let depth = (hit.position - palm).dot(normal);
-        if depth < -0.06 * scale {
+        if depth < -tuning.push_depth_m * scale {
             return Ok(None);
         }
         let chassis = unsafe { bodies::read(vehicle_body, target.vehicle) }
@@ -418,7 +448,8 @@ impl Press {
         let impulse = opening_impulse(
             -normal,
             state.mass_kg,
-            (speed - existing).clamp(0.0, 0.25 * scale),
+            (speed - existing).clamp(0.0, tuning.max_push_mps * scale),
+            tuning,
         );
         if impulse != Vec3::ZERO {
             unsafe { bodies::shove(reach.body, reach.object, impulse, hit.position) }
@@ -428,12 +459,18 @@ impl Press {
         Ok(None)
     }
 
-    fn intent(&mut self, sample: Option<Sample>, dt: f32, scale: f32) -> Option<Opening> {
-        let Some(sample) = sample.filter(|_| valid_timing(dt, scale)) else {
+    fn intent(
+        &mut self,
+        sample: Option<Sample>,
+        dt: f32,
+        scale: f32,
+        tuning: &PressureTuning,
+    ) -> Option<Opening> {
+        let Some(sample) = sample.filter(|_| valid_timing(dt, scale, tuning)) else {
             self.reject(Reason::InvalidSample);
             return None;
         };
-        if sample.hit.normal.normalize_or_zero().dot(sample.outward) >= -0.25 {
+        if sample.hit.normal.normalize_or_zero().dot(sample.outward) >= tuning.inner_face_max_cos {
             self.reject(Reason::ExteriorFace);
             return None;
         }
@@ -472,8 +509,8 @@ impl Press {
         }
         let contact = self.contact.as_mut()?;
         if contact.gap_s > 0.0 {
-            if !contact.near(local, scale)
-                || contact.gap_s + dt > CONTACT_GRACE_S
+            if !contact.near(local, scale, tuning)
+                || contact.gap_s + dt > tuning.contact_grace_s
                 || sample.hit.material.is_none()
                 || glass_hit(sample.hit)
             {
@@ -486,7 +523,7 @@ impl Press {
             self.diagnostics.reason(Reason::InsufficientMovement);
             return None;
         }
-        if (local - contact.previous).dot(contact.outward) < -0.005 * scale {
+        if (local - contact.previous).dot(contact.outward) < -tuning.retreat_m * scale {
             self.reject(Reason::ContactLost);
             return None;
         }
@@ -497,7 +534,7 @@ impl Press {
         if !contact.fired {
             self.diagnostics.reason(Reason::InsufficientMovement);
         }
-        if contact.fired || displacement < UNLATCH_PULL_M * scale || speed <= 0.0 {
+        if contact.fired || displacement < DOORS.get().grip.unlatch_pull_m * scale || speed <= 0.0 {
             return None;
         }
         contact.fired = true;
@@ -507,20 +544,10 @@ impl Press {
                 .world
                 .transform_vector3(contact.outward)
                 .normalize_or_zero(),
-            speed: speed.clamp(MIN_OPEN_MPS, MAX_OPEN_MPS) * scale,
+            speed: speed.clamp(tuning.min_open_mps, tuning.max_open_mps) * scale,
         })
     }
 }
-
-pub(crate) const REACH_M: f32 = 0.18;
-
-const MAX_DT_S: f32 = 0.25;
-const CONTACT_GRACE_S: f32 = 0.08;
-const GAP_DRIFT_M: f32 = 0.025;
-const PROOF_DEPTH_M: f32 = 0.04;
-const MIN_OPEN_MPS: f32 = 0.2;
-const MAX_OPEN_MPS: f32 = 1.0;
-const MAX_IMPULSE_NS: f32 = 80.0;
 
 struct OpenInput {
     reach: Reach,
@@ -551,11 +578,17 @@ impl OpenPress {
     }
 }
 
-fn push_speed(displacement: Vec3, normal: Vec3, dt: f32, scale: f32) -> f32 {
-    if !valid_timing(dt, scale) || !displacement.is_finite() || !normal.is_finite() {
+fn push_speed(
+    displacement: Vec3,
+    normal: Vec3,
+    dt: f32,
+    scale: f32,
+    tuning: &PressureTuning,
+) -> f32 {
+    if !valid_timing(dt, scale, tuning) || !displacement.is_finite() || !normal.is_finite() {
         return 0.0;
     }
-    (-displacement.dot(normal.normalize_or_zero()) / dt).clamp(0.0, 0.25 * scale)
+    (-displacement.dot(normal.normalize_or_zero()) / dt).clamp(0.0, tuning.max_push_mps * scale)
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -579,12 +612,12 @@ struct Contact {
 }
 
 impl Contact {
-    fn near(self, local: Vec3, scale: f32) -> bool {
+    fn near(self, local: Vec3, scale: f32, tuning: &PressureTuning) -> bool {
         let drift = local - self.previous;
         self.scale == scale
             && local.is_finite()
-            && drift.length() <= GAP_DRIFT_M * scale
-            && drift.dot(self.outward) >= -0.005 * scale
+            && drift.length() <= tuning.gap_drift_m * scale
+            && drift.dot(self.outward) >= -tuning.retreat_m * scale
     }
 }
 
@@ -613,7 +646,7 @@ impl Sample {
             && door.slot == target.slot
             && door.latched
             && door.body.is_none()
-            && panel_hit(&door, &hit)
+            && panel_hit(&door, &hit, DOORS.get().grip.panel_slack_m)
             && valid_frame(world)
             && inverse.is_finite()
             && inverse.transform_point3(palm).is_finite()
@@ -636,8 +669,8 @@ impl Sample {
     }
 }
 
-fn valid_timing(dt: f32, scale: f32) -> bool {
-    dt.is_finite() && dt > 0.0 && dt <= MAX_DT_S && scale.is_finite() && scale > 0.0
+fn valid_timing(dt: f32, scale: f32, tuning: &PressureTuning) -> bool {
+    dt.is_finite() && dt > 0.0 && dt <= tuning.max_dt_s && scale.is_finite() && scale > 0.0
 }
 
 fn glass_hit(hit: SurfaceHit) -> bool {
@@ -683,14 +716,14 @@ fn door_body(
     body != vehicle_body && owner != vehicle && current == Some((owner, body))
 }
 
-fn opening_impulse(outward: Vec3, mass: Option<f32>, speed: f32) -> Vec3 {
+fn opening_impulse(outward: Vec3, mass: Option<f32>, speed: f32, tuning: &PressureTuning) -> Vec3 {
     let Some(mass) = mass.filter(|mass| mass.is_finite() && *mass > 0.0) else {
         return Vec3::ZERO;
     };
     if !outward.is_finite() || !speed.is_finite() || speed <= 0.0 {
         return Vec3::ZERO;
     }
-    outward.normalize_or_zero() * (mass * speed).min(MAX_IMPULSE_NS)
+    outward.normalize_or_zero() * (mass * speed).min(tuning.max_impulse_ns)
 }
 
 #[cfg(test)]

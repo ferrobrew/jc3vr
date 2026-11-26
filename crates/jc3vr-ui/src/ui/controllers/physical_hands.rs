@@ -197,7 +197,7 @@ pub(super) fn characters_doors_readout(ui: &mut Ui, status: &PhysicalHandsStatus
                 p.reason.label(),
                 p.slot.map(doors::slot_label).unwrap_or("no door"),
                 p.displacement_m * 1000.0,
-                p.required_m * 1000.0,
+                doors::tuning::DOORS.get().grip.unlatch_pull_m * 1000.0,
             ));
             if let doors::pressure::Reason::NativeFailure(error) = p.reason {
                 ui.label(error.to_string());

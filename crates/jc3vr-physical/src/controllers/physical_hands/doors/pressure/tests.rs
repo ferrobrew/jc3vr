@@ -2,7 +2,7 @@ use glam::Quat;
 use jc3gi::physics::GameMaterialId;
 
 use super::*;
-use crate::controllers::physical_hands::doors::{geometry::DoorBox, table};
+use crate::controllers::physical_hands::doors::{geometry::DoorBox, table, tuning::DOORS};
 
 fn fixture() -> (Reach, SurfaceHit, DoorRead) {
     let vehicle = NonZeroUsize::new(64).unwrap();
@@ -47,13 +47,17 @@ fn fixture() -> (Reach, SurfaceHit, DoorRead) {
     (reach, hit, door)
 }
 
+fn config() -> &'static PressureTuning {
+    &DOORS.get().pressure
+}
+
 fn sample(palm: Vec3) -> Option<Sample> {
     let (reach, hit, door) = fixture();
     Sample::new(reach, hit, door, Mat4::IDENTITY, palm)
 }
 
 fn tick(press: &mut Press, palm: Vec3) -> Option<Opening> {
-    press.intent(sample(palm), 0.01, 1.0)
+    press.intent(sample(palm), 0.01, 1.0, config())
 }
 
 #[test]
@@ -91,7 +95,7 @@ fn diagnostic_movement_and_contact_loss_follow_the_latched_contact() {
     assert_eq!(press.diagnostics.readout.reason, Reason::NoContact);
     let mut exterior = sample(Vec3::X).unwrap();
     exterior.hit.normal = Vec3::X;
-    press.intent(Some(exterior), 0.01, 1.0);
+    press.intent(Some(exterior), 0.01, 1.0, config());
     assert_eq!(press.diagnostics.readout.reason, Reason::ExteriorFace);
 }
 
@@ -102,7 +106,7 @@ fn an_inside_outward_press_opens_once_at_the_contact_not_the_handle() {
     let opening = tick(&mut press, Vec3::X * 1.06).unwrap();
     assert_eq!(opening.point, Vec3::X);
     assert_eq!(opening.outward, Vec3::X);
-    assert_eq!(opening.speed, MAX_OPEN_MPS);
+    assert_eq!(opening.speed, config().max_open_mps);
     assert!(tick(&mut press, Vec3::X * 1.2).is_none());
     assert!(tick(&mut press, Vec3::X).is_none());
     assert!(tick(&mut press, Vec3::X * 1.2).is_none());
@@ -133,7 +137,7 @@ fn outside_contact_cannot_arm_a_push() {
     for palm in [Vec3::X, Vec3::X * 1.2] {
         let mut exterior = sample(palm).unwrap();
         exterior.hit.normal = Vec3::X;
-        assert!(press.intent(Some(exterior), 0.01, 1.0).is_none());
+        assert!(press.intent(Some(exterior), 0.01, 1.0, config()).is_none());
     }
     assert!(press.contact.is_none());
 }
@@ -150,9 +154,9 @@ fn vehicle_translation_and_rotation_do_not_spend_the_pull() {
         moving.hit.position = world.transform_point3(Vec3::X);
         moving.hit.normal = world.transform_vector3(Vec3::NEG_X);
         moving.outward = world.transform_vector3(Vec3::X);
-        assert!(press.intent(Some(moving), 0.01, 1.0).is_none());
+        assert!(press.intent(Some(moving), 0.01, 1.0, config()).is_none());
         moving.palm = world.transform_point3(Vec3::X * 1.06);
-        let opening = press.intent(Some(moving), 0.01, 1.0).unwrap();
+        let opening = press.intent(Some(moving), 0.01, 1.0, config()).unwrap();
         assert!(opening.point.distance(world.transform_point3(Vec3::X)) < 1e-4);
         assert!(opening.outward.distance(world.transform_vector3(Vec3::X)) < 1e-4);
         press.reset();
@@ -164,7 +168,7 @@ fn vehicle_translation_and_rotation_do_not_spend_the_pull() {
 fn contact_loss_and_each_target_identity_change_rebase_the_pull() {
     let mut press = Press::new();
     tick(&mut press, Vec3::X);
-    assert!(press.intent(None, 0.01, 1.0).is_none());
+    assert!(press.intent(None, 0.01, 1.0, config()).is_none());
     assert!(tick(&mut press, Vec3::X * 1.2).is_none());
     assert!(tick(&mut press, Vec3::X * 1.26).is_some());
     for change in 0..4 {
@@ -177,9 +181,9 @@ fn contact_loss_and_each_target_identity_change_rebase_the_pull() {
             2 => swapped.target.part += 1,
             _ => swapped.target.slot = DoorSlot::FRONT_RIGHT,
         }
-        assert!(press.intent(Some(swapped), 0.01, 1.0).is_none());
+        assert!(press.intent(Some(swapped), 0.01, 1.0, config()).is_none());
         swapped.palm += Vec3::X * 0.06;
-        assert!(press.intent(Some(swapped), 0.01, 1.0).is_some());
+        assert!(press.intent(Some(swapped), 0.01, 1.0, config()).is_some());
     }
 }
 
@@ -198,7 +202,11 @@ fn invalid_timing_and_scale_reset_and_never_open() {
     ] {
         let mut press = Press::new();
         tick(&mut press, Vec3::X);
-        assert!(press.intent(sample(Vec3::X * 1.2), dt, scale).is_none());
+        assert!(
+            press
+                .intent(sample(Vec3::X * 1.2), dt, scale, config())
+                .is_none()
+        );
         assert!(press.contact.is_none());
         assert!(tick(&mut press, Vec3::X * 1.2).is_none());
     }
@@ -207,10 +215,22 @@ fn invalid_timing_and_scale_reset_and_never_open() {
 #[test]
 fn scale_controls_the_threshold_and_changes_rebase() {
     let mut press = Press::new();
-    assert!(press.intent(sample(Vec3::X), 0.01, 2.0).is_none());
-    assert!(press.intent(sample(Vec3::X * 1.06), 0.01, 2.0).is_none());
-    assert!(press.intent(sample(Vec3::X * 1.11), 0.01, 2.0).is_some());
-    assert!(press.intent(sample(Vec3::X * 1.3), 0.01, 1.0).is_none());
+    assert!(press.intent(sample(Vec3::X), 0.01, 2.0, config()).is_none());
+    assert!(
+        press
+            .intent(sample(Vec3::X * 1.06), 0.01, 2.0, config())
+            .is_none()
+    );
+    assert!(
+        press
+            .intent(sample(Vec3::X * 1.11), 0.01, 2.0, config())
+            .is_some()
+    );
+    assert!(
+        press
+            .intent(sample(Vec3::X * 1.3), 0.01, 1.0, config())
+            .is_none()
+    );
 }
 
 #[test]
@@ -264,7 +284,8 @@ fn ordinary_glass_is_excluded_and_known_canopy_glass_is_allowed() {
             .intent(
                 Sample::new(reach, hit, door, Mat4::IDENTITY, Vec3::X),
                 0.01,
-                1.0
+                1.0,
+                config()
             )
             .is_none()
     );
@@ -273,7 +294,8 @@ fn ordinary_glass_is_excluded_and_known_canopy_glass_is_allowed() {
             .intent(
                 Sample::new(reach, hit, door, Mat4::IDENTITY, Vec3::X * 1.06),
                 0.01,
-                1.0
+                1.0,
+                config()
             )
             .is_some()
     );
@@ -281,19 +303,28 @@ fn ordinary_glass_is_excluded_and_known_canopy_glass_is_allowed() {
 
 #[test]
 fn open_panels_accept_only_bounded_pressure_into_the_panel() {
-    assert_eq!(push_speed(Vec3::NEG_Y, Vec3::Y, 0.01, 1.0), 0.25);
-    assert_eq!(push_speed(Vec3::Y, Vec3::Y, 0.01, 1.0), 0.0);
-    assert_eq!(push_speed(Vec3::X, Vec3::Y, 0.01, 1.0), 0.0);
-    assert_eq!(push_speed(Vec3::NEG_Y, Vec3::Y, 0.0, 1.0), 0.0);
-    assert_eq!(push_speed(Vec3::NEG_Y, Vec3::Y, 0.01, f32::NAN), 0.0);
+    assert_eq!(
+        push_speed(Vec3::NEG_Y, Vec3::Y, 0.01, 1.0, config()),
+        config().max_push_mps
+    );
+    assert_eq!(push_speed(Vec3::Y, Vec3::Y, 0.01, 1.0, config()), 0.0);
+    assert_eq!(push_speed(Vec3::X, Vec3::Y, 0.01, 1.0, config()), 0.0);
+    assert_eq!(push_speed(Vec3::NEG_Y, Vec3::Y, 0.0, 1.0, config()), 0.0);
+    assert_eq!(
+        push_speed(Vec3::NEG_Y, Vec3::Y, 0.01, f32::NAN, config()),
+        0.0
+    );
 }
 
 #[test]
 fn impulses_are_finite_bounded_and_never_target_the_chassis() {
-    assert_eq!(opening_impulse(Vec3::X, Some(10.0), 0.5), Vec3::X * 5.0);
     assert_eq!(
-        opening_impulse(Vec3::X, Some(f32::MAX), 10.0),
-        Vec3::X * MAX_IMPULSE_NS
+        opening_impulse(Vec3::X, Some(10.0), 0.5, config()),
+        Vec3::X * 5.0
+    );
+    assert_eq!(
+        opening_impulse(Vec3::X, Some(f32::MAX), 10.0, config()),
+        Vec3::X * config().max_impulse_ns
     );
     for mass in [
         None,
@@ -302,10 +333,13 @@ fn impulses_are_finite_bounded_and_never_target_the_chassis() {
         Some(f32::NAN),
         Some(f32::INFINITY),
     ] {
-        assert_eq!(opening_impulse(Vec3::X, mass, 1.0), Vec3::ZERO);
+        assert_eq!(opening_impulse(Vec3::X, mass, 1.0, config()), Vec3::ZERO);
     }
     for speed in [0.0, -1.0, f32::NAN, f32::INFINITY] {
-        assert_eq!(opening_impulse(Vec3::X, Some(10.0), speed), Vec3::ZERO);
+        assert_eq!(
+            opening_impulse(Vec3::X, Some(10.0), speed, config()),
+            Vec3::ZERO
+        );
     }
     let vehicle = NonZeroUsize::new(64).unwrap();
     let owner = NonZeroUsize::new(128).unwrap();
@@ -324,7 +358,7 @@ fn contact_feedback_is_once_per_valid_contact_and_not_replayed_after_grace() {
     assert!(!press.take_contact_cue());
     tick(&mut press, Vec3::X * 1.02);
     assert!(!press.take_contact_cue());
-    assert!(press.retain_sample(sample(Vec3::X * 1.025), 0.01, 1.0));
+    assert!(press.retain_sample(sample(Vec3::X * 1.025), 0.01, 1.0, config()));
     assert!(tick(&mut press, Vec3::X * 1.03).is_none());
     assert!(!press.take_contact_cue());
     press.reset();
@@ -333,7 +367,7 @@ fn contact_feedback_is_once_per_valid_contact_and_not_replayed_after_grace() {
     press.reset();
     let mut exterior = sample(Vec3::X).unwrap();
     exterior.hit.normal = Vec3::X;
-    press.intent(Some(exterior), 0.01, 1.0);
+    press.intent(Some(exterior), 0.01, 1.0, config());
     assert!(!press.take_contact_cue());
 }
 
@@ -343,7 +377,7 @@ fn grace_freezes_progress_and_reacquisition_then_requires_current_outward_contac
     tick(&mut press, Vec3::X);
     tick(&mut press, Vec3::X * 1.04);
     for _ in 0..4 {
-        assert!(press.retain_sample(sample(Vec3::X * 1.055), 0.01, 1.0));
+        assert!(press.retain_sample(sample(Vec3::X * 1.055), 0.01, 1.0, config()));
         assert!((press.diagnostics.readout.displacement_m - 0.04).abs() < 1e-6);
         assert!(!press.contact.unwrap().fired);
     }
@@ -357,14 +391,14 @@ fn grace_freezes_progress_and_reacquisition_then_requires_current_outward_contac
 fn grace_is_bounded_and_cannot_be_extended_by_missing_ticks() {
     let mut press = Press::new();
     tick(&mut press, Vec3::X);
-    assert!(press.retain_sample(sample(Vec3::X), 0.04, 1.0));
-    assert!(press.retain_sample(sample(Vec3::X), 0.04, 1.0));
-    assert!(!press.retain_sample(sample(Vec3::X), 0.001, 1.0));
+    assert!(press.retain_sample(sample(Vec3::X), 0.04, 1.0, config()));
+    assert!(press.retain_sample(sample(Vec3::X), 0.04, 1.0, config()));
+    assert!(!press.retain_sample(sample(Vec3::X), 0.001, 1.0, config()));
     assert!(tick(&mut press, Vec3::X).is_none());
     assert!(press.contact.is_none());
     tick(&mut press, Vec3::X);
-    assert!(press.retain_sample(sample(Vec3::X), 0.07, 1.0));
-    assert!(press.intent(sample(Vec3::X), 0.02, 1.0).is_none());
+    assert!(press.retain_sample(sample(Vec3::X), 0.07, 1.0, config()));
+    assert!(press.intent(sample(Vec3::X), 0.02, 1.0, config()).is_none());
     assert!(press.contact.is_none());
 }
 
@@ -405,7 +439,7 @@ fn grace_rejects_missing_proof_glass_obstructions_and_changed_identity() {
                 Some(proof)
             }
         };
-        assert!(!press.retain_sample(proof, 0.01, 1.0));
+        assert!(!press.retain_sample(proof, 0.01, 1.0, config()));
         press.missing_contact(None, None);
         assert!(!press.engaged());
     }
@@ -431,13 +465,13 @@ fn grace_drift_is_bounded_from_last_contact_not_last_missing_tick() {
     ] {
         let mut press = Press::new();
         tick(&mut press, Vec3::X);
-        assert!(!press.retain_sample(sample(Vec3::X + displacement), 0.01, 1.0));
+        assert!(!press.retain_sample(sample(Vec3::X + displacement), 0.01, 1.0, config()));
     }
     let mut press = Press::new();
     tick(&mut press, Vec3::X);
-    assert!(press.retain_sample(sample(Vec3::X + Vec3::Y * 0.02), 0.01, 1.0));
-    assert!(!press.retain_sample(sample(Vec3::X + Vec3::Y * 0.03), 0.01, 1.0));
-    assert!(press.retain_sample(sample(Vec3::X), 0.01, 1.0));
+    assert!(press.retain_sample(sample(Vec3::X + Vec3::Y * 0.02), 0.01, 1.0, config()));
+    assert!(!press.retain_sample(sample(Vec3::X + Vec3::Y * 0.03), 0.01, 1.0, config()));
+    assert!(press.retain_sample(sample(Vec3::X), 0.01, 1.0, config()));
     assert!(tick(&mut press, Vec3::X + Vec3::Y * 0.03).is_none());
     assert!(!press.engaged());
 }
@@ -453,7 +487,7 @@ fn grace_revalidates_timing_scale_frame_and_closed_panel() {
     ] {
         let mut press = Press::new();
         tick(&mut press, Vec3::X);
-        assert!(!press.retain_sample(sample(Vec3::X), dt, scale));
+        assert!(!press.retain_sample(sample(Vec3::X), dt, scale, config()));
     }
     let (reach, hit, door) = fixture();
     for world in [Mat4::ZERO, Mat4::NAN, Mat4::from_scale(Vec3::splat(2.0))] {
@@ -492,11 +526,11 @@ fn grace_uses_current_vehicle_frame_without_spending_motion() {
     proof.hit.position = world.transform_point3(proof.hit.position);
     proof.hit.normal = world.transform_vector3(proof.hit.normal);
     proof.outward = world.transform_vector3(proof.outward);
-    assert!(press.retain_sample(Some(proof), 0.01, 1.0));
-    assert!(press.intent(Some(proof), 0.01, 1.0).is_none());
+    assert!(press.retain_sample(Some(proof), 0.01, 1.0, config()));
+    assert!(press.intent(Some(proof), 0.01, 1.0, config()).is_none());
     assert!((press.diagnostics.readout.displacement_m - 0.04).abs() < 1e-5);
     proof.palm = world.transform_point3(Vec3::X * 1.065);
-    assert!(press.intent(Some(proof), 0.01, 1.0).is_some());
+    assert!(press.intent(Some(proof), 0.01, 1.0, config()).is_some());
 }
 
 #[test]
@@ -504,7 +538,7 @@ fn unlatch_threshold_remains_five_centimetres() {
     let mut press = Press::new();
     tick(&mut press, Vec3::ZERO);
     assert!(tick(&mut press, Vec3::X * 0.049).is_none());
-    assert!(tick(&mut press, Vec3::X * UNLATCH_PULL_M).is_some());
+    assert!(tick(&mut press, Vec3::X * DOORS.get().grip.unlatch_pull_m).is_some());
 }
 
 #[test]
@@ -539,7 +573,7 @@ fn hidden_canopy_panes_cannot_arm_or_bridge_pressure() {
         if already_armed {
             tick(&mut press, Vec3::X);
             tick(&mut press, Vec3::X * 1.04);
-            assert!(press.retain_sample(sample(Vec3::X * 1.04), 0.01, 1.0));
+            assert!(press.retain_sample(sample(Vec3::X * 1.04), 0.01, 1.0, config()));
         }
         let pressure_hit = press.observe_probe(classify_probe(hit, || true));
         assert!(pressure_hit.is_none());

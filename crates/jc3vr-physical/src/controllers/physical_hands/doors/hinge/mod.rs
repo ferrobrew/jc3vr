@@ -29,36 +29,15 @@ use jc3vr_body::controllers::physics::{
 };
 use parking_lot::Mutex;
 
-use crate::controllers::physical_hands::doors::{engine, table};
-
-/// The hinges of the doors the hands opened (see [`crate::controllers::physical_hands::doors::hinge`]),
-/// fixed at [`HINGE`].
-#[derive(Copy, Clone, Debug, PartialEq)]
-pub struct HingeTuning {
-    /// The closing speed past which a free door within the controller's latch angle latches,
-    /// degrees per second. The controller's own is a tenth of a typical shove.
-    pub latch_speed_deg_s: f32,
-    /// How long a free door must rest within the latch angle before it latches, seconds.
-    pub settle_s: f32,
-    /// The free side door's damping, per second: its velocities fall by `e` each `1 / damping_per_s`
-    /// seconds.
-    pub damping_per_s: f32,
-    /// The share of its travel above which a free lid is held where it is left, `0..=1`.
-    pub strut_fraction: f32,
-}
-
-/// The hinges' tuning.
-pub const HINGE: HingeTuning = HingeTuning {
-    latch_speed_deg_s: 60.0,
-    settle_s: 1.0,
-    damping_per_s: 1.5,
-    strut_fraction: 0.3,
+use crate::controllers::physical_hands::doors::{
+    engine, table,
+    tuning::{CanopyTuning, DOORS, HingeTuning},
 };
 
 /// Note that a hand undid the latch of the door at part index `part_index` of `vehicle`, whose body
 /// `vehicle_body` proves it alive.
 pub(crate) fn opened(vehicle: NonZeroUsize, vehicle_body: u32, part_index: u32, slot: DoorSlot) {
-    let mut doors = DOORS.lock();
+    let mut doors = OPENED.lock();
     if doors
         .iter()
         .any(|d| d.vehicle == vehicle && d.part_index == part_index)
@@ -81,12 +60,12 @@ pub(crate) fn opened(vehicle: NonZeroUsize, vehicle_body: u32, part_index: u32, 
 }
 
 pub(crate) fn yield_support(vehicle: NonZeroUsize, part_index: u32) {
-    if let Some(door) = DOORS
+    if let Some(door) = OPENED
         .lock()
         .iter_mut()
         .find(|door| door.vehicle == vehicle && door.part_index == part_index)
     {
-        door.support.yield_for_input();
+        door.support.yield_for_input(&DOORS.get().hinge.canopy);
     }
 }
 
@@ -97,7 +76,7 @@ pub(crate) fn yield_support(vehicle: NonZeroUsize, part_index: u32) {
 ///
 /// The game thread, outside the physics step.
 pub(crate) unsafe fn tick(dt: f32, held: &[u32], active: bool, gravity_mps2: f32) {
-    let mut doors = DOORS.lock();
+    let mut doors = OPENED.lock();
     if !active {
         for door in doors.drain(..) {
             // SAFETY: the vehicle is proven alive by its body before it is touched.
@@ -107,7 +86,8 @@ pub(crate) unsafe fn tick(dt: f32, held: &[u32], active: bool, gravity_mps2: f32
         }
         return;
     }
-    doors.retain_mut(|door| unsafe { keep(door, dt, held, &HINGE, gravity_mps2) });
+    let config = &DOORS.get().hinge;
+    doors.retain_mut(|door| unsafe { keep(door, dt, held, config, gravity_mps2) });
 }
 
 /// What a door's hinge does this tick.
@@ -186,7 +166,7 @@ pub(crate) fn swing(tick: &HingeTick, config: &HingeTuning) -> Swing {
     // A lid thrown open carries on up, damped; one at rest or coming down stays where it is.
     if tick
         .rate_rad_s
-        .is_some_and(|rate| rate > STRUT_RISING_RAD_S)
+        .is_some_and(|rate| rate > config.strut_rising_rad_s)
     {
         Swing::Damped(damping)
     } else {
@@ -235,9 +215,9 @@ enum CanopySupport {
 }
 
 impl CanopySupport {
-    fn yield_for_input(&mut self) {
+    fn yield_for_input(&mut self, canopy: &CanopyTuning) {
         *self = Self::Yielding {
-            remaining_s: CANOPY_YIELD_S,
+            remaining_s: canopy.yield_s,
             quiet_s: 0.0,
         };
     }
@@ -256,13 +236,13 @@ impl CanopySupport {
             *remaining_s = (*remaining_s - dt).max(0.0);
             if tick
                 .rate_rad_s
-                .is_some_and(|rate| rate.abs() < RESTING_RAD_S)
+                .is_some_and(|rate| rate.abs() < config.resting_rad_s)
             {
                 *quiet_s += dt;
             } else {
                 *quiet_s = 0.0;
             }
-            if *remaining_s > 0.0 || *quiet_s < CANOPY_QUIET_S {
+            if *remaining_s > 0.0 || *quiet_s < config.canopy.quiet_s {
                 return match swing(tick, config) {
                     latch @ Swing::Latch(_) => latch,
                     _ => Swing::Free,
@@ -273,9 +253,9 @@ impl CanopySupport {
         if matches!(self, Self::Supported { .. }) {
             if tick
                 .rate_rad_s
-                .is_some_and(|rate| rate < -STRUT_RISING_RAD_S)
+                .is_some_and(|rate| rate < -config.strut_rising_rad_s)
             {
-                self.yield_for_input();
+                self.yield_for_input(&config.canopy);
                 return Swing::Free;
             }
             return Swing::Strut;
@@ -284,9 +264,9 @@ impl CanopySupport {
         if result == Swing::Strut {
             if tick
                 .rate_rad_s
-                .is_some_and(|rate| rate < -STRUT_RISING_RAD_S)
+                .is_some_and(|rate| rate < -config.strut_rising_rad_s)
             {
-                self.yield_for_input();
+                self.yield_for_input(&config.canopy);
                 return Swing::Free;
             }
             *self = Self::Supported { pose: None };
@@ -313,19 +293,26 @@ impl CanopySupport {
         chassis: Option<&BodyState>,
         dt: f32,
         g: f32,
+        canopy: &CanopyTuning,
     ) -> Option<Velocities> {
         let (Some(door), Some(chassis)) = (door, chassis) else {
             *self = Self::Free;
             return None;
         };
         let mut velocities = hinge_velocities(door, chassis, Swing::Strut, dt, g)?;
-        let correction = self.correction(door, chassis, dt);
+        let correction = self.correction(door, chassis, dt, canopy);
         velocities.linear += correction.linear;
         velocities.angular += correction.angular;
         Some(velocities)
     }
 
-    fn correction(&mut self, door: &BodyState, chassis: &BodyState, dt: f32) -> Velocities {
+    fn correction(
+        &mut self,
+        door: &BodyState,
+        chassis: &BodyState,
+        dt: f32,
+        canopy: &CanopyTuning,
+    ) -> Velocities {
         let Self::Supported { pose } = self else {
             return Velocities::default();
         };
@@ -337,7 +324,7 @@ impl CanopySupport {
         if dt <= 0.0 {
             return Velocities::default();
         }
-        let gain = CANOPY_RESTORE_PER_S.min(dt.recip());
+        let gain = canopy.restore_per_s.min(dt.recip());
         let displacement = chassis.pose.centre + frame * target.centre - door.pose.centre;
         let rotation = frame * target.orientation * door.pose.orientation.inverse();
         let rotation = if rotation.w < 0.0 {
@@ -346,27 +333,14 @@ impl CanopySupport {
             rotation
         };
         Velocities {
-            linear: (displacement * gain).clamp_length_max(CANOPY_RESTORE_MPS),
-            angular: (rotation.to_scaled_axis() * gain).clamp_length_max(CANOPY_RESTORE_RAD_S),
+            linear: (displacement * gain).clamp_length_max(canopy.restore_mps),
+            angular: (rotation.to_scaled_axis() * gain).clamp_length_max(canopy.restore_rad_s),
         }
     }
 }
 
-const CANOPY_YIELD_S: f32 = 0.25;
-const CANOPY_QUIET_S: f32 = 0.15;
-const CANOPY_RESTORE_PER_S: f32 = 4.0;
-const CANOPY_RESTORE_MPS: f32 = 0.5;
-const CANOPY_RESTORE_RAD_S: f32 = 1.0;
-
-static DOORS: Mutex<Vec<Opened>> = Mutex::new(Vec::new());
-
-/// The fastest a lid may open and still be held by the strut, radians per second; faster, it was
-/// thrown open and carries on.
-const STRUT_RISING_RAD_S: f32 = 0.2;
-
-/// The slowest a door within the latch angle may swing and still count as resting, radians per
-/// second.
-const RESTING_RAD_S: f32 = 0.05;
+/// The doors the hands opened.
+static OPENED: Mutex<Vec<Opened>> = Mutex::new(Vec::new());
 
 /// Keep one door for a tick; `false` drops it from the registry.
 ///
@@ -401,7 +375,7 @@ unsafe fn keep(door: &mut Opened, dt: f32, held: &[u32], config: &HingeTuning, g
         .map(|previous| (angle - previous) / dt);
     door.angle_rad = Some(angle);
     let resting = angle < DoorInfo::LATCH_ANGLE_DEG.to_radians()
-        && rate.is_some_and(|rate| rate.abs() < RESTING_RAD_S);
+        && rate.is_some_and(|rate| rate.abs() < config.resting_rad_s);
     door.rested_s = if resting { door.rested_s + dt } else { 0.0 };
     if door.lid.is_none() {
         let part_hash =
@@ -456,7 +430,7 @@ unsafe fn keep(door: &mut Opened, dt: f32, held: &[u32], config: &HingeTuning, g
             let state = unsafe { bodies::read(body, owner) }.ok();
             let velocities = if door.canopy && swing == Swing::Strut {
                 door.support
-                    .velocities(state.as_ref(), chassis.as_ref(), dt, g)
+                    .velocities(state.as_ref(), chassis.as_ref(), dt, g, &config.canopy)
             } else {
                 state
                     .as_ref()
