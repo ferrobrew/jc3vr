@@ -23,44 +23,20 @@ fn each_inventory_switch_edits_only_its_concrete_config_field() {
         (ViewId::BodyMirror, "/overlay/body_mirror"),
         (ViewId::BodyRig, "/overlay/body_rig"),
         (ViewId::BodyEstimate, "/overlay/body_estimate"),
-        (
-            ViewId::ControllerGizmos,
-            "/overlay/debug_gizmos",
-        ),
+        (ViewId::ControllerGizmos, "/overlay/debug_gizmos"),
         (ViewId::GhostHands, "/overlay/ghost_hands"),
-        (
-            ViewId::GrappleHighlight,
-            "/overlay/grapple_highlight",
-        ),
+        (ViewId::GrappleHighlight, "/overlay/grapple_highlight"),
         (ViewId::GrappleBeam, "/overlay/grapple_beam"),
-        (
-            ViewId::GrabView,
-            "/physical_hands/grab_view/enabled",
-        ),
-        (
-            ViewId::GrabRays,
-            "/physical_hands/grab_view/rays",
-        ),
-        (
-            ViewId::GrabTargets,
-            "/physical_hands/grab_view/targets",
-        ),
-        (
-            ViewId::GrabWrist,
-            "/physical_hands/grab_view/wrist",
-        ),
-        (
-            ViewId::GrabRefusals,
-            "/physical_hands/grab_view/refusals",
-        ),
+        (ViewId::GrabView, "/physical_hands/grab_view/enabled"),
+        (ViewId::GrabRays, "/physical_hands/grab_view/rays"),
+        (ViewId::GrabTargets, "/physical_hands/grab_view/targets"),
+        (ViewId::GrabWrist, "/physical_hands/grab_view/wrist"),
+        (ViewId::GrabRefusals, "/physical_hands/grab_view/refusals"),
         (
             ViewId::GrabCandidates,
             "/physical_hands/grab_view/candidates",
         ),
-        (
-            ViewId::GrabZones,
-            "/physical_hands/grab_view/zones",
-        ),
+        (ViewId::GrabZones, "/physical_hands/grab_view/zones"),
         (
             ViewId::ColliderView,
             "/physical_hands/collider_view/enabled",
