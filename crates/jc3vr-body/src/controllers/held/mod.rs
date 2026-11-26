@@ -26,7 +26,9 @@
 //! - [`placement`]: the rigid grip's reads during the inventory's placement pass: a snap moving a
 //!   gun between a socket and the hand ([`SnapView`]), a slide through the hand onto the grip
 //!   ([`GripSlide`]), the gun body's stray from its seat, and the record of the placed grip;
-//! - [`native`]: the native weapon object's accessors both sides read.
+//! - [`native`]: the native weapon object's accessors both sides read;
+//! - [`pickup`]: the hand-off of a weapon a hand reaches in the world to the weapon handling's take,
+//!   through a sink the weapon handling registers apart from its source.
 
 use std::sync::OnceLock;
 
@@ -38,6 +40,7 @@ use jc3gi::{
 use jc3vr_input::frame::{Hand, Pose};
 
 pub mod native;
+pub mod pickup;
 pub mod placement;
 
 pub use placement::{GripSlide, HandlePlacement, SnapStart, SnapView, slide_offset, slide_on_bone};

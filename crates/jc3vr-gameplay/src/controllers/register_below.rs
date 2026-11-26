@@ -1,6 +1,7 @@
 //! Registers the physical hands, the vehicle handling, and the weapon handling with the systems
 //! below them: the body, the grip model, the roomscale, the hand bodies' step, the per-shot seam,
-//! the weapon take, and the character hooks. Each subsystem's own `register_body` names what it contributes.
+//! the weapon take, the weapon pickup hand-off, and the character hooks. Each subsystem's own
+//! `register_body` names what it contributes.
 //!
 //! Each of these does real work every tick, and the body destruction observer keeps the climb and
 //! the carried bodies from holding a destroyed body, so the install refuses to finish with one
@@ -13,6 +14,7 @@ use jc3vr_body::{
         body::{mirror, rig::root},
         facts::climb,
         grab::tick as grab_tick,
+        held::pickup,
         roomscale,
     },
     hooks::character::{
@@ -73,6 +75,9 @@ fn missing() -> String {
     }
     if !take::refusal_sink_registered() {
         missing.push_str("\n- the take refusal sink");
+    }
+    if !pickup::sink_registered() {
+        missing.push_str("\n- the weapon pickup sink");
     }
     if !serial_consumer_registered() {
         missing.push_str("\n- the magazine serial consumer");

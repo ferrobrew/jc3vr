@@ -7,7 +7,8 @@
 //! and differs only in its delivery ([`Delivery`]):
 //!
 //! - a hand that closes on the weapon within reach takes it at once ([`take`]): the source gives
-//!   it up, and it slides from where it was into the hand through the direct pickup;
+//!   it up, and it slides from where it was into the hand through the direct pickup; the
+//!   physical hands' pickup grab of a weapon lying in the world takes it this way ([`take_ground`]);
 //! - the grapple's snatch takes it from range ([`free`]): the source gives it up into the world
 //!   with its bodies, the line pulls it in, and the catching hand takes it ([`deliver`]). A source
 //!   that makes the weapon it gives (a rack's copy, a pair's staged pistol) gives it a few frames
@@ -232,6 +233,25 @@ pub(crate) unsafe fn take(hand: Hand, source: &WeaponSource) -> Result<WeaponSlo
                 hand.label()
             );
             Ok(slot)
+        }
+    }
+}
+
+/// Take `weapon`, lying in the world, into `hand` within reach, as [`take`] takes its ground
+/// source, for the physical hands' pickup grab
+/// ([`PickupSink::take_ground`](jc3vr_body::controllers::held::pickup::PickupSink::take_ground)).
+/// A source that is gone reads as a weapon no longer lying in the world.
+///
+/// # Safety
+///
+/// `weapon` must be live, on the game thread before the world update.
+pub(crate) unsafe fn take_ground(hand: Hand, weapon: &WeaponBase) -> Result<(), Refusal> {
+    let source = unsafe { WeaponSource::ground(weapon) };
+    match unsafe { take(hand, &source) } {
+        Ok(_) => Ok(()),
+        Err(SourceRefusal::Take(refusal)) => Err(refusal),
+        Err(SourceRefusal::Gone | SourceRefusal::CopyPending | SourceRefusal::CopiesClosed) => {
+            Err(Refusal::NotDropped)
         }
     }
 }

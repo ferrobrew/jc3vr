@@ -9,7 +9,7 @@
 //! The grip decides, on the input tick: a hand with a target and no other grab volume reports the
 //! [`GrabVolume::Pickup`] volume to the bindings, which latch the grip press to it, so the press
 //! neither grapples nor reaches the game. A pickup grab of a weapon takes that weapon straight into
-//! the grabbing hand ([`crate::controllers::weapons::hold::pickup`]), or, for a weapon the direct
+//! the grabbing hand through the weapon handling ([`held::pickup`]), or, for a weapon the direct
 //! pickup refuses, clicks the game's use-item action, so that the game picks the weapon up its own
 //! way ([`finish_tick`]). A pickup grab of an
 //! object asks the next simulation tick to take hold of it; letting the grip go asks it to let go.
@@ -54,8 +54,12 @@ use jc3gi::{
 };
 use jc3vr_body::controllers::{
     grab::world_reach::Reach,
-    haptics,
-    intent::hold::{Desired, MapKind, Target, Want},
+    haptics, held,
+    held::pickup::Refusal,
+    intent::{
+        finish::FinishInputs,
+        hold::{Desired, MapKind, Target, Want},
+    },
     physics::bodies,
 };
 use jc3vr_input::{frame::Hand, haptics::cues::Event};
@@ -64,18 +68,7 @@ pub(super) use state::{Held, HeldKind, PickupState, Request};
 pub(super) use tick::{JointInputs, TickInputs, TickOutcome, tick};
 pub use tuning::{PICKUP, PickupTuning};
 
-use crate::controllers::{
-    physical_hands::{STATE, grab_view},
-    weapons,
-    weapons::{
-        FinishInputs,
-        hold::{
-            pickup::Refusal,
-            source,
-            source::{SourceRefusal, WeaponSource},
-        },
-    },
-};
+use crate::controllers::physical_hands::{STATE, grab_view};
 
 /// A hand's hold, for the readout.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -155,7 +148,7 @@ pub(crate) fn finish_tick(
         let refusal = {
             // SAFETY: the game stage runs on the game thread before the world update.
             let refusal = unsafe { take_weapon(hand, reach) }.err();
-            weapons::hold::record_pickup(refusal.map(|r| r.to_string()));
+            held::pickup::record(refusal.map(|r| r.to_string()));
             if let Some(refusal) = refusal {
                 tracing::debug!(target: "controllers", ?hand, %refusal, "physical hands: direct weapon pickup refused");
                 grab_view::refused(hand, Some(reach.point), &refusal.to_string());
@@ -163,7 +156,7 @@ pub(crate) fn finish_tick(
             refusal
         };
         if refusal.is_some_and(Refusal::falls_back) {
-            weapons::hold::button_pickup::grant();
+            held::pickup::grant();
             desired.push(Desired {
                 target: Target {
                     map: MapKind::Player,
@@ -179,8 +172,8 @@ pub(crate) fn finish_tick(
     }
 }
 
-/// Take the weapon `reach` found straight into `hand` ([`weapons::hold::source::take`]), once its
-/// body is checked to still belong to it.
+/// Take the weapon `reach` found straight into `hand` through the weapon handling
+/// ([`held::pickup::take_ground`]), once its body is checked to still belong to it.
 ///
 /// # Safety
 ///
@@ -192,14 +185,7 @@ unsafe fn take_weapon(hand: Hand, reach: Reach) -> Result<(), Refusal> {
         return Err(Refusal::NotDropped);
     }
     let weapon = unsafe { &*(reach.object.get() as *const WeaponBase) };
-    let source = unsafe { WeaponSource::ground(weapon) };
-    match unsafe { source::take(hand, &source) } {
-        Ok(_) => Ok(()),
-        Err(SourceRefusal::Take(refusal)) => Err(refusal),
-        Err(SourceRefusal::Gone | SourceRefusal::CopyPending | SourceRefusal::CopiesClosed) => {
-            Err(Refusal::NotDropped)
-        }
-    }
+    unsafe { held::pickup::take_ground(hand, weapon) }
 }
 
 /// Keep what the hands hold through a game menu: the grips are not read there, and a release is

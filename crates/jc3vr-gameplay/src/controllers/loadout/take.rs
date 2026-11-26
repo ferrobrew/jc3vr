@@ -9,9 +9,8 @@
 //! weapons stay the game's, for the embedded power core (whose pickup spawns and equips another weapon), and
 //! with a weapon in each hand off while the other hand holds one.
 
-use std::fmt;
-
 use jc3gi::character::inventory::WeaponSlot;
+use jc3vr_body::controllers::held::pickup::TakeRefusal;
 use jc3vr_input::frame::Hand;
 
 use crate::controllers::loadout::{item::WeaponType, table::LoadoutSnapshot};
@@ -75,28 +74,6 @@ impl GameTake {
         }
     }
 }
-
-/// Why a take did not happen.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum TakeRefusal {
-    /// The grabbing hand holds something already.
-    HandFull(Hand),
-    /// The game's use-item pickup found no free hand.
-    BothHandsFull,
-}
-
-impl fmt::Display for TakeRefusal {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            TakeRefusal::HandFull(hand) => {
-                write!(f, "take: the {} hand holds something already", hand.label())
-            }
-            TakeRefusal::BothHandsFull => write!(f, "take: both hands hold something"),
-        }
-    }
-}
-
-impl std::error::Error for TakeRefusal {}
 
 /// How `offer` is taken, with the table as `snapshot` has it (`None` while it does not run).
 pub fn route(

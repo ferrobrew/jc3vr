@@ -33,7 +33,7 @@
 //! ([`displaced_by_take`]): the take's slot is selected once that weapon can go back to its
 //! socket, and until then it stays docked.
 
-use std::{fmt, sync::LazyLock};
+use std::sync::LazyLock;
 
 use jc3gi::{
     character::{character::Character, inventory::WeaponSlot},
@@ -41,12 +41,15 @@ use jc3gi::{
     hash::hashlittle,
 };
 use jc3vr_body::controllers::aim::gun;
+// The refusal vocabulary lives at the hand-off to the physical hands; the weapon handling's own
+// takes (a rack's, a steal's, the snatch's) name it at the direct pickup they refuse through.
+pub(crate) use jc3vr_body::controllers::held::pickup::Refusal;
 use jc3vr_input::frame::Hand;
 
 use crate::controllers::{
     loadout::{
         Delivery, ObjectAddress, TakeSource, WeaponType, live, slot_label, take,
-        take::{TakeOffer, TakeRefusal, TakeRoute, TakeRules},
+        take::{TakeOffer, TakeRoute, TakeRules},
     },
     weapons::{
         config::WEAPONS_CONFIG,
@@ -59,67 +62,6 @@ use crate::controllers::{
         inventory::{carry, engine as inventory_engine},
     },
 };
-
-/// Why a direct pickup did not take the weapon.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum Refusal {
-    /// There is no local player.
-    NoCharacter,
-    /// The weapon is no longer lying in the world.
-    NotDropped,
-    /// The weapon an interaction offers is neither on its rack nor lying in the world: its raw state.
-    NotOffered { state: i32 },
-    /// The weapon's slot is out of range.
-    UnknownSlot,
-    /// A hand grenade: the game collects it by proximity.
-    Grenade,
-    /// The weapon gives a copy when picked up.
-    InfinitePickup,
-    /// The character's animation forbids a pickup now.
-    AnimationForbids,
-    /// The pickup ran, but the weapon is not in the hands afterwards.
-    NotWielded,
-    /// The hands cannot take it now.
-    Hands(TakeRefusal),
-    /// The weapon did not become the player's, or the table did not take it into the hand.
-    NotTaken,
-}
-
-impl Refusal {
-    /// Whether the game's use-item action should be tried instead: the direct pickup did not touch
-    /// the weapon.
-    pub fn falls_back(self) -> bool {
-        !matches!(
-            self,
-            Refusal::NotWielded | Refusal::Hands(_) | Refusal::NotTaken
-        )
-    }
-}
-
-impl fmt::Display for Refusal {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let why = match self {
-            Refusal::NoCharacter => "there is no local player",
-            Refusal::NotDropped => "the weapon is not lying in the world",
-            Refusal::NotOffered { state } => {
-                return write!(
-                    f,
-                    "weapon pickup: the offered weapon is neither on its rack nor lying in the world (state {state})"
-                );
-            }
-            Refusal::UnknownSlot => "the weapon's slot is out of range",
-            Refusal::Grenade => "a hand grenade is collected by the game",
-            Refusal::InfinitePickup => "the weapon gives a copy when picked up",
-            Refusal::AnimationForbids => "the animation forbids a pickup",
-            Refusal::NotWielded => "the weapon is not in the hands after the pickup",
-            Refusal::Hands(refusal) => return write!(f, "weapon pickup: {refusal}"),
-            Refusal::NotTaken => "the table did not take the weapon into the hand",
-        };
-        write!(f, "weapon pickup: {why}")
-    }
-}
-
-impl std::error::Error for Refusal {}
 
 /// How a direct pickup treats the weapons around it.
 #[derive(Debug, Copy, Clone, PartialEq)]
