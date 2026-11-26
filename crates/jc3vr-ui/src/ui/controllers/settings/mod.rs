@@ -66,39 +66,6 @@ pub(super) fn grapple_settings(ui: &mut Ui, c: &mut ControllersConfig) {
     ui.checkbox(&mut c.bindings.yank.enabled, "Yank to zip").on_hover_text(
         "A sharp pull of the grapple hand toward the body taps the grapple while a line is live.",
     );
-    ui.checkbox(&mut c.grapple.pull_to_reel, "Pull to reel")
-        .on_hover_text(
-            "The grapple hand's pull speeds the reel, a yank during it boosts it, and a pull back \
-             tightens attached tethers.",
-        );
-    ui.checkbox(&mut c.grapple.pump, "Pump the hang swing");
-    ui.checkbox(&mut c.grapple.seat, "Grapple from a seat").on_hover_text(
-        "In a vehicle seat, the grapple button fires the hook along the off-hand's aim and tethers \
-         what it hits to the vehicle.",
-    );
-    ui.checkbox(&mut c.grapple.free_hand_line, "Free hand on the line")
-        .on_hover_text(
-            "The free hand grips a locked or swinging line ahead of the grapple hand: pulling it \
-             back takes line in, and swinging it swings a snatched target.",
-        );
-    let l = &mut c.grapple.lock;
-    ui.checkbox(&mut l.enabled, "Lock the reel's line").on_hover_text(
-        "Holding the grapple button during the reel holds the line's length to swing from. A quick \
-         release resumes the reel, a longer one lets go, and a yank resumes the reel.",
-    );
-    ui.add_enabled_ui(l.enabled, |ui| {
-        ui.add(Slider::new(&mut l.stiffness_per_s2, 10.0..=400.0).text("Lock stiffness (1/s²)"));
-        ui.add(Slider::new(&mut l.damping_per_s, 0.0..=40.0).text("Lock damping (1/s)"));
-        ui.add(Slider::new(&mut l.max_accel_g, 1.0..=10.0).text("Lock strength (g)"));
-        ui.add(Slider::new(&mut l.break_stretch_m, 0.5..=10.0).text("Lock break stretch (m)"));
-        ui.add(Slider::new(&mut l.reel_in_mps, 0.0..=8.0).text("Hand reel-in (m/s)"));
-        ui.add(Slider::new(&mut l.min_length_m, 0.5..=5.0).text("Shortest line (m)"));
-        ui.add(Slider::new(&mut l.reaction, 0.0..=1.0).text("Target reaction"))
-            .on_hover_text("The share of the line's pull the target feels back.");
-        ui.checkbox(&mut l.hang, "Hang below ceilings")
-            .on_hover_text("A reel onto a ceiling hangs Rico below the hook instead of attaching him upside down.");
-        ui.add(Slider::new(&mut l.hang_length_m, 1.5..=8.0).text("Hang line to the feet (m)"));
-    });
 }
 
 pub(super) fn vehicle_chord_settings(ui: &mut Ui, c: &mut ControllersConfig) {

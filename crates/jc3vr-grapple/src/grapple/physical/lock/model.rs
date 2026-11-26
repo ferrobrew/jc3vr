@@ -10,7 +10,7 @@ use jc3vr_body::controllers::{
 use jc3vr_physical::controllers::physical_hands::physics::drive::rig_jumped;
 
 use crate::grapple::{
-    physical::config::{LockConfig, SwingTuning},
+    physical::config::{LockTuning, SwingTuning},
     rope::{Rope, RopeEnd, RopeFault, RopeStep, RopeTuning, held_floor},
 };
 
@@ -46,7 +46,7 @@ pub(crate) struct Held {
 }
 
 impl Held {
-    pub(crate) fn new(hook: Vec3, rider: Vec3, config: &LockConfig) -> Option<Self> {
+    pub(crate) fn new(hook: Vec3, rider: Vec3, config: &LockTuning) -> Option<Self> {
         let distance = hook.distance(rider);
         if !distance.is_finite() {
             return None;
@@ -67,7 +67,7 @@ impl Held {
         hook: Vec3,
         rider: Vec3,
         length_m: f32,
-        config: &LockConfig,
+        config: &LockTuning,
     ) -> Option<Self> {
         let length_m = length_m.is_finite().then_some(length_m)?;
         Some(Self {
@@ -84,7 +84,7 @@ impl Held {
     }
 
     /// Take `taken_m` of line in, down to `config`'s least length.
-    pub(crate) fn take_in(&mut self, taken_m: f32, dt: f32, config: &LockConfig) {
+    pub(crate) fn take_in(&mut self, taken_m: f32, dt: f32, config: &LockTuning) {
         self.take_in_mps = 0.0;
         if !dt.is_finite() || dt <= 0.0 {
             return;
@@ -168,7 +168,7 @@ impl Held {
         hook: Vec3,
         hook_velocity: Vec3,
         dt: f32,
-        config: &LockConfig,
+        config: &LockTuning,
     ) {
         if !self.coasting || !dt.is_finite() || dt <= 0.0 {
             return;
@@ -280,7 +280,7 @@ pub(crate) struct SwingOutput {
 pub(crate) fn swing(
     held: &mut Held,
     input: SwingInput,
-    config: &LockConfig,
+    config: &LockTuning,
 ) -> Result<SwingOutput, RopeFault> {
     let SwingInput {
         rider,
@@ -357,7 +357,6 @@ impl Pump {
                 && dt.is_finite()
                 && dt > 0.0
                 && dt <= 0.1
-                && tuning.pump
         }) else {
             *self = Self::default();
             return;

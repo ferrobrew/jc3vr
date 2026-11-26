@@ -15,8 +15,7 @@ use jc3vr_body::controllers::hands::anchor::HangPump;
 
 use crate::grapple::physical::config::{GRAPPLE, SwingTuning};
 
-/// The pump as the hands' anchor calls it: the fixed tuning with the pump switched by each call's
-/// `pump`.
+/// The pump as the hands' anchor calls it, with the fixed tuning.
 pub const HANG_PUMP: HangPump = HangPump {
     smooth_velocity: anchor_smooth_velocity,
     impulse: anchor_pump_impulse,
@@ -25,10 +24,10 @@ pub const HANG_PUMP: HangPump = HangPump {
 
 /// The pump for a grapple hand moving at `velocity` (horizontal, body frame, metres per second)
 /// relative to the head: against the motion, from zero at the deadzone to `full_impulse` times
-/// [`SwingTuning::scale`] at the full speed, and zero inside the deadzone or with the pump off.
+/// [`SwingTuning::scale`] at the full speed, and zero inside the deadzone.
 pub fn pump_impulse(velocity: Vec2, full_impulse: f32, config: &SwingTuning) -> Vec2 {
     let speed = velocity.length();
-    if !config.pump || !speed.is_finite() || speed <= config.deadzone_mps {
+    if !speed.is_finite() || speed <= config.deadzone_mps {
         return Vec2::ZERO;
     }
     let span = (config.full_mps - config.deadzone_mps).max(1e-3);
@@ -53,24 +52,16 @@ pub fn smooth_velocity(previous: Vec2, sample: Vec2, dt: f32, config: &SwingTuni
     previous.lerp(sample, follow_factor(dt, config.smoothing_s))
 }
 
-/// The fixed swing tuning with the pump switched by `pump`.
-const fn tuning(pump: bool) -> SwingTuning {
-    SwingTuning {
-        pump,
-        ..GRAPPLE.swing
-    }
+fn anchor_smooth_velocity(previous: Vec2, sample: Vec2, dt: f32) -> Vec2 {
+    smooth_velocity(previous, sample, dt, &GRAPPLE.swing)
 }
 
-fn anchor_smooth_velocity(previous: Vec2, sample: Vec2, dt: f32, pump: bool) -> Vec2 {
-    smooth_velocity(previous, sample, dt, &tuning(pump))
+fn anchor_pump_impulse(velocity: Vec2, full_impulse: f32) -> Vec2 {
+    pump_impulse(velocity, full_impulse, &GRAPPLE.swing)
 }
 
-fn anchor_pump_impulse(velocity: Vec2, full_impulse: f32, pump: bool) -> Vec2 {
-    pump_impulse(velocity, full_impulse, &tuning(pump))
-}
-
-fn anchor_combine(hold: Vec2, pumped: Vec2, full_impulse: f32, pump: bool) -> Vec2 {
-    combine(hold, pumped, full_impulse, &tuning(pump))
+fn anchor_combine(hold: Vec2, pumped: Vec2, full_impulse: f32) -> Vec2 {
+    combine(hold, pumped, full_impulse, &GRAPPLE.swing)
 }
 
 #[cfg(test)]
@@ -86,11 +77,6 @@ mod tests {
         assert!((half.y + 5.0 * config.scale).abs() < 1e-3, "{half}");
         let full = pump_impulse(Vec2::new(-9.0, 0.0), 10.0, &config);
         assert!((full.x - 10.0 * config.scale).abs() < 1e-3, "{full}");
-        let off = SwingTuning {
-            pump: false,
-            ..config
-        };
-        assert_eq!(pump_impulse(Vec2::new(-9.0, 0.0), 10.0, &off), Vec2::ZERO);
         assert_eq!(
             pump_impulse(Vec2::new(f32::NAN, 0.0), 10.0, &config),
             Vec2::ZERO

@@ -15,7 +15,7 @@
 use jc3vr_body::{
     controllers::{
         aim::{
-            GRAPPLE_SEAT, WORLD_MARKERS_ENABLED,
+            WORLD_MARKERS_ENABLED,
             config::{AIM_CONFIG, AimConfig},
         },
         body::{
@@ -120,10 +120,6 @@ jc3vr_core::test_root! {
                     enabled: bool = true,
                 },
             },
-            grapple: Grapple {
-                pump: bool = true,
-                seat: bool = true,
-            },
         },
         testing: Testing {
             enabled: bool = true,
@@ -147,10 +143,8 @@ jc3vr_core::test_root! {
         PHYSICAL_HANDS_CONFIG => controllers.physical_hands,
         GLASS_CONFIG => controllers.glass,
         MOUNTED_AIM_BY_HANDS => controllers.vehicles.mounted.aim_by_hands,
-        GRAPPLE_PUMP => controllers.grapple.pump,
         DRIVING_VIEW_ENABLED => controllers.vehicles.driving_view.enabled,
         TAKE_OFF_TO_HEAD => controllers.vehicles.take_off_to_head,
-        GRAPPLE_SEAT => controllers.grapple.seat,
         CANOPY_LINE_TURN => controllers.vehicles.canopy.line_turn,
         CANOPY_LINE_TURN_SCALE => controllers.vehicles.canopy.line_turn_scale,
         SKIP_REEL_OPENING => controllers.vehicles.canopy.skip_reel_opening,

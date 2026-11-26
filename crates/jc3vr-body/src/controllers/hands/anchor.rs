@@ -56,11 +56,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     controllers::{
         fingers::grip::{self, Grip, GripSource},
-        hands::{
-            self, CockpitHand,
-            config::{GRAPPLE_PUMP, HANDS_CONFIG},
-            tiers,
-        },
+        hands::{self, CockpitHand, config::HANDS_CONFIG, tiers},
         haptics,
         physics::grapple_hook as hook,
         scheme,
@@ -106,17 +102,17 @@ impl Default for AnchorConfig {
 }
 
 /// The grapple's pump of the hang swing by the grapple hand's motion relative to the head, which
-/// the hang task's detour adds to the hold ([`register_hang_pump`]). Each function takes whether
-/// the pump is on, and the game's own continuous stick swing at full deflection as `full_impulse`.
+/// the hang task's detour adds to the hold ([`register_hang_pump`]). Each function takes the
+/// game's own continuous stick swing at full deflection as `full_impulse`.
 #[derive(Clone, Copy)]
 pub struct HangPump {
     /// The hand's smoothed velocity: the previous estimate, a new sample, and the seconds between
     /// them.
-    pub smooth_velocity: fn(previous: Vec2, sample: Vec2, dt: f32, pump: bool) -> Vec2,
+    pub smooth_velocity: fn(previous: Vec2, sample: Vec2, dt: f32) -> Vec2,
     /// The pump's impulse for the hand's smoothed velocity.
-    pub impulse: fn(velocity: Vec2, full_impulse: f32, pump: bool) -> Vec2,
+    pub impulse: fn(velocity: Vec2, full_impulse: f32) -> Vec2,
     /// The hold's and the pump's impulses together, capped.
-    pub combine: fn(hold: Vec2, pumped: Vec2, full_impulse: f32, pump: bool) -> Vec2,
+    pub combine: fn(hold: Vec2, pumped: Vec2, full_impulse: f32) -> Vec2,
 }
 
 /// Register the grapple's pump of the hang swing. One pump: a second registration is refused and
@@ -340,7 +336,6 @@ fn hang_task_update(ctx: *mut StateContext, p1: *mut c_void, p2: *mut c_void) {
 /// Push the local player's hang body by the grapple hand's displacement and motion.
 unsafe fn swing(character: &mut Character) {
     let anchor = HANDS_CONFIG.query(|c| c.anchor);
-    let pump = *GRAPPLE_PUMP.lock();
     let pump_fns = HANG_PUMP.get();
     let hand = scheme::acting_hand().other();
     let now = Instant::now();
@@ -381,16 +376,14 @@ unsafe fn swing(character: &mut Character) {
         && dt > f32::EPSILON
     {
         state.hang_velocity =
-            (fns.smooth_velocity)(state.hang_velocity, (offset - previous) / dt, dt, pump);
+            (fns.smooth_velocity)(state.hang_velocity, (offset - previous) / dt, dt);
     }
     state.hang_offset = Some(offset);
 
     let full = unsafe { *get_GrapplingHangTask_SmallImpulseSwingMagnitude() };
     let hold = swing_impulse(displacement, full);
-    let pumped = pump_fns.map_or(Vec2::ZERO, |fns| {
-        (fns.impulse)(state.hang_velocity, full, pump)
-    });
-    let impulse = pump_fns.map_or(hold, |fns| (fns.combine)(hold, pumped, full, pump));
+    let pumped = pump_fns.map_or(Vec2::ZERO, |fns| (fns.impulse)(state.hang_velocity, full));
+    let impulse = pump_fns.map_or(hold, |fns| (fns.combine)(hold, pumped, full));
     if impulse == Vec2::ZERO {
         return;
     }

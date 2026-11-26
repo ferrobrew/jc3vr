@@ -39,33 +39,23 @@ fn target() -> Line {
 }
 
 fn reel() -> Line {
-    let enabled = read(&CONTROLLERS_CONFIG, |c| c.grapple.pull_to_reel);
-    reel_line(enabled, &physical::status())
+    reel_line(&physical::status())
 }
 
 fn tethers() -> Line {
-    let enabled = read(&CONTROLLERS_CONFIG, |c| c.grapple.pull_to_reel);
-    tethers_line(enabled, &physical::status())
+    tethers_line(&physical::status())
 }
 
 fn lock() -> Line {
-    let enabled = read(&CONTROLLERS_CONFIG, |c| c.grapple.lock.enabled);
-    lock_line(enabled, &lock::status())
+    lock_line(&lock::status())
 }
 
 fn seat_row() -> Line {
-    let enabled = read(&CONTROLLERS_CONFIG, |c| c.grapple.seat);
-    seat_line(enabled, &seat::status())
+    seat_line(&seat::status())
 }
 
 fn swing() -> Line {
-    let (hold, pump) = read(&CONTROLLERS_CONFIG, |c| {
-        (c.hands.anchor.enabled, c.grapple.pump)
-    });
     let status = anchor::status();
-    if !(hold || pump) {
-        return Line::off("");
-    }
     let detail = text!(
         status.swings.to_string(),
         " swings, ",
@@ -180,10 +170,7 @@ fn target_line(status: &GrappleStatus) -> Line {
     }
 }
 
-fn reel_line(enabled: bool, status: &GrappleStatus) -> Line {
-    if !enabled {
-        return Line::off("");
-    }
+fn reel_line(status: &GrappleStatus) -> Line {
     let counts = text!(
         status.reels.to_string(),
         " reels, ",
@@ -207,10 +194,7 @@ fn reel_line(enabled: bool, status: &GrappleStatus) -> Line {
     }
 }
 
-fn lock_line(enabled: bool, status: &LockStatus) -> Line {
-    if !enabled {
-        return Line::off("");
-    }
+fn lock_line(status: &LockStatus) -> Line {
     let counts = text!(
         status.locks.to_string(),
         " locks, ",
@@ -257,10 +241,7 @@ fn lock_line(enabled: bool, status: &LockStatus) -> Line {
     ))
 }
 
-fn seat_line(enabled: bool, status: &SeatStatus) -> Line {
-    if !enabled {
-        return Line::off("");
-    }
+fn seat_line(status: &SeatStatus) -> Line {
     let counts = text!(
         status.fires.to_string(),
         " fired, ",
@@ -296,11 +277,8 @@ fn line_tension(tension_n: f32, max_tension_n: f32) -> Text {
     )
 }
 
-fn tethers_line(enabled: bool, status: &GrappleStatus) -> Line {
+fn tethers_line(status: &GrappleStatus) -> Line {
     let count = text!(status.tethers.to_string(), " attached");
-    if !enabled {
-        return Line::off(count);
-    }
     let pull = status.retract.map_or_else(Text::default, |value| {
         text!(", pull ", format!("{value:.2}"))
     });
@@ -367,13 +345,12 @@ mod tests {
 
     #[test]
     fn the_seat_row_reads_the_seat_grapple() {
-        assert_eq!(seat_line(false, &SeatStatus::default()).text(), "OFF");
         let refused = SeatStatus {
             refused: Some(seat::Refusal::NoTarget),
             ..SeatStatus::default()
         };
         assert_eq!(
-            seat_line(true, &refused).text(),
+            seat_line(&refused).text(),
             "WAITING, 0 FIRED, 0 TETHERED, 0 MISSED, REFUSED: NOTHING IN RANGE"
         );
         let flying = SeatStatus {
@@ -382,16 +359,15 @@ mod tests {
             ..SeatStatus::default()
         };
         assert_eq!(
-            seat_line(true, &flying).text(),
+            seat_line(&flying).text(),
             "OK, FLYING, 1 FIRED, 0 TETHERED, 0 MISSED"
         );
     }
 
     #[test]
     fn the_lock_row_reads_the_lock() {
-        assert_eq!(lock_line(false, &LockStatus::default()).text(), "OFF");
         assert_eq!(
-            lock_line(true, &LockStatus::default()).text(),
+            lock_line(&LockStatus::default()).text(),
             "WAITING, 0 LOCKS, 0 BROKE"
         );
         let held = LockStatus {
@@ -409,7 +385,7 @@ mod tests {
             ..LockStatus::default()
         };
         assert_eq!(
-            lock_line(true, &held).text(),
+            lock_line(&held).text(),
             "OK, VEHICLE 1500 KG, HELD 8.2 M, STRETCH +0.12 M, 900 OF 3924 N, HOOK 12.0 M/S, 1 LOCKS, 0 BROKE"
         );
         let hanging = LockStatus {
@@ -421,7 +397,7 @@ mod tests {
             ..held
         };
         assert!(
-            lock_line(true, &hanging)
+            lock_line(&hanging)
                 .text()
                 .starts_with("OK, HANGING, STATIC, HELD 8.2 M")
         );
@@ -432,7 +408,7 @@ mod tests {
             ..held
         };
         assert_eq!(
-            lock_line(true, &ended).text(),
+            lock_line(&ended).text(),
             "OK, 1 LOCKS, 1 BROKE, LAST BROKE: OVERSTRETCHED"
         );
     }
@@ -462,16 +438,14 @@ mod tests {
         assert_eq!(state_line(&live).text(), "OK, REELING IN");
         assert_eq!(target_line(&live).text(), "OK, OBJECT, 12.3 M");
         assert_eq!(
-            reel_line(true, &live).text(),
+            reel_line(&live).text(),
             "OK, 1.25X BOOSTED, 2 REELS, 1 BOOSTS"
         );
-        assert_eq!(reel_line(false, &live).text(), "OFF");
-        assert_eq!(reel_line(true, &idle).text(), "WAITING, 0 REELS, 0 BOOSTS");
+        assert_eq!(reel_line(&idle).text(), "WAITING, 0 REELS, 0 BOOSTS");
         assert_eq!(
-            tethers_line(true, &live).text(),
+            tethers_line(&live).text(),
             "OK, 2 ATTACHED, PULL 0.50, TENSION 0.75, 3 PULLS"
         );
-        assert_eq!(tethers_line(false, &live).text(), "OFF, 2 ATTACHED");
     }
 
     #[test]

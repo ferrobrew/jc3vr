@@ -1,6 +1,6 @@
 # The free hand on the line
 
-While the grapple lock holds the line ([grapple-lock.md](grapple-lock.md)) or the snatch's line swings its target ([grapple-snatch.md](grapple-snatch.md#swinging-on-the-line)), the free hand can take hold of the line ahead of the grapple hand (`grapple::line_grab`). On the lock's line, pulling it back takes line in. On the snatch's line, the hand holding it becomes the line's anchor, so its pull draws the target in and its swing pulls the target the new way. `free_hand_line` in the Grapple feature's settings switches it, on by default.
+While the grapple lock holds the line ([grapple-lock.md](grapple-lock.md)) or the snatch's line swings its target ([grapple-snatch.md](grapple-snatch.md#swinging-on-the-line)), the free hand can take hold of the line ahead of the grapple hand (`grapple::line_grab`). On the lock's line, pulling it back takes line in. On the snatch's line, the hand holding it becomes the line's anchor, so its pull draws the target in and its swing pulls the target the new way.
 
 ## The grab target
 

@@ -82,7 +82,7 @@ use re_utilities::hook_library::HookLibrary;
 
 use crate::grapple::{
     physical::{
-        config::{GRAPPLE_CONFIG, LockConfig, PhysicalGrappleTuning, SwingTuning},
+        config::{GRAPPLE, LOCK, SwingTuning},
         lock::model::{FreeHand, Held, Pump, PumpSample, SwingInput, TakeIn},
     },
     rope,
@@ -232,11 +232,10 @@ pub fn entering_helicopter() -> bool {
         .is_some_and(|at| at.elapsed() <= ENTERING_FOR)
 }
 
-/// Whether the lock could take hold now: the switch is on, and the local player's hook reels in
-/// along an attached line to something other than a character.
-pub(crate) fn lockable(game: &GameTick<'_>, config: &LockConfig) -> bool {
-    config.enabled
-        && LocalPlayer::get(game)
+/// Whether the lock could take hold now: the local player's hook reels in along an attached line to
+/// something other than a character.
+pub(crate) fn lockable(game: &GameTick<'_>) -> bool {
+    LocalPlayer::get(game)
             .as_mut()
             .and_then(LocalPlayer::character_and_hook)
             .is_some_and(|(_, hook)| {
@@ -247,7 +246,7 @@ pub(crate) fn lockable(game: &GameTick<'_>, config: &LockConfig) -> bool {
 }
 
 /// What the bindings hand the lock's tick.
-pub struct LockTickInput<'a> {
+pub struct LockTickInput {
     /// What the grapple button asks of the lock this tick.
     pub button: Option<LockButton>,
     /// The reel task carries the character toward the hook: the lock may take hold. Before it, in
@@ -270,7 +269,6 @@ pub struct LockTickInput<'a> {
     /// The tick's length, real seconds: the hand's take-in.
     pub real_dt: f32,
     pub hand: Hand,
-    pub config: &'a LockConfig,
 }
 
 /// Run the lock's part of the input tick, after the bindings' tables have stepped: apply the
@@ -360,9 +358,9 @@ pub fn lock_tick(game: &GameTick<'_>, input: &LockTickInput) {
             .take()
             .filter(|at| at.elapsed() <= HANG_WANTED_FOR)
             .is_some();
-        let kind = if hang && input.config.enabled && input.config.hang {
+        let kind = if hang {
             Some(Hold::Hang)
-        } else if wants && input.carries && input.config.enabled {
+        } else if wants && input.carries {
             Some(Hold::Swing)
         } else {
             None
@@ -397,7 +395,7 @@ pub fn lock_tick(game: &GameTick<'_>, input: &LockTickInput) {
                 let (free_taken, changed) =
                     active
                         .free
-                        .step(input.real_dt, input.free_hand, input.config.reel_in_mps);
+                        .step(input.real_dt, input.free_hand, LOCK.reel_in_mps);
                 let free_held = active.free.held();
                 if changed {
                     tracing::info!(
@@ -413,13 +411,12 @@ pub fn lock_tick(game: &GameTick<'_>, input: &LockTickInput) {
                 let taken =
                     active
                         .take_in
-                        .step(input.real_dt, input.line, input.config.reel_in_mps)
+                        .step(input.real_dt, input.line, LOCK.reel_in_mps)
                         + free_taken;
                 active.pump.sample(pump_sample, input.real_dt, &pump_tuning);
                 active.pump_tuning = pump_tuning;
                 active.pump_at = Instant::now();
-                active.config = *input.config;
-                active.held.take_in(taken, input.real_dt, input.config);
+                active.held.take_in(taken, input.real_dt, &LOCK);
                 let length_m = active.held.rope.length_m;
                 let braking = active.held.coasting();
                 shared.status.length_m = length_m;
@@ -492,12 +489,7 @@ pub(crate) unsafe fn drive(
         return false;
     };
     let rider = Vec3::from_array(position.data);
-    let reaction = if active.config.reaction.is_finite() {
-        active.config.reaction.clamp(0.0, 1.0)
-    } else {
-        0.0
-    };
-    let target_inverse_mass = active.target.map_or(0.0, |t| t.inverse_mass * reaction);
+    let target_inverse_mass = active.target.map_or(0.0, |t| t.inverse_mass * LOCK.reaction);
     if active.pump_at.elapsed() > Duration::from_millis(100) {
         active.pump.expire();
     }
@@ -521,7 +513,7 @@ pub(crate) unsafe fn drive(
             target_inverse_mass,
             dt,
         },
-        &active.config,
+        &LOCK,
     );
     let mut shared = SHARED.lock();
     let out = match swung {
@@ -547,7 +539,7 @@ pub(crate) unsafe fn drive(
             impulse: Vec3::ZERO,
             at: hook_point,
         });
-        pending.impulse += out.target_impulse * reaction;
+        pending.impulse += out.target_impulse * LOCK.reaction;
         pending.at = hook_point;
     }
     let status = &mut shared.status;
@@ -564,7 +556,7 @@ pub(crate) unsafe fn drive(
 
 fn pump_sample(input: &LockTickInput) -> (Option<PumpSample>, SwingTuning) {
     let scale = VR_CONFIG.lock().world_scale;
-    let tuning = GRAPPLE_CONFIG.query(|c| PhysicalGrappleTuning::of(c).swing);
+    let tuning = GRAPPLE.swing;
     let fresh = frame::with_latest(|frame| {
         frame.focused
             && frame.published_at.elapsed() <= Duration::from_millis(100)
@@ -663,8 +655,8 @@ unsafe fn start(
     };
     let rider = character_position(character);
     let held = match hold {
-        Hold::Swing => Held::new(hook_point, rider, input.config),
-        Hold::Hang => Held::hang(hook_point, rider, input.config.hang_length_m, input.config),
+        Hold::Swing => Held::new(hook_point, rider, &LOCK),
+        Hold::Hang => Held::hang(hook_point, rider, LOCK.hang_length_m, &LOCK),
     };
     let Some(held) = held else {
         return refuse("the line's length is not finite");
@@ -683,7 +675,7 @@ unsafe fn start(
     let mut pump = Pump::default();
     pump.sample(pump_sample, input.real_dt, &pump_tuning);
     let mut take_in = TakeIn::default();
-    take_in.step(input.real_dt, input.line, input.config.reel_in_mps);
+    take_in.step(input.real_dt, input.line, LOCK.reel_in_mps);
     let lock_target = LockTarget {
         kind: kind_label(kind),
         mass_kg: target.map(|t| 1.0 / t.inverse_mass),
@@ -695,7 +687,6 @@ unsafe fn start(
             proxy: proxy_id,
             rider_mass_kg,
             target,
-            config: *input.config,
             take_in,
             free: FreeHand::default(),
             pump,
@@ -759,9 +750,6 @@ unsafe fn ending(
         _ if input.jump => return Some(LockEnd::Released),
         _ if input.enter && active.under_helicopter => return Some(LockEnd::Entering),
         _ => {}
-    }
-    if !input.config.enabled || (active.hang && !input.config.hang) {
-        return Some(LockEnd::ReelEnded);
     }
     let Some(proxy) = (unsafe { engine::attached_far_end(hook) }) else {
         return Some(LockEnd::ReelEnded);
@@ -882,7 +870,6 @@ struct Active {
     rider_mass_kg: f32,
     /// The dynamic body behind the hook's point, or `None` for one the line does not move.
     target: Option<TargetBody>,
-    config: LockConfig,
     take_in: TakeIn,
     free: FreeHand,
     pump: Pump,

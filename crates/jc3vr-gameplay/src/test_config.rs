@@ -35,7 +35,6 @@ use jc3vr_core::{
     director::clean_view::{CLEAN_VIEW_CONFIG, CleanViewConfig},
     hooks::online::{ONLINE_CONFIG, OnlineConfig},
 };
-use jc3vr_grapple::grapple::physical::config::GRAPPLE_CONFIG;
 use jc3vr_physical::controllers::{
     glass::config::GLASS_CONFIG, physical_hands::config::PHYSICAL_HANDS_CONFIG,
 };
@@ -104,14 +103,11 @@ jc3vr_core::test_root! {
         ROOMSCALE_CONFIG => controllers.roomscale,
         VEHICLES_CONFIG => controllers.vehicles,
         PHYSICAL_HANDS_CONFIG => controllers.physical_hands,
-        GRAPPLE_CONFIG => controllers.grapple,
         HAPTICS_CONFIG => controllers.haptics,
         GLASS_CONFIG => controllers.glass,
         MOUNTED_AIM_BY_HANDS => controllers.vehicles.mounted.aim_by_hands,
-        GRAPPLE_PUMP => controllers.grapple.pump,
         DRIVING_VIEW_ENABLED => controllers.vehicles.driving_view.enabled,
         TAKE_OFF_TO_HEAD => controllers.vehicles.take_off_to_head,
-        GRAPPLE_SEAT => controllers.grapple.seat,
         CANOPY_LINE_TURN => controllers.vehicles.canopy.line_turn,
         CANOPY_LINE_TURN_SCALE => controllers.vehicles.canopy.line_turn_scale,
         SKIP_REEL_OPENING => controllers.vehicles.canopy.skip_reel_opening,

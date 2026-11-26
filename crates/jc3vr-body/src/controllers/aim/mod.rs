@@ -89,11 +89,6 @@ const MIN_TARGET_DISTANCE_M: f32 = 2.0;
 /// the payload binds the slot at startup. The aim casts the markers' fallback rays.
 pub static WORLD_MARKERS_ENABLED: ConfigSlot<bool> = ConfigSlot::new("hud.world_markers.enabled");
 
-/// Whether the seat grapple is on, at `controllers.grapple.seat` in the settings file: a field of
-/// the physical grapple's group, which the aim reads to cast the grapple's ray from a seat. The
-/// payload binds the slot at startup.
-pub static GRAPPLE_SEAT: ConfigSlot<bool> = ConfigSlot::new("controllers.grapple.seat");
-
 /// The aiming hooks, aggregated by `controllers::hook_library`.
 pub fn hook_library() -> HookLibrary {
     HookLibrary::new()
@@ -229,8 +224,6 @@ pub(crate) struct TickHands {
     aim: AimConfig,
     /// The hand the roles follow ([`scheme::acting_hand`]).
     dominant: Hand,
-    /// Whether the seat grapple is on ([`GRAPPLE_SEAT`]).
-    grapple_seat: bool,
     head: Pose,
     hands: [Option<WorldHand>; 2],
 }
@@ -345,11 +338,9 @@ fn begin() -> Result<TickHands, AimIdle> {
     let head = xf.pose_to_world(active.head);
     let aim = *AIM_CONFIG.lock();
     let dominant = scheme::acting_hand();
-    let grapple_seat = *GRAPPLE_SEAT.lock();
     Ok(TickHands {
         aim,
         dominant,
-        grapple_seat,
         head,
         hands,
     })
@@ -482,7 +473,7 @@ unsafe fn finish(
     let fire_enabled = hook.is_some_and(|hook| unsafe { hook.GetFireInputEnabled() });
     // SAFETY: as above.
     let seat_range_m = hook
-        .filter(|hook| tick.grapple_seat && unsafe { stands_in(owner, hook) })
+        .filter(|hook| unsafe { stands_in(owner, hook) })
         .and_then(|hook| unsafe { hook.GetTuning().as_ref() })
         .map(|tuning| tuning.m_GrappleDistance)
         .filter(|range| range.is_finite() && *range > 0.0);

@@ -15,11 +15,6 @@ pub static HANDS_CONFIG: ConfigSlot<HandsConfig> = ConfigSlot::new("controllers.
 pub static MOUNTED_AIM_BY_HANDS: ConfigSlot<bool> =
     ConfigSlot::new("controllers.vehicles.mounted.aim_by_hands");
 
-/// Whether the grapple hand pumps a hanging character's swing, at `controllers.grapple.pump` in the
-/// settings file: a field of the physical grapple's group, which the anchored tier's hang swing
-/// reads. The payload binds the slot at startup.
-pub static GRAPPLE_PUMP: ConfigSlot<bool> = ConfigSlot::new("controllers.grapple.pump");
-
 /// Controller-owned hands (see [`crate::controllers::hands`]). Every part acts only under the
 /// controller scheme and only for a hand whose controller is tracked, so the parts default on.
 #[derive(Copy, Clone, Serialize, Deserialize)]

@@ -116,11 +116,8 @@ pub(crate) fn handed_back_m(
 /// The line's grab target for the free hand this tick, when the lock holds the line or the snatch's
 /// line swings its target from `grapple_hand`, and the other hand is free and empty and within
 /// [`REACH`] of the line. `world_scale` turns the reach into the player's scale for the resolver.
-pub fn targets(grapple_hand: Hand, enabled: bool, world_scale: f32) -> Provided {
+pub fn targets(grapple_hand: Hand, world_scale: f32) -> Provided {
     let mut out = Provided::default();
-    if !enabled {
-        return out;
-    }
     let Some(far) = far_end(grapple_hand) else {
         return out;
     };

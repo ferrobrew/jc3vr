@@ -6,7 +6,7 @@
 //! The arrival's upside-down ending ([`GrapplingHook::StartReelUpsideDown`], the ceiling attach)
 //! and the arrival onto a helicopter's hang entry (the game's stunt hang under the airframe; a
 //! door-side arrival is the game's hijack and runs as the game's) are held off for
-//! the local player while the hang is on and the lock's tick runs: the reel keeps running, and the
+//! the local player while the lock's tick runs: the reel keeps running, and the
 //! lock's next tick hangs the character below the hook instead (`lock::want_hang`). While the
 //! lock's tick does not run (the bindings idle, as under the gamepad scheme), or just after it
 //! refused a hang, the arrival is the game's (`lock::hang_takes_over`).
@@ -37,9 +37,8 @@ use jc3vr_body::controllers::facts::airframe;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::grapple::physical::{
-    config::GRAPPLE_CONFIG,
-    lock::{engine, entering_helicopter, hang_takes_over, holds, last_velocity, want_hang},
+use crate::grapple::physical::lock::{
+    engine, entering_helicopter, hang_takes_over, holds, last_velocity, want_hang,
 };
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -147,19 +146,11 @@ fn start_reel_upside_down(hook: *mut GrapplingHook, holder: *const SharedPtr<Cha
     let local = unsafe { holder.as_ref() }
         .and_then(|h| unsafe { h.px.as_ref() })
         .is_some_and(|c| c.m_IsLocalCharacter);
-    if local && hang_enabled() && hang_takes_over() {
+    if local && hang_takes_over() {
         want_hang();
         return;
     }
     START_REEL_UPSIDE_DOWN.get().unwrap().call(hook, holder);
-}
-
-/// Whether the lock and its hang are on.
-fn hang_enabled() -> bool {
-    GRAPPLE_CONFIG.query(|c| {
-        let lock = &c.lock;
-        lock.enabled && lock.hang
-    })
 }
 
 #[detour(address = jc3gi::equipment::grappling_hook::NStateTask_ReelIn::FinishReel_ADDRESS)]
@@ -212,7 +203,7 @@ fn finish_reel(
             live_hook.is_some_and(|h| unsafe { engine::reeling_to_helicopter_hang(h) });
         // Y below the airframe points the reel at the door side; should it arrive at the hang
         // anyway, the line takes Rico back rather than the inverted hang.
-        if to_helicopter && hang_enabled() && hang_takes_over() {
+        if to_helicopter && hang_takes_over() {
             if entering_helicopter() {
                 tracing::info!(
                     target: "grapple",

@@ -6,9 +6,7 @@ use jc3vr_physical::controllers::physical_hands::config::PhysicalHandsConfig;
 use jc3vr_weapons::controllers::weapons::config::HoldConfig;
 pub use jc3vr_weapons::controllers::weapons::config::{SnatchConfig, SwingConfig};
 
-use crate::{
-    controllers::snatch::landing::LandingTuning, grapple::physical::config::PhysicalGrappleConfig,
-};
+use crate::controllers::snatch::landing::LandingTuning;
 
 /// The settings one snatch tick reads: its own group and the fields of the other groups it
 /// consults. The bindings fill it from the snapshot of the settings they take for the tick.
@@ -20,8 +18,6 @@ pub struct SnatchSettings {
     pub hold: HoldConfig,
     /// The world-space overlay, which draws the armed snatch's latch.
     pub overlay: OverlayConfig,
-    /// The physical grapple, whose free-hand line the swing hands over to.
-    pub grapple: PhysicalGrappleConfig,
     /// The physical hands, whose door handling decides which doors are snatched.
     pub physical_hands: PhysicalHandsConfig,
 }

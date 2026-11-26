@@ -543,7 +543,6 @@ fn tick(game: &GameTick<'_>, dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>)
         ));
         provided.extend(grapple::line_grab::targets(
             grapple_hand,
-            config.grapple.free_hand_line,
             active.as_ref().map_or(1.0, |a| a.world_scale),
         ));
     }
@@ -581,7 +580,7 @@ fn tick(game: &GameTick<'_>, dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>)
     controls.stunt_available = if matches!(detection.mode, Mode::Vehicle(seat) if seat.class != VehicleClass::Mech)
         && detection.held.is_none()
     {
-        if bail::stunt_hangs_inverted(detection.mode, config.grapple.lock.hang) {
+        if bail::stunt_hangs_inverted(detection.mode) {
             // A helicopter seat's stunt act drops Rico into the hang under the airframe, which
             // holds him inverted; the seat's exit takes the press instead.
             Some(false)
@@ -699,7 +698,6 @@ fn tick(game: &GameTick<'_>, dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>)
             line: grapple_line,
             button_held: grapple_held && !snatch_button_owned,
             detection: &detection,
-            config: &config.grapple,
             dominant: config.acting_hand(),
         },
     );
@@ -708,7 +706,7 @@ fn tick(game: &GameTick<'_>, dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>)
         line: yank_armed_in(line, &detection) || grapple::seat::status().flying,
         aim_target: aim::status().grapple.is_some_and(|g| g.valid),
         reeling: physical_grapple.lockable && !snatch_button_owned,
-        seated: config.grapple.seat && grapple::seat::stands_in_for_local(game),
+        seated: grapple::seat::stands_in_for_local(game),
     };
     controls.lock_yank = physical_grapple.lock_yank;
     let lock_status = grapple::physical::lock::status();
@@ -738,15 +736,13 @@ fn tick(game: &GameTick<'_>, dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>)
             free_hand: grapple::line_grab::lock_hand(
                 grapple_hand,
                 state.bindings.grip_latches()[grapple_hand.other().index()],
-            )
-            .filter(|_| config.grapple.free_hand_line),
+            ),
             deployed: matches!(
                 detection.mode,
                 Mode::Airborne(AirborneVariant::Wingsuit | AirborneVariant::Parachute)
             ),
             real_dt,
             hand: grapple_hand,
-            config: &config.grapple.lock,
         },
     );
     // The helicopter's skid: standing on it, and the jump off it.
@@ -1422,7 +1418,6 @@ fn snatch_settings(config: &ControllersConfig) -> SnatchSettings {
         snatch: config.weapons.snatch,
         hold: config.weapons.hold,
         overlay: config.overlay,
-        grapple: config.grapple,
         physical_hands: config.physical_hands,
     }
 }

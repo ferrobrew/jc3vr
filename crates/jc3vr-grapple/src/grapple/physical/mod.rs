@@ -32,7 +32,7 @@ pub mod tether;
 
 use std::time::{Duration, Instant};
 
-pub use config::{PhysicalGrappleConfig, PhysicalGrappleTuning};
+pub use config::{GRAPPLE, PhysicalGrappleTuning};
 use jc3gi::equipment::grappling_hook::GrapplingHookState;
 use jc3vr_body::controllers::{
     hands::anchor,
@@ -72,7 +72,6 @@ pub struct TickInput<'a> {
     /// Whether the grapple button is held: the pull retracts the tethers only while it is.
     pub button_held: bool,
     pub detection: &'a Detection,
-    pub config: &'a PhysicalGrappleConfig,
     /// The hand the roles follow, whose other hand is the grapple hand.
     pub dominant: Hand,
 }
@@ -182,7 +181,7 @@ pub fn status() -> GrappleStatus {
 /// Run the physical grapple's part of the input tick. Called in the game stage while the bindings
 /// inject.
 pub fn input_tick(game: &GameTick<'_>, input: &TickInput) -> TickOutput {
-    let config = &PhysicalGrappleTuning::of(input.config);
+    let config = &GRAPPLE;
     let hand = input.dominant.other();
     let hook = unsafe { read_hook() };
     let anchor = anchor::status().anchor;
@@ -196,17 +195,14 @@ pub fn input_tick(game: &GameTick<'_>, input: &TickInput) -> TickOutput {
         input.detection.traversal,
         Some(Traversal::PreReel | Traversal::ReelingIn)
     );
-    let drive_reel = reeling && config.reel.enabled;
+    let drive_reel = reeling;
     let tethers = hook.map_or(0, |h| h.tethers);
-    let armed = tether::armed(
-        &TetherTick {
-            tethers,
-            active_wire: hook.is_some_and(|h| h.read.active_wire),
-            button_held: input.button_held,
-            detection: *input.detection,
-        },
-        &config.tether,
-    );
+    let armed = tether::armed(&TetherTick {
+        tethers,
+        active_wire: hook.is_some_and(|h| h.read.active_wire),
+        button_held: input.button_held,
+        detection: *input.detection,
+    });
     // Each pull is measured along the aim the hand has when the reel or the retract arms, and the
     // boost's yank along the aim it has when the reel starts.
     let pull = state
@@ -372,7 +368,7 @@ pub fn input_tick(game: &GameTick<'_>, input: &TickInput) -> TickOutput {
     TickOutput {
         retract,
         tethers,
-        lockable: locked || lock::lockable(game, &input.config.lock),
+        lockable: locked || lock::lockable(game),
         lock_yank,
     }
 }

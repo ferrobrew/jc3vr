@@ -718,7 +718,6 @@ pub(super) unsafe fn sling(
     let regrip = brace.step_line(LineInput {
         holds: !braced
             && other_free
-            && input.config.grapple.free_hand_line
             && input.grips[other.index()].held()
             && line_grab::holds_line(input.latches[other.index()]),
         ahead_m: other_palm.and_then(|palm| {

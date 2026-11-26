@@ -27,14 +27,13 @@ pub struct TetherTick {
     pub detection: Detection,
 }
 
-/// Whether the pull may retract the tethers: the setting is on, tethers are attached, the grapple
+/// Whether the pull may retract the tethers: tethers are attached, the grapple
 /// has no line of its own, nothing carries the character along a line, and the character is on
 /// the ground, falling, or seated in a vehicle, with the grapple button held.
 /// The wingsuit and the parachute are left out: the retract input boosts
 /// them too, and their arm steering and handles already use the hands.
-pub fn armed(tick: &TetherTick, config: &TetherTuning) -> bool {
-    config.enabled
-        && tick.button_held
+pub fn armed(tick: &TetherTick) -> bool {
+    tick.button_held
         && tick.tethers > 0
         && !tick.active_wire
         && tick.detection.traversal.is_none()
@@ -84,19 +83,15 @@ mod tests {
 
     #[test]
     fn the_retract_requires_free_tethers_and_an_allowed_mode() {
-        let config = GRAPPLE.tether;
-        assert!(armed(&tick(1), &config));
-        assert!(!armed(&tick(0), &config));
-        assert!(!armed(
-            &TetherTick {
-                active_wire: true,
-                ..tick(2)
-            },
-            &config
-        ));
+        assert!(armed(&tick(1)));
+        assert!(!armed(&tick(0)));
+        assert!(!armed(&TetherTick {
+            active_wire: true,
+            ..tick(2)
+        }));
         let mut falling = tick(1);
         falling.detection.mode = Mode::Airborne(AirborneVariant::Falling);
-        assert!(armed(&falling, &config));
+        assert!(armed(&falling));
         for mode in [
             Mode::Airborne(AirborneVariant::Wingsuit),
             Mode::Airborne(AirborneVariant::Parachute),
@@ -105,16 +100,11 @@ mod tests {
         ] {
             let mut t = tick(1);
             t.detection.mode = mode;
-            assert!(!armed(&t, &config), "{mode:?}");
+            assert!(!armed(&t), "{mode:?}");
         }
         let mut reeling = tick(1);
         reeling.detection.traversal = Some(Traversal::ReelingIn);
-        assert!(!armed(&reeling, &config));
-        let off = TetherTuning {
-            enabled: false,
-            ..config
-        };
-        assert!(!armed(&tick(1), &off));
+        assert!(!armed(&reeling));
     }
 
     #[test]
@@ -140,7 +130,7 @@ mod tests {
                             grip: Vec3::new(0.0, 0.0, z),
                             aim: Vec3::NEG_Z,
                         }),
-                        armed(&tick, &GRAPPLE.tether),
+                        armed(&tick),
                         &GRAPPLE.pull,
                     );
                     retract_value(reading.depth_m, &GRAPPLE.tether)
@@ -152,10 +142,10 @@ mod tests {
                 assert_eq!(sample(false, -0.3), 0.0);
                 assert_eq!(sample(true, -0.3), 0.0);
                 tick.active_wire = true;
-                assert!(!armed(&tick, &GRAPPLE.tether));
+                assert!(!armed(&tick));
                 tick.active_wire = false;
                 tick.detection.traversal = Some(Traversal::ReelingIn);
-                assert!(!armed(&tick, &GRAPPLE.tether));
+                assert!(!armed(&tick));
             }
         }
     }

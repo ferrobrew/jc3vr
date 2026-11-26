@@ -6,7 +6,7 @@ use jc3vr_body::controllers::{
 
 use crate::grapple::{
     physical::{
-        config::{GRAPPLE, LockConfig},
+        config::{GRAPPLE, LOCK, LockTuning},
         lock::model::{FreeHand, Held, Pump, PumpSample, SwingInput, TakeIn, armed, swing},
     },
     rope::RopeFault,
@@ -63,7 +63,7 @@ fn pump_does_not_assist_slack_rope_or_replay_its_slack_budget() {
 fn lateral_pump_keeps_rope_length_and_adds_no_tangent_target_reaction() {
     let tuning = GRAPPLE.swing;
     let rider = Vec3::Y * -5.1;
-    let mut held = Held::new(Vec3::ZERO, Vec3::Y * -5.0, &CONFIG).unwrap();
+    let mut held = Held::new(Vec3::ZERO, Vec3::Y * -5.0, &LOCK).unwrap();
     let length = held.rope.length_m;
     let mut pump = Pump::default();
     pump.sample(Some(pump_sample(Vec3::ZERO, Vec3::ZERO)), DT, &tuning);
@@ -71,7 +71,7 @@ fn lateral_pump_keeps_rope_length_and_adds_no_tangent_target_reaction() {
     let velocity = pump.take(DT, rider, length, &tuning);
     let mut tick = input(rider, velocity, Vec3::ZERO, Vec3::ZERO);
     tick.target_inverse_mass = 1.0 / MASS;
-    let out = swing(&mut held, tick, &CONFIG).unwrap();
+    let out = swing(&mut held, tick, &LOCK).unwrap();
     assert!(out.velocity.x < 0.0);
     assert_eq!(held.rope.length_m, length);
     assert_eq!(out.target_impulse.x, 0.0);
@@ -99,7 +99,6 @@ fn pump_reseeds_after_recenter_tracking_gap_or_implausible_jump() {
 
 const DT: f32 = 1.0 / 30.0;
 const MASS: f32 = 100.0;
-const CONFIG: LockConfig = LockConfig::new();
 
 fn input(rider: Vec3, rider_velocity: Vec3, hook: Vec3, hook_velocity: Vec3) -> SwingInput {
     SwingInput {
@@ -120,7 +119,7 @@ fn fly_with(
     mut rider: Vec3,
     mut velocity: Vec3,
     ticks: usize,
-    config: &LockConfig,
+    config: &LockTuning,
 ) -> Vec<(Vec3, Vec3)> {
     (0..ticks)
         .map(|_| {
@@ -136,13 +135,13 @@ fn fly_with(
 /// Run the swing from a static hook at the origin for `ticks` under the default config, returning
 /// the rider's path.
 fn fly(held: &mut Held, rider: Vec3, velocity: Vec3, ticks: usize) -> Vec<(Vec3, Vec3)> {
-    fly_with(held, rider, velocity, ticks, &CONFIG)
+    fly_with(held, rider, velocity, ticks, &LOCK)
 }
 
 #[test]
 fn a_static_hook_swings_a_bounded_pendulum_that_keeps_its_energy_roughly() {
     let start = Vec3::new(5.0, 0.0, 0.0);
-    let mut held = Held::new(Vec3::ZERO, start, &CONFIG).unwrap();
+    let mut held = Held::new(Vec3::ZERO, start, &LOCK).unwrap();
     let path = fly(&mut held, start, Vec3::ZERO, 300);
     let (lowest, fastest) = path.iter().fold((0.0_f32, 0.0_f32), |(low, fast), (p, v)| {
         (low.min(p.y), fast.max(v.length()))
@@ -159,12 +158,12 @@ fn a_static_hook_swings_a_bounded_pendulum_that_keeps_its_energy_roughly() {
 fn the_take_leaves_the_velocity_alone_and_follows_the_rider_in() {
     let start = Vec3::new(20.0, 0.0, 0.0);
     let rush = Vec3::new(-12.0, 0.0, 6.0);
-    let mut held = Held::new(Vec3::ZERO, start, &CONFIG).unwrap();
+    let mut held = Held::new(Vec3::ZERO, start, &LOCK).unwrap();
     assert!(held.coasting());
     let out = swing(
         &mut held,
         input(start, rush, Vec3::ZERO, Vec3::ZERO),
-        &CONFIG,
+        &LOCK,
     )
     .unwrap();
     assert!(
@@ -179,7 +178,7 @@ fn the_take_leaves_the_velocity_alone_and_follows_the_rider_in() {
         velocity = swing(
             &mut held,
             input(rider, velocity, Vec3::ZERO, Vec3::ZERO),
-            &CONFIG,
+            &LOCK,
         )
         .unwrap()
         .velocity;
@@ -207,7 +206,7 @@ fn take(held: &mut Held, mut rider: Vec3, mut velocity: Vec3) -> (Vec3, Vec3) {
         velocity = swing(
             held,
             input(rider, velocity, Vec3::ZERO, Vec3::ZERO),
-            &CONFIG,
+            &LOCK,
         )
         .unwrap()
         .velocity;
@@ -221,7 +220,7 @@ fn the_line_goes_taut_where_the_approach_ends_with_no_jump() {
     // A rush in toward the hook with some speed across the line.
     let start = Vec3::new(20.0, 0.0, 0.0);
     let rush = Vec3::new(-6.0, 0.0, 12.0);
-    let mut held = Held::new(Vec3::ZERO, start, &CONFIG).unwrap();
+    let mut held = Held::new(Vec3::ZERO, start, &LOCK).unwrap();
     let mut rider = start;
     let mut velocity = rush;
     let mut largest_change = 0.0_f32;
@@ -229,7 +228,7 @@ fn the_line_goes_taut_where_the_approach_ends_with_no_jump() {
         let next = swing(
             &mut held,
             input(rider, velocity, Vec3::ZERO, Vec3::ZERO),
-            &CONFIG,
+            &LOCK,
         )
         .unwrap()
         .velocity;
@@ -256,17 +255,17 @@ fn a_rush_at_a_level_hook_falls_under_it_on_a_line_that_bears_the_swing() {
     // line. The coast stops no shorter than the line can swing that speed on.
     let start = Vec3::new(20.0, 0.0, 0.0);
     let rush = Vec3::new(-25.0, 0.0, 0.0);
-    let mut held = Held::new(Vec3::ZERO, start, &CONFIG).unwrap();
+    let mut held = Held::new(Vec3::ZERO, start, &LOCK).unwrap();
     let (rider, velocity) = take(&mut held, start, rush);
     assert!(rider.y < 0.0, "under the hook: {rider}");
     assert!(
-        held.rope.length_m < start.length() && held.rope.length_m >= CONFIG.min_length_m,
+        held.rope.length_m < start.length() && held.rope.length_m >= LOCK.min_length_m,
         "the line took up the approach: {}",
         held.rope.length_m
     );
     let swing_g = velocity.length_squared() / held.rope.length_m / GRAVITY_MPS2 + 1.0;
     assert!(
-        swing_g < CONFIG.max_accel_g,
+        swing_g < LOCK.max_accel_g,
         "the line bears the swing: {swing_g} g at {velocity} on {}",
         held.rope.length_m
     );
@@ -279,7 +278,7 @@ fn a_rush_at_a_level_hook_falls_under_it_on_a_line_that_bears_the_swing() {
 #[test]
 fn a_coast_that_would_reach_the_hook_stops_at_the_least_length() {
     let start = Vec3::NEG_Y * 10.0;
-    let mut held = Held::new(Vec3::ZERO, start, &CONFIG).unwrap();
+    let mut held = Held::new(Vec3::ZERO, start, &LOCK).unwrap();
     let mut rider = start;
     let mut velocity = Vec3::Y * 40.0;
     let mut nearest = f32::INFINITY;
@@ -287,7 +286,7 @@ fn a_coast_that_would_reach_the_hook_stops_at_the_least_length() {
         velocity = swing(
             &mut held,
             input(rider, velocity, Vec3::ZERO, Vec3::ZERO),
-            &CONFIG,
+            &LOCK,
         )
         .unwrap()
         .velocity;
@@ -295,7 +294,7 @@ fn a_coast_that_would_reach_the_hook_stops_at_the_least_length() {
         nearest = nearest.min(rider.length());
     }
     assert!(
-        nearest > CONFIG.min_length_m * 0.5 && rider.y < 0.0,
+        nearest > LOCK.min_length_m * 0.5 && rider.y < 0.0,
         "the coast never reaches the hook: {nearest}, {rider}"
     );
 }
@@ -307,11 +306,11 @@ fn a_rush_up_to_a_high_hook_keeps_its_way_across_the_line() {
     let direction = start.normalize();
     let across = Vec3::Z * 5.0;
     let rush = -direction * 30.0 + across;
-    let mut held = Held::new(Vec3::ZERO, start, &CONFIG).unwrap();
+    let mut held = Held::new(Vec3::ZERO, start, &LOCK).unwrap();
     let out = swing(
         &mut held,
         input(start, rush, Vec3::ZERO, Vec3::ZERO),
-        &CONFIG,
+        &LOCK,
     )
     .unwrap();
     assert!(
@@ -325,7 +324,7 @@ fn a_rush_up_to_a_high_hook_keeps_its_way_across_the_line() {
 #[test]
 fn a_rush_straight_up_under_its_hook_stops_and_hangs() {
     let start = Vec3::NEG_Y * 30.0;
-    let mut held = Held::new(Vec3::ZERO, start, &CONFIG).unwrap();
+    let mut held = Held::new(Vec3::ZERO, start, &LOCK).unwrap();
     let (_, velocity) = take(&mut held, start, Vec3::Y * 25.0);
     assert!(velocity.length() < 1.0, "no way across: {velocity}");
 }
@@ -335,8 +334,8 @@ fn a_hang_starts_at_rest_under_the_ceiling_and_lowers_the_rider_to_its_length() 
     // Arrived under a ceiling hook, rushing up into it and a little across.
     let start = Vec3::new(0.2, -0.8, 0.0);
     let rush = Vec3::new(6.0, 20.0, 0.0);
-    let mut held = Held::hang(Vec3::ZERO, start, 3.5, &CONFIG).unwrap();
-    assert!((held.rope.length_m - start.length().max(CONFIG.min_length_m)).abs() < 1e-3);
+    let mut held = Held::hang(Vec3::ZERO, start, 3.5, &LOCK).unwrap();
+    assert!((held.rope.length_m - start.length().max(LOCK.min_length_m)).abs() < 1e-3);
     let path = fly(&mut held, start, rush, 150);
     let (rider, velocity) = *path.last().unwrap();
     assert!(
@@ -358,7 +357,7 @@ fn a_hang_starts_at_rest_under_the_ceiling_and_lowers_the_rider_to_its_length() 
 #[test]
 fn a_hang_taken_far_out_is_reeled_in_to_its_length() {
     let start = Vec3::new(3.0, -9.0, 0.0);
-    let mut held = Held::hang(Vec3::ZERO, start, 3.5, &CONFIG).unwrap();
+    let mut held = Held::hang(Vec3::ZERO, start, 3.5, &LOCK).unwrap();
     fly(&mut held, start, Vec3::ZERO, 300);
     assert!(
         (held.rope.length_m - 3.5).abs() < 1e-3,
@@ -371,7 +370,7 @@ fn a_hang_taken_far_out_is_reeled_in_to_its_length() {
 fn a_hang_under_a_moving_hook_stops_swinging_across_the_line() {
     // Under a helicopter flying along +X, swinging across its path.
     let hook_velocity = Vec3::X * 10.0;
-    let mut held = Held::hang(Vec3::ZERO, Vec3::NEG_Y * 3.5, 3.5, &CONFIG).unwrap();
+    let mut held = Held::hang(Vec3::ZERO, Vec3::NEG_Y * 3.5, 3.5, &LOCK).unwrap();
     let mut hook = Vec3::ZERO;
     let mut rider = Vec3::NEG_Y * 3.5;
     let mut velocity = hook_velocity + Vec3::Z * 4.0;
@@ -379,7 +378,7 @@ fn a_hang_under_a_moving_hook_stops_swinging_across_the_line() {
         velocity = swing(
             &mut held,
             input(rider, velocity, hook, hook_velocity),
-            &CONFIG,
+            &LOCK,
         )
         .unwrap()
         .velocity;
@@ -393,8 +392,8 @@ fn a_hang_under_a_moving_hook_stops_swinging_across_the_line() {
 #[test]
 fn taking_line_in_stops_a_hangs_pay_out() {
     let start = Vec3::NEG_Y * 2.0;
-    let mut held = Held::hang(Vec3::ZERO, start, 3.5, &CONFIG).unwrap();
-    held.take_in(0.1, DT, &CONFIG);
+    let mut held = Held::hang(Vec3::ZERO, start, 3.5, &LOCK).unwrap();
+    held.take_in(0.1, DT, &LOCK);
     let before = held.rope.length_m;
     fly(&mut held, start, Vec3::ZERO, 30);
     assert!(
@@ -411,12 +410,12 @@ fn a_tangential_swing_velocity_survives_the_next_lock() {
     // does not stop at the join.
     let rider = Vec3::NEG_Y * 5.0;
     let exit = Vec3::X * 6.0;
-    let mut next = Held::new(Vec3::ZERO, rider, &CONFIG).unwrap();
+    let mut next = Held::new(Vec3::ZERO, rider, &LOCK).unwrap();
     assert!(next.coasting());
     let out = swing(
         &mut next,
         input(rider, exit, Vec3::ZERO, Vec3::ZERO),
-        &CONFIG,
+        &LOCK,
     )
     .unwrap();
     let direction = rider.normalize();
@@ -427,17 +426,17 @@ fn a_tangential_swing_velocity_survives_the_next_lock() {
 #[test]
 fn a_mid_swing_release_hands_on_the_swings_whole_velocity() {
     let start = Vec3::X * 5.0;
-    let mut held = Held::new(Vec3::ZERO, start, &CONFIG).unwrap();
+    let mut held = Held::new(Vec3::ZERO, start, &LOCK).unwrap();
     let path = fly(&mut held, start, Vec3::ZERO, 30);
     let (rider, exit) = *path.last().unwrap();
     assert!(exit.length() > 1.0, "the swing carries speed: {exit}");
     // The captured velocity is the character's whole motion, gravity included: the next tick of
     // the same swing at the same position continues from it.
-    let mut again = Held::new(Vec3::ZERO, rider, &CONFIG).unwrap();
+    let mut again = Held::new(Vec3::ZERO, rider, &LOCK).unwrap();
     let out = swing(
         &mut again,
         input(rider, exit, Vec3::ZERO, Vec3::ZERO),
-        &CONFIG,
+        &LOCK,
     )
     .unwrap();
     assert!(out.velocity.is_finite());
@@ -453,9 +452,9 @@ fn a_hook_on_a_moving_target_keeps_the_rider_at_its_offset() {
     let mut hook = Vec3::new(0.0, 50.0, 0.0);
     let mut rider = hook - Vec3::Y * 6.0;
     let mut velocity = carried;
-    let mut held = Held::new(hook, rider, &CONFIG).unwrap();
+    let mut held = Held::new(hook, rider, &LOCK).unwrap();
     for _ in 0..150 {
-        velocity = swing(&mut held, input(rider, velocity, hook, carried), &CONFIG)
+        velocity = swing(&mut held, input(rider, velocity, hook, carried), &LOCK)
             .unwrap()
             .velocity;
         rider += velocity * DT;
@@ -470,21 +469,21 @@ fn a_hook_on_a_moving_target_keeps_the_rider_at_its_offset() {
 #[test]
 fn arm_take_in_adds_pull_velocity_without_losing_the_tangent() {
     let rider = Vec3::NEG_Y * 4.0;
-    let mut held = Held::new(Vec3::ZERO, rider, &CONFIG).unwrap();
-    held.take_in(0.05, DT, &CONFIG);
+    let mut held = Held::new(Vec3::ZERO, rider, &LOCK).unwrap();
+    held.take_in(0.05, DT, &LOCK);
     let mut stationary = held;
-    stationary.take_in(0.0, DT, &CONFIG);
+    stationary.take_in(0.0, DT, &LOCK);
     let before = Vec3::X * 5.0;
     let moving = swing(
         &mut held,
         input(rider, before, Vec3::ZERO, Vec3::ZERO),
-        &CONFIG,
+        &LOCK,
     )
     .unwrap();
     let still = swing(
         &mut stationary,
         input(rider, before, Vec3::ZERO, Vec3::ZERO),
-        &CONFIG,
+        &LOCK,
     )
     .unwrap();
     assert!(moving.velocity.y > still.velocity.y);
@@ -496,7 +495,7 @@ fn arm_take_in_adds_pull_velocity_without_losing_the_tangent() {
 
 #[test]
 fn the_target_feels_the_equal_and_opposite_pull() {
-    let mut held = Held::new(Vec3::ZERO, Vec3::Y * -4.0, &CONFIG).unwrap();
+    let mut held = Held::new(Vec3::ZERO, Vec3::Y * -4.0, &LOCK).unwrap();
     let before = Vec3::new(0.0, -3.0, 0.0);
     let out = swing(
         &mut held,
@@ -504,7 +503,7 @@ fn the_target_feels_the_equal_and_opposite_pull() {
             target_inverse_mass: 1.0 / 1500.0,
             ..input(Vec3::Y * -4.1, before, Vec3::ZERO, Vec3::ZERO)
         },
-        &CONFIG,
+        &LOCK,
     )
     .unwrap();
     let gravity = Vec3::Y * -GRAVITY_MPS2 * DT;
@@ -519,25 +518,25 @@ fn the_target_feels_the_equal_and_opposite_pull() {
 
 #[test]
 fn the_tension_is_capped_at_the_lines_strength() {
-    let mut held = Held::new(Vec3::ZERO, Vec3::X * 4.0, &CONFIG).unwrap();
+    let mut held = Held::new(Vec3::ZERO, Vec3::X * 4.0, &LOCK).unwrap();
     let out = swing(
         &mut held,
         input(Vec3::X * 6.0, Vec3::X * 30.0, Vec3::ZERO, Vec3::ZERO),
-        &CONFIG,
+        &LOCK,
     )
     .unwrap();
     assert_eq!(out.tension_n, out.max_tension_n);
-    assert!((out.max_tension_n - CONFIG.max_accel_g * GRAVITY_MPS2 * MASS).abs() < 1e-2);
+    assert!((out.max_tension_n - LOCK.max_accel_g * GRAVITY_MPS2 * MASS).abs() < 1e-2);
 }
 
 #[test]
 fn an_overstretched_line_breaks() {
-    let mut held = Held::new(Vec3::ZERO, Vec3::X * 4.0, &CONFIG).unwrap();
+    let mut held = Held::new(Vec3::ZERO, Vec3::X * 4.0, &LOCK).unwrap();
     assert_eq!(
         swing(
             &mut held,
             input(Vec3::X * 7.5, Vec3::ZERO, Vec3::ZERO, Vec3::ZERO),
-            &CONFIG,
+            &LOCK,
         ),
         Err(RopeFault::Stretched)
     );
@@ -545,16 +544,16 @@ fn an_overstretched_line_breaks() {
 
 #[test]
 fn the_line_is_never_held_shorter_than_its_least_length() {
-    let held = Held::new(Vec3::ZERO, Vec3::X * 0.5, &CONFIG).unwrap();
-    assert_eq!(held.rope.length_m, CONFIG.min_length_m);
-    let mut held = Held::new(Vec3::ZERO, Vec3::X * 3.0, &CONFIG).unwrap();
-    held.take_in(1.0, DT, &CONFIG);
+    let held = Held::new(Vec3::ZERO, Vec3::X * 0.5, &LOCK).unwrap();
+    assert_eq!(held.rope.length_m, LOCK.min_length_m);
+    let mut held = Held::new(Vec3::ZERO, Vec3::X * 3.0, &LOCK).unwrap();
+    held.take_in(1.0, DT, &LOCK);
     assert!((held.rope.length_m - 2.0).abs() < 1e-6);
-    held.take_in(5.0, DT, &CONFIG);
-    assert_eq!(held.rope.length_m, CONFIG.min_length_m);
-    held.take_in(f32::NAN, DT, &CONFIG);
-    held.take_in(-2.0, DT, &CONFIG);
-    assert_eq!(held.rope.length_m, CONFIG.min_length_m);
+    held.take_in(5.0, DT, &LOCK);
+    assert_eq!(held.rope.length_m, LOCK.min_length_m);
+    held.take_in(f32::NAN, DT, &LOCK);
+    held.take_in(-2.0, DT, &LOCK);
+    assert_eq!(held.rope.length_m, LOCK.min_length_m);
 }
 
 #[test]
@@ -625,14 +624,14 @@ fn the_free_hand_takes_line_in_by_its_pull_along_the_line_and_starts_afresh_at_e
 
 #[test]
 fn bad_samples_are_refused() {
-    let mut held = Held::new(Vec3::ZERO, Vec3::X * 4.0, &CONFIG).unwrap();
+    let mut held = Held::new(Vec3::ZERO, Vec3::X * 4.0, &LOCK).unwrap();
     let mut bad = input(Vec3::X * 4.0, Vec3::ZERO, Vec3::ZERO, Vec3::ZERO);
     bad.rider_mass_kg = 0.0;
-    assert_eq!(swing(&mut held, bad, &CONFIG), Err(RopeFault::Invalid));
+    assert_eq!(swing(&mut held, bad, &LOCK), Err(RopeFault::Invalid));
     bad.rider_mass_kg = MASS;
     bad.hook = Vec3::NAN;
-    assert_eq!(swing(&mut held, bad, &CONFIG), Err(RopeFault::Invalid));
-    assert!(Held::new(Vec3::NAN, Vec3::ZERO, &CONFIG).is_none());
+    assert_eq!(swing(&mut held, bad, &LOCK), Err(RopeFault::Invalid));
+    assert!(Held::new(Vec3::NAN, Vec3::ZERO, &LOCK).is_none());
 }
 
 #[test]
@@ -670,21 +669,21 @@ fn no_rush_onto_the_lock_breaks_the_line_in_the_swing_after_it() {
         (Vec3::new(10.0, -25.0, 0.0), Vec3::new(-10.0, 25.0, 0.0)),
         (Vec3::new(30.0, 5.0, 10.0), Vec3::new(-30.0, -2.0, -8.0)),
     ] {
-        let mut held = Held::new(Vec3::ZERO, start, &CONFIG).unwrap();
+        let mut held = Held::new(Vec3::ZERO, start, &LOCK).unwrap();
         let mut rider = start;
         let mut velocity = rush;
         for tick in 0..600 {
             velocity = swing(
                 &mut held,
                 input(rider, velocity, Vec3::ZERO, Vec3::ZERO),
-                &CONFIG,
+                &LOCK,
             )
             .unwrap_or_else(|fault| panic!("{start} at {rush}: {fault:?} on tick {tick}"))
             .velocity;
             rider += velocity * DT;
         }
         assert!(
-            rider.length() < held.rope.length_m + CONFIG.break_stretch_m,
+            rider.length() < held.rope.length_m + LOCK.break_stretch_m,
             "{start} at {rush}: the line holds"
         );
     }

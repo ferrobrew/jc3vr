@@ -28,7 +28,6 @@ use jc3vr_body::controllers::{
     overlay::config::OverlayConfig, roomscale::config::RoomscaleConfig, scheme,
 };
 use jc3vr_core::config::engine::ConfigSlot;
-use jc3vr_grapple::grapple::physical::PhysicalGrappleConfig;
 use jc3vr_input::frame::Hand;
 use jc3vr_physical::controllers::{glass::GlassConfig, physical_hands::PhysicalHandsConfig};
 use jc3vr_vehicles::controllers::vehicles::config::VehiclesConfig;
@@ -76,9 +75,6 @@ pub struct ControllersConfig {
     pub vehicles: VehiclesConfig,
     /// The palms' collision with the world.
     pub physical_hands: PhysicalHandsConfig,
-    /// The physical grapple: the reel, the tether retract, and the hang swing worked by the grapple
-    /// hand.
-    pub grapple: PhysicalGrappleConfig,
     /// Controller vibration: the master switch and strength, the category switches, and the
     /// game's rumble.
     pub haptics: HapticsConfig,
@@ -113,7 +109,6 @@ impl ControllersConfig {
             roomscale: RoomscaleConfig::new(),
             vehicles: VehiclesConfig::new(),
             physical_hands: PhysicalHandsConfig::new(),
-            grapple: PhysicalGrappleConfig::new(),
             haptics: HapticsConfig::new(),
             glass: GlassConfig::new(),
         }

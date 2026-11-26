@@ -64,10 +64,10 @@ pub const fn bails_by_parachute(seat: VehicleSeat, mounted_gun: bool) -> bool {
 /// Whether the seat's stunt act would put Rico in a stunt position that holds him inverted, which
 /// the player's body cannot match: a helicopter's, whose stunt position is the hang under the
 /// airframe (the driver's and the passengers' stunt states lead into the stunt hang, whose states
-/// are the grapple's upside-down ones). `upright` is the grapple lock's hang switch, the switch
-/// that keeps the player out of the inverted hangs.
-pub(crate) fn stunt_hangs_inverted(mode: Mode, upright: bool) -> bool {
-    upright && matches!(mode, Mode::Vehicle(seat) if seat.class == VehicleClass::Helicopter)
+/// are the grapple's upside-down ones). The grapple lock's hang keeps the player out of the
+/// inverted hangs elsewhere.
+pub(crate) fn stunt_hangs_inverted(mode: Mode) -> bool {
+    matches!(mode, Mode::Vehicle(seat) if seat.class == VehicleClass::Helicopter)
 }
 
 /// Whether the local seated character's live body state can take the vehicle stunt act.
@@ -181,15 +181,14 @@ mod tests {
                 class: VehicleClass::Helicopter,
                 driver,
             });
-            assert!(stunt_hangs_inverted(heli, true));
-            assert!(!stunt_hangs_inverted(heli, false));
+            assert!(stunt_hangs_inverted(heli));
         }
         for class in [VehicleClass::Car, VehicleClass::Plane, VehicleClass::Sea] {
             let seat = Mode::Vehicle(VehicleSeat {
                 class,
                 driver: true,
             });
-            assert!(!stunt_hangs_inverted(seat, true));
+            assert!(!stunt_hangs_inverted(seat));
         }
     }
 

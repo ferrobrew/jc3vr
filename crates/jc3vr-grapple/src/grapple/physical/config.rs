@@ -1,56 +1,9 @@
-//! The physical grapple's settings, held at `controllers.grapple` ([`GRAPPLE_CONFIG`]), and its
-//! fixed tuning. Every part acts only under the controller scheme with a tracked grapple hand, so each
-//! defaults on.
+//! The physical grapple's fixed tuning. Every part acts only under the controller scheme with a
+//! tracked grapple hand, so none has a switch.
 
-use jc3vr_core::config::engine::ConfigSlot;
-use serde::{Deserialize, Serialize};
-
-/// The physical grapple's settings, at `controllers.grapple` in the settings file; the payload
-/// binds the slot at startup.
-pub static GRAPPLE_CONFIG: ConfigSlot<PhysicalGrappleConfig> =
-    ConfigSlot::new("controllers.grapple");
-
-/// The physical grapple's switches.
-#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct PhysicalGrappleConfig {
-    /// Scale the reel's speed and acceleration by the grapple hand's pull, and boost the reel on a
-    /// yank during it; and retract the tethers while the grapple hand pulls back, on foot or
-    /// falling, with tethers attached and no line of the grapple's own.
-    pub pull_to_reel: bool,
-    /// Pump a hanging character's swing by the grapple hand's motion, on top of the hold of
-    /// [`AnchorConfig::enabled`](jc3vr_body::controllers::hands::anchor::AnchorConfig::enabled).
-    pub pump: bool,
-    /// The lock: holding the grapple button during the reel holds the line's length to swing from
-    /// ([`crate::grapple::physical::lock`]).
-    pub lock: LockConfig,
-    /// The seat grapple: the grapple button fires the hook from a vehicle seat and tethers what it
-    /// hits to the vehicle ([`crate::grapple::seat`]).
-    pub seat: bool,
-    /// The free hand takes hold of a held lock's or a swinging snatch's line ahead of the grapple
-    /// hand, to take line in by pulling it and to swing a snatched target by it
-    /// ([`crate::grapple::line_grab`]).
-    pub free_hand_line: bool,
-}
-
-impl PhysicalGrappleConfig {
-    pub const fn new() -> Self {
-        Self {
-            pull_to_reel: true,
-            pump: true,
-            lock: LockConfig::new(),
-            seat: true,
-            free_hand_line: true,
-        }
-    }
-}
-
-/// The lock's switch and tuning ([`crate::grapple::physical::lock`]).
-#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct LockConfig {
-    /// Whether a press of the grapple button during the reel locks the line.
-    pub enabled: bool,
+/// The lock's tuning ([`crate::grapple::physical::lock`]).
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct LockTuning {
     /// The line's pull per metre it is stretched past its held length, per second squared, for
     /// the character and the target's reduced mass.
     pub stiffness_per_s2: f32,
@@ -66,47 +19,27 @@ pub struct LockConfig {
     pub min_length_m: f32,
     /// The share of the line's pull the target feels back, `0..=1`.
     pub reaction: f32,
-    /// Whether a reel that would end in the game's upside-down ceiling attach hangs the character
-    /// below the hook on a held line instead.
-    pub hang: bool,
     /// The hang's line, from the hook to the character's root, metres: about a metre and a half of
     /// line above the raised grapple hand.
     pub hang_length_m: f32,
 }
 
-impl LockConfig {
-    pub const fn new() -> Self {
-        Self {
-            enabled: true,
-            stiffness_per_s2: 65.0,
-            damping_per_s: 11.0,
-            max_accel_g: 4.0,
-            break_stretch_m: 3.0,
-            reel_in_mps: 3.0,
-            min_length_m: 1.5,
-            reaction: 1.0,
-            hang: true,
-            hang_length_m: 3.5,
-        }
-    }
-}
+/// The lock's tuning.
+pub const LOCK: LockTuning = LockTuning {
+    stiffness_per_s2: 65.0,
+    damping_per_s: 11.0,
+    max_accel_g: 4.0,
+    break_stretch_m: 3.0,
+    reel_in_mps: 3.0,
+    min_length_m: 1.5,
+    reaction: 1.0,
+    hang_length_m: 3.5,
+};
 
-impl Default for LockConfig {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl Default for PhysicalGrappleConfig {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// The physical grapple's tuning with the default switches.
+/// The physical grapple's tuning.
 pub const GRAPPLE: PhysicalGrappleTuning = PhysicalGrappleTuning::new();
 
-/// The physical grapple's fixed tuning, with the switches it takes from [`PhysicalGrappleConfig`].
+/// The physical grapple's fixed tuning.
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct PhysicalGrappleTuning {
     /// How the grapple hand's pull is measured, for the reel and the tether retract.
@@ -126,25 +59,6 @@ impl PhysicalGrappleTuning {
             reel: ReelPullTuning::new(),
             tether: TetherTuning::new(),
             swing: SwingTuning::new(),
-        }
-    }
-
-    /// The fixed tuning with the switches `config` sets.
-    pub const fn of(config: &PhysicalGrappleConfig) -> Self {
-        Self {
-            reel: ReelPullTuning {
-                enabled: config.pull_to_reel,
-                ..GRAPPLE.reel
-            },
-            tether: TetherTuning {
-                enabled: config.pull_to_reel,
-                ..GRAPPLE.tether
-            },
-            swing: SwingTuning {
-                pump: config.pump,
-                ..GRAPPLE.swing
-            },
-            ..GRAPPLE
         }
     }
 }
@@ -174,8 +88,6 @@ impl PullTuning {
 /// The reel by pulling ([`crate::grapple::physical::reel`]).
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct ReelPullTuning {
-    /// [`PhysicalGrappleConfig::pull_to_reel`].
-    pub enabled: bool,
     /// The reel's scale with no pull.
     pub min_scale: f32,
     /// The reel's scale at a pull of [`full_speed_mps`](Self::full_speed_mps) or faster.
@@ -192,7 +104,6 @@ pub struct ReelPullTuning {
 impl ReelPullTuning {
     const fn new() -> Self {
         Self {
-            enabled: true,
             min_scale: 1.0,
             max_scale: 1.5,
             full_speed_mps: 2.5,
@@ -205,8 +116,6 @@ impl ReelPullTuning {
 /// The tether retract by pulling ([`crate::grapple::physical::tether`]).
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct TetherTuning {
-    /// [`PhysicalGrappleConfig::pull_to_reel`].
-    pub enabled: bool,
     /// The pull below which nothing retracts, metres.
     pub deadzone_m: f32,
     /// The pull that retracts at full strength, metres.
@@ -216,7 +125,6 @@ pub struct TetherTuning {
 impl TetherTuning {
     const fn new() -> Self {
         Self {
-            enabled: true,
             deadzone_m: 0.08,
             full_m: 0.35,
         }
@@ -226,8 +134,6 @@ impl TetherTuning {
 /// The hang swing's pump ([`crate::grapple::physical::swing`]).
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct SwingTuning {
-    /// [`PhysicalGrappleConfig::pump`].
-    pub pump: bool,
     /// The hand speed below which the hand does not pump, metres per second.
     pub deadzone_mps: f32,
     /// The hand speed that pumps at full strength, metres per second.
@@ -245,7 +151,6 @@ pub struct SwingTuning {
 impl SwingTuning {
     const fn new() -> Self {
         Self {
-            pump: true,
             deadzone_mps: 0.3,
             full_mps: 1.5,
             scale: 1.5,
