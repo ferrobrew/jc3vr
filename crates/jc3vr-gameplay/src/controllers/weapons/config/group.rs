@@ -1,22 +1,24 @@
 //! Physical weapon handling's settings.
 
+use jc3vr_core::config::engine::ConfigSlot;
 use serde::{Deserialize, Serialize};
 
-use crate::controllers::{
-    snatch::SnatchConfig,
-    weapons::{
-        ads::config::AdsConfig,
-        collide::config::CollideConfig,
-        config::{
-            C4Config, ForegripConfig, GrenadeConfig, HeftConfig, HoldConfig, HolstersConfig,
-            PouchesConfig, RecoilConfig,
-        },
-        inventory::config::InventoryConfig,
-        regions::config::RegionsConfig,
-        reload::config::ReloadConfig,
-        wheel::config::WheelConfig,
+use crate::controllers::weapons::{
+    ads::config::AdsConfig,
+    collide::config::CollideConfig,
+    config::{
+        C4Config, ForegripConfig, GrenadeConfig, HeftConfig, HoldConfig, HolstersConfig,
+        PouchesConfig, RecoilConfig, SnatchConfig,
     },
+    inventory::config::InventoryConfig,
+    regions::config::RegionsConfig,
+    reload::config::ReloadConfig,
+    wheel::config::WheelConfig,
 };
+
+/// The weapon-handling settings, at `controllers.weapons` in the settings file; the payload binds
+/// the slot at startup.
+pub static WEAPONS_CONFIG: ConfigSlot<WeaponsConfig> = ConfigSlot::new("controllers.weapons");
 
 /// Physical weapon handling. Acts only under the controller scheme.
 #[derive(Copy, Clone, Serialize, Deserialize)]
@@ -26,8 +28,7 @@ pub struct WeaponsConfig {
     pub holsters: HolstersConfig,
     /// The pouches on the front of the body: the magazines, the grenades, and the C4.
     pub pouches: PouchesConfig,
-    /// Let the off-hand grab a two-handed weapon's foregrip, which then sets the weapon's
-    /// direction.
+    /// Let the off-hand grab a two-handed weapon's foregrip, which then sets the weapon's direction.
     pub foregrip: ForegripConfig,
     /// The recoil offset between the controller and the rendered weapon.
     pub recoil: RecoilConfig,

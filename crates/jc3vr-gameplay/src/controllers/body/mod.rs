@@ -46,6 +46,7 @@
 //! with [`save`].
 
 pub mod calibration;
+pub mod config;
 pub mod estimator;
 pub mod firm_ragdoll;
 pub mod ik_body;

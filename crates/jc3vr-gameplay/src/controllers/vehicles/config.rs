@@ -2,7 +2,12 @@
 //! [`ControllersConfig::vehicles`](crate::controllers::config::ControllersConfig::vehicles). The
 //! physical controls' fixed placement and tuning are [`crate::controllers::vehicles::tuning`]'s.
 
+use jc3vr_core::config::engine::ConfigSlot;
 use serde::{Deserialize, Serialize};
+
+/// The vehicle, mounted gun, wingsuit, and parachute settings, at `controllers.vehicles` in the
+/// settings file; the payload binds the slot at startup.
+pub static VEHICLES_CONFIG: ConfigSlot<VehiclesConfig> = ConfigSlot::new("controllers.vehicles");
 
 /// Vehicles, mounted guns, the wingsuit, and the parachute. Stick bindings always work; the
 /// physical controls, the arm steering, and the parachute handles are additional and, as part of

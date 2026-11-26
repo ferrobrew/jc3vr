@@ -48,11 +48,26 @@ use toml::Table;
 
 use crate::{
     controllers::{
-        aim::WORLD_MARKERS_ENABLED,
-        body::{BODY_CONFIG, BodyDimensions},
+        aim::{WORLD_MARKERS_ENABLED, config::AIM_CONFIG},
+        aim_state::AIM_STATE_CONFIG,
+        bindings::config::BINDINGS_CONFIG,
+        body::{BODY_CONFIG, BodyDimensions, config::BODY_REMAP_CONFIG},
         config::{CONTROLLERS_CONFIG, ControllersConfig},
+        fingers::config::FINGERS_CONFIG,
+        glass::config::GLASS_CONFIG,
+        hands::config::HANDS_CONFIG,
+        haptics::config::HAPTICS_CONFIG,
+        locomotion::config::LOCOMOTION_CONFIG,
+        overlay::config::OVERLAY_CONFIG,
+        physical_hands::config::PHYSICAL_HANDS_CONFIG,
+        roomscale::config::ROOMSCALE_CONFIG,
         scheme,
+        snatch::config::SNATCH_CONFIG,
+        summary::config::SUMMARY_CONFIG,
+        vehicles::config::VEHICLES_CONFIG,
+        weapons::config::WEAPONS_CONFIG,
     },
+    grapple::physical::config::GRAPPLE_CONFIG,
     hooks::{
         character::config::{BODY_IK_CONFIG, BodyIkConfig},
         input::config::{MOVEMENT_CONFIG, MovementConfig},
@@ -66,6 +81,24 @@ fn register() {
     MOVEMENT_CONFIG.bind(projection!(TestRoot, movement));
     BODY_IK_CONFIG.bind(projection!(TestRoot, body_ik));
     scheme::CONTROLLERS_ENABLED.bind(projection!(TestRoot, controllers.enabled));
+    scheme::DOMINANT_HAND.bind(projection!(TestRoot, controllers.dominant_hand));
+    LOCOMOTION_CONFIG.bind(projection!(TestRoot, controllers.locomotion));
+    BINDINGS_CONFIG.bind(projection!(TestRoot, controllers.bindings));
+    AIM_STATE_CONFIG.bind(projection!(TestRoot, controllers.aim_state));
+    HANDS_CONFIG.bind(projection!(TestRoot, controllers.hands));
+    AIM_CONFIG.bind(projection!(TestRoot, controllers.aim));
+    OVERLAY_CONFIG.bind(projection!(TestRoot, controllers.overlay));
+    WEAPONS_CONFIG.bind(projection!(TestRoot, controllers.weapons));
+    SNATCH_CONFIG.bind(projection!(TestRoot, controllers.weapons.snatch));
+    BODY_REMAP_CONFIG.bind(projection!(TestRoot, controllers.body));
+    ROOMSCALE_CONFIG.bind(projection!(TestRoot, controllers.roomscale));
+    VEHICLES_CONFIG.bind(projection!(TestRoot, controllers.vehicles));
+    FINGERS_CONFIG.bind(projection!(TestRoot, controllers.fingers));
+    PHYSICAL_HANDS_CONFIG.bind(projection!(TestRoot, controllers.physical_hands));
+    SUMMARY_CONFIG.bind(projection!(TestRoot, controllers.summary));
+    GRAPPLE_CONFIG.bind(projection!(TestRoot, controllers.grapple));
+    HAPTICS_CONFIG.bind(projection!(TestRoot, controllers.haptics));
+    GLASS_CONFIG.bind(projection!(TestRoot, controllers.glass));
     WORLD_MARKERS_ENABLED.bind(projection!(TestRoot, hud.world_markers.enabled));
     STEREO_CONFIG.bind(projection!(TestRoot, stereo));
     EXPOSURE_CONFIG.bind(projection!(TestRoot, exposure));

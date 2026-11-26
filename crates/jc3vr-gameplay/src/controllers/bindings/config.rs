@@ -1,58 +1,15 @@
-//! On-foot stick locomotion, and the raw input interpretation and controller-to-game bindings that
-//! drive it.
+//! The controller-to-game bindings' settings.
 
 use std::time::Duration;
 
+use jc3vr_core::config::engine::ConfigSlot;
 use serde::{Deserialize, Serialize};
 
-use crate::controllers::{
-    bindings::{policy_a::PolicyAConfig, yank::GrappleYankConfig},
-    locomotion::config::{ActFilterConfig, StableViewConfig, StickConfig, SwimStrokeConfig},
-};
+use crate::controllers::bindings::{policy_a::PolicyAConfig, yank::GrappleYankConfig};
 
-/// On-foot stick locomotion. Turning is configured in `headpose.vr_turn` (see the module docs).
-#[derive(Copy, Clone, Serialize, Deserialize)]
-#[serde(default)]
-pub struct LocomotionConfig {
-    /// The frame the off-hand stick's direction is relative to.
-    pub direction: LocomotionDirection,
-    /// The stick's velocity, with fixed acceleration.
-    pub stick: StickConfig,
-    /// The filter that keeps the turning animations off the body.
-    pub acts: ActFilterConfig,
-    /// The on-foot view anchored to Rico's root rather than his animated head.
-    pub view: StableViewConfig,
-    /// Swimming by the arms.
-    pub strokes: SwimStrokeConfig,
-}
-
-impl LocomotionConfig {
-    pub const fn new() -> Self {
-        Self {
-            direction: LocomotionDirection::Head,
-            stick: StickConfig::new(),
-            acts: ActFilterConfig::new(),
-            view: StableViewConfig::new(),
-            strokes: SwimStrokeConfig::new(),
-        }
-    }
-}
-
-impl Default for LocomotionConfig {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// The frame the locomotion stick's direction is relative to.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
-pub enum LocomotionDirection {
-    /// Forward is where the head faces (yaw only).
-    #[default]
-    Head,
-    /// Forward is where the off-hand controller points (yaw only).
-    OffHand,
-}
+/// The controller-to-game bindings' settings, at `controllers.bindings` in the settings file; the
+/// payload binds the slot at startup.
+pub static BINDINGS_CONFIG: ConfigSlot<BindingsConfig> = ConfigSlot::new("controllers.bindings");
 
 /// The controller-to-game bindings (see [`crate::controllers::bindings`]). They inject only under
 /// the controller scheme while a controller is active, so they default on.

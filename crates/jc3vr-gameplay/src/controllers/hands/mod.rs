@@ -39,6 +39,7 @@ use crate::controllers::{
 };
 
 pub mod anchor;
+pub mod config;
 pub mod grip;
 pub mod held;
 pub mod ik;

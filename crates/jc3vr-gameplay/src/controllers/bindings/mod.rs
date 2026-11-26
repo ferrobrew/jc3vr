@@ -43,6 +43,7 @@
 pub(crate) mod bail;
 mod buttons;
 mod capture_wait;
+pub mod config;
 pub mod controls;
 mod flight;
 pub mod grapple_button;

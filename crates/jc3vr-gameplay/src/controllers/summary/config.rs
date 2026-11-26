@@ -2,7 +2,12 @@
 //! game's own button hints), and the glance and wrist placement parameter types.
 
 use glam::Vec3;
+use jc3vr_core::config::engine::ConfigSlot;
 use serde::{Deserialize, Serialize};
+
+/// The controls summary's settings, at `controllers.summary` in the settings file; the payload
+/// binds the slot at startup.
+pub static SUMMARY_CONFIG: ConfigSlot<SummaryConfig> = ConfigSlot::new("controllers.summary");
 
 /// The controls summary and the game's own button hints under the controller scheme. Both act only
 /// under the controller scheme, so both default on.

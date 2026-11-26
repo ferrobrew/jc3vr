@@ -1,11 +1,16 @@
 //! Body scale remapping between the player's body and the character's.
 
+use jc3vr_core::config::engine::ConfigSlot;
 use serde::{Deserialize, Serialize};
 
 use crate::controllers::body::{
     estimator::EstimatorConfig, ik_body::IkBodyConfig, procedural::config::ProceduralBodyConfig,
     rig::RigConfig, unarmed::UnarmedBodyConfig,
 };
+
+/// The body remap settings, at `controllers.body` in the settings file; the payload binds the slot
+/// at startup.
+pub static BODY_REMAP_CONFIG: ConfigSlot<BodyRemapConfig> = ConfigSlot::new("controllers.body");
 
 /// Body scale remapping between the player's body and the character's (see
 /// [`crate::controllers::body`]).

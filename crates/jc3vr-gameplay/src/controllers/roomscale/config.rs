@@ -3,7 +3,12 @@
 //! fixed in their modules under [`crate::controllers::roomscale`]. The chase that walks the body
 //! after the head is the rig's ([`crate::controllers::body::rig::config::ChaseConfig`]).
 
+use jc3vr_core::config::engine::ConfigSlot;
 use serde::{Deserialize, Serialize};
+
+/// The posture and roomscale settings, at `controllers.roomscale` in the settings file; the payload
+/// binds the slot at startup.
+pub static ROOMSCALE_CONFIG: ConfigSlot<RoomscaleConfig> = ConfigSlot::new("controllers.roomscale");
 
 /// Posture and roomscale locomotion (see [`crate::controllers::roomscale`]). These act on the
 /// headset alone, controllers or not, and default on as part of the full gameplay preset. The head

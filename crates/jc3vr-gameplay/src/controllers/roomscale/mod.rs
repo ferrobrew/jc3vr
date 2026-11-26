@@ -24,6 +24,7 @@
 //!
 //! [`BodyRemapConfig::remap_head`]: crate::controllers::config::BodyRemapConfig::remap_head
 
+pub mod config;
 pub mod crouch;
 pub mod fade;
 pub mod posture;

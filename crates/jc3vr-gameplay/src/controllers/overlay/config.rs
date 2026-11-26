@@ -1,6 +1,11 @@
 //! The world-space overlay layer: its readouts and the renderer's tuning.
 
+use jc3vr_core::config::engine::ConfigSlot;
 use serde::{Deserialize, Serialize};
+
+/// The world-space overlay layer's settings, at `controllers.overlay` in the settings file; the
+/// payload binds the slot at startup.
+pub static OVERLAY_CONFIG: ConfigSlot<OverlayConfig> = ConfigSlot::new("controllers.overlay");
 
 /// The world-space overlay layer: its readouts and the renderer's tuning. Acts only under the
 /// controller scheme.

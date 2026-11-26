@@ -1,7 +1,12 @@
 //! The haptics settings: the master switch and strength, and the game's rumble.
 
+use jc3vr_core::config::engine::ConfigSlot;
 use jc3vr_input::haptics::cues::Category;
 use serde::{Deserialize, Serialize};
+
+/// The controller vibration settings, at `controllers.haptics` in the settings file; the payload
+/// binds the slot at startup.
+pub static HAPTICS_CONFIG: ConfigSlot<HapticsConfig> = ConfigSlot::new("controllers.haptics");
 
 /// Controller vibration (see [`crate::controllers::haptics`]), as `controllers.haptics`. The
 /// primitives' shapes are fixed at [`VOCABULARY`](jc3vr_input::haptics::vocabulary::VOCABULARY)

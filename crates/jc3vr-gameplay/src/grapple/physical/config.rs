@@ -3,7 +3,13 @@
 //! tuning. Every part acts only under the controller scheme with a tracked grapple hand, so each
 //! defaults on.
 
+use jc3vr_core::config::engine::ConfigSlot;
 use serde::{Deserialize, Serialize};
+
+/// The physical grapple's settings, at `controllers.grapple` in the settings file; the payload
+/// binds the slot at startup.
+pub static GRAPPLE_CONFIG: ConfigSlot<PhysicalGrappleConfig> =
+    ConfigSlot::new("controllers.grapple");
 
 /// The physical grapple's switches.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]

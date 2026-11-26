@@ -1,5 +1,6 @@
 //! The physical hands' settings.
 
+use jc3vr_core::config::engine::ConfigSlot;
 use serde::{Deserialize, Serialize};
 
 use crate::controllers::physical_hands::{
@@ -7,6 +8,11 @@ use crate::controllers::physical_hands::{
     doors::DoorsConfig, grab_view::GrabViewConfig, physics::HandBodiesConfig,
     sounds::ImpactSoundsConfig, stunt::StuntConfig, vault::VaultConfig,
 };
+
+/// The physical hands' settings, at `controllers.physical_hands` in the settings file; the payload
+/// binds the slot at startup.
+pub static PHYSICAL_HANDS_CONFIG: ConfigSlot<PhysicalHandsConfig> =
+    ConfigSlot::new("controllers.physical_hands");
 
 /// The physical hands (see [`crate::controllers::physical_hands`]). They act only under the
 /// controller scheme, on foot on the ground, and for a hand that holds nothing, so they default on.

@@ -3,7 +3,7 @@
 //! swimming ([`SwimStrokeConfig`]). They live under `controllers.locomotion` beside the stick's
 //! direction frame.
 
-use jc3vr_core::config::engine::Invalid;
+use jc3vr_core::config::engine::{ConfigSlot, Invalid};
 use serde::{Deserialize, Serialize};
 
 /// Stick-driven on-foot velocity with fixed acceleration (see [`crate::controllers::locomotion`]).
@@ -171,6 +171,55 @@ fn positive(name: &str, value: f32, max: f32) -> Result<(), Invalid> {
             "locomotion.{name} is {value}, outside (0, {max}]"
         )))
     }
+}
+
+/// The stick locomotion settings, at `controllers.locomotion` in the settings file; the payload
+/// binds the slot at startup.
+pub static LOCOMOTION_CONFIG: ConfigSlot<LocomotionConfig> =
+    ConfigSlot::new("controllers.locomotion");
+
+/// On-foot stick locomotion. Turning is configured in `headpose.vr_turn` (see the module docs).
+#[derive(Copy, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct LocomotionConfig {
+    /// The frame the off-hand stick's direction is relative to.
+    pub direction: LocomotionDirection,
+    /// The stick's velocity, with fixed acceleration.
+    pub stick: StickConfig,
+    /// The filter that keeps the turning animations off the body.
+    pub acts: ActFilterConfig,
+    /// The on-foot view anchored to Rico's root rather than his animated head.
+    pub view: StableViewConfig,
+    /// Swimming by the arms.
+    pub strokes: SwimStrokeConfig,
+}
+
+impl LocomotionConfig {
+    pub const fn new() -> Self {
+        Self {
+            direction: LocomotionDirection::Head,
+            stick: StickConfig::new(),
+            acts: ActFilterConfig::new(),
+            view: StableViewConfig::new(),
+            strokes: SwimStrokeConfig::new(),
+        }
+    }
+}
+
+impl Default for LocomotionConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// The frame the locomotion stick's direction is relative to.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum LocomotionDirection {
+    /// Forward is where the head faces (yaw only).
+    #[default]
+    Head,
+    /// Forward is where the off-hand controller points (yaw only).
+    OffHand,
 }
 
 #[cfg(test)]

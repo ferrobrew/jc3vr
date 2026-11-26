@@ -57,9 +57,11 @@ use jc3gi::{
     state::{StateBitFlag, StateContext},
     types::math::Vector3,
 };
+use jc3vr_core::config::engine::ConfigSlot;
 use jc3vr_render::headpose;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     controllers::{
@@ -677,6 +679,33 @@ fn watched_act(id: i32) -> Option<WatchedAct> {
 pub(crate) const NEUTRAL_AIM_DISTANCE_M: f32 = 25.0;
 
 static WATCHED_ACT_IDS: OnceLock<[i32; 2]> = OnceLock::new();
+
+/// The aim-state work's settings, at `controllers.aim_state` in the settings file; the payload
+/// binds the slot at startup.
+pub static AIM_STATE_CONFIG: ConfigSlot<AimStateConfig> = ConfigSlot::new("controllers.aim_state");
+
+/// The aim-state work (see [`crate::controllers::aim_state`]): the pins, the neutral aim point, the
+/// wall-block clear, and the mental-state cuts act under the controller scheme whenever it is in
+/// effect; the arm aim IK skip has a switch.
+#[derive(Copy, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AimStateConfig {
+    /// Skip the local player's arm and upper-body aim IK tasks, because the controllers own the
+    /// arms.
+    pub skip_arm_ik: bool,
+}
+
+impl AimStateConfig {
+    pub const fn new() -> Self {
+        Self { skip_arm_ik: true }
+    }
+}
+
+impl Default for AimStateConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 #[cfg(test)]
 mod tests {

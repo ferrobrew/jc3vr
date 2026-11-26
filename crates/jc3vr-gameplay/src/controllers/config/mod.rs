@@ -13,36 +13,37 @@
 //! [`VrTurnConfig`](jc3vr_render::headpose::config::VrTurnConfig) (`headpose.vr_turn`) rather than keeping
 //! a second copy of the smooth and snap settings.
 //!
-//! One file per subsystem cluster: [`input`] (raw input, locomotion, and the bindings), [`aim`] (controller-owned hands and per-hand aiming), [`overlay`], [`weapons`],
-//! [`body`], and [`roomscale`]. The range and consistency checks the payload's load runs on the
-//! settings live in [`validate`].
+//! Each group's type and its slot live beside the subsystem that owns them (`WEAPONS_CONFIG` beside
+//! [`WeaponsConfig`] in [`crate::controllers::weapons::config`], `controllers.enabled` in
+//! [`crate::controllers::scheme`]), and every subsystem reads its own group through its slot. This
+//! module only assembles the groups into the `controllers` table of the settings file, and the
+//! payload's load runs the range and consistency checks in [`validate`] over the whole table.
 
-mod aim;
-mod body;
-mod input;
-mod overlay;
-mod roomscale;
 pub mod validate;
-mod weapons;
 
 use jc3vr_core::config::engine::ConfigSlot;
 use jc3vr_input::frame::Hand;
 use jc3vr_render::vr::input::config::InputConfig;
 use serde::{Deserialize, Serialize};
 
-pub use self::{
-    aim::{AimConfig, AimStateConfig, GripOffset, HandsConfig},
-    body::BodyRemapConfig,
-    input::{BindingsConfig, LocomotionConfig, LocomotionDirection},
-    overlay::{GunReadout, OverlayConfig},
-    roomscale::{Posture, RoomscaleConfig, SeatTransition},
-    weapons::WeaponsConfig,
+pub use crate::controllers::{
+    aim::{
+        config::AimConfig,
+        sights::config::{SightOverride, SightTable, SightTuningConfig},
+    },
+    aim_state::AimStateConfig,
+    bindings::config::BindingsConfig,
+    body::config::BodyRemapConfig,
+    hands::config::{GripOffset, HandsConfig},
+    locomotion::config::{LocomotionConfig, LocomotionDirection},
+    overlay::config::{GunReadout, OverlayConfig},
+    roomscale::config::{Posture, RoomscaleConfig, SeatTransition},
+    weapons::config::WeaponsConfig,
 };
-pub use crate::controllers::aim::sights::config::{SightOverride, SightTable, SightTuningConfig};
 use crate::{
     controllers::{
         fingers::config::FingersConfig, glass::GlassConfig, haptics::HapticsConfig,
-        physical_hands::PhysicalHandsConfig, summary::SummaryConfig,
+        physical_hands::PhysicalHandsConfig, scheme, summary::SummaryConfig,
         vehicles::config::VehiclesConfig,
     },
     grapple::physical::PhysicalGrappleConfig,
@@ -113,7 +114,7 @@ impl ControllersConfig {
     /// restart as for the buttons, so the two never disagree.
     #[inline]
     pub fn acting_hand(&self) -> Hand {
-        acting_hand(self.dominant_hand, jc3vr_render::vr::input::bound_hand())
+        scheme::acting_hand_for(self.dominant_hand)
     }
 
     pub const fn new() -> Self {
@@ -147,23 +148,9 @@ impl Default for ControllersConfig {
     }
 }
 
-/// The hand the roles follow for a configured `dominant` hand and the hand the attached bindings
-/// were suggested for, `bound`, if any.
-#[inline]
-fn acting_hand(dominant: Hand, bound: Option<Hand>) -> Hand {
-    bound.unwrap_or(dominant)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn the_roles_follow_the_bound_hand_until_a_restart() {
-        assert_eq!(acting_hand(Hand::Left, None), Hand::Left);
-        assert_eq!(acting_hand(Hand::Left, Some(Hand::Right)), Hand::Right);
-        assert_eq!(acting_hand(Hand::Right, Some(Hand::Right)), Hand::Right);
-    }
 
     #[test]
     fn the_sight_table_keys_by_weapon_hash() {

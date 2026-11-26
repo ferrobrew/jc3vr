@@ -1,7 +1,12 @@
 //! The finger-curl settings, held in
 //! [`ControllersConfig::fingers`](crate::controllers::config::ControllersConfig::fingers).
 
+use jc3vr_core::config::engine::ConfigSlot;
 use serde::{Deserialize, Serialize};
+
+/// The finger curls' settings, at `controllers.fingers` in the settings file; the payload binds the
+/// slot at startup.
+pub static FINGERS_CONFIG: ConfigSlot<FingersConfig> = ConfigSlot::new("controllers.fingers");
 
 /// Finger curls on the rendered hands. They act only on a hand the controllers drive, so they
 /// default on.

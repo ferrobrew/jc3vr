@@ -1,6 +1,11 @@
 //! Breaking glass's settings, `controllers.glass`.
 
+use jc3vr_core::config::engine::ConfigSlot;
 use serde::{Deserialize, Serialize};
+
+/// The glass breaking's settings, at `controllers.glass` in the settings file; the payload binds
+/// the slot at startup.
+pub static GLASS_CONFIG: ConfigSlot<GlassConfig> = ConfigSlot::new("controllers.glass");
 
 /// Breaking glass by hand (see [`crate::controllers::glass`]). It acts only under the controller
 /// scheme, so it defaults on.

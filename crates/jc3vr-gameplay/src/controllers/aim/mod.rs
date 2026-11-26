@@ -28,6 +28,7 @@
 //! always does.
 
 pub mod assist;
+pub mod config;
 pub mod grapple;
 pub mod grapple_weapons;
 pub mod gun;

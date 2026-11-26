@@ -35,6 +35,7 @@
 //! primitives are snapshotted and uploaded once, on the first eye's draw, so both eyes draw the same
 //! geometry.
 
+pub mod config;
 pub mod producers;
 
 use jc3vr_render::controllers::overlay::{pass::DrawSettings, resolve::HandPoses};
