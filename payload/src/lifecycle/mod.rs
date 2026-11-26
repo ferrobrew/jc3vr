@@ -7,12 +7,32 @@
 use std::{
     fmt,
     sync::{
-        Arc,
+        Arc, OnceLock,
         atomic::{AtomicBool, Ordering},
     },
 };
 
 use parking_lot::Mutex;
+
+/// Whether irreversible shutdown has committed. A pending request leaves this false so gameplay,
+/// input, and the VR runtime continue while reversible participants defer preparation.
+/// After commit, the frame loop must not recreate the runtime during hook removal.
+pub(crate) fn is_shutting_down() -> bool {
+    SHUTTING_DOWN.load(Ordering::Acquire)
+}
+
+/// Record the build stamp of the loaded payload image. The image's entry point sets it once at
+/// startup: the stamp identifies the DLL build, so the module that embeds it supplies it rather than
+/// any module beneath it. A second call, from a re-run of the entry point in the same resident
+/// image, carries the same stamp and is ignored.
+pub(crate) fn set_build_stamp(stamp: &'static str) {
+    let _ = BUILD_STAMP.set(stamp);
+}
+
+/// The stamp [`set_build_stamp`] recorded, or a placeholder before startup has recorded one.
+pub(crate) fn build_stamp() -> &'static str {
+    BUILD_STAMP.get().copied().unwrap_or(UNRECORDED_BUILD_STAMP)
+}
 
 /// The participants with reversible work that must precede all ordinary cleanup.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -158,8 +178,8 @@ pub(crate) fn request_shutdown() {
 ///
 /// The caller continues normal frame work unless this returns true. Time only bounds work; it
 /// never proves native quiescence. Ready is validated and consumed here without a frame gap.
-pub(crate) fn advance_shutdown(shutting_down: &AtomicBool) -> bool {
-    advance_shutdown_state(&SHUTDOWN, shutting_down)
+pub(crate) fn advance_shutdown() -> bool {
+    advance_shutdown_state(&SHUTDOWN, &SHUTTING_DOWN)
 }
 
 /// Fatal initialization or update failure is not a recoverable shutdown deferral.
@@ -179,10 +199,7 @@ pub fn on_cleanup(cleanup: impl FnOnce(Option<&mut egui_directx11::Renderer>) + 
 
 /// Drain cleanups once, in reverse registration order, only after the commit boundary.
 pub(crate) fn run_cleanups(renderer: Option<&mut egui_directx11::Renderer>) {
-    assert!(
-        crate::is_shutting_down(),
-        "cleanup requires committed shutdown"
-    );
+    assert!(is_shutting_down(), "cleanup requires committed shutdown");
     run_cleanup_registry(&CLEANUPS, renderer);
 }
 
@@ -235,6 +252,9 @@ fn advance_shutdown_state(shutdown: &Mutex<Shutdown>, shutting_down: &AtomicBool
     committed
 }
 
+static SHUTTING_DOWN: AtomicBool = AtomicBool::new(false);
+static BUILD_STAMP: OnceLock<&'static str> = OnceLock::new();
+const UNRECORDED_BUILD_STAMP: &str = "unrecorded";
 const RETRY_FRAMES: u8 = 15;
 static CLEANUPS: Mutex<Vec<Cleanup>> = Mutex::new(Vec::new());
 static SHUTDOWN: Mutex<Shutdown> = Mutex::new(Shutdown::new());

@@ -1,10 +1,4 @@
-use std::{
-    ffi::c_void,
-    sync::{
-        OnceLock,
-        atomic::{AtomicBool, Ordering},
-    },
-};
+use std::{ffi::c_void, sync::OnceLock};
 
 use windows::Win32::{
     Foundation::HMODULE,
@@ -13,6 +7,7 @@ use windows::Win32::{
 };
 
 use crate::egui_impl::EguiState;
+pub(crate) use crate::lifecycle::is_shutting_down;
 
 pub mod egui_impl;
 pub mod module;
@@ -37,7 +32,6 @@ mod headpose;
 mod hooks;
 mod hud;
 mod image_writer;
-mod input_core;
 mod lifecycle;
 mod logging;
 mod pause_menu;
@@ -67,6 +61,7 @@ pub extern "system" fn DllMain(module: HMODULE, reason: u32, _unk: *mut c_void) 
 #[unsafe(no_mangle)]
 #[allow(non_snake_case)]
 pub extern "system" fn run(_: *mut c_void) {
+    lifecycle::set_build_stamp(BUILD_STAMP);
     initialize_startup();
 }
 
@@ -120,7 +115,7 @@ fn initialize_startup() {
     }));
 
     logging::install();
-    tracing::info!(build = BUILD_STAMP, "jc3vr startup");
+    tracing::info!(build = lifecycle::build_stamp(), "jc3vr startup");
     session::log_location();
     crash::install();
     // Before the hooks: VR initialization, on the game thread's first frame, reads the configuration
@@ -267,19 +262,11 @@ fn shutdown_from_game() {
     EguiState::uninstall();
 }
 
-/// Whether irreversible shutdown has committed. A pending request leaves this false so gameplay,
-/// input, and the VR runtime continue while reversible participants defer preparation.
-/// After commit, the frame loop must not recreate the runtime during hook removal.
-pub(crate) fn is_shutting_down() -> bool {
-    SHUTTING_DOWN.load(Ordering::Acquire)
-}
-
-static SHUTTING_DOWN: AtomicBool = AtomicBool::new(false);
-
 /// When this payload was compiled, embedded by `build.rs`. Announced at startup (log, in-headset
 /// banner, and the debug window): an uninject can leave the module resident (a hung shutdown
 /// thread keeps the DLL mapped), and a failed re-inject then silently reactivates the stale code —
-/// the stamp is how a stale payload is caught at a glance.
+/// the stamp is how a stale payload is caught at a glance. `run` records it in
+/// [`lifecycle::set_build_stamp`], whose cell is the stamp's home for every module beneath this one.
 pub const BUILD_STAMP: &str = env!("jc3vr_build_stamp");
 
 /// Run only after lifecycle preparation commits on the game pre-update entry.
@@ -332,7 +319,7 @@ fn update() {
         if util::is_pressed(VK_F5) {
             lifecycle::request_shutdown();
         }
-        if lifecycle::advance_shutdown(&SHUTTING_DOWN) {
+        if lifecycle::advance_shutdown() {
             commit_shutdown();
             return;
         }
