@@ -145,9 +145,9 @@ unsafe fn pass_through(bullet: *mut Bullet, info: *mut CastRayInfoBase) -> bool 
     true
 }
 
-/// Whether the glass's switches let bullets pass through the panes it brought down.
+/// Whether the glass's switch lets bullets pass through the panes it brought down.
 fn enabled() -> bool {
-    GLASS_CONFIG.query(|glass| glass.enabled && glass.shatter && glass.bullets_pass)
+    GLASS_CONFIG.query(|glass| glass.bullets_pass)
 }
 
 /// Whether the hit `info` names a pane the glass brought down that is still hidden.

@@ -38,7 +38,7 @@ pub mod strike;
 
 use std::{num::NonZeroUsize, time::Instant};
 
-pub use config::{GlassConfig, GlassTuning};
+pub use config::{GLASS, GlassConfig, GlassTuning};
 use glam::Vec3;
 use jc3gi::physics::{GameMaterialId, PhysicsSystem};
 use jc3vr_body::controllers::{
@@ -64,7 +64,6 @@ use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
     glass::{
-        config::GLASS_CONFIG,
         engine::{HideRefusal, Pane},
         strike::{Limiter, Outcome, STRIKERS, Sample, Striker, StrikerKind},
     },
@@ -75,7 +74,7 @@ use crate::controllers::{
 /// Why breaking glass stands down this tick.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Idle {
-    /// Its switch is off, the controller scheme is not in effect, or the game is not in play.
+    /// The controller scheme is not in effect, or the game is not in play.
     Disabled,
     /// The tick ran off the game thread.
     OffThread,
@@ -86,7 +85,7 @@ pub enum Idle {
 impl Idle {
     pub const fn label(self) -> &'static str {
         match self {
-            Idle::Disabled => "off, or not in play under the controller scheme",
+            Idle::Disabled => "not in play under the controller scheme",
             Idle::OffThread => "the tick ran off the game thread",
             Idle::NoHands => "no tracked hands",
         }
@@ -141,8 +140,7 @@ pub fn status() -> GlassStatus {
 ///
 /// The game thread, outside the world update and the physics step.
 pub unsafe fn main_thread_tick() {
-    let config = *GLASS_CONFIG.lock();
-    let active = config.enabled && scheme::is_controllers() && jc3vr_core::hooks::in_gameplay();
+    let active = scheme::is_controllers() && jc3vr_core::hooks::in_gameplay();
     let idle = if !active {
         Some(Idle::Disabled)
     } else if thread_role::current() != ThreadRole::Game {
@@ -158,19 +156,19 @@ pub unsafe fn main_thread_tick() {
         STATE.lock().stand_down(Idle::NoHands);
         return;
     };
-    let points = strikers(&hands, &config);
+    let points = strikers(&hands);
     let frame = CockpitTransform::current(hands.head.position, hands.world_scale);
     let held = physical_hands::held_props();
     let swings = {
         let mut state = STATE.lock();
         state.status.idle = None;
         let now_s = state.now_s();
-        state.swings(points, now_s, hands.world_scale, &config.tuning)
+        state.swings(points, now_s, hands.world_scale, &GLASS)
     };
     for (striker, swing, now_s) in swings.into_iter().flatten() {
         let lead_m = match striker.kind {
-            StrikerKind::Palm => config.tuning.palm_lead_m,
-            StrikerKind::Weapon => config.tuning.tip_lead_m,
+            StrikerKind::Palm => GLASS.palm_lead_m,
+            StrikerKind::Weapon => GLASS.tip_lead_m,
         } * frame.scale();
         let from = frame.point_to_world(swing.from);
         let to = frame.point_to_world(swing.to);
@@ -201,13 +199,13 @@ pub unsafe fn main_thread_tick() {
             continue;
         }
         state.limiter.note(striker, now_s);
-        let Some(damage) = strike::hit_damage(swing.speed_mps, &config.tuning) else {
+        let Some(damage) = strike::hit_damage(swing.speed_mps, &GLASS) else {
             continue;
         };
         let mut shattered = false;
         for pane in panes {
             // SAFETY: forwarded from the caller; the pane was found this tick.
-            let result = unsafe { state.strike(pane, at, swing.speed_mps, damage, &config) };
+            let result = unsafe { state.strike(pane, at, swing.speed_mps, damage) };
             shattered |= result.hidden;
             state.status.last = Some(LastStrike {
                 striker,
@@ -222,28 +220,26 @@ pub unsafe fn main_thread_tick() {
         let scale = if shattered {
             1.0
         } else {
-            damage / config.tuning.max_damage.max(f32::EPSILON)
+            damage / GLASS.max_damage.max(f32::EPSILON)
         };
         haptics::play_scaled(striker.hand, Event::HandStrike, scale);
-        if config.sound {
-            // SAFETY: forwarded from the caller.
-            let played = unsafe {
-                sounds::melee_impact(
-                    at,
-                    velocity,
-                    GameMaterialId::EGameMaterialId_Glass as u32,
-                    true,
-                )
-            };
-            if played == MeleeImpact::Silent {
-                let mut state = STATE.lock();
-                if !state.warned_silent {
-                    state.warned_silent = true;
-                    tracing::info!(
-                        target: "controllers",
-                        "glass: the player's melee impact has no sound for glass"
-                    );
-                }
+        // SAFETY: forwarded from the caller.
+        let played = unsafe {
+            sounds::melee_impact(
+                at,
+                velocity,
+                GameMaterialId::EGameMaterialId_Glass as u32,
+                true,
+            )
+        };
+        if played == MeleeImpact::Silent {
+            let mut state = STATE.lock();
+            if !state.warned_silent {
+                state.warned_silent = true;
+                tracing::info!(
+                    target: "controllers",
+                    "glass: the player's melee impact has no sound for glass"
+                );
             }
         }
     }
@@ -251,7 +247,7 @@ pub unsafe fn main_thread_tick() {
 
 /// Each striker's point this tick, in the cockpit frame, by [`Striker::index`]: an empty hand's
 /// palm, and the muzzle end of the gun a hand holds.
-fn strikers(hands: &ActiveHands, config: &GlassConfig) -> [Option<Vec3>; STRIKERS] {
+fn strikers(hands: &ActiveHands) -> [Option<Vec3>; STRIKERS] {
     let free = physical_hands::free_hands();
     let wielded = held::last_wielded_hands();
     let mut points = [None; STRIKERS];
@@ -265,9 +261,8 @@ fn strikers(hands: &ActiveHands, config: &GlassConfig) -> [Option<Vec3>; STRIKER
             continue;
         }
         let holds_gun = wielded[hand.index()] || held::item(hand) == Some(HeldItem::Weapon);
-        if config.weapons && holds_gun {
-            points[Striker::new(hand, StrikerKind::Weapon).index()] =
-                Some(muzzle(hand, pose, &config.tuning));
+        if holds_gun {
+            points[Striker::new(hand, StrikerKind::Weapon).index()] = Some(muzzle(hand, pose));
         }
     }
     points
@@ -275,10 +270,10 @@ fn strikers(hands: &ActiveHands, config: &GlassConfig) -> [Option<Vec3>; STRIKER
 
 /// The muzzle end of the gun in `hand`: its measured muzzle for a long gun, or a pistol's reach
 /// ahead of the aim pose.
-fn muzzle(hand: Hand, pose: CockpitHand, tuning: &GlassTuning) -> Vec3 {
+fn muzzle(hand: Hand, pose: CockpitHand) -> Vec3 {
     match held::long_gun_muzzle(hand) {
         Some(muzzle) => pose.wrist.position + pose.wrist.orientation * muzzle,
-        None => ahead(pose.aim, tuning.pistol_reach_m),
+        None => ahead(pose.aim, GLASS.pistol_reach_m),
     }
 }
 
@@ -419,14 +414,7 @@ impl State {
     /// # Safety
     ///
     /// The game thread, within the tick the pane was found in.
-    unsafe fn strike(
-        &mut self,
-        pane: Pane,
-        at: Vec3,
-        speed_mps: f32,
-        damage: f32,
-        config: &GlassConfig,
-    ) -> PaneStrike {
+    unsafe fn strike(&mut self, pane: Pane, at: Vec3, speed_mps: f32, damage: f32) -> PaneStrike {
         let now_s = self.now_s();
         // SAFETY: forwarded from the caller.
         let (before, after) = unsafe {
@@ -454,11 +442,7 @@ impl State {
         let accumulated = strike::accumulate(before, after, damage, record.excess);
         record.excess = accumulated.excess;
         record.last_s = now_s;
-        let outcome = if config.shatter {
-            strike::outcome(speed_mps, accumulated.total, &config.tuning)
-        } else {
-            Outcome::Damage
-        };
+        let outcome = strike::outcome(speed_mps, accumulated.total, &GLASS);
         // SAFETY: forwarded from the caller.
         let model = unsafe { pane.model_hash() };
         let mut hidden = false;

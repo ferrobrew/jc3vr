@@ -258,8 +258,9 @@ mod tests {
     use test_case::test_case;
 
     use super::*;
+    use crate::controllers::glass::config::GLASS;
 
-    const TUNING: GlassTuning = GlassTuning::new();
+    const TUNING: GlassTuning = GLASS;
 
     fn sample(at: Vec3, time_s: f64) -> Sample {
         Sample { at, time_s }

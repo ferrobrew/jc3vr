@@ -1,4 +1,4 @@
-//! Breaking glass's settings, `controllers.glass`.
+//! Breaking glass's settings, `controllers.glass`, and its fixed tuning.
 
 use jc3vr_core::config::engine::ConfigSlot;
 use serde::{Deserialize, Serialize};
@@ -8,34 +8,18 @@ use serde::{Deserialize, Serialize};
 pub static GLASS_CONFIG: ConfigSlot<GlassConfig> = ConfigSlot::new("controllers.glass");
 
 /// Breaking glass by hand (see [`crate::controllers::glass`]). It acts only under the controller
-/// scheme, so it defaults on.
+/// scheme, and its tuning is fixed at [`GLASS`].
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct GlassConfig {
-    /// Master switch: a palm or a held gun that strikes a window damages it.
-    pub enabled: bool,
-    /// The muzzle end of a held gun strikes, as well as an empty hand's palm.
-    pub weapons: bool,
-    /// A hard enough strike, or enough damage, brings the whole pane down.
-    pub shatter: bool,
-    /// Play the game's melee impact against glass where a strike lands.
-    pub sound: bool,
     /// Let bullets pass cleanly through a pane brought down, rather than meeting the glass's shapes
     /// that hiding it leaves ([`bullets`](crate::controllers::glass::bullets)).
     pub bullets_pass: bool,
-    pub tuning: GlassTuning,
 }
 
 impl GlassConfig {
     pub const fn new() -> Self {
-        Self {
-            enabled: true,
-            weapons: true,
-            shatter: true,
-            sound: true,
-            bullets_pass: true,
-            tuning: GlassTuning::new(),
-        }
+        Self { bullets_pass: true }
     }
 }
 
@@ -45,9 +29,8 @@ impl Default for GlassConfig {
     }
 }
 
-/// How strikes on glass are measured and what they do.
-#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
+/// How strikes on glass are measured and what they do, fixed at [`GLASS`].
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct GlassTuning {
     /// The slowest strike that damages glass, world metres per second: a hand resting against a
     /// window, or pushed slowly through it, does nothing.
@@ -77,26 +60,17 @@ pub struct GlassTuning {
     pub max_gap_s: f32,
 }
 
-impl GlassTuning {
-    pub const fn new() -> Self {
-        Self {
-            min_speed_mps: 2.0,
-            full_speed_mps: 7.0,
-            min_damage: 0.15,
-            max_damage: 0.6,
-            shatter_speed_mps: 8.5,
-            shatter_total: 2.5,
-            cooldown_s: 0.2,
-            palm_lead_m: 0.05,
-            tip_lead_m: 0.03,
-            pistol_reach_m: 0.18,
-            max_gap_s: 0.1,
-        }
-    }
-}
-
-impl Default for GlassTuning {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+/// The glass strikes' tuning.
+pub const GLASS: GlassTuning = GlassTuning {
+    min_speed_mps: 2.0,
+    full_speed_mps: 7.0,
+    min_damage: 0.15,
+    max_damage: 0.6,
+    shatter_speed_mps: 8.5,
+    shatter_total: 2.5,
+    cooldown_s: 0.2,
+    palm_lead_m: 0.05,
+    tip_lead_m: 0.03,
+    pistol_reach_m: 0.18,
+    max_gap_s: 0.1,
+};
