@@ -6,6 +6,7 @@ use jc3gi::{
     },
     types::math::Vector4,
 };
+use jc3vr_render::stereo::single_pass;
 use jc3vr_view::{
     stereo::{dispatch, dispatch::RenderMode, draw_index, far_phase},
     vr,
@@ -13,7 +14,7 @@ use jc3vr_view::{
 use parking_lot::Mutex;
 use serde::Serialize;
 
-use crate::{screenshot::harness::screenshot_wants_eyes, stereo::single_pass, testing::visual};
+use crate::{screenshot::harness::screenshot_wants_eyes, testing::visual};
 
 #[derive(Clone, Default, Serialize)]
 pub(crate) struct CapturedConstants {

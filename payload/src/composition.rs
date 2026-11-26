@@ -9,6 +9,7 @@
 //! removal), and the registration order is the order the removal steps run in. Both are load-bearing
 //! for startup and ejection timing, so neither is reshuffled for grouping's sake.
 
+use jc3vr_capture::screenshot::harness::{register_pipeline, register_single_pass};
 use jc3vr_core::hooks::{self as core_hooks, online};
 use jc3vr_gameplay::{
     controllers, grapple,
@@ -21,7 +22,6 @@ use jc3vr_render::{
     controllers::register_passes,
     debug,
     hooks::{clock, draw_count, graphics_engine},
-    screenshot::harness::{register_pipeline, register_single_pass},
     stereo,
 };
 use jc3vr_tooling::{diagnostics, director, recorder};

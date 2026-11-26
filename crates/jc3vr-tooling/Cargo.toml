@@ -15,6 +15,7 @@ jc3vr-input = { path = "../jc3vr-input" }
 jc3vr-render = { path = "../jc3vr-render" }
 jc3vr-view = { path = "../jc3vr-view" }
 jc3vr-gameplay = { path = "../jc3vr-gameplay" }
+jc3vr-capture = { path = "../jc3vr-capture" }
 tracking-format = { path = "../tracking-format" }
 tracing = "0.1"
 parking_lot = "0.12.5"

@@ -1,4 +1,5 @@
 use anyhow::{Context as _, bail};
+use jc3vr_render::screenshot::create_staging;
 use windows::{
     Win32::Graphics::{
         Direct3D11::{
@@ -17,16 +18,13 @@ use windows::{
     core::Interface,
 };
 
-use crate::screenshot::{
-    create_staging,
-    harness::{
-        diagnostic_capture_id,
-        stages::{
-            STATE, Source, Stage, StageArtifact, StageImage, StageRecord, SunInputMetadata,
-            capture_raster_state, format_byte_width, stage_image, staging_format, validate_desc,
-        },
-        sun_inputs_requested,
+use crate::screenshot::harness::{
+    diagnostic_capture_id,
+    stages::{
+        STATE, Source, Stage, StageArtifact, StageImage, StageRecord, SunInputMetadata,
+        capture_raster_state, format_byte_width, stage_image, staging_format, validate_desc,
     },
+    sun_inputs_requested,
 };
 
 pub(crate) fn capture_before_sun(ctx: &ID3D11DeviceContext, eye: usize) {

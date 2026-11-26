@@ -121,11 +121,11 @@ unsafe extern "system" fn rs_set_scissor_rects_detour(
 /// never doubled). A normal (single-pass-off) session never installs it.
 /// Whether the draw-path COM detours are installed. Once a session has run single-pass they stay
 /// installed until eject, and every draw then passes through them, single-pass or not.
-pub(crate) fn com_detours_installed() -> bool {
+pub fn com_detours_installed() -> bool {
     RS_SET_VIEWPORTS.get().is_some()
 }
 
-pub(crate) fn ensure_viewport_detours() {
+pub fn ensure_viewport_detours() {
     // The whole body is serialized, not just the published-yet check: the callers are on different
     // threads (the render thread's cb13 mirror and the shader-creation thread's `CreateVertexProgram`),
     // and the publish happens only after seven `GenericDetour::new` calls. Two threads could otherwise
@@ -251,13 +251,13 @@ pub(crate) fn ensure_viewport_detours() {
     }
 }
 
-pub(crate) fn vertex_identity_detour_ready() -> bool {
+pub fn vertex_identity_detour_ready() -> bool {
     CREATE_VERTEX_SHADER
         .get()
         .is_some_and(|detour| detour.is_enabled())
 }
 
-pub(crate) fn ensure_pixel_shader_detour() -> bool {
+pub fn ensure_pixel_shader_detour() -> bool {
     let _install = DETOUR_INSTALL.lock();
     if let Some(detour) = CREATE_PIXEL_SHADER.get() {
         return detour.is_enabled();

@@ -20,10 +20,10 @@ macro_rules! single_pass_switches {
 
         impl SinglePassSwitch {
             /// Every switch, in declaration order.
-            pub(crate) const ALL: &[Self] = &[$(Self::$variant,)*];
+            pub const ALL: &[Self] = &[$(Self::$variant,)*];
 
             /// The switch's configuration field name, which is also its name on the wire.
-            pub(crate) const fn name(self) -> &'static str {
+            pub const fn name(self) -> &'static str {
                 match self {
                     $(Self::$variant => stringify!($field),)*
                 }
@@ -37,13 +37,13 @@ macro_rules! single_pass_switches {
                 }
             }
 
-            pub(crate) fn get(self, config: &SinglePassConfig) -> bool {
+            pub fn get(self, config: &SinglePassConfig) -> bool {
                 match self {
                     $(Self::$variant => config.$field,)*
                 }
             }
 
-            pub(crate) fn set(self, config: &mut SinglePassConfig, value: bool) {
+            pub fn set(self, config: &mut SinglePassConfig, value: bool) {
                 match self {
                     $(Self::$variant => config.$field = value,)*
                 }
@@ -120,10 +120,10 @@ single_pass_switches! {
 }
 
 impl SinglePassSwitch {
-    pub(crate) const COUNT: usize = Self::ALL.len();
+    pub const COUNT: usize = Self::ALL.len();
 
     /// The switch with this wire name, if there is one.
-    pub(crate) fn from_name(name: &str) -> Option<Self> {
+    pub fn from_name(name: &str) -> Option<Self> {
         Self::ALL
             .iter()
             .copied()
@@ -138,7 +138,7 @@ impl SinglePassSwitch {
 /// The state the live shaders were created under: whether single-pass and its collapse were live,
 /// which gate the creation-time rewrites, and the value of every switch that is such a rewrite.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct ShaderBuild {
+pub struct ShaderBuild {
     active: bool,
     collapse: bool,
     switches: [bool; SinglePassSwitch::COUNT],
@@ -146,7 +146,7 @@ pub(crate) struct ShaderBuild {
 
 impl ShaderBuild {
     /// The build a shader created now would get, from the live configuration and gates.
-    pub(crate) fn current() -> Self {
+    pub fn current() -> Self {
         Self::from_config(
             crate::stereo::single_pass::active(),
             jc3vr_view::stereo::layout::collapse_active(),

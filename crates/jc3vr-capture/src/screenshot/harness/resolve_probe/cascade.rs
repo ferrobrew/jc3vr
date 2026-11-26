@@ -1,4 +1,5 @@
 use anyhow::{Context as _, ensure};
+use jc3vr_render::stereo::single_pass::shader_identity::IdentityResult;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use windows::{
@@ -9,12 +10,9 @@ use windows::{
     core::Interface,
 };
 
-use crate::{
-    screenshot::harness::{
-        CascadeScale,
-        resolve_probe::{BufferContent, Observation, STATE, copy_content},
-    },
-    stereo::single_pass::shader_identity::IdentityResult,
+use crate::screenshot::harness::{
+    CascadeScale,
+    resolve_probe::{BufferContent, Observation, STATE, copy_content},
 };
 
 const ROWS: u32 = 95;

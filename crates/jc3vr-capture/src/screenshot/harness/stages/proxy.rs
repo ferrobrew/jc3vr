@@ -8,21 +8,20 @@ use jc3gi::{
     },
     types::math::Matrix4,
 };
+use jc3vr_render::stereo::single_pass::{
+    last_frame_diagnostics, shader_identity, shader_identity::IdentityResult,
+    vertex_identity_lookup,
+};
 use windows::{
     Win32::Graphics::{Direct3D11::*, Dxgi::Common::DXGI_FORMAT_R32_FLOAT},
     core::Interface,
 };
 
-use crate::{
-    screenshot::harness::{
-        self,
+use crate::screenshot::{
+    harness,
+    harness::{
         bound_buffer::{ShaderStage, read_bound_constant_buffer},
         stages::{STATE, Stage, empty_stage_record},
-    },
-    stereo::single_pass::{
-        last_frame_diagnostics,
-        shader_identity::{self, IdentityResult},
-        vertex_identity_lookup,
     },
 };
 

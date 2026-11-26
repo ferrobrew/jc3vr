@@ -1,4 +1,5 @@
 use anyhow::{Context, ensure};
+use jc3vr_render::screenshot::create_staging;
 use windows::{
     Win32::Graphics::{
         Direct3D11::*,
@@ -7,12 +8,9 @@ use windows::{
     core::Interface,
 };
 
-use crate::screenshot::{
-    create_staging,
-    harness::{
-        frame_identity,
-        stages::{STATE, Source, Stage, StageImage, StageRecord, stage_image},
-    },
+use crate::screenshot::harness::{
+    frame_identity,
+    stages::{STATE, Source, Stage, StageImage, StageRecord, stage_image},
 };
 
 const STAGES: [Stage; 4] = [

@@ -12,13 +12,13 @@ pub(crate) mod stage;
 mod text;
 
 pub use config::{TESTING_CONFIG, TestingConfig};
-use jc3vr_render::testing::{benchmark, visual};
+use jc3vr_capture::testing::{benchmark, visual};
 
 /// Drive the test tools for this frame: the capture harness, the request file, the benchmark, and
 /// the visual stage. Game thread, once per frame from the top of the game's update, after the
 /// director's pass (which services the stage's teleport).
 pub fn update() {
-    jc3vr_render::screenshot::harness::tick();
+    jc3vr_capture::screenshot::harness::tick();
     visual::tick();
     request::poll();
     benchmark::tick();
@@ -30,5 +30,5 @@ pub fn update() {
 pub fn shutdown() -> bool {
     benchmark::shutdown();
     visual::shutdown();
-    jc3vr_render::screenshot::harness::snapshot::shutdown()
+    jc3vr_capture::screenshot::harness::snapshot::shutdown()
 }

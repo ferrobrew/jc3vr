@@ -52,14 +52,14 @@ thread_local! {
 }
 
 #[derive(Clone, Debug, Serialize)]
-pub(crate) struct Identity {
+pub struct Identity {
     pub pristine_sha256: String,
     pub actual_sha256: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
-pub(crate) enum IdentityResult {
+pub enum IdentityResult {
     Mapped { identity: Identity },
     Unarmed,
     Unmapped,
@@ -68,7 +68,7 @@ pub(crate) enum IdentityResult {
 }
 
 #[derive(Clone, Debug, Serialize)]
-pub(crate) struct CensusStatus {
+pub struct CensusStatus {
     pub requested: bool,
     pub status: &'static str,
     pub registered: usize,
@@ -167,7 +167,7 @@ pub(crate) fn requested() -> bool {
     ARMED.load(Ordering::Acquire)
 }
 
-pub(crate) fn status() -> CensusStatus {
+pub fn status() -> CensusStatus {
     let state = REGISTRY.lock();
     let requested = ARMED.load(Ordering::Acquire);
     CensusStatus {
@@ -189,7 +189,7 @@ pub(crate) fn status() -> CensusStatus {
     }
 }
 
-pub(crate) fn lookup(shader: &ID3D11PixelShader) -> IdentityResult {
+pub fn lookup(shader: &ID3D11PixelShader) -> IdentityResult {
     if !ARMED.load(Ordering::Acquire) {
         return IdentityResult::Unarmed;
     }
@@ -212,7 +212,7 @@ pub(crate) fn lookup(shader: &ID3D11PixelShader) -> IdentityResult {
         })
 }
 
-pub(crate) fn arm() -> bool {
+pub fn arm() -> bool {
     if ARMED.load(Ordering::Acquire) {
         return false;
     }
@@ -222,7 +222,7 @@ pub(crate) fn arm() -> bool {
     true
 }
 
-pub(crate) fn disarm() {
+pub fn disarm() {
     ARMED.store(false, Ordering::Release);
     crate::stereo::single_pass::vertex_identity_disarm();
     reset();
@@ -239,11 +239,11 @@ pub(crate) fn reset() {
     }
 }
 
-pub(crate) fn mark_install_failed() {
+pub fn mark_install_failed() {
     REGISTRY.lock().install_error = true;
 }
 
-pub(crate) struct PendingGuard(Option<Pending>);
+pub struct PendingGuard(Option<Pending>);
 
 impl Drop for PendingGuard {
     fn drop(&mut self) {
@@ -259,7 +259,13 @@ impl Drop for PendingGuard {
     }
 }
 
-pub(crate) unsafe fn begin(code: *const u8, len: u64) -> Option<PendingGuard> {
+/// Hash the shader bytecode at `code` and arm the identity the next pixel-shader creation on this
+/// thread records it under, while the registry is armed.
+///
+/// # Safety
+///
+/// `code` must point to `len` readable bytes for the duration of the call.
+pub unsafe fn begin(code: *const u8, len: u64) -> Option<PendingGuard> {
     if !ARMED.load(Ordering::Acquire) {
         return None;
     }
@@ -417,31 +423,29 @@ pub(super) unsafe extern "system" fn create_pixel_shader_detour(
     result
 }
 
-pub(crate) const AA_PS: &str = "a4078e6bf737300492eaf5c154ac6b232a537d022396d8c0892635063f17d765";
-pub(crate) fn aa_bytecode() -> Option<Vec<u8>> {
+pub const AA_PS: &str = "a4078e6bf737300492eaf5c154ac6b232a537d022396d8c0892635063f17d765";
+pub fn aa_bytecode() -> Option<Vec<u8>> {
     REGISTRY.lock().aa.clone()
 }
 
-pub(crate) const DOF_PS: &str = "72acf8f41c94e5b9733f6c25643a3c91c21b51abd607c98b6cecaf034577a64f";
-pub(crate) fn dof_bytecode() -> Option<Vec<u8>> {
+pub const DOF_PS: &str = "72acf8f41c94e5b9733f6c25643a3c91c21b51abd607c98b6cecaf034577a64f";
+pub fn dof_bytecode() -> Option<Vec<u8>> {
     REGISTRY.lock().dof.clone()
 }
 
-pub(crate) const FOG_PS: &str = "a10dbcd176ceeaa9b289a3c6ae0ea5935e75d0685e22fabc9aaa0b7042a6db4e";
-pub(crate) fn fog_bytecode() -> Option<Vec<u8>> {
+pub const FOG_PS: &str = "a10dbcd176ceeaa9b289a3c6ae0ea5935e75d0685e22fabc9aaa0b7042a6db4e";
+pub fn fog_bytecode() -> Option<Vec<u8>> {
     REGISTRY.lock().fog.clone()
 }
 
-pub(crate) const IMPOSTOR_PS: &str =
-    "2c157723bbe071f6ad1c67e2279281dfcb997bc5ae10eceb5704dafbf6597b2d";
-pub(crate) fn impostor_bytecode() -> Option<Vec<u8>> {
+pub const IMPOSTOR_PS: &str = "2c157723bbe071f6ad1c67e2279281dfcb997bc5ae10eceb5704dafbf6597b2d";
+pub fn impostor_bytecode() -> Option<Vec<u8>> {
     REGISTRY.lock().impostor.clone()
 }
 
-pub(crate) const BARK_COLOR_PS: &str =
-    "409571499dedebe97d1dba4e7ad782e5f2a91494d0e157c849e6ef66324e3b0d";
-pub(crate) const BARK_PS: &str = "7109e8678eee33b96df29f0bf195a7be083a0aafb93f41abdf91739a8bb67ad3";
-pub(crate) fn bark_bytecode(color: bool) -> Option<Vec<u8>> {
+pub const BARK_COLOR_PS: &str = "409571499dedebe97d1dba4e7ad782e5f2a91494d0e157c849e6ef66324e3b0d";
+pub const BARK_PS: &str = "7109e8678eee33b96df29f0bf195a7be083a0aafb93f41abdf91739a8bb67ad3";
+pub fn bark_bytecode(color: bool) -> Option<Vec<u8>> {
     let r = REGISTRY.lock();
     if color {
         r.color_bark.clone()
@@ -450,24 +454,23 @@ pub(crate) fn bark_bytecode(color: bool) -> Option<Vec<u8>> {
     }
 }
 
-pub(crate) const SSR_RAY: &str = "94981ae62a33b4bb214f62501f088a365774700d655534783f1d1aed076127e4";
-pub(crate) fn ssr_bytecode() -> Option<Vec<u8>> {
+pub const SSR_RAY: &str = "94981ae62a33b4bb214f62501f088a365774700d655534783f1d1aed076127e4";
+pub fn ssr_bytecode() -> Option<Vec<u8>> {
     REGISTRY.lock().ssr.clone()
 }
 
-pub(crate) const RESOLVE_PRISTINE: &str =
+pub const RESOLVE_PRISTINE: &str =
     "06f43db0887b0038147e273a3879a9b7f48c3b630955a94d695898fd7d0e52fc";
-pub(crate) const RESOLVE_ACTUAL: &str =
-    "6a82533e6458166ea3d04789c266ec127baf59931882955c99c4603e47f11c9b";
+pub const RESOLVE_ACTUAL: &str = "6a82533e6458166ea3d04789c266ec127baf59931882955c99c4603e47f11c9b";
 /// The deferred resolve's executable with each eye's camera rows selected per pixel
 /// (`dxbc_stereo::localize_eye_camera` over [`RESOLVE_ACTUAL`] with the local lights unchanged), which
 /// the engine creates while `single_pass.pixel_camera_per_eye` applies without
 /// `single_pass.local_lights_per_eye`.
-pub(crate) const RESOLVE_EYE_CAMERA: &str =
+pub const RESOLVE_EYE_CAMERA: &str =
     "3d6a81d184a090a7f50b48e79c59c78a82a16d0445b54ae7547694fcee8fc834";
 /// The same with the local lights measured from each eye as well, which the engine creates while both
 /// switches apply.
-pub(crate) const RESOLVE_EYE_LIGHTS: &str =
+pub const RESOLVE_EYE_LIGHTS: &str =
     "7b28420a68fdf35d8907b7c61289e16fa44ab39ae95afd78b0be08ee51dd4d4b";
 
 /// Whether `actual` and `length` describe one of the deferred resolve's executables: the engine's own
@@ -479,13 +482,13 @@ pub(crate) fn is_resolve_executable(actual: &str, length: usize) -> bool {
         || (actual == RESOLVE_EYE_LIGHTS && length == 35392)
 }
 
-pub(crate) fn resolve_bytecode() -> Option<Vec<u8>> {
+pub fn resolve_bytecode() -> Option<Vec<u8>> {
     REGISTRY.lock().resolve.clone()
 }
 
-pub(crate) const LAKE_PS: &str = "99dd7036aa192c346c1e23883da83cf4da300dd1190dee40eedb3c2421531531";
+pub const LAKE_PS: &str = "99dd7036aa192c346c1e23883da83cf4da300dd1190dee40eedb3c2421531531";
 
-pub(crate) fn lake_bytecode() -> Option<Vec<u8>> {
+pub fn lake_bytecode() -> Option<Vec<u8>> {
     REGISTRY.lock().lake.clone()
 }
 

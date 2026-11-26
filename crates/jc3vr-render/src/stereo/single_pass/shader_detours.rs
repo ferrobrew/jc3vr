@@ -203,9 +203,9 @@ const MAX_VERTEX_IDENTITIES: usize = 4096;
 const MAX_VERTEX_BYTECODE: usize = 16 * 1024 * 1024;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct VertexIdentity {
-    pub(crate) name: Option<String>,
-    pub(crate) actual_sha256: [u8; 32],
+pub struct VertexIdentity {
+    pub name: Option<String>,
+    pub actual_sha256: [u8; 32],
 }
 
 struct VertexIdentityState {
@@ -376,9 +376,7 @@ mod vertex_identity_tests {
     }
 }
 
-pub(crate) fn vertex_identity_lookup(
-    shader: usize,
-) -> Result<Option<VertexIdentity>, &'static str> {
+pub fn vertex_identity_lookup(shader: usize) -> Result<Option<VertexIdentity>, &'static str> {
     let state = VERTEX_IDENTITIES.lock();
     if !state.armed {
         return Err("unarmed");

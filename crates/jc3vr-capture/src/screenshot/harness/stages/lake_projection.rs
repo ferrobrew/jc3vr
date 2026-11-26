@@ -9,19 +9,17 @@ use jc3gi::{
     types::math::Matrix4,
     water_patch_manager::WaterPatchManager,
 };
+use jc3vr_render::stereo::single_pass::vertex_identity_lookup;
 use jc3vr_view::stereo::{config::STEREO_CONFIG, draw_index};
 use parking_lot::Mutex;
 use serde::Serialize;
 use windows::{Win32::Graphics::Direct3D11::ID3D11DeviceContext, core::Interface};
 
-use crate::{
-    screenshot::harness::{
-        WaterReflection,
-        bound_buffer::{ShaderStage, read_bound_constant_buffer},
-        diagnostic_capture_id, frame_identity, lake_producer_requested, patch_draw,
-        screenshot_wants_eyes, water_reflection_requested, water_surface_inputs_requested,
-    },
-    stereo::single_pass::vertex_identity_lookup,
+use crate::screenshot::harness::{
+    WaterReflection,
+    bound_buffer::{ShaderStage, read_bound_constant_buffer},
+    diagnostic_capture_id, frame_identity, lake_producer_requested, patch_draw,
+    screenshot_wants_eyes, water_reflection_requested, water_surface_inputs_requested,
 };
 
 #[derive(Clone, Debug, Serialize)]

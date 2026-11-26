@@ -12,6 +12,12 @@ use jc3vr_core::{
     hooks::online::{ONLINE_CONFIG, OnlineConfig},
 };
 use jc3vr_input::frame::Hand;
+use jc3vr_render::{
+    debug::texture_census::TEXTURE_CENSUS,
+    hooks::graphics_engine::config::{
+        EXPOSURE_CONFIG, ExposureConfig, POST_FX_CONFIG, PostFxConfig,
+    },
+};
 use jc3vr_view::{
     far_field::{FAR_FIELD_CONFIG, FarFieldConfig},
     fsr::{FSR_CONFIG, FsrConfig},
@@ -26,13 +32,6 @@ use jc3vr_view::{
             CONTROLLERS_ENABLED, DOMINANT_HAND, HAPTICS_ENABLED, HAPTICS_INTENSITY, INPUT_CONFIG,
             InputConfig,
         },
-    },
-};
-
-use jc3vr_render::{
-    debug::texture_census::TEXTURE_CENSUS,
-    hooks::graphics_engine::config::{
-        EXPOSURE_CONFIG, ExposureConfig, POST_FX_CONFIG, PostFxConfig,
     },
 };
 

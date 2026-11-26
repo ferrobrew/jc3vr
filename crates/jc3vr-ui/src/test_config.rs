@@ -10,6 +10,7 @@
 //! The root registers itself before the test harness runs; see
 //! [`test_root`](jc3vr_core::config::engine::test_root).
 
+use jc3vr_capture::testing::visual::PAUSED;
 use jc3vr_core::{
     config::engine::{
         Invalid,
@@ -55,7 +56,6 @@ use jc3vr_render::{
     hooks::graphics_engine::config::{
         EXPOSURE_CONFIG, ExposureConfig, POST_FX_CONFIG, PostFxConfig,
     },
-    testing::visual::PAUSED,
 };
 use jc3vr_tooling::{
     director::{DIRECTOR_CONFIG, DirectorConfig},

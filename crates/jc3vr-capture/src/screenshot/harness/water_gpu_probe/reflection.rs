@@ -21,6 +21,7 @@ use std::{
 };
 
 use jc3gi::graphics_engine::render_engine::RenderPassId;
+use jc3vr_render::stereo::single_pass::RawDrawKind;
 use jc3vr_view::stereo::{draw_index, engine_context::EngineContext};
 use windows::{
     Win32::Graphics::Direct3D11::{
@@ -30,10 +31,7 @@ use windows::{
     core::Interface,
 };
 
-use crate::{
-    screenshot::harness::water_gpu_probe::{pointer, viewport_text},
-    stereo::single_pass::RawDrawKind,
-};
+use crate::screenshot::harness::water_gpu_probe::{pointer, viewport_text};
 
 /// A scene costs fifteen records across its four modes (three isolated, six double-draw, three
 /// single-pass), so sky and shore together cost thirty; this leaves headroom for one more scene while

@@ -1,4 +1,5 @@
 use anyhow::{Context as _, bail, ensure};
+use jc3vr_render::screenshot::create_staging;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use windows::{
@@ -17,12 +18,9 @@ use windows::{
     core::Interface,
 };
 
-use crate::screenshot::{
-    create_staging,
-    harness::stages::{
-        STATE, Source, Stage, StageArtifact, StageImage, StageRecord, WaterInputMetadata,
-        capture_raster_state, format_byte_width, stage_image, validate_desc,
-    },
+use crate::screenshot::harness::stages::{
+    STATE, Source, Stage, StageArtifact, StageImage, StageRecord, WaterInputMetadata,
+    capture_raster_state, format_byte_width, stage_image, validate_desc,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -199,8 +197,8 @@ pub(crate) fn capture_water_inputs(
     let mut shader: Option<ID3D11PixelShader> = None;
     unsafe { ctx.PSGetShader(&mut shader, None, None) };
     let identity = shader.as_ref().map_or(
-        crate::stereo::single_pass::shader_identity::IdentityResult::Unmapped,
-        crate::stereo::single_pass::shader_identity::lookup,
+        jc3vr_render::stereo::single_pass::shader_identity::IdentityResult::Unmapped,
+        jc3vr_render::stereo::single_pass::shader_identity::lookup,
     );
     let shader = shader.as_ref().map_or(0, |value| value.as_raw() as usize);
     for slot in requested_slots(surface) {
@@ -409,7 +407,8 @@ fn empty_treatment(frame: i64, eye: usize, id: &str) -> StageRecord {
             sampler: None,
             wave_footprint: None,
             pixel_shader: 0,
-            shader_identity: crate::stereo::single_pass::shader_identity::IdentityResult::Unmapped,
+            shader_identity:
+                jc3vr_render::stereo::single_pass::shader_identity::IdentityResult::Unmapped,
             draw_index: 0,
             tessellated: false,
             tess_index: None,
@@ -472,7 +471,7 @@ pub(crate) fn complete_water_inputs(
                     wave_footprint: None,
                     pixel_shader: 0,
                     shader_identity:
-                        crate::stereo::single_pass::shader_identity::IdentityResult::Unmapped,
+                        jc3vr_render::stereo::single_pass::shader_identity::IdentityResult::Unmapped,
                     draw_index: 0,
                     tessellated: false,
                     tess_index: None,

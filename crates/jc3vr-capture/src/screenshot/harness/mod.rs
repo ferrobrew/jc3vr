@@ -25,23 +25,22 @@ pub(crate) mod types;
 pub(crate) mod water_gpu_probe;
 
 use jc3vr_core::config::engine::Snapshot;
+use jc3vr_render::{
+    capture_arming::{Arming, arm},
+    image_writer,
+    image_writer::{ImageTarget, WriteOutcome},
+    screenshot::{CaptureSource, read_back},
+};
 use jc3vr_view::stereo::{dispatch, dispatch::RenderMode};
 use windows::Win32::Graphics::Direct3D11::{ID3D11Device, ID3D11DeviceContext};
 
 use crate::{
-    capture_arming::{Arming, arm},
-    image_writer,
-    image_writer::{ImageTarget, WriteOutcome},
-    screenshot::{
-        CaptureSource,
-        harness::{
-            sidecar::CaptureSidecar,
-            types::{
-                CameraInput, CaptureKind, CaptureMetadata, CaptureState, CapturedFrame,
-                ComparisonInputs, EyeInput, Readiness,
-            },
+    screenshot::harness::{
+        sidecar::CaptureSidecar,
+        types::{
+            CameraInput, CaptureKind, CaptureMetadata, CaptureState, CapturedFrame,
+            ComparisonInputs, EyeInput, Readiness,
         },
-        read_back,
     },
     testing::visual::{HISTORY_FRAMES, VisualMetadata},
 };
@@ -380,7 +379,7 @@ pub fn request(id: RequestId, options: CaptureRequest) {
     if options.cascade_scale.is_some()
         && (dispatch::mode() != RenderMode::Multipass
             || !options.resolve_inputs
-            || crate::stereo::single_pass::shader_identity::status().status != "complete")
+            || jc3vr_render::stereo::single_pass::shader_identity::status().status != "complete")
     {
         reject(
             &id,
@@ -414,7 +413,7 @@ pub fn request(id: RequestId, options: CaptureRequest) {
             return;
         }
         let water_inputs = options.water_inputs;
-        let identity = crate::stereo::single_pass::shader_identity::status();
+        let identity = jc3vr_render::stereo::single_pass::shader_identity::status();
         if !water_inputs || !identity.requested || identity.status != "complete" {
             reject(
                 &id,
@@ -2229,7 +2228,7 @@ mod tests {
             profile: DiagnosticProfile::ControlledV3,
             visual_overrides: None,
             shader_build: None,
-            shader_identity: crate::stereo::single_pass::shader_identity::status(),
+            shader_identity: jc3vr_render::stereo::single_pass::shader_identity::status(),
             ready: true,
             paused: true,
             frozen: true,

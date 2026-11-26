@@ -4,6 +4,7 @@ use std::{cell::Cell, ffi::c_void};
 
 use anyhow::Context as _;
 use cascade::{CascadeGuard, CascadeTrial};
+use jc3vr_render::stereo::single_pass::{shader_identity, shader_identity::IdentityResult};
 use jc3vr_view::{
     stereo::{dispatch, draw_index, far_phase},
     vr,
@@ -23,7 +24,6 @@ use windows::{
 
 use crate::{
     screenshot::harness::{diagnostic_capture_id, resolve_inputs_requested},
-    stereo::single_pass::{shader_identity, shader_identity::IdentityResult},
     testing::visual,
 };
 
@@ -261,7 +261,7 @@ pub(crate) unsafe fn on_draw(
     let metadata = visual::metadata();
     let frame = vr::capture_views()?.predicted_display_time_ns;
     let eye = if dispatch::mode() == dispatch::RenderMode::SinglePass {
-        crate::hooks::graphics_engine::reconstruction::masked_eye()?
+        jc3vr_render::hooks::graphics_engine::reconstruction::masked_eye()?
     } else {
         draw_index()
     };

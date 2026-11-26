@@ -35,7 +35,7 @@ use crate::{
 
 /// A point in the frame where the capture side may keep a stage image.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) enum PipelinePoint {
+pub enum PipelinePoint {
     /// The main G-buffer range has completed on a near dispatch.
     Geometry,
     /// The sun's shadow pass has drawn.
@@ -56,25 +56,25 @@ pub(crate) enum PipelinePoint {
 
 /// Which side of the engine's anti-aliasing a post-chain slot is captured on.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) enum AntiAliasingSide {
+pub enum AntiAliasingSide {
     Before,
     After,
 }
 
 /// The near terrain patch pass a pending capture brackets inside the main G-buffer range.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) struct NearPatchBracket {
+pub struct NearPatchBracket {
     /// The render-pass id of the bracketed patch pass.
-    pub(crate) pass: i32,
+    pub pass: i32,
     /// Whether the bracketed pass is the tessellated near patch rather than the base mesh.
-    pub(crate) tessellated: bool,
+    pub tessellated: bool,
 }
 
 /// What the capture tooling does at the pipeline's seams. Every method has an inert default.
 ///
 /// A scope method runs `body` exactly once, at the point its doc names, and brackets it with the
 /// probe's own work.
-pub(crate) trait PipelineProbes: Sync {
+pub trait PipelineProbes: Sync {
     /// Brackets one draw-thread task (`CGraphicsEngine::HandleDrawThreadTask`). Called while a
     /// capture or a benchmark is armed.
     fn draw_task_scope(&self, body: &mut dyn FnMut()) {
@@ -236,7 +236,7 @@ pub(crate) trait PipelineProbes: Sync {
 
 /// Registers the pipeline probes. Once, at startup, before the hooks install; a second registration
 /// is refused with an error log.
-pub(crate) fn register_pipeline_probes(probes: &'static dyn PipelineProbes) {
+pub fn register_pipeline_probes(probes: &'static dyn PipelineProbes) {
     if PROBES.set(probes).is_err() {
         tracing::error!("pipeline probes: already registered; the second registration is ignored");
     }

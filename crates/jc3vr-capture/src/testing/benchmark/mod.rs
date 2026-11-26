@@ -7,7 +7,7 @@
 //! then records each frame: the frame interval and the always-on frame breakdown's per-thread and
 //! per-slot times (`jc3vr_core::frame_timing`), the engine's draw calls and the stereo draw path's
 //! submissions, the draw detours' own cost when asked, and the GPU time of each dispatch from
-//! timestamp queries (`crate::profiler::gpu`). The acknowledgement carries every frame, so the
+//! timestamp queries (`jc3vr_render::profiler::gpu`). The acknowledgement carries every frame, so the
 //! statistics are computed off line. See `docs/mod/testing/benchmark.md`.
 //!
 //! Threading: [`request`] and [`tick`] run on the game thread, from the request poll and the top of
@@ -31,6 +31,22 @@ use jc3vr_core::{
     frame_timing,
     frame_timing::Slot,
 };
+use jc3vr_render::{
+    capture_arming::{Arming, arm},
+    hooks::{
+        draw_count,
+        graphics_engine::{post::post_effects::vr_forces_blurs_off, shader},
+    },
+    profiler::{
+        gpu_samples,
+        gpu_samples::{GPU_SEAM_NAMES, GpuDispatchSample},
+    },
+    stereo::{
+        single_pass,
+        single_pass::{detour_timing, probes::submission_total},
+        switches::ShaderBuild,
+    },
+};
 use jc3vr_view::{
     far_field::FAR_FIELD_CONFIG,
     fsr::{AntiAliasing, FSR_CONFIG, FsrConfig},
@@ -52,29 +68,13 @@ use windows::{
 };
 
 pub use crate::testing::benchmark::request::{BenchmarkError, BenchmarkRequest, BenchmarkTable};
-use crate::{
-    capture_arming::{Arming, arm},
-    hooks::{
-        draw_count,
-        graphics_engine::{post::post_effects::vr_forces_blurs_off, shader},
+use crate::testing::{
+    benchmark::{
+        request::{BenchmarkMode, CameraPath},
+        sample::{COLUMN_COUNT, COLUMNS, Reading, frame_row},
+        sampler::{DrawTaskSamples, Sampler},
     },
-    profiler::{
-        gpu_samples,
-        gpu_samples::{GPU_SEAM_NAMES, GpuDispatchSample},
-    },
-    stereo::{
-        single_pass,
-        single_pass::{detour_timing, probes::submission_total},
-        switches::ShaderBuild,
-    },
-    testing::{
-        benchmark::{
-            request::{BenchmarkMode, CameraPath},
-            sample::{COLUMN_COUNT, COLUMNS, Reading, frame_row},
-            sampler::{DrawTaskSamples, Sampler},
-        },
-        visual::{OrientationOffset, TranslationOffset, overrides::SinglePassOverrides},
-    },
+    visual::{OrientationOffset, TranslationOffset, overrides::SinglePassOverrides},
 };
 
 /// Queue a benchmark run. One runs at a time; a request while another is queued or running is
@@ -336,7 +336,7 @@ impl Run {
                 if self.settled() {
                     self.settled_after = now - self.began;
                     self.path_origin = Some(now);
-                    crate::fsr::request_history_reset();
+                    jc3vr_render::fsr::request_history_reset();
                     gpu_samples::arm(self.request.gpu);
                     gpu_passes::set_armed(self.request.gpu && self.request.gpu_passes);
                     self.phase = Phase::WarmingUp {

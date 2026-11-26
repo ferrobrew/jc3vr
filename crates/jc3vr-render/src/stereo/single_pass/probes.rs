@@ -27,7 +27,7 @@ use crate::{
 /// The device-context draw entry a submission arrived at.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(usize)]
-pub(crate) enum RawDrawKind {
+pub enum RawDrawKind {
     Indexed,
     NonIndexed,
     IndexedInstanced,
@@ -36,9 +36,9 @@ pub(crate) enum RawDrawKind {
 }
 
 impl RawDrawKind {
-    pub(crate) const COUNT: usize = 5;
+    pub const COUNT: usize = 5;
 
-    pub(crate) fn name(self) -> &'static str {
+    pub fn name(self) -> &'static str {
         match self {
             Self::Indexed => "indexed",
             Self::NonIndexed => "non_indexed",
@@ -51,7 +51,7 @@ impl RawDrawKind {
 
 /// The FSR inputs a snapshot can keep per eye.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum FsrPlane {
+pub enum FsrPlane {
     /// The motion vectors FSR is handed.
     Motion,
     /// The depth FSR is handed.
@@ -59,14 +59,14 @@ pub(crate) enum FsrPlane {
 }
 
 /// A probe's state held across a submission, released on drop.
-pub(crate) type ProbeGuard = Box<dyn Any>;
+pub type ProbeGuard = Box<dyn Any>;
 
 /// The cb13 rows of the sun's re-driven pass.
-pub(crate) type Cb13Rows = [Vector4; STEREO_CB_TOTAL_ROWS];
+pub type Cb13Rows = [Vector4; STEREO_CB_TOTAL_ROWS];
 
 /// The capture harness's probes into the single-pass draw path. Each method is the harness side of
 /// one point of a draw; the draw path calls it only while a capture has armed the probes.
-pub(crate) trait SinglePassProbes: Sync {
+pub trait SinglePassProbes: Sync {
     /// A submission arriving at a device-context draw entry.
     ///
     /// # Safety
@@ -213,7 +213,7 @@ pub(crate) trait SinglePassProbes: Sync {
 }
 
 /// The sun probe's bracket of one re-driven sun pass.
-pub(crate) trait SunPassProbe {
+pub trait SunPassProbe {
     /// Open eye `eye`'s run, with the live `rows` and the `pinned` rows the eye draws with.
     fn begin_eye(&mut self, eye: usize, rows: &Cb13Rows, pinned: &Cb13Rows);
     /// Close eye `eye`'s run once its pass has drawn.
@@ -221,12 +221,12 @@ pub(crate) trait SunPassProbe {
 }
 
 /// One water surface draw's GPU probe, finished after the draw.
-pub(crate) trait WaterGpuRun {
+pub trait WaterGpuRun {
     fn finish(self: Box<Self>);
 }
 
 /// Register the capture harness's probes. The first registration stands.
-pub(crate) fn register_single_pass_probes(probes: &'static dyn SinglePassProbes) {
+pub fn register_single_pass_probes(probes: &'static dyn SinglePassProbes) {
     if PROBES.set(probes).is_err() {
         tracing::warn!(
             "single pass: capture probes are already registered; the new ones are ignored"
@@ -294,7 +294,7 @@ pub(crate) fn submit_indirect(
 /// Every submission the stereo draw path has made while a capture or a benchmark was armed, never
 /// reset, for samplers that difference two readings (the benchmark, `crate::testing::benchmark`,
 /// whose request arms the count). Counted only while the draw-path detours are installed.
-pub(crate) fn submission_total() -> u64 {
+pub fn submission_total() -> u64 {
     SUBMISSIONS.load(Ordering::Relaxed)
 }
 

@@ -57,7 +57,7 @@ mod cb13;
 mod config_snapshot;
 mod detour_lifecycle;
 // The draw detours' own cost, which a benchmark run arms.
-pub(crate) mod detour_timing;
+pub mod detour_timing;
 mod draw_detours;
 pub mod eye_camera;
 pub(crate) mod eye_globals;
@@ -70,7 +70,7 @@ mod per_eye_reissue;
 mod pinned_eye;
 pub mod post_filters;
 // The capture harness's probes into the draw path.
-pub(crate) mod probes;
+pub mod probes;
 // The ambient-occlusion volumes' pixel-shader rewrite and its per-eye rows; reached by the shader
 // creation detour and the volume pass's draw walk.
 pub(crate) mod ao_volumes;
@@ -78,7 +78,7 @@ pub(crate) mod ao_volumes;
 // detour and the reflection block.
 pub(crate) mod screen_space_reflection;
 mod shader_detours;
-pub(crate) mod shader_identity;
+pub mod shader_identity;
 mod shader_policy;
 mod static_lights;
 mod sun;
@@ -91,7 +91,7 @@ pub(crate) mod water_pixel_variants;
 pub use cb13::*;
 pub use config_snapshot::*;
 use detour_lifecycle::{DETOUR_INSTALL, DetourSlot, PIXEL_SHADER_EVER_ENABLED};
-pub(crate) use detour_lifecycle::{
+pub use detour_lifecycle::{
     com_detours_installed, ensure_pixel_shader_detour, ensure_viewport_detours,
     vertex_identity_detour_ready,
 };
@@ -103,9 +103,8 @@ pub(crate) use jc3vr_view::stereo::engine_context::EngineContext;
 use jc3vr_view::stereo::layout::{Capability, capability, collapse_active};
 pub use per_eye_reissue::*;
 pub(crate) use pinned_eye::tag_pinned_eye;
-pub(crate) use probes::{
-    RawDrawKind, WaterGpuProbe, begin_water_input_capture, reflection_producer,
-};
+pub use probes::RawDrawKind;
+pub(crate) use probes::{WaterGpuProbe, begin_water_input_capture, reflection_producer};
 pub use shader_detours::*;
 pub use shader_policy::*;
 pub use static_lights::EyeLightWidth;
@@ -115,7 +114,7 @@ pub(crate) use water_fragment_state::begin_water_surface;
 
 /// The live `cb13` rows the remap and reprojection blocks occupy (the clip-origin rows after them
 /// are left out).
-pub(crate) fn live_cb13_rows() -> Option<[Vector4; dxbc_stereo::STEREO_REPROJ_CB_ROWS as usize]> {
+pub fn live_cb13_rows() -> Option<[Vector4; dxbc_stereo::STEREO_REPROJ_CB_ROWS as usize]> {
     let rows = CB13.lock().live_rows()?;
     Some(std::array::from_fn(|row| rows[row]))
 }
@@ -322,7 +321,7 @@ pub fn set_ui_viewport_raw(context: &ID3D11DeviceContext, viewport: &D3D11_VIEWP
 /// per-eye passes in the collapse, where the render camera stays centered. What draws after FSR
 /// takes [`collapse_ui_eye_override`]'s, which leaves the jitter out. `None` if the centre transform
 /// or per-eye params are unavailable.
-pub(crate) fn full_eye_view_projection(eye: usize) -> Option<Matrix4> {
+pub fn full_eye_view_projection(eye: usize) -> Option<Matrix4> {
     let center_transform = jc3vr_view::stereo::STEREO_STATE.lock().center_transform?;
     let params = jc3vr_view::vr::render_params(eye)?;
     let eye_world = params.resolve(glam::Mat4::from(center_transform));
@@ -415,7 +414,7 @@ pub fn restore_current_pass(pass: u8) {
     CURRENT_PASS.store(pass, Ordering::Relaxed);
 }
 
-pub(crate) fn current_pass_id() -> u8 {
+pub fn current_pass_id() -> u8 {
     CURRENT_PASS.load(Ordering::Relaxed)
 }
 
@@ -804,7 +803,7 @@ unsafe fn com_release(object: *mut c_void) {
 static BOUND_VS_PATCHED: AtomicBool = AtomicBool::new(false);
 
 /// Whether the vertex shader bound on the immediate context is one the single-pass rewrite patched.
-pub(crate) fn bound_vertex_shader_patched() -> bool {
+pub fn bound_vertex_shader_patched() -> bool {
     BOUND_VS_PATCHED.load(Ordering::Relaxed)
 }
 /// The currently-bound `ID3D11VertexShader` pointer (updated on `VSSetShader`), so an exposed
@@ -870,7 +869,7 @@ static CVS_REACQ_ERR: AtomicUsize = AtomicUsize::new(0);
 // which is a 2x motion gain as well. It is always the live bind, so the halves derived from it are
 // the halves of whatever target is actually bound.
 
-pub(crate) fn patch_camera_sources(eye: usize) -> Option<(D3D11_VIEWPORT, usize)> {
+pub fn patch_camera_sources(eye: usize) -> Option<(D3D11_VIEWPORT, usize)> {
     let full = viewport_record::scene_viewport()?;
     Some((eye_half_viewport(full, eye), CB13.lock().buffer_ptr()?))
 }

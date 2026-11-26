@@ -1,6 +1,9 @@
 use std::{cell::Cell, ffi::c_void};
 
 use anyhow::{Context as _, Result, ensure};
+use jc3vr_render::stereo::single_pass::{
+    patch_camera_sources, shader_identity, vertex_identity_lookup,
+};
 use jc3vr_view::stereo::draw_index;
 use sha2::{Digest, Sha256};
 use windows::{
@@ -12,15 +15,12 @@ use windows::{
     core::{GUID, Interface},
 };
 
-use crate::{
-    screenshot::{
-        harness,
-        harness::{
-            WaterReflection,
-            bound_buffer::{ShaderStage, read_bound_constant_buffer},
-        },
+use crate::screenshot::{
+    harness,
+    harness::{
+        WaterReflection,
+        bound_buffer::{ShaderStage, read_bound_constant_buffer},
     },
-    stereo::single_pass::{patch_camera_sources, shader_identity, vertex_identity_lookup},
 };
 
 const TAG: GUID = GUID::from_u128(0x8cb3b9e3_ad4d_41e7_bdc3_cdc6611f1238);
@@ -502,7 +502,7 @@ fn other_b1(ctx: &ID3D11DeviceContext) -> [usize; 5] {
 }
 
 pub(crate) fn water_mvp(eye: usize) -> Result<[u32; 16]> {
-    let vp = crate::stereo::single_pass::full_eye_view_projection(eye)
+    let vp = jc3vr_render::stereo::single_pass::full_eye_view_projection(eye)
         .context("lake MVP: missing physical VP")?
         .data;
     ensure!(

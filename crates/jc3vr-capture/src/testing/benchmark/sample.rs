@@ -2,8 +2,7 @@
 //! frame apart on the game thread.
 
 use jc3vr_core::frame_timing::{Cumulative, Kind, Slot, ThreadClass};
-
-use crate::{
+use jc3vr_render::{
     hooks::draw_count::EngineCallTotals, stereo::single_pass::detour_timing::DetourTotals,
 };
 

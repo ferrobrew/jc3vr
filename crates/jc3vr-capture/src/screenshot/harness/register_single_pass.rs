@@ -4,19 +4,18 @@
 use std::ffi::c_void;
 
 use jc3gi::graphics_engine::graphics_engine::RenderContext;
+use jc3vr_render::stereo::single_pass::probes::{
+    FsrPlane, ProbeGuard, RawDrawKind, SinglePassProbes, SunPassProbe, WaterGpuRun,
+    register_single_pass_probes,
+};
 use windows::Win32::Graphics::Direct3D11::ID3D11Resource;
 
-use crate::{
-    screenshot::harness::{
-        patch_draw, resolve_probe,
-        snapshot::{self, Plane},
-        stages::{self, aa, dof, patch_owners, proxy, ssr, velocity},
-        sun_probe, water_gpu_probe,
-    },
-    stereo::single_pass::probes::{
-        FsrPlane, ProbeGuard, RawDrawKind, SinglePassProbes, SunPassProbe, WaterGpuRun,
-        register_single_pass_probes,
-    },
+use crate::screenshot::harness::{
+    patch_draw, resolve_probe, snapshot,
+    snapshot::Plane,
+    stages,
+    stages::{aa, dof, patch_owners, proxy, ssr, velocity},
+    sun_probe, water_gpu_probe,
 };
 
 /// Register the harness's probes into the single-pass draw path.

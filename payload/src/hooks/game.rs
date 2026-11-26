@@ -13,6 +13,7 @@ use jc3gi::{
         render_pass::get_current_add_buffer,
     },
 };
+use jc3vr_capture::testing::visual;
 use jc3vr_core::{
     frame_timing::{self, Slot},
     render_frame,
@@ -42,7 +43,6 @@ use jc3vr_render::{
     },
     stereo,
     stereo::sun_shadows,
-    testing::visual,
 };
 use jc3vr_tooling::diagnostics;
 use jc3vr_view::{

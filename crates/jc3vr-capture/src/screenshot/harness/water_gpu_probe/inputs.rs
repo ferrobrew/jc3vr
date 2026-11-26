@@ -1,5 +1,9 @@
 use std::{cell::RefCell, ffi::c_void, marker::PhantomData, rc::Rc};
 
+use jc3vr_render::stereo::single_pass::{
+    shader_identity,
+    shader_identity::{IdentityResult, LAKE_PS},
+};
 use windows::{
     Win32::Graphics::{
         Direct3D::D3D_SRV_DIMENSION_TEXTURE2D,
@@ -15,17 +19,14 @@ use windows::{
     core::Interface,
 };
 
-use crate::{
-    screenshot::harness::{
-        WaterReflection, diagnostic_capture_id, frame_identity, lake_displacement_requested,
-        lake_ds_mvp, lake_gradients_requested, lake_inner_edge, lake_normals_requested,
-        lake_waves_requested,
-        patch_draw::LakeMvpGuard,
-        stages::{LakeSampleTargets, capture_water_inputs, record_water_treatment},
-        water_gpu_probe::work,
-        water_inputs_requested, water_reflection_requested, water_tess_draw,
-    },
-    stereo::single_pass::shader_identity::{self, IdentityResult, LAKE_PS},
+use crate::screenshot::harness::{
+    WaterReflection, diagnostic_capture_id, frame_identity, lake_displacement_requested,
+    lake_ds_mvp, lake_gradients_requested, lake_inner_edge, lake_normals_requested,
+    lake_waves_requested,
+    patch_draw::LakeMvpGuard,
+    stages::{LakeSampleTargets, capture_water_inputs, record_water_treatment},
+    water_gpu_probe::work,
+    water_inputs_requested, water_reflection_requested, water_tess_draw,
 };
 
 thread_local! {
@@ -207,7 +208,7 @@ pub(crate) unsafe fn reflection_treatment(context: *mut c_void) -> Option<Reflec
                     | WaterReflection::LakeSkyBuffer
                     | WaterReflection::LakeResponse
             ))
-            || (packed && crate::stereo::single_pass::per_eye_reissue_eye() != Some(eye))
+            || (packed && jc3vr_render::stereo::single_pass::per_eye_reissue_eye() != Some(eye))
         {
             return None;
         }
@@ -535,8 +536,8 @@ impl LakeShaderGuard {
                         && eye < 2
                         && water_tess_draw() == Some(7)
                         && jc3vr_view::stereo::layout::collapse_active()
-                        && crate::stereo::single_pass::per_eye_reissue_eye() == Some(eye)
-                        && crate::stereo::single_pass::current_pass_id()
+                        && jc3vr_render::stereo::single_pass::per_eye_reissue_eye() == Some(eye)
+                        && jc3vr_render::stereo::single_pass::current_pass_id()
                             == jc3gi::graphics_engine::render_engine::RenderPassId::RP_WATER as u8,
                     "lake MVP: submission outside selected draw"
                 );
@@ -873,8 +874,9 @@ pub(super) unsafe fn on_raw_draw(context: *mut c_void) {
 
 #[cfg(test)]
 mod tests {
+    use jc3vr_render::stereo::single_pass::shader_identity::Identity;
+
     use super::*;
-    use crate::stereo::single_pass::shader_identity::Identity;
 
     fn mapped(pristine: &str, actual: &str) -> IdentityResult {
         IdentityResult::Mapped {

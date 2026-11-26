@@ -1,6 +1,7 @@
 use std::{cell::Cell, ffi::c_void};
 
 use anyhow::{Context as _, ensure};
+use jc3vr_render::stereo::single_pass::shader_identity;
 use jc3vr_view::stereo::{dispatch, dispatch::RenderMode, draw_index};
 use windows::{
     Win32::Graphics::{
@@ -13,15 +14,12 @@ use windows::{
     core::Interface,
 };
 
-use crate::{
-    screenshot::{
-        harness,
-        harness::stages::{
-            LakeSampleTargets, STATE, Stage, StageImage, capture_raster_state, empty_stage_record,
-            read_texture,
-        },
+use crate::screenshot::{
+    harness,
+    harness::stages::{
+        LakeSampleTargets, STATE, Stage, StageImage, capture_raster_state, empty_stage_record,
+        read_texture,
     },
-    stereo::single_pass::shader_identity,
 };
 thread_local! {static ORDINAL:Cell<Option<u8>>=const{Cell::new(None)};}
 

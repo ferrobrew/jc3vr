@@ -1,10 +1,8 @@
 use anyhow::{Context as _, ensure};
+use jc3vr_render::stereo::single_pass::{shader_identity, shader_identity::IdentityResult};
 use windows::Win32::Graphics::Direct3D11::{ID3D11DeviceContext, ID3D11PixelShader};
 
-use crate::{
-    screenshot::harness::{resolve_probe::Observation, stages::LakeSampleTargets},
-    stereo::single_pass::shader_identity::{self, IdentityResult},
-};
+use crate::screenshot::harness::{resolve_probe::Observation, stages::LakeSampleTargets};
 
 pub(crate) struct Guard {
     ctx: ID3D11DeviceContext,

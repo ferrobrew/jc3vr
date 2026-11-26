@@ -112,7 +112,7 @@ slots! {
     jc3vr_view::recorder::tracking::RECORD_HAND_JOINTS = testing.record_hand_joints,
     jc3vr_view::recorder::tracking::TIME_SCALE = director.time_scale,
     jc3vr_core::director::clean_view::CLEAN_VIEW_CONFIG = director.clean_view,
-    jc3vr_render::testing::visual::PAUSED = director.paused,
+    jc3vr_capture::testing::visual::PAUSED = director.paused,
 }
 
 #[cfg(test)]

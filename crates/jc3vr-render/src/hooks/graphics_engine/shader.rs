@@ -735,11 +735,11 @@ impl std::error::Error for ReloadError {}
 /// reload is synchronous -- `LoadShaderBundle` re-creates every shader holder before it returns --
 /// so a value equal to [`ShaderBuild::current`] means the live bytecode carries exactly the
 /// creation-time rewrites the configuration asks for.
-pub(crate) fn built_with() -> Option<ShaderBuild> {
+pub fn built_with() -> Option<ShaderBuild> {
     *BUILT_WITH.lock()
 }
 
-pub(crate) fn reload_now() -> Result<(), ReloadError> {
+pub fn reload_now() -> Result<(), ReloadError> {
     RELOAD_REQUESTED.store(false, Ordering::Relaxed);
     // Recorded before the attempt, so a reload that fails is not retried on every frame.
     CREATED_SINGLE_PASS.store(crate::stereo::single_pass::active(), Ordering::Relaxed);

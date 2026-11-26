@@ -18,7 +18,7 @@ mod declaration_replay;
 #[allow(clippy::module_inception)]
 pub mod graphics_engine;
 // What the capture tooling observes at the pipeline's seams, registered by the capture side.
-pub(crate) mod probes;
+pub mod probes;
 // The VR runtime's teardown participant: the flip block and the far-field share pipeline.
 pub mod register_vr_teardown;
 mod render_pass;

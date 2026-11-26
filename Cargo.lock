@@ -2297,6 +2297,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "jc3vr-capture"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "dxbc-stereo",
+ "flate2",
+ "glam",
+ "image",
+ "jc3gi",
+ "jc3vr-core",
+ "jc3vr-input",
+ "jc3vr-render",
+ "jc3vr-view",
+ "parking_lot",
+ "pretty_assertions",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "test-case",
+ "toml 1.1.6+spec-1.1.0",
+ "tracing",
+ "windows 0.62.2",
+]
+
+[[package]]
 name = "jc3vr-core"
 version = "0.1.0"
 dependencies = [
@@ -2394,7 +2419,6 @@ dependencies = [
  "anyhow",
  "detours-macro",
  "dxbc-stereo",
- "flate2",
  "fsr-sys",
  "glam",
  "image",
@@ -2411,7 +2435,6 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "test-case",
- "toml 1.1.6+spec-1.1.0",
  "tracing",
  "windows 0.62.2",
 ]
@@ -2423,6 +2446,7 @@ dependencies = [
  "anyhow",
  "glam",
  "jc3gi",
+ "jc3vr-capture",
  "jc3vr-core",
  "jc3vr-gameplay",
  "jc3vr-input",
@@ -2452,6 +2476,7 @@ dependencies = [
  "egui_dock",
  "glam",
  "jc3gi",
+ "jc3vr-capture",
  "jc3vr-core",
  "jc3vr-gameplay",
  "jc3vr-hud",
@@ -2525,6 +2550,7 @@ dependencies = [
  "egui",
  "glam",
  "jc3gi",
+ "jc3vr-capture",
  "jc3vr-core",
  "jc3vr-gameplay",
  "jc3vr-hud",

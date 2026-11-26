@@ -146,7 +146,7 @@ pub trait ImageSidecar: Send {
 }
 
 /// What became of one image submitted with [`try_submit`].
-pub(crate) struct WriteOutcome {
+pub struct WriteOutcome {
     pub result: Result<PathBuf, String>,
     /// The sidecar of an [`ImageTarget::Attached`] image, once it and the image were written.
     pub sidecar: Option<Box<dyn ImageSidecar>>,
@@ -191,10 +191,7 @@ pub fn submit(target: ImageTarget, image: Image) {
     }
 }
 
-pub(crate) fn try_submit(
-    target: ImageTarget,
-    image: Image,
-) -> anyhow::Result<Receiver<WriteOutcome>> {
+pub fn try_submit(target: ImageTarget, image: Image) -> anyhow::Result<Receiver<WriteOutcome>> {
     let mut writer = WRITER.lock();
     anyhow::ensure!(
         !jc3vr_core::is_shutting_down(),
@@ -360,7 +357,7 @@ fn write(target: &ImageTarget, image: Image) -> anyhow::Result<PathBuf> {
 }
 
 /// Encodes `image` as a PNG at `path`, normalizing its channels on the way.
-pub(crate) fn write_png(path: &Path, mut image: Image) -> anyhow::Result<()> {
+pub fn write_png(path: &Path, mut image: Image) -> anyhow::Result<()> {
     to_rgba8_opaque(&mut image.pixels, image.order);
     let file =
         std::fs::File::create(path).with_context(|| format!("creating {}", path.display()))?;

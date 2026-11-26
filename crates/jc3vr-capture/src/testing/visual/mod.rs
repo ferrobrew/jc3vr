@@ -10,6 +10,10 @@ use jc3gi::{
     clock::Clock,
     graphics_engine::{graphics_engine::GraphicsEngine, shadow_manager::get_shadow_system_enabled},
 };
+use jc3vr_render::{
+    capture_arming::{Arming, arm},
+    hooks::graphics_engine::config::{EXPOSURE_CONFIG, POST_FX_CONFIG},
+};
 use jc3vr_view::{
     far_field::FAR_FIELD_CONFIG,
     fsr::FSR_CONFIG,
@@ -18,11 +22,6 @@ use jc3vr_view::{
 };
 use parking_lot::Mutex;
 use serde::Serialize;
-
-use crate::{
-    capture_arming::{Arming, arm},
-    hooks::graphics_engine::config::{EXPOSURE_CONFIG, POST_FX_CONFIG},
-};
 
 pub mod environment;
 pub(crate) mod headset;
@@ -37,6 +36,10 @@ pub use environment::{
 use jc3vr_core::{
     config::engine::{ConfigSlot, Parts, Snapshot, lock_parts},
     director::clean_view::{CLEAN_VIEW_CONFIG, CleanViewScope},
+};
+use jc3vr_render::{
+    hooks::graphics_engine::{shader, tone_mapping},
+    stereo::{single_pass, sun_shadows, switches::ShaderBuild},
 };
 pub use jc3vr_view::stereo::dispatch::RenderMode;
 use jc3vr_view::{
@@ -57,11 +60,6 @@ pub use pose::{
     PoseTable, PoseTransform, TranslationOffset, pose_frame, pose_matches,
 };
 
-use crate::{
-    hooks::graphics_engine::{shader, tone_mapping},
-    stereo::{single_pass, sun_shadows, switches::ShaderBuild},
-};
-
 /// Whether the game is paused, `director.paused` in the settings file, which a capture pins. The
 /// payload binds the slot to its field in the directing settings at startup.
 pub static PAUSED: ConfigSlot<bool> = ConfigSlot::new("director.paused");
@@ -79,7 +77,7 @@ pub(crate) struct VisualMetadata {
     pub generation: u64,
     pub mode: Option<RenderMode>,
     pub profile: DiagnosticProfile,
-    pub shader_identity: crate::stereo::single_pass::shader_identity::CensusStatus,
+    pub shader_identity: jc3vr_render::stereo::single_pass::shader_identity::CensusStatus,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub visual_overrides: Option<VisualOverrides>,
     /// The state the live shaders were created under, so a capture shows which creation-time
@@ -370,7 +368,7 @@ pub fn process_pending() {
             }
             // Every configuration accumulates FSR's history from its own warm-up, so modes compared
             // against each other start from the same number of frames.
-            crate::fsr::request_history_reset();
+            jc3vr_render::fsr::request_history_reset();
             state.shadow_sync_required |=
                 sun_shadows_overridden(visual_overrides.as_ref()) || sun_shadows::override_active();
             state.visual_overrides = visual_overrides;

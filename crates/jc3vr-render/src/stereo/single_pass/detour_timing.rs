@@ -45,7 +45,7 @@ impl Drop for DrawDetourScope {
 }
 
 /// Run a forwarding call into the runtime, timing it while armed.
-pub(crate) fn forward(call: impl FnOnce()) {
+pub fn forward(call: impl FnOnce()) {
     if !ARMED.load(Ordering::Relaxed) {
         call();
         return;
@@ -58,14 +58,14 @@ pub(crate) fn forward(call: impl FnOnce()) {
 
 /// The totals since the payload loaded, never reset.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(crate) struct DetourTotals {
-    pub(crate) detour_ns: u64,
-    pub(crate) detour_calls: u64,
-    pub(crate) forward_ns: u64,
-    pub(crate) forward_calls: u64,
+pub struct DetourTotals {
+    pub detour_ns: u64,
+    pub detour_calls: u64,
+    pub forward_ns: u64,
+    pub forward_calls: u64,
 }
 
-pub(crate) fn totals() -> DetourTotals {
+pub fn totals() -> DetourTotals {
     DetourTotals {
         detour_ns: DETOUR_NS.load(Ordering::Relaxed),
         detour_calls: DETOUR_CALLS.load(Ordering::Relaxed),
@@ -74,13 +74,13 @@ pub(crate) fn totals() -> DetourTotals {
     }
 }
 
-pub(crate) fn set_armed(armed: bool) {
+pub fn set_armed(armed: bool) {
     ARMED.store(armed, Ordering::Relaxed);
 }
 
 /// The mean cost of two back-to-back clock reads and the subtraction between them, in nanoseconds,
 /// over `samples` pairs.
-pub(crate) fn clock_pair_ns(samples: u32) -> f64 {
+pub fn clock_pair_ns(samples: u32) -> f64 {
     let start = Instant::now();
     let mut sink = 0u64;
     for _ in 0..samples {

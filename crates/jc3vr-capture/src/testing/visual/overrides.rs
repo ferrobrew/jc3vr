@@ -9,6 +9,10 @@
 use std::collections::BTreeMap;
 
 use jc3vr_core::config::engine::Parts;
+use jc3vr_render::{
+    hooks::graphics_engine::config::{EXPOSURE_CONFIG, ExposureConfig, POST_FX_CONFIG},
+    stereo::switches::SinglePassSwitch,
+};
 use jc3vr_view::{
     fsr::{AntiAliasing, FSR_CONFIG, FsrConfig},
     stereo::{
@@ -19,11 +23,7 @@ use jc3vr_view::{
 };
 use serde::{Deserialize, Serialize, Serializer, ser::SerializeMap as _};
 
-use crate::{
-    hooks::graphics_engine::config::{EXPOSURE_CONFIG, ExposureConfig, POST_FX_CONFIG},
-    stereo::switches::SinglePassSwitch,
-    testing::visual::headset::HeadsetRig,
-};
+use crate::testing::visual::headset::HeadsetRig;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]

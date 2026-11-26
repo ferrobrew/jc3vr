@@ -1,5 +1,6 @@
 use std::{ffi::c_void, time::Duration};
 
+use jc3vr_render::stereo::single_pass::RawDrawKind;
 use jc3vr_view::stereo::engine_context::EngineContext;
 use windows::{
     Win32::{
@@ -13,10 +14,7 @@ use windows::{
     core::{HRESULT, Interface},
 };
 
-use crate::{
-    screenshot::harness::water_gpu_probe::{ProbeContext, ProbeError},
-    stereo::single_pass::RawDrawKind,
-};
+use crate::screenshot::harness::water_gpu_probe::{ProbeContext, ProbeError};
 
 const POLLS: u32 = 20;
 const POLL_INTERVAL: Duration = Duration::from_micros(250);

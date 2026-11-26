@@ -39,7 +39,7 @@ const FULL_VIEW_PROJECTION_ROW_BASE: usize = 25;
 /// rewrite, each eye's copy of the render camera's position for the remap's per-eye clip origin, the
 /// eye-row selector, and each eye's full view-projection (`dxbc_stereo::STEREO_FULL_CB_ROWS`). Every
 /// idiom binds the same `b13` buffer.
-pub(crate) const STEREO_CB_TOTAL_ROWS: usize = 33;
+pub const STEREO_CB_TOTAL_ROWS: usize = 33;
 
 // Keep the payload's cb13 layout in lockstep with the rewriter that reads it.
 const _: () = {
@@ -491,7 +491,7 @@ pub(super) fn preserve_reprojection_depth(rows: &mut [Vector4; STEREO_CB_TOTAL_R
 
 /// The four view-projection rows and four `M_eye` rows a per-eye pin places in the first `cb13` slot
 /// for `eye`, for the draw-state diagnostic.
-pub(crate) fn pinned_eye_rows(
+pub fn pinned_eye_rows(
     rows: &[Vector4; STEREO_CB_TOTAL_ROWS],
     eye: usize,
 ) -> ([[f32; 4]; 4], [[f32; 4]; 4]) {
@@ -503,7 +503,7 @@ pub(crate) fn pinned_eye_rows(
 }
 
 /// The live `cb13` buffer's interface pointer, for comparing with what a draw has bound.
-pub(crate) fn cb13_buffer_ptr() -> Option<usize> {
+pub fn cb13_buffer_ptr() -> Option<usize> {
     CB13.lock().buffer_ptr()
 }
 

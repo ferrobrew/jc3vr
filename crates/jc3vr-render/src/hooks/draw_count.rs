@@ -42,7 +42,7 @@ pub static DRAW_COUNTS: DrawCounts = DrawCounts::new();
 /// payload loaded and never reset, for samplers that difference two readings (the capture tooling's
 /// benchmark). A render block re-issued per eye calls the wrappers again, so these count its draws
 /// once per eye.
-pub(crate) fn engine_call_totals() -> EngineCallTotals {
+pub fn engine_call_totals() -> EngineCallTotals {
     EngineCallTotals {
         draws: TOTAL_DRAWS.load(Ordering::Relaxed),
         dispatches: TOTAL_DISPATCHES.load(Ordering::Relaxed),
@@ -51,9 +51,9 @@ pub(crate) fn engine_call_totals() -> EngineCallTotals {
 
 /// The totals [`engine_call_totals`] returns.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(crate) struct EngineCallTotals {
-    pub(crate) draws: u64,
-    pub(crate) dispatches: u64,
+pub struct EngineCallTotals {
+    pub draws: u64,
+    pub dispatches: u64,
 }
 
 static TOTAL_DRAWS: AtomicU64 = AtomicU64::new(0);

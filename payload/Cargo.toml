@@ -16,6 +16,7 @@ profiler = [
     "jc3vr-core/profiler",
     "jc3vr-render/profiler",
     "jc3vr-view/profiler",
+    "jc3vr-capture/profiler",
     "jc3vr-gameplay/profiler",
     "jc3vr-ui/profiler",
 ]
@@ -32,6 +33,9 @@ jc3vr-core = { path = "../crates/jc3vr-core" }
 # engine-pipeline hooks, and the render diagnostics.
 jc3vr-render = { path = "../crates/jc3vr-render" }
 jc3vr-view = { path = "../crates/jc3vr-view" }
+# The capture layer: the screenshot harness and its probes, the visual stage's controls, and the
+# benchmark samplers.
+jc3vr-capture = { path = "../crates/jc3vr-capture" }
 # The gameplay layer: the controller subsystems, the grapple, and the character, animation, input,
 # equipment, and sim detours.
 jc3vr-gameplay = { path = "../crates/jc3vr-gameplay" }

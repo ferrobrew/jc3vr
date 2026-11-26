@@ -1,13 +1,11 @@
 use std::path::PathBuf;
 
 use jc3vr_core::config::engine::Snapshot;
+use jc3vr_render::stereo::single_pass::FrameDiagnostics;
 use jc3vr_view::stereo::dispatch::RenderMode;
 use serde::Serialize;
 
-use crate::{
-    stereo::single_pass::FrameDiagnostics,
-    testing::visual::{DiagnosticProfile, VisualMetadata},
-};
+use crate::testing::visual::{DiagnosticProfile, VisualMetadata};
 
 #[derive(Clone, Serialize)]
 pub struct CaptureMetadata {

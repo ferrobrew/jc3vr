@@ -5,14 +5,12 @@
 use std::{any::Any, io::Write, path::Path};
 
 use anyhow::Context as _;
+use jc3vr_render::image_writer::{ImageSidecar, write_png};
 
-use crate::{
-    image_writer::{ImageSidecar, write_png},
-    screenshot::harness::{
-        resolve_probe,
-        stages::{Stage, StageArtifact, StageImage, StageRecord},
-        types::CaptureMetadata,
-    },
+use crate::screenshot::harness::{
+    resolve_probe,
+    stages::{Stage, StageArtifact, StageImage, StageRecord},
+    types::CaptureMetadata,
 };
 
 /// A captured frame's sidecar: its metadata and the stage images to write before it.
@@ -252,11 +250,11 @@ mod tests {
         sync::atomic::{AtomicU64, Ordering},
     };
 
+    use jc3vr_render::image_writer::{ChannelOrder, Image, ImageTarget, try_submit};
     use pretty_assertions::assert_eq;
 
     use super::*;
     use crate::{
-        image_writer::{ChannelOrder, Image, ImageTarget, try_submit},
         screenshot::harness::{
             stages::Source,
             types::{CaptureKind, CaptureState, CapturedFrame, ComparisonInputs, Readiness},

@@ -28,6 +28,10 @@ use std::{
 
 use anyhow::Context as _;
 use jc3gi::graphics_engine::{graphics_engine::GraphicsEngine, texture::Texture};
+use jc3vr_render::{
+    capture_arming::{Arming, arm},
+    screenshot::CaptureSource,
+};
 use jc3vr_view::stereo::{dispatch, dispatch::RenderMode, engine_context::EngineContext};
 use parking_lot::Mutex;
 pub use request::{Plane, SnapshotError, SnapshotRequest, SnapshotTable};
@@ -38,20 +42,16 @@ use windows::{
 };
 
 use crate::{
-    capture_arming::{Arming, arm},
-    screenshot::{
-        CaptureSource,
-        harness::{
-            RequestId,
-            snapshot::{
-                diff::{GRID, Job, Pipeline},
-                dump::{DumpImage, DumpRecord, SavedRecord},
-                request::DumpPolicy,
-                store::PlaneTexture,
-                summary::{Kind, Totals, totals},
-            },
-            stages::Stage,
+    screenshot::harness::{
+        RequestId,
+        snapshot::{
+            diff::{GRID, Job, Pipeline},
+            dump::{DumpImage, DumpRecord, SavedRecord},
+            request::DumpPolicy,
+            store::PlaneTexture,
+            summary::{Kind, Totals, totals},
         },
+        stages::Stage,
     },
     testing::visual::VisualMetadata,
 };
@@ -388,7 +388,7 @@ pub(crate) fn capture(
         plane_errors: snapshot.errors.clone(),
         comparisons: Vec::new(),
         saved: Vec::new(),
-        fsr: crate::fsr::dispatch_records(frame),
+        fsr: jc3vr_render::fsr::dispatch_records(frame),
         kept: pending.request.keep,
         visual: Some(visual),
         timing: Timing {
@@ -917,7 +917,7 @@ struct SnapshotResult {
     /// The planes written whole, when the request asked for them.
     saved: Vec<SavedRecord>,
     /// What FSR resolved each eye with on the snapshot's frame, for the eyes it resolved.
-    fsr: Vec<crate::fsr::DispatchRecord>,
+    fsr: Vec<jc3vr_render::fsr::DispatchRecord>,
     kept: bool,
     visual: Option<VisualMetadata>,
     timing: Timing,

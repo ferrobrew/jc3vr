@@ -13,7 +13,7 @@
 //!   ([`jc3vr_gameplay::controllers::spawn`]), whose settings it holds.
 //! - [`testing`]: the capture harness's request file, the staging of a scene, its text, and the
 //!   testing settings. It drives the render crate's visual stage and benchmark
-//!   ([`jc3vr_render::testing`]).
+//!   ([`jc3vr_capture::testing`]).
 //! - [`diagnostics`]: the samplers that note the controller subsystems' state, Rico's pose, and
 //!   the bodies around him into a tracking recording.
 //!

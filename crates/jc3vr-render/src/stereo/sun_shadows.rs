@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicU8, Ordering};
 use jc3gi::graphics_engine::graphics_engine::GraphicsEngine;
 
 /// Whether the override holds the sun shadows off.
-pub(crate) fn override_active() -> bool {
+pub fn override_active() -> bool {
     SAVED_SHADOWS_ENABLED.load(Ordering::Relaxed) != u8::MAX
 }
 

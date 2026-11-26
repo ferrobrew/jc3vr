@@ -71,21 +71,21 @@ pub fn capture_if_requested(
 static REQUESTED: AtomicBool = AtomicBool::new(false);
 
 /// One read-back frame and what its sidecar records about it.
-struct Capture {
-    image: Image,
+pub struct Capture {
+    pub image: Image,
     /// The capture's source format, for the sidecar.
-    format: String,
+    pub format: String,
     /// The capture's stamp, which names its file; taken on the render thread so the names follow
     /// the order the frames were captured in, not the order they are written in.
     stamp: String,
     /// The single-pass state of the captured frame, snapshotted here because by the time the image
     /// is written the engine is several frames on.
-    diagnostics: Option<FrameDiagnostics>,
+    pub diagnostics: Option<FrameDiagnostics>,
 }
 
 /// The render-thread half: staging copy (or two half-copies for the stitched form), map, memcpy
 /// out. Everything here needs the immediate context, and nothing that does not is allowed in.
-fn read_back(
+pub fn read_back(
     device: &ID3D11Device,
     context: &ID3D11DeviceContext,
     source: CaptureSource<'_>,
@@ -150,7 +150,11 @@ fn channel_order(desc: &D3D11_TEXTURE2D_DESC) -> anyhow::Result<ChannelOrder> {
 }
 
 /// A CPU-readable staging texture matching `desc`'s size and format.
-unsafe fn create_staging(
+///
+/// # Safety
+///
+/// `device` must be the live device, used on the render thread.
+pub unsafe fn create_staging(
     device: &ID3D11Device,
     desc: &D3D11_TEXTURE2D_DESC,
 ) -> anyhow::Result<ID3D11Texture2D> {

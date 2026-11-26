@@ -16,7 +16,7 @@ use std::sync::atomic::{AtomicU8, Ordering};
 
 /// What a request arms.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Arming {
+pub enum Arming {
     /// A screenshot, snapshot, or visual-control request: every probe.
     Capture,
     /// A benchmark request: the probes the benchmark reads (the draw-task scope and the render-block
@@ -25,7 +25,7 @@ pub(crate) enum Arming {
 }
 
 /// Raise `arming`'s flag. It stays raised.
-pub(crate) fn arm(arming: Arming) {
+pub fn arm(arming: Arming) {
     let bit = match arming {
         Arming::Capture => CAPTURE,
         Arming::Benchmark => BENCHMARK,

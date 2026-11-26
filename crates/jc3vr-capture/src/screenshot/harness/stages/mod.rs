@@ -29,6 +29,10 @@ use anyhow::{Context as _, bail};
 use jc3gi::graphics_engine::{
     graphics_engine::GraphicsEngine, post_effects::PostEffectsManager, texture::Texture,
 };
+use jc3vr_render::{
+    image_writer::{ChannelOrder, Image},
+    screenshot::create_staging,
+};
 use jc3vr_view::stereo::{draw_index, engine_context::EngineContext};
 use parking_lot::Mutex;
 use serde::Serialize;
@@ -69,10 +73,7 @@ use windows::{
     core::Interface as _,
 };
 
-use crate::{
-    image_writer::{ChannelOrder, Image},
-    screenshot::{create_staging, harness::screenshot_wants_eyes},
-};
+use crate::screenshot::harness::screenshot_wants_eyes;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -302,7 +303,7 @@ pub(crate) struct WaterInputMetadata {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub wave_footprint: Option<water_inputs::WaveFootprint>,
     pub pixel_shader: usize,
-    pub shader_identity: crate::stereo::single_pass::shader_identity::IdentityResult,
+    pub shader_identity: jc3vr_render::stereo::single_pass::shader_identity::IdentityResult,
     pub draw_index: usize,
     pub tessellated: bool,
     pub tess_index: Option<usize>,

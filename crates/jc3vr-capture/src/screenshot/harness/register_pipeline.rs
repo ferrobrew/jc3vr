@@ -3,7 +3,7 @@
 //! render hooks' [`PipelineProbes`] table at startup, with the benchmark's sink for the GPU
 //! timestamp lane.
 //!
-//! The hooks call the table only once a request has armed it ([`crate::capture_arming`]), except
+//! The hooks call the table only once a request has armed it ([`jc3vr_render::capture_arming`]), except
 //! for the shader tag. Each probe forwards to the capture module that owns it, which decides for
 //! itself whether its capture is pending. The table holds no state of its own.
 
@@ -18,19 +18,24 @@ use jc3gi::graphics_engine::{
     render_engine::{RenderEngine, RenderPassId},
     render_pass::RenderPass,
 };
-use windows::Win32::Graphics::Direct3D11::{ID3D11Device, ID3D11DeviceChild, ID3D11DeviceContext};
-
-#[cfg(feature = "profiler")]
-use crate::profiler::gpu_samples::{GpuDispatchSink, register_dispatch_sink};
-use crate::{
+use jc3vr_render::{
     hooks::graphics_engine::probes::{
         AntiAliasingSide, NearPatchBracket, PipelinePoint, PipelineProbes, register_pipeline_probes,
     },
+    screenshot::CaptureSource,
+};
+#[cfg(feature = "profiler")]
+use jc3vr_render::{
+    profiler::gpu_samples::GpuDispatchSink, profiler::gpu_samples::register_dispatch_sink,
+};
+use windows::Win32::Graphics::Direct3D11::{ID3D11Device, ID3D11DeviceChild, ID3D11DeviceContext};
+
+use crate::{
     screenshot::{
-        CaptureSource,
+        harness,
         harness::{
-            self, WaterReflection, constants, draw_census, patch_draw, resolve_probe, snapshot,
-            stages::{self, Stage, capture_prefix_depth, velocity},
+            WaterReflection, constants, draw_census, patch_draw, resolve_probe, snapshot, stages,
+            stages::{Stage, capture_prefix_depth, velocity},
         },
     },
     testing::{benchmark, visual},

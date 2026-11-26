@@ -1,16 +1,14 @@
 use std::{cell::RefCell, ffi::c_void};
 
 use jc3gi::graphics_engine::{post_effects::AAMode, render_engine::RenderPassId};
+use jc3vr_render::stereo::single_pass::shader_identity;
 use jc3vr_view::stereo::draw_index;
 use serde::Serialize;
 use windows::{Win32::Graphics::Direct3D11::*, core::Interface};
 
-use crate::{
-    screenshot::{
-        harness,
-        harness::stages::{STATE, Stage},
-    },
-    stereo::single_pass::shader_identity,
+use crate::screenshot::{
+    harness,
+    harness::stages::{STATE, Stage},
 };
 
 #[derive(Clone, Debug, Serialize)]
@@ -96,7 +94,7 @@ pub(crate) unsafe fn observe(context: *mut c_void, vertices: u32, start: u32) {
             ctx.PSGetSamplers(0, Some(&mut samplers));
             ctx.OMGetRenderTargets(Some(std::slice::from_mut(&mut target)), None);
         }
-        if harness::aa_weights_requested(obs.frame) && obs.mode == AAMode::AA_SMAA as i32 && (vertices,start)==(3,0) && crate::stereo::single_pass::current_pass_id()==RenderPassId::RP_POSTEFFECTS as u8 && obs.draws.len()==2 && matches!(ps.as_ref().map(shader_identity::lookup), Some(shader_identity::IdentityResult::Mapped {identity}) if identity.actual_sha256=="a4078e6bf737300492eaf5c154ac6b232a537d022396d8c0892635063f17d765") {
+        if harness::aa_weights_requested(obs.frame) && obs.mode == AAMode::AA_SMAA as i32 && (vertices,start)==(3,0) && jc3vr_render::stereo::single_pass::current_pass_id()==RenderPassId::RP_POSTEFFECTS as u8 && obs.draws.len()==2 && matches!(ps.as_ref().map(shader_identity::lookup), Some(shader_identity::IdentityResult::Mapped {identity}) if identity.actual_sha256=="a4078e6bf737300492eaf5c154ac6b232a537d022396d8c0892635063f17d765") {
             let mut record=crate::screenshot::harness::stages::empty_stage_record(obs.frame,obs.eye,Stage::AaWeights);
             let result=(|| -> anyhow::Result<_> {
                 let view=views[1].as_ref().ok_or_else(|| anyhow::anyhow!("missing weights"))?;
@@ -135,7 +133,7 @@ pub(crate) unsafe fn observe(context: *mut c_void, vertices: u32, start: u32) {
             })
             .collect();
         obs.draws.push(Draw {
-            pass: crate::stereo::single_pass::current_pass_id(),
+            pass: jc3vr_render::stereo::single_pass::current_pass_id(),
             vertices,
             start,
             ps: ps.as_ref().map(shader_identity::lookup),

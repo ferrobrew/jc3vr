@@ -26,6 +26,7 @@ use std::{
 };
 
 use jc3gi::graphics_engine::render_engine::RenderBlockTypeBase;
+use jc3vr_render::stereo::single_pass::{current_pass_id, per_eye_reissue_eye};
 use parking_lot::Mutex;
 use serde::Serialize;
 use windows::Win32::{
@@ -47,8 +48,6 @@ use windows::Win32::{
         },
     },
 };
-
-use crate::stereo::single_pass::{current_pass_id, per_eye_reissue_eye};
 
 /// Mark the current thread as running the draw task for as long as the guard lives. Called at the
 /// top of the draw task's detour; one relaxed load while no sampler runs.

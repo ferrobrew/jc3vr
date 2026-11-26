@@ -44,7 +44,7 @@ static APPLIED_EXPOSURE: AtomicU32 = AtomicU32::new(f32::NAN.to_bits());
 /// The exposure the post chain applies this frame (the engine's metered value, or the pinned one),
 /// or `None` before the first exposure update. The visual harness reports it with every capture, so
 /// a comparison can check that each mode settled on the same exposure.
-pub(crate) fn applied_exposure() -> Option<f32> {
+pub fn applied_exposure() -> Option<f32> {
     let value = f32::from_bits(APPLIED_EXPOSURE.load(Ordering::Relaxed));
     (!value.is_nan()).then_some(value)
 }

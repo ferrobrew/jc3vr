@@ -198,11 +198,11 @@ pub(crate) fn dispatch_suppressed() -> bool {
 }
 
 /// The eye of the split fullscreen run in flight on this thread, masked or not yet masked.
-pub(crate) fn split_run_eye() -> Option<usize> {
+pub fn split_run_eye() -> Option<usize> {
     PER_EYE.get().map(|state| state.eye)
 }
 
-pub(crate) fn masked_eye() -> Option<usize> {
+pub fn masked_eye() -> Option<usize> {
     PER_EYE
         .get()
         .filter(|state| state.masked)

@@ -37,11 +37,8 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # PNG-only: the render-trace screenshot diagnostic encodes eye-0 frames; no other formats needed.
 image = { version = "0.25", default-features = false, features = ["png"] }
-# The capture harness's snapshot dumps compress raw planes with gzip.
-flate2 = "1"
 
 [dev-dependencies]
 jc3vr-core = { path = "../jc3vr-core", features = ["test-support"] }
 pretty_assertions = "1.4.1"
 test-case = "3.3.1"
-toml = "1.1.6"

@@ -12,6 +12,7 @@ use std::{
     sync::atomic::{AtomicBool, AtomicUsize, Ordering},
 };
 
+use jc3vr_render::stereo::single_pass::RawDrawKind;
 use jc3vr_view::stereo::engine_context::EngineContext;
 use windows::{
     Win32::{
@@ -28,8 +29,6 @@ use windows::{
     },
     core::{Error as WindowsError, HRESULT, Interface},
 };
-
-use crate::stereo::single_pass::RawDrawKind;
 
 mod constants;
 mod ia;

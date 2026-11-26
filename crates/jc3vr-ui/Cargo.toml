@@ -46,4 +46,6 @@ puffin_egui = { git = "https://github.com/EmbarkStudios/puffin", rev = "d06bed0f
 
 [dev-dependencies]
 jc3vr-core = { path = "../jc3vr-core", features = ["test-support"] }
+# The test configuration root binds the visual stage's pause flag, as the payload does.
+jc3vr-capture = { path = "../jc3vr-capture" }
 test-case = "3.3.1"
