@@ -35,10 +35,9 @@ use crate::controllers::{
     hands::{
         config::HANDS_CONFIG,
         reach::{ArmRemap, ReachLimit},
+        stages::HandComposition,
     },
-    physical_hands::{self, DrawTime, physics::guns},
-    scheme, vehicles,
-    weapons::{ads, collide, config::WEAPONS_CONFIG, recoil},
+    scheme,
 };
 
 pub mod anchor;
@@ -53,9 +52,12 @@ pub mod pose;
 pub mod reach;
 pub mod rig;
 pub mod secondary;
+mod slots;
+pub mod stages;
 pub mod tiers;
 
 pub use pose::CockpitHand;
+pub use stages::DrawTime;
 
 /// The hands' hooks, aggregated by [`crate::controllers::hook_library`].
 pub(crate) fn hook_library() -> HookLibrary {
@@ -101,16 +103,15 @@ impl HandSettings {
 }
 
 /// The active hands, or `None` while the hands are inert: the controllers are disabled, the gamepad
-/// scheme is in effect, no VR session publishes a head pose, or no controller frame exists. While
-/// the off-hand holds a two-handed weapon's foregrip, the hands are in the two-handed pose
-/// through the shared support and weight targets ([`guns::targets::apply`]); a long gun held in
-/// one hand sags, trails, and sways. Physical guns use the same weighted target before their
-/// residual body correction, without adding synthetic recoil or wall-probe displacement. A
-/// kinematic gun hand carries its recoil offset ([`recoil::apply`]); a palm pressed into a surface is
-/// held at it, and a hand body's hand is drawn at its body ([`physical_hands::apply`]); an
-/// anchored
-/// grapple hand holds the line ([`anchor::apply`]); and a hand on a physical vehicle control or a
-/// mounted gun's handle holds it ([`vehicles::apply`]).
+/// scheme is in effect, no VR session publishes a head pose, or no controller frame exists. The
+/// controllers' poses are composed with every stage of the hand composition
+/// ([`stages::HandStage`]): a hand on a physical vehicle control or a mounted gun's handle holds
+/// it; while the off-hand holds a two-handed weapon's foregrip, the hands are in the two-handed
+/// pose through the shared support and weight targets, and a long gun held in one hand sags,
+/// trails, and sways. Physical guns use the same weighted target before their residual body
+/// correction, without adding synthetic recoil or wall-probe displacement. A kinematic gun hand
+/// carries its recoil offset; a palm pressed into a surface is held at it, and a hand body's hand
+/// is drawn at its body; and an anchored grapple hand holds the line ([`anchor::apply`]).
 pub fn active_hands() -> Option<ActiveHands> {
     compose_active_hands(DrawTime::Tick)
 }
@@ -121,20 +122,17 @@ pub(crate) fn active_hands_from_frame(
     at: DrawTime,
 ) -> Option<ActiveHands> {
     let mut active = active_hands_raw_from_frame(frame)?;
-    let (heft, ads, recoil, collide) =
-        WEAPONS_CONFIG.query(|c| (c.heft, c.ads, c.recoil, c.collide));
-    vehicles::apply(&mut active.hands);
-    let physical = guns::physical_hands();
-    guns::targets::apply(&mut active.hands, active.head.position, &heft);
-    let torso = active.torso;
-    let shoulders = shoulder_joints(&active.config, active.head, active.world_scale, torso);
-    ads::apply(&mut active.hands, active.head, shoulders, torso, &ads);
-    let sighted = active.hands;
-    recoil::apply(&mut active.hands, &recoil);
-    collide::apply(&mut active.hands, active.head, active.world_scale, &collide);
-    keep_physical(&mut active.hands, &sighted, physical);
-    physical_hands::apply(&mut active.hands, at);
-    anchor::apply(&mut active.hands, active.head, active.world_scale);
+    let mut composition = HandComposition::new(
+        active.hands,
+        active.head,
+        active.world_scale,
+        active.torso,
+        at,
+    );
+    stages::run(&mut composition, |c| {
+        shoulder_joints(&active.config, c.head, c.world_scale, c.torso)
+    });
+    active.hands = composition.hands;
     Some(active)
 }
 
@@ -228,20 +226,6 @@ pub(crate) fn ik_owned() -> [bool; 2] {
         })
     })
     .unwrap_or([false; 2])
-}
-
-/// Put back each hand on a gun whose body the hands hold (`physical`, by [`Hand::index`]) as it
-/// was in `before`: the kinematic poses between are the gun body's to give.
-fn keep_physical(
-    hands: &mut [Option<CockpitHand>; 2],
-    before: &[Option<CockpitHand>; 2],
-    physical: [bool; 2],
-) {
-    for (i, kept) in physical.into_iter().enumerate() {
-        if kept {
-            hands[i] = before[i];
-        }
-    }
 }
 
 /// Each shoulder joint of the character the hands are drawn on, in the cockpit frame, by

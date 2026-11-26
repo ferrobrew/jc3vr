@@ -13,10 +13,9 @@
 //! render update can see it, so a post-call detour on the part's placement records it for the
 //! local player's weapons.
 //!
-//! The true reload moves two kinds of part on top of the correction
-//! ([`crate::controllers::weapons::reload`]): a pistol's slide, held back while its chamber is
-//! empty and following the hand while it is worked, and a magazine part carried in the hand that
-//! took it from the pouch.
+//! The true reload moves two kinds of part on top of the correction (read through
+//! [`held::adjust_part`]): a pistol's slide, held back while its chamber is empty and following the
+//! hand while it is worked, and a magazine part carried in the hand that took it from the pouch.
 
 use std::{
     collections::HashMap,
@@ -38,10 +37,7 @@ use re_utilities::hook_library::HookLibrary;
 use crate::controllers::{
     aim::gun,
     hands::{ik, late},
-    weapons::{
-        hold::{self, armed, rack::paired::stack_offset},
-        reload,
-    },
+    held,
 };
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -104,7 +100,9 @@ fn part_update_attachment_transforms(
     };
     if !unsafe { part.m_Owner.as_ref() }.is_some_and(|w| {
         let address = w as *const WeaponBase as usize;
-        w.m_IsUserLocalPlayer || hold::owned_holder(address).is_some() || armed::is(address)
+        w.m_IsUserLocalPlayer
+            || held::owned_holder(address).is_some()
+            || held::armed_hand_of(address).is_some()
     }) {
         return;
     }
@@ -142,7 +140,7 @@ unsafe fn late_update_part(
     let address = weapon as *const WeaponBase as usize;
     // A finite rack pair's second pistol is drawn apart from the first, its parts with it.
     if part.m_WeaponDataIndex == 1
-        && let Some(offset) = stack_offset(address)
+        && let Some(offset) = held::rack_stack_offset(address)
     {
         let mut rendered = late::lerp_transform(
             Mat4::from(part.m_WorldMatrixSaved),
@@ -157,9 +155,7 @@ unsafe fn late_update_part(
     }
     let local = ik::local_character();
     // `m_User` is a `weak_ptr<CCharacter>`; its first word is the character.
-    let owned = hold::owned_holder(address)
-        .or_else(|| armed::hand_of(address))
-        .is_some();
+    let owned = held::holder(address).is_some();
     if local == 0 || (weapon.m_User[0] as usize != local && !owned) {
         return;
     }
@@ -217,7 +213,7 @@ unsafe fn late_update_part(
         late::lerp_transform(matrices[0], matrices[1], dtf)
     };
     let corrected = correction.map_or(interpolated, |d| d * interpolated);
-    let adjusted = reload::adjust_part(part, weapon as *const WeaponBase as usize, corrected, dtf);
+    let adjusted = held::adjust_part(part, weapon as *const WeaponBase as usize, corrected, dtf);
     if !on_gun && correction.is_none() && adjusted.is_none() {
         return;
     }

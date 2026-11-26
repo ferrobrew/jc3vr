@@ -1,7 +1,10 @@
 //! The frame's snapshot of the late update's inputs, the correction it derives from them, and the
 //! palette edit that carries the correction onto the skinning palette.
 
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{
+    OnceLock,
+    atomic::{AtomicU64, Ordering},
+};
 
 use glam::{Mat4, Vec3};
 use jc3gi::{character::character::Character, graphics_engine::render_block::Matrix3x4};
@@ -15,7 +18,7 @@ use jc3vr_render::{
 
 use crate::controllers::{
     hands::{
-        self, ActiveHands, ik,
+        self, ActiveHands, DrawTime, ik,
         late::{
             bones::{self, HandBones, Solved},
             math::{
@@ -26,7 +29,6 @@ use crate::controllers::{
         palette, pose as hand_pose,
         reach::{self, REACH, ReachTuning},
     },
-    physical_hands::{DrawTime, physics},
     presentation,
 };
 
@@ -206,12 +208,28 @@ pub fn status() -> LateStatus {
     }
 }
 
+/// Register the hand bodies' sample of their post-step presentation offsets, which
+/// [`begin_frame`] takes once per rendered frame before it composes the hands, on the game thread
+/// after the simulation and outside its step; the first registration stands.
+pub fn register_post_step_sample(sample: fn()) {
+    if POST_STEP_SAMPLE.set(sample).is_err() {
+        tracing::warn!("hands: a post-step sample is already registered; the new one is ignored");
+    }
+}
+
+/// Whether the hand bodies' post-step sample is registered.
+pub(crate) fn post_step_sample_registered() -> bool {
+    POST_STEP_SAMPLE.get().is_some()
+}
+
 /// Snapshot the frame's late-update inputs. Called once per rendered frame from `Game::UpdateRender`
 /// after the VR head pose pair is published and before the engine's render update.
 pub fn begin_frame() {
     crate::controllers::hands::late::weapon::begin_frame();
     // All model and palette consumers share this post-step measurement for the rendered frame.
-    unsafe { physics::sample_render_offsets() };
+    if let Some(sample) = POST_STEP_SAMPLE.get() {
+        sample();
+    }
     let Some(source) = frame::latest() else {
         FRAME.set(None);
         return;
@@ -715,6 +733,7 @@ fn render_views(
 }
 
 static FRAME: RenderFrameSlot<Option<LateFrame>> = RenderFrameSlot::new();
+static POST_STEP_SAMPLE: OnceLock<fn()> = OnceLock::new();
 static WEAPONS_UPDATED: AtomicU64 = AtomicU64::new(0);
 static PALETTES_EDITED: AtomicU64 = AtomicU64::new(0);
 

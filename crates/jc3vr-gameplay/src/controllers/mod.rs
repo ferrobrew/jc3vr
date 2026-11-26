@@ -86,6 +86,7 @@ pub mod overlay;
 pub mod physical_hands;
 pub mod physics;
 pub mod presentation;
+mod register_hands;
 mod register_head_pose;
 mod register_lifecycle;
 mod register_render;
@@ -111,6 +112,7 @@ pub fn install() -> Result<(), RegistrationError> {
     register_head_pose::register();
     register_vr_frame::register();
     register_render::register();
+    register_hands::register();
     register_lifecycle::register()
 }
 

@@ -149,15 +149,7 @@ pub fn held_bodies() -> [Option<HeldBody>; 2] {
     })
 }
 
-/// When the hands are composed for: the simulation tick, or a frame rendered between ticks.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum DrawTime {
-    /// The simulation tick: the hand bodies' offsets as the last step left them.
-    Tick,
-    /// A rendered frame: the hand bodies' offsets blended between the last two steps, so the
-    /// drawn hand does not step at the physics rate.
-    Render,
-}
+pub use crate::controllers::hands::DrawTime;
 
 /// Hold each pressed hand at the surface it presses into, in the cockpit frame, and draw each hand
 /// body's hand at its body, for `at`. Called by [`crate::controllers::hands::active_hands`] and

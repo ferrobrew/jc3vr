@@ -42,10 +42,9 @@ use crate::controllers::{
         anchor::{ANCHOR_BLEND_S, AnchorConfig},
         config::{HANDS_CONFIG, MOUNTED_AIM_BY_HANDS},
     },
-    loadout::live,
+    held,
     mode::{self, AirborneVariant, CharacterSnapshot, Detection, Mode, OnFootVariant, Traversal},
     scheme,
-    weapons::{self, hold::armed},
 };
 
 /// The plan's hand tiers.
@@ -465,15 +464,11 @@ pub(crate) fn tick(dt: f32) {
     // detector's own reads require.
     let signals = unsafe { read_signals() };
     // The weapon handling's last tick: one tick behind, which the anchor's blend absorbs.
-    let weapons = weapons::status();
-    let gun_hands = weapons
-        .wielded
-        .filter(|_| weapons.active)
-        .map_or([false; 2], |w| w.weapon.wielded.hands);
+    let gun_hands = held::wielded_gun_hands();
     // A hand holds something when it has a gun of the wielded weapon, a weapon armed in it, or any
     // item of the table's.
     let holding = Hand::BOTH.map(|hand| {
-        gun_hands[hand.index()] || armed::in_hand(hand).is_some() || live::held_kind(hand).is_some()
+        gun_hands[hand.index()] || held::armed_in(hand).is_some() || held::item(hand).is_some()
     });
     let mut status = STATUS.lock();
     *status = advance(

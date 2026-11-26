@@ -1,5 +1,10 @@
 //! Re-pushing the held gun's model matrix with the same correction the palette edit applies to the
 //! hand bones, so the gun and the hand never separate.
+//!
+//! The weapon render update runs for every weapon in the world, so it is also where the systems
+//! that follow world weapons observe them: each [`WeaponObserver`] is registered once at install by
+//! the system that owns it ([`register_weapon_observer`]) and runs, in the enum's order, before the
+//! correction.
 
 use std::{ffi::c_void, time::Instant};
 
@@ -23,17 +28,60 @@ use crate::controllers::{
             frame,
             math::{lerp_transform, pose_matrix},
         },
+        slots::Slots,
     },
-    weapons::{
-        c4,
-        engine::{self, weapon_at},
-        hold::{self, armed, rack::paired::stack_offset},
+    held::{
+        self,
+        native::{self, weapon_at},
     },
 };
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&WEAPON_UPDATE_RENDER_BINDER)
 }
+
+/// A system that observes each world weapon at its render update, in the order they run.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum WeaponObserver {
+    /// The grenade handling's world weapons.
+    Grenade,
+    /// The remote rack members.
+    RackRemote,
+    /// The mounted guns.
+    Mounted,
+}
+
+impl WeaponObserver {
+    /// Every observer, in the order they run.
+    pub const ALL: [WeaponObserver; Self::COUNT] = [
+        WeaponObserver::Grenade,
+        WeaponObserver::RackRemote,
+        WeaponObserver::Mounted,
+    ];
+
+    /// The number of observers; the last variant closes the count.
+    const COUNT: usize = Self::Mounted as usize + 1;
+}
+
+/// One observer's look at a world weapon in its render update.
+///
+/// # Safety
+///
+/// The weapon is live for the call, on the thread running its render update; an observer retains
+/// only a weak reference to it.
+pub type ObserveWeapon = unsafe fn(&WeaponBase);
+
+/// Register `observer`; the first registration of an observer stands.
+pub fn register_weapon_observer(observer: WeaponObserver, observe: ObserveWeapon) {
+    OBSERVERS.set(observer as usize, observe, "weapon observer");
+}
+
+/// The observers nobody registered, in their order.
+pub fn missing_weapon_observers() -> impl Iterator<Item = WeaponObserver> {
+    OBSERVERS.missing().map(|index| WeaponObserver::ALL[index])
+}
+
+static OBSERVERS: Slots<ObserveWeapon, { WeaponObserver::COUNT }> = Slots::new();
 
 /// One gun mesh's submitted pose, for comparison with its identified current collision body.
 #[derive(Debug, Copy, Clone)]
@@ -60,9 +108,7 @@ pub fn gun_hand(
     index: usize,
     count: usize,
 ) -> Option<Hand> {
-    let owner = hold::owned_holder(weapon)
-        .or_else(|| armed::hand_of(weapon))
-        .or_else(|| c4::act_detonator_hand(weapon));
+    let owner = held::holder(weapon).or_else(|| held::detonator_hand(weapon));
     attachment_hand(state, bone, owner, index, count)
 }
 
@@ -125,14 +171,14 @@ unsafe fn late_update_weapon(game_object: *mut c_void, context: *const GameObjec
         return;
     };
     let weapon = unsafe { &*weapon_at(game_object.cast()) };
-    // SAFETY: this render invocation owns a live native weapon; the observer retains only a weak reference.
-    unsafe { crate::controllers::weapons::grenade::observe_world_weapon(weapon) };
-    // SAFETY: as above.
-    unsafe { crate::controllers::weapons::hold::rack::remote::observe(weapon) };
-    unsafe { crate::controllers::vehicles::mounted::observe(weapon) };
+    for observe in OBSERVERS.each() {
+        // SAFETY: this render invocation owns a live native weapon; the observer retains only a
+        // weak reference.
+        unsafe { observe(weapon) };
+    }
     // A finite rack pair's second pistol is drawn apart from the first while neither is claimed.
-    if let Some(offset) = stack_offset(weapon as *const WeaponBase as usize)
-        && let Some(mut gun) = unsafe { engine::gun_ptr(weapon, 1) }
+    if let Some(offset) = held::rack_stack_offset(weapon as *const WeaponBase as usize)
+        && let Some(mut gun) = unsafe { native::gun_ptr(weapon, 1) }
     {
         // SAFETY: the gun is its own object, live with the weapon.
         let gun = unsafe { gun.as_mut() };
@@ -151,9 +197,7 @@ unsafe fn late_update_weapon(game_object: *mut c_void, context: *const GameObjec
     // `m_User` is a `weak_ptr<CCharacter>`; its first word is the character. Checked before the
     // frame lock, since this runs for every weapon in the world.
     let address = weapon as *const WeaponBase as usize;
-    let owned = hold::owned_holder(address)
-        .or_else(|| armed::hand_of(address))
-        .is_some();
+    let owned = held::holder(address).is_some();
     if local == 0 || (weapon.m_User[0] as usize != local && !owned) {
         return;
     }
@@ -163,8 +207,8 @@ unsafe fn late_update_weapon(game_object: *mut c_void, context: *const GameObjec
     let state = weapon.m_State;
     let dtf = context.m_Dtf;
     let count = unsafe { gun::guns(weapon) }.count();
-    for gun_index in 0..unsafe { engine::gun_count(weapon) } {
-        let Some(mut gun) = (unsafe { engine::gun_ptr(weapon, gun_index) }) else {
+    for gun_index in 0..unsafe { native::gun_count(weapon) } {
+        let Some(mut gun) = (unsafe { native::gun_ptr(weapon, gun_index) }) else {
             continue;
         };
         // SAFETY: each gun is its own object, not part of the weapon.

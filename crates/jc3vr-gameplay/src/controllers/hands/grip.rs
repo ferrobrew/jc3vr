@@ -6,17 +6,17 @@
 //! clip that keys the attach bone turns the gun in a hand the player is holding still (see
 //! `docs/engine/character/hands-locomotion-and-state.md`, "The gun's pose in the hand is
 //! animated"). So before each placement of the local player's weapons
-//! ([`Inventory::UpdateAttachmentTransforms`], whose detour lives in
-//! [`crate::controllers::weapons::hold`]), every gun on a hand attach bone of a hand
-//! with an effective controller plan weight above zero ([`ik::placement_weights`]) has that bone written
-//! ([`AnimationController::SetJoint`]) to the hand's current wrist composed with the hand's
-//! canonical grip: the primary attach bone's pose relative to the wrist in the skeleton's bind
-//! pose ([`AnimationController::GetBindPoseBoneMatrix`]). The written pose is blended from the
-//! animated one by the hand's weight ([`blend_pin`]), so the gun settles into the hand as the hand
-//! blends onto its controller and back out as it yields. The placements run after the state tasks,
-//! after the `MAIN` solve, and after the `SECONDARY` solve, so the last one reads the solved wrist
-//! and the gun's cached transform, which the muzzle effects, the gun's model parts, its physics
-//! proxy, the shot origin, and the render-time late update all derive from, is rigid in the hand.
+//! ([`Inventory::UpdateAttachmentTransforms`], whose detour lives in the weapon handling's `hold`),
+//! every gun on a hand attach bone of a hand with an effective controller plan weight above zero
+//! ([`ik::placement_weights`]) has that bone written ([`AnimationController::SetJoint`]) to the
+//! hand's current wrist composed with the hand's canonical grip: the primary attach bone's pose
+//! relative to the wrist in the skeleton's bind pose
+//! ([`AnimationController::GetBindPoseBoneMatrix`]). The written pose is blended from the animated
+//! one by the hand's weight ([`blend_pin`]), so the gun settles into the hand as the hand blends
+//! onto its controller and back out as it yields. The placements run after the state tasks, after
+//! the `MAIN` solve, and after the `SECONDARY` solve, so the last one reads the solved wrist and
+//! the gun's cached transform, which the muzzle effects, the gun's model parts, its physics proxy,
+//! the shot origin, and the render-time late update all derive from, is rigid in the hand.
 //!
 //! The canonical grip is the same for both of a hand's attach bones, so a state task moving the gun
 //! between them does not turn it either. The skeleton relates its left and right bones with every
@@ -25,19 +25,18 @@
 //! pose holds the gun the way the game's own animation holds it in the left hand; the right one's
 //! does not, so a gun in the right hand can take the left hand's grip mirrored across the body
 //! instead ([`pick_right_grip`]): the right hand keeps its own grip unless it is turned far from
-//! the mirrored one, and the readout reports the angle between the two
-//! ([`right_grip_read`]). A gun whose body the hand bodies hold
-//! ([`crate::controllers::physical_hands::physics::guns`]) is pinned where that body is: the
-//! canonical grip carried by how far the gun body strays from its seat on the holding hand's body
-//! ([`seat_on_body`]), so the drawn gun, and everything that derives from its placement, follows the
-//! gun body while the hand is drawn at its own. A gun sliding through the hand onto its grip from
-//! another part of it ([`crate::controllers::weapons::regions`]) is pinned so that the part the
-//! slide has reached sits in the palm, turned from the way the hand braced it toward the canonical
-//! grip ([`slide_offset`]), a turn measured on the hand-tracking wrist frame and moved onto the
-//! wrist bone's own frame ([`slide_on_bone`]). A gun on a holster or back bone, and a hand the
-//! controllers do not drive, are left to the game. Each placement also records how the hand's
+//! the mirrored one, and the readout reports the angle between the two ([`right_grip_read`]). A gun
+//! whose body the hand bodies hold ([`held::placement::body_deviation`]) is pinned where that body
+//! is: the canonical grip carried by how far the gun body strays from its seat on the holding
+//! hand's body ([`seat_on_body`]), so the drawn gun, and everything that derives from its
+//! placement, follows the gun body while the hand is drawn at its own. A gun sliding through the
+//! hand onto its grip from another part of it ([`held::placement::slide`]) is pinned so that the
+//! part the slide has reached sits in the palm, turned from the way the hand braced it toward the
+//! canonical grip ([`slide_offset`]), a turn measured on the hand-tracking wrist frame and moved
+//! onto the wrist bone's own frame ([`slide_on_bone`]). A gun on a holster or back bone, and a hand
+//! the controllers do not drive, are left to the game. Each placement also records how the hand's
 //! animated attach bone sat relative to the canonical grip before the pin, and how the gun sits on
-//! the wrist after the placement, for [`crate::controllers::weapons::grip_watch`].
+//! the wrist after the placement, for the weapon handling's grip watch.
 
 use std::{
     sync::atomic::{AtomicU8, AtomicU64, Ordering},
@@ -60,13 +59,9 @@ use parking_lot::Mutex;
 use crate::controllers::{
     aim::gun,
     hands::{config::HANDS_CONFIG, ik, pose as hand_pose},
-    physical_hands::physics::guns,
-    weapons::{
-        hold::{
-            act::{self, SnapStart, SnapView},
-            armed, take,
-        },
-        regions::{self, GripSlide, slide_offset, slide_on_bone},
+    held::{
+        self, GripSlide, SnapStart, SnapView, placement::HandlePlacement, slide_offset,
+        slide_on_bone,
     },
 };
 
@@ -232,7 +227,7 @@ pub(crate) unsafe fn before_placement(
     if local == 0 || character as usize != local {
         return None;
     }
-    let generation = take::begin_handle_placement();
+    let generation = held::placement::begin_handle_placement();
     let character = unsafe { character.as_ref() }?;
     let inventory = unsafe { inventory.as_ref() }?;
     if !character.m_IsLocalCharacter {
@@ -266,17 +261,17 @@ pub(crate) unsafe fn before_placement(
             // inactive hand or requiring its IK target to have queued successfully.
             let weight = if enabled { weights[hand.index()] } else { 0.0 };
             let address = weapon as *const WeaponBase as usize;
-            let snap = act::snap_view(address, hand);
+            let snap = held::placement::snap(address, hand);
             // A sliding gun is not in the hand yet, so it has no body to follow.
             let deviation = snap
                 .is_none()
-                .then(|| guns::deviation(hand, address))
+                .then(|| held::placement::body_deviation(hand, address))
                 .flatten();
             let grip = PinGrip {
                 weight,
                 snap,
                 deviation,
-                slide: regions::slide_for(address, hand),
+                slide: held::placement::slide(address, hand),
             };
             let read = unsafe { pin(character, controller, hand, attach, grip) };
             let Some(read) = read else {
@@ -329,7 +324,7 @@ pub(crate) unsafe fn after_placement(character: *const Character, placement: Pla
         if placed.gun == 0 {
             // The native transform and solved wrist belong to this same completed placement.
             unsafe {
-                take::record_handle_placement(take::HandlePlacement {
+                held::placement::record_handle_placement(HandlePlacement {
                     generation: placement.generation,
                     weapon: placed.weapon,
                     primary_gun: placed.data as usize,
@@ -499,7 +494,7 @@ struct PinRead {
 }
 
 /// The local player's weapons in the hands: a slot weapon in a wielding state, or a weapon
-/// armed in a hand ([`armed`]), whose user is `character`.
+/// armed in a hand ([`held::armed_hand_of`]), whose user is `character`.
 fn held_weapons<'a>(
     inventory: &'a Inventory,
     character: &'a Character,
@@ -509,12 +504,12 @@ fn held_weapons<'a>(
         let held = matches!(
             weapon.m_State,
             WeaponState::E_WS_WIELDING | WeaponState::E_WS_DUAL_WIELDING
-        ) || armed::is(weapon as *const WeaponBase as usize);
+        ) || held::armed_hand_of(weapon as *const WeaponBase as usize).is_some();
         held.then_some(weapon)
     });
     // A weapon armed in a hand that the VR inventory carries is in no slot.
     // SAFETY: the placement runs inside the world update for the local player's inventory.
-    let carried: Vec<&'a WeaponBase> = unsafe { armed::carried_for(inventory) };
+    let carried: Vec<&'a WeaponBase> = unsafe { held::placement::carried_for(inventory) };
     in_slots
         .chain(carried)
         .filter(move |weapon| std::ptr::eq(weapon.m_User[0].cast::<Character>(), character))
