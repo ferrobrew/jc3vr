@@ -64,13 +64,7 @@ pub mod tables;
 mod trigger_ownership;
 pub mod yank;
 
-use std::{
-    sync::{
-        LazyLock,
-        atomic::{AtomicBool, Ordering},
-    },
-    time::Instant,
-};
+use std::{sync::LazyLock, time::Instant};
 
 use body_rig::angle::{head_heading, yaw_of};
 use glam::Vec3;
@@ -103,6 +97,7 @@ pub use crate::controllers::bindings::{
     recovery::{Blocker, HandRecovery},
     report::{Idle, ReportedWrite, TickReport, recovery_status},
 };
+pub(crate) use crate::controllers::intent::{grip_holds_now, grip_pressed_now, hand_closed};
 use crate::{
     controllers::{
         aim::{self, sights},
@@ -110,7 +105,7 @@ use crate::{
             bail::{BailLatch, BailTick, bails_by_parachute},
             buttons::{grapple_button, grapple_button_held, reload_button},
             capture_wait::CaptureWait,
-            controls::{ButtonControl, ClosedHand, Controls, holds_unseen},
+            controls::{ButtonControl, ClosedHand, Controls},
             grapple_button::GrappleContext,
             hold::{ActionWrite, Desired, DevicePoll, HoldTracker, MapKind, Target, Want},
             intents::{Intent, SemanticInput},
@@ -135,7 +130,7 @@ use crate::{
         config::{CONTROLLERS_CONFIG, ControllersConfig, LocomotionDirection},
         grab::{self, Consumer, Provided, grabs_for, markers::MarkerFrame},
         hands::{self, tiers},
-        haptics, locomotion,
+        haptics, intent, locomotion,
         mode::{self, AirborneVariant, Detection, Mode, Traversal, VehicleClass},
         physical_hands, roomscale, scheme, snatch,
         snatch::config::SnatchSettings,
@@ -575,7 +570,7 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
             (force && source.active).then_some(source.inputs.squeeze),
             config.input.squeeze_press.release,
         );
-        HANDS_CLOSED[i].store(controls.hands[i].hold.down, Ordering::Relaxed);
+        intent::record_hand_closed(hand, controls.hands[i].hold.down);
     }
     controls.masked_hands = Hand::BOTH.map(|hand| !state.recovery.ready(hand));
     controls.stunt_available = if matches!(detection.mode, Mode::Vehicle(seat) if seat.class != VehicleClass::Mech)
@@ -1128,45 +1123,6 @@ fn marker_frame(active: &hands::ActiveHands) -> MarkerFrame {
     }
 }
 
-/// Whether `hand` was still closed on what its grip took as of the last input tick
-/// ([`ClosedHand`]), for the holds checked outside the tick.
-pub(crate) fn hand_closed(hand: Hand) -> bool {
-    HANDS_CLOSED[hand.index()].load(Ordering::Relaxed)
-}
-
-/// Whether `hand`'s grip holds what the hand has on the latest controller frame, read as the
-/// controller is, unmasked by the wait for a returning hand's controls to rest
-/// ([`holds_unseen`]), for a hold resumed with no tick's history of the hand. `None`
-/// while the frame is unfocused or the hand is not tracked, when the grip is not known.
-pub(crate) fn grip_holds_now(hand: Hand) -> Option<bool> {
-    let input = CONTROLLERS_CONFIG.lock().input;
-    frame::with_latest(|f| {
-        let source = f.hand(hand);
-        (f.focused && source.active).then(|| {
-            let force = matches!(input.grip_press(source.profile, hand), GripPress::Force(_));
-            holds_unseen(
-                source.buttons.contains(Button::SqueezePress),
-                force.then_some(source.inputs.squeeze),
-                input.squeeze_press.release,
-            )
-        })
-    })
-    .flatten()
-}
-
-/// Whether `hand`'s grip is pressed on the latest controller frame: the derived press, with its
-/// hysteresis, which is what opens and closes a hold. Unlike [`grip_holds_now`], fingers resting
-/// round a force-sensing grip's handle after the press has let go do not count: the press is read
-/// with its history, so a hold that has just opened reads open. `None` while the frame is
-/// unfocused or the hand is not tracked.
-pub(crate) fn grip_pressed_now(hand: Hand) -> Option<bool> {
-    frame::with_latest(|f| {
-        let source = f.hand(hand);
-        (f.focused && source.active).then(|| source.buttons.contains(Button::SqueezePress))
-    })
-    .flatten()
-}
-
 /// The last input tick's report.
 pub fn last_report() -> TickReport {
     STATE.lock().report.clone()
@@ -1302,8 +1258,6 @@ fn cancel_capture_routes(poll: DevicePoll, sink: &mut Vec<Segment>) {
 /// System ownership survives gameplay stand-down and editor open/close transitions.
 static INPUT_POLICY: LazyLock<Mutex<Runtime>> = LazyLock::new(|| Mutex::new(Runtime::default()));
 static PANEL_RECOVERY: Mutex<Recovery> = Mutex::new(Recovery::new());
-/// [`hand_closed`]'s copy of each hand's [`ClosedHand`], by [`Hand::index`].
-static HANDS_CLOSED: [AtomicBool; 2] = [AtomicBool::new(false), AtomicBool::new(false)];
 
 static STATE: Mutex<State> = Mutex::new(State {
     poll: DevicePoll::Running,
@@ -1354,9 +1308,7 @@ impl State {
         self.recovery.disarm();
         self.bindings.reset_preserving_snatch();
         self.closed = [ClosedHand::new(); 2];
-        for closed in &HANDS_CLOSED {
-            closed.store(false, Ordering::Relaxed);
-        }
+        intent::clear_hands_closed();
         self.trigger_ownership.suspend();
         if let Some(flight) = &mut self.flight {
             flight.reset();
