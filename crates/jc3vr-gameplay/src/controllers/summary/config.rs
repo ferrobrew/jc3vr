@@ -1,9 +1,11 @@
 //! The controls summary's glance and wrist placement parameter types.
 
 use glam::Vec3;
+use serde::Deserialize;
 
 /// When a look at the wrist counts as a glance.
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct GlanceConfig {
     /// The largest angle between the head's forward and the direction to the panel, degrees.
     pub view_cone_deg: f32,
@@ -38,7 +40,8 @@ impl Default for GlanceConfig {
 }
 
 /// The panel's place on the off-hand.
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct WristPlacement {
     /// The panel's centre in the controller's grip frame, metres: -X out of the back of the hand,
     /// +Z back along the forearm.

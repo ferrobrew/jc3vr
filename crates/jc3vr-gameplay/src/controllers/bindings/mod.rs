@@ -147,6 +147,7 @@ use crate::controllers::{
         trigger_ownership::{Owner as TriggerOwner, RawTrigger, TriggerOwnership},
     },
     config::{CONTROLLERS_CONFIG, ControllersConfig},
+    tuning::GAMEPLAY,
 };
 
 /// The bindings' game stage ([`stage::game_stage`]): take in where the last writes landed, detect
@@ -697,7 +698,9 @@ fn tick(game: &GameTick<'_>, dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>)
     let lock_status = grapple::physical::lock::status();
     controls.grapple_retarget = lock_status.locked
         && aim::status().grapple.is_some_and(|aim| {
-            aim.valid && aim.current && aim.point.distance(lock_status.hook) > RETARGET_M
+            aim.valid
+                && aim.current
+                && aim.point.distance(lock_status.hook) > GAMEPLAY.get().bindings.grapple_retarget_m
         });
     let mut step = state
         .bindings
@@ -1192,10 +1195,6 @@ fn log_capture_wait(
         "debug panel: neither editing nor gameplay owns the controls",
     );
 }
-
-/// How far from the locked line's hook the grapple's aim must be for a tap to fire the hook again,
-/// metres: past the aim's own wander on the hooked surface.
-const RETARGET_M: f32 = 2.0;
 
 static CAPTURE_WAIT: Mutex<CaptureWait> = Mutex::new(CaptureWait::new());
 

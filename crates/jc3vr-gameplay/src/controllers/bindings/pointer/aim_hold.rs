@@ -10,13 +10,7 @@
 
 use jc3vr_view::hud::pointer::panel::PanelHit;
 
-/// The trigger values that pin and free the cursor.
-const PIN_PRESS: f32 = 0.1;
-const PIN_RELEASE: f32 = 0.05;
-/// The trigger values that begin and end a click: a full pull, with the release far enough below
-/// it that a held click does not chatter.
-const CLICK_PRESS: f32 = 0.95;
-const CLICK_RELEASE: f32 = 0.8;
+use crate::controllers::tuning::GAMEPLAY;
 
 /// One pointing hand's aim hold.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
@@ -52,17 +46,18 @@ impl AimHold {
         down: bool,
         value: f32,
     ) -> (Option<PanelHit>, bool) {
+        let tuning = &GAMEPLAY.get().pointer.aim_hold;
         let value = if value.is_finite() { value } else { 0.0 };
         self.full = if self.full {
-            value >= CLICK_RELEASE
+            value >= tuning.click_release
         } else {
-            value >= CLICK_PRESS
+            value >= tuning.click_press
         };
-        let tap = down && value < PIN_RELEASE;
+        let tap = down && value < tuning.pin_release;
         let down = down && (self.full || tap);
-        if value < PIN_RELEASE {
+        if value < tuning.pin_release {
             self.pinned = None;
-        } else if self.pinned.is_none() && value >= PIN_PRESS && !down {
+        } else if self.pinned.is_none() && value >= tuning.pin_press && !down {
             self.pinned = hit.map(|hit| Pinned { hit, offset: None });
         }
         let Some(pinned) = &mut self.pinned else {

@@ -3,9 +3,12 @@
 use jc3vr_body::controllers::intent::hold::{ActionWrite, HoldTracker, Phase};
 
 use super::*;
-use crate::controllers::bindings::{
-    bail,
-    bail::{BailLatch, BailTick},
+use crate::controllers::{
+    bindings::{
+        bail,
+        bail::{BailLatch, BailTick},
+    },
+    tuning::GAMEPLAY,
 };
 
 #[test]
@@ -380,10 +383,12 @@ fn the_bail_or_the_exit_is_chosen_once_per_press() {
         driver: true,
     };
     let mode = Mode::Vehicle(seat);
-    let fast = bail::PARACHUTE_BAIL_MIN_SPEED_MPS + bail::BAIL_ENTER_MARGIN_MPS + 1.0;
+    let fast =
+        bail::PARACHUTE_BAIL_MIN_SPEED_MPS + GAMEPLAY.get().bindings.bail.enter_margin_mps + 1.0;
     let slow = bail::PARACHUTE_BAIL_MIN_SPEED_MPS - 1.0;
     // Inside the hysteresis band, a vehicle that was fast stays fast.
-    let near = bail::PARACHUTE_BAIL_MIN_SPEED_MPS + bail::BAIL_LEAVE_MARGIN_MPS + 0.1;
+    let near =
+        bail::PARACHUTE_BAIL_MIN_SPEED_MPS + GAMEPLAY.get().bindings.bail.leave_margin_mps + 0.1;
     let hover = move |t: f32| {
         if ((t / DT) as u32).is_multiple_of(2) {
             fast
