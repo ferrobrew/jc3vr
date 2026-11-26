@@ -23,13 +23,10 @@ profiler = [
 windows = { workspace = true }
 re-utilities = { workspace = true }
 detours-macro = { workspace = true }
-glam = { workspace = true }
 
 jc3gi = { path = "../jc3gi" }
 # The core layer: the lifecycle, the configuration engine, the hook plumbing, and frame timing.
 jc3vr-core = { path = "../crates/jc3vr-core" }
-# The input layer: the controller frame, motion, scheme, haptic mixer, and capture policy.
-jc3vr-input = { path = "../crates/jc3vr-input" }
 # The render layer: the OpenXR runtime, the head pose, stereo, FSR, the far field, the
 # engine-pipeline hooks, and the render diagnostics.
 jc3vr-render = { path = "../crates/jc3vr-render" }
@@ -45,39 +42,23 @@ jc3vr-tooling = { path = "../crates/jc3vr-tooling" }
 # The UI layer: the debug UI shell and its panels, the status rows, the pause menu with its VR
 # pages, and the profiler's Performance panel.
 jc3vr-ui = { path = "../crates/jc3vr-ui" }
-# Runtime-loaded (`loaded` default feature): the OpenXR loader is opened at runtime via
-# `xr::Entry::load_from`, not linked, so an `openxr_loader.dll` must sit beside the payload DLL (see
-# the `vr` module docs). The `static` feature would build the loader in and drop that DLL, but it does
-# not cross-build cleanly on Linux: with cmake + ninja added it compiles the loader, then CMake feeds
-# the Windows resource step (`loader.rc`) a spurious Clang `-fPIC` that clang-cl rejects, and the fix
-# (`CMAKE_POSITION_INDEPENDENT_CODE=OFF`) does not stick because cargo-xwin regenerates its toolchain
-# file every build. So the dynamic route stays the portable choice.
-openxr = "0.21"
 
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-tracing-appender = "0.2"
 egui = "0.35"
 # Same rev as the UI crate's `puffin_egui`, so both agree on the puffin data model.
 puffin = { git = "https://github.com/EmbarkStudios/puffin", rev = "d06bed0fcb8c8e4c78643d4ead7cf1de9b76fd3b", optional = true }
 anyhow.workspace = true
-# `send_guard`: the VR frame context carries the runtime lock's guard for the frame, and the
-# deferred frame tail hands that context to the tail thread to submit.
-parking_lot = { version = "0.12.5", features = ["send_guard"] }
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-directories = "6.0.0"
 toml = "1.1.6"
-serde_path_to_error = "0.1.20"
-serde_ignored = "0.1.14"
-# The configuration engine serializes its type-erased root through whichever serializer a caller
-# embeds it in, so a capture's copy of the settings reads exactly as the typed root would.
-erased-serde = "0.4.10"
 
 [build-dependencies]
 jiff = "0.2.29"
 
 [dev-dependencies]
+glam = { workspace = true }
+# The configuration tests build settings that name a hand.
+jc3vr-input = { path = "../crates/jc3vr-input" }
+serde_json = "1"
 jc3vr-core = { path = "../crates/jc3vr-core", features = ["test-support"] }
 jc3vr-render = { path = "../crates/jc3vr-render", features = ["test-support"] }
 pretty_assertions = "1.4.1"

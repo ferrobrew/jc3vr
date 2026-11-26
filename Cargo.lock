@@ -2496,9 +2496,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "detours-macro",
- "directories",
  "egui",
- "erased-serde",
  "glam",
  "jc3gi",
  "jc3vr-core",
@@ -2509,19 +2507,13 @@ dependencies = [
  "jc3vr-tooling",
  "jc3vr-ui",
  "jiff",
- "openxr",
- "parking_lot",
  "pretty_assertions",
  "puffin 0.20.0 (git+https://github.com/EmbarkStudios/puffin?rev=d06bed0fcb8c8e4c78643d4ead7cf1de9b76fd3b)",
  "re-utilities",
  "serde",
- "serde_ignored",
  "serde_json",
- "serde_path_to_error",
  "toml 1.1.6+spec-1.1.0",
  "tracing",
- "tracing-appender",
- "tracing-subscriber",
  "windows 0.62.2",
 ]
 
@@ -6182,18 +6174,6 @@ dependencies = [
  "pin-project-lite",
  "tracing-attributes",
  "tracing-core",
-]
-
-[[package]]
-name = "tracing-appender"
-version = "0.2.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3566e8ce28cc0a3fe42519fc80e6b4c943cc4c8cef275620eb8dac2d3d4e06cf"
-dependencies = [
- "crossbeam-channel",
- "thiserror 1.0.69",
- "time",
- "tracing-subscriber",
 ]
 
 [[package]]
