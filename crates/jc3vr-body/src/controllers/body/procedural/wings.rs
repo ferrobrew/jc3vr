@@ -307,9 +307,9 @@ static WING_HEADING: Mutex<WingHeading> = Mutex::new(WingHeading::new());
 
 #[cfg(test)]
 mod tests {
-    use body_rig::angle::yaw_of;
-
     use std::time::Duration;
+
+    use body_rig::angle::yaw_of;
 
     use super::*;
 

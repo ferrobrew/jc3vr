@@ -18,10 +18,7 @@
 //! render placement after each render publication ([`submit_pouch_render`]), with the drawing
 //! helpers and colours here.
 
-use std::{
-    sync::OnceLock,
-    time::Instant,
-};
+use std::{sync::OnceLock, time::Instant};
 
 use glam::{Mat4, Vec3};
 use jc3gi::character::character::{AnimationController, Character, Joint};

@@ -17,10 +17,7 @@
 //! the gun's fire point and the head in the world; a request that waits longer than a few ticks
 //! (the aim is idle) is dropped rather than acting later on a pose the player no longer holds.
 
-use std::{
-    fmt,
-    time::Instant,
-};
+use std::{fmt, time::Instant};
 
 use glam::{Mat4, Vec2, Vec3};
 use jc3vr_input::frame::{Hand, Pose};
