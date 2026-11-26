@@ -1,6 +1,6 @@
 # Breaking glass
 
-A palm or a held gun that strikes a window cracks it the way a bullet does, from outside the car or from inside it, and a hard enough strike, or enough damage, brings the whole pane down. The code is `crates/jc3vr-gameplay/src/controllers/glass/`, and the engine side is in [window-glass.md](../../engine/rendering/window-glass.md).
+A palm or a held gun that strikes a window cracks it the way a bullet does, from outside the car or from inside it, and a hard enough strike, or enough damage, brings the whole pane down. The code is `crates/jc3vr-physical/src/controllers/glass/`, and the engine side is in [window-glass.md](../../engine/rendering/window-glass.md).
 
 ## Why the hands needed help
 

@@ -2,7 +2,7 @@
 
 A physical handhold stays at the point the hand grips. A grip on a vehicle or helicopter carries the player through the moving climb ([hand-climbing.md](hand-climbing.md#moving-bodies)); it does not enter the native animated helicopter hang or snap onto a roof. The other hand remains available for a gun or an interaction. A rifle can be held in one hand. Only an explicit foregrip grab engages weapon support, and that target keeps priority over the climbing fallback.
 
-The code is `crates/jc3vr-gameplay/src/controllers/physical_hands/climb/` and `crates/jc3vr-gameplay/src/controllers/physical_hands/stunt/`. Moving climbing and stunt handoff ship enabled. Their switches, tuning, and readouts stay in the debug UI. Headset tuning remains unverified.
+The code is `crates/jc3vr-physical/src/controllers/physical_hands/climb/` and `crates/jc3vr-physical/src/controllers/physical_hands/stunt/`. Moving climbing and stunt handoff ship enabled. Their switches, tuning, and readouts stay in the debug UI. Headset tuning remains unverified.
 
 ## Native automatic attachment
 
