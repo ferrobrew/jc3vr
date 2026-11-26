@@ -1,6 +1,6 @@
 //! The paired editor's transaction and its settings-file boundary.
 
-use jc3vr_core::config::engine::{Snapshot, load, store, write};
+use jc3vr_core::config::engine::{Parts, Snapshot, load, store, write};
 
 use super::*;
 

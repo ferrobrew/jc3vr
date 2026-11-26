@@ -35,7 +35,7 @@ use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
 use crate::controllers::{
-    hands::{anchor::ANCHOR_BLEND_S, config::MOUNTED_AIM_BY_HANDS},
+    hands::anchor::ANCHOR_BLEND_S,
     held,
     mode::{self, AirborneVariant, CharacterSnapshot, Detection, Mode, OnFootVariant, Traversal},
     physics::local_player::LocalPlayer,
@@ -233,27 +233,13 @@ impl HandTierTable {
         mounted_gun: HandTier::Anchored,
         parachute: HandTier::Free,
         wingsuit: HandTier::Yielded,
-        swimming: HandTier::Yielded,
+        swimming: HandTier::Free,
         interaction: HandTier::Yielded,
         melee: HandTier::Yielded,
         weapon_action: HandTier::ActionRuns,
         ragdoll: HandTier::Yielded,
         cutscene: HandTier::Yielded,
     };
-
-    /// The table with the swimming hands free while the procedural body poses the torso in the
-    /// water (`swim_arms`): the arms follow the controllers on the torso it writes. Otherwise the
-    /// table as it is.
-    pub const fn with_swim_arms(self, swim_arms: bool) -> HandTierTable {
-        if swim_arms {
-            HandTierTable {
-                swimming: HandTier::Free,
-                ..self
-            }
-        } else {
-            self
-        }
-    }
 
     /// The tier assigned to `state`.
     pub fn tier(&self, state: TierState) -> HandTier {
@@ -449,10 +435,9 @@ pub fn weights() -> [f32; 2] {
 /// detector, while the controllers are enabled.
 pub fn tick(game: &GameTick<'_>, dt: f32) {
     let config = TierConfig {
-        table: HandTierTable::PLAN.with_swim_arms(true),
+        table: HandTierTable::PLAN,
     };
     let dominant = scheme::acting_hand();
-    let mounted_anchor = *MOUNTED_AIM_BY_HANDS.lock();
     let signals = read_signals(game);
     // The weapon handling's last tick: one tick behind, which the anchor's blend absorbs.
     let gun_hands = held::wielded_gun_hands();
@@ -468,13 +453,12 @@ pub fn tick(game: &GameTick<'_>, dt: f32) {
         dt,
         &config,
         dominant,
-        mounted_anchor,
+        true,
         holding,
     );
 }
 
-/// What [`advance`] reads of the settings: the tier table, with its swimming row as
-/// [`HandTierTable::with_swim_arms`] sets it.
+/// What [`advance`] reads of the settings: the tier table.
 #[derive(Copy, Clone)]
 pub struct TierConfig {
     pub table: HandTierTable,
@@ -638,17 +622,10 @@ mod tests {
     }
 
     #[test]
-    fn the_procedural_swim_frees_the_swimming_hands() {
+    fn the_swimming_hands_are_free() {
         assert_eq!(
             HandTierTable::PLAN.tier(TierState::Swimming),
-            HandTier::Yielded
-        );
-        let freed = HandTierTable::PLAN.with_swim_arms(true);
-        assert_eq!(freed.tier(TierState::Swimming), HandTier::Free);
-        assert_eq!(freed.tier(TierState::Wingsuit), HandTier::Yielded);
-        assert_eq!(
-            HandTierTable::PLAN.with_swim_arms(false),
-            HandTierTable::PLAN
+            HandTier::Free
         );
     }
 
