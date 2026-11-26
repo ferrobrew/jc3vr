@@ -1,0 +1,45 @@
+# The hand climbing's and the push-up's tuning: `ClimbTuning` in
+# `src/controllers/physical_hands/climb/tuning.rs`, whose fields say what each value does. Every key
+# is required and no other is accepted. Lengths are metres, masses kilograms, speeds metres per
+# second, and times seconds unless the key says milliseconds; step counts are simulation steps, and
+# a share is a fraction of a range, in `0..1`.
+
+[climb]
+reach_m = 0.05
+gain = 0.8
+max_speed_mps = 6.0
+break_distance_m = 1.2
+min_face_level = 0.5
+fling_scale = 1.0
+max_fling_speed_mps = 8.0
+fling_smoothing_s = 0.08
+fling_carry_s = 0.2
+mantle_start_m = 0.9
+mantle_clearance_m = 0.08
+mantle_over_below_clearance_share = 0.5
+mantle_forward_m = 0.4
+mantle_speed_mps = 2.0
+mantle_min_speed_mps = 0.3
+mantle_min_climb_m = 0.25
+mantle_land_past_m = 0.3
+mantle_land_speed_mps = 1.0
+mantle_arrived_m = 0.05
+mantle_landed_below_m = 0.15
+max_mantle_steps = 90
+min_ledge_normal_y = 0.7
+tension_full_speed_mps = 3.0
+min_tension = 0.1
+min_moving_mass_kg = 300.0
+max_carry_speed_mps = 80.0
+stale_after_ms = 200
+max_stale_steps = 6
+
+[vault]
+deadband_m = 0.06
+stiffness_per_s = 10.0
+max_lift_mps = 3.0
+min_vertical = 0.7
+max_rise_m = 1.4
+min_height_m = 0.3
+hold_s = 0.15
+fall_tolerance_mps = 0.5

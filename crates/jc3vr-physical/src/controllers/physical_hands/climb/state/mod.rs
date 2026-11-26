@@ -25,6 +25,7 @@ use crate::controllers::physical_hands::{
         solve::{
             Mantle, MantleCheck, MantleMotion, MantleTuning, carried, carried_turn, mantle_starts,
         },
+        tuning::CLIMB,
         types::{ClimbHandStatus, ClimbStatus, Hold, Landing},
     },
     physics::drive::Goal,
@@ -153,23 +154,6 @@ pub fn stand_down() {
     state.published = None;
     state.status.hands = [ClimbHandStatus::default(); 2];
 }
-
-/// How long a publish stays current for the input tick, which runs every frame.
-pub(super) const STALE_AFTER: Duration = Duration::from_millis(200);
-
-/// How many steps in a row may run without a publish, or with a gripping hand's body not acting,
-/// before the grips let go: the aim update runs every simulation tick, and a game pause stops the
-/// steps as well as the publishes. Counted at the game's 30 Hz tick.
-pub(super) const MAX_STALE_STEPS: u32 = 6;
-
-/// How far below the gripped top feet that stand count as on the ledge, metres.
-pub(super) const MANTLE_LANDED_BELOW_M: f32 = 0.15;
-
-/// How many steps a mantle may take before it gives up: three seconds at the game's 30 Hz tick.
-pub(super) const MAX_MANTLE_STEPS: u32 = 90;
-
-/// The least share of the tension pulse that pulses a gripping hand.
-pub(super) const MIN_TENSION: f32 = 0.1;
 
 /// How often the climb is written to the debug log.
 pub(super) const LOG_PERIOD: Duration = Duration::from_secs(1);
@@ -428,7 +412,7 @@ impl State {
             return MantleStep::Inactive;
         };
         self.mantle_steps += 1;
-        let landed = tick.stands && tick.feet.y >= mantle.top.y - MANTLE_LANDED_BELOW_M;
+        let landed = tick.stands && tick.feet.y >= mantle.top.y - tick.tuning.landed_below_m;
         let motion = mantle.motion(tick.feet, tick.tuning);
         if landed || motion == MantleMotion::Arrived {
             tracing::info!(feet = ?tick.feet, stood = landed, "hand climbing: mantled onto the ledge");
@@ -458,13 +442,15 @@ impl State {
     }
 
     pub(super) fn fresh(&self, now: Instant) -> bool {
+        let stale_after = CLIMB.get().climb.stale_after();
         self.published
-            .is_some_and(|at| now.saturating_duration_since(at) <= STALE_AFTER)
+            .is_some_and(|at| now.saturating_duration_since(at) <= stale_after)
     }
 
     pub(super) fn stepped_lately(&self, now: Instant) -> bool {
+        let stale_after = CLIMB.get().climb.stale_after();
         self.stepped
-            .is_some_and(|at| now.saturating_duration_since(at) <= STALE_AFTER)
+            .is_some_and(|at| now.saturating_duration_since(at) <= stale_after)
     }
 
     /// The grip on the highest ledge's top.

@@ -54,24 +54,21 @@ pub fn body_target(follows: impl IntoIterator<Item = Follow>) -> Option<Vec3> {
 /// November take. The body rises along the face instead: `rise` times the face's slope (its
 /// normal's upward share over its level share, at most one, so a ledge's top adds nothing), toward
 /// the face. A vertical face, an overhang, a lowering, or a face the normal says nothing of adds
-/// nothing.
-pub fn slope_follow(rise: f32, normal: Vec3) -> Vec3 {
+/// nothing, and so does a normal whose level share is below `min_face_level`, a ledge's top rather
+/// than a face.
+pub fn slope_follow(rise: f32, normal: Vec3, min_face_level: f32) -> Vec3 {
     let level = Vec3::new(normal.x, 0.0, normal.z);
     let level_len = level.length();
-    if !rise.is_finite() || rise <= 0.0 || !normal.is_finite() || level_len < MIN_FACE_LEVEL {
+    if !rise.is_finite() || rise <= 0.0 || !normal.is_finite() || level_len < min_face_level {
         return Vec3::ZERO;
     }
     let slope = (normal.y / level_len).clamp(0.0, 1.0);
     -level / level_len * rise * slope
 }
 
-/// The least level share of a gripped surface's normal for it to count as a face the body rises
-/// along, rather than a ledge's top.
-const MIN_FACE_LEVEL: f32 = 0.5;
-
 /// How the body is moved toward its target.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct ClimbTuning {
+pub struct PullTuning {
     /// The share of the gap one step closes, `0..=1`.
     pub gain: f32,
     pub max_speed_mps: f32,
@@ -80,7 +77,7 @@ pub struct ClimbTuning {
 
 /// The velocity that closes `tuning.gain` of the gap from `body` to `target` over one step, capped
 /// at the fastest climb. Zero for a gap or step that is not finite.
-pub fn climb_velocity(target: Vec3, body: Vec3, tuning: &ClimbTuning) -> Vec3 {
+pub fn climb_velocity(target: Vec3, body: Vec3, tuning: &PullTuning) -> Vec3 {
     if !(tuning.step_s.is_finite() && tuning.step_s > 0.0) {
         return Vec3::ZERO;
     }
@@ -203,6 +200,15 @@ pub struct MantleTuning {
     /// How far past the top the feet must be carried before the mantle lets them down onto it,
     /// metres: about the proxy capsule's radius, so the whole capsule is over the ledge.
     pub land_past_m: f32,
+    /// How fast the feet are let down onto the ledge once they are over it, metres per second.
+    pub land_speed_mps: f32,
+    /// How close to where the mantle carries them the feet count as there, metres.
+    pub arrived_m: f32,
+    /// The share of the clearance the feet may still be below where the mantle carries them and
+    /// go over the top rather than straight up.
+    pub over_below_clearance_share: f32,
+    /// How far below the top feet that stand count as on the ledge, metres.
+    pub landed_below_m: f32,
     pub step_s: f32,
 }
 
@@ -306,24 +312,22 @@ impl Mantle {
         let across = (left / tuning.step_s).clamp_length_max(speed);
         let past = Vec2::new(feet.x - self.top.x, feet.z - self.top.z).dot(self.over);
         if past >= tuning.land_past_m {
-            if left.length() <= ARRIVED_M {
+            if left.length() <= tuning.arrived_m {
                 return MantleMotion::Arrived;
             }
-            return MantleMotion::Move(Vec3::new(across.x, -LAND_SPEED_MPS.min(speed), across.y));
+            return MantleMotion::Move(Vec3::new(
+                across.x,
+                -tuning.land_speed_mps.min(speed),
+                across.y,
+            ));
         }
         let rise = ((destination.y - feet.y) / tuning.step_s).clamp(-speed, speed);
-        if feet.y < destination.y - tuning.clearance_m * 0.5 {
+        if feet.y < destination.y - tuning.clearance_m * tuning.over_below_clearance_share {
             return MantleMotion::Move(Vec3::new(0.0, rise, 0.0));
         }
         MantleMotion::Move(Vec3::new(across.x, rise, across.y))
     }
 }
-
-/// How close to where the mantle carries them the feet count as there, metres.
-const ARRIVED_M: f32 = 0.05;
-
-/// How fast the mantle lets the feet down onto the ledge once they are over it, metres per second.
-const LAND_SPEED_MPS: f32 = 1.0;
 
 #[cfg(test)]
 mod tests {
@@ -331,8 +335,10 @@ mod tests {
 
     const STEP: f32 = 1.0 / 30.0;
 
-    fn tuning() -> ClimbTuning {
-        ClimbTuning {
+    const MIN_FACE_LEVEL: f32 = 0.5;
+
+    fn tuning() -> PullTuning {
+        PullTuning {
             gain: 1.0,
             max_speed_mps: 6.0,
             step_s: STEP,
@@ -348,6 +354,10 @@ mod tests {
             min_speed_mps: 0.3,
             min_climb_m: 0.25,
             land_past_m: 0.3,
+            land_speed_mps: 1.0,
+            arrived_m: 0.05,
+            over_below_clearance_share: 0.5,
+            landed_below_m: 0.15,
             step_s: STEP,
         }
     }
@@ -504,7 +514,7 @@ mod tests {
         let start = Vec3::new(2.0, 5.0, 1.0);
         let grip = Vec3::new(0.2, 1.6, -0.4);
         for gain in [0.3, 0.8, 1.0] {
-            let tuning = ClimbTuning { gain, ..tuning() };
+            let tuning = PullTuning { gain, ..tuning() };
             let mut body = start;
             let mut velocity = Vec3::ZERO;
             for step in 0..120 {
@@ -527,7 +537,7 @@ mod tests {
 
     #[test]
     fn the_climb_closes_its_gain_of_the_gap_within_the_speed_cap() {
-        let half = ClimbTuning {
+        let half = PullTuning {
             gain: 0.5,
             ..tuning()
         };
@@ -535,7 +545,7 @@ mod tests {
         assert!((velocity.y * STEP - 0.05).abs() < 1e-5);
         let far = climb_velocity(Vec3::Y * 10.0, Vec3::ZERO, &tuning());
         assert!((far.length() - 6.0).abs() < 1e-4);
-        let bad = ClimbTuning {
+        let bad = PullTuning {
             step_s: 0.0,
             ..tuning()
         };
@@ -655,15 +665,27 @@ mod tests {
     fn a_pull_up_a_face_that_leans_back_carries_the_body_toward_it() {
         // A face leaning back 30 degrees, facing +Z.
         let normal = Vec3::new(0.0, 0.5, 0.866);
-        let along = slope_follow(1.0, normal);
+        let along = slope_follow(1.0, normal, MIN_FACE_LEVEL);
         assert!(along.z < -0.5 && along.z > -0.6, "{along}");
-        assert_eq!(slope_follow(1.0, Vec3::Z), Vec3::ZERO, "a vertical face");
-        assert_eq!(slope_follow(-1.0, normal), Vec3::ZERO, "a lowering");
         assert_eq!(
-            slope_follow(1.0, Vec3::new(0.0, -0.5, 0.866)),
+            slope_follow(1.0, Vec3::Z, MIN_FACE_LEVEL),
+            Vec3::ZERO,
+            "a vertical face"
+        );
+        assert_eq!(
+            slope_follow(-1.0, normal, MIN_FACE_LEVEL),
+            Vec3::ZERO,
+            "a lowering"
+        );
+        assert_eq!(
+            slope_follow(1.0, Vec3::new(0.0, -0.5, 0.866), MIN_FACE_LEVEL),
             Vec3::ZERO,
             "an overhang"
         );
-        assert_eq!(slope_follow(1.0, Vec3::Y), Vec3::ZERO, "a ledge's top");
+        assert_eq!(
+            slope_follow(1.0, Vec3::Y, MIN_FACE_LEVEL),
+            Vec3::ZERO,
+            "a ledge's top"
+        );
     }
 }

@@ -5,24 +5,21 @@ use std::time::Instant;
 
 use glam::{Quat, Vec3};
 use jc3gi::character::character::Character;
+use jc3vr_body::controllers::physics::GRAVITY_MPS2;
 use jc3vr_input::frame::Hand;
 use jc3vr_view::headpose::teleport;
 
 use crate::controllers::physical_hands::{
     climb::{
-        config::CLIMB,
         engine, native,
         solve::{
-            ClimbTuning, Follow, MantleTuning, body_target, carry_velocity, climb_velocity,
+            Follow, MantleTuning, PullTuning, body_target, carry_velocity, climb_velocity,
             fling_carry, is_ledge, release_velocity, slope_follow, smooth_motion,
         },
-        state::{
-            Carry, Event, Grip, LOG_PERIOD, MAX_MANTLE_STEPS, MAX_STALE_STEPS, MantleStep,
-            MantleTick, Request, STATE,
-        },
+        state::{Carry, Event, Grip, LOG_PERIOD, MantleStep, MantleTick, Request, STATE},
+        tuning::CLIMB,
     },
     physics::{self, drive::Goal},
-    pickup::PICKUP,
     stunt,
 };
 
@@ -35,7 +32,7 @@ use crate::controllers::physical_hands::{
 /// The thread that steps the physics world, outside the step, after the characters' proxy
 /// updates (the pre-simulation callback).
 pub unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2] {
-    let climb = CLIMB;
+    let climb = &CLIMB.get().climb;
     let context = unsafe { engine::gate_context() };
     native::observe(context);
     let mut state = STATE.lock();
@@ -67,12 +64,12 @@ pub unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2] {
     let reason = if teleport::epoch() != state.epoch {
         state.epoch = teleport::epoch();
         Some("the player was teleported")
-    } else if state.input_at.is_none_or(|at| {
-        Instant::now().saturating_duration_since(at)
-            > crate::controllers::physical_hands::climb::state::STALE_AFTER
-    }) {
+    } else if state
+        .input_at
+        .is_none_or(|at| Instant::now().saturating_duration_since(at) > climb.stale_after())
+    {
         Some("the hand input stopped publishing")
-    } else if state.stale_steps > MAX_STALE_STEPS {
+    } else if state.stale_steps > climb.max_stale_steps {
         Some("the hands stopped publishing")
     } else {
         None
@@ -100,6 +97,10 @@ pub unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2] {
         min_speed_mps: climb.mantle_min_speed_mps,
         min_climb_m: climb.mantle_min_climb_m,
         land_past_m: climb.mantle_land_past_m,
+        land_speed_mps: climb.mantle_land_speed_mps,
+        arrived_m: climb.mantle_arrived_m,
+        over_below_clearance_share: climb.mantle_over_below_clearance_share,
+        landed_below_m: climb.mantle_landed_below_m,
         step_s,
     };
     let rig_epoch = state.rig_epoch;
@@ -119,7 +120,7 @@ pub unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2] {
             {
                 // SAFETY: forwarded from the caller.
                 let frame = unsafe { engine::body_frame(hold.body) }
-                    .filter(|f| engine::climbable(f, climb.moving, climb.min_moving_mass_kg));
+                    .filter(|f| engine::climbable(f, climb.min_moving_mass_kg));
                 let grip = match (bodies[i], state.palms[i], place, frame) {
                     (Some(pin), Some(palm), Ok(place), Some(frame)) => Some(Grip {
                         hand,
@@ -179,7 +180,7 @@ pub unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2] {
             } else {
                 grip.missing_steps.saturating_add(1)
             };
-            if grip.missing_steps > MAX_STALE_STEPS {
+            if grip.missing_steps > climb.max_stale_steps {
                 state.drop_hand(hand, "the hand's body stopped acting");
             }
         }
@@ -247,7 +248,7 @@ pub unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2] {
             if support.is_some() || elapsed_s > climb.fling_carry_s {
                 state.carry = None;
             } else {
-                let velocity = fling_carry(carry.kept, elapsed_s, PICKUP.gravity_mps2);
+                let velocity = fling_carry(carry.kept, elapsed_s, GRAVITY_MPS2);
                 // SAFETY: forwarded from the caller.
                 match unsafe { engine::set_velocity(velocity) } {
                     Ok(()) => {
@@ -287,7 +288,7 @@ pub unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2] {
         state.start_feet_y = place.feet.y;
         tracing::info!(feet = ?place.feet, "hand climbing: climbing starts");
     }
-    let tuning = ClimbTuning {
+    let tuning = PullTuning {
         gain: climb.gain,
         max_speed_mps: climb.max_speed_mps,
         step_s,
@@ -326,7 +327,7 @@ pub unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2] {
         let grip = state.grips[i]?;
         let palm = state.palms[i]?;
         let moved = carried[i].map_or(Vec3::ZERO, |c| c.point - grip.hold.point);
-        let along = slope_follow((grip.palm - palm).y, grip.hold.normal);
+        let along = slope_follow((grip.palm - palm).y, grip.hold.normal, climb.min_face_level);
         Some(Follow {
             body: grip.body + moved + along,
             grip: grip.palm,
@@ -353,7 +354,7 @@ pub unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2] {
             supported: support.is_some(),
             stands,
             tuning: &mantle_tuning,
-            max_steps: MAX_MANTLE_STEPS,
+            max_steps: climb.max_mantle_steps,
             max_carry_speed_mps: climb.max_carry_speed_mps,
             context,
         },

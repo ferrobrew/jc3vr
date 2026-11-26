@@ -19,7 +19,7 @@ use jc3vr_body::controllers::facts::climb::BodyIdentity;
 use jc3vr_view::headpose::teleport;
 
 use crate::controllers::physical_hands::climb::{
-    Hold, engine, lifetime, state::STALE_AFTER, types::Landing,
+    Hold, engine, lifetime, tuning::CLIMB, types::Landing,
 };
 
 /// Copied only at the serialized input/pre-simulation boundary, never looked up by a worker.
@@ -233,7 +233,7 @@ impl Gate {
 
     fn current(&self, claim: &Claim, now: Instant) -> bool {
         let observed = self.context.load();
-        now.saturating_duration_since(claim.at) <= STALE_AFTER
+        now.saturating_duration_since(claim.at) <= CLIMB.get().climb.stale_after()
             && claim.generation == self.generation.load(Ordering::Acquire)
             && observed
                 .as_ref()

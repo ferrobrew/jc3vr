@@ -4,7 +4,7 @@
 //! a moving body is held in the body's own frame and carries the player with it. The design is in `docs/mod/input/hand-climbing.md`, the
 //! engine side in `docs/engine/character/hands-locomotion-and-state.md`.
 //!
-//! - [`config`]: the settings;
+//! - [`tuning`]: the tuning, with the push-up's;
 //! - [`solve`]: the motion, pure: where the gripping hands would have the body, the velocity that
 //!   takes it there, the fling a release keeps, and the mantle over a ledge;
 //! - [`engine`]: the player's character proxy: where it is, its support, and its velocity;
@@ -28,7 +28,6 @@
 //! The grips are taken and the player moved only in the pre-simulation step, on the thread that
 //! steps the world, outside the step. The other halves share a leaf lock of their own.
 
-pub mod config;
 pub mod engine;
 pub(crate) mod lifetime;
 pub(crate) mod native;
@@ -36,6 +35,7 @@ mod observe;
 pub mod solve;
 mod state;
 mod step;
+pub mod tuning;
 mod types;
 
 pub use self::{

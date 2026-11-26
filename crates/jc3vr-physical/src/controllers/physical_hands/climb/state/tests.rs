@@ -47,6 +47,10 @@ fn tuning() -> MantleTuning {
         min_speed_mps: 0.1,
         min_climb_m: 0.2,
         land_past_m: 0.3,
+        land_speed_mps: 1.0,
+        arrived_m: 0.05,
+        over_below_clearance_share: 0.5,
+        landed_below_m: 0.15,
         step_s: 1.0 / 30.0,
     }
 }
@@ -57,7 +61,7 @@ fn tick(tuning: &MantleTuning, feet: Vec3) -> MantleTick<'_> {
         supported: false,
         stands: false,
         tuning,
-        max_steps: MAX_MANTLE_STEPS,
+        max_steps: CLIMB.get().climb.max_mantle_steps,
         max_carry_speed_mps: 50.0,
         context: Some(context()),
     }

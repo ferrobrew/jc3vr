@@ -114,7 +114,7 @@ fn worker_adapter_uses_only_caller_proof_and_atomic_stamps() {
     }
     assert!(!gate.blocks(
         caller(),
-        now + STALE_AFTER + Duration::from_nanos(1),
+        now + CLIMB.get().climb.stale_after() + Duration::from_nanos(1),
         |_, _| panic!("expired proof must not read a stamp")
     ));
 }
@@ -185,7 +185,7 @@ fn pending_landing_survives_extra_no_grip_steps_until_handoff_reject_consume_or_
     assert!(!gate.blocks(caller(), at, |_, _| 8));
 
     pending(&gate, at);
-    let expired = at + STALE_AFTER + Duration::from_nanos(1);
+    let expired = at + CLIMB.get().climb.stale_after() + Duration::from_nanos(1);
     gate.finish_grips(expired);
     assert!(
         gate.take_landing(expired, |_| panic!(

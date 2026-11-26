@@ -6,7 +6,8 @@ use jc3vr_body::controllers::facts::climb::BodyIdentity;
 
 use crate::controllers::physical_hands::climb::engine;
 
-/// A surface a hand can grip: the static world, or with [`HandClimbTuning::moving`](crate::controllers::physical_hands::climb::config::HandClimbTuning::moving), a moving body.
+/// A surface a hand can grip: the static world, or a moving body heavy enough to climb
+/// ([`engine::climbable`]).
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Hold {
     /// Where the surface is, game space.
