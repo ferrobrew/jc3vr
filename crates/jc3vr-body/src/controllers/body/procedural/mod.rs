@@ -261,8 +261,7 @@ pub(crate) unsafe fn at_solve_gate(character: &mut Character, dt: f32) -> bool {
 ///
 /// As [`at_solve_gate`].
 unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
-    let (config, follow, ik_config) =
-        BODY_REMAP_CONFIG.query(|c| (c.procedural, c.rig.follow, c.ik));
+    let (config, ik_config) = BODY_REMAP_CONFIG.query(|c| (c.procedural, c.ik));
     let scale = VR_CONFIG.lock().world_scale;
     let now = Instant::now();
     // Read before the gate's own state too: it takes the configuration and the controller frame.
@@ -294,14 +293,12 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
                 .filter(|point| point.is_finite())
         })
     });
-    let visual_hips = if follow.enabled && follow.square_hips {
+    let visual_hips = {
         let world = Mat4::from(character.m_WorldMatrixT1);
         let (_, rotation, _) = world.to_scale_rotation_translation();
         grounded::body_yaw().and_then(|yaw| {
             relative_heading(Quat::from_rotation_y(yaw), xr::body_rotation(), rotation)
         })
-    } else {
-        None
     };
     let mut state = STATE.lock();
     let dt = if dt.is_finite() {
@@ -368,10 +365,7 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
             );
         }
     }
-    let stance_authorized = (config.stance.enabled || (follow.enabled && follow.square_hips))
-        && case == Case::OnFoot
-        && idle
-        && locomotion.fresh(now);
+    let stance_authorized = case == Case::OnFoot && idle && locomotion.fresh(now);
     let stance_weight = if stance_authorized {
         state
             .stance

@@ -147,22 +147,6 @@ pub(super) fn rig_settings(ui: &mut Ui, body: &mut BodyRemapConfig) {
     let r = &mut body.rig;
     ui.checkbox(&mut r.steps.enabled, "Step after the head")
         .on_hover_text("Walk Rico under the player's neck once the head is out past a lean.");
-    ui.checkbox(&mut r.follow.enabled, "Body follows the head's yaw")
-        .on_hover_text("Turn the legs under the view for a large or sustained turn of the head.");
-    ui.checkbox(
-        &mut r.follow.turn_animation,
-        "Turn in place with the game's animation",
-    )
-    .on_hover_text("Let the game's turn-in-place acts play while Rico stands.");
-    ui.checkbox(
-        &mut r.follow.square_hips,
-        "Square the clip's hips to the legs",
-    )
-    .on_hover_text("Steer the root so the animation's hips, not its root, face the legs' heading.");
-    ui.checkbox(&mut r.pushback.enabled, "Stop at walls")
-        .on_hover_text(
-            "Hold the view at a wall the body cannot pass; off, only the fade answers it.",
-        );
     ik_body_settings(ui, &mut body.ik);
     ui.collapsing("Stance", |ui| {
         let s = &mut body.procedural.stance;
@@ -205,8 +189,6 @@ pub(super) fn rig_settings(ui: &mut Ui, body: &mut BodyRemapConfig) {
             egui::Slider::new(&mut s.drift_steady_mps, 0.0..=0.3).text("Head steady below (m/s)"),
         );
         ui.add(egui::Slider::new(&mut s.drift_speed_mps, 0.0..=0.5).text("Drift speed (m/s)"));
-        ui.add(egui::Slider::new(&mut r.steps.walk_stick, 0.0..=1.0).text("Walk stick"))
-            .on_hover_text("How far a step pushes the move stick for the game's walk.");
     });
     ui.collapsing("Yaw", |ui| {
         let y = &mut r.yaw;

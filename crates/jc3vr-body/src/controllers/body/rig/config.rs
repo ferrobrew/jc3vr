@@ -4,17 +4,13 @@ use body_rig::{PelvisTuning, StepTuning, YawTuning};
 use jc3vr_core::config::engine::Invalid;
 use serde::{Deserialize, Serialize};
 
-/// The body rig's switches and tuning. The switches default on; the tuning is the pure core's
+/// The body rig's step switch and tuning. The switch defaults on; the tuning is the pure core's
 /// (`body-rig`), set from the offline evaluation of a standing session.
 #[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct RigConfig {
     /// The step drive: Rico walking after the player's head on foot, seated or standing.
     pub steps: StepsConfig,
-    /// Rico's yaw following the player's head.
-    pub follow: FollowConfig,
-    /// Holding the view at a wall the body cannot pass.
-    pub pushback: PushbackConfig,
     /// The pelvis solver's tuning: the lean's radius and reach, and the bend limits.
     pub pelvis: PelvisTuning,
     /// The step commit's tuning: the threshold, the arrival, and the drive.
@@ -28,8 +24,6 @@ impl RigConfig {
     pub const fn new() -> Self {
         Self {
             steps: StepsConfig::new(),
-            follow: FollowConfig::new(),
-            pushback: PushbackConfig::new(),
             pelvis: PelvisTuning::new(),
             step: StepTuning::new(),
             yaw: YawTuning::new(),
@@ -51,7 +45,6 @@ impl RigConfig {
         let y = &self.yaw;
         let e = &y.estimate;
         let checks = [
-            ("steps.walk_stick", self.steps.walk_stick, 0.0, 1.0),
             ("pelvis.lean_radius_m", p.lean_radius_m, 0.0, 1.0),
             ("pelvis.back_radius_m", p.back_radius_m, 0.0, 1.0),
             ("pelvis.max_lean_m", p.max_lean_m, 0.05, 1.5),
@@ -142,69 +135,15 @@ impl Default for RigConfig {
 #[serde(default)]
 pub struct StepsConfig {
     pub enabled: bool,
-    /// How far a committed step pushes the move stick for the game's animation, `0..=1`: a walk.
-    /// The velocity is the drive's whatever this is; it only picks the clip.
-    pub walk_stick: f32,
 }
 
 impl StepsConfig {
-    pub const fn new() -> Self {
-        Self {
-            enabled: true,
-            walk_stick: 0.45,
-        }
-    }
-}
-
-impl Default for StepsConfig {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// Rico's yaw following the player's head.
-#[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct FollowConfig {
-    pub enabled: bool,
-    /// Whether a body turn while Rico stands plays the game's turn-in-place animation rather than
-    /// turning the root alone.
-    pub turn_animation: bool,
-    /// Whether the follow steers Rico's root so that the clip's hips, rather than the root, face
-    /// the legs' heading: the idle clip stands with its hips turned from the root.
-    pub square_hips: bool,
-}
-
-impl FollowConfig {
-    pub const fn new() -> Self {
-        Self {
-            enabled: true,
-            turn_animation: true,
-            square_hips: true,
-        }
-    }
-}
-
-impl Default for FollowConfig {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// Holding the view at a wall the body cannot pass ([`crate::controllers::body::rig::root::pushback`]).
-#[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct PushbackConfig {
-    pub enabled: bool,
-}
-
-impl PushbackConfig {
     pub const fn new() -> Self {
         Self { enabled: true }
     }
 }
 
-impl Default for PushbackConfig {
+impl Default for StepsConfig {
     fn default() -> Self {
         Self::new()
     }

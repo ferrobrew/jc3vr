@@ -247,15 +247,12 @@ pub fn frame(inputs: &FrameInputs) -> FrameOutput {
     // Where the drive cannot follow, the view is held at the obstruction.
     let to_world = |v: Vec2| to_world(v, inputs.view, inputs.world_scale);
     let demand = rig.map_or(Vec2::ZERO, |r| to_world(r.output.solve.step_demand));
-    let pushback = state.pushback.step(
-        &PushbackInput {
-            gap: demand,
-            owner,
-            stopped,
-            dt: inputs.dt,
-        },
-        &config.pushback,
-    );
+    let pushback = state.pushback.step(&PushbackInput {
+        gap: demand,
+        owner,
+        stopped,
+        dt: inputs.dt,
+    });
     if pushback.push != Vec2::ZERO {
         state
             .shift

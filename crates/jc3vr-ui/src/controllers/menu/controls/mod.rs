@@ -241,7 +241,7 @@ mod tests {
             controllers.locomotion.stick.run_speed_mps = 3.0;
             controllers.roomscale.crouch.enter_drop_m = 0.5;
             controllers.body.remap_head = false;
-            controllers.body.rig.follow.turn_animation = false;
+            controllers.body.estimator.enabled = false;
             let headpose = config.part_mut(&HEADPOSE_CONFIG);
             headpose.vr_turn.snap_angle_deg = 45.0;
             headpose.grapple.mode = GrappleComfortMode::Off;
@@ -274,7 +274,7 @@ mod tests {
             assert_eq!(controllers.aim.sights.get(7), Some(&sight));
             assert_eq!(controllers.roomscale.crouch.enter_drop_m, 0.5);
             assert!(!controllers.body.remap_head);
-            assert!(!controllers.body.rig.follow.turn_animation);
+            assert!(!controllers.body.estimator.enabled);
             assert_eq!(config.part(&HUD_CONFIG).distance, 2.0);
         });
     }

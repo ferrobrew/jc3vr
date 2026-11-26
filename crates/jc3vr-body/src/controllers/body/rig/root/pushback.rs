@@ -20,7 +20,7 @@
 use body_rig::smooth::smoothstep;
 use glam::Vec2;
 
-use crate::controllers::body::rig::{config::PushbackConfig, root::owner::RootOwner};
+use crate::controllers::body::rig::root::owner::RootOwner;
 
 /// One frame's inputs.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -84,7 +84,7 @@ impl Pushback {
     }
 
     /// Advance one frame.
-    pub fn step(&mut self, input: &PushbackInput, config: &PushbackConfig) -> PushbackOutcome {
+    pub fn step(&mut self, input: &PushbackInput) -> PushbackOutcome {
         let gap = if input.gap.is_finite() {
             input.gap
         } else {
@@ -119,7 +119,7 @@ impl Pushback {
                 ..PushbackOutcome::default()
             };
         };
-        let cap = if config.enabled { DEBT_CAP_M } else { 0.0 };
+        let cap = DEBT_CAP_M;
         let mut push = Vec2::ZERO;
         let mut left = r;
         if r > t && self.debt < cap {
@@ -185,7 +185,6 @@ const CAP_EPSILON_M: f32 = 1e-5;
 mod tests {
     use super::*;
 
-    const CONFIG: PushbackConfig = PushbackConfig::new();
     const DT: f32 = 1.0 / 90.0;
 
     fn into_wall(gap_m: f32) -> PushbackInput {
@@ -204,12 +203,12 @@ mod tests {
             stopped: false,
             ..into_wall(0.5)
         };
-        assert_eq!(pushback.step(&free, &CONFIG), PushbackOutcome::default());
+        assert_eq!(pushback.step(&free), PushbackOutcome::default());
         let game = PushbackInput {
             owner: Some(RootOwner::Game),
             ..into_wall(0.5)
         };
-        assert_eq!(pushback.step(&game, &CONFIG).push, Vec2::ZERO);
+        assert_eq!(pushback.step(&game).push, Vec2::ZERO);
     }
 
     #[test]
@@ -218,7 +217,7 @@ mod tests {
             owner: Some(RootOwner::Seated),
             ..into_wall(0.25)
         };
-        let out = Pushback::new().step(&seated, &CONFIG);
+        let out = Pushback::new().step(&seated);
         assert!(out.obstructed);
         assert_eq!(out.threshold, Some(0.10));
         assert!((out.push - Vec2::new(0.0, 0.15)).length() < 1e-6, "{out:?}");
@@ -226,26 +225,23 @@ mod tests {
             stopped: false,
             ..seated
         };
-        assert_eq!(
-            Pushback::new().step(&free, &CONFIG),
-            PushbackOutcome::default()
-        );
+        assert_eq!(Pushback::new().step(&free), PushbackOutcome::default());
     }
 
     #[test]
     fn an_obstruction_holds_the_view_at_the_threshold_up_to_the_cap() {
         let mut pushback = Pushback::new();
-        let out = pushback.step(&into_wall(0.25), &CONFIG);
+        let out = pushback.step(&into_wall(0.25));
         assert!(out.obstructed);
         assert!((out.push - Vec2::new(0.0, 0.15)).length() < 1e-6, "{out:?}");
         assert_eq!(out.fade, 0.0);
         assert_eq!(pushback.episodes(), 1);
         // A further 0.2 m: only 0.15 of the cap is left, and the fade starts past it.
-        let out = pushback.step(&into_wall(0.30), &CONFIG);
+        let out = pushback.step(&into_wall(0.30));
         assert!((out.push.length() - 0.15).abs() < 1e-6, "{out:?}");
         assert!((pushback.debt() - 0.30).abs() < 1e-6);
         assert!(out.fade > 0.0 && out.fade < 1.0, "{out:?}");
-        let out = pushback.step(&into_wall(0.10 + 0.15), &CONFIG);
+        let out = pushback.step(&into_wall(0.10 + 0.15));
         assert_eq!(out.push, Vec2::ZERO);
         assert_eq!(out.fade, 1.0);
         assert_eq!(pushback.episodes(), 1);
@@ -254,29 +250,20 @@ mod tests {
     #[test]
     fn a_calm_gap_ends_the_episode() {
         let mut pushback = Pushback::new();
-        pushback.step(&into_wall(0.5), &CONFIG);
+        pushback.step(&into_wall(0.5));
         assert!(pushback.debt() > 0.0);
         let calm = PushbackInput {
             stopped: false,
             ..into_wall(0.02)
         };
         for _ in 0..10 {
-            pushback.step(&calm, &CONFIG);
+            pushback.step(&calm);
         }
         assert!(pushback.debt() > 0.0, "ended before the reset time");
         for _ in 0..20 {
-            pushback.step(&calm, &CONFIG);
+            pushback.step(&calm);
         }
         assert_eq!(pushback.debt(), 0.0);
-    }
-
-    #[test]
-    fn off_it_only_fades() {
-        let off = PushbackConfig { enabled: false };
-        let mut pushback = Pushback::new();
-        let out = pushback.step(&into_wall(0.10 + 0.075), &off);
-        assert_eq!(out.push, Vec2::ZERO);
-        assert!((out.fade - 0.5).abs() < 1e-5, "{out:?}");
     }
 
     #[test]

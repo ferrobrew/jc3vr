@@ -9,7 +9,6 @@ use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
     aim_state,
-    body::config::BODY_REMAP_CONFIG,
     locomotion::{
         acts::{ActDecision, filter as act_filter},
         config::LOCOMOTION_CONFIG,
@@ -41,14 +40,12 @@ fn character_queue_act(character: *mut Character, act: *const u32) {
         let id = id as i32;
         let controllers_enabled = scheme::enabled();
         let locomotion = *LOCOMOTION_CONFIG.lock();
-        let follow = BODY_REMAP_CONFIG.query(|c| c.rig.follow);
-        let turn_animation = follow.enabled && follow.turn_animation;
         let reverse = reverse_act_ids().is_some_and(|ids| ids.contains(&id));
         if reverse || aim_state::swallow_local_act(id) {
             return;
         }
         // SAFETY: the local character, on the thread queuing its act.
-        match unsafe { act_filter(local, id, &locomotion, controllers_enabled, turn_animation) } {
+        match unsafe { act_filter(local, id, &locomotion, controllers_enabled) } {
             ActDecision::Pass => {}
             ActDecision::Drop => return,
             ActDecision::Replace(replacement) => {

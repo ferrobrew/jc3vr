@@ -1008,7 +1008,7 @@ fn tick(game: &GameTick<'_>, dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>)
         );
         // A committed step walks Rico through the game's animation; the drive sets his speed.
         if config.body.rig.steps.enabled {
-            add_step_walk(&mut step.desired, config.body.rig.steps.walk_stick);
+            add_step_walk(&mut step.desired);
         }
         locomotion::strokes::tick(
             active.as_ref(),

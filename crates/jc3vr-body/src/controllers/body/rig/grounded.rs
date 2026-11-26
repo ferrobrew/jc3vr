@@ -196,13 +196,13 @@ pub fn forget() {
 
 /// Add a committed step's walk to the move stick the tables wrote this tick, so the game's
 /// animation walks Rico while the step drive moves him, and publish what was added for the stick
-/// locomotion to take back out of its velocity ([`step_stick`]). `walk_stick` is how far the walk
-/// pushes the stick. The walk is in the frame of the head's heading, as the stick locomotion reads
-/// the stick.
-pub fn add_step_walk(desired: &mut Vec<Desired>, walk_stick: f32) {
+/// locomotion to take back out of its velocity ([`step_stick`]). The walk pushes the stick
+/// [`WALK_STICK`] of the way, in the frame of the head's heading, as the stick locomotion reads the
+/// stick.
+pub fn add_step_walk(desired: &mut Vec<Desired>) {
     let now = Instant::now();
     let walk = fresh(now)
-        .and_then(|published| walk_for(&published, walk_stick))
+        .and_then(|published| walk_for(&published))
         .unwrap_or(Vec2::ZERO);
     if walk != Vec2::ZERO {
         let stick = read_move(desired);
@@ -319,17 +319,20 @@ pub fn status() -> GroundedStatus {
 
 /// The walk for a published frame: along the gap, in the head's heading's frame, while a step is
 /// committed and far enough from arriving that the drive walks rather than shuffles.
-fn walk_for(published: &Published, walk_stick: f32) -> Option<Vec2> {
+fn walk_for(published: &Published) -> Option<Vec2> {
     let output = published.frame.output;
     if output.phase != StepPhase::Stepping || output.gap.length() < WALK_GAP_M {
         return None;
     }
     let direction = output.gap.try_normalize()?;
     let yaw = head_heading(published.head)?;
-    let walk = Vec2::new(direction.dot(right(yaw)), direction.dot(forward(yaw)))
-        * walk_stick.clamp(0.0, 1.0);
+    let walk = Vec2::new(direction.dot(right(yaw)), direction.dot(forward(yaw))) * WALK_STICK;
     walk.is_finite().then_some(walk)
 }
+
+/// How far a committed step pushes the move stick for the game's animation, `0..=1`: a walk. The
+/// velocity is the drive's whatever this is; it only picks the clip.
+const WALK_STICK: f32 = 0.45;
 
 /// A step closer than this to arriving shuffles under the drive rather than walking, metres.
 const WALK_GAP_M: f32 = 0.08;
@@ -447,34 +450,26 @@ mod tests {
     fn a_step_walks_along_the_gap_in_the_heads_frame() {
         // The head faces -X (a quarter turn left); a gap toward -X is straight ahead.
         let head = Quat::from_rotation_y(std::f32::consts::FRAC_PI_2);
-        let walk = walk_for(
-            &published(StepPhase::Stepping, Vec2::new(-0.3, 0.0), head),
-            0.5,
-        )
-        .unwrap();
-        assert!((walk - Vec2::new(0.0, 0.5)).length() < 1e-5, "{walk}");
+        let walk = walk_for(&published(StepPhase::Stepping, Vec2::new(-0.3, 0.0), head)).unwrap();
+        assert!(
+            (walk - Vec2::new(0.0, WALK_STICK)).length() < 1e-5,
+            "{walk}"
+        );
         // A gap to the head's right is a strafe right.
-        let right = walk_for(
-            &published(StepPhase::Stepping, Vec2::new(0.0, -0.3), head),
-            0.5,
-        )
-        .unwrap();
-        assert!((right - Vec2::new(0.5, 0.0)).length() < 1e-5, "{right}");
+        let right = walk_for(&published(StepPhase::Stepping, Vec2::new(0.0, -0.3), head)).unwrap();
+        assert!(
+            (right - Vec2::new(WALK_STICK, 0.0)).length() < 1e-5,
+            "{right}"
+        );
     }
 
     #[test]
     fn idle_settling_and_nearly_arrived_steps_do_not_walk() {
         let head = Quat::IDENTITY;
         let gap = Vec2::new(0.0, -0.3);
-        assert_eq!(walk_for(&published(StepPhase::Idle, gap, head), 0.5), None);
-        assert_eq!(
-            walk_for(&published(StepPhase::Settling, gap, head), 0.5),
-            None
-        );
+        assert_eq!(walk_for(&published(StepPhase::Idle, gap, head)), None);
+        assert_eq!(walk_for(&published(StepPhase::Settling, gap, head)), None);
         let near = Vec2::new(0.0, -0.05);
-        assert_eq!(
-            walk_for(&published(StepPhase::Stepping, near, head), 0.5),
-            None
-        );
+        assert_eq!(walk_for(&published(StepPhase::Stepping, near, head)), None);
     }
 }
