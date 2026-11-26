@@ -38,11 +38,10 @@ use windows::Win32::Graphics::Direct3D11::{ID3D11DeviceContext, ID3D11ShaderReso
 
 pub(crate) use crate::hud::egui_panel::slot::{end_grab, is_placed, recall};
 use crate::{
-    config::{self, Config},
     controllers::frame::{self, Hand, Pose},
     egui_impl::{EguiState, debug_ui_capture, request_debug_ui},
     hud::{
-        config::EguiPanelConfig,
+        config::{EguiPanelConfig, HUD_CONFIG},
         cursor::CursorFrame,
         egui_panel::{
             placement::world_panel,
@@ -87,7 +86,7 @@ static WAS_ACTIVE: AtomicBool = AtomicBool::new(false);
 /// slot (a separate lock, published per frame precisely so draw-thread hooks can read it), not the
 /// runtime lock.
 pub(crate) fn is_active() -> bool {
-    Config::lock_query(|c| c.hud.egui_panel.enabled)
+    HUD_CONFIG.query(|c| c.egui_panel.enabled)
         && !crate::director::clean_view::hides_everything()
         && crate::vr::render_params(0).is_some()
 }
@@ -96,9 +95,9 @@ pub(crate) fn is_active() -> bool {
 /// Reopening enters Editing; a visible ReadOnly panel cannot edit itself.
 pub(crate) fn toggle() -> bool {
     let enabled = {
-        let mut cfg = config::edit();
-        cfg.hud.egui_panel.enabled = !cfg.hud.egui_panel.enabled;
-        cfg.hud.egui_panel.enabled
+        let mut hud = HUD_CONFIG.edit();
+        hud.egui_panel.enabled = !hud.egui_panel.enabled;
+        hud.egui_panel.enabled
     };
     let request = if enabled {
         PanelRequest::Open
@@ -118,7 +117,7 @@ pub(crate) fn toggle() -> bool {
 /// This queues ownership work because the top-bar callback holds the egui state lock.
 pub(crate) fn hide() {
     if is_active() {
-        config::edit().hud.egui_panel.enabled = false;
+        HUD_CONFIG.edit().egui_panel.enabled = false;
     } else {
         crate::director::clean_view::hide();
     }
@@ -145,7 +144,7 @@ pub(crate) fn hold_grab(hand: Hand, aim: Option<Pose>, rate: f32, dt: f32) {
 /// The panel texture size when the panel is active, or `None` otherwise. The egui layout is sized to
 /// this ([`crate::egui_impl::EguiState::set_panel_mode`]) and the pointer maps into it.
 pub(crate) fn active_size() -> Option<(u32, u32)> {
-    is_active().then(|| Config::lock_query(|c| c.hud.egui_panel.resolution))
+    is_active().then(|| HUD_CONFIG.query(|c| c.egui_panel.resolution))
 }
 
 /// A clone of the panel texture's shader-resource view for the desktop mirror composite, or `None`
@@ -179,7 +178,7 @@ pub(crate) fn draw_quad(
     if !WAS_ACTIVE.swap(true, Ordering::Relaxed) {
         slot::summon(Summon::Shown);
     }
-    let cfg = Config::lock_query(|c| c.hud.egui_panel);
+    let cfg = HUD_CONFIG.lock().egui_panel;
     let mut panel = EGUI_PANEL.lock();
     if crate::stereo::dispatch::first_ui_eye(eye) {
         panel.prepare(context, device, &cfg);

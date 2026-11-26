@@ -41,6 +41,7 @@ pub use config::{
     BlitGamma, FoveationConfig, FoveationConfigError, FreezeMode, MirrorView, ProjectionConvention,
     VrConfig,
 };
+pub(crate) use config::{FOVEATION_CONFIG, VR_CONFIG};
 pub use frame::{
     CaptureEyeView, CaptureViews, EyeRenderParams, begin_render_frame, capture_views,
     clear_render_params, cull_projection_standard, eyes_union_projection_standard, render_params,

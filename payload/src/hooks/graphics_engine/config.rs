@@ -2,6 +2,12 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::config::engine::ConfigSlot;
+
+/// The exposure settings, at `exposure` in the settings file; the payload binds the slot at
+/// startup.
+pub(crate) static EXPOSURE_CONFIG: ConfigSlot<ExposureConfig> = ConfigSlot::new("exposure");
+
 /// Auto-exposure toggles.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct ExposureConfig {
@@ -27,6 +33,10 @@ impl ExposureConfig {
         }
     }
 }
+
+/// The post-processing settings, at `post_fx` in the settings file; the payload binds the slot at
+/// startup.
+pub(crate) static POST_FX_CONFIG: ConfigSlot<PostFxConfig> = ConfigSlot::new("post_fx");
 
 /// Post-effect skip toggles (bisection aids / VR cleanups).
 #[derive(Clone, Serialize, Deserialize)]

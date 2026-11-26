@@ -22,9 +22,9 @@ use parking_lot::Mutex;
 use windows::Win32::Graphics::Direct3D11::{D3D11_BOX, ID3D11DeviceContext};
 
 use crate::{
-    config::Config,
     controllers::aim::marker_rays::{self as raycast, Sight, Timed},
     hud::{
+        config::HUD_CONFIG,
         log_once::LogOnce,
         quad::HudQuad,
         target::HudTarget,
@@ -61,7 +61,7 @@ pub(crate) fn prepare_frame(
     inputs: &FrameInputs<'_>,
 ) {
     let _timing = crate::frame_timing::scope(crate::frame_timing::Slot::WorldMarkers);
-    let cfg = Config::lock_query(|c| c.hud);
+    let cfg = *HUD_CONFIG.lock();
     let mut renderer = RENDERER.lock();
     let active = cfg.world_markers.enabled && world_quads_active(&cfg);
     let Some(hud) = inputs.hud.filter(|_| active) else {

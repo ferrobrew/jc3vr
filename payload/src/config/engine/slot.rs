@@ -56,6 +56,14 @@ impl<T: 'static> ConfigSlot<T> {
         SlotGuard { guard, _held: held }
     }
 
+    /// Lock the configuration, run `f` against the part, and return the result. The lock is held
+    /// only for `f`, so the read can sit inside a larger expression that locks the configuration
+    /// again (`HUD.query(|h| h.quad) && VR.query(|v| v.mirror)`), which two [`lock`](Self::lock)
+    /// temporaries in one statement cannot.
+    pub(crate) fn query<R>(&self, f: impl FnOnce(&T) -> R) -> R {
+        f(&self.lock())
+    }
+
     /// Lock the configuration for a change the user meant. The guard derefs to the part; when it
     /// drops, the configuration is marked changed and a save follows once the changes settle.
     pub(crate) fn edit(&self) -> EditGuard<T> {

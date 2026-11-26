@@ -52,9 +52,13 @@ use re_utilities::hook_library::HookLibrary;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    config::Config,
+    config::{Config, engine::ConfigSlot},
     frame_timing::{self, Slot},
 };
+
+/// The online-feature settings, at `online` in the settings file; the payload binds the slot at
+/// startup.
+pub(crate) static ONLINE_CONFIG: ConfigSlot<OnlineConfig> = ConfigSlot::new("online");
 
 /// The online hooks' settings.
 #[derive(Clone, Serialize, Deserialize)]

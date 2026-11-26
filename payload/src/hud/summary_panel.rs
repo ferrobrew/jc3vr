@@ -29,9 +29,9 @@ use parking_lot::Mutex;
 use windows::Win32::Graphics::Direct3D11::ID3D11DeviceContext;
 
 use crate::{
-    config::Config,
     controllers::{
         bindings::tables::describe::{Control, StickDir},
+        config::CONTROLLERS_CONFIG,
         frame::{self, Pose},
         hands::late,
         scheme,
@@ -59,13 +59,8 @@ use crate::{
 pub(crate) fn draw(context: &ID3D11DeviceContext, device: &Device, target: &Texture, eye: usize) {
     let mut panel = PANEL.lock();
     if crate::stereo::dispatch::first_ui_eye(eye) {
-        let (enabled, dominant, config) = Config::lock_query(|c| {
-            (
-                c.controllers.enabled && c.controllers.summary.enabled,
-                c.controllers.acting_hand(),
-                c.controllers.summary,
-            )
-        });
+        let (enabled, dominant, config) = CONTROLLERS_CONFIG
+            .query(|c| (c.enabled && c.summary.enabled, c.acting_hand(), c.summary));
         let active = enabled
             && scheme::is_controllers()
             && !crate::director::clean_view::hides_everything()

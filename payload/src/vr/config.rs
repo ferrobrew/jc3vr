@@ -3,6 +3,8 @@
 use jc3gi::camera::camera::Camera;
 use serde::{Deserialize, Serialize};
 
+use crate::config::engine::ConfigSlot;
+
 /// Which depth convention the per-eye off-axis projection is written in, and where in the
 /// `SetupRenderCamera` sequence it lands (`docs/engine/rendering/rendering.md` §2.7, `docs/mod/vr-runtime.md` blocker 1).
 /// The coordinate/depth conventions are the least-verifiable part of the pipeline without a headset,
@@ -118,6 +120,9 @@ impl MirrorView {
         }
     }
 }
+
+/// The VR runtime settings, at `vr` in the settings file; the payload binds the slot at startup.
+pub(crate) static VR_CONFIG: ConfigSlot<VrConfig> = ConfigSlot::new("vr");
 
 /// OpenXR runtime settings. `Clone` (not `Copy`) because [`loader_path`](VrConfig::loader_path) owns
 /// a `String`.
@@ -289,6 +294,10 @@ impl Default for VrConfig {
         Self::new()
     }
 }
+
+/// The foveation settings, at `foveation` in the settings file; the payload binds the slot at
+/// startup.
+pub(crate) static FOVEATION_CONFIG: ConfigSlot<FoveationConfig> = ConfigSlot::new("foveation");
 
 /// Static foveated rendering (issue #29): a radial stencil mask drops a dithered fraction of the
 /// peripheral pixels before the expensive scene passes shade them, and a fill-in pass reconstructs them

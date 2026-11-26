@@ -235,6 +235,19 @@ impl Config {
     }
 }
 
+/// The test binary registers the configuration before `main` runs, as the payload's startup does
+/// before anything reads it, so a test that reads a subsystem's slot finds it bound whichever test
+/// runs first. The C runtime calls each pointer in the `.CRT$XCU` section before `main`.
+#[cfg(test)]
+#[used]
+#[unsafe(link_section = ".CRT$XCU")]
+static REGISTER_BEFORE_TESTS: extern "C" fn() = {
+    extern "C" fn register_before_tests() {
+        register();
+    }
+    register_before_tests
+};
+
 /// Take the configuration for a test: other tests that take it wait, and the configuration and the
 /// edit marks are restored when the fixture drops.
 #[cfg(test)]

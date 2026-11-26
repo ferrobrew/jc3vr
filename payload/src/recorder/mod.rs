@@ -50,6 +50,7 @@ use windows::Win32::Graphics::Direct3D11::{
 };
 
 use crate::{
+    config::engine::ConfigSlot,
     director::markers::Marker,
     recorder::{
         convert::{Converter, Readback},
@@ -82,6 +83,10 @@ pub use crate::{
     },
     vr::{MirrorDraw, MirrorFrame},
 };
+
+/// The video recorder's settings, at `recorder` in the settings file; the payload binds the slot at
+/// startup.
+pub(crate) static RECORDER_CONFIG: ConfigSlot<RecorderConfig> = ConfigSlot::new("recorder");
 
 /// The recorder's settings. Read at the start of a recording; changes apply to the next one.
 #[derive(Clone, Serialize, Deserialize)]

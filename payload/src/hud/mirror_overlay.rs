@@ -40,7 +40,8 @@ pub(crate) fn release_on_eject() {
 pub(crate) fn is_active() -> bool {
     crate::vr::render_params(0).is_some()
         && !crate::director::clean_view::hides_desktop()
-        && crate::config::Config::lock_query(|c| c.vr.mirror && !c.hud.egui_panel.enabled)
+        && crate::vr::VR_CONFIG.query(|vr| vr.mirror)
+        && !crate::hud::config::HUD_CONFIG.query(|hud| hud.egui_panel.enabled)
 }
 
 /// Render this frame's egui output into the overlay texture. Called from the post-draw hook of the

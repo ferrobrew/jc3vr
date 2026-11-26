@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 
 use jc3gi::graphics_engine::device::Device;
 
-use crate::hud::{binding, state::AppliedRedirect, target::HudTarget};
+use crate::hud::{binding, config::dimension, state::AppliedRedirect, target::HudTarget};
 
 pub(super) trait Adapter {
     type Target;
@@ -70,10 +70,8 @@ pub(super) fn redirect<A: Adapter>(
     if !surface.retry.ready(requested.texture, now) {
         return false;
     }
-    if let Err(error) =
-        crate::config::validate::hud::dimension("HUD target width", requested.texture.0).and_then(
-            |()| crate::config::validate::hud::dimension("HUD target height", requested.texture.1),
-        )
+    if let Err(error) = dimension("HUD target width", requested.texture.0)
+        .and_then(|()| dimension("HUD target height", requested.texture.1))
     {
         surface.retry.failed(requested.texture, now, || {
             tracing::error!("HUD target: {error}")

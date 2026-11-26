@@ -39,8 +39,8 @@ use parking_lot::Mutex;
 use windows::Win32::Graphics::Direct3D11::ID3D11DeviceContext;
 
 use crate::{
-    config::Config,
     controllers::{
+        config::CONTROLLERS_CONFIG,
         frame::{Hand, Pose},
         hands::late,
         scheme,
@@ -66,7 +66,7 @@ use crate::{
             },
         },
         atlas::{self, Part},
-        config::{AtlasConfig, HudConfig},
+        config::{AtlasConfig, HUD_CONFIG, HudConfig},
         log_once::LogOnce,
         quad::HudQuad,
         target::KeyedTexture,
@@ -104,7 +104,8 @@ pub(crate) unsafe fn sample_status(cfg: &HudConfig) {
 pub(crate) fn draw(context: &ID3D11DeviceContext, device: &Device, target: &Texture, eye: usize) {
     let mut state = STATE.lock();
     if crate::stereo::dispatch::first_ui_eye(eye) {
-        let (cfg, dominant) = Config::lock_query(|c| (c.hud, c.controllers.acting_hand()));
+        let cfg = *HUD_CONFIG.lock();
+        let dominant = CONTROLLERS_CONFIG.lock().acting_hand();
         let active = cfg.atlas.enabled
             && world_quads_active(&cfg)
             && scheme::is_controllers()

@@ -30,7 +30,7 @@ pub(crate) use crate::config::engine::{
     persist::{SaveStatus, init, shutdown, status, tick},
     slot::{ConfigSlot, EditGuard, Projection, SlotGuard, projection},
     store::{ConfigRoot, Schema, downcast_mut, downcast_ref, register},
-    validate::Invalid,
+    validate::{Invalid, nonnegative, positive, range, vec2, vec3},
 };
 
 #[cfg(test)]

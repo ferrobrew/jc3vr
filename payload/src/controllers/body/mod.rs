@@ -59,9 +59,13 @@ use glam::{Quat, Vec3};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    config::{self, Config},
+    config::{self, Config, engine::ConfigSlot},
     controllers::body::calibration::{ARM_SPAN_HEIGHT_RATIO, FOREARM_RATIO, UPPER_ARM_RATIO},
 };
+
+/// The player's body dimensions, at `body` in the settings file; the payload binds the slot at
+/// startup.
+pub(crate) static BODY_CONFIG: ConfigSlot<BodyDimensions> = ConfigSlot::new("body");
 
 /// A body's dimensions, in metres. Heights are measured from the floor.
 #[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]

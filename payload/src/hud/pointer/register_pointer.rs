@@ -5,9 +5,8 @@
 //! and they move and toggle the egui panel ([`crate::hud::egui_panel`]), all through this table.
 
 use crate::{
-    config::Config,
     controllers::bindings::pointer::{EguiPointerSettings, PointerHud, register_hud},
-    hud::{egui_panel, pointer::route},
+    hud::{config::HUD_CONFIG, egui_panel, pointer::route},
 };
 
 pub(crate) fn register() {
@@ -27,12 +26,12 @@ static POINTER_HUD: PointerHud = PointerHud {
 };
 
 fn native_pointer_enabled() -> bool {
-    Config::lock_query(|c| c.hud.redirect && c.hud.quad)
+    HUD_CONFIG.query(|c| c.redirect && c.quad)
 }
 
 fn egui_pointer() -> EguiPointerSettings {
-    Config::lock_query(|c| EguiPointerSettings {
-        enabled: c.hud.egui_panel.controller_pointer,
-        aspect: c.hud.egui_panel.aspect,
+    HUD_CONFIG.query(|c| EguiPointerSettings {
+        enabled: c.egui_panel.controller_pointer,
+        aspect: c.egui_panel.aspect,
     })
 }

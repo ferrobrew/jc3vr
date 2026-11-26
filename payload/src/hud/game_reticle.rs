@@ -33,13 +33,11 @@ use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
 
-use crate::{
-    config::Config,
-    controllers::{
-        aim,
-        mode::{self, Mode},
-        scheme, vehicles,
-    },
+use crate::controllers::{
+    aim,
+    config::CONTROLLERS_CONFIG,
+    mode::{self, Mode},
+    scheme, vehicles,
 };
 
 /// Which of the game's reticles to hide.
@@ -127,8 +125,7 @@ pub fn decide(inputs: ReticleInputs) -> HiddenReticles {
 /// Must be called from the [`MovieImpl::Capture`](jc3gi::ui::scaleform::MovieImpl) detour, as
 /// [`crate::hud::scaleform::apply_reticle_suppression`] requires.
 pub(crate) unsafe fn hide_game_reticles() {
-    let (enabled, guns, grapple, driver) = Config::lock_query(|c| {
-        let controllers = &c.controllers;
+    let (enabled, guns, grapple, driver) = CONTROLLERS_CONFIG.query(|controllers| {
         (
             controllers.enabled && controllers.overlay.hide_game_reticle,
             controllers.aim.gun,

@@ -13,6 +13,7 @@ pub(crate) mod stage;
 mod text;
 pub(crate) mod visual;
 
+pub(crate) use config::TESTING_CONFIG;
 pub use config::TestingConfig;
 
 /// Drive the test tools for this frame: the capture harness, the request file, the benchmark, and

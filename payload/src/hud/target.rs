@@ -14,6 +14,8 @@ use windows::Win32::Graphics::{
     Dxgi::Common::{DXGI_FORMAT_D24_UNORM_S8_UINT, DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_SAMPLE_DESC},
 };
 
+use crate::hud::config::dimension;
+
 /// Our offscreen HUD render target: a color texture (with an RTV to render into and an SRV to preview)
 /// and a matching depth-stencil for the UI's depth clears, plus the size they were built for.
 pub(crate) struct HudTarget {
@@ -29,8 +31,8 @@ pub(crate) struct HudTarget {
 impl HudTarget {
     /// Build the color texture (with RTV + SRV) and a matching depth-stencil at `width` x `height`.
     pub(crate) fn new(device: &Device, width: u32, height: u32) -> anyhow::Result<Self> {
-        crate::config::validate::hud::dimension("HUD target width", width)?;
-        crate::config::validate::hud::dimension("HUD target height", height)?;
+        dimension("HUD target width", width)?;
+        dimension("HUD target height", height)?;
         let d3d = &device.m_Device;
         // SAFETY: `d3d` is the live engine device; the descriptors below are valid for these calls.
         unsafe {

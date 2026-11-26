@@ -35,6 +35,7 @@ pub use self::{
 };
 pub use crate::controllers::aim::sights::config::{SightOverride, SightTable, SightTuningConfig};
 use crate::{
+    config::engine::ConfigSlot,
     controllers::{
         fingers::config::FingersConfig, frame::Hand, glass::GlassConfig, haptics::HapticsConfig,
         physical_hands::PhysicalHandsConfig, summary::SummaryConfig,
@@ -42,6 +43,11 @@ use crate::{
     },
     grapple::physical::PhysicalGrappleConfig,
 };
+
+/// The controller settings, at `controllers` in the settings file; the payload binds the slot at
+/// startup.
+pub(crate) static CONTROLLERS_CONFIG: ConfigSlot<ControllersConfig> =
+    ConfigSlot::new("controllers");
 
 /// All motion-controller settings, added to [`crate::config::Config`] as `controllers`.
 #[derive(Clone, Serialize, Deserialize)]

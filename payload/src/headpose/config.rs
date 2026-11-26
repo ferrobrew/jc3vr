@@ -2,6 +2,12 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::config::engine::ConfigSlot;
+
+/// The head pose settings, at `headpose` in the settings file; the payload binds the slot at
+/// startup.
+pub(crate) static HEADPOSE_CONFIG: ConfigSlot<HeadPoseConfig> = ConfigSlot::new("headpose");
+
 /// All thresholds and tunables for the headpose simulation, added to [`crate::config::Config`] as
 /// `headpose`.
 #[derive(Copy, Clone, Serialize, Deserialize)]

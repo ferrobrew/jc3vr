@@ -20,6 +20,7 @@
 //! its own pixels; the motion vectors it is handed are free of it ([`jitter_free_reprojection`]).
 
 mod config;
+pub(crate) use config::FSR_CONFIG;
 pub use config::{AntiAliasing, FsrConfig, TaaConfig};
 pub mod jitter;
 pub mod taa;

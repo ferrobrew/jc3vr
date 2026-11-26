@@ -25,10 +25,12 @@ use re_utilities::hook_library::HookLibrary;
 
 pub(crate) use crate::hooks::ui::mouse::cancel_pointer_on_game_thread;
 use crate::{
-    config::Config,
     controllers::summary::game_hints::hide_game_hints,
     frame_timing::{self, Slot},
-    hud::{HUD_STATE, aim, compute_panel_vp, current_aspect, game_reticle::hide_game_reticles},
+    hud::{
+        HUD_STATE, aim, compute_panel_vp, config::HUD_CONFIG, current_aspect,
+        game_reticle::hide_game_reticles,
+    },
 };
 
 pub(crate) fn hook_library() -> HookLibrary {
@@ -63,7 +65,7 @@ fn convert_3d_coords_default(
     out_x: *mut f32,
     out_y: *mut f32,
 ) -> bool {
-    let panel_enabled = Config::lock_query(|c| c.hud.redirect && c.hud.quad);
+    let panel_enabled = HUD_CONFIG.query(|c| c.redirect && c.quad);
 
     // Only the frame's first call projects the aim position; claiming the frame's recording before
     // reading the point keeps the later calls (the attach point, the grip-radius sample) out of it.
@@ -127,7 +129,7 @@ fn movie_capture(this: *mut MovieImpl, if_changed: bool) -> u64 {
     };
     let timing = frame_timing::scope(Slot::UiCapture);
     if is_main_movie {
-        let hud = Config::lock_query(|c| c.hud);
+        let hud = *HUD_CONFIG.lock();
         // SAFETY: this is the capture seam both callees require; `this` is the live main movie.
         unsafe {
             crate::hud::scaleform::apply_overlay_suppression();
@@ -177,7 +179,7 @@ fn get_2d_info(
     offset: Vector2,
 ) {
     let (panel_enabled, world_markers) =
-        Config::lock_query(|c| (c.hud.redirect && c.hud.quad, c.hud.world_markers));
+        HUD_CONFIG.query(|c| (c.redirect && c.quad, c.world_markers));
     let aspect = current_aspect();
     let panel = panel_enabled.then(compute_panel_vp).flatten();
     let (vp, camera) = panel

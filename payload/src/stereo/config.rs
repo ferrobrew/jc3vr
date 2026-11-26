@@ -2,7 +2,10 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{config::Config, far_field::FarFieldMode};
+use crate::{
+    config::{Config, engine::ConfigSlot},
+    far_field::FarFieldMode,
+};
 
 /// Turn the whole single-pass feature on or off together, as the debug UI's one button does: the
 /// master switch, the dual-eye split, the collapse, the double-wide target, the reprojected scene
@@ -757,6 +760,9 @@ pub struct SinglePassConfig {
     /// and blitting the copies at the frame submit. Applies from the next frame. On by default.
     pub collapse_direct_blit: bool,
 }
+
+/// The stereo settings, at `stereo` in the settings file; the payload binds the slot at startup.
+pub(crate) static STEREO_CONFIG: ConfigSlot<StereoConfig> = ConfigSlot::new("stereo");
 
 /// Stereo rendering toggles. The live per-eye runtime state is [`crate::stereo::StereoState`].
 #[derive(Clone, Serialize, Deserialize)]

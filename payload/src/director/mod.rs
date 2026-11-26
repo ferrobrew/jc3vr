@@ -13,7 +13,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::config::CONFIG;
+use crate::config::{CONFIG, engine::ConfigSlot};
 pub(crate) use crate::controllers::spawn;
 
 pub mod clean_view;
@@ -24,6 +24,10 @@ pub(crate) mod register_tracking;
 pub mod safety;
 pub mod teleport;
 pub mod time;
+
+/// The directing tools' settings, at `director` in the settings file; the payload binds the slot at
+/// startup.
+pub(crate) static DIRECTOR_CONFIG: ConfigSlot<DirectorConfig> = ConfigSlot::new("director");
 
 /// The directing settings, reconciled against the live game every frame by [`update`].
 #[derive(Clone, Serialize, Deserialize)]

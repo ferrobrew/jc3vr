@@ -24,7 +24,6 @@ use parking_lot::Mutex;
 use windows::Win32::Graphics::Direct3D11::ID3D11DeviceContext;
 
 use crate::{
-    config::Config,
     controllers::{
         scheme,
         weapons::hud_feed::{
@@ -34,6 +33,7 @@ use crate::{
     },
     hud::{
         anchored::place::upright_corners,
+        config::HUD_CONFIG,
         game_icons::{self, Lookup},
         grab_hint::{MARKER_TEXELS, paint_marker},
         log_once::LogOnce,
@@ -48,7 +48,7 @@ use crate::{
 pub(crate) fn draw(context: &ID3D11DeviceContext, device: &Device, target: &Texture, eye: usize) {
     let mut state = STATE.lock();
     if crate::stereo::dispatch::first_ui_eye(eye) {
-        let cfg = Config::lock_query(|c| c.hud);
+        let cfg = *HUD_CONFIG.lock();
         let active =
             cfg.lost_weapons.enabled && world_quads_active(&cfg) && scheme::is_controllers();
         let head = active.then(crate::hud::render_camera_pose).flatten();

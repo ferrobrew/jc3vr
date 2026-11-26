@@ -12,16 +12,12 @@ use pretty_assertions::assert_eq;
 
 use crate::{
     config::{
-        CONFIG, Config, edit,
-        engine::persist::edit_pending,
-        format,
-        load::parse,
-        slots::{HUD, VR},
-        test_fixture,
+        CONFIG, Config, edit, engine::persist::edit_pending, format, load::parse, test_fixture,
     },
     controllers::{config::SightOverride, frame::Hand},
     director::keymap::{Action, Binding, Chord},
-    vr::MirrorView,
+    hud::config::HUD_CONFIG,
+    vr::{MirrorView, VR_CONFIG},
 };
 
 /// A configuration with settings changed across many groups and value kinds: floats that widen
@@ -210,11 +206,11 @@ fn the_fixture_restores_both_the_settings_and_the_edit_status() {
 #[test]
 fn a_slot_reads_and_writes_its_group_of_the_one_configuration() {
     let _fixture = test_fixture();
-    HUD.lock().distance = 2.5;
+    HUD_CONFIG.lock().distance = 2.5;
     assert_eq!(CONFIG.lock().hud.distance, 2.5);
     CONFIG.lock().vr.mirror = false;
-    assert!(!VR.lock().mirror);
-    VR.edit().mirror = true;
+    assert!(!VR_CONFIG.lock().mirror);
+    VR_CONFIG.edit().mirror = true;
     assert!(CONFIG.lock().vr.mirror);
 }
 
@@ -222,12 +218,12 @@ fn a_slot_reads_and_writes_its_group_of_the_one_configuration() {
 #[test]
 fn a_second_lock_on_one_thread_panics_rather_than_deadlocking() {
     let _fixture = test_fixture();
-    let guard = HUD.lock();
-    let nested = panic::catch_unwind(AssertUnwindSafe(|| VR.lock().mirror));
+    let guard = HUD_CONFIG.lock();
+    let nested = panic::catch_unwind(AssertUnwindSafe(|| VR_CONFIG.lock().mirror));
     assert!(nested.is_err());
     let nested = panic::catch_unwind(AssertUnwindSafe(|| CONFIG.lock().vr.mirror));
     assert!(nested.is_err());
     drop(guard);
     // The guard's release clears the mark, so the next lock succeeds.
-    let _ = VR.lock().mirror;
+    let _ = VR_CONFIG.lock().mirror;
 }

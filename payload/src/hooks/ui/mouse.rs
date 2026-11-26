@@ -27,9 +27,9 @@ use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{
-    config::Config,
     controllers::map,
     hud::{
+        config::HUD_CONFIG,
         cursor,
         pointer::{self, PendingRoute, RoutedPointer},
     },
@@ -237,7 +237,8 @@ fn get_movie_space_mouse_cursor(
     out: *mut Vector2,
 ) {
     let original = GET_MOVIE_SPACE_MOUSE_CURSOR.get().unwrap();
-    let geometry = Config::lock_query(|c| c.hud.redirect)
+    let geometry = HUD_CONFIG
+        .query(|c| c.redirect)
         .then(cursor::geometry)
         .flatten();
     // SAFETY: `this` is the live UI singleton (the map passes it); `out` is the caller's
@@ -273,7 +274,7 @@ fn get_movie_space_mouse_cursor(
 /// shutting down. The UI input boundary and the mouse delivery share this one gate.
 fn mouse_route_active() -> bool {
     !crate::is_shutting_down()
-        && Config::lock_query(|c| c.hud.redirect)
+        && HUD_CONFIG.query(|c| c.redirect)
         && debug_ui_capture().is_none_or(|snapshot| snapshot.gameplay_effective)
         && cursor::geometry().is_some()
 }

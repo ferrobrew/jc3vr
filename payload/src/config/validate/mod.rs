@@ -7,22 +7,20 @@
 //! checks need nothing from this module.
 //!
 //! The checks are split by config area, one module per subsystem, each returning the first
-//! out-of-range or inconsistent setting in `controllers`' order. The primitives below (`range` and
-//! its specializations) are shared by every area.
+//! out-of-range or inconsistent setting in `controllers`' order. They are built from the engine's
+//! range checks ([`crate::config::engine::range`] and its specializations).
 
 mod aim;
 mod haptics;
-pub(crate) mod hud;
 mod input;
 mod physical_hands;
 mod roomscale;
 mod vehicles;
 mod weapons;
 
-use glam::{Vec2, Vec3};
-
 pub(crate) use crate::config::engine::Invalid;
 use crate::{
+    config::engine::{nonnegative, positive, range, vec2, vec3},
     controllers::{
         config::{ControllersConfig, SightTable},
         frame::PressThresholds,
@@ -74,34 +72,6 @@ pub(crate) fn vr_turn(turn: &VrTurnConfig) -> Result<(), Invalid> {
     range("snap_threshold", turn.snap_threshold, 0.0, 1.0)?;
     range("deadzone", turn.deadzone, 0.0, 1.0)?;
     Ok(())
-}
-
-fn range(name: &str, value: f32, min: f32, max: f32) -> Result<(), Invalid> {
-    if !value.is_finite() || value < min || value > max {
-        return Err(Invalid(format!(
-            "{name} must be finite and in [{min}, {max}], got {value}"
-        )));
-    }
-    Ok(())
-}
-
-fn positive(name: &str, value: f32, max: f32) -> Result<(), Invalid> {
-    range(name, value, f32::EPSILON, max)
-}
-
-fn nonnegative(name: &str, value: f32, max: f32) -> Result<(), Invalid> {
-    range(name, value, 0.0, max)
-}
-
-fn vec2(name: &str, value: Vec2, max: f32) -> Result<(), Invalid> {
-    range(&format!("{name}.x"), value.x, -max, max)?;
-    range(&format!("{name}.y"), value.y, -max, max)
-}
-
-fn vec3(name: &str, value: Vec3, max: f32) -> Result<(), Invalid> {
-    range(&format!("{name}.x"), value.x, -max, max)?;
-    range(&format!("{name}.y"), value.y, -max, max)?;
-    range(&format!("{name}.z"), value.z, -max, max)
 }
 
 pub(crate) fn press_thresholds(name: &str, thresholds: PressThresholds) -> Result<(), Invalid> {

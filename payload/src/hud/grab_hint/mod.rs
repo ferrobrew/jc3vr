@@ -34,7 +34,6 @@ use parking_lot::Mutex;
 use windows::Win32::Graphics::Direct3D11::ID3D11DeviceContext;
 
 use crate::{
-    config::Config,
     controllers::{
         frame::Hand,
         scheme,
@@ -42,6 +41,7 @@ use crate::{
         weapons::hud_feed::grab_hint::{self as feed, Hint},
     },
     hud::{
+        config::HUD_CONFIG,
         game_icons::{self, Image, Lookup},
         gameplay_hints_active,
         grab_hint::{
@@ -66,7 +66,7 @@ pub(crate) fn draw(
 ) {
     let mut state = STATE.lock();
     if crate::stereo::dispatch::first_ui_eye(eye) {
-        let cfg = Config::lock_query(|c| c.hud);
+        let cfg = *HUD_CONFIG.lock();
         let active = cfg.grab_hint.enabled
             && world_quads_active(&cfg)
             && gameplay_hints_active()

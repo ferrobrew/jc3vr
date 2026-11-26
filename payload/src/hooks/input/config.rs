@@ -3,6 +3,12 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::config::engine::ConfigSlot;
+
+/// The movement settings, at `movement` in the settings file; the payload binds the slot at
+/// startup.
+pub(crate) static MOVEMENT_CONFIG: ConfigSlot<MovementConfig> = ConfigSlot::new("movement");
+
 /// Movement settings.
 #[derive(Copy, Clone, Serialize, Deserialize)]
 pub struct MovementConfig {

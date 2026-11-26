@@ -2,6 +2,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::config::engine::ConfigSlot;
+
 /// Which anti-aliasing resolves the eye images at the engine's anti-aliasing stage.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AntiAliasing {
@@ -20,6 +22,10 @@ impl AntiAliasing {
         matches!(self, Self::Fsr | Self::Taa)
     }
 }
+
+/// The upscaling and anti-aliasing settings, at `fsr` in the settings file; the payload binds the
+/// slot at startup.
+pub(crate) static FSR_CONFIG: ConfigSlot<FsrConfig> = ConfigSlot::new("fsr");
 
 /// Anti-aliasing settings: the resolve in use, and FSR's and the shared inputs' switches. See
 /// `docs/mod/rendering/fsr.md` and `docs/mod/rendering/taa.md`.

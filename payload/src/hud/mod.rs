@@ -86,8 +86,9 @@ pub(crate) use state::{StageSafeAreaReadout, stage_safe_area_readout};
 use windows::Win32::Graphics::Direct3D11::ID3D11DeviceContext;
 
 use crate::{
-    config::{Config, Switch, disable_automatically},
+    config::engine::{Switch, disable_automatically},
     hooks::in_gameplay,
+    hud::config::HUD_CONFIG,
     stereo::single_pass::collapse_active,
 };
 
@@ -267,7 +268,7 @@ pub(crate) fn redirect_applied() -> bool {
 /// mod's choice (see [`hud_target_size`]), as is its aspect.
 pub fn tick(device: &Device, window_width: u32, window_height: u32) {
     let mut hud = HUD_STATE.lock();
-    let cfg = Config::lock_query(|c| c.hud);
+    let cfg = *HUD_CONFIG.lock();
     let render = crate::stereo::render_size().unwrap_or((window_width, window_height));
     if cfg.redirect {
         let aspect = aspect_for(current_mode());
@@ -318,14 +319,12 @@ fn hud_target_size(
         (base * aspect, base)
     };
     (
-        width.round().clamp(
-            1.0,
-            crate::config::validate::hud::MAX_TEXTURE_DIMENSION as f32,
-        ) as u32,
-        height.round().clamp(
-            1.0,
-            crate::config::validate::hud::MAX_TEXTURE_DIMENSION as f32,
-        ) as u32,
+        width
+            .round()
+            .clamp(1.0, config::MAX_TEXTURE_DIMENSION as f32) as u32,
+        height
+            .round()
+            .clamp(1.0, config::MAX_TEXTURE_DIMENSION as f32) as u32,
     )
 }
 
@@ -337,7 +336,7 @@ fn hud_target_size(
 /// from the render-thread post-draw hook, before the back buffer is captured/presented, with the
 /// engine context mutex held.
 pub fn draw_quad(context: &ID3D11DeviceContext, device: &Device, target: &Texture, eye: usize) {
-    let cfg = Config::lock_query(|c| c.hud);
+    let cfg = *HUD_CONFIG.lock();
     let mut hud = HUD_STATE.lock();
     if !cfg.redirect || !cfg.quad || hud.redirected_size().is_none() {
         hud.clear_panel_corners();
@@ -506,7 +505,7 @@ pub fn compute_panel_vp() -> Option<(Matrix4, Matrix4)> {
     // markers project onto exactly the panel the quad drew.
     let (pos, rot) = HUD_STATE.lock().panel_pose()?;
     let aspect = current_aspect();
-    let panel_scale = Config::lock_query(|c| c.hud.panel_scale);
+    let panel_scale = HUD_CONFIG.lock().panel_scale;
 
     let projection = unsafe {
         let cm = CameraManager::get()?;
@@ -582,7 +581,8 @@ pub fn install() {
         // Automatically, so that a save during the teardown keeps the redirect the user chose.
         disable_automatically(Switch {
             path: "hud.redirect",
-            place: |c| &mut c.hud.redirect,
+            slot: &HUD_CONFIG,
+            place: |hud| &mut hud.redirect,
         });
         if let Some(renderer) = renderer {
             HUD_STATE.lock().release_preview(renderer);

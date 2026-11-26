@@ -14,6 +14,7 @@ use crate::{
     },
     controllers::config::{ControllersConfig, SightTable},
     headpose::config::VrTurnConfig,
+    hud::HudConfig,
 };
 
 /// A loaded configuration and what the load had to change to get it.
@@ -80,7 +81,7 @@ pub(crate) fn validate_subtrees(config: &mut Config, resets: &mut Vec<Reset>) {
         &mut config.hud,
         &Config::new().hud,
         "hud",
-        validate::hud::hud,
+        HudConfig::validate,
         resets,
     ) {
         config.hud = Config::new().hud;
@@ -113,7 +114,7 @@ mirror = false
 "#,
         )
         .unwrap();
-        validate::hud::hud(&loaded.config.hud).unwrap();
+        loaded.config.hud.validate().unwrap();
         assert_eq!(loaded.config.hud.panel_scale, 0.7);
         assert!(!loaded.config.vr.mirror);
         assert!(
@@ -134,7 +135,7 @@ mirror = false
             parse("[hud.egui_panel]\nresolution = [\"wrong\", 960]\n[hud]\npanel_scale = 0.6")
                 .unwrap();
         assert_eq!(loaded.config.hud.panel_scale, 0.6);
-        validate::hud::hud(&loaded.config.hud).unwrap();
+        loaded.config.hud.validate().unwrap();
         assert!(matches!(parse("[hud"), Err(LoadError::Syntax(_))));
     }
 }

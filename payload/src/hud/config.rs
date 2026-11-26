@@ -2,6 +2,11 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::config::engine::{ConfigSlot, Invalid, positive};
+
+/// The HUD settings, at `hud` in the settings file; the payload binds the slot at startup.
+pub(crate) static HUD_CONFIG: ConfigSlot<HudConfig> = ConfigSlot::new("hud");
+
 /// Floating-HUD settings. See `docs/mod/hud.md`.
 #[derive(Copy, Clone, Serialize, Deserialize)]
 pub struct HudConfig {
@@ -47,7 +52,31 @@ pub struct HudConfig {
     #[serde(default)]
     pub lost_weapons: IconFeatureConfig,
 }
+/// The Direct3D 11 two-dimensional texture axis limit.
+pub(crate) const MAX_TEXTURE_DIMENSION: u32 = 16384;
+
+/// Check that a HUD texture axis is within [`MAX_TEXTURE_DIMENSION`].
+pub(crate) fn dimension(name: &str, value: u32) -> Result<(), Invalid> {
+    if !(1..=MAX_TEXTURE_DIMENSION).contains(&value) {
+        return Err(Invalid(format!(
+            "{name} must be between 1 and {MAX_TEXTURE_DIMENSION}, got {value}"
+        )));
+    }
+    Ok(())
+}
+
 impl HudConfig {
+    /// Check the panel geometry and surfaces loaded from settings, returning the first setting
+    /// that is out of range. Paths are relative to `hud`.
+    pub(crate) fn validate(&self) -> Result<(), Invalid> {
+        positive("distance", self.distance, 1000.0)?;
+        positive("panel_scale", self.panel_scale, 100.0)?;
+        let e = &self.egui_panel;
+        positive("egui_panel.aspect", e.aspect, 100.0)?;
+        dimension("egui_panel.resolution[0]", e.resolution.0)?;
+        dimension("egui_panel.resolution[1]", e.resolution.1)
+    }
+
     pub const fn new() -> Self {
         Self {
             redirect: true,
