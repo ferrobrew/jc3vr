@@ -5240,6 +5240,11 @@ impl WeaponData {
     }
 }
 impl WeaponData {
+    /// The hash of the usage `BoltAction` (`hashlittle` of the name):
+    /// [`SniperWeapon::UpdateFromUserPostSim_Parallel`](crate::equipment::weapon::SniperWeapon::UpdateFromUserPostSim_Parallel) plays it on every gun of a bolt-action
+    /// rifle as it starts the bolt act. The CS111 Archangel's and the Final Argument's effect files
+    /// carry it as their casing ejection, a particle effect with no sound.
+    pub const BOLT_ACTION_USAGE: u32 = 3197613089;
     /// The name hash (`hashlittle` of `Chamber`) of the crane bone in a revolver's own skeleton, the
     /// Peacekeeper's, which the Little General shares: a child of the `Reference` root at the
     /// crane's pivot below the cylinder. The revolver's reload clips swing the cylinder out by
@@ -5253,6 +5258,23 @@ impl WeaponData {
     /// cylinder's centre, about which the cylinder turns on the barrel's line. The reload clips
     /// leave it still.
     pub const CHAMBER_SPIN_BONE_HASH: u32 = 1829080287;
+    /// The hash of the usage `CockBack` (`hashlittle` of the name): the sound of the action pulled
+    /// back, which the U-Rys 96's effect file carries as its pump going back and the CS111
+    /// Archangel's and the Final Argument's carry as their bolt's cock. No code names it; the
+    /// pump and bolt clips' track messages play it.
+    pub const COCK_BACK_USAGE: u32 = 1475335323;
+    /// The hash of the usage `CockForward` (`hashlittle` of the name): the sound of the action run
+    /// forward, which only the U-Rys 96's effect file carries, as its pump going forward. No code
+    /// names it; the pump clip's track message plays it.
+    pub const COCK_FORWARD_USAGE: u32 = 2373403284;
+    /// The hash of the usage `DrawWeapon` (`hashlittle` of the name): the sound of the gun being
+    /// drawn, which every hand-held gun's effect file carries under an entry named `Draw` or
+    /// `DrawWeapon`. No code names it; the draw clip's track message plays it.
+    pub const DRAW_WEAPON_USAGE: u32 = 3483696895;
+    /// The hash of the usage `HolsterWeapon` (`hashlittle` of the name): the sound of the gun being
+    /// put away, which every hand-held gun's effect file carries under an entry named `Holster` or
+    /// `HolsterWeapon`. No code names it; the holster clip's track message plays it.
+    pub const HOLSTER_WEAPON_USAGE: u32 = 3715135999;
     /// The `model_name_hash` (the hash of `no_magazine_model`) that makes
     /// [`ThrowAwayMagazineObject`](crate::equipment::weapon::WeaponData::ThrowAwayMagazineObject) drop the spare magazine from the
     /// gun's own transform without looking for a model part.
@@ -5277,6 +5299,16 @@ impl WeaponData {
     /// Bildt Negotiator's effect files carry. No code names it; a reload clip's track message
     /// plays it.
     pub const RELOAD_INSERT_AMMO_USAGE: u32 = 150649730;
+    /// The hash of the usage `ReloadRemoveMagazine` (`hashlittle` of the name), which only the
+    /// assault rifles' effect files carry: the whole reload's sound, played by the reload clip's
+    /// track message where the magazine comes out. No code names it.
+    pub const RELOAD_REMOVE_MAGAZINE_USAGE: u32 = 1503746277;
+    /// The hash of the usage `ReloadStart` (`hashlittle` of the name):
+    /// [`WeaponBase::StartReloadSequence`](crate::equipment::weapon::WeaponBase::StartReloadSequence) plays it on every gun of the weapon. A gun's effect file
+    /// that carries it names the whole reload's sound for it: the magazine out, the magazine in,
+    /// and the action, as one event. The assault rifles carry none and play the same kind of sound
+    /// from [`RELOAD_REMOVE_MAGAZINE_USAGE`](crate::equipment::weapon::WeaponData::RELOAD_REMOVE_MAGAZINE_USAGE) instead.
+    pub const RELOAD_START_USAGE: u32 = 4253434231;
     /// The name hash (`hashlittle` of `Slider`) of the bolt bone in a bolt-action rifle's own
     /// skeleton, the CS111 Archangel's and the Final Argument's: the skeleton's one bone besides its
     /// `Reference` root, which carries the bolt and which the rifle's bolt-action clip moves.
