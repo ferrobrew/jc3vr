@@ -28,7 +28,6 @@ use crate::{
     vr::{FreezeMode, VR_CONFIG, harness, pose_control},
 };
 
-pub mod authored;
 pub mod config;
 mod participants;
 pub use config::{CameraConfig, SCENE_NEAR_CLIP_M};
@@ -39,7 +38,7 @@ pub use participants::{
 };
 
 use crate::headpose::{
-    HeadPose, Source, anchor, anchor_prev, is_active, query, query_prev, source, xr::follow_turn,
+    HeadPose, Source, anchor, is_active, query, query_prev, source, xr::follow_turn,
 };
 
 pub fn hook_library() -> HookLibrary {
@@ -341,7 +340,6 @@ fn camera_update_render(camera: *mut Camera, dt: f32, dtf: f32) {
             LAST_DTF.set(dtf);
 
             if !CAMERA_CONFIG.query(|c| c.enabled) {
-                authored::reset(authored::Refusal::Disabled);
                 *LAST_CAMERA_WORLD.lock() = None;
                 CAMERA_UPDATE_RENDER.get().unwrap().call(camera, dt, dtf);
                 return;
@@ -356,7 +354,6 @@ fn camera_update_render(camera: *mut Camera, dt: f32, dtf: f32) {
             // (which the streaming system does not read); absolute placement resumes and the
             // auto-recenter re-bases onto Rico's updated head once gameplay returns.
             if !in_gameplay() {
-                authored::reset(authored::Refusal::OutsideGameplay);
                 *LAST_CAMERA_WORLD.lock() = None;
                 CAMERA_UPDATE_RENDER.get().unwrap().call(camera, dt, dtf);
                 return;
@@ -366,21 +363,7 @@ fn camera_update_render(camera: *mut Camera, dt: f32, dtf: f32) {
             // back to the translation-only bone-derived placement below.
             let headpose_active = is_active() && anchor().is_some();
 
-            if !headpose_active {
-                authored::reset(authored::Refusal::NoTrackedHead);
-                *LAST_CAMERA_WORLD.lock() = None;
-            }
-            if headpose_active
-                && let Some([previous, current]) = authored::selected(local_character)
-            {
-                camera.m_TransformT0 = Matrix4::from(previous);
-                camera.m_TransformT1 = Matrix4::from(current);
-                *LAST_CAMERA_WORLD.lock() = Some(camera.m_TransformT1);
-                participants::note_placement(
-                    glam::Mat4::from(local_character.m_WorldMatrixT1),
-                    current.w_axis.truncate(),
-                );
-            } else if headpose_active {
+            if headpose_active {
                 // Both position and orientation come from the tick-spaced pose pair, so the
                 // engine's dtf Lerp smooths the whole camera placement — the bone reads
                 // (`GetSafeBoneMatrix`) only carry the finalized sim-rate pose, and placing T0/T1
@@ -401,6 +384,7 @@ fn camera_update_render(camera: *mut Camera, dt: f32, dtf: f32) {
                     previous_position,
                 );
             } else {
+                *LAST_CAMERA_WORLD.lock() = None;
                 let (left_eye_matrix, right_eye_matrix) = eye_matrices(local_character);
                 let character_t1_matrix = glam::Mat4::from(local_character.m_WorldMatrixT1);
                 let head_position =
@@ -415,10 +399,6 @@ fn camera_update_render(camera: *mut Camera, dt: f32, dtf: f32) {
                 camera.m_TransformT0.data[12] = head_position_t0.x;
                 camera.m_TransformT0.data[13] = head_position_t0.y;
                 camera.m_TransformT0.data[14] = head_position_t0.z;
-            }
-
-            if authored::take_normal_reset() {
-                camera.m_TransformT0 = camera.m_TransformT1;
             }
 
             // Capture this gameplay frame's viewpoint as the upright loading base (issue #27): its
@@ -769,16 +749,13 @@ fn camera_tree_update_render_contexts(
     unsafe {
         *LAST_CAMERA_WORLD.lock() = None;
         let Some(local_character) = Character::GetLocalPlayerCharacter().as_mut() else {
-            authored::reset(authored::Refusal::MissingChannel);
             return;
         };
         let Some(ccc) = camera_control_context.as_mut() else {
-            authored::reset(authored::Refusal::MissingChannel);
             return;
         };
 
         if !CAMERA_CONFIG.query(|c| c.enabled) {
-            authored::reset(authored::Refusal::Disabled);
             return;
         }
 
@@ -787,7 +764,6 @@ fn camera_tree_update_render_contexts(
         // placement stops entirely here; the player's head-tracking for the view is applied to the
         // render camera copy in `setup_render_camera`, which does not touch these contexts.
         if !in_gameplay() {
-            authored::reset(authored::Refusal::OutsideGameplay);
             return;
         }
 
@@ -819,39 +795,6 @@ fn camera_tree_update_render_contexts(
                 )
             };
 
-        let selected = if headpose_active {
-            let previous = query_prev();
-            let current = query();
-            let views = [
-                authored::TrackedView {
-                    world: glam::Mat4::from_rotation_translation(
-                        previous.orientation,
-                        previous_position,
-                    ),
-                    tracking_translation: previous.position
-                        - anchor_prev().unwrap_or(previous.position),
-                },
-                authored::TrackedView {
-                    world: glam::Mat4::from_rotation_translation(
-                        current.orientation,
-                        next_position,
-                    ),
-                    tracking_translation: current.position - anchor().unwrap_or(current.position),
-                },
-            ];
-            authored::capture(local_character, views)
-        } else {
-            authored::reset(authored::Refusal::NoTrackedHead);
-            None
-        };
-        if let Some([previous, current]) = selected {
-            patch_authored_context(&mut ccc.m_PreviousCameraContext, previous);
-            patch_authored_context(&mut ccc.m_PreviousRenderContext, previous);
-            patch_authored_context(&mut ccc.m_NextCameraContext, current);
-            patch_authored_context(&mut ccc.m_NextRenderContext, current);
-            *LAST_CAMERA_WORLD.lock() = Some(Matrix4::from(current));
-            return;
-        }
         if headpose_active {
             *LAST_CAMERA_WORLD.lock() = Some(Matrix4::from(glam::Mat4::from_rotation_translation(
                 next_orientation.unwrap_or(glam::Quat::IDENTITY),
@@ -861,12 +804,6 @@ fn camera_tree_update_render_contexts(
             *LAST_CAMERA_WORLD.lock() = None;
         }
 
-        let normal_reset = authored::normal_reset();
-        let (previous_position, previous_orientation) = if normal_reset {
-            (next_position, next_orientation)
-        } else {
-            (previous_position, previous_orientation)
-        };
         patch_context(
             &mut ccc.m_PreviousCameraContext,
             previous_position,
@@ -887,14 +824,6 @@ fn camera_tree_update_render_contexts(
             next_position,
             next_orientation,
         );
-    }
-
-    fn patch_authored_context(context: &mut CameraContext, world: glam::Mat4) {
-        context.m_CameraTransform = Matrix4::from(world);
-        context.m_AlternateAimTransform = context.m_CameraTransform;
-        context.m_ListenerTransform = context.m_CameraTransform;
-        context.m_FOV = VIEW.get().camera.context_fov_deg.to_radians();
-        clear_blurs(context);
     }
 
     fn patch_context(

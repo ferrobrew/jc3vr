@@ -18,13 +18,9 @@ pub(crate) fn head_view(ui: &mut egui::Ui) {
     });
 }
 
-/// The camera and headpose readout: the authored camera, the headpose mode and latch, the
-/// body-relative rotation, the published position and anchors, and the engine's camera blend.
+/// The camera and headpose readout: the headpose mode and latch, the body-relative rotation, the
+/// published position and anchors, and the engine's camera blend.
 pub(crate) fn head_view_status(ui: &mut egui::Ui) {
-    ui.label(format!(
-        "Authored sequence camera: {:?}.",
-        hooks::camera::authored::status()
-    ));
     ui.label(format!("Mode: {:?}", headpose::sim::mode()));
     ui.label(format!("Latch: {:?}", headpose::sim::latch_state()));
 

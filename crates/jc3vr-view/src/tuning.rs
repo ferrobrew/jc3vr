@@ -1,7 +1,7 @@
 //! The view crate's tuning files (`docs/mod/tuning.md`):
 //!
 //! - [`VIEW`]: the head pose's turning, follow steps, flatscreen latch, and synthetic-rotation
-//!   filter, the camera's flatscreen stereo and authored-camera handback, the tracking recorder's
+//!   filter, the camera's flatscreen stereo and context field of view, the tracking recorder's
 //!   lookback, and the VR runtime's foveation, cull padding, recenter, floor watch, bring-up retry,
 //!   press thresholds, and mirror zoom.
 //! - [`HAPTICS`]: the haptic output's primitives, mix, and cues, whose types the input crate
@@ -44,7 +44,6 @@ pub struct ViewTuning {
     pub head_animation: HeadAnimationTuning,
     pub anchors: AnchorsTuning,
     pub camera: CameraTuning,
-    pub handback: HandbackTuning,
     pub recorder: RecorderTuning,
     pub foveation: FoveationTuning,
     pub frame: FrameTuning,
@@ -141,26 +140,6 @@ pub struct CameraTuning {
     /// The field of view written into the camera context the game reads after the update,
     /// degrees.
     pub context_fov_deg: f32,
-}
-
-/// The authored camera's handback to the player's view
-/// ([`crate::hooks::camera::authored`]).
-#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct HandbackTuning {
-    /// The largest jump of the camera root between two frames that is still continuous motion,
-    /// metres; a larger one is taken for a teleport. A mod-side discontinuity limit, not a native
-    /// movement threshold.
-    pub max_root_step_m: f32,
-    /// The shortest handback, seconds.
-    pub min_s: f32,
-    /// The longest handback, seconds.
-    pub max_s: f32,
-    /// The average handback rotation rate, radians per second; the smoothstep peak is half again
-    /// as fast.
-    pub rotation_rate_rad_per_s: f32,
-    /// The average handback translation rate, metres per second.
-    pub translation_rate_m_per_s: f32,
 }
 
 /// The tracking recorder ([`crate::recorder::tracking`]).
@@ -350,21 +329,6 @@ impl Tuning for ViewTuning {
         let camera = &self.camera;
         positive("camera.flatscreen_ipd_m", camera.flatscreen_ipd_m, 0.2)?;
         range("camera.context_fov_deg", camera.context_fov_deg, 1.0, 179.0)?;
-
-        let handback = &self.handback;
-        positive("handback.max_root_step_m", handback.max_root_step_m, 1000.0)?;
-        positive("handback.min_s", handback.min_s, 60.0)?;
-        range("handback.max_s", handback.max_s, handback.min_s, 60.0)?;
-        positive(
-            "handback.rotation_rate_rad_per_s",
-            handback.rotation_rate_rad_per_s,
-            100.0,
-        )?;
-        positive(
-            "handback.translation_rate_m_per_s",
-            handback.translation_rate_m_per_s,
-            100.0,
-        )?;
 
         let recorder = &self.recorder;
         positive(

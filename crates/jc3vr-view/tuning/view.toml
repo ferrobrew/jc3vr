@@ -32,13 +32,6 @@ max_root_step_m = 10.0
 flatscreen_ipd_m = 0.068
 context_fov_deg = 90.0
 
-[handback]
-max_root_step_m = 8.0
-min_s = 0.25
-max_s = 1.5
-rotation_rate_rad_per_s = 2.0943952
-translation_rate_m_per_s = 1.0
-
 [recorder]
 lookback_window_s = 10
 bookmark_radius_m = 2.0

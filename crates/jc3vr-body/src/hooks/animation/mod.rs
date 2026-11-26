@@ -1,5 +1,5 @@
-//! Animation hooks: the local player's animation updates, for the pose publication and the authored
-//! camera, and the pose producer's asynchronous dispatch, which cannot certify completed output.
+//! Animation hooks: the local player's animation updates, for the pose publication, and the pose
+//! producer's asynchronous dispatch, which cannot certify completed output.
 
 use detours_macro::detour;
 use jc3gi::{
@@ -13,7 +13,6 @@ pub(crate) mod publication;
 
 pub fn hook_library() -> HookLibrary {
     HookLibrary::new()
-        .with_static_binder(&UPDATE_ANIMATIONS_TIME_BINDER)
         .with_static_binder(&UPDATE_ANIMATIONS_BINDER)
         .with_static_binder(&KICK_UPDATE_JOB_BINDER)
         .with_hook_library(canopy::hook_library())
@@ -34,21 +33,7 @@ fn kick_update_job(
         .call(producer, dt, layers, bones);
 }
 
-/// The controller's time-only path: the local player's update feeds the authored camera.
-#[detour(
-    address = jc3gi::character::character::AnimationController::UpdateAnimationsTime_ADDRESS
-)]
-fn update_animations_time(controller: *mut AnimationController, dt: f32) {
-    UPDATE_ANIMATIONS_TIME.get().unwrap().call(controller, dt);
-    if unsafe { is_local_controller(controller) }
-        && let Some(controller) = unsafe { controller.as_ref() }
-    {
-        unsafe { jc3vr_view::hooks::camera::authored::animation_update(controller, None) };
-    }
-}
-
-/// Synchronous pose evaluation: the local player's evaluation is published and feeds the authored
-/// camera.
+/// Synchronous pose evaluation: the local player's evaluation is published.
 #[detour(
     address = jc3gi::character::character::AnimationController::UpdateAnimations_ADDRESS
 )]
@@ -61,21 +46,12 @@ fn update_animations(controller: *mut AnimationController, dt: f32, num_of_bones
     let pose_evaluation = unsafe { controller.as_ref() }
         .filter(|_| local)
         .and_then(|controller| unsafe { publication::begin(controller, num_of_bones) });
-    let evaluation = unsafe {
-        controller
-            .as_ref()
-            .filter(|_| local)
-            .and_then(|controller| {
-                jc3vr_view::hooks::camera::authored::animation_evaluation(controller, num_of_bones)
-            })
-    };
     UPDATE_ANIMATIONS
         .get()
         .unwrap()
         .call(controller, dt, num_of_bones);
     if local && let Some(controller) = unsafe { controller.as_ref() } {
         unsafe { publication::complete(controller, pose_evaluation) };
-        unsafe { jc3vr_view::hooks::camera::authored::animation_update(controller, evaluation) };
     }
 }
 
@@ -84,9 +60,6 @@ unsafe fn is_local_controller(controller: *mut AnimationController) -> bool {
         .map(|player| player.m_AnimatedModel.m_AnimationController)
         .filter(|controller| !controller.is_null());
     publication::select(selected.map(|controller| controller as usize));
-    jc3vr_view::hooks::camera::authored::select_controller(
-        selected.map(|controller| controller as u64),
-    );
     selected.is_some_and(|selected| std::ptr::eq(selected, controller))
 }
 

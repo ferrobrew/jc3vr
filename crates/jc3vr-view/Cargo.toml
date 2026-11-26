@@ -10,8 +10,7 @@ publish = false
 # the benchmark's render-pass totals. The payload's `profiler` feature forwards here.
 profiler = ["dep:puffin", "jc3vr-core/profiler"]
 # Test fixtures and per-test isolation other crates' tests rely on: the head pose and anchor
-# fixtures, the live input packet's test guard, and the authored camera's per-thread evidence
-# publication.
+# fixtures and the live input packet's test guard.
 test-support = []
 
 [dependencies]
