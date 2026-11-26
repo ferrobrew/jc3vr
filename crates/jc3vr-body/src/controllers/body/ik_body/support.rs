@@ -10,7 +10,7 @@
 //! aim control's post-simulation update, outside the physics step), and the gate carries the
 //! snapshot forward to its own moment by the body's velocities ([`SupportFrame::predict`]).
 
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use body_rig::contact::{SupportFrame, SupportId, SupportMotion};
 use glam::Quat;
@@ -74,7 +74,9 @@ pub(crate) unsafe fn identify(body: u32, now: Instant) -> SupportId {
 /// The game thread, outside the physics step.
 pub(crate) unsafe fn tick(now: Instant) {
     let mut supports = SUPPORTS.lock();
-    supports.retain(|s| now.saturating_duration_since(s.asked) <= KEEP_FOR);
+    supports.retain(|s| {
+        now.saturating_duration_since(s.asked) <= FRESHNESS.get().body.ik_support_kept_ms.duration()
+    });
     for support in supports.iter_mut() {
         support.snapshot = unsafe { snapshot(support, now) };
     }
@@ -145,9 +147,6 @@ unsafe fn snapshot(support: &Tracked, now: Instant) -> Option<Snapshot> {
         at: now,
     })
 }
-
-/// A support the gate asks about stays tracked this long after it last asked.
-const KEEP_FOR: Duration = Duration::from_secs(2);
 
 /// The most moving supports tracked at once: two feet, and the supports they just left.
 const MAX_SUPPORTS: usize = 8;

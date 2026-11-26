@@ -29,16 +29,21 @@ use jc3vr_view::{
 };
 use parking_lot::Mutex;
 
-use crate::controllers::{
-    aim,
-    aim::{GrappleAim, HandAim, HandSource, config::AIM_CONFIG, raycast::RayHit, sights::tuning},
-    body::{
-        estimator,
-        rig::{grounded, visual},
+use crate::{
+    controllers::{
+        aim,
+        aim::{
+            GrappleAim, HandAim, HandSource, config::AIM_CONFIG, raycast::RayHit, sights::tuning,
+        },
+        body::{
+            estimator,
+            rig::{grounded, visual},
+        },
+        intent::tuning::CONTROLS,
+        overlay::config::OVERLAY_CONFIG,
+        scheme,
     },
-    intent::tuning::CONTROLS,
-    overlay::config::OVERLAY_CONFIG,
-    scheme,
+    tuning::FRESHNESS,
 };
 
 /// Build and submit every producer's primitives for this frame. Every producer's slot is cleared
@@ -70,7 +75,7 @@ pub fn tick(active: bool) {
         submit_or_clear(
             Source::GrappleHighlight,
             true,
-            SIM_TTL,
+            FRESHNESS.get().overlay.sim_ms.duration(),
             |out| {
                 if let (Some(g), Some(at)) = (&status.grapple, grapple_at) {
                     grapple_highlight(g, at, off_hit, out);
@@ -83,7 +88,7 @@ pub fn tick(active: bool) {
     submit_or_clear(
         Source::SightTuning,
         sight_tuning,
-        FRAME_TTL,
+        FRESHNESS.get().overlay.frame_ms.duration(),
         |out| {
             if let Some(marker) = tuning::status().marker {
                 sight_marker(marker, status.hands[dominant.index()], out);
@@ -94,7 +99,7 @@ pub fn tick(active: bool) {
     submit_or_clear(
         Source::BodyRig,
         config.body_rig || config.body_estimate,
-        FRAME_TTL,
+        FRESHNESS.get().overlay.frame_ms.duration(),
         |out| {
             let view = headpose::xr::body_rotation();
             if config.body_rig
@@ -225,11 +230,6 @@ const PRODUCED: [Source; 3] = [
     Source::SightTuning,
     Source::BodyRig,
 ];
-
-/// The time to live of the sim-rate producers' slots: a few sim ticks.
-const SIM_TTL: Duration = Duration::from_millis(150);
-/// The time to live of the frame-rate producers' slots.
-const FRAME_TTL: Duration = Duration::from_millis(100);
 
 /// The aim's update count at the last submission of the sim-rate producers.
 static LAST_AIM_UPDATE: AtomicU64 = AtomicU64::new(u64::MAX);

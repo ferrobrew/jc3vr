@@ -13,7 +13,7 @@
 
 use std::{
     sync::atomic::{AtomicU8, Ordering},
-    time::{Duration, Instant},
+    time::Instant,
 };
 
 use body_rig::{
@@ -27,24 +27,27 @@ use jc3vr_input::frame::{self, Hand, Pose};
 use jc3vr_view::{headpose, headpose::Source};
 use parking_lot::Mutex;
 
-use crate::controllers::{
-    body::{
-        self,
-        procedural::{
-            authority::Case,
-            gate_state::State,
-            rig::{Rig, RigBone},
-            solver::{
-                arms::Side,
-                clavicles::shoulder_joint,
-                pose::RigPose,
-                wings::{PlayerArms, RicoArms, WingTarget, flight_heading, wing_targets},
+use crate::{
+    controllers::{
+        body::{
+            self,
+            procedural::{
+                authority::Case,
+                gate_state::State,
+                rig::{Rig, RigBone},
+                solver::{
+                    arms::Side,
+                    clavicles::shoulder_joint,
+                    pose::RigPose,
+                    wings::{PlayerArms, RicoArms, WingTarget, flight_heading, wing_targets},
+                },
+                tuning::{PROCEDURAL, ProceduralTuning},
             },
-            tuning::{PROCEDURAL, ProceduralTuning},
         },
+        hands::{config::HANDS_CONFIG, ik::queue_model_wrists, pose::cockpit_hand},
+        scheme,
     },
-    hands::{config::HANDS_CONFIG, ik::queue_model_wrists, pose::cockpit_hand},
-    scheme,
+    tuning::FRESHNESS,
 };
 
 /// The wrist targets the gate placed for the wingsuit's arms this tick, to queue once it has let go
@@ -242,11 +245,14 @@ impl WingHeading {
     }
 
     /// The torso's heading for the head's cockpit orientation `head` and the tracked wrists
-    /// `wrists` (cockpit frame, by [`Hand::index`]) at `now`. A gap longer than [`RESUME_AFTER`]
-    /// starts again from the head's heading.
+    /// `wrists` (cockpit frame, by [`Hand::index`]) at `now`. A gap longer than the freshness
+    /// tuning's `body.wings_gap_ms` starts again from the head's heading.
     pub(crate) fn update(&mut self, head: Quat, wrists: [Option<Vec3>; 2], now: Instant) -> Quat {
         let dt = match self.last {
-            Some(last) if now.saturating_duration_since(last) <= RESUME_AFTER => {
+            Some(last)
+                if now.saturating_duration_since(last)
+                    <= FRESHNESS.get().body.wings_gap_ms.duration() =>
+            {
                 now.saturating_duration_since(last).as_secs_f32()
             }
             _ => {
@@ -297,14 +303,13 @@ fn spread_heading(wrists: [Option<Vec3>; 2], head_yaw: f32) -> Option<f32> {
     line_yaw(left, right).filter(|yaw| wrap(yaw - head_yaw).abs() < std::f32::consts::FRAC_PI_2)
 }
 
-/// A gap between readings longer than this starts the follower again, a few ticks.
-const RESUME_AFTER: Duration = Duration::from_millis(500);
-
 static WING_HEADING: Mutex<WingHeading> = Mutex::new(WingHeading::new());
 
 #[cfg(test)]
 mod tests {
     use body_rig::angle::yaw_of;
+
+    use std::time::Duration;
 
     use super::*;
 

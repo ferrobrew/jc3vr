@@ -18,7 +18,7 @@ use std::{
     cell::Cell,
     num::NonZeroUsize,
     sync::atomic::{AtomicBool, Ordering},
-    time::{Duration, Instant},
+    time::Instant,
 };
 
 use detours_macro::detour;
@@ -32,17 +32,20 @@ use jc3gi::{
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::controllers::{
-    aim::{
-        ray::Ray,
-        raycast::{self, CastOptions, RayHit},
-        tuning_file::AIM,
+use crate::{
+    controllers::{
+        aim::{
+            ray::Ray,
+            raycast::{self, CastOptions, RayHit},
+            tuning_file::AIM,
+        },
+        physics::{
+            bodies::game_object_of,
+            body_pose,
+            refs::{Strong, Weak},
+        },
     },
-    physics::{
-        bodies::game_object_of,
-        body_pose,
-        refs::{Strong, Weak},
-    },
+    tuning::FRESHNESS,
 };
 
 /// The patch's hooks, aggregated by [`crate::controllers::aim::hook_library`].
@@ -81,7 +84,7 @@ pub fn set_enabled(enabled: bool) {
 pub fn aimed() -> Option<(Aimed, Strong)> {
     let aimed = AIMED.lock();
     let (weapon, weak, at) = aimed.as_ref()?;
-    if at.elapsed() > AIMED_FOR {
+    if at.elapsed() > FRESHNESS.get().aim.grapple_weapons_ms.duration() {
         return None;
     }
     Some((*weapon, weak.lock()?))
@@ -117,9 +120,6 @@ pub unsafe fn is_dropped_weapon(object: NonZeroUsize) -> bool {
 fn unowned_dropped(state: i32, no_holder: bool, no_user: bool) -> bool {
     state == WeaponState::E_WS_DROPPED as i32 && no_holder && no_user
 }
-
-/// How long a published aim stays current.
-const AIMED_FOR: Duration = Duration::from_millis(250);
 
 static ENABLED: AtomicBool = AtomicBool::new(false);
 static AIMED: Mutex<Option<(Aimed, Weak, Instant)>> = Mutex::new(None);

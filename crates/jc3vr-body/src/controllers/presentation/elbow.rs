@@ -24,13 +24,10 @@
 use body_rig::smooth::follow_factor;
 use glam::{Quat, Vec3};
 
-use crate::controllers::{
-    body::procedural::solver::arms::Side, presentation::tuning::PRESENTATION,
+use crate::{
+    controllers::{body::procedural::solver::arms::Side, presentation::tuning::PRESENTATION},
+    tuning::FRESHNESS,
 };
-
-/// The longest step the smoothing carries its direction across, seconds; past it (the layer was
-/// idle, a hitch) the smoothing starts again from the rule's pole.
-pub const MAX_SMOOTHING_GAP_S: f32 = 0.15;
 
 /// One arm's inputs, model space.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -107,10 +104,13 @@ pub fn little_finger(hand: Quat, side: Side) -> Vec3 {
 /// the rule's `target` (square to it already) by the share of the angle between them an
 /// exponential follow closes in the step. Turning by a share of the angle, rather than blending
 /// the vectors, keeps the follow the same whatever the frame rate, however far apart the two are.
-/// A gap longer than [`MAX_SMOOTHING_GAP_S`], or a `previous` along the axis, starts again from
-/// `target`.
+/// A gap longer than the freshness tuning's `hands.elbow_smoothing_gap_s`, or a `previous` along
+/// the axis, starts again from `target`.
 pub fn smooth(previous: Vec3, target: Vec3, axis: Vec3, dt: f32, smoothing_s: f32) -> Vec3 {
-    if !(dt <= MAX_SMOOTHING_GAP_S && previous.is_finite() && target.is_finite()) {
+    if !(dt <= FRESHNESS.get().hands.elbow_smoothing_gap_s
+        && previous.is_finite()
+        && target.is_finite())
+    {
         return target;
     }
     let (Some(axis), Some(from)) = (
@@ -367,7 +367,16 @@ mod tests {
     fn the_smoothing_starts_again_after_a_gap_and_holds_on_a_zero_step() {
         let axis = Vec3::NEG_Y;
         let (a, b) = (Vec3::X, Vec3::Z);
-        assert_eq!(smooth(a, b, axis, MAX_SMOOTHING_GAP_S * 2.0, 0.06), b);
+        assert_eq!(
+            smooth(
+                a,
+                b,
+                axis,
+                FRESHNESS.get().hands.elbow_smoothing_gap_s * 2.0,
+                0.06
+            ),
+            b
+        );
         assert_eq!(smooth(a, b, axis, f32::NAN, 0.06), b);
         assert!(smooth(a, b, axis, 0.0, 0.06).abs_diff_eq(a, 1e-6));
         // No smoothing time lands on the target at once.

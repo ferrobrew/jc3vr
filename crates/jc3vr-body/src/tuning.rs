@@ -52,6 +52,7 @@ pub struct FreshnessTuning {
     pub held: HeldFreshness,
     pub locomotion: LocomotionFreshness,
     pub roomscale: RoomscaleFreshness,
+    pub overlay: OverlayFreshness,
     pub facts: FactsFreshness,
     pub hooks: HooksFreshness,
     pub physics: PhysicsFreshness,
@@ -62,6 +63,25 @@ impl Tuning for FreshnessTuning {
         const MAX_MS: u64 = 10_000;
         let windows = [
             ("aim.gun_ms", self.aim.gun_ms),
+            ("aim.grapple_weapons_ms", self.aim.grapple_weapons_ms),
+            ("aim.sight_request_ms", self.aim.sight_request_ms),
+            ("body.mirror_ms", self.body.mirror_ms),
+            ("body.ik_support_kept_ms", self.body.ik_support_kept_ms),
+            ("body.ik_probe_answer_ms", self.body.ik_probe_answer_ms),
+            ("body.ik_brace_answer_ms", self.body.ik_brace_answer_ms),
+            (
+                "body.procedural_climb_task_ms",
+                self.body.procedural_climb_task_ms,
+            ),
+            ("body.wings_gap_ms", self.body.wings_gap_ms),
+            ("rig.snap_wait_ms", self.rig.snap_wait_ms),
+            (
+                "hands.held_registration_ms",
+                self.hands.held_registration_ms,
+            ),
+            ("hands.grab_markers_ms", self.hands.grab_markers_ms),
+            ("overlay.sim_ms", self.overlay.sim_ms),
+            ("overlay.frame_ms", self.overlay.frame_ms),
             ("body.unarmed_ms", self.body.unarmed_ms),
             ("body.estimator_eyes_ms", self.body.estimator_eyes_ms),
             ("body.estimate_ms", self.body.estimate_ms),
@@ -109,6 +129,21 @@ impl Tuning for FreshnessTuning {
         positive("fingers.grip_min_s", f.grip_min_s, 1.0)?;
         range("fingers.grip_max_s", f.grip_max_s, f.grip_min_s, 1.0)?;
         positive("fingers.grip_ticks", f.grip_ticks, 100.0)?;
+        positive(
+            "hands.elbow_smoothing_gap_s",
+            self.hands.elbow_smoothing_gap_s,
+            10.0,
+        )?;
+        positive(
+            "locomotion.movement_task_grace_s",
+            self.locomotion.movement_task_grace_s,
+            10.0,
+        )?;
+        positive(
+            "locomotion.strokes_max_tick_s",
+            self.locomotion.strokes_max_tick_s,
+            10.0,
+        )?;
         if !(1..=1_000).contains(&self.physics.stale_steps) {
             return Err(Invalid(format!(
                 "physics.stale_steps must be in [1, 1000], got {}",
@@ -126,6 +161,10 @@ pub struct AimFreshness {
     /// How long the gun aim's snapshot stands for the player. The aim update runs every simulation
     /// tick while the player exists, so an older one belongs to a paused or departed player.
     pub gun_ms: Millis,
+    /// How long a published grapple-weapon aim stays current.
+    pub grapple_weapons_ms: Millis,
+    /// How long a sight tool request waits for an aim update before it is dropped.
+    pub sight_request_ms: Millis,
 }
 
 /// The body's windows: the unarmed pose, the learned estimator, the IK body, the procedural body,
@@ -155,6 +194,21 @@ pub struct BodyFreshness {
     pub procedural_local_ms: Millis,
     /// How long a published firm ragdoll source stands: a few ticks.
     pub firm_ragdoll_source_ms: Millis,
+    /// How long a body mirror submission is drawn without another: a few ticks, so a paused or
+    /// skipped pass clears the mirror.
+    pub mirror_ms: Millis,
+    /// A support the IK body's gate asks about stays tracked this long after it last asked.
+    pub ik_support_kept_ms: Millis,
+    /// A ground probe's answer stands for its point this long.
+    pub ik_probe_answer_ms: Millis,
+    /// A brace cast's answer stands this long: a few ticks, so a brace taken from it is near where
+    /// the leg is.
+    pub ik_brace_answer_ms: Millis,
+    /// How long after the climb's task last ran it still counts as running: a tick or two.
+    pub procedural_climb_task_ms: Millis,
+    /// A gap between the wings' readings longer than this starts their follower again: a few
+    /// ticks.
+    pub wings_gap_ms: Millis,
 }
 
 /// The body rig's windows.
@@ -174,6 +228,8 @@ pub struct RigFreshness {
     /// A gap between rendered frames longer than this means the headset stopped rendering, and the
     /// root's frame half measurement stops holding for the simulation half.
     pub root_frame_gap_ms: Millis,
+    /// How long a recenter's snap waits for Rico to be grounded before it expires.
+    pub snap_wait_ms: Millis,
 }
 
 /// The hands' windows: the anchor, the measured arms, the presentation, and the grab readout.
@@ -192,6 +248,14 @@ pub struct HandsFreshness {
     pub presentation_ms: Millis,
     /// How long the grab readout counts as live after the last input tick.
     pub grab_status_ms: Millis,
+    /// How long a held item's registration stays current without a refresh: a little past a tick.
+    pub held_registration_ms: Millis,
+    /// How long the grab markers live in the overlay. They are submitted at the input tick's rate,
+    /// so they live a little past one tick.
+    pub grab_markers_ms: Millis,
+    /// The longest step the elbow pole's smoothing carries its direction across, seconds; past it
+    /// (the layer was idle, a hitch) the smoothing starts again from the rule's pole.
+    pub elbow_smoothing_gap_s: f32,
 }
 
 /// The finger curls' grip declarations: a declaration lasts a few of the curls' ticks, so that a
@@ -227,6 +291,12 @@ pub struct LocomotionFreshness {
     pub movement_task_ms: Millis,
     /// How long the strokes may go without a tick before they forget the hands' motion.
     pub strokes_ms: Millis,
+    /// How long after the movement task last ran it still counts as driving the root, seconds. It
+    /// runs every simulation tick on foot, so this covers a few ticks' jitter without letting an
+    /// unclassified animation carry the body far from the view first.
+    pub movement_task_grace_s: f32,
+    /// The longest tick that can contain a stroke, seconds. Longer gaps forget the hands' motion.
+    pub strokes_max_tick_s: f32,
 }
 
 /// Roomscale's windows.
@@ -236,6 +306,16 @@ pub struct RoomscaleFreshness {
     /// A gap between rendered frames longer than this means the headset stopped rendering: the fade
     /// resets, and the frame half's values stop holding for the simulation half.
     pub frame_gap_ms: Millis,
+}
+
+/// The overlay producers' windows.
+#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OverlayFreshness {
+    /// The time to live of the simulation-rate producers' slots: a few simulation ticks.
+    pub sim_ms: Millis,
+    /// The time to live of the frame-rate producers' slots.
+    pub frame_ms: Millis,
 }
 
 /// The published facts' windows.

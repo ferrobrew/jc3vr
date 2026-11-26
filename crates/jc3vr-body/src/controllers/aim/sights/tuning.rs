@@ -19,19 +19,22 @@
 
 use std::{
     fmt,
-    time::{Duration, Instant},
+    time::Instant,
 };
 
 use glam::{Mat4, Vec2, Vec3};
 use jc3vr_input::frame::{Hand, Pose};
 use parking_lot::Mutex;
 
-use crate::controllers::aim::{
-    config::AIM_CONFIG,
-    gun::HeldWeapon,
-    ray, sights,
-    sights::config::{SightOverride, SightTuningConfig},
-    tuning_file::AIM,
+use crate::{
+    controllers::aim::{
+        config::AIM_CONFIG,
+        gun::HeldWeapon,
+        ray, sights,
+        sights::config::{SightOverride, SightTuningConfig},
+        tuning_file::AIM,
+    },
+    tuning::FRESHNESS,
 };
 
 /// The tuning tool's readout.
@@ -146,7 +149,9 @@ pub(crate) fn service(
             *state = State::EMPTY;
             return;
         }
-        let fresh = |at: Option<Instant>| at.is_some_and(|at| at.elapsed() < REQUEST_TTL);
+        let fresh = |at: Option<Instant>| {
+            at.is_some_and(|at| at.elapsed() < FRESHNESS.get().aim.sight_request_ms.duration())
+        };
         let place = fresh(state.place.take());
         let capture = fresh(state.capture.take());
         if place {
@@ -261,8 +266,6 @@ impl State {
 
 static STATE: Mutex<State> = Mutex::new(State::EMPTY);
 
-/// How long a request waits for an aim update before it is dropped.
-const REQUEST_TTL: Duration = Duration::from_millis(500);
 /// The nearest the marker is placed, metres: nearer, the eye cannot focus on the sights and the
 /// marker together, and the solve is dominated by where the eye sits.
 const MIN_MARKER_DISTANCE_M: f32 = 2.0;

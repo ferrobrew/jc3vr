@@ -22,7 +22,7 @@ use std::{
         OnceLock,
         atomic::{AtomicUsize, Ordering},
     },
-    time::{Duration, Instant},
+    time::Instant,
 };
 
 use jc3gi::{
@@ -50,9 +50,9 @@ pub(crate) fn set_local_character(character: &Character, now: Instant) {
 /// Stamp a tick of the local player's ledge climb. Called from the climb's motion task.
 pub(crate) fn note_ledge_climb(now: Instant) {
     let mut state = STATE.lock();
-    let started = state
-        .ledge_climb_at
-        .is_none_or(|at| now.saturating_duration_since(at) > TASK_GAP);
+    let started = state.ledge_climb_at.is_none_or(|at| {
+        now.saturating_duration_since(at) > FRESHNESS.get().body.procedural_climb_task_ms.duration()
+    });
     state.ledge_climb_at = Some(now);
     drop(state);
     if started {
@@ -97,10 +97,10 @@ pub(crate) fn is_local_model(model: *const AnimatedModel) -> bool {
 
 /// Whether the grapple's ledge climb ran within the last tick or two.
 pub fn in_ledge_climb(now: Instant) -> bool {
-    STATE
-        .lock()
-        .ledge_climb_at
-        .is_some_and(|at| now.saturating_duration_since(at) <= TASK_GAP)
+    STATE.lock().ledge_climb_at.is_some_and(|at| {
+        now.saturating_duration_since(at)
+            <= FRESHNESS.get().body.procedural_climb_task_ms.duration()
+    })
 }
 
 /// Whether a hit reaction's act was queued within the tuning's last `hit_reaction.hold_ms`.
@@ -111,9 +111,6 @@ pub fn in_hit_reaction(now: Instant) -> bool {
         .hit_reaction_at
         .is_some_and(|at| now.saturating_duration_since(at) <= hold)
 }
-
-/// How long after the climb's task last ran it still counts as running: a tick or two.
-const TASK_GAP: Duration = Duration::from_millis(100);
 
 /// The acts that start a hit reaction the animation plays out: the stumbles and the knock-back.
 /// The flinch is a partial the body keeps.

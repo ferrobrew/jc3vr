@@ -7,19 +7,22 @@
 //! foot's candidate brace ([`body_rig::brace`]), named with its support
 //! ([`crate::controllers::body::ik_body::support`]) so a brace on a moving body is carried with it.
 
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use body_rig::{brace::BraceHit, contact::Side};
 use glam::Vec3;
 use jc3gi::character::character::Character;
 use parking_lot::Mutex;
 
-use crate::controllers::{
-    aim::{
-        ray::Ray,
-        raycast::{self, CastOptions},
+use crate::{
+    controllers::{
+        aim::{
+            ray::Ray,
+            raycast::{self, CastOptions},
+        },
+        body::ik_body::support,
     },
-    body::ik_body::support,
+    tuning::FRESHNESS,
 };
 
 /// A cast a foot asks for, world space.
@@ -41,7 +44,10 @@ pub(crate) fn ask(side: Side, casts: [BraceCast; 2], now: Instant) -> Option<Bra
         .all(|cast| cast.from.is_finite() && cast.direction.is_finite() && cast.length > 0.0)
         .then_some(casts);
     slot.answer
-        .filter(|answer| now.saturating_duration_since(answer.when) <= ANSWER_FOR)
+        .filter(|answer| {
+            now.saturating_duration_since(answer.when)
+                <= FRESHNESS.get().body.ik_brace_answer_ms.duration()
+        })
         .and_then(|answer| answer.hit)
 }
 
@@ -114,9 +120,6 @@ unsafe fn cast_one(
     ))
 }
 
-/// An answer stands this long: a few ticks, so a brace taken from it is near where the leg is.
-const ANSWER_FOR: Duration = Duration::from_millis(200);
-
 #[derive(Debug, Copy, Clone, PartialEq)]
 struct Answer {
     hit: Option<BraceHit>,
@@ -170,7 +173,14 @@ mod tests {
         };
         assert!(ask(Side::Left, [good; 2], now).is_some());
         assert!(SLOTS.lock()[0].request.is_some());
-        assert_eq!(ask(Side::Left, [good; 2], now + ANSWER_FOR * 2), None);
+        assert_eq!(
+            ask(
+                Side::Left,
+                [good; 2],
+                now + FRESHNESS.get().body.ik_brace_answer_ms.duration() * 2
+            ),
+            None
+        );
         forget();
     }
 }

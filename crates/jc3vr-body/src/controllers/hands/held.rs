@@ -25,7 +25,7 @@
 use std::{
     ffi::c_void,
     sync::atomic::{AtomicU64, Ordering},
-    time::{Duration, Instant},
+    time::Instant,
 };
 
 use detours_macro::detour;
@@ -40,7 +40,7 @@ use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 use serde::Deserialize;
 
-use crate::controllers::hands::late;
+use crate::{controllers::hands::late, tuning::FRESHNESS};
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new()
@@ -227,14 +227,13 @@ fn current(explosive: usize, slots: [Slot; 2], now: Instant) -> Option<Held> {
     slots.into_iter().find_map(|slot| {
         held[slot.index()]
             .filter(|(h, at)| {
-                h.explosive == explosive && now.saturating_duration_since(*at) <= LAPSE_AFTER
+                h.explosive == explosive
+                    && now.saturating_duration_since(*at)
+                        <= FRESHNESS.get().hands.held_registration_ms.duration()
             })
             .map(|(h, _)| h)
     })
 }
-
-/// How long a registration stays current without a refresh: a little past a tick.
-const LAPSE_AFTER: Duration = Duration::from_millis(150);
 
 static HELD: Mutex<[Option<(Held, Instant)>; Slot::COUNT]> = Mutex::new([None; Slot::COUNT]);
 static UPDATED: AtomicU64 = AtomicU64::new(0);
@@ -318,7 +317,14 @@ mod tests {
         assert_eq!(current(0x4000, slots, now), Some(held));
         assert_eq!(current(0x5000, slots, now), None);
         assert_eq!(current(0x4000, [Slot::Charge; 2], now), None);
-        assert_eq!(current(0x4000, slots, now + LAPSE_AFTER * 2), None);
+        assert_eq!(
+            current(
+                0x4000,
+                slots,
+                now + FRESHNESS.get().hands.held_registration_ms.duration() * 2
+            ),
+            None
+        );
         hold(Slot::CaughtGrenade, None);
         assert_eq!(current(0x4000, slots, now), None);
     }

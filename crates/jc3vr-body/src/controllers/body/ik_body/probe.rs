@@ -11,19 +11,22 @@
 //! The probe names the body it lands on as the foot's support ([`support::identify`]), and the
 //! same update snapshots every moving support the gate still asks about ([`support::tick`]).
 
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use body_rig::contact::{Ground, Probe, Side};
 use glam::{Vec2, Vec3};
 use jc3gi::character::character::Character;
 use parking_lot::Mutex;
 
-use crate::controllers::{
-    aim::{
-        ray::Ray,
-        raycast::{self, CastOptions},
+use crate::{
+    controllers::{
+        aim::{
+            ray::Ray,
+            raycast::{self, CastOptions},
+        },
+        body::ik_body::{brace, support, tuning::IK_BODY},
     },
-    body::ik_body::{brace, support, tuning::IK_BODY},
+    tuning::FRESHNESS,
 };
 
 /// The probe for `side` at the world floor point `at`, near the height `near`: its answer, once a
@@ -39,7 +42,8 @@ pub(crate) fn ask(side: Side, at: Vec2, near: f32) -> Probe {
     if let Some(answer) = slot.answer
         && answer.at.distance(at) <= tuning.same_point_m
         && (answer.near - near).abs() <= tuning.same_height_m
-        && now.saturating_duration_since(answer.when) <= ANSWER_FOR
+        && now.saturating_duration_since(answer.when)
+            <= FRESHNESS.get().body.ik_probe_answer_ms.duration()
     {
         return match answer.ground {
             Some(ground) => Probe::Hit(ground),
@@ -129,9 +133,6 @@ fn cast_options(character: *const Character) -> CastOptions {
         ..CastOptions::default()
     }
 }
-
-/// An answer stands for its point this long.
-const ANSWER_FOR: Duration = Duration::from_millis(500);
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 struct Request {

@@ -19,22 +19,25 @@ use jc3vr_view::{
 };
 use parking_lot::Mutex;
 
-use crate::controllers::{
-    body::procedural::{
-        authority::{Case, classify},
-        state::StateTracker,
-    },
-    locomotion::{
-        status as locomotion_status,
-        tuning::LOCOMOTION,
-        view::{
-            Eligibility, Handover, HeightFilter, MOVEMENT_TASK_GRACE_S, Neutral, NeutralCapture,
-            blend, face_clear, face_offset, neck_model_anchors, stable_anchors,
+use crate::{
+    controllers::{
+        body::procedural::{
+            authority::{Case, classify},
+            state::StateTracker,
         },
-        view_follow::{Escape, HeadFollower, HeldSource, escape_distance},
+        locomotion::{
+            status as locomotion_status,
+            tuning::LOCOMOTION,
+            view::{
+                Eligibility, Handover, HeightFilter, Neutral, NeutralCapture, blend, face_clear,
+                face_offset, neck_model_anchors, stable_anchors,
+            },
+            view_follow::{Escape, HeadFollower, HeldSource, escape_distance},
+        },
+        mode::{AirborneVariant, Mode, OnFootVariant, current as current_mode},
+        scheme,
     },
-    mode::{AirborneVariant, Mode, OnFootVariant, current as current_mode},
-    scheme,
+    tuning::FRESHNESS,
 };
 
 /// What the stable anchor did on its last tick, for the debug UI.
@@ -113,7 +116,8 @@ pub(crate) unsafe fn stabilize(
             unsafe { tracker.read(character, &locomotion, now, step, tuning.jump_grace_s) };
         // A few ticks' jitter in the task's stamp does not hand the view over and back.
         read.movement_task = locomotion.at.is_some_and(|at| {
-            now.saturating_duration_since(at).as_secs_f32() <= MOVEMENT_TASK_GRACE_S
+            now.saturating_duration_since(at).as_secs_f32()
+                <= FRESHNESS.get().locomotion.movement_task_grace_s
         });
         airborne = read.jump || read.flight;
         classify(&read)

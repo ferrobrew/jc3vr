@@ -7,7 +7,7 @@ use body_rig::smooth::follow_factor;
 use glam::{Vec2, Vec3};
 use serde::Deserialize;
 
-use crate::controllers::locomotion::tuning::LOCOMOTION;
+use crate::{controllers::locomotion::tuning::LOCOMOTION, tuning::FRESHNESS};
 
 /// The palm's normal in the wrist frame: the fingers run along -Z and the back of the hand faces
 /// +Y, so the palm faces -Y.
@@ -160,7 +160,9 @@ impl StrokeModel {
     pub fn step(&mut self, input: &StrokeInput) -> StrokeStep {
         let config = &LOCOMOTION.get().strokes;
         let dt = if input.dt.is_finite() {
-            input.dt.clamp(0.0, MAX_DT)
+            input
+                .dt
+                .clamp(0.0, FRESHNESS.get().locomotion.strokes_max_tick_s)
         } else {
             0.0
         };
@@ -184,7 +186,10 @@ impl StrokeModel {
             })
         });
         for (i, hand) in input.hands.iter().enumerate() {
-            if !wet[i] || input.dt > MAX_DT || forward == Vec3::ZERO {
+            if !wet[i]
+                || input.dt > FRESHNESS.get().locomotion.strokes_max_tick_s
+                || forward == Vec3::ZERO
+            {
                 self.last[i] = None;
                 self.velocity[i] = Vec3::ZERO;
                 self.phase[i] = StrokePhase::Recovery;
@@ -344,9 +349,6 @@ pub fn propel(velocity: Vec3, direction: Vec3, speed: f32) -> Vec3 {
         velocity + direction * (speed - along)
     }
 }
-
-/// The longest tick that can contain a stroke, seconds. Longer gaps forget the hands' motion.
-const MAX_DT: f32 = 0.1;
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 enum StrokePhase {

@@ -246,11 +246,6 @@ impl Eligibility {
     }
 }
 
-/// How long after the movement task last ran it still counts as driving the root, seconds. It runs
-/// every sim tick on foot, so this covers a few ticks' jitter without letting an unclassified
-/// animation carry the body far from the view first.
-pub const MOVEMENT_TASK_GRACE_S: f32 = 0.1;
-
 /// The anchors of the neutral pose carried by the root: `world_t0` and `world_t1` are the
 /// character's previous- and current-tick world matrices, and `height` the smoothed root heights
 /// that replace theirs.

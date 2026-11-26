@@ -21,7 +21,7 @@
 //! the standing height afresh, and the root's cockpit point is put where the pelvis stands under
 //! the neck, so the view moves to the body and the body never moves through a wall.
 
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use body_rig::{
     BodyEstimate, GroundedRig, PlayerBody, RigFrame, RigOutput, RigTuning, StepPhase,
@@ -94,8 +94,9 @@ pub fn frame(input: &GroundedInput) -> Option<GroundedFrame> {
     let tuning = RIG.get();
     let mut state = STATE.lock();
     state.rig.set_body(player_body(&input.dimensions));
-    let snap = std::mem::take(&mut state.snap)
-        .filter(|at| input.now.saturating_duration_since(*at) <= SNAP_WAIT);
+    let snap = std::mem::take(&mut state.snap).filter(|at| {
+        input.now.saturating_duration_since(*at) <= FRESHNESS.get().rig.snap_wait_ms.duration()
+    });
     if !input.grounded {
         state.rig.stand();
         if state.grounded_at.is_none_or(|at| {
@@ -337,9 +338,6 @@ fn walk_for(published: &Published) -> Option<Vec2> {
 
 /// The walk last added to the move stick, and when.
 static STEP_STICK: Mutex<Option<(Vec2, Instant)>> = Mutex::new(None);
-
-/// How long a snap waits for Rico to be grounded before it expires.
-const SNAP_WAIT: Duration = Duration::from_secs(1);
 
 /// The player's body as the pure core measures it.
 fn player_body(dimensions: &BodyDimensions) -> PlayerBody {

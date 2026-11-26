@@ -4,6 +4,8 @@
 
 [aim]
 gun_ms = 250
+grapple_weapons_ms = 250
+sight_request_ms = 500
 
 [body]
 unarmed_ms = 250
@@ -15,6 +17,12 @@ ik_gate_ms = 250
 procedural_gate_ms = 500
 procedural_local_ms = 250
 firm_ragdoll_source_ms = 250
+mirror_ms = 150
+ik_support_kept_ms = 2000
+ik_probe_answer_ms = 500
+ik_brace_answer_ms = 200
+procedural_climb_task_ms = 100
+wings_gap_ms = 500
 
 [rig]
 grounded_ms = 250
@@ -22,6 +30,7 @@ skeleton_ms = 250
 probe_ms = 200
 root_trace_ms = 250
 root_frame_gap_ms = 500
+snap_wait_ms = 1000
 
 [hands]
 anchor_ms = 250
@@ -29,6 +38,9 @@ hang_gap_ms = 300
 measured_arms_ms = 250
 presentation_ms = 250
 grab_status_ms = 500
+held_registration_ms = 150
+grab_markers_ms = 150
+elbow_smoothing_gap_s = 0.15
 
 [fingers]
 grip_min_s = 0.03
@@ -41,9 +53,15 @@ guns_ms = 200
 [locomotion]
 movement_task_ms = 200
 strokes_ms = 250
+movement_task_grace_s = 0.1
+strokes_max_tick_s = 0.1
 
 [roomscale]
 frame_gap_ms = 500
+
+[overlay]
+sim_ms = 150
+frame_ms = 100
 
 [facts]
 driving_ms = 500

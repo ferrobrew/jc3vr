@@ -24,9 +24,12 @@ use jc3vr_view::controllers::{
 };
 use parking_lot::Mutex;
 
-use crate::controllers::{
-    grab::{Category, GripTarget, MarkAt, MarkStyle, Resolved, Shown, tuning::GRAB},
-    hands::CockpitHand,
+use crate::{
+    controllers::{
+        grab::{Category, GripTarget, MarkAt, MarkStyle, Resolved, Shown, tuning::GRAB},
+        hands::CockpitHand,
+    },
+    tuning::FRESHNESS,
 };
 
 /// Where the tick's cockpit-frame points are placed for the overlay, and the hands that reach for
@@ -52,7 +55,11 @@ pub struct MarkLabel {
 /// Submit the markers of `targets`, resolved for the hands as `resolved` says, and their labels.
 pub fn submit(targets: &[GripTarget], resolved: &[Resolved; 2], frame: &MarkerFrame) {
     let mut prims = primitives(targets, resolved, frame);
-    store::submit(Source::GrabMarkers, &mut prims, MARKER_TTL);
+    store::submit(
+        Source::GrabMarkers,
+        &mut prims,
+        FRESHNESS.get().hands.grab_markers_ms.duration(),
+    );
     publish_labels(labels(targets, resolved, frame));
 }
 
@@ -290,9 +297,6 @@ pub fn test_frame() -> MarkerFrame {
         drawn: [None; 2],
     }
 }
-
-/// The markers are submitted at the input tick's rate, so they live a little past one tick.
-const MARKER_TTL: Duration = Duration::from_millis(150);
 
 /// The labels to draw, published at the input tick's rate with when they were published.
 static LABELS: Mutex<Option<(Vec<MarkLabel>, Instant)>> = Mutex::new(None);

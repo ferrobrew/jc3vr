@@ -20,7 +20,7 @@
 
 use std::{
     sync::OnceLock,
-    time::{Duration, Instant},
+    time::Instant,
 };
 
 use glam::{Mat4, Vec3};
@@ -36,10 +36,13 @@ use jc3vr_view::{
 };
 use parking_lot::Mutex;
 
-use crate::controllers::{
-    body::procedural::{head::head_bone_world, joints::from_joint, skeleton},
-    hands::ik::tick_records,
-    overlay::config::{OVERLAY_CONFIG, body_mirror_distance_m},
+use crate::{
+    controllers::{
+        body::procedural::{head::head_bone_world, joints::from_joint, skeleton},
+        hands::ik::tick_records,
+        overlay::config::{OVERLAY_CONFIG, body_mirror_distance_m},
+    },
+    tuning::FRESHNESS,
 };
 
 /// What the mirror drew on its last pass.
@@ -98,7 +101,7 @@ pub fn pouch_render_status() -> PouchRenderStatus {
     let (at, status) = *POUCH_RENDER_STATUS.lock();
     if at
         .and_then(|at| Instant::now().checked_duration_since(at))
-        .is_some_and(|age| age <= TTL)
+        .is_some_and(|age| age <= FRESHNESS.get().body.mirror_ms.duration())
     {
         status
     } else {
@@ -150,7 +153,11 @@ pub fn attachment_sampler_registered() -> bool {
 /// Submit the reflected pouches of a render publication, drawn by the weapon handling from the
 /// matrices it applied, with what was drawn.
 pub fn submit_pouch_render(primitives: &mut Vec<Primitive>, status: PouchRenderStatus) {
-    store::submit(Source::BodyMirrorPouches, primitives, TTL);
+    store::submit(
+        Source::BodyMirrorPouches,
+        primitives,
+        FRESHNESS.get().body.mirror_ms.duration(),
+    );
     *POUCH_RENDER_STATUS.lock() = (Some(Instant::now()), status);
 }
 
@@ -224,7 +231,11 @@ pub(crate) unsafe fn after_solve(character: *mut Character) {
         )
     });
     let submitted = primitives.len();
-    store::submit(Source::BodyMirror, &mut primitives, TTL);
+    store::submit(
+        Source::BodyMirror,
+        &mut primitives,
+        FRESHNESS.get().body.mirror_ms.duration(),
+    );
     *STATUS.lock() = MirrorStatus {
         at: Some(now),
         bones: Some(found),
@@ -332,10 +343,6 @@ pub fn figure(figure: &Figure, head: Vec3, out: &mut Vec<Primitive>) {
         ));
     }
 }
-
-/// How long a submission is drawn without another: a few ticks, so a paused or skipped pass
-/// clears the mirror.
-pub(crate) const TTL: Duration = Duration::from_millis(150);
 
 /// How long a direction laid flat must be to have a heading of its own.
 const MIN_FLAT: f32 = 0.2;
