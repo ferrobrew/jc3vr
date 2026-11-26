@@ -5,7 +5,9 @@ use test_case::test_case;
 use super::*;
 use crate::controllers::weapons::reload::tuning::RELOAD;
 
-const CONFIG: ExtractionTuning = RELOAD.extraction;
+fn config() -> &'static ExtractionTuning {
+    &RELOAD.get().extraction
+}
 
 fn sample(holder: Hand, outward_m: f32) -> Sample {
     Sample {
@@ -27,46 +29,46 @@ fn sample(holder: Hand, outward_m: f32) -> Sample {
 #[test_case(Hand::Right; "right gun")]
 fn only_a_claim_then_a_full_pull_extracts(holder: Hand) {
     let mut pull = Pull::new();
-    assert!(!pull.step(Some(sample(holder, 0.0)), false, true, &CONFIG));
+    assert!(!pull.step(Some(sample(holder, 0.0)), false, true, config()));
     assert_eq!(pull.hand(), None);
-    assert!(!pull.step(Some(sample(holder, 0.0)), true, true, &CONFIG));
+    assert!(!pull.step(Some(sample(holder, 0.0)), true, true, config()));
     assert_eq!(pull.hand(), Some(holder.other()));
     assert!(!pull.step(
-        Some(sample(holder, CONFIG.pull_m * 0.9)),
+        Some(sample(holder, config().pull_m * 0.9)),
         false,
         true,
-        &CONFIG
+        config()
     ));
-    assert!(pull.step(Some(sample(holder, CONFIG.pull_m)), false, true, &CONFIG));
+    assert!(pull.step(Some(sample(holder, config().pull_m)), false, true, config()));
     assert_eq!(pull.hand(), None);
-    assert!(!pull.step(Some(sample(holder, CONFIG.pull_m)), false, true, &CONFIG));
+    assert!(!pull.step(Some(sample(holder, config().pull_m)), false, true, config()));
 }
 
 #[test]
 fn returning_to_the_magazine_and_releasing_does_not_extract() {
     let mut pull = Pull::new();
-    pull.step(Some(sample(Hand::Right, 0.0)), true, true, &CONFIG);
+    pull.step(Some(sample(Hand::Right, 0.0)), true, true, config());
     pull.step(
-        Some(sample(Hand::Right, CONFIG.pull_m * 0.5)),
+        Some(sample(Hand::Right, config().pull_m * 0.5)),
         false,
         true,
-        &CONFIG,
+        config(),
     );
-    assert!(!pull.step(Some(sample(Hand::Right, 0.0)), false, true, &CONFIG));
-    assert!(!pull.step(Some(sample(Hand::Right, 0.0)), false, false, &CONFIG));
+    assert!(!pull.step(Some(sample(Hand::Right, 0.0)), false, true, config()));
+    assert!(!pull.step(Some(sample(Hand::Right, 0.0)), false, false, config()));
     assert_eq!(pull.hand(), None);
     assert!(!pull.step(
-        Some(sample(Hand::Right, CONFIG.pull_m)),
+        Some(sample(Hand::Right, config().pull_m)),
         false,
         true,
-        &CONFIG
+        config()
     ));
 }
 
 #[test]
 fn the_pull_follows_the_rotating_and_translating_gun_not_world_motion() {
     let mut pull = Pull::new();
-    pull.step(Some(sample(Hand::Right, 0.0)), true, true, &CONFIG);
+    pull.step(Some(sample(Hand::Right, 0.0)), true, true, config());
     let rotation = Quat::from_rotation_z(0.8);
     let position = Vec3::new(1.0, 2.0, -3.0);
     let mut moved = sample(Hand::Right, 0.0);
@@ -76,18 +78,18 @@ fn the_pull_follows_the_rotating_and_translating_gun_not_world_motion() {
     };
     moved.outward = rotation * Vec3::NEG_Y;
     moved.grip = position;
-    assert!(!pull.step(Some(moved), false, true, &CONFIG));
-    moved.grip += moved.outward * (CONFIG.pull_m + 0.001);
-    assert!(pull.step(Some(moved), false, true, &CONFIG));
+    assert!(!pull.step(Some(moved), false, true, config()));
+    moved.grip += moved.outward * (config().pull_m + 0.001);
+    assert!(pull.step(Some(moved), false, true, config()));
 }
 
 #[test]
 fn sideways_motion_aborts_instead_of_detaching() {
     let mut pull = Pull::new();
-    pull.step(Some(sample(Hand::Left, 0.0)), true, true, &CONFIG);
-    let mut sideways = sample(Hand::Left, CONFIG.pull_m);
-    sideways.grip.x = CONFIG.lateral_tolerance_m + 0.001;
-    assert!(!pull.step(Some(sideways), false, true, &CONFIG));
+    pull.step(Some(sample(Hand::Left, 0.0)), true, true, config());
+    let mut sideways = sample(Hand::Left, config().pull_m);
+    sideways.grip.x = config().lateral_tolerance_m + 0.001;
+    assert!(!pull.step(Some(sideways), false, true, config()));
     assert_eq!(pull.hand(), None);
 }
 
@@ -113,30 +115,30 @@ fn hand_loss_removal_identity_scale_and_mode_changes_require_a_new_claim() {
         Some(invalid),
     ] {
         let mut pull = Pull::new();
-        pull.step(Some(start), true, true, &CONFIG);
-        assert!(!pull.step(changed, false, true, &CONFIG));
+        pull.step(Some(start), true, true, config());
+        assert!(!pull.step(changed, false, true, config()));
         assert_eq!(pull.hand(), None);
         assert!(!pull.step(
-            Some(sample(Hand::Right, CONFIG.pull_m)),
+            Some(sample(Hand::Right, config().pull_m)),
             false,
             true,
-            &CONFIG
+            config()
         ));
     }
     let mut pull = Pull::new();
-    pull.step(Some(start), true, true, &CONFIG);
+    pull.step(Some(start), true, true, config());
     pull.reset();
     assert!(!pull.step(
-        Some(sample(Hand::Right, CONFIG.pull_m)),
+        Some(sample(Hand::Right, config().pull_m)),
         false,
         true,
-        &CONFIG
+        config()
     ));
 }
 
 #[test]
 fn only_an_inserted_detachable_magazine_is_eligible() {
-    let mut reload = RELOAD;
+    let mut reload = Reload::shipped();
     assert!(eligible(LoadKind::Magazine, false, &reload));
     assert!(!eligible(LoadKind::Magazine, true, &reload));
     for load in [LoadKind::Shell, LoadKind::Rocket, LoadKind::Cylinder] {
@@ -307,12 +309,12 @@ fn a_claim_anywhere_in_the_zone_acquires_the_pull() {
     // Well outside the magazine's grab radius, but in its zone.
     let far = Sample {
         in_zone: true,
-        ..sample(Hand::Right, CONFIG.grab_radius_m * 2.0)
+        ..sample(Hand::Right, config().grab_radius_m * 2.0)
     };
-    assert!(!pull.step(Some(far), true, true, &CONFIG));
+    assert!(!pull.step(Some(far), true, true, config()));
     assert_eq!(pull.hand(), Some(Hand::Left));
     let mut pull = Pull::new();
-    let outside = sample(Hand::Right, CONFIG.grab_radius_m * 2.0);
-    assert!(!pull.step(Some(outside), true, true, &CONFIG));
+    let outside = sample(Hand::Right, config().grab_radius_m * 2.0);
+    assert!(!pull.step(Some(outside), true, true, config()));
     assert_eq!(pull.hand(), None);
 }

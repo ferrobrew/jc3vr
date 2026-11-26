@@ -149,9 +149,9 @@ fn the_strike_is_reported_in_the_cockpit_frame() {
 #[test]
 fn the_zone_follows_the_player_scale_and_ends_at_the_base() {
     let zone = KnockZone::of(Vec3::ZERO, Vec3::Y, 0.12, 2.0).unwrap();
-    assert!((zone.radius - KNOCK.radius_m / 2.0).abs() < 1e-6);
+    assert!((zone.radius - knock_tuning().radius_m / 2.0).abs() < 1e-6);
     let (top, base) = zone.ends();
-    assert!((top - Vec3::Y * KNOCK.lip_m / 2.0).length() < 1e-6);
+    assert!((top - Vec3::Y * knock_tuning().lip_m / 2.0).length() < 1e-6);
     assert!((base + Vec3::Y * 0.06).length() < 1e-6);
     assert!(KnockZone::of(Vec3::ZERO, Vec3::ZERO, 0.12, 1.0).is_none());
     assert!(KnockZone::of(Vec3::ZERO, Vec3::Y, 0.12, 0.0).is_none());
@@ -339,8 +339,8 @@ fn magazine_body() -> RigidBody {
 fn a_base_strike_through_the_centre_sends_the_magazine_on_without_spin() {
     let body = magazine_body();
     let contact = body.pose.centre - Vec3::Y * 0.06;
-    let after = knocked(body, contact, Vec3::Y * 2.0, &KNOCK);
-    let expected = Vec3::new(0.5, 2.0 * KNOCK.share, 0.0);
+    let after = knocked(body, contact, Vec3::Y * 2.0, knock_tuning());
+    let expected = Vec3::new(0.5, 2.0 * knock_tuning().share, 0.0);
     assert!((after.linear - expected).length() < 1e-3, "{after:?}");
     assert!(after.angular.length() < 1e-4, "{after:?}");
 }
@@ -350,8 +350,8 @@ fn a_hard_strike_drops_the_magazine_clear_without_launching_it() {
     // The session's knocks closed at three to four metres per second.
     let body = magazine_body();
     let contact = body.pose.centre - Vec3::Y * 0.06;
-    for (strike, added) in [(3.0, 1.5), (4.0, 2.0), (6.0, KNOCK.max_knock_mps)] {
-        let after = knocked(body, contact, Vec3::Y * strike, &KNOCK);
+    for (strike, added) in [(3.0, 1.5), (4.0, 2.0), (6.0, knock_tuning().max_knock_mps)] {
+        let after = knocked(body, contact, Vec3::Y * strike, knock_tuning());
         let change = (after.linear - body.velocities.linear).length();
         assert!((change - added).abs() < 1e-3, "{strike}: {change}");
     }
@@ -373,21 +373,21 @@ fn the_knocked_part_lingers_until_the_impulse_lands_and_a_few_ticks_after() {
 fn a_side_strike_near_the_well_turns_the_magazine_as_it_goes() {
     let body = magazine_body();
     let contact = body.pose.centre + Vec3::Y * 0.05;
-    let after = knocked(body, contact, Vec3::NEG_X * 2.5, &KNOCK);
+    let after = knocked(body, contact, Vec3::NEG_X * 2.5, knock_tuning());
     assert!(after.linear.x < 0.5, "{after:?}");
     // Struck above the centre toward -X, it turns about +Z.
     assert!(after.angular.z > 0.0, "{after:?}");
-    assert!(after.angular.length() <= KNOCK.max_spin_radps + 1e-3);
+    assert!(after.angular.length() <= knock_tuning().max_spin_radps + 1e-3);
 }
 
 #[test]
 fn a_knock_is_capped_and_an_immovable_body_is_left_alone() {
     let body = magazine_body();
     let contact = body.pose.centre - Vec3::Y * 0.06;
-    let after = knocked(body, contact, Vec3::Y * 40.0, &KNOCK);
+    let after = knocked(body, contact, Vec3::Y * 40.0, knock_tuning());
     let change = after.linear - body.velocities.linear;
     assert!(
-        (change.length() - KNOCK.max_knock_mps).abs() < 1e-3,
+        (change.length() - knock_tuning().max_knock_mps).abs() < 1e-3,
         "{after:?}"
     );
     let fixed = RigidBody {
@@ -396,10 +396,13 @@ fn a_knock_is_capped_and_an_immovable_body_is_left_alone() {
         ..body
     };
     assert_eq!(
-        knocked(fixed, contact, Vec3::Y * 2.0, &KNOCK),
+        knocked(fixed, contact, Vec3::Y * 2.0, knock_tuning()),
         fixed.velocities
     );
-    assert_eq!(knocked(body, contact, Vec3::ZERO, &KNOCK), body.velocities);
+    assert_eq!(
+        knocked(body, contact, Vec3::ZERO, knock_tuning()),
+        body.velocities
+    );
 }
 
 #[test]
@@ -411,4 +414,8 @@ fn a_push_into_the_mouth_sends_the_magazine_straight_out_of_the_well() {
     // Struck at the mouth, the magazine's top end.
     assert!((s.contact - Vec3::Y * 0.06).length() < 1e-6, "{s:?}");
     assert_eq!(push_strike(&zone, f32::NAN).closing_mps, 0.0);
+}
+
+fn knock_tuning() -> &'static KnockTuning {
+    &RELOAD.get().knock
 }

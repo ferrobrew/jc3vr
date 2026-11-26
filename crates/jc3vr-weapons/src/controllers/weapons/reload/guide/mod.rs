@@ -7,7 +7,11 @@ use jc3vr_view::controllers::overlay::{
 };
 
 use crate::controllers::weapons::reload::{
-    State, Tick, guide::geometry::shape, insert::InsertStage, plan::WellFrame, tuning::Reload,
+    State, Tick,
+    guide::geometry::shape,
+    insert::InsertStage,
+    plan::WellFrame,
+    tuning::{GuideTuning, Reload},
 };
 
 mod geometry;
@@ -16,7 +20,8 @@ impl State {
     pub(super) fn insertion_guide(&self, tick: &Tick, reload: &Reload) {
         match self.guide_primitives(tick, reload) {
             Some(mut primitives) => {
-                store::submit(source(), &mut primitives, Duration::from_millis(150));
+                let ttl = Duration::from_millis(reload.guide.ttl_ms);
+                store::submit(source(), &mut primitives, ttl);
             }
             None => clear(),
         }
@@ -33,6 +38,7 @@ impl State {
         }
         let well = gun.well?;
         let capture = reload.for_plan(&weapon.plan);
+        let tuning = &reload.guide;
         let (elapsed_s, caught) = match self.status.insertion.stage {
             InsertStage::Idle => return None,
             InsertStage::Holding { elapsed_s } => (elapsed_s, false),
@@ -43,6 +49,7 @@ impl State {
             caught,
             capture.capture_radius_m,
             capture.seat_depth_m,
+            tuning,
         )?;
         let shape = shape(weapon.reading.name_hash, &weapon.plan);
         let rotation = match (weapon.plan.well, gun.frame) {
@@ -65,14 +72,14 @@ impl State {
                 primitives.push(Primitive::Line {
                     from: anchor(position(a)),
                     to: anchor(position(b)),
-                    width: 0.0018 * tick.world_scale,
+                    width: tuning.width_m * tick.world_scale,
                     color: if caught {
-                        [0.25, 1.0, 0.5, alpha]
+                        rgba(tuning.caught_rgb, alpha)
                     } else {
-                        [0.35, 0.85, 1.0, alpha]
+                        rgba(tuning.holding_rgb, alpha)
                     },
                     depth: DepthMode::XRay {
-                        occluded_alpha: 0.3,
+                        occluded_alpha: tuning.occluded_alpha,
                     },
                 });
             }
@@ -81,9 +88,14 @@ impl State {
         if !(tick.world_scale.is_finite() && tick.world_scale > 0.0) {
             return None;
         }
-        draw(capture.seat_depth_m, if caught { 0.55 } else { 0.18 })?;
+        let seat_alpha = if caught {
+            tuning.seat_caught_alpha
+        } else {
+            tuning.seat_holding_alpha
+        };
+        draw(capture.seat_depth_m, seat_alpha)?;
         if !caught && sample.alpha > 0.0 {
-            draw(sample.depth_m, sample.alpha * 0.65)?;
+            draw(sample.depth_m, sample.alpha * tuning.preview_alpha)?;
         }
         Some(primitives)
     }
@@ -97,13 +109,23 @@ fn source() -> Source {
     Source::AmmoInsertionGuide
 }
 
+fn rgba([r, g, b]: [f32; 3], alpha: f32) -> [f32; 4] {
+    [r, g, b, alpha]
+}
+
 #[derive(Debug, Copy, Clone, PartialEq)]
 struct Animation {
     depth_m: f32,
     alpha: f32,
 }
 
-fn animation(elapsed_s: f32, caught: bool, radius_m: f32, seat_m: f32) -> Option<Animation> {
+fn animation(
+    elapsed_s: f32,
+    caught: bool,
+    radius_m: f32,
+    seat_m: f32,
+    tuning: &GuideTuning,
+) -> Option<Animation> {
     if ![elapsed_s, radius_m, seat_m]
         .into_iter()
         .all(f32::is_finite)
@@ -118,12 +140,15 @@ fn animation(elapsed_s: f32, caught: bool, radius_m: f32, seat_m: f32) -> Option
             alpha: 1.0,
         });
     }
-    let phase = elapsed_s.max(0.0).rem_euclid(1.6) / 1.6;
-    let travel = ((phase - 0.12) / 0.58).clamp(0.0, 1.0);
-    let alpha = if phase < 0.12 {
-        (phase / 0.12).min(1.0)
+    let period = tuning.preview_period_s;
+    let fade_in = tuning.preview_fade_in_share;
+    let phase = elapsed_s.max(0.0).rem_euclid(period) / period;
+    let travel = ((phase - fade_in) / tuning.preview_travel_share).clamp(0.0, 1.0);
+    let alpha = if phase < fade_in {
+        (phase / fade_in).min(1.0)
     } else {
-        ((0.88 - phase) / 0.18).clamp(0.0, 1.0)
+        ((tuning.preview_fade_out_end_share - phase) / tuning.preview_fade_out_share)
+            .clamp(0.0, 1.0)
     };
     Some(Animation {
         depth_m: -radius_m + (radius_m + seat_m) * travel,
@@ -134,21 +159,31 @@ fn animation(elapsed_s: f32, caught: bool, radius_m: f32, seat_m: f32) -> Option
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::controllers::weapons::reload::insert::Well;
+    use crate::controllers::weapons::reload::{insert::Well, tuning::RELOAD};
 
     #[test]
     fn the_preview_only_moves_inward_and_resets_while_invisible() {
+        let tuning = &RELOAD.get().guide;
+        let period = tuning.preview_period_s;
         let mut previous = f32::NEG_INFINITY;
         for frame in 0..160 {
-            let sample = animation(frame as f32 * 0.01, false, 0.16, 0.025).unwrap();
+            let elapsed = period * frame as f32 / 160.0;
+            let sample = animation(elapsed, false, 0.16, 0.025, tuning).unwrap();
             assert!(sample.depth_m >= previous);
             previous = sample.depth_m;
         }
-        assert_eq!(animation(1.59, false, 0.16, 0.025).unwrap().alpha, 0.0);
-        assert_eq!(animation(1.6, false, 0.16, 0.025).unwrap().alpha, 0.0);
+        let last = period - 0.01;
         assert_eq!(
-            animation(0.0, true, 0.16, 0.025),
-            animation(12.0, true, 0.16, 0.025)
+            animation(last, false, 0.16, 0.025, tuning).unwrap().alpha,
+            0.0
+        );
+        assert_eq!(
+            animation(period, false, 0.16, 0.025, tuning).unwrap().alpha,
+            0.0
+        );
+        assert_eq!(
+            animation(0.0, true, 0.16, 0.025, tuning),
+            animation(12.0, true, 0.16, 0.025, tuning)
         );
     }
 

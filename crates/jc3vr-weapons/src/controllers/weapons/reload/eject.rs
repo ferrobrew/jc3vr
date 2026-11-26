@@ -43,7 +43,7 @@ impl TapDetector {
 }
 
 /// A double tap of a gun hand's fire press: two taps, each no longer than the tap, the second
-/// ending within [`DOUBLE_TAP_GAP_S`] of the first. The seated magazine release, where the hands
+/// ending within the gap of the first. The seated magazine release, where the hands
 /// are on the vehicle's controls and the reload button is not bound.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct DoubleTapDetector {
@@ -61,11 +61,12 @@ impl DoubleTapDetector {
     }
 
     /// Fold in one tick of the press; true when the second tap of a double tap ends this tick.
-    pub fn step(&mut self, button: ButtonControl, dt: f32, tap_s: f32) -> bool {
+    /// `gap_s` is the longest from the end of the first tap to the end of the second.
+    pub fn step(&mut self, button: ButtonControl, dt: f32, tap_s: f32, gap_s: f32) -> bool {
         let dt = if dt.is_finite() { dt.max(0.0) } else { 0.0 };
         if let Some(since) = &mut self.since_first_s {
             *since += dt;
-            if *since > DOUBLE_TAP_GAP_S {
+            if *since > gap_s {
                 self.since_first_s = None;
             }
         }
@@ -79,9 +80,6 @@ impl DoubleTapDetector {
         false
     }
 }
-
-/// The longest from the end of a double tap's first tap to the end of its second, seconds.
-pub const DOUBLE_TAP_GAP_S: f32 = 0.4;
 
 /// The hand whose gun a tap ejects, from the rounds in each hand's ejectable magazine by
 /// [`Hand::index`] (`None` for a hand with no gun, or whose gun has no magazine to eject) and the
@@ -175,17 +173,17 @@ mod tests {
         };
         let up = ButtonControl::default();
         let mut d = DoubleTapDetector::new();
-        assert!(!d.step(press, 0.03, 0.3));
-        assert!(!d.step(release, 0.03, 0.3));
-        assert!(!d.step(up, 0.1, 0.3));
-        assert!(!d.step(press, 0.03, 0.3));
-        assert!(d.step(release, 0.03, 0.3));
+        assert!(!d.step(press, 0.03, 0.3, 0.4));
+        assert!(!d.step(release, 0.03, 0.3, 0.4));
+        assert!(!d.step(up, 0.1, 0.3, 0.4));
+        assert!(!d.step(press, 0.03, 0.3, 0.4));
+        assert!(d.step(release, 0.03, 0.3, 0.4));
 
         let mut d = DoubleTapDetector::new();
-        d.step(press, 0.03, 0.3);
-        d.step(release, 0.03, 0.3);
-        d.step(up, 0.5, 0.3);
-        d.step(press, 0.03, 0.3);
-        assert!(!d.step(release, 0.03, 0.3), "too far apart");
+        d.step(press, 0.03, 0.3, 0.4);
+        d.step(release, 0.03, 0.3, 0.4);
+        d.step(up, 0.5, 0.3, 0.4);
+        d.step(press, 0.03, 0.3, 0.4);
+        assert!(!d.step(release, 0.03, 0.3, 0.4), "too far apart");
     }
 }

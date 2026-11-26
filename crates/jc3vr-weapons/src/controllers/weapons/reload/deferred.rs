@@ -18,9 +18,9 @@ use crate::controllers::weapons::{
         engine,
         engine::DetachOutcome,
         extraction::{DetachKind, DetachRequest, MagazineId},
-        knock::{KNOCK, Linger, PendingImpulse},
+        knock::{Linger, PendingImpulse},
         serial, steps,
-        tuning::Reload,
+        tuning::{RELOAD, Reload},
     },
 };
 
@@ -130,6 +130,7 @@ impl State {
     /// model draws the one in the hand, leaving the part free.
     fn finish_knock(&mut self, hand: Hand, outcome: DetachOutcome, weapon: &WeaponTick) {
         let strike = self.knocks.strikes[hand.index()].take();
+        let tuning = &RELOAD.get().knock;
         self.event(format!("{hand:?} magazine knocked out"));
         // SAFETY (both): game thread before the world update; the weapon was read this tick.
         if weapon.plan.spare_top_m.is_some() && unsafe { pouch_models::hand_draws(weapon.address) }
@@ -137,7 +138,7 @@ impl State {
             unsafe { engine::show_magazine_part(weapon.address, true) };
             self.knocks.linger = Some(Linger {
                 weapon: weapon.address,
-                ticks_left: KNOCK.linger_ticks,
+                ticks_left: tuning.linger_ticks,
             });
         }
         if let (DetachOutcome::Retained(magazine), Some(strike), Some(frames)) =
@@ -147,7 +148,7 @@ impl State {
                 magazine,
                 contact: frames.cockpit.offset_to_world(strike.contact),
                 velocity: frames.cockpit.offset_to_world(strike.velocity),
-                ticks_left: KNOCK.impulse_ticks,
+                ticks_left: tuning.impulse_ticks,
             });
         }
     }

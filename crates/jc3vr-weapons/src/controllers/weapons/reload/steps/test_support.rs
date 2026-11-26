@@ -72,14 +72,14 @@ pub(crate) fn state(stage: InsertStage) -> State {
 pub(crate) fn tick(seating: bool) -> Tick {
     let grip = Pose::IDENTITY;
     let top = insert::held_round(
-        frames::held_line(grip, Hand::Left, RELOAD.held_palm_gap_m),
+        frames::held_line(grip, Hand::Left, RELOAD.get().held_palm_gap_m),
         frames::pointing(grip),
-        RELOAD.held_top_m,
+        RELOAD.get().held_top_m,
         Vec3::ZERO,
     )
     .unwrap();
     let depth = if seating {
-        RELOAD.seat_depth_m * 1.1
+        RELOAD.get().seat_depth_m * 1.1
     } else {
         -0.2
     };

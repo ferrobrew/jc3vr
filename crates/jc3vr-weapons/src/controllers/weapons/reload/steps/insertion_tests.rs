@@ -223,7 +223,7 @@ fn first_deferred_world_carry_recovers_and_seats_exactly_once() {
         .well
         .as_mut()
         .unwrap();
-    well.mouth += well.axis * RELOAD.seat_depth_m * 1.1;
+    well.mouth += well.axis * RELOAD.get().seat_depth_m * 1.1;
     state.last_grips[Hand::Left.index()] = Some(-well.axis * 0.001);
     state.insert_with(&capture, &inputs(true), &config, &mut adapter);
     assert!(matches!(

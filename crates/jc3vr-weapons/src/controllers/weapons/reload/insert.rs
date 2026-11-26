@@ -7,7 +7,8 @@
 //! than the capture angle from the axis, and moving into the gun. A caught round slides only along
 //! the axis; once its top is the seat depth past the mouth it seats. Pulled back out of the capture
 //! it is held again. Letting go of the grip seats a round already more than half seated. A round
-//! let go of near the mouth and pointing roughly into the well floats in ([`FLOAT`]): its top
+//! let go of near the mouth and pointing roughly into the well floats in
+//! ([`FloatTuning`](crate::controllers::weapons::reload::tuning::FloatTuning)): its top
 //! travels from where the hand left it onto the axis and down to the seat depth, turning onto the
 //! axis as it goes, and seats when it arrives. Anything else let go of drops.
 
@@ -126,33 +127,6 @@ pub struct Insertion {
     pub(super) refused: bool,
 }
 
-/// How a round let go of near the well floats into it.
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub struct FloatTuning {
-    /// How far from the mouth the top of a round let go of may be to float in, metres: about a
-    /// hand's breadth, so a magazine released while it is being brought to the well goes in, and
-    /// one let go of anywhere else drops. A well whose capture radius is large floats from twice
-    /// that instead.
-    pub radius_m: f32,
-    /// How far a round let go of may be turned from the well's axis and float in, degrees: wider
-    /// than the capture angle, as the round turns onto the axis on the way.
-    pub angle_deg: f32,
-    /// How fast the round travels in on average, metres per second.
-    pub speed_mps: f32,
-    /// The shortest and the longest the float takes, seconds.
-    pub min_s: f32,
-    pub max_s: f32,
-}
-
-/// The float's fixed tuning.
-pub const FLOAT: FloatTuning = FloatTuning {
-    radius_m: 0.15,
-    angle_deg: 70.0,
-    speed_mps: 0.8,
-    min_s: 0.08,
-    max_s: 0.3,
-};
-
 /// A round floating into the well, in the well's frame (+Y along the axis into the gun, the mouth
 /// at the origin).
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -163,6 +137,8 @@ pub(super) struct Float {
     from_axis: Vec3,
     /// How far past the mouth the top seats.
     seat_m: f32,
+    /// The share of the float spent bringing the top onto the axis.
+    approach_share: f32,
     elapsed_s: f32,
     duration_s: f32,
 }
@@ -171,9 +147,12 @@ impl Float {
     /// The float of a round let go of with its top at `local` pointing along `axis` (both in the
     /// well's frame), or `None` when it is too far from the mouth, turned too far from the axis,
     /// or beside the gun past the mouth.
-    fn start(local: Vec3, axis: Vec3, config: &Reload, tuning: &FloatTuning) -> Option<Self> {
+    fn start(local: Vec3, axis: Vec3, config: &Reload) -> Option<Self> {
+        let tuning = &config.float;
         let axis = axis.try_normalize()?;
-        let radius = tuning.radius_m.max(config.capture_radius_m * 2.0);
+        let radius = tuning
+            .radius_m
+            .max(config.capture_radius_m * tuning.capture_radius_scale);
         let distance = local.length();
         let off_axis = Vec3::new(local.x, 0.0, local.z).length();
         let near = distance <= radius
@@ -189,6 +168,7 @@ impl Float {
             from: local,
             from_axis: axis,
             seat_m: config.seat_depth_m,
+            approach_share: tuning.approach_share,
             elapsed_s: 0.0,
             duration_s: travel.clamp(tuning.min_s, tuning.max_s.max(tuning.min_s)),
         })
@@ -209,11 +189,12 @@ impl Float {
     /// axis to the seat depth, eased in and out, so it never cuts through the gun's side.
     fn top(&self) -> Vec3 {
         let t = (self.elapsed_s / self.duration_s.max(f32::EPSILON)).clamp(0.0, 1.0);
-        let approach = smoothstep((t / APPROACH_SHARE).min(1.0));
-        let slide = smoothstep(((t - APPROACH_SHARE) / (1.0 - APPROACH_SHARE)).max(0.0));
+        let share = self.approach_share;
+        let approach = smoothstep((t / share).min(1.0));
+        let slide = smoothstep(((t - share) / (1.0 - share)).max(0.0));
         let entry = self.from.y.min(0.0);
         let lateral = Vec3::new(self.from.x, 0.0, self.from.z) * (1.0 - approach);
-        let depth = if t < APPROACH_SHARE {
+        let depth = if t < share {
             self.from.y + (entry - self.from.y) * approach
         } else {
             entry + (self.seat_m - entry) * slide
@@ -229,9 +210,6 @@ impl Float {
             .mul_vec3(self.from_axis)
     }
 }
-
-/// The share of a float spent bringing the top onto the axis.
-const APPROACH_SHARE: f32 = 0.6;
 
 impl Insertion {
     pub const fn new() -> Self {
@@ -356,21 +334,21 @@ impl Insertion {
         let depth = local.y;
         let off_axis = Vec3::new(local.x, 0.0, local.z).length();
         let aligned = aligned_cos >= config.capture_angle_deg.to_radians().cos();
-        let slack = config.capture_radius_m * 1.5;
+        let slack = config.capture_radius_m * config.retain_radius_scale;
         let retained = aligned && off_axis <= slack && depth >= -slack;
         self.distance_m = Some(local.length());
         if !inputs.grip_held {
             if captured.is_some()
                 && retained
                 && off_axis <= config.capture_radius_m
-                && depth >= config.seat_depth_m * 0.5
-                && depth <= config.seat_depth_m * 1.5
+                && depth >= config.seat_depth_m * config.release_seat_shares.0
+                && depth <= config.seat_depth_m * config.release_seat_shares.1
             {
                 self.stage = InsertStage::Idle;
                 return Some(InsertEvent::Seated);
             }
             let pointing = Quat::from_rotation_arc(axis, Vec3::Y) * held.axis;
-            if let Some(float) = Float::start(local, pointing, config, &FLOAT) {
+            if let Some(float) = Float::start(local, pointing, config) {
                 self.float = Some(float);
                 self.stage = InsertStage::Captured {
                     elapsed_s,
@@ -612,15 +590,14 @@ fn finite_or_zero(seconds: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::controllers::weapons::reload::tuning::RELOAD;
 
     #[test]
     fn launcher_release_assistance_covers_every_held_capture_angle() {
-        let config = RELOAD.launcher_capture();
+        let config = config().launcher_capture();
         for degrees in [0.0_f32, 50.0, 70.0, 80.0, 84.9] {
             for local in [Vec3::Y * -0.15, Vec3::X * 0.15, Vec3::ZERO] {
                 let axis = Quat::from_rotation_z(degrees.to_radians()) * Vec3::Y;
-                let float = Float::start(local, axis, &config, &FLOAT).unwrap();
+                let float = Float::start(local, axis, &config).unwrap();
                 assert!(float.top().is_finite());
                 assert!(float.axis().is_finite());
             }
@@ -629,12 +606,12 @@ mod tests {
 
     #[test]
     fn release_assistance_rejects_wrong_depth_and_a_side_entry_past_the_mouth() {
-        for config in [RELOAD, RELOAD.launcher_capture()] {
+        for config in [config(), config().launcher_capture()] {
             for local in [
                 Vec3::Y * (config.seat_depth_m + 0.001),
                 Vec3::new(config.capture_radius_m * 1.1, 0.001, 0.0),
             ] {
-                assert!(Float::start(local, Vec3::Y, &config, &FLOAT).is_none());
+                assert!(Float::start(local, Vec3::Y, &config).is_none());
             }
             let mut insertion = Insertion::new();
             insertion.stage = InsertStage::Captured {
@@ -662,7 +639,7 @@ mod tests {
             ..inputs(false, WELL.mouth - Vec3::Y * 0.1, Vec3::ZERO)
         };
         assert_eq!(
-            insertion.step(released, &CONFIG),
+            insertion.step(released, &config()),
             Some(InsertEvent::Captured)
         );
         let occupied = InsertInputs {
@@ -671,7 +648,7 @@ mod tests {
             ..released
         };
         assert_eq!(
-            insertion.step(occupied, &CONFIG),
+            insertion.step(occupied, &config()),
             Some(InsertEvent::Dropped)
         );
         assert_eq!(insertion.seated, 0);
@@ -679,7 +656,7 @@ mod tests {
 
     #[test]
     fn retained_magazines_keep_the_grip_beyond_pouch_and_world_lifetimes() {
-        let config = RELOAD;
+        let config = config();
         for source in [InsertionSource::Pouch, InsertionSource::RetainedMagazine] {
             let mut insertion = Insertion::new();
             let mut sample = inputs(true, WELL.mouth - Vec3::Y, Vec3::ZERO);
@@ -711,7 +688,10 @@ mod tests {
         }
     }
 
-    const CONFIG: Reload = RELOAD;
+    fn config() -> Reload {
+        Reload::shipped()
+    }
+
     const WELL: Well = Well {
         mouth: Vec3::new(0.2, -0.3, -0.4),
         axis: Vec3::Y,
@@ -739,7 +719,7 @@ mod tests {
                     held: None,
                     ..inputs(true, Vec3::ZERO, Vec3::ZERO)
                 },
-                &CONFIG
+                &config()
             ),
             Some(InsertEvent::Taken)
         );
@@ -757,12 +737,12 @@ mod tests {
         };
         // The first push at the occupied well is refused, once.
         assert_eq!(
-            i.step(occupied(WELL.mouth - Vec3::Y * 0.02, true), &CONFIG),
+            i.step(occupied(WELL.mouth - Vec3::Y * 0.02, true), &config()),
             Some(InsertEvent::Refused)
         );
         for depth in [0.01, 0.03, 0.06] {
             assert_eq!(
-                i.step(occupied(WELL.mouth + Vec3::Y * depth, true), &CONFIG),
+                i.step(occupied(WELL.mouth + Vec3::Y * depth, true), &config()),
                 None
             );
             assert!(
@@ -773,7 +753,7 @@ mod tests {
         }
         // Let go at the mouth: no float in, the round drops.
         assert_eq!(
-            i.step(occupied(WELL.mouth, false), &CONFIG),
+            i.step(occupied(WELL.mouth, false), &config()),
             Some(InsertEvent::Dropped)
         );
         assert_eq!(i.seated, 0);
@@ -790,10 +770,10 @@ mod tests {
         for (speed, knocks) in [(0.4, false), (0.6, false), (0.9, true), (2.5, true)] {
             let mut i = Insertion::new();
             take(&mut i);
-            let start = WELL.mouth - Vec3::Y * (CONFIG.capture_radius_m + 0.001);
-            assert_eq!(i.step(occupied(start), &CONFIG), None);
+            let start = WELL.mouth - Vec3::Y * (config().capture_radius_m + 0.001);
+            assert_eq!(i.step(occupied(start), &config()), None);
             let top = start + Vec3::Y * speed * 0.02;
-            let event = i.step(occupied(top), &CONFIG);
+            let event = i.step(occupied(top), &config());
             match event {
                 Some(InsertEvent::Pushed { speed_mps }) if knocks => {
                     assert!((speed_mps - speed).abs() < 1e-3, "{speed_mps} {speed}");
@@ -802,7 +782,7 @@ mod tests {
                 other => panic!("{speed} m/s gave {other:?}"),
             }
             // Either is once per approach.
-            assert_eq!(i.step(occupied(top + Vec3::Y * 0.01), &CONFIG), None);
+            assert_eq!(i.step(occupied(top + Vec3::Y * 0.01), &config()), None);
         }
     }
 
@@ -812,14 +792,14 @@ mod tests {
         take(&mut i);
         let up = Vec3::Y * 0.5;
         assert_eq!(
-            i.step(inputs(false, WELL.mouth - Vec3::Y * 0.02, up), &CONFIG),
+            i.step(inputs(false, WELL.mouth - Vec3::Y * 0.02, up), &config()),
             Some(InsertEvent::Captured)
         );
         let occupied = InsertInputs {
             occupied: true,
             ..inputs(false, WELL.mouth + Vec3::Y * 0.01, up)
         };
-        assert_eq!(i.step(occupied, &CONFIG), Some(InsertEvent::Released));
+        assert_eq!(i.step(occupied, &config()), Some(InsertEvent::Released));
         assert!(matches!(i.stage, InsertStage::Holding { .. }));
     }
 
@@ -829,15 +809,15 @@ mod tests {
         take(&mut i);
         let up = Vec3::Y * 0.5;
         assert_eq!(
-            i.step(inputs(false, WELL.mouth - Vec3::Y * 0.02, up), &CONFIG),
+            i.step(inputs(false, WELL.mouth - Vec3::Y * 0.02, up), &config()),
             Some(InsertEvent::Captured)
         );
         assert_eq!(
-            i.step(inputs(false, WELL.mouth + Vec3::Y * 0.01, up), &CONFIG),
+            i.step(inputs(false, WELL.mouth + Vec3::Y * 0.01, up), &config()),
             None
         );
         assert_eq!(
-            i.step(inputs(false, WELL.mouth + Vec3::Y * 0.03, up), &CONFIG),
+            i.step(inputs(false, WELL.mouth + Vec3::Y * 0.03, up), &config()),
             Some(InsertEvent::Seated)
         );
         assert_eq!(i.stage, InsertStage::Idle);
@@ -849,7 +829,7 @@ mod tests {
         let mut i = Insertion::new();
         take(&mut i);
         let near = WELL.mouth - Vec3::Y * 0.02;
-        assert_eq!(i.step(inputs(false, near, -Vec3::Y), &CONFIG), None);
+        assert_eq!(i.step(inputs(false, near, -Vec3::Y), &config()), None);
         let crossways = InsertInputs {
             held: Some(Held {
                 top: near,
@@ -858,7 +838,7 @@ mod tests {
             }),
             ..inputs(false, near, Vec3::Y)
         };
-        assert_eq!(i.step(crossways, &CONFIG), None);
+        assert_eq!(i.step(crossways, &config()), None);
         assert!(matches!(i.stage, InsertStage::Holding { .. }));
     }
 
@@ -866,9 +846,12 @@ mod tests {
     fn pulling_a_caught_round_back_out_holds_it_again() {
         let mut i = Insertion::new();
         take(&mut i);
-        i.step(inputs(false, WELL.mouth, Vec3::Y), &CONFIG);
+        i.step(inputs(false, WELL.mouth, Vec3::Y), &config());
         assert_eq!(
-            i.step(inputs(false, WELL.mouth - Vec3::Y * 0.2, -Vec3::Y), &CONFIG),
+            i.step(
+                inputs(false, WELL.mouth - Vec3::Y * 0.2, -Vec3::Y),
+                &config()
+            ),
             Some(InsertEvent::Released)
         );
         assert!(matches!(i.stage, InsertStage::Holding { .. }));
@@ -883,18 +866,18 @@ mod tests {
             ..inputs(false, top, Vec3::Y)
         };
         assert_eq!(
-            i.step(released(Vec3::ZERO), &CONFIG),
+            i.step(released(Vec3::ZERO), &config()),
             Some(InsertEvent::Dropped)
         );
 
         take(&mut i);
-        i.step(inputs(false, WELL.mouth, Vec3::Y), &CONFIG);
+        i.step(inputs(false, WELL.mouth, Vec3::Y), &config());
         i.step(
             inputs(false, WELL.mouth + Vec3::Y * 0.015, Vec3::Y),
-            &CONFIG,
+            &config(),
         );
         assert_eq!(
-            i.step(released(WELL.mouth + Vec3::Y * 0.015), &CONFIG),
+            i.step(released(WELL.mouth + Vec3::Y * 0.015), &config()),
             Some(InsertEvent::Seated)
         );
     }
@@ -905,7 +888,7 @@ mod tests {
         take(&mut i);
         let mut event = None;
         for _ in 0..1000 {
-            event = i.step(inputs(false, Vec3::ZERO, Vec3::ZERO), &CONFIG);
+            event = i.step(inputs(false, Vec3::ZERO, Vec3::ZERO), &config());
             if event.is_some() {
                 break;
             }
@@ -917,7 +900,7 @@ mod tests {
             well: None,
             ..inputs(false, Vec3::ZERO, Vec3::ZERO)
         };
-        assert_eq!(i.step(gone, &CONFIG), Some(InsertEvent::Dropped));
+        assert_eq!(i.step(gone, &config()), Some(InsertEvent::Dropped));
     }
 
     #[test]
@@ -925,10 +908,13 @@ mod tests {
         let mut insertion = Insertion::new();
         insertion.step(
             inputs(true, WELL.mouth - Vec3::Y * 0.12, Vec3::ZERO),
-            &CONFIG,
+            &config(),
         );
         let pushed = inputs(false, WELL.mouth + Vec3::Y * 0.08, Vec3::ZERO);
-        assert_eq!(insertion.step(pushed, &CONFIG), Some(InsertEvent::Captured));
+        assert_eq!(
+            insertion.step(pushed, &config()),
+            Some(InsertEvent::Captured)
+        );
         let shown = insertion.carried(
             Held {
                 top: Vec3::splat(5.0),
@@ -939,8 +925,8 @@ mod tests {
         );
         assert!(shown.top.abs_diff_eq(WELL.mouth + Vec3::Y * 0.08, 1.0e-5));
         assert_eq!(shown.axis, WELL.axis);
-        assert_eq!(insertion.step(pushed, &CONFIG), Some(InsertEvent::Seated));
-        assert_eq!(insertion.step(pushed, &CONFIG), None);
+        assert_eq!(insertion.step(pushed, &config()), Some(InsertEvent::Seated));
+        assert_eq!(insertion.step(pushed, &config()), None);
         assert_eq!(insertion.seated, 1);
     }
 
@@ -958,11 +944,11 @@ mod tests {
             }),
             ..inputs(false, top, Vec3::ZERO)
         };
-        i.step(held(true), &CONFIG);
+        i.step(held(true), &config());
         let mut events = Vec::new();
         let mut shown = Vec::new();
         for _ in 0..50 {
-            if let Some(event) = i.step(held(false), &CONFIG) {
+            if let Some(event) = i.step(held(false), &config()) {
                 events.push(event);
             }
             if i.float.is_some() {
@@ -1013,7 +999,7 @@ mod tests {
         let near = WELL.mouth - Vec3::Y * 0.08;
         assert_eq!(let_go_at(near, Vec3::X).0, vec![InsertEvent::Dropped]);
         // Beside the gun, past the mouth.
-        let beside = WELL.mouth + Vec3::new(0.04, CONFIG.capture_radius_m * 1.5 + 0.001, 0.0);
+        let beside = WELL.mouth + Vec3::new(0.04, config().capture_radius_m * 1.5 + 0.001, 0.0);
         assert_eq!(let_go_at(beside, Vec3::Y).0, vec![InsertEvent::Dropped]);
     }
 
@@ -1022,18 +1008,18 @@ mod tests {
         let mut i = Insertion::new();
         take(&mut i);
         let near = WELL.mouth - Vec3::Y * 0.08;
-        i.step(inputs(false, near, Vec3::ZERO), &CONFIG);
+        i.step(inputs(false, near, Vec3::ZERO), &config());
         let released = InsertInputs {
             grip_held: false,
             ..inputs(false, near, Vec3::ZERO)
         };
-        assert_eq!(i.step(released, &CONFIG), Some(InsertEvent::Captured));
+        assert_eq!(i.step(released, &config()), Some(InsertEvent::Captured));
         assert!(i.float.is_some());
         let gone = InsertInputs {
             well: None,
             ..released
         };
-        assert_eq!(i.step(gone, &CONFIG), Some(InsertEvent::Dropped));
+        assert_eq!(i.step(gone, &config()), Some(InsertEvent::Dropped));
         assert_eq!((i.stage, i.float, i.seated), (InsertStage::Idle, None, 0));
     }
 
@@ -1042,8 +1028,7 @@ mod tests {
         let float = Float::start(
             Vec3::new(0.0, -0.1, 0.0),
             Vec3::new(1.0, 1.0, 0.0),
-            &CONFIG,
-            &FLOAT,
+            &config(),
         )
         .unwrap();
         assert!(
@@ -1051,13 +1036,13 @@ mod tests {
                 .axis()
                 .abs_diff_eq(Vec3::new(1.0, 1.0, 0.0).normalize(), 1.0e-5)
         );
-        let arrived = float.advanced(FLOAT.max_s);
+        let arrived = float.advanced(config().float.max_s);
         assert!(arrived.arrived());
         assert!(arrived.axis().abs_diff_eq(Vec3::Y, 1.0e-5));
         assert!(
             arrived
                 .top()
-                .abs_diff_eq(Vec3::Y * CONFIG.seat_depth_m, 1.0e-5)
+                .abs_diff_eq(Vec3::Y * config().seat_depth_m, 1.0e-5)
         );
     }
 
@@ -1066,11 +1051,11 @@ mod tests {
         for released in [false, true] {
             let mut insertion = Insertion::new();
             take(&mut insertion);
-            insertion.step(inputs(false, WELL.mouth, Vec3::Y), &CONFIG);
+            insertion.step(inputs(false, WELL.mouth, Vec3::Y), &config());
             let mut escaped = inputs(false, WELL.mouth + Vec3::new(0.2, 0.1, 0.0), Vec3::Y);
             escaped.grip_held = !released;
             assert_eq!(
-                insertion.step(escaped, &CONFIG),
+                insertion.step(escaped, &config()),
                 Some(if released {
                     InsertEvent::Dropped
                 } else {
@@ -1085,17 +1070,17 @@ mod tests {
     fn relative_motion_accepts_a_moving_well_but_not_shared_transport() {
         let top = WELL.mouth - Vec3::Y * 0.04;
         let mut insertion = Insertion::new();
-        insertion.step(inputs(true, top, Vec3::ZERO), &CONFIG);
+        insertion.step(inputs(true, top, Vec3::ZERO), &config());
         let mut shared = inputs(false, top + Vec3::Y, Vec3::Y * 20.0);
         shared.well = Some(Well {
             mouth: WELL.mouth + Vec3::Y,
             ..WELL
         });
-        assert_eq!(insertion.step(shared, &CONFIG), None);
+        assert_eq!(insertion.step(shared, &config()), None);
         let mut entering = shared;
         entering.well.as_mut().unwrap().mouth -= Vec3::Y * 0.03;
         assert_eq!(
-            insertion.step(entering, &CONFIG),
+            insertion.step(entering, &config()),
             Some(InsertEvent::Captured)
         );
     }
@@ -1104,10 +1089,13 @@ mod tests {
     fn invalid_capture_geometry_drops_without_seating() {
         let mut insertion = Insertion::new();
         take(&mut insertion);
-        insertion.step(inputs(false, WELL.mouth, Vec3::Y), &CONFIG);
+        insertion.step(inputs(false, WELL.mouth, Vec3::Y), &config());
         let mut invalid = inputs(false, WELL.mouth + Vec3::Y, Vec3::Y);
         invalid.well.as_mut().unwrap().axis = Vec3::ZERO;
-        assert_eq!(insertion.step(invalid, &CONFIG), Some(InsertEvent::Dropped));
+        assert_eq!(
+            insertion.step(invalid, &config()),
+            Some(InsertEvent::Dropped)
+        );
         assert_eq!(insertion.seated, 0);
     }
 
@@ -1165,8 +1153,8 @@ mod tests {
 
     #[test]
     fn a_launcher_round_catches_from_farther_and_more_turned_than_a_guns() {
-        let gun = RELOAD;
-        let launcher = RELOAD.launcher_capture();
+        let gun = config();
+        let launcher = config().launcher_capture();
         // The round's top 9 cm beside the mouth and turned 65 degrees from the axis, moving in.
         let turn = Quat::from_rotation_x(65f32.to_radians());
         let sample = |config: &Reload| {

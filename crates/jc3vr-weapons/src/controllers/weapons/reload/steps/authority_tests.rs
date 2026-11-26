@@ -1,7 +1,7 @@
 use super::*;
 use crate::controllers::weapons::reload::{
     steps::test_support::{state as make_state, tick as insertion_tick},
-    tuning::RELOAD,
+    tuning::{RELOAD, Reload},
 };
 
 fn tick(seating: bool) -> Tick {
@@ -37,7 +37,7 @@ fn delayed_pair_shots_preserve_owned_readiness_and_still_lock_back() {
     state.apply_shots(&tick, vec![shot(Hand::Right, 3), shot(Hand::Left, 0)]);
     assert_eq!(state.records.get(key).chambers, chambers);
     assert_eq!(state.status.counts.lock_backs, 1);
-    assert!(!state.records.get(key).travels[1].in_battery(&RELOAD.action));
+    assert!(!state.records.get(key).travels[1].in_battery(&RELOAD.get().action));
 }
 
 #[test]
@@ -71,7 +71,7 @@ fn first_empty_observation_preserves_owned_chambers_and_seeds_lockback() {
                 Chamber::Empty
             }; 2]
         );
-        assert!(!state.records.get(key).travels[0].in_battery(&RELOAD.action));
+        assert!(!state.records.get(key).travels[0].in_battery(&RELOAD.get().action));
     }
 }
 
@@ -90,12 +90,15 @@ fn pouch_capture_holds_launcher_fire_without_a_retained_world_magazine() {
         depth_m: 0.02,
     };
     assert_eq!(
-        state.fire_hold(&tick, Hand::Right, &RELOAD),
+        state.fire_hold(&tick, Hand::Right, &Reload::shipped()),
         Some(FireHold::RoundGoingIn)
     );
     state.status.insertion.reset();
     state.status.insert_hands = None;
-    assert_eq!(state.fire_hold(&tick, Hand::Right, &RELOAD), None);
+    assert_eq!(
+        state.fire_hold(&tick, Hand::Right, &Reload::shipped()),
+        None
+    );
 }
 
 #[test]

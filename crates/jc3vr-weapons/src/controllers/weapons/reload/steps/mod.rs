@@ -498,7 +498,12 @@ impl State {
         let seated = matches!(mode::current().mode, Mode::Vehicle(_));
         for hand in Hand::BOTH {
             let i = hand.index();
-            let double = self.fire_taps[i].step(inputs.fire_presses[i], inputs.dt, reload.tap_s);
+            let double = self.fire_taps[i].step(
+                inputs.fire_presses[i],
+                inputs.dt,
+                reload.tap_s,
+                reload.double_tap_gap_s,
+            );
             if seated && double && self.ejectable_rounds(tick, hand) == Some(0) {
                 self.event(format!(
                     "the {hand:?} gun's double tap drops its dry magazine"

@@ -12,7 +12,8 @@ use crate::controllers::weapons::reload::{
     engine::{dump_cylinder, gun_address, gun_has_bone, gun_world},
     plan::{LoadKind, ReloadPlan, WellFrame},
     render,
-    revolver::{Cylinder, CylinderEvent, CylinderInputs, REVOLVER},
+    revolver::{Cylinder, CylinderEvent, CylinderInputs},
+    tuning::RELOAD,
 };
 
 /// A revolver's cylinder as the tick reads it.
@@ -73,7 +74,7 @@ impl State {
                     orientation: gun.frame.map(|f| f.pose.orientation),
                     dt,
                 },
-                &REVOLVER,
+                &RELOAD.get().revolver,
             );
             self.cylinders[i] = Some(cylinder);
             match event {
@@ -152,7 +153,7 @@ impl State {
             gun_address,
             crane_rad: cylinder.crane_rad(),
             crane_shift_m: cylinder.crane_shift_m(),
-            spin_rad: cylinder.spin_rad(&REVOLVER),
+            spin_rad: cylinder.spin_rad(&RELOAD.get().revolver),
         })
     }
 }

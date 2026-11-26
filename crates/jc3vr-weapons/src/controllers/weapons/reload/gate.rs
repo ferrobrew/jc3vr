@@ -26,6 +26,8 @@ use std::time::{Duration, Instant};
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
+use crate::controllers::weapons::reload::tuning::RELOAD;
+
 /// What the input tick publishes for the detours.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
 pub(super) struct Published {
@@ -201,9 +203,6 @@ fn reloads(published: &Published, weapon: usize) -> bool {
     weapon != 0 && published.weapons.contains(&weapon)
 }
 
-/// How long the input tick's state stands without a refresh. Past it the detours stop acting, so
-/// a stalled input tick hands the weapon back to the game.
-const STALE: Duration = Duration::from_millis(500);
 /// More shots than any weapon fires between two input ticks.
 const MAX_SHOTS: usize = 64;
 /// The shortest interval between two logs of a reload start the stop let through.
@@ -219,9 +218,12 @@ struct Shared {
 }
 
 impl Shared {
+    /// The published state, while it is newer than the tuning's `gate.stale_ms`
+    /// ([`GateTuning::stale_ms`](crate::controllers::weapons::reload::tuning::GateTuning::stale_ms)).
     fn fresh(&self) -> Option<Published> {
+        let stale = Duration::from_millis(RELOAD.get().gate.stale_ms);
         self.at
-            .filter(|at| at.elapsed() < STALE)
+            .filter(|at| at.elapsed() < stale)
             .map(|_| self.published)
     }
 }

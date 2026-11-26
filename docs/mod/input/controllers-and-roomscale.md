@@ -537,7 +537,7 @@ The settings are under `weapons` unless named otherwise. The description is in [
 | Precision aim suppression | none; always on under the controller scheme | Built. |
 | Scope lenses | none; the lens reads the other eye's image when it has one, and the lens tuning is the handling tuning's `scope.lens` section | The resampled lens is built. The narrow-field scene render is not. |
 | Per-hand aim assist | `aim.assist_strength` (0, which is off); the reach and occlusion tolerance are fixed in `controllers::aim::assist` | Built. |
-| The true reload | `reload` (on); the button, the well, the belt, the chamber, the extraction, and the dual split are tuned by `RELOAD` in `controllers::weapons::reload`, and the magazine pouch by `POUCHES` | Built, not run in the headset. See [reload.md](reload.md). |
+| The true reload | `reload` (on); the button, the well, the belt, the chamber, the extraction, and the dual split are tuned by `crates/jc3vr-weapons/tuning/reload.toml` ([tuning.md](../tuning.md)), and the magazine pouch by `POUCHES` | Built, not run in the headset. See [reload.md](reload.md). |
 | The embedded sight table | `aim.sights` entries override it | Built. Only the `scoped`, `pistol`, and `tuned` grades are used. |
 | The sight tuning tool | `aim.sight_tuning.enabled` (off); the marker distance is fixed in `controllers::aim::sights::tuning` | Built. A tuned entry lasts until the payload unloads unless it is copied into the table. |
 | Hand-tier promotions | none | Not built beyond the anchored grapple and mounted-gun rows. |

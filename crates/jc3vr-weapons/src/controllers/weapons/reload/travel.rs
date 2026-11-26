@@ -325,7 +325,9 @@ mod tests {
     use super::*;
     use crate::controllers::weapons::reload::tuning::RELOAD;
 
-    const CONFIG: ActionTuning = RELOAD.action;
+    fn config() -> &'static ActionTuning {
+        &RELOAD.get().action
+    }
     const HANDLE: Vec3 = Vec3::new(0.04, 0.1, -0.05);
     const TRAVEL: f32 = 0.05;
 
@@ -357,17 +359,23 @@ mod tests {
         let mut t = ActionTravel::new();
         let k = ActionKind::Slide;
         let grab_point = back(0.0) + Vec3::Z * 0.01;
-        let e = t.step(&inputs(k, grab_point, true, true), &CONFIG);
+        let e = t.step(&inputs(k, grab_point, true, true), config());
         assert!(e.grabbed);
         assert_eq!(t.position, 0.0, "the part does not jump to the hand");
         t.step(
             &inputs(k, grab_point + Vec3::Z * 0.02, false, true),
-            &CONFIG,
+            config(),
         );
         assert!((t.position - 0.4).abs() < 1e-4);
-        t.step(&inputs(k, grab_point + Vec3::Z * 0.2, false, true), &CONFIG);
+        t.step(
+            &inputs(k, grab_point + Vec3::Z * 0.2, false, true),
+            config(),
+        );
         assert_eq!(t.position, 1.0, "held at the rear of its travel");
-        t.step(&inputs(k, grab_point - Vec3::Z * 0.2, false, true), &CONFIG);
+        t.step(
+            &inputs(k, grab_point - Vec3::Z * 0.2, false, true),
+            config(),
+        );
         assert_eq!(t.position, 0.0, "held at home");
     }
 
@@ -375,29 +383,29 @@ mod tests {
     fn a_racked_slide_springs_home_and_cycles() {
         let mut t = ActionTravel::new();
         let k = ActionKind::Slide;
-        t.step(&inputs(k, back(0.0), true, true), &CONFIG);
-        let e = t.step(&inputs(k, back(1.0), false, true), &CONFIG);
+        t.step(&inputs(k, back(0.0), true, true), config());
+        let e = t.step(&inputs(k, back(1.0), false, true), config());
         assert!(e.rear && t.pulled);
-        let e = t.step(&inputs(k, back(1.0), false, false), &CONFIG);
+        let e = t.step(&inputs(k, back(1.0), false, false), config());
         assert!(e.let_go);
         let mut cycled = 0;
         for _ in 0..30 {
-            let e = t.step(&inputs(k, back(1.0), false, false), &CONFIG);
+            let e = t.step(&inputs(k, back(1.0), false, false), config());
             cycled += u32::from(e.cycled);
         }
         assert_eq!(cycled, 1);
         assert_eq!(t.position, 0.0);
-        assert!(t.in_battery(&CONFIG));
+        assert!(t.in_battery(config()));
     }
 
     #[test]
     fn a_short_pull_springs_home_without_cycling() {
         let mut t = ActionTravel::new();
         let k = ActionKind::ChargingHandle;
-        t.step(&inputs(k, back(0.0), true, true), &CONFIG);
-        t.step(&inputs(k, back(0.5), false, true), &CONFIG);
+        t.step(&inputs(k, back(0.0), true, true), config());
+        t.step(&inputs(k, back(0.5), false, true), config());
         for _ in 0..30 {
-            let e = t.step(&inputs(k, back(0.5), false, false), &CONFIG);
+            let e = t.step(&inputs(k, back(0.5), false, false), config());
             assert!(!e.cycled && !e.rear);
         }
         assert_eq!(t.position, 0.0);
@@ -407,22 +415,22 @@ mod tests {
     fn a_distant_handle_refuses_but_a_ready_slide_remains_grabbable() {
         let mut t = ActionTravel::new();
         let k = ActionKind::Slide;
-        let e = t.step(&inputs(k, back(0.0) + Vec3::Y * 0.2, true, true), &CONFIG);
+        let e = t.step(&inputs(k, back(0.0) + Vec3::Y * 0.2, true, true), config());
         assert!(!e.grabbed);
         let not_needed = TravelInputs {
             needed: false,
             ..inputs(k, back(0.0), true, true)
         };
-        assert!(t.step(&not_needed, &CONFIG).grabbed);
+        assert!(t.step(&not_needed, config()).grabbed);
     }
 
     #[test]
     fn a_hand_straying_off_the_axis_lets_go() {
         let mut t = ActionTravel::new();
         let k = ActionKind::Slide;
-        t.step(&inputs(k, back(0.0), true, true), &CONFIG);
-        let away = back(0.5) + Vec3::X * (CONFIG.release_distance_m + 0.01);
-        assert!(t.step(&inputs(k, away, false, true), &CONFIG).let_go);
+        t.step(&inputs(k, back(0.0), true, true), config());
+        let away = back(0.5) + Vec3::X * (config().release_distance_m + 0.01);
+        assert!(t.step(&inputs(k, away, false, true), config()).let_go);
         assert!(t.grip.is_none());
     }
 
@@ -434,22 +442,22 @@ mod tests {
             feeds: false,
             ..inputs(k, hand, pressed, held)
         };
-        t.step(&empty(back(0.0), true, true), &CONFIG);
-        t.step(&empty(back(1.0), false, true), &CONFIG);
-        let e = t.step(&empty(back(1.0), false, false), &CONFIG);
+        t.step(&empty(back(0.0), true, true), config());
+        t.step(&empty(back(1.0), false, true), config());
+        let e = t.step(&empty(back(1.0), false, false), config());
         assert!(e.locked_back && t.locked_back);
         for _ in 0..30 {
-            t.step(&empty(back(1.0), false, false), &CONFIG);
+            t.step(&empty(back(1.0), false, false), config());
         }
         assert_eq!(t.position, 1.0, "held back by the catch");
-        assert!(!t.in_battery(&CONFIG));
+        assert!(!t.in_battery(config()));
         // A full magazine goes in; the slide is taken and let go: it runs home and chambers.
-        let e = t.step(&inputs(k, back(1.0), true, true), &CONFIG);
+        let e = t.step(&inputs(k, back(1.0), true, true), config());
         assert!(e.grabbed && e.unlocked && !t.locked_back);
-        t.step(&inputs(k, back(1.0), false, false), &CONFIG);
+        t.step(&inputs(k, back(1.0), false, false), config());
         let mut cycled = false;
         for _ in 0..30 {
-            cycled |= t.step(&inputs(k, back(1.0), false, false), &CONFIG).cycled;
+            cycled |= t.step(&inputs(k, back(1.0), false, false), config()).cycled;
         }
         assert!(cycled);
         assert_eq!(t.position, 0.0);
@@ -464,11 +472,11 @@ mod tests {
             ..inputs(ActionKind::Slide, back(0.0), false, false)
         };
         for _ in 0..30 {
-            t.step(&free, &CONFIG);
+            t.step(&free, config());
         }
         assert_eq!(t.position, 1.0);
         t.close();
-        assert!(t.in_battery(&CONFIG) && !t.locked_back);
+        assert!(t.in_battery(config()) && !t.locked_back);
     }
 
     #[test]
@@ -480,12 +488,12 @@ mod tests {
             magazine_in: false,
             ..inputs(k, hand, pressed, held)
         };
-        t.step(&out(back(0.0), true, true), &CONFIG);
-        t.step(&out(back(1.0), false, true), &CONFIG);
-        let e = t.step(&out(back(1.0), false, false), &CONFIG);
+        t.step(&out(back(0.0), true, true), config());
+        t.step(&out(back(1.0), false, true), config());
+        let e = t.step(&out(back(1.0), false, false), config());
         assert!(!e.locked_back);
         for _ in 0..30 {
-            t.step(&out(back(1.0), false, false), &CONFIG);
+            t.step(&out(back(1.0), false, false), config());
         }
         assert_eq!(t.position, 0.0);
     }
@@ -500,32 +508,32 @@ mod tests {
             ..inputs(k, start, false, true)
         };
         assert!(
-            t.step(&not_needed, &CONFIG).grabbed,
+            t.step(&not_needed, config()).grabbed,
             "a ready pump can be worked"
         );
-        let e = t.step(&inputs(k, start + Vec3::Z * TRAVEL, false, true), &CONFIG);
+        let e = t.step(&inputs(k, start + Vec3::Z * TRAVEL, false, true), config());
         assert!(e.rear);
         let e = t.step(
             &inputs(k, start + Vec3::Z * 0.6 * TRAVEL, false, false),
-            &CONFIG,
+            config(),
         );
         assert!(e.let_go);
         for _ in 0..10 {
-            t.step(&inputs(k, start, false, false), &CONFIG);
+            t.step(&inputs(k, start, false, false), config());
         }
         assert_eq!(t.position, 1.0, "a pump has no spring");
         // The hand takes the foregrip again further forward and pushes the pump home.
         let regrip = start + Vec3::Z * 0.5 * TRAVEL;
-        assert!(t.step(&inputs(k, regrip, false, true), &CONFIG).grabbed);
-        let e = t.step(&inputs(k, regrip - Vec3::Z * TRAVEL, false, true), &CONFIG);
+        assert!(t.step(&inputs(k, regrip, false, true), config()).grabbed);
+        let e = t.step(&inputs(k, regrip - Vec3::Z * TRAVEL, false, true), config());
         assert!(e.home && e.cycled);
     }
 
     /// The hand at the bolt's handle turned `lift` of the way up and pulled `share` back.
     fn bolt_hand(lift: f32, share: f32) -> Vec3 {
-        let radius = CONFIG.bolt_radius_m;
+        let radius = config().bolt_radius_m;
         let pivot = HANDLE - Vec3::X * radius;
-        let turn = lift * CONFIG.bolt_lift_deg.to_radians();
+        let turn = lift * config().bolt_lift_deg.to_radians();
         pivot + Vec3::new(turn.cos(), turn.sin(), 0.0) * radius + Vec3::Z * (share * TRAVEL)
     }
 
@@ -534,10 +542,10 @@ mod tests {
         let mut t = ActionTravel::new();
         let k = ActionKind::Bolt;
         let step = |t: &mut ActionTravel, lift, share| {
-            t.step(&inputs(k, bolt_hand(lift, share), false, true), &CONFIG)
+            t.step(&inputs(k, bolt_hand(lift, share), false, true), config())
         };
         assert!(
-            t.step(&inputs(k, bolt_hand(0.0, 0.0), true, true), &CONFIG)
+            t.step(&inputs(k, bolt_hand(0.0, 0.0), true, true), config())
                 .grabbed
         );
         step(&mut t, 0.5, 0.5);
@@ -550,22 +558,22 @@ mod tests {
         assert!((t.position - 0.6).abs() < 1e-3);
         let e = step(&mut t, 1.0, 0.0);
         assert!(!e.cycled, "home but still up");
-        assert!(!t.in_battery(&CONFIG));
+        assert!(!t.in_battery(config()));
         let e = step(&mut t, 0.0, 0.0);
         assert!(e.home && e.cycled);
-        assert!(t.in_battery(&CONFIG));
+        assert!(t.in_battery(config()));
     }
 
     #[test]
     fn a_bolt_let_go_open_stays_open_and_can_be_closed() {
         let mut t = ActionTravel::new();
         let k = ActionKind::Bolt;
-        t.step(&inputs(k, bolt_hand(0.0, 0.0), true, true), &CONFIG);
-        t.step(&inputs(k, bolt_hand(1.0, 0.0), false, true), &CONFIG);
-        t.step(&inputs(k, bolt_hand(1.0, 1.0), false, true), &CONFIG);
-        t.step(&inputs(k, bolt_hand(1.0, 1.0), false, false), &CONFIG);
+        t.step(&inputs(k, bolt_hand(0.0, 0.0), true, true), config());
+        t.step(&inputs(k, bolt_hand(1.0, 0.0), false, true), config());
+        t.step(&inputs(k, bolt_hand(1.0, 1.0), false, true), config());
+        t.step(&inputs(k, bolt_hand(1.0, 1.0), false, false), config());
         for _ in 0..10 {
-            t.step(&inputs(k, bolt_hand(0.0, 0.0), false, false), &CONFIG);
+            t.step(&inputs(k, bolt_hand(0.0, 0.0), false, false), config());
         }
         assert_eq!((t.position, t.lift), (1.0, 1.0));
         let not_needed = TravelInputs {
@@ -573,23 +581,23 @@ mod tests {
             ..inputs(k, bolt_hand(1.0, 1.0), true, true)
         };
         assert!(
-            t.step(&not_needed, &CONFIG).grabbed,
+            t.step(&not_needed, config()).grabbed,
             "an open bolt can be taken"
         );
-        t.step(&inputs(k, bolt_hand(1.0, 0.0), false, true), &CONFIG);
-        let e = t.step(&inputs(k, bolt_hand(0.0, 0.0), false, true), &CONFIG);
+        t.step(&inputs(k, bolt_hand(1.0, 0.0), false, true), config());
+        let e = t.step(&inputs(k, bolt_hand(0.0, 0.0), false, true), config());
         assert!(e.cycled);
     }
 
     #[test]
     fn invalid_inputs_let_go() {
         let mut t = ActionTravel::new();
-        t.step(&inputs(ActionKind::Slide, back(0.0), true, true), &CONFIG);
+        t.step(&inputs(ActionKind::Slide, back(0.0), true, true), config());
         let bad = TravelInputs {
             travel_m: 0.0,
             ..inputs(ActionKind::Slide, back(0.0), false, true)
         };
-        t.step(&bad, &CONFIG);
+        t.step(&bad, config());
         assert!(t.grip.is_none());
     }
 }

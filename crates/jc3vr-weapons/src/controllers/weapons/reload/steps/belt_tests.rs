@@ -22,9 +22,9 @@ fn actual_belt_gate_requires_ammo_space_delay_and_no_other_reload_claim() {
     );
     assert!(offer(&state, &tick, &config, guns).is_some());
 
-    state.since_draw_s = RELOAD.belt.after_draw_s;
+    state.since_draw_s = RELOAD.get().belt.after_draw_s;
     assert!(offer(&state, &tick, &config, guns).is_some());
-    state.since_draw_s = RELOAD.belt.after_draw_s - 0.001;
+    state.since_draw_s = RELOAD.get().belt.after_draw_s - 0.001;
     assert!(
         !state
             .belt_gate(&tick, hand)
@@ -283,7 +283,7 @@ fn each_dual_wielded_gun_is_pushed_onto_its_own_pouch() {
     let mouth = |tick: &Tick, h: Hand| tick.guns[h.index()].unwrap().well.unwrap().mouth;
     // Each pouch is its own gun's: one gun enters its pouch's push sphere, short of the depth that
     // reloads (which would call the engine), and the other's pouch is far off.
-    let entering = RELOAD.belt.radius_m - RELOAD.belt.depth_m * 0.5;
+    let entering = RELOAD.get().belt.radius_m - RELOAD.get().belt.depth_m * 0.5;
     state.pouches[hand.index()] = Some(mouth(&tick, hand) - Vec3::Y * entering);
     state.pouches[other.index()] = Some(mouth(&tick, other) + Vec3::X * 1.0);
     for g in tick.guns.iter_mut().flatten() {
@@ -308,7 +308,8 @@ fn an_eligible_gun_near_its_pouch_marks_it() {
     well.axis = Vec3::Y;
     let mouth = well.mouth;
     // Near enough to show, outside the push sphere.
-    let centre = mouth - Vec3::Y * (RELOAD.belt.radius_m + RELOAD.belt.approach_m * 0.5);
+    let centre =
+        mouth - Vec3::Y * (RELOAD.get().belt.radius_m + RELOAD.get().belt.approach_m * 0.5);
     state.pouches = [Some(centre); 2];
     state.belt(&tick, &config);
     assert_eq!(state.belt_rings[hand.index()], Some(centre));

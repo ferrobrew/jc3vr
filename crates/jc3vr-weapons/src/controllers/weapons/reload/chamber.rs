@@ -263,7 +263,9 @@ mod tests {
     use super::*;
     use crate::controllers::weapons::reload::tuning::RELOAD;
 
-    const CONFIG: ActionTuning = RELOAD.action;
+    fn config() -> &'static ActionTuning {
+        &RELOAD.get().action
+    }
     const HANDLE: Vec3 = Vec3::new(0.1, -0.2, -0.3);
 
     fn sphere(volume: GrabVolume, centre: Vec3, radius: f32) -> GripTarget {
@@ -286,7 +288,7 @@ mod tests {
             sphere(
                 GrabVolume::WeaponAction,
                 Vec3::X * 0.09,
-                CONFIG.grab_radius_m,
+                config().grab_radius_m,
             ),
         ]
     }
@@ -301,7 +303,7 @@ mod tests {
     fn the_handle_of_a_gun_waiting_on_its_action_comes_first_within_its_reach() {
         // A closed hand 9 cm from the handle, nearer the other parts: a reach the old 7 cm radius
         // missed, after which the hand took the foregrip.
-        const { assert!(CONFIG.grab_radius_m >= 0.1) };
+        assert!(config().grab_radius_m >= 0.1);
         let mut waiting = gun_parts();
         prefer_waiting_action(&mut waiting, [Some(Vec3::ZERO), None], [true, false]);
         assert_eq!(chosen(&waiting), Some(GrabVolume::WeaponAction));
@@ -358,16 +360,16 @@ mod tests {
         let mut w = ActionWork::new();
         let k = ActionKind::Slide;
         assert_eq!(
-            w.step(inputs(k, 0.0, true, true), &CONFIG),
+            w.step(inputs(k, 0.0, true, true), config()),
             Some(WorkEvent::Grabbed)
         );
-        assert_eq!(w.step(inputs(k, 0.02, false, true), &CONFIG), None);
+        assert_eq!(w.step(inputs(k, 0.02, false, true), config()), None);
         assert_eq!(
-            w.step(inputs(k, 0.045, false, true), &CONFIG),
+            w.step(inputs(k, 0.045, false, true), config()),
             Some(WorkEvent::Pulled)
         );
         assert_eq!(
-            w.step(inputs(k, 0.045, false, false), &CONFIG),
+            w.step(inputs(k, 0.045, false, false), config()),
             Some(WorkEvent::Worked)
         );
         assert_eq!(w.worked, 1);
@@ -377,11 +379,11 @@ mod tests {
     fn a_short_pull_or_a_grab_away_from_the_handle_does_nothing() {
         let mut w = ActionWork::new();
         let k = ActionKind::ChargingHandle;
-        assert_eq!(w.step(inputs(k, 0.2, true, true), &CONFIG), None);
-        w.step(inputs(k, 0.0, true, true), &CONFIG);
-        w.step(inputs(k, 0.02, false, true), &CONFIG);
+        assert_eq!(w.step(inputs(k, 0.2, true, true), config()), None);
+        w.step(inputs(k, 0.0, true, true), config());
+        w.step(inputs(k, 0.02, false, true), config());
         assert_eq!(
-            w.step(inputs(k, 0.02, false, false), &CONFIG),
+            w.step(inputs(k, 0.02, false, false), config()),
             Some(WorkEvent::LetGo)
         );
         assert_eq!(w.worked, 0);
@@ -391,16 +393,16 @@ mod tests {
     fn a_bolt_has_to_go_back_home() {
         let mut w = ActionWork::new();
         let k = ActionKind::Bolt;
-        w.step(inputs(k, 0.0, true, true), &CONFIG);
-        w.step(inputs(k, 0.05, false, true), &CONFIG);
+        w.step(inputs(k, 0.0, true, true), config());
+        w.step(inputs(k, 0.05, false, true), config());
         assert_eq!(
-            w.step(inputs(k, 0.05, false, false), &CONFIG),
+            w.step(inputs(k, 0.05, false, false), config()),
             Some(WorkEvent::LetGo)
         );
-        w.step(inputs(k, 0.0, true, true), &CONFIG);
-        w.step(inputs(k, 0.05, false, true), &CONFIG);
+        w.step(inputs(k, 0.0, true, true), config());
+        w.step(inputs(k, 0.05, false, true), config());
         assert_eq!(
-            w.step(inputs(k, 0.005, false, true), &CONFIG),
+            w.step(inputs(k, 0.005, false, true), config()),
             Some(WorkEvent::Worked)
         );
     }
@@ -410,17 +412,17 @@ mod tests {
         let mut w = ActionWork::new();
         let k = ActionKind::Pump;
         let not_needed = inputs(k, 0.03, false, true).map(|i| WorkInputs { needed: false, ..i });
-        assert_eq!(w.step(not_needed, &CONFIG), None);
+        assert_eq!(w.step(not_needed, config()), None);
         assert_eq!(
-            w.step(inputs(k, 0.03, false, true), &CONFIG),
+            w.step(inputs(k, 0.03, false, true), config()),
             Some(WorkEvent::Grabbed)
         );
         assert_eq!(
-            w.step(inputs(k, 0.075, false, true), &CONFIG),
+            w.step(inputs(k, 0.075, false, true), config()),
             Some(WorkEvent::Pulled)
         );
         assert_eq!(
-            w.step(inputs(k, 0.035, false, true), &CONFIG),
+            w.step(inputs(k, 0.035, false, true), config()),
             Some(WorkEvent::Worked)
         );
     }

@@ -9,12 +9,12 @@
 //! weapon, since the table never puts one in its slot and so never wields it.
 //!
 //! Such a weapon is refilled through the game's own round move instead ([`WeaponBase::Reload`],
-//! the same call a seated magazine loads through) once its magazine has stayed empty for
-//! [`REFILL_DELAY`], about as long as the game's reload takes, while its reserve has rounds or
-//! the ammunition is unlimited. The reload's own rules (the reserve, unlimited ammunition, the
-//! upgrades, the HUD) all apply. A weapon without a magazine limit, as every heavy weapon is,
-//! fires straight from the reserve and is never refilled; nor is one of the game's untimed or
-//! unlimited reloads, whose own timer or kind looks after it.
+//! the same call a seated magazine loads through) once its magazine has stayed empty for the
+//! tuning's `refill_delay_ms` ([`Reload::refill_delay_ms`]), about as long as the game's reload
+//! takes, while its reserve has rounds or the ammunition is unlimited. The reload's own rules (the
+//! reserve, unlimited ammunition, the upgrades, the HUD) all apply. A weapon without a magazine
+//! limit, as every heavy weapon is, fires straight from the reserve and is never refilled; nor is
+//! one of the game's untimed or unlimited reloads, whose own timer or kind looks after it.
 //!
 //! [`Character::StartReloadingWieldingWeapon`]: jc3gi::character::character::Character::StartReloadingWieldingWeapon
 
@@ -37,17 +37,15 @@ use crate::controllers::weapons::{
     },
 };
 
-/// How long an armed weapon's magazine stays empty before the game's reload refills it.
-pub(crate) const REFILL_DELAY: Duration = Duration::from_millis(1500);
-
 /// Refill each armed weapon whose reload is the game's once its magazine has stayed empty for
-/// [`REFILL_DELAY`]. `reload_acts` is whether the true reload acts this tick.
+/// the refill delay. `reload_acts` is whether the true reload acts this tick.
 ///
 /// # Safety
 ///
 /// `owner` must be the live local player character, on the game thread before the world update.
 pub(crate) unsafe fn refill_armed(owner: &Character, config: &WeaponSettings, reload_acts: bool) {
     let reload = Reload::of(&config.weapons.reload);
+    let delay = Duration::from_millis(reload.refill_delay_ms);
     let now = Instant::now();
     let mut pending = PENDING.lock();
     for hand in Hand::BOTH {
@@ -60,7 +58,7 @@ pub(crate) unsafe fn refill_armed(owner: &Character, config: &WeaponSettings, re
         // SAFETY: the armed weapon's slot or carry-set source keeps it alive for this borrow.
         let weapon = unsafe { handle.as_mut() };
         let facts = unsafe { facts_of(weapon, &reload, reload_acts) };
-        let (next, due) = step(*slot, address, wants_refill(facts), now);
+        let (next, due) = step(*slot, address, wants_refill(facts), now, delay);
         *slot = next;
         if due {
             let refilled = unsafe { refill(weapon) };
@@ -96,7 +94,7 @@ struct ArmedFacts {
     stocked: bool,
 }
 
-/// A weapon whose magazine ran empty, waiting out [`REFILL_DELAY`].
+/// A weapon whose magazine ran empty, waiting out the refill delay.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 struct Pending {
     address: usize,
@@ -147,19 +145,20 @@ fn wants_refill(facts: ArmedFacts) -> bool {
 }
 
 /// Advance the refill of the weapon at `address`: start waiting when it wants one, keep waiting
-/// while it still does, and refill once [`REFILL_DELAY`] has passed. A different weapon, or one
+/// while it still does, and refill once `delay` has passed. A different weapon, or one
 /// no longer wanting a refill, starts over. Returns the next state and whether the refill is due.
 fn step(
     pending: Option<Pending>,
     address: usize,
     wants: bool,
     now: Instant,
+    delay: Duration,
 ) -> (Option<Pending>, bool) {
     if !wants {
         return (None, false);
     }
     match pending.filter(|p| p.address == address) {
-        Some(p) if now.saturating_duration_since(p.since) >= REFILL_DELAY => (None, true),
+        Some(p) if now.saturating_duration_since(p.since) >= delay => (None, true),
         Some(p) => (Some(p), false),
         None => (
             Some(Pending {
@@ -192,6 +191,11 @@ unsafe fn refill(weapon: &mut WeaponBase) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::controllers::weapons::reload::tuning::RELOAD;
+
+    fn refill_delay() -> Duration {
+        Duration::from_millis(RELOAD.get().refill_delay_ms)
+    }
 
     const EMPTY_SPECIAL: ArmedFacts = ArmedFacts {
         by_hand: false,
@@ -248,12 +252,12 @@ mod tests {
     #[test]
     fn the_refill_waits_out_the_delay_for_the_same_weapon() {
         let start = Instant::now();
-        let (pending, due) = step(None, 1, true, start);
+        let (pending, due) = step(None, 1, true, start, refill_delay());
         assert!(!due);
-        let (pending, due) = step(pending, 1, true, start + REFILL_DELAY / 2);
+        let (pending, due) = step(pending, 1, true, start + refill_delay() / 2, refill_delay());
         assert!(!due);
         assert!(pending.is_some());
-        let (pending, due) = step(pending, 1, true, start + REFILL_DELAY);
+        let (pending, due) = step(pending, 1, true, start + refill_delay(), refill_delay());
         assert!(due);
         assert_eq!(pending, None);
     }
@@ -261,14 +265,20 @@ mod tests {
     #[test]
     fn another_weapon_or_a_lapse_starts_the_wait_over() {
         let start = Instant::now();
-        let (pending, _) = step(None, 1, true, start);
-        let (pending, due) = step(pending, 2, true, start + REFILL_DELAY);
+        let (pending, _) = step(None, 1, true, start, refill_delay());
+        let (pending, due) = step(pending, 2, true, start + refill_delay(), refill_delay());
         assert!(!due, "a different weapon in the hand waits on its own");
         assert_eq!(pending.map(|p| p.address), Some(2));
-        let (pending, due) = step(pending, 2, false, start + REFILL_DELAY * 2);
+        let (pending, due) = step(
+            pending,
+            2,
+            false,
+            start + refill_delay() * 2,
+            refill_delay(),
+        );
         assert!(!due);
         assert_eq!(pending, None);
-        let (_, due) = step(pending, 2, true, start + REFILL_DELAY * 3);
+        let (_, due) = step(pending, 2, true, start + refill_delay() * 3, refill_delay());
         assert!(!due, "a weapon that wants a refill again waits again");
     }
 }

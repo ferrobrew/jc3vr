@@ -1,0 +1,114 @@
+# The true reload's tuning: `ReloadTuning` (`Reload<()>`) in
+# `src/controllers/weapons/reload/tuning.rs`, whose fields say what each value does. The switch
+# that turns the reload on is a setting, not tuning (`ReloadConfig`). Every key is required and no
+# other is accepted. Lengths are metres, speeds metres per second, angles degrees, and times seconds
+# unless a key says otherwise (`_ms` is milliseconds, `_radps` radians per second); a share is a
+# fraction of a range, in `0..1`. Lengths in `knock` and `zones` are the gun model's metres.
+
+tap_s = 0.3
+double_tap_gap_s = 0.4
+well_offset_m = [0.0, -0.08, -0.06]
+held_top_m = 0.07
+held_palm_gap_m = 0.03
+capture_radius_m = 0.08
+capture_angle_deg = 50.0
+retain_radius_scale = 1.5
+push_knock_mps = 0.75
+launcher_capture_radius_m = 0.16
+launcher_capture_angle_deg = 85.0
+seat_depth_m = 0.025
+release_seat_shares = [0.5, 1.5]
+timeout_s = 8.0
+ready_cue_delay_s = 0.15
+ready_cue_pulses = [2, 0.1]
+refill_delay_ms = 1500
+
+[belt]
+max_tilt_deg = 60.0
+radius_m = 0.12
+depth_m = 0.02
+approach_m = 0.25
+after_draw_s = 0.8
+
+[action]
+grab_radius_m = 0.105
+pull_fraction = 0.8
+return_fraction = 0.3
+release_distance_m = 0.15
+default_travel_m = 0.06
+spring_s = 0.05
+bolt_lift_deg = 60.0
+bolt_radius_m = 0.03
+lift_fraction = 0.85
+
+[loose]
+radius_m = 0.1
+range_m = 2.0
+half_length_m = 0.06
+max_carry_mps = 20.0
+max_carry_turn_radps = 30.0
+keep_s = 300.0
+
+[extraction]
+grab_radius_m = 0.06
+pull_m = 0.08
+lateral_tolerance_m = 0.06
+
+[float]
+radius_m = 0.15
+capture_radius_scale = 2.0
+angle_deg = 70.0
+speed_mps = 0.8
+min_s = 0.08
+max_s = 0.3
+approach_share = 0.6
+
+[knock]
+min_speed_mps = 0.75
+radius_m = 0.035
+lip_m = 0.015
+share = 0.5
+max_knock_mps = 2.5
+max_spin_radps = 25.0
+impulse_ticks = 10
+linger_ticks = 4
+flash_ms = 400
+view_max_age_ms = 250
+
+[zones]
+lip_m = 0.015
+length_m = 0.24
+radius_m = 0.06
+view_max_age_ms = 250
+
+[revolver]
+flick_dps = 450.0
+flick_cooldown_s = 0.3
+open_s = 0.13
+close_s = 0.1
+dump_elevation_deg = 45.0
+spin_turns = 2.0
+spin_s = 0.6
+
+[casings]
+fall_s = 1.2
+eject_mps = 0.8
+tumble_radps = 9.0
+
+[guide]
+ttl_ms = 150
+width_m = 0.0018
+holding_rgb = [0.35, 0.85, 1.0]
+caught_rgb = [0.25, 1.0, 0.5]
+occluded_alpha = 0.3
+seat_holding_alpha = 0.18
+seat_caught_alpha = 0.55
+preview_alpha = 0.65
+preview_period_s = 1.6
+preview_fade_in_share = 0.12
+preview_travel_share = 0.58
+preview_fade_out_end_share = 0.88
+preview_fade_out_share = 0.18
+
+[gate]
+stale_ms = 500

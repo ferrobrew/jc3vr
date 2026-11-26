@@ -69,7 +69,7 @@ fn carry<'a>(config: &'a LooseTuning) -> Carry<'a> {
 
 #[test]
 fn reownership_from_carry_read_seat_read_or_velocity_write_is_sticky_between_maintenance_calls() {
-    let config = RELOAD.loose;
+    let config = RELOAD.get().loose;
     for operation in 0..3 {
         for error in [BodyError::NoBody, BodyError::Reowned] {
             let (mut state, magazine) = state();
@@ -115,7 +115,7 @@ fn reownership_from_carry_read_seat_read_or_velocity_write_is_sticky_between_mai
 
 #[test]
 fn temporary_pose_or_write_errors_defer_and_recover_without_consuming_rounds() {
-    let config = RELOAD.loose;
+    let config = RELOAD.get().loose;
     for error in [
         BodyError::NoPhysicsWorld,
         BodyError::NotDynamic,

@@ -15,10 +15,10 @@ use crate::controllers::weapons::{
         frames, insert,
         insert::{InsertStage, InsertionSource},
         knock,
-        knock::{GunMagazine, KNOCK, KnockView, Strike},
+        knock::{GunMagazine, KnockView, Strike},
         loose,
         loose::Operation,
-        tuning::Reload,
+        tuning::{RELOAD, Reload},
         wells,
     },
 };
@@ -80,11 +80,12 @@ impl State {
             return;
         }
         let previous = self.knocks.previous;
-        let (strike, local) = knock::strike(&zone, previous, tip, inputs.dt, knock::MIN_SPEED_MPS);
+        let min_speed_mps = reload.knock.min_speed_mps;
+        let (strike, local) = knock::strike(&zone, previous, tip, inputs.dt, min_speed_mps);
         self.knocks.previous = local;
-        let fast = previous.zip(local).is_some_and(|(p, l)| {
-            inputs.dt > 0.0 && p.distance(l) / inputs.dt >= knock::MIN_SPEED_MPS
-        });
+        let fast = previous
+            .zip(local)
+            .is_some_and(|(p, l)| inputs.dt > 0.0 && p.distance(l) / inputs.dt >= min_speed_mps);
         if let Some(strike) = strike {
             self.queue_knock(tick, gun_hand, strike);
         } else if let (Some(touch), _) = knock::strike(&zone, previous, tip, inputs.dt, 0.0) {
@@ -93,7 +94,7 @@ impl State {
                 target: "controllers",
                 hand = ?hand,
                 closing_mps = touch.closing_mps,
-                min_speed_mps = knock::MIN_SPEED_MPS,
+                min_speed_mps,
                 "reload: the held magazine met the inserted one too slowly to knock it out"
             );
         }
@@ -154,9 +155,9 @@ impl State {
                 world_scale: tick.world_scale,
             })
         });
-        let strikes = self
-            .knocks
-            .gun_strikes(magazines, inputs.dt, knock::MIN_SPEED_MPS);
+        let strikes =
+            self.knocks
+                .gun_strikes(magazines, inputs.dt, RELOAD.get().knock.min_speed_mps);
         let candidate = Hand::BOTH
             .into_iter()
             .filter_map(|holder| Some((holder, strikes[holder.index()]?)))
@@ -236,7 +237,7 @@ impl State {
                     body,
                     body.pose.centre + pending.contact,
                     pending.velocity,
-                    &KNOCK,
+                    &RELOAD.get().knock,
                 )
             })
         };

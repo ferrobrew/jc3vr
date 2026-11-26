@@ -419,8 +419,8 @@ fn pump_and_bolt_hold_open_without_repeated_debits_and_close_after_reacquisition
             let (config, mut state, mut tick, mut engine) = fixture(kind, hand, 3);
             let rear = Vec3::Z * tick.weapons[0].unwrap().plan.travel_m;
             let lifted = Vec3::new(
-                -RELOAD.action.bolt_radius_m,
-                RELOAD.action.bolt_radius_m,
+                -RELOAD.get().action.bolt_radius_m,
+                RELOAD.get().action.bolt_radius_m,
                 0.0,
             );
             step(
@@ -664,8 +664,8 @@ fn a_bolt_opened_after_a_shot_throws_the_casing_and_one_not_fired_does_not() {
         engine.fired = fired;
         let rear = Vec3::Z * tick.weapons[0].unwrap().plan.travel_m;
         let lifted = Vec3::new(
-            -RELOAD.action.bolt_radius_m,
-            RELOAD.action.bolt_radius_m,
+            -RELOAD.get().action.bolt_radius_m,
+            RELOAD.get().action.bolt_radius_m,
             0.0,
         );
         for (position, grip) in [

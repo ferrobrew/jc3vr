@@ -21,7 +21,10 @@ use glam::Vec3;
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
-use crate::controllers::weapons::reload::plan::{LoadKind, WellFrame};
+use crate::controllers::weapons::reload::{
+    plan::{LoadKind, WellFrame},
+    tuning::RELOAD,
+};
 
 /// The space under a gun's magazine well, in the cockpit frame.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -47,12 +50,13 @@ impl MagazineZone {
             .is_finite()
             .then_some(world_scale)
             .filter(|s| *s > 0.0)?;
+        let tuning = &RELOAD.get().zones;
         mouth.is_finite().then_some(Self {
             mouth,
             outward,
-            lip: ZONE.lip_m / scale,
-            length: ZONE.length_m / scale,
-            radius: ZONE.radius_m / scale,
+            lip: tuning.lip_m / scale,
+            length: tuning.length_m / scale,
+            radius: tuning.radius_m / scale,
         })
     }
 
@@ -113,7 +117,11 @@ pub(crate) struct ZoneView {
 /// handling has stopped resolving them.
 pub(crate) fn views() -> [Option<ZoneView>; 2] {
     match *VIEWS.lock() {
-        Some((at, views)) if at.elapsed() <= VIEW_MAX_AGE => views,
+        Some((at, views))
+            if at.elapsed() <= Duration::from_millis(RELOAD.get().zones.view_max_age_ms) =>
+        {
+            views
+        }
         _ => [None; 2],
     }
 }
@@ -121,27 +129,6 @@ pub(crate) fn views() -> [Option<ZoneView>; 2] {
 pub(super) fn publish(views: [Option<ZoneView>; 2]) {
     *VIEWS.lock() = Some((Instant::now(), views));
 }
-
-/// The zone's size, in the gun model's metres.
-struct ZoneTuning {
-    /// How far into the well above its mouth: the base plate of a pistol's magazine sits at the
-    /// bottom of the grip, and a hand pinching it is level with the mouth.
-    lip_m: f32,
-    /// How far below the mouth: past the longest magazine, plus a hand's grip on its end.
-    length_m: f32,
-    /// How far from the axis: a magazine's half-width plus the hand's tracking and placement
-    /// error, short of a long gun's pistol grip behind the well.
-    radius_m: f32,
-}
-
-const ZONE: ZoneTuning = ZoneTuning {
-    lip_m: 0.015,
-    length_m: 0.24,
-    radius_m: 0.06,
-};
-
-/// How long a published view is drawn without a newer one.
-const VIEW_MAX_AGE: Duration = Duration::from_millis(250);
 
 static VIEWS: Mutex<Option<(Instant, [Option<ZoneView>; 2])>> = Mutex::new(None);
 
@@ -189,7 +176,7 @@ mod tests {
     fn the_zone_follows_the_player_scale() {
         // At twice the world scale the player is half as large against the gun.
         let zone = MagazineZone::under(Vec3::ZERO, Vec3::Y, 2.0).unwrap();
-        assert!((zone.radius - ZONE.radius_m / 2.0).abs() < 1e-6);
+        assert!((zone.radius - RELOAD.get().zones.radius_m / 2.0).abs() < 1e-6);
         assert!(!zone.contains(Vec3::new(0.0, -0.2, 0.0)));
         assert!(zone.contains(Vec3::new(0.0, -0.1, 0.0)));
     }

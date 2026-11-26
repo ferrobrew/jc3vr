@@ -150,7 +150,9 @@ mod tests {
     use super::*;
     use crate::controllers::weapons::reload::tuning::RELOAD;
 
-    const CONFIG: BeltTuning = RELOAD.belt;
+    fn config() -> &'static BeltTuning {
+        &RELOAD.get().belt
+    }
     const POUCH: Vec3 = Vec3::new(0.2, -0.6, -0.1);
 
     fn at(height: f32) -> Option<PushInputs> {
@@ -158,7 +160,7 @@ mod tests {
             point: POUCH + Vec3::Y * height,
             axis: Vec3::Y,
             pouch_centre: POUCH,
-            pouch_radius: CONFIG.radius_m,
+            pouch_radius: config().radius_m,
             eligible: true,
         })
     }
@@ -166,20 +168,20 @@ mod tests {
     #[test]
     fn a_gun_brought_down_onto_the_pouch_reloads_once_however_slowly() {
         let mut b = BeltPush::new();
-        assert!(!b.step(at(0.2), &CONFIG));
-        assert!(!b.step(at(0.115), &CONFIG));
+        assert!(!b.step(at(0.2), config()));
+        assert!(!b.step(at(0.115), config()));
         assert_eq!(b.stage, PushStage::Pushing);
-        assert!(b.step(at(0.09), &CONFIG));
+        assert!(b.step(at(0.09), config()));
         assert!(b.holds_fire());
         // The reload filled the magazine, so the gun is no longer eligible: the hold stays.
         let full = at(0.0).map(|i| PushInputs {
             eligible: false,
             ..i
         });
-        assert!(!b.step(full, &CONFIG));
+        assert!(!b.step(full, config()));
         assert!(b.holds_fire());
-        assert!(!b.step(at(0.0), &CONFIG));
-        assert!(!b.step(at(0.2), &CONFIG));
+        assert!(!b.step(at(0.0), config()));
+        assert!(!b.step(at(0.2), config()));
         assert!(!b.holds_fire());
     }
 
@@ -192,12 +194,12 @@ mod tests {
             })
         };
         let mut b = BeltPush::new();
-        b.step(tilted(55.0), &CONFIG);
-        assert!(b.step(at(0.0), &CONFIG));
+        b.step(tilted(55.0), config());
+        assert!(b.step(at(0.0), config()));
 
         let mut b = BeltPush::new();
-        b.step(tilted(65.0), &CONFIG);
-        assert!(!b.step(at(0.0), &CONFIG));
+        b.step(tilted(65.0), config());
+        assert!(!b.step(at(0.0), config()));
         assert_eq!(b.stage, PushStage::Brushed);
         assert!(!b.holds_fire());
     }
@@ -211,13 +213,13 @@ mod tests {
                 ..i
             })
         };
-        b.step(ineligible(0.1), &CONFIG);
+        b.step(ineligible(0.1), config());
         // A gun brushing the pouch with nothing to reload (a full magazine, no reserve, a fresh
         // draw beside its pouch) fires as ever.
         assert!(!b.holds_fire());
-        assert!(!b.step(at(0.0), &CONFIG));
+        assert!(!b.step(at(0.0), config()));
         assert!(!b.holds_fire());
-        assert!(!b.step(None, &CONFIG));
+        assert!(!b.step(None, config()));
         assert_eq!(b.stage, PushStage::Outside);
     }
 
@@ -233,8 +235,8 @@ mod tests {
     #[test]
     fn the_push_is_offered_to_an_upright_gun_near_the_pouch() {
         let near = POUCH + Vec3::Y * 0.3;
-        assert!(approaching(near, Vec3::Y, POUCH, 0.12, 0.2, &CONFIG));
-        assert!(!approaching(near, Vec3::Y, POUCH, 0.12, 0.1, &CONFIG));
-        assert!(!approaching(POUCH, Vec3::Z, POUCH, 0.12, 0.2, &CONFIG));
+        assert!(approaching(near, Vec3::Y, POUCH, 0.12, 0.2, config()));
+        assert!(!approaching(near, Vec3::Y, POUCH, 0.12, 0.1, config()));
+        assert!(!approaching(POUCH, Vec3::Z, POUCH, 0.12, 0.2, config()));
     }
 }

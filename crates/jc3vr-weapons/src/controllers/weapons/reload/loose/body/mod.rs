@@ -94,7 +94,7 @@ impl State {
             (centre, orientation),
             (target, upright_toward(orientation, carry.axis)),
             carry.dt,
-            carry.config.max_carry_mps,
+            carry.config,
         );
         let result = bodies.velocities(magazine, linear, angular);
         self.observe(magazine, result)

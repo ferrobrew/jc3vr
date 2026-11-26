@@ -392,20 +392,21 @@ pub fn counts() -> LooseCounts {
     STATE.lock().counts
 }
 
-/// The velocities that carry a body from `from` (centre, orientation) to `to` over `dt`, the
-/// linear part capped at `max_mps`.
+/// The velocities that carry a body from `from` (centre, orientation) to `to` over `dt`, capped at
+/// `config`'s carry speed and turn rate.
 pub fn carry_velocities(
     from: (Vec3, Quat),
     to: (Vec3, Quat),
     dt: f32,
-    max_mps: f32,
+    config: &LooseTuning,
 ) -> (Vec3, Vec3) {
     if !(dt > 0.0 && from.0.is_finite() && to.0.is_finite()) {
         return (Vec3::ZERO, Vec3::ZERO);
     }
-    let linear = ((to.0 - from.0) / dt).clamp_length_max(max_mps.max(0.0));
-    let angular = angular_velocity(from.1, to.1, dt)
-        .map_or(Vec3::ZERO, |v| v.clamp_length_max(MAX_CARRY_TURN_RADPS));
+    let linear = ((to.0 - from.0) / dt).clamp_length_max(config.max_carry_mps.max(0.0));
+    let angular = angular_velocity(from.1, to.1, dt).map_or(Vec3::ZERO, |v| {
+        v.clamp_length_max(config.max_carry_turn_radps)
+    });
     (linear, angular)
 }
 
@@ -418,9 +419,6 @@ pub fn upright_toward(orientation: Quat, axis: Vec3) -> Quat {
     let up = orientation * Vec3::Y;
     (Quat::from_rotation_arc(up, axis) * orientation).normalize()
 }
-
-/// The fastest a held magazine is turned toward the hand's pose, radians per second.
-const MAX_CARRY_TURN_RADPS: f32 = 30.0;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 struct ExpectedDrop {
@@ -610,6 +608,7 @@ mod tests {
     use std::f32::consts::FRAC_PI_2;
 
     use super::*;
+    use crate::controllers::weapons::reload::tuning::RELOAD;
 
     fn magazine(tag: i32) -> Loose {
         Loose {
@@ -686,13 +685,14 @@ mod tests {
     fn the_carry_moves_and_turns_the_magazine_to_the_hand() {
         let from = (Vec3::ZERO, Quat::IDENTITY);
         let to = (Vec3::new(0.0, 0.1, 0.0), Quat::from_rotation_z(0.1));
-        let (linear, angular) = carry_velocities(from, to, 0.01, 20.0);
+        let config = &RELOAD.get().loose;
+        let (linear, angular) = carry_velocities(from, to, 0.01, config);
         assert!((linear - Vec3::new(0.0, 10.0, 0.0)).length() < 1e-4);
         assert!((angular - Vec3::new(0.0, 0.0, 10.0)).length() < 1e-3);
-        let (capped, _) = carry_velocities(from, (Vec3::X, Quat::IDENTITY), 0.01, 20.0);
-        assert!((capped.length() - 20.0).abs() < 1e-3);
+        let (capped, _) = carry_velocities(from, (Vec3::X, Quat::IDENTITY), 0.01, config);
+        assert!((capped.length() - config.max_carry_mps).abs() < 1e-3);
         assert_eq!(
-            carry_velocities(from, to, 0.0, 20.0),
+            carry_velocities(from, to, 0.0, config),
             (Vec3::ZERO, Vec3::ZERO)
         );
     }

@@ -7,7 +7,7 @@
 //! inserted magazine: a capsule down the well's axis over the magazine's visible length, in the
 //! well's moving frame, so that the gun's own motion does not count. The tip must come into the
 //! capsule from outside, between two input ticks or along the line between them, closing on it
-//! faster than [`MIN_SPEED_MPS`] relative to the gun. A tip that rests against the
+//! faster than the tuning's `knock.min_speed_mps` ([`KnockTuning::min_speed_mps`]) relative to the gun. A tip that rests against the
 //! magazine or slides along it does nothing.
 //!
 //! The knocked magazine leaves through the eject's own drop, with the eject's round accounting and
@@ -28,17 +28,9 @@ use crate::controllers::weapons::reload::{
     loose::Loose,
     plan::{LoadKind, WellFrame},
     serial::Identity,
+    tuning::{KnockTuning, RELOAD},
     wells::WellEntry,
 };
-
-/// The slowest closing speed of the held magazine's tip against the inserted magazine, relative to
-/// the gun, that knocks it out, metres per second at the player's scale. A hand brought to the gun
-/// to load moves at a few tenths of a metre per second, and a deliberate strike at one and a half
-/// to three, so a gentle touch does nothing. The speed is one tick's travel into the magazine,
-/// which reads 55 to 70 percent of the hand's peak as it slows into the contact: on the 14 November
-/// 2026 take strikes whose hands peaked at 1.2 to 1.8 m/s read 0.8 to 1.0 and were turned away at
-/// 1.0, while the seat attempts read 0.2 to 0.5.
-pub(crate) const MIN_SPEED_MPS: f32 = 0.75;
 
 /// The inserted magazine a held one can knock out, in the cockpit frame at the player's scale.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -62,12 +54,13 @@ impl KnockZone {
     pub(super) fn of(mouth: Vec3, axis: Vec3, below_m: f32, world_scale: f32) -> Option<Self> {
         let axis = axis.try_normalize()?;
         let scale = Some(world_scale).filter(|s| s.is_finite() && *s > 0.0)?;
+        let tuning = &RELOAD.get().knock;
         (mouth.is_finite() && below_m.is_finite()).then_some(Self {
             mouth,
             axis,
             below: below_m.max(0.0) / scale,
-            lip: KNOCK.lip_m / scale,
-            radius: KNOCK.radius_m / scale,
+            lip: tuning.lip_m / scale,
+            radius: tuning.radius_m / scale,
         })
     }
 
@@ -247,43 +240,6 @@ pub(super) struct PendingImpulse {
     pub ticks_left: u32,
 }
 
-/// The knock's fixed tuning, in the gun model's metres.
-pub(super) struct KnockTuning {
-    /// How far from the magazine's axis the held tip touches it: a magazine's half-width plus the
-    /// held tip's own, and a little of the hand's tracking error.
-    pub radius_m: f32,
-    /// How far into the well above the mouth the zone reaches, so a strike at the joint of the
-    /// magazine and the gun counts.
-    pub lip_m: f32,
-    /// The share of the tip's speed the struck point is sent on at. A collision with a hand-driven
-    /// body would send it on faster than the tip, but a magazine knocked at that speed leaves the
-    /// view before the eye finds it; at about half, a strike of two to four metres per second
-    /// drops it clear of the gun where it can be seen falling.
-    pub share: f32,
-    /// The most a knock adds to the magazine's speed, metres per second.
-    pub max_knock_mps: f32,
-    /// The most a knock adds to the magazine's spin, radians per second.
-    pub max_spin_radps: f32,
-    /// How many input ticks a knocked magazine's impulse waits on its body becoming readable.
-    pub impulse_ticks: u32,
-    /// How many input ticks the gun's magazine part stays drawn in the well after the knocked
-    /// prop's impulse lands, so the magazine does not vanish while its prop is not yet drawn.
-    pub linger_ticks: u32,
-    /// How long the grab view shows a knock.
-    pub flash: Duration,
-}
-
-pub(super) const KNOCK: KnockTuning = KnockTuning {
-    radius_m: 0.035,
-    lip_m: 0.015,
-    share: 0.5,
-    max_knock_mps: 2.5,
-    max_spin_radps: 25.0,
-    impulse_ticks: 10,
-    linger_ticks: 4,
-    flash: Duration::from_millis(400),
-};
-
 /// The visible length of an inserted magazine below its well, model metres: the magazine part's
 /// length, or zero for a magazine modelled into the gun, whose mouth is its base.
 pub(super) fn below_m(entry: Option<&WellEntry>) -> f32 {
@@ -424,8 +380,9 @@ pub(crate) struct KnockView {
 impl KnockView {
     /// Whether the knock is recent enough to flash.
     pub(crate) fn flashing(&self, now: Instant) -> bool {
-        self.knocked_at
-            .is_some_and(|at| now.saturating_duration_since(at) <= KNOCK.flash)
+        self.knocked_at.is_some_and(|at| {
+            now.saturating_duration_since(at) <= Duration::from_millis(RELOAD.get().knock.flash_ms)
+        })
     }
 }
 
@@ -434,7 +391,9 @@ pub(crate) fn view() -> Option<KnockView> {
     let now = Instant::now();
     match *VIEW.lock() {
         Some((at, view))
-            if now.saturating_duration_since(at) <= VIEW_MAX_AGE || view.flashing(now) =>
+            if now.saturating_duration_since(at)
+                <= Duration::from_millis(RELOAD.get().knock.view_max_age_ms)
+                || view.flashing(now) =>
         {
             Some(view)
         }
@@ -461,8 +420,6 @@ pub(super) fn publish(view: Option<KnockView>) {
 const MIN_DT: f32 = 1e-4;
 /// The most points the tip's path between two ticks is tested at.
 const MAX_SWEEP_STEPS: u32 = 32;
-/// How long a published view is drawn without a newer one.
-const VIEW_MAX_AGE: Duration = Duration::from_millis(250);
 
 static VIEW: Mutex<Option<(Instant, KnockView)>> = Mutex::new(None);
 

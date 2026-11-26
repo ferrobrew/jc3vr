@@ -18,6 +18,8 @@ use std::f32::consts::{FRAC_PI_2, TAU};
 use glam::{Quat, Vec3};
 use jc3vr_input::frame::Hand;
 
+use crate::controllers::weapons::reload::tuning::RevolverTuning;
+
 /// The crane's swing, in the gun's model frame, metres, as the revolvers' reload clips move it.
 pub(super) struct Crane {
     /// The crane bone's pivot: the line about which it turns runs through it along Z.
@@ -35,33 +37,6 @@ pub(super) const CRANE: Crane = Crane {
     pivot: Vec3::new(0.0, 0.0782, -0.0838),
     open_rad: FRAC_PI_2,
     shift_m: 0.005,
-};
-
-/// The cylinder's handling.
-pub(super) struct RevolverTuning {
-    /// How fast the gun hand must roll about the barrel's line for a flick, degrees per second.
-    pub flick_dps: f32,
-    /// The shortest time between one flick and the next, seconds.
-    pub flick_cooldown_s: f32,
-    /// How long the cylinder takes to swing out, seconds, about as long as the clip's swing.
-    pub open_s: f32,
-    /// How long it takes to swing shut, seconds.
-    pub close_s: f32,
-    /// How far the muzzle must point above the horizon to dump the cylinder, degrees.
-    pub dump_elevation_deg: f32,
-    /// How many turns the cylinder spins as it closes, and over how long, seconds.
-    pub spin_turns: f32,
-    pub spin_s: f32,
-}
-
-pub(super) const REVOLVER: RevolverTuning = RevolverTuning {
-    flick_dps: 450.0,
-    flick_cooldown_s: 0.3,
-    open_s: 0.13,
-    close_s: 0.1,
-    dump_elevation_deg: 45.0,
-    spin_turns: 2.0,
-    spin_s: 0.6,
 };
 
 /// The sign of the crane's turn about the model's +Z for a gun in `hand`: the left-hand clip turns
@@ -250,8 +225,13 @@ fn smoothstep(t: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::controllers::weapons::reload::tuning::RELOAD;
 
     const DT: f32 = 1.0 / 30.0;
+
+    fn revolver_tuning() -> &'static RevolverTuning {
+        &RELOAD.get().revolver
+    }
 
     /// Step `cylinder` with the gun rolled `degrees` about its barrel over one tick from `from`,
     /// returning the event and the new orientation.
@@ -263,7 +243,7 @@ mod tests {
                     orientation: Some(to),
                     dt: DT,
                 },
-                &REVOLVER,
+                revolver_tuning(),
             ),
             to,
         )
@@ -277,7 +257,7 @@ mod tests {
                         orientation: Some(at),
                         dt: DT,
                     },
-                    &REVOLVER,
+                    revolver_tuning(),
                 )
             })
             .collect()
@@ -307,7 +287,7 @@ mod tests {
             assert!(hold(&mut c, at, 30).is_empty());
             assert!(c.is_shut());
             assert_eq!(c.spin_s, None);
-            assert_eq!(c.spin_rad(&REVOLVER), 0.0);
+            assert_eq!(c.spin_rad(revolver_tuning()), 0.0);
         }
     }
 

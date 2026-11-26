@@ -473,6 +473,7 @@ pub(super) fn belt_marks() -> Vec<Candidate> {
     if state.tick.is_none() {
         return Vec::new();
     }
+    let radius = RELOAD.get().belt.radius_m;
     Hand::BOTH
         .into_iter()
         .filter_map(|hand| {
@@ -480,7 +481,7 @@ pub(super) fn belt_marks() -> Vec<Candidate> {
             Some(Candidate {
                 volume: GrabVolume::MagazinePouch,
                 centre,
-                radius: RELOAD.belt.radius_m,
+                radius,
                 hand: Some(hand),
             })
         })
