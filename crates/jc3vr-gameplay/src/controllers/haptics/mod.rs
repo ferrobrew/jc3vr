@@ -5,7 +5,9 @@
 //! - [`cues`]: every source, as a one-off [`Event`] or a [`Sustain`] that follows a level, with the
 //!   primitive, strength, and category it plays;
 //! - [`mixer`]: what each hand plays when several sources reach it at once;
-//! - [`rumble`]: the game's own rumble, forwarded to the hands.
+//! - [`rumble`]: the game's own rumble, forwarded to the hands;
+//! - [`shot`]: the shot in progress on the thread, which the weapon handling marks so that the
+//!   weapon's fire rumble goes to the firing hand.
 //!
 //! A source calls [`play`], [`play_hands`], or [`play_scaled`] for a one-off cue and [`sustain`]
 //! each tick for a level. Any thread may call them: the cue is shaped from the settings, checked
@@ -19,6 +21,7 @@
 
 pub mod config;
 pub mod rumble;
+pub mod shot;
 
 use std::time::{Duration, Instant};
 

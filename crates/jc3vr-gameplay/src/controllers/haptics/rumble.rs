@@ -8,7 +8,7 @@
 //!   (the weapon fire rumble, the player's damage rumbles, collisions, animation track messages and
 //!   melee hits, the reel-in kick, the force pulse, and the event-driven rumbles), picks out a
 //!   weapon's own fire rumble inside a shot of the gun held in a hand
-//!   ([`crate::controllers::weapons::fire`] marks the shot) and plays it on that hand as
+//!   (the weapon handling marks the shot, [`crate::controllers::haptics::shot`]) and plays it on that hand as
 //!   [`Event::Shot`], raised by the shot's recoil kick. It always lets the game's own call
 //!   through, since the effect it starts still needs to exist for the game's own per-frame sum
 //!   below;
@@ -37,9 +37,8 @@ use jc3vr_input::{
 use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
-    haptics::{self, HapticsConfig, config::HAPTICS_CONFIG},
+    haptics::{self, HapticsConfig, config::HAPTICS_CONFIG, shot},
     scheme,
-    weapons::fire,
 };
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -203,7 +202,7 @@ fn route(motors: Motors, time: f32, debug_name: *const u8) {
     if name != WEAPON_FIRE {
         return;
     }
-    let Some((hand, kick_rad)) = fire::rumble_in_shot() else {
+    let Some((hand, kick_rad)) = shot::rumble_in_shot() else {
         return;
     };
     let amplitude = shot_amplitude(motors.strongest(), kick_rad);
