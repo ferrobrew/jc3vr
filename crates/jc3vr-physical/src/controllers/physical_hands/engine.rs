@@ -130,6 +130,7 @@ unsafe fn player_of(character: &Character) -> Option<&Player> {
 }
 
 /// Whether the physics game object at `object` is a character.
+#[inline]
 pub(super) unsafe fn is_character(object: NonZeroUsize) -> bool {
     unsafe { is_type(object, Character::TYPE_ID()) }
 }

@@ -847,6 +847,7 @@ fn joint_inputs(config: &PhysicalHandsConfig) -> pickup::JointInputs {
 /// charge, or detonator, nothing of the loadout table's but a prop the pickup carries, no mounted
 /// gun's handle, and the controller drives the hand. A hand on a handle is drawn there, and a hand
 /// body left at its controller would fight the gun it holds.
+#[inline]
 pub fn free_hands() -> [bool; 2] {
     let wielded = held::last_wielded_hands();
     let foregrip = held::two_hand_holder().map(Hand::other);

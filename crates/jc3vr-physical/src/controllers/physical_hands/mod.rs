@@ -117,6 +117,7 @@ pub(crate) unsafe fn carry_bodies_destroying(world: *mut hknpWorld, ids: *const 
 /// The loose object each hand carries, by [`Hand::index`](jc3vr_input::frame::Hand::index),
 /// for the loadout table: a prop, not a grip on something hinged, a door, or a character, which are
 /// the world's.
+#[inline]
 pub fn held_props() -> [Option<NonZeroUsize>; 2] {
     STATE.lock().pickup.props()
 }

@@ -34,6 +34,7 @@ use crate::controllers::physical_hands::{
 ///
 /// The main thread, outside the physics step; `object` and `body` must be held alive or come from
 /// a cast this tick.
+#[inline]
 pub unsafe fn loose_mass(object: NonZeroUsize, body: u32) -> Option<f32> {
     if unsafe { engine::is_character(object) } {
         return None;
@@ -51,6 +52,7 @@ pub unsafe fn loose_mass(object: NonZeroUsize, body: u32) -> Option<f32> {
 ///
 /// The main thread, outside the physics step; `object` must be held alive or come from a cast this
 /// tick.
+#[inline]
 pub unsafe fn position(object: NonZeroUsize, body: u32) -> Result<Vec3, BodyError> {
     unsafe { bodies::position(body, object) }
 }
@@ -109,6 +111,7 @@ pub unsafe fn ragdoll_target(
 ///
 /// The main thread, outside the physics step.
 #[track_caller]
+#[inline]
 pub unsafe fn push(
     body: u32,
     owner: NonZeroUsize,
@@ -350,6 +353,7 @@ pub unsafe fn swing_open(door: &DoorTarget, at: Vec3, speed: f32) -> Result<(), 
 /// # Safety
 ///
 /// The main thread, outside the physics step.
+#[inline]
 pub unsafe fn door_moving(door: &DoorTarget, max_speed_mps: f32) -> bool {
     let Some(body) = door.vehicle_body else {
         return true;

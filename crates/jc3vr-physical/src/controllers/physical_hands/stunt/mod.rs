@@ -90,6 +90,7 @@ pub fn enabled(config: &PhysicalHandsConfig) -> bool {
 
 /// Whether the player hangs from a helicopter, so that either hand's grip holds on. Called from the
 /// input tick.
+#[inline]
 pub fn hanging() -> bool {
     let state = STATE.lock();
     state.status.position == Some(StuntKind::Hanging)
