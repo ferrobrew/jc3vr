@@ -13,7 +13,7 @@ use body_rig::smooth::smoothstep;
 use glam::Vec3;
 use parking_lot::Mutex;
 
-use crate::tuning::FRESHNESS;
+use crate::{controllers::roomscale::tuning::ROOMSCALE, tuning::FRESHNESS};
 
 /// Publish the input tick's correction for the driven seat, cockpit frame, metres, or `None` out
 /// of a measured driver's seat. A leaf slot, taken briefly.
@@ -44,7 +44,9 @@ pub fn advance(enabled: bool, inputs: FrameInputs, now: Instant) -> Vec3 {
         Some(applied) if enabled && inputs.seated && fresh => applied,
         _ => Vec3::ZERO,
     };
-    let offset = shared.ease.advance(goal, inputs.dt, BLEND_S);
+    let offset = shared
+        .ease
+        .advance(goal, inputs.dt, ROOMSCALE.get().driving_view.blend_s);
     shared.offset = offset;
     shared.goal = goal;
     offset
@@ -67,9 +69,6 @@ pub fn status() -> EasedCorrection {
         offset: shared.offset,
     }
 }
-
-/// How long the view takes to ease to a new correction, seconds.
-const BLEND_S: f32 = 1.0;
 
 /// An eased move from one correction to another, restarted from wherever it is whenever the goal
 /// changes, so a new goal never jumps the view.

@@ -3,6 +3,7 @@
 //! below fails until it is.
 
 use jc3vr_body::controllers::locomotion::tuning::LOCOMOTION;
+use jc3vr_body::controllers::roomscale::tuning::ROOMSCALE;
 use jc3vr_body::{
     controllers::{
         aim::tuning_file::AIM,
@@ -50,6 +51,7 @@ static FILES: &[&dyn AnyTuningFile] = &[
     &PROCEDURAL,
     &VIEW,
     &LOCOMOTION,
+    &ROOMSCALE,
 ];
 
 #[cfg(test)]

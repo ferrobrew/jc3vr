@@ -15,20 +15,21 @@
 //!
 //! Deliberate head movement stays one to one (scaled by the height ratio): a lean, a duck, or a
 //! look over the shoulder held for less than half the window does not move the median, and the
-//! reference never moves faster than [`SEATED_REFERENCE`]'s rate.
+//! reference never moves faster than the roomscale tuning's `seated.rate_mps`.
 //!
 //! [`capture`]: SeatedReference::capture
+
+use serde::Deserialize;
+
+use crate::controllers::roomscale::tuning::ROOMSCALE;
 
 /// The seated eye reference ([`crate::controllers::roomscale::seated`]): the head height above the
 /// floor that the seated posture puts at the character's eyes. It starts at the calibrated seated
 /// eye height, a manual recenter while seated captures the head's height, and the adaptive
-/// baseline moves it toward how the player actually sits.
-#[derive(Copy, Clone, Debug)]
+/// baseline moves it toward how the player actually sits. The roomscale tuning's `seated`.
+#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SeatedReferenceTuning {
-    /// Move the reference toward the median head height over the window. On: without it
-    /// a reference that does not match how the player sits holds the view above or below the
-    /// character's eyes until the next manual recenter.
-    pub adaptive: bool,
     /// The window the median is taken over, seconds. Head movement held for less than half of it
     /// (a lean, a duck, a look around) does not move the median.
     pub window_s: f32,
@@ -37,15 +38,11 @@ pub struct SeatedReferenceTuning {
     /// How far the median must be from the reference before the adaptive baseline moves it,
     /// metres.
     pub deadband_m: f32,
+    /// Once adapting, the adaptive baseline closes the gap to this fraction of the deadband.
+    pub settle_fraction: f32,
+    /// The longest frame step a head-height tracker accounts for, seconds ([`step`]).
+    pub max_step_s: f32,
 }
-
-/// The seated eye reference's tuning.
-pub const SEATED_REFERENCE: SeatedReferenceTuning = SeatedReferenceTuning {
-    adaptive: true,
-    window_s: 120.0,
-    rate_mps: 0.01,
-    deadband_m: 0.02,
-};
 
 /// The seated eye reference in effect, and where it came from.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -144,10 +141,6 @@ impl SeatedReference {
             self.restart(height_m, SeatedReferenceSource::FirstSample);
         }
 
-        if !config.adaptive {
-            self.forget_samples();
-            return self.reference;
-        }
         let dt = step(dt);
         if let Some(height_m) = head {
             self.since_sample_s += dt;
@@ -208,7 +201,7 @@ impl SeatedReference {
         let deadband = config.deadband_m.max(0.0);
         if gap.abs() > deadband {
             self.adapting = true;
-        } else if gap.abs() <= deadband * SETTLE_FRACTION {
+        } else if gap.abs() <= deadband * config.settle_fraction {
             self.adapting = false;
         }
         if !self.adapting {
@@ -229,28 +222,22 @@ impl Default for SeatedReference {
     }
 }
 
-/// A frame step of `dt` seconds as a head-height tracker counts it: at most [`MAX_STEP_S`], so
-/// that a stall counts neither as seated time nor toward the posture's dwell, and nothing when it
-/// is not finite.
+/// A frame step of `dt` seconds as a head-height tracker counts it: at most
+/// [`max_step_s`](SeatedReferenceTuning::max_step_s), so that a stall counts neither as seated time
+/// nor toward the posture's dwell, and nothing when it is not finite.
 pub(crate) fn step(dt: f32) -> f32 {
     if dt.is_finite() {
-        dt.clamp(0.0, MAX_STEP_S)
+        dt.clamp(0.0, ROOMSCALE.get().seated.max_step_s)
     } else {
         0.0
     }
 }
-
-/// The longest frame step a head-height tracker accounts for, seconds.
-const MAX_STEP_S: f32 = 0.25;
 
 /// The samples the window holds; the sampling interval is the window divided by this.
 const CAPACITY: usize = 240;
 
 /// The samples the window must hold before the median moves the reference: a quarter of the window.
 const MIN_SAMPLES: usize = CAPACITY / 4;
-
-/// Once adapting, the adaptive baseline closes the gap to this fraction of the deadband.
-const SETTLE_FRACTION: f32 = 0.25;
 
 /// The range a head height above the floor must fall in to be used, metres.
 const PLAUSIBLE_HEIGHT_M: (f32, f32) = (0.3, 2.5);
@@ -263,7 +250,7 @@ fn sample_interval(window_s: f32) -> f32 {
     let window_s = if window_s.is_finite() {
         window_s.max(MIN_WINDOW_S)
     } else {
-        SEATED_REFERENCE.window_s
+        ROOMSCALE.get().seated.window_s
     };
     window_s / CAPACITY as f32
 }
@@ -331,7 +318,7 @@ mod tests {
     const FRAME_S: f32 = 1.0 / 90.0;
 
     fn config() -> SeatedReferenceTuning {
-        SEATED_REFERENCE
+        ROOMSCALE.get().seated
     }
 
     /// Run `seconds` of frames with the head at `head(t)`.
@@ -465,21 +452,6 @@ mod tests {
         r.capture(SITTING);
         assert_eq!(r.status().samples, 0);
         assert_eq!(r.status().median_m, None);
-    }
-
-    #[test]
-    fn with_the_adaptive_baseline_off_the_reference_holds() {
-        let off = SeatedReferenceTuning {
-            adaptive: false,
-            ..config()
-        };
-        let mut r = SeatedReference::new();
-        for _ in 0..(120.0 / FRAME_S) as usize {
-            r.update(Some(SITTING), Some(CALIBRATED), FRAME_S, &off);
-        }
-        let held = r.current().unwrap();
-        assert_eq!(held.source, SeatedReferenceSource::Calibrated);
-        assert_eq!(r.status().samples, 0);
     }
 
     #[test]

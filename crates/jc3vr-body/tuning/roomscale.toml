@@ -1,0 +1,38 @@
+# The roomscale's tuning: `RoomscaleTuning` in
+# crates/jc3vr-body/src/controllers/roomscale/tuning.rs, where each value's meaning is documented.
+# Every key is required and no other is accepted. Units: metres (`_m`), seconds (`_s`), metres per
+# second (`_mps`); fractions, shares, and stick deflections are in `0..1`.
+
+moving_stick = 0.2
+
+[posture]
+stand_after_s = 1.0
+sit_after_s = 20.0
+seated_crouch_drop_m = 0.6
+seated_eye_fraction = 0.72
+min_eye_gap_m = 0.2
+sit_fraction = 0.4
+stand_fraction = 0.6
+floor_margin_fraction = 0.12
+steady_band_m = 0.08
+
+[seated]
+window_s = 120.0
+rate_mps = 0.01
+deadband_m = 0.02
+settle_fraction = 0.25
+max_step_s = 0.25
+
+[crouch]
+enter_drop_m = 0.45
+exit_drop_m = 0.30
+
+[fade]
+out_s = 0.15
+in_s = 0.3
+
+[seat]
+fade_hold_s = 0.3
+
+[driving_view]
+blend_s = 1.0

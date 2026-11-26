@@ -14,20 +14,24 @@
 //! the head's height above the floor ([`PostureClassifier`]).
 
 use glam::Vec3;
+use serde::Deserialize;
 
 use crate::controllers::{
     body::{BodyDimensions, remap_head_height, remap_head_translation},
     roomscale::{
         config::Posture,
         seated::{SeatedEyeReference, SeatedReferenceSource, step},
+        tuning::ROOMSCALE,
     },
 };
 
 /// The automatic posture's seated and standing detection
-/// ([`crate::controllers::roomscale::posture::PostureClassifier`]). The thresholds sit between the
-/// calibrated seated eye height (or an estimate from the standing eye height) and the standing eye
-/// height; the dwell times decide how long the head must stay past them.
-#[derive(Copy, Clone, Debug)]
+/// ([`crate::controllers::roomscale::posture::PostureClassifier`]), and the seated crouch: the
+/// roomscale tuning's `posture`. The thresholds sit between the calibrated seated eye height (or an
+/// estimate from the standing eye height) and the standing eye height; the dwell times decide how
+/// long the head must stay past them.
+#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AutoPostureTuning {
     /// How long a seated player's head must stay at standing height before the posture becomes
     /// standing, seconds. Short: a seated player cannot raise the head that far without standing
@@ -37,22 +41,27 @@ pub struct AutoPostureTuning {
     /// seated, seconds. Long, so that a standing player crouching behind cover keeps the physical
     /// crouch.
     pub sit_after_s: f32,
-    /// Count the sit wait only while a standing player's head is steady at a chair's height: a
-    /// head at floor level (sitting or kneeling on the floor of the play area) or one that bobs
-    /// (a crouch peeking out of cover) stays standing.
-    pub chair_height_only: bool,
+    /// In the seated posture, how far the crouch toggle lowers the eyes, metres at the character's
+    /// scale.
+    pub seated_crouch_drop_m: f32,
+    /// The seated eye height estimated from the standing eye height, without a calibration, as a
+    /// share of it: an adult on an ordinary chair.
+    pub seated_eye_fraction: f32,
+    /// The smallest gap between a calibrated seated eye height and the standing eye height the
+    /// thresholds take it with, metres; a closer one is replaced by the estimate.
+    pub min_eye_gap_m: f32,
+    /// Where between the seated and the standing eye heights the sit threshold sits.
+    pub sit_fraction: f32,
+    /// Where between the seated and the standing eye heights the stand threshold sits.
+    pub stand_fraction: f32,
+    /// How far below the seated eye height a head is at floor level, as a share of the standing
+    /// eye height: about twenty centimetres for a standing eye height of 1.7 m, below the lowest
+    /// chair and above a head sitting on the floor.
+    pub floor_margin_fraction: f32,
+    /// How far a standing player's head may move up or down and still count as steady at a chair's
+    /// height, metres: a seated head holds its height, and a crouch behind cover bobs.
+    pub steady_band_m: f32,
 }
-
-/// The automatic posture's tuning.
-pub const AUTO_POSTURE: AutoPostureTuning = AutoPostureTuning {
-    stand_after_s: 1.0,
-    sit_after_s: 20.0,
-    chair_height_only: true,
-};
-
-/// In the seated posture, how far the crouch toggle lowers the eyes, metres at the character's
-/// scale.
-pub const SEATED_CROUCH_DROP_M: f32 = 0.6;
 
 /// The posture in effect after the automatic setting is resolved.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -163,27 +172,29 @@ pub struct Thresholds {
 
 impl Thresholds {
     /// The thresholds for one frame's eye heights. The seated eye height is the calibrated one when
-    /// it is below the standing eye height, and otherwise [`SEATED_EYE_FRACTION`] of it.
+    /// it is below the standing eye height, and otherwise
+    /// [`seated_eye_fraction`](AutoPostureTuning::seated_eye_fraction) of it.
     pub fn new(standing_eye_m: f32, calibrated_seated_eye_m: Option<f32>) -> Self {
+        let tuning = &ROOMSCALE.get().posture;
         let standing_eye_m = if standing_eye_m.is_finite() && standing_eye_m > 0.0 {
             standing_eye_m
         } else {
             BodyDimensions::GENERIC_ADULT.eye_height
         };
         let calibrated = calibrated_seated_eye_m
-            .filter(|h| h.is_finite() && *h > 0.0 && *h < standing_eye_m - MIN_EYE_GAP_M);
+            .filter(|h| h.is_finite() && *h > 0.0 && *h < standing_eye_m - tuning.min_eye_gap_m);
         let (seated_eye_m, seated_estimated) = match calibrated {
             Some(h) => (h, false),
-            None => (standing_eye_m * SEATED_EYE_FRACTION, true),
+            None => (standing_eye_m * tuning.seated_eye_fraction, true),
         };
         let gap = standing_eye_m - seated_eye_m;
         Self {
             seated_eye_m,
             seated_estimated,
             standing_eye_m,
-            sit_below_m: seated_eye_m + SIT_FRACTION * gap,
-            floor_below_m: seated_eye_m - FLOOR_MARGIN_FRACTION * standing_eye_m,
-            stand_above_m: seated_eye_m + STAND_FRACTION * gap,
+            sit_below_m: seated_eye_m + tuning.sit_fraction * gap,
+            floor_below_m: seated_eye_m - tuning.floor_margin_fraction * standing_eye_m,
+            stand_above_m: seated_eye_m + tuning.stand_fraction * gap,
             midpoint_m: seated_eye_m + 0.5 * gap,
         }
     }
@@ -209,7 +220,7 @@ impl Thresholds {
 ///   sits once the head stays below [`Thresholds::sit_below_m`] for `sit_after_s`, which is long so
 ///   that a crouch behind cover stays a physical crouch.
 /// - The standing player's head must stay at a chair's height for that: steady, within
-///   [`STEADY_BAND_M`] of where the dwell started, and above [`Thresholds::floor_below_m`]. A head
+///   [`steady_band_m`](AutoPostureTuning::steady_band_m) of where the dwell started, and above [`Thresholds::floor_below_m`]. A head
 ///   that moves further starts the dwell again from where it is, and a head at floor level does not
 ///   count: a standing player who got down onto the floor of the play area (sitting on it, kneeling)
 ///   stays standing, so the head keeps its true height and the body sits on the ground under it.
@@ -258,8 +269,7 @@ impl PostureClassifier {
                         DetectionReason::StoodUp,
                     ),
                     DetectedPosture::Standing => {
-                        self.floor_level =
-                            config.chair_height_only && height < thresholds.floor_below_m;
+                        self.floor_level = height < thresholds.floor_below_m;
                         (
                             height < thresholds.sit_below_m && !self.floor_level,
                             config.sit_after_s,
@@ -271,10 +281,9 @@ impl PostureClassifier {
                 if !crossing {
                     self.restart_dwell();
                 } else if detected == DetectedPosture::Standing
-                    && config.chair_height_only
                     && self
                         .dwell_from
-                        .is_none_or(|from| (height - from).abs() > STEADY_BAND_M)
+                        .is_none_or(|from| (height - from).abs() > config.steady_band_m)
                 {
                     // A head that is not steady at a chair's height starts the dwell over from
                     // where it is.
@@ -341,29 +350,6 @@ impl Default for PostureClassifier {
         Self::new()
     }
 }
-
-/// The seated eye height estimated from the standing eye height, without a calibration: an adult on
-/// an ordinary chair.
-pub const SEATED_EYE_FRACTION: f32 = 0.72;
-
-/// The smallest gap between a calibrated seated eye height and the standing eye height the
-/// thresholds take it with, metres; a closer one is replaced by the estimate.
-const MIN_EYE_GAP_M: f32 = 0.2;
-
-/// Where between the seated and the standing eye heights the sit threshold sits.
-const SIT_FRACTION: f32 = 0.4;
-
-/// Where between the seated and the standing eye heights the stand threshold sits.
-const STAND_FRACTION: f32 = 0.6;
-
-/// How far below the seated eye height a head is at floor level, as a share of the standing eye
-/// height: about twenty centimetres for a standing eye height of 1.7 m, below the lowest chair and
-/// above a head sitting on the floor.
-const FLOOR_MARGIN_FRACTION: f32 = 0.12;
-
-/// How far a standing player's head may move up or down and still count as steady at a chair's
-/// height, metres: a seated head holds its height, and a crouch behind cover bobs.
-pub const STEADY_BAND_M: f32 = 0.08;
 
 /// What the head height is computed from on one frame.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -490,6 +476,10 @@ mod tests {
     };
     const FRAME_S: f32 = 1.0 / 90.0;
 
+    fn posture() -> &'static AutoPostureTuning {
+        &ROOMSCALE.get().posture
+    }
+
     /// The eye heights of the session the classifier was fixed from: standing 1.70 m, calibrated
     /// seated 1.22 m.
     const LOGGED: ClassifierInput = ClassifierInput {
@@ -526,10 +516,10 @@ mod tests {
         head_height: f32,
         seconds: f32,
     ) -> ClassifierStatus {
-        let config = AUTO_POSTURE;
-        let mut status = classifier.update(&at(head_height), 0.0, &config);
+        let config = posture();
+        let mut status = classifier.update(&at(head_height), 0.0, config);
         for _ in 0..(seconds / FRAME_S).round() as usize {
-            status = classifier.update(&at(head_height), FRAME_S, &config);
+            status = classifier.update(&at(head_height), FRAME_S, config);
         }
         status
     }
@@ -564,7 +554,7 @@ mod tests {
     #[test]
     fn the_logged_seated_head_is_seated_from_the_first_frame() {
         let mut classifier = PostureClassifier::new();
-        let status = classifier.update(&at(1.057), FRAME_S, &AUTO_POSTURE);
+        let status = classifier.update(&at(1.057), FRAME_S, posture());
         assert_eq!(status.detected, DetectedPosture::Seated);
         assert_eq!(status.reason, DetectionReason::FirstSample);
         for logged in [1.0496, 1.0094, 1.0892, 0.896, 1.0255, 1.1414] {
@@ -579,11 +569,11 @@ mod tests {
     #[test]
     fn before_any_head_height_the_player_counts_as_seated() {
         let mut classifier = PostureClassifier::new();
-        let status = classifier.update(&LOGGED, FRAME_S, &AUTO_POSTURE);
+        let status = classifier.update(&LOGGED, FRAME_S, posture());
         assert_eq!(status.detected, DetectedPosture::Seated);
         assert_eq!(status.reason, DetectionReason::NoEvidence);
         // The first located height still classifies at once.
-        let status = classifier.update(&at(1.68), FRAME_S, &AUTO_POSTURE);
+        let status = classifier.update(&at(1.68), FRAME_S, posture());
         assert_eq!(status.detected, DetectedPosture::Standing);
         assert_eq!(status.reason, DetectionReason::FirstSample);
     }
@@ -648,19 +638,6 @@ mod tests {
         let status = hold(&mut classifier, 1.15, 20.0);
         assert_eq!(status.detected, DetectedPosture::Seated);
         assert_eq!(status.reason, DetectionReason::SatDown);
-        // Switched off, the floor sits after the wait, as any low head does.
-        let config = AutoPostureTuning {
-            chair_height_only: false,
-            ..AUTO_POSTURE
-        };
-        let mut classifier = PostureClassifier::new();
-        classifier.update(&at(1.68), FRAME_S, &config);
-        let mut status = classifier.update(&at(0.85), FRAME_S, &config);
-        for _ in 0..(21.0 / FRAME_S) as usize {
-            status = classifier.update(&at(0.85), FRAME_S, &config);
-        }
-        assert!(!status.floor_level);
-        assert_eq!(status.detected, DetectedPosture::Seated);
     }
 
     #[test]
@@ -670,7 +647,7 @@ mod tests {
         // Crouched behind cover for a minute, rising to peek and ducking again every few seconds.
         for _ in 0..12 {
             assert_eq!(
-                hold(&mut classifier, 1.0 + STEADY_BAND_M * 2.0, 2.5).detected,
+                hold(&mut classifier, 1.0 + posture().steady_band_m * 2.0, 2.5).detected,
                 DetectedPosture::Standing
             );
             assert_eq!(
@@ -703,9 +680,8 @@ mod tests {
     #[test]
     fn a_stall_does_not_complete_a_dwell() {
         let mut classifier = PostureClassifier::new();
-        let config = AUTO_POSTURE;
-        classifier.update(&at(1.68), FRAME_S, &config);
-        let status = classifier.update(&at(1.05), 3600.0, &config);
+        classifier.update(&at(1.68), FRAME_S, posture());
+        let status = classifier.update(&at(1.05), 3600.0, posture());
         assert_eq!(status.detected, DetectedPosture::Standing);
     }
 
@@ -713,7 +689,7 @@ mod tests {
     fn without_a_seated_calibration_the_seated_eyes_are_estimated() {
         let t = Thresholds::new(1.70, None);
         assert!(t.seated_estimated);
-        assert!((t.seated_eye_m - 1.70 * SEATED_EYE_FRACTION).abs() < EPS);
+        assert!((t.seated_eye_m - 1.70 * posture().seated_eye_fraction).abs() < EPS);
         assert!(t.sit_below_m < t.midpoint_m && t.midpoint_m < t.stand_above_m);
         assert!(t.stand_above_m < t.standing_eye_m);
         // A calibration too close to the standing eyes is replaced by the estimate.

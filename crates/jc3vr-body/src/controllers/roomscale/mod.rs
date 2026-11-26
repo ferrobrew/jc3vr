@@ -31,6 +31,7 @@ pub mod posture;
 pub mod seat;
 pub mod seated;
 pub mod teleport;
+pub mod tuning;
 
 use std::{
     collections::HashSet,
@@ -69,14 +70,15 @@ use crate::{
         mode::{Mode, current as current_mode},
         roomscale::{
             config::{DRIVING_VIEW_ENABLED, Posture, ROOMSCALE_CONFIG, RoomscaleConfig},
-            crouch::{CROUCH_ENTER_DROP_M, CROUCH_EXIT_DROP_M, CrouchTracker},
-            fade::{FADE_TIMING, FadeSource},
+            crouch::CrouchTracker,
+            fade::FadeSource,
             posture::{
-                AUTO_POSTURE, ClassifierInput, ClassifierStatus, DetectedPosture, EffectivePosture,
-                HeadHeight, HeadHeightInput, PostureClassifier, SEATED_CROUCH_DROP_M,
+                ClassifierInput, ClassifierStatus, DetectedPosture, EffectivePosture, HeadHeight,
+                HeadHeightInput, PostureClassifier,
             },
-            seat::{SEAT_FADE_HOLD_S, SeatEvent, SeatTracker},
-            seated::{SEATED_REFERENCE, SeatedReference, SeatedReferenceStatus},
+            seat::{SeatEvent, SeatTracker},
+            seated::{SeatedReference, SeatedReferenceStatus},
+            tuning::ROOMSCALE,
         },
     },
     hooks::animation::active_state_type_id,
@@ -119,6 +121,7 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
     let config = *ROOMSCALE_CONFIG.lock();
     let (rig, remap_head) = BODY_REMAP_CONFIG.query(|c| (c.rig, c.remap_head));
     let driving_view_on = *DRIVING_VIEW_ENABLED.lock();
+    let tuning = ROOMSCALE.get();
     let stage = vr::stage::stage();
     let player = body::player();
     let now = Instant::now();
@@ -126,7 +129,7 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
     let on_foot = headpose::sim::mode() == headpose::sim::HeadMode::OnFoot;
     let moving = {
         let stick = locomotion::status();
-        stick.fresh(now) && stick.stick.length() > MOVING_STICK
+        stick.fresh(now) && stick.stick.length() > tuning.moving_stick
     };
 
     let mut frame = FRAME.lock();
@@ -149,7 +152,7 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
         Some(
             frame
                 .classifier
-                .update(&classifier_input(&stage, &player), dt, &AUTO_POSTURE),
+                .update(&classifier_input(&stage, &player), dt, &tuning.posture),
         )
     } else {
         frame.classifier.reset();
@@ -180,7 +183,7 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
             stage.head_height,
             player.seated_eye_height,
             dt,
-            &SEATED_REFERENCE,
+            &tuning.seated,
         )
     } else {
         frame.seated_reference.current()
@@ -207,7 +210,7 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
                     .then_some(seated_reference)
                     .flatten(),
                 seated_crouch,
-                seated_drop_m: SEATED_CROUCH_DROP_M,
+                seated_drop_m: tuning.posture.seated_crouch_drop_m,
             },
             &remap_player,
             &BodyDimensions::CHARACTER_ESTIMATE,
@@ -217,7 +220,11 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
     let vertical = head_height.map_or_else(
         || {
             inputs.cockpit.y
-                - posture::seated_crouch_drop(posture, seated_crouch, SEATED_CROUCH_DROP_M)
+                - posture::seated_crouch_drop(
+                    posture,
+                    seated_crouch,
+                    tuning.posture.seated_crouch_drop_m,
+                )
         },
         |h| h.cockpit_y,
     );
@@ -280,9 +287,11 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
         }
         _ => eye_drop_m,
     };
-    let crouched = frame
-        .crouch
-        .update(eye_drop_m, CROUCH_ENTER_DROP_M, CROUCH_EXIT_DROP_M);
+    let crouched = frame.crouch.update(
+        eye_drop_m,
+        tuning.crouch.enter_drop_m,
+        tuning.crouch.exit_drop_m,
+    );
 
     if in_gameplay {
         // SAFETY: the game thread, outside the world update.
@@ -322,7 +331,7 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
         _ => 0.0,
     };
     fade::set_target(FadeSource::HeadInGeometry, head_fade);
-    fade::advance(dt, &FADE_TIMING);
+    fade::advance(dt, &tuning.fade);
 
     let sim_stale = sim
         .at
@@ -438,9 +447,6 @@ fn room_grips(lift: f32) -> [Option<(Vec3, Quat)>; 2] {
     })
     .unwrap_or([None, None])
 }
-
-/// The move stick past this deflection moves the body, for the yaw's deadzone.
-const MOVING_STICK: f32 = 0.2;
 
 /// Re-base the cockpit shift after the recenter baseline was re-based
 /// ([`crate::controllers::body::rig::root::on_recenter`]). Called by the recenter at the top of the
@@ -710,7 +716,11 @@ unsafe fn seat_tick(frame: &mut FrameState, config: &RoomscaleConfig, now: Insta
     };
     frame.last_seat_event = Some(event);
     tracing::debug!(target: "controllers", ?event, ?phase, "roomscale: seat transition");
-    let action = seat::action(config.seat_transition, event, SEAT_FADE_HOLD_S);
+    let action = seat::action(
+        config.seat_transition,
+        event,
+        ROOMSCALE.get().seat.fade_hold_s,
+    );
     if let Some(kind) = action.recenter {
         vr::request_seat_recenter(kind);
     }

@@ -50,7 +50,7 @@ impl Default for RoomscaleConfig {
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum Posture {
     /// Seated or standing by the head's height above the floor
-    /// ([`AUTO_POSTURE`](crate::controllers::roomscale::posture::AUTO_POSTURE)), seated until the
+    /// (the roomscale tuning's `posture`), seated until the
     /// head has been located.
     #[default]
     Auto,
@@ -68,9 +68,8 @@ pub enum Posture {
 #[serde(default)]
 pub struct HeadFadeConfig {
     /// On by default, as part of the full gameplay preset: it darkens the view for every player
-    /// whose head enters a wall. The depths are
-    /// [`HEAD_FADE_START_DEPTH_M`](crate::controllers::body::rig::collision::probe::HEAD_FADE_START_DEPTH_M)
-    /// and [`HEAD_FADE_FULL_DEPTH_M`](crate::controllers::body::rig::collision::probe::HEAD_FADE_FULL_DEPTH_M).
+    /// whose head enters a wall. The depths are the rig tuning's `probe.head_fade_start_m` and
+    /// `probe.head_fade_full_m` ([`head_fade`](crate::controllers::body::rig::collision::probe::head_fade)).
     pub enabled: bool,
 }
 

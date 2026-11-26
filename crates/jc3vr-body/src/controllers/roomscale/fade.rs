@@ -11,21 +11,18 @@
 
 use jc3vr_view::vr::{fade_level, set_fade_level};
 use parking_lot::Mutex;
+use serde::Deserialize;
 
-/// The comfort fade's timing, shared by every source (the head in geometry, the seat transitions).
-#[derive(Copy, Clone, Debug)]
+/// The comfort fade's timing, shared by every source (the head in geometry, the seat transitions):
+/// the roomscale tuning's `fade`.
+#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct FadeTuning {
     /// How long a fade from clear to fully dark takes, seconds.
     pub out_s: f32,
     /// How long a fade from fully dark to clear takes, seconds.
     pub in_s: f32,
 }
-
-/// The comfort fade's timing.
-pub const FADE_TIMING: FadeTuning = FadeTuning {
-    out_s: 0.15,
-    in_s: 0.3,
-};
 
 /// Who wants the view darkened.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
