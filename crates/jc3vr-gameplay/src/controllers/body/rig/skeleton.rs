@@ -32,7 +32,7 @@ use crate::{
 pub const SKELETON_TARGET: &str = "body_divergence";
 
 /// The character's skeleton in the cockpit frame, while the character's pose is fresh: what the
-/// body's grab volumes ride ([`crate::controllers::weapons::volumes`]), with where it came from.
+/// body's grab volumes ride (`controllers::weapons::volumes`), with where it came from.
 /// `head_cockpit` is the head's cockpit position and `world_scale` the VR world scale the cockpit
 /// composes with.
 pub fn skeleton_in_cockpit(

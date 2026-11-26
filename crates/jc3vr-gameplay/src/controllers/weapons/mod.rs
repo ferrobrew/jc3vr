@@ -38,8 +38,8 @@
 //! - [`config`]: the weapon-handling settings.
 //!
 //! The weapon handling runs in the input tick's game stage
-//! ([`crate::controllers::bindings::stage`]), in two halves around the bindings' tables
-//! ([`crate::controllers::bindings::game_tick`]):
+//! (`controllers::bindings::stage`), in two halves around the bindings' tables
+//! (`controllers::bindings::game_tick`):
 //!
 //! 1. [`begin_tick`] reads the wielded weapon and provides the weapon handling's grip targets
 //!    ([`crate::controllers::grab`]): the sockets and pouches on the body, reached by the player's
@@ -115,7 +115,7 @@ pub use state::status;
 pub(crate) use state::{pause, stand_down};
 pub use types::{TickStart, WeaponsStatus};
 
-/// The weapon handling's hooks, aggregated by [`crate::controllers::hook_library`].
+/// The weapon handling's hooks, aggregated by `controllers::hook_library`.
 pub(crate) fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_hook_library(fire::hook_library())

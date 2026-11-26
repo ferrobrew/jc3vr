@@ -6,20 +6,20 @@
 //! a hand must come, how it ranks ([`Tier`]), and its marker ([`Mark`]). Each subsystem only
 //! provides its targets on the input tick and consumes the grabs of the targets it owns:
 //!
-//! - the weapon handling ([`crate::controllers::weapons`]): the sockets and pouches on the body, the
+//! - the weapon handling (`controllers::weapons`): the sockets and pouches on the body, the
 //!   held gun's parts, the guns in the world without a body (in characters' hands, on racks, in
 //!   lockers), the grenade's pin, a live grenade, a magazine in the world, and the carried weapons'
 //!   sockets;
-//! - the vehicle handling ([`crate::controllers::vehicles`]): the driver's controls, the cockpit's
+//! - the vehicle handling (`controllers::vehicles`): the driver's controls, the cockpit's
 //!   buttons, the parachute's handles, and the mounted gun's handles;
-//! - the physical hands ([`crate::controllers::physical_hands`]): what each hand's reach found in
+//! - the physical hands (`controllers::physical_hands`): what each hand's reach found in
 //!   the world (an object, a weapon, a door, a character), the vehicles' doors near the hands, a
 //!   surface to climb, and the helicopter the player hangs from.
 //!
 //! [`tick`] gathers them, resolves each hand ([`resolve`]): of the targets a hand is within reach
 //! of, the one whose grab point is nearest wins, with the fallbacks (a surface to climb, the
 //! helicopter to hang from, a reach margin) taken only when nothing else is, and a remote target
-//! for the grapple's snatch ([`crate::controllers::snatch`]) only when not even those are. It
+//! for the grapple's snatch (`controllers::snatch`) only when not even those are. It
 //! publishes the
 //! result for the readouts and the markers ([`markers`]), and logs each grip press with what the
 //! hand was within reach of and why the others lost. The grip takes the chosen target through
@@ -56,10 +56,10 @@ pub enum GrabVolume {
     /// The held two-handed weapon's foregrip.
     Foregrip,
     /// The held gun's grip, for the hand without the gun, which takes the gun from the other hand
-    /// (see [`crate::controllers::weapons::hold`]).
+    /// (see `controllers::weapons::hold`).
     Handle,
     /// The pin of the grenade the other hand holds with its pin in, which a squeeze pulls (see
-    /// [`crate::controllers::weapons::grenade`]). It ranks over the grenade itself
+    /// `controllers::weapons::grenade`). It ranks over the grenade itself
     /// ([`Tier::Handle`]), which a squeeze anywhere else on it takes into the squeezing hand
     /// ([`GrabVolume::Handle`]).
     GrenadePin,
@@ -68,7 +68,7 @@ pub enum GrabVolume {
     /// A visible grenade display at an interaction-backed locker or pickup source.
     GrenadeLocker,
     /// The universal reload pouch on the belt, for the hand without a gun, while the true reload
-    /// reloads the held weapon (see [`crate::controllers::weapons::reload`]).
+    /// reloads the held weapon (see `controllers::weapons::reload`).
     MagazinePouch,
     /// The held gun's slide, charging handle, or bolt, for the hand without a gun, while its
     /// chamber waits on the action.
@@ -81,52 +81,52 @@ pub enum GrabVolume {
     /// The C4 pouch on the chest, while the C4 throw is on.
     C4Pouch,
     /// The surface a held charge is coming to, where it sticks when pressed on: marked, never taken
-    /// by a squeeze (see [`crate::controllers::weapons::c4::stick`]).
+    /// by a squeeze (see `controllers::weapons::c4::stick`).
     ChargeSurface,
     /// A charge the player placed, within reach of a free hand, to take back into the hand (see
-    /// [`crate::controllers::weapons::c4::placed`]).
+    /// `controllers::weapons::c4::placed`).
     PlacedCharge,
     /// A physical vehicle control of the driver's seat (see
-    /// [`crate::controllers::vehicles::physical`]).
+    /// `controllers::vehicles::physical`).
     VehicleControl(ControlKind),
     /// A cockpit button, pressed by the palm rather than taken by the grip (see
-    /// [`crate::controllers::vehicles::physical::buttons`]).
+    /// `controllers::vehicles::physical::buttons`).
     CockpitButton(Button),
-    /// The parachute's handle on that side (see [`crate::controllers::vehicles::parachute`]).
+    /// The parachute's handle on that side (see `controllers::vehicles::parachute`).
     ParachuteHandle(Hand),
     /// The ripcord at the hip, pulled to open the parachute from a fall or the wingsuit (see
-    /// [`crate::controllers::vehicles::ripcord`]).
+    /// `controllers::vehicles::ripcord`).
     Ripcord,
     /// The mounted gun's handle for that hand (see
-    /// [`crate::controllers::vehicles::mounted_grip`]).
+    /// `controllers::vehicles::mounted_grip`).
     MountedHandle(Hand),
     /// What the empty hand's reach found in the world, or a vehicle's door near it (see
-    /// [`crate::controllers::physical_hands::pickup`]).
+    /// `controllers::physical_hands::pickup`).
     Pickup(PickupKind),
     /// The static world, or a heavy moving body, the empty hand's body touches, to climb (see
-    /// [`crate::controllers::physical_hands::climb`]).
+    /// `controllers::physical_hands::climb`).
     Climb,
     /// The helicopter the player hangs from, held by either hand's grip (see
-    /// [`crate::controllers::physical_hands::stunt`]).
+    /// `controllers::physical_hands::stunt`).
     StuntHold,
     /// A weapon without a body in the world for the free hand to take: a gun in a character's
-    /// hands, or a weapon on a rack or in a locker (see [`crate::controllers::weapons::hold::take`]).
+    /// hands, or a weapon on a rack or in a locker (see `controllers::weapons::hold::take`).
     WorldWeapon,
     /// A live grenade in flight or on the ground near a free hand, to catch (see
-    /// [`crate::controllers::weapons::grenade::catch`]).
+    /// `controllers::weapons::grenade::catch`).
     LiveGrenade,
     /// A magazine lying in the world that fits the held gun, for the hand without a gun while the
-    /// gun's magazine is out (see [`crate::controllers::weapons::reload::loose`]).
+    /// gun's magazine is out (see `controllers::weapons::reload::loose`).
     WorldMagazine,
     /// A socket on the body: the weapon on it, for an empty hand to draw, or the free socket, for
     /// the hand holding a weapon that fits it to dock it there (see
-    /// [`crate::controllers::weapons::docks`]).
+    /// `controllers::weapons::docks`).
     Socket(Socket),
     /// A thing out of reach under the grapple's aim, for the empty grapple hand to snatch (see
-    /// [`crate::controllers::snatch`]).
+    /// `controllers::snatch`).
     Snatch(RemoteKind),
     /// The grapple's held line ahead of the grapple hand, for the free hand while the lock holds
-    /// the line or the snatch's line swings its target (see [`crate::grapple::line_grab`]).
+    /// the line or the snatch's line swings its target (see `grapple::line_grab`).
     GrappleLine,
 }
 

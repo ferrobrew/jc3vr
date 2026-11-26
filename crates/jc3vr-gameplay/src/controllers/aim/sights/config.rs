@@ -1,5 +1,5 @@
 //! The sight-line settings: the per-weapon sight corrections and the in-headset tuning tool,
-//! re-exported from [`crate::controllers::config`].
+//! re-exported from `controllers::config`.
 
 use std::fmt;
 

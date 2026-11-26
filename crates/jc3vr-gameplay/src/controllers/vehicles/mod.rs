@@ -22,7 +22,7 @@
 //! - [`passenger`]: a passenger's seated body turned toward the gun hand's aim;
 //! - [`look_steer`]: the wingsuit's head look-steer removed.
 //!
-//! The stick bindings of every class are the tables' ([`crate::controllers::bindings::tables`]).
+//! The stick bindings of every class are the tables' (`controllers::bindings::tables`).
 //! This module runs on the input tick in two halves around them, like the weapon handling:
 //!
 //! 1. [`begin_tick`] reads the mounted gun, fits the wheel and the handlebars to the vehicle, and
@@ -107,7 +107,7 @@ pub(crate) use self::{
     state::{parachute_holds, stand_down},
 };
 
-/// The vehicles' hooks, aggregated by [`crate::controllers::hook_library`].
+/// The vehicles' hooks, aggregated by `controllers::hook_library`.
 pub(crate) fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_hook_library(driver_aim::hook_library())

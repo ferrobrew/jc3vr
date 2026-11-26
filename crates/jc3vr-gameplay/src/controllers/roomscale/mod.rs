@@ -84,7 +84,7 @@ use crate::{
     hooks::animation::active_state_type_id,
 };
 
-/// The roomscale hooks, aggregated by [`crate::controllers::hook_library`].
+/// The roomscale hooks, aggregated by `controllers::hook_library`.
 pub(crate) fn hook_library() -> HookLibrary {
     HookLibrary::new().with_hook_library(teleport::hook_library())
 }

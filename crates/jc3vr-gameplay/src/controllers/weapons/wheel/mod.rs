@@ -12,7 +12,7 @@
 //! - [`placement`] moves the cross on the floating panel to where the hand was when the wheel
 //!   opened;
 //! - this module runs in the game stage, after the binding tables and the weapon handling
-//!   ([`crate::controllers::bindings::game_tick`]): it reads the game's state, steps the wheel,
+//!   (`controllers::bindings::game_tick`): it reads the game's state, steps the wheel,
 //!   puts its slot-select hold in the tick's wanted actions (dropping the tables' own trackpad
 //!   quadrant holds, which the wheel takes over), pulses the steering hand, and clears the game's
 //!   pending selection when the wheel cancels ([`Inventory::m_SlotToSelectOnRelease`]).

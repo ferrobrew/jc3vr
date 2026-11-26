@@ -107,7 +107,7 @@ pub enum Tier {
     /// a pouch or a parachute handle the hand misses by a little.
     Fallback,
     /// Taken only when nothing at all is in reach, not even a fallback: a thing out of reach that
-    /// the grapple snatches into the hand (see [`crate::controllers::snatch`]).
+    /// the grapple snatches into the hand (see `controllers::snatch`).
     Remote,
     /// Worked by the hand without a squeeze, such as a cockpit button or a gun's magazine well:
     /// marked, never taken.

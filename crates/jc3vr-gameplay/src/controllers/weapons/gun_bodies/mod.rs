@@ -1,6 +1,6 @@
 //! The held guns the hand bodies make bodies of, as the weapon handling publishes them, and what
 //! the bodies' step reports back. The bodies themselves are the hand bodies' own
-//! ([`crate::controllers::physical_hands::physics::guns`]); the design is in
+//! (`controllers::physical_hands::physics::guns`); the design is in
 //! `docs/mod/input/physical-guns.md`.
 //!
 //! - [`holds`]: the guns in the hands, read on the weapon handling's input tick, and the bracing

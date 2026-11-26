@@ -74,7 +74,7 @@ pub fn status() -> SettingStatus {
 }
 
 /// Hold or restore the setting for this input tick. Called from the input tick's game stage
-/// ([`crate::controllers::bindings::stage::game_stage`]), on the game thread outside the input
+/// (`controllers::bindings::stage::game_stage`), on the game thread outside the input
 /// job, so the write never overlaps the settings manager's own update.
 pub(crate) fn input_tick() {
     let active = scheme::enabled() && scheme::is_controllers();

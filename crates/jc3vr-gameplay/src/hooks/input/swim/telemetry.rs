@@ -45,7 +45,7 @@ pub(super) fn record_rotate(core: SwimCore, from: Vec3, game_to: Vec3, given_to:
 
 /// Log the swim heading's state, at most once per [`PERIOD`], while the local player swims.
 /// `look_x` is the turn input the body-yaw accumulator took this tick. Called from the poll
-/// stage ([`crate::controllers::bindings::stage`]), in the engine's input job in play, after the
+/// stage (`controllers::bindings::stage`), in the engine's input job in play, after the
 /// headpose has advanced, holding no lock.
 pub(crate) fn log_tick(look_x: f32) {
     let signals = SwimSignals::local().unwrap_or_default();

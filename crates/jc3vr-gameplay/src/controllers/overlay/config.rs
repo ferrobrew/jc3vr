@@ -50,7 +50,7 @@ pub struct OverlayConfig {
     pub body_estimate: bool,
     /// Mark each gun docked on a socket of the body where its placement puts it, with a line along
     /// its barrel, green while its model is shown and red while hidden
-    /// ([`crate::controllers::weapons::inventory::docked_view`]).
+    /// (`controllers::weapons::inventory::docked_view`).
     pub docked_guns: bool,
     /// How far behind the scene's depth, in metres, a primitive still counts as visible, so that a
     /// marker on a surface is not hidden by that surface.

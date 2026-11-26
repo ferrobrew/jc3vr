@@ -17,7 +17,7 @@
 //! coexists with the buttons: the retract the pull drives merges with the trigger's, the larger
 //! value winning, and a reel the hand does not drive runs on the game's own tuning.
 //!
-//! [`input_tick`] runs in the bindings' game stage ([`crate::controllers::bindings::stage`]), which
+//! [`input_tick`] runs in the bindings' game stage (`controllers::bindings::stage`), which
 //! hands it the grapple hand's grip and aim and injects the retract it returns. It reads
 //! the hook, steps the pull, publishes the reel's drive for the reel task's detour, vibrates the
 //! grapple hand, logs the grapple's events, and publishes the readout ([`status`]) for the
@@ -57,7 +57,7 @@ use crate::{
     },
 };
 
-/// The physical grapple's hooks, aggregated by [`crate::hooks`].
+/// The physical grapple's hooks, aggregated by `hooks`.
 pub fn hook_library() -> HookLibrary {
     reel::hook_library().with_hook_library(lock::hook_library())
 }

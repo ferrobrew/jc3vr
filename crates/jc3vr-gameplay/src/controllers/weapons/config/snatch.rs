@@ -1,12 +1,12 @@
 //! The grapple snatch's settings, held as `weapons.snatch` beside the weapon-handling settings.
-//! Its fixed tuning is in [`crate::controllers::snatch::config`].
+//! Its fixed tuning is in `controllers::snatch::config`.
 
 use serde::{Deserialize, Serialize};
 
 use crate::controllers::bindings::yank::YankConfig;
 
-/// The grapple snatch (see [`crate::controllers::snatch`]). Acts only under the controller scheme.
-/// Its tuning is fixed at [`SNATCH`](crate::controllers::snatch::config::SNATCH), apart from the
+/// The grapple snatch (see `controllers::snatch`). Acts only under the controller scheme.
+/// Its tuning is fixed at `SNATCH`, apart from the
 /// yank that fires it.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -52,7 +52,7 @@ impl Default for SnatchConfig {
 }
 
 /// The held line's tuning: the swing of a heavy object, and of a weapon or a light object while B
-/// is held ([`crate::controllers::snatch::sling`]).
+/// is held (`controllers::snatch::sling`).
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct SwingConfig {
@@ -65,12 +65,12 @@ pub struct SwingConfig {
     /// The line's damping of the target's speed away from the hand, per second.
     pub damping_per_s: f32,
     /// The most tension the line holds on a target of
-    /// [`REFERENCE_MASS_KG`](crate::controllers::snatch::config::REFERENCE_MASS_KG), newtons.
+    /// `REFERENCE_MASS_KG`, newtons.
     pub strength_n: f32,
     /// How the line's strength grows with the target's mass, `0..=1`: the strength is
     /// [`strength_n`](Self::strength_n) times the mass over
-    /// [`REFERENCE_MASS_KG`](crate::controllers::snatch::config::REFERENCE_MASS_KG) to this power
-    /// ([`line_strength_n`](crate::controllers::snatch::sling::line_strength_n)). At 1 every mass
+    /// `REFERENCE_MASS_KG` to this power
+    /// (`line_strength_n`). At 1 every mass
     /// swings alike; at 0 the line pulls every mass equally hard, so a heavy one barely moves.
     pub mass_scaling: f32,
     /// The line's strength while the other hand braces the grapple hand's wrist, as a multiple of

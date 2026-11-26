@@ -4,7 +4,7 @@
 //! to the composed cockpit position ([`advance`]).
 //!
 //! The vehicle handling measures the seat and derives the correction
-//! ([`crate::controllers::vehicles::driving_view`]). A correction the input tick stopped publishing
+//! (`controllers::vehicles::driving_view`). A correction the input tick stopped publishing
 //! goes stale, and the view eases back.
 
 use std::time::{Duration, Instant};

@@ -1,6 +1,6 @@
 //! The weapon handling's engine reads and calls: the local player's wielded weapon, the foregrip
 //! geometry measured from the gun's placement, and the holster call. Everything here runs in the
-//! game stage ([`crate::controllers::bindings::stage`]), on the game thread before the world
+//! game stage (`controllers::bindings::stage`), on the game thread before the world
 //! update.
 
 use glam::{Mat4, Quat, Vec3};

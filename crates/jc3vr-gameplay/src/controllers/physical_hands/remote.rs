@@ -1,4 +1,4 @@
-//! The physical hands' side of the grapple snatch ([`crate::controllers::snatch`]): what a thing out
+//! The physical hands' side of the grapple snatch (`controllers::snatch`): what a thing out
 //! of reach under the grapple's aim is to a hand, by the same rules as the reach in reach, and the
 //! hand-over of a snatched prop to the hand's ordinary hold.
 

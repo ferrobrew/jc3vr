@@ -2,7 +2,7 @@
 //! weapon handling.
 //!
 //! The lock writes it as it takes the line and as it lets go
-//! ([`crate::grapple::physical::lock`]), so a reader sees the lock's own state, not a copy a tick
+//! (`grapple::physical::lock`), so a reader sees the lock's own state, not a copy a tick
 //! old.
 
 use std::sync::atomic::{AtomicBool, Ordering};

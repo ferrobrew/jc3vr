@@ -40,7 +40,7 @@ use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{haptics::config::HAPTICS_CONFIG, scheme, telemetry};
 
-/// The haptics' hooks, aggregated by [`crate::controllers::hook_library`].
+/// The haptics' hooks, aggregated by `controllers::hook_library`.
 pub(crate) fn hook_library() -> HookLibrary {
     rumble::hook_library()
 }

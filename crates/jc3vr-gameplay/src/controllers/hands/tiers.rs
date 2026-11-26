@@ -9,7 +9,7 @@
 //! - [`HandTier::ActionRuns`]: the game plays the action (a reload's timer and the weapon model's
 //!   own magazine and bolt animation, a draw, a holster) while the hand stays on its controller;
 //!   the weapon handling holds the fire inputs back for the action's duration
-//!   ([`crate::controllers::weapons`]);
+//!   (`controllers::weapons`);
 //! - [`HandTier::Anchored`]: the hand is attached to a world point, and its movement drives the
 //!   game. It is built for the grapple states and the mounted guns ([`TierState::anchor_built`]):
 //!   the grapple hand holds the line ([`crate::controllers::hands::anchor`]), and while hanging its
@@ -17,9 +17,9 @@
 //!   armed there, a prop, a grenade, or a charge, as the loadout table has it) stays free instead,
 //!   so that what it holds stays where the controller puts it rather than going onto the line; on a
 //!   mounted gun both hands hold the handles, and their
-//!   positions aim the gun ([`crate::controllers::vehicles::mounted`]). A state assigned the tier
+//!   positions aim the gun (`controllers::vehicles::mounted`). A state assigned the tier
 //!   where it is not built yields. The physical vehicle controls anchor a holding hand within the
-//!   seated state's free tier ([`crate::controllers::vehicles::physical`]), because a hand holds a
+//!   seated state's free tier (`controllers::vehicles::physical`), because a hand holds a
 //!   control only while the player grips it;
 //! - [`HandTier::Yielded`]: the animation owns the hand, which blends out from the controller over
 //!   [`YIELD_BLEND_S`] and back over [`RETURN_BLEND_S`].

@@ -1,6 +1,6 @@
 //! The speed of the vehicle the local character rides, as the animation graph's parachute bail
 //! condition measures it: what the bindings' bail compares against the graph's speed gate
-//! ([`PARACHUTE_BAIL_MIN_SPEED_MPS`](crate::controllers::bindings::bail::PARACHUTE_BAIL_MIN_SPEED_MPS)).
+//! (`PARACHUTE_BAIL_MIN_SPEED_MPS`).
 
 use glam::{Mat4, Vec3};
 use jc3gi::{character::character::Character, types::math::Vector3};

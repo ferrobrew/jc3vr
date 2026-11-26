@@ -94,7 +94,7 @@ pub static WORLD_MARKERS_ENABLED: ConfigSlot<bool> = ConfigSlot::new("hud.world_
 /// payload binds the slot at startup.
 pub static GRAPPLE_SEAT: ConfigSlot<bool> = ConfigSlot::new("controllers.grapple.seat");
 
-/// The aiming hooks, aggregated by [`crate::controllers::hook_library`].
+/// The aiming hooks, aggregated by `controllers::hook_library`.
 pub(crate) fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_static_binder(&UPDATE_POST_SIM_BINDER)

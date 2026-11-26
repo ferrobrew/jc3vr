@@ -113,7 +113,7 @@ use crate::controllers::{
     weapons::hold::{source::SourceRefusal, steal},
 };
 
-/// The snatch's hooks, aggregated by [`crate::controllers::hook_library`].
+/// The snatch's hooks, aggregated by `controllers::hook_library`.
 pub(crate) fn hook_library() -> HookLibrary {
     hooks::hook_library()
         .with_hook_library(sling_hooks::hook_library())

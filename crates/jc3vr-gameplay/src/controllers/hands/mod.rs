@@ -59,7 +59,7 @@ pub mod tiers;
 pub use pose::CockpitHand;
 pub use stages::DrawTime;
 
-/// The hands' hooks, aggregated by [`crate::controllers::hook_library`].
+/// The hands' hooks, aggregated by `controllers::hook_library`.
 pub(crate) fn hook_library() -> HookLibrary {
     late::hook_library()
         .with_hook_library(parts::hook_library())
