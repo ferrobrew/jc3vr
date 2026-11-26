@@ -7,7 +7,8 @@
 //! hands' recent motion, and the scheme rule are the input crate's ([`jc3vr_input`]). This module
 //! owns everything built on that snapshot:
 //!
-//! - [`config`]: [`ControllersConfig`], one toggle per subsystem;
+//! - [`config`]: [`ControllersConfig`], the controllers' settings assembled from each subsystem's
+//!   group;
 //! - [`scheme`]: controller versus gamepad scheme selection;
 //! - [`mode`]: the per-tick mode detector, which selects the OpenXR action set;
 //! - [`bindings`]: the per-mode mapping from the controllers to the game's actions, and its
@@ -49,7 +50,9 @@
 //!   head-through-geometry fade, and seat transitions. These need the headset rather than the
 //!   controllers, so they are gated on the VR source and their own toggles instead of the scheme;
 //! - [`summary`]: the controls summary's model, which the HUD draws on the off-hand wrist;
-//! - [`telemetry`]: the notes the subsystems write to the tracking recording.
+//! - [`telemetry`]: the notes the subsystems write to the tracking recording;
+//! - [`intent`], [`held`], [`physics`], and [`facts`]: the vocabulary, the held-item facts, the
+//!   physics substrate, and the published facts that the subsystems share across their layering.
 //!
 //! The controls map and the summary's presentation belong to the HUD layer, and the pause menu's
 //! `VR:` pages to the UI layer.
@@ -67,17 +70,21 @@ pub mod bindings;
 pub mod body;
 pub mod clock;
 pub mod config;
+pub mod facts;
 pub mod fingers;
 pub mod gamepad_setting;
 pub mod glass;
 pub mod grab;
 pub mod hands;
 pub mod haptics;
+pub mod held;
+pub mod intent;
 pub mod loadout;
 pub mod locomotion;
 pub mod mode;
 pub mod overlay;
 pub mod physical_hands;
+pub mod physics;
 pub mod presentation;
 mod register_head_pose;
 mod register_lifecycle;
