@@ -173,7 +173,6 @@ pub fn held_floor(floor_m: f32) -> f32 {
     floor_m.max(MIN_HELD_LENGTH_M)
 }
 
-
 /// `tension_n` as a share of the rope's strength `max_tension_n`, `0..=1`: none for a strength
 /// that is not positive or a tension that is not finite.
 pub fn tension_share(tension_n: f32, max_tension_n: f32) -> f32 {

@@ -24,8 +24,10 @@ pub enum AutoAttachBlocker {
 
 impl AutoAttachBlocker {
     /// Every blocker, in the order they are asked.
-    pub const ALL: [AutoAttachBlocker; Self::COUNT] =
-        [AutoAttachBlocker::PhysicalClimb, AutoAttachBlocker::VehicleRail];
+    pub const ALL: [AutoAttachBlocker; Self::COUNT] = [
+        AutoAttachBlocker::PhysicalClimb,
+        AutoAttachBlocker::VehicleRail,
+    ];
 
     const COUNT: usize = 2;
 
