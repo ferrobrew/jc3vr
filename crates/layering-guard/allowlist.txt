@@ -47,7 +47,6 @@ payload/src/controllers/clock.rs -> tooling
 payload/src/controllers/diagnostics/mod.rs -> tooling
 payload/src/controllers/diagnostics/world_state.rs -> payload
 payload/src/controllers/fingers/mod.rs -> payload
-payload/src/controllers/frame.rs -> render
 payload/src/controllers/gamepad_setting.rs -> payload
 payload/src/controllers/glass/bullets.rs -> payload
 payload/src/controllers/glass/mod.rs -> payload
@@ -57,7 +56,6 @@ payload/src/controllers/hands/grip.rs -> payload
 payload/src/controllers/hands/ik/tests.rs -> payload
 payload/src/controllers/hands/mod.rs -> payload
 payload/src/controllers/hands/tiers.rs -> payload
-payload/src/controllers/haptics/mixer.rs -> gameplay
 payload/src/controllers/haptics/mod.rs -> payload
 payload/src/controllers/haptics/rumble.rs -> payload
 payload/src/controllers/locomotion/anchor.rs -> payload
@@ -65,8 +63,6 @@ payload/src/controllers/locomotion/config.rs -> payload
 payload/src/controllers/locomotion/mod.rs -> payload
 payload/src/controllers/menu/controls/mod.rs -> payload
 payload/src/controllers/menu/mod.rs -> payload
-payload/src/controllers/mode.rs -> hud
-payload/src/controllers/motion.rs -> gameplay
 payload/src/controllers/overlay/game_reticle.rs -> payload
 payload/src/controllers/overlay/mod.rs -> payload
 payload/src/controllers/overlay/producers.rs -> payload
@@ -180,7 +176,6 @@ payload/src/hooks/graphics_engine/screen/ss_decal.rs -> payload
 payload/src/hooks/graphics_engine/screen/ssao.rs -> payload
 payload/src/hooks/graphics_engine/shader.rs -> payload
 payload/src/hooks/input/locomotion.rs -> payload
-payload/src/hooks/input/look.rs -> hud
 payload/src/hooks/input/parachute.rs -> payload
 payload/src/hooks/input/swim/mod.rs -> payload
 payload/src/hooks/input/swim/telemetry.rs -> payload
