@@ -1,16 +1,16 @@
 //! Owned hold generations, event leases, and feedback planning without native calls.
 
-use std::{
-    num::NonZeroUsize,
-    time::{Duration, Instant},
-};
+use std::{num::NonZeroUsize, time::Instant};
 
 use glam::Vec3;
 use jc3gi::physics::{hknpBody, hknpWorld};
 
-use crate::controllers::physical_hands::impacts::{
-    Status,
-    policy::{Gate, Motion, damage_impulse, strength},
+use crate::controllers::physical_hands::{
+    characters::tuning::{CHARACTERS, ImpactsTuning},
+    impacts::{
+        Status,
+        policy::{Gate, Motion, damage_impulse, strength},
+    },
 };
 
 pub(super) type Held = (u32, NonZeroUsize);
@@ -140,7 +140,8 @@ impl State {
     }
 
     pub fn publish(&mut self, held: [Option<Held>; 2], now: Instant) {
-        let stale = !self.fresh(now);
+        let tuning = &CHARACTERS.get().impacts;
+        let stale = !self.fresh(now, tuning);
         for (i, wanted) in held.iter().enumerate() {
             if self.wanted[i] != *wanted || stale {
                 self.generations[i] = self.generations[i]
@@ -150,11 +151,20 @@ impl State {
         }
         self.wanted = held;
         self.published = Some(now);
-        self.prune_contacts(now);
+        self.prune_contacts(now, tuning);
     }
 
     pub fn wanted(&self, now: Instant, enabled: Enabled) -> [Option<Held>; 2] {
-        if enabled.active() && self.fresh(now) {
+        self.wanted_in(now, enabled, &CHARACTERS.get().impacts)
+    }
+
+    fn wanted_in(
+        &self,
+        now: Instant,
+        enabled: Enabled,
+        tuning: &ImpactsTuning,
+    ) -> [Option<Held>; 2] {
+        if enabled.active() && self.fresh(now, tuning) {
             self.wanted
         } else {
             [None; 2]
@@ -168,10 +178,11 @@ impl State {
         enabled: Enabled,
         observations: &[Observation],
     ) -> Vec<FlagCall> {
+        let tuning = &CHARACTERS.get().impacts;
         if !enabled.active() {
             self.clear(now);
         }
-        let wanted = self.wanted(now, enabled);
+        let wanted = self.wanted_in(now, enabled, tuning);
         let mut changes = Vec::new();
         for slot in &mut self.leases {
             let Some(lease) = slot else {
@@ -228,7 +239,7 @@ impl State {
                 lease.motion = observed.motion;
             }
         }
-        self.prune_contacts(now);
+        self.prune_contacts(now, tuning);
         self.status.listening = self.leases.iter().flatten().count();
         changes
     }
@@ -251,22 +262,23 @@ impl State {
     }
 
     pub fn queue(&mut self, contact: Contact, now: Instant) {
-        self.prune_contacts(now);
+        let tuning = &CHARACTERS.get().impacts;
+        self.prune_contacts(now, tuning);
         if !contact.character
             && contact.impulse.is_finite()
             && contact.impulse > 0.0
             && contact.at.is_finite()
             && contact.normal.is_finite()
             && contact.normal.try_normalize().is_some()
-            && self.contact_live(contact, now)
+            && self.contact_live(contact, now, tuning)
         {
-            if self.recent_contacts.len() >= 32 {
+            if self.recent_contacts.len() >= tuning.max_recent_contacts {
                 self.recent_contacts.remove(0);
             }
             self.recent_contacts.push((contact, now));
         }
         self.status.contacts += 1;
-        if self.queue.len() >= 32 {
+        if self.queue.len() >= tuning.max_queued {
             self.status.dropped += 1;
         } else {
             self.queue.push((contact, now));
@@ -274,16 +286,20 @@ impl State {
     }
 
     pub fn native(&mut self, pair: [Identity; 2], recipient: Identity, now: Instant) {
+        let tuning = &CHARACTERS.get().impacts;
+        let stale_after = tuning.stale_after();
         self.native
-            .retain(|(_, _, at)| now.saturating_duration_since(*at) <= STALE_AFTER);
-        if self.native.len() >= 64 {
+            .retain(|(_, _, at)| now.saturating_duration_since(*at) <= stale_after);
+        if self.native.len() >= tuning.max_native_hits {
             self.native.remove(0);
         }
         self.native.push((pair, recipient, now));
     }
 
     pub fn deliver(&mut self, now: Instant, enabled: Enabled, valid: &[Identity]) -> Vec<Feedback> {
-        let wanted = self.wanted(now, enabled);
+        let tuning = &CHARACTERS.get().impacts;
+        let stale_after = tuning.stale_after();
+        let wanted = self.wanted_in(now, enabled, tuning);
         let now_s = now
             .saturating_duration_since(*self.start.get_or_insert(now))
             .as_secs_f64();
@@ -301,8 +317,14 @@ impl State {
                     .iter()
                     .flatten()
                     .any(|l| l.identity == contact.identity);
-            let share = strength(contact.motion, contact.at, contact.normal, contact.impulse);
-            if now.saturating_duration_since(queued) > STALE_AFTER
+            let share = strength(
+                contact.motion,
+                contact.at,
+                contact.normal,
+                contact.impulse,
+                &tuning.feedback,
+            );
+            if now.saturating_duration_since(queued) > stale_after
                 || !live
                 || !hands.into_iter().any(|h| h)
             {
@@ -311,7 +333,7 @@ impl State {
             }
             let pair = contact.target.map(|target| [contact.identity, target]);
             self.damage_gate
-                .retain(|(_, at)| now_s >= *at && now_s - *at < 0.35);
+                .retain(|(_, at)| now_s >= *at && now_s - *at < tuning.strike.repeat_s);
             let damage_impulse = pair.and_then(|pair| {
                 contact
                     .target_motion
@@ -323,6 +345,7 @@ impl State {
                             contact.at,
                             contact.normal,
                             contact.impulse,
+                            &tuning.strike,
                         )
                     })
                     .filter(|_| {
@@ -337,17 +360,19 @@ impl State {
                     native_hits.iter().any(|(native_pair, target, at)| {
                         *target == recipient
                             && (*native_pair == pair || *native_pair == [pair[1], pair[0]])
-                            && now.saturating_duration_since(*at) <= STALE_AFTER
+                            && now.saturating_duration_since(*at) <= stale_after
                     })
                 })
             });
             if let Some(pair) = pair.filter(|_| damage_impulse.is_some()) {
-                if self.damage_gate.len() >= 64 {
+                if self.damage_gate.len() >= tuning.max_struck_pairs {
                     self.damage_gate.remove(0);
                 }
                 self.damage_gate.push((pair, now_s));
             }
-            let hands = [0, 1].map(|i| hands[i] && share.is_some() && self.gate.admit(i, now_s));
+            let hands = [0, 1].map(|i| {
+                hands[i] && share.is_some() && self.gate.admit(i, now_s, tuning.feedback.repeat_s)
+            });
             if hands.into_iter().any(|h| h) || damage_impulse.is_some() {
                 self.status.feedback += 1;
                 feedback.push(Feedback {
@@ -373,6 +398,8 @@ impl State {
         if !enabled.active() || !lag.is_finite() {
             return Vec3::ZERO;
         }
+        let tuning = &CHARACTERS.get().impacts;
+        let freshness = tuning.contact_freshness();
         let mut basis = [Vec3::ZERO; 3];
         let mut count = 0;
         for &(contact, at) in &self.recent_contacts {
@@ -380,8 +407,8 @@ impl State {
                 || contact.identity.owner != owner
                 || now
                     .checked_duration_since(at)
-                    .is_none_or(|age| age > CONTACT_FRESHNESS)
-                || !self.contact_live(contact, now)
+                    .is_none_or(|age| age > freshness)
+                || !self.contact_live(contact, now, tuning)
             {
                 continue;
             }
@@ -413,8 +440,8 @@ impl State {
         }
     }
 
-    fn contact_live(&self, contact: Contact, now: Instant) -> bool {
-        self.fresh(now)
+    fn contact_live(&self, contact: Contact, now: Instant, tuning: &ImpactsTuning) -> bool {
+        self.fresh(now, tuning)
             && self.leases.iter().flatten().any(|lease| {
                 lease.armed
                     && lease.identity == contact.identity
@@ -426,14 +453,15 @@ impl State {
             })
     }
 
-    fn prune_contacts(&mut self, now: Instant) {
+    fn prune_contacts(&mut self, now: Instant, tuning: &ImpactsTuning) {
+        let freshness = tuning.contact_freshness();
         let contacts = std::mem::take(&mut self.recent_contacts);
         self.recent_contacts = contacts
             .into_iter()
             .filter(|(contact, at)| {
                 now.checked_duration_since(*at)
-                    .is_some_and(|age| age <= CONTACT_FRESHNESS)
-                    && self.contact_live(*contact, now)
+                    .is_some_and(|age| age <= freshness)
+                    && self.contact_live(*contact, now, tuning)
             })
             .collect();
     }
@@ -447,14 +475,11 @@ impl State {
         self.native.clear();
     }
 
-    fn fresh(&self, now: Instant) -> bool {
+    fn fresh(&self, now: Instant, tuning: &ImpactsTuning) -> bool {
         self.published
-            .is_some_and(|at| now.saturating_duration_since(at) <= STALE_AFTER)
+            .is_some_and(|at| now.saturating_duration_since(at) <= tuning.stale_after())
     }
 }
-
-const STALE_AFTER: Duration = Duration::from_millis(250);
-const CONTACT_FRESHNESS: Duration = Duration::from_millis(100);
 
 fn flag_change(identity: Identity, enable: bool) -> FlagCall {
     FlagCall {

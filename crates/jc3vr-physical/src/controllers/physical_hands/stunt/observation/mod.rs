@@ -7,6 +7,7 @@ use jc3vr_body::hooks::animation::active_state_type_id;
 use parking_lot::Mutex;
 
 use crate::controllers::physical_hands::{
+    characters::tuning::CHARACTERS,
     climb::{engine::gate_context, native::Context},
     stunt::engine::PositionRead,
 };
@@ -36,9 +37,10 @@ pub(super) fn publish(read: Option<PositionRead>, now: Instant) {
 
 pub(super) fn movement_owner() -> MovementOwner {
     let context = unsafe { ready_context() };
+    let stale_after = CHARACTERS.get().stunt.observation_stale_after();
     OBSERVATION
         .lock()
-        .and_then(|o| o.current(context, Instant::now()))
+        .and_then(|o| o.current(context, Instant::now(), stale_after))
         .unwrap_or(MovementOwner::Unavailable)
 }
 
@@ -73,15 +75,19 @@ struct Observation {
 }
 
 impl Observation {
-    fn current(self, context: Option<Context>, now: Instant) -> Option<MovementOwner> {
+    fn current(
+        self,
+        context: Option<Context>,
+        now: Instant,
+        stale_after: Duration,
+    ) -> Option<MovementOwner> {
         (context.is_some()
             && context == self.context
-            && now.saturating_duration_since(self.at) <= STALE_AFTER)
+            && now.saturating_duration_since(self.at) <= stale_after)
             .then_some(self.owner)
     }
 }
 
-const STALE_AFTER: Duration = Duration::from_millis(200);
 static OBSERVATION: Mutex<Option<Observation>> = Mutex::new(None);
 
 #[cfg(test)]

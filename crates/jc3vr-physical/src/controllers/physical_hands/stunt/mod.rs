@@ -20,7 +20,7 @@ pub mod engine;
 mod observation;
 pub mod solve;
 
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use jc3gi::input::input_action_map::Action;
 use jc3vr_body::controllers::{
@@ -39,6 +39,7 @@ use jc3vr_input::{
 use parking_lot::Mutex;
 
 use crate::controllers::physical_hands::{
+    characters::tuning::CHARACTERS,
     climb,
     stunt::{
         engine::Entry,
@@ -84,23 +85,25 @@ pub(crate) fn game_holds() -> bool {
 /// input tick.
 #[inline]
 pub fn hanging() -> bool {
+    let stale_after = CHARACTERS.get().stunt.reading_stale_after();
     let state = STATE.lock();
     state.status.position == Some(StuntKind::Hanging)
         && state
             .ticked
-            .is_some_and(|at| Instant::now().saturating_duration_since(at) <= STALE_AFTER)
+            .is_some_and(|at| Instant::now().saturating_duration_since(at) <= stale_after)
 }
 
 /// Read the stunt position, enter a roof where a completed mantle offers it, and let go of a hang
 /// whose grips opened. `held` is each hand's grip; a let-go asks the game for its jump, which
 /// leaves the hang, through `desired`. Called from the input tick after the climb's.
 pub fn finish_tick(game: &GameTick<'_>, held: [bool; 2], desired: &mut Vec<Desired>) {
+    let tuning = &CHARACTERS.get().stunt;
     let now = Instant::now();
     let mut state = STATE.lock();
     let dt = state
         .ticked
         .map_or(0.0, |at| now.saturating_duration_since(at).as_secs_f32())
-        .min(MAX_TICK_S);
+        .min(tuning.max_tick_s);
     state.ticked = Some(now);
     let read = engine::position(game);
     state.observe_read(read, true);
@@ -132,7 +135,7 @@ pub fn finish_tick(game: &GameTick<'_>, held: [bool; 2], desired: &mut Vec<Desir
         roof_landing: landing.map(|(_, _, distance)| distance),
         dt,
     };
-    let decision = state.tracker.step(&tick, &TUNING);
+    let decision = state.tracker.step(&tick, &tuning.tracker);
     state.status.armed = state.tracker.armed();
     state.status.on_helicopter = helicopters;
     state.status.holding = if read.kind == Some(StuntKind::Hanging) {
@@ -148,7 +151,7 @@ pub fn finish_tick(game: &GameTick<'_>, held: [bool; 2], desired: &mut Vec<Desir
             if let Some((Some(vehicle), feet, distance)) = landing {
                 // SAFETY: as above.
                 let entered = unsafe { engine::enter(game, vehicle, feet) };
-                if state.entered(entered, &TUNING) {
+                if state.entered(entered, &tuning.tracker) {
                     tracing::info!(
                         feet = ?feet,
                         distance_m = ?distance,
@@ -177,16 +180,16 @@ pub fn finish_tick(game: &GameTick<'_>, held: [bool; 2], desired: &mut Vec<Desir
         }
     }
     let skid = GripPose::Cylinder {
-        diameter_m: SKID_DIAMETER_M,
+        diameter_m: tuning.skid_diameter_m,
     };
-    let strain = hold_strain(read.vehicle_speed_mps, HOLD_FULL_SPEED_MPS);
+    let strain = hold_strain(read.vehicle_speed_mps, tuning.hold_full_speed_mps);
     for hand in Hand::BOTH {
         let i = hand.index();
         let in_hang = state.status.holding[i];
         if in_hang || (held[i] && helicopters[i]) {
             grip::declare(hand, Grip::new(GripSource::Stunt).pose(skid));
         }
-        if in_hang && strain >= MIN_STRAIN {
+        if in_hang && strain >= tuning.min_strain {
             strains.push((hand, strain));
         }
     }
@@ -198,16 +201,6 @@ pub fn finish_tick(game: &GameTick<'_>, held: [bool; 2], desired: &mut Vec<Desir
         haptics::sustain(hand, Sustain::StuntHang, strain);
     }
 }
-
-/// How long the last input tick's reading stays current.
-const STALE_AFTER: Duration = Duration::from_millis(200);
-
-/// The longest tick the tracker counts, seconds, so that a hitch or a pause does not count as a
-/// held grip or an open one.
-const MAX_TICK_S: f32 = 0.1;
-
-/// The least share of the hold pulse that pulses a hand.
-const MIN_STRAIN: f32 = 0.1;
 
 /// Whether a live moving grip holds a helicopter, for the hand pose and readout.
 ///
@@ -222,25 +215,6 @@ unsafe fn helicopter_grip(grip: Option<climb::Hold>) -> bool {
     unsafe { engine::vehicle_of(grip.body) }
         .is_some_and(|vehicle| unsafe { engine::is_helicopter(vehicle) })
 }
-
-/// The tracker's tuning: enter a vehicle's stunt area when a mantle lands on its roof within
-/// [`Tuning::roof_offer_m`] of the nearest one, and let go of the helicopter once both grips have
-/// stayed open in its hang for [`Tuning::release_grace_s`] after a grip held there, so that a hand
-/// moved from one grip to the other does not. An entry the game refused is tried again after
-/// [`Tuning::retry_s`].
-const TUNING: Tuning = Tuning {
-    enter_roof: true,
-    roof_offer_m: 0.6,
-    let_go: true,
-    release_grace_s: 0.2,
-    retry_s: 1.0,
-};
-
-/// The diameter of the bar the fingers close round on a helicopter's skid, metres.
-const SKID_DIAMETER_M: f32 = 0.05;
-
-/// The helicopter's speed of the strongest hold pulse, metres per second.
-const HOLD_FULL_SPEED_MPS: f32 = 40.0;
 
 /// The share of the hold pulse at the vehicle's speed, `0..=1`.
 fn hold_strain(speed_mps: f32, full_speed_mps: f32) -> f32 {

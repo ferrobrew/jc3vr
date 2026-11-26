@@ -31,14 +31,15 @@
 //! every ray hit on a character. The pickup tick
 //! ([`crate::controllers::physical_hands::pickup::tick`]) keeps a grip on a character
 //! ([`Seize`]): the hand stays at its grab point on the character ([`SeizeStep::Pin`]) until it pulls
-//! away past [`YANK_M`] ([`SeizeStep::Yank`]). The yank's and the shove's hit
-//! reactions are dealt by the hand bodies' blows on the next frame tick
+//! away past [`tuning::CharacterGripTuning::yank_m`] ([`SeizeStep::Yank`]). The yank's and the
+//! shove's hit reactions are dealt by the hand bodies' blows on the next frame tick
 //! ([`crate::controllers::physical_hands::physics::queue_shove`]), outside the game's update.
 
 mod acquisition;
 pub(crate) mod get_up;
 pub(crate) mod pane;
 pub mod ragdoll;
+pub mod tuning;
 
 use std::num::NonZeroUsize;
 
@@ -55,7 +56,10 @@ use jc3vr_body::controllers::{
 use jc3vr_input::frame::Pose;
 
 use crate::controllers::physical_hands::{
-    characters::ragdoll::Ragdoll, contact::SurfaceHit, doors::engine as door_engine, remote,
+    characters::{ragdoll::Ragdoll, tuning::CHARACTERS},
+    contact::SurfaceHit,
+    doors::engine as door_engine,
+    remote,
 };
 
 /// Why a character the reach hit is not one a hand takes.
@@ -83,38 +87,6 @@ impl Unavailable {
     }
 }
 
-/// How far a hand gripping a character must pull away from its grab point to yank, metres of the
-/// player's hand.
-pub(crate) const YANK_M: f32 = 0.2;
-
-/// How hard a yank throws a character the player is hostile to, as a share of the knockdown blow
-/// ([`HandHitsTuning::knockdown_impulse_ns`]); one and above knocks the character down.
-///
-/// [`HandHitsTuning::knockdown_impulse_ns`]: crate::controllers::physical_hands::physics::HandHitsTuning::knockdown_impulse_ns
-pub(crate) const YANK_STRENGTH: f32 = 1.3;
-
-/// How long after a yank the hand looks for the fallen character's ragdoll to hold, seconds of
-/// game time: the fall takes as long as the game's clock says, so slow motion gives it longer.
-pub(crate) const REGRIP_S: f32 = 1.0;
-
-/// How long a hand waits for the ragdoll after a topple before retrying the ragdoll act, game
-/// seconds: the hit reaction's ragdoll is under way well before this when it comes.
-const RAGDOLL_RETRY_AFTER_S: f32 = 0.3;
-
-/// The slowest hand that shoves a character it lets go of, metres per second.
-pub(crate) const SHOVE_MIN_SPEED_MPS: f32 = 1.5;
-
-/// How hard a grip throws a standing character into their ragdoll, as a share of the knockdown
-/// blow: just past it, so that the character falls where the hand holds them rather than flying
-/// off.
-pub(crate) const TOPPLE_STRENGTH: f32 = 1.1;
-
-/// How much harder a hand pulls a character's ragdoll than a loose object, as a multiple of the
-/// pickup's hand force. The hand drags the whole body by one of its bones, and the rest hangs from
-/// that bone by the ragdoll's own constraints, so the pull must move the whole body's mass rather
-/// than the bone's. Scoped to ragdolls: every other hold keeps the hand's own strength.
-pub(crate) const RAGDOLL_CARRY_STRENGTH: f32 = 4.0;
-
 /// Whether a grip that took `target` throws the character into their ragdoll at once, held by the
 /// bone nearest the palm, rather than holding on until a yank: a character on foot, alive, and not one whose state keeps it out
 /// of its ragdoll, so that the game's own hit reaction ragdolls it.
@@ -135,11 +107,13 @@ pub(crate) unsafe fn topples(target: CharacterTarget) -> bool {
 }
 
 /// The way a grip throws a character it takes into their ragdoll: along the palm's motion
-/// `palm_velocity` when the hand moves at least [`SHOVE_MIN_SPEED_MPS`], or else toward the palm
+/// `palm_velocity` when the hand moves at least
+/// [`tuning::CharacterGripTuning::shove_min_speed_mps`], or else toward the palm
 /// along the touched surface's normal `normal`, held level so that the character folds toward the
 /// hand rather than being lifted or driven into the ground. `None` when neither gives a way.
 pub(crate) fn topple_direction(palm_velocity: Vec3, normal: Vec3) -> Option<Vec3> {
-    if palm_velocity.is_finite() && palm_velocity.length() >= SHOVE_MIN_SPEED_MPS {
+    let shove_min_speed_mps = CHARACTERS.get().characters.shove_min_speed_mps;
+    if palm_velocity.is_finite() && palm_velocity.length() >= shove_min_speed_mps {
         return palm_velocity.try_normalize();
     }
     Vec3::new(normal.x, 0.0, normal.z)
@@ -284,18 +258,19 @@ pub struct Regrip {
 }
 
 impl Regrip {
-    /// A regrip of `seize` that waits [`REGRIP_S`].
+    /// A regrip of `seize` that waits [`tuning::CharacterGripTuning::regrip_s`].
     pub fn new(seize: Seize) -> Self {
         Self {
             seize,
-            remaining_s: REGRIP_S,
+            remaining_s: CHARACTERS.get().characters.regrip_s,
             retried: false,
         }
     }
 
     /// Whether the wait has run long enough, with no ragdoll, to retry the ragdoll act once.
     pub fn retry_due(&self) -> bool {
-        !self.retried && REGRIP_S - self.remaining_s >= RAGDOLL_RETRY_AFTER_S
+        let tuning = &CHARACTERS.get().characters;
+        !self.retried && tuning.regrip_s - self.remaining_s >= tuning.ragdoll_retry_after_s
     }
 
     /// Count `dt` seconds of game time off the wait, and return whether it has run out.
@@ -440,7 +415,8 @@ pub(crate) unsafe fn gunner_out(target: CharacterTarget) -> GunnerOut {
 }
 
 /// Damp the ragdoll of `character`, held by its body `body`, within itself over a step of `dt`
-/// seconds ([`Ragdoll::internal_damping`] at [`HELD_RAGDOLL_DAMPING_PER_S`]): a hand drives only
+/// seconds ([`Ragdoll::internal_damping`] at
+/// [`tuning::CharacterGripTuning::held_ragdoll_damping_per_s`]): a hand drives only
 /// the bone it holds, and the rest of the body, hung off that bone on soft constraints, kept its
 /// momentum and orbited and thrashed about the palm (on the 14 November take, at 2 to 4 Hz a few
 /// centimetres from the camera).
@@ -456,14 +432,12 @@ pub(crate) unsafe fn damp_held_ragdoll(character: NonZeroUsize, body: u32, dt: f
     let Some(ragdoll) = (unsafe { Ragdoll::of(&*(character.get() as *const Character)) }) else {
         return;
     };
-    for (bone, impulse) in ragdoll.internal_damping(HELD_RAGDOLL_DAMPING_PER_S, dt) {
+    let per_s = CHARACTERS.get().characters.held_ragdoll_damping_per_s;
+    for (bone, impulse) in ragdoll.internal_damping(per_s, dt) {
         // A bone the game has freed since the read is passed over.
         let _ = unsafe { remote::push(bone.body, bone.owner, impulse, bone.centre) };
     }
 }
-
-/// How fast a held ragdoll's motion within itself dies down, per second.
-const HELD_RAGDOLL_DAMPING_PER_S: f32 = 4.0;
 
 /// Take the character `target`, reached through a window the glass brought down, out of its seat as
 /// a ragdoll where it sits ([`engine::seat_out`]).
@@ -526,14 +500,16 @@ unsafe fn open_door_near(
     palm: Vec3,
     world_scale: f32,
 ) -> Option<(DoorSlot, f32)> {
-    let reach_m = HIJACK_DOOR_REACH_M * world_scale;
+    let tuning = &CHARACTERS.get().characters;
+    let reach_m = tuning.hijack_door_reach_m * world_scale;
+    let min_open_deg = tuning.hijack_min_open_deg;
     unsafe { door_engine::doors(vehicle) }
         .into_iter()
         .filter(|d| !d.latched)
         .filter_map(|d| {
             let distance = d.door_box?.centre().distance(palm);
             let open_deg = unsafe { door_engine::open_angle(vehicle, d.part_index) }.to_degrees();
-            (distance <= reach_m && open_deg >= HIJACK_MIN_OPEN_DEG)
+            (distance <= reach_m && open_deg >= min_open_deg)
                 .then_some((d.slot, open_deg, distance))
         })
         .min_by(|a, b| a.2.total_cmp(&b.2))
@@ -581,13 +557,6 @@ fn yank(at: Vec3, palm: Vec3, yank_m: f32) -> Option<Vec3> {
         .filter(|d| *d != Vec3::ZERO)
 }
 
-/// How far open a door beside the hand must stand for a hand to reach in, degrees.
-const HIJACK_MIN_OPEN_DEG: f32 = 25.0;
-
-/// How far from the palm an open door may be for the hand to reach in through it, metres of the
-/// player's hand.
-const HIJACK_DOOR_REACH_M: f32 = 1.2;
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -623,12 +592,13 @@ mod tests {
             in_palm: Vec3::new(0.01, 0.02, -0.03),
         };
         let mut regrip = Regrip::new(seize);
-        assert!(!regrip.run_down(REGRIP_S * 0.5));
+        assert!(!regrip.run_down(CHARACTERS.get().characters.regrip_s * 0.5));
         assert_eq!(regrip.seize, seize);
     }
 
     #[test]
     fn a_regrip_waits_on_the_game_clock() {
+        let regrip_s = CHARACTERS.get().characters.regrip_s;
         let mut regrip = Regrip::new(Seize {
             target: target(32, false),
             grab: Vec3::Y,
@@ -639,12 +609,12 @@ mod tests {
         for _ in 0..60 {
             assert!(!regrip.run_down(0.25 / 60.0));
         }
-        assert!((regrip.remaining_s - (REGRIP_S - 0.25)).abs() < 1e-4);
+        assert!((regrip.remaining_s - (regrip_s - 0.25)).abs() < 1e-4);
         // A paused clock, or a broken time step, waits on.
         assert!(!regrip.run_down(0.0));
         assert!(!regrip.run_down(f32::NAN));
         assert!(!regrip.run_down(-1.0));
-        assert!(regrip.run_down(REGRIP_S));
+        assert!(regrip.run_down(regrip_s));
     }
 
     #[test]

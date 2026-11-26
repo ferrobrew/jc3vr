@@ -3,6 +3,8 @@
 //! [`Tracker::step`] reads the game's stunt position, the held grips, and a completed roof
 //! mantle, and returns one [`Decision`]. Physical grips do not request the animated hang.
 
+use serde::Deserialize;
+
 /// A stunt position the game holds the player in.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum StuntKind {
@@ -35,14 +37,24 @@ pub struct Tick {
     pub dt: f32,
 }
 
-/// The tracker's tuning, fixed in [`crate::controllers::physical_hands::stunt`].
-#[derive(Debug, Copy, Clone, PartialEq)]
+/// The tracker's tuning: enter a vehicle's stunt area when a mantle lands on its roof within
+/// [`roof_offer_m`](Self::roof_offer_m) of the nearest one, and let go of the helicopter once both
+/// grips have stayed open in its hang for [`release_grace_s`](Self::release_grace_s) after a grip
+/// held there, so that a hand moved from one grip to the other does not. An entry the game refused
+/// is tried again after [`retry_s`](Self::retry_s).
+#[derive(Debug, Copy, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Tuning {
-    pub enter_roof: bool,
+    /// How far from a vehicle's nearest stunt area a mantle may land on its roof to enter it,
+    /// metres.
     pub roof_offer_m: f32,
-    pub let_go: bool,
+    /// How long every grip must stay open in an armed hang before it lets go, seconds.
     pub release_grace_s: f32,
+    /// How long after a refused entry another is tried, seconds.
     pub retry_s: f32,
+    /// How long the hang may last after a let-go before the game is reported to have kept it,
+    /// seconds.
+    pub let_go_timeout_s: f32,
 }
 
 /// What to do on this tick.
@@ -123,7 +135,7 @@ impl Tracker {
     fn hanging(&mut self, any_held: bool, dt: f32, tuning: &Tuning) -> Decision {
         if let Some(since) = self.let_go_s.as_mut() {
             *since += dt;
-            if *since >= LET_GO_TIMEOUT_S && !self.ignored {
+            if *since >= tuning.let_go_timeout_s && !self.ignored {
                 self.ignored = true;
                 return Decision::LetGoIgnored;
             }
@@ -134,7 +146,7 @@ impl Tracker {
             self.open_s = 0.0;
             return Decision::Hold;
         }
-        if !self.armed || !tuning.let_go {
+        if !self.armed {
             return Decision::Hold;
         }
         self.open_s += dt;
@@ -150,8 +162,7 @@ impl Tracker {
             self.retry_in_s = (self.retry_in_s - dt).max(0.0);
             return Decision::Hold;
         }
-        if tuning.enter_roof
-            && let Some(Some(distance)) = tick.roof_landing
+        if let Some(Some(distance)) = tick.roof_landing
             && distance <= tuning.roof_offer_m
         {
             return Decision::EnterRoof;
@@ -160,24 +171,15 @@ impl Tracker {
     }
 }
 
-/// How long the hang may last after a let-go before the game is reported to have kept it,
-/// seconds.
-const LET_GO_TIMEOUT_S: f32 = 1.0;
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::controllers::physical_hands::characters::tuning::CHARACTERS;
 
     const DT: f32 = 1.0 / 30.0;
 
     fn tuning() -> Tuning {
-        Tuning {
-            enter_roof: true,
-            roof_offer_m: 0.6,
-            let_go: true,
-            release_grace_s: 0.2,
-            retry_s: 1.0,
-        }
+        CHARACTERS.get().stunt.tracker
     }
 
     fn run(tracker: &mut Tracker, tick: &Tick, ticks: usize) -> Vec<Decision> {
@@ -229,7 +231,10 @@ mod tests {
             .iter()
             .position(|d| *d == Decision::LetGo)
             .expect("the hang lets go");
-        assert!(first as f32 * DT >= 0.2 - DT, "{first}");
+        assert!(
+            first as f32 * DT >= tuning().release_grace_s - DT,
+            "{first}"
+        );
         assert_eq!(
             decisions.iter().filter(|d| **d == Decision::LetGo).count(),
             1
@@ -267,31 +272,6 @@ mod tests {
     }
 
     #[test]
-    fn with_the_let_go_off_the_hang_holds_with_the_grips_open() {
-        let mut tracker = Tracker::new();
-        let holding = Tick {
-            position: Some(StuntKind::Hanging),
-            held: [true, false],
-            dt: DT,
-            ..Tick::default()
-        };
-        tracker.step(&holding, &tuning());
-        let no_let_go = Tuning {
-            let_go: false,
-            ..tuning()
-        };
-        let open = Tick {
-            held: [false; 2],
-            ..holding
-        };
-        assert!(
-            (0..60)
-                .map(|_| tracker.step(&open, &no_let_go))
-                .all(|d| d == Decision::Hold)
-        );
-    }
-
-    #[test]
     fn standing_on_a_roof_needs_no_grip() {
         let mut tracker = Tracker::new();
         let standing = Tick {
@@ -325,11 +305,6 @@ mod tests {
             ..near
         };
         assert_eq!(tracker.step(&none, &tuning()), Decision::Hold);
-        let off = Tuning {
-            enter_roof: false,
-            ..tuning()
-        };
-        assert_eq!(tracker.step(&near, &off), Decision::Hold);
     }
 
     #[test]
@@ -347,7 +322,7 @@ mod tests {
             .iter()
             .position(|d| *d == Decision::EnterRoof)
             .expect("tried again");
-        assert!(next as f32 * DT >= 1.0, "{next}");
+        assert!(next as f32 * DT >= tuning().retry_s, "{next}");
     }
 
     #[test]

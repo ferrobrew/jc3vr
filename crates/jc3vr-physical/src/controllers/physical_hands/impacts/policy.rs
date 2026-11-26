@@ -3,6 +3,10 @@
 use body_rig::geometry::point_velocity;
 use glam::Vec3;
 
+use crate::controllers::physical_hands::characters::tuning::{
+    FeedbackTuning, ObjectDamageTuning, StrikeTuning,
+};
+
 /// The contact-point motion before the physics step.
 #[derive(Debug, Copy, Clone)]
 pub(super) struct Motion {
@@ -33,6 +37,7 @@ pub(super) fn damage_impulse(
     at: Vec3,
     normal: Vec3,
     solver_impulse: f32,
+    tuning: &StrikeTuning,
 ) -> Option<f32> {
     if !held.centre.is_finite()
         || !held.linear.is_finite()
@@ -51,21 +56,35 @@ pub(super) fn damage_impulse(
     let normal = normal.try_normalize()?;
     let own_speed = held.velocity_at(at).dot(normal);
     let relative_speed = (held.velocity_at(at) - target.velocity_at(at)).dot(normal);
-    if !relative_speed.is_finite() || own_speed < 1.5 || relative_speed < 1.5 {
+    if !relative_speed.is_finite()
+        || own_speed < tuning.min_speed_mps
+        || relative_speed < tuning.min_speed_mps
+    {
         return None;
     }
-    let momentum = held.mass_kg.clamp(0.25, 20.0) * own_speed.min(relative_speed).min(12.0);
-    Some(momentum.min(solver_impulse).min(120.0)).filter(|v| *v >= 3.0)
+    let momentum = held.mass_kg.clamp(tuning.min_mass_kg, tuning.max_mass_kg)
+        * own_speed.min(relative_speed).min(tuning.max_speed_mps);
+    Some(momentum.min(solver_impulse).min(tuning.max_impulse_ns))
+        .filter(|v| *v >= tuning.min_impulse_ns)
 }
 
-/// Health points for native object impact damage, with no detonation override.
-pub(super) fn object_damage(impulse_ns: f32) -> Option<i16> {
-    (impulse_ns.is_finite() && impulse_ns >= 3.0)
-        .then(|| (impulse_ns * 0.75).round().clamp(1.0, 90.0) as i16)
+/// Health points for native object impact damage, with no detonation override: at least one.
+pub(super) fn object_damage(impulse_ns: f32, tuning: &ObjectDamageTuning) -> Option<i16> {
+    (impulse_ns.is_finite() && impulse_ns >= tuning.min_impulse_ns).then(|| {
+        (impulse_ns * tuning.health_per_ns)
+            .round()
+            .clamp(1.0, tuning.max_health) as i16
+    })
 }
 
 /// The feedback strength of a real solver contact.
-pub(super) fn strength(motion: Motion, at: Vec3, normal: Vec3, impulse_ns: f32) -> Option<f32> {
+pub(super) fn strength(
+    motion: Motion,
+    at: Vec3,
+    normal: Vec3,
+    impulse_ns: f32,
+    tuning: &FeedbackTuning,
+) -> Option<f32> {
     if !motion.centre.is_finite()
         || !motion.linear.is_finite()
         || !motion.angular.is_finite()
@@ -79,23 +98,28 @@ pub(super) fn strength(motion: Motion, at: Vec3, normal: Vec3, impulse_ns: f32) 
         return None;
     }
     let normal = normal.try_normalize()?;
-    let speed = motion.velocity_at(at).dot(normal).clamp(0.0, 12.0);
-    if speed < 0.8 {
+    let speed = motion
+        .velocity_at(at)
+        .dot(normal)
+        .clamp(0.0, tuning.max_speed_mps);
+    if speed < tuning.min_speed_mps {
         return None;
     }
-    let momentum = motion.mass_kg.clamp(0.25, 20.0) * speed;
-    Some((momentum.min(impulse_ns) / 24.0).clamp(0.0, 1.0)).filter(|s| *s >= 0.05)
+    let momentum = motion.mass_kg.clamp(tuning.min_mass_kg, tuning.max_mass_kg) * speed;
+    Some((momentum.min(impulse_ns) / tuning.full_momentum_ns).clamp(0.0, 1.0))
+        .filter(|s| *s >= tuning.min_share)
 }
 
-/// Feedback is limited per hand, including contacts without a cache.
+/// Feedback is limited per hand, including contacts without a cache, to one per `repeat_s`
+/// ([`FeedbackTuning::repeat_s`]).
 #[derive(Default)]
 pub(super) struct Gate {
     pub last: [Option<f64>; 2],
 }
 
 impl Gate {
-    pub fn admit(&mut self, hand: usize, now: f64) -> bool {
-        let due = self.last[hand].is_none_or(|at| now < at || now - at >= 0.2);
+    pub fn admit(&mut self, hand: usize, now: f64, repeat_s: f64) -> bool {
+        let due = self.last[hand].is_none_or(|at| now < at || now - at >= repeat_s);
         if due {
             self.last[hand] = Some(now);
         }
@@ -106,6 +130,19 @@ impl Gate {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::controllers::physical_hands::characters::tuning::CHARACTERS;
+
+    fn strike() -> &'static StrikeTuning {
+        &CHARACTERS.get().impacts.strike
+    }
+
+    fn feedback() -> &'static FeedbackTuning {
+        &CHARACTERS.get().impacts.feedback
+    }
+
+    fn damage() -> &'static ObjectDamageTuning {
+        &CHARACTERS.get().impacts.object_damage
+    }
 
     fn motion() -> Motion {
         Motion {
@@ -123,8 +160,8 @@ mod tests {
             angular: Vec3::Y * 3.0,
             ..motion()
         };
-        assert!(strength(m, Vec3::Z * 1.5, Vec3::X, 20.0).is_some());
-        assert_eq!(strength(m, Vec3::ZERO, Vec3::X, 20.0), None);
+        assert!(strength(m, Vec3::Z * 1.5, Vec3::X, 20.0, feedback()).is_some());
+        assert_eq!(strength(m, Vec3::ZERO, Vec3::X, 20.0, feedback()), None);
     }
 
     #[test]
@@ -137,12 +174,19 @@ mod tests {
                 },
                 Vec3::ZERO,
                 Vec3::X,
-                100.0
+                100.0,
+                feedback()
             ),
             None
         );
-        assert_eq!(strength(motion(), Vec3::ZERO, Vec3::Y, 100.0), None);
-        assert_eq!(strength(motion(), Vec3::ZERO, Vec3::X, f32::NAN), None);
+        assert_eq!(
+            strength(motion(), Vec3::ZERO, Vec3::Y, 100.0, feedback()),
+            None
+        );
+        assert_eq!(
+            strength(motion(), Vec3::ZERO, Vec3::X, f32::NAN, feedback()),
+            None
+        );
         assert_eq!(
             strength(
                 Motion {
@@ -151,7 +195,8 @@ mod tests {
                 },
                 Vec3::ZERO,
                 Vec3::X,
-                100.0
+                100.0,
+                feedback()
             ),
             None
         );
@@ -159,12 +204,18 @@ mod tests {
 
     #[test]
     fn separating_motion_is_not_a_strike() {
-        assert_eq!(strength(motion(), Vec3::ZERO, Vec3::NEG_X, 100.0), None);
+        assert_eq!(
+            strength(motion(), Vec3::ZERO, Vec3::NEG_X, 100.0, feedback()),
+            None
+        );
     }
 
     #[test]
     fn mass_speed_and_solver_impulse_bound_the_feedback() {
-        assert_eq!(strength(motion(), Vec3::ZERO, Vec3::X, 12.0), Some(0.5));
+        assert_eq!(
+            strength(motion(), Vec3::ZERO, Vec3::X, 12.0, feedback()),
+            Some(0.5)
+        );
         assert_eq!(
             strength(
                 Motion {
@@ -174,7 +225,8 @@ mod tests {
                 },
                 Vec3::ZERO,
                 Vec3::X,
-                1e6
+                1e6,
+                feedback()
             ),
             Some(1.0)
         );
@@ -182,7 +234,8 @@ mod tests {
 
     #[test]
     fn damage_requires_an_intentional_swing_and_relative_closing() {
-        let contact = |held, target| damage_impulse(held, target, Vec3::ZERO, Vec3::X, 1000.0);
+        let contact =
+            |held, target| damage_impulse(held, target, Vec3::ZERO, Vec3::X, 1000.0, strike());
         assert_eq!(contact(Motion::STILL, motion()), None);
         assert_eq!(
             contact(
@@ -236,15 +289,22 @@ mod tests {
             ..motion()
         };
         assert_eq!(
-            damage_impulse(rotating, Motion::STILL, Vec3::Z, Vec3::X, 1000.0),
+            damage_impulse(rotating, Motion::STILL, Vec3::Z, Vec3::X, 1000.0, strike()),
             Some(30.0)
         );
         assert_eq!(
-            damage_impulse(rotating, Motion::STILL, Vec3::ZERO, Vec3::X, 1000.0),
+            damage_impulse(
+                rotating,
+                Motion::STILL,
+                Vec3::ZERO,
+                Vec3::X,
+                1000.0,
+                strike()
+            ),
             None
         );
         assert_eq!(
-            damage_impulse(motion(), Motion::STILL, Vec3::ZERO, Vec3::X, 4.0),
+            damage_impulse(motion(), Motion::STILL, Vec3::ZERO, Vec3::X, 4.0, strike()),
             Some(4.0)
         );
         let extreme = Motion {
@@ -253,20 +313,27 @@ mod tests {
             ..motion()
         };
         assert_eq!(
-            damage_impulse(extreme, Motion::STILL, Vec3::ZERO, Vec3::X, 1e6),
+            damage_impulse(extreme, Motion::STILL, Vec3::ZERO, Vec3::X, 1e6, strike()),
             Some(120.0)
         );
-        assert_eq!(object_damage(120.0), Some(90));
-        assert_eq!(object_damage(1e6), Some(90));
-        assert_eq!(object_damage(2.99), None);
-        assert_eq!(object_damage(f32::NAN), None);
+        assert_eq!(object_damage(120.0, damage()), Some(90));
+        assert_eq!(object_damage(1e6, damage()), Some(90));
+        assert_eq!(object_damage(2.99, damage()), None);
+        assert_eq!(object_damage(f32::NAN, damage()), None);
     }
 
     #[test]
     fn damage_rejects_invalid_contact_geometry_and_motion() {
         for invalid in [f32::NAN, f32::INFINITY, -1.0, 0.0] {
             assert_eq!(
-                damage_impulse(motion(), Motion::STILL, Vec3::ZERO, Vec3::X, invalid),
+                damage_impulse(
+                    motion(),
+                    Motion::STILL,
+                    Vec3::ZERO,
+                    Vec3::X,
+                    invalid,
+                    strike()
+                ),
                 None
             );
         }
@@ -280,16 +347,24 @@ mod tests {
                     },
                     Vec3::ZERO,
                     Vec3::X,
-                    100.0
+                    100.0,
+                    strike()
                 ),
                 None
             );
             assert_eq!(
-                damage_impulse(motion(), Motion::STILL, invalid, Vec3::X, 100.0),
+                damage_impulse(motion(), Motion::STILL, invalid, Vec3::X, 100.0, strike()),
                 None
             );
             assert_eq!(
-                damage_impulse(motion(), Motion::STILL, Vec3::ZERO, invalid, 100.0),
+                damage_impulse(
+                    motion(),
+                    Motion::STILL,
+                    Vec3::ZERO,
+                    invalid,
+                    100.0,
+                    strike()
+                ),
                 None
             );
         }
@@ -298,10 +373,10 @@ mod tests {
     #[test]
     fn repeated_contacts_do_not_buzz_and_hands_are_independent() {
         let mut gate = Gate::default();
-        assert!(gate.admit(0, 1.0));
-        assert!(!gate.admit(0, 1.1));
-        assert!(gate.admit(1, 1.1));
-        assert!(gate.admit(0, 1.21));
-        assert!(gate.admit(0, 0.0));
+        assert!(gate.admit(0, 1.0, feedback().repeat_s));
+        assert!(!gate.admit(0, 1.1, feedback().repeat_s));
+        assert!(gate.admit(1, 1.1, feedback().repeat_s));
+        assert!(gate.admit(0, 1.21, feedback().repeat_s));
+        assert!(gate.admit(0, 0.0, feedback().repeat_s));
     }
 }

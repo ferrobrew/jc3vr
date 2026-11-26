@@ -88,6 +88,7 @@ fn context() -> Context {
 #[test]
 fn only_fresh_matching_explicit_not_owned_observations_admit_movement() {
     let now = Instant::now();
+    let stale_after = CHARACTERS.get().stunt.observation_stale_after();
     for owner in [
         MovementOwner::ObservedKnown(false),
         MovementOwner::ObservedKnown(true),
@@ -99,10 +100,13 @@ fn only_fresh_matching_explicit_not_owned_observations_admit_movement() {
             at: now,
         };
         assert_eq!(
-            observation.current(Some(context()), now).unwrap().yields(),
+            observation
+                .current(Some(context()), now, stale_after)
+                .unwrap()
+                .yields(),
             owner != MovementOwner::ObservedKnown(false)
         );
-        assert_eq!(observation.current(None, now), None);
+        assert_eq!(observation.current(None, now, stale_after), None);
         for field in 0..5 {
             let mut replaced = context();
             match field {
@@ -112,10 +116,14 @@ fn only_fresh_matching_explicit_not_owned_observations_admit_movement() {
                 3 => replaced.bodies += 1,
                 _ => replaced.epoch += 1,
             }
-            assert_eq!(observation.current(Some(replaced), now), None);
+            assert_eq!(observation.current(Some(replaced), now, stale_after), None);
         }
         assert_eq!(
-            observation.current(Some(context()), now + STALE_AFTER + Duration::from_nanos(1)),
+            observation.current(
+                Some(context()),
+                now + stale_after + Duration::from_nanos(1),
+                stale_after
+            ),
             None
         );
     }

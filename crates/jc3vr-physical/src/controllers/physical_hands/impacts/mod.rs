@@ -35,7 +35,9 @@ use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::physical_hands::{
-    carry_collision, engine,
+    carry_collision,
+    characters::tuning::{CHARACTERS, ObjectDamageTuning},
+    engine,
     impacts::{
         policy::{Motion, object_damage},
         state::{Contact, Enabled, FlagCall, Identity, Lease, Observation, State},
@@ -170,6 +172,7 @@ pub(crate) fn deliver(game: &GameTick<'_>) {
         })
         .collect();
     let feedback = STATE.lock().deliver(Instant::now(), enabled, &valid);
+    let damage_tuning = &CHARACTERS.get().impacts.object_damage;
     for feedback in feedback {
         let event = feedback.contact;
         let Some((_, held, _, target)) = locked.iter().find(|entry| entry.0 == event.retention)
@@ -191,7 +194,19 @@ pub(crate) fn deliver(game: &GameTick<'_>) {
             continue;
         }
         if let (Some(impulse), Some((_, target))) = (feedback.damage_impulse, target.as_ref()) {
-            unsafe { damage(game, event, impulse, feedback.native, held, target) };
+            unsafe {
+                damage(
+                    game,
+                    Strike {
+                        contact: event,
+                        impulse,
+                        native: feedback.native,
+                    },
+                    held,
+                    target,
+                    damage_tuning,
+                )
+            };
         }
         for hand in Hand::BOTH {
             if feedback.hands[hand.index()] {
@@ -276,6 +291,7 @@ unsafe fn observe_contacts(
     let Some(world) = (unsafe { World::get() }) else {
         return contacts;
     };
+    let max_retained = CHARACTERS.get().impacts.max_retained;
     for (slot, lease) in contacts.iter_mut().zip(leases) {
         let Some(lease) = lease else { continue };
         let Some(side) = event
@@ -349,7 +365,7 @@ unsafe fn observe_contacts(
                 .map(|observation| observation.motion)
         });
         let mut retained = RETAINED.lock();
-        if retained.len() >= 32 {
+        if retained.len() >= max_retained {
             continue;
         }
         let token = NEXT_CONTACT.fetch_add(1, Ordering::Relaxed);
@@ -456,14 +472,26 @@ unsafe fn participant_live(world: &World, id: Identity, strong: &Strong) -> bool
         && unsafe { identity(world, id.body, id.owner) } == Some(id)
 }
 
-unsafe fn damage(
-    game: &GameTick<'_>,
+/// A contact that struck: the strike's impulse, and whether the native reaction acted on each
+/// participant.
+struct Strike {
     contact: Contact,
     impulse: f32,
     native: [bool; 2],
+}
+
+unsafe fn damage(
+    game: &GameTick<'_>,
+    strike: Strike,
     held: &Strong,
     target: &Strong,
+    tuning: &ObjectDamageTuning,
 ) {
+    let Strike {
+        contact,
+        impulse,
+        native,
+    } = strike;
     let (Some(target_identity), Some(target_motion)) = (contact.target, contact.target_motion)
     else {
         return;
@@ -515,7 +543,7 @@ unsafe fn damage(
     // Its queued damage is not observable through DoReactToHit, so those contacts stay native.
     if !native[0]
         && contact.character
-        && let Some(amount) = object_damage(impulse)
+        && let Some(amount) = object_damage(impulse, tuning)
     {
         let source = unsafe { &(*target.object()).m_WeakThis };
         let dealt = unsafe {
