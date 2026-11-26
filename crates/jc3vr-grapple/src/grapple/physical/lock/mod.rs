@@ -206,12 +206,12 @@ pub fn status() -> LockStatus {
 }
 
 /// Whether the lock holds the line.
-pub(crate) fn holds() -> bool {
+pub fn holds() -> bool {
     facts::lock::holds()
 }
 
 /// Whether the lock hangs the character below a helicopter, where Y enters it.
-pub(crate) fn hangs_under_helicopter() -> bool {
+pub fn hangs_under_helicopter() -> bool {
     holds()
         && SHARED
             .lock()
@@ -220,7 +220,7 @@ pub(crate) fn hangs_under_helicopter() -> bool {
 }
 
 /// Whether Y under a helicopter has just pointed the resumed reel at its door side.
-pub(crate) fn entering_helicopter() -> bool {
+pub fn entering_helicopter() -> bool {
     HANG_GATE
         .lock()
         .entering
@@ -242,7 +242,7 @@ pub(crate) unsafe fn lockable(config: &LockConfig) -> bool {
 }
 
 /// What the bindings hand the lock's tick.
-pub(crate) struct LockTickInput<'a> {
+pub struct LockTickInput<'a> {
     /// What the grapple button asks of the lock this tick.
     pub button: Option<LockButton>,
     /// The reel task carries the character toward the hook: the lock may take hold. Before it, in
@@ -274,7 +274,7 @@ pub(crate) struct LockTickInput<'a> {
 /// # Safety
 ///
 /// The game thread, before the world update.
-pub(crate) unsafe fn lock_tick(input: &LockTickInput) {
+pub unsafe fn lock_tick(input: &LockTickInput) {
     HANG_GATE.lock().ticked = Some(Instant::now());
     let (pending, fault) = {
         let mut shared = SHARED.lock();

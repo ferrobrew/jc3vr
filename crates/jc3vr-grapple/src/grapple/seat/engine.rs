@@ -36,7 +36,7 @@ use jc3vr_view::controllers::cockpit::CockpitTransform;
 use crate::grapple::seat::Refusal;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) enum WireReading {
+pub enum WireReading {
     Flying,
     Attached,
     Gone,
@@ -44,14 +44,14 @@ pub(crate) enum WireReading {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub(crate) struct Target {
+pub struct Target {
     pub point: Vec3,
     pub hit: Option<RayHit>,
     pub body: Option<BodyHit>,
 }
 
 impl Target {
-    pub(crate) unsafe fn capture(at: Vec3) -> Option<Self> {
+    pub unsafe fn capture(at: Vec3) -> Option<Self> {
         if !at.is_finite() {
             return None;
         }

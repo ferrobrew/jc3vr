@@ -6,7 +6,7 @@ mod tests;
 
 use std::num::NonZeroUsize;
 
-pub(crate) use engine::{Target, WireReading};
+pub use engine::{Target, WireReading};
 use glam::Vec3;
 use jc3vr_body::controllers::{
     facts::seat::stands_in,
@@ -18,7 +18,7 @@ use jc3vr_input::{frame::Hand, haptics::cues::Event};
 use parking_lot::Mutex;
 
 /// What the bindings hand the seat grapple's tick.
-pub(crate) struct SeatTickInput {
+pub struct SeatTickInput {
     /// The seat grapple is switched on and stands in for the game's ([`stands_in`]).
     pub seated: bool,
     /// The grapple button fired this tick.
@@ -74,7 +74,7 @@ impl Refusal {
 /// # Safety
 ///
 /// The game thread.
-pub(crate) unsafe fn stands_in_for_local() -> bool {
+pub unsafe fn stands_in_for_local() -> bool {
     unsafe { local() }.is_some_and(|(character, hook)| unsafe { stands_in(character, hook) })
 }
 
@@ -88,7 +88,7 @@ pub fn status() -> SeatStatus {
 /// # Safety
 ///
 /// The game thread, before the world update.
-pub(crate) unsafe fn tick(input: &SeatTickInput) {
+pub unsafe fn tick(input: &SeatTickInput) {
     // Clearing tethers also applies when the native hook handles fire, outside `stands_in`.
     if input.release_all
         && let Some((_, hook)) = unsafe { local() }
@@ -188,7 +188,7 @@ pub(crate) unsafe fn tick(input: &SeatTickInput) {
 /// # Safety
 ///
 /// The game thread, before the world update.
-pub(crate) unsafe fn stand_down() {
+pub unsafe fn stand_down() {
     let phase = {
         let mut state = STATE.lock();
         state.status.flying = false;

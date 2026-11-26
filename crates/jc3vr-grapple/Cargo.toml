@@ -1,0 +1,42 @@
+[package]
+name = "jc3vr-grapple"
+version = "0.1.0"
+edition = "2024"
+description = "The grapple layer of the payload: the grapple's device, its physical rope and swing, its lock and seats, and the grapple snatch, built on the body, weapons, and physical layers."
+publish = false
+
+[features]
+# Test fixtures the gameplay crate's tests rely on: the snatch's input-side reel gate.
+test-support = []
+
+[dependencies]
+windows = { workspace = true }
+glam = { workspace = true }
+jc3gi = { path = "../../jc3gi" }
+jc3vr-core = { path = "../jc3vr-core" }
+jc3vr-input = { path = "../jc3vr-input" }
+jc3vr-view = { path = "../jc3vr-view" }
+# The body layer below: the body-bound subsystems, the shared vocabulary, the facts, and the
+# physics substrate the grapple builds on.
+jc3vr-body = { path = "../jc3vr-body" }
+# The weapons layer below: the weapon sources, the steal, the C4, and the grenades the snatch
+# pulls from.
+jc3vr-weapons = { path = "../jc3vr-weapons" }
+# The physical layer below: the remote holds, the doors, and the ragdolls the snatch and the lock
+# reach through.
+jc3vr-physical = { path = "../jc3vr-physical" }
+# The grapple's and the snatch's detours. The detour macro emits `::re_utilities` paths, so a crate
+# that defines detours depends on `re-utilities` directly.
+re-utilities = { workspace = true }
+detours-macro = { workspace = true }
+tracking-format = { path = "../tracking-format" }
+body-rig = { path = "../body-rig", features = ["serde"] }
+tracing = "0.1"
+parking_lot = "0.12.5"
+serde = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+jc3vr-body = { path = "../jc3vr-body", features = ["test-support"] }
+jc3vr-core = { path = "../jc3vr-core", features = ["test-support"] }
+jc3vr-view = { path = "../jc3vr-view", features = ["test-support"] }
+pretty_assertions = "1.4.1"

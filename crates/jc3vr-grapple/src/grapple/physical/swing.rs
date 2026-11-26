@@ -17,7 +17,7 @@ use crate::grapple::physical::config::{GRAPPLE, SwingTuning};
 
 /// The pump as the hands' anchor calls it: the fixed tuning with the pump switched by each call's
 /// `pump`.
-pub(crate) const HANG_PUMP: HangPump = HangPump {
+pub const HANG_PUMP: HangPump = HangPump {
     smooth_velocity: anchor_smooth_velocity,
     impulse: anchor_pump_impulse,
     combine: anchor_combine,

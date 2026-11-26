@@ -61,7 +61,7 @@ pub fn hook_library() -> HookLibrary {
 }
 
 /// What the bindings hand the input tick.
-pub(crate) struct TickInput<'a> {
+pub struct TickInput<'a> {
     /// The engine's tick delta, game seconds: the boost's length in the reel it drives.
     pub dt: f32,
     /// The tick's length, real seconds: the hand's pull and yank.
@@ -78,7 +78,7 @@ pub(crate) struct TickInput<'a> {
 
 /// What the input tick hands back to the bindings.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
-pub(crate) struct TickOutput {
+pub struct TickOutput {
     /// The retract input's value the pull asks for, `0..=1`, while it retracts the tethers.
     pub retract: Option<f32>,
     /// The dual tethers the hook holds.
@@ -184,7 +184,7 @@ pub fn status() -> GrappleStatus {
 /// # Safety
 ///
 /// Game thread, before the world update.
-pub(crate) unsafe fn input_tick(input: &TickInput) -> TickOutput {
+pub unsafe fn input_tick(input: &TickInput) -> TickOutput {
     let config = &PhysicalGrappleTuning::of(input.config);
     let hand = input.dominant.other();
     let hook = unsafe { read_hook() };
@@ -381,7 +381,7 @@ pub(crate) unsafe fn input_tick(input: &TickInput) -> TickOutput {
 }
 
 /// Forget the pull and stop driving the reel: the bindings stand down.
-pub(crate) fn stand_down() {
+pub fn stand_down() {
     let mut state = STATE.lock();
     state.pull = LinePull::new();
     state.boost = LineYank::new();

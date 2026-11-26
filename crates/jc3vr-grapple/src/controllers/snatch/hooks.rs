@@ -45,7 +45,7 @@ pub(super) fn publish(enabled: bool, button_held: bool) {
 }
 
 /// The input-side gate runs before the native held/tether latch updates.
-pub(crate) fn should_reel_weapon(enabled: bool, ordinary_button_held: bool) -> bool {
+pub fn should_reel_weapon(enabled: bool, ordinary_button_held: bool) -> bool {
     enabled && !ordinary_button_held
 }
 

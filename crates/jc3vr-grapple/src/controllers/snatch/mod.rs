@@ -118,13 +118,13 @@ pub use crate::controllers::snatch::{
 };
 
 /// The snatch's hooks, aggregated by `controllers::hook_library`.
-pub(crate) fn hook_library() -> HookLibrary {
+pub fn hook_library() -> HookLibrary {
     hooks::hook_library()
         .with_hook_library(sling_hooks::hook_library())
         .with_hook_library(juice::hook_library())
 }
 
-pub(crate) fn available_in(detection: &Detection) -> bool {
+pub fn available_in(detection: &Detection) -> bool {
     if detection.traversal.is_some() {
         return false;
     }
@@ -143,7 +143,7 @@ pub(crate) fn available_in(detection: &Detection) -> bool {
 /// hook out to it or its line pulling it in, so that a press after the yank holds the line (the
 /// swing) as a press before it does. A heavy object swings without it, and the claimed press does
 /// nothing to it, rather than firing the game's grapple from under the snatch.
-pub(crate) fn can_claim_button() -> bool {
+pub fn can_claim_button() -> bool {
     matches!(
         STATE.lock().phase,
         Phase::Armed { .. } | Phase::HookOut { .. } | Phase::Pulling { .. }
@@ -152,7 +152,7 @@ pub(crate) fn can_claim_button() -> bool {
 
 /// A copied phase-specific instruction for the current usable-controls provider.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) struct Hint {
+pub struct Hint {
     /// The grapple hand.
     pub hand: Hand,
     /// Whether the line swings the target.
@@ -163,7 +163,7 @@ pub(crate) struct Hint {
 }
 
 /// The snatch's current instruction, while it has one.
-pub(crate) fn hint() -> Option<Hint> {
+pub fn hint() -> Option<Hint> {
     let state = STATE.lock();
     match state.phase {
         Phase::Armed {
@@ -217,7 +217,7 @@ pub(crate) fn swinging_far_end(hand: Hand) -> Option<Vec3> {
 /// the free, empty hand other than the grapple hand. A press of such a grip closes the hand on
 /// nothing, ready to catch, rather than taking what is in reach or driving the game action bound to
 /// it.
-pub(crate) fn reserved_hands() -> [bool; 2] {
+pub fn reserved_hands() -> [bool; 2] {
     let Some(hand) = STATE.lock().phase.in_flight() else {
         return [false; 2];
     };
@@ -228,12 +228,12 @@ pub(crate) fn reserved_hands() -> [bool; 2] {
 
 /// The hand other than the grapple hand that caught the snatch's target on the last tick, with the
 /// grab its grip now holds the target by, as the grapple hand's grip holds a snatched target.
-pub(crate) fn take_other_catch() -> Option<(Hand, GrabVolume)> {
+pub fn take_other_catch() -> Option<(Hand, GrabVolume)> {
     STATE.lock().other_catch.take()
 }
 
 /// What the bindings hand [`targets`].
-pub(crate) struct OfferInput<'a> {
+pub struct OfferInput<'a> {
     /// The grapple hand.
     pub hand: Hand,
     pub detection: &'a Detection,
@@ -251,7 +251,7 @@ pub(crate) struct OfferInput<'a> {
 /// # Safety
 ///
 /// The game thread, before the world update.
-pub(crate) unsafe fn targets(input: &OfferInput) -> Provided {
+pub unsafe fn targets(input: &OfferInput) -> Provided {
     let config = &input.config.snatch;
     let hold = &input.config.hold;
     let takes_held = hold.either_hand;
@@ -319,13 +319,13 @@ pub(crate) unsafe fn targets(input: &OfferInput) -> Provided {
 
 /// Separate consumers of the routed grapple hold.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) struct ButtonHolds {
+pub struct ButtonHolds {
     pub ordinary: bool,
     pub modifier: bool,
 }
 
 impl ButtonHolds {
-    pub(crate) fn routed(held: bool, owned: bool) -> Self {
+    pub fn routed(held: bool, owned: bool) -> Self {
         Self {
             ordinary: held && !owned,
             modifier: held && owned,
@@ -333,11 +333,11 @@ impl ButtonHolds {
     }
 }
 
-#[cfg(test)]
-pub(crate) use hooks::should_reel_weapon;
+#[cfg(any(test, feature = "test-support"))]
+pub use hooks::should_reel_weapon;
 
 /// What the bindings hand [`finish_tick`].
-pub(crate) struct FinishInput<'a> {
+pub struct FinishInput<'a> {
     /// The grapple hand.
     pub hand: Hand,
     /// The grabs the grips took this tick that the snatch acts on, by [`Hand::index`].
@@ -367,7 +367,7 @@ pub(crate) struct FinishInput<'a> {
 /// # Safety
 ///
 /// The game thread, before the world update.
-pub(crate) unsafe fn finish_tick(input: &FinishInput, desired: &mut Vec<Desired>) {
+pub unsafe fn finish_tick(input: &FinishInput, desired: &mut Vec<Desired>) {
     let config = &input.config.snatch;
     hooks::publish(config.enabled, input.ordinary_button_held);
     if let Some(weak) = hooks::take_toss() {
@@ -411,7 +411,7 @@ pub(crate) unsafe fn finish_tick(input: &FinishInput, desired: &mut Vec<Desired>
 
 /// Stand the snatch down: end its line, let go of its target, and turn the grapple's weapon aim
 /// and button hooks off. Called from the input tick whenever the bindings stand down.
-pub(crate) fn stand_down() {
+pub fn stand_down() {
     hooks::publish(false, false);
     grapple_weapons::set_enabled(false);
     latch::clear();
