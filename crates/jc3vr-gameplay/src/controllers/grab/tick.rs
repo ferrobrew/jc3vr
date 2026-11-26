@@ -84,6 +84,11 @@ pub fn register_palm_summary(summary: fn(Hand) -> String) {
     }
 }
 
+/// Whether the physical hands' palm summary is registered.
+pub fn palm_summary_registered() -> bool {
+    PALM_SUMMARY.get().is_some()
+}
+
 /// How long a hand that leaves a body slot's reach still takes from it ([`resolve::recall`]).
 pub const RECALL_S: f32 = 0.3;
 

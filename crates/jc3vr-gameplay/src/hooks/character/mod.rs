@@ -57,9 +57,12 @@ pub use body_ik::body_ik_status;
 pub use config::BodyIkConfig;
 
 pub use crate::hooks::character::{
-    magazine::register_serial_consumer,
+    magazine::{register_serial_consumer, serial_consumer_registered},
     pose_observer::{PoseObserver, register_pose_observer},
-    stunt::{AutoAttachBlocker, register_auto_attach_blocker, register_bodies_destroying},
+    stunt::{
+        AutoAttachBlocker, bodies_destroying_registered, missing_auto_attach_blockers,
+        register_auto_attach_blocker, register_bodies_destroying,
+    },
 };
 
 pub fn hook_library() -> HookLibrary {

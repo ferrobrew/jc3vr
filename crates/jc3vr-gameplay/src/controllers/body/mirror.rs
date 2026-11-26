@@ -142,6 +142,11 @@ pub fn register_attachment_sampler(sampler: AttachmentSampler) {
     }
 }
 
+/// Whether the sampler of the attachments on the body is registered.
+pub fn attachment_sampler_registered() -> bool {
+    ATTACHMENT_SAMPLER.get().is_some()
+}
+
 /// Submit the reflected pouches of a render publication, drawn by the weapon handling from the
 /// matrices it applied, with what was drawn.
 pub(crate) fn submit_pouch_render(primitives: &mut Vec<Primitive>, status: PouchRenderStatus) {

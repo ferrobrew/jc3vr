@@ -100,6 +100,11 @@ pub fn register_take_off(tick: unsafe fn(bool)) {
     }
 }
 
+/// Whether the wingsuit's take-off is registered.
+pub fn take_off_registered() -> bool {
+    TAKE_OFF.get().is_some()
+}
+
 /// The cockpit positions to compose the two sides of the pose pair with.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct ComposedCockpit {

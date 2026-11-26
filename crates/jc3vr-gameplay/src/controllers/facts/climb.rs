@@ -31,6 +31,11 @@ pub fn register(readers: ClimbReaders) {
     }
 }
 
+/// Whether the climb's readers are registered.
+pub fn is_registered() -> bool {
+    READERS.get().is_some()
+}
+
 /// Whether a hand grips the world, as the last pre-simulation step left it: the procedural body
 /// hangs the legs while one does, and the rig leaves the root to the climb.
 pub fn climbing() -> bool {

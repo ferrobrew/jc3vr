@@ -24,6 +24,11 @@ pub fn register_serial_consumer(consumer: unsafe fn(*mut Character, *mut GameObj
     }
 }
 
+/// Whether the consumer of the deferred magazine detachments is registered.
+pub fn serial_consumer_registered() -> bool {
+    SERIAL_CONSUMER.get().is_some()
+}
+
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&CHARACTER_UPDATE_PASS_POST_PHYSICS_SERIAL_BINDER)
 }

@@ -126,6 +126,11 @@ pub fn register_palm_push(push: unsafe fn(&mut Character)) {
     }
 }
 
+/// Whether the palms' push is registered.
+pub fn palm_push_registered() -> bool {
+    PALM_PUSH.get().is_some()
+}
+
 /// One rendered frame's inputs to the frame half.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct FrameInputs {

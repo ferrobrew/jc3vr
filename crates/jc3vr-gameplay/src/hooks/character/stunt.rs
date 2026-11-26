@@ -23,6 +23,10 @@ pub enum AutoAttachBlocker {
 }
 
 impl AutoAttachBlocker {
+    /// Every blocker, in the order they are asked.
+    pub const ALL: [AutoAttachBlocker; Self::COUNT] =
+        [AutoAttachBlocker::PhysicalClimb, AutoAttachBlocker::VehicleRail];
+
     const COUNT: usize = 2;
 
     const fn index(self) -> usize {
@@ -63,6 +67,18 @@ pub fn register_bodies_destroying(observer: unsafe fn(*mut hknpWorld, *const u32
             "character: a body destruction observer is already registered; keeping the first"
         );
     }
+}
+
+/// Every blocker still unregistered, in the order they are asked.
+pub fn missing_auto_attach_blockers() -> impl Iterator<Item = AutoAttachBlocker> {
+    AutoAttachBlocker::ALL
+        .into_iter()
+        .filter(|blocker| BLOCKERS[blocker.index()].get().is_none())
+}
+
+/// Whether the observer of a body destruction is registered.
+pub fn bodies_destroying_registered() -> bool {
+    BODIES_DESTROYING.get().is_some()
 }
 
 pub(super) fn hook_library() -> HookLibrary {
