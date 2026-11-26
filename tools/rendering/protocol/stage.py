@@ -15,7 +15,7 @@ from tools.rendering.protocol.base import (
     valid_request_id,
 )
 
-# Mirrors `MAX_SETTLE_SECONDS`, `MAX_SPAWNS`, and `MAX_REUSE_METRES` in `payload/src/testing/stage.rs`.
+# Mirrors `MAX_SETTLE_SECONDS`, `MAX_SPAWNS`, and `MAX_REUSE_METRES` in `crates/jc3vr-tooling/src/testing/stage.rs`.
 MAX_SETTLE_SECONDS = 300.0
 MAX_SPAWNS = 16
 MAX_REUSE_METRES = 50.0
