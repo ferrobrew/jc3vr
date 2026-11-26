@@ -62,6 +62,7 @@ pub(crate) struct Schema {
     clone: fn(&Root) -> Box<Root>,
     serialize: fn(&Root) -> Result<String, toml::ser::Error>,
     to_value: fn(&Root) -> Result<Value, toml::ser::Error>,
+    as_serialize: fn(&Root) -> &dyn erased_serde::Serialize,
     deserialize: fn(Value, &mut Ignored<'_>) -> Result<Box<Root>, DeserializeError>,
     migrate: fn(&mut Table, Format) -> Vec<Migrated>,
     validate: fn(&mut Root, &mut Vec<Reset>),
@@ -82,6 +83,7 @@ impl Schema {
             clone: clone_of::<C>,
             serialize: serialize_of::<C>,
             to_value: to_value_of::<C>,
+            as_serialize: as_serialize_of::<C>,
             deserialize: deserialize_of::<C>,
             migrate: C::migrate,
             validate: validate_of::<C>,
@@ -105,6 +107,12 @@ impl Schema {
     /// The root serialized straight into a value tree, its floats widened from `f32`.
     pub(crate) fn to_value(&self, root: &Root) -> Result<Value, toml::ser::Error> {
         (self.to_value)(root)
+    }
+
+    /// The root as a value any serializer takes, emitting exactly what the root type's own
+    /// `Serialize` emits.
+    pub(crate) fn as_serialize<'a>(&self, root: &'a Root) -> &'a dyn erased_serde::Serialize {
+        (self.as_serialize)(root)
     }
 
     /// Deserialize `value`, reporting each setting the root type does not know to `ignored`.
@@ -274,6 +282,10 @@ fn serialize_of<C: ConfigRoot>(root: &Root) -> Result<String, toml::ser::Error> 
 
 fn to_value_of<C: ConfigRoot>(root: &Root) -> Result<Value, toml::ser::Error> {
     Value::try_from(downcast_ref::<C>(root))
+}
+
+fn as_serialize_of<C: ConfigRoot>(root: &Root) -> &dyn erased_serde::Serialize {
+    downcast_ref::<C>(root)
 }
 
 fn deserialize_of<C: ConfigRoot>(

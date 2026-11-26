@@ -23,6 +23,7 @@ pub(crate) mod types;
 use windows::Win32::Graphics::Direct3D11::{ID3D11Device, ID3D11DeviceContext};
 
 use crate::{
+    config::engine::Snapshot,
     image_writer::{self, ImageTarget, WriteOutcome},
     screenshot::{
         CaptureSource,
@@ -1327,7 +1328,7 @@ pub(crate) fn capture(
     let frame = frame_identity();
     let running = crate::vr::is_running_published();
     let gameplay = crate::hooks::in_gameplay();
-    let effective_config = crate::config::get();
+    let effective_config = Snapshot::take();
     let mode = dispatch::mode();
     let selected_eye = mode.selected_eye();
     let target_phase = match PENDING_STATE.load(Ordering::Acquire) {

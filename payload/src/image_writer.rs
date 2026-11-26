@@ -917,7 +917,7 @@ mod tests {
                 eye_height: 1,
                 world_scale: 1.0,
             },
-            effective_config: crate::config::Config::new(),
+            effective_config: crate::config::engine::Snapshot::defaults(),
             water_reflection: None,
             aa_weights: None,
             aa_draws: None,

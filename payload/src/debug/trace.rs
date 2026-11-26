@@ -7,6 +7,7 @@ use std::sync::atomic::{AtomicI32, AtomicUsize, Ordering};
 use parking_lot::Mutex;
 
 use crate::{
+    config::engine::Snapshot,
     debug::{
         coord_frame::{self, CoordFrameSample},
         stereo_diff::{self, DrawDiff},
@@ -37,9 +38,8 @@ pub struct TraceState {
     frame: u32,
 }
 
-/// One dumped trace record: a [`TraceEvent`] plus when/where it happened. Round-trips through serde,
-/// so a dumped trace reads back into `Vec<TraceRecord>` for analysis.
-#[derive(serde::Serialize, serde::Deserialize)]
+/// One dumped trace record: a [`TraceEvent`] plus when/where it happened.
+#[derive(serde::Serialize)]
 pub struct TraceRecord {
     /// Nanoseconds since the trace started (monotonic), for ordering + intra-frame timing.
     pub time_ns: u64,
@@ -90,7 +90,7 @@ impl DrawCounts {
 
 /// One render event, serialized inside a [`TraceRecord`] (which stamps timing / frame / eye). The
 /// `ev` tag names the event. Frame/driver markers that carry their own `eye` field set it explicitly.
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(serde::Serialize)]
 #[serde(tag = "ev")]
 pub enum TraceEvent {
     /// First record of every trace: a snapshot of the active runtime toggles, so a capture is
@@ -99,10 +99,8 @@ pub enum TraceEvent {
     Manifest {
         /// The trace's [`crate::session::stamp`], matching its folder name.
         timestamp: String,
-        /// The full runtime configuration snapshot (nests cleanly via its own `Serialize`). Boxed
-        /// so the one-off manifest doesn't inflate every event in the enum
-        /// (`clippy::large_enum_variant`).
-        config: Box<crate::config::Config>,
+        /// The full runtime configuration, serialized as the configuration's own type would be.
+        config: Snapshot,
     },
     #[serde(rename = "frame_begin")]
     FrameBegin {
@@ -470,7 +468,7 @@ impl TraceState {
 fn build_manifest(timestamp: String) -> TraceEvent {
     TraceEvent::Manifest {
         timestamp,
-        config: Box::new(crate::config::get()),
+        config: Snapshot::take(),
     }
 }
 

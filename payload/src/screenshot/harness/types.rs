@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use serde::Serialize;
 
 use crate::{
-    config::Config,
+    config::engine::Snapshot,
     stereo::{dispatch::RenderMode, single_pass::FrameDiagnostics},
     testing::visual::{DiagnosticProfile, VisualMetadata},
 };
@@ -54,7 +54,7 @@ pub(crate) struct CapturedFrame {
     pub(crate) mode: RenderMode,
     pub(crate) visual: VisualMetadata,
     pub(crate) comparison_inputs: ComparisonInputs,
-    pub(crate) effective_config: Config,
+    pub(crate) effective_config: Snapshot,
     pub(crate) stages: Vec<crate::screenshot::harness::stages::StageRecord>,
     pub(crate) constants: crate::screenshot::harness::constants::CapturedConstants,
     #[serde(skip_serializing_if = "Option::is_none")]

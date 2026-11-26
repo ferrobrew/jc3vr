@@ -8,7 +8,10 @@ use toml::{Table, Value};
 
 use super::*;
 use crate::{
-    config::load::{LoadReport, Loaded, parse},
+    config::{
+        engine::Snapshot,
+        load::{LoadReport, Loaded, parse},
+    },
     controllers::{
         config::{LocomotionDirection, Posture, SightOverride},
         frame::Hand,
@@ -492,6 +495,59 @@ fn text_that_is_not_toml_is_an_error() {
         parse("stereo = {"),
         Err(load::LoadError::Syntax(_))
     ));
+}
+
+/// A trace's manifest and a capture's metadata embed the configuration through the engine's
+/// [`Snapshot`], and the tools that read them expect the text the typed `Config` produced: the
+/// same keys in the same order, `f32` values at their own precision, and the pretty printer's
+/// indentation when nested.
+#[test]
+fn a_snapshot_serializes_exactly_as_the_config_does() {
+    #[derive(serde::Serialize)]
+    struct Document<T> {
+        before: u32,
+        effective_config: T,
+        after: f32,
+    }
+
+    fn nest<T>(effective_config: T) -> Document<T> {
+        Document {
+            before: 7,
+            effective_config,
+            after: 0.1,
+        }
+    }
+
+    register();
+    let mut config = Config::new();
+    config.vr.loader_path = Some("C:/openxr/openxr_loader.dll".to_owned());
+    config.director.heat_cap = Some(3);
+    config.body.height = 1.9;
+    config.controllers.hands.grip.position_m = Vec3::new(0.01, 0.07, 0.0);
+    config.controllers.dominant_hand = Hand::Left;
+    config.far_field.gated_types = Cow::Owned("Window".to_owned());
+    config.fsr.sharpen = true;
+    config.vr.far_clip = f32::INFINITY;
+    let snapshot = Snapshot::of(&config);
+
+    assert_eq!(
+        serde_json::to_string(&snapshot).unwrap(),
+        serde_json::to_string(&config).unwrap()
+    );
+    assert_eq!(
+        serde_json::to_string(&nest(&snapshot)).unwrap(),
+        serde_json::to_string(&nest(&config)).unwrap()
+    );
+    assert_eq!(
+        serde_json::to_string_pretty(&nest(&snapshot)).unwrap(),
+        serde_json::to_string_pretty(&nest(&config)).unwrap()
+    );
+    let value = serde_json::to_value(nest(&snapshot)).unwrap();
+    assert_eq!(value, serde_json::to_value(nest(&config)).unwrap());
+    assert_eq!(
+        serde_json::to_string_pretty(&value).unwrap(),
+        serde_json::to_string_pretty(&serde_json::to_value(nest(&config)).unwrap()).unwrap()
+    );
 }
 
 fn defaults_table() -> Table {

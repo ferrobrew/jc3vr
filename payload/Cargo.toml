@@ -70,6 +70,9 @@ directories = "6.0.0"
 toml = "1.1.6"
 serde_path_to_error = "0.1.20"
 serde_ignored = "0.1.14"
+# The configuration engine serializes its type-erased root through whichever serializer a caller
+# embeds it in, so a capture's copy of the settings reads exactly as the typed root would.
+erased-serde = "0.4.10"
 
 [build-dependencies]
 jiff = "0.2.29"

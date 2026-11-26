@@ -1,12 +1,15 @@
 //! Several slots' parts of one configuration root, read or changed together without naming the
 //! root's type: the live configuration under one lock ([`lock_parts`], [`edit_parts`]), or a copy
-//! of it ([`Snapshot`]) that is changed on the side and put back whole.
+//! of it ([`Snapshot`]) that is changed on the side and put back whole, or serialized into a
+//! capture's manifest as the root type itself would serialize.
 //!
 //! A single slot's guard is the usual access. These are for the code that works on the whole
 //! configuration at once: a capture harness that pins a profile across subsystems and restores the
 //! settings afterwards, or a debug UI tab whose controls span several groups. Like every guard,
 //! [`lock_parts`] and [`edit_parts`] hold the one configuration lock, so the
 //! [nesting rule](crate::config::engine::store#lock-nesting) applies to them.
+
+use serde::{Serialize, Serializer};
 
 use crate::config::engine::{
     automatic::{self, Observed},
@@ -136,6 +139,15 @@ impl Clone for Snapshot {
         Self {
             root: store::schema().clone_root(self.root.as_ref()),
         }
+    }
+}
+
+/// Serializes as the registered root type does, through the same serializer calls, so a
+/// snapshot nested in a larger document (a trace's manifest, a capture's metadata) emits the same
+/// text as the typed configuration would, in any format and at any indentation.
+impl Serialize for Snapshot {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        erased_serde::serialize(store::schema().as_serialize(self.root.as_ref()), serializer)
     }
 }
 

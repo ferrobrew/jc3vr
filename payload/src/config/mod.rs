@@ -108,11 +108,6 @@ impl ConfigLock {
     }
 }
 
-/// Snapshot the whole config (for the trace manifest / bulk UI reads).
-pub(crate) fn get() -> Config {
-    CONFIG.lock().clone()
-}
-
 /// Lock the configuration for a change the user meant. The guard derefs to the [`Config`]; when it
 /// drops, the configuration is marked changed and [`tick`] saves it once the changes settle.
 /// Holding the guard through a frame of debug UI without changing anything is harmless: the save
