@@ -11,7 +11,9 @@
 //! An image's file name is `<stem>.png` when it holds the whole frame and `<stem>_eye<N>.png` when
 //! it holds one eye; a sidecar sits beside it as `<stem>.json`. The stem is the capture's stamp for
 //! a screenshot and the frame index (`frameNNN`) for a trace frame, so a trace's images align 1:1
-//! with its per-frame events. The folders are the session's (see [`jc3vr_core::session`]).
+//! with its per-frame events. The folders are the session's (see [`jc3vr_core::session`]). A
+//! submitter that names its own path attaches its own sidecar ([`ImageSidecar`]), which the writer
+//! writes without knowing what it holds.
 //!
 //! The queue between the submitters and the writer is bounded, so a trace that produces images
 //! faster than they encode blocks its submitter until one drains rather than holding an unbounded
@@ -23,8 +25,9 @@
 //! [`crate::vr::tail::shutdown`] and the profiler's capture writer do.
 
 use std::{
-    io::Write as _,
-    path::PathBuf,
+    any::Any,
+    io::Write,
+    path::{Path, PathBuf},
     sync::mpsc::{self, Receiver, Sender, SyncSender, TrySendError},
     thread::JoinHandle,
     time::Duration,
@@ -40,11 +43,6 @@ use parking_lot::Mutex;
 use windows::Win32::Graphics::Dxgi::Common::{
     DXGI_FORMAT, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_B8G8R8A8_UNORM_SRGB,
     DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
-};
-
-use crate::screenshot::harness::{
-    stages::{Stage, StageArtifact, StageImage, StageRecord},
-    types::CaptureMetadata,
 };
 
 /// The byte order of a read-back image's four channels.
@@ -125,25 +123,40 @@ pub enum ImageTarget {
         frame: u32,
         eye: usize,
     },
-    HarnessScreenshot {
+    /// An image written to `path` with a sidecar its submitter supplies, which writes its own
+    /// artifacts first and its JSON beside the image after it, as `<stem>.json`.
+    Attached {
         path: PathBuf,
-        sidecar: Box<CaptureMetadata>,
-        stages: Vec<StageImage>,
+        sidecar: Box<dyn ImageSidecar>,
     },
 }
 
+/// The sidecar of an [`ImageTarget::Attached`] image, opaque to the writer: it writes what it holds
+/// on the writer thread and comes back to its submitter in the [`WriteOutcome`].
+pub trait ImageSidecar: Send {
+    /// Writes the sidecar's own artifacts beside the image at `path`, before the image and the
+    /// JSON. A failed artifact is the sidecar's to record; it does not fail the image.
+    fn write_artifacts(&mut self, path: &Path);
+
+    /// Serializes the JSON written beside the image.
+    fn write_json(&self, writer: &mut dyn Write) -> serde_json::Result<()>;
+
+    /// The sidecar as [`Any`], for its submitter to take back from the outcome.
+    fn into_any(self: Box<Self>) -> Box<dyn Any + Send>;
+}
+
+/// What became of one image submitted with [`try_submit`].
 pub(crate) struct WriteOutcome {
     pub result: Result<PathBuf, String>,
-    pub stages: Vec<StageRecord>,
-    pub resolve_inputs: Option<crate::screenshot::harness::resolve_probe::Capture>,
+    /// The sidecar of an [`ImageTarget::Attached`] image, once it and the image were written.
+    pub sidecar: Option<Box<dyn ImageSidecar>>,
 }
 
 impl From<Result<PathBuf, String>> for WriteOutcome {
     fn from(result: Result<PathBuf, String>) -> Self {
         Self {
             result,
-            stages: Vec::new(),
-            resolve_inputs: None,
+            sidecar: None,
         }
     }
 }
@@ -306,233 +319,48 @@ fn run(receiver: Receiver<Job>) {
 }
 
 fn write_job(mut target: ImageTarget, image: Image) -> WriteOutcome {
-    let mut records = Vec::new();
-    let mut resolve_inputs = None;
-    if let ImageTarget::HarnessScreenshot {
-        path,
-        sidecar,
-        stages,
-    } = &mut target
-    {
-        let id = sidecar.id.clone();
-        if let Some(capture) = &mut sidecar.capture {
-            for stage in std::mem::take(stages) {
-                let record = &mut capture.stages[stage.record];
-                let name = stage_name(record.stage);
-                let raw = matches!(&stage.artifact, StageArtifact::Raw(_));
-                let extension = match (&stage.artifact, record.stage) {
-                    (StageArtifact::Png(_), _) => "png",
-                    (StageArtifact::Raw(_), stage) if stage.is_hdr() => "r11g11b10",
-                    (StageArtifact::Raw(_), _) => "raw",
-                };
-                let stage_path =
-                    path.with_file_name(format!("{}.{name}.eye{}.{extension}", id, record.eye));
-                let result = match stage.artifact {
-                    StageArtifact::Png(image) => write_png(&stage_path, image),
-                    StageArtifact::Raw(bytes) => std::fs::write(&stage_path, bytes)
-                        .with_context(|| format!("writing {}", stage_path.display())),
-                };
-                match result {
-                    Ok(()) if raw => record.raw = Some(stage_path),
-                    Ok(()) => record.png = Some(stage_path),
-                    Err(error) => record.error = Some(format!("image writer: {error:#}")),
-                }
-            }
-            if let Some(resolve) = capture.resolve_inputs.as_mut() {
-                if let Some(folder) = path.parent() {
-                    resolve.write_artifacts(folder, &id);
-                }
-                resolve_inputs = Some(resolve.clone());
-            }
-            records = capture.stages.clone();
+    if let ImageTarget::Attached { path, sidecar } = &mut target {
+        sidecar.write_artifacts(path);
+    }
+    let result = write(&target, image).map_err(|error| format!("image writer: {error:#}"));
+    let sidecar = match target {
+        ImageTarget::Attached { sidecar, .. } => Some(sidecar),
+        ImageTarget::Screenshot { .. } | ImageTarget::TraceFrame { .. } => None,
+    };
+    WriteOutcome { result, sidecar }
+}
+
+fn write(target: &ImageTarget, image: Image) -> anyhow::Result<PathBuf> {
+    let path = match target {
+        ImageTarget::Attached { path, .. } => path.clone(),
+        ImageTarget::Screenshot { stamp, .. } => {
+            session::capture_file(CaptureFile::Screenshot, stamp)?
         }
-    }
-    WriteOutcome {
-        result: write(target, image).map_err(|error| format!("image writer: {error:#}")),
-        stages: records,
-        resolve_inputs,
-    }
-}
-
-fn stage_name(stage: Stage) -> &'static str {
-    match stage {
-        Stage::GeometryDepth => "geometry_depth",
-        Stage::SecondCameraSubmission => "second_camera_submission",
-        Stage::DomainCameraSubmission => "domain_camera_submission",
-        Stage::PatchDepthOwners => "patch_depth_owners",
-        Stage::BeforePatchDrawDepth => "before_patch_draw_depth",
-        Stage::BeforePatchDrawAlbedo => "before_patch_draw_albedo",
-        Stage::AfterPatchDrawDepth => "after_patch_draw_depth",
-        Stage::AfterPatchDrawAlbedo => "after_patch_draw_albedo",
-        Stage::BeforeTessPatchDepth => "before_tess_patch_depth",
-        Stage::AfterTessPatchDepth => "after_tess_patch_depth",
-        Stage::BeforeTessPatchAlbedo => "before_tess_patch_albedo",
-        Stage::AfterTessPatchAlbedo => "after_tess_patch_albedo",
-        Stage::BeforeZPassDepth => "before_z_pass_depth",
-        Stage::AfterZPassDepth => "after_z_pass_depth",
-        Stage::AfterBaseNearDepth => "after_base_near_depth",
-        Stage::AfterTessFarDepth => "after_tess_far_depth",
-        Stage::AfterBaseFarDepth => "after_base_far_depth",
-        Stage::AfterTessColorDepth => "after_tess_color_depth",
-        Stage::AfterBaseColorDepth => "after_base_color_depth",
-        Stage::AfterApplyNearDetailedDepth => "after_apply_near_detailed_depth",
-        Stage::AfterApplyNearDepth => "after_apply_near_depth",
-        Stage::BeforeDynamicModelsDepth => "before_dynamic_models_depth",
-        Stage::AfterDynamicModelsDepth => "after_dynamic_models_depth",
-        Stage::AfterStaticModelsDepth => "after_static_models_depth",
-        Stage::AfterOpaqueVegetationDepth => "after_opaque_vegetation_depth",
-        Stage::AfterFinsDepth => "after_fins_depth",
-        Stage::AfterGroupDepth => "after_group_depth",
-        Stage::AfterGroup2Depth => "after_group2_depth",
-        Stage::BaseSources => "base_sources",
-        Stage::TerrainSources => "terrain_sources",
-        Stage::IntervalTrace => "interval_trace",
-        Stage::AfterForestDepth => "after_forest_depth",
-        Stage::BarkColorTrace => "bark_color_trace",
-        Stage::VelocityTrace => "velocity_trace",
-        Stage::AfterZVelocityDepth => "after_z_velocity_depth",
-        Stage::BeforeNearPatchDepth => "before_near_patch_depth",
-        Stage::AfterNearPatchDepth => "after_near_patch_depth",
-        Stage::BeforeNearPatchAlbedo => "before_near_patch_albedo",
-        Stage::AfterNearPatchAlbedo => "after_near_patch_albedo",
-        Stage::GBuffer0 => "gbuffer0",
-        Stage::GBuffer1 => "gbuffer1",
-        Stage::GBuffer2 => "gbuffer2",
-        Stage::GBuffer3 => "gbuffer3",
-        Stage::Velocity => "velocity",
-        Stage::MainColor => "maincolor",
-        Stage::AfterApplyClouds => "after_apply_clouds",
-        Stage::FogGenDepth => "fog_gen_depth",
-        Stage::FogLocalUv => "fog_local_uv",
-        Stage::FogGenerated => "fog_generated",
-        Stage::FogInput => "fog_input",
-        Stage::BeforeFogVolumeApply => "before_fog_volume_apply",
-        Stage::AfterFogVolumeApply => "after_fog_volume_apply",
-        Stage::PreAtmosphere => "pre_atmosphere",
-        Stage::PostAtmosphere => "post_atmosphere",
-        Stage::PostResolve => "post_resolve",
-        Stage::SunDepthClipTreatment => "sun_depth_clip_treatment",
-        Stage::PreSunColor => "pre_sun_color",
-        Stage::PreSunDepth => "pre_sun_depth",
-        Stage::PostSun => "post_sun",
-        Stage::WaterBefore => "water_before",
-        Stage::WaterAfterLeft => "water_after_left",
-        Stage::WaterAfterRight => "water_after_right",
-        Stage::WaterDepthBefore => "water_depth_before",
-        Stage::WaterDepthAfterLeft => "water_depth_after_left",
-        Stage::WaterDepthAfterRight => "water_depth_after_right",
-        Stage::WaterReflectionTreatment => "water_reflection_treatment",
-        Stage::WaterInputReflection => "water_input_t1",
-        Stage::WaterInputStaticReflection => "water_input_t2",
-        Stage::WaterInputReflectionAlpha => "water_input_t12",
-        Stage::WaterInputRefraction => "water_input_t3",
-        Stage::WaterInputRefractionDepth => "water_input_t0",
-        Stage::LakeResponseColor => "lake_response_color",
-        Stage::LakeResponseUv => "lake_response_uv",
-        Stage::LakeResponseTint => "lake_response_tint",
-        Stage::LakeResponseOutput => "lake_response_output",
-        Stage::ResolveHalfSamples => "resolve_half_samples",
-        Stage::ProxyNativeObserved => "proxy_native_observed",
-        Stage::SsrGridNative => "ssr_grid_native",
-        Stage::SsrGridPhysical => "ssr_grid_physical",
-        Stage::SsrVetoPacked => "ssr_veto_packed",
-        Stage::SsrVetoNative => "ssr_veto_native",
-        Stage::SsrMarchNative => "ssr_march_native",
-        Stage::SsrMarchPacked => "ssr_march_packed",
-        Stage::ProxyEyeApplied => "proxy_eye_applied",
-        Stage::SsrPrepDepth => "ssr_prep_depth",
-        Stage::SsrPrepNormal => "ssr_prep_normal",
-        Stage::SsrPrepPlane => "ssr_prep_plane",
-        Stage::SsrPrepScene => "ssr_prep_scene",
-        Stage::SsrHistoryUv => "ssr_history_uv",
-        Stage::SsrHistorySample => "ssr_history_sample",
-        Stage::SsrHistoryNative => "ssr_history_native",
-        Stage::SsrHistoryPhysical => "ssr_history_physical",
-        Stage::SsrHistorySource => "ssr_history_source",
-        Stage::SsrRayInput => "ssr_ray_input",
-        Stage::SsrRayNormal => "ssr_ray_normal",
-        Stage::SsrRaySegment => "ssr_ray_segment",
-        Stage::SsrRayWorld => "ssr_ray_world",
-        Stage::SsrRayMarch => "ssr_ray_march",
-        Stage::SsrRayMask => "ssr_ray_mask",
-        Stage::SsrRayColor => "ssr_ray_color",
-        Stage::SsrRayAlpha => "ssr_ray_alpha",
-        Stage::SsrBlurColor => "ssr_blur_color",
-        Stage::SsrBlurAlpha => "ssr_blur_alpha",
-        Stage::ResolveShadowTerms => "resolve_shadow_terms",
-        Stage::ResolveShadowTap => "resolve_shadow_tap",
-        Stage::ResolveFullSamples => "resolve_full_samples",
-        Stage::ResolveWorld => "resolve_world",
-        Stage::ResolveView => "resolve_view",
-        Stage::LakeGradientSample => "lake_gradient_sample",
-        Stage::LakeGradientUv => "lake_gradient_uv",
-        Stage::LakeGradientCoarseX => "lake_gradient_coarse_x",
-        Stage::LakeGradientCoarseY => "lake_gradient_coarse_y",
-        Stage::LakeGradientFineX => "lake_gradient_fine_x",
-        Stage::LakeGradientFineY => "lake_gradient_fine_y",
-        Stage::LakeWaveSamples78 => "lake_wave_samples_7_8",
-        Stage::LakeWaveSamples910 => "lake_wave_samples_9_10",
-        Stage::LakeWaveUv78 => "lake_wave_uv_7_8",
-        Stage::LakeWaveUv910 => "lake_wave_uv_9_10",
-        Stage::LakeWaveWeights => "lake_wave_weights",
-        Stage::LakeWaveCombined => "lake_wave_combined",
-        Stage::LakeNormalMesh => "lake_normal_mesh",
-        Stage::LakeNormalMixed => "lake_normal_mixed",
-        Stage::LakeDisplacementDepth => "lake_displacement_depth",
-        Stage::LakeDisplacementSurface => "lake_displacement_surface",
-        Stage::LakeResponseAir => "lake_response_air",
-        Stage::LakeLightingBase => "lake_lighting_base",
-        Stage::LakeLightingMixed => "lake_lighting_mixed",
-        Stage::LakeLightingLit => "lake_lighting_lit",
-        Stage::LakeLightingOutput => "lake_lighting_output",
-        Stage::LakeSampleUv => "lake_sample_uv",
-        Stage::LakeSampleDepth => "lake_sample_depth",
-        Stage::LakeSampleColor => "lake_sample_color",
-        Stage::LakeSamplePlanar => "lake_sample_planar",
-        Stage::WaterInputWave0 => "water_input_t7",
-        Stage::WaterInputWave1 => "water_input_t8",
-        Stage::WaterInputWave2 => "water_input_t9",
-        Stage::WaterInputWave3 => "water_input_t10",
-        Stage::WaterInputAmbientOcclusion => "water_input_t11",
-
-        Stage::DofEdgeLocal => "dof_edge_local",
-        Stage::AaWeights => "aa_weights",
-        Stage::DofScene => "dof_scene",
-        Stage::DofComposite => "dof_composite",
-        Stage::DofReturned => "dof_returned",
-        Stage::PreAa => "pre_aa",
-        Stage::PostAa => "post_aa",
-    }
-}
-
-fn write(target: ImageTarget, image: Image) -> anyhow::Result<PathBuf> {
-    let (path, sidecar) = match &target {
-        ImageTarget::HarnessScreenshot { path, .. } => (path.clone(), None),
-        ImageTarget::Screenshot { stamp, sidecar } => (
-            session::capture_file(CaptureFile::Screenshot, stamp)?,
-            Some(sidecar),
-        ),
         ImageTarget::TraceFrame {
             trace_stamp,
             frame,
             eye,
-        } => (
-            session::capture_folder(CaptureFolder::Trace, trace_stamp)?
-                .join(trace_frame_name(*frame, *eye)),
-            None,
-        ),
+        } => session::capture_folder(CaptureFolder::Trace, trace_stamp)?
+            .join(trace_frame_name(*frame, *eye)),
     };
 
     write_png(&path, image)?;
-    if let ImageTarget::HarnessScreenshot { sidecar, .. } = &target {
-        write_sidecar(&path, sidecar)?;
-    } else if let Some(sidecar) = sidecar {
-        write_sidecar(&path, sidecar)?;
+    match target {
+        ImageTarget::Attached { sidecar, .. } => {
+            write_sidecar(&path, |writer| sidecar.write_json(writer))?;
+        }
+        ImageTarget::Screenshot { sidecar, .. } => {
+            write_sidecar(&path, |writer| {
+                serde_json::to_writer_pretty(writer, sidecar)
+            })?;
+        }
+        ImageTarget::TraceFrame { .. } => {}
     }
     Ok(path)
 }
 
-fn write_png(path: &std::path::Path, mut image: Image) -> anyhow::Result<()> {
+/// Encodes `image` as a PNG at `path`, normalizing its channels on the way.
+pub(crate) fn write_png(path: &Path, mut image: Image) -> anyhow::Result<()> {
     to_rgba8_opaque(&mut image.pixels, image.order);
     let file =
         std::fs::File::create(path).with_context(|| format!("creating {}", path.display()))?;
@@ -550,13 +378,15 @@ fn write_png(path: &std::path::Path, mut image: Image) -> anyhow::Result<()> {
         .with_context(|| format!("flushing {}", path.display()))
 }
 
-fn write_sidecar(path: &std::path::Path, sidecar: &impl serde::Serialize) -> anyhow::Result<()> {
+fn write_sidecar(
+    path: &Path,
+    write_json: impl FnOnce(&mut dyn Write) -> serde_json::Result<()>,
+) -> anyhow::Result<()> {
     let json_path = path.with_extension("json");
     let file = std::fs::File::create(&json_path)
         .with_context(|| format!("creating {}", json_path.display()))?;
     let mut writer = std::io::BufWriter::new(file);
-    serde_json::to_writer_pretty(&mut writer, sidecar)
-        .with_context(|| format!("writing {}", json_path.display()))?;
+    write_json(&mut writer).with_context(|| format!("writing {}", json_path.display()))?;
     writer
         .flush()
         .with_context(|| format!("flushing {}", json_path.display()))
@@ -592,393 +422,48 @@ mod tests {
     use super::*;
 
     #[test]
-    fn harness_writes_png_and_adjacent_sidecar() {
+    fn attached_writes_png_and_adjacent_sidecar() {
         let directory = TestDirectory::new();
         let path = directory.0.join("capture.capture.png");
         let result_path = directory.0.join("capture.json");
         std::fs::write(&result_path, b"protocol result").unwrap();
-        let sidecar = test_metadata();
-        let result = write(
-            ImageTarget::HarnessScreenshot {
-                path: path.clone(),
-                sidecar: Box::new(sidecar.clone()),
-                stages: Vec::new(),
-            },
-            test_image(),
-        )
-        .unwrap();
+        let result = write(&test_target(path.clone()), test_image()).unwrap();
         assert_eq!(result, path);
         let image = image::open(&path).unwrap().to_rgba8();
         assert_eq!(image.dimensions(), (1, 1));
         assert_eq!(image.as_raw(), &[30, 20, 10, 255]);
         let metadata: serde_json::Value =
             serde_json::from_slice(&std::fs::read(path.with_extension("json")).unwrap()).unwrap();
-        assert_eq!(metadata, serde_json::to_value(sidecar).unwrap());
+        assert_eq!(metadata, test_json(false));
         assert_eq!(std::fs::read(result_path).unwrap(), b"protocol result");
     }
 
+    /// The sidecar's artifacts are written before the image and the JSON, and the sidecar comes back
+    /// with the outcome once all three are.
     #[test]
-    fn stage_artifacts_finish_before_completion_and_sidecar_and_report_failures() {
-        crate::test_config::register();
-        for fail in [false, true] {
-            let directory = TestDirectory::new();
-            let path = directory.0.join("writer-test.capture.png");
-            let raw_path = directory.0.join("writer-test.maincolor.eye0.r11g11b10");
-            let pre_path = directory.0.join("writer-test.pre_aa.eye0.png");
-            let post_path = directory.0.join("writer-test.post_aa.eye1.png");
-            if fail {
-                std::fs::create_dir(&pre_path).unwrap();
-            }
-            let mut metadata = test_metadata();
-            metadata.capture = Some(test_capture(&path));
-            let raw = vec![0, 255, 128, 1];
-            let stages = vec![
-                StageImage {
-                    record: 0,
-                    artifact: StageArtifact::Raw(raw.clone()),
-                },
-                StageImage {
-                    record: 1,
-                    artifact: StageArtifact::Png(test_image()),
-                },
-                StageImage {
-                    record: 2,
-                    artifact: StageArtifact::Png(
-                        Image::from_rows(&[10, 20, 30, 7], 4, 1, 1, ChannelOrder::Rgba).unwrap(),
-                    ),
-                },
-            ];
-            let (sender, jobs) = mpsc::sync_channel(1);
-            let mut writer = test_writer(Some(sender), false);
-            let completion = writer
-                .try_submit(
-                    ImageTarget::HarnessScreenshot {
-                        path: path.clone(),
-                        sidecar: Box::new(metadata),
-                        stages,
-                    },
-                    test_image(),
-                )
-                .unwrap();
-            assert!(matches!(
-                completion.try_recv(),
-                Err(mpsc::TryRecvError::Empty)
-            ));
-            drop(writer);
-            run(jobs);
-            let outcome = completion.recv().unwrap();
-            assert_eq!(outcome.result, Ok(path.clone()));
-            assert_eq!(std::fs::read(&raw_path).unwrap(), raw);
-            assert_eq!(outcome.stages[0].raw, Some(raw_path));
-            assert_eq!(outcome.stages[2].png, Some(post_path.clone()));
-            assert_eq!(
-                image::open(post_path).unwrap().to_rgba8().as_raw(),
-                &[10, 20, 30, 255]
-            );
-            if fail {
-                assert!(outcome.stages[1].png.is_none());
-                assert!(outcome.stages[1].error.as_ref().unwrap().contains("pre_aa"));
-            } else {
-                assert_eq!(outcome.stages[1].png, Some(pre_path.clone()));
-                assert_eq!(
-                    image::open(pre_path).unwrap().to_rgba8().as_raw(),
-                    &[30, 20, 10, 255]
-                );
-            }
-            let sidecar: serde_json::Value =
-                serde_json::from_slice(&std::fs::read(path.with_extension("json")).unwrap())
-                    .unwrap();
-            assert_eq!(
-                sidecar["stages"],
-                serde_json::to_value(outcome.stages).unwrap()
-            );
-        }
-    }
-
-    #[test]
-    fn geometry_artifacts_keep_stable_names_alpha_and_acknowledged_metadata() {
-        crate::test_config::register();
+    fn attached_sidecar_writes_its_artifacts_first_and_comes_back() {
         let directory = TestDirectory::new();
-        let path = directory.0.join("writer-test.capture.png");
-        let mut metadata = test_metadata();
-        let mut capture = test_capture(&path);
-        let template = capture.stages[0].clone();
-        capture.stages = [
-            (Stage::GeometryDepth, "geometry_depth", 8),
-            (Stage::WaterDepthBefore, "water_depth_before", 8),
-            (Stage::WaterDepthAfterLeft, "water_depth_after_left", 8),
-            (Stage::WaterDepthAfterRight, "water_depth_after_right", 8),
-            (Stage::GBuffer0, "gbuffer0", 4),
-            (Stage::GBuffer1, "gbuffer1", 4),
-            (Stage::GBuffer2, "gbuffer2", 4),
-            (Stage::GBuffer3, "gbuffer3", 4),
-            (Stage::Velocity, "velocity", 4),
-        ]
-        .into_iter()
-        .map(|(stage, name, pixel_bytes)| {
-            assert_eq!(serde_json::to_value(stage).unwrap(), name);
-            let mut record = template.clone();
-            record.stage = stage;
-            record.source.as_mut().unwrap().bytes_per_pixel = Some(pixel_bytes);
-            record
-        })
-        .collect();
-        let stages = capture
-            .stages
-            .iter()
-            .enumerate()
-            .map(|(record, stage)| StageImage {
-                record,
-                artifact: StageArtifact::Raw(
-                    (0..stage.source.as_ref().unwrap().bytes_per_pixel.unwrap() as u8).collect(),
-                ),
-            })
-            .collect();
-        metadata.capture = Some(capture);
+        let path = directory.0.join("attached.png");
         let (sender, jobs) = mpsc::sync_channel(1);
         let mut writer = test_writer(Some(sender), false);
         let completion = writer
-            .try_submit(
-                ImageTarget::HarnessScreenshot {
-                    path: path.clone(),
-                    sidecar: Box::new(metadata),
-                    stages,
-                },
-                test_image(),
-            )
+            .try_submit(test_target(path.clone()), test_image())
             .unwrap();
-        assert!(matches!(
-            completion.try_recv(),
-            Err(mpsc::TryRecvError::Empty)
-        ));
         drop(writer);
         run(jobs);
         let outcome = completion.recv().unwrap();
         assert_eq!(outcome.result, Ok(path.clone()));
-        for record in &outcome.stages {
-            let name = stage_name(record.stage);
-            let raw_path = directory.0.join(format!("writer-test.{name}.eye0.raw"));
-            assert_eq!(record.raw.as_ref(), Some(&raw_path));
-            assert!(record.png.is_none());
-            assert!(record.error.is_none());
-            assert!(record.means.is_none());
-            let bytes = std::fs::read(raw_path).unwrap();
-            assert_eq!(bytes[3], 3);
-            assert_eq!(
-                bytes.len(),
-                record.source.as_ref().unwrap().bytes_per_pixel.unwrap()
-            );
-        }
-        let sidecar: serde_json::Value =
+        let sidecar = outcome
+            .sidecar
+            .unwrap()
+            .into_any()
+            .downcast::<TestSidecar>()
+            .unwrap();
+        assert_eq!(sidecar.artifact, Some(path.with_extension("artifact")));
+        assert!(path.with_extension("artifact").is_file());
+        let metadata: serde_json::Value =
             serde_json::from_slice(&std::fs::read(path.with_extension("json")).unwrap()).unwrap();
-        assert_eq!(
-            sidecar["stages"],
-            serde_json::to_value(outcome.stages).unwrap()
-        );
-    }
-
-    #[test]
-    fn raw_stage_failure_is_acknowledged_in_the_sidecar() {
-        crate::test_config::register();
-        let directory = TestDirectory::new();
-        let path = directory.0.join("writer-test.capture.png");
-        let raw_path = directory.0.join("writer-test.geometry_depth.eye0.raw");
-        std::fs::create_dir(&raw_path).unwrap();
-        let mut metadata = test_metadata();
-        let mut capture = test_capture(&path);
-        capture.stages.truncate(1);
-        capture.stages[0].stage = Stage::GeometryDepth;
-        metadata.capture = Some(capture);
-        let outcome = write_job(
-            ImageTarget::HarnessScreenshot {
-                path: path.clone(),
-                sidecar: Box::new(metadata),
-                stages: vec![StageImage {
-                    record: 0,
-                    artifact: StageArtifact::Raw(vec![0; 8]),
-                }],
-            },
-            test_image(),
-        );
-        assert_eq!(outcome.result, Ok(path.clone()));
-        let record = &outcome.stages[0];
-        assert!(record.raw.is_none());
-        assert!(
-            record
-                .error
-                .as_ref()
-                .unwrap()
-                .contains("geometry_depth.eye0.raw")
-        );
-        let sidecar: serde_json::Value =
-            serde_json::from_slice(&std::fs::read(path.with_extension("json")).unwrap()).unwrap();
-        assert_eq!(
-            sidecar["stages"],
-            serde_json::to_value(outcome.stages).unwrap()
-        );
-    }
-
-    #[test]
-    fn wave_stage_metadata_matches_the_raw_artifact_stage_name() {
-        for stage in [
-            Stage::LakeGradientSample,
-            Stage::LakeGradientUv,
-            Stage::LakeGradientCoarseX,
-            Stage::LakeGradientCoarseY,
-            Stage::LakeGradientFineX,
-            Stage::LakeGradientFineY,
-            Stage::LakeWaveSamples78,
-            Stage::LakeWaveSamples910,
-            Stage::LakeWaveUv78,
-            Stage::LakeWaveUv910,
-            Stage::LakeWaveWeights,
-            Stage::LakeWaveCombined,
-            Stage::LakeResponseOutput,
-        ] {
-            assert_eq!(serde_json::to_value(stage).unwrap(), stage_name(stage));
-        }
-    }
-
-    #[test]
-    fn hdr_stage_names_and_extensions_cover_every_hdr_stage() {
-        crate::test_config::register();
-        let directory = TestDirectory::new();
-        let path = directory.0.join("writer-test.capture.png");
-        let mut metadata = test_metadata();
-        let mut capture = test_capture(&path);
-        let template = capture.stages[0].clone();
-        let stages = [
-            (Stage::MainColor, "maincolor"),
-            (Stage::PreAtmosphere, "pre_atmosphere"),
-            (Stage::PostAtmosphere, "post_atmosphere"),
-            (Stage::PostResolve, "post_resolve"),
-            (Stage::PostSun, "post_sun"),
-            (Stage::WaterBefore, "water_before"),
-            (Stage::WaterAfterLeft, "water_after_left"),
-            (Stage::WaterAfterRight, "water_after_right"),
-        ];
-        capture.stages = stages
-            .into_iter()
-            .map(|(stage, name)| {
-                assert_eq!(stage_name(stage), name);
-                assert!(stage.is_hdr());
-                let mut record = template.clone();
-                record.stage = stage;
-                record
-            })
-            .collect();
-        metadata.capture = Some(capture);
-        let images = stages
-            .into_iter()
-            .enumerate()
-            .map(|(record, _)| StageImage {
-                record,
-                artifact: StageArtifact::Raw(vec![0; 4]),
-            })
-            .collect();
-        let outcome = write_job(
-            ImageTarget::HarnessScreenshot {
-                path: path.clone(),
-                sidecar: Box::new(metadata),
-                stages: images,
-            },
-            test_image(),
-        );
-        assert_eq!(outcome.result, Ok(path));
-        for (record, (_, name)) in outcome.stages.iter().zip(stages) {
-            let raw_path = directory
-                .0
-                .join(format!("writer-test.{name}.eye0.r11g11b10"));
-            assert_eq!(record.raw.as_ref(), Some(&raw_path));
-            assert!(raw_path.is_file());
-            assert!(record.png.is_none());
-            assert!(record.error.is_none());
-        }
-    }
-
-    fn test_capture(path: &std::path::Path) -> crate::screenshot::harness::types::CapturedFrame {
-        crate::screenshot::harness::types::CapturedFrame {
-            png: path.to_owned(),
-            metadata: path.with_extension("json"),
-            frame_ordinal: 1,
-            predicted_display_time_ns: 42,
-            source: crate::screenshot::harness::types::CaptureKind::EyeTextures,
-            width: 2,
-            height: 1,
-            eye_width: 1,
-            eye_height: 1,
-            format: "test".to_owned(),
-            fresh_eyes: [true; 2],
-            rendered_eyes: [true; 2],
-            selected_eye: None,
-            mode: crate::stereo::dispatch::RenderMode::Multipass,
-            visual: crate::testing::visual::metadata(),
-            comparison_inputs: crate::screenshot::harness::types::ComparisonInputs {
-                build_stamp: "test-build",
-                profile: crate::testing::visual::DiagnosticProfile::Native,
-                camera: None,
-                eyes: [None, None],
-                eye_width: 1,
-                eye_height: 1,
-                world_scale: 1.0,
-            },
-            effective_config: jc3vr_core::config::engine::Snapshot::defaults(),
-            water_reflection: None,
-            aa_weights: None,
-            aa_draws: None,
-            lake_owner_four: None,
-            lake_producer: None,
-            lake_gradients: None,
-            lake_waves: None,
-            lake_normals: None,
-            lake_displacement: None,
-            aa_color_edge: None,
-            patch63_hull: None,
-            owner_four_domain: None,
-            lake_color_mirror: None,
-            lake_depth_edge: None,
-            lake_ds_mvp: None,
-            lake_inner_edge: None,
-            patch_draw_ordinal: None,
-            second_patch_ordinal: None,
-            cascade_scale: None,
-            sun_depth_clip: None,
-            resolve_inputs: None,
-            draw_census: None,
-            single_pass: None,
-            constants: Default::default(),
-            stages: [(Stage::MainColor, 0), (Stage::PreAa, 0), (Stage::PostAa, 1)]
-                .into_iter()
-                .map(|(stage, eye)| StageRecord {
-                    frame: 42,
-                    stage,
-                    eye,
-                    source: Some(crate::screenshot::harness::stages::Source {
-                        width: 1,
-                        height: 1,
-                        format_id: 0,
-                        bytes_per_pixel: Some(4),
-                        format: if stage == Stage::MainColor {
-                            "DXGI_FORMAT_R11G11B10_FLOAT"
-                        } else {
-                            "DXGI_FORMAT_R8G8B8A8_TYPELESS"
-                        }
-                        .to_owned(),
-                    }),
-                    viewports: Vec::new(),
-                    scissors: Vec::new(),
-                    scissor_enabled: None,
-                    means: None,
-                    png: None,
-                    raw: None,
-                    error: None,
-                    water_input: None,
-                    velocity: None,
-                    aa: None,
-                    sun_input: None,
-                })
-                .collect(),
-        }
+        assert_eq!(metadata, test_json(true));
     }
 
     #[test]
@@ -1100,25 +585,40 @@ mod tests {
     }
 
     fn test_target(path: PathBuf) -> ImageTarget {
-        ImageTarget::HarnessScreenshot {
+        ImageTarget::Attached {
             path,
-            sidecar: Box::new(test_metadata()),
-            stages: Vec::new(),
+            sidecar: Box::new(TestSidecar { artifact: None }),
         }
     }
 
-    fn test_metadata() -> CaptureMetadata {
-        CaptureMetadata {
-            id: "writer-test".to_owned(),
-            state: crate::screenshot::harness::types::CaptureState::Captured,
-            readiness: crate::screenshot::harness::types::Readiness {
-                gameplay_ready: true,
-                xr_session_running: true,
-                xr_frame_rendering: true,
-                build_stamp: "test-build",
-            },
-            capture: None,
-            error: None,
+    /// The JSON a [`TestSidecar`] writes, after its artifact was written or not.
+    fn test_json(artifact_written: bool) -> serde_json::Value {
+        serde_json::json!({
+            "id": "writer-test",
+            "state": "captured",
+            "artifact_written": artifact_written,
+        })
+    }
+
+    /// A sidecar that writes one artifact, `<stem>.artifact`, beside the image when the writer
+    /// writes its artifacts, and says in its JSON whether it had.
+    struct TestSidecar {
+        artifact: Option<PathBuf>,
+    }
+
+    impl ImageSidecar for TestSidecar {
+        fn write_artifacts(&mut self, path: &Path) {
+            let artifact = path.with_extension("artifact");
+            std::fs::write(&artifact, b"artifact").unwrap();
+            self.artifact = Some(artifact);
+        }
+
+        fn write_json(&self, writer: &mut dyn Write) -> serde_json::Result<()> {
+            serde_json::to_writer_pretty(writer, &test_json(self.artifact.is_some()))
+        }
+
+        fn into_any(self: Box<Self>) -> Box<dyn Any + Send> {
+            self
         }
     }
 

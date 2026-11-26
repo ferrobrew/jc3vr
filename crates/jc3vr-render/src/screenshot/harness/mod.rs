@@ -18,6 +18,7 @@ pub(crate) mod patch_draw;
 pub mod register_pipeline;
 pub mod register_single_pass;
 pub(crate) mod resolve_probe;
+mod sidecar;
 pub mod snapshot;
 pub(crate) mod stages;
 mod sun_probe;
@@ -32,9 +33,12 @@ use crate::{
     image_writer::{ImageTarget, WriteOutcome},
     screenshot::{
         CaptureSource,
-        harness::types::{
-            CameraInput, CaptureKind, CaptureMetadata, CaptureState, CapturedFrame,
-            ComparisonInputs, EyeInput, Readiness,
+        harness::{
+            sidecar::CaptureSidecar,
+            types::{
+                CameraInput, CaptureKind, CaptureMetadata, CaptureState, CapturedFrame,
+                ComparisonInputs, EyeInput, Readiness,
+            },
         },
         read_back,
     },
@@ -1516,10 +1520,9 @@ pub(crate) fn capture(
     let sidecar = active.result.clone();
     active.result.state = CaptureState::Failed;
     match image_writer::try_submit(
-        ImageTarget::HarnessScreenshot {
+        ImageTarget::Attached {
             path: png,
-            sidecar: Box::new(sidecar),
-            stages: stage_images,
+            sidecar: Box::new(CaptureSidecar::new(Box::new(sidecar), stage_images)),
         },
         capture.image,
     ) {
@@ -1555,15 +1558,16 @@ fn advance(state: &mut State, now: Instant, latest_readiness: Option<Readiness>)
         };
         if let Some(outcome) = outcome {
             if !active.reported {
+                let written = CaptureSidecar::take_written(outcome.sidecar);
                 if let Some(capture) = &mut active.result.capture
-                    && !outcome.stages.is_empty()
+                    && !written.stages.is_empty()
                 {
-                    capture.stages = outcome.stages;
+                    capture.stages = written.stages;
                 }
                 match outcome.result {
                     Ok(_) => {
                         if let Some(capture) = &mut active.result.capture {
-                            capture.resolve_inputs = outcome.resolve_inputs.clone();
+                            capture.resolve_inputs = written.resolve_inputs;
                         }
                         let stage_error = active.result.capture.as_ref().is_some_and(|capture| {
                             capture.stages.iter().any(|stage| stage.error.is_some())
