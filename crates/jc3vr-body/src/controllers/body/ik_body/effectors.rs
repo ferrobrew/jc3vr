@@ -23,7 +23,7 @@ use jc3gi::{
 };
 
 use crate::controllers::body::{
-    ik_body::{STATE, config::IkBodyConfig},
+    ik_body::STATE,
     procedural::{
         rig::{Rig, RigBone},
         solver::pose::RigPose,
@@ -38,12 +38,7 @@ use crate::controllers::body::{
 /// `hik` must be the live local character's solver, inside its pose-finalization pass before the
 /// `MAIN` solve, on the thread running it; `rig` must be the rig of its skeleton and `pose` the
 /// pose written this tick.
-pub(crate) unsafe fn queue(
-    hik: &mut HumanIK,
-    rig: &Rig,
-    pose: &RigPose,
-    config: &IkBodyConfig,
-) -> usize {
+pub(crate) unsafe fn queue(hik: &mut HumanIK, rig: &Rig, pose: &RigPose) -> usize {
     let Some(targets) = STATE.lock().targets.take() else {
         return 0;
     };
@@ -58,7 +53,7 @@ pub(crate) unsafe fn queue(
                 hips,
                 w.pelvis_position,
                 Gains {
-                    reach: config.hips_reach,
+                    reach: HIPS_REACH,
                     pull: 0.0,
                 },
             )
@@ -67,8 +62,8 @@ pub(crate) unsafe fn queue(
             writer.hold_rotation(
                 RigBone::Hips,
                 w.pelvis_orientation,
-                config.hips_rotation_reach,
-                config.hips_resist,
+                HIPS_ROTATION_REACH,
+                HIPS_RESIST,
             )
         });
     }
@@ -78,11 +73,11 @@ pub(crate) unsafe fn queue(
     ];
     for (i, (ankle, toe, knee)) in feet.into_iter().enumerate() {
         let foot = Gains {
-            reach: config.foot_reach,
-            pull: config.foot_pull,
+            reach: FOOT_REACH,
+            pull: FOOT_PULL,
         };
         let hint = Gains {
-            reach: config.knee_hint_reach,
+            reach: KNEE_HINT_REACH,
             pull: 0.0,
         };
         if w.feet > 0.0
@@ -118,7 +113,7 @@ pub(crate) unsafe fn queue(
             && let Some(ankles) = targets.air_ankles
         {
             let air = Gains {
-                reach: config.air_foot_reach,
+                reach: AIR_FOOT_REACH,
                 pull: 0.0,
             };
             queued += usize::from(unsafe { writer.place(ankle, ankles[i], w.air_legs, air) });
@@ -130,6 +125,22 @@ pub(crate) unsafe fn queue(
     state.status.targets_queued = queued;
     queued
 }
+
+/// The hips effector's translation reach at full weight.
+const HIPS_REACH: f32 = 1.0;
+/// The hips effector's rotation reach at full weight: the zero rotation offset that holds the
+/// seeded pelvis's orientation through the solve.
+const HIPS_ROTATION_REACH: f32 = 1.0;
+/// How firmly the hips resist being displaced by other effectors' pull.
+const HIPS_RESIST: f32 = 1.0;
+/// The ankle and toe effectors' translation reach at full weight.
+const FOOT_REACH: f32 = 1.0;
+/// How much reaching a foot's target drags the rest of the body after it.
+const FOOT_PULL: f32 = 0.0;
+/// The knee hints' translation reach at full weight: weak, a direction rather than a place.
+const KNEE_HINT_REACH: f32 = 0.2;
+/// In the air, the ankle effectors' translation reach at full weight.
+const AIR_FOOT_REACH: f32 = 0.6;
 
 /// A target's reach and pull at full weight.
 #[derive(Debug, Copy, Clone, PartialEq)]

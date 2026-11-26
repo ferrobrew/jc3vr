@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 
 use body_rig::{
     angle::{line_yaw, wrap, yaw_of},
+    brace::BraceTuning,
     contact::{
         ContactEvent, ContactFrame, FootContacts, FootPose, FootTarget, Handover, Probe, Side,
         Stance, StepRate, SupportFrame, SupportId, Surroundings,
@@ -51,8 +52,6 @@ use crate::controllers::{
 /// Why the IK body leaves the body to the game.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum StandDown {
-    /// Switched off in the debug UI.
-    SwitchedOff,
     /// The procedural torso is off, so nothing writes the seeded pose.
     TorsoOff,
     /// The gamepad scheme: the estimator does not run.
@@ -69,8 +68,6 @@ pub enum StandDown {
     NotIdle,
     /// The movement task is not running on foot.
     NoMovementTask,
-    /// The airborne body is switched off.
-    AirborneOff,
     /// A case the table leaves to the game.
     Case(Case),
     /// The procedural body did not write a pose this tick.
@@ -80,7 +77,6 @@ pub enum StandDown {
 impl StandDown {
     pub fn label(self) -> &'static str {
         match self {
-            StandDown::SwitchedOff => "switched off",
             StandDown::TorsoOff => "the procedural torso is off",
             StandDown::Gamepad => "the gamepad scheme",
             StandDown::FirmRagdoll => "the firm ragdoll owns the legs",
@@ -89,7 +85,6 @@ impl StandDown {
             StandDown::HandedOver(_) => "handed to the walk",
             StandDown::NotIdle => "not a standing idle",
             StandDown::NoMovementTask => "the movement task is not running",
-            StandDown::AirborneOff => "the airborne body is off",
             StandDown::Case(case) => case.label(),
             StandDown::NotWritten => "no pose written",
         }
@@ -561,11 +556,9 @@ pub(crate) fn prepare(input: &GateInput<'_>) -> Prepared {
             input.now,
         );
     }
-    let weights = state.blend.step(
-        target.weights(input.config.walk_weight),
-        input.dt,
-        input.config.blend_s,
-    );
+    let weights = state
+        .blend
+        .step(target.weights(WALK_WEIGHT), input.dt, BLEND_S);
     state.status.state = target;
     state.status.stand_down = reason;
     state.status.weights = weights;
@@ -619,7 +612,7 @@ pub(crate) fn prepare(input: &GateInput<'_>) -> Prepared {
         ],
         model_feet.map(|foot| foot.map(|pose| pose.ankle)),
         geometry.rico.leg,
-        input.config.max_pelvis_drop_m,
+        MAX_PELVIS_DROP_M,
     );
     let pose = seed::seed(input.animated, &geometry.body, &weights, drop);
     state.status.pelvis_drop_m = drop * weights.feet;
@@ -638,14 +631,7 @@ pub(crate) fn prepare(input: &GateInput<'_>) -> Prepared {
     let air = (weights.air_legs > 0.0)
         .then(|| seed::ik_frame(&geometry.body))
         .flatten()
-        .map(|frame| {
-            seed::air_legs(
-                &geometry.body,
-                frame,
-                geometry.rico.leg,
-                input.config.air_relax,
-            )
-        });
+        .map(|frame| seed::air_legs(&geometry.body, frame, geometry.rico.leg, AIR_RELAX));
     // The knees hint along the estimate's thighs, or the air pose's in the air, from the seeded
     // hips at Rico's thigh length.
     let thigh_knees = air.map_or(geometry.body.knees, |[_, knees]| knees);
@@ -672,9 +658,7 @@ pub(crate) fn prepare(input: &GateInput<'_>) -> Prepared {
             ankle_height_m: geometry.rico.ankle_height,
             toe_height_m: geometry.rico.toe_height,
         };
-        state
-            .climb
-            .step(&legs, &input.config.brace, input.dt, input.now)
+        state.climb.step(&legs, &BRACE, input.dt, input.now)
     } else {
         [None; 2]
     };
@@ -704,12 +688,7 @@ fn ragdoll_legs(input: &GateInput<'_>, fk: &FkPose) -> Option<IkLegs> {
     }
     let geometry = Geometry::of(input, fk);
     let frame = seed::ik_frame(&geometry.body)?;
-    let [ankles, knees] = seed::air_legs(
-        &geometry.body,
-        frame,
-        geometry.rico.leg,
-        input.config.air_relax,
-    );
+    let [ankles, knees] = seed::air_legs(&geometry.body, frame, geometry.rico.leg, AIR_RELAX);
     Some(IkLegs {
         hips: geometry.body.hips,
         knees,
@@ -724,9 +703,6 @@ fn classify(
     hold: &mut Option<Hold>,
 ) -> (IkState, Option<StandDown>) {
     let unchanged = |reason| (IkState::Unchanged, Some(reason));
-    if !input.config.enabled {
-        return unchanged(StandDown::SwitchedOff);
-    }
     if !input.torso_on {
         return unchanged(StandDown::TorsoOff);
     }
@@ -737,7 +713,7 @@ fn classify(
         return unchanged(StandDown::FirmRagdoll);
     }
     // The braces need no estimate: without one the hanging legs hang straight from the fallback.
-    if input.case == Case::HandClimb && input.config.climb_feet {
+    if input.case == Case::HandClimb {
         *hold = None;
         return (IkState::Climb, None);
     }
@@ -753,7 +729,7 @@ fn classify(
                 } else {
                     held.still_s = 0.0;
                 }
-                if held.still_s < input.config.resume_s {
+                if held.still_s < RESUME_S {
                     return (IkState::Walk, Some(StandDown::HandedOver(held.why)));
                 }
                 *hold = None;
@@ -768,14 +744,11 @@ fn classify(
                 (IkState::Idle, None)
             }
         }
-        Case::Jump | Case::Flight if input.config.airborne && input.torso_target > 0.0 => {
+        Case::Jump | Case::Flight if input.torso_target > 0.0 => {
             *hold = None;
             (IkState::Airborne, None)
         }
-        Case::Jump | Case::Flight if input.config.airborne => {
-            (IkState::Clip, Some(StandDown::Case(input.case)))
-        }
-        Case::Jump | Case::Flight => unchanged(StandDown::AirborneOff),
+        Case::Jump | Case::Flight => (IkState::Clip, Some(StandDown::Case(input.case))),
         Case::AuthoredMotion | Case::HitReaction => {
             (IkState::Clip, Some(StandDown::Case(input.case)))
         }
@@ -870,6 +843,21 @@ impl RicoMeasures {
     }
 }
 
+/// The IK pose's share of the pelvis's turn and the spine on the walk.
+const WALK_WEIGHT: f32 = 0.2;
+/// How long a hand-over between the IK pose and a clip takes, seconds.
+const BLEND_S: f32 = 0.25;
+/// How long after a hand-over to the walk the IK waits before it takes the standing body back,
+/// seconds, once Rico stands still again.
+const RESUME_S: f32 = 0.4;
+/// The furthest the pelvis is lowered so that the planted feet stay within the legs' reach,
+/// metres.
+const MAX_PELVIS_DROP_M: f32 = 0.2;
+/// In the air, the share of the way from the estimate's legs to the light air pose.
+const AIR_RELAX: f32 = 0.5;
+/// The climbing feet's braces.
+const BRACE: BraceTuning = BraceTuning::new();
+
 /// The toe joint's height over the ground, metres: a generic anthropometric figure.
 const TOE_HEIGHT_M: f32 = 0.025;
 
@@ -899,7 +887,6 @@ mod tests {
     #[test]
     fn every_stand_down_has_a_label() {
         for reason in [
-            StandDown::SwitchedOff,
             StandDown::TorsoOff,
             StandDown::Gamepad,
             StandDown::FirmRagdoll,
@@ -908,7 +895,6 @@ mod tests {
             StandDown::HandedOver(Handover::BothFeet),
             StandDown::NotIdle,
             StandDown::NoMovementTask,
-            StandDown::AirborneOff,
             StandDown::Case(Case::Swimming),
             StandDown::NotWritten,
         ] {

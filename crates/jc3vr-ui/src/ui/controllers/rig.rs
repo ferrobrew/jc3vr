@@ -223,18 +223,8 @@ pub(super) fn rig_settings(ui: &mut Ui, body: &mut BodyRemapConfig) {
     });
 }
 
-/// The IK body's switches and the tuning that matters in the headset.
+/// The IK body's firm ragdoll target switch and its contacts' tuning.
 fn ik_body_settings(ui: &mut Ui, ik: &mut IkBodyConfig) {
-    ui.checkbox(&mut ik.enabled, "IK body standing on foot")
-        .on_hover_text(
-            "Pose Rico's pelvis and legs from the learned estimate while he stands: the feet \
-             planted by IK, stepping for themselves, and the square stance only without an \
-             estimate.",
-        );
-    ui.checkbox(&mut ik.airborne, "IK body in the air")
-        .on_hover_text(
-            "Hang the pelvis under the head in a jump, the legs relaxed toward an air pose.",
-        );
     ui.checkbox(
         &mut ik.ragdoll_target,
         "IK pose as the firm ragdoll's target",
@@ -244,17 +234,7 @@ fn ik_body_settings(ui: &mut Ui, ik: &mut IkBodyConfig) {
              legs rather than the raw clip. Until the ragdoll's pre-physics step is bound, the \
              target is composed as a dry run for the readout.",
     );
-    ui.checkbox(&mut ik.climb_feet, "IK feet on the face while climbing")
-        .on_hover_text(
-            "While the hands climb, brace each foot on the face in front of it, or let it hang \
-             relaxed where nothing is in reach.",
-        );
     ui.collapsing("IK body", |ui| {
-        ui.add(egui::Slider::new(&mut ik.walk_weight, 0.0..=1.0).text("Walk share"))
-            .on_hover_text("How much of the IK pose turns the clip's pelvis on the walk.");
-        ui.add(egui::Slider::new(&mut ik.blend_s, 0.0..=1.0).text("Blend (s)"))
-            .on_hover_text("How long a hand-over between the IK pose and a clip takes.");
-        ui.add(egui::Slider::new(&mut ik.resume_s, 0.0..=2.0).text("Resume after a walk (s)"));
         let c = &mut ik.contact;
         ui.add(egui::Slider::new(&mut c.step_s, 0.1..=0.8).text("Step duration (s)"));
         ui.add(egui::Slider::new(&mut c.arc_m, 0.0..=0.2).text("Step lift (m)"));
@@ -280,30 +260,5 @@ fn ik_body_settings(ui: &mut Ui, ik: &mut IkBodyConfig) {
             .on_hover_text("A longer step hands the legs to the game's walk.");
         ui.add(egui::Slider::new(&mut c.walk_speed_mps, 0.1..=3.0).text("Walk past (m/s)"))
             .on_hover_text("Both feet due at once with the pelvis this fast is a walk.");
-        ui.add(egui::Slider::new(&mut ik.max_pelvis_drop_m, 0.0..=0.5).text("Pelvis drop (m)"))
-            .on_hover_text("The furthest the pelvis comes down to keep the planted feet in reach.");
-        ui.add(egui::Slider::new(&mut ik.hips_reach, 0.0..=1.0).text("Hips reach"));
-        ui.add(egui::Slider::new(&mut ik.hips_rotation_reach, 0.0..=1.0).text("Hips turn reach"));
-        ui.add(egui::Slider::new(&mut ik.hips_resist, 0.0..=1.0).text("Hips resist"))
-            .on_hover_text("How firmly HumanIK holds the hips against the feet's and hands' pull.");
-        ui.add(egui::Slider::new(&mut ik.foot_reach, 0.0..=1.0).text("Feet reach"));
-        ui.add(egui::Slider::new(&mut ik.foot_pull, 0.0..=1.0).text("Feet pull"))
-            .on_hover_text("How much reaching a foot drags the body after it.");
-        ui.add(egui::Slider::new(&mut ik.knee_hint_reach, 0.0..=1.0).text("Knee hints"));
-        ui.add(egui::Slider::new(&mut ik.air_relax, 0.0..=1.0).text("Air pose share"));
-        ui.add(egui::Slider::new(&mut ik.fk.smooth_s, 0.0..=0.5).text("Pelvis smoothing (s)"));
-        let b = &mut ik.brace;
-        ui.add(egui::Slider::new(&mut b.reach_share, 0.6..=1.1).text("Brace lets go past (× leg)"))
-            .on_hover_text(
-                "A braced foot lets go once its hip is this far from it, in leg lengths.",
-            );
-        ui.add(
-            egui::Slider::new(&mut b.acquire_share, 0.4..=1.1).text("Brace taken within (× leg)"),
-        );
-        ui.add(egui::Slider::new(&mut b.knee_m, 0.0..=0.4).text("Brace knee toward the face (m)"));
-        ui.add(egui::Slider::new(&mut b.move_s, 0.0..=1.0).text("Brace move (s)"))
-            .on_hover_text(
-                "How long a foot takes to move to a new brace, or to fade in or out of one.",
-            );
     });
 }

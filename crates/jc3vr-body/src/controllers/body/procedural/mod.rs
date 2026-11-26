@@ -506,7 +506,7 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
     finish_write(&mut state, character, &pose, weight, &config);
     // SAFETY: the live local character's solver, at its pose gate before the solve, with the
     // pose just written.
-    unsafe { ik_body::queue(&mut character.m_HIK, rig, &pose, &ik_config) };
+    unsafe { ik_body::queue(&mut character.m_HIK, rig, &pose) };
     true
 }
 

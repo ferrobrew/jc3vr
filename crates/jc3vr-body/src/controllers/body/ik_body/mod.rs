@@ -17,7 +17,7 @@
 //! - [`support`]: the bodies the feet stand on, snapshotted where the probes cast and carried
 //!   forward to the gate, so a moving deck carries the planted feet.
 //! - [`seed`]: the geometry of the seeded pose (pure).
-//! - [`config`]: the switch and the tuning.
+//! - [`config`]: the firm ragdoll's target switch and the contacts' tuning.
 //!
 //! The rest of the mod reads [`owns_idle`] (the act filter drops the game's turn-in-place acts
 //! while the IK turns the feet itself) and [`root_target`] (the grounded rig's drive follows the FK
@@ -35,7 +35,7 @@ pub(crate) mod support;
 
 use std::time::{Duration, Instant};
 
-use body_rig::{PlayerBody, body::EYES_TO_NECK, ik_weight::IkState};
+use body_rig::{PlayerBody, body::EYES_TO_NECK, fk::FkTuning, ik_weight::IkState};
 use glam::{Quat, Vec2, Vec3};
 use parking_lot::Mutex;
 
@@ -48,9 +48,7 @@ pub(crate) use crate::controllers::body::ik_body::{
     gate::{GateInput, prepare},
 };
 use crate::controllers::body::{
-    BodyDimensions,
-    config::BODY_REMAP_CONFIG,
-    estimator,
+    BodyDimensions, estimator,
     ik_body::{fk::FkInput, gate::GateState},
     rig::grounded,
 };
@@ -85,7 +83,6 @@ pub fn status() -> IkStatus {
 /// Advance the FK pelvis by one rendered frame: the root's frame half calls it before the grounded
 /// rig. `eyes` and `head` are the room frame's, as the rig takes them.
 pub(crate) fn frame(eyes: Vec3, head: Quat, dimensions: &BodyDimensions, dt: f32, now: Instant) {
-    let tuning = BODY_REMAP_CONFIG.lock().ik.fk;
     let diagnostics = grounded::diagnostics();
     let input = FkInput {
         eyes,
@@ -95,7 +92,7 @@ pub(crate) fn frame(eyes: Vec3, head: Quat, dimensions: &BodyDimensions, dt: f32
         standing_neck: grounded::standing_eye_height() + EYES_TO_NECK.y,
         waist: diagnostics.map(|d| d.waist),
         yaw: grounded::body_yaw().unwrap_or(0.0),
-        tuning,
+        tuning: FkTuning::new(),
         dt,
         now,
     };
