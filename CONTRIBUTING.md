@@ -68,7 +68,8 @@ A def's doc-comments describe the game **as it is**: what a function does, what 
 - **Shader compilation**: The mod's shaders (`.hlsl` files in the `shaders/` directory of the crate that draws with them, such as `crates/jc3vr-render/shaders/`) are compiled to `.dxbc` bytecode and committed alongside their sources. After modifying a shader, recompile with:
   - Windows: `cargo run -p shadergen`
   - Linux: `cargo run -p shadergen --target x86_64-unknown-linux-gnu` (requires `wine` on PATH)
-- **Settings**: the pause menu's VR pages hold only the essentials a player reaches for in the headset (comfort, display, core controls, and the body calibration). A feature's switch, its tuning, and its diagnostic readouts go in the debug UI, and the feature ships enabled by default. See `docs/mod/settings.md`.
+- **Settings**: the pause menu's VR pages hold only the essentials a player reaches for in the headset (comfort, display, core controls, and the body calibration). A feature's switch and its diagnostic readouts go in the debug UI, and the feature ships enabled by default. See `docs/mod/settings.md`.
+- **Tuning**: a number that sets how something feels or behaves (a gain, threshold, timing, distance, angle, mass, or budget) goes into the owning crate's `tuning/*.toml` and is read through its `TuningFile`, never written as a `const`, a `static`, or an inline literal. Structural numbers stay in code: array lengths, bit masks, format and protocol versions, shader register slots, and anything the pyxis defs own. See `docs/mod/tuning.md`.
 - **Game shader reverse-engineering**: To extract, disassemble, and interpret the game's own shaders (the `.shader_bundle` files), see `docs/engine/rendering/shaders.md` and the tooling in `tools/shaders/`. For how the mod patches them in memory, see `docs/mod/rendering/shader-patching.md`.
 
 ---
