@@ -4,13 +4,13 @@
 //!
 //! All of it is in Rico's model space.
 //!
-//! - The torso bends after the head: the spine joints turn, each by its share
-//!   ([`SPINE_SHARES`]), so that the head's joint swings toward where the head has moved to, by
+//! - The torso bends after the head: the spine joints turn, each by its share (the presentation
+//!   tuning's `solve.spine_shares`), so that the head's joint swings toward where the head has moved to, by
 //!   the procedural torso's weight ([`chain_swing`]). The bend turns the spine about its base; it
 //!   does not lengthen or shorten it.
 //! - The head takes the head's whole motion: it turns by the head's turn since the ticks, about its
 //!   own joint, and whatever of the head's travel the spine's bend did not cover moves it, up to
-//!   [`MAX_HEAD_RESIDUAL_M`].
+//!   `solve.max_head_residual_m`.
 //! - Each arm is solved again from its shoulder, carried by the torso's bend, to its hand: two-bone
 //!   IK ([`two_bone_elbow`]) with the upper arm's and the forearm's lengths as drawn. An arm the
 //!   controllers drive bends toward the elbow pole ([`crate::controllers::presentation::elbow`]),
@@ -33,6 +33,7 @@ use crate::controllers::{
     presentation::{
         elbow::{self, PoleInput},
         rig::Group,
+        tuning::PRESENTATION,
     },
 };
 
@@ -120,7 +121,7 @@ pub struct Motion {
 pub struct ElbowDrive {
     /// The player's up, a unit vector.
     pub up: Vec3,
-    /// The little finger's pull ([`elbow::PALM_WEIGHT`]).
+    /// The little finger's pull (the presentation tuning's `elbow.palm_weight`).
     pub palm_weight: f32,
     /// The smoothing's time constant, seconds.
     pub smoothing_s: f32,
@@ -165,17 +166,9 @@ pub struct ElbowSolve {
     pub swivel_deg: Option<f32>,
 }
 
-/// Each spine joint's share of the bend, base first: more of it higher, as the procedural spine
-/// shares its own swing.
-pub const SPINE_SHARES: [f32; 4] = [0.15, 0.25, 0.3, 0.3];
-
-/// How far the head moves off the end of the bent spine at most, metres: what the bend cannot
-/// cover in a frame is a tick of the head's travel at most, and anything more is not the head's
-/// motion.
-pub const MAX_HEAD_RESIDUAL_M: f32 = 0.05;
-
 /// The groups' edits for `body` as drawn, after `motion`.
 pub fn solve(body: &UpperBody, motion: &Motion) -> Solved {
+    let tuning = &PRESENTATION.get().solve;
     let mut edits = [Mat4::IDENTITY; Group::COUNT];
     let mut elbows = [None; 2];
     if let Some(head) = motion.head {
@@ -190,7 +183,7 @@ pub fn solve(body: &UpperBody, motion: &Motion) -> Solved {
                 body.spine,
                 body.head,
                 body.head.lerp(wanted, torso),
-                SPINE_SHARES,
+                tuning.spine_shares,
             );
             for (group, edit) in Group::SPINE.into_iter().zip(chain) {
                 edits[group.index()] = edit;
@@ -199,8 +192,8 @@ pub fn solve(body: &UpperBody, motion: &Motion) -> Solved {
         let neck = edits[Group::Neck.index()];
         let turn = rotation_of(&neck).inverse() * rotation_of(&head);
         let placed = neck * about(body.head, turn);
-        let residual =
-            (wanted - placed.transform_point3(body.head)).clamp_length_max(MAX_HEAD_RESIDUAL_M);
+        let residual = (wanted - placed.transform_point3(body.head))
+            .clamp_length_max(tuning.max_head_residual_m);
         edits[Group::Head.index()] = Mat4::from_translation(residual) * placed;
     }
     let torso = edits[Group::Sternum.index()];
@@ -292,7 +285,7 @@ pub fn chain_swing<const N: usize>(
     let Some(&base) = joints.first() else {
         return [Mat4::IDENTITY; N];
     };
-    for _ in 0..CHAIN_ITERATIONS {
+    for _ in 0..PRESENTATION.get().solve.chain_iterations {
         let edits = chain_edits(&joints, &turns);
         let reached = edits[N - 1].transform_point3(end);
         let (Some(from), Some(to)) = (
@@ -385,7 +378,8 @@ fn clavicle_edit(torso: Mat4, arm: &ArmJoints, hand: Mat4, stretch: bool) -> Mat
         .clamp(-1.0, 1.0)
         .acos();
     let angle = from.angle_between(to);
-    let turn = (angle - needed).clamp(0.0, 35.0_f32.to_radians());
+    let max_turn = PRESENTATION.get().solve.clavicle_max_turn_deg.to_radians();
+    let turn = (angle - needed).clamp(0.0, max_turn);
     if angle <= 1e-5 {
         return torso;
     }
@@ -486,7 +480,10 @@ impl ElbowRule<'_> {
             up: self.drive.up,
             little_finger: elbow::little_finger(hand, side),
         };
-        let bend = ((0.995 - shoulder.distance(wrist) / self.length) / 0.095).clamp(0.0, 1.0);
+        let tuning = &PRESENTATION.get().elbow;
+        let extension = shoulder.distance(wrist) / self.length;
+        let bend =
+            ((tuning.palm_straight_extension - extension) / tuning.palm_fade_span).clamp(0.0, 1.0);
         let bend = bend * bend * (3.0 - 2.0 * bend);
         let target = elbow::pole(&input, side, self.drive.palm_weight * bend)?;
         let smoothed = self.arm.previous.map_or(target, |previous| {
@@ -522,8 +519,9 @@ fn drawn_pole(upper: Vec3, reach: Vec3, target_reach: Vec3) -> Option<DrawnPole>
     let target_axis = target_reach.try_normalize()?;
     let across = upper - axis * upper.dot(axis);
     let bend = across.length() / upper.length();
-    let confidence =
-        ((bend - MIN_DRAWN_BEND_SIN) / (FULL_DRAWN_BEND_SIN - MIN_DRAWN_BEND_SIN)).clamp(0.0, 1.0);
+    let tuning = &PRESENTATION.get().solve;
+    let (min, full) = (tuning.min_drawn_bend_sin, tuning.full_drawn_bend_sin);
+    let confidence = ((bend - min) / (full - min)).clamp(0.0, 1.0);
     let confidence = confidence * confidence * (3.0 - 2.0 * confidence);
     let direction = Quat::from_rotation_arc(axis, target_axis) * across.try_normalize()?;
     let direction = (direction - target_axis * direction.dot(target_axis)).try_normalize()?;
@@ -585,19 +583,12 @@ fn rotation_of(m: &Mat4) -> Quat {
     Quat::from_mat4(m).normalize()
 }
 
-/// How many times the chain's swing is shared out at most; each pass leaves a small fraction of the
-/// last pass's miss.
-const CHAIN_ITERATIONS: usize = 6;
-
 /// The least the shares' scale-up is taken to be, so a chain folded back on itself is not turned by
 /// many times its swing.
 const MIN_CHAIN_GAIN: f32 = 0.25;
 
 /// How far the pole must stand off the reach for its side to count, metres.
 const POLE_EPSILON_M: f32 = 1e-3;
-
-const MIN_DRAWN_BEND_SIN: f32 = 0.05;
-const FULL_DRAWN_BEND_SIN: f32 = 0.2;
 
 #[cfg(test)]
 mod tests;

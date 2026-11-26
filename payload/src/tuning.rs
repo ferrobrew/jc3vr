@@ -6,6 +6,7 @@ use jc3vr_body::controllers::body::rig::tuning::RIG;
 use jc3vr_body::controllers::hands::tuning::HANDS;
 use jc3vr_body::controllers::intent::tuning::CONTROLS;
 use jc3vr_body::controllers::locomotion::tuning::LOCOMOTION;
+use jc3vr_body::controllers::presentation::tuning::PRESENTATION;
 use jc3vr_body::controllers::roomscale::tuning::ROOMSCALE;
 use jc3vr_body::hooks::character::tuning::CHARACTER;
 use jc3vr_body::hooks::input::tuning::INPUT_HOOKS;
@@ -62,6 +63,7 @@ static FILES: &[&dyn AnyTuningFile] = &[
     &INPUT_HOOKS,
     &HANDS,
     &RIG,
+    &PRESENTATION,
 ];
 
 #[cfg(test)]

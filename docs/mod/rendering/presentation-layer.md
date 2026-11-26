@@ -64,7 +64,7 @@ The layer's work is timed in the `presentation` slot of the frame breakdown (`pe
 
 ## Settings and readouts
 
-The layer has no settings. The elbow pole's tuning is `PALM_WEIGHT` and `SMOOTHING_S` in `presentation::elbow`. The debug UI's Body/tracking > Hand presentation feature opens with the `RENDER-RATE BODY` status row: the layer's state, the draws it re-posed, and its cost. The hand bodies' blended offset always applies.
+The layer has no settings. Its tuning, the elbow pole's and the re-solve's, is `crates/jc3vr-body/tuning/presentation.toml`. The debug UI's Body/tracking > Hand presentation feature opens with the `RENDER-RATE BODY` status row: the layer's state, the draws it re-posed, and its cost. The hand bodies' blended offset always applies.
 
 The `RENDER-RATE BODY` status row (under `RENDERING` on the debug UI's Status page) reads `OK` with the number of the player's body draws the layer re-posed in its last active frame and its smoothed cost per frame in milliseconds, with each arm's elbow pole in its note (how much of the pole the arm bent toward and how far it turned the elbow from HumanIK's, or `off` for an arm bent toward HumanIK's elbow); `WAITING` with why it is idle before it has run (not in the headset, no recent tick); and `FAILED, NO RIG` for a skeleton without the bones. The skeleton's rig is logged once (`presentation: rigged the player's skeleton for the render-rate body`).
 

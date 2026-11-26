@@ -60,7 +60,12 @@ fn with_nothing_moved_every_edit_is_the_identity() {
 fn the_chain_swings_its_end_onto_the_target_and_keeps_its_base_and_lengths() {
     let b = body();
     let target = b.head + Vec3::new(0.0, 0.0, -0.04);
-    let edits = chain_swing(b.spine, b.head, target, SPINE_SHARES);
+    let edits = chain_swing(
+        b.spine,
+        b.head,
+        target,
+        PRESENTATION.get().solve.spine_shares,
+    );
     let base = b.spine[0];
     assert!(edits[0].transform_point3(base).abs_diff_eq(base, 1e-6));
     let end = edits[3].transform_point3(b.head);
@@ -138,7 +143,7 @@ fn without_the_torso_the_spine_stays_and_the_head_s_travel_is_capped() {
         assert!(edits[group.index()].abs_diff_eq(Mat4::IDENTITY, 1e-6));
     }
     let moved = edits[Group::Head.index()].transform_point3(b.head) - b.head;
-    assert!((moved.length() - MAX_HEAD_RESIDUAL_M).abs() < 1e-5);
+    assert!((moved.length() - PRESENTATION.get().solve.max_head_residual_m).abs() < 1e-5);
 }
 
 #[test]
@@ -267,8 +272,8 @@ fn driven(weight: f32) -> Motion {
     Motion {
         elbow: Some(ElbowDrive {
             up: Vec3::Y,
-            palm_weight: elbow::PALM_WEIGHT,
-            smoothing_s: elbow::SMOOTHING_S,
+            palm_weight: PRESENTATION.get().elbow.palm_weight,
+            smoothing_s: PRESENTATION.get().elbow.smoothing_s,
             dt: 1.0 / 90.0,
             arms: [
                 ArmDrive {
@@ -338,7 +343,13 @@ fn the_smoothed_pole_carries_from_the_last_frame() {
     let mut motion = driven(1.0);
     motion.elbow.as_mut().unwrap().arms[0].previous = Some(previous);
     let smoothed = solve(&b, &motion).elbows[0].unwrap().pole;
-    let expected = elbow::smooth(previous, target, axis, 1.0 / 90.0, elbow::SMOOTHING_S);
+    let expected = elbow::smooth(
+        previous,
+        target,
+        axis,
+        1.0 / 90.0,
+        PRESENTATION.get().elbow.smoothing_s,
+    );
     assert!(
         smoothed.abs_diff_eq(expected, 1e-4),
         "{smoothed:?} {expected:?}"
@@ -392,9 +403,9 @@ fn the_drawn_pole_fades_in_smoothly_with_a_resolved_source_bend() {
         assert!((pole.length() - 1.0).abs() < 1e-5);
         assert!(pole.z.abs() < 1e-5);
         assert!(pole.distance(previous) < 0.02);
-        if bend <= MIN_DRAWN_BEND_SIN {
+        if bend <= PRESENTATION.get().solve.min_drawn_bend_sin {
             assert!(pole.abs_diff_eq(Vec3::X, 1e-5));
-        } else if bend >= FULL_DRAWN_BEND_SIN {
+        } else if bend >= PRESENTATION.get().solve.full_drawn_bend_sin {
             assert!(pole.abs_diff_eq(Vec3::Y, 1e-5));
         }
         previous = pole;

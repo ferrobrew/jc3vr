@@ -35,6 +35,7 @@ mod edit;
 pub mod elbow;
 pub mod rig;
 pub mod solve;
+pub mod tuning;
 
 use std::{
     sync::atomic::{AtomicBool, AtomicU8, AtomicU32, AtomicU64, Ordering},
@@ -65,9 +66,9 @@ use crate::{
         mode::{self, Mode},
         presentation::{
             edit::{DrawnArms, PaletteRegistration},
-            elbow::{PALM_WEIGHT, SMOOTHING_S},
             rig::{Group, GroupMap, PresentationRig},
             solve::{ArmDrive, ArmJoints, ElbowDrive, Motion, UpperBody, head_motion, solve},
+            tuning::PRESENTATION,
         },
     },
     tuning::FRESHNESS,
@@ -537,10 +538,11 @@ fn solve_frame(frame: &Frame, instance: Mat4, dtf: f32) -> Option<BodyEdit> {
         .transform_vector3(frame.up[0].lerp(frame.up[1], t))
         .try_normalize();
     let (last, dt) = POLES.lock().begin(frame);
+    let elbow_tuning = &PRESENTATION.get().elbow;
     let drive = up.map(|up| ElbowDrive {
         up,
-        palm_weight: PALM_WEIGHT,
-        smoothing_s: SMOOTHING_S,
+        palm_weight: elbow_tuning.palm_weight,
+        smoothing_s: elbow_tuning.smoothing_s,
         dt,
         arms: std::array::from_fn(|i| ArmDrive {
             weight: previous.drive[i] + (current.drive[i] - previous.drive[i]) * t,

@@ -1,0 +1,27 @@
+# The presentation layer's tuning: `PresentationTuning` in `src/controllers/presentation/tuning.rs`
+# and the structs under it, whose fields say what each value does. Every key is required and no
+# other is accepted. Lengths are metres, angles degrees, and times seconds; a share is a fraction in
+# `0..1`. The elbow pole's pulls are weights against one another.
+
+[elbow]
+palm_weight = 0.7
+smoothing_s = 0.06
+pole_down = 1.0
+pole_out = 0.4
+pole_back = 0.3
+pole_raise_out = 1.0
+pole_across_out = 0.6
+raise_from_m = -0.10
+raise_span_m = 0.30
+across_min_reach_m = 0.2
+pole_fallback_below = 0.5
+palm_straight_extension = 0.995
+palm_fade_span = 0.095
+
+[solve]
+spine_shares = [0.15, 0.25, 0.3, 0.3]
+max_head_residual_m = 0.05
+chain_iterations = 6
+clavicle_max_turn_deg = 35.0
+min_drawn_bend_sin = 0.05
+full_drawn_bend_sin = 0.2
