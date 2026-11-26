@@ -28,10 +28,8 @@
 //! thread, from the mode detector's snapshot plus a few state-machine predicates, and publishes one
 //! weight per hand for the IK and the late update to read ([`weights`]).
 
-use jc3gi::{
-    camera::game_camera_manager::GameCameraManager, character::character::Character,
-    state::StateBitFlag,
-};
+use jc3gi::{camera::game_camera_manager::GameCameraManager, state::StateBitFlag};
+use jc3vr_core::game_tick::GameTick;
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
@@ -44,6 +42,7 @@ use crate::controllers::{
     },
     held,
     mode::{self, AirborneVariant, CharacterSnapshot, Detection, Mode, OnFootVariant, Traversal},
+    physics::local_player::LocalPlayer,
     scheme,
 };
 
@@ -452,7 +451,7 @@ pub fn weights() -> [f32; 2] {
 
 /// Classify this input tick and advance the blends. Called from the game stage after the mode
 /// detector, while the controllers are enabled.
-pub fn tick(dt: f32) {
+pub fn tick(game: &GameTick<'_>, dt: f32) {
     let swim_arms = BODY_REMAP_CONFIG.query(|c| c.procedural.mode == ProceduralMode::Full);
     let config = TierConfig {
         table: HandTierTable::PLAN.with_swim_arms(swim_arms),
@@ -460,9 +459,7 @@ pub fn tick(dt: f32) {
     };
     let dominant = scheme::acting_hand();
     let mounted_anchor = *MOUNTED_AIM_BY_HANDS.lock();
-    // SAFETY: the game stage runs on the game thread before the world update, as the mode
-    // detector's own reads require.
-    let signals = unsafe { read_signals() };
+    let signals = read_signals(game);
     // The weapon handling's last tick: one tick behind, which the anchor's blend absorbs.
     let gun_hands = held::wielded_gun_hands();
     // A hand holds something when it has a gun of the wielded weapon, a weapon armed in it, or any
@@ -571,12 +568,9 @@ const YIELD_BLEND_S: f32 = 0.25;
 const RETURN_BLEND_S: f32 = 0.35;
 
 /// Read the signals: the mode detector's detection and snapshot from this tick, plus the
-/// state-machine predicates, each only while the character is readable.
-///
-/// # Safety
-///
-/// Must run on the game thread before the world update, like [`mode::read_snapshot`].
-unsafe fn read_signals() -> TierSignals {
+/// state-machine predicates, each only while the character is readable. In a game tick before the
+/// world update, like [`mode::read_snapshot`].
+fn read_signals(game: &GameTick<'_>) -> TierSignals {
     let detection = mode::current();
     let character = mode::last_snapshot().and_then(|s| s.character);
     let mut signals = TierSignals {
@@ -587,18 +581,16 @@ unsafe fn read_signals() -> TierSignals {
     let Some(snapshot) = character else {
         return signals;
     };
-    let Some(local) = (unsafe { Character::GetLocalPlayerCharacter().as_ref() }) else {
+    let Some(local) = LocalPlayer::get(game) else {
         signals.character = None;
         return signals;
     };
-    unsafe {
-        signals.riding_vehicle = snapshot.vehicle.is_some() && local.IsInRidingInVehicleState();
-        signals.stunt_traversing = local.IsStuntTraversing();
-        signals.stunt_hanging = local.IsStuntHanging();
-        signals.mounted_gun = local.IsInMountedGunState();
-        signals.cinematic_camera =
-            GameCameraManager::get().is_some_and(|camera| camera.IsInCinematicCamera());
-    }
+    signals.riding_vehicle = snapshot.vehicle.is_some() && local.in_riding_in_vehicle_state();
+    signals.stunt_traversing = local.stunt_traversing();
+    signals.stunt_hanging = local.stunt_hanging();
+    signals.mounted_gun = local.in_mounted_gun_state();
+    signals.cinematic_camera =
+        unsafe { GameCameraManager::get().is_some_and(|camera| camera.IsInCinematicCamera()) };
     signals
 }
 

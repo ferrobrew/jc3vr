@@ -46,13 +46,17 @@ use jc3gi::{
     character::character::Character,
     types::math::Matrix4,
 };
+use jc3vr_core::game_tick::GameTick;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
 pub use crate::controllers::body::firm_ragdoll::stand_in::TargetReport;
-use crate::controllers::body::firm_ragdoll::{
-    stand_in::StandIn,
-    target::{IkLegs, TargetBones},
+use crate::controllers::{
+    body::firm_ragdoll::{
+        stand_in::StandIn,
+        target::{IkLegs, TargetBones},
+    },
+    physics::local_player::LocalPlayer,
 };
 
 pub fn hook_library() -> HookLibrary {
@@ -161,23 +165,16 @@ pub(crate) unsafe fn feed(character: &Character, producer: *mut PoseProducer) ->
 }
 
 /// Step the firm mode for the local player on an input tick, asked for `want`, with the switch
-/// `enabled`.
-///
-/// # Safety
-///
-/// The game thread before the world update.
-pub unsafe fn input_tick(want: Want, enabled: bool) {
-    if let Some(character) = unsafe { Character::GetLocalPlayerCharacter().as_mut() } {
-        unsafe { tick(character, want, enabled) };
+/// `enabled`, in a game tick before the world update.
+pub fn input_tick(game: &GameTick<'_>, want: Want, enabled: bool) {
+    if let Some(mut player) = LocalPlayer::get(game) {
+        tick(&mut player, want, enabled);
     }
 }
 
-/// Step the firm mode for the local player `character`.
-///
-/// # Safety
-///
-/// `character` is the live local player, on the game thread before the world update.
-unsafe fn tick(character: &mut Character, want: Want, enabled: bool) {
+/// Step the firm mode for the local `player`.
+fn tick(player: &mut LocalPlayer<'_>, want: Want, enabled: bool) {
+    let character = player.character_mut();
     let want = if enabled { want } else { Want::Off };
     let now = Instant::now();
     let mut state = STATE.lock();

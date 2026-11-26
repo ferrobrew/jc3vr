@@ -40,10 +40,14 @@ use jc3gi::{
     state::StateBitFlag,
     vehicle::vehicle::Seat,
 };
+use jc3vr_core::game_tick::GameTick;
 use jc3vr_input::{capture::debug_ui_capture, frame::ActionSetKind};
 use parking_lot::Mutex;
 
-use crate::{controllers::physics::grapple_hook, hooks::animation::active_state_type_id};
+use crate::{
+    controllers::physics::{grapple_hook, local_player::LocalPlayer},
+    hooks::animation::active_state_type_id,
+};
 
 /// The mod contributes a UI-mode signal only while it owns editing input.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -381,10 +385,8 @@ pub fn traversal(character: &CharacterSnapshot) -> Option<Traversal> {
 /// Run the detector for this input tick: read the engine, fold the snapshot in, select the action
 /// set, and publish the detection for [`current`]. Called from the game stage while the controllers
 /// are enabled.
-pub fn tick() -> Detection {
-    // SAFETY: the game stage runs on the game thread before the world update that writes the state
-    // read here.
-    let snapshot = unsafe { read_snapshot() };
+pub fn tick(game: &GameTick<'_>) -> Detection {
+    let snapshot = read_snapshot(game);
     let mut detector = DETECTOR.lock();
     let before = detector.current().mode;
     let detection = detector.observe(&snapshot, DEBOUNCE_TICKS);
@@ -407,13 +409,10 @@ pub fn last_snapshot() -> Option<ModeSnapshot> {
     *LAST_SNAPSHOT.lock()
 }
 
-/// Read the engine state the rules need.
-///
-/// # Safety
-///
-/// Must run on the game thread before the world update (the game stage): the vehicle predicates
-/// walk the animation rule system and the interaction graph, which the world update mutates.
-pub unsafe fn read_snapshot() -> ModeSnapshot {
+/// Read the engine state the rules need, in a game tick before the world update (the game stage):
+/// the vehicle predicates walk the animation rule system and the interaction graph, which the world
+/// update mutates.
+pub fn read_snapshot(game: &GameTick<'_>) -> ModeSnapshot {
     let ui = UiSignals {
         clock_stopped: unsafe { Clock::get() }.is_some_and(|clock| clock.m_Stop),
         screen_focus: unsafe { LocalPlayerActionMap::get() }.is_some_and(|map| {
@@ -423,8 +422,8 @@ pub unsafe fn read_snapshot() -> ModeSnapshot {
     };
     let teleporting =
         unsafe { GameWorld::get() }.is_some_and(|world| unsafe { world.IsTeleporting() });
-    let character = unsafe { Character::GetLocalPlayerCharacter().as_ref() }
-        .and_then(|c| unsafe { read_character(c) });
+    let character =
+        LocalPlayer::get(game).and_then(|player| unsafe { read_character(player.character()) });
     ModeSnapshot {
         ui,
         teleporting,

@@ -21,7 +21,7 @@ use jc3gi::{
     types::math::Vector3,
 };
 
-use crate::controllers::aim::ray::Ray;
+use crate::controllers::{aim::ray::Ray, physics::local_player::LocalPlayer};
 
 /// What a cast should pass through.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
@@ -47,6 +47,16 @@ impl CastOptions {
         let player = unsafe { Character::GetLocalPlayerCharacter() } as usize;
         CastOptions {
             ignore: [player, other],
+            ..CastOptions::default()
+        }
+    }
+
+    /// Pass through the local player `player` and `other` (a game object, or zero), and nothing
+    /// else: [`Self::ignoring_player`] for code that holds the player for the tick.
+    #[inline]
+    pub fn ignoring(player: &LocalPlayer<'_>, other: usize) -> CastOptions {
+        CastOptions {
+            ignore: [player.address(), other],
             ..CastOptions::default()
         }
     }

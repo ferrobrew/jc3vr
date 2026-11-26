@@ -17,7 +17,9 @@
 use std::{marker::PhantomData, ptr::NonNull};
 
 use glam::{Mat4, Vec3};
-use jc3gi::{character::character::Character, game::GameObject};
+use jc3gi::{
+    character::character::Character, equipment::grappling_hook::GrapplingHook, game::GameObject,
+};
 use jc3vr_core::game_tick::GameTick;
 
 use crate::controllers::physics::characters::{character_frame, character_object};
@@ -92,6 +94,17 @@ impl<'t> LocalPlayer<'t> {
     pub fn faction(&self) -> i32 {
         // SAFETY: a live character on the game thread at a serial point.
         unsafe { self.character().GetFaction() }
+    }
+
+    /// The character and its grappling hook, a separate object its inventory owns, or `None` before
+    /// the inventory has one.
+    #[inline]
+    pub fn character_and_hook(&mut self) -> Option<(&mut Character, &mut GrapplingHook)> {
+        let character = self.character_mut();
+        // SAFETY: the inventory owns its hook, a separate allocation, for as long as the character
+        // lives, which is the tick.
+        let hook = unsafe { character.m_Inventory.m_GrapplingHook.px.as_mut() }?;
+        Some((character, hook))
     }
 
     /// Whether the character mans a mounted gun ([`Character::IsInMountedGunState`]).

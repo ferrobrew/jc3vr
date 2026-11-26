@@ -15,16 +15,6 @@ use jc3gi::{
 
 use crate::{controllers::aim_state::StateBit, hooks::character::acts::resolve_act_id};
 
-/// The local player character.
-///
-/// # Safety
-///
-/// Game thread, before the world update.
-#[inline]
-pub unsafe fn local_player() -> Option<&'static mut Character> {
-    unsafe { Character::GetLocalPlayerCharacter().as_mut() }
-}
-
 /// `character`'s `CGameObject` subobject, as a weapon's holder names it and the pickups take it
 /// as their activator.
 #[inline]

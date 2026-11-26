@@ -131,26 +131,17 @@ struct CustomClaim {
 
 static CUSTOM: Mutex<Option<CustomClaim>> = Mutex::new(None);
 
-/// The local player's character and grappling hook.
+/// The local player's grappling hook, for code without a game tick (the grapple's detours and the
+/// anchor's reads); code with one reaches it through the
+/// [`LocalPlayer`](crate::controllers::physics::local_player::LocalPlayer).
 ///
 /// # Safety
 ///
 /// The game thread, or a thread that reads the hook's plain fields where the game does not free it.
 #[inline]
-pub unsafe fn local() -> Option<(&'static mut Character, &'static mut GrapplingHook)> {
-    let character = unsafe { Character::GetLocalPlayerCharacter().as_mut() }?;
-    let hook = unsafe { character.m_Inventory.m_GrapplingHook.px.as_mut() }?;
-    Some((character, hook))
-}
-
-/// The local player's grappling hook.
-///
-/// # Safety
-///
-/// As for [`local`].
-#[inline]
 pub unsafe fn local_hook() -> Option<&'static mut GrapplingHook> {
-    unsafe { local() }.map(|(_, hook)| hook)
+    let character = unsafe { Character::GetLocalPlayerCharacter().as_mut() }?;
+    unsafe { character.m_Inventory.m_GrapplingHook.px.as_mut() }
 }
 
 /// `character`'s grappling hook.

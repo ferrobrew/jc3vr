@@ -10,6 +10,7 @@
 use std::{fmt, sync::OnceLock};
 
 use jc3gi::equipment::weapon::WeaponBase;
+use jc3vr_core::game_tick::GameTick;
 use jc3vr_input::frame::Hand;
 
 /// Why a direct pickup did not take the weapon.
@@ -106,7 +107,7 @@ pub struct PickupSink {
     /// # Safety
     ///
     /// As [`take_ground`].
-    pub take_ground: unsafe fn(Hand, &WeaponBase) -> Result<(), Refusal>,
+    pub take_ground: unsafe fn(&GameTick<'_>, Hand, &WeaponBase) -> Result<(), Refusal>,
     /// Count a direct pickup, or a pickup left to the use-item action with its refusal.
     pub record: fn(Option<String>),
     /// Let the use-item click that follows through to the game's pickup.
@@ -129,9 +130,13 @@ pub fn sink_registered() -> bool {
 ///
 /// # Safety
 ///
-/// `weapon` must be live, on the game thread before the world update.
-pub unsafe fn take_ground(hand: Hand, weapon: &WeaponBase) -> Result<(), Refusal> {
-    unsafe { (sink().take_ground)(hand, weapon) }
+/// `weapon` must be live.
+pub unsafe fn take_ground(
+    game: &GameTick<'_>,
+    hand: Hand,
+    weapon: &WeaponBase,
+) -> Result<(), Refusal> {
+    unsafe { (sink().take_ground)(game, hand, weapon) }
 }
 
 /// A direct pickup happened, or was left to the game's use-item action because of `refusal`.
