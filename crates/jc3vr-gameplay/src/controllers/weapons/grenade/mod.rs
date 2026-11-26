@@ -32,6 +32,24 @@ use jc3gi::{
     input::input_action_map::Action,
     types::math::{Matrix4, Vector3},
 };
+use jc3vr_body::controllers::{
+    aim::targets::weak_target,
+    body::rig::frames::Frames,
+    grab::{Candidate, GrabVolume, resolve::nearest_within},
+    hands::{
+        ActiveHands, held,
+        held::{Held, Slot},
+    },
+    haptics, intent,
+    intent::{
+        controls::ButtonControl,
+        hold::{Desired, MapKind},
+    },
+    physics,
+    physics::refs::Weak,
+    telemetry,
+    telemetry::Thrown,
+};
 use jc3vr_input::{
     frame::{Hand, Pose},
     haptics::cues::Event,
@@ -45,22 +63,7 @@ use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
-    aim::targets::weak_target,
-    bindings::{
-        self,
-        controls::ButtonControl,
-        hold::{Desired, MapKind},
-    },
-    body::rig::frames::Frames,
-    grab::{Candidate, GrabVolume, resolve::nearest_within},
-    hands::{
-        ActiveHands,
-        held::{self, Held, Slot},
-    },
-    haptics,
     loadout::{ItemId, Place, TakeSource, live, safe_items::SafeItemView},
-    physical_hands,
-    telemetry::{self, Thrown},
     weapons::{
         config::{WEAPONS_CONFIG, WeaponSettings},
         docks, engine,
@@ -71,7 +74,8 @@ use crate::controllers::{
             stock::Stock,
             tuning::{GRENADE, GrenadeTuning},
         },
-        hold::{self, act, refs::Weak},
+        hold,
+        hold::act,
         inventory::engine::weapon_of,
         pouch_return, reload,
     },
@@ -825,7 +829,7 @@ fn at_mouth(inputs: &BeginInputs, tuning: &GrenadeTuning) -> [Option<Mouth>; 2] 
         Some(Mouth {
             at_mouth: pin::at_mouth(pin, mouth),
             other_occupied: !inputs.free[other.index()]
-                || bindings::hand_closed(other)
+                || intent::hand_closed(other)
                 || inputs.active.hands[other.index()].is_none(),
         })
     })
@@ -993,7 +997,7 @@ fn catch_one(hand: Hand, grip: Vec3, seen: &[Sighting], tuning: &GrenadeTuning) 
 unsafe fn carry_caught(inputs: &TickInputs, tuning: &GrenadeTuning) -> Option<(Hand, Fuse)> {
     let caught = catch::caught()?;
     let hand = caught.hand;
-    let Ok((centre, _)) = (unsafe { physical_hands::body_pose(caught.body, caught.owner) }) else {
+    let Ok((centre, _)) = (unsafe { physics::body_pose(caught.body, caught.owner) }) else {
         catch::let_go(false);
         return None;
     };
@@ -1002,9 +1006,8 @@ unsafe fn carry_caught(inputs: &TickInputs, tuning: &GrenadeTuning) -> Option<(H
         // body takes the release motion at once.
         let Release { velocity, angular } =
             throw_release(hand, centre, caught.since_s, "caught grenade", Some(true));
-        let _ = unsafe {
-            physical_hands::set_body_velocities(caught.body, caught.owner, velocity, angular)
-        };
+        let _ =
+            unsafe { physics::set_body_velocities(caught.body, caught.owner, velocity, angular) };
         catch::let_go(true);
         STATE.lock().status.last_release = Some(velocity);
         return None;
@@ -1022,7 +1025,7 @@ unsafe fn carry_caught(inputs: &TickInputs, tuning: &GrenadeTuning) -> Option<(H
         let target = grip.position + grip.orientation * hold_local(hand, tuning).position;
         let velocity = catch::carry_velocity(centre, target, inputs.dt, tuning.catch.max_carry_mps);
         let _ = unsafe {
-            physical_hands::set_body_velocities(caught.body, caught.owner, velocity, Vec3::ZERO)
+            physics::set_body_velocities(caught.body, caught.owner, velocity, Vec3::ZERO)
         };
     }
     // SAFETY: body_pose proved the native grenade live on the game thread before the world update.
@@ -1038,12 +1041,13 @@ unsafe fn carry_caught(inputs: &TickInputs, tuning: &GrenadeTuning) -> Option<(H
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::controllers::{
+    use jc3vr_body::controllers::{
         fingers::grip::catalogue::{GripPose, cylinder_curl},
         hands::held::away_from_palm,
-        weapons::grenade::tuning::GRENADE_BODY_RADIUS_M,
     };
+
+    use super::*;
+    use crate::controllers::weapons::grenade::tuning::GRENADE_BODY_RADIUS_M;
 
     #[test]
     fn the_fuse_warning_rises_from_the_pin() {

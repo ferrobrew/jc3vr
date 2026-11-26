@@ -27,11 +27,11 @@ use jc3gi::{
     equipment::weapon::{AmmunitionType, WeaponBase},
     game::GameObject,
 };
+use jc3vr_body::controllers::hands::ik;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
-    hands::ik,
     loadout::{Place, live},
     weapons::{engine::character_object, inventory::carry},
 };

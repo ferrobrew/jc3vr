@@ -22,7 +22,7 @@ use crate::controllers::{
 /// The game actions the new layout leaves without a button: grenades come from their pouch and
 /// C4 from its chest pouch, and the grenade throw stays as an unbound action for a player who
 /// binds it. The gamepad's B (releasing the tethers, cancelling, and stepping off a ledge) is the
-/// grapple button's double tap ([`crate::controllers::bindings::grapple_button`]), a gesture the
+/// grapple button's double tap ([`jc3vr_body::controllers::intent::grapple_button`]), a gesture the
 /// tables do not declare; the use button held also steps off a ledge, and keeps a ragdoll one,
 /// which needs a ragdoll the coverage does not simulate.
 const DROPPED: [Action; 6] = [

@@ -10,6 +10,32 @@
 //! The root registers itself before the test harness runs; see
 //! [`test_root`](jc3vr_core::config::engine::test_root).
 
+use jc3vr_body::{
+    controllers::{
+        aim::{
+            GRAPPLE_SEAT, WORLD_MARKERS_ENABLED, config::AIM_CONFIG, sights::config::SightTable,
+        },
+        aim_state::AIM_STATE_CONFIG,
+        body::{BODY_CONFIG, BodyDimensions, config::BODY_REMAP_CONFIG},
+        fingers::config::FINGERS_CONFIG,
+        hands::config::{GRAPPLE_PUMP, HANDS_CONFIG, MOUNTED_AIM_BY_HANDS},
+        haptics::config::HAPTICS_CONFIG,
+        intent::config::BINDINGS_CONFIG,
+        locomotion::config::LOCOMOTION_CONFIG,
+        overlay::config::OVERLAY_CONFIG,
+        roomscale::config::{DRIVING_VIEW_ENABLED, ROOMSCALE_CONFIG, TAKE_OFF_TO_HEAD},
+        scheme,
+    },
+    hooks::{
+        animation::canopy::SKIP_REEL_OPENING,
+        character::config::{BODY_IK_CONFIG, BodyIkConfig},
+        input::{
+            config::{MOVEMENT_CONFIG, MovementConfig},
+            parachute::{CANOPY_LINE_TURN, CANOPY_LINE_TURN_SCALE},
+            wingsuit::WINGSUIT_EVADE_ENABLED,
+        },
+    },
+};
 use jc3vr_capture::testing::visual::PAUSED;
 use jc3vr_core::{
     config::engine::{
@@ -21,34 +47,14 @@ use jc3vr_core::{
 };
 use jc3vr_gameplay::{
     controllers::{
-        aim::{GRAPPLE_SEAT, WORLD_MARKERS_ENABLED, config::AIM_CONFIG},
-        aim_state::AIM_STATE_CONFIG,
-        bindings::config::BINDINGS_CONFIG,
-        body::{BODY_CONFIG, BodyDimensions, config::BODY_REMAP_CONFIG},
-        config::{CONTROLLERS_CONFIG, ControllersConfig, SightTable, validate},
-        fingers::config::FINGERS_CONFIG,
+        config::{CONTROLLERS_CONFIG, ControllersConfig, validate},
         glass::config::GLASS_CONFIG,
-        hands::config::{GRAPPLE_PUMP, HANDS_CONFIG, MOUNTED_AIM_BY_HANDS},
-        haptics::config::HAPTICS_CONFIG,
-        locomotion::config::LOCOMOTION_CONFIG,
-        overlay::config::OVERLAY_CONFIG,
         physical_hands::config::PHYSICAL_HANDS_CONFIG,
-        roomscale::config::{DRIVING_VIEW_ENABLED, ROOMSCALE_CONFIG, TAKE_OFF_TO_HEAD},
-        scheme,
         summary::config::SUMMARY_CONFIG,
         vehicles::config::VEHICLES_CONFIG,
         weapons::config::WEAPONS_CONFIG,
     },
     grapple::physical::config::GRAPPLE_CONFIG,
-    hooks::{
-        animation::canopy::SKIP_REEL_OPENING,
-        character::config::{BODY_IK_CONFIG, BodyIkConfig},
-        input::{
-            config::{MOVEMENT_CONFIG, MovementConfig},
-            parachute::{CANOPY_LINE_TURN, CANOPY_LINE_TURN_SCALE},
-            wingsuit::WINGSUIT_EVADE_ENABLED,
-        },
-    },
 };
 use jc3vr_hud::hud::config::{HUD_CONFIG, HudConfig};
 use jc3vr_render::{

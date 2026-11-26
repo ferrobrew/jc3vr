@@ -1,7 +1,7 @@
 //! The aim-state pin and the mental-state cuts.
 
 use egui::Ui;
-use jc3vr_gameplay::controllers::aim_state::{AimStateStatus, IkTask};
+use jc3vr_body::controllers::aim_state::{AimStateStatus, IkTask};
 
 use crate::ui::controllers::{vec3, yes_no};
 

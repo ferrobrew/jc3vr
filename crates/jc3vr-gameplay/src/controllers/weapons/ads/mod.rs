@@ -13,7 +13,7 @@
 //! front hand coming onto the foregrip, the raised gun changing hands) glides rather than snaps.
 //!
 //! The pose is applied in [`apply`], on the cockpit-frame hands every hand subsystem starts from
-//! ([`crate::controllers::hands::active_hands`]), after the two-handed pose and the weight, so the
+//! ([`jc3vr_body::controllers::hands::active_hands`]), after the two-handed pose and the weight, so the
 //! IK targets, the render-time late update, the sight line the gun aim casts, and the scope's lens
 //! all see the gun where the eye has it. The holding hand rides the gun, and the hand on the
 //! foregrip with it.
@@ -30,18 +30,16 @@ pub mod solve;
 use std::time::Instant;
 
 use glam::Vec3;
+use jc3vr_body::controllers::hands::CockpitHand;
 use jc3vr_input::frame::{Hand, Pose};
 use parking_lot::Mutex;
 
-use crate::controllers::{
-    hands::CockpitHand,
-    weapons::{
-        ads::{
-            config::{AdsConfig, AimingEye},
-            solve::{AdsInputs, AdsSolution, RigidMove, WristSight},
-        },
-        foregrip,
+use crate::controllers::weapons::{
+    ads::{
+        config::{AdsConfig, AimingEye},
+        solve::{AdsInputs, AdsSolution, RigidMove, WristSight},
     },
+    foregrip,
 };
 
 /// A long gun in a hand, as the input tick measured it.

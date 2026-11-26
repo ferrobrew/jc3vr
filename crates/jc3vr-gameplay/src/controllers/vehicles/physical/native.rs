@@ -1,9 +1,8 @@
 use glam::{Mat4, Quat, Vec2, Vec3};
+use jc3vr_body::controllers::grab::cockpit::ControlKind;
 
 use crate::controllers::vehicles::{
-    physical::{ControlKind, yoke::YokeFrame},
-    tuning::PhysicalControlsTuning,
-    wheel_render::RenderWheel,
+    physical::yoke::YokeFrame, tuning::PhysicalControlsTuning, wheel_render::RenderWheel,
 };
 
 #[derive(Debug, Copy, Clone, PartialEq)]

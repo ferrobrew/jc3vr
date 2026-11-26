@@ -11,6 +11,7 @@ use std::time::Duration;
 use body_rig::rotation::{angular_velocity, shortest};
 use glam::{Quat, Vec3};
 use jc3gi::character::inventory::WeaponSlot;
+use jc3vr_body::controllers::{clock::TimeScale, physics::bodies::BodyError, telemetry::Thrown};
 use jc3vr_input::{
     frame::{self, ControllerFrame, Hand},
     motion::{self, MotionSample, RELEASE_ESTIMATE},
@@ -21,10 +22,7 @@ use jc3vr_view::{
 };
 use tracking_format::event::{GunRelease, ReleaseController, ReleaseDrop, WorldMotion};
 
-use crate::controllers::{
-    clock::TimeScale, physical_hands::BodyError, telemetry::Thrown,
-    weapons::hold::equip::DockRefusal,
-};
+use crate::controllers::weapons::hold::equip::DockRefusal;
 
 /// The cockpit-to-world transform sampled on an input tick, without controller translation.
 #[derive(Debug, Copy, Clone, PartialEq)]

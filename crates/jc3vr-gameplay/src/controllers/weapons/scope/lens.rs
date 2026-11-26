@@ -13,10 +13,9 @@
 //! image, so the image is correct at the target and the parallax between the eyes vanishes there.
 
 use glam::Vec3;
+use jc3vr_body::controllers::{aim::ray::Ray, hands::pose as hand_pose};
 use jc3vr_input::frame::{Hand, Pose};
 use jc3vr_view::controllers::weapons::scope::lens_frame::LensDraw;
-
-use crate::controllers::{aim::ray::Ray, hands::pose as hand_pose};
 
 /// The lens's fixed tuning.
 pub const LENS: LensTuning = LensTuning {

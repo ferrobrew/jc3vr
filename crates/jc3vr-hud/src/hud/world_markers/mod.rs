@@ -16,7 +16,7 @@
 //!   cut out of the panel, and each slot is drawn as a billboard facing the head at the marker's
 //!   world point, with the angular size it had on the panel. The scene depth at each marker's pixel
 //!   ([`depth`]) places it on the nearest visible surface along its line of sight.
-//! - [`jc3vr_gameplay::controllers::aim::marker_rays`] (the game thread, in the player aim's simulation
+//! - [`jc3vr_body::controllers::aim::marker_rays`] (the game thread, in the player aim's simulation
 //!   update): a physics raycast for the markers that had no recent depth sample.
 //!
 //! [`layout`] holds the pure geometry, and [`stage_frame`](jc3vr_view::hud::world_markers::stage_frame), in the render crate, the stage's mapping onto the texture. The whole prototype is behind

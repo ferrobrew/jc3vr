@@ -27,6 +27,10 @@ pub(crate) mod simulate;
 mod tests;
 
 use glam::Vec2;
+use jc3vr_body::controllers::intent::{
+    config::BindingsConfig,
+    controls::{ButtonControl, radial_deadzone, scalar_deadzone},
+};
 use jc3vr_input::{
     frame::{Hand, InteractionProfile},
     semantic::{
@@ -41,11 +45,6 @@ use jc3vr_view::vr::input::{
         frame::{ActionValue, SemanticEdges, SemanticFrame, SetState},
     },
     sources,
-};
-
-use crate::controllers::{
-    bindings::controls::{ButtonControl, radial_deadzone, scalar_deadzone},
-    config::BindingsConfig,
 };
 
 /// One semantic action's state on one hand over the tick.

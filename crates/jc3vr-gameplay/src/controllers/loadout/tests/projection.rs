@@ -1,13 +1,13 @@
 //! The game's slots as a projection of the table.
 
 use jc3gi::character::inventory::WeaponSlot;
+use jc3vr_body::controllers::grab::socket::Socket;
 use jc3vr_input::frame::Hand;
 
 use super::fixtures::*;
 use crate::controllers::loadout::{
     item::{ItemId, ItemKind},
     projection::{BodyPlace, SlotContent, project, project_store},
-    socket::Socket,
     table::Loadout,
     transition::Release,
 };

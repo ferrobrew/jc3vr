@@ -1,9 +1,10 @@
 //! Checks for the controller-owned hands, per-hand aiming, and the world-space
 //! overlay.
 
+use jc3vr_body::controllers::{
+    aim::config::AimConfig, hands::config::HandsConfig, overlay::config::OverlayConfig,
+};
 use jc3vr_core::config::engine::{Invalid, nonnegative, positive, range, vec3};
-
-use crate::controllers::config::{AimConfig, HandsConfig, OverlayConfig};
 
 /// Check the controller-owned hands' settings. Paths are relative to `controllers.hands`.
 pub(super) fn hands(c: &HandsConfig) -> Result<(), Invalid> {

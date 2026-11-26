@@ -1,6 +1,6 @@
 //! The recent aimed target across the grip edge, before the snatch is armed.
 
-use crate::controllers::bindings::controls::ButtonControl;
+use jc3vr_body::controllers::intent::controls::ButtonControl;
 
 /// A recent offer that a grip press freezes until the consumer takes it.
 pub(super) struct Prearm<T> {

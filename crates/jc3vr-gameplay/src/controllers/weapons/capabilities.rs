@@ -4,12 +4,17 @@ use jc3gi::{
     character::{character::Character, inventory::WeaponSlot},
     equipment::weapon::WeaponBase,
 };
+use jc3vr_body::controllers::{
+    hands::{
+        tiers,
+        tiers::{HandTier, TierState},
+    },
+    mode::{AirborneVariant, Mode, OnFootVariant},
+};
 use jc3vr_input::frame::{self, Hand};
 
 use crate::controllers::{
-    hands::tiers::{self, HandTier, TierState},
     loadout::live,
-    mode::{AirborneVariant, Mode, OnFootVariant},
     weapons::{dual_wield::single, engine::slot_of, foregrip, hold::armed, permission, reload},
 };
 
@@ -197,8 +202,9 @@ pub(crate) fn tracked_hands() -> [bool; 2] {
 
 #[cfg(test)]
 mod tests {
+    use jc3vr_body::controllers::mode::{VehicleClass, VehicleSeat};
+
     use super::*;
-    use crate::controllers::mode::{VehicleClass, VehicleSeat};
 
     fn modes() -> Vec<Mode> {
         let mut modes = vec![

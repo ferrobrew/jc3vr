@@ -3,7 +3,7 @@
 use std::sync::atomic::Ordering;
 
 use jc3gi::character::character::{AimState, Character};
-use jc3vr_gameplay::{
+use jc3vr_body::{
     hooks,
     hooks::{
         animation::canopy::REEL_OPENINGS_SKIPPED,

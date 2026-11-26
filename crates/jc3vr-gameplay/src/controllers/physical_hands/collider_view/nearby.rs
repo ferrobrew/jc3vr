@@ -1,7 +1,7 @@
 //! The reads the tracking recorder's near set makes of the physics world: a slice of the body
 //! slots walked for dynamic bodies whose boxes a test accepts, one dynamic body's pose and
 //! velocities, and a body's identity and shape for its introduction. The set itself, and what it
-//! records, is `crate::controllers::telemetry`'s.
+//! records, is `jc3vr_body::controllers::telemetry`'s.
 //!
 //! A walk of every slot up to the world's peak streams the whole body array, so the recorder walks
 //! a slice per step and reads only the bodies it keeps on the other steps.
@@ -10,9 +10,9 @@ use std::num::NonZeroUsize;
 
 use glam::{Quat, Vec3};
 use jc3gi::physics::hknpBody;
+use jc3vr_body::controllers::physics::bodies;
 
 use crate::controllers::physical_hands::{
-    bodies,
     collider_view::{
         mod_ids,
         model::{Aabb, KindInputs, ModBody, MotionKind, classify},

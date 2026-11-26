@@ -3,6 +3,10 @@
 use std::borrow::Cow;
 
 use glam::{Vec2, Vec3};
+use jc3vr_body::controllers::{
+    aim::sights::config::SightOverride, locomotion::config::LocomotionDirection,
+    roomscale::config::Posture,
+};
 use jc3vr_core::{
     config::engine::{
         Snapshot,
@@ -10,7 +14,6 @@ use jc3vr_core::{
     },
     director::clean_view::CleanViewScope,
 };
-use jc3vr_gameplay::controllers::config::{LocomotionDirection, Posture, SightOverride};
 use jc3vr_input::frame::Hand;
 use jc3vr_tooling::director::keymap::{Action, Binding, Chord};
 use jc3vr_view::vr::MirrorView;

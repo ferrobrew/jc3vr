@@ -7,6 +7,24 @@ use jc3gi::{
     character::inventory::WeaponSlot, equipment::weapon::WeaponBase,
     input::input_action_map::Action,
 };
+use jc3vr_body::controllers::{
+    fingers::{
+        grip,
+        grip::{Grip, GripSource},
+    },
+    grab::{GrabVolume, resolve::dock_target},
+    hands,
+    hands::{
+        ActiveHands, pose as hand_pose, tiers,
+        tiers::{HandTier, TierState},
+    },
+    haptics, intent,
+    intent::{
+        controls::ButtonControl,
+        hold::{Desired, MapKind},
+    },
+    mode, telemetry,
+};
 use jc3vr_input::{
     frame::{self, Hand},
     haptics::cues::Event,
@@ -14,38 +32,29 @@ use jc3vr_input::{
 };
 
 use crate::controllers::{
-    bindings::{
-        controls::ButtonControl,
-        hold::{Desired, MapKind},
-    },
-    fingers::grip::{self, Grip, GripSource},
-    grab::{GrabVolume, resolve::dock_target},
-    hands::{
-        self, ActiveHands, pose as hand_pose,
-        tiers::{self, HandTier, TierState},
-    },
-    haptics,
     loadout::{
-        Socket,
-        grab::{self, GrabRules, Release, SocketMove, SocketRefusal},
+        Socket, grab,
+        grab::{GrabRules, Release, SocketMove, SocketRefusal},
         live,
     },
-    mode, telemetry,
     weapons::{
         begin::with_holder,
-        c4::{self, tuning::C4Tuning},
+        c4,
+        c4::tuning::C4Tuning,
         capabilities::{
             Capabilities, GunHand, gun_hands_now, gun_owners_now, tracked_hands, trigger_claims,
         },
         config::WeaponSettings,
-        docks::attract::{self, ATTRACTION},
+        docks::{attract, attract::ATTRACTION},
         dual_wield::single,
-        engine,
-        foregrip::{self, FOREGRIP, GripGeometry, Inputs, Transition, TwoHandedWeapon},
-        grenade, gun_bodies,
-        hold::{self, armed, tick},
-        regions::{self, GunRegion},
-        reload::{self, fire_hold::FireHold},
+        engine, foregrip,
+        foregrip::{FOREGRIP, GripGeometry, Inputs, Transition, TwoHandedWeapon},
+        grenade, gun_bodies, hold,
+        hold::{armed, tick},
+        regions,
+        regions::GunRegion,
+        reload,
+        reload::fire_hold::FireHold,
         state::STATE,
         types::{GrabEvent, GrabOutcome, SocketOutcome},
         weighted_hands,
@@ -57,7 +66,7 @@ pub(crate) struct FinishInputs {
     /// The grab volume each hand grabbed this tick, indexed by [`Hand::index`].
     pub grabs: [Option<GrabVolume>; 2],
     /// Each hand's grip over the tick, as a hold reads it
-    /// ([`HandControls::hold`](crate::controllers::bindings::controls::HandControls::hold)).
+    /// ([`HandControls::hold`](intent::controls::HandControls::hold)).
     pub grips: [ButtonControl; 2],
     /// Each hand's trigger press over the tick.
     pub triggers: [ButtonControl; 2],
@@ -915,7 +924,7 @@ fn release(
 }
 
 fn bindings_closed(hand: Hand) -> bool {
-    crate::controllers::bindings::grip_holds_now(hand) == Some(true)
+    intent::grip_holds_now(hand) == Some(true)
 }
 
 fn holstering(hand: Hand, closed: bool) -> bool {

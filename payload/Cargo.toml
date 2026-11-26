@@ -33,11 +33,14 @@ jc3vr-core = { path = "../crates/jc3vr-core" }
 # engine-pipeline hooks, and the render diagnostics.
 jc3vr-render = { path = "../crates/jc3vr-render" }
 jc3vr-view = { path = "../crates/jc3vr-view" }
+# The body layer: the body-bound controller subsystems, the shared vocabulary, facts, and physics
+# substrate, and the character, animation, and input detours.
+jc3vr-body = { path = "../crates/jc3vr-body" }
 # The capture layer: the screenshot harness and its probes, the visual stage's controls, and the
 # benchmark samplers.
 jc3vr-capture = { path = "../crates/jc3vr-capture" }
-# The gameplay layer: the controller subsystems, the grapple, and the character, animation, input,
-# equipment, and sim detours.
+# The gameplay layer: the weapon handling, the physical hands, the vehicles, the bindings, the
+# summary model, the grapple, and the look, equipment, and sim detours.
 jc3vr-gameplay = { path = "../crates/jc3vr-gameplay" }
 # The HUD layer: the floating panel and its layers, the summary's presentation, the controls map,
 # the UI detours, and the egui renderer.

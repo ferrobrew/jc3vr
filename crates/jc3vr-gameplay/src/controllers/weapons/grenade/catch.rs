@@ -16,22 +16,21 @@
 //! ([`crate::controllers::weapons::grenade::throw_release`]).
 //!
 //! [`Grenade::PropelToward`]: jc3gi::equipment::explosive::Grenade::PropelToward
-//! [`GrabVolume::LiveGrenade`]: crate::controllers::grab::GrabVolume::LiveGrenade
+//! [`GrabVolume::LiveGrenade`]: jc3vr_body::controllers::grab::GrabVolume::LiveGrenade
 //! [`CatchTuning::range_m`]: crate::controllers::weapons::grenade::tuning::CatchTuning::range_m
 
 use std::{num::NonZeroUsize, time::Instant};
 
 use glam::Vec3;
 use jc3gi::{equipment::explosive::Explosive, physics::PfxInstance};
+use jc3vr_body::controllers::{
+    grab::{Candidate, GrabVolume},
+    hands::{held, held::Slot},
+};
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
-use crate::controllers::{
-    grab::{Candidate, GrabVolume},
-    hands::held::{self, Slot},
-    physical_hands,
-    weapons::grenade::tuning::CatchTuning,
-};
+use crate::controllers::weapons::grenade::tuning::CatchTuning;
 
 /// A live grenade the input tick saw, in the cockpit frame.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -127,7 +126,9 @@ pub(crate) unsafe fn sightings(
     let caught = state.caught.map(|c| c.explosive);
     let mut seen = Vec::new();
     state.tracked.retain(|t| {
-        let Ok((centre, _)) = (unsafe { physical_hands::body_pose(t.body, t.owner) }) else {
+        let Ok((centre, _)) =
+            (unsafe { jc3vr_body::controllers::physics::body_pose(t.body, t.owner) })
+        else {
             return false;
         };
         let age_s = now.saturating_duration_since(t.launched).as_secs_f32();

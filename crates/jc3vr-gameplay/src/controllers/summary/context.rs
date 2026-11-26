@@ -13,15 +13,15 @@ use jc3gi::{
     input::{button_mapping::ButtonInteraction, input_action_map::Action},
     ui::hud_ui::{ButtonHintType, HUDUI},
 };
+use jc3vr_body::controllers::{
+    intent::rows::{Control, Effect, Gesture, ModAction, Row},
+    mode::Mode,
+};
 use windows::Win32::System::Threading::{LeaveCriticalSection, TryEnterCriticalSection};
 
-use crate::controllers::{
-    bindings::tables::describe::{Control, Effect, Gesture, ModAction, Row},
-    mode::Mode,
-    summary::{
-        content::Line,
-        labels::{ActionLabel, Text, action_label, gesture_prefix},
-    },
+use crate::controllers::summary::{
+    content::Line,
+    labels::{ActionLabel, Text, action_label, gesture_prefix},
 };
 
 /// One queued hint, as the summary needs it.
@@ -174,13 +174,11 @@ fn fallback_label(action: Action, mode: Mode, resolve: &dyn Fn(Text) -> String) 
 
 #[cfg(test)]
 mod tests {
+    use jc3vr_body::controllers::mode::{OnFootVariant, VehicleClass, VehicleSeat};
     use jc3vr_input::frame::Hand;
 
     use super::*;
-    use crate::controllers::{
-        mode::{OnFootVariant, VehicleClass, VehicleSeat},
-        summary::localise::humanise,
-    };
+    use crate::controllers::summary::localise::humanise;
 
     const ON_FOOT: Mode = Mode::OnFoot(OnFootVariant::Ground);
 

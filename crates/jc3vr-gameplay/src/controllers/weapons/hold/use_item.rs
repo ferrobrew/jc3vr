@@ -29,25 +29,22 @@ use jc3gi::{
     equipment::weapon::WeaponBase,
     game::GameObject,
 };
+use jc3vr_body::controllers::{hands::ik, physics::refs::Strong};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
-    hands::ik,
     loadout::{Delivery, TakeSource, live, take::TakeRoute},
     weapons::{
         config::WEAPONS_CONFIG,
         dual_wield::single,
         engine::{character_object, slot_of},
         grenade::stock,
-        hold::{
-            self, SNAP_S,
-            pickup::{self, TakeOptions},
-            rack,
-            refs::Strong,
-        },
+        hold,
+        hold::{SNAP_S, pickup, pickup::TakeOptions, rack},
         inventory::{
-            engine::{self as inventory_engine, strong_to, weapon_of},
+            engine as inventory_engine,
+            engine::{strong_to, weapon_of},
             gives, reconcile,
         },
     },

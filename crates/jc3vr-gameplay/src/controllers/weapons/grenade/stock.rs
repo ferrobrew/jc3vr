@@ -23,12 +23,10 @@ use jc3gi::{
     equipment::weapon::WeaponBase,
     game::GameObject,
 };
+use jc3vr_body::controllers::scheme;
 use parking_lot::Mutex;
 
-use crate::controllers::{
-    scheme,
-    weapons::{config::WEAPONS_CONFIG, engine},
-};
+use crate::controllers::weapons::{config::WEAPONS_CONFIG, engine};
 
 /// The local player's grenades as the game counts them.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]

@@ -1,8 +1,8 @@
 //! Registers the systems above the aim with the aim: the weapon handling's and the hand bodies'
-//! hooks into the aim update and the per-weapon update ([`crate::controllers::aim::hooks`]), the
+//! hooks into the aim update and the per-weapon update ([`jc3vr_body::controllers::aim::hooks`]), the
 //! weapon handling's contributions around the local player's weapon handling
-//! ([`crate::controllers::aim_state::PreWeaponHook`]), and the vehicle handling's mounted-gun fact
-//! ([`crate::controllers::facts::mounted`]).
+//! ([`jc3vr_body::controllers::aim_state::PreWeaponHook`]), and the vehicle handling's mounted-gun fact
+//! ([`jc3vr_body::controllers::facts::mounted`]).
 //!
 //! The aim calls into each of these on every update, so the install refuses to finish with one
 //! missing: [`register`] panics naming it.
@@ -10,17 +10,20 @@
 use std::fmt::Write as _;
 
 use jc3gi::character::character::Character;
+use jc3vr_body::controllers::{
+    aim::{hooks, hooks::AimHooks},
+    aim_state,
+    aim_state::{PreWeaponHook, PreWeaponHookFn},
+    facts::mounted,
+};
 
 use crate::controllers::{
-    aim::hooks::{self, AimHooks},
-    aim_state::{self, PreWeaponHook, PreWeaponHookFn},
-    facts::mounted,
     physical_hands, vehicles,
     weapons::{
         c4, collide,
         dual_wield::single,
-        grenade,
-        hold::{self, button_pickup, tick as hold_tick, use_item},
+        grenade, hold,
+        hold::{button_pickup, tick as hold_tick, use_item},
         unarmed_fire,
     },
 };

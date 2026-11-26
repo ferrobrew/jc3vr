@@ -8,14 +8,13 @@ use std::time::Duration;
 
 use glam::Vec3;
 use jc3gi::{character::character::Character, graphics_engine::model_instance::ModelInstanceFlags};
+use jc3vr_body::controllers::{aim::gun, overlay::config::OVERLAY_CONFIG};
 use jc3vr_view::controllers::overlay::{
     primitive::{Anchor, DepthMode, Facing, Primitive, Rgba, Shape, Source, SpriteSize},
     store,
 };
 
-use crate::controllers::{
-    aim::gun, loadout::live, overlay::config::OVERLAY_CONFIG, weapons::docks,
-};
+use crate::controllers::{loadout::live, weapons::docks};
 
 /// Submit the docked guns' marks for `owner`, or clear them while the view is off.
 ///

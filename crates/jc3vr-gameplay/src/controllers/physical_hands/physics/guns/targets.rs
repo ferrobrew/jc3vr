@@ -6,12 +6,12 @@
 use std::sync::OnceLock;
 
 use glam::Vec3;
+use jc3vr_body::controllers::{hands::CockpitHand, physics::steps::steps};
 use jc3vr_input::frame::Hand;
 
 pub(crate) use crate::controllers::weapons::gun_bodies::apply;
 use crate::controllers::{
-    hands::CockpitHand,
-    physical_hands::physics::{guns::GunHolds, state::steps},
+    physical_hands::physics::guns::GunHolds,
     weapons::{config::HeftConfig, gun_bodies},
 };
 
@@ -60,11 +60,11 @@ mod tests {
     use std::num::NonZeroUsize;
 
     use glam::Quat;
+    use jc3vr_body::controllers::hands::pose as hand_pose;
     use jc3vr_input::frame::Pose;
 
     use super::*;
     use crate::controllers::{
-        hands::pose as hand_pose,
         physical_hands::{
             palm::PalmBox,
             physics::guns::{

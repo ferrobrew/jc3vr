@@ -12,7 +12,7 @@
 //! the hub's offset from the standard place, limited in length, or a [`SEAT_OVERRIDES`] entry's.
 //!
 //! The input tick publishes the correction for the vehicle ([`publish`]). The frame half of the
-//! pose composition ([`crate::controllers::roomscale::compose_cockpit`]) eases toward it, and back
+//! pose composition ([`jc3vr_body::controllers::roomscale::compose_cockpit`]) eases toward it, and back
 //! to nothing through a seat transition ([`facts::driving::advance`]), and adds it to the composed cockpit
 //! position after the posture, the seated reference, and the crouch have been resolved, so it
 //! neither feeds them nor is undone by them. The view, the hands, and the grab volumes are all
@@ -31,9 +31,10 @@
 use std::time::Duration;
 
 use glam::Vec3;
+use jc3vr_body::controllers::facts;
 use parking_lot::Mutex;
 
-use crate::controllers::{facts, vehicles::fit::SETTLE};
+use crate::controllers::vehicles::fit::SETTLE;
 
 /// Where the hub sits from the eyes in the standard driving position, cockpit frame (+X right, +Y
 /// up, +Z back), metres. The standard is the middle of a road car's ergonomic range: the wheel's

@@ -10,10 +10,9 @@
 //!
 //! [`GrapplingHook::UpdateDualTetherHandling`]: jc3gi::equipment::grappling_hook::GrapplingHook::UpdateDualTetherHandling
 
-use crate::{
-    controllers::mode::{AirborneVariant, Detection, Mode, OnFootVariant},
-    grapple::physical::config::TetherTuning,
-};
+use jc3vr_body::controllers::mode::{AirborneVariant, Detection, Mode, OnFootVariant};
+
+use crate::grapple::physical::config::TetherTuning;
 
 /// What the tether retract needs to know of the tick.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -63,15 +62,13 @@ pub fn retract_value(depth_m: f32, config: &TetherTuning) -> f32 {
 #[cfg(test)]
 mod tests {
     use glam::Vec3;
+    use jc3vr_body::controllers::{
+        intent::yank::HandLine,
+        mode::{Traversal, VehicleClass, VehicleSeat},
+    };
 
     use super::*;
-    use crate::{
-        controllers::{
-            bindings::yank::HandLine,
-            mode::{Traversal, VehicleClass, VehicleSeat},
-        },
-        grapple::physical::{config::GRAPPLE, pull::LinePull},
-    };
+    use crate::grapple::physical::{config::GRAPPLE, pull::LinePull};
 
     fn tick(tethers: u32) -> TetherTick {
         TetherTick {

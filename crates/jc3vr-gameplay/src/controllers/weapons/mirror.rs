@@ -1,25 +1,29 @@
-//! The weapon handling's part of the body mirror ([`crate::controllers::body::mirror`]): the
+//! The weapon handling's part of the body mirror ([`jc3vr_body::controllers::body::mirror`]): the
 //! sockets' copied interaction targets drawn on each mirror pass through the registered sampler
 //! ([`sample_attachments`]), and the pouches' render placement compared with their input targets
 //! after each render publication ([`pouches_rendered`]).
 
 use glam::Vec3;
-use jc3vr_view::controllers::overlay::primitive::{Anchor, Primitive};
-
-use crate::controllers::{
-    body::mirror::{
-        self, ATTACHMENT_AXIS_M, ATTACHMENT_RING_M, AttachmentCounts, AttachmentPass, BONE_WIDTH,
-        EMPTY, FRAME, NO_FIT, OCCUPIED, Plane, PouchRenderStatus, SampleId, TARGET, TARGET_RING_M,
-        line, ring,
+use jc3vr_body::controllers::{
+    body::{
+        mirror,
+        mirror::{
+            ATTACHMENT_AXIS_M, ATTACHMENT_RING_M, AttachmentCounts, AttachmentPass, BONE_WIDTH,
+            EMPTY, FRAME, NO_FIT, OCCUPIED, Plane, PouchRenderStatus, SampleId, TARGET,
+            TARGET_RING_M, line, ring,
+        },
     },
     overlay::config::OVERLAY_CONFIG,
-    weapons::{
-        docks::{
-            self, SocketUse,
-            attachments::{Occupancy, PoseSource, Sample},
-        },
-        pouch_models::attachments::RenderSample as PouchRenderSample,
+};
+use jc3vr_view::controllers::overlay::primitive::{Anchor, Primitive};
+
+use crate::controllers::weapons::{
+    docks,
+    docks::{
+        SocketUse,
+        attachments::{Occupancy, PoseSource, Sample},
     },
+    pouch_models::attachments::RenderSample as PouchRenderSample,
 };
 
 /// The body mirror's attachment sampler ([`mirror::register_attachment_sampler`]): the sockets'

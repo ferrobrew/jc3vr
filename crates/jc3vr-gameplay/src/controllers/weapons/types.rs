@@ -1,10 +1,10 @@
 //! The weapon handling's public readout types: what the tick's two halves hand each other and the
 //! bindings, and what the debug UI reads back.
 
+use jc3vr_body::controllers::grab::{GrabVolume, GripTarget};
 use jc3vr_input::frame::Hand;
 
 use crate::controllers::{
-    grab::{GrabVolume, GripTarget},
     loadout::grab::SocketRefusal,
     weapons::{
         engine::HeldWeapon,

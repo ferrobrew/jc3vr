@@ -14,8 +14,7 @@
 use std::num::NonZeroUsize;
 
 use jc3gi::character::character::Character;
-
-use crate::controllers::physical_hands::{bodies::owner_of, characters::engine};
+use jc3vr_body::controllers::physics::{bodies::owner_of, characters as engine};
 
 /// Write back the ragdolling timers of `character`, held by its body `body`, so no get-up
 /// condition holds: the total below zero, as the ragdolling state task keeps it while the

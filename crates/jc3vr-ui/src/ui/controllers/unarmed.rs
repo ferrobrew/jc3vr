@@ -4,7 +4,7 @@
 use std::time::Duration;
 
 use egui::Ui;
-use jc3vr_gameplay::controllers::{
+use jc3vr_body::controllers::{
     body::unarmed::{
         MASKABLE_LAYERS, UnarmedBodyConfig, UnarmedStatus, UnarmedVerdict, WeaponAnimations,
         layer_label,

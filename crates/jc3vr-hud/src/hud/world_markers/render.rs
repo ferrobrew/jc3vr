@@ -18,7 +18,7 @@ use jc3gi::{
     graphics_engine::{device::Device, graphics_engine::GraphicsEngine, texture::Texture},
     ui::ui_manager::UIManager,
 };
-use jc3vr_gameplay::controllers::aim::{
+use jc3vr_body::controllers::aim::{
     marker_rays as raycast,
     marker_rays::{Sight, Timed},
 };

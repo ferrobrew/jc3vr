@@ -5,21 +5,20 @@
 //! tick ([`crate::controllers::physical_hands::main_thread_tick`]) only on that thread.
 
 use glam::Vec3;
+use jc3vr_body::controllers::{haptics, physics::bodies};
 use jc3vr_input::{
     frame::Hand,
     haptics::cues::{Event, Sustain},
 };
 
-use crate::controllers::{
-    haptics,
-    physical_hands::{
-        HandStatus, PhysicalHandsConfig, ShoveReport, State, bodies,
-        contact::{Surface, SurfaceHit},
-        engine,
-        shove::{self, ShoveTuning},
-        sounds::{self, Impact, ImpactKind},
-        tuning::PALMS,
-    },
+use crate::controllers::physical_hands::{
+    HandStatus, PhysicalHandsConfig, ShoveReport, State,
+    contact::{Surface, SurfaceHit},
+    engine, shove,
+    shove::ShoveTuning,
+    sounds,
+    sounds::{Impact, ImpactKind},
+    tuning::PALMS,
 };
 
 /// A palm meeting a solid surface on a tick.

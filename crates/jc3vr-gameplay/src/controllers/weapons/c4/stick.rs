@@ -22,21 +22,16 @@
 //! [`StickTuning::push_mps`]: crate::controllers::weapons::c4::tuning::StickTuning::push_mps
 
 use glam::Vec3;
+use jc3vr_body::controllers::{
+    aim::{ray::Ray, raycast, raycast::CastOptions},
+    hands::held::held_matrix,
+};
 use jc3vr_input::frame::Pose;
 
-use crate::controllers::{
-    aim::{
-        ray::Ray,
-        raycast::{self, CastOptions},
-    },
-    hands::held::held_matrix,
-    weapons::{
-        c4::{
-            self,
-            tuning::{C4Tuning, StickTuning},
-        },
-        config::WEAPONS_CONFIG,
-    },
+use crate::controllers::weapons::{
+    c4,
+    c4::tuning::{C4Tuning, StickTuning},
+    config::WEAPONS_CONFIG,
 };
 
 /// A surface touching the held charge.

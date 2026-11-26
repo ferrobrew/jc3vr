@@ -49,15 +49,11 @@ use jc3gi::{
     character::{character::Character, inventory::Inventory},
     equipment::weapon::{WeaponBase, WeaponData},
 };
+use jc3vr_body::controllers::{hands::ik, haptics, scheme, scheme::CONTROLLERS_ENABLED};
 use jc3vr_input::haptics::cues::Event;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::controllers::{
-    hands::ik,
-    haptics, scheme,
-    scheme::CONTROLLERS_ENABLED,
-    weapons::{config::WEAPONS_CONFIG, fire, hold::tick, reload},
-};
+use crate::controllers::weapons::{config::WEAPONS_CONFIG, fire, hold::tick, reload};
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new()

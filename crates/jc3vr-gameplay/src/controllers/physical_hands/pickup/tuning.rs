@@ -1,10 +1,9 @@
 //! The pickups' fixed tuning: the reach, the weight limits, the hand's strength on what it holds,
 //! the drive toward the hand, and the throw.
 
-use crate::controllers::{
-    physical_hands::{config::PickupConfig, physics::config::HAND_BODIES},
-    physics::GRAVITY_MPS2,
-};
+use jc3vr_body::controllers::physics::GRAVITY_MPS2;
+
+use crate::controllers::physical_hands::{config::PickupConfig, physics::config::HAND_BODIES};
 
 /// The pickups' tuning, fixed at [`PICKUP`] apart from what [`PickupConfig`] sets from the debug UI
 /// ([`PickupTuning::configured`]).

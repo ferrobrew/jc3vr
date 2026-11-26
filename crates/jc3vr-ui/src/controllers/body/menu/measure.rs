@@ -2,7 +2,7 @@
 //! distance between the controllers' grips.
 
 use glam::Vec3;
-use jc3vr_gameplay::controllers::body::calibration::Unavailable;
+use jc3vr_body::controllers::body::calibration::Unavailable;
 use jc3vr_input::{
     frame,
     frame::{Hand, TrackedPose},

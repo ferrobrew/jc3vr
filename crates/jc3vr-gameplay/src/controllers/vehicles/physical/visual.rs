@@ -4,6 +4,7 @@
 use std::time::Duration;
 
 use glam::Vec3;
+use jc3vr_body::controllers::grab::cockpit::ControlKind;
 use jc3vr_input::frame::Hand;
 use jc3vr_view::controllers::{
     cockpit::CockpitTransform,
@@ -13,9 +14,7 @@ use jc3vr_view::controllers::{
     },
 };
 
-use crate::controllers::vehicles::physical::{
-    ControlKind, ControlState, Placement, yoke::YokeFrame,
-};
+use crate::controllers::vehicles::physical::{ControlState, Placement, yoke::YokeFrame};
 
 pub(crate) fn submit(
     placement: &Placement,

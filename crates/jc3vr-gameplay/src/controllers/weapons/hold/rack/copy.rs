@@ -28,18 +28,20 @@ use jc3gi::{
     equipment::weapon::{WeaponBase, WeaponState},
     types::math::Matrix4,
 };
+use jc3vr_body::controllers::physics::refs::Strong;
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
 use crate::controllers::{
     loadout::{Delivery, TakeSource},
     weapons::{
-        engine::{self, character_object, slot_of},
+        engine,
+        engine::{character_object, slot_of},
+        hold,
         hold::{
-            self, SNAP_S,
-            pickup::{self, TakeOptions},
-            rack::paired::{self, Member},
-            refs::Strong,
+            SNAP_S, pickup,
+            pickup::TakeOptions,
+            rack::{paired, paired::Member},
             source::{Freed, SourceRefusal},
         },
         inventory::{

@@ -26,23 +26,26 @@ use std::time::{Duration, Instant};
 
 pub use config::StuntConfig;
 use jc3gi::input::input_action_map::Action;
+use jc3vr_body::controllers::{
+    fingers::{
+        grip,
+        grip::{Grip, GripSource, catalogue::GripPose},
+    },
+    haptics,
+    intent::hold::{Desired, MapKind, Target, Want},
+};
 use jc3vr_input::{
     frame::Hand,
     haptics::cues::{Event, Sustain},
 };
 use parking_lot::Mutex;
 
-use crate::controllers::{
-    bindings::hold::{Desired, MapKind, Target, Want},
-    fingers::grip::{self, Grip, GripSource, catalogue::GripPose},
-    haptics,
-    physical_hands::{
-        PhysicalHandsConfig, climb,
-        config::PHYSICAL_HANDS_CONFIG,
-        stunt::{
-            engine::Entry,
-            solve::{Decision, StuntKind, Tick, Tracker, Tuning},
-        },
+use crate::controllers::physical_hands::{
+    PhysicalHandsConfig, climb,
+    config::PHYSICAL_HANDS_CONFIG,
+    stunt::{
+        engine::Entry,
+        solve::{Decision, StuntKind, Tick, Tracker, Tuning},
     },
 };
 

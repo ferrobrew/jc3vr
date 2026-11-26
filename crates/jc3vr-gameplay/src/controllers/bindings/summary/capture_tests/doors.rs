@@ -1,8 +1,10 @@
-use super::*;
-use crate::controllers::{
-    grab::{self, target::TargetReach},
-    physical_hands::{DoorProvider, grasp::TargetKind},
+use jc3vr_body::controllers::{
+    grab,
+    grab::{target::TargetReach, world_reach::TargetKind},
 };
+
+use super::*;
+use crate::controllers::physical_hands::DoorProvider;
 
 fn row(hand: Hand) -> Row {
     Row {

@@ -3,12 +3,12 @@
 //! `docs/engine/gameplay/grapple-pipeline.md`.
 //!
 //! The grapple's aim sees weapons lying in the world through a patch scoped to the grapple's pass
-//! of the aim ray ([`crate::controllers::aim::grapple_weapons`]), which also publishes what the
+//! of the aim ray ([`jc3vr_body::controllers::aim::grapple_weapons`]), which also publishes what the
 //! aim hit, and the steal notes the guns in characters' hands and holsters out to the snatch's
 //! range ([`crate::controllers::weapons::hold::steal`]). On each input tick:
 //!
 //! 1. [`targets`] offers the grip one remote target ([`GrabVolume::Snatch`], ranked
-//!    [`Tier::Remote`](crate::controllers::grab::Tier::Remote), taken only when nothing at all is
+//!    [`Tier::Remote`](jc3vr_body::controllers::grab::Tier::Remote), taken only when nothing at all is
 //!    in reach) for the empty grapple hand on foot, with the hook free and the grapple button up
 //!    ([`target`]): the weapon, loose object, or car door under the grapple's aim, or the weapon or
 //!    loose object lying in the world or gun in a character's hands or holster nearest the aim's
@@ -77,6 +77,19 @@ use std::num::NonZeroUsize;
 
 use glam::Vec3;
 use jc3gi::character::character::Character;
+use jc3vr_body::controllers::{
+    aim,
+    aim::grapple_weapons,
+    facts::{line, seat},
+    grab::{GrabVolume, GripTarget, Mark, MarkAt, Provided, latch::GripLatch},
+    haptics,
+    intent::{
+        controls::ButtonControl,
+        hold::Desired,
+        yank::{ArmedLine, HandLine, YankConfig, YankDetector},
+    },
+    mode::{Detection, Mode, VehicleClass},
+};
 use jc3vr_input::{frame::Hand, haptics::cues::Event};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
@@ -87,18 +100,8 @@ pub use crate::controllers::snatch::{
     refusal::Refusal,
 };
 use crate::controllers::{
-    aim::{self, grapple_weapons},
-    bindings::{
-        controls::ButtonControl,
-        hold::Desired,
-        tables,
-        yank::{ArmedLine, HandLine, YankConfig, YankDetector},
-    },
-    facts::line,
-    grab::{GrabVolume, GripTarget, Mark, MarkAt, Provided, latch::GripLatch},
-    haptics,
+    bindings::tables,
     loadout::slot_label,
-    mode::{Detection, Mode, VehicleClass},
     physical_hands,
     snatch::{
         arrival::ArrivalWatch,
@@ -129,7 +132,7 @@ pub(crate) fn available_in(detection: &Detection) -> bool {
         Mode::Vehicle(seat) if seat.class == VehicleClass::Car => unsafe {
             Character::GetLocalPlayerCharacter()
                 .as_ref()
-                .is_some_and(|character| crate::grapple::seat::rides_in_seat(character))
+                .is_some_and(|character| seat::rides_in_seat(character))
         },
         _ => false,
     }

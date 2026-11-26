@@ -12,15 +12,15 @@ use jc3gi::{
     character::{character::Character, player::Player},
     physics::{PfxCharacterInstance, PhysicsSystem},
 };
-
-use crate::controllers::{
+use jc3vr_body::controllers::{
     aim::raycast::RayHit,
-    physical_hands::{
-        bodies::is_type,
-        contact::{Surface, SurfaceHit},
-        physics::havok_vector,
-    },
+    physics::bodies::is_type,
     telemetry::{Applied, note_force},
+};
+
+use crate::controllers::physical_hands::{
+    contact::{Surface, SurfaceHit},
+    physics::havok_vector,
 };
 
 /// Why an engine call did not run.

@@ -1,10 +1,11 @@
 //! The mode detector and the bindings' injection.
 
 use egui::Ui;
-use jc3vr_gameplay::controllers::{
-    bindings::{Idle, TickReport, hold::Phase, inject::Outcome},
+use jc3vr_body::controllers::{
+    intent::hold::Phase,
     mode::{Detection, ModeSnapshot},
 };
+use jc3vr_gameplay::controllers::bindings::{Idle, TickReport, inject::Outcome};
 
 use crate::ui::controllers::yes_no;
 

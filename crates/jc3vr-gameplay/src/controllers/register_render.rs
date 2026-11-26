@@ -5,6 +5,7 @@
 //! render layer's own, which it registers itself.
 
 use jc3gi::graphics_engine::{device::Device, texture::Texture};
+use jc3vr_body::controllers::{aim, body::estimator, overlay, presentation::PlayerBodyEdits};
 use jc3vr_core::frame_timing::{self, Slot};
 use jc3vr_view::{
     controllers::overlay::inputs::{OverlayInputs, register_overlay_inputs},
@@ -18,10 +19,7 @@ use jc3vr_view::{
 };
 use windows::Win32::Graphics::Direct3D11::ID3D11DeviceContext;
 
-use crate::{
-    controllers::{aim, body::estimator, overlay, presentation::PlayerBodyEdits, weapons::scope},
-    hooks::camera::height,
-};
+use crate::{controllers::weapons::scope, hooks::camera::height};
 
 pub(super) fn register() {
     register_dispatch_tick(DispatchTick::WorldOverlay, overlay::tick);

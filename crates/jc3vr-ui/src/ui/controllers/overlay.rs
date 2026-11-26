@@ -2,7 +2,7 @@
 //! settings live in the global visualization drawer.
 
 use egui::Ui;
-use jc3vr_gameplay::controllers::body::mirror;
+use jc3vr_body::controllers::body::mirror;
 use jc3vr_render::controllers::overlay::pass::OverlayStatus;
 use jc3vr_view::controllers::overlay::primitive::Source;
 

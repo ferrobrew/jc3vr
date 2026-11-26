@@ -9,11 +9,12 @@
 //! removal), and the registration order is the order the removal steps run in. Both are load-bearing
 //! for startup and ejection timing, so neither is reshuffled for grouping's sake.
 
+use jc3vr_body::hooks::{animation, character};
 use jc3vr_capture::screenshot::harness::{register_pipeline, register_single_pass};
 use jc3vr_core::hooks::{self as core_hooks, online};
 use jc3vr_gameplay::{
     controllers, grapple,
-    hooks::{animation, character, equipment, input, sim},
+    hooks::{equipment, input, sim},
 };
 use jc3vr_hud::{controllers::map, egui_impl::register_desktop_overlay, hooks::ui, hud};
 #[cfg(feature = "profiler")]

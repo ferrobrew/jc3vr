@@ -3,7 +3,7 @@
 //!
 //! Out of the driver's seat the weapon in the hands is the player's wielded weapon, so the per-hand
 //! gun aim already aims and fires it along the holding hand's sight line
-//! ([`crate::controllers::aim::gun`]), and the character-level aim point follows the gun hand. The
+//! ([`jc3vr_body::controllers::aim::gun`]), and the character-level aim point follows the gun hand. The
 //! seated character's upper body is another matter: the vehicle aim blend
 //! ([`VehicleAimBlendState::UpdateSamplers`]) turns the torso and the gun arm toward the aim
 //! control's own weapon point ([`PlayerAimControl::m_AimPos`]), which the game sets from the gaze.
@@ -20,9 +20,10 @@
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use glam::Vec3;
+use jc3vr_body::controllers::{mode::VehicleSeat, scheme};
 use jc3vr_input::frame::Hand;
 
-use crate::controllers::{mode::VehicleSeat, scheme, vehicles::config::VEHICLES_CONFIG};
+use crate::controllers::vehicles::config::VEHICLES_CONFIG;
 
 /// The passenger aim's readout.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
@@ -96,8 +97,10 @@ static STARTS: AtomicU64 = AtomicU64::new(0);
 
 #[cfg(test)]
 mod tests {
+    use jc3vr_body::controllers::mode::VehicleClass;
+
     use super::*;
-    use crate::controllers::{mode::VehicleClass, vehicles::config::VehiclesConfig};
+    use crate::controllers::vehicles::config::VehiclesConfig;
 
     fn seat(driver: bool) -> Option<VehicleSeat> {
         Some(VehicleSeat {

@@ -21,18 +21,16 @@
 use std::time::{Duration, Instant};
 
 use glam::{Quat, Vec3};
+use jc3vr_body::controllers::physics::rigid::{RigidBody, Velocities};
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
-use crate::controllers::{
-    physical_hands::rigid::{RigidBody, Velocities},
-    weapons::reload::{
-        extraction::MagazineId,
-        loose::Loose,
-        plan::{LoadKind, WellFrame},
-        serial::Identity,
-        wells::WellEntry,
-    },
+use crate::controllers::weapons::reload::{
+    extraction::MagazineId,
+    loose::Loose,
+    plan::{LoadKind, WellFrame},
+    serial::Identity,
+    wells::WellEntry,
 };
 
 /// The inserted magazine a held one can knock out, in the cockpit frame at the player's scale.

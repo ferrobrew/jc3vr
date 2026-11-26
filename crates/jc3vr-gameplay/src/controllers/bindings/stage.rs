@@ -30,7 +30,7 @@
 //! ([`Grenade::UpdatePostSim`](jc3gi::equipment::explosive::Grenade::UpdatePostSim)). The stage
 //! therefore runs there whenever the queue runs, and elsewhere (a paused update, which skips the
 //! queue and the ammunition manager's pass, or an inline game stage) it runs with [`Spawn`]
-//! refused, which acts that spawn such objects check through [`spawn`](crate::controllers::intent::stage::spawn).
+//! refused, which acts that spawn such objects check through [`spawn`](jc3vr_body::controllers::intent::stage::spawn).
 //!
 //! Where the poll stage runs outside the input job (the load state, and the frontend before its
 //! main menu, call the input update inline on the game thread with no world update after it), the
@@ -49,20 +49,23 @@
 
 use std::cell::RefCell;
 
+use jc3vr_body::controllers::{
+    gamepad_setting,
+    intent::{
+        hold::{ActionWrite, DevicePoll, Phase},
+        stage::{Spawn, SpawnScope},
+    },
+    telemetry::{Write, note_injected},
+};
 use jc3vr_core::{
     frame_timing::{self, Slot},
     thread_role::{self, ThreadRole},
 };
 use parking_lot::Mutex;
 
-use crate::controllers::{
-    bindings::{
-        hold::{ActionWrite, DevicePoll, Phase},
-        inject::{self, Landing, Outcome},
-    },
-    gamepad_setting,
-    intent::stage::{Spawn, SpawnScope},
-    telemetry::{Write, note_injected},
+use crate::controllers::bindings::{
+    inject,
+    inject::{Landing, Outcome},
 };
 
 /// Where the game stage runs relative to the poll stage that fed it.
@@ -155,7 +158,7 @@ pub(crate) struct PollRecord {
 pub(crate) struct Segment {
     pub writes: Vec<ActionWrite>,
     /// Whether the hold tracker learns where these writes landed
-    /// ([`HoldTracker::landed`](crate::controllers::bindings::hold::HoldTracker::landed)).
+    /// ([`HoldTracker::landed`](jc3vr_body::controllers::intent::hold::HoldTracker::landed)).
     pub tracked: bool,
 }
 
@@ -204,7 +207,7 @@ pub(crate) fn poll_stage(dt: f32, poll: DevicePoll) -> Option<f32> {
 
 /// The game stage: run the bindings' decisions and acts for the tick the last poll stage
 /// published, and the active-input-device pin, with `spawn` saying whether the acts may spawn
-/// objects that register for the world's updates ([`spawn`](crate::controllers::intent::stage::spawn)). Does nothing when no poll stage ran
+/// objects that register for the world's updates ([`spawn`](jc3vr_body::controllers::intent::stage::spawn)). Does nothing when no poll stage ran
 /// since the last game stage (the device poll was skipped, or the frontend or load state already
 /// ran this tick inline).
 ///
@@ -364,9 +367,9 @@ fn injected_write(write: &ActionWrite, landing: &Landing) -> Write {
 #[cfg(test)]
 mod tests {
     use jc3gi::input::input_action_map::Action;
+    use jc3vr_body::controllers::intent::hold::{MapKind, Phase, Target};
 
     use super::*;
-    use crate::controllers::bindings::hold::{MapKind, Phase, Target};
 
     const RECORD: PollRecord = PollRecord {
         dt: 1.0 / 60.0,

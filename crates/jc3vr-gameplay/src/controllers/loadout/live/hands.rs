@@ -9,6 +9,7 @@
 //! A move the table already shows sends nothing, and a hand the table disagrees about is left as
 //! the table has it.
 
+use jc3vr_body::controllers::grab::socket::Socket;
 use jc3vr_input::frame::Hand;
 
 use crate::controllers::loadout::{
@@ -16,7 +17,6 @@ use crate::controllers::loadout::{
     event::Event,
     item::{ItemKind, WeaponType},
     live::HeldOther,
-    socket::Socket,
     table::{Loadout, Place},
     transition::{Release, Removal, RemovalWhy, Take, TakeSource},
 };

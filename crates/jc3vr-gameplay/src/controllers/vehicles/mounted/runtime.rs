@@ -17,26 +17,28 @@ use jc3gi::{
     equipment::weapon::{WeaponBase, WeaponState},
     input::input_action_map::Action,
 };
+use jc3vr_body::controllers::{
+    hands,
+    held::native::weapon_at,
+    intent::hold::{Desired, MapKind, Target, Want},
+    physics::{bodies::physics_object_of, refs::Weak},
+    scheme,
+};
 use jc3vr_input::frame::Hand;
 use jc3vr_view::controllers::cockpit::CockpitTransform;
 use parking_lot::Mutex;
 
 use crate::controllers::{
-    bindings::hold::{Desired, MapKind, Target, Want},
-    hands,
     loadout::{Delivery, TakeSource},
-    physical_hands::{
-        self, config::PHYSICAL_HANDS_CONFIG, doors::engine::vehicle_of as resolve_vehicle,
-        physics_object_of,
-    },
-    scheme,
+    physical_hands,
+    physical_hands::{config::PHYSICAL_HANDS_CONFIG, doors::engine::vehicle_of as resolve_vehicle},
     vehicles::{
         is_mounted_weapon,
         mounted::{
             Held, Mount, MountedGun,
             control::{Identity, Input, Tear},
-            gunner_seat, handle, mount_matches,
-            native::{self, Motor, Prompt},
+            gunner_seat, handle, mount_matches, native,
+            native::{Motor, Prompt},
             pivot_and_barrel,
             vehicle_hold::VehicleHold,
         },
@@ -44,8 +46,8 @@ use crate::controllers::{
     },
     weapons::{
         FinishInputs,
-        engine::{character_object, object_of, weapon_at},
-        hold::{armed, pickup, refs::Weak},
+        engine::{character_object, object_of},
+        hold::{armed, pickup},
     },
 };
 

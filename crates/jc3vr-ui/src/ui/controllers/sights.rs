@@ -3,14 +3,18 @@
 //! sight table's line format.
 
 use egui::Ui;
-use jc3vr_gameplay::controllers::{
+use jc3vr_body::controllers::{
     aim,
     aim::{
         sights,
-        sights::{SightSource, tuning},
+        sights::{
+            SightSource,
+            config::{SightOverride, SightTable},
+            tuning,
+        },
     },
-    config::{ControllersConfig, SightOverride, SightTable},
 };
+use jc3vr_gameplay::controllers::config::ControllersConfig;
 
 use crate::ui::controllers::{vec3, vec3_drag};
 

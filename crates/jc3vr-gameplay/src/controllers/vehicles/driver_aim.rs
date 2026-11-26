@@ -6,7 +6,7 @@
 //! vehicle aims from the stored point ([`Vehicle::m_AimingTargetPosition`]); turrets turn toward it
 //! at their own limited rate, so a hand-aimed turret trails the hand as it trails the gaze. The
 //! detour substitutes the dominant hand's aim point, cast by the aim update earlier in the same
-//! tick ([`crate::controllers::aim`]), for the local player's vehicle. Off, or with no hand aim, the
+//! tick ([`jc3vr_body::controllers::aim`]), for the local player's vehicle. Off, or with no hand aim, the
 //! gaze point goes through unchanged.
 
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -17,9 +17,10 @@ use jc3gi::{
     types::math::Vector3,
     vehicle::vehicle::{Seat, Vehicle},
 };
+use jc3vr_body::controllers::{aim, scheme};
 use re_utilities::hook_library::HookLibrary;
 
-use crate::controllers::{aim, scheme, vehicles::config::VEHICLES_CONFIG};
+use crate::controllers::vehicles::config::VEHICLES_CONFIG;
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&SET_AIM_TARGET_POSITION_BINDER)

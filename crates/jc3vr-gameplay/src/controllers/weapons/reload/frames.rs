@@ -8,12 +8,10 @@
 //! by it.
 
 use glam::{Mat4, Vec3};
+use jc3vr_body::controllers::hands::{held::away_from_palm, pose as hand_pose};
 use jc3vr_input::frame::{Hand, Pose};
 
-use crate::controllers::{
-    hands::{held::away_from_palm, pose as hand_pose},
-    weapons::reload::plan::WellFrame,
-};
+use crate::controllers::weapons::reload::plan::WellFrame;
 
 /// A gun's model frame in the cockpit frame.
 #[derive(Debug, Copy, Clone, PartialEq)]

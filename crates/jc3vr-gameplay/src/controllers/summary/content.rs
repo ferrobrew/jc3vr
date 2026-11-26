@@ -1,15 +1,15 @@
 //! The summary's content and layout model: the described rows labelled, grouped by hand, and the
 //! sizes the panel lays them out at. Pure.
 
+use jc3vr_body::controllers::{
+    intent::rows::{Control, Effect, Row},
+    mode::Mode,
+};
 use jc3vr_input::frame::Hand;
 use jc3vr_view::vr::input::semantic::bound::SourceName;
 
-use crate::controllers::{
-    bindings::tables::describe::{Control, Effect, Row},
-    mode::Mode,
-    summary::labels::{
-        ActionLabel, HOLD_KEY, ModText, Text, action_label, gesture_prefix, heading, mod_action,
-    },
+use crate::controllers::summary::labels::{
+    ActionLabel, HOLD_KEY, ModText, Text, action_label, gesture_prefix, heading, mod_action,
 };
 
 /// The labelled summary of one mode.
@@ -193,15 +193,15 @@ pub const MAX_ROW_PX: f32 = 64.0;
 #[cfg(test)]
 mod tests {
     use jc3gi::input::input_action_map::Action::*;
+    use jc3vr_body::controllers::{
+        intent::rows::{Gesture, ModAction, StickDir},
+        mode::{AirborneVariant, OnFootVariant},
+    };
     use jc3vr_input::semantic::SemanticSet;
     use jc3vr_view::vr::input::semantic::bound::{EnumeratedSource, SourceTable};
 
     use super::*;
-    use crate::controllers::{
-        bindings::tables::describe::{Gesture, ModAction, StickDir},
-        mode::OnFootVariant,
-        summary::localise::humanise,
-    };
+    use crate::controllers::summary::localise::humanise;
 
     const ON_FOOT: Mode = Mode::OnFoot(OnFootVariant::Ground);
 
@@ -296,7 +296,7 @@ mod tests {
 
     #[test]
     fn labels_that_read_the_same_appear_once() {
-        let wingsuit = Mode::Airborne(crate::controllers::mode::AirborneVariant::Wingsuit);
+        let wingsuit = Mode::Airborne(AirborneVariant::Wingsuit);
         let same = |text: Text| match text {
             Text::Game("buttonhint_air_brake") => "Air Brake".to_owned(),
             Text::Game("buttonhint_wingsuit_air_brake") => "AIR BRAKE".to_owned(),

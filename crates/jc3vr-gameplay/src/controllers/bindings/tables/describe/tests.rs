@@ -1,12 +1,10 @@
 use jc3gi::input::input_action_map::Action::*;
+use jc3vr_body::controllers::mode::{OnFootVariant, VehicleClass, VehicleSeat};
 use jc3vr_input::semantic::SemanticSet;
 use jc3vr_view::vr::input::semantic::bound::EnumeratedSource;
 
 use super::*;
-use crate::controllers::{
-    bindings::tables::coverage::{all_contexts, all_modes, injected},
-    mode::{OnFootVariant, VehicleClass, VehicleSeat},
-};
+use crate::controllers::bindings::tables::coverage::{all_contexts, all_modes, injected};
 
 const ON_FOOT: Mode = Mode::OnFoot(OnFootVariant::Ground);
 

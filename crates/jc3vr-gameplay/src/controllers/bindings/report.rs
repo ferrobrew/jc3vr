@@ -1,15 +1,15 @@
 //! Diagnostic snapshots and write outcomes for the controller bindings.
 
 use jc3gi::input::input_action_map::Action;
+use jc3vr_body::controllers::{
+    intent::hold::{ActionWrite, MapKind, Phase},
+    mode::Detection,
+};
 use parking_lot::Mutex;
 
-use crate::controllers::{
-    bindings::{
-        hold::{ActionWrite, MapKind, Phase},
-        inject::{Landing, Outcome},
-        recovery::HandRecovery,
-    },
-    mode::Detection,
+use crate::controllers::bindings::{
+    inject::{Landing, Outcome},
+    recovery::HandRecovery,
 };
 
 /// Why the bindings did not inject on a tick.

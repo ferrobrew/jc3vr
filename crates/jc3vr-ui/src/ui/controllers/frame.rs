@@ -2,7 +2,7 @@
 
 use egui::Ui;
 use glam::Vec3;
-use jc3vr_gameplay::controllers::haptics;
+use jc3vr_body::controllers::haptics;
 use jc3vr_input::{
     frame,
     frame::{Hand, HandFrame, HandJoint, TrackedPose},

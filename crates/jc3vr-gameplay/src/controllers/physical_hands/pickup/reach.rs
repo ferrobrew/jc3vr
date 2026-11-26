@@ -5,29 +5,31 @@ use std::num::NonZeroUsize;
 
 use glam::Vec3;
 use jc3gi::{equipment::weapon::WeaponBase, physics::PfxLayer, vehicle::vehicle::Vehicle};
+use jc3vr_body::controllers::{
+    aim::{ray::Ray, raycast, raycast::CastOptions},
+    grab::world_reach::{Reach, TargetKind},
+    physics::bodies,
+};
 use parking_lot::Mutex;
 
-use crate::controllers::{
-    aim::{
-        ray::Ray,
-        raycast::{self, CastOptions},
+use crate::controllers::physical_hands::{
+    articulated,
+    bodies::{classify, describe},
+    characters,
+    characters::CharactersConfig,
+    collider_view::{model::Aabb, nearby},
+    contact::{Surface, SurfaceHit},
+    doors,
+    doors::{DoorsConfig, acquisition::PanelReach},
+    engine as hand_engine,
+    grab_view::model::{RayOutcome, ReachRay},
+    grasp,
+    palm::PalmBox,
+    pickup::{
+        PickupTuning,
+        diagnostics::scan::{Branch, Scan, ScanEntry, ScanResult},
     },
-    physical_hands::{
-        articulated, bodies,
-        characters::{self, CharactersConfig},
-        collider_view::{model::Aabb, nearby},
-        contact::{Surface, SurfaceHit},
-        doors::{self, DoorsConfig, acquisition::PanelReach},
-        engine as hand_engine,
-        grab_view::model::{RayOutcome, ReachRay},
-        grasp::{self, Reach, TargetKind},
-        palm::PalmBox,
-        pickup::{
-            PickupTuning,
-            diagnostics::scan::{Branch, Scan, ScanEntry, ScanResult},
-        },
-        world::World,
-    },
+    world::World,
 };
 
 /// The existing reach readouts and a bounded copy of its evaluated branches.
@@ -97,7 +99,7 @@ pub(crate) unsafe fn floor_weapons(hands: &[Vec3], radius: f32) -> Vec<FloorWeap
                 && !scan.bodies.contains(&body)
                 && let Some(object) = bodies::owner_of(body)
                 && (hand_engine::is_character(object)
-                    || matches!(bodies::classify(object, body), Ok(TargetKind::Weapon)))
+                    || matches!(classify(object, body), Ok(TargetKind::Weapon)))
             {
                 scan.bodies.push(body);
             }
@@ -118,10 +120,7 @@ pub(crate) unsafe fn floor_weapons(hands: &[Vec3], radius: f32) -> Vec<FloorWeap
             return false;
         };
         if !unsafe { hand_engine::is_character(object) }
-            && !matches!(
-                unsafe { bodies::classify(object, body) },
-                Ok(TargetKind::Weapon)
-            )
+            && !matches!(unsafe { classify(object, body) }, Ok(TargetKind::Weapon))
         {
             return false;
         }
@@ -239,10 +238,8 @@ pub(crate) unsafe fn reach_with(
                 else {
                     return false;
                 };
-                matches!(
-                    unsafe { bodies::classify(object, body) },
-                    Ok(TargetKind::Weapon)
-                ) && surface_visible(origin, hit, ordinary.as_ref())
+                matches!(unsafe { classify(object, body) }, Ok(TargetKind::Weapon))
+                    && surface_visible(origin, hit, ordinary.as_ref())
             });
             [
                 Some((Some(k), to, ordinary)),
@@ -329,7 +326,7 @@ pub(crate) unsafe fn reach_with(
             };
             reach = character;
         } else if !matches!(
-            unsafe { bodies::classify(reach.object, reach.body) },
+            unsafe { classify(reach.object, reach.body) },
             Ok(TargetKind::Weapon)
         ) || unsafe { bodies::read(reach.body, reach.object) }.is_err()
         {
@@ -586,7 +583,7 @@ unsafe fn judge(
         judged.vehicles.push(object);
     }
     // SAFETY: forwarded from the caller; the hit was found this tick.
-    let what = unsafe { bodies::describe(object) };
+    let what = unsafe { describe(object) };
     // A vehicle's door, open or closed, wherever the hand reaches it, before anything else: the
     // player may stand on the vehicle whose door they open.
     // SAFETY: forwarded from the caller; the hit was found this tick.
@@ -619,7 +616,7 @@ unsafe fn judge(
         return;
     }
     // SAFETY: forwarded from the caller; the hit was found this tick.
-    let classified = unsafe { bodies::classify(object, body) };
+    let classified = unsafe { classify(object, body) };
     // A rejected semantic class cannot be restored through the articulation fallback.
     // A body joined to the world or another body is taken whatever its weight, since its
     // constraint carries it.
@@ -697,13 +694,13 @@ unsafe fn articulated_kind(
 #[cfg(test)]
 mod tests {
     use glam::Quat;
+    use jc3vr_body::controllers::grab::{
+        GrabVolume, GripTarget, Mark, MarkAt, PickupKind, RemoteKind, resolve,
+    };
     use jc3vr_input::frame::Hand;
 
     use super::*;
-    use crate::controllers::{
-        grab::{GrabVolume, GripTarget, Mark, MarkAt, PickupKind, RemoteKind, resolve},
-        physical_hands::pickup::PICKUP,
-    };
+    use crate::controllers::physical_hands::pickup::PICKUP;
 
     fn weapon() -> FloorWeapon {
         FloorWeapon {

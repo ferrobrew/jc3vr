@@ -12,8 +12,7 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use jc3gi::character::character::{Character, WeaponInput};
-
-use crate::controllers::{scheme, scheme::CONTROLLERS_ENABLED};
+use jc3vr_body::controllers::{scheme, scheme::CONTROLLERS_ENABLED};
 
 /// The draw-on-fire suppression's readout.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]

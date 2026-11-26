@@ -16,12 +16,10 @@ use jc3gi::{
     game::GameObject,
     physics::PhysicsGameObject,
 };
+use jc3vr_body::controllers::{aim::targets::weak_target, physics::refs::Weak};
 
-use crate::controllers::{
-    aim::targets::weak_target,
-    weapons::{
-        c4::placed::ChargeIdentity as Identity, engine, grenade::catch::body_of, hold::refs::Weak,
-    },
+use crate::controllers::weapons::{
+    c4::placed::ChargeIdentity as Identity, engine, grenade::catch::body_of,
 };
 
 /// A placed charge's allocation identity and weak lifetime during retrieval.

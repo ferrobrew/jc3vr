@@ -4,16 +4,21 @@
 
 use std::time::Instant;
 
+use jc3vr_body::controllers::{
+    grab::world_reach::{Reach, SeatAccess, TargetKind},
+    physics::bodies,
+};
 use jc3vr_input::frame::Hand;
 
 use crate::controllers::physical_hands::{
-    bodies,
-    characters::{
-        self, CharactersConfig, GunnerOut, Regrip, SeatAccess, SeatOut, Seize, SeizeStep,
-    },
-    doors::{self, LatchStep},
-    grasp::{self, Grip, PalmMotion, Reach, TargetKind},
-    physics::{self, Shove, ShoveForce},
+    characters,
+    characters::{CharactersConfig, GunnerOut, Regrip, SeatOut, Seize, SeizeStep},
+    doors,
+    doors::LatchStep,
+    grasp,
+    grasp::{Grip, PalmMotion},
+    physics,
+    physics::{Shove, ShoveForce},
     pickup::{
         Held, HeldKind, JointInputs, PickupState, PickupTuning, TickOutcome, tick::held_mass,
     },

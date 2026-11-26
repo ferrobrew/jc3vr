@@ -8,16 +8,16 @@ use std::{
 };
 
 use glam::{Quat, Vec2, Vec3};
+// The step counter moved down to the physics substrate; re-exported here so the hand bodies keep
+// their paths until the crate cut.
+use jc3vr_body::{
+    controllers::hands, controllers::hands::CockpitHand, controllers::mode, controllers::scheme,
+};
 use jc3vr_input::frame::Hand;
 use jc3vr_view::controllers::cockpit::CockpitTransform;
 use parking_lot::Mutex;
 
-// The step counter moved down to the physics substrate; re-exported here so the hand bodies keep
-// their paths until the crate cut.
-pub(super) use crate::controllers::physics::steps::{count_step, current_at, steps};
 use crate::controllers::{
-    hands::{self, CockpitHand},
-    mode,
     physical_hands::{
         PhysicalHandsConfig, STATE, free_hands,
         grasp::{AngularTracker, VelocityTracker},
@@ -35,7 +35,6 @@ use crate::controllers::{
         pickup::PICKUP,
         tuning::PALMS,
     },
-    scheme,
     weapons::config::WEAPONS_CONFIG,
 };
 

@@ -13,8 +13,7 @@ use jc3gi::{
     interaction::{InteractionGraphEntry, InteractionGraphEntryArray},
     weapon_placement_rule::WeaponPlacementRule,
 };
-
-use crate::controllers::weapons::hold::refs::Strong;
+use jc3vr_body::controllers::physics::refs::Strong;
 
 /// Walk the weapons `entries` offer, each held alive by a strong reference, until `visit` returns
 /// true. An array that is null, reversed, or not a whole number of entries is not walked, and at

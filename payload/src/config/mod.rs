@@ -43,8 +43,8 @@
 //! [`FarFieldConfig`](jc3vr_view::far_field::FarFieldConfig) in `far_field`,
 //! [`FoveationConfig`](jc3vr_view::vr::FoveationConfig) in `vr::config`,
 //! [`CameraConfig`](jc3vr_view::hooks::camera::CameraConfig) in `hooks::camera::config`,
-//! [`BodyIkConfig`](jc3vr_gameplay::hooks::character::BodyIkConfig) in `hooks::character::config`,
-//! [`MovementConfig`](jc3vr_gameplay::hooks::input::MovementConfig) in `hooks::input::config`,
+//! [`BodyIkConfig`](jc3vr_body::hooks::character::BodyIkConfig) in `hooks::character::config`,
+//! [`MovementConfig`](jc3vr_body::hooks::input::MovementConfig) in `hooks::input::config`,
 //! [`OnlineConfig`](jc3vr_core::hooks::online::OnlineConfig) in `hooks::online`,
 //! [`FsrConfig`](jc3vr_view::fsr::FsrConfig) in `fsr::config`,
 //! [`HudConfig`](jc3vr_hud::hud::HudConfig) in `hud::config`,
@@ -54,7 +54,7 @@
 //! [`RecorderConfig`](jc3vr_tooling::recorder::RecorderConfig) in `recorder`,
 //! [`ControllersConfig`](jc3vr_gameplay::controllers::ControllersConfig) in `controllers::config`,
 //! [`TestingConfig`](jc3vr_tooling::testing::TestingConfig) in `testing::config`, and
-//! [`BodyDimensions`](jc3vr_gameplay::controllers::body::BodyDimensions) in `controllers::body`.
+//! [`BodyDimensions`](jc3vr_body::controllers::body::BodyDimensions) in `controllers::body`.
 
 pub(crate) mod format;
 pub(crate) mod load;
@@ -63,6 +63,10 @@ pub(crate) mod slots;
 
 use std::sync::Once;
 
+use jc3vr_body::{
+    controllers::body::BodyDimensions,
+    hooks::{character::BodyIkConfig, input::MovementConfig},
+};
 use jc3vr_core::{
     config::{
         engine,
@@ -70,10 +74,7 @@ use jc3vr_core::{
     },
     hooks::online::OnlineConfig,
 };
-use jc3vr_gameplay::{
-    controllers::{ControllersConfig, body::BodyDimensions},
-    hooks::{character::BodyIkConfig, input::MovementConfig},
-};
+use jc3vr_gameplay::controllers::ControllersConfig;
 use jc3vr_hud::hud::HudConfig;
 use jc3vr_render::hooks::graphics_engine::config::{ExposureConfig, PostFxConfig};
 use jc3vr_tooling::{director::DirectorConfig, recorder::RecorderConfig, testing::TestingConfig};
@@ -176,7 +177,7 @@ pub struct Config {
     pub testing: TestingConfig,
     #[serde(default)]
     pub online: OnlineConfig,
-    /// The player's body dimensions; see [`jc3vr_gameplay::controllers::body`].
+    /// The player's body dimensions; see [`jc3vr_body::controllers::body`].
     pub body: BodyDimensions,
 }
 impl Config {

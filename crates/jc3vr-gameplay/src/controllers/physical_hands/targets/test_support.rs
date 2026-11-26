@@ -2,22 +2,23 @@ use std::{num::NonZeroUsize, time::Instant};
 
 use glam::Vec3;
 use jc3gi::vehicle::vehicle::DoorSlot;
+use jc3vr_body::controllers::grab::{
+    GripTarget,
+    world_reach::{DoorTarget, Reach, TargetKind},
+};
 use jc3vr_input::frame::Hand;
 
-use crate::controllers::{
-    grab::GripTarget,
-    physical_hands::{
-        config::PhysicalHandsConfig,
-        contact::PointProbe,
-        doors::{DoorTarget, pressure::Press},
-        grasp::{AngularTracker, Reach, TargetKind, VelocityTracker},
-        palm::PROBE_POINTS,
-        pickup::{HeldReport, PickupState, Request},
-        shove::Give,
-        state::{STALE_AFTER, State},
-        status::PhysicalHandsStatus,
-        targets::{door_offer_current_in, provided_reach},
-    },
+use crate::controllers::physical_hands::{
+    config::PhysicalHandsConfig,
+    contact::PointProbe,
+    doors::pressure::Press,
+    grasp::{AngularTracker, VelocityTracker},
+    palm::PROBE_POINTS,
+    pickup::{HeldReport, PickupState, Request},
+    shove::Give,
+    state::{STALE_AFTER, State},
+    status::PhysicalHandsStatus,
+    targets::{door_offer_current_in, provided_reach},
 };
 
 /// An isolated source for the production provider and final validation helpers.

@@ -19,20 +19,25 @@ use jc3gi::{
     character::inventory::WeaponSlot,
     equipment::weapon::{WeaponBase, WeaponState},
 };
+use jc3vr_body::controllers::{
+    aim::grapple_weapons,
+    physics::refs::{Strong, Weak},
+};
 use jc3vr_input::frame::Hand;
 
 use crate::controllers::{
-    aim::grapple_weapons,
     loadout::{Delivery, TakeSource},
     weapons::{
         dual_wield::single,
-        engine::{self, slot_of},
+        engine,
+        engine::slot_of,
         hold::{
-            SNAP_S,
-            pickup::{self, Refusal, TakeOptions},
-            rack::{self, paired::Member},
-            refs::{Strong, Weak},
-            steal::{self, CharacterGun},
+            SNAP_S, pickup,
+            pickup::{Refusal, TakeOptions},
+            rack,
+            rack::paired::Member,
+            steal,
+            steal::CharacterGun,
             world::{TargetKind, WorldTarget},
         },
         inventory::engine::{strong_to, weak_to, weapon_of},

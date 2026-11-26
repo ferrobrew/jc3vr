@@ -1,11 +1,9 @@
 use std::num::NonZeroUsize;
 
 use jc3gi::vehicle::vehicle::DoorSlot;
+use jc3vr_body::controllers::{grab::world_reach::DoorTarget, physics::bodies::BodyError};
 
-use crate::controllers::physical_hands::{
-    bodies::BodyError,
-    doors::{DoorTarget, UNLATCH_PULL_M, engine::DoorError, slot_label},
-};
+use crate::controllers::physical_hands::doors::{UNLATCH_PULL_M, engine::DoorError, slot_label};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Reason {

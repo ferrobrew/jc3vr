@@ -2,8 +2,9 @@
 //! ([`C4Config`]).
 
 use glam::Vec3;
+use jc3vr_body::controllers::hands::held::HoldPlacement;
 
-use crate::controllers::{hands::held::HoldPlacement, weapons::config::C4Config};
+use crate::controllers::weapons::config::C4Config;
 
 /// The C4 tuning with its default switches.
 pub const C4: C4Tuning = C4Tuning::new();

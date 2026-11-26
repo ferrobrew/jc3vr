@@ -5,38 +5,42 @@ use std::num::NonZeroUsize;
 
 use glam::Vec3;
 use jc3gi::physics::{PfxLayer, PhysicsSystem};
+use jc3vr_body::controllers::{
+    aim::{grapple_weapons, ray::Ray, raycast, raycast::CastOptions},
+    grab::{RemoteKind, world_reach::DoorTarget},
+    physics,
+    physics::{
+        bodies::game_object_of,
+        grapple_hook::{BodyHit, local_hook},
+        refs::Weak,
+    },
+};
 
 use crate::controllers::{
-    aim::{
-        grapple_weapons,
-        ray::Ray,
-        raycast::{self, CastOptions},
-    },
-    grab::RemoteKind,
+    physical_hands,
     physical_hands::{
-        self,
         collider_view::model::Aabb,
-        doors::{
-            DoorTarget,
-            engine::{broken_off, is_vehicle_part},
-        },
-        game_object_of,
-        remote::{self, NearBody, NearKind, RagdollTarget},
+        doors::engine::{broken_off, is_vehicle_part},
+        remote,
+        remote::{NearBody, NearKind, RagdollTarget},
     },
-    physics::grapple_hook::{BodyHit, local_hook},
     snatch::{
         OfferInput, Refusal, SNATCH,
         config::SnatchSettings,
-        engine,
-        rules::{self, Candidate, PropHandling},
+        engine, rules,
+        rules::{Candidate, PropHandling},
     },
     weapons::{
-        c4::placed::{self as placed_charges, ChargeIdentity, PlacedCharge},
+        c4::{
+            placed as placed_charges,
+            placed::{ChargeIdentity, PlacedCharge},
+        },
         grenade,
         hold::{
-            rack::{self, remote::RemoteRack},
-            refs::Weak,
-            steal::{self, HolsteredTarget},
+            rack,
+            rack::remote::RemoteRack,
+            steal,
+            steal::HolsteredTarget,
             world::{TargetKind, WorldTarget},
         },
     },
@@ -58,7 +62,7 @@ pub(super) unsafe fn refresh(offer: &mut Offer, ray: &Ray, config: &SnatchSettin
             {
                 return false;
             }
-            let Ok((point, _)) = (unsafe { physical_hands::body_pose(*body, *weapon) }) else {
+            let Ok((point, _)) = (unsafe { physics::body_pose(*body, *weapon) }) else {
                 return false;
             };
             point
@@ -75,8 +79,7 @@ pub(super) unsafe fn refresh(offer: &mut Offer, ray: &Ray, config: &SnatchSettin
             if !unsafe { grapple_weapons::is_dropped_weapon(*weapon) } {
                 return false;
             }
-            let Ok((centre, orientation)) = (unsafe { physical_hands::body_pose(*body, *weapon) })
-            else {
+            let Ok((centre, orientation)) = (unsafe { physics::body_pose(*body, *weapon) }) else {
                 return false;
             };
             centre + orientation * *local_point
@@ -163,7 +166,7 @@ pub(super) unsafe fn refresh(offer: &mut Offer, ray: &Ray, config: &SnatchSettin
             if !grenade::inert_in_world(*object, *body) {
                 return false;
             }
-            let Ok((point, _)) = (unsafe { physical_hands::body_pose(*body, *object) }) else {
+            let Ok((point, _)) = (unsafe { physics::body_pose(*body, *object) }) else {
                 return false;
             };
             point
@@ -795,8 +798,7 @@ unsafe fn aimed_offer(
         {
             return None;
         }
-        let (centre, orientation) =
-            unsafe { physical_hands::body_pose(aimed.body, aimed.object) }.ok()?;
+        let (centre, orientation) = unsafe { physics::body_pose(aimed.body, aimed.object) }.ok()?;
         match unsafe { engine::hand_grenade(aimed.object) } {
             None => {}
             Some(true) => {

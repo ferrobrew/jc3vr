@@ -2,10 +2,9 @@
 
 use std::fmt;
 
-use crate::controllers::{
-    physical_hands::BodyError,
-    weapons::hold::{pickup, source::SourceRefusal},
-};
+use jc3vr_body::controllers::physics::bodies::BodyError;
+
+use crate::controllers::weapons::hold::{pickup, source::SourceRefusal};
 
 /// Why a snatch did not happen, or ended before the target reached the hand.
 #[derive(Debug, Clone, PartialEq, Eq)]

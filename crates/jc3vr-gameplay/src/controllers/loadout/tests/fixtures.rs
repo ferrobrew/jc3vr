@@ -4,6 +4,7 @@
 use std::num::NonZeroUsize;
 
 use jc3gi::{character::inventory::WeaponSlot, equipment::weapon::WeaponClass};
+use jc3vr_body::controllers::grab::socket::Socket;
 use jc3vr_input::frame::Hand;
 use pretty_assertions::assert_eq;
 
@@ -11,7 +12,7 @@ use crate::controllers::loadout::{
     binding::{Binding, ObjectAddress},
     item::{ItemId, ItemKind, WeaponType},
     projection::{SLOTS, SlotContent, project},
-    socket::{BodyLayout, Socket},
+    socket::BodyLayout,
     table::{Departure, ItemView, Loadout, Place, primary},
     transition::{Change, Take, TakeSource, Transition},
 };

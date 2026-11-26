@@ -3,15 +3,12 @@
 use std::time::Instant;
 
 use glam::{Mat4, Quat};
+use jc3vr_body::controllers::body::{mirror::SampleId, rig::frames::Frames};
 use jc3vr_input::frame::{Hand, Pose};
 
-pub use crate::controllers::body::mirror::SampleId;
-use crate::controllers::{
-    body::rig::frames::Frames,
-    weapons::{
-        docks::attachments::MAX_AGE,
-        pouch_models::{ModelPlacement, Prop, ShownPouch, on_pouch},
-    },
+use crate::controllers::weapons::{
+    docks::attachments::MAX_AGE,
+    pouch_models::{ModelPlacement, Prop, ShownPouch, on_pouch},
 };
 
 /// A pouch's missing value is distinct from one whose current source model is unavailable.

@@ -89,6 +89,17 @@ use jc3gi::{
     },
     types::math::{Matrix4, Vector3},
 };
+use jc3vr_body::controllers::{
+    aim::targets::weak_target,
+    hands::{
+        held,
+        held::{Held, Slot},
+    },
+    haptics,
+    held::native,
+    intent::controls::ButtonControl,
+    physics, scheme,
+};
 use jc3vr_input::{
     frame::{Hand, Pose},
     haptics::cues::Event,
@@ -98,18 +109,14 @@ use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
-    aim::targets::weak_target,
-    bindings::controls::ButtonControl,
-    hands::held::{self, Held, Slot},
-    haptics,
     loadout::{ObjectAddress, live},
-    physical_hands, scheme,
     weapons::{
         c4::{
             detonator::{DETONATOR_HOLD, Detonator, DetonatorStep},
             placed::{PlacedState, TakeStep},
             stage::{InputEvent, Outcome, Refusal, Stage, WeaponAction, WeaponView},
-            stick::{self as stick_by_hand, StickAt},
+            stick as stick_by_hand,
+            stick::StickAt,
             tuning::{C4, C4Tuning},
             wheel::{WheelHands, WheelStep},
         },
@@ -1106,7 +1113,7 @@ unsafe fn place_act_detonator(weapon: &mut PlantedExplosiveWeapon, user: &Charac
     };
     let base = std::ptr::from_mut(weapon).cast::<WeaponBase>();
     // SAFETY: the C4 weapon's first gun is its trigger model, live with the weapon.
-    let Some(gun) = (unsafe { engine::gun_ptr(&*base, 0) }) else {
+    let Some(gun) = (unsafe { native::gun_ptr(&*base, 0) }) else {
         return;
     };
     let matrix = Matrix4::from(held::held_matrix(grip, DETONATOR_HOLD.in_hand(hand)));
@@ -1271,7 +1278,7 @@ unsafe fn throw(
     // engine's own setter, which sets only the linear part, is the fallback.
     let explosive = unsafe { &*std::ptr::from_mut(charge).cast::<Explosive>() };
     let set = unsafe { body_of(explosive) }.is_some_and(|(body, owner)| {
-        unsafe { physical_hands::set_body_velocities(body, owner, velocity, release.angular) }
+        unsafe { physics::set_body_velocities(body, owner, velocity, release.angular) }
             .inspect_err(|error| {
                 tracing::debug!(target: "controllers", %error, "c4: the charge's body refused the release motion");
             })
@@ -1347,7 +1354,7 @@ unsafe fn slot_c4(owner: &mut Character) -> Option<&mut PlantedExplosiveWeapon> 
 /// `weapon` must be a live C4 weapon.
 unsafe fn first_weapon_data(weapon: &mut PlantedExplosiveWeapon) -> Option<*mut WeaponData> {
     let base = unsafe { &*std::ptr::from_mut(weapon).cast::<WeaponBase>() };
-    unsafe { engine::gun_ptr(base, 0) }.map(NonNull::as_ptr)
+    unsafe { native::gun_ptr(base, 0) }.map(NonNull::as_ptr)
 }
 
 #[cfg(test)]

@@ -20,16 +20,14 @@ use std::time::Instant;
 
 use glam::Vec3;
 use jc3gi::character::character::Character;
+use jc3vr_body::controllers::physics::refs::Strong;
 use parking_lot::Mutex;
 
 use crate::controllers::{
     loadout::{Departure, LostWhy, ObjectAddress, Place, live},
     weapons::{
-        hold::{equip, refs::Strong, release_diagnostics::ReleaseMotion},
-        inventory::{
-            carry,
-            engine::{self as inventory_engine, ObjectKey},
-        },
+        hold::{equip, release_diagnostics::ReleaseMotion},
+        inventory::{carry, engine as inventory_engine, engine::ObjectKey},
     },
 };
 

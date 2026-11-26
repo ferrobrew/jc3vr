@@ -4,29 +4,31 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use glam::Vec3;
+use jc3vr_body::controllers::{
+    facts, hands,
+    hands::{CockpitHand, tiers},
+    mode::VehicleSeat,
+    physics::refs::Strong,
+};
 use jc3vr_input::frame::{Hand, Pose};
 use jc3vr_view::controllers::overlay::{primitive::Source, store};
 use parking_lot::Mutex;
 
-use crate::controllers::{
-    facts,
-    hands::{self, CockpitHand, tiers},
-    mode::VehicleSeat,
-    vehicles::{
-        arm_steering as arm,
-        config::{MountedConfig, ParachuteHandlesConfig},
-        driving_view,
-        entry::VehicleEntryIdentity,
-        fit::VehicleLatch,
-        mounted::{MountedTarget, Reference},
-        mounted_grip::MountedGrip,
-        mounted_recoil,
-        parachute::{self, HandleEvent, HandleHold, HandleState},
-        physical::{self, ControlEvent, ControlState, Hold, Outputs, Placement},
-        types::{VehicleSummary, VehiclesStatus},
-        wheel_render::{self, RenderWheel},
-    },
-    weapons::hold::refs::Strong,
+use crate::controllers::vehicles::{
+    arm_steering as arm,
+    config::{MountedConfig, ParachuteHandlesConfig},
+    driving_view,
+    entry::VehicleEntryIdentity,
+    fit::VehicleLatch,
+    mounted::{MountedTarget, Reference},
+    mounted_grip::MountedGrip,
+    mounted_recoil, parachute,
+    parachute::{HandleEvent, HandleHold, HandleState},
+    physical,
+    physical::{ControlEvent, ControlState, Hold, Outputs, Placement},
+    types::{VehicleSummary, VehiclesStatus},
+    wheel_render,
+    wheel_render::RenderWheel,
 };
 
 /// The wrists' mean tilt now, degrees, positive with the leading edges down: what the wingsuit's
@@ -158,7 +160,7 @@ pub(crate) fn stand_down() {
 pub fn apply(hands: &mut [Option<CockpitHand>; 2]) {
     let tier_status = tiers::status();
     // The grapple states' anchor weights are the line's
-    // ([`crate::controllers::hands::anchor`]), not the handles'.
+    // ([`jc3vr_body::controllers::hands::anchor`]), not the handles'.
     let grapple = matches!(
         tier_status.state,
         Some(tiers::TierState::GrappleReel | tiers::TierState::GrappleHang)

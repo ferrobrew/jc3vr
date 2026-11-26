@@ -1,7 +1,7 @@
 //! Finger curls: the grip pose rows, the per-hand readout, and the finger settings.
 
 use egui::Ui;
-use jc3vr_gameplay::controllers::fingers::{
+use jc3vr_body::controllers::fingers::{
     HandFingersStatus,
     config::{FingerSource, FingersConfig},
     curl::Finger,

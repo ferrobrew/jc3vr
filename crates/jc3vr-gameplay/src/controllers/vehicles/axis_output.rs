@@ -1,15 +1,14 @@
 //! Writing a held control's or a steered stick's values over the input tables' analog writes,
 //! replacing whichever half-axes the write touches. The player-map axis writes themselves are the
-//! locomotion's ([`crate::controllers::locomotion::axis_output`]).
+//! locomotion's ([`jc3vr_body::controllers::locomotion::axis_output`]).
 
 use jc3gi::input::input_action_map::Action::*;
-
-pub(crate) use crate::controllers::locomotion::axis_output::{axis_wanted, write_move};
-use crate::controllers::{
-    bindings::hold::{Desired, MapKind, Target, Want},
-    locomotion::axis_output::{raise_analog, replace_axis},
-    vehicles::physical::Outputs,
+use jc3vr_body::controllers::{
+    intent::hold::{Desired, MapKind, Target, Want},
+    locomotion::axis_output::{axis_wanted, raise_analog, replace_axis},
 };
+
+use crate::controllers::vehicles::physical::Outputs;
 
 /// Write the held controls' axes over the tables' writes for the same actions.
 pub fn write_outputs(out: &Outputs, desired: &mut Vec<Desired>) {

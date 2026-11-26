@@ -31,14 +31,15 @@ mod stride;
 
 use body_rig::smooth::smoothstep_between;
 use glam::{Mat3, Quat, Vec3};
+use jc3vr_body::controllers::{
+    body,
+    body::rig::frames::SkeletonLandmarks,
+    grab::{Candidate, GrabVolume},
+};
 use jc3vr_input::frame::Hand;
 pub(crate) use stride::StrideFilter;
 
-use crate::controllers::{
-    body::{self, rig::frames::SkeletonLandmarks},
-    grab::{Candidate, GrabVolume},
-    loadout::Socket,
-};
+use crate::controllers::loadout::Socket;
 
 /// The sockets' fixed reach.
 pub const SOCKETS: SocketTuning = SocketTuning {

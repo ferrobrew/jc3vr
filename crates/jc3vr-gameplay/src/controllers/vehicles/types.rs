@@ -2,17 +2,17 @@
 //! debug UI and the status rows read back.
 
 use glam::{Vec2, Vec3};
-
-use crate::controllers::{
-    grab::{GrabVolume, GripTarget},
+use jc3vr_body::controllers::{
+    grab::{GrabVolume, GripTarget, cockpit::ControlKind},
     mode::VehicleSeat,
-    vehicles::{
-        arm_steering::{ArmPose, PitchInput},
-        fit::FitReadout,
-        mounted::MountedGun,
-        physical::{ControlCue, ControlEvent, ControlKind, ControlState, Outputs},
-        wheel::WheelFrame,
-    },
+};
+
+use crate::controllers::vehicles::{
+    arm_steering::{ArmPose, PitchInput},
+    fit::FitReadout,
+    mounted::MountedGun,
+    physical::{ControlCue, ControlEvent, ControlState, Outputs},
+    wheel::WheelFrame,
 };
 
 /// The mounted gun as the last input tick saw it.

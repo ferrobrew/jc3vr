@@ -44,25 +44,22 @@ use jc3gi::{
     equipment::weapon::WeaponBase,
     types::shared_ptr::SharedPtr,
 };
+use jc3vr_body::controllers::{hands::ik, held::native::weapon_at, physics::refs::Strong};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
-    hands::ik,
     loadout::{GiveSource, Place, live, slot_label},
     weapons::{
         config::WEAPONS_CONFIG,
-        engine::{object_of, slot_of, weapon_at},
+        engine::{object_of, slot_of},
         hold::{
-            equip,
-            rack::{
-                self,
-                paired::{CopyRequest, Member},
-            },
-            refs::Strong,
+            equip, rack,
+            rack::paired::{CopyRequest, Member},
         },
+        inventory,
         inventory::{
-            self, engine,
+            engine,
             gives::authority::{Authority, Identity},
             reconcile,
         },

@@ -17,7 +17,7 @@ pub(crate) mod runtime;
 
 use std::{error::Error, fmt, time::Duration};
 
-use crate::controllers::intent::config::BindingsConfig;
+use jc3vr_body::controllers::intent::config::BindingsConfig;
 
 /// How many physical controls the arbiter covers, the recorded decision's width.
 pub(crate) const CONTROLS: usize = tracking_format::input::policy::PROTECTED_CONTROLS;

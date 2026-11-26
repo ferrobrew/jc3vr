@@ -4,13 +4,13 @@ use std::num::NonZeroUsize;
 
 use glam::{Mat4, Vec3};
 use jc3gi::character::character::{Character, SafeBoneIndex};
+use jc3vr_body::controllers::{
+    grab::world_reach::{CharacterTarget, SeatAccess, Seated},
+    physics::{bodies::owner_of, characters as engine},
+};
 
-use crate::controllers::physical_hands::{
-    bodies::owner_of,
-    characters::{
-        CharacterTarget, CharactersConfig, SeatAccess, Seated, Seize, bone_frame, engine, frame,
-        open_door_near,
-    },
+use crate::controllers::physical_hands::characters::{
+    CharactersConfig, Seize, bone_frame, frame, open_door_near,
 };
 
 /// # Safety

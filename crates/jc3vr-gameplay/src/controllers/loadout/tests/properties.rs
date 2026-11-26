@@ -2,6 +2,7 @@
 //! all, the transitions say what the table became, the player's moves touch only their item, and
 //! the spawn reset never changes who is who.
 
+use jc3vr_body::controllers::grab::socket::Socket;
 use jc3vr_input::frame::Hand;
 use pretty_assertions::assert_eq;
 use proptest::{collection::vec, prelude::*};
@@ -12,7 +13,7 @@ use crate::controllers::loadout::{
     event::Event,
     item::{ItemId, ItemKind, WeaponType},
     reset::{CacheKind, ResetKind, SlotObject},
-    socket::{BodyLayout, Socket},
+    socket::BodyLayout,
     table::{ItemView, Loadout, Place},
     transition::{
         Change, Give, GiveSource, LostWhy, Release, Removal, RemovalWhy, Restored, Take,

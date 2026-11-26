@@ -4,10 +4,9 @@ use std::num::NonZeroUsize;
 
 use glam::Vec3;
 use jc3gi::vehicle::vehicle::DoorSlot;
+use jc3vr_body::controllers::grab::world_reach::Reach;
 
-use crate::controllers::physical_hands::{
-    bodies::Unclassified, doors::acquisition::PanelRefusal, grasp::Reach,
-};
+use crate::controllers::physical_hands::{bodies::Unclassified, doors::acquisition::PanelRefusal};
 
 pub(crate) const SCAN_CAPACITY: usize = 12;
 

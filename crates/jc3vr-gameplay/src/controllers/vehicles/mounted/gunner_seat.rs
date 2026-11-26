@@ -22,14 +22,17 @@ use jc3gi::{
     character::character::Character, equipment::weapon::WeaponState,
     input::input_action_map::Action, vehicle::vehicle::NStateTask_InputVehicleEnterTask,
 };
+use jc3vr_body::controllers::{
+    held::native::weapon_at,
+    intent::hold::{Desired, MapKind, Target, Want},
+    physics::{bodies::physics_object_of, refs::Weak},
+};
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
 use crate::controllers::{
-    bindings::hold::{Desired, MapKind, Target, Want},
-    physical_hands::{doors::engine::vehicle_of, physics_object_of},
+    physical_hands::doors::engine::vehicle_of,
     vehicles::mounted::{handle, pivot_and_barrel},
-    weapons::{engine::weapon_at, hold::refs::Weak},
 };
 
 /// Where the gunner of an unmanned vehicle gun stands: behind the handles' midpoint, along the

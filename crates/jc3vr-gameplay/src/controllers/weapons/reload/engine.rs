@@ -29,39 +29,36 @@ use jc3gi::{
     spawn_system::SpawnSystem,
     types::math::{Matrix4, Vector3},
 };
+use jc3vr_body::{
+    controllers::{
+        aim::gun,
+        hands::{ik, ik::TickTarget, late},
+        held::native::{gun_count, gun_ptr},
+    },
+    hooks::character::acts::resolve_act_id,
+};
 use jc3vr_input::frame::{Hand, Pose};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::{
-    controllers::{
-        aim::gun,
-        hands::{
-            ik::{self, TickTarget},
-            late,
-        },
-        weapons::{
-            dual_wield::single,
-            empty,
-            engine::{
-                FULL_WEIGHT, credit_reserve, gun_at, gun_at_mut, gun_count, gun_ptr, limited_ammo,
-                reserve,
-            },
-            fire,
-            hold::armed,
-            inventory::{carry, engine as inventory_engine},
-            reload::{
-                ammo::{self, Ammo, NativeAmmo},
-                bones,
-                chamber::{ActionKind, Chamber},
-                frames, gate,
-                loose::{self, EjectRounds, Loose, Retention},
-                render, wells,
-            },
-            sounds::{self, GunSound},
-        },
+use crate::controllers::weapons::{
+    dual_wield::single,
+    empty,
+    engine::{FULL_WEIGHT, credit_reserve, gun_at, gun_at_mut, limited_ammo, reserve},
+    fire,
+    hold::armed,
+    inventory::{carry, engine as inventory_engine},
+    reload::{
+        ammo,
+        ammo::{Ammo, NativeAmmo},
+        bones,
+        chamber::{ActionKind, Chamber},
+        frames, gate, loose,
+        loose::{EjectRounds, Loose, Retention},
+        render, wells,
     },
-    hooks::character::acts::resolve_act_id,
+    sounds,
+    sounds::GunSound,
 };
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -834,7 +831,7 @@ pub(super) unsafe fn dump_cylinder(address: usize) -> Option<i32> {
 /// The local player's reload start, refused while the weapon is reloaded by hand (see [`gate`]).
 #[detour(address = jc3gi::character::character::Character::StartReloadingWieldingWeapon_ADDRESS)]
 fn start_reloading_wielding_weapon(character: *mut Character) {
-    let local = crate::controllers::hands::ik::local_character();
+    let local = ik::local_character();
     // The per-hand tick's guns each ask for the wielded weapon's reload from their own check.
     // SAFETY: the game passes the live character whose reload it starts.
     let is_local = unsafe { character.as_ref() }.is_some_and(|c| c.m_IsLocalCharacter);

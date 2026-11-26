@@ -5,7 +5,7 @@
 //! The landing reads the gun's body frame relative to the gun's own frame once at the hook's bite,
 //! while the gun lies still, so each tick of the flight knows where the gun's grip is and what pose
 //! its body must reach for the gun to sit on a hand's canonical grip
-//! ([`crate::controllers::hands::grip::canonical_on_wrist_frame`]).
+//! ([`jc3vr_body::controllers::hands::grip::canonical_on_wrist_frame`]).
 //!
 //! The watch logs, for a few ticks after the catch, the weapon's state, whether its model is drawn,
 //! whether the rigid grip pinned it, and the arrival slide's progress, and shows the weapon's model
@@ -18,17 +18,16 @@ use jc3gi::{
     character::character::Character, equipment::weapon::WeaponBase,
     graphics_engine::model_instance::ModelInstanceFlags,
 };
+use jc3vr_body::controllers::{
+    aim::gun,
+    hands::{grip, ik, pose as hand_pose},
+    physics::rigid::BodyPose,
+};
 use jc3vr_input::frame::{Hand, Pose};
 
 use crate::controllers::{
-    aim::gun,
-    hands::{grip, ik, pose as hand_pose},
     loadout::live,
-    physical_hands::rigid::BodyPose,
-    snatch::{
-        SNATCH,
-        landing::{self, Turning},
-    },
+    snatch::{SNATCH, landing, landing::Turning},
     weapons::{engine::gun_pose, hold::act},
 };
 

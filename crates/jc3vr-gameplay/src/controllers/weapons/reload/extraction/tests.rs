@@ -1,11 +1,9 @@
 use glam::Quat;
+use jc3vr_body::controllers::grab::{Mark, MarkAt, resolve::resolve};
 use test_case::test_case;
 
 use super::*;
-use crate::controllers::{
-    grab::{Mark, MarkAt, resolve::resolve},
-    weapons::reload::tuning::RELOAD,
-};
+use crate::controllers::weapons::reload::tuning::RELOAD;
 
 const CONFIG: ExtractionConfig = ExtractionConfig::new();
 

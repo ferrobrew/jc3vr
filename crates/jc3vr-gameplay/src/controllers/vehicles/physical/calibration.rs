@@ -20,18 +20,13 @@ use std::{
 };
 
 use glam::Vec3;
+use jc3vr_body::controllers::{grab::cockpit::ControlKind, haptics};
 use jc3vr_core::config::engine::{paths, write};
 use jc3vr_input::{frame::Hand, haptics::cues::Event};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
-use crate::controllers::{
-    haptics,
-    vehicles::physical::{
-        ControlKind,
-        native::{CockpitAsset, YokeAsset},
-    },
-};
+use crate::controllers::vehicles::physical::native::{CockpitAsset, YokeAsset};
 
 /// The calibration file's name, in the configuration directory.
 pub const FILE_NAME: &str = "cockpit_calibration.toml";

@@ -17,9 +17,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use detours_macro::detour;
 use jc3gi::character::player::{AimMode, Player};
+use jc3vr_body::controllers::{scheme, scheme::CONTROLLERS_ENABLED};
 use re_utilities::hook_library::HookLibrary;
-
-use crate::controllers::{scheme, scheme::CONTROLLERS_ENABLED};
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new()

@@ -1,6 +1,13 @@
 //! Per-physical-hand gun trigger ownership and neutral transfer between gameplay consumers.
 
 use jc3gi::input::input_action_map::Action;
+use jc3vr_body::controllers::{
+    intent::{
+        controls::{ButtonControl, Controls},
+        hold::{Desired, MapKind},
+    },
+    mode::{AirborneVariant, Mode},
+};
 use jc3vr_input::{
     frame::Hand,
     semantic::{
@@ -12,8 +19,6 @@ use jc3vr_view::vr::input::semantic::bound::{Physical, PhysicalSet};
 
 use crate::controllers::{
     bindings::{
-        controls::{ButtonControl, Controls},
-        hold::{Desired, MapKind},
         intents::{Intent, SemanticInput},
         tables::{
             declare::{TableCtx, declare},
@@ -21,7 +26,6 @@ use crate::controllers::{
             sink::{Axis, Press, Sink},
         },
     },
-    mode::{AirborneVariant, Mode},
     weapons::capabilities::{GunHand, GunOwner},
 };
 
@@ -291,19 +295,20 @@ impl Sink for ChangedRoutes<'_> {
 
 #[cfg(test)]
 mod tests {
+    use jc3vr_body::controllers::{
+        intent::{
+            config::BindingsConfig,
+            grapple_button::GrappleContext,
+            hold::{Target, Want},
+        },
+        mode::{OnFootVariant, VehicleClass, VehicleSeat},
+    };
     use jc3vr_input::semantic::vocabulary::WingsuitAction;
     use jc3vr_view::vr::input::semantic::{bound::PhysicalSet, defaults::default_binding};
 
     use super::*;
     use crate::controllers::{
-        bindings::{
-            grapple_button::GrappleContext,
-            hold::{Target, Want},
-            intents::simulate::simulate,
-            tables::Bindings,
-        },
-        config::BindingsConfig,
-        mode::{OnFootVariant, VehicleClass, VehicleSeat},
+        bindings::{intents::simulate::simulate, tables::Bindings},
         weapons::capabilities::{Capabilities, NativePair, TriggerClaim, trigger_claims},
     };
 

@@ -19,10 +19,9 @@ use jc3gi::{
         shared_ptr::SharedPtr,
     },
 };
+use jc3vr_body::controllers::physics::grapple_hook as hook;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
-
-use crate::controllers::physics::grapple_hook as hook;
 
 /// Only addresses identifying the owned wire and its native near-end proxy accompany the pose.
 #[derive(Copy, Clone)]

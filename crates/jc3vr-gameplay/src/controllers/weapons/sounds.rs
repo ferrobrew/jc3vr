@@ -11,8 +11,7 @@ use jc3gi::{
     equipment::weapon::{WeaponBase, WeaponData},
     physics::GameMaterialId,
 };
-
-use crate::controllers::weapons::engine::gun_ptr;
+use jc3vr_body::controllers::held::native::gun_ptr;
 
 /// A move of the hands that plays a sound at the gun.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]

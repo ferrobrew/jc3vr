@@ -10,7 +10,8 @@
 //! game's hint queue keeps running, so its timing and cooldowns behave as normal. The controls
 //! summary stands in for them.
 
-use jc3vr_gameplay::controllers::{config::CONTROLLERS_CONFIG, scheme};
+use jc3vr_body::controllers::scheme;
+use jc3vr_gameplay::controllers::config::CONTROLLERS_CONFIG;
 
 /// Whether to hide the hints: the toggle, with the controllers' master switch, and the controller
 /// scheme.

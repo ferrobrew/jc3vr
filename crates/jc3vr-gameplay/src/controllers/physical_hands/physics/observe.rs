@@ -8,6 +8,9 @@ use std::{
 };
 
 use glam::Vec3;
+use jc3vr_body::controllers::{
+    clock::TimeScale, hands::CockpitHand, haptics, physics::steps::steps,
+};
 use jc3vr_input::{
     frame::{Hand, Pose},
     haptics::cues::Sustain,
@@ -16,9 +19,6 @@ use jc3vr_view::{headpose, headpose::teleport, vr::recenter_count};
 use parking_lot::Mutex;
 
 use crate::controllers::{
-    clock::TimeScale,
-    hands::CockpitHand,
-    haptics,
     physical_hands::{
         config::PHYSICAL_HANDS_CONFIG,
         physics::{
@@ -30,7 +30,7 @@ use crate::controllers::{
             state::{
                 CLEANUP_REGISTERED, MIN_PRESSURE_LOAD, RENDER_MAX_TURN_RAD,
                 RENDER_TURN_DEADBAND_RAD, SHARED, STALE_AFTER, TRACKERS_AT_REST, Target,
-                acting_palms, enabled, steps,
+                acting_palms, enabled,
             },
         },
         state::VELOCITY_SMOOTHING_S,

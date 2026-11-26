@@ -5,13 +5,11 @@
 //! down onto them ([`crate::controllers::weapons::reload::belt_speedloaders`]).
 
 use glam::{Mat4, Quat, Vec3};
+use jc3vr_body::controllers::body::rig::frames::Frames;
 
-use crate::controllers::{
-    body::rig::frames::Frames,
-    weapons::{
-        pouch_models::{MODEL_PLACEMENT, on_pouch, owned::OwnedModel, render_matrix},
-        reload::{BeltSpeedloader, plan::MAX_HELD_ROUNDS},
-    },
+use crate::controllers::weapons::{
+    pouch_models::{MODEL_PLACEMENT, on_pouch, owned::OwnedModel, render_matrix},
+    reload::{BeltSpeedloader, plan::MAX_HELD_ROUNDS},
 };
 
 /// Each gun hand's speedloader on its belt pouch, by

@@ -10,10 +10,10 @@
 //! threshold, and reports nothing else meanwhile.
 
 use glam::Vec2;
+use jc3vr_body::controllers::intent::controls::ButtonControl;
 use jc3vr_input::{frame::Hand, semantic::vocabulary::MenuAction};
 
 use crate::controllers::bindings::{
-    controls::ButtonControl,
     intents::Intents,
     tables::sink::{Direction, MenuLatch, PadLatch, pad_of, pad_press_of},
 };

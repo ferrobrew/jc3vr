@@ -30,24 +30,25 @@ use jc3gi::{
         vehicle::Vehicle,
     },
 };
+use jc3vr_body::controllers::{
+    grab::cockpit::ControlKind,
+    mode::{VehicleClass, VehicleSeat},
+};
 use jc3vr_view::controllers::cockpit::CockpitTransform;
 use smol_str::SmolStr;
 
-use crate::controllers::{
-    mode::{VehicleClass, VehicleSeat},
-    vehicles::{
-        driving_view::{self, Correction, Entry, Target},
-        entry::VehicleEntry,
-        physical::{
-            ControlKind, calibration,
-            native::{self, CockpitFit, NativeStick},
-        },
-        tuning::PhysicalControlsTuning,
-        wheel::{
-            self, BarsFrame, CockpitParts as _, PartWheel, WheelFrame, WheelPartView, WheelSource,
-        },
-        wheel_render::RenderWheel,
+use crate::controllers::vehicles::{
+    driving_view,
+    driving_view::{Correction, Entry, Target},
+    entry::VehicleEntry,
+    physical::{
+        calibration, native,
+        native::{CockpitFit, NativeStick},
     },
+    tuning::PhysicalControlsTuning,
+    wheel,
+    wheel::{BarsFrame, CockpitParts as _, PartWheel, WheelFrame, WheelPartView, WheelSource},
+    wheel_render::RenderWheel,
 };
 
 /// The wheel and the handlebars as fitted this tick.

@@ -1,11 +1,11 @@
 //! The `VR: BODY` page's rows for each step of the flow: the summary, the two measuring steps,
 //! and the review for each stance.
 
-use jc3vr_gameplay::controllers::{
+use jc3vr_body::controllers::{
     body,
     body::calibration::{Stance, height_from_eye_height},
-    config::CONTROLLERS_CONFIG,
 };
+use jc3vr_gameplay::controllers::config::CONTROLLERS_CONFIG;
 
 use crate::{
     controllers::{

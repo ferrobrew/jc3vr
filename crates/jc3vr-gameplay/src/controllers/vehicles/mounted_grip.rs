@@ -10,13 +10,13 @@
 //! the character mans it.
 
 use glam::Vec3;
-use jc3vr_input::frame::Hand;
-
-use crate::controllers::{
+use jc3vr_body::controllers::{
     grab::{Candidate, GrabVolume},
     hands::tiers,
-    vehicles::{config::MountedConfig, physical::Release},
 };
+use jc3vr_input::frame::Hand;
+
+use crate::controllers::vehicles::{config::MountedConfig, physical::Release};
 
 /// The hands' hold on the handles.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]

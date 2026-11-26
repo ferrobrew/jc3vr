@@ -5,7 +5,7 @@
 //! [`crate::controllers::vehicles::config`]); the wheel and the handlebars are placed where the
 //! vehicle's own are where they are found ([`crate::controllers::vehicles::wheel`]), so they arrive
 //! here as frames already in the cockpit frame. A control is held only while the hand stays closed
-//! ([`ClosedHand`](crate::controllers::bindings::controls::ClosedHand)): a grip press with the
+//! ([`ClosedHand`](jc3vr_body::controllers::intent::controls::ClosedHand)): a grip press with the
 //! hand's grip near the control takes it, and only the hand opening lets go. A holding hand that
 //! drifts off the control keeps working it from its position and rotation however far it goes. A
 //! hand that merely passes through a control, or rests there with the grip open, takes nothing.
@@ -54,29 +54,26 @@ pub(crate) mod visual;
 pub mod yoke;
 
 use glam::{Quat, Vec2, Vec3};
+use jc3vr_body::controllers::grab::{Candidate, GrabVolume, cockpit::ControlKind};
 use jc3vr_input::frame::Hand;
 
-pub use crate::controllers::{
-    grab::cockpit::ControlKind,
-    vehicles::physical::{cues::ControlCue, handlebars::bar_ends, sticks::stick_deflection},
+pub use crate::controllers::vehicles::physical::{
+    cues::ControlCue, handlebars::bar_ends, sticks::stick_deflection,
 };
-use crate::controllers::{
-    grab::{Candidate, GrabVolume},
-    vehicles::{
-        config::PhysicalControlsConfig,
-        physical::{
-            buttons::{ButtonEvent, ButtonInputs, ButtonPlacement, ButtonState, step_buttons},
-            cues::TravelCues,
-            handlebars::{BarsLatch, bar_grab_point, bars_now, step_bars},
-            held_wheel::step_wheel,
-            levers::{ThrottleState, step_lever, throttle_constrain, throttle_zero},
-            sticks::{deflection3, step_stick},
-            yoke::{YokeFrame, YokeState, grab_yoke, nearest_horn, step_yoke},
-        },
-        steering::{CueArming, WheelCue, WheelGrip},
-        tuning::{LeverSpec, PhysicalControlsTuning, StickSpec},
-        wheel::{BarsFrame, WheelFrame},
+use crate::controllers::vehicles::{
+    config::PhysicalControlsConfig,
+    physical::{
+        buttons::{ButtonEvent, ButtonInputs, ButtonPlacement, ButtonState, step_buttons},
+        cues::TravelCues,
+        handlebars::{BarsLatch, bar_grab_point, bars_now, step_bars},
+        held_wheel::step_wheel,
+        levers::{ThrottleState, step_lever, throttle_constrain, throttle_zero},
+        sticks::{deflection3, step_stick},
+        yoke::{YokeFrame, YokeState, grab_yoke, nearest_horn, step_yoke},
     },
+    steering::{CueArming, WheelCue, WheelGrip},
+    tuning::{LeverSpec, PhysicalControlsTuning, StickSpec},
+    wheel::{BarsFrame, WheelFrame},
 };
 
 /// Whether `kind`'s toggle is on.

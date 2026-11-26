@@ -1,12 +1,10 @@
 use std::{num::NonZeroUsize, time::Duration};
 
+use jc3vr_body::controllers::physics::bodies::BodyError;
 use jc3vr_input::frame::Hand;
 
 use super::*;
-use crate::controllers::{
-    physical_hands::BodyError,
-    weapons::reload::loose::{LooseCounts, State, body_status},
-};
+use crate::controllers::weapons::reload::loose::{LooseCounts, State, body_status};
 
 fn key(index: usize) -> DropKey {
     DropKey {

@@ -7,13 +7,14 @@ use jc3gi::{
     character::{character::Character, inventory::WeaponSlot},
     equipment::weapon::WeaponBase,
 };
+use jc3vr_body::controllers::grab::GrabVolume;
 use jc3vr_input::frame::Hand;
 
 use crate::controllers::{
-    grab::GrabVolume,
     loadout::{ItemView, LoadoutSnapshot, Socket},
     weapons::hud_feed::{
-        grab_hint::{self, Hint, Place},
+        grab_hint,
+        grab_hint::{Hint, Place},
         icon::IconId,
     },
 };

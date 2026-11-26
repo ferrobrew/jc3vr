@@ -27,10 +27,10 @@
 //! has left the attraction by a margin, so a hand resting on its edge does not buzz.
 
 use glam::Vec3;
+use jc3vr_body::controllers::grab::{Candidate, GrabVolume};
 use jc3vr_input::frame::Hand;
 
 use crate::controllers::{
-    grab::{Candidate, GrabVolume},
     loadout::Socket,
     weapons::{docks::SocketUse, volumes::BodyFrame},
 };

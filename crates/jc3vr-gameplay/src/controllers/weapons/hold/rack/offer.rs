@@ -24,13 +24,10 @@ use jc3gi::{
     character::{character::Character, inventory::WeaponSlot},
     interaction::{InteractionGraphParentWeaponNotInInventory, InteractionUserProxy},
 };
+use jc3vr_body::controllers::held::native::weapon_at;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::controllers::weapons::{
-    dual_wield::single,
-    engine::{slot_of, weapon_at},
-    hold::rack::entries,
-};
+use crate::controllers::weapons::{dual_wield::single, engine::slot_of, hold::rack::entries};
 
 pub(crate) fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&PARENT_WEAPON_NOT_IN_INVENTORY_EVALUATE_BINDER)

@@ -1,12 +1,11 @@
 //! The raw-input tables' vocabulary and evaluating reader, frozen.
 
 use jc3gi::input::input_action_map::Action;
-use jc3vr_input::frame::Hand;
-
-use crate::controllers::bindings::{
+use jc3vr_body::controllers::intent::{
     controls::{ButtonControl, Controls, HandControls, rotate_stick},
     hold::{Desired, MapKind, Target, Want},
 };
+use jc3vr_input::frame::Hand;
 
 /// Which hand an input is on: by its role in the layout, or by its physical side. The gameplay
 /// tables use the roles, so a left-handed layout mirrors them; the menu table uses the sides.

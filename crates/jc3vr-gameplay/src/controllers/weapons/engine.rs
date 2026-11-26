@@ -14,13 +14,14 @@ use jc3gi::{
     graphics_engine::model_instance::ModelInstanceFlags,
     types::math::Matrix4,
 };
+use jc3vr_body::controllers::{
+    aim::{config::AimConfig, gun, ray, sights},
+    hands::{ik::TickTarget, late, pose as hand_pose},
+    held::native::{gun_count, gun_ptr},
+};
 use jc3vr_input::frame::{Hand, Pose};
 
-pub(crate) use crate::controllers::held::native::{gun_count, gun_ptr, weapon_at};
 use crate::controllers::{
-    aim::{gun, ray, sights},
-    config::AimConfig,
-    hands::{ik::TickTarget, late, pose as hand_pose},
     loadout::SLOTS,
     weapons::{
         foregrip::{FOREGRIP, GripGeometry},
@@ -500,6 +501,8 @@ pub(crate) fn slot_from_raw(slot: i32) -> Option<WeaponSlot> {
 
 #[cfg(test)]
 mod tests {
+    use jc3vr_body::controllers::held::native::weapon_at;
+
     use super::*;
 
     fn gun(address: usize, slot: WeaponSlot, hand: Hand) -> HeldWeapon {

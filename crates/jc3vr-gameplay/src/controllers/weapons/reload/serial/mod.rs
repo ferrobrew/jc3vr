@@ -11,22 +11,20 @@ use jc3gi::{
     game::GameObjectUpdateContext,
     game_world::GameWorld,
 };
+use jc3vr_body::controllers::{aim::gun, hands::late, intent, mode, physics::refs::Strong, scheme};
 use jc3vr_input::frame::{self, Hand};
 use parking_lot::Mutex;
 
 use crate::controllers::{
-    aim::gun,
-    bindings,
-    hands::late,
     loadout::live,
-    mode, scheme,
     weapons::{
         capabilities::{Capabilities, GunHand, gun_owners_now},
         config::WEAPONS_CONFIG,
-        hold::{armed, refs::Strong},
+        hold::armed,
         inventory::engine::strong_to,
         reload::{
-            engine::{self, DetachOutcome},
+            engine,
+            engine::DetachOutcome,
             extraction::{DetachKind, DetachRequest, MagazineId},
             loose::Retention,
         },
@@ -305,8 +303,8 @@ fn permitted(request: DetachRequest, retain: bool) -> bool {
         return false;
     }
     let puller_closed = !pull
-        || bindings::grip_holds_now(request.id.holder.other()) == Some(true)
-        || bindings::hand_closed(request.id.holder.other());
+        || intent::grip_holds_now(request.id.holder.other()) == Some(true)
+        || intent::hand_closed(request.id.holder.other());
     let tracked = frame::with_latest(|frame| {
         frame.focused
             && frame.is_fresh_at(Instant::now())

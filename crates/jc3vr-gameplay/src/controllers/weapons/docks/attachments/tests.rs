@@ -1,14 +1,12 @@
 use glam::Quat;
+use jc3vr_body::controllers::body::{mirror::Plane, rig::frames::Frames};
 use jc3vr_view::controllers::{
     cockpit::CockpitTransform,
     overlay::primitive::{Anchor, Primitive},
 };
 
 use super::*;
-use crate::controllers::{
-    body::{mirror::Plane, rig::frames::Frames},
-    weapons::mirror::attachment_markers,
-};
+use crate::controllers::weapons::mirror::attachment_markers;
 
 #[test]
 fn waist_relocation_moves_the_visible_grip_and_the_socket_together_without_scaling() {

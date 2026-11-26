@@ -8,8 +8,7 @@
 use std::{fmt, num::NonZeroU32};
 
 use jc3gi::{character::inventory::WeaponSlot, equipment::weapon::WeaponClass};
-
-pub use crate::controllers::grab::socket::SizeClass;
+use jc3vr_body::controllers::grab::socket::SizeClass;
 
 /// The name of an inventory slot, for the readouts and the log.
 pub const fn slot_label(slot: WeaponSlot) -> &'static str {

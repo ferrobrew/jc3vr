@@ -21,14 +21,12 @@
 
 use glam::{Quat, Vec3};
 use jc3gi::{character::inventory::WeaponSlot, input::input_action_map::Action};
+use jc3vr_body::controllers::intent::controls::{ButtonControl, PadZone};
 use jc3vr_input::frame::{Hand, Pose};
 
-use crate::controllers::{
-    bindings::{controls::ButtonControl, tables::sink::PadZone},
-    weapons::wheel::{
-        steer::{Aimed, SteerOrigin, aim},
-        tuning::WheelTuning,
-    },
+use crate::controllers::weapons::wheel::{
+    steer::{Aimed, SteerOrigin, aim},
+    tuning::WheelTuning,
 };
 
 /// An arm of the game's selection cross, in the layout it draws under gamepad semantics.

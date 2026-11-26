@@ -4,11 +4,11 @@
 
 use egui::Slider;
 use jc3gi::heat_manager::HeatManager;
-use jc3vr_core::director::clean_view::CleanViewScope;
-use jc3vr_gameplay::controllers::{
+use jc3vr_body::controllers::{
     clock::{MAX_TIME_SCALE, MIN_TIME_SCALE},
     spawn,
 };
+use jc3vr_core::director::clean_view::CleanViewScope;
 use jc3vr_tooling::{
     director::{DIRECTOR_CONFIG, heat, keymap, markers, safety, teleport, teleport::TeleportMode},
     recorder,

@@ -1,6 +1,7 @@
 //! Restored callback adoption uses one table admission for the physical and table destination.
 
 use jc3gi::{character::character::Character, equipment::weapon::WeaponBase};
+use jc3vr_body::controllers::physics::refs::Strong;
 
 use crate::controllers::{
     loadout::{
@@ -9,10 +10,11 @@ use crate::controllers::{
     },
     weapons::{
         dual_wield::single,
-        hold::refs::Strong,
         inventory::{
-            carry::{self, CarryRefusal},
-            engine::{self, kind_of, weapon_of},
+            carry,
+            carry::CarryRefusal,
+            engine,
+            engine::{kind_of, weapon_of},
             persist::Record,
             restore::{PLAN, SPAWNED, STATUS, expire_spawning},
         },

@@ -3,10 +3,11 @@
 //!
 //! Shutdown preparation stops magazine extraction and drains the serial executor's queue. It is
 //! ready only once no native magazine callback is running in payload code
-//! ([`crate::hooks::character::magazine::active_entries`]).
+//! ([`jc3vr_body::hooks::character::magazine::active_entries`]).
 
 use std::sync::Arc;
 
+use jc3vr_body::hooks::character::magazine;
 use jc3vr_core::{
     lifecycle::{
         DeferReason, ParticipantId, Preparation, PrepareOutcome, PreparedParticipant,
@@ -15,10 +16,7 @@ use jc3vr_core::{
     thread_role::{self, ThreadRole},
 };
 
-use crate::{
-    controllers::weapons::reload::{cancel_extraction_on_standdown, serial},
-    hooks::character::magazine,
-};
+use crate::controllers::weapons::reload::{cancel_extraction_on_standdown, serial};
 
 /// The participant that keeps shutdown waiting while magazine work is pending or running.
 pub(crate) fn participant() -> Arc<dyn ShutdownParticipant> {

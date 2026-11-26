@@ -1,8 +1,7 @@
 //! Checks for the controller-to-game bindings.
 
+use jc3vr_body::controllers::intent::config::BindingsConfig;
 use jc3vr_core::config::engine::{Invalid, positive, range};
-
-use crate::controllers::config::BindingsConfig;
 
 /// Check the controller-to-game bindings. Paths are relative to `controllers.bindings`.
 pub(super) fn bindings(c: &BindingsConfig) -> Result<(), Invalid> {

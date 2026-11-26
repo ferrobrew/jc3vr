@@ -16,7 +16,7 @@
 //! Rico's pose before and after the solves ([`pose`]), at the character hooks' pose-finalization
 //! observer, and the bodies near Rico and what his hands hold ([`bodies`]), after each simulation
 //! step. The notes the controller subsystems write as they act (refusals, forces, injected actions,
-//! haptic cues, the rig's frames) are [`jc3vr_gameplay::controllers::telemetry`]'s, and the
+//! haptic cues, the rig's frames) are [`jc3vr_body::controllers::telemetry`]'s, and the
 //! settings and the frame timing are the tracking recorder's own.
 
 mod bodies;
@@ -30,7 +30,7 @@ mod world_state;
 use std::time::Instant;
 
 use jc3gi::character::character::Character;
-use jc3vr_gameplay::{controllers::body::procedural, hooks::animation::active_state_type_id};
+use jc3vr_body::{controllers::body::procedural, hooks::animation::active_state_type_id};
 use jc3vr_view::recorder::tracking::{events, events::EventKind};
 
 /// Register the samplers that observe the game: the pose-finalization observer and the post-step

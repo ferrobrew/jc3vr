@@ -1,26 +1,30 @@
 //! Registers the systems above the hands with the hands: the hand composition's stages in their
 //! order, the observers of each world weapon at its render update, the hand bodies' post-step
 //! sample taken before each rendered frame's composition, the weapon handling's held-item source
-//! ([`crate::controllers::held`]), and the grapple's pump of the hang swing the anchor drives.
+//! ([`jc3vr_body::controllers::held`]), and the grapple's pump of the hang swing the anchor drives.
 //!
 //! The hands do real work in each of these every frame, so the install refuses to finish with one
 //! missing: [`register`] panics naming it.
 
 use std::fmt::Write as _;
 
+use jc3vr_body::controllers::{
+    hands,
+    hands::{
+        anchor, late,
+        late::WeaponObserver,
+        stages,
+        stages::{HandComposition, HandStage, HandStageFn},
+    },
+    held,
+};
+
 use crate::{
     controllers::{
-        hands::{
-            self, anchor,
-            late::{self, WeaponObserver},
-            stages::{self, HandComposition, HandStage, HandStageFn},
-        },
-        held,
-        physical_hands::{self, physics},
-        vehicles,
-        weapons::{
-            self, ads, collide, config::WEAPONS_CONFIG, grenade, gun_bodies, hold::rack, recoil,
-        },
+        physical_hands,
+        physical_hands::physics,
+        vehicles, weapons,
+        weapons::{ads, collide, config::WEAPONS_CONFIG, grenade, gun_bodies, hold::rack, recoil},
     },
     grapple::physical::swing,
 };

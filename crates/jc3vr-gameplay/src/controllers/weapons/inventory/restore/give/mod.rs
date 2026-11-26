@@ -39,28 +39,24 @@ use jc3gi::{
     types::math::Matrix4,
     ui::locator::Locale,
 };
+use jc3vr_body::controllers::{intent, physics::refs::Strong, spawn, spawn::SpawnDefinition};
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
 use crate::controllers::{
-    bindings,
     loadout::{ObjectAddress, Socket, live},
-    spawn::{self, SpawnDefinition},
-    summary::localise,
     weapons::{
         c4,
         config::WEAPONS_CONFIG,
         dual_wield::single,
         grenade::stock,
-        hold::{self, act, refs::Strong, swap},
+        hold,
+        hold::{act, swap},
         inventory::{
             engine as inventory_engine,
-            restore::{
-                PLAN, SpawnToken,
-                adoption::{self, Outcome},
-                spawned,
-            },
-            spawn_safety::{self, RequestKind},
+            restore::{PLAN, SpawnToken, adoption, adoption::Outcome, spawned},
+            spawn_safety,
+            spawn_safety::RequestKind,
         },
     },
 };
@@ -570,7 +566,7 @@ unsafe fn draw_given() {
             continue;
         }
         let empty = live::snapshot_now().is_some_and(|table| table.held(hand).is_none());
-        let line = if bindings::grip_holds_now(hand) != Some(true) {
+        let line = if intent::grip_holds_now(hand) != Some(true) {
             format!(
                 "give: {name} stays on the {}: the {} hand's grip is open",
                 socket.label(),
@@ -599,7 +595,7 @@ unsafe fn draw_given() {
 ///
 /// The game thread, past startup.
 unsafe fn refresh_names() {
-    let locale = unsafe { localise::current_locale() };
+    let locale = unsafe { intent::localise::current_locale() };
     if locale.is_none() || NAMES.lock().locale == locale {
         return;
     }
@@ -607,7 +603,7 @@ unsafe fn refresh_names() {
         .into_iter()
         .map(|def| {
             // SAFETY: per the contract.
-            let display = unsafe { localise::weapon_name(def.name_hash()) };
+            let display = unsafe { intent::localise::weapon_name(def.name_hash()) };
             (def.name.as_str(), display)
         })
         .collect();

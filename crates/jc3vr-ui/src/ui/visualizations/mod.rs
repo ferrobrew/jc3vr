@@ -1,10 +1,10 @@
 //! Shared visualization switches, known draw blockers, and the global drawer.
 
 use egui::Ui;
+use jc3vr_body::controllers::{overlay::config::GunReadout, scheme};
 use jc3vr_gameplay::controllers::{
-    config::{CONTROLLERS_CONFIG, ControllersConfig, GunReadout},
+    config::{CONTROLLERS_CONFIG, ControllersConfig},
     physical_hands::collider_view::ColliderViewConfig,
-    scheme,
 };
 use jc3vr_render::controllers::overlay;
 use jc3vr_view::controllers::overlay::{primitive::Source, store, store::SourceMask};

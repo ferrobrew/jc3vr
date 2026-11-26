@@ -2,25 +2,20 @@
 
 use std::time::Duration;
 
+use jc3vr_body::controllers::intent::{config::BindingsConfig, controls::ButtonControl};
 use jc3vr_input::frame::ActionSetKind;
 use jc3vr_view::vr::input::semantic::{SCHEMA_VERSION, history};
 use tracking_format::input::{GroupOrder, InputGroup, InputStamp};
 
 #[cfg(test)]
 use crate::controllers::bindings::policy_a::InputEvidence;
-use crate::controllers::{
-    bindings::{
-        controls::ButtonControl,
-        policy_a::{
-            Arbitration, BindingGeneration, CONTROLS, ClockEpoch, Control, Disposition,
-            GameplayContext, Observation, ObservationStamp, ObservationStatus, PolicyA,
-            ResetReason, SingleEvent, SystemCommand,
-            attribution::{SourceIdentity, raw_location},
-            recording,
-            runtime::{Delivery, Runtime, Tick, complete_inventory, group_neutral, raw_evidence},
-        },
-    },
-    config::BindingsConfig,
+use crate::controllers::bindings::policy_a::{
+    Arbitration, BindingGeneration, CONTROLS, ClockEpoch, Control, Disposition, GameplayContext,
+    Observation, ObservationStamp, ObservationStatus, PolicyA, ResetReason, SingleEvent,
+    SystemCommand,
+    attribution::{SourceIdentity, raw_location},
+    recording,
+    runtime::{Delivery, Runtime, Tick, complete_inventory, group_neutral, raw_evidence},
 };
 
 pub(super) struct EvaluationInput<'a> {

@@ -1,14 +1,16 @@
 mod current;
 
 use jc3gi::input::input_action_map::Action::{CANCEL, OPEN_WINGSUIT, WINGSUIT_AIRBRAKE};
+use jc3vr_body::controllers::{
+    intent::hold::{Target, Want},
+    mode::AirborneVariant,
+};
 use jc3vr_input::frame::ActionSetKind;
 use jc3vr_view::vr::input::flight_pose::GestureSample;
 
 use super::*;
 use crate::controllers::{
-    bindings::hold::{Target, Want},
     loadout::Socket,
-    mode::AirborneVariant,
     vehicles::{
         config::WingsuitGesturesConfig,
         wingsuit_gestures::{FlightPose, SuitTransition},

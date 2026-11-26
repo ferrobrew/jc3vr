@@ -1,10 +1,8 @@
 use glam::{Quat, Vec3};
+use jc3vr_body::controllers::physics::rigid::BodyPose;
 
 use super::*;
-use crate::controllers::{
-    physical_hands::rigid::BodyPose,
-    weapons::reload::wells::{RoundEntry, TableAction, WellGrade, WellKind},
-};
+use crate::controllers::weapons::reload::wells::{RoundEntry, TableAction, WellGrade, WellKind};
 
 /// A rifle's magazine hanging 12 cm out of a well pushed up (+Y) into the gun at the origin.
 fn rifle() -> KnockZone {

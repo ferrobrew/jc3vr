@@ -12,20 +12,19 @@ use jc3gi::{
     character::{character::Character, inventory::WeaponSlot},
     equipment::weapon::{WeaponBase, WeaponData, WeaponState},
 };
+use jc3vr_body::controllers::{held::native::gun_count, physics::refs::Strong};
 use jc3vr_input::frame::{Hand, Pose};
 use parking_lot::Mutex;
 
 use crate::controllers::{
     loadout::{live, take::TakeRoute},
     weapons::{
-        dual_wield::single::{self, magazine},
-        engine::{
-            character_object, gun_at, gun_count, gun_data_pose, hide_gun, place_guns, slot_of,
-        },
+        dual_wield::{single, single::magazine},
+        engine::{character_object, gun_at, gun_data_pose, hide_gun, place_guns, slot_of},
         hold::{
-            pickup::{self, Refusal},
+            pickup,
+            pickup::Refusal,
             rack::{copy, offered_state},
-            refs::Strong,
             source::SourceRefusal,
             world::{TargetKind, WorldTarget},
         },

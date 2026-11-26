@@ -11,11 +11,9 @@
 
 use body_rig::smooth::follow_factor;
 use glam::Vec2;
+use jc3vr_body::controllers::hands::anchor::HangPump;
 
-use crate::{
-    controllers::hands::anchor::HangPump,
-    grapple::physical::config::{GRAPPLE, SwingTuning},
-};
+use crate::grapple::physical::config::{GRAPPLE, SwingTuning};
 
 /// The pump as the hands' anchor calls it: the fixed tuning with the pump switched by each call's
 /// `pump`.

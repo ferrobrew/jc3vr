@@ -35,9 +35,9 @@ use std::{num::NonZeroUsize, time::Instant};
 pub use config::DoorsConfig;
 use glam::{Mat4, Vec3};
 use jc3gi::{physics::GameMaterialId, vehicle::vehicle::DoorSlot};
+use jc3vr_body::controllers::grab::world_reach::{DoorTarget, Reach, TargetKind};
 use jc3vr_input::frame::Pose;
 
-pub use crate::controllers::grab::world_reach::DoorTarget;
 use crate::controllers::physical_hands::{
     contact::SurfaceHit,
     doors::{
@@ -45,7 +45,6 @@ use crate::controllers::physical_hands::{
         engine::DoorError,
         geometry::pull,
     },
-    grasp::{Reach, TargetKind},
     pickup::diagnostics::scan::{Branch, Scan, ScanEntry, ScanResult},
 };
 
@@ -390,9 +389,10 @@ fn latch_decision(
 #[cfg(test)]
 mod tests {
     use glam::Quat;
+    use jc3vr_body::controllers::physics::rigid::BodyPose;
 
     use super::*;
-    use crate::controllers::physical_hands::{grasp::Grip, rigid::BodyPose};
+    use crate::controllers::physical_hands::grasp::Grip;
 
     #[test]
     fn panel_evidence_rejects_car_glass_and_hits_outside_the_door() {

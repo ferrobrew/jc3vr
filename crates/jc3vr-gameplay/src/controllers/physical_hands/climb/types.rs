@@ -2,8 +2,9 @@
 //! status, a mantle's landing on a moving body, and what the palms' tick publishes.
 
 use glam::{Quat, Vec3};
+use jc3vr_body::controllers::facts::climb::BodyIdentity;
 
-use crate::controllers::physical_hands::climb::engine::{self, BodyIdentity};
+use crate::controllers::physical_hands::climb::engine;
 
 /// A surface a hand can grip: the static world, or with [`HandClimbTuning::moving`](crate::controllers::physical_hands::climb::config::HandClimbTuning::moving), a moving body.
 #[derive(Debug, Copy, Clone, PartialEq)]

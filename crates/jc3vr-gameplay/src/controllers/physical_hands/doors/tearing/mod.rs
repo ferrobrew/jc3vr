@@ -4,14 +4,11 @@ use std::{fmt, mem::MaybeUninit, num::NonZeroUsize};
 
 use glam::{Mat4, Vec3};
 use jc3gi::vehicle::{parts::ConstraintInfo, vehicle::Vehicle};
-
-use crate::controllers::{
-    physical_hands::{
-        bodies::owner_of,
-        doors::{DoorTarget, config::TearTuning, engine},
-    },
-    telemetry::report,
+use jc3vr_body::controllers::{
+    grab::world_reach::DoorTarget, physics::bodies::owner_of, telemetry::report,
 };
+
+use crate::controllers::physical_hands::doors::{config::TearTuning, engine};
 
 /// The native identity and gesture history of an open door grip.
 #[derive(Debug, Copy, Clone, PartialEq)]

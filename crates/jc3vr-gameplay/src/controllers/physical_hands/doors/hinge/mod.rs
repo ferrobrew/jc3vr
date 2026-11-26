@@ -22,14 +22,15 @@ use std::num::NonZeroUsize;
 
 use glam::Vec3;
 use jc3gi::vehicle::vehicle::{DoorInfo, DoorSlot};
+use jc3vr_body::controllers::physics::{
+    bodies,
+    bodies::BodyState,
+    rigid::{BodyPose, Velocities},
+};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
-use crate::controllers::physical_hands::{
-    bodies::{self, BodyState},
-    doors::{engine, table},
-    rigid::{BodyPose, Velocities},
-};
+use crate::controllers::physical_hands::doors::{engine, table};
 
 /// The hinges of the doors the hands opened (see [`crate::controllers::physical_hands::doors::hinge`]).
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]

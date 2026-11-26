@@ -41,19 +41,20 @@ use std::time::{Duration, Instant};
 
 use glam::{Mat4, Vec3};
 use jc3gi::equipment::weapon::{WeaponBase, WeaponClass};
+use jc3vr_body::controllers::{
+    aim,
+    aim::{AimStatus, HandSource, gun::HeldWeapon, sights::SightSource},
+    hands::late,
+    scheme,
+};
 use jc3vr_input::frame::{Hand, Pose};
 use jc3vr_view::controllers::weapons::scope::lens_frame::{self, LensFrame};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::controllers::{
-    aim::{self, AimStatus, HandSource, gun::HeldWeapon, sights::SightSource},
-    hands::late,
-    scheme,
-    weapons::{
-        config::WEAPONS_CONFIG,
-        scope::lens::{LENS, Lens, LensTuning, SightAnchor},
-    },
+use crate::controllers::weapons::{
+    config::WEAPONS_CONFIG,
+    scope::lens::{LENS, Lens, LensTuning, SightAnchor},
 };
 
 /// The scope hooks, aggregated by [`crate::controllers::weapons::hook_library`].

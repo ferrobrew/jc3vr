@@ -2,13 +2,12 @@
 //! ([`VEHICLES_CONFIG`]), and the snapshot of them a vehicle tick reads ([`VehicleSettings`]). The
 //! physical controls' fixed placement and tuning are [`crate::controllers::vehicles::tuning`]'s.
 
+use jc3vr_body::controllers::{
+    body::config::BODY_REMAP_CONFIG, overlay::config::OVERLAY_CONFIG, scheme,
+};
 use jc3vr_core::config::engine::ConfigSlot;
 use jc3vr_input::frame::Hand;
 use serde::{Deserialize, Serialize};
-
-use crate::controllers::{
-    body::config::BODY_REMAP_CONFIG, overlay::config::OVERLAY_CONFIG, scheme,
-};
 
 /// The vehicle, mounted gun, wingsuit, and parachute settings, at `controllers.vehicles` in the
 /// settings file; the payload binds the slot at startup.
@@ -22,10 +21,10 @@ pub(crate) struct VehicleSettings {
     /// The hand the roles follow ([`scheme::acting_hand`]).
     pub(crate) dominant: Hand,
     /// Whether the hands are remapped onto the character's arms
-    /// ([`BodyRemapConfig::remap_hands`](crate::controllers::body::config::BodyRemapConfig::remap_hands)).
+    /// ([`BodyRemapConfig::remap_hands`](jc3vr_body::controllers::body::config::BodyRemapConfig::remap_hands)).
     pub(crate) remap_hands: bool,
     /// Whether the world-space overlay draws
-    /// ([`OverlayConfig::enabled`](crate::controllers::overlay::config::OverlayConfig::enabled)).
+    /// ([`OverlayConfig::enabled`](jc3vr_body::controllers::overlay::config::OverlayConfig::enabled)).
     pub(crate) overlay: bool,
 }
 
@@ -536,8 +535,8 @@ impl Default for RipcordConfig {
     }
 }
 
-/// The canopy's settings (see [`crate::hooks::input::parachute`] and
-/// [`crate::hooks::animation::canopy`]).
+/// The canopy's settings (see [`jc3vr_body::hooks::input::parachute`] and
+/// [`jc3vr_body::hooks::animation::canopy`]).
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct CanopyConfig {

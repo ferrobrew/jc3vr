@@ -35,10 +35,9 @@ use jc3gi::{
     graphics_engine::{device::Device, texture::Texture},
     heat_manager::HeatManager,
 };
+use jc3vr_body::controllers::{hands::late, scheme};
 use jc3vr_gameplay::controllers::{
     config::CONTROLLERS_CONFIG,
-    hands::late,
-    scheme,
     summary::config::GlanceConfig,
     weapons::{hud_feed::hand_ammo as ammo_sample, wheel, wheel::CROSS_LINGER},
 };

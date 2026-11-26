@@ -9,16 +9,14 @@
 
 use body_rig::{geometry::point_velocity, rotation::angular_velocity, smooth::follow_factor};
 use glam::{Quat, Vec3};
+use jc3vr_body::controllers::{
+    clock::TimeScale,
+    grab::world_reach::{Reach, TargetKind},
+    physics::rigid::BodyPose,
+};
 use jc3vr_input::frame::Pose;
 
-use crate::controllers::{
-    clock::TimeScale,
-    physical_hands::{pickup::PickupTuning, rigid::BodyPose},
-};
-pub use crate::controllers::{
-    grab::world_reach::{Reach, TargetKind},
-    physics::bodies::mass_of,
-};
+use crate::controllers::physical_hands::pickup::PickupTuning;
 
 /// The nearest of `reaches`.
 pub fn nearest(reaches: impl IntoIterator<Item = Reach>) -> Option<Reach> {

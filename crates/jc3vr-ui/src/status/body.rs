@@ -6,17 +6,17 @@
 
 use std::time::{Duration, Instant};
 
-use jc3vr_gameplay::controllers::{
+use jc3vr_body::controllers::{
     body::{
         mirror,
         mirror::MirrorStatus,
         procedural,
         procedural::{ProceduralStatus, authority::Case, config::ProceduralMode},
     },
-    config::CONTROLLERS_CONFIG,
     presentation,
     presentation::{ElbowReadout, PresentationStatus},
 };
+use jc3vr_gameplay::controllers::config::CONTROLLERS_CONFIG;
 
 use crate::{
     controllers::menu::read,
@@ -208,7 +208,7 @@ fn elbow_note(elbows: &[Option<ElbowReadout>; 2]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use jc3vr_gameplay::controllers::presentation::Idle;
+    use jc3vr_body::controllers::presentation::Idle;
 
     use super::*;
 

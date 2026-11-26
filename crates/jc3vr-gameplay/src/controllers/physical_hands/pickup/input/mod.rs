@@ -1,17 +1,20 @@
 //! The input tick's pickup requests and derived vehicle-entry clicks, without native acquisition.
 
 use jc3gi::input::input_action_map::Action;
+use jc3vr_body::controllers::{
+    grab::{
+        GrabVolume,
+        world_reach::{Reach, TargetKind},
+    },
+    intent::hold::{Desired, MapKind, Target, Want},
+};
 use jc3vr_input::frame::Hand;
 
 use crate::controllers::{
-    bindings::hold::{Desired, MapKind, Target, Want},
-    grab::GrabVolume,
-    physical_hands::{
-        grasp::{Reach, TargetKind},
-        pickup::{
-            diagnostics::{self, ConsumerResult, InputConsumer, InputContext},
-            state::{PickupState, Request},
-        },
+    physical_hands::pickup::{
+        diagnostics,
+        diagnostics::{ConsumerResult, InputConsumer, InputContext},
+        state::{PickupState, Request},
     },
     weapons::FinishInputs,
 };

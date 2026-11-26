@@ -78,44 +78,46 @@ pub(crate) mod zones;
 
 use glam::Vec3;
 use jc3gi::equipment::weapon::WeaponBase;
+use jc3vr_body::controllers::{
+    body::rig::frames::Frames,
+    grab::{Candidate, GrabVolume, GripTarget},
+    hands::{ActiveHands, pose::CockpitHand},
+    intent::{
+        controls::ButtonControl,
+        rows::{Control, Effect, Gesture, ModAction, Row},
+    },
+    telemetry,
+};
 use jc3vr_input::frame::{Hand, Pose};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::controllers::{
-    bindings::{
-        controls::ButtonControl,
-        tables::describe::{Control, Effect, Gesture, ModAction, Row},
+use crate::controllers::weapons::{
+    capabilities::{GunHand, GunOwner},
+    config::WeaponSettings,
+    docks,
+    dual_wield::single::magazine::Dealt,
+    engine::{HeldWeapon, reserve},
+    inventory::engine::strong_to,
+    pouch_models,
+    pouch_models::MODEL_PLACEMENT,
+    reload::{
+        belt::{BeltPush, PushStage},
+        chamber::{ActionWork, Chamber},
+        eject::{DoubleTapDetector, FlickDetector, TapDetector},
+        engine::Reading,
+        extraction::{DetachRequest, PendingDetach, Pull},
+        fire_hold::FireHold,
+        frames::GunFrame,
+        insert::{Insertion, InsertionSource, ReadyCue, Well},
+        knock::Knocks,
+        plan::ReloadPlan,
+        records::{RecordKey, Records, gun_entry},
+        travel::ActionTravel,
+        tuning::{RELOAD, Reload},
     },
-    body::rig::frames::Frames,
-    grab::{Candidate, GrabVolume, GripTarget},
-    hands::{ActiveHands, pose::CockpitHand},
-    telemetry,
-    weapons::{
-        capabilities::{GunHand, GunOwner},
-        config::WeaponSettings,
-        docks,
-        dual_wield::single::magazine::Dealt,
-        engine::{HeldWeapon, reserve},
-        inventory::engine::strong_to,
-        pouch_models::{self, MODEL_PLACEMENT},
-        reload::{
-            belt::{BeltPush, PushStage},
-            chamber::{ActionWork, Chamber},
-            eject::{DoubleTapDetector, FlickDetector, TapDetector},
-            engine::Reading,
-            extraction::{DetachRequest, PendingDetach, Pull},
-            fire_hold::FireHold,
-            frames::GunFrame,
-            insert::{Insertion, InsertionSource, ReadyCue, Well},
-            knock::Knocks,
-            plan::ReloadPlan,
-            records::{RecordKey, Records, gun_entry},
-            travel::ActionTravel,
-            tuning::{RELOAD, Reload},
-        },
-        volumes::{self, BodyFrame, POUCHES},
-    },
+    volumes,
+    volumes::{BodyFrame, POUCHES},
 };
 
 /// The reload's hooks, aggregated by [`crate::controllers::weapons::hook_library`].

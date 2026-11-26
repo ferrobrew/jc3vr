@@ -9,7 +9,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use jc3gi::{clock::Clock, slow_motion::get_SlowMotionManager_NormalGameSpeed};
-use jc3vr_gameplay::controllers::clock::{MAX_TIME_SCALE, MIN_TIME_SCALE};
+use jc3vr_body::controllers::clock::{MAX_TIME_SCALE, MIN_TIME_SCALE};
 
 use crate::director::DirectorConfig;
 

@@ -1,5 +1,7 @@
+use jc3vr_body::controllers::grab::PickupKind;
+
 use super::*;
-use crate::controllers::{grab::PickupKind, summary::current::TriggerUse};
+use crate::controllers::summary::current::TriggerUse;
 
 #[test]
 fn door_row_requires_exact_current_physical_grip_press_identity() {

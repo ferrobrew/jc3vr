@@ -6,19 +6,18 @@ mod flight;
 
 use std::f32::consts::FRAC_PI_2;
 
+use jc3vr_body::controllers::mode::VehicleClass;
+
 use super::*;
-use crate::controllers::{
-    mode::VehicleClass,
-    vehicles::{
-        config::PhysicalControlsConfig,
-        physical::{
-            handlebars::{bar_grab_point, bar_turn, steer_for_turn},
-            levers::{ThrottleSection, detent},
-            sticks,
-        },
-        steering,
-        tuning::{HandlebarsSpec, LeverAxis, PHYSICAL, PhysicalControlsTuning},
+use crate::controllers::vehicles::{
+    config::PhysicalControlsConfig,
+    physical::{
+        handlebars::{bar_grab_point, bar_turn, steer_for_turn},
+        levers::{ThrottleSection, detent},
+        sticks,
     },
+    steering,
+    tuning::{HandlebarsSpec, LeverAxis, PHYSICAL, PhysicalControlsTuning},
 };
 
 const DT: f32 = 1.0 / 30.0;

@@ -7,9 +7,10 @@
 
 use std::fmt;
 
+use jc3vr_body::controllers::grab::socket::Socket;
 use jc3vr_input::frame::Hand;
 
-use crate::controllers::loadout::{item::WeaponType, socket::Socket, table::LoadoutSnapshot};
+use crate::controllers::loadout::{item::WeaponType, table::LoadoutSnapshot};
 
 /// A move a hand makes at a socket.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]

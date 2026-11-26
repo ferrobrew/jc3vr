@@ -14,23 +14,25 @@ use jc3gi::{
         shared_ptr::SharedPtr,
     },
 };
+use jc3vr_body::controllers::{
+    aim,
+    aim::{
+        ray::Ray,
+        raycast,
+        raycast::{CastOptions, RayHit},
+    },
+    hands, physics,
+    physics::{
+        bodies::game_object_of,
+        grapple_hook as hook,
+        grapple_hook::{BodyHit, CustomOwner, local},
+        refs::{Strong, null_weak},
+    },
+};
 use jc3vr_input::frame::Hand;
 use jc3vr_view::controllers::cockpit::CockpitTransform;
 
-use crate::{
-    controllers::{
-        aim::{
-            self,
-            ray::Ray,
-            raycast::{self, CastOptions, RayHit},
-        },
-        hands,
-        physical_hands::{self, doors::engine::vehicle_body, game_object_of},
-        physics::grapple_hook::{self as hook, BodyHit, CustomOwner, local},
-        weapons::hold::refs::{Strong, null_weak},
-    },
-    grapple::seat::Refusal,
-};
+use crate::{controllers::physical_hands::doors::engine::vehicle_body, grapple::seat::Refusal};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) enum WireReading {
@@ -89,8 +91,7 @@ pub(super) unsafe fn fire(target: Target) -> Result<NonZeroUsize, Refusal> {
     let vehicle = NonZeroUsize::new(unsafe { character.GetVehiclePtr() } as usize)
         .ok_or(Refusal::NoPlayer)?;
     let body = unsafe { vehicle_body(vehicle) }.ok_or(Refusal::NoPlayer)?;
-    let state =
-        unsafe { physical_hands::body_state(body, vehicle) }.map_err(|_| Refusal::NoPlayer)?;
+    let state = unsafe { physics::body_state(body, vehicle) }.map_err(|_| Refusal::NoPlayer)?;
     let speed = unsafe { hook.GetTuning().as_ref() }
         .ok_or(Refusal::FireRefused)?
         .m_GrappleFireSpeed;

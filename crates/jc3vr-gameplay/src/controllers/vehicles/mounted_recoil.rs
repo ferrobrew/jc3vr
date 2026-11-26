@@ -21,10 +21,11 @@ use std::{
 };
 
 use glam::{Vec2, Vec3};
+use jc3vr_body::controllers::haptics;
 use jc3vr_input::{frame::Hand, haptics::cues::Event};
 use parking_lot::Mutex;
 
-use crate::controllers::{haptics, vehicles::config::VEHICLES_CONFIG, weapons::recoil::Spring};
+use crate::controllers::{vehicles::config::VEHICLES_CONFIG, weapons::recoil::Spring};
 
 /// Kick the handles by one shot of the mounted gun, and pulse the hands holding them.
 pub(crate) fn on_shot() {

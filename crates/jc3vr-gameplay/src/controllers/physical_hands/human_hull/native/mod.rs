@@ -14,20 +14,18 @@ use jc3gi::{
     havok::{hkReferencedObject, hknpShape},
     physics::{ProxyState, SharedPfxCharacterSettings, hknpBody, hknpWorld},
 };
+use jc3vr_body::controllers::physics::{bodies, characters::proxy_body};
 
-use crate::controllers::physical_hands::{
-    bodies,
-    characters::engine::proxy_body,
-    human_hull::{
-        ClearanceUnavailableReason,
-        geometry::{self, GeometryError, shape_step_profile},
-        kept::{self, KeptPair},
-        native::{
-            restore::{Allowance, Plan, RetryBackoff, Surroundings, check_body, plan},
-            scan::{DiscoveryClock, Lookup, Migrated, scan},
-        },
-        step_up::PlayerSteps,
+use crate::controllers::physical_hands::human_hull::{
+    ClearanceUnavailableReason, geometry,
+    geometry::{GeometryError, shape_step_profile},
+    kept,
+    kept::KeptPair,
+    native::{
+        restore::{Allowance, Plan, RetryBackoff, Surroundings, check_body, plan},
+        scan::{DiscoveryClock, Lookup, Migrated, scan},
     },
+    step_up::PlayerSteps,
 };
 
 pub(super) struct NativeState {

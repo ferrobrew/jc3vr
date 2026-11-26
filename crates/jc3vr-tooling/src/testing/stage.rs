@@ -30,10 +30,10 @@ use std::{
 use anyhow::Context as _;
 use glam::Vec3;
 use jc3gi::types::math::Matrix4;
+use jc3vr_body::controllers::{spawn, spawn::Submission};
 use jc3vr_capture::testing::visual::{
     self, EnvironmentRequest, EnvironmentTable, RequestId, environment,
 };
-use jc3vr_gameplay::controllers::spawn::{self, Submission};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 

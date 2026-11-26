@@ -31,10 +31,10 @@ use jc3gi::{
     graph_script::NodeWeaponCache,
     mission::MissionManager,
 };
+use jc3vr_body::controllers::hands::ik;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
-    hands::ik,
     loadout::{CacheKind, live},
     weapons::{
         dual_wield::single,

@@ -7,9 +7,10 @@
 use std::time::Instant;
 
 use jc3gi::character::character::Character;
-use jc3vr_gameplay::{
+use jc3vr_body::{
     controllers::{
-        aim::{self, AimIdle, HandSource, raycast::RaycastError, sights::SightSource},
+        aim,
+        aim::{AimIdle, HandSource, raycast::RaycastError, sights::SightSource},
         body::rig::{
             collision::probe::ProbeResult,
             root::{
@@ -18,7 +19,8 @@ use jc3vr_gameplay::{
             },
         },
         hands::{ik, late, tiers},
-        mode::{self, AirborneVariant, HoldReason, Mode, OnFootVariant, Traversal},
+        mode,
+        mode::{AirborneVariant, HoldReason, Mode, OnFootVariant, Traversal},
         roomscale, scheme,
     },
     hooks::animation::body_rule_system,

@@ -1,15 +1,13 @@
 //! Resolving the summary's strings: the game's through its localisation store
-//! ([`crate::controllers::intent::localise`]), the mod's from [`ModText`].
+//! ([`jc3vr_body::controllers::intent::localise`]), the mod's from [`ModText`].
 //!
 //! In a language the panel's fonts cannot draw ([`renders`]) every game string falls back to its
 //! English stand-in, the key's own name made readable ([`humanise`]), as does a key the game does
 //! not have.
 
 use jc3gi::ui::locator::Locale;
+use jc3vr_body::controllers::intent::localise::renders;
 
-pub(crate) use crate::controllers::intent::localise::{
-    current_locale, game_string, game_string_by_hash, renders, weapon_name,
-};
 use crate::controllers::summary::labels::{ModText, Text};
 
 /// Resolve `text` in `locale`, looking the game's keys up with `game`.

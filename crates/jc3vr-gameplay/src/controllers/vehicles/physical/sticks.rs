@@ -9,12 +9,13 @@
 
 use body_rig::rotation::twist_angle;
 use glam::{Quat, Vec2, Vec3};
+use jc3vr_body::controllers::grab::cockpit::ControlKind;
 use jc3vr_input::frame::Hand;
 
 use crate::controllers::vehicles::{
     physical::{
-        ControlKind, ControlState, Holding, Placement,
-        cues::{self, ControlCue, TravelCues},
+        ControlState, Holding, Placement, cues,
+        cues::{ControlCue, TravelCues},
     },
     tuning::{FlightControlsTuning, StickSpec},
 };

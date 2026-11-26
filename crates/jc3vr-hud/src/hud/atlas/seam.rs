@@ -14,7 +14,7 @@ use jc3gi::ui::{
     scaleform::{DisplayInfo, MovieImpl, Value},
     ui_manager::UIManager,
 };
-use jc3vr_gameplay::controllers::scheme;
+use jc3vr_body::controllers::scheme;
 use jc3vr_view::hud::world_markers::stage_frame::StageFrame;
 use parking_lot::Mutex;
 

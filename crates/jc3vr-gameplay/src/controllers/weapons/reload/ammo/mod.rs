@@ -5,11 +5,11 @@
 //! rounds remain in the native count for the game's next reload to return to the reserve, but
 //! cannot feed the chamber or fire while the magazine is absent.
 
+use jc3vr_body::controllers::physics::refs::Strong;
 use parking_lot::Mutex;
 
 use crate::controllers::weapons::{
     dual_wield::single::magazine::{Dealt, split},
-    hold::refs::Strong,
     reload::{chamber::Chamber, records::MAX_RECORDS},
 };
 

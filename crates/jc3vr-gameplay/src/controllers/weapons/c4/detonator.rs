@@ -32,17 +32,15 @@ use jc3gi::{
     graphics_engine::model_instance::{Model, ModelInstance},
     types::shared_ptr::SharedPtr,
 };
+use jc3vr_body::controllers::{
+    hands::{held, held::HoldPlacement, late},
+    held::native,
+    intent::controls::ButtonControl,
+};
 use jc3vr_input::frame::{Hand, Pose};
 use parking_lot::Mutex;
 
-use crate::controllers::{
-    bindings::controls::ButtonControl,
-    hands::{
-        held::{self, HoldPlacement},
-        late,
-    },
-    weapons::{c4::slot_c4, engine, pouch_models::owned::OwnedModel},
-};
+use crate::controllers::weapons::{c4::slot_c4, engine, pouch_models::owned::OwnedModel};
 
 /// The detonator, and the hand that holds it.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
@@ -198,7 +196,7 @@ pub fn model_shown() -> bool {
 ///
 /// `weapon` must be a live weapon of the local player, on the game thread.
 pub(crate) unsafe fn trigger_model(weapon: &WeaponBase) -> Option<*const SharedPtr<Model>> {
-    let data = unsafe { engine::gun_ptr(weapon, 0) }?;
+    let data = unsafe { native::gun_ptr(weapon, 0) }?;
     let instance: *mut ModelInstance = unsafe { data.as_ref() }.m_BaseModelInstance;
     let instance = unsafe { instance.as_ref() }?;
     let model: *const SharedPtr<Model> = &instance.m_spModel;

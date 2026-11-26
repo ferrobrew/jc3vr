@@ -6,18 +6,20 @@ use std::{num::NonZeroUsize, time::Duration};
 
 use glam::Vec3;
 use jc3gi::equipment::weapon::{WeaponBase, WeaponData};
+use jc3vr_body::controllers::{
+    aim::gun,
+    hands,
+    hands::{CockpitHand, grip, pose::PALM_CENTRE_M},
+};
 use jc3vr_input::frame::Hand;
 
-use crate::controllers::{
-    aim::gun,
-    hands::{self, CockpitHand, grip, pose::PALM_CENTRE_M},
-    weapons::{
-        foregrip::{self, GripGeometry},
-        gun_bodies::{BraceContact, GunHolds, HeldGun},
-        heft::HeftClass,
-        hold::act,
-        regions,
-    },
+use crate::controllers::weapons::{
+    foregrip,
+    foregrip::GripGeometry,
+    gun_bodies::{BraceContact, GunHolds, HeldGun},
+    heft::HeftClass,
+    hold::act,
+    regions,
 };
 
 /// Read the guns in the hands: each hand whose gun the rigid grip pinned lately, of one of

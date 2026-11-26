@@ -1,13 +1,13 @@
 //! The settings one weapon-handling tick reads, gathered from their groups.
 
-use jc3vr_input::frame::Hand;
-
-use crate::controllers::{
+use jc3vr_body::controllers::{
     aim::config::{AIM_CONFIG, AimConfig},
     overlay::config::{OVERLAY_CONFIG, OverlayConfig},
     scheme,
-    weapons::config::{WEAPONS_CONFIG, WeaponsConfig},
 };
+use jc3vr_input::frame::Hand;
+
+use crate::controllers::weapons::config::{WEAPONS_CONFIG, WeaponsConfig};
 
 /// The settings the weapon handling reads in one tick: its own group, and the fields of the lower
 /// groups it consults. [`WeaponSettings::read`] takes them one group at a time, so no two

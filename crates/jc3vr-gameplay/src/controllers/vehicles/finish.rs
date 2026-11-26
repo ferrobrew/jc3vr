@@ -5,33 +5,36 @@
 use jc3gi::input::input_action_map::Action::{
     HELI_TURN_LEFT, HELI_TURN_RIGHT, TURN_LEFT, TURN_RIGHT,
 };
-use jc3vr_input::{frame::Hand, haptics::cues::Event};
-use jc3vr_view::controllers::cockpit::CockpitTransform;
-
-use crate::controllers::{
-    bindings::{
+use jc3vr_body::controllers::{
+    grab::{GrabVolume, cockpit::ControlKind},
+    hands,
+    hands::{anchor::ANCHOR_BLEND_S, tiers},
+    haptics,
+    intent::{
         controls::Controls,
         hold::{Desired, MapKind, Target, Want},
     },
-    grab::GrabVolume,
-    hands::{self, anchor::ANCHOR_BLEND_S, tiers},
-    haptics,
+    locomotion::axis_output::axis_wanted,
     mode::{Mode, VehicleClass},
-    vehicles::{
-        arm_tick::arm_tick,
-        axis_output::{axis_wanted, lever_axes_wanted, stick_axes_wanted},
-        begin::body_dimensions,
-        config::VehicleSettings,
-        control_haptics,
-        handle_tick::handles_tick,
-        mounted_grip::{self, MountedGripEvent},
-        mounted_recoil, parachute, parachute_rig,
-        physical::{self, ControlEvent, ControlKind, ControlState, buttons::ButtonEvent},
-        state::{STATE, log_handle_events, publish_mounted_holds, push_events},
-        steering,
-        tuning::PhysicalControlsTuning,
-        wheel_render, wingsuit_evade, write_outputs,
-    },
+};
+use jc3vr_input::{frame::Hand, haptics::cues::Event};
+use jc3vr_view::controllers::cockpit::CockpitTransform;
+
+use crate::controllers::vehicles::{
+    arm_tick::arm_tick,
+    axis_output::{lever_axes_wanted, stick_axes_wanted},
+    begin::body_dimensions,
+    config::VehicleSettings,
+    control_haptics,
+    handle_tick::handles_tick,
+    mounted_grip,
+    mounted_grip::MountedGripEvent,
+    mounted_recoil, parachute, parachute_rig, physical,
+    physical::{ControlEvent, ControlState, buttons::ButtonEvent},
+    state::{STATE, log_handle_events, publish_mounted_holds, push_events},
+    steering,
+    tuning::PhysicalControlsTuning,
+    wheel_render, wingsuit_evade, write_outputs,
 };
 
 /// The second half of the vehicle handling's input tick: act on the grabs, move the held controls,
@@ -347,9 +350,9 @@ fn write_heli_rudder(desired: &mut Vec<Desired>, rudder: f32) {
 #[cfg(test)]
 mod tests {
     use jc3gi::input::input_action_map::Action::{self, ACCELERATE};
+    use jc3vr_body::controllers::mode::VehicleSeat;
 
     use super::*;
-    use crate::controllers::mode::VehicleSeat;
 
     fn analog(desired: &[Desired], action: Action) -> Option<f32> {
         desired.iter().find_map(|d| match d.want {

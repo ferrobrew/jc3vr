@@ -8,15 +8,14 @@ use std::num::NonZeroUsize;
 
 pub(crate) use engine::{Target, WireReading};
 use glam::Vec3;
-use jc3vr_input::{frame::Hand, haptics::cues::Event};
-use parking_lot::Mutex;
-
-pub(crate) use crate::controllers::facts::seat::{rides_in_seat, stands_in};
-use crate::controllers::{
-    bindings::grapple_button::{SeatRequest, TAP_S},
+use jc3vr_body::controllers::{
+    facts::seat::stands_in,
     haptics,
+    intent::grapple_button::{SeatRequest, TAP_S},
     physics::grapple_hook::local,
 };
+use jc3vr_input::{frame::Hand, haptics::cues::Event};
+use parking_lot::Mutex;
 
 /// What the bindings hand the seat grapple's tick.
 pub(crate) struct SeatTickInput {

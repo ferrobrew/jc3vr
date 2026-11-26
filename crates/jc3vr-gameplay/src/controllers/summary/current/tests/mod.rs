@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use jc3vr_body::controllers::{grab::GrabVolume, intent::rows::StickDir, mode::OnFootVariant};
 use jc3vr_input::semantic::{SemanticSet, vocabulary::OnFootAction};
 use jc3vr_view::vr::input::semantic::bound::{EnumeratedSource, SourceTable};
 
@@ -7,15 +8,9 @@ use super::*;
 use crate::controllers::{
     bindings::tables::{
         declare::TableCtx,
-        describe::{DescribeCtx, Features, StickDir, describe_bound, describe_sources},
+        describe::{DescribeCtx, Features, describe_bound, describe_sources},
     },
-    grab::GrabVolume,
-    mode::OnFootVariant,
-    summary::{
-        eligibility::{self, Eligibility},
-        localise::humanise,
-        retain_wrist,
-    },
+    summary::{eligibility, eligibility::Eligibility, localise::humanise, retain_wrist},
 };
 
 mod doors;

@@ -14,7 +14,7 @@
 //!
 //! The probe is cast along the gun's pose before the push ([`apply`] notes it), so the push never
 //! feeds back into where the wall is looked for. The pose is applied last on the cockpit-frame
-//! hands ([`crate::controllers::hands::active_hands`]), after the sights and the recoil, so the
+//! hands ([`jc3vr_body::controllers::hands::active_hands`]), after the sights and the recoil, so the
 //! drawn gun, its sight line, and the IK targets all see the gun where the wall stops it.
 
 pub mod config;
@@ -23,24 +23,21 @@ pub mod solve;
 use std::time::{Duration, Instant};
 
 use glam::Vec3;
+use jc3vr_body::controllers::{
+    aim::{ray::Ray, raycast, raycast::CastOptions},
+    hands::CockpitHand,
+};
 use jc3vr_input::frame::{Hand, Pose};
 use jc3vr_view::controllers::cockpit::CockpitTransform;
 use parking_lot::Mutex;
 
-use crate::controllers::{
-    aim::{
-        ray::Ray,
-        raycast::{self, CastOptions},
+use crate::controllers::weapons::{
+    ads::solve::RigidMove,
+    collide::{
+        config::CollideConfig,
+        solve::{Barrel, Wall},
     },
-    hands::CockpitHand,
-    weapons::{
-        ads::solve::RigidMove,
-        collide::{
-            config::CollideConfig,
-            solve::{Barrel, Wall},
-        },
-        foregrip,
-    },
+    foregrip,
 };
 
 /// A long gun in a hand, as the input tick measured it.

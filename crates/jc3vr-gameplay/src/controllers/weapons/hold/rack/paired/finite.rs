@@ -12,21 +12,24 @@ use jc3gi::{
     character::{character::Character, inventory::WeaponSlot},
     equipment::weapon::{WeaponBase, WeaponState},
 };
+use jc3vr_body::controllers::physics::refs::{Strong, Weak};
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
 use crate::controllers::{
     loadout::take::TakeRoute,
     weapons::{
-        dual_wield::single::{self, magazine},
+        dual_wield::{single, single::magazine},
         engine::{character_object, gun_at_mut, object_of},
         hold::{
             pickup::Refusal,
-            rack::paired::{
-                self, COPY_WAIT, Claim, ClaimKind, MAX_SOURCES, Member, SOURCE_GRACE, Stage, gun,
-                member_points,
+            rack::{
+                paired,
+                paired::{
+                    COPY_WAIT, Claim, ClaimKind, MAX_SOURCES, Member, SOURCE_GRACE, Stage, gun,
+                    member_points,
+                },
             },
-            refs::{Strong, Weak},
             source::SourceRefusal,
             world::{TargetKind, WorldTarget},
         },

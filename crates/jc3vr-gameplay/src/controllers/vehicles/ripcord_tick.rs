@@ -7,24 +7,29 @@
 //! tick, as the button does.
 
 use jc3gi::input::input_action_map::Action::OPEN_PARACHUTE;
-use jc3vr_input::{frame::Hand, haptics::cues::Event};
-use parking_lot::Mutex;
-
-use crate::controllers::{
-    bindings::{
+use jc3vr_body::controllers::{
+    body,
+    fingers::{
+        grip,
+        grip::{Grip, GripSource},
+    },
+    grab::{GrabVolume, GripTarget, Mark, MarkAt, MarkStyle, Shown, Tier},
+    hands,
+    hands::ActiveHands,
+    haptics,
+    intent::{
         controls::Controls,
         hold::{Desired, MapKind, Target, Want},
     },
-    body,
-    fingers::grip::{self, Grip, GripSource},
-    grab::{GrabVolume, GripTarget, Mark, MarkAt, MarkStyle, Shown, Tier},
-    hands::{self, ActiveHands},
-    haptics,
     mode::{AirborneVariant, Mode},
-    vehicles::{
-        config::VehicleSettings,
-        ripcord::{self, RipcordEvent, RipcordState, StepInputs},
-    },
+};
+use jc3vr_input::{frame::Hand, haptics::cues::Event};
+use parking_lot::Mutex;
+
+use crate::controllers::vehicles::{
+    config::VehicleSettings,
+    ripcord,
+    ripcord::{RipcordEvent, RipcordState, StepInputs},
 };
 
 /// Whether the ripcord acts in `mode`.

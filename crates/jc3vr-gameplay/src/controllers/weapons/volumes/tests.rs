@@ -1,5 +1,6 @@
+use jc3vr_body::controllers::{body::BodyDimensions, grab::grab_volume};
+
 use super::*;
-use crate::controllers::{body::BodyDimensions, grab::grab_volume};
 
 const DIMS: BodyDimensions = BodyDimensions::CHARACTER_ESTIMATE;
 /// A body a little shorter than the character's.

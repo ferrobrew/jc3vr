@@ -1,6 +1,7 @@
 //! The tolerant load of this configuration: the engine's load ([`jc3vr_core::config::engine::load`])
 //! for a [`Config`], and the checks it runs on the settings whose types admit unusable values.
 
+use jc3vr_body::controllers::aim::sights::config::SightTable;
 #[cfg(test)]
 use jc3vr_core::config::engine;
 #[cfg(test)]
@@ -9,7 +10,7 @@ use jc3vr_core::config::engine::{
     Invalid,
     load::{Reset, reset_named},
 };
-use jc3vr_gameplay::controllers::config::{ControllersConfig, SightTable, validate};
+use jc3vr_gameplay::controllers::config::{ControllersConfig, validate};
 use jc3vr_hud::hud::HudConfig;
 use jc3vr_view::headpose::config::VrTurnConfig;
 

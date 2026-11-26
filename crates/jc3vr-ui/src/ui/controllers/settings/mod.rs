@@ -1,13 +1,11 @@
 //! Every controller setting except those with their own section's file.
 
 use egui::{Slider, Ui};
+use jc3vr_body::hooks::character::config::BODY_IK_CONFIG;
 use jc3vr_core::config::engine::Parts;
-use jc3vr_gameplay::{
-    controllers::{
-        bindings::{Blocker, HandRecovery},
-        config::{CONTROLLERS_CONFIG, ControllersConfig},
-    },
-    hooks::character::config::BODY_IK_CONFIG,
+use jc3vr_gameplay::controllers::{
+    bindings::{Blocker, HandRecovery},
+    config::{CONTROLLERS_CONFIG, ControllersConfig},
 };
 use jc3vr_input::{
     frame,

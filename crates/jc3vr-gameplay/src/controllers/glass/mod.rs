@@ -41,6 +41,16 @@ use std::{num::NonZeroUsize, time::Instant};
 pub use config::{GlassConfig, GlassTuning};
 use glam::Vec3;
 use jc3gi::physics::{GameMaterialId, PhysicsSystem};
+use jc3vr_body::controllers::{
+    aim::{
+        ray::Ray,
+        raycast,
+        raycast::{CastOptions, RaycastError},
+    },
+    hands,
+    hands::{ActiveHands, CockpitHand},
+    haptics, scheme,
+};
 use jc3vr_core::thread_role::{self, ThreadRole};
 use jc3vr_input::{
     frame::{Hand, Pose},
@@ -51,26 +61,16 @@ use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
-    aim::{
-        ray::Ray,
-        raycast::{self, CastOptions, RaycastError},
-    },
     glass::{
         config::GLASS_CONFIG,
         engine::{HideRefusal, Pane},
         strike::{Limiter, Outcome, STRIKERS, Sample, Striker, StrikerKind},
     },
-    hands::{self, ActiveHands, CockpitHand},
-    haptics,
     loadout::{ItemKind, live},
-    physical_hands::{
-        self,
-        palm::PalmBox,
-        sounds::{self, MeleeImpact},
-        tuning::PALMS,
-    },
-    scheme,
-    weapons::{self, collide},
+    physical_hands,
+    physical_hands::{palm::PalmBox, sounds, sounds::MeleeImpact, tuning::PALMS},
+    weapons,
+    weapons::collide,
 };
 
 /// Why breaking glass stands down this tick.

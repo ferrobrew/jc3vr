@@ -1,20 +1,23 @@
 use jc3gi::input::input_action_map::Action;
+use jc3vr_body::controllers::{
+    grab::GrabVolume,
+    intent::{
+        controls::{ButtonControl, Controls},
+        rows::{Control as ShownControl, Effect, ModAction},
+    },
+    mode::{Mode, OnFootVariant},
+};
 use jc3vr_view::vr::input::semantic::bound::{EnumeratedSource, SourceTable, of_sources};
 
 use super::*;
 use crate::controllers::{
     bindings::{
-        controls::{ButtonControl, Controls},
         summary::grapple_routes,
-        tables::{
-            Bindings,
-            describe::{Control as ShownControl, Effect, ModAction},
-        },
-        trigger_ownership::{self, Owner, TriggerMask},
+        tables::Bindings,
+        trigger_ownership,
+        trigger_ownership::{Owner, TriggerMask},
     },
-    grab::GrabVolume,
     loadout::Socket,
-    mode::{Mode, OnFootVariant},
     summary::{current::CurrentContext, eligibility::SnatchHint, snatch},
     weapons::capabilities::{GunHand, GunOwner},
 };

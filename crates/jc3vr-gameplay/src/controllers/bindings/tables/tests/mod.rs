@@ -2,15 +2,15 @@
 
 use glam::Vec2;
 use jc3gi::input::input_action_map::Action::{self, *};
+use jc3vr_body::controllers::{
+    intent::controls::HandControls,
+    mode::{OnFootVariant, VehicleSeat},
+};
 use jc3vr_input::semantic::SemanticSet;
 use jc3vr_view::vr::input::semantic::defaults::default_binding;
 
 use super::*;
-use crate::controllers::{
-    bindings::{controls::HandControls, intents::simulate::simulate},
-    loadout::Socket,
-    mode::{OnFootVariant, VehicleSeat},
-};
+use crate::controllers::{bindings::intents::simulate::simulate, loadout::Socket};
 
 const DT: f32 = 1.0 / 30.0;
 /// The table inputs are already accepted; chord timing does not change their interpretation.

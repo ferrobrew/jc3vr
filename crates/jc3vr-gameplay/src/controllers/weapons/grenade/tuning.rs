@@ -2,8 +2,9 @@
 //! configuration ([`GrenadeConfig`]).
 
 use glam::Vec3;
+use jc3vr_body::controllers::hands::held::HoldPlacement;
 
-use crate::controllers::{hands::held::HoldPlacement, weapons::config::GrenadeConfig};
+use crate::controllers::weapons::config::GrenadeConfig;
 
 /// The grenade throw's tuning with the catch switched on.
 pub const GRENADE: GrenadeTuning = GrenadeTuning::new();

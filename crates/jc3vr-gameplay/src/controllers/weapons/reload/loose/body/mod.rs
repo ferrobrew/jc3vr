@@ -1,13 +1,11 @@
 //! Current body reads and writes, with committed-generation observations before further access.
 
 use glam::{Quat, Vec3};
+use jc3vr_body::controllers::{physics, physics::bodies::BodyError};
 
-use crate::controllers::{
-    physical_hands::{self, BodyError},
-    weapons::reload::{
-        loose::{Loose, Operation, State, body_status, carry_velocities, upright_toward},
-        tuning::LooseTuning,
-    },
+use crate::controllers::weapons::reload::{
+    loose::{Loose, Operation, State, body_status, carry_velocities, upright_toward},
+    tuning::LooseTuning,
 };
 
 pub(super) trait Bodies {
@@ -21,7 +19,7 @@ pub(super) struct NativeBodies;
 
 impl Bodies for NativeBodies {
     fn pose(&mut self, magazine: Loose) -> Result<(Vec3, Quat), BodyError> {
-        unsafe { physical_hands::body_pose(magazine.body, magazine.owner) }
+        unsafe { physics::body_pose(magazine.body, magazine.owner) }
     }
     fn velocities(
         &mut self,
@@ -29,12 +27,10 @@ impl Bodies for NativeBodies {
         linear: Vec3,
         angular: Vec3,
     ) -> Result<(), BodyError> {
-        unsafe {
-            physical_hands::set_body_velocities(magazine.body, magazine.owner, linear, angular)
-        }
+        unsafe { physics::set_body_velocities(magazine.body, magazine.owner, linear, angular) }
     }
     fn disable(&mut self, magazine: Loose) {
-        unsafe { (*physical_hands::game_object_of(magazine.object)).Enable(false) };
+        unsafe { (*physics::bodies::game_object_of(magazine.object)).Enable(false) };
     }
 }
 

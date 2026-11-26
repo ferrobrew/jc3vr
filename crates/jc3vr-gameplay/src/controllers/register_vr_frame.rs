@@ -1,8 +1,7 @@
 //! The gameplay participants of the VR frame and its recenters ([`jc3vr_view::vr::FrameParticipants`]).
 
+use jc3vr_body::controllers::roomscale;
 use jc3vr_view::vr::{FrameParticipants, register_frame_participants};
-
-use crate::controllers::roomscale;
 
 pub(super) fn register() {
     register_frame_participants(&PARTICIPANTS);

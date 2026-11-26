@@ -11,7 +11,7 @@
 use anyhow::Context as _;
 use glam::{Mat4, Vec3};
 use jc3gi::graphics_engine::{device::Device, graphics_engine::GraphicsEngine};
-use jc3vr_gameplay::controllers::aim::marker_rays::Sight;
+use jc3vr_body::controllers::aim::marker_rays::Sight;
 use windows::Win32::Graphics::{
     Direct3D11::{
         D3D11_BIND_CONSTANT_BUFFER, D3D11_BIND_UNORDERED_ACCESS, D3D11_BUFFER_DESC,

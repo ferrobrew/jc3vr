@@ -13,17 +13,17 @@ use jc3gi::{
         render_pass::get_current_add_buffer,
     },
 };
+use jc3vr_body::{
+    controllers::{hands, presentation},
+    hooks::input,
+};
 use jc3vr_capture::testing::visual;
 use jc3vr_core::{
     frame_timing::{self, Slot},
     render_frame,
     thread_role::{self, ThreadRole},
 };
-use jc3vr_gameplay::{
-    controllers,
-    controllers::{hands, presentation},
-    hooks::input,
-};
+use jc3vr_gameplay::controllers;
 use jc3vr_hud::{hooks::ui, hud};
 use jc3vr_render::{
     debug,

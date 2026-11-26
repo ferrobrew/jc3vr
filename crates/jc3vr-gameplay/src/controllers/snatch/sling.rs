@@ -4,13 +4,14 @@
 //! real swing to move, but does move.
 
 use glam::Vec3;
+use jc3vr_body::controllers::physics::rigid::RigidBody;
 
 use crate::{
-    controllers::{
-        physical_hands::rigid::RigidBody,
-        snatch::config::{REFERENCE_MASS_KG, SwingConfig},
+    controllers::snatch::config::{REFERENCE_MASS_KG, SwingConfig},
+    grapple::{
+        rope,
+        rope::{Rope, RopeEnd, RopeFault, RopeOutput, RopeTuning},
     },
-    grapple::rope::{self, Rope, RopeEnd, RopeFault, RopeOutput, RopeTuning},
 };
 
 /// The owner facts required before continuing any snatch phase.
@@ -264,9 +265,9 @@ impl Sling {
 #[cfg(test)]
 mod tests {
     use glam::Quat;
+    use jc3vr_body::controllers::physics::rigid::{BodyPose, Velocities};
 
     use super::*;
-    use crate::controllers::physical_hands::rigid::{BodyPose, Velocities};
 
     #[test]
     fn a_rotating_detached_panel_uses_its_selected_surface_and_point_velocity() {

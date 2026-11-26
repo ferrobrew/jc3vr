@@ -18,7 +18,7 @@
 //!
 //! - [`config`]: the settings;
 //! - [`engine`]: a character's capsule body, the player's hostility to it, and whether it is dead
-//!   (in [`crate::controllers::physics`]);
+//!   (in [`jc3vr_body::controllers::physics`]);
 //! - [`get_up`]: holding a held ragdoll's get-up off, and what ended a hold;
 //! - [`pane`]: reaching an occupant through a window the glass brought down;
 //! - [`ragdoll`]: a ragdolling character's bodies, the bone nearest a point, and the whole
@@ -52,19 +52,14 @@ use jc3gi::{
     character::character::{Character, SafeBoneIndex},
     vehicle::vehicle::DoorSlot,
 };
+use jc3vr_body::controllers::{
+    grab::world_reach::{CharacterTarget, Reach, SeatAccess, Seated, TargetKind},
+    physics::{bodies::owner_of, characters as engine},
+};
 use jc3vr_input::frame::Pose;
 
 use crate::controllers::physical_hands::{
-    bodies::owner_of,
-    characters::ragdoll::Ragdoll,
-    contact::SurfaceHit,
-    doors::engine as door_engine,
-    grasp::{Reach, TargetKind},
-    remote,
-};
-pub use crate::controllers::{
-    grab::world_reach::{CharacterTarget, SeatAccess, Seated},
-    physics::characters as engine,
+    characters::ragdoll::Ragdoll, contact::SurfaceHit, doors::engine as door_engine, remote,
 };
 
 /// Why a character the reach hit is not one a hand takes.

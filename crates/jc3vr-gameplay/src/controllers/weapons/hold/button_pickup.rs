@@ -30,10 +30,11 @@ use jc3gi::{
     },
     ui::hud_ui::HUDUI,
 };
+use jc3vr_body::controllers::scheme;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::controllers::{scheme, weapons::config::WEAPONS_CONFIG};
+use crate::controllers::weapons::config::WEAPONS_CONFIG;
 
 /// The button pickup suppression's readout.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]

@@ -28,21 +28,21 @@ use std::{
 
 use glam::{Mat4, Quat, Vec3};
 use jc3gi::character::character::Character;
+use jc3vr_body::controllers::{
+    body::procedural::{solver::arms::Capsule as KeepOutCapsule, torso_keep_out},
+    physics::bodies,
+    scheme,
+};
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
-use crate::controllers::{
-    body::procedural::{solver::arms::Capsule as KeepOutCapsule, torso_keep_out},
-    physical_hands::{
-        bodies,
-        config::PHYSICAL_HANDS_CONFIG,
-        physics::{
-            body::{BodyShape, BodySpec, Capsule, HandBody, player_system_group},
-            contact::Source,
-            step::step_seconds,
-        },
+use crate::controllers::physical_hands::{
+    config::PHYSICAL_HANDS_CONFIG,
+    physics::{
+        body::{BodyShape, BodySpec, Capsule, HandBody, player_system_group},
+        contact::Source,
+        step::step_seconds,
     },
-    scheme,
 };
 
 /// Whether `body` is one of the drawn torso's capsules. Lock-free, for the carry collision's

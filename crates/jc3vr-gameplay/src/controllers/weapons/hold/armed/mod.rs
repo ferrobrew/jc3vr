@@ -38,18 +38,20 @@ use jc3gi::{
     },
     equipment::weapon::{WeaponBase, WeaponData, WeaponState},
 };
+use jc3vr_body::controllers::{
+    hands::ik,
+    held::native::{gun_count, gun_ptr},
+};
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
-use crate::controllers::{
-    hands::ik,
-    weapons::{
-        dual_wield::single,
-        engine::{self, HeldWeapon, Wielded, gun_count, gun_ptr, skip_interpolation, slot_of},
-        heft::HeftClass,
-        hold::layout,
-        inventory::{carry, engine as inventory_engine},
-    },
+use crate::controllers::weapons::{
+    dual_wield::single,
+    engine,
+    engine::{HeldWeapon, Wielded, skip_interpolation, slot_of},
+    heft::HeftClass,
+    hold::layout,
+    inventory::{carry, engine as inventory_engine},
 };
 
 /// Why a weapon was not armed.

@@ -7,8 +7,9 @@
 use std::num::NonZeroUsize;
 
 use glam::Vec3;
+use jc3vr_body::controllers::aim::raycast::CastOptions;
 
-use crate::controllers::{aim::raycast::CastOptions, glass::bullets, physical_hands::query};
+use crate::controllers::{glass::bullets, physical_hands::query};
 
 /// Whether a palm at `palm` that reaches `target` on an occupant of `vehicle` came in through one
 /// of the vehicle's panes the glass brought down ([`query::crosses_hidden_pane`]), with the

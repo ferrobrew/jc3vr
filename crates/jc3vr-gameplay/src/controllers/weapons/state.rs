@@ -3,28 +3,29 @@
 //! measured geometry, and the bookkeeping the two tick halves share.
 
 use glam::Vec3;
+use jc3vr_body::controllers::{
+    grab::{GrabVolume, GripTarget},
+    hands::ik,
+};
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
-use crate::controllers::{
-    grab::{GrabVolume, GripTarget},
-    hands::ik,
-    weapons::{
-        ads, c4, collide,
-        config::WeaponSettings,
-        docks::attract::{Attractor, ZoneWatch},
-        dual_wield,
-        engine::{self, HeldWeapon},
-        foregrip::{self, GripGeometry},
-        grenade, grip_watch, gun_bodies, heft,
-        hold::{self, armed},
-        opening::OpenWatch,
-        pouch_models, pouch_return, recoil,
-        regions::{self, GunRegion, RegionHit},
-        reload,
-        types::WeaponsStatus,
-        wheel,
-    },
+use crate::controllers::weapons::{
+    ads, c4, collide,
+    config::WeaponSettings,
+    docks::attract::{Attractor, ZoneWatch},
+    dual_wield, engine,
+    engine::HeldWeapon,
+    foregrip,
+    foregrip::GripGeometry,
+    grenade, grip_watch, gun_bodies, heft, hold,
+    hold::armed,
+    opening::OpenWatch,
+    pouch_models, pouch_return, recoil, regions,
+    regions::{GunRegion, RegionHit},
+    reload,
+    types::WeaponsStatus,
+    wheel,
 };
 
 /// The weapon handling's readout, for the debug UI.

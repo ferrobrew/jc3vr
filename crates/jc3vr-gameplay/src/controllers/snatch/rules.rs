@@ -4,9 +4,10 @@
 //! gun gives it. The catch itself is in [`crate::controllers::snatch::catch`].
 
 use glam::Vec3;
+use jc3vr_body::controllers::aim::ray::Ray;
 use jc3vr_input::frame::Hand;
 
-use crate::controllers::{aim::ray::Ray, snatch::catch::CatchTick};
+use crate::controllers::snatch::catch::CatchTick;
 
 /// A thing the snatch could take, as the aim or the noted characters place it this tick.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -334,11 +335,10 @@ pub fn prop_handling(mass_kg: f32, carry_max_kg: f32, ceiling_kg: f32) -> Option
 
 #[cfg(test)]
 mod tests {
+    use jc3vr_body::controllers::intent::yank::{YankDetector, reach_along};
+
     use super::*;
-    use crate::controllers::{
-        bindings::yank::{YankDetector, reach_along},
-        snatch::config::SnatchConfig,
-    };
+    use crate::controllers::snatch::config::SnatchConfig;
 
     /// A seated player's grip on a weapon on the ground ahead and to the right, then a pull of the
     /// hand back and out past their left side at about 0.9 m/s, sampled at the game's tick, with the

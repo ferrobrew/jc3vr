@@ -2,7 +2,7 @@
 //! the Valve Index set, with the grips from the same pack's Steam Frame set, since the Index set has
 //! no grip glyph. Test-only asset and physical-source mapping compatibility coverage.
 
-use jc3vr_gameplay::controllers::bindings::tables::describe::{Control, StickDir};
+use jc3vr_body::controllers::intent::rows::{Control, StickDir};
 use jc3vr_input::frame::Hand;
 
 /// Embed a glyph PNG by its file stem.

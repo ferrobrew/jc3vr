@@ -5,29 +5,29 @@
 use std::time::Instant;
 
 use glam::Vec3;
+use jc3vr_body::controllers::{
+    haptics, mode,
+    mode::{Mode, OnFootVariant},
+};
 use jc3vr_input::{
     frame::Hand,
     haptics::cues::{self, Sustain},
 };
 use jc3vr_view::vr::recenter_count;
 
-use crate::controllers::{
-    haptics,
-    mode::{self, Mode, OnFootVariant},
-    physical_hands::{
-        PhysicalHandsConfig,
-        climb::{
-            config::CLIMB,
-            engine,
-            solve::tension,
-            state::{Event, MIN_TENSION, STATE, enabled},
-            types::{Hold, Observed},
-        },
-        contact::{Surface, SurfaceHit},
-        palm::PalmBox,
-        physics::drive::rig_jumped,
-        pickup::REACH_DIRECTIONS,
+use crate::controllers::physical_hands::{
+    PhysicalHandsConfig,
+    climb::{
+        config::CLIMB,
+        engine,
+        solve::tension,
+        state::{Event, MIN_TENSION, STATE, enabled},
+        types::{Hold, Observed},
     },
+    contact::{Surface, SurfaceHit},
+    palm::PalmBox,
+    physics::drive::rig_jumped,
+    pickup::REACH_DIRECTIONS,
 };
 
 /// The surface `palm` reaches: the nearest hit, on a body a hand climbs ([`engine::climbable`]), of

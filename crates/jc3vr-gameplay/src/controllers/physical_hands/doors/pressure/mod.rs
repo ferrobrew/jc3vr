@@ -5,30 +5,32 @@ use jc3gi::{
     physics::{GameMaterialId, PhysicsSystem},
     vehicle::vehicle::DoorSlot,
 };
-
-use crate::controllers::{
+use jc3vr_body::controllers::{
     aim::{
         ray::Ray,
-        raycast::{self, CastOptions, RaycastError},
+        raycast,
+        raycast::{CastOptions, RaycastError},
     },
-    glass::bullets::names_hidden_pane,
+    physics::bodies,
 };
+
+use crate::controllers::glass::bullets::names_hidden_pane;
 
 mod diagnostics;
 
+use jc3vr_body::controllers::grab::world_reach::{DoorTarget, Reach, TargetKind};
+
 pub use crate::controllers::physical_hands::doors::pressure::diagnostics::{Readout, Reason};
 use crate::controllers::physical_hands::{
-    bodies,
     contact::{Surface, SurfaceHit},
     doors::{
-        DoorTarget, UNLATCH_PULL_M,
-        engine::{self, DoorError, DoorRead},
+        UNLATCH_PULL_M, engine,
+        engine::{DoorError, DoorRead},
         hinge, panel_hit,
         pressure::diagnostics::Diagnostics,
         table,
     },
     engine as contact_engine,
-    grasp::{Reach, TargetKind},
     palm::PalmBox,
     state::STATE,
 };

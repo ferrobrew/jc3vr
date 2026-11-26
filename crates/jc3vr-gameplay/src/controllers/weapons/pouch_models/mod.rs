@@ -49,27 +49,25 @@ use jc3gi::{
     graphics_engine::model_instance::Model,
     types::shared_ptr::SharedPtr,
 };
+use jc3vr_body::controllers::{
+    body::{mirror, mirror::SampleId, rig::frames::Frames},
+    hands::{grip, late::lerp_transform},
+};
 use jc3vr_input::frame::{Hand, Pose};
 use parking_lot::Mutex;
 
-use crate::controllers::{
-    body::{mirror, rig::frames::Frames},
-    hands::{grip, late::lerp_transform},
-    weapons::{
-        c4::detonator::trigger_model,
-        config::PouchModelsConfig,
-        engine,
-        mirror::pouches_rendered,
-        pouch_models::{
-            attachments::{RenderSample, Sample, SampleId, placement},
-            owned::{OwnedModel, magazine_source, without_magazine_prop},
-            speedloader::Speedloaders,
-        },
-        reload::{
-            self,
-            plan::{HandModel, MAX_HELD_ROUNDS, RoundModel},
-        },
+use crate::controllers::weapons::{
+    c4::detonator::trigger_model,
+    config::PouchModelsConfig,
+    engine,
+    mirror::pouches_rendered,
+    pouch_models::{
+        attachments::{RenderSample, Sample, placement},
+        owned::{OwnedModel, magazine_source, without_magazine_prop},
+        speedloader::Speedloaders,
     },
+    reload,
+    reload::plan::{HandModel, MAX_HELD_ROUNDS, RoundModel},
 };
 
 pub(crate) mod attachments;

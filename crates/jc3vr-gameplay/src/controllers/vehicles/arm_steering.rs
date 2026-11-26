@@ -32,11 +32,9 @@
 //! threshold does not flicker in and out.
 
 use glam::{Quat, Vec2, Vec3};
+use jc3vr_body::controllers::body::EYES_FORWARD_OF_SHOULDERS;
 
-use crate::controllers::{
-    body::EYES_FORWARD_OF_SHOULDERS,
-    vehicles::config::{ArmPitch, ArmSteeringConfig},
-};
+use crate::controllers::vehicles::config::{ArmPitch, ArmSteeringConfig};
 
 /// One hand, as the arm steering reads it.
 #[derive(Debug, Copy, Clone, PartialEq)]

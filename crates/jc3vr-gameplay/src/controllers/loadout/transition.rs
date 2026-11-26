@@ -8,13 +8,13 @@
 
 use std::fmt;
 
+use jc3vr_body::controllers::grab::socket::Socket;
 use jc3vr_input::frame::Hand;
 
 use crate::controllers::loadout::{
     binding::{Awaiting, Binding, ObjectAddress},
     item::{ItemId, ItemKind, WeaponType},
     reset::{CacheKind, ResetKind},
-    socket::Socket,
     table::{Departure, Docked, Item, Loadout, Lying, Place},
 };
 

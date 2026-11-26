@@ -8,18 +8,23 @@
 
 use std::fmt::Write as _;
 
-use crate::{
+use jc3vr_body::{
     controllers::{
         body::{mirror, rig::root},
         facts::climb,
         grab::tick as grab_tick,
-        physical_hands::{self, physics as hand_bodies},
-        roomscale, vehicles,
-        weapons::{self, fire, hold::take, inventory},
+        roomscale,
     },
     hooks::character::{
         bodies_destroying_registered, missing_auto_attach_blockers, serial_consumer_registered,
     },
+};
+
+use crate::controllers::{
+    physical_hands,
+    physical_hands::physics as hand_bodies,
+    vehicles, weapons,
+    weapons::{fire, hold::take, inventory},
 };
 
 pub(super) fn register() {

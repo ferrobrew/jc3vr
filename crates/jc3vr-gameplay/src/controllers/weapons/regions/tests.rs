@@ -1,12 +1,10 @@
 use glam::{Quat, Vec3};
+use jc3vr_body::controllers::{fingers::grip::catalogue::GripPose, hands::pose as hand_pose};
 use jc3vr_input::frame::Pose;
 use pretty_assertions::assert_eq;
 
 use super::*;
-use crate::controllers::{
-    fingers::grip::catalogue::GripPose, hands::pose as hand_pose,
-    weapons::regions::shape::MagazineWell,
-};
+use crate::controllers::weapons::regions::shape::MagazineWell;
 
 const GRIP_RADIUS: f32 = 0.07;
 const REACH: f32 = 0.05;

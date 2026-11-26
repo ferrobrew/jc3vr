@@ -5,17 +5,19 @@ use std::collections::BTreeSet;
 
 use glam::Vec2;
 use jc3gi::input::input_action_map::Action;
+use jc3vr_body::controllers::{
+    intent::{
+        config::BindingsConfig,
+        controls::{ButtonControl, Controls, HandControls},
+    },
+    mode::{AirborneVariant, Mode, OnFootVariant, VehicleClass, VehicleSeat},
+};
 use jc3vr_input::{frame::Hand, semantic::SemanticSet};
 use jc3vr_view::vr::input::semantic::{bound::Layout, defaults::default_binding};
 
-use crate::controllers::{
-    bindings::{
-        controls::{ButtonControl, Controls, HandControls},
-        intents::simulate::simulate,
-        tables::{Bindings, declare::TableCtx},
-    },
-    config::BindingsConfig,
-    mode::{AirborneVariant, Mode, OnFootVariant, VehicleClass, VehicleSeat},
+use crate::controllers::bindings::{
+    intents::simulate::simulate,
+    tables::{Bindings, declare::TableCtx},
 };
 
 /// Every mode the detector reports.

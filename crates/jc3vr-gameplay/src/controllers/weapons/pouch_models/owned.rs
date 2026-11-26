@@ -18,8 +18,7 @@ use jc3gi::{
     },
     types::{math::Matrix4, shared_ptr::SharedPtr},
 };
-
-use crate::controllers::aim::gun;
+use jc3vr_body::controllers::aim::gun;
 
 /// One owned instance of a game model, and the weapon it was made for, if any.
 #[derive(Debug, Copy, Clone, Default)]

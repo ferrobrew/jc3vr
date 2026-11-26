@@ -1,9 +1,11 @@
 //! Vehicle, wingsuit, and parachute bindings.
 
+use jc3vr_body::controllers::intent::hold::{ActionWrite, HoldTracker, Phase};
+
 use super::*;
 use crate::controllers::bindings::{
-    bail::{self, BailLatch, BailTick},
-    hold::{ActionWrite, HoldTracker, Phase},
+    bail,
+    bail::{BailLatch, BailTick},
 };
 
 #[test]

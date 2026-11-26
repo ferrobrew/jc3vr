@@ -19,7 +19,7 @@ pub struct PhysicalGrappleConfig {
     /// falling, with tethers attached and no line of the grapple's own.
     pub pull_to_reel: bool,
     /// Pump a hanging character's swing by the grapple hand's motion, on top of the hold of
-    /// [`AnchorConfig::enabled`](crate::controllers::hands::anchor::AnchorConfig::enabled).
+    /// [`AnchorConfig::enabled`](jc3vr_body::controllers::hands::anchor::AnchorConfig::enabled).
     pub pump: bool,
     /// The lock: holding the grapple button during the reel holds the line's length to swing from
     /// ([`crate::grapple::physical::lock`]).
@@ -151,7 +151,7 @@ impl PhysicalGrappleTuning {
 
 /// How the grapple hand's pull toward the body is measured
 /// ([`crate::grapple::physical::pull`]). The hand's distance from the body point is the yank's
-/// ([`GRAPPLE_YANK`](crate::controllers::bindings::yank::GRAPPLE_YANK)).
+/// ([`GRAPPLE_YANK`](jc3vr_body::controllers::intent::yank::GRAPPLE_YANK)).
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct PullTuning {
     /// How long a pull's speed is remembered after the hand stops, seconds: the time constant of

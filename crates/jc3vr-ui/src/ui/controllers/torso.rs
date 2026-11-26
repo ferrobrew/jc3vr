@@ -4,7 +4,7 @@
 use std::time::Instant;
 
 use egui::Ui;
-use jc3vr_gameplay::controllers::body::rig::{TorsoStatus, skeleton::SkeletonStatus};
+use jc3vr_body::controllers::body::rig::{TorsoStatus, skeleton::SkeletonStatus};
 
 use crate::ui::controllers::{vec3, yes_no};
 

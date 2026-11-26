@@ -7,6 +7,13 @@ use std::num::NonZeroUsize;
 
 use glam::{Mat4, Vec3};
 use jc3gi::{character::inventory::WeaponSlot, equipment::weapon::WeaponBase};
+use jc3vr_body::controllers::{
+    aim::{GRAPPLE_ORIGIN_M, ray::Ray, raycast, raycast::CastOptions},
+    grab::latch::GripLatch,
+    hands::ik,
+    haptics, physics,
+    physics::{GRAVITY_MPS2, grapple_hook::BodyHit, refs::Weak, rigid::Velocities},
+};
 use jc3vr_input::{frame::Hand, haptics::cues::Sustain};
 use jc3vr_view::hooks::camera;
 
@@ -15,44 +22,33 @@ pub(super) use crate::controllers::snatch::acquisition::{
 };
 use crate::{
     controllers::{
-        aim::{
-            GRAPPLE_ORIGIN_M,
-            ray::Ray,
-            raycast::{self, CastOptions},
-        },
-        grab::latch::GripLatch,
-        hands::ik,
-        haptics,
         physical_hands::{
-            self,
             doors::engine::vehicle_frame,
             grasp::GripTarget as HoldPoint,
-            hold::{self, HandHold, HoldTuning},
+            hold,
+            hold::{HandHold, HoldTuning},
             remote,
-            rigid::Velocities,
         },
-        physics::{GRAVITY_MPS2, grapple_hook::BodyHit},
         snatch::{
-            FinishInput, Refusal, SNATCH,
-            arrival::{self, Landing, LandingInput},
-            brace::{self, Brace, BraceInput, BraceReach, LineInput, Regrip},
-            catch::{self, CatchHand, CatchTuning, CatchWatch},
-            engine, juice, landing,
-            rules::{self, FlightLimits, FlightSample, PropHandling, StallWatch, Verdict},
+            FinishInput, Refusal, SNATCH, arrival,
+            arrival::{Landing, LandingInput},
+            brace,
+            brace::{Brace, BraceInput, BraceReach, LineInput, Regrip},
+            catch,
+            catch::{CatchHand, CatchTuning, CatchWatch},
+            engine, juice, landing, rules,
+            rules::{FlightLimits, FlightSample, PropHandling, StallWatch, Verdict},
             sling::{LineTuning, Sling, SlingStep},
             sling_hooks,
             target::weak_of,
         },
         weapons::{
             grenade,
-            hold::{SNAP_S, refs::Weak, source as hold_source},
+            hold::{SNAP_S, source as hold_source},
             inventory::engine::weapon_of,
         },
     },
-    grapple::{
-        line_grab,
-        rope::{self, RopeFault},
-    },
+    grapple::{line_grab, rope, rope::RopeFault},
 };
 
 /// Fire the hook at what `grabbed` holds.
@@ -200,7 +196,7 @@ pub(super) unsafe fn bite(
     if matches!(grabbed.kind, Pulled::Prop { .. }) {
         unsafe { remote::loosen(owner, body) }.map_err(Refusal::Body)?;
     }
-    let state = unsafe { physical_hands::body_state(body, owner) }.map_err(Refusal::Body)?;
+    let state = unsafe { physics::body_state(body, owner) }.map_err(Refusal::Body)?;
     unsafe { engine::exclude_rope(wire) };
     if let Some(palm) = ik::tick_records().current[hand.index()].map(|t| t.wrist.position) {
         unsafe { juice::impact(wire, grabbed.object, palm) };
@@ -278,7 +274,7 @@ pub(super) unsafe fn pull(
         flight.hit = hit;
     }
     let BodyHit { body, owner, .. } = hit;
-    let state = unsafe { physical_hands::body_state(body, owner) }.map_err(Refusal::Body)?;
+    let state = unsafe { physics::body_state(body, owner) }.map_err(Refusal::Body)?;
     let heavy = rules::HeavyCatch {
         mass_kg: state.mass_kg.unwrap_or(f32::INFINITY),
         heavy_mass_kg: SNATCH.heavy_mass_kg,
@@ -386,12 +382,7 @@ pub(super) unsafe fn pull(
         Verdict::Slack => {
             if let Some(angular) = drive {
                 unsafe {
-                    physical_hands::set_body_velocities(
-                        body,
-                        owner,
-                        state.velocities.linear,
-                        angular,
-                    )
+                    physics::set_body_velocities(body, owner, state.velocities.linear, angular)
                 }
                 .map_err(Refusal::Body)?;
             }
@@ -440,9 +431,8 @@ pub(super) unsafe fn pull(
             if arrived.is_err() {
                 // A target the hand caught and could not take drops at the hand, as one let go of
                 // does, rather than flying on past the player at the pull's speed.
-                let _ = unsafe {
-                    physical_hands::set_body_velocities(body, owner, Vec3::ZERO, Vec3::ZERO)
-                };
+                let _ =
+                    unsafe { physics::set_body_velocities(body, owner, Vec3::ZERO, Vec3::ZERO) };
             }
             return arrived.map(|arrival| Step::Caught(catcher, arrival));
         }
@@ -496,7 +486,7 @@ pub(super) unsafe fn pull(
     });
     let solution = hold::solve_in_frame(&rigid, holds, input.dt, &tuning, Velocities::default());
     unsafe {
-        physical_hands::set_body_velocities(
+        physics::set_body_velocities(
             body,
             owner,
             solution.velocities.linear,
@@ -561,11 +551,11 @@ unsafe fn verified_hit(
 ) -> Result<Option<engine::Anchor>, Refusal> {
     let anchor = unsafe { engine::anchor(wire) };
     let owner = hit.owner;
-    let selected_owned = unsafe { physical_hands::body_state(hit.body, owner) }.is_ok();
+    let selected_owned = unsafe { physics::body_state(hit.body, owner) }.is_ok();
     let proxy = anchor.map(|anchor| {
         (
             anchor.body,
-            unsafe { physical_hands::body_state(anchor.body, owner) }.is_ok(),
+            unsafe { physics::body_state(anchor.body, owner) }.is_ok(),
         )
     });
     match engine::check_anchor(selected_owned, hit.body, proxy) {
@@ -687,7 +677,7 @@ pub(super) unsafe fn sling(
         flight.hit = hit;
     }
     let BodyHit { body, owner, .. } = hit;
-    let state = unsafe { physical_hands::body_state(body, owner) }.map_err(Refusal::Body)?;
+    let state = unsafe { physics::body_state(body, owner) }.map_err(Refusal::Body)?;
     let (line_anchor, wrist) = unsafe { prepare_sling(hand, wire) }?;
     let other = hand.other();
     let other_record = ik::tick_records().current[other.index()];
@@ -915,7 +905,7 @@ unsafe fn surface_toward(object: NonZeroUsize, centre: Vec3, palm: Vec3) -> Vec3
 ///
 /// The game thread, before the world update.
 unsafe fn body_centre(body: u32, object: NonZeroUsize) -> Result<Vec3, Refusal> {
-    unsafe { physical_hands::body_state(body, object) }
+    unsafe { physics::body_state(body, object) }
         .map(|state| state.pose.centre)
         .map_err(Refusal::Body)
 }
@@ -942,6 +932,6 @@ pub(super) unsafe fn toss(weak: &Weak) -> Result<(), Refusal> {
         TOSS_FLIGHT_S.1,
     );
     let velocity = rules::toss_velocity(from, land, flight, Vec3::new(0.0, -GRAVITY_MPS2, 0.0));
-    unsafe { physical_hands::set_body_velocities(body, weapon, velocity, Vec3::ZERO) }
+    unsafe { physics::set_body_velocities(body, weapon, velocity, Vec3::ZERO) }
         .map_err(Refusal::Body)
 }

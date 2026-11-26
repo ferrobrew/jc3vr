@@ -14,15 +14,19 @@ use jc3gi::{
     equipment::weapon::{AmmunitionType, WeaponBase, WeaponState},
     ui::locator::Locale,
 };
+use jc3vr_body::controllers::intent::{
+    localise,
+    localise::{current_locale, renders},
+};
 use parking_lot::Mutex;
 use smol_str::SmolStr;
 
 use crate::controllers::{
     loadout::ObjectAddress,
-    summary::localise::{self, current_locale, renders},
     weapons::{
         dual_wield::single,
-        engine::{self as weapons_engine, slot_from_raw},
+        engine as weapons_engine,
+        engine::slot_from_raw,
         inventory::{carry, traversal},
     },
 };

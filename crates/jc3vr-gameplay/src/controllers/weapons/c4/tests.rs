@@ -1,7 +1,8 @@
 use glam::Quat;
+use jc3vr_body::controllers::hands::held::away_from_palm;
 
 use super::*;
-use crate::controllers::{hands::held::away_from_palm, weapons::c4::tuning::CHARGE_TOP_M};
+use crate::controllers::weapons::c4::tuning::CHARGE_TOP_M;
 
 fn fresh() -> State {
     State {

@@ -21,9 +21,8 @@ use jc3gi::{
     character::character::Character,
     equipment::weapon::{BulletWeaponBase, WeaponBase, WeaponData},
 };
+use jc3vr_body::controllers::scheme;
 use re_utilities::hook_library::HookLibrary;
-
-use crate::controllers::scheme;
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new()

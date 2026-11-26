@@ -23,16 +23,14 @@
 
 use body_rig::rotation::rotation_error;
 use glam::{Vec2, Vec3};
-
-use crate::controllers::{
+use jc3vr_body::controllers::{
     body::procedural::solver::arms::TorsoKeepOut,
     clock::TimeScale,
-    physical_hands::{
-        grasp::GripTarget,
-        pickup::PickupTuning,
-        rigid::{RigidBody, Velocities},
-        tuning::PalmTuning,
-    },
+    physics::rigid::{RigidBody, Velocities},
+};
+
+use crate::controllers::physical_hands::{
+    grasp::GripTarget, pickup::PickupTuning, tuning::PalmTuning,
 };
 
 /// The hold's tuning.
@@ -345,15 +343,16 @@ mod tests {
     use std::f32::consts::FRAC_PI_2;
 
     use glam::Quat;
-
-    use super::*;
-    use crate::controllers::{
+    use jc3vr_body::controllers::{
         body::procedural::{
-            rig::{Rig, tests::skeleton},
+            rig::{Rig, test_support::skeleton},
             solver::pose::RigPose,
         },
-        physical_hands::{pickup::PICKUP, rigid::tests::crate_body, tuning::PALMS},
+        physics::rigid::test_support::crate_body,
     };
+
+    use super::*;
+    use crate::controllers::physical_hands::{pickup::PICKUP, tuning::PALMS};
 
     const DT: f32 = 1.0 / 60.0;
 

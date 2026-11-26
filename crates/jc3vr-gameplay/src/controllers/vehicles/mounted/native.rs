@@ -6,8 +6,7 @@ use jc3gi::{
     interaction::{InteractionContext, InteractionContextFlags},
     physics::{Constraint, ConstraintFlags},
 };
-
-use crate::controllers::weapons::hold::refs::{Strong, Weak};
+use jc3vr_body::controllers::physics::refs::{Strong, Weak};
 
 /// One mount constraint whose motor the mounted aim drives.
 pub(super) struct Motor {

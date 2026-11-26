@@ -10,6 +10,15 @@ use std::{fmt, time::Instant};
 use jc3gi::input::input_action_map::Action::{
     CANCEL, FIRE_GRAPPLE, OPEN_PARACHUTE, PUSH_GRAPPLE, RETRACT_GRAPPLE,
 };
+use jc3vr_body::controllers::{
+    body::BodyDimensions,
+    fingers::{grip, grip::GripSource},
+    grab::GrabVolume,
+    hands::config::GripOffset,
+    intent::hold::{Desired, MapKind, Target, Want},
+    mode::{AirborneVariant, Detection, Mode, OnFootVariant, Traversal},
+    physics::grapple_hook as hook,
+};
 use jc3vr_input::frame::{Button, ControllerFrame, Hand};
 use jc3vr_view::{
     recorder::tracking::{events, events::EventKind},
@@ -18,13 +27,7 @@ use jc3vr_view::{
 use tracking_format::event::{Label, WingsuitGesture};
 
 use crate::controllers::{
-    bindings::hold::{Desired, MapKind, Target, Want},
-    body::BodyDimensions,
-    config::{ControllersConfig, GripOffset},
-    fingers::grip::{self, GripSource},
-    grab::GrabVolume,
-    mode::{AirborneVariant, Detection, Mode, OnFootVariant, Traversal},
-    physics::grapple_hook as hook,
+    config::ControllersConfig,
     vehicles::{
         config::WingsuitGesturesConfig,
         wingsuit_gestures::{
@@ -79,7 +82,7 @@ pub(super) struct Tick<'a> {
     pub dimensions: &'a BodyDimensions,
     pub detection: Detection,
     /// Rico is off the ground on foot, from the jump's grace on, as the view anchor last read it
-    /// ([`crate::controllers::locomotion::anchor::AnchorStatus::airborne`]).
+    /// ([`jc3vr_body::controllers::locomotion::anchor::AnchorStatus::airborne`]).
     pub airborne: bool,
     pub ready: bool,
     pub ragdoll: bool,

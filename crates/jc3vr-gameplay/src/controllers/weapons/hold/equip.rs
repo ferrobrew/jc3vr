@@ -24,18 +24,18 @@ use jc3gi::{
     },
     equipment::weapon::{WeaponBase, WeaponData, WeaponState},
 };
-use jc3vr_input::frame::Pose;
-
-use crate::controllers::{
+use jc3vr_body::controllers::{
     aim::gun,
     hands::{grip, pose as hand_pose},
-    physical_hands,
-    weapons::{
-        dual_wield::single,
-        engine::{skip_interpolation, slot_of},
-        hold::release_diagnostics::{DropObservation, NativeWrite, ReleaseMotion, SampleStage},
-        inventory::{carry, engine::strong_to},
-    },
+    physics,
+};
+use jc3vr_input::frame::Pose;
+
+use crate::controllers::weapons::{
+    dual_wield::single,
+    engine::{skip_interpolation, slot_of},
+    hold::release_diagnostics::{DropObservation, NativeWrite, ReleaseMotion, SampleStage},
+    inventory::{carry, engine::strong_to},
 };
 
 /// Why a dock or a drop was not done.
@@ -180,7 +180,7 @@ unsafe fn throw(
         (Some(body), Some(owner_object)) => {
             // SAFETY: the game stage runs on the game thread before the world update.
             let result = unsafe {
-                physical_hands::set_body_velocities(body, owner_object, linear, angular)
+                physics::set_body_velocities(body, owner_object, linear, angular)
             }
             .inspect_err(|e| {
                 tracing::debug!(target: "controllers", error = %e, "hold: the dropped weapon keeps the game's velocity");

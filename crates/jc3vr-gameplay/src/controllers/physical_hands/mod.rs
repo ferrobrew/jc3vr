@@ -7,7 +7,7 @@
 //! - [`shove`]: a palm's soft contact with a loose body, and how much the body gives;
 //! - [`pickup`]: taking hold of loose objects and picking up weapons with the grip, with the pure
 //!   grip in [`grasp`] and the solver that carries what the hands hold in [`hold`];
-//! - [`rigid`]: a rigid body's response to impulses (in [`crate::controllers::physics`]);
+//! - [`rigid`](jc3vr_body::controllers::physics::rigid): a rigid body's response to impulses (in [`jc3vr_body::controllers::physics`]);
 //! - [`touch`]: what the contacts do to the world: knocks, shoves, and pressure pulses;
 //! - [`physics`]: the hand bodies, which replace the palms' probes for the hands they drive;
 //! - [`characters`]: taking hold of characters, and pulling a seated one out through an open door
@@ -19,7 +19,7 @@
 //! - [`doors`]: opening vehicle doors by hand, a latched one gripped at its handle area;
 //! - [`grab_view`]: the grab view, a diagnostic of what the grip and the reach saw;
 //! - [`world`]: the Havok world, lent out for one call at a time (in
-//!   [`crate::controllers::physics`]);
+//!   [`jc3vr_body::controllers::physics`]);
 //! - [`config`]: the settings, and [`tuning`] the palms' fixed tuning.
 //!
 //! A hand its body drives ([`physics::drives`]) meets the world through its body. Otherwise, the
@@ -33,7 +33,7 @@
 //! 1. A press into a solid surface pushes the body away from it ([`push`]), as movement added to
 //!    the on-foot locomotion task's own ([`push_body`], from the roomscale simulation half), so
 //!    that the view moves with the body as it does for stick movement.
-//! 2. The rendered hand is held at the surface ([`apply`], from [`crate::controllers::hands`]).
+//! 2. The rendered hand is held at the surface ([`apply`], from [`jc3vr_body::controllers::hands`]).
 //! 3. A press into a dynamic object shoves it every tick, within the hand's strength ([`shove`]);
 //!    the share it does not give pushes the body away, as a wall does. A fast hit also knocks it.
 //! 4. An object within reach of a palm can be taken with the grip ([`pickup`]), held at the point
@@ -92,6 +92,7 @@ use std::num::NonZeroUsize;
 pub use config::PhysicalHandsConfig;
 use glam::Vec3;
 use jc3gi::{character::character::Character, physics::hknpWorld, types::math::Vector3};
+use jc3vr_body::controllers::physics::{line_body, world};
 use state::{STALE_AFTER, State};
 pub use status::{HandStatus, Idle, PhysicalHandsStatus, ShoveReport, status};
 pub(crate) use status::{PalmReadout, palm_readout, press_summary};
@@ -100,18 +101,14 @@ pub(crate) use targets::test_support::DoorProvider;
 pub(crate) use targets::{door_offer_current, targets};
 pub use tick::{after_aim, free_hands, main_thread_tick, mode_acts};
 
-pub use crate::controllers::physics::{bodies::BodyError, rigid};
-pub(crate) use crate::controllers::physics::{
-    bodies::{BodyState, game_object_of, physics_object_of},
-    body_mass_kg, body_pose, body_state, line_body, set_body_velocities,
-};
-use crate::controllers::{physical_hands::config::PHYSICAL_HANDS_CONFIG, physics::world};
+use crate::controllers::physical_hands::config::PHYSICAL_HANDS_CONFIG;
 
 pub(crate) mod lifetime;
 
+use jc3vr_body::controllers::{grab::PickupKind, hands::CockpitHand};
 use jc3vr_input::frame::Hand;
 
-use crate::controllers::{grab::PickupKind, hands::CockpitHand, physical_hands::state::STATE};
+use crate::controllers::physical_hands::state::STATE;
 
 pub(crate) unsafe fn carry_bodies_destroying(world: *mut hknpWorld, ids: *const u32, count: i32) {
     unsafe { carry_collision::destroying(world, ids, count) };
@@ -150,11 +147,11 @@ pub fn held_bodies() -> [Option<HeldBody>; 2] {
     })
 }
 
-pub use crate::controllers::hands::DrawTime;
+use jc3vr_body::controllers::hands::DrawTime;
 
 /// Hold each pressed hand at the surface it presses into, in the cockpit frame, and draw each hand
-/// body's hand at its body, for `at`. Called by [`crate::controllers::hands::active_hands`] and
-/// [`crate::controllers::hands::active_hands_from_frame`].
+/// body's hand at its body, for `at`. Called by [`jc3vr_body::controllers::hands::active_hands`] and
+/// its `active_hands_from_frame`.
 pub fn apply(cockpit: &mut [Option<CockpitHand>; 2], at: DrawTime) {
     let enabled = PHYSICAL_HANDS_CONFIG.lock().enabled;
     let palm_offset = tuning::PALMS.palm_offset_m;

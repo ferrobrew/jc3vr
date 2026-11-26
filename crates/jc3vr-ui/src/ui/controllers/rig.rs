@@ -6,14 +6,12 @@
 use std::time::Instant;
 
 use egui::Ui;
-use jc3vr_gameplay::controllers::{
-    body::{
-        firm_ragdoll,
-        ik_body::IkBodyConfig,
-        procedural::config::ProceduralMode,
-        rig::{collision::probe::STALE_AFTER, grounded, root::RootStatus},
-    },
+use jc3vr_body::controllers::body::{
     config::BodyRemapConfig,
+    firm_ragdoll,
+    ik_body::IkBodyConfig,
+    procedural::config::ProceduralMode,
+    rig::{collision::probe::STALE_AFTER, grounded, root::RootStatus},
 };
 
 use crate::ui::controllers::{vec3, yes_no};

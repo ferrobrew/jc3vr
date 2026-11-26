@@ -12,13 +12,12 @@
 
 use std::time::{Duration, Instant};
 
+use jc3vr_body::controllers::intent::config::BindingsConfig;
 use jc3vr_input::frame::{Button, ButtonSet, ControllerFrame, Edges, Hand, HandFrame};
 use jc3vr_view::{
     headpose::config::{VrTurnConfig, VrTurnMode},
     vr::input::{config::InputConfig, semantic::admission::hand_usable},
 };
-
-use crate::controllers::config::BindingsConfig;
 
 /// One hand's recovery state, for the tick report.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
@@ -304,19 +303,16 @@ impl MaskWait {
 mod tests {
     use glam::Vec2;
     use jc3gi::input::input_action_map::Action;
+    use jc3vr_body::controllers::intent::{
+        config::BindingsConfig,
+        controls::Controls,
+        hold::{Desired, DevicePoll, HoldTracker, Phase, Target, Want},
+        yank::LineYank,
+    };
     use jc3vr_input::frame::{ActionSetKind, Button, Hand, InteractionProfile, derive_buttons};
 
     use super::*;
-    use crate::controllers::{
-        bindings::{
-            State, TickReport,
-            controls::Controls,
-            hold::{Desired, DevicePoll, HoldTracker, Phase, Target, Want},
-            tables::Bindings,
-            yank::LineYank,
-        },
-        config::BindingsConfig,
-    };
+    use crate::controllers::bindings::{State, TickReport, tables::Bindings};
 
     fn policy() -> NeutralPolicy {
         NeutralPolicy::new(

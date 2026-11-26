@@ -2,9 +2,10 @@
 //! and pickup settings.
 
 use egui::Ui;
+use jc3vr_body::controllers::grab::world_reach::{SeatAccess, TargetKind};
 use jc3vr_gameplay::controllers::physical_hands::{
-    PhysicalHandsConfig, PhysicalHandsStatus, characters::SeatAccess, doors, grasp::TargetKind,
-    human_hull, human_hull::step_up, impacts, pickup::diagnostics, sounds::SoundsStatus,
+    PhysicalHandsConfig, PhysicalHandsStatus, doors, human_hull, human_hull::step_up, impacts,
+    pickup::diagnostics, sounds::SoundsStatus,
 };
 use jc3vr_input::frame::Hand;
 

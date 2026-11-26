@@ -41,23 +41,20 @@ use jc3gi::{
     spawn_system::SpawnSystem,
     types::{math::Matrix4, shared_ptr::SharedPtr, std_vector::Vector},
 };
+use jc3vr_body::controllers::{hands::ik, held::native::weapon_at, physics::refs::Strong};
 use jc3vr_core::config::engine::paths;
 use parking_lot::Mutex;
 
-use crate::controllers::{
-    hands::ik,
-    weapons::{
-        dual_wield::single,
-        engine::weapon_at,
-        hold::refs::Strong,
-        inventory::{
-            carry,
-            config::InventoryConfig,
-            engine::{self as inventory_engine, kind_of},
-            persist::{Fingerprint, MAX_BYTES, RESERVES, Record, SLOTS, Sidecar},
-            sidecar,
-            spawn_safety::{self, RequestKind},
-        },
+use crate::controllers::weapons::{
+    dual_wield::single,
+    inventory::{
+        carry,
+        config::InventoryConfig,
+        engine as inventory_engine,
+        engine::kind_of,
+        persist::{Fingerprint, MAX_BYTES, RESERVES, Record, SLOTS, Sidecar},
+        sidecar, spawn_safety,
+        spawn_safety::RequestKind,
     },
 };
 

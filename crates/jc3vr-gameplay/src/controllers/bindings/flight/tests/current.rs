@@ -4,12 +4,12 @@ use glam::{Quat, Vec3};
 use jc3gi::input::input_action_map::Action::{
     ACCELERATE, CANCEL, FIRE_RIGHT, OPEN_WINGSUIT, RELEASE_GRAPPLE, VEHICLE_RELEASE_GRAPPLE,
 };
+use jc3vr_body::controllers::mode::{OnFootVariant, VehicleClass, VehicleSeat};
 use jc3vr_input::frame::{HandFrame, Pose, TrackedPose};
 use jc3vr_view::vr::input::flight_pose::LocatedHead;
 use openxr as xr;
 
 use super::*;
-use crate::controllers::mode::{OnFootVariant, VehicleClass, VehicleSeat};
 
 fn input(mode: Mode) -> GestureInput {
     GestureInput {

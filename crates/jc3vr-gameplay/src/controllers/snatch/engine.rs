@@ -17,16 +17,20 @@ use jc3gi::{
         shared_ptr::SharedPtr,
     },
 };
+use jc3vr_body::controllers::{
+    aim::gun,
+    physics,
+    physics::{
+        bodies::game_object_of,
+        grapple_hook as hook,
+        grapple_hook::{BodyHit, CustomOwner, local_hook},
+        refs::{Strong, null_weak},
+    },
+};
 
 use crate::controllers::{
-    aim::gun,
-    physical_hands::{self, game_object_of},
-    physics::grapple_hook::{self as hook, BodyHit, CustomOwner, local_hook},
     snatch::{Refusal, sling_hooks},
-    weapons::{
-        engine, grenade,
-        hold::refs::{Strong, null_weak},
-    },
+    weapons::{engine, grenade},
 };
 
 /// Why the hook cannot fire now, if it cannot: a line is out, or a fire or a reel is under way.
@@ -222,7 +226,7 @@ unsafe fn attach_body(
     let position = Vec3::from_array(position.data);
     let offset_m = position.distance(at);
     let proxy_body_owned =
-        body != hit.body && unsafe { physical_hands::body_state(body, hit.owner) }.is_ok();
+        body != hit.body && unsafe { physics::body_state(body, hit.owner) }.is_ok();
     let matched = verify_proxy(
         hit.body,
         body,

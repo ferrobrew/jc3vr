@@ -1,11 +1,20 @@
 //! The first half of the weapon handling's input tick: read the weapons in the hands, and provide
-//! the weapon handling's grip targets ([`crate::controllers::grab`]): the sockets and pouches on
+//! the weapon handling's grip targets ([`jc3vr_body::controllers::grab`]): the sockets and pouches on
 //! the body, the held gun's parts, and the weapons and grenades in the world.
 
 use std::time::Instant;
 
 use glam::{Mat4, Vec3};
 use jc3gi::equipment::weapon::WeaponBase;
+use jc3vr_body::controllers::{
+    body::rig::{frames::SkeletonLandmarks, skeleton},
+    grab,
+    grab::{Candidate, GrabVolume, GripTarget, Mark, MarkAt, MarkStyle, Shown, resolve},
+    hands,
+    hands::{ActiveHands, CockpitHand, pose as hand_pose},
+    haptics, intent, locomotion,
+    mode::{AirborneVariant, Mode, OnFootVariant},
+};
 use jc3vr_input::{
     frame::{Hand, Pose},
     haptics::cues::Event,
@@ -13,17 +22,11 @@ use jc3vr_input::{
 use parking_lot::Mutex;
 
 use crate::controllers::{
-    body::rig::{frames::SkeletonLandmarks, skeleton},
-    grab::{self, Candidate, GrabVolume, GripTarget, Mark, MarkAt, MarkStyle, Shown},
-    hands::{self, ActiveHands, CockpitHand, pose as hand_pose},
-    haptics,
     loadout::{
         LoadoutSnapshot,
         grab::{GrabRules, swaps},
         live,
     },
-    locomotion,
-    mode::{AirborneVariant, Mode, OnFootVariant},
     weapons::{
         ads,
         begin::place::{CHARGE_MARK_M, Place, held_foregrip, mark_size},
@@ -31,29 +34,28 @@ use crate::controllers::{
         capabilities::{Capabilities, gun_hands_now, tracked_hands, trigger_claims},
         collide,
         config::{WEAPONS_CONFIG, WeaponSettings},
-        docks::{
-            self, SocketInputs, SocketUse,
-            attachments::Sample,
-            attract::{self, ATTRACTION},
-        },
-        engine::{self, HeldWeapon},
-        foregrip::{self, FOREGRIP},
-        grenade::{self, tuning::GrenadeTuning},
-        grip_watch, gun_bodies,
-        heft::{self, Heft},
-        hold::{self, armed},
+        docks,
+        docks::{SocketInputs, SocketUse, attachments::Sample, attract, attract::ATTRACTION},
+        engine,
+        engine::HeldWeapon,
+        foregrip,
+        foregrip::FOREGRIP,
+        grenade,
+        grenade::tuning::GrenadeTuning,
+        grip_watch, gun_bodies, heft,
+        heft::Heft,
+        hold,
+        hold::armed,
         hud_feed::hand_ammo,
-        inventory,
-        pouch_models::{self, Prop, ShownPouch},
-        pouch_return,
-        regions::{
-            self, GunRegion, GunShape, Observed,
-            engine::{self as region_engine, DockedLongGun},
-        },
+        inventory, pouch_models,
+        pouch_models::{Prop, ShownPouch},
+        pouch_return, regions,
+        regions::{GunRegion, GunShape, Observed, engine as region_engine, engine::DockedLongGun},
         reload, scope,
         state::{OffTouch, STATE},
         types::{TickStart, WieldedReadout},
-        volumes::{self, BodyFrame, ChestGrabbers, POUCHES, SOCKETS, StrideFilter},
+        volumes,
+        volumes::{BodyFrame, ChestGrabbers, POUCHES, SOCKETS, StrideFilter},
     },
 };
 
@@ -613,14 +615,14 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
     let docking = hold::act::docking();
     let holstering = Hand::BOTH.map(|hand| {
         let near = live::snapshot_now().is_some_and(|snapshot| {
-            crate::controllers::grab::resolve::dock_target(hand, &targets, grips[hand.index()], |volume| {
+            resolve::dock_target(hand, &targets, grips[hand.index()], |volume| {
                 matches!(volume, GrabVolume::Socket(socket) if crate::controllers::loadout::grab::fits(&snapshot, hand, socket))
             }).is_some()
         });
         live::in_hand(hand).is_some() && hold::world::handover_blocked(
             docking[hand.index()],
             hold::act::pending_release(hand).is_some(),
-            crate::controllers::bindings::grip_holds_now(hand) != Some(false),
+            intent::grip_holds_now(hand) != Some(false),
             near,
         )
     });

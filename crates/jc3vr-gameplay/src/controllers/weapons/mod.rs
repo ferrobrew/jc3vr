@@ -42,7 +42,7 @@
 //! (`controllers::bindings::game_tick`):
 //!
 //! 1. [`begin_tick`] reads the wielded weapon and provides the weapon handling's grip targets
-//!    ([`crate::controllers::grab`]): the sockets and pouches on the body, reached by the player's
+//!    ([`jc3vr_body::controllers::grab`]): the sockets and pouches on the body, reached by the player's
 //!    own grip before the body-scale remap while they ride the player's body, each pouch with a
 //!    reach margin a hand that misses it by a little still takes it within; the held gun's parts,
 //!    reached by the hand on the gun; the weapons in the world without a body (in characters'
@@ -54,12 +54,12 @@
 //!    grab draws a safe grenade that a deliberate tracked throw arms, a C4-pouch grab primes a
 //!    charge, and a reload-pouch grab takes a round for the reload. Opening the grip on a gun docks
 //!    it on the nearest socket under the hand that takes it, or lets it fall
-//!    ([`crate::controllers::grab::resolve::dock_target`]). It runs the throws, the wrist
+//!    ([`jc3vr_body::controllers::grab::resolve::dock_target`]). It runs the throws, the wrist
 //!    detonator, and the reload, and holds the fire inputs back while a reload plays (the
 //!    action-runs hand tier) and while the reload holds the gun from firing.
 //!
 //! A gun is held while its grip is: nothing here draws or docks except a grab and its release.
-//! The markers on the targets are the grip model's ([`crate::controllers::grab::markers`]).
+//! The markers on the targets are the grip model's ([`jc3vr_body::controllers::grab::markers`]).
 //! Everything acts only while the bindings inject, which is only under the controller scheme with
 //! a controller active.
 
@@ -137,16 +137,18 @@ pub(crate) fn hook_library() -> HookLibrary {
 #[cfg(test)]
 mod tests {
     use jc3gi::{character::inventory::WeaponSlot, input::input_action_map::Action};
-    use jc3vr_input::frame::Hand;
-
-    use crate::controllers::{
-        bindings::{
+    use jc3vr_body::controllers::{
+        grab::GrabVolume,
+        intent::{
             controls::ButtonControl,
             hold::{Desired, MapKind, Target, Want},
         },
-        grab::GrabVolume,
-        loadout::{Socket, grab::SocketRefusal},
         mode::{AirborneVariant, Mode, OnFootVariant},
+    };
+    use jc3vr_input::frame::Hand;
+
+    use crate::controllers::{
+        loadout::{Socket, grab::SocketRefusal},
         weapons::{
             begin::{entered_body_volumes, gameplay},
             engine::{HeldWeapon, Wielded},

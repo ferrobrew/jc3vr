@@ -4,11 +4,11 @@
 
 use body_rig::rotation::{angle, angle_between, angular_velocity, clamp_angle};
 use glam::{Mat4, Vec3};
+use jc3vr_body::controllers::hands::pose as hand_pose;
 use jc3vr_input::frame::Pose;
 
 pub use crate::controllers::weapons::gun_bodies::MassSource;
 use crate::controllers::{
-    hands::pose as hand_pose,
     physical_hands::physics::{
         config::{BraceConfig, GunClassValues, HeldGunsTuning},
         guns::BraceContact,

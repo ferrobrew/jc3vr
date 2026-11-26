@@ -2,10 +2,10 @@
 //! the hand settings.
 
 use egui::Ui;
-use jc3vr_gameplay::controllers::{
+use jc3vr_body::controllers::{
     body,
-    config::{GripOffset, HandsConfig},
     hands::{
+        config::{GripOffset, HandsConfig},
         held,
         ik::HandIkStatus,
         late::{HandLateStatus, LateStatus},

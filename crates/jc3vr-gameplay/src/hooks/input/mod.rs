@@ -1,16 +1,10 @@
-//! Input-area detours, mirroring `jc3gi::input`.
+//! Input-area detours, mirroring `jc3gi::input`: the look detour, where the bindings' writes land
+//! on the input tick, and the composition of the body crate's input detours around it.
 
+use jc3vr_body::hooks::input::{air, locomotion, parachute, swim};
 use re_utilities::hook_library::HookLibrary;
 
-pub mod config;
-pub use config::MovementConfig;
-
-pub mod air;
-pub mod locomotion;
 pub mod look;
-pub mod parachute;
-pub mod swim;
-pub mod wingsuit;
 
 pub fn hook_library() -> HookLibrary {
     HookLibrary::new()

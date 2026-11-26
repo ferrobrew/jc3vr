@@ -11,11 +11,9 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use jc3gi::input::input_action_map::Action;
+use jc3vr_body::controllers::intent::hold::{Desired, MapKind, Want};
 
-use crate::{
-    controllers::bindings::hold::{Desired, MapKind, Want},
-    grapple::physical::lock,
-};
+use crate::grapple::physical::lock;
 
 /// Rework `desired` for a hang below a helicopter; returns whether Y was pressed in the hang.
 pub(super) fn step(desired: &mut Vec<Desired>) -> bool {

@@ -19,12 +19,11 @@ use jc3gi::{
     game::GameObject,
     types::math::Matrix4,
 };
+use jc3vr_body::controllers::hands::ik;
 use jc3vr_input::frame::Hand;
 use jc3vr_view::controllers::cockpit::CockpitTransform;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
-
-use crate::controllers::hands::ik;
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new()

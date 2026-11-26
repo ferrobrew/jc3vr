@@ -5,40 +5,40 @@ use jc3gi::{
     equipment::weapon::WeaponBase,
     input::input_action_map::Action,
 };
+use jc3vr_body::controllers::{
+    aim::gun,
+    grab::{GrabVolume, GripTarget, PickupKind, cockpit::ControlKind},
+    hands::{
+        late, tiers,
+        tiers::{HandTier, TierState},
+    },
+    intent::{
+        controls::Controls,
+        grapple_button::GrapplePermissions,
+        rows::{Control, Effect, Gesture, ModAction, Row},
+    },
+    mode::{AirborneVariant, Detection, Mode},
+};
 use jc3vr_input::{frame::Hand, semantic::vocabulary::ActionId};
 use jc3vr_view::vr::input::semantic::bound::PhysicalSet;
 
 use crate::controllers::{
-    aim::gun,
     bindings::{
-        controls::Controls,
-        grapple_button::GrapplePermissions,
         intents::SemanticInput,
         policy_a::runtime::Tick,
-        tables::{
-            self,
-            describe::{Control, Effect, Gesture, ModAction, Row},
-        },
+        tables,
         trigger_ownership::{Owner, TriggerMask},
     },
     config::ControllersConfig,
-    grab::{GrabVolume, GripTarget, PickupKind},
-    hands::{
-        late,
-        tiers::{self, HandTier, TierState},
-    },
-    mode::{AirborneVariant, Detection, Mode},
     physical_hands::door_offer_current,
     snatch,
     summary::{
         current::{CurrentRouting, TriggerUse},
         eligibility::{Eligibility, SnatchHint},
     },
-    vehicles::{
-        parachute::HandleHold, physical::ControlKind, wingsuit_gestures::GestureAvailability,
-    },
+    vehicles::{parachute::HandleHold, wingsuit_gestures::GestureAvailability},
+    weapons,
     weapons::{
-        self,
         capabilities::{GunHand, GunOwner},
         reload::{BeltEligibility, ReloadStatus},
     },
@@ -609,18 +609,16 @@ mod capture_tests;
 #[cfg(test)]
 mod tests {
     use glam::Vec3;
+    use jc3vr_body::controllers::mode::{OnFootVariant, Traversal, VehicleClass, VehicleSeat};
 
     use super::*;
-    use crate::controllers::{
-        mode::{OnFootVariant, Traversal, VehicleClass, VehicleSeat},
-        weapons::{
-            capabilities::NativePair,
-            reload::{
-                WeaponReadout,
-                chamber::{ActionKind, Chamber},
-                insert::InsertStage,
-                plan::{LoadKind, ReloadPlan, WellFrame},
-            },
+    use crate::controllers::weapons::{
+        capabilities::NativePair,
+        reload::{
+            WeaponReadout,
+            chamber::{ActionKind, Chamber},
+            insert::InsertStage,
+            plan::{LoadKind, ReloadPlan, WellFrame},
         },
     };
 

@@ -1,15 +1,15 @@
 use body_rig::smooth::follow_factor;
 use glam::{Quat, Vec3};
+use jc3vr_body::controllers::{
+    intent::{
+        grapple_button::LockButton,
+        yank::{ArmedLine, HandLine},
+    },
+    physics::GRAVITY_MPS2,
+};
 
 use crate::{
-    controllers::{
-        bindings::{
-            grapple_button::LockButton,
-            yank::{ArmedLine, HandLine},
-        },
-        physical_hands::physics::drive::rig_jumped,
-        physics::GRAVITY_MPS2,
-    },
+    controllers::physical_hands::physics::drive::rig_jumped,
     grapple::{
         physical::config::{LockConfig, SwingTuning},
         rope::{Rope, RopeEnd, RopeFault, RopeStep, RopeTuning, held_floor},

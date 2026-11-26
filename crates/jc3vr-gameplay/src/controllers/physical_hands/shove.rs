@@ -16,8 +16,7 @@
 
 use body_rig::smooth::follow_factor;
 use glam::Vec3;
-
-use crate::controllers::physical_hands::rigid::RigidBody;
+use jc3vr_body::controllers::physics::rigid::RigidBody;
 
 /// The contact's tuning, fixed at [`SHOVE`].
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -182,9 +181,9 @@ const MIN_ASKED_MPS: f32 = 0.05;
 #[cfg(test)]
 mod tests {
     use glam::Quat;
+    use jc3vr_body::controllers::physics::rigid::test_support::crate_body;
 
     use super::*;
-    use crate::controllers::physical_hands::rigid::tests::crate_body;
 
     const DT: f32 = 1.0 / 60.0;
     const TUNING: ShoveTuning = ShoveTuning {

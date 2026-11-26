@@ -1,7 +1,7 @@
 //! Directing tools for staging footage from inside the headset: time control, actor safety, heat
 //! control, teleport bookmarks, a spawner, a clean view that hides the overlays, take markers, and the key bindings that drive them without opening the debug panel.
 //!
-//! The spawner itself, with the spawn definition table, is [`jc3vr_gameplay::controllers::spawn`],
+//! The spawner itself, with the spawn definition table, is [`jc3vr_body::controllers::spawn`],
 //! because the inventory's gives use the table too; the director queues its requests and services
 //! them.
 //!
@@ -12,8 +12,8 @@
 //! live game state against the config, which is what makes the settings survive the game's own
 //! resets (a respawn clearing god mode, a mission reset unlocking heat).
 
+use jc3vr_body::controllers::spawn;
 use jc3vr_core::{config::engine::ConfigSlot, director::clean_view};
-use jc3vr_gameplay::controllers::spawn;
 use serde::{Deserialize, Serialize};
 
 pub mod heat;

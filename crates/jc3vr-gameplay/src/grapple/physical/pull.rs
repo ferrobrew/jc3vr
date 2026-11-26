@@ -19,10 +19,9 @@
 //!   and relaxes toward a hand held still at [`PullTuning::relax_mps`]. Reaching out and pulling
 //!   back deepens the pull; holding the hand back lets it fade; a hand-over-hand pull keeps it up.
 
-use crate::{
-    controllers::bindings::yank::{ArmedLine, HandLine},
-    grapple::physical::config::PullTuning,
-};
+use jc3vr_body::controllers::intent::yank::{ArmedLine, HandLine};
+
+use crate::grapple::physical::config::PullTuning;
 
 /// A pull measured along the aim the hand had when it armed.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]

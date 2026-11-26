@@ -13,17 +13,18 @@
 //! ([`handed_back_m`]).
 
 use glam::Vec3;
+use jc3vr_body::controllers::{
+    aim::GRAPPLE_ORIGIN_M,
+    grab::{GrabVolume, GripTarget, Mark, MarkAt, Provided, latch::GripLatch},
+    hands,
+    hands::ik,
+    intent::yank::HandLine,
+};
 use jc3vr_input::frame::{Hand, Pose};
 use jc3vr_view::headpose::xr;
 
 use crate::{
-    controllers::{
-        aim::GRAPPLE_ORIGIN_M,
-        bindings::yank::HandLine,
-        grab::{GrabVolume, GripTarget, Mark, MarkAt, Provided, latch::GripLatch},
-        hands::{self, ik},
-        physical_hands, snatch,
-    },
+    controllers::{physical_hands, snatch},
     grapple::{physical::lock, rope::held_floor},
 };
 

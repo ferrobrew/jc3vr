@@ -1,6 +1,7 @@
+use jc3vr_body::controllers::mode::OnFootVariant;
+
 use super::*;
 use crate::controllers::{
-    mode::OnFootVariant,
     summary::eligibility,
     weapons::{config::WeaponSettings, reload::eligible_belt_for_test},
 };

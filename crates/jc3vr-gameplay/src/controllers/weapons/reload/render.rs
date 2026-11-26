@@ -1,7 +1,7 @@
 //! The reload's model parts: each hand's gun's action part where its travel has it, and the round
 //! (a magazine, a cartridge, a pod, or a rocket) carried in the hand that took it from the pouch.
 //! The input tick publishes what to draw ([`publish`]), each part with the weapon it belongs to.
-//! The late update of the held gun's parts ([`crate::controllers::hands::parts`]) asks for each
+//! The late update of the held gun's parts ([`jc3vr_body::controllers::hands::parts`]) asks for each
 //! separate part's matrix ([`adjust`]) on the render thread, and the gun's own skeleton takes the
 //! pump or the bolt bone from [`bone_part`] ([`crate::controllers::weapons::reload::bones`]).
 //!
@@ -25,13 +25,11 @@ use glam::{Mat3, Mat4, Quat, Vec3};
 use jc3gi::equipment::weapon::{
     BarrelRecoilWeaponComponent, ModelAttachementWeaponComponent, WeaponComponentType,
 };
+use jc3vr_body::controllers::hands::{held::away_from_palm, late};
 use jc3vr_input::frame::{Hand, Pose};
 use parking_lot::Mutex;
 
-use crate::controllers::{
-    hands::{held::away_from_palm, late},
-    weapons::reload::chamber::ActionKind,
-};
+use crate::controllers::weapons::reload::chamber::ActionKind;
 
 /// Gun `gun`'s action part where the reload has it.
 #[derive(Debug, Copy, Clone, PartialEq)]

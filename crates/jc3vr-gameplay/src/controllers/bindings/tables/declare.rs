@@ -8,6 +8,10 @@
 //! [`crate::controllers::bindings::tables`] explains the virtual gamepad buttons.
 
 use jc3gi::input::input_action_map::Action::{self, *};
+use jc3vr_body::controllers::{
+    intent::controls::{Controls, PadZone},
+    mode::{AirborneVariant, Mode, VehicleClass, VehicleSeat},
+};
 use jc3vr_input::{
     frame::Hand,
     semantic::vocabulary::{
@@ -16,13 +20,7 @@ use jc3vr_input::{
     },
 };
 
-use crate::controllers::{
-    bindings::{
-        controls::Controls,
-        tables::sink::{Axis, Direction, Gate, Input, PadZone, Press, Sink},
-    },
-    mode::{AirborneVariant, Mode, VehicleClass, VehicleSeat},
-};
+use crate::controllers::bindings::tables::sink::{Axis, Direction, Gate, Input, Press, Sink};
 
 /// What the tables branch on besides the mode: the state that changes which actions are read,
 /// rather than whether a read action is held.

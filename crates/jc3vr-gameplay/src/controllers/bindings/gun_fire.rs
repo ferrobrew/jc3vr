@@ -8,15 +8,12 @@
 //! weapon action alone fires the gun. The tables keep a gun hand's vehicle weapon action from the
 //! vehicle's weapon ([`crate::controllers::bindings::tables::sink::Gate::HandUnarmed`]).
 
+use jc3vr_body::controllers::{intent::controls::ButtonControl, mode::Mode};
 use jc3vr_input::frame::Hand;
 
-use crate::controllers::{
-    bindings::{
-        controls::ButtonControl,
-        intents::SemanticInput,
-        tables::{declare::vehicle_weapon_actions, merge_buttons},
-    },
-    mode::Mode,
+use crate::controllers::bindings::{
+    intents::SemanticInput,
+    tables::{declare::vehicle_weapon_actions, merge_buttons},
 };
 
 /// Each hand's fire press, by [`Hand::index`]: `triggers` where the triggers fire the hand's gun in
@@ -61,15 +58,16 @@ const fn triggers_fire_guns(mode: Mode) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use jc3vr_body::controllers::{
+        intent::controls::Controls,
+        mode::{AirborneVariant, OnFootVariant, VehicleClass, VehicleSeat},
+    };
     use jc3vr_input::semantic::SemanticSet;
     use jc3vr_view::vr::input::semantic::defaults::default_binding;
     use test_case::test_case;
 
     use super::*;
-    use crate::controllers::{
-        bindings::{controls::Controls, intents::simulate::simulate},
-        mode::{AirborneVariant, OnFootVariant, VehicleClass, VehicleSeat},
-    };
+    use crate::controllers::bindings::intents::simulate::simulate;
 
     const HELD: ButtonControl = ButtonControl {
         down: true,

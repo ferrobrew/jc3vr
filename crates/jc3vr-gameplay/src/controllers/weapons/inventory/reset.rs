@@ -32,14 +32,15 @@ use jc3gi::{
     save::PlayerSaveData,
     types::math::Matrix4,
 };
+use jc3vr_body::controllers::hands::ik;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
-    hands::ik,
     loadout::live,
     weapons::{
         config::WEAPONS_CONFIG,
-        inventory::{self, reconcile, restore},
+        inventory,
+        inventory::{reconcile, restore},
     },
 };
 

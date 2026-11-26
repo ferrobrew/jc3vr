@@ -1,11 +1,13 @@
 //! The grapple snatch's fixed tuning. Its settings, held as `weapons.snatch`, live with the
 //! weapon-handling settings ([`SnatchConfig`]).
 
+use jc3vr_body::controllers::overlay::config::OverlayConfig;
+
 pub use crate::controllers::weapons::config::{SnatchConfig, SwingConfig};
 use crate::{
     controllers::{
-        overlay::config::OverlayConfig, physical_hands::config::PhysicalHandsConfig,
-        snatch::landing::LandingTuning, weapons::config::HoldConfig,
+        physical_hands::config::PhysicalHandsConfig, snatch::landing::LandingTuning,
+        weapons::config::HoldConfig,
     },
     grapple::physical::config::PhysicalGrappleConfig,
 };
@@ -166,8 +168,9 @@ const DEGREE: f32 = std::f32::consts::PI / 180.0;
 
 #[cfg(test)]
 mod tests {
+    use jc3vr_body::controllers::intent::yank::YankDetector;
+
     use super::*;
-    use crate::controllers::bindings::yank::YankDetector;
 
     const DT: f32 = 1.0 / 30.0;
 

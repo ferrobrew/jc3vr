@@ -22,12 +22,15 @@ use jc3gi::{
     havok::hkSimdFloat32,
     physics::{PfxCharacterInstance, PfxInstance, hknpBody, hknpCharacterSurfaceInfo, hknpWorld},
 };
+use jc3vr_body::controllers::{
+    facts::climb::{BodyFrame, BodyIdentity},
+    physics::bodies::slot,
+};
 
-pub use crate::controllers::facts::climb::{BodyFrame, BodyIdentity};
 use crate::controllers::{
     physical_hands::{
-        bodies::slot,
-        physics::{self, havok_affine, havok_vector},
+        physics,
+        physics::{havok_affine, havok_vector},
         world::World,
     },
     weapons::engine::character_position,

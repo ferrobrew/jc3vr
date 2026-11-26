@@ -1,26 +1,28 @@
 //! Registers the physical hands with the body, the grip model, the weapon handling, and the
-//! character hooks below them: the climb's readers ([`crate::controllers::facts::climb`]), the
+//! character hooks below them: the climb's readers ([`jc3vr_body::controllers::facts::climb`]), the
 //! palms' push in the rig's simulation half, the climb's refusal of the automatic entry into a
 //! vehicle's stunt area below the player, the observer of a body destruction, the palm summary
 //! logged with each grip press, the grip view's flash for a refused take of a weapon, and the props
 //! the hands carry, which the loadout table records.
 
 use jc3gi::physics::hknpWorld;
-use jc3vr_input::frame::Hand;
-
-use crate::{
+use jc3vr_body::{
     controllers::{
         body::rig::root::register_palm_push,
-        facts::climb::{self as climb_facts, ClimbReaders},
+        facts::{climb as climb_facts, climb::ClimbReaders},
         grab::tick::register_palm_summary,
-        physical_hands::{
-            carry_bodies_destroying, climb, grab_view, held_props, press_summary, push_body,
-        },
-        weapons::{hold::take::register_refusal_sink, inventory::register_held_props},
     },
     hooks::character::{
         AutoAttachBlocker, register_auto_attach_blocker, register_bodies_destroying,
     },
+};
+use jc3vr_input::frame::Hand;
+
+use crate::controllers::{
+    physical_hands::{
+        carry_bodies_destroying, climb, grab_view, held_props, press_summary, push_body,
+    },
+    weapons::{hold::take::register_refusal_sink, inventory::register_held_props},
 };
 
 pub(crate) fn register() {

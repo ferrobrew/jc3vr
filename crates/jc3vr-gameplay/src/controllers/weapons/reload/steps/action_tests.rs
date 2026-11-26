@@ -1,14 +1,11 @@
 use glam::Quat;
+use jc3vr_body::controllers::{hands::pose::CockpitHand, intent::controls::ButtonControl};
 
 use super::*;
-use crate::controllers::{
-    bindings::controls::ButtonControl,
-    hands::pose::CockpitHand,
-    weapons::reload::{
-        action::ActionEngine,
-        chamber::WorkStage,
-        tuning::{RELOAD, Reload},
-    },
+use crate::controllers::weapons::reload::{
+    action::ActionEngine,
+    chamber::WorkStage,
+    tuning::{RELOAD, Reload},
 };
 
 struct FakeAction {

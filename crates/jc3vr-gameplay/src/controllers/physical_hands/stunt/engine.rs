@@ -23,12 +23,9 @@ use jc3gi::{
         vehicle::{Helicopter, Vehicle},
     },
 };
+use jc3vr_body::controllers::physics::bodies::{is_type, owner_of};
 
-use crate::controllers::physical_hands::{
-    bodies::{is_type, owner_of},
-    physics,
-    stunt::solve::StuntKind,
-};
+use crate::controllers::physical_hands::{physics, stunt::solve::StuntKind};
 
 /// Why the game did not take the player into a stunt position.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]

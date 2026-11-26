@@ -7,23 +7,21 @@ use std::{
 };
 
 use glam::{Vec2, Vec3};
+use jc3vr_body::controllers::haptics;
 use jc3vr_input::{frame::Hand, haptics::cues::Event, motion};
 use parking_lot::Mutex;
 
-use crate::controllers::{
-    haptics,
-    physical_hands::{
-        climb,
-        contact::PointProbe,
-        doors::pressure::Press,
-        draw,
-        grasp::{AngularTracker, VelocityTracker},
-        palm::PROBE_POINTS,
-        physics,
-        pickup::{self, PickupState, PickupStatus},
-        shove::Give,
-        status::{HandStatus, Idle, PhysicalHandsStatus},
-    },
+use crate::controllers::physical_hands::{
+    climb,
+    contact::PointProbe,
+    doors::pressure::Press,
+    draw,
+    grasp::{AngularTracker, VelocityTracker},
+    palm::PROBE_POINTS,
+    physics, pickup,
+    pickup::{PickupState, PickupStatus},
+    shove::Give,
+    status::{HandStatus, Idle, PhysicalHandsStatus},
 };
 
 /// Stop: forget the probes and the push, and say why.

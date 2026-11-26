@@ -25,11 +25,14 @@ use egui::{
 };
 use glam::Vec4;
 use jc3gi::graphics_engine::{device::Device, texture::Texture};
-use jc3vr_gameplay::controllers::{
-    bindings::tables::describe::{Control, StickDir},
-    config::CONTROLLERS_CONFIG,
+use jc3vr_body::controllers::{
     hands::late,
-    scheme, summary,
+    intent::rows::{Control, StickDir},
+    scheme,
+};
+use jc3vr_gameplay::controllers::{
+    config::CONTROLLERS_CONFIG,
+    summary,
     summary::{
         Published, SummaryConfig,
         config::{GlanceConfig, WristPlacement},

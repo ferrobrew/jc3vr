@@ -1,9 +1,8 @@
 //! The grapple snatch's settings, held as `weapons.snatch` beside the weapon-handling settings.
 //! Its fixed tuning is in `controllers::snatch::config`.
 
+use jc3vr_body::controllers::intent::yank::YankConfig;
 use serde::{Deserialize, Serialize};
-
-use crate::controllers::bindings::yank::YankConfig;
 
 /// The grapple snatch (see `controllers::snatch`). Acts only under the controller scheme.
 /// Its tuning is fixed at `SNATCH`, apart from the
@@ -24,7 +23,7 @@ pub struct SnatchConfig {
     /// The held line's tuning ([`SwingConfig`]).
     pub swing: SwingConfig,
     /// The yank that fires the snatch, measured along the grapple hand's aim at the grip edge
-    /// ([`reach_along`](crate::controllers::bindings::yank::reach_along)).
+    /// ([`reach_along`](jc3vr_body::controllers::intent::yank::reach_along)).
     pub yank: YankConfig,
 }
 

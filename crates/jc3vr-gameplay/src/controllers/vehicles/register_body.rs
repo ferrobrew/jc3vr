@@ -4,14 +4,16 @@
 //! pre-simulation step; the handles' kick by each shot of the mounted gun the hands aim; and the
 //! vehicle controls' targets in the hand bodies' drive.
 
-use crate::{
-    controllers::{
-        physical_hands::physics::{guns::targets::register_vehicle_targets, register_rail_step},
-        roomscale::register_take_off,
-        vehicles::{self, mounted_recoil, rail, take_off},
-        weapons::fire::register_mounted_shot_observer,
-    },
+use jc3vr_body::{
+    controllers::roomscale::register_take_off,
     hooks::character::{AutoAttachBlocker, register_auto_attach_blocker},
+};
+
+use crate::controllers::{
+    physical_hands::physics::{guns::targets::register_vehicle_targets, register_rail_step},
+    vehicles,
+    vehicles::{mounted_recoil, rail, take_off},
+    weapons::fire::register_mounted_shot_observer,
 };
 
 pub(crate) fn register() {

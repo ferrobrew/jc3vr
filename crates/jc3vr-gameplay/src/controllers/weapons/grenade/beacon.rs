@@ -13,6 +13,16 @@ use jc3gi::{
     },
     types::math::Vector3,
 };
+use jc3vr_body::controllers::{
+    hands::{
+        held,
+        held::{Held, Slot, held_matrix},
+    },
+    held::native,
+    intent,
+    physics::refs::{Weak, null_weak},
+    scheme,
+};
 use jc3vr_input::{
     frame::{Hand, Pose},
     motion,
@@ -20,20 +30,14 @@ use jc3vr_input::{
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::controllers::{
-    bindings,
-    hands::held::{self, Held, Slot, held_matrix},
-    scheme,
-    weapons::{
-        config::WEAPONS_CONFIG,
-        engine,
-        grenade::{
-            LAUNCH, PlannedLaunch, Release, TickInputs, catch, hold_local, native::LaunchScope,
-            primed_explosive, report_native_throw, safe, throw_release, tuning::GrenadeTuning,
-        },
-        hold::refs::{Weak, null_weak},
-        inventory::engine::weapon_of,
+use crate::controllers::weapons::{
+    config::WEAPONS_CONFIG,
+    engine,
+    grenade::{
+        LAUNCH, PlannedLaunch, Release, TickInputs, catch, hold_local, native::LaunchScope,
+        primed_explosive, report_native_throw, safe, throw_release, tuning::GrenadeTuning,
     },
+    inventory::engine::weapon_of,
 };
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -74,7 +78,7 @@ pub(super) fn input_tick(inputs: &TickInputs, grips: [Option<Pose>; 2]) {
         return;
     };
     gesture.world = world;
-    match bindings::grip_holds_now(hand) {
+    match intent::grip_holds_now(hand) {
         Some(closed) => {
             if gesture.grip.observe(closed, inputs.opened[hand.index()]) {
                 gesture.release = Some(throw_release(
@@ -142,9 +146,9 @@ pub(super) unsafe fn observe(weapon: *mut ThrownGrenadeWeapon) {
         return;
     }
     let index = usize::from(base.m_NextWeaponToFire);
-    let data = unsafe { engine::gun_ptr(base, index) }
+    let data = unsafe { native::gun_ptr(base, index) }
         .map(|_| index)
-        .or_else(|| unsafe { engine::gun_ptr(base, 0) }.map(|_| 0));
+        .or_else(|| unsafe { native::gun_ptr(base, 0) }.map(|_| 0));
     let Some(data) = data else {
         return;
     };
@@ -201,7 +205,7 @@ pub(super) unsafe fn render_frame() {
         || !jc3vr_core::hooks::in_gameplay()
         || !scheme::is_controllers()
         || !WEAPONS_CONFIG.query(|config| config.grenade_throw)
-        || bindings::grip_holds_now(pending.gesture.hand).is_none()
+        || intent::grip_holds_now(pending.gesture.hand).is_none()
     {
         pending.gesture.cancel();
     }
@@ -222,8 +226,8 @@ pub(super) unsafe fn render_frame() {
             && owner_valid
             && let Some(base) = base
         {
-            let data = unsafe { engine::gun_ptr(&*base, pending.data) }
-                .or_else(|| unsafe { engine::gun_ptr(&*base, 0) });
+            let data = unsafe { native::gun_ptr(&*base, pending.data) }
+                .or_else(|| unsafe { native::gun_ptr(&*base, 0) });
             if let Some(data) = data {
                 let scope = LaunchScope::enter(PlannedLaunch {
                     explosive: pending.explosive,
@@ -361,7 +365,7 @@ impl Gesture {
             started: Instant::now(),
             world,
             release: None,
-            grip: if bindings::grip_holds_now(hand) == Some(true) {
+            grip: if intent::grip_holds_now(hand) == Some(true) {
                 Grip::Held
             } else {
                 Grip::Waiting

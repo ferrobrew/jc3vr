@@ -4,6 +4,7 @@
 use std::time::Duration;
 use std::{collections::VecDeque, time::Instant};
 
+use jc3vr_body::controllers::intent::{config::BindingsConfig, controls::ButtonControl};
 use jc3vr_input::{
     frame::{Button, ControllerFrame, Edges, Hand, MAX_FRAME_AGE},
     semantic::{
@@ -27,19 +28,16 @@ use tracking_format::input::{
     policy::{DirectAcceptance, DirectDecision},
 };
 
-use crate::controllers::{
-    bindings::{
-        controls::ButtonControl,
-        intents::{Intent, SemanticInput, shape},
-        policy_a::{
-            self, Arbitration, CONTROLS, ClockEpoch, Control, Disposition, PolicyA, PolicyAConfig,
-            ResetReason, ResetRequest, SingleEvent, SystemCommand,
-            attribution::{Attribution, SourceIdentity, raw_location, raw_verified},
-            recording,
-            runtime::evaluation::EvaluationInput,
-        },
+use crate::controllers::bindings::{
+    intents::{Intent, SemanticInput, shape},
+    policy_a,
+    policy_a::{
+        Arbitration, CONTROLS, ClockEpoch, Control, Disposition, PolicyA, PolicyAConfig,
+        ResetReason, ResetRequest, SingleEvent, SystemCommand,
+        attribution::{Attribution, SourceIdentity, raw_location, raw_verified},
+        recording,
+        runtime::evaluation::EvaluationInput,
     },
-    config::BindingsConfig,
 };
 
 mod evaluation;

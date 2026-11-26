@@ -4,12 +4,13 @@ use std::num::NonZeroUsize;
 
 use glam::Vec3;
 use jc3gi::physics::{GameMaterialId, PhysicsSystem};
+use jc3vr_body::controllers::aim::{
+    ray::Ray,
+    raycast,
+    raycast::{CastOptions, RaycastError},
+};
 
 use crate::controllers::{
-    aim::{
-        ray::Ray,
-        raycast::{self, CastOptions, RaycastError},
-    },
     glass::bullets::names_hidden_pane,
     physical_hands::{
         contact::{Surface, SurfaceHit},

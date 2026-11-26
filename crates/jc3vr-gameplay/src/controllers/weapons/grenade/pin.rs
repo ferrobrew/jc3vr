@@ -9,15 +9,13 @@
 //! ([`TeethPull`]). A trigger press on the holding hand pulls it as well, whatever the other hand
 //! does. The design is in `docs/mod/input/grenades.md`.
 //!
-//! [`Tier::Handle`]: crate::controllers::grab::Tier::Handle
+//! [`Tier::Handle`]: jc3vr_body::controllers::grab::Tier::Handle
 
 use glam::Vec3;
+use jc3vr_body::controllers::grab::{Candidate, GrabVolume};
 use jc3vr_input::frame::{Hand, Pose};
 
-use crate::controllers::{
-    grab::{Candidate, GrabVolume},
-    weapons::grenade::tuning::GrenadeTuning,
-};
+use crate::controllers::weapons::grenade::tuning::GrenadeTuning;
 
 /// How a pin came out, for the log.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -155,12 +153,10 @@ const MOUTH_RADIUS_M: f32 = 0.08;
 #[cfg(test)]
 mod tests {
     use glam::Quat;
+    use jc3vr_body::controllers::grab::grab_volume;
 
     use super::*;
-    use crate::controllers::{
-        grab::grab_volume,
-        weapons::{grenade::tuning::GRENADE, hold::HANDLE_RADIUS_M},
-    };
+    use crate::controllers::weapons::{grenade::tuning::GRENADE, hold::HANDLE_RADIUS_M};
 
     fn upright() -> Pose {
         Pose {

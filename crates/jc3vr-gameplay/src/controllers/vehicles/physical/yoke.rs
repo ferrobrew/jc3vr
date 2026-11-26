@@ -290,11 +290,10 @@ const SETTLED_M: f32 = 0.001;
 
 #[cfg(test)]
 mod tests {
+    use jc3vr_body::controllers::grab::cockpit::ControlKind;
+
     use super::*;
-    use crate::controllers::vehicles::{
-        physical::{ControlKind, Hold},
-        tuning::PHYSICAL,
-    };
+    use crate::controllers::vehicles::{physical::Hold, tuning::PHYSICAL};
 
     fn frame() -> YokeFrame {
         YokeFrame::new(

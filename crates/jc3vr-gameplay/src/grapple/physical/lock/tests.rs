@@ -1,17 +1,15 @@
 use glam::{Quat, Vec3};
+use jc3vr_body::controllers::{
+    intent::{grapple_button::LockButton, yank::HandLine},
+    physics::GRAVITY_MPS2,
+};
 
-use crate::{
-    controllers::{
-        bindings::{grapple_button::LockButton, yank::HandLine},
-        physics::GRAVITY_MPS2,
+use crate::grapple::{
+    physical::{
+        config::{GRAPPLE, LockConfig},
+        lock::model::{FreeHand, Held, Pump, PumpSample, SwingInput, TakeIn, armed, swing},
     },
-    grapple::{
-        physical::{
-            config::{GRAPPLE, LockConfig},
-            lock::model::{FreeHand, Held, Pump, PumpSample, SwingInput, TakeIn, armed, swing},
-        },
-        rope::RopeFault,
-    },
+    rope::RopeFault,
 };
 
 fn pump_sample(hand: Vec3, head: Vec3) -> PumpSample {

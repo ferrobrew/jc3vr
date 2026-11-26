@@ -1,5 +1,6 @@
 use std::{ffi::c_void, sync::OnceLock};
 
+use jc3vr_body::controllers::body::estimator;
 use jc3vr_core::{
     cpu_placement, director::clean_view, is_shutting_down, lifecycle, logging, module, session,
     thread_role, util,
@@ -163,7 +164,7 @@ fn shutdown_startup() {
     if !hud::game_icons::shutdown() {
         module::pin();
     }
-    if !controllers::body::estimator::shutdown() {
+    if !estimator::shutdown() {
         module::pin();
     }
 

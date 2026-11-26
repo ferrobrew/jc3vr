@@ -4,9 +4,9 @@ use std::num::NonZeroUsize;
 
 use body_rig::geometry::point_velocity;
 use glam::{Mat4, Vec3};
+use jc3vr_body::controllers::physics::bodies;
 
 use crate::controllers::physical_hands::{
-    bodies,
     doors::{
         config::TearTuning,
         engine as door_engine,
@@ -305,15 +305,19 @@ mod tests {
     use std::num::NonZeroUsize;
 
     use glam::{Mat4, Vec3};
+    use jc3vr_body::controllers::{
+        grab::world_reach::DoorTarget,
+        physics::rigid::{BodyPose, Velocities},
+    };
     use jc3vr_input::frame::Pose;
 
     use super::*;
     use crate::controllers::physical_hands::{
-        doors::{DoorTarget, config::TEARING},
+        doors::config::TEARING,
         grasp::Grip,
-        hold::{self, HandHold},
+        hold,
+        hold::HandHold,
         pickup::{HeldReport, PICKUP, PickupTuning, tick::carry_tuning},
-        rigid::{BodyPose, Velocities},
     };
 
     fn held() -> Held {

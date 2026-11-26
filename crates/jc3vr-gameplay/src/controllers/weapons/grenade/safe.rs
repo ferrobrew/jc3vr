@@ -21,6 +21,10 @@ use jc3gi::{
     character::{character::Character, inventory::WeaponSlot},
     equipment::{explosive::Explosive, weapon::ThrownGrenadeWeapon},
 };
+use jc3vr_body::controllers::{
+    body::rig::frames::Frames,
+    hands::{held::held_matrix, late},
+};
 use jc3vr_input::{
     frame::{Hand, Pose},
     motion,
@@ -28,8 +32,6 @@ use jc3vr_input::{
 use parking_lot::Mutex;
 
 use crate::controllers::{
-    body::rig::frames::Frames,
-    hands::{held::held_matrix, late},
     loadout::{
         Departure, ItemId, Place, Socket, live,
         safe_items::{ItemLeaseId, SafeItemView},
@@ -39,8 +41,8 @@ use crate::controllers::{
         grenade::{
             Release,
             catch::body_of,
-            hold_local,
-            native::{self, Actor, PinPull},
+            hold_local, native,
+            native::{Actor, PinPull},
             throw_release,
             tuning::GrenadeTuning,
         },

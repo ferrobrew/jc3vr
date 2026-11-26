@@ -1,8 +1,8 @@
+use jc3vr_body::controllers::intent::controls::{Controls, HandControls};
 use jc3vr_input::semantic::vocabulary::{MenuAction, OnFootAction};
 use jc3vr_view::vr::input::semantic::defaults::default_binding;
 
 use super::*;
-use crate::controllers::bindings::controls::{Controls, HandControls};
 
 const DOWN: ButtonControl = ButtonControl {
     down: true,

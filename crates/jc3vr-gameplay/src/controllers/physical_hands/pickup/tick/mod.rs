@@ -5,28 +5,34 @@ use std::{num::NonZeroUsize, time::Instant};
 
 use glam::Vec3;
 use jc3gi::vehicle::vehicle::DoorSlot;
+use jc3vr_body::controllers::{
+    grab::world_reach::{Reach, TargetKind},
+    physics::{bodies, rigid::Velocities},
+    telemetry::{Released, Thrown, note_release, note_throw},
+};
 use jc3vr_input::frame::{Hand, Pose};
 
-use crate::controllers::{
-    physical_hands::{
-        STALE_AFTER, bodies, carry_collision,
-        characters::{self, CharactersConfig, Regrip, Seize},
-        doors::{self, Latch},
-        grasp::{self, Grip, PalmMotion, Reach, StrainSample, TargetKind},
-        hold::{self, HandHold, HoldTuning, PlayerKeepOut},
-        physics::{self, HoldTarget, Shove, ShoveForce, drawn_body},
-        pickup::{
-            HeldReport, PickupTuning, damping,
-            diagnostics::{self, ConsumerResult, DriveRecord},
-            grips::{keep_latch, keep_regrip, keep_seize, shove_on_release},
-            held_ragdolls,
-            state::{GripSubject, Held, HeldKind, PickupState, Request},
-            tearing::{self, Frame as TearFrame, Observation},
-            transport::Transport,
-        },
-        rigid::Velocities,
+use crate::controllers::physical_hands::{
+    STALE_AFTER, carry_collision, characters,
+    characters::{CharactersConfig, Regrip, Seize},
+    doors,
+    doors::Latch,
+    grasp,
+    grasp::{Grip, PalmMotion, StrainSample},
+    hold,
+    hold::{HandHold, HoldTuning, PlayerKeepOut},
+    physics,
+    physics::{HoldTarget, Shove, ShoveForce, drawn_body},
+    pickup::{
+        HeldReport, PickupTuning, damping, diagnostics,
+        diagnostics::{ConsumerResult, DriveRecord},
+        grips::{keep_latch, keep_regrip, keep_seize, shove_on_release},
+        held_ragdolls,
+        state::{GripSubject, Held, HeldKind, PickupState, Request},
+        tearing,
+        tearing::{Frame as TearFrame, Observation},
+        transport::Transport,
     },
-    telemetry::{Released, Thrown, note_release, note_throw},
 };
 
 /// What the hand bodies tell a pickup tick about the joints.

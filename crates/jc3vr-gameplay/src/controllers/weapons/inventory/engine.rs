@@ -17,13 +17,14 @@ use jc3gi::{
     types::shared_ptr::SharedPtr,
     ui::hud_ui::HUDUI,
 };
+use jc3vr_body::controllers::{
+    held::native::weapon_at,
+    physics::refs::{Strong, Weak},
+};
 
 use crate::controllers::{
     loadout::{ObjectAddress, Restored, Socket, WeaponType},
-    weapons::{
-        engine::{character_object, gun_position, object_of, slot_of, weapon_at},
-        hold::refs::{Strong, Weak},
-    },
+    weapons::engine::{character_object, gun_position, object_of, slot_of},
 };
 
 /// A live weapon object's address, the key the inventory's stores keep it by.

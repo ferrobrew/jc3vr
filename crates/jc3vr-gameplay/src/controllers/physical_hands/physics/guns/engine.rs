@@ -5,21 +5,18 @@ use std::{fmt, ptr::NonNull};
 
 use glam::{Mat4, Vec3};
 use jc3gi::{equipment::weapon::WeaponData, havok::hknpShape, physics::PfxRigidBody};
+use jc3vr_body::controllers::{aim::gun, physics::bodies};
 use jc3vr_input::frame::Pose;
 
-use crate::controllers::{
-    aim::gun,
-    physical_hands::{
-        bodies,
-        physics::{
-            body::half_to_f32,
-            guns::{
-                HeldGun,
-                math::{GunAxes, gun_axes},
-            },
+use crate::controllers::physical_hands::{
+    physics::{
+        body::half_to_f32,
+        guns::{
+            HeldGun,
+            math::{GunAxes, gun_axes},
         },
-        world::World,
     },
+    world::World,
 };
 
 /// What a gun body is made from: the gun's own body's shape and inverse mass, and where the gun is.

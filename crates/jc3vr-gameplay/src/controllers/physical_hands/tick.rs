@@ -14,6 +14,28 @@ use std::{num::NonZeroUsize, time::Instant};
 use body_rig::rotation::level;
 use glam::{Mat4, Quat, Vec2, Vec3};
 use jc3gi::character::character::Character;
+use jc3vr_body::controllers::{
+    aim::raycast::CastOptions,
+    body,
+    clock::TimeScale,
+    facts::{mounted, seat::rides_in_seat},
+    fingers::{
+        config::FINGERS_CONFIG,
+        grip,
+        grip::{
+            Grip, GripSource,
+            catalogue::GripPose,
+            contact as finger_contact,
+            contact::{CastHit, FitTarget},
+        },
+        tuning::FINGERS,
+    },
+    hands,
+    hands::tiers,
+    haptics, mode,
+    mode::{AirborneVariant, Detection, Mode, OnFootVariant},
+    scheme,
+};
 use jc3vr_core::thread_role::{self, ThreadRole};
 use jc3vr_input::{
     frame::{Hand, Pose},
@@ -24,40 +46,25 @@ use parking_lot::Mutex;
 use windows::Win32::System::Threading::GetCurrentThreadId;
 
 use crate::controllers::{
-    aim::raycast::CastOptions,
-    body,
-    clock::TimeScale,
-    facts::{mounted, seat::rides_in_seat},
-    fingers::{
-        config::FINGERS_CONFIG,
-        grip::{
-            self, Grip, GripSource,
-            catalogue::GripPose,
-            contact::{self as finger_contact, CastHit, FitTarget},
-        },
-        tuning::FINGERS,
-    },
-    hands::{self, tiers},
-    haptics,
     loadout::{ItemKind, live},
-    mode::{self, AirborneVariant, Detection, Mode, OnFootVariant},
     physical_hands::{
         PhysicalHandsConfig, climb,
         config::PHYSICAL_HANDS_CONFIG,
         contact::{HandContact, PointContact, PointProbe, Surface, SurfaceHit},
+        doors,
         doors::{
-            self,
             acquisition::PanelReach,
             config::{TEARING, TearTuning},
             hinge::HingeConfig,
         },
-        draw, engine, grab_view,
-        grasp::{self, PalmMotion},
-        hold::{self, BodySpace, PlayerKeepOut},
+        draw, engine, grab_view, grasp,
+        grasp::PalmMotion,
+        hold,
+        hold::{BodySpace, PlayerKeepOut},
         impacts,
         palm::{PROBE_POINTS, PalmBox},
-        physics,
-        pickup::{self, PICKUP},
+        physics, pickup,
+        pickup::PICKUP,
         push, query, seated,
         shove::SHOVE,
         state::{STATE, VELOCITY_SMOOTHING_S, stand_down},
@@ -65,8 +72,8 @@ use crate::controllers::{
         touch::{ShoveInput, Touch, pressure_haptics},
         tuning::PALMS,
     },
-    scheme,
-    weapons::{self, c4, foregrip, grenade},
+    weapons,
+    weapons::{c4, foregrip, grenade},
 };
 
 /// Note that a palms' tick is due, `dt` seconds of simulation after the last: called from the

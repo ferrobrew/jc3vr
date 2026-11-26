@@ -1,12 +1,14 @@
 use glam::Vec3;
+use jc3vr_body::controllers::{
+    grab,
+    grab::{Mark, MarkAt},
+};
 
 use super::*;
-use crate::controllers::{
-    grab::{self, Mark, MarkAt},
-    summary::{
-        current::{self, CellKind, CurrentSummary, Source},
-        labels::Text,
-    },
+use crate::controllers::summary::{
+    current,
+    current::{CellKind, CurrentSummary, Source},
+    labels::Text,
 };
 
 const MODE: Mode = Mode::OnFoot(OnFootVariant::Ground);

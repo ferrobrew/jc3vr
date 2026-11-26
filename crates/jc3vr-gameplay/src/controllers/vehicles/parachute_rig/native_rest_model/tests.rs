@@ -2,16 +2,14 @@
 //! placement; these fixtures do not establish callback scheduling or authorize native restoration.
 
 use glam::Quat;
+use jc3vr_body::controllers::grab::{Candidate, GrabVolume};
 use jc3vr_input::frame::Hand;
 
 use super::*;
-use crate::controllers::{
-    grab::{Candidate, GrabVolume},
-    vehicles::{
-        config::ParachuteHandlesConfig,
-        parachute::{HandleEvent, HandleHold, HandleState, RADIUS_M, REACH_M, StepInputs},
-        physical::Release,
-    },
+use crate::controllers::vehicles::{
+    config::ParachuteHandlesConfig,
+    parachute::{HandleEvent, HandleHold, HandleState, RADIUS_M, REACH_M, StepInputs},
+    physical::Release,
 };
 
 mod parachute {

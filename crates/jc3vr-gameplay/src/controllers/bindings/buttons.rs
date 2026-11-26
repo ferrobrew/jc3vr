@@ -1,11 +1,9 @@
 //! Semantic button reads shared by input-tick consumers outside the binding tables.
 
+use jc3vr_body::controllers::{intent::controls::ButtonControl, mode::Mode};
 use jc3vr_input::semantic::vocabulary::OnFootAction;
 
-use crate::controllers::{
-    bindings::{controls::ButtonControl, intents::SemanticInput, tables},
-    mode::Mode,
-};
+use crate::controllers::bindings::{intents::SemanticInput, tables};
 
 /// The reload tap and held holster share the same accepted semantic press.
 pub(super) fn reload_button(semantic: &SemanticInput) -> ButtonControl {

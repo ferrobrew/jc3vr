@@ -4,22 +4,22 @@
 
 use std::time::Instant;
 
+use jc3vr_body::controllers::haptics;
 use jc3vr_input::{frame::Hand, haptics::cues::Event};
 
-use crate::controllers::{
-    haptics,
-    weapons::{
-        config::WeaponSettings,
-        reload::{
-            FinishInputs, State, Tick, engine,
-            extraction::{DetachKind, MagazineId},
-            frames,
-            insert::{self, InsertStage, InsertionSource},
-            knock::{self, GunMagazine, KNOCK, KnockView, Strike},
-            loose::{self, Operation},
-            tuning::Reload,
-            wells,
-        },
+use crate::controllers::weapons::{
+    config::WeaponSettings,
+    reload::{
+        FinishInputs, State, Tick, engine,
+        extraction::{DetachKind, MagazineId},
+        frames, insert,
+        insert::{InsertStage, InsertionSource},
+        knock,
+        knock::{GunMagazine, KNOCK, KnockView, Strike},
+        loose,
+        loose::Operation,
+        tuning::Reload,
+        wells,
     },
 };
 

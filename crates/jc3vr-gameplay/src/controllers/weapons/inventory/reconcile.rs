@@ -34,23 +34,20 @@ use jc3gi::{
     },
     equipment::weapon::{WeaponBase, WeaponState},
 };
+use jc3vr_body::{controllers::aim::gun, hooks::character::acts::resolve_act_id};
 use jc3vr_input::frame::Hand;
 
-use crate::{
-    controllers::{
-        aim::gun,
-        loadout::{LoadoutSnapshot, Place, Projection, SlotContent, Socket, StoreProjection, live},
-        weapons::{
-            engine,
-            hold::armed,
-            inventory::{
-                carry,
-                engine::{self as inventory_engine, ObjectKey, refresh_hud, shared_view},
-                traversal,
-            },
+use crate::controllers::{
+    loadout::{LoadoutSnapshot, Place, Projection, SlotContent, Socket, StoreProjection, live},
+    weapons::{
+        engine,
+        hold::armed,
+        inventory::{
+            carry, engine as inventory_engine,
+            engine::{ObjectKey, refresh_hud, shared_view},
+            traversal,
         },
     },
-    hooks::character::acts::resolve_act_id,
 };
 
 /// Make the game match the table as it is now: the slots, the primary, and the hands. Called each

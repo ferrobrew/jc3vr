@@ -7,7 +7,7 @@
 //! recoil the game adds for that shot ([`WeaponBase::m_RecoilPitch`] and
 //! [`WeaponBase::m_RecoilYaw`], read across the shot by [`crate::controllers::weapons::fire`]), and
 //! a damped spring returns it to zero. The offset is applied to the active hands
-//! ([`crate::controllers::hands::active_hands`]), so the IK targets, the render-time late update,
+//! ([`jc3vr_body::controllers::hands::active_hands`]), so the IK targets, the render-time late update,
 //! the gun's sight line, and the overlay all carry it: the aim follows the kicked gun, and a player
 //! who holds against the climb keeps the gun on target. The game's own scatter stays on top.
 //!
@@ -26,13 +26,11 @@
 use std::time::{Duration, Instant};
 
 use glam::{FloatExt, Quat, Vec3};
+use jc3vr_body::controllers::hands::CockpitHand;
 use jc3vr_input::frame::{Hand, Pose};
 use parking_lot::Mutex;
 
-use crate::controllers::{
-    hands::CockpitHand,
-    weapons::{config::RecoilConfig, foregrip},
-};
+use crate::controllers::weapons::{config::RecoilConfig, foregrip};
 
 /// A damped spring per component, pulled toward zero.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
@@ -313,9 +311,9 @@ fn grip_weight(grip: Option<foregrip::TwoHandGrip>, hand: Hand) -> f32 {
 #[cfg(test)]
 mod tests {
     use glam::Vec2;
+    use jc3vr_body::controllers::hands::{config::GripOffset, pose as hand_pose};
 
     use super::*;
-    use crate::controllers::{config::GripOffset, hands::pose as hand_pose};
 
     fn config() -> RecoilConfig {
         RecoilConfig::new()

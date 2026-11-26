@@ -1,16 +1,18 @@
 //! The status rows for the vehicles: the plane's flight stick and throttle, the cockpit
 //! buttons, the passenger's aim, and the mounted gun.
 
+use jc3vr_body::controllers::{
+    grab::cockpit::ControlKind,
+    mode::{VehicleClass, VehicleSeat},
+};
 use jc3vr_gameplay::controllers::{
     config::CONTROLLERS_CONFIG,
-    mode::{VehicleClass, VehicleSeat},
     vehicles,
     vehicles::{
         VehicleSummary,
         config::MountedConfig,
         mounted_recoil, passenger,
         passenger::PassengerStatus,
-        physical::ControlKind,
         tuning::{CockpitButtonsTuning, PhysicalControlsTuning},
     },
 };

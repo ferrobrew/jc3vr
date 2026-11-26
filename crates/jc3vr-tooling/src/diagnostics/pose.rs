@@ -13,11 +13,11 @@ use jc3gi::{
     animation::ik::{HumanIK, Pass},
     character::character::Character,
 };
+use jc3vr_body::hooks::character::pose::LivePose;
 use jc3vr_core::{
     frame_timing::{self, Slot},
     hooks,
 };
-use jc3vr_gameplay::hooks::character::pose::LivePose;
 use jc3vr_view::{
     headpose::skeleton::SkeletonKey,
     recorder::tracking::{events, events::EventKind},

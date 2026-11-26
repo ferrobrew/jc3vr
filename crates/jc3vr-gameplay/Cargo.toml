@@ -2,7 +2,7 @@
 name = "jc3vr-gameplay"
 version = "0.1.0"
 edition = "2024"
-description = "The gameplay layer of the payload: the controller subsystems (bindings, weapons, the physical hands, the body, the vehicles, the hands, aim, locomotion, and roomscale), the grapple, and the character, animation, input, equipment, and sim detours."
+description = "The gameplay layer of the payload: the controller subsystems built on the body layer (the bindings, the weapons, the physical hands, the vehicles, the snatch, and the summary model), the grapple, and the look, equipment, and sim detours."
 publish = false
 
 [features]
@@ -17,14 +17,15 @@ jc3gi = { path = "../../jc3gi" }
 jc3vr-core = { path = "../jc3vr-core" }
 jc3vr-input = { path = "../jc3vr-input" }
 jc3vr-view = { path = "../jc3vr-view" }
+# The body layer below: the body-bound subsystems, the shared vocabulary, facts, and physics
+# substrate, and the character, animation, and input detours.
+jc3vr-body = { path = "../jc3vr-body" }
 # The gameplay detours. The detour macro emits `::re_utilities` paths, so a crate that defines
 # detours depends on `re-utilities` directly.
 re-utilities = { workspace = true }
 detours-macro = { workspace = true }
 tracking-format = { path = "../tracking-format" }
 body-rig = { path = "../body-rig", features = ["serde"] }
-# The learned body estimator, run on the game's device through its Direct3D 11 executor.
-body-estimator = { path = "../body-estimator" }
 tracing = "0.1"
 # Same rev as the payload's `puffin_egui`, so both agree on the puffin data model.
 puffin = { git = "https://github.com/EmbarkStudios/puffin", rev = "d06bed0fcb8c8e4c78643d4ead7cf1de9b76fd3b", optional = true }
@@ -36,6 +37,7 @@ smol_str = "0.3.6"
 toml = "1.1.6"
 
 [dev-dependencies]
+jc3vr-body = { path = "../jc3vr-body", features = ["test-support"] }
 jc3vr-core = { path = "../jc3vr-core", features = ["test-support"] }
 jc3vr-view = { path = "../jc3vr-view", features = ["test-support"] }
 # The tests build the OpenXR poses and times the published tracking carries.

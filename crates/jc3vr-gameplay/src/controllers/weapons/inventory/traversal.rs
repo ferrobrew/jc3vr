@@ -48,12 +48,10 @@ use jc3gi::{
     },
     state::StateContext,
 };
+use jc3vr_body::hooks::input::locomotion::character_from_context;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::{
-    controllers::{loadout::live, weapons::inventory::engine},
-    hooks::input::locomotion::character_from_context,
-};
+use crate::controllers::{loadout::live, weapons::inventory::engine};
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new()

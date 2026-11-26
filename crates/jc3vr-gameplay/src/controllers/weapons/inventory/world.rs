@@ -17,15 +17,16 @@
 
 use glam::Vec3;
 use jc3gi::{character::character::Character, equipment::weapon::WeaponBase};
+use jc3vr_body::controllers::physics::refs::{Strong, Weak};
 
 use crate::controllers::{
     loadout::{ObjectAddress, live},
     weapons::{
         engine::gun_position,
-        hold::refs::{Strong, Weak},
         hud_feed::{icon::IconId, lost_weapons::LostWeapon},
         inventory::{
-            engine::{self, Fate},
+            engine,
+            engine::Fate,
             pins::{PinPlan, WorldWeapon},
         },
     },

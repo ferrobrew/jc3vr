@@ -1,6 +1,7 @@
 //! The spawn reset's re-keying, and the checkpoint and mission snapshots.
 
 use jc3gi::{character::inventory::WeaponSlot, equipment::weapon::WeaponClass};
+use jc3vr_body::controllers::grab::socket::Socket;
 use jc3vr_input::frame::Hand;
 use test_case::test_case;
 
@@ -10,7 +11,7 @@ use crate::controllers::loadout::{
     item::{ItemId, ItemKind, WeaponType},
     projection::{SlotContent, project},
     reset::{CacheKind, ResetKind, SlotObject},
-    socket::{BodyLayout, Socket},
+    socket::BodyLayout,
     table::{Departure, ItemView, Loadout, Place},
     transition::{Cause, Change, Release, Removal, RemovalWhy, Restored, TransitionError},
 };

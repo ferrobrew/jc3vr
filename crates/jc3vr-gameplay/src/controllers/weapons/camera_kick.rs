@@ -16,9 +16,8 @@ use jc3gi::{
     },
     character::character::Character,
 };
+use jc3vr_body::controllers::{aim::config::AIM_CONFIG, scheme};
 use re_utilities::hook_library::HookLibrary;
-
-use crate::controllers::{aim::config::AIM_CONFIG, scheme};
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&PROCESS_CAMERA_CONTEXT_BINDER)

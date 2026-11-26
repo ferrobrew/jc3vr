@@ -17,12 +17,16 @@ use jc3gi::{
     types::math::{Matrix4, Vector3},
     vehicle::vehicle::Helicopter,
 };
-
-use crate::controllers::{
-    physical_hands::{self, BodyState, characters::engine::proxy_body, game_object_of},
-    physics::grapple_hook as hook,
-    weapons::engine::character_position,
+use jc3vr_body::controllers::{
+    physics,
+    physics::{
+        bodies::{BodyState, game_object_of},
+        characters::proxy_body,
+        grapple_hook as hook,
+    },
 };
+
+use crate::controllers::weapons::engine::character_position;
 
 /// The far end's proxy of `hook`'s active wire while the hook reels in along it, the far end is
 /// attached, and what it is attached to is live.
@@ -91,7 +95,7 @@ pub(super) unsafe fn far_body(proxy: &GrapplePointProxy) -> Option<(u32, NonZero
     if body == PfxCharacterInstance::INVALID_BODY_ID {
         return None;
     }
-    let (owner, state) = unsafe { physical_hands::line_body(body) }?;
+    let (owner, state) = unsafe { physics::line_body(body) }?;
     Some((body, owner, state))
 }
 
@@ -263,7 +267,7 @@ const NO_ENTRY: i32 = -1;
 /// The game thread, outside the physics step.
 pub(super) unsafe fn rider_mass_kg(character: &Character) -> Option<f32> {
     let body = unsafe { proxy_body(character) }?;
-    unsafe { physical_hands::body_mass_kg(body) }.filter(|m| *m > 0.0)
+    unsafe { physics::body_mass_kg(body) }.filter(|m| *m > 0.0)
 }
 
 /// Whether the character's proxy stands on a surface.

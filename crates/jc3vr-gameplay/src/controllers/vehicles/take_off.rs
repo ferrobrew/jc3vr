@@ -23,14 +23,16 @@ use jc3gi::{
     character::character::Character,
     input::input_action_map::{Action, LocalPlayerActionMap},
 };
+use jc3vr_body::{
+    controllers::{
+        mode,
+        mode::{Mode, OnFootVariant},
+    },
+    hooks::animation::active_state_type_id,
+};
 use jc3vr_core::hash::StateSet;
 use jc3vr_view::{headpose, headpose::sim::body_yaw_of};
 use parking_lot::Mutex;
-
-use crate::{
-    controllers::mode::{self, Mode, OnFootVariant},
-    hooks::animation::active_state_type_id,
-};
 
 /// Track the take-off for this game tick, with `enabled` from the debug UI.
 ///

@@ -1,6 +1,6 @@
 //! What a reached object is to a hand: a weapon lying in the world, a loose body, or something a
 //! hand does not carry, and why. The body accessors this reads are in
-//! [`crate::controllers::physics::bodies`], re-exported here for the physical hands.
+//! [`jc3vr_body::controllers::physics::bodies`], re-exported here for the physical hands.
 
 use std::{fmt, num::NonZeroUsize};
 
@@ -13,12 +13,11 @@ use jc3gi::{
     physics::RigidObject,
     vehicle::{parts::VehiclePartGameObject, vehicle::Vehicle},
 };
-
-pub(crate) use crate::controllers::physics::bodies::*;
-use crate::controllers::{
-    aim::grapple_weapons,
-    physical_hands::{doors::engine as door_engine, grasp::TargetKind},
+use jc3vr_body::controllers::{
+    aim::grapple_weapons, grab::world_reach::TargetKind, physics::bodies::*,
 };
+
+use crate::controllers::physical_hands::doors::engine as door_engine;
 
 /// What the object at `object`, reached on its body `body`, is to a hand: a weapon lying in the
 /// world, or a finite-mass loose body, including a vehicle the player does not occupy. Parts still
@@ -160,9 +159,9 @@ pub(super) unsafe fn describe(object: NonZeroUsize) -> String {
 #[cfg(test)]
 mod tests {
     use glam::{Quat, Vec3};
+    use jc3vr_body::controllers::physics::rigid::{BodyPose, Velocities};
 
     use super::*;
-    use crate::controllers::physics::rigid::{BodyPose, Velocities};
 
     #[test]
     fn a_vehicle_requires_dynamic_finite_mass_and_an_unoccupied_player_seat() {

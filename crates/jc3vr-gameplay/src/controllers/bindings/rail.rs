@@ -2,8 +2,7 @@
 
 use glam::{Quat, Vec3};
 use jc3gi::input::input_action_map::Action;
-
-use crate::controllers::bindings::hold::{Desired, MapKind, Target, Want};
+use jc3vr_body::controllers::intent::hold::{Desired, MapKind, Target, Want};
 
 #[derive(Debug, Default)]
 pub(super) struct RailRelease {

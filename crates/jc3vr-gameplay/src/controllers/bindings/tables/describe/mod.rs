@@ -14,6 +14,13 @@
 //! as [`Control::Unbound`].
 
 use jc3gi::input::input_action_map::Action;
+use jc3vr_body::controllers::{
+    intent::{
+        controls::PadZone,
+        rows::{Control, Effect, Gesture, ModAction, Row, StickDir},
+    },
+    mode::{AirborneVariant, Mode, OnFootVariant, VehicleClass},
+};
 use jc3vr_input::{
     frame::Hand,
     semantic::vocabulary::{ActionId, GlobalAction, MenuAction, OnFootAction},
@@ -23,7 +30,6 @@ use jc3vr_view::vr::input::semantic::{
     defaults::{Component, default_binding},
 };
 
-pub use crate::controllers::intent::rows::{Control, Effect, Gesture, ModAction, Row, StickDir};
 use crate::controllers::{
     bindings::{
         intents::{Mask, YANK_ACTIONS},
@@ -31,10 +37,9 @@ use crate::controllers::{
             body_turn_action, context_masks,
             declare::{TableCtx, declare, vehicle_weapon_actions},
             grapple_press,
-            sink::{Axis, Direction, Gate, Input, PadLayout, PadZone, Press, Sink, pad_of},
+            sink::{Axis, Direction, Gate, Input, PadLayout, Press, Sink, pad_of},
         },
     },
-    mode::{AirborneVariant, Mode, OnFootVariant, VehicleClass},
     vehicles::wingsuit_gestures::GestureAvailability,
 };
 
@@ -510,7 +515,7 @@ fn outside_rows(ctx: &DescribeCtx, bindings: Bindings) -> Vec<Row> {
             add(control, Gesture::Press, modded(ModAction::Turn));
         }
     }
-    // The grapple button's gestures (`crate::controllers::bindings::grapple_button`).
+    // The grapple button's gestures (`jc3vr_body::controllers::intent::grapple_button`).
     if let Some((grapple, _)) = grapple_press(ctx.mode) {
         for &action in grapple {
             for (control, _) in controls(action)

@@ -7,9 +7,8 @@
 //! parachute headings) are in [`ModText`], the one table of mod strings, in English.
 
 use jc3gi::input::input_action_map::Action::{self, *};
-
-use crate::controllers::{
-    bindings::tables::describe::{Gesture, ModAction},
+use jc3vr_body::controllers::{
+    intent::rows::{Gesture, ModAction},
     mode::{AirborneVariant, Mode, VehicleClass},
 };
 
@@ -496,13 +495,17 @@ impl ModText {
 
 #[cfg(test)]
 mod tests {
+    use jc3vr_body::controllers::{
+        intent::rows::{Control, Effect, Gesture},
+        mode::OnFootVariant,
+    };
     use jc3vr_input::frame::Hand;
 
     use super::*;
     use crate::controllers::bindings::tables::{
         coverage::{all_contexts, all_modes, injected},
         declare::TableCtx,
-        describe::{Control, DescribeCtx, Effect, Features, Gesture, PhysicalFeatures, describe},
+        describe::{DescribeCtx, Features, PhysicalFeatures, describe},
     };
 
     #[test]
@@ -601,7 +604,7 @@ mod tests {
 
     #[test]
     fn the_mirrors_are_hidden_and_the_overloads_carry_their_hold() {
-        let on_foot = Mode::OnFoot(crate::controllers::mode::OnFootVariant::Ground);
+        let on_foot = Mode::OnFoot(OnFootVariant::Ground);
         assert_eq!(action_label(BTN_A, on_foot), Some(ActionLabel::Hidden));
         assert_eq!(
             action_label(RELOAD, on_foot),

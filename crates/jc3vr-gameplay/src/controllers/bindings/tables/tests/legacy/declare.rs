@@ -1,22 +1,18 @@
 //! The raw-input tables' declarations, frozen.
 
 use jc3gi::input::input_action_map::Action::{self, *};
+use jc3vr_body::controllers::{
+    intent::controls::Controls,
+    mode::{AirborneVariant, Mode, VehicleClass, VehicleSeat},
+};
 use jc3vr_input::frame::Hand;
 
-use crate::controllers::{
-    bindings::{
-        controls::Controls,
-        tables::tests::legacy::sink::{
-            Axis, Direction, Gate,
-            Input::{
-                self, A, B, GripDefault, Stick, StickClick, TrackpadLeft, TrackpadRight, Trigger,
-            },
-            Press,
-            Role::{self, Dom, Left, Off, Right},
-            Sink,
-        },
-    },
-    mode::{AirborneVariant, Mode, VehicleClass, VehicleSeat},
+use crate::controllers::bindings::tables::tests::legacy::sink::{
+    Axis, Direction, Gate, Input,
+    Input::{A, B, GripDefault, Stick, StickClick, TrackpadLeft, TrackpadRight, Trigger},
+    Press, Role,
+    Role::{Dom, Left, Off, Right},
+    Sink,
 };
 
 /// What the tables branch on besides the mode: the state that changes which inputs are bound,

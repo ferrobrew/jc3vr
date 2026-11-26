@@ -3,10 +3,10 @@
 
 use body_rig::angle::{head_heading, wrap};
 use egui::Ui;
-use jc3vr_gameplay::controllers::{
-    body::{estimator, estimator::config::DEFAULT_WEIGHTS_FILE, rig::root::RootStatus},
-    config::ControllersConfig,
+use jc3vr_body::controllers::body::{
+    estimator, estimator::config::DEFAULT_WEIGHTS_FILE, rig::root::RootStatus,
 };
+use jc3vr_gameplay::controllers::config::ControllersConfig;
 use jc3vr_view::headpose;
 
 pub(super) fn estimator_readout(ui: &mut Ui, root: &RootStatus) {

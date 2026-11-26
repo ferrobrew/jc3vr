@@ -1,6 +1,6 @@
 //! The `VR: BODY` page: the saved body dimensions, the body-scaling switches, and the guided
 //! calibration that measures the player in the headset
-//! ([`Calibration`](jc3vr_gameplay::controllers::body::calibration::Calibration)) and saves the result with
+//! ([`Calibration`](jc3vr_body::controllers::body::calibration::Calibration)) and saves the result with
 //! the rest of the settings.
 //!
 //! The calibration runs standing or seated ([`Stance`]), as the summary's `STANCE` choice says; it
@@ -15,7 +15,7 @@
 //!
 //! - [`measure`]: the live measurements the calibration steps read;
 //! - [`state`]: the running
-//!   [`Calibration`](jc3vr_gameplay::controllers::body::calibration::Calibration), the stance choice, and
+//!   [`Calibration`](jc3vr_body::controllers::body::calibration::Calibration), the stance choice, and
 //!   the lifecycle handlers;
 //! - [`text`]: the row text the flow and its readouts show;
 //! - [`pages`]: the page's rows for each step of the flow.
@@ -25,7 +25,7 @@ mod pages;
 mod state;
 mod text;
 
-use jc3vr_gameplay::controllers::body::calibration::{Stance, Step};
+use jc3vr_body::controllers::body::calibration::{Stance, Step};
 
 use crate::pause_menu::model::page::{Page, PageDef};
 
@@ -58,7 +58,7 @@ mod tests {
     use std::time::{Duration, Instant};
 
     use glam::{Vec2, Vec3};
-    use jc3vr_gameplay::controllers::{
+    use jc3vr_body::controllers::{
         body::{
             InvalidDimension,
             calibration::{
@@ -66,8 +66,9 @@ mod tests {
                 check_seated_eye_height,
             },
         },
-        config::{CONTROLLERS_CONFIG, Posture},
+        roomscale::config::Posture,
     };
+    use jc3vr_gameplay::controllers::config::CONTROLLERS_CONFIG;
     use jc3vr_input::frame::{Hand, Pose, TrackedPose};
     use jc3vr_view::vr::stage::StageInfo;
     use smol_str::SmolStr;

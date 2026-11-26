@@ -3,7 +3,7 @@
 //! shove a palm gives an object, longer the harder it pushes, and a line from the grab point of
 //! what a hand holds to where the hand would have it, redder the harder the hand pulls. What a hand
 //! would take, and holds, is marked by the grip model's markers
-//! ([`crate::controllers::grab::markers`]).
+//! ([`jc3vr_body::controllers::grab::markers`]).
 //!
 //! The palms and what they hold ride with the player, so they are anchored to the render-time eyes
 //! at their offset from the tick's eyes (`docs/mod/rendering/render-time-anchoring.md`).
@@ -11,6 +11,7 @@
 use std::time::Duration;
 
 use glam::Vec3;
+use jc3vr_body::controllers::overlay::config::OVERLAY_CONFIG;
 use jc3vr_view::{
     controllers::overlay::{
         primitive::{Anchor, DepthMode, Facing, Primitive, Rgba, Shape, Source, SpriteSize},
@@ -19,10 +20,7 @@ use jc3vr_view::{
     hooks::camera::eye_point,
 };
 
-use crate::controllers::{
-    overlay::config::OVERLAY_CONFIG,
-    physical_hands::{HandStatus, PhysicalHandsConfig, palm::EDGES},
-};
+use crate::controllers::physical_hands::{HandStatus, PhysicalHandsConfig, palm::EDGES};
 
 /// Submit the palms of the last tick, or clear them when they are not shown.
 pub(super) fn submit(hands: &[HandStatus; 2], config: &PhysicalHandsConfig) {

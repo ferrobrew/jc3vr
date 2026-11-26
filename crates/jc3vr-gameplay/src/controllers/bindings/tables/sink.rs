@@ -13,6 +13,10 @@
 
 use glam::Vec2;
 use jc3gi::input::input_action_map::Action;
+use jc3vr_body::controllers::intent::{
+    controls::{ButtonControl, PadZone, rotate_stick},
+    hold::{Desired, MapKind, Target, Want},
+};
 use jc3vr_input::{
     frame::Hand,
     semantic::{
@@ -21,12 +25,7 @@ use jc3vr_input::{
     },
 };
 
-use crate::controllers::bindings::{
-    controls::{ButtonControl, rotate_stick},
-    hold::{Desired, MapKind, Target, Want},
-    intents::Intents,
-};
-pub use crate::controllers::intent::controls::PadZone;
+use crate::controllers::bindings::intents::Intents;
 
 /// A digital input of the tables.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
@@ -185,7 +184,7 @@ impl Press {
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum Axis {
     /// A vector action's horizontal axis, +X right, rotated by the move rotation
-    /// ([`Controls::move_rotation`](crate::controllers::bindings::controls::Controls::move_rotation)).
+    /// ([`Controls::move_rotation`](jc3vr_body::controllers::intent::controls::Controls::move_rotation)).
     MoveX(ActionId),
     /// A vector action's vertical axis, +Y forward, rotated by the move rotation.
     MoveY(ActionId),

@@ -18,18 +18,19 @@ use std::num::NonZeroUsize;
 use detours_macro::detour;
 use glam::Mat4;
 use jc3gi::{character::character::Character, equipment::weapon::WeaponBase};
+use jc3vr_body::controllers::{
+    aim::gun,
+    physics,
+    physics::refs::{Strong, Weak},
+    scheme,
+};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::controllers::{
-    aim::gun,
-    physical_hands, scheme,
-    weapons::{
-        engine::{character_object, gun_pose},
-        grenade::{Release, consume_world_pickup, finite_world_pickup, safe},
-        hold::refs::{Strong, Weak},
-        inventory::engine::weapon_of,
-    },
+use crate::controllers::weapons::{
+    engine::{character_object, gun_pose},
+    grenade::{Release, consume_world_pickup, finite_world_pickup, safe},
+    inventory::engine::weapon_of,
 };
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -126,7 +127,7 @@ unsafe fn motion(weapon: &WeaponBase) -> Option<(Mat4, Release)> {
     let first = unsafe { gun::guns(weapon) }.next().flatten()?;
     let owner = NonZeroUsize::new(weapon as *const WeaponBase as usize)?;
     let release = unsafe { first.m_PfxInstance.as_ref() }
-        .and_then(|instance| unsafe { physical_hands::body_state(instance.m_BodyId, owner) }.ok())
+        .and_then(|instance| unsafe { physics::body_state(instance.m_BodyId, owner) }.ok())
         .map(|state| Release {
             velocity: state.velocities.linear,
             angular: state.velocities.angular,

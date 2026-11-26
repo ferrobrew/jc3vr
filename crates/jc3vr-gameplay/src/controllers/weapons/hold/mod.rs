@@ -37,7 +37,7 @@
 //! off the hands, are kept. Nothing changes the weapon's state.
 //!
 //! The placement detour also runs the rigid grip around the original
-//! ([`crate::controllers::hands::grip`]), for every weapon the local player holds.
+//! ([`jc3vr_body::controllers::hands::grip`]), for every weapon the local player holds.
 //!
 //! The detours run on the simulation's worker threads for every character, so they compare the
 //! inventory's weapons against the table's published hands before taking any lock, and they never
@@ -85,18 +85,20 @@ use jc3gi::{
     },
     equipment::weapon::{WeaponBase, WeaponState},
 };
+use jc3vr_body::controllers::{
+    aim::gun,
+    hands::{grip, late},
+    held::native::gun_count,
+};
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-pub(crate) use crate::controllers::physics::refs;
 use crate::controllers::{
-    aim::gun,
-    hands::{grip, late},
     loadout::{ObjectAddress, TakeSource, live},
     weapons::{
         docks,
-        engine::{gun_at_mut, gun_count, slot_of},
+        engine::{gun_at_mut, slot_of},
         inventory,
     },
 };

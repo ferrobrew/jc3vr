@@ -7,7 +7,7 @@
 //! why it was not offered, is noted for the grip press's log.
 //!
 //! The vehicles come from the target system's vehicle set
-//! ([`crate::controllers::aim::targets`]), read on the aim update's thread as the palms' tick runs,
+//! ([`jc3vr_body::controllers::aim::targets`]), read on the aim update's thread as the palms' tick runs,
 //! and from the vehicles a hand's reach rays hit this tick: the set does not keep every vehicle
 //! near the player (a parked car can be missing from it), and a door a hand is at is on a vehicle
 //! its rays meet.
@@ -19,24 +19,25 @@ use jc3gi::{
     physics::{GameMaterialId, PhysicsGameObject},
     vehicle::vehicle::{DoorSlot, Vehicle},
 };
+use jc3vr_body::controllers::{
+    aim::{targets, targets::TargetSet},
+    grab::world_reach::{DoorTarget, Reach, TargetKind},
+    physics::bodies::is_type,
+};
 use parking_lot::Mutex;
 
-use crate::controllers::{
-    aim::targets::{self, TargetSet},
-    physical_hands::{
-        bodies::is_type,
-        contact::{Surface, SurfaceHit},
-        doors::{
-            DoorTarget, DoorsConfig, HANDLE_REACH_M,
-            acquisition::PanelReach,
-            engine::{self, DoorRead},
-            geometry::{DoorKind, door_handle},
-            observed_reach, slot_label, table,
-        },
-        grab_view::model::{HandleOutcome, HandleSeen},
-        grasp::{Reach, TargetKind},
-        pickup::diagnostics::scan::{Branch, Scan, ScanEntry, ScanResult},
+use crate::controllers::physical_hands::{
+    contact::{Surface, SurfaceHit},
+    doors::{
+        DoorsConfig, HANDLE_REACH_M,
+        acquisition::PanelReach,
+        engine,
+        engine::DoorRead,
+        geometry::{DoorKind, door_handle},
+        observed_reach, slot_label, table,
     },
+    grab_view::model::{HandleOutcome, HandleSeen},
+    pickup::diagnostics::scan::{Branch, Scan, ScanEntry, ScanResult},
 };
 
 /// The vehicles whose doors a palm at any of `palms` might reach: those in the target system's

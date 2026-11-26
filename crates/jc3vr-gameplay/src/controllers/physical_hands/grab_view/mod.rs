@@ -26,6 +26,10 @@ use std::{
 };
 
 use glam::Vec3;
+use jc3vr_body::controllers::grab::{
+    markers::{MarkerFrame, anchor as marker_anchor},
+    tick::Tick,
+};
 use jc3vr_input::frame::Hand;
 use jc3vr_view::controllers::overlay::{
     primitive::{Anchor, Primitive, Source},
@@ -39,10 +43,6 @@ use self::{
     model::{Candidate, CandidateKind, HandleSeen, PalmState, REFUSAL_FLASH_S, ReachRay},
 };
 use crate::controllers::{
-    grab::{
-        markers::{MarkerFrame, anchor as marker_anchor},
-        tick::Tick,
-    },
     physical_hands::{PhysicalHandsConfig, config::PHYSICAL_HANDS_CONFIG, palm_readout},
     weapons::reload::{knock, zones},
 };

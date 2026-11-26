@@ -20,12 +20,12 @@
 //!   game's.
 
 use jc3gi::character::inventory::WeaponSlot;
+use jc3vr_body::controllers::grab::socket::Socket;
 use jc3vr_input::frame::Hand;
 
 use crate::controllers::loadout::{
     binding::Binding,
     item::{ItemId, WeaponType},
-    socket::Socket,
     table::{Loadout, Place},
 };
 

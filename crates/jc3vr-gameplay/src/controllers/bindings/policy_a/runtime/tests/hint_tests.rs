@@ -1,6 +1,14 @@
 //! Current descriptions retain the same aggregate permissions as table execution.
 
 use jc3gi::input::input_action_map::Action;
+use jc3vr_body::controllers::{
+    grab::{GrabVolume, cockpit::ControlKind},
+    intent::{
+        controls::Controls,
+        rows::{Control as ShownControl, Effect, ModAction},
+    },
+    mode::{Mode, VehicleClass, VehicleSeat},
+};
 use jc3vr_input::semantic::vocabulary::LandVehicleAction;
 
 use super::{
@@ -9,20 +17,16 @@ use super::{
 };
 use crate::controllers::{
     bindings::{
-        controls::Controls,
         summary::permitted_routes,
         tables::{
             Bindings,
             declare::TableCtx,
-            describe::{
-                Control as ShownControl, DescribeCtx, Effect, Features, ModAction, describe_current,
-            },
+            describe::{DescribeCtx, Features, describe_current},
         },
-        trigger_ownership::{self, TriggerMask},
+        trigger_ownership,
+        trigger_ownership::TriggerMask,
     },
-    grab::GrabVolume,
     loadout::Socket,
-    mode::{Mode, VehicleClass, VehicleSeat},
 };
 
 #[test]
@@ -43,9 +47,7 @@ fn wheel_held_grip_fire_is_absent_before_row_merge_and_returns_after_release() {
         pressed: true,
         released: false,
     };
-    controls.hands[0].grab_volume = Some(GrabVolume::VehicleControl(
-        crate::controllers::vehicles::physical::ControlKind::Wheel,
-    ));
+    controls.hands[0].grab_volume = Some(GrabVolume::VehicleControl(ControlKind::Wheel));
     for held in [true, false] {
         if !held {
             controls.hands[0].grip = ButtonControl {

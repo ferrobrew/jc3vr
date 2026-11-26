@@ -35,15 +35,13 @@ use std::time::{Duration, Instant};
 
 use body_rig::smooth::smoothstep;
 use glam::{Quat, Vec3};
+pub use jc3vr_body::controllers::held::{GripSlide, slide_offset, slide_on_bone};
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
 pub use self::{
     action::{action_back, action_volume},
-    shape::{
-        GripSlide, GunRegion, GunShape, RegionHit, classify, into_gun, out_of_gun, slide_offset,
-        slide_on_bone, turn_on_wrist,
-    },
+    shape::{GunRegion, GunShape, RegionHit, classify, into_gun, out_of_gun, turn_on_wrist},
 };
 
 /// How far outside the gun's model box a hand still touches the gun, metres.

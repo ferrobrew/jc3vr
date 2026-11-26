@@ -55,16 +55,17 @@ pub mod math;
 pub(super) mod step;
 pub(crate) mod targets;
 
+use jc3vr_body::controllers::{
+    mode::{AirborneVariant, Detection, Mode, OnFootVariant},
+    physics::steps::steps,
+};
+
 pub use crate::controllers::weapons::gun_bodies::{
     BraceContact, GunBodyStatus, GunHolds, GunsStatus, HeldGun, MassSource, physical_hands, status,
 };
 pub(super) use crate::controllers::weapons::gun_bodies::{carried_mass, count_contact, mass};
 use crate::controllers::{
-    mode::{AirborneVariant, Detection, Mode, OnFootVariant},
-    physical_hands::{
-        PhysicalHandsConfig,
-        physics::state::{enabled as hand_bodies_enabled, steps},
-    },
+    physical_hands::{PhysicalHandsConfig, physics::state::enabled as hand_bodies_enabled},
     weapons::gun_bodies,
 };
 
@@ -100,11 +101,10 @@ pub(crate) fn acting_hands(config: &PhysicalHandsConfig) -> [bool; 2] {
 
 #[cfg(test)]
 mod tests {
+    use jc3vr_body::controllers::mode::{Traversal, VehicleClass, VehicleSeat};
+
     use super::*;
-    use crate::controllers::{
-        mode::{Traversal, VehicleClass, VehicleSeat},
-        physical_hands::mode_acts,
-    };
+    use crate::controllers::physical_hands::mode_acts;
 
     #[test]
     fn grapple_traversal_allows_gun_bodies_but_not_ordinary_palms() {

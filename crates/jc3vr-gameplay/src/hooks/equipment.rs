@@ -10,13 +10,10 @@ use jc3gi::{
     game::GameObjectUpdateContext,
     types::math::Vector3,
 };
+use jc3vr_body::controllers::{aim::gun, held::native::weapon_at};
 use re_utilities::hook_library::HookLibrary;
 
-use crate::controllers::{
-    aim::gun,
-    vehicles::mounted,
-    weapons::{engine::weapon_at, hold::armed},
-};
+use crate::controllers::{vehicles::mounted, weapons::hold::armed};
 
 pub fn hook_library() -> HookLibrary {
     HookLibrary::new()

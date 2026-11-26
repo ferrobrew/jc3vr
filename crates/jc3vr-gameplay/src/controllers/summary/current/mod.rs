@@ -1,19 +1,17 @@
 //! Current wrist hints, projected from resolved sources and explicit gameplay eligibility.
 
 use jc3gi::input::input_action_map::Action;
+use jc3vr_body::controllers::{
+    intent::rows::{Control, Effect, Gesture, ModAction, Row},
+    mode::Mode,
+};
 use jc3vr_input::frame::Hand;
 use jc3vr_view::vr::input::semantic::bound::SourceName;
 
-use crate::controllers::{
-    bindings::tables::describe::{Control, Effect, Gesture, ModAction, Row},
-    mode::Mode,
-    summary::{
-        content::{Line, build},
-        context::ContextHint,
-        labels::{
-            ActionLabel, CurrentAction, HOLD_KEY, Text, action_label, gesture_prefix, heading,
-        },
-    },
+use crate::controllers::summary::{
+    content::{Line, build},
+    context::ContextHint,
+    labels::{ActionLabel, CurrentAction, HOLD_KEY, Text, action_label, gesture_prefix, heading},
 };
 
 /// The current consumer of a physical trigger, including neutral-transfer suppression.

@@ -47,21 +47,21 @@ use jc3gi::{
     character::character::Character,
     types::math::Vector3,
 };
+use jc3vr_body::{
+    controllers::scheme,
+    hooks::animation::{active_state_type_id, body_rule_system},
+};
 use jc3vr_core::hash::hashlittle;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::{
-    controllers::{
-        physical_hands::climb::{self, engine},
-        scheme,
-        vehicles::{
-            config::{RailConfig, VEHICLES_CONFIG},
-            rail::solve::{RailLine, RailMotion, RailStep, step, walk_from},
-        },
-        weapons::engine::character_position,
+use crate::controllers::{
+    physical_hands::{climb, climb::engine},
+    vehicles::{
+        config::{RailConfig, VEHICLES_CONFIG},
+        rail::solve::{RailLine, RailMotion, RailStep, step, walk_from},
     },
-    hooks::animation::{active_state_type_id, body_rule_system},
+    weapons::engine::character_position,
 };
 
 pub(super) fn hook_library() -> HookLibrary {

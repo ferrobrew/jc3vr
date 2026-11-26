@@ -1,13 +1,13 @@
 //! How the weapon handling's candidates become grip targets, and where their markers go.
 
+use jc3vr_body::controllers::{
+    grab::{Candidate, GrabVolume, GripTarget, Mark, MarkAt, MarkStyle, Shown, Tier},
+    hands::ActiveHands,
+};
 use jc3vr_input::frame::Hand;
 use jc3vr_view::controllers::cockpit::CockpitTransform;
 
-use crate::controllers::{
-    grab::{Candidate, GrabVolume, GripTarget, Mark, MarkAt, MarkStyle, Shown, Tier},
-    hands::ActiveHands,
-    weapons::foregrip::{self, FOREGRIP},
-};
+use crate::controllers::weapons::{foregrip, foregrip::FOREGRIP};
 
 /// How the weapon handling's candidates become grip targets, and where the markers go.
 pub(super) struct Place {

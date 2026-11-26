@@ -1,9 +1,10 @@
 //! Current snatch instructions from the owner's phase and permitted semantic routes.
 
+use jc3vr_body::controllers::intent::rows::{Control, Effect, Gesture, ModAction, Row};
 use jc3vr_view::vr::input::semantic::bound::SourceTable;
 
 use crate::controllers::{
-    bindings::tables::describe::{Control, Effect, Gesture, ModAction, Row, press_control},
+    bindings::tables::describe::press_control,
     summary::{current::CurrentContext, eligibility::SnatchHint},
 };
 

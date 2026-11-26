@@ -3,19 +3,17 @@
 //! precision-aim suppression's counts, and the aim-and-sights switches.
 
 use egui::Ui;
-use jc3vr_gameplay::controllers::{
-    aim::sights::SightSource,
-    weapons::{
-        ads,
-        ads::{
-            AdsStatus,
-            config::{AdsConfig, AimingEye},
-        },
-        collide,
-        collide::{HandCollideStatus, config::CollideConfig},
-        scope,
-        scope::{ScopeStatus, suppress, suppress::SuppressCounters},
+use jc3vr_body::controllers::aim::sights::SightSource;
+use jc3vr_gameplay::controllers::weapons::{
+    ads,
+    ads::{
+        AdsStatus,
+        config::{AdsConfig, AimingEye},
     },
+    collide,
+    collide::{HandCollideStatus, config::CollideConfig},
+    scope,
+    scope::{ScopeStatus, suppress, suppress::SuppressCounters},
 };
 use jc3vr_input::frame::Hand;
 

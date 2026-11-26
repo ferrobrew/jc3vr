@@ -12,6 +12,14 @@ pub(crate) mod scan;
 #[cfg(test)]
 mod tests;
 
+use jc3vr_body::controllers::{
+    grab::{GrabVolume, latch::GripLatch, resolve, resolve::Lost, tick::Tick, world_reach::Reach},
+    intent::controls::ButtonControl,
+    physics::{
+        bodies::{BodyError, BodyState},
+        rigid::Velocities,
+    },
+};
 use jc3vr_input::frame::Hand;
 use jc3vr_view::recorder::tracking::{
     events,
@@ -23,21 +31,7 @@ use tracking_format::event::{
     GripAcquisition, GripCandidate, GripDrive, GripScan, GripScanEntry, GripStage, Label,
 };
 
-use crate::controllers::{
-    bindings::controls::ButtonControl,
-    grab::{
-        GrabVolume,
-        latch::GripLatch,
-        resolve::{self, Lost},
-        tick::Tick,
-    },
-    physical_hands::{
-        bodies::{BodyError, BodyState},
-        grasp::Reach,
-        pickup::HeldReport,
-        rigid::Velocities,
-    },
-};
+use crate::controllers::physical_hands::pickup::HeldReport;
 
 /// The number of resolver candidates retained in each input snapshot.
 pub(crate) const CANDIDATE_CAPACITY: usize = 8;

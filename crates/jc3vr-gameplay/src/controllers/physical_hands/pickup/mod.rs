@@ -52,6 +52,12 @@ use glam::Vec3;
 use jc3gi::{
     equipment::weapon::WeaponBase, input::input_action_map::Action, vehicle::vehicle::DoorSlot,
 };
+use jc3vr_body::controllers::{
+    grab::world_reach::Reach,
+    haptics,
+    intent::hold::{Desired, MapKind, Target, Want},
+    physics::bodies,
+};
 use jc3vr_input::{frame::Hand, haptics::cues::Event};
 pub(super) use reach::{REACH_DIRECTIONS, ReachObservations, ReachTuning, floor_weapons, reach};
 pub(super) use state::{Held, HeldKind, PickupState, Request};
@@ -59,14 +65,14 @@ pub(super) use tick::{JointInputs, TickInputs, TickOutcome, tick};
 pub use tuning::{PICKUP, PickupTuning};
 
 use crate::controllers::{
-    bindings::hold::{Desired, MapKind, Target, Want},
-    haptics,
-    physical_hands::{STATE, bodies, grab_view, grasp::Reach},
+    physical_hands::{STATE, grab_view},
+    weapons,
     weapons::{
-        self, FinishInputs,
+        FinishInputs,
         hold::{
             pickup::Refusal,
-            source::{self, SourceRefusal, WeaponSource},
+            source,
+            source::{SourceRefusal, WeaponSource},
         },
     },
 };

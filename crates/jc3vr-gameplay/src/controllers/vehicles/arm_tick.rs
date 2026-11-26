@@ -2,19 +2,20 @@
 //! wingsuit's arm steering is switched on.
 
 use glam::Vec2;
+use jc3vr_body::controllers::{
+    hands::ActiveHands,
+    intent::{controls::Controls, hold::Desired},
+    locomotion::axis_output::write_move,
+    mode::{AirborneVariant, Mode},
+};
 use jc3vr_input::frame::Hand;
 
-use crate::controllers::{
-    bindings::{controls::Controls, hold::Desired},
-    hands::ActiveHands,
-    mode::{AirborneVariant, Mode},
-    vehicles::{
-        arm_steering::{self as arm, ArmBody, ArmHand},
-        axis_output::write_move,
-        begin::body_dimensions,
-        config::VehicleSettings,
-        types::ArmReadout,
-    },
+use crate::controllers::vehicles::{
+    arm_steering as arm,
+    arm_steering::{ArmBody, ArmHand},
+    begin::body_dimensions,
+    config::VehicleSettings,
+    types::ArmReadout,
 };
 
 /// Whether the arm steering acts in `mode`: in the wingsuit, with it switched on.

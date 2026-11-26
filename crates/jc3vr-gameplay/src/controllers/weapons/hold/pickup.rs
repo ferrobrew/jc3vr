@@ -40,20 +40,23 @@ use jc3gi::{
     equipment::weapon::{WeaponBase, WeaponState},
     hash::hashlittle,
 };
+use jc3vr_body::controllers::aim::gun;
 use jc3vr_input::frame::Hand;
 
 use crate::controllers::{
-    aim::gun,
     loadout::{
-        Delivery, ObjectAddress, TakeSource, WeaponType, live, slot_label,
-        take::{self, TakeOffer, TakeRefusal, TakeRoute, TakeRules},
+        Delivery, ObjectAddress, TakeSource, WeaponType, live, slot_label, take,
+        take::{TakeOffer, TakeRefusal, TakeRoute, TakeRules},
     },
     weapons::{
         config::WEAPONS_CONFIG,
         dual_wield::single,
-        engine::{self, character_object, credit_stored, gun_pose, slot_of},
-        hold::{self, act, equip, use_item},
-        inventory::{self, carry, engine as inventory_engine},
+        engine,
+        engine::{character_object, credit_stored, gun_pose, slot_of},
+        hold,
+        hold::{act, equip, use_item},
+        inventory,
+        inventory::{carry, engine as inventory_engine},
     },
 };
 

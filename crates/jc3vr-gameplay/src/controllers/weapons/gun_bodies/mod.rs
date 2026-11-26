@@ -10,7 +10,7 @@
 //!   ([`physical_hands`], [`deviation`], [`take_support_break`]), and the readout ([`status`]);
 //! - [`apply`]: the support and weight targets the hands compose once for every hand.
 //!
-//! The step counts the publication's age in physics steps ([`crate::controllers::physics::steps`])
+//! The step counts the publication's age in physics steps ([`jc3vr_body::controllers::physics::steps`])
 //! and the results' in wall-clock time, so a hitch of the whole simulation tick never drops a held
 //! gun and a reader between the steps sees results only while the steps run.
 
@@ -22,18 +22,20 @@ use std::{
 };
 
 use glam::Vec3;
+use jc3vr_body::controllers::{
+    hands::CockpitHand,
+    physics::steps::{current_at, steps},
+};
 use jc3vr_input::frame::{Hand, Pose};
 use parking_lot::Mutex;
 
 pub(crate) use self::holds::read_holds;
-use crate::controllers::{
-    hands::CockpitHand,
-    physics::steps::{current_at, steps},
-    weapons::{
-        config::HeftConfig,
-        foregrip::{self, FOREGRIP},
-        heft::{self, Heft, HeftClass},
-    },
+use crate::controllers::weapons::{
+    config::HeftConfig,
+    foregrip,
+    foregrip::FOREGRIP,
+    heft,
+    heft::{Heft, HeftClass},
 };
 
 /// A gun in a hand, as the weapon handling's input tick read it.

@@ -16,13 +16,13 @@
 //! line. A hold pulls once; the hand lets go and takes it again to pull again.
 
 use glam::{Quat, Vec3};
-use jc3vr_input::frame::Hand;
-
-use crate::controllers::{
+use jc3vr_body::controllers::{
     body::BodyDimensions,
     grab::{Candidate, GrabVolume},
-    vehicles::physical::Release,
 };
+use jc3vr_input::frame::Hand;
+
+use crate::controllers::vehicles::physical::Release;
 
 /// The ripcord's hold, while a hand has it.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -192,8 +192,9 @@ fn release(state: &mut RipcordState, why: Release, events: &mut Vec<RipcordEvent
 
 #[cfg(test)]
 mod tests {
+    use jc3vr_body::controllers::grab::grab_volume;
+
     use super::*;
-    use crate::controllers::grab::grab_volume;
 
     const PULL_M: f32 = 0.15;
 

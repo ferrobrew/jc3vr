@@ -1,5 +1,5 @@
 //! The grip markers' labels: a short name drawn upright above a labelled marker
-//! ([`jc3vr_gameplay::controllers::grab::Mark::label`]), such as the cockpit's nitrous button, while a hand
+//! ([`jc3vr_body::controllers::grab::Mark::label`]), such as the cockpit's nitrous button, while a hand
 //! is at it. The overlay that draws the markers has no text, so the HUD draws each label as a quad
 //! of the grab hint's haloed text ([`crate::hud::grab_hint`]), with no backing.
 //!
@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 
 use glam::{Quat, Vec3, Vec4};
 use jc3gi::graphics_engine::{device::Device, texture::Texture};
-use jc3vr_gameplay::controllers::{
+use jc3vr_body::controllers::{
     grab::markers::{MarkLabel, published_labels},
     overlay::render_poses,
     scheme,

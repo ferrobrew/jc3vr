@@ -12,15 +12,10 @@
 use body_rig::geometry::{closest_on_segment, segment_distance};
 use glam::Vec3;
 use jc3gi::character::inventory::WeaponSlot;
+use jc3vr_body::controllers::grab::{Candidate, GrabVolume};
 use jc3vr_input::frame::{Hand, Pose};
 
-use crate::controllers::{
-    grab::{Candidate, GrabVolume},
-    weapons::{
-        engine::{self, HeldWeapon},
-        regions::GunRegion,
-    },
-};
+use crate::controllers::weapons::{engine, engine::HeldWeapon, regions::GunRegion};
 
 /// Where a target weapon is.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -331,17 +326,17 @@ pub fn stagger_impulse(
 #[cfg(test)]
 mod tests {
     use glam::{Mat4, Quat};
+    use jc3vr_body::controllers::{
+        body::rig::frames::Frames,
+        grab::{Mark, MarkAt, PickupKind, RemoteKind, Tier, resolve},
+    };
     use jc3vr_view::controllers::cockpit::CockpitTransform;
 
     use super::*;
-    use crate::controllers::{
-        body::rig::frames::Frames,
-        grab::{Mark, MarkAt, PickupKind, RemoteKind, Tier, resolve},
-        weapons::{
-            engine::Wielded,
-            heft::HeftClass,
-            hold::{HANDLE_RADIUS_M, TAKE_RADIUS_M},
-        },
+    use crate::controllers::weapons::{
+        engine::Wielded,
+        heft::HeftClass,
+        hold::{HANDLE_RADIUS_M, TAKE_RADIUS_M},
     };
 
     #[test]

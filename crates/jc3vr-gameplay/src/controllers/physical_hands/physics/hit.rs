@@ -22,12 +22,12 @@
 //! whatever its faction: the game's own reactions to being hit (alarm, heat) follow.
 
 use glam::Vec3;
-
-use crate::controllers::{
+use jc3vr_body::controllers::{
     clock::TimeScale,
     grab::{GrabVolume, latch::GripLatch},
-    physical_hands::physics::config::HandHitsTuning,
 };
+
+use crate::controllers::physical_hands::physics::config::HandHitsTuning;
 
 /// How a hand and a character closed on each other before a contact: the hand's speed toward the
 /// character, and the character's toward the hand, metres per second, neither below zero.
@@ -355,8 +355,9 @@ const MAX_RECENT: usize = 32;
 
 #[cfg(test)]
 mod tests {
+    use jc3vr_body::controllers::grab::PickupKind;
+
     use super::*;
-    use crate::controllers::grab::PickupKind;
 
     const CONFIG: HandHitsTuning = HandHitsTuning::new();
     const VICTIM: VictimTuning = VictimTuning {

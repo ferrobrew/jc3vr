@@ -27,6 +27,13 @@ use jc3gi::{
     character::character::Character,
     equipment::weapon::{WeaponBase, WeaponState},
 };
+use jc3vr_body::controllers::{
+    aim::gun,
+    clock::TimeScale,
+    hands::grip,
+    held::{SnapStart, SnapView},
+    intent, telemetry,
+};
 use jc3vr_input::{
     frame::{self, Hand, Pose},
     motion,
@@ -39,24 +46,21 @@ use jc3vr_view::{
 };
 use parking_lot::Mutex;
 
-pub use crate::controllers::held::{SnapStart, SnapView};
 use crate::controllers::{
-    aim::gun,
-    bindings,
-    clock::TimeScale,
-    hands::grip,
     loadout::{ObjectAddress, Socket, grab, live},
-    telemetry,
     weapons::{
         docks,
         dual_wield::single,
-        engine::{self, grip_points, slot_of},
+        engine,
+        engine::{grip_points, slot_of},
+        hold,
         hold::{
-            self, armed,
+            armed,
             dock::{
                 DrawRearm, ReleaseIntent, ReleaseWatch, Snap, SnapFrom, SnapKind, draw_blocked,
             },
-            equip::{self, DockRefusal, Thrown},
+            equip,
+            equip::{DockRefusal, Thrown},
             layout,
             release_diagnostics::{
                 ControllerContext, MAX_RELEASE_AGE_S, ReleaseFrame, ReleaseInput, ReleaseMotion,
@@ -64,8 +68,10 @@ use crate::controllers::{
                 SampleStage, estimate_release,
             },
         },
-        inventory::{self, reconcile, sockets, traversal},
-        sounds::{self, GunSound},
+        inventory,
+        inventory::{reconcile, sockets, traversal},
+        sounds,
+        sounds::GunSound,
     },
 };
 
@@ -396,7 +402,7 @@ pub(crate) fn cancel_releases() {
 /// unmasked by the bindings' wait for a returning hand's controls to rest
 /// ([`bindings::grip_holds_now`]); `None` for a grip not known.
 fn physical_grips() -> [Option<bool>; 2] {
-    Hand::BOTH.map(bindings::grip_holds_now)
+    Hand::BOTH.map(intent::grip_holds_now)
 }
 
 /// Whether each controller's grip is pressed on the latest frame, by [`Hand::index`]
@@ -405,7 +411,7 @@ fn physical_grips() -> [Option<bool>; 2] {
 /// the fingers stay round the handle for a few frames after the press lets go, and reading those
 /// as a hold would call off every release made with a slow-opening hand, dropping the weapon.
 pub(crate) fn pressed_grips() -> [Option<bool>; 2] {
-    Hand::BOTH.map(bindings::grip_pressed_now)
+    Hand::BOTH.map(intent::grip_pressed_now)
 }
 
 /// One tick's grips, by [`Hand::index`].

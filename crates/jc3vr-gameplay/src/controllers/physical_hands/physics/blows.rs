@@ -35,35 +35,42 @@ use jc3gi::{
     state::StateBitFlag,
     types::{math::Vector3, shared_ptr::WeakPtrGameObject},
 };
-use jc3vr_input::{frame::Hand, haptics::cues::Event};
-use parking_lot::Mutex;
-
-use crate::{
+use jc3vr_body::{
     controllers::{
         aim_state::StateBit,
         clock::{GameClock, TimeScale},
-        grab::{self, latch::GripLatch},
+        grab,
+        grab::latch::GripLatch,
         haptics,
-        physical_hands::{
-            PhysicalHandsConfig,
+        physics::{
             bodies::{instance_of, owner_of},
-            characters::{engine as character_engine, pane},
-            collider_view, engine,
-            physics::{
-                HAND_BODIES, HandHitsTuning, body,
-                contact::{self, Contact},
-                guns,
-                hit::{
-                    ANY_HAND, Blow, BlowPlan, HitGate, Intent, RiderReaction, VictimTuning,
-                    approach, blow, blow_impulse, pulse_share, striking_with, swing,
-                },
-            },
-            sounds::{self, Impact, ImpactKind},
-            world::World,
+            characters as character_engine,
         },
-        weapons::{engine::character_position, hold::take},
     },
     hooks::character::resolve_act_id,
+};
+use jc3vr_input::{frame::Hand, haptics::cues::Event};
+use parking_lot::Mutex;
+
+use crate::controllers::{
+    physical_hands::{
+        PhysicalHandsConfig,
+        characters::pane,
+        collider_view, engine,
+        physics::{
+            HAND_BODIES, HandHitsTuning, body, contact,
+            contact::Contact,
+            guns,
+            hit::{
+                ANY_HAND, Blow, BlowPlan, HitGate, Intent, RiderReaction, VictimTuning, approach,
+                blow, blow_impulse, pulse_share, striking_with, swing,
+            },
+        },
+        sounds,
+        sounds::{Impact, ImpactKind},
+        world::World,
+    },
+    weapons::{engine::character_position, hold::take},
 };
 
 /// A blow a hand dealt, for the readout.

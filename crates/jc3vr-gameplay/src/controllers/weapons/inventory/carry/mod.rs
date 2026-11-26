@@ -52,20 +52,25 @@ use jc3gi::{
     equipment::weapon::{ModelAttachementWeaponComponent, WeaponBase, WeaponData, WeaponState},
     types::math::Matrix4,
 };
+use jc3vr_body::controllers::{
+    aim::gun,
+    hands::ik,
+    held::native::{gun_count, gun_ptr},
+    physics::refs::Strong,
+};
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
-    aim::gun,
-    hands::ik,
     loadout::{ObjectAddress, Place, Socket, live},
     weapons::{
         dual_wield::single,
-        engine::{character_object, gun_count, gun_ptr, skip_interpolation, slot_of},
-        hold::{armed, refs::Strong},
+        engine::{character_object, skip_interpolation, slot_of},
+        hold::armed,
         inventory::{
-            engine::{self as inventory_engine, ObjectKey, Seen, kind_of, refresh_hud, strong_to},
+            engine as inventory_engine,
+            engine::{ObjectKey, Seen, kind_of, refresh_hud, strong_to},
             lost,
             persist::Record,
             sockets,

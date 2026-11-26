@@ -3,11 +3,11 @@
 //! ([`crate::ui::controllers::sights`]), the one editor of the per-weapon sight table.
 
 use egui::Ui;
-use jc3vr_gameplay::controllers::{
+use jc3vr_body::controllers::{
     aim::{AimIdle, AimStatus, HandAim, HandSource, gun::GunCounters},
-    config::ControllersConfig,
     gamepad_setting::SettingStatus,
 };
+use jc3vr_gameplay::controllers::config::ControllersConfig;
 use jc3vr_input::frame::Hand;
 
 use crate::ui::controllers::{sights, vec3, yes_no};

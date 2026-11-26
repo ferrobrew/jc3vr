@@ -30,29 +30,31 @@ use jc3gi::{
     equipment::weapon::{WeaponBase, WeaponState},
     types::math::Matrix4,
 };
+use jc3vr_body::controllers::{
+    body,
+    body::rig::frames::Frames,
+    hands,
+    hands::{ActiveHands, grip, ik},
+    held::native::{gun_count, gun_ptr},
+    roomscale,
+    roomscale::{SeatPhase, posture::EffectivePosture},
+};
 use jc3vr_input::frame::Hand;
 use jc3vr_view::{controllers::cockpit::CockpitTransform, vr::input::flight_pose};
 use parking_lot::Mutex;
 
 use crate::controllers::{
-    body::{self, rig::frames::Frames},
-    hands::{self, ActiveHands, grip, ik},
     loadout::{
-        LoadoutSnapshot, Place, Socket,
-        grab::{self, GrabRules, SocketMove},
+        LoadoutSnapshot, Place, Socket, grab,
+        grab::{GrabRules, SocketMove},
         live,
     },
-    roomscale::{self, SeatPhase, posture::EffectivePosture},
     weapons::{
         docks::attachments::{Attachment, Missing, Occupancy, Placement, PoseSource, Sample},
-        engine::{grip_points, gun_count, gun_ptr, slot_of},
+        engine::{grip_points, slot_of},
         grenade,
         hold::{act, armed},
-        inventory::{
-            carry,
-            engine::ObjectKey,
-            sockets::{self, Offsets},
-        },
+        inventory::{carry, engine::ObjectKey, sockets, sockets::Offsets},
     },
 };
 

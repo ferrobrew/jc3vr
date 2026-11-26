@@ -4,17 +4,23 @@
 use std::{num::NonZeroUsize, time::Instant};
 
 use glam::Vec3;
+use jc3vr_body::controllers::{
+    fingers::grip::GripSource,
+    grab::{
+        PickupKind,
+        world_reach::{Reach, TargetKind},
+    },
+};
 use jc3vr_input::frame::{Hand, Pose};
 
-use crate::controllers::{
-    fingers::grip::GripSource,
-    grab::PickupKind,
-    physical_hands::{
-        carry_collision::{Assembly, Subject},
-        characters::{Regrip, Seize},
-        doors::{Latch, tearing::TearGrip},
-        grasp::{Grip, Reach, Strain, TargetKind},
-        pickup::diagnostics::{self, ConsumerResult, RequestKey, scan::Scan},
+use crate::controllers::physical_hands::{
+    carry_collision::{Assembly, Subject},
+    characters::{Regrip, Seize},
+    doors::{Latch, tearing::TearGrip},
+    grasp::{Grip, Strain},
+    pickup::{
+        diagnostics,
+        diagnostics::{ConsumerResult, RequestKey, scan::Scan},
     },
 };
 

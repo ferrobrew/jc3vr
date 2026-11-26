@@ -517,6 +517,7 @@ impl SecondaryButton {
 mod tests {
     use std::sync::Arc;
 
+    use jc3vr_body::controllers::intent::config::BindingsConfig;
     use jc3vr_input::{
         frame::ActionSetKind,
         semantic::{ActionKind, SemanticSet, vocabulary::GlobalAction},
@@ -528,10 +529,7 @@ mod tests {
     };
 
     use super::*;
-    use crate::controllers::{
-        bindings::policy_a::runtime::{Runtime, TickInput},
-        config::BindingsConfig,
-    };
+    use crate::controllers::bindings::policy_a::runtime::{Runtime, TickInput};
 
     const INSIDE: Option<PanelHit> = Some(PanelHit {
         uv: (0.25, 0.75),

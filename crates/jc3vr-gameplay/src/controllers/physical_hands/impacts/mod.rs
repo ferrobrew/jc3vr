@@ -20,29 +20,30 @@ use jc3gi::{
     havok::{hkcdManifold4, hknpContactImpulseEvent},
     physics::{PhysicsGameObject, hknpWorld},
 };
+use jc3vr_body::controllers::{
+    haptics,
+    physics::{
+        bodies,
+        refs::{Strong, Weak},
+    },
+    scheme,
+};
 use jc3vr_input::{frame::Hand, haptics::cues::Event};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::controllers::{
-    haptics,
-    physical_hands::{
-        bodies, carry_collision,
-        config::PHYSICAL_HANDS_CONFIG,
-        engine,
-        impacts::{
-            policy::{Motion, object_damage},
-            state::{Contact, Enabled, FlagCall, Identity, Lease, Observation, State},
-        },
-        physics::{
-            blows::{self, DamageContext},
-            body, drawn_body,
-        },
-        sounds::{self, Impact, ImpactKind},
-        world::World,
+use crate::controllers::physical_hands::{
+    carry_collision,
+    config::PHYSICAL_HANDS_CONFIG,
+    engine,
+    impacts::{
+        policy::{Motion, object_damage},
+        state::{Contact, Enabled, FlagCall, Identity, Lease, Observation, State},
     },
-    scheme,
-    weapons::hold::refs::{Strong, Weak},
+    physics::{blows, blows::DamageContext, body, drawn_body},
+    sounds,
+    sounds::{Impact, ImpactKind},
+    world::World,
 };
 
 /// Counters for held-prop contact observation and feedback.

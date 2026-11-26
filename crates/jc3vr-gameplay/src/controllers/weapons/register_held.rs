@@ -1,17 +1,21 @@
-//! Registers the weapon handling's side of the held-item seam ([`crate::controllers::held`]): the
+//! Registers the weapon handling's side of the held-item seam ([`jc3vr_body::controllers::held`]): the
 //! query functions behind each hand's armed weapon, item kind, wielded gun, rack and slide state,
 //! and the rigid grip's placement reads.
 
+use jc3vr_body::controllers::{
+    held,
+    held::{HeldItem, HeldSource, PlacementSource},
+};
 use jc3vr_input::frame::Hand;
 
 use crate::controllers::{
-    held::{self, HeldItem, HeldSource, PlacementSource},
     loadout::{ItemKind, live},
+    weapons,
     weapons::{
-        self, c4,
+        c4,
         dual_wield::single,
-        gun_bodies,
-        hold::{self, act, armed, rack::paired::stack_offset, take},
+        gun_bodies, hold,
+        hold::{act, armed, rack::paired::stack_offset, take},
         regions, reload,
     },
 };

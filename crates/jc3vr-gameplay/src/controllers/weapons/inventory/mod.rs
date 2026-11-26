@@ -66,6 +66,7 @@ use jc3gi::{
     character::{character::Character, inventory::WeaponSlot},
     equipment::weapon::WeaponBase,
 };
+use jc3vr_body::controllers::physics::refs::Strong;
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
@@ -77,7 +78,7 @@ use crate::controllers::{
         config::WEAPONS_CONFIG,
         dual_wield::single,
         engine as weapons_engine, grenade,
-        hold::{armed, refs::Strong, use_item},
+        hold::{armed, use_item},
         hud_feed::lost_weapons,
         inventory::{
             config::InventoryConfig,

@@ -3,8 +3,9 @@
 
 use std::sync::atomic::Ordering;
 
+use jc3vr_body::controllers::locomotion::config::LocomotionDirection;
 use jc3vr_gameplay::controllers::{
-    config::{CONTROLLERS_CONFIG, LocomotionDirection},
+    config::CONTROLLERS_CONFIG,
     vehicles::config::{ArmPitch, WheelTracking},
 };
 use jc3vr_input::frame::Hand;

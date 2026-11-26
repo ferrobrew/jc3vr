@@ -59,12 +59,11 @@ pub mod rope;
 pub mod seat;
 pub mod telemetry;
 
+use jc3vr_body::controllers::physics::{grapple_hook as hook, grapple_hook::HookRead};
 use jc3vr_view::{
     headpose,
     headpose::config::{GrappleComfortConfig, GrappleComfortMode},
 };
-
-use crate::controllers::physics::grapple_hook::{self as hook, HookRead};
 
 /// Advance the filter one step: read the hook's phase, run the engage/hold/handoff/release state
 /// machine, and update the anchor absorber. `body` is the raw body rotation as of this advance,

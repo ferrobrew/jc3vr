@@ -1,8 +1,7 @@
 //! The palms' fixed tuning: the palm box, the push off surfaces, and the knock of a fast hit.
 
 use glam::Vec3;
-
-use crate::controllers::hands::pose::PALM_CENTRE_M;
+use jc3vr_body::controllers::hands::pose::PALM_CENTRE_M;
 
 /// The palms' tuning, fixed at [`PALMS`].
 #[derive(Copy, Clone, Debug, PartialEq)]

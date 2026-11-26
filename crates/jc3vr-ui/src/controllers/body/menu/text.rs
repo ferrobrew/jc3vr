@@ -3,7 +3,7 @@
 
 use std::time::Instant;
 
-use jc3vr_gameplay::controllers::body::{
+use jc3vr_body::controllers::body::{
     BodyDimensions,
     calibration::{
         Calibration, CalibrationError, CaptureStatus, Notice, Unavailable, span_out_of_proportion,

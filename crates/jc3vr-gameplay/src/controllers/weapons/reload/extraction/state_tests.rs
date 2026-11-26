@@ -1,28 +1,26 @@
 use std::num::NonZeroUsize;
 
 use glam::{Mat4, Quat};
+use jc3vr_body::controllers::{
+    body::rig::frames::Frames, hands::pose::CockpitHand, intent::controls::ButtonControl,
+};
 use jc3vr_view::controllers::cockpit::CockpitTransform;
 
 use super::*;
-use crate::controllers::{
-    bindings::controls::ButtonControl,
-    body::rig::frames::Frames,
-    hands::pose::CockpitHand,
-    weapons::{
-        config::WeaponSettings,
-        reload::{
-            ReloadStatus,
-            belt::{BeltPush, PushStage},
-            chamber::Chamber,
-            eject::{DoubleTapDetector, FlickDetector, TapDetector},
-            engine::{DetachOutcome, Reading},
-            frames::GunFrame,
-            insert::{InsertStage, ReadyCue, Well},
-            knock::Knocks,
-            plan::ReloadPlan,
-            records::{RecordKey, Records},
-            tuning::{RELOAD, Reload},
-        },
+use crate::controllers::weapons::{
+    config::WeaponSettings,
+    reload::{
+        ReloadStatus,
+        belt::{BeltPush, PushStage},
+        chamber::Chamber,
+        eject::{DoubleTapDetector, FlickDetector, TapDetector},
+        engine::{DetachOutcome, Reading},
+        frames::GunFrame,
+        insert::{InsertStage, ReadyCue, Well},
+        knock::Knocks,
+        plan::ReloadPlan,
+        records::{RecordKey, Records},
+        tuning::{RELOAD, Reload},
     },
 };
 

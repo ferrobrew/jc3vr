@@ -1,6 +1,7 @@
 use std::time::{Duration, Instant};
 
 use glam::{Quat, Vec3};
+use jc3vr_body::controllers::body::mirror::Plane;
 use jc3vr_input::frame::{Hand, Pose};
 use jc3vr_view::controllers::{
     cockpit::CockpitTransform,
@@ -8,13 +9,11 @@ use jc3vr_view::controllers::{
 };
 
 use super::*;
-use crate::controllers::{
-    body::mirror::Plane,
-    weapons::{
-        docks::attachments::{Attachment, MAX_AGE, Missing, Occupancy, PoseSource},
-        mirror::attachment_markers,
-        volumes::{self, SOCKETS},
-    },
+use crate::controllers::weapons::{
+    docks::attachments::{Attachment, MAX_AGE, Missing, Occupancy, PoseSource},
+    mirror::attachment_markers,
+    volumes,
+    volumes::SOCKETS,
 };
 
 fn frames(character: Mat4) -> Frames {

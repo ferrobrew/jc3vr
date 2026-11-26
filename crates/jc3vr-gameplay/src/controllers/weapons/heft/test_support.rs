@@ -1,13 +1,11 @@
 //! Local access to the runtime weight response for physical-target regression tests.
 
 use glam::Vec3;
+use jc3vr_body::controllers::hands::CockpitHand;
 
-use crate::controllers::{
-    hands::CockpitHand,
-    weapons::{
-        heft::{HandHeft, HandInputs, Heft, HeftClass, pose::Weight},
-        recoil::Motion,
-    },
+use crate::controllers::weapons::{
+    heft::{HandHeft, HandInputs, Heft, HeftClass, pose::Weight},
+    recoil::Motion,
 };
 
 #[derive(Default)]

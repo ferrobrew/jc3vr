@@ -1,24 +1,26 @@
 use std::{num::NonZeroUsize, time::Instant};
 
 use glam::{Quat, Vec3};
+use jc3vr_body::controllers::{
+    grab::{GripTarget, Mark, MarkAt, PickupKind, target::Tier, world_reach::TargetKind},
+    physics::rigid::BodyPose,
+};
 use jc3vr_input::frame::Pose;
 
 use super::*;
-use crate::controllers::{
-    grab::{GripTarget, Mark, MarkAt, PickupKind, target::Tier},
-    physical_hands::{
-        characters::{CharactersConfig, RAGDOLL_CARRY_STRENGTH},
-        doors::DoorsConfig,
-        grasp::{PalmMotion, TargetKind},
-        hold::{self, HandHold, HoldTuning},
-        palm::PalmBox,
-        pickup::{
-            PICKUP, ReachObservations, ReachTuning,
-            reach::reach_with,
-            state::{Held, HeldKind, PickupState, Request},
-            tick::{self, BodyGrab, JointInputs, TickInputs, TickOutcome, take_body},
-        },
-        rigid::BodyPose,
+use crate::controllers::physical_hands::{
+    characters::{CharactersConfig, RAGDOLL_CARRY_STRENGTH},
+    doors::DoorsConfig,
+    grasp::PalmMotion,
+    hold,
+    hold::{HandHold, HoldTuning},
+    palm::PalmBox,
+    pickup::{
+        PICKUP, ReachObservations, ReachTuning,
+        reach::reach_with,
+        state::{Held, HeldKind, PickupState, Request},
+        tick,
+        tick::{BodyGrab, JointInputs, TickInputs, TickOutcome, take_body},
     },
 };
 
@@ -58,7 +60,7 @@ fn observed_tick(count: usize) -> Tick {
             target
         })
         .collect();
-    crate::controllers::grab::tick::resolve(targets, Default::default(), None)
+    jc3vr_body::controllers::grab::tick::resolve(targets, Default::default(), None)
 }
 
 #[test]
@@ -96,7 +98,7 @@ fn a_missing_provider_identity_is_not_reported_as_a_missing_candidate() {
     let record = hand.input(50, &tick, input_state(), Hand::Left);
     assert!(record.chosen.is_some());
     assert!(record.chosen.unwrap().observed.is_none());
-    let empty = crate::controllers::grab::tick::resolve(Vec::new(), Default::default(), None);
+    let empty = jc3vr_body::controllers::grab::tick::resolve(Vec::new(), Default::default(), None);
     assert!(
         hand.input(51, &empty, input_state(), Hand::Left)
             .chosen

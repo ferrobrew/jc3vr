@@ -1,6 +1,6 @@
 //! A watch on how each held gun sits in its hand, for diagnosing a gun that turns in the hand.
 //!
-//! The rigid grip ([`crate::controllers::hands::grip`]) holds a gun in a controller-driven hand at
+//! The rigid grip ([`jc3vr_body::controllers::hands::grip`]) holds a gun in a controller-driven hand at
 //! a fixed pose on the solved wrist, and records at each placement how the gun sits on that wrist.
 //! On every input tick the watch reads each hand's last record and compares the gun's rotation on
 //! the solved wrist, and relative to the wrist's target (the controller's pose for it, which a
@@ -29,19 +29,14 @@ use jc3gi::{
     character::character::Character,
     equipment::weapon::{WeaponBase, WeaponState},
 };
+use jc3vr_body::{
+    controllers::hands::{grip, grip::HandGrip, tiers},
+    hooks::animation,
+};
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
-use crate::{
-    controllers::{
-        hands::{
-            grip::{self, HandGrip},
-            tiers,
-        },
-        weapons::{engine::FULL_WEIGHT, heft::HeftClass},
-    },
-    hooks::animation,
-};
+use crate::controllers::weapons::{engine::FULL_WEIGHT, heft::HeftClass};
 
 /// The watch's readout.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]

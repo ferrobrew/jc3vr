@@ -7,13 +7,13 @@
 //! - [`reel`] scales the reel by the pull's speed, and boosts it on a yank during the reel;
 //! - [`tether`] turns the pull's depth into the game's retract input while tethers are attached;
 //! - [`swing`] is the hang swing's pump, which the hang task's detour applies
-//!   ([`crate::controllers::hands::anchor`]);
+//!   ([`jc3vr_body::controllers::hands::anchor`]);
 //! - [`lock`] holds the line's length during the reel while the grapple button is held, and the
 //!   character swings from it;
 //!
 //! The yank that starts a reel along an attached line is the bindings' own gesture
-//! ([`crate::controllers::bindings::yank`]); the point-and-fire of a tether is the grapple's hand
-//! aim ([`crate::controllers::aim::grapple`]) with the grip's held `FIRE_GRAPPLE`. Everything here
+//! ([`jc3vr_body::controllers::intent::yank`]); the point-and-fire of a tether is the grapple's hand
+//! aim ([`jc3vr_body::controllers::aim::grapple`]) with the grip's held `FIRE_GRAPPLE`. Everything here
 //! coexists with the buttons: the retract the pull drives merges with the trigger's, the larger
 //! value winning, and a reel the hand does not drive runs on the game's own tuning.
 //!
@@ -34,6 +34,13 @@ use std::time::{Duration, Instant};
 
 pub use config::{PhysicalGrappleConfig, PhysicalGrappleTuning};
 use jc3gi::equipment::grappling_hook::GrapplingHookState;
+use jc3vr_body::controllers::{
+    hands::anchor,
+    haptics,
+    intent::yank::{GRAPPLE_YANK, HandLine, LineYank},
+    mode::{Detection, Traversal},
+    physics::{grapple_hook as hook, grapple_hook::HookRead},
+};
 use jc3vr_input::{
     frame::Hand,
     haptics::cues::{Event, Sustain},
@@ -42,19 +49,10 @@ use jc3vr_view::headpose;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::{
-    controllers::{
-        bindings::yank::{GRAPPLE_YANK, HandLine, LineYank},
-        hands::anchor,
-        haptics,
-        mode::{Detection, Traversal},
-        physics::grapple_hook::{self as hook, HookRead},
-    },
-    grapple::physical::{
-        pull::{LinePull, PullReading},
-        reel::ReelDrive,
-        tether::TetherTick,
-    },
+use crate::grapple::physical::{
+    pull::{LinePull, PullReading},
+    reel::ReelDrive,
+    tether::TetherTick,
 };
 
 /// The physical grapple's hooks, aggregated by `hooks`.
@@ -550,8 +548,9 @@ fn unit(value: f32) -> f32 {
 
 #[cfg(test)]
 mod tests {
+    use jc3vr_body::controllers::mode::{Mode, OnFootVariant};
+
     use super::*;
-    use crate::controllers::mode::{Mode, OnFootVariant};
 
     fn on_foot(traversal: Option<Traversal>) -> Detection {
         Detection {

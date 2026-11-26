@@ -23,25 +23,25 @@
 //! [`PlantedExplosiveWeapon::m_ActiveExplosives`]: jc3gi::equipment::weapon::PlantedExplosiveWeapon::m_ActiveExplosives
 //! [`PlantedExplosiveWeapon::RemoveFromActiveList`]: jc3gi::equipment::weapon::PlantedExplosiveWeapon::RemoveFromActiveList
 //! [`Explosive::RemoveSelf`]: jc3gi::equipment::explosive::Explosive::RemoveSelf
-//! [`GrabVolume::PlacedCharge`]: crate::controllers::grab::GrabVolume::PlacedCharge
+//! [`GrabVolume::PlacedCharge`]: jc3vr_body::controllers::grab::GrabVolume::PlacedCharge
 
 use glam::{Mat4, Vec3};
 use jc3gi::equipment::{
     explosive::{Explosive, PlantedExplosive},
     weapon::PlantedExplosiveWeapon,
 };
-use jc3vr_input::frame::Hand;
-
-use crate::controllers::{
+use jc3vr_body::controllers::{
     grab::{Candidate, GrabVolume},
     hands::ActiveHands,
-    weapons::{
-        c4::{
-            STATE, State, primed_charge,
-            stage::{self, InputEvent, Refusal, Stage, WeaponView},
-        },
-        docks, engine,
+};
+use jc3vr_input::frame::Hand;
+
+use crate::controllers::weapons::{
+    c4::{
+        STATE, State, primed_charge, stage,
+        stage::{InputEvent, Refusal, Stage, WeaponView},
     },
+    docks, engine,
 };
 
 /// A charge the player placed, as the C4 weapon's last update listed it.

@@ -23,19 +23,15 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use glam::{Vec2, Vec3};
 use jc3gi::character::character::Character;
+use jc3vr_body::controllers::{
+    aim::{ray::Ray, raycast, raycast::CastOptions},
+    mode,
+    mode::{Mode, OnFootVariant},
+};
 use parking_lot::Mutex;
 
-use crate::controllers::{
-    aim::{
-        ray::Ray,
-        raycast::{self, CastOptions},
-    },
-    mode::{self, Mode, OnFootVariant},
-    physical_hands::{
-        climb::{self, engine as proxy},
-        human_hull::geometry::StepProfile,
-        vault::lifted,
-    },
+use crate::controllers::physical_hands::{
+    climb, climb::engine as proxy, human_hull::geometry::StepProfile, vault::lifted,
 };
 
 /// The local player's narrowed hull's step profile and the authored one it replaces.

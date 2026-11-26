@@ -34,6 +34,7 @@ mod safe;
 
 use std::{sync::Arc, time::Instant};
 
+use jc3vr_body::controllers::grab::socket::Socket;
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
@@ -55,7 +56,7 @@ use crate::controllers::{
         projection::{StoreProjection, project_store},
         reset::{CacheKind, ResetKind, SlotObject},
         restore::{RestoreAdmission, RestoreRefusal},
-        socket::{BodyLayout, Socket},
+        socket::BodyLayout,
         table::{Loadout, LoadoutSnapshot, Place},
         transition::{
             Delivery, Give, GiveSource, LostWhy, Release, Removal, RemovalWhy, Restored, TakeSource,

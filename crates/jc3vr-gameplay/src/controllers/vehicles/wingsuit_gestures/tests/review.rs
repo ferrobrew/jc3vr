@@ -1,7 +1,8 @@
 use std::time::Duration;
 
+use jc3vr_body::controllers::hands::pose::grip_to_wrist;
+
 use super::*;
-use crate::controllers::hands::pose::grip_to_wrist;
 
 fn observation(sample: GestureSample, pose: Option<FlightPose>) -> GestureInput {
     GestureInput {

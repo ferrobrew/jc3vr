@@ -1,7 +1,7 @@
 use glam::Quat;
+use jc3vr_body::controllers::body::rig::frames::SkeletonLandmarks;
 
 use super::*;
-use crate::controllers::body::rig::frames::SkeletonLandmarks;
 
 /// A standing body facing -Z: shoulders at 1.45 m, hips at 0.95 m, 0.4 m and 0.2 m wide.
 fn body(yaw: f32) -> BodyFrame {

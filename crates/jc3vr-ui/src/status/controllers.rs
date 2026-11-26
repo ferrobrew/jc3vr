@@ -3,17 +3,19 @@
 
 use std::time::Instant;
 
-use jc3vr_gameplay::controllers::{
+use jc3vr_body::controllers::{
     body::{
         procedural,
         procedural::{
             ProceduralStatus, authority::Case, config::ProceduralMode, twist::TwistStatus,
         },
     },
-    config::CONTROLLERS_CONFIG,
     hands::{grip, grip::GripRead},
     locomotion,
     locomotion::{acts, acts::ActFilterStatus, anchor, anchor::AnchorStatus},
+};
+use jc3vr_gameplay::controllers::{
+    config::CONTROLLERS_CONFIG,
     physical_hands::{
         collider_view,
         collider_view::ColliderViewStatus,
@@ -567,9 +569,8 @@ mod tests {
     use std::time::Duration;
 
     use glam::Vec3;
-    use jc3vr_gameplay::controllers::{
-        locomotion::view::Neutral, physical_hands::collider_view::draw::Drawn,
-    };
+    use jc3vr_body::controllers::locomotion::view::Neutral;
+    use jc3vr_gameplay::controllers::physical_hands::collider_view::draw::Drawn;
 
     use super::*;
 

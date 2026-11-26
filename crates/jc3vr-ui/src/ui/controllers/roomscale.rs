@@ -3,15 +3,12 @@
 //! the rig's ([`crate::ui::controllers::rig`]).
 
 use egui::Ui;
-use jc3vr_gameplay::{
-    controllers::{
-        body::rig::collision::probe::ProbeResult,
-        config::RoomscaleConfig,
-        roomscale,
-        roomscale::{FrameStatus, RoomscaleStatus, posture::EffectivePosture},
-    },
-    hooks::camera::height,
+use jc3vr_body::controllers::{
+    body::rig::collision::probe::ProbeResult,
+    roomscale,
+    roomscale::{FrameStatus, RoomscaleStatus, config::RoomscaleConfig, posture::EffectivePosture},
 };
+use jc3vr_gameplay::hooks::camera::height;
 
 use crate::ui::controllers::yes_no;
 

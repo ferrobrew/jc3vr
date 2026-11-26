@@ -1,15 +1,17 @@
 //! Steering with the parachute's held handles: their combined stick vector added to the move
 //! stick under the parachute.
 
-use crate::controllers::{
-    bindings::{controls::Controls, hold::Desired},
+use jc3vr_body::controllers::{
+    intent::{controls::Controls, hold::Desired},
+    locomotion::axis_output::write_move,
     mode::{AirborneVariant, Mode},
-    vehicles::{
-        HandlesReadout, arm_steering as arm,
-        axis_output::write_move,
-        config::{ParachuteHandlesConfig, VehicleSettings},
-        parachute::{self, HandleState},
-    },
+};
+
+use crate::controllers::vehicles::{
+    HandlesReadout, arm_steering as arm,
+    config::{ParachuteHandlesConfig, VehicleSettings},
+    parachute,
+    parachute::HandleState,
 };
 
 /// Whether the parachute handles act in `mode`.

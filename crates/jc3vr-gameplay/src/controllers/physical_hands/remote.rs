@@ -6,22 +6,27 @@ use std::num::NonZeroUsize;
 
 use glam::Vec3;
 use jc3gi::character::character::Character;
+use jc3vr_body::controllers::{
+    grab::world_reach::{DoorTarget, Reach, TargetKind},
+    physics::{bodies, bodies::BodyError},
+};
 use jc3vr_input::frame::Hand;
 
 use crate::controllers::physical_hands::{
     STATE,
-    bodies::{self, BodyError},
+    bodies::classify,
     characters::ragdoll::{Bone, Ragdoll},
-    collider_view::{self, model::Aabb},
+    collider_view,
+    collider_view::model::Aabb,
     contact::{Surface, SurfaceHit},
-    doors::{self, DoorTarget, DoorsConfig, acquisition::PanelReach, engine as door_engine},
-    engine,
-    grasp::{self, Reach, TargetKind},
+    doors,
+    doors::{DoorsConfig, acquisition::PanelReach, engine as door_engine},
+    engine, grasp,
     pickup::{PICKUP, Request},
 };
 
 /// The mass of `object`'s body `body`, when it is a loose object by the reach's own classification
-/// ([`bodies::classify`]): not a character, a vehicle or a part still on it, a weapon, or a
+/// ([`classify`]): not a character, a vehicle or a part still on it, a weapon, or a
 /// grenade, with a finite mass. A part that has come off its vehicle, such as a door torn off, is a
 /// loose object.
 ///
@@ -33,7 +38,7 @@ pub(crate) unsafe fn loose_mass(object: NonZeroUsize, body: u32) -> Option<f32> 
     if unsafe { engine::is_character(object) } {
         return None;
     }
-    let TargetKind::Prop { mass_kg } = (unsafe { bodies::classify(object, body) }).ok()? else {
+    let TargetKind::Prop { mass_kg } = (unsafe { classify(object, body) }).ok()? else {
         return None;
     };
     Some(mass_kg)
@@ -259,7 +264,7 @@ pub(crate) unsafe fn dynamic_near(keep: impl FnMut(&Aabb) -> bool) -> Vec<NearBo
         .into_iter()
         .filter_map(|(body, _)| {
             let object = unsafe { bodies::owner_of(body) }?;
-            let kind = match unsafe { bodies::classify(object, body) } {
+            let kind = match unsafe { classify(object, body) } {
                 Ok(TargetKind::Weapon) => NearKind::Weapon,
                 Ok(TargetKind::Prop { mass_kg }) if !unsafe { engine::is_character(object) } => {
                     NearKind::Prop { mass_kg }

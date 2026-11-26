@@ -9,20 +9,19 @@ use std::{num::NonZeroUsize, time::Instant};
 
 use detours_macro::detour;
 use jc3gi::game_world_object_manager::GameWorldObjectManager;
+use jc3vr_body::controllers::{
+    facts::climb::BodyIdentity,
+    physics::{bodies, refs::Weak},
+    scheme,
+};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 use windows::Win32::System::Threading::{
     CRITICAL_SECTION, EnterCriticalSection, LeaveCriticalSection,
 };
 
-use crate::controllers::{
-    physical_hands::{
-        STALE_AFTER, bodies,
-        climb::engine::{BodyIdentity, body_identity},
-        config::PHYSICAL_HANDS_CONFIG,
-    },
-    scheme,
-    weapons::hold::refs::Weak,
+use crate::controllers::physical_hands::{
+    STALE_AFTER, climb::engine::body_identity, config::PHYSICAL_HANDS_CONFIG,
 };
 
 pub(crate) fn hook_library() -> HookLibrary {

@@ -1,16 +1,16 @@
 //! Advertised UI routes consume accepted delivery rather than their former raw controls.
 
 use jc3gi::input::input_action_map::Action;
+use jc3vr_body::controllers::{
+    intent::controls::Controls,
+    mode::{Mode, OnFootVariant},
+};
 use jc3vr_view::vr::input::semantic::bound::{EnumeratedSource, SourceTable, of_sources};
 
 use super::*;
-use crate::controllers::{
-    bindings::{
-        controls::Controls,
-        intents::{Mask, MaskScope},
-        tables::Bindings,
-    },
-    mode::{Mode, OnFootVariant},
+use crate::controllers::bindings::{
+    intents::{Mask, MaskScope},
+    tables::Bindings,
 };
 
 fn menu_tick(runtime: &mut Runtime, sequence: u64, select: bool, source: &str) -> Tick {

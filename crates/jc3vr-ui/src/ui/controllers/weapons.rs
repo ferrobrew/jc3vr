@@ -5,18 +5,20 @@
 //! and the switches of the hold, the support, the reload, and the explosives.
 
 use egui::Ui;
-use jc3vr_gameplay::controllers::{
+use jc3vr_body::controllers::{
     aim as controller_aim,
     aim::AimStatus,
-    bindings,
-    bindings::yank::Yank,
-    config::{ControllersConfig, WeaponsConfig},
     hands::{
         anchor,
         anchor::AnchorStatus,
         tiers,
         tiers::{TierState, TierStatus},
     },
+    intent::yank::Yank,
+};
+use jc3vr_gameplay::controllers::{
+    bindings,
+    config::{ControllersConfig, WeaponsConfig},
     loadout::slot_label,
     snatch, weapons,
     weapons::{

@@ -17,6 +17,7 @@
 
 use std::fmt;
 
+use jc3vr_body::controllers::grab::socket::Socket;
 use jc3vr_input::frame::Hand;
 
 use crate::controllers::loadout::{
@@ -25,7 +26,7 @@ use crate::controllers::loadout::{
     projection::{Projection, project},
     reset::Caches,
     safe_items::SafeWorld,
-    socket::{BodyLayout, Socket},
+    socket::BodyLayout,
 };
 
 /// The table.

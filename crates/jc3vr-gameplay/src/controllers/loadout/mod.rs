@@ -41,9 +41,10 @@ mod tests;
 pub use binding::{Binding, ObjectAddress};
 pub use event::Event;
 pub use item::{ItemId, ItemKind, WeaponType, slot_label};
+pub use jc3vr_body::controllers::grab::socket::Socket;
 pub use projection::{Projection, SLOTS, SlotContent, StoreProjection};
 pub use reset::{CacheKind, ResetKind, SlotObject};
-pub use socket::{BodyLayout, Socket};
+pub use socket::BodyLayout;
 #[cfg(test)]
 pub(crate) use table::Loadout;
 pub use table::{Departure, ItemView, LoadoutSnapshot, Place};

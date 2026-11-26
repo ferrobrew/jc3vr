@@ -5,10 +5,10 @@
 //! of the hips and shoulders exist follows the dominant hand, so the layout mirrors for handedness
 //! ([`BodyLayout`]).
 
+use jc3vr_body::controllers::grab::socket::{SizeClass, Socket};
 use jc3vr_input::frame::Hand;
 
-pub use crate::controllers::grab::socket::Socket;
-use crate::controllers::loadout::item::{SizeClass, WeaponType};
+use crate::controllers::loadout::item::WeaponType;
 
 /// Which sockets the body has, and the dominant hand they mirror for.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]

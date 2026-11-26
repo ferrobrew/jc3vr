@@ -6,8 +6,8 @@
 //!
 //! - before the shot, it notes the gun's hand and the weapon's per-tick recoil
 //!   ([`WeaponBase::m_RecoilPitch`] and [`WeaponBase::m_RecoilYaw`]), and marks the shot on the
-//!   thread ([`crate::controllers::haptics::shot`]) so that the fire rumble spawned inside it goes
-//!   to that hand ([`crate::controllers::haptics::rumble`]);
+//!   thread ([`jc3vr_body::controllers::haptics::shot`]) so that the fire rumble spawned inside it goes
+//!   to that hand ([`jc3vr_body::controllers::haptics::rumble`]);
 //! - after the shot, the change in the recoil is the shot's kick, which kicks the hand's recoil
 //!   offset ([`crate::controllers::weapons::recoil`]), by the class's one-handed kick scale for a
 //!   long gun in one hand ([`crate::controllers::weapons::heft`]), and the reload learns the shot's
@@ -16,7 +16,7 @@
 //!   ([`crate::controllers::weapons::gun_bodies::queue_shot`]). A weapon without a fire rumble of
 //!   its own still pulses the hand with the kick alone.
 //!
-//! A shot of the mounted gun the hands aim ([`crate::controllers::facts::mounted`]) rides no hand:
+//! A shot of the mounted gun the hands aim ([`jc3vr_body::controllers::facts::mounted`]) rides no hand:
 //! after it, the detour hands it to the observer the vehicle handling registers
 //! ([`register_mounted_shot_observer`]), which kicks the handles.
 
@@ -24,19 +24,18 @@ use std::sync::OnceLock;
 
 use detours_macro::detour;
 use jc3gi::equipment::weapon::{WeaponBase, WeaponData, WeaponState};
-use jc3vr_input::frame::Hand;
-use re_utilities::hook_library::HookLibrary;
-
-use crate::controllers::{
+use jc3vr_body::controllers::{
     aim::gun,
     facts::mounted,
     hands::late,
-    haptics::{
-        rumble,
-        shot::{self, Shot},
-    },
+    haptics::{rumble, shot, shot::Shot},
     scheme,
-    weapons::{config::WeaponSettings, dual_wield, gun_bodies, heft, hold::armed, recoil, reload},
+};
+use jc3vr_input::frame::Hand;
+use re_utilities::hook_library::HookLibrary;
+
+use crate::controllers::weapons::{
+    config::WeaponSettings, dual_wield, gun_bodies, heft, hold::armed, recoil, reload,
 };
 
 /// Register the observer of each shot of the mounted gun the hands aim, called after the shot on

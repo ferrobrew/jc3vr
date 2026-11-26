@@ -9,8 +9,7 @@
 
 use body_rig::smooth::critically_damped;
 use glam::Vec3;
-
-use crate::controllers::body::rig::frames::SkeletonLandmarks;
+use jc3vr_body::controllers::body::rig::frames::SkeletonLandmarks;
 
 /// Low-passes the hip joints of the skeleton the belt rides while Rico moves.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]

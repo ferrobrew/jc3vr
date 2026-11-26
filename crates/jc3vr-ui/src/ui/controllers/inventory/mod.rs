@@ -11,9 +11,9 @@ mod mismatch;
 use std::{sync::Arc, time::Instant};
 
 use egui::{CollapsingHeader, Ui};
+use jc3vr_body::controllers::fingers::{grip, grip::GripSource};
 use jc3vr_gameplay::controllers::{
     config::WeaponsConfig,
-    fingers::{grip, grip::GripSource},
     loadout::{live, live::LiveStatus},
     physical_hands,
     physical_hands::PhysicalHandsStatus,

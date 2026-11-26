@@ -2,8 +2,9 @@
 //! reel and the tethers the hand works, the lock, the seat grapple, the hang swing, the snatch, and
 //! the grapple hand's vibration.
 
+use jc3vr_body::controllers::hands::anchor;
 use jc3vr_gameplay::{
-    controllers::{config::CONTROLLERS_CONFIG, hands::anchor, snatch, snatch::SnatchStatus},
+    controllers::{config::CONTROLLERS_CONFIG, snatch, snatch::SnatchStatus},
     grapple::{
         physical,
         physical::{GrapplePhase, GrappleStatus, lock, lock::LockStatus},

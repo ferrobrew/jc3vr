@@ -1,4 +1,4 @@
-//! The physical hands' grip targets ([`crate::controllers::grab`]): what each empty hand's reach
+//! The physical hands' grip targets ([`jc3vr_body::controllers::grab`]): what each empty hand's reach
 //! found in the world (an object, a weapon, a vehicle's door, or a character), the object a hand
 //! holds, the surface a hand could climb, and the helicopter the player hangs from.
 //!
@@ -8,22 +8,18 @@
 
 use std::time::Instant;
 
+use jc3vr_body::controllers::grab::{
+    GrabVolume, GripTarget, Mark, MarkAt, PickupKind, Provided, Shown,
+    world_reach::{DoorEligibility, DoorTarget, Reach, TargetKind},
+};
 use jc3vr_input::frame::Hand;
 
-use crate::controllers::{
-    grab::{
-        GrabVolume, GripTarget, Mark, MarkAt, PickupKind, Provided, Shown,
-        world_reach::DoorEligibility,
-    },
-    physical_hands::{
-        STATE, climb,
-        config::{PHYSICAL_HANDS_CONFIG, PhysicalHandsConfig},
-        doors::DoorTarget,
-        grasp::{Reach, TargetKind},
-        pickup::diagnostics::scan::Scan,
-        state::State,
-        stunt,
-    },
+use crate::controllers::physical_hands::{
+    STATE, climb,
+    config::{PHYSICAL_HANDS_CONFIG, PhysicalHandsConfig},
+    pickup::diagnostics::scan::Scan,
+    state::State,
+    stunt,
 };
 
 /// Whether `offer` still stands for `hand`: the same fresh sample of the same source, and the door

@@ -38,22 +38,22 @@ use jc3gi::{
     },
     ui::hud_ui::HUDUI,
 };
+use jc3vr_body::controllers::{
+    aim::gun,
+    hands, haptics,
+    intent::hold::{Desired, MapKind, Target, Want},
+    mode::Mode,
+};
 use jc3vr_input::{frame::Hand, haptics::cues::Event};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::controllers::{
-    aim::gun,
-    bindings::hold::{Desired, MapKind, Target, Want},
-    hands, haptics,
-    mode::Mode,
-    weapons::{
-        config::WEAPONS_CONFIG,
-        engine, gameplay,
-        wheel::{
-            select::{Close, HandPose, Wheel, WheelInput, WheelPress, WheelSlot, resting},
-            tuning::WheelTuning,
-        },
+use crate::controllers::weapons::{
+    config::WEAPONS_CONFIG,
+    engine, gameplay,
+    wheel::{
+        select::{Close, HandPose, Wheel, WheelInput, WheelPress, WheelSlot, resting},
+        tuning::WheelTuning,
     },
 };
 

@@ -8,14 +8,15 @@ use jc3gi::{
     },
     vehicle::vehicle::Vehicle,
 };
+use jc3vr_body::controllers::{
+    physics::{bodies, characters::proxy_body},
+    scheme,
+};
 use parking_lot::Mutex;
 
-use crate::controllers::{
-    physical_hands::{
-        STALE_AFTER, bodies, characters::engine::proxy_body, config::PHYSICAL_HANDS_CONFIG,
-        doors::engine::is_vehicle_part, physics::drawn_body, world::World,
-    },
-    scheme,
+use crate::controllers::physical_hands::{
+    STALE_AFTER, config::PHYSICAL_HANDS_CONFIG, doors::engine::is_vehicle_part,
+    physics::drawn_body, world::World,
 };
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]

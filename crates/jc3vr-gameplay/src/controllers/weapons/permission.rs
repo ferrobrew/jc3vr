@@ -20,8 +20,7 @@
 //! swung on the snatch's line. A plain reel keeps the game's own rule.
 
 use jc3gi::character::character::Character;
-
-use crate::controllers::{
+use jc3vr_body::controllers::{
     facts::{line, lock},
     physics::{characters::dead, grapple_hook as hook},
 };

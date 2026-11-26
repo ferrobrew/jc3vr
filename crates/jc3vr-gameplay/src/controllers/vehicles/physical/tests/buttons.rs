@@ -1,18 +1,19 @@
 //! Tests for the cockpit's buttons and twist grips.
 
 use jc3gi::input::input_action_map::Action;
+use jc3vr_body::controllers::{
+    grab::cockpit::Button,
+    intent::hold::{Desired, MapKind, Target, Want},
+};
 
 use super::*;
-use crate::controllers::{
-    bindings::hold::{Desired, MapKind, Target, Want},
-    vehicles::{
-        physical::buttons::{
-            Button, ButtonEvent, PushButton, PushPhase, THROTTLE_DEADZONE_DEG, TwistGrip,
-            grip_twist, push_step, twist_throttle,
-        },
-        tuning::PHYSICAL,
-        write_outputs,
+use crate::controllers::vehicles::{
+    physical::buttons::{
+        ButtonEvent, PushButton, PushPhase, THROTTLE_DEADZONE_DEG, TwistGrip, grip_twist,
+        push_step, twist_throttle,
     },
+    tuning::PHYSICAL,
+    write_outputs,
 };
 
 fn button() -> PushButton {

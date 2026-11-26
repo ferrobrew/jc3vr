@@ -3,12 +3,15 @@
 use std::{cell::Cell, num::NonZeroUsize};
 
 use glam::Vec3;
+use jc3vr_body::controllers::{
+    grab::world_reach::DoorTarget,
+    physics::{grapple_hook::BodyHit, refs::Strong},
+};
 use jc3vr_input::frame::Hand;
 
 use crate::controllers::{
     loadout::TakeSource,
-    physical_hands::doors::{DoorTarget, engine::vehicle_frame},
-    physics::grapple_hook::BodyHit,
+    physical_hands::doors::engine::vehicle_frame,
     snatch::{
         Refusal, SNATCH, charge, engine,
         pull::fire_hook,
@@ -19,8 +22,8 @@ use crate::controllers::{
         c4::placed,
         hold::{
             rack::copy,
-            refs::Strong,
-            source::{self as hold_source, Freed, Ticket, WeaponSource, Yield},
+            source as hold_source,
+            source::{Freed, Ticket, WeaponSource, Yield},
             steal::CharacterGun,
         },
     },

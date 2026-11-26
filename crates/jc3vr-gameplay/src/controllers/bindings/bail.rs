@@ -7,10 +7,9 @@
 //! band above the game's bail speed so a hovering speed does not flicker between the two.
 
 use jc3gi::character::character::Character;
-
-use crate::{
+use jc3vr_body::{
     controllers::{
-        bindings::controls::ButtonControl,
+        intent::controls::ButtonControl,
         mode::{Mode, VehicleClass, VehicleSeat},
     },
     hooks::{animation::ready_body_machine, character::acts::resolve_act_id},

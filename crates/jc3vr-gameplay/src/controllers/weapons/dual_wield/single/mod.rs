@@ -12,7 +12,7 @@
 //!   ([`hide_extra`], from the detour of the visibility's base, and each input tick for the
 //!   pistols the player owns), and its next gun is kept on the first ([`pin`]);
 //! - everything of the mod's that walks a weapon's guns sees one gun
-//!   ([`crate::controllers::aim::gun::guns`]), so the hold places it in the holding hand as it
+//!   ([`jc3vr_body::controllers::aim::gun::guns`]), so the hold places it in the holding hand as it
 //!   places any weapon of one gun, and the dual-wield split leaves it alone;
 //! - its magazine holds half the tuned size ([`magazine`]), with the reserve shared.
 //!
@@ -50,12 +50,12 @@ use jc3gi::{
     game::GameObject,
     graphics_engine::model_instance::ModelInstanceFlags,
 };
+use jc3vr_body::controllers::{aim::gun, held::native::gun_count, physics::refs::Strong};
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
-    aim::gun,
     loadout::{Place, Socket, live},
     weapons::{
         config::WEAPONS_CONFIG,
@@ -63,15 +63,11 @@ use crate::controllers::{
             grant::{Grant, GrantTick, Grants, OneWhy, TwinState},
             magazine::Dealt,
         },
-        engine::{
-            character_object, credit_reserve, credit_stored, gun_at, gun_count, hide_gun, slot_of,
-        },
-        hold::{self, rack::paired, refs::Strong},
+        engine::{character_object, credit_reserve, credit_stored, gun_at, hide_gun, slot_of},
+        hold,
+        hold::rack::paired,
         inventory::{
-            carry,
-            config::InventoryConfig,
-            engine::{self as inventory_engine, ObjectKey},
-            restore,
+            carry, config::InventoryConfig, engine as inventory_engine, engine::ObjectKey, restore,
         },
         reload,
     },

@@ -2,13 +2,12 @@
 //! doors, the characters they take hold of, the moving bodies they climb, the stunt positions they hold, pushing the body
 //! up, and articulated objects.
 
+use jc3vr_body::controllers::grab::world_reach::TargetKind;
 use jc3vr_gameplay::controllers::{
     config::CONTROLLERS_CONFIG,
     physical_hands,
     physical_hands::{
-        Idle, climb, doors,
-        grasp::TargetKind,
-        physics,
+        Idle, climb, doors, physics,
         pickup::PickupStatus,
         stunt,
         stunt::{StuntStatus, solve::StuntKind},

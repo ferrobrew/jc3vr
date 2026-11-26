@@ -4,10 +4,11 @@
 //! not a setting. The comfort tuning (the fades' times, the crouch, the lean, the stick's rates)
 //! is in the debug UI.
 
-use jc3vr_gameplay::controllers::{
-    config::{CONTROLLERS_CONFIG, Posture, SeatTransition},
-    roomscale::manual_recenter_kind,
+use jc3vr_body::controllers::roomscale::{
+    config::{Posture, SeatTransition},
+    manual_recenter_kind,
 };
+use jc3vr_gameplay::controllers::config::CONTROLLERS_CONFIG;
 use jc3vr_view::{
     headpose::config::{GrappleComfortMode, HEADPOSE_CONFIG, VrTurnConfig, VrTurnMode},
     vr::request_recenter,

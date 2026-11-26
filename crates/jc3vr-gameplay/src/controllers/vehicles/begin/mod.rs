@@ -1,35 +1,47 @@
 //! The first half of the vehicle handling's input tick: read the mounted gun, fit the wheel and
-//! the handlebars, and provide the vehicle handling's grip targets ([`crate::controllers::grab`]):
+//! the handlebars, and provide the vehicle handling's grip targets ([`jc3vr_body::controllers::grab`]):
 //! the driver's controls, the cockpit's buttons, the parachute's handles, the ripcord, and the
 //! mounted gun's handles.
 
 use std::{sync::atomic::Ordering, time::Instant};
 
 use glam::Vec3;
+use jc3vr_body::controllers::{
+    body,
+    body::BodyDimensions,
+    fingers::{
+        grip,
+        grip::{Grip, GripSource},
+    },
+    grab,
+    grab::{
+        GrabVolume, GripTarget, Mark, MarkAt, MarkStyle, Shown, Tier,
+        cockpit::{Button, ControlKind},
+    },
+    hands,
+    hands::tiers,
+    mode::{Mode, VehicleSeat},
+};
 use jc3vr_input::frame::Hand;
 use jc3vr_view::{controllers::cockpit::CockpitTransform, headpose};
 use parking_lot::Mutex;
 
 use crate::controllers::{
-    body::{self, BodyDimensions},
-    fingers::grip::{self, Grip, GripSource},
-    grab::{self, GrabVolume, GripTarget, Mark, MarkAt, MarkStyle, Shown, Tier},
-    hands::{self, tiers},
     loadout::live,
-    mode::{Mode, VehicleSeat},
     vehicles::{
         arm_tick::arms_act,
         config::VehicleSettings,
         driving_view,
         entry::{VehicleEntry, VehicleEntryIdentity},
-        fit::{self, FitInputs, VehicleLatch},
+        fit,
+        fit::{FitInputs, VehicleLatch},
         handle_tick::handles_act,
         mounted_grip,
         mounted_tick::{MountedTick, mounted_tick, offered},
-        parachute, parachute_rig,
+        parachute, parachute_rig, physical,
         physical::{
-            self, ControlEvent, Placement,
-            buttons::{Button, ButtonPlacement, PushPhase},
+            ControlEvent, Placement,
+            buttons::{ButtonPlacement, PushPhase},
         },
         ripcord_tick,
         state::{
@@ -95,7 +107,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
     STATE.lock().entry_owner = entry.map(VehicleEntry::into_owner);
     let yoke = fit
         .cockpit
-        .is_some_and(|fit| fit.asset.stick_kind == physical::ControlKind::Yoke);
+        .is_some_and(|fit| fit.asset.stick_kind == ControlKind::Yoke);
     let offered = offered(seat, &config.vehicles.physical, fit.fork, yoke);
     if offered.is_empty() {
         physical::visual::clear();
@@ -195,11 +207,11 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
                     GrabVolume::VehicleControl(kind)
                         if matches!(
                             kind,
-                            physical::ControlKind::Cyclic
-                                | physical::ControlKind::FlightStick
-                                | physical::ControlKind::Yoke
-                                | physical::ControlKind::Collective
-                                | physical::ControlKind::Throttle
+                            ControlKind::Cyclic
+                                | ControlKind::FlightStick
+                                | ControlKind::Yoke
+                                | ControlKind::Collective
+                                | ControlKind::Throttle
                         ) =>
                     {
                         mark.labelled(kind.label()).showing(Shown::InReach)

@@ -1,9 +1,9 @@
 use std::{cell::Cell, time::Duration};
 
 use glam::Vec3;
+use jc3vr_body::controllers::facts::climb::BodyIdentity;
 
 use super::*;
-use crate::controllers::physical_hands::climb::engine::BodyIdentity;
 
 fn context() -> Context {
     Context {

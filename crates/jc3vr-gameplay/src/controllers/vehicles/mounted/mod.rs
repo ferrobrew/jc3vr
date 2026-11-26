@@ -4,8 +4,8 @@
 //! mounted state ([`Character::IsInMountedGunState`]). The game draws the gun toward the character's
 //! weapon aim point, and the gun's per-weapon update builds its shot toward the point it is handed,
 //! so both are given the point this module derives, the first through the character-level point
-//! ([`crate::controllers::aim::character_aim_point`]) and the second through the per-weapon seam
-//! ([`crate::controllers::aim::gun`]).
+//! ([`jc3vr_body::controllers::aim::character_aim_point`]) and the second through the per-weapon seam
+//! ([`jc3vr_body::controllers::aim::gun`]).
 //!
 //! The aim follows the hands as handles on a pivot. When the hands take the gun, the reference is
 //! taken: the hands' midpoint, the lever from the gun's handles to its pivot (the gun's origin) in
@@ -39,9 +39,8 @@ use jc3gi::{
     equipment::weapon::{WeaponBase, WeaponGripHand, WeaponState},
     types::math::Matrix4,
 };
+use jc3vr_body::controllers::aim::gun;
 use jc3vr_input::frame::Hand;
-
-use crate::controllers::aim::gun;
 
 mod control;
 mod gunner_seat;

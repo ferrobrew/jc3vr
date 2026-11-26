@@ -4,31 +4,29 @@
 //! loads; and the parts published for drawing.
 
 use glam::{Quat, Vec3};
+use jc3vr_body::controllers::{grab::GrabVolume, haptics};
 use jc3vr_input::{
     frame::{Hand, Pose},
     haptics::cues::Event,
 };
 
-use crate::controllers::{
-    grab::GrabVolume,
-    haptics,
-    weapons::{
-        config::WeaponSettings,
-        foregrip::{self, set_pump_slide},
-        pouch_models,
-        reload::{
-            FinishInputs, GunTick, State, Tick, WeaponTick,
-            chamber::{self, ActionKind, Chamber, WorkEvent, WorkInputs},
-            engine,
-            insert::{InsertStage, InsertionSource},
-            plan::ReloadPlan,
-            render,
-            steps::{self, chambering},
-            travel::{ActionTravel, TravelEvents, TravelInputs},
-            tuning::Reload,
-        },
-        sounds::GunSound,
+use crate::controllers::weapons::{
+    config::WeaponSettings,
+    foregrip,
+    foregrip::set_pump_slide,
+    pouch_models,
+    reload::{
+        FinishInputs, GunTick, State, Tick, WeaponTick, chamber,
+        chamber::{ActionKind, Chamber, WorkEvent, WorkInputs},
+        engine,
+        insert::{InsertStage, InsertionSource},
+        plan::ReloadPlan,
+        render, steps,
+        steps::chambering,
+        travel::{ActionTravel, TravelEvents, TravelInputs},
+        tuning::Reload,
     },
+    sounds::GunSound,
 };
 
 pub(super) trait ActionEngine {

@@ -3,13 +3,13 @@
 
 use std::time::{Duration, Instant};
 
-use jc3vr_gameplay::controllers::{
+use jc3vr_body::controllers::{
     body,
     body::calibration::{Calibration, Stance, Step, Unavailable},
-    config::CONTROLLERS_CONFIG,
     roomscale,
     roomscale::posture::{DetectedPosture, EffectivePosture},
 };
+use jc3vr_gameplay::controllers::config::CONTROLLERS_CONFIG;
 use parking_lot::Mutex;
 
 use crate::{

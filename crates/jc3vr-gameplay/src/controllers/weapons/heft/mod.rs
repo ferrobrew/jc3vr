@@ -11,7 +11,7 @@
 //! hand's gun has a weight, a spring, and a freeze of its own; everything else reads that.
 //!
 //! - The pose: [`apply`] turns the holding hand's poses about the controller's grip, on the active
-//!   hands every hand subsystem starts from ([`crate::controllers::hands::active_hands`]), so the
+//!   hands every hand subsystem starts from ([`jc3vr_body::controllers::hands::active_hands`]), so the
 //!   IK, the late update, the gun's sight line, and the overlay all carry it, and a shot goes where
 //!   the drooping gun points. The barrel is the wrist frame's fingers axis, not the controller's
 //!   grip -Z, which runs up the handle. The gun pitches down about the horizontal axis across its
@@ -50,6 +50,7 @@ use body_rig::rotation::{angle, clamp_angle};
 use detours_macro::detour;
 use glam::{FloatExt, Quat, Vec2, Vec3};
 use jc3gi::equipment::weapon::WeaponBase;
+use jc3vr_body::controllers::{hands::CockpitHand, scheme};
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
@@ -61,11 +62,7 @@ pub use self::{
     class::HeftClass,
     tuning::{BracedHeft, BracedTuning, Heft, HeftTuning},
 };
-use crate::controllers::{
-    hands::CockpitHand,
-    scheme,
-    weapons::{config::WEAPONS_CONFIG, foregrip, recoil::Motion},
-};
+use crate::controllers::weapons::{config::WEAPONS_CONFIG, foregrip, recoil::Motion};
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&GET_CURRENT_SCATTER_VALUE_BINDER)
@@ -406,21 +403,18 @@ mod tests {
     use body_rig::rotation::angle;
     use glam::{Quat, Vec2, Vec3};
     use jc3gi::equipment::weapon::WeaponClass;
+    use jc3vr_body::controllers::hands::{CockpitHand, config::GripOffset, pose as hand_pose};
     use jc3vr_input::frame::{Hand, Pose};
 
     use super::{HeftClass, HeftTarget, advance_clock, apply, freeze, observe};
-    use crate::controllers::{
-        config::GripOffset,
-        hands::{CockpitHand, pose as hand_pose},
-        weapons::{
-            foregrip,
-            heft::{
-                BracedTuning, Heft, HeftTuning,
-                pose::{RotSpring, Weight, WeightedPose, sway, unbraced_share, weighted_pose},
-                tuning::HEFT,
-            },
-            regions::GunRegion,
+    use crate::controllers::weapons::{
+        foregrip,
+        heft::{
+            BracedTuning, Heft, HeftTuning,
+            pose::{RotSpring, Weight, WeightedPose, sway, unbraced_share, weighted_pose},
+            tuning::HEFT,
         },
+        regions::GunRegion,
     };
 
     fn config() -> Heft {

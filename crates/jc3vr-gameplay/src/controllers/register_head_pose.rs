@@ -3,20 +3,21 @@
 
 use std::{sync::atomic::Ordering, time::Instant};
 
-use jc3vr_view::headpose::{HeadParticipants, register_head_participants};
-
-use crate::{
+use jc3vr_body::{
     controllers::{
         body::{
             procedural::{authority::Case, published_status},
             rig::follow_settings,
         },
-        mode::{self, Mode},
+        mode,
+        mode::Mode,
         roomscale::{frame_shared, seat::SeatPhase},
     },
-    grapple,
     hooks::input::{locomotion::ORIENTATION_EVAL_CALLS, swim},
 };
+use jc3vr_view::headpose::{HeadParticipants, register_head_participants};
+
+use crate::grapple;
 
 pub(super) fn register() {
     register_head_participants(&PARTICIPANTS);

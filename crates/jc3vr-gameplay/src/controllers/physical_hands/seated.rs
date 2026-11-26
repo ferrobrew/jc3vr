@@ -3,44 +3,43 @@ use std::{num::NonZeroUsize, time::Instant};
 use body_rig::rotation::level;
 use glam::{Vec2, Vec3};
 use jc3gi::character::character::Character;
+use jc3vr_body::controllers::{
+    aim::raycast::CastOptions,
+    body,
+    clock::TimeScale,
+    grab::world_reach::{Reach, TargetKind},
+    hands, haptics,
+};
 use jc3vr_input::{
     frame::{Hand, Pose},
     haptics::cues::Event,
 };
 use jc3vr_view::{controllers::cockpit::CockpitTransform, headpose::teleport};
 
-use crate::controllers::{
-    aim::raycast::CastOptions,
-    body,
-    clock::TimeScale,
-    hands, haptics,
-    physical_hands::{
-        config::PHYSICAL_HANDS_CONFIG,
-        contact::{HandContact, PointContact, Surface, SurfaceHit},
-        doors::{
-            self,
-            acquisition::PanelReach,
-            config::{TEARING, TearTuning},
-        },
-        draw,
-        grab_view::{
-            self,
-            model::{RayOutcome, ReachRay},
-        },
-        grasp::{self, PalmMotion, Reach, TargetKind},
-        palm::{PROBE_POINTS, PalmBox},
-        physics,
-        pickup::{
-            self, HeldKind, PICKUP, PickupState,
-            diagnostics::{ConsumerResult, scan::Scan},
-        },
-        query,
-        state::{STATE, VELOCITY_SMOOTHING_S, stand_down},
-        status::{HandStatus, Idle},
-        tick::{declare_grips, free_hands},
-        touch::pressure_haptics,
-        tuning::PALMS,
+use crate::controllers::physical_hands::{
+    config::PHYSICAL_HANDS_CONFIG,
+    contact::{HandContact, PointContact, Surface, SurfaceHit},
+    doors,
+    doors::{
+        acquisition::PanelReach,
+        config::{TEARING, TearTuning},
     },
+    draw, grab_view,
+    grab_view::model::{RayOutcome, ReachRay},
+    grasp,
+    grasp::PalmMotion,
+    palm::{PROBE_POINTS, PalmBox},
+    physics, pickup,
+    pickup::{
+        HeldKind, PICKUP, PickupState,
+        diagnostics::{ConsumerResult, scan::Scan},
+    },
+    query,
+    state::{STATE, VELOCITY_SMOOTHING_S, stand_down},
+    status::{HandStatus, Idle},
+    tick::{declare_grips, free_hands},
+    touch::pressure_haptics,
+    tuning::PALMS,
 };
 
 pub(super) unsafe fn run(owner: &Character, dt: f32) {
@@ -415,13 +414,13 @@ unsafe fn panel_reach_with(
 mod tests {
     use glam::Quat;
     use jc3gi::vehicle::vehicle::DoorSlot;
+    use jc3vr_body::controllers::{grab::world_reach::DoorTarget, physics::rigid::BodyPose};
 
     use super::*;
     use crate::controllers::physical_hands::{
-        doors::{DoorTarget, Latch, tearing::TearGrip},
+        doors::{Latch, tearing::TearGrip},
         grasp::Grip,
         pickup::{Held, Request, diagnostics::RequestKey},
-        rigid::BodyPose,
     };
 
     fn vehicle() -> NonZeroUsize {

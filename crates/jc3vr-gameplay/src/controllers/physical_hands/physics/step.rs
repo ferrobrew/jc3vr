@@ -5,40 +5,36 @@ use std::time::Instant;
 
 use glam::{Quat, Vec2, Vec3};
 use jc3gi::physics::PhysicsSystem;
-use jc3vr_input::frame::{Hand, Pose};
-
-use crate::controllers::{
-    aim::{
-        ray::Ray,
-        raycast::{self, CastOptions},
-    },
+use jc3vr_body::controllers::{
+    aim::{ray::Ray, raycast, raycast::CastOptions},
     clock::TimeScale,
     mode,
-    physical_hands::{
-        climb,
-        config::PHYSICAL_HANDS_CONFIG,
-        impacts, mode_acts,
-        physics::{
-            HAND_BODIES,
-            body::{BodyShape, BodySpec, Capsule, HandBody, player_system_group},
-            contact,
-            drive::{
-                DriveTuning, Goal, JoinedLoad, PushTuning, contact_gain, lag_push, smooth_push,
-            },
-            guns::{self, step::GunStep},
-            joint::Joint,
-            lifecycle::{ActRequest, HANDS, RenderTuning},
-            render::RenderOffset,
-            state::{
-                MAX_LEAD_S, PARK_AFTER, READOUT_PERIOD, RENDER_MAX_TURN_RAD,
-                RENDER_TURN_DEADBAND_RAD, SHARED, count_step, current_at, enabled, gun_tuning,
-                holding_tuning, press_load,
-            },
-            types::{BodyPhase, HandBodyStatus},
+    physics::steps::{count_step, current_at},
+};
+use jc3vr_input::frame::{Hand, Pose};
+
+use crate::controllers::physical_hands::{
+    climb,
+    config::PHYSICAL_HANDS_CONFIG,
+    impacts, mode_acts,
+    physics::{
+        HAND_BODIES,
+        body::{BodyShape, BodySpec, Capsule, HandBody, player_system_group},
+        contact,
+        drive::{DriveTuning, Goal, JoinedLoad, PushTuning, contact_gain, lag_push, smooth_push},
+        guns,
+        guns::step::GunStep,
+        joint::Joint,
+        lifecycle::{ActRequest, HANDS, RenderTuning},
+        render::RenderOffset,
+        state::{
+            MAX_LEAD_S, PARK_AFTER, READOUT_PERIOD, RENDER_MAX_TURN_RAD, RENDER_TURN_DEADBAND_RAD,
+            SHARED, enabled, gun_tuning, holding_tuning, press_load,
         },
-        pickup::PICKUP,
-        stunt, vault,
+        types::{BodyPhase, HandBodyStatus},
     },
+    pickup::PICKUP,
+    stunt, vault,
 };
 
 /// The pre-simulation step: make, add, park, and drive the hand bodies. Called by the

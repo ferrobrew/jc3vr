@@ -14,21 +14,21 @@
 //! applies (a virtual gamepad button). This is what keeps the game's tap and hold overloads
 //! intact: the reload button is also the holster (hold), `USE_VEHICLE_MOD` is nitrous (hold) and
 //! the turbo jump (tap), `ENTER_VEHICLE` held enters the gunner seat, and the grapple tethers on a
-//! hold, all decided by the game from the hold time the tracker ([`crate::controllers::bindings::hold`])
+//! hold, all decided by the game from the hold time the tracker ([`jc3vr_body::controllers::intent::hold`])
 //! writes. The mod resolves two overloads itself, by the press's length: the pause action, whose
 //! short press opens the commlink and long press pauses, and a vehicle's stunt and exit, which a
 //! table reads as a short and a long press ([`sink::Input::Short`] and [`sink::Input::Long`]).
 //!
 //! One action drives the mod rather than the game: on foot, flicking `crouch_flick` (the dominant
 //! stick's vertical axis by default) down toggles the seated crouch
-//! ([`crate::controllers::roomscale::toggle_seated_crouch`]).
+//! ([`jc3vr_body::controllers::roomscale::toggle_seated_crouch`]).
 //!
 //! The shared input arbiter resolves the system chords before these tables. They consume only
 //! accepted semantic values and never recognize or cancel a second chord.
 //!
 //! The sight tuning chord drives the mod too, and only while the sight tuning tool's marker is placed
 //! ([`Controls::sight_chord`]): on foot, holding both grips and pressing the dominant A captures the
-//! held weapon's sight offset ([`crate::controllers::aim::sights::tuning`]). While it is armed, the
+//! held weapon's sight offset ([`jc3vr_body::controllers::aim::sights::tuning`]). While it is armed, the
 //! dominant grip withholds the grapple (squeeze the dominant grip first) and both grips withhold the
 //! jump, so the chord neither grapples nor jumps.
 //!
@@ -45,6 +45,22 @@ pub mod menu;
 pub mod sink;
 
 use jc3gi::input::input_action_map::Action;
+use jc3vr_body::controllers::{
+    grab::{
+        GrabVolume,
+        latch::{GripLatch, LatchTick},
+    },
+    intent::{
+        config::BindingsConfig,
+        controls::{ButtonControl, Controls},
+        grapple_button::{
+            GrappleActions, GrappleButton, GrappleContext, GrapplePermissions, GrappleTick,
+            LockButton, SeatRequest,
+        },
+        hold::{Desired, MapKind, Target, Want},
+    },
+    mode::{AirborneVariant, Mode, VehicleClass, VehicleSeat},
+};
 use jc3vr_input::{
     frame::Hand,
     semantic::{
@@ -60,12 +76,6 @@ use jc3vr_view::vr::input::semantic::bound::{Physical, PhysicalSet};
 use crate::controllers::{
     bindings::{
         bail::ExitLatch,
-        controls::{ButtonControl, Controls},
-        grapple_button::{
-            GrappleActions, GrappleButton, GrappleContext, GrapplePermissions, GrappleTick,
-            LockButton, SeatRequest,
-        },
-        hold::{Desired, MapKind, Target, Want},
         intents::{Gestures, Intents, Mask, MaskScope, SemanticInput},
         policy_a::runtime::Tick,
         tables::{
@@ -76,12 +86,6 @@ use crate::controllers::{
             },
         },
     },
-    config::BindingsConfig,
-    grab::{
-        GrabVolume,
-        latch::{GripLatch, LatchTick},
-    },
-    mode::{AirborneVariant, Mode, VehicleClass, VehicleSeat},
     weapons::wheel::select::WheelPress,
 };
 

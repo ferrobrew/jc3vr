@@ -34,23 +34,24 @@ use jc3gi::{
     equipment::weapon::WeaponData,
     physics::{PfxRigidBody, PhysicsGameObject},
 };
+use jc3vr_body::controllers::{
+    body::rig::frames::Frames,
+    grab::{Candidate, GrabVolume},
+    physics,
+    physics::{
+        bodies,
+        rigid::{RigidBody, Velocities},
+    },
+};
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::controllers::{
-    body::rig::frames::Frames,
-    grab::{Candidate, GrabVolume},
-    physical_hands::{
-        self,
-        rigid::{RigidBody, Velocities},
-    },
-    weapons::{
-        config::WEAPONS_CONFIG,
-        reload::{
-            loose::records::{DropKey, Records, Token, WorldHandle},
-            tuning::LooseTuning,
-        },
+use crate::controllers::weapons::{
+    config::WEAPONS_CONFIG,
+    reload::{
+        loose::records::{DropKey, Records, Token, WorldHandle},
+        tuning::LooseTuning,
     },
 };
 
@@ -79,19 +80,17 @@ enum Maintenance {
     Gone,
 }
 
-fn body_status(result: Result<(), physical_hands::BodyError>) -> Maintenance {
+fn body_status(result: Result<(), bodies::BodyError>) -> Maintenance {
     match result {
         Ok(()) => Maintenance::Live,
-        Err(physical_hands::BodyError::NoBody | physical_hands::BodyError::Reowned) => {
-            Maintenance::Unavailable {
-                identity_lost: true,
-            }
-        }
+        Err(bodies::BodyError::NoBody | bodies::BodyError::Reowned) => Maintenance::Unavailable {
+            identity_lost: true,
+        },
         Err(
-            physical_hands::BodyError::NoPhysicsWorld
-            | physical_hands::BodyError::NotDynamic
-            | physical_hands::BodyError::BadMotion
-            | physical_hands::BodyError::Fixture,
+            bodies::BodyError::NoPhysicsWorld
+            | bodies::BodyError::NotDynamic
+            | bodies::BodyError::BadMotion
+            | bodies::BodyError::Fixture,
         ) => Maintenance::Unavailable {
             identity_lost: false,
         },
@@ -241,7 +240,7 @@ impl EjectRounds {
 pub(super) unsafe fn maintain(config: &LooseTuning) {
     let mut state = STATE.lock();
     state.maintain(Instant::now(), config.keep_s, |m| {
-        body_status(unsafe { physical_hands::body_pose(m.body, m.owner) }.map(|_| ()))
+        body_status(unsafe { physics::body_pose(m.body, m.owner) }.map(|_| ()))
     });
 }
 
@@ -266,7 +265,7 @@ pub(super) unsafe fn sightings(
         .collect();
     let mut seen = Vec::new();
     for magazine in magazines {
-        let result = unsafe { physical_hands::body_pose(magazine.body, magazine.owner) };
+        let result = unsafe { physics::body_pose(magazine.body, magazine.owner) };
         if let Operation::Ready((centre, _)) = state.observe(magazine, result)
             && fits(&magazine, tag, centre, player, config.range_m)
         {
@@ -346,7 +345,7 @@ pub(super) unsafe fn knock(
     knock: impl FnOnce(RigidBody) -> Velocities,
 ) -> Operation<()> {
     let mut state = STATE.lock();
-    let read = unsafe { physical_hands::body_state(magazine.body, magazine.owner) };
+    let read = unsafe { physics::body_state(magazine.body, magazine.owner) };
     let body = match state.observe(magazine, read) {
         Operation::Ready(body) => body,
         Operation::Deferred => return Operation::Deferred,
@@ -354,7 +353,7 @@ pub(super) unsafe fn knock(
     };
     let velocities = knock(body.rigid());
     let result = unsafe {
-        physical_hands::set_body_velocities(
+        physics::set_body_velocities(
             magazine.body,
             magazine.owner,
             velocities.linear,

@@ -15,9 +15,9 @@
 //! - [`two_hand_grip`] reports the grip, for the recoil spring to stiffen under.
 //!
 //! Both happen in [`apply`], on the cockpit-frame hands every hand subsystem starts from
-//! ([`crate::controllers::hands::active_hands`]), so the IK targets, the render-time late update,
+//! ([`jc3vr_body::controllers::hands::active_hands`]), so the IK targets, the render-time late update,
 //! the gun's sight line, and the overlay all see the same two-handed pose. The engine's own
-//! off-hand grip IK stays suppressed ([`crate::controllers::hands::secondary`]): the mod places the
+//! off-hand grip IK stays suppressed ([`jc3vr_body::controllers::hands::secondary`]): the mod places the
 //! off-hand itself, on the `MAIN` pass with the rest of the arm, so the late update corrects it
 //! like any other controller-driven hand.
 //!
@@ -37,13 +37,11 @@
 
 use body_rig::smooth::smoothstep_between;
 use glam::{Quat, Vec3};
+use jc3vr_body::controllers::hands::{CockpitHand, pose as hand_pose};
 use jc3vr_input::frame::{Hand, Pose};
 use parking_lot::Mutex;
 
-use crate::controllers::{
-    hands::{CockpitHand, pose as hand_pose},
-    weapons::regions::GunRegion,
-};
+use crate::controllers::weapons::regions::GunRegion;
 
 /// The foregrip's fixed tuning.
 pub const FOREGRIP: ForegripTuning = ForegripTuning {

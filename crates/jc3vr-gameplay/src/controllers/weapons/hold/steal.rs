@@ -52,19 +52,20 @@ use jc3gi::{
     equipment::weapon::{WeaponBase, WeaponState},
     types::math::Vector3,
 };
+use jc3vr_body::controllers::{hands::ik, physics::refs::Weak};
 use jc3vr_input::frame::Pose;
 use parking_lot::Mutex;
 
 use crate::controllers::{
-    hands::ik,
     loadout::TakeSource,
     weapons::{
-        engine::{self, character_position, grip_points, slot_of, takeable_gun_slot},
+        engine,
+        engine::{character_position, grip_points, slot_of, takeable_gun_slot},
         hold::{
             pickup::Refusal,
-            refs::Weak,
             source::{Freed, SourceRefusal},
-            world::{self, TargetKind, WorldTarget},
+            world,
+            world::{TargetKind, WorldTarget},
         },
     },
 };

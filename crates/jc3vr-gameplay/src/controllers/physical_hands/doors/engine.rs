@@ -25,11 +25,9 @@ use jc3gi::{
         vehicle::{DoorInfo, DoorMapNode, DoorSlot, DoorState, Vehicle},
     },
 };
+use jc3vr_body::controllers::physics::bodies::{is_type, owner_of};
 
-use crate::controllers::physical_hands::{
-    bodies::{is_type, owner_of},
-    doors::{geometry::DoorBox, hinge},
-};
+use crate::controllers::physical_hands::doors::{geometry::DoorBox, hinge};
 
 /// Why a door could not be worked.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]

@@ -5,7 +5,7 @@
 use std::time::Instant;
 
 use egui::Ui;
-use jc3vr_gameplay::controllers::locomotion::{
+use jc3vr_body::controllers::locomotion::{
     LocomotionStatus,
     anchor::{AnchorStatus, remeasure},
     config::{ActFilterConfig, SpeedSource, StableViewConfig, StickConfig, SwimStrokeConfig},

@@ -28,7 +28,7 @@
 //! The view rolls with the body through the evade: the cockpit frame follows the character's
 //! whole rotation in the wingsuit, the evade's roll included, so the head never parts from the
 //! body. Switched off, no throw is taken and the player's barrel rolls are dropped
-//! ([`crate::hooks::input::wingsuit`]).
+//! ([`jc3vr_body::hooks::input::wingsuit`]).
 //!
 //! [`ACT_BOOST_WINGSUIT_BARREL_ROLL`]: jc3gi::animation::symbol_table::EventIdSymbolTable::ACT_BOOST_WINGSUIT_BARREL_ROLL
 
@@ -36,11 +36,14 @@ use std::{collections::VecDeque, fmt};
 
 use glam::Vec2;
 use jc3gi::input::input_action_map::Action::{WINGSUIT_AIRBRAKE, WINGSUIT_EVADE};
+use jc3vr_body::controllers::{
+    intent::hold::{Desired, MapKind, Target, Want},
+    locomotion::axis_output::write_move,
+};
 use parking_lot::Mutex;
 
 use crate::controllers::{
-    bindings::hold::{Desired, MapKind, Target, Want},
-    vehicles::{axis_output::write_move, config::WingsuitEvadeConfig, types::ArmReadout},
+    vehicles::{config::WingsuitEvadeConfig, types::ArmReadout},
     weapons::engine,
 };
 

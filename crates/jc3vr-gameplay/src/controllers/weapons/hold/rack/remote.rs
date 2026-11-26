@@ -27,16 +27,18 @@ use jc3gi::{
     equipment::weapon::{WeaponBase, WeaponState},
     graphics_engine::model_instance::ModelInstanceFlags,
 };
+use jc3vr_body::controllers::physics::refs::Weak;
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
 use crate::controllers::weapons::{
     dual_wield::single,
-    engine::{self, character_object, object_of, slot_of, takeable_gun_slot},
+    engine,
+    engine::{character_object, object_of, slot_of, takeable_gun_slot},
     hold::{
-        pickup::{self, Refusal},
+        pickup,
+        pickup::Refusal,
         rack::{offered_source, paired},
-        refs::Weak,
         source::{Freed, SourceRefusal},
     },
 };

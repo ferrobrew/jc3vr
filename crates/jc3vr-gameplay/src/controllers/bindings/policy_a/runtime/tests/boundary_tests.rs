@@ -1,6 +1,10 @@
 //! Sampler admission through ordered arbitration and semantic table execution.
 
 use jc3gi::input::input_action_map::Action;
+use jc3vr_body::controllers::{
+    intent::controls::Controls,
+    mode::{AirborneVariant, Mode, OnFootVariant},
+};
 use jc3vr_input::{
     frame::{HandFrame, InteractionProfile, TrackedPose},
     semantic::vocabulary::WingsuitAction,
@@ -14,12 +18,10 @@ use jc3vr_view::vr::input::semantic::{
 use super::*;
 use crate::controllers::{
     bindings::{
-        controls::Controls,
         tables::Bindings,
         trigger_ownership::{TriggerMask, mask_routes},
     },
     config::ControllersConfig,
-    mode::{AirborneVariant, Mode, OnFootVariant},
 };
 
 fn hands() -> [HandFrame; 2] {

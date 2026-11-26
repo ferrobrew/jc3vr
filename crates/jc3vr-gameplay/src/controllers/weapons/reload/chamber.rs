@@ -16,12 +16,10 @@
 //! chamber empties rather than from a grab.
 
 use glam::Vec3;
+use jc3vr_body::controllers::grab::{GrabVolume, GripTarget, target::TargetReach};
 use jc3vr_input::frame::Hand;
 
-use crate::controllers::{
-    grab::{GrabVolume, GripTarget, target::TargetReach},
-    weapons::reload::tuning::ActionTuning,
-};
+use crate::controllers::weapons::reload::tuning::ActionTuning;
 
 /// The mod's chamber.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
@@ -260,11 +258,10 @@ pub(super) fn prefer_waiting_action(
 
 #[cfg(test)]
 mod tests {
+    use jc3vr_body::controllers::grab::{Mark, MarkAt, resolve::resolve};
+
     use super::*;
-    use crate::controllers::{
-        grab::{Mark, MarkAt, resolve::resolve},
-        weapons::reload::tuning::RELOAD,
-    };
+    use crate::controllers::weapons::reload::tuning::RELOAD;
 
     const CONFIG: ActionTuning = RELOAD.action;
     const HANDLE: Vec3 = Vec3::new(0.1, -0.2, -0.3);

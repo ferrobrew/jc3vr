@@ -3,14 +3,12 @@
 use std::time::{Duration, Instant};
 
 use jc3gi::character::character::Character;
+use jc3vr_body::hooks::animation::active_state_type_id;
 use parking_lot::Mutex;
 
-use crate::{
-    controllers::physical_hands::{
-        climb::{engine::gate_context, native::Context},
-        stunt::engine::PositionRead,
-    },
-    hooks::animation::active_state_type_id,
+use crate::controllers::physical_hands::{
+    climb::{engine::gate_context, native::Context},
+    stunt::engine::PositionRead,
 };
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]

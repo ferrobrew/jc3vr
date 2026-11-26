@@ -1,19 +1,21 @@
 //! The grab view's candidates: the weapons lying in the world, the loose objects, and the vehicles
 //! whose boxes come near a hand, whether or not the reach's rays find them. The world is read
 //! through the collider view's read ([`collider_view::scan_moving`]), and each body near a hand is
-//! told apart by its owner the way the reach tells what it hits apart ([`bodies::classify`]).
+//! told apart by its owner the way the reach tells what it hits apart ([`classify`]).
 
 use std::num::NonZeroUsize;
 
 use glam::Vec3;
+use jc3vr_body::controllers::{grab::world_reach::TargetKind, physics::bodies};
 use jc3vr_input::frame::Hand;
 
 use crate::controllers::physical_hands::{
-    bodies,
-    collider_view::{self, ScanError, model::BodyKind},
+    bodies::classify,
+    collider_view,
+    collider_view::{ScanError, model::BodyKind},
     doors::engine::{broken_off, vehicle_of},
     grab_view::model::{Candidate, CandidateKind},
-    grasp::{self, TargetKind},
+    grasp,
     pickup::PICKUP,
 };
 
@@ -104,7 +106,7 @@ unsafe fn kind_of(
     if standing_on == Some(body) {
         return None;
     }
-    match unsafe { bodies::classify(object, body) } {
+    match unsafe { classify(object, body) } {
         Ok(TargetKind::Weapon) => Some(CandidateKind::Weapon),
         Ok(TargetKind::Prop { mass_kg }) if grasp::can_hold(mass_kg, &PICKUP) => {
             Some(CandidateKind::Prop)

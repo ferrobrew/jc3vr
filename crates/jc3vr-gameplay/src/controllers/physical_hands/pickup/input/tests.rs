@@ -2,23 +2,28 @@ use std::{num::NonZeroUsize, time::Instant};
 
 use glam::{Quat, Vec3};
 use jc3gi::vehicle::vehicle::DoorSlot;
+use jc3vr_body::controllers::{
+    grab::{
+        PickupKind,
+        latch::GripLatch,
+        world_reach::{CharacterTarget, DoorTarget},
+    },
+    intent::controls::ButtonControl,
+    physics::rigid::BodyPose,
+};
 use jc3vr_input::frame::Pose;
 
 use super::*;
-use crate::controllers::{
-    bindings::controls::ButtonControl,
-    grab::{PickupKind, latch::GripLatch},
-    physical_hands::{
-        characters::{CharacterTarget, CharactersConfig, Regrip, Seize},
-        doors::{DoorTarget, Latch, config::TEARING, tearing::TearGrip},
-        grasp::Grip,
-        pickup::{
-            PICKUP,
-            diagnostics::InputState,
-            state::{Held, HeldKind},
-            tick::{self, JointInputs, TickInputs},
-        },
-        rigid::BodyPose,
+use crate::controllers::physical_hands::{
+    characters::{CharactersConfig, Regrip, Seize},
+    doors::{Latch, config::TEARING, tearing::TearGrip},
+    grasp::Grip,
+    pickup::{
+        PICKUP,
+        diagnostics::InputState,
+        state::{Held, HeldKind},
+        tick,
+        tick::{JointInputs, TickInputs},
     },
 };
 
@@ -186,7 +191,7 @@ fn produce_hands(
         dt: 0.01,
         real_dt: 0.01,
     };
-    let tick = crate::controllers::grab::tick::resolve(Vec::new(), Default::default(), None);
+    let tick = jc3vr_body::controllers::grab::tick::resolve(Vec::new(), Default::default(), None);
     let context = diagnostics::input(
         1,
         &tick,

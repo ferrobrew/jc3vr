@@ -1,10 +1,9 @@
+use jc3vr_body::controllers::{grab::cockpit::ControlKind, mode::VehicleClass};
+
 use super::*;
-use crate::controllers::{
-    mode::VehicleClass,
-    vehicles::{
-        config::VehiclesConfig,
-        physical::{ControlKind, ControlState, Hold, Outputs, Release},
-    },
+use crate::controllers::vehicles::{
+    config::VehiclesConfig,
+    physical::{ControlState, Hold, Outputs, Release},
 };
 
 fn driver() -> Option<VehicleSeat> {

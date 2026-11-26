@@ -1,20 +1,20 @@
 //! The controller-to-game bindings: on every engine input tick, map the latest controller frame
 //! and its edges to the game's actions for the current mode, and inject them.
 //!
-//! - [`controls`] reduces the frame to logical controls (deadzones, edges, what each grip would
+//! - [`controls`](jc3vr_body::controllers::intent::controls) reduces the frame to logical controls (deadzones, edges, what each grip would
 //!   take);
 //! - [`intents`] reads the tick's semantic actions and masks what the mod claims of each hand;
 //! - [`tables`] maps the semantic actions to the wanted game actions per mode;
 //! - `bail` chooses, once per press, between the vehicle exit and the parachute bail for the
 //!   exit's long press;
-//! - [`hold`] turns the wanted actions into effector writes with the game's hold timing;
-//! - the grip model ([`crate::controllers::grab`]) gathers the targets the weapon handling, the
+//! - [`hold`](jc3vr_body::controllers::intent::hold) turns the wanted actions into effector writes with the game's hold timing;
+//! - the grip model ([`jc3vr_body::controllers::grab`]) gathers the targets the weapon handling, the
 //!   vehicle handling, and the physical hands provide, resolves each hand among them, and hands
 //!   each grab to the subsystem that owns its target;
 //! - [`grapple_button`] reads the grapple button's gestures while tethers or a line are attached:
 //!   a tap, a double tap that releases the tethers, a hold that tethers or tightens, and a sharp
 //!   pull that zips;
-//! - [`yank`] detects the yank gesture on the grapple hand, a sharp pull while the grapple button is
+//! - [`yank`](jc3vr_body::controllers::intent::yank) detects the yank gesture on the grapple hand, a sharp pull while the grapple button is
 //!   held, and the snatch's own yank while the grip holds a remote target
 //!   ([`crate::controllers::snatch`]);
 //! - `recovery` masks a hand after a loss of its pose or of injection until its controls rest
@@ -43,13 +43,9 @@
 pub(crate) mod bail;
 mod buttons;
 mod capture_wait;
-pub mod config;
-pub mod controls;
 mod flight;
-pub mod grapple_button;
 mod gun_fire;
 mod heli_hang;
-pub mod hold;
 pub mod inject;
 pub mod intents;
 mod loss;
@@ -62,7 +58,6 @@ pub(crate) mod stage;
 mod summary;
 pub mod tables;
 mod trigger_ownership;
-pub mod yank;
 
 use std::{sync::LazyLock, time::Instant};
 
@@ -70,6 +65,28 @@ use body_rig::angle::{head_heading, yaw_of};
 use glam::Vec3;
 use jc3gi::{
     character::character::Character, input::input_action_map::Action, state::StateBitFlag,
+};
+use jc3vr_body::controllers::{
+    aim,
+    aim::sights,
+    body::{BODY_CONFIG, firm_ragdoll, rig::grounded::add_step_walk},
+    clock::TimeScale,
+    grab,
+    grab::{Consumer, Provided, grabs_for, markers::MarkerFrame},
+    hands,
+    hands::tiers,
+    haptics, intent,
+    intent::{
+        controls::{ButtonControl, ClosedHand, Controls},
+        grapple_button::GrappleContext,
+        hold::{ActionWrite, Desired, DevicePoll, HoldTracker, MapKind, Target, Want},
+        yank::{HandLine, LineYank, Yank},
+    },
+    locomotion,
+    locomotion::config::LocomotionDirection,
+    mode,
+    mode::{AirborneVariant, Detection, Mode, Traversal, VehicleClass},
+    roomscale, scheme,
 };
 use jc3vr_input::{
     capture::{
@@ -96,17 +113,12 @@ pub use crate::controllers::bindings::{
     recovery::{Blocker, HandRecovery},
     report::{Idle, ReportedWrite, TickReport, recovery_status},
 };
-pub(crate) use crate::controllers::intent::{grip_holds_now, grip_pressed_now, hand_closed};
 use crate::{
     controllers::{
-        aim::{self, sights},
         bindings::{
             bail::{BailLatch, BailTick, bails_by_parachute},
             buttons::{grapple_button, grapple_button_held, reload_button},
             capture_wait::CaptureWait,
-            controls::{ButtonControl, ClosedHand, Controls},
-            grapple_button::GrappleContext,
-            hold::{ActionWrite, Desired, DevicePoll, HoldTracker, MapKind, Target, Want},
             intents::{Intent, SemanticInput},
             pointer::{
                 clear_controller, owns_menu_trigger, toggle_panel, update_controller,
@@ -122,16 +134,9 @@ use crate::{
             summary::yank_armed_in,
             tables::Bindings,
             trigger_ownership::{Owner as TriggerOwner, RawTrigger, TriggerOwnership},
-            yank::{HandLine, LineYank, Yank},
         },
-        body::{BODY_CONFIG, firm_ragdoll, rig::grounded::add_step_walk},
-        clock::TimeScale,
-        config::{CONTROLLERS_CONFIG, ControllersConfig, LocomotionDirection},
-        grab::{self, Consumer, Provided, grabs_for, markers::MarkerFrame},
-        hands::{self, tiers},
-        haptics, intent, locomotion,
-        mode::{self, AirborneVariant, Detection, Mode, Traversal, VehicleClass},
-        physical_hands, roomscale, scheme, snatch,
+        config::{CONTROLLERS_CONFIG, ControllersConfig},
+        physical_hands, snatch,
         snatch::config::SnatchSettings,
         vehicles, weapons,
     },
@@ -843,7 +848,7 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
         .map(marker_frame);
     physical_hands::grab_view::submit(&targets, view_frame.as_ref());
     if step.crouch_toggle {
-        crate::controllers::roomscale::toggle_seated_crouch();
+        roomscale::toggle_seated_crouch();
     }
     if step.sight_capture {
         sights::tuning::request_capture();

@@ -41,17 +41,19 @@ mod weapons;
 
 use egui::Ui;
 use glam::{Quat, Vec3};
-use jc3vr_core::config::engine::edit_parts;
-use jc3vr_gameplay::controllers::{
-    aim as controller_aim, aim_state as controller_aim_state, bindings, body as controller_body,
+use jc3vr_body::controllers::{
+    aim as controller_aim, aim_state as controller_aim_state, body as controller_body,
     body::{rig as controller_rig, unarmed as controller_unarmed},
-    config::CONTROLLERS_CONFIG,
-    fingers as controller_fingers, gamepad_setting, glass as controller_glass,
+    fingers as controller_fingers, gamepad_setting,
     hands::{ik as hand_ik, late, tiers},
     haptics as controller_haptics, locomotion as controller_locomotion, mode as controller_mode,
-    physical_hands as controller_physical_hands,
-    physical_hands::collider_view::ColliderViewConfig,
-    roomscale as controller_roomscale, scheme, summary as controller_summary,
+    roomscale as controller_roomscale, scheme,
+};
+use jc3vr_core::config::engine::edit_parts;
+use jc3vr_gameplay::controllers::{
+    bindings, config::CONTROLLERS_CONFIG, glass as controller_glass,
+    physical_hands as controller_physical_hands, physical_hands::collider_view::ColliderViewConfig,
+    summary as controller_summary,
 };
 use jc3vr_hud::{controllers::map as controller_map, hud::summary_panel};
 use jc3vr_input::{frame as controller_frame, frame::InteractionProfile};

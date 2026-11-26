@@ -9,12 +9,12 @@
 //! rows of the same hand, leaving out one the contextual rows already show.
 
 use jc3gi::input::input_action_map::Action::{self, *};
-
-use crate::controllers::{
-    bindings::tables::describe::{Control, Effect, ModAction, Row},
+use jc3vr_body::controllers::{
+    intent::rows::{Control, Effect, ModAction, Row},
     mode::{AirborneVariant, Mode},
-    summary::current::{CurrentContext, CurrentRouting, CurrentSummary},
 };
+
+use crate::controllers::summary::current::{CurrentContext, CurrentRouting, CurrentSummary};
 
 /// What the essentials need beyond the mode: state the mode alone does not say.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
@@ -150,6 +150,10 @@ fn essential_mod(mode: Mode, action: ModAction) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use jc3vr_body::controllers::{
+        intent::rows::Gesture,
+        mode::{OnFootVariant, VehicleClass, VehicleSeat},
+    };
     use jc3vr_input::{
         frame::Hand,
         semantic::{SemanticSet, vocabulary::OnFootAction},
@@ -160,9 +164,8 @@ mod tests {
     use crate::controllers::{
         bindings::tables::{
             declare::TableCtx,
-            describe::{DescribeCtx, Features, Gesture, describe_current},
+            describe::{DescribeCtx, Features, describe_current},
         },
-        mode::{OnFootVariant, VehicleClass, VehicleSeat},
         summary::{
             current::{CellKind, Hint, Source, project},
             labels::Text,

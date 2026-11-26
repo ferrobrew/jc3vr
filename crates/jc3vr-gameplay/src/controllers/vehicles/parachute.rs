@@ -40,12 +40,10 @@
 //! down, up, or forward with the hand by no more than a full pull.
 
 use glam::{Vec2, Vec3};
+use jc3vr_body::controllers::grab::{Candidate, GrabVolume};
 use jc3vr_input::frame::Hand;
 
-use crate::controllers::{
-    grab::{Candidate, GrabVolume},
-    vehicles::{config::ParachuteHandlesConfig, physical::Release},
-};
+use crate::controllers::vehicles::{config::ParachuteHandlesConfig, physical::Release};
 
 /// A held handle.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -237,10 +235,11 @@ fn release(state: &mut HandleState, hand: Hand, why: Release, events: &mut Vec<H
 
 #[cfg(test)]
 mod tests {
+    use jc3vr_body::controllers::grab::grab_volume;
+
     use super::*;
     use crate::controllers::{
-        grab::grab_volume, loadout::Socket, vehicles::arm_steering::combine,
-        weapons::volumes::SOCKETS,
+        loadout::Socket, vehicles::arm_steering::combine, weapons::volumes::SOCKETS,
     };
 
     const CONFIG: ParachuteHandlesConfig = ParachuteHandlesConfig::new();

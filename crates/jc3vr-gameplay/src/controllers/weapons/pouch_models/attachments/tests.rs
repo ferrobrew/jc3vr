@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use glam::{Quat, Vec3};
+use jc3vr_body::controllers::body::mirror::PouchRenderStatus;
 use jc3vr_view::controllers::{
     cockpit::CockpitTransform,
     overlay::{
@@ -10,12 +11,9 @@ use jc3vr_view::controllers::{
 };
 
 use super::*;
-use crate::controllers::{
-    body::mirror::PouchRenderStatus,
-    weapons::{
-        mirror::{PouchRenderContext, pouch_render_markers},
-        pouch_models::{render_character, render_matrix},
-    },
+use crate::controllers::weapons::{
+    mirror::{PouchRenderContext, pouch_render_markers},
+    pouch_models::{render_character, render_matrix},
 };
 
 fn frames() -> Frames {

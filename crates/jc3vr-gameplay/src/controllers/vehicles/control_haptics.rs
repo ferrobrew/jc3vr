@@ -2,14 +2,12 @@
 //! the sticks' and levers' stops, the levers' neutral, the throttle's afterburner gate, and the
 //! cockpit buttons.
 
+use jc3vr_body::controllers::{grab::cockpit::ControlKind, haptics};
 use jc3vr_input::{frame::Hand, haptics::cues::Event};
 
-use crate::controllers::{
-    haptics,
-    vehicles::{
-        physical::{ControlCue, ControlKind, Outputs, buttons::ButtonEvent},
-        steering::WheelCue,
-    },
+use crate::controllers::vehicles::{
+    physical::{ControlCue, Outputs, buttons::ButtonEvent},
+    steering::WheelCue,
 };
 
 /// Play the cues of the controls whose cues fired this tick on the hands holding them, and the

@@ -1,4 +1,4 @@
-//! The wingsuit's head look-steer removed, as the parachute's is ([`crate::hooks::input::parachute`]).
+//! The wingsuit's head look-steer removed, as the parachute's is ([`jc3vr_body::hooks::input::parachute`]).
 //!
 //! The air movement core adds a camera look-steer to the stick's steering: the camera's pitch and
 //! yaw against the character's, shaped by the look-steer tuning. In VR the camera follows the head,
@@ -10,7 +10,7 @@
 //! The core also serves the falls, whose camera steering the same detour would remove, so it acts
 //! only while the mode detector reads the wingsuit or the parachute, under the controller scheme,
 //! for a head-decoupled local player. The parachute's own look-steer is removed by its own
-//! detour ([`crate::hooks::input::parachute`]).
+//! detour ([`jc3vr_body::hooks::input::parachute`]).
 //!
 //! [`NAirMovement_UpdateStdLookSteering`]: jc3gi::input::parachute::NAirMovement_UpdateStdLookSteering
 
@@ -21,16 +21,16 @@ use jc3gi::{
     character::character::Character, input::parachute::CharacterAirMovementSettings,
     types::math::Vector3,
 };
-use re_utilities::hook_library::HookLibrary;
-
-use crate::{
+use jc3vr_body::{
     controllers::{
-        mode::{self, AirborneVariant, Mode},
+        mode,
+        mode::{AirborneVariant, Mode},
         scheme,
         scheme::CONTROLLERS_ENABLED,
     },
     hooks::input::locomotion::head_decoupled,
 };
+use re_utilities::hook_library::HookLibrary;
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&UPDATE_STD_LOOK_STEERING_BINDER)

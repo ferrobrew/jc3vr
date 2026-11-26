@@ -1,11 +1,9 @@
 //! The raw-input tables' menu latches, frozen.
 
 use glam::Vec2;
+use jc3vr_body::controllers::intent::controls::{ButtonControl, HandControls};
 
-use crate::controllers::bindings::{
-    controls::{ButtonControl, HandControls},
-    tables::tests::legacy::sink::{Direction, MenuLatch},
-};
+use crate::controllers::bindings::tables::tests::legacy::sink::{Direction, MenuLatch};
 
 /// Advance `latch` by one tick of `hand`'s controls. `push` is how far the stick must be pushed
 /// along one axis to latch a direction, `0..=1`.

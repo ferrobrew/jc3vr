@@ -1,5 +1,5 @@
 //! What the grapple button does with a weapon under the grapple's aim, which the aim sees only
-//! through the scoped patch ([`crate::controllers::aim::grapple_weapons`]).
+//! through the scoped patch ([`jc3vr_body::controllers::aim::grapple_weapons`]).
 //!
 //! - A hook fired at a weapon flies as a ghost wire ([`set_extend`]): the hook's casts never hit a
 //!   weapon's body, so a plain hook would attach to whatever lies under or behind the gun; a ghost
@@ -22,16 +22,14 @@ use jc3gi::{
     },
     types::math::Vector3,
 };
+use jc3vr_body::controllers::physics::{
+    grapple_hook::{attached_hook_end, local_hook},
+    refs::{Strong, Weak},
+};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::controllers::{
-    physics::grapple_hook::{attached_hook_end, local_hook},
-    weapons::{
-        hold::refs::{Strong, Weak},
-        inventory::engine::weapon_of,
-    },
-};
+use crate::controllers::weapons::inventory::engine::weapon_of;
 
 /// The hooks, aggregated by [`crate::controllers::snatch::hook_library`].
 pub(super) fn hook_library() -> HookLibrary {

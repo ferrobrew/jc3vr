@@ -26,7 +26,7 @@
 //! This module runs on the input tick in two halves around them, like the weapon handling:
 //!
 //! 1. [`begin_tick`] reads the mounted gun, fits the wheel and the handlebars to the vehicle, and
-//!    provides the vehicle handling's grip targets ([`crate::controllers::grab`]): the driver's
+//!    provides the vehicle handling's grip targets ([`jc3vr_body::controllers::grab`]): the driver's
 //!    controls, the cockpit's buttons, the parachute's handles with a reach margin around each,
 //!    and the mounted gun's handles. What a hand holds is offered to it as held, so that a press
 //!    made while it still holds (a release and a press between two ticks) takes it again.
@@ -38,13 +38,13 @@
 //! A control or a handle is held only while its hand's grip is: releasing the grip lets go.
 //!
 //! The hands take the anchored poses in [`apply`], which every hand subsystem's hands pass through
-//! ([`crate::controllers::hands::active_hands`]). Everything acts only while the bindings inject,
+//! ([`jc3vr_body::controllers::hands::active_hands`]). Everything acts only while the bindings inject,
 //! which is only under the controller scheme with a controller active.
 //!
 //! Turrets are left to the game: a turret turns toward its weapon's aim point at its own limited
 //! rate, so a turret aimed by hand trails the hand exactly as it trails the gaze. The motorcycle's
 //! and jetski's personal weapon is a wielded weapon on the hand's attach bone, so the per-hand gun
-//! aim already aims it by hand ([`crate::controllers::aim::gun`]).
+//! aim already aims it by hand ([`jc3vr_body::controllers::aim::gun`]).
 //!
 //! [`VEHICLES_CONFIG`]: crate::controllers::vehicles::config::VEHICLES_CONFIG
 
@@ -122,21 +122,22 @@ pub(crate) fn hook_library() -> HookLibrary {
 mod tests {
     use glam::{Quat, Vec2, Vec3};
     use jc3gi::input::input_action_map::Action::{self, *};
+    use jc3vr_body::controllers::{
+        grab::cockpit::ControlKind,
+        hands::CockpitHand,
+        intent::hold::{Desired, MapKind, Target, Want},
+        mode::{VehicleClass, VehicleSeat},
+    };
     use jc3vr_input::frame::Pose;
 
     use super::*;
-    use crate::controllers::{
-        bindings::hold::{Desired, MapKind, Target, Want},
-        hands::CockpitHand,
-        mode::{VehicleClass, VehicleSeat},
-        vehicles::{
-            config::VehiclesConfig,
-            finish::rendered_angle,
-            mounted_tick::offered,
-            physical::{ControlKind, ControlState, Hold, Outputs},
-            state::move_grip,
-            tuning::PHYSICAL,
-        },
+    use crate::controllers::vehicles::{
+        config::VehiclesConfig,
+        finish::rendered_angle,
+        mounted_tick::offered,
+        physical::{ControlState, Hold, Outputs},
+        state::move_grip,
+        tuning::PHYSICAL,
     };
 
     fn analog(desired: &[Desired], action: Action) -> Option<f32> {

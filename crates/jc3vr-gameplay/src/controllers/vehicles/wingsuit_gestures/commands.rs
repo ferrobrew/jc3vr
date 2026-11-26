@@ -2,11 +2,9 @@
 //! the narrow player-map actions the game's own wingsuit takes.
 
 use jc3gi::input::input_action_map::Action::{CANCEL, OPEN_WINGSUIT, WINGSUIT_AIRBRAKE};
+use jc3vr_body::controllers::intent::hold::{Desired, MapKind, Target, Want};
 
-use crate::controllers::{
-    bindings::hold::{Desired, MapKind, Target, Want},
-    vehicles::wingsuit_gestures::{GestureCommands, Stage, SuitTransition},
-};
+use crate::controllers::vehicles::wingsuit_gestures::{GestureCommands, Stage, SuitTransition};
 
 /// Invalid command contexts emit no partial action list. The caller retains canopy precedence.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]

@@ -4,7 +4,7 @@
 use std::time::Instant;
 
 use egui::Ui;
-use jc3vr_gameplay::controllers::body::{
+use jc3vr_body::controllers::body::{
     ik_body,
     procedural::{ProceduralStatus, config::ProceduralMode, owns_body},
 };

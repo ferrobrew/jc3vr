@@ -5,29 +5,30 @@
 //! Completion hands the exact retained engine prop to the existing loose-magazine insertion path.
 
 use glam::Vec3;
+use jc3vr_body::controllers::{
+    grab::{Candidate, GrabVolume, GripTarget, resolve::reaches, target::TargetReach},
+    haptics,
+};
 use jc3vr_input::{
     frame::{Hand, Pose},
     haptics::cues::Event,
 };
 
-use crate::controllers::{
-    grab::{Candidate, GrabVolume, GripTarget, resolve::reaches, target::TargetReach},
-    haptics,
-    weapons::{
-        capabilities::tracked_hands,
-        foregrip,
-        reload::{
-            FinishInputs, GunTick, STATE, State, Tick, WeaponTick,
-            chamber::WorkStage,
-            config::ExtractionConfig,
-            engine,
-            insert::{InsertInputs, InsertionSource},
-            loose,
-            plan::{LoadKind, WellFrame},
-            serial,
-            tuning::Reload,
-            zones::{self, MagazineZone, ZoneView},
-        },
+use crate::controllers::weapons::{
+    capabilities::tracked_hands,
+    foregrip,
+    reload::{
+        FinishInputs, GunTick, STATE, State, Tick, WeaponTick,
+        chamber::WorkStage,
+        config::ExtractionConfig,
+        engine,
+        insert::{InsertInputs, InsertionSource},
+        loose,
+        plan::{LoadKind, WellFrame},
+        serial,
+        tuning::Reload,
+        zones,
+        zones::{MagazineZone, ZoneView},
     },
 };
 

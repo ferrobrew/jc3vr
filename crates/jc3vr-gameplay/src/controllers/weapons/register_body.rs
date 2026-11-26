@@ -2,13 +2,12 @@
 //! the deferred magazine detachments at the character's serial post-physics entry, and the body
 //! mirror's sampler of the attachments on the body.
 
-use crate::{
-    controllers::{
-        body::mirror::register_attachment_sampler,
-        weapons::{mirror, reload::serial},
-    },
+use jc3vr_body::{
+    controllers::body::mirror::register_attachment_sampler,
     hooks::character::register_serial_consumer,
 };
+
+use crate::controllers::weapons::{mirror, reload::serial};
 
 pub(crate) fn register() {
     register_serial_consumer(serial::consume);

@@ -27,10 +27,8 @@ use std::{
 use anyhow::Context as _;
 use glam::Vec4;
 use jc3gi::graphics_engine::{device::Device, texture::Texture};
-use jc3vr_gameplay::controllers::{
-    scheme,
-    weapons::hud_feed::{grab_hint as feed, grab_hint::Hint},
-};
+use jc3vr_body::controllers::scheme;
+use jc3vr_gameplay::controllers::weapons::hud_feed::{grab_hint as feed, grab_hint::Hint};
 use jc3vr_input::frame::Hand;
 pub(crate) use paint::{
     MARKER_TEXELS, TAG_TEXELS, marker as paint_marker, tag as paint_tag, tag_fits,

@@ -5,20 +5,19 @@ use std::time::Instant;
 
 use glam::Vec3;
 use jc3gi::character::character::Character;
+use jc3vr_body::controllers::{
+    aim::RAY_LENGTH_M, grab::cockpit::ControlKind, hands::ActiveHands, mode::VehicleSeat,
+};
 use jc3vr_input::frame::Hand;
 use jc3vr_view::controllers::cockpit::CockpitTransform;
 
-use crate::controllers::{
-    aim::RAY_LENGTH_M,
-    hands::ActiveHands,
-    mode::VehicleSeat,
-    vehicles::{
-        config::{PhysicalControlsConfig, VehicleSettings},
-        mounted::{self, MountedTarget},
-        physical::{ControlKind, control_enabled},
-        state::STATE,
-        types::MountedReadout,
-    },
+use crate::controllers::vehicles::{
+    config::{PhysicalControlsConfig, VehicleSettings},
+    mounted,
+    mounted::MountedTarget,
+    physical::control_enabled,
+    state::STATE,
+    types::MountedReadout,
 };
 
 /// What the mounted-gun half of the input tick produced.

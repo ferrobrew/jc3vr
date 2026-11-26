@@ -4,17 +4,15 @@
 
 use glam::{Mat4, Quat};
 use jc3gi::equipment::weapon::WeaponData;
+use jc3vr_body::controllers::haptics;
 use jc3vr_input::{frame::Hand, haptics::cues::Event};
 
-use crate::controllers::{
-    haptics,
-    weapons::reload::{
-        GunTick, State, Tick, WeaponTick, casings,
-        engine::{dump_cylinder, gun_address, gun_has_bone, gun_world},
-        plan::{LoadKind, ReloadPlan, WellFrame},
-        render,
-        revolver::{Cylinder, CylinderEvent, CylinderInputs, REVOLVER},
-    },
+use crate::controllers::weapons::reload::{
+    GunTick, State, Tick, WeaponTick, casings,
+    engine::{dump_cylinder, gun_address, gun_has_bone, gun_world},
+    plan::{LoadKind, ReloadPlan, WellFrame},
+    render,
+    revolver::{Cylinder, CylinderEvent, CylinderInputs, REVOLVER},
 };
 
 /// A revolver's cylinder as the tick reads it.

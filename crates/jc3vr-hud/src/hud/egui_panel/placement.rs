@@ -8,7 +8,7 @@
 
 use body_rig::angle::{direction, head_heading, yaw_of};
 use glam::{Quat, Vec3};
-use jc3vr_gameplay::controllers::hands::pose::{inverse, mul};
+use jc3vr_body::controllers::hands::pose::{inverse, mul};
 use jc3vr_input::frame::Pose;
 use jc3vr_view::{
     controllers::cockpit::{CockpitTransform, body_of_head},

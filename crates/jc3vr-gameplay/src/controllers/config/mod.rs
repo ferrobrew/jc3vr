@@ -15,35 +15,27 @@
 //!
 //! Each group's type and its slot live beside the subsystem that owns them (`WEAPONS_CONFIG` beside
 //! [`WeaponsConfig`] in [`crate::controllers::weapons::config`], `controllers.enabled` in
-//! [`crate::controllers::scheme`]), and every subsystem reads its own group through its slot. This
+//! [`jc3vr_body::controllers::scheme`]), and every subsystem reads its own group through its slot. This
 //! module only assembles the groups into the `controllers` table of the settings file, and the
 //! payload's load runs the range and consistency checks in [`validate`] over the whole table.
 
 pub mod validate;
 
+use jc3vr_body::controllers::{
+    aim::config::AimConfig, aim_state::AimStateConfig, body::config::BodyRemapConfig,
+    fingers::config::FingersConfig, hands::config::HandsConfig, haptics::HapticsConfig,
+    intent::config::BindingsConfig, locomotion::config::LocomotionConfig,
+    overlay::config::OverlayConfig, roomscale::config::RoomscaleConfig, scheme,
+};
 use jc3vr_core::config::engine::ConfigSlot;
 use jc3vr_input::frame::Hand;
 use jc3vr_view::vr::input::config::InputConfig;
 use serde::{Deserialize, Serialize};
 
-pub use crate::controllers::{
-    aim::{
-        config::AimConfig,
-        sights::config::{SightOverride, SightTable, SightTuningConfig},
-    },
-    aim_state::AimStateConfig,
-    bindings::config::BindingsConfig,
-    body::config::BodyRemapConfig,
-    hands::config::{GripOffset, HandsConfig},
-    locomotion::config::{LocomotionConfig, LocomotionDirection},
-    overlay::config::{GunReadout, OverlayConfig},
-    roomscale::config::{Posture, RoomscaleConfig, SeatTransition},
-    weapons::config::WeaponsConfig,
-};
+pub use crate::controllers::weapons::config::WeaponsConfig;
 use crate::{
     controllers::{
-        fingers::config::FingersConfig, glass::GlassConfig, haptics::HapticsConfig,
-        physical_hands::PhysicalHandsConfig, scheme, summary::SummaryConfig,
+        glass::GlassConfig, physical_hands::PhysicalHandsConfig, summary::SummaryConfig,
         vehicles::config::VehiclesConfig,
     },
     grapple::physical::PhysicalGrappleConfig,
@@ -83,7 +75,7 @@ pub struct ControllersConfig {
     pub overlay: OverlayConfig,
     /// Physical weapon handling.
     pub weapons: WeaponsConfig,
-    /// Body scale remapping (see [`crate::controllers::body`]).
+    /// Body scale remapping (see [`jc3vr_body::controllers::body`]).
     pub body: BodyRemapConfig,
     /// Posture and roomscale locomotion.
     pub roomscale: RoomscaleConfig,
@@ -145,35 +137,5 @@ impl ControllersConfig {
 impl Default for ControllersConfig {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn the_sight_table_keys_by_weapon_hash() {
-        let mut table = SightTable::EMPTY;
-        assert!(table.set(SightOverride::identity(7)));
-        let raised = SightOverride {
-            offset_m: glam::Vec3::Y * 0.05,
-            ..SightOverride::identity(7)
-        };
-        assert!(table.set(raised));
-        assert_eq!(table.entries.iter().flatten().count(), 1);
-        assert_eq!(table.get(7), Some(&raised));
-        table.remove(7);
-        assert!(table.get(7).is_none());
-    }
-
-    #[test]
-    fn a_full_sight_table_refuses_a_new_weapon() {
-        let mut table = SightTable::EMPTY;
-        for hash in 0..SightTable::CAPACITY as u32 {
-            assert!(table.set(SightOverride::identity(hash)));
-        }
-        assert!(!table.set(SightOverride::identity(1000)));
-        assert!(table.set(SightOverride::identity(3)));
     }
 }

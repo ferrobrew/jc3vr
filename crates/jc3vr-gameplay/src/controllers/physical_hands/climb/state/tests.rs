@@ -1,5 +1,6 @@
+use jc3vr_body::controllers::facts::climb::BodyIdentity;
+
 use super::*;
-use crate::controllers::physical_hands::climb::engine::BodyIdentity;
 
 fn grip(hand: Hand, body: u32, height: f32) -> Grip {
     Grip {

@@ -13,8 +13,7 @@ use jc3gi::input::input_action_map::{
     EffectorState, InputActionMap, InputDeviceEffector, LocalPlayerActionMap, get_null_effector,
     get_ui_action_map,
 };
-
-use crate::controllers::bindings::hold::{ActionWrite, EffectorId, MapKind, Phase};
+use jc3vr_body::controllers::intent::hold::{ActionWrite, EffectorId, MapKind, Phase};
 
 /// What became of one write.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -157,9 +156,9 @@ fn apply_one(effector: &mut InputDeviceEffector, id: EffectorId, write: &ActionW
 #[cfg(test)]
 mod tests {
     use jc3gi::input::input_action_map::Action;
+    use jc3vr_body::controllers::intent::hold::Target;
 
     use super::*;
-    use crate::controllers::bindings::hold::Target;
 
     fn effector(value: f32, state: EffectorState, time: f32) -> InputDeviceEffector {
         // SAFETY: the effector is plain data; all-zero is a valid idle effector.

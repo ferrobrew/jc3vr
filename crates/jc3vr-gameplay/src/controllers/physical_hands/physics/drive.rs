@@ -17,8 +17,7 @@
 
 use body_rig::{rotation::rotation_error, smooth::follow_factor};
 use glam::{DVec3, Mat3, Quat, Vec2, Vec3};
-
-use crate::controllers::clock::TimeScale;
+use jc3vr_body::controllers::clock::TimeScale;
 
 /// How a hand body is driven.
 #[derive(Debug, Copy, Clone, PartialEq)]

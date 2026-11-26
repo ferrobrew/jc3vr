@@ -18,24 +18,25 @@ use jc3gi::{
     equipment::weapon::{WeaponBase, WeaponGripHand},
     types::math::Matrix4,
 };
-use jc3vr_input::frame::Hand;
-use parking_lot::Mutex;
-
-pub(crate) use crate::controllers::held::HandlePlacement;
-use crate::controllers::{
+use jc3vr_body::controllers::{
     aim::gun,
     grab::Candidate,
     hands::{ActiveHands, CockpitHand},
-    weapons::{
-        config::HoldConfig,
-        docks, engine,
-        hold::{
-            self, STEAL_RADIUS_M, TAKE_RADIUS_M, rack,
-            source::{self, SourceRefusal, WeaponSource},
-            steal,
-            take::placement::{Identity, Records, Sample},
-            world::{self, TakeRadii, TargetKind, WorldTarget},
-        },
+    held::HandlePlacement,
+};
+use jc3vr_input::frame::Hand;
+use parking_lot::Mutex;
+
+use crate::controllers::weapons::{
+    config::HoldConfig,
+    docks, engine, hold,
+    hold::{
+        STEAL_RADIUS_M, TAKE_RADIUS_M, rack, source,
+        source::{SourceRefusal, WeaponSource},
+        steal,
+        take::placement::{Identity, Records, Sample},
+        world,
+        world::{TakeRadii, TargetKind, WorldTarget},
     },
 };
 
@@ -207,7 +208,7 @@ pub(crate) unsafe fn begin_tick(inputs: &TakeInputs) -> Vec<Candidate> {
 }
 
 /// Take the weapon `hand`'s grab of a
-/// [`GrabVolume::WorldWeapon`](crate::controllers::grab::GrabVolume::WorldWeapon) closed
+/// [`GrabVolume::WorldWeapon`](jc3vr_body::controllers::grab::GrabVolume::WorldWeapon) closed
 /// on. Returns whether a
 /// weapon went into the hand.
 ///

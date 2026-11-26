@@ -1,8 +1,7 @@
 //! One retained observation of the local character's vehicle for fitting and control ownership.
 
 use jc3gi::{character::character::Character, vehicle::vehicle::Vehicle};
-
-use crate::controllers::weapons::hold::refs::Strong;
+use jc3vr_body::controllers::physics::refs::Strong;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) struct VehicleEntryIdentity {

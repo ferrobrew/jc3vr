@@ -5,6 +5,7 @@
 //! settings.
 
 use egui::Ui;
+use jc3vr_body::controllers::grab::cockpit::ControlKind;
 use jc3vr_gameplay::controllers::{
     vehicles,
     vehicles::{
@@ -15,7 +16,7 @@ use jc3vr_gameplay::controllers::{
         driving_view::DrivingViewStatus,
         fit::FitReadout,
         look_steer, parachute_rig,
-        physical::{ControlEvent, ControlKind, calibration},
+        physical::{ControlEvent, calibration},
         rail,
         ripcord::MIN_PULL_M,
         turret,

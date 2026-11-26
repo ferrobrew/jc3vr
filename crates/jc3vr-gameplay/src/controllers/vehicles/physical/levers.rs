@@ -17,11 +17,12 @@
 //! gate by the cue it gives going in and coming out.
 
 use jc3gi::vehicle::vehicle::AirPlane;
+use jc3vr_body::controllers::grab::cockpit::ControlKind;
 
 use crate::controllers::vehicles::{
     physical::{
-        ControlKind, ControlState, Holding, Placement,
-        cues::{self, ControlCue, ThrottleCues, ThrottleMove, TravelCues},
+        ControlState, Holding, Placement, cues,
+        cues::{ControlCue, ThrottleCues, ThrottleMove, TravelCues},
     },
     tuning::FlightControlsTuning,
 };

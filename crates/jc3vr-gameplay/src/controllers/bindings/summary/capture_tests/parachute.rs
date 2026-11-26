@@ -1,15 +1,22 @@
 use glam::Vec3;
+use jc3vr_body::controllers::{
+    grab,
+    grab::{Mark, MarkAt},
+};
 use jc3vr_view::vr::input::semantic::bound::SourceTable;
 
 use super::*;
 use crate::controllers::{
     bindings::tables::{declare::TableCtx, describe::DescribeCtx},
-    grab::{self, Mark, MarkAt},
     summary::{
-        current::{self, CellKind, CurrentSummary, Source},
+        current,
+        current::{CellKind, CurrentSummary, Source},
         labels::{ModText, Text},
     },
-    vehicles::parachute::{self, HandleState, StepInputs},
+    vehicles::{
+        parachute,
+        parachute::{HandleState, StepInputs},
+    },
 };
 
 const MODE: Mode = Mode::Airborne(AirborneVariant::Parachute);

@@ -29,15 +29,15 @@ use jc3gi::{
     },
     physics::{hknpConstraint, hknpConstraintManager, hknpWorld},
 };
+use jc3vr_body::controllers::physics::{
+    bodies,
+    bodies::BodyError as ObjectError,
+    havok::{affine, transform},
+};
 use jc3vr_input::frame::Pose;
 use windows::Win32::System::Threading::TlsGetValue;
 
-use crate::controllers::physical_hands::{
-    bodies::{self, BodyError as ObjectError},
-    physics::body::release,
-    world::World,
-};
-pub use crate::controllers::physics::havok::{affine, transform, vector};
+use crate::controllers::physical_hands::{physics::body::release, world::World};
 
 /// Why a joint could not be made.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]

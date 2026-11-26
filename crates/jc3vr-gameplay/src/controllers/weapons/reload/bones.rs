@@ -20,12 +20,10 @@ use jc3gi::{
     character::character::{AnimationController, Joint},
     equipment::weapon::WeaponData,
 };
+use jc3vr_body::controllers::hands::late;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::controllers::{
-    hands::late,
-    weapons::reload::{chamber::ActionKind, render},
-};
+use crate::controllers::weapons::reload::{chamber::ActionKind, render};
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&GUN_UPDATE_PRE_SIM_BINDER)

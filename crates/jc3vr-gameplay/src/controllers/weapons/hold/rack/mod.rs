@@ -41,15 +41,17 @@ use jc3gi::{
     character::{character::Character, inventory::WeaponSlot},
     equipment::weapon::{WeaponBase, WeaponState},
 };
+use jc3vr_body::controllers::{held::native::weapon_at, physics::refs::Strong};
 use jc3vr_input::frame::Hand;
 
 use crate::controllers::{
     loadout::{TakeSource, live},
     weapons::{
-        engine::{self, character_object, grip_points, slot_of, takeable_gun_slot, weapon_at},
+        engine,
+        engine::{character_object, grip_points, slot_of, takeable_gun_slot},
         hold::{
-            pickup::{self, Refusal, TakeOptions},
-            refs::Strong,
+            pickup,
+            pickup::{Refusal, TakeOptions},
             source::SourceRefusal,
             world::{TargetKind, WorldTarget},
         },

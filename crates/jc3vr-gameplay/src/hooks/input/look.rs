@@ -5,7 +5,7 @@
 //! slots including `LOOK_LEFT` / `LOOK_RIGHT` / `LOOK_UP` / `LOOK_DOWN`. These are the mouse-look
 //! deltas the game's camera system reads. We intercept them post-call: read the values, clear the
 //! effectors so the game's camera doesn't respond, and feed the deltas into the headpose simulation.
-//! The same seam is where [`crate::hooks::input::swim`] refuses backward and sideways movement in
+//! The same seam is where [`jc3vr_body::hooks::input::swim`] refuses backward and sideways movement in
 //! water, and where the motion controllers' poll stage lands their bindings' writes
 //! ([`crate::controllers::bindings::stage::poll_stage`]): after the poll, so the injected state
 //! survives until the game reads it, and before the swim refusal, so it covers the controllers'
@@ -21,15 +21,16 @@ use jc3gi::input::{
     input_action_map::{Action, EffectorState, LocalPlayerActionMap},
     input_device_manager::InputDeviceManager,
 };
+use jc3vr_body::{
+    controllers::intent::hold::DevicePoll,
+    hooks::input::swim::{log_tick, refuse_swim_moves},
+};
 use jc3vr_core::frame_timing::{self, Slot};
 use jc3vr_input::capture::input_captured;
 use jc3vr_view::headpose;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::{
-    controllers::{self, bindings::hold::DevicePoll},
-    hooks::input::swim::{log_tick, refuse_swim_moves},
-};
+use crate::controllers;
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&INPUT_DEVICE_MANAGER_UPDATE_BINDER)

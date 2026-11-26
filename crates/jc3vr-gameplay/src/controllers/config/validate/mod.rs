@@ -18,13 +18,13 @@ mod roomscale;
 mod vehicles;
 mod weapons;
 
+use jc3vr_body::controllers::{
+    aim::sights::config::SightTable, locomotion::config::validate as locomotion,
+};
 use jc3vr_core::config::engine::{Invalid, range, vec2, vec3};
 use jc3vr_view::headpose::config::VrTurnConfig;
 
-use crate::controllers::{
-    config::{ControllersConfig, SightTable},
-    locomotion::config::validate as locomotion,
-};
+use crate::controllers::config::ControllersConfig;
 
 /// Check every controller setting except the sight corrections ([`sights`]), returning the first
 /// that is out of range or inconsistent. Paths are relative to `controllers`.

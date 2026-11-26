@@ -10,18 +10,16 @@
 //! door handles, the candidates, a refusal's point) to the world.
 
 use glam::Vec3;
+use jc3vr_body::controllers::grab::{
+    Category, GripTarget, MarkAt, Shown, markers, markers::MarkerFrame, target::TargetReach,
+    tick::Tick,
+};
 use jc3vr_input::frame::Hand;
 use jc3vr_view::controllers::overlay::primitive::{
     Anchor, DepthMode, Facing, HandPose, Primitive, Rgba, Shape, SpriteSize,
 };
 
 use crate::controllers::{
-    grab::{
-        Category, GripTarget, MarkAt, Shown,
-        markers::{self, MarkerFrame},
-        target::TargetReach,
-        tick::Tick,
-    },
     physical_hands::grab_view::{
         Recorded,
         candidates::MAX_CANDIDATES,
@@ -474,10 +472,12 @@ const CANDIDATE_PRIMITIVES: usize = 13;
 #[cfg(test)]
 mod tests {
     use glam::Vec3;
+    use jc3vr_body::controllers::grab::{
+        GrabVolume, Mark, MarkAt, Reach, Resolved, Tier, markers::test_frame,
+    };
 
     use super::*;
     use crate::controllers::{
-        grab::{GrabVolume, Mark, MarkAt, Reach, Resolved, Tier, markers::test_frame},
         loadout::Socket,
         physical_hands::{
             collider_view::model::Aabb,

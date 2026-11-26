@@ -23,16 +23,17 @@ use jc3gi::{
     physics::{CastRayInfo, GameMaterialId, PfxLayer},
     types::math::Vector3,
 };
-use re_utilities::hook_library::HookLibrary;
-
-use crate::controllers::{
+use jc3vr_body::controllers::{
     aim::{
         ray::Ray,
-        raycast::{self, CastOptions, RayHit},
+        raycast,
+        raycast::{CastOptions, RayHit},
     },
     physics::grapple_hook::local_hook,
-    snatch::engine,
 };
+use re_utilities::hook_library::HookLibrary;
+
+use crate::controllers::snatch::engine;
 
 /// The juice's hooks, aggregated by [`crate::controllers::snatch::hook_library`].
 pub(super) fn hook_library() -> HookLibrary {
@@ -84,7 +85,7 @@ pub(super) unsafe fn impact(wire: NonZeroUsize, object: NonZeroUsize, from: Vec3
         true
     };
     // The weapons lying in the world are met only on the vehicle layer, as the snatch's aim finds
-    // them ([`crate::controllers::aim::grapple_weapons`]).
+    // them ([`jc3vr_body::controllers::aim::grapple_weapons`]).
     let layer = PfxLayer::VEHICLE_RAYCAST as i32;
     let played = unsafe { raycast::cast_on_with(&ray, reach, &options, layer, play) };
     if !matches!(played, Ok(Some(true))) {

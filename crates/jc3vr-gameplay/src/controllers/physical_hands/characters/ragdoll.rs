@@ -12,8 +12,9 @@ use std::num::NonZeroUsize;
 
 use glam::Vec3;
 use jc3gi::{character::character::Character, physics::hknpRagdoll};
+use jc3vr_body::controllers::physics::{characters as engine, rigid};
 
-use crate::controllers::physical_hands::{self, characters::engine, rigid};
+use crate::controllers::physical_hands;
 
 /// One dynamic body of a character's ragdoll.
 #[derive(Debug, Copy, Clone, PartialEq)]

@@ -8,23 +8,25 @@ pub mod menu;
 pub mod sink;
 
 use jc3gi::input::input_action_map::Action;
+use jc3vr_body::controllers::{
+    intent::{
+        config::BindingsConfig,
+        controls::{ButtonControl, Controls},
+        hold::{Desired, MapKind, Target, Want},
+    },
+    mode::{AirborneVariant, Mode, VehicleClass},
+};
 use jc3vr_input::frame::Hand;
 
-use crate::controllers::{
-    bindings::{
-        controls::{ButtonControl, Controls},
-        grab::GrabVolume,
-        hold::{Desired, MapKind, Target, Want},
-        tables::{
-            Step,
-            tests::legacy::{
-                declare::{TableCtx, declare},
-                sink::{EvalSink, Latches, MenuLatch},
-            },
+use crate::controllers::bindings::{
+    grab::GrabVolume,
+    tables::{
+        Step,
+        tests::legacy::{
+            declare::{TableCtx, declare},
+            sink::{EvalSink, Latches, MenuLatch},
         },
     },
-    config::BindingsConfig,
-    mode::{AirborneVariant, Mode, VehicleClass},
 };
 
 /// The raw-input tables and their cross-tick state.

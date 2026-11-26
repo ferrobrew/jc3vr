@@ -23,8 +23,12 @@ use std::{collections::VecDeque, num::NonZeroUsize};
 
 use glam::Vec3;
 use jc3gi::physics::{hknpConstraint, hknpConstraintManager};
+use jc3vr_body::controllers::physics::rigid;
 
-use crate::controllers::physical_hands::{self, physics::drawn_body, remote, rigid, world::World};
+use crate::controllers::{
+    physical_hands,
+    physical_hands::{physics::drawn_body, remote, world::World},
+};
 
 /// A constraint slot, as far as an articulation cares.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]

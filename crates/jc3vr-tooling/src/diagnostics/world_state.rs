@@ -8,9 +8,10 @@ use jc3gi::{
     equipment::wire_end::WireEnd, graphics_engine::graphics_engine::get_render_frame_counters,
     vehicle::vehicle::Vehicle,
 };
+use jc3vr_body::controllers::{haptics, physics::grapple_hook as hook};
 use jc3vr_core::frame_timing;
 use jc3vr_gameplay::{
-    controllers::{haptics, physics::grapple_hook as hook, snatch, vehicles},
+    controllers::{snatch, vehicles},
     grapple::physical::lock,
 };
 use jc3vr_input::frame::Hand;

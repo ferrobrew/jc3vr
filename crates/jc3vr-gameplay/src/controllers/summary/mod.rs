@@ -47,20 +47,24 @@ use std::{
 };
 
 use jc3gi::ui::locator::Locale;
+use jc3vr_body::controllers::{
+    intent::{
+        controls::Controls,
+        localise::{current_locale, game_string, game_string_by_hash, renders},
+        rows,
+    },
+    mode::{AirborneVariant, Mode},
+};
 use jc3vr_view::vr::input::sources;
 use parking_lot::Mutex;
 
 pub use crate::controllers::summary::config::SummaryConfig;
 use crate::controllers::{
-    bindings::{
-        controls::Controls,
-        tables::{
-            declare::TableCtx,
-            describe::{DescribeCtx, Features, PhysicalFeatures, describe_bound, describe_current},
-        },
+    bindings::tables::{
+        declare::TableCtx,
+        describe::{DescribeCtx, Features, PhysicalFeatures, describe_bound, describe_current},
     },
     config::ControllersConfig,
-    mode::{AirborneVariant, Mode},
     summary::{
         content::{Side, Summary, build, with_context},
         context::ContextHint,
@@ -78,12 +82,7 @@ pub struct Published {
     pub summary: Arc<Summary>,
     /// The current usable wrist projection, independent of the reference inventory.
     pub current: Arc<CurrentSummary>,
-    pub(crate) omitted: Arc<
-        Vec<(
-            crate::controllers::bindings::tables::describe::Row,
-            Omission,
-        )>,
-    >,
+    pub(crate) omitted: Arc<Vec<(rows::Row, Omission)>>,
     /// Bumped on every complete-reference rebuild.
     pub revision: u64,
     /// Changes only when the projected wrist content changes.
@@ -183,7 +182,7 @@ pub(crate) fn refresh(
         Vec::new()
     };
     // SAFETY: the game stage runs on the game thread past startup.
-    let locale = unsafe { localise::current_locale() };
+    let locale = unsafe { current_locale() };
     let key = Key {
         ctx,
         locale,
@@ -205,17 +204,16 @@ pub(crate) fn refresh(
     // Built outside the state lock: the render thread reads the published summary under it, and
     // the lookups take the localisation store's own lock.
     // SAFETY: as above.
-    let resolve =
-        |text| localise::resolve(text, locale, |key| unsafe { localise::game_string(key) });
+    let resolve = |text| localise::resolve(text, locale, |key| unsafe { game_string(key) });
     let rows = describe_bound(&ctx, &table);
     let summary = build(&rows, mode, controls.dominant, &resolve, &|name| {
         table.name(name).to_owned()
     });
-    let renders = locale.is_some_and(localise::renders);
+    let renders = locale.is_some_and(renders);
     // SAFETY: as above.
     let description = |hash| {
         renders
-            .then(|| unsafe { localise::game_string_by_hash(hash) })
+            .then(|| unsafe { game_string_by_hash(hash) })
             .flatten()
     };
     let context_lines = context::lines(
@@ -408,14 +406,14 @@ static STATE: Mutex<State> = Mutex::new(State {
 #[cfg(test)]
 mod tests {
     use jc3gi::input::input_action_map::Action;
+    use jc3vr_body::controllers::{
+        intent::rows::{Control, Effect, Gesture, Row},
+        mode::{OnFootVariant, VehicleClass, VehicleSeat},
+    };
     use jc3vr_input::frame::Hand;
 
     use super::*;
-    use crate::controllers::{
-        bindings::tables::describe::{Control, Effect, Gesture, Row},
-        mode::{OnFootVariant, VehicleClass, VehicleSeat},
-        summary::current::CurrentRouting,
-    };
+    use crate::controllers::summary::current::CurrentRouting;
 
     const GROUND: Mode = Mode::OnFoot(OnFootVariant::Ground);
     const FALLING: Mode = Mode::Airborne(AirborneVariant::Falling);

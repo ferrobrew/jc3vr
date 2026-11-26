@@ -1,14 +1,13 @@
+use jc3vr_body::controllers::intent::rows::{Control, Effect, Gesture, ModAction, Row};
+
 use super::*;
-use crate::controllers::{
-    bindings::tables::describe::{Control, Effect, Gesture, ModAction, Row},
-    weapons::{
-        capabilities::{GunHand, GunOwner, NativePair},
-        reload::{
-            BeltEligibility,
-            belt::PushStage,
-            steps::insertion_tests,
-            tuning::{RELOAD, Reload},
-        },
+use crate::controllers::weapons::{
+    capabilities::{GunHand, GunOwner, NativePair},
+    reload::{
+        BeltEligibility,
+        belt::PushStage,
+        steps::insertion_tests,
+        tuning::{RELOAD, Reload},
     },
 };
 
