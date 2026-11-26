@@ -10,6 +10,7 @@ use crate::controllers::{
     physical_hands::physics::guns,
     weapons::{
         self, c4,
+        dual_wield::single,
         hold::{self, act, armed, rack::paired::stack_offset, take},
         regions, reload,
     },
@@ -20,10 +21,12 @@ pub(crate) fn register() {
     held::register_held_source(HeldSource {
         armed_in: armed::in_hand,
         armed_hand_of: armed::hand_of,
+        armed_weapon: armed::weapon_of,
         owned_holder: hold::owned_holder,
         item,
         wielded_gun_hands,
         detonator_hand: c4::act_detonator_hand,
+        is_single_pistol: single::is,
         rack_stack_offset: stack_offset,
         adjust_part: reload::adjust_part,
         placement: PlacementSource {

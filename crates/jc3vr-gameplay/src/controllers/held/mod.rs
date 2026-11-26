@@ -14,11 +14,13 @@
 //! install registers it before any hook is enabled.
 //!
 //! - [`armed_in`], [`armed_hand_of`]: the weapon armed in a hand, by the hand or by the weapon;
+//! - [`armed_weapon`]: the weapon armed in a hand, as the native object a character holds;
 //! - [`owned_holder`]: the hand holding a weapon while the mod owns its attach bones;
 //! - [`holder`]: the hand a weapon is in by either of the two;
 //! - [`item`]: the kind of item the loadout table has in a hand ([`HeldItem`]);
 //! - [`wielded_gun_hands`]: which hands hold a gun of the wielded weapon;
 //! - [`detonator_hand`]: the hand the C4 detonate act draws the detonator in;
+//! - [`is_single_pistol`]: whether a weapon is one pistol split off the dual-wield pair;
 //! - [`rack_stack_offset`], [`adjust_part`]: a rack pair's second pistol drawn apart, and a held
 //!   gun's slide and magazine parts as the reload moves them;
 //! - [`placement`]: the rigid grip's reads during the inventory's placement pass: a snap moving a
@@ -30,7 +32,7 @@ use std::sync::OnceLock;
 
 use glam::{Mat4, Vec3};
 use jc3gi::{
-    character::inventory::Inventory,
+    character::{character::Character, inventory::Inventory},
     equipment::weapon::{ModelAttachementWeaponComponent, WeaponBase},
 };
 use jc3vr_input::frame::{Hand, Pose};
@@ -61,6 +63,12 @@ pub struct HeldSource {
     pub armed_in: fn(Hand) -> Option<usize>,
     /// The hand a weapon is armed in.
     pub armed_hand_of: fn(usize) -> Option<Hand>,
+    /// The weapon armed in a hand, when the character's inventory or the carry set holds it.
+    ///
+    /// # Safety
+    ///
+    /// As [`armed_weapon`].
+    pub armed_weapon: for<'a> unsafe fn(&'a Character, Hand) -> Option<&'a WeaponBase>,
     /// The hand holding a weapon, while the mod owns its attach bones.
     pub owned_holder: fn(usize) -> Option<Hand>,
     /// The kind of item the loadout table has in a hand.
@@ -70,6 +78,9 @@ pub struct HeldSource {
     pub wielded_gun_hands: fn() -> [bool; 2],
     /// The hand the C4 detonate act draws a weapon's detonator in, while the act plays.
     pub detonator_hand: fn(usize) -> Option<Hand>,
+    /// Whether a weapon is a single pistol: one pistol of the dual-wield pair split off to be held
+    /// on its own, which shows and fires only its first gun.
+    pub is_single_pistol: fn(usize) -> bool,
     /// The world-space offset a finite rack source's second pistol is drawn at while neither of
     /// the pair is claimed.
     pub rack_stack_offset: fn(usize) -> Option<Vec3>,
@@ -130,6 +141,18 @@ pub fn armed_hand_of(address: usize) -> Option<Hand> {
     (source().armed_hand_of)(address)
 }
 
+/// The weapon armed in `hand`, when `owner`'s inventory or the carry set holds it.
+///
+/// # Safety
+///
+/// `owner` must be the live local player character, on the game thread before the world update or
+/// on the thread updating it. The phase must retain the slot or carry-set source without native
+/// mutation for the returned shared borrow.
+#[inline]
+pub unsafe fn armed_weapon(owner: &Character, hand: Hand) -> Option<&WeaponBase> {
+    unsafe { (source().armed_weapon)(owner, hand) }
+}
+
 /// The hand holding the weapon at `address`, while the mod owns its attach bones.
 #[inline]
 pub fn owned_holder(address: usize) -> Option<Hand> {
@@ -160,6 +183,12 @@ pub fn wielded_gun_hands() -> [bool; 2] {
 #[inline]
 pub fn detonator_hand(address: usize) -> Option<Hand> {
     (source().detonator_hand)(address)
+}
+
+/// Whether the weapon at `address` is a single pistol, split off the dual-wield pair.
+#[inline]
+pub fn is_single_pistol(address: usize) -> bool {
+    (source().is_single_pistol)(address)
 }
 
 /// The world-space offset the second pistol of the finite rack source at `address` is drawn at
