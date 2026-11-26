@@ -29,6 +29,10 @@ use crate::controllers::{
     hands::reach::{ArmRemap, ReachLimit},
 };
 
+/// The centre of the palm in the wrist frame, metres of the player's hand: a little toward the
+/// fingers and into the palm from the wrist joint.
+pub const PALM_CENTRE_M: Vec3 = Vec3::new(0.0, -0.01, -0.06);
+
 /// One hand's poses in the cockpit frame, after the grip offset and the remap.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct CockpitHand {
