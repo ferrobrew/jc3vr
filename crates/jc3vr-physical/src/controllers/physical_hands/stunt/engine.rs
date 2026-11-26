@@ -23,7 +23,11 @@ use jc3gi::{
         vehicle::{Helicopter, Vehicle},
     },
 };
-use jc3vr_body::controllers::physics::bodies::{is_type, owner_of};
+use jc3vr_body::controllers::physics::{
+    bodies::{is_type, owner_of},
+    local_player::LocalPlayer,
+};
+use jc3vr_core::game_tick::GameTick;
 
 use crate::controllers::physical_hands::{physics, stunt::solve::StuntKind};
 
@@ -60,12 +64,9 @@ pub struct PositionRead {
 }
 
 /// Read the local player's stunt position, or `None` without a player.
-///
-/// # Safety
-///
-/// The game thread, before the world update.
-pub(super) unsafe fn position() -> Option<PositionRead> {
-    let character = unsafe { Character::GetLocalPlayerCharacter().as_ref() }?;
+pub(super) fn position(game: &GameTick<'_>) -> Option<PositionRead> {
+    let local_player = LocalPlayer::get(game)?;
+    let character = local_player.character();
     unsafe {
         crate::controllers::physical_hands::stunt::observation::read_ready(character, |character| {
             position_ready(character)
@@ -179,10 +180,14 @@ impl Entry {
 ///
 /// # Safety
 ///
-/// `vehicle` must be a live vehicle, on the game thread before the world update.
-pub(super) unsafe fn enter(vehicle: NonZeroUsize, from: Vec3) -> Result<Entry, StuntError> {
-    let character =
-        unsafe { Character::GetLocalPlayerCharacter().as_mut() }.ok_or(StuntError::NoPlayer)?;
+/// `vehicle` must be a live vehicle.
+pub(super) unsafe fn enter(
+    game: &GameTick<'_>,
+    vehicle: NonZeroUsize,
+    from: Vec3,
+) -> Result<Entry, StuntError> {
+    let mut local_player = LocalPlayer::get(game).ok_or(StuntError::NoPlayer)?;
+    let character = local_player.character_mut();
     if !unsafe { character.IsThisVehicleBelow(vehicle.get() as *const Vehicle) } {
         return Err(StuntError::Refused);
     }

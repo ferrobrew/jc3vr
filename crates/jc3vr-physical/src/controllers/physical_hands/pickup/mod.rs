@@ -62,6 +62,7 @@ use jc3vr_body::controllers::{
     },
     physics::bodies,
 };
+use jc3vr_core::game_tick::GameTick;
 use jc3vr_input::{frame::Hand, haptics::cues::Event};
 pub(super) use reach::{REACH_DIRECTIONS, ReachObservations, ReachTuning, floor_weapons, reach};
 pub(super) use state::{Held, HeldKind, PickupState, Request};
@@ -131,7 +132,12 @@ pub struct PickupStatus {
 /// Act on the input tick's pickup grabs and grip releases: a grab of a weapon clicks the game's
 /// use-item action into `desired`, a grab of an object asks the next simulation tick to take hold
 /// of it, and a released grip asks it to let go. Called from the input tick after the tables.
-pub fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>, context: &InputContext) {
+pub fn finish_tick(
+    game: &GameTick<'_>,
+    inputs: &FinishInputs,
+    desired: &mut Vec<Desired>,
+    context: &InputContext,
+) {
     let mut state = STATE.lock();
     state.pickup.input_at = Some(Instant::now());
     let fresh = state.fresh(Instant::now());
@@ -142,8 +148,7 @@ pub fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>, context: &
     drop(state);
     for (hand, reach) in weapons {
         let refusal = {
-            // SAFETY: the game stage runs on the game thread before the world update.
-            let refusal = unsafe { take_weapon(hand, reach) }.err();
+            let refusal = take_weapon(game, hand, reach).err();
             held::pickup::record(refusal.map(|r| r.to_string()));
             if let Some(refusal) = refusal {
                 tracing::debug!(target: "controllers", ?hand, %refusal, "physical hands: direct weapon pickup refused");
@@ -170,18 +175,14 @@ pub fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>, context: &
 
 /// Take the weapon `reach` found straight into `hand` through the weapon handling
 /// ([`held::pickup::take_ground`]), once its body is checked to still belong to it.
-///
-/// # Safety
-///
-/// Game thread, before the world update.
-unsafe fn take_weapon(hand: Hand, reach: Reach) -> Result<(), Refusal> {
+fn take_weapon(game: &GameTick<'_>, hand: Hand, reach: Reach) -> Result<(), Refusal> {
     // A weapon's body leaves the world when it is picked up or despawned, so a body that still
     // belongs to the reached object proves the object is alive.
     if unsafe { bodies::read(reach.body, reach.object) }.is_err() {
         return Err(Refusal::NotDropped);
     }
     let weapon = unsafe { &*(reach.object.get() as *const WeaponBase) };
-    unsafe { held::pickup::take_ground(hand, weapon) }
+    unsafe { held::pickup::take_ground(game, hand, weapon) }
 }
 
 /// Keep what the hands hold through a game menu: the grips are not read there, and a release is

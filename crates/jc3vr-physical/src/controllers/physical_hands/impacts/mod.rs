@@ -24,10 +24,12 @@ use jc3vr_body::controllers::{
     haptics,
     physics::{
         bodies,
+        local_player::LocalPlayer,
         refs::{Strong, Weak},
     },
     scheme,
 };
+use jc3vr_core::game_tick::GameTick;
 use jc3vr_input::{frame::Hand, haptics::cues::Event};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
@@ -135,10 +137,7 @@ pub(crate) unsafe fn clear() {
 }
 
 /// Deliver feedback and missing native damage after validating both contact participants.
-///
-/// # Safety
-/// The game thread, outside the physics step.
-pub(crate) unsafe fn deliver() {
+pub(crate) fn deliver(game: &GameTick<'_>) {
     let enabled = enabled();
     if !enabled.active() {
         unsafe { clear() };
@@ -189,7 +188,7 @@ pub(crate) unsafe fn deliver() {
                 !unsafe { participant_live(&world, *identity, strong) }
                     || unsafe { body::in_player_group(identity.body) }
                     || identity.owner.get()
-                        == unsafe { Character::GetLocalPlayerCharacter() } as usize
+                        == LocalPlayer::get(game).map_or(0, |player| player.address())
             })
         {
             continue;
@@ -197,6 +196,7 @@ pub(crate) unsafe fn deliver() {
         if let (Some(impulse), Some((_, target))) = (feedback.damage_impulse, target.as_ref()) {
             unsafe {
                 damage(
+                    game,
                     event,
                     impulse,
                     feedback.native,
@@ -476,6 +476,7 @@ unsafe fn participant_live(world: &World, id: Identity, strong: &Strong) -> bool
 }
 
 unsafe fn damage(
+    game: &GameTick<'_>,
     contact: Contact,
     impulse: f32,
     native: [bool; 2],
@@ -487,9 +488,10 @@ unsafe fn damage(
     else {
         return;
     };
-    let Some(attacker) = (unsafe { Character::GetLocalPlayerCharacter().as_ref() }) else {
+    let Some(attacker) = LocalPlayer::get(game) else {
         return;
     };
+    let attacker = attacker.character();
     let Some(world) = (unsafe { World::get() }) else {
         return;
     };

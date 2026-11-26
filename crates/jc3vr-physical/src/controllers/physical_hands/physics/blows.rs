@@ -46,10 +46,12 @@ use jc3vr_body::{
         physics::{
             bodies::{instance_of, owner_of},
             characters::{self as character_engine, character_position},
+            local_player::LocalPlayer,
         },
     },
     hooks::character::resolve_act_id,
 };
+use jc3vr_core::game_tick::GameTick;
 use jc3vr_input::{frame::Hand, haptics::cues::Event};
 use parking_lot::Mutex;
 
@@ -98,11 +100,7 @@ pub struct Delivered {
 }
 
 /// Deal the blows of the contacts recorded since the last frame tick, and pulse their hands.
-///
-/// # Safety
-///
-/// The game thread, outside the game's update.
-pub(super) unsafe fn deliver(config: &PhysicalHandsConfig) -> Delivered {
+pub(super) fn deliver(game: &GameTick<'_>, config: &PhysicalHandsConfig) -> Delivered {
     let (contacts, dropped) = contact::take();
     let mut delivered = Delivered {
         contacts: contacts.len() as u64,
@@ -113,14 +111,15 @@ pub(super) unsafe fn deliver(config: &PhysicalHandsConfig) -> Delivered {
         return delivered;
     }
     let own_hits = &HAND_BODIES.hits;
-    let attacker = unsafe { Character::GetLocalPlayerCharacter().as_mut() };
+    let mut local_player = LocalPlayer::get(game);
+    let attacker = local_player.as_mut().map(LocalPlayer::character_mut);
     let mut gate = GATE.lock();
     let now_s = gate
         .epoch
         .get_or_insert_with(Instant::now)
         .elapsed()
         .as_secs_f64();
-    // SAFETY: forwarded from the caller: the game thread.
+    // SAFETY: the game tick: the game runs.
     let time_scale = unsafe { TimeScale::current() };
     let game_now_s = gate.game.at(now_s, time_scale);
     let pulse_interval_s = f64::from(HAND_BODIES.guns.contact_pulse_interval_s.max(0.0));
@@ -434,14 +433,11 @@ pub(crate) fn queue_shove(shove: Shove) {
 
 /// Deal the shoves queued since the last frame tick through each character's own hit reaction, as
 /// a blow without damage, every character alike.
-///
-/// # Safety
-///
-/// The game thread, outside the game's update.
-pub(super) unsafe fn deliver_shoves() -> ShovesDelivered {
+pub(super) fn deliver_shoves(game: &GameTick<'_>) -> ShovesDelivered {
     let shoves = std::mem::take(&mut *SHOVES.lock());
     let mut delivered = ShovesDelivered::default();
-    let Some(attacker) = (unsafe { Character::GetLocalPlayerCharacter().as_ref() }) else {
+    let local_player = LocalPlayer::get(game);
+    let Some(attacker) = local_player.as_ref().map(LocalPlayer::character) else {
         return delivered;
     };
     let hits = HandHitsTuning {

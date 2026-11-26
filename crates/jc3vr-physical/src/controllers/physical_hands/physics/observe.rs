@@ -11,6 +11,7 @@ use glam::Vec3;
 use jc3vr_body::controllers::{
     clock::TimeScale, hands::CockpitHand, haptics, held, held::guns, physics::steps::steps,
 };
+use jc3vr_core::game_tick::GameTick;
 use jc3vr_input::{
     frame::{Hand, Pose},
     haptics::cues::Sustain,
@@ -34,19 +35,17 @@ use crate::controllers::physical_hands::{
 };
 
 /// Register the pre-simulation callback when the hand bodies are wanted, and the cleanup that
-/// removes it. Called once per frame on the game thread, ahead of the game's update.
-pub fn frame_tick() {
+/// removes it. Called once per frame in a game tick ahead of the game's update.
+pub fn frame_tick(game: &GameTick<'_>) {
     if jc3vr_core::is_shutting_down() {
         blows::discard();
         return;
     }
     let config = *PHYSICAL_HANDS_CONFIG.lock();
-    // SAFETY: the game thread, ahead of the game's update.
-    unsafe { crate::controllers::physical_hands::impacts::deliver() };
+    crate::controllers::physical_hands::impacts::deliver(game);
     if jc3vr_core::hooks::in_gameplay() {
         // The shoves come from the pickups, which hold characters with or without the bodies.
-        // SAFETY: the game thread, ahead of the game's update.
-        let shoves = unsafe { blows::deliver_shoves() };
+        let shoves = blows::deliver_shoves(game);
         if shoves.shoves > 0 {
             let mut shared = SHARED.lock();
             shared.status.shoves += shoves.shoves;
@@ -66,8 +65,7 @@ pub fn frame_tick() {
         blows::discard();
         return;
     }
-    // SAFETY: the game thread, ahead of the game's update.
-    let delivered = unsafe { blows::deliver(&config) };
+    let delivered = blows::deliver(game, &config);
     let mut shared = SHARED.lock();
     let now = Instant::now();
     let follow_through = Duration::from_secs_f32(HAND_BODIES.hits.follow_through_s.max(0.0));

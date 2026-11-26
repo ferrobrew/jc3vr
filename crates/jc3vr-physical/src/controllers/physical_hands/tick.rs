@@ -13,7 +13,6 @@ use std::{num::NonZeroUsize, time::Instant};
 
 use body_rig::rotation::level;
 use glam::{Mat4, Quat, Vec2, Vec3};
-use jc3gi::character::character::Character;
 use jc3vr_body::controllers::{
     aim::raycast::CastOptions,
     body,
@@ -36,9 +35,13 @@ use jc3vr_body::controllers::{
     held::HeldItem,
     mode,
     mode::{AirborneVariant, Detection, Mode, OnFootVariant},
+    physics::local_player::LocalPlayer,
     scheme,
 };
-use jc3vr_core::thread_role::{self, ThreadRole};
+use jc3vr_core::{
+    game_tick::GameTick,
+    thread_role::{self, ThreadRole},
+};
 use jc3vr_input::{
     frame::{Hand, Pose},
     haptics::cues::{Event, Sustain},
@@ -82,35 +85,26 @@ pub fn after_aim(dt: f32) {
     *pending = Some(pending.unwrap_or(0.0) + dt);
 }
 
-/// Run the palms' tick the aim update left due, if any.
-///
-/// # Safety
-///
-/// The game thread, outside the world update and the physics step.
-pub unsafe fn main_thread_tick() {
+/// Run the palms' tick the aim update left due, if any, in a game tick outside the world update
+/// and the physics step.
+pub fn main_thread_tick(game: &GameTick<'_>) {
     let Some(dt) = PENDING.lock().take() else {
         return;
     };
-    // SAFETY: the game thread, outside the world update.
-    let Some(owner) = (unsafe { Character::GetLocalPlayerCharacter().as_ref() }) else {
+    let Some(owner) = LocalPlayer::get(game) else {
         return;
     };
-    // SAFETY: as above, with the owner the live local player.
-    unsafe { run(owner, dt) };
+    run(&owner, dt);
 }
 
 /// The palms' simulation time not yet ticked, while a tick is due.
 static PENDING: Mutex<Option<f32>> = Mutex::new(None);
 
-/// The palms' tick.
-///
-/// # Safety
-///
-/// `owner` must be the live local player character, on the game thread outside the world update
-/// and the physics step.
-unsafe fn run(owner: &Character, dt: f32) {
+/// The palms' tick, for the local player `owner`.
+fn run(player: &LocalPlayer<'_>, dt: f32) {
+    let owner = player.character();
     physics::observe(dt);
-    // SAFETY: forwarded from the caller: the game runs.
+    // SAFETY: the game tick: the game runs.
     let time_scale = unsafe { TimeScale::current() };
     let config = *PHYSICAL_HANDS_CONFIG.lock();
     let gate = Gate {
@@ -208,9 +202,9 @@ unsafe fn run(owner: &Character, dt: f32) {
             PlayerKeepOut::Torso,
         )
     });
-    // SAFETY: forwarded from the caller.
+    // SAFETY: the local player, in the game tick.
     let melee_impulse = unsafe { engine::melee_impulse(owner) };
-    // SAFETY: forwarded from the caller.
+    // SAFETY: as above.
     let standing_on = unsafe { engine::ground_body(owner) };
     let floor_hands: Vec<Vec3> = Hand::BOTH
         .into_iter()
@@ -242,16 +236,14 @@ unsafe fn run(owner: &Character, dt: f32) {
     // rays do not, so that the other hand can take hold of it too.
     let held_objects = state.pickup.held_objects();
     let held = held_objects.into_iter().find(|&o| o != 0).unwrap_or(0);
-    // SAFETY: forwarded from the caller.
     let probe_options = CastOptions {
         // The impact sounds play against the surface's material.
         material: true,
-        ..unsafe { CastOptions::ignoring_player(held) }
+        ..CastOptions::ignoring(player, held)
     };
-    // SAFETY: forwarded from the caller.
     let reach_options = CastOptions {
         material: true,
-        ..unsafe { CastOptions::ignoring_player(0) }
+        ..CastOptions::ignoring(player, 0)
     };
     let mut casts = 0;
     let mut error = None;
@@ -688,7 +680,7 @@ unsafe fn run(owner: &Character, dt: f32) {
     pressure_haptics(&pressure_status);
     let push = push::combine(hand_status.map(|h| h.push), &PALMS);
     for touch in touches {
-        // SAFETY: forwarded from the caller; the touches' objects were found by this tick's casts.
+        // SAFETY: the game tick; the touches' objects were found by this tick's casts.
         unsafe { state.touch(touch, melee_impulse, &config) };
     }
     if let Some(error) = error {
@@ -727,8 +719,7 @@ unsafe fn run(owner: &Character, dt: f32) {
             rays,
             handles,
         });
-        // SAFETY: forwarded from the caller: the simulation phase outside the physics step, on the
-        // main thread.
+        // SAFETY: the game tick, outside the physics step.
         unsafe { grab_view::scan_candidates(near_hands, standing_on, &config) };
     }
 }

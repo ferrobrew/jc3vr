@@ -34,6 +34,7 @@ use jc3vr_body::controllers::{
     haptics,
     intent::hold::{Desired, MapKind, Target, Want},
 };
+use jc3vr_core::game_tick::GameTick;
 use jc3vr_input::{
     frame::Hand,
     haptics::cues::{Event, Sustain},
@@ -102,7 +103,7 @@ pub fn hanging() -> bool {
 /// Read the stunt position, enter a roof where a completed mantle offers it, and let go of a hang
 /// whose grips opened. `held` is each hand's grip; a let-go asks the game for its jump, which
 /// leaves the hang, through `desired`. Called from the input tick after the climb's.
-pub fn finish_tick(held: [bool; 2], desired: &mut Vec<Desired>) {
+pub fn finish_tick(game: &GameTick<'_>, held: [bool; 2], desired: &mut Vec<Desired>) {
     let config = *PHYSICAL_HANDS_CONFIG.lock();
     let now = Instant::now();
     let mut state = STATE.lock();
@@ -111,8 +112,7 @@ pub fn finish_tick(held: [bool; 2], desired: &mut Vec<Desired>) {
         .map_or(0.0, |at| now.saturating_duration_since(at).as_secs_f32())
         .min(MAX_TICK_S);
     state.ticked = Some(now);
-    // SAFETY: the game stage runs on the game thread before the world update.
-    let read = unsafe { engine::position() };
+    let read = engine::position(game);
     state.observe_read(read, enabled(&config));
     observation::publish(read, now);
     let Some(read) = read else {
@@ -129,7 +129,7 @@ pub fn finish_tick(held: [bool; 2], desired: &mut Vec<Desired>) {
     }
 
     let gripped = climb::gripped();
-    // SAFETY: as above; the grips were taken on bodies of the live world.
+    // SAFETY: the game tick; the grips were taken on bodies of the live world.
     let helicopters = gripped.map(|grip| unsafe { helicopter_grip(grip) });
     let landing_offer = climb::take_landing();
     let landing = landing_offer.as_ref().map(|offer| {
@@ -162,7 +162,7 @@ pub fn finish_tick(held: [bool; 2], desired: &mut Vec<Desired>) {
         Decision::EnterRoof => {
             if let Some((Some(vehicle), feet, distance)) = landing {
                 // SAFETY: as above.
-                let entered = unsafe { engine::enter(vehicle, feet) };
+                let entered = unsafe { engine::enter(game, vehicle, feet) };
                 if state.entered(entered, &TUNING) {
                     tracing::info!(
                         feet = ?feet,
