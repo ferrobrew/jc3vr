@@ -26,14 +26,14 @@ use jc3gi::graphics_engine::{
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{
-    config::Config,
     debug::trace::{TraceEvent, TraceState},
-    fsr::{AntiAliasing, TaaConfig},
-    hooks::graphics_engine::capture::{
-        POST_STAGE_DOF, POST_STAGE_MB, capture_post_stage, previews_visible,
+    fsr::{AntiAliasing, FSR_CONFIG, TaaConfig},
+    hooks::graphics_engine::{
+        capture::{POST_STAGE_DOF, POST_STAGE_MB, capture_post_stage, previews_visible},
+        config::POST_FX_CONFIG,
     },
     screenshot::harness::stages::{self, Stage},
-    stereo::{self, draw_index, far_phase, later_scene},
+    stereo::{self, config::STEREO_CONFIG, draw_index, far_phase, later_scene},
 };
 
 /// Whether the motion blur and the depth of field are forced off: while a VR session runs, whatever
@@ -96,7 +96,7 @@ fn temporal_dispatch(mgr: *mut c_void, slot: u32, resolve: TemporalResolve) -> b
             return false;
         };
         let layout = if crate::stereo::single_pass::double_wide_active()
-            && Config::lock_query(|c| c.stereo.single_pass.fsr_per_eye)
+            && STEREO_CONFIG.query(|c| c.single_pass.fsr_per_eye)
         {
             crate::fsr::EyeLayout::SideBySide
         } else {
@@ -187,7 +187,7 @@ fn apply_world_filters(
     a7: *mut c_void,
     a8: *mut c_void,
 ) {
-    let gated = (later_scene() || far_phase()) && Config::lock_query(|c| c.stereo.gate_eye1_dt);
+    let gated = (later_scene() || far_phase()) && STEREO_CONFIG.query(|c| c.gate_eye1_dt);
     TraceState::record_eye(TraceEvent::ApplyWorldFilters { gated });
     let dt = if gated { 0.0 } else { dt };
     APPLY_WORLD_FILTERS
@@ -201,7 +201,7 @@ fn apply_world_filters(
 // dispatches for the same once-per-real-frame reason.
 #[detour(address = jc3gi::graphics_engine::post_effects::PostEffectsManager::ApplyGlobalFilters_ADDRESS)]
 fn apply_global_filters(this: *mut c_void, dt: f32, ctx: *mut c_void) {
-    let gated = (later_scene() || far_phase()) && Config::lock_query(|c| c.stereo.gate_eye1_dt);
+    let gated = (later_scene() || far_phase()) && STEREO_CONFIG.query(|c| c.gate_eye1_dt);
     TraceState::record_eye(TraceEvent::ApplyGlobalFilters { gated });
     let dt = if gated { 0.0 } else { dt };
     APPLY_GLOBAL_FILTERS.get().unwrap().call(this, dt, ctx);
@@ -227,16 +227,12 @@ fn anti_aliasing_apply(
     // SAFETY: the AA hook receives the current chain slot as a live in/out parameter.
     stages::capture_slot(Stage::PreAa, mgr, unsafe { *slot });
     let force_smaa_1x = stereo::active();
-    let (fsr, skip_aa) = Config::lock_query(|c| {
-        let resolve = match c.fsr.antialiasing {
-            AntiAliasing::Fsr => Some(TemporalResolve::Fsr(
-                c.fsr.sharpen.then_some(c.fsr.sharpness),
-            )),
-            AntiAliasing::Taa => Some(TemporalResolve::Taa(c.fsr.taa)),
-            AntiAliasing::Engine => None,
-        };
-        (resolve, c.post_fx.skip_anti_aliasing)
+    let fsr = FSR_CONFIG.query(|fsr| match fsr.antialiasing {
+        AntiAliasing::Fsr => Some(TemporalResolve::Fsr(fsr.sharpen.then_some(fsr.sharpness))),
+        AntiAliasing::Taa => Some(TemporalResolve::Taa(fsr.taa)),
+        AntiAliasing::Engine => None,
     });
+    let skip_aa = POST_FX_CONFIG.lock().skip_anti_aliasing;
 
     // When FSR is on, resolve into the current slot ourselves, then let the engine AA run as a
     // passthrough (AA_NONE blits the slot onward without filtering). FSR replaces SMAA, so its
@@ -306,7 +302,7 @@ fn motion_blur_apply(
     flag1: bool,
 ) -> u32 {
     let (skip_motion_blur, skip_recon) =
-        Config::lock_query(|c| (c.post_fx.skip_motion_blur, c.post_fx.skip_motion_blur_recon));
+        POST_FX_CONFIG.query(|c| (c.skip_motion_blur, c.skip_motion_blur_recon));
     let skip_motion_blur = skip_motion_blur || vr_forces_blurs_off();
     TraceState::record_eye(TraceEvent::MotionBlurApply {
         input,
@@ -337,8 +333,7 @@ fn dof_apply(
     mgr: *mut c_void,
     input: u32,
 ) -> u32 {
-    let (skip_dof, dof_no_reproject) =
-        Config::lock_query(|c| (c.post_fx.skip_dof, c.post_fx.dof_no_reproject));
+    let (skip_dof, dof_no_reproject) = POST_FX_CONFIG.query(|c| (c.skip_dof, c.dof_no_reproject));
     // The composite is also the tonemap, so skipping it in VR would hand the headset the HDR scene
     // unmapped; the depth of field is dropped in VR by `is_bokeh_active` instead.
     let skip_dof = skip_dof && !vr_forces_blurs_off();
@@ -395,7 +390,7 @@ fn is_bokeh_active(this: *const PostEffectsManager) -> bool {
 // FadeEffect::Apply -- alpha-blended fade quad. Skip = no-op (the u64 return is discarded).
 #[detour(address = jc3gi::graphics_engine::post_effects::FadeEffect::Apply_ADDRESS)]
 fn fade_apply(this: *mut c_void, a2: *mut c_void, a3: *mut c_void) -> u64 {
-    let skip = Config::lock_query(|c| c.post_fx.skip_fade);
+    let skip = POST_FX_CONFIG.lock().skip_fade;
     TraceState::record_eye(TraceEvent::FadeApply { skip });
     if skip {
         return 0;
@@ -416,7 +411,7 @@ fn glare_apply(
     a4: *mut c_void,
     a5: *mut c_void,
 ) -> u64 {
-    let skip = Config::lock_query(|c| c.post_fx.skip_glare);
+    let skip = POST_FX_CONFIG.lock().skip_glare;
     TraceState::record_eye(TraceEvent::GlareApply { skip });
     if skip {
         return 0;
@@ -436,7 +431,7 @@ fn player_damage_apply(
     a4: *mut c_void,
     input: u32,
 ) -> u32 {
-    let skip = Config::lock_query(|c| c.post_fx.skip_player_damage);
+    let skip = POST_FX_CONFIG.lock().skip_player_damage;
     TraceState::record_eye(TraceEvent::PlayerDamageApply { input, skip });
     if skip {
         return input;
@@ -458,7 +453,7 @@ fn sun_halo_pre_apply(
     a3: *mut c_void,
     a4: *mut c_void,
 ) -> u64 {
-    let skip = Config::lock_query(|c| c.post_fx.skip_sun_halo);
+    let skip = POST_FX_CONFIG.lock().skip_sun_halo;
     TraceState::record_eye(TraceEvent::SunHaloPreApply { skip });
     if skip {
         if let Some(halo) = unsafe { this.as_mut() } {
@@ -474,7 +469,7 @@ fn sun_halo_pre_apply(
 // SunHaloEffect::Apply -- composites the halo additively. Skip = no-op.
 #[detour(address = jc3gi::graphics_engine::post_effects::SunHaloEffect::Apply_ADDRESS)]
 fn sun_halo_apply(this: *mut c_void, a2: *mut c_void) -> u64 {
-    let skip = Config::lock_query(|c| c.post_fx.skip_sun_halo);
+    let skip = POST_FX_CONFIG.lock().skip_sun_halo;
     TraceState::record_eye(TraceEvent::SunHaloApply { skip });
     if skip {
         return 0;

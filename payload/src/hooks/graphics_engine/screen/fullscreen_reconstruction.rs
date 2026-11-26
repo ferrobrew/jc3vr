@@ -61,10 +61,12 @@ use jc3gi::graphics_engine::{
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{
-    config::Config,
     hooks::graphics_engine::reconstruction,
     screenshot::harness::snapshot,
-    stereo::single_pass::{ambient_occlusion, screen_space_reflection},
+    stereo::{
+        config::STEREO_CONFIG,
+        single_pass::{ambient_occlusion, screen_space_reflection},
+    },
 };
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -82,7 +84,7 @@ pub(super) fn hook_library() -> HookLibrary {
 /// bound and the block runs as the engine issues it.
 #[detour(address = jc3gi::graphics_engine::render_block::RenderBlockSSAO::Draw_ADDRESS)]
 fn ssao_block_draw(this: *mut RenderBlockSSAO, rc: *mut RenderContext, info: *const RBIInfo) {
-    let enabled = Config::lock_query(|c| c.stereo.single_pass.ssao_per_eye)
+    let enabled = STEREO_CONFIG.query(|c| c.single_pass.ssao_per_eye)
         && crate::stereo::single_pass::collapse_active();
     let _rows = enabled.then(ambient_occlusion::bind_eye_rows).flatten();
     snapshot::ambient_occlusion_block(true);
@@ -107,7 +109,7 @@ fn ssr_draw(
     rc: *mut RenderContext,
     info: *const RBIInfo,
 ) {
-    let enabled = Config::lock_query(|c| c.stereo.single_pass.ssr_per_eye)
+    let enabled = STEREO_CONFIG.query(|c| c.single_pass.ssr_per_eye)
         && crate::stereo::single_pass::collapse_active();
     // SAFETY: the engine hands the block its live render context for the length of the call.
     let context = unsafe { rc.as_ref() };
@@ -131,7 +133,7 @@ fn subsurface_draw(
     rc: *mut RenderContext,
     info: *const RBIInfo,
 ) {
-    let enabled = Config::lock_query(|c| c.stereo.single_pass.subsurface_per_eye);
+    let enabled = STEREO_CONFIG.lock().single_pass.subsurface_per_eye;
     let call = || SUBSURFACE_DRAW.get().unwrap().call(this, rc, info);
     split_or_issue(enabled, render_context_ctx(rc), call);
 }
@@ -162,7 +164,7 @@ fn dof_downscale_apply(
     pec: *mut PostEffectContext,
     mgr: *mut PostEffectsManager,
 ) {
-    let enabled = Config::lock_query(|c| c.stereo.single_pass.dof_per_eye);
+    let enabled = STEREO_CONFIG.lock().single_pass.dof_per_eye;
     let call = || DOF_DOWNSCALE_APPLY.get().unwrap().call(this, ctx, pec, mgr);
     split_or_issue_with(
         reconstruction::DispatchPhase::FirstRun,

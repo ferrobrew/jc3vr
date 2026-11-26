@@ -26,9 +26,9 @@ use windows::{
     core::{GUID, IUnknown, Interface},
 };
 
-use crate::{
-    config::Config,
-    stereo::single_pass::{
+use crate::stereo::{
+    config::STEREO_CONFIG,
+    single_pass::{
         per_eye_reissue_eye,
         shader_identity::{self, LAKE_PS},
     },
@@ -100,7 +100,7 @@ pub(super) fn bind(ctx: &ID3D11DeviceContext) -> Option<Restore<'_>> {
     unsafe { ctx.PSGetShader(&mut shader, None, None) };
     let shader = shader?;
     let variant = per_eye_reissue_eye()
-        .filter(|_| Config::lock_query(|c| c.stereo.single_pass.water_reflection_per_eye))
+        .filter(|_| STEREO_CONFIG.query(|c| c.single_pass.water_reflection_per_eye))
         .and_then(|eye| EYE_VARIANTS.get(eye))
         .and_then(|key| variant(&shader, key))
         .or_else(|| variant(&shader, &PACKED_VARIANT))?;

@@ -9,7 +9,7 @@
 
 use serde::{Serialize, Serializer, ser::SerializeMap as _};
 
-use crate::{config::Config, stereo::config::SinglePassConfig};
+use crate::stereo::config::{STEREO_CONFIG, SinglePassConfig};
 
 macro_rules! single_pass_switches {
     ($($variant:ident => $field:ident, $rebuilds:literal;)*) => {
@@ -151,7 +151,7 @@ impl ShaderBuild {
         Self::from_config(
             crate::stereo::single_pass::active(),
             crate::stereo::single_pass::collapse_active(),
-            &Config::lock_query(|config| config.stereo.single_pass),
+            &STEREO_CONFIG.query(|config| config.single_pass),
         )
     }
 

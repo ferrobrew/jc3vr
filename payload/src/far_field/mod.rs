@@ -41,8 +41,6 @@ use jc3gi::graphics_engine::{
 };
 use parking_lot::Mutex;
 
-use crate::config::Config;
-
 mod config;
 pub(crate) use config::FAR_FIELD_CONFIG;
 pub use config::{FarFieldConfig, FarFieldMode};
@@ -147,13 +145,7 @@ pub fn sync_type_gates(names: &str) {
 /// split is enabled, none while it is not. Once per frame on the game thread, so a list loaded from
 /// the settings or edited in the debug UI takes effect without either being shown.
 pub fn sync_configured_type_gates() {
-    Config::lock_query(|c| {
-        sync_type_gates(if c.far_field.enabled {
-            &c.far_field.gated_types
-        } else {
-            ""
-        })
-    });
+    FAR_FIELD_CONFIG.query(|c| sync_type_gates(if c.enabled { &c.gated_types } else { "" }));
 }
 
 /// The names of the currently gated types, for the UI.
@@ -191,13 +183,8 @@ impl Drop for ListWindow {
 pub unsafe fn before_do_draw(pass: *mut RenderPass, ctx: *mut RenderContext) -> Option<ListWindow> {
     // Copy out only the fields this needs: the whole config carries a `String`, and this runs for
     // every pass of every dispatch.
-    let (enabled, threshold_m, mode) = Config::lock_query(|c| {
-        (
-            c.far_field.enabled,
-            c.far_field.threshold_m,
-            c.far_field.mode,
-        )
-    });
+    let (enabled, threshold_m, mode) =
+        FAR_FIELD_CONFIG.query(|c| (c.enabled, c.threshold_m, c.mode));
     let pass = unsafe { pass.as_mut() }?;
     let ctx = unsafe { ctx.as_ref() }?;
 
@@ -345,7 +332,7 @@ const SPLIT_PASSES: &[i16] = &[
 /// dispatches this per type run, so the gate follows the eye and the live config without any
 /// repatching. (The stock implementation compiles to a constant `true`.)
 unsafe extern "system" fn far_gated_type_is_enabled(_this: *mut ::core::ffi::c_void) -> bool {
-    let (enabled, mode) = Config::lock_query(|c| (c.far_field.enabled, c.far_field.mode));
+    let (enabled, mode) = FAR_FIELD_CONFIG.query(|c| (c.enabled, c.mode));
     let skipping = enabled
         && match mode {
             FarFieldMode::SkipFar => true,
@@ -368,7 +355,7 @@ unsafe extern "system" fn far_gated_type_is_enabled(_this: *mut ::core::ffi::c_v
 /// the same mono image cropped in half.
 pub fn share_configured() -> bool {
     !crate::stereo::single_pass::collapse_active()
-        && Config::lock_query(|c| c.far_field.enabled && c.far_field.mode == FarFieldMode::Share)
+        && FAR_FIELD_CONFIG.query(|c| c.enabled && c.mode == FarFieldMode::Share)
 }
 
 /// The sentinel boundary appended after the threshold. The engine's bucket search

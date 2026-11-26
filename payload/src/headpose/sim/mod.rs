@@ -33,13 +33,11 @@ use body_rig::angle::{direction, wrap};
 use glam::{Quat, Vec3};
 use parking_lot::Mutex;
 
-use crate::{
-    config::Config,
-    headpose::{
-        HeadPose,
-        participants::head_participants,
-        xr::{YawTick, advance_body_yaw, follow_turn},
-    },
+use crate::headpose::{
+    HeadPose,
+    config::HEADPOSE_CONFIG,
+    participants::head_participants,
+    xr::{YawTick, advance_body_yaw, follow_turn},
 };
 
 /// The latch state (on-foot only).
@@ -68,7 +66,7 @@ pub enum HeadMode {
 /// engine's fixed-rate sim tick): detect the mode, rotate the published pose
 /// pair, integrate the look deltas, update the latch, and publish the headpose.
 pub fn on_input_tick(look_x: f32, look_y: f32, look_x_delta: bool, dt: f32) {
-    let config = Config::lock_query(|c| c.headpose);
+    let config = *HEADPOSE_CONFIG.lock();
     if !config.enabled {
         return;
     }

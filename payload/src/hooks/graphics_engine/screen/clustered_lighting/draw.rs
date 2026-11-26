@@ -13,7 +13,6 @@ use jc3gi::graphics_engine::{
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{
-    config::Config,
     hooks::graphics_engine::{
         clustered_lighting::{
             bounds::tile_bounds_from_projection,
@@ -24,6 +23,7 @@ use crate::{
         },
         reconstruction,
     },
+    stereo::config::STEREO_CONFIG,
 };
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -50,11 +50,11 @@ fn draw_clustered(
     a3: *mut c_void,
     a4: *mut HTexture_t,
 ) {
-    let (per_eye, clustered, light_view) = Config::lock_query(|c| {
+    let (per_eye, clustered, light_view) = STEREO_CONFIG.query(|c| {
         (
-            c.stereo.single_pass.reconstruct_per_eye,
-            c.stereo.single_pass.clustered_per_eye,
-            c.stereo.single_pass.clustered_per_eye_light_view,
+            c.single_pass.reconstruct_per_eye,
+            c.single_pass.clustered_per_eye,
+            c.single_pass.clustered_per_eye_light_view,
         )
     });
     let run =

@@ -49,7 +49,7 @@ use windows::{
     core::{IUnknown, Interface},
 };
 
-use crate::{config::Config, hooks::suspend, util::bump};
+use crate::{hooks::suspend, util::bump};
 
 /// The result of the DXVK viewport-routing capability probe.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -35,7 +35,7 @@ use windows::{
     core::{GUID, IUnknown, Interface},
 };
 
-use crate::{config::Config, stereo::single_pass::shader_identity};
+use crate::stereo::{config::STEREO_CONFIG, single_pass::shader_identity};
 
 /// Build and attach the eye-half variant of a newly created pixel shader. A shader that is not one
 /// of the glare chain's filters gets none.
@@ -69,7 +69,7 @@ pub(crate) struct Scope {
 impl Scope {
     pub(crate) fn enter() -> Scope {
         let entered = crate::stereo::single_pass::collapse_active()
-            && Config::lock_query(|c| c.stereo.single_pass.glare_per_eye);
+            && STEREO_CONFIG.query(|c| c.single_pass.glare_per_eye);
         if entered {
             IN_GLARE.store(true, Ordering::Relaxed);
         }

@@ -14,7 +14,7 @@ use parking_lot::Mutex;
 use crate::{
     director::markers,
     recorder::{
-        self, HostState,
+        self, HostState, RECORDER_CONFIG,
         tracking::{self, lookback},
     },
 };
@@ -92,8 +92,7 @@ pub(crate) fn poll() {
         return;
     }
     drop(status);
-    let (host, port) =
-        crate::config::Config::lock_query(|c| (c.recorder.host().to_owned(), c.recorder.port));
+    let (host, port) = RECORDER_CONFIG.query(|c| (c.host().to_owned(), c.port));
     recorder::stop();
     *VIDEO_ERROR.lock() = Some(format!(
         "capture host is not running at {host}:{port}; recording tracking only"

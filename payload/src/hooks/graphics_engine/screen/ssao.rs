@@ -27,9 +27,9 @@ use jc3gi::graphics_engine::ssao::SSAOPass;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{
-    config::Config,
     debug::trace::{TraceEvent, TraceState},
     stereo,
+    stereo::config::STEREO_CONFIG,
 };
 
 /// The live `CSSAOPass` instance, captured from [`ssao_draw`]. The between-eye SSAO history-index
@@ -89,8 +89,7 @@ fn ssao_draw(this: *mut SSAOPass) {
     SSAO_PASS.store(this, Ordering::Relaxed);
 
     let stereo = stereo::active();
-    let (disable, eye0_only) =
-        Config::lock_query(|c| (c.stereo.disable_ssao, c.stereo.ssao_eye0_only));
+    let (disable, eye0_only) = STEREO_CONFIG.query(|c| (c.disable_ssao, c.ssao_eye0_only));
 
     // Diagnostic levers: skipping the pass leaves that eye's GBuffer-alpha AO untouched (material AO
     // only, no screen AO) and is fully reversible -- toggling off resumes the pass next dispatch with
@@ -102,7 +101,7 @@ fn ssao_draw(this: *mut SSAOPass) {
         return;
     }
 
-    let skip_temporal = stereo && Config::lock_query(|c| c.stereo.single_pass.ssao_skip_temporal);
+    let skip_temporal = stereo && STEREO_CONFIG.query(|c| c.single_pass.ssao_skip_temporal);
     if let Some(pass) = unsafe { this.as_mut() } {
         pass.m_FirstPass |= stereo;
         override_temporal_filter(pass, skip_temporal);

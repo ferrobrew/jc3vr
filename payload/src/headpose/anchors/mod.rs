@@ -9,7 +9,7 @@ use parking_lot::Mutex;
 use crate::{
     controllers::body::rig::origin_provenance::OriginEvidence,
     headpose::{Anchors, Source, participants::head_participants, skeleton::SkeletonKey, teleport},
-    vr::live_tracking,
+    vr::{VR_CONFIG, live_tracking},
 };
 
 #[cfg(test)]
@@ -168,7 +168,7 @@ impl Context {
             gameplay: crate::hooks::in_gameplay() && !(head_participants().ui_mode)(),
             teleport: teleport::epoch(),
             recenter: crate::vr::recenter_count(),
-            world_scale: crate::config::Config::lock_query(|c| c.vr.world_scale),
+            world_scale: VR_CONFIG.query(|c| c.world_scale),
             tracking,
         }
     }

@@ -32,8 +32,8 @@ use windows::{
 };
 
 use crate::{
-    config::Config,
     debug::trace::{CAPTURE_FRAMES, TraceEvent, TraceState, tracing_active},
+    stereo::config::STEREO_CONFIG,
 };
 
 /// Record the render engine's CPU staging copies of the global shader constant buffers into the
@@ -41,7 +41,7 @@ use crate::{
 /// `scene`-time rows differ from what the post pass leaves for `frame_end`. No-op unless a trace is
 /// collecting and `stereo.diagnose_global_constants` is set.
 pub fn record_global_constants(at: &'static str) {
-    if !tracing_active() || !Config::lock_query(|c| c.stereo.diagnose_global_constants) {
+    if !tracing_active() || !STEREO_CONFIG.query(|c| c.diagnose_global_constants) {
         return;
     }
     let Some(re) = (unsafe { jc3gi::graphics_engine::render_engine::RenderEngine::get() }) else {
@@ -65,7 +65,7 @@ pub fn record_global_constants(at: &'static str) {
 /// and `stereo.diagnose_main_color_means` is set; the readback drains the GPU up to the copy, which
 /// is the price of the bracket.
 pub fn record_main_color_mean(at: &'static str) {
-    if !Config::lock_query(|c| c.stereo.diagnose_main_color_means) {
+    if !STEREO_CONFIG.query(|c| c.diagnose_main_color_means) {
         return;
     }
     record_mean_labeled(at.to_owned());
@@ -74,7 +74,7 @@ pub fn record_main_color_mean(at: &'static str) {
 /// Record the MainColor mean with a caller-built label, for the per-pass sweep. No-op unless a
 /// trace is collecting and `stereo.diagnose_pass_sweep` is set.
 pub fn record_pass_sweep_mean(at: String) {
-    if !Config::lock_query(|c| c.stereo.diagnose_pass_sweep) {
+    if !STEREO_CONFIG.query(|c| c.diagnose_pass_sweep) {
         return;
     }
     record_mean_labeled(at);
@@ -103,7 +103,7 @@ pub fn armed_brightness_probe() {
     static MEANS: parking_lot::Mutex<std::collections::VecDeque<f32>> =
         parking_lot::Mutex::new(std::collections::VecDeque::new());
 
-    if !Config::lock_query(|c| c.stereo.auto_trace_brightness_step) || tracing_active() {
+    if !STEREO_CONFIG.query(|c| c.auto_trace_brightness_step) || tracing_active() {
         MEANS.lock().clear();
         return;
     }
@@ -126,10 +126,7 @@ pub fn armed_brightness_probe() {
     if triggered {
         means.clear();
         drop(means);
-        crate::config::CONFIG
-            .lock()
-            .stereo
-            .auto_trace_brightness_step = false;
+        STEREO_CONFIG.lock().auto_trace_brightness_step = false;
         let frames = CAPTURE_FRAMES
             .load(std::sync::atomic::Ordering::Relaxed)
             .max(30);

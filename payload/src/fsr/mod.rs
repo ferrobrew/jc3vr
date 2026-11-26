@@ -49,10 +49,9 @@ use windows::{
 };
 
 use crate::{
-    config::Config,
     hooks::camera::SCENE_NEAR_CLIP_M,
     screenshot::harness::snapshot::{self, Plane},
-    stereo::STEREO_STATE,
+    stereo::{STEREO_STATE, config::STEREO_CONFIG},
 };
 
 /// How the post chain's textures hold the eyes one FSR resolve covers.
@@ -390,10 +389,11 @@ pub fn dispatch(
         EyeLayout::SideBySide => (&EYES, [Some(0), Some(build.eye_width)]),
     };
     let stereo = crate::stereo::active();
-    let (correction, hybrid) = Config::lock_query(|c| {
+    let cameras = STEREO_CONFIG.lock().cameras;
+    let (correction, hybrid) = FSR_CONFIG.query(|fsr| {
         (
-            c.stereo.cameras && c.fsr.stereo_mv_correction && stereo,
-            c.fsr.hybrid_velocity && stereo,
+            cameras && fsr.stereo_mv_correction && stereo,
+            fsr.hybrid_velocity && stereo,
         )
     });
     let frame = crate::screenshot::harness::frame_identity();

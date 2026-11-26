@@ -51,7 +51,7 @@ use jc3gi::{
 };
 use re_utilities::hook_library::HookLibrary;
 
-use crate::{config::Config, vr::cull_projection_standard};
+use crate::{stereo::config::STEREO_CONFIG, vr::cull_projection_standard};
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new()
@@ -94,8 +94,7 @@ fn get_bfbc_frustum_params(
     // original (which builds the BFBC frustum from it), then restore the full projection so the per-eye
     // render projections are untouched. No `m_FOVT1` relaxation or occlusion drop -- those are
     // cull-camera-specific.
-    let saved_proj: Option<Matrix4> = if !main && Config::lock_query(|c| c.stereo.widen_spawn_cull)
-    {
+    let saved_proj: Option<Matrix4> = if !main && STEREO_CONFIG.query(|c| c.widen_spawn_cull) {
         is_active_camera(camera)
             .then(|| stamp_union_projection(camera))
             .flatten()
@@ -271,7 +270,7 @@ fn camera_update_frustum(this: *mut Camera, transform: *const Matrix4) {
 #[detour(address = jc3gi::spawn_system::SpawnSystem::Update_ADDRESS)]
 fn spawn_system_update(this: *mut SpawnSystem) {
     if !BUDGETS_SCALED.swap(true, Ordering::Relaxed) {
-        let scale = Config::lock_query(|c| c.stereo.spawn_budget_scale);
+        let scale = STEREO_CONFIG.lock().spawn_budget_scale;
         if scale != 1.0 {
             patch_spawn_budgets(this, scale);
         }

@@ -13,11 +13,11 @@ use openxr as xr;
 use parking_lot::Mutex;
 
 use crate::{
-    config::Config,
     controllers::{body::rig::origin_provenance, frame as controller_frame},
     headpose::xr::{bank, on_recenter, pending_bank, stepping},
     recorder::tracking::format::RecenterEvent,
     vr::{
+        VR_CONFIG,
         convert::{posef, quat, vec3},
         input::flight_pose::{self, EpochChange, GestureSample},
         is_running,
@@ -374,7 +374,7 @@ pub fn auto_recenter_tick() {
     service_requested_recenter();
     service_follow_bank();
     service_seat_yaw();
-    if !Config::lock_query(|c| c.vr.auto_recenter_on_gameplay) {
+    if !VR_CONFIG.query(|c| c.auto_recenter_on_gameplay) {
         return;
     }
     let in_gameplay = crate::hooks::in_gameplay();

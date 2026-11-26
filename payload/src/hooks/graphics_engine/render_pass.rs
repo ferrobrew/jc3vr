@@ -24,7 +24,6 @@ use re_utilities::hook_library::HookLibrary;
 #[cfg(feature = "profiler")]
 use crate::profiler::gpu::seam;
 use crate::{
-    config::Config,
     debug::{
         stereo_diff::{op_total, record_pass, recording},
         trace::{TraceEvent, TraceState, tracing_active},
@@ -32,10 +31,15 @@ use crate::{
     hooks::graphics_engine::screen::reconstruction,
     screenshot::harness::stages::{Stage, capture_prefix_depth, velocity},
     stereo::{
-        STEREO_STATE, draw_index, is_second_eye,
+        STEREO_STATE,
+        config::STEREO_CONFIG,
+        draw_index, is_second_eye,
         single_pass::{ao_volumes, is_sun_pass, reissue_sun_pass},
     },
-    vr::foveation::{EyeLayout, FORCE_STENCIL_TEST, FoveatedPasses, FoveationParams},
+    vr::{
+        FOVEATION_CONFIG,
+        foveation::{EyeLayout, FORCE_STENCIL_TEST, FoveatedPasses, FoveationParams},
+    },
 };
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -99,8 +103,8 @@ const SWEEP_PASS_RANGE: std::ops::RangeInclusive<i16> =
 // `current_add_buffer` between eyes in `game::game_update_render`).
 #[detour(address = jc3gi::graphics_engine::render_pass::RenderPass::SetupRenderFrameData_ADDRESS)]
 fn setup_render_frame_data(a1: *mut c_void, count: i32, a3: *mut c_void, items: *mut c_void) {
-    let gated = crate::stereo::later_scene()
-        && Config::lock_query(|c| c.stereo.gate_setup_render_frame_data);
+    let gated =
+        crate::stereo::later_scene() && STEREO_CONFIG.query(|c| c.gate_setup_render_frame_data);
     TraceState::record_eye(TraceEvent::SetupRenderFrameData { gated });
     if gated {
         return;
@@ -115,8 +119,7 @@ fn setup_render_frame_data(a1: *mut c_void, count: i32, a3: *mut c_void, items: 
 // pool. Suppressing it on eye 1 starves the second render of constant buffers. Off by default.
 #[detour(address = jc3gi::graphics_engine::render_pass::ConstantBufferPool::HandBackBuffers_ADDRESS)]
 fn hand_back_buffers(this: *mut c_void) {
-    let gated =
-        crate::stereo::later_scene() && Config::lock_query(|c| c.stereo.gate_hand_back_buffers);
+    let gated = crate::stereo::later_scene() && STEREO_CONFIG.query(|c| c.gate_hand_back_buffers);
     TraceState::record_eye(TraceEvent::HandBackBuffers { gated });
     if gated {
         return;
@@ -213,14 +216,12 @@ fn draw_render_pass_range(
     #[cfg(feature = "profiler")]
     puffin::profile_scope!("DrawRenderPassRange", format!("{first}..{last}"));
     let original = DRAW_RENDER_PASS_RANGE.get().unwrap();
-    let (skip_ssr, skip_gi, skip_ao_volumes, skip_range) = Config::lock_query(|c| {
+    let (skip_ssr, skip_gi, skip_ao_volumes, skip_range) = STEREO_CONFIG.query(|c| {
         (
-            c.stereo.skip_ssr,
-            c.stereo.skip_gi,
-            c.stereo.skip_ao_volumes,
-            c.stereo
-                .skip_pass_range_enabled
-                .then_some(c.stereo.skip_pass_range),
+            c.skip_ssr,
+            c.skip_gi,
+            c.skip_ao_volumes,
+            c.skip_pass_range_enabled.then_some(c.skip_pass_range),
         )
     });
 
@@ -548,10 +549,10 @@ struct FoveationPlan {
 /// VR eye render, or no foveated pass lies in `[first, last)`. Publishes the per-draw stencil test bits
 /// ([`crate::vr::foveation::STENCIL_TEST_BITS`]) when active.
 fn foveation_plan(first: i32, last: i32) -> Option<FoveationPlan> {
-    let (cfg, passes, quads) = Config::lock_query(|c| {
-        let sp = &c.stereo.single_pass;
+    let cfg = FOVEATION_CONFIG.lock().clone();
+    let (passes, quads) = STEREO_CONFIG.query(|c| {
+        let sp = &c.single_pass;
         (
-            c.foveation.clone(),
             FoveatedPasses {
                 gbuffer: sp.foveation_gbuffer,
                 lighting: sp.foveation_lighting,
@@ -586,7 +587,7 @@ fn foveation_plan(first: i32, last: i32) -> Option<FoveationPlan> {
 /// fovea then lands on the seam). `None` when no VR frame is in flight.
 fn foveation_layout() -> Option<EyeLayout> {
     if crate::stereo::single_pass::double_wide_active()
-        && Config::lock_query(|c| c.stereo.single_pass.foveation_per_eye)
+        && STEREO_CONFIG.query(|c| c.single_pass.foveation_per_eye)
     {
         return Some(EyeLayout::SideBySide {
             center_uv: [foveal_center_uv(0)?, foveal_center_uv(1)?],
@@ -659,10 +660,14 @@ fn draw_posteffects(this: *mut c_void, ctx: *mut c_void, setup: *mut c_void) {
     #[cfg(feature = "profiler")]
     // SAFETY: `ctx` is the live immediate-context handle for this dispatch.
     let _gpu = unsafe { seam(ctx.cast(), crate::profiler::gpu::GpuSeam::PostEffects) };
-    if let Some((cfg, quads)) = Config::lock_query(|c| {
-        (c.foveation.enabled && !c.stereo.single_pass.foveation_lighting)
-            .then(|| (c.foveation.clone(), c.stereo.single_pass.foveation_quads))
-    }) && let Some(layout) = foveation_layout()
+    let (lighting, quads) = STEREO_CONFIG.query(|c| {
+        (
+            c.single_pass.foveation_lighting,
+            c.single_pass.foveation_quads,
+        )
+    });
+    if let Some(cfg) = FOVEATION_CONFIG.query(|f| (f.enabled && !lighting).then(|| f.clone()))
+        && let Some(layout) = foveation_layout()
     {
         run_foveation_pass(
             crate::vr::foveation::fill_in,
@@ -710,7 +715,7 @@ fn shadow_manager_update_render(this: *mut c_void, dt: f32, dtf: f32) -> u64 {
     #[cfg(feature = "profiler")]
     puffin::profile_scope!("ShadowManager::UpdateRender");
     let original = SHADOW_MANAGER_UPDATE_RENDER.get().unwrap();
-    let update_every_frame = Config::lock_query(|c| c.stereo.shadow_update_every_frame);
+    let update_every_frame = STEREO_CONFIG.lock().shadow_update_every_frame;
     // Defeat the cascade update-pattern amortization (issue #31): force every cascade to update level 0
     // so it re-fits and re-renders each frame instead of on its 2^L cadence, eliminating the periodic
     // re-fit snaps that surface as flicker with the mod's forced SMAA 1x (no T2X to average them). The
@@ -721,7 +726,7 @@ fn shadow_manager_update_render(this: *mut c_void, dt: f32, dtf: f32) -> u64 {
     }
     // The widen uses the eyes' exact union (or the padded cull projection with the switch off);
     // `None` on flatscreen, so widening is VR-only.
-    let union = if Config::lock_query(|c| c.stereo.shadow_fit_unpadded) {
+    let union = if STEREO_CONFIG.query(|c| c.shadow_fit_unpadded) {
         crate::vr::shadow_fit_projection_standard()
     } else {
         crate::vr::cull_projection_standard()
@@ -781,7 +786,7 @@ fn commit_render_pass_settings(this: *mut ShadowManager, ctx: *mut c_void) {
     #[cfg(feature = "profiler")]
     puffin::profile_scope!("ShadowManager::CommitRenderPassSettings");
     COMMIT_RENDER_PASS_SETTINGS.get().unwrap().call(this, ctx);
-    if !Config::lock_query(|c| c.stereo.freeze_shadow_maps) {
+    if !STEREO_CONFIG.query(|c| c.freeze_shadow_maps) {
         return;
     }
     // SAFETY: `this` is the live shadow manager; each cascade's pass pointers are engine-owned and
@@ -923,7 +928,7 @@ unsafe fn reenable_passes(passes: &[*mut RenderPass]) {
 fn set_global_shader_constants(this: *mut c_void, ctx: *mut c_void) {
     if let Some(ctx) = unsafe { ctx.cast::<RenderContext>().as_mut() } {
         // The config is read before the stereo state's lock, never under it.
-        let anchor_to_fit = Config::lock_query(|c| c.stereo.shadow_anchor_to_fit);
+        let anchor_to_fit = STEREO_CONFIG.lock().shadow_anchor_to_fit;
         let delta = shadow_lookup_delta(&STEREO_STATE.lock(), anchor_to_fit);
         record_shadow_state(ctx, delta);
         apply_shadow_cascade_anchor_fix(ctx, delta);

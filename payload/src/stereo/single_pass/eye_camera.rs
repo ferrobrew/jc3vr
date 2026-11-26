@@ -66,8 +66,8 @@ use windows::Win32::Graphics::Direct3D11::{
 };
 
 use crate::{
-    config::Config,
     stereo::{
+        config::STEREO_CONFIG,
         engine_context::EngineContext,
         single_pass::{
             CURRENT_M_EYE, collapse_active, collapse_full_viewport, eye_globals, in_gbuffer_range,
@@ -230,11 +230,11 @@ pub(crate) fn sync(engine: &RenderEngine) {
     }
     let staged = &engine.m_FPGlobalConstData;
     let mirrored = block(EYE_CAMERA_SOURCE_ROWS.map(|row| staged[row as usize]), ZERO);
-    let (pixel_camera, local_lights, velocity) = Config::lock_query(|c| {
+    let (pixel_camera, local_lights, velocity) = STEREO_CONFIG.query(|c| {
         (
-            c.stereo.single_pass.pixel_camera_per_eye,
-            c.stereo.single_pass.local_lights_per_eye,
-            c.stereo.single_pass.velocity_per_eye,
+            c.single_pass.pixel_camera_per_eye,
+            c.single_pass.local_lights_per_eye,
+            c.single_pass.velocity_per_eye,
         )
     });
     let eye_block = |eye: usize| -> Option<[Vector4; EYE_ROWS]> {

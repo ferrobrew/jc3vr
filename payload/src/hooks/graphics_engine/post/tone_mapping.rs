@@ -20,9 +20,11 @@ use jc3gi::graphics_engine::{
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{
-    config::Config,
     debug::trace::{TraceEvent, TraceState},
-    hooks::graphics_engine::capture::{capture_main_color, previews_visible},
+    hooks::graphics_engine::{
+        capture::{capture_main_color, previews_visible},
+        config::{EXPOSURE_CONFIG, POST_FX_CONFIG},
+    },
     stereo::{draw_index, later_scene},
 };
 
@@ -52,7 +54,7 @@ pub(crate) fn applied_exposure() -> Option<f32> {
 // share the first scene dispatch's exposure without binocular rivalry.
 #[detour(address = jc3gi::graphics_engine::tone_mapping::SmoothedExposure::Update_ADDRESS)]
 fn smoothed_exposure_update(this: *mut c_void, exposure: f32) {
-    let gated = later_scene() && Config::lock_query(|c| c.exposure.gate);
+    let gated = later_scene() && EXPOSURE_CONFIG.query(|c| c.gate);
     TraceState::record_eye(TraceEvent::SmoothedExposureUpdate { gated, exposure });
     if gated {
         return;
@@ -71,7 +73,7 @@ fn calc_histogram_mid_bright(
     arg3: f32,
     hist: *mut HistogramGeneration,
 ) {
-    let gated = later_scene() && Config::lock_query(|c| c.exposure.gate);
+    let gated = later_scene() && EXPOSURE_CONFIG.query(|c| c.gate);
     TraceState::record_eye(TraceEvent::CalcHistogramMidBright { gated });
     if gated {
         return;
@@ -96,7 +98,7 @@ fn tonemapping_update(
     manager: *mut c_void,
     ctx: *mut PostEffectContext,
 ) {
-    let gated = later_scene() && Config::lock_query(|c| c.exposure.gate_update);
+    let gated = later_scene() && EXPOSURE_CONFIG.query(|c| c.gate_update);
     TraceState::record_eye(TraceEvent::ToneMappingUpdate { gated });
     if gated {
         return;
@@ -105,8 +107,7 @@ fn tonemapping_update(
     let Some(tme) = (unsafe { this.as_mut() }) else {
         return;
     };
-    let (force_exposure, forced_value) =
-        Config::lock_query(|c| (c.exposure.force, c.exposure.forced_value));
+    let (force_exposure, forced_value) = EXPOSURE_CONFIG.query(|c| (c.force, c.forced_value));
     if force_exposure {
         tme.m_ExposureBrightPoint = forced_value;
     }
@@ -158,8 +159,8 @@ fn tonemapping_apply(
     // Gate histogram population on later scene dispatches, symmetric to the exposure-adaptation
     // gate (exposure.gate). Both eyes otherwise write the GPU luminance buckets, so the gated
     // per-frame exposure Update reads a histogram populated by both dispatches and settles too dark.
-    let (skip_histogram, gate_exposure) =
-        Config::lock_query(|c| (c.post_fx.skip_histogram, c.exposure.gate));
+    let skip_histogram = POST_FX_CONFIG.lock().skip_histogram;
+    let gate_exposure = EXPOSURE_CONFIG.lock().gate;
     let later_scene_gated = later_scene() && gate_exposure;
     let skip = skip_histogram || later_scene_gated;
     TraceState::record_eye(TraceEvent::ToneMappingApply { skip });
@@ -217,7 +218,7 @@ fn generate_final_histogram(
     mgr: *mut c_void,
     index: u32,
 ) {
-    let later_scene_gated = later_scene() && Config::lock_query(|c| c.exposure.gate);
+    let later_scene_gated = later_scene() && EXPOSURE_CONFIG.query(|c| c.gate);
     TraceState::record_eye(TraceEvent::GenerateFinalHistogram {
         skip: later_scene_gated,
     });

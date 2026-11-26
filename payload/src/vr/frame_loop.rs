@@ -15,7 +15,6 @@ use openxr as xr;
 use parking_lot::MutexGuard;
 
 use crate::{
-    config::Config,
     controllers::{
         body::rig::origin_provenance::{self, OriginEvidence, OriginUnavailable, TrackingReceipt},
         frame as controller_frame,
@@ -25,10 +24,13 @@ use crate::{
     stereo::engine_context::EngineContext,
     testing::visual::headset,
     vr::{
-        Fov, FreezeMode, OffAxisProjection, VIEW_TYPE, VrConfig,
+        Fov, FreezeMode, OffAxisProjection, VIEW_TYPE, VR_CONFIG, VrConfig,
         convert::{self, posef, quat, vec3},
         input::{
-            config::{HapticOutput, SamplingConfig},
+            config::{
+                CONTROLLERS_ENABLED, HAPTICS_ENABLED, HAPTICS_INTENSITY, HapticOutput,
+                INPUT_CONFIG, SamplingConfig,
+            },
             flight_pose::{self, LocatedHead},
         },
         live_tracking::{self, LocatedTracking},
@@ -63,7 +65,7 @@ pub fn frame_wait() -> Option<WaitedFrame> {
         return None;
     }
 
-    let cfg = Config::lock_query(|c| c.vr.clone());
+    let cfg = VR_CONFIG.lock().clone();
     match guard.wait_frame(&cfg) {
         Ok(frame) => Some(WaitedFrame { frame: Some(frame) }),
         Err(e) => {
@@ -258,7 +260,7 @@ impl FrameContext {
         if self.image_acquired {
             return Ok(());
         }
-        let cfg = Config::lock_query(|c| c.vr.clone());
+        let cfg = VR_CONFIG.lock().clone();
         let _timing = frame_timing::scope(Slot::VrSwapchainWait);
         let submitter = self.submitter()?;
         under_engine_context(|| submitter.acquire_swapchain_image(&cfg))?;
@@ -534,14 +536,19 @@ impl VrState {
         // The controllers are sampled at the same predicted display time and re-based against the
         // same baseline as the eye views, so a hand and the head it is drawn beside agree.
         if let Some(input) = self.input.as_mut() {
-            let sampling = Config::lock_query(|c| SamplingConfig {
-                enabled: c.controllers.enabled,
-                input: c.controllers.input,
+            // One slot lock at a time: a guard in a struct literal lives to the statement's end.
+            let enabled = *CONTROLLERS_ENABLED.lock();
+            let input_config = *INPUT_CONFIG.lock();
+            let haptics_enabled = *HAPTICS_ENABLED.lock();
+            let intensity = *HAPTICS_INTENSITY.lock();
+            let sampling = SamplingConfig {
+                enabled,
+                input: input_config,
                 haptics: HapticOutput {
-                    enabled: c.controllers.haptics.enabled,
-                    intensity: c.controllers.haptics.intensity,
+                    enabled: haptics_enabled,
+                    intensity,
                 },
-            });
+            };
             let _timing = frame_timing::scope(Slot::VrInput);
             let sampled = input.update(
                 &session.handle,

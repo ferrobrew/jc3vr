@@ -44,7 +44,11 @@ use windows::{
     core::{HRESULT, Interface as _, PCWSTR},
 };
 
-use crate::config::Config;
+use crate::config::engine::ConfigSlot;
+
+/// Whether to keep the census, `testing.texture_census` in the settings file. The payload binds the
+/// slot to its field in the capture harness's settings at startup.
+pub(crate) static TEXTURE_CENSUS: ConfigSlot<bool> = ConfigSlot::new("testing.texture_census");
 
 /// The log line that marks the payload as pinned by the census's detours.
 pub(crate) const PINNED_BY_TEXTURE_CENSUS: &str =
@@ -53,7 +57,7 @@ pub(crate) const PINNED_BY_TEXTURE_CENSUS: &str =
 /// Arm the census if `testing.texture_census` asks for it and it is not armed yet. Any thread, once
 /// the engine's device exists.
 pub(crate) fn ensure_armed() {
-    if ARMED.load(Ordering::Acquire) || !Config::lock_query(|c| c.testing.texture_census) {
+    if ARMED.load(Ordering::Acquire) || !TEXTURE_CENSUS.query(|on| *on) {
         return;
     }
     let _install = INSTALL.lock();

@@ -18,12 +18,13 @@ use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{
-    config::Config,
     controllers::{cockpit::CockpitTransform, frame::Pose},
     debug::trace::{TraceEvent, TraceState},
+    fsr::FSR_CONFIG,
+    hooks::camera::config::CAMERA_CONFIG,
     render_frame::RenderFrameSlot,
-    stereo::STEREO_STATE,
-    vr::{FreezeMode, pose_control},
+    stereo::{STEREO_STATE, config::STEREO_CONFIG},
+    vr::{FreezeMode, VR_CONFIG, pose_control},
 };
 
 pub(crate) mod authored;
@@ -123,8 +124,8 @@ fn setup_render_camera(camera: *mut Camera, jitter: bool) -> *mut c_void {
 
     // Snapshot the stereo + FSR config once; drop the lock before the engine call below.
     let stereo_active = crate::stereo::active();
-    let (stereo_cameras, fsr_enabled) =
-        Config::lock_query(|c| (c.stereo.cameras, c.fsr.antialiasing.temporal()));
+    let stereo_cameras = STEREO_CONFIG.lock().cameras;
+    let fsr_enabled = FSR_CONFIG.lock().antialiasing.temporal();
 
     // The engine's TAA jitter only feeds its own SMAA T2X. Drop it when that resolve is gone --
     // either because stereo always forces SMAA 1x (T2X's single shared history ghosts each eye with
@@ -153,7 +154,7 @@ fn setup_render_camera(camera: *mut Camera, jitter: bool) -> *mut c_void {
     // look around during the load. Written before the engine call so it builds the view-projections
     // from the head-tracked view; the per-eye offset below then applies on top.
     let pointer_cockpit = crate::headpose::xr::cockpit_pose();
-    let pointer_scale = Config::lock_query(|c| c.vr.world_scale);
+    let pointer_scale = VR_CONFIG.lock().world_scale;
     if is_render_camera
         && vr_loading_view_active()
         && let Some(camera) = unsafe { camera.as_mut() }
@@ -321,7 +322,7 @@ fn setup_render_camera(camera: *mut Camera, jitter: bool) -> *mut c_void {
 /// the camera moves" into a measurement. `m_View` is re-derived here rather than captured, so an edit
 /// reaches both matrices consistently.
 fn freeze_render_camera(camera: &mut Camera) {
-    if Config::lock_query(|c| c.vr.freeze_mode) != crate::vr::FreezeMode::FullCamera {
+    if VR_CONFIG.query(|c| c.freeze_mode) != crate::vr::FreezeMode::FullCamera {
         return;
     }
     let world =
@@ -357,7 +358,7 @@ fn camera_update_render(camera: *mut Camera, dt: f32, dtf: f32) {
         {
             LAST_DTF.set(dtf);
 
-            if !Config::lock_query(|c| c.camera.enabled) {
+            if !CAMERA_CONFIG.query(|c| c.enabled) {
                 authored::reset(authored::Refusal::Disabled);
                 *LAST_CAMERA_WORLD.lock() = None;
                 CAMERA_UPDATE_RENDER.get().unwrap().call(camera, dt, dtf);
@@ -453,7 +454,7 @@ fn camera_update_render(camera: *mut Camera, dt: f32, dtf: f32) {
         && holds_probe_pose(
             in_gameplay(),
             crate::testing::visual::is_active(),
-            Config::lock_query(|c| c.vr.freeze_mode),
+            VR_CONFIG.query(|c| c.freeze_mode),
         )
         && let Some(pose) = pose_control::current_full_camera()
         && let Some(camera) = unsafe { camera.as_mut() }
@@ -477,7 +478,7 @@ fn update_player_lighting_transforms(manager: *mut LightManager, camera_transfor
     let held = holds_probe_pose(
         in_gameplay(),
         crate::testing::visual::is_active(),
-        Config::lock_query(|c| c.vr.freeze_mode),
+        VR_CONFIG.query(|c| c.freeze_mode),
     )
     .then(pose_control::current_full_camera)
     .flatten()
@@ -794,7 +795,7 @@ fn camera_tree_update_render_contexts(
             return;
         };
 
-        if !Config::lock_query(|c| c.camera.enabled) {
+        if !CAMERA_CONFIG.query(|c| c.enabled) {
             authored::reset(authored::Refusal::Disabled);
             return;
         }

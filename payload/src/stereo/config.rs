@@ -3,8 +3,9 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    config::{Config, engine::ConfigSlot},
-    far_field::FarFieldMode,
+    config::engine::{ConfigSlot, Parts},
+    far_field::{FAR_FIELD_CONFIG, FarFieldMode},
+    vr::VR_CONFIG,
 };
 
 /// Turn the whole single-pass feature on or off together, as the debug UI's one button does: the
@@ -15,8 +16,8 @@ use crate::{
 /// it to collecting. The defaults are the feature turned on, so applying this with `on` to a
 /// default configuration changes nothing. The caller requests the shader reload that applies the
 /// change.
-pub(crate) fn set_single_pass_feature(config: &mut Config, on: bool) {
-    let sps = &mut config.stereo.single_pass;
+pub(crate) fn set_single_pass_feature(config: &mut impl Parts, on: bool) {
+    let sps = &mut config.part_mut(&STEREO_CONFIG).single_pass;
     sps.enabled = on;
     sps.dual_eye = on;
     sps.collapse = on;
@@ -30,9 +31,10 @@ pub(crate) fn set_single_pass_feature(config: &mut Config, on: bool) {
     sps.occluder = on;
     sps.patch_dryrun = false;
     if on {
-        config.vr.native_resolution = true;
-        if config.far_field.mode == FarFieldMode::Share {
-            config.far_field.mode = FarFieldMode::Collect;
+        config.part_mut(&VR_CONFIG).native_resolution = true;
+        let far_field = config.part_mut(&FAR_FIELD_CONFIG);
+        if far_field.mode == FarFieldMode::Share {
+            far_field.mode = FarFieldMode::Collect;
         }
     }
 }
@@ -1072,27 +1074,32 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use super::*;
+    use crate::config::engine::Snapshot;
 
     /// The defaults are the single-pass feature turned on, exactly as the debug UI's button turns it
     /// on, so the two cannot drift apart.
     #[test]
     fn defaults_are_the_single_pass_feature_turned_on() {
-        let defaults = Config::new();
-        let mut turned_on = Config::new();
+        let defaults = Snapshot::defaults();
+        let mut turned_on = Snapshot::defaults();
         set_single_pass_feature(&mut turned_on, true);
-        assert_eq!(
-            toml::Value::try_from(&turned_on).unwrap(),
-            toml::Value::try_from(&defaults).unwrap()
-        );
+        let value = |config: &Snapshot| {
+            (
+                toml::Value::try_from(config.part(&STEREO_CONFIG)).unwrap(),
+                toml::Value::try_from(config.part(&VR_CONFIG)).unwrap(),
+                toml::Value::try_from(config.part(&FAR_FIELD_CONFIG)).unwrap(),
+            )
+        };
+        assert_eq!(value(&turned_on), value(&defaults));
     }
 
     /// Turning the feature off leaves the double-draw: every structural switch is off, so nothing
     /// single-pass runs.
     #[test]
     fn turning_the_feature_off_clears_the_master_switch_and_the_collapse() {
-        let mut config = Config::new();
+        let mut config = Snapshot::defaults();
         set_single_pass_feature(&mut config, false);
-        let sps = &config.stereo.single_pass;
+        let sps = &config.part(&STEREO_CONFIG).single_pass;
         assert!(!sps.enabled);
         assert!(!sps.dual_eye);
         assert!(!sps.collapse);

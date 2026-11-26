@@ -92,7 +92,8 @@ pub use frame_loop::{EyeImage, EyeView, FrameContext, LocatedFrame, WaitedFrame,
 pub(crate) use frame_loop::{head_tracked, pose_age_totals};
 pub use mirror::{MirrorDraw, MirrorFrame, present_mirror, toggle_stereo_pair};
 pub(crate) use mirror::{
-    MirrorLayers, MirrorObserver, latest_present, register_mirror_layers, register_mirror_observer,
+    MirrorLayers, MirrorObserver, PANEL_ENABLED, PANEL_ON_MIRROR, PANEL_RESOLUTION, latest_present,
+    register_mirror_layers, register_mirror_observer,
 };
 pub use participants::FrameInputs;
 pub(crate) use participants::{CockpitPositions, FrameParticipants, register_frame_participants};

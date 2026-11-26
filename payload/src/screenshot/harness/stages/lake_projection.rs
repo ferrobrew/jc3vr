@@ -20,7 +20,7 @@ use crate::{
         diagnostic_capture_id, frame_identity, lake_producer_requested, patch_draw,
         screenshot_wants_eyes, water_reflection_requested, water_surface_inputs_requested,
     },
-    stereo::{draw_index, single_pass::vertex_identity_lookup},
+    stereo::{config::STEREO_CONFIG, draw_index, single_pass::vertex_identity_lookup},
 };
 
 #[derive(Clone, Debug, Serialize)]
@@ -131,7 +131,7 @@ pub(crate) unsafe fn eye_width_snapshot(pass: *mut RenderPass) -> Option<Snapsho
         || draw_index() != 0
         || !crate::stereo::single_pass::double_wide_active()
         // The production switch already sizes the reflection camera to one eye.
-        || crate::config::Config::lock_query(|c| c.stereo.single_pass.water_reflection_eye_size)
+        || STEREO_CONFIG.query(|c| c.single_pass.water_reflection_eye_size)
         || !water_surface_inputs_requested()
         || !matches!(
             water_reflection_requested(),

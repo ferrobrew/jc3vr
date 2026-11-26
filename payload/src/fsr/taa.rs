@@ -40,11 +40,11 @@ use windows::{
 };
 
 use crate::{
-    config::Config,
     fsr::{
-        Build, ChainTextures, EyeLayout, EyeMotion, EyeViewProjections, TaaConfig, camera_cut,
-        jitter, velocity_decode::depth_srv,
+        Build, ChainTextures, EyeLayout, EyeMotion, EyeViewProjections, FSR_CONFIG, TaaConfig,
+        camera_cut, jitter, velocity_decode::depth_srv,
     },
+    stereo::config::STEREO_CONFIG,
 };
 
 /// The live resolve state (render thread only).
@@ -143,10 +143,11 @@ pub fn dispatch(
 
     jitter::publish_eye_size(build.eye_width, build.height);
     let stereo = crate::stereo::active();
-    let (correction, hybrid) = Config::lock_query(|c| {
+    let cameras = STEREO_CONFIG.lock().cameras;
+    let (correction, hybrid) = FSR_CONFIG.query(|fsr| {
         (
-            c.stereo.cameras && c.fsr.stereo_mv_correction && stereo,
-            c.fsr.hybrid_velocity && stereo,
+            cameras && fsr.stereo_mv_correction && stereo,
+            fsr.hybrid_velocity && stereo,
         )
     });
     let mut params = Params {

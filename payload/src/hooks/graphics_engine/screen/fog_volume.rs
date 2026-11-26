@@ -40,11 +40,10 @@ use jc3gi::{
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{
-    config::Config,
     hooks::graphics_engine::reconstruction::{
         self, DispatchPhase, SplitOutcome, SplitPolicy, half_target_view_projection,
     },
-    stereo::{STEREO_STATE, single_pass::full_eye_view_projection},
+    stereo::{STEREO_STATE, config::STEREO_CONFIG, single_pass::full_eye_view_projection},
     vr::render_params,
 };
 
@@ -67,7 +66,7 @@ fn fog_volume_draw(
     if context.m_ActiveRenderPass != RenderPassId::RP_FOG_VOLUME_GENERATE as i32 {
         return call();
     }
-    let enabled = Config::lock_query(|c| c.stereo.single_pass.fog_volume_per_eye);
+    let enabled = STEREO_CONFIG.lock().single_pass.fog_volume_per_eye;
     let ctx = Some(context.m_Context);
     let outcome = reconstruction::split_fullscreen_pass_policy(
         SplitPolicy::at_entry(DispatchPhase::Both),

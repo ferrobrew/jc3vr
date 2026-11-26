@@ -12,7 +12,10 @@ use std::{collections::BTreeMap, sync::atomic::Ordering};
 use dxbc_stereo::DxbcError;
 use parking_lot::Mutex;
 
-use crate::{session::CaptureFile, stereo::single_pass::*};
+use crate::{
+    session::CaptureFile,
+    stereo::{config::STEREO_CONFIG, single_pass::*},
+};
 
 /// Vertex-shader name prefixes whose no-`cb0` shaders are reprojected for single-pass: the scene
 /// geometry that writes clip as `scene-VP · world` (skinned characters/NPCs, static and dynamic
@@ -324,7 +327,7 @@ pub enum VsTransform {
 /// [`clip_origin_per_eye`](crate::stereo::config::SinglePassConfig::clip_origin_per_eye) is on.
 /// Decided at shader creation, so a change to the switch applies at the next shader reload.
 pub fn remap_vertex_shader(code: &[u8]) -> Result<Vec<u8>, DxbcError> {
-    let origin = if Config::lock_query(|c| c.stereo.single_pass.clip_origin_per_eye) {
+    let origin = if STEREO_CONFIG.query(|c| c.single_pass.clip_origin_per_eye) {
         dxbc_stereo::ClipOrigin::PerEye
     } else {
         dxbc_stereo::ClipOrigin::Unchanged
@@ -500,7 +503,7 @@ pub fn record_patch_outcome(outcome: &Result<Vec<u8>, DxbcError>, name: Option<&
 /// Read live rather than pinned into the frame snapshot: this runs at shader creation, not on a draw
 /// path, and the census is armed by turning it on and reloading the shaders, which is the same action.
 fn vs_name_census_enabled() -> bool {
-    Config::lock_query(|c| c.stereo.single_pass.dump_vs_name_census)
+    STEREO_CONFIG.query(|c| c.single_pass.dump_vs_name_census)
 }
 
 /// The rewrite outcome class of a vertex shader, tracked per shader name in [`VS_NAME_CENSUS`] so the

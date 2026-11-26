@@ -35,7 +35,10 @@ use glam::{Quat, Vec2, Vec3};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
-use crate::input_core::{motion, semantic::SemanticSet};
+use crate::{
+    config::engine::{Invalid, range},
+    input_core::{motion, semantic::SemanticSet},
+};
 
 /// A hand, and the index of its entry in the per-hand arrays ([`ControllerFrame::hands`],
 /// [`Edges`]). The left hand is index 0.
@@ -390,6 +393,17 @@ impl PressThresholds {
         } else {
             value >= self.press
         }
+    }
+
+    /// Check that both thresholds are in `[0, 1]` and the release does not exceed the press.
+    /// `name` is the pair's settings path, which leads the failure's message.
+    pub(crate) fn validate(self, name: &str) -> Result<(), Invalid> {
+        range(&format!("{name}.press"), self.press, 0.0, 1.0)?;
+        range(&format!("{name}.release"), self.release, 0.0, 1.0)?;
+        if self.release > self.press {
+            return Err(Invalid(format!("{name}.release exceeds press")));
+        }
+        Ok(())
     }
 }
 

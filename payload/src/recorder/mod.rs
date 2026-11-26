@@ -200,7 +200,7 @@ pub fn start_stamped(stamp: &str) {
     if is_recording() || crate::is_shutting_down() {
         return;
     }
-    let cfg = crate::config::Config::lock_query(|c| c.recorder.clone());
+    let cfg = RECORDER_CONFIG.lock().clone();
     // Read before the state lock: neither call takes it, and the title read sends no message to the
     // window's thread.
     let window = WindowHint {

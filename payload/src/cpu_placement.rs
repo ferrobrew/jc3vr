@@ -25,12 +25,9 @@ use windows::Win32::System::{
     Threading::{GetCurrentProcess, GetProcessAffinityMask, SetProcessAffinityMask},
 };
 
-use crate::config::Config;
-
-/// Apply or release the placement to match `vr.large_cache_cores`. Game thread, once per frame;
-/// does nothing while the placement already matches the switch.
-pub(crate) fn update() {
-    let wanted = Config::lock_query(|c| c.vr.large_cache_cores);
+/// Apply or release the placement to match `wanted`, the `vr.large_cache_cores` switch. Game
+/// thread, once per frame; does nothing while the placement already matches the switch.
+pub(crate) fn update(wanted: bool) {
     let mut state = STATE.lock();
     match (wanted, state.applied) {
         (true, None) if !state.declined => apply(&mut state),

@@ -4,9 +4,28 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    config::engine::{ConfigSlot, Invalid},
     controllers::frame::{GripPress, Hand, InteractionProfile, PressRules, PressThresholds},
     vr::input::layout::{FloatInput, Input, provides},
 };
+
+/// The raw input interpretation, at `controllers.input` in the settings file. The payload binds
+/// this slot and the four below to their fields in the controller settings at startup.
+pub(crate) static INPUT_CONFIG: ConfigSlot<InputConfig> = ConfigSlot::new("controllers.input");
+
+/// The controllers master switch, `controllers.enabled`.
+pub(crate) static CONTROLLERS_ENABLED: ConfigSlot<bool> = ConfigSlot::new("controllers.enabled");
+
+/// The hand that holds and fires the guns, `controllers.dominant_hand`.
+pub(crate) static DOMINANT_HAND: ConfigSlot<Hand> = ConfigSlot::new("controllers.dominant_hand");
+
+/// The haptic output's switch, `controllers.haptics.enabled`.
+pub(crate) static HAPTICS_ENABLED: ConfigSlot<bool> =
+    ConfigSlot::new("controllers.haptics.enabled");
+
+/// The haptic output's strength, `controllers.haptics.intensity`.
+pub(crate) static HAPTICS_INTENSITY: ConfigSlot<f32> =
+    ConfigSlot::new("controllers.haptics.intensity");
 
 /// What one frame's input update reads from the controller settings: whether the controllers are
 /// on, the raw input interpretation, and the haptic output.
@@ -63,6 +82,16 @@ pub struct InputConfig {
 }
 
 impl InputConfig {
+    /// Check the raw input settings, returning the first that is out of range. Paths are relative
+    /// to `controllers`.
+    pub(crate) fn validate(&self) -> Result<(), Invalid> {
+        self.trigger_press.validate("input.trigger_press")?;
+        self.squeeze_press.validate("input.squeeze_press")?;
+        self.squeeze_force_press
+            .validate("input.squeeze_force_press")?;
+        self.trackpad_press.validate("input.trackpad_press")
+    }
+
     pub const fn new() -> Self {
         Self {
             trigger_press: PressThresholds {

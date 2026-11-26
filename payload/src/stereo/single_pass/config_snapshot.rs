@@ -17,7 +17,7 @@ use std::{
     sync::atomic::{AtomicBool, AtomicU64, Ordering},
 };
 
-use crate::config::Config;
+use crate::stereo::config::STEREO_CONFIG;
 
 /// One flag in the per-frame single-pass config snapshot.
 #[derive(Clone, Copy)]
@@ -156,8 +156,8 @@ static SESSION_LIVE: AtomicBool = AtomicBool::new(false);
 fn store_config_flags() -> u64 {
     let bit = |on: bool, flag: Flag| u64::from(on) << flag as u64;
     let session_live = SESSION_LIVE.load(Ordering::Relaxed);
-    let snapshot = Config::lock_query(|c| {
-        let s = &c.stereo.single_pass;
+    let snapshot = STEREO_CONFIG.query(|c| {
+        let s = &c.single_pass;
         bit(s.enabled && session_live, Flag::SinglePass)
             | bit(s.patch_dryrun, Flag::DryRun)
             | bit(s.dual_eye, Flag::DualEye)

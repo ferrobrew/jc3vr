@@ -21,7 +21,6 @@ use windows::Win32::{
 };
 
 use crate::{
-    config::Config,
     debug::trace::{TraceEvent, TraceState},
     frame_timing::{self, Slot},
     hooks::graphics_engine::{
@@ -30,7 +29,7 @@ use crate::{
     },
     screenshot::CaptureSource,
     stereo::single_pass::{collapse_active, set_collapse_ui_eye},
-    vr::BlitSource,
+    vr::{BlitSource, VR_CONFIG},
 };
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -658,7 +657,7 @@ fn mod_post_draw(context: *mut Context) {
 /// copy the eye into it even when the eye went straight to the swapchain: the desktop mirror's eyes,
 /// a pending screenshot, the Previews tab, and a recording that streams the eye views.
 fn eye_capture_wanted(eye: usize) -> bool {
-    Config::lock_query(|c| c.vr.mirror && c.vr.mirror_view.shows_eye(eye))
+    VR_CONFIG.query(|c| c.mirror && c.mirror_view.shows_eye(eye))
         || crate::screenshot::is_requested()
         || crate::screenshot::harness::wants_eyes()
         || previews_visible()

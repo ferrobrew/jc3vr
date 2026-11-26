@@ -3,7 +3,7 @@
 //! needs. Shared by the stereo swapchain ([`crate::vr::swapchain`]) and the native-resolution driver
 //! ([`crate::vr::resolution`]) so the engine renders each eye at exactly the swapchain size.
 
-use crate::{config::Config, vr::state::lock_state};
+use crate::vr::{VR_CONFIG, state::lock_state};
 
 /// The per-eye render resolution the engine should target while a session is running: the runtime's
 /// recommended view size × [`VrConfig::resolution_scale`](crate::vr::VrConfig::resolution_scale),
@@ -12,7 +12,7 @@ use crate::{config::Config, vr::state::lock_state};
 /// the frame: it locks the runtime state, which only the game thread may do there (see
 /// `docs/mod/threading.md`).
 pub fn native_eye_resolution() -> Option<(u32, u32)> {
-    let cfg = Config::lock_query(|c| c.vr.clone());
+    let cfg = VR_CONFIG.lock().clone();
     let state = lock_state();
     if !state.is_running() {
         return None;

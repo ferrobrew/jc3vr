@@ -30,6 +30,8 @@ use std::sync::{
 use glam::{Quat, Vec3};
 use parking_lot::Mutex;
 
+use crate::{headpose::config::HEADPOSE_CONFIG, vr::VR_CONFIG};
+
 pub(crate) mod anchors;
 pub(crate) mod animation;
 pub mod config;
@@ -43,8 +45,6 @@ pub mod xr;
 pub use config::HeadPoseConfig;
 pub use participants::FrameTelemetry;
 pub(crate) use participants::{HeadParticipants, register_head_participants};
-
-use crate::config::Config;
 
 /// Which source currently owns the published headpose. The flatscreen [`sim`] and the VR [`xr`]
 /// source are mutually exclusive publishers; the arbiter is a plain atomic so the sim's per-tick
@@ -182,7 +182,7 @@ pub(crate) fn set_anchor_pair(pair: [anchors::Geometry; 2]) {
         xr::cockpit_pose().map(|cockpit| RetainedTracking {
             cockpit,
             follow_turn: xr::follow_turn(true),
-            world_scale: Config::lock_query(|c| c.vr.world_scale),
+            world_scale: VR_CONFIG.query(|c| c.world_scale),
         })
     } else {
         None
@@ -262,7 +262,7 @@ pub fn body_yaw_target() -> Option<Vec3> {
 
 /// Whether headpose-driven head control is enabled.
 pub fn is_active() -> bool {
-    Config::lock_query(|c| c.headpose.enabled)
+    HEADPOSE_CONFIG.query(|c| c.enabled)
 }
 
 #[derive(Default)]

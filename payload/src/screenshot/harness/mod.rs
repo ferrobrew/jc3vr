@@ -9,6 +9,8 @@ use std::{
 
 use anyhow::Context as _;
 use parking_lot::Mutex;
+
+use crate::vr::VR_CONFIG;
 pub(crate) mod bound_buffer;
 pub(crate) mod constants;
 pub(crate) mod draw_census;
@@ -21,7 +23,6 @@ pub(crate) mod types;
 use windows::Win32::Graphics::Direct3D11::{ID3D11Device, ID3D11DeviceContext};
 
 use crate::{
-    config::Config,
     image_writer::{self, ImageTarget, WriteOutcome},
     screenshot::{
         CaptureSource,
@@ -1836,7 +1837,7 @@ fn comparison_inputs(
         eyes,
         eye_width,
         eye_height,
-        world_scale: Config::lock_query(|config| config.vr.world_scale),
+        world_scale: VR_CONFIG.query(|config| config.world_scale),
     }
 }
 

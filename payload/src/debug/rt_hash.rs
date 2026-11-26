@@ -38,9 +38,9 @@ use windows::{
 };
 
 use crate::{
-    config::Config,
     debug::trace::{RtKind, TraceEvent, TraceState, tracing_active},
     image_writer::{self, ChannelOrder, Image, ImageTarget},
+    stereo::config::STEREO_CONFIG,
 };
 
 /// Hash the curated engine render targets for the eye that just finished drawing, recording each into
@@ -52,12 +52,8 @@ pub fn hash_engine_rts() {
     if !tracing_active() {
         return;
     }
-    let (want_hashes, want_shots) = Config::lock_query(|c| {
-        (
-            c.stereo.diagnose_rt_hashes,
-            c.stereo.diagnose_rt_screenshots,
-        )
-    });
+    let (want_hashes, want_shots) =
+        STEREO_CONFIG.query(|c| (c.diagnose_rt_hashes, c.diagnose_rt_screenshots));
     if !want_hashes && !want_shots {
         return;
     }

@@ -46,6 +46,8 @@ use jc3gi::graphics_engine::{
 };
 use parking_lot::Mutex;
 
+use crate::config::engine::{Switch, disable_automatically};
+
 /// The mod-owned backing texture and the size it was created at.
 ///
 /// Only the texture is here. The surface and the two render setups built over it live in the engine's
@@ -336,9 +338,10 @@ pub unsafe fn substitute_render_setups(engine: &mut GraphicsEngine) {
             // and drives another full `ApplyResize`, turning a persistent failure into a per-frame
             // teardown-and-rebuild storm. The saved setting keeps the user's choice.
             OWNED.store(false, Ordering::Release);
-            crate::config::disable_automatically(crate::config::Switch {
+            disable_automatically(Switch {
                 path: "vr.own_back_buffer",
-                place: |c| &mut c.vr.own_back_buffer,
+                slot: &crate::vr::VR_CONFIG,
+                place: |vr| &mut vr.own_back_buffer,
             });
             tracing::error!(
                 target: "vr",

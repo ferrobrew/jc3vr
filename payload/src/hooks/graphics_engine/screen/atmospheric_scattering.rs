@@ -26,8 +26,8 @@ use jc3gi::graphics_engine::{
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{
-    config::Config, debug::pipeline_probes::record_main_color_mean,
-    hooks::graphics_engine::reconstruction, screenshot::harness::stages,
+    debug::pipeline_probes::record_main_color_mean, hooks::graphics_engine::reconstruction,
+    screenshot::harness::stages, stereo::config::STEREO_CONFIG,
 };
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -42,7 +42,7 @@ fn atmospheric_scattering_draw(
     rc: *mut RenderContext,
     info: *const RBIInfo,
 ) {
-    let enabled = Config::lock_query(|c| c.stereo.single_pass.atmospheric_per_eye);
+    let enabled = STEREO_CONFIG.lock().single_pass.atmospheric_per_eye;
     let call = || {
         ATMOSPHERIC_SCATTERING_DRAW
             .get()

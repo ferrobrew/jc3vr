@@ -54,8 +54,8 @@ use jc3gi::{
 use parking_lot::Mutex;
 
 use crate::{
-    config::{Config, Switch, disable_automatically},
-    vr::back_buffer,
+    config::engine::{Switch, disable_automatically},
+    vr::{VR_CONFIG, back_buffer},
 };
 
 /// How many frames to wait for a requested deferred resize to be serviced before treating it as a
@@ -100,7 +100,7 @@ pub fn install() {
 /// serviced resize (size and window rect) and disables native resolution on any fault. A no-op until
 /// the engine is initialized, and cheap when the size is already correct.
 pub fn apply_native_resolution() {
-    let native_enabled = Config::lock_query(|c| c.vr.native_resolution);
+    let native_enabled = VR_CONFIG.lock().native_resolution;
     // The engine render target size: the per-eye resolution, or 2x its width under single-pass
     // double-wide (both eye-halves side by side). `None` when no session is running or native
     // resolution is off, which drives a restore to the original size.
@@ -202,7 +202,7 @@ pub fn apply_native_resolution() {
 
     // Recompute the target after a possible in-fault disable (which cleared `vr.native_resolution`).
     // Once shutdown has requested the restore, never re-request native.
-    let target = if st.shutting_down || !Config::lock_query(|c| c.vr.native_resolution) {
+    let target = if st.shutting_down || !VR_CONFIG.query(|c| c.native_resolution) {
         None
     } else {
         target
@@ -218,7 +218,7 @@ pub fn apply_native_resolution() {
     };
     // Whether the mod should own the back buffer: only while driving a render size of our own, and
     // only when asked to.
-    let want_owned = target.is_some() && Config::lock_query(|c| c.vr.own_back_buffer);
+    let want_owned = target.is_some() && VR_CONFIG.query(|c| c.own_back_buffer);
     // An ownership change needs an `ApplyResize` to carry it, because that is what rebuilds the
     // render setups the substitution swaps (and, on release, what puts the engine's own back). So a
     // toggle at an unchanged size still issues a resize -- otherwise flipping `vr.own_back_buffer`
@@ -286,7 +286,7 @@ pub(crate) fn progress() -> ResolutionProgress {
 }
 
 fn publish_progress(st: &ResolutionState, current: (u32, u32), target: Option<(u32, u32)>) {
-    let target = if st.shutting_down || !Config::lock_query(|config| config.vr.native_resolution) {
+    let target = if st.shutting_down || !VR_CONFIG.query(|config| config.native_resolution) {
         None
     } else {
         target
@@ -487,7 +487,8 @@ fn issue_resize(
 fn disable_native_resolution() {
     disable_automatically(Switch {
         path: "vr.native_resolution",
-        place: |c| &mut c.vr.native_resolution,
+        slot: &VR_CONFIG,
+        place: |vr| &mut vr.native_resolution,
     });
 }
 

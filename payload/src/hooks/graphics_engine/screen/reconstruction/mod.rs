@@ -56,10 +56,9 @@ use windows::Win32::{
 };
 
 use crate::{
-    config::Config,
     debug::trace::{TraceEvent, TraceState},
-    stereo::{engine_context::EngineContext, single_pass::eye_globals},
-    vr::{EyeRenderParams, render_params},
+    stereo::{config::STEREO_CONFIG, engine_context::EngineContext, single_pass::eye_globals},
+    vr::{EyeRenderParams, VR_CONFIG, render_params},
 };
 
 mod scissor;
@@ -427,7 +426,7 @@ fn perspective_fov_inverse(
 /// main-camera planes (an auxiliary camera -- e.g. a reflection -- whose own symmetric rebuild is
 /// already correct).
 fn offaxis_inverse(near: f32, far: f32) -> Option<Matrix4> {
-    let far_fallback = Config::lock_query(|c| c.vr.far_clip);
+    let far_fallback = VR_CONFIG.lock().far_clip;
     // A per-eye half run reconstructs for *its* eye, not for the collapse's single dispatch index
     // (which is always eye 0); everything else keeps reading the dispatch's own eye.
     let half = PER_EYE.get();
@@ -651,7 +650,7 @@ fn arm_eye_half_scissor(state: &PerEyeState) -> bool {
         masked: true,
         ..*state
     }));
-    if Config::lock_query(|c| c.stereo.single_pass.fullscreen_camera_per_eye) {
+    if STEREO_CONFIG.query(|c| c.single_pass.fullscreen_camera_per_eye) {
         eye_globals::stage(state.eye);
     }
     if !ENGAGED.swap(true, Ordering::Relaxed) {

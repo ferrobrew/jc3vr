@@ -20,7 +20,6 @@ use windows::{
 };
 
 use crate::{
-    config::Config,
     controllers::{
         body::rig::origin_provenance::{self, ReferenceSpaceChanges},
         frame as controller_frame,
@@ -29,11 +28,12 @@ use crate::{
     hooks::graphics_engine::graphics_engine,
     thread_role::{self, ThreadRole},
     vr::{
-        VIEW_TYPE, VrConfig, blit,
+        VIEW_TYPE, VR_CONFIG, VrConfig, blit,
         eye_resolution::scaled_eye_size,
         foveation,
         input::{
             self, InputState,
+            config::{DOMINANT_HAND, INPUT_CONFIG},
             flight_pose::{self, EpochChange},
         },
         loader::{LoaderUnavailable, load_entry},
@@ -96,7 +96,7 @@ fn update_runtime() -> bool {
         return false;
     }
 
-    let cfg = Config::lock_query(|c| c.vr.clone());
+    let cfg = VR_CONFIG.lock().clone();
     let mut state = lock_state();
 
     if !cfg.enabled {
@@ -154,7 +154,7 @@ pub struct VrStatus {
 
 /// Snapshot the VR runtime state for the debug UI. Locks the config and the runtime state briefly.
 pub fn status() -> VrStatus {
-    let cfg = Config::lock_query(|c| c.vr.clone());
+    let cfg = VR_CONFIG.lock().clone();
     // `try_lock`, never `lock`. The debug UI runs on the game thread holding the egui state lock,
     // and a blocking lock of the runtime state is for the top of the render update only (see
     // `lock_state`). A stale readout for one frame is not worth a deadlock.
@@ -212,7 +212,7 @@ pub(crate) fn published_status() -> PublishedStatus {
 /// reinject to reuse, sidestepping the runtime's per-process instance/session budget. Otherwise
 /// everything is destroyed.
 pub fn uninstall() {
-    let persist = Config::lock_query(|c| c.vr.persist_instance);
+    let persist = VR_CONFIG.lock().persist_instance;
     let mut state = lock_state();
     if state.instance.is_some() {
         tracing::info!(target: "vr", persist, "uninstalling the OpenXR runtime");
@@ -472,12 +472,8 @@ impl VrState {
 
         // Controller input is optional: without it the headset still renders, and the mod stays on
         // the gamepad scheme.
-        let (want_hand_tracking, dominant) = Config::lock_query(|c| {
-            (
-                c.controllers.input.hand_tracking,
-                c.controllers.dominant_hand,
-            )
-        });
+        let want_hand_tracking = INPUT_CONFIG.lock().hand_tracking;
+        let dominant = *DOMINANT_HAND.lock();
         let input = match InputState::acquire(
             &instance,
             system,

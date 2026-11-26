@@ -78,10 +78,10 @@ use windows::{
 };
 
 use crate::{
-    config::{self, Config, Switch, disable_automatically},
+    config::engine::{ConfigSlot, Switch, disable_automatically},
     hooks::graphics_engine::capture::{EGUI_DEBUG_RENDER_STATE, eye_capture_fresh},
     vr::{
-        MirrorView,
+        MirrorView, VR_CONFIG,
         mirror::{
             layout::{
                 AspectSize, MirrorFraming, MirrorLayout, Viewport, mirror_layout, mirror_viewport,
@@ -108,6 +108,19 @@ const PIXEL_DXBC: &[u8] = include_bytes!("../../shaders/capture_ps.dxbc");
 
 /// The mirror pipeline singleton, built lazily on the first mirrored frame and torn down with the
 /// runtime. Holds COM objects, which `windows` marks `Send`/`Sync`, so a `Mutex` static is sound.
+/// Whether the floating debug panel is up, `hud.egui_panel.enabled`: the mirror then shows the
+/// panel's texture instead of the flat overlay. The payload binds this slot and the two below to
+/// their fields in the HUD settings at startup.
+pub(crate) static PANEL_ENABLED: ConfigSlot<bool> = ConfigSlot::new("hud.egui_panel.enabled");
+
+/// Whether the floating panel also shows on the desktop mirror, `hud.egui_panel.show_on_mirror`.
+pub(crate) static PANEL_ON_MIRROR: ConfigSlot<bool> =
+    ConfigSlot::new("hud.egui_panel.show_on_mirror");
+
+/// The floating panel's texture size, `hud.egui_panel.resolution`.
+pub(crate) static PANEL_RESOLUTION: ConfigSlot<(u32, u32)> =
+    ConfigSlot::new("hud.egui_panel.resolution");
+
 static MIRROR: Mutex<Option<Mirror>> = Mutex::new(None);
 
 /// Whether [`present_mirror`] is currently in a transient-failure streak, so repeated failures log a
@@ -151,7 +164,8 @@ pub fn present_mirror(view: MirrorView) {
             tracing::error!(target: "vr", "mirror present failed with device-removed error {win_err}; disabling vr.mirror");
             disable_automatically(Switch {
                 path: "vr.mirror",
-                place: |c| &mut c.vr.mirror,
+                slot: &VR_CONFIG,
+                place: |vr| &mut vr.mirror,
             });
             *MIRROR.lock() = None;
         } else {
@@ -188,9 +202,9 @@ pub(crate) fn latest_present() -> Option<u32> {
 /// from (the left eye before any toggle), returning the new view. Bound to F10.
 pub fn toggle_stereo_pair() -> MirrorView {
     let mut last_mono = LAST_MONO_VIEW.lock();
-    let mut cfg = config::edit();
-    let (view, remembered) = cfg.vr.mirror_view.toggled(*last_mono);
-    cfg.vr.mirror_view = view;
+    let mut vr = VR_CONFIG.edit();
+    let (view, remembered) = vr.mirror_view.toggled(*last_mono);
+    vr.mirror_view = view;
     *last_mono = remembered;
     view
 }
@@ -293,19 +307,19 @@ unsafe fn present_mirror_inner(view: MirrorView) -> anyhow::Result<()> {
         // alpha-blended overlay. Never `EguiState::render` (a second egui pass that mutates shared
         // state), so this is safe from the deferred frame tail's thread as well as inline.
         if !crate::director::clean_view::hides_everything() {
-            let panel = Config::lock_query(|c| c.hud.egui_panel);
-            if panel.enabled {
+            let panel_enabled = *PANEL_ENABLED.lock();
+            if panel_enabled {
                 // With `show_on_mirror` off, the panel stays in the headset only, leaving the desktop
                 // mirror showing the unobstructed scene.
-                if panel.show_on_mirror
-                    && let Some(srv) = panel_srv()
-                {
+                let show_on_mirror = *PANEL_ON_MIRROR.lock();
+                let resolution = *PANEL_RESOLUTION.lock();
+                if show_on_mirror && let Some(srv) = panel_srv() {
                     // Always letterboxed at 1:1 -- a cropped or magnified UI panel would lose its
                     // edges, whatever the eye image's framing.
                     let overlay = mirror_viewport(
                         AspectSize {
-                            width: panel.resolution.0,
-                            height: panel.resolution.1,
+                            width: resolution.0,
+                            height: resolution.1,
                         },
                         buffer_size,
                         window_size,
@@ -332,7 +346,7 @@ unsafe fn present_mirror_inner(view: MirrorView) -> anyhow::Result<()> {
 
         present_index = PRESENTS.fetch_add(1, Ordering::Relaxed);
         stamped = records_mirror()
-            && Config::lock_query(|c| c.vr.mirror_frame_stamp)
+            && VR_CONFIG.query(|c| c.mirror_frame_stamp)
             && mirror.stamp(
                 &context.m_Context,
                 &rtv,

@@ -58,9 +58,9 @@ use re_utilities::hook_library::HookLibrary;
 use windows::Win32::System::Threading::GetCurrentThreadId;
 
 use crate::{
-    config::Config,
     screenshot::harness::stages::{capture_water_after, capture_water_before},
     stereo::{
+        config::STEREO_CONFIG,
         draw_index,
         single_pass::{
             BlockIntercept, WaterGpuProbe, begin_water_input_capture, begin_water_surface,
@@ -213,8 +213,8 @@ extern "system" fn wave_works_simulation_step(
 /// again.
 #[detour(address = jc3gi::water_patch_manager::WaterPatchManager::UpdateReflectionCamera_ADDRESS)]
 fn update_reflection_camera(this: *mut WaterPatchManager) {
-    let eye_size = double_wide_active()
-        && Config::lock_query(|c| c.stereo.single_pass.water_reflection_eye_size);
+    let eye_size =
+        double_wide_active() && STEREO_CONFIG.query(|c| c.single_pass.water_reflection_eye_size);
     // SAFETY: `this` is the live manager the engine passed in, whose caller has checked the
     // reflection camera pointer, and the camera manager is the live singleton.
     if !eye_size || !unsafe { set_eye_sized_reflection_camera(this) } {
@@ -449,7 +449,7 @@ unsafe fn nv_water_per_eye(
         capture_water_before();
     }
     let replay = water_surface.then(begin_water_surface);
-    let stage_camera = Config::lock_query(|c| c.stereo.single_pass.water_camera_per_eye);
+    let stage_camera = STEREO_CONFIG.lock().single_pass.water_camera_per_eye;
 
     draw_per_eye_half_ignoring_bound_vs(|eye| {
         if let Some(replay) = &replay {

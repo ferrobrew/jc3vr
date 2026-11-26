@@ -335,7 +335,8 @@ fn update() {
         // The test tools, after the director's pass, which services a visual stage's teleport.
         recorder::tracking::frame_tick();
         testing::update();
-        cpu_placement::update();
+        let large_cache_cores = vr::VR_CONFIG.lock().large_cache_cores;
+        cpu_placement::update(large_cache_cores);
 
         // Ahead of the game's update, whose physics step fires the hand bodies' callback, so that
         // registering it never races the engine's walk over the callbacks.

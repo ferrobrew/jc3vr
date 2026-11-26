@@ -18,7 +18,13 @@
 
 use std::fmt;
 
-use crate::{config::Config, controllers::frame::Hand, vr::input::InputStatus};
+use crate::{
+    controllers::frame::Hand,
+    vr::input::{
+        InputStatus,
+        config::{CONTROLLERS_ENABLED, DOMINANT_HAND},
+    },
+};
 
 /// Why the game must restart for the controller input to match the settings.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -107,8 +113,8 @@ pub fn reason(status: &InputStatus, configured: Hand) -> Option<RestartReason> {
 /// config lock, one after the other, never nested.
 pub fn current() -> Option<RestartReason> {
     let status = crate::vr::input::status();
-    let (enabled, configured) =
-        Config::lock_query(|c| (c.controllers.enabled, c.controllers.dominant_hand));
+    let enabled = *CONTROLLERS_ENABLED.lock();
+    let configured = *DOMINANT_HAND.lock();
     reason(&status, configured).filter(|_| enabled)
 }
 

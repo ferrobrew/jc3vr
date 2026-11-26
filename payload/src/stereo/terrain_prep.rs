@@ -24,7 +24,7 @@ use jc3gi::{
     types::math::Vector4,
 };
 
-use crate::{config::Config, stereo};
+use crate::{stereo, stereo::config::STEREO_CONFIG};
 
 /// Stage the centre camera's position into the vertex globals for a terrain patch prep pass in an
 /// eye-at-a-time stereo dispatch. Returns the eye's staged row for [`restore`] when it changed
@@ -36,7 +36,7 @@ pub(crate) fn stage_centre_camera(
     if !PREP_PASSES.contains(&rc.m_ActiveRenderPass)
         || !stereo::active()
         || stereo::single_pass::collapse_active()
-        || !Config::lock_query(|c| c.stereo.terrain_prep_from_centre)
+        || !STEREO_CONFIG.query(|c| c.terrain_prep_from_centre)
     {
         return None;
     }

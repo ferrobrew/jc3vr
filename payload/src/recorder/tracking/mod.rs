@@ -49,7 +49,7 @@ pub(crate) use crate::recorder::tracking::{
     start_source::{NamedPlace, StartSource, register_start_source},
 };
 use crate::{
-    config::Config,
+    config::engine::{ConfigSlot, Snapshot},
     controllers::frame as controller_frame,
     recorder::tracking::{
         events::{EventKind, Noted},
@@ -62,13 +62,28 @@ use crate::{
     },
     session::{RecordingFile, SessionError},
     vr::{
-        input::semantic::{
-            frame as semantic_frame,
-            history::{self, Publication},
+        VR_CONFIG,
+        input::{
+            config::{CONTROLLERS_ENABLED, DOMINANT_HAND},
+            semantic::{
+                frame as semantic_frame,
+                history::{self, Publication},
+            },
         },
         stage,
     },
 };
+
+/// Whether the test tools are on, `testing.enabled` in the settings file: off, a recording does not
+/// start. The payload binds this slot and the two below to their fields at startup.
+pub(crate) static TESTING_ENABLED: ConfigSlot<bool> = ConfigSlot::new("testing.enabled");
+
+/// Whether a recording carries the tracked hand joints, `testing.record_hand_joints`.
+pub(crate) static RECORD_HAND_JOINTS: ConfigSlot<bool> =
+    ConfigSlot::new("testing.record_hand_joints");
+
+/// The game's time scale, `director.time_scale`, which a recording's header notes.
+pub(crate) static TIME_SCALE: ConfigSlot<f32> = ConfigSlot::new("director.time_scale");
 
 /// What the frame loop knows about a frame's views when it hands it to [`capture`].
 #[derive(Debug, Copy, Clone)]
@@ -592,11 +607,11 @@ fn start() {
 }
 
 fn begin(stamp: String) -> Result<PathBuf, StartError> {
-    if !Config::lock_query(|c| c.testing.enabled) {
+    if !*TESTING_ENABLED.lock() {
         return Err(StartError::Disabled);
     }
     let transform = start_source::player_transform().ok_or(StartError::NoPlayer)?;
-    let hand_joints = Config::lock_query(|c| c.testing.record_hand_joints);
+    let hand_joints = *RECORD_HAND_JOINTS.lock();
     let header = header_at(transform, stamp.clone());
     let path = crate::session::recording_file(RecordingFile::Tracking, &stamp)
         .map_err(StartError::Session)?;
@@ -642,13 +657,9 @@ fn header_at(transform: [f32; 16], stamp: String) -> Header {
         .filter(|(_, distance)| *distance <= BOOKMARK_RADIUS_M)
         .min_by(|a, b| a.1.total_cmp(&b.1))
         .map(|(name, _)| name);
-    let (dominant_hand, world_scale, time_scale) = Config::lock_query(|c| {
-        (
-            c.controllers.dominant_hand,
-            c.vr.world_scale,
-            c.director.time_scale,
-        )
-    });
+    let dominant_hand = *DOMINANT_HAND.lock();
+    let world_scale = VR_CONFIG.lock().world_scale;
+    let time_scale = *TIME_SCALE.lock();
     Header {
         build: crate::BUILD_STAMP.to_owned(),
         recorded_at: stamp,
@@ -668,8 +679,8 @@ fn discard_before_start() {
 /// a save request. Without a runtime no frame is captured, so the
 /// player's transform is not read for one.
 fn lookback_tick() {
-    let (enabled, hand_joints) =
-        Config::lock_query(|c| (c.controllers.enabled, c.testing.record_hand_joints));
+    let enabled = *CONTROLLERS_ENABLED.lock();
+    let hand_joints = *RECORD_HAND_JOINTS.lock();
     let run = enabled && crate::vr::published_status().runtime_up;
     let transform = run.then(start_source::player_transform).flatten();
     let save = lookback::take_save_request();
@@ -770,7 +781,7 @@ fn save_lookback() -> Result<PathBuf, StartError> {
 /// Every setting, for the recording to open with: the file holds only the changed ones, which
 /// would leave the defaults of the recording's build unsaid.
 fn settings_toml() -> Option<String> {
-    match toml::to_string(&crate::config::get()) {
+    match Snapshot::take().to_toml() {
         Ok(toml) => Some(toml),
         Err(error) => {
             tracing::warn!("recorder: tracking: the settings did not serialize: {error}");

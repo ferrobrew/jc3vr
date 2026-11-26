@@ -14,10 +14,10 @@ use jc3gi::types::math::Matrix4;
 use parking_lot::Mutex;
 
 use crate::{
-    config,
     controllers::body::rig::origin_provenance::{OriginEvidence, TrackingReceipt},
-    headpose::{self, FrameTelemetry, participants::head_participants},
+    headpose::{self, FrameTelemetry, config::HEADPOSE_CONFIG, participants::head_participants},
     render_frame::RenderFrameSlot,
+    stereo::config::STEREO_CONFIG,
     testing::visual::headset::{self, HeadsetRig},
     vr::{
         EyeView, Fov, FrameInputs, FreezeMode, LocatedFrame, OffAxisProjection, VrConfig,
@@ -336,7 +336,7 @@ fn render_frame(
     );
     let participants = frame_participants();
     let head_participants = head_participants();
-    let headpose_config = config::Config::lock_query(|c| c.headpose);
+    let headpose_config = HEADPOSE_CONFIG.query(|c| *c);
     (head_participants.advance_grapple)(
         headpose::xr::body_rotation_followed(),
         frozen
@@ -499,9 +499,8 @@ fn render_frame(
     // makes eye 1 reuse eye 0's params so both eyes draw the identical view (Test B). Both feed the
     // reconstruction consistently, since the camera hook and reconstruction read whatever lands in
     // `RENDER_PARAMS`. See `crate::stereo::config::StereoConfig`.
-    let (symmetrize, mirror) = config::Config::lock_query(|c| {
-        (c.stereo.symmetrize_eye_frusta, c.stereo.mirror_eye0_to_both)
-    });
+    let (symmetrize, mirror) =
+        STEREO_CONFIG.query(|c| (c.symmetrize_eye_frusta, c.mirror_eye0_to_both));
 
     let eye_params = |eye: crate::vr::EyeView, eye_position: Vec3| {
         let projection = if symmetrize {

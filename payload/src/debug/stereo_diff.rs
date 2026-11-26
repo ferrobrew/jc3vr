@@ -28,6 +28,7 @@ use parking_lot::Mutex;
 use crate::{
     debug::trace::{TraceEvent, TraceState, tracing_active},
     hooks::draw_count::DRAW_COUNTS,
+    stereo::config::STEREO_CONFIG,
 };
 
 /// One traced stereo frame's draw-sequence diff, aligned **by pass id**, not position: eye 1
@@ -95,7 +96,7 @@ impl DrawDiff {
 /// Whether the probe would record were a stereo frame to begin now: the toggle is set and a trace
 /// is collecting.
 pub fn is_active() -> bool {
-    tracing_active() && crate::config::Config::lock_query(|c| c.stereo.diagnose_stereo_draw_diff)
+    tracing_active() && STEREO_CONFIG.query(|c| c.diagnose_stereo_draw_diff)
 }
 
 /// Opens a stereo frame for the probe. `drained_inline` is whether every dispatch of this frame

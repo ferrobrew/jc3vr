@@ -30,7 +30,7 @@ use jc3gi::graphics_engine::{
 };
 use re_utilities::hook_library::HookLibrary;
 
-use crate::config::Config;
+use crate::stereo::config::STEREO_CONFIG;
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&TERRAIN_DETAIL_DRAW_BINDER)
@@ -105,7 +105,9 @@ const BUDGET_SITES: [(u64, u32); 5] = [
 /// runs at startup, with the render engine's own resource context. Call once per frame on the game
 /// thread with no draw in flight; the immediates auto-revert on uninject.
 pub fn process_budget_request() {
-    let scale = Config::lock_query(|c| c.stereo.terrain_detail_budget_scale).clamp(1, 16);
+    let scale = STEREO_CONFIG
+        .query(|c| c.terrain_detail_budget_scale)
+        .clamp(1, 16);
     // The automatic once-per-session apply: the first frame-start after injection, when the engine
     // singletons are guaranteed live. Skipped at scale 1 (the shipped sizes). The flag is set only
     // after the patcher and engine-singleton checks succeed, so an early return leaves it unset and

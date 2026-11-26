@@ -20,13 +20,13 @@ use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 use glam::{Mat4, Vec2, Vec3};
 
-use crate::config::Config;
+use crate::fsr::FSR_CONFIG;
 
 /// The frame's jitter, or `None` when the jitter is off: neither FSR nor the mod's own temporal
 /// resolve running (the game's SMAA 1x has no temporal resolve to use it), the jitter switch off, or no FSR resolve yet to size the eyes. Advances the
 /// phase; call once per VR frame.
 pub fn frame_offset() -> Option<FrameJitter> {
-    let enabled = Config::lock_query(|c| c.fsr.antialiasing.temporal() && c.fsr.jitter);
+    let enabled = FSR_CONFIG.query(|c| c.antialiasing.temporal() && c.jitter);
     if !enabled {
         return None;
     }
