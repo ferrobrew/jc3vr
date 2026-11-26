@@ -299,7 +299,7 @@ const SECTIONS: &[Section] = &[
     Section {
         title: "GRIP",
         display_title: "Grip",
-        rows: &[grip::LEFT_GRIP, grip::RIGHT_GRIP, grip::MARKERS],
+        rows: &[grip::LEFT_GRIP, grip::RIGHT_GRIP],
     },
     Section {
         title: "HANDS IN THE WORLD",

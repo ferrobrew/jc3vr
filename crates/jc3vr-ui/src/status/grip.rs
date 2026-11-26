@@ -1,18 +1,12 @@
-//! The status rows for the grip model: what each hand's squeeze would take or holds, and
-//! the markers.
+//! The status rows for the grip model: what each hand's squeeze would take or holds.
 
 use jc3vr_body::controllers::grab::{latch::GripLatch, tick, tick::GrabStatus};
-use jc3vr_gameplay::controllers::config::CONTROLLERS_CONFIG;
 use jc3vr_input::frame::Hand;
 
-use crate::{
-    controllers::menu::read,
-    status::{Health, Line, Row, prose, text},
-};
+use crate::status::{Health, Line, Row, prose, text};
 
 pub(crate) const LEFT_GRIP: Row = Row::new("LEFT GRIP", "Left grip", left_grip);
 pub(crate) const RIGHT_GRIP: Row = Row::new("RIGHT GRIP", "Right grip", right_grip);
-pub(crate) const MARKERS: Row = Row::new("GRIP MARKERS", "Grip markers", markers);
 
 fn left_grip() -> Line {
     grip_line(&tick::status(), Hand::Left)
@@ -20,11 +14,6 @@ fn left_grip() -> Line {
 
 fn right_grip() -> Line {
     grip_line(&tick::status(), Hand::Right)
-}
-
-fn markers() -> Line {
-    let on = read(&CONTROLLERS_CONFIG, |c| c.overlay.markers);
-    markers_line(on, &tick::status())
 }
 
 /// What `hand`'s grip is doing, and what a squeeze would take.
@@ -50,17 +39,6 @@ fn grip_line(status: &GrabStatus, hand: Hand) -> Line {
         (GripLatch::Open, None) => text!("Nothing in reach of ", status.targets.to_string()),
     };
     Line::new(Health::Ok, detail).with_note(format!("{} targets in reach", hand.in_reach))
-}
-
-fn markers_line(on: bool, status: &GrabStatus) -> Line {
-    if !on {
-        return Line::off(prose("Switch on in VR: controls (grip markers)"));
-    }
-    if !status.live {
-        return Line::waiting(prose("Not acting"));
-    }
-    Line::ok(text!(status.targets.to_string(), " targets"))
-        .with_note(format!("{} grabs taken", status.grabs))
 }
 
 #[cfg(test)]
@@ -98,18 +76,6 @@ mod tests {
         assert_eq!(
             grip_line(&GrabStatus::default(), Hand::Left).health,
             Health::Waiting
-        );
-    }
-
-    #[test]
-    fn the_markers_row_follows_its_switch() {
-        assert_eq!(
-            markers_line(false, &live(Default::default())).health,
-            Health::Off
-        );
-        assert_eq!(
-            markers_line(true, &live(Default::default())).text(),
-            "OK, 7 TARGETS"
         );
     }
 }
