@@ -74,7 +74,27 @@ pub enum SafeItemError {
 
 impl fmt::Display for SafeItemError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "loadout safe item: {self:?}")
+        f.write_str("loadout safe item: ")?;
+        match self {
+            SafeItemError::NotRunning => f.write_str("the table does not run"),
+            SafeItemError::Resetting => f.write_str("a spawn reset or a load is under way"),
+            SafeItemError::UnknownItem(item) => write!(f, "the table has no item {item}"),
+            SafeItemError::StaleItem(item) => {
+                write!(f, "item {item} moved since the caller looked at it")
+            }
+            SafeItemError::NotHeld(item) => write!(f, "item {item} is not in a hand"),
+            SafeItemError::LeaseAlreadyBound { model, item } => {
+                write!(f, "{model} is already bound to item {item}")
+            }
+            SafeItemError::Occupied { place, item } => write!(f, "item {item} is in {place}"),
+            SafeItemError::UnsupportedHolster(socket) => {
+                write!(f, "the {} takes no grenade", socket.label())
+            }
+            SafeItemError::UnsupportedDeparture(departure) => {
+                write!(f, "a grenade cannot leave the body {departure}")
+            }
+            SafeItemError::RevisionExhausted => f.write_str("the item's revisions ran out"),
+        }
     }
 }
 
