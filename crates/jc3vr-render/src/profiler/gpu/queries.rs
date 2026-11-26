@@ -9,16 +9,16 @@ use jc3gi::graphics_engine::graphics_engine::{
 use puffin::{GlobalProfiler, ScopeDetails, ScopeId};
 
 use crate::{
-    profiler::gpu::{
-        GpuSeam,
-        gaps::{Resolved, named_gaps, starvation_gaps},
-        lane::{GpuScope, report_gpu_frame},
-        stats::{DispatchMetrics, Stats, ms},
+    profiler::{
+        gpu::{
+            GpuSeam,
+            gaps::{Resolved, named_gaps, starvation_gaps},
+            lane::{GpuScope, report_gpu_frame},
+            stats::{DispatchMetrics, Stats, ms},
+        },
+        gpu_samples::{self, GpuDispatchSample},
     },
-    testing::benchmark::{
-        GpuDispatchSample,
-        gpu_passes::{self, GpuPassLabel},
-    },
+    testing::benchmark::gpu_passes::{self, GpuPassLabel},
 };
 
 /// A raw handle wrapper asserting [`Send`]. Sound because every handle is created, recorded, and
@@ -237,7 +237,7 @@ impl GpuProfiler {
                 }
                 // Disjoint (unreliable), zero frequency, or an over-deep backlog: drop it.
                 _ => {
-                    crate::testing::benchmark::note_gpu_dispatch_dropped();
+                    gpu_samples::note_dropped();
                     let dispatch = self.pending.pop_front().unwrap();
                     self.recycle_dispatch(dispatch);
                 }
@@ -337,7 +337,7 @@ impl GpuProfiler {
             );
             self.stats.log_if_due();
 
-            if crate::testing::benchmark::gpu_timing_armed() {
+            if gpu_samples::armed() {
                 let mut seams_ns = [None; GpuSeam::ALL.len()];
                 for r in &resolved {
                     if let IntervalLabel::Seam(seam) = r.label {
@@ -363,7 +363,7 @@ impl GpuProfiler {
                                 .map(|(at, ns)| (GpuPassLabel::Gap(at.name()), ns)),
                         ),
                 );
-                crate::testing::benchmark::record_gpu_dispatch(GpuDispatchSample {
+                gpu_samples::record(GpuDispatchSample {
                     lane: dispatch.lane as u8,
                     span_ns,
                     idle_before_ns: idle_ns,

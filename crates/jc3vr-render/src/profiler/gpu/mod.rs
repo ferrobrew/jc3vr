@@ -133,12 +133,12 @@ impl GpuSeam {
 }
 
 // The benchmark names the seams by position.
-const _: () = assert!(GpuSeam::ALL.len() == crate::testing::benchmark::GPU_SEAM_NAMES.len());
+const _: () = assert!(GpuSeam::ALL.len() == crate::profiler::gpu_samples::GPU_SEAM_NAMES.len());
 
-/// Whether the GPU layer should issue queries this frame: while puffin collects, or while the
-/// benchmark records (`crate::testing::benchmark`).
+/// Whether the GPU layer should issue queries this frame: while puffin collects, or while a
+/// recording run has armed it (`crate::profiler::gpu_samples`).
 pub fn enabled() -> bool {
-    puffin::are_scopes_on() || crate::testing::benchmark::gpu_timing_armed()
+    puffin::are_scopes_on() || crate::profiler::gpu_samples::armed()
 }
 
 /// Opens a GPU dispatch on `ctx`, tagged with the current eye. Begins the disjoint query and

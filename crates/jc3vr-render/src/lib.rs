@@ -16,8 +16,8 @@
 //!   feed: the cockpit transform, the overlay and scope renderers and passes, the rig's origin
 //!   provenance, the render camera's pose, the panel math, and the stage frame.
 //! - [`recorder::tracking`]: the `.jc3trk` tracking recorder.
-//! - [`debug`], [`screenshot`], [`image_writer`], [`testing`], and, with the `profiler` feature,
-//!   `profiler::gpu`: the render diagnostics, the capture harness, and the GPU timestamp lane.
+//! - [`debug`], [`screenshot`], [`image_writer`], [`testing`], and [`profiler`]: the render
+//!   diagnostics, the capture harness, and, with the `profiler` feature, the GPU timestamp lane.
 //!
 //! The layers above reach these modules by path. [`CAPTURE_VS`] is the full-screen vertex shader
 //! every capture pass draws with, exported for the passes that live above.
@@ -30,7 +30,6 @@ pub mod headpose;
 pub mod hooks;
 pub mod hud;
 pub mod image_writer;
-#[cfg(feature = "profiler")]
 pub mod profiler;
 pub mod recorder;
 pub mod screenshot;

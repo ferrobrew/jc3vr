@@ -47,6 +47,7 @@ use crate::{
         draw_count,
         graphics_engine::{post::post_effects::vr_forces_blurs_off, shader},
     },
+    profiler::gpu_samples::{self, GPU_SEAM_NAMES, GpuDispatchSample},
     screenshot::harness::draw_census,
     stereo::{
         config::{STEREO_CONFIG, set_single_pass_feature},
@@ -68,33 +69,6 @@ use crate::{
         pose_control::PoseValues,
     },
 };
-
-/// The GPU seams each dispatch record carries a time for, in the order of
-/// `crate::profiler::gpu::GpuSeam::ALL`.
-pub(crate) const GPU_SEAM_NAMES: [&str; 7] = [
-    "pre_draw",
-    "gbuffer",
-    "scene",
-    "post_effects",
-    "post_draw",
-    "fsr",
-    "mod_post_draw",
-];
-
-/// One resolved GPU dispatch, from the profiler's timestamp read-back.
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct GpuDispatchSample {
-    /// The dispatch's eye (0 or 1) or 2 for a far-field dispatch.
-    pub(crate) lane: u8,
-    /// The GPU's execution window for the dispatch, idle inside it included.
-    pub(crate) span_ns: i64,
-    /// The GPU's idle gap since the previous dispatch ended, when measurable.
-    pub(crate) idle_before_ns: Option<i64>,
-    /// The wall time the draw thread spent recording the dispatch.
-    pub(crate) submit_ns: i64,
-    /// Each seam's GPU time, by [`GPU_SEAM_NAMES`], when it ran.
-    pub(crate) seams_ns: [Option<i64>; GPU_SEAM_NAMES.len()],
-}
 
 /// Queue a benchmark run. One runs at a time; a request while another is queued or running is
 /// refused with a failed acknowledgement.
@@ -146,13 +120,8 @@ pub fn tick() {
     }
 }
 
-/// Whether the GPU layer should bracket dispatches for a run.
-#[cfg(feature = "profiler")]
-pub(crate) fn gpu_timing_armed() -> bool {
-    GPU_ARMED.load(Ordering::Relaxed)
-}
-
-/// File one resolved GPU dispatch with the recording run, if one records.
+/// File one resolved GPU dispatch with the recording run, if one records. The GPU timestamp lane's
+/// dispatch sink, with [`note_gpu_dispatch_dropped`].
 #[cfg(feature = "profiler")]
 pub(crate) fn record_gpu_dispatch(sample: GpuDispatchSample) {
     if !GPU_RECORDING.load(Ordering::Relaxed) {
@@ -205,7 +174,6 @@ static STATE: Mutex<State> = Mutex::new(State {
     saved: None,
 });
 
-static GPU_ARMED: AtomicBool = AtomicBool::new(false);
 static GPU_RECORDING: AtomicBool = AtomicBool::new(false);
 static GPU_SAMPLES: Mutex<Vec<GpuDispatchSample>> = Mutex::new(Vec::new());
 static GPU_DROPPED: AtomicU64 = AtomicU64::new(0);
@@ -361,7 +329,7 @@ impl Run {
                     self.settled_after = now - self.began;
                     self.path_origin = Some(now);
                     crate::fsr::request_history_reset();
-                    GPU_ARMED.store(self.request.gpu, Ordering::Relaxed);
+                    gpu_samples::arm(self.request.gpu);
                     gpu_passes::set_armed(self.request.gpu && self.request.gpu_passes);
                     self.phase = Phase::WarmingUp {
                         until: now + Duration::from_secs_f64(self.request.warmup_seconds),
@@ -522,7 +490,7 @@ fn read() -> Reading {
 }
 
 fn disarm() {
-    GPU_ARMED.store(false, Ordering::Relaxed);
+    gpu_samples::arm(false);
     GPU_RECORDING.store(false, Ordering::Relaxed);
     gpu_passes::set_armed(false);
     gpu_passes::set_recording(false);
