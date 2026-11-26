@@ -1,7 +1,7 @@
 //! Runtime configuration: every user-facing toggle, consolidated into one mutex-guarded struct with
 //! sub-structs by concern. The debug UI reads and writes the whole struct; hooks copy out the
 //! field(s) they need at the top of a detour. Live engine-interface state (the current eye, frame
-//! counters, the trace arm-flag) does not live here; see [`crate::stereo::StereoState`] and the
+//! counters, the trace arm-flag) does not live here; see [`jc3vr_render::stereo::StereoState`] and the
 //! per-subsystem runtime statics. A field that is configuration-shaped but holds state for the
 //! session (a value discovered at runtime, a diagnostic armed for one capture) is `#[serde(skip)]`.
 //!
@@ -25,36 +25,36 @@
 //! not saved for its own sake; one that switches off a setting the user chose goes through
 //! [`engine::disable_automatically`], so a later save keeps the user's choice. Every guard locks
 //! the one configuration lock, so a thread must not lock it again while it holds one (the
-//! [nesting rule](crate::config::engine::store#lock-nesting)). See `docs/mod/settings.md`.
+//! [nesting rule](jc3vr_core::config::engine::store#lock-nesting)). See `docs/mod/settings.md`.
 //!
 //! TOML has no null, so a `None` is left out of the file. An optional setting defaults to `None`:
 //! the load then reads a missing key as `None` and a present one as `Some`. A setting whose value is
 //! kept while it is switched off is a switch beside the value instead (see
-//! [`FsrConfig::sharpen`](crate::fsr::FsrConfig::sharpen)).
+//! [`FsrConfig::sharpen`](jc3vr_render::fsr::FsrConfig::sharpen)).
 //!
 //! The trace manifest and screenshot sidecar also serialize the capture's configuration.
 //!
 //! The sub-structs are defined in their owning modules:
-//! [`StereoConfig`](crate::stereo::config::StereoConfig) and
-//! [`SinglePassConfig`](crate::stereo::config::SinglePassConfig) in `stereo::config`,
-//! [`ExposureConfig`](crate::hooks::graphics_engine::config::ExposureConfig) and
-//! [`PostFxConfig`](crate::hooks::graphics_engine::config::PostFxConfig) in
+//! [`StereoConfig`](jc3vr_render::stereo::config::StereoConfig) and
+//! [`SinglePassConfig`](jc3vr_render::stereo::config::SinglePassConfig) in `stereo::config`,
+//! [`ExposureConfig`](jc3vr_render::hooks::graphics_engine::config::ExposureConfig) and
+//! [`PostFxConfig`](jc3vr_render::hooks::graphics_engine::config::PostFxConfig) in
 //! `hooks::graphics_engine::config`,
-//! [`FarFieldConfig`](crate::far_field::FarFieldConfig) in `far_field`,
-//! [`FoveationConfig`](crate::vr::FoveationConfig) in `vr::config`,
-//! [`CameraConfig`](crate::hooks::camera::CameraConfig) in `hooks::camera::config`,
-//! [`BodyIkConfig`](crate::hooks::character::BodyIkConfig) in `hooks::character::config`,
-//! [`MovementConfig`](crate::hooks::input::MovementConfig) in `hooks::input::config`,
-//! [`OnlineConfig`](crate::hooks::online::OnlineConfig) in `hooks::online`,
-//! [`FsrConfig`](crate::fsr::FsrConfig) in `fsr::config`,
-//! [`HudConfig`](crate::hud::HudConfig) in `hud::config`,
-//! [`HeadPoseConfig`](crate::headpose::HeadPoseConfig) in `headpose::config`,
-//! [`VrConfig`](crate::vr::VrConfig) in `vr::config`, and
-//! [`DirectorConfig`](crate::director::DirectorConfig) in `director`,
-//! [`RecorderConfig`](crate::recorder::RecorderConfig) in `recorder`,
-//! [`ControllersConfig`](crate::controllers::ControllersConfig) in `controllers::config`,
-//! [`TestingConfig`](crate::testing::TestingConfig) in `testing::config`, and
-//! [`BodyDimensions`](crate::controllers::body::BodyDimensions) in `controllers::body`.
+//! [`FarFieldConfig`](jc3vr_render::far_field::FarFieldConfig) in `far_field`,
+//! [`FoveationConfig`](jc3vr_render::vr::FoveationConfig) in `vr::config`,
+//! [`CameraConfig`](jc3vr_render::hooks::camera::CameraConfig) in `hooks::camera::config`,
+//! [`BodyIkConfig`](jc3vr_gameplay::hooks::character::BodyIkConfig) in `hooks::character::config`,
+//! [`MovementConfig`](jc3vr_gameplay::hooks::input::MovementConfig) in `hooks::input::config`,
+//! [`OnlineConfig`](jc3vr_core::hooks::online::OnlineConfig) in `hooks::online`,
+//! [`FsrConfig`](jc3vr_render::fsr::FsrConfig) in `fsr::config`,
+//! [`HudConfig`](jc3vr_hud::hud::HudConfig) in `hud::config`,
+//! [`HeadPoseConfig`](jc3vr_render::headpose::HeadPoseConfig) in `headpose::config`,
+//! [`VrConfig`](jc3vr_render::vr::VrConfig) in `vr::config`, and
+//! [`DirectorConfig`](jc3vr_tooling::director::DirectorConfig) in `director`,
+//! [`RecorderConfig`](jc3vr_tooling::recorder::RecorderConfig) in `recorder`,
+//! [`ControllersConfig`](jc3vr_gameplay::controllers::ControllersConfig) in `controllers::config`,
+//! [`TestingConfig`](jc3vr_tooling::testing::TestingConfig) in `testing::config`, and
+//! [`BodyDimensions`](jc3vr_gameplay::controllers::body::BodyDimensions) in `controllers::body`.
 
 pub(crate) mod format;
 pub(crate) mod load;
@@ -63,29 +63,31 @@ pub(crate) mod slots;
 
 use std::sync::Once;
 
-pub(crate) use jc3vr_core::config::engine;
-use serde::{Deserialize, Serialize};
-
-use crate::{
-    config::engine::{EditGuard, SlotGuard},
+use jc3vr_core::{
+    config::{
+        engine,
+        engine::{EditGuard, SlotGuard},
+    },
+    hooks::online::OnlineConfig,
+};
+use jc3vr_gameplay::{
     controllers::{ControllersConfig, body::BodyDimensions},
-    director::DirectorConfig,
+    hooks::{character::BodyIkConfig, input::MovementConfig},
+};
+use jc3vr_hud::hud::HudConfig;
+use jc3vr_render::{
     far_field::FarFieldConfig,
     fsr::FsrConfig,
     headpose::HeadPoseConfig,
     hooks::{
         camera::CameraConfig,
-        character::BodyIkConfig,
         graphics_engine::config::{ExposureConfig, PostFxConfig},
-        input::MovementConfig,
-        online::OnlineConfig,
     },
-    hud::HudConfig,
-    recorder::RecorderConfig,
     stereo::config::StereoConfig,
-    testing::TestingConfig,
     vr::{FoveationConfig, VrConfig},
 };
+use jc3vr_tooling::{director::DirectorConfig, recorder::RecorderConfig, testing::TestingConfig};
+use serde::{Deserialize, Serialize};
 
 /// The global runtime configuration. Cheap to lock (an uncontended `parking_lot::Mutex`); read it
 /// at the top of a hook and release before doing engine work.
@@ -176,7 +178,7 @@ pub struct Config {
     pub testing: TestingConfig,
     #[serde(default)]
     pub online: OnlineConfig,
-    /// The player's body dimensions; see [`crate::controllers::body`].
+    /// The player's body dimensions; see [`jc3vr_gameplay::controllers::body`].
     pub body: BodyDimensions,
 }
 impl Config {

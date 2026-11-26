@@ -1,5 +1,5 @@
 //! The settings file's format for this configuration: the engine's diff-from-defaults text
-//! ([`crate::config::engine::format`]) for a [`Config`], and the migrations of a file an older
+//! ([`jc3vr_core::config::engine::format`]) for a [`Config`], and the migrations of a file an older
 //! build wrote, which name the subsystems' settings.
 //!
 //! Format zero, a file without a version, holds every setting, each default as it stood when the
@@ -13,16 +13,19 @@
 //! group's collapse cannot run under, so the group takes its current default as a whole rather
 //! than loading half on.
 
+#[cfg(test)]
+use jc3vr_core::config::engine;
+#[cfg(test)]
+use jc3vr_core::config::engine::format::TextError;
+use jc3vr_core::config::engine::format::{Format, Migrated, remove_superseded, same};
+use jc3vr_tooling::director::keymap::{Action, Chord, Keymap};
 use toml::{Table, Value};
 use windows::Win32::UI::Input::KeyboardAndMouse::VK_NUMPAD0;
 
-pub(crate) use crate::config::engine::format::{Format, Migrated};
 #[cfg(test)]
-use crate::config::{Config, engine, engine::format::TextError, schema::SCHEMA};
-use crate::{
-    config::engine::format::{remove_superseded, same},
-    director::keymap::{Action, Chord, Keymap},
-};
+use crate::config::Config;
+#[cfg(test)]
+use crate::config::schema::SCHEMA;
 
 /// The configuration as a save writes it: the version, then each setting that differs from its
 /// default.
@@ -251,19 +254,18 @@ fn flatten(table: &Table, prefix: String, entries: &mut Vec<(String, Vec<Value>)
 
 #[cfg(test)]
 mod tests {
+    use jc3vr_core::config::engine::{
+        format::{Upgrade, VERSION, VERSION_KEY},
+        load::LoadReport,
+    };
+    use jc3vr_render::{
+        far_field::FarFieldMode, fsr::AntiAliasing, stereo::config::set_single_pass_feature,
+    };
+    use jc3vr_tooling::director::keymap::Binding;
     use pretty_assertions::assert_eq;
 
     use super::*;
-    use crate::{
-        config::{
-            engine::format::{Upgrade, VERSION, VERSION_KEY},
-            load::{LoadReport, parse},
-        },
-        director::keymap::Binding,
-        far_field::FarFieldMode,
-        fsr::AntiAliasing,
-        stereo::config::set_single_pass_feature,
-    };
+    use crate::config::load::parse;
 
     fn upgrade(file: &mut Table) -> Upgrade {
         engine::format::upgrade(&SCHEMA, file)

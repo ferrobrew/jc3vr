@@ -8,18 +8,15 @@ use std::{
 };
 
 use glam::{Vec2, Vec3};
+use jc3vr_core::config::engine::persist::edit_pending;
+use jc3vr_gameplay::controllers::config::SightOverride;
+use jc3vr_hud::hud::config::HUD_CONFIG;
 use jc3vr_input::frame::Hand;
+use jc3vr_render::vr::{MirrorView, VR_CONFIG};
+use jc3vr_tooling::director::keymap::{Action, Binding, Chord};
 use pretty_assertions::assert_eq;
 
-use crate::{
-    config::{
-        CONFIG, Config, edit, engine::persist::edit_pending, format, load::parse, test_fixture,
-    },
-    controllers::config::SightOverride,
-    director::keymap::{Action, Binding, Chord},
-    hud::config::HUD_CONFIG,
-    vr::{MirrorView, VR_CONFIG},
-};
+use crate::config::{CONFIG, Config, edit, format, load::parse, test_fixture};
 
 /// A configuration with settings changed across many groups and value kinds: floats that widen
 /// from `f32`, an option, a list of another length, a list of tables, an enum, a borrowed string

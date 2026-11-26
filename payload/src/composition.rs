@@ -2,18 +2,31 @@
 //!
 //! Each module that installs detours exports a `hook_library()`, and each module whose detours need
 //! work at shutdown or hook removal registers it from its own `install`. This module is the one
-//! place that names them all: it runs the registrations, then hands [`crate::hooks::install`] the
+//! place that names them all: it runs the registrations, then hands [`jc3vr_core::hooks::install`] the
 //! composed library.
 //!
 //! The order of [`libraries`] is the order the detours are enabled in (and disabled in, at
 //! removal), and the registration order is the order the removal steps run in. Both are load-bearing
 //! for startup and ejection timing, so neither is reshuffled for grouping's sake.
 
+use jc3vr_core::hooks::{self as core_hooks, online};
+use jc3vr_gameplay::{
+    controllers, grapple,
+    hooks::{animation, character, equipment, input, sim},
+};
+use jc3vr_hud::{controllers::map, egui_impl::register_desktop_overlay, hooks::ui, hud};
+#[cfg(feature = "profiler")]
+use jc3vr_render::hooks::profiler;
+use jc3vr_render::{
+    debug,
+    hooks::{camera, clock, draw_count, graphics_engine, window_focus},
+    stereo,
+};
+use jc3vr_tooling::{diagnostics, director, recorder};
+use jc3vr_ui::pause_menu;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::{
-    controllers, debug, diagnostics, director, grapple, hooks, hud, pause_menu, recorder, stereo,
-};
+use crate::hooks::{game, wndproc};
 
 /// Register every lifecycle participant and hook step, then install the composed hook library. A
 /// refused participant registration leaves the hooks uninstalled.
@@ -23,9 +36,9 @@ pub(crate) fn install() {
     debug::register_unpatch::register();
     // What the layers above the render hooks contribute to the post-draw, the mirror, the camera,
     // and the flip.
-    crate::hud::register_render::register();
-    crate::recorder::register_render::register();
-    crate::egui_impl::register_desktop_overlay::register();
+    hud::register_render::register();
+    recorder::register_render::register();
+    register_desktop_overlay::register();
     // What the input tick reads from the HUD and the recorder, registered before any tick runs.
     hud::pointer::register_pointer::register();
     recorder::register_mark::register();
@@ -35,7 +48,7 @@ pub(crate) fn install() {
     }
     diagnostics::install();
     director::register_tracking::register();
-    hooks::install(compose);
+    core_hooks::install(compose);
 }
 
 /// One hook library in the composition, named so the order can be checked.
@@ -47,24 +60,31 @@ struct NamedLibrary {
 
 /// The hook libraries, in enable order.
 fn libraries() -> Vec<NamedLibrary> {
+    #[cfg_attr(
+        not(feature = "profiler"),
+        expect(
+            unused_mut,
+            reason = "only the profiler's library is pushed after the list"
+        )
+    )]
     let mut libraries = vec![
-        library("game", hooks::game::hook_library),
-        library("sim", hooks::sim::hook_library),
-        library("online", hooks::online::hook_library),
-        library("clock", hooks::clock::hook_library),
-        library("graphics_engine", hooks::graphics_engine::hook_library),
-        library("draw_count", hooks::draw_count::hook_library),
-        library("equipment", hooks::equipment::hook_library),
-        library("camera", hooks::camera::hook_library),
-        library("wndproc", hooks::wndproc::hook_library),
-        library("window_focus", hooks::window_focus::hook_library),
-        library("character", hooks::character::hook_library),
-        library("animation", hooks::animation::hook_library),
-        library("input", hooks::input::hook_library),
-        library("ui", hooks::ui::hook_library),
+        library("game", game::hook_library),
+        library("sim", sim::hook_library),
+        library("online", online::hook_library),
+        library("clock", clock::hook_library),
+        library("graphics_engine", graphics_engine::hook_library),
+        library("draw_count", draw_count::hook_library),
+        library("equipment", equipment::hook_library),
+        library("camera", camera::hook_library),
+        library("wndproc", wndproc::hook_library),
+        library("window_focus", window_focus::hook_library),
+        library("character", character::hook_library),
+        library("animation", animation::hook_library),
+        library("input", input::hook_library),
+        library("ui", ui::hook_library),
         library("pause_menu", pause_menu::hook_library),
         library("controllers", || {
-            controllers::hook_library(controllers::map::hook_library())
+            controllers::hook_library(map::hook_library())
         }),
         library(
             "human_hull",
@@ -74,7 +94,7 @@ fn libraries() -> Vec<NamedLibrary> {
         library("grapple_device", grapple::device::hook_library),
     ];
     #[cfg(feature = "profiler")]
-    libraries.push(library("profiler", hooks::profiler::hook_library));
+    libraries.push(library("profiler", profiler::hook_library));
     libraries
 }
 

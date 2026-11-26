@@ -10,6 +10,10 @@
 //! so a re-injection loop that still grows shows how much each eject returned.
 
 use jc3gi::graphics_engine::graphics_engine::GraphicsEngine;
+use jc3vr_core::lifecycle;
+use jc3vr_gameplay::controllers;
+use jc3vr_hud::hud;
+use jc3vr_render::fsr;
 use windows::{
     Win32::{
         Graphics::Dxgi::{DXGI_MEMORY_SEGMENT_GROUP_LOCAL, IDXGIAdapter3, IDXGIDevice},
@@ -22,26 +26,20 @@ use windows::{
 /// the cleanups run in reverse, so this one runs last, after the VR teardown and the resize back to
 /// the native resolution.
 pub(crate) fn install() {
-    crate::lifecycle::on_cleanup(|_renderer| release());
+    lifecycle::on_cleanup(|_renderer| release());
 }
 
 fn release() {
     let before = video_memory_mib();
     let steps: [(&str, fn()); 8] = [
-        ("hud", crate::hud::release_on_eject),
-        ("fsr", crate::fsr::release_on_eject),
-        ("overlay", crate::controllers::overlay::release_on_eject),
-        (
-            "scope",
-            crate::controllers::weapons::scope::release_on_eject,
-        ),
-        ("world_markers", crate::hud::world_markers::release_on_eject),
-        ("atlas", crate::hud::atlas::release_on_eject),
-        (
-            "mirror_overlay",
-            crate::hud::mirror_overlay::release_on_eject,
-        ),
-        ("egui_panel", crate::hud::egui_panel::release_on_eject),
+        ("hud", hud::release_on_eject),
+        ("fsr", fsr::release_on_eject),
+        ("overlay", controllers::overlay::release_on_eject),
+        ("scope", controllers::weapons::scope::release_on_eject),
+        ("world_markers", hud::world_markers::release_on_eject),
+        ("atlas", hud::atlas::release_on_eject),
+        ("mirror_overlay", hud::mirror_overlay::release_on_eject),
+        ("egui_panel", hud::egui_panel::release_on_eject),
     ];
     for (holder, release) in steps {
         let held = video_memory_mib();

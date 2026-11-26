@@ -2,14 +2,15 @@
 //! [`Config`], registered with the store before anything reads the configuration
 //! ([`crate::config::register`]).
 
+use jc3vr_core::config::engine::{
+    ConfigRoot, Parts, Schema,
+    format::{Format, Migrated},
+    load::Reset,
+    store::Root,
+};
 use toml::Table;
 
-use crate::config::{
-    Config,
-    engine::{ConfigRoot, Parts, Schema, store::Root},
-    format::{self, Format, Migrated},
-    load::{self, Reset},
-};
+use crate::config::{Config, format, load};
 
 /// The schema the payload registers.
 pub(crate) static SCHEMA: Schema = Schema::of::<Config>();
@@ -29,12 +30,12 @@ impl ConfigRoot for Config {
 
     /// Note the settings for a tracking recording.
     fn note_saved(text: &str) {
-        crate::controllers::diagnostics::note_settings(text);
+        jc3vr_gameplay::controllers::diagnostics::note_settings(text);
     }
 }
 
 /// A configuration value is itself the parts of one root, so code that changes several groups
-/// together ([`set_single_pass_feature`](crate::stereo::config::set_single_pass_feature)) runs on a
+/// together ([`set_single_pass_feature`](jc3vr_render::stereo::config::set_single_pass_feature)) runs on a
 /// `Config` as it does on the live configuration.
 impl Parts for Config {
     fn root(&self) -> &Root {

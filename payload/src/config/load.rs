@@ -1,20 +1,21 @@
-//! The tolerant load of this configuration: the engine's load ([`crate::config::engine::load`])
+//! The tolerant load of this configuration: the engine's load ([`jc3vr_core::config::engine::load`])
 //! for a [`Config`], and the checks it runs on the settings whose types admit unusable values.
 
-pub(crate) use crate::config::engine::load::Reset;
 #[cfg(test)]
-pub(crate) use crate::config::engine::load::{LoadError, LoadReport};
+use jc3vr_core::config::engine;
 #[cfg(test)]
-use crate::config::{engine, schema::SCHEMA};
-use crate::{
-    config::{
-        Config,
-        engine::{Invalid, load::reset_named},
-    },
-    controllers::config::{ControllersConfig, SightTable, validate},
-    headpose::config::VrTurnConfig,
-    hud::HudConfig,
+use jc3vr_core::config::engine::load::{LoadError, LoadReport};
+use jc3vr_core::config::engine::{
+    Invalid,
+    load::{Reset, reset_named},
 };
+use jc3vr_gameplay::controllers::config::{ControllersConfig, SightTable, validate};
+use jc3vr_hud::hud::HudConfig;
+use jc3vr_render::headpose::config::VrTurnConfig;
+
+use crate::config::Config;
+#[cfg(test)]
+use crate::config::schema::SCHEMA;
 
 /// A loaded configuration and what the load had to change to get it.
 #[cfg(test)]

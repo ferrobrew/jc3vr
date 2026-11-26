@@ -3,23 +3,22 @@
 use std::borrow::Cow;
 
 use glam::{Vec2, Vec3};
+use jc3vr_core::config::engine::{
+    Snapshot,
+    load::{LoadError, LoadReport},
+};
+use jc3vr_gameplay::controllers::config::{LocomotionDirection, Posture, SightOverride};
 use jc3vr_input::frame::Hand;
+use jc3vr_render::vr::MirrorView;
+use jc3vr_tooling::director::{
+    clean_view::CleanViewScope,
+    keymap::{Action, Binding, Chord},
+};
 use pretty_assertions::assert_eq;
 use toml::{Table, Value};
 
 use super::*;
-use crate::{
-    config::{
-        engine::Snapshot,
-        load::{LoadReport, Loaded, parse},
-    },
-    controllers::config::{LocomotionDirection, Posture, SightOverride},
-    director::{
-        clean_view::CleanViewScope,
-        keymap::{Action, Binding, Chord},
-    },
-    vr::MirrorView,
-};
+use crate::config::load::{Loaded, parse};
 
 #[test]
 fn the_defaults_round_trip() {
@@ -489,10 +488,7 @@ fn a_shorter_key_map_loads_as_written() {
 
 #[test]
 fn text_that_is_not_toml_is_an_error() {
-    assert!(matches!(
-        parse("stereo = {"),
-        Err(load::LoadError::Syntax(_))
-    ));
+    assert!(matches!(parse("stereo = {"), Err(LoadError::Syntax(_))));
 }
 
 /// A trace's manifest and a capture's metadata embed the configuration through the engine's

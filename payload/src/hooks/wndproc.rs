@@ -1,4 +1,12 @@
 use detours_macro::detour;
+#[cfg(feature = "profiler")]
+use jc3vr_core::profiler::capture;
+use jc3vr_hud::{
+    egui_impl::{EguiState, consume_desktop_shortcut, observe_desktop_message},
+    hud::{cursor, egui_panel},
+};
+use jc3vr_render::{headpose, hooks::graphics_engine::shader, screenshot, vr};
+use jc3vr_tooling::{director, recorder};
 use re_utilities::hook_library::HookLibrary;
 #[cfg(feature = "profiler")]
 use windows::Win32::UI::Input::KeyboardAndMouse::VK_F9;
@@ -14,12 +22,7 @@ use windows::Win32::{
     },
 };
 
-use crate::{
-    config,
-    egui_impl::{EguiState, consume_desktop_shortcut, observe_desktop_message},
-    hooks::graphics_engine::shader,
-    hud::{cursor, egui_panel},
-};
+use crate::config;
 
 pub(crate) fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&WNDPROC_BINDER)
@@ -35,28 +38,28 @@ fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
         return WNDPROC.get().unwrap().call(hwnd, msg, wparam, lparam);
     }
     // F1 starts or stops a session recording: the video recorder and a tracking recording together,
-    // under one stamp (`crate::recorder::session_recording`). Edge-detected; consumed.
+    // under one stamp (`jc3vr_tooling::recorder::session_recording`). Edge-detected; consumed.
     if (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) && wparam.0 == VK_F1.0 as usize {
         consume_desktop_shortcut(wparam.0);
         let previous_down = (lparam.0 & 0x4000_0000) != 0;
         if !previous_down {
-            crate::recorder::session_recording::toggle();
+            recorder::session_recording::toggle();
         }
         return LRESULT(0);
     }
 
     // F2 drops a take marker into whatever records, and saves the lookback when no tracking
-    // recording runs (`crate::recorder::session_recording::mark`). Edge-detected; consumed.
+    // recording runs (`jc3vr_tooling::recorder::session_recording::mark`). Edge-detected; consumed.
     if (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) && wparam.0 == VK_F2.0 as usize {
         consume_desktop_shortcut(wparam.0);
         let previous_down = (lparam.0 & 0x4000_0000) != 0;
         if !previous_down {
-            crate::recorder::session_recording::mark();
+            recorder::session_recording::mark();
         }
         return LRESULT(0);
     }
 
-    // F4 toggles the clean view at its scope (`crate::director::clean_view`): the flat egui debug
+    // F4 toggles the clean view at its scope (`jc3vr_tooling::director::clean_view`): the flat egui debug
     // overlay leaves the desktop window, and at the everything scope every other overlay goes too.
     // With no live VR panel, hiding releases editing and showing requests Editing through
     // device/neutral gates. The consumed key episode remains blocked through its release.
@@ -64,7 +67,7 @@ fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
         consume_desktop_shortcut(wparam.0);
         let previous_down = (lparam.0 & 0x4000_0000) != 0;
         if !previous_down {
-            let clean = crate::director::clean_view::toggle();
+            let clean = director::clean_view::toggle();
             if let Some(egui_state) = EguiState::get().as_mut() {
                 egui_state.desktop_visibility_changed(!clean);
             }
@@ -78,7 +81,7 @@ fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
         consume_desktop_shortcut(wparam.0);
         let previous_down = (lparam.0 & 0x4000_0000) != 0;
         if !previous_down {
-            crate::headpose::recenter();
+            headpose::recenter();
             tracing::info!("Headpose recentered");
         }
         return LRESULT(0);
@@ -92,9 +95,7 @@ fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     if (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) && wparam.0 == VK_F9.0 as usize {
         consume_desktop_shortcut(wparam.0);
         let previous_down = (lparam.0 & 0x4000_0000) != 0;
-        if !previous_down
-            && crate::profiler::capture::start(crate::profiler::capture::DEFAULT_CAPTURE_SECS)
-        {
+        if !previous_down && capture::start(capture::DEFAULT_CAPTURE_SECS) {
             tracing::info!("F9: profiler trace capture started");
         }
         return LRESULT(0);
@@ -116,13 +117,13 @@ fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     }
 
     // F10 switches the desktop mirror between the stereo pair and the last single eye
-    // (`crate::vr::toggle_stereo_pair`). Edge-detected; consumed, which also keeps the system's
+    // (`jc3vr_render::vr::toggle_stereo_pair`). Edge-detected; consumed, which also keeps the system's
     // menu activation off it.
     if (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) && wparam.0 == VK_F10.0 as usize {
         consume_desktop_shortcut(wparam.0);
         let previous_down = (lparam.0 & 0x4000_0000) != 0;
         if !previous_down {
-            let view = crate::vr::toggle_stereo_pair();
+            let view = vr::toggle_stereo_pair();
             tracing::info!("F10: desktop mirror view {view:?}");
         }
         return LRESULT(0);
@@ -156,23 +157,23 @@ fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
         consume_desktop_shortcut(wparam.0);
         let previous_down = (lparam.0 & 0x4000_0000) != 0;
         if !previous_down {
-            crate::screenshot::request();
+            screenshot::request();
             tracing::info!("F12: screenshot requested");
         }
         return LRESULT(0);
     }
 
-    // The director's bindable keys (`crate::director::keymap`): fed every key-down after the fixed
+    // The director's bindable keys (`jc3vr_tooling::director::keymap`): fed every key-down after the fixed
     // function keys above so those keep precedence. Consumed when bound, so the game does not also
     // act on the key; auto-repeat is passed through as a non-first press and ignored.
     if (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN)
-        && crate::director::keymap::on_key_down(wparam.0 as u16, (lparam.0 & 0x4000_0000) == 0)
+        && director::keymap::on_key_down(wparam.0 as u16, (lparam.0 & 0x4000_0000) == 0)
     {
         consume_desktop_shortcut(wparam.0);
         return LRESULT(0);
     }
 
-    // Track the mouse buttons and wheel for the panel cursor (see `crate::hud::cursor`): the
+    // Track the mouse buttons and wheel for the panel cursor (see `jc3vr_hud::hud::cursor`): the
     // `SendMouseEvents` detour hands Scaleform the live button bitmask each frame instead of the
     // steering action map's effector edges. Observed, not consumed -- egui and the game still see
     // the messages.
@@ -212,7 +213,7 @@ fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
 
 /// Log the game window gaining or losing the foreground, and being minimized or restored. Outside a
 /// VR session the engine's main loop skips `Game::Update` for as long as the window is in the
-/// background (`window::AVAMainLoop`, `crate::hooks::window_focus`), which the frame breakdown can
+/// background (`window::AVAMainLoop`, `jc3vr_render::hooks::window_focus`), which the frame breakdown can
 /// only report as untracked time, so these lines are what places a long frame against what the
 /// window was doing. The engine itself ignores these messages and polls the foreground window.
 fn log_window_state(msg: u32, wparam: WPARAM) {
