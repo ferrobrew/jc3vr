@@ -1,8 +1,8 @@
-//! The eight target crates and the dependency order between them.
+//! The eight crates the payload is built from and the dependency order between them.
 
 use std::fmt;
 
-/// One of the crates the payload is split into, from the bottom of the stack to the top.
+/// One of the crates the payload is built from, from the bottom of the stack to the top.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Layer {
     Core,

@@ -1,19 +1,19 @@
-//! Extracts the paths a source file names through `crate::` or another layer's crate.
+//! Extracts the paths a source file names through `crate::` or a layer crate.
 //!
 //! A path is read as a use tree, so `crate::a::{b, c::{self, d}}` expands to `a::b`, `a::c`, and
 //! `a::c::d`. Expression paths (`crate::a::B::new()`) are read up to the first segment that is not
-//! followed by `::`; the table lookup takes the longest known prefix, so the trailing item does not
-//! matter. Only `crate::` and `jc3vr_<layer>::` roots are read: `self::` and `super::` stay inside
-//! the file's own module, which CONTRIBUTING.md requires for everything but `use super::*` in tests.
+//! followed by `::`. Only `crate::` and `jc3vr_<layer>::` roots are read: `self::` and `super::`
+//! stay inside the file's own module, which CONTRIBUTING.md requires for everything but
+//! `use super::*` in tests.
 
 use crate::lex::{blank_non_code, is_ident_char};
 
 /// Where a reference's path starts.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum Root {
-    /// `crate::` (or `$crate::` in a macro), resolved through the module table.
+    /// `crate::` (or `$crate::` in a macro), which stays inside the file's own crate.
     Local,
-    /// `jc3vr_<name>::`, a crate that is already cut out, carrying the name as written.
+    /// `jc3vr_<name>::`, another crate, carrying the name as written.
     Extern(String),
 }
 

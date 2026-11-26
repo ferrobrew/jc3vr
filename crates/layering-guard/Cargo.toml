@@ -2,7 +2,7 @@
 name = "layering-guard"
 version = "0.1.0"
 edition = "2024"
-description = "A test-only check that the payload's modules respect the planned crate layering, and, once the crates exist, that their manifests do."
+description = "A test-only check that the payload's layer crates depend only on the crates below them, and that only the payload is a cdylib."
 publish = false
 
 # Host-native on purpose: it reads source and manifests and links nothing from Windows, so it runs

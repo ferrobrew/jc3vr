@@ -1,8 +1,0 @@
-# Known upward edges in payload/src, for the layering guard's phase one.
-#
-# Each line is `<file> -> <layer>`: the file, in its target crate, still names something in a crate
-# above it (docs/architecture.md, "Crate layering"). The list may only shrink. When a change
-# removes the last such reference, the guard fails and prints the exact line to delete here. Keep
-# the file sorted bytewise (`LC_ALL=C sort`), one edge per line, so concurrent deletions merge
-# cleanly. Most `-> payload` lines are reads of the settings aggregate, `crate::config::Config`,
-# which the config slots replace.
