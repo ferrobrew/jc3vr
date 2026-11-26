@@ -117,11 +117,13 @@ pub fn present_and_submit(mut frame: FrameContext, cfg: &VrConfig) {
 
 /// Set the comfort fade's darkness, `0` (clear) to `1` (black), that the blit scales each eye by.
 /// The fade's owner writes it once per rendered frame, and any thread may.
+#[inline]
 pub fn set_fade_level(level: f32) {
     FADE_LEVEL.store(level.to_bits(), Ordering::Relaxed);
 }
 
 /// The comfort fade's darkness, as last set by [`set_fade_level`].
+#[inline]
 pub fn fade_level() -> f32 {
     f32::from_bits(FADE_LEVEL.load(Ordering::Relaxed))
 }

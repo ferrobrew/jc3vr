@@ -67,6 +67,7 @@ pub fn set_source(source: Source) {
 }
 
 /// The active headpose source.
+#[inline]
 pub fn source() -> Source {
     if SOURCE.load(Ordering::Relaxed) == Source::Vr as u8 {
         Source::Vr

@@ -169,6 +169,7 @@ pub fn request_stop() {
 }
 
 /// Whether a recording is running.
+#[inline]
 pub fn is_recording() -> bool {
     RECORDING.load(Ordering::Relaxed)
 }

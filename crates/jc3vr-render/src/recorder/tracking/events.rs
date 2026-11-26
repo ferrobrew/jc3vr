@@ -17,6 +17,7 @@ use tracking_format::event::Event;
 pub use tracking_format::event::EventKind;
 
 /// Whether noted events are kept: a tracking recording runs, or the lookback does.
+#[inline]
 pub fn collecting() -> bool {
     crate::recorder::tracking::is_recording() || crate::recorder::tracking::lookback::is_running()
 }

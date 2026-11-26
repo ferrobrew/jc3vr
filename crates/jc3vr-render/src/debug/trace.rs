@@ -325,6 +325,7 @@ pub enum RtKind {
 }
 
 /// Whether a render trace is currently collecting. Lock-free; lets hooks skip readback work when off.
+#[inline]
 pub fn tracing_active() -> bool {
     TRACE_FRAMES.load(Ordering::Relaxed) > 0
 }

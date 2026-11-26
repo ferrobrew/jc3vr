@@ -362,6 +362,7 @@ impl LocatedFrame {
 static HEAD_TRACKED: AtomicBool = AtomicBool::new(true);
 
 /// Whether the last located views had a valid position and orientation.
+#[inline]
 pub fn head_tracked() -> bool {
     HEAD_TRACKED.load(Ordering::Relaxed)
 }

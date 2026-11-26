@@ -86,6 +86,7 @@ pub fn set_active_action_set(kind: ActionSetKind) {
 }
 
 /// The mode action set currently selected.
+#[inline]
 pub fn active_action_set() -> ActionSetKind {
     let index = ACTIVE_SET.load(Ordering::Relaxed) as usize;
     ActionSetKind::ALL
@@ -145,6 +146,7 @@ pub fn status() -> InputStatus {
 
 /// The dominant hand the attached actions' bindings were suggested for, `None` while none are
 /// attached. Lock-free, so that any thread, holding any lock, may ask.
+#[inline]
 pub fn bound_hand() -> Option<Hand> {
     match BOUND_HAND.load(Ordering::Relaxed) {
         BOUND_LEFT => Some(Hand::Left),

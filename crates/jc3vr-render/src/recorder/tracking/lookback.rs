@@ -25,6 +25,7 @@ use std::{
 pub const WINDOW: Duration = Duration::from_secs(10);
 
 /// Whether the lookback is collecting. Any thread.
+#[inline]
 pub(crate) fn is_running() -> bool {
     RUNNING.load(Ordering::Relaxed)
 }

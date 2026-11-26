@@ -8,6 +8,7 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
 /// The number of teleports seen since the payload loaded.
+#[inline]
 pub fn epoch() -> u64 {
     EPOCH.load(Ordering::Relaxed)
 }
