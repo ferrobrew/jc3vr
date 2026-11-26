@@ -4,8 +4,12 @@
 //! depth-of-field, and anti-aliasing trials rewrite a pristine game shader before the trial binds
 //! it. Those rewrites sit behind `dxbc-stereo`'s `capture-rewrites` feature so the shipped payload
 //! does not carry them. The harness builds the payload with the feature (through the payload's and
-//! this crate's `capture-rewrites`); in a build without it each rewrite fails with an error that
-//! names the missing feature, so the experiment reports the build rather than a wrong image.
+//! this crate's `capture-rewrites`). A build without it refuses a request whose options need a
+//! rewrite when the request arrives ([`AVAILABLE`]), and each rewrite below also fails with an error
+//! that names the missing feature, so an experiment reports the build rather than a wrong image.
+
+/// Whether this build carries the capture-only rewrites.
+pub(crate) const AVAILABLE: bool = cfg!(feature = "capture-rewrites");
 
 macro_rules! capture_rewrites {
     ($($name:ident($($arg:ident: $ty:ty),*);)*) => {$(

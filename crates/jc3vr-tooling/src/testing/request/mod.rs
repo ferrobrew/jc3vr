@@ -7,12 +7,19 @@
 //! ```
 
 use std::{
+    collections::BTreeMap,
     path::{Path, PathBuf},
     time::{Duration, Instant},
 };
 
 use jc3vr_capture::{
-    screenshot::harness::snapshot::{SnapshotError, SnapshotRequest, SnapshotTable},
+    screenshot::{
+        harness,
+        harness::{
+            CaptureRequest, RequestId,
+            snapshot::{SnapshotError, SnapshotRequest, SnapshotTable},
+        },
+    },
     testing::{
         benchmark::{BenchmarkError, BenchmarkRequest, BenchmarkTable},
         visual,
@@ -81,87 +88,14 @@ enum Request {
     Record,
     StopRecording,
     Screenshot {
-        id: jc3vr_capture::screenshot::harness::RequestId,
+        id: RequestId,
         motion: Option<u32>,
-        water_reflection: Option<jc3vr_capture::screenshot::harness::WaterReflection>,
-        water_inputs: bool,
-        water_tess_draw: Option<u8>,
-        patch_draw_ordinal: Option<u8>,
-        second_patch_ordinal: Option<u8>,
-        water_surface_inputs: bool,
-        late_sky_stages: bool,
-        draw_census: bool,
-        fog_inputs: bool,
-        group_sources: bool,
-        group_inputs: bool,
-        terrain_interval: bool,
-        base_sources: bool,
-        base_projection: bool,
-        group_cards: bool,
-        group_residual: bool,
-        aa_weights: bool,
-        aa_draws: bool,
-        lake_owner_four: bool,
-        lake_producer: bool,
-        lake_gradients: bool,
-        lake_waves: bool,
-        lake_normals: bool,
-        lake_displacement: bool,
-        lake_samplers: bool,
-        tess_writer: bool,
-        tess_owners: bool,
-        resolve_shadow: bool,
-        dof_inputs: bool,
-        fog_generation: bool,
-        sun_inputs: bool,
-        resolve_inputs: bool,
-        resolve_samples: bool,
-        ssr_bracket: bool,
-        ssr_operands: bool,
-        ssr_prepare: bool,
-        ssr_history: bool,
-        dof_edge_local: Option<bool>,
-        card_atlas: Option<bool>,
-        group_fade: Option<bool>,
-        group_atlas_scale: Option<bool>,
-        aa_color_edge: Option<bool>,
-        patch63_hull: Option<bool>,
-        owner_four_domain: Option<bool>,
-        lake_color_mirror: Option<bool>,
-        lake_depth_edge: Option<bool>,
-        lake_ds_mvp: Option<bool>,
-        lake_inner_edge: Option<bool>,
-        writer_domain_camera: Option<bool>,
-        base_eye_vp: Option<bool>,
-        fog_local_uv: Option<bool>,
-        terrain_camera: Option<bool>,
-        extra_bark_dither: Option<bool>,
-        left_atlas_scale: Option<bool>,
-        impostor_scale: Option<bool>,
-        color_dither: Option<bool>,
-        bark_dither: Option<bool>,
-        terrain_sources: bool,
-        residual_bark: bool,
-        left_interval: bool,
-        impostor_inputs: bool,
-        interval_trace: bool,
-        post_geometry: bool,
-        bark_color_trace: bool,
-        velocity_trace: bool,
-        early_depth: bool,
-        resolve_eye_camera: Option<bool>,
-        proxy_eye: Option<bool>,
-        march_eye: Option<bool>,
-        veto_eye: Option<bool>,
-        grid_eye: Option<bool>,
-        history_center: Option<bool>,
-        cascade_scale: Option<jc3vr_capture::screenshot::harness::CascadeScale>,
-        sun_depth_clip: Option<jc3vr_capture::screenshot::harness::SunDepthClip>,
+        options: CaptureRequest,
     },
     Visual(visual::Request),
     Stage(StageRequest),
     Snapshot(SnapshotRequest),
-    SnapshotRelease(jc3vr_capture::screenshot::harness::RequestId),
+    SnapshotRelease(RequestId),
     Benchmark(BenchmarkRequest),
 }
 
@@ -199,20 +133,8 @@ enum RequestErrorKind {
     InvalidVisualOverrides(visual::OverrideError),
     ShaderIdentityOnCommand(Command),
     MotionCaptureOnCommand(Command),
-    WaterReflectionOnCommand(Command),
-    WaterReflectionNeedsInputs,
-    WaterInputsOnCommand(Command),
-    InvalidPatchOrdinal,
-    InvalidWaterDraw,
-    InvalidSurfaceInputs,
-    InvalidLateSkyStages,
-    InvalidDrawCensus,
-    InvalidResolveSamples,
-    InvalidCascadeScale,
-    SunInputsOnCommand(Command),
-    ResolveInputsOnCommand(Command),
-    SunDepthClipOnCommand(Command),
-    SunDepthClipNeedsSunInputs,
+    CaptureOptionsOnCommand(Command),
+    UnknownKeys(Vec<String>),
     MotionWithPose,
     NoMode,
     InvalidMode,
@@ -298,53 +220,14 @@ impl std::fmt::Display for RequestError {
                     "visual_configure accepts either a pose or a motion table, not both"
                 )
             }
-            RequestErrorKind::WaterReflectionOnCommand(command) => write!(
-                f,
-                "only screenshot accepts water_reflection, not {command:?}"
-            ),
-            RequestErrorKind::WaterReflectionNeedsInputs => {
-                write!(f, "water_reflection requires water_inputs")
+            RequestErrorKind::CaptureOptionsOnCommand(command) => {
+                write!(
+                    f,
+                    "only screenshot accepts screenshot options, not {command:?}"
+                )
             }
-            RequestErrorKind::InvalidResolveSamples => write!(
-                f,
-                "resolve samples require an untimed resolve screenshot without a cascade override"
-            ),
-            RequestErrorKind::InvalidCascadeScale => write!(
-                f,
-                "cascade_scale requires a resolve screenshot without motion"
-            ),
-            RequestErrorKind::InvalidLateSkyStages => {
-                write!(f, "late_sky_stages requires a screenshot without motion")
-            }
-            RequestErrorKind::InvalidDrawCensus => {
-                write!(f, "draw_census requires a screenshot without motion")
-            }
-            RequestErrorKind::InvalidSurfaceInputs => write!(
-                f,
-                "surface inputs require a selected water draw without motion or incompatible treatments"
-            ),
-            RequestErrorKind::InvalidPatchOrdinal => write!(
-                f,
-                "terrain diagnostic: patch_draw_ordinal requires a camera experiment and a positive ordinal"
-            ),
-            RequestErrorKind::InvalidWaterDraw => write!(
-                f,
-                "water_tess_draw requires water_inputs and an index below 32"
-            ),
-            RequestErrorKind::WaterInputsOnCommand(command) => {
-                write!(f, "only screenshot accepts water_inputs, not {command:?}")
-            }
-            RequestErrorKind::SunDepthClipOnCommand(command) => {
-                write!(f, "only screenshot accepts sun_depth_clip, not {command:?}")
-            }
-            RequestErrorKind::SunDepthClipNeedsSunInputs => {
-                write!(f, "sun_depth_clip requires sun_inputs")
-            }
-            RequestErrorKind::ResolveInputsOnCommand(command) => {
-                write!(f, "only screenshot accepts resolve_inputs, not {command:?}")
-            }
-            RequestErrorKind::SunInputsOnCommand(command) => {
-                write!(f, "only screenshot accepts sun_inputs, not {command:?}")
+            RequestErrorKind::UnknownKeys(keys) => {
+                write!(f, "unknown keys: {}", keys.join(", "))
             }
             RequestErrorKind::NoMode => write!(f, "visual_configure needs a mode"),
             RequestErrorKind::InvalidMode => {
@@ -372,7 +255,6 @@ enum Command {
 }
 
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
 struct RequestFile {
     command: Command,
     id: Option<String>,
@@ -388,122 +270,12 @@ struct RequestFile {
     motion_capture: Option<MotionCaptureTable>,
     snapshot: Option<SnapshotTable>,
     benchmark: Option<BenchmarkTable>,
-    water_reflection: Option<jc3vr_capture::screenshot::harness::WaterReflection>,
-    #[serde(default)]
-    water_inputs: bool,
-    water_tess_draw: Option<u8>,
-    patch_draw_ordinal: Option<u8>,
-    second_patch_ordinal: Option<u8>,
-    #[serde(default)]
-    water_surface_inputs: bool,
-    #[serde(default)]
-    late_sky_stages: bool,
-    #[serde(default)]
-    draw_census: bool,
-    #[serde(default)]
-    fog_inputs: bool,
-    #[serde(default)]
-    group_sources: bool,
-    #[serde(default)]
-    group_inputs: bool,
-    #[serde(default)]
-    terrain_interval: bool,
-    #[serde(default)]
-    base_sources: bool,
-    #[serde(default)]
-    base_projection: bool,
-    #[serde(default)]
-    group_cards: bool,
-    #[serde(default)]
-    group_residual: bool,
-    #[serde(default)]
-    aa_weights: bool,
-    #[serde(default)]
-    aa_draws: bool,
-    #[serde(default)]
-    lake_owner_four: bool,
-    #[serde(default)]
-    lake_producer: bool,
-    #[serde(default)]
-    lake_gradients: bool,
-    #[serde(default)]
-    lake_waves: bool,
-    #[serde(default)]
-    lake_normals: bool,
-    #[serde(default)]
-    lake_displacement: bool,
-    #[serde(default)]
-    lake_samplers: bool,
-    #[serde(default)]
-    tess_writer: bool,
-    #[serde(default)]
-    tess_owners: bool,
-    #[serde(default)]
-    resolve_shadow: bool,
-    #[serde(default)]
-    dof_inputs: bool,
-    #[serde(default)]
-    fog_generation: bool,
-    #[serde(default)]
-    sun_inputs: bool,
-    #[serde(default)]
-    resolve_inputs: bool,
-    #[serde(default)]
-    ssr_bracket: bool,
-    #[serde(default)]
-    ssr_operands: bool,
-    #[serde(default)]
-    ssr_prepare: bool,
-    #[serde(default)]
-    ssr_history: bool,
-    dof_edge_local: Option<bool>,
-    card_atlas: Option<bool>,
-    group_fade: Option<bool>,
-    group_atlas_scale: Option<bool>,
-    aa_color_edge: Option<bool>,
-    patch63_hull: Option<bool>,
-    owner_four_domain: Option<bool>,
-    lake_color_mirror: Option<bool>,
-    lake_depth_edge: Option<bool>,
-    lake_ds_mvp: Option<bool>,
-    lake_inner_edge: Option<bool>,
-    writer_domain_camera: Option<bool>,
-    base_eye_vp: Option<bool>,
-    fog_local_uv: Option<bool>,
-    terrain_camera: Option<bool>,
-    extra_bark_dither: Option<bool>,
-    left_atlas_scale: Option<bool>,
-    impostor_scale: Option<bool>,
-    color_dither: Option<bool>,
-    bark_dither: Option<bool>,
-    #[serde(default)]
-    terrain_sources: bool,
-    #[serde(default)]
-    residual_bark: bool,
-    #[serde(default)]
-    left_interval: bool,
-    #[serde(default)]
-    impostor_inputs: bool,
-    #[serde(default)]
-    interval_trace: bool,
-    #[serde(default)]
-    post_geometry: bool,
-    #[serde(default)]
-    bark_color_trace: bool,
-    #[serde(default)]
-    velocity_trace: bool,
-    #[serde(default)]
-    early_depth: bool,
-    #[serde(default)]
-    resolve_samples: bool,
-    resolve_eye_camera: Option<bool>,
-    proxy_eye: Option<bool>,
-    march_eye: Option<bool>,
-    veto_eye: Option<bool>,
-    grid_eye: Option<bool>,
-    history_center: Option<bool>,
-    cascade_scale: Option<jc3vr_capture::screenshot::harness::CascadeScale>,
-    sun_depth_clip: Option<jc3vr_capture::screenshot::harness::SunDepthClip>,
+    #[serde(flatten)]
+    capture: CaptureRequest,
+    /// Whatever no field above claims. The struct cannot deny unknown keys itself while it
+    /// flattens the screenshot options, so [`parse`] refuses a request that leaves any here.
+    #[serde(flatten)]
+    unknown: BTreeMap<String, toml::Value>,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize)]
@@ -568,6 +340,11 @@ fn parse(path: &Path, text: &str) -> Result<Request, RequestError> {
     text::limit("request file", text.len(), text::REQUEST_BYTES)
         .map_err(|e| error(RequestErrorKind::Read(e)))?;
     let file: RequestFile = toml::from_str(text).map_err(|e| error(RequestErrorKind::Parse(e)))?;
+    if !file.unknown.is_empty() {
+        return Err(error(RequestErrorKind::UnknownKeys(
+            file.unknown.into_keys().collect(),
+        )));
+    }
     let pose = match file.pose {
         Some(table) => {
             if file.command != Command::VisualConfigure {
@@ -657,208 +434,10 @@ fn parse(path: &Path, text: &str) -> Result<Request, RequestError> {
         }
         None => None,
     };
-    if file.water_reflection.is_some() && file.command != Command::Screenshot {
-        return Err(error(RequestErrorKind::WaterReflectionOnCommand(
+    if file.capture != CaptureRequest::default() && file.command != Command::Screenshot {
+        return Err(error(RequestErrorKind::CaptureOptionsOnCommand(
             file.command,
         )));
-    }
-    if file.water_reflection.is_some() && !file.water_inputs {
-        return Err(error(RequestErrorKind::WaterReflectionNeedsInputs));
-    }
-    if (file.aa_color_edge.is_some() && (!file.aa_weights || file.patch63_hull != Some(true)))
-        || (file.aa_weights && !file.aa_draws)
-        || (file.aa_draws && !file.dof_inputs)
-        || (file.lake_owner_four && (!file.lake_producer || !file.tess_writer))
-        || (file.lake_producer && !file.lake_displacement)
-        || (file.lake_gradients && !file.lake_waves)
-        || (file.lake_waves && (!file.lake_displacement || file.lake_normals))
-        || (file.lake_normals && !file.lake_displacement)
-        || (file.lake_displacement
-            && (!file.lake_samplers
-                || !file.tess_writer
-                || !matches!(
-                    file.water_reflection,
-                    Some(
-                        jc3vr_capture::screenshot::harness::WaterReflection::LakeCameraControl
-                            | jc3vr_capture::screenshot::harness::WaterReflection::LakeHullCamera
-                    )
-                )))
-        || (file.patch63_hull.is_some()
-            && (file.owner_four_domain != Some(true) || file.writer_domain_camera != Some(true)))
-        || (file.owner_four_domain.is_some()
-            && (!file.lake_owner_four || file.lake_color_mirror != Some(true)))
-        || (file.lake_color_mirror.is_some() && file.lake_depth_edge != Some(true))
-        || (file.lake_depth_edge.is_some()
-            && (file.lake_ds_mvp != Some(true) || file.lake_waves || file.lake_normals))
-        || (file.lake_ds_mvp.is_some()
-            && (!file.lake_producer
-                || file.card_atlas != Some(true)
-                || file.water_reflection
-                    != Some(jc3vr_capture::screenshot::harness::WaterReflection::LakeHullCamera)))
-        || (file.card_atlas.is_some() && file.group_fade != Some(true))
-        || (file.group_fade.is_some() && (!file.group_cards || file.lake_inner_edge != Some(true)))
-        || (file.group_cards && !file.group_residual)
-        || (file.group_residual && !file.group_inputs)
-        || (file.lake_samplers && (!file.water_surface_inputs || file.water_tess_draw != Some(7)))
-        || (file.tess_writer
-            && (!file.terrain_sources || !file.tess_owners || file.terrain_camera.is_some()))
-        || (file.tess_owners && !file.terrain_interval)
-        || (file.base_projection && !file.base_sources)
-        || (file.base_sources && !file.terrain_interval)
-        || (file.terrain_interval && !file.post_geometry)
-        || (file.group_inputs && !file.group_sources)
-        || (file.group_sources && !file.left_interval)
-        || (file.resolve_shadow && !file.resolve_samples)
-        || (file.dof_inputs && !file.fog_generation)
-        || (file.fog_inputs && !file.late_sky_stages)
-        || (file.fog_generation && !file.fog_inputs)
-        || (file.dof_edge_local.is_some() && !file.dof_inputs)
-        || (file.lake_inner_edge.is_some()
-            && (!file.lake_samplers || file.writer_domain_camera != Some(true)))
-        || (file.writer_domain_camera.is_some()
-            && (!file.tess_writer || file.base_eye_vp != Some(true)))
-        || (file.base_eye_vp.is_some()
-            && (!file.base_projection || file.group_atlas_scale != Some(true)))
-        || (file.group_atlas_scale.is_some()
-            && (!file.group_inputs
-                || file.dof_edge_local != Some(true)
-                || file.left_atlas_scale != Some(true)))
-        || (file.fog_local_uv.is_some() && !file.fog_generation)
-    {
-        return Err(error(RequestErrorKind::InvalidLateSkyStages));
-    }
-    if file.late_sky_stages && (file.command != Command::Screenshot || motion_capture.is_some()) {
-        return Err(error(RequestErrorKind::InvalidLateSkyStages));
-    }
-    if file.draw_census && (file.command != Command::Screenshot || motion_capture.is_some()) {
-        return Err(error(RequestErrorKind::InvalidDrawCensus));
-    }
-    if file
-        .second_patch_ordinal
-        .is_some_and(|second| !file.patch_draw_ordinal.is_some_and(|first| first < second))
-    {
-        return Err(error(RequestErrorKind::InvalidPatchOrdinal));
-    }
-    if file.patch_draw_ordinal.is_some_and(|n| {
-        n == 0
-            || !matches!(
-                file.water_reflection,
-                Some(
-                    jc3vr_capture::screenshot::harness::WaterReflection::LakeCameraControl
-                        | jc3vr_capture::screenshot::harness::WaterReflection::LakeDomainCamera
-                        | jc3vr_capture::screenshot::harness::WaterReflection::LakeHullCamera
-                )
-            )
-    }) {
-        return Err(error(RequestErrorKind::InvalidPatchOrdinal));
-    }
-    if file.water_surface_inputs
-        && (file.water_tess_draw.is_none()
-            || file.water_reflection.is_some_and(|r| {
-                !matches!(
-                    r,
-                    jc3vr_capture::screenshot::harness::WaterReflection::EyeWidthPlanar
-                        | jc3vr_capture::screenshot::harness::WaterReflection::LakeSamples
-                        | jc3vr_capture::screenshot::harness::WaterReflection::LakeLighting
-                        | jc3vr_capture::screenshot::harness::WaterReflection::LakeSky
-                        | jc3vr_capture::screenshot::harness::WaterReflection::LakeSkyBuffer
-                        | jc3vr_capture::screenshot::harness::WaterReflection::LakeResponse
-                        | jc3vr_capture::screenshot::harness::WaterReflection::LakeNearPatch
-                        | jc3vr_capture::screenshot::harness::WaterReflection::LakeTessPatch
-                        | jc3vr_capture::screenshot::harness::WaterReflection::LakePatchDraw
-                        | jc3vr_capture::screenshot::harness::WaterReflection::LakeCameraControl
-                        | jc3vr_capture::screenshot::harness::WaterReflection::LakePatchOwners
-                        | jc3vr_capture::screenshot::harness::WaterReflection::LakeDomainCamera
-                        | jc3vr_capture::screenshot::harness::WaterReflection::LakeHullCamera
-                )
-            })
-            || motion_capture.is_some())
-    {
-        return Err(error(RequestErrorKind::InvalidSurfaceInputs));
-    }
-    if file
-        .water_tess_draw
-        .is_some_and(|n| !file.water_inputs || n >= 32)
-    {
-        return Err(error(RequestErrorKind::InvalidWaterDraw));
-    }
-    if file.water_inputs && file.command != Command::Screenshot {
-        return Err(error(RequestErrorKind::WaterInputsOnCommand(file.command)));
-    }
-    if file.sun_inputs && file.command != Command::Screenshot {
-        return Err(error(RequestErrorKind::SunInputsOnCommand(file.command)));
-    }
-    if file.history_center.is_some() && (!file.ssr_history || file.veto_eye != Some(true)) {
-        return Err(error(RequestErrorKind::InvalidResolveSamples));
-    }
-    if file.grid_eye.is_some() && file.veto_eye != Some(true) {
-        return Err(error(RequestErrorKind::InvalidResolveSamples));
-    }
-    if file.veto_eye.is_some() && file.march_eye != Some(true) {
-        return Err(error(RequestErrorKind::InvalidResolveSamples));
-    }
-    if file.march_eye.is_some() && file.proxy_eye != Some(true) {
-        return Err(error(RequestErrorKind::InvalidResolveSamples));
-    }
-    if file.proxy_eye.is_some() && (!file.ssr_prepare || file.resolve_eye_camera != Some(true)) {
-        return Err(error(RequestErrorKind::InvalidResolveSamples));
-    }
-    if (file.extra_bark_dither.is_some()
-        && (!file.residual_bark || file.left_atlas_scale != Some(true)))
-        || (file.terrain_camera.is_some()
-            && (!file.terrain_sources || file.extra_bark_dither != Some(true)))
-        || (file.terrain_sources && !file.early_depth)
-        || (file.residual_bark && !file.left_interval)
-        || (file.left_atlas_scale.is_some()
-            && (!file.left_interval || file.impostor_scale != Some(true)))
-        || (file.left_interval && !file.impostor_inputs)
-        || (file.impostor_scale.is_some()
-            && (!file.impostor_inputs || file.color_dither != Some(true)))
-        || (file.impostor_inputs && !file.interval_trace)
-        || (file.interval_trace && !file.post_geometry)
-        || (file.post_geometry && !file.bark_color_trace)
-        || (file.color_dither.is_some()
-            && (!file.bark_color_trace || file.bark_dither != Some(true)))
-        || ((file.bark_dither.is_some() || file.bark_color_trace) && !file.velocity_trace)
-        || (file.velocity_trace && !file.early_depth)
-    {
-        return Err(error(RequestErrorKind::InvalidPatchOrdinal));
-    }
-    if file.early_depth && (file.patch_draw_ordinal.is_none() || !file.ssr_history) {
-        return Err(error(RequestErrorKind::InvalidPatchOrdinal));
-    }
-    if file.ssr_history && !file.ssr_prepare {
-        return Err(error(RequestErrorKind::InvalidResolveSamples));
-    }
-    if (file.ssr_prepare && !file.ssr_operands) || (file.ssr_operands && !file.ssr_bracket) {
-        return Err(error(RequestErrorKind::InvalidResolveSamples));
-    }
-    if (file.resolve_eye_camera.is_some() || file.ssr_bracket) && !file.resolve_samples {
-        return Err(error(RequestErrorKind::InvalidResolveSamples));
-    }
-    if file.resolve_samples
-        && (!file.resolve_inputs
-            || file.cascade_scale.is_some()
-            || motion_capture.is_some()
-            || file.command != Command::Screenshot)
-    {
-        return Err(error(RequestErrorKind::InvalidResolveSamples));
-    }
-    if file.cascade_scale.is_some()
-        && (!file.resolve_inputs || file.command != Command::Screenshot || motion_capture.is_some())
-    {
-        return Err(error(RequestErrorKind::InvalidCascadeScale));
-    }
-    if file.resolve_inputs && file.command != Command::Screenshot {
-        return Err(error(RequestErrorKind::ResolveInputsOnCommand(
-            file.command,
-        )));
-    }
-    if file.sun_depth_clip.is_some() && file.command != Command::Screenshot {
-        return Err(error(RequestErrorKind::SunDepthClipOnCommand(file.command)));
-    }
-    if file.sun_depth_clip.is_some() && !file.sun_inputs {
-        return Err(error(RequestErrorKind::SunDepthClipNeedsSunInputs));
     }
     Ok(match file.command {
         Command::VisualConfigure | Command::VisualEnd => {
@@ -903,10 +482,8 @@ fn parse(path: &Path, text: &str) -> Result<Request, RequestError> {
             )
         }
         Command::Snapshot => {
-            let id = jc3vr_capture::screenshot::harness::RequestId::parse(
-                file.id.as_deref().unwrap_or_default(),
-            )
-            .map_err(|reason| error(RequestErrorKind::InvalidId(reason)))?;
+            let id = RequestId::parse(file.id.as_deref().unwrap_or_default())
+                .map_err(|reason| error(RequestErrorKind::InvalidId(reason)))?;
             let table = file
                 .snapshot
                 .ok_or_else(|| error(RequestErrorKind::NoSnapshot))?;
@@ -916,10 +493,8 @@ fn parse(path: &Path, text: &str) -> Result<Request, RequestError> {
             )
         }
         Command::Benchmark => {
-            let id = jc3vr_capture::screenshot::harness::RequestId::parse(
-                file.id.as_deref().unwrap_or_default(),
-            )
-            .map_err(|reason| error(RequestErrorKind::InvalidId(reason)))?;
+            let id = RequestId::parse(file.id.as_deref().unwrap_or_default())
+                .map_err(|reason| error(RequestErrorKind::InvalidId(reason)))?;
             let table = file
                 .benchmark
                 .ok_or_else(|| error(RequestErrorKind::NoBenchmark))?;
@@ -929,91 +504,14 @@ fn parse(path: &Path, text: &str) -> Result<Request, RequestError> {
             )
         }
         Command::SnapshotRelease => Request::SnapshotRelease(
-            jc3vr_capture::screenshot::harness::RequestId::parse(
-                file.id.as_deref().unwrap_or_default(),
-            )
-            .map_err(|reason| error(RequestErrorKind::InvalidId(reason)))?,
+            RequestId::parse(file.id.as_deref().unwrap_or_default())
+                .map_err(|reason| error(RequestErrorKind::InvalidId(reason)))?,
         ),
         Command::Screenshot => Request::Screenshot {
-            id: jc3vr_capture::screenshot::harness::RequestId::parse(
-                file.id.as_deref().unwrap_or_default(),
-            )
-            .map_err(|reason| error(RequestErrorKind::InvalidId(reason)))?,
+            id: RequestId::parse(file.id.as_deref().unwrap_or_default())
+                .map_err(|reason| error(RequestErrorKind::InvalidId(reason)))?,
             motion: motion_capture,
-            water_reflection: file.water_reflection,
-            water_inputs: file.water_inputs,
-            water_tess_draw: file.water_tess_draw,
-            patch_draw_ordinal: file.patch_draw_ordinal,
-            second_patch_ordinal: file.second_patch_ordinal,
-            water_surface_inputs: file.water_surface_inputs,
-            late_sky_stages: file.late_sky_stages,
-            draw_census: file.draw_census,
-            fog_inputs: file.fog_inputs,
-            group_sources: file.group_sources,
-            group_inputs: file.group_inputs,
-            terrain_interval: file.terrain_interval,
-            base_sources: file.base_sources,
-            base_projection: file.base_projection,
-            group_cards: file.group_cards,
-            group_residual: file.group_residual,
-            aa_weights: file.aa_weights,
-            aa_draws: file.aa_draws,
-            lake_owner_four: file.lake_owner_four,
-            lake_producer: file.lake_producer,
-            lake_gradients: file.lake_gradients,
-            lake_waves: file.lake_waves,
-            lake_normals: file.lake_normals,
-            lake_displacement: file.lake_displacement,
-            lake_samplers: file.lake_samplers,
-            tess_writer: file.tess_writer,
-            tess_owners: file.tess_owners,
-            resolve_shadow: file.resolve_shadow,
-            dof_inputs: file.dof_inputs,
-            fog_generation: file.fog_generation,
-            sun_inputs: file.sun_inputs,
-            resolve_inputs: file.resolve_inputs,
-            resolve_samples: file.resolve_samples,
-            ssr_bracket: file.ssr_bracket,
-            ssr_operands: file.ssr_operands,
-            ssr_prepare: file.ssr_prepare,
-            ssr_history: file.ssr_history,
-            dof_edge_local: file.dof_edge_local,
-            card_atlas: file.card_atlas,
-            group_fade: file.group_fade,
-            group_atlas_scale: file.group_atlas_scale,
-            aa_color_edge: file.aa_color_edge,
-            patch63_hull: file.patch63_hull,
-            owner_four_domain: file.owner_four_domain,
-            lake_color_mirror: file.lake_color_mirror,
-            lake_depth_edge: file.lake_depth_edge,
-            lake_ds_mvp: file.lake_ds_mvp,
-            lake_inner_edge: file.lake_inner_edge,
-            writer_domain_camera: file.writer_domain_camera,
-            base_eye_vp: file.base_eye_vp,
-            fog_local_uv: file.fog_local_uv,
-            terrain_camera: file.terrain_camera,
-            extra_bark_dither: file.extra_bark_dither,
-            left_atlas_scale: file.left_atlas_scale,
-            impostor_scale: file.impostor_scale,
-            color_dither: file.color_dither,
-            bark_dither: file.bark_dither,
-            terrain_sources: file.terrain_sources,
-            residual_bark: file.residual_bark,
-            left_interval: file.left_interval,
-            impostor_inputs: file.impostor_inputs,
-            interval_trace: file.interval_trace,
-            post_geometry: file.post_geometry,
-            bark_color_trace: file.bark_color_trace,
-            velocity_trace: file.velocity_trace,
-            early_depth: file.early_depth,
-            resolve_eye_camera: file.resolve_eye_camera,
-            proxy_eye: file.proxy_eye,
-            march_eye: file.march_eye,
-            veto_eye: file.veto_eye,
-            grid_eye: file.grid_eye,
-            history_center: file.history_center,
-            cascade_scale: file.cascade_scale,
-            sun_depth_clip: file.sun_depth_clip,
+            options: file.capture,
         },
         Command::Record => Request::Record,
         Command::StopRecording => Request::StopRecording,
@@ -1025,172 +523,17 @@ fn act(request: Request) {
     match request {
         Request::Visual(request) => visual::enqueue(request),
         Request::Stage(request) => stage::enqueue(request),
-        Request::Snapshot(request) => {
-            jc3vr_capture::screenshot::harness::snapshot::request(request)
-        }
-        Request::SnapshotRelease(id) => jc3vr_capture::screenshot::harness::snapshot::release(id),
+        Request::Snapshot(request) => harness::snapshot::request(request),
+        Request::SnapshotRelease(id) => harness::snapshot::release(id),
         Request::Benchmark(request) => jc3vr_capture::testing::benchmark::request(request),
         Request::Screenshot {
             id,
             motion,
-            water_reflection,
-            water_inputs,
-            water_tess_draw,
-            patch_draw_ordinal,
-            second_patch_ordinal,
-            water_surface_inputs,
-            late_sky_stages,
-            draw_census,
-            fog_inputs,
-            group_sources,
-            group_inputs,
-            terrain_interval,
-            base_sources,
-            base_projection,
-            group_cards,
-            group_residual,
-            aa_weights,
-            aa_draws,
-            lake_owner_four,
-            lake_producer,
-            lake_gradients,
-            lake_waves,
-            lake_normals,
-            lake_displacement,
-            lake_samplers,
-            tess_writer,
-            tess_owners,
-            resolve_shadow,
-            dof_inputs,
-            fog_generation,
-            sun_inputs,
-            resolve_inputs,
-            ssr_bracket,
-            ssr_operands,
-            ssr_prepare,
-            ssr_history,
-            dof_edge_local,
-            card_atlas,
-            group_fade,
-            group_atlas_scale,
-            aa_color_edge,
-            patch63_hull,
-            owner_four_domain,
-            lake_color_mirror,
-            lake_depth_edge,
-            lake_ds_mvp,
-            lake_inner_edge,
-            writer_domain_camera,
-            base_eye_vp,
-            fog_local_uv,
-            terrain_camera,
-            extra_bark_dither,
-            left_atlas_scale,
-            impostor_scale,
-            color_dither,
-            bark_dither,
-            terrain_sources,
-            residual_bark,
-            left_interval,
-            impostor_inputs,
-            interval_trace,
-            post_geometry,
-            bark_color_trace,
-            velocity_trace,
-            early_depth,
-            resolve_samples,
-            resolve_eye_camera,
-            proxy_eye,
-            march_eye,
-            veto_eye,
-            grid_eye,
-            history_center,
-            cascade_scale,
-            sun_depth_clip,
-        } => {
-            let options = jc3vr_capture::screenshot::harness::CaptureRequest {
-                water_reflection,
-                water_inputs,
-                water_tess_draw,
-                patch_draw_ordinal,
-                second_patch_ordinal,
-                water_surface_inputs,
-                late_sky_stages,
-                draw_census,
-                fog_inputs,
-                group_sources,
-                group_inputs,
-                terrain_interval,
-                base_sources,
-                base_projection,
-                group_cards,
-                group_residual,
-                aa_weights,
-                aa_draws,
-                lake_owner_four,
-                lake_producer,
-                lake_gradients,
-                lake_waves,
-                lake_normals,
-                lake_displacement,
-                lake_samplers,
-                tess_writer,
-                tess_owners,
-                resolve_shadow,
-                dof_inputs,
-                fog_generation,
-                sun_inputs,
-                resolve_inputs,
-                ssr_bracket,
-                ssr_operands,
-                ssr_prepare,
-                ssr_history,
-                dof_edge_local,
-                card_atlas,
-                group_fade,
-                group_atlas_scale,
-                aa_color_edge,
-                patch63_hull,
-                owner_four_domain,
-                lake_color_mirror,
-                lake_depth_edge,
-                lake_ds_mvp,
-                lake_inner_edge,
-                writer_domain_camera,
-                base_eye_vp,
-                fog_local_uv,
-                terrain_camera,
-                extra_bark_dither,
-                left_atlas_scale,
-                impostor_scale,
-                color_dither,
-                bark_dither,
-                terrain_sources,
-                residual_bark,
-                left_interval,
-                impostor_inputs,
-                interval_trace,
-                post_geometry,
-                bark_color_trace,
-                velocity_trace,
-                early_depth,
-                resolve_samples,
-                resolve_eye_camera,
-                proxy_eye,
-                march_eye,
-                veto_eye,
-                grid_eye,
-                history_center,
-                cascade_scale,
-                sun_depth_clip,
-            };
-            match motion {
-                Some(phase) => {
-                    jc3vr_capture::screenshot::harness::request_motion(id, phase, options)
-                }
-                None => jc3vr_capture::screenshot::harness::request(id, options),
-            }
-        }
+            options,
+        } => match motion {
+            Some(phase) => harness::request_motion(id, phase, options),
+            None => harness::request(id, options),
+        },
         Request::Record => jc3vr_view::recorder::tracking::request_start(),
         Request::StopRecording => jc3vr_view::recorder::tracking::request_stop(),
     }

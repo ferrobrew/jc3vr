@@ -1,5 +1,6 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use jc3vr_capture::screenshot::harness::{CascadeScale, WaterReflection};
 use jc3vr_view::stereo::config::SinglePassSwitch;
 use pretty_assertions::assert_eq;
 
@@ -141,23 +142,24 @@ fn screenshot_ids_are_required_and_path_safe() {
 }
 
 #[test]
-fn water_reflection_requires_water_inputs_and_screenshot() {
+fn a_water_reflection_treatment_is_typed_and_screenshot_only() {
     assert!(matches!(
         read(
             "command = 'screenshot'\nid = 'shot'\nwater_inputs = true\nwater_reflection = 'zero_weight'"
         ),
         Ok(Request::Screenshot {
-            water_reflection: Some(jc3vr_capture::screenshot::harness::WaterReflection::ZeroWeight),
+            options: CaptureRequest {
+                water_reflection: Some(WaterReflection::ZeroWeight),
+                ..
+            },
             ..
         })
     ));
     assert!(matches!(
-        read("command = 'screenshot'\nid = 'shot'\nwater_reflection = 'zero_weight'"),
-        Err(RequestErrorKind::WaterReflectionNeedsInputs)
-    ));
-    assert!(matches!(
         read("command = 'visual_end'\nid = 'end'\nwater_reflection = 'zero_weight'"),
-        Err(RequestErrorKind::WaterReflectionOnCommand(_))
+        Err(RequestErrorKind::CaptureOptionsOnCommand(
+            Command::VisualEnd
+        ))
     ));
     assert!(matches!(
         read(
@@ -591,44 +593,26 @@ fn motion_tables_are_only_accepted_by_visual_configure() {
 }
 
 #[test]
-fn late_sky_stages_require_a_screenshot_without_motion() {
-    assert!(matches!(
-        read("command = 'screenshot'\nid = 'shot'\nlate_sky_stages = true"),
-        Ok(Request::Screenshot {
-            late_sky_stages: true,
-            ..
-        })
-    ));
-    assert!(matches!(
-        read("command = 'record'\nlate_sky_stages = true"),
-        Err(RequestErrorKind::InvalidLateSkyStages)
-    ));
-    assert!(matches!(
-        read(
-            "command = 'screenshot'\nid = 'shot'\nlate_sky_stages = true\n[motion_capture]\nphase = 1"
-        ),
-        Err(RequestErrorKind::InvalidLateSkyStages)
-    ));
+fn screenshot_options_are_screenshot_only() {
+    for option in ["late_sky_stages", "draw_census", "aa_weights"] {
+        assert!(matches!(
+            read(&format!(
+                "command = 'screenshot'\nid = 'shot'\n{option} = true"
+            )),
+            Ok(Request::Screenshot { .. })
+        ));
+        assert!(matches!(
+            read(&format!("command = 'record'\n{option} = true")),
+            Err(RequestErrorKind::CaptureOptionsOnCommand(Command::Record))
+        ));
+    }
 }
 
 #[test]
-fn a_draw_census_requires_a_screenshot_without_motion() {
+fn an_unknown_key_is_refused() {
     assert!(matches!(
-        read("command = 'screenshot'\nid = 'shot'\ndraw_census = true"),
-        Ok(Request::Screenshot {
-            draw_census: true,
-            ..
-        })
-    ));
-    assert!(matches!(
-        read("command = 'record'\ndraw_census = true"),
-        Err(RequestErrorKind::InvalidDrawCensus)
-    ));
-    assert!(matches!(
-        read(
-            "command = 'screenshot'\nid = 'shot'\ndraw_census = true\n[motion_capture]\nphase = 1"
-        ),
-        Err(RequestErrorKind::InvalidDrawCensus)
+        read("command = 'screenshot'\nid = 'shot'\nlake_bogus = true"),
+        Err(RequestErrorKind::UnknownKeys(keys)) if keys == ["lake_bogus"]
     ));
 }
 
@@ -637,20 +621,26 @@ fn water_inputs_are_explicit_and_screenshot_only() {
     assert!(matches!(
         read("command = 'screenshot'\nid = 'shot'\nwater_inputs = true"),
         Ok(Request::Screenshot {
-            water_inputs: true,
+            options: CaptureRequest {
+                water_inputs: true,
+                ..
+            },
             ..
         })
     ));
     assert!(matches!(
         read("command = 'screenshot'\nid = 'shot'"),
         Ok(Request::Screenshot {
-            water_inputs: false,
+            options: CaptureRequest {
+                water_inputs: false,
+                ..
+            },
             ..
         })
     ));
     assert!(matches!(
         read("command = 'record'\nwater_inputs = true"),
-        Err(RequestErrorKind::WaterInputsOnCommand(Command::Record))
+        Err(RequestErrorKind::CaptureOptionsOnCommand(Command::Record))
     ));
 }
 
@@ -665,13 +655,15 @@ fn diagnostic_fields_are_typed_and_command_scoped() {
         }))
     ));
     assert!(read("command = 'screenshot'\nid = 'shot'\nshader_identity = true").is_err());
-    assert!(read("command = 'screenshot'\nid = 'shot'\ncascade_scale = 'shore_low'").is_err());
     assert!(matches!(
         read(
             "command = 'screenshot'\nid = 'shot'\nresolve_inputs = true\ncascade_scale = 'shore_high'"
         ),
         Ok(Request::Screenshot {
-            cascade_scale: Some(jc3vr_capture::screenshot::harness::CascadeScale::ShoreHigh),
+            options: CaptureRequest {
+                cascade_scale: Some(CascadeScale::ShoreHigh),
+                ..
+            },
             ..
         })
     ));
@@ -681,14 +673,14 @@ fn diagnostic_fields_are_typed_and_command_scoped() {
             "command = 'screenshot'\nid = 'shot'\nresolve_inputs = true\nsun_inputs = true\nsun_depth_clip = 'disabled_right'"
         ),
         Ok(Request::Screenshot {
-            resolve_inputs: true,
-            sun_depth_clip: Some(_),
+            options: CaptureRequest {
+                resolve_inputs: true,
+                sun_depth_clip: Some(_),
+                ..
+            },
             ..
         })
     ));
-    assert!(
-        read("command = 'screenshot'\nid = 'shot'\nsun_depth_clip = 'disabled_right'").is_err()
-    );
     assert!(
         read("command = 'screenshot'\nid = 'shot'\nsun_inputs = true\nsun_depth_clip = 'other'")
             .is_err()
@@ -700,20 +692,26 @@ fn sun_inputs_are_explicit_and_screenshot_only() {
     assert!(matches!(
         read("command = 'screenshot'\nid = 'shot'\nsun_inputs = true"),
         Ok(Request::Screenshot {
-            sun_inputs: true,
+            options: CaptureRequest {
+                sun_inputs: true,
+                ..
+            },
             ..
         })
     ));
     assert!(matches!(
         read("command = 'screenshot'\nid = 'shot'"),
         Ok(Request::Screenshot {
-            sun_inputs: false,
+            options: CaptureRequest {
+                sun_inputs: false,
+                ..
+            },
             ..
         })
     ));
     assert!(matches!(
         read("command = 'record'\nsun_inputs = true"),
-        Err(RequestErrorKind::SunInputsOnCommand(Command::Record))
+        Err(RequestErrorKind::CaptureOptionsOnCommand(Command::Record))
     ));
 }
 
