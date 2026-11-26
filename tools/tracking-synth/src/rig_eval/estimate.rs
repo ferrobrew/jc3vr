@@ -27,7 +27,7 @@ pub struct EstimateCadence {
 }
 
 impl EstimateCadence {
-    /// The payload's default submission rate, read back on the next frame.
+    /// The payload's submission rate (its `SUBMIT_HZ`), read back on the next frame.
     pub const GAME: EstimateCadence = EstimateCadence {
         submit_hz: 30.0,
         latency_s: 0.025,

@@ -77,8 +77,6 @@ pub(super) fn estimator_settings(ui: &mut Ui, controllers: &mut ControllersConfi
                 "Run EgoPoser on the GPU under the controller scheme and let the grounded rig's \
                  legs and chest follow its estimate. Off, the yaw is the head's rules alone.",
             );
-        ui.add(egui::Slider::new(&mut c.submit_hz, 1.0..=90.0).text("Submit rate (Hz)"))
-            .on_hover_text("How many windows a second go to the GPU.");
         let mut path = c.weights_path.clone().unwrap_or_default();
         ui.horizontal(|ui| {
             ui.label("Weights");

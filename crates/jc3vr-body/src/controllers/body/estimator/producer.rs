@@ -57,7 +57,7 @@ pub fn observe(observation: &Observation) {
         producer.stop();
         return;
     }
-    let submit = producer.observe(observation, config.submit_hz);
+    let submit = producer.observe(observation);
     drop(state);
     if let Some(submission) = submit {
         *SUBMISSION.lock() = Some(submission);
@@ -138,12 +138,8 @@ impl Producer {
         self.posture = None;
     }
 
-    /// Fold `observation` in and return the window to post, at most `submit_hz` times a second.
-    pub(crate) fn observe(
-        &mut self,
-        observation: &Observation,
-        submit_hz: f32,
-    ) -> Option<Submission> {
+    /// Fold `observation` in and return the window to post, at most [`SUBMIT_HZ`] times a second.
+    pub(crate) fn observe(&mut self, observation: &Observation) -> Option<Submission> {
         let now = observation.now;
         if self.posture.is_some_and(|p| p != observation.posture) {
             self.builder.restart();
@@ -160,7 +156,7 @@ impl Producer {
                 .map(|grip| grip.map(|(p, q)| (p.as_dvec3(), q.as_dquat().normalize()))),
         });
         self.eyes = Some((observation.eyes, now));
-        let interval = Duration::from_secs_f32(1.0 / submit_hz.clamp(1.0, 90.0));
+        let interval = Duration::from_secs_f32(1.0 / SUBMIT_HZ);
         // A frame a little early for the due time takes it, and the next is due an interval after
         // the due time rather than the frame, so the rate does not fall to the frames' next
         // divisor; a due time an interval behind starts the schedule again.
@@ -182,6 +178,9 @@ impl Producer {
         })
     }
 }
+
+/// How many windows a second go to the GPU.
+const SUBMIT_HZ: f32 = 30.0;
 
 /// How early a frame may take a submission's due time: a frame's jitter.
 const SUBMIT_EARLY: Duration = Duration::from_millis(2);

@@ -3,10 +3,9 @@
 
 use std::path::PathBuf;
 
-use jc3vr_core::config::engine::Invalid;
 use serde::{Deserialize, Serialize};
 
-/// The estimator's switch, its weights, and how often it runs.
+/// The estimator's switch and its weights.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct EstimatorConfig {
@@ -15,8 +14,6 @@ pub struct EstimatorConfig {
     /// The checkpoint's safetensors file. Unset, it is [`DEFAULT_WEIGHTS_FILE`] next to the
     /// payload DLL.
     pub weights_path: Option<String>,
-    /// How many windows a second go to the GPU.
-    pub submit_hz: f32,
 }
 
 /// The weights' file name next to the payload DLL when no path is set.
@@ -30,7 +27,6 @@ impl EstimatorConfig {
         Self {
             enabled: true,
             weights_path: None,
-            submit_hz: 30.0,
         }
     }
 
@@ -41,16 +37,6 @@ impl EstimatorConfig {
             Some(path) if !path.is_empty() => Some(PathBuf::from(path)),
             _ => Some(payload?.parent()?.join(DEFAULT_WEIGHTS_FILE)),
         }
-    }
-
-    pub fn validate(&self) -> Result<(), Invalid> {
-        if !self.submit_hz.is_finite() || !(1.0..=90.0).contains(&self.submit_hz) {
-            return Err(Invalid(format!(
-                "body.estimator.submit_hz must be finite and in [1, 90], got {}",
-                self.submit_hz
-            )));
-        }
-        Ok(())
     }
 }
 
@@ -63,16 +49,6 @@ impl Default for EstimatorConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn the_defaults_validate_and_a_bad_rate_does_not() {
-        assert_eq!(EstimatorConfig::new().validate(), Ok(()));
-        let bad = EstimatorConfig {
-            submit_hz: 0.0,
-            ..EstimatorConfig::new()
-        };
-        assert!(bad.validate().unwrap_err().0.contains("submit_hz"));
-    }
 
     #[test]
     fn the_weights_default_to_beside_the_payload() {

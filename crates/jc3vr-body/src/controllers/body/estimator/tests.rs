@@ -100,7 +100,7 @@ fn the_producer_posts_at_the_submit_rate_once_the_window_is_full() {
     for i in 0..(90 * 3) {
         let now = start + frame * i;
         if producer
-            .observe(&observation(now, EffectivePosture::Standing), 30.0)
+            .observe(&observation(now, EffectivePosture::Standing))
             .is_some()
         {
             posted.push(now);
@@ -124,15 +124,9 @@ fn a_change_of_posture_starts_the_window_again() {
     let start = Instant::now();
     let frame = Duration::from_secs_f64(1.0 / 90.0);
     for i in 0..200 {
-        producer.observe(
-            &observation(start + frame * i, EffectivePosture::Standing),
-            30.0,
-        );
+        producer.observe(&observation(start + frame * i, EffectivePosture::Standing));
     }
     assert_eq!(producer.builder.len(), body_estimator::WINDOW_POSES);
-    producer.observe(
-        &observation(start + frame * 200, EffectivePosture::Seated),
-        30.0,
-    );
+    producer.observe(&observation(start + frame * 200, EffectivePosture::Seated));
     assert_eq!(producer.builder.len(), 1);
 }

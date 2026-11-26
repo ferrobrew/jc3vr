@@ -32,7 +32,6 @@ pub fn controllers(c: &ControllersConfig) -> Result<(), Invalid> {
     locomotion(&c.locomotion.stick)?;
     c.body.procedural.validate()?;
     c.body.rig.validate()?;
-    c.body.estimator.validate()?;
     c.body.ik.validate()?;
     c.input.validate()?;
     input::bindings(&c.bindings)?;
