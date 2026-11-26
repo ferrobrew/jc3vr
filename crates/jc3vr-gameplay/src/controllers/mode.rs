@@ -43,7 +43,7 @@ use jc3gi::{
 use jc3vr_input::{capture::debug_ui_capture, frame::ActionSetKind};
 use parking_lot::Mutex;
 
-use crate::{grapple::hook, hooks::animation::active_state_type_id};
+use crate::{controllers::physics::grapple_hook, hooks::animation::active_state_type_id};
 
 /// The mod contributes a UI-mode signal only while it owns editing input.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -458,7 +458,7 @@ unsafe fn read_character(character: &Character) -> Option<CharacterSnapshot> {
     ];
     let vehicle =
         unsafe { character.IsInVehicleAttachState() }.then(|| unsafe { read_vehicle(character) });
-    let hook = unsafe { hook::of(character) };
+    let hook = unsafe { grapple_hook::of(character) };
     let grapple_wire = hook.is_some_and(|h| h.m_ActiveWire.exists());
     let reeled_in = hook.is_some()
         && (unsafe { character.IsReeledIn() } || unsafe { character.IsGrappleHanging() });

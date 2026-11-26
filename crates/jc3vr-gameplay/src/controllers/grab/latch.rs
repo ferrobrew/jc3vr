@@ -12,12 +12,12 @@
 //! is slow against the room while the body swings under it (a grapple swing, a landing), and a
 //! fist closed on the grapple line drew a holstered gun twice on the 14 November take, then threw
 //! it when the hand let go of the line. Whatever the press took, it holds until the hand opens
-//! ([`ClosedHand`](crate::controllers::bindings::controls::ClosedHand)), which on a force-sensing
+//! ([`ClosedHand`](crate::controllers::intent::controls::ClosedHand)), which on a force-sensing
 //! grip can be after the press itself ends. A fist or a game action ends with the press.
 
 use crate::controllers::{
-    bindings::controls::ButtonControl,
     grab::{GrabVolume, Tier},
+    intent::controls::ButtonControl,
 };
 
 /// What a grip press is doing.
@@ -41,7 +41,7 @@ pub enum GripLatch {
 pub struct LatchTick {
     pub grip: ButtonControl,
     /// Whether the hand is still closed since the press
-    /// ([`HandControls::hold`](crate::controllers::bindings::controls::HandControls::hold)).
+    /// ([`HandControls::hold`](crate::controllers::intent::controls::HandControls::hold)).
     pub closed: bool,
     /// What the hand would take this tick.
     pub target: Option<GrabVolume>,

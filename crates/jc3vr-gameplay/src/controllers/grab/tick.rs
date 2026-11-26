@@ -16,7 +16,6 @@ use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
 use crate::controllers::{
-    bindings::controls::ButtonControl,
     grab::{
         GrabVolume, GripTarget, Reach, Resolved, Tier,
         latch::GripLatch,
@@ -24,6 +23,7 @@ use crate::controllers::{
         resolve::{self, losers, nearest_miss},
     },
     hands::ActiveHands,
+    intent::controls::ButtonControl,
 };
 
 /// One input tick's targets and how each hand stands among them.

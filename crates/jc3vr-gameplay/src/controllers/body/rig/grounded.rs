@@ -32,11 +32,11 @@ use glam::{Quat, Vec2, Vec3};
 use parking_lot::Mutex;
 
 use crate::controllers::{
-    bindings::hold::Desired,
     body::{
         BodyDimensions,
         rig::torso::{HIP_SPACING_FRACTION, TorsoEstimate},
     },
+    intent::hold::Desired,
     locomotion::axis_output::{read_move, write_move},
     telemetry::{RigRun, note_rig},
 };

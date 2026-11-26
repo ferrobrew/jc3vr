@@ -15,7 +15,7 @@ fn array<T>(values: &mut [T]) -> HkArray<T> {
 
 #[test]
 fn failed_required_bone_capture_withdraws_current_anchor_authority() {
-    crate::controllers::register_head_participants_for_tests();
+    crate::test_support::register_head_participants();
     jc3vr_render::headpose::set_anchors(jc3vr_render::headpose::Anchors {
         head: glam::Vec3::Y,
         head_prev: glam::Vec3::Y,

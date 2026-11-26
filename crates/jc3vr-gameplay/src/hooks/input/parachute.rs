@@ -45,7 +45,7 @@ use jc3vr_core::config::engine::ConfigSlot;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::{grapple::hook, hooks::input::locomotion::head_decoupled};
+use crate::{controllers::physics::grapple_hook, hooks::input::locomotion::head_decoupled};
 
 /// Whether the canopy turns toward a grapple line it reels along, at
 /// `controllers.vehicles.canopy.line_turn` in the settings file; the payload binds the slot at
@@ -248,7 +248,7 @@ unsafe fn turn_toward_line(
         return;
     };
     // SAFETY: the local character's hook, read on the game thread during its parachute update.
-    let Some(hook) = (unsafe { hook::of(character) })
+    let Some(hook) = (unsafe { grapple_hook::of(character) })
         .filter(|hook| hook.m_State == GrapplingHookState::GHS_REELING_IN)
     else {
         return;

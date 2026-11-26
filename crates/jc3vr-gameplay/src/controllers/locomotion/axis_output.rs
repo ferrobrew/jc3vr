@@ -5,7 +5,7 @@
 use glam::Vec2;
 use jc3gi::input::input_action_map::Action::{self, *};
 
-use crate::controllers::bindings::hold::{Desired, MapKind, Target, Want};
+use crate::controllers::intent::hold::{Desired, MapKind, Target, Want};
 
 /// The move stick the tables wrote this tick (+X right, +Y forward), from the move half-axes: each
 /// half-axis at the largest of its wants, as the wants on one action merge.
