@@ -32,7 +32,9 @@ use jc3vr_body::controllers::{
     },
     hands,
     hands::tiers,
-    haptics, mode,
+    haptics, held,
+    held::HeldItem,
+    mode,
     mode::{AirborneVariant, Detection, Mode, OnFootVariant},
     scheme,
 };
@@ -45,35 +47,30 @@ use jc3vr_view::{controllers::cockpit::CockpitTransform, headpose::teleport};
 use parking_lot::Mutex;
 use windows::Win32::System::Threading::GetCurrentThreadId;
 
-use crate::controllers::{
-    loadout::{ItemKind, live},
-    physical_hands::{
-        PhysicalHandsConfig, climb,
-        config::PHYSICAL_HANDS_CONFIG,
-        contact::{HandContact, PointContact, PointProbe, Surface, SurfaceHit},
-        doors,
-        doors::{
-            acquisition::PanelReach,
-            config::{TEARING, TearTuning},
-            hinge::HingeConfig,
-        },
-        draw, engine, grab_view, grasp,
-        grasp::PalmMotion,
-        hold,
-        hold::{BodySpace, PlayerKeepOut},
-        impacts,
-        palm::{PROBE_POINTS, PalmBox},
-        physics, pickup,
-        pickup::PICKUP,
-        push, query, seated,
-        shove::SHOVE,
-        state::{STATE, VELOCITY_SMOOTHING_S, stand_down},
-        status::{HandStatus, Idle},
-        touch::{ShoveInput, Touch, pressure_haptics},
-        tuning::PALMS,
+use crate::controllers::physical_hands::{
+    PhysicalHandsConfig, climb,
+    config::PHYSICAL_HANDS_CONFIG,
+    contact::{HandContact, PointContact, PointProbe, Surface, SurfaceHit},
+    doors,
+    doors::{
+        acquisition::PanelReach,
+        config::{TEARING, TearTuning},
+        hinge::HingeConfig,
     },
-    weapons,
-    weapons::{c4, foregrip, grenade},
+    draw, engine, grab_view, grasp,
+    grasp::PalmMotion,
+    hold,
+    hold::{BodySpace, PlayerKeepOut},
+    impacts,
+    palm::{PROBE_POINTS, PalmBox},
+    physics, pickup,
+    pickup::PICKUP,
+    push, query, seated,
+    shove::SHOVE,
+    state::{STATE, VELOCITY_SMOOTHING_S, stand_down},
+    status::{HandStatus, Idle},
+    touch::{ShoveInput, Touch, pressure_haptics},
+    tuning::PALMS,
 };
 
 /// Note that a palms' tick is due, `dt` seconds of simulation after the last: called from the
@@ -851,23 +848,18 @@ fn joint_inputs(config: &PhysicalHandsConfig) -> pickup::JointInputs {
 /// gun's handle, and the controller drives the hand. A hand on a handle is drawn there, and a hand
 /// body left at its controller would fight the gun it holds.
 pub fn free_hands() -> [bool; 2] {
-    let wielded = weapons::status()
-        .wielded
-        .map_or([false; 2], |w| w.weapon.wielded.hands);
-    let foregrip = foregrip::status()
-        .hold
-        .filter(|h| h.engaged)
-        .map(|h| h.holder.other());
-    let charge = c4::throwing_hand();
-    let detonator = c4::detonator_hand();
+    let wielded = held::last_wielded_hands();
+    let foregrip = held::two_hand_holder().map(Hand::other);
+    let charge = held::throwing_hand();
+    let detonator = held::detonator_holder();
     let weights = tiers::weights();
     let mounted = mounted::holds();
     Hand::BOTH.map(|hand| {
-        let held = live::held_kind(hand).is_some_and(|kind| kind != ItemKind::Prop);
+        let holds_item = held::item(hand).is_some_and(|kind| kind != HeldItem::Prop);
         !wielded[hand.index()]
-            && !held
+            && !holds_item
             && foregrip != Some(hand)
-            && !grenade::holds(hand)
+            && !held::grenade_in(hand)
             && charge != Some(hand)
             && detonator != Some(hand)
             && !mounted[hand.index()]

@@ -20,6 +20,14 @@
 //! - [`item`]: the kind of item the loadout table has in a hand ([`HeldItem`]);
 //! - [`wielded_gun_hands`]: which hands hold a gun of the wielded weapon;
 //! - [`detonator_hand`]: the hand the C4 detonate act draws the detonator in;
+//! - [`last_wielded_hands`]: which hands hold a gun of the wielded weapon, kept through a
+//!   stand-down;
+//! - [`two_hand_holder`]: the holding hand of the engaged two-hand grip;
+//! - [`throwing_hand`], [`detonator_holder`], [`grenade_in`]: the hands holding a primed C4 charge,
+//!   the detonator, and a grenade;
+//! - [`long_gun_muzzle`]: the muzzle of the long gun in a hand, as the input tick measured it;
+//! - [`steal_offer`]: the character whose gun the last input tick offered a hand;
+//! - [`reload_views`]: the reload's zones on the held guns ([`zones`]);
 //! - [`is_single_pistol`]: whether a weapon is one pistol split off the dual-wield pair;
 //! - [`rack_stack_offset`], [`adjust_part`]: a rack pair's second pistol drawn apart, and a held
 //!   gun's slide and magazine parts as the reload moves them;
@@ -32,7 +40,7 @@
 //! - [`pickup`]: the hand-off of a weapon a hand reaches in the world to the weapon handling's take,
 //!   through a sink the weapon handling registers apart from its source.
 
-use std::sync::OnceLock;
+use std::{sync::OnceLock, time::Instant};
 
 use glam::{Mat4, Vec3};
 use jc3gi::{
@@ -45,8 +53,10 @@ pub mod guns;
 pub mod native;
 pub mod pickup;
 pub mod placement;
+pub mod zones;
 
 pub use placement::{GripSlide, HandlePlacement, SnapStart, SnapView, slide_offset, slide_on_bone};
+use zones::ReloadViews;
 
 /// The kind of item the loadout table has in a hand.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -84,6 +94,24 @@ pub struct HeldSource {
     pub wielded_gun_hands: fn() -> [bool; 2],
     /// The hand the C4 detonate act draws a weapon's detonator in, while the act plays.
     pub detonator_hand: fn(usize) -> Option<Hand>,
+    /// Which hands hold a gun of the wielded weapon as the weapon handling's last tick left them,
+    /// by [`Hand::index`], kept while the weapon handling is stood down.
+    pub last_wielded_hands: fn() -> [bool; 2],
+    /// The holding hand of the engaged two-hand grip; `None` while the weapon is held in one hand.
+    pub two_hand_holder: fn() -> Option<Hand>,
+    /// The hand holding a primed C4 charge to throw.
+    pub throwing_hand: fn() -> Option<Hand>,
+    /// The hand holding the C4 detonator.
+    pub detonator_holder: fn() -> Option<Hand>,
+    /// Whether a hand holds a grenade: a safe one, the beacon, or one it caught.
+    pub grenade_in: fn(Hand) -> bool,
+    /// The muzzle of the long gun in a hand, in the holding wrist's frame, cockpit metres, as the
+    /// input tick measured it.
+    pub long_gun_muzzle: fn(Hand) -> Option<Vec3>,
+    /// The character whose gun the last input tick offered a hand, as an address.
+    pub steal_offer: fn(Hand) -> Option<usize>,
+    /// The reload's zones on the held guns, with a knock's flash judged at the given instant.
+    pub reload_views: fn(Instant) -> ReloadViews,
     /// Whether a weapon is a single pistol: one pistol of the dual-wield pair split off to be held
     /// on its own, which shows and fires only its first gun.
     pub is_single_pistol: fn(usize) -> bool,
@@ -189,6 +217,58 @@ pub fn wielded_gun_hands() -> [bool; 2] {
 #[inline]
 pub fn detonator_hand(address: usize) -> Option<Hand> {
     (source().detonator_hand)(address)
+}
+
+/// Which hands hold a gun of the wielded weapon as the weapon handling's last tick left them, by
+/// [`Hand::index`], kept while the weapon handling is stood down.
+#[inline]
+pub fn last_wielded_hands() -> [bool; 2] {
+    (source().last_wielded_hands)()
+}
+
+/// The holding hand of the engaged two-hand grip; `None` while the weapon is held in one hand.
+#[inline]
+pub fn two_hand_holder() -> Option<Hand> {
+    (source().two_hand_holder)()
+}
+
+/// The hand holding a primed C4 charge to throw.
+#[inline]
+pub fn throwing_hand() -> Option<Hand> {
+    (source().throwing_hand)()
+}
+
+/// The hand holding the C4 detonator.
+#[inline]
+pub fn detonator_holder() -> Option<Hand> {
+    (source().detonator_holder)()
+}
+
+/// Whether `hand` holds a grenade: a safe one, the beacon, or one it caught.
+#[inline]
+pub fn grenade_in(hand: Hand) -> bool {
+    (source().grenade_in)(hand)
+}
+
+/// The muzzle of the long gun in `hand`, in the holding wrist's frame, cockpit metres, as the
+/// input tick measured it.
+#[inline]
+pub fn long_gun_muzzle(hand: Hand) -> Option<Vec3> {
+    (source().long_gun_muzzle)(hand)
+}
+
+/// The character whose gun the last input tick offered `hand`, as an address: the hand is within
+/// its steal reach of a gun in its hands or holstered on its body. `None` when no gun on a
+/// character was offered to it, or once a grab consumed the offer.
+#[inline]
+pub fn steal_offer(hand: Hand) -> Option<usize> {
+    (source().steal_offer)(hand)
+}
+
+/// The reload's zones on the held guns, with a knock's flash judged at `now`.
+#[inline]
+pub fn reload_views(now: Instant) -> ReloadViews {
+    (source().reload_views)(now)
 }
 
 /// Whether the weapon at `address` is a single pistol, split off the dual-wield pair.

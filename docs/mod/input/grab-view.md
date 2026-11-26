@@ -60,7 +60,7 @@ The palms' simulation tick (`physical_hands::tick::after_aim`) records each hand
 
 The candidates are read from the physics world on the same tick, outside the physics step, a few times a second rather than every tick: the read goes through the collider view's ([collider-view.md, "Reading the world"](collider-view.md#reading-the-world)) with the static bodies left out, around the middle of the hands, and keeps at most 64 bodies before they are told apart. Each moving body near a hand is named by its owner, the object whose engine instance holds the body, and told apart the way the reach tells what it hits apart: a vehicle or a part of one, a weapon lying dropped, or a loose object with a mass, light enough for a hand or not. A body without an owner, a weapon that is not lying dropped, a body without a mass, and the body the player stands on are not candidates.
 
-The zones are the ones the weapon handling's input tick resolved before the grip model ran (`reload::zones::views`), drawn only while they are fresh.
+The zones are the ones the weapon handling's input tick resolved before the grip model ran (`reload::zones::views` and `reload::knock::view`), drawn only while they are fresh. The grab view reads them through the held-item seam (`held::reload_views`, in the body crate), which the weapon handling fills, so the physical hands do not name the weapon handling.
 
 The refusals are noted where they are made: the direct pickup's refusal in `pickup::finish_tick`, a take's refusal in `weapons::hold::take::finish_grab`, and the pickup tick's refused grips, published after the tick. The palm state is read on the input tick from the palms' readout.
 

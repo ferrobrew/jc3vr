@@ -10,26 +10,26 @@
 //! door handles, the candidates, a refusal's point) to the world.
 
 use glam::Vec3;
-use jc3vr_body::controllers::grab::{
-    Category, GripTarget, MarkAt, Shown, markers, markers::MarkerFrame, target::TargetReach,
-    tick::Tick,
+use jc3vr_body::controllers::{
+    grab::{
+        Category, GripTarget, MarkAt, Shown, markers, markers::MarkerFrame, target::TargetReach,
+        tick::Tick,
+    },
+    held::zones::{GunZones, KnockZone},
 };
 use jc3vr_input::frame::Hand;
 use jc3vr_view::controllers::overlay::primitive::{
     Anchor, DepthMode, Facing, HandPose, Primitive, Rgba, Shape, SpriteSize,
 };
 
-use crate::controllers::{
-    physical_hands::grab_view::{
-        Recorded,
-        candidates::MAX_CANDIDATES,
-        config::GrabViewConfig,
-        model::{
-            Candidate, PalmState, REFUSAL_COLOUR, TargetState, approach, refusal_flash,
-            target_colour, target_mark_size,
-        },
+use crate::controllers::physical_hands::grab_view::{
+    Recorded,
+    candidates::MAX_CANDIDATES,
+    config::GrabViewConfig,
+    model::{
+        Candidate, PalmState, REFUSAL_COLOUR, TargetState, approach, refusal_flash, target_colour,
+        target_mark_size,
     },
-    weapons::reload::{knock::KnockView, zones::ZoneView},
 };
 
 /// What one tick drew.
@@ -60,10 +60,9 @@ pub(crate) struct DrawInputs<'a> {
     /// The refused grabs still flashing: where, and how many seconds ago.
     pub flashes: &'a [(Anchor, f32)],
     /// The grab zones of each gun held in one hand for the other, by the holding hand.
-    pub zones: [Option<ZoneView>; 2],
-    /// The knock zone of the gun whose magazine a held pouch magazine can knock out, and whether
-    /// its knock still flashes.
-    pub knock: Option<(KnockView, bool)>,
+    pub zones: [Option<GunZones>; 2],
+    /// The knock zone of the gun whose magazine a held pouch magazine can knock out.
+    pub knock: Option<KnockZone>,
 }
 
 /// The most primitives the view submits in a tick.
@@ -152,11 +151,11 @@ pub(crate) fn build(inputs: &DrawInputs, out: &mut Vec<Primitive>) -> Drawn {
             zone_primitives(view, inputs.frame, out);
             drawn.zones += 1;
         }
-        if let Some((view, flashing)) = inputs.knock {
+        if let Some(view) = inputs.knock {
             if out.len() + KNOCK_PRIMITIVES > PRIMITIVE_BUDGET {
                 drawn.dropped += 1;
             } else {
-                knock_primitives(&view, flashing, inputs.frame, out);
+                knock_primitives(&view, inputs.frame, out);
                 drawn.zones += 1;
             }
         }
@@ -299,7 +298,7 @@ fn palm_marker(hand: Hand, state: PalmState, out: &mut Vec<Primitive>) {
 /// zone under the well as its axis and a ring at each end, and the handover's reach around the
 /// pistol grip as a ring of its radius. The zone the free hand is in is drawn brighter, and the
 /// handover dimmed while the magazine's zone holds the hand.
-fn zone_primitives(view: &ZoneView, frame: &MarkerFrame, out: &mut Vec<Primitive>) {
+fn zone_primitives(view: &GunZones, frame: &MarkerFrame, out: &mut Vec<Primitive>) {
     let on_gun = |point: Vec3| {
         markers::anchor_at(
             MarkAt::OnHand {
@@ -312,9 +311,8 @@ fn zone_primitives(view: &ZoneView, frame: &MarkerFrame, out: &mut Vec<Primitive
     };
     let scale = frame.xf.world_scale;
     if let Some(zone) = view.magazine {
-        let (top, bottom) = zone.ends();
         let colour = shade(MAGAZINE_ZONE_COLOUR, view.at_magazine);
-        if let (Some(top), Some(bottom)) = (on_gun(top), on_gun(bottom)) {
+        if let (Some(top), Some(bottom)) = (on_gun(zone.top), on_gun(zone.bottom)) {
             out.push(line(top, bottom, ZONE_LINE_WIDTH_M, colour));
             for end in [top, bottom] {
                 out.push(sprite(
@@ -351,12 +349,7 @@ fn zone_primitives(view: &ZoneView, frame: &MarkerFrame, out: &mut Vec<Primitive
 /// The knock zone on the held gun: the inserted magazine as its axis with a ring at the base and
 /// one at the top, and the held magazine's tip, green while it moves fast enough to knock. The
 /// zone flashes white when the magazine is knocked out.
-fn knock_primitives(
-    view: &KnockView,
-    flashing: bool,
-    frame: &MarkerFrame,
-    out: &mut Vec<Primitive>,
-) {
+fn knock_primitives(view: &KnockZone, frame: &MarkerFrame, out: &mut Vec<Primitive>) {
     let on_gun = |point: Vec3| {
         markers::anchor_at(
             MarkAt::OnHand {
@@ -368,13 +361,12 @@ fn knock_primitives(
         .or_else(|| markers::anchor_at(MarkAt::Cockpit(point), frame))
     };
     let scale = frame.xf.world_scale;
-    let colour = if flashing {
+    let colour = if view.flashing {
         KNOCK_FLASH_COLOUR
     } else {
         KNOCK_ZONE_COLOUR
     };
-    let (top, base) = view.zone.ends();
-    if let (Some(top), Some(base)) = (on_gun(top), on_gun(base)) {
+    if let (Some(top), Some(base)) = (on_gun(view.zone.top), on_gun(view.zone.bottom)) {
         out.push(line(top, base, ZONE_LINE_WIDTH_M, colour));
         for (end, thickness) in [(top, 0.08), (base, 0.2)] {
             out.push(sprite(
@@ -473,16 +465,13 @@ const CANDIDATE_PRIMITIVES: usize = 13;
 mod tests {
     use glam::Vec3;
     use jc3vr_body::controllers::grab::{
-        GrabVolume, Mark, MarkAt, Reach, Resolved, Tier, markers::test_frame,
+        GrabVolume, Mark, MarkAt, Reach, Resolved, Tier, markers::test_frame, socket::Socket,
     };
 
     use super::*;
-    use crate::controllers::{
-        loadout::Socket,
-        physical_hands::{
-            collider_view::model::Aabb,
-            grab_view::model::{CandidateKind, RayOutcome, ReachRay},
-        },
+    use crate::controllers::physical_hands::{
+        collider_view::model::Aabb,
+        grab_view::model::{CandidateKind, RayOutcome, ReachRay},
     };
 
     fn sphere(volume: GrabVolume, centre: Vec3, radius: f32) -> GripTarget {

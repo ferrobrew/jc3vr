@@ -9,7 +9,7 @@ use std::{
 
 use glam::Vec3;
 use jc3vr_body::controllers::{
-    clock::TimeScale, hands::CockpitHand, haptics, physics::steps::steps,
+    clock::TimeScale, hands::CockpitHand, haptics, held, physics::steps::steps,
 };
 use jc3vr_input::{
     frame::{Hand, Pose},
@@ -18,24 +18,20 @@ use jc3vr_input::{
 use jc3vr_view::{headpose, headpose::teleport, vr::recenter_count};
 use parking_lot::Mutex;
 
-use crate::controllers::{
-    physical_hands::{
-        config::PHYSICAL_HANDS_CONFIG,
-        physics::{
-            HAND_BODIES, blows, callback, drawn_body,
-            drive::rig_jumped,
-            guns,
-            lifecycle::HANDS,
-            render::{RenderOffset, apply_offsets},
-            state::{
-                CLEANUP_REGISTERED, MIN_PRESSURE_LOAD, RENDER_MAX_TURN_RAD,
-                RENDER_TURN_DEADBAND_RAD, SHARED, STALE_AFTER, TRACKERS_AT_REST, Target,
-                acting_palms, enabled,
-            },
+use crate::controllers::physical_hands::{
+    config::PHYSICAL_HANDS_CONFIG,
+    physics::{
+        HAND_BODIES, blows, callback, drawn_body,
+        drive::rig_jumped,
+        guns,
+        lifecycle::HANDS,
+        render::{RenderOffset, apply_offsets},
+        state::{
+            CLEANUP_REGISTERED, MIN_PRESSURE_LOAD, RENDER_MAX_TURN_RAD, RENDER_TURN_DEADBAND_RAD,
+            SHARED, STALE_AFTER, TRACKERS_AT_REST, Target, acting_palms, enabled,
         },
-        state::VELOCITY_SMOOTHING_S,
     },
-    weapons::foregrip,
+    state::VELOCITY_SMOOTHING_S,
 };
 
 /// Register the pre-simulation callback when the hand bodies are wanted, and the cleanup that
@@ -216,7 +212,7 @@ pub fn apply(cockpit: &mut [Option<CockpitHand>; 2], palm_offset: Vec3) {
 
 /// The holding hand of the engaged two-handed hold, whose bracing hand rides its offset.
 fn braced_by_hold() -> Option<Hand> {
-    foregrip::two_hand_grip().map(|grip| grip.holder)
+    held::two_hand_holder()
 }
 
 /// Freeze post-step presentation offsets against the published palms, in their transport frame.

@@ -49,7 +49,9 @@ use jc3vr_body::controllers::{
     },
     hands,
     hands::{ActiveHands, CockpitHand},
-    haptics, scheme,
+    haptics, held,
+    held::HeldItem,
+    scheme,
 };
 use jc3vr_core::thread_role::{self, ThreadRole};
 use jc3vr_input::{
@@ -66,11 +68,8 @@ use crate::controllers::{
         engine::{HideRefusal, Pane},
         strike::{Limiter, Outcome, STRIKERS, Sample, Striker, StrikerKind},
     },
-    loadout::{ItemKind, live},
     physical_hands,
     physical_hands::{palm::PalmBox, sounds, sounds::MeleeImpact, tuning::PALMS},
-    weapons,
-    weapons::collide,
 };
 
 /// Why breaking glass stands down this tick.
@@ -254,9 +253,7 @@ pub unsafe fn main_thread_tick() {
 /// palm, and the muzzle end of the gun a hand holds.
 fn strikers(hands: &ActiveHands, config: &GlassConfig) -> [Option<Vec3>; STRIKERS] {
     let free = physical_hands::free_hands();
-    let wielded = weapons::status()
-        .wielded
-        .map_or([false; 2], |w| w.weapon.wielded.hands);
+    let wielded = held::last_wielded_hands();
     let mut points = [None; STRIKERS];
     for hand in Hand::BOTH {
         let Some(pose) = hands.hands[hand.index()] else {
@@ -267,8 +264,7 @@ fn strikers(hands: &ActiveHands, config: &GlassConfig) -> [Option<Vec3>; STRIKER
             points[Striker::new(hand, StrikerKind::Palm).index()] = Some(palm.centre);
             continue;
         }
-        let holds_gun = wielded[hand.index()]
-            || live::held_kind(hand).is_some_and(|kind| matches!(kind, ItemKind::Weapon(_)));
+        let holds_gun = wielded[hand.index()] || held::item(hand) == Some(HeldItem::Weapon);
         if config.weapons && holds_gun {
             points[Striker::new(hand, StrikerKind::Weapon).index()] =
                 Some(muzzle(hand, pose, &config.tuning));
@@ -280,8 +276,8 @@ fn strikers(hands: &ActiveHands, config: &GlassConfig) -> [Option<Vec3>; STRIKER
 /// The muzzle end of the gun in `hand`: its measured muzzle for a long gun, or a pistol's reach
 /// ahead of the aim pose.
 fn muzzle(hand: Hand, pose: CockpitHand, tuning: &GlassTuning) -> Vec3 {
-    match collide::measured(hand) {
-        Some(gun) => pose.wrist.position + pose.wrist.orientation * gun.muzzle,
+    match held::long_gun_muzzle(hand) {
+        Some(muzzle) => pose.wrist.position + pose.wrist.orientation * muzzle,
         None => ahead(pose.aim, tuning.pistol_reach_m),
     }
 }

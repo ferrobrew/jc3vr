@@ -41,10 +41,10 @@ use jc3vr_body::{
         clock::{GameClock, TimeScale},
         grab,
         grab::latch::GripLatch,
-        haptics,
+        haptics, held,
         physics::{
             bodies::{instance_of, owner_of},
-            characters as character_engine,
+            characters::{self as character_engine, character_position},
         },
     },
     hooks::character::resolve_act_id,
@@ -52,25 +52,22 @@ use jc3vr_body::{
 use jc3vr_input::{frame::Hand, haptics::cues::Event};
 use parking_lot::Mutex;
 
-use crate::controllers::{
-    physical_hands::{
-        PhysicalHandsConfig,
-        characters::pane,
-        collider_view, engine,
-        physics::{
-            HAND_BODIES, HandHitsTuning, body, contact,
-            contact::Contact,
-            guns,
-            hit::{
-                ANY_HAND, Blow, BlowPlan, HitGate, Intent, RiderReaction, VictimTuning, approach,
-                blow, blow_impulse, pulse_share, striking_with, swing,
-            },
+use crate::controllers::physical_hands::{
+    PhysicalHandsConfig,
+    characters::pane,
+    collider_view, engine,
+    physics::{
+        HAND_BODIES, HandHitsTuning, body, contact,
+        contact::Contact,
+        guns,
+        hit::{
+            ANY_HAND, Blow, BlowPlan, HitGate, Intent, RiderReaction, VictimTuning, approach, blow,
+            blow_impulse, pulse_share, striking_with, swing,
         },
-        sounds,
-        sounds::{Impact, ImpactKind},
-        world::World,
     },
-    weapons::{engine::character_position, hold::take},
+    sounds,
+    sounds::{Impact, ImpactKind},
+    world::World,
 };
 
 /// A blow a hand dealt, for the readout.
@@ -581,7 +578,7 @@ fn intent(hand: Hand, character: usize) -> Intent {
     Intent::of(
         latch,
         guns::mass(hand).is_some(),
-        take::steal_offer(hand) == Some(character),
+        held::steal_offer(hand) == Some(character),
     )
 }
 

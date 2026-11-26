@@ -26,9 +26,12 @@ use std::{
 };
 
 use glam::Vec3;
-use jc3vr_body::controllers::grab::{
-    markers::{MarkerFrame, anchor as marker_anchor},
-    tick::Tick,
+use jc3vr_body::controllers::{
+    grab::{
+        markers::{MarkerFrame, anchor as marker_anchor},
+        tick::Tick,
+    },
+    held,
 };
 use jc3vr_input::frame::Hand;
 use jc3vr_view::controllers::overlay::{
@@ -42,9 +45,8 @@ use self::{
     draw::{DrawInputs, Drawn},
     model::{Candidate, CandidateKind, HandleSeen, PalmState, REFUSAL_FLASH_S, ReachRay},
 };
-use crate::controllers::{
-    physical_hands::{PhysicalHandsConfig, config::PHYSICAL_HANDS_CONFIG, palm_readout},
-    weapons::reload::{knock, zones},
+use crate::controllers::physical_hands::{
+    PhysicalHandsConfig, config::PHYSICAL_HANDS_CONFIG, palm_readout,
 };
 
 /// The view's readout for the debug UI.
@@ -220,6 +222,7 @@ pub(crate) fn submit(tick: &Tick, frame: Option<&MarkerFrame>) {
         Some(at) if now.saturating_duration_since(at) <= CANDIDATE_MAX_AGE => &state.candidates,
         _ => &[],
     };
+    let reload = held::reload_views(now);
     let drawn = draw::build(
         &DrawInputs {
             config: &config,
@@ -229,8 +232,8 @@ pub(crate) fn submit(tick: &Tick, frame: Option<&MarkerFrame>) {
             palms,
             candidates,
             flashes: &flashes,
-            zones: zones::views(),
-            knock: knock::view().map(|view| (view, view.flashing(now))),
+            zones: reload.zones,
+            knock: reload.knock,
         },
         &mut state.primitives,
     );
