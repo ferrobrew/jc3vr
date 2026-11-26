@@ -26,6 +26,7 @@ use crate::controllers::bindings::{
     hold::{Desired, MapKind, Target, Want},
     intents::Intents,
 };
+pub use crate::controllers::intent::controls::PadZone;
 
 /// A digital input of the tables.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
@@ -70,15 +71,6 @@ pub enum Direction {
     Down,
     Left,
     Right,
-}
-
-/// A zone of a trackpad, as a pad press latches to it.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub enum PadZone {
-    Left,
-    Right,
-    Up,
-    Down,
 }
 
 /// How a pad press divides its pad.
