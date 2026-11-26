@@ -4,8 +4,8 @@
 
 use jc3vr_core::tuning::{AnyTuningFile, StartupError};
 pub(crate) use jc3vr_core::tuning::{Source, shutdown, tick};
-use jc3vr_ui::tuning::UI;
 use jc3vr_tooling::tuning::TOOLING;
+use jc3vr_ui::tuning::UI;
 use jc3vr_vehicles::controllers::vehicles::tuning::VEHICLES;
 
 /// Loads every tuning file from `source` and starts watching them.
