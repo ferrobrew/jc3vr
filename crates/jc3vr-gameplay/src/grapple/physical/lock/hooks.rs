@@ -33,6 +33,7 @@ use jc3gi::{
     equipment::grappling_hook::{GrappleTuning, GrapplingHook},
     types::{math::Vector3, shared_ptr::SharedPtr},
 };
+use jc3vr_body::controllers::facts::airframe;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
@@ -221,11 +222,11 @@ fn finish_reel(
             want_hang();
             return;
         }
-        // The skid's rail stands Rico on the airframe the door-side arrival lands him beside.
+        // The vehicles' skid rail stands Rico on the airframe the door-side arrival lands him beside.
         let door_side =
             live_hook.and_then(|h| unsafe { engine::reeling_to_helicopter_door_side(h) });
         if let Some(body) = door_side {
-            crate::controllers::vehicles::rail::note_airframe(body);
+            airframe::publish(body);
         }
         if entering_helicopter() && door_side.is_some() {
             tracing::info!(

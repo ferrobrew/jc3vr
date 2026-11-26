@@ -24,8 +24,8 @@
 //! takes him back into the helicopter's graph. While the rail holds, the game's automatic entry
 //! into a stunt area on the vehicle below is refused for him ([`blocks_auto_attach`]).
 //!
-//! The airframe is the body the reel's line was attached to, noted at the door-side arrival
-//! ([`note_airframe`]).
+//! The airframe is the body the reel's line was attached to, as the grapple's lock notes it at the
+//! door-side arrival ([`airframe`]).
 //!
 //! [`ValidateStuntPositionCondition::Evaluate`]: jc3gi::animation::rule_system::ValidateStuntPositionCondition::Evaluate
 //! [`InteractionGraph::RemoveUser`]: jc3gi::interaction::InteractionGraph::RemoveUser
@@ -48,7 +48,7 @@ use jc3gi::{
     types::math::Vector3,
 };
 use jc3vr_body::{
-    controllers::scheme,
+    controllers::{facts::airframe, scheme},
     hooks::animation::{active_state_type_id, body_rule_system},
 };
 use jc3vr_core::hash::hashlittle;
@@ -96,14 +96,8 @@ pub fn status() -> RailStatus {
 
 pub(crate) fn stand_down() {
     ENTER_REQUESTED.store(false, Ordering::Relaxed);
-    let mut state = STATE.lock();
-    state.airframe = None;
-    state.release("the input owner stood down");
-}
-
-/// Note the body of the airframe a reel arriving at a helicopter's door side was attached to.
-pub(crate) fn note_airframe(body: u32) {
-    STATE.lock().airframe = Some((body, Instant::now()));
+    airframe::clear();
+    STATE.lock().release("the input owner stood down");
 }
 
 /// Whether the rail holds `character`, so the game's automatic entry into a stunt area on the
@@ -286,9 +280,7 @@ fn motion(config: &RailConfig) -> RailMotion {
 ///
 /// `character` is the live local player, on the game thread before the world update.
 unsafe fn enter(character: &mut Character, config: &RailConfig) {
-    let airframe = STATE
-        .lock()
-        .airframe
+    let airframe = airframe::noted()
         .filter(|(_, at)| at.elapsed() <= AIRFRAME_FRESH)
         .map(|(body, _)| body);
     let Some((body, frame)) =
@@ -415,7 +407,6 @@ struct Active {
 }
 
 struct State {
-    airframe: Option<(u32, Instant)>,
     active: Option<Active>,
     status: RailStatus,
 }
@@ -432,7 +423,6 @@ impl State {
 }
 
 static STATE: Mutex<State> = Mutex::new(State {
-    airframe: None,
     active: None,
     status: RailStatus {
         active: false,
@@ -497,7 +487,7 @@ mod tests {
         let now = Instant::now();
         {
             let mut state = STATE.lock();
-            state.airframe = Some((1, now));
+            airframe::publish(1);
             state.active = Some(Active {
                 character: 1,
                 body: 1,
@@ -517,7 +507,7 @@ mod tests {
         assert!(!ENTER_REQUESTED.load(Ordering::Relaxed));
         let state = STATE.lock();
         assert_eq!(state.active, None);
-        assert_eq!(state.airframe, None);
+        assert_eq!(airframe::noted(), None);
         assert!(!state.status.active);
     }
 
