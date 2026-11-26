@@ -89,6 +89,7 @@ pub(super) fn active() -> bool {
 
 /// Handle a plain indexed draw inside a single-drawn block: one two-instance draw with the variant
 /// bound and the viewport split. `false` when the bound shader has no variant.
+#[inline]
 pub(super) fn draw_indexed(
     context: *mut c_void,
     index_count: u32,
@@ -129,6 +130,7 @@ pub(super) fn draw_indexed(
 /// there is one, otherwise re-issued per eye with `cb13` pinned to each eye, with the variant bound
 /// either way. Without a variant it is still re-issued per eye, without parallax. `submit_doubled`
 /// submits the caller's draw with the instance count it is given; `submit` submits it unchanged.
+#[inline]
 pub(super) fn draw_indexed_instanced(
     context: *mut c_void,
     instance_count: u32,
@@ -153,6 +155,7 @@ pub(super) fn draw_indexed_instanced(
 /// argument buffer with the instance counts doubled, with the variant bound and the viewport split.
 /// `false` when the bound shader has no variant or the copy could not be made. `submit` issues the
 /// draw against the argument buffer it is given, at the caller's offset.
+#[inline]
 pub(super) fn draw_indexed_instanced_indirect(
     context: *mut c_void,
     buffer_for_args: *mut c_void,
