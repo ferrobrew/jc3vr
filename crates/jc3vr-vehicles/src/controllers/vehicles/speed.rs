@@ -15,7 +15,7 @@ use jc3gi::{character::character::Character, types::math::Vector3};
 /// # Safety
 ///
 /// The game thread, before the world update.
-pub(crate) unsafe fn seat_vehicle_speed_mps() -> Option<f32> {
+pub unsafe fn seat_vehicle_speed_mps() -> Option<f32> {
     let character = unsafe { Character::GetLocalPlayerCharacter().as_ref() }?;
     let vehicle = unsafe { character.GetVehiclePtr().as_ref() }?;
     // The game reads the velocity through the physics body without checking it.

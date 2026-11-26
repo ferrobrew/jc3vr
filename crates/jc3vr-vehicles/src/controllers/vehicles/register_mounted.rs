@@ -11,7 +11,7 @@ use jc3vr_body::controllers::{
 use crate::controllers::{vehicles, vehicles::passenger};
 
 /// Register the source once; the controllers' install calls it before any hook is enabled.
-pub(crate) fn register() {
+pub fn register() {
     mounted::register_mounted_source(MountedSource {
         is_mounted_weapon: vehicles::is_mounted_weapon,
         target: vehicles::mounted_target,

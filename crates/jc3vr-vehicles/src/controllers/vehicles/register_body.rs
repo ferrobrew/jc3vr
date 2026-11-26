@@ -18,7 +18,7 @@ use crate::controllers::{
     vehicles::{mounted_recoil, rail, take_off},
 };
 
-pub(crate) fn register() {
+pub fn register() {
     register_take_off(take_off::tick);
     register_auto_attach_blocker(AutoAttachBlocker::VehicleRail, rail::blocks_auto_attach);
     register_rail_step(rail::step_physics);

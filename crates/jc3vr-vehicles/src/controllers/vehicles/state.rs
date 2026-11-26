@@ -47,7 +47,7 @@ pub fn status() -> VehiclesStatus {
 }
 
 /// Copy current handle owners without reconstructing them from diagnostic booleans.
-pub(crate) fn parachute_holds() -> [Option<HandleHold>; 2] {
+pub fn parachute_holds() -> [Option<HandleHold>; 2] {
     let state = STATE.lock();
     if state.status.active && state.handles_on {
         state.handles.holds
@@ -105,7 +105,7 @@ pub fn mounted_aim_point() -> Option<Vec3> {
 
 /// Stop acting: let go of every control and forget the mounted gun. Called whenever the bindings
 /// do not inject.
-pub(crate) fn stand_down() {
+pub fn stand_down() {
     crate::controllers::vehicles::rail::stand_down();
     physical::calibration::leave();
     let mut state = STATE.lock();

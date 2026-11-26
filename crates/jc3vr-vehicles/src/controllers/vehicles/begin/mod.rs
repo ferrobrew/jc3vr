@@ -55,7 +55,7 @@ use crate::controllers::vehicles::{
 /// The first half of the vehicle handling's input tick: read the mounted gun, place the physical
 /// controls, and return the vehicle handling's grip targets. Called while the bindings inject,
 /// before the tables.
-pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
+pub fn begin_tick(mode: Mode) -> TickVolumes {
     let Some(active) = hands::active_hands_raw() else {
         crate::controllers::vehicles::stand_down();
         physical::visual::clear();

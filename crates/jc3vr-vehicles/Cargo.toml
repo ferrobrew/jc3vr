@@ -1,0 +1,38 @@
+[package]
+name = "jc3vr-vehicles"
+version = "0.1.0"
+edition = "2024"
+description = "The vehicles layer of the payload: vehicles, mounted guns, the wingsuit, and the parachute under the controller scheme (the physical controls, the hand-aimed mounted guns and driver weapons, arm steering, the ripcord, and the vehicle rail), built on the body, weapons, and physical layers."
+publish = false
+
+[dependencies]
+glam = { workspace = true }
+jc3gi = { path = "../../jc3gi" }
+jc3vr-core = { path = "../jc3vr-core" }
+jc3vr-input = { path = "../jc3vr-input" }
+jc3vr-view = { path = "../jc3vr-view" }
+# The body layer below: the body-bound subsystems, the shared vocabulary, the facts, and the
+# character, animation, and input detours the vehicle handling builds on.
+jc3vr-body = { path = "../jc3vr-body" }
+# The weapons layer below: the mounted guns' delivery to the hands and their recoil.
+jc3vr-weapons = { path = "../jc3vr-weapons" }
+# The physical layer below: the climb and the hand bodies the rail and the mounted handles use.
+jc3vr-physical = { path = "../jc3vr-physical" }
+# The vehicle handling's detours. The detour macro emits `::re_utilities` paths, so a crate that
+# defines detours depends on `re-utilities` directly.
+re-utilities = { workspace = true }
+detours-macro = { workspace = true }
+body-rig = { path = "../body-rig", features = ["serde"] }
+tracing = "0.1"
+parking_lot = "0.12.5"
+serde = { version = "1", features = ["derive"] }
+smol_str = "0.3.6"
+toml = "1.1.6"
+
+[dev-dependencies]
+jc3vr-body = { path = "../jc3vr-body", features = ["test-support"] }
+jc3vr-core = { path = "../jc3vr-core", features = ["test-support"] }
+jc3vr-view = { path = "../jc3vr-view", features = ["test-support"] }
+pretty_assertions = "1.4.1"
+proptest = "1.11.0"
+test-case = "3.3.1"

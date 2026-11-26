@@ -112,7 +112,7 @@ pub(crate) fn blocks_auto_attach(character: *const Character) -> bool {
 /// # Safety
 ///
 /// The game stage, on the game thread before the world update.
-pub(crate) unsafe fn input_tick(jump: bool, on_foot: bool) {
+pub unsafe fn input_tick(jump: bool, on_foot: bool) {
     let Some(character) = (unsafe { Character::GetLocalPlayerCharacter().as_mut() }) else {
         release("the local player went away");
         return;

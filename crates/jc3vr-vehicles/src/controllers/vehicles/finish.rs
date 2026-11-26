@@ -40,7 +40,7 @@ use crate::controllers::vehicles::{
 /// The second half of the vehicle handling's input tick: act on the grabs, move the held controls,
 /// write their axes over the tables', add the arm pose to the move stick in the wingsuit, and steer
 /// with the held handles under the parachute.
-pub(crate) fn finish_tick(
+pub fn finish_tick(
     mode: Mode,
     grabs: [Option<GrabVolume>; 2],
     controls: &Controls,

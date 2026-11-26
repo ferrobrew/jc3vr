@@ -8,7 +8,7 @@ use crate::controllers::vehicles::wingsuit_gestures::{GestureCommands, Stage, Su
 
 /// Invalid command contexts emit no partial action list. The caller retains canopy precedence.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) enum CommandRejection {
+pub enum CommandRejection {
     CanopyRequested,
     WrongMode,
     ConflictingCommands,
@@ -17,7 +17,7 @@ pub(crate) enum CommandRejection {
 /// Translate typed transitions through the existing narrow player-map action, with stage guards.
 /// Both suit transitions use `OPEN_WINGSUIT`; the broad use/vehicle-entry family is not emitted. A
 /// deploy goes in during the game's jump as in its fall: both take the suit's opening.
-pub(crate) fn desired_for(
+pub fn desired_for(
     commands: GestureCommands,
     stage: Stage,
     canopy_requested: bool,

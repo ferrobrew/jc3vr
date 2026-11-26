@@ -87,7 +87,7 @@ pub(super) fn targets(
 
 /// Act on this tick's grabs: take, hold, or let go of the ripcord, and click the canopy's action
 /// when a hold pulls it. `grabs` are the vehicle handling's, by [`Hand::index`].
-pub(crate) fn finish(
+pub fn finish(
     mode: Mode,
     grabs: [Option<GrabVolume>; 2],
     controls: &Controls,

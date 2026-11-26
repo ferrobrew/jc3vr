@@ -16,7 +16,7 @@ pub(crate) struct Identity {
 
 /// The grips and fire inputs one retained weapon has this tick.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub(crate) struct Input {
+pub struct Input {
     pub(crate) identity: Identity,
     pub(crate) hands: [bool; 2],
     pub(crate) fire: [bool; 2],
@@ -25,7 +25,7 @@ pub(crate) struct Input {
 
 impl Input {
     /// Whether any hand still gripping the gun holds its fire input.
-    pub(crate) fn trigger(self) -> bool {
+    pub fn trigger(self) -> bool {
         self.hands
             .into_iter()
             .zip(self.fire)

@@ -19,6 +19,7 @@ members = [
     "crates/jc3vr-render",
     "crates/jc3vr-tooling",
     "crates/jc3vr-ui",
+    "crates/jc3vr-vehicles",
     "crates/jc3vr-view",
     "crates/jc3vr-weapons",
     "crates/tracking-format",

@@ -71,8 +71,8 @@ pub mod parachute_rig;
 pub mod passenger;
 pub mod physical;
 pub mod rail;
-pub(crate) mod register_body;
-pub(crate) mod register_mounted;
+pub mod register_body;
+pub mod register_mounted;
 pub mod ripcord;
 mod ripcord_tick;
 mod speed;
@@ -86,29 +86,25 @@ pub mod wheel;
 pub mod wheel_render;
 mod wing_guide;
 pub mod wingsuit_evade;
-pub(crate) mod wingsuit_gestures;
+pub mod wingsuit_gestures;
 
 use re_utilities::hook_library::HookLibrary;
 
 pub use self::{
     axis_output::write_outputs,
-    ripcord_tick::holder as ripcord_holder,
+    begin::begin_tick,
+    finish::finish_tick,
+    ripcord_tick::{finish as ripcord_finish, holder as ripcord_holder},
+    speed::seat_vehicle_speed_mps,
     state::{
-        apply, is_mounted_weapon, mounted_aim_point, mounted_target, status, summary,
-        wrist_tilt_now_deg,
+        apply, is_mounted_weapon, mounted_aim_point, mounted_target, parachute_holds, stand_down,
+        status, summary, wrist_tilt_now_deg,
     },
     types::{HandlesReadout, TickVolumes, VehicleSummary, VehiclesStatus},
 };
-pub(crate) use self::{
-    begin::begin_tick,
-    finish::finish_tick,
-    ripcord_tick::finish as ripcord_finish,
-    speed::seat_vehicle_speed_mps,
-    state::{parachute_holds, stand_down},
-};
 
-/// The vehicles' hooks, aggregated by `controllers::hook_library`.
-pub(crate) fn hook_library() -> HookLibrary {
+/// The vehicles' hooks, aggregated by the gameplay crate's `controllers::hook_library`.
+pub fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_hook_library(driver_aim::hook_library())
         .with_hook_library(look_steer::hook_library())

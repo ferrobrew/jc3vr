@@ -2385,6 +2385,7 @@ dependencies = [
  "jc3vr-core",
  "jc3vr-input",
  "jc3vr-physical",
+ "jc3vr-vehicles",
  "jc3vr-view",
  "jc3vr-weapons",
  "openxr",
@@ -2420,6 +2421,7 @@ dependencies = [
  "jc3vr-gameplay",
  "jc3vr-input",
  "jc3vr-render",
+ "jc3vr-vehicles",
  "jc3vr-view",
  "jc3vr-weapons",
  "parking_lot",
@@ -2505,6 +2507,7 @@ dependencies = [
  "jc3vr-input",
  "jc3vr-physical",
  "jc3vr-render",
+ "jc3vr-vehicles",
  "jc3vr-view",
  "jiff",
  "parking_lot",
@@ -2539,6 +2542,7 @@ dependencies = [
  "jc3vr-physical",
  "jc3vr-render",
  "jc3vr-tooling",
+ "jc3vr-vehicles",
  "jc3vr-view",
  "jc3vr-weapons",
  "jiff",
@@ -2553,6 +2557,31 @@ dependencies = [
  "toml 1.1.6+spec-1.1.0",
  "tracing",
  "windows 0.62.2",
+]
+
+[[package]]
+name = "jc3vr-vehicles"
+version = "0.1.0"
+dependencies = [
+ "body-rig",
+ "detours-macro",
+ "glam",
+ "jc3gi",
+ "jc3vr-body",
+ "jc3vr-core",
+ "jc3vr-input",
+ "jc3vr-physical",
+ "jc3vr-view",
+ "jc3vr-weapons",
+ "parking_lot",
+ "pretty_assertions",
+ "proptest",
+ "re-utilities",
+ "serde",
+ "smol_str",
+ "test-case",
+ "toml 1.1.6+spec-1.1.0",
+ "tracing",
 ]
 
 [[package]]
@@ -2642,6 +2671,7 @@ dependencies = [
  "jc3vr-render",
  "jc3vr-tooling",
  "jc3vr-ui",
+ "jc3vr-vehicles",
  "jc3vr-view",
  "jc3vr-weapons",
  "jiff",

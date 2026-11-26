@@ -56,7 +56,7 @@ use crate::controllers::vehicles::{
 ///
 /// # Safety
 /// The weapon is live on the game thread.
-pub(crate) unsafe fn observe(weapon: &WeaponBase) {
+pub unsafe fn observe(weapon: &WeaponBase) {
     if weapon.m_State != WeaponState::E_WS_MOUNTED || weapon.m_WeakThis.pn.is_null() {
         return;
     }
@@ -87,7 +87,7 @@ pub(crate) unsafe fn observe(weapon: &WeaponBase) {
 ///
 /// # Safety
 /// The game thread, after the physical hands and weapon handling settled this tick.
-pub(crate) unsafe fn tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
+pub unsafe fn tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
     let enabled = scheme::is_controllers()
         && !jc3vr_core::is_shutting_down()
         && scheme::enabled()
@@ -633,14 +633,18 @@ const SEAT_EXIT_RETRY: Duration = Duration::from_millis(1500);
 const SEAT_EXIT_TIMEOUT: Duration = Duration::from_secs(4);
 
 /// Release every retained gun, for a paused game, a mode change, or a shutdown.
-pub(crate) unsafe fn stand_down() {
+///
+/// # Safety
+/// The game thread, outside the world update; a retained gun is checked through its weak reference
+/// before it is touched.
+pub unsafe fn stand_down() {
     gunner_seat::reset();
     let records = std::mem::take(&mut *CONTROLLED.lock());
     unsafe { release_all(records) };
 }
 
 /// The retained grips on `weapon`, if this module controls it.
-pub(crate) fn input(weapon: &WeaponBase) -> Option<Input> {
+pub fn input(weapon: &WeaponBase) -> Option<Input> {
     let address = weapon as *const WeaponBase as usize;
     let control = weapon.m_WeakThis.pn as usize;
     CONTROLLED
@@ -651,7 +655,7 @@ pub(crate) fn input(weapon: &WeaponBase) -> Option<Input> {
 }
 
 /// The temporary shooter for `weapon`, and whether the hands still grip it.
-pub(crate) fn shooter(weapon: &WeaponBase) -> Option<(Weak, bool)> {
+pub fn shooter(weapon: &WeaponBase) -> Option<(Weak, bool)> {
     let address = weapon as *const WeaponBase as usize;
     let control = weapon.m_WeakThis.pn as usize;
     CONTROLLED
@@ -721,7 +725,7 @@ pub(crate) unsafe fn nearby(hands: [Option<Vec3>; 2], reach_m: f32) -> Option<Mo
 }
 
 /// Whether the runtime holds `weapon`, so the game's native start-using must not run.
-pub(crate) fn suppress_start_using(weapon: &WeaponBase) -> bool {
+pub fn suppress_start_using(weapon: &WeaponBase) -> bool {
     // Entering a vehicle's gunner seat starts the native use, which the seat needs.
     // SAFETY: the game thread, where the native start-using runs.
     if unsafe { Character::GetLocalPlayerCharacter().as_ref() }
@@ -747,7 +751,7 @@ pub(crate) fn suppress_start_using(weapon: &WeaponBase) -> bool {
 ///
 /// # Safety
 /// The weapon is live on the game thread, and `run` may act on it.
-pub(crate) unsafe fn with_shooter<R>(
+pub unsafe fn with_shooter<R>(
     weapon: *mut WeaponBase,
     shooter: &Weak,
     run: impl FnOnce() -> R,

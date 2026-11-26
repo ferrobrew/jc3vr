@@ -50,9 +50,8 @@ mod runtime;
 mod vehicle_hold;
 
 pub(super) use mount::{Held, Mount, matches as mount_matches};
-pub(crate) use runtime::{
-    input, nearby, observe, shooter, stand_down, suppress_start_using, tick, with_shooter,
-};
+pub(crate) use runtime::nearby;
+pub use runtime::{input, observe, shooter, stand_down, suppress_start_using, tick, with_shooter};
 
 /// The mounted gun the local player mans, as read on the input tick.
 #[derive(Debug, Copy, Clone, PartialEq)]

@@ -19,7 +19,7 @@ mod commands;
 use std::{fmt, time::Instant};
 
 use body_rig::{angle::yaw_of, rotation::level};
-pub(crate) use commands::desired_for;
+pub use commands::desired_for;
 use glam::{Quat, Vec3};
 use jc3vr_body::controllers::{
     body,
@@ -34,14 +34,14 @@ use crate::controllers::vehicles::{arm_steering::wrist_tilt, config::WingsuitGes
 
 /// A single transition request. The binding owner emits it once, never as a held toggle.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) enum SuitTransition {
+pub enum SuitTransition {
     Deploy,
     Close,
 }
 
 /// Commands produced from one observation. The canopy request always cancels these commands.
 #[derive(Debug, Copy, Clone, Default, PartialEq, Eq)]
-pub(crate) struct GestureCommands {
+pub struct GestureCommands {
     pub transition: Option<SuitTransition>,
     pub brake: bool,
 }
@@ -49,7 +49,7 @@ pub(crate) struct GestureCommands {
 /// Current availability of the physical gesture sequence, independently of command pulses.
 /// This describes the mod recognizer, not game-side permission to change the suit state.
 #[derive(Debug, Copy, Clone, Default, PartialEq, Eq)]
-pub(crate) enum GestureAvailability {
+pub enum GestureAvailability {
     #[default]
     Unavailable,
     Deploy,
@@ -58,7 +58,7 @@ pub(crate) enum GestureAvailability {
 
 /// What the recognizer waits for, or holds, as of its last evaluated sample.
 #[derive(Debug, Copy, Clone, Default, PartialEq, Eq)]
-pub(crate) enum GesturePhase {
+pub enum GesturePhase {
     #[default]
     Unavailable,
     /// Falling out of the suit, waiting for both arms lowered or drawn in.
@@ -85,7 +85,7 @@ impl fmt::Display for GesturePhase {
 
 /// The first gate that keeps the gestures unavailable for an observation.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) enum Blocked {
+pub enum Blocked {
     /// The binding owner suspended gameplay input.
     Gameplay,
     CanopyRequested,
@@ -100,7 +100,7 @@ pub(crate) enum Blocked {
 
 /// Where the player is, as far as the gestures are concerned.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) enum Stage {
+pub enum Stage {
     /// Falling, or off the ground on foot while the game still plays its jump: the game's jump
     /// states take the suit's opening as its falls do.
     Fall,
@@ -114,7 +114,7 @@ pub(crate) enum Stage {
 
 impl Stage {
     /// The stage of `mode`, with `airborne` telling a jump from standing on the ground.
-    pub(crate) fn of(mode: Mode, airborne: bool) -> Self {
+    pub fn of(mode: Mode, airborne: bool) -> Self {
         match mode {
             Mode::Airborne(AirborneVariant::Falling) => Self::Fall,
             Mode::OnFoot(OnFootVariant::Ground) if airborne => Self::Fall,
@@ -143,7 +143,7 @@ impl fmt::Display for Blocked {
 
 /// An interaction that claims a hand away from the gestures, as [`HandClaims`] reports it.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) enum Claim {
+pub enum Claim {
     Grip,
     Slot,
     Mechanical,
@@ -167,7 +167,7 @@ impl fmt::Display for Claim {
 /// rides along in the hand while the arm pose drives the suit. A support or reload hand reports
 /// only the inputs its interaction owns. Grip release remains the owner's concern.
 #[derive(Debug, Copy, Clone, Default, PartialEq, Eq)]
-pub(crate) struct HandClaims {
+pub struct HandClaims {
     /// The grip works something other than a held item: a grab this tick, a support hold on the
     /// other hand's gun, or a hold on the world or a vehicle.
     pub grip: bool,
@@ -197,14 +197,14 @@ pub(crate) struct GestureObservation<'a> {
 
 /// Physical player dimensions and the configured controller grip-to-wrist transform.
 /// `None` torso in the observation uses the packet's own head yaw rather than a global estimate.
-pub(crate) struct FlightCalibration<'a> {
+pub struct FlightCalibration<'a> {
     pub grip_offset: &'a GripOffset,
     pub dimensions: &'a BodyDimensions,
 }
 
 /// Continuous pose measures in the calibrated shoulder frame, normalized by the arm span.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub(crate) struct FlightPose {
+pub struct FlightPose {
     /// Outward distance from each shoulder, positive on that hand's own side.
     pub lateral: [f32; 2],
     /// Distance from each shoulder to the wrist.
@@ -220,7 +220,7 @@ pub(crate) struct FlightPose {
 
 impl FlightPose {
     /// Derive palms and shoulder-relative distances from `packet`, not a later snapshot.
-    pub(crate) fn from_packet(
+    pub fn from_packet(
         packet: &FlightPacket,
         calibration: &FlightCalibration<'_>,
         now: Instant,
@@ -406,7 +406,7 @@ impl FlightPose {
 
 /// Pure observation. `gameplay` excludes menus, focus loss, action-set waits, and recovery masks.
 #[derive(Debug, Copy, Clone)]
-pub(crate) struct GestureInput {
+pub struct GestureInput {
     pub sample: GestureSample,
     pub mode: Mode,
     /// Rico is off the ground on foot, from the jump's grace on: a jump, or a step off a ledge,
@@ -424,7 +424,7 @@ pub(crate) struct GestureInput {
 
 /// Stateful recognizer owned by the binding tick, independently of physical vehicles.
 #[derive(Debug, Default)]
-pub(crate) struct WingsuitGestures {
+pub struct WingsuitGestures {
     last: Option<(GestureSample, Stage)>,
     current: GestureAvailability,
     config: Option<WingsuitGesturesConfig>,
@@ -458,7 +458,7 @@ pub(crate) struct WingsuitGestures {
 
 impl WingsuitGestures {
     /// Cancel gestures without lowering the sample watermark. Only a newer epoch restarts time.
-    pub(crate) fn reset(&mut self) {
+    pub fn reset(&mut self) {
         self.current = GestureAvailability::Unavailable;
         self.grapple_intent = false;
         self.deploy_since_ns = None;
@@ -466,23 +466,23 @@ impl WingsuitGestures {
         self.clear_pose();
     }
 
-    pub(crate) fn tracking_lost(&mut self) {
+    pub fn tracking_lost(&mut self) {
         self.current = GestureAvailability::Unavailable;
         self.clear_pose();
     }
 
-    pub(crate) fn current(&self) -> GestureAvailability {
+    pub fn current(&self) -> GestureAvailability {
         self.current
     }
 
     /// Remember a canopy request seen while the flight packet was missing, so the canopy's entry
     /// still starts unarmed.
-    pub(crate) fn note_canopy_request(&mut self) {
+    pub fn note_canopy_request(&mut self) {
         self.canopy_requested = true;
     }
 
     /// What the recognizer waits for, or holds, as of its last evaluated sample.
-    pub(crate) fn phase(&self) -> GesturePhase {
+    pub fn phase(&self) -> GesturePhase {
         match self.current {
             GestureAvailability::Unavailable => GesturePhase::Unavailable,
             GestureAvailability::Deploy if self.ready => GesturePhase::AwaitingFlight,
@@ -494,7 +494,7 @@ impl WingsuitGestures {
     }
 
     /// Recheck the evaluated sample without advancing dwell or emitting another transition.
-    pub(crate) fn revalidate(
+    pub fn revalidate(
         &mut self,
         input: GestureInput,
         config: &WingsuitGesturesConfig,
@@ -520,7 +520,7 @@ impl WingsuitGestures {
         self.current
     }
 
-    pub(crate) fn step(
+    pub fn step(
         &mut self,
         input: GestureInput,
         config: &WingsuitGesturesConfig,
@@ -780,7 +780,7 @@ impl WingsuitGestures {
 
 impl GestureInput {
     /// The first gate that keeps the gestures unavailable, or `None` while they are available.
-    pub(crate) fn blocked(self, config: &WingsuitGesturesConfig) -> Option<Blocked> {
+    pub fn blocked(self, config: &WingsuitGesturesConfig) -> Option<Blocked> {
         if !self.gameplay {
             return Some(Blocked::Gameplay);
         }
@@ -810,7 +810,7 @@ impl GestureInput {
 
     /// Where the player is, as far as the gestures are concerned. An eligible line is a fall's
     /// fresh start: its release precedes the suit request, and the pose is measured as in a fall.
-    pub(crate) fn stage(self) -> Stage {
+    pub fn stage(self) -> Stage {
         if self.deploy_grapple {
             Stage::Fall
         } else {
