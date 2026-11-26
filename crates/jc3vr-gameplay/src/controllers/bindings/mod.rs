@@ -61,7 +61,7 @@ mod trigger_ownership;
 
 use std::{sync::LazyLock, time::Instant};
 
-use body_rig::angle::{head_heading, yaw_of};
+use body_rig::math::angle::{heading, yaw_of};
 use glam::Vec3;
 use jc3gi::{input::input_action_map::Action, state::StateBitFlag};
 use jc3vr_body::controllers::{
@@ -1355,8 +1355,8 @@ fn off_hand_rotation(frame: &ControllerFrame, off: Hand) -> f32 {
     let hand = aim
         .orientation_valid
         .then(|| yaw_of(aim.pose.orientation * Vec3::NEG_Z));
-    let head = headpose::xr::cockpit_pose().map(|pose| head_heading(pose.orientation));
-    match (hand.flatten(), head.flatten()) {
+    let head = headpose::xr::cockpit_pose().map(|pose| heading(pose.orientation));
+    match (hand.flatten(), head) {
         (Some(hand), Some(head)) => hand - head,
         _ => 0.0,
     }

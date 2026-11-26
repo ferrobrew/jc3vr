@@ -1,7 +1,7 @@
 //! The learned body estimator: its switch, submit rate, and weights; the estimate's policy tuning in
 //! the yaw; and the live readout of the executor and the estimate against the head and the rig.
 
-use body_rig::angle::{head_heading, wrap};
+use body_rig::math::angle::{heading, wrap};
 use egui::Ui;
 use jc3vr_body::controllers::body::{
     estimator, estimator::config::DEFAULT_WEIGHTS_FILE, rig::root::RootStatus,
@@ -32,7 +32,7 @@ pub(super) fn estimator_readout(ui: &mut Ui, root: &RootStatus) {
         ui.label("No estimate.");
         return;
     };
-    let head = headpose::xr::cockpit_pose().and_then(|pose| head_heading(pose.orientation));
+    let head = headpose::xr::cockpit_pose().map(|pose| heading(pose.orientation));
     let relative = |yaw: f32| {
         head.map_or_else(
             || format!("{:+.1}°", yaw.to_degrees()),

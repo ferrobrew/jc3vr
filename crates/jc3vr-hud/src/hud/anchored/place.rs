@@ -1,6 +1,6 @@
 //! Where the hand- and wrist-anchored readouts go, and when they show. Pure.
 
-use body_rig::smooth::half_life_factor;
+use body_rig::math::smooth::half_life_factor;
 use glam::{Mat3, Mat4, Quat, Vec2, Vec3};
 use jc3vr_input::frame::{Hand, Pose};
 use jc3vr_weapons::controllers::weapons::hud_feed::hand_ammo::ModelBox;

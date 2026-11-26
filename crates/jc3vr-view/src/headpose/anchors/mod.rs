@@ -2,7 +2,7 @@
 
 use std::time::{Duration, Instant};
 
-use body_rig::rotation::twist_about_y;
+use body_rig::math::angle::heading;
 use glam::{Mat4, Quat, Vec3};
 use parking_lot::Mutex;
 
@@ -121,7 +121,7 @@ impl Geometry {
 /// `frame` turned toward the upright heading of `root` by `weight`, clamped to one.
 fn toward_heading(frame: Quat, root: Quat, weight: f32) -> Quat {
     if weight > 0.0 {
-        frame.slerp(twist_about_y(root), weight.min(1.0))
+        frame.slerp(Quat::from_rotation_y(heading(root)), weight.min(1.0))
     } else {
         frame
     }

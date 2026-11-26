@@ -13,7 +13,7 @@
 
 use std::time::Instant;
 
-use body_rig::smooth::half_life_factor;
+use body_rig::math::smooth::half_life_factor;
 use glam::Vec3;
 use parking_lot::Mutex;
 

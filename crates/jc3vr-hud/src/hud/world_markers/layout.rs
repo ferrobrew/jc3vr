@@ -2,7 +2,7 @@
 //! marker's crop covers, how large its billboard is to keep its angular size, whether a world point
 //! is inside the headset's field of view, and how the placement distance is resolved and smoothed.
 
-use body_rig::smooth::half_life_factor;
+use body_rig::math::smooth::half_life_factor;
 use glam::{Quat, Vec2, Vec3, Vec4};
 use jc3vr_body::controllers::aim::marker_rays::Sight;
 use jc3vr_view::hud::world_markers::stage_frame::StageFrame;

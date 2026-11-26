@@ -29,7 +29,7 @@
 //! the step to the next frame's update left the render lerping a stale pair at `dtf ≈ 0` on every
 //! tick frame — a per-tick jerk.)
 
-use body_rig::angle::{direction, wrap};
+use body_rig::math::angle::{direction, heading, wrap};
 use glam::{Quat, Vec3};
 use parking_lot::Mutex;
 
@@ -152,7 +152,7 @@ pub fn on_input_tick(look_x: f32, look_y: f32, look_x_delta: bool, dt: f32) {
     }
 
     let body_rotation = read_body_rotation();
-    let body_yaw = body_rotation.map(body_yaw_of);
+    let body_yaw = body_rotation.map(heading);
 
     // Rotate the published pose pair on the engine's own tick timeline, phase-aligned with its
     // dtf reset (see the module docs).

@@ -40,9 +40,9 @@
 //! zero together, so the view does not move and the cockpit frame's forward is the body's again,
 //! as everything off foot (the vehicles' controls, the driving view, the flight steering) expects.
 //!
-//! Headings are world yaws about +Y in radians, as [`crate::headpose::sim::body_yaw_of`] reads them.
+//! Headings are world yaws about +Y in radians, as [`body_rig::math::angle::heading`] reads them.
 
-use body_rig::angle::wrap;
+use body_rig::math::angle::wrap;
 
 use crate::tuning::VIEW;
 

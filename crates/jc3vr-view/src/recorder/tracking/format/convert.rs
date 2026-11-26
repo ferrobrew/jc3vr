@@ -6,7 +6,7 @@
 use jc3vr_input::{
     frame::{
         ActionSetKind, Button, ButtonSet, Hand, HandFrame, HandInputs, HandJoint,
-        InteractionProfile, Pose, TrackedPose,
+        InteractionProfile, TrackedPose,
     },
     semantic::SemanticSet,
 };
@@ -78,10 +78,7 @@ pub(super) fn frame_to_file(frame: &Frame) -> file::Frame {
             head_tracked: *head_tracked,
         },
         head: head.map(|HeadSample { eyes }| file::HeadSample {
-            eyes: eyes.map(|EyeSample { pose, fov }| file::EyeSample {
-                pose: pose_to_file(pose),
-                fov,
-            }),
+            eyes: eyes.map(|EyeSample { pose, fov }| file::EyeSample { pose, fov }),
         }),
         stage: stage_to_file(stage),
         controllers: controllers.as_ref().map(
@@ -154,17 +151,6 @@ pub(super) fn hand_to_file(hand: Hand) -> wire::Hand {
     }
 }
 
-fn pose_to_file(pose: Pose) -> wire::Pose {
-    let Pose {
-        position,
-        orientation,
-    } = pose;
-    wire::Pose {
-        position,
-        orientation,
-    }
-}
-
 fn stage_to_file(stage: &StageInfo) -> wire::Stage {
     // The floor shift and jump count are the session's bookkeeping, already taken out of the head
     // height, so they are not recorded.
@@ -225,7 +211,7 @@ fn hand_frame_to_file(hand: &HandFrame) -> wire::HandFrame {
                      position_tracked,
                      orientation_tracked,
                  }| wire::HandJoint {
-                    pose: pose_to_file(pose),
+                    pose,
                     radius,
                     position_valid,
                     orientation_valid,
@@ -248,7 +234,7 @@ fn tracked_pose_to_file(pose: &TrackedPose) -> wire::TrackedPose {
         angular_velocity,
     } = *pose;
     wire::TrackedPose {
-        pose: pose_to_file(pose),
+        pose,
         position_valid,
         orientation_valid,
         position_tracked,
@@ -414,10 +400,7 @@ fn frame_from_file(frame: file::Frame) -> Frame {
             head_tracked,
         },
         head: head.map(|file::HeadSample { eyes }| HeadSample {
-            eyes: eyes.map(|file::EyeSample { pose, fov }| EyeSample {
-                pose: pose_from_file(pose),
-                fov,
-            }),
+            eyes: eyes.map(|file::EyeSample { pose, fov }| EyeSample { pose, fov }),
         }),
         stage: stage_from_file(stage),
         controllers: controllers.map(
@@ -465,18 +448,6 @@ fn hand_from_file(hand: wire::Hand) -> Hand {
     match hand {
         wire::Hand::Left => Hand::Left,
         wire::Hand::Right => Hand::Right,
-    }
-}
-
-#[cfg(test)]
-fn pose_from_file(pose: wire::Pose) -> Pose {
-    let wire::Pose {
-        position,
-        orientation,
-    } = pose;
-    Pose {
-        position,
-        orientation,
     }
 }
 
@@ -540,7 +511,7 @@ fn hand_frame_from_file(hand: wire::HandFrame) -> HandFrame {
                      position_tracked,
                      orientation_tracked,
                  }| HandJoint {
-                    pose: pose_from_file(pose),
+                    pose,
                     radius,
                     position_valid,
                     orientation_valid,
@@ -564,7 +535,7 @@ fn tracked_pose_from_file(pose: wire::TrackedPose) -> TrackedPose {
         angular_velocity,
     } = pose;
     TrackedPose {
-        pose: pose_from_file(pose),
+        pose,
         position_valid,
         orientation_valid,
         position_tracked,

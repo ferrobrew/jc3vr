@@ -40,10 +40,7 @@
 //! ([`crate::headpose::follow`]): the view frame is then the body frame turned back by the body's
 //! heading relative to the view ([`follow_turn`]), so only the turn input turns the view.
 
-use body_rig::{
-    angle::{direction, wrap},
-    rotation::level,
-};
+use body_rig::math::angle::{direction, heading, wrap};
 use glam::{Quat, Vec3};
 use jc3vr_input::frame::Pose;
 use parking_lot::Mutex;
@@ -55,7 +52,6 @@ use crate::{
         config::{HeadPoseConfig, VrTurnMode},
         follow::{BodyFollow, FollowTick},
         participants::head_participants,
-        sim,
     },
     tuning::VIEW,
 };
@@ -155,7 +151,7 @@ pub fn advance_body_yaw(tick: YawTick, config: &HeadPoseConfig, follow: &FollowS
         dt,
     } = tick;
     let mut s = BODY_YAW.lock();
-    let body = sim::body_yaw_of(body_rotation_raw());
+    let body = heading(body_rotation_raw());
     // The strokes' turn is taken every tick, so a turn queued out of the water is dropped.
     let stroke_turn = std::mem::take(&mut *SWIM_TURN.lock());
     if s.thrown != body_thrown {
@@ -322,10 +318,7 @@ pub fn follow_offset(current: bool) -> f32 {
     } else {
         body_rotation_from(|character| glam::Mat4::from(character.m_WorldMatrixT0))
     };
-    BODY_YAW
-        .lock()
-        .follow
-        .offset(sim::body_yaw_of(body), current)
+    BODY_YAW.lock().follow.offset(heading(body), current)
 }
 
 /// The turn from the body frame to the view frame at the current tick (`current`) or the previous
@@ -398,7 +391,7 @@ const BANK_MIN_RAD: f32 = 1.0e-4;
 /// Clear the body's turn under the view, for a recenter: the recenter makes the head's forward the
 /// body's, so the view takes the body's heading from here, and the turn accumulator with it.
 pub fn on_recenter() {
-    let body = sim::body_yaw_of(body_rotation_raw());
+    let body = heading(body_rotation_raw());
     let mut s = BODY_YAW.lock();
     if s.follow.following() || s.follow.frozen() != 0.0 {
         s.yaw = s.yaw.map(|_| body);
@@ -490,7 +483,7 @@ fn level_while_swimming(rotation: Quat) -> Quat {
     if !(head_participants().swimming)() {
         return rotation;
     }
-    level(rotation)
+    Quat::from_rotation_y(heading(rotation))
 }
 
 /// Extract the local player's world rotation from the world matrix `world_of` selects. Identity when

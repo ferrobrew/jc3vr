@@ -6,9 +6,8 @@
 //! centre, its -Z points into the panel's front face, its +X is the panel's right, and its +Y the
 //! panel's up. This is the rotation [`PanelParams::rot`] takes.
 
-use body_rig::angle::{direction, head_heading, yaw_of};
+use body_rig::math::angle::{direction, heading};
 use glam::{Quat, Vec3};
-use jc3vr_body::controllers::hands::pose::{inverse, mul};
 use jc3vr_input::frame::Pose;
 use jc3vr_view::{
     controllers::cockpit::{CockpitTransform, body_of_head},
@@ -20,9 +19,10 @@ use crate::hud::{quad::PanelParams, tuning::HUD};
 /// The longest interval one push covers, seconds, so a hitch does not throw the panel.
 pub(crate) const MAX_PUSH_DT: f32 = 0.1;
 
-/// The panel pose `distance` metres in front of `head`, along the gaze, facing the head, with no
-/// roll: the panel's up is in the vertical plane through the gaze. It is never nearer than the
-/// tuning's `egui_panel.min_distance_m`.
+/// The panel pose `distance` metres in front of `head`, along the head's heading at the gaze's
+/// pitch, facing the head, with no roll: the panel's up is in the vertical plane through the
+/// heading. With the head upright or only rolled, that is along the gaze. It is never nearer than
+/// the tuning's `egui_panel.min_distance_m`.
 pub(crate) fn in_front_of(head: Pose, distance: f32) -> Pose {
     let min_distance = HUD.get().egui_panel.min_distance_m;
     let distance = if distance.is_finite() {
@@ -31,7 +31,7 @@ pub(crate) fn in_front_of(head: Pose, distance: f32) -> Pose {
         min_distance
     };
     let forward = head.orientation * Vec3::NEG_Z;
-    let yaw = gaze_heading(head.orientation);
+    let yaw = heading(head.orientation);
     let pitch = forward
         .y
         .atan2(Vec3::new(forward.x, 0.0, forward.z).length());
@@ -47,17 +47,17 @@ pub(crate) fn in_front_of(head: Pose, distance: f32) -> Pose {
 pub(crate) fn is_behind(head: Pose, center: Vec3) -> bool {
     let to_center = center - head.position;
     flat_direction(to_center)
-        .is_some_and(|flat| flat.dot(direction(gaze_heading(head.orientation))) < 0.0)
+        .is_some_and(|flat| flat.dot(direction(heading(head.orientation))) < 0.0)
 }
 
 /// The panel in the frame of the hand's `aim` pose at the moment of a grab, which the grab keeps.
 pub(crate) fn grab_offset(aim: Pose, panel: Pose) -> Pose {
-    mul(inverse(aim), panel)
+    aim.inverse().compose(panel)
 }
 
 /// The panel pose a hand at `aim` holds, with the grab's `offset`.
 pub(crate) fn held_pose(aim: Pose, offset: Pose) -> Pose {
-    mul(aim, offset)
+    aim.compose(offset)
 }
 
 /// The grab's `offset` after the thumbstick pushes (`rate` above zero) or pulls (below zero) the
@@ -123,15 +123,6 @@ pub(crate) fn world_panel(
     }
 }
 
-/// The heading of the gaze's ground projection, so that a summoned panel sits along the gaze even
-/// with the head rolled. Looking straight up or down the gaze has no projection, and the head's
-/// heading, which reads the top of the head there, stands in.
-fn gaze_heading(orientation: Quat) -> f32 {
-    yaw_of(orientation * Vec3::NEG_Z)
-        .or_else(|| head_heading(orientation))
-        .unwrap_or(0.0)
-}
-
 /// The horizontal part of `v`, normalized, or `None` when it is too short to give a direction.
 fn flat_direction(v: Vec3) -> Option<Vec3> {
     let flat = Vec3::new(v.x, 0.0, v.z);
@@ -167,15 +158,29 @@ mod tests {
 
     #[test]
     fn a_summoned_panel_faces_the_head_along_its_gaze_without_roll() {
+        for rotation in [
+            Quat::from_euler(EulerRot::YXZ, 0.7, -0.3, 0.0),
+            Quat::from_euler(EulerRot::YXZ, 0.7, 0.0, 0.5),
+        ] {
+            let head = pose(Vec3::new(0.2, 1.6, -0.1), rotation);
+            let panel = in_front_of(head, 2.0);
+            assert_near(panel.position, head.position + rotation * Vec3::NEG_Z * 2.0);
+            // Facing the head: the panel's front looks back along the gaze.
+            assert_near(panel.orientation * Vec3::NEG_Z, rotation * Vec3::NEG_Z);
+            // No roll: the panel's right is level.
+            assert!((panel.orientation * Vec3::X).y.abs() < 1e-5);
+            assert!((panel.orientation * Vec3::Y).y > 0.0);
+        }
+    }
+
+    #[test]
+    fn a_pitched_and_rolled_head_summons_the_panel_along_its_heading() {
         let rotation = Quat::from_euler(EulerRot::YXZ, 0.7, -0.3, 0.5);
-        let head = pose(Vec3::new(0.2, 1.6, -0.1), rotation);
-        let panel = in_front_of(head, 2.0);
-        assert_near(panel.position, head.position + rotation * Vec3::NEG_Z * 2.0);
-        // Facing the head: the panel's front looks back along the gaze.
-        assert_near(panel.orientation * Vec3::NEG_Z, rotation * Vec3::NEG_Z);
-        // No roll: the panel's right is level.
+        let panel = in_front_of(pose(Vec3::ZERO, rotation), 2.0);
+        let forward = panel.orientation * Vec3::NEG_Z;
+        assert!((heading(panel.orientation) - heading(rotation)).abs() < 1e-5);
+        assert!((forward.y - (rotation * Vec3::NEG_Z).y).abs() < 1e-5);
         assert!((panel.orientation * Vec3::X).y.abs() < 1e-5);
-        assert!((panel.orientation * Vec3::Y).y > 0.0);
     }
 
     #[test]
@@ -207,19 +212,23 @@ mod tests {
 
     #[test]
     fn behind_is_past_the_plane_square_to_the_heading() {
-        let head = pose(
-            Vec3::new(1.0, 1.7, 1.0),
+        for rotation in [
+            Quat::from_euler(EulerRot::YXZ, 0.0, 0.6, 0.0),
             Quat::from_euler(EulerRot::YXZ, 0.0, 0.6, 0.3),
-        );
-        let at = |offset: Vec3| is_behind(head, head.position + offset);
-        assert!(!at(Vec3::new(0.0, -0.5, -2.0)));
-        assert!(!at(Vec3::new(1.5, 0.0, -0.1)));
-        assert!(at(Vec3::new(1.5, 0.0, 0.1)));
-        assert!(at(Vec3::new(0.0, 0.3, 2.0)));
-        assert!(
-            !at(Vec3::new(0.0, 2.0, 0.0)),
-            "straight above is not behind"
-        );
+        ] {
+            let head = pose(Vec3::new(1.0, 1.7, 1.0), rotation);
+            let ahead = direction(heading(rotation));
+            let across = Vec3::new(-ahead.z, 0.0, ahead.x);
+            let at = |offset: Vec3| is_behind(head, head.position + offset);
+            assert!(!at(ahead * 2.0 - Vec3::Y * 0.5));
+            assert!(!at(across * 1.5 + ahead * 0.1));
+            assert!(at(across * 1.5 - ahead * 0.1));
+            assert!(at(-ahead * 2.0 + Vec3::Y * 0.3));
+            assert!(
+                !at(Vec3::new(0.0, 2.0, 0.0)),
+                "straight above is not behind"
+            );
+        }
     }
 
     #[test]
@@ -245,8 +254,8 @@ mod tests {
 
         // Moving the hand by a rigid motion moves the panel by the same motion.
         let motion = pose(Vec3::new(-0.5, 0.2, 0.7), Quat::from_rotation_y(1.1));
-        let moved = held_pose(mul(motion, aim), offset);
-        let expected = mul(motion, panel);
+        let moved = held_pose(motion.compose(aim), offset);
+        let expected = motion.compose(panel);
         assert_near(moved.position, expected.position);
         assert_same_rotation(moved.orientation, expected.orientation);
     }

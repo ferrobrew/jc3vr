@@ -1,5 +1,6 @@
 //! Low-pass filtering of synthetic head rotation. Tracking never enters this filter.
 
+use body_rig::math::angle::heading;
 use glam::{Quat, Vec3};
 
 use crate::tuning::VIEW;
@@ -53,7 +54,7 @@ pub fn synthetic_rotation(
     dt: f32,
     reset: bool,
 ) -> Quat {
-    let heading = body_rig::rotation::twist_about_y(root);
+    let heading = Quat::from_rotation_y(heading(root));
     let local = heading.inverse() * head;
     (root.inverse() * heading * filter.step(local, dt, reset)).normalize()
 }
@@ -69,7 +70,7 @@ mod tests {
 
     fn close(a: Quat, b: Quat) {
         assert!(
-            body_rig::rotation::angle_between(a, b) < 0.001,
+            body_rig::math::rotation::angle_between(a, b) < 0.001,
             "{a:?} != {b:?}"
         );
     }
@@ -97,7 +98,7 @@ mod tests {
         let mut filter = RotationFilter::default();
         filter.step(Quat::IDENTITY, 0.02, true);
         let impulse = filter.step(Quat::from_rotation_x(-1.0), 0.02, false);
-        assert!(body_rig::rotation::angle(impulse) < 0.2);
+        assert!(body_rig::math::rotation::angle(impulse) < 0.2);
         let bank = Quat::from_rotation_z(1.0);
         for _ in 0..100 {
             filter.step(bank, 0.02, false);

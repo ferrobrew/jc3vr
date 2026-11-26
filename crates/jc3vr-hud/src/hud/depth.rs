@@ -3,7 +3,7 @@
 //! always reads as far. The panel's constant-apparent-size scaling makes the shift a pure depth
 //! change.
 
-use body_rig::smooth::half_life_factor;
+use body_rig::math::smooth::half_life_factor;
 
 use crate::hud::{HudMode, tuning::DepthShiftTuning};
 

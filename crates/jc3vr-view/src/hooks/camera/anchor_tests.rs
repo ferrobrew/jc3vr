@@ -267,7 +267,7 @@ fn filtered_animation_keeps_both_eye_endpoints_on_the_animated_face() {
         let expected = sample.root.transform_point3(sample.eyes_model) + frame * travel;
         assert!(eyes[side].abs_diff_eq(expected, 1.0e-5));
         assert!(
-            body_rig::rotation::angle_between(frame.inverse() * poses[side].orientation, hmd)
+            body_rig::math::rotation::angle_between(frame.inverse() * poses[side].orientation, hmd)
                 < 0.001
         );
     }
@@ -297,7 +297,9 @@ fn simulation_publication_transports_the_unfiltered_tracking_delta_with_the_head
     );
     let actual = state.test_poses()[1];
     assert!(actual.position.abs_diff_eq(expected.position, 1.0e-5));
-    assert!(body_rig::rotation::angle_between(actual.orientation, expected.orientation) < 0.001);
+    assert!(
+        body_rig::math::rotation::angle_between(actual.orientation, expected.orientation) < 0.001
+    );
 }
 
 /// Before any anchors are published there is no arm to hang the eyes by.

@@ -8,7 +8,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use body_rig::{angle::head_heading, rotation::twist_about_y};
+use body_rig::math::{angle::heading, smooth::smoothstep};
 use jc3vr_input::frame as controller_frame;
 use openxr as xr;
 use parking_lot::Mutex;
@@ -211,12 +211,13 @@ fn service_follow_bank() {
         let head = state.latest_head_pose.map(|pose| banked.rebase(pose));
         flight_pose::source_changed(EpochChange::FollowBank);
         // The head's heading in the banked cockpit frame is its offset from the body.
-        *LAST_BANK.lock() = head
-            .and_then(|pose| {
-                let o = pose.orientation;
-                head_heading(glam::Quat::from_xyzw(o.x, o.y, o.z, o.w))
-            })
-            .map(|yaw| (yaw, Instant::now()));
+        *LAST_BANK.lock() = head.map(|pose| {
+            let o = pose.orientation;
+            (
+                heading(glam::Quat::from_xyzw(o.x, o.y, o.z, o.w)),
+                Instant::now(),
+            )
+        });
     }
     // The cockpit frame turns by the inverse: new frame from old.
     let turn = rotation.conjugate();
@@ -309,7 +310,7 @@ fn seat_yaw_progress(elapsed_s: f32) -> f32 {
         return 1.0;
     }
     let blend_s = VIEW.get().recenter.seat_yaw_blend_s;
-    body_rig::smooth::smoothstep((elapsed_s / blend_s).clamp(0.0, 1.0))
+    smoothstep((elapsed_s / blend_s).clamp(0.0, 1.0))
 }
 
 /// A seat lock's yaw re-base in progress.
@@ -441,7 +442,7 @@ impl Baseline {
     fn from_pose(pose: xr::Posef) -> Self {
         Self {
             position: vec3(pose.position),
-            yaw: twist_about_y(quat(pose.orientation)),
+            yaw: glam::Quat::from_rotation_y(heading(quat(pose.orientation))),
         }
     }
 
