@@ -255,10 +255,7 @@ fn a_file_from_before_the_two_handed_inventory_skips_the_retired_weapon_settings
             "controllers.weapons.dual_wield",
             "controllers.weapons.hold.instant_dock",
             "controllers.weapons.hold.pistol_dock",
-            "controllers.weapons.inventory.back_sockets",
-            "controllers.weapons.inventory.chest_socket",
-            "controllers.weapons.inventory.hip_sockets",
-            "controllers.weapons.inventory.socket_radius_m",
+            "controllers.weapons.inventory",
             "controllers.weapons.reload.dual_split",
         ]
     );
