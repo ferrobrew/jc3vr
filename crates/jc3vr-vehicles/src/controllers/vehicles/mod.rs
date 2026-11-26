@@ -132,7 +132,7 @@ mod tests {
         mounted_tick::offered,
         physical::{ControlState, Hold, Outputs},
         state::move_grip,
-        tuning::PHYSICAL,
+        tuning::PhysicalControlsTuning,
     };
 
     fn analog(desired: &[Desired], action: Action) -> Option<f32> {
@@ -208,7 +208,7 @@ mod tests {
 
     #[test]
     fn the_rendered_wheel_follows_the_held_wheel_and_otherwise_the_steering() {
-        let config = PHYSICAL;
+        let config = PhysicalControlsTuning::shipped();
         let lock = config.wheel.lock_deg.to_radians();
         let mut controls = ControlState::new();
         let half = rendered_angle(&controls, &config, Some(0.5));

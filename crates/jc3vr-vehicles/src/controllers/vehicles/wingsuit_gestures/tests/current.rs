@@ -133,7 +133,7 @@ fn backward_samples_and_large_gaps_remove_current_availability() {
                 pose: Some(FLIGHT),
                 claims: [HandClaims::default(); 2],
             },
-            &CONFIG,
+            config(),
         );
         assert_eq!(commands, GestureCommands::default());
         assert_eq!(h.state.current(), GestureAvailability::Unavailable);

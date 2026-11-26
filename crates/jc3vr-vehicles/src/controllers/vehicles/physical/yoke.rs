@@ -293,7 +293,7 @@ mod tests {
     use jc3vr_body::controllers::grab::cockpit::ControlKind;
 
     use super::*;
-    use crate::controllers::vehicles::{physical::Hold, tuning::PHYSICAL};
+    use crate::controllers::vehicles::{physical::Hold, tuning::PhysicalControlsTuning};
 
     fn frame() -> YokeFrame {
         YokeFrame::new(
@@ -325,7 +325,7 @@ mod tests {
         step_yoke(
             state,
             &frame(),
-            &PHYSICAL.yoke,
+            &PhysicalControlsTuning::shipped().yoke,
             holding(points),
             false,
             1.0 / 30.0,
@@ -378,12 +378,15 @@ mod tests {
         let right = f.horn(Hand::Right, 0.0, 0.0);
         grab_yoke(&mut state, &f, Hand::Right, right);
         let out = step(&mut state, [None, Some(f.horn(Hand::Right, 2.0, 0.0))]);
-        let max = PHYSICAL.yoke.max_roll_deg.to_radians();
+        let max = PhysicalControlsTuning::shipped()
+            .yoke
+            .max_roll_deg
+            .to_radians();
         assert!((state.yoke.roll - max).abs() < 1e-4);
         assert_eq!(out.cue, Some(ControlCue::Stop));
         let out = step(&mut state, [None, Some(right)]);
         assert_eq!(out.cue, Some(ControlCue::Centre));
-        let travel = PHYSICAL.yoke.travel_m;
+        let travel = PhysicalControlsTuning::shipped().yoke.travel_m;
         let out = step(&mut state, [None, Some(right + f.axis * travel * 2.0)]);
         assert!((state.yoke.pitch - travel).abs() < 1e-5);
         assert_eq!(out.cue, Some(ControlCue::Stop));

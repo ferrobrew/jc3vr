@@ -16,13 +16,13 @@ use crate::controllers::vehicles::{
         sticks,
     },
     steering,
-    tuning::{HandlebarsSpec, LeverAxis, PHYSICAL},
+    tuning::{HandlebarsSpec, LeverAxis, PhysicalControlsTuning},
 };
 
 const DT: f32 = 1.0 / 30.0;
 
 fn placement() -> Placement {
-    Placement::new(PHYSICAL, Hand::Right)
+    Placement::new(PhysicalControlsTuning::shipped(), Hand::Right)
 }
 
 /// A tick with every tracked hand's grip held.
@@ -274,7 +274,7 @@ fn the_handlebars_turn_with_a_pulled_back_grip_and_not_with_a_lowered_one() {
 
 #[test]
 fn the_handlebars_steer_past_a_deadzone_on_a_curve_and_lean_as_they_steer() {
-    let spec = PHYSICAL.handlebars;
+    let spec = PhysicalControlsTuning::shipped().handlebars;
     let lock = spec.max_steer_deg.to_radians();
     let deadzone = spec.deadzone_deg.to_radians();
     assert!(deadzone > 0.0 && spec.response > 1.0);
@@ -546,7 +546,7 @@ fn a_one_handed_control_passes_to_the_hand_that_takes_it() {
 
 #[test]
 fn a_left_handed_layout_mirrors_the_sticks_but_not_the_wheel() {
-    let mut config = PHYSICAL;
+    let mut config = PhysicalControlsTuning::shipped();
     config.wheel.centre_m.x = -0.3;
     let p = Placement::new(config, Hand::Left);
     let state = ControlState::default();

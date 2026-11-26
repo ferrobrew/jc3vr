@@ -34,7 +34,7 @@ use crate::controllers::vehicles::{
     physical::{ControlEvent, ControlState, buttons::ButtonEvent},
     state::{STATE, log_handle_events, publish_mounted_holds, push_events},
     steering,
-    tuning::{PARACHUTE_HANDLES, PhysicalControlsTuning},
+    tuning::{PhysicalControlsTuning, VEHICLES},
     wheel_render, wingsuit_evade, write_outputs,
 };
 
@@ -141,7 +141,7 @@ pub fn finish_tick(
     let pulls = state.handles_on.then(|| {
         parachute::step(
             &mut state.handles,
-            &PARACHUTE_HANDLES,
+            &VEHICLES.get().parachute_handles,
             &parachute::StepInputs {
                 grips,
                 held,
@@ -222,8 +222,15 @@ pub fn finish_tick(
             "wingsuit arm steering"
         );
     }
-    let handles = pulls
-        .map(|pulls| handles_tick(&state.handles, pulls, controls, desired, &PARACHUTE_HANDLES));
+    let handles = pulls.map(|pulls| {
+        handles_tick(
+            &state.handles,
+            pulls,
+            controls,
+            desired,
+            &VEHICLES.get().parachute_handles,
+        )
+    });
     state.status.holds = state.controls.holds.map(|h| h.map(|h| h.kind));
     state.status.controls = state.controls;
     state.status.outputs = outputs;

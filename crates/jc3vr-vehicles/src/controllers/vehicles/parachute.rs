@@ -239,9 +239,11 @@ mod tests {
     use jc3vr_weapons::controllers::{loadout::Socket, weapons::volumes::SOCKETS};
 
     use super::*;
-    use crate::controllers::vehicles::{arm_steering::combine, tuning::PARACHUTE_HANDLES};
+    use crate::controllers::vehicles::{arm_steering::combine, tuning::VEHICLES};
 
-    const CONFIG: ParachuteHandlesTuning = PARACHUTE_HANDLES;
+    fn config() -> &'static ParachuteHandlesTuning {
+        &VEHICLES.get().parachute_handles
+    }
 
     /// The handles' centres: above, ahead of, and outside the shoulders.
     fn centres() -> [Vec3; 2] {
@@ -268,7 +270,7 @@ mod tests {
     ) -> ([f32; 2], Vec<HandleEvent>) {
         let mut events = Vec::new();
         let inputs = StepInputs { grips, held, grabs };
-        let pulls = step(state, &CONFIG, &inputs, &mut events);
+        let pulls = step(state, config(), &inputs, &mut events);
         (pulls, events)
     }
 
@@ -282,7 +284,7 @@ mod tests {
     #[test]
     fn each_handle_is_for_its_own_hand() {
         let centres = centres();
-        let c = candidates(&CONFIG, &HandleState::new(), centres, [None; 2]);
+        let c = candidates(config(), &HandleState::new(), centres, [None; 2]);
         assert_eq!(
             grab_volume(centres[1], Hand::Right, &c),
             Some(GrabVolume::ParachuteHandle(Hand::Right))
@@ -300,7 +302,7 @@ mod tests {
     #[test]
     fn the_handles_overlap_harmlessly_at_full_size() {
         let centres = centres();
-        let c = candidates(&CONFIG, &HandleState::new(), centres, [None; 2]);
+        let c = candidates(config(), &HandleState::new(), centres, [None; 2]);
         let reach: Vec<_> = reach_candidates(&HandleState::new(), centres).collect();
         assert!(c.iter().all(|c| c.radius == RADIUS_M));
         assert!(reach.iter().all(|c| c.radius == REACH_M));
@@ -326,7 +328,7 @@ mod tests {
             hand: Some(Hand::Right),
         };
         assert!(socket.centre.distance(centres[1]) < RADIUS_M);
-        let mut c = candidates(&CONFIG, &HandleState::new(), centres, [None; 2]).to_vec();
+        let mut c = candidates(config(), &HandleState::new(), centres, [None; 2]).to_vec();
         c.push(socket);
         assert_eq!(
             grab_volume(socket.centre, Hand::Right, &c),
@@ -343,7 +345,7 @@ mod tests {
         let centres = centres();
         let state = HandleState::new();
         let near = centres[1] + Vec3::X * (RADIUS_M + REACH_M) * 0.5;
-        let placed = candidates(&CONFIG, &state, centres, [None; 2]);
+        let placed = candidates(config(), &state, centres, [None; 2]);
         assert_eq!(grab_volume(near, Hand::Right, &placed), None);
         let reach: Vec<_> = reach_candidates(&state, centres).collect();
         assert_eq!(
@@ -362,7 +364,7 @@ mod tests {
     fn a_handle_is_held_only_once_taken_and_only_while_the_grip_is() {
         let centres = centres();
         let mut state = HandleState::new();
-        let down = centres[1] - Vec3::Y * CONFIG.full_pull_m;
+        let down = centres[1] - Vec3::Y * config().full_pull_m;
         let (pulls, _) = tick(&mut state, [None, Some(down)], [false; 2]);
         assert_eq!(pulls, [0.0; 2], "an untaken handle is not pulled");
 
@@ -386,12 +388,12 @@ mod tests {
     fn a_natural_pull_down_and_back_keeps_the_handle() {
         let (mut state, centres) = both_taken();
         // Down a full pull and back toward the body by a third of a metre, and out a little.
-        let pulled = centres[1] + Vec3::new(0.08, -CONFIG.full_pull_m, 0.3);
+        let pulled = centres[1] + Vec3::new(0.08, -config().full_pull_m, 0.3);
         let (pulls, events) = tick(&mut state, [Some(centres[0]), Some(pulled)], [false; 2]);
         assert!(events.is_empty(), "{events:?}");
         assert!((pulls[1] - 1.0).abs() < 1e-5, "{pulls:?}");
         // Further down than a full pull and further back still.
-        let deep = centres[1] + Vec3::new(0.0, -CONFIG.full_pull_m - 0.2, 0.4);
+        let deep = centres[1] + Vec3::new(0.0, -config().full_pull_m - 0.2, 0.4);
         let (_, events) = tick(&mut state, [Some(centres[0]), Some(deep)], [false; 2]);
         assert!(events.is_empty(), "{events:?}");
     }
@@ -419,44 +421,44 @@ mod tests {
     fn the_pull_is_measured_from_where_the_handle_was_taken() {
         let hold = HandleHold { rest: Vec3::ZERO };
         assert_eq!(
-            pull(&CONFIG, hold, Vec3::Y * DEADZONE_M),
+            pull(config(), hold, Vec3::Y * DEADZONE_M),
             0.0,
             "a small raise is slack"
         );
-        assert!(pull(&CONFIG, hold, Vec3::Y * 0.2) < 0.0, "raising pushes");
+        assert!(pull(config(), hold, Vec3::Y * 0.2) < 0.0, "raising pushes");
         assert!(
-            pull(&CONFIG, hold, Vec3::NEG_Z * 0.2) < 0.0,
+            pull(config(), hold, Vec3::NEG_Z * 0.2) < 0.0,
             "reaching forward pushes"
         );
-        assert_eq!(pull(&CONFIG, hold, Vec3::Y), -1.0);
-        assert_eq!(pull(&CONFIG, hold, -Vec3::Y * DEADZONE_M), 0.0);
-        let half = DEADZONE_M + (CONFIG.full_pull_m - DEADZONE_M) * 0.5;
-        assert!((pull(&CONFIG, hold, -Vec3::Y * half) - 0.5).abs() < 1e-5);
-        assert_eq!(pull(&CONFIG, hold, -Vec3::Y), 1.0);
-        assert_eq!(pull(&CONFIG, hold, Vec3::NAN), 0.0);
+        assert_eq!(pull(config(), hold, Vec3::Y), -1.0);
+        assert_eq!(pull(config(), hold, -Vec3::Y * DEADZONE_M), 0.0);
+        let half = DEADZONE_M + (config().full_pull_m - DEADZONE_M) * 0.5;
+        assert!((pull(config(), hold, -Vec3::Y * half) - 0.5).abs() < 1e-5);
+        assert_eq!(pull(config(), hold, -Vec3::Y), 1.0);
+        assert_eq!(pull(config(), hold, Vec3::NAN), 0.0);
     }
 
     #[test]
     fn one_handle_banks_to_its_side_and_both_brake() {
-        assert_eq!(steer([0.0, 1.0], &CONFIG), Vec2::new(1.0, 0.0));
-        assert_eq!(steer([0.6, 0.0], &CONFIG), Vec2::new(-0.6, 0.0));
-        assert_eq!(steer([1.0, 1.0], &CONFIG), Vec2::new(0.0, -1.0));
-        let light = steer([CONFIG.brake_threshold; 2], &CONFIG);
+        assert_eq!(steer([0.0, 1.0], config()), Vec2::new(1.0, 0.0));
+        assert_eq!(steer([0.6, 0.0], config()), Vec2::new(-0.6, 0.0));
+        assert_eq!(steer([1.0, 1.0], config()), Vec2::new(0.0, -1.0));
+        let light = steer([config().brake_threshold; 2], config());
         assert_eq!(light, Vec2::ZERO, "a light pull on both does not brake");
-        let turning_brake = steer([0.6, 1.0], &CONFIG);
+        let turning_brake = steer([0.6, 1.0], config());
         assert!(
             turning_brake.x > 0.0 && turning_brake.y < 0.0,
             "{turning_brake}"
         );
-        assert_eq!(steer([f32::NAN, 0.0], &CONFIG), Vec2::ZERO);
+        assert_eq!(steer([f32::NAN, 0.0], config()), Vec2::ZERO);
     }
 
     #[test]
     fn both_handles_pushed_dive_and_one_alone_does_nothing() {
-        assert_eq!(steer([-1.0, -1.0], &CONFIG), Vec2::new(0.0, 1.0));
-        assert_eq!(steer([-0.5, -0.8], &CONFIG), Vec2::new(0.0, 0.5));
-        assert_eq!(steer([-1.0, 0.0], &CONFIG), Vec2::ZERO);
-        let turning_dive = steer([-0.6, 0.0], &CONFIG);
+        assert_eq!(steer([-1.0, -1.0], config()), Vec2::new(0.0, 1.0));
+        assert_eq!(steer([-0.5, -0.8], config()), Vec2::new(0.0, 0.5));
+        assert_eq!(steer([-1.0, 0.0], config()), Vec2::ZERO);
+        let turning_dive = steer([-0.6, 0.0], config());
         assert_eq!(
             turning_dive,
             Vec2::ZERO,
@@ -466,14 +468,14 @@ mod tests {
 
     #[test]
     fn the_stick_adds_to_the_handles_and_still_dives() {
-        let brake = steer([1.0, 1.0], &CONFIG);
+        let brake = steer([1.0, 1.0], config());
         assert_eq!(combine(Vec2::new(0.0, 1.0), Some(brake)), Vec2::ZERO);
         assert_eq!(
             combine(Vec2::new(0.5, 1.0), Some(Vec2::ZERO)),
             Vec2::new(0.5, 1.0)
         );
         assert_eq!(
-            combine(Vec2::new(0.8, 0.0), Some(steer([0.0, 1.0], &CONFIG))),
+            combine(Vec2::new(0.8, 0.0), Some(steer([0.0, 1.0], config()))),
             Vec2::new(1.0, 0.0)
         );
     }
@@ -481,13 +483,13 @@ mod tests {
     #[test]
     fn the_held_hand_is_drawn_where_it_took_the_handle_moved_within_a_full_pull() {
         let hold = HandleHold { rest: Vec3::ZERO };
-        let a = anchor_point(&CONFIG, hold, Vec3::new(0.05, -0.1, 0.02));
+        let a = anchor_point(config(), hold, Vec3::new(0.05, -0.1, 0.02));
         assert_eq!(a, Vec3::new(0.0, -0.1, 0.0));
-        let high = anchor_point(&CONFIG, hold, Vec3::Y);
-        assert!((high.y - CONFIG.full_pull_m).abs() < 1e-6);
-        let ahead = anchor_point(&CONFIG, hold, Vec3::NEG_Z * 0.1);
+        let high = anchor_point(config(), hold, Vec3::Y);
+        assert!((high.y - config().full_pull_m).abs() < 1e-6);
+        let ahead = anchor_point(config(), hold, Vec3::NEG_Z * 0.1);
         assert_eq!(ahead, Vec3::NEG_Z * 0.1);
-        let low = anchor_point(&CONFIG, hold, -Vec3::Y);
-        assert!((low.y + CONFIG.full_pull_m).abs() < 1e-6);
+        let low = anchor_point(config(), hold, -Vec3::Y);
+        assert!((low.y + config().full_pull_m).abs() < 1e-6);
     }
 }

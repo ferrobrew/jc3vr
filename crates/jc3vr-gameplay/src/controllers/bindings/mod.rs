@@ -786,7 +786,7 @@ fn tick(game: &GameTick<'_>, dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>)
     let flight_tick = flight::Tick {
         frame: &original,
         config: &config,
-        gestures: &vehicles::tuning::WINGSUIT_GESTURES,
+        gestures: &vehicles::tuning::VEHICLES.get().wingsuit_gestures,
         dimensions: &flight_dimensions,
         detection,
         airborne: locomotion::anchor::status().airborne,

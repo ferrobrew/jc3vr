@@ -155,17 +155,17 @@ fn flight(pose: FlightPose, config: &WingsuitGesturesTuning) -> bool {
 #[test]
 fn the_entry_pose_is_withdrawn_and_not_a_flight_pose() {
     let pose = measure(ENTRY);
-    assert!(pose.withdrawn(&CONFIG), "{pose:?}");
-    assert!(!flight(pose, &CONFIG), "{pose:?}");
+    assert!(pose.withdrawn(config()), "{pose:?}");
+    assert!(!flight(pose, config()), "{pose:?}");
 }
 
 #[test]
 fn a_seated_glide_is_a_flight_pose_wherever_the_head_looks() {
     for sample in [GLIDE, GLIDE_LOOKING_ASIDE] {
         let pose = measure(sample);
-        assert!(flight(pose, &CONFIG), "{pose:?}");
-        assert!(!pose.enters_brake(&CONFIG), "{pose:?}");
-        assert!(!pose.withdrawn(&CONFIG), "{pose:?}");
+        assert!(flight(pose, config()), "{pose:?}");
+        assert!(!pose.enters_brake(config()), "{pose:?}");
+        assert!(!pose.withdrawn(config()), "{pose:?}");
     }
 }
 
@@ -173,14 +173,14 @@ fn a_seated_glide_is_a_flight_pose_wherever_the_head_looks() {
 fn seated_hands_turned_to_the_wind_brake() {
     for sample in BRAKES {
         let pose = measure(sample);
-        assert!(pose.enters_brake(&CONFIG), "{pose:?}");
+        assert!(pose.enters_brake(config()), "{pose:?}");
         assert!(
             pose.lateral
                 .into_iter()
-                .all(|v| v >= CONFIG.flight_lateral_span),
+                .all(|v| v >= config().flight_lateral_span),
             "{pose:?}"
         );
-        assert!(!flight(pose, &CONFIG), "{pose:?}");
+        assert!(!flight(pose, config()), "{pose:?}");
     }
 }
 

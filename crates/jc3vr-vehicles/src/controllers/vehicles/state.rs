@@ -24,7 +24,7 @@ use crate::controllers::vehicles::{
     parachute::{HandleEvent, HandleHold, HandleState},
     physical,
     physical::{ControlEvent, ControlState, Hold, Outputs, Placement},
-    tuning::PARACHUTE_HANDLES,
+    tuning::VEHICLES,
     types::{VehicleSummary, VehiclesStatus},
     wheel_render,
     wheel_render::RenderWheel,
@@ -187,7 +187,11 @@ pub fn apply(hands: &mut [Option<CockpitHand>; 2]) {
         let handle = state.last_handles[i]
             .filter(|_| state.anchor_weights[i] > 0.0)
             .map(|hold| {
-                let point = parachute::anchor_point(&PARACHUTE_HANDLES, hold, h.grip.position);
+                let point = parachute::anchor_point(
+                    &VEHICLES.get().parachute_handles,
+                    hold,
+                    h.grip.position,
+                );
                 (point, state.anchor_weights[i])
             });
         let mounted = state

@@ -248,11 +248,11 @@ fn step_throttle(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::controllers::vehicles::tuning::PHYSICAL;
+    use crate::controllers::vehicles::tuning::PhysicalControlsTuning;
 
     #[test]
     fn the_throttle_stops_at_zero_until_pulled_through_into_reverse() {
-        let flight = PHYSICAL.flight;
+        let flight = PhysicalControlsTuning::shipped().flight;
         let pull = flight.zero_pull * 2.0;
         let forward = ThrottleSection::Forward;
         assert_eq!(throttle_constrain(&flight, forward, 0.4), (0.4, forward));
@@ -280,7 +280,7 @@ mod tests {
 
     #[test]
     fn a_third_of_the_travel_is_reverse_and_the_rest_forward() {
-        let flight = PHYSICAL.flight;
+        let flight = PhysicalControlsTuning::shipped().flight;
         let zero = throttle_zero(&flight);
         assert!((zero - (-1.0 / 3.0)).abs() < 1e-6);
         assert_eq!(throttle_output(&flight, None, 1.0 - zero), 1.0);
@@ -301,7 +301,7 @@ mod tests {
     fn without_a_reverse_section_the_zero_stop_is_the_end() {
         let flight = FlightControlsTuning {
             reverse_share: 0.0,
-            ..PHYSICAL.flight
+            ..PhysicalControlsTuning::shipped().flight
         };
         let (offset, section) = throttle_constrain(&flight, ThrottleSection::Forward, -1.0);
         assert_eq!((offset, section), (0.0, ThrottleSection::Forward));
@@ -309,7 +309,7 @@ mod tests {
 
     #[test]
     fn the_dry_throttle_stays_short_of_the_afterburner_through_the_forward_section() {
-        let flight = PHYSICAL.flight;
+        let flight = PhysicalControlsTuning::shipped().flight;
         let zero = throttle_zero(&flight);
         let at = |share: f32| throttle_output(&flight, Some(0.85), share * (1.0 - zero));
         let below = at(0.84);

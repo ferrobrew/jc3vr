@@ -1,5 +1,7 @@
 mod current;
 
+use std::sync::LazyLock;
+
 use jc3gi::input::input_action_map::Action::{CANCEL, OPEN_WINGSUIT, WINGSUIT_AIRBRAKE};
 use jc3vr_body::controllers::{
     intent::hold::{Target, Want},
@@ -7,7 +9,7 @@ use jc3vr_body::controllers::{
 };
 use jc3vr_input::frame::ActionSetKind;
 use jc3vr_vehicles::controllers::vehicles::{
-    tuning::WingsuitGesturesTuning,
+    tuning::{VEHICLES, WingsuitGesturesTuning},
     wingsuit_gestures::{FlightPose, SuitTransition},
 };
 use jc3vr_view::vr::input::flight_pose::GestureSample;
@@ -16,14 +18,14 @@ use jc3vr_weapons::controllers::loadout::Socket;
 use super::*;
 
 const SUIT: Mode = Mode::Airborne(AirborneVariant::Wingsuit);
-const CONFIG: WingsuitGesturesTuning = WingsuitGesturesTuning {
+static CONFIG: LazyLock<WingsuitGesturesTuning> = LazyLock::new(|| WingsuitGesturesTuning {
     neutral_dwell_s: 0.125,
     flight_dwell_s: 0.25,
     close_dwell_s: 0.25,
     brake_dwell_s: 0.125,
     max_sample_gap_s: 0.5,
-    ..WingsuitGesturesTuning::new()
-};
+    ..VEHICLES.get().wingsuit_gestures
+});
 const FLIGHT: FlightPose = FlightPose {
     lateral: [0.30; 2],
     reach: [0.32; 2],
@@ -349,7 +351,7 @@ fn missing_packets_clear_pose_history_and_a_lowered_pose_does_not_deploy() {
     let tick = Tick {
         frame: &frame,
         config: &config,
-        gestures: &WingsuitGesturesTuning::new(),
+        gestures: &VEHICLES.get().wingsuit_gestures,
         dimensions: &dimensions,
         detection: Detection {
             mode: SUIT,
@@ -501,7 +503,7 @@ fn a_body_slot_claims_the_hand_only_while_its_grip_is_squeezed() {
         let tick = Tick {
             frame: &frame,
             config: &config,
-            gestures: &WingsuitGesturesTuning::new(),
+            gestures: &VEHICLES.get().wingsuit_gestures,
             dimensions: &dimensions,
             detection: Detection {
                 mode: Mode::Airborne(AirborneVariant::Falling),

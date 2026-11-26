@@ -356,10 +356,10 @@ mod tests {
     use std::f32::consts::{FRAC_PI_2, TAU};
 
     use super::*;
-    use crate::controllers::vehicles::tuning::PHYSICAL;
+    use crate::controllers::vehicles::tuning::PhysicalControlsTuning;
 
     fn spec() -> WheelSpec {
-        PHYSICAL.wheel
+        PhysicalControlsTuning::shipped().wheel
     }
 
     fn frame() -> WheelFrame {
@@ -689,7 +689,7 @@ mod tests {
             }
         }
         // A response above one steers less than linearly near centre.
-        let half = angle_for_steer(0.5, &PHYSICAL.wheel);
+        let half = angle_for_steer(0.5, &PhysicalControlsTuning::shipped().wheel);
         assert!(steer_for_angle(half, &spec) < 0.5);
     }
 

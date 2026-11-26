@@ -48,7 +48,7 @@ use crate::controllers::vehicles::{
         MOUNTED_WEAPON, MountedHandWeight, STATE, State, log_handle_events, mounted_hand_weight,
         push_events,
     },
-    tuning::{PARACHUTE_HANDLES, PhysicalControlsTuning},
+    tuning::{PhysicalControlsTuning, VEHICLES},
     types::TickVolumes,
     wing_guide,
 };
@@ -268,7 +268,12 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickVolumes {
     }
     if handles_on {
         let centres = native_centres.map(|point| point.unwrap_or(Vec3::ZERO));
-        let placed = parachute::candidates(&PARACHUTE_HANDLES, &state.handles, centres, grips);
+        let placed = parachute::candidates(
+            &VEHICLES.get().parachute_handles,
+            &state.handles,
+            centres,
+            grips,
+        );
         for (hand, c) in Hand::BOTH.into_iter().zip(placed) {
             if state.handles.holds[hand.index()].is_none() && native_centres[hand.index()].is_none()
             {

@@ -197,14 +197,14 @@ mod tests {
             native::{CockpitFit, NativeStick, asset as native_asset, cockpit_asset},
             step,
         },
-        tuning::PHYSICAL,
+        tuning::PhysicalControlsTuning,
         wheel_render::RenderWheel,
     };
 
     #[test]
     fn moving_handles_share_the_grab_centres_and_hand_anchors_for_both_sides() {
         for dominant in Hand::BOTH {
-            let placement = Placement::new(PHYSICAL, dominant);
+            let placement = Placement::new(PhysicalControlsTuning::shipped(), dominant);
             for kind in [
                 ControlKind::Cyclic,
                 ControlKind::FlightStick,
@@ -253,7 +253,7 @@ mod tests {
             ControlKind::Throttle,
             ControlKind::Collective,
         ] {
-            let placement = Placement::new(PHYSICAL, Hand::Right);
+            let placement = Placement::new(PhysicalControlsTuning::shipped(), Hand::Right);
             let mut state = ControlState::default();
             let start = geometry(&placement, &state, kind).unwrap().handle;
             let mut inputs = StepInputs {
@@ -322,9 +322,9 @@ mod tests {
                 Mat4::from_translation(-pilot),
                 asset,
                 bounds,
-                &PHYSICAL,
+                &PhysicalControlsTuning::shipped(),
             );
-            let mut placement = Placement::new(PHYSICAL, Hand::Right);
+            let mut placement = Placement::new(PhysicalControlsTuning::shipped(), Hand::Right);
             placement.cockpit = Some(fit);
             let state = ControlState::default();
             let stick = geometry(&placement, &state, asset.stick_kind).unwrap();
@@ -402,7 +402,7 @@ mod tests {
                 pivot,
                 grip,
             };
-            let mut placement = Placement::new(PHYSICAL, Hand::Right);
+            let mut placement = Placement::new(PhysicalControlsTuning::shipped(), Hand::Right);
             placement.native_stick = Some(native);
             let state = ControlState {
                 stick: Vec2::new(0.04, -0.03),
@@ -426,7 +426,7 @@ mod tests {
 
     #[test]
     fn sticks_keep_their_base_and_levers_reach_the_drawn_stops() {
-        let placement = Placement::new(PHYSICAL, Hand::Left);
+        let placement = Placement::new(PhysicalControlsTuning::shipped(), Hand::Left);
         for kind in [ControlKind::Cyclic, ControlKind::FlightStick] {
             let rest = geometry(&placement, &ControlState::default(), kind).unwrap();
             let pushed = geometry(

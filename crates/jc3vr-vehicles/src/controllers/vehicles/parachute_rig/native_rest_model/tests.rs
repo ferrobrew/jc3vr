@@ -9,7 +9,7 @@ use super::*;
 use crate::controllers::vehicles::{
     parachute::{HandleEvent, HandleHold, HandleState, RADIUS_M, REACH_M, StepInputs},
     physical::Release,
-    tuning::{PARACHUTE_HANDLES, ParachuteHandlesTuning},
+    tuning::{ParachuteHandlesTuning, VEHICLES},
 };
 
 mod parachute {
@@ -56,7 +56,9 @@ mod parachute {
     }
 }
 
-const CONFIG: ParachuteHandlesTuning = PARACHUTE_HANDLES;
+fn config() -> &'static ParachuteHandlesTuning {
+    &VEHICLES.get().parachute_handles
+}
 const OWNER: OwnerIdentity = OwnerIdentity {
     character: 10,
     control_block: 20,
@@ -350,19 +352,19 @@ fn free_held_and_released_handles_use_native_rest_grip_and_native_rest() {
         .centres(&cockpit(), now)
         .map(Result::ok);
     let mut state = HandleState::new();
-    let free = parachute::candidates(&CONFIG, &state, native, [None; 2]);
+    let free = parachute::candidates(config(), &state, native, [None; 2]);
     assert_eq!(free.map(|c| c.unwrap().centre), native.map(Option::unwrap));
     assert_eq!(parachute::reach_candidates(&state, native).count(), 2);
     let rests = [Vec3::new(-0.2, 0.8, -0.4), Vec3::new(0.3, 0.9, -0.5)];
     state.holds = rests.map(|rest| Some(HandleHold { rest }));
     let grips = rests.map(|rest| Some(rest - Vec3::Y * 0.1));
-    let held = parachute::candidates(&CONFIG, &state, [None; 2], grips);
+    let held = parachute::candidates(config(), &state, [None; 2], grips);
     assert_eq!(held.map(|c| c.unwrap().centre), grips.map(Option::unwrap));
     assert_eq!(parachute::reach_candidates(&state, native).count(), 0);
     let mut events = Vec::new();
     parachute::step(
         &mut state,
-        &CONFIG,
+        config(),
         &StepInputs {
             grips,
             held: [false; 2],
@@ -377,7 +379,7 @@ fn free_held_and_released_handles_use_native_rest_grip_and_native_rest() {
             HandleEvent::Released(Hand::Right, Release::GripReleased),
         ]
     );
-    let released = parachute::candidates(&CONFIG, &state, native, grips);
+    let released = parachute::candidates(config(), &state, native, grips);
     assert_eq!(
         released.map(|c| c.unwrap().centre),
         native.map(Option::unwrap)
@@ -389,19 +391,19 @@ fn free_held_and_released_handles_use_native_rest_grip_and_native_rest() {
 fn unavailable_free_rest_never_substitutes_a_shoulder_or_a_held_rest() {
     let mut state = HandleState::new();
     assert_eq!(
-        parachute::candidates(&CONFIG, &state, [None; 2], [Some(Vec3::ZERO); 2]),
+        parachute::candidates(config(), &state, [None; 2], [Some(Vec3::ZERO); 2]),
         [None; 2]
     );
     assert_eq!(parachute::reach_candidates(&state, [None; 2]).count(), 0);
     state.holds[0] = Some(HandleHold { rest: Vec3::Y });
     let native = [None, Some(Vec3::X)];
-    let mixed = parachute::candidates(&CONFIG, &state, native, [Some(Vec3::Y), None]);
+    let mixed = parachute::candidates(config(), &state, native, [Some(Vec3::Y), None]);
     assert_eq!(mixed[0].unwrap().centre, Vec3::Y);
     assert_eq!(mixed[1].unwrap().centre, Vec3::X);
     let reach: Vec<_> = parachute::reach_candidates(&state, native).collect();
     assert_eq!(reach.len(), 1);
     assert_eq!(reach[0].hand, Some(Hand::Right));
-    assert!(parachute::candidates(&CONFIG, &state, [Some(Vec3::ZERO); 2], [None; 2])[0].is_none());
+    assert!(parachute::candidates(config(), &state, [Some(Vec3::ZERO); 2], [None; 2])[0].is_none());
 }
 
 #[test]

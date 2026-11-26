@@ -53,8 +53,8 @@ fn a_held_brake_ignores_one_flat_palm_and_releases_once_both_are_flat() {
         ..FLIGHT
     };
     assert!(h.observe(Some(one_flat)).brake);
-    assert!(h.observe(Some(palms(CONFIG.flight_roll_deg + 1.0))).brake);
-    assert!(!h.observe(Some(palms(-CONFIG.flight_roll_deg))).brake);
+    assert!(h.observe(Some(palms(config().flight_roll_deg + 1.0))).brake);
+    assert!(!h.observe(Some(palms(-config().flight_roll_deg))).brake);
     assert_eq!(h.state.phase(), GesturePhase::AwaitingFlight);
 }
 
@@ -64,7 +64,7 @@ fn either_arm_drawn_in_past_the_hysteresis_releases_the_brake() {
         let mut h = ready_suit();
         braking(&mut h);
         let mut inside = BRAKE;
-        inside.lateral[hand.index()] = CONFIG.flight_lateral_span - CONFIG.pose_hysteresis_span;
+        inside.lateral[hand.index()] = config().flight_lateral_span - config().pose_hysteresis_span;
         assert!(h.observe(Some(inside)).brake, "{hand:?}");
         inside.lateral[hand.index()] -= 0.001;
         assert!(!h.observe(Some(inside)).brake, "{hand:?}");
@@ -74,8 +74,8 @@ fn either_arm_drawn_in_past_the_hysteresis_releases_the_brake() {
 #[test]
 fn the_brake_is_entered_only_within_its_roll_band() {
     for roll in [
-        CONFIG.brake_roll_deg - 0.01,
-        CONFIG.brake_roll_max_deg + 0.01,
+        config().brake_roll_deg - 0.01,
+        config().brake_roll_max_deg + 0.01,
         175.0,
         -90.0,
     ] {
@@ -83,7 +83,7 @@ fn the_brake_is_entered_only_within_its_roll_band() {
         assert!(h.hold(palms(roll), 20).iter().all(|c| !c.brake), "{roll}");
     }
     let narrow = FlightPose {
-        lateral: [CONFIG.flight_lateral_span - 0.001; 2],
+        lateral: [config().flight_lateral_span - 0.001; 2],
         ..BRAKE
     };
     let mut h = ready_suit();
@@ -134,7 +134,7 @@ fn braking_neither_closes_the_suit_nor_arms_it() {
 
 #[test]
 fn the_flight_rolls_keep_the_brake_entry_and_its_release_apart() {
-    let mut config = CONFIG;
+    let mut config = *config();
     for flight_roll_deg in [15.0, 40.0, 59.9] {
         config.flight_roll_deg = flight_roll_deg;
         for roll in [config.brake_roll_deg, config.brake_roll_max_deg] {

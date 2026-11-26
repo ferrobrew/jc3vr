@@ -166,8 +166,8 @@ pub enum WheelTracking {
 /// with the arms spread, the difference in the hands' heights banks, and the wrists' tilt, the
 /// hands' height, or the arms' sweep pitches ([`ArmPitch`]). On by default, alongside the stick
 /// steering it adds to. With the overlay on, the overlay rings each hand in the wingsuit, lit while
-/// the arms steer. Its deadzone and full bank are
-/// [`ARM_STEERING`](crate::controllers::vehicles::tuning::ARM_STEERING)'s.
+/// the arms steer. Its deadzone and full bank are tuning
+/// ([`ArmSteeringTuning`](crate::controllers::vehicles::tuning::ArmSteeringTuning)).
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ArmSteeringConfig {
@@ -219,8 +219,8 @@ impl ArmPitch {
 /// hand a little above, ahead of, and outside its shoulder, where a hand raised to a canopy's
 /// toggle comes to rest standing or seated. A grip press inside one takes the handle, and pulling
 /// it down from where it was taken banks to that side; both pulled down brake. On by default; the
-/// stick still steers and dives alongside them. The pulls are
-/// [`PARACHUTE_HANDLES`](crate::controllers::vehicles::tuning::PARACHUTE_HANDLES)'s.
+/// stick still steers and dives alongside them. The pulls are tuning
+/// ([`ParachuteHandlesTuning`](crate::controllers::vehicles::tuning::ParachuteHandlesTuning)).
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ParachuteHandlesConfig {
@@ -240,7 +240,7 @@ impl Default for ParachuteHandlesConfig {
 }
 
 /// The boost wingsuit's barrel-roll evade, in [`VehiclesConfig::wingsuit_evade`]. Its throw is
-/// [`WINGSUIT_EVADE`](crate::controllers::vehicles::tuning::WINGSUIT_EVADE)'s.
+/// tuning ([`WingsuitEvadeTuning`](crate::controllers::vehicles::tuning::WingsuitEvadeTuning)).
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct WingsuitEvadeConfig {

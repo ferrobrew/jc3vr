@@ -292,7 +292,7 @@ mod tests {
     use super::*;
     use crate::controllers::vehicles::{
         physical::{ControlState, Hold, Placement, anchor_point},
-        tuning::PHYSICAL,
+        tuning::PhysicalControlsTuning,
     };
 
     fn stick(name: &str, part_to_cockpit: Mat4) -> NativeStick {
@@ -341,7 +341,7 @@ mod tests {
         for name in ["lightassault_joystick", "smallfloatprop_controlwheel"] {
             for dominant in Hand::BOTH {
                 let native = stick(name, Mat4::IDENTITY);
-                let mut placement = Placement::new(PHYSICAL, dominant);
+                let mut placement = Placement::new(PhysicalControlsTuning::shipped(), dominant);
                 placement.native_stick = Some(native);
                 let state = ControlState {
                     stick: Vec2::new(0.04, -0.03),
@@ -388,9 +388,9 @@ mod tests {
                     ),
                     asset,
                     (Vec3::splat(-10.0), Vec3::splat(10.0)),
-                    &PHYSICAL,
+                    &PhysicalControlsTuning::shipped(),
                 );
-                let mut placement = Placement::new(PHYSICAL, dominant);
+                let mut placement = Placement::new(PhysicalControlsTuning::shipped(), dominant);
                 placement.cockpit = Some(fit);
                 let state = ControlState::default();
                 for kind in [ControlKind::FlightStick, ControlKind::Throttle] {
@@ -440,7 +440,7 @@ mod tests {
                 lever: Some((ControlKind::Collective, Vec3::NEG_X)),
             },
             (Vec3::splat(-10.0), Vec3::splat(10.0)),
-            &PHYSICAL,
+            &PhysicalControlsTuning::shipped(),
         );
         let mut state = ControlState {
             holds: [ControlKind::Collective, ControlKind::Cyclic].map(|kind| {
@@ -511,13 +511,13 @@ mod tests {
         );
         let pilot = Vec3::new(-0.35, 1.5, -0.92);
         for dominant in Hand::BOTH {
-            let mut placement = Placement::new(PHYSICAL, dominant);
+            let mut placement = Placement::new(PhysicalControlsTuning::shipped(), dominant);
             let fit = CockpitFit::new(
                 stick("lightassault_joystick", Mat4::IDENTITY).target,
                 Mat4::from_translation(-pilot),
                 driver,
                 bounds,
-                &PHYSICAL,
+                &PhysicalControlsTuning::shipped(),
             );
             placement.cockpit = Some(fit);
             let collective = placement
@@ -556,11 +556,11 @@ mod tests {
                 lever: None,
             },
             (Vec3::splat(-1.0), Vec3::splat(1.0)),
-            &PHYSICAL,
+            &PhysicalControlsTuning::shipped(),
         );
         let (kind, rest) = fit.fallback_lever.unwrap();
         assert_eq!(kind, ControlKind::Throttle);
-        assert!((rest - PHYSICAL.throttle.rest_m).length() < 1e-5);
+        assert!((rest - PhysicalControlsTuning::shipped().throttle.rest_m).length() < 1e-5);
         assert!(fit.lever_rest(ControlKind::Throttle).is_some());
         assert!(fit.lever_rest(ControlKind::Collective).is_none());
     }
@@ -606,13 +606,13 @@ mod tests {
             assert!((0.3..0.4).contains(&(pilot.z - asset.stick_grip.z)));
             assert!((0.3..0.5).contains(&(asset.stick_grip.y - pilot.y)));
             for dominant in Hand::BOTH {
-                let mut placement = Placement::new(PHYSICAL, dominant);
+                let mut placement = Placement::new(PhysicalControlsTuning::shipped(), dominant);
                 placement.cockpit = Some(CockpitFit::new(
                     stick("lightassault_joystick", Mat4::IDENTITY).target,
                     Mat4::from_translation(-pilot),
                     asset,
                     (Vec3::splat(-10.0), Vec3::splat(10.0)),
-                    &PHYSICAL,
+                    &PhysicalControlsTuning::shipped(),
                 ));
                 for (kind, measured) in [
                     (ControlKind::FlightStick, asset.stick_grip),

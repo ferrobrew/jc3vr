@@ -4,7 +4,7 @@
 use std::collections::BTreeSet;
 
 use jc3vr_vehicles::controllers::vehicles::{
-    tuning::WingsuitGesturesTuning,
+    tuning::VEHICLES,
     wingsuit_gestures::{
         FlightPose, GestureInput, HandClaims, Stage, WingsuitGestures, desired_for,
     },
@@ -77,7 +77,7 @@ fn gesture_actions(mode: Mode) -> BTreeSet<Action> {
         }
         _ => return BTreeSet::new(),
     };
-    let config = WingsuitGesturesTuning::new();
+    let config = VEHICLES.get().wingsuit_gestures;
     let neutral = FlightPose {
         lateral: [0.0; 2],
         reach: [1.0 / 3.0; 2],

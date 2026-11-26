@@ -36,7 +36,7 @@ use jc3vr_body::controllers::body::EYES_FORWARD_OF_SHOULDERS;
 
 use crate::controllers::vehicles::{
     config::{ArmPitch, ArmSteeringConfig},
-    tuning::ARM_STEERING,
+    tuning::VEHICLES,
 };
 
 /// One hand, as the arm steering reads it.
@@ -130,15 +130,12 @@ pub fn steer(pose: &ArmPose, config: &ArmSteeringConfig, engaged: bool) -> Optio
     if pose.spread.is_nan() || pose.spread < needed_spread(engaged) {
         return None;
     }
-    let bank = shape(
-        pose.bank_m,
-        ARM_STEERING.deadzone_m,
-        ARM_STEERING.full_bank_m,
-    );
+    let tuning = &VEHICLES.get().arm_steering;
+    let bank = shape(pose.bank_m, tuning.deadzone_m, tuning.full_bank_m);
     let pitch = match pitch_input(pose, config) {
-        PitchInput::Height(height) => shape(-height, ARM_STEERING.deadzone_m, FULL_PITCH_M),
+        PitchInput::Height(height) => shape(-height, tuning.deadzone_m, FULL_PITCH_M),
         PitchInput::TiltDeg(tilt) => shape(tilt, TILT_DEADZONE_DEG, FULL_TILT_DEG),
-        PitchInput::Sweep(sweep) => shape(-sweep, ARM_STEERING.deadzone_m, FULL_SWEEP_M),
+        PitchInput::Sweep(sweep) => shape(-sweep, tuning.deadzone_m, FULL_SWEEP_M),
     };
     let pitch = if config.invert_pitch { -pitch } else { pitch };
     Some(Vec2::new(bank, pitch))

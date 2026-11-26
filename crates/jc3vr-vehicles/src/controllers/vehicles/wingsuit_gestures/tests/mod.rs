@@ -9,8 +9,12 @@ use jc3vr_body::controllers::mode::{OnFootVariant, VehicleClass, VehicleSeat};
 use jc3vr_input::frame::{ActionSetKind, HandFrame, TrackedPose};
 
 use super::*;
+use crate::controllers::vehicles::tuning::VEHICLES;
 
-const CONFIG: WingsuitGesturesTuning = WingsuitGesturesTuning::new();
+fn config() -> &'static WingsuitGesturesTuning {
+    &VEHICLES.get().wingsuit_gestures
+}
+
 const FALLING: Mode = Mode::Airborne(AirborneVariant::Falling);
 const SUIT: Mode = Mode::Airborne(AirborneVariant::Wingsuit);
 const CANOPY: Mode = Mode::Airborne(AirborneVariant::Parachute);
@@ -77,7 +81,7 @@ impl History {
                 pose,
                 claims: self.claims,
             },
-            &CONFIG,
+            config(),
         )
     }
 
@@ -216,7 +220,7 @@ fn a_late_canopy_request_still_blocks_the_canopy_reopening_the_suit() {
         claims: h.claims,
     };
     assert_eq!(
-        h.state.revalidate(late, &CONFIG),
+        h.state.revalidate(late, config()),
         GestureAvailability::Unavailable
     );
     h.mode = CANOPY;
@@ -500,7 +504,7 @@ fn menus_focus_and_repeated_samples_do_not_accumulate_pose_dwell() {
                 pose: Some(FOLDED),
                 claims: [HandClaims::default(); 2],
             },
-            &CONFIG,
+            config(),
         );
         assert!(command.transition.is_none());
     }
@@ -587,7 +591,7 @@ fn the_palm_roll_ignores_raising_and_sweeping_the_arms() {
             .all(|v| (v - 80.0).abs() < 1e-2),
         "{pose:?}"
     );
-    assert!(pose.enters_brake(&CONFIG), "{pose:?}");
+    assert!(pose.enters_brake(config()), "{pose:?}");
 }
 
 #[test]
@@ -650,7 +654,7 @@ fn palms_past_the_brake_band_toward_palm_up_do_not_brake() {
     let mut h = History::new(SUIT);
     h.arm();
     let palm_up = FlightPose {
-        palm_roll_deg: [CONFIG.brake_roll_max_deg + 1.0; 2],
+        palm_roll_deg: [config().brake_roll_max_deg + 1.0; 2],
         ..FLIGHT
     };
     assert!(h.hold(palm_up, 12).iter().all(|c| !c.brake));

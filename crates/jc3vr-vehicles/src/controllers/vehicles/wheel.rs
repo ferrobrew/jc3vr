@@ -407,7 +407,7 @@ mod tests {
     use std::f32::consts::FRAC_PI_2;
 
     use super::*;
-    use crate::controllers::vehicles::tuning::PHYSICAL;
+    use crate::controllers::vehicles::tuning::PhysicalControlsTuning;
 
     fn close(a: Vec3, b: Vec3) -> bool {
         a.distance(b) < 1e-4
@@ -415,7 +415,7 @@ mod tests {
 
     #[test]
     fn angles_around_the_wheel_run_clockwise_from_the_top() {
-        let frame = WheelFrame::from_spec(&PHYSICAL.wheel);
+        let frame = WheelFrame::from_spec(&PhysicalControlsTuning::shipped().wheel);
         assert!(frame.hand_angle(frame.rim_point(0.0)).unwrap().abs() < 1e-5);
         let right = frame.rim_point(FRAC_PI_2);
         assert!(right.x > frame.centre.x);

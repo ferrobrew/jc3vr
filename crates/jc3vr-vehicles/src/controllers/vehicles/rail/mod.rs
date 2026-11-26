@@ -62,7 +62,7 @@ use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::vehicles::{
     rail::solve::{RailLine, RailMotion, RailStep, step, walk_from},
-    tuning::{RAIL, RailTuning},
+    tuning::{RailTuning, VEHICLES},
 };
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -158,7 +158,7 @@ pub fn input_tick(game: &GameTick<'_>, jump: bool, on_foot: bool) {
         return;
     }
     if ENTER_REQUESTED.swap(false, Ordering::Relaxed) {
-        unsafe { enter(character, &RAIL) };
+        unsafe { enter(character, &VEHICLES.get().rail) };
     }
 }
 
@@ -202,7 +202,12 @@ pub(crate) unsafe fn step_physics() {
     let into_frame = frame.transform.inverse();
     let feet = into_frame.transform_point3(place.feet);
     let walk_local = into_frame.transform_vector3(walk);
-    let decision = step(&active.line, feet, walk_local, &motion(&RAIL));
+    let decision = step(
+        &active.line,
+        feet,
+        walk_local,
+        &motion(&VEHICLES.get().rail),
+    );
     let nearest = active.line.nearest(feet);
     state.status.off_line_m = Vec3::new(feet.x - nearest.x, 0.0, feet.z - nearest.z).length();
     state.status.walk_mps = walk.length();

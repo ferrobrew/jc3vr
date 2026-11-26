@@ -580,10 +580,15 @@ unsafe fn adf_str(s: &AdfHashString) -> Option<&str> {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::LazyLock;
+
     use glam::Quat;
 
     use super::*;
-    use crate::controllers::vehicles::tuning::PHYSICAL;
+    use crate::controllers::vehicles::tuning::PhysicalControlsTuning;
+
+    static SHIPPED: LazyLock<PhysicalControlsTuning> =
+        LazyLock::new(PhysicalControlsTuning::shipped);
 
     fn part(name: &str) -> PartRead {
         let (min, max) = match name {
@@ -616,7 +621,7 @@ mod tests {
 
     fn inputs(xf: &CockpitTransform, class: VehicleClass, eyes: Vec3) -> FitInputs<'_> {
         FitInputs {
-            physical: &PHYSICAL,
+            physical: &SHIPPED,
             view_enabled: false,
             seat: Some(VehicleSeat {
                 class,

@@ -37,9 +37,9 @@ fn realistic_straight_down_arms_establish_neutral_and_close_once_only_after_flig
     assert!(
         down.reach
             .into_iter()
-            .all(|reach| reach > CONFIG.withdraw_reach_span)
+            .all(|reach| reach > config().withdraw_reach_span)
     );
-    assert!(down.withdrawn(&CONFIG));
+    assert!(down.withdrawn(config()));
     let flight = measured([Vec3::new(-0.60, 0.0, 0.0), Vec3::new(0.60, 0.0, 0.0)]);
     let one_down = measured([Vec3::new(0.0, -0.60, 0.0), Vec3::new(0.60, 0.0, 0.0)]);
     let mut h = History::new(SUIT);
@@ -88,7 +88,7 @@ fn withdrawn_geometry_excludes_banking_deadzone_and_crossed_wrists() {
     let crossed = measured([Vec3::new(0.45, -0.60, 0.0), Vec3::new(-0.45, -0.60, 0.0)]);
     let raised = measured([Vec3::new(0.0, 0.60, 0.0); 2]);
     for pose in [bank, gap, crossed, raised] {
-        assert!(!pose.withdrawn(&CONFIG));
+        assert!(!pose.withdrawn(config()));
         let mut h = History::new(SUIT);
         h.arm();
         assert!(
@@ -247,7 +247,7 @@ fn isolated_folded_and_flight_samples_do_not_receive_the_previous_interval() {
             Some(pose),
         );
         input.mode = FALLING;
-        assert_eq!(state.step(input, &CONFIG), GestureCommands::default());
+        assert_eq!(state.step(input, config()), GestureCommands::default());
     }
     assert!(!state.armed && state.flight.since_ns == Some(400_000_000));
     let mut h = History::new(SUIT);
@@ -276,7 +276,7 @@ fn dwell_entry_boundaries_and_gaps_are_independent_of_the_poll_interval() {
         brake_dwell_s: 0.125,
         close_dwell_s: 0.25,
         max_sample_gap_s: 0.5,
-        ..CONFIG
+        ..*config()
     };
     let mut state = WingsuitGestures::default();
     let mut sample = GestureSample {
@@ -363,18 +363,18 @@ fn old_observations_cannot_lower_the_watermark_on_any_cancellation_path() {
     }
     for rejected in paths {
         let mut state = WingsuitGestures::default();
-        state.step(observation(high, Some(FOLDED)), &CONFIG);
-        assert_eq!(state.step(rejected, &CONFIG), GestureCommands::default());
+        state.step(observation(high, Some(FOLDED)), config());
+        assert_eq!(state.step(rejected, config()), GestureCommands::default());
         assert_eq!(state.last, Some((high, Stage::Suit)));
         let other = WingsuitGesturesTuning {
             flight_dwell_s: 0.5,
-            ..CONFIG
+            ..*config()
         };
         assert_eq!(state.step(rejected, &other), GestureCommands::default());
-        assert_eq!(state.config, Some(CONFIG));
+        assert_eq!(state.config, Some(*config()));
         assert_eq!(state.last, Some((high, Stage::Suit)));
         assert_eq!(
-            state.step(observation(high, Some(FOLDED)), &CONFIG),
+            state.step(observation(high, Some(FOLDED)), config()),
             GestureCommands::default()
         );
         assert!(!state.ready && state.neutral.since_ns.is_none());
@@ -383,7 +383,7 @@ fn old_observations_cannot_lower_the_watermark_on_any_cancellation_path() {
             time_ns: 1_050_000_000,
             ..high
         };
-        state.step(observation(next, Some(FOLDED)), &CONFIG);
+        state.step(observation(next, Some(FOLDED)), config());
         assert_eq!(state.neutral.since_ns, Some(next.time_ns));
         assert!(!state.ready);
     }
@@ -424,7 +424,7 @@ fn time_sequence_and_epoch_rollback_are_rejected_before_mode_or_config_updates()
         },
     ] {
         let mut state = WingsuitGestures::default();
-        state.step(observation(high, Some(FOLDED)), &CONFIG);
+        state.step(observation(high, Some(FOLDED)), config());
         let mut input = observation(bad, Some(FLIGHT));
         input.mode = FALLING;
         assert_eq!(
@@ -432,15 +432,15 @@ fn time_sequence_and_epoch_rollback_are_rejected_before_mode_or_config_updates()
                 input,
                 &WingsuitGesturesTuning {
                     flight_dwell_s: 0.5,
-                    ..CONFIG
+                    ..*config()
                 }
             ),
             GestureCommands::default()
         );
         assert_eq!(state.last, Some((high, Stage::Suit)));
-        assert_eq!(state.config, Some(CONFIG));
+        assert_eq!(state.config, Some(*config()));
         assert_eq!(
-            state.step(observation(high, Some(FOLDED)), &CONFIG),
+            state.step(observation(high, Some(FOLDED)), config()),
             GestureCommands::default()
         );
         assert!(!state.ready);
@@ -451,11 +451,11 @@ fn time_sequence_and_epoch_rollback_are_rejected_before_mode_or_config_updates()
             sequence: 1,
             time_ns: 0,
         };
-        state.step(observation(new_epoch, Some(FOLDED)), &CONFIG);
+        state.step(observation(new_epoch, Some(FOLDED)), config());
         assert_eq!(state.last, Some((new_epoch, Stage::Suit)));
         assert_eq!(state.neutral.since_ns, Some(0));
         assert_eq!(
-            state.step(observation(high, Some(FOLDED)), &CONFIG),
+            state.step(observation(high, Some(FOLDED)), config()),
             GestureCommands::default()
         );
         assert_eq!(state.last, Some((new_epoch, Stage::Suit)));
@@ -469,7 +469,7 @@ fn repeated_samples_retain_only_held_commands_and_cancellation_does_not_rearm_th
     h.hold(BRAKE, 6);
     let same = observation(h.sample, Some(BRAKE));
     for _ in 0..20 {
-        let command = h.state.step(same, &CONFIG);
+        let command = h.state.step(same, config());
         assert!(command.brake && command.transition.is_none());
     }
     for cancel in [
@@ -488,8 +488,8 @@ fn repeated_samples_retain_only_held_commands_and_cancellation_does_not_rearm_th
         },
         GestureInput { pose: None, ..same },
     ] {
-        assert_eq!(h.state.step(cancel, &CONFIG), GestureCommands::default());
-        assert_eq!(h.state.step(same, &CONFIG), GestureCommands::default());
+        assert_eq!(h.state.step(cancel, config()), GestureCommands::default());
+        assert_eq!(h.state.step(same, config()), GestureCommands::default());
         assert!(!h.state.armed);
     }
 }
@@ -697,20 +697,20 @@ fn grip_palm_basis_has_independent_expected_rolls_for_both_hands_and_adjustments
 #[test]
 fn pose_hysteresis_boundaries_remain_separated() {
     let boundary_down = measured([Vec3::new(0.0, -0.18 * 1.8, 0.0); 2]);
-    assert!(boundary_down.withdrawn(&CONFIG));
+    assert!(boundary_down.withdrawn(config()));
     let shallow = measured([Vec3::new(0.0, -0.17 * 1.8, -0.30 * 1.8); 2]);
-    assert!(!shallow.withdrawn(&CONFIG));
+    assert!(!shallow.withdrawn(config()));
     let mut h = History::new(SUIT);
     h.arm();
     let below_entry = FlightPose {
-        palm_roll_deg: [CONFIG.brake_roll_deg - 0.01; 2],
+        palm_roll_deg: [config().brake_roll_deg - 0.01; 2],
         ..FLIGHT
     };
     assert_eq!(h.observe(Some(below_entry)), GestureCommands::default());
     assert!(h.hold(BRAKE, 6).iter().any(|command| command.brake));
     let retained = FlightPose {
-        lateral: [CONFIG.flight_lateral_span - CONFIG.pose_hysteresis_span; 2],
-        palm_roll_deg: [CONFIG.flight_roll_deg + 0.01; 2],
+        lateral: [config().flight_lateral_span - config().pose_hysteresis_span; 2],
+        palm_roll_deg: [config().flight_roll_deg + 0.01; 2],
         ..FLIGHT
     };
     assert!(h.observe(Some(retained)).brake);
@@ -721,7 +721,7 @@ fn pose_hysteresis_boundaries_remain_separated() {
     assert!(!h.observe(Some(released)).brake);
     assert!(h.hold(BRAKE, 6).iter().any(|command| command.brake));
     let flat = FlightPose {
-        palm_roll_deg: [CONFIG.flight_roll_deg; 2],
+        palm_roll_deg: [config().flight_roll_deg; 2],
         ..FLIGHT
     };
     assert!(!h.observe(Some(flat)).brake);

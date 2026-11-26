@@ -6,7 +6,7 @@ use jc3vr_body::controllers::{
 use jc3vr_vehicles::controllers::vehicles::{
     parachute,
     parachute::{HandleState, StepInputs},
-    tuning::PARACHUTE_HANDLES,
+    tuning::VEHICLES,
 };
 use jc3vr_view::vr::input::semantic::bound::SourceTable;
 
@@ -54,7 +54,7 @@ impl Capture {
         let i = hand.index();
         parachute::step(
             &mut self.after,
-            &PARACHUTE_HANDLES,
+            &VEHICLES.get().parachute_handles,
             &StepInputs {
                 grips: Hand::BOTH.map(|h| if h == hand { grip } else { None }),
                 held: Hand::BOTH.map(|h| h == hand && held),
@@ -68,7 +68,7 @@ impl Capture {
 
     fn targets(&self, hand: Hand) -> Vec<GripTarget> {
         let candidate = parachute::candidates(
-            &PARACHUTE_HANDLES,
+            &VEHICLES.get().parachute_handles,
             &self.before,
             [Vec3::ZERO; 2],
             [Some(Vec3::ZERO); 2],

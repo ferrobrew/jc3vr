@@ -158,12 +158,12 @@ mod tests {
             native::{CockpitAsset, CockpitFit, NativeStick},
             step,
         },
-        tuning::PHYSICAL,
+        tuning::PhysicalControlsTuning,
         wheel_render::RenderWheel,
     };
 
     fn spec() -> StickSpec {
-        PHYSICAL.flight_stick
+        PhysicalControlsTuning::shipped().flight_stick
     }
 
     #[test]
@@ -206,7 +206,7 @@ mod tests {
                     Quat::from_rotation_x(std::f32::consts::FRAC_PI_2),
                     Quat::from_rotation_y(0.8) * Quat::from_rotation_z(1.1),
                 ] {
-                    let mut placement = Placement::new(PHYSICAL, hand);
+                    let mut placement = Placement::new(PhysicalControlsTuning::shipped(), hand);
                     placement.cockpit = Some(CockpitFit::new(
                         target(),
                         Mat4::from_scale_rotation_translation(
@@ -222,7 +222,7 @@ mod tests {
                             lever: None,
                         },
                         (Vec3::splat(-10.0), Vec3::splat(10.0)),
-                        &PHYSICAL,
+                        &PhysicalControlsTuning::shipped(),
                     ));
                     let spec = placement.stick(kind).unwrap();
                     let config = placement.config.flight;
@@ -276,11 +276,16 @@ mod tests {
     #[test]
     fn a_twisted_cyclic_and_flight_stick_both_yaw_through_the_step() {
         for kind in [ControlKind::FlightStick, ControlKind::Cyclic] {
-            let placement = Placement::new(PHYSICAL, Hand::Right);
+            let placement = Placement::new(PhysicalControlsTuning::shipped(), Hand::Right);
             let spec = placement.stick(kind).unwrap();
             let top = placement.stick_top(kind, &spec);
             let grab = Quat::from_rotation_x(0.4);
-            let turned = Quat::from_rotation_y(-PHYSICAL.flight.twist_full_deg.to_radians()) * grab;
+            let turned = Quat::from_rotation_y(
+                -PhysicalControlsTuning::shipped()
+                    .flight
+                    .twist_full_deg
+                    .to_radians(),
+            ) * grab;
             let mut state = ControlState::default();
             let mut events = Vec::new();
             let kinds = [kind];
@@ -328,12 +333,16 @@ mod tests {
                     grip: Vec3::Y,
                 }),
             ] {
-                let mut placement = Placement::new(PHYSICAL, Hand::Right);
+                let mut placement = Placement::new(PhysicalControlsTuning::shipped(), Hand::Right);
                 placement.native_stick = native_stick;
                 let spec = placement.stick(kind).unwrap();
                 let grab = Quat::from_rotation_x(0.4);
-                let now =
-                    Quat::from_rotation_y(-PHYSICAL.flight.twist_full_deg.to_radians()) * grab;
+                let now = Quat::from_rotation_y(
+                    -PhysicalControlsTuning::shipped()
+                        .flight
+                        .twist_full_deg
+                        .to_radians(),
+                ) * grab;
                 let holding = [
                     None,
                     Some((
@@ -370,7 +379,7 @@ mod tests {
 
     #[test]
     fn twisting_the_top_right_is_right_rudder_past_the_deadzone() {
-        let config = PHYSICAL.flight;
+        let config = PhysicalControlsTuning::shipped().flight;
         let grab = Quat::from_rotation_x(0.4);
         let small = Quat::from_rotation_y(-(config.twist_deadzone_deg * 0.5).to_radians()) * grab;
         assert_eq!(twist_rudder(&config, grab, small), 0.0);

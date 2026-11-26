@@ -10,7 +10,7 @@ use jc3vr_vehicles::controllers::{
     vehicles::{
         VehicleSummary, mounted_recoil, passenger,
         passenger::PassengerStatus,
-        tuning::{CockpitButtonsTuning, PHYSICAL},
+        tuning::{CockpitButtonsTuning, VEHICLES},
     },
 };
 
@@ -74,7 +74,7 @@ fn passenger_aim_line(seat: Option<VehicleSeat>, status: PassengerStatus) -> Lin
 }
 
 fn cockpit_buttons() -> Line {
-    cockpit_buttons_line(&PHYSICAL.buttons, &vehicles::summary())
+    cockpit_buttons_line(&VEHICLES.get().physical.buttons, &vehicles::summary())
 }
 
 fn cockpit_buttons_line(config: &CockpitButtonsTuning, summary: &VehicleSummary) -> Line {
@@ -164,7 +164,7 @@ fn flight_controls_line(summary: &VehicleSummary) -> Line {
 
 #[cfg(test)]
 mod tests {
-    use jc3vr_vehicles::controllers::vehicles::{physical::Outputs, tuning::PHYSICAL};
+    use jc3vr_vehicles::controllers::vehicles::physical::Outputs;
 
     use super::*;
 
@@ -239,7 +239,7 @@ mod tests {
 
     #[test]
     fn the_cockpit_buttons_name_what_the_seat_has() {
-        let config = PHYSICAL.buttons;
+        let config = VEHICLES.get().physical.buttons;
         let off = CockpitButtonsTuning {
             horn: false,
             nitrous_button: false,

@@ -30,7 +30,7 @@ use crate::controllers::vehicles::{
     config::VehicleSettings,
     ripcord,
     ripcord::{RipcordEvent, RipcordState, StepInputs},
-    tuning::RIPCORD_PULL_M,
+    tuning::VEHICLES,
 };
 
 /// Whether the ripcord acts in `mode`.
@@ -105,7 +105,7 @@ pub fn finish(
         grips: active.hands.map(|h| h.map(|h| h.grip.position)),
         held: Hand::BOTH.map(|hand| controls.hand(hand).hold.held()),
         grabs: grabs.map(|g| g == Some(GrabVolume::Ripcord)),
-        pull_m: RIPCORD_PULL_M,
+        pull_m: VEHICLES.get().ripcord.pull_m,
     };
     let mut events = Vec::new();
     let pulled = ripcord::step(&mut state.ripcord, &inputs, &mut events);

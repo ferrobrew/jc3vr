@@ -326,7 +326,9 @@ pub(super) fn tick(
         gate,
         dt,
     };
-    let mut outcome = state.recognizer.step(input, &tuning::WINGSUIT_EVADE);
+    let mut outcome = state
+        .recognizer
+        .step(input, &tuning::VEHICLES.get().wingsuit_evade);
     if let Outcome::Throw(throw) = outcome
         && !flying_boost_suit(game)
     {

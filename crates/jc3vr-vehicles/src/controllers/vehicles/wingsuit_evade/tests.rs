@@ -1,6 +1,10 @@
 use super::*;
+use crate::controllers::vehicles::tuning::VEHICLES;
 
-const CONFIG: WingsuitEvadeTuning = WingsuitEvadeTuning::new();
+fn config() -> &'static WingsuitEvadeTuning {
+    &VEHICLES.get().wingsuit_evade
+}
+
 const DT: f32 = 1.0 / 90.0;
 
 fn input(bank_deg: f32) -> EvadeInput {
@@ -18,7 +22,7 @@ fn swing(recognizer: &mut EvadeRecognizer, from: f32, to: f32, seconds: f32) -> 
     (1..=ticks)
         .map(|tick| {
             let bank = from + (to - from) * tick as f32 / ticks as f32;
-            recognizer.step(input(bank), &CONFIG)
+            recognizer.step(input(bank), config())
         })
         .collect()
 }
@@ -47,7 +51,7 @@ fn a_fast_steep_bank_throws_once_toward_the_lower_hand() {
             pitch: None
         }
     );
-    assert!(thrown[0].bank_deg >= CONFIG.throw_bank_deg);
+    assert!(thrown[0].bank_deg >= config().throw_bank_deg);
 
     let mut recognizer = EvadeRecognizer::default();
     let thrown = throws(&swing(&mut recognizer, 5.0, -70.0, 0.15));
@@ -101,7 +105,7 @@ fn a_second_throw_needs_the_arms_back_and_the_cooldown_passed() {
             .any(|outcome| matches!(outcome, Outcome::Refused(_, Blocked::Cooldown)))
     );
     // After the cooldown, a fresh throw from level counts.
-    swing(&mut recognizer, -70.0, 0.0, CONFIG.cooldown_s);
+    swing(&mut recognizer, -70.0, 0.0, config().cooldown_s);
     assert_eq!(throws(&swing(&mut recognizer, 0.0, -70.0, 0.1)).len(), 1);
 }
 
@@ -115,7 +119,7 @@ fn a_gate_refuses_the_throw_without_starting_the_cooldown() {
                     gate: Some(Blocked::Braking),
                     ..input(7.0 * tick as f32)
                 },
-                &CONFIG,
+                config(),
             )
         })
         .collect::<Vec<_>>();
@@ -136,7 +140,7 @@ fn losing_the_arms_forgets_the_swing_and_the_held_direction() {
         bank_deg: None,
         ..input(0.0)
     };
-    assert_eq!(recognizer.step(lost, &CONFIG), Outcome::Idle);
+    assert_eq!(recognizer.step(lost, config()), Outcome::Idle);
     // The swing before the loss does not count toward this one.
     assert!(throws(&swing(&mut recognizer, 45.0, 60.0, 0.05)).is_empty());
 }
@@ -158,7 +162,7 @@ fn the_arms_pitch_picks_the_diagonal_past_the_threshold() {
                         pitch,
                         ..input(-7.0 * tick as f32)
                     },
-                    &CONFIG,
+                    config(),
                 )
             })
             .collect::<Vec<_>>();
