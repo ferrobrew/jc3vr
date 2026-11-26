@@ -752,15 +752,10 @@ mod tests {
             at: Some(now),
             ..ProceduralStatus::default()
         };
-        assert_eq!(
-            procedural_mode_line(&ran, now).text(),
-            "OK, FULL BODY"
-        );
+        assert_eq!(procedural_mode_line(&ran, now).text(), "OK, FULL BODY");
         let later = now + Duration::from_secs(60);
         assert_eq!(
-            procedural_mode_line(&ran, later)
-                .note
-                .as_deref(),
+            procedural_mode_line(&ran, later).note.as_deref(),
             Some("last gate 60.0 s ago")
         );
         assert_eq!(

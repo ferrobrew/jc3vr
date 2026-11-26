@@ -11,7 +11,6 @@ use jc3vr_input::{
 };
 use jc3vr_view::vr::input::config::{InputConfig, validate_thresholds};
 
-
 pub(super) fn devices(ui: &mut Ui, c: &mut ControllersConfig) {
     ui.checkbox(&mut c.input.hand_tracking, "Hand tracking")
         .on_hover_text("Locate the hand skeleton through XR_EXT_hand_tracking when offered.");
