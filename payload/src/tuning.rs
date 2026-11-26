@@ -9,6 +9,7 @@ use jc3vr_core::{
     tuning::{AnyTuningFile, StartupError},
 };
 use jc3vr_gameplay::controllers::tuning::GAMEPLAY;
+use jc3vr_render::tuning::RENDER;
 use jc3vr_tooling::tuning::TOOLING;
 use jc3vr_ui::tuning::UI;
 use jc3vr_vehicles::controllers::vehicles::tuning::VEHICLES;
@@ -19,7 +20,9 @@ pub(crate) fn init(source: Source) -> Result<(), StartupError> {
 }
 
 /// The tuning files, in no particular order: each loads on its own.
-static FILES: &[&dyn AnyTuningFile] = &[&VEHICLES, &GAMEPLAY, &UI, &TOOLING, &FRESHNESS, &CORE];
+static FILES: &[&dyn AnyTuningFile] = &[
+    &VEHICLES, &GAMEPLAY, &UI, &TOOLING, &FRESHNESS, &CORE, &RENDER,
+];
 
 #[cfg(test)]
 mod tests {

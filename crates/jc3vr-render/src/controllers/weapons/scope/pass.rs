@@ -19,9 +19,12 @@ use jc3vr_view::{
 use parking_lot::Mutex;
 use windows::Win32::Graphics::Direct3D11::{D3D11_VIEWPORT, ID3D11DeviceContext};
 
-use crate::controllers::{
-    overlay::{view, view::EyeView},
-    weapons::scope::renderer::{EyeRegion, Renderer},
+use crate::{
+    controllers::{
+        overlay::{view, view::EyeView},
+        weapons::scope::renderer::{EyeRegion, Renderer},
+    },
+    tuning::RENDER,
 };
 
 /// The eye whose image the lens reads: the other eye when its image is available, since the scope
@@ -109,10 +112,11 @@ pub fn draw(context: &ID3D11DeviceContext, device: &Device, target: &Texture, ey
     let Some(renderer) = state.renderer(device) else {
         return;
     };
+    let max_copy_age = Duration::from_millis(RENDER.get().scope_lens.max_copy_age_ms);
     let fresh = |e: usize| {
         renderer
             .copy(e)
-            .filter(|c| c.taken.elapsed() < MAX_COPY_AGE)
+            .filter(|c| c.taken.elapsed() < max_copy_age)
             .map(|c| c.camera)
     };
     let other = fresh(1 - eye.min(1));
@@ -180,10 +184,6 @@ static STATE: Mutex<State> = Mutex::new(State {
     renderer: None,
     failed: false,
 });
-
-/// How old an eye's copy may be and still be read: a frame or two at any usable frame rate. The
-/// other eye's copy is the previous frame's when the first eye sights in two-pass stereo.
-const MAX_COPY_AGE: Duration = Duration::from_millis(100);
 
 /// An eye's camera under the collapse, which keeps the render camera centred.
 fn collapse_camera(eye: usize) -> Option<EyeCamera> {

@@ -40,9 +40,12 @@ use windows::{
     core::Interface,
 };
 
-use crate::fsr::{
-    Build, ChainTextures, EyeLayout, EyeMotion, EyeViewProjections, camera_cut,
-    velocity_decode::depth_srv,
+use crate::{
+    fsr::{
+        Build, ChainTextures, EyeLayout, EyeMotion, EyeViewProjections, camera_cut,
+        velocity_decode::depth_srv,
+    },
+    tuning::RENDER,
 };
 
 /// The live resolve state (render thread only).
@@ -147,16 +150,17 @@ pub fn dispatch(
             fsr.hybrid_velocity && stereo,
         )
     });
+    let taa_tuning = &RENDER.get().taa;
     let mut params = Params {
         texture_size: [width, height],
         eye_width: build.eye_width,
         eye_count: eyes.len() as u32,
         history_weight: tuning.history_weight.clamp(0.0, 0.99),
         motion_history_weight: tuning.motion_history_weight.clamp(0.0, 0.99),
-        clip_gamma: CLIP_GAMMA,
+        clip_gamma: taa_tuning.clip_gamma,
         clip_gamma_rest: tuning.clip_gamma_rest.max(0.0),
         current_sharpness: tuning.current_sharpness.max(0.0),
-        depth_tolerance: DEPTH_TOLERANCE,
+        depth_tolerance: taa_tuning.depth_tolerance,
         padding: [0.0; 2],
         eyes: [EyeParams::ZERO; 2],
     };
@@ -233,13 +237,6 @@ const FLAG_HYBRID: u32 = 8;
 
 static RESET_REQUESTED: AtomicBool = AtomicBool::new(false);
 static EYES: [usize; 2] = [0, 1];
-
-/// The half-size, in standard deviations, of the current neighbourhood's colour box the history is
-/// clipped to while the pixel moves.
-const CLIP_GAMMA: f32 = 1.0;
-
-/// The relative slack of the depth test that rejects a disoccluded history.
-const DEPTH_TOLERANCE: f32 = 0.1;
 
 /// Matches the HLSL `Params` cbuffer: three registers of sizes and tuning, then one
 /// [`EyeParams`] per eye.
