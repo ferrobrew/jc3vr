@@ -14,7 +14,6 @@ use jc3gi::{
     },
 };
 use jc3vr_core::{
-    crash::{Phase, mark},
     frame_timing::{self, Slot},
     render_frame,
     thread_role::{self, ThreadRole},
@@ -56,7 +55,10 @@ use jc3vr_render::{
 use jc3vr_tooling::diagnostics;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::config::Config;
+use crate::{
+    config::Config,
+    crash::{Phase, mark},
+};
 
 pub(crate) fn hook_library() -> HookLibrary {
     HookLibrary::new()

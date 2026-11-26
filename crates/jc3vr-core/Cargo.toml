@@ -2,7 +2,7 @@
 name = "jc3vr-core"
 version = "0.1.0"
 edition = "2024"
-description = "The bottom layer of the payload: the payload lifecycle, the configuration engine, the hook plumbing, the frame slots and timing, the session folder, logging, crash reports, and the profiler core."
+description = "The bottom layer of the payload: the payload lifecycle, the configuration engine, the hook plumbing, the frame slots and timing, the session folder, logging, and the profiler core."
 publish = false
 
 [features]

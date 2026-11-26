@@ -14,7 +14,7 @@
 //! - [`frame_timing`] and [`render_frame`]: the always-on frame breakdown and the per-frame slots.
 //! - `profiler` (with the `profiler` feature): the puffin scopes, the frame advance, and the trace
 //!   capture.
-//! - [`session`], [`logging`], and [`crash`]: the session folder, the log, and the crash reports.
+//! - [`session`] and [`logging`]: the session folder and the log.
 //! - [`thread_role`], [`cpu_placement`], [`module`], [`hash`], [`util`], and
 //!   [`director::clean_view`]: small process-wide services.
 //!
@@ -23,7 +23,6 @@
 
 pub mod config;
 pub mod cpu_placement;
-pub mod crash;
 pub mod director;
 pub mod frame_timing;
 pub mod hash;

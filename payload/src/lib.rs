@@ -1,8 +1,8 @@
 use std::{ffi::c_void, sync::OnceLock};
 
 use jc3vr_core::{
-    cpu_placement, crash, director::clean_view, is_shutting_down, lifecycle, logging, module,
-    session, thread_role, util,
+    cpu_placement, director::clean_view, is_shutting_down, lifecycle, logging, module, session,
+    thread_role, util,
 };
 use jc3vr_gameplay::controllers;
 use jc3vr_hud::{egui_impl::EguiState, hooks::ui::cancel_pointer_on_game_thread, hud};
@@ -24,6 +24,7 @@ use windows::Win32::{
 mod allocator;
 mod composition;
 mod config;
+mod crash;
 mod eject_gpu;
 mod hooks;
 

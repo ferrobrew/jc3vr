@@ -49,6 +49,7 @@ use std::{
     sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
 };
 
+use jc3vr_core::session::SessionFile;
 use windows::{
     Win32::{
         Foundation::{CloseHandle, HANDLE},
@@ -67,22 +68,19 @@ use windows::{
 };
 
 pub use crate::crash::breadcrumbs::{Phase, mark};
-use crate::{
-    crash::{
-        line::{CRASH_LOG, Line, stamp},
-        memory::{readable, resolve_probe_host_bases},
-        report::{log_backtrace, record_exception},
-    },
-    session::SessionFile,
+use crate::crash::{
+    line::{CRASH_LOG, Line, stamp},
+    memory::{readable, resolve_probe_host_bases},
+    report::{log_backtrace, record_exception},
 };
 
 pub fn install() {
     // Open the crash log with a raw handle. It is a *separate* file from `session.log` because the
     // vectored handler writes it directly (raw `WriteFile`, no allocation, no tracing subscriber), so
     // a record survives a fault that has already broken the normal logging path. It lives in the
-    // session directory (see [`crate::session`]), opened append-only; each record is timestamped to
+    // session directory (see [`jc3vr_core::session`]), opened append-only; each record is timestamped to
     // line up with the (UTC-stamped) tracing log of the run that produced it.
-    match crate::session::file(SessionFile::CrashLog) {
+    match jc3vr_core::session::file(SessionFile::CrashLog) {
         Ok(path) => {
             let mut wide: Vec<u16> = path.as_os_str().encode_wide().collect();
             wide.push(0);
