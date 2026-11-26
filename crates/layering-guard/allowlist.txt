@@ -143,11 +143,8 @@ payload/src/hooks/graphics_engine/graphics_engine.rs -> gameplay
 payload/src/hooks/graphics_engine/graphics_engine.rs -> hud
 payload/src/hooks/graphics_engine/graphics_engine.rs -> payload
 payload/src/hooks/graphics_engine/graphics_engine.rs -> tooling
-payload/src/hooks/graphics_engine/graphics_engine.rs -> ui
 payload/src/hooks/graphics_engine/post/post_effects.rs -> payload
-payload/src/hooks/graphics_engine/post/post_effects.rs -> ui
 payload/src/hooks/graphics_engine/post/tone_mapping.rs -> payload
-payload/src/hooks/graphics_engine/post/tone_mapping.rs -> ui
 payload/src/hooks/graphics_engine/render_pass.rs -> payload
 payload/src/hooks/graphics_engine/scene/culling.rs -> payload
 payload/src/hooks/graphics_engine/scene/render_block.rs -> gameplay
@@ -219,7 +216,6 @@ payload/src/ui/layout/mod.rs -> payload
 payload/src/ui/layout/writer/mod.rs -> payload
 payload/src/ui/mod.rs -> payload
 payload/src/ui/performance.rs -> payload
-payload/src/ui/render/capture.rs -> hud
 payload/src/ui/render/far_field.rs -> payload
 payload/src/ui/render/mod.rs -> payload
 payload/src/ui/render/post_fx.rs -> payload
@@ -244,7 +240,6 @@ payload/src/vr/input/state.rs -> gameplay
 payload/src/vr/mirror/mod.rs -> hud
 payload/src/vr/mirror/mod.rs -> payload
 payload/src/vr/mirror/mod.rs -> tooling
-payload/src/vr/mirror/mod.rs -> ui
 payload/src/vr/recenter.rs -> gameplay
 payload/src/vr/recenter.rs -> payload
 payload/src/vr/resolution.rs -> payload

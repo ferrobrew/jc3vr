@@ -1,10 +1,9 @@
 //! The Rendering page's stereo and foveation controls, the Experimental page's single-pass stereo,
 //! far field, and post-FX controls, plus render-thread capture state.
 //!
-//! The feature bodies use one section module per concern. The capture state lives in [`capture`],
-//! independent of whether a feature is drawn.
+//! The feature bodies use one section module per concern. The capture state lives in
+//! [`crate::hooks::graphics_engine::capture`], beside the render hooks that fill it.
 
-mod capture;
 mod far_field;
 mod passes;
 mod post_fx;
@@ -12,7 +11,7 @@ mod resolution;
 mod single_pass;
 mod stereo;
 
-pub use crate::ui::render::capture::{
+pub use crate::hooks::graphics_engine::capture::{
     EGUI_DEBUG_RENDER_STATE, EguiDebugRenderState, POST_STAGE_DOF, POST_STAGE_MB,
     capture_main_color, capture_post_stage, eye_capture_fresh, install, mark_eye_capture,
     mark_previews_visible, previews_visible,

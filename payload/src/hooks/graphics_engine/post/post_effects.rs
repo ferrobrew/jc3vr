@@ -29,6 +29,9 @@ use crate::{
     config::Config,
     debug::trace::{TraceEvent, TraceState},
     fsr::{AntiAliasing, TaaConfig},
+    hooks::graphics_engine::capture::{
+        POST_STAGE_DOF, POST_STAGE_MB, capture_post_stage, previews_visible,
+    },
     screenshot::harness::stages::{self, Stage},
     stereo::{self, draw_index, far_phase, later_scene},
 };
@@ -278,7 +281,7 @@ fn anti_aliasing_apply(
 /// it for the current eye into the debug overlay's per-stage preview. Debug-only: gated on the
 /// Previews tab actually being open, so the CopyResource isn't paid for every dispatch by everyone.
 fn capture_post_result(stage: usize, mgr: *mut c_void, slot: u32) {
-    if mgr.is_null() || !crate::ui::render::previews_visible() {
+    if mgr.is_null() || !previews_visible() {
         return;
     }
     let eye = draw_index();
@@ -286,7 +289,7 @@ fn capture_post_result(stage: usize, mgr: *mut c_void, slot: u32) {
         let result = (mgr as *const *mut jc3gi::graphics_engine::texture::Texture)
             .add(slot as usize + PostEffectsManager::RESULT_TEXTURE_SLOT_BASE as usize)
             .read();
-        crate::ui::render::capture_post_stage(stage, eye, result);
+        capture_post_stage(stage, eye, result);
     }
 }
 
@@ -322,7 +325,7 @@ fn motion_blur_apply(
             .unwrap()
             .call(this, ctx, pec, mgr, input, blur, flag0, flag1)
     };
-    capture_post_result(crate::ui::render::POST_STAGE_MB, mgr, slot);
+    capture_post_result(POST_STAGE_MB, mgr, slot);
     slot
 }
 
@@ -373,7 +376,7 @@ fn dof_apply(
     if let Some(probe) = probe {
         probe.finish(mgr, slot);
     }
-    capture_post_result(crate::ui::render::POST_STAGE_DOF, mgr, slot);
+    capture_post_result(POST_STAGE_DOF, mgr, slot);
     slot
 }
 

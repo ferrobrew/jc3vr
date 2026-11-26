@@ -25,11 +25,13 @@ use crate::{
     controllers::{overlay, weapons::scope},
     debug::trace::{TraceEvent, TraceState},
     frame_timing::{self, Slot},
+    hooks::graphics_engine::capture::{
+        EGUI_DEBUG_RENDER_STATE, eye_capture_fresh, mark_eye_capture, previews_visible,
+    },
     hud,
     hud::egui_panel::draw_quad,
     screenshot::CaptureSource,
     stereo::single_pass::{collapse_active, set_collapse_ui_eye},
-    ui::render::{eye_capture_fresh, mark_eye_capture, previews_visible},
     vr::BlitSource,
 };
 
@@ -52,7 +54,7 @@ pub(super) fn hook_library() -> HookLibrary {
 ///
 /// The first is whether `render_engine_post_draw` runs apart from `crate::update`, which is what this
 /// hook's shared state has to assume. `crate::update` takes the `EguiState` lock and then
-/// `crate::ui::render::EGUI_DEBUG_RENDER_STATE` inside it, so `render_engine_post_draw` does not hold
+/// `crate::hooks::graphics_engine::capture::EGUI_DEBUG_RENDER_STATE` inside it, so `render_engine_post_draw` does not hold
 /// `EGUI_DEBUG_RENDER_STATE` across `hud::egui_panel::draw_quad` and `hud::mirror_overlay::render`,
 /// both of which take the `EguiState` lock: it clones the captures under a brief lock, as everywhere
 /// else. Two blocking mutexes in opposite orders deadlock if and only if the two sides run on
@@ -437,7 +439,7 @@ fn mod_post_draw(context: *mut Context) {
         // acquisition, not one per eye, so the collapse's two half-copies cannot straddle a resize
         // that rebuilds the pair.
         let eye_textures: [Option<ID3D11Texture2D>; 2] = {
-            let lock = crate::ui::render::EGUI_DEBUG_RENDER_STATE.lock();
+            let lock = EGUI_DEBUG_RENDER_STATE.lock();
             [lock.texture(0).cloned(), lock.texture(1).cloned()]
         };
         let index = crate::stereo::draw_index();

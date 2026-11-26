@@ -377,7 +377,11 @@ fn update() {
                     crate::hud::pointer::apply_panel_input_options(ctx, panel_size.is_some());
                     // The UI-side half of capture upkeep: the Previews tab's own textures, and the egui
                     // registrations for surfaces the render thread created without a renderer. The eye
-                    // captures themselves are prepared above, off this path.
+                    // captures themselves are prepared above, off this path. The HUD preview's retired
+                    // registrations are released first, outside the capture lock.
+                    crate::hud::HUD_STATE
+                        .lock()
+                        .drain_preview_retirements(renderer);
                     ui::render::EGUI_DEBUG_RENDER_STATE
                         .lock()
                         .prepare_if_necessary(renderer);

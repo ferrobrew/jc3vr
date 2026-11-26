@@ -22,6 +22,7 @@ use re_utilities::hook_library::HookLibrary;
 use crate::{
     config::Config,
     debug::trace::{TraceEvent, TraceState},
+    hooks::graphics_engine::capture::{capture_main_color, previews_visible},
     stereo::{draw_index, later_scene},
 };
 
@@ -173,8 +174,8 @@ fn tonemapping_apply(
     // point in the post chain where MainColor still holds this dispatch's clean scene -- grab it for
     // the per-eye "Scene" preview before the chain recycles it. Debug-only: gated on the Previews tab
     // actually being open, so the CopyResource isn't paid for every dispatch by everyone.
-    if crate::ui::render::previews_visible() {
-        crate::ui::render::capture_main_color(draw_index());
+    if previews_visible() {
+        capture_main_color(draw_index());
     }
 
     if skip {

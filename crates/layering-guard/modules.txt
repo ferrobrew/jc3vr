@@ -69,7 +69,6 @@ screenshot render
 stereo render
 testing::benchmark render
 testing::visual render
-ui::render::capture render
 vr render
 
 # Gameplay: the controllers, the grapple, and the character, animation, input, equipment, and sim

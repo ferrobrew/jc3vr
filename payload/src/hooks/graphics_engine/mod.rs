@@ -8,6 +8,9 @@
 
 use re_utilities::hook_library::HookLibrary;
 
+// The eye and preview captures the post-draw and the post chain fill, which the VR blit, the
+// mirror, the recorder, the screenshots, and the Previews tab read.
+pub(crate) mod capture;
 // Exposure and post-effect config structs, accessed by `tone_mapping` and `post_effects` via
 // `Config::lock_query`.
 pub(crate) mod config;

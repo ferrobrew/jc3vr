@@ -79,8 +79,8 @@ use windows::{
 
 use crate::{
     config::{self, Config, Switch, disable_automatically},
+    hooks::graphics_engine::capture::{EGUI_DEBUG_RENDER_STATE, eye_capture_fresh},
     recorder::{MirrorDraw, MirrorFrame},
-    ui::render::{EGUI_DEBUG_RENDER_STATE, eye_capture_fresh},
     vr::{
         MirrorView,
         mirror::layout::{
