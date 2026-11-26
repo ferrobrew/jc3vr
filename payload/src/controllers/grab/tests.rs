@@ -277,6 +277,7 @@ fn every_kind() -> Vec<GrabVolume> {
         HIP,
         GrabVolume::Foregrip,
         GrabVolume::Handle,
+        GrabVolume::GrenadePin,
         GrabVolume::GrenadePouch,
         GrabVolume::GrenadeLocker,
         GrabVolume::MagazinePouch,
@@ -316,6 +317,7 @@ fn every_kind() -> Vec<GrabVolume> {
             GrabVolume::Socket(_)
             | GrabVolume::Foregrip
             | GrabVolume::Handle
+            | GrabVolume::GrenadePin
             | GrabVolume::GrenadePouch
             | GrabVolume::GrenadeLocker
             | GrabVolume::MagazinePouch

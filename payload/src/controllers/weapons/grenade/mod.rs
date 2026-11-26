@@ -4,15 +4,17 @@
 //! the grenade weapon's own pool, left inert, so the item the player sees, carries, stows, and
 //! drops is the engine's own object from that moment on. Transfers, holster moves, and releases
 //! keep that item and its actor while its pin is in, and pressed back onto the pouch with its pin in
-//! it returns to the stock. A trigger press on the hand holding it pulls the pin, which starts the
-//! fuse; nothing else does, and a grenade thrown or dropped with its pin in stays inert. Native
-//! live grenades can still be caught and thrown on.
+//! it returns to the stock. Pulling the pin starts the fuse ([`pin`]): a trigger press on the hand
+//! holding it, the other hand's squeeze on the pin, or the teeth, with the grenade held at the mouth
+//! while the other hand is occupied. Nothing else does, and a grenade thrown or dropped with its pin
+//! in stays inert. Native live grenades can still be caught and thrown on.
 
 mod beacon;
 pub mod catch;
 mod fuse_log;
 mod locker;
 mod native;
+mod pin;
 pub(crate) mod safe;
 pub mod stock;
 pub mod tuning;
@@ -38,6 +40,7 @@ use crate::{
     controllers::{
         aim::targets::weak_target,
         bindings::{
+            self,
             controls::ButtonControl,
             hold::{Desired, MapKind},
         },
@@ -65,6 +68,7 @@ use crate::{
             grenade::{
                 catch::{CatchCounts, Caught, Sighting},
                 native::PinPull,
+                pin::{PinSource, TeethPull, TeethTick},
                 stock::Stock,
                 tuning::{GRENADE, GrenadeTuning},
             },
@@ -324,6 +328,7 @@ pub(super) unsafe fn begin_tick(inputs: &BeginInputs, tuning: &GrenadeTuning) ->
         let mut state = STATE.lock();
         state.sightings.clear();
         state.locker_frames = None;
+        state.mouth = [None; 2];
     }
     // SAFETY: the game thread, before the world update.
     let _ = unsafe { stock::refresh() };
@@ -340,6 +345,7 @@ pub(super) unsafe fn begin_tick(inputs: &BeginInputs, tuning: &GrenadeTuning) ->
         return Vec::new();
     };
     STATE.lock().locker_frames = Some(frames);
+    STATE.lock().mouth = at_mouth(inputs, tuning);
     let mut candidates = Vec::new();
     if let Some(owner) = unsafe { engine::local_player() } {
         candidates.extend(unsafe {
@@ -379,8 +385,31 @@ pub(super) unsafe fn begin_tick(inputs: &BeginInputs, tuning: &GrenadeTuning) ->
     candidates
 }
 
+/// The pins of the grenades in the hands, each offered to the other hand while that hand is free,
+/// with the hand that holds the grenade: a squeeze there pulls the pin ([`pin`]).
+pub(super) fn pin_candidates(
+    inputs: &BeginInputs,
+    tuning: &GrenadeTuning,
+) -> Vec<(Hand, Candidate)> {
+    if !inputs.acting {
+        return Vec::new();
+    }
+    Hand::BOTH
+        .into_iter()
+        .filter(|&holder| inputs.free[holder.other().index()] && safe::pin_in(holder))
+        .filter_map(|holder| {
+            let grip = inputs.active.hands[holder.index()]?.grip;
+            let point = pin::pin_point(grip, holder, inputs.active.world_scale, tuning)?;
+            Some((holder, pin::candidate(holder, point)))
+        })
+        .collect()
+}
+
 pub(super) struct TickInputs {
     pub acting: bool,
+    /// The hands whose grenade's pin the other hand squeezed this tick, by [`Hand::index`] of the
+    /// hand holding the grenade.
+    pub pin_grabs: [bool; 2],
     pub pouch_grab: Option<Hand>,
     pub locker_grabs: [bool; 2],
     pub catch_grab: Option<Hand>,
@@ -488,20 +517,46 @@ pub(super) fn input_tick(
             catch_one(hand, grip, &seen, tuning);
         }
     }
+    let teeth = {
+        let mut state = STATE.lock();
+        let mouth = state.mouth;
+        Hand::BOTH.map(|hand| {
+            let seen = mouth[hand.index()];
+            state.teeth[hand.index()].step(TeethTick {
+                pin_in: safe::pin_in(hand),
+                at_mouth: seen.is_some_and(|seen| seen.at_mouth),
+                other_occupied: seen.is_some_and(|seen| seen.other_occupied),
+                dt: inputs.dt,
+            })
+        })
+    };
     for hand in Hand::BOTH {
-        if !inputs.triggers[hand.index()].pressed {
+        let source = if inputs.triggers[hand.index()].pressed {
+            PinSource::Trigger
+        } else if inputs.pin_grabs[hand.index()] {
+            PinSource::OtherHand
+        } else if teeth[hand.index()] {
+            PinSource::Teeth
+        } else {
             continue;
-        }
+        };
         // SAFETY: the game stage runs on the game thread before the world update.
         match unsafe { safe::pull_pin(hand) } {
             Some(PinPull::Pulled) => {
                 haptics::play(hand, Event::GrenadePin);
-                fuse_log::lit(hand);
+                if source == PinSource::OtherHand {
+                    haptics::play(hand.other(), Event::GrenadePin);
+                }
+                fuse_log::lit(hand, source);
             }
             Some(PinPull::NotReady) => {
-                tracing::debug!(target: "controllers", hand = hand.label(), "grenade: the pin stays in until the grenade has its physics body");
+                tracing::debug!(target: "controllers", hand = hand.label(), by = source.label(), "grenade: the pin stays in until the grenade has its physics body");
             }
-            Some(PinPull::AlreadyOut) | None => {}
+            Some(PinPull::AlreadyOut) | None => {
+                if source != PinSource::Trigger {
+                    tracing::debug!(target: "controllers", hand = hand.label(), by = source.label(), "grenade: no pin to pull");
+                }
+            }
         }
     }
     for hand in Hand::BOTH {
@@ -571,6 +626,8 @@ pub(super) fn stand_down() {
     state.locker_frames = None;
     state.snatched = [None; 2];
     state.snatched_pickups = [None, None];
+    state.mouth = [None; 2];
+    state.teeth = [TeethPull::NEW; 2];
     state.status.fuse = None;
     drop(state);
     if catch::caught().is_some() {
@@ -709,6 +766,16 @@ struct State {
     status: GrenadeStatus,
     grips: [Option<Pose>; 2],
     next_pulse_s: f32,
+    /// Where each hand's grenade stood to the mouth at the tick's start, for the teeth pull.
+    mouth: [Option<Mouth>; 2],
+    teeth: [TeethPull; 2],
+}
+
+/// How a hand's grenade stood to the mouth at the tick's start ([`at_mouth`]).
+#[derive(Debug, Copy, Clone, PartialEq)]
+struct Mouth {
+    at_mouth: bool,
+    other_occupied: bool,
 }
 
 static STATE: Mutex<State> = Mutex::new(State {
@@ -739,6 +806,8 @@ static STATE: Mutex<State> = Mutex::new(State {
     },
     grips: [None; 2],
     next_pulse_s: 0.0,
+    mouth: [None; 2],
+    teeth: [TeethPull::NEW; 2],
 });
 
 #[derive(Copy, Clone)]
@@ -751,6 +820,27 @@ struct PlannedLaunch {
 
 thread_local! {
     static LAUNCH: Cell<Option<PlannedLaunch>> = const { Cell::new(None) };
+}
+
+/// Where each hand's grenade with its pin in stands to the mouth: whether its pin is at the mouth,
+/// and whether the other hand is occupied, holding something ([`BeginInputs::free`]), closed on
+/// something, or untracked. `None` for a hand without such a grenade or without a pose.
+fn at_mouth(inputs: &BeginInputs, tuning: &GrenadeTuning) -> [Option<Mouth>; 2] {
+    let mouth = pin::mouth_point(inputs.active.head);
+    Hand::BOTH.map(|hand| {
+        if !safe::pin_in(hand) {
+            return None;
+        }
+        let grip = inputs.active.hands[hand.index()]?.grip;
+        let pin = pin::pin_point(grip, hand, inputs.active.world_scale, tuning)?;
+        let other = hand.other();
+        Some(Mouth {
+            at_mouth: pin::at_mouth(pin, mouth),
+            other_occupied: !inputs.free[other.index()]
+                || bindings::hand_closed(other)
+                || inputs.active.hands[other.index()].is_none(),
+        })
+    })
 }
 
 /// The held grenade's model in `hand`'s grip frame.

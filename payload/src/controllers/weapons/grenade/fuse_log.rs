@@ -26,7 +26,7 @@ use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
     frame::{Hand, Pose},
-    weapons::grenade::{Release, safe},
+    weapons::grenade::{Release, pin::PinSource, safe},
 };
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -35,8 +35,9 @@ pub(super) fn hook_library() -> HookLibrary {
         .with_static_binder(&GRENADE_DETONATE_BINDER)
 }
 
-/// Follow the grenade `hand` holds, whose pin was just pulled, and log its fuse.
-pub(super) fn lit(hand: Hand) {
+/// Follow the grenade `hand` holds, whose pin was just pulled `by` the trigger, the other hand, or
+/// the teeth, and log its fuse.
+pub(super) fn lit(hand: Hand, by: PinSource) {
     let Some(explosive) = safe::explosive_in_hand(hand) else {
         return;
     };
@@ -45,6 +46,7 @@ pub(super) fn lit(hand: Hand) {
     tracing::info!(
         target: "controllers",
         hand = hand.label(),
+        by = by.label(),
         fuse_s = explosive.m_StartDetonationTimer,
         remaining_s = explosive.m_DetonationTimer,
         "grenade: the pin is pulled, and the fuse runs",

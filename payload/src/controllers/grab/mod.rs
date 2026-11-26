@@ -55,6 +55,11 @@ pub enum GrabVolume {
     /// The held gun's grip, for the hand without the gun, which takes the gun from the other hand
     /// (see [`crate::controllers::weapons::hold`]).
     Handle,
+    /// The pin of the grenade the other hand holds with its pin in, which a squeeze pulls (see
+    /// [`crate::controllers::weapons::grenade`]). It ranks over the grenade itself
+    /// ([`Tier::Handle`]), which a squeeze anywhere else on it takes into the squeezing hand
+    /// ([`GrabVolume::Handle`]).
+    GrenadePin,
     /// The grenade pouch.
     GrenadePouch,
     /// A visible grenade display at an interaction-backed locker or pickup source.
@@ -135,6 +140,7 @@ impl GrabVolume {
         match self {
             GrabVolume::Foregrip => "foregrip",
             GrabVolume::Handle => "gun grip",
+            GrabVolume::GrenadePin => "grenade pin",
             GrabVolume::GrenadePouch => "grenade pouch",
             GrabVolume::GrenadeLocker => "locker grenade",
             GrabVolume::MagazinePouch => "reload pouch",
@@ -189,6 +195,7 @@ impl GrabVolume {
             | GrabVolume::Pickup(PickupKind::Door) => Category::Vehicle,
             GrabVolume::Pickup(PickupKind::Character) => Category::Character,
             GrabVolume::GrenadeLocker
+            | GrabVolume::GrenadePin
             | GrabVolume::LiveGrenade
             | GrabVolume::ChargeSurface
             | GrabVolume::PlacedCharge => Category::Explosive,
@@ -204,6 +211,7 @@ impl GrabVolume {
         match self {
             GrabVolume::Foregrip
             | GrabVolume::Handle
+            | GrabVolume::GrenadePin
             | GrabVolume::GrenadePouch
             | GrabVolume::GrenadeLocker
             | GrabVolume::MagazinePouch

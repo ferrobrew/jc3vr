@@ -191,7 +191,8 @@ pub enum Lost {
     Touch,
     /// A character, and a weapon to take is in reach.
     Character,
-    /// A mounted gun's handle was in reach, which ranks over every other target.
+    /// A mounted gun's handle or a held grenade's pin was in reach, which ranks over every other
+    /// target.
     Handle,
     /// The chosen one's grab point is nearer, by this many metres.
     Farther(f32),
@@ -204,7 +205,7 @@ impl Lost {
             Lost::Remote => "out of reach, and something is in reach".to_owned(),
             Lost::Touch => "worked by the palm, not the grip".to_owned(),
             Lost::Character => "a character, and a weapon to take is in reach".to_owned(),
-            Lost::Handle => "a mounted gun's handle is in reach".to_owned(),
+            Lost::Handle => "a mounted gun's handle or a grenade's pin is in reach".to_owned(),
             Lost::Farther(by) => format!("{:.0} mm farther", by * 1000.0),
         }
     }

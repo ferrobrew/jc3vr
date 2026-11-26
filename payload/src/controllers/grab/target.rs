@@ -97,7 +97,8 @@ impl GripTarget {
 pub enum Tier {
     /// Taken over every other target in reach: a mounted gun's handle, which sits on the gun's own
     /// body and its holder, so the nearest-grab-point rule would hand the grip to the body (a
-    /// loose object on a hinge the hand cannot turn) by a few millimetres.
+    /// loose object on a hinge the hand cannot turn) by a few millimetres; and a held grenade's
+    /// pin, which sits on the grenade the hand would otherwise take into itself.
     Handle,
     /// Taken by the nearest-grab-point rule.
     Target,
@@ -116,7 +117,7 @@ impl Tier {
     /// The tier a target of `volume` ranks in by default.
     pub const fn of(volume: GrabVolume) -> Self {
         match volume {
-            GrabVolume::MountedHandle(_) => Tier::Handle,
+            GrabVolume::MountedHandle(_) | GrabVolume::GrenadePin => Tier::Handle,
             GrabVolume::Climb | GrabVolume::StuntHold => Tier::Fallback,
             GrabVolume::Snatch(_) => Tier::Remote,
             GrabVolume::CockpitButton(_) | GrabVolume::MagazineWell | GrabVolume::ChargeSurface => {

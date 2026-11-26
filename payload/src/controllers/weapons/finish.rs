@@ -222,6 +222,7 @@ pub(crate) fn finish_tick(
                 Some(t) => GrabOutcome::Foregrip(t),
                 None => GrabOutcome::ForegripUnmeasured,
             },
+            GrabVolume::GrenadePin => GrabOutcome::Pin,
             GrabVolume::GrenadePouch | GrabVolume::GrenadeLocker => GrabOutcome::Pouch,
             GrabVolume::LiveGrenade => GrabOutcome::Catch,
             GrabVolume::MagazinePouch
@@ -293,6 +294,9 @@ pub(crate) fn finish_tick(
     grenade::input_tick(
         &grenade::TickInputs {
             acting: config.weapons.grenade_throw && pouches && active.is_some(),
+            // The pin is on the grenade in the other hand.
+            pin_grabs: Hand::BOTH
+                .map(|holder| grabs[holder.other().index()] == Some(GrabVolume::GrenadePin)),
             locker_grabs: Hand::BOTH
                 .map(|hand| grabs[hand.index()] == Some(GrabVolume::GrenadeLocker)),
             pouch_grab: Hand::BOTH

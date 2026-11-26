@@ -82,6 +82,23 @@ impl Place {
         ))
     }
 
+    /// The pin of the grenade in `holder`'s hand: a ring the size of its reach, shown always and
+    /// labelled, so that the other hand knows where a squeeze pulls the pin rather than taking the
+    /// grenade.
+    pub(super) fn grenade_pin(&self, c: &Candidate, holder: Hand) -> GripTarget {
+        c.target(
+            Mark::ring(
+                MarkAt::OnHand {
+                    hand: holder,
+                    point: c.centre,
+                },
+                mark_size(c.radius),
+            )
+            .showing(Shown::Always)
+            .labelled("pull pin"),
+        )
+    }
+
     /// Something lying in the world.
     pub(super) fn world(&self, c: &Candidate) -> GripTarget {
         c.target(Mark::ring(

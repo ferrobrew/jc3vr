@@ -385,23 +385,22 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
     if config.weapons.grenade_throw {
         let charge = c4::throwing_hand();
         let detonator = c4::detonator_hand();
-        // SAFETY: the game stage runs on the game thread before the world update.
-        let grenades = unsafe {
-            grenade::begin_tick(
-                &grenade::BeginInputs {
-                    active: &active,
-                    free: Hand::BOTH.map(|h| {
-                        free[h.index()]
-                            && !grenade::holds(h)
-                            && charge != Some(h)
-                            && detonator != Some(h)
-                    }),
-                    acting: pouches_act,
-                },
-                &GrenadeTuning::of(&config.weapons.grenade),
-            )
+        let inputs = grenade::BeginInputs {
+            active: &active,
+            free: Hand::BOTH.map(|h| {
+                free[h.index()] && !grenade::holds(h) && charge != Some(h) && detonator != Some(h)
+            }),
+            acting: pouches_act,
         };
+        let tuning = GrenadeTuning::of(&config.weapons.grenade);
+        // SAFETY: the game stage runs on the game thread before the world update.
+        let grenades = unsafe { grenade::begin_tick(&inputs, &tuning) };
         targets.extend(grenades.iter().map(|c| place.world(c)));
+        targets.extend(
+            grenade::pin_candidates(&inputs, &tuning)
+                .iter()
+                .map(|(holder, c)| place.grenade_pin(c, *holder)),
+        );
     }
     if config.weapons.c4_throw {
         // SAFETY: the game stage runs on the game thread before the world update.
