@@ -44,16 +44,9 @@ pub struct DirectorConfig {
     pub heat_lock: bool,
     /// Cap the heat level at this value (`0..=5`), or `None` to leave the game's own cap alone.
     pub heat_cap: Option<i32>,
-    /// Hide the mod's overlays at [`clean_view_scope`](Self::clean_view_scope); see
-    /// [`clean_view`]. On at every launch, which keeps the flat debug overlay off the desktop window
-    /// until F4 shows it. Not saved, so a session that showed the overlay does not leave it showing
-    /// at the next launch.
-    #[serde(skip, default = "clean_view_on")]
-    pub clean_view: bool,
-    /// How much the [`clean_view`](Self::clean_view) hides. A choice for the shot at hand, so it is
-    /// not saved: a launch never starts with the HUD hidden.
+    /// The clean view's switch and scope; see [`clean_view`]. Neither is saved.
     #[serde(skip)]
-    pub clean_view_scope: clean_view::CleanViewScope,
+    pub clean_view: clean_view::CleanViewConfig,
     /// The spawner's request: what to spawn and where relative to the view.
     pub spawn: spawn::SpawnConfig,
     /// The key bindings that drive the directing tools; see [`keymap`].
@@ -69,8 +62,7 @@ impl DirectorConfig {
             unlimited_ammo: false,
             heat_lock: false,
             heat_cap: None,
-            clean_view: true,
-            clean_view_scope: clean_view::CleanViewScope::Desktop,
+            clean_view: clean_view::CleanViewConfig::new(),
             spawn: spawn::SpawnConfig::new(),
             keymap: keymap::Keymap::new(),
         }
@@ -81,7 +73,7 @@ impl DirectorConfig {
 /// so a hotkey and a panel click in the same frame are applied in one place.
 pub fn update() {
     let cfg = CONFIG.lock().director.clone();
-    clean_view::update(&cfg);
+    clean_view::update(&cfg.clean_view);
     time::apply(&cfg);
     safety::apply(&cfg);
     heat::apply(&cfg);
@@ -92,9 +84,4 @@ pub fn update() {
 /// The default of [`DirectorConfig::time_scale`] when it is not loaded: real time.
 fn real_time() -> f32 {
     1.0
-}
-
-/// The default of [`DirectorConfig::clean_view`] when it is not loaded: on.
-fn clean_view_on() -> bool {
-    true
 }

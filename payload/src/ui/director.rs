@@ -134,25 +134,20 @@ pub(crate) fn host_line(status: &recorder::Status) -> String {
 
 fn clean_view_ui(ui: &mut egui::Ui) {
     let mut cfg = config::edit();
-    let d = &mut cfg.director;
+    let d = &mut cfg.director.clean_view;
     ui.horizontal(|ui| {
-        ui.checkbox(&mut d.clean_view, "Clean view (F4)")
-            .on_hover_text(
-                "Hides the mod's overlays at the chosen scope without changing their settings. At \
+        ui.checkbox(&mut d.on, "Clean view (F4)").on_hover_text(
+            "Hides the mod's overlays at the chosen scope without changing their settings. At \
              the desktop scope this hides the debug overlay, so F4 brings it back.",
-            );
-        ui.selectable_value(&mut d.clean_view_scope, CleanViewScope::Desktop, "Desktop")
+        );
+        ui.selectable_value(&mut d.scope, CleanViewScope::Desktop, "Desktop")
             .on_hover_text("Hide the flat debug overlay from the desktop window only.");
-        ui.selectable_value(
-            &mut d.clean_view_scope,
-            CleanViewScope::Everything,
-            "Everything",
-        )
-        .on_hover_text(
-            "Also hide the floating HUD, the floating panel, and the in-world overlays. With \
+        ui.selectable_value(&mut d.scope, CleanViewScope::Everything, "Everything")
+            .on_hover_text(
+                "Also hide the floating HUD, the floating panel, and the in-world overlays. With \
                  the HUD redirect off (flatscreen) the game's own HUD stays; turn the redirect on \
                  in Rendering > HUD to hide it too.",
-        );
+            );
     });
 }
 

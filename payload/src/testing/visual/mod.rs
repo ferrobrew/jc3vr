@@ -1178,8 +1178,8 @@ fn apply_profile_with_overrides(
 /// bloom textures nothing refreshed, whose contents depended on the previous capture set.
 fn apply_profile(config: &mut Config, mode: Mode) {
     config.director.paused = true;
-    config.director.clean_view = true;
-    config.director.clean_view_scope = crate::director::clean_view::CleanViewScope::Everything;
+    config.director.clean_view.on = true;
+    config.director.clean_view.scope = crate::director::clean_view::CleanViewScope::Everything;
     config.vr.freeze_mode = FreezeMode::FullCamera;
     config.vr.native_resolution = true;
     config.fsr.antialiasing = AntiAliasing::Engine;

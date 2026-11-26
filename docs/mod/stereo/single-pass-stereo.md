@@ -829,7 +829,7 @@ The capture profile (`apply_profile` in `payload/src/testing/visual/mod.rs`) pin
 | `post_fx.dof_no_reproject` | on | on | the depth of field's underwater composite | unchanged by the profile |
 | `far_field.enabled` | off | off | the monoscopic far field | unchanged by the profile |
 | `vr.native_resolution`, `vr.resolution_scale` | on, 1.0 | on, left as configured | the per-eye render size | the double-wide target requires native resolution |
-| `director.clean_view_scope` | the desktop overlay only | every overlay | the mod's own overlays | composited outside the eye targets the comparison reads |
+| `director.clean_view.scope` | the desktop overlay only | every overlay | the mod's own overlays | composited outside the eye targets the comparison reads |
 | `director.paused`, `vr.freeze_mode` | running, off | held, full camera | the clock and the camera | what makes the four modes comparable at all |
 
 **Foveation.** Run as for one eye, the mask and fill-in put one fovea on the seam, sized for the double-wide target, so each eye drops pixels at its own centre of view; see "Under single-pass stereo" in [`foveation.md`](foveation.md) for `single_pass.foveation_per_eye`. With the foveation alone put back at the town (run 289, static camera, final image per eye, pixels differing from the isolated eye by more than three codes), the fix took the difference from 32,661 and 57,617 to 2,647 and 1,943, against 2,649 and 1,894 for the repeat. The image FSR reads matches the isolated eyes at 399 and 649 pixels with the fix and 22,772 and 44,915 without, against 9 and 3 for multipass.

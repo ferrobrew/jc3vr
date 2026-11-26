@@ -19,7 +19,34 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use serde::{Deserialize, Serialize};
 
-use crate::{config, director::DirectorConfig};
+use crate::config::{self, Config};
+
+/// The clean view's settings: the switch and its scope. Neither is saved: the switch is on at every
+/// launch, which keeps the flat debug overlay off the desktop window until F4 shows it, so a session
+/// that showed the overlay does not leave it showing at the next launch; and the scope is a choice
+/// for the shot at hand, so a launch never starts with the HUD hidden.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub struct CleanViewConfig {
+    /// Hide the mod's overlays at [`scope`](Self::scope).
+    pub on: bool,
+    /// How much [`on`](Self::on) hides.
+    pub scope: CleanViewScope,
+}
+
+impl CleanViewConfig {
+    pub const fn new() -> Self {
+        Self {
+            on: true,
+            scope: CleanViewScope::Desktop,
+        }
+    }
+}
+
+impl Default for CleanViewConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 /// How much the clean view hides.
 #[derive(Copy, Clone, PartialEq, Eq, Serialize, Deserialize, Default, Debug)]
@@ -46,32 +73,39 @@ pub fn hides_everything() -> bool {
 /// Flip the clean view at its current scope, returning whether it is now on. Bound to F4.
 pub fn toggle() -> bool {
     let mut cfg = config::edit();
-    cfg.director.clean_view = !cfg.director.clean_view;
-    publish(cfg.director.clean_view, cfg.director.clean_view_scope);
-    cfg.director.clean_view
+    let clean_view = settings(&mut cfg);
+    clean_view.on = !clean_view.on;
+    publish(*clean_view);
+    clean_view.on
 }
 
 /// Switch the clean view on at its current scope: the debug UI's Hide.
 pub(crate) fn hide() {
     let mut cfg = config::edit();
-    cfg.director.clean_view = true;
-    publish(true, cfg.director.clean_view_scope);
+    let clean_view = settings(&mut cfg);
+    clean_view.on = true;
+    publish(*clean_view);
 }
 
 /// Publish the config's clean view, once per frame from [`crate::director::update`], so a change
 /// made in the debug UI reaches the gates. Logs the edges so a recording's log shows when the
 /// overlays went away.
-pub(super) fn update(cfg: &DirectorConfig) {
-    publish(cfg.clean_view, cfg.clean_view_scope);
+pub(super) fn update(cfg: &CleanViewConfig) {
+    publish(*cfg);
 }
 
-/// Whether the clean view is on. Mirrored from `DirectorConfig::clean_view`; an atomic so the
+/// The clean view's part of the settings.
+fn settings(cfg: &mut Config) -> &mut CleanViewConfig {
+    &mut cfg.director.clean_view
+}
+
+/// Whether the clean view is on. Mirrored from [`CleanViewConfig::on`]; an atomic so the
 /// draw-thread gates read it without the config lock. Starts on, as the config does.
 static ON: AtomicBool = AtomicBool::new(true);
 /// Whether the clean view's scope is [`CleanViewScope::Everything`].
 static EVERYTHING: AtomicBool = AtomicBool::new(false);
 
-fn publish(on: bool, scope: CleanViewScope) {
+fn publish(CleanViewConfig { on, scope }: CleanViewConfig) {
     let everything = scope == CleanViewScope::Everything;
     let was_on = ON.swap(on, Ordering::Relaxed);
     let was_everything = EVERYTHING.swap(everything, Ordering::Relaxed);

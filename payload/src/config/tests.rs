@@ -134,13 +134,13 @@ fn the_clean_view_and_its_scope_are_not_loaded() {
     let mut table = defaults_table();
     set(&mut table, &["director", "clean_view"], false.into());
     let Loaded { config, report, .. } = load(table);
-    assert!(config.director.clean_view);
+    assert!(config.director.clean_view.on);
     assert_eq!(report.ignored, ["director.clean_view"]);
 
     let mut table = defaults_table();
     set(&mut table, &["hud", "flat_overlay_visible"], true.into());
     let Loaded { config, report, .. } = load(table);
-    assert!(config.director.clean_view);
+    assert!(config.director.clean_view.on);
     assert_eq!(report.ignored, ["hud.flat_overlay_visible"]);
 
     // The scope is chosen for the shot at hand: a saved one is skipped, so a launch never starts
@@ -152,7 +152,7 @@ fn the_clean_view_and_its_scope_are_not_loaded() {
         "Everything".into(),
     );
     let Loaded { config, report, .. } = load(table);
-    assert_eq!(config.director.clean_view_scope, CleanViewScope::Desktop);
+    assert_eq!(config.director.clean_view.scope, CleanViewScope::Desktop);
     assert_eq!(report.ignored, ["director.clean_view_scope"]);
 }
 
