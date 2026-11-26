@@ -107,6 +107,9 @@ pub(super) const MAX_BYTES: usize = 64 * 1024 * 1024;
 const MAX_NAMES: usize = 16 * 1024;
 const MAX_INSTANCES: usize = 256 * 1024;
 const MAX_GRENADES: usize = 16;
+/// The part of every outpost collection's name that is the Guardia faction's, which the five
+/// [`COLLECTIONS`] share; compared without regard to case.
+pub(super) const OUTPOST_FACTION: &[u8] = b"massos";
 const COLLECTIONS: [(&[u8], usize); 5] = [
     (
         b"locations/region_02/military/outposts/outpost_01/outpost_guardia_massos_01.nl.mdic",

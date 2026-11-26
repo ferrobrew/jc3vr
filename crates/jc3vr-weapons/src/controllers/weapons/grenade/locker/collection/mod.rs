@@ -23,7 +23,7 @@ use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::weapons::grenade::locker::{
     Identity, Provider, Source,
-    format::{Dictionary, MAX_BYTES, dictionary, grenade_model},
+    format::{Dictionary, MAX_BYTES, OUTPOST_FACTION, dictionary, grenade_model},
 };
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -320,10 +320,10 @@ unsafe fn metadata(data: *const u8, size: u32, name: *const u8) -> Option<Dictio
         std::slice::from_raw_parts(data, size as usize)
     });
     if owned_name
-        .windows(b"massos".len())
-        .any(|part| part.eq_ignore_ascii_case(b"massos"))
+        .windows(OUTPOST_FACTION.len())
+        .any(|part| part.eq_ignore_ascii_case(OUTPOST_FACTION))
     {
-        tracing::debug!(target: "controllers", resource = %String::from_utf8_lossy(&owned_name), size, qualified = metadata.is_some(), "grenade: inspected a Massos model collection dictionary");
+        tracing::debug!(target: "controllers", resource = %String::from_utf8_lossy(&owned_name), size, qualified = metadata.is_some(), "grenade: inspected an outpost faction's model collection dictionary");
     }
     metadata
 }
