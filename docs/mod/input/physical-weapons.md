@@ -9,7 +9,7 @@ None of this has been run in the headset. Everything acts only while the binding
 With `weapons.hold.either_hand` (on; in the debug UI's Weapons > Hold, transfer, and grab regions), a weapon rides the hand the loadout table holds it in rather than always the right hand ([two-handed-inventory.md, "The live table"](two-handed-inventory.md#the-live-table)), so the hold needs the VR inventory on (`weapons.inventory.enabled`), which runs the table; without it the game's own layout stands. The table's hands change by the hands' own moves at once: a draw off a socket, a dock onto one, a direct pickup or a take, a handover, a let-go. A weapon the game wields on its own lands in a hand of the table's once per input tick:
 
 - A direct pickup or a take (below) leaves the grabbing hand expecting that one weapon, so another weapon the game wields first does not take it. The expectation lasts up to three seconds before it lapses.
-- A weapon the game wields on its own (the weapon wheel, a switch, an automatic draw) lands in the acting hand (`controllers.acting_hand()`) when the table has it empty, otherwise in the other hand.
+- A weapon the game wields on its own (the weapon wheel, a switch, an automatic draw) lands in the acting hand (`scheme::acting_hand()`) when the table has it empty, otherwise in the other hand.
 - A weapon the game puts away on its own (its holster act, a vehicle's entry) leaves its hand in the table, docked on the socket the game docks its slot on, or let go of when it left the slots.
 
 A weapon lands only in a hand the table has empty: while both hands hold something, a weapon the game wields is put away again.
