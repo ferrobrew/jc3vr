@@ -482,8 +482,8 @@ mod tests {
     use super::*;
     use crate::debug::stereo_diff::NamedPass;
 
-    /// `tools/analyze_trace_frames.py` reads the probe events by their `ev` tag with the payload's
-    /// fields flattened beside it; this pins that shape.
+    /// `tools/analysis/analyze_trace_frames.py` reads the probe events by their `ev` tag with the
+    /// payload's fields flattened beside it; this pins that shape.
     #[test]
     fn probe_events_flatten_beside_their_tag() {
         let record = TraceRecord {

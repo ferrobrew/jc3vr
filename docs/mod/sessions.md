@@ -23,13 +23,13 @@ What lands where is fixed per kind of output, in `payload/src/session.rs`. Folde
 | `session.log` | the tracing log | |
 | `crash.log` | the crash handler, appended through a raw handle so a record survives a broken logging path | |
 | `markers.jsonl` | take markers made while no video recording runs, one JSON object per line ([capture.md](capture.md)) | |
-| `profiles/<stamp>.json` | an F9 profiler capture ([profiler.md](performance/profiler.md)) | `tools/analyze_profile.py`, ui.perfetto.dev |
+| `profiles/<stamp>.json` | an F9 profiler capture ([profiler.md](performance/profiler.md)) | `tools/analysis/analyze_profile.py`, ui.perfetto.dev |
 | `screenshots/<stamp>.png` and `<stamp>.json` | an F12 screenshot and its single-pass sidecar | |
 | `grapple-logs/<stamp>.csv` | a grapple telemetry capture ([grapple-comfort.md](body/grapple-comfort.md)) | |
 | `recordings/<stamp>/` | a recording, holding whichever halves it has (below) | |
 | `scenarios/<stamp>_<scenario file>.toml` | a scenario's summary, stamped with the scenario's start | |
 | `shader-dumps/<stamp>.txt` | the vertex-shader name census, after a shader reload with the census on | |
-| `traces/<stamp>/` | a render trace: `trace.ndjson` and, with the per-eye screenshot probe, `frameNNN_eye<N>.png` ([render-trace.md](rendering/render-trace.md)) | `tools/analyze_trace_frames.py` |
+| `traces/<stamp>/` | a render trace: `trace.ndjson` and, with the per-eye screenshot probe, `frameNNN_eye<N>.png` ([render-trace.md](rendering/render-trace.md)) | `tools/analysis/analyze_trace_frames.py` |
 
 A recording's folder holds:
 

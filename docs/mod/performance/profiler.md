@@ -35,7 +35,7 @@ feature off, the hooks and scopes do not exist.
 2. In the game, get to the situation you want measured, then press F9. The log says `F9: profiler trace capture started` and `profiler: capturing 5.0s of frames`, and, once the file is written, the path. Hold the situation for the whole five seconds.
 3. Leave the per-draw render-block scopes off unless the per-type timeline is the question (see below). The GPU per-pass timestamps are on by default and should stay on.
 4. The capture lands in the session folder, `<session>/profiles/<stamp>.json` under the sessions root ([sessions.md](../sessions.md#the-sessions-root)); the startup log and the Status page name the session folder.
-5. Summarize it with `uv run tools/analyze_profile.py <file>`, or open it in [ui.perfetto.dev](https://ui.perfetto.dev).
+5. Summarize it with `uv run tools/analysis/analyze_profile.py <file>`, or open it in [ui.perfetto.dev](https://ui.perfetto.dev).
 
 Take the capture alongside the always-on breakdown in the same log ([frame-timing.md](frame-timing.md)): the breakdown says which part of the frame grew, and the capture shows what is inside it.
 

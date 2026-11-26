@@ -96,7 +96,7 @@ Everything below needs a headset in the loop; the desktop build could not settle
 
 **Coordinate frame and pose.**
 
-- Capture a render trace while walking forward and read its `CoordFrame` summary (`tools/analyze_trace_frames.py`, or the `coord_frame` log line at the trace's end) to confirm the world frame before trusting HMD rotation (blocker 3, `docs/mod/body/head-and-body.md`).
+- Capture a render trace while walking forward and read its `CoordFrame` summary (`tools/analysis/analyze_trace_frames.py`, or the `coord_frame` log line at the trace's end) to confirm the world frame before trusting HMD rotation (blocker 3, `docs/mod/body/head-and-body.md`).
 - Confirm head rotation and roomscale translation track 1:1 with no perceptible lag or smoothing.
 - Confirm Recenter (F7 or the pause menu's RECENTER VIEW) re-bases heading only, leaving pitch and roll (real head tilt) intact.
 - Confirm the stereo separation reads as depth (not a flat or hyperstereo image) and that near/far objects fuse — the true per-eye `locate_views` delta, not the synthetic IPD.

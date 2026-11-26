@@ -170,7 +170,7 @@ The scenario signals ([recorder.md](../testing/recorder.md)) are `rig.gap_m` (th
 
 ## Offline evaluation
 
-`tracking-synth rig-eval <recording> <out.csv>` runs the same solver over a recorded `tracking.jc3trk` and writes a CSV of the time, the bend, the step demand, the committed steps, the step phase, the yaw error, and the head's pitch ([testing/recorder.md](../testing/recorder.md)); `tools/plot_rig_eval.py` plots it against the take's video.
+`tracking-synth rig-eval <recording> <out.csv>` runs the same solver over a recorded `tracking.jc3trk` and writes a CSV of the time, the bend, the step demand, the committed steps, the step phase, the yaw error, and the head's pitch ([testing/recorder.md](../testing/recorder.md)); `tools/analysis/plot_rig_eval.py` plots it against the take's video.
 
 `--weights <safetensors>` runs the learned body estimator over the whole recording first, from the raw head and grip poses as `estimate-body` does (`tools/tracking-synth/src/estimate.rs`), and hands the rig its estimate as the game would: every other 60 Hz estimate (the default submission rate of 30 a second), a little after its window ends, its confidence fading with age, turned from the estimator's fixed room frame into the cockpit frame by the recenters so far. Each row then carries the estimate's columns (`estimate_pelvis_yaw_deg`, `estimate_chest_yaw_deg`, `estimate_confidence`, `estimate_weight`, and the smoothed `estimate_smoothed_pelvis_deg` and `estimate_smoothed_chest_deg`); without `--weights` the CSV is as before. `export-rerun --weights` runs its offline rig the same way.
 

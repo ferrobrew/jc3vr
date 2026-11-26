@@ -38,4 +38,4 @@ The stereo draw diff and the coordinate-frame probe log nothing per frame. When 
 
 ## Analysis
 
-`tools/analyze_trace_frames.py <trace folder>` (run with `uv run`) summarises the `StereoDrawDiff` and `CoordFrame` events, then, when the folder holds screenshots, analyses them for per-frame flicker: the luminance pulse, a temporal standard-deviation heatmap, a tile ranking, the per-eye gap, the frame-parity split, and the correlation with the traced exposure.
+`tools/analysis/analyze_trace_frames.py <trace folder>` (run with `uv run`) summarises the `StereoDrawDiff` and `CoordFrame` events, then, when the folder holds screenshots, analyses them for per-frame flicker: the luminance pulse, a temporal standard-deviation heatmap, a tile ranking, the per-eye gap, the frame-parity split, and the correlation with the traced exposure.

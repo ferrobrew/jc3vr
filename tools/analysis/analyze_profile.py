@@ -28,7 +28,7 @@ Reading notes baked into the numbers:
   * The per-render-block-type scopes are off by default (they inflate the draw path they measure),
     so a capture may have no render-block ranking; the block counts go to the log instead.
 
-Usage: uv run tools/analyze_profile.py <profiles/stamp.json> [--worst N] [--top N] [--csv out.csv]
+Usage: uv run tools/analysis/analyze_profile.py <profiles/stamp.json> [--worst N] [--top N] [--csv out.csv]
 """
 
 import argparse

@@ -16,7 +16,7 @@ per-frame flicker:
   * a coarse tile ranking of which regions vary most across frames,
   * correlation of the brightness pulse with the exposure / shadow-cascade series.
 
-Usage: uv run tools/analyze_trace_frames.py <traces/stamp dir> [--eye 0]
+Usage: uv run tools/analysis/analyze_trace_frames.py <traces/stamp dir> [--eye 0]
 """
 
 import argparse

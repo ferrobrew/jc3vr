@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = Path(__file__).resolve().parents[2]
 PAYLOAD_SRC = REPO_ROOT / "payload" / "src"
 DETOUR = re.compile(r"(?m)^[ \t]*#\[\s*detour\s*\(")
 ADDRESS_PATH = re.compile(r"[\w:]+_ADDRESS")
