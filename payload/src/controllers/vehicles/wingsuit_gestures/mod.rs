@@ -40,8 +40,6 @@ pub(crate) enum SuitTransition {
 pub(crate) struct GestureCommands {
     pub transition: Option<SuitTransition>,
     pub brake: bool,
-    /// Suppress pose-derived pitch during armed brake entry and its subsequent release.
-    pub reserve_pitch: bool,
 }
 
 /// Current availability of the physical gesture sequence, independently of command pulses.
@@ -63,7 +61,7 @@ pub(crate) enum GesturePhase {
     AwaitingNeutral,
     /// Falling, or in the suit, waiting for a stable flight pose.
     AwaitingFlight,
-    /// In the suit, with closing and braking armed.
+    /// In the suit, with closing armed.
     Armed,
     /// In the suit, holding the air brake.
     Braking,
@@ -355,17 +353,28 @@ impl FlightPose {
         }
     }
 
-    /// Whether both palms are turned to face the wind, within the brake's roll band, widened by the
-    /// hysteresis while `braking`.
-    fn braking_palms(self, config: &WingsuitGesturesConfig, braking: bool) -> bool {
-        let margin = if braking {
-            config.brake_hysteresis_deg
-        } else {
-            0.0
-        };
-        self.palm_roll_deg.into_iter().all(|roll| {
-            roll >= config.brake_roll_deg - margin && roll <= config.brake_roll_max_deg + margin
-        })
+    /// Whether the pose enters the air brake: both arms spread wide and both palms turned to face
+    /// the wind, within the brake's roll band. The band stops short of palm-up, where the roll
+    /// wraps, so a palm turned past it does not enter the brake from the far side.
+    fn enters_brake(self, config: &WingsuitGesturesConfig) -> bool {
+        self.lateral
+            .into_iter()
+            .all(|v| v >= config.flight_lateral_span)
+            && self
+                .palm_roll_deg
+                .into_iter()
+                .all(|roll| roll >= config.brake_roll_deg && roll <= config.brake_roll_max_deg)
+    }
+
+    /// Whether the pose releases a held air brake: either arm drawn in past the spread's
+    /// hysteresis, or both palms back within the flight pose's roll of flat. A held brake ignores
+    /// the band's upper end, so a flare that turns the palms on toward palm-up, and through the
+    /// roll's wrap, keeps braking.
+    fn releases_brake(self, config: &WingsuitGesturesConfig) -> bool {
+        self.lateral
+            .into_iter()
+            .any(|v| v < config.flight_lateral_span - config.pose_hysteresis_span)
+            || self.flat_palms(config.flight_roll_deg)
     }
 
     /// Whether both palms are within `limit_deg` of flat, turned either way.
@@ -426,7 +435,11 @@ pub(crate) struct WingsuitGestures {
     deploy_since_ns: Option<i64>,
     armed: bool,
     brake: bool,
-    reserve_pitch: bool,
+    /// The brake may engage in this suit: a pose that releases it has been seen since the suit's
+    /// entry. A fall's spread deploys with the palms turned any way, so without it, palms already
+    /// rolled to the wind would brake the suit as it opens, and the brake's close act could fold it
+    /// back into a fall.
+    brake_ready: bool,
     neutral: Dwell,
     flight: Dwell,
     close: Dwell,
@@ -569,7 +582,6 @@ impl WingsuitGestures {
         if repeated {
             return GestureCommands {
                 brake: self.brake,
-                reserve_pitch: self.reserve_pitch,
                 transition: None,
             };
         }
@@ -609,33 +621,12 @@ impl WingsuitGestures {
         }
         let pose = input.pose.unwrap();
         let in_suit = stage == Stage::Suit;
-        let wide = pose.lateral.into_iter().all(|v| {
-            v >= config.flight_lateral_span
-                - if self.brake {
-                    config.pose_hysteresis_span
-                } else {
-                    0.0
-                }
-        });
-        let brake_pose = in_suit && self.armed && wide && pose.braking_palms(config, self.brake);
-        let brake_was = self.brake;
-        self.brake = brake_pose
-            && (self.brake
-                || self
-                    .brake_entry
-                    .update(brake_pose, input.sample.time_ns, config.brake_dwell_s));
-        if !brake_pose {
-            self.brake_entry = Dwell::default();
-        }
-        let palms_returned = pose.flat_palms(config.pitch_release_roll_deg);
-        self.reserve_pitch = brake_pose || brake_was || (self.reserve_pitch && !palms_returned);
-        if self.reserve_pitch {
+        if in_suit && self.update_brake(pose, input.sample.time_ns, config) {
             self.close = Dwell::default();
             self.flight = Dwell::default();
             return GestureCommands {
                 transition: None,
-                brake: self.brake,
-                reserve_pitch: self.reserve_pitch,
+                brake: true,
             };
         }
         let withdrawn = pose.withdrawn(config);
@@ -704,6 +695,33 @@ impl WingsuitGestures {
         GestureCommands::default()
     }
 
+    /// Latch or release the air brake in the suit from `pose`, returning whether it is held.
+    ///
+    /// The brake latches once a brake pose is held for the brake's dwell, with no flight pose
+    /// needed first, and holds until the pose releases it ([`FlightPose::releases_brake`]).
+    fn update_brake(
+        &mut self,
+        pose: FlightPose,
+        now_ns: i64,
+        config: &WingsuitGesturesConfig,
+    ) -> bool {
+        let releases = pose.releases_brake(config);
+        if self.brake {
+            self.brake = !releases;
+            return self.brake;
+        }
+        self.brake_ready |= releases;
+        if self.brake_entry.update(
+            self.brake_ready && pose.enters_brake(config),
+            now_ns,
+            config.brake_dwell_s,
+        ) {
+            self.brake = true;
+            self.brake_entry = Dwell::default();
+        }
+        self.brake
+    }
+
     /// Track the stage outside menus, and start each fall or canopy afresh. A menu over a fall
     /// leaves the fall's start where it was.
     ///
@@ -734,6 +752,7 @@ impl WingsuitGestures {
                 false
             }
         };
+        self.brake_ready = false;
         self.retry_at_ns = None;
         self.deploy_since_ns = None;
         self.stage = Some(stage);
@@ -742,7 +761,6 @@ impl WingsuitGestures {
     fn clear_pose(&mut self) {
         self.armed = false;
         self.brake = false;
-        self.reserve_pitch = false;
         self.neutral = Dwell::default();
         self.flight = Dwell::default();
         self.close = Dwell::default();

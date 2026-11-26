@@ -158,7 +158,7 @@ pub(crate) fn desired_for(
         return Err(CommandRejection::CanopyRequested);
     }
     let suit = stage == Stage::Suit;
-    if commands.transition.is_some() && (commands.brake || commands.reserve_pitch) {
+    if commands.transition.is_some() && commands.brake {
         return Err(CommandRejection::ConflictingCommands);
     }
     let transition = match commands.transition {
@@ -169,7 +169,7 @@ pub(crate) fn desired_for(
         }
         None => false,
     };
-    if (commands.brake || commands.reserve_pitch) && !suit {
+    if commands.brake && !suit {
         return Err(CommandRejection::WrongMode);
     }
     let mut desired = Vec::with_capacity(2);
@@ -618,7 +618,6 @@ mod tests {
         let stage = Stage::Suit;
         let commands = GestureCommands {
             brake: true,
-            reserve_pitch: true,
             ..Default::default()
         };
         let desired = desired_for(commands, stage, false).unwrap();

@@ -308,18 +308,16 @@ pub struct WingsuitGesturesConfig {
     pub withdraw_lowered_span: f32,
     /// A tucked wrist also qualifies within this shoulder distance, without lowering the arm.
     pub withdraw_reach_span: f32,
-    /// The lateral margin that keeps an active brake from flickering near its spread threshold.
+    /// How far inside the flight pose's spread a held brake's arms may come before it releases.
     pub pose_hysteresis_span: f32,
-    /// Each wrist's largest roll from palm-flat, either way, for a flight pose.
+    /// Each wrist's largest roll from palm-flat, either way, for a flight pose. Both palms back
+    /// within it release a held brake.
     pub flight_roll_deg: f32,
     /// Each wrist's smallest roll toward palm-forward to enter braking.
     pub brake_roll_deg: f32,
-    /// Each wrist's largest roll toward palm-forward to enter braking, short of palm-up.
+    /// Each wrist's largest roll toward palm-forward to enter braking, short of palm-up. A held
+    /// brake ignores it.
     pub brake_roll_max_deg: f32,
-    /// How far past either end of the brake's roll band a held brake may go.
-    pub brake_hysteresis_deg: f32,
-    /// Both wrists' rolls within this of palm-flat release reserved pitch after braking.
-    pub pitch_release_roll_deg: f32,
     pub neutral_dwell_s: f32,
     pub flight_dwell_s: f32,
     pub close_dwell_s: f32,
@@ -341,8 +339,6 @@ impl WingsuitGesturesConfig {
             flight_roll_deg: 40.0,
             brake_roll_deg: 60.0,
             brake_roll_max_deg: 150.0,
-            brake_hysteresis_deg: 15.0,
-            pitch_release_roll_deg: 30.0,
             neutral_dwell_s: 0.12,
             flight_dwell_s: 0.20,
             close_dwell_s: 0.30,
@@ -352,8 +348,8 @@ impl WingsuitGesturesConfig {
     }
 
     /// Whether the tuning is finite, bounded, keeps withdrawal outside the flight deadzone, keeps the
-    /// flight pose's roll short of a held brake's, and keeps the brake's band clear of palm-up, where
-    /// the roll wraps.
+    /// flight pose's roll (which releases the brake) short of the brake's entry, and keeps the
+    /// brake's band clear of palm-up, where the roll wraps.
     /// Invalid saved tuning disables gesture output rather than clamping a toggle threshold.
     pub fn valid(&self) -> bool {
         let bounded = |value: f32, low, high| value.is_finite() && (low..=high).contains(&value);
@@ -367,11 +363,7 @@ impl WingsuitGesturesConfig {
             && bounded(self.flight_roll_deg, 15.0, 60.0)
             && bounded(self.brake_roll_deg, 40.0, 85.0)
             && bounded(self.brake_roll_max_deg, 100.0, 165.0)
-            && bounded(self.brake_hysteresis_deg, 2.0, 20.0)
-            && self.flight_roll_deg < self.brake_roll_deg - self.brake_hysteresis_deg
-            && self.brake_roll_max_deg + self.brake_hysteresis_deg < 180.0
-            && bounded(self.pitch_release_roll_deg, 0.0, 60.0)
-            && self.pitch_release_roll_deg <= self.flight_roll_deg
+            && self.flight_roll_deg < self.brake_roll_deg
             && bounded(self.neutral_dwell_s, 0.05, 0.50)
             && bounded(self.flight_dwell_s, 0.10, 1.0)
             && bounded(self.close_dwell_s, 0.15, 1.0)

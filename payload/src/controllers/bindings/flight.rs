@@ -129,7 +129,7 @@ pub(super) fn commit(
     commands: GestureCommands,
     tick: &Tick<'_>,
     desired: &mut Vec<Desired>,
-) -> bool {
+) {
     let calibration = Calibration {
         grip_offset: tick.config.hands.grip,
         dimensions: *tick.dimensions,
@@ -140,7 +140,7 @@ pub(super) fn commit(
     if input.is_none() {
         cancel_without_tracking(state, tick, desired);
     }
-    let reserve_pitch = commit_input(state, commands, input, config, desired);
+    commit_input(state, commands, input, config, desired);
     retract_committed_wire(state, || {
         // SAFETY: the binding game stage runs before the world update on the game thread.
         if let Some(hook) = unsafe { hook::local_hook() }
@@ -151,7 +151,6 @@ pub(super) fn commit(
         }
     });
     note(state, tick, input, config, Pass::Commit);
-    reserve_pitch
 }
 
 /// Why the recognizer is unavailable, as far as the binding owner can tell.
@@ -373,7 +372,7 @@ fn commit_input(
     input: Option<GestureInput>,
     config: &WingsuitGesturesConfig,
     desired: &mut Vec<Desired>,
-) -> bool {
+) {
     state.retract_active_wire = false;
     let Some(mut input) = input else {
         if config.enabled && config.valid() && !canopy(desired) {
@@ -381,7 +380,7 @@ fn commit_input(
         } else {
             state.reset();
         }
-        return false;
+        return;
     };
     input.canopy_requested |= canopy(desired);
     // A new line fired after the deployment retracted the old one is not the deployment's to
@@ -393,7 +392,7 @@ fn commit_input(
         if input.blocked(config) != Some(Blocked::NoPose) {
             state.reset();
         }
-        return false;
+        return;
     }
     // The suit's opening act is taken by the fall out of the parachute, not by the canopy state:
     // cut the canopy first, and the retry opens the suit once the fall begins.
@@ -405,7 +404,7 @@ fn commit_input(
             },
             want: Want::Click,
         });
-        return commands.reserve_pitch;
+        return;
     }
     let stage = match input.stage() {
         // A remaining canopy command (not a deploy, which cuts the canopy above) is read as a fall's:
@@ -426,12 +425,8 @@ fn commit_input(
                 state.retract_active_wire = input.deploy_grapple && !state.retracted_line;
             }
             desired.extend(inputs);
-            commands.reserve_pitch
         }
-        Err(_) => {
-            state.reset();
-            false
-        }
+        Err(_) => state.reset(),
     }
 }
 

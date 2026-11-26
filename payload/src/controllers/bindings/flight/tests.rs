@@ -97,7 +97,7 @@ impl History {
         self.arm();
         let outputs = self.hold(BRAKE, 3);
         let command = *outputs.last().unwrap();
-        assert!(command.brake && command.reserve_pitch);
+        assert!(command.brake);
         command
     }
 }
@@ -189,10 +189,13 @@ fn calibration_edits_disarm_flight_and_brake_without_reusing_the_packet() {
             h.calibration = changed;
             assert_eq!(h.repeat(last), GestureCommands::default());
             assert_eq!(h.repeat(BRAKE), GestureCommands::default());
-            assert_idle(&h.hold(BRAKE, 6));
+            // The held brake pose takes the brake's whole dwell again, from the next packet.
+            let resumed = h.hold(BRAKE, 3);
+            assert_idle(&resumed[..2]);
+            assert!(resumed[2].brake);
             assert_idle(&h.hold(FLIGHT, 5));
-            assert!(h.observe(BRAKE).reserve_pitch);
-            assert!(h.hold(BRAKE, 2).last().unwrap().brake);
+            assert_idle(&h.hold(BRAKE, 2));
+            assert!(h.observe(BRAKE).brake);
         }
     }
 }
@@ -208,7 +211,8 @@ fn calibration_edits_discard_partial_flight() {
         assert_eq!(h.state.gestures.phase(), GesturePhase::AwaitingFlight);
         assert_idle(&h.hold(FLIGHT, 1));
         assert_eq!(h.state.gestures.phase(), GesturePhase::Armed);
-        assert!(h.observe(BRAKE).reserve_pitch);
+        assert_idle(&h.hold(BRAKE, 2));
+        assert!(h.observe(BRAKE).brake);
     }
 }
 
@@ -239,7 +243,7 @@ fn commit_history(
     commands: GestureCommands,
     claims: [HandClaims; 2],
     desired: &mut Vec<Desired>,
-) -> bool {
+) {
     commit_input(
         &mut history.state,
         commands,
@@ -264,12 +268,7 @@ fn late_canopy_and_new_claims_cancel_otherwise_publishable_braking_and_reset_his
         let mut h = History::new();
         let candidate = h.braking();
         let mut baseline = Vec::new();
-        assert!(commit_history(
-            &mut h,
-            candidate,
-            [HandClaims::default(); 2],
-            &mut baseline
-        ));
+        commit_history(&mut h, candidate, [HandClaims::default(); 2], &mut baseline);
         assert_eq!(
             baseline,
             [CANCEL, WINGSUIT_AIRBRAKE].map(|action| Desired {
@@ -296,12 +295,13 @@ fn late_canopy_and_new_claims_cancel_otherwise_publishable_braking_and_reset_his
             }
         }
         let expected = desired.clone();
-        assert!(!commit_history(&mut h, candidate, claims, &mut desired));
+        commit_history(&mut h, candidate, claims, &mut desired);
         assert_eq!(desired, expected);
         assert_eq!(h.repeat(BRAKE), GestureCommands::default());
-        assert_idle(&h.hold(BRAKE, 6));
-        h.arm();
-        assert!(h.observe(BRAKE).reserve_pitch);
+        // The cancellation drops the brake; the held pose takes the brake's dwell again.
+        let resumed = h.hold(BRAKE, 3);
+        assert_idle(&resumed[..2]);
+        assert!(resumed[2].brake);
     }
 }
 
@@ -313,12 +313,7 @@ fn late_canopy_suppresses_an_otherwise_publishable_close() {
     let candidate = *outputs.last().unwrap();
     assert_eq!(candidate.transition, Some(SuitTransition::Close));
     let mut baseline = Vec::new();
-    assert!(!commit_history(
-        &mut h,
-        candidate,
-        [HandClaims::default(); 2],
-        &mut baseline
-    ));
+    commit_history(&mut h, candidate, [HandClaims::default(); 2], &mut baseline);
     assert_eq!(
         baseline,
         vec![Desired {
@@ -331,12 +326,7 @@ fn late_canopy_suppresses_an_otherwise_publishable_close() {
         want: Want::Hold(1.0),
     };
     let mut desired = vec![canopy];
-    assert!(!commit_history(
-        &mut h,
-        candidate,
-        [HandClaims::default(); 2],
-        &mut desired
-    ));
+    commit_history(&mut h, candidate, [HandClaims::default(); 2], &mut desired);
     assert_eq!(desired, vec![canopy]);
     assert_eq!(h.repeat(LOWERED), GestureCommands::default());
     assert_idle(&h.hold(LOWERED, 6));
@@ -428,12 +418,12 @@ fn missing_packets_clear_pose_history_and_a_lowered_pose_does_not_deploy() {
                     GestureCommands::default()
                 );
                 assert_eq!(state.current(), GestureAvailability::Unavailable);
-                assert!(!commit(
+                commit(
                     &mut state,
                     GestureCommands::default(),
                     &missing,
-                    &mut Vec::new()
-                ));
+                    &mut Vec::new(),
+                );
             } else {
                 let absent = GestureInput {
                     pose: None,
@@ -452,13 +442,13 @@ fn missing_packets_clear_pose_history_and_a_lowered_pose_does_not_deploy() {
                         GestureCommands::default()
                     );
                 }
-                assert!(!commit_input(
+                commit_input(
                     &mut state,
                     GestureCommands::default(),
                     Some(absent),
                     &CONFIG,
-                    &mut Vec::new()
-                ));
+                    &mut Vec::new(),
+                );
             }
             let recovered = GestureInput {
                 pose: Some(LOWERED),

@@ -1,16 +1,14 @@
+mod brake;
 mod current;
 mod review;
 mod seated;
 
 use std::f32::consts::FRAC_PI_2;
 
-use glam::Vec2;
-
 use super::*;
 use crate::controllers::{
     frame::{ActionSetKind, HandFrame},
     mode::{OnFootVariant, VehicleClass, VehicleSeat},
-    vehicles::arm_steering::{combine, reserve_brake_pitch},
 };
 
 const CONFIG: WingsuitGesturesConfig = WingsuitGesturesConfig::new();
@@ -333,37 +331,6 @@ fn button_deployment_with_arms_down_does_not_close_the_suit() {
 }
 
 #[test]
-fn braking_reserves_pitch_and_cannot_close_the_suit() {
-    let mut h = History::new(SUIT);
-    h.arm();
-    let entering = h.observe(Some(BRAKE));
-    assert!(entering.reserve_pitch && !entering.brake);
-    let braking = h.hold(BRAKE, 12);
-    assert!(braking.iter().any(|c| c.brake));
-    assert!(
-        braking
-            .iter()
-            .all(|c| c.transition.is_none() && c.reserve_pitch)
-    );
-    let halfway = FlightPose {
-        palm_roll_deg: [40.0; 2],
-        ..FLIGHT
-    };
-    assert!(h.observe(Some(halfway)).reserve_pitch);
-    assert!(h.observe(Some(halfway)).reserve_pitch);
-    let released = h.observe(Some(FLIGHT));
-    assert!(!released.brake && !released.reserve_pitch);
-    assert!(!h.observe(Some(FLIGHT)).reserve_pitch);
-    assert_eq!(
-        combine(
-            Vec2::new(0.2, 0.3),
-            reserve_brake_pitch(Some(Vec2::new(0.4, 1.0)), true)
-        ),
-        Vec2::new(0.6, 0.3)
-    );
-}
-
-#[test]
 fn a_single_withdrawn_arm_and_the_deadzone_do_not_close() {
     let mut h = History::new(SUIT);
     h.arm();
@@ -621,7 +588,7 @@ fn the_palm_roll_ignores_raising_and_sweeping_the_arms() {
             .all(|v| (v - 80.0).abs() < 1e-2),
         "{pose:?}"
     );
-    assert!(pose.braking_palms(&CONFIG, false), "{pose:?}");
+    assert!(pose.enters_brake(&CONFIG), "{pose:?}");
 }
 
 #[test]

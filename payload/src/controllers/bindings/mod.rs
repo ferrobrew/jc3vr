@@ -985,7 +985,7 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
             &controls,
             &mut step.desired,
         );
-        let reserve_pitch = flight::commit(
+        flight::commit(
             state
                 .flight
                 .as_mut()
@@ -1010,7 +1010,6 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
             &mut step.desired,
             dt,
             step.grapple_held,
-            reserve_pitch,
         );
         // A committed step walks Rico through the game's animation; the drive sets his speed.
         if config.body.rig.steps.enabled {

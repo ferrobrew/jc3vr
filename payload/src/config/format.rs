@@ -319,7 +319,6 @@ angle_rad = [0.01]
 
 [controllers.vehicles.wingsuit_gestures]
 flight_angle_deg = [35.0]
-brake_hysteresis_deg = [12.0]
 
 [controllers.weapons.snatch.yank]
 min_distance_m = [0.12]

@@ -43,7 +43,6 @@ pub(crate) fn finish_tick(
     desired: &mut Vec<Desired>,
     dt: f32,
     grapple_held: bool,
-    reserve_brake_pitch: bool,
 ) {
     let Some(active) = hands::active_hands_raw() else {
         return;
@@ -182,15 +181,7 @@ pub(crate) fn finish_tick(
     let last = state.status.arms.map(|a| a.arms);
     let engaged = last.flatten().is_some();
     let was_held = state.status.arms.is_some_and(|a| a.held_for_grapple);
-    let arms = arm_tick(
-        mode,
-        controls,
-        &active,
-        desired,
-        last,
-        grapple_held,
-        reserve_brake_pitch,
-    );
+    let arms = arm_tick(mode, controls, &active, desired, last, grapple_held);
     // SAFETY: the vehicles' finish runs in the binding stage, on the game thread before the world
     // update.
     unsafe {

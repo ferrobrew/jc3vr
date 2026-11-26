@@ -164,7 +164,7 @@ fn a_seated_glide_is_a_flight_pose_wherever_the_head_looks() {
     for sample in [GLIDE, GLIDE_LOOKING_ASIDE] {
         let pose = measure(sample);
         assert!(flight(pose, &CONFIG), "{pose:?}");
-        assert!(!pose.braking_palms(&CONFIG, false), "{pose:?}");
+        assert!(!pose.enters_brake(&CONFIG), "{pose:?}");
         assert!(!pose.withdrawn(&CONFIG), "{pose:?}");
     }
 }
@@ -173,7 +173,7 @@ fn a_seated_glide_is_a_flight_pose_wherever_the_head_looks() {
 fn seated_hands_turned_to_the_wind_brake() {
     for sample in BRAKES {
         let pose = measure(sample);
-        assert!(pose.braking_palms(&CONFIG, false), "{pose:?}");
+        assert!(pose.enters_brake(&CONFIG), "{pose:?}");
         assert!(
             pose.lateral
                 .into_iter()
@@ -196,6 +196,15 @@ fn the_recorded_flight_arms_and_brakes_without_a_neutral() {
     assert_eq!(h.state.phase(), GesturePhase::Armed);
     assert!(h.hold(measure(BRAKES[1]), 6).iter().any(|c| c.brake));
     assert_eq!(h.state.phase(), GesturePhase::Braking);
+}
+
+#[test]
+fn the_recorded_brake_engages_straight_from_the_entry_without_a_glide() {
+    let mut h = History::new(SUIT);
+    h.hold(measure(ENTRY), 4);
+    assert!(h.hold(measure(BRAKES[0]), 6).iter().any(|c| c.brake));
+    assert_eq!(h.state.phase(), GesturePhase::Braking);
+    assert!(!h.state.armed);
 }
 
 #[test]

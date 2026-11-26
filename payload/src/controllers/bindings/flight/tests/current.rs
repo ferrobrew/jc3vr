@@ -127,13 +127,13 @@ fn grapple_deployment_retracts_only_the_active_wire_without_releasing_dual_tethe
             }
         }
         let before = desired.clone();
-        assert!(!commit_input(
+        commit_input(
             &mut state,
             commands,
             Some(observation),
             &CONFIG,
-            &mut desired
-        ));
+            &mut desired,
+        );
         if denial == 0 {
             assert_eq!(&desired[..2], &before[3..]);
             assert_eq!(desired[2].target.action, OPEN_WINGSUIT);
@@ -148,13 +148,13 @@ fn grapple_deployment_retracts_only_the_active_wire_without_releasing_dual_tethe
             )));
             observation.mode = SUIT;
             observation.deploy_grapple = false;
-            assert!(!commit_input(
+            commit_input(
                 &mut state,
                 commands,
                 Some(observation),
                 &CONFIG,
-                &mut desired
-            ));
+                &mut desired,
+            );
             retract_committed_wire(&mut state, || {
                 panic!("suit acknowledgement cannot retract again")
             });
@@ -196,13 +196,7 @@ fn evaluation_and_commit_retain_current_availability_without_emitting_actions() 
             let commands = evaluate_input(&mut state, calibration(), Some(input), &CONFIG);
             assert_eq!(commands, GestureCommands::default());
             let mut desired = Vec::new();
-            assert!(!commit_input(
-                &mut state,
-                commands,
-                Some(input),
-                &CONFIG,
-                &mut desired
-            ));
+            commit_input(&mut state, commands, Some(input), &CONFIG, &mut desired);
             assert!(desired.is_empty());
             assert_eq!(state.current(), expected);
         }
@@ -222,13 +216,13 @@ fn a_canopy_flight_pose_cuts_the_canopy_before_the_suit() {
     }
     assert_eq!(commands.transition, Some(SuitTransition::Deploy));
     let mut desired = Vec::new();
-    assert!(!commit_input(
+    commit_input(
         &mut state,
         commands,
         Some(observation),
         &CONFIG,
-        &mut desired
-    ));
+        &mut desired,
+    );
     assert_eq!(
         desired,
         vec![Desired {
@@ -248,13 +242,13 @@ fn a_canopy_flight_pose_cuts_the_canopy_before_the_suit() {
             continue;
         }
         let mut desired = Vec::new();
-        assert!(!commit_input(
+        commit_input(
             &mut state,
             commands,
             Some(observation),
             &CONFIG,
-            &mut desired
-        ));
+            &mut desired,
+        );
         assert_eq!(
             desired,
             vec![Desired {
@@ -288,13 +282,13 @@ fn a_hang_releases_the_line_before_the_suit_request() {
             want: Want::Hold(1.0),
         })
         .to_vec();
-    assert!(!commit_input(
+    commit_input(
         &mut state,
         commands,
         Some(observation),
         &CONFIG,
-        &mut desired
-    ));
+        &mut desired,
+    );
     assert_eq!(
         desired,
         vec![Desired {
@@ -308,7 +302,7 @@ fn a_hang_releases_the_line_before_the_suit_request() {
     assert!(retracted);
     assert!(!state.retract_active_wire);
     // A retry in the deploy window does not retract a line the player fired since.
-    assert!(!commit_input(
+    commit_input(
         &mut state,
         GestureCommands {
             transition: Some(SuitTransition::Deploy),
@@ -316,8 +310,8 @@ fn a_hang_releases_the_line_before_the_suit_request() {
         },
         Some(observation),
         &CONFIG,
-        &mut Vec::new()
-    ));
+        &mut Vec::new(),
+    );
     assert!(!state.retract_active_wire);
     let mut retried = false;
     retract_committed_wire(&mut state, || retried = true);
@@ -336,7 +330,7 @@ fn late_input_changes_remove_current_and_cancel_pending_commands() {
             ..input(SUIT)
         };
         let commands = evaluate_input(&mut state, calibration(), Some(original), &CONFIG);
-        assert!(commands.brake && commands.reserve_pitch);
+        assert!(commands.brake);
         assert_eq!(state.current(), GestureAvailability::CloseAndBrake);
         let mut late = Some(original);
         let mut config = CONFIG;
@@ -364,10 +358,7 @@ fn late_input_changes_remove_current_and_cancel_pending_commands() {
             _ => late.as_mut().unwrap().sample.time_ns += 1,
         }
         let mut desired = Vec::new();
-        assert!(
-            !commit_input(&mut state, commands, late, &config, &mut desired),
-            "{denial}"
-        );
+        commit_input(&mut state, commands, late, &config, &mut desired);
         assert!(desired.is_empty(), "{denial}");
         assert_eq!(
             state.current(),
@@ -495,12 +486,12 @@ fn actual_packet_evaluate_and_commit_apply_late_canopy_staleness_and_claims() {
     assert_eq!(commands, GestureCommands::default());
     assert_eq!(state.current(), GestureAvailability::CloseAndBrake);
     let mut desired = Vec::new();
-    assert!(!commit(&mut state, commands, &tick, &mut desired));
+    commit(&mut state, commands, &tick, &mut desired);
     assert!(desired.is_empty());
     assert_eq!(state.current(), GestureAvailability::CloseAndBrake);
 
     tick.grabs[0] = Some(GrabVolume::Foregrip);
-    assert!(!commit(&mut state, commands, &tick, &mut desired));
+    commit(&mut state, commands, &tick, &mut desired);
     assert_eq!(state.current(), GestureAvailability::Unavailable);
     tick.grabs = [None; 2];
     let commands = evaluate(&mut state, &tick, &[]);
@@ -510,7 +501,7 @@ fn actual_packet_evaluate_and_commit_apply_late_canopy_staleness_and_claims() {
         want: Want::Hold(1.0),
     });
     let expected = desired.clone();
-    assert!(!commit(&mut state, commands, &tick, &mut desired));
+    commit(&mut state, commands, &tick, &mut desired);
     assert_eq!(desired, expected);
     assert_eq!(state.current(), GestureAvailability::Unavailable);
 
@@ -529,7 +520,7 @@ fn actual_packet_evaluate_and_commit_apply_late_canopy_staleness_and_claims() {
         let commands = evaluate(&mut state, &changed_tick, &[]);
         assert_eq!(commands, GestureCommands::default());
         assert_eq!(state.current(), GestureAvailability::Unavailable);
-        assert!(!commit(&mut state, commands, &changed_tick, &mut desired));
+        commit(&mut state, commands, &changed_tick, &mut desired);
         assert_eq!(state.current(), GestureAvailability::Unavailable);
     }
     let commands = evaluate(&mut state, &tick, &[]);
@@ -554,16 +545,11 @@ fn actual_packet_evaluate_and_commit_apply_late_canopy_staleness_and_claims() {
         (stale.sequence, expired_at)
     ));
     tick.frame = &stale;
-    assert!(!commit(&mut state, commands, &tick, &mut desired));
+    commit(&mut state, commands, &tick, &mut desired);
     assert_eq!(state.current(), GestureAvailability::Unavailable);
     assert!(desired.is_empty());
     flight_pose::unavailable();
     assert_eq!(evaluate(&mut state, &tick, &[]), GestureCommands::default());
-    assert!(!commit(
-        &mut state,
-        GestureCommands::default(),
-        &tick,
-        &mut desired
-    ));
+    commit(&mut state, GestureCommands::default(), &tick, &mut desired);
     assert_eq!(state.current(), GestureAvailability::Unavailable);
 }

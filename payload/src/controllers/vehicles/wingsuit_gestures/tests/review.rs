@@ -161,7 +161,8 @@ fn interrupt(h: &mut History, interruption: Interruption) {
 }
 
 #[test]
-fn brake_entry_and_release_require_fresh_arming_after_every_interruption() {
+fn a_held_brake_pose_brakes_again_after_an_interruption_and_after_leaving_the_suit_needs_a_release()
+{
     let mut interruptions = vec![
         Interruption::Reset,
         Interruption::Unavailable,
@@ -207,19 +208,24 @@ fn brake_entry_and_release_require_fresh_arming_after_every_interruption() {
         h.arm();
         assert!(h.hold(BRAKE, 6).iter().any(|command| command.brake));
         interrupt(&mut h, interruption);
+        if matches!(
+            interruption,
+            Interruption::CanopyMode | Interruption::Falling
+        ) {
+            assert!(
+                h.hold(BRAKE, 20)
+                    .iter()
+                    .all(|command| *command == GestureCommands::default()),
+                "{interruption:?}"
+            );
+            h.observe(Some(FLIGHT));
+        }
+        let resumed = h.hold(BRAKE, 6);
+        assert!(!resumed[0].brake, "{interruption:?}");
         assert!(
-            h.hold(BRAKE, 20)
-                .iter()
-                .all(|command| *command == GestureCommands::default()),
+            resumed.iter().any(|command| command.brake),
             "{interruption:?}"
         );
-        h.arm();
-        let entering = h.observe(Some(BRAKE));
-        assert!(
-            entering.reserve_pitch && !entering.brake,
-            "{interruption:?}"
-        );
-        assert!(h.hold(BRAKE, 6).iter().any(|command| command.brake));
     }
 }
 
@@ -297,7 +303,7 @@ fn dwell_entry_boundaries_and_gaps_are_independent_of_the_poll_interval() {
     sample.sequence += 1;
     sample.time_ns = 1_250_000_000;
     let entry = state.step(observation(sample, Some(BRAKE)), &config);
-    assert!(entry.reserve_pitch && !entry.brake);
+    assert!(!entry.brake);
     sample.sequence += 1;
     sample.time_ns = 1_375_000_000;
     assert!(state.step(observation(sample, Some(BRAKE)), &config).brake);
@@ -464,7 +470,7 @@ fn repeated_samples_retain_only_held_commands_and_cancellation_does_not_rearm_th
     let same = observation(h.sample, Some(BRAKE));
     for _ in 0..20 {
         let command = h.state.step(same, &CONFIG);
-        assert!(command.brake && command.reserve_pitch && command.transition.is_none());
+        assert!(command.brake && command.transition.is_none());
     }
     for cancel in [
         GestureInput {
@@ -701,8 +707,6 @@ fn config_endpoints_and_pose_hysteresis_boundaries_remain_separated() {
             flight_roll_deg: 15.0,
             brake_roll_deg: 40.0,
             brake_roll_max_deg: 100.0,
-            brake_hysteresis_deg: 2.0,
-            pitch_release_roll_deg: 0.0,
             neutral_dwell_s: 0.05,
             flight_dwell_s: 0.10,
             close_dwell_s: 0.15,
@@ -723,8 +727,6 @@ fn config_endpoints_and_pose_hysteresis_boundaries_remain_separated() {
             flight_roll_deg: 60.0,
             brake_roll_deg: 85.0,
             brake_roll_max_deg: 165.0,
-            brake_hysteresis_deg: 14.0,
-            pitch_release_roll_deg: 60.0,
             neutral_dwell_s: 0.50,
             flight_dwell_s: 1.0,
             close_dwell_s: 1.0,
@@ -748,16 +750,11 @@ fn config_endpoints_and_pose_hysteresis_boundaries_remain_separated() {
             ..CONFIG
         },
         WingsuitGesturesConfig {
-            pitch_release_roll_deg: CONFIG.flight_roll_deg + 1.0,
+            flight_roll_deg: CONFIG.brake_roll_deg,
             ..CONFIG
         },
         WingsuitGesturesConfig {
-            flight_roll_deg: CONFIG.brake_roll_deg - CONFIG.brake_hysteresis_deg,
-            ..CONFIG
-        },
-        WingsuitGesturesConfig {
-            brake_roll_max_deg: 165.0,
-            brake_hysteresis_deg: 15.0,
+            brake_roll_max_deg: 165.1,
             ..CONFIG
         },
         WingsuitGesturesConfig {
@@ -790,7 +787,7 @@ fn config_endpoints_and_pose_hysteresis_boundaries_remain_separated() {
     assert!(h.hold(BRAKE, 6).iter().any(|command| command.brake));
     let retained = FlightPose {
         lateral: [CONFIG.flight_lateral_span - CONFIG.pose_hysteresis_span; 2],
-        palm_roll_deg: [CONFIG.brake_roll_deg - CONFIG.brake_hysteresis_deg; 2],
+        palm_roll_deg: [CONFIG.flight_roll_deg + 0.01; 2],
         ..FLIGHT
     };
     assert!(h.observe(Some(retained)).brake);
@@ -798,26 +795,11 @@ fn config_endpoints_and_pose_hysteresis_boundaries_remain_separated() {
         lateral: [retained.lateral[0] - 0.001; 2],
         ..retained
     };
-    let output = h.observe(Some(released));
-    assert!(!output.brake && output.reserve_pitch);
-    assert!(!h.observe(Some(FLIGHT)).reserve_pitch);
+    assert!(!h.observe(Some(released)).brake);
     assert!(h.hold(BRAKE, 6).iter().any(|command| command.brake));
-    let beyond_angle = FlightPose {
-        palm_roll_deg: [CONFIG.brake_roll_deg - CONFIG.brake_hysteresis_deg - 0.01; 2],
+    let flat = FlightPose {
+        palm_roll_deg: [CONFIG.flight_roll_deg; 2],
         ..FLIGHT
     };
-    let output = h.observe(Some(beyond_angle));
-    assert!(!output.brake && output.reserve_pitch);
-    let pitch = Some(Vec2::new(-0.8, 0.9));
-    assert_eq!(reserve_brake_pitch(pitch, false), pitch);
-    assert_eq!(reserve_brake_pitch(None, true), None);
-    assert_eq!(reserve_brake_pitch(pitch, true), Some(Vec2::new(-0.8, 0.0)));
-    assert_eq!(
-        combine(Vec2::new(-0.5, -0.7), reserve_brake_pitch(pitch, true)),
-        Vec2::new(-1.0, -0.7)
-    );
-    assert_eq!(
-        combine(Vec2::new(0.2, -0.3), reserve_brake_pitch(None, true)),
-        Vec2::new(0.2, -0.3)
-    );
+    assert!(!h.observe(Some(flat)).brake);
 }
