@@ -1,0 +1,21 @@
+# The tooling's tuning: `ToolingTuning` in `src/tuning.rs`, whose fields say what each value does.
+# Every key is required and no other is accepted. Lengths are metres and times seconds.
+
+[director]
+instant_teleport_range_m = 400.0
+time_scale_step = 2.0
+
+[bodies]
+rico_radius_m = 8.0
+hand_radius_m = 3.0
+max_bodies = 32
+walk_steps = 8
+min_slice = 256
+intro_repeat_s = 5.0
+rest_speed_sq = 1.0e-6
+
+[body_state]
+repeat_after_s = 5.0
+
+[stage]
+arrived_frames = 60

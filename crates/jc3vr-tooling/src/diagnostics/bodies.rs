@@ -4,9 +4,10 @@
 //! applies ([`jc3vr_body::controllers::telemetry::note_force`]), a viewer can show what Rico
 //! touches and how it moves.
 //!
-//! A walk of every body slot streams the world's whole body array, so each step walks an eighth of
-//! the slots to discover bodies and reads only the kept set otherwise: a body is found within eight
-//! steps of coming near, and a held body joins at once. The step's cost is recorded with it.
+//! A walk of every body slot streams the world's whole body array, so each step walks a share of the
+//! slots to discover bodies ([`walk_steps`](crate::tuning::BodiesTuning::walk_steps)) and reads
+//! only the kept set otherwise: a body is found within that many steps of coming near, and a held
+//! body joins at once. The step's cost is recorded with it.
 
 use std::time::{Duration, Instant};
 
@@ -31,6 +32,8 @@ use tracking_format::{
     model::Pose,
 };
 
+use crate::tuning::TOOLING;
+
 /// Record the bodies near Rico and what his hands hold, after a simulation step.
 ///
 /// # Safety
@@ -43,6 +46,7 @@ pub(crate) unsafe fn after_step() {
     }
     let _timing = frame_timing::scope(Slot::Recorder);
     let started = Instant::now();
+    let tuning = &TOOLING.get().bodies;
     // SAFETY: the game thread outside the physics step, where the local player is stable.
     let Some(character) = (unsafe { Character::GetLocalPlayerCharacter().as_ref() }) else {
         return;
@@ -53,19 +57,19 @@ pub(crate) unsafe fn after_step() {
     let hands = Hand::BOTH.map(|hand| physics::body_pose(hand).map(|(position, _)| position));
     let held = physical_hands::held_bodies();
     let near = |aabb: &Aabb| {
-        aabb.distance(origin) <= RICO_RADIUS_M
+        aabb.distance(origin) <= tuning.rico_radius_m
             || hands
                 .iter()
                 .flatten()
-                .any(|hand| aabb.distance(*hand) <= HAND_RADIUS_M)
+                .any(|hand| aabb.distance(*hand) <= tuning.hand_radius_m)
     };
 
     let mut state = NEAR.lock();
     let state = &mut *state;
     state.step += 1;
     let slice_len = (state.peak.saturating_add(1))
-        .div_ceil(WALK_STEPS)
-        .max(MIN_SLICE);
+        .div_ceil(tuning.walk_steps)
+        .max(tuning.min_slice);
     let mut candidates: Vec<u32> = state.kept.iter().map(|(id, _)| *id).collect();
     // SAFETY: forwarded from the caller.
     let slice = unsafe {
@@ -104,7 +108,9 @@ pub(crate) unsafe fn after_step() {
             let distance = hands
                 .iter()
                 .flatten()
-                .map(|hand| body.aabb.distance(*hand) - (HAND_RADIUS_M - RICO_RADIUS_M))
+                .map(|hand| {
+                    body.aabb.distance(*hand) - (tuning.hand_radius_m - tuning.rico_radius_m)
+                })
                 .fold(body.aabb.distance(origin), f32::min);
             (holding[0] || holding[1] || near(&body.aabb)).then_some(Reading {
                 id,
@@ -121,9 +127,10 @@ pub(crate) unsafe fn after_step() {
             .cmp(&unheld(b))
             .then(a.distance.total_cmp(&b.distance))
     });
-    read.truncate(MAX_BODIES);
+    read.truncate(tuning.max_bodies);
 
     let now = Instant::now();
+    let intro_repeat = Duration::from_secs_f32(tuning.intro_repeat_s);
     let mut kept = Vec::with_capacity(read.len());
     let mut samples = Vec::with_capacity(read.len());
     let mut intros = Vec::new();
@@ -131,15 +138,15 @@ pub(crate) unsafe fn after_step() {
         id, body, holding, ..
     } in &read
     {
-        let resting = body.linear.length_squared() < REST_SPEED_SQ
-            && body.angular.length_squared() < REST_SPEED_SQ;
+        let resting = body.linear.length_squared() < tuning.rest_speed_sq
+            && body.angular.length_squared() < tuning.rest_speed_sq;
         let previous = state
             .kept
             .iter()
             .find(|(kept, _)| kept == id)
             .map(|(_, kept)| *kept);
         let introduced = match previous {
-            Some(p) if now.saturating_duration_since(p.introduced) < INTRO_REPEAT => p.introduced,
+            Some(p) if now.saturating_duration_since(p.introduced) < intro_repeat => p.introduced,
             _ => {
                 intros.push((*id, previous.is_some()));
                 now
@@ -206,29 +213,13 @@ pub(crate) unsafe fn after_step() {
     })));
 }
 
-/// Within this of Rico's root, or [`HAND_RADIUS_M`] of a hand, a dynamic body is near.
-const RICO_RADIUS_M: f32 = 8.0;
-const HAND_RADIUS_M: f32 = 3.0;
-
-/// The most bodies kept, held ones first and then the nearest.
-const MAX_BODIES: usize = 32;
-
-/// Each step walks this share of the slots, and at least [`MIN_SLICE`] of them.
-const WALK_STEPS: u32 = 8;
-const MIN_SLICE: u32 = 256;
-
-/// A kept body is introduced again after this long, so a stretch of a recording names its bodies.
-const INTRO_REPEAT: Duration = Duration::from_secs(5);
-
-/// Below this squared speed, in either velocity, a body is at rest.
-const REST_SPEED_SQ: f32 = 1.0e-6;
-
 /// The near set between steps.
 struct Near {
     step: u64,
     cursor: u32,
     peak: u32,
-    /// The kept bodies by id, at most [`MAX_BODIES`].
+    /// The kept bodies by id, at most the tuning's
+    /// [`max_bodies`](crate::tuning::BodiesTuning::max_bodies).
     kept: Vec<(u32, Kept)>,
 }
 
