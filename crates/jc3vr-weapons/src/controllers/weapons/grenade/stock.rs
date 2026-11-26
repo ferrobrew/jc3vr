@@ -73,14 +73,14 @@ impl Stock {
 
     /// What giving a grenade back does to the stock. A full stock refuses, except under unlimited
     /// ammunition, where the grenade is put away without a count to raise.
-    pub fn give_back(self) -> Result<Change, Full> {
+    pub fn give_back(self) -> Result<Change, StockError> {
         let room = self
             .capacity
             .is_none_or(|capacity| self.count() < capacity && self.reserve < capacity);
         match (room, self.unlimited) {
             (true, _) => Ok(Change::Reserve(self.reserve.saturating_add(1))),
             (false, true) => Ok(Change::None),
-            (false, false) => Err(Full),
+            (false, false) => Err(StockError::Full),
         }
     }
 }
@@ -96,88 +96,108 @@ pub enum Change {
     Magazine(i32),
 }
 
-/// The stock is at its capacity.
+/// Why the stock could not be read or changed.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct Full;
+pub enum StockError {
+    /// There is no local player to read.
+    NoPlayer,
+    /// The player's hand-grenade slot holds no weapon.
+    NoGrenadeWeapon,
+    /// The grenade weapon's ammunition kind is unlimited or outside the inventory's arrays, so the
+    /// inventory keeps no reserve of it.
+    NoAmmunitionKind,
+    /// The stock has no grenade to take.
+    Empty,
+    /// The stock is at its capacity.
+    Full,
+}
 
-impl fmt::Display for Full {
+impl fmt::Display for StockError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "grenade stock: the pouch is full")
+        f.write_str(match self {
+            StockError::NoPlayer => "grenade stock: there is no local player",
+            StockError::NoGrenadeWeapon => "grenade stock: the player has no grenade weapon",
+            StockError::NoAmmunitionKind => {
+                "grenade stock: the grenade weapon's ammunition is not kept in the inventory"
+            }
+            StockError::Empty => "grenade stock: the pouch is empty",
+            StockError::Full => "grenade stock: the pouch is full",
+        })
     }
 }
 
-impl std::error::Error for Full {}
+impl std::error::Error for StockError {}
 
 /// Whether the pouch has a grenade to give, as the last read found the stock. `false` before the
 /// first read.
 pub(crate) fn in_stock() -> bool {
-    CACHED.lock().is_some_and(Stock::may_draw)
+    CACHED.lock().stock.is_some_and(Stock::may_draw)
 }
 
 /// The stock as the last read found it.
 pub fn last() -> Option<Stock> {
-    *CACHED.lock()
+    CACHED.lock().stock
 }
 
-/// Read the local player's stock and remember it for [`in_stock`].
-pub(super) fn refresh(game: &GameTick<'_>) -> Option<Stock> {
-    let stock = LocalPlayer::get(game).and_then(|owner| read(&owner));
-    *CACHED.lock() = stock;
+/// Read the local player's stock and remember it for [`in_stock`] and [`last`].
+pub(super) fn refresh(game: &GameTick<'_>) -> Result<Stock, StockError> {
+    let stock = LocalPlayer::get(game)
+        .ok_or(StockError::NoPlayer)
+        .and_then(|owner| read(&owner));
+    remember(stock);
     stock
 }
 
-/// Take one grenade for a pouch draw that has already put its item in the hand. `false`, with the
-/// stock unchanged, when there was none to take.
-pub(super) fn take(game: &GameTick<'_>) -> bool {
-    let Some(mut owner) = LocalPlayer::get(game) else {
-        return false;
-    };
-    let Some(stock) = read(&owner) else {
-        return false;
-    };
-    let Some(change) = stock.draw() else {
-        return false;
-    };
+/// Remember the local player's stock as it is now, for [`in_stock`] and [`last`].
+pub(super) fn update(game: &GameTick<'_>) {
+    remember(
+        LocalPlayer::get(game)
+            .ok_or(StockError::NoPlayer)
+            .and_then(|owner| read(&owner)),
+    );
+}
+
+/// Take one grenade for a pouch draw that has already put its item in the hand, leaving the stock
+/// unchanged on an error.
+pub(super) fn take(game: &GameTick<'_>) -> Result<(), StockError> {
+    let mut owner = LocalPlayer::get(game).ok_or(StockError::NoPlayer)?;
+    let stock = read(&owner)?;
+    let change = stock.draw().ok_or(StockError::Empty)?;
     apply(&mut owner, change);
-    let _ = refresh(game);
-    true
+    update(game);
+    Ok(())
 }
 
 /// Whether a grenade could be given back now.
-pub(super) fn may_give_back(game: &GameTick<'_>) -> Result<(), Full> {
-    let stock = LocalPlayer::get(game)
-        .and_then(|owner| read(&owner))
-        .ok_or(Full)?;
-    stock.give_back().map(|_| ())
+pub(super) fn may_give_back(game: &GameTick<'_>) -> Result<(), StockError> {
+    let owner = LocalPlayer::get(game).ok_or(StockError::NoPlayer)?;
+    read(&owner)?.give_back().map(drop)
 }
 
 /// Give one grenade back to the stock, up to its capacity.
-pub(super) fn give_back(game: &GameTick<'_>) -> Result<(), Full> {
-    let mut owner = LocalPlayer::get(game).ok_or(Full)?;
-    let stock = read(&owner).ok_or(Full)?;
-    let change = stock.give_back()?;
+pub(super) fn give_back(game: &GameTick<'_>) -> Result<(), StockError> {
+    let mut owner = LocalPlayer::get(game).ok_or(StockError::NoPlayer)?;
+    let change = read(&owner)?.give_back()?;
     apply(&mut owner, change);
-    let _ = refresh(game);
+    update(game);
     Ok(())
 }
 
 /// Set the stock to `count` grenades, kept in the reserve up to its capacity with the weapon's
-/// magazine emptied, through the game's own setters. Returns the count set, or `None` without a
-/// grenade weapon. Under unlimited ammunition the count is still written, though the draw ignores
-/// it.
-pub(crate) fn set(game: &GameTick<'_>, count: i32) -> Option<i32> {
-    let mut owner = LocalPlayer::get(game)?;
-    let stock = read(&owner)?;
-    let count = settable(stock, count);
+/// magazine emptied, through the game's own setters. Returns the count set. Under unlimited
+/// ammunition the count is still written, though the draw ignores it.
+pub(crate) fn set(game: &GameTick<'_>, count: i32) -> Result<i32, StockError> {
+    let mut owner = LocalPlayer::get(game).ok_or(StockError::NoPlayer)?;
+    let count = settable(read(&owner)?, count);
     apply(&mut owner, Change::Magazine(0));
     apply(&mut owner, Change::Reserve(count));
-    let _ = refresh(game);
-    Some(count)
+    update(game);
+    Ok(count)
 }
 
 /// The stock's capacity, for a fill, or `None` for an uncapped reserve.
 pub fn capacity() -> Option<i32> {
-    CACHED.lock().and_then(|stock| stock.capacity)
+    CACHED.lock().stock.and_then(|stock| stock.capacity)
 }
 
 /// The count a [`set`] to `count` writes: never below zero, nor above the reserve's capacity.
@@ -208,7 +228,29 @@ pub(super) unsafe fn consume_through_pickup(game: &GameTick<'_>, weapon: &mut We
     true
 }
 
-static CACHED: Mutex<Option<Stock>> = Mutex::new(None);
+/// Remember `stock`, a read just made, logging a failure whose reason differs from the last read's.
+fn remember(stock: Result<Stock, StockError>) {
+    let mut cached = CACHED.lock();
+    let failed = stock.err();
+    if let Some(error) = failed
+        && cached.failed != failed
+    {
+        tracing::debug!(target: "controllers", %error, "grenade: the stock could not be read");
+    }
+    cached.stock = stock.ok();
+    cached.failed = failed;
+}
+
+/// The last read of the stock, and why it failed when it did.
+struct Cached {
+    stock: Option<Stock>,
+    failed: Option<StockError>,
+}
+
+static CACHED: Mutex<Cached> = Mutex::new(Cached {
+    stock: None,
+    failed: None,
+});
 
 thread_local! {
     /// The mod's own consume is running ([`consume_through_pickup`]), which the pickup's gate lets
@@ -216,20 +258,26 @@ thread_local! {
     static PERMIT: Cell<bool> = const { Cell::new(false) };
 }
 
-/// Read `owner`'s stock, or `None` without a grenade weapon or with an ammunition kind outside the
-/// inventory's arrays.
-fn read(owner: &LocalPlayer<'_>) -> Option<Stock> {
-    let weapon = grenade_weapon(owner)?;
+/// Read `owner`'s stock.
+fn read(owner: &LocalPlayer<'_>) -> Result<Stock, StockError> {
+    let weapon = grenade_weapon(owner).ok_or(StockError::NoGrenadeWeapon)?;
     // SAFETY: the inventory's weapon lives with the local player, in the tick.
-    let kind = unsafe { engine::limited_ammo(weapon) }? as usize;
+    let kind =
+        unsafe { engine::limited_ammo(weapon) }.ok_or(StockError::NoAmmunitionKind)? as usize;
     let character = owner.character();
     let inventory = &character.m_Inventory;
-    let reserve = inventory.m_Ammunition.get(kind)?;
-    let cap = inventory.m_MaxAmmunition.get(kind)?;
+    let reserve = inventory
+        .m_Ammunition
+        .get(kind)
+        .ok_or(StockError::NoAmmunitionKind)?;
+    let cap = inventory
+        .m_MaxAmmunition
+        .get(kind)
+        .ok_or(StockError::NoAmmunitionKind)?;
     // SAFETY: as above.
     let unlimited = unsafe { character.HasUnlimitedAmmo() }
         || unsafe { weapon.m_Tuning.as_ref() }.is_some_and(|tuning| tuning.m_unlimited_ammo);
-    Some(Stock {
+    Ok(Stock {
         magazine: weapon.m_MagazineAmmo.max(0),
         reserve: (*reserve).max(0),
         capacity: (*cap > 0).then_some(*cap),
@@ -351,9 +399,15 @@ mod tests {
             stock(0, 2, Some(4), false).give_back(),
             Ok(Change::Reserve(3))
         );
-        assert_eq!(stock(0, 4, Some(4), false).give_back(), Err(Full));
+        assert_eq!(
+            stock(0, 4, Some(4), false).give_back(),
+            Err(StockError::Full)
+        );
         // The magazine counts toward the capacity, as the HUD counts it.
-        assert_eq!(stock(1, 3, Some(4), false).give_back(), Err(Full));
+        assert_eq!(
+            stock(1, 3, Some(4), false).give_back(),
+            Err(StockError::Full)
+        );
         assert_eq!(
             stock(0, 9, None, false).give_back(),
             Ok(Change::Reserve(10))

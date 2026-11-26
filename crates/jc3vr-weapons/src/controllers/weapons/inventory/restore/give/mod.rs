@@ -224,8 +224,8 @@ pub(super) unsafe fn input_tick(game: &GameTick<'_>, owner: &mut Character, read
                 }
             }
             GiveRequest::Grenades(count) => match stock::set(game, count) {
-                Some(count) => format!("give: the grenade stock is {count}"),
-                None => "give: the player has no grenade weapon".to_owned(),
+                Ok(count) => format!("give: the grenade stock is {count}"),
+                Err(error) => format!("give: the grenade stock was not set: {error}"),
             },
             GiveRequest::RemovePlacedC4 => match unsafe { c4::remove_placed(owner) } {
                 Some(1) => "give: removed the one placed C4 charge".to_owned(),

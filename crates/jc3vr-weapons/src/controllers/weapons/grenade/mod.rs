@@ -337,7 +337,7 @@ pub(super) fn begin_tick(
         state.locker_frames = None;
         state.mouth = [None; 2];
     }
-    let _ = stock::refresh(game);
+    stock::update(game);
     locker::clear();
     if !inputs.acting {
         return Vec::new();
@@ -669,16 +669,23 @@ pub(super) fn report_native_throw(hand: Hand, release: Release) {
 ///
 /// In the input tick's game stage.
 fn draw_from_pouch(game: &GameTick<'_>, hand: Hand, tuning: &GrenadeTuning) -> bool {
-    if !stock::refresh(game).is_some_and(Stock::may_draw) {
-        tracing::info!(target: "controllers", hand = hand.label(), "grenade: the pouch is empty");
-        return false;
+    match stock::refresh(game) {
+        Ok(stock) if stock.may_draw() => {}
+        Ok(_) => {
+            tracing::info!(target: "controllers", hand = hand.label(), "grenade: the pouch is empty");
+            return false;
+        }
+        Err(error) => {
+            tracing::info!(target: "controllers", hand = hand.label(), %error, "grenade: the pouch gave nothing");
+            return false;
+        }
     }
     if !safe::draw(game, hand, tuning) {
         return false;
     }
-    if !stock::take(game) {
+    if let Err(error) = stock::take(game) {
         // The stock changed between the read and the take: the item goes back as it came.
-        tracing::warn!(target: "controllers", hand = hand.label(), "grenade: the stock emptied during the draw; the grenade goes back");
+        tracing::warn!(target: "controllers", hand = hand.label(), %error, "grenade: the stock changed during the draw; the grenade goes back");
         safe::return_held(hand);
         return false;
     }
