@@ -28,7 +28,7 @@ use re_utilities::hook_library::HookLibrary;
 use crate::{
     debug::pipeline_probes::record_main_color_mean,
     hooks::graphics_engine::{
-        probes::{PipelinePoint, pipeline_probes},
+        probes::{PipelinePoint, capture_point},
         reconstruction,
     },
     stereo::config::STEREO_CONFIG,
@@ -61,7 +61,7 @@ fn atmospheric_scattering_draw(
     if scene_pass {
         crate::debug::pipeline_probes::record_global_constants("scene");
         record_main_color_mean("pre_atmosphere");
-        pipeline_probes().capture_point(PipelinePoint::BeforeAtmosphere);
+        capture_point(PipelinePoint::BeforeAtmosphere);
     }
 
     // SAFETY: `rc` is the live render context for this dispatch; the caller (the engine's draw
@@ -74,7 +74,7 @@ fn atmospheric_scattering_draw(
     }
 
     if scene_pass {
-        pipeline_probes().capture_point(PipelinePoint::AfterAtmosphere);
+        capture_point(PipelinePoint::AfterAtmosphere);
         record_main_color_mean("post_atmosphere");
     }
 }

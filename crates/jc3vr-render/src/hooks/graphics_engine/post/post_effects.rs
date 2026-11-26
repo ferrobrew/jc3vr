@@ -31,7 +31,7 @@ use crate::{
     hooks::graphics_engine::{
         capture::{POST_STAGE_DOF, POST_STAGE_MB, capture_post_stage, previews_visible},
         config::POST_FX_CONFIG,
-        probes::{AntiAliasingSide, PipelinePoint, pipeline_probes, scoped},
+        probes::{self, AntiAliasingSide, PipelinePoint, capture_point, scoped},
     },
     stereo::{self, config::STEREO_CONFIG, draw_index, far_phase, later_scene},
 };
@@ -163,7 +163,7 @@ fn render_block_post_effects_draw(this: *mut c_void, ctx: *mut c_void, info: *mu
         return 0;
     }
     crate::debug::pipeline_probes::record_main_color_mean("post_block_entry");
-    pipeline_probes().capture_point(PipelinePoint::MainColor);
+    capture_point(PipelinePoint::MainColor);
     #[cfg(feature = "profiler")]
     let _gpu = crate::profiler::gpu::detail_interval("post: world block");
     RENDER_BLOCK_POST_EFFECTS_DRAW
@@ -224,8 +224,10 @@ fn anti_aliasing_apply(
     mgr: *mut c_void,
     slot: *mut u32,
 ) -> u64 {
-    // SAFETY: the AA hook receives the current chain slot as a live in/out parameter.
-    pipeline_probes().capture_anti_aliasing_slot(AntiAliasingSide::Before, mgr, unsafe { *slot });
+    if let Some(probes) = probes::armed() {
+        // SAFETY: the AA hook receives the current chain slot as a live in/out parameter.
+        probes.capture_anti_aliasing_slot(AntiAliasingSide::Before, mgr, unsafe { *slot });
+    }
     let force_smaa_1x = stereo::active();
     let fsr = FSR_CONFIG.query(|fsr| match fsr.antialiasing {
         AntiAliasing::Fsr => Some(TemporalResolve::Fsr(fsr.sharpen.then_some(fsr.sharpness))),
@@ -255,7 +257,8 @@ fn anti_aliasing_apply(
     }
 
     let r = scoped(
-        |body| pipeline_probes().anti_aliasing_scope(unsafe { (*this).m_Mode }, body),
+        probes::armed(),
+        |probes, body| probes.anti_aliasing_scope(unsafe { (*this).m_Mode }, body),
         || {
             #[cfg(feature = "profiler")]
             let gpu = crate::profiler::gpu::detail_interval("post: engine anti-aliasing");
@@ -265,9 +268,10 @@ fn anti_aliasing_apply(
                 .call(this, ctx, pec, mgr, slot);
             #[cfg(feature = "profiler")]
             drop(gpu);
-            // SAFETY: the AA result updates the same live slot parameter.
-            pipeline_probes()
-                .capture_anti_aliasing_slot(AntiAliasingSide::After, mgr, unsafe { *slot });
+            if let Some(probes) = probes::armed() {
+                // SAFETY: the AA result updates the same live slot parameter.
+                probes.capture_anti_aliasing_slot(AntiAliasingSide::After, mgr, unsafe { *slot });
+            }
             r
         },
     );
@@ -349,7 +353,7 @@ fn dof_apply(
     if skip_dof {
         return input;
     }
-    let slot = pipeline_probes().depth_of_field_scope(pec, input, mgr, &mut || {
+    let mut apply = || {
         #[cfg(feature = "profiler")]
         let gpu = crate::profiler::gpu::detail_interval("post: blur and composite");
         let slot = if dof_no_reproject {
@@ -374,7 +378,11 @@ fn dof_apply(
         #[cfg(feature = "profiler")]
         drop(gpu);
         slot
-    });
+    };
+    let slot = match probes::armed() {
+        Some(probes) => probes.depth_of_field_scope(pec, input, mgr, &mut apply),
+        None => apply(),
+    };
     capture_post_result(POST_STAGE_DOF, mgr, slot);
     slot
 }

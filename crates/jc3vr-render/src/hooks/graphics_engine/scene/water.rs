@@ -58,7 +58,7 @@ use re_utilities::hook_library::HookLibrary;
 use windows::Win32::System::Threading::GetCurrentThreadId;
 
 use crate::{
-    hooks::graphics_engine::probes::{PipelinePoint, pipeline_probes},
+    hooks::graphics_engine::probes::{PipelinePoint, capture_point},
     stereo::{
         config::STEREO_CONFIG,
         draw_index,
@@ -145,7 +145,7 @@ fn nv_water_high_end_draw(
         let pass = unsafe { (*rc).m_ActiveRenderPass };
         let water_surface = pass == RenderPassId::RP_WATER as i32;
         if water_surface {
-            pipeline_probes().capture_point(PipelinePoint::BeforeWater);
+            capture_point(PipelinePoint::BeforeWater);
         }
         let probe = if water_surface {
             WaterGpuProbe::begin(pass, draw_index())
@@ -159,7 +159,7 @@ fn nv_water_high_end_draw(
             probe.finish();
         }
         if water_surface {
-            pipeline_probes().capture_point(PipelinePoint::AfterWater(draw_index()));
+            capture_point(PipelinePoint::AfterWater(draw_index()));
         }
     }
 }
@@ -447,7 +447,7 @@ unsafe fn nv_water_per_eye(
     };
 
     if water_surface {
-        pipeline_probes().capture_point(PipelinePoint::BeforeWater);
+        capture_point(PipelinePoint::BeforeWater);
     }
     let replay = water_surface.then(begin_water_surface);
     let stage_camera = STEREO_CONFIG.lock().single_pass.water_camera_per_eye;
@@ -477,7 +477,7 @@ unsafe fn nv_water_per_eye(
             probe.finish();
         }
         if water_surface {
-            pipeline_probes().capture_point(PipelinePoint::AfterWater(eye));
+            capture_point(PipelinePoint::AfterWater(eye));
         }
     })
 }

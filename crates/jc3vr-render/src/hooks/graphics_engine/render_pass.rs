@@ -29,7 +29,7 @@ use crate::{
         trace::{TraceEvent, TraceState, tracing_active},
     },
     hooks::graphics_engine::{
-        probes::{PipelinePoint, pipeline_probes, scoped},
+        probes::{self, PipelinePoint, capture_point, scoped},
         screen::reconstruction,
     },
     stereo::{
@@ -66,12 +66,12 @@ pub(super) fn hook_library() -> HookLibrary {
 #[detour(address = jc3gi::graphics_engine::render_pass::RenderPass::Draw_ADDRESS)]
 fn render_pass_draw(this: *mut RenderPass) {
     let pass_id = unsafe { this.as_ref() }.map(|pass| pass.m_Index);
-    // SAFETY: `this` is the live render pass the engine is drawing.
-    unsafe {
-        pipeline_probes().pass_draw_scope(this, pass_id, &mut || {
-            RENDER_PASS_DRAW.get().unwrap().call(this)
-        });
-    }
+    scoped(
+        probes::armed(),
+        // SAFETY: `this` is the live render pass the engine is drawing.
+        |probes, body| unsafe { probes.pass_draw_scope(this, pass_id, body) },
+        || RENDER_PASS_DRAW.get().unwrap().call(this),
+    );
     let Some(id) = pass_id else { return };
     if !tracing_active() || draw_index() != 0 {
         return;
@@ -145,8 +145,9 @@ fn do_draw(this: *mut RenderPass, ctx: *mut RenderContext, color_mask: u32) -> b
     let pass_id = unsafe { (*this).m_Index };
     let previous_pass = crate::stereo::single_pass::set_current_pass(pass_id);
     scoped(
+        probes::armed(),
         // SAFETY: `this` and `ctx` are the live pass and render context of this draw call.
-        |body| unsafe { pipeline_probes().pass_walk_scope(this, ctx, pass_id, body) },
+        |probes, body| unsafe { probes.pass_walk_scope(this, ctx, pass_id, body) },
         || {
             // Capture-gated producer diagnostic for the passes that feed the water's reflection
             // inputs; inert for every other pass and for an unarmed capture.
@@ -166,7 +167,7 @@ fn do_draw(this: *mut RenderPass, ctx: *mut RenderContext, color_mask: u32) -> b
             };
             crate::stereo::single_pass::restore_current_pass(previous_pass);
             if sun_pass {
-                pipeline_probes().capture_point(PipelinePoint::AfterSun);
+                capture_point(PipelinePoint::AfterSun);
             }
             drop(window);
             if diff {
@@ -258,14 +259,17 @@ fn draw_render_pass_range(
         && last == RenderPassId::RP_LAST_GBUFFER as i32
         && !share_frame
         && !far_phase)
-        .then(|| pipeline_probes().near_patch_bracket())
+        .then(|| {
+            let probes = probes::armed()?;
+            Some((probes, probes.near_patch_bracket()?))
+        })
         .flatten();
     let draw = |lo, hi| {
-        if let Some(bracket) = bracket
+        if let Some((probes, bracket)) = bracket
             && (lo..hi).contains(&bracket.pass)
             && !skipped(bracket.pass)
         {
-            pipeline_probes().draw_near_patch_bracket(bracket, lo, hi, &skipped, &draw_runs);
+            probes.draw_near_patch_bracket(bracket, lo, hi, &skipped, &draw_runs);
         } else {
             draw_runs(lo, hi);
         }
@@ -319,7 +323,7 @@ fn capture_geometry_range(first: i32, last: i32) {
         && last == RenderPassId::RP_LAST_GBUFFER as i32
         && !STEREO_STATE.lock().far_phase
     {
-        pipeline_probes().capture_point(PipelinePoint::Geometry);
+        capture_point(PipelinePoint::Geometry);
     }
 }
 

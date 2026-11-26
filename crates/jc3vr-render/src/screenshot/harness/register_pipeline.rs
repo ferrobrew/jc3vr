@@ -3,8 +3,9 @@
 //! render hooks' [`PipelineProbes`] table at startup, with the benchmark's sink for the GPU
 //! timestamp lane.
 //!
-//! Each probe forwards to the capture module that owns it, which decides for itself whether a
-//! capture is armed. The table holds no state of its own.
+//! The hooks call the table only once a request has armed it ([`crate::capture_arming`]), except
+//! for the shader tag. Each probe forwards to the capture module that owns it, which decides for
+//! itself whether its capture is pending. The table holds no state of its own.
 
 use std::ffi::c_void;
 

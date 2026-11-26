@@ -26,7 +26,7 @@ use crate::{
     hooks::graphics_engine::{
         capture::{EGUI_DEBUG_RENDER_STATE, eye_capture_fresh, mark_eye_capture, previews_visible},
         post_draw,
-        probes::{pipeline_probes, scoped},
+        probes::{self, scoped},
     },
     screenshot::CaptureSource,
     stereo::{layout::collapse_active, single_pass::set_collapse_ui_eye},
@@ -193,7 +193,8 @@ fn graphics_engine_draw(graphics_engine: *mut GraphicsEngine, dt: f32) {
 #[detour(address = GraphicsEngine::HandleDrawThreadTask_ADDRESS)]
 fn handle_draw_thread_task(engine: *mut GraphicsEngine, param: *mut DrawThreadTaskParam) -> u32 {
     scoped(
-        |body| pipeline_probes().draw_task_scope(body),
+        probes::armed_for_benchmark(),
+        |probes, body| probes.draw_task_scope(body),
         || {
             // The task records the frame its dispatch drew, whatever the game thread prepares
             // meanwhile.
@@ -525,8 +526,9 @@ fn mod_post_draw(context: *mut Context) {
                         .as_ref()
                         .filter(|_| !blitted || eye_capture_wanted(eye as usize));
                     mark_eye_capture(eye as usize, dst.is_some());
-                    pipeline_probes()
-                        .note_eye(eye as usize, !crate::stereo::far_phase() && dst.is_some());
+                    if let Some(probes) = probes::armed() {
+                        probes.note_eye(eye as usize, !crate::stereo::far_phase() && dst.is_some());
+                    }
                     if let Some(dst) = dst {
                         let region = D3D11_BOX {
                             left: eye * half_w,
@@ -569,7 +571,9 @@ fn mod_post_draw(context: *mut Context) {
                     _ => false,
                 };
                 mark_eye_capture(index, copied);
-                pipeline_probes().note_eye(index, copied && !crate::stereo::far_phase());
+                if let Some(probes) = probes::armed() {
+                    probes.note_eye(index, copied && !crate::stereo::far_phase());
+                }
             }
             #[cfg(feature = "profiler")]
             drop(copies_gpu);
@@ -594,15 +598,18 @@ fn mod_post_draw(context: *mut Context) {
                 }
             }
 
-            if last_near_dispatch && let Some(device) = graphics_engine.m_Device.as_ref() {
+            if last_near_dispatch
+                && let Some(probes) = probes::armed()
+                && let Some(device) = graphics_engine.m_Device.as_ref()
+            {
                 if collapse_active() || crate::stereo::dispatch::selected_eye().is_some() {
-                    pipeline_probes().capture_frame(
+                    probes.capture_frame(
                         &device.m_Device,
                         &context.m_Context,
                         CaptureSource::Full(&src.m_Texture),
                     );
                 } else if let [Some(left), Some(right)] = &eye_textures {
-                    pipeline_probes().capture_frame(
+                    probes.capture_frame(
                         &device.m_Device,
                         &context.m_Context,
                         CaptureSource::Eyes([left, right]),
@@ -652,7 +659,7 @@ fn mod_post_draw(context: *mut Context) {
 fn eye_capture_wanted(eye: usize) -> bool {
     VR_CONFIG.query(|c| c.mirror && c.mirror_view.shows_eye(eye))
         || crate::screenshot::is_requested()
-        || pipeline_probes().wants_eyes()
+        || probes::armed().is_some_and(|probes| probes.wants_eyes())
         || previews_visible()
         || post_draw::recorder_wants_eye_captures()
 }

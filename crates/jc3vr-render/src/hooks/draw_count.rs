@@ -22,7 +22,7 @@ use re_utilities::hook_library::HookLibrary;
 
 use crate::{
     debug::trace::{DrawCounts, TraceEvent, TraceState},
-    hooks::graphics_engine::{clustered_lighting, probes::pipeline_probes, reconstruction},
+    hooks::graphics_engine::{clustered_lighting, probes, reconstruction},
 };
 
 // Per-pass tallies: bumped alongside the global per-eye counters, then read + reset on each
@@ -113,7 +113,9 @@ fn draw_indexed(
 fn draw(ctx: *mut c_void, prim: i32, arg2: i32, arg3: i32) {
     bump_draw();
     DRAW.get().unwrap().call(ctx, prim, arg2, arg3);
-    pipeline_probes().after_engine_draw();
+    if let Some(probes) = probes::armed() {
+        probes.after_engine_draw();
+    }
 }
 
 // The six below forward opaque args transparently -- see the module doc and draw.pyxis.

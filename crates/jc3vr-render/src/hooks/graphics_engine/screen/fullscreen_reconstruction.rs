@@ -61,7 +61,10 @@ use jc3gi::graphics_engine::{
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{
-    hooks::graphics_engine::{probes::pipeline_probes, reconstruction},
+    hooks::graphics_engine::{
+        probes::{self, scoped},
+        reconstruction,
+    },
     stereo::{
         config::STEREO_CONFIG,
         single_pass::{ambient_occlusion, screen_space_reflection},
@@ -86,8 +89,11 @@ fn ssao_block_draw(this: *mut RenderBlockSSAO, rc: *mut RenderContext, info: *co
     let enabled = STEREO_CONFIG.query(|c| c.single_pass.ssao_per_eye)
         && crate::stereo::layout::collapse_active();
     let _rows = enabled.then(ambient_occlusion::bind_eye_rows).flatten();
-    pipeline_probes()
-        .ambient_occlusion_scope(&mut || SSAO_BLOCK_DRAW.get().unwrap().call(this, rc, info));
+    scoped(
+        probes::armed(),
+        |probes, body| probes.ambient_occlusion_scope(body),
+        || SSAO_BLOCK_DRAW.get().unwrap().call(this, rc, info),
+    );
 }
 
 /// `CRenderBlockScreenSpaceReflection::Draw`, run once with each eye's rows bound for its rewritten
@@ -113,8 +119,11 @@ fn ssr_draw(
     let _rows = context
         .filter(|_| enabled)
         .and_then(screen_space_reflection::bind_eye_rows);
-    pipeline_probes()
-        .screen_space_reflection_scope(&mut || SSR_DRAW.get().unwrap().call(this, rc, info));
+    scoped(
+        probes::armed(),
+        |probes, body| probes.screen_space_reflection_scope(body),
+        || SSR_DRAW.get().unwrap().call(this, rc, info),
+    );
 }
 
 /// `CRenderBlockScreenSpaceSubSurfaceSkin::Draw`, split per eye.

@@ -39,7 +39,7 @@ use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{
-    hooks::graphics_engine::{probes::pipeline_probes, ss_decal},
+    hooks::graphics_engine::{probes::registered, ss_decal},
     stereo::{
         config::STEREO_CONFIG,
         single_pass::{
@@ -534,8 +534,9 @@ fn create_hull_program(
         && let Some(params) = unsafe { params.as_ref() }
         && !params.m_Code.is_null()
         && (4..=16 * 1024 * 1024).contains(&params.m_Size)
+        && let Some(probes) = registered()
     {
-        pipeline_probes().tag_shader(program, unsafe {
+        probes.tag_shader(program, unsafe {
             std::slice::from_raw_parts(params.m_Code, params.m_Size as usize)
         });
     }
@@ -624,8 +625,9 @@ fn create_domain_program(
         && let Some(params) = unsafe { params.as_ref() }
         && !params.m_Code.is_null()
         && (4..=16 * 1024 * 1024).contains(&params.m_Size)
+        && let Some(probes) = registered()
     {
-        pipeline_probes().tag_shader(program, unsafe {
+        probes.tag_shader(program, unsafe {
             std::slice::from_raw_parts(params.m_Code, params.m_Size as usize)
         });
     }

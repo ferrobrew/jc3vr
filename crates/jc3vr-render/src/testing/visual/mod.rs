@@ -14,6 +14,7 @@ use parking_lot::Mutex;
 use serde::Serialize;
 
 use crate::{
+    capture_arming::{Arming, arm},
     far_field::FAR_FIELD_CONFIG,
     fsr::FSR_CONFIG,
     hooks::graphics_engine::config::{EXPOSURE_CONFIG, POST_FX_CONFIG},
@@ -178,6 +179,7 @@ pub(crate) struct FrameObservation {
 }
 
 pub fn enqueue(request: Request) {
+    arm(Arming::Capture);
     let mut state = STATE.lock();
     let id = request.id();
     if state.contains_id(id) || result_path(id).is_some_and(|path| path.exists()) {

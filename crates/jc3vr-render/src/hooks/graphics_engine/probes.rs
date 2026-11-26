@@ -4,10 +4,16 @@
 //! The engine-pipeline detours (the passes, the G-buffer range, the post-effects chain, the
 //! screen-space blocks, the water, the post-draw's eye copies, the clock, the draw counts, and the
 //! render-block type switch) call into the [`PipelineProbes`] table at fixed points. The capture
-//! side registers its table ([`register_pipeline_probes`]) before the hooks install; until then, and
-//! in a build or test that registers none, every probe is inert: a scope runs its body, a capture
-//! does nothing, and a query answers no. Each probe decides for itself whether a capture is armed,
-//! so the hooks call them unconditionally.
+//! side registers its table ([`register_pipeline_probes`]) before the hooks install.
+//!
+//! Every probe but the shader tag is inert until the capture side receives a request, so the hooks
+//! reach the table through [`armed`] (or [`armed_for_benchmark`] for the probes a benchmark reads),
+//! which reads the capture arming flag ([`crate::capture_arming`]) with one relaxed load and
+//! answers `None` while nothing has asked for a capture. Unarmed, or with no table registered, the
+//! hooks make no call into the table: a scope runs its body directly, a capture is skipped, and a
+//! query answers no. Armed, each probe still decides for itself whether its capture is pending. The
+//! shader tag ([`registered`]) records state a later capture reads, so it runs whenever a table is
+//! registered.
 
 use std::{ffi::c_void, sync::OnceLock};
 
@@ -22,7 +28,10 @@ use jc3gi::graphics_engine::{
 };
 use windows::Win32::Graphics::Direct3D11::{ID3D11Device, ID3D11DeviceChild, ID3D11DeviceContext};
 
-use crate::screenshot::CaptureSource;
+use crate::{
+    capture_arming::{capture_armed, capture_or_benchmark_armed},
+    screenshot::CaptureSource,
+};
 
 /// A point in the frame where the capture side may keep a stage image.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -61,23 +70,24 @@ pub(crate) struct NearPatchBracket {
     pub(crate) tessellated: bool,
 }
 
-/// What the capture tooling does at the pipeline's seams. Every method has an inert default, which
-/// is what an unregistered table does.
+/// What the capture tooling does at the pipeline's seams. Every method has an inert default.
 ///
 /// A scope method runs `body` exactly once, at the point its doc names, and brackets it with the
 /// probe's own work.
 pub(crate) trait PipelineProbes: Sync {
-    /// Brackets one draw-thread task (`CGraphicsEngine::HandleDrawThreadTask`).
+    /// Brackets one draw-thread task (`CGraphicsEngine::HandleDrawThreadTask`). Called while a
+    /// capture or a benchmark is armed.
     fn draw_task_scope(&self, body: &mut dyn FnMut()) {
         body();
     }
 
     /// Runs before the render pass changes its render-block type, while the outgoing run's type is
-    /// still current.
+    /// still current. Called while a capture or a benchmark is armed.
     #[cfg(feature = "profiler")]
     fn before_block_type_switch(&self) {}
 
-    /// Runs after the render pass changed its render-block type to `next`.
+    /// Runs after the render pass changed its render-block type to `next`. Called while a capture
+    /// or a benchmark is armed.
     #[cfg(feature = "profiler")]
     fn after_block_type_switch(&self, _next: *mut RenderBlockTypeBase) {}
 
@@ -197,7 +207,8 @@ pub(crate) trait PipelineProbes: Sync {
     ) {
     }
 
-    /// Records the bytecode a shader program was created from.
+    /// Records the bytecode a shader program was created from. Called whenever a table is
+    /// registered, armed or not, so a capture can name the shaders created before it.
     fn tag_shader(&self, _program: &ID3D11DeviceChild, _bytecode: &[u8]) {}
 
     /// Whether a capture waits for this frame's eyes, so their captures must be kept fresh.
@@ -231,21 +242,54 @@ pub(crate) fn register_pipeline_probes(probes: &'static dyn PipelineProbes) {
     }
 }
 
-/// The registered pipeline probes, or the inert table when none is registered.
+/// The registered probes while a capture has armed them, `None` otherwise.
 #[inline]
-pub(crate) fn pipeline_probes() -> &'static dyn PipelineProbes {
-    match PROBES.get() {
-        Some(probes) => *probes,
-        None => &Unregistered,
+pub(crate) fn armed() -> Option<&'static dyn PipelineProbes> {
+    if !capture_armed() {
+        return None;
+    }
+    registered()
+}
+
+/// The registered probes while a capture or a benchmark has armed them, `None` otherwise: for the
+/// probes a benchmark reads (the draw-task scope and the render-block type switch).
+#[inline]
+pub(crate) fn armed_for_benchmark() -> Option<&'static dyn PipelineProbes> {
+    if !capture_or_benchmark_armed() {
+        return None;
+    }
+    registered()
+}
+
+/// The registered probes, armed or not: for the shader tag.
+#[inline]
+pub(crate) fn registered() -> Option<&'static dyn PipelineProbes> {
+    PROBES.get().copied()
+}
+
+/// Keeps the stage image of `point` while a capture is armed.
+#[inline]
+pub(crate) fn capture_point(point: PipelinePoint) {
+    if let Some(probes) = armed() {
+        probes.capture_point(point);
     }
 }
 
 /// Runs `body` inside a probe scope (one of the [`PipelineProbes`] scope methods, called through
-/// `scope`) and returns what `body` returned.
-pub(crate) fn scoped<R>(scope: impl FnOnce(&mut dyn FnMut()), body: impl FnOnce() -> R) -> R {
+/// `scope` on `probes`) and returns what `body` returned. With no `probes` (unarmed), runs `body`
+/// directly.
+#[inline]
+pub(crate) fn scoped<R>(
+    probes: Option<&'static dyn PipelineProbes>,
+    scope: impl FnOnce(&'static dyn PipelineProbes, &mut dyn FnMut()),
+    body: impl FnOnce() -> R,
+) -> R {
+    let Some(probes) = probes else {
+        return body();
+    };
     let mut body = Some(body);
     let mut result = None;
-    scope(&mut || {
+    scope(probes, &mut || {
         if let Some(body) = body.take() {
             result = Some(body());
         }
@@ -254,8 +298,3 @@ pub(crate) fn scoped<R>(scope: impl FnOnce(&mut dyn FnMut()), body: impl FnOnce(
 }
 
 static PROBES: OnceLock<&'static dyn PipelineProbes> = OnceLock::new();
-
-/// The table in force until the capture side registers its own: every probe inert.
-struct Unregistered;
-
-impl PipelineProbes for Unregistered {}
