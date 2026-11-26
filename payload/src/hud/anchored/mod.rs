@@ -48,7 +48,10 @@ use crate::{
             config::GlanceConfig,
             glance::{Glance, fade, looking},
         },
-        weapons::wheel::{self, CROSS_LINGER},
+        weapons::{
+            hud_feed::hand_ammo as ammo_sample,
+            wheel::{self, CROSS_LINGER},
+        },
     },
     hooks,
     hud::{
@@ -346,7 +349,7 @@ impl State {
         let grip = |hand: Hand| hands[hand.index()].map(|h| h.grip);
 
         let guns = late::rendered_guns();
-        let sampled = hand_ammo::sampled().filter(|_| cfg.ammo.enabled);
+        let sampled = ammo_sample::sampled().filter(|_| cfg.ammo.enabled);
         self.status.counts = [false; 2];
         for hand in Hand::BOTH {
             let count = &mut self.counts[hand.index()];

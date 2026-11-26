@@ -10,13 +10,14 @@
 //! own hint; two at once (each hand armed its own) sit apart toward their own hands' sides, the
 //! left hand's on the left ([`layout`]).
 //!
-//! The weapon handling's input tick publishes each hand's hint ([`publish`]), with the icons named
-//! by weapon id. The draw reads the icons from the archives ([`crate::hud::game_icons`]), paints a
-//! texture per hand when its hint changes, and draws it on the panel's plane after the panel, with
-//! a short fade. A hint whose icons are not all loaded is not drawn: it never falls back to text.
+//! The weapon handling's input tick publishes each hand's hint
+//! ([`crate::controllers::weapons::hud_feed::grab_hint`]), with the icons named by weapon id. The
+//! draw reads the icons from the archives ([`crate::hud::game_icons`]), paints a texture per hand
+//! when its hint changes, and draws it on the panel's plane after the panel, with a short fade. A hint whose icons are not all loaded is not drawn: it never falls back to text.
 
 mod layout;
 mod paint;
+pub(crate) mod register_gate;
 
 use std::{
     sync::Arc,
@@ -34,9 +35,14 @@ use windows::Win32::Graphics::Direct3D11::ID3D11DeviceContext;
 
 use crate::{
     config::Config,
-    controllers::{frame::Hand, loadout::Socket, scheme, summary::glance::fade},
+    controllers::{
+        frame::Hand,
+        scheme,
+        summary::glance::fade,
+        weapons::hud_feed::grab_hint::{self as feed, Hint},
+    },
     hud::{
-        game_icons::{self, IconId, Image, Lookup},
+        game_icons::{self, Image, Lookup},
         gameplay_hints_active,
         grab_hint::{
             layout::{hint_corners, panel_frame},
@@ -48,70 +54,6 @@ use crate::{
         world_quads_active,
     },
 };
-
-/// What one hand's grip would take, or swap, and where on the body.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) enum Hint {
-    /// The grip takes the item with this icon from `place`.
-    Take { icon: IconId, place: Place },
-    /// Letting go docks the held weapon (`incoming`) on `place`, and the weapon docked there
-    /// (`outgoing`) falls clear.
-    Swap {
-        incoming: IconId,
-        outgoing: IconId,
-        place: Place,
-    },
-}
-
-impl Hint {
-    fn icons(self) -> impl Iterator<Item = IconId> {
-        let (first, second) = match self {
-            Hint::Take { icon, .. } => (icon, None),
-            Hint::Swap {
-                incoming, outgoing, ..
-            } => (incoming, Some(outgoing)),
-        };
-        std::iter::once(first).chain(second)
-    }
-
-    /// The name of the place the hint is about, drawn above it.
-    fn label(self) -> &'static str {
-        match self {
-            Hint::Take { place, .. } | Hint::Swap { place, .. } => place.name(),
-        }
-    }
-}
-
-/// A place on the body a hand takes from or docks on.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) enum Place {
-    Socket(Socket),
-    GrenadePouch,
-    C4Pouch,
-    MagazinePouch,
-}
-
-impl Place {
-    /// The place's name as the hint shows it, in sentence case.
-    pub const fn name(self) -> &'static str {
-        match self {
-            Place::Socket(socket) => socket.display_name(),
-            Place::GrenadePouch => "Grenade pouch",
-            Place::C4Pouch => "C4 pouch",
-            Place::MagazinePouch => "Magazine pouch",
-        }
-    }
-}
-
-/// Publish each hand's hint, by [`Hand::index`]. Called each input tick of the weapon handling.
-pub(crate) fn publish(hints: [Option<Hint>; 2]) {
-    *SAMPLE.lock() = gameplay_hints_active().then(|| (hints, Instant::now()));
-}
-
-/// Forget the hints: the weapon handling stood down.
-pub(crate) fn clear() {
-    *SAMPLE.lock() = None;
-}
 
 /// Draw the hints for `eye` over `target`, on the plane of the panel drawn this frame (`panel`, its
 /// corners). Called from the HUD's draw after the panel, with the engine context mutex held.
@@ -130,7 +72,7 @@ pub(crate) fn draw(
             && gameplay_hints_active()
             && scheme::is_controllers();
         if !active {
-            clear();
+            feed::clear();
         }
         state.prepare(context, device, active.then_some(panel).flatten());
     }
@@ -143,8 +85,6 @@ const STALE: Duration = Duration::from_millis(250);
 
 /// The hint's fade in and out, seconds.
 const FADE_S: f32 = 0.1;
-
-static SAMPLE: Mutex<Option<([Option<Hint>; 2], Instant)>> = Mutex::new(None);
 
 static STATE: Mutex<State> = Mutex::new(State::new());
 
@@ -253,10 +193,7 @@ impl State {
             self.hands = [HandHint::new(); 2];
             return;
         };
-        let wanted = SAMPLE
-            .lock()
-            .filter(|(_, at)| now.duration_since(*at) <= STALE)
-            .map_or([None; 2], |(hints, _)| hints);
+        let wanted = feed::fresh(now, STALE);
         if wanted.iter().all(Option::is_none) && self.hands.iter().all(|h| h.alpha <= 0.0) {
             self.hands = [HandHint::new(); 2];
             return;
@@ -335,7 +272,10 @@ static FAILURES: LogOnce = LogOnce::new("hud grab hint");
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::hud::label;
+    use crate::{
+        controllers::{loadout::Socket, weapons::hud_feed::grab_hint::Place},
+        hud::label,
+    };
 
     /// Every place's name fits across a take's texture, the narrower of the two, with room for its
     /// halo.

@@ -1,23 +1,17 @@
-//! The ammunition readout of a gun in a hand: its magazine and its reserve, as a small counter the
-//! mod draws above that hand.
+//! The ammunition counter the mod draws above a hand holding a gun: its magazine and its reserve,
+//! painted from the input tick's sample of each hand's gun
+//! ([`crate::controllers::weapons::hud_feed::hand_ammo`]).
 //!
 //! The game's weapon readout shows the wielded weapon alone, and the game wields nothing in the
 //! seats whose update skips the wielded weapon. Each hand holds a weapon of its own under the
 //! two-handed inventory, so every gun gets the mod's counter, in every mode, and the game's readout
-//! is not drawn: the two hands' guns read alike. The input tick samples each hand's gun
-//! ([`observe`], on the game thread where the table keeps the guns alive), and the HUD draws a
-//! counter above each hand holding one: the wielded weapon, a gun armed beside it, and each gun of
-//! the game's own dual-wield pair, which share one magazine. A magazine out of its gun reads as
-//! empty. The sample carries each gun's model box too, so the HUD can place the counter over the
-//! middle of the drawn gun.
-
-use jc3gi::equipment::weapon::WeaponBase;
-use parking_lot::Mutex;
+//! is not drawn: the two hands' guns read alike. The HUD draws a counter above each hand holding
+//! one: the wielded weapon, a gun armed beside it, and each gun of the game's own dual-wield pair,
+//! which share one magazine. A magazine out of its gun reads as empty.
 
 use crate::{
-    controllers::weapons::{engine::reserve, regions::engine::model_box},
+    controllers::weapons::hud_feed::hand_ammo::HandAmmo,
     hud::{
-        anchored::place::ModelBox,
         label,
         palette::{ALERT, TEXT, premultiply, with_alpha},
     },
@@ -25,70 +19,6 @@ use crate::{
 
 /// The counter texture's size, texels.
 pub(crate) const COUNT_TEXELS: (u32, u32) = (192, 40);
-
-/// One hand's gun as the input tick read it.
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub(crate) struct HandAmmo {
-    /// The gun's address.
-    pub weapon: usize,
-    /// The rounds in its magazine.
-    pub magazine: i32,
-    /// The magazine is out of the gun ([`WeaponBase::m_WeaponIsWithoutMagazine`]).
-    pub out: bool,
-    /// The rounds of its ammunition its user carries.
-    pub reserve: i32,
-    /// Its model's box, when it has a model.
-    pub model: Option<ModelBox>,
-}
-
-/// The input tick's sample: each hand's gun, by [`Hand::index`](crate::controllers::frame::Hand::index).
-#[derive(Debug, Copy, Clone, PartialEq, Default)]
-pub(crate) struct HandsAmmo {
-    pub hands: [Option<HandAmmo>; 2],
-}
-
-/// Sample the gun in each hand, by [`Hand::index`](crate::controllers::frame::Hand::index), for the HUD. Called each input tick of the
-/// weapon handling.
-///
-/// # Safety
-///
-/// Each address must be a live weapon of the local player, read on the game thread before the
-/// world update.
-pub(crate) unsafe fn observe(guns: [Option<usize>; 2]) {
-    let previous = *SAMPLE.lock();
-    let mut hands = [None; 2];
-    for (index, gun) in guns.into_iter().enumerate() {
-        let Some(address) = gun else { continue };
-        let Some(weapon) = (unsafe { (address as *const WeaponBase).as_ref() }) else {
-            continue;
-        };
-        // A gun's model does not change while it is held, so its box is read once per gun.
-        let known = previous
-            .and_then(|p| p.hands[index])
-            .filter(|h| h.weapon == address)
-            .and_then(|h| h.model);
-        let model =
-            known.or_else(|| unsafe { model_box(weapon) }.map(|(min, max)| ModelBox { min, max }));
-        hands[index] = Some(HandAmmo {
-            weapon: address,
-            magazine: weapon.m_MagazineAmmo,
-            out: weapon.m_WeaponIsWithoutMagazine,
-            reserve: unsafe { reserve(weapon) },
-            model,
-        });
-    }
-    *SAMPLE.lock() = Some(HandsAmmo { hands });
-}
-
-/// Forget the sample: the weapon handling stood down.
-pub(crate) fn clear() {
-    *SAMPLE.lock() = None;
-}
-
-/// The last sample.
-pub(crate) fn sampled() -> Option<HandsAmmo> {
-    *SAMPLE.lock()
-}
 
 /// What a counter shows, so it is repainted only when it changes.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -130,8 +60,6 @@ pub(crate) fn paint(width: u32, height: u32, key: CountKey) -> Vec<u8> {
     }
     texels
 }
-
-static SAMPLE: Mutex<Option<HandsAmmo>> = Mutex::new(None);
 
 /// The largest count drawn; more shows as this.
 const MAX_SHOWN: u32 = 9999;

@@ -11,9 +11,9 @@
 //! stereo-correct depth, so it shows through what is in front of the weapon and still reads as
 //! being where the weapon is.
 //!
-//! The inventory's input tick publishes the weapons and their places ([`publish`]); the marker is
-//! kept for as long as the table keeps the weapon, which forgets one left far away (the pins'
-//! forget distance). It fades in past arm's length, where the grip's own markers take over, keeps
+//! The inventory's input tick publishes the weapons and their places
+//! ([`crate::controllers::weapons::hud_feed::lost_weapons`]); the marker is kept for as long as
+//! the table keeps the weapon, which forgets one left far away (the pins' forget distance). It fades in past arm's length, where the grip's own markers take over, keeps
 //! a constant angular size, and only the nearest few are drawn.
 
 use std::time::{Duration, Instant};
@@ -25,10 +25,16 @@ use windows::Win32::Graphics::Direct3D11::ID3D11DeviceContext;
 
 use crate::{
     config::Config,
-    controllers::scheme,
+    controllers::{
+        scheme,
+        weapons::hud_feed::{
+            icon::IconId,
+            lost_weapons::{self, LostWeapon},
+        },
+    },
     hud::{
         anchored::place::upright_corners,
-        game_icons::{self, IconId, Lookup},
+        game_icons::{self, Lookup},
         grab_hint::{MARKER_TEXELS, paint_marker},
         log_once::LogOnce,
         quad::HudQuad,
@@ -36,19 +42,6 @@ use crate::{
         world_quads_active,
     },
 };
-
-/// A weapon the table has lying in the world.
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub(crate) struct LostWeapon {
-    /// Where it lies, in the world.
-    pub position: Vec3,
-    pub icon: IconId,
-}
-
-/// Publish the weapons lying in the world. Called each input tick of the inventory.
-pub(crate) fn publish(weapons: Vec<LostWeapon>) {
-    *SAMPLE.lock() = Some((weapons, Instant::now()));
-}
 
 /// Draw the markers for `eye` over `target`. Called from the HUD's draw, with the engine context
 /// mutex held.
@@ -121,8 +114,6 @@ const MAX_TEXTURES: usize = 16;
 /// How long a published list stays current without a newer one.
 const STALE: Duration = Duration::from_millis(500);
 
-static SAMPLE: Mutex<Option<(Vec<LostWeapon>, Instant)>> = Mutex::new(None);
-
 static STATE: Mutex<State> = Mutex::new(State {
     placed: Vec::new(),
     gpu: None,
@@ -152,15 +143,10 @@ impl State {
             return;
         };
         let now = Instant::now();
-        let placed = {
-            let sample = SAMPLE.lock();
-            let Some((weapons, _)) = sample
-                .as_ref()
-                .filter(|(_, at)| now.duration_since(*at) <= STALE)
-            else {
-                return;
-            };
+        let Some(placed) = lost_weapons::with_fresh(now, STALE, |weapons| {
             place(head, rotation * Vec3::Y, weapons)
+        }) else {
+            return;
         };
         if placed.is_empty() {
             return;

@@ -24,6 +24,7 @@ pub(crate) fn install() {
     // What the input tick reads from the HUD and the recorder, registered before any tick runs.
     hud::pointer::register_pointer::register();
     recorder::register_mark::register();
+    hud::grab_hint::register_gate::register();
     if controllers::install().is_err() {
         return;
     }

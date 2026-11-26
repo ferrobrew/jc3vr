@@ -33,7 +33,6 @@ payload/src/controllers/fingers/mod.rs -> payload
 payload/src/controllers/gamepad_setting.rs -> payload
 payload/src/controllers/glass/bullets.rs -> payload
 payload/src/controllers/glass/mod.rs -> payload
-payload/src/controllers/grab/markers.rs -> hud
 payload/src/controllers/hands/anchor.rs -> payload
 payload/src/controllers/hands/grip.rs -> payload
 payload/src/controllers/hands/ik/tests.rs -> payload
@@ -74,8 +73,6 @@ payload/src/controllers/vehicles/driver_aim.rs -> payload
 payload/src/controllers/vehicles/look_steer.rs -> payload
 payload/src/controllers/vehicles/mounted/runtime.rs -> payload
 payload/src/controllers/vehicles/rail/mod.rs -> payload
-payload/src/controllers/weapons/begin/hint.rs -> hud
-payload/src/controllers/weapons/begin/mod.rs -> hud
 payload/src/controllers/weapons/begin/mod.rs -> payload
 payload/src/controllers/weapons/c4/mod.rs -> payload
 payload/src/controllers/weapons/camera_kick.rs -> payload
@@ -93,11 +90,9 @@ payload/src/controllers/weapons/hold/pickup.rs -> payload
 payload/src/controllers/weapons/hold/use_item.rs -> payload
 payload/src/controllers/weapons/inventory/docked_view.rs -> payload
 payload/src/controllers/weapons/inventory/gives/mod.rs -> payload
-payload/src/controllers/weapons/inventory/mod.rs -> hud
 payload/src/controllers/weapons/inventory/mod.rs -> payload
 payload/src/controllers/weapons/inventory/reset.rs -> payload
 payload/src/controllers/weapons/inventory/restore/give/mod.rs -> payload
-payload/src/controllers/weapons/inventory/world.rs -> hud
 payload/src/controllers/weapons/reload/loose/mod.rs -> payload
 payload/src/controllers/weapons/reload/serial/mod.rs -> payload
 payload/src/controllers/weapons/scope/mod.rs -> payload

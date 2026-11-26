@@ -5,29 +5,26 @@
 //! and shows as its [`Shown`] says: faint while no hand is within reach of it, brighter once one
 //! is, brightest and a little larger on the target a squeeze would take, and solid while a hand
 //! holds it. A marker on a surface lies on it ([`Mark::normal`]). A marker with a label
-//! ([`Mark::label`]) has it drawn above it by the HUD ([`crate::hud::mark_labels`]) while a hand
-//! is at it.
+//! ([`Mark::label`]) has it drawn above it by the HUD ([`crate::hud::mark_labels`], from
+//! [`published_labels`]) while a hand is at it.
 //!
 //! Every marker is anchored at render time (`docs/mod/rendering/render-time-anchoring.md`): a point
 //! that rides with the player to the render-time head, one on a held gun to its hand's render-time
 //! grip, and only a point that lies in the world to the world.
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-use crate::{
-    controllers::{
-        cockpit::CockpitTransform,
-        frame::Hand,
-        grab::{Category, GripTarget, MarkAt, MarkStyle, Resolved, Shown},
-        hands::CockpitHand,
-        overlay::{
-            primitive::{
-                Anchor, DepthMode, Facing, HandPose, Primitive, Shape, Source, SpriteSize,
-            },
-            store,
-        },
+use parking_lot::Mutex;
+
+use crate::controllers::{
+    cockpit::CockpitTransform,
+    frame::Hand,
+    grab::{Category, GripTarget, MarkAt, MarkStyle, Resolved, Shown},
+    hands::CockpitHand,
+    overlay::{
+        primitive::{Anchor, DepthMode, Facing, HandPose, Primitive, Shape, Source, SpriteSize},
+        store,
     },
-    hud::mark_labels::{self, MarkLabel},
 };
 
 /// Where the tick's cockpit-frame points are placed for the overlay, and the hands that reach for
@@ -40,17 +37,38 @@ pub struct MarkerFrame {
     pub drawn: [Option<CockpitHand>; 2],
 }
 
+/// One marker's label as the markers publish it for the HUD.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub(crate) struct MarkLabel {
+    pub text: &'static str,
+    /// Where the marker is drawn.
+    pub at: Anchor,
+    /// How far above the marker's centre its edge is, metres: the label sits above that.
+    pub clearance: f32,
+}
+
 /// Submit the markers of `targets`, resolved for the hands as `resolved` says, and their labels.
 pub fn submit(targets: &[GripTarget], resolved: &[Resolved; 2], frame: &MarkerFrame) {
     let mut prims = primitives(targets, resolved, frame);
     store::submit(Source::GrabMarkers, &mut prims, MARKER_TTL);
-    mark_labels::publish(labels(targets, resolved, frame));
+    publish_labels(labels(targets, resolved, frame));
 }
 
 /// Take the markers down.
 pub fn clear() {
     store::clear(Source::GrabMarkers);
-    mark_labels::publish(Vec::new());
+    publish_labels(Vec::new());
+}
+
+/// The labels published no longer than `stale` before `now`, or none when the latest list is
+/// older or none was published.
+pub(crate) fn published_labels(now: Instant, stale: Duration) -> Vec<MarkLabel> {
+    LABELS
+        .lock()
+        .as_ref()
+        .filter(|(_, at)| now.duration_since(*at) <= stale)
+        .map(|(labels, _)| labels.clone())
+        .unwrap_or_default()
 }
 
 /// The labels of `targets`' labelled markers that a hand is within reach of, takes, or holds:
@@ -173,6 +191,11 @@ struct MarkState {
     held: bool,
 }
 
+/// Publish the labels to draw. Called each input tick of the markers.
+fn publish_labels(labels: Vec<MarkLabel>) {
+    *LABELS.lock() = Some((labels, Instant::now()));
+}
+
 fn state_of(index: usize, target: &GripTarget, resolved: &[Resolved; 2]) -> MarkState {
     let mut state = MarkState {
         held: target.held_by.is_some(),
@@ -252,6 +275,9 @@ pub(crate) fn test_frame() -> MarkerFrame {
 
 /// The markers are submitted at the input tick's rate, so they live a little past one tick.
 const MARKER_TTL: Duration = Duration::from_millis(150);
+
+/// The labels to draw, published at the input tick's rate with when they were published.
+static LABELS: Mutex<Option<(Vec<MarkLabel>, Instant)>> = Mutex::new(None);
 
 const XRAY: DepthMode = DepthMode::XRay {
     occluded_alpha: 0.4,

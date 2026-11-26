@@ -79,6 +79,7 @@ use crate::{
             dual_wield::single,
             engine as weapons_engine, grenade,
             hold::{armed, refs::Strong, use_item},
+            hud_feed::lost_weapons,
             inventory::{
                 config::InventoryConfig,
                 engine::ObjectKey,
@@ -90,7 +91,6 @@ use crate::{
             },
         },
     },
-    hud::lost_weapons,
 };
 
 /// The pin policy: the weapons the player let go of nearby are kept from the game's despawn while

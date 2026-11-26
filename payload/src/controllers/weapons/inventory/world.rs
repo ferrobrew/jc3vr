@@ -18,19 +18,17 @@
 use glam::Vec3;
 use jc3gi::{character::character::Character, equipment::weapon::WeaponBase};
 
-use crate::{
-    controllers::{
-        loadout::{ObjectAddress, live},
-        weapons::{
-            engine::gun_position,
-            hold::refs::{Strong, Weak},
-            inventory::{
-                engine::{self, Fate},
-                pins::{PinPlan, WorldWeapon},
-            },
+use crate::controllers::{
+    loadout::{ObjectAddress, live},
+    weapons::{
+        engine::gun_position,
+        hold::refs::{Strong, Weak},
+        hud_feed::{icon::IconId, lost_weapons::LostWeapon},
+        inventory::{
+            engine::{self, Fate},
+            pins::{PinPlan, WorldWeapon},
         },
     },
-    hud::{game_icons::IconId, lost_weapons::LostWeapon},
 };
 
 /// The inventory's references to the weapons it has seen.

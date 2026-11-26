@@ -4,8 +4,8 @@
 //! of the grab hint's haloed text ([`crate::hud::grab_hint`]), with no backing.
 //!
 //! The grip markers publish the labels at the input tick's rate with each marker's anchor
-//! ([`publish`]); the draw places them at render time from the same anchors the overlay resolves,
-//! so a label rides with its marker.
+//! ([`published_labels`]); the draw places them at render time from the same anchors the overlay
+//! resolves, so a label rides with its marker.
 
 use std::time::{Duration, Instant};
 
@@ -17,6 +17,7 @@ use windows::Win32::Graphics::Direct3D11::ID3D11DeviceContext;
 use crate::{
     config::Config,
     controllers::{
+        grab::markers::{MarkLabel, published_labels},
         overlay::{
             primitive::Anchor,
             render_poses,
@@ -33,21 +34,6 @@ use crate::{
         world_quads_active,
     },
 };
-
-/// One marker's label as the grip markers publish it.
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub(crate) struct MarkLabel {
-    pub text: &'static str,
-    /// Where the marker is drawn.
-    pub at: Anchor,
-    /// How far above the marker's centre its edge is, metres: the label sits above that.
-    pub clearance: f32,
-}
-
-/// Publish the labels to draw. Called each input tick of the grip markers.
-pub(crate) fn publish(labels: Vec<MarkLabel>) {
-    *SAMPLE.lock() = Some((labels, Instant::now()));
-}
 
 /// Draw the labels for `eye` over `target`. Called from the HUD's draw, with the engine context
 /// mutex held.
@@ -95,8 +81,6 @@ const STALE: Duration = Duration::from_millis(250);
 /// The most distinct labels kept as textures; a new one replaces one no longer shown.
 const MAX_TEXTURES: usize = 8;
 
-static SAMPLE: Mutex<Option<(Vec<MarkLabel>, Instant)>> = Mutex::new(None);
-
 static STATE: Mutex<State> = Mutex::new(State {
     placed: Vec::new(),
     gpu: None,
@@ -126,12 +110,7 @@ impl State {
             return;
         };
         let now = Instant::now();
-        let labels = SAMPLE
-            .lock()
-            .as_ref()
-            .filter(|(_, at)| now.duration_since(*at) <= STALE)
-            .map(|(labels, _)| labels.clone())
-            .unwrap_or_default();
+        let labels = published_labels(now, STALE);
         if labels.is_empty() {
             return;
         }

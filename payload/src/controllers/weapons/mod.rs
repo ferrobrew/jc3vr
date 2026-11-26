@@ -80,6 +80,7 @@ pub(crate) mod grenade_moves;
 pub mod grip_watch;
 pub mod heft;
 pub mod hold;
+pub(crate) mod hud_feed;
 pub mod inventory;
 pub mod opening;
 pub(crate) mod permission;

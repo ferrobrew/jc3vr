@@ -26,26 +26,10 @@ use std::{
 };
 
 pub(crate) use avtx::Image;
-use jc3gi::equipment::weapon::WeaponBase;
 use parking_lot::Mutex;
 
+pub(crate) use crate::controllers::weapons::hud_feed::icon::IconId;
 use crate::hud::game_icons::archive::ArchiveIndex;
-
-/// A weapon icon, by the weapon's id ([`WeaponBase::m_WeaponId`]).
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub(crate) struct IconId(pub i16);
-
-impl IconId {
-    /// The icon of `weapon`; none for a weapon without an id.
-    pub(crate) fn of(weapon: &WeaponBase) -> Option<Self> {
-        (weapon.m_WeaponId >= 0).then_some(Self(weapon.m_WeaponId))
-    }
-
-    /// The icon's path in the archives.
-    fn path(self) -> String {
-        format!("textures/ui/weapon_icons/{}.ddsc", self.0)
-    }
-}
 
 /// Where an icon's loading stands.
 #[derive(Debug, Clone)]
@@ -268,7 +252,7 @@ fn game_dir() -> Result<PathBuf, String> {
 }
 
 fn load(index: &ArchiveIndex, id: IconId) -> Lookup {
-    let path = id.path();
+    let path = icon_path(id);
     match index.read(&path) {
         Ok(Some(bytes)) => match avtx::decode(&bytes) {
             Ok(image) => Lookup::Ready(Arc::new(image)),
@@ -286,6 +270,11 @@ fn load(index: &ArchiveIndex, id: IconId) -> Lookup {
             Lookup::Missing
         }
     }
+}
+
+/// The icon's path in the archives.
+fn icon_path(id: IconId) -> String {
+    format!("textures/ui/weapon_icons/{}.ddsc", id.0)
 }
 
 #[cfg(test)]

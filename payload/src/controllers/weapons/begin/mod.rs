@@ -42,6 +42,7 @@ use crate::{
             grip_watch,
             heft::{self, Heft},
             hold::{self, armed},
+            hud_feed::hand_ammo,
             inventory,
             pouch_models::{self, Prop, ShownPouch},
             pouch_return,
@@ -55,7 +56,6 @@ use crate::{
             volumes::{self, BodyFrame, ChestGrabbers, POUCHES, SOCKETS, StrideFilter},
         },
     },
-    hud::anchored::hand_ammo,
 };
 
 mod hint;

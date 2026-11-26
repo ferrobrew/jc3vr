@@ -3,18 +3,11 @@
 use body_rig::smooth::half_life_factor;
 use glam::{Mat3, Mat4, Quat, Vec2, Vec3};
 
+pub(crate) use crate::controllers::weapons::hud_feed::hand_ammo::ModelBox;
 use crate::controllers::{
     frame::{Hand, Pose},
     summary::glance::PanelPose,
 };
-
-/// A gun model's box in the gun's own frame (+Y up, -Z toward the muzzle, the origin at the
-/// pistol grip), metres.
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub(crate) struct ModelBox {
-    pub min: Vec3,
-    pub max: Vec3,
-}
 
 /// The ammunition quad's corners in the rendered gun's frame, with its lower edge `clearance`
 /// above the model's local top and centred along its length. Its text axes follow the gun's +X
