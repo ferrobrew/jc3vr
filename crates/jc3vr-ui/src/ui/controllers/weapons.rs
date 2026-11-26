@@ -1,8 +1,8 @@
 //! Weapon handling: the grab volume each hand is in, the wielded weapon, the grabs and what they
 //! did, the foregrip, the hand tiers, the recoil, the dual-wield split, the grapple line and yank,
 //! the grenade throw, the C4 throw and its detonator, the true reload, the empty weapon, the
-//! one-handed weight, the gun-in-hand watch, the fire input with empty hands, per-hand aim assist,
-//! and the brace joint's tuning.
+//! one-handed weight, the gun-in-hand watch, the fire input with empty hands, and per-hand aim
+//! assist.
 
 use egui::Ui;
 use jc3vr_body::controllers::{
