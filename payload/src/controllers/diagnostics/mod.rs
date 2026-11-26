@@ -21,6 +21,7 @@ mod body_state;
 mod moments;
 mod notes;
 mod pose;
+mod register_frame_timing;
 mod rig;
 mod sample;
 mod state_names;
@@ -38,6 +39,7 @@ pub(crate) use crate::controllers::diagnostics::{
         note_settings, report,
     },
     pose::{drawn_arm_joints, sample_drawn_arms, sample_final, sample_pre_ik},
+    register_frame_timing::register_frame_timing,
     rig::{RigRun, note_rig},
 };
 use crate::{

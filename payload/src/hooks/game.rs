@@ -66,6 +66,8 @@ pub(super) fn hook_library() -> HookLibrary {
 fn game_update(game: *const Game) -> bool {
     if !GAME_UPDATE_LOGGED.swap(true, Ordering::Relaxed) {
         tracing::info!("startup: first game update");
+        // Before the first frame-timing window can close.
+        diagnostics::register_frame_timing();
     }
     thread_role::mark_thread(ThreadRole::Game);
     // Start of a real frame: re-arm the once-per-frame CClock::Update gate.

@@ -166,11 +166,22 @@ pub(crate) fn frame_tick() {
         *PERCENTILES.lock() = Some(percentiles);
     }
     if let Some(ui) = ui {
-        crate::controllers::diagnostics::note_frame_timing(&ui);
+        if let Some(sink) = REPORT_SINK.get() {
+            sink(&ui);
+        }
         *LATEST.lock() = Some(ui);
     }
     if let Some(log) = log {
         tracing::info!(target: "perf", "{log}");
+    }
+}
+
+/// Register the consumer of every closed [`UI_WINDOW`] breakdown, which [`frame_tick`] hands to it
+/// on the game thread before publishing it to [`latest`]. Only one sink is held: the first
+/// registration wins and a later one is refused with a warning.
+pub(crate) fn set_report_sink(sink: fn(&Report)) {
+    if REPORT_SINK.set(sink).is_err() {
+        tracing::warn!("frame timing: a report sink is already registered; the new one is ignored");
     }
 }
 
@@ -296,6 +307,9 @@ thread_local! {
 
 /// The percentiles [`frame_percentiles`] returns.
 static PERCENTILES: Mutex<Option<FramePercentiles>> = Mutex::new(None);
+
+/// The consumer of each closed debug-UI window, set by [`set_report_sink`].
+static REPORT_SINK: OnceLock<fn(&Report)> = OnceLock::new();
 
 /// The breakdown over the last complete [`UI_WINDOW`].
 static LATEST: Mutex<Option<Report>> = Mutex::new(None);
