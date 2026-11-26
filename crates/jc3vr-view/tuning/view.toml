@@ -68,3 +68,6 @@ trackpad = { press = 0.4, release = 0.2 }
 
 [mirror]
 zoom = 1.0
+
+[pointer]
+panel_max_age_ms = 500

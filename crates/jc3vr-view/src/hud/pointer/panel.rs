@@ -2,15 +2,14 @@
 //! tracking sample, the game-UI panel's and the egui debug panel's corners published with that
 //! basis, and the ray intersection against them.
 
-use std::time::Instant;
-
 use glam::{Mat4, Vec3, Vec4};
-use jc3vr_input::frame::{MAX_FRAME_AGE, Pose};
-use parking_lot::Mutex;
+use jc3vr_core::published::{Published, Stage, Window};
+use jc3vr_input::frame::Pose;
 
 use crate::{
     controllers::cockpit::{CockpitTransform, body_of_head},
     headpose::xr::CockpitPose,
+    tuning::VIEW,
 };
 
 /// A ray in world space, used by the pure panel intersection helper.
@@ -42,30 +41,25 @@ pub struct RenderedCamera {
 /// that placed it, for the panel and the pointer to share one basis.
 pub fn publish_camera(world: Mat4, cockpit: Option<CockpitPose>, scale: f32) {
     let (_, orientation, position) = world.to_scale_rotation_translation();
-    *RENDERED_CAMERA.lock() = cockpit.map(|cockpit| {
-        (
-            RenderedCamera {
-                head: Pose {
-                    position,
-                    orientation,
-                },
-                cockpit_head: Pose {
-                    position: cockpit.position,
-                    orientation: cockpit.orientation,
-                },
-                scale,
+    match cockpit {
+        Some(cockpit) => RENDERED_CAMERA.publish(RenderedCamera {
+            head: Pose {
+                position,
+                orientation,
             },
-            Instant::now(),
-        )
-    });
+            cockpit_head: Pose {
+                position: cockpit.position,
+                orientation: cockpit.orientation,
+            },
+            scale,
+        }),
+        None => RENDERED_CAMERA.clear(),
+    }
 }
 
-/// The latest captured camera, unless it is older than [`MAX_FRAME_AGE`].
+/// The latest captured camera, while it is within the panels' window.
 pub fn rendered_camera() -> Option<RenderedCamera> {
-    RENDERED_CAMERA
-        .lock()
-        .filter(|(_, time)| time.elapsed() <= MAX_FRAME_AGE)
-        .map(|(camera, _)| camera)
+    RENDERED_CAMERA.fresh(panel_window())
 }
 
 /// The rendered panel and the tracking-to-world basis that placed its center camera.
@@ -80,13 +74,13 @@ pub struct RenderedPanel {
 /// Publish the panel drawn this frame, or `None` when no panel with a pointer basis was drawn, so
 /// the pointer never intersects corners the player no longer sees.
 pub fn publish_panel(panel: Option<RenderedPanel>) {
-    *RENDERED_PANEL.lock() = panel.map(|panel| (panel, Instant::now()));
+    publish_or_clear(&RENDERED_PANEL, panel);
 }
 
 /// Publish the egui debug panel drawn this frame, or `None` when it was not drawn with a pointer
 /// basis, as [`publish_panel`] does for the game-UI panel.
 pub fn publish_egui_panel(panel: Option<RenderedPanel>) {
-    *RENDERED_EGUI_PANEL.lock() = panel.map(|panel| (panel, Instant::now()));
+    publish_or_clear(&RENDERED_EGUI_PANEL, panel);
 }
 
 /// The world-space aim ray of a cockpit-frame `aim` pose against the latest fresh panel, with the
@@ -150,17 +144,26 @@ pub fn intersect_panel(ray: PanelRay, corners: &[Vec4; 4]) -> Option<PanelHit> {
     })
 }
 
-type PanelSlot = Mutex<Option<(RenderedPanel, Instant)>>;
+static RENDERED_CAMERA: Published<RenderedCamera> = Published::new(Stage::RenderUpdate);
 
-static RENDERED_CAMERA: Mutex<Option<(RenderedCamera, Instant)>> = Mutex::new(None);
+static RENDERED_PANEL: Published<RenderedPanel> = Published::new(Stage::RenderUpdate);
 
-static RENDERED_PANEL: PanelSlot = Mutex::new(None);
+static RENDERED_EGUI_PANEL: Published<RenderedPanel> = Published::new(Stage::RenderUpdate);
 
-static RENDERED_EGUI_PANEL: PanelSlot = Mutex::new(None);
+fn panel_window() -> Window {
+    Window::from_millis(VIEW.get().pointer.panel_max_age_ms)
+}
 
-fn aim_at(slot: &PanelSlot, aim: Pose) -> Option<(PanelRay, [Vec4; 4])> {
-    let (panel, published) = (*slot.lock())?;
-    (published.elapsed() <= MAX_FRAME_AGE).then(|| (panel.ray(aim), panel.corners))
+fn publish_or_clear(slot: &Published<RenderedPanel>, panel: Option<RenderedPanel>) {
+    match panel {
+        Some(panel) => slot.publish(panel),
+        None => slot.clear(),
+    }
+}
+
+fn aim_at(slot: &Published<RenderedPanel>, aim: Pose) -> Option<(PanelRay, [Vec4; 4])> {
+    let panel = slot.fresh(panel_window())?;
+    Some((panel.ray(aim), panel.corners))
 }
 
 impl RenderedPanel {

@@ -2,8 +2,8 @@
 //!
 //! - [`VIEW`]: the head pose's turning, follow steps, flatscreen latch, and synthetic-rotation
 //!   filter, the camera's flatscreen stereo and context field of view, the tracking recorder's
-//!   lookback, and the VR runtime's foveation, cull padding, recenter, floor watch, bring-up retry,
-//!   press thresholds, and mirror zoom.
+//!   lookback, the VR runtime's foveation, cull padding, recenter, floor watch, bring-up retry,
+//!   press thresholds, and mirror zoom, and how long a drawn panel stays a pointer target.
 //! - [`HAPTICS`]: the haptic output's primitives, mix, and cues, whose types the input crate
 //!   declares ([`jc3vr_input::haptics::tuning`]) and which this crate loads because the input crate
 //!   depends on no layer crate.
@@ -52,6 +52,7 @@ pub struct ViewTuning {
     pub runtime: RuntimeTuning,
     pub press: PressTuning,
     pub mirror: MirrorTuning,
+    pub pointer: PointerTuning,
 }
 
 /// How the look input turns the body in VR ([`crate::headpose::xr`]).
@@ -262,6 +263,15 @@ pub struct MirrorTuning {
     pub zoom: f32,
 }
 
+/// The panels as the controller pointers see them ([`crate::hud::pointer::panel`]).
+#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PointerTuning {
+    /// How long a drawn panel, and the camera that placed it, stay a target for the pointer after
+    /// the frame that drew them, milliseconds: a panel no longer drawn stops taking hits.
+    pub panel_max_age_ms: u64,
+}
+
 impl Tuning for ViewTuning {
     fn validate(&self) -> Result<(), Invalid> {
         let turn = &self.turn;
@@ -392,7 +402,8 @@ impl Tuning for ViewTuning {
             1.0,
         )?;
 
-        range("mirror.zoom", self.mirror.zoom, 0.25, 4.0)
+        range("mirror.zoom", self.mirror.zoom, 0.25, 4.0)?;
+        millis("pointer.panel_max_age_ms", self.pointer.panel_max_age_ms)
     }
 }
 
