@@ -59,6 +59,7 @@ mod eye_resolution;
 pub mod foveation;
 mod frame;
 mod frame_loop;
+pub mod harness;
 pub mod input;
 pub mod live_tracking;
 mod loader;

@@ -54,7 +54,7 @@ use crate::{
         dispatch, layout, single_pass, sun_shadows,
         switches::ShaderBuild,
     },
-    vr::{FreezeMode, ResolutionProgress, pose_control, pose_control::PoseValues},
+    vr::{FreezeMode, ResolutionProgress, harness, pose_control, pose_control::PoseValues},
 };
 
 /// Whether the game is paused, `director.paused` in the settings file, which a capture pins. The
@@ -379,6 +379,7 @@ pub fn process_pending() {
                 }
             }
             state.mode = Some(mode);
+            harness::set_visual_active(true);
             dispatch::set_mode(mode);
             state.warmup_frames = warmup_frames;
             single_pass::refresh_config_flags();
@@ -418,6 +419,7 @@ pub fn process_pending() {
                 return;
             }
             state.mode = None;
+            harness::set_visual_active(false);
             state.visual_overrides = None;
             headset::set_active(None);
             crate::screenshot::harness::stages::set_geometry_only(false);
@@ -569,6 +571,7 @@ pub fn shutdown() {
         pose_control::clear();
     }
     state.mode = None;
+    harness::set_visual_active(false);
     state.clear_pose();
     dispatch::set_mode(RenderMode::Native);
     state.ready = false;

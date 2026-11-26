@@ -25,7 +25,7 @@ use crate::{
     fsr::FSR_CONFIG,
     hooks::camera::config::CAMERA_CONFIG,
     stereo::{STEREO_STATE, config::STEREO_CONFIG},
-    vr::{FreezeMode, VR_CONFIG, pose_control},
+    vr::{FreezeMode, VR_CONFIG, harness, pose_control},
 };
 
 pub mod authored;
@@ -450,7 +450,7 @@ fn camera_update_render(camera: *mut Camera, dt: f32, dtf: f32) {
     if is_active_camera
         && holds_probe_pose(
             in_gameplay(),
-            crate::testing::visual::is_active(),
+            harness::visual_active(),
             VR_CONFIG.query(|c| c.freeze_mode),
         )
         && let Some(pose) = pose_control::current_full_camera()
@@ -474,7 +474,7 @@ fn camera_update_render(camera: *mut Camera, dt: f32, dtf: f32) {
 fn update_player_lighting_transforms(manager: *mut LightManager, camera_transform: *const Matrix4) {
     let held = holds_probe_pose(
         in_gameplay(),
-        crate::testing::visual::is_active(),
+        harness::visual_active(),
         VR_CONFIG.query(|c| c.freeze_mode),
     )
     .then(pose_control::current_full_camera)

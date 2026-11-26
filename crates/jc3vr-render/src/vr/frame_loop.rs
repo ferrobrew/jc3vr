@@ -23,10 +23,10 @@ use crate::{
     },
     recorder::tracking::{CaptureSample, format::EyeSample},
     stereo::engine_context::EngineContext,
-    testing::visual::headset,
     vr::{
         Fov, FreezeMode, OffAxisProjection, VIEW_TYPE, VR_CONFIG, VrConfig, convert,
         convert::{posef, quat, vec3},
+        harness,
         input::{
             config::{
                 CONTROLLERS_ENABLED, HAPTICS_ENABLED, HAPTICS_INTENSITY, HapticOutput,
@@ -730,7 +730,7 @@ static VIEWS_LOGGED: AtomicBool = AtomicBool::new(false);
 /// compositor is handed the views the eyes were rendered for), its field of view, and its
 /// projection. Everything downstream then sees the rig.
 fn substitute_headset_rig(eyes: &mut [EyeView; 2], near_clip: f32, far_clip: f32) {
-    let Some(rig) = headset::active() else {
+    let Some(rig) = harness::headset_substitute() else {
         return;
     };
     let head = mid_pose(eyes[0].pose, eyes[1].pose);

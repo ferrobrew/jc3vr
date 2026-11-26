@@ -19,11 +19,12 @@ use crate::{
     headpose,
     headpose::{FrameTelemetry, config::HEADPOSE_CONFIG, participants::head_participants},
     stereo::config::STEREO_CONFIG,
-    testing::visual::{headset, headset::HeadsetRig},
     vr::{
         EyeView, Fov, FrameInputs, FreezeMode, LocatedFrame, OffAxisProjection, VrConfig,
         config::ProjectionConvention,
         convert::{quat, vec3},
+        harness,
+        harness::HeadsetSubstitute,
         participants::frame_participants,
         pose_control,
     },
@@ -169,7 +170,7 @@ static FROZEN_EYE_PARAMS: Mutex<Option<FrozenEyeParams>> = Mutex::new(None);
 /// the rig is what the parameters were derived from.
 #[derive(Copy, Clone)]
 struct FrozenEyeParams {
-    rig: Option<HeadsetRig>,
+    rig: Option<HeadsetSubstitute>,
     params: [EyeRenderParams; 2],
 }
 
@@ -537,7 +538,7 @@ fn render_frame(
     let params = {
         let mut frozen_params = FROZEN_EYE_PARAMS.lock();
         if cfg.freeze_mode == FreezeMode::FullCamera {
-            let rig = headset::active().map(|geometry| geometry.rig);
+            let rig = harness::headset_substitute();
             match *frozen_params {
                 Some(frozen) if frozen.rig == rig => frozen.params,
                 _ => {

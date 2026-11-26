@@ -13,11 +13,14 @@
 //! Bigscreen-Beyond-like rig, which a session seeds with its own eye size. The per-eye resolution is
 //! the session's, never the rig's.
 
-use glam::{EulerRot, Quat, Vec3};
+use glam::{EulerRot, Quat};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
-use crate::vr::Fov;
+use crate::vr::{
+    Fov, harness,
+    harness::{EyeOffset, HeadsetSubstitute},
+};
 
 /// A named headset-like rig.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
@@ -61,14 +64,6 @@ pub(crate) struct HeadsetGeometry {
     pub eyes: [EyeGeometry; 2],
 }
 
-/// One eye's substituted view: its pose relative to the head and its field of view.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) struct EyeSubstitute {
-    pub position: Vec3,
-    pub orientation: Quat,
-    pub fov: Fov,
-}
-
 impl HeadsetRig {
     /// The rig's geometry.
     pub(crate) fn geometry(self) -> HeadsetGeometry {
@@ -87,39 +82,32 @@ impl HeadsetRig {
 }
 
 impl HeadsetGeometry {
-    /// Each eye's substituted view for a head at `head_position` with `head_orientation`, in the
-    /// frame the located views are in.
-    pub(crate) fn substitute(
-        &self,
-        head_position: Vec3,
-        head_orientation: Quat,
-    ) -> [EyeSubstitute; 2] {
-        std::array::from_fn(|eye| {
-            let geometry = self.eyes[eye];
-            let side = if eye == 0 { -0.5 } else { 0.5 };
-            let [left, right, up, down] = geometry.fov_deg.map(f32::to_radians);
-            EyeSubstitute {
-                position: head_position + head_orientation * Vec3::new(side * self.ipd_m, 0.0, 0.0),
-                orientation: (head_orientation
-                    * Quat::from_euler(
+    /// The rig as the frame loop substitutes it for the located views.
+    pub(crate) fn view_substitute(&self) -> HeadsetSubstitute {
+        HeadsetSubstitute {
+            ipd_m: self.ipd_m,
+            eyes: self.eyes.map(|geometry| {
+                let [left, right, up, down] = geometry.fov_deg.map(f32::to_radians);
+                EyeOffset {
+                    orientation: Quat::from_euler(
                         EulerRot::YXZ,
                         geometry.yaw_deg.to_radians(),
                         geometry.pitch_deg.to_radians(),
                         geometry.roll_deg.to_radians(),
-                    ))
-                .normalize(),
-                fov: Fov {
-                    left,
-                    right,
-                    up,
-                    down,
-                },
-            }
-        })
+                    ),
+                    fov: Fov {
+                        left,
+                        right,
+                        up,
+                        down,
+                    },
+                }
+            }),
+        }
     }
 }
 
-/// The rig the frame loop substitutes for the located views, or `None` to leave them as located.
+/// The rig in force, recorded in the capture metadata, or `None` when the views are left as located.
 pub(crate) fn active() -> Option<HeadsetGeometry> {
     ACTIVE.lock().map(HeadsetRig::geometry)
 }
@@ -127,10 +115,10 @@ pub(crate) fn active() -> Option<HeadsetGeometry> {
 /// Set the rig the frame loop substitutes, for the configuration that names it.
 pub(super) fn set_active(rig: Option<HeadsetRig>) {
     *ACTIVE.lock() = rig;
+    harness::set_headset_substitute(rig.map(|rig| rig.geometry().view_substitute()));
 }
 
-/// The rig in force. A lock of its own, never held while taking another, because the frame loop
-/// reads it under the runtime lock.
+/// The rig in force, as the metadata records it.
 static ACTIVE: Mutex<Option<HeadsetRig>> = Mutex::new(None);
 
 /// A rig whose right eye is the mirror image of its left: the field of view swapped side for side,
@@ -165,11 +153,12 @@ fn mirrored(
 
 #[cfg(test)]
 mod tests {
+    use glam::Vec3;
     use pretty_assertions::assert_eq;
     use test_case::test_case;
 
     use super::*;
-    use crate::vr::OffAxisProjection;
+    use crate::vr::{OffAxisProjection, harness::EyeSubstitute};
 
     const RIGS: [HeadsetRig; 4] = [
         HeadsetRig::Index,
@@ -229,7 +218,9 @@ mod tests {
         let head_orientation = Quat::from_rotation_y(0.7);
         for rig in RIGS {
             let geometry = rig.geometry();
-            let [left, right] = geometry.substitute(head_position, head_orientation);
+            let [left, right] = geometry
+                .view_substitute()
+                .substitute(head_position, head_orientation);
             assert!(((right.position - left.position).length() - geometry.ipd_m).abs() < 1e-6);
             assert!((0.5 * (left.position + right.position) - head_position).length() < 1e-6);
             let local = head_orientation.inverse() * (right.position - left.position);
@@ -243,6 +234,7 @@ mod tests {
     fn the_cant_turns_each_eye_outward() {
         let [left, right] = HeadsetRig::Index
             .geometry()
+            .view_substitute()
             .substitute(Vec3::ZERO, Quat::IDENTITY);
         let forward = |orientation: Quat| orientation * Vec3::NEG_Z;
         let (l, r) = (forward(left.orientation), forward(right.orientation));
@@ -251,6 +243,7 @@ mod tests {
         assert!((r.x.asin().to_degrees() - 5.0).abs() < 1e-3);
         let [left, right] = HeadsetRig::Quest
             .geometry()
+            .view_substitute()
             .substitute(Vec3::ZERO, Quat::IDENTITY);
         assert_eq!(left.orientation, Quat::IDENTITY);
         assert_eq!(right.orientation, Quat::IDENTITY);
@@ -262,6 +255,7 @@ mod tests {
     fn the_stress_rig_pitches_the_eyes_apart() {
         let [left, right] = HeadsetRig::Stress
             .geometry()
+            .view_substitute()
             .substitute(Vec3::ZERO, Quat::IDENTITY);
         let up = |orientation: Quat| (orientation * Vec3::NEG_Z).y;
         assert!(up(left.orientation) > 0.0 && up(right.orientation) < 0.0);
@@ -273,7 +267,10 @@ mod tests {
     #[test]
     fn the_substituted_projection_is_off_axis_and_mirrored() {
         for rig in RIGS {
-            let [left, right] = rig.geometry().substitute(Vec3::ZERO, Quat::IDENTITY);
+            let [left, right] = rig
+                .geometry()
+                .view_substitute()
+                .substitute(Vec3::ZERO, Quat::IDENTITY);
             let p =
                 |eye: &EyeSubstitute| OffAxisProjection::new(eye.fov, 0.1, 1000.0).standard_depth;
             let (pl, pr) = (p(&left), p(&right));
