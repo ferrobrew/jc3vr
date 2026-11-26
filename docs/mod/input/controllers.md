@@ -389,7 +389,7 @@ The wingsuit's barrel roll (`wingsuit_evade.enabled`, on). The code is in `paylo
 
 ## Grenades, aim assist, and reloads
 
-This is most of milestone 5, and has not been run in the headset. The code is in `payload/src/controllers/weapons/` (`grenade/`), `payload/src/controllers/aim/` (`assist.rs`, `targets.rs`), and `payload/src/input_core/motion.rs`. The engine side is in [aim-pipeline.md, "Grenades"](../../engine/gameplay/aim-pipeline.md#grenades) and ["Aim assist"](../../engine/gameplay/aim-pipeline.md#aim-assist-updatealltargets). The scopes are the next section, and the sight lines are under "Aiming"; the hand-tier promotions are not built.
+This is most of milestone 5, and has not been run in the headset. The code is in `payload/src/controllers/weapons/` (`grenade/`), `payload/src/controllers/aim/` (`assist.rs`, `targets.rs`), and `crates/jc3vr-input/src/motion.rs`. The engine side is in [aim-pipeline.md, "Grenades"](../../engine/gameplay/aim-pipeline.md#grenades) and ["Aim assist"](../../engine/gameplay/aim-pipeline.md#aim-assist-updatealltargets). The scopes are the next section, and the sight lines are under "Aiming"; the hand-tier promotions are not built.
 
 The hands' recent motion is kept for the throws. Every published controller frame adds each tracked grip's pose and velocities to a half-second history; an untracked frame adds nothing, so an inferred pose never feeds a throw. A velocity is the runtime's own where it reports one, and a difference of positions otherwise.
 
