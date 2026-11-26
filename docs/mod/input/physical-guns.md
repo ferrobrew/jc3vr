@@ -2,7 +2,7 @@
 
 With the hand bodies on ([physical-hands.md](physical-hands.md#hand-bodies)), a gun in a hand is a body of its own in the physics world, joined to the hand bodies that hold it. Its weight hangs from the hands and drags them by its mass, it collides along its whole length, a two-handed hold is two joints, and swung into a character it strikes as the hands do. The drawn gun and the drawn hands follow the physics: each hand is drawn at its body, and the gun at its body. With the hand bodies off, a held gun has no body, its hands' bodies leave the world as before, and the kinematic weight ([`heft`](../../../crates/jc3vr-gameplay/src/controllers/weapons/heft/mod.rs)), recoil offset, two-handed pose, and wall probe ([physical-weapons.md, "Guns against walls"](physical-weapons.md#guns-against-walls)) act instead.
 
-The code is `crates/jc3vr-gameplay/src/controllers/physical_hands/physics/guns/`. The engine side is in [havok-bodies.md](../../engine/physics/havok-bodies.md) and [weapon-equip-and-drop.md](../../engine/gameplay/weapon-equip-and-drop.md#one-object-for-its-whole-life). None of this has been run in the headset.
+The gun bodies are the hand bodies' own, in `crates/jc3vr-gameplay/src/controllers/physical_hands/physics/guns/`; the guns in the hands, the shots that kick them, and what each step reports back are the weapon handling's, in `crates/jc3vr-gameplay/src/controllers/weapons/gun_bodies/`. The engine side is in [havok-bodies.md](../../engine/physics/havok-bodies.md) and [weapon-equip-and-drop.md](../../engine/gameplay/weapon-equip-and-drop.md#one-object-for-its-whole-life). None of this has been run in the headset.
 
 ## Which body
 

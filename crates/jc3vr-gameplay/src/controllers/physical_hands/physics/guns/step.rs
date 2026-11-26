@@ -18,23 +18,26 @@ use jc3gi::physics::CustomGroupCollisionFilter;
 use jc3vr_input::frame::{Hand, Pose};
 use parking_lot::Mutex;
 
-use crate::controllers::physical_hands::physics::{
-    body::{BodyError, BodyShape, BodySpec, HandBody},
-    config::{BraceConfig, HeldGunsTuning},
-    contact::{self, Source},
-    drive::BodyMotion,
-    guns::{
-        GunBodyStatus, GunHolds, HeldGun, SHARED,
-        engine::{GunError, GunSource, check_own_body, read_source},
-        math::{
-            BRACE_BREAK_STEPS, GunAxes, MAX_GRIP_SEAT_M, MassSource, brace_broken, brace_due,
-            brace_palm, clamp_velocity, class_value, deviation, gun_mass, intended_seat, limit,
-            seat, seated, settled, shot_impulse, strayed,
+use crate::controllers::{
+    physical_hands::physics::{
+        body::{BodyError, BodyShape, BodySpec, HandBody},
+        config::{BraceConfig, HeldGunsTuning},
+        contact::{self, Source},
+        drive::BodyMotion,
+        guns::{
+            GunBodyStatus, GunHolds, HeldGun,
+            engine::{GunError, GunSource, check_own_body, read_source},
+            math::{
+                BRACE_BREAK_STEPS, GunAxes, MAX_GRIP_SEAT_M, MassSource, brace_broken, brace_due,
+                brace_palm, clamp_velocity, class_value, deviation, gun_mass, intended_seat, limit,
+                seat, seated, settled, shot_impulse, strayed,
+            },
         },
+        joint::Joint,
+        lifecycle::{Hands, PLACED_MUTE_STEPS},
+        types::BodyPhase,
     },
-    joint::Joint,
-    lifecycle::{Hands, PLACED_MUTE_STEPS},
-    types::BodyPhase,
+    weapons::gun_bodies::{self, StepRecord},
 };
 
 /// A holding hand's gun body.
@@ -90,7 +93,7 @@ pub(crate) struct GunStep<'a> {
 /// The thread that steps the physics world, outside the step.
 pub(crate) unsafe fn step(hands: &mut Hands, input: GunStep<'_>) {
     let now = Instant::now();
-    let shots = std::mem::take(&mut SHARED.lock().shots);
+    let shots = gun_bodies::take_shots();
     let mut statuses = [None; 2];
     let mut deviations = [None; 2];
     let mut broken = [false; 2];
@@ -175,30 +178,23 @@ pub(crate) unsafe fn step(hands: &mut Hands, input: GunStep<'_>) {
             }
         }
     }
-    let mut shared = SHARED.lock();
-    for (flag, now_broken) in shared.support_broke.iter_mut().zip(broken) {
-        *flag |= now_broken;
-    }
-    shared.deviations = deviations;
-    shared.stepped = Some(now);
-    let status = &mut shared.status;
-    status.hands = statuses;
-    status.made += tally.made;
-    status.destroyed += tally.destroyed;
-    status.reseats += tally.reseats;
-    status.shots += tally.shots;
-    if let Some(error) = tally.error {
-        status.last_error = Some(error);
-    }
+    gun_bodies::record_step(StepRecord {
+        at: now,
+        statuses,
+        deviations,
+        support_broke: broken,
+        made: tally.made,
+        destroyed: tally.destroyed,
+        reseats: tally.reseats,
+        shots: tally.shots,
+        error: tally.error,
+    });
 }
 
 /// Forget the last step's gun bodies and the shots queued, for a step that acts on no hand (the
 /// hand bodies off, or the game out of gameplay), whose bodies, guns included, it destroys.
 pub(crate) fn stand_down() {
-    let mut shared = SHARED.lock();
-    shared.shots = [None; 2];
-    shared.deviations = [None; 2];
-    shared.status.hands = [None; 2];
+    gun_bodies::stand_down();
 }
 
 /// Destroy every gun body that hangs from `hand`'s body: the gun it holds, with its joints, and
@@ -212,7 +208,7 @@ pub(crate) unsafe fn drop_hand(guns: &mut [Option<GunSlot>; 2], hand: Hand, reas
     if let Some(slot) = guns[hand.index()].take() {
         // SAFETY: forwarded from the caller.
         let destroyed = unsafe { destroy_slot(slot, hand, reason) };
-        SHARED.lock().status.destroyed += u64::from(destroyed);
+        gun_bodies::count_destroyed(u64::from(destroyed));
     }
     if let Some(slot) = guns[hand.other().index()].as_mut()
         && let Some(brace) = slot.brace.take()

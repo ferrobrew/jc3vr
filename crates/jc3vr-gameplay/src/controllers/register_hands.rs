@@ -15,9 +15,11 @@ use crate::controllers::{
         stages::{self, HandComposition, HandStage, HandStageFn},
     },
     held,
-    physical_hands::{self, physics, physics::guns},
+    physical_hands::{self, physics},
     vehicles,
-    weapons::{self, ads, collide, config::WEAPONS_CONFIG, grenade, hold::rack, recoil},
+    weapons::{
+        self, ads, collide, config::WEAPONS_CONFIG, grenade, gun_bodies, hold::rack, recoil,
+    },
 };
 
 pub(super) fn register() {
@@ -53,9 +55,9 @@ fn vehicle_controls(c: &mut HandComposition) {
 }
 
 fn gun_targets(c: &mut HandComposition) {
-    c.physical = guns::physical_hands();
+    c.physical = gun_bodies::physical_hands();
     let heft = WEAPONS_CONFIG.query(|w| w.heft);
-    guns::targets::apply(&mut c.hands, c.head.position, &heft);
+    gun_bodies::apply(&mut c.hands, c.head.position, &heft);
 }
 
 fn aim_down_sights(c: &mut HandComposition) {

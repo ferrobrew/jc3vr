@@ -383,7 +383,7 @@ pub struct Inputs {
     /// and the region it is in there: a hold on a region the hand slides along follows it.
     pub slide: Option<(Vec3, GunRegion)>,
     /// Whether the physical brace of the off-hand broke since the last tick
-    /// ([`crate::controllers::physical_hands::physics::guns::take_support_break`]).
+    /// ([`crate::controllers::weapons::gun_bodies::take_support_break`]).
     pub support_broke: bool,
 }
 

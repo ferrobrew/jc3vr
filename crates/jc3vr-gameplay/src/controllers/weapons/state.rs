@@ -9,7 +9,6 @@ use parking_lot::Mutex;
 use crate::controllers::{
     grab::{GrabVolume, GripTarget},
     hands::ik,
-    physical_hands::physics::guns,
     weapons::{
         ads, c4, collide,
         config::WeaponSettings,
@@ -17,7 +16,7 @@ use crate::controllers::{
         dual_wield,
         engine::{self, HeldWeapon},
         foregrip::{self, GripGeometry},
-        grenade, grip_watch, heft,
+        grenade, grip_watch, gun_bodies, heft,
         hold::{self, armed},
         opening::OpenWatch,
         pouch_models, pouch_return, recoil,
@@ -47,7 +46,7 @@ pub(crate) fn pause() {
 /// do not inject.
 pub(crate) fn stand_down() {
     foregrip::clear();
-    guns::publish(guns::GunHolds::default());
+    gun_bodies::publish(gun_bodies::GunHolds::default());
     heft::observe([None; 2]);
     heft::freeze([false; 2]);
     ads::observe([None; 2]);

@@ -3,32 +3,18 @@
 use glam::Vec3;
 use jc3vr_input::frame::Hand;
 
+pub(crate) use crate::controllers::weapons::gun_bodies::apply;
 use crate::controllers::{
     hands::CockpitHand,
-    physical_hands::physics::{
-        guns::{self, GunHolds},
-        state::steps,
-    },
+    physical_hands::physics::{guns::GunHolds, state::steps},
     vehicles,
-    weapons::{
-        config::HeftConfig,
-        foregrip::{self, FOREGRIP},
-        heft::{self, Heft},
-    },
+    weapons::{config::HeftConfig, gun_bodies},
 };
-
-/// Compose support and weight once, before either driving a gun hand or drawing its body offset.
-/// The physical drive keeps only the hands of current gun holds; ordinary active-hand composition
-/// uses this same operation for every hand. The body supplies collisions and recoil afterward.
-pub(crate) fn apply(hands: &mut [Option<CockpitHand>; 2], head: Vec3, heft: &HeftConfig) {
-    foregrip::apply(hands, &FOREGRIP);
-    heft::apply(hands, head, &Heft::of(heft));
-}
 
 /// Give the physical drive the support and weight targets of the currently published guns.
 /// Reads no native objects and does not compose active hands recursively.
 pub(crate) fn apply_physical(hands: &mut [Option<CockpitHand>; 2], head: Vec3, heft: &HeftConfig) {
-    let holds = guns::SHARED.lock().fresh_holds(steps()).unwrap_or_default();
+    let holds = gun_bodies::holds_at(steps()).unwrap_or_default();
     let raw = *hands;
     vehicles::apply(hands);
     apply(hands, head, heft);

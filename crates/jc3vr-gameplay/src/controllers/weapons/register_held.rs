@@ -7,10 +7,10 @@ use jc3vr_input::frame::Hand;
 use crate::controllers::{
     held::{self, HeldItem, HeldSource, PlacementSource},
     loadout::{ItemKind, live},
-    physical_hands::physics::guns,
     weapons::{
         self, c4,
         dual_wield::single,
+        gun_bodies,
         hold::{self, act, armed, rack::paired::stack_offset, take},
         regions, reload,
     },
@@ -34,7 +34,7 @@ pub(crate) fn register() {
             record: take::record_handle_placement,
             snap: act::snap_view,
             slide: regions::slide_for,
-            body_deviation: guns::deviation,
+            body_deviation: gun_bodies::deviation,
             carried_for: armed::carried_for,
         },
     });

@@ -1,89 +1,26 @@
-//! The held guns' engine reads: the guns in the hands, read on the weapon handling's input tick,
-//! and, in the pre-simulation step, the gun's own body whose shape and mass the gun body takes.
+//! The held guns' engine reads in the pre-simulation step: the gun's own body, whose shape and mass
+//! the gun body takes.
 
-use std::{fmt, num::NonZeroUsize, ptr::NonNull, time::Duration};
+use std::{fmt, ptr::NonNull};
 
 use glam::{Mat4, Vec3};
-use jc3gi::{
-    equipment::weapon::{WeaponBase, WeaponData},
-    havok::hknpShape,
-    physics::PfxRigidBody,
-};
-use jc3vr_input::frame::{Hand, Pose};
+use jc3gi::{equipment::weapon::WeaponData, havok::hknpShape, physics::PfxRigidBody};
+use jc3vr_input::frame::Pose;
 
 use crate::controllers::{
     aim::gun,
-    hands::{self, grip},
     physical_hands::{
         bodies,
         physics::{
             body::half_to_f32,
             guns::{
-                GunHolds, HeldGun,
-                math::{GunAxes, brace_contact, gun_axes},
+                HeldGun,
+                math::{GunAxes, gun_axes},
             },
         },
-        tuning::PALMS,
         world::World,
     },
-    weapons::{foregrip, heft::HeftClass, hold::act, regions},
 };
-
-/// Read the guns in the hands: each hand whose gun the rigid grip pinned lately, of one of
-/// `weapons` (the wielded weapon and the second weapon, each with its weight class), with no slide
-/// moving it, and the hand that braces a holding hand's gun on its foregrip.
-///
-/// # Safety
-///
-/// The weapon handling's input tick, on the game thread before the world update, with `weapons`
-/// the weapons read live on it.
-pub(crate) unsafe fn read_holds(weapons: [Option<(usize, HeftClass)>; 2]) -> GunHolds {
-    let grips = grip::status().hands;
-    let mut holds = GunHolds::default();
-    for hand in Hand::BOTH {
-        let Some(placed) = grips[hand.index()] else {
-            continue;
-        };
-        let Some((weapon, class)) = weapons
-            .into_iter()
-            .flatten()
-            .find(|(w, _)| *w == placed.weapon)
-        else {
-            continue;
-        };
-        if !placed.pinned
-            || placed.at.elapsed() > PINNED_LATELY
-            || act::snap_view(weapon, hand).is_some()
-        {
-            continue;
-        }
-        // SAFETY: forwarded from the caller; the weapon was read live this tick.
-        holds.guns[hand.index()] =
-            unsafe { held_gun(weapon, placed.gun, class) }.map(|gun| HeldGun {
-                carry: regions::slide_mark(weapon, hand),
-                ..gun
-            });
-    }
-    if let Some(hold) = foregrip::posed_hold().filter(|h| h.engaged) {
-        let off = hold.holder.other();
-        let holding =
-            holds.guns[hold.holder.index()].is_some_and(|g| g.weapon.get() == hold.weapon);
-        if holding
-            && holds.guns[off.index()].is_none()
-            && let Some(active) = hands::active_hands_raw()
-            && let Some(hand) = active.hands[off.index()]
-        {
-            holds.contacts[off.index()] = brace_contact(
-                &hold.geometry,
-                &hand,
-                PALMS.palm_offset_m,
-                active.world_scale,
-            );
-            holds.braces[off.index()] = holds.contacts[off.index()].is_some();
-        }
-    }
-    holds
-}
 
 /// What a gun body is made from: the gun's own body's shape and inverse mass, and where the gun is.
 pub(super) struct GunSource {
@@ -204,28 +141,4 @@ pub(super) unsafe fn check_own_body(held: &HeldGun) -> Result<(), GunError> {
         return Err(GunError::OwnBodyInWorld);
     }
     Ok(())
-}
-
-/// How lately the rigid grip must have pinned a gun for it to count as in the hand.
-const PINNED_LATELY: Duration = Duration::from_millis(250);
-
-/// The gun `index` of `weapon`, with its own body.
-///
-/// # Safety
-///
-/// As [`read_holds`].
-unsafe fn held_gun(weapon: usize, index: usize, class: HeftClass) -> Option<HeldGun> {
-    let base = unsafe { (weapon as *const WeaponBase).as_ref() }?;
-    let guns = unsafe { gun::guns(base) }.count();
-    let data = unsafe { gun::guns(base) }.nth(index).flatten()?;
-    let wrapper = unsafe { data.m_PfxInstance.as_ref() }?;
-    Some(HeldGun {
-        weapon: NonZeroUsize::new(weapon)?,
-        gun: NonZeroUsize::new(data as *const WeaponData as usize)?,
-        wrapper: NonZeroUsize::new(data.m_PfxInstance as usize)?,
-        body: wrapper.m_BodyId,
-        class,
-        guns,
-        carry: None,
-    })
 }

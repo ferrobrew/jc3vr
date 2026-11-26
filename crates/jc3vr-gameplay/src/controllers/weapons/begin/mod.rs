@@ -24,7 +24,6 @@ use crate::controllers::{
     },
     locomotion,
     mode::{AirborneVariant, Mode, OnFootVariant},
-    physical_hands::physics::guns,
     weapons::{
         ads,
         begin::place::{CHARGE_MARK_M, Place, held_foregrip, mark_size},
@@ -40,7 +39,7 @@ use crate::controllers::{
         engine::{self, HeldWeapon},
         foregrip::{self, FOREGRIP},
         grenade::{self, tuning::GrenadeTuning},
-        grip_watch,
+        grip_watch, gun_bodies,
         heft::{self, Heft},
         hold::{self, armed},
         hud_feed::hand_ammo,
@@ -103,13 +102,13 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
                 .filter_map(|h| guns[h.index()])
                 .find(|w| weapon.is_none_or(|wielded| wielded.address != w.address));
             // The guns the hands hold, for their bodies.
-            guns::publish(if capabilities.support {
-                guns::read_holds([
+            gun_bodies::publish(if capabilities.support {
+                gun_bodies::read_holds([
                     weapon.map(|w| (w.address, w.class)),
                     beside.map(|w| (w.address, w.class)),
                 ])
             } else {
-                guns::GunHolds::default()
+                gun_bodies::GunHolds::default()
             });
             let snapshot = live::snapshot_now();
             let table_hands = snapshot.as_ref().map_or([false; 2], hands_holding);

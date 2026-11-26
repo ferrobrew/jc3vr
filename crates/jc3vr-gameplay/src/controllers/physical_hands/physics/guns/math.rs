@@ -6,37 +6,15 @@ use body_rig::rotation::{angle, angle_between, angular_velocity, clamp_angle};
 use glam::{Mat4, Vec3};
 use jc3vr_input::frame::Pose;
 
+pub use crate::controllers::weapons::gun_bodies::MassSource;
 use crate::controllers::{
-    hands::{CockpitHand, pose as hand_pose},
+    hands::pose as hand_pose,
     physical_hands::physics::{
         config::{BraceConfig, GunClassValues, HeldGunsTuning},
         guns::BraceContact,
     },
-    weapons::{foregrip::GripGeometry, heft::HeftClass},
+    weapons::heft::HeftClass,
 };
-
-/// Convert a measured support region and the tracked hand's grip-to-palm displacement into the
-/// gun's local contact. The measured gun translation is in cockpit metres; native gun-local
-/// coordinates and the physical palm offset are in game units after this conversion.
-pub fn brace_contact(
-    geometry: &GripGeometry,
-    off: &CockpitHand,
-    palm_offset_m: Vec3,
-    world_scale: f32,
-) -> Option<BraceContact> {
-    if !(world_scale.is_finite() && world_scale > 0.0) {
-        return None;
-    }
-    let point = geometry.gun.orientation.inverse()
-        * (geometry.foregrip - geometry.gun.position)
-        * world_scale;
-    let palm = off.wrist.position + off.wrist.orientation * palm_offset_m;
-    let palm_from_grip = off.wrist.orientation.inverse() * (palm - off.grip.position) * world_scale;
-    (point.is_finite() && palm_from_grip.is_finite()).then_some(BraceContact {
-        point,
-        palm_from_grip,
-    })
-}
 
 /// The support palm seated on its selected region on the actual gun body, preserving the tracked
 /// wrist's orientation. This is also the pose captured by its fixed brace joint.
@@ -85,24 +63,6 @@ pub fn class_value(values: &GunClassValues, class: HeftClass) -> f32 {
         HeftClass::Smg => values.smg,
         HeftClass::Rifle => values.rifle,
         HeftClass::Heavy => values.heavy,
-    }
-}
-
-/// Where the gun's mass comes from.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum MassSource {
-    /// The gun's own body.
-    Body,
-    /// The class's fallback: the gun's own body gives no finite, positive mass.
-    Class,
-}
-
-impl MassSource {
-    pub const fn label(self) -> &'static str {
-        match self {
-            MassSource::Body => "its own body",
-            MassSource::Class => "its class",
-        }
     }
 }
 
@@ -283,33 +243,6 @@ mod tests {
             position,
             orientation,
         }
-    }
-
-    #[test]
-    fn support_contact_uses_the_selected_region_and_scales_once() {
-        let geometry = GripGeometry {
-            foregrip: Vec3::new(-0.04, -0.06, -0.35),
-            gun: pose(Vec3::new(0.02, -0.03, -0.01), Quat::from_rotation_y(0.4)),
-            barrel: Vec3::NEG_Z,
-            sight: Vec3::Y * 0.08,
-            muzzle: Vec3::NEG_Z * 0.7,
-            native: false,
-        };
-        let off = CockpitHand {
-            wrist: pose(Vec3::new(-0.2, 0.1, -0.3), Quat::from_rotation_z(0.6)),
-            grip: pose(Vec3::new(-0.18, 0.08, -0.32), Quat::IDENTITY),
-            aim: Pose::IDENTITY,
-        };
-        let offset = Vec3::new(0.0, -0.01, -0.07);
-        let contact = brace_contact(&geometry, &off, offset, 1.7).unwrap();
-        let point = geometry.gun.position + geometry.gun.orientation * contact.point / 1.7;
-        assert!(point.abs_diff_eq(geometry.foregrip, 1e-5));
-        let palm = off.wrist.position + off.wrist.orientation * offset;
-        assert!(
-            (off.grip.position + off.wrist.orientation * contact.palm_from_grip / 1.7)
-                .abs_diff_eq(palm, 1e-5)
-        );
-        assert!(brace_contact(&geometry, &off, offset, f32::NAN).is_none());
     }
 
     #[test]

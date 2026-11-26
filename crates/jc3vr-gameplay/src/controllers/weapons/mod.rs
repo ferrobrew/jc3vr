@@ -12,6 +12,8 @@
 //!   spread, gone while it is braced on the foregrip;
 //! - [`fire`]: the per-shot seam that kicks the recoil and marks the shot's hand;
 //! - [`grip_watch`]: a diagnostic watch on how each held gun sits in its hand;
+//! - [`gun_bodies`]: the held guns the hand bodies make bodies of, as the weapon handling publishes
+//!   them, the shots that kick them, and what each step reports back;
 //! - [`dual_wield`]: each dual-wielded pistol drawn by its own hand and fired by its own hand's
 //!   trigger;
 //! - [`hold`]: the weapons in the hands as the loadout table has them, the attach bones that put
@@ -78,6 +80,7 @@ pub mod foregrip;
 pub mod grenade;
 pub(crate) mod grenade_moves;
 pub mod grip_watch;
+pub mod gun_bodies;
 pub mod heft;
 pub mod hold;
 pub mod hud_feed;

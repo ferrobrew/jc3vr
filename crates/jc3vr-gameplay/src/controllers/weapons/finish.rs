@@ -30,9 +30,7 @@ use crate::controllers::{
         grab::{self, GrabRules, Release, SocketMove, SocketRefusal},
         live,
     },
-    mode,
-    physical_hands::physics::guns,
-    telemetry,
+    mode, telemetry,
     weapons::{
         begin::with_holder,
         c4::{self, tuning::C4Tuning},
@@ -44,7 +42,7 @@ use crate::controllers::{
         dual_wield::single,
         engine,
         foregrip::{self, FOREGRIP, GripGeometry, Inputs, Transition, TwoHandedWeapon},
-        grenade,
+        grenade, gun_bodies,
         hold::{self, armed, tick},
         regions::{self, GunRegion},
         reload::{self, fire_hold::FireHold},
@@ -154,7 +152,7 @@ pub(crate) fn finish_tick(
         None => w,
     });
     // Taken every tick, so a break left over from an ended hold never lets go of the next.
-    let support_broke = Hand::BOTH.map(guns::take_support_break);
+    let support_broke = Hand::BOTH.map(gun_bodies::take_support_break);
     let inputs = Inputs {
         active: config.weapons.foregrip.enabled && active.is_some(),
         hands: active.as_ref().map_or([None; 2], |a| a.hands),

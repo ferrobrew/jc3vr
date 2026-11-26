@@ -13,8 +13,8 @@
 //!   long gun in one hand ([`crate::controllers::weapons::heft`]), and the reload learns the shot's
 //!   hand and the rounds left ([`crate::controllers::weapons::reload`]). A gun whose body the hands
 //!   hold is kicked by an impulse on that body instead of the offset
-//!   ([`crate::controllers::physical_hands::physics::guns`]). A weapon without a fire rumble of its own
-//!   still pulses the hand with the kick alone.
+//!   ([`crate::controllers::weapons::gun_bodies::queue_shot`]). A weapon without a fire rumble of
+//!   its own still pulses the hand with the kick alone.
 
 use detours_macro::detour;
 use jc3gi::equipment::weapon::{WeaponBase, WeaponData, WeaponState};
@@ -28,9 +28,8 @@ use crate::controllers::{
         rumble,
         shot::{self, Shot},
     },
-    physical_hands::physics::guns,
     scheme, vehicles,
-    weapons::{config::WeaponSettings, dual_wield, heft, hold::armed, recoil, reload},
+    weapons::{config::WeaponSettings, dual_wield, gun_bodies, heft, hold::armed, recoil, reload},
 };
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -76,7 +75,7 @@ fn fire_projectile_base(weapon: *mut WeaponBase, gun_data: *mut WeaponData) {
     let (pitch, yaw) = shot.kick(w);
     // A gun whose body the hands hold takes the shot's kick as an impulse on that body; the step
     // drops the shot for a gun without one, whose hands the recoil offset below moves instead.
-    guns::queue_shot(hand, weapon as usize);
+    gun_bodies::queue_shot(hand, weapon as usize);
     recoil::kick(
         hand,
         pitch,
