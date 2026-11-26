@@ -1,8 +1,8 @@
 //! The input self-check: a one-off probe of how the runtime treats the action layout, for the
 //! semantic actions' headset validation.
 //!
-//! Once per input state (each session, and each reinject), after the first focused sync at which a
-//! hand has an interaction profile, it logs one block (info, target `vr`, starting
+//! Once per OpenXR runtime and set of controller interaction profiles ([`record`]), after the
+//! first focused sync at which a hand has an interaction profile, it logs one block (info, target `vr`, starting
 //! `input: self-check`) and keeps it for the debug UI. The block holds:
 //!
 //! - the runtime's name and version, the dominant hand the bindings were suggested for, and each
@@ -24,8 +24,12 @@
 //! has passed, and the grip's finding is a measurement; only a pair one side of which read nothing
 //! is a problem ([`SelfCheckStatus::problems`]).
 //!
-//! `controllers.input.self_check` turns it off; [`request_rerun`] runs it again (the debug UI's
-//! button), for example after switching to a set that was inactive the first time.
+//! A runtime and controllers an earlier session checked are skipped, and the skip is logged on one
+//! line. The hands' profiles changing mid-session decides again, so a newly connected controller is
+//! checked. [`request_rerun`] runs it regardless (the debug UI's button), for example after
+//! switching to a set that was inactive the first time.
+
+mod record;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -41,6 +45,7 @@ use crate::vr::input::{
     config::grip_press,
     layout,
     layout::{BoolInput, FloatInput, Input, Profile, Vec2Input},
+    self_check::record::{CheckKey, Decision, Record},
     semantic::{
         SCHEMA_VERSION, defaults,
         frame::{ActionValue, SemanticFrame},
@@ -57,6 +62,9 @@ pub struct SelfCheckStatus {
     pub findings: Vec<String>,
     /// How many of the findings are problems: a pair the runtime gave to one set only.
     pub problems: usize,
+    /// The runtime and controllers, when an earlier session checked them and no check has run
+    /// in this one.
+    pub skipped: Option<String>,
 }
 
 /// A snapshot of the self-check's results.
@@ -64,7 +72,8 @@ pub fn status() -> SelfCheckStatus {
     STATUS.lock().clone()
 }
 
-/// Run the self-check again on the next frame.
+/// Run the self-check at the next focused frame, whether or not it ran for this runtime and these
+/// controllers before.
 pub fn request_rerun() {
     RERUN.store(true, Ordering::Relaxed);
 }
@@ -74,6 +83,8 @@ pub(crate) struct CheckFrame<'a> {
     pub(crate) session: &'a xr::Session<xr::D3D11>,
     pub(crate) actions: &'a Actions,
     pub(crate) profiles: [InteractionProfile; 2],
+    /// Whether the hands' profiles were re-queried this frame, after the runtime reported a change.
+    pub(crate) profiles_changed: bool,
     pub(crate) mode: ActionSetKind,
     /// Whether the session has input focus; unfocused, every action reads inactive.
     pub(crate) focused: bool,
@@ -85,6 +96,12 @@ pub(crate) struct CheckFrame<'a> {
 
 /// The self-check's progress through one input state.
 pub(crate) struct SelfCheck {
+    /// Whether the hands' profiles changed since the last decision to run or skip; set at the start.
+    undecided: bool,
+    /// Whether a run was requested and has not happened yet.
+    requested: bool,
+    /// The record, loaded at the first decision.
+    record: Option<Record>,
     ran: bool,
     watches: Vec<OverlapWatch>,
     grips: [GripWatch; 2],
@@ -93,38 +110,64 @@ pub(crate) struct SelfCheck {
 impl SelfCheck {
     pub(crate) fn new() -> SelfCheck {
         SelfCheck {
+            undecided: true,
+            requested: false,
+            record: None,
             ran: false,
             watches: Vec::new(),
             grips: [GripWatch::default(); 2],
         }
     }
 
-    /// Run the check once a hand has a profile, then watch the paired inputs.
+    /// Decide whether to run the check once a hand has a profile, run it, then watch the paired
+    /// inputs.
     pub(crate) fn update(&mut self, frame: &CheckFrame) {
-        if RERUN.swap(false, Ordering::Relaxed) {
-            *self = SelfCheck::new();
-            *STATUS.lock() = SelfCheckStatus::default();
+        self.requested |= RERUN.swap(false, Ordering::Relaxed);
+        self.undecided |= frame.profiles_changed;
+        let profiled = frame
+            .profiles
+            .iter()
+            .any(|&p| p != InteractionProfile::None);
+        if (self.undecided || self.requested) && frame.focused && profiled {
+            self.decide(frame);
         }
-        if !self.ran {
-            if !frame.focused
-                || frame
-                    .profiles
-                    .iter()
-                    .all(|&p| p == InteractionProfile::None)
-            {
-                return;
+        if self.ran {
+            self.watch_overlaps(frame);
+            self.watch_grips(frame);
+        }
+    }
+
+    /// Run the check, unless an earlier session checked this runtime and these controllers. A skip
+    /// leaves a check already running in this session alone.
+    fn decide(&mut self, frame: &CheckFrame) {
+        let requested = std::mem::take(&mut self.requested);
+        self.undecided = false;
+        let key = check_key(frame);
+        let record = self.record.get_or_insert_with(Record::load);
+        if record::decide(record, key.as_ref(), requested) == Decision::Skip {
+            if let Some(key) = key {
+                tracing::info!(target: "vr", "input: self-check skipped: {key} was checked before");
+                if !self.ran {
+                    STATUS.lock().skipped = Some(key.to_string());
+                }
             }
-            self.ran = true;
-            self.watches = pairs(frame.profiles, frame.dominant)
-                .into_iter()
-                .map(OverlapWatch::new)
-                .collect();
-            let report = report(frame, &self.watches);
-            tracing::info!(target: "vr", "input: self-check\n{report}");
-            STATUS.lock().report = Some(report);
+            return;
         }
-        self.watch_overlaps(frame);
-        self.watch_grips(frame);
+        if let Some(key) = key {
+            record.note(key);
+        }
+        self.ran = true;
+        self.watches = pairs(frame.profiles, frame.dominant)
+            .into_iter()
+            .map(OverlapWatch::new)
+            .collect();
+        self.grips = [GripWatch::default(); 2];
+        let report = report(frame, &self.watches);
+        tracing::info!(target: "vr", "input: self-check\n{report}");
+        *STATUS.lock() = SelfCheckStatus {
+            report: Some(report),
+            ..SelfCheckStatus::default()
+        };
     }
 
     fn watch_overlaps(&mut self, frame: &CheckFrame) {
@@ -421,6 +464,30 @@ const SOURCE_SAMPLE: &[(SetId, &str)] = &[
     (SetId::Semantic(SemanticSet::Menu), "menu_confirm"),
 ];
 
+/// The runtime and controllers of `frame`, or `None` when the runtime's name or a hand's profile
+/// cannot be read.
+fn check_key(frame: &CheckFrame) -> Option<CheckKey> {
+    let instance = frame.session.instance();
+    let named = (|| {
+        let runtime = instance.properties()?.runtime_name;
+        let mut profiles = Vec::new();
+        for hand in Hand::BOTH {
+            let path = frame
+                .session
+                .current_interaction_profile(frame.actions.hand_path(hand))?;
+            if path != xr::Path::NULL {
+                profiles.push(instance.path_to_string(path)?);
+            }
+        }
+        Ok::<_, xr::sys::Result>(CheckKey::new(runtime, profiles))
+    })();
+    named
+        .inspect_err(|e| {
+            tracing::warn!(target: "vr", "input: self-check: could not name the runtime and controllers ({e}), so it runs");
+        })
+        .ok()
+}
+
 fn report(frame: &CheckFrame, watches: &[OverlapWatch]) -> String {
     let CheckFrame {
         session,
@@ -581,6 +648,7 @@ static STATUS: Mutex<SelfCheckStatus> = Mutex::new(SelfCheckStatus {
     report: None,
     findings: Vec::new(),
     problems: 0,
+    skipped: None,
 });
 
 static RERUN: AtomicBool = AtomicBool::new(false);

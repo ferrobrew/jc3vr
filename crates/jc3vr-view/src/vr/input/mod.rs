@@ -30,9 +30,9 @@
 //! actions follow [`semantic::defaults`], whose table is chosen from the dominant hand when the
 //! actions are created.
 //!
-//! [`self_check`] probes, once per session, how the runtime treats this layout, and [`sources`]
-//! caches the runtime's bound sources for the debug UI, the bindings' masks, and the controls
-//! summary's glyphs.
+//! [`self_check`] probes, once per runtime and controller, how the runtime treats this layout, and
+//! [`sources`] caches the runtime's bound sources for the debug UI, the bindings' masks, and the
+//! controls summary's glyphs.
 //!
 //! # Handedness
 //!

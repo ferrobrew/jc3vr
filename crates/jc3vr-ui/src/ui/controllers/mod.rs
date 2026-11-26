@@ -100,12 +100,6 @@ pub(crate) fn controls(id: FeatureId) -> Option<FeatureBody> {
             estimator::estimator_settings(ui, &mut c);
         },
         FeatureId::Presets => |ui, _| presets::presets(ui, &mut CONTROLLERS_CONFIG.edit()),
-        FeatureId::Semantic => |ui, _| {
-            ui.checkbox(
-                &mut CONTROLLERS_CONFIG.edit().input.self_check,
-                "Input self-check",
-            );
-        },
         _ => return None,
     };
     Some(body)

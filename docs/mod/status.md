@@ -12,7 +12,7 @@ The status rows say whether each of the mod's systems is live, for confirming a 
 | | `RENDER-RATE BODY` | how many of the player's body draws the presentation layer re-posed in its last active frame, and its smoothed cost per frame in milliseconds ([rendering/presentation-layer.md](rendering/presentation-layer.md)); `WAITING` with why before it has run, `FAILED, NO RIG` for a skeleton without its bones |
 | `INPUT` | `CONTROLLER ACTIONS` | whether the actions are attached, created or reused from a reinject, and whether a restart is needed |
 | | `LAYOUT FINGERPRINT` | the first eight hex digits of the action layout's fingerprint for the hand the bindings were suggested for (the whole one is logged) |
-| | `SELF-CHECK` | whether the input self-check has run, and how many findings it logged |
+| | `SELF-CHECK` | whether the input self-check has run, been skipped for a runtime and controllers checked before, and how many findings it logged |
 | `HUD` | `ATLAS PARTS` | which parts the HUD atlas moved into cells on the last frame, or the count of failed moves and restores |
 | | `WORLD MARKERS` | how many markers were placed in the world on the last frame, and how many were left on the panel |
 | | `MARKER DEPTH` | how many of them took their distance from the scene depth, the fallback ray, or their own point |

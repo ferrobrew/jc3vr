@@ -84,7 +84,8 @@ impl InputState {
             }
         };
         let observed_at = history::observation_time();
-        if self.refresh_profiles(session) {
+        let profiles_changed = self.refresh_profiles(session);
+        if profiles_changed {
             self.sources.mark_stale();
         }
         self.sources.update(
@@ -179,18 +180,17 @@ impl InputState {
                 &mut observed,
             ),
         };
-        if cfg.input.self_check {
-            self.self_check.update(&CheckFrame {
-                session,
-                actions: &self.actions,
-                profiles: self.profiles,
-                mode,
-                focused,
-                dominant: self.dominant,
-                hands: &frame.hands,
-                semantic: &semantic,
-            });
-        }
+        self.self_check.update(&CheckFrame {
+            session,
+            actions: &self.actions,
+            profiles: self.profiles,
+            profiles_changed,
+            mode,
+            focused,
+            dominant: self.dominant,
+            hands: &frame.hands,
+            semantic: &semantic,
+        });
         let flight_controllers = flight_head
             .as_ref()
             .filter(|_| first_error.is_none())

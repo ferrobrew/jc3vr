@@ -92,6 +92,7 @@ fn layout_fingerprint() -> Line {
 fn self_check() -> Line {
     let status = self_check::status();
     match (status.report.is_some(), status.problems) {
+        (false, _) if status.skipped.is_some() => Line::off(prose("Checked before")),
         (false, _) => Line::waiting(prose("Not run")),
         (true, 0) => Line::ok(text!(
             "Passed, ",

@@ -47,9 +47,10 @@ puffin = { git = "https://github.com/EmbarkStudios/puffin", rev = "d06bed0fcb8c8
 # deferred frame tail hands that context to the tail thread to submit.
 parking_lot = { version = "0.12.5", features = ["send_guard"] }
 serde = { version = "1", features = ["derive"] }
+# The input self-check's record of the runtimes and controllers it has checked.
+toml = "1.1.6"
 
 [dev-dependencies]
 jc3vr-core = { path = "../jc3vr-core", features = ["test-support"] }
 pretty_assertions = "1.4.1"
 test-case = "3.3.1"
-toml = "1.1.6"

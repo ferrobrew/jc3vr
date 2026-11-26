@@ -29,18 +29,25 @@ pub(super) fn semantic_readout(ui: &mut Ui) {
     let cache = sources::cached();
 
     headlines(ui, &[&SELF_CHECK]);
-    match &check.report {
-        Some(report) => {
+    match (&check.report, &check.skipped) {
+        (Some(report), _) => {
             ui.label(RichText::new(report).monospace());
         }
-        None => {
-            ui.label("It runs once a hand has an interaction profile.");
+        (None, Some(key)) => {
+            ui.label(format!(
+                "Skipped: an earlier session checked {key}. It runs again for a new runtime or controller."
+            ));
+        }
+        (None, None) => {
+            ui.label(
+                "It runs once a hand has an interaction profile, for a runtime or controller not checked before.",
+            );
         }
     }
     for finding in &check.findings {
         ui.label(RichText::new(format!("finding: {finding}")).monospace());
     }
-    if ui.button("Run the self-check again").clicked() {
+    if ui.button("Run the self-check now").clicked() {
         self_check::request_rerun();
     }
 
