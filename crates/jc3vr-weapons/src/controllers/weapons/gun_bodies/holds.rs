@@ -9,7 +9,7 @@ use jc3gi::equipment::weapon::{WeaponBase, WeaponData};
 use jc3vr_body::controllers::{
     aim::gun,
     hands,
-    hands::{CockpitHand, grip, pose::PALM_CENTRE_M},
+    hands::{CockpitHand, grip, pose::palm_centre_m},
     held::guns::{BraceContact, GunHolds, HeftClass, HeldGun},
 };
 use jc3vr_input::frame::Hand;
@@ -61,7 +61,7 @@ pub(crate) unsafe fn read_holds(weapons: [Option<(usize, HeftClass)>; 2]) -> Gun
             && let Some(hand) = active.hands[off.index()]
         {
             holds.contacts[off.index()] =
-                brace_contact(&hold.geometry, &hand, PALM_CENTRE_M, active.world_scale);
+                brace_contact(&hold.geometry, &hand, palm_centre_m(), active.world_scale);
             holds.braces[off.index()] = holds.contacts[off.index()].is_some();
         }
     }

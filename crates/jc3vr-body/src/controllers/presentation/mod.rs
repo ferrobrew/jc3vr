@@ -61,7 +61,7 @@ pub use crate::controllers::presentation::edit::{BodyEdit, DrawEdit, PlayerBodyE
 use crate::{
     controllers::{
         body::procedural::{self, skeleton},
-        hands::{ik, late, pose as hand_pose, reach::REACH},
+        hands::{ik, late, pose as hand_pose},
         mode::{self, Mode},
         presentation::{
             edit::{DrawnArms, PaletteRegistration},
@@ -274,7 +274,6 @@ pub fn begin_frame() {
                     mode: mode::current().mode,
                 },
                 at: start,
-                stretch_forearm: REACH.detach && REACH.stretch_forearm,
                 pivot_offset: EYES_TO_NECK * scale,
                 head: [head(headpose::query_prev()), head(headpose::query())],
                 ticks: [previous, current],
@@ -342,7 +341,6 @@ struct Frame {
     poles: PoleContext,
     /// When the frame was snapshot.
     at: Instant,
-    stretch_forearm: bool,
     /// The neck pivot from the eyes, in the head's frame, at the world scale.
     pivot_offset: Vec3,
     /// The render-time head pose pair, previous then current, as the camera interpolates it.
@@ -566,7 +564,7 @@ fn solve_frame(frame: &Frame, instance: Mat4, dtf: f32) -> Option<BodyEdit> {
             })
         }),
         arms: true,
-        stretch_forearm: frame.stretch_forearm,
+        stretch_forearm: true,
         elbow: drive,
     };
     let solved = solve(&body, &motion);

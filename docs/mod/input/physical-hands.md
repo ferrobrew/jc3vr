@@ -72,7 +72,7 @@ With the hand bodies off, the palms are probed with ray casts. The casts reuse t
 
 ## The palm
 
-The palm is a box in the wrist frame, sized from the player's hand (`PALMS.palm_half_extents_m`, about 9 by 4 by 10 cm) and centred toward the fingers (`PALMS.palm_offset_m`), the palms' fixed tuning in `physical_hands::tuning::PALMS`, scaled by the VR world scale. It is probed from six points: its centre, the middle of the palm's face, and the four corners of the face toward the fingers, which lead a reach and a push.
+The palm is a box in the wrist frame, sized from the player's hand (`PALMS.palm_half_extents_m`, about 9 by 4 by 10 cm) and centred toward the fingers (`PALMS` is the palms' fixed tuning in `physical_hands::tuning`, and the centre is the hands [tuning](../tuning.md)'s `pose.palm_centre_m`), scaled by the VR world scale. It is probed from six points: its centre, the middle of the palm's face, and the four corners of the face toward the fingers, which lead a reach and a push.
 
 A palm acts on foot, on the ground or falling, for a tracked hand the controllers drive (its tier weight is above zero) that holds nothing: no gun, not the foregrip, no grenade or charge being thrown. The hands are taken before the two-handed pose, recoil, and the anchored grapple hand are applied, so the probes see where the player's hand is.
 

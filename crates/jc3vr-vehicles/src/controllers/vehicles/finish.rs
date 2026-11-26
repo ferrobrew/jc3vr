@@ -8,7 +8,7 @@ use jc3gi::input::input_action_map::Action::{
 use jc3vr_body::controllers::{
     grab::{GrabVolume, cockpit::ControlKind},
     hands,
-    hands::{anchor::ANCHOR_BLEND_S, tiers},
+    hands::{tiers, tuning::HANDS},
     haptics,
     intent::{
         controls::Controls,
@@ -77,7 +77,7 @@ pub fn finish_tick(
             held,
             grabs: mounted_grabs,
             dt,
-            blend_s: ANCHOR_BLEND_S,
+            blend_s: HANDS.get().anchor.blend_s,
         },
         &mut mounted_events,
     );
@@ -156,7 +156,7 @@ pub fn finish_tick(
             .handles_on
             .then(|| state.handles.holds.map(|hold| hold.is_some())),
     );
-    let blend = ANCHOR_BLEND_S;
+    let blend = HANDS.get().anchor.blend_s;
     for hand in Hand::BOTH {
         let i = hand.index();
         let hold = state.controls.holds[i];

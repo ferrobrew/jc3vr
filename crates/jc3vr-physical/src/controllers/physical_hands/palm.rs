@@ -2,6 +2,7 @@
 //! from.
 
 use glam::{Quat, Vec3};
+use jc3vr_body::controllers::hands::pose::palm_centre_m;
 use jc3vr_input::frame::Pose;
 
 use crate::controllers::physical_hands::tuning::PalmTuning;
@@ -29,7 +30,7 @@ impl PalmBox {
             1.0
         };
         Self {
-            centre: wrist.position + wrist.orientation * (config.palm_offset_m * scale),
+            centre: wrist.position + wrist.orientation * (palm_centre_m() * scale),
             orientation: wrist.orientation,
             half_extents: config.palm_half_extents_m.abs() * scale,
         }
@@ -71,7 +72,7 @@ mod tests {
     fn the_palm_sits_toward_the_fingers_in_the_wrist_frame() {
         let config = PALMS;
         let palm = PalmBox::from_wrist(wrist(Vec3::ZERO, Quat::IDENTITY), 1.0, &config);
-        assert_eq!(palm.centre, config.palm_offset_m);
+        assert_eq!(palm.centre, palm_centre_m());
         // Turned a quarter about +Y, the fingers (-Z) point along -X.
         let turned = PalmBox::from_wrist(
             wrist(

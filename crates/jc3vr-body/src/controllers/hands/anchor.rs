@@ -51,7 +51,7 @@ use re_utilities::hook_library::HookLibrary;
 use crate::{
     controllers::{
         fingers::grip::{self, Grip, GripSource},
-        hands::{self, CockpitHand, tiers},
+        hands::{self, CockpitHand, tiers, tuning::HANDS},
         haptics,
         physics::grapple_hook as hook,
         scheme,
@@ -59,20 +59,6 @@ use crate::{
     hooks::input::locomotion::character_from_context,
     tuning::FRESHNESS,
 };
-
-/// How long the hand takes to turn onto the line and back off it, seconds. The vehicle controls'
-/// and handles' anchored poses blend over it too.
-pub const ANCHOR_BLEND_S: f32 = 0.15;
-
-/// The hand displacement below which the hang is left alone, metres.
-const SWING_DEADZONE_M: f32 = 0.05;
-
-/// The hand displacement that swings at full strength, metres.
-const SWING_FULL_M: f32 = 0.3;
-
-/// The full-strength swing impulse per hang tick, as a multiple of the game's own continuous stick
-/// swing at full deflection.
-const SWING_SCALE: f32 = 1.0;
 
 /// The grapple's pump of the hang swing by the grapple hand's motion relative to the head, which
 /// the hang task's detour adds to the hold ([`register_hang_pump`]). Each function takes the
@@ -137,13 +123,14 @@ pub fn hold_line(hand: CockpitHand, line: Vec3, weight: f32) -> CockpitHand {
 /// metres) from where it held the line when the hang began: against the displacement, from zero at
 /// the deadzone to `full_impulse` at the full displacement, and zero inside the deadzone.
 pub fn swing_impulse(displacement: Vec2, full_impulse: f32) -> Vec2 {
+    let tuning = &HANDS.get().anchor;
     let length = displacement.length();
-    let span = SWING_FULL_M - SWING_DEADZONE_M;
-    if !length.is_finite() || length <= SWING_DEADZONE_M {
+    let span = tuning.swing_full_m - tuning.swing_deadzone_m;
+    if !length.is_finite() || length <= tuning.swing_deadzone_m {
         return Vec2::ZERO;
     }
-    let strength = ((length - SWING_DEADZONE_M) / span).clamp(0.0, 1.0);
-    -displacement / length * strength * full_impulse * SWING_SCALE
+    let strength = ((length - tuning.swing_deadzone_m) / span).clamp(0.0, 1.0);
+    -displacement / length * strength * full_impulse * tuning.swing_scale
 }
 
 /// Put the anchored hands on the line. `hands` are the cockpit-frame hands indexed by
@@ -429,12 +416,16 @@ mod tests {
 
     #[test]
     fn the_swing_pushes_against_the_hand_and_saturates() {
-        assert_eq!(swing_impulse(Vec2::new(0.03, 0.0), 10.0), Vec2::ZERO);
-        let half = swing_impulse(Vec2::new(0.0, -0.175), 10.0);
-        assert!((half.y - 5.0).abs() < 1e-3, "{half}");
+        let tuning = &HANDS.get().anchor;
+        let (deadzone, full_m) = (tuning.swing_deadzone_m, tuning.swing_full_m);
+        let scale = 10.0 * tuning.swing_scale;
+        let inside = swing_impulse(Vec2::new(deadzone * 0.5, 0.0), 10.0);
+        assert_eq!(inside, Vec2::ZERO);
+        let half = swing_impulse(Vec2::new(0.0, -(deadzone + full_m) / 2.0), 10.0);
+        assert!((half.y - scale / 2.0).abs() < 1e-3, "{half}");
         assert!(half.x.abs() < 1e-6);
-        let full = swing_impulse(Vec2::new(0.9, 0.0), 10.0);
-        assert!((full.x + 10.0).abs() < 1e-4);
+        let full = swing_impulse(Vec2::new(full_m * 3.0, 0.0), 10.0);
+        assert!((full.x + scale).abs() < 1e-4);
         assert_eq!(swing_impulse(Vec2::new(f32::NAN, 0.0), 10.0), Vec2::ZERO);
     }
 }

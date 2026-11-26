@@ -27,7 +27,8 @@ use crate::controllers::{
             },
         },
         palette, pose as hand_pose,
-        reach::{self, REACH, ReachTuning},
+        reach::{self, ReachTuning},
+        tuning::HANDS,
     },
     presentation,
 };
@@ -247,7 +248,7 @@ pub fn begin_frame() {
         ticks: ik::tick_records(),
         transport: character_transport(),
         solved,
-        reach: REACH,
+        reach: HANDS.get().reach,
     }));
 }
 
@@ -372,10 +373,9 @@ pub fn palette_edit(instance: Mat4, dtf: f32) -> Option<PaletteEdit> {
         let previous = frame.solved.previous[hand.index()].unwrap_or(joints);
         let elbow = previous.elbow.lerp(joints.elbow, dtf);
         let wrist = previous.wrist.lerp(joints.wrist, dtf);
-        let stretch = frame.reach.detach && frame.reach.stretch_forearm;
         Some(HandPaletteEdit {
             hand: d_model,
-            forearm: palette::forearm_reach(elbow, wrist, d_model.transform_point3(wrist), stretch),
+            forearm: palette::forearm_reach(elbow, wrist, d_model.transform_point3(wrist), true),
         })
     });
     hands.iter().any(Option::is_some).then_some(PaletteEdit {
@@ -426,7 +426,7 @@ pub(super) struct LateFrame {
     ticks: ik::TickRecords,
     transport: Option<[Mat4; 2]>,
     solved: Solved,
-    /// The detach's settings.
+    /// The detach's tuning.
     reach: ReachTuning,
 }
 
@@ -487,7 +487,7 @@ impl LateFrame {
         let to_world = lerp_transform(transport[0], transport[1], dtf);
         let elbow = to_world.transform_point3(previous.elbow.lerp(joints.elbow, dtf));
         let wrist = to_world.transform_point3(previous.wrist.lerp(joints.wrist, dtf));
-        keep_on_forearm(d, elbow, wrist, palette::MAX_FOREARM_STRETCH)
+        keep_on_forearm(d, elbow, wrist, self.reach.max_forearm_stretch)
     }
 
     /// `hand`'s forearm's world-space edit as the presentation layer draws it at `dtf`, through the
@@ -579,9 +579,6 @@ impl LateFrame {
 
     /// How far the rendered hand leaves the solved wrist toward the target at `dtf`, in the world.
     fn detach(&self, hand: Hand, dtf: f32) -> Vec3 {
-        if !self.reach.detach {
-            return Vec3::ZERO;
-        }
         self.miss(hand, dtf).map_or(Vec3::ZERO, |miss| {
             reach::detach_offset(miss, self.reach.detach_threshold_m, self.reach.detach_cap_m)
         })
@@ -800,7 +797,7 @@ mod tests {
             },
             transport: None,
             solved: Solved::default(),
-            reach: REACH,
+            reach: HANDS.get().reach,
         }
     }
 
@@ -927,7 +924,7 @@ mod tests {
         });
         f.solved.previous[Hand::Right.index()] = joints;
         f.solved.current[Hand::Right.index()] = joints;
-        let reach = 0.24 * palette::MAX_FOREARM_STRETCH;
+        let reach = 0.24 * f.reach.max_forearm_stretch;
         let d = f.hand_delta(Hand::Right, 0.5).unwrap();
         assert!((d.position.x - (reach - 0.24)).abs() < 1e-5);
         let drawn = f.drawn(Hand::Right, 0.5).unwrap();
@@ -950,10 +947,10 @@ mod tests {
     }
 
     #[test]
-    fn the_detach_off_keeps_the_hand_on_the_arm() {
+    fn a_miss_within_the_threshold_keeps_the_hand_on_the_arm() {
         let p = pose(0.3, 0.0);
-        let mut f = with_miss(frame(p, p, p, 1.0), Vec3::new(0.05, 0.0, 0.0));
-        f.reach.detach = false;
+        let threshold = HANDS.get().reach.detach_threshold_m;
+        let f = with_miss(frame(p, p, p, 1.0), Vec3::new(threshold * 0.5, 0.0, 0.0));
         let d = f.hand_delta(Hand::Right, 0.5).unwrap();
         assert!(d.position.length() < 1e-5);
     }

@@ -58,7 +58,7 @@ use parking_lot::Mutex;
 
 use crate::controllers::{
     aim::gun,
-    hands::{ik, pose as hand_pose},
+    hands::{ik, pose as hand_pose, tuning::HANDS},
     held::{
         self, GripSlide, SnapStart, SnapView, placement::HandlePlacement, slide_offset,
         slide_on_bone,
@@ -175,16 +175,13 @@ pub fn mirrored_grip(right_wrist: Mat4, left_attach: Mat4, axis: usize) -> Optio
 /// whether it is the mirrored one: its own, unless it is turned far from the mirrored one. The left
 /// hand always takes its own grip.
 pub fn pick_right_grip(own: Pose, mirrored: Pose) -> (Pose, bool) {
-    if angle_between(own.orientation, mirrored.orientation).to_degrees() > AUTO_TURN_DEG {
+    let auto_turn_deg = HANDS.get().grip.auto_turn_deg;
+    if angle_between(own.orientation, mirrored.orientation).to_degrees() > auto_turn_deg {
         (mirrored, true)
     } else {
         (own, false)
     }
 }
-
-/// How far the right hand's own grip may turn from the mirrored one before the automatic choice
-/// takes the mirrored one, degrees.
-pub const AUTO_TURN_DEG: f32 = 45.0;
 
 /// How a hand's last placement fared at reading its canonical grip.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]

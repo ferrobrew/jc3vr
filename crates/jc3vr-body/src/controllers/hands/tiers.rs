@@ -22,7 +22,7 @@
 //!   seated state's free tier (`controllers::vehicles::physical`), because a hand holds a
 //!   control only while the player grips it;
 //! - [`HandTier::Yielded`]: the animation owns the hand, which blends out from the controller over
-//!   [`YIELD_BLEND_S`] and back over [`RETURN_BLEND_S`].
+//!   the hands tuning's `tiers.yield_blend_s` and back over `tiers.return_blend_s`.
 //!
 //! The classification runs once per input tick ([`tick`]), in the game stage on the game
 //! thread, from the mode detector's snapshot plus a few state-machine predicates, and publishes one
@@ -35,7 +35,7 @@ use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
 use crate::controllers::{
-    hands::anchor::ANCHOR_BLEND_S,
+    hands::tuning::HANDS,
     held,
     mode::{self, AirborneVariant, CharacterSnapshot, Detection, Mode, OnFootVariant, Traversal},
     physics::local_player::LocalPlayer,
@@ -406,8 +406,8 @@ pub struct TierStatus {
     /// Each hand's controller weight: one on the controller, zero on the animation. A yielded
     /// hand below one is where the overlay draws the ghost of the controller-driven hand.
     pub weights: [f32; 2],
-    /// Each hand's share of the anchored pose: one while anchored, blending over
-    /// [`ANCHOR_BLEND_S`](crate::controllers::hands::anchor::ANCHOR_BLEND_S).
+    /// Each hand's share of the anchored pose: one while anchored, blending over the hands
+    /// tuning's `anchor.blend_s`.
     pub anchor_weights: [f32; 2],
 }
 
@@ -502,13 +502,14 @@ pub fn advance(
             tier => tier,
         },
     );
+    let tuning = HANDS.get();
     let weights = Hand::BOTH.map(|hand| {
         step_weight(
             previous.weights[hand.index()],
             effective[hand.index()].controller_weight(),
             dt,
-            YIELD_BLEND_S,
-            RETURN_BLEND_S,
+            tuning.tiers.yield_blend_s,
+            tuning.tiers.return_blend_s,
         )
     });
     let anchor_weights = Hand::BOTH.map(|hand| {
@@ -521,8 +522,8 @@ pub fn advance(
             previous.anchor_weights[hand.index()],
             target,
             dt,
-            ANCHOR_BLEND_S,
-            ANCHOR_BLEND_S,
+            tuning.anchor.blend_s,
+            tuning.anchor.blend_s,
         )
     });
     TierStatus {
@@ -535,13 +536,6 @@ pub fn advance(
 }
 
 static STATUS: Mutex<TierStatus> = Mutex::new(TierStatus::INITIAL);
-
-/// How long a hand takes to blend from its controller to the animation when a state yields it,
-/// seconds.
-const YIELD_BLEND_S: f32 = 0.25;
-
-/// How long a hand takes to blend from the animation back to its controller, seconds.
-const RETURN_BLEND_S: f32 = 0.35;
 
 /// Read the signals: the mode detector's detection and snapshot from this tick, plus the
 /// state-machine predicates, each only while the character is readable. In a game tick before the
@@ -877,7 +871,7 @@ mod tests {
         let status = advance(
             TierStatus::INITIAL,
             Some(TierState::Wingsuit),
-            YIELD_BLEND_S,
+            HANDS.get().tiers.yield_blend_s,
             &config,
             Hand::Right,
             true,

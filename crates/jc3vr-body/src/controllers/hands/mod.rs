@@ -19,7 +19,8 @@
 //!   bones in the skinning palette, and the render-time hand poses for the overlay;
 //! - [`parts`]: the render-time late update of a held gun's separate model parts (its magazine,
 //!   slide, or spinning barrel);
-//! - [`palette`]: the pure palette-entry math of the late update.
+//! - [`palette`]: the pure palette-entry math of the late update;
+//! - [`tuning`]: the tuning, read from the shipped `tuning/hands.toml`.
 //!
 //! Everything here is inert unless the controller scheme is in effect and the hand's controller is
 //! tracked ([`active_hands`]).
@@ -55,6 +56,7 @@ pub mod secondary;
 mod slots;
 pub mod stages;
 pub mod tiers;
+pub mod tuning;
 
 pub use pose::CockpitHand;
 pub use stages::DrawTime;
@@ -250,10 +252,7 @@ pub fn arm_remaps(
     torso: Quat,
     world_scale: f32,
 ) -> [Option<ArmRemap>; 2] {
-    let measured = reach::REACH
-        .measured_remap
-        .then(rig::arms)
-        .unwrap_or([None; 2]);
+    let measured = rig::arms();
     if measured.iter().all(Option::is_none) && !config.remap_hands {
         return [None; 2];
     }
@@ -282,9 +281,6 @@ pub fn arm_remaps(
 }
 
 fn reach_limits(remaps: &[Option<ArmRemap>; 2], world_scale: f32) -> [Option<ReachLimit>; 2] {
-    if !reach::REACH.reach_limit {
-        return [None; 2];
-    }
     let arms = rig::arms();
     if arms.iter().all(Option::is_none) {
         return [None; 2];

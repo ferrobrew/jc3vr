@@ -1,7 +1,6 @@
 //! The palms' fixed tuning: the palm box, the push off surfaces, and the knock of a fast hit.
 
 use glam::Vec3;
-use jc3vr_body::controllers::hands::pose::PALM_CENTRE_M;
 
 /// The palms' tuning, fixed at [`PALMS`].
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -9,9 +8,6 @@ pub struct PalmTuning {
     /// Half the palm box's size, metres of the player's hand: across the palm, through it, and
     /// along it.
     pub palm_half_extents_m: Vec3,
-    /// The palm box's centre in the wrist frame, metres (-Z toward the fingers, +Y out of the back
-    /// of the hand): the hand's palm centre ([`PALM_CENTRE_M`]).
-    pub palm_offset_m: Vec3,
     /// The press depth left alone before the body is pushed, metres, so that resting a hand on a
     /// wall does not drift the body.
     pub push_deadband_m: f32,
@@ -36,7 +32,6 @@ pub struct PalmTuning {
 /// The palms' tuning.
 pub const PALMS: PalmTuning = PalmTuning {
     palm_half_extents_m: Vec3::new(0.045, 0.02, 0.05),
-    palm_offset_m: PALM_CENTRE_M,
     push_deadband_m: 0.02,
     push_stiffness_per_s: 10.0,
     max_push_speed_mps: 2.5,

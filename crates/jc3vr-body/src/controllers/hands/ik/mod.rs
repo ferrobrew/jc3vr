@@ -74,6 +74,7 @@ use crate::{
             rig::{self, TickArm},
             secondary::{self, SecondaryParts, Switched},
             tiers,
+            tuning::HANDS,
         },
     },
     hooks::character::body_ik,
@@ -433,7 +434,8 @@ pub(crate) unsafe fn queue_model_wrists(
                 0.0,
             );
         }
-        hik.m_TargetReachT[slot] = (WRIST_REACH_T * weight).clamp(0.0, 1.0);
+        let ik = &HANDS.get().ik;
+        hik.m_TargetReachT[slot] = (ik.wrist_reach_t * weight).clamp(0.0, 1.0);
         hik.m_TargetPull[slot] = 0.0;
         let (axis, angle) = hand_pose::wrist_rotation_delta(rotation, animated_frame);
         let axis = Vector3 {
@@ -452,10 +454,10 @@ pub(crate) unsafe fn queue_model_wrists(
                 0.0,
             );
         }
-        hik.m_TargetReachR[slot] = (WRIST_REACH_R * weight).clamp(0.0, 1.0);
+        hik.m_TargetReachR[slot] = (ik.wrist_reach_r * weight).clamp(0.0, 1.0);
         // A rotation target promotes the target resist to the live resist, so the slot is always
         // written, or a past writer's value leaks in.
-        hik.m_TargetResist[slot] = (WRIST_RESIST * weight).clamp(0.0, 1.0);
+        hik.m_TargetResist[slot] = (ik.wrist_resist * weight).clamp(0.0, 1.0);
         queued[hand.index()] = true;
         records[hand.index()] = Some(record);
     }
@@ -682,7 +684,7 @@ pub(crate) unsafe fn before_secondary(character: *mut Character) {
                         &mut character.m_Blackboard,
                         hand,
                         target.wrist.position,
-                        SECONDARY_HOLD_REACH,
+                        HANDS.get().ik.secondary_hold_reach,
                     )
                 };
             }
@@ -696,23 +698,6 @@ pub(crate) unsafe fn before_secondary(character: *mut Character) {
         s.secondary_wrist_held = held[hand.index()];
     }
 }
-
-/// The reach of the weak `SECONDARY` target that holds a driven wrist while the weapon off-hand
-/// grip solves for the other.
-const SECONDARY_HOLD_REACH: f32 = 0.5;
-
-/// The wrist targets' positional reach, `0..=1`, before the tier weight scales it.
-const WRIST_REACH_T: f32 = 1.0;
-
-/// The wrist targets' rotational reach, `0..=1`, before the tier weight scales it.
-const WRIST_REACH_R: f32 = 1.0;
-
-/// How far a wrist target out of reach pulls the torso after it, `0..=1`, before the reach ramp
-/// raises it near full extension.
-const WRIST_PULL: f32 = 0.0;
-
-/// How strongly a wrist resists being dragged by other effectors' pull, `0..=1`.
-const WRIST_RESIST: f32 = 0.0;
 
 /// Queue the plan [`queue_or_defer`] kept for a solve gate that did not run, with no procedural
 /// torso, so the hands' status and records say what became of this tick's targets. Called at the
@@ -881,11 +866,12 @@ unsafe fn queue_hand(
         );
     }
 
-    let reach_cfg = &reach::REACH;
+    let tuning = HANDS.get();
+    let (reach_cfg, ik) = (&tuning.reach, &tuning.ik);
     let extension = arm
         .filter(|a| a.length > 0.0)
         .map(|a| target_position.distance(a.shoulder_model) / a.length);
-    let ramp = extension.filter(|_| reach_cfg.reach_pull).map_or(0.0, |e| {
+    let ramp = extension.map_or(0.0, |e| {
         reach::pull_ramp(e, reach_cfg.pull_start, reach_cfg.pull_full)
     });
     // On the procedural torso the arm reaches with the arm alone: the torso is the player's, and
@@ -893,7 +879,7 @@ unsafe fn queue_hand(
     let pull = if torso.is_some() {
         0.0
     } else {
-        (WRIST_PULL.max(ramp * reach_cfg.pull_max) * weight).clamp(0.0, 1.0)
+        (ik.wrist_pull.max(ramp * reach_cfg.pull_max) * weight).clamp(0.0, 1.0)
     };
     let hik = &mut character.m_HIK;
     let slot = effector as usize;
@@ -912,7 +898,7 @@ unsafe fn queue_hand(
             0.0,
         );
     }
-    hik.m_TargetReachT[slot] = (WRIST_REACH_T * weight).clamp(0.0, 1.0);
+    hik.m_TargetReachT[slot] = (ik.wrist_reach_t * weight).clamp(0.0, 1.0);
     hik.m_TargetPull[slot] = pull;
 
     // The body IK's shoulder target holds the girdle where the lean put it, which would cancel the
@@ -948,10 +934,10 @@ unsafe fn queue_hand(
             0.0,
         );
     }
-    hik.m_TargetReachR[slot] = (WRIST_REACH_R * weight).clamp(0.0, 1.0);
+    hik.m_TargetReachR[slot] = (ik.wrist_reach_r * weight).clamp(0.0, 1.0);
     // A rotation target promotes the target resist to the live resist, so the slot is always
     // written, or a past writer's value leaks in.
-    hik.m_TargetResist[slot] = (WRIST_RESIST * weight).clamp(0.0, 1.0);
+    hik.m_TargetResist[slot] = (ik.wrist_resist * weight).clamp(0.0, 1.0);
 
     let elbow = torso
         .and_then(|t| t.elbow_reach)

@@ -29,7 +29,7 @@ use glam::{Mat4, Quat, Vec3};
 
 use crate::controllers::{
     body::procedural::solver::arms::{Side, elbow_hint},
-    hands::palette::{MAX_FOREARM_STRETCH, forearm_reach},
+    hands::{palette::forearm_reach, tuning::HANDS},
     presentation::{
         elbow::{self, PoleInput},
         rig::Group,
@@ -546,7 +546,11 @@ fn blend_drawn_pole(drawn: Option<DrawnPole>, fallback: Vec3, axis: Vec3, weight
 
 /// How far the forearm may reach as a share of its length: its stretch's cap, or its own length.
 fn stretch_limit(stretch: bool) -> f32 {
-    if stretch { MAX_FOREARM_STRETCH } else { 1.0 }
+    if stretch {
+        HANDS.get().reach.max_forearm_stretch
+    } else {
+        1.0
+    }
 }
 
 /// `hand` moved back along the line from `shoulder` so that the wrist it carries from `wrist`

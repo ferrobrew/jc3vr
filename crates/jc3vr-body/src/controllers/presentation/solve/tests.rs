@@ -213,7 +213,8 @@ fn a_hand_past_the_arm_s_reach_falls_short_on_the_end_of_the_forearm() {
         forearm_wrist.abs_diff_eq(wrist, 1e-3),
         "{forearm_wrist:?} {wrist:?}"
     );
-    assert!(shoulder.distance(wrist) <= upper + fore * MAX_FOREARM_STRETCH + 1e-4);
+    let stretch = HANDS.get().reach.max_forearm_stretch;
+    assert!(shoulder.distance(wrist) <= upper + fore * stretch + 1e-4);
 }
 
 #[test]

@@ -102,7 +102,10 @@ pub use tick::{after_aim, free_hands, main_thread_tick, mode_acts};
 
 pub mod lifetime;
 
-use jc3vr_body::controllers::{grab::PickupKind, hands::CockpitHand};
+use jc3vr_body::controllers::{
+    grab::PickupKind,
+    hands::{CockpitHand, pose::palm_centre_m},
+};
 use jc3vr_input::frame::Hand;
 
 use crate::controllers::physical_hands::state::STATE;
@@ -151,7 +154,7 @@ use jc3vr_body::controllers::hands::DrawTime;
 /// body's hand at its body, for `at`. Called by [`jc3vr_body::controllers::hands::active_hands`] and
 /// its `active_hands_from_frame`.
 pub fn apply(cockpit: &mut [Option<CockpitHand>; 2], at: DrawTime) {
-    let palm_offset = tuning::PALMS.palm_offset_m;
+    let palm_offset = palm_centre_m();
     match at {
         DrawTime::Tick => physics::apply(cockpit, palm_offset),
         DrawTime::Render => physics::apply_at_render(cockpit, palm_offset),

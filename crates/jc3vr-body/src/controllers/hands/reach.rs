@@ -2,7 +2,7 @@
 //! arm, the pull ramp that lets the character's shoulder and chest follow a hand near full
 //! extension, and the capped detach of the rendered hand from a wrist the solve left short.
 //!
-//! The pieces, each behind its toggle in [`REACH`]:
+//! The pieces, tuned by the hands tuning's `reach` section ([`ReachTuning`]):
 //!
 //! - [`ArmRemap`]: a wrist's offset from the player's shoulder, scaled by the ratio of the two arm
 //!   lengths and placed at the character's shoulder. Both shoulders hang from the same eye point,
@@ -33,53 +33,70 @@ use body_rig::{
     smooth::{follow_factor, smoothstep_between},
 };
 use glam::{FloatExt, Quat, Vec3};
+use jc3vr_core::config::engine::{Invalid, nonnegative, positive, range};
 use jc3vr_input::frame::{Hand, Pose};
+use serde::Deserialize;
 
-use crate::controllers::body::{self, BodyDimensions};
+use crate::controllers::{
+    body::{self, BodyDimensions},
+    hands::tuning::HANDS,
+};
 
-/// The arm-reach tuning, fixed at [`REACH`]. Each part acts only under the controller scheme with
-/// the hand IK or the late update on.
-#[derive(Copy, Clone, Debug, PartialEq)]
+/// The arm-reach tuning, the hands tuning's `reach` section
+/// ([`HANDS`](crate::controllers::hands::tuning::HANDS)). Each part acts only under the controller
+/// scheme with the hand IK or the late update on.
+#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ReachTuning {
-    pub measured_remap: bool,
     /// The time constant of the smoothing on the character's measured shoulder positions, seconds.
     pub shoulder_smoothing_s: f32,
+    /// The time constant of the smoothing on the shoulder's offset in the clip's chest, seconds.
     pub chest_shoulder_smoothing_s: f32,
-    pub reach_limit: bool,
-    /// Ramp the wrist targets' pull up as a hand nears full extension, so the character's shoulder
-    /// and chest follow a reach.
-    pub reach_pull: bool,
-    /// The extension, as a fraction of the character's arm length, where the pull starts.
+    /// The time constant the measured bone lengths settle over, seconds.
+    pub length_smoothing_s: f32,
+    /// The extension, as a fraction of the character's arm length, where the wrist targets' pull
+    /// starts, so the character's shoulder and chest follow a reach.
     pub pull_start: f32,
     /// The extension where the pull reaches [`pull_max`](Self::pull_max).
     pub pull_full: f32,
     /// The pull at and beyond full extension, `0..=1`.
     pub pull_max: f32,
-    /// Move the rendered hand from a solved wrist that fell short of its target toward the target.
-    pub detach: bool,
-    /// The shortfall left alone, metres: below it, the rendered hand stays on the arm.
+    /// The shortfall of a solved wrist from its target left alone, metres: below it, the rendered
+    /// hand stays on the arm.
     pub detach_threshold_m: f32,
     /// The furthest the rendered hand leaves the arm, metres.
     pub detach_cap_m: f32,
-    /// Stretch the rendered forearm along its axis so it stays attached to a detached hand.
-    pub stretch_forearm: bool,
+    /// The most the rendered forearm extends along its axis to stay attached to a detached hand,
+    /// as a ratio of its length.
+    pub max_forearm_stretch: f32,
 }
 
-/// The arm-reach tuning.
-pub const REACH: ReachTuning = ReachTuning {
-    measured_remap: true,
-    shoulder_smoothing_s: 0.1,
-    chest_shoulder_smoothing_s: 0.5,
-    reach_limit: true,
-    reach_pull: true,
-    pull_start: 0.9,
-    pull_full: 1.0,
-    pull_max: 0.4,
-    detach: true,
-    detach_threshold_m: 0.01,
-    detach_cap_m: 0.1,
-    stretch_forearm: true,
-};
+impl ReachTuning {
+    pub(crate) fn validate(&self) -> Result<(), Invalid> {
+        positive(
+            "reach.shoulder_smoothing_s",
+            self.shoulder_smoothing_s,
+            10.0,
+        )?;
+        positive(
+            "reach.chest_shoulder_smoothing_s",
+            self.chest_shoulder_smoothing_s,
+            10.0,
+        )?;
+        positive("reach.length_smoothing_s", self.length_smoothing_s, 10.0)?;
+        range("reach.pull_start", self.pull_start, 0.0, 2.0)?;
+        range("reach.pull_full", self.pull_full, self.pull_start, 2.0)?;
+        range("reach.pull_max", self.pull_max, 0.0, 1.0)?;
+        nonnegative("reach.detach_threshold_m", self.detach_threshold_m, 1.0)?;
+        nonnegative("reach.detach_cap_m", self.detach_cap_m, 1.0)?;
+        range(
+            "reach.max_forearm_stretch",
+            self.max_forearm_stretch,
+            1.0,
+            3.0,
+        )
+    }
+}
 
 /// The remap of one arm's wrist: the offset from `player_shoulder`, scaled by `scale`, placed at
 /// `character_shoulder`. All positions are in the cockpit frame.
@@ -237,7 +254,7 @@ impl ArmSample {
 /// The smoothed measurement of one arm, updated once per tick.
 ///
 /// The bone lengths are constant across animation (the rig carries no scale), so they settle over
-/// a fixed half-second time constant and then hold. The eye-to-shoulder offset changes with the
+/// [`ReachTuning::length_smoothing_s`] and then hold. The eye-to-shoulder offset changes with the
 /// animation and follows it over [`ReachTuning::shoulder_smoothing_s`], and the offset in the clip's
 /// chest over [`ReachTuning::chest_shoulder_smoothing_s`].
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
@@ -271,7 +288,7 @@ impl ArmTracker {
     }
 
     /// Fold in one tick's sample, `dt` seconds after the last, smoothing the offsets over
-    /// [`REACH`]'s time constants. An implausible sample is dropped and counted.
+    /// [`ReachTuning`]'s time constants. An implausible sample is dropped and counted.
     pub fn update(&mut self, sample: ArmSample, dt: f32) {
         if !sample.plausible() {
             self.rejected = self.rejected.saturating_add(1);
@@ -287,9 +304,10 @@ impl ArmTracker {
         self.arm = Some(match self.arm {
             None => reading,
             Some(previous) => {
-                let lengths = follow_factor(dt, LENGTH_SMOOTHING_S);
-                let offset = follow_factor(dt, REACH.shoulder_smoothing_s);
-                let chest = follow_factor(dt, REACH.chest_shoulder_smoothing_s);
+                let tuning = &HANDS.get().reach;
+                let lengths = follow_factor(dt, tuning.length_smoothing_s);
+                let offset = follow_factor(dt, tuning.shoulder_smoothing_s);
+                let chest = follow_factor(dt, tuning.chest_shoulder_smoothing_s);
                 MeasuredArm {
                     upper_arm: previous.upper_arm.lerp(reading.upper_arm, lengths),
                     forearm: previous.forearm.lerp(reading.forearm, lengths),
@@ -350,8 +368,6 @@ const MIN_ARM_M: f32 = 0.2;
 /// The bounds on one measured segment (a bone, or the eyes to a shoulder), metres.
 const MIN_SEGMENT_M: f32 = 0.05;
 const MAX_SEGMENT_M: f32 = 0.6;
-/// The time constant the bone lengths settle over, seconds.
-const LENGTH_SMOOTHING_S: f32 = 0.5;
 
 #[cfg(test)]
 mod tests {

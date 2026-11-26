@@ -27,11 +27,14 @@ use jc3vr_input::frame::{Hand, Pose};
 use crate::controllers::hands::{
     config::GripOffset,
     reach::{ArmRemap, ReachLimit},
+    tuning::HANDS,
 };
 
-/// The centre of the palm in the wrist frame, metres of the player's hand: a little toward the
-/// fingers and into the palm from the wrist joint.
-pub const PALM_CENTRE_M: Vec3 = Vec3::new(0.0, -0.01, -0.06);
+/// The centre of the palm in the wrist frame, metres of the player's hand: the hands tuning's
+/// `pose.palm_centre_m`.
+pub fn palm_centre_m() -> Vec3 {
+    HANDS.get().pose.palm_centre_m
+}
 
 /// One hand's poses in the cockpit frame, after the grip offset and the remap.
 #[derive(Debug, Copy, Clone, PartialEq)]

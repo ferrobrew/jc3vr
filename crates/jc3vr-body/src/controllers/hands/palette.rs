@@ -11,6 +11,8 @@ use body_rig::rotation::twist_angle;
 use glam::{Mat3, Mat4, Quat, Vec3, Vec4};
 use jc3vr_view::hooks::graphics_engine::palette_edit::PaletteLayout;
 
+use crate::controllers::hands::tuning::HANDS;
+
 /// Read a palette entry as a transform.
 pub fn entry_to_matrix(m: &[f32; 12], layout: PaletteLayout) -> Mat4 {
     match layout {
@@ -61,8 +63,9 @@ pub fn forearm_swing(elbow: Vec3, wrist: Vec3, wrist_corrected: Vec3) -> Mat4 {
 /// The forearm's transform toward the corrected wrist: the swing about the elbow
 /// ([`forearm_swing`]), and with `stretch` a scale along the corrected forearm's axis about the
 /// elbow, so the forearm's far end lands on the corrected wrist even when the hand has moved off the
-/// end of the arm. Extension is bounded to [`MAX_FOREARM_STRETCH`]; shortening has no floor,
-/// since a separate floor would leave a close hand detached from the forearm.
+/// end of the arm. Extension is bounded to the hands tuning's `reach.max_forearm_stretch`
+/// ([`ReachTuning`](crate::controllers::hands::reach::ReachTuning)); shortening has no floor, since
+/// a separate floor would leave a close hand detached from the forearm.
 pub fn forearm_reach(elbow: Vec3, wrist: Vec3, wrist_corrected: Vec3, stretch: bool) -> Mat4 {
     let swing = forearm_swing(elbow, wrist, wrist_corrected);
     let (Some(axis), true) = (
@@ -78,7 +81,7 @@ pub fn forearm_reach(elbow: Vec3, wrist: Vec3, wrist_corrected: Vec3, stretch: b
     if !(from.is_finite() && to.is_finite()) || from <= f32::EPSILON {
         return swing;
     }
-    let ratio = (to / from).min(MAX_FOREARM_STRETCH);
+    let ratio = (to / from).min(HANDS.get().reach.max_forearm_stretch);
     let along = Mat3::IDENTITY
         + Mat3::from_cols(axis * axis.x, axis * axis.y, axis * axis.z) * (ratio - 1.0);
     Mat4::from_translation(elbow) * Mat4::from_mat3(along) * Mat4::from_translation(-elbow) * swing
@@ -152,9 +155,6 @@ pub(crate) fn roll_about(elbow: Vec3, wrist: Vec3, angle: f32) -> Mat4 {
         * Mat4::from_quat(Quat::from_axis_angle(axis, angle))
         * Mat4::from_translation(-elbow)
 }
-
-/// The most the forearm extends along its axis, as a ratio of its length.
-pub const MAX_FOREARM_STRETCH: f32 = 1.5;
 
 #[cfg(test)]
 mod tests {
@@ -314,7 +314,8 @@ mod tests {
         let far = Vec3::NEG_Z * 1.0;
         let reach = forearm_reach(elbow, wrist, far, true);
         let end = reach.transform_point3(wrist);
-        assert!((end.length() - 0.2 * MAX_FOREARM_STRETCH).abs() < 1e-5);
+        let stretch = HANDS.get().reach.max_forearm_stretch;
+        assert!((end.length() - 0.2 * stretch).abs() < 1e-5);
         assert_eq!(forearm_reach(elbow, elbow, far, true), Mat4::IDENTITY);
     }
 }
