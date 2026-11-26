@@ -3,8 +3,7 @@
 //! The payload binds every slot to its settings aggregate at startup. That aggregate sits above
 //! this crate, so the crate's tests register a root of their own instead: it holds the vehicles
 //! group itself, the groups of the layers the vehicle handling builds on (the body-bound
-//! controllers groups, the body, the movement, and the body IK settings, the weapons, and the
-//! physical hands), the view and core groups read through their slots, and stand-ins for the
+//! controllers groups, the body, the weapons, and the physical hands), the view and core groups read through their slots, and stand-ins for the
 //! fields of higher layers' groups that a body slot projects (the grapple's switches and the world
 //! markers' switch), all at the paths the payload's aggregate keeps them and with its defaults. A
 //! test reads and changes the configuration through the slots exactly as the payload does, and
@@ -37,9 +36,7 @@ use jc3vr_body::{
     },
     hooks::{
         animation::canopy::SKIP_REEL_OPENING,
-        character::config::{BODY_IK_CONFIG, BodyIkConfig},
         input::{
-            config::{MOVEMENT_CONFIG, MovementConfig},
             parachute::{CANOPY_LINE_TURN, CANOPY_LINE_TURN_SCALE},
             wingsuit::WINGSUIT_EVADE_ENABLED,
         },
@@ -77,7 +74,6 @@ jc3vr_core::test_root! {
         stereo: StereoConfig = StereoConfig::new(),
         foveation: FoveationConfig = FoveationConfig::new(),
         camera: CameraConfig = CameraConfig::new(),
-        movement: MovementConfig = MovementConfig::new(),
         fsr: FsrConfig = FsrConfig::new(),
         hud: Hud {
             egui_panel: EguiPanel {
@@ -90,7 +86,6 @@ jc3vr_core::test_root! {
             },
         },
         headpose: HeadPoseConfig = HeadPoseConfig::new(),
-        body_ik: BodyIkConfig = BodyIkConfig::new(),
         vr: VrConfig = VrConfig::new(),
         director: Director {
             time_scale: f32 = 1.0,
@@ -128,8 +123,6 @@ jc3vr_core::test_root! {
     }
     binds {
         BODY_CONFIG => body,
-        MOVEMENT_CONFIG => movement,
-        BODY_IK_CONFIG => body_ik,
         scheme::CONTROLLERS_ENABLED => controllers.enabled,
         scheme::DOMINANT_HAND => controllers.dominant_hand,
         LOCOMOTION_CONFIG => controllers.locomotion,

@@ -40,7 +40,6 @@ use crate::controllers::{
 
 pub mod acts;
 pub(crate) mod body_ik;
-pub mod config;
 pub(crate) mod gate;
 pub(crate) mod head;
 pub(crate) mod layers;
@@ -54,7 +53,6 @@ pub(crate) mod wielded;
 
 pub use acts::resolve_act_id;
 pub use body_ik::body_ik_status;
-pub use config::BodyIkConfig;
 
 pub use crate::hooks::character::{
     magazine::{register_serial_consumer, serial_consumer_registered},

@@ -28,9 +28,7 @@ use jc3vr_body::{
     },
     hooks::{
         animation::canopy::SKIP_REEL_OPENING,
-        character::config::{BODY_IK_CONFIG, BodyIkConfig},
         input::{
-            config::{MOVEMENT_CONFIG, MovementConfig},
             parachute::{CANOPY_LINE_TURN, CANOPY_LINE_TURN_SCALE},
             wingsuit::WINGSUIT_EVADE_ENABLED,
         },
@@ -91,11 +89,9 @@ jc3vr_core::test_root! {
         #[serde(default)]
         post_fx: PostFxConfig = PostFxConfig::new(),
         camera: CameraConfig = CameraConfig::new(),
-        movement: MovementConfig = MovementConfig::new(),
         fsr: FsrConfig = FsrConfig::new(),
         hud: HudConfig = HudConfig::new(),
         headpose: HeadPoseConfig = HeadPoseConfig::new(),
-        body_ik: BodyIkConfig = BodyIkConfig::new(),
         vr: VrConfig = VrConfig::new(),
         director: DirectorConfig = DirectorConfig::new(),
         recorder: RecorderConfig = RecorderConfig::new(),
@@ -113,11 +109,9 @@ jc3vr_core::test_root! {
         FOVEATION_CONFIG => foveation,
         POST_FX_CONFIG => post_fx,
         CAMERA_CONFIG => camera,
-        MOVEMENT_CONFIG => movement,
         FSR_CONFIG => fsr,
         HUD_CONFIG => hud,
         HEADPOSE_CONFIG => headpose,
-        BODY_IK_CONFIG => body_ik,
         VR_CONFIG => vr,
         DIRECTOR_CONFIG => director,
         RECORDER_CONFIG => recorder,

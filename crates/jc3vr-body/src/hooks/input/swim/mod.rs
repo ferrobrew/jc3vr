@@ -1,5 +1,4 @@
-//! Swim locomotion detours: the right stick owns the heading in water, behind
-//! [`smooth_swim_yaw`](crate::hooks::input::MovementConfig::smooth_swim_yaw).
+//! Swim locomotion detours: the right stick owns the heading in water.
 //!
 //! The swim family is a separate locomotion pipeline that never touches the on-foot orientation
 //! machinery, so nothing in [`crate::hooks::input::locomotion`] applies here. It turns the body two
@@ -52,12 +51,9 @@ use jc3vr_view::headpose::body_yaw_target;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::{
-    controllers::{
-        locomotion::strokes::{self, model::propel},
-        mode::CharacterSnapshot,
-    },
-    hooks::input::config::MOVEMENT_CONFIG,
+use crate::controllers::{
+    locomotion::strokes::{self, model::propel},
+    mode::CharacterSnapshot,
 };
 
 mod telemetry;
@@ -287,12 +283,8 @@ fn do_rotate(from: *const Vector3, to: *const Vector3, rate: f32, out: *mut Vect
         }
         SwimCore::Underwater => pitched(target, advance_swim_pitch(window.dt).sin()),
     };
-    let rate = (MOVEMENT_CONFIG
-        .query(|c| c.swim_turn_rate_deg_s)
-        .max(0.0)
-        .to_radians()
-        * window.dt)
-        .clamp(f32::EPSILON, DO_ROTATE_EASE_ANGLE);
+    let rate =
+        (SWIM_TURN_RATE_DEG_S.to_radians() * window.dt).clamp(f32::EPSILON, DO_ROTATE_EASE_ANGLE);
     let given = target;
     let target = Vector3 {
         data: target.to_array(),
@@ -305,6 +297,12 @@ fn do_rotate(from: *const Vector3, to: *const Vector3, rate: f32, out: *mut Vect
         telemetry::record_rotate(window.core, from, game_to, given, out);
     }
 }
+
+/// The rate the body is turned toward the swim heading, degrees per second. It stays above the look
+/// input's own rate, or the body trails the target and the turn continues after the stick is
+/// released; the game's own swim turn rates are far below it. Capped per frame by
+/// [`DO_ROTATE_EASE_ANGLE`], so it cannot overshoot.
+const SWIM_TURN_RATE_DEG_S: f32 = 360.0;
 
 /// The angle below which [`physics::DoRotate`] eases its step out, and the largest step that cannot
 /// overshoot the target. Radians.
@@ -359,11 +357,11 @@ fn process_motion(
     IN_PROCESS_MOTION.with(|c| c.set(false));
 }
 
-/// The body-yaw target while the override is engaged: the toggle is on and the headpose has a
+/// The body-yaw target while the override is engaged: the player swims and the headpose has a
 /// heading (the VR accumulator is seeded, or the flatscreen latch is following). `None` leaves every
 /// detour inert and the native swim behaviour standing.
 fn engaged_target() -> Option<Vec3> {
-    if !(swimming() && MOVEMENT_CONFIG.query(|c| c.smooth_swim_yaw)) {
+    if !swimming() {
         return None;
     }
     body_yaw_target()
@@ -401,7 +399,7 @@ fn with_swim_window(character: *mut Character, core: SwimCore, dt: f32, call: im
         return;
     }
     SWIM_EVAL_CALLS.fetch_add(1, Ordering::Relaxed);
-    if MOVEMENT_CONFIG.query(|c| c.smooth_swim_yaw) && body_yaw_target().is_none() {
+    if body_yaw_target().is_none() {
         SWIM_UNTARGETED.fetch_add(1, Ordering::Relaxed);
     }
     SWIM_WINDOW.with(|w| w.set(Some(SwimWindow { core, dt })));

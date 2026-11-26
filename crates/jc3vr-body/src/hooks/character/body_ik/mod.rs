@@ -34,7 +34,7 @@ use crate::{
     },
     hooks::{
         animation::{active_state_type_id, body_rule_system},
-        character::{body_ik::tuning::BODY_IK_TUNING, config::BODY_IK_CONFIG},
+        character::body_ik::tuning::BODY_IK_TUNING,
     },
 };
 
@@ -104,7 +104,6 @@ impl BodyIkStatus {
 /// The reason the body-IK path queued nothing on a frame.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum BodyIkSkip {
-    Disabled,
     HeadposeInactive,
     NoAnchor,
     NotInGameplay,
@@ -116,7 +115,6 @@ pub enum BodyIkSkip {
 impl BodyIkSkip {
     pub fn label(self) -> &'static str {
         match self {
-            Self::Disabled => "disabled in config",
             Self::HeadposeInactive => "headpose inactive",
             Self::NoAnchor => "no head anchor yet",
             Self::NotInGameplay => "not in gameplay",
@@ -416,15 +414,13 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
         let (_, character_rotation, _) = character_world.to_scale_rotation_translation();
         let joint_translation = |joint: &Joint| glam::Vec3::from_array(joint.m_Translation.data);
 
-        // From here on: the HumanIK body-follow targets, behind the body_ik config. Only while
+        // From here on: the HumanIK body-follow targets. Only while
         // gameplay owns the character: outside E_GAME_RUN the engine repositions Rico for a teleport,
         // so queuing head-follow targets would fight that (issue #27). The anchor capture above still
         // runs so the pose stays fresh for the auto-recenter rebase on resume.
-        let enabled = BODY_IK_CONFIG.lock().enabled;
         let tuning = BODY_IK_TUNING;
-        if let Some(skip) = (!enabled)
-            .then_some(BodyIkSkip::Disabled)
-            .or((!headpose::is_active()).then_some(BodyIkSkip::HeadposeInactive))
+        if let Some(skip) = (!headpose::is_active())
+            .then_some(BodyIkSkip::HeadposeInactive)
             .or(headpose::anchor().is_none().then_some(BodyIkSkip::NoAnchor))
             .or((!jc3vr_core::hooks::in_gameplay()).then_some(BodyIkSkip::NotInGameplay))
         {

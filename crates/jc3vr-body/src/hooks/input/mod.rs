@@ -2,9 +2,6 @@
 //! on the input tick, lives in the gameplay crate's `hooks::input`, which composes these detours'
 //! libraries around it in their established order.
 
-pub mod config;
-pub use config::MovementConfig;
-
 pub mod air;
 pub mod locomotion;
 pub mod parachute;

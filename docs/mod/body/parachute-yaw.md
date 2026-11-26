@@ -6,7 +6,7 @@ Why the parachute turned with the head in VR, and how the mod stops it. The engi
 
 The parachute steering helper `NParachuteMovement::GetParachuteSteeringValues` mixes the **camera input matrix** into the chute's steering. In VR the camera follows the HMD, so turning the head past the look-steer deadzone (`m_LookSteerDeadZone`, shaped by `m_LookSteerMaxYaw`/`m_LookSteerExponential`) turns the parachute — with **no stick input at all**. The whole body frame rotates under the player, since the view is composed on the body frame (`body × cockpit`).
 
-The mod's existing airborne suppression (`movement.suppress_air_aim_facing`) could not reach it: that hooks `UpdateFallSteering`, which governs the jump ascent and the fall, but the parachute is a separate movement core that never routes through that helper (see [engine/gameplay/parachute-locomotion.md](../../engine/gameplay/parachute-locomotion.md)).
+The mod's existing airborne suppression (the jump and fall detours in `hooks::input::locomotion`) could not reach it: that hooks `UpdateFallSteering`, which governs the jump ascent and the fall, but the parachute is a separate movement core that never routes through that helper (see [engine/gameplay/parachute-locomotion.md](../../engine/gameplay/parachute-locomotion.md)).
 
 ## The fix
 

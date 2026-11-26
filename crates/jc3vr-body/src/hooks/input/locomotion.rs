@@ -29,8 +29,6 @@ use jc3vr_view::headpose::sim::{HeadMode, LatchState};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::hooks::input::config::MOVEMENT_CONFIG;
-
 pub fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_static_binder(&INPUT_LOCO_MOVE_TASK_UPDATE_BINDER)
@@ -95,17 +93,14 @@ fn input_loco_aim_relative_task_update(ctx: *mut StateContext, p1: *mut c_void, 
 /// head turn yaws the body mid-jump with no stick input. While the head is decoupled (the VR source),
 /// clear the aim bit around the update for the local player so the jump takes its non-aiming fallback
 /// (current forward plus the stick-gated steer). Restored immediately; the character updates on its own worker thread, so the
-/// temporary clear is invisible to the aim system. Passes straight through with the toggle off, off
-/// the VR source, or for a non-local character.
+/// temporary clear is invisible to the aim system. Passes straight through off the VR source or for
+/// a non-local character.
 #[detour(
     address = jc3gi::input::locomotion::NStateTask_MovementJumpTask::Update_ADDRESS
 )]
 fn movement_jump_task_update(ctx: *mut StateContext, p1: *mut c_void, p2: *mut c_void) {
-    let character = if MOVEMENT_CONFIG.query(|c| c.suppress_air_aim_facing) {
-        unsafe { character_from_context(ctx) }.filter(|c| c.m_IsLocalCharacter && head_decoupled(c))
-    } else {
-        None
-    };
+    let character = unsafe { character_from_context(ctx) }
+        .filter(|c| c.m_IsLocalCharacter && head_decoupled(c));
     // Clear the weapon-aim bit around the update so its aim-target-facing branch takes the
     // non-aiming fallback. This covers only the aim-target facing path; the stick-gated air-steer is handled separately in
     // `update_fall_steering`.
@@ -174,8 +169,8 @@ fn update_fall_steering(
         out_velocity_norm,
         out_speed,
     );
-    let hold_straight = MOVEMENT_CONFIG.query(|c| c.suppress_air_aim_facing)
-        && unsafe { character.as_ref() }.is_some_and(|c| c.m_IsLocalCharacter && head_decoupled(c));
+    let hold_straight =
+        unsafe { character.as_ref() }.is_some_and(|c| c.m_IsLocalCharacter && head_decoupled(c));
     if hold_straight && !out_facing.is_null() {
         let forward = -glam::Mat4::from(unsafe { (*character).m_WorldMatrixT1 })
             .z_axis

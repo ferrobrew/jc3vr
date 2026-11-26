@@ -1,7 +1,6 @@
 //! Every controller setting except those with their own section's file.
 
 use egui::{Slider, Ui};
-use jc3vr_body::hooks::character::config::BODY_IK_CONFIG;
 use jc3vr_core::config::engine::Parts;
 use jc3vr_gameplay::controllers::{
     bindings::{Blocker, HandRecovery},
@@ -121,8 +120,6 @@ pub(super) fn locomotion_settings(ui: &mut Ui, c: &mut ControllersConfig) {
 }
 
 pub(super) fn animation_settings(ui: &mut Ui, cfg: &mut impl Parts) {
-    ui.checkbox(&mut cfg.part_mut(&BODY_IK_CONFIG).enabled, "Body IK")
-        .on_hover_text("Drive the upper body toward the headpose via the engine's HumanIK solver.");
     let c = cfg.part_mut(&CONTROLLERS_CONFIG);
     ui.checkbox(&mut c.aim_state.skip_arm_ik, "Skip the game's arm aim IK");
     unarmed::unarmed_settings(ui, &mut c.body.unarmed);

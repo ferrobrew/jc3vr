@@ -36,9 +36,7 @@ use jc3vr_body::{
     },
     hooks::{
         animation::canopy::SKIP_REEL_OPENING,
-        character::config::{BODY_IK_CONFIG, BodyIkConfig},
         input::{
-            config::{MOVEMENT_CONFIG, MovementConfig},
             parachute::{CANOPY_LINE_TURN, CANOPY_LINE_TURN_SCALE},
             wingsuit::WINGSUIT_EVADE_ENABLED,
         },
@@ -75,7 +73,6 @@ jc3vr_core::test_root! {
         stereo: StereoConfig = StereoConfig::new(),
         foveation: FoveationConfig = FoveationConfig::new(),
         camera: CameraConfig = CameraConfig::new(),
-        movement: MovementConfig = MovementConfig::new(),
         fsr: FsrConfig = FsrConfig::new(),
         hud: Hud {
             egui_panel: EguiPanel {
@@ -88,7 +85,6 @@ jc3vr_core::test_root! {
             },
         },
         headpose: HeadPoseConfig = HeadPoseConfig::new(),
-        body_ik: BodyIkConfig = BodyIkConfig::new(),
         vr: VrConfig = VrConfig::new(),
         director: Director {
             time_scale: f32 = 1.0,
@@ -142,8 +138,6 @@ jc3vr_core::test_root! {
     }
     binds {
         BODY_CONFIG => body,
-        MOVEMENT_CONFIG => movement,
-        BODY_IK_CONFIG => body_ik,
         scheme::CONTROLLERS_ENABLED => controllers.enabled,
         scheme::DOMINANT_HAND => controllers.dominant_hand,
         LOCOMOTION_CONFIG => controllers.locomotion,

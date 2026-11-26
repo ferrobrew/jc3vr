@@ -42,8 +42,6 @@
 //! `hooks::graphics_engine::config`,
 //! [`FoveationConfig`](jc3vr_view::vr::FoveationConfig) in `vr::config`,
 //! [`CameraConfig`](jc3vr_view::hooks::camera::CameraConfig) in `hooks::camera::config`,
-//! [`BodyIkConfig`](jc3vr_body::hooks::character::BodyIkConfig) in `hooks::character::config`,
-//! [`MovementConfig`](jc3vr_body::hooks::input::MovementConfig) in `hooks::input::config`,
 //! [`OnlineConfig`](jc3vr_core::hooks::online::OnlineConfig) in `hooks::online`,
 //! [`FsrConfig`](jc3vr_view::fsr::FsrConfig) in `fsr::config`,
 //! [`HudConfig`](jc3vr_hud::hud::HudConfig) in `hud::config`,
@@ -62,10 +60,7 @@ pub(crate) mod slots;
 
 use std::sync::Once;
 
-use jc3vr_body::{
-    controllers::body::BodyDimensions,
-    hooks::{character::BodyIkConfig, input::MovementConfig},
-};
+use jc3vr_body::controllers::body::BodyDimensions;
 use jc3vr_core::{
     config::{engine, engine::SlotGuard},
     hooks::online::OnlineConfig,
@@ -143,11 +138,9 @@ pub struct Config {
     #[serde(default)]
     pub post_fx: PostFxConfig,
     pub camera: CameraConfig,
-    pub movement: MovementConfig,
     pub fsr: FsrConfig,
     pub hud: HudConfig,
     pub headpose: HeadPoseConfig,
-    pub body_ik: BodyIkConfig,
     pub vr: VrConfig,
     pub director: DirectorConfig,
     pub recorder: RecorderConfig,
@@ -168,11 +161,9 @@ impl Config {
             foveation: FoveationConfig::new(),
             post_fx: PostFxConfig::new(),
             camera: CameraConfig::new(),
-            movement: MovementConfig::new(),
             fsr: FsrConfig::new(),
             hud: HudConfig::new(),
             headpose: HeadPoseConfig::new(),
-            body_ik: BodyIkConfig::new(),
             vr: VrConfig::new(),
             director: DirectorConfig::new(),
             recorder: RecorderConfig::new(),

@@ -9,10 +9,7 @@ use jc3vr_view::{headpose, headpose::Source, hooks::graphics_engine::player_draw
 
 use crate::{
     controllers::body::procedural::head::head_bone_world,
-    hooks::character::{
-        body_ik::{PRE_IK_POSE, PreIkPose, body_ik_status, tuning::BODY_IK_TUNING},
-        config::BODY_IK_CONFIG,
-    },
+    hooks::character::body_ik::{PRE_IK_POSE, PreIkPose, body_ik_status, tuning::BODY_IK_TUNING},
 };
 
 /// Hide the player's head and drive its full pose from the headpose.
@@ -111,12 +108,9 @@ pub(crate) unsafe fn override_head(character: *mut Character) {
         // point comes from the skeleton here.
         player_draw::publish_collapse_target(joint_translation(&neck_joint));
 
-        // The pre-IK capture retains the bind frame even when body IK is disabled. VR uses that
-        // frame with the filtered animation and fresh tracking, while the sim preserves its
-        // animated-or-post-solve fallback when body IK is disabled.
-        let body_ik_enabled = BODY_IK_CONFIG.lock().enabled;
+        // The pre-IK capture carries the bind frame. VR uses that frame with the filtered
+        // animation and fresh tracking.
         let pre_ik_pose = *PRE_IK_POSE.lock();
-        let pre_ik = body_ik_enabled.then_some(pre_ik_pose).flatten();
         let source = headpose::source();
 
         // Only drive the head/neck from the headpose while gameplay owns the character. Outside
@@ -130,10 +124,12 @@ pub(crate) unsafe fn override_head(character: *mut Character) {
             // The VR head uses the same filtered synthetic frame as the camera, followed by
             // tracking and the bone's bind frame. The sim retains its animated head offset.
             let offset_model = headpose::body_relative_rotation();
-            let animated = pre_ik.map(|pose| pose.head_orientation).unwrap_or_else(|| {
-                let [qx, qy, qz, qw] = joint.m_Orientation.data;
-                Quat::from_xyzw(qx, qy, qz, qw)
-            });
+            let animated = pre_ik_pose
+                .map(|pose| pose.head_orientation)
+                .unwrap_or_else(|| {
+                    let [qx, qy, qz, qw] = joint.m_Orientation.data;
+                    Quat::from_xyzw(qx, qy, qz, qw)
+                });
             let Some(composed) = head_orientation(source, pre_ik_pose, offset_model, animated)
             else {
                 crate::hooks::character::body_ik::capture_unavailable();
@@ -148,8 +144,7 @@ pub(crate) unsafe fn override_head(character: *mut Character) {
             // requires an effective reach, not just a queued target — with the reach dialled to
             // zero the solve moves nothing and this add must take over, or roomscale placement
             // silently dies.
-            let hik_places_head = body_ik_enabled
-                && BODY_IK_TUNING.head_reach_t * BODY_IK_TUNING.weight > 0.0
+            let hik_places_head = BODY_IK_TUNING.head_reach_t * BODY_IK_TUNING.weight > 0.0
                 && body_ik_status().is_some_and(|s| s.skip.is_none());
             let animated_head_world = headpose::anchor().unwrap_or(glam::Vec3::ZERO);
             let scale = VR_CONFIG.lock().world_scale;
@@ -182,7 +177,6 @@ pub(crate) unsafe fn override_head(character: *mut Character) {
                 // above: when body_ik has bent the neck toward the target, twisting the post-IK
                 // orientation would compound HIK's neck rotation with this manual twist.
                 let animated = pre_ik_pose
-                    .filter(|_| source == Source::Vr || body_ik_enabled)
                     .map(|pose| pose.neck_orientation)
                     .unwrap_or_else(|| {
                         let [qx, qy, qz, qw] = neck_joint.m_Orientation.data;
