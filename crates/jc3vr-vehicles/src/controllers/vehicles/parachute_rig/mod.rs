@@ -9,7 +9,6 @@ use std::{
     cell::RefCell,
     ffi::c_void,
     sync::atomic::{AtomicU64, Ordering},
-    time::{Duration, Instant},
 };
 
 use detours_macro::detour;
@@ -20,6 +19,7 @@ use jc3gi::{
     types::math::Matrix4,
 };
 use jc3vr_body::controllers::hands::ik;
+use jc3vr_core::published::{Published, Stage, Stamp, Window};
 use jc3vr_input::frame::Hand;
 use jc3vr_view::controllers::cockpit::CockpitTransform;
 use parking_lot::Mutex;
@@ -36,14 +36,17 @@ pub(super) fn hook_library() -> HookLibrary {
 
 /// Publish whether the handles act and which hands hold theirs, indexed by [`Hand::index`].
 pub(super) fn publish(held: Option<[bool; 2]>) {
-    *HOLDS.lock() = held.map(|held| (held, Instant::now()));
+    match held {
+        Some(held) => HOLDS.publish(held),
+        None => HOLDS.clear(),
+    }
 }
 
 /// Request native positions and copy the latest positions into the current cockpit frame.
 /// A missing or stale native position supplies no free-handle target.
 pub(super) fn centres(active: bool, cockpit: &CockpitTransform) -> [Option<Vec3>; 2] {
     let owner = active.then(ik::local_character).filter(|owner| *owner != 0);
-    let now = Instant::now();
+    let now = Stamp::now();
     let mut native = NATIVE.lock();
     if native.owner != owner {
         native.generation = native.generation.wrapping_add(1);
@@ -59,9 +62,7 @@ pub(super) fn centres(active: bool, cockpit: &CockpitTransform) -> [Option<Vec3>
                 && sample.rig.1 != 0
                 && sample.rig.2 != 0
                 && sample.generation == native.generation
-                && now
-                    .checked_duration_since(sample.sampled_at)
-                    .is_some_and(|age| age <= stale_after())
+                && stale_after().holds(sample.sampled_at, now)
         })
         .map_or([None; 2], |sample| {
             sample.world.map(|point| {
@@ -76,12 +77,10 @@ pub fn handles_unplaced() -> u64 {
     UNPLACED.load(Ordering::Relaxed)
 }
 
-/// Which handles to put back while the handle controls acted recently.
-pub fn unplaced(holds: Option<([bool; 2], Instant)>, now: Instant) -> [bool; 2] {
-    match holds {
-        Some((held, at)) if now.saturating_duration_since(at) <= stale_after() => held.map(|h| !h),
-        _ => [false; 2],
-    }
+/// Which handles to put back, given the holds the handle controls published recently, if any: the
+/// ones the hands do not hold.
+pub fn unplaced(holds: Option<[bool; 2]>) -> [bool; 2] {
+    holds.map_or([false; 2], |held| held.map(|h| !h))
 }
 
 #[detour(address = jc3gi::input::parachute::NParachuteObjectControl_SyncBones_ADDRESS)]
@@ -93,20 +92,17 @@ fn sync_bones(
 ) {
     let local = ik::local_character();
     let ours = local != 0 && owner as usize == local;
-    let now = Instant::now();
+    let now = Stamp::now();
     let unplace = if ours {
-        unplaced(*HOLDS.lock(), now)
+        unplaced(HOLDS.fresh_at(now, stale_after()))
     } else {
         [false; 2]
     };
     let request = ours
         .then(|| {
             let native = NATIVE.lock();
-            (native.owner == Some(local)
-                && native
-                    .requested_at
-                    .is_some_and(|at| now.saturating_duration_since(at) <= stale_after()))
-            .then_some(native.generation)
+            (native.owner == Some(local) && stale_after().holds(native.requested_at, now))
+                .then_some(native.generation)
         })
         .flatten();
     if request.is_none() && !unplace.contains(&true) {
@@ -408,7 +404,7 @@ struct NativeSample {
     owner: usize,
     generation: u64,
     sequence: u64,
-    sampled_at: Instant,
+    sampled_at: Stamp,
     rig: (usize, usize, usize),
     world: [Option<Vec3>; 2],
 }
@@ -416,7 +412,7 @@ struct NativeSample {
 struct NativeState {
     owner: Option<usize>,
     generation: u64,
-    requested_at: Option<Instant>,
+    requested_at: Option<Stamp>,
     sample: Option<NativeSample>,
 }
 
@@ -427,7 +423,7 @@ const BONE_NAMES: [[&str; 3]; 2] = [
 const ATTACH_NAMES: [&str; 2] = ["LeftHandleAttach", "RightHandleAttach"];
 const HAND_ATTACH_NAMES: [&str; 2] = ["LeftHandAttach2", "RightHandAttach2"];
 
-static HOLDS: Mutex<Option<([bool; 2], Instant)>> = Mutex::new(None);
+static HOLDS: Published<[bool; 2]> = Published::new(Stage::InputGame);
 static UNPLACED: AtomicU64 = AtomicU64::new(0);
 static SEQUENCE: AtomicU64 = AtomicU64::new(1);
 static NATIVE: Mutex<NativeState> = Mutex::new(NativeState {
@@ -442,7 +438,7 @@ thread_local! {
 }
 
 /// How old the rig's published holds and native samples may be and still stand.
-fn stale_after() -> Duration {
+fn stale_after() -> Window {
     VEHICLES.get().parachute_rig.stale_after()
 }
 
@@ -500,13 +496,13 @@ mod tests {
 
     #[test]
     fn only_the_handles_the_hands_do_not_hold_are_put_back_while_the_handles_act() {
-        let now = Instant::now();
-        assert_eq!(unplaced(None, now), [false; 2]);
-        assert_eq!(unplaced(Some(([false, true], now)), now), [true, false]);
-        assert_eq!(
-            unplaced(Some(([false; 2], now)), now + stale_after() * 2),
-            [false; 2]
-        );
+        let holds = Published::new(Stage::InputGame);
+        let now = Stamp::now();
+        assert_eq!(unplaced(holds.fresh_at(now, stale_after())), [false; 2]);
+        holds.publish_at([false, true], now);
+        assert_eq!(unplaced(holds.fresh_at(now, stale_after())), [true, false]);
+        let later = now + stale_after().duration() * 2;
+        assert_eq!(unplaced(holds.fresh_at(later, stale_after())), [false; 2]);
     }
 }
 

@@ -4,7 +4,10 @@
 use std::time::Duration;
 
 use glam::Vec3;
-use jc3vr_core::config::engine::{Invalid, nonnegative, positive, range, vec3};
+use jc3vr_core::{
+    config::engine::{Invalid, nonnegative, positive, range, vec3},
+    published::Window,
+};
 use serde::Deserialize;
 
 use crate::controllers::vehicles::tuning::millis;
@@ -45,8 +48,8 @@ pub struct MountedTuning {
 
 impl MountedTuning {
     /// [`Self::max_age_ms`].
-    pub fn max_age(&self) -> Duration {
-        Duration::from_millis(self.max_age_ms)
+    pub fn max_age(&self) -> Window {
+        Window::from_millis(self.max_age_ms)
     }
 
     /// [`Self::seat_exit_retry_ms`].

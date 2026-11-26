@@ -10,6 +10,7 @@ use jc3vr_body::controllers::{
     mode::VehicleSeat,
     physics::refs::Strong,
 };
+use jc3vr_core::published::{Published, Stage};
 use jc3vr_input::frame::{Hand, Pose};
 use jc3vr_view::controllers::overlay::{primitive::Source, store};
 use parking_lot::Mutex;
@@ -87,21 +88,15 @@ pub fn is_mounted_weapon(weapon: usize) -> bool {
 
 /// The mounted gun's aim point for the per-weapon update, when `weapon` is the gun the hands aim.
 pub fn mounted_target(weapon: usize) -> Option<Vec3> {
-    STATE
-        .lock()
-        .mounted_target
-        .filter(|t| t.weapon == weapon && t.fresh())
+    fresh_mounted_target()
+        .filter(|t| t.weapon == weapon)
         .map(|t| t.point)
 }
 
 /// The mounted gun's aim point for the character-level aim point, which draws the gun.
 #[inline]
 pub fn mounted_aim_point() -> Option<Vec3> {
-    STATE
-        .lock()
-        .mounted_target
-        .filter(MountedTarget::fresh)
-        .map(|t| t.point)
+    fresh_mounted_target().map(|t| t.point)
 }
 
 /// Stop acting: let go of every control and forget the mounted gun. Called whenever the bindings
@@ -120,7 +115,7 @@ pub fn stand_down() {
     state.last_handles = [None; 2];
     state.anchor_weights = [0.0; 2];
     state.mounted_reference = None;
-    state.mounted_target = None;
+    MOUNTED_TARGET.clear();
     state.mounted_last = None;
     state.mounted_grip = MountedGrip::new();
     state.mounted_barrel = None;
@@ -266,7 +261,6 @@ pub(super) struct State {
     /// Whether the parachute handles act this tick: under the parachute, with them switched on.
     pub(super) handles_on: bool,
     pub(super) mounted_reference: Option<Reference>,
-    pub(super) mounted_target: Option<MountedTarget>,
     /// The gun the hands last aimed and the direction they gave it, in the body frame, which it
     /// keeps while no hand holds a handle.
     pub(super) mounted_last: Option<(usize, Vec3)>,
@@ -357,7 +351,6 @@ impl State {
             handles: HandleState::new(),
             handles_on: false,
             mounted_reference: None,
-            mounted_target: None,
             mounted_last: None,
             mounted_grip: MountedGrip::new(),
             mounted_barrel: None,
@@ -373,9 +366,17 @@ impl State {
 
 pub(super) static STATE: Mutex<State> = Mutex::new(State::new());
 
-/// The address of the weapon in [`State::mounted_target`], or zero: a lock-free copy for
+/// The address of the mounted gun the hands aim, or zero: a lock-free copy for
 /// [`is_mounted_weapon`].
 pub(super) static MOUNTED_WEAPON: AtomicUsize = AtomicUsize::new(0);
+
+/// The mounted gun's aim point for the per-weapon update. An old one belongs to a gun the player
+/// has left or a paused game.
+pub(super) static MOUNTED_TARGET: Published<MountedTarget> = Published::new(Stage::InputGame);
+
+fn fresh_mounted_target() -> Option<MountedTarget> {
+    MOUNTED_TARGET.fresh(VEHICLES.get().mounted.max_age())
+}
 
 pub(super) fn log_handle_events(events: &[HandleEvent]) {
     for event in events {

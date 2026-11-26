@@ -46,7 +46,7 @@
 
 use std::{
     sync::atomic::{AtomicU32, Ordering},
-    time::Instant,
+    time::Duration,
 };
 
 use body_rig::math::{
@@ -55,6 +55,7 @@ use body_rig::math::{
 };
 use glam::{Quat, Vec3};
 use jc3gi::equipment::grappling_hook::GrapplingHookState;
+use jc3vr_core::published::{Stamp, Window};
 use parking_lot::Mutex;
 
 pub mod device;
@@ -86,10 +87,10 @@ use crate::grapple::tuning::GRAPPLE;
 pub fn advance(body: Quat, rooted: Option<Vec3>, on_foot: bool, config: &GrappleComfortConfig) {
     let tuning = &GRAPPLE.get().comfort;
     let mut s = FILTER.lock();
-    let now = Instant::now();
+    let now = Stamp::now();
     let dt = s
         .last_advance
-        .map(|last| (now - last).as_secs_f32())
+        .map(|last| now.saturating_duration_since(last).as_secs_f32())
         .unwrap_or(0.0)
         .clamp(0.0, 0.1);
     s.last_advance = Some(now);
@@ -109,8 +110,7 @@ pub fn advance(body: Quat, rooted: Option<Vec3>, on_foot: bool, config: &Grapple
         && headpose::source() == headpose::Source::Vr
     {
         s.pending_retarget = Some((heading(s.held), now));
-        s.handoff_deadline =
-            Some(now + std::time::Duration::from_secs_f32(tuning.handoff_timeout_s));
+        s.handoff_deadline = Some(now + Duration::from_secs_f32(tuning.handoff_timeout_s));
     }
     s.was_active = active;
 
@@ -189,7 +189,10 @@ pub fn blend_factor() -> f32 {
 pub fn take_body_yaw_retarget() -> Option<f32> {
     let mut s = FILTER.lock();
     let (yaw, at) = s.pending_retarget.take()?;
-    (at.elapsed().as_secs_f32() <= GRAPPLE.get().comfort.retarget_fresh_s).then_some(yaw)
+    let window = Window::new(Duration::from_secs_f32(
+        GRAPPLE.get().comfort.retarget_fresh_s,
+    ));
+    window.holds(at, Stamp::now()).then_some(yaw)
 }
 
 /// The landing-snap absorber step (see the module docs). The detection runs on the anchor's offset
@@ -247,7 +250,7 @@ struct GrappleFilter {
     /// The mode as of the last advance, so [`filter_body_rotation`] needs no config access.
     mode: GrappleComfortMode,
     /// The previous advance's instant, for the blend step `dt` (advances arrive on two cadences).
-    last_advance: Option<Instant>,
+    last_advance: Option<Stamp>,
     /// Whether the previous advance saw the grapple active (release-edge detection for the
     /// handoff).
     was_active: bool,
@@ -256,10 +259,10 @@ struct GrappleFilter {
     was_hold: bool,
     /// While `Some`, the post-reel yaw handoff is running: the hold stays engaged and the body
     /// turns toward the held heading.
-    handoff_deadline: Option<Instant>,
+    handoff_deadline: Option<Stamp>,
     /// The heading the yaw handoff wants the body turned toward, awaiting consumption by the VR
     /// body-yaw accumulator (see [`take_body_yaw_retarget`]).
-    pending_retarget: Option<(f32, Instant)>,
+    pending_retarget: Option<(f32, Stamp)>,
     /// The body rotation as of the previous advance — the frame the last render composed with —
     /// captured into the hold on the engage edge (the current advance's body already carries the
     /// grapple's fire-snap).

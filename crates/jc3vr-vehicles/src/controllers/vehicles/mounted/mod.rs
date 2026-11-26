@@ -31,8 +31,6 @@
 //!
 //! [`WeaponBase::GetGripPosition`]: jc3gi::equipment::weapon::WeaponBase::GetGripPosition
 
-use std::time::Instant;
-
 use glam::{Mat4, Quat, Vec3};
 use jc3gi::{
     character::{character::Character, inventory::WeaponSlot},
@@ -41,8 +39,6 @@ use jc3gi::{
 };
 use jc3vr_body::controllers::aim::gun;
 use jc3vr_input::frame::Hand;
-
-use crate::controllers::vehicles::tuning::VEHICLES;
 
 mod control;
 mod gunner_seat;
@@ -128,15 +124,6 @@ pub fn hands_midpoint(grips: [Option<Vec3>; 2]) -> Option<(Vec3, [bool; 2])> {
 pub struct MountedTarget {
     pub weapon: usize,
     pub point: Vec3,
-    pub at: Instant,
-}
-
-impl MountedTarget {
-    /// Whether the point is from a recent input tick. An older one belongs to a gun the player has
-    /// left or a paused game.
-    pub fn fresh(&self) -> bool {
-        self.at.elapsed() < VEHICLES.get().mounted.max_age()
-    }
 }
 
 /// Read the mounted gun `owner` mans, if any: the heavy slot's weapon in its mounted state, with

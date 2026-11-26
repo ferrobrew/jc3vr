@@ -48,10 +48,7 @@ mod model;
 #[cfg(test)]
 mod tests;
 
-use std::{
-    num::NonZeroUsize,
-    time::{Duration, Instant},
-};
+use std::{num::NonZeroUsize, time::Duration};
 
 use body_rig::math::constants::GRAVITY_MPS2;
 use glam::Vec3;
@@ -68,7 +65,10 @@ use jc3vr_body::{
     },
     hooks::input::air,
 };
-use jc3vr_core::game_tick::GameTick;
+use jc3vr_core::{
+    game_tick::GameTick,
+    published::{Stamp, Window},
+};
 use jc3vr_input::{
     frame::{self, Hand},
     haptics::cues::{Event, Sustain},
@@ -228,10 +228,9 @@ pub fn hangs_under_helicopter() -> bool {
 /// Whether Y under a helicopter has just pointed the resumed reel at its door side.
 #[inline]
 pub fn entering_helicopter() -> bool {
-    HANG_GATE
-        .lock()
-        .entering
-        .is_some_and(|at| at.elapsed() <= Duration::from_millis(GRAPPLE.get().lock.entering_ms))
+    HANG_GATE.lock().entering.is_some_and(|at| {
+        Window::from_millis(GRAPPLE.get().lock.entering_ms).holds(at, Stamp::now())
+    })
 }
 
 /// Whether the lock could take hold now: the local player's hook reels in along an attached line to
@@ -276,7 +275,7 @@ pub struct LockTickInput {
 /// Run the lock's part of the input tick, after the bindings' tables have stepped: apply the
 /// target's reaction, take the lock, end it, or take line in.
 pub fn lock_tick(game: &GameTick<'_>, input: &LockTickInput) {
-    HANG_GATE.lock().ticked = Some(Instant::now());
+    HANG_GATE.lock().ticked = Some(Stamp::now());
     let (pending, fault) = {
         let mut shared = SHARED.lock();
         (shared.pending.take(), shared.fault.take())
@@ -359,7 +358,9 @@ pub fn lock_tick(game: &GameTick<'_>, input: &LockTickInput) {
             .lock()
             .wanted
             .take()
-            .filter(|at| at.elapsed() <= Duration::from_millis(GRAPPLE.get().lock.hang_wanted_ms))
+            .filter(|&at| {
+                Window::from_millis(GRAPPLE.get().lock.hang_wanted_ms).holds(at, Stamp::now())
+            })
             .is_some();
         let kind = if hang {
             Some(Hold::Hang)
@@ -377,7 +378,7 @@ pub fn lock_tick(game: &GameTick<'_>, input: &LockTickInput) {
     match unsafe { ending(character, hook, input, fault) } {
         Some(why) => {
             if why == LockEnd::Entering {
-                HANG_GATE.lock().entering = Some(Instant::now());
+                HANG_GATE.lock().entering = Some(Stamp::now());
                 // The reel is pointed at the nearest door side, so it pulls Rico up onto the skid
                 // rather than into the stunt hang.
                 let pull = unsafe { engine::pull_to_door_side(character, hook) };
@@ -418,7 +419,7 @@ pub fn lock_tick(game: &GameTick<'_>, input: &LockTickInput) {
                     + free_taken;
                 active.pump.sample(pump_sample, input.real_dt, &pump_tuning);
                 active.pump_tuning = pump_tuning;
-                active.pump_at = Instant::now();
+                active.pump_at = Stamp::now();
                 active.held.take_in(taken, input.real_dt, lock);
                 let length_m = active.held.rope.length_m;
                 let braking = active.held.coasting();
@@ -496,7 +497,7 @@ pub(crate) unsafe fn drive(
     let target_inverse_mass = active
         .target
         .map_or(0.0, |t| t.inverse_mass * lock.reaction);
-    if active.pump_at.elapsed() > Duration::from_millis(lock.pump.stale_ms) {
+    if !Window::from_millis(lock.pump.stale_ms).holds(active.pump_at, Stamp::now()) {
         active.pump.expire();
     }
     let pump_velocity = active.pump.take(
@@ -603,7 +604,7 @@ fn last_velocity() -> Option<Vec3> {
 /// Ask the lock's next tick to hang the character below the hook: the reel's arrival would have
 /// put it in the game's upside-down ceiling attach.
 fn want_hang() {
-    HANG_GATE.lock().wanted = Some(Instant::now());
+    HANG_GATE.lock().wanted = Some(Stamp::now());
 }
 
 /// Whether a hang can take the place of the reel's arrival: the lock's tick runs (it does not while
@@ -611,12 +612,11 @@ fn want_hang() {
 /// Otherwise the arrival held off would only arrive again on every reel tick, with nothing to end
 /// the reel.
 fn hang_takes_over() -> bool {
+    let lock = &GRAPPLE.get().lock;
+    let now = Stamp::now();
     let gate = HANG_GATE.lock();
-    gate.ticked
-        .is_some_and(|at| at.elapsed() <= Duration::from_millis(GRAPPLE.get().lock.hang_wanted_ms))
-        && gate.refused.is_none_or(|at| {
-            at.elapsed() > Duration::from_millis(GRAPPLE.get().lock.hang_refused_ms)
-        })
+    Window::from_millis(lock.hang_wanted_ms).holds(gate.ticked, now)
+        && !Window::from_millis(lock.hang_refused_ms).holds(gate.refused, now)
 }
 
 /// How the lock took hold.
@@ -643,7 +643,7 @@ unsafe fn start(
 ) {
     let refuse = |why: &str| {
         if hold == Hold::Hang {
-            HANG_GATE.lock().refused = Some(Instant::now());
+            HANG_GATE.lock().refused = Some(Stamp::now());
         }
         tracing::info!(target: "grapple", why, "grapple lock: refused");
     };
@@ -699,7 +699,7 @@ unsafe fn start(
             free: FreeHand::default(),
             pump,
             pump_tuning,
-            pump_at: Instant::now(),
+            pump_at: Stamp::now(),
             airborne: false,
             hang: hold == Hold::Hang,
             under_helicopter: hold == Hold::Hang
@@ -836,7 +836,7 @@ fn end(local: Option<(&mut Character, &mut GrapplingHook)>, why: LockEnd, hand: 
             unsafe { engine::set_wanted_velocity(character, velocity) };
             // The reel's cancel runs on its next update; hand the velocity back once more after
             // it, in case the cancel cleared it.
-            SHARED.lock().release_velocity = Some((velocity, Instant::now()));
+            SHARED.lock().release_velocity = Some((velocity, Stamp::now()));
             air::carry_speed(velocity.length());
         }
     }
@@ -882,7 +882,7 @@ struct Active {
     free: FreeHand,
     pump: Pump,
     pump_tuning: SwingTuning,
-    pump_at: Instant,
+    pump_at: Stamp,
     /// Whether the character has left the ground since the lock took hold.
     airborne: bool,
     /// Whether the lock is a hang below a ceiling attach.
@@ -916,7 +916,7 @@ struct Shared {
     last_velocity: Option<Vec3>,
     /// The exit velocity a release captured and when, to hand back after the reel's cancel has
     /// run.
-    release_velocity: Option<(Vec3, Instant)>,
+    release_velocity: Option<(Vec3, Stamp)>,
     /// A press is held that has not yet taken the lock or been refused.
     armed: bool,
 }
@@ -963,9 +963,9 @@ static HANG_GATE: Mutex<HangGate> = Mutex::new(HangGate {
 });
 
 struct HangGate {
-    wanted: Option<Instant>,
-    ticked: Option<Instant>,
-    refused: Option<Instant>,
+    wanted: Option<Stamp>,
+    ticked: Option<Stamp>,
+    refused: Option<Stamp>,
     /// When Y under a helicopter let the reel resume into the game's hang.
-    entering: Option<Instant>,
+    entering: Option<Stamp>,
 }

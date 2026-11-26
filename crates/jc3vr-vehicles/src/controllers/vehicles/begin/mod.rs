@@ -45,8 +45,8 @@ use crate::controllers::vehicles::{
     },
     ripcord_tick,
     state::{
-        MOUNTED_WEAPON, MountedHandWeight, STATE, State, log_handle_events, mounted_hand_weight,
-        push_events,
+        MOUNTED_TARGET, MOUNTED_WEAPON, MountedHandWeight, STATE, State, log_handle_events,
+        mounted_hand_weight, push_events,
     },
     tuning::{PhysicalControlsTuning, VEHICLES},
     types::TickVolumes,
@@ -324,7 +324,10 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickVolumes {
     state.steering_turn = fit.steering_turn;
     state.status.fit = fit.readout;
     state.status.wheel = seat.is_some_and(|s| s.driver).then_some(fit.wheel);
-    state.mounted_target = mounted.target;
+    match mounted.target {
+        Some(target) => MOUNTED_TARGET.publish(target),
+        None => MOUNTED_TARGET.clear(),
+    }
     MOUNTED_WEAPON.store(mounted.weapon.unwrap_or(0), Ordering::Relaxed);
     state.mounted_handles = mounted.handles.or(state.mounted_handles);
     state.mounted_handle_points = mounted.handle_points;

@@ -4,7 +4,10 @@
 use std::time::Duration;
 
 use glam::Vec3;
-use jc3vr_core::config::engine::{Invalid, nonnegative, positive, range, vec3};
+use jc3vr_core::{
+    config::engine::{Invalid, nonnegative, positive, range, vec3},
+    published::Window,
+};
 use serde::Deserialize;
 
 use crate::controllers::vehicles::{ripcord::MIN_PULL_M, tuning::millis};
@@ -145,8 +148,8 @@ pub struct ParachuteRigTuning {
 
 impl ParachuteRigTuning {
     /// [`Self::stale_after_ms`].
-    pub fn stale_after(&self) -> Duration {
-        Duration::from_millis(self.stale_after_ms)
+    pub fn stale_after(&self) -> Window {
+        Window::from_millis(self.stale_after_ms)
     }
 
     pub(super) fn validate(&self) -> Result<(), Invalid> {

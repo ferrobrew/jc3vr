@@ -30,8 +30,6 @@ pub mod reel;
 pub mod swing;
 pub mod tether;
 
-use std::time::{Duration, Instant};
-
 pub use config::PhysicalGrappleTuning;
 use jc3gi::equipment::grappling_hook::GrapplingHookState;
 use jc3vr_body::controllers::{
@@ -41,7 +39,10 @@ use jc3vr_body::controllers::{
     mode::{Detection, Traversal},
     physics::{grapple_hook as hook, grapple_hook::HookRead},
 };
-use jc3vr_core::game_tick::GameTick;
+use jc3vr_core::{
+    game_tick::GameTick,
+    published::{Published, Stage, Stamp, Window},
+};
 use jc3vr_input::{
     frame::Hand,
     haptics::cues::{Event, Sustain},
@@ -174,13 +175,13 @@ pub struct GrappleStatus {
 
 /// The latest readout. Safe from any thread: it takes only a leaf lock.
 pub fn status() -> GrappleStatus {
-    let status = STATUS.lock();
-    GrappleStatus {
-        live: status.1.is_some_and(|at| {
-            at.elapsed() < Duration::from_millis(GRAPPLE.get().physical.status_max_age_ms)
-        }),
-        ..status.0
-    }
+    let window = Window::from_millis(GRAPPLE.get().physical.status_max_age_ms);
+    STATUS
+        .latest()
+        .map_or_else(GrappleStatus::default, |status| GrappleStatus {
+            live: window.holds(status.at, Stamp::now()),
+            ..status.value
+        })
 }
 
 /// Run the physical grapple's part of the input tick. Called in the game stage while the bindings
@@ -191,7 +192,7 @@ pub fn input_tick(game: &GameTick<'_>, input: &TickInput) -> TickOutput {
     let hook = unsafe { read_hook() };
     let anchor = anchor::status().anchor;
     let head = headpose::query().position;
-    let now = Instant::now();
+    let now = Stamp::now();
 
     let mut pulses = Vec::new();
     let mut state = STATE.lock();
@@ -361,7 +362,7 @@ pub fn input_tick(game: &GameTick<'_>, input: &TickInput) -> TickOutput {
         haptic,
         ..state.status
     };
-    *STATUS.lock() = (state.status, Some(now));
+    STATUS.publish_at(state.status, now);
     drop(state);
 
     for event in pulses {
@@ -439,30 +440,9 @@ static STATE: Mutex<State> = Mutex::new(State {
     },
 });
 
-/// The published readout and when it was published: a leaf lock, apart from [`STATE`], so that the
-/// readout's readers on other threads never wait on the input tick.
-static STATUS: Mutex<(GrappleStatus, Option<Instant>)> = Mutex::new((
-    GrappleStatus {
-        live: false,
-        phase: GrapplePhase::Inactive,
-        target: None,
-        pull: PullReading {
-            speed_mps: 0.0,
-            depth_m: 0.0,
-        },
-        reel_scale: None,
-        boosted: false,
-        reels: 0,
-        boosts: 0,
-        tethers: 0,
-        retract: None,
-        retracts: 0,
-        squeezing: false,
-        tension: 0.0,
-        haptic: 0.0,
-    },
-    None,
-));
+/// The published readout, apart from [`STATE`], so that the readout's readers on other threads
+/// never wait on the input tick.
+static STATUS: Published<GrappleStatus> = Published::new(Stage::InputGame);
 
 /// The local player's hook as the input tick reads it: the phase's fields, and the tethers and
 /// their tension as the game counts them.

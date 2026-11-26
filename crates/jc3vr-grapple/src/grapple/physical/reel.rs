@@ -20,8 +20,6 @@
 //!
 //! [`NStateTask_ReelIn::UpdateReelVelocity`]: jc3gi::equipment::grappling_hook::NStateTask_ReelIn::UpdateReelVelocity
 
-use std::time::{Duration, Instant};
-
 use detours_macro::detour;
 use glam::Vec3;
 use jc3gi::{
@@ -29,6 +27,7 @@ use jc3gi::{
     equipment::grappling_hook::{GrappleTuning, GrapplingHook},
     types::{math::Vector3, shared_ptr::SharedPtr},
 };
+use jc3vr_core::published::{Stamp, Window};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
@@ -131,7 +130,7 @@ pub fn scale_for(speed_mps: f32, config: &ReelPullTuning) -> f32 {
 /// Publish the hand's drive for the reel's next ticks, or `None` to leave the reel to the game.
 pub(super) fn publish(drive: Option<ReelDrive>) {
     let mut shared = SHARED.lock();
-    shared.drive = drive.map(|d| (d, Instant::now()));
+    shared.drive = drive.map(|d| (d, Stamp::now()));
     if drive.is_none() {
         shared.readout = ReelReadout::default();
     }
@@ -143,7 +142,7 @@ pub(super) fn readout() -> ReelReadout {
 }
 
 struct Shared {
-    drive: Option<(ReelDrive, Instant)>,
+    drive: Option<(ReelDrive, Stamp)>,
     readout: ReelReadout,
 }
 
@@ -161,8 +160,9 @@ fn current_drive() -> Option<ReelDrive> {
     SHARED
         .lock()
         .drive
-        .filter(|(_, at)| {
-            at.elapsed() < Duration::from_millis(GRAPPLE.get().physical.reel.drive_max_age_ms)
+        .filter(|&(_, at)| {
+            Window::from_millis(GRAPPLE.get().physical.reel.drive_max_age_ms)
+                .holds(at, Stamp::now())
         })
         .map(|(drive, _)| drive)
 }
