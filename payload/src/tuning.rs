@@ -27,6 +27,14 @@ use jc3vr_core::{
 use jc3vr_gameplay::controllers::tuning::GAMEPLAY;
 use jc3vr_grapple::{controllers::snatch::config::SNATCH, grapple::tuning::GRAPPLE};
 use jc3vr_hud::hud::tuning::HUD;
+use jc3vr_physical::controllers::{
+    glass::tuning::GLASS,
+    physical_hands::{
+        characters::tuning::CHARACTERS, climb::tuning::CLIMB, doors::tuning::DOORS,
+        human_hull::tuning::HUMAN_HULL, physics::tuning::PHYSICS, pickup::tuning::PICKUP,
+        tuning::PHYSICAL_HANDS, views::VIEWS,
+    },
+};
 use jc3vr_render::tuning::RENDER;
 use jc3vr_tooling::tuning::TOOLING;
 use jc3vr_ui::tuning::UI;
@@ -66,6 +74,15 @@ static FILES: &[&dyn AnyTuningFile] = &[
     &RIG,
     &PRESENTATION,
     &GRAB,
+    &PHYSICAL_HANDS,
+    &PHYSICS,
+    &PICKUP,
+    &CHARACTERS,
+    &DOORS,
+    &GLASS,
+    &CLIMB,
+    &HUMAN_HULL,
+    &VIEWS,
 ];
 
 #[cfg(test)]
