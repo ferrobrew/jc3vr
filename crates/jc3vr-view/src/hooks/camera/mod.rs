@@ -1,6 +1,6 @@
 use std::ffi::c_void;
 
-use body_rig::rotation::twist_about_y;
+use body_rig::math::angle::heading;
 use detours_macro::detour;
 use jc3gi::{
     camera::{
@@ -16,7 +16,6 @@ use jc3gi::{
 };
 use jc3vr_core::render_frame::RenderFrameSlot;
 use jc3vr_input::frame::Pose;
-use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{
@@ -331,7 +330,7 @@ fn camera_update_render(camera: *mut Camera, dt: f32, dtf: f32) {
             LAST_DTF.set(dtf);
 
             if !CAMERA_CONFIG.query(|c| c.enabled) {
-                *LAST_CAMERA_WORLD.lock() = None;
+                LAST_CAMERA_WORLD.set(None);
                 CAMERA_UPDATE_RENDER.get().unwrap().call(camera, dt, dtf);
                 return;
             }
@@ -345,7 +344,7 @@ fn camera_update_render(camera: *mut Camera, dt: f32, dtf: f32) {
             // (which the streaming system does not read); absolute placement resumes and the
             // auto-recenter re-bases onto Rico's updated head once gameplay returns.
             if !in_gameplay() {
-                *LAST_CAMERA_WORLD.lock() = None;
+                LAST_CAMERA_WORLD.set(None);
                 CAMERA_UPDATE_RENDER.get().unwrap().call(camera, dt, dtf);
                 return;
             }
@@ -368,14 +367,14 @@ fn camera_update_render(camera: *mut Camera, dt: f32, dtf: f32) {
                 participants::note_placement(character_t1_matrix, position);
                 // Republish the transform for the sim-phase readers (see the GetCameraMatrix
                 // hook below).
-                *LAST_CAMERA_WORLD.lock() = Some(camera.m_TransformT1);
+                LAST_CAMERA_WORLD.set(Some(camera.m_TransformT1));
                 write_camera_transform(
                     &mut camera.m_TransformT0,
                     prev.orientation,
                     previous_position,
                 );
             } else {
-                *LAST_CAMERA_WORLD.lock() = None;
+                LAST_CAMERA_WORLD.set(None);
                 let (left_eye_matrix, right_eye_matrix) = eye_matrices(local_character);
                 let character_t1_matrix = glam::Mat4::from(local_character.m_WorldMatrixT1);
                 let head_position =
@@ -399,7 +398,10 @@ fn camera_update_render(camera: *mut Camera, dt: f32, dtf: f32) {
             // look around and the floating panel a fixed world anchor.
             let (_, gameplay_rotation, gameplay_position) =
                 glam::Mat4::from(camera.m_TransformT1).to_scale_rotation_translation();
-            *LOADING_BASE.lock() = Some((gameplay_position, twist_about_y(gameplay_rotation)));
+            LOADING_BASE.set((
+                gameplay_position,
+                glam::Quat::from_rotation_y(heading(gameplay_rotation)),
+            ));
         }
     }
 
@@ -595,7 +597,7 @@ fn write_camera_transform(target: &mut Matrix4, orientation: glam::Quat, positio
 /// `setup_render_camera`) and the floating panel's world-lock in `crate::hud`, so the render camera and
 /// the panel always agree on when it is active and hand off together.
 pub fn vr_loading_view_active() -> bool {
-    !in_gameplay() && source() == Source::Vr && LOADING_BASE.lock().is_some()
+    !in_gameplay() && source() == Source::Vr && LOADING_BASE.get().is_some()
 }
 
 /// Head-track the *render* camera around the [`LOADING_BASE`] (the last gameplay viewpoint, upright)
@@ -622,7 +624,7 @@ fn head_track_render_camera(
     let Some(cockpit) = cockpit else {
         return;
     };
-    let Some((base_position, base_rotation)) = *LOADING_BASE.lock() else {
+    let Some((base_position, base_rotation)) = LOADING_BASE.get() else {
         return;
     };
     let base = glam::Mat4::from_rotation_translation(base_rotation, base_position);
@@ -653,7 +655,7 @@ fn compose_relative(
 /// frozen while the game parks its own camera outside gameplay so the render camera has a stable,
 /// well-formed frame to head-track around during the load (issue #27). `None` until the first gameplay
 /// frame captures one.
-static LOADING_BASE: Mutex<Option<(glam::Vec3, glam::Quat)>> = Mutex::new(None);
+static LOADING_BASE: RenderFrameSlot<(glam::Vec3, glam::Quat)> = RenderFrameSlot::new();
 
 /// The sim-phase camera matrix reader: `m_NextCameraContext`'s transform, which the game's
 /// sim-phase camera update rewrites from its internal camera *after* the mod's render-phase
@@ -690,7 +692,7 @@ fn game_camera_manager_get_camera_matrix(manager: *const GameCameraManager, matr
     if !in_gameplay() {
         return;
     }
-    if let Some(data) = *LAST_CAMERA_WORLD.lock()
+    if let Some(data) = LAST_CAMERA_WORLD.get().flatten()
         && let Some(matrix) = unsafe { matrix.as_mut() }
     {
         *matrix = data;
@@ -704,8 +706,9 @@ static LAST_DTF: RenderFrameSlot<f32> = RenderFrameSlot::new();
 
 /// The camera world transform last written to the active camera's `m_TransformT1` with the
 /// headpose active, republished by [`game_camera_manager_get_camera_matrix`] so sim-phase readers
-/// see the headpose camera. `None` until the camera hook first runs with the headpose active.
-static LAST_CAMERA_WORLD: Mutex<Option<Matrix4>> = Mutex::new(None);
+/// see the headpose camera. `None` until the camera hook first runs with the headpose active, and
+/// for a frame placed without it.
+static LAST_CAMERA_WORLD: RenderFrameSlot<Option<Matrix4>> = RenderFrameSlot::new();
 
 /// The active (main) camera's near/far clip planes (`m_Near`/`m_Far`), captured each frame from the
 /// engine. The graphics-engine hooks' reconstruction override keys on
@@ -738,7 +741,7 @@ fn camera_tree_update_render_contexts(
         .call(tree, camera_control_context);
 
     unsafe {
-        *LAST_CAMERA_WORLD.lock() = None;
+        LAST_CAMERA_WORLD.set(None);
         let Some(local_character) = Character::GetLocalPlayerCharacter().as_mut() else {
             return;
         };
@@ -787,12 +790,12 @@ fn camera_tree_update_render_contexts(
             };
 
         if headpose_active {
-            *LAST_CAMERA_WORLD.lock() = Some(Matrix4::from(glam::Mat4::from_rotation_translation(
+            LAST_CAMERA_WORLD.set(Some(Matrix4::from(glam::Mat4::from_rotation_translation(
                 next_orientation.unwrap_or(glam::Quat::IDENTITY),
                 next_position,
-            )));
+            ))));
         } else {
-            *LAST_CAMERA_WORLD.lock() = None;
+            LAST_CAMERA_WORLD.set(None);
         }
 
         patch_context(
