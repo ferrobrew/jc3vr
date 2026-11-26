@@ -107,8 +107,7 @@ pub(crate) unsafe fn stabilize(
     let case = (controllers_enabled && source() == Source::Vr).then(|| {
         let step = if dt.is_finite() { dt.max(0.0) } else { 0.0 };
         // SAFETY: the pass's entry, on the thread running it.
-        let mut read =
-            unsafe { tracker.read(character, &locomotion, now, step, JUMP_GRACE_S) };
+        let mut read = unsafe { tracker.read(character, &locomotion, now, step, JUMP_GRACE_S) };
         // A few ticks' jitter in the task's stamp does not hand the view over and back.
         read.movement_task = locomotion.at.is_some_and(|at| {
             now.saturating_duration_since(at).as_secs_f32() <= MOVEMENT_TASK_GRACE_S
