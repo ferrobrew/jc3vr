@@ -30,7 +30,7 @@ The payload keeps its files in the per-user configuration directory that the `di
 | --- | --- | --- |
 | `settings.toml` | The whole runtime configuration | When a setting changes, as described below |
 | `ui_layout_v2.json` | The debug UI's feature selection and dock layout | One owned coalescing writer performs atomic replacement outside UI locks; snapshots are checked every 60 editing UI frames |
-| `teleports.toml` | The director's teleport bookmarks | When a bookmark is saved or removed |
+| `teleports.toml` | The director's teleport bookmarks | When a bookmark is saved or removed, unless the file could not be read or parsed: then it is left untouched and the error shows in the Director feature |
 | `inventory.toml` | The VR inventory's save sidecar: the weapons carried beyond the slots, tied to the game's save ([input/two-handed-inventory.md](input/two-handed-inventory.md#saves-resets-and-loads)) | Each time the game stores the player's save data |
 
 The learned body estimator's weights are not a setting and are not kept here: they are read from `controllers.body.estimator.weights_path`, or by default from `egoposer.safetensors` beside the payload DLL, where `scripts/egoposer_weights.sh` puts them ([body/body-estimator.md](body/body-estimator.md#the-weights)).

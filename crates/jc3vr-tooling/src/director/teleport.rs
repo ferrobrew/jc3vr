@@ -12,7 +12,10 @@
 //! ([`jc3vr_core::config::engine::paths`]), so a shot's framing survives a relaunch. The stored transform is the character's full world matrix, so the facing comes back
 //! too and no axis convention is assumed.
 
-use std::path::PathBuf;
+use std::{
+    fmt,
+    path::{Path, PathBuf},
+};
 
 use jc3gi::{character::character::Character, game_world::GameWorld, types::math::Matrix4};
 use parking_lot::Mutex;
@@ -51,6 +54,47 @@ pub fn bookmarks() -> Vec<Bookmark> {
         .bookmarks
         .clone()
 }
+
+/// Why the bookmarks file could not be loaded, if it could not. While it could not, the file is left
+/// untouched and changes to the bookmarks last only for the session.
+pub fn load_error() -> Option<BookmarksError> {
+    STATE
+        .lock()
+        .get_or_insert_with(State::load)
+        .load_error
+        .clone()
+}
+
+/// A bookmarks file that exists but could not be loaded.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BookmarksError {
+    pub path: PathBuf,
+    pub kind: BookmarksErrorKind,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum BookmarksErrorKind {
+    /// The file could not be read.
+    Read(String),
+    /// The file is not TOML, or not the bookmarks' shape.
+    Parse(String),
+}
+
+impl fmt::Display for BookmarksError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let path = self.path.display();
+        match &self.kind {
+            BookmarksErrorKind::Read(why) => {
+                write!(f, "director: bookmarks: could not read {path}: {why}")
+            }
+            BookmarksErrorKind::Parse(why) => {
+                write!(f, "director: bookmarks: could not parse {path}: {why}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for BookmarksError {}
 
 /// Save the player's current transform under `name`, replacing a bookmark of the same name.
 pub fn save_current(name: &str) -> bool {
@@ -203,35 +247,79 @@ static PENDING: Mutex<Option<Request>> = Mutex::new(None);
 
 static STATE: Mutex<Option<State>> = Mutex::new(None);
 
-#[derive(Default, Serialize, Deserialize)]
-#[serde(default)]
+/// The bookmarks in memory, and why the file could not be loaded, if it could not.
+#[derive(Default)]
 struct State {
     bookmarks: Vec<Bookmark>,
+    /// Set when the file exists but could not be read or parsed. While it is, the file is never
+    /// written: the in-memory list is not what the file holds, and a save would replace bookmarks
+    /// that are still recoverable from it.
+    load_error: Option<BookmarksError>,
 }
+
+/// The bookmarks file's contents.
+#[derive(Default, Serialize, Deserialize)]
+#[serde(default)]
+struct BookmarkFile {
+    bookmarks: Vec<Bookmark>,
+}
+
 impl State {
     fn load() -> Self {
-        let Some(path) = path() else {
-            return Self::default();
-        };
-        match std::fs::read_to_string(&path) {
-            Ok(text) => toml::from_str(&text).unwrap_or_else(|e| {
-                tracing::warn!(
-                    "director: could not parse the bookmarks at {}: {e}",
-                    path.display()
-                );
-                Self::default()
+        match path() {
+            Some(path) => Self::load_from(&path),
+            None => Self::default(),
+        }
+    }
+
+    /// Load the bookmarks at `path`. A missing file is an empty list; an unreadable or unparsable
+    /// one is an empty list that refuses to save.
+    fn load_from(path: &Path) -> Self {
+        let parsed = match std::fs::read_to_string(path) {
+            Ok(text) => toml::from_str::<BookmarkFile>(&text).map_err(|error| BookmarksError {
+                path: path.to_owned(),
+                kind: BookmarksErrorKind::Parse(error.to_string()),
             }),
-            Err(_) => Self::default(),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                Ok(BookmarkFile::default())
+            }
+            Err(error) => Err(BookmarksError {
+                path: path.to_owned(),
+                kind: BookmarksErrorKind::Read(error.to_string()),
+            }),
+        };
+        match parsed {
+            Ok(file) => Self {
+                bookmarks: file.bookmarks,
+                load_error: None,
+            },
+            Err(error) => {
+                tracing::warn!("{error}; the file is left untouched");
+                Self {
+                    bookmarks: Vec::new(),
+                    load_error: Some(error),
+                }
+            }
         }
     }
 
     fn save(&self) {
-        let Some(path) = path() else {
+        if let Some(path) = path() {
+            self.save_to(&path);
+        }
+    }
+
+    fn save_to(&self, path: &Path) {
+        if let Some(error) = &self.load_error {
+            tracing::warn!("{error}; the change is kept for this session and not saved");
             return;
+        }
+        let file = BookmarkFile {
+            bookmarks: self.bookmarks.clone(),
         };
-        match toml::to_string(self) {
+        match toml::to_string(&file) {
             Ok(text) => {
-                if let Err(e) = std::fs::write(&path, text) {
+                if let Err(e) = std::fs::write(path, text) {
                     tracing::warn!(
                         "director: could not write the bookmarks to {}: {e}",
                         path.display()
@@ -256,5 +344,77 @@ pub(crate) fn player_transform() -> Option<[f32; 16]> {
         Character::GetLocalPlayerCharacter()
             .as_ref()
             .map(|c| c.m_WorldMatrixT1.data)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn scratch_dir(name: &str) -> PathBuf {
+        let dir =
+            std::env::temp_dir().join(format!("jc3vr-teleport-{name}-{}", std::process::id()));
+        drop(std::fs::remove_dir_all(&dir));
+        std::fs::create_dir_all(&dir).expect("scratch directory");
+        dir
+    }
+
+    fn bookmark(name: &str) -> Bookmark {
+        let mut transform = Matrix4::IDENTITY.data;
+        transform[12..15].copy_from_slice(&[1.0, 2.0, 3.0]);
+        Bookmark {
+            name: name.to_owned(),
+            transform,
+        }
+    }
+
+    #[test]
+    fn a_missing_file_is_an_empty_list_that_saves() {
+        let dir = scratch_dir("missing");
+        let path = dir.join("teleports.toml");
+        let mut state = State::load_from(&path);
+        assert!(state.bookmarks.is_empty());
+        assert_eq!(state.load_error, None);
+        state.bookmarks.push(bookmark("first"));
+        state.save_to(&path);
+        let reloaded = State::load_from(&path);
+        assert_eq!(reloaded.bookmarks.len(), 1);
+        assert_eq!(reloaded.bookmarks[0].name, "first");
+        drop(std::fs::remove_dir_all(&dir));
+    }
+
+    #[test]
+    fn an_unparsable_file_is_reported_and_never_overwritten() {
+        let dir = scratch_dir("unparsable");
+        let path = dir.join("teleports.toml");
+        let original = "[[bookmarks]]\nname = \"kept\"\ntransform = [1.0, 2.0\n";
+        std::fs::write(&path, original).expect("write the broken file");
+        let mut state = State::load_from(&path);
+        assert!(state.bookmarks.is_empty());
+        let error = state.load_error.clone().expect("a parse error");
+        assert!(matches!(error.kind, BookmarksErrorKind::Parse(_)));
+        assert!(
+            error
+                .to_string()
+                .starts_with("director: bookmarks: could not parse ")
+        );
+        state.bookmarks.push(bookmark("new"));
+        state.save_to(&path);
+        assert_eq!(std::fs::read_to_string(&path).expect("reread"), original);
+        drop(std::fs::remove_dir_all(&dir));
+    }
+
+    #[test]
+    fn an_unreadable_file_is_reported_and_never_overwritten() {
+        let dir = scratch_dir("unreadable");
+        // A directory where the file should be cannot be read as text.
+        let path = dir.join("teleports.toml");
+        std::fs::create_dir(&path).expect("directory in the file's place");
+        let state = State::load_from(&path);
+        let error = state.load_error.clone().expect("a read error");
+        assert!(matches!(error.kind, BookmarksErrorKind::Read(_)));
+        state.save_to(&path);
+        assert!(path.is_dir());
+        drop(std::fs::remove_dir_all(&dir));
     }
 }

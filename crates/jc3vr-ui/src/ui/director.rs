@@ -314,6 +314,12 @@ fn teleport_ui(ui: &mut egui::Ui) {
             }
         }
     });
+    if let Some(error) = teleport::load_error() {
+        ui.colored_label(
+            egui::Color32::LIGHT_RED,
+            format!("{error}; the file is left untouched and changes are not saved"),
+        );
+    }
     let mode = form.mode;
     let bookmarks = teleport::bookmarks();
     if bookmarks.is_empty() {
