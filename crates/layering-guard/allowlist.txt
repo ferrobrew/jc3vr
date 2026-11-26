@@ -43,7 +43,6 @@ payload/src/controllers/locomotion/anchor.rs -> payload
 payload/src/controllers/locomotion/mod.rs -> payload
 payload/src/controllers/menu/controls/mod.rs -> payload
 payload/src/controllers/menu/mod.rs -> payload
-payload/src/controllers/overlay/game_reticle.rs -> payload
 payload/src/controllers/overlay/mod.rs -> payload
 payload/src/controllers/overlay/producers.rs -> payload
 payload/src/controllers/physical_hands/carry_collision.rs -> payload
@@ -151,6 +150,7 @@ payload/src/hooks/ui/mod.rs -> payload
 payload/src/hooks/ui/mouse.rs -> payload
 payload/src/hud/anchored/mod.rs -> payload
 payload/src/hud/egui_panel/mod.rs -> payload
+payload/src/hud/game_reticle.rs -> payload
 payload/src/hud/grab_hint/mod.rs -> payload
 payload/src/hud/lost_weapons.rs -> payload
 payload/src/hud/mark_labels.rs -> payload

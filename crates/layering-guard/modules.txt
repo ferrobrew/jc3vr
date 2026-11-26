@@ -43,13 +43,13 @@ ui::capture input
 controllers::body::rig::live_observation render
 controllers::body::rig::origin_provenance render
 controllers::cockpit render
+controllers::overlay::pass render
 controllers::overlay::primitive render
 controllers::overlay::renderer render
 controllers::overlay::resolve render
 controllers::overlay::store render
 controllers::overlay::view render
-controllers::weapons::scope::lens::EyeCamera render
-controllers::weapons::scope::lens::LensConstants render
+controllers::weapons::scope::pass render
 controllers::weapons::scope::renderer render
 debug render
 far_field render
@@ -86,7 +86,6 @@ hooks::sim gameplay
 
 # HUD: the panel, the summary presentation, the map, the UI hooks, and the egui renderer.
 controllers::map hud
-controllers::overlay::game_reticle hud
 controllers::summary::game_hints hud
 controllers::summary::glance hud
 controllers::summary::glyphs hud

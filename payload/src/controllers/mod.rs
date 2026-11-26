@@ -89,6 +89,7 @@ pub mod physical_hands;
 pub mod presentation;
 pub mod presets;
 mod register_lifecycle;
+mod register_render;
 mod register_vr_frame;
 pub mod roomscale;
 pub mod scheme;
@@ -106,6 +107,7 @@ pub use config::ControllersConfig;
 /// refusal is already logged.
 pub(crate) fn install() -> Result<(), RegistrationError> {
     register_vr_frame::register();
+    register_render::register();
     register_lifecycle::register()
 }
 

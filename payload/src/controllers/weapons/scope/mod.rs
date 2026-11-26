@@ -4,7 +4,8 @@
 //!   the character) refused under the controller scheme;
 //! - [`lens`]: the lens's geometry: the eyepiece on the sight line, the sighting eye, and the
 //!   magnification;
-//! - [`renderer`]: the D3D11 pipeline that copies the eyes' images and draws the lens.
+//! - [`renderer`]: the D3D11 pipeline that copies the eyes' images and draws the lens;
+//! - [`pass`]: the capture and the draw, which read the frame's lens this module plans.
 //!
 //! The lens is a magnified resample of a rendered eye image, drawn as a disc at the scope's eyepiece
 //! while an eye is within [`LensTuning::max_eye_distance_m`](lens::LensTuning::max_eye_distance_m)
@@ -20,10 +21,10 @@
 //!
 //! 1. [`tick`], once per frame on the first eye, outside the engine's context lock: the scoped
 //!    weapon, its sight line anchored to the holding wrist, the lens placed from the render-time
-//!    wrist, and the sighting eye;
-//! 2. [`capture`], every dispatch, before the overlay draws: the dispatch's eye images copied while a
-//!    scoped weapon is held;
-//! 3. [`draw`], for each eye after the overlay: the lens, on the sighting eye only.
+//!    wrist, and the sighting eye, handed to the [`pass`];
+//! 2. [`pass::capture`], every dispatch, before the overlay draws: the dispatch's eye images copied
+//!    while a scoped weapon is held;
+//! 3. [`pass::draw`], for each eye after the overlay: the lens, on the sighting eye only.
 //!
 //! The scoped weapons are identified on the input tick ([`input_tick`]) by their class, the sniper
 //! class, which is what the game gives its scoped rifles: the gun in either hand, the wielded weapon
@@ -32,35 +33,31 @@
 //! eye.
 
 pub mod lens;
+pub mod pass;
 mod renderer;
 pub mod suppress;
 
 use std::time::{Duration, Instant};
 
 use glam::{Mat4, Vec3};
-use jc3gi::{
-    equipment::weapon::{WeaponBase, WeaponClass},
-    graphics_engine::{device::Device, texture::Texture},
-};
+use jc3gi::equipment::weapon::{WeaponBase, WeaponClass};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
-use windows::Win32::Graphics::Direct3D11::{D3D11_VIEWPORT, ID3D11DeviceContext};
 
+pub(crate) use crate::controllers::weapons::scope::pass::{capture, draw, release_on_eject};
 use crate::{
     config::Config,
     controllers::{
         aim::{self, AimStatus, HandSource, gun::HeldWeapon, sights::SightSource},
         frame::{Hand, Pose},
         hands::late,
-        overlay::view::{self, EyeView},
         scheme,
         weapons::scope::{
-            lens::{EyeCamera, LENS, Lens, LensTuning, SightAnchor},
-            renderer::{EyeRegion, Renderer},
+            lens::{LENS, Lens, LensTuning, SightAnchor},
+            pass::LensFrame,
         },
     },
     hooks,
-    stereo::{STEREO_STATE, single_pass::collapse_active},
 };
 
 /// The scope hooks, aggregated by [`crate::controllers::weapons::hook_library`].
@@ -124,15 +121,15 @@ pub struct ScopeStatus {
     pub error: Option<String>,
 }
 
-/// The latest readout.
-/// Release the lens pipeline, for eject: it holds each eye's image copy and a render-target view
-/// over the engine's back buffer, which keeps that texture alive after the engine resizes off it.
-pub(crate) fn release_on_eject() {
-    STATE.lock().renderer = None;
-}
-
+/// The latest readout: the frame's plan, with what the [`pass`] drew.
 pub fn status() -> ScopeStatus {
-    STATUS.lock().clone()
+    let drawn = pass::draw_status();
+    ScopeStatus {
+        eyes: drawn.eyes,
+        frames: drawn.frames,
+        error: drawn.error,
+        ..STATUS.lock().clone()
+    }
 }
 
 /// Identify the gun in each hand, by [`Hand::index`], as scoped or not. Called in the game stage,
@@ -171,125 +168,12 @@ pub(crate) fn tick(eye: usize) {
     status.scope = plan.scope;
     status.eyepiece_distance_m = plan.eyepiece_distance_m;
     status.idle = plan.idle;
-    if plan.idle.is_some() {
-        status.eyes = None;
-    }
-    state.plan = plan;
-}
-
-/// Copy the dispatch's eye images for the lens while a scoped weapon is held. Called under the
-/// engine's context lock, before the world-space overlay draws, with `target` the dispatch's final
-/// back buffer.
-pub(crate) fn capture(
-    context: &ID3D11DeviceContext,
-    device: &Device,
-    target: &Texture,
-    eye: usize,
-) {
-    if crate::stereo::far_phase() {
-        return;
-    }
-    let mut state = STATE.lock();
-    if !state.plan.armed {
-        return;
-    }
-    let Some(renderer) = state.renderer(device) else {
-        return;
-    };
-    let width = u32::from(target.m_Width);
-    let result = if collapse_active() {
-        let half = width / 2;
-        (0..2).try_for_each(|e| {
-            let Some(camera) = collapse_camera(e) else {
-                return Ok(());
-            };
-            let region = EyeRegion {
-                left: e as u32 * half,
-                width: half,
-            };
-            renderer.capture(&device.m_Device, context, target, region, e, camera)
-        })
-    } else {
-        match view::current(eye) {
-            Some((v, _)) => renderer.capture(
-                &device.m_Device,
-                context,
-                target,
-                EyeRegion { left: 0, width },
-                eye,
-                camera_of(&v),
-            ),
-            None => Ok(()),
-        }
-    };
-    if let Err(error) = result {
-        report(error);
-    }
-}
-
-/// Draw the lens onto `target` for `eye`, when `eye` sights through it. Called under the engine's
-/// context lock after the world-space overlay; under the collapse, the caller has selected the eye
-/// with `set_collapse_ui_eye`.
-pub(crate) fn draw(context: &ID3D11DeviceContext, device: &Device, target: &Texture, eye: usize) {
-    if crate::stereo::far_phase() || crate::director::clean_view::hides_everything() {
-        return;
-    }
-    let mut state = STATE.lock();
-    let (Some(lens), Some(sighting)) = (state.plan.lens, state.plan.sighting) else {
-        return;
-    };
-    if sighting != eye {
-        return;
-    }
-    let Some((v, viewport)) = view::current(eye) else {
-        return;
-    };
-    let Some(renderer) = state.renderer(device) else {
-        return;
-    };
-    let fresh = |e: usize| {
-        renderer
-            .copy(e)
-            .filter(|c| c.taken.elapsed() < MAX_COPY_AGE)
-            .map(|c| c.camera)
-    };
-    let other = fresh(1 - eye.min(1));
-    let source = lens::source_eye(eye, other.is_some());
-    let source_camera = if source == eye {
-        // The own image is this dispatch's copy, taken with this eye's camera.
-        fresh(eye).map(|_| camera_of(&v))
-    } else {
-        other
-    };
-    let Some(source_camera) = source_camera else {
-        return;
-    };
-    let constants = lens::constants(&lens, &camera_of(&v), &source_camera, &LENS);
-    let viewport = viewport.unwrap_or(D3D11_VIEWPORT {
-        TopLeftX: 0.0,
-        TopLeftY: 0.0,
-        Width: f32::from(target.m_Width),
-        Height: f32::from(target.m_Height),
-        MinDepth: 0.0,
-        MaxDepth: 1.0,
+    // A plan is idle exactly when no eye sights, which is when the pass clears the drawn eyes.
+    pass::set_frame(LensFrame {
+        armed: plan.armed,
+        sighting: plan.sighting,
+        lens: plan.lens.map(|lens| lens::draw_of(&lens, &LENS)),
     });
-    let drawn = renderer.draw(
-        &device.m_Device,
-        context,
-        target,
-        viewport,
-        &constants,
-        source,
-    );
-    drop(state);
-    match drawn {
-        Ok(()) => {
-            let mut status = STATUS.lock();
-            status.eyes = Some((eye, source));
-            status.frames += 1;
-        }
-        Err(error) => report(error),
-    }
 }
 
 /// The frame's lens plan.
@@ -307,48 +191,12 @@ struct Plan {
 }
 
 struct State {
-    renderer: Option<Renderer>,
-    /// Set when the pipeline could not be built, so that it is not retried every frame.
-    failed: bool,
     /// Each hand's scoped gun's sight line in its wrist's frame, and the aim update it was taken
     /// from, by [`Hand::index`].
     anchors: [Option<(u64, SightAnchor)>; 2],
-    plan: Plan,
 }
 
-impl State {
-    /// The pipeline, built on first use.
-    fn renderer(&mut self, device: &Device) -> Option<&mut Renderer> {
-        if self.failed {
-            return None;
-        }
-        if self.renderer.is_none() {
-            match Renderer::new(&device.m_Device) {
-                Ok(renderer) => self.renderer = Some(renderer),
-                Err(error) => {
-                    self.failed = true;
-                    report(error);
-                    return None;
-                }
-            }
-        }
-        self.renderer.as_mut()
-    }
-}
-
-static STATE: Mutex<State> = Mutex::new(State {
-    renderer: None,
-    failed: false,
-    anchors: [None; 2],
-    plan: Plan {
-        armed: false,
-        lens: None,
-        sighting: None,
-        scope: None,
-        eyepiece_distance_m: None,
-        idle: Some(LensIdle::Disabled),
-    },
-});
+static STATE: Mutex<State> = Mutex::new(State { anchors: [None; 2] });
 
 static STATUS: Mutex<ScopeStatus> = Mutex::new(ScopeStatus {
     scope: None,
@@ -366,10 +214,6 @@ static SCOPED: Mutex<Option<([Option<usize>; 2], Instant)>> = Mutex::new(None);
 /// simulation rate while the bindings inject, so an older one belongs to a menu or the gamepad
 /// scheme.
 const MAX_SCOPED_AGE: Duration = Duration::from_millis(250);
-
-/// How old an eye's copy may be and still be read: a frame or two at any usable frame rate. The
-/// other eye's copy is the previous frame's when the first eye sights in two-pass stereo.
-const MAX_COPY_AGE: Duration = Duration::from_millis(100);
 
 /// Plan the frame's lens, re-anchoring each scoped gun's sight line to its wrist when the aim has
 /// run since its anchor was taken, and taking the lens of the scope raised to the eye.
@@ -510,35 +354,6 @@ fn eye_positions() -> [Option<Vec3>; 2] {
     };
     let center = Mat4::from_rotation_translation(orientation, head);
     [0, 1].map(|eye| crate::vr::render_params(eye).map(|p| p.resolve(center).w_axis.truncate()))
-}
-
-/// An eye's camera under the collapse, which keeps the render camera centred.
-fn collapse_camera(eye: usize) -> Option<EyeCamera> {
-    let center = STEREO_STATE.lock().center_transform?;
-    let params = crate::vr::render_params(eye)?;
-    let eye_world = params.resolve(Mat4::from(center));
-    // The lens is drawn after FSR has resolved the eye, so it takes the projection without FSR's
-    // jitter, as `view::current` does.
-    Some(camera_of(&EyeView::from_eye_world(
-        eye_world,
-        params.unjittered_projection_reverse_z(),
-    )))
-}
-
-fn camera_of(view: &EyeView) -> EyeCamera {
-    EyeCamera {
-        position: view.position,
-        offset_view_projection: view.offset_view_projection,
-    }
-}
-
-fn report(error: anyhow::Error) {
-    let message = format!("{error:#}");
-    let mut status = STATUS.lock();
-    if status.error.as_deref() != Some(message.as_str()) {
-        tracing::error!("{message}");
-    }
-    status.error = Some(message);
 }
 
 #[cfg(test)]

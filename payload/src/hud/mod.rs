@@ -44,6 +44,7 @@ pub mod cursor;
 pub mod depth;
 pub(crate) mod egui_panel;
 pub(crate) mod game_icons;
+pub(crate) mod game_reticle;
 pub(crate) mod grab_hint;
 mod label;
 mod log_once;

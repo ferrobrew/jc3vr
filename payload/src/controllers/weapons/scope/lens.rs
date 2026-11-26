@@ -1,5 +1,6 @@
-//! The lens's geometry, all pure: where the eyepiece is, which eye sights through it, and the
-//! constants of the lens draw.
+//! The lens's geometry, all pure: where the eyepiece is, which eye sights through it, and the lens
+//! draw it hands the pass ([`crate::controllers::weapons::scope::pass`]), which holds the draw's
+//! constants.
 //!
 //! The sight line is kept in the holding hand's wrist frame between aim updates, so the lens follows
 //! the controller at frame rate while the sight line itself is refreshed at the sim rate. The
@@ -11,12 +12,13 @@
 //! at the sight line's focus distance (the aim point's distance), projected into the source eye's
 //! image, so the image is correct at the target and the parallax between the eyes vanishes there.
 
-use glam::{Mat4, Vec3};
+use glam::Vec3;
 
 use crate::controllers::{
     aim::ray::Ray,
     frame::{Hand, Pose},
     hands::pose as hand_pose,
+    weapons::scope::pass::LensDraw,
 };
 
 /// The lens's fixed tuning.
@@ -117,91 +119,15 @@ pub fn sighting_eye(lens: &Lens, eyes: [Option<Vec3>; 2], max_distance: f32) -> 
     (distance <= max_distance && behind).then_some(eye)
 }
 
-/// The eye whose image the lens reads: the other eye when its image is available, since the scope
-/// does not block it (in two-pass stereo the second eye's image is the previous frame's when the
-/// first eye sights, reprojected by its own camera), and the sighting eye's own otherwise, whose
-/// magnified region shows the scope's own model.
-pub fn source_eye(sighting: usize, other_available: bool) -> usize {
-    if other_available {
-        1 - sighting.min(1)
-    } else {
-        sighting
-    }
-}
-
-/// Two unit vectors that span the lens's plane with `direction`, right and up as seen looking along
-/// it. The lens is round and its image is mapped through the same vectors, so their roll about the
-/// sight line does not change what the lens shows.
-pub fn lens_basis(direction: Vec3) -> (Vec3, Vec3) {
-    let right = direction
-        .cross(Vec3::Y)
-        .try_normalize()
-        .unwrap_or_else(|| direction.cross(Vec3::Z).normalize());
-    let up = right.cross(direction);
-    (right, up)
-}
-
-/// The tangent off the sight line that the lens's rim shows: the rim's tangent from an eye
-/// `eye_distance` from the lens, divided by the zoom.
-pub fn field_tangent(radius: f32, eye_distance: f32, zoom: f32) -> f32 {
-    radius / eye_distance.max(MIN_EYE_DISTANCE_M) / zoom.max(1.0)
-}
-
-/// The constants of the lens shaders' `cbuffer Lens`.
-#[repr(C)]
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub struct LensConstants {
-    /// The sighting eye's view-projection of a position relative to it.
-    pub view_projection: [f32; 16],
-    /// The source eye's view-projection of a position relative to it.
-    pub source_view_projection: [f32; 16],
-    pub eyepiece_from_eye: [f32; 3],
-    pub radius: f32,
-    pub right: [f32; 3],
-    pub tangent: f32,
-    pub up: [f32; 3],
-    pub focus: f32,
-    pub direction: [f32; 3],
-    pub vignette_start: f32,
-    pub eyepiece_from_source: [f32; 3],
-    /// 1 to draw the reticle, 0 not to.
-    pub reticle: f32,
-}
-
-/// An eye's camera as the lens needs it: its position and the view-projection of a position
-/// relative to it.
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub struct EyeCamera {
-    pub position: Vec3,
-    pub offset_view_projection: Mat4,
-}
-
-/// The lens draw's constants for the sighting eye `eye`, reading the image of `source`.
-pub fn constants(
-    lens: &Lens,
-    eye: &EyeCamera,
-    source: &EyeCamera,
-    config: &LensTuning,
-) -> LensConstants {
-    let (right, up) = lens_basis(lens.direction);
-    let eyepiece_from_eye = lens.eyepiece - eye.position;
-    LensConstants {
-        view_projection: eye.offset_view_projection.to_cols_array(),
-        source_view_projection: source.offset_view_projection.to_cols_array(),
-        eyepiece_from_eye: eyepiece_from_eye.to_array(),
-        radius: config.lens_radius_m,
-        right: right.to_array(),
-        tangent: field_tangent(
-            config.lens_radius_m,
-            eyepiece_from_eye.length(),
-            config.zoom,
-        ),
-        up: up.to_array(),
-        focus: lens.focus_m,
-        direction: lens.direction.to_array(),
-        vignette_start: config.vignette_start.clamp(0.0, 0.99),
-        eyepiece_from_source: (lens.eyepiece - source.position).to_array(),
-        reticle: 1.0,
+/// The lens's draw: its geometry with the tuning's look.
+pub fn draw_of(lens: &Lens, config: &LensTuning) -> LensDraw {
+    LensDraw {
+        eyepiece: lens.eyepiece,
+        direction: lens.direction,
+        focus_m: lens.focus_m,
+        radius_m: config.lens_radius_m,
+        zoom: config.zoom,
+        vignette_start: config.vignette_start,
     }
 }
 
@@ -209,14 +135,14 @@ pub fn constants(
 /// swing with the tiny parallax between the eyes.
 const MIN_FOCUS_M: f32 = 1.0;
 
-/// The nearest an eye is taken to be to the lens, so the field stays finite.
-const MIN_EYE_DISTANCE_M: f32 = 0.01;
-
 #[cfg(test)]
 mod tests {
-    use glam::{Quat, Vec2, Vec4};
+    use glam::{Mat4, Quat, Vec2, Vec4};
 
     use super::*;
+    use crate::controllers::weapons::scope::pass::{
+        EyeCamera, LensConstants, field_tangent, lens_basis,
+    };
 
     /// The scene point the lens shows at `q` (the lens's unit disc, +x right and +y up), relative to
     /// the source eye: `eyepiece_from_source` is the eyepiece relative to that eye. The lens pixel shader
@@ -293,28 +219,6 @@ mod tests {
     }
 
     #[test]
-    fn the_source_is_the_other_eye_only_when_available() {
-        assert_eq!(source_eye(0, true), 1);
-        assert_eq!(source_eye(1, true), 0);
-        assert_eq!(source_eye(1, false), 1);
-    }
-
-    #[test]
-    fn the_basis_is_orthonormal_even_looking_straight_up() {
-        for direction in [Vec3::NEG_Z, Vec3::Y, Vec3::new(0.3, -0.2, -0.9).normalize()] {
-            let (right, up) = lens_basis(direction);
-            assert!((right.length() - 1.0).abs() < 1e-5);
-            assert!((up.length() - 1.0).abs() < 1e-5);
-            assert!(right.dot(up).abs() < 1e-5);
-            assert!(right.dot(direction).abs() < 1e-5);
-            assert!(up.dot(direction).abs() < 1e-5);
-        }
-        let (right, up) = lens_basis(Vec3::NEG_Z);
-        assert!(right.distance(Vec3::X) < 1e-5);
-        assert!(up.distance(Vec3::Y) < 1e-5);
-    }
-
-    #[test]
     fn the_lens_magnifies_by_the_zoom() {
         let eye_distance = 0.08;
         let lens = Lens {
@@ -352,7 +256,7 @@ mod tests {
                 position: eye,
                 offset_view_projection: projection,
             };
-            let c = constants(&lens, &camera, &camera, &config());
+            let c = draw_of(&lens, &config()).constants(&camera, &camera);
             let from_source = Vec3::from_array(c.eyepiece_from_source);
             let p = sample_point(&lens, from_source, c.tangent, Vec2::ZERO);
             let clip: Vec4 = projection * p.extend(1.0);

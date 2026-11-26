@@ -26,11 +26,9 @@ use re_utilities::hook_library::HookLibrary;
 pub(crate) use crate::hooks::ui::mouse::cancel_pointer_on_game_thread;
 use crate::{
     config::Config,
-    controllers::{
-        overlay::game_reticle::hide_game_reticles, summary::game_hints::hide_game_hints,
-    },
+    controllers::summary::game_hints::hide_game_hints,
     frame_timing::{self, Slot},
-    hud::{HUD_STATE, aim, compute_panel_vp, current_aspect},
+    hud::{HUD_STATE, aim, compute_panel_vp, current_aspect, game_reticle::hide_game_reticles},
 };
 
 pub(crate) fn hook_library() -> HookLibrary {
