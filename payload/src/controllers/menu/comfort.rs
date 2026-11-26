@@ -7,9 +7,7 @@
 use crate::{
     controllers::{
         config::{CONTROLLERS_CONFIG, Posture, SeatTransition},
-        menu::{
-            config_choice, config_slider, config_toggle, edit_config, nearest_index, read_config,
-        },
+        menu::{config_choice, config_slider, config_toggle, edit, nearest_index, read},
         roomscale::manual_recenter_kind,
     },
     grapple::GrappleComfortMode,
@@ -77,12 +75,12 @@ fn build() -> Page {
             get: || {
                 nearest_index(
                     &SNAP_ANGLES,
-                    read_config(|c| c.headpose.vr_turn.snap_angle_deg),
+                    read(&HEADPOSE_CONFIG, |c| c.vr_turn.snap_angle_deg),
                 )
             },
             set: |index| {
                 if let Some(&angle) = SNAP_ANGLES.get(index) {
-                    edit_config(|c| c.headpose.vr_turn.snap_angle_deg = angle);
+                    edit(&HEADPOSE_CONFIG, |c| c.vr_turn.snap_angle_deg = angle);
                 }
             },
             default: nearest_index(&SNAP_ANGLES, VrTurnConfig::new().snap_angle_deg),
@@ -202,7 +200,7 @@ mod tests {
         else {
             panic!("no snap angle choice");
         };
-        edit_config(|c| c.headpose.vr_turn.snap_angle_deg = 40.0);
+        edit(&HEADPOSE_CONFIG, |c| c.vr_turn.snap_angle_deg = 40.0);
         assert_eq!((snap.get)(), 2);
     }
 }

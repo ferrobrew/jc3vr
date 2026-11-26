@@ -12,7 +12,8 @@ use crate::{
             calibration::{Calibration, Stance, Step, Unavailable},
             menu::measure::{live_eye_height, live_grip_span},
         },
-        menu::read_config,
+        config::CONTROLLERS_CONFIG,
+        menu::read,
         roomscale::{
             self,
             posture::{DetectedPosture, EffectivePosture},
@@ -39,7 +40,7 @@ pub(super) fn posture_stance() -> Stance {
             EffectivePosture::Seated => DetectedPosture::Seated,
             EffectivePosture::Standing => DetectedPosture::Standing,
         });
-    Stance::for_posture(read_config(|c| c.controllers.roomscale.posture), detected)
+    Stance::for_posture(read(&CONTROLLERS_CONFIG, |c| c.roomscale.posture), detected)
 }
 
 pub(super) fn stance_index(stance: Stance) -> usize {

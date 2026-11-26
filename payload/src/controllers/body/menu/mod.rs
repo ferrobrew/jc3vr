@@ -79,9 +79,9 @@ mod tests {
                     text::{live_text, notice_text, status_text, unavailable_text},
                 },
             },
-            config::Posture,
+            config::{CONTROLLERS_CONFIG, Posture},
             frame::{Hand, Pose, TrackedPose},
-            menu::{edit_config, tests::exercise_page},
+            menu::{edit, tests::exercise_page},
         },
         pause_menu::model::{page::Item, rows::encode_page},
         vr::stage::StageInfo,
@@ -388,9 +388,11 @@ mod tests {
                 })
                 .unwrap()
         };
-        edit_config(|c| c.controllers.roomscale.posture = Posture::Seated);
+        edit(&CONTROLLERS_CONFIG, |c| {
+            c.roomscale.posture = Posture::Seated
+        });
         assert_eq!(STANCE_OPTIONS[stance_default()], "SEATED");
-        edit_config(|c| c.controllers.roomscale.posture = Posture::Auto);
+        edit(&CONTROLLERS_CONFIG, |c| c.roomscale.posture = Posture::Auto);
         assert_eq!(STANCE_OPTIONS[stance_default()], "STANDING");
     }
 

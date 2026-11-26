@@ -17,7 +17,8 @@ use smol_str::SmolStr;
 
 use crate::{
     controllers::{
-        menu::{comfort, edit_config, read_config},
+        config::CONTROLLERS_CONFIG,
+        menu::{comfort, edit, read},
         vehicles::{self, config::ArmPitch},
     },
     pause_menu::model::page::{Button, ButtonOutcome, Item, Page, PageDef},
@@ -130,7 +131,7 @@ fn on_close() {
 /// Rebuild the page when the wingsuit's pitch measure changed since it was built, so that the
 /// calibration rows show only for the measure that has them.
 fn on_frame() -> ButtonOutcome {
-    let pitch_by = read_config(|c| c.controllers.vehicles.arm_steering.pitch_by);
+    let pitch_by = read(&CONTROLLERS_CONFIG, |c| c.vehicles.arm_steering.pitch_by);
     if built_pitch() == Some(pitch_by) || CONFIRMING_RESET.load(Ordering::Relaxed) {
         ButtonOutcome::Stay
     } else {
@@ -141,7 +142,7 @@ fn on_frame() -> ButtonOutcome {
 /// The calibration rows of the wingsuit's pitch measure: the wrists' tilt has a capture of the
 /// relaxed tilt as the neutral; the hands' height and the arms' sweep have none.
 fn pitch_rows(page: Page) -> Page {
-    let pitch_by = read_config(|c| c.controllers.vehicles.arm_steering.pitch_by);
+    let pitch_by = read(&CONTROLLERS_CONFIG, |c| c.vehicles.arm_steering.pitch_by);
     set_built_pitch(pitch_by);
     match pitch_by {
         ArmPitch::WristTilt => page.item(Button {
@@ -157,8 +158,8 @@ fn pitch_rows(page: Page) -> Page {
 /// nothing.
 fn capture_neutral_tilt() -> ButtonOutcome {
     if let Some(tilt) = vehicles::wrist_tilt_now_deg() {
-        edit_config(|c| {
-            c.controllers.vehicles.arm_steering.tilt_neutral_deg =
+        edit(&CONTROLLERS_CONFIG, |c| {
+            c.vehicles.arm_steering.tilt_neutral_deg =
                 tilt.clamp(-NEUTRAL_TILT_LIMIT_DEG, NEUTRAL_TILT_LIMIT_DEG);
         });
     }
@@ -213,13 +214,15 @@ mod tests {
         *,
     };
     use crate::{
-        config::Config,
+        config::engine::{Parts, Snapshot},
         controllers::{
             config::SightOverride,
             frame::Hand,
             menu::tests::{TEST_CONFIG, exercise_page},
         },
         grapple::GrappleComfortMode,
+        headpose::config::HEADPOSE_CONFIG,
+        hud::config::HUD_CONFIG,
         pause_menu::model::rows::encode_page,
     };
 
@@ -231,47 +234,53 @@ mod tests {
             angles_deg: Vec2::new(0.5, 0.0),
         };
         TEST_CONFIG.with_borrow_mut(|config| {
-            *config = Config::new();
-            config.controllers.aim.sights.set(sight);
-            config.controllers.dominant_hand = Hand::Left;
-            config.controllers.bindings.move_deadzone = 0.3;
-            config.controllers.locomotion.stick.enabled = false;
-            config.headpose.vr_turn.snap_angle_deg = 45.0;
-            config.headpose.grapple.mode = GrappleComfortMode::Off;
+            *config = Snapshot::defaults();
+            let controllers = config.part_mut(&CONTROLLERS_CONFIG);
+            controllers.aim.sights.set(sight);
+            controllers.dominant_hand = Hand::Left;
+            controllers.bindings.move_deadzone = 0.3;
+            controllers.locomotion.stick.enabled = false;
             // Not on either page: the debug UI's switches and tuning, the body page, and the
             // display.
-            config.controllers.input.hand_tracking = false;
-            config.controllers.locomotion.stick.run_speed_mps = 3.0;
-            config.controllers.roomscale.crouch.enter_drop_m = 0.5;
-            config.controllers.body.remap_head = false;
-            config.controllers.body.rig.follow.turn_animation = false;
-            config.hud.distance = 2.0;
+            controllers.input.hand_tracking = false;
+            controllers.locomotion.stick.run_speed_mps = 3.0;
+            controllers.roomscale.crouch.enter_drop_m = 0.5;
+            controllers.body.remap_head = false;
+            controllers.body.rig.follow.turn_animation = false;
+            let headpose = config.part_mut(&HEADPOSE_CONFIG);
+            headpose.vr_turn.snap_angle_deg = 45.0;
+            headpose.grapple.mode = GrappleComfortMode::Off;
+            config.part_mut(&HUD_CONFIG).distance = 2.0;
         });
         reset_shown_settings();
-        let defaults = Config::new();
-        read_config(|config| {
+        let defaults = Snapshot::defaults();
+        TEST_CONFIG.with_borrow(|config| {
+            let controllers = config.part(&CONTROLLERS_CONFIG);
+            let default_controllers = defaults.part(&CONTROLLERS_CONFIG);
+            let headpose = config.part(&HEADPOSE_CONFIG);
+            let default_headpose = defaults.part(&HEADPOSE_CONFIG);
             assert_eq!(
-                config.controllers.bindings.move_deadzone,
-                defaults.controllers.bindings.move_deadzone
+                controllers.bindings.move_deadzone,
+                default_controllers.bindings.move_deadzone
             );
             assert_eq!(
-                config.controllers.locomotion.stick.enabled,
-                defaults.controllers.locomotion.stick.enabled
+                controllers.locomotion.stick.enabled,
+                default_controllers.locomotion.stick.enabled
             );
             assert_eq!(
-                config.headpose.vr_turn.snap_angle_deg,
-                defaults.headpose.vr_turn.snap_angle_deg
+                headpose.vr_turn.snap_angle_deg,
+                default_headpose.vr_turn.snap_angle_deg
             );
 
-            assert_eq!(config.controllers.dominant_hand, Hand::Left);
-            assert!(!config.controllers.input.hand_tracking);
-            assert_eq!(config.controllers.locomotion.stick.run_speed_mps, 3.0);
-            assert_eq!(config.headpose.grapple.mode, defaults.headpose.grapple.mode);
-            assert_eq!(config.controllers.aim.sights.get(7), Some(&sight));
-            assert_eq!(config.controllers.roomscale.crouch.enter_drop_m, 0.5);
-            assert!(!config.controllers.body.remap_head);
-            assert!(!config.controllers.body.rig.follow.turn_animation);
-            assert_eq!(config.hud.distance, 2.0);
+            assert_eq!(controllers.dominant_hand, Hand::Left);
+            assert!(!controllers.input.hand_tracking);
+            assert_eq!(controllers.locomotion.stick.run_speed_mps, 3.0);
+            assert_eq!(headpose.grapple.mode, default_headpose.grapple.mode);
+            assert_eq!(controllers.aim.sights.get(7), Some(&sight));
+            assert_eq!(controllers.roomscale.crouch.enter_drop_m, 0.5);
+            assert!(!controllers.body.remap_head);
+            assert!(!controllers.body.rig.follow.turn_animation);
+            assert_eq!(config.part(&HUD_CONFIG).distance, 2.0);
         });
     }
 
@@ -291,7 +300,9 @@ mod tests {
     #[test]
     fn the_wingsuit_calibration_follows_the_pitch_measure() {
         let calibrate = |pitch_by| {
-            edit_config(|c| c.controllers.vehicles.arm_steering.pitch_by = pitch_by);
+            edit(&CONTROLLERS_CONFIG, |c| {
+                c.vehicles.arm_steering.pitch_by = pitch_by
+            });
             settings_page()
                 .items
                 .iter()
@@ -302,7 +313,9 @@ mod tests {
         assert!(calibrate(ArmPitch::WristTilt));
         // A change of measure since the build asks for a rebuild, and none is asked after it.
         assert_eq!(on_frame(), ButtonOutcome::Stay);
-        edit_config(|c| c.controllers.vehicles.arm_steering.pitch_by = ArmPitch::Height);
+        edit(&CONTROLLERS_CONFIG, |c| {
+            c.vehicles.arm_steering.pitch_by = ArmPitch::Height
+        });
         assert_eq!(on_frame(), ButtonOutcome::Rebuild);
         settings_page();
         assert_eq!(on_frame(), ButtonOutcome::Stay);

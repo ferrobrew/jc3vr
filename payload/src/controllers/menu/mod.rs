@@ -16,7 +16,9 @@ pub(crate) mod comfort;
 pub(crate) mod controls;
 pub(crate) mod display;
 
-use crate::config::{Config, engine::ConfigSlot};
+use crate::config::engine::ConfigSlot;
+#[cfg(test)]
+use crate::config::engine::Parts;
 
 /// A [`Toggle`](crate::pause_menu::model::page::Toggle) over the `bool` at a place in a slot's
 /// part of the configuration.
@@ -99,16 +101,6 @@ pub(crate) fn default_of<T: Clone>(slot: &'static ConfigSlot<T>) -> T {
     slot.default_value()
 }
 
-/// Read the configuration.
-pub(crate) fn read_config<R>(f: impl FnOnce(&Config) -> R) -> R {
-    with_config(|config| f(config))
-}
-
-/// Change the configuration as the user meant to, so that the change is saved.
-pub(crate) fn edit_config(f: impl FnOnce(&mut Config)) {
-    edit_with(f);
-}
-
 /// The index of `value` in `values`, or `0` when it is not there.
 pub(crate) fn index_of<T: PartialEq>(values: &[T], value: &T) -> usize {
     values.iter().position(|v| v == value).unwrap_or(0)
@@ -134,36 +126,16 @@ fn edit_part<T>(slot: &'static ConfigSlot<T>, f: impl FnOnce(&mut T)) {
     f(&mut slot.edit());
 }
 
-#[cfg(not(test))]
-fn with_config<R>(f: impl FnOnce(&mut Config) -> R) -> R {
-    f(&mut crate::config::CONFIG.lock())
-}
-
-#[cfg(not(test))]
-fn edit_with(f: impl FnOnce(&mut Config)) {
-    f(&mut crate::config::edit());
-}
-
 // Tests run each item against a configuration of their own thread, so they can change settings
 // without racing other tests over the global one.
 #[cfg(test)]
 fn with_part<T, R>(slot: &'static ConfigSlot<T>, f: impl FnOnce(&mut T) -> R) -> R {
-    tests::TEST_CONFIG.with_borrow_mut(|config| f(slot.project_mut(config)))
+    tests::TEST_CONFIG.with_borrow_mut(|config| f(config.part_mut(slot)))
 }
 
 #[cfg(test)]
 fn edit_part<T>(slot: &'static ConfigSlot<T>, f: impl FnOnce(&mut T)) {
-    tests::TEST_CONFIG.with_borrow_mut(|config| f(slot.project_mut(config)));
-}
-
-#[cfg(test)]
-fn with_config<R>(f: impl FnOnce(&mut Config) -> R) -> R {
-    tests::TEST_CONFIG.with_borrow_mut(f)
-}
-
-#[cfg(test)]
-fn edit_with(f: impl FnOnce(&mut Config)) {
-    tests::TEST_CONFIG.with_borrow_mut(f);
+    tests::TEST_CONFIG.with_borrow_mut(|config| f(config.part_mut(slot)));
 }
 
 #[cfg(test)]
@@ -172,12 +144,13 @@ pub(crate) mod tests {
 
     use super::*;
     use crate::{
-        config::validate,
+        config::engine::{Snapshot, store},
         pause_menu::model::page::{Item, Page},
+        vr::FOVEATION_CONFIG,
     };
 
     thread_local! {
-        pub(crate) static TEST_CONFIG: RefCell<Config> = const { RefCell::new(Config::new()) };
+        pub(crate) static TEST_CONFIG: RefCell<Snapshot> = RefCell::new(Snapshot::defaults());
     }
 
     /// Put every value item of `page` through every value it can take, checking that each reads
@@ -185,13 +158,16 @@ pub(crate) mod tests {
     /// it is back at the configuration's defaults. Runs against this thread's configuration.
     pub(crate) fn exercise_page(page: &Page) {
         let valid = || {
-            read_config(|c| {
-                validate::controllers(&c.controllers)?;
-                validate::sights(&c.controllers.aim.sights)?;
-                validate::vr_turn(&c.headpose.vr_turn)
-            })
-            .map_err(|e| e.to_string())?;
-            read_config(|c| c.foveation.validate()).map_err(|e| e.to_string())
+            let mut config = TEST_CONFIG.with_borrow(Snapshot::clone);
+            let mut resets = Vec::new();
+            store::schema().validate(config.root_mut(), &mut resets);
+            if let Some(reset) = resets.first() {
+                return Err(format!("{}: {}", reset.path, reset.reason));
+            }
+            config
+                .part(&FOVEATION_CONFIG)
+                .validate()
+                .map_err(|e| e.to_string())
         };
         for item in &page.items {
             match item {
@@ -228,8 +204,8 @@ pub(crate) mod tests {
         }
         // Only this page's items changed, so its reset brings the whole configuration back.
         page.reset_to_defaults();
-        let saved = |c: &Config| serde_json::to_value(c).unwrap();
-        assert_eq!(read_config(saved), saved(&Config::new()));
+        let saved = |c: &Snapshot| c.to_toml().unwrap();
+        assert_eq!(TEST_CONFIG.with_borrow(saved), saved(&Snapshot::defaults()));
     }
 
     #[test]

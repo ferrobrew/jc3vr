@@ -6,8 +6,6 @@
 # the file sorted bytewise (`LC_ALL=C sort`), one edge per line, so concurrent deletions merge
 # cleanly. Most `-> payload` lines are reads of the settings aggregate, `crate::config::Config`,
 # which the config slots replace.
-payload/src/controllers/menu/controls/mod.rs -> payload
-payload/src/controllers/menu/mod.rs -> payload
 payload/src/debug/trace.rs -> payload
 payload/src/image_writer.rs -> payload
 payload/src/screenshot/harness/mod.rs -> payload
