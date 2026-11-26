@@ -52,7 +52,7 @@ pub(super) fn held() -> Option<(Hand, usize)> {
 }
 
 pub(super) fn input_tick(inputs: &TickInputs, grips: [Option<Pose>; 2]) {
-    let tuning = GRENADE;
+    let tuning = GRENADE.get();
     let mut state = STATE.lock();
     state.hand = inputs.dominant;
     let State {
@@ -70,7 +70,7 @@ pub(super) fn input_tick(inputs: &TickInputs, grips: [Option<Pose>; 2]) {
     }
     let hand = gesture.hand;
     let Some(world) = grips[hand.index()]
-        .map(|grip| held_matrix(grip, hold_local(hand, &tuning)))
+        .map(|grip| held_matrix(grip, hold_local(hand, tuning)))
         .filter(|world| world.is_finite())
     else {
         gesture.cancel();
@@ -138,8 +138,8 @@ pub(super) unsafe fn observe(weapon: *mut ThrownGrenadeWeapon) {
     let Some(explosive) = (unsafe { primed_explosive(&*weapon) }) else {
         return;
     };
-    let tuning = GRENADE;
-    let world = held_matrix(grip, hold_local(hand, &tuning));
+    let tuning = GRENADE.get();
+    let world = held_matrix(grip, hold_local(hand, tuning));
     if !world.is_finite() {
         return;
     }
@@ -257,13 +257,13 @@ pub(super) unsafe fn render_frame() {
         (*explosive).m_WorldMatrixT1 = world;
         (*explosive).SetPhysicsTransform(&world);
     }
-    let tuning = GRENADE;
+    let tuning = GRENADE.get();
     held::hold(
         Slot::Grenade,
         Some(Held {
             explosive: pending.explosive,
             hand: pending.gesture.hand,
-            local: hold_local(pending.gesture.hand, &tuning),
+            local: hold_local(pending.gesture.hand, tuning),
         }),
     );
     STATE.lock().pending = Some(pending);
@@ -303,8 +303,8 @@ unsafe fn observe_selection() {
         .is_none_or(|selection| selection.weapon.raw().pn != weapon.m_WeakThis.pn);
     let grip = crate::controllers::weapons::grenade::STATE.lock().grips[hand.index()];
     if fresh && let Some(grip) = grip {
-        let tuning = GRENADE;
-        let world = held_matrix(grip, hold_local(hand, &tuning));
+        let tuning = GRENADE.get();
+        let world = held_matrix(grip, hold_local(hand, tuning));
         if world.is_finite() {
             STATE.lock().selection = Some(Selection {
                 weapon: unsafe { Weak::of(&weapon.m_WeakThis) },

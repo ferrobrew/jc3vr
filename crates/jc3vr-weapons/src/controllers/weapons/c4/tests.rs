@@ -2,7 +2,7 @@ use glam::Quat;
 use jc3vr_body::controllers::hands::held::away_from_palm;
 
 use super::*;
-use crate::controllers::weapons::c4::tuning::CHARGE_TOP_M;
+use crate::controllers::weapons::c4::tuning::{CHARGE_CENTRE_M, CHARGE_TOP_M};
 
 fn fresh() -> State {
     State {
@@ -30,7 +30,7 @@ fn a_started_detonation_is_credited_to_the_request_or_the_game() {
     let mut state = fresh();
     state.detonation = Some(PendingDetonation {
         source: DetonationSource::Detonator,
-        remaining_s: DETONATION_TIMEOUT_S,
+        remaining_s: C4.get().detonation.timeout_s,
     });
     settle_detonation(&mut state, true, 3, 0.03);
     assert_eq!(
@@ -55,7 +55,7 @@ fn an_unanswered_request_times_out() {
     let mut state = fresh();
     state.detonation = Some(PendingDetonation {
         source: DetonationSource::Detonator,
-        remaining_s: DETONATION_TIMEOUT_S,
+        remaining_s: C4.get().detonation.timeout_s,
     });
     settle_detonation(&mut state, false, 1, 0.1);
     assert!(state.status.detonation_pending);
@@ -100,13 +100,13 @@ fn a_detonation_whose_charges_outlast_the_limit_is_over() {
         steps += 1;
         assert!(steps < 100);
     }
-    assert!((steps as f32 * 0.1 - DETONATION_IN_FLIGHT_S).abs() < 0.15);
+    assert!((steps as f32 * 0.1 - C4.get().detonation.in_flight_s).abs() < 0.15);
 }
 
 #[test]
 fn the_held_charge_lies_flat_on_the_palm_with_its_sticking_face_out() {
     for hand in Hand::BOTH {
-        let local = hold_local(hand, &C4);
+        let local = hold_local(hand, C4.get());
         let away = away_from_palm(hand);
         // The top face's normal points back into the palm, so the sticking face looks out.
         assert!((local.orientation * Vec3::Y).abs_diff_eq(-away, 1e-5));
@@ -118,8 +118,9 @@ fn the_held_charge_lies_flat_on_the_palm_with_its_sticking_face_out() {
         position: Vec3::new(1.0, 2.0, 3.0),
         orientation: Quat::IDENTITY,
     };
-    let m = Mat4::from(held_matrix(grip, hold_local(Hand::Right, &C4)));
-    let centre = m.transform_point3(C4.centre_m);
-    // The middle of the brick is half its thickness out of the palm.
-    assert!((centre.x - (1.0 - CHARGE_TOP_M / 2.0 - 0.003)).abs() < 1e-5);
+    let m = Mat4::from(held_matrix(grip, hold_local(Hand::Right, C4.get())));
+    let centre = m.transform_point3(CHARGE_CENTRE_M);
+    // The middle of the brick is half its thickness up from the sticking face, the model's origin.
+    let sticking_x = 1.0 + C4.get().hold.offset_m.x;
+    assert!((centre.x - (sticking_x + CHARGE_TOP_M / 2.0)).abs() < 1e-5);
 }

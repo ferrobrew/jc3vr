@@ -2,10 +2,10 @@
 //!
 //! Every charge the player has placed is on the C4 weapon's live list
 //! ([`PlantedExplosiveWeapon::m_ActiveExplosives`]), which the weapon's serial update reads after
-//! each of its updates ([`read`]). On the input tick each charge within [`OFFER_RANGE_M`] of the
-//! player is a grab volume ([`GrabVolume::PlacedCharge`]) for each free hand, at the charge, in the
-//! cockpit frame the volumes live in ([`begin_tick`]); while a throw holds a charge or waits for
-//! one, nothing is offered. A grip press there takes the charge nearest the hand.
+//! each of its updates ([`read`]). On the input tick each charge within the tuning's
+//! [`offer_range_m`] of the player is a grab volume ([`GrabVolume::PlacedCharge`]) for each free
+//! hand, at the charge, in the cockpit frame the volumes live in ([`begin_tick`]); while a throw
+//! holds a charge or waits for one, nothing is offered. A grip press there takes the charge nearest the hand.
 //!
 //! A take is refused, the placed charge left where it is, when the charge is no longer placed
 //! (it went off or was removed since the offer) and while the game's own planting holds the
@@ -24,6 +24,7 @@
 //! [`PlantedExplosiveWeapon::RemoveFromActiveList`]: jc3gi::equipment::weapon::PlantedExplosiveWeapon::RemoveFromActiveList
 //! [`Explosive::RemoveSelf`]: jc3gi::equipment::explosive::Explosive::RemoveSelf
 //! [`GrabVolume::PlacedCharge`]: jc3vr_body::controllers::grab::GrabVolume::PlacedCharge
+//! [`offer_range_m`]: crate::controllers::weapons::c4::tuning::PlacedTuning::offer_range_m
 
 use glam::{Mat4, Vec3};
 use jc3gi::equipment::{
@@ -42,6 +43,7 @@ use crate::controllers::weapons::{
     c4::{
         STATE, State, primed_charge, stage,
         stage::{InputEvent, Refusal, Stage, WeaponView},
+        tuning::C4,
     },
     docks,
 };
@@ -112,12 +114,13 @@ pub(crate) fn begin_tick(game: &GameTick<'_>, inputs: &BeginInputs) -> Vec<Candi
     let Some(frames) = docks::cockpit_frames(inputs.active, player) else {
         return Vec::new();
     };
+    let tuning = &C4.get().placed;
     let origin = player.w_axis.truncate();
     let near: Vec<(usize, Vec3)> = state
         .placed
         .charges
         .iter()
-        .filter(|c| c.position.distance(origin) <= OFFER_RANGE_M)
+        .filter(|c| c.position.distance(origin) <= tuning.offer_range_m)
         .map(|c| (c.charge, frames.cockpit.point_to_cockpit(c.position)))
         .collect();
     let grips = inputs
@@ -125,7 +128,7 @@ pub(crate) fn begin_tick(game: &GameTick<'_>, inputs: &BeginInputs) -> Vec<Candi
         .hands
         .map(|hand| hand.map(|hand| hand.grip.position));
     state.placed.offers = offers(&near, grips, inputs.free);
-    candidates(&near, RADIUS_M, inputs.free)
+    candidates(&near, tuning.radius_m, inputs.free)
 }
 
 /// The grab volumes of the charges `near` (each its address and its position in the cockpit
@@ -375,14 +378,6 @@ pub(super) unsafe fn read(weapon: &PlantedExplosiveWeapon) -> Vec<PlacedCharge> 
         .collect()
 }
 
-/// How near a placed charge a hand must come to take it, metres: about the charge's size, with the
-/// slack the drawn hand needs.
-pub const RADIUS_M: f32 = 0.1;
-
-/// How far from the player a placed charge is offered, metres: beyond any reach, so that only the
-/// few charges a hand might take are carried into the cockpit frame.
-pub const OFFER_RANGE_M: f32 = 3.0;
-
 /// The charges on the weapon's live list, null entries skipped.
 ///
 /// # Safety
@@ -605,13 +600,13 @@ mod tests {
             (A, Vec3::new(0.0, 1.0, -0.5)),
             (B, Vec3::new(1.0, 0.0, 0.0)),
         ];
-        let both = candidates(&near, RADIUS_M, [true; 2]);
+        let both = candidates(&near, C4.get().placed.radius_m, [true; 2]);
         assert_eq!(both.len(), 4);
         assert!(both.iter().all(|c| c.volume == GrabVolume::PlacedCharge));
-        let left = candidates(&near, RADIUS_M, [true, false]);
+        let left = candidates(&near, C4.get().placed.radius_m, [true, false]);
         assert_eq!(left.len(), 2);
         assert!(left.iter().all(|c| c.hand == Some(Hand::Left)));
-        assert!(candidates(&near, RADIUS_M, [false; 2]).is_empty());
+        assert!(candidates(&near, C4.get().placed.radius_m, [false; 2]).is_empty());
     }
 
     #[test]

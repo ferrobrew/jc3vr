@@ -440,10 +440,12 @@ unsafe fn finish(
     sights::tuning::service(&cfg.sight_tuning, tick.head, held.as_ref(), tick.dominant);
 
     let dominant = tick.dominant;
+    // No controller input binds the game's own grenade throw (grenades come from the pouch), so
+    // the grenade slot's aim point matters only to a throw the game starts by other means: it
+    // follows the dominant hand rather than the gaze.
     // SAFETY: the aim control is live for its own update, and the original has run.
     if let Some(aim) = unsafe { aim.as_mut() }
-        && let Some(point) =
-            (hooks.grenade_fallback_target)(hands[dominant.index()].map(|h| h.target))
+        && let Some(point) = hands[dominant.index()].map(|h| h.target)
     {
         aim.m_AimPos[TargetType::TARGET_GRENADE as usize] = Vector3 {
             data: point.to_array(),

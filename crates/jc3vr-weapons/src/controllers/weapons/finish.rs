@@ -340,7 +340,7 @@ pub fn finish_tick(
             free: c4::wheel::WheelHands::available(free, unavailable, config.dominant).free,
             dominant: config.dominant,
         },
-        &C4,
+        C4.get(),
     );
     let reload_finish = reload::finish_tick(
         game,

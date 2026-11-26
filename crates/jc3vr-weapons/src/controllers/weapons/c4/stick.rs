@@ -30,7 +30,7 @@ use jc3vr_input::frame::Pose;
 
 use crate::controllers::weapons::{
     c4,
-    c4::tuning::{C4, StickTuning},
+    c4::tuning::{C4, CHARGE_CENTRE_M, StickTuning},
 };
 
 /// A surface touching the held charge.
@@ -62,12 +62,12 @@ pub struct StickAt {
 ///
 /// The simulation thread outside the physics step, with a live local player character.
 pub unsafe fn probe() {
-    let tuning = &C4;
+    let tuning = C4.get();
     let Some((hand, grip)) = c4::stick_candidate(tuning) else {
         c4::publish_preview(None);
         return;
     };
-    let centre = probe_origin(grip, c4::hold_local(hand, tuning), tuning.centre_m);
+    let centre = probe_origin(grip, c4::hold_local(hand, tuning), CHARGE_CENTRE_M);
     // SAFETY: forwarded from the caller.
     let options = unsafe { CastOptions::ignoring_player(0) };
     let reach = tuning.stick.contact_m.max(0.0);
@@ -188,7 +188,7 @@ mod tests {
 
     #[test]
     fn the_charge_leaves_off_the_surface_pushed_onto_it() {
-        let tuning = C4.stick;
+        let tuning = C4.get().stick;
         let at = placement(
             Contact {
                 point: Vec3::new(1.0, 0.0, 0.0),
@@ -205,7 +205,7 @@ mod tests {
 
     #[test]
     fn a_charge_sticks_only_after_it_leaves_the_pouch() {
-        let tuning = C4.stick;
+        let tuning = C4.get().stick;
         assert!(!may_stick(0.1, false, &tuning));
         assert!(may_stick(tuning.after_prime_s, false, &tuning));
         assert!(!may_stick(1.0, true, &tuning));

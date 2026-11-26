@@ -37,9 +37,6 @@ pub struct AimHooks {
     /// The aim points of the weapons armed in the hands beside the wielded one, by the owner's
     /// address, each the armed weapon's address and its hand's point.
     pub publish_armed_targets: fn(usize, ArmedTargets),
-    /// The grenade slot's aim point from the dominant hand's aim point, while the game's own
-    /// grenade throw follows the hand.
-    pub grenade_fallback_target: fn(Option<Vec3>) -> Option<Vec3>,
     /// The hand bodies' step after the aim update, with the tick's length in seconds.
     pub after_aim: fn(f32),
     /// The per-weapon update's pin of a single pistol to the gun it shows, for every character's

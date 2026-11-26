@@ -33,7 +33,6 @@ pub(super) fn register() {
         probe_c4_stick: c4::stick::probe,
         probe_collide: collide::probe,
         publish_armed_targets: hold_tick::publish_targets,
-        grenade_fallback_target: grenade::fallback_target,
         after_aim: physical_hands::after_aim,
         pin_single: single::pin,
         before_update: hold::before_update,

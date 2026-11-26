@@ -57,7 +57,7 @@ use jc3vr_input::{
     motion,
 };
 use jc3vr_view::controllers::overlay::{
-    primitive::{Anchor, DepthMode, Facing, HandPose, Primitive, Rgba, Shape, Source, SpriteSize},
+    primitive::{Anchor, DepthMode, Facing, HandPose, Primitive, Shape, Source, SpriteSize},
     store,
 };
 use parking_lot::Mutex;
@@ -404,7 +404,7 @@ pub(super) fn pin_candidates(
         .filter_map(|holder| {
             let grip = inputs.active.hands[holder.index()]?.grip;
             let point = pin::pin_point(grip, holder, inputs.active.world_scale, tuning)?;
-            Some((holder, pin::candidate(holder, point)))
+            Some((holder, pin::candidate(holder, point, &tuning.pin)))
         })
         .collect()
 }
@@ -430,7 +430,7 @@ pub(super) fn input_tick(game: &GameTick<'_>, inputs: &TickInputs, desired: &mut
         stand_down();
         return;
     }
-    let tuning = &GRENADE;
+    let tuning = GRENADE.get();
     let grips = STATE.lock().grips;
     beacon::input_tick(inputs, grips);
     for hand in Hand::BOTH {
@@ -516,12 +516,15 @@ pub(super) fn input_tick(game: &GameTick<'_>, inputs: &TickInputs, desired: &mut
         let mouth = state.mouth;
         Hand::BOTH.map(|hand| {
             let seen = mouth[hand.index()];
-            state.teeth[hand.index()].step(TeethTick {
-                pin_in: safe::pin_in(hand),
-                at_mouth: seen.is_some_and(|seen| seen.at_mouth),
-                other_occupied: seen.is_some_and(|seen| seen.other_occupied),
-                dt: inputs.dt,
-            })
+            state.teeth[hand.index()].step(
+                TeethTick {
+                    pin_in: safe::pin_in(hand),
+                    at_mouth: seen.is_some_and(|seen| seen.at_mouth),
+                    other_occupied: seen.is_some_and(|seen| seen.other_occupied),
+                    dt: inputs.dt,
+                },
+                &tuning.pin,
+            )
         })
     };
     for hand in Hand::BOTH {
@@ -590,7 +593,8 @@ pub(super) fn input_tick(game: &GameTick<'_>, inputs: &TickInputs, desired: &mut
     if primitives.is_empty() {
         store::clear(Source::GrenadeWarning);
     } else {
-        store::submit(Source::GrenadeWarning, &mut primitives, WARNING_TTL);
+        let ttl = Duration::from_millis(tuning.warning.ttl_ms);
+        store::submit(Source::GrenadeWarning, &mut primitives, ttl);
     }
     if let Some(hand) = pulse {
         haptics::play(hand, Event::GrenadeWarning);
@@ -631,7 +635,7 @@ pub(super) fn stand_down() {
 /// Note tracked controller world poses for safe rendering and live catches.
 pub fn observe_hands(grips: [Option<Pose>; 2]) {
     STATE.lock().grips = grips;
-    safe::observe(grips, &GRENADE);
+    safe::observe(grips, GRENADE.get());
 }
 
 /// Draw the items' native actors at the frame's interpolation fraction `dtf`; their own render
@@ -642,12 +646,7 @@ pub fn observe_hands(grips: [Option<Pose>; 2]) {
 /// The game thread, before the world update.
 pub unsafe fn render_frame(dtf: f32) {
     unsafe { beacon::render_frame() };
-    let tuning = GRENADE;
-    unsafe { safe::render_frame(dtf, &tuning) };
-}
-
-pub fn fallback_target(dominant_target: Option<Vec3>) -> Option<Vec3> {
-    dominant_target.filter(|_| GRENADE.hand_aimed_fallback)
+    unsafe { safe::render_frame(dtf, GRENADE.get()) };
 }
 
 pub(super) fn report_native_throw(hand: Hand, release: Release) {
@@ -727,10 +726,7 @@ fn return_to_pouch(game: &GameTick<'_>, hand: Hand) {
     tracing::info!(target: "controllers", hand = hand.label(), "grenade: put the grenade back into the pouch");
 }
 
-const WARNING_TTL: Duration = Duration::from_millis(150);
 const MAX_EVENTS: usize = 6;
-const WARNING_CALM: Rgba = [0.4, 1.0, 0.4, 0.8];
-const WARNING_URGENT: Rgba = [1.0, 0.15, 0.1, 0.95];
 
 struct State {
     thrown: [bool; 2],
@@ -804,7 +800,7 @@ thread_local! {
 /// and whether the other hand is occupied, holding something ([`BeginInputs::free`]), closed on
 /// something, or untracked. `None` for a hand without such a grenade or without a pose.
 fn at_mouth(inputs: &BeginInputs, tuning: &GrenadeTuning) -> [Option<Mouth>; 2] {
-    let mouth = pin::mouth_point(inputs.active.head);
+    let mouth = pin::mouth_point(inputs.active.head, &tuning.pin);
     Hand::BOTH.map(|hand| {
         if !safe::pin_in(hand) {
             return None;
@@ -813,7 +809,7 @@ fn at_mouth(inputs: &BeginInputs, tuning: &GrenadeTuning) -> [Option<Mouth>; 2] 
         let pin = pin::pin_point(grip, hand, inputs.active.world_scale, tuning)?;
         let other = hand.other();
         Some(Mouth {
-            at_mouth: pin::at_mouth(pin, mouth),
+            at_mouth: pin::at_mouth(pin, mouth, &tuning.pin),
             other_occupied: !inputs.free[other.index()]
                 || intent::hand_closed(other)
                 || inputs.active.hands[other.index()].is_none(),
@@ -831,43 +827,36 @@ fn warning(
     caught: Option<(Hand, Fuse)>,
     dt: f32,
 ) -> Option<(Vec<Primitive>, Option<Hand>)> {
-    let tuning = &GRENADE;
+    let tuning = GRENADE.get();
+    let warning = &tuning.warning;
     let Some((hand, fuse)) = caught else {
         state.next_pulse_s = 0.0;
         return None;
     };
     let urgency = fuse_urgency(fuse.remaining_s, fuse.total_s);
-    let mut primitives = Vec::new();
-    if tuning.warning_overlay {
-        primitives.push(Primitive::Sprite {
-            at: Anchor::Hand {
-                hand,
-                pose: HandPose::Grip,
-                offset: hold_local(hand, tuning).position,
-            },
-            size: SpriteSize::World(0.07 + 0.03 * urgency),
-            facing: Facing::Billboard,
-            shape: Shape::Ring {
-                thickness: 0.2 + 0.3 * urgency,
-            },
-            color: std::array::from_fn(|index| {
-                WARNING_CALM[index] + (WARNING_URGENT[index] - WARNING_CALM[index]) * urgency
-            }),
-            depth: DepthMode::XRay {
-                occluded_alpha: 0.6,
-            },
-        });
-    }
+    let (calm, urgent) = (warning.calm_rgba, warning.urgent_rgba);
+    let primitives = vec![Primitive::Sprite {
+        at: Anchor::Hand {
+            hand,
+            pose: HandPose::Grip,
+            offset: hold_local(hand, tuning).position,
+        },
+        size: SpriteSize::World(warning.ring_size_m + warning.ring_size_growth_m * urgency),
+        facing: Facing::Billboard,
+        shape: Shape::Ring {
+            thickness: warning.ring_thickness + warning.ring_thickness_growth * urgency,
+        },
+        color: std::array::from_fn(|index| calm[index] + (urgent[index] - calm[index]) * urgency),
+        depth: DepthMode::XRay {
+            occluded_alpha: warning.occluded_alpha,
+        },
+    }];
     let mut pulse = None;
-    if tuning.warning_haptics {
-        state.next_pulse_s -= dt;
-        if state.next_pulse_s <= 0.0 {
-            let [slow, fast] = tuning.warning_interval_s;
-            state.next_pulse_s = slow + (fast - slow) * urgency;
-            pulse = Some(hand);
-        }
-    } else {
-        state.next_pulse_s = 0.0;
+    state.next_pulse_s -= dt;
+    if state.next_pulse_s <= 0.0 {
+        let [slow, fast] = warning.interval_s;
+        state.next_pulse_s = slow + (fast - slow) * urgency;
+        pulse = Some(hand);
     }
     Some((primitives, pulse))
 }
@@ -1071,7 +1060,7 @@ mod tests {
     #[test]
     fn the_held_grenade_stands_upright_with_its_lever_on_the_palm() {
         for hand in Hand::BOTH {
-            let local = hold_local(hand, &GRENADE);
+            let local = hold_local(hand, GRENADE.get());
             // The fuse head points up the finger tube, out of the top of the fist.
             assert!((local.orientation * Vec3::Y).abs_diff_eq(Vec3::NEG_Z, 1e-5));
             // The lever faces back into the palm.

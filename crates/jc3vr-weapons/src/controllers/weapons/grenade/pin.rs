@@ -15,7 +15,7 @@ use glam::Vec3;
 use jc3vr_body::controllers::grab::{Candidate, GrabVolume};
 use jc3vr_input::frame::{Hand, Pose};
 
-use crate::controllers::weapons::grenade::tuning::GrenadeTuning;
+use crate::controllers::weapons::grenade::tuning::{GrenadeTuning, PinTuning};
 
 /// How a pin came out, for the log.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -58,28 +58,28 @@ pub(crate) fn pin_point(
 }
 
 /// The pin target for the hand other than `holder`, the grenade's pin at `pin` (cockpit frame).
-pub(crate) fn candidate(holder: Hand, pin: Vec3) -> Candidate {
+pub(crate) fn candidate(holder: Hand, pin: Vec3, tuning: &PinTuning) -> Candidate {
     Candidate {
         volume: GrabVolume::GrenadePin,
         centre: pin,
-        radius: PIN_RADIUS_M,
+        radius: tuning.radius_m,
         hand: Some(holder.other()),
     }
 }
 
 /// Where the mouth is for the head `head` (the eye midpoint, cockpit frame): below the eyes and a
 /// little in front of them.
-pub(crate) fn mouth_point(head: Pose) -> Vec3 {
-    head.position + head.orientation * MOUTH_IN_HEAD_M
+pub(crate) fn mouth_point(head: Pose, tuning: &PinTuning) -> Vec3 {
+    head.position + head.orientation * tuning.mouth_in_head_m
 }
 
 /// Whether the pin at `pin` is at the mouth at `mouth`, both in the cockpit frame.
-pub(crate) fn at_mouth(pin: Vec3, mouth: Vec3) -> bool {
-    pin.is_finite() && mouth.is_finite() && pin.distance(mouth) <= MOUTH_RADIUS_M
+pub(crate) fn at_mouth(pin: Vec3, mouth: Vec3, tuning: &PinTuning) -> bool {
+    pin.is_finite() && mouth.is_finite() && pin.distance(mouth) <= tuning.mouth_radius_m
 }
 
 /// The teeth pull for one hand's grenade: the grenade's pin held at the mouth for
-/// [`TEETH_DWELL_S`] while the other hand is occupied pulls the pin, once per visit to the mouth.
+/// [`PinTuning::teeth_dwell_s`] while the other hand is occupied pulls the pin, once per visit to the mouth.
 /// A grenade only passing the face, or one brought there while the other hand is free to pull the
 /// pin itself, pulls nothing.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -112,7 +112,7 @@ impl TeethPull {
     };
 
     /// Advance one tick. `true` on the tick the teeth pull the pin.
-    pub(crate) fn step(&mut self, tick: TeethTick) -> bool {
+    pub(crate) fn step(&mut self, tick: TeethTick, tuning: &PinTuning) -> bool {
         if !tick.at_mouth {
             *self = TeethPull::NEW;
             return false;
@@ -124,7 +124,7 @@ impl TeethPull {
         if tick.dt.is_finite() && tick.dt > 0.0 {
             self.held_s += tick.dt;
         }
-        if self.held_s >= TEETH_DWELL_S {
+        if self.held_s >= tuning.teeth_dwell_s {
             self.pulled = true;
             self.held_s = 0.0;
             return true;
@@ -133,22 +133,9 @@ impl TeethPull {
     }
 }
 
-/// The pin's reach, metres at the player's scale: larger than the ring, so that a hand reaching for
-/// the top of the grenade takes the pin without aiming for it, and smaller than the grenade's own
-/// reach ([`crate::controllers::weapons::hold::HANDLE_RADIUS_M`]), so that a hand closing on the
-/// grenade's body still takes the grenade.
-pub(crate) const PIN_RADIUS_M: f32 = 0.05;
-/// How long the pin stays at the mouth before the teeth pull it, seconds: longer than a grenade
-/// passing the face takes.
-pub(crate) const TEETH_DWELL_S: f32 = 0.15;
-
 /// The pin in the grenade model's frame, metres: on the model's +Y axis, at the top of the fuse
-/// head (see [`crate::controllers::weapons::grenade::tuning::HOLD`] for the model's axes).
+/// head (see [`GrenadeTuning::hold`] for the model's axes).
 const PIN_IN_MODEL_M: Vec3 = Vec3::new(0.0, 0.065, 0.0);
-/// The mouth in the head's frame (the eye midpoint, -Z forward, +Y up), metres.
-const MOUTH_IN_HEAD_M: Vec3 = Vec3::new(0.0, -0.08, -0.07);
-/// How near the mouth the pin must come for the teeth to take it, metres.
-const MOUTH_RADIUS_M: f32 = 0.08;
 
 #[cfg(test)]
 mod tests {
@@ -157,6 +144,10 @@ mod tests {
 
     use super::*;
     use crate::controllers::weapons::{grenade::tuning::GRENADE, hold::HANDLE_RADIUS_M};
+
+    fn config() -> &'static PinTuning {
+        &GRENADE.get().pin
+    }
 
     fn upright() -> Pose {
         Pose {
@@ -169,7 +160,7 @@ mod tests {
     fn the_pin_sits_above_the_fist() {
         for hand in Hand::BOTH {
             let grip = upright();
-            let pin = pin_point(grip, hand, 1.0, &GRENADE).unwrap();
+            let pin = pin_point(grip, hand, 1.0, GRENADE.get()).unwrap();
             // Up the finger tube, the grip's -Z, out of the top of the fist.
             let up = (pin - grip.position).dot(Vec3::NEG_Z);
             assert!(up > 0.05, "{hand:?}: {up}");
@@ -181,8 +172,8 @@ mod tests {
     #[test]
     fn the_pin_shrinks_with_the_world_scale() {
         let grip = upright();
-        let at_one = pin_point(grip, Hand::Right, 1.0, &GRENADE).unwrap();
-        let at_two = pin_point(grip, Hand::Right, 2.0, &GRENADE).unwrap();
+        let at_one = pin_point(grip, Hand::Right, 1.0, GRENADE.get()).unwrap();
+        let at_two = pin_point(grip, Hand::Right, 2.0, GRENADE.get()).unwrap();
         let offset_one = at_one - grip.position;
         let offset_two = at_two - grip.position;
         assert!((offset_one * 0.5).abs_diff_eq(offset_two, 1e-6));
@@ -191,7 +182,7 @@ mod tests {
     #[test]
     fn a_degenerate_scale_places_no_pin() {
         for scale in [0.0, -1.0, f32::NAN, f32::INFINITY] {
-            assert_eq!(pin_point(upright(), Hand::Left, scale, &GRENADE), None);
+            assert_eq!(pin_point(upright(), Hand::Left, scale, GRENADE.get()), None);
         }
     }
 
@@ -200,7 +191,7 @@ mod tests {
         let holder = Hand::Right;
         let taker = holder.other();
         let grip = upright();
-        let pin = pin_point(grip, holder, 1.0, &GRENADE).unwrap();
+        let pin = pin_point(grip, holder, 1.0, GRENADE.get()).unwrap();
         let candidates = [
             Candidate {
                 volume: GrabVolume::Handle,
@@ -208,10 +199,10 @@ mod tests {
                 radius: HANDLE_RADIUS_M,
                 hand: Some(taker),
             },
-            candidate(holder, pin),
+            candidate(holder, pin, config()),
         ];
         // At the pin, and even nearer the grenade's grip than the pin, within the pin's reach.
-        let toward_grip = pin + (grip.position - pin).normalize() * (PIN_RADIUS_M * 0.9);
+        let toward_grip = pin + (grip.position - pin).normalize() * (config().radius_m * 0.9);
         assert!(toward_grip.distance(grip.position) < toward_grip.distance(pin));
         for point in [pin, toward_grip] {
             assert_eq!(
@@ -221,7 +212,7 @@ mod tests {
         }
         // Beside the grenade's body, past the pin's reach: the grenade changes hands.
         let beside = grip.position + Vec3::X * 0.06;
-        assert!(beside.distance(pin) > PIN_RADIUS_M);
+        assert!(beside.distance(pin) > config().radius_m);
         assert_eq!(
             grab_volume(beside, taker, &candidates),
             Some(GrabVolume::Handle)
@@ -236,13 +227,13 @@ mod tests {
             position: Vec3::new(0.0, 1.7, 0.0),
             orientation: Quat::from_rotation_y(std::f32::consts::FRAC_PI_2),
         };
-        let mouth = mouth_point(head);
+        let mouth = mouth_point(head, config());
         assert!(mouth.y < head.position.y);
         // Turned to the left, forward is -X.
         assert!(mouth.x < head.position.x);
-        assert!(at_mouth(mouth, mouth));
-        assert!(!at_mouth(mouth + Vec3::Y * 0.2, mouth));
-        assert!(!at_mouth(Vec3::NAN, mouth));
+        assert!(at_mouth(mouth, mouth, config()));
+        assert!(!at_mouth(mouth + Vec3::Y * 0.2, mouth, config()));
+        assert!(!at_mouth(Vec3::NAN, mouth, config()));
     }
 
     fn tick(at_mouth: bool, other_occupied: bool, dt: f32) -> TeethTick {
@@ -257,30 +248,30 @@ mod tests {
     #[test]
     fn the_teeth_pull_after_a_moment_at_the_mouth() {
         let mut teeth = TeethPull::NEW;
-        assert!(!teeth.step(tick(true, true, TEETH_DWELL_S * 0.5)));
-        assert!(teeth.step(tick(true, true, TEETH_DWELL_S * 0.6)));
+        assert!(!teeth.step(tick(true, true, config().teeth_dwell_s * 0.5), config()));
+        assert!(teeth.step(tick(true, true, config().teeth_dwell_s * 0.6), config()));
         // Left there, the pin is not pulled again.
-        assert!(!teeth.step(tick(true, true, 1.0)));
+        assert!(!teeth.step(tick(true, true, 1.0), config()));
         // Away and back, it can be.
-        assert!(!teeth.step(tick(false, true, 0.1)));
-        assert!(teeth.step(tick(true, true, TEETH_DWELL_S)));
+        assert!(!teeth.step(tick(false, true, 0.1), config()));
+        assert!(teeth.step(tick(true, true, config().teeth_dwell_s), config()));
     }
 
     #[test]
     fn a_grenade_passing_the_face_pulls_nothing() {
         let mut teeth = TeethPull::NEW;
-        assert!(!teeth.step(tick(true, true, TEETH_DWELL_S * 0.6)));
-        assert!(!teeth.step(tick(false, true, 0.01)));
-        assert!(!teeth.step(tick(true, true, TEETH_DWELL_S * 0.6)));
+        assert!(!teeth.step(tick(true, true, config().teeth_dwell_s * 0.6), config()));
+        assert!(!teeth.step(tick(false, true, 0.01), config()));
+        assert!(!teeth.step(tick(true, true, config().teeth_dwell_s * 0.6), config()));
     }
 
     #[test]
     fn the_teeth_wait_while_the_other_hand_is_free() {
         let mut teeth = TeethPull::NEW;
-        assert!(!teeth.step(tick(true, false, 1.0)));
+        assert!(!teeth.step(tick(true, false, 1.0), config()));
         // Its dwell starts once the other hand is occupied.
-        assert!(!teeth.step(tick(true, true, TEETH_DWELL_S * 0.5)));
-        assert!(teeth.step(tick(true, true, TEETH_DWELL_S * 0.6)));
+        assert!(!teeth.step(tick(true, true, config().teeth_dwell_s * 0.5), config()));
+        assert!(teeth.step(tick(true, true, config().teeth_dwell_s * 0.6), config()));
     }
 
     #[test]
@@ -290,9 +281,9 @@ mod tests {
             pin_in: false,
             ..tick(true, true, 1.0)
         };
-        assert!(!teeth.step(out));
+        assert!(!teeth.step(out, config()));
         for dt in [f32::NAN, -1.0, 0.0] {
-            assert!(!teeth.step(tick(true, true, dt)));
+            assert!(!teeth.step(tick(true, true, dt), config()));
         }
     }
 }

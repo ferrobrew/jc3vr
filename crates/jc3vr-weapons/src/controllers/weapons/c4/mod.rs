@@ -115,12 +115,12 @@ use crate::controllers::{
     loadout::{ObjectAddress, live},
     weapons::{
         c4::{
-            detonator::{DETONATOR_HOLD, Detonator, DetonatorStep},
+            detonator::{Detonator, DetonatorStep},
             placed::{PlacedState, TakeStep},
             stage::{InputEvent, Outcome, Refusal, Stage, WeaponAction, WeaponView},
             stick as stick_by_hand,
             stick::StickAt,
-            tuning::{C4, C4Tuning},
+            tuning::{C4, C4Tuning, CHARGE_CENTRE_M},
             wheel::{WheelHands, WheelStep},
         },
         engine,
@@ -209,7 +209,8 @@ pub struct C4Status {
     /// Whether a detonation request waits for the weapon.
     pub detonation_pending: bool,
     /// Whether the last detonation's charges are still live: it started, and they have neither all
-    /// gone off nor outlasted [`DETONATION_IN_FLIGHT_S`].
+    /// gone off nor outlasted the tuning's
+    /// [`in_flight_s`](crate::controllers::weapons::c4::tuning::DetonationTuning::in_flight_s).
     pub detonation_in_flight: bool,
     pub detonations: u64,
     pub last_detonation: Option<Detonation>,
@@ -508,7 +509,7 @@ pub(super) fn input_tick(game: &GameTick<'_>, inputs: &TickInputs, tuning: &C4Tu
         // in a hand that has opened.
         let release = state.grips[hand.index()].map_or(Release::REST, |grip| {
             let point =
-                held::held_matrix(grip, hold_local(hand, tuning)).transform_point3(tuning.centre_m);
+                held::held_matrix(grip, hold_local(hand, tuning)).transform_point3(CHARGE_CENTRE_M);
             throw_release(
                 hand,
                 point,
@@ -567,15 +568,6 @@ pub fn observe_hands(grips: [Option<Pose>; 2]) {
     }
 }
 
-/// How long a detonation request waits for the weapon to start the detonation, seconds: long
-/// enough for the character to finish an act that keeps the detonate act out.
-const DETONATION_TIMEOUT_S: f32 = 0.5;
-
-/// The longest a started detonation's charges count as on their way to going off, seconds: the
-/// detonate act's lead-in and the charges' own timers. A charge still live after this did not go
-/// off, and a press may detonate it again.
-const DETONATION_IN_FLIGHT_S: f32 = 3.0;
-
 /// How many throw steps the readout keeps.
 const MAX_EVENTS: usize = 6;
 
@@ -600,10 +592,12 @@ impl InFlight {
 
     /// The detonation after a weapon update that read `live` charges, `dt` seconds on: over once
     /// they have all gone off, once the count rises (a charge placed since is not part of it, and
-    /// a press should set it off), or once it has outlasted [`DETONATION_IN_FLIGHT_S`].
+    /// a press should set it off), or once it has outlasted the tuning's
+    /// [`in_flight_s`](crate::controllers::weapons::c4::tuning::DetonationTuning::in_flight_s).
     fn step(self, live: i32, dt: f32) -> Option<Self> {
         let elapsed_s = self.elapsed_s + if dt.is_finite() { dt.max(0.0) } else { 0.0 };
-        (live > 0 && live <= self.lowest && elapsed_s < DETONATION_IN_FLIGHT_S).then_some(Self {
+        let in_flight_s = C4.get().detonation.in_flight_s;
+        (live > 0 && live <= self.lowest && elapsed_s < in_flight_s).then_some(Self {
             lowest: live,
             elapsed_s,
         })
@@ -679,7 +673,7 @@ impl State {
             self.act = Some((hand, false));
             self.detonation = Some(PendingDetonation {
                 source: DetonationSource::Detonator,
-                remaining_s: DETONATION_TIMEOUT_S,
+                remaining_s: C4.get().detonation.timeout_s,
             });
             self.status.detonation_pending = true;
             return (hand, Event::DetonatorPress);
@@ -847,7 +841,7 @@ fn update_from_user_serial(
         return original();
     };
     let enabled = scheme::enabled();
-    let tuning = C4;
+    let tuning = C4.get();
     let acting = enabled && scheme::is_controllers();
 
     // SAFETY: the weapon and its user are live, on the thread that updates the weapon; the
@@ -876,7 +870,7 @@ fn update_from_user_serial(
                 pulses.extend(outcome_pulse(hand, outcome));
             }
             let grip = hand.and_then(|h| {
-                state.grips[h.index()].map(|g| held_matrix(g, hold_local(h, &tuning)))
+                state.grips[h.index()].map(|g| held_matrix(g, hold_local(h, tuning)))
             });
             // A charge pressed onto a surface leaves from just off it, turned as the hand holds it.
             let stick = state
@@ -1053,7 +1047,7 @@ fn update_attachment_transforms(
         held::hold(Slot::Charge, None);
         return;
     };
-    let local = hold_local(hand, &C4);
+    let local = hold_local(hand, C4.get());
     let matrix = held_matrix(grip, local);
     // SAFETY: the primed charge is live while the weak reference locks, on this thread.
     let charge = unsafe { primed_charge(&*weapon) };
@@ -1088,7 +1082,7 @@ static ACT_DETONATOR: Mutex<Option<(usize, Hand)>> = Mutex::new(None);
 /// the detonation. The game shows the weapon's own model for as long as the act plays and puts it
 /// at the act's attach bone, taken raw, which on the hand the mod poses drew it upside down and
 /// out of the fist on the 14 November take. The model is held at the hand's grip as the owned
-/// detonator is ([`detonator::DETONATOR_HOLD`]), its previous transform set too on the act's first
+/// detonator is ([`C4Tuning::detonator_hold`]), its previous transform set too on the act's first
 /// update so it does not sweep in from the bone.
 ///
 /// # Safety
@@ -1115,7 +1109,10 @@ unsafe fn place_act_detonator(weapon: &mut PlantedExplosiveWeapon, user: &Charac
     let Some(gun) = (unsafe { native::gun_ptr(&*base, 0) }) else {
         return;
     };
-    let matrix = Matrix4::from(held::held_matrix(grip, DETONATOR_HOLD.in_hand(hand)));
+    let matrix = Matrix4::from(held::held_matrix(
+        grip,
+        C4.get().detonator_hold.in_hand(hand),
+    ));
     // SAFETY: as above, on the weapon's own update.
     unsafe {
         let gun = &mut *gun.as_ptr();

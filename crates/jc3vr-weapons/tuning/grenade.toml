@@ -1,0 +1,37 @@
+# The grenades' tuning: `GrenadeTuning` in `src/controllers/weapons/grenade/tuning.rs`, whose
+# fields say what each value does. Every key is required and no other is accepted. Lengths are
+# metres, speeds metres per second, and times seconds unless a key says otherwise; a share is a
+# fraction of a range, in `0..1`, and a colour is `[r, g, b, a]` in `0..1`.
+#
+# A hold places the model in the right hand's grip frame (OpenXR's: -Z up the finger tube toward
+# the thumb, +X out of the back of the right hand, +Y toward the wrist), mirrored for the left.
+
+[hold]
+offset_m = [-0.036000002, 0.01, 0.01]
+axes = [[0.0, -1.0, 0.0], [0.0, 0.0, -1.0], [1.0, 0.0, 0.0]]
+
+[warning]
+interval_s = [0.5, 0.08]
+ring_size_m = 0.07
+ring_size_growth_m = 0.03
+ring_thickness = 0.2
+ring_thickness_growth = 0.3
+calm_rgba = [0.4, 1.0, 0.4, 0.8]
+urgent_rgba = [1.0, 0.15, 0.1, 0.95]
+occluded_alpha = 0.6
+ttl_ms = 150
+
+[catch]
+radius_m = 0.18
+range_m = 4.0
+own_grace_s = 0.4
+max_carry_mps = 25.0
+
+[pin]
+radius_m = 0.05
+teeth_dwell_s = 0.15
+mouth_in_head_m = [0.0, -0.08, -0.07]
+mouth_radius_m = 0.08
+
+[locker]
+reach_m = 0.18

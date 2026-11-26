@@ -1,0 +1,29 @@
+# The C4's tuning: `C4Tuning` in `src/controllers/weapons/c4/tuning.rs`, whose fields say what each
+# value does. Every key is required and no other is accepted. Lengths are metres, speeds metres per
+# second, and times seconds.
+#
+# A hold places the model in the right hand's grip frame (OpenXR's: -Z up the finger tube toward
+# the thumb, +X out of the back of the right hand, +Y toward the wrist), mirrored for the left.
+
+[hold]
+offset_m = [-0.031999998, 0.01, 0.0]
+axes = [[0.0, 1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, -1.0]]
+
+[detonator_hold]
+offset_m = [0.0, 0.0, 0.044]
+axes = [[1.0, 0.0, 0.0], [0.0, 0.0, -1.0], [0.0, 1.0, 0.0]]
+
+[stick]
+contact_m = 0.04
+standoff_m = 0.03
+push_mps = 1.5
+after_prime_s = 0.3
+preview_m = 0.3
+
+[placed]
+radius_m = 0.1
+offer_range_m = 3.0
+
+[detonation]
+timeout_s = 0.5
+in_flight_s = 3.0

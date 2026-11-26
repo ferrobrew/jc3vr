@@ -381,10 +381,10 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickStart {
         }),
         acting: pouches_act,
     };
-    let grenades = grenade::begin_tick(game, &inputs, &GRENADE);
+    let grenades = grenade::begin_tick(game, &inputs, GRENADE.get());
     targets.extend(grenades.iter().map(|c| place.world(c)));
     targets.extend(
-        grenade::pin_candidates(&inputs, &GRENADE)
+        grenade::pin_candidates(&inputs, GRENADE.get())
             .iter()
             .map(|(holder, c)| place.grenade_pin(c, *holder)),
     );

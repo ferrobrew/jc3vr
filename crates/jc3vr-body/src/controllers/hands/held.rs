@@ -38,6 +38,7 @@ use jc3gi::{
 use jc3vr_input::frame::{Hand, Pose};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
+use serde::Deserialize;
 
 use crate::controllers::hands::late;
 
@@ -86,7 +87,11 @@ pub struct Held {
 /// The grip frame is OpenXR's: the origin at the centre of the closed hand, -Z up the tube of the
 /// curled fingers toward the thumb, +X out of the back of the right hand (into the left palm), and
 /// +Y toward the wrist.
-#[derive(Debug, Copy, Clone, PartialEq)]
+///
+/// A placement is tuning, so it deserializes from a tuning file: `offset_m` as `[x, y, z]` and
+/// `axes` as three of them.
+#[derive(Debug, Copy, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct HoldPlacement {
     /// The model's origin in the right hand's grip frame, metres.
     pub offset_m: Vec3,

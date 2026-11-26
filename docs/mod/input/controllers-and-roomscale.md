@@ -532,7 +532,7 @@ The settings are under `weapons` unless named otherwise. The description is in [
 
 | Part | Settings | State |
 |---|---|---|
-| The physical grenade throw | none; the release, warning, and fallback tuning is `GRENADE` in `controllers::weapons::grenade` | Built. No button throws a grenade. |
+| The physical grenade throw | none; the hold, warning, catch, and pin tuning is `crates/jc3vr-weapons/tuning/grenade.toml` ([tuning.md](../tuning.md)) | Built. No button throws a grenade. |
 | The C4 throw and the detonator | none; the release tuning is `C4` in `controllers::weapons::c4` | Built. The detonator's trigger and the R stick click detonate. |
 | Precision aim suppression | none; always on under the controller scheme | Built. |
 | Scope lenses | none; the lens reads the other eye's image when it has one, and the lens tuning is the handling tuning's `scope.lens` section | The resampled lens is built. The narrow-field scene render is not. |

@@ -5,8 +5,8 @@
 //! charge for it (the charge goes back into the pouch), and a grab at the C4 pouch with no charge
 //! left to give hands it over instead of a charge ([`Detonator::take`]). There is one detonator, so
 //! a hand taking it takes it from the other. It sits in the hand by its grip, upright in the fist as
-//! a pistol grip is held ([`DETONATOR_HOLD`]), and the hand closes on it as on a gun's grip. Opening
-//! the hand puts it back on the chest: it is never dropped into the world.
+//! a pistol grip is held (the tuning's [`detonator_hold`]), and the hand closes on it as on a gun's
+//! grip. Opening the hand puts it back on the chest: it is never dropped into the world.
 //!
 //! The trigger of the hand holding it detonates ([`Detonator::step`]): a press with charges placed
 //! asks the weapon to detonate them, and a press with none placed, or while the last detonation's
@@ -22,17 +22,17 @@
 //! the same model once no charge is left to give ([`trigger_model`]).
 //!
 //! [`WeaponData::m_BaseModelInstance`]: jc3gi::equipment::weapon::WeaponData::m_BaseModelInstance
+//! [`detonator_hold`]: crate::controllers::weapons::c4::tuning::C4Tuning::detonator_hold
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use glam::Vec3;
 use jc3gi::{
     equipment::weapon::WeaponBase,
     graphics_engine::model_instance::{Model, ModelInstance},
     types::shared_ptr::SharedPtr,
 };
 use jc3vr_body::controllers::{
-    hands::{held, held::HoldPlacement, late},
+    hands::{held, late},
     held::native,
     intent::controls::ButtonControl,
     physics::local_player::LocalPlayer,
@@ -41,7 +41,10 @@ use jc3vr_core::game_tick::GameTick;
 use jc3vr_input::frame::{Hand, Pose};
 use parking_lot::Mutex;
 
-use crate::controllers::weapons::{c4::slot_c4, pouch_models::owned::OwnedModel};
+use crate::controllers::weapons::{
+    c4::{slot_c4, tuning::C4},
+    pouch_models::owned::OwnedModel,
+};
 
 /// The detonator, and the hand that holds it.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
@@ -115,16 +118,6 @@ impl Detonator {
     }
 }
 
-/// Where the detonator's model sits in the hand ([`HoldPlacement`]), derived from the trigger
-/// model's bounds: an upright cylinder about 3.3 cm across and [`DETONATOR_LENGTH_M`] long,
-/// standing on its origin along the model's +Y. It stands up the fist
-/// as a pistol grip does, its +Y along the grip's -Z, toward the thumb, centred on the grip's
-/// origin, the middle of the closed hand.
-pub const DETONATOR_HOLD: HoldPlacement = HoldPlacement {
-    offset_m: Vec3::new(0.0, 0.0, DETONATOR_LENGTH_M / 2.0),
-    axes: [Vec3::X, Vec3::NEG_Z, Vec3::Y],
-};
-
 /// The trigger model's length along its +Y, metres.
 pub const DETONATOR_LENGTH_M: f32 = 0.088;
 
@@ -137,7 +130,7 @@ pub(crate) fn place_model(game: &GameTick<'_>, held: Option<(Hand, Pose)>) {
         return;
     };
     ensure_cleanup();
-    let local = DETONATOR_HOLD.in_hand(hand);
+    let local = C4.get().detonator_hold.in_hand(hand);
     let matrix = held::held_matrix(grip, local);
     let source = LocalPlayer::get(game).and_then(|mut owner| owner_trigger_model(&mut owner));
     let shown = source.and_then(|source| unsafe { model.owned.show(source, matrix) });
@@ -164,7 +157,7 @@ pub unsafe fn render_frame(dtf: f32) {
     let Some(drawn) = late::drawn_hands(dtf)[hand.index()] else {
         return;
     };
-    let matrix = held::held_matrix(drawn.grip, DETONATOR_HOLD.in_hand(hand));
+    let matrix = held::held_matrix(drawn.grip, C4.get().detonator_hold.in_hand(hand));
     if matrix.is_finite() {
         unsafe { model.owned.push(matrix) };
     }
@@ -242,6 +235,8 @@ fn owner_trigger_model(owner: &mut LocalPlayer<'_>) -> Option<*const SharedPtr<M
 
 #[cfg(test)]
 mod tests {
+    use glam::Vec3;
+
     use super::*;
 
     fn trigger(down: bool, pressed: bool, released: bool) -> ButtonControl {
@@ -350,13 +345,13 @@ mod tests {
 
     #[test]
     fn the_hold_stands_the_detonator_up_the_fist() {
-        let right = DETONATOR_HOLD.in_hand(Hand::Right);
+        let right = C4.get().detonator_hold.in_hand(Hand::Right);
         // The model's +Y runs up the fist toward the thumb, the grip's -Z.
         assert!((right.orientation * Vec3::Y).abs_diff_eq(Vec3::NEG_Z, 1e-5));
         // Centred on the grip's origin along its length.
         let middle = right.position + right.orientation * (Vec3::Y * DETONATOR_LENGTH_M / 2.0);
         assert!(middle.abs_diff_eq(Vec3::ZERO, 1e-5), "{middle}");
-        let left = DETONATOR_HOLD.in_hand(Hand::Left);
+        let left = C4.get().detonator_hold.in_hand(Hand::Left);
         assert!((left.orientation * Vec3::Y).abs_diff_eq(Vec3::NEG_Z, 1e-5));
     }
 }

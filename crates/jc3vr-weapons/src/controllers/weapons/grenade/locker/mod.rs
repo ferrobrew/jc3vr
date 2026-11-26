@@ -39,7 +39,10 @@ use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::weapons::{
     engine, grenade,
-    grenade::{beacon, safe, stock, tuning::GrenadeTuning},
+    grenade::{
+        beacon, safe, stock,
+        tuning::{GRENADE, GrenadeTuning},
+    },
     hold::rack::entries,
     inventory::engine::weapon_of,
 };
@@ -126,6 +129,7 @@ pub(super) unsafe fn begin(
             .filter(|_| free[hand.index()])
             .and_then(|grip| nearest(&sources, grip))
     });
+    let reach_m = GRENADE.get().locker.reach_m;
     let candidates = Hand::BOTH
         .into_iter()
         .filter_map(|hand| {
@@ -133,7 +137,7 @@ pub(super) unsafe fn begin(
             Some(Candidate {
                 volume: GrabVolume::GrenadeLocker,
                 centre: source.centre,
-                radius: REACH_M,
+                radius: reach_m,
                 hand: Some(hand),
             })
         })
@@ -209,7 +213,6 @@ pub(super) fn clear() {
 const MAX_SOURCES: usize = 64;
 const MAX_DISPLAYS: usize = MAX_SOURCES * MAX_MODELS_PER_WEAPON;
 const MAX_MODELS_PER_WEAPON: usize = 8;
-const REACH_M: f32 = 0.18;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 enum Provider {
@@ -466,7 +469,12 @@ unsafe fn display(
 }
 
 fn nearest(sources: &[Source], grip: Vec3) -> Option<Source> {
-    nearest_within(sources, |source| source.centre, grip, REACH_M)
+    nearest_within(
+        sources,
+        |source| source.centre,
+        grip,
+        GRENADE.get().locker.reach_m,
+    )
 }
 
 fn complete(
