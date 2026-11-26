@@ -4,8 +4,8 @@
 //! The FidelityFX DX11 backend bakes its compute shaders in as DXBC bytecode: the shader compiler
 //! (`FidelityFX_SC.exe`, bundled in the vendored submodule) compiles each pass into a
 //! `<pass>_permutations.h` header of byte arrays, which `ffx_fsr2_shaders_dx11.cpp` `#include`s. Those
-//! generated headers land under `fsr-sys/generated/` (git-ignored for now); `fsr-sys`'s `build.rs`
-//! errors if they're missing, pointing here. This is its own crate -- separate from `fsr-sys` -- so
+//! generated headers land under `crates/fsr-sys/generated/` (git-ignored for now); `fsr-sys`'s
+//! `build.rs` errors if they're missing, pointing here. This is its own crate -- separate from `fsr-sys` -- so
 //! its HTTP / archive dependencies never reach a normal build of the `-sys` crate or the payload. It
 //! runs only on an FSR version bump or after a fresh checkout.
 //!
@@ -25,7 +25,7 @@
 //! Environment overrides (all optional):
 //! - `FFX_SC`             -- override the path to `FidelityFX_SC.exe` (default: the vendored copy).
 //! - `FSR_VENDOR_DIR`     -- override the submodule root (default: `vendor/FidelityFX-FSR2-DX11`).
-//! - `FSR_GENERATED_DIR`  -- override the output dir (default: `fsr-sys/generated/dx11`).
+//! - `FSR_GENERATED_DIR`  -- override the output dir (default: `crates/fsr-sys/generated/dx11`).
 //! - `WINE`               -- the Wine binary, when running under Wine (default `wine`).
 //! - `WINEPREFIX`         -- use this prefix instead of the managed one under `target/`.
 //! - `D3DCOMPILER_DLL`    -- use this native `d3dcompiler_47.dll` instead of downloading one.
@@ -110,8 +110,8 @@ const PAYLOAD_SHADERS: &[(&str, &str)] = &[
 ];
 
 /// `body-estimator`'s compute shaders (`cs_5_0`): `(name, source, defines)`. Each
-/// `body-estimator/src/shaders/<source>.hlsl` (entry point `main`) compiles with `defines` to a
-/// committed `<name>.dxbc` beside it, so one source can give more than one variant.
+/// `crates/body-estimator/src/shaders/<source>.hlsl` (entry point `main`) compiles with `defines`
+/// to a committed `<name>.dxbc` beside it, so one source can give more than one variant.
 const ESTIMATOR_SHADERS: &[(&str, &str, &[&str])] = &[
     ("egoposer_linear_f32", "egoposer_linear", &["WEIGHTS_F16=0"]),
     ("egoposer_linear_f16", "egoposer_linear", &["WEIGHTS_F16=1"]),
@@ -162,15 +162,15 @@ impl Runner {
 }
 
 fn run() -> Result<(), String> {
-    // This crate sits at the workspace root next to `fsr-sys` and `vendor/`; resolve those siblings
-    // relative to its manifest dir.
-    let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    // This crate sits at `tools/shadergen`, two levels below the workspace root; resolve `vendor/`,
+    // `crates/fsr-sys`, and the shader folders relative to that root.
+    let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let vendor =
         env_path("FSR_VENDOR_DIR").unwrap_or_else(|| workspace.join("vendor/FidelityFX-FSR2-DX11"));
     let sc_exe = env_path("FFX_SC").unwrap_or_else(|| vendor.join("tools/sc/FidelityFX_SC.exe"));
     let shader_src = vendor.join("src/ffx-fsr2-api/shaders");
-    let out_dir =
-        env_path("FSR_GENERATED_DIR").unwrap_or_else(|| workspace.join("fsr-sys/generated/dx11"));
+    let out_dir = env_path("FSR_GENERATED_DIR")
+        .unwrap_or_else(|| workspace.join("crates/fsr-sys/generated/dx11"));
 
     if !sc_exe.exists() {
         return Err(format!(
@@ -222,7 +222,7 @@ fn run() -> Result<(), String> {
         payload_shaders.display()
     );
 
-    let estimator_shaders = workspace.join("body-estimator/src/shaders");
+    let estimator_shaders = workspace.join("crates/body-estimator/src/shaders");
     for (name, source, defines) in ESTIMATOR_SHADERS {
         let shader = BlobShader {
             dir: &estimator_shaders,
