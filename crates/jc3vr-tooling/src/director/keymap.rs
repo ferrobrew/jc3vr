@@ -16,6 +16,7 @@
 
 use std::borrow::Cow;
 
+use jc3vr_gameplay::controllers::spawn;
 use serde::{Deserialize, Serialize};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetKeyState, VK_ADD, VK_CONTROL, VK_DECIMAL, VK_DIVIDE, VK_F3, VK_MENU, VK_MULTIPLY,
@@ -23,10 +24,7 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     VK_NUMPAD8, VK_NUMPAD9, VK_SHIFT, VK_SUBTRACT,
 };
 
-use crate::{
-    controllers::spawn,
-    director::{DIRECTOR_CONFIG, heat, markers, teleport, teleport::TeleportMode, time},
-};
+use crate::director::{DIRECTOR_CONFIG, heat, markers, teleport, teleport::TeleportMode, time};
 
 /// Everything a key can trigger.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -158,6 +156,12 @@ impl Keymap {
     }
 }
 
+impl Default for Keymap {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// The active map, for the debug tab.
 pub fn current() -> Keymap {
     DIRECTOR_CONFIG.query(|c| c.keymap.clone())
@@ -222,7 +226,9 @@ pub fn run(action: Action) {
         Action::ClearHeat => heat::clear(),
         Action::Spawn => spawn::request(),
         Action::ToggleRecording => crate::recorder::session_recording::toggle(),
-        Action::ToggleColliderView => crate::controllers::physical_hands::collider_view::toggle(),
+        Action::ToggleColliderView => {
+            jc3vr_gameplay::controllers::physical_hands::collider_view::toggle()
+        }
     }
 }
 

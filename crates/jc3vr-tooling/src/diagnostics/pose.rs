@@ -13,6 +13,13 @@ use jc3gi::{
     animation::ik::{HumanIK, Pass},
     character::character::Character,
 };
+use jc3vr_core::{
+    frame_timing::{self, Slot},
+    hooks,
+};
+use jc3vr_gameplay::{
+    controllers::body::procedural::skeleton::SkeletonKey, hooks::character::pose::LivePose,
+};
 use parking_lot::Mutex;
 use tracking_format::{
     event::{BODY_BONES, BoneSet, IkGoal, IkTarget, PoseSample, PoseStage},
@@ -20,10 +27,7 @@ use tracking_format::{
 };
 
 use crate::{
-    controllers::body::procedural::skeleton::SkeletonKey,
     diagnostics::world_state::pose_of,
-    frame_timing::{self, Slot},
-    hooks::{self, character::pose::LivePose},
     recorder::tracking::events::{self, EventKind},
 };
 

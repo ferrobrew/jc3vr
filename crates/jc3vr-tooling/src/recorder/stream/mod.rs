@@ -33,13 +33,11 @@ use std::{
 };
 
 use anyhow::Context as _;
+use jc3vr_core::session::RecordingFile;
 use parking_lot::Mutex;
 use serde::Serialize;
 
-use crate::{
-    recorder::protocol::{FRAME_TAG, VideoFormat, stream_header},
-    session::RecordingFile,
-};
+use crate::recorder::protocol::{FRAME_TAG, VideoFormat, stream_header};
 
 /// One message to the writer: `repeats` stream frames of the previous image, then `image`, the
 /// planar bytes of a fresh frame with the take frame ordinal it was converted from.

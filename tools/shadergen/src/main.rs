@@ -89,7 +89,10 @@ const DX11_BASE_ARGS: &[&str] = &[
 /// compiles to a committed `<directory>/<name>.dxbc` beside it. A shader lives with the crate that
 /// draws with it.
 const MOD_SHADERS: &[(&str, &[(&str, &str)])] = &[
-    ("payload/src/shaders", &[("i420_pack_ps", "ps_5_0")]),
+    (
+        "crates/jc3vr-tooling/shaders",
+        &[("i420_pack_ps", "ps_5_0")],
+    ),
     (
         "crates/jc3vr-render/shaders",
         &[

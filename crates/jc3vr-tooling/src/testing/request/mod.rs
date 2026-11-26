@@ -11,22 +11,20 @@ use std::{
     time::{Duration, Instant},
 };
 
+use jc3vr_render::screenshot::harness::snapshot::{SnapshotError, SnapshotRequest, SnapshotTable};
 use parking_lot::Mutex;
 use serde::Deserialize;
 
-use crate::{
-    screenshot::harness::snapshot::{SnapshotError, SnapshotRequest, SnapshotTable},
-    testing::{
-        TESTING_CONFIG,
-        benchmark::{BenchmarkError, BenchmarkRequest, BenchmarkTable},
-        stage::{self, StageRequest, StageTable},
-        text::{self, TextError},
-        visual,
-    },
+use crate::testing::{
+    TESTING_CONFIG,
+    benchmark::{BenchmarkError, BenchmarkRequest, BenchmarkTable},
+    stage::{self, StageRequest, StageTable},
+    text::{self, TextError},
+    visual,
 };
 
 /// The request file's name in the configuration directory.
-pub(crate) const FILE_NAME: &str = "test_request.toml";
+pub const FILE_NAME: &str = "test_request.toml";
 
 /// Look for the request file and act on it, at most once every [`POLL_INTERVAL`], or every frame
 /// in a capture harness session. Game thread.
@@ -47,7 +45,7 @@ pub(crate) fn poll() {
     if !enabled || !watched {
         return;
     }
-    let Some(path) = crate::config::paths::file(FILE_NAME) else {
+    let Some(path) = jc3vr_core::config::engine::paths::file(FILE_NAME) else {
         return;
     };
     match take(&path) {
@@ -79,9 +77,9 @@ enum Request {
     Record,
     StopRecording,
     Screenshot {
-        id: crate::screenshot::harness::RequestId,
+        id: jc3vr_render::screenshot::harness::RequestId,
         motion: Option<u32>,
-        water_reflection: Option<crate::screenshot::harness::WaterReflection>,
+        water_reflection: Option<jc3vr_render::screenshot::harness::WaterReflection>,
         water_inputs: bool,
         water_tess_draw: Option<u8>,
         patch_draw_ordinal: Option<u8>,
@@ -153,13 +151,13 @@ enum Request {
         veto_eye: Option<bool>,
         grid_eye: Option<bool>,
         history_center: Option<bool>,
-        cascade_scale: Option<crate::screenshot::harness::CascadeScale>,
-        sun_depth_clip: Option<crate::screenshot::harness::SunDepthClip>,
+        cascade_scale: Option<jc3vr_render::screenshot::harness::CascadeScale>,
+        sun_depth_clip: Option<jc3vr_render::screenshot::harness::SunDepthClip>,
     },
     Visual(visual::Request),
     Stage(StageRequest),
     Snapshot(SnapshotRequest),
-    SnapshotRelease(crate::screenshot::harness::RequestId),
+    SnapshotRelease(jc3vr_render::screenshot::harness::RequestId),
     Benchmark(BenchmarkRequest),
 }
 
@@ -386,7 +384,7 @@ struct RequestFile {
     motion_capture: Option<MotionCaptureTable>,
     snapshot: Option<SnapshotTable>,
     benchmark: Option<BenchmarkTable>,
-    water_reflection: Option<crate::screenshot::harness::WaterReflection>,
+    water_reflection: Option<jc3vr_render::screenshot::harness::WaterReflection>,
     #[serde(default)]
     water_inputs: bool,
     water_tess_draw: Option<u8>,
@@ -500,8 +498,8 @@ struct RequestFile {
     veto_eye: Option<bool>,
     grid_eye: Option<bool>,
     history_center: Option<bool>,
-    cascade_scale: Option<crate::screenshot::harness::CascadeScale>,
-    sun_depth_clip: Option<crate::screenshot::harness::SunDepthClip>,
+    cascade_scale: Option<jc3vr_render::screenshot::harness::CascadeScale>,
+    sun_depth_clip: Option<jc3vr_render::screenshot::harness::SunDepthClip>,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize)]
@@ -677,8 +675,8 @@ fn parse(path: &Path, text: &str) -> Result<Request, RequestError> {
                 || !matches!(
                     file.water_reflection,
                     Some(
-                        crate::screenshot::harness::WaterReflection::LakeCameraControl
-                            | crate::screenshot::harness::WaterReflection::LakeHullCamera
+                        jc3vr_render::screenshot::harness::WaterReflection::LakeCameraControl
+                            | jc3vr_render::screenshot::harness::WaterReflection::LakeHullCamera
                     )
                 )))
         || (file.patch63_hull.is_some()
@@ -692,7 +690,7 @@ fn parse(path: &Path, text: &str) -> Result<Request, RequestError> {
             && (!file.lake_producer
                 || file.card_atlas != Some(true)
                 || file.water_reflection
-                    != Some(crate::screenshot::harness::WaterReflection::LakeHullCamera)))
+                    != Some(jc3vr_render::screenshot::harness::WaterReflection::LakeHullCamera)))
         || (file.card_atlas.is_some() && file.group_fade != Some(true))
         || (file.group_fade.is_some() && (!file.group_cards || file.lake_inner_edge != Some(true)))
         || (file.group_cards && !file.group_residual)
@@ -742,9 +740,9 @@ fn parse(path: &Path, text: &str) -> Result<Request, RequestError> {
             || !matches!(
                 file.water_reflection,
                 Some(
-                    crate::screenshot::harness::WaterReflection::LakeCameraControl
-                        | crate::screenshot::harness::WaterReflection::LakeDomainCamera
-                        | crate::screenshot::harness::WaterReflection::LakeHullCamera
+                    jc3vr_render::screenshot::harness::WaterReflection::LakeCameraControl
+                        | jc3vr_render::screenshot::harness::WaterReflection::LakeDomainCamera
+                        | jc3vr_render::screenshot::harness::WaterReflection::LakeHullCamera
                 )
             )
     }) {
@@ -755,19 +753,19 @@ fn parse(path: &Path, text: &str) -> Result<Request, RequestError> {
             || file.water_reflection.is_some_and(|r| {
                 !matches!(
                     r,
-                    crate::screenshot::harness::WaterReflection::EyeWidthPlanar
-                        | crate::screenshot::harness::WaterReflection::LakeSamples
-                        | crate::screenshot::harness::WaterReflection::LakeLighting
-                        | crate::screenshot::harness::WaterReflection::LakeSky
-                        | crate::screenshot::harness::WaterReflection::LakeSkyBuffer
-                        | crate::screenshot::harness::WaterReflection::LakeResponse
-                        | crate::screenshot::harness::WaterReflection::LakeNearPatch
-                        | crate::screenshot::harness::WaterReflection::LakeTessPatch
-                        | crate::screenshot::harness::WaterReflection::LakePatchDraw
-                        | crate::screenshot::harness::WaterReflection::LakeCameraControl
-                        | crate::screenshot::harness::WaterReflection::LakePatchOwners
-                        | crate::screenshot::harness::WaterReflection::LakeDomainCamera
-                        | crate::screenshot::harness::WaterReflection::LakeHullCamera
+                    jc3vr_render::screenshot::harness::WaterReflection::EyeWidthPlanar
+                        | jc3vr_render::screenshot::harness::WaterReflection::LakeSamples
+                        | jc3vr_render::screenshot::harness::WaterReflection::LakeLighting
+                        | jc3vr_render::screenshot::harness::WaterReflection::LakeSky
+                        | jc3vr_render::screenshot::harness::WaterReflection::LakeSkyBuffer
+                        | jc3vr_render::screenshot::harness::WaterReflection::LakeResponse
+                        | jc3vr_render::screenshot::harness::WaterReflection::LakeNearPatch
+                        | jc3vr_render::screenshot::harness::WaterReflection::LakeTessPatch
+                        | jc3vr_render::screenshot::harness::WaterReflection::LakePatchDraw
+                        | jc3vr_render::screenshot::harness::WaterReflection::LakeCameraControl
+                        | jc3vr_render::screenshot::harness::WaterReflection::LakePatchOwners
+                        | jc3vr_render::screenshot::harness::WaterReflection::LakeDomainCamera
+                        | jc3vr_render::screenshot::harness::WaterReflection::LakeHullCamera
                 )
             })
             || motion_capture.is_some())
@@ -901,7 +899,7 @@ fn parse(path: &Path, text: &str) -> Result<Request, RequestError> {
             )
         }
         Command::Snapshot => {
-            let id = crate::screenshot::harness::RequestId::parse(
+            let id = jc3vr_render::screenshot::harness::RequestId::parse(
                 file.id.as_deref().unwrap_or_default(),
             )
             .map_err(|reason| error(RequestErrorKind::InvalidId(reason)))?;
@@ -914,7 +912,7 @@ fn parse(path: &Path, text: &str) -> Result<Request, RequestError> {
             )
         }
         Command::Benchmark => {
-            let id = crate::screenshot::harness::RequestId::parse(
+            let id = jc3vr_render::screenshot::harness::RequestId::parse(
                 file.id.as_deref().unwrap_or_default(),
             )
             .map_err(|reason| error(RequestErrorKind::InvalidId(reason)))?;
@@ -927,11 +925,13 @@ fn parse(path: &Path, text: &str) -> Result<Request, RequestError> {
             )
         }
         Command::SnapshotRelease => Request::SnapshotRelease(
-            crate::screenshot::harness::RequestId::parse(file.id.as_deref().unwrap_or_default())
-                .map_err(|reason| error(RequestErrorKind::InvalidId(reason)))?,
+            jc3vr_render::screenshot::harness::RequestId::parse(
+                file.id.as_deref().unwrap_or_default(),
+            )
+            .map_err(|reason| error(RequestErrorKind::InvalidId(reason)))?,
         ),
         Command::Screenshot => Request::Screenshot {
-            id: crate::screenshot::harness::RequestId::parse(
+            id: jc3vr_render::screenshot::harness::RequestId::parse(
                 file.id.as_deref().unwrap_or_default(),
             )
             .map_err(|reason| error(RequestErrorKind::InvalidId(reason)))?,
@@ -1021,8 +1021,8 @@ fn act(request: Request) {
     match request {
         Request::Visual(request) => visual::enqueue(request),
         Request::Stage(request) => stage::enqueue(request),
-        Request::Snapshot(request) => crate::screenshot::harness::snapshot::request(request),
-        Request::SnapshotRelease(id) => crate::screenshot::harness::snapshot::release(id),
+        Request::Snapshot(request) => jc3vr_render::screenshot::harness::snapshot::request(request),
+        Request::SnapshotRelease(id) => jc3vr_render::screenshot::harness::snapshot::release(id),
         Request::Benchmark(request) => crate::testing::benchmark::request(request),
         Request::Screenshot {
             id,
@@ -1102,7 +1102,7 @@ fn act(request: Request) {
             cascade_scale,
             sun_depth_clip,
         } => {
-            let options = crate::screenshot::harness::CaptureRequest {
+            let options = jc3vr_render::screenshot::harness::CaptureRequest {
                 water_reflection,
                 water_inputs,
                 water_tess_draw,
@@ -1179,8 +1179,10 @@ fn act(request: Request) {
                 sun_depth_clip,
             };
             match motion {
-                Some(phase) => crate::screenshot::harness::request_motion(id, phase, options),
-                None => crate::screenshot::harness::request(id, options),
+                Some(phase) => {
+                    jc3vr_render::screenshot::harness::request_motion(id, phase, options)
+                }
+                None => jc3vr_render::screenshot::harness::request(id, options),
             }
         }
         Request::Record => crate::recorder::tracking::request_start(),

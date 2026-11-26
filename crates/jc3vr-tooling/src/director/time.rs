@@ -9,8 +9,8 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use jc3gi::{clock::Clock, slow_motion::get_SlowMotionManager_NormalGameSpeed};
+pub use jc3vr_gameplay::controllers::clock::{MAX_TIME_SCALE, MIN_TIME_SCALE};
 
-pub(crate) use crate::controllers::clock::{MAX_TIME_SCALE, MIN_TIME_SCALE};
 use crate::director::DirectorConfig;
 
 /// Whether the last applied pass held the clock, so the pause call is made on the edge only.

@@ -22,7 +22,6 @@ glam = { workspace = true }
 jc3gi = { path = "../jc3gi" }
 # The core layer: the lifecycle, the configuration engine, the hook plumbing, and frame timing.
 jc3vr-core = { path = "../crates/jc3vr-core" }
-tracking-format = { path = "../crates/tracking-format" }
 body-rig = { path = "../crates/body-rig", features = ["serde"] }
 # The input layer: the controller frame, motion, scheme, haptic mixer, and capture policy.
 jc3vr-input = { path = "../crates/jc3vr-input" }
@@ -35,6 +34,9 @@ jc3vr-gameplay = { path = "../crates/jc3vr-gameplay" }
 # The HUD layer: the floating panel and its layers, the summary's presentation, the controls map,
 # the UI detours, and the egui renderer.
 jc3vr-hud = { path = "../crates/jc3vr-hud" }
+# The tooling layer: the video recorder, the directing tools, the capture harness's request file and
+# staging, and the diagnostics samplers.
+jc3vr-tooling = { path = "../crates/jc3vr-tooling" }
 # Runtime-loaded (`loaded` default feature): the OpenXR loader is opened at runtime via
 # `xr::Entry::load_from`, not linked, so an `openxr_loader.dll` must sit beside the payload DLL (see
 # the `vr` module docs). The `static` feature would build the loader in and drop that DLL, but it does

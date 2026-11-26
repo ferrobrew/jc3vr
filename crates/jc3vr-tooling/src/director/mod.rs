@@ -1,33 +1,33 @@
 //! Directing tools for staging footage from inside the headset: time control, actor safety, heat
 //! control, teleport bookmarks, a spawner, a clean view that hides the overlays, take markers, and the key bindings that drive them without opening the debug panel.
 //!
-//! The spawner itself, with the spawn definition table, is [`crate::controllers::spawn`], because
-//! the inventory's gives use the table too; the director queues its requests and services them.
+//! The spawner itself, with the spawn definition table, is [`jc3vr_gameplay::controllers::spawn`],
+//! because the inventory's gives use the table too; the director queues its requests and services
+//! them.
 //!
 //! Everything here is applied from [`update`], which runs on the game's main thread at the top of
-//! `CGame::Update` (`crate::update`), so the engine setters that assert the main thread (the heat
-//! manager, the teleports) are always called from the right place. The debug tab and the hotkeys
-//! only mutate [`DirectorConfig`] or queue a request; the per-frame pass reconciles the live game
-//! state against the config, which is what makes the settings survive the game's own resets (a
-//! respawn clearing god mode, a mission reset unlocking heat).
+//! `CGame::Update` (the payload's frame driver), so the engine setters that assert the main thread
+//! (the heat manager, the teleports) are always called from the right place. The debug tab and the
+//! hotkeys only mutate [`DirectorConfig`] or queue a request; the per-frame pass reconciles the
+//! live game state against the config, which is what makes the settings survive the game's own
+//! resets (a respawn clearing god mode, a mission reset unlocking heat).
 
-pub(crate) use jc3vr_core::director::clean_view;
+use jc3vr_core::config::engine::ConfigSlot;
+pub use jc3vr_core::director::clean_view;
+pub use jc3vr_gameplay::controllers::spawn;
 use serde::{Deserialize, Serialize};
-
-use crate::config::engine::ConfigSlot;
-pub(crate) use crate::controllers::spawn;
 
 pub mod heat;
 pub mod keymap;
 pub mod markers;
-pub(crate) mod register_tracking;
+pub mod register_tracking;
 pub mod safety;
 pub mod teleport;
 pub mod time;
 
 /// The directing tools' settings, at `director` in the settings file; the payload binds the slot at
 /// startup.
-pub(crate) static DIRECTOR_CONFIG: ConfigSlot<DirectorConfig> = ConfigSlot::new("director");
+pub static DIRECTOR_CONFIG: ConfigSlot<DirectorConfig> = ConfigSlot::new("director");
 
 /// The directing settings, reconciled against the live game every frame by [`update`].
 #[derive(Clone, Serialize, Deserialize)]
@@ -74,6 +74,12 @@ impl DirectorConfig {
             spawn: spawn::SpawnConfig::new(),
             keymap: keymap::Keymap::new(),
         }
+    }
+}
+
+impl Default for DirectorConfig {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

@@ -25,8 +25,6 @@ mod allocator;
 mod composition;
 mod config;
 mod controllers;
-mod diagnostics;
-mod director;
 mod eject_gpu;
 // The gameplay layer lives in its own crate; the old paths keep working until the final cleanup pass.
 pub(crate) use jc3vr_gameplay::grapple;
@@ -36,9 +34,9 @@ pub(crate) use jc3vr_input as input_core;
 mod pause_menu;
 #[cfg(feature = "profiler")]
 mod profiler;
-mod recorder;
 mod status;
-mod testing;
+// The tooling layer lives in its own crate; the old paths keep working until the final cleanup pass.
+pub(crate) use jc3vr_tooling::{diagnostics, director, recorder, testing};
 
 #[unsafe(no_mangle)]
 #[allow(non_snake_case)]

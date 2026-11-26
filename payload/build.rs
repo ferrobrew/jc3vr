@@ -24,6 +24,8 @@ fn main() {
     println!("cargo:rerun-if-changed=../crates/jc3vr-hud/src");
     println!("cargo:rerun-if-changed=../crates/jc3vr-hud/shaders");
     println!("cargo:rerun-if-changed=../crates/jc3vr-hud/assets");
+    println!("cargo:rerun-if-changed=../crates/jc3vr-tooling/src");
+    println!("cargo:rerun-if-changed=../crates/jc3vr-tooling/shaders");
     let stamp = jiff::Zoned::now().strftime("%Y-%m-%d %H:%M:%S").to_string();
     println!("cargo:rustc-env=jc3vr_build_stamp={stamp}");
     embed_checklist();

@@ -7,7 +7,7 @@ use crate::{
 };
 
 /// Register [`teleport`] as the start marker's source. Call once, before the first recording.
-pub(crate) fn register() {
+pub fn register() {
     register_start_source(StartSource {
         player_transform: teleport::player_transform,
         places: bookmark_places,

@@ -8,6 +8,17 @@ use jc3gi::{
     equipment::wire_end::WireEnd, graphics_engine::graphics_engine::get_render_frame_counters,
     vehicle::vehicle::Vehicle,
 };
+use jc3vr_core::frame_timing;
+use jc3vr_gameplay::{
+    controllers::{haptics, snatch, vehicles},
+    grapple::{hook, physical::lock},
+};
+use jc3vr_input::frame::Hand;
+use jc3vr_render::{
+    headpose,
+    hooks::camera::{eye_point, last_dtf},
+    vr::VR_CONFIG,
+};
 use tracking_format::{
     event::{
         CameraState, FrameState, GrappleState, Label, LockState, SlingState, VehicleState,
@@ -16,19 +27,11 @@ use tracking_format::{
     model::Pose,
 };
 
-use crate::{
-    controllers::{frame::Hand, haptics, snatch, vehicles},
-    frame_timing,
-    grapple::{hook, physical::lock},
-    headpose,
-    hooks::camera::{eye_point, last_dtf},
-    recorder::tracking::format::debug_label,
-    vr::VR_CONFIG,
-};
+use crate::recorder::tracking::format::debug_label;
 
 /// The cockpit's placement in the world, from the rendered eye midpoint the hands compose from
-/// ([`crate::controllers::cockpit::CockpitTransform::current`]), and the active camera, while the
-/// cockpit is placed.
+/// ([`jc3vr_gameplay::controllers::cockpit::CockpitTransform::current`]), and the active camera,
+/// while the cockpit is placed.
 pub(super) fn view_state() -> Option<ViewState> {
     let cockpit = headpose::xr::cockpit_pose()?;
     let head = headpose::query();
@@ -146,7 +149,7 @@ pub(super) fn frame_state() -> FrameState {
     let played = haptics::status().last_output;
     FrameState {
         render_frame: Some(render_frame),
-        mirror_frame: crate::vr::latest_present().map(u64::from),
+        mirror_frame: jc3vr_render::vr::latest_present().map(u64::from),
         interval_ms: interval.map(|d| d.as_secs_f32() * 1000.0),
         ticks,
         haptics: Hand::BOTH.map(|hand| played[hand.index()]),

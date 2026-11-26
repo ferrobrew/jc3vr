@@ -32,6 +32,8 @@ use std::{
 };
 
 use anyhow::Context as _;
+use jc3vr_core::session::RecordingFile;
+use jc3vr_render::vr::{CaptureEyeView, CaptureViews, MirrorView};
 use parking_lot::Mutex;
 use serde::Serialize;
 
@@ -45,8 +47,6 @@ use crate::{
         },
         stream::{VideoChannel, Writer},
     },
-    session::RecordingFile,
-    vr::{CaptureEyeView, CaptureViews, MirrorView},
 };
 
 /// What a take's thread needs at spawn.

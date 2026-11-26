@@ -1,7 +1,7 @@
-//! The physics bodies around Rico as recording events, once per simulation step: the dynamic
-//! bodies near him and his hands ([`BodiesSample`]), each introduced with its identity and shape
-//! when it joins ([`BodyIntro`]), and what each hand holds ([`HeldSample`]). With the forces the
-//! mod applies ([`crate::controllers::telemetry::note_force`]), a viewer can show what Rico
+//! The physics bodies around Rico as recording events, once per simulation step: the dynamic bodies
+//! near him and his hands ([`BodiesSample`]), each introduced with its identity and shape when it
+//! joins ([`BodyIntro`]), and what each hand holds ([`HeldSample`]). With the forces the mod
+//! applies ([`jc3vr_gameplay::controllers::telemetry::note_force`]), a viewer can show what Rico
 //! touches and how it moves.
 //!
 //! A walk of every body slot streams the world's whole body array, so each step walks an eighth of
@@ -11,30 +11,28 @@
 use std::time::{Duration, Instant};
 
 use jc3gi::character::character::Character;
+use jc3vr_core::{
+    frame_timing::{self, Slot},
+    hooks,
+};
+use jc3vr_gameplay::controllers::physical_hands::{
+    self, HeldBody,
+    collider_view::{
+        model::Aabb,
+        nearby::{self, BodyState},
+    },
+    physics,
+};
+use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 use tracking_format::{
     event::{BodiesSample, BodyIntro, BodySample, HeldMotion, HeldSample, HoldReport, Label},
     model::Pose,
 };
 
-use crate::{
-    controllers::{
-        frame::Hand,
-        physical_hands::{
-            self, HeldBody,
-            collider_view::{
-                model::Aabb,
-                nearby::{self, BodyState},
-            },
-            physics,
-        },
-    },
-    frame_timing::{self, Slot},
-    hooks,
-    recorder::tracking::{
-        events::{self, EventKind},
-        format::hand_to_file,
-    },
+use crate::recorder::tracking::{
+    events::{self, EventKind},
+    format::hand_to_file,
 };
 
 /// Record the bodies near Rico and what his hands hold, after a simulation step.

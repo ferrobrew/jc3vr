@@ -14,6 +14,7 @@ members = [
     "crates/jc3vr-hud",
     "crates/jc3vr-input",
     "crates/jc3vr-render",
+    "crates/jc3vr-tooling",
     "crates/tracking-format",
     # Offline tools.
     "tools/dxbc-tool",

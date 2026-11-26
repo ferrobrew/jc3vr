@@ -8,9 +8,9 @@
 
 use std::sync::LazyLock;
 
-use crate::{
-    controllers::{roomscale::seat::PHASE_STATES, vehicles::take_off::TAKE_OFF_STATES},
-    hash::StateTable,
+use jc3vr_core::hash::StateTable;
+use jc3vr_gameplay::controllers::{
+    roomscale::seat::PHASE_STATES, vehicles::take_off::TAKE_OFF_STATES,
 };
 
 /// The name of the rule state whose name hash is `hash`, when the mod knows it.
@@ -111,8 +111,9 @@ const NAMES: &[&str] = &[
 mod tests {
     use std::collections::HashSet;
 
+    use jc3vr_core::hash::hashlittle;
+
     use super::*;
-    use crate::hash::hashlittle;
 
     #[test]
     fn the_names_are_sorted_unique_state_names() {

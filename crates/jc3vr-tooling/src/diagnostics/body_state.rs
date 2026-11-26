@@ -7,11 +7,11 @@
 
 use std::time::{Duration, Instant};
 
+use jc3vr_gameplay::controllers::body::procedural::authority::Case;
 use parking_lot::Mutex;
 use tracking_format::event::{BodyState, Label};
 
 use crate::{
-    controllers::body::procedural::authority::Case,
     diagnostics::state_names,
     recorder::tracking::events::{self, EventKind},
 };

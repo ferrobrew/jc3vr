@@ -12,14 +12,12 @@
 use std::io::Write as _;
 
 use jc3gi::clock::Clock;
+use jc3vr_core::session::SessionFile;
 use parking_lot::Mutex;
 use serde::Serialize;
 use tracking_format::event::{Label, TakeMarker};
 
-use crate::{
-    recorder::tracking::events::{self, EventKind},
-    session::SessionFile,
-};
+use crate::recorder::tracking::events::{self, EventKind};
 
 /// One take marker.
 #[derive(Serialize, Clone)]
@@ -44,7 +42,7 @@ pub fn mark(label: &str) {
     let game_run_time_us = unsafe { Clock::get().map(|c| c.m_GameRunTimeMicro) };
     let marker = Marker {
         index: state.count,
-        stamp: crate::session::stamp(),
+        stamp: jc3vr_core::session::stamp(),
         unix_ms: jiff::Timestamp::now().as_millisecond(),
         game_run_time_us,
         label: label.trim().to_owned(),
@@ -95,7 +93,7 @@ static STATE: Mutex<State> = Mutex::new(State {
 });
 
 fn write_line(marker: &Marker) {
-    let path = match crate::session::file(SessionFile::Markers) {
+    let path = match jc3vr_core::session::file(SessionFile::Markers) {
         Ok(path) => path,
         Err(e) => {
             tracing::warn!("director: markers: {e}");

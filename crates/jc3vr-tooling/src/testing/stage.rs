@@ -30,11 +30,11 @@ use std::{
 use anyhow::Context as _;
 use glam::Vec3;
 use jc3gi::types::math::Matrix4;
+use jc3vr_gameplay::controllers::spawn::{self, Submission};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    controllers::spawn::{self, Submission},
     director::teleport::{self, TeleportMode},
     testing::visual::{self, EnvironmentRequest, EnvironmentTable, RequestId, environment},
 };
@@ -251,7 +251,7 @@ pub(crate) fn update() {
     }
     match run.phase {
         Phase::Teleporting { arrived } => {
-            let settled = !teleport::in_flight() && crate::hooks::in_gameplay();
+            let settled = !teleport::in_flight() && jc3vr_core::hooks::in_gameplay();
             let arrived = if settled { arrived + 1 } else { 0 };
             run.phase = if arrived >= ARRIVED_FRAMES {
                 Phase::Spawning
@@ -331,7 +331,7 @@ pub(crate) fn update() {
 fn reused(request: &StageRequest) -> Option<StageResult> {
     let within = request.reuse_within_m?;
     let location = request.location?;
-    if teleport::in_flight() || !crate::hooks::in_gameplay() {
+    if teleport::in_flight() || !jc3vr_core::hooks::in_gameplay() {
         return None;
     }
     let player = teleport::player_position()?;
@@ -488,7 +488,7 @@ impl StageResult {
 }
 
 fn publish(result: &StageResult) {
-    let Some(dir) = crate::config::paths::dir() else {
+    let Some(dir) = jc3vr_core::config::engine::paths::dir() else {
         tracing::error!("visual stage: no configuration directory for the result");
         return;
     };

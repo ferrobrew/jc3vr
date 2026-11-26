@@ -18,7 +18,7 @@
 //!
 //! With it off, the host records the game's mirror window on screen with the desktop's audio
 //! (protocol version 1, which only the relay speaks). What the video shows is then what the desktop
-//! mirror shows (`crate::vr::mirror`), at the window's size, so the mirror view decides what is
+//! mirror shows (`jc3vr_render::vr::mirror`), at the window's size, so the mirror view decides what is
 //! recorded and the window must be on screen.
 //!
 //! The payload writes the take's sidecar, `frames.jsonl`: one line per rendered frame with the wall
@@ -43,6 +43,7 @@ use std::{
     time::Instant,
 };
 
+use jc3vr_core::{config::engine::ConfigSlot, session::CaptureFolder};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use windows::Win32::Graphics::Direct3D11::{
@@ -50,7 +51,6 @@ use windows::Win32::Graphics::Direct3D11::{
 };
 
 use crate::{
-    config::engine::ConfigSlot,
     director::markers::Marker,
     recorder::{
         convert::{Converter, Readback},
@@ -61,7 +61,6 @@ use crate::{
         stream::{QueueError, VideoChannel, VideoFrame},
         take::{FrameRecord, Record, Take, TakeRequest},
     },
-    session::CaptureFolder,
 };
 
 mod convert;
@@ -69,26 +68,26 @@ pub(crate) mod layout;
 mod owners;
 mod pacing;
 pub(crate) mod protocol;
-pub(crate) mod register_mark;
-pub(crate) mod register_render;
-pub(crate) mod session_recording;
+pub mod register_mark;
+pub mod register_render;
+pub mod session_recording;
 mod stream;
 mod take;
-// The tracking recorder lives in the render crate; the old path keeps working until the final
-// cleanup pass.
-pub(crate) use jc3vr_render::recorder::tracking;
-
-pub use crate::{
-    recorder::{
-        layout::{Arrangement, MAX_EYE_WIDTH, MIN_EYE_WIDTH},
-        protocol::Region,
-    },
+// The tracking recorder and the mirror's frame types live in the render crate; the old paths keep
+// working until the final cleanup pass.
+pub use jc3vr_render::{
+    recorder::tracking,
     vr::{MirrorDraw, MirrorFrame},
+};
+
+pub use crate::recorder::{
+    layout::{Arrangement, MAX_EYE_WIDTH, MIN_EYE_WIDTH},
+    protocol::Region,
 };
 
 /// The video recorder's settings, at `recorder` in the settings file; the payload binds the slot at
 /// startup.
-pub(crate) static RECORDER_CONFIG: ConfigSlot<RecorderConfig> = ConfigSlot::new("recorder");
+pub static RECORDER_CONFIG: ConfigSlot<RecorderConfig> = ConfigSlot::new("recorder");
 
 /// The recorder's settings. Read at the start of a recording; changes apply to the next one.
 #[derive(Clone, Serialize, Deserialize)]
@@ -125,6 +124,12 @@ impl RecorderConfig {
         } else {
             self.host.trim()
         }
+    }
+}
+
+impl Default for RecorderConfig {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -199,15 +204,15 @@ pub struct Capture {
 /// Start a recording whose folder is stamped `stamp`, so a session recording's tracking half lands
 /// in the same folder. Any thread. A no-op while one runs.
 pub fn start_stamped(stamp: &str) {
-    if is_recording() || crate::is_shutting_down() {
+    if is_recording() || jc3vr_core::is_shutting_down() {
         return;
     }
     let cfg = RECORDER_CONFIG.lock().clone();
     // Read before the state lock: neither call takes it, and the title read sends no message to the
     // window's thread.
     let window = WindowHint {
-        title: crate::vr::window::title(),
-        client_size: crate::vr::window::client_size().map(|(w, h)| [w, h]),
+        title: jc3vr_render::vr::window::title(),
+        client_size: jc3vr_render::vr::window::client_size().map(|(w, h)| [w, h]),
     };
     let mut state = STATE.lock();
     state.reap();
@@ -221,8 +226,8 @@ pub fn start_stamped(stamp: &str) {
     let spawn = || {
         Take::spawn(TakeRequest {
             stamp: stamp.to_owned(),
-            folder: crate::session::capture_folder(CaptureFolder::Recording, stamp)?,
-            host_folder: crate::session::host_capture_folder(CaptureFolder::Recording, stamp),
+            folder: jc3vr_core::session::capture_folder(CaptureFolder::Recording, stamp)?,
+            host_folder: jc3vr_core::session::host_capture_folder(CaptureFolder::Recording, stamp),
             target: format!("{}:{}", cfg.host(), cfg.port),
             window,
             stream: cfg.in_process,
@@ -361,7 +366,7 @@ pub fn frame_rendered() -> Option<u32> {
     let unix_ms = jiff::Timestamp::now().as_millisecond();
     // SAFETY: a read of the clock singleton's counters, which the render thread only reads.
     let game_run_time_us = unsafe { jc3gi::clock::Clock::get().map(|c| c.m_GameRunTimeMicro) };
-    let views = crate::vr::capture_views();
+    let views = jc3vr_render::vr::capture_views();
     let mut state = STATE.lock();
     let frame = state.frame_index;
     let take = state.takes.active().filter(|_| state.recording)?;

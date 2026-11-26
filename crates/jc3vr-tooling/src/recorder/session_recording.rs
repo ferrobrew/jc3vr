@@ -21,26 +21,26 @@ use crate::{
 
 /// The pair's state for the debug UI.
 #[derive(Debug, Clone)]
-pub(crate) struct SessionStatus {
-    pub(crate) video: bool,
-    pub(crate) tracking: bool,
+pub struct SessionStatus {
+    pub video: bool,
+    pub tracking: bool,
     /// The stamp of the current or last session recording.
-    pub(crate) stamp: Option<String>,
+    pub stamp: Option<String>,
     /// Why the tracking recording did not start or stopped early, if it did.
-    pub(crate) tracking_error: Option<String>,
+    pub tracking_error: Option<String>,
     /// Why the video half is not running, if it degraded to tracking only.
-    pub(crate) video_error: Option<String>,
+    pub video_error: Option<String>,
 }
 
 /// Start both recorders under a fresh stamp, or stop both when either runs. Any thread.
-pub(crate) fn toggle() {
+pub fn toggle() {
     if recorder::is_recording() || tracking::is_recording() {
         recorder::stop();
         tracking::request_stop();
         *STARTED_AT.lock() = None;
         tracing::info!("recorder: session recording: stopping");
     } else {
-        let stamp = crate::session::stamp();
+        let stamp = jc3vr_core::session::stamp();
         *STAMP.lock() = Some(stamp.clone());
         *STARTED_AT.lock() = Some(Instant::now());
         *VIDEO_ERROR.lock() = None;
@@ -52,7 +52,7 @@ pub(crate) fn toggle() {
 
 /// Drop an unlabelled take marker, and save the lookback when no tracking recording runs to carry
 /// the marker. Any thread.
-pub(crate) fn mark() {
+pub fn mark() {
     markers::mark("");
     if !tracking::is_recording() {
         lookback::request_save();
@@ -60,7 +60,7 @@ pub(crate) fn mark() {
 }
 
 /// The pair's state, without collecting completed writers.
-pub(crate) fn status() -> SessionStatus {
+pub fn status() -> SessionStatus {
     poll();
     SessionStatus {
         video: recorder::is_recording(),

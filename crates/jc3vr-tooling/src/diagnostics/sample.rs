@@ -7,12 +7,7 @@
 use std::time::Instant;
 
 use jc3gi::character::character::Character;
-use tracking_format::event::{
-    AimState, CharacterMotion, ControllerState, GrappleAim, GroundHeight, HandAim, HandLate,
-    HandTier, IkState, Label, LateState, RoomscaleState, RootTick, TierState, WeaponAim,
-};
-
-use crate::{
+use jc3vr_gameplay::{
     controllers::{
         aim::{self, AimIdle, HandSource, raycast::RaycastError, sights::SightSource},
         body::rig::{
@@ -22,17 +17,21 @@ use crate::{
                 trace::{RootTrace, STALE_AFTER as TRACE_STALE_AFTER},
             },
         },
-        frame::{self, Hand},
         hands::{ik, late, tiers},
         mode::{self, AirborneVariant, HoldReason, Mode, OnFootVariant, Traversal},
         roomscale,
         scheme::{self, Scheme},
     },
-    diagnostics::world_state,
     hooks::animation::body_rule_system,
-    recorder::tracking::format::hand_to_file,
-    vr::input as vr_input,
 };
+use jc3vr_input::frame::{self, Hand};
+use jc3vr_render::vr::input as vr_input;
+use tracking_format::event::{
+    AimState, CharacterMotion, ControllerState, GrappleAim, GroundHeight, HandAim, HandLate,
+    HandTier, IkState, Label, LateState, RoomscaleState, RootTick, TierState, WeaponAim,
+};
+
+use crate::{diagnostics::world_state, recorder::tracking::format::hand_to_file};
 
 /// Read every subsystem's status, and the player `character`'s measured motion, into one event.
 pub(super) fn snapshot(character: Option<&Character>) -> ControllerState {

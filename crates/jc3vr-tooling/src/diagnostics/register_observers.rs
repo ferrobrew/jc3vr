@@ -1,14 +1,14 @@
 //! Registers the samplers that observe the game where it acts: Rico's pose at the character hooks'
-//! pose-finalization observer ([`crate::hooks::character::register_pose_observer`]), and the
-//! bodies around him after each simulation step ([`crate::hooks::sim::register_post_step`]).
+//! pose-finalization observer ([`jc3vr_gameplay::hooks::character::register_pose_observer`]), and
+//! the bodies around him after each simulation step
+//! ([`jc3vr_gameplay::hooks::sim::register_post_step`]).
 
-use crate::{
-    diagnostics::{bodies, pose},
-    hooks::{
-        character::{PoseObserver, register_pose_observer},
-        sim::register_post_step,
-    },
+use jc3vr_gameplay::hooks::{
+    character::{PoseObserver, register_pose_observer},
+    sim::register_post_step,
 };
+
+use crate::diagnostics::{bodies, pose};
 
 pub(super) fn register() {
     register_pose_observer(PoseObserver {

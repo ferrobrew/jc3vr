@@ -2420,6 +2420,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "jc3vr-tooling"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "glam",
+ "jc3gi",
+ "jc3vr-core",
+ "jc3vr-gameplay",
+ "jc3vr-input",
+ "jc3vr-render",
+ "jiff",
+ "parking_lot",
+ "pretty_assertions",
+ "serde",
+ "serde_json",
+ "test-case",
+ "toml 1.1.6+spec-1.1.0",
+ "tracing",
+ "tracking-format",
+ "windows 0.62.2",
+]
+
+[[package]]
 name = "jc3vr_injector"
 version = "0.1.0"
 dependencies = [
@@ -2455,6 +2478,7 @@ dependencies = [
  "jc3vr-hud",
  "jc3vr-input",
  "jc3vr-render",
+ "jc3vr-tooling",
  "jiff",
  "openxr",
  "parking_lot",
@@ -2472,7 +2496,6 @@ dependencies = [
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
- "tracking-format",
  "windows 0.62.2",
 ]
 

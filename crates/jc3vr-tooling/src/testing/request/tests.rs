@@ -146,7 +146,7 @@ fn water_reflection_requires_water_inputs_and_screenshot() {
             "command = 'screenshot'\nid = 'shot'\nwater_inputs = true\nwater_reflection = 'zero_weight'"
         ),
         Ok(Request::Screenshot {
-            water_reflection: Some(crate::screenshot::harness::WaterReflection::ZeroWeight),
+            water_reflection: Some(jc3vr_render::screenshot::harness::WaterReflection::ZeroWeight),
             ..
         })
     ));
@@ -233,10 +233,13 @@ fn single_pass_switch_overrides_are_validated_against_the_switches_and_mode() {
         overrides.single_pass.iter().collect::<Vec<_>>(),
         [
             (
-                crate::stereo::switches::SinglePassSwitch::PixelCameraPerEye,
+                jc3vr_render::stereo::switches::SinglePassSwitch::PixelCameraPerEye,
                 false
             ),
-            (crate::stereo::switches::SinglePassSwitch::SsrPerEye, false),
+            (
+                jc3vr_render::stereo::switches::SinglePassSwitch::SsrPerEye,
+                false
+            ),
         ]
     );
     assert!(matches!(
@@ -673,7 +676,7 @@ fn diagnostic_fields_are_typed_and_command_scoped() {
             "command = 'screenshot'\nid = 'shot'\nresolve_inputs = true\ncascade_scale = 'shore_high'"
         ),
         Ok(Request::Screenshot {
-            cascade_scale: Some(crate::screenshot::harness::CascadeScale::ShoreHigh),
+            cascade_scale: Some(jc3vr_render::screenshot::harness::CascadeScale::ShoreHigh),
             ..
         })
     ));

@@ -9,7 +9,7 @@
 //! against the engine's own "too far without load state" threshold.
 //!
 //! Bookmarks persist in `teleports.toml` in the configuration directory
-//! ([`crate::config::paths`]), so a shot's framing survives a relaunch. The stored transform is the character's full world matrix, so the facing comes back
+//! ([`jc3vr_core::config::engine::paths`]), so a shot's framing survives a relaunch. The stored transform is the character's full world matrix, so the facing comes back
 //! too and no axis convention is assumed.
 
 use std::path::PathBuf;
@@ -60,7 +60,7 @@ pub fn save_current(name: &str) -> bool {
     };
     let name = name.trim();
     let name = if name.is_empty() {
-        format!("bookmark {}", crate::session::stamp())
+        format!("bookmark {}", jc3vr_core::session::stamp())
     } else {
         name.to_owned()
     };
@@ -119,7 +119,7 @@ pub fn player_position() -> Option<[f32; 3]> {
 }
 
 /// Whether a jump is queued or the game world is in the middle of one. Main thread.
-pub(crate) fn in_flight() -> bool {
+pub fn in_flight() -> bool {
     if PENDING.lock().is_some() {
         return true;
     }
@@ -245,7 +245,7 @@ impl State {
 
 /// The bookmarks file, in the configuration directory beside the settings.
 fn path() -> Option<PathBuf> {
-    crate::config::paths::file("teleports.toml")
+    jc3vr_core::config::engine::paths::file("teleports.toml")
 }
 
 /// The player's current world matrix (`m_WorldMatrixT1`, what `GetTransform` returns). Main

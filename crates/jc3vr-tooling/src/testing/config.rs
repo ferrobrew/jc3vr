@@ -1,12 +1,11 @@
 //! The test tools' settings.
 
+use jc3vr_core::config::engine::ConfigSlot;
 use serde::{Deserialize, Serialize};
-
-use crate::config::engine::ConfigSlot;
 
 /// The capture harness's settings, at `testing` in the settings file; the payload binds the slot at
 /// startup.
-pub(crate) static TESTING_CONFIG: ConfigSlot<TestingConfig> = ConfigSlot::new("testing");
+pub static TESTING_CONFIG: ConfigSlot<TestingConfig> = ConfigSlot::new("testing");
 
 /// The test tools' settings: the tracking recorder and the request file.
 #[derive(Clone, Serialize, Deserialize)]

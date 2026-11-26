@@ -1,0 +1,27 @@
+[package]
+name = "jc3vr-tooling"
+version = "0.1.0"
+edition = "2024"
+description = "The tooling layer of the payload: the video recorder, the directing tools, the capture harness's request file and staging, and the diagnostics samplers."
+publish = false
+
+[dependencies]
+windows = { workspace = true }
+glam = { workspace = true }
+anyhow = { workspace = true }
+jc3gi = { path = "../../jc3gi" }
+jc3vr-core = { path = "../jc3vr-core" }
+jc3vr-input = { path = "../jc3vr-input" }
+jc3vr-render = { path = "../jc3vr-render" }
+jc3vr-gameplay = { path = "../jc3vr-gameplay" }
+tracking-format = { path = "../tracking-format" }
+tracing = "0.1"
+parking_lot = "0.12.5"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "1.1.6"
+jiff = "0.2.29"
+
+[dev-dependencies]
+pretty_assertions = "1.4.1"
+test-case = "3.3.1"

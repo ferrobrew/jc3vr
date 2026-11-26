@@ -16,8 +16,8 @@
 //! Rico's pose before and after the solves ([`pose`]), at the character hooks' pose-finalization
 //! observer, and the bodies near Rico and what his hands hold ([`bodies`]), after each simulation
 //! step. The notes the controller subsystems write as they act (refusals, forces, injected actions,
-//! haptic cues, the rig's frames) are [`crate::controllers::telemetry`]'s, and the settings and the
-//! frame timing are the tracking recorder's own.
+//! haptic cues, the rig's frames) are [`jc3vr_gameplay::controllers::telemetry`]'s, and the
+//! settings and the frame timing are the tracking recorder's own.
 
 mod bodies;
 mod body_state;
@@ -30,22 +30,19 @@ mod world_state;
 use std::time::Instant;
 
 use jc3gi::character::character::Character;
+use jc3vr_gameplay::{controllers::body::procedural, hooks::animation::active_state_type_id};
 
-use crate::{
-    controllers::body::procedural,
-    hooks::animation::active_state_type_id,
-    recorder::tracking::events::{self, EventKind},
-};
+use crate::recorder::tracking::events::{self, EventKind};
 
 /// Register the samplers that observe the game: the pose-finalization observer and the post-step
 /// observer. Call once, before the hooks are installed.
-pub(crate) fn install() {
+pub fn install() {
     register_observers::register();
 }
 
 /// Note the controller subsystems' state when a recording or the lookback collects it.
-pub(crate) fn record() {
-    if crate::is_shutting_down() || !events::collecting() {
+pub fn record() {
+    if jc3vr_core::is_shutting_down() || !events::collecting() {
         body_state::forget();
         return;
     }
