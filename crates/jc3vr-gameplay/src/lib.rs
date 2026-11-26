@@ -46,7 +46,8 @@
 //!   the layers above.
 //!
 //! The `profiler` feature adds the sim step's profiler scopes. The crate's own tests register a
-//! configuration root of their own (`test_config`), since the payload's aggregate is not there.
+//! configuration root of their own (`test_config`), since the payload's aggregate is not there, and
+//! the body-bound subsystems' tests share the fixtures in `test_support`.
 
 pub mod controllers;
 pub mod grapple;
@@ -56,3 +57,5 @@ pub use crate::controllers::install;
 
 #[cfg(test)]
 mod test_config;
+#[cfg(test)]
+mod test_support;

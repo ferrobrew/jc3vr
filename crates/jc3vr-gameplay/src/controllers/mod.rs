@@ -101,6 +101,9 @@ pub mod weapons;
 
 pub use config::ControllersConfig;
 
+#[cfg(test)]
+pub(crate) use crate::test_support::register_head_participants as register_head_participants_for_tests;
+
 /// Register the controller subsystems' shutdown participants and their hook installation and
 /// removal steps. Runs before the hooks are installed; an error refuses hook installation, and the
 /// refusal is already logged.
@@ -109,14 +112,6 @@ pub fn install() -> Result<(), RegistrationError> {
     register_vr_frame::register();
     register_render::register();
     register_lifecycle::register()
-}
-
-/// Register the head pose's participants once, for a test that drives the head composition
-/// without the install that registers them.
-#[cfg(test)]
-pub(crate) fn register_head_participants_for_tests() {
-    static REGISTERED: std::sync::Once = std::sync::Once::new();
-    REGISTERED.call_once(register_head_pose::register);
 }
 
 /// The controller subsystems' hooks, aggregated into the payload's hook library by its composition.
