@@ -73,7 +73,7 @@ visibly trails — the CPU work that submitted it. Disjoint intervals are droppe
 reported. The lane also carries measured "GPU idle" scopes — the true starvation gap between one
 dispatch's last timestamp and the next one's first — so the cost of the serialized dispatch
 pipeline shows up as a number (the analyzer folds them into a GPU-utilization figure) rather than
-an inference. The queries also run, without the puffin lane, while the frame-time benchmark records ([benchmark.md](../testing/benchmark.md)), which takes each resolved dispatch's span, idle gap, submit span, and seam times. Comparing ticks across disjoint brackets is out of contract for D3D11 but sound
+an inference. The queries also run, without the puffin lane, while the frame-time benchmark records ([benchmark.md](../testing/benchmark.md)), which takes each resolved dispatch's span, idle gap, submit span, and seam times. The benchmark arms the lane and receives those records through `profiler::gpu_samples`, where it registers itself as the lane's dispatch sink at startup, so the lane names nothing of the benchmark. Comparing ticks across disjoint brackets is out of contract for D3D11 but sound
 under DXVK's monotonic timestamp clock; implausible gaps are discarded.
 
 ### Reading the GPU lane: work, not span
