@@ -2,13 +2,11 @@
 
 mod feedback;
 
-use std::{
-    num::NonZeroUsize,
-    time::{Duration, Instant},
-};
+use std::{num::NonZeroUsize, time::Duration};
 
 use glam::Vec3;
 use jc3gi::physics::{hknpBody, hknpWorld};
+use jc3vr_core::published::Stamp;
 
 use crate::controllers::physical_hands::impacts::{
     policy::Motion,
@@ -51,10 +49,10 @@ fn held(observed: Observation) -> Option<Held> {
     Some((observed.identity.body, observed.identity.owner))
 }
 
-fn acquire(holders: [bool; 2], native: bool) -> (State, Observation, Instant) {
+fn acquire(holders: [bool; 2], native: bool) -> (State, Observation, Stamp) {
     let mut state = State::new();
     let observation = observed(native);
-    let now = Instant::now();
+    let now = Stamp::now();
     state.publish(
         holders.map(|h| if h { held(observation) } else { None }),
         now,

@@ -20,7 +20,7 @@
 //! Both callers run on the game thread outside the physics step: the palms' tick and the hand
 //! bodies' frame tick.
 
-use std::{ptr, time::Instant};
+use std::ptr;
 
 use glam::Vec3;
 use jc3gi::{
@@ -29,6 +29,7 @@ use jc3gi::{
     physics::GameMaterialId,
     types::math::{Matrix4, Vector3},
 };
+use jc3vr_core::published::Stamp;
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 use serde::Deserialize;
@@ -162,7 +163,7 @@ pub(super) unsafe fn play(impact: Impact) {
     let mut state = STATE.lock();
     let now_s = state
         .epoch
-        .get_or_insert_with(Instant::now)
+        .get_or_insert_with(Stamp::now)
         .elapsed()
         .as_secs_f64();
     if !state.limiter.admit(impact.hand, now_s, tuning) {
@@ -199,7 +200,7 @@ pub(super) unsafe fn play(impact: Impact) {
 struct State {
     limiter: Limiter,
     status: SoundsStatus,
-    epoch: Option<Instant>,
+    epoch: Option<Stamp>,
     warned_silent: bool,
 }
 

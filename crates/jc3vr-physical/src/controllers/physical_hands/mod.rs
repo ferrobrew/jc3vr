@@ -93,6 +93,7 @@ pub use config::PhysicalHandsConfig;
 use glam::Vec3;
 use jc3gi::{character::character::Character, physics::hknpWorld, types::math::Vector3};
 use jc3vr_body::controllers::physics::{line_body, world};
+use jc3vr_core::published::Stamp;
 use state::{State, stale_after};
 pub use status::{HandStatus, Idle, PhysicalHandsStatus, ShoveReport, status};
 pub(crate) use status::{PalmReadout, palm_readout, press_summary};
@@ -161,7 +162,7 @@ pub fn apply(cockpit: &mut [Option<CockpitHand>; 2], at: DrawTime) {
     }
     let offsets = {
         let state = STATE.lock();
-        if !state.fresh(std::time::Instant::now()) {
+        if !state.fresh(Stamp::now()) {
             return;
         }
         state.clamp
@@ -188,7 +189,7 @@ pub fn apply(cockpit: &mut [Option<CockpitHand>; 2], at: DrawTime) {
 pub(crate) unsafe fn push_body(character: &mut Character) {
     let palms = {
         let state = STATE.lock();
-        if state.fresh(std::time::Instant::now()) {
+        if state.fresh(Stamp::now()) {
             state.status.push
         } else {
             glam::Vec2::ZERO

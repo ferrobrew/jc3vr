@@ -45,8 +45,6 @@ mod tick;
 mod transport;
 pub mod tuning;
 
-use std::time::Instant;
-
 use diagnostics::InputContext;
 use glam::Vec3;
 use jc3gi::{
@@ -62,7 +60,7 @@ use jc3vr_body::controllers::{
     },
     physics::bodies,
 };
-use jc3vr_core::game_tick::GameTick;
+use jc3vr_core::{game_tick::GameTick, published::Stamp};
 use jc3vr_input::{frame::Hand, haptics::cues::Event};
 pub(super) use reach::{REACH_DIRECTIONS, ReachObservations, ReachTuning, floor_weapons, reach};
 pub(super) use state::{Held, HeldKind, PickupState, Request};
@@ -139,8 +137,8 @@ pub fn finish_tick(
     context: &InputContext,
 ) {
     let mut state = STATE.lock();
-    state.pickup.input_at = Some(Instant::now());
-    let fresh = state.fresh(Instant::now());
+    state.pickup.input_at = Some(Stamp::now());
+    let fresh = state.fresh(Stamp::now());
     let reaches = state.status.hands.each_ref().map(|hand| hand.reach);
     let weapons = input::finish(&mut state.pickup, inputs, reaches, fresh, desired, context);
     state.status.pickup.weapons += weapons.len() as u64;
@@ -188,5 +186,5 @@ fn take_weapon(game: &GameTick<'_>, hand: Hand, reach: Reach) -> Result<(), Refu
 /// Keep what the hands hold through a game menu: the grips are not read there, and a release is
 /// acted on when gameplay resumes. Called from the input tick in place of [`finish_tick`].
 pub fn pause() {
-    STATE.lock().pickup.input_at = Some(Instant::now());
+    STATE.lock().pickup.input_at = Some(Stamp::now());
 }

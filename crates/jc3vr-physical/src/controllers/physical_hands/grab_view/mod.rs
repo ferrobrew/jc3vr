@@ -21,10 +21,7 @@ pub mod config;
 pub mod draw;
 pub mod model;
 
-use std::{
-    sync::atomic::{AtomicBool, Ordering},
-    time::Instant,
-};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use glam::Vec3;
 use jc3vr_body::controllers::{
@@ -34,6 +31,7 @@ use jc3vr_body::controllers::{
     },
     held,
 };
+use jc3vr_core::published::Stamp;
 use jc3vr_input::frame::Hand;
 use jc3vr_view::controllers::overlay::{
     primitive::{Anchor, Primitive, Source},
@@ -98,7 +96,7 @@ pub(crate) struct Recorded {
 
 /// Record what the palms' tick cast. Called from the tick, outside its own state's lock.
 pub(crate) fn record(recorded: Recorded) {
-    STATE.lock().recorded = Some((Instant::now(), recorded));
+    STATE.lock().recorded = Some((Stamp::now(), recorded));
 }
 
 /// Read the candidates near `hands` (each hand's palm, game space) when the last read is old
@@ -109,7 +107,7 @@ pub(crate) fn record(recorded: Recorded) {
 /// The game thread, before the world update.
 pub(crate) unsafe fn scan_candidates(hands: [Option<Vec3>; 2], standing_on: Option<u32>) {
     let tuning = &VIEWS.get().grab_view;
-    let now = Instant::now();
+    let now = Stamp::now();
     let period = tuning.candidate_period();
     let due = STATE
         .lock()
@@ -162,7 +160,7 @@ pub fn refused(hand: Hand, at: Option<Vec3>, why: &str) {
             if state.flashes.len() >= VIEWS.get().grab_view.max_flashes {
                 state.flashes.remove(0);
             }
-            state.flashes.push((anchor, Instant::now()));
+            state.flashes.push((anchor, Stamp::now()));
         }
     }
     let mut status = STATUS.lock();
@@ -181,7 +179,7 @@ pub fn submit(tick: &Tick, frame: Option<&MarkerFrame>) {
     };
     WAS_ACTIVE.store(true, Ordering::Relaxed);
     let tuning = &VIEWS.get().grab_view;
-    let now = Instant::now();
+    let now = Stamp::now();
     // Read before the view's lock: the readout takes the palms' own state.
     let palms = Hand::BOTH.map(|hand| PalmState::of(&palm_readout(hand), tuning.palm_stale_ms));
 
@@ -205,15 +203,14 @@ pub fn submit(tick: &Tick, frame: Option<&MarkerFrame>) {
     let recorded = state
         .recorded
         .as_ref()
-        .filter(|(at, _)| now.saturating_duration_since(*at) <= tuning.record_max_age())
+        .filter(|(at, _)| tuning.record_max_age().holds(*at, now))
         .map(|(_, recorded)| recorded);
     let candidates: &[Candidate] = match state.candidates_at {
-        Some(at) if now.saturating_duration_since(at) <= tuning.candidate_max_age() => {
-            &state.candidates
-        }
+        Some(at) if tuning.candidate_max_age().holds(at, now) => &state.candidates,
         _ => &[],
     };
-    let reload = held::reload_views(now);
+    // The held guns' readouts still run on `Instant`.
+    let reload = held::reload_views(std::time::Instant::now());
     let drawn = draw::build(
         &DrawInputs {
             frame,
@@ -258,15 +255,15 @@ fn stand_down(enabled: bool) {
 /// The view's state across ticks.
 struct State {
     /// The palms' last tick, and when it was recorded.
-    recorded: Option<(Instant, Recorded)>,
+    recorded: Option<(Stamp, Recorded)>,
     /// The candidates at the last read.
     candidates: Vec<Candidate>,
     /// When the candidates were last read.
-    candidates_at: Option<Instant>,
+    candidates_at: Option<Stamp>,
     /// Where each hand's chosen target's marker was on the last input tick, by [`Hand::index`].
     chosen: [Option<Anchor>; 2],
     /// The refused grabs still flashing: where, and when.
-    flashes: Vec<(Anchor, Instant)>,
+    flashes: Vec<(Anchor, Stamp)>,
     /// The tick's primitives, reused across submissions.
     primitives: Vec<Primitive>,
 }

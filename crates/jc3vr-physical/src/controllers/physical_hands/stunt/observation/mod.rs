@@ -1,9 +1,8 @@
 //! Checked native movement observation and its bounded input-tick publication.
 
-use std::time::{Duration, Instant};
-
 use jc3gi::character::character::Character;
 use jc3vr_body::hooks::animation::active_state_type_id;
+use jc3vr_core::published::{Stamp, Window};
 use parking_lot::Mutex;
 
 use crate::controllers::physical_hands::{
@@ -24,7 +23,7 @@ impl MovementOwner {
     }
 }
 
-pub(super) fn publish(read: Option<PositionRead>, now: Instant) {
+pub(super) fn publish(read: Option<PositionRead>, now: Stamp) {
     let context = unsafe { ready_context() };
     *OBSERVATION.lock() = Some(Observation {
         owner: read.map_or(MovementOwner::Unavailable, |r| {
@@ -40,7 +39,7 @@ pub(super) fn movement_owner() -> MovementOwner {
     let stale_after = CHARACTERS.get().stunt.observation_stale_after();
     OBSERVATION
         .lock()
-        .and_then(|o| o.current(context, Instant::now(), stale_after))
+        .and_then(|o| o.current(context, Stamp::now(), stale_after))
         .unwrap_or(MovementOwner::Unavailable)
 }
 
@@ -71,19 +70,17 @@ unsafe fn ready_context() -> Option<Context> {
 struct Observation {
     owner: MovementOwner,
     context: Option<Context>,
-    at: Instant,
+    at: Stamp,
 }
 
 impl Observation {
     fn current(
         self,
         context: Option<Context>,
-        now: Instant,
-        stale_after: Duration,
+        now: Stamp,
+        stale_after: Window,
     ) -> Option<MovementOwner> {
-        (context.is_some()
-            && context == self.context
-            && now.saturating_duration_since(self.at) <= stale_after)
+        (context.is_some() && context == self.context && stale_after.holds(self.at, now))
             .then_some(self.owner)
     }
 }

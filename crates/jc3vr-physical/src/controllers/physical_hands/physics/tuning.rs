@@ -6,6 +6,7 @@ use std::{f32::consts::PI, time::Duration};
 
 use jc3vr_core::{
     config::engine::{Invalid, nonnegative, positive, range},
+    published::Window,
     tuning::Tuning,
 };
 use serde::Deserialize;
@@ -543,9 +544,9 @@ pub struct StepTuning {
 }
 
 impl StepTuning {
-    /// [`stale_after_ms`](Self::stale_after_ms) as a duration.
-    pub fn stale_after(&self) -> Duration {
-        Duration::from_millis(self.stale_after_ms)
+    /// [`stale_after_ms`](Self::stale_after_ms) as a freshness window.
+    pub fn stale_after(&self) -> Window {
+        Window::from_millis(self.stale_after_ms)
     }
 
     /// [`park_after_ms`](Self::park_after_ms) as a duration.

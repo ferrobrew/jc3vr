@@ -1,13 +1,11 @@
 //! The palms' state across ticks: each hand's probes, its pressed and held state, and its motion,
 //! with the stand-down that forgets it all when the palms stop acting.
 
-use std::{
-    num::NonZeroUsize,
-    time::{Duration, Instant},
-};
+use std::num::NonZeroUsize;
 
 use glam::{Vec2, Vec3};
 use jc3vr_body::controllers::haptics;
+use jc3vr_core::published::{Stamp, Window};
 use jc3vr_input::{frame::Hand, haptics::cues::Event, motion};
 use parking_lot::Mutex;
 
@@ -61,7 +59,7 @@ pub(super) struct State {
     /// How much each palm's pressed object gives.
     pub(super) gives: [Give; 2],
     /// When the last tick ran.
-    pub(super) at: Option<Instant>,
+    pub(super) at: Option<Stamp>,
     pub(super) epoch: u64,
     pub(super) seated_vehicle: Option<NonZeroUsize>,
     pub(super) door_press: [Press; 2],
@@ -71,9 +69,8 @@ pub(super) struct State {
 }
 
 impl State {
-    pub(super) fn fresh(&self, now: Instant) -> bool {
-        self.at
-            .is_some_and(|at| now.saturating_duration_since(at) <= stale_after())
+    pub(super) fn fresh(&self, now: Stamp) -> bool {
+        stale_after().holds(self.at, now)
     }
 
     pub(super) fn reset_probes(&mut self) {
@@ -145,8 +142,8 @@ impl State {
 /// How long a tick's results stay current ([`StateTuning::stale_after_ms`]).
 ///
 /// [`StateTuning::stale_after_ms`]: crate::controllers::physical_hands::tuning::StateTuning::stale_after_ms
-pub(super) fn stale_after() -> Duration {
-    Duration::from_millis(PHYSICAL_HANDS.get().state.stale_after_ms)
+pub(super) fn stale_after() -> Window {
+    Window::from_millis(PHYSICAL_HANDS.get().state.stale_after_ms)
 }
 
 pub(super) static STATE: Mutex<State> = Mutex::new(State {

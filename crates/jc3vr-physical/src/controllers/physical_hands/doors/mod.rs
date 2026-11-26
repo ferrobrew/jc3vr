@@ -30,11 +30,12 @@ pub mod table;
 pub(crate) mod tearing;
 pub mod tuning;
 
-use std::{num::NonZeroUsize, time::Instant};
+use std::num::NonZeroUsize;
 
 use glam::{Mat4, Vec3};
 use jc3gi::{physics::GameMaterialId, vehicle::vehicle::DoorSlot};
 use jc3vr_body::controllers::grab::world_reach::{DoorTarget, Reach, TargetKind};
+use jc3vr_core::published::Stamp;
 use jc3vr_input::frame::Pose;
 
 use crate::controllers::physical_hands::{
@@ -207,7 +208,7 @@ pub struct Latch {
     /// The palm at acquisition, in the vehicle's frame, before its opening pull.
     pub palm: Pose,
     /// The first native unlatch attempt, bounding a body-publication retry.
-    pub opening_at: Option<Instant>,
+    pub opening_at: Option<Stamp>,
 }
 
 impl Latch {
@@ -296,7 +297,7 @@ impl Latch {
         match decision {
             LatchDecision::Hold(pin) => LatchStep::Pin(pin),
             LatchDecision::Give(grab) => {
-                let now = Instant::now();
+                let now = Stamp::now();
                 let opening_at = *self.opening_at.get_or_insert(now);
                 // SAFETY: forwarded from the caller; the vehicle was checked alive above.
                 let result = unsafe { engine::unlatch(vehicle, self.door.part_index) };

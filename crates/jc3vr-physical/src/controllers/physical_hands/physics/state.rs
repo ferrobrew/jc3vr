@@ -2,11 +2,11 @@
 //! last step's results, the readout, and the small readers both halves and the rest of the
 //! controllers take.
 
-use std::{sync::atomic::AtomicBool, time::Instant};
+use std::sync::atomic::AtomicBool;
 
 use glam::{Quat, Vec2, Vec3};
 use jc3vr_body::controllers::{hands, hands::CockpitHand, mode, scheme};
-use jc3vr_core::published::Step;
+use jc3vr_core::published::{Stamp, Step};
 use jc3vr_input::frame::Hand;
 use jc3vr_view::controllers::cockpit::CockpitTransform;
 use parking_lot::Mutex;
@@ -65,7 +65,7 @@ pub fn take_joint_losses() -> [bool; 2] {
 /// palm's probes leave such a hand alone, and take it back as soon as its body stops.
 pub fn drives(hand: Hand) -> bool {
     let shared = SHARED.lock();
-    let now = Instant::now();
+    let now = Stamp::now();
     shared.fresh(now)
         && shared.stepped_lately(now)
         && shared.targets[hand.index()].is_some()
@@ -76,7 +76,7 @@ pub fn drives(hand: Hand) -> bool {
 /// is cast from, so that what the hand reaches is what its body touches.
 pub fn body_pose(hand: Hand) -> Option<(Vec3, Quat)> {
     let shared = SHARED.lock();
-    let now = Instant::now();
+    let now = Stamp::now();
     (shared.fresh(now) && shared.stepped_lately(now))
         .then_some(shared.body_poses[hand.index()])
         .flatten()
@@ -85,7 +85,7 @@ pub fn body_pose(hand: Hand) -> Option<(Vec3, Quat)> {
 /// Whether `hand`'s body presses into something that holds it back, as the last step found it.
 pub fn pressing(hand: Hand) -> bool {
     let shared = SHARED.lock();
-    let now = Instant::now();
+    let now = Stamp::now();
     shared.fresh(now)
         && shared.stepped_lately(now)
         && shared.loads[hand.index()] >= PHYSICS.get().step.min_pressure_load
@@ -98,7 +98,7 @@ pub fn push() -> Vec2 {
         return Vec2::ZERO;
     }
     let shared = SHARED.lock();
-    let now = Instant::now();
+    let now = Stamp::now();
     if shared.stepped_lately(now) && shared.fresh(now) {
         shared.push
     } else {
@@ -164,7 +164,7 @@ pub(super) struct Shared {
     /// at.
     pub(super) park_now: Option<(Step, [bool; 2])>,
     /// When the targets were published; `None` while no hand acts.
-    pub(super) published: Option<Instant>,
+    pub(super) published: Option<Stamp>,
     /// The step the targets were published at; `None` while no hand acts.
     pub(super) published_step: Option<Step>,
     pub(super) world_scale: f32,
@@ -198,23 +198,19 @@ pub(super) struct Shared {
     /// Which hands lost their joint since the aim update last took it.
     pub(super) joint_lost: [bool; 2],
     /// Until when each hand follows through a hard blow with a softened drive.
-    pub(super) follow_through: [Option<Instant>; 2],
+    pub(super) follow_through: [Option<Stamp>; 2],
     /// When the last step ran.
-    pub(super) stepped: Option<Instant>,
+    pub(super) stepped: Option<Stamp>,
     pub(super) status: HandBodiesStatus,
 }
 
 impl Shared {
-    pub(super) fn fresh(&self, now: Instant) -> bool {
-        let stale_after = PHYSICS.get().step.stale_after();
-        self.published
-            .is_some_and(|at| now.saturating_duration_since(at) <= stale_after)
+    pub(super) fn fresh(&self, now: Stamp) -> bool {
+        PHYSICS.get().step.stale_after().holds(self.published, now)
     }
 
-    pub(super) fn stepped_lately(&self, now: Instant) -> bool {
-        let stale_after = PHYSICS.get().step.stale_after();
-        self.stepped
-            .is_some_and(|at| now.saturating_duration_since(at) <= stale_after)
+    pub(super) fn stepped_lately(&self, now: Stamp) -> bool {
+        PHYSICS.get().step.stale_after().holds(self.stepped, now)
     }
 }
 

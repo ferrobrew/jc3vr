@@ -2,7 +2,7 @@
 //! carrying the body, the readout, and the small readers both halves and the rest of the
 //! controllers take.
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use glam::{Affine3A, Quat, Vec3};
 use jc3vr_body::controllers::{
@@ -15,7 +15,7 @@ use jc3vr_body::controllers::{
     mode,
     mode::{AirborneVariant, Mode, OnFootVariant},
 };
-use jc3vr_core::published::Step;
+use jc3vr_core::published::{Stamp, Step};
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
@@ -43,13 +43,13 @@ pub fn climbing() -> bool {
     let state = STATE.lock();
     state.grips.iter().any(Option::is_some)
         && !state.held_by_game
-        && state.stepped_lately(Instant::now())
+        && state.stepped_lately(Stamp::now())
 }
 
 /// What each hand grips, as the last pre-simulation step left it, indexed by [`Hand::index`].
 pub fn gripped() -> [Option<Hold>; 2] {
     let state = STATE.lock();
-    if !state.stepped_lately(Instant::now()) {
+    if !state.stepped_lately(Stamp::now()) {
         return [None; 2];
     }
     state.grips.map(|grip| grip.map(|g| g.hold))
@@ -61,7 +61,7 @@ pub fn take_landing()
 -> Option<crate::controllers::physical_hands::climb::native::LandingOffer<'static>> {
     let context = unsafe { engine::gate_context() };
     crate::controllers::physical_hands::climb::native::observe(context);
-    crate::controllers::physical_hands::climb::native::take_landing(Instant::now(), |landing| {
+    crate::controllers::physical_hands::climb::native::take_landing(Stamp::now(), |landing| {
         (unsafe { engine::body_identity(landing.body) }) == Some(landing.identity)
     })
 }
@@ -71,7 +71,7 @@ pub fn take_landing()
 /// ([`crate::controllers::physical_hands::vault`]).
 pub fn static_reaches() -> [Option<Hold>; 2] {
     let state = STATE.lock();
-    let fresh = state.fresh(Instant::now());
+    let fresh = state.fresh(Stamp::now());
     state
         .status
         .hands
@@ -84,7 +84,7 @@ pub fn static_reaches() -> [Option<Hold>; 2] {
 pub fn reach_hold(hand: Hand) -> Option<Hold> {
     let state = STATE.lock();
     let i = hand.index();
-    if !state.fresh(Instant::now()) || state.grips[i].is_some() {
+    if !state.fresh(Stamp::now()) || state.grips[i].is_some() {
         return None;
     }
     state.status.hands[i].reach
@@ -96,7 +96,7 @@ pub fn reach_hold(hand: Hand) -> Option<Hold> {
 pub fn finish_tick(held: [bool; 2], grabs: [Option<GrabVolume>; 2]) {
     crate::controllers::physical_hands::climb::native::observe(unsafe { engine::gate_context() });
     let mut state = STATE.lock();
-    let now = Instant::now();
+    let now = Stamp::now();
     let fresh = state.fresh(now);
     let input_mode = mode::current().mode;
     let allowed = matches!(
@@ -307,10 +307,10 @@ pub(super) struct State {
     pub(super) rig: Option<(Quat, u32)>,
     /// Counts the recenters and snap turns that moved the rig under the palms.
     pub(super) rig_epoch: u64,
-    pub(super) published: Option<Instant>,
+    pub(super) published: Option<Stamp>,
     /// The physics step the palms' tick last ran at, whether or not it published a player.
     pub(super) published_step: Option<Step>,
-    pub(super) stepped: Option<Instant>,
+    pub(super) stepped: Option<Stamp>,
     pub(super) climbing: bool,
     pub(super) mantle: Option<Mantle>,
     pub(super) mantle_steps: u32,
@@ -319,7 +319,7 @@ pub(super) struct State {
     pub(super) smoothed: Vec3,
     pub(super) smoothed_carry: Vec3,
     pub(super) motion_grips: [Option<Hold>; 2],
-    pub(super) input_at: Option<Instant>,
+    pub(super) input_at: Option<Stamp>,
     pub(super) input_held: [bool; 2],
     pub(super) input_mode: Option<Mode>,
     /// The feet's height when the climb started.
@@ -329,7 +329,7 @@ pub(super) struct State {
     pub(super) events: Vec<(Hand, Event)>,
     pub(super) epoch: u64,
     pub(super) warned_mode: bool,
-    pub(super) logged_at: Option<Instant>,
+    pub(super) logged_at: Option<Stamp>,
     /// Whether the game held the player in a stunt position on the last step.
     pub(super) held_by_game: bool,
     pub(super) status: ClimbStatus,
@@ -441,16 +441,12 @@ impl State {
         }
     }
 
-    pub(super) fn fresh(&self, now: Instant) -> bool {
-        let stale_after = CLIMB.get().climb.stale_after();
-        self.published
-            .is_some_and(|at| now.saturating_duration_since(at) <= stale_after)
+    pub(super) fn fresh(&self, now: Stamp) -> bool {
+        CLIMB.get().climb.stale_after().holds(self.published, now)
     }
 
-    pub(super) fn stepped_lately(&self, now: Instant) -> bool {
-        let stale_after = CLIMB.get().climb.stale_after();
-        self.stepped
-            .is_some_and(|at| now.saturating_duration_since(at) <= stale_after)
+    pub(super) fn stepped_lately(&self, now: Stamp) -> bool {
+        CLIMB.get().climb.stale_after().holds(self.stepped, now)
     }
 
     /// The grip on the highest ledge's top.
@@ -508,12 +504,12 @@ impl State {
     /// Forget the climb once no hand grips.
     pub(super) fn finish_climb(&mut self) {
         self.finish_climb_with(
-            Instant::now(),
+            Stamp::now(),
             crate::controllers::physical_hands::climb::native::finish_grips,
         );
     }
 
-    pub(super) fn finish_climb_with(&mut self, now: Instant, finish_grips: impl FnOnce(Instant)) {
+    pub(super) fn finish_climb_with(&mut self, now: Stamp, finish_grips: impl FnOnce(Stamp)) {
         if self.climbing {
             tracing::info!("hand climbing: climbing ends");
         }

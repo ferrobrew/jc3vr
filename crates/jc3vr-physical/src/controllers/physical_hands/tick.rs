@@ -9,7 +9,7 @@
 //! [`thread_role`] marks it; the input tick is no proxy for it, since the game's input pre-update
 //! runs on a CPU fragment worker during the simulation (`docs/engine/gameplay/input.md`).
 
-use std::{num::NonZeroUsize, time::Instant};
+use std::num::NonZeroUsize;
 
 use body_rig::rotation::level;
 use glam::{Mat4, Quat, Vec2, Vec3};
@@ -39,6 +39,7 @@ use jc3vr_body::controllers::{
 };
 use jc3vr_core::{
     game_tick::GameTick,
+    published::Stamp,
     thread_role::{self, ThreadRole},
 };
 use jc3vr_input::{
@@ -207,7 +208,7 @@ fn run(player: &LocalPlayer<'_>, dt: f32) {
     let floor_weapons = unsafe { pickup::floor_weapons(&floor_hands, floor_radius) };
 
     let mut state = STATE.lock();
-    let now = Instant::now();
+    let now = Stamp::now();
     if teleport::epoch() != state.epoch {
         state.epoch = teleport::epoch();
         state.reset_probes();

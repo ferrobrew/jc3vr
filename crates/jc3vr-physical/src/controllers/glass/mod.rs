@@ -37,7 +37,7 @@ mod engine;
 pub mod strike;
 pub mod tuning;
 
-use std::{num::NonZeroUsize, time::Instant};
+use std::num::NonZeroUsize;
 
 pub use config::GlassConfig;
 use glam::Vec3;
@@ -54,7 +54,10 @@ use jc3vr_body::controllers::{
     held::HeldItem,
     scheme,
 };
-use jc3vr_core::thread_role::{self, ThreadRole};
+use jc3vr_core::{
+    published::Stamp,
+    thread_role::{self, ThreadRole},
+};
 use jc3vr_input::{
     frame::{Hand, Pose},
     haptics::cues::Event,
@@ -371,7 +374,7 @@ struct PaneRecord {
 
 struct State {
     /// The tick clock's start, set on the first tick.
-    epoch: Option<Instant>,
+    epoch: Option<Stamp>,
     samples: [Option<Sample>; STRIKERS],
     limiter: Limiter,
     panes: Vec<PaneRecord>,
@@ -383,7 +386,7 @@ impl State {
     /// Seconds on the tick clock.
     fn now_s(&mut self) -> f64 {
         self.epoch
-            .get_or_insert_with(Instant::now)
+            .get_or_insert_with(Stamp::now)
             .elapsed()
             .as_secs_f64()
     }

@@ -21,10 +21,7 @@
 //! player), which leaves out every body of the player's system group, and are noted here instead
 //! ([`note_contact`]).
 
-use std::{
-    sync::atomic::{AtomicU32, Ordering},
-    time::Instant,
-};
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use glam::{Mat4, Quat, Vec3};
 use jc3gi::character::character::Character;
@@ -33,6 +30,7 @@ use jc3vr_body::controllers::{
     physics::bodies,
     scheme,
 };
+use jc3vr_core::published::Stamp;
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
@@ -84,7 +82,7 @@ pub(crate) unsafe fn rests_against(body: u32) -> bool {
             .flatten()
             .any(|c| box_reaches_capsule(min, max, *c, tuning.reach_margin_m))
     });
-    let at = Instant::now();
+    let at = Stamp::now();
     let forget_after = tuning.forget_after();
     let mut resting = RESTING.lock();
     // A body last asked about long ago was let go since, and starts afresh.
@@ -317,7 +315,7 @@ static CAPSULES: Mutex<[Option<WorldCapsule>; 2]> = Mutex::new([None; 2]);
 static MET: Mutex<Vec<u32>> = Mutex::new(Vec::new());
 
 /// The held bodies resting against the capsules, with when each was last asked about.
-static RESTING: Mutex<Vec<(u32, Instant)>> = Mutex::new(Vec::new());
+static RESTING: Mutex<Vec<(u32, Stamp)>> = Mutex::new(Vec::new());
 
 /// The most held bodies [`MET`] and [`RESTING`] keep: the two hands hold two at most.
 const MAX_TRACKED: usize = 8;

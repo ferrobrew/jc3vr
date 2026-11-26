@@ -2,14 +2,12 @@
 //! touches, and publish what the palms' tick found, pulsing the hands for the last step's grips
 //! and releases.
 
-use std::time::Instant;
-
 use glam::Vec3;
 use jc3vr_body::controllers::{
     haptics, mode,
     mode::{Mode, OnFootVariant},
 };
-use jc3vr_core::published::Step;
+use jc3vr_core::published::{Stamp, Step};
 use jc3vr_input::{
     frame::Hand,
     haptics::cues::{self, Sustain},
@@ -97,7 +95,7 @@ pub fn observe(observed: Observed) {
         state.rig = Some((body_rotation, recenters));
         state.palms = palms;
         state.pressing = pressing;
-        state.published = player.is_some().then(Instant::now);
+        state.published = player.is_some().then(Stamp::now);
         state.published_step = Some(Step::now());
         for hand in Hand::BOTH {
             state.status.hands[hand.index()].reach = reaches[hand.index()];

@@ -2,20 +2,19 @@
 //! velocity for the next step, and take the last step's results to draw the hands and pulse a
 //! pressed one.
 
-use std::{
-    sync::atomic::Ordering,
-    time::{Duration, Instant},
-};
+use std::{sync::atomic::Ordering, time::Duration};
 
 use glam::Vec3;
 use jc3vr_body::controllers::{clock::TimeScale, hands::CockpitHand, haptics, held, held::guns};
-use jc3vr_core::{game_tick::GameTick, published::Step};
+use jc3vr_core::{
+    game_tick::GameTick,
+    published::{Published, Stage, Stamp, Step},
+};
 use jc3vr_input::{
     frame::{Hand, Pose},
     haptics::cues::Sustain,
 };
 use jc3vr_view::{headpose, headpose::teleport, vr::recenter_count};
-use parking_lot::Mutex;
 
 use crate::controllers::physical_hands::{
     physics::{
@@ -60,7 +59,7 @@ pub fn frame_tick(game: &GameTick<'_>) {
     }
     let delivered = blows::deliver(game);
     let mut shared = SHARED.lock();
-    let now = Instant::now();
+    let now = Stamp::now();
     let follow_through =
         Duration::from_secs_f32(PHYSICS.get().hand_bodies.hits.follow_through_s.max(0.0));
     for (until, struck) in shared
@@ -86,7 +85,7 @@ pub fn frame_tick(game: &GameTick<'_>) {
 /// results. Called from the player aim control's post-simulation update, `dt` seconds after the
 /// last.
 pub fn observe(dt: f32) {
-    let now = Instant::now();
+    let now = Stamp::now();
     let acting = acting_palms();
     let step = Step::now();
     let park_now = acting.as_ref().map(|a| (step, a.park_now));
@@ -189,7 +188,7 @@ pub fn observe(dt: f32) {
 pub fn apply(cockpit: &mut [Option<CockpitHand>; 2], palm_offset: Vec3) {
     let offsets = {
         let shared = SHARED.lock();
-        if !shared.fresh(Instant::now()) {
+        if !shared.fresh(Stamp::now()) {
             return;
         }
         shared.cockpit_offsets
@@ -214,11 +213,11 @@ fn braced_by_hold() -> Option<Hand> {
 ///
 /// The game thread, after simulation and outside the physics step.
 pub unsafe fn sample_render_offsets() {
-    let now = Instant::now();
+    let now = Stamp::now();
     let (targets, rotation, scale, shown, fallback) = {
         let shared = SHARED.lock();
         if !shared.fresh(now) || !shared.stepped_lately(now) {
-            *RENDER_OFFSETS.lock() = None;
+            RENDER_OFFSETS.clear();
             return;
         }
         (
@@ -270,24 +269,18 @@ pub unsafe fn sample_render_offsets() {
         Some(offset.to_cockpit(rotation, scale))
     });
     drop(hands);
-    *RENDER_OFFSETS.lock() = Some((now, offsets));
+    RENDER_OFFSETS.publish_at(offsets, now);
 }
 
 /// Apply the frame's post-step offsets without adding another physics-step interpolation delay.
 pub fn apply_at_render(cockpit: &mut [Option<CockpitHand>; 2], palm_offset: Vec3) {
-    let sampled = *RENDER_OFFSETS.lock();
-    let Some((at, offsets)) = sampled else {
-        apply(cockpit, palm_offset);
-        return;
-    };
-    if Instant::now().saturating_duration_since(at) > PHYSICS.get().step.stale_after() {
-        apply(cockpit, palm_offset);
-        return;
+    match RENDER_OFFSETS.fresh(PHYSICS.get().step.stale_after()) {
+        Some(offsets) => apply_offsets(cockpit, offsets, palm_offset, braced_by_hold()),
+        None => apply(cockpit, palm_offset),
     }
-    apply_offsets(cockpit, offsets, palm_offset, braced_by_hold());
 }
 
-static RENDER_OFFSETS: Mutex<Option<(Instant, [Option<RenderOffset>; 2])>> = Mutex::new(None);
+static RENDER_OFFSETS: Published<[Option<RenderOffset>; 2]> = Published::new(Stage::RenderUpdate);
 
 /// Remove the callback and destroy the bodies.
 ///

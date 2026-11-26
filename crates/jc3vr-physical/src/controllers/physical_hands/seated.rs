@@ -1,4 +1,4 @@
-use std::{num::NonZeroUsize, time::Instant};
+use std::num::NonZeroUsize;
 
 use body_rig::rotation::level;
 use glam::{Vec2, Vec3};
@@ -10,6 +10,7 @@ use jc3vr_body::controllers::{
     grab::world_reach::{Reach, TargetKind},
     hands, haptics,
 };
+use jc3vr_core::published::Stamp;
 use jc3vr_input::{
     frame::{Hand, Pose},
     haptics::cues::Event,
@@ -86,7 +87,7 @@ pub(super) unsafe fn run(owner: &Character, dt: f32) {
         state.seated_vehicle = Some(vehicle);
     }
     scope(&mut state.pickup, vehicle);
-    let now = Instant::now();
+    let now = Stamp::now();
     let viewing = config.grab_view.enabled;
     let mut palms = [None; 2];
     let mut wrists = [None; 2];
@@ -434,7 +435,7 @@ mod tests {
     #[test]
     fn scoping_rejects_pending_grabs_but_preserves_release_and_input_age() {
         let mut state = PickupState::new();
-        let input_at = Instant::now();
+        let input_at = Stamp::now();
         state.input_at = Some(input_at);
         for request in [
             Request::Grab(reach(TargetKind::Weapon)),

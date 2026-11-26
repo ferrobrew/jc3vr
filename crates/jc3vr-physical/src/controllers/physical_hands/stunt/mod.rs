@@ -20,8 +20,6 @@ pub mod engine;
 mod observation;
 pub mod solve;
 
-use std::time::Instant;
-
 use jc3gi::input::input_action_map::Action;
 use jc3vr_body::controllers::{
     fingers::{
@@ -31,7 +29,7 @@ use jc3vr_body::controllers::{
     haptics,
     intent::hold::{Desired, MapKind, Target, Want},
 };
-use jc3vr_core::game_tick::GameTick;
+use jc3vr_core::{game_tick::GameTick, published::Stamp};
 use jc3vr_input::{
     frame::Hand,
     haptics::cues::{Event, Sustain},
@@ -88,9 +86,7 @@ pub fn hanging() -> bool {
     let stale_after = CHARACTERS.get().stunt.reading_stale_after();
     let state = STATE.lock();
     state.status.position == Some(StuntKind::Hanging)
-        && state
-            .ticked
-            .is_some_and(|at| Instant::now().saturating_duration_since(at) <= stale_after)
+        && stale_after.holds(state.ticked, Stamp::now())
 }
 
 /// Read the stunt position, enter a roof where a completed mantle offers it, and let go of a hang
@@ -98,7 +94,7 @@ pub fn hanging() -> bool {
 /// leaves the hang, through `desired`. Called from the input tick after the climb's.
 pub fn finish_tick(game: &GameTick<'_>, held: [bool; 2], desired: &mut Vec<Desired>) {
     let tuning = &CHARACTERS.get().stunt;
-    let now = Instant::now();
+    let now = Stamp::now();
     let mut state = STATE.lock();
     let dt = state
         .ticked
@@ -226,7 +222,7 @@ fn hold_strain(speed_mps: f32, full_speed_mps: f32) -> f32 {
 
 struct State {
     tracker: Tracker,
-    ticked: Option<Instant>,
+    ticked: Option<Stamp>,
     status: StuntStatus,
 }
 

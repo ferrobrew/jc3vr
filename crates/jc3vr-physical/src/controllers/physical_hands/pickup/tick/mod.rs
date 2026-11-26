@@ -1,7 +1,7 @@
 //! The pickups' simulation tick: take hold and let go as the input tick asked, keep the grips on
 //! latched doors, and drive what the hands carry.
 
-use std::{num::NonZeroUsize, time::Instant};
+use std::num::NonZeroUsize;
 
 use glam::Vec3;
 use jc3gi::vehicle::vehicle::DoorSlot;
@@ -10,6 +10,7 @@ use jc3vr_body::controllers::{
     physics::{GRAVITY_MPS2, bodies, rigid::Velocities},
     telemetry::{Released, Thrown, note_release, note_throw},
 };
+use jc3vr_core::published::Stamp;
 use jc3vr_input::frame::{Hand, Pose};
 
 use crate::controllers::physical_hands::{
@@ -324,10 +325,8 @@ unsafe fn tick_with(
                 Some("physical hands: pickup: the hand's joint to the object ended".to_owned());
         }
     }
-    let now = Instant::now();
-    let input_fresh = state
-        .input_at
-        .is_some_and(|at| now.saturating_duration_since(at) <= stale_after());
+    let now = Stamp::now();
+    let input_fresh = stale_after().holds(state.input_at, now);
     if !input_fresh {
         // The bindings stopped reading the grips: no release will come.
         state.drop_all();

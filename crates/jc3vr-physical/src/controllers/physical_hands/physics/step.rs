@@ -1,8 +1,6 @@
 //! The pre-simulation half of the hand bodies' tick: make, add, park, and drive the bodies toward
 //! where their palms will be at the end of the step, then keep the held guns' bodies on them.
 
-use std::time::Instant;
-
 use glam::{Quat, Vec2, Vec3};
 use jc3gi::physics::PhysicsSystem;
 use jc3vr_body::controllers::{
@@ -12,6 +10,7 @@ use jc3vr_body::controllers::{
     mode,
     physics::{GRAVITY_MPS2, steps},
 };
+use jc3vr_core::published::Stamp;
 use jc3vr_input::frame::{Hand, Pose};
 
 use crate::controllers::physical_hands::{
@@ -41,7 +40,7 @@ use crate::controllers::physical_hands::{
 ///
 /// The thread that steps the physics world, outside the step.
 pub unsafe fn step() {
-    let now = Instant::now();
+    let now = Stamp::now();
     let physics = PHYSICS.get();
     // SAFETY: the physics step runs while the game runs.
     let time_scale = unsafe { TimeScale::current() };
@@ -450,7 +449,7 @@ pub unsafe fn step() {
         *lost |= now_lost;
     }
     shared.world_offsets = offsets;
-    shared.offset_timeline.push(offsets, Instant::now());
+    shared.offset_timeline.push(offsets, Stamp::now());
     shared.loads = loads;
     shared.body_poses = poses;
     shared.push = push;

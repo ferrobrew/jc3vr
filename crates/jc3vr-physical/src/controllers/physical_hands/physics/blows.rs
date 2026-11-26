@@ -22,7 +22,7 @@
 //! [`contact`]: crate::controllers::physical_hands::physics::contact
 //! [`hit`]: crate::controllers::physical_hands::physics::hit
 
-use std::{mem::MaybeUninit, num::NonZeroUsize, time::Instant};
+use std::{mem::MaybeUninit, num::NonZeroUsize};
 
 use glam::Vec3;
 use jc3gi::{
@@ -51,7 +51,7 @@ use jc3vr_body::{
     },
     hooks::character::resolve_act_id,
 };
-use jc3vr_core::game_tick::GameTick;
+use jc3vr_core::{game_tick::GameTick, published::Stamp};
 use jc3vr_input::{frame::Hand, haptics::cues::Event};
 use parking_lot::Mutex;
 
@@ -116,7 +116,7 @@ pub(super) fn deliver(game: &GameTick<'_>) -> Delivered {
     let mut gate = GATE.lock();
     let now_s = gate
         .epoch
-        .get_or_insert_with(Instant::now)
+        .get_or_insert_with(Stamp::now)
         .elapsed()
         .as_secs_f64();
     // SAFETY: the game tick: the game runs.
@@ -323,7 +323,7 @@ pub(crate) unsafe fn held_strike(
     let mut gate = GATE.lock();
     let now_s = gate
         .epoch
-        .get_or_insert_with(Instant::now)
+        .get_or_insert_with(Stamp::now)
         .elapsed()
         .as_secs_f64();
     let game_now_s = gate.game.at(now_s, unsafe { TimeScale::current() });
@@ -507,7 +507,7 @@ struct Gates {
     /// The characters a blow damaged lately, in game seconds: the world's own pace of harm.
     damage: HitGate,
     /// The real time base.
-    epoch: Option<Instant>,
+    epoch: Option<Stamp>,
     game: GameClock,
 }
 

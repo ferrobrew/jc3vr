@@ -2,12 +2,11 @@
 //! character until a yank, and a yanked character until the hand takes hold of the ragdoll it falls
 //! as. Each runs from the pickup tick, on the main thread outside the physics step.
 
-use std::time::Instant;
-
 use jc3vr_body::controllers::{
     grab::world_reach::{Reach, SeatAccess, TargetKind},
     physics::bodies,
 };
+use jc3vr_core::published::Stamp;
 use jc3vr_input::frame::Hand;
 
 use crate::controllers::physical_hands::{
@@ -111,7 +110,7 @@ pub(super) unsafe fn keep_latch(
                     outcome.unlatched[i] = true;
                 }
                 Err(e) => {
-                    let now = Instant::now();
+                    let now = Stamp::now();
                     let opening_at = *latch.opening_at.get_or_insert(now);
                     if matches!(
                         e,

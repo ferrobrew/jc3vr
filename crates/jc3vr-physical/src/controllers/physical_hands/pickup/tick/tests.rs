@@ -6,6 +6,7 @@ use jc3vr_body::controllers::{
     grab::world_reach::{CharacterTarget, DoorTarget},
     physics::rigid::BodyPose,
 };
+use jc3vr_core::published::Stamp;
 use jc3vr_input::frame::Pose;
 
 use super::*;
@@ -95,7 +96,7 @@ fn inputs(join: bool) -> TickInputs {
 }
 
 fn run(state: &mut PickupState, join: bool, fake: &mut FakeBodies) -> TickOutcome {
-    state.input_at = Some(Instant::now());
+    state.input_at = Some(Stamp::now());
     unsafe { tick_with(state, inputs(join), PICKUP.get(), fake) }
 }
 
@@ -121,7 +122,7 @@ fn a_fixture_activation_refusal_stops_before_reading_or_taking_the_body() {
         }
     }
     let mut state = PickupState::new();
-    state.input_at = Some(Instant::now());
+    state.input_at = Some(Stamp::now());
     state.requests[0] = Some(Request::Grab(Reach {
         object: held(false, HeldKind::Prop).object,
         body: 7,
@@ -321,7 +322,7 @@ fn a_carried_object_the_hands_can_lift_takes_on_the_characters_jump() {
             ..*PICKUP.get()
         };
         for carrier in [Vec3::ZERO, jump] {
-            state.input_at = Some(Instant::now());
+            state.input_at = Some(Stamp::now());
             let inputs = TickInputs {
                 palms: [Some(rising_palm); 2],
                 carrier_velocity: Some(carrier),
@@ -411,7 +412,7 @@ fn ticks_held(held: Held, lag: Vec3, velocity: Vec3, limit: usize) -> (usize, Ti
     };
     let mut last = TickOutcome::default();
     for tick in 0..limit {
-        state.input_at = Some(Instant::now());
+        state.input_at = Some(Stamp::now());
         let inputs = TickInputs {
             palms: [Some(moved), None],
             ..inputs(held.joined)
@@ -493,7 +494,7 @@ fn a_joined_ragdoll_hold_persists_and_keeps_its_scoped_joint() {
             velocity: Vec3::Y * 0.5,
             ..palm()
         };
-        state.input_at = Some(Instant::now());
+        state.input_at = Some(Stamp::now());
         let inputs = TickInputs {
             palms: [Some(moving); 2],
             ..inputs(true)
@@ -682,7 +683,7 @@ fn a_joined_ragdoll_release_unjoins_and_throws_with_the_hand() {
         calls: Vec::new(),
         driven: None,
     };
-    state.input_at = Some(Instant::now());
+    state.input_at = Some(Stamp::now());
     let inputs = TickInputs {
         palms: [Some(moving), None],
         ..inputs(true)
@@ -715,7 +716,7 @@ fn a_falling_anatomical_contact_converges_only_within_the_soft_hold_force_budget
             calls: Vec::new(),
             driven: None,
         };
-        state.input_at = Some(Instant::now());
+        state.input_at = Some(Stamp::now());
         let outcome = unsafe {
             tick_with(
                 &mut state,
@@ -838,7 +839,7 @@ fn two_hands_on_a_joined_heavy_object_pull_as_a_carry_of_it_would() {
         calls: Vec::new(),
         driven: None,
     };
-    state.input_at = Some(Instant::now());
+    state.input_at = Some(Stamp::now());
     let palms = ends.map(|end| {
         Some(PalmMotion {
             pose: Pose {
@@ -913,7 +914,7 @@ fn a_hold_that_ends_takes_its_strain_with_it() {
         let mut state = PickupState::new();
         state.held[0] = Some(held(false, HeldKind::Prop));
         for _ in 0..2 {
-            state.input_at = Some(Instant::now());
+            state.input_at = Some(Stamp::now());
             let inputs = TickInputs {
                 palms: [Some(caught), None],
                 ..inputs(false)
@@ -921,7 +922,7 @@ fn a_hold_that_ends_takes_its_strain_with_it() {
             unsafe { tick_with(&mut state, inputs, PICKUP.get(), &mut fake) };
         }
         assert!(state.held[0].is_some() && state.strains[0].is_some());
-        state.input_at = Some(Instant::now());
+        state.input_at = Some(Stamp::now());
         let inputs = end(&mut state);
         unsafe { tick_with(&mut state, inputs, PICKUP.get(), &mut fake) };
         assert_eq!(state.held[0], None);
@@ -959,7 +960,7 @@ fn a_tear_judges_the_other_hand_with_the_strength_left() {
             ..palm()
         })
     };
-    state.input_at = Some(Instant::now());
+    state.input_at = Some(Stamp::now());
     let inputs = TickInputs {
         palms: [
             at(Vec3::new(PICKUP.get().tear_distance_m + 0.1, 0.0, 0.0)),

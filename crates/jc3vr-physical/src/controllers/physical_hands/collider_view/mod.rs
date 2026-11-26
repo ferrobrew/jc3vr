@@ -22,14 +22,11 @@ pub mod model;
 pub mod nearby;
 mod scan;
 
-use std::{
-    sync::atomic::{AtomicBool, Ordering},
-    time::Instant,
-};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use glam::Vec3;
 use jc3vr_body::controllers::{hands::late, held::guns};
-use jc3vr_core::published::Step;
+use jc3vr_core::published::{Stamp, Step};
 use jc3vr_input::frame::Hand;
 use jc3vr_view::{
     controllers::overlay::{
@@ -157,7 +154,7 @@ pub unsafe fn render_tick(dtf: f32) {
     };
     let outcome = read.then(|| {
         let mods = mod_ids();
-        let started = Instant::now();
+        let started = Stamp::now();
         // SAFETY: forwarded from the caller.
         let scanned = unsafe {
             scan::scan(
@@ -188,7 +185,7 @@ pub unsafe fn render_tick(dtf: f32) {
             }
         }
     }
-    let sampled_at = Instant::now();
+    let sampled_at = Stamp::now();
     if let Some(current) = state.current.as_mut() {
         // SAFETY: forwarded from the caller; only retained transforms and boxes are read here.
         if let Err(e) = unsafe { scan::refresh(current, head.position) } {
@@ -321,7 +318,7 @@ pub(crate) fn note_contact(at: Vec3, other_body: u32, impulse_ns: f32) {
     }
     FLASHES
         .lock()
-        .push((Instant::now(), at, other_body, impulse_ns));
+        .push((Stamp::now(), at, other_body, impulse_ns));
 }
 
 /// The view's state across frames.
@@ -370,7 +367,7 @@ static STATUS: Mutex<ColliderViewStatus> = Mutex::new(ColliderViewStatus {
 });
 
 /// The contacts reported lately, oldest first: when, where, the other body, and the impulse.
-static FLASHES: Mutex<Vec<(Instant, Vec3, u32, f32)>> = Mutex::new(Vec::new());
+static FLASHES: Mutex<Vec<(Stamp, Vec3, u32, f32)>> = Mutex::new(Vec::new());
 
 /// Whether the view drew last frame, so that switching it off clears its slot once.
 static WAS_ACTIVE: AtomicBool = AtomicBool::new(false);
@@ -403,7 +400,7 @@ fn mod_ids() -> ModIds {
 /// spent and the older ones are dropped. The cap is applied here, once a frame, rather than as
 /// each contact is noted, in the physics' per-contact loop.
 fn take_flashes(tuning: &ColliderViewTuning) -> Vec<Flash> {
-    let now = Instant::now();
+    let now = Stamp::now();
     let flash_s = tuning.draw.flash_s;
     let mut flashes = FLASHES.lock();
     flashes.retain(|(at, ..)| now.saturating_duration_since(*at).as_secs_f32() < flash_s);

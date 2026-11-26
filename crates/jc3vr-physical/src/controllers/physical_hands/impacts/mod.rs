@@ -10,7 +10,6 @@ use std::{
     mem::MaybeUninit,
     num::NonZeroUsize,
     sync::atomic::{AtomicBool, AtomicU64, Ordering},
-    time::Instant,
 };
 
 use glam::Vec3;
@@ -29,7 +28,7 @@ use jc3vr_body::controllers::{
     },
     scheme,
 };
-use jc3vr_core::game_tick::GameTick;
+use jc3vr_core::{game_tick::GameTick, published::Stamp};
 use jc3vr_input::{frame::Hand, haptics::cues::Event};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
@@ -67,14 +66,14 @@ pub fn hook_library() -> HookLibrary {
 
 /// Publish current holders after the pickup tick. Both jointed and carried holds use this path.
 pub(super) fn publish(held: [Option<(u32, NonZeroUsize)>; 2]) {
-    STATE.lock().publish(held, Instant::now());
+    STATE.lock().publish(held, Stamp::now());
 }
 
 pub(super) fn obstruction(body: u32, owner: NonZeroUsize, lag: Vec3) -> Vec3 {
     let enabled = enabled();
     STATE
         .lock()
-        .obstruction(body, owner, lag, Instant::now(), enabled)
+        .obstruction(body, owner, lag, Stamp::now(), enabled)
 }
 
 /// Refresh motion and event leases immediately before the world step.
@@ -83,7 +82,7 @@ pub(super) fn obstruction(body: u32, owner: NonZeroUsize, lag: Vec3) -> Vec3 {
 /// The game thread, outside the physics step.
 pub(crate) unsafe fn step() {
     unsafe { carry_collision::step() };
-    let now = Instant::now();
+    let now = Stamp::now();
     let enabled = enabled();
     let (wanted, leases) = {
         let state = STATE.lock();
@@ -131,7 +130,7 @@ pub(crate) unsafe fn step() {
 /// The game thread, outside the physics step.
 pub(crate) unsafe fn clear() {
     unsafe { carry_collision::clear() };
-    STATE.lock().clear(Instant::now());
+    STATE.lock().clear(Stamp::now());
     RETAINED.lock().clear();
     unsafe { step() };
 }
@@ -171,7 +170,7 @@ pub(crate) fn deliver(game: &GameTick<'_>) {
             std::iter::once(*held).chain(target.as_ref().map(|(identity, _)| *identity))
         })
         .collect();
-    let feedback = STATE.lock().deliver(Instant::now(), enabled, &valid);
+    let feedback = STATE.lock().deliver(Stamp::now(), enabled, &valid);
     let damage_tuning = &CHARACTERS.get().impacts.object_damage;
     for feedback in feedback {
         let event = feedback.contact;
@@ -256,7 +255,7 @@ pub(super) unsafe fn record(event: *const hknpContactImpulseEvent) {
         |leases| unsafe { observe_contacts(event, leases) },
         |contacts| {
             let mut state = STATE.lock();
-            let now = Instant::now();
+            let now = Stamp::now();
             for contact in contacts.into_iter().flatten() {
                 state.queue(contact, now);
             }
@@ -423,7 +422,7 @@ pub(super) unsafe fn native_hit(recipient: *mut PhysicsGameObject) {
     let mut state = STATE.lock();
     for (pair, target) in pairs {
         // The opaque native hit info cannot prove the pair. Suppress conservatively by recipient.
-        state.native(pair, target, Instant::now());
+        state.native(pair, target, Stamp::now());
     }
 }
 

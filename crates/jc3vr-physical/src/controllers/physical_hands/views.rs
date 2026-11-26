@@ -8,6 +8,7 @@ use std::{fmt, time::Duration};
 
 use jc3vr_core::{
     config::engine::{Invalid, nonnegative, positive, range},
+    published::Window,
     tuning::Tuning,
 };
 use serde::Deserialize;
@@ -210,9 +211,9 @@ impl GrabViewTuning {
         Duration::from_millis(self.ttl_ms)
     }
 
-    /// [`Self::record_max_age_ms`] as a duration.
-    pub fn record_max_age(&self) -> Duration {
-        Duration::from_millis(self.record_max_age_ms)
+    /// [`Self::record_max_age_ms`] as a freshness window.
+    pub fn record_max_age(&self) -> Window {
+        Window::from_millis(self.record_max_age_ms)
     }
 
     /// [`Self::candidate_period_ms`] as a duration.
@@ -220,9 +221,9 @@ impl GrabViewTuning {
         Duration::from_millis(self.candidate_period_ms)
     }
 
-    /// [`Self::candidate_max_age_ms`] as a duration.
-    pub fn candidate_max_age(&self) -> Duration {
-        Duration::from_millis(self.candidate_max_age_ms)
+    /// [`Self::candidate_max_age_ms`] as a freshness window.
+    pub fn candidate_max_age(&self) -> Window {
+        Window::from_millis(self.candidate_max_age_ms)
     }
 
     fn validate(&self) -> Result<(), Invalid> {

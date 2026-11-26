@@ -6,12 +6,11 @@
 //! own casts found each target, so its distance is the reach's. The markers lie on what was found,
 //! in the world, on its surface where the reach knows the surface's normal.
 
-use std::time::Instant;
-
 use jc3vr_body::controllers::grab::{
     GrabVolume, GripTarget, Mark, MarkAt, PickupKind, Provided, Shown,
     world_reach::{DoorEligibility, DoorTarget, Reach, TargetKind},
 };
+use jc3vr_core::published::Stamp;
 use jc3vr_input::frame::Hand;
 
 use crate::controllers::physical_hands::{
@@ -22,7 +21,7 @@ use crate::controllers::physical_hands::{
 /// it offers still unclaimed and in reach.
 pub fn door_offer_current(offer: DoorEligibility, hand: Hand) -> bool {
     let state = STATE.lock();
-    door_offer_current_in(offer, hand, &state, Instant::now())
+    door_offer_current_in(offer, hand, &state, Stamp::now())
 }
 
 /// The physical hands' targets for this input tick, with the reach's notes for each hand, at the VR
@@ -34,7 +33,7 @@ pub fn targets(world_scale: f32, scans: &mut [Option<Scan>; 2]) -> Provided {
     let mut out = Provided::default();
     let palms = {
         let state = STATE.lock();
-        let now = Instant::now();
+        let now = Stamp::now();
         let fresh = state.fresh(now);
         for hand in Hand::BOTH {
             let i = hand.index();
@@ -89,26 +88,20 @@ pub fn targets(world_scale: f32, scans: &mut [Option<Scan>; 2]) -> Provided {
     out
 }
 
-fn provided_reach(
-    hand: Hand,
-    reach: &Reach,
-    scale: f32,
-    state: &State,
-    now: Instant,
-) -> GripTarget {
+fn provided_reach(hand: Hand, reach: &Reach, scale: f32, state: &State, now: Stamp) -> GripTarget {
     let mut target = reach_target(hand, reach, scale);
     target.door_eligibility = door_offer(hand, reach, state, now);
     target
 }
 
-fn door_offer_current_in(offer: DoorEligibility, hand: Hand, state: &State, now: Instant) -> bool {
+fn door_offer_current_in(offer: DoorEligibility, hand: Hand, state: &State, now: Stamp) -> bool {
     offer.hand() == hand
         && state.epoch == offer.epoch()
         && state.at == Some(offer.at())
         && door_offer(hand, &offer.reach(), state, now) == Some(offer)
 }
 
-fn door_offer(hand: Hand, reach: &Reach, state: &State, now: Instant) -> Option<DoorEligibility> {
+fn door_offer(hand: Hand, reach: &Reach, state: &State, now: Stamp) -> Option<DoorEligibility> {
     let i = hand.index();
     let TargetKind::Door(door) = reach.kind else {
         return None;

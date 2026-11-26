@@ -1,7 +1,7 @@
 //! The pickups' state across ticks: each hand's hold, the grip it keeps on what it cannot simply
 //! carry, and what the input tick last asked of it.
 
-use std::{num::NonZeroUsize, time::Instant};
+use std::num::NonZeroUsize;
 
 use glam::Vec3;
 use jc3vr_body::controllers::{
@@ -11,6 +11,7 @@ use jc3vr_body::controllers::{
         world_reach::{Reach, TargetKind},
     },
 };
+use jc3vr_core::published::Stamp;
 use jc3vr_input::frame::{Hand, Pose};
 
 use crate::controllers::physical_hands::{
@@ -44,7 +45,7 @@ pub(crate) struct PickupState {
     pub(crate) evidence_holds: [Option<RequestKey>; 2],
     pub(crate) scans: [Scan; 2],
     /// When the input tick last acted on the grips.
-    pub(crate) input_at: Option<Instant>,
+    pub(crate) input_at: Option<Stamp>,
     /// The player character's world velocity at the last tick, from which a carried object takes
     /// on the character's change of velocity.
     pub(crate) carrier_velocity: Option<Vec3>,

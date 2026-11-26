@@ -4,10 +4,9 @@
 //! ([`crate::controllers::physical_hands::stunt`]), and the held objects' impacts
 //! ([`crate::controllers::physical_hands::impacts`]).
 
-use std::time::Duration;
-
 use jc3vr_core::{
     config::engine::{Invalid, nonnegative, positive, range},
+    published::Window,
     tuning::Tuning,
 };
 use serde::Deserialize;
@@ -88,14 +87,14 @@ pub struct StuntTuning {
 }
 
 impl StuntTuning {
-    /// [`reading_stale_after_ms`](Self::reading_stale_after_ms) as a duration.
-    pub fn reading_stale_after(&self) -> Duration {
-        Duration::from_millis(self.reading_stale_after_ms)
+    /// [`reading_stale_after_ms`](Self::reading_stale_after_ms) as a freshness window.
+    pub fn reading_stale_after(&self) -> Window {
+        Window::from_millis(self.reading_stale_after_ms)
     }
 
-    /// [`observation_stale_after_ms`](Self::observation_stale_after_ms) as a duration.
-    pub fn observation_stale_after(&self) -> Duration {
-        Duration::from_millis(self.observation_stale_after_ms)
+    /// [`observation_stale_after_ms`](Self::observation_stale_after_ms) as a freshness window.
+    pub fn observation_stale_after(&self) -> Window {
+        Window::from_millis(self.observation_stale_after_ms)
     }
 }
 
@@ -124,14 +123,14 @@ pub struct ImpactsTuning {
 }
 
 impl ImpactsTuning {
-    /// [`stale_after_ms`](Self::stale_after_ms) as a duration.
-    pub fn stale_after(&self) -> Duration {
-        Duration::from_millis(self.stale_after_ms)
+    /// [`stale_after_ms`](Self::stale_after_ms) as a freshness window.
+    pub fn stale_after(&self) -> Window {
+        Window::from_millis(self.stale_after_ms)
     }
 
-    /// [`contact_freshness_ms`](Self::contact_freshness_ms) as a duration.
-    pub fn contact_freshness(&self) -> Duration {
-        Duration::from_millis(self.contact_freshness_ms)
+    /// [`contact_freshness_ms`](Self::contact_freshness_ms) as a freshness window.
+    pub fn contact_freshness(&self) -> Window {
+        Window::from_millis(self.contact_freshness_ms)
     }
 }
 

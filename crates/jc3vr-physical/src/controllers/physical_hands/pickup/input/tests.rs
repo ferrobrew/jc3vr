@@ -1,4 +1,4 @@
-use std::{num::NonZeroUsize, time::Instant};
+use std::num::NonZeroUsize;
 
 use glam::{Quat, Vec3};
 use jc3gi::vehicle::vehicle::DoorSlot;
@@ -11,6 +11,7 @@ use jc3vr_body::controllers::{
     intent::controls::ButtonControl,
     physics::rigid::BodyPose,
 };
+use jc3vr_core::published::Stamp;
 use jc3vr_input::frame::Pose;
 
 use super::*;
@@ -206,7 +207,7 @@ fn produce_hands(
 }
 
 fn consume_without_native(state: &mut PickupState) {
-    state.input_at = Some(Instant::now());
+    state.input_at = Some(Stamp::now());
     // SAFETY: generated releases remove all owners; no palms means no throws or shoves.
     unsafe { tick::tick(state, tick_inputs(), PICKUP.get()) };
 }

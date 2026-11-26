@@ -1,12 +1,10 @@
 //! The pre-simulation half of the hand climbing's tick: take and end the grips, and move the
 //! player while a hand grips.
 
-use std::time::Instant;
-
 use glam::{Quat, Vec3};
 use jc3gi::character::character::Character;
 use jc3vr_body::controllers::physics::GRAVITY_MPS2;
-use jc3vr_core::published::Step;
+use jc3vr_core::published::{Stamp, Step};
 use jc3vr_input::frame::Hand;
 use jc3vr_view::headpose::teleport;
 
@@ -37,7 +35,7 @@ pub unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2] {
     let context = unsafe { engine::gate_context() };
     native::observe(context);
     let mut state = STATE.lock();
-    state.stepped = Some(Instant::now());
+    state.stepped = Some(Stamp::now());
     let character = unsafe { Character::GetLocalPlayerCharacter() };
     let player =
         unsafe { character.as_ref() }.map(|c| (character as usize, c.m_PfxCharacter.px as usize));
@@ -59,10 +57,7 @@ pub unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2] {
     let reason = if teleport::epoch() != state.epoch {
         state.epoch = teleport::epoch();
         Some("the player was teleported")
-    } else if state
-        .input_at
-        .is_none_or(|at| Instant::now().saturating_duration_since(at) > climb.stale_after())
-    {
+    } else if !climb.stale_after().holds(state.input_at, Stamp::now()) {
         Some("the hand input stopped publishing")
     } else if !climb
         .publish_window()
@@ -373,7 +368,7 @@ pub unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2] {
         }
         MantleStep::Completed(landing) => {
             if let (Some((owner, landing)), Some(context)) = (landing, context) {
-                unsafe { native::landed(context, owner, landing, Instant::now()) };
+                unsafe { native::landed(context, owner, landing, Stamp::now()) };
             }
             for hand in Hand::BOTH {
                 if state.grips[hand.index()].take().is_some() {
@@ -412,12 +407,12 @@ pub unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2] {
     );
     state.motion_grips = motion_grips;
     if let Some(context) = context {
-        unsafe { native::hold(context, motion_grips, Instant::now()) };
+        unsafe { native::hold(context, motion_grips, Stamp::now()) };
     }
     state.status.velocity = velocity;
     state.status.climbing = true;
     state.status.mantling = state.mantle.is_some();
-    let now = Instant::now();
+    let now = Stamp::now();
     if state
         .logged_at
         .is_none_or(|at| now.saturating_duration_since(at) >= LOG_PERIOD)

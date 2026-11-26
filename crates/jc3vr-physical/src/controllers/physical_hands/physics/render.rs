@@ -4,11 +4,10 @@
 //! carries them into the world. They are not interpolated across physics steps: doing so mixes
 //! an old collision response with the current tracking and transport frame.
 
-use std::time::Instant;
-
 use body_rig::rotation::shortest;
 use glam::{Quat, Vec3};
 use jc3vr_body::controllers::hands::CockpitHand;
+use jc3vr_core::published::Stamp;
 use jc3vr_input::frame::{Hand, Pose};
 
 /// The offset that draws a hand where its body is.
@@ -109,13 +108,13 @@ pub fn apply_offsets(
 /// The latest pre-step offset, retained as a fallback when a post-step body read fails.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct OffsetTimeline {
-    current: Option<([RenderOffset; 2], Instant)>,
+    current: Option<([RenderOffset; 2], Stamp)>,
 }
 
 impl OffsetTimeline {
     pub const EMPTY: Self = Self { current: None };
 
-    pub fn push(&mut self, offsets: [RenderOffset; 2], at: Instant) {
+    pub fn push(&mut self, offsets: [RenderOffset; 2], at: Stamp) {
         self.current = Some((offsets, at));
     }
 
@@ -124,7 +123,7 @@ impl OffsetTimeline {
     }
 
     /// Keep the latest result instead of introducing another step of presentation delay.
-    pub fn at(&self, _now: Instant) -> Option<[RenderOffset; 2]> {
+    pub fn at(&self, _now: Stamp) -> Option<[RenderOffset; 2]> {
         self.current.map(|(offsets, _)| offsets)
     }
 }
@@ -246,7 +245,7 @@ mod tests {
 
     #[test]
     fn the_latest_step_is_visible_immediately_without_an_extra_blend_interval() {
-        let now = Instant::now();
+        let now = Stamp::now();
         let mut timeline = OffsetTimeline::EMPTY;
         assert!(timeline.at(now).is_none());
         timeline.push([RenderOffset::NONE; 2], now);

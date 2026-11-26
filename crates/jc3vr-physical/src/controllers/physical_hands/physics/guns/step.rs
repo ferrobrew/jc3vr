@@ -10,8 +10,6 @@
 //! outside the step: from the pre-simulation callback, or from the shutdown cleanup on the game
 //! thread.
 
-use std::time::Instant;
-
 use body_rig::{geometry::point_velocity, rotation::angle};
 use glam::Vec3;
 use jc3gi::physics::CustomGroupCollisionFilter;
@@ -19,6 +17,7 @@ use jc3vr_body::controllers::held::{
     guns as held_guns,
     guns::{GunBodyStatus, GunHolds, HeldGun, MassSource, StepRecord},
 };
+use jc3vr_core::published::Stamp;
 use jc3vr_input::frame::{Hand, Pose};
 use parking_lot::Mutex;
 
@@ -59,7 +58,7 @@ pub(crate) struct GunSlot {
 struct Brace {
     joint: Joint,
     frame: Pose,
-    made: Instant,
+    made: Stamp,
 }
 
 /// What one step's gun phase works from.
@@ -91,7 +90,7 @@ pub(crate) struct GunStep<'a> {
 ///
 /// The thread that steps the physics world, outside the step.
 pub(crate) unsafe fn step(hands: &mut Hands, input: GunStep<'_>) {
-    let now = Instant::now();
+    let now = Stamp::now();
     let shots = held_guns::take_shots();
     let mut statuses = [None; 2];
     let mut deviations = [None; 2];
@@ -178,7 +177,8 @@ pub(crate) unsafe fn step(hands: &mut Hands, input: GunStep<'_>) {
         }
     }
     held_guns::record_step(StepRecord {
-        at: now,
+        // The held guns' readouts still run on `Instant`.
+        at: std::time::Instant::now(),
         statuses,
         deviations,
         support_broke: broken,
@@ -367,7 +367,7 @@ unsafe fn keep(
     input: &GunStep<'_>,
     shots: Option<(usize, u32)>,
     tally: &mut Tally,
-    now: Instant,
+    now: Stamp,
 ) -> Result<Kept, &'static str> {
     let i = hand.index();
     let off = hand.other();

@@ -10,12 +10,12 @@ use std::{
         Arc, LazyLock,
         atomic::{AtomicU64, Ordering},
     },
-    time::Instant,
 };
 
 use arc_swap::ArcSwapOption;
 use jc3gi::character::character::Character;
 use jc3vr_body::controllers::facts::climb::BodyIdentity;
+use jc3vr_core::published::Stamp;
 use jc3vr_view::headpose::teleport;
 
 use crate::controllers::physical_hands::climb::{
@@ -50,13 +50,13 @@ pub(crate) fn observe(context: Option<Context>) {
 }
 
 /// Publish only identities already validated by the serialized pre-simulation step.
-pub(crate) unsafe fn hold(context: Context, grips: [Option<Hold>; 2], now: Instant) {
+pub(crate) unsafe fn hold(context: Context, grips: [Option<Hold>; 2], now: Stamp) {
     GATE.validated(context, grips, Kind::Grips, now, |body| unsafe {
         engine::body_identity(body)
     });
 }
 
-pub(crate) unsafe fn landed(context: Context, hold: Hold, landing: Landing, now: Instant) {
+pub(crate) unsafe fn landed(context: Context, hold: Hold, landing: Landing, now: Stamp) {
     GATE.validated(
         context,
         [Some(hold), None],
@@ -67,7 +67,7 @@ pub(crate) unsafe fn landed(context: Context, hold: Hold, landing: Landing, now:
 }
 
 /// End physical locomotion without discarding a completed mantle awaiting input handoff.
-pub(crate) fn finish_grips(now: Instant) {
+pub(crate) fn finish_grips(now: Stamp) {
     GATE.finish_grips(now);
 }
 
@@ -80,7 +80,7 @@ pub(crate) fn reject_landing() {
 }
 
 pub(crate) fn take_landing(
-    now: Instant,
+    now: Stamp,
     valid: impl FnOnce(Landing) -> bool,
 ) -> Option<LandingOffer<'static>> {
     GATE.take_landing(now, valid)
@@ -105,7 +105,7 @@ pub(crate) unsafe fn blocks(character: *const Character) -> bool {
     if DELIBERATE.with(|owner| owner.get() == caller.character && owner.get() != 0) {
         return false;
     }
-    GATE.blocks(caller, Instant::now(), lifetime::stamp)
+    GATE.blocks(caller, Stamp::now(), lifetime::stamp)
 }
 
 /// Permit only the synchronous, owner-checked mantle entry on the calling thread.
@@ -148,7 +148,7 @@ enum Kind {
 struct Claim {
     context: Context,
     generation: u64,
-    at: Instant,
+    at: Stamp,
     proofs: [Option<Hold>; 2],
     kind: Kind,
 }
@@ -188,14 +188,14 @@ impl Gate {
         context: Context,
         holds: [Option<Hold>; 2],
         kind: Kind,
-        now: Instant,
+        now: Stamp,
         mut identity: impl FnMut(u32) -> Option<BodyIdentity>,
     ) {
         let proofs = holds.map(|hold| hold.filter(|h| identity(h.body) == Some(h.identity)));
         self.publish(context, proofs, kind, now);
     }
 
-    fn publish(&self, context: Context, proofs: [Option<Hold>; 2], kind: Kind, now: Instant) {
+    fn publish(&self, context: Context, proofs: [Option<Hold>; 2], kind: Kind, now: Stamp) {
         let observed = self.context.load_full();
         let Some(observed) = observed.filter(|o| o.context == context) else {
             return;
@@ -231,16 +231,16 @@ impl Gate {
         })));
     }
 
-    fn current(&self, claim: &Claim, now: Instant) -> bool {
+    fn current(&self, claim: &Claim, now: Stamp) -> bool {
         let observed = self.context.load();
-        now.saturating_duration_since(claim.at) <= CLIMB.get().climb.stale_after()
+        CLIMB.get().climb.stale_after().holds(claim.at, now)
             && claim.generation == self.generation.load(Ordering::Acquire)
             && observed
                 .as_ref()
                 .is_some_and(|o| o.generation == claim.generation && o.context == claim.context)
     }
 
-    fn blocks(&self, caller: Caller, now: Instant, stamp: impl Fn(usize, u32) -> u64) -> bool {
+    fn blocks(&self, caller: Caller, now: Stamp, stamp: impl Fn(usize, u32) -> u64) -> bool {
         let Some(claim) = self.claim.load_full() else {
             return false;
         };
@@ -261,7 +261,7 @@ impl Gate {
         self.claim.compare_and_swap(&Some(Arc::clone(claim)), None);
     }
 
-    fn finish_grips(&self, now: Instant) {
+    fn finish_grips(&self, now: Stamp) {
         if let Some(claim) = self.claim.load_full()
             && (matches!(claim.kind, Kind::Grips) || !self.current(&claim, now))
         {
@@ -279,7 +279,7 @@ impl Gate {
 
     fn take_landing(
         &self,
-        now: Instant,
+        now: Stamp,
         valid: impl FnOnce(Landing) -> bool,
     ) -> Option<LandingOffer<'_>> {
         let claim = self.claim.load_full()?;

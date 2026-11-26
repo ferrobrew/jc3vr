@@ -1,10 +1,11 @@
-use std::{num::NonZeroUsize, time::Instant};
+use std::num::NonZeroUsize;
 
 use glam::{Quat, Vec3};
 use jc3vr_body::controllers::{
     grab::{GripTarget, Mark, MarkAt, PickupKind, target::Tier, world_reach::TargetKind},
     physics::{GRAVITY_MPS2, rigid::BodyPose},
 };
+use jc3vr_core::published::Stamp;
 use jc3vr_input::frame::Pose;
 
 use super::*;
@@ -183,7 +184,7 @@ fn queue_replacement_and_no_palm_consumer_preserve_the_actual_request_key() {
     assert_eq!(record(key).consumer, ConsumerResult::Replaced);
     let key = queued(Hand::Left, context.hands[0], target());
     state.requests[0] = Some(Request::ObservedGrab(key));
-    state.input_at = Some(Instant::now());
+    state.input_at = Some(Stamp::now());
     // SAFETY: the no-palm branch has no body reads, writes, or engine calls.
     let outcome = unsafe {
         tick::tick(
@@ -219,7 +220,7 @@ fn an_evicted_observed_request_consumes_the_same_target_as_a_remote_grab() {
     let key = queued(hand, context.hands[i], target());
     let mut observed = PickupState::new();
     observed.requests[i] = Some(Request::ObservedGrab(key));
-    observed.input_at = Some(Instant::now());
+    observed.input_at = Some(Stamp::now());
     for _ in 0..REQUEST_CAPACITY {
         queued(hand, context.hands[i], target());
     }

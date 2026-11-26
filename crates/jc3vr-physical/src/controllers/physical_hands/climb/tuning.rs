@@ -1,11 +1,9 @@
 //! The hand climbing's and the push-up's tuning, read from the shipped `tuning/climb.toml`
 //! ([`CLIMB`]).
 
-use std::time::Duration;
-
 use jc3vr_core::{
     config::engine::{Invalid, nonnegative, positive, range},
-    published::StepWindow,
+    published::{StepWindow, Window},
     tuning::Tuning,
 };
 use serde::Deserialize;
@@ -112,9 +110,9 @@ pub struct HandClimbTuning {
 }
 
 impl HandClimbTuning {
-    /// [`HandClimbTuning::stale_after_ms`] as a duration.
-    pub fn stale_after(&self) -> Duration {
-        Duration::from_millis(self.stale_after_ms)
+    /// [`HandClimbTuning::stale_after_ms`] as a freshness window.
+    pub fn stale_after(&self) -> Window {
+        Window::from_millis(self.stale_after_ms)
     }
 
     /// How many physics steps the palms' tick's last run stays current for a step: the step after

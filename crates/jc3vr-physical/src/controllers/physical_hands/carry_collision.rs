@@ -1,4 +1,4 @@
-use std::{collections::HashSet, num::NonZeroUsize, time::Instant};
+use std::{collections::HashSet, num::NonZeroUsize};
 
 use jc3gi::{
     character::character::Character,
@@ -12,6 +12,7 @@ use jc3vr_body::controllers::{
     physics::{bodies, characters::proxy_body},
     scheme,
 };
+use jc3vr_core::published::Stamp;
 use parking_lot::Mutex;
 
 use crate::controllers::physical_hands::{
@@ -46,7 +47,7 @@ impl Subject {
 pub(super) fn publish(held: [Option<Subject>; 2]) {
     let mut state = STATE.lock();
     state.wanted = held;
-    state.published = Some(Instant::now());
+    state.published = Some(Stamp::now());
 }
 
 pub(super) unsafe fn step() {
@@ -54,12 +55,10 @@ pub(super) unsafe fn step() {
         && scheme::is_controllers()
         && jc3vr_core::hooks::in_gameplay()
         && !jc3vr_core::is_shutting_down();
-    let now = Instant::now();
+    let now = Stamp::now();
     let tuning = &PHYSICAL_HANDS.get().carry_collision;
     let mut state = STATE.lock();
-    let fresh = state
-        .published
-        .is_some_and(|at| now.saturating_duration_since(at) <= stale_after());
+    let fresh = stale_after().holds(state.published, now);
     let wanted = if enabled && fresh {
         state.wanted
     } else {
@@ -309,14 +308,14 @@ struct Lease {
     context: Context,
     a: Identity,
     b: Identity,
-    released: Option<Instant>,
+    released: Option<Stamp>,
 }
 
 impl Lease {
     fn retain(
         &mut self,
         held: bool,
-        now: Instant,
+        now: Stamp,
         overlapping: bool,
         force: bool,
         tuning: &CarryCollisionTuning,
@@ -336,7 +335,7 @@ impl Lease {
 
 struct State {
     wanted: [Option<Subject>; 2],
-    published: Option<Instant>,
+    published: Option<Stamp>,
     leases: Vec<Lease>,
     /// The bodies the leases last paired, carried and the player's, for logging each change.
     logged: (Vec<u32>, Vec<u32>),
@@ -481,7 +480,7 @@ mod tests {
             released: None,
         };
         let tuning = &PHYSICAL_HANDS.get().carry_collision;
-        let now = Instant::now();
+        let now = Stamp::now();
         let past_grace = now + Duration::from_secs_f32(tuning.release_grace_s * 2.0);
         assert!(lease.retain(true, now, true, false, tuning));
         assert!(lease.retain(false, now, true, false, tuning));

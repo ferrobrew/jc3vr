@@ -1,9 +1,10 @@
 //! Owned hold generations, event leases, and feedback planning without native calls.
 
-use std::{num::NonZeroUsize, time::Instant};
+use std::num::NonZeroUsize;
 
 use glam::Vec3;
 use jc3gi::physics::{hknpBody, hknpWorld};
+use jc3vr_core::published::Stamp;
 
 use crate::controllers::physical_hands::{
     characters::tuning::{CHARACTERS, ImpactsTuning},
@@ -103,16 +104,16 @@ impl Enabled {
 }
 
 pub(super) struct State {
-    published: Option<Instant>,
+    published: Option<Stamp>,
     wanted: [Option<Held>; 2],
     generations: [u64; 2],
     pub leases: [Option<Lease>; 2],
-    queue: Vec<(Contact, Instant)>,
-    recent_contacts: Vec<(Contact, Instant)>,
+    queue: Vec<(Contact, Stamp)>,
+    recent_contacts: Vec<(Contact, Stamp)>,
     gate: Gate,
     damage_gate: Vec<([Identity; 2], f64)>,
-    native: Vec<([Identity; 2], Identity, Instant)>,
-    start: Option<Instant>,
+    native: Vec<([Identity; 2], Identity, Stamp)>,
+    start: Option<Stamp>,
     pub status: Status,
 }
 
@@ -139,7 +140,7 @@ impl State {
         }
     }
 
-    pub fn publish(&mut self, held: [Option<Held>; 2], now: Instant) {
+    pub fn publish(&mut self, held: [Option<Held>; 2], now: Stamp) {
         let tuning = &CHARACTERS.get().impacts;
         let stale = !self.fresh(now, tuning);
         for (i, wanted) in held.iter().enumerate() {
@@ -154,16 +155,11 @@ impl State {
         self.prune_contacts(now, tuning);
     }
 
-    pub fn wanted(&self, now: Instant, enabled: Enabled) -> [Option<Held>; 2] {
+    pub fn wanted(&self, now: Stamp, enabled: Enabled) -> [Option<Held>; 2] {
         self.wanted_in(now, enabled, &CHARACTERS.get().impacts)
     }
 
-    fn wanted_in(
-        &self,
-        now: Instant,
-        enabled: Enabled,
-        tuning: &ImpactsTuning,
-    ) -> [Option<Held>; 2] {
+    fn wanted_in(&self, now: Stamp, enabled: Enabled, tuning: &ImpactsTuning) -> [Option<Held>; 2] {
         if enabled.active() && self.fresh(now, tuning) {
             self.wanted
         } else {
@@ -174,7 +170,7 @@ impl State {
     /// Keep and acquire leases from live observations, and plan only necessary native flag changes.
     pub fn plan_step(
         &mut self,
-        now: Instant,
+        now: Stamp,
         enabled: Enabled,
         observations: &[Observation],
     ) -> Vec<FlagCall> {
@@ -261,7 +257,7 @@ impl State {
         call
     }
 
-    pub fn queue(&mut self, contact: Contact, now: Instant) {
+    pub fn queue(&mut self, contact: Contact, now: Stamp) {
         let tuning = &CHARACTERS.get().impacts;
         self.prune_contacts(now, tuning);
         if !contact.character
@@ -285,18 +281,17 @@ impl State {
         }
     }
 
-    pub fn native(&mut self, pair: [Identity; 2], recipient: Identity, now: Instant) {
+    pub fn native(&mut self, pair: [Identity; 2], recipient: Identity, now: Stamp) {
         let tuning = &CHARACTERS.get().impacts;
         let stale_after = tuning.stale_after();
-        self.native
-            .retain(|(_, _, at)| now.saturating_duration_since(*at) <= stale_after);
+        self.native.retain(|(_, _, at)| stale_after.holds(*at, now));
         if self.native.len() >= tuning.max_native_hits {
             self.native.remove(0);
         }
         self.native.push((pair, recipient, now));
     }
 
-    pub fn deliver(&mut self, now: Instant, enabled: Enabled, valid: &[Identity]) -> Vec<Feedback> {
+    pub fn deliver(&mut self, now: Stamp, enabled: Enabled, valid: &[Identity]) -> Vec<Feedback> {
         let tuning = &CHARACTERS.get().impacts;
         let stale_after = tuning.stale_after();
         let wanted = self.wanted_in(now, enabled, tuning);
@@ -324,10 +319,7 @@ impl State {
                 contact.impulse,
                 &tuning.feedback,
             );
-            if now.saturating_duration_since(queued) > stale_after
-                || !live
-                || !hands.into_iter().any(|h| h)
-            {
+            if !stale_after.holds(queued, now) || !live || !hands.into_iter().any(|h| h) {
                 self.status.suppressed += 1;
                 continue;
             }
@@ -360,7 +352,7 @@ impl State {
                     native_hits.iter().any(|(native_pair, target, at)| {
                         *target == recipient
                             && (*native_pair == pair || *native_pair == [pair[1], pair[0]])
-                            && now.saturating_duration_since(*at) <= stale_after
+                            && stale_after.holds(*at, now)
                     })
                 })
             });
@@ -392,7 +384,7 @@ impl State {
         body: u32,
         owner: NonZeroUsize,
         lag: Vec3,
-        now: Instant,
+        now: Stamp,
         enabled: Enabled,
     ) -> Vec3 {
         if !enabled.active() || !lag.is_finite() {
@@ -405,9 +397,8 @@ impl State {
         for &(contact, at) in &self.recent_contacts {
             if contact.identity.body != body
                 || contact.identity.owner != owner
-                || now
-                    .checked_duration_since(at)
-                    .is_none_or(|age| age > freshness)
+                || at > now
+                || !freshness.holds(at, now)
                 || !self.contact_live(contact, now, tuning)
             {
                 continue;
@@ -440,7 +431,7 @@ impl State {
         }
     }
 
-    fn contact_live(&self, contact: Contact, now: Instant, tuning: &ImpactsTuning) -> bool {
+    fn contact_live(&self, contact: Contact, now: Stamp, tuning: &ImpactsTuning) -> bool {
         self.fresh(now, tuning)
             && self.leases.iter().flatten().any(|lease| {
                 lease.armed
@@ -453,20 +444,18 @@ impl State {
             })
     }
 
-    fn prune_contacts(&mut self, now: Instant, tuning: &ImpactsTuning) {
+    fn prune_contacts(&mut self, now: Stamp, tuning: &ImpactsTuning) {
         let freshness = tuning.contact_freshness();
         let contacts = std::mem::take(&mut self.recent_contacts);
         self.recent_contacts = contacts
             .into_iter()
             .filter(|(contact, at)| {
-                now.checked_duration_since(*at)
-                    .is_some_and(|age| age <= freshness)
-                    && self.contact_live(*contact, now, tuning)
+                *at <= now && freshness.holds(*at, now) && self.contact_live(*contact, now, tuning)
             })
             .collect();
     }
 
-    pub fn clear(&mut self, now: Instant) {
+    pub fn clear(&mut self, now: Stamp) {
         self.publish([None; 2], now);
         self.queue.clear();
         self.recent_contacts.clear();
@@ -475,9 +464,8 @@ impl State {
         self.native.clear();
     }
 
-    fn fresh(&self, now: Instant, tuning: &ImpactsTuning) -> bool {
-        self.published
-            .is_some_and(|at| now.saturating_duration_since(at) <= tuning.stale_after())
+    fn fresh(&self, now: Stamp, tuning: &ImpactsTuning) -> bool {
+        tuning.stale_after().holds(self.published, now)
     }
 }
 

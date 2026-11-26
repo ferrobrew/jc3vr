@@ -5,7 +5,7 @@
 //! countdowns before the native update subtracts it, so the object stays until the hands let go.
 //! Destruction, streaming, and explicit world removal are not affected.
 
-use std::{num::NonZeroUsize, time::Instant};
+use std::num::NonZeroUsize;
 
 use detours_macro::detour;
 use jc3gi::game_world_object_manager::GameWorldObjectManager;
@@ -14,6 +14,7 @@ use jc3vr_body::controllers::{
     physics::{bodies, refs::Weak},
     scheme,
 };
+use jc3vr_core::published::Stamp;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 use windows::Win32::System::Threading::{
@@ -31,7 +32,7 @@ pub fn hook_library() -> HookLibrary {
 /// # Safety
 /// The game thread, outside the world update.
 pub unsafe fn publish(held: [Option<(NonZeroUsize, u32)>; 2]) {
-    let now = Instant::now();
+    let now = Stamp::now();
     let mut state = STATE.lock();
     state.published = Some(now);
     state.wanted = held;
@@ -75,7 +76,7 @@ fn update_remove_queue(manager: *mut GameWorldObjectManager, dt: f32) {
         UPDATE_REMOVE_QUEUE.get().unwrap().call(manager, dt);
         return;
     };
-    let proofs = held_proofs(Instant::now());
+    let proofs = held_proofs(Stamp::now());
     let lock = manager.m_RemoveQueueLock;
     if proofs.is_empty() || lock.is_null() || !dt.is_finite() || dt <= 0.0 {
         UPDATE_REMOVE_QUEUE.get().unwrap().call(manager, dt);
@@ -95,7 +96,7 @@ fn update_remove_queue(manager: *mut GameWorldObjectManager, dt: f32) {
 }
 
 /// The held objects still in the world, as their game object and control block.
-fn held_proofs(now: Instant) -> Vec<(usize, usize)> {
+fn held_proofs(now: Stamp) -> Vec<(usize, usize)> {
     let state = STATE.lock();
     if !active(&state, now) {
         return Vec::new();
@@ -116,10 +117,8 @@ fn held_proofs(now: Instant) -> Vec<(usize, usize)> {
         .collect()
 }
 
-fn active(state: &State, now: Instant) -> bool {
-    state
-        .published
-        .is_some_and(|at| now.saturating_duration_since(at) <= stale_after())
+fn active(state: &State, now: Stamp) -> bool {
+    stale_after().holds(state.published, now)
         && jc3vr_core::hooks::in_gameplay()
         && !jc3vr_core::is_shutting_down()
         && scheme::is_controllers()
@@ -136,7 +135,7 @@ struct Proof {
 
 struct State {
     wanted: [Option<(NonZeroUsize, u32)>; 2],
-    published: Option<Instant>,
+    published: Option<Stamp>,
     proofs: Vec<Proof>,
 }
 

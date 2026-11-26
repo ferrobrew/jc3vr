@@ -1,4 +1,4 @@
-use std::{num::NonZeroUsize, time::Instant};
+use std::num::NonZeroUsize;
 
 use glam::Vec3;
 use jc3gi::vehicle::vehicle::DoorSlot;
@@ -6,6 +6,7 @@ use jc3vr_body::controllers::grab::{
     GripTarget,
     world_reach::{DoorTarget, Reach, TargetKind},
 };
+use jc3vr_core::published::Stamp;
 use jc3vr_input::frame::Hand;
 
 use crate::controllers::physical_hands::{
@@ -23,7 +24,7 @@ use crate::controllers::physical_hands::{
 /// An isolated source for the production provider and final validation helpers.
 pub struct DoorProvider {
     state: State,
-    now: Instant,
+    now: Stamp,
 }
 
 impl Default for DoorProvider {
@@ -34,7 +35,7 @@ impl Default for DoorProvider {
 
 impl DoorProvider {
     pub fn new() -> Self {
-        let now = Instant::now();
+        let now = Stamp::now();
         Self {
             state: State {
                 status: PhysicalHandsStatus::default(),
@@ -89,7 +90,7 @@ impl DoorProvider {
     }
 
     pub fn expire(&mut self) {
-        self.now += stale_after() + std::time::Duration::from_millis(1);
+        self.now = self.now + stale_after().duration() + std::time::Duration::from_millis(1);
     }
 
     pub fn replace_source(&mut self) {

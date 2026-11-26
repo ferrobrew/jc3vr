@@ -4,9 +4,10 @@
 //! body never stops, parks, or goes while a gun body hangs from it: the gun's joints, and with a
 //! holding hand the gun body, go first ([`drop_hand`]).
 
-use std::{num::NonZeroUsize, time::Instant};
+use std::num::NonZeroUsize;
 
 use glam::Vec3;
+use jc3vr_core::published::Stamp;
 use jc3vr_input::frame::{Hand, Pose};
 use parking_lot::Mutex;
 
@@ -88,9 +89,9 @@ pub(super) struct Hands {
     /// Where each controller's palm was predicted for the end of the last step, world space.
     palms: [Option<Goal>; 2],
     /// When each hand stopped acting.
-    pub missing_since: [Option<Instant>; 2],
+    pub missing_since: [Option<Stamp>; 2],
     resets: [u64; 2],
-    pub last_log: Option<Instant>,
+    pub last_log: Option<Stamp>,
 }
 
 pub(super) static HANDS: Mutex<Hands> = Mutex::new(Hands {

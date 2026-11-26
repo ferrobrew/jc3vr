@@ -1,10 +1,9 @@
 //! The physical hands' readout: why the palms did nothing on the last tick, and what each one did
 //! when they acted.
 
-use std::time::Instant;
-
 use glam::{Vec2, Vec3};
 use jc3vr_body::controllers::grab::world_reach::Reach;
+use jc3vr_core::published::Stamp;
 use jc3vr_input::frame::Hand;
 
 use crate::controllers::physical_hands::{
@@ -136,7 +135,7 @@ pub(crate) fn palm_readout(hand: Hand) -> PalmReadout {
         let state = STATE.lock();
         let age_ms = state
             .at
-            .map(|at| Instant::now().saturating_duration_since(at).as_millis());
+            .map(|at| Stamp::now().saturating_duration_since(at).as_millis());
         let status = &state.status;
         (
             status.idle,

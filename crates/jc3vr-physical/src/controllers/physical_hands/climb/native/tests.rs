@@ -2,6 +2,7 @@ use std::{cell::Cell, time::Duration};
 
 use glam::Vec3;
 use jc3vr_body::controllers::facts::climb::BodyIdentity;
+use jc3vr_core::published::Stamp;
 
 use super::*;
 
@@ -52,7 +53,7 @@ fn landing(owner: Hold) -> Landing {
     }
 }
 
-fn pending(gate: &Gate, at: Instant) {
+fn pending(gate: &Gate, at: Stamp) {
     gate.observe(Some(context()));
     gate.publish(
         context(),
@@ -65,7 +66,7 @@ fn pending(gate: &Gate, at: Instant) {
 #[test]
 fn worker_adapter_uses_only_caller_proof_and_atomic_stamps() {
     let gate = Gate::new();
-    let now = Instant::now();
+    let now = Stamp::now();
     gate.observe(Some(context()));
     // Serialized validation rejects the recycled identity before it can become a proof.
     gate.validated(context(), [Some(hold(10)), None], Kind::Grips, now, |_| {
@@ -114,7 +115,7 @@ fn worker_adapter_uses_only_caller_proof_and_atomic_stamps() {
     }
     assert!(!gate.blocks(
         caller(),
-        now + CLIMB.get().climb.stale_after() + Duration::from_nanos(1),
+        now + CLIMB.get().climb.stale_after().duration() + Duration::from_nanos(1),
         |_, _| panic!("expired proof must not read a stamp")
     ));
 }
@@ -122,7 +123,7 @@ fn worker_adapter_uses_only_caller_proof_and_atomic_stamps() {
 #[test]
 fn context_changes_and_clear_prevent_resurrecting_old_claims() {
     let gate = Gate::new();
-    let now = Instant::now();
+    let now = Stamp::now();
     for next in [
         None,
         Some(Context {
@@ -157,7 +158,7 @@ fn context_changes_and_clear_prevent_resurrecting_old_claims() {
 #[test]
 fn pending_landing_survives_extra_no_grip_steps_until_handoff_reject_consume_or_expiry() {
     let gate = Gate::new();
-    let at = Instant::now();
+    let at = Stamp::now();
     pending(&gate, at);
     let mut state = crate::controllers::physical_hands::climb::state::State::new();
     for millis in [10, 20, 40] {
@@ -185,7 +186,7 @@ fn pending_landing_survives_extra_no_grip_steps_until_handoff_reject_consume_or_
     assert!(!gate.blocks(caller(), at, |_, _| 8));
 
     pending(&gate, at);
-    let expired = at + CLIMB.get().climb.stale_after() + Duration::from_nanos(1);
+    let expired = at + CLIMB.get().climb.stale_after().duration() + Duration::from_nanos(1);
     gate.finish_grips(expired);
     assert!(
         gate.take_landing(expired, |_| panic!(
@@ -199,7 +200,7 @@ fn pending_landing_survives_extra_no_grip_steps_until_handoff_reject_consume_or_
 #[test]
 fn dropping_an_old_offer_cannot_clear_a_new_grip_claim() {
     let gate = Gate::new();
-    let at = Instant::now();
+    let at = Stamp::now();
     pending(&gate, at);
     let offer = gate.take_landing(at, |_| true).unwrap();
     gate.publish(context(), [Some(hold(11)), None], Kind::Grips, at);

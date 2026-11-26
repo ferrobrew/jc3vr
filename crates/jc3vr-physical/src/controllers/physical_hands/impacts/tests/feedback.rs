@@ -102,7 +102,7 @@ fn ownerless_contacts_still_require_the_original_live_hold() {
                 state.publish([held(observation), None], now);
                 state.plan_step(now, active(), &[observation]);
             }
-            3 => deliver_at += Duration::from_millis(251),
+            3 => deliver_at = deliver_at + Duration::from_millis(251),
             _ => unreachable!(),
         }
         assert!(state.deliver(deliver_at, active(), &valid).is_empty());

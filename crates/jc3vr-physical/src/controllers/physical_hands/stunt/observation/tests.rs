@@ -1,12 +1,14 @@
 use std::{
     cell::Cell,
     ptr::{self, NonNull},
+    time::Duration,
 };
 
 use jc3gi::{
     animation::rule_system::{AnimationRuleSystem, State, StateMachineInstance},
     types::shared_ptr::SharedPtr,
 };
+use jc3vr_core::published::Stamp;
 
 use super::*;
 
@@ -87,7 +89,7 @@ fn context() -> Context {
 
 #[test]
 fn only_fresh_matching_explicit_not_owned_observations_admit_movement() {
-    let now = Instant::now();
+    let now = Stamp::now();
     let stale_after = CHARACTERS.get().stunt.observation_stale_after();
     for owner in [
         MovementOwner::ObservedKnown(false),
@@ -121,7 +123,7 @@ fn only_fresh_matching_explicit_not_owned_observations_admit_movement() {
         assert_eq!(
             observation.current(
                 Some(context()),
-                now + stale_after + Duration::from_nanos(1),
+                now + stale_after.duration() + Duration::from_nanos(1),
                 stale_after
             ),
             None
