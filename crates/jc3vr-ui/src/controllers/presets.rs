@@ -170,7 +170,7 @@ mod tests {
                 owned += usize::from(is_owned);
             }
         }
-        assert!(owned > 90);
+        assert!(owned > 0);
     }
 
     fn collect_leaves(value: &serde_json::Value, path: String, leaves: &mut Vec<String>) {

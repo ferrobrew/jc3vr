@@ -476,7 +476,7 @@ A setting marked "off" below is off by default and has to be switched on to test
 | Bindings and injection | `bindings.move_deadzone`, `dominant_hand`, `locomotion.direction` (`Head` or `OffHand`) | Built for every mode. An off-hand grip press inside a grab volume (milestone 3) grabs, and elsewhere fires the grapple. Falling and under the parachute the dominant hand keeps the on-foot fire, reload, and grenade bindings. The wingsuit's evade is unbound. |
 | Gamepad semantics | none; always on under the controller scheme | Built. |
 | Aim-state pin and mental-state cuts | The arm aim IK skip, the pins, the neutral aim point, the wall-block clear, and the mental-state cuts act whenever the controller scheme is in effect | Built, except the strafe reference correction (see "The aim-state pin"). |
-| Hands | `hands.ik`, `hands.late_update`, `hands.grip`; the tier table is fixed at `HandTierTable::PLAN` | The free and yielded tiers are built; milestones 3 and 4 add the action-runs and anchored tiers. A state assigned a tier that is not built for it yields. A left-handed layout mirrors the bindings but does not move a single gun to the left hand: the gun stays on the attach bone the game gives it, and the pouches are laid out around whichever hand holds it rather than the dominant hand. Swapping a single gun's attach bone to the dominant hand, as the dual-wield layout already does for the pistols, is a future item; it needs the two-handed weapons' foregrip geometry and the sight corrections checked for the mirrored hold. The grapple wire's render-time correction and elbow pole hints are not built. |
+| Hands | `hands.grip`; the tier table is fixed at `HandTierTable::PLAN` | The free and yielded tiers are built; milestones 3 and 4 add the action-runs and anchored tiers. A state assigned a tier that is not built for it yields. A left-handed layout mirrors the bindings but does not move a single gun to the left hand: the gun stays on the attach bone the game gives it, and the pouches are laid out around whichever hand holds it rather than the dominant hand. Swapping a single gun's attach bone to the dominant hand, as the dual-wield layout already does for the pistols, is a future item; it needs the two-handed weapons' foregrip geometry and the sight corrections checked for the mirrored hold. The grapple wire's render-time correction and elbow pole hints are not built. |
 | Gun aiming | `aim.sights`; the ray length is `RAY_LENGTH_M` in `controllers::aim` | Built. The sight line starts from the fire point, corrected by the config entry or the embedded table (milestone 5). |
 | Grapple aiming | No settings; the assist's cone is `GRAPPLE_CONE_DEG` in `controllers::aim::assist`, and the ray's origin is `GRAPPLE_ORIGIN_M` in `controllers::aim` | Built. |
 | World-space overlay | `overlay.markers` (on), and the diagnostics `overlay.body_rig` (on), `overlay.docked_guns` (on), `overlay.body_mirror` (off), and `overlay.body_estimate` (off) | Built. |
@@ -489,7 +489,7 @@ The settings are under `roomscale`, except the head remap (`body.remap_head`). T
 |---|---|---|
 | Posture and STAGE space | `posture` (`Auto`, `Seated`, or `Standing`) | Built. `Auto` detects seated from the head height (`roomscale::posture::AUTO_POSTURE`). |
 | Head height remap | `body.remap_head` (on) | Built. |
-| Seated crouch toggle | `bindings.crouch_flick` | Built. It works with or without the head remap. |
+| Seated crouch toggle | No settings; the flick is `CROUCH_FLICK` in `intent::config` | Built. It works with or without the head remap. |
 | The body following the head and the teleport re-base | `body.rig.steps` (on) | Built ([rig.md](../body/rig.md)). |
 | The head-through-geometry fade | `head_fade.enabled` (on) | Built. The fade darkens the image in the VR blit. |
 | The crouch capsule | No settings; the depths are `CROUCH_ENTER_DROP_M` and `CROUCH_EXIT_DROP_M` in `roomscale::crouch` | Built. The AI response to a lowered head is not measured. |
@@ -507,8 +507,8 @@ The settings are under `weapons` unless named otherwise. The description is in [
 | Recoil | `recoil.kick_scale`; the spring tuning is fixed in `controllers::weapons::recoil`, and the game's camera kick is always suppressed while the guns aim by hand | Built. |
 | Haptics | `haptics.enabled`, `haptics.intensity`, and `haptics.game_rumble` ([haptics.md](haptics.md)) | Built. |
 | Separate pistols | none | Built, as part of the two-handed inventory: each pistol its own weapon, a pistol in each hand ([physical-weapons.md, "Separate pistols"](physical-weapons.md#separate-pistols)). |
-| The anchored tier for the grapple line and the hang push | `hands.anchor.enabled`, which also carries the hang push; the swing tuning is fixed in `controllers::hands::anchor` | Built for the reel and hang states. A grapple hand that holds anything (a gun, a prop, a grenade, or a charge) stays free. |
-| The yank gesture | `bindings.yank.enabled`; the detector is fixed at `GRAPPLE_YANK` | Built. It is disarmed while the line carries the character (the reel-in and the hang). |
+| The anchored tier for the grapple line and the hang push | No settings; the swing tuning is fixed in `controllers::hands::anchor` | Built for the reel and hang states. A grapple hand that holds anything (a gun, a prop, a grenade, or a charge) stays free. |
+| The yank gesture | No settings; the detector is fixed at `GRAPPLE_YANK` | Built. It is disarmed while the line carries the character (the reel-in and the hang). |
 | F7 on foot | none | Re-bases yaw and height only out of a vehicle seat, and the rig snaps the pelvis under the neck ([rig.md, "Recentering"](../body/rig.md#recentering)). |
 
 ### Milestone 4: vehicles and flight
