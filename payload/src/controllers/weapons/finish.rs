@@ -8,48 +8,45 @@ use jc3gi::{
     input::input_action_map::Action,
 };
 
-use crate::{
-    config::Config,
-    controllers::{
-        bindings::{
-            controls::ButtonControl,
-            hold::{Desired, MapKind},
+use crate::controllers::{
+    bindings::{
+        controls::ButtonControl,
+        hold::{Desired, MapKind},
+    },
+    config::{CONTROLLERS_CONFIG, ControllersConfig},
+    diagnostics,
+    fingers::grip::{self, Grip, GripSource},
+    frame::{self, Hand},
+    grab::{GrabVolume, resolve::dock_target},
+    hands::{
+        self, ActiveHands, pose as hand_pose,
+        tiers::{self, HandTier, TierState},
+    },
+    haptics::{self, Event},
+    loadout::{
+        Socket,
+        grab::{self, GrabRules, Release, SocketMove, SocketRefusal},
+        live,
+    },
+    mode, motion,
+    physical_hands::physics::guns,
+    weapons::{
+        begin::with_holder,
+        c4::{self, tuning::C4Tuning},
+        capabilities::{
+            Capabilities, GunHand, gun_hands_now, gun_owners_now, tracked_hands, trigger_claims,
         },
-        config::ControllersConfig,
-        diagnostics,
-        fingers::grip::{self, Grip, GripSource},
-        frame::{self, Hand},
-        grab::{GrabVolume, resolve::dock_target},
-        hands::{
-            self, ActiveHands, pose as hand_pose,
-            tiers::{self, HandTier, TierState},
-        },
-        haptics::{self, Event},
-        loadout::{
-            Socket,
-            grab::{self, GrabRules, Release, SocketMove, SocketRefusal},
-            live,
-        },
-        mode, motion,
-        physical_hands::physics::guns,
-        weapons::{
-            begin::with_holder,
-            c4::{self, tuning::C4Tuning},
-            capabilities::{
-                Capabilities, GunHand, gun_hands_now, gun_owners_now, tracked_hands, trigger_claims,
-            },
-            docks::attract::{self, ATTRACTION},
-            dual_wield::single,
-            engine,
-            foregrip::{self, FOREGRIP, GripGeometry, Inputs, Transition, TwoHandedWeapon},
-            grenade,
-            hold::{self, armed, tick},
-            regions::{self, GunRegion},
-            reload::{self, fire_hold::FireHold},
-            state::STATE,
-            types::{GrabEvent, GrabOutcome, SocketOutcome},
-            weighted_hands,
-        },
+        docks::attract::{self, ATTRACTION},
+        dual_wield::single,
+        engine,
+        foregrip::{self, FOREGRIP, GripGeometry, Inputs, Transition, TwoHandedWeapon},
+        grenade,
+        hold::{self, armed, tick},
+        regions::{self, GunRegion},
+        reload::{self, fire_hold::FireHold},
+        state::STATE,
+        types::{GrabEvent, GrabOutcome, SocketOutcome},
+        weighted_hands,
     },
 };
 
@@ -93,7 +90,7 @@ pub(crate) fn finish_tick(
         dt,
         real_dt,
     } = *inputs;
-    let config = Config::lock_query(|c| c.controllers.clone());
+    let config = CONTROLLERS_CONFIG.lock().clone();
     let active = hands::active_hands_raw();
     let capabilities = Capabilities::of(mode::current().mode);
     let source_guns = gun_owners_now();

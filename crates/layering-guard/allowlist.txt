@@ -66,12 +66,6 @@ payload/src/controllers/vehicles/driver_aim.rs -> payload
 payload/src/controllers/vehicles/look_steer.rs -> payload
 payload/src/controllers/vehicles/mounted/runtime.rs -> payload
 payload/src/controllers/vehicles/rail/mod.rs -> payload
-payload/src/controllers/weapons/begin/mod.rs -> payload
-payload/src/controllers/weapons/camera_kick.rs -> payload
-payload/src/controllers/weapons/empty.rs -> payload
-payload/src/controllers/weapons/finish.rs -> payload
-payload/src/controllers/weapons/fire.rs -> payload
-payload/src/controllers/weapons/unarmed_fire.rs -> payload
 payload/src/debug/trace.rs -> payload
 payload/src/image_writer.rs -> payload
 payload/src/screenshot/harness/mod.rs -> payload

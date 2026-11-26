@@ -8,53 +8,50 @@ use glam::{Mat4, Vec3};
 use jc3gi::equipment::weapon::WeaponBase;
 use parking_lot::Mutex;
 
-use crate::{
-    config::Config,
-    controllers::{
-        body::rig::{frames::SkeletonLandmarks, skeleton},
-        config::ControllersConfig,
-        frame::{Hand, Pose},
-        grab::{self, Candidate, GrabVolume, GripTarget, Mark, MarkAt, MarkStyle, Shown},
-        hands::{self, ActiveHands, CockpitHand, pose as hand_pose},
-        haptics::{self, Event},
-        loadout::{
-            LoadoutSnapshot,
-            grab::{GrabRules, swaps},
-            live,
+use crate::controllers::{
+    body::rig::{frames::SkeletonLandmarks, skeleton},
+    config::{CONTROLLERS_CONFIG, ControllersConfig},
+    frame::{Hand, Pose},
+    grab::{self, Candidate, GrabVolume, GripTarget, Mark, MarkAt, MarkStyle, Shown},
+    hands::{self, ActiveHands, CockpitHand, pose as hand_pose},
+    haptics::{self, Event},
+    loadout::{
+        LoadoutSnapshot,
+        grab::{GrabRules, swaps},
+        live,
+    },
+    locomotion,
+    mode::{AirborneVariant, Mode, OnFootVariant},
+    physical_hands::physics::guns,
+    weapons::{
+        ads,
+        begin::place::{CHARGE_MARK_M, Place, held_foregrip, mark_size},
+        c4,
+        capabilities::{Capabilities, gun_hands_now, tracked_hands, trigger_claims},
+        collide,
+        docks::{
+            self, SocketInputs, SocketUse,
+            attachments::Sample,
+            attract::{self, ATTRACTION},
         },
-        locomotion,
-        mode::{AirborneVariant, Mode, OnFootVariant},
-        physical_hands::physics::guns,
-        weapons::{
-            ads,
-            begin::place::{CHARGE_MARK_M, Place, held_foregrip, mark_size},
-            c4,
-            capabilities::{Capabilities, gun_hands_now, tracked_hands, trigger_claims},
-            collide,
-            docks::{
-                self, SocketInputs, SocketUse,
-                attachments::Sample,
-                attract::{self, ATTRACTION},
-            },
-            engine::{self, HeldWeapon},
-            foregrip::{self, FOREGRIP},
-            grenade::{self, tuning::GrenadeTuning},
-            grip_watch,
-            heft::{self, Heft},
-            hold::{self, armed},
-            hud_feed::hand_ammo,
-            inventory,
-            pouch_models::{self, Prop, ShownPouch},
-            pouch_return,
-            regions::{
-                self, GunRegion, GunShape, Observed,
-                engine::{self as region_engine, DockedLongGun},
-            },
-            reload, scope,
-            state::{OffTouch, STATE},
-            types::{TickStart, WieldedReadout},
-            volumes::{self, BodyFrame, ChestGrabbers, POUCHES, SOCKETS, StrideFilter},
+        engine::{self, HeldWeapon},
+        foregrip::{self, FOREGRIP},
+        grenade::{self, tuning::GrenadeTuning},
+        grip_watch,
+        heft::{self, Heft},
+        hold::{self, armed},
+        hud_feed::hand_ammo,
+        inventory,
+        pouch_models::{self, Prop, ShownPouch},
+        pouch_return,
+        regions::{
+            self, GunRegion, GunShape, Observed,
+            engine::{self as region_engine, DockedLongGun},
         },
+        reload, scope,
+        state::{OffTouch, STATE},
+        types::{TickStart, WieldedReadout},
+        volumes::{self, BodyFrame, ChestGrabbers, POUCHES, SOCKETS, StrideFilter},
     },
 };
 
@@ -65,7 +62,7 @@ mod socket_candidates;
 /// The first half of the weapon handling's input tick: read the weapons in the hands and return
 /// the weapon handling's grip targets. Called while the bindings inject, before the tables.
 pub(crate) fn begin_tick(mode: Mode) -> TickStart {
-    let config = Config::lock_query(|c| c.controllers.clone());
+    let config = CONTROLLERS_CONFIG.lock().clone();
     docks::publish_targets(None);
     let Some(active) = hands::active_hands_raw() else {
         crate::controllers::weapons::stand_down();

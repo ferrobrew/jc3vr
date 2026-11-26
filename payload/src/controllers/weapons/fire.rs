@@ -22,17 +22,15 @@ use detours_macro::detour;
 use jc3gi::equipment::weapon::{WeaponBase, WeaponData, WeaponState};
 use re_utilities::hook_library::HookLibrary;
 
-use crate::{
-    config::Config,
-    controllers::{
-        aim::gun,
-        frame::Hand,
-        hands::late,
-        haptics::rumble,
-        physical_hands::physics::guns,
-        scheme, vehicles,
-        weapons::{dual_wield, heft, hold::armed, recoil, reload},
-    },
+use crate::controllers::{
+    aim::gun,
+    config::CONTROLLERS_CONFIG,
+    frame::Hand,
+    hands::late,
+    haptics::rumble,
+    physical_hands::physics::guns,
+    scheme, vehicles,
+    weapons::{dual_wield, heft, hold::armed, recoil, reload},
 };
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -85,7 +83,7 @@ thread_local! {
 #[detour(address = jc3gi::equipment::weapon::WeaponBase::Fire_ProjectileBase_ADDRESS)]
 fn fire_projectile_base(weapon: *mut WeaponBase, gun_data: *mut WeaponData) {
     let original = || FIRE_PROJECTILE_BASE.get().unwrap().call(weapon, gun_data);
-    let config = Config::lock_query(|c| c.controllers.clone());
+    let config = CONTROLLERS_CONFIG.lock().clone();
     let acting = config.enabled && scheme::is_controllers();
     // The mounted gun the hands aim rides no hand; its kick goes to the handles.
     if acting && vehicles::is_mounted_weapon(weapon as usize) {
