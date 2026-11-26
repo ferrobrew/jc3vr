@@ -368,6 +368,7 @@ const fn transient(mode: Mode) -> bool {
 }
 
 /// Whether the mode changed within `window` of `now`.
+#[inline]
 pub fn mode_changed_within(published: &Published, now: Instant, window: Duration) -> bool {
     now.saturating_duration_since(published.mode_changed_at) < window
 }

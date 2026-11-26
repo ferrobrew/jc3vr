@@ -108,6 +108,7 @@ impl ControllersConfig {
     /// since OpenXR keeps those until the game restarts and the buttons stay laid out for it; a
     /// change of [`ControllersConfig::dominant_hand`] takes effect for the roles at the same
     /// restart as for the buttons, so the two never disagree.
+    #[inline]
     pub fn acting_hand(&self) -> Hand {
         acting_hand(self.dominant_hand, jc3vr_render::vr::input::bound_hand())
     }
@@ -145,6 +146,7 @@ impl Default for ControllersConfig {
 
 /// The hand the roles follow for a configured `dominant` hand and the hand the attached bindings
 /// were suggested for, `bound`, if any.
+#[inline]
 fn acting_hand(dominant: Hand, bound: Option<Hand>) -> Hand {
     bound.unwrap_or(dominant)
 }

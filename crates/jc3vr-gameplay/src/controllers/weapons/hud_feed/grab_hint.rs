@@ -31,6 +31,7 @@ pub enum Hint {
 
 impl Hint {
     /// The icons the hint shows, in drawing order.
+    #[inline]
     pub fn icons(self) -> impl Iterator<Item = IconId> {
         let (first, second) = match self {
             Hint::Take { icon, .. } => (icon, None),
