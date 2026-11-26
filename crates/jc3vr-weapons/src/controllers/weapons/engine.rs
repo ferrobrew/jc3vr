@@ -26,7 +26,7 @@ use jc3vr_input::frame::{Hand, Pose};
 
 use crate::controllers::{
     loadout::SLOTS,
-    weapons::foregrip::{FOREGRIP, GripGeometry},
+    weapons::{foregrip::GripGeometry, handling_tuning::HANDLING},
 };
 
 /// A weapon in the hands: its slot and the hands holding one of its guns.
@@ -417,7 +417,7 @@ pub unsafe fn measure_geometry(
         );
         local.position / world_scale
     } else {
-        barrel * FOREGRIP.fallback_distance_m
+        barrel * HANDLING.get().foregrip.fallback_distance_m
     };
     let (_, gun_rotation, gun_position) =
         Mat4::from(first.m_WorldMatrixT1).to_scale_rotation_translation();

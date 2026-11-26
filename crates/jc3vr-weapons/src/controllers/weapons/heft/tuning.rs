@@ -1,54 +1,14 @@
-//! The weight's fixed tuning, by weapon class.
+//! The weight's tuning, by weapon class: the `heft` section of the handling tuning
+//! ([`crate::controllers::weapons::handling_tuning::HANDLING`]).
 
-use jc3vr_body::controllers::held::guns::HeftClass;
-
-/// The weight's tuning.
-pub const HEFT: Heft = Heft {
-    reach_near_m: 0.3,
-    reach_far_m: 0.65,
-    sway_hz: 0.35,
-    max_angle_deg: 40.0,
-    sidearm: HeftTuning::NONE,
-    rifle: HeftTuning {
-        sag_deg: 8.0,
-        reach_sag_deg: 10.0,
-        lag_stiffness: 90.0,
-        lag_damping_ratio: 0.6,
-        sway_deg: 0.9,
-        kick_scale: 1.4,
-        spread_scale: 1.8,
-    },
-    heavy: HeftTuning {
-        sag_deg: 16.0,
-        reach_sag_deg: 14.0,
-        lag_stiffness: 30.0,
-        lag_damping_ratio: 0.55,
-        sway_deg: 1.8,
-        kick_scale: 1.8,
-        spread_scale: 2.5,
-    },
-    braced: BracedHeft {
-        strength: 1.0,
-        max_angle_deg: 8.0,
-        smg: BracedTuning {
-            sag_deg: 0.5,
-            stiffness: 5000.0,
-        },
-        rifle: BracedTuning {
-            sag_deg: 1.5,
-            stiffness: 1600.0,
-        },
-        heavy: BracedTuning {
-            sag_deg: 3.0,
-            stiffness: 500.0,
-        },
-    },
-};
+use jc3vr_body::{controllers::held::guns::HeftClass, tuning::Millis};
+use serde::Deserialize;
 
 /// The weight of a long weapon: held in one hand, a long gun sags, trails the hand on a spring,
 /// and sways, its kick grows, and its spread widens, all scaled by the weapon's class; braced on
 /// the foregrip, it keeps a lighter weight of its own ([`BracedHeft`]).
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Heft {
     /// The hand's distance from the head at which the reach sag starts, metres.
     pub reach_near_m: f32,
@@ -56,8 +16,20 @@ pub struct Heft {
     pub reach_far_m: f32,
     /// The sway's frequency, hertz; the two axes run at incommensurate multiples of it.
     pub sway_hz: f32,
+    /// The yaw sway's frequency relative to the pitch sway's.
+    pub sway_yaw_ratio: f32,
+    /// The yaw sway's phase offset from the pitch sway's, radians.
+    pub sway_yaw_phase: f32,
+    /// The yaw sway's share of the amplitude.
+    pub sway_yaw_share: f32,
+    /// The share of the sway that shows with the hand close in; all of it shows at full reach.
+    pub sway_near_share: f32,
     /// The furthest the weapon may trail or sag away from the controller, degrees.
     pub max_angle_deg: f32,
+    /// How long a published weapon stays in effect without a new input tick.
+    pub target_ms: Millis,
+    /// A gap longer than this between reads puts the spring at rest on its target.
+    pub max_gap_ms: Millis,
     /// Pistols, revolvers, and SMGs.
     pub sidearm: HeftTuning,
     /// Assault rifles, shotguns, and sniper rifles.
@@ -83,7 +55,8 @@ impl Heft {
 /// turn it on a critically damped spring, so it lags a quick swing a little and settles on the aim
 /// without overshooting, and it sags a little. The hands are carried with the gun, so they stay on
 /// it. Pistols and revolvers carry none.
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct BracedHeft {
     /// How heavy a braced gun feels: one is the classes' tuning, zero carries no weight, and two
     /// lags twice as long and sags twice as far.
@@ -112,7 +85,8 @@ impl BracedHeft {
 }
 
 /// One weapon class's braced weight.
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct BracedTuning {
     /// How far the barrel pitches down, degrees.
     pub sag_deg: f32,
@@ -142,14 +116,9 @@ impl BracedTuning {
     }
 }
 
-impl Default for BracedTuning {
-    fn default() -> Self {
-        Self::NONE
-    }
-}
-
 /// One weapon class's one-handed weight.
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct HeftTuning {
     /// How far the weapon pitches down with the hand close to the body, degrees.
     pub sag_deg: f32,
@@ -179,10 +148,4 @@ impl HeftTuning {
         kick_scale: 1.0,
         spread_scale: 1.0,
     };
-}
-
-impl Default for HeftTuning {
-    fn default() -> Self {
-        Self::NONE
-    }
 }

@@ -27,37 +27,54 @@ use body_rig::smooth::{follow_factor, smoothstep_between};
 use glam::{Quat, Vec3};
 use jc3vr_body::controllers::hands::CockpitHand;
 use jc3vr_input::frame::Pose;
+use serde::Deserialize;
 
-/// How far the eye may be off the sight line for the line to start turning onto it, metres.
-pub const ENGAGE_M: f32 = 0.06;
-/// How far off the sight line the eye is when the line passes through it fully, metres.
-pub const LOCK_M: f32 = 0.02;
-/// How far behind the holding grip, along the sight line, the eye may be, metres.
-pub const MAX_EYE_BEHIND_M: f32 = 0.4;
-/// How far the sights fade over at each end of the eye's range behind the grip, metres: in over
-/// the first stretch behind the grip, and out over the last before [`MAX_EYE_BEHIND_M`].
-pub const EYE_BEHIND_FADE_M: f32 = 0.05;
-/// The widest angle between the head's forward and the sight line, degrees: a gun the head does not
-/// look along is not being aimed.
-pub const MAX_VIEW_ANGLE_DEG: f32 = 30.0;
-/// The angle between the head's forward and the sight line within which the head fully looks along
-/// it, degrees; the sights fade out from here to [`MAX_VIEW_ANGLE_DEG`].
-pub const FULL_VIEW_ANGLE_DEG: f32 = 20.0;
-/// How far ahead of the holding grip, along the sight line, the gun turns about to bring the sights
-/// to the eye, metres: about where the front sight is.
-pub const PIVOT_AHEAD_M: f32 = 0.35;
-/// How far behind the holding grip the butt is, along the sight line, metres.
-pub const BUTT_BEHIND_GRIP_M: f32 = 0.22;
-/// How far from the shoulder pocket the butt starts to seat, metres.
-pub const SHOULDER_ENGAGE_M: f32 = 0.12;
-/// How far from the shoulder pocket the butt is when it is fully seated, metres.
-pub const SHOULDER_LOCK_M: f32 = 0.04;
-/// How far off a scope's axis the eye may be for the cheek weld to start, metres.
-pub const WELD_ENGAGE_M: f32 = 0.05;
-/// How far off a scope's axis the eye is when the cheek weld is full, metres.
-pub const WELD_LOCK_M: f32 = 0.015;
-/// The time constant the solved move eases toward each new one with, seconds ([`ease`]).
-pub const EASE_S: f32 = 0.06;
+use crate::controllers::weapons::handling_tuning::HANDLING;
+
+/// The aim-down-sights tuning: the `ads` section of the handling tuning ([`HANDLING`]).
+#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AdsTuning {
+    /// How far the eye may be off the sight line for the line to start turning onto it, metres.
+    pub engage_m: f32,
+    /// How far off the sight line the eye is when the line passes through it fully, metres.
+    pub lock_m: f32,
+    /// How far behind the holding grip, along the sight line, the eye may be, metres.
+    pub max_eye_behind_m: f32,
+    /// How far the sights fade over at each end of the eye's range behind the grip, metres: in over
+    /// the first stretch behind the grip, and out over the last before
+    /// [`AdsTuning::max_eye_behind_m`].
+    pub eye_behind_fade_m: f32,
+    /// The widest angle between the head's forward and the sight line, degrees: a gun the head does
+    /// not look along is not being aimed.
+    pub max_view_angle_deg: f32,
+    /// The angle between the head's forward and the sight line within which the head fully looks
+    /// along it, degrees; the sights fade out from here to [`AdsTuning::max_view_angle_deg`].
+    pub full_view_angle_deg: f32,
+    /// How far ahead of the holding grip, along the sight line, the gun turns about to bring the
+    /// sights to the eye, metres: about where the front sight is.
+    pub pivot_ahead_m: f32,
+    /// How far behind the holding grip the butt is, along the sight line, metres.
+    pub butt_behind_grip_m: f32,
+    /// How far from the shoulder pocket the butt starts to seat, metres.
+    pub shoulder_engage_m: f32,
+    /// How far from the shoulder pocket the butt is when it is fully seated, metres.
+    pub shoulder_lock_m: f32,
+    /// How far off a scope's axis the eye may be for the cheek weld to start, metres.
+    pub weld_engage_m: f32,
+    /// How far off a scope's axis the eye is when the cheek weld is full, metres.
+    pub weld_lock_m: f32,
+    /// The time constant the solved move eases toward each new one with, seconds ([`ease`]).
+    pub ease_s: f32,
+    /// The longest step the eased moves take between two poses, seconds: after a pause in the poses
+    /// (a hitch, or the hands going inert), the moves take one long step rather than replaying it.
+    pub max_ease_step_s: f32,
+    /// How far each eye sits from the eyes' midpoint, metres.
+    pub half_ipd_m: f32,
+    /// The shoulder pocket's offset from the shoulder joint in the torso's frame (+X right, +Y up,
+    /// -Z forward), metres, given for the right shoulder and mirrored for the left.
+    pub pocket_offset_m: Vec3,
+}
 
 /// A gun's sight line in its holding wrist's frame, in cockpit metres.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -186,6 +203,7 @@ impl AdsSolution {
 
 /// Solve the pose.
 pub fn solve(inputs: &AdsInputs) -> AdsSolution {
+    let tuning = &HANDLING.get().ads;
     let mut solution = AdsSolution::NONE;
     if let Some(pocket) = inputs.pocket
         && let Some((step, weight)) = shoulder_move(inputs, pocket)
@@ -200,13 +218,23 @@ pub fn solve(inputs: &AdsInputs) -> AdsSolution {
     };
     solution.eye_offset_m = Some(view.offset.length());
     let step = if inputs.scoped {
-        let weight = fade(view.offset.length(), WELD_LOCK_M, WELD_ENGAGE_M) * view.gate;
+        let weight = fade(
+            view.offset.length(),
+            tuning.weld_lock_m,
+            tuning.weld_engage_m,
+        ) * view.gate;
         solution.weld = weight;
         Some(weld_move(view, weight))
     } else {
-        let weight = fade(view.offset.length(), LOCK_M, ENGAGE_M) * view.gate;
+        let weight = fade(view.offset.length(), tuning.lock_m, tuning.engage_m) * view.gate;
         solution.eye = weight;
-        Some(eye_move(line, grip, inputs.eye, PIVOT_AHEAD_M, weight))
+        Some(eye_move(
+            line,
+            grip,
+            inputs.eye,
+            tuning.pivot_ahead_m,
+            weight,
+        ))
     };
     if let Some(step) = step {
         solution.moved = solution.moved.then(step);
@@ -224,10 +252,15 @@ fn sight_line(inputs: &AdsInputs, moved: RigidMove) -> (Vec3, Vec3) {
 
 /// The turn that seats the butt in `pocket`, faded by its distance, and its weight.
 pub fn shoulder_move(inputs: &AdsInputs, pocket: Vec3) -> Option<(RigidMove, f32)> {
+    let tuning = &HANDLING.get().ads;
     let (_, direction) = sight_line(inputs, RigidMove::IDENTITY);
     let grip = inputs.holder.grip.position;
-    let butt = grip - direction * BUTT_BEHIND_GRIP_M;
-    let weight = fade(butt.distance(pocket), SHOULDER_LOCK_M, SHOULDER_ENGAGE_M);
+    let butt = grip - direction * tuning.butt_behind_grip_m;
+    let weight = fade(
+        butt.distance(pocket),
+        tuning.shoulder_lock_m,
+        tuning.shoulder_engage_m,
+    );
     if weight <= 0.0 {
         return None;
     }
@@ -249,24 +282,29 @@ pub struct EyeView {
 }
 
 /// The eye's view of the line `(origin, direction)` held at `grip`: `None` unless the eye is behind
-/// the grip by no more than [`MAX_EYE_BEHIND_M`] and the head looks along the line within
-/// [`MAX_VIEW_ANGLE_DEG`]. The gate fades to zero toward each of those bounds.
+/// the grip by no more than [`AdsTuning::max_eye_behind_m`] and the head looks along the line within
+/// [`AdsTuning::max_view_angle_deg`]. The gate fades to zero toward each of those bounds.
 pub fn eye_view(
     (origin, direction): (Vec3, Vec3),
     grip: Vec3,
     eye: Vec3,
     forward: Vec3,
 ) -> Option<EyeView> {
+    let tuning = &HANDLING.get().ads;
     let behind = -(eye - grip).dot(direction);
     let forward = forward.try_normalize()?;
     let angle_deg = forward.dot(direction).clamp(-1.0, 1.0).acos().to_degrees();
-    let gate = fade(-behind, -EYE_BEHIND_FADE_M, 0.0)
+    let gate = fade(-behind, -tuning.eye_behind_fade_m, 0.0)
         * fade(
             behind,
-            MAX_EYE_BEHIND_M - EYE_BEHIND_FADE_M,
-            MAX_EYE_BEHIND_M,
+            tuning.max_eye_behind_m - tuning.eye_behind_fade_m,
+            tuning.max_eye_behind_m,
         )
-        * fade(angle_deg, FULL_VIEW_ANGLE_DEG, MAX_VIEW_ANGLE_DEG);
+        * fade(
+            angle_deg,
+            tuning.full_view_angle_deg,
+            tuning.max_view_angle_deg,
+        );
     if gate <= 0.0 {
         return None;
     }
@@ -301,9 +339,9 @@ pub fn weld_move(view: EyeView, weight: f32) -> RigidMove {
 }
 
 /// `current` moved toward `target` over `dt` seconds, closing the gap with the time constant
-/// [`EASE_S`]: a step in the target becomes a short glide, and a held target is reached.
+/// [`AdsTuning::ease_s`]: a step in the target becomes a short glide, and a held target is reached.
 pub fn ease(current: RigidMove, target: RigidMove, dt: f32) -> RigidMove {
-    let t = follow_factor(dt, EASE_S);
+    let t = follow_factor(dt, HANDLING.get().ads.ease_s);
     RigidMove {
         rotation: current.rotation.slerp(target.rotation, t).normalize(),
         translation: current.translation.lerp(target.translation, t),
@@ -321,6 +359,10 @@ pub fn fade(distance: f32, lock: f32, engage: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn tuning() -> &'static AdsTuning {
+        &HANDLING.get().ads
+    }
 
     /// A right hand holding a rifle pointing down -Z, its sight line 8 cm above the grip, at head
     /// height in front of the right eye.
@@ -362,7 +404,7 @@ mod tests {
         assert!(s.eye > 0.99, "{s:?}");
         assert!(line_distance(&s, &i, i.eye) < 1e-4);
         // The pivot ahead of the grip stays put.
-        let pivot = Vec3::new(0.03, 1.58, -0.3 - PIVOT_AHEAD_M);
+        let pivot = Vec3::new(0.03, 1.58, -0.3 - tuning().pivot_ahead_m);
         assert!(s.moved.point(pivot).distance(pivot) < 1e-4);
     }
 
@@ -398,7 +440,7 @@ mod tests {
     #[test]
     fn the_butt_is_seated_in_the_pocket() {
         let mut i = inputs(Vec3::new(0.5, 3.0, 0.0));
-        let butt = i.holder.grip.position + Vec3::Z * BUTT_BEHIND_GRIP_M;
+        let butt = i.holder.grip.position + Vec3::Z * tuning().butt_behind_grip_m;
         let pocket = butt + Vec3::new(0.02, -0.02, 0.0);
         i.pocket = Some(pocket);
         let s = solve(&i);
@@ -453,7 +495,8 @@ mod tests {
         // degree step of the head may carry more than a small share of it.
         assert!(largest_step(sweep) < 0.002);
         let mut looking = inputs(eye);
-        looking.forward = Quat::from_rotation_y(FULL_VIEW_ANGLE_DEG.to_radians()) * Vec3::NEG_Z;
+        looking.forward =
+            Quat::from_rotation_y(tuning().full_view_angle_deg.to_radians()) * Vec3::NEG_Z;
         assert!(solve(&looking).eye > 0.99);
     }
 

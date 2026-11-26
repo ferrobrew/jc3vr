@@ -36,6 +36,7 @@ use parking_lot::Mutex;
 use crate::controllers::weapons::{
     ads::solve::{AdsInputs, AdsSolution, RigidMove, WristSight},
     foregrip,
+    handling_tuning::HANDLING,
 };
 
 /// A long gun in a hand, as the input tick measured it.
@@ -108,6 +109,7 @@ pub fn apply(
         settle();
         return;
     }
+    let pocket_offset = HANDLING.get().ads.pocket_offset_m;
     let brace = foregrip::status().hold.filter(|h| h.engaged);
     // The hand on the foregrip of the gun in `holder`.
     let support_hand = |holder: Hand| {
@@ -128,7 +130,7 @@ pub fn apply(
             eye: aiming_eye(head, hand),
             forward: head.orientation * Vec3::NEG_Z,
             pocket: shoulders[hand.index()]
-                .map(|s| s + torso * hand.mirror_from_right(POCKET_OFFSET_M)),
+                .map(|s| s + torso * hand.mirror_from_right(pocket_offset)),
             scoped: weapon.scoped,
         };
         Some(solve::solve(&inputs))
@@ -200,22 +202,12 @@ pub fn aiming_eye(head: Pose, holder: Hand) -> Vec3 {
         Hand::Left => -1.0,
         Hand::Right => 1.0,
     };
-    head.position + head.orientation * Vec3::new(sign * HALF_IPD_M, 0.0, 0.0)
+    let half_ipd = HANDLING.get().ads.half_ipd_m;
+    head.position + head.orientation * Vec3::new(sign * half_ipd, 0.0, 0.0)
 }
-
-/// How far each eye sits from the eyes' midpoint, metres.
-const HALF_IPD_M: f32 = 0.032;
-
-/// The shoulder pocket's offset from the shoulder joint in the torso's frame (+X right, +Y up, -Z
-/// forward), metres, given for the right shoulder and mirrored for the left.
-const POCKET_OFFSET_M: Vec3 = Vec3::new(-0.06, -0.04, -0.04);
 
 /// A step counts as taken once its share passes this.
 const TAKEN: f32 = 0.99;
-
-/// The longest step the eased moves take between two poses, seconds: after a pause in the poses
-/// (a hitch, or the hands going inert), the moves take one long step rather than replaying it.
-const MAX_EASE_STEP_S: f32 = 0.1;
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 struct State {
@@ -255,7 +247,7 @@ fn ease_toward(targets: [Option<RigidMove>; 2]) -> [Option<RigidMove>; 2] {
     let dt = state.eased_at.map_or(0.0, |at| {
         now.saturating_duration_since(at)
             .as_secs_f32()
-            .min(MAX_EASE_STEP_S)
+            .min(HANDLING.get().ads.max_ease_step_s)
     });
     state.eased_at = Some(now);
     let weapons = state.weapons;

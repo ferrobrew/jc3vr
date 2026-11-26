@@ -7,7 +7,7 @@ use jc3vr_body::controllers::{
 use jc3vr_input::frame::Hand;
 use jc3vr_view::controllers::cockpit::CockpitTransform;
 
-use crate::controllers::weapons::{foregrip, foregrip::FOREGRIP};
+use crate::controllers::weapons::{foregrip, handling_tuning::HANDLING};
 
 /// How the weapon handling's candidates become grip targets, and where the markers go.
 pub(super) struct Place {
@@ -111,14 +111,15 @@ impl Place {
 
 /// The braced foregrip, held by the bracing hand, marked where it holds the gun.
 pub(super) fn held_foregrip(hold: &foregrip::Hold, active: &ActiveHands) -> Option<GripTarget> {
+    let tuning = &HANDLING.get().foregrip;
     let mut posed = active.hands;
-    foregrip::apply(&mut posed, &FOREGRIP);
+    foregrip::apply(&mut posed, tuning);
     let brace = hold.holder.other();
     let point = posed[brace.index()]?.grip.position;
     let target = Candidate {
         volume: GrabVolume::Foregrip,
         centre: point,
-        radius: FOREGRIP.radius_m,
+        radius: tuning.radius_m,
         hand: Some(brace),
     }
     .target(Mark::ring(

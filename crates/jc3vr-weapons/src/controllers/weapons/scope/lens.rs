@@ -16,18 +16,12 @@ use glam::Vec3;
 use jc3vr_body::controllers::{aim::ray::Ray, hands::pose as hand_pose};
 use jc3vr_input::frame::{Hand, Pose};
 use jc3vr_view::controllers::weapons::scope::lens_frame::LensDraw;
+use serde::Deserialize;
 
-/// The lens's fixed tuning.
-pub const LENS: LensTuning = LensTuning {
-    zoom: 4.0,
-    lens_radius_m: 0.02,
-    eyepiece_back_m: 0.8,
-    max_eye_distance_m: 0.15,
-    vignette_start: 0.7,
-};
-
-/// The lens's geometry and look, fixed at [`LENS`].
-#[derive(Debug, Copy, Clone, PartialEq)]
+/// The lens's geometry and look: the `scope.lens` section of the handling tuning
+/// ([`crate::controllers::weapons::handling_tuning::HANDLING`]).
+#[derive(Debug, Copy, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct LensTuning {
     /// The lens's magnification.
     pub zoom: f32,
@@ -41,6 +35,9 @@ pub struct LensTuning {
     pub max_eye_distance_m: f32,
     /// Where the dark rim starts, as a fraction of the lens radius.
     pub vignette_start: f32,
+    /// The nearest the aim point is taken to be, metres: a closer point would make the other eye's
+    /// image swing with the tiny parallax between the eyes.
+    pub min_focus_m: f32,
 }
 
 /// The sight line in the holding hand's wrist frame.
@@ -57,13 +54,19 @@ pub struct SightAnchor {
 
 impl SightAnchor {
     /// The sight line `ray` of the gun in `hand`, whose wrist is at `wrist`, focused at `focus_m`.
-    pub fn new(hand: Hand, ray: &Ray, wrist: Pose, focus_m: f32) -> SightAnchor {
+    pub fn new(
+        hand: Hand,
+        ray: &Ray,
+        wrist: Pose,
+        focus_m: f32,
+        config: &LensTuning,
+    ) -> SightAnchor {
         let to_wrist = hand_pose::inverse(wrist);
         SightAnchor {
             hand,
             origin: to_wrist.position + to_wrist.orientation * ray.origin,
             direction: to_wrist.orientation * ray.direction,
-            focus_m: focus_m.max(MIN_FOCUS_M),
+            focus_m: focus_m.max(config.min_focus_m),
         }
     }
 
@@ -93,7 +96,7 @@ impl Lens {
         Lens {
             eyepiece: sight.at(-config.eyepiece_back_m),
             direction: sight.direction,
-            focus_m: focus_m.max(MIN_FOCUS_M),
+            focus_m: focus_m.max(config.min_focus_m),
         }
     }
 }
@@ -127,10 +130,6 @@ pub fn draw_of(lens: &Lens, config: &LensTuning) -> LensDraw {
     }
 }
 
-/// The nearest the aim point is taken to be: a closer point would make the other eye's image
-/// swing with the tiny parallax between the eyes.
-const MIN_FOCUS_M: f32 = 1.0;
-
 #[cfg(test)]
 mod tests {
     use glam::{Mat4, Quat, Vec2, Vec4};
@@ -139,6 +138,7 @@ mod tests {
     };
 
     use super::*;
+    use crate::controllers::weapons::handling_tuning::HANDLING;
 
     /// The scene point the lens shows at `q` (the lens's unit disc, +x right and +y up), relative to
     /// the source eye: `eyepiece_from_source` is the eyepiece relative to that eye. The lens pixel shader
@@ -150,7 +150,7 @@ mod tests {
     }
 
     fn config() -> LensTuning {
-        LENS
+        HANDLING.get().scope.lens
     }
 
     #[test]
@@ -160,7 +160,7 @@ mod tests {
             orientation: Quat::from_rotation_y(0.8) * Quat::from_rotation_x(-0.3),
         };
         let ray = Ray::new(Vec3::new(10.2, 2.1, -3.5), Vec3::new(0.1, 0.0, -1.0)).unwrap();
-        let anchor = SightAnchor::new(Hand::Right, &ray, wrist, 120.0);
+        let anchor = SightAnchor::new(Hand::Right, &ray, wrist, 120.0, &config());
         let placed = anchor.place(wrist).unwrap();
         assert!(placed.origin.distance(ray.origin) < 1e-4);
         assert!(placed.direction.distance(ray.direction) < 1e-5);

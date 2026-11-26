@@ -40,10 +40,7 @@ mod pose;
 #[cfg(test)]
 mod test_support;
 pub mod tuning;
-use std::{
-    sync::OnceLock,
-    time::{Duration, Instant},
-};
+use std::{sync::OnceLock, time::Instant};
 
 use body_rig::rotation::{angle, clamp_angle};
 use detours_macro::detour;
@@ -58,7 +55,7 @@ use test_support::TestWeight;
 
 use self::pose::{Weight, sway, unbraced_share};
 pub use self::tuning::{BracedHeft, BracedTuning, Heft, HeftTuning};
-use crate::controllers::weapons::{foregrip, heft::tuning::HEFT, recoil::Motion};
+use crate::controllers::weapons::{foregrip, handling_tuning::HANDLING, recoil::Motion};
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&GET_CURRENT_SCATTER_VALUE_BINDER)
@@ -148,7 +145,7 @@ pub fn apply(hands: &mut [Option<CockpitHand>; 2], head: Vec3, config: &Heft) {
         let h = &mut state.hands[hand.index()];
         let target = h
             .target
-            .filter(|(_, at)| now.saturating_duration_since(*at) < MAX_AGE)
+            .filter(|(_, at)| now.saturating_duration_since(*at) < config.target_ms.duration())
             .map(|(t, _)| t);
         let Some(target) = target else {
             h.rest();
@@ -200,7 +197,7 @@ pub fn apply(hands: &mut [Option<CockpitHand>; 2], head: Vec3, config: &Heft) {
 /// two-hand kick scale by the foregrip's weight.
 pub fn one_hand_kick(hand: Hand) -> f32 {
     let target = STATE.lock().hands[hand.index()].target.map(|(t, _)| t);
-    target.map_or(1.0, |t| HEFT.tuning(t.class).kick_scale)
+    target.map_or(1.0, |t| HANDLING.get().heft.tuning(t.class).kick_scale)
 }
 
 /// The multiplier on the scatter of a shot from `weapon`: the class's spread scale, scaled by the
@@ -216,13 +213,8 @@ pub fn spread_scale(weapon: usize) -> f32 {
     };
     let share = unbraced_share(foregrip::two_hand_grip(), target.hand);
     // The share is clamped to `0..=1` where it is made.
-    1.0_f32.lerp(HEFT.tuning(target.class).spread_scale, share)
+    1.0_f32.lerp(HANDLING.get().heft.tuning(target.class).spread_scale, share)
 }
-
-/// How long a published weapon stays in effect without a new input tick.
-const MAX_AGE: Duration = Duration::from_millis(500);
-/// A gap longer than this between reads puts the spring at rest on its target.
-const MAX_GAP: Duration = Duration::from_millis(250);
 
 /// One hand's weight: its gun, its spring, and its freeze.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -280,7 +272,7 @@ impl HandHeft {
             head,
             weight,
             config,
-            sway(t, config.sway_hz, weight.sway_deg.to_radians()),
+            sway(t, weight.sway_deg.to_radians(), config),
         );
         let rotation = if self.freeze {
             // The gun keeps the turn it had on the hand, and the spring rests where the gun is
@@ -290,16 +282,17 @@ impl HandHeft {
             held
         } else {
             self.frozen = None;
-            let shown = if weight.stiffness > 0.0 && dt <= MAX_GAP.as_secs_f32() {
-                let spring = self
-                    .spring
-                    .get_or_insert(pose::RotSpring::at(pose.orientation));
-                spring.step(pose.orientation, dt, weight.stiffness, weight.damping_ratio);
-                spring.orientation
-            } else {
-                self.spring = Some(pose::RotSpring::at(pose.orientation));
-                pose.orientation
-            };
+            let shown =
+                if weight.stiffness > 0.0 && dt <= config.max_gap_ms.duration().as_secs_f32() {
+                    let spring = self
+                        .spring
+                        .get_or_insert(pose::RotSpring::at(pose.orientation));
+                    spring.step(pose.orientation, dt, weight.stiffness, weight.damping_ratio);
+                    spring.orientation
+                } else {
+                    self.spring = Some(pose::RotSpring::at(pose.orientation));
+                    pose.orientation
+                };
             clamp_angle(
                 shown * h.grip.orientation.inverse(),
                 weight.max_angle_deg.to_radians(),
@@ -396,16 +389,16 @@ mod tests {
     use super::{HeftClass, HeftTarget, advance_clock, apply, freeze, observe};
     use crate::controllers::weapons::{
         foregrip,
+        handling_tuning::HANDLING,
         heft::{
             BracedTuning, Heft, HeftTuning, TestWeight,
             pose::{RotSpring, Weight, WeightedPose, sway, unbraced_share, weighted_pose},
-            tuning::HEFT,
         },
         regions::GunRegion,
     };
 
     fn config() -> Heft {
-        HEFT
+        HANDLING.get().heft
     }
 
     const OFFSET: GripOffset = GripOffset::INDEX_BEST_GUESS;
@@ -650,10 +643,10 @@ mod tests {
     #[test]
     fn the_sway_stays_within_its_amplitude() {
         for i in 0..200 {
-            let s = sway(i as f32 * 0.05, 0.35, 0.02);
+            let s = sway(i as f32 * 0.05, 0.02, &config());
             assert!(s.x.abs() <= 0.02 + 1e-6 && s.y.abs() <= 0.02 + 1e-6);
         }
-        assert_eq!(sway(1.0, 0.35, 0.0), Vec2::ZERO);
+        assert_eq!(sway(1.0, 0.0, &config()), Vec2::ZERO);
     }
 
     #[test]
@@ -954,7 +947,7 @@ mod tests {
 
     #[test]
     fn a_heavy_gun_in_either_hand_droops_about_the_grip_and_lifts_braced() {
-        let config = HEFT;
+        let config = config();
         for holder in Hand::BOTH {
             let mut spring = TestWeight::default();
             let mut shown = square_hand(Vec3::new(0.0, -0.2, -0.6));

@@ -99,8 +99,8 @@ impl Weight {
 /// gun; the controller's grip -Z runs up the handle instead. The sag turns the barrel down about
 /// the horizontal axis across it, by the sag plus the reach sag as the hand moves out, scaled by
 /// how level the barrel is; `sway` (pitch and yaw, radians, at full share) pitches it about that
-/// same horizontal axis and yaws it about the vertical, so that neither rolls the gun, half of it
-/// close in and all of it at full reach.
+/// same horizontal axis and yaws it about the vertical, so that neither rolls the gun, the near
+/// share of it close in ([`Heft::sway_near_share`]) and all of it at full reach.
 pub fn weighted_pose(
     hand: &CockpitHand,
     head: Vec3,
@@ -128,7 +128,7 @@ pub fn weighted_pose(
                 .try_normalize()
         })
         .unwrap_or(Vec3::X);
-    let sway_reach = 0.5 + 0.5 * reach;
+    let sway_reach = config.sway_near_share + (1.0 - config.sway_near_share) * reach;
     let sway_scaled = sway * weight.sway_share * sway_reach;
     let wobble =
         Quat::from_rotation_y(sway_scaled.y) * Quat::from_axis_angle(pitch_axis, sway_scaled.x);
@@ -141,13 +141,15 @@ pub fn weighted_pose(
     }
 }
 
-/// The sway at time `t` seconds: a pitch and a yaw of amplitude `amplitude` (radians) at
-/// `hz` and at an incommensurate multiple of it, so the path does not repeat.
-pub fn sway(t: f32, hz: f32, amplitude: f32) -> Vec2 {
-    let phase = TAU * hz.max(0.0) * t;
+/// The sway at time `t` seconds: a pitch and a yaw of amplitude `amplitude` (radians) at the
+/// tuning's frequency and at an incommensurate multiple of it, so the path does not repeat.
+pub fn sway(t: f32, amplitude: f32, config: &Heft) -> Vec2 {
+    let phase = TAU * config.sway_hz.max(0.0) * t;
     Vec2::new(
         phase.sin() * amplitude,
-        (phase * YAW_RATIO + YAW_PHASE).sin() * amplitude * YAW_SHARE,
+        (phase * config.sway_yaw_ratio + config.sway_yaw_phase).sin()
+            * amplitude
+            * config.sway_yaw_share,
     )
 }
 
@@ -203,8 +205,3 @@ impl RotSpring {
 const RIGID_OMEGA: f32 = 120.0;
 /// The longest sub-step the spring integrates in one go, seconds.
 const MAX_SUBSTEP: f32 = 1.0 / 480.0;
-/// The yaw sway's frequency relative to the pitch sway's, its phase offset, and its share of the
-/// amplitude.
-const YAW_RATIO: f32 = 0.618;
-const YAW_PHASE: f32 = 1.3;
-const YAW_SHARE: f32 = 0.8;

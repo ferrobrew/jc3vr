@@ -29,12 +29,29 @@ use jc3vr_body::controllers::{
 use jc3vr_input::frame::{Hand, Pose};
 use jc3vr_view::controllers::cockpit::CockpitTransform;
 use parking_lot::Mutex;
+use serde::Deserialize;
 
 use crate::controllers::weapons::{
     ads::solve::RigidMove,
     collide::solve::{Barrel, Wall},
     foregrip,
+    handling_tuning::HANDLING,
 };
+
+/// The push out of walls' tuning: the `collide` section of the handling tuning ([`HANDLING`]).
+#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CollideTuning {
+    /// How far past the muzzle the gun's probe reaches, metres, so the muzzle stops just short of a
+    /// wall.
+    pub tip_margin_m: f32,
+    /// The furthest the gun turns away from a wall about its grip, degrees.
+    pub max_turn_deg: f32,
+    /// The furthest the gun is pulled back into the hands, metres.
+    pub max_retract_m: f32,
+    /// How long a wall is kept after the probe last met it, seconds.
+    pub keep_s: f32,
+}
 
 /// A long gun in a hand, as the input tick measured it.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -144,7 +161,7 @@ pub unsafe fn probe() {
         let hit = unsafe { raycast::cast(&ray, probe.length.max(1e-3), &options) };
         let mut state = STATE.lock();
         state.status.casts += 1;
-        // A miss keeps the last wall a moment past its sighting (see `keep_s`), so a probe that
+        // A miss keeps the last wall a moment past its sighting (`collide.keep_s`), so a probe that
         // just missed does not drop the push and let the gun bounce back in.
         if let Ok(Some(hit)) = hit {
             // A wall faces the grip: a normal facing away is taken from the probe.
@@ -164,25 +181,13 @@ pub unsafe fn probe() {
     }
 }
 
-/// How far past the muzzle the gun's probe reaches, metres, so the muzzle stops just short of a
-/// wall.
-const TIP_MARGIN_M: f32 = 0.03;
-
-/// The furthest the gun turns away from a wall about its grip, degrees.
-const MAX_TURN_DEG: f32 = 70.0;
-
-/// The furthest the gun is pulled back into the hands, metres.
-const MAX_RETRACT_M: f32 = 0.35;
-
-/// How long a wall is kept after the probe last met it, seconds.
-const KEEP_S: f32 = 0.15;
-
 /// The push of `hand`'s gun out of its wall, noting the probe for the next cast and the readout.
 fn push_hand(
     hand: Hand,
     hands: &[Option<CockpitHand>; 2],
     frame: &CockpitTransform,
 ) -> Option<RigidMove> {
+    let tuning = &HANDLING.get().collide;
     let mut guard = STATE.lock();
     let state = &mut *guard;
     let h = &mut state.hands[hand.index()];
@@ -192,9 +197,10 @@ fn push_hand(
     h.probe = Some(barrel_to_world(frame, barrel));
     let wall = h
         .wall
-        .filter(|w| w.at.elapsed() <= Duration::from_secs_f32(KEEP_S))
+        .filter(|w| w.at.elapsed() <= Duration::from_secs_f32(tuning.keep_s))
         .map(|w| wall_to_cockpit(frame, w.wall));
-    let push = wall.and_then(|w| solve::solve(barrel, w, MAX_TURN_DEG, MAX_RETRACT_M));
+    let push =
+        wall.and_then(|w| solve::solve(barrel, w, tuning.max_turn_deg, tuning.max_retract_m));
     let touching = push.is_some();
     let status = &mut state.status.hands[hand.index()];
     if touching && !status.touching {
@@ -224,7 +230,7 @@ fn barrel_of(holder: CockpitHand, weapon: &CollideWeapon) -> Barrel {
     Barrel {
         grip,
         direction,
-        length: ((muzzle - grip).dot(direction) + TIP_MARGIN_M).max(0.0),
+        length: ((muzzle - grip).dot(direction) + HANDLING.get().collide.tip_margin_m).max(0.0),
     }
 }
 
@@ -389,7 +395,7 @@ mod tests {
             barrel: Vec3::NEG_Z,
         };
         let b = barrel_of(hand, &weapon);
-        assert!((b.length - (0.7 + TIP_MARGIN_M)).abs() < 1e-5);
+        assert!((b.length - (0.7 + HANDLING.get().collide.tip_margin_m)).abs() < 1e-5);
         assert_eq!(b.direction, Vec3::NEG_Z);
     }
 }

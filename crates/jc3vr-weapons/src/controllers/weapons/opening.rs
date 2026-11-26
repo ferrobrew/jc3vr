@@ -6,17 +6,26 @@
 //! feet mid-throw. The fingers are read instead, through the grip's value: on the Index controller
 //! the capacitive sense of the fingers round the handle, which stays full while the fingers rest on
 //! it however lightly they press, and on a Touch controller the grip's pull. The hand counts as
-//! closed once the value passes [`CLOSED`] or the grip is pressed, and opens when the value falls
-//! under [`OPEN`]. A hand whose value is not read (an inactive controller) opens with its grip's
+//! closed once the value passes [`OpeningTuning::closed`] or the grip is pressed, and opens when the
+//! value falls under [`OpeningTuning::open`]. A hand whose value is not read (an inactive controller) opens with its grip's
 //! press instead.
 
 use jc3vr_body::controllers::intent::controls::ButtonControl;
 use jc3vr_input::frame::Hand;
+use serde::Deserialize;
 
-/// The grip value at or above which the fingers count as closed round the handle.
-pub const CLOSED: f32 = 0.6;
-/// The grip value under which closed fingers count as opened.
-pub const OPEN: f32 = 0.35;
+use crate::controllers::weapons::handling_tuning::HANDLING;
+
+/// When the fingers count as closed and as opened: the `opening` section of the handling tuning
+/// ([`HANDLING`]).
+#[derive(Debug, Copy, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OpeningTuning {
+    /// The grip value at or above which the fingers count as closed round the handle.
+    pub closed: f32,
+    /// The grip value under which closed fingers count as opened.
+    pub open: f32,
+}
 
 /// Each hand's fingers across ticks.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
@@ -33,13 +42,14 @@ impl OpenWatch {
     /// Advance one tick with each hand's grip value (`None` when it is not read) and grip press.
     /// Returns the hands whose fingers opened this tick, by [`Hand::index`].
     pub fn step(&mut self, values: [Option<f32>; 2], grips: [ButtonControl; 2]) -> [bool; 2] {
+        let tuning = &HANDLING.get().opening;
         Hand::BOTH.map(|hand| {
             let i = hand.index();
             let grip = grips[i];
             let was = self.closed[i];
             let now = match values[i].filter(|v| v.is_finite()) {
-                Some(value) if was => value >= OPEN || grip.down,
-                Some(value) => value >= CLOSED || grip.held(),
+                Some(value) if was => value >= tuning.open || grip.down,
+                Some(value) => value >= tuning.closed || grip.held(),
                 None => grip.down,
             };
             self.closed[i] = now;

@@ -7,12 +7,13 @@
 //! wrist the solve leaves behind turns the gun away from), with two references, taking the larger
 //! change:
 //!
-//! - the previous tick's: a change past [`FLIP_DEG`] is a snap;
+//! - the previous tick's: a change past [`GripWatchTuning::flip_deg`] is a snap;
 //! - the rotation the gun had when the hand took it (a grab, taken once the gun's slide into the
 //!   grip has ended, since the slide turns it on the wrist by design, started afresh when the gun
 //!   moves to another attach bone or the pin takes hold or lets go, across which the rotation is
-//!   expected to change, and forgotten when the hold ends): a departure past [`SWEEP_DEG`] held for
-//!   [`SWEEP_HOLD`] is a sweep, which catches a turn the animation blends over several ticks.
+//!   expected to change, and forgotten when the hold ends): a departure past
+//!   [`GripWatchTuning::sweep_deg`] held for [`GripWatchTuning::sweep_hold_ms`] is a sweep, which
+//!   catches a turn the animation blends over several ticks.
 //!
 //! A move to another attach bone is logged too. Each warning carries what tells the causes apart:
 //! the attach bone and the weapon state, whether the bone was pinned, how far the animation had put
@@ -35,11 +36,31 @@ use jc3vr_body::{
         held::guns::HeftClass,
     },
     hooks::animation,
+    tuning::Millis,
 };
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
+use serde::Deserialize;
 
-use crate::controllers::weapons::engine::FULL_WEIGHT;
+use crate::controllers::weapons::{engine::FULL_WEIGHT, handling_tuning::HANDLING};
+
+/// The watch's tuning: the `grip_watch` section of the handling tuning ([`HANDLING`]).
+#[derive(Debug, Copy, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GripWatchTuning {
+    /// A tick-to-tick change in the gun's rotation on the wrist larger than this is a snap, degrees.
+    pub flip_deg: f32,
+    /// A departure from the grab's rotation larger than this, held for
+    /// [`GripWatchTuning::sweep_hold_ms`], is a sweep, degrees.
+    pub sweep_deg: f32,
+    /// The share of [`GripWatchTuning::sweep_deg`] the departure must fall back under before
+    /// another excursion can be reported.
+    pub sweep_rearm_share: f32,
+    /// How long a departure past [`GripWatchTuning::sweep_deg`] lasts before it is a sweep.
+    pub sweep_hold_ms: Millis,
+    /// A grip record older than this is from a placement that no longer runs.
+    pub record_ms: Millis,
+}
 
 /// The watch's readout.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
@@ -70,14 +91,6 @@ pub fn status() -> GripWatchStatus {
     STATE.lock().status
 }
 
-/// A tick-to-tick change in the gun's rotation on the wrist larger than this is a snap, degrees.
-pub const FLIP_DEG: f32 = 90.0;
-/// A departure from the grab's rotation larger than this, held for [`SWEEP_HOLD`], is a sweep,
-/// degrees.
-pub const SWEEP_DEG: f32 = 60.0;
-/// How long a departure past [`SWEEP_DEG`] lasts before it is a sweep.
-pub const SWEEP_HOLD: Duration = Duration::from_millis(100);
-
 /// The change between two gun-on-wrist rotations, degrees.
 pub fn change_deg(previous: Quat, current: Quat) -> f32 {
     angle_between(previous, current).to_degrees()
@@ -90,6 +103,7 @@ pub fn change_deg(previous: Quat, current: Quat) -> f32 {
 /// `weapon` must be live, read on the game thread before the world update.
 pub(super) unsafe fn observe(weapon: &WeaponBase, class: HeftClass) {
     let now = Instant::now();
+    let record_age = HANDLING.get().grip_watch.record_ms.duration();
     let records = grip::status().hands;
     let address = weapon as *const WeaponBase as usize;
     let character = unsafe { weapon.m_User[0].cast::<Character>().as_ref() };
@@ -98,7 +112,7 @@ pub(super) unsafe fn observe(weapon: &WeaponBase, class: HeftClass) {
     let state = &mut *guard;
     for hand in Hand::BOTH {
         let record = records[hand.index()]
-            .filter(|r| r.weapon == address && now.saturating_duration_since(r.at) <= MAX_AGE);
+            .filter(|r| r.weapon == address && now.saturating_duration_since(r.at) <= record_age);
         let context = Context {
             hand,
             weapon_state: weapon.m_State,
@@ -174,7 +188,7 @@ struct Events {
     bone_change: Option<u32>,
     /// The solved wrist's drift from its target since the grab, degrees.
     wrist_drift_deg: Option<f32>,
-    /// How long the gun has been past [`SWEEP_DEG`], when it is.
+    /// How long the gun has been past [`GripWatchTuning::sweep_deg`], when it is.
     away_for: Option<Duration>,
 }
 
@@ -183,7 +197,8 @@ struct Events {
 struct HandWatch {
     grab: Option<Grab>,
     previous: Option<HandGrip>,
-    /// When the gun went past [`SWEEP_DEG`], and whether that excursion was reported.
+    /// When the gun went past [`GripWatchTuning::sweep_deg`], and whether that excursion was
+    /// reported.
     away_since: Option<(Instant, bool)>,
     limiter: Limiter,
 }
@@ -199,6 +214,7 @@ impl HandWatch {
     }
 
     fn observe(&mut self, record: Option<HandGrip>, now: Instant) -> Events {
+        let tuning = &HANDLING.get().grip_watch;
         let Some(record) = record else {
             self.grab = None;
             self.previous = None;
@@ -269,21 +285,21 @@ impl HandWatch {
 
         let mut sweep = None;
         let mut away_for = None;
-        if from_grab_deg > SWEEP_DEG {
+        if from_grab_deg > tuning.sweep_deg {
             let (since, reported) = *self.away_since.get_or_insert((now, false));
             let held = now.saturating_duration_since(since);
             away_for = Some(held);
-            if !reported && held >= SWEEP_HOLD {
+            if !reported && held >= tuning.sweep_hold_ms.duration() {
                 sweep = Some(from_grab_deg);
                 self.away_since = Some((since, true));
             }
-        } else if from_grab_deg < SWEEP_DEG * 0.5 {
+        } else if from_grab_deg < tuning.sweep_deg * tuning.sweep_rearm_share {
             self.away_since = None;
         }
         Events {
             change_deg: tick_change,
             from_grab_deg: Some(from_grab_deg),
-            snap: tick_change.filter(|&c| c > FLIP_DEG),
+            snap: tick_change.filter(|&c| c > tuning.flip_deg),
             sweep,
             bone_change,
             wrist_drift_deg,
@@ -397,8 +413,6 @@ fn at_full_weight(record: HandGrip) -> Option<f32> {
         .filter(|d| d.is_finite())
 }
 
-/// A record older than this is from a placement that no longer runs.
-const MAX_AGE: Duration = Duration::from_millis(250);
 const LOG_INTERVAL: Duration = Duration::from_secs(1);
 
 struct State {
@@ -450,7 +464,7 @@ mod tests {
         let held = Quat::from_rotation_y(0.3);
         assert!(change_deg(held, Quat::from_rotation_y(0.35)) < 5.0);
         let flipped = Quat::from_rotation_z(std::f32::consts::PI) * held;
-        assert!(change_deg(held, flipped) > FLIP_DEG);
+        assert!(change_deg(held, flipped) > HANDLING.get().grip_watch.flip_deg);
         assert!(change_deg(held, -held) < 1e-3);
     }
 
@@ -468,7 +482,7 @@ mod tests {
         assert!(events.iter().all(|e| e.snap.is_none()));
         let sweeps: Vec<_> = events.iter().filter_map(|e| e.sweep).collect();
         assert_eq!(sweeps.len(), 1, "{events:?}");
-        assert!(sweeps[0] > SWEEP_DEG);
+        assert!(sweeps[0] > HANDLING.get().grip_watch.sweep_deg);
     }
 
     #[test]
@@ -498,7 +512,11 @@ mod tests {
         let at = start + TICK;
         let flipped = Quat::from_rotation_x(170.0f32.to_radians());
         let events = watch.observe(Some(record(at, flipped, 2)), at);
-        assert!(events.snap.is_some_and(|c| c > FLIP_DEG));
+        assert!(
+            events
+                .snap
+                .is_some_and(|c| c > HANDLING.get().grip_watch.flip_deg)
+        );
         assert_eq!(events.bone_change, Some(1));
         // The gun sits differently on the new bone, which is not a sweep away from the grab.
         assert!(events.from_grab_deg.is_some_and(|d| d < 1e-3));

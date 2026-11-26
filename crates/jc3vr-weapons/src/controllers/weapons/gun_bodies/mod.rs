@@ -14,7 +14,7 @@ use glam::Vec3;
 use jc3vr_body::controllers::hands::CockpitHand;
 
 pub(crate) use self::holds::read_holds;
-use crate::controllers::weapons::{foregrip, foregrip::FOREGRIP, heft, heft::tuning::HEFT};
+use crate::controllers::weapons::{foregrip, handling_tuning::HANDLING, heft};
 
 /// Compose support and weight once, before either driving a gun hand or drawing its body offset:
 /// the held guns' support and weight targets
@@ -22,6 +22,7 @@ use crate::controllers::weapons::{foregrip, foregrip::FOREGRIP, heft, heft::tuni
 /// active-hand composition uses this same operation for every hand. The body supplies collisions
 /// and recoil afterward.
 pub fn apply(hands: &mut [Option<CockpitHand>; 2], head: Vec3) {
-    foregrip::apply(hands, &FOREGRIP);
-    heft::apply(hands, head, &HEFT);
+    let tuning = HANDLING.get();
+    foregrip::apply(hands, &tuning.foregrip);
+    heft::apply(hands, head, &tuning.heft);
 }

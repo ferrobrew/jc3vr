@@ -36,13 +36,11 @@ use crate::controllers::{
         docks::{SocketInputs, SocketUse, attachments::Sample, attract, attract::ATTRACTION},
         engine,
         engine::HeldWeapon,
-        foregrip,
-        foregrip::FOREGRIP,
-        grenade,
+        foregrip, grenade,
         grenade::tuning::GRENADE,
-        grip_watch, gun_bodies, heft,
-        heft::tuning::HEFT,
-        hold,
+        grip_watch, gun_bodies,
+        handling_tuning::HANDLING,
+        heft, hold,
         hold::armed,
         hud_feed::hand_ammo,
         inventory, pouch_models,
@@ -548,7 +546,7 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickStart {
                     &Candidate {
                         volume: GrabVolume::Foregrip,
                         centre: foregrip::foregrip_point(&holding_hand, &g),
-                        radius: FOREGRIP.radius_m,
+                        radius: HANDLING.get().foregrip.radius_m,
                         hand: Some(off),
                     },
                     holder,
@@ -911,8 +909,9 @@ pub(super) fn pouches(mode: Mode) -> bool {
 /// player sees them.
 pub(super) fn weighted_hands(active: &ActiveHands) -> [Option<CockpitHand>; 2] {
     let mut hands = active.hands;
-    foregrip::apply(&mut hands, &FOREGRIP);
-    heft::apply(&mut hands, active.head.position, &HEFT);
+    let tuning = HANDLING.get();
+    foregrip::apply(&mut hands, &tuning.foregrip);
+    heft::apply(&mut hands, active.head.position, &tuning.heft);
     hands
 }
 

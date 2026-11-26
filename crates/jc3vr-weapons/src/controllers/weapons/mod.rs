@@ -81,6 +81,7 @@ pub mod grenade;
 pub(crate) mod grenade_moves;
 pub mod grip_watch;
 pub mod gun_bodies;
+pub mod handling_tuning;
 pub mod heft;
 pub mod hold;
 pub mod hud_feed;

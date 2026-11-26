@@ -52,8 +52,10 @@ use crate::controllers::{
         docks::{attract, attract::ATTRACTION},
         dual_wield::single,
         engine, foregrip,
-        foregrip::{FOREGRIP, GripGeometry, Inputs, Transition, TwoHandedWeapon},
-        grenade, hold,
+        foregrip::{GripGeometry, Inputs, Transition, TwoHandedWeapon},
+        grenade,
+        handling_tuning::HANDLING,
+        hold,
         hold::{armed, tick},
         regions,
         regions::GunRegion,
@@ -154,7 +156,7 @@ pub fn finish_tick(
         slide,
         support_broke: two_handed.is_some_and(|w| support_broke[w.holder.other().index()]),
     };
-    let transition = foregrip::tick(&inputs, dt, &FOREGRIP);
+    let transition = foregrip::tick(&inputs, dt, &HANDLING.get().foregrip);
     if let (Some(Transition::Grabbed), Some(w)) = (transition, two_handed) {
         regions::braced(w.holder.other(), w.region);
     }

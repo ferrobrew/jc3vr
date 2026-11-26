@@ -37,22 +37,40 @@
 pub mod lens;
 pub mod suppress;
 
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use glam::{Mat4, Vec3};
 use jc3gi::equipment::weapon::{WeaponBase, WeaponClass};
-use jc3vr_body::controllers::{
-    aim,
-    aim::{AimStatus, HandSource, gun::HeldWeapon, sights::SightSource},
-    hands::late,
-    scheme,
+use jc3vr_body::{
+    controllers::{
+        aim,
+        aim::{AimStatus, HandSource, gun::HeldWeapon, sights::SightSource},
+        hands::late,
+        scheme,
+    },
+    tuning::Millis,
 };
 use jc3vr_input::frame::{Hand, Pose};
 use jc3vr_view::controllers::weapons::scope::lens_frame::{self, LensFrame};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
+use serde::Deserialize;
 
-use crate::controllers::weapons::scope::lens::{LENS, Lens, LensTuning, SightAnchor};
+use crate::controllers::weapons::{
+    handling_tuning::HANDLING,
+    scope::lens::{Lens, LensTuning, SightAnchor},
+};
+
+/// The scope's tuning: the `scope` section of the handling tuning ([`HANDLING`]).
+#[derive(Debug, Copy, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ScopeTuning {
+    /// How long an input tick's identification of the scoped weapon stands. The input tick runs at
+    /// the simulation rate while the bindings inject, so an older one belongs to a menu or the
+    /// gamepad scheme.
+    pub scoped_ms: Millis,
+    pub lens: LensTuning,
+}
 
 /// The scope hooks, aggregated by [`crate::controllers::weapons::hook_library`].
 pub(crate) fn hook_library() -> HookLibrary {
@@ -157,7 +175,8 @@ pub fn tick(eye: usize) {
     }
     let enabled = scheme::enabled();
     let mut state = STATE.lock();
-    let plan = plan(enabled, &LENS, &mut state.anchors);
+    let tuning = &HANDLING.get().scope;
+    let plan = plan(enabled, tuning, &mut state.anchors);
     let mut status = STATUS.lock();
     status.scope = plan.scope;
     status.eyepiece_distance_m = plan.eyepiece_distance_m;
@@ -166,7 +185,7 @@ pub fn tick(eye: usize) {
     lens_frame::set_frame(LensFrame {
         armed: plan.armed,
         sighting: plan.sighting,
-        lens: plan.lens.map(|lens| lens::draw_of(&lens, &LENS)),
+        lens: plan.lens.map(|lens| lens::draw_of(&lens, &tuning.lens)),
     });
 }
 
@@ -204,14 +223,13 @@ static STATUS: Mutex<ScopeStatus> = Mutex::new(ScopeStatus {
 /// The gun in each hand the last input tick found scoped, by [`Hand::index`], and when.
 static SCOPED: Mutex<Option<([Option<usize>; 2], Instant)>> = Mutex::new(None);
 
-/// How long an input tick's identification of the scoped weapon stands. The input tick runs at the
-/// simulation rate while the bindings inject, so an older one belongs to a menu or the gamepad
-/// scheme.
-const MAX_SCOPED_AGE: Duration = Duration::from_millis(250);
-
 /// Plan the frame's lens, re-anchoring each scoped gun's sight line to its wrist when the aim has
 /// run since its anchor was taken, and taking the lens of the scope raised to the eye.
-fn plan(enabled: bool, config: &LensTuning, anchors: &mut [Option<(u64, SightAnchor)>; 2]) -> Plan {
+fn plan(
+    enabled: bool,
+    config: &ScopeTuning,
+    anchors: &mut [Option<(u64, SightAnchor)>; 2],
+) -> Plan {
     if !enabled {
         return idle(LensIdle::Disabled);
     }
@@ -223,7 +241,7 @@ fn plan(enabled: bool, config: &LensTuning, anchors: &mut [Option<(u64, SightAnc
     }
     let scoped = SCOPED
         .lock()
-        .filter(|(_, at)| at.elapsed() < MAX_SCOPED_AGE)
+        .filter(|(_, at)| at.elapsed() < config.scoped_ms.duration())
         .map_or([None; 2], |(scoped, _)| scoped);
     let aim = aim::status();
     let frame = FrameInputs {
@@ -231,7 +249,7 @@ fn plan(enabled: bool, config: &LensTuning, anchors: &mut [Option<(u64, SightAnc
         wrists: late::drawn_hands(jc3vr_view::hooks::camera::last_dtf())
             .map(|h| h.map(|h| h.wrist)),
         eyes: eye_positions(),
-        config,
+        config: &config.lens,
     };
     let plans = Hand::BOTH.map(|hand| {
         let planned = scoped[hand.index()]
@@ -299,7 +317,10 @@ fn plan_hand(
         && anchor.is_none_or(|(updates, a)| updates != aim.updates || a.hand != hand)
     {
         let focus = h.ray.origin.distance(h.target);
-        *anchor = Some((aim.updates, SightAnchor::new(hand, &h.ray, wrist, focus)));
+        *anchor = Some((
+            aim.updates,
+            SightAnchor::new(hand, &h.ray, wrist, focus, frame.config),
+        ));
     }
     let Some((_, a)) = anchor.filter(|(_, a)| a.hand == hand) else {
         return no_sight_line;
@@ -362,7 +383,7 @@ mod tests {
             lens: Some(Lens::new(
                 &aim::ray::Ray::new(Vec3::ZERO, Vec3::NEG_Z).unwrap(),
                 100.0,
-                &LENS,
+                &HANDLING.get().scope.lens,
             )),
             sighting: sighting.then_some(0),
             eyepiece_distance_m: Some(distance),

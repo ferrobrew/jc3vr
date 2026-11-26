@@ -502,7 +502,7 @@ The settings are under `weapons` unless named otherwise. The description is in [
 | Part | Settings | State |
 |---|---|---|
 | Sockets and pouches | `holsters.stick_click_cycles` (off); the sockets are always on, fixed at `SOCKETS` in `controllers::weapons::volumes`: the hips (radius 0.12 m), the shoulders (0.17 m), and the chest (0.09 m); the pouches are fixed at `POUCHES` there: the grenade and C4 pouches (0.075 m, on either side of the chest, for either hand with no gun drawn and the free hand otherwise, the grenades on the gun hand's side), the magazine pouch (0.075 m, at the front of the free hand's hip, for the free hand), and a reach margin of 0.05 m | Built, with a seated placement keyed on the roomscale posture (`roomscale.posture`). The volume offsets and radii are untuned. |
-| The two-handed foregrip | none; the tuning is `FOREGRIP` in `controllers::weapons::foregrip` | Built. |
+| The two-handed foregrip | none; the tuning is the `foregrip` section of `crates/jc3vr-weapons/tuning/handling.toml` ([tuning.md](../tuning.md)) | Built. |
 | The action-runs tier | none; always on | Built for the game's reloads, draws, and holsters. |
 | Recoil | `recoil.kick_scale`; the spring tuning is fixed in `controllers::weapons::recoil`, and the game's camera kick is always suppressed while the guns aim by hand | Built. |
 | Haptics | `haptics.enabled`, `haptics.intensity`, and `haptics.game_rumble` ([haptics.md](haptics.md)) | Built. |
@@ -535,7 +535,7 @@ The settings are under `weapons` unless named otherwise. The description is in [
 | The physical grenade throw | none; the release, warning, and fallback tuning is `GRENADE` in `controllers::weapons::grenade` | Built. No button throws a grenade. |
 | The C4 throw and the detonator | none; the release tuning is `C4` in `controllers::weapons::c4` | Built. The detonator's trigger and the R stick click detonate. |
 | Precision aim suppression | none; always on under the controller scheme | Built. |
-| Scope lenses | none; the lens reads the other eye's image when it has one, and the lens tuning is `LENS` in `controllers::weapons::scope` | The resampled lens is built. The narrow-field scene render is not. |
+| Scope lenses | none; the lens reads the other eye's image when it has one, and the lens tuning is the handling tuning's `scope.lens` section | The resampled lens is built. The narrow-field scene render is not. |
 | Per-hand aim assist | `aim.assist_strength` (0, which is off); the reach and occlusion tolerance are fixed in `controllers::aim::assist` | Built. |
 | The true reload | `reload` (on); the button, the well, the belt, the chamber, the extraction, and the dual split are tuned by `RELOAD` in `controllers::weapons::reload`, and the magazine pouch by `POUCHES` | Built, not run in the headset. See [reload.md](reload.md). |
 | The embedded sight table | `aim.sights` entries override it | Built. Only the `scoped`, `pistol`, and `tuned` grades are used. |

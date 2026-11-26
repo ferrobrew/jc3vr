@@ -30,31 +30,23 @@
 //! is ([`set_pump_slide`]), and the foregrip moves back with it, so the drawn off-hand rides the
 //! pump.
 //!
-//! The grip ends when the off-hand lets go of its grip ([`ForegripTuning::hold`], the default), or
-//! with the grip a toggle, on its next grip press; when the off-hand moves further than the release
-//! distance from the foregrip; or when the weapon leaves the hands. Engaging and releasing blend
-//! over the configured time.
+//! The grip ends when the off-hand lets go of its grip; when the off-hand moves further than the
+//! release distance from the foregrip; or when the weapon leaves the hands. Engaging and releasing
+//! blend over the tuned time ([`ForegripTuning::blend_s`]).
 
 use body_rig::smooth::smoothstep_between;
 use glam::{Quat, Vec3};
 use jc3vr_body::controllers::hands::{CockpitHand, pose as hand_pose};
 use jc3vr_input::frame::{Hand, Pose};
 use parking_lot::Mutex;
+use serde::Deserialize;
 
 use crate::controllers::weapons::regions::GunRegion;
 
-/// The foregrip's fixed tuning.
-pub const FOREGRIP: ForegripTuning = ForegripTuning {
-    radius_m: 0.10,
-    release_distance_m: 0.15,
-    blend_s: 0.12,
-    fallback_distance_m: 0.32,
-    min_span_m: 0.08,
-    max_turn_deg: 70.0,
-};
-
-/// The foregrip's reach, blend, and limits, fixed at [`FOREGRIP`].
-#[derive(Copy, Clone, Debug, PartialEq)]
+/// The foregrip's reach, blend, and limits: the `foregrip` section of the handling tuning
+/// ([`crate::controllers::weapons::handling_tuning::HANDLING`]).
+#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ForegripTuning {
     /// The foregrip volume's radius around the weapon's grip point, metres.
     pub radius_m: f32,
@@ -374,8 +366,7 @@ pub struct Inputs {
     pub weapon: Option<TwoHandedWeapon>,
     /// Whether the off-hand pressed its grip in the foregrip volume this tick.
     pub grab_pressed: bool,
-    /// Whether the off-hand's grip is held, which keeps a hold under
-    /// [`ForegripTuning::hold`].
+    /// Whether the off-hand's grip is held, which keeps a hold.
     pub grip_held: bool,
     /// Where an engaged hold's off-hand has slid to along the gun, in the holding wrist's frame,
     /// and the region it is in there: a hold on a region the hand slides along follows it.
@@ -564,6 +555,7 @@ static STATE: Mutex<ForegripStatus> = Mutex::new(ForegripStatus {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::controllers::weapons::handling_tuning::HANDLING;
 
     const DT: f32 = 1.0 / 30.0;
 
@@ -602,7 +594,7 @@ mod tests {
     fn config() -> ForegripTuning {
         ForegripTuning {
             blend_s: 0.0,
-            ..FOREGRIP
+            ..HANDLING.get().foregrip
         }
     }
 
