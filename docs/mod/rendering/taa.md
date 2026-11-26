@@ -1,6 +1,6 @@
 # The mod's temporal anti-aliasing resolve
 
-FSR 2 runs at 1:1 as the mod's anti-aliasing, and most of its passes exist for upscaling (the depth clip, the lock, the reactive mask, the luma pyramid, the sharpening): at the headset's size it costs about 2 ms of a frame budget of 8.3. The mod's own resolve (`payload/src/fsr/taa.rs`, `payload/src/shaders/taa_resolve.hlsl`) is a single compute pass at the same hook, reading the same inputs, that does what a modern TAA does and nothing an upscaler needs. This document covers how it is built, what it costs, and how its image compares with FSR's and SMAA's. How FSR itself is wired, the jitter, and the motion-vector decode both resolves share are in [fsr.md](fsr.md).
+FSR 2 runs at 1:1 as the mod's anti-aliasing, and most of its passes exist for upscaling (the depth clip, the lock, the reactive mask, the luma pyramid, the sharpening): at the headset's size it costs about 2 ms of a frame budget of 8.3. The mod's own resolve (`crates/jc3vr-render/src/fsr/taa.rs`, `crates/jc3vr-render/shaders/taa_resolve.hlsl`) is a single compute pass at the same hook, reading the same inputs, that does what a modern TAA does and nothing an upscaler needs. This document covers how it is built, what it costs, and how its image compares with FSR's and SMAA's. How FSR itself is wired, the jitter, and the motion-vector decode both resolves share are in [fsr.md](fsr.md).
 
 ## Choosing the resolve
 

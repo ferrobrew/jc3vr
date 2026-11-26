@@ -1,6 +1,6 @@
 """Typed values for the harness's `snapshot` and `snapshot_release` requests: GPU snapshots of a
 frame that the payload compares on the GPU against snapshots kept earlier in the schedule
-(`payload/src/screenshot/harness/snapshot/`)."""
+(`crates/jc3vr-render/src/screenshot/harness/snapshot/`)."""
 
 import json
 import math
@@ -17,7 +17,7 @@ from tools.rendering.protocol.base import (
     valid_request_id,
 )
 
-# Mirrors `MAX_COMPARED` and `MAX_DEPTH_ULPS` in `payload/src/screenshot/harness/snapshot/request.rs`.
+# Mirrors `MAX_COMPARED` and `MAX_DEPTH_ULPS` in `crates/jc3vr-render/src/screenshot/harness/snapshot/request.rs`.
 MAX_COMPARED = 8
 MAX_DEPTH_ULPS = 512
 

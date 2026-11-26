@@ -2,7 +2,7 @@
 
 While a VR session runs, the engine renders into a texture the mod allocates rather than into the DXGI swapchain, so the render resolution and the swapchain size stop being the same number. The scene is per-eye sized; the swapchain stays at the window's client size; the desktop mirror's present is 1:1.
 
-Controlled by `vr.own_back_buffer` (default on). Implemented in `payload/src/vr/back_buffer.rs`, with two hooks in `payload/src/hooks/graphics_engine/graphics_engine.rs` and the transitions in `payload/src/vr/resolution.rs`.
+Controlled by `vr.own_back_buffer` (default on). Implemented in `crates/jc3vr-render/src/vr/back_buffer.rs`, with two hooks in `crates/jc3vr-render/src/hooks/graphics_engine/graphics_engine.rs` and the transitions in `crates/jc3vr-render/src/vr/resolution.rs`.
 
 The engine-side behaviour this rests on is documented in [`render-setups-reinit.md`](../../engine/rendering/render-setups-reinit.md) and [`rendering.md`](../../engine/rendering/rendering.md); this document is the mod-side design.
 
@@ -102,7 +102,7 @@ The mirror is the composite. The substitution adds no present path; it makes the
 
 Because `m_BackBuffer` and `m_BackBufferLinear` answer different questions under the substitution, every consumer has to pick one. `crate::stereo::render_size` reads `m_BackBufferLinear` and is the render basis; `per_eye_render_size` halves it under single-pass double-wide. Anything sizing a resource *to the render* uses those — the per-eye capture textures, the HUD's reset proxy, and its engine-binding restore. Only code addressing the presented surface reads the swapchain's size: the mirror's viewport, and the cursor mapping's window basis.
 
-These mod-owned render-sized resources (the FSR contexts and outputs and the per-eye capture textures) are outside the engine's teardown ([`render-setups-reinit.md` §3](../../engine/rendering/render-setups-reinit.md#3-what-destroyrendersetups-tears-down)), so a resize does not re-create them. Each compares the size it was built for against the current render size when it next runs, and re-creates itself on a change (`payload/src/fsr/mod.rs`, `payload/src/hooks/graphics_engine/capture.rs`). This follows the engine's resize rather than racing it.
+These mod-owned render-sized resources (the FSR contexts and outputs and the per-eye capture textures) are outside the engine's teardown ([`render-setups-reinit.md` §3](../../engine/rendering/render-setups-reinit.md#3-what-destroyrendersetups-tears-down)), so a resize does not re-create them. Each compares the size it was built for against the current render size when it next runs, and re-creates itself on a change (`crates/jc3vr-render/src/fsr/mod.rs`, `crates/jc3vr-render/src/hooks/graphics_engine/capture.rs`). This follows the engine's resize rather than racing it.
 
 The HUD texture is neither. It is a flat panel at a fixed apparent size, so what it needs is enough texels to look crisp at that size — a property of the headset and the panel's angular size, not of the scene's pixel count. It derives from `RENDER_SCALE * sqrt(eye_width * eye_height)` (`payload/src/hud/mod.rs`, which also has an unset `RENDER_RESOLUTION` pin). The geometric mean, rather than the longer axis, keeps the budget stable as the render target's shape changes: a per-eye target is much taller than it is wide, where `RENDER_SCALE * max(w, h)` would inflate the HUD 2x under double-wide.
 

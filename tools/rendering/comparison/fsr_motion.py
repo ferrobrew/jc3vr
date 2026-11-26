@@ -36,7 +36,7 @@ import numpy as np
 
 SESSIONS = Path("target/harness-probe")
 # The velocity target's clear value, as bytes: what a pixel the velocity pass never drew holds
-# (`UNDRAWN` in payload/src/shaders/velocity_decode.hlsl).
+# (`UNDRAWN` in crates/jc3vr-render/shaders/velocity_decode.hlsl).
 UNDRAWN = (127, 127, 255, 0)
 # DXGI formats the saved planes come in.
 R32G8X24_TYPELESS = 19

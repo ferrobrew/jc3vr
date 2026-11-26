@@ -229,6 +229,6 @@ class ShippedOverrideTests(unittest.TestCase):
 
     def test_the_shipped_list_matches_the_payload(self):
         source = (pathlib.Path(__file__).resolve().parents[3] /
-                  "payload/src/testing/visual/overrides.rs").read_text()
+                  "crates/jc3vr-render/src/testing/visual/overrides.rs").read_text()
         body = source.split("fn shipped(&self)", 1)[1].split("]", 1)[0]
         self.assertEqual(tuple(re.findall(r'\("(\w+)", self\.', body)), SHIPPED_OVERRIDES)

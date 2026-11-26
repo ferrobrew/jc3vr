@@ -11,17 +11,18 @@ The Cargo workspace (`Cargo.toml`) groups its members into the runtime, shared l
 | Path | What it is |
 | --- | --- |
 | `injector/` | Loads the payload into a running game process (or ejects or reloads it), then stays running as the capture host that encodes the payload's video stream ([mod/capture.md](mod/capture.md)). |
-| `payload/` | The injected DLL: every hook, the OpenXR runtime, the HUD, the controllers and body, the debug UI, and the diagnostics. Its shaders live in `payload/src/shaders/` as HLSL with committed DXBC. |
+| `payload/` | The injected DLL: every hook, the HUD, the controllers and body, the debug UI, and the tooling, built on the layer crates below. Its shaders live in `payload/src/shaders/` as HLSL with committed DXBC. |
 | `jc3gi/` | Rust bindings to the game's types, functions, and globals, generated at build time by pyxis from the `.pyxis` files in the `jc3gi/pyxis-defs` submodule. The defs are the record of every address, offset, and reverse-engineered finding; CONTRIBUTING.md describes the rules and the submodule workflow. |
 | `crates/body-estimator` | The learned full-body estimator's inference (EgoPoser) in plain Rust ([mod/body/body-estimator.md](mod/body/body-estimator.md)). |
 | `crates/body-rig` | The body rig's pure core (the pelvis solver, the yaw follow, and the step commit), shared by the payload and the offline evaluator ([mod/body/rig.md](mod/body/rig.md)). |
 | `crates/dxbc-stereo` | DXBC bytecode rewriting of the game's vertex shaders for single-pass stereo ([mod/stereo/single-pass-stereo.md](mod/stereo/single-pass-stereo.md)). |
 | `crates/fsr-sys` | Bindings to FidelityFX Super Resolution 2 with its DX11 backend, built from the vendored source in `vendor/` ([mod/rendering/fsr.md](mod/rendering/fsr.md)). |
 | `crates/jc3vr-input` | The payload's input layer: the published controller frame and its motion history, the control scheme, the haptic data and mixer, the semantic action vocabulary, and the debug UI's input-capture policy. It depends on no layer crate, so it builds and tests on any host ([crate layering](#crate-layering)). |
+| `crates/jc3vr-render` | The payload's render layer: the OpenXR runtime and input sampling, the head pose, stereo rendering, FSR, the far field, the engine-pipeline hooks, the overlay and scope passes, the tracking recorder, and the render diagnostics. Its shaders live in `crates/jc3vr-render/shaders/` as HLSL with committed DXBC ([crate layering](#crate-layering)). |
 | `crates/jc3vr-core` | The payload's bottom layer: the lifecycle, the configuration engine, the hook plumbing, the online timing detours, frame timing and the per-frame slots, the session folder, logging, crash reports, and the profiler core ([crate layering](#crate-layering)). |
 | `crates/tracking-format` | The `.jc3trk` tracking recording's data model and codec, built for any host ([mod/testing/recorder.md](mod/testing/recorder.md)). |
 | `crates/layering-guard` | A test crate that enforces the payload's crate layering while the payload is split into crates ([crate layering](#crate-layering)). |
-| `tools/shadergen` | Compiles the payload's shaders and the FSR2 shader permutations. |
+| `tools/shadergen` | Compiles the payload's and the render crate's shaders, the body estimator's kernels, and the FSR2 shader permutations. |
 | `tools/dxbc-tool` | Compiles HLSL and disassembles DXBC through `d3dcompiler_47` under wine. |
 | `tools/scaleform-gfx-examine` | Inspects Scaleform movie files ([engine/scaleform.md](engine/scaleform.md)). |
 | `tools/tracking-synth` | Offline tools over tracking recordings: printing, the body rig evaluator, the Rerun export, the view scan, and synthetic recordings ([mod/testing/recorder.md](mod/testing/recorder.md)). |
@@ -75,7 +76,7 @@ The game's Scaleform UI is redirected into a texture the mod owns by rebinding [
 
 The payload's top-level modules group by the domain they serve. Detours live in `hooks/`, which mirrors the pyxis hierarchy, and also inside the domain modules that own the behaviour (mostly under `controllers/`, `grapple/`, and `pause_menu/`).
 
-A module already cut out into its layer crate lives there and is re-exported at its old payload path until the split's final cleanup pass. The core crate (`crates/jc3vr-core/src`) holds `lifecycle`, `module`, `thread_role`, `cpu_placement`, `hash`, `util`, `session`, `logging`, `crash`, `render_frame`, `frame_timing`, the profiler core (`profiler` minus `gpu` and `ui`), the configuration engine (`config::engine`), the hook plumbing with `hooks::online` (`hooks` minus the engine-facing hook modules), and `director::clean_view`.
+A module already cut out into its layer crate lives there and is re-exported at its old payload path until the split's final cleanup pass. The core crate (`crates/jc3vr-core/src`) holds `lifecycle`, `module`, `thread_role`, `cpu_placement`, `hash`, `util`, `session`, `logging`, `crash`, `render_frame`, `frame_timing`, the profiler core (`profiler` minus `gpu` and `ui`), the configuration engine (`config::engine`), the hook plumbing with `hooks::online` (`hooks` minus the engine-facing hook modules), and `director::clean_view`. The render crate (`crates/jc3vr-render/src`) holds `vr`, `headpose`, `stereo`, `far_field`, `fsr`, `debug`, `screenshot`, `image_writer`, the engine-pipeline hooks (`hooks::{graphics_engine, camera, clock, draw_count, window_focus, profiler}`, minus `hooks::camera::height`), `profiler::gpu`, `recorder::tracking`, `testing::{visual, benchmark}`, and the render-side pieces of the modules above it, kept at their payload paths: `controllers::cockpit`, `controllers::overlay::{pass, primitive, renderer, resolve, store, view}`, `controllers::weapons::scope::{pass, renderer}`, `controllers::body::rig::origin_provenance`, `hud::render_camera_pose`, `hud::pointer::panel`, and `hud::world_markers::stage_frame`.
 
 | Domain | Modules | Responsibility | Owning docs |
 | --- | --- | --- | --- |

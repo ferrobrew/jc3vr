@@ -97,9 +97,9 @@ Reflections and other non-shadow passes inherit the hide (headless in mirrors).
 
 The headpose abstraction is implemented as two cleanly separated layers:
 
-- **`payload/src/headpose/mod.rs`** — the pure pose source of truth. Owns the current `HeadPose { position, orientation }`, the previous-tick pose (for the engine's T0/T1 interpolation, below), and the head-bone anchor. No latch logic, no mode detection. The sim (or VR) writes via `set_pose()`; consumers (head bone, camera, HUD) read via `query()`/`query_prev()`. This is the VR seam: when OpenXR lands, the sim is replaced with the HMD pose and nothing else changes.
+- **`crates/jc3vr-render/src/headpose/mod.rs`** — the pure pose source of truth. Owns the current `HeadPose { position, orientation }`, the previous-tick pose (for the engine's T0/T1 interpolation, below), and the head-bone anchor. No latch logic, no mode detection. The sim (or VR) writes via `set_pose()`; consumers (head bone, camera, HUD) read via `query()`/`query_prev()`. This is the VR seam: when OpenXR lands, the sim is replaced with the HMD pose and nothing else changes.
 
-- **`payload/src/headpose/sim/mod.rs`** — the flatscreen simulation. Owns mouse-look input accumulation, the latch state machine, mode detection, body-yaw target computation, and the per-frame `update()` that produces a `HeadPose` and publishes it via `set_pose()`.
+- **`crates/jc3vr-render/src/headpose/sim/mod.rs`** — the flatscreen simulation. Owns mouse-look input accumulation, the latch state machine, mode detection, body-yaw target computation, and the per-frame `update()` that produces a `HeadPose` and publishes it via `set_pose()`.
 
 Alongside the world-space pose, `headpose` exposes the head's **body-relative rotation** (`body_relative_rotation()`): how far the head is turned from the body's own facing, with the body frame divided out. Both sources compose their published orientation as `body × … × this`, so it is the factor each contributes — the sim's accumulated look angles, the HMD's orientation relative to the recenter baseline — and the accessor picks the right one per source. Anything that poses the head *bone* wants this rather than the world orientation: the bone lives in model space, where the body frame is already the identity, and it is rest-frame-free, so neutral is exactly the identity no matter how the head bone's rest orientation sits relative to the model axes. Reading the sim's raw angles instead does not work — under the VR source `sim::on_input_tick` returns early before writing them, so they read as a permanent zero and the head-bone override and neck twist would both be inert in VR (the *camera* still tracks, which is a separate path, so the failure shows only in Rico's shadow and reflections).
 
@@ -168,7 +168,7 @@ Position alone is not a grip, though: it says *where* the wrist is and leaves th
 
 What the wingsuit does raise is a question of *taste* rather than frames. That pose is strongly authored and aerodynamically legible, the arms are wings rather than limbs, and the hand pinning has nothing sensible to hold on to. Bending the torso toward a lean there may simply look wrong even though it computes correctly. Gating the feature — or scaling the shares — per mode is the likely answer, and doing so needs finer mode detection than the current binary on-foot-versus-everything-else: the recipe for that is in `docs/engine/character/hands-locomotion-and-state.md` §5, and is not implemented yet. Until it is, wingsuit and parachute share the vehicle's settings.
 
-[`compose`]: ../../../payload/src/headpose/xr.rs
+[`compose`]: ../../../crates/jc3vr-render/src/headpose/xr.rs
 
 ### Where this model stops
 

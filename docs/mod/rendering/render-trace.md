@@ -1,6 +1,6 @@
 # Render trace
 
-The render trace records the frame's render events over a fixed number of real frames and writes them as NDJSON, for investigating stereo rendering artifacts without a debugger. The machinery is `payload/src/debug/trace.rs`; the probes that feed it are the other modules in `payload/src/debug/`.
+The render trace records the frame's render events over a fixed number of real frames and writes them as NDJSON, for investigating stereo rendering artifacts without a debugger. The machinery is `crates/jc3vr-render/src/debug/trace.rs`; the probes that feed it are the other modules in `crates/jc3vr-render/src/debug/`.
 
 ## Capturing
 
@@ -19,18 +19,18 @@ The trace is held in memory and written when its last frame ends, so a crash mid
 The always-recorded events are the frame and dispatch markers, the post-effect and exposure gates, the buffer-flow events, the shadow and depth-reconstruction state, and the coordinate frame. The toggled probes are:
 
 - Per-eye screenshots (`stereo.diagnose_rt_screenshots`): the PNGs above.
-- MainColor means (`stereo.diagnose_main_color_means`, and `stereo.diagnose_pass_sweep` for the per-pass ladder): `MainColorMean` events at the pipeline stage brackets or after every late-scene pass, in `payload/src/debug/pipeline_probes.rs`.
+- MainColor means (`stereo.diagnose_main_color_means`, and `stereo.diagnose_pass_sweep` for the per-pass ladder): `MainColorMean` events at the pipeline stage brackets or after every late-scene pass, in `crates/jc3vr-render/src/debug/pipeline_probes.rs`.
 - Global constants (`stereo.diagnose_global_constants`): `GlobalConstants` events with the fragment and vertex constant staging blocks at scene time and frame end.
-- Render-target hashes (`stereo.diagnose_rt_hashes`): `rt_hash` events per eye, for finding a target written twice without a per-dispatch reset; run with stereo cameras off. See `payload/src/debug/rt_hash.rs`.
+- Render-target hashes (`stereo.diagnose_rt_hashes`): `rt_hash` events per eye, for finding a target written twice without a per-dispatch reset; run with stereo cameras off. See `crates/jc3vr-render/src/debug/rt_hash.rs`.
 - Stereo draw diff (`stereo.diagnose_stereo_draw_diff`): `StereoDrawDiff` events, described below.
 
 ### Stereo draw diff
 
-The single-pass stereo feasibility probe (`payload/src/debug/stereo_diff.rs`). During each traced stereo frame, `RenderPass::DoDraw` records each pass's GPU op count (draws, indexed draws, and dispatches) per eye. After both eyes drain, the two sequences are aligned by pass id and the frame's `StereoDrawDiff` event records the passes both eyes run and their op total, the ops in passes whose counts agree, the passes only eye 0 runs (the shared prepasses), whether the shared passes keep the same relative order, each divergent pass with both eyes' counts, and any pass only eye 1 runs, which should not happen. The probe arms at the stereo frame boundary, so a trace started mid-frame does not diff a partial sequence.
+The single-pass stereo feasibility probe (`crates/jc3vr-render/src/debug/stereo_diff.rs`). During each traced stereo frame, `RenderPass::DoDraw` records each pass's GPU op count (draws, indexed draws, and dispatches) per eye. After both eyes drain, the two sequences are aligned by pass id and the frame's `StereoDrawDiff` event records the passes both eyes run and their op total, the ops in passes whose counts agree, the passes only eye 0 runs (the shared prepasses), whether the shared passes keep the same relative order, each divergent pass with both eyes' counts, and any pass only eye 1 runs, which should not happen. The probe arms at the stereo frame boundary, so a trace started mid-frame does not diff a partial sequence.
 
 ### Coordinate frame
 
-The coordinate-frame probe (`payload/src/debug/coord_frame.rs`) records a `CoordFrame` event once per real frame from the render camera before the per-eye offset: the `m_TransformF` position and basis rows, the position change since the previous sample, and the travel direction's dot products with `-z_basis`, `z_basis`, right, and up. Walking forward with `dot_neg_z` near +1 confirms the world frame is right-handed and Y-up with forward along −Z (the coordinate-frame gate in [vr-runtime.md](../vr-runtime.md)).
+The coordinate-frame probe (`crates/jc3vr-render/src/debug/coord_frame.rs`) records a `CoordFrame` event once per real frame from the render camera before the per-eye offset: the `m_TransformF` position and basis rows, the position change since the previous sample, and the travel direction's dot products with `-z_basis`, `z_basis`, right, and up. Walking forward with `dot_neg_z` near +1 confirms the world frame is right-handed and Y-up with forward along −Z (the coordinate-frame gate in [vr-runtime.md](../vr-runtime.md)).
 
 ## Log lines
 

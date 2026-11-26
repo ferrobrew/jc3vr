@@ -1,6 +1,6 @@
 # Frame-time benchmark
 
-The capture harness's comparisons say whether single-pass renders the same image as multipass; the benchmark says what each costs. It plays the game forward in a scene for a few seconds in each render mode and records every frame's CPU time per thread, GPU time per dispatch, and draw submissions, at the session's render size or a sweep of them. The results at the headset's size, and what they say, are in [frame-budget.md](../performance/frame-budget.md). The payload side is `payload/src/testing/benchmark/`, the harness side `tools/rendering/benchmark/`, and the scene list `tools/rendering/suites/benchmark.toml`.
+The capture harness's comparisons say whether single-pass renders the same image as multipass; the benchmark says what each costs. It plays the game forward in a scene for a few seconds in each render mode and records every frame's CPU time per thread, GPU time per dispatch, and draw submissions, at the session's render size or a sweep of them. The results at the headset's size, and what they say, are in [frame-budget.md](../performance/frame-budget.md). The payload side is `crates/jc3vr-render/src/testing/benchmark/`, the harness side `tools/rendering/benchmark/`, and the scene list `tools/rendering/suites/benchmark.toml`.
 
 ## Running it
 
@@ -42,7 +42,7 @@ The scene's last run puts the configuration back and releases the camera, so the
 
 ## What is measured
 
-Each frame row is the difference between two readings of never-reset counters taken a frame apart at the top of the game's update (`payload/src/testing/benchmark/sample.rs`):
+Each frame row is the difference between two readings of never-reset counters taken a frame apart at the top of the game's update (`crates/jc3vr-render/src/testing/benchmark/sample.rs`):
 
 - From the always-on frame breakdown ([frame-timing.md](../performance/frame-timing.md)): the frame interval; the game thread's self time by kind (mod, OpenXR, engine, wait), the frame tail's, and the other threads'; and the slots that answer where the time went: the draw task (`draw_task`, the engine's walk of the render passes that records a dispatch's draws, with the stereo draw path's detours inside it) and its count, the post-draw work, the game thread's dispatch, the drains that wait on the draw task, `xrWaitFrame`, `xrBeginFrame`, `xrEndFrame`, the swapchain wait, the runtime lock the deferred tail holds, the submit, the simulation, the engine's update and render update, and the debug UI.
 - The engine's draw calls and compute dispatches through its `Graphics::` wrappers (`hooks::draw_count`), which count a render block re-issued per eye once per eye but miss the blocks that call Direct3D directly, and the stereo draw path's submissions (`draw_census::submission_total`), the census's definition of a submission, counted only while the draw path's detours are installed. The harness installs them in every run by default, as any session that has run single-pass has them, so multipass's submissions are counted and every mode pays for the detours alike; `--no-draw-detours` in a fresh session measures multipass with no detours at all.

@@ -37,7 +37,7 @@ from tools.rendering.protocol.benchmark import (
     CameraPath,
 )
 
-# The payload's frame columns (`payload/src/testing/benchmark/sample.rs`).
+# The payload's frame columns (`crates/jc3vr-render/src/testing/benchmark/sample.rs`).
 COLUMNS = ["frame_us", "sim_ticks", "game_mod_us", "game_openxr_us", "game_engine_us",
            "game_wait_us", "tail_mod_us", "tail_openxr_us", "tail_wait_us", "other_mod_us",
            "other_engine_us", "other_wait_us", "draw_task_us", "draw_tasks", "post_draw_us",

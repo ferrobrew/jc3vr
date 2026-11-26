@@ -231,7 +231,7 @@ class SunShadows(StrEnum):
 
 
 # The single-pass production switches a configuration may override, by their configuration field
-# names. Mirrors `SinglePassSwitch` in `payload/src/stereo/switches.rs`; a test keeps the two equal.
+# names. Mirrors `SinglePassSwitch` in `crates/jc3vr-render/src/stereo/switches.rs`; a test keeps the two equal.
 SINGLE_PASS_SWITCHES = (
     "reproject", "reproject_camera_only", "terrain", "terrain_patch_per_eye", "terrain_eye_rows", "full_view_projection_rows", "tree_impostors",
     "tree_impostor_pixel_size_per_eye", "tree_impostor_screen_door_per_eye", "static_lights_per_eye", "moon_per_eye", "water_plane_per_eye", "clouds_per_eye", "stars_per_eye", "bark", "foliage",
@@ -268,18 +268,18 @@ def single_pass_switches(value, context="single_pass") -> tuple[tuple[str, bool]
 
 
 # Settings the capture profile turns off or pins, put back at the mod's shipped value in every mode.
-# Mirrors `VisualOverrides::shipped` in `payload/src/testing/visual/overrides.rs`.
+# Mirrors `VisualOverrides::shipped` in `crates/jc3vr-render/src/testing/visual/overrides.rs`.
 # Sources left out in every mode, to attribute a difference to one.
 DISABLING_OVERRIDES = ("ssao", "ao_volumes", "global_illumination", "fsr_mv_correction",
                        "fsr_hybrid_velocity", "fsr_jitter", "anti_aliasing", "fsr_sharpen")
 SHIPPED_OVERRIDES = ("fsr", "taa", "foveation", "auto_exposure", "screen_fade", "player_damage")
 # The mod's temporal resolve's tuning values, each within [0, 4]. Mirrors `TaaTuningOverride` in
-# `payload/src/testing/visual/overrides.rs`.
+# `crates/jc3vr-render/src/testing/visual/overrides.rs`.
 # `taa_current_sharpness` is in tenths of the kernel falloff.
 TAA_TUNING_OVERRIDES = ("taa_history_weight", "taa_clip_gamma_rest", "taa_current_sharpness",
                         "taa_motion_history_weight")
 # The range of the resolution-scale override (each side). Mirrors `ResolutionScaleOverride` in
-# `payload/src/testing/visual/overrides.rs`: the top is twice the session's pixels.
+# `crates/jc3vr-render/src/testing/visual/overrides.rs`: the top is twice the session's pixels.
 RESOLUTION_SCALE_RANGE = (0.5, 1.415)
 
 

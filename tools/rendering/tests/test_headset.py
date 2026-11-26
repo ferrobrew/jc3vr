@@ -94,7 +94,7 @@ class HeadsetOverrideTests(unittest.TestCase):
                     self.assertAlmostEqual((tr - tl) / (tu - td), target, delta=0.01)
 
     def test_presets_match_the_payload(self):
-        source = (REPOSITORY / "payload/src/testing/visual/headset.rs").read_text()
+        source = (REPOSITORY / "crates/jc3vr-render/src/testing/visual/headset.rs").read_text()
         found = dict(re.findall(
             r"Self::(\w+) =>(?: \{\s*let mut geometry =)?\s*mirrored\(self, ([^)]*)\)", source))
         self.assertEqual(sorted(name.lower() for name in found), sorted(HEADSET_RIGS))

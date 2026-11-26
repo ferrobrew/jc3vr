@@ -25,7 +25,7 @@ STAGE_BUDGET_SECONDS = 450
 
 # A benchmark run waits up to 90 seconds for its configuration, then warms up and records for at
 # most 60 and 120 seconds (`MAX_WARMUP_SECONDS` and `MAX_RECORD_SECONDS` in
-# `payload/src/testing/benchmark/request.rs`).
+# `crates/jc3vr-render/src/testing/benchmark/request.rs`).
 BENCHMARK_BUDGET_SECONDS = 300
 
 # How often an outstanding request's acknowledgement is looked for. The payload looks for requests

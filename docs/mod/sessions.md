@@ -42,4 +42,4 @@ A recording's folder holds:
 
 A standalone tracking recording is a folder with only `tracking.jc3trk`, a standalone video recording one without it, and an F1 session recording has both halves.
 
-A kind that writes one file per capture names it `<stamp>[_<qualifier>].<ext>`; a kind that writes several gets a `<stamp>/` folder whose files are named by their role. Images are written by one writer, `payload/src/image_writer.rs`, on its own thread, and follow one rule wherever they land: `<stem>.png` for an image of the whole frame (both eyes side by side in stereo) and `<stem>_eye<N>.png` for one eye, with any sidecar beside it as `<stem>.json`.
+A kind that writes one file per capture names it `<stamp>[_<qualifier>].<ext>`; a kind that writes several gets a `<stamp>/` folder whose files are named by their role. Images are written by one writer, `crates/jc3vr-render/src/image_writer.rs`, on its own thread, and follow one rule wherever they land: `<stem>.png` for an image of the whole frame (both eyes side by side in stereo) and `<stem>_eye<N>.png` for one eye, with any sidecar beside it as `<stem>.json`.

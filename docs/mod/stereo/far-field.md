@@ -67,7 +67,7 @@ translation is the only residual, and it is the threshold-bounded parallax error
 250 m). The warp pass samples colour (and, in Variant B, the G-buffer targets) through `H` and
 reconstructs/writes per-pixel depth (`SV_Depth`, reverse-Z per `rendering.md` §2.9). World-space
 G-buffer normals warp unchanged. Shaders follow the `capture`/`vr_blit`/foveation precedent
-(`payload/src/shaders/`, compiled via shadergen).
+(`crates/jc3vr-render/shaders/`, compiled via shadergen).
 
 Rendering the far dispatch at the eye-0 pose (not centre) makes eye 0's composite a plain copy —
 only eye 1 pays the warp, and the residual error lands entirely on eye 1 (IPD instead of IPD/2 per

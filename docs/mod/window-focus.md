@@ -2,7 +2,7 @@
 
 The game freezes itself whenever its desktop window loses the foreground ([engine/window-focus.md](../engine/window-focus.md)). In VR that is wrong: the desktop window's focus says nothing about where the player is looking, and it is taken often (a focus-follows-mouse window manager, an overlay such as WayVR, a terminal). Left alone, a focus change mid-session stops `Game::Update`, so the headset view, the head pose, and the controllers freeze until someone clicks the window.
 
-`payload/src/hooks/window_focus.rs` detours [`LoseFocus`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/window::LoseFocus) and [`GainFocus`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/window::GainFocus), the two functions the main loop calls on a foreground change. Those are where the suspension is applied and lifted, so skipping them keeps every system the suspension touches running together: the frame, the audio, and the fullscreen mode. The window procedure is not the hook point, since the engine never reads the activation messages.
+`crates/jc3vr-render/src/hooks/window_focus.rs` detours [`LoseFocus`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/window::LoseFocus) and [`GainFocus`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/window::GainFocus), the two functions the main loop calls on a foreground change. Those are where the suspension is applied and lifted, so skipping them keeps every system the suspension touches running together: the frame, the audio, and the fullscreen mode. The window procedure is not the hook point, since the engine never reads the activation messages.
 
 ## While a session runs
 

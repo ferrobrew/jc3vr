@@ -40,22 +40,22 @@ No engine code path found references the top stencil bit, so it is the mask-bit 
 
 ### Clear timing and the mask-write injection
 
-Depth-stencil clears are per-pass and data-driven through [`Clear`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::draw##func-Clear), whose flags are [`ClearFlags`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::draw::ClearFlags) (`CLEAR_DEPTHBUFFER`, `CLEAR_STENCILBUFFER`). The main depth and stencil are cleared early in the GBuffer range, around [`RenderPassId::RP_Z_OCCLUDERS`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderPassId##variant-RP_Z_OCCLUDERS). The mask must be written after that clear. The existing `DrawRenderPassRange` hook (`payload/src/hooks/graphics_engine/render_pass.rs`) already splits pass ranges, so it hosts the insertion. After `RP_Z_OCCLUDERS`, it draws a full-screen radial-mask pass and then continues the range. The mask pass binds the MainDepth DSV with no colour target, and its DS state is `StencilEnable`, func `ALWAYS`, `StencilOp REPLACE`, write mask and ref equal to the mask bit, and `DepthEnable=0`/`DepthWriteMask=0`. Its pixel shader discards foveal-centre pixels, so only the periphery writes the bit.
+Depth-stencil clears are per-pass and data-driven through [`Clear`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::draw##func-Clear), whose flags are [`ClearFlags`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::draw::ClearFlags) (`CLEAR_DEPTHBUFFER`, `CLEAR_STENCILBUFFER`). The main depth and stencil are cleared early in the GBuffer range, around [`RenderPassId::RP_Z_OCCLUDERS`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderPassId##variant-RP_Z_OCCLUDERS). The mask must be written after that clear. The existing `DrawRenderPassRange` hook (`crates/jc3vr-render/src/hooks/graphics_engine/render_pass.rs`) already splits pass ranges, so it hosts the insertion. After `RP_Z_OCCLUDERS`, it draws a full-screen radial-mask pass and then continues the range. The mask pass binds the MainDepth DSV with no colour target, and its DS state is `StencilEnable`, func `ALWAYS`, `StencilOp REPLACE`, write mask and ref equal to the mask bit, and `DepthEnable=0`/`DepthWriteMask=0`. Its pixel shader discards foveal-centre pixels, so only the periphery writes the bit.
 
 ## Implementation
 
 The design above is implemented, on by default, across:
 
 - pyxis defs: [`SetupRenderStates`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::graphics_engine##func-SetupRenderStates), [`CreateDepthStencilState`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::graphics_engine##func-CreateDepthStencilState), and the [`HContext_t::m_DepthStencilStateIndex`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::HContext_t##field-m_DepthStencilStateIndex) and [`HContext_t::m_StencilRef`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::HContext_t##field-m_StencilRef) fields with the full packed-index bit layout.
-- **shaders** — `payload/src/shaders/foveation_mask_ps.hlsl` (radial dithered mask, interleaved-gradient
+- **shaders** — `crates/jc3vr-render/shaders/foveation_mask_ps.hlsl` (radial dithered mask, interleaved-gradient
   noise, decided per drop cell) and `foveation_fill_ps.hlsl` (neighbour-average reconstruction), compiled
   via `shadergen`. Both take the same constant buffer (the eyes' centres, the radii, the drop, the seam
   column, and the cell size); the two must keep their `ign` and drop decision identical so the fill
   reproduces the mask's choice.
-- **`payload/src/vr/foveation.rs`** — the D3D pipeline (mask-write and fill-in full-screen passes on the
+- **`crates/jc3vr-render/src/vr/foveation.rs`** — the D3D pipeline (mask-write and fill-in full-screen passes on the
   immediate context under `Context::m_Mutex`, the `blit.rs` pattern), the `SetupRenderStates` force-test
   index rewrite (`apply_force_test`), and the `packed_stencil_test` bit math.
-- **`payload/src/hooks/graphics_engine/render_pass.rs`** — the `SetupRenderStates` detour, and the
+- **`crates/jc3vr-render/src/hooks/graphics_engine/render_pass.rs`** — the `SetupRenderStates` detour, and the
   `DrawRenderPassRange` bracketing that runs the mask-write before the first foveated pass, forces the
   stencil test through each run of foveated passes (`FoveatedPasses` in `foveation.rs`), clears the mask
   bit after the last, and runs the fill-in (see "Which passes skip the dropped pixels"). The foveal centre comes from the eye's
@@ -70,7 +70,7 @@ The design above is implemented, on by default, across:
 
 ## Which passes skip the dropped pixels
 
-The forced test covers a set of render passes (`FoveatedPasses` in `payload/src/vr/foveation.rs`), and a pass belongs in it only if dropping its pixels leaves every kept pixel as it was. Two things decide that: whether the pass writes anything a later pass reads at a neighbouring pixel before the fill-in runs, and whether it writes depth the prepasses have not already written. A dropped pixel keeps whatever depth it had when the forced test began, and the SSAO, the depth downsample, the fog volumes, the water's depth test, and FSR all read depth at and around it.
+The forced test covers a set of render passes (`FoveatedPasses` in `crates/jc3vr-render/src/vr/foveation.rs`), and a pass belongs in it only if dropping its pixels leaves every kept pixel as it was. Two things decide that: whether the pass writes anything a later pass reads at a neighbouring pixel before the fill-in runs, and whether it writes depth the prepasses have not already written. A dropped pixel keeps whatever depth it had when the forced test began, and the SSAO, the depth downsample, the fog volumes, the water's depth test, and FSR all read depth at and around it.
 
 - Always: the models, the vegetation, and the creatures ([`RenderPassId::RP_MODELS_DYNAMIC`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderPassId##variant-RP_MODELS_DYNAMIC) through [`RenderPassId::RP_CREATURES`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderPassId##variant-RP_CREATURES)), as before.
 - `single_pass.foveation_gbuffer`: the terrain's apply passes ([`RenderPassId::RP_TERRAIN_APPLY_NEAR_DETAILED`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderPassId##variant-RP_TERRAIN_APPLY_NEAR_DETAILED) through `RP_TERRAIN_APPLY_FAR`), the road junctions and road layers (`RP_ROAD_JUNCTION` through `RP_ROAD_JUNCTION_OPAQUE`), and the decals (`RP_DECALS` through `RP_SCREEN_SPACE_ROAD_DECALS`). Per draw, a draw that already uses stencil is left alone, as before.

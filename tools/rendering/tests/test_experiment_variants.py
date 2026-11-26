@@ -181,7 +181,7 @@ class VariantConfigTests(ExperimentTestCase):
 
 class VariantProtocolTests(unittest.TestCase):
     def test_switch_names_match_the_payload(self):
-        source = (REPOSITORY / "payload/src/stereo/switches.rs").read_text()
+        source = (REPOSITORY / "crates/jc3vr-render/src/stereo/switches.rs").read_text()
         invocation = source[source.index("single_pass_switches! {"):]
         invocation = invocation[:invocation.index("\n}\n")]
         names = tuple(re.findall(r"^\s*\w+ => (\w+), (?:true|false);$", invocation, re.M))
