@@ -8,10 +8,10 @@ use jc3vr_body::controllers::{
     physics::{grapple_hook::BodyHit, refs::Strong},
 };
 use jc3vr_input::frame::Hand;
+use jc3vr_physical::controllers::physical_hands::doors::engine::vehicle_frame;
 
 use crate::controllers::{
     loadout::TakeSource,
-    physical_hands::doors::engine::vehicle_frame,
     snatch::{
         Refusal, SNATCH, charge, engine,
         pull::fire_hook,

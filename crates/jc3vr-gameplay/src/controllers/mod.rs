@@ -10,7 +10,8 @@
 //! the body, the hands, fingers, and presentation, the aim and the aim-state pin, the haptics, the
 //! overlay producers, locomotion and roomscale, the spawn table, the telemetry notes, and the
 //! shared vocabulary, held-item facts, physics substrate, and published facts) are the body
-//! crate's, under [`jc3vr_body::controllers`]. This module owns what builds on them:
+//! crate's, under [`jc3vr_body::controllers`], and the physical hands and the glass are the physical
+//! crate's, under [`jc3vr_physical::controllers`]. This module owns what builds on them:
 //!
 //! - [`config`]: [`ControllersConfig`], the controllers' settings assembled from each subsystem's
 //!   group;
@@ -21,10 +22,6 @@
 //!   the dual-wield split, with the [`loadout`];
 //! - [`snatch`]: the grapple snatch: the empty grapple hand pulls a weapon out of reach into itself
 //!   on the game's hook;
-//! - [`physical_hands`]: each empty hand's palm colliding with the world: pushing the body off
-//!   surfaces, holding the hand at them, and striking characters and objects;
-//! - [`glass`]: breaking window glass with a palm or a held gun, as bullets crack it, and bringing
-//!   a pane down with a hard enough strike;
 //! - [`vehicles`]: vehicles, mounted guns, the wingsuit, and the parachute: the opt-in physical
 //!   controls, hand-aimed mounted guns and driver weapons, arm steering, and the wingsuit's head
 //!   look-steer removed;
@@ -41,13 +38,12 @@
 
 use jc3vr_body::controllers::{aim, aim_state, body, hands, haptics, roomscale};
 use jc3vr_core::lifecycle::RegistrationError;
+use jc3vr_physical::controllers::{glass, physical_hands};
 use re_utilities::hook_library::HookLibrary;
 
 pub mod bindings;
 pub mod config;
-pub mod glass;
 pub mod loadout;
-pub mod physical_hands;
 mod register_aim;
 mod register_below;
 mod register_hands;

@@ -59,7 +59,7 @@ pub struct Status {
 pub fn status() -> Status {
     STATE.lock().status
 }
-pub(crate) fn hook_library() -> HookLibrary {
+pub fn hook_library() -> HookLibrary {
     hooks::hook_library()
 }
 

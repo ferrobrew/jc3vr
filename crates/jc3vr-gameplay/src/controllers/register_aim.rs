@@ -16,9 +16,10 @@ use jc3vr_body::controllers::{
     aim_state::{PreWeaponHook, PreWeaponHookFn},
     facts::mounted,
 };
+use jc3vr_physical::controllers::physical_hands;
 
 use crate::controllers::{
-    physical_hands, vehicles,
+    vehicles,
     weapons::{
         c4, collide,
         dual_wield::single,

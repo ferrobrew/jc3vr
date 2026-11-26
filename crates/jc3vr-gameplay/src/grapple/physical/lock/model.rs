@@ -7,13 +7,11 @@ use jc3vr_body::controllers::{
     },
     physics::GRAVITY_MPS2,
 };
+use jc3vr_physical::controllers::physical_hands::physics::drive::rig_jumped;
 
-use crate::{
-    controllers::physical_hands::physics::drive::rig_jumped,
-    grapple::{
-        physical::config::{LockConfig, SwingTuning},
-        rope::{Rope, RopeEnd, RopeFault, RopeStep, RopeTuning, held_floor},
-    },
+use crate::grapple::{
+    physical::config::{LockConfig, SwingTuning},
+    rope::{Rope, RopeEnd, RopeFault, RopeStep, RopeTuning, held_floor},
 };
 
 /// Whether a press asks the lock to take hold, given whether it asked last tick (`armed`, cleared

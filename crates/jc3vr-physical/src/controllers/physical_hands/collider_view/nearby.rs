@@ -10,7 +10,7 @@ use std::num::NonZeroUsize;
 
 use glam::{Quat, Vec3};
 use jc3gi::physics::hknpBody;
-use jc3vr_body::controllers::physics::bodies;
+use jc3vr_body::controllers::physics::{bodies, havok::affine as havok_affine};
 
 use crate::controllers::physical_hands::{
     collider_view::{
@@ -18,7 +18,6 @@ use crate::controllers::physical_hands::{
         model::{Aabb, KindInputs, ModBody, MotionKind, classify},
         scan::{ScanError, Space, geometry, layer, mass, motion_kind, player_proxy},
     },
-    physics::havok_affine,
     world::World,
 };
 

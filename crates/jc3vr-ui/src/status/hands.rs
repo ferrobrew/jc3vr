@@ -3,8 +3,8 @@
 //! up, and articulated objects.
 
 use jc3vr_body::controllers::grab::world_reach::TargetKind;
-use jc3vr_gameplay::controllers::{
-    config::CONTROLLERS_CONFIG,
+use jc3vr_gameplay::controllers::config::CONTROLLERS_CONFIG;
+use jc3vr_physical::controllers::{
     physical_hands,
     physical_hands::{
         Idle, climb, doors, physics,

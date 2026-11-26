@@ -11,20 +11,21 @@ use jc3vr_body::controllers::{
         },
     },
     hands::{grip, grip::GripRead},
+    held::{guns as held_guns, guns::GunBodyStatus},
     locomotion,
     locomotion::{acts, acts::ActFilterStatus, anchor, anchor::AnchorStatus},
 };
 use jc3vr_gameplay::controllers::{
     config::CONTROLLERS_CONFIG,
-    physical_hands::{
-        collider_view,
-        collider_view::ColliderViewStatus,
-        physics,
-        physics::{BodyPhase, CallbackStatus, HandBodyStatus, guns, guns::GunBodyStatus},
-    },
     weapons::{grip_watch, heft::HeftClass},
 };
 use jc3vr_input::frame::Hand;
+use jc3vr_physical::controllers::physical_hands::{
+    collider_view,
+    collider_view::ColliderViewStatus,
+    physics,
+    physics::{BodyPhase, CallbackStatus, HandBodyStatus, guns},
+};
 use jc3vr_tooling::director::{keymap, keymap::Action};
 use smol_str::{SmolStr, format_smolstr};
 
@@ -361,7 +362,7 @@ fn right_gun_body() -> Line {
 
 fn gun_body(hand: Hand) -> Line {
     let enabled = read(&CONTROLLERS_CONFIG, |c| guns::enabled(&c.physical_hands));
-    let status = guns::status();
+    let status = held_guns::status();
     gun_body_line(
         enabled,
         status.hands[hand.index()],
@@ -570,7 +571,7 @@ mod tests {
 
     use glam::Vec3;
     use jc3vr_body::controllers::locomotion::view::Neutral;
-    use jc3vr_gameplay::controllers::physical_hands::collider_view::draw::Drawn;
+    use jc3vr_physical::controllers::physical_hands::collider_view::draw::Drawn;
 
     use super::*;
 
@@ -617,7 +618,7 @@ mod tests {
             body_id: 812,
             in_world: true,
             mass_kg: 3.96,
-            mass_source: guns::MassSource::Body,
+            mass_source: held_guns::MassSource::Body,
             holder_joint: Some(4),
             brace_joint: Some(5),
             deviation_m: 0.004,

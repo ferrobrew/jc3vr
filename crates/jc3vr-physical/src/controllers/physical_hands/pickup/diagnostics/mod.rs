@@ -40,7 +40,7 @@ pub(crate) const REQUEST_CAPACITY: usize = 4;
 
 /// The input caller's observations, before the pickup consumer runs.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub(crate) struct InputState {
+pub struct InputState {
     pub grips: [ButtonControl; 2],
     pub latches: [GripLatch; 2],
     pub grabs: [Option<GrabVolume>; 2],
@@ -48,7 +48,7 @@ pub(crate) struct InputState {
 
 /// The exact controller publication used by an input tick, with its bounded resolver evidence.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub(crate) struct InputContext {
+pub struct InputContext {
     pub hands: [InputRecord; 2],
 }
 
@@ -160,7 +160,7 @@ pub struct Status {
 }
 
 /// Capture the exact resolver result and the input caller's captured publication sequence.
-pub(crate) fn input(
+pub fn input(
     sequence: u64,
     tick: &Tick,
     state: InputState,

@@ -2,11 +2,11 @@
 //! grabs.
 
 use egui::Ui;
-use jc3vr_gameplay::controllers::physical_hands::{
+use jc3vr_input::frame::Hand;
+use jc3vr_physical::controllers::physical_hands::{
     grab_view,
     grab_view::{GrabViewStatus, draw::PRIMITIVE_BUDGET, model::CandidateKind},
 };
-use jc3vr_input::frame::Hand;
 
 pub(super) fn grab_view_readout(ui: &mut Ui, status: &GrabViewStatus) {
     let label = if status.enabled {

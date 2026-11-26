@@ -21,11 +21,10 @@ use jc3vr_body::controllers::{
     held,
     held::guns,
 };
+use jc3vr_physical::controllers::{physical_hands, physical_hands::physics};
 
 use crate::{
     controllers::{
-        physical_hands,
-        physical_hands::physics,
         vehicles, weapons,
         weapons::{ads, collide, config::WEAPONS_CONFIG, grenade, gun_bodies, hold::rack, recoil},
     },

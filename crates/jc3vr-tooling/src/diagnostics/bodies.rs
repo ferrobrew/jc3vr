@@ -15,7 +15,8 @@ use jc3vr_core::{
     frame_timing::{self, Slot},
     hooks,
 };
-use jc3vr_gameplay::controllers::physical_hands::{
+use jc3vr_input::frame::Hand;
+use jc3vr_physical::controllers::physical_hands::{
     self, HeldBody,
     collider_view::{
         model::Aabb,
@@ -23,7 +24,6 @@ use jc3vr_gameplay::controllers::physical_hands::{
     },
     physics,
 };
-use jc3vr_input::frame::Hand;
 use jc3vr_view::recorder::tracking::{events, events::EventKind, format::hand_to_file};
 use parking_lot::Mutex;
 use tracking_format::{

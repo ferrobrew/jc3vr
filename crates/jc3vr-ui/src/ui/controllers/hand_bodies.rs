@@ -2,8 +2,9 @@
 //! guns' bodies.
 
 use egui::Ui;
-use jc3vr_gameplay::controllers::physical_hands::physics::{BodyPhase, HandBodiesStatus, guns};
+use jc3vr_body::controllers::held::guns;
 use jc3vr_input::frame::Hand;
+use jc3vr_physical::controllers::physical_hands::physics::{BodyPhase, HandBodiesStatus};
 
 use crate::{
     status::controllers::{

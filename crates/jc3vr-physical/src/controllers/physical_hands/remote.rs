@@ -34,7 +34,7 @@ use crate::controllers::physical_hands::{
 ///
 /// The main thread, outside the physics step; `object` and `body` must be held alive or come from
 /// a cast this tick.
-pub(crate) unsafe fn loose_mass(object: NonZeroUsize, body: u32) -> Option<f32> {
+pub unsafe fn loose_mass(object: NonZeroUsize, body: u32) -> Option<f32> {
     if unsafe { engine::is_character(object) } {
         return None;
     }
@@ -51,7 +51,7 @@ pub(crate) unsafe fn loose_mass(object: NonZeroUsize, body: u32) -> Option<f32> 
 ///
 /// The main thread, outside the physics step; `object` must be held alive or come from a cast this
 /// tick.
-pub(crate) unsafe fn position(object: NonZeroUsize, body: u32) -> Result<Vec3, BodyError> {
+pub unsafe fn position(object: NonZeroUsize, body: u32) -> Result<Vec3, BodyError> {
     unsafe { bodies::position(body, object) }
 }
 
@@ -61,7 +61,7 @@ pub(crate) unsafe fn position(object: NonZeroUsize, body: u32) -> Result<Vec3, B
 /// # Safety
 ///
 /// The main thread, outside the physics step; `object` must be held alive.
-pub(crate) unsafe fn loosen(object: NonZeroUsize, body: u32) -> Result<(), BodyError> {
+pub unsafe fn loosen(object: NonZeroUsize, body: u32) -> Result<(), BodyError> {
     let loosened = unsafe { bodies::loosen(object, body) }?;
     if loosened {
         tracing::info!(target: "controllers", body, "physical hands: a placed object was turned loose for the snatch");
@@ -72,7 +72,7 @@ pub(crate) unsafe fn loosen(object: NonZeroUsize, body: u32) -> Result<(), BodyE
 /// A ragdolling character under the grapple's aim: the bone of its ragdoll the line pulls, and
 /// the whole ragdoll's mass, which that bone drags.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub(crate) struct RagdollTarget {
+pub struct RagdollTarget {
     pub bone: Bone,
     /// The whole ragdoll's mass, kilograms.
     pub mass_kg: f32,
@@ -86,7 +86,7 @@ pub(crate) struct RagdollTarget {
 ///
 /// The main thread, outside the physics step; `object` must be held alive or come from a cast
 /// this tick.
-pub(crate) unsafe fn ragdoll_target(
+pub unsafe fn ragdoll_target(
     object: NonZeroUsize,
     body: u32,
     point: Vec3,
@@ -109,7 +109,7 @@ pub(crate) unsafe fn ragdoll_target(
 ///
 /// The main thread, outside the physics step.
 #[track_caller]
-pub(crate) unsafe fn push(
+pub unsafe fn push(
     body: u32,
     owner: NonZeroUsize,
     impulse: Vec3,
@@ -130,7 +130,7 @@ pub(crate) unsafe fn push(
 ///
 /// The main thread, outside the physics step; `character` must be held alive.
 #[track_caller]
-pub(crate) unsafe fn pull_ragdoll(
+pub unsafe fn pull_ragdoll(
     character: NonZeroUsize,
     body: u32,
     owner: NonZeroUsize,
@@ -218,7 +218,7 @@ pub(crate) fn spread_pull(
 
 /// The heaviest loose object one hand lifts and carries, kilograms: within the pickup's heaviest,
 /// and no heavier than one hand's strongest pull holds up.
-pub(crate) fn carry_max_kg() -> f32 {
+pub fn carry_max_kg() -> f32 {
     let lifted = PICKUP.hand_force_n / PICKUP.gravity_mps2;
     if grasp::can_hold(lifted, &PICKUP) {
         lifted
@@ -229,7 +229,7 @@ pub(crate) fn carry_max_kg() -> f32 {
 
 /// A weapon lying in the world or a loose object, found by its box rather than by a cast.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub(crate) struct NearBody {
+pub struct NearBody {
     /// The object (its physics game object: a `CWeaponBase` for a weapon).
     pub object: NonZeroUsize,
     pub body: u32,
@@ -240,7 +240,7 @@ pub(crate) struct NearBody {
 
 /// What a body found by its box is.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub(crate) enum NearKind {
+pub enum NearKind {
     /// A weapon lying in the world.
     Weapon,
     /// A loose object of this mass, kilograms ([`loose_mass`]).
@@ -256,7 +256,7 @@ pub(crate) enum NearKind {
 /// # Safety
 ///
 /// The main thread, outside the physics step.
-pub(crate) unsafe fn dynamic_near(keep: impl FnMut(&Aabb) -> bool) -> Vec<NearBody> {
+pub unsafe fn dynamic_near(keep: impl FnMut(&Aabb) -> bool) -> Vec<NearBody> {
     let Ok(boxes) = (unsafe { collider_view::dynamic_boxes(keep, MAX_NEAR_BODIES) }) else {
         return Vec::new();
     };
@@ -293,7 +293,7 @@ const MAX_NEAR_BODIES: usize = 48;
 /// # Safety
 ///
 /// The main thread, outside the physics step; `object` and `body` must come from a cast this tick.
-pub(crate) unsafe fn closed_door(
+pub unsafe fn closed_door(
     object: NonZeroUsize,
     body: u32,
     point: Vec3,
@@ -333,7 +333,7 @@ pub(crate) unsafe fn closed_door(
 ///
 /// The main thread, outside the physics step; the door's vehicle must be live.
 #[track_caller]
-pub(crate) unsafe fn swing_open(door: &DoorTarget, at: Vec3, speed: f32) -> Result<(), String> {
+pub unsafe fn swing_open(door: &DoorTarget, at: Vec3, speed: f32) -> Result<(), String> {
     let (owner, body) = unsafe { door_engine::unlatch(door.vehicle, door.part_index) }
         .map_err(|e| e.to_string())?;
     let mass = unsafe { bodies::read(body, owner) }
@@ -350,7 +350,7 @@ pub(crate) unsafe fn swing_open(door: &DoorTarget, at: Vec3, speed: f32) -> Resu
 /// # Safety
 ///
 /// The main thread, outside the physics step.
-pub(crate) unsafe fn door_moving(door: &DoorTarget, max_speed_mps: f32) -> bool {
+pub unsafe fn door_moving(door: &DoorTarget, max_speed_mps: f32) -> bool {
     let Some(body) = door.vehicle_body else {
         return true;
     };
@@ -362,7 +362,7 @@ pub(crate) unsafe fn door_moving(door: &DoorTarget, max_speed_mps: f32) -> bool 
 /// Hand a snatched loose object, its body `body` arrived at the hand, over to the hand's ordinary
 /// hold, taken at `point`: the next palms' tick takes hold of it as of a grab in reach, and the
 /// grip's release lets go of it.
-pub(crate) fn hold_remote(hand: Hand, object: NonZeroUsize, body: u32, point: Vec3, mass_kg: f32) {
+pub fn hold_remote(hand: Hand, object: NonZeroUsize, body: u32, point: Vec3, mass_kg: f32) {
     let mut state = STATE.lock();
     state.pickup.requests[hand.index()] = Some(Request::Grab(Reach {
         object,

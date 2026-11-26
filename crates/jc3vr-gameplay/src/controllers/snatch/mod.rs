@@ -92,6 +92,7 @@ use jc3vr_body::controllers::{
     mode::{Detection, Mode, VehicleClass},
 };
 use jc3vr_input::{frame::Hand, haptics::cues::Event};
+use jc3vr_physical::controllers::physical_hands;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
@@ -102,7 +103,6 @@ pub use crate::controllers::snatch::{
 };
 use crate::controllers::{
     loadout::slot_label,
-    physical_hands,
     snatch::{
         arrival::ArrivalWatch,
         brace::Brace,

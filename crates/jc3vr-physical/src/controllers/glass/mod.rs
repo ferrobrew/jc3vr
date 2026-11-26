@@ -127,7 +127,7 @@ pub struct GlassStatus {
     pub last_error: Option<RaycastError>,
 }
 
-pub(crate) fn hook_library() -> HookLibrary {
+pub fn hook_library() -> HookLibrary {
     bullets::hook_library()
 }
 

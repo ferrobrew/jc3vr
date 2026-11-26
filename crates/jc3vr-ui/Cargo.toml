@@ -19,6 +19,7 @@ jc3vr-input = { path = "../jc3vr-input" }
 jc3vr-render = { path = "../jc3vr-render" }
 jc3vr-view = { path = "../jc3vr-view" }
 jc3vr-body = { path = "../jc3vr-body" }
+jc3vr-physical = { path = "../jc3vr-physical" }
 jc3vr-gameplay = { path = "../jc3vr-gameplay" }
 jc3vr-hud = { path = "../jc3vr-hud" }
 jc3vr-tooling = { path = "../jc3vr-tooling" }

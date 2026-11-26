@@ -5,6 +5,11 @@ edition = "2024"
 description = "The physical layer of the payload: the physical hands (each empty palm colliding with the world, holding, climbing, doors, and the hand bodies) and breaking window glass, built on the body layer."
 publish = false
 
+[features]
+# Test fixtures the gameplay crate's tests rely on: the door provider that stands in for the
+# physical hands' reach and door offers.
+test-support = []
+
 [dependencies]
 windows = { workspace = true }
 glam = { workspace = true }

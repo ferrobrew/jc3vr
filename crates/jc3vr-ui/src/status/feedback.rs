@@ -2,7 +2,8 @@
 //! folded them together, and the impact sounds the hands made.
 
 use jc3vr_body::controllers::haptics;
-use jc3vr_gameplay::controllers::{config::CONTROLLERS_CONFIG, physical_hands::sounds};
+use jc3vr_gameplay::controllers::config::CONTROLLERS_CONFIG;
+use jc3vr_physical::controllers::physical_hands::sounds;
 
 use crate::{
     controllers::menu::read,

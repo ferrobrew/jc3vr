@@ -52,15 +52,13 @@ use jc3vr_body::{
     hooks::animation::{active_state_type_id, body_rule_system},
 };
 use jc3vr_core::hash::hashlittle;
+use jc3vr_physical::controllers::physical_hands::{climb, climb::engine};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::controllers::{
-    physical_hands::{climb, climb::engine},
-    vehicles::{
-        config::{RailConfig, VEHICLES_CONFIG},
-        rail::solve::{RailLine, RailMotion, RailStep, step, walk_from},
-    },
+use crate::controllers::vehicles::{
+    config::{RailConfig, VEHICLES_CONFIG},
+    rail::solve::{RailLine, RailMotion, RailStep, step, walk_from},
 };
 
 pub(super) fn hook_library() -> HookLibrary {

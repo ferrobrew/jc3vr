@@ -128,7 +128,7 @@ pub fn hook_library() -> HookLibrary {
 }
 
 /// Hook removal must keep the image mapped if a settings callback remains active after unpatching.
-pub(crate) fn active_entries() -> usize {
+pub fn active_entries() -> usize {
     ACTIVE_ENTRIES.load(Ordering::Acquire)
 }
 
@@ -191,7 +191,7 @@ unsafe fn pass(state: &mut NativeState, world: *mut hknpWorld) {
 }
 
 /// Register this participant before enabling the construction hooks.
-pub(crate) struct HumanHullShutdown;
+pub struct HumanHullShutdown;
 
 impl ShutdownParticipant for HumanHullShutdown {
     fn prepare(&self, preparation: Preparation) -> PrepareOutcome<Box<dyn PreparedParticipant>> {

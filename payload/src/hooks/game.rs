@@ -25,6 +25,7 @@ use jc3vr_core::{
 };
 use jc3vr_gameplay::controllers;
 use jc3vr_hud::{hooks::ui, hud};
+use jc3vr_physical::controllers::{glass, physical_hands};
 use jc3vr_render::{
     debug,
     debug::{
@@ -126,10 +127,10 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
         // simulation's input tick reads the palms' targets.
         {
             let _timing = frame_timing::scope(Slot::PhysicalHands);
-            controllers::physical_hands::main_thread_tick();
+            physical_hands::main_thread_tick();
             // Breaking glass, on the thread and in the phase of the ammunition manager's deferred
             // list, which applies the bullets' window damage; before the original runs it.
-            controllers::glass::main_thread_tick();
+            glass::main_thread_tick();
         }
 
         // A queued visual transition changes render resources and dispatch ownership only after
@@ -300,9 +301,7 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
         #[cfg(feature = "profiler")]
         drop(engine_scope);
         // Compare current physics poses with the weapon matrices published by this render update.
-        controllers::physical_hands::collider_view::render_tick(
-            (*update_contexts).m_RenderContext.m_Dtf,
-        );
+        physical_hands::collider_view::render_tick((*update_contexts).m_RenderContext.m_Dtf);
         // After the engine's render update, whose camera update stores this frame's `dtf`: the
         // late hand readout is evaluated at it, and before it the readout would pair this frame's
         // hand snapshot with the previous frame's `dtf`.

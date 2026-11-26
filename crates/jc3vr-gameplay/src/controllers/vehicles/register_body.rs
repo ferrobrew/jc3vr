@@ -8,9 +8,11 @@ use jc3vr_body::{
     controllers::roomscale::register_take_off,
     hooks::character::{AutoAttachBlocker, register_auto_attach_blocker},
 };
+use jc3vr_physical::controllers::physical_hands::physics::{
+    guns::targets::register_vehicle_targets, register_rail_step,
+};
 
 use crate::controllers::{
-    physical_hands::physics::{guns::targets::register_vehicle_targets, register_rail_step},
     vehicles,
     vehicles::{mounted_recoil, rail, take_off},
     weapons::fire::register_mounted_shot_observer,

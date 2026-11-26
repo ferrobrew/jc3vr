@@ -29,15 +29,13 @@ use jc3vr_body::controllers::{
 };
 use jc3vr_core::config::engine::ConfigSlot;
 use jc3vr_input::frame::Hand;
+use jc3vr_physical::controllers::{glass::GlassConfig, physical_hands::PhysicalHandsConfig};
 use jc3vr_view::vr::input::config::InputConfig;
 use serde::{Deserialize, Serialize};
 
 pub use crate::controllers::weapons::config::WeaponsConfig;
 use crate::{
-    controllers::{
-        glass::GlassConfig, physical_hands::PhysicalHandsConfig, summary::SummaryConfig,
-        vehicles::config::VehiclesConfig,
-    },
+    controllers::{summary::SummaryConfig, vehicles::config::VehiclesConfig},
     grapple::physical::PhysicalGrappleConfig,
 };
 

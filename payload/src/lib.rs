@@ -7,6 +7,7 @@ use jc3vr_core::{
 };
 use jc3vr_gameplay::controllers;
 use jc3vr_hud::{egui_impl::EguiState, hooks::ui::cancel_pointer_on_game_thread, hud};
+use jc3vr_physical::controllers::physical_hands;
 use jc3vr_render::{
     far_field, hooks::graphics_engine::shader::restore_original_shaders_on_eject, image_writer,
 };
@@ -317,8 +318,8 @@ fn update() {
 
         // Ahead of the game's update, whose physics step fires the hand bodies' callback, so that
         // registering it never races the engine's walk over the callbacks.
-        controllers::physical_hands::physics::frame_tick();
-        controllers::physical_hands::collider_view::frame_tick();
+        physical_hands::physics::frame_tick();
+        physical_hands::collider_view::frame_tick();
 
         // The per-eye captures feed the VR blit, the desktop mirror, the recorder, and the screenshots.
         // Driven here rather than from inside the egui closure below: they are what VR submits, and

@@ -22,10 +22,9 @@ use jc3vr_body::{
         bodies_destroying_registered, missing_auto_attach_blockers, serial_consumer_registered,
     },
 };
+use jc3vr_physical::controllers::{physical_hands, physical_hands::physics as hand_bodies};
 
 use crate::controllers::{
-    physical_hands,
-    physical_hands::physics as hand_bodies,
     vehicles, weapons,
     weapons::{fire, hold::take, inventory},
 };

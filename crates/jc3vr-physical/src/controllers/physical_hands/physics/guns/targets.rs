@@ -17,14 +17,14 @@ use jc3vr_input::frame::Hand;
 
 /// Register the vehicle controls' targets: called with the cockpit-frame hands, it draws a hand
 /// holding a control or a handle there. One registration: a second is refused and logged.
-pub(crate) fn register_vehicle_targets(apply: fn(&mut [Option<CockpitHand>; 2])) {
+pub fn register_vehicle_targets(apply: fn(&mut [Option<CockpitHand>; 2])) {
     if VEHICLE_TARGETS.set(apply).is_err() {
         tracing::error!("hand bodies: vehicle targets are already registered; keeping the first");
     }
 }
 
 /// Whether the vehicle controls' targets are registered.
-pub(crate) fn vehicle_targets_registered() -> bool {
+pub fn vehicle_targets_registered() -> bool {
     VEHICLE_TARGETS.get().is_some()
 }
 

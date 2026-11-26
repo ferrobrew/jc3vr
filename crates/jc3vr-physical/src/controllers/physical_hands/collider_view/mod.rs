@@ -28,7 +28,7 @@ use std::{
 };
 
 use glam::Vec3;
-use jc3vr_body::controllers::hands::late;
+use jc3vr_body::controllers::{hands::late, held::guns};
 use jc3vr_input::frame::Hand;
 use jc3vr_view::{
     controllers::overlay::{
@@ -45,7 +45,7 @@ use self::{
     model::{Aabb, BodyKind, JointKind, MotionKind, Snapshot, gazed},
     scan::ModIds,
 };
-use crate::controllers::physical_hands::{config::PHYSICAL_HANDS_CONFIG, physics, physics::guns};
+use crate::controllers::physical_hands::{config::PHYSICAL_HANDS_CONFIG, physics};
 
 /// The view's readout for the debug UI and the status rows.
 #[derive(Debug, Clone, PartialEq, Default)]

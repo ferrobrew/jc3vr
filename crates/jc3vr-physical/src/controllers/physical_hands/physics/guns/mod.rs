@@ -53,14 +53,10 @@
 mod engine;
 pub mod math;
 pub(super) mod step;
-pub(crate) mod targets;
+pub mod targets;
 
-pub use jc3vr_body::controllers::held::guns::{
-    BraceContact, GunBodyStatus, GunHolds, GunsStatus, HeldGun, MassSource, physical_hands, status,
-};
-pub(super) use jc3vr_body::controllers::held::guns::{carried_mass, count_contact, mass};
 use jc3vr_body::controllers::{
-    held::guns as held_guns,
+    held::{guns as held_guns, guns::GunHolds},
     mode::{AirborneVariant, Detection, Mode, OnFootVariant},
     physics::steps::steps,
 };

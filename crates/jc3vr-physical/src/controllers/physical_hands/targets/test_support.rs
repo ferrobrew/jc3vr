@@ -22,14 +22,20 @@ use crate::controllers::physical_hands::{
 };
 
 /// An isolated source for the production provider and final validation helpers.
-pub(crate) struct DoorProvider {
-    pub(crate) config: PhysicalHandsConfig,
+pub struct DoorProvider {
+    pub config: PhysicalHandsConfig,
     state: State,
     now: Instant,
 }
 
+impl Default for DoorProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DoorProvider {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         let now = Instant::now();
         Self {
             config: PhysicalHandsConfig::new(),
@@ -52,7 +58,7 @@ impl DoorProvider {
         }
     }
 
-    pub(crate) fn target(&mut self, hand: Hand, kind: TargetKind) -> GripTarget {
+    pub fn target(&mut self, hand: Hand, kind: TargetKind) -> GripTarget {
         let reach = Reach {
             object: NonZeroUsize::new(0x1000).unwrap(),
             body: 1,
@@ -65,7 +71,7 @@ impl DoorProvider {
         provided_reach(hand, &reach, 1.0, &self.config, &self.state, self.now)
     }
 
-    pub(crate) fn door(&mut self, hand: Hand, latched: bool) -> GripTarget {
+    pub fn door(&mut self, hand: Hand, latched: bool) -> GripTarget {
         self.target(
             hand,
             TargetKind::Door(DoorTarget {
@@ -79,25 +85,25 @@ impl DoorProvider {
         )
     }
 
-    pub(crate) fn current(&self, hand: Hand, target: GripTarget) -> bool {
+    pub fn current(&self, hand: Hand, target: GripTarget) -> bool {
         target.door_eligibility.is_some_and(|offer| {
             door_offer_current_in(offer, hand, &self.config, &self.state, self.now)
         })
     }
 
-    pub(crate) fn expire(&mut self) {
+    pub fn expire(&mut self) {
         self.now += STALE_AFTER + std::time::Duration::from_millis(1);
     }
 
-    pub(crate) fn replace_source(&mut self) {
+    pub fn replace_source(&mut self) {
         self.state.epoch += 1;
     }
 
-    pub(crate) fn replace_sample(&mut self) {
+    pub fn replace_sample(&mut self) {
         self.state.at = Some(self.now + std::time::Duration::from_millis(1));
     }
 
-    pub(crate) fn replace_door(&mut self, hand: Hand) {
+    pub fn replace_door(&mut self, hand: Hand) {
         let reach = self.state.status.hands[hand.index()]
             .reach
             .as_mut()
@@ -107,24 +113,24 @@ impl DoorProvider {
         }
     }
 
-    pub(crate) fn remove_reach(&mut self, hand: Hand) {
+    pub fn remove_reach(&mut self, hand: Hand) {
         self.state.status.hands[hand.index()].reach = None;
     }
 
-    pub(crate) fn claim(&mut self, hand: Hand) {
+    pub fn claim(&mut self, hand: Hand) {
         self.state.pickup.requests[hand.index()] = Some(Request::Release);
     }
 
-    pub(crate) fn claim_same_door(&mut self, hand: Hand) {
+    pub fn claim_same_door(&mut self, hand: Hand) {
         let reach = self.state.status.hands[hand.index()].reach.unwrap();
         self.state.pickup.requests[hand.other().index()] = Some(Request::Grab(reach));
     }
 
-    pub(crate) fn latch(&mut self, hand: Hand) {
+    pub fn latch(&mut self, hand: Hand) {
         self.state.status.hands[hand.index()].latched = true;
     }
 
-    pub(crate) fn hold(&mut self, hand: Hand) {
+    pub fn hold(&mut self, hand: Hand) {
         self.state.status.hands[hand.index()].held = Some(HeldReport {
             mass_kg: 1.0,
             liftable: true,

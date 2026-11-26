@@ -14,7 +14,6 @@ use jc3vr_gameplay::controllers::{
         Binding, Departure, ItemKind, ItemView, LoadoutSnapshot, Place, Socket, live::LiveStatus,
         slot_label,
     },
-    physical_hands::PhysicalHandsStatus,
     weapons::{
         c4,
         grenade::stock,
@@ -29,6 +28,7 @@ use jc3vr_gameplay::controllers::{
     },
 };
 use jc3vr_input::frame::Hand;
+use jc3vr_physical::controllers::physical_hands::PhysicalHandsStatus;
 
 /// What the loadout section reads besides the table.
 pub(super) struct LoadoutInputs<'a> {

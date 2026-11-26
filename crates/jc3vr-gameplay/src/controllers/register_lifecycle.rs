@@ -11,10 +11,10 @@ use std::sync::Arc;
 
 use jc3vr_body::hooks::character::magazine;
 use jc3vr_core::lifecycle::{self, ParticipantId, RegistrationError};
+use jc3vr_physical::controllers::physical_hands::{human_hull, human_hull::HumanHullShutdown};
 
-use crate::controllers::{
-    physical_hands::{human_hull, human_hull::HumanHullShutdown},
-    weapons::{grenade, inventory::spawn_safety, reload::shutdown as magazine_shutdown},
+use crate::controllers::weapons::{
+    grenade, inventory::spawn_safety, reload::shutdown as magazine_shutdown,
 };
 
 pub(super) fn register() -> Result<(), RegistrationError> {

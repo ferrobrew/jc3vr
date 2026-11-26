@@ -48,8 +48,6 @@ use jc3vr_core::{
 use jc3vr_gameplay::{
     controllers::{
         config::{CONTROLLERS_CONFIG, ControllersConfig, validate},
-        glass::config::GLASS_CONFIG,
-        physical_hands::config::PHYSICAL_HANDS_CONFIG,
         summary::config::SUMMARY_CONFIG,
         vehicles::config::VEHICLES_CONFIG,
         weapons::config::WEAPONS_CONFIG,
@@ -57,6 +55,9 @@ use jc3vr_gameplay::{
     grapple::physical::config::GRAPPLE_CONFIG,
 };
 use jc3vr_hud::hud::config::{HUD_CONFIG, HudConfig};
+use jc3vr_physical::controllers::{
+    glass::config::GLASS_CONFIG, physical_hands::config::PHYSICAL_HANDS_CONFIG,
+};
 use jc3vr_render::{
     debug::texture_census::TEXTURE_CENSUS,
     hooks::graphics_engine::config::{

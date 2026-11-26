@@ -51,12 +51,14 @@ use jc3vr_body::controllers::{
 };
 use jc3vr_core::config::engine::edit_parts;
 use jc3vr_gameplay::controllers::{
-    bindings, config::CONTROLLERS_CONFIG, glass as controller_glass,
-    physical_hands as controller_physical_hands, physical_hands::collider_view::ColliderViewConfig,
-    summary as controller_summary,
+    bindings, config::CONTROLLERS_CONFIG, summary as controller_summary,
 };
 use jc3vr_hud::{controllers::map as controller_map, hud::summary_panel};
 use jc3vr_input::{frame as controller_frame, frame::InteractionProfile};
+use jc3vr_physical::controllers::{
+    glass as controller_glass, physical_hands as controller_physical_hands,
+    physical_hands::collider_view::ColliderViewConfig,
+};
 use jc3vr_render::controllers::overlay::pass as overlay_pass;
 use jc3vr_view::vr::input as vr_input;
 

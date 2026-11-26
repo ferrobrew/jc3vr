@@ -24,7 +24,7 @@ use crate::controllers::physical_hands::{
     STALE_AFTER, climb::engine::body_identity, config::PHYSICAL_HANDS_CONFIG,
 };
 
-pub(crate) fn hook_library() -> HookLibrary {
+pub fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&UPDATE_REMOVE_QUEUE_BINDER)
 }
 
@@ -32,7 +32,7 @@ pub(crate) fn hook_library() -> HookLibrary {
 ///
 /// # Safety
 /// The game thread, outside the world update.
-pub(crate) unsafe fn publish(held: [Option<(NonZeroUsize, u32)>; 2]) {
+pub unsafe fn publish(held: [Option<(NonZeroUsize, u32)>; 2]) {
     let now = Instant::now();
     let mut state = STATE.lock();
     state.published = Some(now);
@@ -64,7 +64,7 @@ pub(crate) unsafe fn publish(held: [Option<(NonZeroUsize, u32)>; 2]) {
 }
 
 /// Stop protecting the current holds.
-pub(crate) fn clear() {
+pub fn clear() {
     let mut state = STATE.lock();
     state.wanted = [None; 2];
     state.published = None;

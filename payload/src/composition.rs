@@ -17,6 +17,7 @@ use jc3vr_gameplay::{
     hooks::{equipment, input, sim},
 };
 use jc3vr_hud::{controllers::map, egui_impl::register_desktop_overlay, hooks::ui, hud};
+use jc3vr_physical::controllers::physical_hands::human_hull;
 #[cfg(feature = "profiler")]
 use jc3vr_render::hooks::profiler;
 use jc3vr_render::{
@@ -100,10 +101,7 @@ fn libraries() -> Vec<NamedLibrary> {
         library("controllers", || {
             controllers::hook_library(map::hook_library())
         }),
-        library(
-            "human_hull",
-            controllers::physical_hands::human_hull::hook_library,
-        ),
+        library("human_hull", human_hull::hook_library),
         library("grapple_physical", grapple::physical::hook_library),
         library("grapple_device", grapple::device::hook_library),
     ];

@@ -3,11 +3,11 @@
 
 use egui::Ui;
 use jc3vr_body::controllers::grab::world_reach::{SeatAccess, TargetKind};
-use jc3vr_gameplay::controllers::physical_hands::{
+use jc3vr_input::frame::Hand;
+use jc3vr_physical::controllers::physical_hands::{
     PhysicalHandsConfig, PhysicalHandsStatus, doors, human_hull, human_hull::step_up, impacts,
     pickup::diagnostics, sounds::SoundsStatus,
 };
-use jc3vr_input::frame::Hand;
 
 pub(super) fn physical_hands_readout(ui: &mut Ui, status: &PhysicalHandsStatus) {
     let hull = &status.human_hull;

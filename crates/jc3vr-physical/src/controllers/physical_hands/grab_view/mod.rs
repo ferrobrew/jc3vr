@@ -163,7 +163,7 @@ pub(crate) unsafe fn scan_candidates(
 /// Note that a grab by `hand` was refused, `why`, flashing at `at` (game space) or, without it, at
 /// the target the hand's grip chose on the last input tick. Called on the game thread where the
 /// refusal is made, outside the view's own lock.
-pub(crate) fn refused(hand: Hand, at: Option<Vec3>, why: &str) {
+pub fn refused(hand: Hand, at: Option<Vec3>, why: &str) {
     {
         let mut state = STATE.lock();
         let anchor = at
@@ -185,7 +185,7 @@ pub(crate) fn refused(hand: Hand, at: Option<Vec3>, why: &str) {
 /// Draw the view for the input tick `tick`, placed by `frame`, or take it down when `frame` is
 /// `None` (the overlay is off, or a menu is up). Called by the input tick after the grip model's
 /// own finish.
-pub(crate) fn submit(tick: &Tick, frame: Option<&MarkerFrame>) {
+pub fn submit(tick: &Tick, frame: Option<&MarkerFrame>) {
     let config = PHYSICAL_HANDS_CONFIG.lock().grab_view;
     let Some(frame) = frame.filter(|_| config.enabled) else {
         stand_down(config.enabled);

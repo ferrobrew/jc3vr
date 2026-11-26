@@ -101,6 +101,7 @@ use jc3vr_input::{
         vocabulary::{MenuAction, OnFootAction},
     },
 };
+use jc3vr_physical::controllers::physical_hands;
 use jc3vr_view::{
     controllers::cockpit::CockpitTransform,
     headpose,
@@ -137,7 +138,7 @@ use crate::{
             trigger_ownership::{Owner as TriggerOwner, RawTrigger, TriggerOwnership},
         },
         config::{CONTROLLERS_CONFIG, ControllersConfig},
-        physical_hands, snatch,
+        snatch,
         snatch::config::SnatchSettings,
         vehicles, weapons,
     },

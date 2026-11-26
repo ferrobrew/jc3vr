@@ -40,6 +40,9 @@ use jc3vr_core::{
     director::clean_view::{CLEAN_VIEW_CONFIG, CleanViewConfig},
     hooks::online::{ONLINE_CONFIG, OnlineConfig},
 };
+use jc3vr_physical::controllers::{
+    glass::config::GLASS_CONFIG, physical_hands::config::PHYSICAL_HANDS_CONFIG,
+};
 use jc3vr_view::{
     far_field::{FAR_FIELD_CONFIG, FarFieldConfig},
     fsr::{FSR_CONFIG, FsrConfig},
@@ -59,8 +62,6 @@ use jc3vr_view::{
 use crate::{
     controllers::{
         config::{CONTROLLERS_CONFIG, ControllersConfig},
-        glass::config::GLASS_CONFIG,
-        physical_hands::config::PHYSICAL_HANDS_CONFIG,
         summary::config::SUMMARY_CONFIG,
         vehicles::config::VEHICLES_CONFIG,
         weapons::config::WEAPONS_CONFIG,

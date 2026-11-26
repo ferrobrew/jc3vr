@@ -14,14 +14,11 @@ use jc3gi::{
 };
 use jc3vr_body::controllers::{
     aim::raycast::RayHit,
-    physics::bodies::is_type,
+    physics::{bodies::is_type, havok::vector as havok_vector},
     telemetry::{Applied, note_force},
 };
 
-use crate::controllers::physical_hands::{
-    contact::{Surface, SurfaceHit},
-    physics::havok_vector,
-};
+use crate::controllers::physical_hands::contact::{Surface, SurfaceHit};
 
 /// Why an engine call did not run.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]

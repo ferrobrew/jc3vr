@@ -5,16 +5,13 @@ use std::{fmt, ptr::NonNull};
 
 use glam::{Mat4, Vec3};
 use jc3gi::{equipment::weapon::WeaponData, havok::hknpShape, physics::PfxRigidBody};
-use jc3vr_body::controllers::{aim::gun, physics::bodies};
+use jc3vr_body::controllers::{aim::gun, held::guns::HeldGun, physics::bodies};
 use jc3vr_input::frame::Pose;
 
 use crate::controllers::physical_hands::{
     physics::{
         body::half_to_f32,
-        guns::{
-            HeldGun,
-            math::{GunAxes, gun_axes},
-        },
+        guns::math::{GunAxes, gun_axes},
     },
     world::World,
 };

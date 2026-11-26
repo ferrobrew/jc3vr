@@ -20,7 +20,7 @@ use crate::controllers::physical_hands::{
     carry_bodies_destroying, climb, press_summary, push_body,
 };
 
-pub(crate) fn register() {
+pub fn register() {
     climb_facts::register(ClimbReaders {
         climbing: climb::climbing,
         body_frame: climb::engine::body_frame,

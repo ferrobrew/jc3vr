@@ -83,7 +83,7 @@ pub struct DoorRead {
 /// # Safety
 ///
 /// `object` must be a live physics game object, from a cast this tick.
-pub(crate) unsafe fn vehicle_of(object: NonZeroUsize) -> Option<NonZeroUsize> {
+pub unsafe fn vehicle_of(object: NonZeroUsize) -> Option<NonZeroUsize> {
     if unsafe { is_type(object, Vehicle::TYPE_ID()) } {
         return Some(object);
     }
@@ -99,7 +99,7 @@ pub(crate) unsafe fn vehicle_of(object: NonZeroUsize) -> Option<NonZeroUsize> {
 /// # Safety
 ///
 /// `object` must be a live physics game object.
-pub(crate) unsafe fn is_vehicle_part(object: NonZeroUsize) -> bool {
+pub unsafe fn is_vehicle_part(object: NonZeroUsize) -> bool {
     unsafe { is_type(object, VehiclePartGameObject::TYPE_ID()) }
 }
 
@@ -112,7 +112,7 @@ pub(crate) unsafe fn is_vehicle_part(object: NonZeroUsize) -> bool {
 /// # Safety
 ///
 /// `object` must be a live physics game object, on the game thread outside the physics step.
-pub(crate) unsafe fn broken_off(object: NonZeroUsize, body: u32) -> bool {
+pub unsafe fn broken_off(object: NonZeroUsize, body: u32) -> bool {
     if !unsafe { is_vehicle_part(object) } {
         return false;
     }
@@ -143,7 +143,7 @@ pub(crate) unsafe fn broken_off(object: NonZeroUsize, body: u32) -> bool {
 /// # Safety
 ///
 /// `vehicle` must be a live vehicle.
-pub(crate) unsafe fn vehicle_frame(vehicle: NonZeroUsize) -> Mat4 {
+pub unsafe fn vehicle_frame(vehicle: NonZeroUsize) -> Mat4 {
     let vehicle = unsafe { &*(vehicle.get() as *const Vehicle) };
     Mat4::from(vehicle.m_WorldMatrixT1)
 }
@@ -185,7 +185,7 @@ pub(crate) unsafe fn alive(vehicle: NonZeroUsize, vehicle_body: u32) -> bool {
 /// # Safety
 ///
 /// The game thread, outside the physics step; `vehicle` must be a live vehicle.
-pub(crate) unsafe fn vehicle_body(vehicle: NonZeroUsize) -> Option<u32> {
+pub unsafe fn vehicle_body(vehicle: NonZeroUsize) -> Option<u32> {
     let vehicle_ref = unsafe { &*(vehicle.get() as *const Vehicle) };
     let pfx = unsafe { vehicle_ref.m_PfxVehicle.cast::<PfxRigidBody>().as_ref() }?;
     let body = pfx.m_BodyId;

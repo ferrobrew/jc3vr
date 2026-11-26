@@ -227,7 +227,7 @@ pub fn run(action: Action) {
         Action::Spawn => spawn::request(),
         Action::ToggleRecording => crate::recorder::session_recording::toggle(),
         Action::ToggleColliderView => {
-            jc3vr_gameplay::controllers::physical_hands::collider_view::toggle()
+            jc3vr_physical::controllers::physical_hands::collider_view::toggle()
         }
     }
 }

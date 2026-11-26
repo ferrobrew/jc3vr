@@ -131,11 +131,7 @@ pub struct PickupStatus {
 /// Act on the input tick's pickup grabs and grip releases: a grab of a weapon clicks the game's
 /// use-item action into `desired`, a grab of an object asks the next simulation tick to take hold
 /// of it, and a released grip asks it to let go. Called from the input tick after the tables.
-pub(crate) fn finish_tick(
-    inputs: &FinishInputs,
-    desired: &mut Vec<Desired>,
-    context: &InputContext,
-) {
+pub fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>, context: &InputContext) {
     let mut state = STATE.lock();
     state.pickup.input_at = Some(Instant::now());
     let fresh = state.fresh(Instant::now());
@@ -190,6 +186,6 @@ unsafe fn take_weapon(hand: Hand, reach: Reach) -> Result<(), Refusal> {
 
 /// Keep what the hands hold through a game menu: the grips are not read there, and a release is
 /// acted on when gameplay resumes. Called from the input tick in place of [`finish_tick`].
-pub(crate) fn pause() {
+pub fn pause() {
     STATE.lock().pickup.input_at = Some(Instant::now());
 }

@@ -24,14 +24,14 @@ use jc3gi::{
 };
 use jc3vr_body::controllers::{
     facts::climb::{BodyFrame, BodyIdentity},
-    physics::{bodies::slot, characters::character_position},
+    physics::{
+        bodies::slot,
+        characters::character_position,
+        havok::{affine as havok_affine, vector as havok_vector},
+    },
 };
 
-use crate::controllers::physical_hands::{
-    physics,
-    physics::{havok_affine, havok_vector},
-    world::World,
-};
+use crate::controllers::physical_hands::{physics, world::World};
 
 /// Why the player could not be climbed with.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]

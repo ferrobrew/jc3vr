@@ -2,9 +2,9 @@ use jc3vr_body::controllers::{
     grab,
     grab::{target::TargetReach, world_reach::TargetKind},
 };
+use jc3vr_physical::controllers::physical_hands::DoorProvider;
 
 use super::*;
-use crate::controllers::physical_hands::DoorProvider;
 
 fn row(hand: Hand) -> Row {
     Row {

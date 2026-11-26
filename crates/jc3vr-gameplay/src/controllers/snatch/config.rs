@@ -2,13 +2,11 @@
 //! weapon-handling settings ([`SnatchConfig`]).
 
 use jc3vr_body::controllers::overlay::config::OverlayConfig;
+use jc3vr_physical::controllers::physical_hands::config::PhysicalHandsConfig;
 
 pub use crate::controllers::weapons::config::{SnatchConfig, SwingConfig};
 use crate::{
-    controllers::{
-        physical_hands::config::PhysicalHandsConfig, snatch::landing::LandingTuning,
-        weapons::config::HoldConfig,
-    },
+    controllers::{snatch::landing::LandingTuning, weapons::config::HoldConfig},
     grapple::physical::config::PhysicalGrappleConfig,
 };
 

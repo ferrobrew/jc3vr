@@ -28,13 +28,15 @@ use jc3vr_body::controllers::{
     scheme,
 };
 use jc3vr_input::frame::Hand;
+use jc3vr_physical::controllers::{
+    physical_hands,
+    physical_hands::{config::PHYSICAL_HANDS_CONFIG, doors::engine::vehicle_of as resolve_vehicle},
+};
 use jc3vr_view::controllers::cockpit::CockpitTransform;
 use parking_lot::Mutex;
 
 use crate::controllers::{
     loadout::{Delivery, TakeSource},
-    physical_hands,
-    physical_hands::{config::PHYSICAL_HANDS_CONFIG, doors::engine::vehicle_of as resolve_vehicle},
     vehicles::{
         is_mounted_weapon,
         mounted::{

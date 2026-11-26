@@ -15,8 +15,7 @@ use jc3vr_body::controllers::{
         refs::Weak,
     },
 };
-
-use crate::controllers::{
+use jc3vr_physical::controllers::{
     physical_hands,
     physical_hands::{
         collider_view::model::Aabb,
@@ -24,6 +23,9 @@ use crate::controllers::{
         remote,
         remote::{NearBody, NearKind, RagdollTarget},
     },
+};
+
+use crate::controllers::{
     snatch::{
         OfferInput, Refusal, SNATCH,
         config::SnatchSettings,

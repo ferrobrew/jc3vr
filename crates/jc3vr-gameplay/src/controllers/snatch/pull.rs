@@ -15,6 +15,13 @@ use jc3vr_body::controllers::{
     physics::{GRAVITY_MPS2, grapple_hook::BodyHit, refs::Weak, rigid::Velocities},
 };
 use jc3vr_input::{frame::Hand, haptics::cues::Sustain};
+use jc3vr_physical::controllers::physical_hands::{
+    doors::engine::vehicle_frame,
+    grasp::GripTarget as HoldPoint,
+    hold,
+    hold::{HandHold, HoldTuning},
+    remote,
+};
 use jc3vr_view::hooks::camera;
 
 pub(super) use crate::controllers::snatch::acquisition::{
@@ -22,13 +29,6 @@ pub(super) use crate::controllers::snatch::acquisition::{
 };
 use crate::{
     controllers::{
-        physical_hands::{
-            doors::engine::vehicle_frame,
-            grasp::GripTarget as HoldPoint,
-            hold,
-            hold::{HandHold, HoldTuning},
-            remote,
-        },
         snatch::{
             FinishInput, Refusal, SNATCH, arrival,
             arrival::{Landing, LandingInput},

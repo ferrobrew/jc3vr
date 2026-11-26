@@ -21,10 +21,11 @@ use jc3vr_body::controllers::{
     intent::yank::HandLine,
 };
 use jc3vr_input::frame::{Hand, Pose};
+use jc3vr_physical::controllers::physical_hands;
 use jc3vr_view::headpose::xr;
 
 use crate::{
-    controllers::{physical_hands, snatch},
+    controllers::snatch,
     grapple::{physical::lock, rope::held_floor},
 };
 

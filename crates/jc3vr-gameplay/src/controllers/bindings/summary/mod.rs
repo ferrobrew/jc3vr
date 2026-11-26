@@ -20,6 +20,7 @@ use jc3vr_body::controllers::{
     mode::{AirborneVariant, Detection, Mode},
 };
 use jc3vr_input::{frame::Hand, semantic::vocabulary::ActionId};
+use jc3vr_physical::controllers::physical_hands::door_offer_current;
 use jc3vr_view::vr::input::semantic::bound::PhysicalSet;
 
 use crate::controllers::{
@@ -30,7 +31,6 @@ use crate::controllers::{
         trigger_ownership::{Owner, TriggerMask},
     },
     config::ControllersConfig,
-    physical_hands::door_offer_current,
     snatch,
     summary::{
         current::{CurrentRouting, TriggerUse},

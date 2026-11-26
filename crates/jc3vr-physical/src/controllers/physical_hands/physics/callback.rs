@@ -29,14 +29,14 @@ use windows::Win32::System::Threading::GetCurrentThreadId;
 ///
 /// The step is called on the thread that steps the physics world, outside the step, after the
 /// characters' proxy updates.
-pub(crate) fn register_rail_step(step: unsafe fn()) {
+pub fn register_rail_step(step: unsafe fn()) {
     if RAIL_STEP.set(step).is_err() {
         tracing::error!("hand bodies: a rail step is already registered; keeping the first");
     }
 }
 
 /// Whether the vehicle rail's step is registered.
-pub(crate) fn rail_step_registered() -> bool {
+pub fn rail_step_registered() -> bool {
     RAIL_STEP.get().is_some()
 }
 

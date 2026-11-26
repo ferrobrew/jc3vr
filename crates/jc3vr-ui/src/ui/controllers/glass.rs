@@ -1,7 +1,7 @@
 //! Breaking glass: its switches and tuning, and what its strikes did.
 
 use egui::Ui;
-use jc3vr_gameplay::controllers::glass::{GlassConfig, GlassStatus, bullets, strike::Outcome};
+use jc3vr_physical::controllers::glass::{GlassConfig, GlassStatus, bullets, strike::Outcome};
 
 pub(super) fn glass_settings(ui: &mut Ui, g: &mut GlassConfig) {
     ui.checkbox(&mut g.enabled, "Break glass by hand")

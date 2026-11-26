@@ -18,7 +18,7 @@ use crate::controllers::physical_hands;
 
 /// One dynamic body of a character's ragdoll.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub(crate) struct Bone {
+pub struct Bone {
     /// The object that owns the body, as a physics query reports it.
     pub owner: NonZeroUsize,
     pub body: u32,

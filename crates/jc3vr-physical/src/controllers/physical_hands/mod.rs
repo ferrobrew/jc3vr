@@ -72,8 +72,8 @@ pub mod physics;
 pub mod pickup;
 pub mod push;
 pub(crate) mod query;
-pub(crate) mod register_body;
-pub(crate) mod remote;
+pub mod register_body;
+pub mod remote;
 mod seated;
 pub mod shove;
 pub mod sounds;
@@ -96,14 +96,14 @@ use jc3vr_body::controllers::physics::{line_body, world};
 use state::{STALE_AFTER, State};
 pub use status::{HandStatus, Idle, PhysicalHandsStatus, ShoveReport, status};
 pub(crate) use status::{PalmReadout, palm_readout, press_summary};
-#[cfg(test)]
-pub(crate) use targets::test_support::DoorProvider;
-pub(crate) use targets::{door_offer_current, targets};
+#[cfg(any(test, feature = "test-support"))]
+pub use targets::test_support::DoorProvider;
+pub use targets::{door_offer_current, targets};
 pub use tick::{after_aim, free_hands, main_thread_tick, mode_acts};
 
 use crate::controllers::physical_hands::config::PHYSICAL_HANDS_CONFIG;
 
-pub(crate) mod lifetime;
+pub mod lifetime;
 
 use jc3vr_body::controllers::{grab::PickupKind, hands::CockpitHand};
 use jc3vr_input::frame::Hand;
@@ -117,7 +117,7 @@ pub(crate) unsafe fn carry_bodies_destroying(world: *mut hknpWorld, ids: *const 
 /// The loose object each hand carries, by [`Hand::index`](jc3vr_input::frame::Hand::index),
 /// for the loadout table: a prop, not a grip on something hinged, a door, or a character, which are
 /// the world's.
-pub(crate) fn held_props() -> [Option<NonZeroUsize>; 2] {
+pub fn held_props() -> [Option<NonZeroUsize>; 2] {
     STATE.lock().pickup.props()
 }
 

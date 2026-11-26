@@ -30,9 +30,10 @@ use jc3vr_body::controllers::{
     },
 };
 use jc3vr_input::frame::Hand;
+use jc3vr_physical::controllers::physical_hands::doors::engine::vehicle_body;
 use jc3vr_view::controllers::cockpit::CockpitTransform;
 
-use crate::{controllers::physical_hands::doors::engine::vehicle_body, grapple::seat::Refusal};
+use crate::grapple::seat::Refusal;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) enum WireReading {

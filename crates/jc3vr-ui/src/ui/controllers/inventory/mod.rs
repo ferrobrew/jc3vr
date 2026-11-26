@@ -15,14 +15,13 @@ use jc3vr_body::controllers::fingers::{grip, grip::GripSource};
 use jc3vr_gameplay::controllers::{
     config::WeaponsConfig,
     loadout::{live, live::LiveStatus},
-    physical_hands,
-    physical_hands::PhysicalHandsStatus,
     weapons::{
         inventory as controller_inventory,
         inventory::{InventoryReadout, StatusUnavailable},
     },
 };
 use jc3vr_input::frame::Hand;
+use jc3vr_physical::controllers::{physical_hands, physical_hands::PhysicalHandsStatus};
 
 use crate::{
     status::inventory::{CARRIED, LAST_LOAD, LOADOUT, PINNED, SEPARATE_PISTOLS, SIDECAR, TRACKED},

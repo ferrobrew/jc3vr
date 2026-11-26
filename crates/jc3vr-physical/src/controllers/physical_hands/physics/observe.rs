@@ -9,7 +9,7 @@ use std::{
 
 use glam::Vec3;
 use jc3vr_body::controllers::{
-    clock::TimeScale, hands::CockpitHand, haptics, held, physics::steps::steps,
+    clock::TimeScale, hands::CockpitHand, haptics, held, held::guns, physics::steps::steps,
 };
 use jc3vr_input::{
     frame::{Hand, Pose},
@@ -23,7 +23,6 @@ use crate::controllers::physical_hands::{
     physics::{
         HAND_BODIES, blows, callback, drawn_body,
         drive::rig_jumped,
-        guns,
         lifecycle::HANDS,
         render::{RenderOffset, apply_offsets},
         state::{

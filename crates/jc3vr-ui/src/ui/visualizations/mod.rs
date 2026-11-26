@@ -2,10 +2,8 @@
 
 use egui::Ui;
 use jc3vr_body::controllers::{overlay::config::GunReadout, scheme};
-use jc3vr_gameplay::controllers::{
-    config::{CONTROLLERS_CONFIG, ControllersConfig},
-    physical_hands::collider_view::ColliderViewConfig,
-};
+use jc3vr_gameplay::controllers::config::{CONTROLLERS_CONFIG, ControllersConfig};
+use jc3vr_physical::controllers::physical_hands::collider_view::ColliderViewConfig;
 use jc3vr_render::controllers::overlay;
 use jc3vr_view::controllers::overlay::{primitive::Source, store, store::SourceMask};
 use parking_lot::Mutex;

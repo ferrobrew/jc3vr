@@ -8,6 +8,7 @@ use jc3gi::physics::PhysicsSystem;
 use jc3vr_body::controllers::{
     aim::{ray::Ray, raycast, raycast::CastOptions},
     clock::TimeScale,
+    held::guns as held_guns,
     mode,
     physics::steps::{count_step, current_at},
 };
@@ -124,7 +125,7 @@ pub unsafe fn step() {
     let gun_holds = if fresh && guns::mode_allows_bodies(detection) {
         guns::holds_for_step(&config, step_number)
     } else {
-        guns::GunHolds::default()
+        held_guns::GunHolds::default()
     };
     let on_gun = gun_holds.hands();
     let targets = Hand::BOTH.map(|hand| {
@@ -267,7 +268,7 @@ pub unsafe fn step() {
                     linear_gain *= b.hits.follow_through_gain.clamp(0.0, 1.0);
                 }
                 let held_tuning = if on_gun[i] {
-                    gun_tuning(&tuning, guns::carried_mass(hand, b.mass_kg))
+                    gun_tuning(&tuning, held_guns::carried_mass(hand, b.mass_kg))
                 } else {
                     holding.map_or(tuning, |h| holding_tuning(&tuning, &h))
                 };

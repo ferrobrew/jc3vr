@@ -81,11 +81,11 @@ slots! {
     jc3vr_body::controllers::roomscale::config::ROOMSCALE_CONFIG = controllers.roomscale,
     jc3vr_gameplay::controllers::vehicles::config::VEHICLES_CONFIG = controllers.vehicles,
     jc3vr_body::controllers::fingers::config::FINGERS_CONFIG = controllers.fingers,
-    jc3vr_gameplay::controllers::physical_hands::config::PHYSICAL_HANDS_CONFIG = controllers.physical_hands,
+    jc3vr_physical::controllers::physical_hands::config::PHYSICAL_HANDS_CONFIG = controllers.physical_hands,
     jc3vr_gameplay::controllers::summary::config::SUMMARY_CONFIG = controllers.summary,
     jc3vr_gameplay::grapple::physical::config::GRAPPLE_CONFIG = controllers.grapple,
     jc3vr_body::controllers::haptics::config::HAPTICS_CONFIG = controllers.haptics,
-    jc3vr_gameplay::controllers::glass::config::GLASS_CONFIG = controllers.glass,
+    jc3vr_physical::controllers::glass::config::GLASS_CONFIG = controllers.glass,
     // Fields of a controllers group that a subsystem below the group's owner reads.
     jc3vr_body::controllers::hands::config::MOUNTED_AIM_BY_HANDS = controllers.vehicles.mounted.aim_by_hands,
     jc3vr_body::controllers::hands::config::GRAPPLE_PUMP = controllers.grapple.pump,

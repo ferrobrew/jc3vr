@@ -24,7 +24,7 @@ use crate::controllers::physical_hands::{
 
 /// Whether `offer` still stands for `hand`: the same fresh sample of the same source, and the door
 /// it offers still unclaimed and in reach.
-pub(crate) fn door_offer_current(
+pub fn door_offer_current(
     offer: DoorEligibility,
     hand: Hand,
     config: &PhysicalHandsConfig,
@@ -35,7 +35,7 @@ pub(crate) fn door_offer_current(
 
 /// The physical hands' targets for this input tick, with the reach's notes for each hand, at the VR
 /// world scale `world_scale`.
-pub(crate) fn targets(world_scale: f32, scans: &mut [Option<Scan>; 2]) -> Provided {
+pub fn targets(world_scale: f32, scans: &mut [Option<Scan>; 2]) -> Provided {
     *scans = [None; 2];
     let config = *PHYSICAL_HANDS_CONFIG.lock();
     let scale = world_scale.max(1e-3);
@@ -215,7 +215,7 @@ pub(super) fn kind_of(kind: &TargetKind) -> PickupKind {
 /// The marker on the grab point of what a hand holds, metres.
 const HELD_MARK_M: f32 = 0.03;
 
-#[cfg(test)]
-pub(crate) mod test_support;
+#[cfg(any(test, feature = "test-support"))]
+pub mod test_support;
 #[cfg(test)]
 mod tests;

@@ -2,7 +2,7 @@
 
 use std::time::Instant;
 
-use crate::controllers::physical_hands::pickup::HeldReport;
+use jc3vr_physical::controllers::physical_hands::pickup::HeldReport;
 
 /// Which weapon and body the grips belong to, so a recycled address is not mistaken for the gun
 /// the record was made for.

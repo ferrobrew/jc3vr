@@ -25,13 +25,13 @@ use jc3gi::{
     },
     types::vector_math::AlignedVector3,
 };
+use jc3vr_body::controllers::physics::havok::affine as havok_affine;
 
 use crate::controllers::physical_hands::{
     collider_view::model::{
         Aabb, Body, Geometry, Ground, Joint, JointKind, KindInputs, Layer, ModBody, MotionKind,
         Snapshot, capsule_radius, classify, hull_edges, nearest, restore_aabb,
     },
-    physics::havok_affine,
     world::World,
 };
 

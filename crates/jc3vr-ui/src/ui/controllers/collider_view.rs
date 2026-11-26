@@ -3,7 +3,7 @@
 
 use egui::Ui;
 use jc3gi::physics::CustomGroupCollisionFilter;
-use jc3vr_gameplay::controllers::physical_hands::{
+use jc3vr_physical::controllers::physical_hands::{
     collider_view,
     collider_view::{ColliderViewConfig, ColliderViewStatus, model::BodyKind},
 };

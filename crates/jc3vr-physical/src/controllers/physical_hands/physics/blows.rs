@@ -42,6 +42,7 @@ use jc3vr_body::{
         grab,
         grab::latch::GripLatch,
         haptics, held,
+        held::guns,
         physics::{
             bodies::{instance_of, owner_of},
             characters::{self as character_engine, character_position},
@@ -59,7 +60,6 @@ use crate::controllers::physical_hands::{
     physics::{
         HAND_BODIES, HandHitsTuning, body, contact,
         contact::Contact,
-        guns,
         hit::{
             ANY_HAND, Blow, BlowPlan, HitGate, Intent, RiderReaction, VictimTuning, approach, blow,
             blow_impulse, pulse_share, striking_with, swing,

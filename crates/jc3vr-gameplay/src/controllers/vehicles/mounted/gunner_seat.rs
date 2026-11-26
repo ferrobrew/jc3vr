@@ -28,12 +28,10 @@ use jc3vr_body::controllers::{
     physics::{bodies::physics_object_of, refs::Weak},
 };
 use jc3vr_input::frame::Hand;
+use jc3vr_physical::controllers::physical_hands::doors::engine::vehicle_of;
 use parking_lot::Mutex;
 
-use crate::controllers::{
-    physical_hands::doors::engine::vehicle_of,
-    vehicles::mounted::{handle, pivot_and_barrel},
-};
+use crate::controllers::vehicles::mounted::{handle, pivot_and_barrel};
 
 /// Where the gunner of an unmanned vehicle gun stands: behind the handles' midpoint, along the
 /// barrel's level direction.

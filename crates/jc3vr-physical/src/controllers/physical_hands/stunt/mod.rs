@@ -90,7 +90,7 @@ pub fn enabled(config: &PhysicalHandsConfig) -> bool {
 
 /// Whether the player hangs from a helicopter, so that either hand's grip holds on. Called from the
 /// input tick.
-pub(crate) fn hanging() -> bool {
+pub fn hanging() -> bool {
     let state = STATE.lock();
     state.status.position == Some(StuntKind::Hanging)
         && state
@@ -101,7 +101,7 @@ pub(crate) fn hanging() -> bool {
 /// Read the stunt position, enter a roof where a completed mantle offers it, and let go of a hang
 /// whose grips opened. `held` is each hand's grip; a let-go asks the game for its jump, which
 /// leaves the hang, through `desired`. Called from the input tick after the climb's.
-pub(crate) fn finish_tick(held: [bool; 2], desired: &mut Vec<Desired>) {
+pub fn finish_tick(held: [bool; 2], desired: &mut Vec<Desired>) {
     let config = *PHYSICAL_HANDS_CONFIG.lock();
     let now = Instant::now();
     let mut state = STATE.lock();

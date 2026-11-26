@@ -36,14 +36,15 @@ use jc3gi::{
     },
     types::{math::Matrix4, vector_math::AlignedQuat},
 };
-use jc3vr_body::controllers::physics::{bodies, characters::proxy_body};
+use jc3vr_body::controllers::physics::{
+    bodies, characters::proxy_body, havok::vector as havok_vector,
+};
 
 use crate::controllers::physical_hands::{
     physics::{
         contact,
         contact::{ContactError, Source},
         drive::BodyMotion,
-        havok_vector,
     },
     world::World,
 };

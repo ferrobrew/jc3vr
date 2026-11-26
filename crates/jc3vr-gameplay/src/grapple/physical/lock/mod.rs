@@ -71,6 +71,7 @@ use jc3vr_input::{
     frame::{self, Hand},
     haptics::cues::{Event, Sustain},
 };
+use jc3vr_physical::controllers::physical_hands::remote;
 use jc3vr_view::{
     headpose::xr,
     vr::{VR_CONFIG, recenter_count},
@@ -78,16 +79,13 @@ use jc3vr_view::{
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::{
-    controllers::physical_hands::remote,
-    grapple::{
-        physical::{
-            config::{GRAPPLE_CONFIG, LockConfig, PhysicalGrappleTuning, SwingTuning},
-            lock::model::{FreeHand, Held, Pump, PumpSample, SwingInput, TakeIn},
-        },
-        rope,
-        rope::RopeFault,
+use crate::grapple::{
+    physical::{
+        config::{GRAPPLE_CONFIG, LockConfig, PhysicalGrappleTuning, SwingTuning},
+        lock::model::{FreeHand, Held, Pump, PumpSample, SwingInput, TakeIn},
     },
+    rope,
+    rope::RopeFault,
 };
 
 /// The lock's hooks, aggregated by [`crate::grapple::physical::hook_library`].

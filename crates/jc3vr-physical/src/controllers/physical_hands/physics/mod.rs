@@ -65,11 +65,8 @@ mod types;
 
 pub(crate) use blows::queue_shove;
 pub use blows::{Shove, ShoveForce};
-pub(crate) use callback::{rail_step_registered, register_rail_step};
+pub use callback::{rail_step_registered, register_rail_step};
 pub use config::{HAND_BODIES, HandBodiesConfig, HandHitsTuning};
-pub(crate) use jc3vr_body::controllers::physics::havok::{
-    affine as havok_affine, vector as havok_vector,
-};
 pub(crate) use lifecycle::release_body_joints;
 
 pub use self::{
