@@ -524,6 +524,66 @@ fn a_snapshot_serializes_exactly_as_the_config_does() {
     );
 }
 
+/// A file the build before the slot table's children wrote, with settings since removed: the
+/// groups whose slots moved down a layer (the haptics, the floating panel, the driver's view, and
+/// the evade) and the fields the lower layers read through slots of their own keep their values,
+/// and only the removed settings are reported, as unknown.
+#[test]
+fn a_file_from_the_previous_build_loads() {
+    let text = r#"version = 1
+
+[controllers]
+enabled = false
+dominant_hand = "Left"
+
+[controllers.input]
+self_check = true
+
+[controllers.haptics]
+intensity = 0.4
+game_rumble = false
+
+[controllers.vehicles]
+take_off_to_head = false
+
+[controllers.vehicles.driving_view]
+enabled = false
+
+[controllers.vehicles.wingsuit_evade]
+enabled = false
+
+[controllers.vehicles.mounted]
+aim_by_hands = false
+
+[hud.egui_panel]
+resolution = [1600, 1200]
+aspect = 1.3333334
+show_on_mirror = true
+
+[testing]
+record_hand_joints = false
+texture_census = true
+"#;
+    let Loaded { config, report, .. } = parse(text).unwrap();
+    assert_eq!(
+        report.ignored,
+        [
+            "controllers.input.self_check",
+            "controllers.vehicles.mounted",
+            "controllers.vehicles.take_off_to_head",
+        ]
+    );
+    assert!(report.reset.is_empty());
+    let c = &config.controllers;
+    assert!(!c.enabled);
+    assert_eq!(c.dominant_hand, Hand::Left);
+    assert_eq!((c.haptics.intensity, c.haptics.game_rumble), (0.4, false));
+    assert!(!c.vehicles.driving_view.enabled && !c.vehicles.wingsuit_evade.enabled);
+    assert_eq!(config.hud.egui_panel.resolution, (1600, 1200));
+    assert!(config.hud.egui_panel.show_on_mirror);
+    assert!(!config.testing.record_hand_joints && config.testing.texture_census);
+}
+
 fn defaults_table() -> Table {
     toml::from_str(&toml::to_string(&Config::new()).unwrap()).unwrap()
 }
