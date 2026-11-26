@@ -1,7 +1,8 @@
 //! The controls' vocabulary every subsystem speaks: the hold requests the subsystems hand the
 //! bindings, the per-hand controls they read, the yank gesture, the grapple button's context, and
 //! the rows the controls summary describes. It also holds the bindings' settings, the game's
-//! localised strings, and the reads of each hand's grip outside the bindings' tick.
+//! localised strings, the reads of each hand's grip outside the bindings' tick, and whether the
+//! bindings' game stage may spawn ([`stage`]).
 
 pub mod config;
 pub mod controls;
@@ -9,6 +10,7 @@ pub mod grapple_button;
 pub mod hold;
 pub mod localise;
 pub mod rows;
+pub mod stage;
 pub mod yank;
 
 use std::sync::atomic::{AtomicBool, Ordering};

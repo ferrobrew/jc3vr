@@ -30,7 +30,7 @@
 //! ([`Grenade::UpdatePostSim`](jc3gi::equipment::explosive::Grenade::UpdatePostSim)). The stage
 //! therefore runs there whenever the queue runs, and elsewhere (a paused update, which skips the
 //! queue and the ammunition manager's pass, or an inline game stage) it runs with [`Spawn`]
-//! refused, which acts that spawn such objects check through [`spawn`].
+//! refused, which acts that spawn such objects check through [`stage::spawn`].
 //!
 //! Where the poll stage runs outside the input job (the load state, and the frontend before its
 //! main menu, call the input update inline on the game thread with no world update after it), the
@@ -47,7 +47,7 @@
 //! next poll stage, where they landed back to the next game stage (which the hold tracker needs
 //! before it resolves again), and the right stick's body turn for the next poll stage's look path.
 
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 
 use jc3vr_core::{
     frame_timing::{self, Slot},
@@ -61,6 +61,7 @@ use crate::controllers::{
         inject::{self, Landing, Outcome},
     },
     gamepad_setting,
+    intent::stage::{self, Spawn, SpawnScope},
     telemetry::{Write, note_injected},
 };
 
@@ -83,23 +84,6 @@ impl Delivery {
             _ => Self::Inline,
         }
     }
-}
-
-/// Whether the game stage may spawn objects that register for the world's updates.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) enum Spawn {
-    /// The stage runs at the top of the world's pre-simulation queue, after the update-queue
-    /// commit: what it registers is first updated in the next tick.
-    Allowed,
-    /// The stage runs anywhere else: a registration would be made live by the next pre-simulation
-    /// commit, ahead of the ammunition manager's pass that completes an explosive.
-    Refused,
-}
-
-/// Whether the game stage running on this thread may spawn objects that register for the world's
-/// updates; [`Spawn::Refused`] outside a game stage.
-pub(crate) fn spawn() -> Spawn {
-    SPAWN.with(Cell::get)
 }
 
 /// Where the game stage runs within one world pre-simulation update, on the game thread: at the top
@@ -220,7 +204,7 @@ pub(crate) fn poll_stage(dt: f32, poll: DevicePoll) -> Option<f32> {
 
 /// The game stage: run the bindings' decisions and acts for the tick the last poll stage
 /// published, and the active-input-device pin, with `spawn` saying whether the acts may spawn
-/// objects that register for the world's updates ([`spawn`]). Does nothing when no poll stage ran
+/// objects that register for the world's updates ([`stage::spawn`]). Does nothing when no poll stage ran
 /// since the last game stage (the device poll was skipped, or the frontend or load state already
 /// ran this tick inline).
 ///
@@ -338,27 +322,6 @@ static HANDOFF: Mutex<Handoff<Segment, LandedSegment>> = Mutex::new(Handoff::new
 
 thread_local! {
     static PRE_SIM_TURN: RefCell<PreSimTurn> = const { RefCell::new(PreSimTurn { pending: false }) };
-    static SPAWN: Cell<Spawn> = const { Cell::new(Spawn::Refused) };
-}
-
-/// Holds this thread's [`spawn`] answer for a game stage, and restores the previous one when
-/// dropped.
-struct SpawnScope {
-    previous: Spawn,
-}
-
-impl SpawnScope {
-    fn enter(spawn: Spawn) -> Self {
-        Self {
-            previous: SPAWN.with(|cell| cell.replace(spawn)),
-        }
-    }
-}
-
-impl Drop for SpawnScope {
-    fn drop(&mut self) {
-        SPAWN.with(|cell| cell.set(self.previous));
-    }
 }
 
 /// Log a poll stage that had no game stage after it, at every power of two so that a persistent

@@ -84,7 +84,7 @@ use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
     aim::targets::weak_target,
-    bindings::stage::{self, Spawn},
+    intent::stage::{self, Spawn},
     loadout::{live, safe_items::SafeItemView},
     weapons::{
         engine::{gun_ptr, is_hand_grenade},
