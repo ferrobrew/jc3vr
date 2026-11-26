@@ -41,6 +41,10 @@ use jc3vr_tooling::tuning::TOOLING;
 use jc3vr_ui::tuning::UI;
 use jc3vr_vehicles::controllers::vehicles::tuning::VEHICLES;
 use jc3vr_view::tuning::{HAPTICS, VIEW};
+use jc3vr_weapons::controllers::weapons::{
+    c4::tuning::C4, grenade::tuning::GRENADE, handling_tuning::HANDLING, hold::tuning::HOLD,
+    inventory::tuning::INVENTORY, reload::tuning::RELOAD,
+};
 
 /// Loads every tuning file from `source` and starts watching them.
 pub(crate) fn init(source: Source) -> Result<(), StartupError> {
@@ -84,6 +88,12 @@ static FILES: &[&dyn AnyTuningFile] = &[
     &CLIMB,
     &HUMAN_HULL,
     &VIEWS,
+    &HANDLING,
+    &INVENTORY,
+    &RELOAD,
+    &GRENADE,
+    &C4,
+    &HOLD,
 ];
 
 #[cfg(test)]
