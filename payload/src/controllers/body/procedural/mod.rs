@@ -70,7 +70,6 @@ use jc3gi::{
 use parking_lot::Mutex;
 
 use crate::{
-    config::Config,
     controllers::{
         body::{
             firm_ragdoll,
@@ -95,6 +94,7 @@ use crate::{
             rig::{grounded, torso::relative_heading, torso_turn},
         },
         cockpit::CockpitTransform,
+        config::CONTROLLERS_CONFIG,
         hands::{active_hands_raw, arm_remaps},
         locomotion::{anchor::JUMP_GRACE_S, status as locomotion_status},
         mode::{AirborneVariant, Mode, current as current_mode},
@@ -103,6 +103,7 @@ use crate::{
     hash::StateSet,
     headpose::{body_relative_rotation, xr},
     hooks::animation::active_state_type_id,
+    vr::VR_CONFIG,
 };
 
 /// What the procedural body did at its last gate.
@@ -258,14 +259,9 @@ pub(crate) unsafe fn at_solve_gate(character: &mut Character, dt: f32) -> bool {
 ///
 /// As [`at_solve_gate`].
 unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
-    let (config, follow, scale, ik_config) = Config::lock_query(|c| {
-        (
-            c.controllers.body.procedural,
-            c.controllers.body.rig.follow,
-            c.vr.world_scale,
-            c.controllers.body.ik,
-        )
-    });
+    let (config, follow, ik_config) =
+        CONTROLLERS_CONFIG.query(|c| (c.body.procedural, c.body.rig.follow, c.body.ik));
+    let scale = VR_CONFIG.lock().world_scale;
     let now = Instant::now();
     // Read before the gate's own state too: it takes the configuration and the controller frame.
     let mode = current_mode().mode;

@@ -16,15 +16,15 @@ use glam::Quat;
 use jc3gi::character::character::{AnimationController, Character, Joint};
 use parking_lot::Mutex;
 
-use crate::{
-    config::Config,
-    controllers::body::procedural::{
+use crate::controllers::{
+    body::procedural::{
         config::ProceduralMode,
         joints::{from_joint, to_joint},
         leg_weight, published_status,
         skeleton::{self, SkeletonKey},
         solver::twist::{Region, TwistRig},
     },
+    config::CONTROLLERS_CONFIG,
 };
 
 /// What the twist distribution did on its last pass.
@@ -55,7 +55,7 @@ pub(crate) unsafe fn after_solve(character: *mut Character) {
     let Some(character) = (unsafe { character.as_mut() }).filter(|c| c.m_IsLocalCharacter) else {
         return;
     };
-    let mode = Config::lock_query(|c| c.controllers.body.procedural.mode);
+    let mode = CONTROLLERS_CONFIG.lock().body.procedural.mode;
     let body = published_status();
     let weights = [body.weight, leg_weight()];
     let mut status = TwistStatus {

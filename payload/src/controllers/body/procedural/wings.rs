@@ -26,7 +26,6 @@ use jc3gi::character::character::Character;
 use parking_lot::Mutex;
 
 use crate::{
-    config::Config,
     controllers::{
         body::{
             self,
@@ -43,6 +42,7 @@ use crate::{
                 },
             },
         },
+        config::CONTROLLERS_CONFIG,
         frame::{self, Hand, Pose},
         hands::{ik::queue_model_wrists, pose::cockpit_hand},
         scheme,
@@ -74,7 +74,7 @@ pub(super) fn clear() {
 /// controller frame slot, and the rig's torso estimate, one after the other, so the gate reads it
 /// before it takes its own state.
 pub(super) fn read_player_arms() -> Option<PlayerArms> {
-    let config = Config::lock_query(|c| c.controllers.clone());
+    let config = CONTROLLERS_CONFIG.lock().clone();
     if !config.enabled || !scheme::is_controllers() || headpose::source() != Source::Vr {
         return None;
     }

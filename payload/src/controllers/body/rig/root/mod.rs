@@ -70,7 +70,6 @@ pub(crate) use crate::controllers::body::rig::root::completion::{
     test_source, test_source_with_root,
 };
 use crate::{
-    config::Config,
     controllers::{
         aim::raycast::CastOptions,
         body::{
@@ -91,7 +90,7 @@ use crate::{
             },
         },
         clock::TimeScale,
-        config::RoomscaleConfig,
+        config::{CONTROLLERS_CONFIG, RoomscaleConfig},
         locomotion::after_task,
         physical_hands::{self, climb},
         roomscale::{
@@ -274,7 +273,7 @@ pub fn frame(inputs: &FrameInputs) -> FrameOutput {
 /// offset the rig's pelvis assumes the upright eyes stand ahead of the root by; else the measured
 /// neck-to-eyes arm.
 fn slip_arm() -> Vec3 {
-    let head_on_pivot = Config::lock_query(|c| c.controllers.locomotion.view.head_on_pivot);
+    let head_on_pivot = CONTROLLERS_CONFIG.lock().locomotion.view.head_on_pivot;
     headpose::anchor_pair()
         .map(|[_, current]| current)
         .filter(|current| head_on_pivot && current.camera_stable)
@@ -596,7 +595,7 @@ fn locomotion_task_update(ctx: *mut StateContext, properties: *mut c_void, state
 
 /// The simulation half, for the local player after the locomotion task.
 unsafe fn after_locomotion(character: &mut Character, dt: f32) {
-    let (config, rig) = Config::lock_query(|c| (c.controllers.roomscale, c.controllers.body.rig));
+    let (config, rig) = CONTROLLERS_CONFIG.query(|c| (c.roomscale, c.body.rig));
     let now = Instant::now();
     let shared = roomscale::frame_shared();
     let step_frame = published_step(now);

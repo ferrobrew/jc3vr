@@ -19,7 +19,6 @@ use jc3gi::{
 use parking_lot::Mutex;
 
 use crate::{
-    config::Config,
     controllers::{
         body::rig::{
             self,
@@ -29,6 +28,7 @@ use crate::{
     },
     headpose, hooks,
     hooks::character::body_ik::bone_for_effector,
+    vr::VR_CONFIG,
 };
 
 /// The tracing target for the divergence's once-a-second log. Public so that the debug UI can turn
@@ -129,7 +129,7 @@ pub unsafe fn after_solve(character: *mut Character) {
             let frames = Frames {
                 cockpit: CockpitTransform::current(
                     cockpit.position,
-                    Config::lock_query(|c| c.vr.world_scale),
+                    VR_CONFIG.query(|c| c.world_scale),
                 ),
                 character: world,
             };

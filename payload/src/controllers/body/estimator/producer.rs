@@ -17,8 +17,10 @@ use glam::{DQuat, Quat, Vec3};
 use parking_lot::Mutex;
 
 use crate::{
-    config::Config,
-    controllers::{body::estimator::withdraw, roomscale::posture::EffectivePosture, scheme},
+    controllers::{
+        body::estimator::withdraw, config::CONTROLLERS_CONFIG,
+        roomscale::posture::EffectivePosture, scheme,
+    },
     vr,
 };
 
@@ -41,7 +43,7 @@ pub struct Observation {
 /// the window starts again and nothing is posted; off or under the gamepad scheme the published
 /// estimate is withdrawn too.
 pub fn observe(observation: &Observation) {
-    let config = Config::lock_query(|c| c.controllers.body.estimator.clone());
+    let config = CONTROLLERS_CONFIG.lock().body.estimator.clone();
     let controllers = scheme::is_controllers();
     let mut state = STATE.lock();
     let producer = state.get_or_insert_with(Producer::new);

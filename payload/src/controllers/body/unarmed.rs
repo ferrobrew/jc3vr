@@ -36,8 +36,8 @@ use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    config::Config,
     controllers::{
+        config::CONTROLLERS_CONFIG,
         hands::tiers::{self, TierState},
         scheme,
     },
@@ -258,7 +258,7 @@ pub unsafe fn tick(character: *mut Character) {
     let Some(character) = (unsafe { character.as_ref() }).filter(|c| c.m_IsLocalCharacter) else {
         return;
     };
-    let weapon_animations = Config::lock_query(|c| c.controllers.body.unarmed.weapon_animations);
+    let weapon_animations = CONTROLLERS_CONFIG.lock().body.unarmed.weapon_animations;
     let inputs = GateInputs {
         controllers: scheme::is_controllers(),
         vr: headpose::source() == headpose::Source::Vr,

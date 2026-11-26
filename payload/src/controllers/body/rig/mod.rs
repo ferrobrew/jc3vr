@@ -27,12 +27,12 @@ use parking_lot::Mutex;
 
 pub use crate::controllers::body::rig::config::RigConfig;
 use crate::{
-    config::Config,
     controllers::{
         body::{
             procedural::wings::airborne_torso_heading,
             rig::torso::{CHEST_LIMIT_DEG, TorsoEstimate},
         },
+        config::CONTROLLERS_CONFIG,
         frame::Pose,
         hands::reach,
         mode::{self, Mode},
@@ -54,7 +54,7 @@ pub fn estimate() -> Option<TorsoEstimate> {
 /// Hip squaring changes the visual pose without feeding the animated hip heading back into root
 /// following.
 pub fn follow_settings() -> FollowSettings {
-    let follow = Config::lock_query(|c| c.controllers.body.rig.follow);
+    let follow = CONTROLLERS_CONFIG.lock().body.rig.follow;
     if !follow.enabled || headpose::source() != headpose::Source::Vr || !hooks::in_gameplay() {
         return FollowSettings::OFF;
     }

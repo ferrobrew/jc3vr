@@ -17,10 +17,10 @@ use jc3gi::character::character::Character;
 use parking_lot::Mutex;
 
 use crate::{
-    config::Config,
     controllers::{
         aim::raycast::CastOptions,
         body::rig::collision::probe::{HeadProbe, TimedProbe},
+        config::CONTROLLERS_CONFIG,
         roomscale::teleport,
     },
     headpose::{self, Source},
@@ -34,7 +34,7 @@ use crate::{
 /// `character` must be the live local character, in the simulation phase outside the physics
 /// step.
 pub(crate) unsafe fn tick(character: &Character) {
-    let enabled = Config::lock_query(|c| c.controllers.roomscale.head_fade.enabled);
+    let enabled = CONTROLLERS_CONFIG.lock().roomscale.head_fade.enabled;
     let mut state = STATE.lock();
     let epoch = teleport::epoch();
     if !enabled || headpose::source() != Source::Vr || !hooks::in_gameplay() || epoch != state.epoch

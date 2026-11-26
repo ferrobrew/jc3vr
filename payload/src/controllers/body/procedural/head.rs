@@ -22,8 +22,7 @@ use body_rig::body::EYES_TO_NECK;
 use glam::{Mat4, Quat, Vec3};
 
 use crate::{
-    config::Config,
-    controllers::locomotion::anchor::status as anchor_status,
+    controllers::{config::CONTROLLERS_CONFIG, locomotion::anchor::status as anchor_status},
     headpose::{anchor_pair, animation_rotation, body_relative_rotation, eye_arm, query},
     hooks::camera::eye_point,
 };
@@ -106,7 +105,7 @@ pub fn camera_neck_pivot(eye: Vec3, orientation: Quat, scale: f32) -> Vec3 {
 /// carried back onto it: the steady view's weight while the headset's eyes hang from its neutral
 /// head by the neck model (`controllers.locomotion.view.head_on_pivot`), else none.
 fn pivot_weight() -> f32 {
-    if !Config::lock_query(|c| c.controllers.locomotion.view.head_on_pivot) {
+    if !CONTROLLERS_CONFIG.query(|c| c.locomotion.view.head_on_pivot) {
         return 0.0;
     }
     anchor_pair()

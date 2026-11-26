@@ -47,10 +47,13 @@ pub(crate) use crate::controllers::body::ik_body::{
     effectors::queue,
     gate::{GateInput, prepare},
 };
-use crate::controllers::body::{
-    BodyDimensions, estimator,
-    ik_body::{fk::FkInput, gate::GateState},
-    rig::grounded,
+use crate::controllers::{
+    body::{
+        BodyDimensions, estimator,
+        ik_body::{fk::FkInput, gate::GateState},
+        rig::grounded,
+    },
+    config::CONTROLLERS_CONFIG,
 };
 
 /// Whether the IK body owns the standing body now: its feet are planted by IK, so the game's
@@ -83,7 +86,7 @@ pub fn status() -> IkStatus {
 /// Advance the FK pelvis by one rendered frame: the root's frame half calls it before the grounded
 /// rig. `eyes` and `head` are the room frame's, as the rig takes them.
 pub(crate) fn frame(eyes: Vec3, head: Quat, dimensions: &BodyDimensions, dt: f32, now: Instant) {
-    let tuning = crate::config::Config::lock_query(|c| c.controllers.body.ik.fk);
+    let tuning = CONTROLLERS_CONFIG.lock().body.ik.fk;
     let diagnostics = grounded::diagnostics();
     let input = FkInput {
         eyes,

@@ -20,13 +20,13 @@ use jc3gi::character::character::{AnimationController, Character, Joint};
 use parking_lot::Mutex;
 
 use crate::{
-    config::Config,
     controllers::{
         body::procedural::{
             head::head_bone_world,
             joints::from_joint,
             skeleton::{self, SkeletonKey},
         },
+        config::CONTROLLERS_CONFIG,
         hands::ik::tick_records,
         overlay::{
             primitive::{Anchor, DepthMode, Facing, Primitive, Rgba, Shape, Source, SpriteSize},
@@ -41,6 +41,7 @@ use crate::{
         },
     },
     hooks::camera::eye_point,
+    vr::VR_CONFIG,
 };
 
 /// What the mirror drew on its last pass.
@@ -118,12 +119,8 @@ impl PouchRenderContext {
 /// Publish only copied values after the model producer applies this render's matrices.
 pub(crate) fn pouches_rendered(sample: &PouchRenderSample) {
     clear_pouch_render();
-    let (enabled, distance) = Config::lock_query(|c| {
-        (
-            c.controllers.overlay.body_mirror,
-            c.controllers.overlay.body_mirror_distance_m,
-        )
-    });
+    let (enabled, distance) =
+        CONTROLLERS_CONFIG.query(|c| (c.overlay.body_mirror, c.overlay.body_mirror_distance_m));
     if !enabled {
         return;
     }
@@ -157,12 +154,8 @@ pub(crate) unsafe fn after_solve(character: *mut Character) {
     let Some(character) = (unsafe { character.as_ref() }).filter(|c| c.m_IsLocalCharacter) else {
         return;
     };
-    let (enabled, distance) = Config::lock_query(|c| {
-        (
-            c.controllers.overlay.body_mirror,
-            c.controllers.overlay.body_mirror_distance_m,
-        )
-    });
+    let (enabled, distance) =
+        CONTROLLERS_CONFIG.query(|c| (c.overlay.body_mirror, c.overlay.body_mirror_distance_m));
     if !enabled {
         return;
     }
@@ -179,7 +172,7 @@ pub(crate) unsafe fn after_solve(character: *mut Character) {
         indices.map(|index| index.map(|i| unsafe { joint_in_world(controller, i, &world) }));
     let head = eye_point();
     let (_, rotation, _) = world.to_scale_rotation_translation();
-    let head_target = head_bone_world(rotation, Config::lock_query(|c| c.vr.world_scale));
+    let head_target = head_bone_world(rotation, VR_CONFIG.query(|c| c.world_scale));
     let targets = tick_records()
         .current
         .map(|t| t.map(|t| t.wrist.position).filter(|p| p.is_finite()));

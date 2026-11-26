@@ -14,9 +14,9 @@
 //!
 //! # The player's dimensions
 //!
-//! The player's dimensions are the `body` section of the runtime configuration
-//! ([`Config::body`](crate::config::Config::body)), saved in the settings file with everything
-//! else. Every field defaults to [`BodyDimensions::GENERIC_ADULT`], and all values are metres:
+//! The player's dimensions are the `body` section of the runtime configuration ([`BODY_CONFIG`]),
+//! saved in the settings file with everything else. Every field defaults to
+//! [`BodyDimensions::GENERIC_ADULT`], and all values are metres:
 //!
 //! ```toml
 //! [body]
@@ -59,7 +59,7 @@ use glam::{Quat, Vec3};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    config::{self, Config, engine::ConfigSlot},
+    config::engine::ConfigSlot,
     controllers::body::calibration::{ARM_SPAN_HEIGHT_RATIO, FOREARM_RATIO, UPPER_ARM_RATIO},
 };
 
@@ -232,7 +232,7 @@ impl std::error::Error for InvalidDimension {}
 
 /// The player's body dimensions.
 pub fn player() -> BodyDimensions {
-    Config::lock_query(|c| c.body)
+    *BODY_CONFIG.lock()
 }
 
 /// Whether the player's dimensions are still the generic adult ones, for a readout.
@@ -244,7 +244,7 @@ pub fn is_generic() -> bool {
 /// failure, the dimensions in use are unchanged.
 pub fn save(dimensions: BodyDimensions) -> Result<(), InvalidDimension> {
     dimensions.validate()?;
-    config::edit().body = dimensions;
+    *BODY_CONFIG.edit() = dimensions;
     tracing::info!(target: "controllers", ?dimensions, "body dimensions saved");
     Ok(())
 }
