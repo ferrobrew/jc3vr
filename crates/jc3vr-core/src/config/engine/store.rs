@@ -264,6 +264,7 @@ const SECOND_SCHEMA: &str = "config: a second, different schema was registered";
 
 const WRONG_TYPE: &str = "config: the root is not of the registered schema's type";
 
+#[cfg(debug_assertions)]
 const NESTED: &str = "config: this thread already holds the configuration lock, which would \
                       deadlock; take one guard and read every part through it, or copy the first \
                       value out before locking again";
