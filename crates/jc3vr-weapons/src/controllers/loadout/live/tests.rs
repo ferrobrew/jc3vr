@@ -68,6 +68,7 @@ fn tick<'a>(
         }),
         fates: &[],
         others: &NO_OTHERS,
+        expect_s: 3.0,
     }
 }
 

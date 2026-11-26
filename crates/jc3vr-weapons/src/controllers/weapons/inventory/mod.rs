@@ -213,7 +213,12 @@ pub(crate) unsafe fn input_tick(
     let slots = unsafe { live_slots(owner) };
     let spawning =
         engine::tracked_slots().any(|slot| owner.m_Inventory.m_WeaponPendingSpawn[slot as usize]);
-    let restore_ready = live::begin_tick(inputs.dominant, &slots, spawning);
+    let restore_ready = live::begin_tick(
+        inputs.dominant,
+        &slots,
+        spawning,
+        INVENTORY.get().loadout.settle_wait(),
+    );
     unsafe { restore::input_tick(game, owner, restore_ready) };
     unsafe { use_item::input_tick(owner) };
     unsafe { gives::input_tick(game, owner) };
@@ -281,6 +286,7 @@ pub(crate) unsafe fn input_tick(
         armed,
         fates: &fates,
         others: &others,
+        expect_s: INVENTORY.get().loadout.expect_s,
     });
     let returning: Vec<(lost::Lying, Option<Strong>)> = live::bound()
         .into_iter()
@@ -411,7 +417,12 @@ pub fn maintenance_tick(game: &GameTick<'_>, dominant: Hand) {
     let slots = unsafe { live_slots(owner) };
     let spawning =
         engine::tracked_slots().any(|slot| owner.m_Inventory.m_WeaponPendingSpawn[slot as usize]);
-    let ready = live::begin_tick(dominant, &slots, spawning);
+    let ready = live::begin_tick(
+        dominant,
+        &slots,
+        spawning,
+        INVENTORY.get().loadout.settle_wait(),
+    );
     if !ready {
         return;
     }
@@ -457,6 +468,9 @@ unsafe fn stop(owner: &mut Character, why: &str) {
     if active {
         unsafe { reconcile::project_back(owner) };
     }
+    // The safe grenades' actors and queued releases retire outside the table's lock; their native
+    // removal waits for the serialized render boundary.
+    grenade::safe::reset();
     live::stop();
     if !active {
         publish_status();
@@ -601,6 +615,7 @@ fn on_reset() {
         .into_iter()
         .filter_map(ObjectAddress::from_address)
         .collect();
+    grenade::safe::reset();
     live::reset_began(&released);
     gives::on_reset();
     let slot_single = single::slot_single();

@@ -38,7 +38,7 @@ use re_utilities::hook_library::HookLibrary;
 use crate::controllers::{
     loadout::live,
     weapons::{
-        inventory,
+        grenade, inventory,
         inventory::{reconcile, restore},
     },
 };
@@ -116,6 +116,7 @@ fn load_player_save_data(save_data: *mut PlayerSaveData, archive: *mut c_void, v
         .call(save_data, archive, version);
     // SAFETY: the load was given live save data.
     unsafe { restore::on_load(save_data) };
+    grenade::safe::reset();
     live::loaded();
 }
 
@@ -136,6 +137,7 @@ fn re_init(player: *mut Player, transform: *mut Matrix4, teleport_flags: u32, re
 #[detour(address = jc3gi::game::GameStateFrontend::ResetSystems_ADDRESS)]
 fn frontend_reset_systems() {
     tracing::info!(target: "controllers", "inventory: the frontend is resetting the game's systems");
+    grenade::safe::reset();
     live::frontend_reset();
     restore::on_frontend();
     FRONTEND_RESET_SYSTEMS.get().unwrap().call();

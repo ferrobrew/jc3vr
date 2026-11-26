@@ -32,7 +32,10 @@ mod published;
 mod restoration;
 mod safe;
 
-use std::{sync::Arc, time::Instant};
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use jc3vr_body::controllers::grab::socket::Socket;
 use jc3vr_input::frame::Hand;
@@ -41,28 +44,25 @@ use parking_lot::Mutex;
 pub use crate::controllers::loadout::live::{
     expect::{Expect, Pending},
     hands::{Held, Whereabouts},
-    published::{hand_of, held_kind, in_hand, item_of, place_of},
+    published::{hand_of, held_kind, in_hand, item_of, place_of, register_hands_moved},
     safe::{
         admit_safe_item, admit_safe_item_to_world, move_safe_item, retire_safe_item, safe_item,
         safe_items,
     },
 };
-use crate::controllers::{
-    loadout::{
-        binding::{Awaiting, Binding, ObjectAddress},
-        event::Event,
-        item::{ItemKind, WeaponType},
-        live::expect::landing,
-        projection::{StoreProjection, project_store},
-        reset::{CacheKind, ResetKind, SlotObject},
-        restore::{RestoreAdmission, RestoreRefusal},
-        socket::BodyLayout,
-        table::{Loadout, LoadoutSnapshot, Place},
-        transition::{
-            Delivery, Give, GiveSource, LostWhy, Release, Removal, RemovalWhy, Restored, TakeSource,
-        },
+use crate::controllers::loadout::{
+    binding::{Awaiting, Binding, ObjectAddress},
+    event::Event,
+    item::{ItemKind, WeaponType},
+    live::expect::landing,
+    projection::{StoreProjection, project_store},
+    reset::{CacheKind, ResetKind, SlotObject},
+    restore::{RestoreAdmission, RestoreRefusal},
+    socket::BodyLayout,
+    table::{Loadout, LoadoutSnapshot, Place},
+    transition::{
+        Delivery, Give, GiveSource, LostWhy, Release, Removal, RemovalWhy, Restored, TakeSource,
     },
-    weapons::{grenade::safe::reset as retire_safe_items, inventory::tuning::INVENTORY},
 };
 
 /// The live table as the readouts show it.
@@ -116,6 +116,8 @@ pub(crate) struct Tick<'a> {
     pub fates: &'a [(ObjectAddress, Fate)],
     /// What the hands hold that is not a weapon.
     pub others: &'a HeldOthers,
+    /// How long a hand expects the game to wield the weapon a grab asked for, seconds.
+    pub expect_s: f32,
 }
 
 /// What the hands hold that is not a weapon, as the physical hands and the throws have it: each
@@ -140,12 +142,16 @@ pub(crate) struct HeldOther {
 /// Start the input tick's feed: start the table from the slots on its first tick, complete a spawn
 /// reset or a load since the last tick, and a checkpoint's, a mission's, or a challenge's restore.
 /// `slots` are the tracked slots' weapons, and `spawning` whether a slot's spawn is still on its
-/// way: a completion waits for the slots to settle, up to the tuning's `loadout.settle_wait_s`
-/// ([`LoadoutTuning`](crate::controllers::weapons::inventory::tuning::LoadoutTuning)). Called before anything
+/// way: a completion waits for the slots to settle, up to `settle_wait`. Called before anything
 /// restores a weapon this tick, so a restore lands in the table that the reset left.
-pub(crate) fn begin_tick(dominant: Hand, slots: &[SlotObject], spawning: bool) -> bool {
+pub(crate) fn begin_tick(
+    dominant: Hand,
+    slots: &[SlotObject],
+    spawning: bool,
+    settle_wait: Duration,
+) -> bool {
     LIVE.lock()
-        .begin_restoration(dominant, slots, spawning, Instant::now())
+        .begin_restoration(dominant, slots, spawning, settle_wait, Instant::now())
 }
 
 /// A weapon the game wields that came into a hand this tick, and the expectation it met (`None`
@@ -167,8 +173,7 @@ pub(crate) fn input_tick(tick: &Tick) -> Option<Arrival> {
         .last
         .map_or(0.0, |t| now.saturating_duration_since(t).as_secs_f32());
     live.last = Some(now);
-    let expect_s = INVENTORY.get().loadout.expect_s;
-    live.pending = live.pending.and_then(|p| p.aged(dt_s, expect_s));
+    live.pending = live.pending.and_then(|p| p.aged(dt_s, tick.expect_s));
     live.rebind_kept(tick.carried);
     let arrival = live.hand_moves(tick);
     live.sync_others(tick.others);
@@ -436,11 +441,9 @@ pub(crate) fn forgotten(objects: &[ObjectAddress]) {
 }
 
 /// Stop the table: the old inventory is off, so the game's slots are the player's weapons again.
-/// Safe actors and queued releases retire before the table lock; native removal waits for the
-/// serialized render boundary.
+/// The caller retires the safe grenades first, outside the table's lock.
 /// The next tick with the inventory on starts it again from the slots.
 pub(crate) fn stop() {
-    retire_safe_items();
     let mut live = LIVE.lock();
     if !live.started {
         return;
@@ -488,18 +491,17 @@ pub(crate) fn respawning() {
 }
 
 /// The frontend reset the game's systems (the quit to the menu): whatever follows starts the table
-/// again from the slots, as a load does.
+/// again from the slots, as a load does. The caller retires the safe grenades first.
 pub(crate) fn frontend_reset() {
-    retire_safe_items();
     let mut live = LIVE.lock();
     live.reset.frontend = true;
     live.reset.began = true;
 }
 
 /// The spawn reset is about to replace the slots' weapons, and the inventory releases the carry
-/// set's weapons (`released`), which the reset then removes.
+/// set's weapons (`released`), which the reset then removes. The caller retires the safe grenades
+/// first.
 pub(crate) fn reset_began(released: &[ObjectAddress]) {
-    retire_safe_items();
     let mut live = LIVE.lock();
     if !live.started {
         return;
@@ -526,9 +528,8 @@ pub(crate) fn reset_ended() {
 }
 
 /// The game loaded the player's save data: the next input tick starts the table again from the
-/// slots the load put in the inventory.
+/// slots the load put in the inventory. The caller retires the safe grenades first.
 pub(crate) fn loaded() {
-    retire_safe_items();
     let mut live = LIVE.lock();
     live.reset.loaded = true;
     live.reset.completed = true;

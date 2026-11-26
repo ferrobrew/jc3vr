@@ -9,9 +9,13 @@
 //! of their own, which only the local
 //! player's placement takes. Both are written from the table under its lock, after every fold that
 //! can move an item: at the end of each input tick, and at once for the moves the hands make
-//! between ticks, so the next placement already follows them.
+//! between ticks, so the next placement already follows them. A change of a hand's weapon calls
+//! the listener the weapon handling registers ([`register_hands_moved`]).
 
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{
+    OnceLock,
+    atomic::{AtomicUsize, Ordering},
+};
 
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
@@ -64,6 +68,15 @@ pub fn item_of(address: usize) -> Option<ItemId> {
         .map(|&(_, item, _)| item)
 }
 
+/// Register the listener called whenever a hand's weapon changes, before the new hands are
+/// published, under the table's lock: it must take no lock the table's callers hold. One listener:
+/// a second registration is refused and logged.
+pub fn register_hands_moved(listener: fn()) {
+    if HANDS_MOVED.set(listener).is_err() {
+        tracing::error!("loadout: a hands-moved listener is already registered; keeping the first");
+    }
+}
+
 /// Publish `table`'s hands and its places on the body.
 pub(super) fn publish(table: &Loadout) {
     #[cfg(test)]
@@ -79,7 +92,7 @@ pub(super) fn publish(table: &Loadout) {
         .into_iter()
         .any(|hand| HANDS[hand.index()].load(Ordering::Relaxed) != weapons[hand.index()])
     {
-        crate::controllers::weapons::hold::take::invalidate_handle_placements();
+        hands_moved();
     }
     for hand in Hand::BOTH {
         HANDS[hand.index()].store(weapons[hand.index()], Ordering::Relaxed);
@@ -100,13 +113,21 @@ pub(super) fn publish(table: &Loadout) {
 pub(super) fn clear() {
     #[cfg(test)]
     let _guard = PUBLICATION_TEST_LOCK.lock();
-    crate::controllers::weapons::hold::take::invalidate_handle_placements();
+    hands_moved();
     for hand in &HANDS {
         hand.store(0, Ordering::Relaxed);
     }
     *HELD.lock() = [None; 2];
     PLACES.lock().clear();
 }
+
+fn hands_moved() {
+    if let Some(listener) = HANDS_MOVED.get() {
+        listener();
+    }
+}
+
+static HANDS_MOVED: OnceLock<fn()> = OnceLock::new();
 
 #[cfg(test)]
 static PUBLICATION_TEST_LOCK: parking_lot::ReentrantMutex<()> =

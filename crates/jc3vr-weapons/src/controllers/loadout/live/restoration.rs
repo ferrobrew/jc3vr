@@ -1,15 +1,12 @@
 //! Complete native resets and cache restoration before accepting carried results.
 
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use jc3vr_input::frame::Hand;
 
-use crate::controllers::{
-    loadout::{
-        BodyLayout, CacheKind, Event, ResetKind, SlotObject,
-        live::{Hold, Live, ResetWatch},
-    },
-    weapons::inventory::tuning::INVENTORY,
+use crate::controllers::loadout::{
+    BodyLayout, CacheKind, Event, ResetKind, SlotObject,
+    live::{Hold, Live, ResetWatch},
 };
 
 impl Live {
@@ -18,9 +15,9 @@ impl Live {
         dominant: Hand,
         slots: &[SlotObject],
         spawning: bool,
+        settle_wait: Duration,
         now: Instant,
     ) -> bool {
-        let settle_wait = INVENTORY.get().loadout.settle_wait();
         self.table.set_body(BodyLayout::full(dominant));
         if !self.started {
             let since = *self.reset.completed_at.get_or_insert(now);
@@ -90,15 +87,18 @@ mod tests {
         ObjectAddress, Restored, Socket, WeaponType, binding::Binding,
     };
 
+    /// A settle wait longer than any test's ticks.
+    const WAIT: Duration = Duration::from_secs(2);
+
     #[test]
     fn first_start_waits_for_pending_slots_before_publishing_restore_readiness() {
         let mut live = Live::new();
         let now = Instant::now();
         live.reset.completed = true;
-        assert!(!live.begin_restoration(Hand::Right, &[], true, now));
+        assert!(!live.begin_restoration(Hand::Right, &[], true, WAIT, now));
         assert!(!live.started);
         assert!(!live.restore_ready());
-        assert!(live.begin_restoration(Hand::Right, &[], false, now));
+        assert!(live.begin_restoration(Hand::Right, &[], false, WAIT, now));
         assert!(live.started);
         assert!(live.restore_ready());
     }
@@ -107,7 +107,7 @@ mod tests {
     fn carried_callback_waits_for_delayed_native_slot_then_survives_later_ticks() {
         let mut live = Live::new();
         let now = Instant::now();
-        assert!(live.begin_restoration(Hand::Right, &[], false, now));
+        assert!(live.begin_restoration(Hand::Right, &[], false, WAIT, now));
         live.reset.began = true;
         live.reset.completed = true;
         live.reset.loaded = true;
@@ -123,7 +123,7 @@ mod tests {
             socket: Socket::Shoulder(Hand::Left),
         };
         let mut callback = Some(restored);
-        assert!(!live.begin_restoration(Hand::Right, &[], true, now));
+        assert!(!live.begin_restoration(Hand::Right, &[], true, WAIT, now));
         assert!(!live.restore_ready());
         assert!(callback.is_some());
         assert!(
@@ -136,10 +136,10 @@ mod tests {
             object: ObjectAddress::new(NonZeroUsize::new(200).unwrap()),
             weapon,
         }];
-        assert!(live.begin_restoration(Hand::Right, &slots, false, now));
+        assert!(live.begin_restoration(Hand::Right, &slots, false, WAIT, now));
         let admission = live.table.admit_restore(callback.take().unwrap()).unwrap();
         live.table.commit_restore(admission).unwrap();
-        assert!(live.begin_restoration(Hand::Right, &slots, false, now));
+        assert!(live.begin_restoration(Hand::Right, &slots, false, WAIT, now));
         assert!(
             live.table
                 .items()
