@@ -4,8 +4,7 @@
 use std::path::{Path, PathBuf};
 
 use layering_guard::{
-    check_manifests, check_render_hooks, check_workspace, load_layer_manifests, load_render_hooks,
-    load_workspace,
+    check_hooks, check_manifests, check_workspace, load_hooks, load_layer_manifests, load_workspace,
 };
 
 fn repo() -> PathBuf {
@@ -41,16 +40,16 @@ fn only_the_payload_is_a_cdylib() {
 }
 
 #[test]
-fn render_hooks_reach_upward_only_through_registrations() {
-    let hooks = load_render_hooks(&repo()).unwrap_or_else(|error| {
-        panic!("layering guard: could not read the render crate's hooks: {error}")
+fn hooks_reach_upward_only_through_registrations() {
+    let hooks = load_hooks(&repo()).unwrap_or_else(|error| {
+        panic!("layering guard: could not read the view and render crates' hooks: {error}")
     });
     assert!(
         !hooks.is_empty(),
-        "layering guard: crates/jc3vr-render/src/hooks holds no Rust files"
+        "layering guard: the view and render crates' hooks hold no Rust files"
     );
     assert_clean(
-        "the render crate's hooks name a crate above them",
-        check_render_hooks(&hooks),
+        "the view and render crates' hooks name a crate above them",
+        check_hooks(&hooks),
     );
 }

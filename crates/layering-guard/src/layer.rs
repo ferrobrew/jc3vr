@@ -1,4 +1,4 @@
-//! The eight crates the payload is built from and the dependency order between them.
+//! The nine crates the payload is built from and the dependency order between them.
 
 use std::fmt;
 
@@ -7,6 +7,7 @@ use std::fmt;
 pub enum Layer {
     Core,
     Input,
+    View,
     Render,
     Gameplay,
     Hud,
@@ -16,9 +17,10 @@ pub enum Layer {
 }
 
 impl Layer {
-    pub const ALL: [Layer; 8] = [
+    pub const ALL: [Layer; 9] = [
         Layer::Core,
         Layer::Input,
+        Layer::View,
         Layer::Render,
         Layer::Gameplay,
         Layer::Hud,
@@ -32,6 +34,7 @@ impl Layer {
         match self {
             Layer::Core => "core",
             Layer::Input => "input",
+            Layer::View => "view",
             Layer::Render => "render",
             Layer::Gameplay => "gameplay",
             Layer::Hud => "hud",
@@ -67,27 +70,34 @@ impl Layer {
 
     /// Whether this layer's crate may depend on `other`'s.
     ///
-    /// Each crate may depend on any crate below it, with one exception: input sits directly above
-    /// core but depends on no layer crate, so it stays pure and builds and tests on any host. HUD
-    /// and tooling sit side by side between gameplay and the UI, so neither may depend on the
-    /// other.
+    /// Each crate may depend on any crate below it, with three exceptions. Input sits directly
+    /// above core but depends on no layer crate, so it stays pure and builds and tests on any host.
+    /// Render and gameplay sit side by side on the view crate, so neither may depend on the other:
+    /// gameplay reaches the render passes through the registries and cells the view crate holds,
+    /// and a render edit does not rebuild gameplay. HUD and tooling sit side by side between
+    /// gameplay and the UI, so neither may depend on the other.
     pub fn may_depend_on(self, other: Layer) -> bool {
         let below: &[Layer] = match self {
             Layer::Core | Layer::Input => &[],
-            Layer::Render => &[Layer::Core, Layer::Input],
-            Layer::Gameplay => &[Layer::Core, Layer::Input, Layer::Render],
-            Layer::Hud | Layer::Tooling => {
-                &[Layer::Core, Layer::Input, Layer::Render, Layer::Gameplay]
-            }
+            Layer::View => &[Layer::Core, Layer::Input],
+            Layer::Render | Layer::Gameplay => &[Layer::Core, Layer::Input, Layer::View],
+            Layer::Hud | Layer::Tooling => &[
+                Layer::Core,
+                Layer::Input,
+                Layer::View,
+                Layer::Render,
+                Layer::Gameplay,
+            ],
             Layer::Ui => &[
                 Layer::Core,
                 Layer::Input,
+                Layer::View,
                 Layer::Render,
                 Layer::Gameplay,
                 Layer::Hud,
                 Layer::Tooling,
             ],
-            Layer::Payload => &Layer::ALL[..7],
+            Layer::Payload => &Layer::ALL[..8],
         };
         below.contains(&other)
     }
@@ -148,18 +158,30 @@ mod tests {
     }
 
     #[test]
+    fn render_and_gameplay_are_siblings_on_view() {
+        assert!(!Layer::Gameplay.may_depend_on(Layer::Render));
+        assert!(!Layer::Render.may_depend_on(Layer::Gameplay));
+        assert!(Layer::Gameplay.may_depend_on(Layer::View));
+        assert!(Layer::Render.may_depend_on(Layer::View));
+        assert!(!Layer::View.may_depend_on(Layer::Render));
+        assert!(Layer::Hud.may_depend_on(Layer::Render));
+        assert!(Layer::Tooling.may_depend_on(Layer::Render));
+    }
+
+    #[test]
     fn input_depends_on_no_layer() {
         for layer in Layer::ALL {
             assert!(!Layer::Input.may_depend_on(layer), "{layer}");
         }
-        assert!(Layer::Render.may_depend_on(Layer::Input));
+        assert!(Layer::View.may_depend_on(Layer::Input));
     }
 
     #[test]
     fn everything_below_is_allowed() {
-        assert!(Layer::Render.may_depend_on(Layer::Core));
-        assert!(Layer::Gameplay.may_depend_on(Layer::Render));
-        assert!(!Layer::Render.may_depend_on(Layer::Gameplay));
+        assert!(Layer::View.may_depend_on(Layer::Core));
+        assert!(Layer::Render.may_depend_on(Layer::View));
+        assert!(Layer::Hud.may_depend_on(Layer::Gameplay));
+        assert!(!Layer::View.may_depend_on(Layer::Gameplay));
         assert!(!Layer::Core.may_depend_on(Layer::Input));
         for layer in Layer::ALL {
             assert_eq!(Layer::Payload.may_depend_on(layer), layer != Layer::Payload);

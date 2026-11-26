@@ -1,4 +1,5 @@
-//! The layer crates' manifests, the workspace's crate types, and the render crate's hooks.
+//! The layer crates' manifests, the workspace's crate types, and the view and render crates'
+//! hooks.
 //!
 //! Cargo forbids dependency cycles, but an acyclic edge can still be wrong (HUD depending on
 //! tooling, or a layer crate depending on the payload), so these checks hold each layer crate's
@@ -14,8 +15,12 @@ use crate::{
     source::{SourceFile, read_sources},
 };
 
-/// The layers the render crate's `hooks` module must never name.
-pub const RENDER_HOOKS_FORBIDDEN: [Layer; 2] = [Layer::Gameplay, Layer::Hud];
+/// The crates whose `hooks` modules hold the engine detours that gameplay and the HUD reach only
+/// through registrations.
+pub const HOOK_CRATES: [Layer; 2] = [Layer::View, Layer::Render];
+
+/// The layers the view and render crates' `hooks` modules must never name.
+pub const HOOKS_FORBIDDEN: [Layer; 2] = [Layer::Gameplay, Layer::Hud];
 
 /// Where the layering and the reasons for it are documented, for messages.
 const LAYERING_DOC: &str = "docs/architecture.md, \"Crate layering\"";
@@ -113,13 +118,20 @@ pub fn check_workspace(root: &str, members: &[ManifestSource]) -> Vec<String> {
     out
 }
 
-/// Reads the render crate's `hooks` module.
-pub fn load_render_hooks(repo: &Path) -> io::Result<Vec<SourceFile>> {
-    read_sources(repo, "crates/jc3vr-render/src/hooks")
+/// Reads the `hooks` module of every crate in [`HOOK_CRATES`].
+pub fn load_hooks(repo: &Path) -> io::Result<Vec<SourceFile>> {
+    let mut files = Vec::new();
+    for layer in HOOK_CRATES {
+        files.extend(read_sources(
+            repo,
+            &format!("{}/src/hooks", layer_dir(layer)),
+        )?);
+    }
+    Ok(files)
 }
 
-/// Checks that no file names a crate in [`RENDER_HOOKS_FORBIDDEN`].
-pub fn check_render_hooks(files: &[SourceFile]) -> Vec<String> {
+/// Checks that no file names a crate in [`HOOKS_FORBIDDEN`].
+pub fn check_hooks(files: &[SourceFile]) -> Vec<String> {
     let mut out = Vec::new();
     for file in files {
         for reference in references(&file.text) {
@@ -127,13 +139,13 @@ pub fn check_render_hooks(files: &[SourceFile]) -> Vec<String> {
                 continue;
             };
             if let Some(layer) = Layer::from_package(name)
-                && RENDER_HOOKS_FORBIDDEN.contains(&layer)
+                && HOOKS_FORBIDDEN.contains(&layer)
             {
                 out.push(format!(
-                    "{}:{}: {} names the {layer} crate, but the render crate's hooks reach gameplay \
-                     and the HUD only through registrations; add a registration point in the \
-                     render crate and fill it from the {layer} crate's install, as the existing \
-                     `register_*` modules do",
+                    "{}:{}: {} names the {layer} crate, but the view and render crates' hooks \
+                     reach gameplay and the HUD only through registrations; add a registration \
+                     point in the crate that owns the hook and fill it from the {layer} crate's \
+                     install, as the existing `register_*` modules do",
                     file.path,
                     reference.line,
                     reference.display()
@@ -264,6 +276,15 @@ fn violation_advice(layer: Layer, dependency: Layer) -> String {
         return "but the HUD and tooling crates are siblings with no edge between them; move the \
                 shared code down into the gameplay crate or below, or connect them from the UI \
                 crate, which sees both"
+            .to_owned();
+    }
+    if matches!(
+        (layer, dependency),
+        (Layer::Render, Layer::Gameplay) | (Layer::Gameplay, Layer::Render)
+    ) {
+        return "but the render and gameplay crates are siblings on the view crate with no edge \
+                between them; move the registration type or publication cell they share down \
+                into the view crate, as the overlay's inputs and the scope's lens frame are"
             .to_owned();
     }
     let below: Vec<&str> = Layer::ALL
@@ -455,8 +476,23 @@ mod tests {
         let violations = check_manifests(&stack_with(Layer::Render, render));
         assert_eq!(violations.len(), 2, "{violations:#?}");
         assert!(violations[0].contains("(`jc3vr-gameplay` in [build-dependencies])"));
-        assert!(violations[0].contains("may only depend on core, input; move the code"));
+        assert!(violations[0].contains("but the render and gameplay crates are siblings"));
         assert!(violations[1].contains("[target.cfg(windows).dev-dependencies]"));
+    }
+
+    #[test]
+    fn gameplay_may_not_depend_on_render() {
+        let gameplay = r#"
+            [package]
+            name = "jc3vr-gameplay"
+            [dependencies]
+            jc3vr-view = { path = "../jc3vr-view" }
+            jc3vr-render = { path = "../jc3vr-render" }
+        "#;
+        let violations = check_manifests(&stack_with(Layer::Gameplay, gameplay));
+        assert_eq!(violations.len(), 1, "{violations:#?}");
+        assert!(violations[0].contains("the gameplay crate depends on the render crate"));
+        assert!(violations[0].contains("move the registration type or publication cell"));
     }
 
     #[test]
@@ -594,10 +630,10 @@ mod tests {
     }
 
     #[test]
-    fn render_hooks_must_not_name_gameplay_or_hud() {
+    fn hooks_must_not_name_gameplay_or_hud() {
         let files = [
             SourceFile {
-                path: "crates/jc3vr-render/src/hooks/camera/mod.rs".into(),
+                path: "crates/jc3vr-view/src/hooks/camera/mod.rs".into(),
                 text: "use jc3vr_core::hooks::patcher;\n// jc3vr_hud::pointer in a comment.\nuse jc3vr_gameplay::aim;".into(),
             },
             SourceFile {
@@ -605,10 +641,10 @@ mod tests {
                 text: "fn f() { jc3vr_hud::egui_panel::draw_quad(); }".into(),
             },
         ];
-        let violations = check_render_hooks(&files);
+        let violations = check_hooks(&files);
         assert_eq!(violations.len(), 2, "{violations:#?}");
-        assert!(violations[0].starts_with("crates/jc3vr-render/src/hooks/camera/mod.rs:3: jc3vr_gameplay::aim names the gameplay crate"));
-        assert!(violations[0].contains("add a registration point in the render crate"));
+        assert!(violations[0].starts_with("crates/jc3vr-view/src/hooks/camera/mod.rs:3: jc3vr_gameplay::aim names the gameplay crate"));
+        assert!(violations[0].contains("add a registration point in the crate that owns the hook"));
         assert!(violations[1].contains("jc3vr_hud::egui_panel::draw_quad names the hud crate"));
     }
 }
