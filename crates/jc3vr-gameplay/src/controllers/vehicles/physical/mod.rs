@@ -56,12 +56,12 @@ pub mod yoke;
 use glam::{Quat, Vec2, Vec3};
 use jc3vr_input::frame::Hand;
 
-pub use crate::controllers::vehicles::physical::{
-    cues::ControlCue, handlebars::bar_ends, sticks::stick_deflection,
+pub use crate::controllers::{
+    grab::cockpit::ControlKind,
+    vehicles::physical::{cues::ControlCue, handlebars::bar_ends, sticks::stick_deflection},
 };
 use crate::controllers::{
     grab::{Candidate, GrabVolume},
-    mode::VehicleClass,
     vehicles::{
         config::PhysicalControlsConfig,
         physical::{
@@ -79,67 +79,13 @@ use crate::controllers::{
     },
 };
 
-/// A physical control.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum ControlKind {
-    Wheel,
-    Handlebars,
-    Cyclic,
-    Collective,
-    FlightStick,
-    /// A plane's control wheel, in place of the flight stick where the cockpit models one.
-    Yoke,
-    Throttle,
-}
-
-impl ControlKind {
-    pub const fn label(self) -> &'static str {
-        match self {
-            ControlKind::Wheel => "wheel",
-            ControlKind::Handlebars => "handlebars",
-            ControlKind::Cyclic => "cyclic",
-            ControlKind::Collective => "collective",
-            ControlKind::FlightStick => "flight stick",
-            ControlKind::Yoke => "yoke",
-            ControlKind::Throttle => "throttle",
-        }
-    }
-
-    /// The controls a vehicle of `class` offers its driver. Cars and boats share their classes with
-    /// the ATV, the jetski, and the duck, which steer by handlebars: a vehicle with a steering fork
-    /// (`fork`) gets the handlebars in place of the wheel. A plane whose cockpit has a control wheel
-    /// (`yoke`) gets the yoke in place of the flight stick.
-    pub const fn for_seat(class: VehicleClass, fork: bool, yoke: bool) -> &'static [ControlKind] {
-        match class {
-            VehicleClass::Car | VehicleClass::Sea | VehicleClass::Unknown if fork => {
-                &[ControlKind::Handlebars]
-            }
-            VehicleClass::Car | VehicleClass::Sea | VehicleClass::Unknown => &[ControlKind::Wheel],
-            VehicleClass::Motorcycle => &[ControlKind::Handlebars],
-            VehicleClass::Helicopter => &[ControlKind::Cyclic, ControlKind::Collective],
-            VehicleClass::Plane if yoke => &[ControlKind::Yoke, ControlKind::Throttle],
-            VehicleClass::Plane => &[ControlKind::FlightStick, ControlKind::Throttle],
-            // The mech walks; it has no controls to hold.
-            VehicleClass::Mech => &[],
-        }
-    }
-
-    /// Whether the control's toggle is on.
-    pub const fn enabled(self, config: &PhysicalControlsConfig) -> bool {
-        match self {
-            ControlKind::Wheel => config.wheel.enabled,
-            ControlKind::Handlebars => config.handlebars,
-            ControlKind::Cyclic | ControlKind::FlightStick | ControlKind::Yoke => config.sticks,
-            ControlKind::Collective | ControlKind::Throttle => config.levers,
-        }
-    }
-
-    /// Whether both hands may hold the control at once.
-    const fn two_handed(self) -> bool {
-        matches!(
-            self,
-            ControlKind::Wheel | ControlKind::Handlebars | ControlKind::Yoke
-        )
+/// Whether `kind`'s toggle is on.
+pub const fn control_enabled(kind: ControlKind, config: &PhysicalControlsConfig) -> bool {
+    match kind {
+        ControlKind::Wheel => config.wheel.enabled,
+        ControlKind::Handlebars => config.handlebars,
+        ControlKind::Cyclic | ControlKind::FlightStick | ControlKind::Yoke => config.sticks,
+        ControlKind::Collective | ControlKind::Throttle => config.levers,
     }
 }
 

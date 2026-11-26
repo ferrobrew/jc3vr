@@ -19,38 +19,12 @@ use body_rig::rotation::twist_angle;
 use glam::{Quat, Vec3};
 use jc3vr_input::frame::Hand;
 
+pub use crate::controllers::grab::cockpit::Button;
 use crate::controllers::vehicles::{
     physical::{ControlKind, Hold, bar_ends},
     tuning::CockpitButtonsTuning,
     wheel::{BarsFrame, WheelFrame},
 };
-
-/// A cockpit button.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum Button {
-    /// The horn, on the wheel's hub.
-    Horn,
-    /// The nitrous button on the dash beside the wheel.
-    Nitrous,
-}
-
-impl Button {
-    pub const ALL: [Button; 2] = [Button::Horn, Button::Nitrous];
-
-    pub const fn label(self) -> &'static str {
-        match self {
-            Button::Horn => "horn",
-            Button::Nitrous => "nitrous button",
-        }
-    }
-
-    const fn index(self) -> usize {
-        match self {
-            Button::Horn => 0,
-            Button::Nitrous => 1,
-        }
-    }
-}
 
 /// A push button in the cockpit frame: a disc facing the driver.
 #[derive(Debug, Copy, Clone, PartialEq)]

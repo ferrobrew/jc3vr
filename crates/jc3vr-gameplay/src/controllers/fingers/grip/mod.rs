@@ -32,7 +32,7 @@ use std::time::{Duration, Instant};
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
-use crate::controllers::{fingers::grip::catalogue::GripPose, vehicles::physical::ControlKind};
+use crate::controllers::{fingers::grip::catalogue::GripPose, grab::cockpit::ControlKind};
 
 /// What put something in a hand, in the order the declarations win.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]

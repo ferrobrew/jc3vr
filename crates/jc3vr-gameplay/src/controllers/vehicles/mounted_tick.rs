@@ -15,7 +15,7 @@ use crate::controllers::{
     vehicles::{
         config::{PhysicalControlsConfig, VehicleSettings},
         mounted::{self, MountedTarget},
-        physical::ControlKind,
+        physical::{ControlKind, control_enabled},
         state::STATE,
         types::MountedReadout,
     },
@@ -178,8 +178,11 @@ pub(super) fn offered(
     };
     let kinds = ControlKind::for_seat(seat.class, fork, yoke);
     match kinds {
-        [one] if one.enabled(physical) => kinds,
-        [first, second] => match (first.enabled(physical), second.enabled(physical)) {
+        [one] if control_enabled(*one, physical) => kinds,
+        [first, second] => match (
+            control_enabled(*first, physical),
+            control_enabled(*second, physical),
+        ) {
             (true, true) => kinds,
             (true, false) => &kinds[..1],
             (false, true) => &kinds[1..],

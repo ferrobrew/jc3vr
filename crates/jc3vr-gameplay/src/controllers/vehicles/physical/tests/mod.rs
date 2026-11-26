@@ -7,15 +7,18 @@ mod flight;
 use std::f32::consts::FRAC_PI_2;
 
 use super::*;
-use crate::controllers::vehicles::{
-    config::PhysicalControlsConfig,
-    physical::{
-        handlebars::{bar_grab_point, bar_turn, steer_for_turn},
-        levers::{ThrottleSection, detent},
-        sticks,
+use crate::controllers::{
+    mode::VehicleClass,
+    vehicles::{
+        config::PhysicalControlsConfig,
+        physical::{
+            handlebars::{bar_grab_point, bar_turn, steer_for_turn},
+            levers::{ThrottleSection, detent},
+            sticks,
+        },
+        steering,
+        tuning::{HandlebarsSpec, LeverAxis, PHYSICAL, PhysicalControlsTuning},
     },
-    steering,
-    tuning::{HandlebarsSpec, LeverAxis, PHYSICAL, PhysicalControlsTuning},
 };
 
 const DT: f32 = 1.0 / 30.0;
@@ -596,7 +599,7 @@ fn only_the_seat_class_s_controls_are_offered() {
     }
     let mut off = PhysicalControlsConfig::new();
     off.wheel.enabled = false;
-    assert!(!ControlKind::Wheel.enabled(&off));
+    assert!(!control_enabled(ControlKind::Wheel, &off));
 }
 
 #[test]

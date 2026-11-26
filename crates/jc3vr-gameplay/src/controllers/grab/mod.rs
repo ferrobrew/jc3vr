@@ -26,9 +26,11 @@
 //! [`latch::GripLatch`], continuously while it is held, and lets go of what it took when it opens;
 //! a held thing over a socket that fits it docks there ([`resolve::dock_target`]).
 
+pub mod cockpit;
 pub mod latch;
 pub mod markers;
 pub mod resolve;
+pub mod socket;
 pub mod target;
 pub mod tick;
 
@@ -38,13 +40,13 @@ mod tests;
 use glam::Vec3;
 use jc3vr_input::frame::Hand;
 
+use crate::controllers::grab::{
+    cockpit::{Button, ControlKind},
+    socket::Socket,
+};
 pub use crate::controllers::grab::{
     resolve::{Reach, Resolved},
     target::{GripTarget, Mark, MarkAt, MarkStyle, Shown, Tier},
-};
-use crate::controllers::{
-    loadout::Socket,
-    vehicles::physical::{ControlKind, buttons::Button},
 };
 
 /// What a squeeze takes.

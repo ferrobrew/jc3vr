@@ -9,6 +9,8 @@ use std::{fmt, num::NonZeroU32};
 
 use jc3gi::{character::inventory::WeaponSlot, equipment::weapon::WeaponClass};
 
+pub use crate::controllers::grab::socket::SizeClass;
+
 /// The name of an inventory slot, for the readouts and the log.
 pub const fn slot_label(slot: WeaponSlot) -> &'static str {
     match slot {
@@ -45,31 +47,6 @@ impl ItemId {
 impl fmt::Display for ItemId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "#{}", self.0)
-    }
-}
-
-/// How big a weapon is, for the body's sockets: a socket takes items of its own class or smaller,
-/// in this order.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum SizeClass {
-    /// The pistols and revolvers.
-    Pistol,
-    /// The submachine guns.
-    Smg,
-    /// The two-handed and special weapons.
-    LongGun,
-    /// The heavy weapons, which go on the back.
-    Heavy,
-}
-
-impl SizeClass {
-    pub const fn label(self) -> &'static str {
-        match self {
-            SizeClass::Pistol => "pistol",
-            SizeClass::Smg => "submachine gun",
-            SizeClass::LongGun => "long gun",
-            SizeClass::Heavy => "heavy weapon",
-        }
     }
 }
 

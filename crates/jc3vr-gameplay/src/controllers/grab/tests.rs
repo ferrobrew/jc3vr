@@ -7,7 +7,7 @@ use super::{
     resolve::{Lost, choose, dock_target, losers, nearest_within, resolve},
     *,
 };
-use crate::controllers::{bindings::controls::ButtonControl, loadout::Socket};
+use crate::controllers::{bindings::controls::ButtonControl, grab::socket::Socket};
 
 fn sphere(volume: GrabVolume, x: f32, radius: f32, hand: Option<Hand>) -> GripTarget {
     GripTarget::sphere(
