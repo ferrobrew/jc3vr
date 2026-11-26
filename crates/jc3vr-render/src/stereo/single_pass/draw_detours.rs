@@ -8,19 +8,17 @@
 
 use windows::Win32::Graphics::Direct3D11::{ID3D11DomainShader, ID3D11GeometryShader};
 
-use crate::{
-    screenshot::harness::stages::velocity,
-    stereo::{
-        layout::collapse_active,
-        single_pass::{
-            eye_vertex_globals::EyeVertexGlobals,
-            pinned_eye::Cb13EyePin,
-            sun::{after_raw_draw, depth_clip_treatment, on_raw_draw, preserve_far_depth},
-            vegetation_once,
-            water_fragment_state::packed_water_context,
-            water_gpu_probe::{RawDrawKind, raw_entry, reflection_treatment},
-            *,
-        },
+use crate::stereo::{
+    layout::collapse_active,
+    single_pass::{
+        detour_timing,
+        eye_vertex_globals::EyeVertexGlobals,
+        pinned_eye::Cb13EyePin,
+        probes::{self, RawDrawKind, SinglePassProbes},
+        sun::preserve_far_depth,
+        vegetation_once,
+        water_fragment_state::packed_water_context,
+        *,
     },
 };
 
@@ -64,14 +62,16 @@ pub(super) unsafe extern "system" fn draw_indexed_detour(
     start_index: u32,
     base_vertex: i32,
 ) {
-    let _timing = crate::testing::benchmark::detour_timing::enter();
+    let _timing = detour_timing::enter();
+    let probes = probes::armed();
     // SAFETY: `context` is the live immediate context this entry was called on.
     let water = unsafe { packed_water_context(&context) };
-    let _reflection = unsafe { reflection_treatment(context) };
+    let _reflection = probes.and_then(|probes| unsafe { probes.reflection_treatment(context) });
     let _lake = water
         .filter(|_| _reflection.is_none())
         .and_then(water_pixel_variants::bind);
-    unsafe { raw_entry(RawDrawKind::Indexed, context) };
+    // SAFETY: `context` is the live immediate context this entry was called on.
+    unsafe { raw_entry(probes, RawDrawKind::Indexed, context) };
     let detour = DRAW_INDEXED.get().expect("set before enable");
     if vegetation_once::active()
         && vegetation_once::draw_indexed(context, index_count, start_index, base_vertex)
@@ -88,7 +88,8 @@ pub(super) unsafe extern "system" fn draw_indexed_detour(
             if let Some(instanced) = DRAW_INDEXED_INSTANCED.get() {
                 // Through the trampoline, not the detoured entry: the promotion is the mod's own
                 // draw, so it must not be counted as exposure by [`draw_indexed_instanced_detour`].
-                velocity::submit(
+                probes::submit(
+                    probes,
                     context,
                     "indexed_promoted",
                     [
@@ -124,7 +125,8 @@ pub(super) unsafe extern "system" fn draw_indexed_detour(
                     if let Some(globals) = &globals {
                         globals.bind(eye);
                     }
-                    velocity::submit(
+                    probes::submit(
+                        probes,
                         context,
                         "indexed",
                         [
@@ -144,7 +146,8 @@ pub(super) unsafe extern "system" fn draw_indexed_detour(
             }
         }
     }
-    velocity::submit(
+    probes::submit(
+        probes,
         context,
         "indexed",
         [
@@ -168,21 +171,24 @@ pub(super) unsafe extern "system" fn draw_detour(
     vertex_count: u32,
     start_vertex: u32,
 ) {
-    let _timing = crate::testing::benchmark::detour_timing::enter();
+    let _timing = detour_timing::enter();
+    let probes = probes::armed();
     // SAFETY: `context` is the live immediate context this entry was called on.
     let water = unsafe { packed_water_context(&context) };
-    let _reflection = unsafe { reflection_treatment(context) };
+    let _reflection = probes.and_then(|probes| unsafe { probes.reflection_treatment(context) });
     let _lake = water
         .filter(|_| _reflection.is_none())
         .and_then(water_pixel_variants::bind);
     // SAFETY: `context` is the live immediate context this entry was called on.
     let _glare = unsafe { <ID3D11DeviceContext as Interface>::from_raw_borrowed(&context) }
         .and_then(post_filters::bind);
-    unsafe { raw_entry(RawDrawKind::NonIndexed, context) };
+    // SAFETY: `context` is the live immediate context this entry was called on.
+    unsafe { raw_entry(probes, RawDrawKind::NonIndexed, context) };
     let detour = DRAW.get().expect("set before enable");
     // SAFETY: forwards the caller's arguments unchanged to the trampoline.
     let submit = || {
-        velocity::submit(
+        probes::submit(
+            probes,
             context,
             "draw",
             [vertex_count.into(), start_vertex.into(), 0, 0, 0],
@@ -201,7 +207,7 @@ pub(super) unsafe extern "system" fn draw_detour(
             // its draws.
             if patched
                 && flags.has(Flag::NonIndexedGeometryOnce)
-                && promote_non_indexed(context, vertex_count, start_vertex)
+                && promote_non_indexed(probes, context, vertex_count, start_vertex)
             {
                 return;
             }
@@ -214,7 +220,7 @@ pub(super) unsafe extern "system" fn draw_detour(
         }
         if patched
             && promotes_non_indexed(pass, flags)
-            && promote_non_indexed(context, vertex_count, start_vertex)
+            && promote_non_indexed(probes, context, vertex_count, start_vertex)
         {
             return;
         }
@@ -225,61 +231,68 @@ pub(super) unsafe extern "system" fn draw_detour(
             && ((pass == RenderPassId::RP_MOON as u8 && flags.has(Flag::Moon))
                 || (pass == RenderPassId::RP_STARS as u8 && flags.has(Flag::Stars)))
             && let Some(_depth) = FarDepthRows::begin()
-            && promote_non_indexed(context, vertex_count, start_vertex)
+            && promote_non_indexed(probes, context, vertex_count, start_vertex)
         {
             return;
         }
         ensure_collapse_viewport(context, CollapseViewport::Full);
     }
-    unsafe { crate::screenshot::harness::stages::aa::observe(context, vertex_count, start_vertex) };
-    if unsafe { crate::screenshot::harness::stages::aa::with_color_edge(context, &submit) } {
+    // SAFETY (every probe call below): `context` is the live immediate context this entry was
+    // called on.
+    if let Some(probes) = probes {
+        unsafe { probes.aa_observe(context, vertex_count, start_vertex) };
+    }
+    if probes.is_some_and(|probes| unsafe { probes.aa_with_color_edge(context, &submit) }) {
         return;
     }
     if current_pass_id() == RenderPassId::RP_SUN as u8 {
-        let _sun_raster = unsafe { depth_clip_treatment(context) };
+        let _sun_raster =
+            probes.and_then(|probes| unsafe { probes.sun_depth_clip_treatment(context) });
         let _sun_depth = unsafe { preserve_far_depth(context) };
-        // SAFETY: `context` is the live immediate context this entry was called on.
-        unsafe { on_raw_draw(context, vertex_count, start_vertex) };
+        if let Some(probes) = probes {
+            unsafe { probes.sun_raw_draw(context, vertex_count, start_vertex) };
+        }
         submit();
-        // SAFETY: the query, if any, was begun on this live immediate context.
-        unsafe { after_raw_draw(context) };
+        if let Some(probes) = probes {
+            // The query, if any, was begun on this live immediate context.
+            unsafe { probes.sun_after_raw_draw(context) };
+        }
         return;
     }
     if current_pass_id() == RenderPassId::RP_REFLECTIVE_WATER_PLANES as u8
         && vertex_count == 6
         && start_vertex == 0
-        && unsafe { crate::screenshot::harness::stages::proxy::on_draw(context, &submit) }
+        && probes.is_some_and(|probes| unsafe { probes.water_proxy_draw(context, &submit) })
     {
         return;
     }
     if current_pass_id() == RenderPassId::RP_POSTEFFECTS as u8
         && (vertex_count, start_vertex) == (3, 0)
-        && unsafe { crate::screenshot::harness::stages::dof::on_draw(context, &submit) }
+        && probes.is_some_and(|probes| unsafe { probes.dof_draw(context, &submit) })
     {
         return;
     }
     if current_pass_id() == RenderPassId::RP_FOG_VOLUME_GENERATE as u8
         && (vertex_count, start_vertex) == (3, 0)
-        && unsafe { crate::screenshot::harness::stages::capture_fog_generation(context, &submit) }
+        && probes.is_some_and(|probes| unsafe { probes.fog_generation_draw(context, &submit) })
     {
         return;
     }
     if current_pass_id() == RenderPassId::RP_FOG_VOLUME_APPLY as u8
         && (vertex_count, start_vertex) == (3, 0)
+        && let Some(probes) = probes
     {
-        unsafe { crate::screenshot::harness::stages::capture_fog_inputs(context) };
+        unsafe { probes.fog_inputs(context) };
     }
-    let _cascade = unsafe {
-        crate::screenshot::harness::resolve_probe::on_draw(context, vertex_count, start_vertex)
-    };
-    let ssr = unsafe {
-        crate::screenshot::harness::stages::ssr::before_draw(context, vertex_count, start_vertex)
-    };
+    let _cascade = probes
+        .and_then(|probes| unsafe { probes.resolve_draw(context, vertex_count, start_vertex) });
+    let ssr = probes
+        .and_then(|probes| unsafe { probes.ssr_before_draw(context, vertex_count, start_vertex) });
     submit();
     drop(ssr);
-    unsafe {
-        crate::screenshot::harness::stages::ssr::after_draw(context, vertex_count, start_vertex)
-    };
+    if let Some(probes) = probes {
+        unsafe { probes.ssr_after_draw(context, vertex_count, start_vertex) };
+    }
 }
 
 /// Render passes whose non-indexed draws are **geometry**, not a viewport-covering triangle.
@@ -416,7 +429,12 @@ fn promotes_non_indexed(pass: u8, flags: ConfigFlags) -> bool {
 /// stage before it: behind a tessellation or geometry stage that writes none, both instances would
 /// land in the left eye's half. The tessellated particles (`particleeffecttess*`) are such a
 /// pipeline, with a vertex shader the `cb0` remap patches and clip built in the domain shader.
-fn promote_non_indexed(context: *mut c_void, vertex_count: u32, start_vertex: u32) -> bool {
+fn promote_non_indexed(
+    probes: Option<&dyn SinglePassProbes>,
+    context: *mut c_void,
+    vertex_count: u32,
+    start_vertex: u32,
+) -> bool {
     // SAFETY: `context` is the live immediate context the detoured entry was called on.
     let Some(ctx) = (unsafe { <ID3D11DeviceContext as Interface>::from_raw_borrowed(&context) })
     else {
@@ -427,7 +445,8 @@ fn promote_non_indexed(context: *mut c_void, vertex_count: u32, start_vertex: u3
     }
     ensure_collapse_viewport(context, CollapseViewport::Split);
     bump(&PATCHED_DRAWS);
-    velocity::submit(
+    probes::submit(
+        probes,
         context,
         "draw_promoted",
         [vertex_count.into(), 2, start_vertex.into(), 0, 0],
@@ -475,20 +494,23 @@ pub(super) unsafe extern "system" fn draw_indexed_instanced_indirect_detour(
     buffer_for_args: *mut c_void,
     aligned_byte_offset: u32,
 ) {
-    let _timing = crate::testing::benchmark::detour_timing::enter();
+    let _timing = detour_timing::enter();
+    let probes = probes::armed();
     // SAFETY: `context` is the live immediate context this entry was called on.
     let water = unsafe { packed_water_context(&context) };
-    let _reflection = unsafe { reflection_treatment(context) };
+    let _reflection = probes.and_then(|probes| unsafe { probes.reflection_treatment(context) });
     let _lake = water
         .filter(|_| _reflection.is_none())
         .and_then(water_pixel_variants::bind);
-    unsafe { raw_entry(RawDrawKind::IndexedInstancedIndirect, context) };
+    // SAFETY: `context` is the live immediate context this entry was called on.
+    unsafe { raw_entry(probes, RawDrawKind::IndexedInstancedIndirect, context) };
     let detour = DRAW_INDEXED_INSTANCED_INDIRECT
         .get()
         .expect("set before enable");
     if vegetation_once::active()
         && vegetation_once::draw_indexed_instanced_indirect(context, buffer_for_args, &|args| {
-            velocity::submit(
+            probes::submit(
+                probes,
                 context,
                 "indexed_instanced_indirect_promoted",
                 [aligned_byte_offset.into(), 0, 0, 0, 0],
@@ -502,7 +524,8 @@ pub(super) unsafe extern "system" fn draw_indexed_instanced_indirect_detour(
     }
     // SAFETY: forwards the caller's arguments unchanged to the trampoline.
     let submit = |_| {
-        velocity::submit(
+        probes::submit(
+            probes,
             context,
             "indexed_instanced_indirect",
             [aligned_byte_offset.into(), 0, 0, 0, 0],
@@ -519,45 +542,46 @@ pub(super) unsafe extern "system" fn draw_instanced_indirect_detour(
     buffer_for_args: *mut c_void,
     aligned_byte_offset: u32,
 ) {
-    let _timing = crate::testing::benchmark::detour_timing::enter();
+    let _timing = detour_timing::enter();
+    let probes = probes::armed();
     // SAFETY: `context` is the live immediate context this entry was called on.
     let water = unsafe { packed_water_context(&context) };
-    let _reflection = unsafe { reflection_treatment(context) };
+    let _reflection = probes.and_then(|probes| unsafe { probes.reflection_treatment(context) });
     let _lake = water
         .filter(|_| _reflection.is_none())
         .and_then(water_pixel_variants::bind);
-    unsafe { raw_entry(RawDrawKind::InstancedIndirect, context) };
+    // SAFETY: `context` is the live immediate context this entry was called on.
+    unsafe { raw_entry(probes, RawDrawKind::InstancedIndirect, context) };
     let detour = DRAW_INSTANCED_INDIRECT.get().expect("set before enable");
     // SAFETY: forwards the caller's arguments unchanged to the trampoline.
-    let trace = crate::screenshot::harness::patch_draw::select();
+    let trace = probes.and_then(|probes| probes.patch_draw_select());
     let submit = |expected| unsafe {
-        let guard = trace.and_then(|secondary| {
-            crate::screenshot::harness::patch_draw::observe(
-                context,
-                aligned_byte_offset,
-                expected,
-                secondary,
-            )
+        let guard = probes.zip(trace).and_then(|(probes, secondary)| {
+            probes.patch_draw_observe(context, aligned_byte_offset, expected, secondary)
         });
-        velocity::submit_indirect(context, buffer_for_args, aligned_byte_offset, || {
-            detour.call(context, buffer_for_args, aligned_byte_offset)
-        });
+        probes::submit_indirect(
+            probes,
+            context,
+            buffer_for_args,
+            aligned_byte_offset,
+            || detour.call(context, buffer_for_args, aligned_byte_offset),
+        );
         drop(guard);
     };
     let bracket =
-        trace == Some(false) && crate::screenshot::harness::patch_draw::camera_experiment();
-    let owners = crate::screenshot::harness::stages::patch_owners::before(aligned_byte_offset);
-    if bracket {
-        crate::screenshot::harness::stages::capture_patch_submission(false);
+        trace == Some(false) && probes.is_some_and(|probes| probes.patch_camera_experiment());
+    let owners = probes.is_some_and(|probes| probes.patch_owners_before(aligned_byte_offset));
+    if bracket && let Some(probes) = probes {
+        probes.capture_patch_submission(false);
     }
     if !indirect_per_eye(context, &submit) {
         submit(None);
     }
-    if owners {
-        crate::screenshot::harness::stages::patch_owners::after(aligned_byte_offset);
+    if owners && let Some(probes) = probes {
+        probes.patch_owners_after(aligned_byte_offset);
     }
-    if bracket {
-        crate::screenshot::harness::stages::capture_patch_submission(true);
+    if bracket && let Some(probes) = probes {
+        probes.capture_patch_submission(true);
     }
 }
 
@@ -644,17 +668,20 @@ pub(super) unsafe extern "system" fn draw_indexed_instanced_detour(
     base_vertex: i32,
     start_instance: u32,
 ) {
-    let _timing = crate::testing::benchmark::detour_timing::enter();
+    let _timing = detour_timing::enter();
+    let probes = probes::armed();
     // SAFETY: `context` is the live immediate context this entry was called on.
     let water = unsafe { packed_water_context(&context) };
-    let _reflection = unsafe { reflection_treatment(context) };
+    let _reflection = probes.and_then(|probes| unsafe { probes.reflection_treatment(context) });
     let _lake = water
         .filter(|_| _reflection.is_none())
         .and_then(water_pixel_variants::bind);
-    unsafe { raw_entry(RawDrawKind::IndexedInstanced, context) };
+    // SAFETY: `context` is the live immediate context this entry was called on.
+    unsafe { raw_entry(probes, RawDrawKind::IndexedInstanced, context) };
     let detour = DRAW_INDEXED_INSTANCED.get().expect("set before enable");
     let submit = || {
-        velocity::submit(
+        probes::submit(
+            probes,
             context,
             "indexed_instanced",
             [
@@ -680,7 +707,8 @@ pub(super) unsafe extern "system" fn draw_indexed_instanced_detour(
         )
     };
     let submit_promoted = |doubled: u32| {
-        velocity::submit(
+        probes::submit(
+            probes,
             context,
             "indexed_instanced_promoted",
             [
@@ -857,4 +885,20 @@ pub(super) fn instanced_per_eye(submit: &dyn Fn()) -> bool {
     // submit it; one after leaves it partially drawn, where a further submission would only duplicate
     // geometry in an eye that already has it.
     submitted > 0
+}
+
+/// Hand a submission arriving at a draw entry to the probes, while armed.
+///
+/// # Safety
+///
+/// `context` must be the live immediate context the detoured entry was called on.
+unsafe fn raw_entry(
+    probes: Option<&dyn SinglePassProbes>,
+    kind: RawDrawKind,
+    context: *mut c_void,
+) {
+    if let Some(probes) = probes {
+        // SAFETY: per this function's contract.
+        unsafe { probes.raw_entry(kind, context) };
+    }
 }

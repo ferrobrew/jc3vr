@@ -60,6 +60,7 @@ use crate::{
 
 /// Admit a snapshot request. Game thread. A request that cannot start is acknowledged as failed.
 pub fn request(request: SnapshotRequest) {
+    crate::stereo::single_pass::probes::arm_capture();
     let Some(folder) = captures_folder() else {
         tracing::error!("snapshot: no configuration directory");
         return;

@@ -41,13 +41,10 @@ use windows::{
     core::Interface,
 };
 
-use crate::{
-    screenshot::harness::stages::velocity,
-    stereo::single_pass::{
-        BOUND_VS, CollapseViewport, DRAW_INDEXED_INSTANCED, Flag, bind_both_viewport_slots,
-        config_flags, current_pass_id, ensure_collapse_viewport, eye_split_state,
-        hw_instanced_once, instanced_per_eye,
-    },
+use crate::stereo::single_pass::{
+    BOUND_VS, CollapseViewport, DRAW_INDEXED_INSTANCED, Flag, bind_both_viewport_slots,
+    config_flags, current_pass_id, ensure_collapse_viewport, eye_split_state, hw_instanced_once,
+    instanced_per_eye, probes,
 };
 
 /// Draw a bark or foliage block once for both eyes, reporting whether it did; `false` leaves the
@@ -110,7 +107,8 @@ pub(super) fn draw_indexed(
         return false;
     };
     ensure_collapse_viewport(context, CollapseViewport::Split);
-    velocity::submit(
+    probes::submit(
+        probes::armed(),
         context,
         "indexed_promoted",
         [

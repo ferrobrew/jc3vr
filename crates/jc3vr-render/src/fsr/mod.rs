@@ -49,8 +49,11 @@ use windows::{
 
 use crate::{
     hooks::camera::SCENE_NEAR_CLIP_M,
-    screenshot::harness::snapshot::{self, Plane},
-    stereo::{STEREO_STATE, config::STEREO_CONFIG},
+    stereo::{
+        STEREO_STATE,
+        config::STEREO_CONFIG,
+        single_pass::probes::{self, FsrPlane},
+    },
 };
 
 /// How the post chain's textures hold the eyes one FSR resolve covers.
@@ -360,7 +363,7 @@ pub fn dispatch(
             fsr.hybrid_velocity && stereo,
         )
     });
-    let frame = crate::screenshot::harness::frame_identity();
+    let frame = crate::vr::capture_views().map(|views| views.predicted_display_time_ns);
     let mut ran = false;
     for &eye in eyes {
         let EyeMotion {
@@ -645,8 +648,8 @@ unsafe fn resolve_eye(
             },
             (Some(_), None) => return false,
         };
-        snapshot::eye_plane_hook(Plane::FsrMotion, eye, &mv_res);
-        snapshot::eye_plane_hook(Plane::FsrDepth, eye, &depth_res);
+        probes::fsr_plane(FsrPlane::Motion, eye, &mv_res);
+        probes::fsr_plane(FsrPlane::Depth, eye, &depth_res);
 
         let info = DispatchInfo {
             context,

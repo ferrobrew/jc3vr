@@ -56,6 +56,8 @@ pub(crate) mod ambient_occlusion;
 mod cb13;
 mod config_snapshot;
 mod detour_lifecycle;
+// The draw detours' own cost, which a benchmark run arms.
+pub(crate) mod detour_timing;
 mod draw_detours;
 pub mod eye_camera;
 pub(crate) mod eye_globals;
@@ -67,6 +69,8 @@ mod instanced_exposure;
 mod per_eye_reissue;
 mod pinned_eye;
 pub mod post_filters;
+// The capture harness's probes into the draw path.
+pub(crate) mod probes;
 // The ambient-occlusion volumes' pixel-shader rewrite and its per-eye rows; reached by the shader
 // creation detour and the volume pass's draw walk.
 pub(crate) mod ao_volumes;
@@ -82,7 +86,6 @@ pub mod vegetation_once;
 mod viewport;
 pub(crate) mod viewport_record;
 mod water_fragment_state;
-mod water_gpu_probe;
 pub(crate) mod water_pixel_variants;
 
 pub use cb13::*;
@@ -98,15 +101,15 @@ pub use impostor_pixel_size::EyeDisplayWidth;
 pub use instanced_exposure::*;
 pub use per_eye_reissue::*;
 pub(crate) use pinned_eye::tag_pinned_eye;
+pub(crate) use probes::{
+    RawDrawKind, WaterGpuProbe, begin_water_input_capture, reflection_producer,
+};
 pub use shader_detours::*;
 pub use shader_policy::*;
 pub use static_lights::EyeLightWidth;
 pub use sun::*;
 pub use viewport::*;
 pub(crate) use water_fragment_state::begin_water_surface;
-pub(crate) use water_gpu_probe::{
-    RawDrawKind, WaterGpuProbe, begin_water_input_capture, reflection_producer,
-};
 
 pub(crate) use crate::stereo::engine_context::EngineContext;
 use crate::stereo::layout::capability;

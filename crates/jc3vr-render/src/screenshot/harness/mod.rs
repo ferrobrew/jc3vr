@@ -15,10 +15,13 @@ pub(crate) mod bound_buffer;
 pub(crate) mod constants;
 pub(crate) mod draw_census;
 pub(crate) mod patch_draw;
+pub mod register_single_pass;
 pub(crate) mod resolve_probe;
 pub mod snapshot;
 pub(crate) mod stages;
+mod sun_probe;
 pub(crate) mod types;
+pub(crate) mod water_gpu_probe;
 
 use jc3vr_core::config::engine::Snapshot;
 use windows::Win32::Graphics::Direct3D11::{ID3D11Device, ID3D11DeviceContext};
@@ -447,6 +450,7 @@ pub fn request_motion(id: RequestId, phase: u32, options: CaptureRequest) {
 }
 
 fn request_with_phase(id: RequestId, target_phase: Option<u32>, options: CaptureRequest) {
+    crate::stereo::single_pass::probes::arm_capture();
     let Some(folder) = jc3vr_core::config::engine::paths::dir().map(|dir| dir.join("captures"))
     else {
         tracing::error!("screenshot harness: no configuration directory");
