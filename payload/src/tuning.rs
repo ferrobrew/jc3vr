@@ -2,9 +2,27 @@
 //! (`docs/mod/tuning.md`). A file added to a crate's `tuning/` directory is listed here; the test
 //! below fails until it is.
 
-use jc3vr_core::tuning::{AnyTuningFile, StartupError};
+use jc3vr_body::{
+    controllers::{
+        aim::tuning_file::AIM,
+        body::{ik_body::tuning::IK_BODY, procedural::tuning::PROCEDURAL, tuning::BODY},
+        fingers::tuning::FINGERS_TUNING,
+    },
+    tuning::FRESHNESS,
+};
 pub(crate) use jc3vr_core::tuning::{Source, shutdown, tick};
+use jc3vr_core::{
+    core_tuning::CORE,
+    tuning::{AnyTuningFile, StartupError},
+};
+use jc3vr_gameplay::controllers::tuning::GAMEPLAY;
+use jc3vr_grapple::{controllers::snatch::config::SNATCH, grapple::tuning::GRAPPLE};
+use jc3vr_hud::hud::tuning::HUD;
+use jc3vr_render::tuning::RENDER;
+use jc3vr_tooling::tuning::TOOLING;
+use jc3vr_ui::tuning::UI;
 use jc3vr_vehicles::controllers::vehicles::tuning::VEHICLES;
+use jc3vr_view::tuning::HAPTICS;
 
 /// Loads every tuning file from `source` and starts watching them.
 pub(crate) fn init(source: Source) -> Result<(), StartupError> {
@@ -12,7 +30,24 @@ pub(crate) fn init(source: Source) -> Result<(), StartupError> {
 }
 
 /// The tuning files, in no particular order: each loads on its own.
-static FILES: &[&dyn AnyTuningFile] = &[&VEHICLES];
+static FILES: &[&dyn AnyTuningFile] = &[
+    &VEHICLES,
+    &GAMEPLAY,
+    &UI,
+    &TOOLING,
+    &FRESHNESS,
+    &CORE,
+    &RENDER,
+    &GRAPPLE,
+    &SNATCH,
+    &HAPTICS,
+    &BODY,
+    &IK_BODY,
+    &HUD,
+    &FINGERS_TUNING,
+    &AIM,
+    &PROCEDURAL,
+];
 
 #[cfg(test)]
 mod tests {

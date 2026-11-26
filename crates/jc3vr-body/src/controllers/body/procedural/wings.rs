@@ -40,7 +40,7 @@ use crate::controllers::{
                 pose::RigPose,
                 wings::{PlayerArms, RicoArms, WingTarget, flight_heading, wing_targets},
             },
-            tuning::ProceduralTuning,
+            tuning::{PROCEDURAL, ProceduralTuning},
         },
     },
     hands::{config::HANDS_CONFIG, ik::queue_model_wrists, pose::cockpit_hand},
@@ -142,8 +142,8 @@ impl State {
         let weight = self.wings.step(
             if wanted { 1.0 } else { 0.0 },
             dt,
-            config.blend_s,
-            config.blend_out_s,
+            config.blend.in_s,
+            config.blend.out_s,
         );
         self.status.wing_weight = weight;
         if weight <= 0.0 {
@@ -225,8 +225,8 @@ pub(super) unsafe fn queue(character: &mut Character, wings: Option<WingQueue>) 
 static WING_HANDS: AtomicU8 = AtomicU8::new(0);
 
 /// The torso's heading in flight, read from the arms: the line between the wrists while they are
-/// spread at least [`SPREAD_M`] apart, and otherwise a follower of the head that turns only for a
-/// sustained turn ([`FOLLOW`]), slowly.
+/// spread at least the tuning's `wings.spread_m` apart, and otherwise a follower of the head that
+/// turns only for a sustained turn (`wings.follow`), slowly.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub(crate) struct WingHeading {
     follow: YawFollow,
@@ -262,6 +262,7 @@ impl WingHeading {
             self.follow.snap(spread);
             return Quat::from_rotation_y(spread);
         }
+        let follow = &PROCEDURAL.get().wings.follow;
         let yaw = self.follow.update(
             &YawInput {
                 head_yaw,
@@ -270,38 +271,31 @@ impl WingHeading {
                 moving: false,
                 dt,
             },
-            &FOLLOW,
+            &YawTuning {
+                turn_deg: follow.turn_deg,
+                sustain_deg: follow.sustain_deg,
+                sustain_s: follow.sustain_s,
+                slew_deg_s: follow.slew_deg_s,
+                ..YawTuning::new()
+            },
         );
         Quat::from_rotation_y(yaw)
     }
 }
 
-/// The heading the line between the wrists faces, when both are tracked and spread at least
-/// [`SPREAD_M`] apart across the ground, and it faces within a right angle of the head's heading
+/// The heading the line between the wrists faces, when both are tracked and spread at least the
+/// tuning's `wings.spread_m` apart across the ground, and it faces within a right angle of the head's heading
 /// `head_yaw`: crossed arms face backward, and say nothing.
 fn spread_heading(wrists: [Option<Vec3>; 2], head_yaw: f32) -> Option<f32> {
     let [Some(left), Some(right)] = wrists else {
         return None;
     };
     let across = (right - left) * Vec3::new(1.0, 0.0, 1.0);
-    if !across.is_finite() || across.length() < SPREAD_M {
+    if !across.is_finite() || across.length() < PROCEDURAL.get().wings.spread_m {
         return None;
     }
     line_yaw(left, right).filter(|yaw| wrap(yaw - head_yaw).abs() < std::f32::consts::FRAC_PI_2)
 }
-
-/// The wrists spread at least this far apart across the ground give the torso's heading, metres.
-const SPREAD_M: f32 = 0.8;
-
-/// The follower of the head in flight: no turn for a look alone, however far, a slow turn after a
-/// look held to one side, and a slow settle under a steady head.
-const FOLLOW: YawTuning = YawTuning {
-    turn_deg: 180.0,
-    sustain_deg: 35.0,
-    sustain_s: 1.5,
-    slew_deg_s: 90.0,
-    ..YawTuning::new()
-};
 
 /// A gap between readings longer than this starts the follower again, a few ticks.
 const RESUME_AFTER: Duration = Duration::from_millis(500);

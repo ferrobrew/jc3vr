@@ -18,7 +18,9 @@
 use body_rig::{geometry::closest_on_segment, smooth::smoothstep};
 use glam::{Mat4, Quat, Vec3};
 
-use crate::controllers::body::procedural::{rig::RigBone, solver::pose::RigPose};
+use crate::controllers::body::procedural::{
+    rig::RigBone, solver::pose::RigPose, tuning::PROCEDURAL,
+};
 
 /// A capsule: the points within `radius` of the segment from `a` to `b`.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -153,14 +155,16 @@ pub fn elbow_hint(
         0.0
     });
     let local = chest.inverse() * along;
+    let tuning = &PROCEDURAL.get().elbow_hint;
     // Up, and across toward the other side, both lift the elbow out.
     let lift = (local.y.max(0.0) + (-local.dot(out)).max(0.0)).min(1.0);
-    let pole = Vec3::NEG_Y * POLE_DOWN
-        + chest * (out * (POLE_OUT + POLE_REACH_OUT * lift) + Vec3::Z * POLE_BACK);
+    let pole = Vec3::NEG_Y * tuning.pole_down
+        + chest
+            * (out * (tuning.pole_out + tuning.pole_reach_out * lift) + Vec3::Z * tuning.pole_back);
     let across = |pole: Vec3| pole - along * pole.dot(along);
     let primary = across(pole.normalize_or_zero());
     let fallback = across(chest * Vec3::Z).normalize_or_zero();
-    let keep = smoothstep(primary.length() / POLE_FALLBACK_BELOW);
+    let keep = smoothstep(primary.length() / tuning.pole_fallback_below);
     let pole = (primary.normalize_or_zero() * keep + fallback * (1.0 - keep))
         .try_normalize()
         .unwrap_or(out);
@@ -168,18 +172,6 @@ pub fn elbow_hint(
     let bend = (half * half - (distance * 0.5).powi(2)).max(0.0).sqrt();
     Some(shoulder + reach * 0.5 + pole * bend)
 }
-
-/// The elbow pole's lean: mostly down, partly out to the arm's side, and a little back.
-const POLE_DOWN: f32 = 1.0;
-const POLE_OUT: f32 = 0.5;
-const POLE_BACK: f32 = 0.3;
-
-/// How much further out a reach up or across lifts the elbow, on top of [`POLE_OUT`].
-const POLE_REACH_OUT: f32 = 1.5;
-
-/// The share of the pole left across the reach below which the fallback pole takes over, fully
-/// at none.
-const POLE_FALLBACK_BELOW: f32 = 0.6;
 
 #[cfg(test)]
 mod tests {

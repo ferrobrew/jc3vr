@@ -16,6 +16,7 @@ use glam::{Quat, Vec3};
 use crate::controllers::body::procedural::{
     rig::{Rig, RigBone},
     solver::{arms::Side, pose::RigPose},
+    tuning::ClavicleTuning,
 };
 
 /// A clavicle's turn from where the torso carries it, radians.
@@ -36,19 +37,6 @@ impl ClavicleTurn {
     fn is_finite(&self) -> bool {
         self.elevation.is_finite() && self.protraction.is_finite()
     }
-}
-
-/// The clavicles' limits and where their reach starts.
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub struct ClavicleTuning {
-    /// The furthest a clavicle lifts, radians.
-    pub elevation: f32,
-    /// The furthest a clavicle drops, radians.
-    pub depression: f32,
-    /// The furthest a clavicle swings forward, radians.
-    pub protraction: f32,
-    /// The share of the arm's length at which a hand ahead or below starts to take the shoulder.
-    pub reach_start: f32,
 }
 
 /// The turn the clavicle on `side` takes toward the wrist target `target`, scaled by `weight`
@@ -84,16 +72,20 @@ pub fn wanted(
 
     let reach_start = tuning.reach_start.clamp(0.0, REACH_FULL - 0.01);
     let far = smoothstep_between(reach_start, REACH_FULL, extension);
-    // A hand overhead lifts the shoulder by how straight the arm is, from about half its length.
-    let lift = smoothstep_between(LIFT_START, 1.0, direction.y)
-        * smoothstep_between(0.5, REACH_FULL, extension);
-    let lower = smoothstep_between(LOWER_START, 1.0, -direction.y) * far;
-    // Ahead, and across the body (half as much, since the chest is in the way).
-    let ahead = (direction.dot(forward) - ACROSS_SHARE * direction.dot(outward)).clamp(0.0, 1.0);
+    // A hand overhead lifts the shoulder by how straight the arm is.
+    let lift = smoothstep_between(tuning.lift_start, 1.0, direction.y)
+        * smoothstep_between(tuning.lift_extension_start, REACH_FULL, extension);
+    let lower = smoothstep_between(tuning.lower_start, 1.0, -direction.y) * far;
+    // Ahead, and across the body (less, since the chest is in the way).
+    let ahead =
+        (direction.dot(forward) - tuning.across_share * direction.dot(outward)).clamp(0.0, 1.0);
 
+    let elevation = tuning.elevation_deg.to_radians().max(0.0);
+    let depression = tuning.depression_deg.to_radians().max(0.0);
+    let protraction = tuning.protraction_deg.to_radians().max(0.0);
     let turn = ClavicleTurn {
-        elevation: (tuning.elevation.max(0.0) * lift - tuning.depression.max(0.0) * lower) * weight,
-        protraction: tuning.protraction.max(0.0) * far * ahead * weight,
+        elevation: (elevation * lift - depression * lower) * weight,
+        protraction: protraction * far * ahead * weight,
     };
     if turn.is_finite() {
         turn
@@ -170,16 +162,6 @@ pub fn shoulder_joint(pose: &RigPose, rig: &Rig, side: Side) -> Vec3 {
 /// takes the clavicle fully.
 const REACH_FULL: f32 = 1.0;
 
-/// How steeply up the hand must be from the shoulder before it lifts it: the sine of the angle
-/// above the horizontal.
-const LIFT_START: f32 = 0.25;
-
-/// How steeply down the hand must be from the shoulder before it lowers it.
-const LOWER_START: f32 = 0.5;
-
-/// How much a reach across the body counts against a reach ahead.
-const ACROSS_SHARE: f32 = 0.5;
-
 /// The chest's horizontal forward: square to the line between the clavicles.
 fn chest_forward(pose: &RigPose) -> Option<Vec3> {
     let line =
@@ -190,20 +172,14 @@ fn chest_forward(pose: &RigPose) -> Option<Vec3> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::controllers::body::procedural::rig::test_support::skeleton;
+    use crate::controllers::body::procedural::{rig::test_support::skeleton, tuning::PROCEDURAL};
 
     fn setup() -> (Rig, RigPose, ClavicleTuning) {
         let rig = Rig::from_skeleton(&skeleton()).unwrap();
         let pose = RigPose {
             bones: rig.reference,
         };
-        let tuning = ClavicleTuning {
-            elevation: 30f32.to_radians(),
-            depression: 10f32.to_radians(),
-            protraction: 25f32.to_radians(),
-            reach_start: 0.8,
-        };
-        (rig, pose, tuning)
+        (rig, pose, PROCEDURAL.get().clavicles)
     }
 
     #[test]
@@ -227,7 +203,10 @@ mod tests {
         let shoulder = shoulder_joint(&pose, &rig, Side::Left);
         let target = shoulder + Vec3::Y * 0.6;
         let turn = wanted(&pose, &rig, Side::Left, target, 1.0, &tuning);
-        assert!((turn.elevation - tuning.elevation).abs() < 1e-4, "{turn:?}");
+        assert!(
+            (turn.elevation - tuning.elevation_deg.to_radians()).abs() < 1e-4,
+            "{turn:?}"
+        );
         let before = target.distance(shoulder);
         apply(&mut pose, &rig, Side::Left, turn);
         let lifted = shoulder_joint(&pose, &rig, Side::Left);
@@ -250,7 +229,10 @@ mod tests {
         let shoulder = shoulder_joint(&pose, &rig, Side::Right);
         let target = shoulder + Vec3::NEG_Z * 0.62;
         let turn = wanted(&pose, &rig, Side::Right, target, 1.0, &tuning);
-        assert!(turn.protraction > tuning.protraction * 0.9, "{turn:?}");
+        assert!(
+            turn.protraction > tuning.protraction_deg.to_radians() * 0.9,
+            "{turn:?}"
+        );
         assert!(turn.elevation.abs() < 1e-4);
         apply(&mut pose, &rig, Side::Right, turn);
         let moved = shoulder_joint(&pose, &rig, Side::Right);

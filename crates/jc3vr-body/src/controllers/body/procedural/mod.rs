@@ -30,7 +30,7 @@
 //! - [`hips`]: the clip's hips against Rico's facing, which the yaw follow squares.
 //! - [`stance`]: the feet squared under the hips while Rico stands idle.
 //! - [`twist`]: the arms' twist bones.
-//! - [`tuning`]: the blends, the limits, and the clavicles' tuning.
+//! - [`tuning`]: the procedural body's tuning file.
 //!
 //! [`at_solve_gate`] poses the torso, handing it between the player and the animation by the table
 //! in [`authority`], and fades the game's own IK targets on the bones it owns. While it has any weight, [`owns_body`] tells the pre-solve IK (the body IK's torso) to
@@ -57,7 +57,7 @@ use std::{
         LazyLock,
         atomic::{AtomicU32, Ordering},
     },
-    time::{Duration, Instant},
+    time::Instant,
 };
 
 use body_rig::angle::line_yaw;
@@ -92,9 +92,9 @@ use crate::{
                     clavicles::{self, ClavicleTurn},
                     pose::RigPose,
                 },
-                stance::{STANCE_BLEND_S, place_feet, square_stance},
+                stance::{place_feet, square_stance},
                 targets::{Fade, Slot, TargetFade},
-                tuning::{ProceduralTuning, TUNING},
+                tuning::{PROCEDURAL, ProceduralTuning},
                 wings::{WingRequest, read_player_arms},
             },
             rig::{grounded, torso::relative_heading, torso_turn},
@@ -105,6 +105,7 @@ use crate::{
         mode::{AirborneVariant, Mode, current as current_mode},
     },
     hooks::animation::active_state_type_id,
+    tuning::FRESHNESS,
 };
 
 /// What the procedural body did at its last gate.
@@ -137,8 +138,9 @@ impl ProceduralStatus {
     /// Whether the local player's gate ran recently: the body is being solved now, not left as it
     /// was when the gate last ran.
     pub fn fresh(&self, now: Instant) -> bool {
-        self.at
-            .is_some_and(|at| now.saturating_duration_since(at) <= GATE_FRESH)
+        self.at.is_some_and(|at| {
+            now.saturating_duration_since(at) <= FRESHNESS.get().body.procedural_gate_ms.duration()
+        })
     }
 }
 
@@ -259,7 +261,7 @@ pub(crate) unsafe fn at_solve_gate(character: &mut Character, dt: f32) -> bool {
 ///
 /// As [`at_solve_gate`].
 unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
-    let config = TUNING;
+    let config = PROCEDURAL.get();
     let ik_config = BODY_REMAP_CONFIG.query(|c| c.ik);
     let scale = VR_CONFIG.lock().world_scale;
     let now = Instant::now();
@@ -301,7 +303,7 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
     };
     let mut state = STATE.lock();
     let dt = if dt.is_finite() {
-        dt.clamp(0.0, MAX_STEP_S)
+        dt.clamp(0.0, config.blend.max_step_s)
     } else {
         0.0
     };
@@ -356,7 +358,7 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
     let stance_weight = if stance_authorized {
         state
             .stance
-            .step(locomotion.standing_still(), dt, STANCE_BLEND_S)
+            .step(locomotion.standing_still(), dt, config.stance.blend_s)
     } else {
         state.stance.reset();
         0.0
@@ -366,7 +368,7 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
         Some(heading) => square_pose(&animated, heading, stance_weight),
         None => animated,
     };
-    let weight = state.blend.step(case, dt, &config);
+    let weight = state.blend.step(case, dt, config);
     let target = state.blend.target();
     let world = Mat4::from(character.m_WorldMatrixT1);
     // The IK body seeds the FK pelvis into the posture before the torso is solved on it, and the
@@ -408,7 +410,7 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
         world: &world,
         dt,
     };
-    state.wing_queue = state.step_wings(&wings, &config);
+    state.wing_queue = state.step_wings(&wings, config);
     state.leg_weight = if relaxes_legs(case)
         && !read.ledge_climb
         && !read.swimming
@@ -426,8 +428,8 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
                 0.0
             },
             dt,
-            config.blend_s,
-            config.blend_out_s,
+            config.blend.in_s,
+            config.blend.out_s,
         )
     } else {
         state.legs = WeightFollower::new();
@@ -462,7 +464,7 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
         arm_shoulders,
     };
     let mut pose = if weight > 0.0 {
-        let Some(pose) = (unsafe { pose_torso(&mut state, rig, &gate, &config) }) else {
+        let Some(pose) = (unsafe { pose_torso(&mut state, rig, &gate, config) }) else {
             return false;
         };
         pose
@@ -483,7 +485,7 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
     }
     unsafe { live.write(controller, &pose) };
     publish_leg_weight(leg_weight);
-    finish_write(&mut state, character, &pose, weight, &config);
+    finish_write(&mut state, character, &pose, weight, config);
     // SAFETY: the live local character's solver, at its pose gate before the solve, with the
     // pose just written.
     unsafe { ik_body::queue(&mut character.m_HIK, rig, &pose) };
@@ -532,13 +534,6 @@ static STANCE_IDLES: LazyLock<StateSet> = LazyLock::new(|| {
     ])
 });
 
-/// The share of a gait clip's forward lean the torso takes out on the ground before following the
-/// player's head.
-const ON_FOOT_DELEAN: f32 = 0.8;
-
-/// How long the de-lean takes to ease in or out across a change of case, seconds.
-const DELEAN_BLEND_S: f32 = 0.25;
-
 /// The pose to write: the torso follows the player's head on the clip's hips, including in a
 /// standing stunt position, whose animation is the on-foot one. `None` without tracking.
 ///
@@ -563,12 +558,12 @@ unsafe fn pose_torso(
     // the swing, the chest stays square over the pelvis rather than tipped back toward the eyes.
     // Eased in and out, so a jump's takeoff and landing do not move the torso in one tick.
     let grounded = matches!(gate.case, Case::OnFoot | Case::StuntStanding);
-    input.delean = ON_FOOT_DELEAN
+    input.delean = config.torso.delean
         * state.delean.step(
             if grounded { 1.0 } else { 0.0 },
             gate.dt,
-            DELEAN_BLEND_S,
-            DELEAN_BLEND_S,
+            config.torso.delean_blend_s,
+            config.torso.delean_blend_s,
         );
     let mut solved = solve_anchored(&input, config);
     if matches!(
@@ -628,15 +623,15 @@ fn finish_write(
     // upright.
     let upright = (pose.position(RigBone::Neck) - pose.position(RigBone::Spine))
         .try_normalize()
-        .is_some_and(|axis| upright_share(axis) > ELBOW_HINT_UPRIGHT);
+        .is_some_and(|axis| upright_share(axis) > config.elbow_hint.upright);
     state.arms = (weight > 0.0).then(|| ArmContext {
         keep_out: TorsoKeepOut::around(
             pose,
-            config.chest_radius_m,
-            config.abdomen_radius_m,
-            config.hand_margin_m,
+            config.keep_out.chest_radius_m,
+            config.keep_out.abdomen_radius_m,
+            config.keep_out.hand_margin_m,
         ),
-        elbow_reach: upright.then_some(config.elbow_hint_reach * weight),
+        elbow_reach: upright.then_some(config.elbow_hint.reach * weight),
         chest_yaw: line_yaw(
             pose.position(RigBone::LeftShoulder),
             pose.position(RigBone::RightShoulder),
@@ -645,15 +640,6 @@ fn finish_write(
     });
     neutralize_owned_targets(&mut character.m_HIK, weight, &mut state.fade);
 }
-
-/// How long after the gate last ran the body still counts as solved: a few ticks.
-const GATE_FRESH: Duration = Duration::from_millis(500);
-
-/// How upright the written chest must be for the elbow hints, as [`upright_share`] measures it.
-const ELBOW_HINT_UPRIGHT: f32 = 0.5;
-
-/// The longest step the body takes, seconds: a hitch is not a long blend.
-const MAX_STEP_S: f32 = 0.1;
 
 /// The effectors of the torso's bones. The hips are the animation's.
 const TORSO_EFFECTORS: [Effector; 4] = [
