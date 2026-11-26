@@ -7,7 +7,7 @@ use glam::Quat;
 use jc3gi::character::character::{AnimatedModel, Character, Joint, SafeBoneIndex};
 use jc3vr_render::{
     headpose::{self, Source},
-    hooks::graphics_engine::render_block,
+    hooks::graphics_engine::player_draw,
     vr::VR_CONFIG,
 };
 
@@ -77,9 +77,9 @@ pub(crate) unsafe fn override_head(character: *mut Character) {
                     instance as usize + AnimatedModel::MODEL_INSTANCE_RBI_INFO_OFFSET as usize
                 }
             });
-        render_block::publish_player_rbi_infos(&rbi_infos);
+        player_draw::publish_player_rbi_infos(&rbi_infos);
         let bone = |name: &[u8]| pose.named(name).unwrap_or(u32::MAX);
-        render_block::publish_collapse_bones(&[
+        player_draw::publish_collapse_bones(&[
             head_index,
             bone(b"offset_facialOrienter"),
             bone(b"fJaw"),
@@ -113,7 +113,7 @@ pub(crate) unsafe fn override_head(character: *mut Character) {
         // The head-hide collapse target: the render side cannot read positions out of the
         // palette (the translation slots depend on each block's layout), so the model-space neck
         // point comes from the skeleton here.
-        render_block::publish_collapse_target(joint_translation(&neck_joint));
+        player_draw::publish_collapse_target(joint_translation(&neck_joint));
 
         // The pre-IK capture retains the bind frame even when body IK is disabled. VR uses that
         // frame with the filtered animation and fresh tracking, while the sim preserves its

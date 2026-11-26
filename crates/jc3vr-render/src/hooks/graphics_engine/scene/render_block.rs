@@ -25,15 +25,15 @@
 //!
 //! Ownership is settled by pointer identity: every draw receives its owning model instance's
 //! embedded `CRBIInfo` as the `info` argument, and the character hook publishes the player's
-//! instance-info pointers slot-for-slot — the hide matches the body-model slot only. Character
+//! instance-info pointers slot-for-slot ([`crate::hooks::graphics_engine::player_draw`]) — the hide
+//! matches the body-model slot only. Character
 //! draws run concurrently on multiple render worker threads, so the spoof flag and the palette
 //! copy are thread-local.
 
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use detours_macro::detour;
 use jc3gi::{
-    character::character::AnimatedModel,
     graphics_engine::{
         graphics_engine::{HContext_t, RenderContext},
         render_block::{
@@ -47,7 +47,10 @@ use jc3gi::{
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{
-    hooks::graphics_engine::palette_edit::{BodyPaletteEdit, PaletteLayout, player_draw_edits},
+    hooks::graphics_engine::{
+        palette_edit::{BodyPaletteEdit, PaletteLayout, player_draw_edits},
+        player_draw,
+    },
     stereo::STEREO_STATE,
 };
 
@@ -60,62 +63,6 @@ pub(super) fn hook_library() -> HookLibrary {
         .with_static_binder(&RENDER_BLOCK_CHARACTER_SET_MATRIX_PALETTE_BINDER)
         .with_static_binder(&RENDER_BLOCK_CHARACTER_SKIN_SET_MATRIX_PALETTE_BINDER)
         .with_static_binder(&RENDER_BLOCK_LIGHT_GLOW_DRAW_BINDER)
-}
-
-/// Publish the `CRBIInfo` pointers of the local player's model instances, slot-for-slot (zero for
-/// empty slots), from the character hook. Every render-block draw receives its owning model
-/// instance's embedded `CRBIInfo` as the `info` argument, so pointer identity is an *exact*
-/// ownership test — unlike the earlier position-radius check, which failed at vehicle/wingsuit
-/// speeds and false-matched nearby characters. The slots are kept distinct because they are
-/// different models with different skeletons: the parachute occupies one of them, and collapsing
-/// the body skeleton's bone indices on the chute's skeleton crumpled the canopy.
-pub fn publish_player_rbi_infos(infos: &[usize; PLAYER_MODEL_SLOTS]) {
-    for (slot, &info) in PLAYER_RBI_INFOS.iter().zip(infos) {
-        slot.store(info, Ordering::Relaxed);
-    }
-}
-
-/// The number of model-instance slots on `CAnimatedModel`, as a `usize` for array sizing.
-pub const PLAYER_MODEL_SLOTS: usize = AnimatedModel::MODEL_INSTANCE_SLOTS as usize;
-
-/// The largest skeleton bone index `publish_collapse_bones` accepts. Skeleton indices beyond an
-/// `i16`'s range are implausible (the engine's bone index space is i16-sized), so they are dropped
-/// rather than risking a whole-body collapse.
-const MAX_BONE_INDEX: u32 = 0x7FFF;
-
-/// Publish the NECK bone's model-space position, from the character hook: the collapse target
-/// point. Collapsed vertices contract here (inside the collar) rather than to each bone's own
-/// position — vertices blended between a collapsed and a kept bone form a stretch cone to the
-/// collapse point, and anchoring that point at the neck keeps the cone tucked into the collar
-/// instead of dangling off the chin (the beard flap). The point cannot be sampled from the
-/// palette itself: where the translation lives in each matrix depends on the block's palette
-/// layout, and reading the wrong slots yields a pseudo-point rather than a position (observed
-/// in-game as collapsed clusters parked ~0.6 m under the head, with blended vertices streaking
-/// down toward them). Non-finite positions are dropped, leaving the previous target in place.
-pub fn publish_collapse_target(position: glam::Vec3) {
-    if !position.is_finite() {
-        return;
-    }
-    for (slot, value) in COLLAPSE_TARGET.iter().zip(position.to_array()) {
-        slot.store(value.to_bits(), Ordering::Relaxed);
-    }
-    COLLAPSE_TARGET_VALID.store(true, Ordering::Relaxed);
-}
-
-/// Publish the skeleton indices of the bones to collapse (HEAD plus the facial set), from the
-/// character hook (the game thread owns the skeleton; the draws run on the render thread and only
-/// load these). Index 0 (the root — also what a failed name lookup can resolve to) and
-/// implausibly large values are dropped rather than risking a whole-body collapse.
-pub fn publish_collapse_bones(indices: &[u32]) {
-    let mut len = 0;
-    for &index in indices {
-        if index == 0 || index > MAX_BONE_INDEX || len >= COLLAPSE_BONES.len() {
-            continue;
-        }
-        COLLAPSE_BONES[len].store(index, Ordering::Relaxed);
-        len += 1;
-    }
-    COLLAPSE_BONE_LEN.store(len, Ordering::Relaxed);
 }
 
 #[detour(
@@ -236,20 +183,6 @@ thread_local! {
         const { std::cell::RefCell::new([Matrix3x4 { m: [0.0; 12] }; PALETTE_BUF_LEN]) };
 }
 
-/// The skeleton indices of the bones to collapse; the first [`COLLAPSE_BONE_LEN`] entries are
-/// valid.
-static COLLAPSE_BONES: [AtomicU32; 16] = [const { AtomicU32::new(0) }; 16];
-static COLLAPSE_BONE_LEN: AtomicUsize = AtomicUsize::new(0);
-
-/// The NECK bone's model-space position as `f32` bits (see [`publish_collapse_target`]), plus a
-/// flag for "published at least once".
-static COLLAPSE_TARGET: [AtomicU32; 3] = [const { AtomicU32::new(0) }; 3];
-static COLLAPSE_TARGET_VALID: AtomicBool = AtomicBool::new(false);
-
-/// The `CRBIInfo` pointers of the local player's model instances, slot-for-slot (zero = empty).
-static PLAYER_RBI_INFOS: [AtomicUsize; PLAYER_MODEL_SLOTS] =
-    [const { AtomicUsize::new(0) }; PLAYER_MODEL_SLOTS];
-
 /// Raise the draw's palette-spoof flags: the head hide for the player's body in non-shadow passes,
 /// and the body's render-time re-pose for the player's body in every pass.
 unsafe fn begin_player_draw(rc: *mut RenderContext, info: *const RBIInfo) {
@@ -274,7 +207,7 @@ fn end_player_draw() {
 /// instance matrix. Every pass takes it, so the shadow's body matches the rendered one. Whether
 /// the provider holds an edit for the draw.
 unsafe fn begin_hand_palette_edit(rc: *mut RenderContext, info: *const RBIInfo) -> bool {
-    let body = PLAYER_RBI_INFOS[AnimatedModel::BODY_MODEL_SLOT as usize].load(Ordering::Relaxed);
+    let body = player_draw::player_body_info();
     if body == 0 || info as usize != body {
         return false;
     }
@@ -297,7 +230,7 @@ unsafe fn begin_hand_palette_edit(rc: *mut RenderContext, info: *const RBIInfo) 
 unsafe fn should_hide_facial(rc: *mut RenderContext, info: *const RBIInfo) -> bool {
     // The pointer identity first: it rules out every draw but the player's body without a lock,
     // and this runs for every character draw.
-    let body = PLAYER_RBI_INFOS[AnimatedModel::BODY_MODEL_SLOT as usize].load(Ordering::Relaxed);
+    let body = player_draw::player_body_info();
     if body == 0 || info as usize != body {
         return false;
     }
@@ -335,10 +268,10 @@ unsafe fn spoofed_matrices(
     if matrices.is_null() {
         return None;
     }
-    let len = COLLAPSE_BONE_LEN.load(Ordering::Relaxed);
+    let collapse = player_draw::collapse_bones();
     let hide = HIDE_ACTIVE.with(|flag| flag.get())
-        && len > 0
-        && COLLAPSE_TARGET_VALID.load(Ordering::Relaxed);
+        && !collapse.is_empty()
+        && player_draw::collapse_target_published();
     let edits = HAND_EDIT
         .with(|cell| cell.get())
         .then(player_draw_edits)
@@ -347,11 +280,11 @@ unsafe fn spoofed_matrices(
         Some(edits) => {
             let mut spoofed = None;
             edits.with(&mut |hands| {
-                spoofed = unsafe { spoof(matrices, batch, len, hide, hands) };
+                spoofed = unsafe { spoof(matrices, batch, collapse, hide, hands) };
             });
             spoofed
         }
-        None if hide => unsafe { spoof(matrices, batch, len, hide, None) },
+        None if hide => unsafe { spoof(matrices, batch, collapse, hide, None) },
         None => None,
     }
 }
@@ -361,7 +294,7 @@ unsafe fn spoofed_matrices(
 unsafe fn spoof(
     matrices: *const Matrix3x4,
     batch: *const SkinBatch,
-    len: usize,
+    collapse: &[AtomicU32],
     hide: bool,
     hands: Option<&dyn BodyPaletteEdit>,
 ) -> Option<*const Matrix3x4> {
@@ -372,7 +305,7 @@ unsafe fn spoof(
     if b.BatchToSkeletonLookup.is_null() {
         return None;
     }
-    let collapse = if hide { &COLLAPSE_BONES[..len] } else { &[] };
+    let collapse = if hide { collapse } else { &[] };
     let is_collapse = |bone: usize| {
         collapse
             .iter()
@@ -426,15 +359,10 @@ unsafe fn spoof(
         // into the collar rather than dangling from each bone's own position (the beard flap).
         // The point deliberately does NOT come from the palette: its translation slots depend on
         // the per-block layout below, and sampling them without knowing it parks the collapsed
-        // cluster at a phantom point (see [`publish_collapse_target`]).
+        // cluster at a phantom point (see [`player_draw::publish_collapse_target`]).
         // The presentation layer's neck edit carries it with the neck it re-poses.
         let target = {
-            let [x, y, z] = &COLLAPSE_TARGET;
-            let point = glam::Vec3::new(
-                f32::from_bits(x.load(Ordering::Relaxed)),
-                f32::from_bits(y.load(Ordering::Relaxed)),
-                f32::from_bits(z.load(Ordering::Relaxed)),
-            );
+            let point = player_draw::collapse_target();
             hands
                 .map_or(point, |edit| edit.neck().transform_point3(point))
                 .to_array()

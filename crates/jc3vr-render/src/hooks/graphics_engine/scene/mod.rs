@@ -7,7 +7,9 @@ use re_utilities::hook_library::HookLibrary;
 pub(crate) mod culling;
 // The body's palette edit the character render blocks apply, and its provider's registration.
 pub mod palette_edit;
-// `render_block` is crate-visible so hooks::character can publish the facial classification bones.
+// The local player's draw inputs, which the character hook publishes and the render blocks read.
+pub mod player_draw;
+// The character render blocks' head hide and palette edit.
 pub mod render_block;
 // Diagnostic override of the base VolumetricTerrain color-pass hull-clip type (black cliff-wall
 // tiles).

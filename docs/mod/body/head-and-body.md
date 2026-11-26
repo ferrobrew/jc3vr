@@ -74,7 +74,7 @@ During gameplay, with the camera override enabled, an active head pose, and a va
 
 ## Hiding the head (and keeping its shadow)
 
-The camera sits at the player's head, so the head mesh — face, eyes, hair, and any gear weighted to facial bones — must be hidden from the player's own view. It is hidden from the colour passes only: the shadow passes see the real skinning data, so Rico's shadow keeps its head. The implementation lives in `crates/jc3vr-render/src/hooks/graphics_engine/scene/render_block.rs`; the render-block classes, their `Draw`/`DrawZ`/`SetMatrixPalette` entry points, and the batch/palette structures are in pyxis-defs (`rendering/render_block.pyxis`).
+The camera sits at the player's head, so the head mesh — face, eyes, hair, and any gear weighted to facial bones — must be hidden from the player's own view. It is hidden from the colour passes only: the shadow passes see the real skinning data, so Rico's shadow keeps its head. The implementation lives in `crates/jc3vr-render/src/hooks/graphics_engine/scene/render_block.rs`, with the inputs the character hook publishes for it in `player_draw.rs` beside it; the render-block classes, their `Draw`/`DrawZ`/`SetMatrixPalette` entry points, and the batch/palette structures are in pyxis-defs (`rendering/render_block.pyxis`).
 
 The engine facts that shape the design:
 

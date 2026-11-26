@@ -34,7 +34,7 @@ mod screen;
 
 pub use post::{post_effects, tone_mapping};
 pub use render_pass::shadow_fit_gap_m;
-pub use scene::{palette_edit, render_block, terrain};
+pub use scene::{palette_edit, player_draw, render_block, terrain};
 pub use screen::{clustered_lighting, reconstruction, ss_decal, ssao};
 pub(crate) use single_pass::upload_global_constants;
 
