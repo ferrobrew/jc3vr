@@ -8,7 +8,9 @@
 //! - [`refs`]: weak and strong references to game objects held across ticks;
 //! - [`characters`]: a character's proxy body, its protection, and the ragdolls that take it out
 //!   of a seat;
-//! - [`grapple_hook`]: the grappling hook and its wire's two ends.
+//! - [`grapple_hook`]: the grappling hook and its wire's two ends;
+//! - [`steps`]: the physics steps counted so far, which publications for the next step are
+//!   stamped and aged by.
 //!
 //! The body operations below read and drive one body each for the hands, the weapons, and the
 //! grapple.
@@ -19,6 +21,7 @@ pub mod grapple_hook;
 pub mod havok;
 pub(crate) mod refs;
 pub mod rigid;
+pub mod steps;
 pub(crate) mod world;
 
 use std::num::NonZeroUsize;
