@@ -9,7 +9,8 @@
 //!   lock, loads and saves `settings.toml`, and hands each subsystem a typed slot. The settings
 //!   aggregate itself lives in the payload.
 //! - [`tuning`]: the tuning loader, which reads each crate's shipped TOML files at startup,
-//!   publishes them for lock-free reads, and reloads an edited file live.
+//!   publishes them for lock-free reads, and reloads an edited file live; [`core_tuning`] is this
+//!   crate's own file.
 //! - [`hooks`]: the hook plumbing, which installs a composed hook library under thread suspension
 //!   and removes it, the shared `Patcher`, the installation and removal steps other layers
 //!   register, the gameplay predicate, and the online timing detours ([`hooks::online`]).
@@ -26,6 +27,7 @@
 //! fixture, the test configuration root (`test_root!`), and the lifecycle harness.
 
 pub mod config;
+pub mod core_tuning;
 pub mod cpu_placement;
 pub mod director;
 pub mod frame_timing;

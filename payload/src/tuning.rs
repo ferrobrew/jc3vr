@@ -3,8 +3,11 @@
 //! below fails until it is.
 
 use jc3vr_body::tuning::FRESHNESS;
-use jc3vr_core::tuning::{AnyTuningFile, StartupError};
 pub(crate) use jc3vr_core::tuning::{Source, shutdown, tick};
+use jc3vr_core::{
+    core_tuning::CORE,
+    tuning::{AnyTuningFile, StartupError},
+};
 use jc3vr_tooling::tuning::TOOLING;
 use jc3vr_ui::tuning::UI;
 use jc3vr_vehicles::controllers::vehicles::tuning::VEHICLES;
@@ -15,7 +18,7 @@ pub(crate) fn init(source: Source) -> Result<(), StartupError> {
 }
 
 /// The tuning files, in no particular order: each loads on its own.
-static FILES: &[&dyn AnyTuningFile] = &[&VEHICLES, &UI, &TOOLING, &FRESHNESS];
+static FILES: &[&dyn AnyTuningFile] = &[&VEHICLES, &UI, &TOOLING, &FRESHNESS, &CORE];
 
 #[cfg(test)]
 mod tests {
