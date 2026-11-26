@@ -1,40 +1,26 @@
 use std::{ffi::c_void, sync::OnceLock};
 
-// The core layer lives in its own crate; the old paths keep working until the final cleanup pass.
-pub(crate) use jc3vr_core::{
-    cpu_placement, crash, frame_timing, is_shutting_down, lifecycle, logging, module, render_frame,
-    session, thread_role, util,
+use jc3vr_core::{
+    cpu_placement, crash, is_shutting_down, lifecycle, logging, module, session, thread_role, util,
 };
-// The HUD layer lives in its own crate; the old paths keep working until the final cleanup pass.
-pub use jc3vr_hud::egui_impl;
-pub(crate) use jc3vr_hud::hud;
-// The render layer lives in its own crate; the old paths keep working until the final cleanup pass.
-pub use jc3vr_render::vr;
-pub(crate) use jc3vr_render::{debug, far_field, fsr, headpose, image_writer, screenshot, stereo};
+use jc3vr_gameplay::controllers;
+use jc3vr_hud::{egui_impl::EguiState, hooks::ui::cancel_pointer_on_game_thread, hud};
+use jc3vr_render::{
+    far_field, hooks::graphics_engine::shader::restore_original_shaders_on_eject, image_writer, vr,
+};
+use jc3vr_tooling::{director, recorder, testing};
+use jc3vr_ui::ui;
 use windows::Win32::{
     Foundation::HMODULE,
     System::{LibraryLoader::DisableThreadLibraryCalls, SystemServices::DLL_PROCESS_ATTACH},
     UI::Input::KeyboardAndMouse::{VK_F5, VK_F6},
 };
 
-use crate::egui_impl::EguiState;
-
 mod allocator;
 mod composition;
 mod config;
-mod controllers;
 mod eject_gpu;
-// The gameplay layer lives in its own crate; the old paths keep working until the final cleanup pass.
-pub(crate) use jc3vr_gameplay::grapple;
 mod hooks;
-// The profiler core lives in the core crate; the old path keeps working until the final cleanup pass.
-#[cfg(feature = "profiler")]
-pub(crate) use jc3vr_core::profiler;
-// The tooling layer lives in its own crate; the old paths keep working until the final cleanup pass.
-pub(crate) use jc3vr_tooling::{diagnostics, director, recorder, testing};
-// The UI layer lives in its own crate; the old paths keep working until the final cleanup pass.
-pub(crate) use jc3vr_ui::pause_menu;
-pub use jc3vr_ui::ui;
 
 #[unsafe(no_mangle)]
 #[allow(non_snake_case)]
@@ -133,7 +119,7 @@ fn shutdown_startup() {
     // Likewise for a profiler capture's writer thread: see `profiler::capture::shutdown`'s doc
     // comment for why an unjoined writer is the same class of hazard as the frame tail.
     #[cfg(feature = "profiler")]
-    if !profiler::capture::shutdown() {
+    if !jc3vr_core::profiler::capture::shutdown() {
         module::pin();
     }
 
@@ -184,7 +170,7 @@ fn shutdown_startup() {
     std::thread::sleep(std::time::Duration::from_millis(100));
 
     tracing::info!("Uninstalling hooks");
-    if !hooks::uninstall() {
+    if !jc3vr_core::hooks::uninstall() {
         // Cleanup has already committed. Retention here is fatal containment, not live deferral.
         module::pin();
         tracing::error!("shutdown: hook removal is incomplete; ejection is blocked");
@@ -229,12 +215,12 @@ fn shutdown_from_game() {
     // teardown in the cleanups locks the runtime state under it, and the tail holds that lock while
     // it waits on a draw task that takes the egui state lock. See `docs/mod/threading.md`.
     vr::wait_for_frame_tail();
-    hooks::ui::cancel_pointer_on_game_thread();
+    cancel_pointer_on_game_thread();
     // Re-create the original vertex shaders before anything is torn down: single-pass substitutes
     // patched (cb13-reading) shaders that the game holds, so without this the clean game would keep
     // rendering with them after eject. `SHUTTING_DOWN` is already set, so the reload's create hooks
     // are inert and produce the unpatched originals. A no-op unless single-pass patched any shaders.
-    hooks::graphics_engine::shader::restore_original_shaders_on_eject();
+    restore_original_shaders_on_eject();
 
     // Revert the far-field type gates and release the share pipeline's COM objects before the
     // hooks (and their patches) are torn down: the gated IsEnabled slots and the composite
@@ -284,8 +270,8 @@ fn contain_fatal_failure() {
 /// back buffer under the same conditions it checks.
 fn debug_ui_visible(panel_active: bool) -> bool {
     panel_active
-        || crate::hud::mirror_overlay::is_active()
-        || (crate::vr::render_params(0).is_none() && !crate::director::clean_view::hides_desktop())
+        || hud::mirror_overlay::is_active()
+        || (vr::render_params(0).is_none() && !director::clean_view::hides_desktop())
 }
 
 fn update() {
@@ -304,7 +290,7 @@ fn update() {
         // Close the previous real frame's puffin scopes and open the next; the frame scope itself
         // is opened by `game_update` right after this returns. Once per real frame, main thread.
         #[cfg(feature = "profiler")]
-        profiler::new_frame();
+        jc3vr_core::profiler::new_frame();
 
         if util::is_pressed(VK_F5) {
             lifecycle::request_shutdown();
@@ -342,7 +328,7 @@ fn update() {
             let mut egui_state_guard = EguiState::get();
             if let Some(egui_state) = egui_state_guard.as_mut() {
                 // The debug UI runs holding the egui state lock, which the draw task also takes, so
-                // nothing in it may block on the VR runtime lock (see `crate::thread_role`).
+                // nothing in it may block on the VR runtime lock (see `jc3vr_core::thread_role`).
                 let _debug_ui_role = thread_role::enter(thread_role::ThreadRole::GameDebugUi);
                 if util::is_pressed(VK_F6) {
                     egui_state.toggle_game_input_capture();
@@ -352,25 +338,23 @@ fn update() {
                 // enabled (issue #24): size the layout to the panel texture and re-source the pointer from
                 // the desktop mouse or a controller onto the panel surface. Off, this is `None` and the
                 // flat overlay path is unchanged.
-                let panel_size = crate::hud::egui_panel::active_size();
+                let panel_size = hud::egui_panel::active_size();
                 egui_state.set_panel_mode(panel_size);
                 match panel_size {
                     Some(size) => {
-                        egui_state.push_events(crate::hud::pointer::egui_panel_events(size));
+                        egui_state.push_events(hud::pointer::egui_panel_events(size));
                     }
-                    None => crate::hud::pointer::reset_egui_pointer(),
+                    None => hud::pointer::reset_egui_pointer(),
                 }
 
                 let visible = debug_ui_visible(panel_size.is_some());
                 egui_state.run(|ctx, renderer| {
-                    crate::hud::pointer::apply_panel_input_options(ctx, panel_size.is_some());
+                    hud::pointer::apply_panel_input_options(ctx, panel_size.is_some());
                     // The UI-side half of capture upkeep: the Previews tab's own textures, and the egui
                     // registrations for surfaces the render thread created without a renderer. The eye
                     // captures themselves are prepared above, off this path. The HUD preview's retired
                     // registrations are released first, outside the capture lock.
-                    crate::hud::HUD_STATE
-                        .lock()
-                        .drain_preview_retirements(renderer);
+                    hud::HUD_STATE.lock().drain_preview_retirements(renderer);
                     ui::render::EGUI_DEBUG_RENDER_STATE
                         .lock()
                         .prepare_if_necessary(renderer);
