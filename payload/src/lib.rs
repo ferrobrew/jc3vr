@@ -22,6 +22,7 @@ mod controllers;
 mod cpu_placement;
 mod crash;
 mod debug;
+mod diagnostics;
 mod director;
 mod eject_gpu;
 mod far_field;

@@ -1,7 +1,7 @@
 //! The physics bodies around Rico as recording events, once per simulation step: the dynamic
 //! bodies near him and his hands ([`BodiesSample`]), each introduced with its identity and shape
 //! when it joins ([`BodyIntro`]), and what each hand holds ([`HeldSample`]). With the forces the
-//! mod applies ([`crate::controllers::diagnostics::note_force`]), a viewer can show what Rico
+//! mod applies ([`crate::controllers::telemetry::note_force`]), a viewer can show what Rico
 //! touches and how it moves.
 //!
 //! A walk of every body slot streams the world's whole body array, so each step walks an eighth of

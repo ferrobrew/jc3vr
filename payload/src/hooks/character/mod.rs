@@ -2,11 +2,13 @@
 //! completion of the step's root movement, headset-driven body IK, and the controller hands' wrist
 //! targets before the HumanIK solve, the secondary hand targets switched off before the `SECONDARY`
 //! pass, and the head override, the hands' post-solve publish, the finger curls, and the rig's
-//! skeleton read after it, and the tracking recorder's pose samples before the solves and after
-//! the pass), the act filter, the animation modifiers, and the animation-layer mask.
+//! skeleton read after it, and the pose observer before the solves and after the pass), the act
+//! filter, the animation modifiers, and the animation-layer mask.
 //!
 //! - [`body_ik`]: the pre-solve anchor capture and the head, torso, and hand-pin targets;
 //! - [`head`]: the post-solve head override and the render-block head-hide inputs;
+//! - [`pose_observer`]: the observer of the local player's pose before the solves and after the
+//!   pass;
 //! - [`acts`]: the local player's act filter;
 //! - [`gate`]: the HumanIK solve gate, where the procedural body writes the pose;
 //! - [`modifiers`]: the weapon-agnostic body, which keeps the weapon's animation modifiers off the
@@ -45,6 +47,7 @@ pub(crate) mod layers;
 pub(crate) mod magazine;
 pub(crate) mod modifiers;
 pub(crate) mod pose;
+pub(crate) mod pose_observer;
 pub(crate) mod signals;
 mod stunt;
 pub(crate) mod wielded;
@@ -52,6 +55,8 @@ pub(crate) mod wielded;
 pub(crate) use acts::resolve_act_id;
 pub(crate) use body_ik::body_ik_status;
 pub(crate) use config::BodyIkConfig;
+
+pub(crate) use crate::hooks::character::pose_observer::{PoseObserver, register_pose_observer};
 
 pub(crate) fn hook_library() -> HookLibrary {
     HookLibrary::new()
@@ -132,7 +137,7 @@ fn character_update_pass_finalize_pose_parallel(
             hands::ik::queue_or_defer(character, plan);
         }
         if pose_ready {
-            controllers::diagnostics::sample_pre_ik(character);
+            pose_observer::before_solve(character);
         }
     }
     drop(timing);
@@ -187,6 +192,6 @@ fn character_update_prop_effects(character: *mut Character, dt: f32) {
         controllers::body::procedural::twist::after_solve(character);
         controllers::body::mirror::after_solve(character);
         controllers::presentation::after_solve(character);
-        controllers::diagnostics::sample_final(character);
+        pose_observer::after_pass(character);
     }
 }

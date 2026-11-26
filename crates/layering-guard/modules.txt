@@ -97,11 +97,7 @@ hud hud
 
 # Tooling: the video recorder, the directing tools, the capture harness, and the diagnostics
 # samplers.
-controllers::diagnostics::bodies tooling
-controllers::diagnostics::body_state tooling
-controllers::diagnostics::pose tooling
-controllers::diagnostics::sample tooling
-controllers::diagnostics::world_state tooling
+diagnostics tooling
 director tooling
 recorder tooling
 testing tooling

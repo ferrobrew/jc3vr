@@ -87,23 +87,21 @@ pub mod physical_hands;
 pub mod presentation;
 pub mod presets;
 mod register_lifecycle;
-mod register_post_step;
 pub mod roomscale;
 pub mod scheme;
 pub mod snatch;
 pub mod summary;
+pub(crate) mod telemetry;
 pub mod vehicles;
 pub mod weapons;
 
 pub use config::ControllersConfig;
 
-/// Register the controller subsystems' shutdown participants, their hook installation and removal
-/// steps, and their simulation observers. Runs before the hooks are installed; an error refuses
-/// hook installation, and the refusal is already logged.
+/// Register the controller subsystems' shutdown participants and their hook installation and
+/// removal steps. Runs before the hooks are installed; an error refuses hook installation, and the
+/// refusal is already logged.
 pub(crate) fn install() -> Result<(), RegistrationError> {
-    register_lifecycle::register()?;
-    register_post_step::register();
-    Ok(())
+    register_lifecycle::register()
 }
 
 /// The controller subsystems' hooks, aggregated into the payload's hook library by

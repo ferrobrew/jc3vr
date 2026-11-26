@@ -11,7 +11,8 @@ use parking_lot::Mutex;
 use tracking_format::event::{BodyState, Label};
 
 use crate::{
-    controllers::{body::procedural::authority::Case, diagnostics::state_names},
+    controllers::body::procedural::authority::Case,
+    diagnostics::state_names,
     recorder::tracking::events::{self, EventKind},
 };
 

@@ -1,65 +1,13 @@
-//! The controller subsystems' derived state as tracking-recording events, for diagnosing tracking
-//! and hand-control problems after the fact.
-//!
-//! The game-thread hook calls [`record`] after the engine's render update, so the late hand
-//! snapshot and the frame's sub-tick fraction it is evaluated at are the ones that frame rendered
-//! with. While a tracking recording or the lookback collects
-//! ([`crate::recorder::tracking::events::collecting`]), each call notes one
-//! [`ControllerState`](tracking_format::event::ControllerState) event, which the recorder stamps on
-//! the frame timeline and writes beside the next frame, and a
-//! [`BodyState`](tracking_format::event::BodyState) event when the body's animation state changed
-//! ([`body_state`]). The controller state combines independently read subsystem snapshots; it does
-//! not claim an atomic cross-subsystem instant; its world groups are [`world_state`]'s.
-//!
-//! The rest of the recording's evidence is noted where it happens: Rico's pose before and after the
-//! solves ([`pose`]), the grounded rig's frames ([`rig`]), the bodies near Rico and what his hands
-//! hold after each simulation step ([`bodies`]), and the refusals, forces, injected actions, and
-//! haptic cues ([`notes`]). The settings and the frame timing are the tracking recorder's own notes.
+//! Re-exports of the diagnostics at their old path, for the consumers not yet moved: the note API
+//! is [`crate::controllers::telemetry`]'s, the samplers are `crate::diagnostics`'s, and the
+//! settings note and the frame-timing sink are the tracking recorder's.
 
-mod bodies;
-mod body_state;
-mod moments;
-mod notes;
-mod pose;
-mod rig;
-mod sample;
-mod state_names;
-mod world_state;
-
-use std::time::Instant;
-
-use jc3gi::character::character::Character;
-
-pub(crate) use crate::controllers::diagnostics::{
-    bodies::after_step,
-    moments::{Released, Thrown, note_release, note_throw, note_throw_at},
-    notes::{Applied, BodyBefore, Cue, Write, note_force, note_haptic, note_injected, report},
-    pose::{drawn_arm_joints, sample_drawn_arms, sample_final, sample_pre_ik},
-    rig::{RigRun, note_rig},
+pub(crate) use crate::{
+    controllers::telemetry::{
+        Applied, BodyBefore, Cue, Released, RigRun, Thrown, Write, drawn_arm_joints, note_force,
+        note_haptic, note_injected, note_release, note_rig, note_throw, note_throw_at, report,
+        sample_drawn_arms,
+    },
+    diagnostics::record,
+    recorder::tracking::{note_settings, register_frame_timing},
 };
-pub(crate) use crate::recorder::tracking::{note_settings, register_frame_timing};
-use crate::{
-    controllers::body::procedural,
-    hooks::animation::active_state_type_id,
-    recorder::tracking::events::{self, EventKind},
-};
-
-/// Note the controller subsystems' state when a recording or the lookback collects it.
-pub fn record() {
-    if crate::is_shutting_down() || !events::collecting() {
-        body_state::forget();
-        return;
-    }
-    // SAFETY: the game thread, after the render update and outside the world update, where the
-    // local player and its rule systems are stable for the reads.
-    let character = unsafe { Character::GetLocalPlayerCharacter().as_ref() };
-    let rule_state = character.and_then(|character| unsafe { active_state_type_id(character) });
-    body_state::note(
-        rule_state,
-        procedural::published_status().case,
-        Instant::now(),
-    );
-    events::note(EventKind::ControllerState(Box::new(sample::snapshot(
-        character,
-    ))));
-}

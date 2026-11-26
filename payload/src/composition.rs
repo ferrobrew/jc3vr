@@ -11,7 +11,7 @@
 
 use re_utilities::hook_library::HookLibrary;
 
-use crate::{controllers, debug, director, grapple, hooks, pause_menu, stereo};
+use crate::{controllers, debug, diagnostics, director, grapple, hooks, pause_menu, stereo};
 
 /// Register every lifecycle participant and hook step, then install the composed hook library. A
 /// refused participant registration leaves the hooks uninstalled.
@@ -22,6 +22,7 @@ pub(crate) fn install() {
     if controllers::install().is_err() {
         return;
     }
+    diagnostics::install();
     director::register_tracking::register();
     hooks::install(compose);
 }
