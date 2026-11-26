@@ -2,14 +2,10 @@
 //! uploaded on the first eye, and drawn onto each eye's final back buffer, tested against the
 //! scene's depth.
 //!
-//! The draw reads what it needs from the controllers through [`OverlayInputs`], which they
-//! register at startup: whether the overlay is on and how it draws, and the hands' render-time
-//! poses its hand-anchored primitives ride. Until they do, the overlay draws nothing.
+//! The draw reads what it needs from the controllers through the [`OverlayInputs`] they register
+//! ([`crate::controllers::overlay::inputs`]).
 
-use std::sync::{
-    OnceLock,
-    atomic::{AtomicBool, Ordering},
-};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use glam::Vec3;
 use jc3gi::graphics_engine::{device::Device, graphics_engine::GraphicsEngine, texture::Texture};
@@ -21,11 +17,14 @@ use windows::{
     core::Interface as _,
 };
 
+// The gameplay overlay names `DrawSettings` here until its import moves to the inputs module.
+pub use crate::controllers::overlay::inputs::DrawSettings;
 use crate::controllers::overlay::{
+    inputs::{self, OverlayInputs},
     primitive::{Primitive, Source},
     renderer::{EyeConstants, EyeDraw, Renderer},
     resolve,
-    resolve::{Frame, GpuPrimitive, HandPoses},
+    resolve::{Frame, GpuPrimitive},
     store, view,
     view::EyeView,
 };
@@ -47,33 +46,6 @@ pub struct OverlayStatus {
     pub error: Option<String>,
 }
 
-/// How the overlay draws, while it is on.
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub struct DrawSettings {
-    /// The thinnest a line is drawn, in pixels.
-    pub min_line_px: f32,
-    /// How far behind the scene's depth a primitive still draws, metres.
-    pub depth_tolerance_m: f32,
-    /// How far behind the scene's depth a primitive still draws, as a fraction of its distance.
-    pub depth_tolerance_rel: f32,
-}
-
-/// What the overlay's draw reads from the controllers.
-#[derive(Clone, Copy)]
-pub struct OverlayInputs {
-    /// How the overlay draws, or `None` while it is off.
-    pub settings: fn() -> Option<DrawSettings>,
-    /// Each hand's world poses as it is drawn this frame, by hand index.
-    pub hand_poses: fn() -> [Option<HandPoses>; 2],
-}
-
-/// Register what the overlay's draw reads. The first registration stands.
-pub fn register_overlay_inputs(inputs: OverlayInputs) {
-    if INPUTS.set(inputs).is_err() {
-        tracing::warn!("overlay: inputs are already registered; the new ones are ignored");
-    }
-}
-
 /// Release the pipeline, for eject: it holds a render-target view over the engine's back buffer,
 /// which keeps that texture alive after the engine resizes off it.
 pub fn release_on_eject() {
@@ -92,7 +64,7 @@ pub fn draw(context: &ID3D11DeviceContext, device: &Device, target: &Texture, ey
     if crate::stereo::far_phase() || jc3vr_core::director::clean_view::hides_everything() {
         return;
     }
-    let Some(inputs) = INPUTS.get() else {
+    let Some(inputs) = inputs::registered() else {
         return;
     };
     let Some(settings) = (inputs.settings)() else {
@@ -176,8 +148,6 @@ struct State {
     /// The frame's origin, which the packed positions are relative to.
     origin: Vec3,
 }
-
-static INPUTS: OnceLock<OverlayInputs> = OnceLock::new();
 
 static STATE: Mutex<State> = Mutex::new(State {
     renderer: None,
