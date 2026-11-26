@@ -3,8 +3,6 @@
 //! The bundle is game-derived and git-ignored, so the tests read a local extract
 //! (`tools/shaders/Shaders_F.shaders/`, produced by `tools/shaders/extract_dxbc.py`).
 
-#![allow(dead_code)]
-
 use std::path::PathBuf;
 
 /// Set this to `1` to turn a missing shader extract into a skip instead of a failure.
