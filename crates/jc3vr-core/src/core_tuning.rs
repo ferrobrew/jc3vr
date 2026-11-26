@@ -1,5 +1,6 @@
 //! The core crate's tuning, read from the shipped `tuning/core.toml` ([`CORE`]): when the settings
-//! file is saved after a change, and how long a debug hotkey ignores the keyboard after a press.
+//! file is saved after a change, and how long the eject lets the engine's frames run between its
+//! teardown steps.
 
 use serde::Deserialize;
 
@@ -18,7 +19,7 @@ crate::tuning_file! {
 #[serde(deny_unknown_fields)]
 pub struct CoreTuning {
     pub settings_save: SettingsSaveTuning,
-    pub hotkey: HotkeyTuning,
+    pub teardown: TeardownTuning,
 }
 
 impl Tuning for CoreTuning {
@@ -39,7 +40,12 @@ impl Tuning for CoreTuning {
                 save.retry_first_ms, save.retry_max_ms
             )));
         }
-        millis("hotkey.repeat_lockout_ms", self.hotkey.repeat_lockout_ms)
+        positive(
+            "teardown.settle_frames",
+            self.teardown.settle_frames as f32,
+            MAX_SETTLE_FRAMES,
+        )?;
+        millis("teardown.settle_budget_ms", self.teardown.settle_budget_ms)
     }
 }
 
@@ -61,14 +67,21 @@ pub struct SettingsSaveTuning {
     pub compare_interval_ms: u64,
 }
 
-/// The debug hotkeys' polling ([`crate::util::is_pressed`]).
+/// The eject's settle waits ([`crate::lifecycle::settle_frames`]): after the cleanups, so the
+/// still-installed hooks service what they requested (the native-resolution restore in the `Draw`
+/// prologue, the per-frame restores), and after hook removal, so a detour entered before it has
+/// returned.
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct HotkeyTuning {
-    /// How long after a hotkey reads pressed every hotkey reads released, so one press acts once,
-    /// milliseconds.
-    pub repeat_lockout_ms: u64,
+pub struct TeardownTuning {
+    /// How many engine frames each wait lets run.
+    pub settle_frames: u32,
+    /// The longest each wait lasts when the frame loop does not advance, milliseconds.
+    pub settle_budget_ms: u64,
 }
+
+/// The most frames a settle wait can usefully ask for: a second of frames at the fastest refresh.
+const MAX_SETTLE_FRAMES: f32 = 144.0;
 
 /// Checks a duration in milliseconds against the longest any of the file's waits can usefully be:
 /// ten minutes.

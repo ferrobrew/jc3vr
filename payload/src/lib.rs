@@ -1,23 +1,18 @@
 use std::{ffi::c_void, sync::OnceLock};
 
-use jc3vr_body::controllers::body::estimator;
 use jc3vr_core::{
     cpu_placement, director::clean_view, game_tick::GameTick, is_shutting_down, lifecycle, logging,
-    module, session, thread_role, util,
+    module, session, thread_role,
 };
 use jc3vr_hud::{egui_impl::EguiState, hooks::ui::cancel_pointer_on_game_thread, hud};
 use jc3vr_physical::controllers::physical_hands;
-use jc3vr_render::{
-    hooks::graphics_engine::shader::restore_original_shaders_on_eject, image_writer,
-};
-use jc3vr_tooling::{director, recorder, testing};
+use jc3vr_render::hooks::graphics_engine::shader::restore_original_shaders_on_eject;
+use jc3vr_tooling::{director, testing};
 use jc3vr_ui::ui;
 use jc3vr_view::{hooks::graphics_engine::capture, recorder::tracking, vr};
-use jc3vr_weapons::controllers::weapons;
 use windows::Win32::{
     Foundation::HMODULE,
     System::{LibraryLoader::DisableThreadLibraryCalls, SystemServices::DLL_PROCESS_ATTACH},
-    UI::Input::KeyboardAndMouse::{VK_F5, VK_F6},
 };
 
 mod allocator;
@@ -26,6 +21,7 @@ mod config;
 mod crash;
 mod eject_gpu;
 mod hooks;
+mod teardown;
 mod tuning;
 
 #[unsafe(no_mangle)]
@@ -71,7 +67,6 @@ pub extern "system" fn eject(_: *mut c_void) {
 fn start(source: tuning::Source) {
     lifecycle::set_build_stamp(BUILD_STAMP);
     if !initialize_startup(source) {
-        logging::uninstall();
         module::exit();
     }
 }
@@ -97,14 +92,10 @@ fn initialize_startup(source: tuning::Source) -> bool {
 
         let payload = info.payload();
 
-        #[allow(clippy::manual_map)]
-        let payload = if let Some(s) = payload.downcast_ref::<&str>() {
-            Some(*s)
-        } else if let Some(s) = payload.downcast_ref::<String>() {
-            Some(s.as_str())
-        } else {
-            None
-        };
+        let payload = payload
+            .downcast_ref::<&str>()
+            .copied()
+            .or_else(|| payload.downcast_ref::<String>().map(String::as_str));
 
         let backtrace = std::backtrace::Backtrace::capture();
 
@@ -119,6 +110,11 @@ fn initialize_startup(source: tuning::Source) -> bool {
     logging::install();
     tracing::info!(build = lifecycle::build_stamp(), "jc3vr startup");
     session::log_location();
+    // First, while nothing has started that the eject would have to stop.
+    if let Err(error) = teardown::register() {
+        tracing::error!("startup: {error}; the payload unloads itself");
+        return false;
+    }
     // Before anything that reads the tuning, and before anything that would need undoing: a
     // payload without its tuning stops here and unloads.
     if let Err(error) = tuning::init(source) {
@@ -136,77 +132,20 @@ fn initialize_startup(source: tuning::Source) -> bool {
     true
 }
 
-/// Called to undo `initialize_startup` and eject
+/// Called to undo `initialize_startup` and eject, on its own thread once the game thread has run
+/// the cleanups.
 fn shutdown_startup() {
-    // Stop the frame-tail worker before anything is torn down: a thread still alive at
-    // `module::exit` would be running in an unmapped image. Any in-flight tail finishes first
-    // (the VR teardown in `shutdown_from_game` already synchronized on the runtime lock).
-    //
-    // If it will not stop, pin the module so the image is never unmapped. A live thread in an
-    // unmapped image parks forever holding whatever it took, and the process wedges with nothing
-    // runnable and nothing logged -- strictly worse than leaking this DLL for the remaining lifetime
-    // of the game, which the player ends by quitting anyway.
-    if !vr::tail::shutdown() {
+    // Every worker thread must have exited before `module::exit` unmaps the image (see
+    // `lifecycle::stop_workers`). One that will not stop pins the module instead: leaking this DLL
+    // for the rest of the game's run is strictly better than a live thread in an unmapped image.
+    if !lifecycle::stop_workers().is_empty() {
         module::pin();
     }
 
-    // Likewise for a profiler capture's writer thread: see `profiler::capture::shutdown`'s doc
-    // comment for why an unjoined writer is the same class of hazard as the frame tail.
-    #[cfg(feature = "profiler")]
-    if !jc3vr_core::profiler::capture::shutdown() {
-        module::pin();
-    }
-
-    // And for the image writer that encodes the F12 screenshots and the render trace's frames. The
-    // PNG encode of a double-wide capture runs off-thread precisely because it is too slow to do
-    // inline, so the same unjoined-thread hazard applies -- and unlike the profiler's, this one is
-    // not behind a feature.
-    if !image_writer::shutdown() {
-        module::pin();
-    }
-
-    // And for the recorder's writer thread, which streams frames to the host and appends the pose
-    // sidecar: stop the recording and wait for the drain, on the same argument.
-    if !recorder::shutdown() {
-        module::pin();
-    }
-
-    // And for the tracking recorder's writer, and the test tools' threads.
-    if !tracking::shutdown() {
-        module::pin();
-    }
-    if !testing::shutdown() {
-        module::pin();
-    }
-
-    if !ui::layout::shutdown() {
-        module::pin();
-    }
-
-    // And for the tuning's file watcher.
-    if !tuning::shutdown() {
-        module::pin();
-    }
-
-    // And for the settings writers, after which a change still waiting to settle is written here.
-    if !config::shutdown() {
-        module::pin();
-    }
-    // Sidecar replacement and its status publication must finish before the DLL can unmap.
-    if !weapons::inventory::sidecar::shutdown() {
-        module::pin();
-    }
-    if !hud::game_icons::shutdown() {
-        module::pin();
-    }
-    if !estimator::shutdown() {
-        module::pin();
-    }
-
-    // The cleanups cleared render-thread-driven config flags (e.g. the HUD redirect). Give the still-
-    // live hooks a few frames to tick those changes through -- the per-frame restore runs on the
-    // render thread -- before uninstalling.
-    std::thread::sleep(std::time::Duration::from_millis(100));
+    // The cleanups requested work the still-installed hooks carry out on the engine's next frames:
+    // the native-resolution restore in the `Draw` prologue, and the per-frame restore of the flags
+    // they cleared (the HUD redirect among them).
+    lifecycle::settle_frames("the cleanups' requests");
 
     tracing::info!("Uninstalling hooks");
     if !jc3vr_core::hooks::uninstall() {
@@ -216,8 +155,9 @@ fn shutdown_startup() {
         return;
     }
 
-    // Wait to ensure we're clear of the blast radius of the hooks
-    std::thread::sleep(std::time::Duration::from_millis(100));
+    // A detour entered before the removal may still be running on a frame thread; the frames
+    // passing see it return.
+    lifecycle::settle_frames("the removed detours");
     eject_gpu::log_video_memory("hooks removed");
 
     // The VEH registration must not outlive the DLL: ntdll would keep calling into the unmapped
@@ -225,7 +165,6 @@ fn shutdown_startup() {
     crash::uninstall();
 
     tracing::info!("Ejecting");
-    logging::uninstall();
     module::exit();
 }
 
@@ -326,9 +265,6 @@ fn update() {
         #[cfg(feature = "profiler")]
         jc3vr_core::profiler::new_frame();
 
-        if util::is_pressed(VK_F5) {
-            lifecycle::request_shutdown();
-        }
         if lifecycle::advance_shutdown() {
             commit_shutdown();
             return;
@@ -367,9 +303,6 @@ fn update() {
                 // The debug UI runs holding the egui state lock, which the draw task also takes, so
                 // nothing in it may block on the VR runtime lock (see `jc3vr_core::thread_role`).
                 let _debug_ui_role = thread_role::enter(thread_role::ThreadRole::GameDebugUi);
-                if util::is_pressed(VK_F6) {
-                    egui_state.toggle_game_input_capture();
-                }
 
                 // Drive the egui UI as the VR floating panel when a session is running and the panel is
                 // enabled (issue #24): size the layout to the panel texture and re-source the pointer from

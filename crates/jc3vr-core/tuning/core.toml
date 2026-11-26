@@ -8,5 +8,6 @@ retry_first_ms = 2000
 retry_max_ms = 60000
 compare_interval_ms = 1000
 
-[hotkey]
-repeat_lockout_ms = 250
+[teardown]
+settle_frames = 3
+settle_budget_ms = 250

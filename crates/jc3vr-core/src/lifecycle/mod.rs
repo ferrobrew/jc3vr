@@ -3,6 +3,8 @@
 //! Preparation runs before the irreversible boundary on the game thread. A deferred attempt keeps
 //! ordinary cleanups, hooks, and subsystem owners live. Prepared participants hold their exclusion
 //! guards through final validation and commit; dropping an uncommitted guard aborts preparation.
+//! After commit, the cleanups run on the game thread and the worker teardown ([`stop_workers`]) on
+//! the shutdown thread.
 
 use std::{
     any::Any,
@@ -14,6 +16,10 @@ use std::{
 };
 
 use parking_lot::Mutex;
+
+pub use crate::lifecycle::teardown::{
+    StopWorker, WorkerRegistrationError, register_worker, settle_frames, stop_workers,
+};
 
 /// Whether irreversible shutdown has committed. A pending request leaves this false so gameplay,
 /// input, and the VR runtime continue while reversible participants defer preparation.
@@ -447,6 +453,7 @@ impl Drop for PreparedShutdown {
     }
 }
 
+mod teardown;
 #[cfg(any(test, feature = "test-support"))]
 pub mod test_support;
 #[cfg(test)]

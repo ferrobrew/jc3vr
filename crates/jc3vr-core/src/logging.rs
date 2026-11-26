@@ -79,8 +79,6 @@ pub fn install() {
         .ok();
 }
 
-pub fn uninstall() {}
-
 /// The filter in effect until [`set_filter`] replaces it: the launch environment's `RUST_LOG`
 /// directives over an INFO floor.
 fn initial_filter() -> EnvFilter {
