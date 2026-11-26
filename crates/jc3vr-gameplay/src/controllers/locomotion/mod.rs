@@ -24,6 +24,7 @@
 pub mod accel;
 pub mod acts;
 pub mod anchor;
+pub mod axis_output;
 pub mod config;
 pub mod speeds;
 pub mod strokes;

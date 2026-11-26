@@ -37,8 +37,8 @@ use crate::controllers::{
         BodyDimensions,
         rig::torso::{HIP_SPACING_FRACTION, TorsoEstimate},
     },
+    locomotion::axis_output::{read_move, write_move},
     telemetry::{RigRun, note_rig},
-    vehicles::axis_output::{read_move, write_move},
 };
 
 /// One frame's inputs.
