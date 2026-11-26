@@ -28,7 +28,7 @@ use crate::{
         post_draw,
     },
     screenshot::CaptureSource,
-    stereo::single_pass::{collapse_active, set_collapse_ui_eye},
+    stereo::{layout::collapse_active, single_pass::set_collapse_ui_eye},
     vr::{BlitSource, VR_CONFIG},
 };
 

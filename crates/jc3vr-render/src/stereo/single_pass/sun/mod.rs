@@ -45,20 +45,23 @@ use crate::{
         self,
         bound_buffer::{ShaderStage, read_bound_constant_buffer},
     },
-    stereo::single_pass::{
-        BOUND_VS_PATCHED, CB13, EngineContext, PATCHED_VS_NAMES,
-        cb13::{
-            STEREO_CB_TOTAL_ROWS, pin_rows_to_eye, pinned_eye_rows, preserve_reprojection_depth,
-            write_cb13_rows,
+    stereo::{
+        layout::collapse_active,
+        single_pass::{
+            BOUND_VS_PATCHED, CB13, EngineContext, PATCHED_VS_NAMES,
+            cb13::{
+                STEREO_CB_TOTAL_ROWS, pin_rows_to_eye, pinned_eye_rows,
+                preserve_reprojection_depth, write_cb13_rows,
+            },
+            current_pass_id, eye_split_state, in_gbuffer_range,
+            per_eye_reissue::PerEyeReissue,
+            per_eye_reissue_eye,
+            viewport::{
+                bind_both_viewport_slots, capture_viewport_slots, eye_half_viewport,
+                restore_viewport_slots,
+            },
+            viewport_record,
         },
-        collapse_active, current_pass_id, eye_split_state, in_gbuffer_range,
-        per_eye_reissue::PerEyeReissue,
-        per_eye_reissue_eye,
-        viewport::{
-            bind_both_viewport_slots, capture_viewport_slots, eye_half_viewport,
-            restore_viewport_slots,
-        },
-        viewport_record,
     },
 };
 

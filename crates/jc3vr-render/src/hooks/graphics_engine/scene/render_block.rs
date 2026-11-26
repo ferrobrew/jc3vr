@@ -559,7 +559,7 @@ struct SavedRenderContextMatrices {
 /// Replace `rc`'s view/projection matrices with this eye's per-eye patched values if they are
 /// available. Returns the original matrices so the caller can restore them.
 fn light_glow_patch_render_context(rc: &mut RenderContext) -> Option<SavedRenderContextMatrices> {
-    if !crate::stereo::active() || crate::stereo::single_pass::collapse_active() {
+    if !crate::stereo::active() || crate::stereo::layout::collapse_active() {
         return None;
     }
     let stereo = STEREO_STATE.lock();

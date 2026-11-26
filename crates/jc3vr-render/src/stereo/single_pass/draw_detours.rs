@@ -10,14 +10,17 @@ use windows::Win32::Graphics::Direct3D11::{ID3D11DomainShader, ID3D11GeometrySha
 
 use crate::{
     screenshot::harness::stages::velocity,
-    stereo::single_pass::{
-        eye_vertex_globals::EyeVertexGlobals,
-        pinned_eye::Cb13EyePin,
-        sun::{after_raw_draw, depth_clip_treatment, on_raw_draw, preserve_far_depth},
-        vegetation_once,
-        water_fragment_state::packed_water_context,
-        water_gpu_probe::{RawDrawKind, raw_entry, reflection_treatment},
-        *,
+    stereo::{
+        layout::collapse_active,
+        single_pass::{
+            eye_vertex_globals::EyeVertexGlobals,
+            pinned_eye::Cb13EyePin,
+            sun::{after_raw_draw, depth_clip_treatment, on_raw_draw, preserve_far_depth},
+            vegetation_once,
+            water_fragment_state::packed_water_context,
+            water_gpu_probe::{RawDrawKind, raw_entry, reflection_treatment},
+            *,
+        },
     },
 };
 

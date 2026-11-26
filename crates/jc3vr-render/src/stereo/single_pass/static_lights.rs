@@ -12,8 +12,9 @@
 
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use crate::stereo::single_pass::{
-    Flag, collapse_eye_width, config_flags, double_wide_active, in_gbuffer_range,
+use crate::stereo::{
+    layout::double_wide_active,
+    single_pass::{Flag, collapse_eye_width, config_flags, in_gbuffer_range},
 };
 
 /// The constant buffer the light type stages its sprite constants into.

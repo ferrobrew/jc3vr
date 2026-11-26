@@ -129,7 +129,7 @@ impl Drop for SnapshotGuard {
 pub(crate) unsafe fn eye_width_snapshot(pass: *mut RenderPass) -> Option<SnapshotGuard> {
     if !screenshot_wants_eyes()
         || draw_index() != 0
-        || !crate::stereo::single_pass::double_wide_active()
+        || !crate::stereo::layout::double_wide_active()
         // The production switch already sizes the reflection camera to one eye.
         || STEREO_CONFIG.query(|c| c.single_pass.water_reflection_eye_size)
         || !water_surface_inputs_requested()

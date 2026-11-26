@@ -307,7 +307,7 @@ pub(super) fn split_fullscreen_pass_policy(
     ctx: Option<*mut HContext_t>,
     mut draw: impl FnMut(usize),
 ) -> SplitOutcome {
-    if !enabled || !crate::stereo::single_pass::collapse_active() {
+    if !enabled || !crate::stereo::layout::collapse_active() {
         return SplitOutcome::NotTaken;
     }
     let Some(ctx) = ctx else {

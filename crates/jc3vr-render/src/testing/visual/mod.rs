@@ -51,7 +51,7 @@ use crate::{
     hooks::graphics_engine::{shader, tone_mapping},
     stereo::{
         config::{SinglePassConfig, set_single_pass_feature},
-        dispatch, single_pass, sun_shadows,
+        dispatch, layout, single_pass, sun_shadows,
         switches::ShaderBuild,
     },
     vr::{FreezeMode, ResolutionProgress, pose_control, pose_control::PoseValues},
@@ -383,7 +383,7 @@ pub fn process_pending() {
             state.warmup_frames = warmup_frames;
             single_pass::refresh_config_flags();
             if mode == Mode::SinglePass
-                && single_pass::probe_if_needed() != single_pass::Capability::Supported
+                && layout::probe_if_needed() != layout::Capability::Supported
             {
                 state.fail(
                     "visual control: the device does not support single-pass viewport routing"
@@ -480,7 +480,7 @@ pub fn frame_complete() {
             mode: dispatch::mode(),
             engine_dimensions: resolution.engine.unwrap_or_default(),
             target_dimensions: resolution.target.unwrap_or_default(),
-            single_pass: single_pass::active() && single_pass::double_wide_active(),
+            single_pass: single_pass::active() && layout::double_wide_active(),
             camera_frozen: live.is_some()
                 && VR_CONFIG.query(|config| config.freeze_mode == FreezeMode::FullCamera),
             horizon_map_ready: horizon_map_ready(),
@@ -511,7 +511,7 @@ pub fn frame_complete() {
             mode: dispatch::mode(),
             engine_dimensions: resolution.engine.unwrap_or_default(),
             target_dimensions: resolution.target.unwrap_or_default(),
-            single_pass: single_pass::active() && single_pass::double_wide_active(),
+            single_pass: single_pass::active() && layout::double_wide_active(),
             camera_frozen: live.is_some()
                 && VR_CONFIG.query(|config| config.freeze_mode == FreezeMode::FullCamera),
             horizon_map_ready: horizon_map_ready(),

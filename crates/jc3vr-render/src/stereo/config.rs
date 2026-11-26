@@ -54,7 +54,7 @@ pub struct SinglePassConfig {
     /// with the rest of the group [`set_single_pass_feature`] switches; the double-draw is what
     /// turning the group off leaves. Live only while a VR session runs (see
     /// [`crate::stereo::single_pass::active`]), and requires the DXVK viewport-routing capability
-    /// (see [`crate::stereo::single_pass::capability`]); forced off if absent.
+    /// (see [`crate::stereo::layout::capability`]); forced off if absent.
     pub enabled: bool,
     /// Requires [`single_pass`](Self::enabled): make the two eyes actually diverge. Fills `cb13` with **distinct** per-eye view-projections (slot 0 = eye 0, slot 1 =
     /// eye 1) instead of both = the current view, splits the bound viewport into left/right **halves**

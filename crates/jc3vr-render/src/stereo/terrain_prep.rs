@@ -35,7 +35,7 @@ pub(crate) fn stage_centre_camera(
 ) -> Option<Vector4> {
     if !PREP_PASSES.contains(&rc.m_ActiveRenderPass)
         || !stereo::active()
-        || stereo::single_pass::collapse_active()
+        || stereo::layout::collapse_active()
         || !STEREO_CONFIG.query(|c| c.terrain_prep_from_centre)
     {
         return None;

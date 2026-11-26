@@ -458,7 +458,7 @@ fn draw_render_pass_range(
     // interleaved fullscreen lighting/post passes keep the full width. A no-op unless dual-eye is on.
     let scene_geometry = crate::stereo::single_pass::dual_eye_active()
         && first >= RP_Z_OCCLUDERS
-        && (crate::stereo::single_pass::collapse_active() || last <= RP_FIRST_SCENE);
+        && (crate::stereo::layout::collapse_active() || last <= RP_FIRST_SCENE);
     let range = scene_geometry.then(|| {
         let range = crate::stereo::single_pass::enter_gbuffer_range();
         // The main G-buffer viewport was bound before this range flag went up, so re-split it now.
@@ -586,7 +586,7 @@ fn foveation_plan(first: i32, last: i32) -> Option<FoveationPlan> {
 /// eyes side by side; otherwise it holds the dispatch's eye (eye 0's under the collapse, whose one
 /// fovea then lands on the seam). `None` when no VR frame is in flight.
 fn foveation_layout() -> Option<EyeLayout> {
-    if crate::stereo::single_pass::double_wide_active()
+    if crate::stereo::layout::double_wide_active()
         && STEREO_CONFIG.query(|c| c.single_pass.foveation_per_eye)
     {
         return Some(EyeLayout::SideBySide {

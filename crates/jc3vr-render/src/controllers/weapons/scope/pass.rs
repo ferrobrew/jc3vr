@@ -16,7 +16,7 @@ use crate::{
         overlay::view::{self, EyeView},
         weapons::scope::renderer::{EyeRegion, Renderer},
     },
-    stereo::{STEREO_STATE, single_pass::collapse_active},
+    stereo::{STEREO_STATE, layout::collapse_active},
 };
 
 /// The lens of the frame, as its draw needs it.

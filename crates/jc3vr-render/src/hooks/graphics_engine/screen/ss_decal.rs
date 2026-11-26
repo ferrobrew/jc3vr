@@ -94,7 +94,7 @@ pub(super) fn hook_library() -> HookLibrary {
 /// reload; the debug UI requests one when the flag changes, and [`ss_decal_draw`] keeps the interval
 /// in between bounded.
 pub(crate) fn shader_rewrite_enabled() -> bool {
-    let enabled = crate::stereo::single_pass::collapse_active()
+    let enabled = crate::stereo::layout::collapse_active()
         && STEREO_CONFIG.query(|c| c.single_pass.ssdecal_per_eye);
     if enabled {
         // Sticky, never cleared: this is the same gate `create_fragment_program` reads to decide

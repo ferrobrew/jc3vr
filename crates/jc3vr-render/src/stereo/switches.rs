@@ -150,7 +150,7 @@ impl ShaderBuild {
     pub(crate) fn current() -> Self {
         Self::from_config(
             crate::stereo::single_pass::active(),
-            crate::stereo::single_pass::collapse_active(),
+            crate::stereo::layout::collapse_active(),
             &STEREO_CONFIG.query(|config| config.single_pass),
         )
     }

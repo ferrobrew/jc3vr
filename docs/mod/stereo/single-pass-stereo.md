@@ -24,7 +24,7 @@ per eye under a scissor mask instead (see "Four ways content goes wrong under th
 - **Routing.** A vertex shader writes `SV_ViewportArrayIndex` directly — the D3D11.3
   `VPAndRTArrayIndexFromAnyShaderFeedingRasterizer` capability, which DXVK reports and compiles (gated
   on the Vulkan `shaderOutputViewportIndex` feature). No geometry shader involved.
-  `stereo::single_pass::probe` checks it at runtime and the whole feature stays inert if it is absent.
+  `stereo::layout::probe` checks it at runtime and the whole feature stays inert if it is absent.
 - **Target topology: double-wide, not a texture array.** A two-slice array would force the ~300 pixel
   shaders that sample the scene targets as `Texture2D` to be retyped to `Texture2DArray`. A
   double-wide render target needs none of that — the engine's own `CreateRenderSetups` re-runs with a
@@ -290,7 +290,7 @@ is split by concern:
 | `eye_camera` | the pixel shaders' per-eye camera buffer, kept in step with the engine's fragment constants and the bound target |
 | `impostor_pixel_size` | the tree impostors' pixel size at one eye's width |
 | `static_lights` | the static light sprites' inverse screen width at one eye's width |
-| `config_snapshot` | the per-frame and per-dispatch flag snapshots |
+| `config_snapshot` | the per-frame and per-dispatch flag snapshots, and the collapse and double-wide bits they publish to `stereo::layout` for the code outside single-pass |
 | `instanced_exposure`, `frame_diagnostics` | measurement only; nothing here changes a draw |
 
 ### Hook points

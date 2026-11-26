@@ -85,7 +85,7 @@ pub(super) fn hook_library() -> HookLibrary {
 #[detour(address = jc3gi::graphics_engine::render_block::RenderBlockSSAO::Draw_ADDRESS)]
 fn ssao_block_draw(this: *mut RenderBlockSSAO, rc: *mut RenderContext, info: *const RBIInfo) {
     let enabled = STEREO_CONFIG.query(|c| c.single_pass.ssao_per_eye)
-        && crate::stereo::single_pass::collapse_active();
+        && crate::stereo::layout::collapse_active();
     let _rows = enabled.then(ambient_occlusion::bind_eye_rows).flatten();
     snapshot::ambient_occlusion_block(true);
     SSAO_BLOCK_DRAW.get().unwrap().call(this, rc, info);
@@ -110,7 +110,7 @@ fn ssr_draw(
     info: *const RBIInfo,
 ) {
     let enabled = STEREO_CONFIG.query(|c| c.single_pass.ssr_per_eye)
-        && crate::stereo::single_pass::collapse_active();
+        && crate::stereo::layout::collapse_active();
     // SAFETY: the engine hands the block its live render context for the length of the call.
     let context = unsafe { rc.as_ref() };
     let _rows = context

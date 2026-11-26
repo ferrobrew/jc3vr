@@ -13,7 +13,10 @@
 
 use crate::{
     hooks::graphics_engine::clustered_lighting,
-    stereo::single_pass::{static_lights, *},
+    stereo::{
+        layout::collapse_active,
+        single_pass::{static_lights, *},
+    },
 };
 
 /// One eye's re-issue of a terrain-detail draw: the reprojected `cb1` (four float4 rows) to stage on

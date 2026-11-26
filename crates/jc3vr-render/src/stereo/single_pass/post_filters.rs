@@ -68,7 +68,7 @@ pub(crate) struct Scope {
 
 impl Scope {
     pub(crate) fn enter() -> Scope {
-        let entered = crate::stereo::single_pass::collapse_active()
+        let entered = crate::stereo::layout::collapse_active()
             && STEREO_CONFIG.query(|c| c.single_pass.glare_per_eye);
         if entered {
             IN_GLARE.store(true, Ordering::Relaxed);

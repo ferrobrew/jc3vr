@@ -28,7 +28,7 @@ pub fn native_eye_resolution() -> Option<(u32, u32)> {
 /// per frame.
 pub fn engine_render_resolution() -> Option<(u32, u32)> {
     let (width, height) = native_eye_resolution()?;
-    if crate::stereo::single_pass::double_wide_active() {
+    if crate::stereo::layout::double_wide_active() {
         Some((width.saturating_mul(2), height))
     } else {
         Some((width, height))

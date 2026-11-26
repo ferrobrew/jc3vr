@@ -42,7 +42,7 @@ use windows::Win32::Graphics::Direct3D11::{
     D3D11_MAPPED_SUBRESOURCE, D3D11_USAGE_DYNAMIC, ID3D11Buffer, ID3D11DeviceContext,
 };
 
-use crate::stereo::single_pass::*;
+use crate::stereo::{layout::collapse_active, single_pass::*};
 
 /// An ambient-occlusion volume pixel shader rewritten for the collapse, or `None` for any other
 /// shader or when `enabled` is off.

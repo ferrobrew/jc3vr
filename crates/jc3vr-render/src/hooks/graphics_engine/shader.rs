@@ -250,16 +250,16 @@ fn create_fragment_program(
     // The final composite's vignette and lens dirt, mapped over one eye instead of the whole
     // double-wide target. Baked into the bytecode, so it is only right while the collapse is live;
     // the debug UI requests a reload when the switch changes.
-    let localize_overlays = crate::stereo::single_pass::collapse_active()
+    let localize_overlays = crate::stereo::layout::collapse_active()
         && STEREO_CONFIG.query(|c| c.single_pass.composite_overlays_per_eye);
     // The ambient-occlusion generation pass computed for each eye's half. Baked into the bytecode
     // like the overlays, and decided for every fragment program so the SSAO block knows whether the
     // generation shader it will run carries it.
     // The composite's bloom lookups, kept to each eye's half. Baked into the bytecode like the
     // overlays.
-    let localize_bloom = crate::stereo::single_pass::collapse_active()
+    let localize_bloom = crate::stereo::layout::collapse_active()
         && STEREO_CONFIG.query(|c| c.single_pass.glare_per_eye);
-    let localize_ambient_occlusion = crate::stereo::single_pass::collapse_active()
+    let localize_ambient_occlusion = crate::stereo::layout::collapse_active()
         && STEREO_CONFIG.query(|c| c.single_pass.ssao_per_eye);
     // The SSAO passes' sampling computed in the shader, in every mode: under the collapse as part of
     // the rewrite above, elsewhere as a rewrite of its own.
@@ -271,16 +271,16 @@ fn create_fragment_program(
     };
     // The ambient-occlusion volumes mapped through each eye's camera. Baked into the bytecode like
     // the ambient occlusion; its vertex shader's reprojection is decided by name with the same switch.
-    let localize_ao_volumes = crate::stereo::single_pass::collapse_active()
+    let localize_ao_volumes = crate::stereo::layout::collapse_active()
         && STEREO_CONFIG.query(|c| c.single_pass.ao_volumes_per_eye);
     // The screen-space reflection ray march traced for each eye's half, and its blur kept to it.
     // Baked into the bytecode like the ambient occlusion, and decided for every fragment program so
     // the reflection block knows whether the ray march it will run carries it.
-    let localize_reflections = crate::stereo::single_pass::collapse_active()
+    let localize_reflections = crate::stereo::layout::collapse_active()
         && STEREO_CONFIG.query(|c| c.single_pass.ssr_per_eye);
     // Every pixel shader that reads the camera position picks its eye's copy per pixel. Applied last,
     // over whatever the other rewrites produced, since it composes with all of them.
-    let localize_camera = crate::stereo::single_pass::collapse_active()
+    let localize_camera = crate::stereo::layout::collapse_active()
         && STEREO_CONFIG.query(|c| c.single_pass.pixel_camera_per_eye);
     let local_lights = if STEREO_CONFIG.query(|c| c.single_pass.local_lights_per_eye) {
         LocalLights::PerEye
@@ -289,15 +289,15 @@ fn create_fragment_program(
     };
     // Every screen-door pattern hashed from the pixel position is laid out from its eye's origin.
     // Applied after the camera rewrite, whose buffer carries the eye boundary it reads.
-    let localize_screen_door = crate::stereo::single_pass::collapse_active()
+    let localize_screen_door = crate::stereo::layout::collapse_active()
         && STEREO_CONFIG.query(|c| c.single_pass.screen_door_per_eye);
     // The tree impostors hash theirs from their own projected position; the same buffer's boundary
     // lays it out per eye.
-    let localize_projected_screen_door = crate::stereo::single_pass::collapse_active()
+    let localize_projected_screen_door = crate::stereo::layout::collapse_active()
         && STEREO_CONFIG.query(|c| c.single_pass.tree_impostor_screen_door_per_eye);
     // The velocity pass's motion vectors are written in each eye's screen space, from rows of the
     // same buffer. Applied after the screen-door rewrites, whose buffer declaration it reads.
-    let localize_velocity = crate::stereo::single_pass::collapse_active()
+    let localize_velocity = crate::stereo::layout::collapse_active()
         && STEREO_CONFIG.query(|c| c.single_pass.velocity_per_eye);
     let ssao_far_early_out = STEREO_CONFIG.lock().single_pass.ssao_far_early_out;
     let mut rewritten_screen_pass = None;

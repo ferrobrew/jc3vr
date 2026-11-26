@@ -11,6 +11,7 @@ use parking_lot::Mutex;
 pub mod config;
 pub mod dispatch;
 pub(crate) mod engine_context;
+pub mod layout;
 pub mod register_unpatch;
 pub mod single_pass;
 pub mod sun_shadows;
@@ -229,7 +230,7 @@ pub fn render_size() -> Option<(u32, u32)> {
 /// eyes side by side, so the per-eye width is half of it.
 pub fn per_eye_render_size() -> Option<(u32, u32)> {
     let (width, height) = render_size()?;
-    let width = if single_pass::double_wide_active() {
+    let width = if layout::double_wide_active() {
         (width / 2).max(1)
     } else {
         width

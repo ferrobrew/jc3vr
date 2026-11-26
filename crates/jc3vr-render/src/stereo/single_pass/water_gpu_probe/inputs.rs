@@ -198,7 +198,7 @@ pub(crate) unsafe fn reflection_treatment(context: *mut c_void) -> Option<Reflec
             | WaterReflection::CenterPlanar
             | WaterReflection::PackedRefraction
     ) {
-        let packed = crate::stereo::single_pass::collapse_active();
+        let packed = crate::stereo::layout::collapse_active();
         if (!packed
             && !matches!(
                 treatment,
@@ -405,7 +405,7 @@ impl LakeShaderGuard {
             | WaterReflection::LakeSky
             | WaterReflection::LakeSkyBuffer
             | WaterReflection::LakeResponse => {
-                let source = if crate::stereo::single_pass::collapse_active() {
+                let source = if crate::stereo::layout::collapse_active() {
                     dxbc_stereo::isolate_lake_reflection(
                         &dxbc_stereo::scale_lake_refraction(&blob)?,
                         eye == 1,
@@ -435,7 +435,7 @@ impl LakeShaderGuard {
                 }
             }
             WaterReflection::PlanarUv => {
-                let source = if crate::stereo::single_pass::collapse_active() {
+                let source = if crate::stereo::layout::collapse_active() {
                     dxbc_stereo::reproject_lake_reflection(
                         &dxbc_stereo::scale_lake_refraction(&blob)?,
                         eye == 1,
@@ -536,7 +536,7 @@ impl LakeShaderGuard {
                     displacement
                         && eye < 2
                         && water_tess_draw() == Some(7)
-                        && crate::stereo::single_pass::collapse_active()
+                        && crate::stereo::layout::collapse_active()
                         && crate::stereo::single_pass::per_eye_reissue_eye() == Some(eye)
                         && crate::stereo::single_pass::current_pass_id()
                             == jc3gi::graphics_engine::render_engine::RenderPassId::RP_WATER as u8,
@@ -553,7 +553,7 @@ impl LakeShaderGuard {
                 | WaterReflection::LakeSkyBuffer
                 | WaterReflection::LakeResponse
         ) && (treatment != WaterReflection::LakeResponse
-            || crate::stereo::single_pass::collapse_active())
+            || crate::stereo::layout::collapse_active())
         {
             sky = SkyViews::prepare(ctx, eye, id, treatment)?;
         }

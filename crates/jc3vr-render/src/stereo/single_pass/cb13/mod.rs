@@ -6,7 +6,13 @@
 //! camera constants, how they are uploaded and bound, and how they are pinned to one eye for a
 //! re-issue that has to submit each eye separately.
 
-use crate::{stereo::single_pass::*, vr::render_params};
+use crate::{
+    stereo::{
+        layout::{Capability, capability},
+        single_pass::*,
+    },
+    vr::render_params,
+};
 
 #[cfg(test)]
 mod tests;

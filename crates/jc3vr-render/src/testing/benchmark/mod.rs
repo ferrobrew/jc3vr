@@ -51,7 +51,7 @@ use crate::{
     screenshot::harness::draw_census,
     stereo::{
         config::{STEREO_CONFIG, set_single_pass_feature},
-        single_pass,
+        layout, single_pass,
         switches::ShaderBuild,
     },
     testing::{
@@ -271,7 +271,7 @@ fn start(state: &mut State, request: BenchmarkRequest, now: Instant) -> Result<R
         return Err("benchmark: the game is not in gameplay with a VR session running".to_owned());
     }
     let single_pass_on = request.mode == BenchmarkMode::SinglePass;
-    if single_pass_on && single_pass::probe_if_needed() != single_pass::Capability::Supported {
+    if single_pass_on && layout::probe_if_needed() != layout::Capability::Supported {
         return Err(
             "benchmark: the device does not support single-pass viewport routing".to_owned(),
         );
@@ -451,7 +451,7 @@ impl Run {
         let single_pass_on = self.request.mode == BenchmarkMode::SinglePass;
         let shaders = !self.reloaded || shader::built_with() == Some(ShaderBuild::current());
         let sps = single_pass::active() == single_pass_on
-            && single_pass::double_wide_active() == single_pass_on;
+            && layout::double_wide_active() == single_pass_on;
         let resolution = crate::vr::resolution_status();
         let sized = resolution.target.is_none() || resolution.engine == resolution.target;
         let held = pose_control::current_full_camera().is_some();
@@ -465,7 +465,7 @@ impl Run {
              size {:?}, camera held {}",
             shader::built_with() == Some(ShaderBuild::current()),
             single_pass::active(),
-            single_pass::double_wide_active(),
+            layout::double_wide_active(),
             resolution.engine,
             resolution.target,
             pose_control::current_full_camera().is_some(),
@@ -610,7 +610,7 @@ impl Environment {
             },
             profiler_feature: cfg!(feature = "profiler"),
             single_pass_active: single_pass::active(),
-            double_wide_active: single_pass::double_wide_active(),
+            double_wide_active: layout::double_wide_active(),
             com_detours_installed: single_pass::com_detours_installed(),
             blurs_forced_off: vr_forces_blurs_off(),
             engine_size: resolution.engine,

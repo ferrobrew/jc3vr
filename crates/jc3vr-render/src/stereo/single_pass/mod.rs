@@ -41,7 +41,6 @@ use windows::{
     Win32::{
         Graphics::Direct3D11::{
             D3D11_BIND_CONSTANT_BUFFER, D3D11_BUFFER_DESC, D3D11_CPU_ACCESS_WRITE,
-            D3D11_FEATURE_D3D11_OPTIONS3, D3D11_FEATURE_DATA_D3D11_OPTIONS3,
             D3D11_MAP_WRITE_DISCARD, D3D11_MAPPED_SUBRESOURCE, D3D11_SUBRESOURCE_DATA,
             D3D11_USAGE_DYNAMIC, D3D11_VIEWPORT, ID3D11Buffer, ID3D11Device, ID3D11DeviceContext,
         },
@@ -50,26 +49,10 @@ use windows::{
     core::{IUnknown, Interface},
 };
 
-/// The result of the DXVK viewport-routing capability probe.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Capability {
-    /// Not yet probed (no device seen, or the probe has not run this session).
-    Unprobed,
-    /// `VPAndRTArrayIndexFromAnyShaderFeedingRasterizer` is supported: a vertex shader may write
-    /// `SV_ViewportArrayIndex` directly, so single-pass routing is possible.
-    Supported,
-    /// The capability is absent; single-pass must fall back to double-draw.
-    Unsupported,
-}
-
 // The ambient-occlusion generation pass's rewrite and its per-eye rows; reached by the shader
 // creation detour and the SSAO block.
 pub(crate) mod ambient_occlusion;
 
-/// Probe the D3D11 device for `VPAndRTArrayIndexFromAnyShaderFeedingRasterizer` (the D3D11.3 feature
-/// that lets a vertex shader write `SV_ViewportArrayIndex`), caching the result. Idempotent and
-/// cheap; safe to call every frame. `CheckFeatureSupport` on the device is free-threaded, so no
-/// context lock is needed.
 mod cb13;
 mod config_snapshot;
 mod detour_lifecycle;
@@ -126,62 +109,15 @@ pub(crate) use water_gpu_probe::{
 };
 
 pub(crate) use crate::stereo::engine_context::EngineContext;
+use crate::stereo::layout::capability;
+// The crates above reach the stereo layout at this path until the view crate is cut.
+pub use crate::stereo::layout::{Capability, collapse_active, double_wide_active, probe_if_needed};
 
 /// The live `cb13` rows the remap and reprojection blocks occupy (the clip-origin rows after them
 /// are left out).
 pub(crate) fn live_cb13_rows() -> Option<[Vector4; dxbc_stereo::STEREO_REPROJ_CB_ROWS as usize]> {
     let rows = CB13.lock().live_rows()?;
     Some(std::array::from_fn(|row| rows[row]))
-}
-
-pub fn probe(device: &ID3D11Device) -> Capability {
-    let mut options = D3D11_FEATURE_DATA_D3D11_OPTIONS3::default();
-    let ok = unsafe {
-        device.CheckFeatureSupport(
-            D3D11_FEATURE_D3D11_OPTIONS3,
-            std::ptr::from_mut(&mut options).cast(),
-            std::mem::size_of::<D3D11_FEATURE_DATA_D3D11_OPTIONS3>() as u32,
-        )
-    };
-    let capability = if ok.is_ok()
-        && options
-            .VPAndRTArrayIndexFromAnyShaderFeedingRasterizer
-            .as_bool()
-    {
-        Capability::Supported
-    } else {
-        Capability::Unsupported
-    };
-    CAPABILITY.store(capability as u8, Ordering::Relaxed);
-    capability
-}
-
-/// Probe the capability using the live engine device, if one is available and the probe has not run
-/// yet. Returns the (now cached) result. Called from the debug UI and the frame driver so the probe
-/// happens as soon as a device exists.
-pub fn probe_if_needed() -> Capability {
-    let cached = capability();
-    if cached != Capability::Unprobed {
-        return cached;
-    }
-    // SAFETY: `GraphicsEngine::get` returns the live singleton or `None`; the device pointer is stable
-    // once the engine has initialised.
-    let Some(device) = (unsafe { GraphicsEngine::get() }) else {
-        return Capability::Unprobed;
-    };
-    let Some(device) = (unsafe { device.m_Device.as_ref() }) else {
-        return Capability::Unprobed;
-    };
-    probe(&device.m_Device)
-}
-
-/// The cached capability-probe result.
-pub fn capability() -> Capability {
-    match CAPABILITY.load(Ordering::Relaxed) {
-        x if x == Capability::Supported as u8 => Capability::Supported,
-        x if x == Capability::Unsupported as u8 => Capability::Unsupported,
-        _ => Capability::Unprobed,
-    }
 }
 
 /// Whether single-pass rendering should actually run this frame: the master switch is on, a VR
@@ -207,15 +143,6 @@ pub fn active() -> bool {
 /// [`compute_dual_eye_rows`] cannot produce per-eye data.
 pub fn dual_eye_active() -> bool {
     active() && config_flags().has(Flag::DualEye)
-}
-
-/// Whether the per-eye double-draw has been collapsed to a single G-buffer walk: one `game.Draw`
-/// produces both eyes (via [`dual_eye_active`]'s `cb13` + viewport routing + instance doubling), the
-/// render camera stays centered (no per-eye offset -- both eyes come from `cb13`), and the capture
-/// splits the one back buffer into the two eye textures. Requires [`dual_eye_active`]; independent of
-/// `single_pass_double_wide`, which only upgrades each eye-half from squished to full resolution.
-pub fn collapse_active() -> bool {
-    dual_eye_active() && config_flags().has(Flag::Collapse)
 }
 
 /// Whether the engine's copy into the effect depth-history slots is skipped: single-pass is
@@ -251,15 +178,6 @@ pub(crate) fn terrain_cull_both_eyes(block: TerrainCullBlock) -> bool {
         && in_gbuffer_range()
         && flags.has(Flag::TerrainCullBothEyes)
         && domain_reads_eye_rows
-}
-
-/// Whether the scene render targets are re-created at 2x per-eye width so each eye-half is full
-/// resolution (instead of a squished half of a per-eye-sized target). Requires [`collapse_active`] --
-/// it only makes sense for the single walk whose capture split reads one full-width half per eye.
-/// Drives the engine render resolution ([`crate::vr::engine_render_resolution`]) and the per-eye
-/// capture-texture width (`ui::render`); the XR swapchain stays per-eye width.
-pub fn double_wide_active() -> bool {
-    collapse_active() && config_flags().has(Flag::DoubleWide)
 }
 
 /// Whether the per-eye re-issue intercept for one of the intercepted render blocks is enabled. Read
@@ -961,7 +879,6 @@ pub(crate) fn patch_camera_sources(eye: usize) -> Option<(D3D11_VIEWPORT, usize)
 /// per-eye `cb1` on the CPU (the detail draw is GPU-indirect, so it cannot be instance-doubled).
 static CURRENT_M_EYE: Mutex<Option<[glam::Mat4; 2]>> = Mutex::new(None);
 
-static CAPABILITY: AtomicU8 = AtomicU8::new(Capability::Unprobed as u8);
 static PATCHED: AtomicUsize = AtomicUsize::new(0);
 static NO_REFS: AtomicUsize = AtomicUsize::new(0);
 static DEFERRED: AtomicUsize = AtomicUsize::new(0);

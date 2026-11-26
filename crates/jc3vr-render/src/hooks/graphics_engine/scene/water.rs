@@ -62,10 +62,11 @@ use crate::{
     stereo::{
         config::STEREO_CONFIG,
         draw_index,
+        layout::double_wide_active,
         single_pass::{
             BlockIntercept, WaterGpuProbe, begin_water_input_capture, begin_water_surface,
-            block_intercept_enabled, double_wide_active, draw_per_eye_half_ignoring_bound_vs,
-            eye_globals, screen_uv_cb_per_eye, with_wave_simulation_viewports,
+            block_intercept_enabled, draw_per_eye_half_ignoring_bound_vs, eye_globals,
+            screen_uv_cb_per_eye, with_wave_simulation_viewports,
         },
     },
 };

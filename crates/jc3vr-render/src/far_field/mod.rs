@@ -351,7 +351,7 @@ unsafe extern "system" fn far_gated_type_is_enabled(_this: *mut ::core::ffi::c_v
 /// G-buffer marking entirely -- leaving `cb13` mirrored and the viewport unsplit, so both eyes get
 /// the same mono image cropped in half.
 pub fn share_configured() -> bool {
-    !crate::stereo::single_pass::collapse_active()
+    !crate::stereo::layout::collapse_active()
         && FAR_FIELD_CONFIG.query(|c| c.enabled && c.mode == FarFieldMode::Share)
 }
 

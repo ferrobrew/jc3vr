@@ -14,7 +14,7 @@ use std::cell::Cell;
 
 use windows::Win32::Foundation::RECT;
 
-use crate::stereo::single_pass::*;
+use crate::stereo::{layout::collapse_active, single_pass::*};
 
 thread_local! {
     static WAVE_SIMULATION: Cell<bool> = const { Cell::new(false) };

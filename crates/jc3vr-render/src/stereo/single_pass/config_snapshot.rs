@@ -11,13 +11,20 @@
 //! The master switch is taken together with whether a VR session is running, latched at the same
 //! frame refresh: single-pass renders both eyes into the halves of a double-wide target sized from
 //! the headset's views, so without a session it stays inert and the game renders as it ships.
+//!
+//! Each sample also publishes the stereo layout its flags settle ([`crate::stereo::layout`]), to the
+//! frame snapshot and the dispatch pin alike, for the code that sizes and poses by the layout
+//! without reading the single-pass flags.
 
 use std::{
     cell::Cell,
     sync::atomic::{AtomicBool, AtomicU64, Ordering},
 };
 
-use crate::stereo::config::STEREO_CONFIG;
+use crate::stereo::{
+    config::STEREO_CONFIG,
+    layout::{self, LayoutFlags},
+};
 
 /// One flag in the per-frame single-pass config snapshot.
 #[derive(Clone, Copy)]
@@ -68,6 +75,17 @@ pub(super) struct ConfigFlags(u64);
 impl ConfigFlags {
     pub(super) fn has(self, flag: Flag) -> bool {
         self.0 & (1 << flag as u64) != 0
+    }
+
+    /// The stereo layout these flags ask for, as [`layout`] publishes it.
+    fn layout(self) -> LayoutFlags {
+        LayoutFlags::new(
+            self.has(Flag::SinglePass)
+                && !self.has(Flag::DryRun)
+                && self.has(Flag::DualEye)
+                && self.has(Flag::Collapse),
+            self.has(Flag::DoubleWide),
+        )
     }
 }
 
@@ -124,7 +142,9 @@ pub fn refresh_config_flags() {
 /// Pin the config flags for the dispatch this thread is opening, so every gate it consults answers
 /// the same for the whole of it. Called from [`begin_dispatch`].
 pub(super) fn pin_dispatch_config_flags() {
-    DISPATCH_FLAGS.set(Some(ConfigFlags(store_config_flags())));
+    let flags = ConfigFlags(store_config_flags());
+    DISPATCH_FLAGS.set(Some(flags));
+    layout::pin_dispatch_layout(flags.layout());
 }
 
 /// The end of the dispatch this thread opened: drops the pinned flags when it goes out of scope, so
@@ -146,6 +166,7 @@ pub fn end_dispatch() -> DispatchEnd {
 impl Drop for DispatchEnd {
     fn drop(&mut self) {
         DISPATCH_FLAGS.set(None);
+        layout::unpin_dispatch_layout();
     }
 }
 
@@ -206,6 +227,7 @@ fn store_config_flags() -> u64 {
             )
     }) | CONFIG_FLAGS_VALID;
     CONFIG_FLAGS.store(snapshot, Ordering::Relaxed);
+    layout::publish_frame_layout(ConfigFlags(snapshot).layout());
     snapshot
 }
 

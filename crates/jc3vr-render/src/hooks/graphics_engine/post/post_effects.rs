@@ -95,7 +95,7 @@ fn temporal_dispatch(mgr: *mut c_void, slot: u32, resolve: TemporalResolve) -> b
         ) else {
             return false;
         };
-        let layout = if crate::stereo::single_pass::double_wide_active()
+        let layout = if crate::stereo::layout::double_wide_active()
             && STEREO_CONFIG.query(|c| c.single_pass.fsr_per_eye)
         {
             crate::fsr::EyeLayout::SideBySide

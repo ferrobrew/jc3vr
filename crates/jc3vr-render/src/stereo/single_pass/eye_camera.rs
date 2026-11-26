@@ -69,8 +69,9 @@ use crate::{
     stereo::{
         config::STEREO_CONFIG,
         engine_context::EngineContext,
+        layout::collapse_active,
         single_pass::{
-            CURRENT_M_EYE, collapse_active, collapse_full_viewport, eye_globals, in_gbuffer_range,
+            CURRENT_M_EYE, collapse_full_viewport, eye_globals, in_gbuffer_range,
             viewport::eye_half_viewport,
         },
     },

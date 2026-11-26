@@ -218,7 +218,7 @@ fn setup_render_camera(camera: *mut Camera, jitter: bool) -> *mut c_void {
     // m_TransformF and rebuild the view-projections, so the offset reaches the full-m_ViewProjection
     // shaders (transparents/sky/water), not just the camera-relative opaque path.
     if is_render_camera && stereo_active {
-        if crate::stereo::single_pass::collapse_active() {
+        if crate::stereo::layout::collapse_active() {
             // Collapsed single-pass keeps the render camera centered: both eyes are produced from the
             // per-eye `cb13` in the patched vertex shaders, so applying a per-eye world offset here
             // would double the parallax. Zero the shadow-anchor delta to match the centered camera
@@ -288,8 +288,8 @@ fn setup_render_camera(camera: *mut Camera, jitter: bool) -> *mut c_void {
     // view-projection is rebuilt from the projection as it was before the jitter, bit for bit, so a
     // still camera's matrices are identical from frame to frame.
     if is_render_camera && let Some(camera) = unsafe { camera.as_ref() } {
-        let jittered_eye = vr_eye
-            .filter(|vr| vr.jitter.is_some() && !crate::stereo::single_pass::collapse_active());
+        let jittered_eye =
+            vr_eye.filter(|vr| vr.jitter.is_some() && !crate::stereo::layout::collapse_active());
         let mut stereo = STEREO_STATE.lock();
         let index = stereo.draw_index;
         let (view_projection, jitter) = match jittered_eye {
