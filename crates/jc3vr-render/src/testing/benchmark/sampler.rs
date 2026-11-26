@@ -94,6 +94,7 @@ impl Drop for DrawTaskMark {
 
 /// Publish the render-block type whose run the draw thread has entered, from the engine's type
 /// switch.
+#[cfg(feature = "profiler")]
 pub(crate) fn note_block_type(block_type: *const RenderBlockTypeBase) {
     CURRENT_BLOCK_TYPE.store(block_type as usize, Ordering::Relaxed);
 }

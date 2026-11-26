@@ -147,11 +147,13 @@ pub fn tick() {
 }
 
 /// Whether the GPU layer should bracket dispatches for a run.
+#[cfg(feature = "profiler")]
 pub(crate) fn gpu_timing_armed() -> bool {
     GPU_ARMED.load(Ordering::Relaxed)
 }
 
 /// File one resolved GPU dispatch with the recording run, if one records.
+#[cfg(feature = "profiler")]
 pub(crate) fn record_gpu_dispatch(sample: GpuDispatchSample) {
     if !GPU_RECORDING.load(Ordering::Relaxed) {
         return;
@@ -163,6 +165,7 @@ pub(crate) fn record_gpu_dispatch(sample: GpuDispatchSample) {
 }
 
 /// Count a dispatch whose GPU timestamps were dropped unread.
+#[cfg(feature = "profiler")]
 pub(crate) fn note_gpu_dispatch_dropped() {
     GPU_DROPPED.fetch_add(1, Ordering::Relaxed);
 }
@@ -214,6 +217,7 @@ thread_local! {
 
 /// The most frames and GPU dispatches a run keeps: a minute at well over a hundred frames a second.
 const MAX_FRAMES: usize = 20_000;
+#[cfg(feature = "profiler")]
 const MAX_GPU_DISPATCHES: usize = 60_000;
 /// How long a run may wait for its configuration to apply before it fails.
 const SETTLE_TIMEOUT: Duration = Duration::from_secs(90);

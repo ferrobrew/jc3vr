@@ -28,11 +28,14 @@ use serde::Serialize;
 /// What a GPU interval timed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum GpuPassLabel {
-    /// A render pass, by the engine's debug name for it.
+    /// A render pass, by the engine's debug name for it. Only the profiler's GPU lane times one.
+    #[cfg(feature = "profiler")]
     RenderPass(&'static str),
     /// A stretch of work that is not a render pass, by a name the payload gives it.
     Detail(&'static str),
-    /// A hole between the timed intervals, by where it lies (`crate::profiler::gpu::GapAt`).
+    /// A hole between the timed intervals, by where it lies (`crate::profiler::gpu::GapAt`). Only
+    /// the profiler's GPU lane finds one.
+    #[cfg(feature = "profiler")]
     Gap(&'static str),
 }
 
@@ -75,8 +78,10 @@ pub(super) fn take() -> Vec<GpuPassTotal> {
         .into_iter()
         .map(|((lane, label), total)| {
             let (kind, name) = match label {
+                #[cfg(feature = "profiler")]
                 GpuPassLabel::RenderPass(name) => ("render_pass", name),
                 GpuPassLabel::Detail(name) => ("detail", name),
+                #[cfg(feature = "profiler")]
                 GpuPassLabel::Gap(name) => ("gap", name),
             };
             GpuPassTotal {

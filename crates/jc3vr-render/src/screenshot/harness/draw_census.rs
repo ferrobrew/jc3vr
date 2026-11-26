@@ -17,7 +17,9 @@ use std::{
     sync::atomic::{AtomicBool, AtomicU64, Ordering},
 };
 
-use jc3gi::graphics_engine::render_engine::{RenderBlockTypeBase, RenderPassId};
+#[cfg(feature = "profiler")]
+use jc3gi::graphics_engine::render_engine::RenderBlockTypeBase;
+use jc3gi::graphics_engine::render_engine::RenderPassId;
 use jc3vr_core::util::bump;
 use parking_lot::Mutex;
 use serde::Serialize;
@@ -144,6 +146,7 @@ pub(crate) fn end_pass() {
 }
 
 /// Note the render-block type the pass switches to, for the calls that follow.
+#[cfg(feature = "profiler")]
 pub(crate) fn type_switch(next: Option<*mut RenderBlockTypeBase>) {
     if !RECORDING.load(Ordering::Acquire) {
         return;

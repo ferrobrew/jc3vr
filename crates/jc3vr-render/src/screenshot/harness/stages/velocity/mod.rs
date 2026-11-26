@@ -4,7 +4,9 @@ mod projection;
 use std::{cell::RefCell, ffi::c_void};
 
 use anyhow::{Context, Result, ensure};
-use jc3gi::graphics_engine::{graphics_engine::GraphicsEngine, render_engine::RenderBlockTypeBase};
+use jc3gi::graphics_engine::graphics_engine::GraphicsEngine;
+#[cfg(feature = "profiler")]
+use jc3gi::graphics_engine::render_engine::RenderBlockTypeBase;
 use serde::Serialize;
 use windows::{
     Win32::Graphics::{
