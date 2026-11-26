@@ -1,10 +1,7 @@
 use std::sync::Arc;
 
-use jc3vr_render::vr::input::semantic::{
-    SemanticSet,
-    bound::{EnumeratedSource, SourceTable},
-    vocabulary::OnFootAction,
-};
+use jc3vr_input::semantic::{SemanticSet, vocabulary::OnFootAction};
+use jc3vr_render::vr::input::semantic::bound::{EnumeratedSource, SourceTable};
 
 use super::*;
 use crate::controllers::{

@@ -20,14 +20,14 @@
 //! ([`SourceTable`]): a recognised source is drawn with its glyph, and any other with the
 //! runtime's localized name for it.
 
-use jc3vr_input::frame::{Hand, InteractionProfile};
+use jc3vr_input::{
+    frame::{Hand, InteractionProfile},
+    semantic::SemanticSet,
+};
 
 use crate::vr::input::{
     layout::{Profile, hand_path},
-    semantic::{
-        SemanticSet,
-        defaults::{Component, DefaultBinding},
-    },
+    semantic::defaults::{Component, DefaultBinding},
 };
 
 /// A physical input of one controller, as the masks name it: the trigger or grip as a whole, the

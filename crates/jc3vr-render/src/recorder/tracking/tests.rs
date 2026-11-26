@@ -166,8 +166,8 @@ fn snapshot_matching_requires_publication_identity_even_with_equal_display_times
     let semantic = semantic_frame::SemanticFrame {
         published_at: now,
         action_set: frame.action_set,
-        global: set(crate::vr::input::semantic::SemanticSet::Global),
-        mode: set(crate::vr::input::semantic::SemanticSet::OnFoot),
+        global: set(jc3vr_input::semantic::SemanticSet::Global),
+        mode: set(jc3vr_input::semantic::SemanticSet::OnFoot),
     };
     let input = [CapturedInput {
         capture_time_ns: 1,

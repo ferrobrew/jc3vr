@@ -34,14 +34,14 @@ use jc3gi::{
     },
     ui::{comm_map_ui::CommMapUI, ui_manager::UIManager},
 };
-use jc3vr_input::{frame, frame::MAX_FRAME_AGE};
+use jc3vr_input::{
+    frame,
+    frame::MAX_FRAME_AGE,
+    semantic::{SemanticSet, vocabulary::MenuAction},
+};
 use jc3vr_render::vr::input::{
     semantic,
-    semantic::{
-        SemanticSet,
-        frame::{ActionValue, SemanticFrame},
-        vocabulary::MenuAction,
-    },
+    semantic::frame::{ActionValue, SemanticFrame},
 };
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;

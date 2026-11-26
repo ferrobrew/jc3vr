@@ -3,9 +3,12 @@
 //! Every struct is destructured in full and every enum matched without a wildcard, so a field or
 //! variant added to a payload type fails to build here until the file format accounts for it.
 
-use jc3vr_input::frame::{
-    ActionSetKind, Button, ButtonSet, Hand, HandFrame, HandInputs, HandJoint, InteractionProfile,
-    Pose, TrackedPose,
+use jc3vr_input::{
+    frame::{
+        ActionSetKind, Button, ButtonSet, Hand, HandFrame, HandInputs, HandJoint,
+        InteractionProfile, Pose, TrackedPose,
+    },
+    semantic::SemanticSet,
 };
 use tracking_format::{self as file, model as wire};
 
@@ -18,10 +21,7 @@ use crate::{
     },
     vr::{
         RecenterCause, RecenterKind,
-        input::semantic::{
-            SemanticSet,
-            frame::{ActionState, ActionValue, SetState},
-        },
+        input::semantic::frame::{ActionState, ActionValue, SetState},
         stage::StageInfo,
     },
 };

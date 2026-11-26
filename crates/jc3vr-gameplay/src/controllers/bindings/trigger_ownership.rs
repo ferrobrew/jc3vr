@@ -1,12 +1,14 @@
 //! Per-physical-hand gun trigger ownership and neutral transfer between gameplay consumers.
 
 use jc3gi::input::input_action_map::Action;
-use jc3vr_input::frame::Hand;
-use jc3vr_render::vr::input::semantic::{
-    SemanticSet,
-    bound::{Physical, PhysicalSet},
-    vocabulary::{ActionId, HelicopterAction, LandVehicleAction, OnFootAction, PlaneAction},
+use jc3vr_input::{
+    frame::Hand,
+    semantic::{
+        SemanticSet,
+        vocabulary::{ActionId, HelicopterAction, LandVehicleAction, OnFootAction, PlaneAction},
+    },
 };
+use jc3vr_render::vr::input::semantic::bound::{Physical, PhysicalSet};
 
 use crate::controllers::{
     bindings::{
@@ -289,9 +291,8 @@ impl Sink for ChangedRoutes<'_> {
 
 #[cfg(test)]
 mod tests {
-    use jc3vr_render::vr::input::semantic::{
-        bound::PhysicalSet, defaults::default_binding, vocabulary::WingsuitAction,
-    };
+    use jc3vr_input::semantic::vocabulary::WingsuitAction;
+    use jc3vr_render::vr::input::semantic::{bound::PhysicalSet, defaults::default_binding};
 
     use super::*;
     use crate::controllers::{

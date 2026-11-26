@@ -6,11 +6,10 @@
 //! in as its attribution, and a raw protected route, which the mod owns and players are asked not
 //! to rebind, is taken at its fixed physical location.
 
-use jc3vr_input::frame::Hand;
+use jc3vr_input::{frame::Hand, semantic::vocabulary::ActionId};
 use jc3vr_render::vr::input::semantic::{
     bound::{self, Physical},
     defaults::default_binding,
-    vocabulary::ActionId,
 };
 use tracking_format::input::SourceQuery;
 

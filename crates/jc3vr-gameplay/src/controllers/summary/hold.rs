@@ -2,10 +2,11 @@
 
 use std::time::Instant;
 
-use jc3vr_input::frame::{Button, ControllerFrame, Hand, MAX_FRAME_AGE};
-use jc3vr_render::vr::input::semantic::{
-    bound::SourceTable, defaults::Component, vocabulary::GlobalAction,
+use jc3vr_input::{
+    frame::{Button, ControllerFrame, Hand, MAX_FRAME_AGE},
+    semantic::vocabulary::GlobalAction,
 };
+use jc3vr_render::vr::input::semantic::{bound::SourceTable, defaults::Component};
 use parking_lot::Mutex;
 
 use crate::controllers::bindings::{

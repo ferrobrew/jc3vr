@@ -517,10 +517,11 @@ impl SecondaryButton {
 mod tests {
     use std::sync::Arc;
 
-    use jc3vr_input::frame::ActionSetKind;
-    use jc3vr_render::vr::input::semantic::{
-        ActionKind, SCHEMA_VERSION, SemanticSet, history::Publication, vocabulary::GlobalAction,
+    use jc3vr_input::{
+        frame::ActionSetKind,
+        semantic::{ActionKind, SemanticSet, vocabulary::GlobalAction},
     };
+    use jc3vr_render::vr::input::semantic::{SCHEMA_VERSION, history::Publication};
     use tracking_format::input::{
         ClockDomain, GroupOrder, InputGroup, InputRecord, InputRoute, InputStamp, RouteSample,
         SourceQuery, ValueBits,

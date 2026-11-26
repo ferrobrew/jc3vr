@@ -27,14 +27,18 @@ pub(crate) mod simulate;
 mod tests;
 
 use glam::Vec2;
-use jc3vr_input::frame::{Hand, InteractionProfile};
-use jc3vr_render::vr::input::{
+use jc3vr_input::{
+    frame::{Hand, InteractionProfile},
     semantic::{
         SemanticSet,
+        vocabulary::{ActionId, OnFootAction, WingsuitAction},
+    },
+};
+use jc3vr_render::vr::input::{
+    semantic::{
         bound::{BoundSet, Physical, PhysicalSet},
         defaults::{Component, default_binding},
         frame::{ActionValue, SemanticEdges, SemanticFrame, SetState},
-        vocabulary::{ActionId, OnFootAction, WingsuitAction},
     },
     sources,
 };

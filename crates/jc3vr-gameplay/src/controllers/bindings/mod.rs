@@ -79,16 +79,17 @@ use jc3gi::{
 use jc3vr_input::{
     capture::{CaptureUpdate, OwnershipBlocker, desktop_input_observation},
     frame::{self, Button, ControllerFrame, GripPress, Hand},
+    semantic::{
+        SemanticSet,
+        vocabulary::{MenuAction, OnFootAction},
+    },
 };
 use jc3vr_render::{
     controllers::cockpit::CockpitTransform,
     headpose::{self, config::HEADPOSE_CONFIG},
     vr::{
         self,
-        input::semantic::{
-            SemanticSet, frame as semantic_frame, history,
-            vocabulary::{MenuAction, OnFootAction},
-        },
+        input::semantic::{frame as semantic_frame, history},
     },
 };
 use parking_lot::Mutex;

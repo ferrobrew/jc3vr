@@ -45,15 +45,17 @@ pub mod menu;
 pub mod sink;
 
 use jc3gi::input::input_action_map::Action;
-use jc3vr_input::frame::Hand;
-use jc3vr_render::vr::input::semantic::{
-    SemanticSet,
-    bound::{Physical, PhysicalSet},
-    vocabulary::{
-        ActionId, GlobalAction, HelicopterAction, LandVehicleAction, MenuAction, OnFootAction,
-        PlaneAction, WingsuitAction,
+use jc3vr_input::{
+    frame::Hand,
+    semantic::{
+        SemanticSet,
+        vocabulary::{
+            ActionId, GlobalAction, HelicopterAction, LandVehicleAction, MenuAction, OnFootAction,
+            PlaneAction, WingsuitAction,
+        },
     },
 };
+use jc3vr_render::vr::input::semantic::bound::{Physical, PhysicalSet};
 
 use crate::controllers::{
     bindings::{

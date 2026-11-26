@@ -14,11 +14,13 @@
 //! as [`Control::Unbound`].
 
 use jc3gi::input::input_action_map::Action;
-use jc3vr_input::frame::Hand;
+use jc3vr_input::{
+    frame::Hand,
+    semantic::vocabulary::{ActionId, GlobalAction, MenuAction, OnFootAction},
+};
 use jc3vr_render::vr::input::semantic::{
     bound::{Layout, PhysicalSet, SourceName, SourceTable},
     defaults::{Component, default_binding},
-    vocabulary::{ActionId, GlobalAction, MenuAction, OnFootAction},
 };
 
 use crate::controllers::{

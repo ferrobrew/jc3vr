@@ -16,7 +16,10 @@ use std::{ffi::c_char, ptr};
 
 use anyhow::Context as _;
 use glam::Vec2;
-use jc3vr_input::frame::{ActionSetKind, Hand};
+use jc3vr_input::{
+    frame::{ActionSetKind, Hand},
+    semantic::{ActionKind, SemanticSet},
+};
 use openxr as xr;
 use openxr::sys::{self, Handle as _};
 
@@ -24,7 +27,7 @@ use crate::vr::input::{
     layout,
     layout::{BoolInput, FloatInput, HandsAction, Input, Profile, Vec2Input, binding, hand_path},
     semantic::{
-        ActionKind, SemanticSet, defaults,
+        defaults,
         frame::{ActionState, ActionValue},
     },
 };

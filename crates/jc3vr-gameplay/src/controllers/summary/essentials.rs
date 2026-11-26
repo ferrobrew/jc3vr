@@ -150,12 +150,11 @@ fn essential_mod(mode: Mode, action: ModAction) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use jc3vr_input::frame::Hand;
-    use jc3vr_render::vr::input::semantic::{
-        SemanticSet,
-        bound::{EnumeratedSource, SourceTable},
-        vocabulary::OnFootAction,
+    use jc3vr_input::{
+        frame::Hand,
+        semantic::{SemanticSet, vocabulary::OnFootAction},
     };
+    use jc3vr_render::vr::input::semantic::bound::{EnumeratedSource, SourceTable};
 
     use super::*;
     use crate::controllers::{

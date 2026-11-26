@@ -1,12 +1,14 @@
 //! Sampler admission through ordered arbitration and semantic table execution.
 
 use jc3gi::input::input_action_map::Action;
-use jc3vr_input::frame::{HandFrame, InteractionProfile, TrackedPose};
+use jc3vr_input::{
+    frame::{HandFrame, InteractionProfile, TrackedPose},
+    semantic::vocabulary::WingsuitAction,
+};
 use jc3vr_render::vr::input::semantic::{
     admission,
     bound::of_sources,
     frame::{ActionValue, digital},
-    vocabulary::WingsuitAction,
 };
 
 use super::*;

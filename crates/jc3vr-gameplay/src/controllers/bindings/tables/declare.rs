@@ -8,10 +8,12 @@
 //! [`crate::controllers::bindings::tables`] explains the virtual gamepad buttons.
 
 use jc3gi::input::input_action_map::Action::{self, *};
-use jc3vr_input::frame::Hand;
-use jc3vr_render::vr::input::semantic::vocabulary::{
-    ActionId, HelicopterAction as H, LandVehicleAction as L, MenuAction as M, OnFootAction as F,
-    PlaneAction as P, WingsuitAction as W,
+use jc3vr_input::{
+    frame::Hand,
+    semantic::vocabulary::{
+        ActionId, HelicopterAction as H, LandVehicleAction as L, MenuAction as M,
+        OnFootAction as F, PlaneAction as P, WingsuitAction as W,
+    },
 };
 
 use crate::controllers::{

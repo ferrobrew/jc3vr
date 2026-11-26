@@ -12,10 +12,8 @@
 //! sides) are left as they are. The table is chosen from `controllers.dominant_hand` when the
 //! actions are created, since suggestions are fixed once the sets are attached.
 
-use jc3vr_input::frame::Hand;
-
-use crate::vr::input::{
-    layout::Profile,
+use jc3vr_input::{
+    frame::Hand,
     semantic::{
         SemanticSet,
         vocabulary::{
@@ -24,6 +22,8 @@ use crate::vr::input::{
         },
     },
 };
+
+use crate::vr::input::layout::Profile;
 
 /// The hand or hands a default binding is on.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]

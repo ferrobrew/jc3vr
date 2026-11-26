@@ -1,6 +1,6 @@
 //! Semantic button reads shared by input-tick consumers outside the binding tables.
 
-use jc3vr_render::vr::input::semantic::vocabulary::OnFootAction;
+use jc3vr_input::semantic::vocabulary::OnFootAction;
 
 use crate::controllers::{
     bindings::{controls::ButtonControl, intents::SemanticInput, tables},

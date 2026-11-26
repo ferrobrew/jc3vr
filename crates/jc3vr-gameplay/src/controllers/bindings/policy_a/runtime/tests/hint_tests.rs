@@ -1,7 +1,7 @@
 //! Current descriptions retain the same aggregate permissions as table execution.
 
 use jc3gi::input::input_action_map::Action;
-use jc3vr_render::vr::input::semantic::vocabulary::LandVehicleAction;
+use jc3vr_input::semantic::vocabulary::LandVehicleAction;
 
 use super::{
     snatch_tests::{GRIP, LEFT_A, MODE, TRIGGER, fixture},

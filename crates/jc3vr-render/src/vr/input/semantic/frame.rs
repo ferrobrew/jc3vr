@@ -15,13 +15,14 @@
 use std::time::Instant;
 
 use glam::Vec2;
-use jc3vr_input::frame::{ActionSetKind, GripPress, Hand, MAX_FRAME_AGE, PressRules};
-use parking_lot::Mutex;
-
-use crate::vr::input::semantic::{
-    ActionKind, SemanticSet,
-    vocabulary::{ActionId, FloatPress},
+use jc3vr_input::{
+    frame::{ActionSetKind, GripPress, Hand, MAX_FRAME_AGE, PressRules},
+    semantic::{
+        ActionKind, SemanticSet,
+        vocabulary::{ActionId, FloatPress},
+    },
 };
+use parking_lot::Mutex;
 
 /// One action's value on one hand.
 #[derive(Debug, Copy, Clone, PartialEq)]

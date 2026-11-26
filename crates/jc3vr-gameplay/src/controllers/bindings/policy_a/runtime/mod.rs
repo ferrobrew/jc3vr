@@ -4,14 +4,19 @@
 use std::time::Duration;
 use std::{collections::VecDeque, time::Instant};
 
-use jc3vr_input::frame::{Button, ControllerFrame, Edges, Hand, MAX_FRAME_AGE};
+use jc3vr_input::{
+    frame::{Button, ControllerFrame, Edges, Hand, MAX_FRAME_AGE},
+    semantic::{
+        ActionKind, SemanticSet,
+        vocabulary::{ActionId, GlobalAction, MenuAction},
+    },
+};
 use jc3vr_render::vr::input::semantic::{
-    ActionKind, SCHEMA_VERSION, SemanticSet,
+    SCHEMA_VERSION,
     bound::Physical,
     defaults::{Component, default_binding},
     frame::ActionValue,
     history::{self, Publication},
-    vocabulary::{ActionId, GlobalAction, MenuAction},
 };
 #[cfg(test)]
 use tracking_format::input::policy::PolicyOutcome;

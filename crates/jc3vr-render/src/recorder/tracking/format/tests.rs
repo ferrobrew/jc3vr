@@ -1,14 +1,12 @@
 use glam::{Quat, Vec2, Vec3};
-use jc3vr_input::frame::{
-    Button, ButtonSet, HandInputs, HandJoint, InteractionProfile, TrackedPose,
+use jc3vr_input::{
+    frame::{Button, ButtonSet, HandInputs, HandJoint, InteractionProfile, TrackedPose},
+    semantic::SemanticSet,
 };
 use pretty_assertions::assert_eq;
 
 use super::*;
-use crate::vr::input::semantic::{
-    SemanticSet,
-    frame::{ActionState, ActionValue},
-};
+use crate::vr::input::semantic::frame::{ActionState, ActionValue};
 
 fn header() -> Header {
     let mut transform = [0.0; 16];

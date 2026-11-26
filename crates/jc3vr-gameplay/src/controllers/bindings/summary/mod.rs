@@ -5,8 +5,8 @@ use jc3gi::{
     equipment::weapon::WeaponBase,
     input::input_action_map::Action,
 };
-use jc3vr_input::frame::Hand;
-use jc3vr_render::vr::input::semantic::{bound::PhysicalSet, vocabulary::ActionId};
+use jc3vr_input::{frame::Hand, semantic::vocabulary::ActionId};
+use jc3vr_render::vr::input::semantic::bound::PhysicalSet;
 
 use crate::controllers::{
     aim::gun,

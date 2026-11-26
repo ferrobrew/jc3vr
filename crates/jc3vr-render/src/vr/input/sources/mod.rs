@@ -25,7 +25,10 @@ use std::{
     time::{Duration, Instant},
 };
 
-use jc3vr_input::frame::{Hand, InteractionProfile};
+use jc3vr_input::{
+    frame::{Hand, InteractionProfile},
+    semantic::SemanticSet,
+};
 use openxr as xr;
 use openxr::sys;
 use parking_lot::Mutex;
@@ -35,7 +38,7 @@ use crate::vr::input::{
     actions::{Actions, SetId},
     layout::hand_path,
     semantic::{
-        SemanticSet, bound,
+        bound,
         bound::{EnumeratedSource, PhysicalSet, SourceTable},
     },
 };

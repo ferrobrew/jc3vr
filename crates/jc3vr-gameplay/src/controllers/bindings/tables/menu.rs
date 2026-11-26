@@ -10,8 +10,7 @@
 //! threshold, and reports nothing else meanwhile.
 
 use glam::Vec2;
-use jc3vr_input::frame::Hand;
-use jc3vr_render::vr::input::semantic::vocabulary::MenuAction;
+use jc3vr_input::{frame::Hand, semantic::vocabulary::MenuAction};
 
 use crate::controllers::bindings::{
     controls::ButtonControl,

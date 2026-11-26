@@ -193,10 +193,8 @@ pub const MAX_ROW_PX: f32 = 64.0;
 #[cfg(test)]
 mod tests {
     use jc3gi::input::input_action_map::Action::*;
-    use jc3vr_render::vr::input::semantic::{
-        SemanticSet,
-        bound::{EnumeratedSource, SourceTable},
-    };
+    use jc3vr_input::semantic::SemanticSet;
+    use jc3vr_render::vr::input::semantic::bound::{EnumeratedSource, SourceTable};
 
     use super::*;
     use crate::controllers::{

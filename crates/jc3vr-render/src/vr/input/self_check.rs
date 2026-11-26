@@ -29,8 +29,9 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use jc3vr_input::frame::{
-    ActionSetKind, GripPress, Hand, HandFrame, HandInputs, InteractionProfile,
+use jc3vr_input::{
+    frame::{ActionSetKind, GripPress, Hand, HandFrame, HandInputs, InteractionProfile},
+    semantic::SemanticSet,
 };
 use openxr as xr;
 use parking_lot::Mutex;
@@ -41,7 +42,7 @@ use crate::vr::input::{
     layout,
     layout::{BoolInput, FloatInput, Input, Profile, Vec2Input},
     semantic::{
-        SCHEMA_VERSION, SemanticSet, defaults,
+        SCHEMA_VERSION, defaults,
         frame::{ActionValue, SemanticFrame},
     },
     sources,
@@ -587,8 +588,9 @@ static RERUN: AtomicBool = AtomicBool::new(false);
 
 #[cfg(test)]
 mod tests {
+    use jc3vr_input::semantic::vocabulary::{GlobalAction, OnFootAction};
+
     use super::*;
-    use crate::vr::input::semantic::vocabulary::{GlobalAction, OnFootAction};
 
     fn find(pairs: &[Pair], set: SemanticSet, index: usize, hand: Hand) -> Option<RawProbe> {
         pairs

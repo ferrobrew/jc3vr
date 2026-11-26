@@ -5,8 +5,8 @@ use std::collections::BTreeSet;
 
 use glam::Vec2;
 use jc3gi::input::input_action_map::Action;
-use jc3vr_input::frame::Hand;
-use jc3vr_render::vr::input::semantic::{SemanticSet, bound::Layout, defaults::default_binding};
+use jc3vr_input::{frame::Hand, semantic::SemanticSet};
+use jc3vr_render::vr::input::semantic::{bound::Layout, defaults::default_binding};
 
 use crate::controllers::{
     bindings::{

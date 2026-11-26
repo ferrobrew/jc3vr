@@ -13,7 +13,8 @@
 //! Every action is created with both hands as subaction paths and read per hand, so the hand a
 //! press came from stays known after the player remaps it.
 //!
-//! - [`vocabulary`] declares each set's actions, their types, and their localized names.
+//! - [`jc3vr_input::semantic::vocabulary`] declares each set's actions, their types, and their
+//!   localized names.
 //! - [`defaults`] holds the suggested bindings on the Index and Touch profiles, written in terms
 //!   of the dominant hand and the off-hand, and the left-handed table mirrored from the
 //!   right-handed one.
@@ -30,12 +31,9 @@ pub mod bound;
 pub mod defaults;
 pub mod frame;
 pub mod history;
-pub mod vocabulary;
 
 #[cfg(test)]
 mod tests;
-
-pub use jc3vr_input::semantic::{ActionKind, SemanticSet};
 
 /// The version of the action schema: the sets, their actions, and the actions' types. It is the
 /// OpenXR application version, so a runtime that keys saved bindings on it can tell the schemas

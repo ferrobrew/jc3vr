@@ -13,9 +13,12 @@
 //! re-wraps another payload's handles: a runtime takes suggestions only before the sets are
 //! attached, so re-wrapping would keep the old suggestions without a sign.
 
-use jc3vr_input::frame::{Hand, InteractionProfile};
+use jc3vr_input::{
+    frame::{Hand, InteractionProfile},
+    semantic::SemanticSet,
+};
 
-use crate::vr::input::semantic::{SemanticSet, defaults};
+use crate::vr::input::semantic::defaults;
 
 /// Append the note that marks a raw input's localized name.
 macro_rules! raw_name {

@@ -2,13 +2,13 @@
 //! active flag, per-hand state, and bound sources.
 
 use egui::{RichText, Ui};
-use jc3vr_input::frame::Hand;
+use jc3vr_input::{frame::Hand, semantic::SemanticSet};
 use jc3vr_render::vr::input::{
     actions::SetId,
     layout::{BoolInput, FloatInput, HandsAction, Vec2Input},
     self_check,
     semantic::{
-        SemanticSet, frame as semantic_frame,
+        frame as semantic_frame,
         frame::{ActionState, ActionValue},
     },
     sources,

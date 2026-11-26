@@ -14,6 +14,7 @@ use jc3vr_input::{
         InteractionProfile, Pose, TrackedPose, derive_buttons,
     },
     haptics::{mixer::HapticPulse, output as haptic_output},
+    semantic::SemanticSet,
 };
 use openxr as xr;
 use openxr::sys;
@@ -33,7 +34,7 @@ use crate::vr::{
         layout::{BoolInput, FloatInput, HandsAction, Vec2Input},
         self_check::CheckFrame,
         semantic::{
-            SemanticSet, admission, frame as semantic_frame,
+            admission, frame as semantic_frame,
             frame::{ActionState, ActionValue, SemanticFrame, SetState},
             history,
         },

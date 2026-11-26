@@ -1,6 +1,15 @@
 use std::collections::HashMap;
 
-use jc3vr_input::frame::{ActionSetKind, Hand, InteractionProfile};
+use jc3vr_input::{
+    frame::{ActionSetKind, Hand, InteractionProfile},
+    semantic::{
+        ActionKind, SemanticSet,
+        vocabulary::{
+            GlobalAction as G, HelicopterAction as H, LandVehicleAction as L, MenuAction as M,
+            OnFootAction as F, PlaneAction as P,
+        },
+    },
+};
 
 use super::*;
 use crate::vr::input::{
@@ -11,10 +20,6 @@ use crate::vr::input::{
         defaults::{
             Component, DefaultBinding, Side, Suggestion, default_binding, default_path, mirror,
             resolve, suggestions,
-        },
-        vocabulary::{
-            GlobalAction as G, HelicopterAction as H, LandVehicleAction as L, MenuAction as M,
-            OnFootAction as F, PlaneAction as P,
         },
     },
 };
