@@ -1,19 +1,19 @@
 //! Guards the payload's crate layering.
 //!
-//! The payload is split into ten layer crates under `crates/` and the payload crate on top
+//! The payload is split into layer crates under `crates/` and the payload crate on top
 //! (`docs/architecture.md`, "Crate layering"). Each crate may depend only on the crates below it,
 //! and crates side by side may not depend on each other. Cargo forbids cycles, but an acyclic edge
 //! can still point the wrong way, so the guard checks, as ordinary tests:
 //!
 //! - that every layer has its crate, named for its layer, and that every dependency of each, in
 //!   every section (normal, dev, build, and per-target), points down the order, read by package
-//!   name and by path, so the render crate and the body and gameplay crates, and the HUD and
-//!   tooling crates, have no edge between them, only the tooling crate and the crates above it
-//!   depend on the capture crate, and no layer crate depends on the payload;
+//!   name and by path, so the render crate and the body, physical, and gameplay crates, and the
+//!   HUD and tooling crates, have no edge between them, only the tooling crate and the crates
+//!   above it depend on the capture crate, and no layer crate depends on the payload;
 //! - that every layer crate is a workspace member, and that only the payload is a `cdylib` among
 //!   the workspace's members;
-//! - that the view and render crates' `hooks` modules never name the body, gameplay, or HUD
-//!   crates, which reach them only through registrations.
+//! - that the view and render crates' `hooks` modules never name the body, physical, gameplay, or
+//!   HUD crates, which reach them only through registrations.
 
 mod layer;
 mod lex;

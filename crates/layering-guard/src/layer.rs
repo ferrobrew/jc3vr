@@ -1,4 +1,4 @@
-//! The eleven crates the payload is built from and the dependency order between them.
+//! The crates the payload is built from and the dependency order between them.
 
 use std::fmt;
 
@@ -11,6 +11,7 @@ pub enum Layer {
     Render,
     Capture,
     Body,
+    Physical,
     Gameplay,
     Hud,
     Tooling,
@@ -19,13 +20,14 @@ pub enum Layer {
 }
 
 impl Layer {
-    pub const ALL: [Layer; 11] = [
+    pub const ALL: [Layer; 12] = [
         Layer::Core,
         Layer::Input,
         Layer::View,
         Layer::Render,
         Layer::Capture,
         Layer::Body,
+        Layer::Physical,
         Layer::Gameplay,
         Layer::Hud,
         Layer::Tooling,
@@ -42,6 +44,7 @@ impl Layer {
             Layer::Render => "render",
             Layer::Capture => "capture",
             Layer::Body => "body",
+            Layer::Physical => "physical",
             Layer::Gameplay => "gameplay",
             Layer::Hud => "hud",
             Layer::Tooling => "tooling",
@@ -81,7 +84,8 @@ impl Layer {
     /// Render sits side by side with body and gameplay on the view crate, so render and those two
     /// may not depend on each other: they reach the render passes through the registries and cells
     /// the view crate holds, and a render edit rebuilds neither. Gameplay sits on body, which holds
-    /// the subsystems it builds on and fills through registrations. Capture sits on render, beside
+    /// the subsystems it builds on and fills through registrations, and on physical, which sits on
+    /// body beside render and below gameplay. Capture sits on render, beside
     /// body and gameplay, and
     /// only tooling and the layers above it see it: the render hooks reach the capture tooling
     /// through the probe tables the capture crate fills, so a capture edit rebuilds neither render
@@ -93,13 +97,21 @@ impl Layer {
             Layer::View => &[Layer::Core, Layer::Input],
             Layer::Render | Layer::Body => &[Layer::Core, Layer::Input, Layer::View],
             Layer::Capture => &[Layer::Core, Layer::Input, Layer::View, Layer::Render],
-            Layer::Gameplay => &[Layer::Core, Layer::Input, Layer::View, Layer::Body],
+            Layer::Physical => &[Layer::Core, Layer::Input, Layer::View, Layer::Body],
+            Layer::Gameplay => &[
+                Layer::Core,
+                Layer::Input,
+                Layer::View,
+                Layer::Body,
+                Layer::Physical,
+            ],
             Layer::Hud => &[
                 Layer::Core,
                 Layer::Input,
                 Layer::View,
                 Layer::Render,
                 Layer::Body,
+                Layer::Physical,
                 Layer::Gameplay,
             ],
             Layer::Tooling => &[
@@ -109,6 +121,7 @@ impl Layer {
                 Layer::Render,
                 Layer::Capture,
                 Layer::Body,
+                Layer::Physical,
                 Layer::Gameplay,
             ],
             Layer::Ui => &[
@@ -118,11 +131,12 @@ impl Layer {
                 Layer::Render,
                 Layer::Capture,
                 Layer::Body,
+                Layer::Physical,
                 Layer::Gameplay,
                 Layer::Hud,
                 Layer::Tooling,
             ],
-            Layer::Payload => &Layer::ALL[..10],
+            Layer::Payload => &Layer::ALL[..Layer::ALL.len() - 1],
         };
         below.contains(&other)
     }
@@ -221,6 +235,20 @@ mod tests {
         assert!(Layer::Hud.may_depend_on(Layer::Body));
         assert!(Layer::Tooling.may_depend_on(Layer::Body));
         assert!(Layer::Ui.may_depend_on(Layer::Body));
+    }
+
+    #[test]
+    fn physical_sits_on_body_below_gameplay() {
+        assert!(Layer::Physical.may_depend_on(Layer::Body));
+        assert!(Layer::Physical.may_depend_on(Layer::View));
+        assert!(!Layer::Physical.may_depend_on(Layer::Gameplay));
+        assert!(!Layer::Physical.may_depend_on(Layer::Render));
+        assert!(!Layer::Physical.may_depend_on(Layer::Capture));
+        assert!(!Layer::Body.may_depend_on(Layer::Physical));
+        assert!(!Layer::Render.may_depend_on(Layer::Physical));
+        for above in [Layer::Gameplay, Layer::Hud, Layer::Tooling, Layer::Ui] {
+            assert!(above.may_depend_on(Layer::Physical), "{above}");
+        }
     }
 
     #[test]

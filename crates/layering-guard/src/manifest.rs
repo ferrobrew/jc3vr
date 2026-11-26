@@ -15,12 +15,12 @@ use crate::{
     source::{SourceFile, read_sources},
 };
 
-/// The crates whose `hooks` modules hold the engine detours that body, gameplay, and the HUD reach
-/// only through registrations.
+/// The crates whose `hooks` modules hold the engine detours that body, physical, gameplay, and the
+/// HUD reach only through registrations.
 pub const HOOK_CRATES: [Layer; 2] = [Layer::View, Layer::Render];
 
 /// The layers the view and render crates' `hooks` modules must never name.
-pub const HOOKS_FORBIDDEN: [Layer; 3] = [Layer::Body, Layer::Gameplay, Layer::Hud];
+pub const HOOKS_FORBIDDEN: [Layer; 4] = [Layer::Body, Layer::Physical, Layer::Gameplay, Layer::Hud];
 
 /// Where the layering and the reasons for it are documented, for messages.
 const LAYERING_DOC: &str = "docs/architecture.md, \"Crate layering\"";
@@ -143,7 +143,8 @@ pub fn check_hooks(files: &[SourceFile]) -> Vec<String> {
             {
                 out.push(format!(
                     "{}:{}: {} names the {layer} crate, but the view and render crates' hooks \
-                     reach body, gameplay, and the HUD only through registrations; add a registration \
+                     reach body, physical, gameplay, and the HUD only through registrations; add a \
+                     registration \
                      point in the crate that owns the hook and fill it from the {layer} crate's \
                      install, as the existing `register_*` modules do",
                     file.path,
@@ -280,8 +281,13 @@ fn violation_advice(layer: Layer, dependency: Layer) -> String {
     }
     if matches!(
         (layer, dependency),
-        (Layer::Render, Layer::Gameplay | Layer::Body)
-            | (Layer::Gameplay | Layer::Body, Layer::Render)
+        (
+            Layer::Render,
+            Layer::Gameplay | Layer::Physical | Layer::Body
+        ) | (
+            Layer::Gameplay | Layer::Physical | Layer::Body,
+            Layer::Render
+        )
     ) {
         let other = if layer == Layer::Render {
             dependency
@@ -561,6 +567,25 @@ mod tests {
         assert_eq!(violations.len(), 1, "{violations:#?}");
         assert!(violations[0].contains("the body crate depends on the gameplay crate"));
         assert!(violations[0].contains("it may only depend on core, input, view"));
+    }
+
+    #[test]
+    fn physical_may_not_depend_on_gameplay_or_render() {
+        let physical = r#"
+            [package]
+            name = "jc3vr-physical"
+            [dependencies]
+            jc3vr-body = { path = "../jc3vr-body" }
+            jc3vr-render = { path = "../jc3vr-render" }
+            [dev-dependencies]
+            jc3vr-gameplay = { path = "../jc3vr-gameplay" }
+        "#;
+        let violations = check_manifests(&stack_with(Layer::Physical, physical));
+        assert_eq!(violations.len(), 2, "{violations:#?}");
+        assert!(violations[0].contains("the physical crate depends on the render crate"));
+        assert!(violations[0].contains("but the render and physical crates are siblings"));
+        assert!(violations[1].contains("the physical crate depends on the gameplay crate"));
+        assert!(violations[1].contains("it may only depend on core, input, view, body"));
     }
 
     #[test]
