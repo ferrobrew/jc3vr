@@ -122,7 +122,7 @@ Nothing else draws a marker, logs a press, or decides between two subsystems' ta
 
 ## Settings
 
-`overlay.markers` switches the markers. The reach margins are `POUCHES.reach_margin_m` (`controllers::weapons::volumes`) and the vehicles' [tuning](../tuning.md)'s `parachute_handles.reach_m`. The fist's window and speed are the grip model's tuning (`crates/jc3vr-body/tuning/grab.toml`), with the markers' sizes, opacities, and colours.
+`overlay.markers` switches the markers. The reach margins are the [hold tuning](../tuning.md)'s `volumes.pouches.reach_margin_m` and the vehicles' [tuning](../tuning.md)'s `parachute_handles.reach_m`. The fist's window and speed are the grip model's tuning (`crates/jc3vr-body/tuning/grab.toml`), with the markers' sizes, opacities, and colours.
 
 ## In the headset
 
