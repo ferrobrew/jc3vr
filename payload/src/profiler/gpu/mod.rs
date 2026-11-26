@@ -75,12 +75,12 @@ use jc3gi::graphics_engine::{
 use parking_lot::Mutex;
 use puffin::ScopeId;
 
+pub use crate::profiler::gpu::stats::summary;
 use crate::profiler::{
     EngineScope,
     gpu::queries::{DispatchLane, GpuProfiler, IntervalLabel, SendPtr},
     named_scope_id,
 };
-pub use crate::profiler::gpu::stats::summary;
 
 /// The coarse render seams bracketed on the GPU timeline, in draw order.
 #[derive(Clone, Copy, PartialEq, Eq)]

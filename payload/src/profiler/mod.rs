@@ -26,9 +26,6 @@ pub mod chrome_trace;
 pub mod gpu;
 pub mod ui;
 
-// The render-pass hook names these at their former home in the core.
-pub(crate) use crate::profiler::gpu::{PassScope, pass_scope};
-
 use std::{
     collections::HashMap,
     sync::{
@@ -39,6 +36,9 @@ use std::{
 
 use parking_lot::Mutex;
 use puffin::{GlobalProfiler, ScopeDetails, ScopeId, ThreadProfiler};
+
+// Re-exported at its former home, where the render-pass hook names it.
+pub(crate) use crate::profiler::gpu::pass_scope;
 
 /// Whether the profiler UI has scope collection enabled (independent of an active capture, which
 /// forces collection on for its duration).
