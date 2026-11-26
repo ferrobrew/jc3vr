@@ -34,10 +34,6 @@ pub struct WeaponsConfig {
     /// The true reload: eject, load from the belt pouch, and chamber by hand, in place of the
     /// game's timed reload.
     pub reload: ReloadConfig,
-    /// Let the game switch to another weapon when the trigger of an empty weapon that cannot
-    /// reload is pulled. Off, the empty weapon stays in the hand until it is holstered or another
-    /// is drawn, and the pull only dry-fires.
-    pub auto_switch_when_empty: bool,
     /// The weapon wheel: the game's selection cross, opened with a held input and steered by the
     /// hand.
     pub wheel: WheelConfig,
@@ -60,7 +56,6 @@ impl WeaponsConfig {
             separate_pistols: true,
             hold: HoldConfig::new(),
             reload: ReloadConfig::new(),
-            auto_switch_when_empty: false,
             wheel: WheelConfig::new(),
             ads: AdsConfig::new(),
             inventory: InventoryConfig::new(),

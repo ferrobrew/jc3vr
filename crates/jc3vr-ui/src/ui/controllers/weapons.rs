@@ -500,8 +500,8 @@ fn grenade_readout(ui: &mut Ui, g: &GrenadeStatus) {
 
 fn empty_readout(ui: &mut Ui, e: &EmptyStatus) {
     ui.label(format!(
-        "Empty weapon: dry fires {} · automatic switches suppressed {}, allowed {}",
-        e.dry_fires, e.suppressed, e.allowed
+        "Empty weapon: dry fires {} · automatic switches suppressed {}",
+        e.dry_fires, e.suppressed
     ));
 }
 

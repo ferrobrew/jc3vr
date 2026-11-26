@@ -10,8 +10,7 @@
 //!
 //! - a detour on the ammunition check marks the check of the local player's weapon on its thread
 //!   ([`CHECK`]) for the length of the call;
-//! - a detour on the switch, inside a marked check and with `weapons.auto_switch_when_empty` off,
-//!   reports that no weapon qualified without switching. The game then treats the pull as it does
+//! - a detour on the switch, inside a marked check, reports that no weapon qualified without switching. The game then treats the pull as it does
 //!   with no other weapon to switch to: the HUD's out-of-ammunition notice and the gun's
 //!   `OutOfAmmoFire` effect at the pull's press edge, and no shot. The switch's other caller, the
 //!   `NWeaponEquipTask` state task, runs outside a check and is left alone, as are manual
@@ -23,8 +22,8 @@
 //! both stay in the hands.
 //!
 //! A pull at the press edge that the check found empty plays [`Event::DryFire`] on the hand whose
-//! gun was pulled, since the gun gives no recoil to feel: one that tried the switch, whether or
-//! not the switch is suppressed, and one of an empty magazine with ammunition left,
+//! gun was pulled, since the gun gives no recoil to feel: one that tried the switch, and one of an
+//! empty magazine with ammunition left,
 //! whose reload the true reload stops ([`crate::controllers::weapons::reload`]). A gun the true
 //! reload holds from firing (its chamber empty or its magazine out) has its shot cleared here as
 //! well; its trigger already clicks at the input tick.
@@ -53,7 +52,7 @@ use jc3vr_body::controllers::{hands::ik, haptics, scheme, scheme::CONTROLLERS_EN
 use jc3vr_input::haptics::cues::Event;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::controllers::weapons::{config::WEAPONS_CONFIG, fire, hold::tick, reload};
+use crate::controllers::weapons::{fire, hold::tick, reload};
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new()
@@ -67,8 +66,6 @@ pub(super) fn hook_library() -> HookLibrary {
 pub struct EmptyStatus {
     /// Automatic switches the game tried and the mod suppressed.
     pub suppressed: u64,
-    /// Automatic switches the game tried and the mod let through.
-    pub allowed: u64,
     /// Pulls of an empty gun at their press edge.
     pub dry_fires: u64,
     /// The ammunition checks' reload requests and cancels refused for the local player.
@@ -78,7 +75,6 @@ pub struct EmptyStatus {
 pub fn status() -> EmptyStatus {
     EmptyStatus {
         suppressed: SUPPRESSED.load(Ordering::Relaxed),
-        allowed: ALLOWED.load(Ordering::Relaxed),
         dry_fires: DRY_FIRES.load(Ordering::Relaxed),
         requests_refused: REQUESTS_REFUSED.load(Ordering::Relaxed),
     }
@@ -95,26 +91,6 @@ pub(crate) fn refuses_check_request(character: *const Character) -> bool {
         REQUESTS_REFUSED.fetch_add(1, Ordering::Relaxed);
     }
     refuse
-}
-
-/// What the switch detour does with a call.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum SwitchDecision {
-    /// Let the game switch: the call is not the empty-weapon switch of the player's weapon, or the
-    /// setting allows it.
-    Pass,
-    /// Report that no weapon qualified, without switching.
-    Suppress,
-}
-
-/// Decide a call of the switch: `in_check` is whether it comes from a marked ammunition check of
-/// the local player's weapon on this thread, and `auto_switch` the setting.
-pub fn decide(in_check: bool, auto_switch: bool) -> SwitchDecision {
-    if in_check && !auto_switch {
-        SwitchDecision::Suppress
-    } else {
-        SwitchDecision::Pass
-    }
 }
 
 /// Whether a marked check was a dry fire to pulse: the check tried the switch, which it does only
@@ -137,7 +113,6 @@ pub fn is_reloadable_dry_fire(
 }
 
 static SUPPRESSED: AtomicU64 = AtomicU64::new(0);
-static ALLOWED: AtomicU64 = AtomicU64::new(0);
 static DRY_FIRES: AtomicU64 = AtomicU64::new(0);
 static REQUESTS_REFUSED: AtomicU64 = AtomicU64::new(0);
 
@@ -232,32 +207,17 @@ fn try_to_switch_to_valid_weapon(inventory: *mut Inventory) -> bool {
     if check.is_some() {
         CHECK.set(Some(Check { tried_switch: true }));
     }
-    let auto_switch = WEAPONS_CONFIG.lock().auto_switch_when_empty;
-    match decide(check.is_some(), auto_switch) {
-        SwitchDecision::Suppress => {
-            SUPPRESSED.fetch_add(1, Ordering::Relaxed);
-            false
-        }
-        SwitchDecision::Pass => {
-            if check.is_some() {
-                ALLOWED.fetch_add(1, Ordering::Relaxed);
-            }
-            TRY_TO_SWITCH_TO_VALID_WEAPON.get().unwrap().call(inventory)
-        }
+    // The empty-weapon switch of the player's weapon reports that no weapon qualified.
+    if check.is_some() {
+        SUPPRESSED.fetch_add(1, Ordering::Relaxed);
+        return false;
     }
+    TRY_TO_SWITCH_TO_VALID_WEAPON.get().unwrap().call(inventory)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn only_the_checks_switch_is_suppressed_and_only_when_the_setting_is_off() {
-        assert_eq!(decide(true, false), SwitchDecision::Suppress);
-        assert_eq!(decide(true, true), SwitchDecision::Pass);
-        assert_eq!(decide(false, false), SwitchDecision::Pass);
-        assert_eq!(decide(false, true), SwitchDecision::Pass);
-    }
 
     #[test]
     fn an_empty_magazine_with_reserve_clicks_once_per_pull() {
