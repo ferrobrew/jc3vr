@@ -18,7 +18,7 @@ mod commands;
 
 use std::{fmt, time::Instant};
 
-use body_rig::{angle::yaw_of, rotation::level};
+use body_rig::math::angle::{heading, yaw_of};
 pub use commands::desired_for;
 use glam::{Quat, Vec3};
 use jc3vr_body::controllers::{
@@ -846,7 +846,7 @@ impl HandClaims {
 /// otherwise (wrists together, crossed, or behind the player).
 fn flight_heading(wrists: [Pose; 2], head: Pose) -> Quat {
     let tuning = &VEHICLES.get().wingsuit_gestures;
-    let head_heading = level(head.orientation);
+    let head_heading = Quat::from_rotation_y(heading(head.orientation));
     let across = (wrists[1].position - wrists[0].position).with_y(0.0);
     if across.length() < tuning.min_arms_separation_m {
         return head_heading;

@@ -17,6 +17,7 @@
 
 use std::{sync::LazyLock, time::Instant};
 
+use body_rig::math::angle::heading;
 use jc3gi::{
     character::character::Character,
     input::input_action_map::{Action, LocalPlayerActionMap},
@@ -29,7 +30,7 @@ use jc3vr_body::{
     hooks::animation::active_state_type_id,
 };
 use jc3vr_core::hash::StateSet;
-use jc3vr_view::{headpose, headpose::sim::body_yaw_of};
+use jc3vr_view::headpose;
 use parking_lot::Mutex;
 
 use crate::controllers::vehicles::tuning::VEHICLES;
@@ -50,7 +51,7 @@ pub(crate) unsafe fn tick() {
     let edge = tracker.step(holding, taking_off, Instant::now());
     let phase = tracker.phase;
     drop(tracker);
-    let head = || headpose::xr::cockpit_pose().map(|pose| body_yaw_of(pose.orientation));
+    let head = || headpose::xr::cockpit_pose().map(|pose| heading(pose.orientation));
     match (edge, phase) {
         (Some(Edge::Entered), _) => {
             let heading = head();

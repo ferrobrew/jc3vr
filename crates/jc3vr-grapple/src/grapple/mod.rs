@@ -49,7 +49,10 @@ use std::{
     time::Instant,
 };
 
-use body_rig::{angle::wrap, smooth::follow_factor};
+use body_rig::math::{
+    angle::{heading, wrap},
+    smooth::follow_factor,
+};
 use glam::{Quat, Vec3};
 use jc3gi::equipment::grappling_hook::GrapplingHookState;
 use parking_lot::Mutex;
@@ -105,7 +108,7 @@ pub fn advance(body: Quat, rooted: Option<Vec3>, on_foot: bool, config: &Grapple
         && config.mode == GrappleComfortMode::HoldView
         && headpose::source() == headpose::Source::Vr
     {
-        s.pending_retarget = Some((headpose::sim::body_yaw_of(s.held), now));
+        s.pending_retarget = Some((heading(s.held), now));
         s.handoff_deadline =
             Some(now + std::time::Duration::from_secs_f32(tuning.handoff_timeout_s));
     }
@@ -115,8 +118,7 @@ pub fn advance(body: Quat, rooted: Option<Vec3>, on_foot: bool, config: &Grapple
     // body can be blocked from turning), when the character leaves its feet, or when a new reel
     // starts.
     if let Some(deadline) = s.handoff_deadline {
-        let dyaw =
-            wrap(headpose::sim::body_yaw_of(body) - headpose::sim::body_yaw_of(s.held)).abs();
+        let dyaw = wrap(heading(body) - heading(s.held)).abs();
         if active
             || !on_foot
             || now >= deadline
@@ -299,7 +301,7 @@ fn filter_with(body: Quat, mode: GrappleComfortMode, held: Quat, factor: f32) ->
     let filtered = match mode {
         GrappleComfortMode::Off => return body,
         GrappleComfortMode::HoldView => held,
-        GrappleComfortMode::LevelPitch => Quat::from_rotation_y(headpose::sim::body_yaw_of(body)),
+        GrappleComfortMode::LevelPitch => Quat::from_rotation_y(heading(body)),
     };
     body.slerp(filtered, factor.min(1.0)).normalize()
 }
