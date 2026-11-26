@@ -42,23 +42,12 @@ use jc3gi::{
 };
 use parking_lot::Mutex;
 
-pub(crate) use crate::egui_impl::DebugUiInput;
-use crate::{
-    controllers::frame::ActionSetKind,
-    grapple::hook,
-    hooks::animation::active_state_type_id,
-    ui::capture::{CaptureUpdate, OwnershipSnapshot},
+pub(crate) use crate::input_core::capture::{
+    DebugUiInput, debug_ui_capture, update_debug_ui_capture,
 };
-
-/// Step debug ownership from unfiltered input before detecting the control mode.
-pub(crate) fn update_debug_ui_capture(input: DebugUiInput) -> Option<CaptureUpdate> {
-    crate::egui_impl::update_debug_ui_capture(input)
-}
-
-/// Visibility and requested mode are independent of the effective editing owner.
-pub(crate) fn debug_ui_capture() -> Option<OwnershipSnapshot> {
-    crate::egui_impl::debug_ui_capture()
-}
+use crate::{
+    controllers::frame::ActionSetKind, grapple::hook, hooks::animation::active_state_type_id,
+};
 
 /// The mod contributes a UI-mode signal only while it owns editing input.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

@@ -1,4 +1,5 @@
 pub(crate) mod desktop_input;
+mod register_input_capture;
 
 use anyhow::Context as _;
 use egui::CursorIcon as CI;
@@ -30,31 +31,18 @@ use windows::Win32::{
     },
 };
 
-pub(crate) use crate::egui_impl::desktop_input::{
-    consume_desktop_shortcut, desktop_input_observation, observe_desktop_message,
-};
 use crate::{
     director::clean_view::hides_desktop,
     hud::{egui_panel, pointer},
-    ui::capture::{
+    input_core::capture::{
         CapturePolicy, CaptureUpdate, DeviceEffect, InputObservation, OwnershipSnapshot, PanelMode,
-        PanelRequest,
+        PanelRequest, publish_capture,
     },
 };
-
-/// Input-thread observations before either editing or gameplay receives the sample.
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct DebugUiInput {
-    pub focused: bool,
-    pub tracking_ready: bool,
-    /// Includes all source episodes, panel shortcuts, keys, buttons, composition, and scroll.
-    pub controls_neutral: bool,
-}
-
-/// The latest policy observation; reading it never takes the renderer lock.
-pub(crate) fn debug_ui_capture() -> Option<OwnershipSnapshot> {
-    *CAPTURE_SNAPSHOT.lock()
-}
+pub(crate) use crate::{
+    egui_impl::desktop_input::{consume_desktop_shortcut, observe_desktop_message},
+    input_core::capture::{DebugUiInput, debug_ui_capture, desktop_input_observation},
+};
 
 /// Queue a UI request without re-entering the renderer lock from an egui callback.
 pub(crate) fn request_debug_ui(request: PanelRequest) {
@@ -62,6 +50,8 @@ pub(crate) fn request_debug_ui(request: PanelRequest) {
 }
 
 /// Step capture before mode detection, pointer routing, and gameplay output on the input thread.
+/// The capture driver registers it as its step
+/// ([`crate::input_core::capture::update_debug_ui_capture`]).
 pub(crate) fn update_debug_ui_capture(input: DebugUiInput) -> Option<CaptureUpdate> {
     let mut state = EguiState::get();
     state.as_mut().map(|state| {
@@ -87,7 +77,6 @@ pub struct EguiState {
     panel: Option<(u32, u32)>,
 }
 static STATE: Mutex<Option<EguiState>> = Mutex::new(None);
-static CAPTURE_SNAPSHOT: Mutex<Option<OwnershipSnapshot>> = Mutex::new(None);
 static REQUESTS: Mutex<Vec<PanelRequest>> = Mutex::new(Vec::new());
 
 /// The renderer-free part of the live adapter, also exercised with a real egui context.
@@ -292,6 +281,7 @@ impl EguiState {
     }
 
     pub fn install() -> anyhow::Result<()> {
+        register_input_capture::register();
         desktop_input::reset_desktop_input();
         STATE.lock().replace(Self::new()?);
         tracing::info!("Initialized egui");
@@ -302,7 +292,7 @@ impl EguiState {
         if let Some(mut state) = STATE.lock().take() {
             state.request_capture(PanelRequest::Hide);
         }
-        *CAPTURE_SNAPSHOT.lock() = None;
+        publish_capture(None);
         REQUESTS.lock().clear();
         desktop_input::reset_desktop_input();
         tracing::info!("Uninitialized egui");
@@ -640,7 +630,7 @@ impl EguiState {
         {
             graphics.m_ActiveCursor = cursor;
         }
-        *CAPTURE_SNAPSHOT.lock() = Some(update.snapshot);
+        publish_capture(Some(update.snapshot));
         update
     }
 

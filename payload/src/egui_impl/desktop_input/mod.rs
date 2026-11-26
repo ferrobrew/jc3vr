@@ -36,81 +36,13 @@ use windows::{
     core::{s, w},
 };
 
-/// An unavailable sample never establishes desktop neutrality.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum DesktopInputObservation {
-    Unavailable(DesktopInputUnavailable),
-    Observed(DesktopInputEvidence),
-}
-
-impl DesktopInputObservation {
-    pub(crate) fn controls_neutral(self) -> Option<bool> {
-        match self {
-            Self::Unavailable(_) => None,
-            Self::Observed(evidence) => Some(evidence.controls_neutral()),
-        }
-    }
-
-    /// Native focus is known only for observed samples or an explicit focus failure.
-    pub(crate) fn focused(self) -> Option<bool> {
-        match self {
-            Self::Observed(_) => Some(true),
-            Self::Unavailable(DesktopInputUnavailable::Unfocused) => Some(false),
-            Self::Unavailable(_) => None,
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum DesktopInputUnavailable {
-    WindowNotObserved,
-    WrongThread,
-    Unfocused,
-    KeyboardStateUnavailable,
-    ImeStateUnavailable,
-    BaselinePending,
-    ConcurrentActivity,
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(crate) struct DesktopModifiers {
-    pub shift: bool,
-    pub control: bool,
-    pub alt: bool,
-    pub windows: bool,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct DesktopInputEvidence {
-    pub sequence: u64,
-    pub held_virtual_keys: u16,
-    pub held_mouse_buttons: u8,
-    pub modifiers: DesktopModifiers,
-    pub key_activity: bool,
-    pub mouse_button_activity: bool,
-    pub scroll_activity: bool,
-    pub text_activity: bool,
-    pub composition_active: bool,
-    pub consumed_shortcuts: u16,
-}
-
-impl DesktopInputEvidence {
-    pub(crate) fn controls_neutral(self) -> bool {
-        self.held_virtual_keys == 0
-            && self.held_mouse_buttons == 0
-            && self.modifiers == DesktopModifiers::default()
-            && !self.key_activity
-            && !self.mouse_button_activity
-            && !self.scroll_activity
-            && !self.text_activity
-            && !self.composition_active
-            && self.consumed_shortcuts == 0
-    }
-}
+pub(crate) use crate::input_core::capture::desktop::{
+    DesktopInputEvidence, DesktopInputObservation, DesktopInputUnavailable, DesktopModifiers,
+};
 
 /// Sample once before the capture policy, including while editing disables game-device polling.
 /// The native calls use the window thread's keyboard state and the asynchronous held-state bit.
-pub(crate) fn desktop_input_observation() -> DesktopInputObservation {
+pub(crate) fn sample_desktop_input() -> DesktopInputObservation {
     // The game owns the window, so its handle comes from the game's own graphics params rather
     // than from whichever window message happened to arrive first.
     let window = engine_window();

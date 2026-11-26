@@ -28,6 +28,7 @@ use crate::{
     frame_timing::{self, Slot},
     headpose,
     hooks::input::swim::{log_tick, refuse_swim_moves},
+    input_core::capture::input_captured,
 };
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -53,10 +54,7 @@ fn input_device_manager_update(manager: *mut InputDeviceManager, dt: f32) {
     }
     // When egui captures input, publish a zero-delta tick — the game's input is already disabled,
     // but the sim's tick cadence (mode detection, pose-pair rotation) must keep running.
-    if crate::egui_impl::EguiState::get()
-        .as_ref()
-        .is_some_and(|s| s.is_input_captured())
-    {
+    if input_captured() {
         headpose::sim::on_input_tick(0.0, 0.0, false, dt);
         return;
     }

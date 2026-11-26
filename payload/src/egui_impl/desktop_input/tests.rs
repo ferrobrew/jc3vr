@@ -1,7 +1,7 @@
 use super::*;
 use crate::{
     egui_impl::EguiCaptureAdapter,
-    ui::capture::{InputObservation, PanelRequest},
+    input_core::capture::{InputObservation, PanelRequest},
 };
 
 fn native(keys: &[usize]) -> Result<NativeSnapshot, DesktopInputUnavailable> {

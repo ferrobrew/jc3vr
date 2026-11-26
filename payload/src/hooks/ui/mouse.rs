@@ -29,11 +29,11 @@ use re_utilities::hook_library::HookLibrary;
 use crate::{
     config::Config,
     controllers::map,
-    egui_impl::debug_ui_capture,
     hud::{
         cursor,
         pointer::{self, PendingRoute, RoutedPointer},
     },
+    input_core::capture::debug_ui_capture,
 };
 
 /// Cancel input on the game thread before ownership changes or shutdown removes the UI hooks.
