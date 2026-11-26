@@ -96,12 +96,14 @@ pub fn holds() -> [bool; 2] {
 }
 
 /// Publish each hand's hold on a mounted gun's handle for [`holds`].
+#[inline]
 pub fn publish_holds(holds: [bool; 2]) {
     for (slot, hold) in HOLDS.iter().zip(holds) {
         slot.store(hold, Ordering::Relaxed);
     }
 }
 
+#[inline]
 fn source() -> &'static MountedSource {
     SOURCE.get().expect(
         "mounted: no mounted-gun source is registered; the controllers' install registers it",

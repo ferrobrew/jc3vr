@@ -66,6 +66,7 @@ impl RigidBody {
     }
 
     /// The velocity of the body's material point at the world point `at`.
+    #[inline]
     pub fn point_velocity(&self, at: Vec3) -> Vec3 {
         point_velocity(
             self.pose.centre,

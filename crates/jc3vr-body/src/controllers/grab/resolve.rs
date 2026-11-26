@@ -43,6 +43,7 @@ pub fn resolve(targets: &[GripTarget], grips: [Option<Vec3>; 2]) -> [Resolved; 2
 /// Every target of `targets` that `hand`, with its drawn grip at `grip`, may take and is within
 /// reach of. A target the provider measured is within reach whenever it is offered; a hand without
 /// a grip reaches only those.
+#[inline]
 pub fn reaches(hand: Hand, targets: &[GripTarget], grip: Option<Vec3>) -> Vec<Reach> {
     targets
         .iter()

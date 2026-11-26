@@ -200,6 +200,7 @@ pub struct Grip {
 
 impl Grip {
     /// The source's default pose and firmness, at the whole share, with no fit.
+    #[inline]
     pub const fn new(source: GripSource) -> Self {
         Self {
             source,
@@ -216,6 +217,7 @@ impl Grip {
     }
 
     /// The grip with its share scaled by `share`, `0..=1`.
+    #[inline]
     pub fn share(self, share: f32) -> Self {
         let share = if share.is_finite() {
             share.clamp(0.0, 1.0)

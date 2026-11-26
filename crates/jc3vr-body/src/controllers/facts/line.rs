@@ -14,6 +14,7 @@ pub fn out() -> bool {
 }
 
 /// Publish whether the snatch's line is out.
+#[inline]
 pub fn publish(out: bool) {
     LINE_OUT.store(out, Ordering::Release);
 }

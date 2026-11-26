@@ -239,6 +239,7 @@ pub fn tick_records() -> TickRecords {
 
 /// The local player character's address, published every tick for the render-phase weapon hook's
 /// ownership test (which must not call into the engine from a render job).
+#[inline]
 pub fn local_character() -> usize {
     LOCAL_CHARACTER.load(Ordering::Relaxed)
 }

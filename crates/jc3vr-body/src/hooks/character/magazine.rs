@@ -33,6 +33,7 @@ pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&CHARACTER_UPDATE_PASS_POST_PHYSICS_SERIAL_BINDER)
 }
 
+#[inline]
 pub fn active_entries() -> usize {
     ACTIVE_ENTRIES.load(Ordering::Acquire)
 }

@@ -239,6 +239,7 @@ impl GrappleButton {
         }
     }
 
+    #[inline]
     pub fn pending(&self) -> bool {
         self.phase != Phase::Idle || self.traversal_spent
     }

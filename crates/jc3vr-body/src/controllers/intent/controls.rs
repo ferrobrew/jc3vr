@@ -283,6 +283,7 @@ pub fn radial_deadzone(stick: Vec2, deadzone: f32) -> Vec2 {
 }
 
 /// A `0..=1` axis with a deadzone at zero, rescaled so that it still reaches one.
+#[inline]
 pub fn scalar_deadzone(value: f32, deadzone: f32) -> f32 {
     let deadzone = deadzone.clamp(0.0, 0.99);
     if !value.is_finite() || value <= deadzone {

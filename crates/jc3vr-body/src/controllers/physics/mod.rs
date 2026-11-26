@@ -41,6 +41,7 @@ pub const GRAVITY_MPS2: f32 = 9.81;
 ///
 /// The main thread, outside the physics step.
 #[track_caller]
+#[inline]
 pub unsafe fn set_body_velocities(
     body: u32,
     owner: NonZeroUsize,
@@ -57,6 +58,7 @@ pub unsafe fn set_body_velocities(
 /// # Safety
 ///
 /// The main thread, outside the physics step.
+#[inline]
 pub unsafe fn body_pose(body: u32, owner: NonZeroUsize) -> Result<(Vec3, Quat), BodyError> {
     let state = unsafe { bodies::read(body, owner) }?;
     Ok((state.pose.centre, state.pose.orientation))
@@ -68,6 +70,7 @@ pub unsafe fn body_pose(body: u32, owner: NonZeroUsize) -> Result<(Vec3, Quat), 
 /// # Safety
 ///
 /// The main thread, outside the physics step.
+#[inline]
 pub unsafe fn body_state(body: u32, owner: NonZeroUsize) -> Result<BodyState, BodyError> {
     unsafe { bodies::read(body, owner) }
 }

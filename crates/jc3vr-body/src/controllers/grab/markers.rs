@@ -234,6 +234,7 @@ fn alpha(shown: Shown, state: MarkState) -> Option<f32> {
 }
 
 /// Where `target`'s marker is drawn.
+#[inline]
 pub fn anchor(target: &GripTarget, frame: &MarkerFrame) -> Option<Anchor> {
     anchor_at(target.mark.at, frame)
 }

@@ -27,6 +27,7 @@ pub(crate) fn read_move(desired: &[Desired]) -> Vec2 {
 }
 
 /// Write `stick` (+X right, +Y forward) over the tables' move half-axes and their length.
+#[inline]
 pub fn write_move(desired: &mut Vec<Desired>, stick: Vec2) {
     replace_axis(desired, stick.y, MOVE_BACKWARD, MOVE_FORWARD);
     replace_axis(desired, stick.x, MOVE_LEFT, MOVE_RIGHT);
@@ -83,6 +84,7 @@ pub fn raise_analog(desired: &mut Vec<Desired>, value: f32, action: Action) {
 
 /// Whether the tables wrote either half of the axis `negative`/`positive` this tick: their stick
 /// is out of its deadzone.
+#[inline]
 pub fn axis_wanted(desired: &[Desired], negative: Action, positive: Action) -> bool {
     desired.iter().any(|d| {
         d.target.map == MapKind::Player

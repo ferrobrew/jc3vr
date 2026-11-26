@@ -79,10 +79,12 @@ impl Frames {
         self.character.transform_point3(point)
     }
 
+    #[inline]
     pub fn world_to_model(&self, point: Vec3) -> Vec3 {
         self.character.inverse().transform_point3(point)
     }
 
+    #[inline]
     pub fn cockpit_to_model(&self, point: Vec3) -> Vec3 {
         self.world_to_model(self.cockpit.point_to_world(point))
     }

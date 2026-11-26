@@ -15,6 +15,7 @@ pub fn holds() -> bool {
 }
 
 /// Publish whether the lock holds the line.
+#[inline]
 pub fn publish(holds: bool) {
     LOCKED.store(holds, Ordering::Release);
 }

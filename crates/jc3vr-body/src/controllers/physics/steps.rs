@@ -11,6 +11,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 pub const STALE_STEPS: u64 = 6;
 
 /// The physics steps run so far, for stamping a publication.
+#[inline]
 pub fn steps() -> u64 {
     STEPS.load(Ordering::Acquire)
 }

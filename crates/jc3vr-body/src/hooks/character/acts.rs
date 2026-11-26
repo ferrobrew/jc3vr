@@ -86,6 +86,7 @@ static REVERSE_ACT_IDS: OnceLock<[i32; 2]> = OnceLock::new();
 /// is not live yet (e.g. immediately after a startup injection, before the animation system has
 /// created it). Once the table exists the lookup is a pure read: the `ACT_*` names are registered by
 /// loaded animation data before gameplay queues acts.
+#[inline]
 pub fn resolve_act_id(name: &std::ffi::CStr) -> Option<i32> {
     let table = unsafe { EventIdSymbolTable::get() }?;
     Some(unsafe { table.string_to_id(name.as_ptr() as *const u8) })

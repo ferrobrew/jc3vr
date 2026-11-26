@@ -17,6 +17,7 @@ use jc3gi::{character::character::Character, equipment::grappling_hook::Grapplin
 /// `character` must be live, on the game thread.
 ///
 /// [`Character::IsInRidingInVehicleState`]: jc3gi::character::character::Character::IsInRidingInVehicleState
+#[inline]
 pub unsafe fn rides_in_seat(character: &Character) -> bool {
     !unsafe { character.GetVehiclePtr() }.is_null()
         && unsafe { character.IsInRidingInVehicleState() }
@@ -28,6 +29,7 @@ pub unsafe fn rides_in_seat(character: &Character) -> bool {
 /// # Safety
 ///
 /// `character` and `hook` must be live, on the game thread.
+#[inline]
 pub unsafe fn stands_in(character: &Character, hook: &GrapplingHook) -> bool {
     unsafe { !hook.GetFireInputEnabled() && rides_in_seat(character) }
 }

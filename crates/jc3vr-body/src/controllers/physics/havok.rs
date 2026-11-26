@@ -5,6 +5,7 @@ use jc3gi::{havok::hkTransformf, types::vector_math::AlignedVector3};
 
 /// A Havok transform as an affine transform: its rotation's columns are the images of the local
 /// axes.
+#[inline]
 pub fn affine(t: &hkTransformf) -> Affine3A {
     let [x, y, z] = t.m_rotation.map(|c| Vec3A::from_array(c.data));
     Affine3A {

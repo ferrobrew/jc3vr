@@ -28,6 +28,7 @@ impl Weak {
     /// # Safety
     ///
     /// `source` must be a live weak reference.
+    #[inline]
     pub unsafe fn of(source: &WeakPtrGameObject) -> Self {
         let mut weak = Weak(null_weak());
         unsafe { weak.0.Assign(source) };
@@ -48,6 +49,7 @@ impl Weak {
 
 impl Clone for Weak {
     /// A second weak reference to the same object, with its own count.
+    #[inline]
     fn clone(&self) -> Self {
         let mut weak = Weak(null_weak());
         // SAFETY: the source is a live reference, and the engine's copy takes its own count.
@@ -57,6 +59,7 @@ impl Clone for Weak {
 }
 
 impl Drop for Weak {
+    #[inline]
     fn drop(&mut self) {
         if self.0.pn.is_null() {
             return;
@@ -104,6 +107,7 @@ impl Strong {
     /// # Safety
     ///
     /// `shared` must be a strong reference whose release falls to the caller.
+    #[inline]
     pub unsafe fn adopt(shared: SharedPtr<GameObject>) -> Option<Self> {
         (!shared.px.is_null()).then_some(Strong(shared))
     }
@@ -131,6 +135,7 @@ impl Strong {
 }
 
 impl Drop for Strong {
+    #[inline]
     fn drop(&mut self) {
         if self.0.pn.is_null() {
             return;

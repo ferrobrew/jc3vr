@@ -108,6 +108,7 @@ pub fn own_custom(owner: CustomOwner, wire: NonZeroUsize) {
 }
 
 /// Whether `owner` holds the claim and made `wire` under it.
+#[inline]
 pub fn owns_custom(owner: CustomOwner, wire: NonZeroUsize) -> bool {
     CUSTOM
         .lock()
@@ -135,6 +136,7 @@ static CUSTOM: Mutex<Option<CustomClaim>> = Mutex::new(None);
 /// # Safety
 ///
 /// The game thread, or a thread that reads the hook's plain fields where the game does not free it.
+#[inline]
 pub unsafe fn local() -> Option<(&'static mut Character, &'static mut GrapplingHook)> {
     let character = unsafe { Character::GetLocalPlayerCharacter().as_mut() }?;
     let hook = unsafe { character.m_Inventory.m_GrapplingHook.px.as_mut() }?;
@@ -146,6 +148,7 @@ pub unsafe fn local() -> Option<(&'static mut Character, &'static mut GrapplingH
 /// # Safety
 ///
 /// As for [`local`].
+#[inline]
 pub unsafe fn local_hook() -> Option<&'static mut GrapplingHook> {
     unsafe { local() }.map(|(_, hook)| hook)
 }

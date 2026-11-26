@@ -57,6 +57,7 @@ pub struct EasedCorrection {
     pub offset: Vec3,
 }
 
+#[inline]
 pub fn status() -> EasedCorrection {
     let shared = SHARED.lock();
     EasedCorrection {

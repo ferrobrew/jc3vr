@@ -53,6 +53,7 @@ pub unsafe fn proxy_body(character: &Character) -> Option<u32> {
 /// # Safety
 ///
 /// `character` must be a live character.
+#[inline]
 pub unsafe fn hostile(character: &Character) -> bool {
     let Some(player) = (unsafe { Character::GetLocalPlayerCharacter().as_ref() }) else {
         return false;
@@ -127,6 +128,7 @@ impl GunnerOut {
 /// # Safety
 ///
 /// `character` must be a live character, on the game thread outside the game's update.
+#[inline]
 pub unsafe fn gunner_out(character: &mut Character) -> GunnerOut {
     if !unsafe { character.IsInMountedGunState() } {
         return GunnerOut::NotAGunner;
@@ -239,6 +241,7 @@ pub unsafe fn getting_up(character: &Character) -> bool {
 /// # Safety
 ///
 /// `character` must be a live character.
+#[inline]
 pub unsafe fn dead(character: &Character) -> bool {
     let health = unsafe { character.GetHealth() };
     health <= 0 || unsafe { state_bit(character, StateBitFlag::SB_IS_IN_DEAD_STATE) }

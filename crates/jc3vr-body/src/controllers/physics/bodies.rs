@@ -78,6 +78,7 @@ pub struct BodyState {
 }
 
 impl BodyState {
+    #[inline]
     pub fn rigid(&self) -> RigidBody {
         RigidBody {
             pose: self.pose,
@@ -388,6 +389,7 @@ pub(crate) unsafe fn mass_kg(body: u32) -> Option<f32> {
 /// # Safety
 ///
 /// `object` must be a live physics game object.
+#[inline]
 pub unsafe fn is_type(object: NonZeroUsize, type_id: *const u32) -> bool {
     unsafe { (*game_object_of(object)).IsType(type_id) }
 }

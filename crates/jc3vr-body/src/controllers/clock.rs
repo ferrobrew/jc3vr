@@ -31,6 +31,7 @@ impl TimeScale {
 
     /// The time scale of a clock whose update speed is `update_speed`: one for a value that is not
     /// finite and positive, and otherwise bounded to the range the director's time scale reaches.
+    #[inline]
     pub fn new(update_speed: f32) -> Self {
         if update_speed.is_finite() && update_speed > 0.0 {
             Self(update_speed.clamp(MIN_TIME_SCALE, MAX_TIME_SCALE))
@@ -46,6 +47,7 @@ impl TimeScale {
     /// # Safety
     ///
     /// The game is running, so the clock singleton is live.
+    #[inline]
     pub unsafe fn current() -> Self {
         unsafe { Clock::get() }.map_or(Self::REAL, |clock| {
             // SAFETY: a field of the live singleton, aligned, read without forming a reference

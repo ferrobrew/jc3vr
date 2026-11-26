@@ -23,16 +23,19 @@ use crate::controllers::intent::controls::holds_unseen;
 /// Whether `hand` was still closed on what its grip took as of the last input tick
 /// ([`ClosedHand`](crate::controllers::intent::controls::ClosedHand)), for the holds checked
 /// outside the tick.
+#[inline]
 pub fn hand_closed(hand: Hand) -> bool {
     HANDS_CLOSED[hand.index()].load(Ordering::Relaxed)
 }
 
 /// Record whether `hand` is still closed on what its grip took, as the bindings' tick found it.
+#[inline]
 pub fn record_hand_closed(hand: Hand, closed: bool) {
     HANDS_CLOSED[hand.index()].store(closed, Ordering::Relaxed);
 }
 
 /// Forget every hand's closed state, for the bindings standing down.
+#[inline]
 pub fn clear_hands_closed() {
     for closed in &HANDS_CLOSED {
         closed.store(false, Ordering::Relaxed);

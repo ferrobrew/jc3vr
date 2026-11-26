@@ -99,6 +99,7 @@ pub(super) fn in_grapple_pass<R>(f: impl FnOnce() -> R) -> R {
 /// # Safety
 ///
 /// `object` must be a live physics game object.
+#[inline]
 pub unsafe fn is_dropped_weapon(object: NonZeroUsize) -> bool {
     let game_object = game_object_of(object);
     if !unsafe { (*game_object).IsType(WeaponBase::TYPE_ID()) } {

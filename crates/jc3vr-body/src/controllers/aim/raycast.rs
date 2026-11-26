@@ -42,6 +42,7 @@ impl CastOptions {
     /// # Safety
     ///
     /// The game thread.
+    #[inline]
     pub unsafe fn ignoring_player(other: usize) -> CastOptions {
         let player = unsafe { Character::GetLocalPlayerCharacter() } as usize;
         CastOptions {
@@ -55,6 +56,7 @@ impl CastOptions {
     /// # Safety
     ///
     /// `rider` must be a live character, on the thread updating it.
+    #[inline]
     pub unsafe fn ignoring_rider(rider: &Character) -> CastOptions {
         let vehicle = unsafe { rider.GetVehiclePtr() } as usize;
         CastOptions {

@@ -46,6 +46,7 @@ pub fn hook_library() -> HookLibrary {
 }
 
 /// Play `event`'s cue on `hand`.
+#[inline]
 pub fn play(hand: Hand, event: Event) {
     play_scaled(hand, event, 1.0);
 }
