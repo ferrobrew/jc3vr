@@ -15,6 +15,7 @@ members = [
     "crates/jc3vr-gameplay",
     "crates/jc3vr-hud",
     "crates/jc3vr-input",
+    "crates/jc3vr-physical",
     "crates/jc3vr-render",
     "crates/jc3vr-tooling",
     "crates/jc3vr-ui",

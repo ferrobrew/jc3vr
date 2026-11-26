@@ -1,0 +1,35 @@
+[package]
+name = "jc3vr-physical"
+version = "0.1.0"
+edition = "2024"
+description = "The physical layer of the payload: the physical hands (each empty palm colliding with the world, holding, climbing, doors, and the hand bodies) and breaking window glass, built on the body layer."
+publish = false
+
+[dependencies]
+windows = { workspace = true }
+glam = { workspace = true }
+jc3gi = { path = "../../jc3gi" }
+jc3vr-core = { path = "../jc3vr-core" }
+jc3vr-input = { path = "../jc3vr-input" }
+jc3vr-view = { path = "../jc3vr-view" }
+# The body layer below: the body-bound subsystems, the shared vocabulary, the held-item facts, and
+# the physics substrate the hands build on.
+jc3vr-body = { path = "../jc3vr-body" }
+# The physical hands' and the glass's detours. The detour macro emits `::re_utilities` paths, so a
+# crate that defines detours depends on `re-utilities` directly.
+re-utilities = { workspace = true }
+detours-macro = { workspace = true }
+tracking-format = { path = "../tracking-format" }
+body-rig = { path = "../body-rig", features = ["serde"] }
+tracing = "0.1"
+parking_lot = "0.12.5"
+arc-swap = "1.8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
+jc3vr-body = { path = "../jc3vr-body", features = ["test-support"] }
+jc3vr-core = { path = "../jc3vr-core", features = ["test-support"] }
+jc3vr-view = { path = "../jc3vr-view", features = ["test-support"] }
+pretty_assertions = "1.4.1"
+test-case = "3.3.1"
