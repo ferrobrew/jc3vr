@@ -35,47 +35,44 @@ use jc3gi::{
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::{
-    config::Config,
-    controllers::{
-        aim::targets::weak_target,
-        bindings::{
-            self,
-            controls::ButtonControl,
-            hold::{Desired, MapKind},
+use crate::controllers::{
+    aim::targets::weak_target,
+    bindings::{
+        self,
+        controls::ButtonControl,
+        hold::{Desired, MapKind},
+    },
+    body::rig::frames::Frames,
+    config::{CONTROLLERS_CONFIG, ControllersConfig},
+    diagnostics::{self, Thrown},
+    frame::{Hand, Pose},
+    grab::{Candidate, GrabVolume, resolve::nearest_within},
+    hands::{
+        ActiveHands,
+        held::{self, Held, Slot},
+    },
+    haptics::{self, Event},
+    loadout::{ItemId, Place, TakeSource, live, safe_items::SafeItemView},
+    motion,
+    overlay::{
+        primitive::{
+            Anchor, DepthMode, Facing, HandPose, Primitive, Rgba, Shape, Source, SpriteSize,
         },
-        body::rig::frames::Frames,
-        config::ControllersConfig,
-        diagnostics::{self, Thrown},
-        frame::{Hand, Pose},
-        grab::{Candidate, GrabVolume, resolve::nearest_within},
-        hands::{
-            ActiveHands,
-            held::{self, Held, Slot},
+        store,
+    },
+    physical_hands,
+    weapons::{
+        docks, engine,
+        grenade::{
+            catch::{CatchCounts, Caught, Sighting},
+            native::PinPull,
+            pin::{PinSource, TeethPull, TeethTick},
+            stock::Stock,
+            tuning::{GRENADE, GrenadeTuning},
         },
-        haptics::{self, Event},
-        loadout::{ItemId, Place, TakeSource, live, safe_items::SafeItemView},
-        motion,
-        overlay::{
-            primitive::{
-                Anchor, DepthMode, Facing, HandPose, Primitive, Rgba, Shape, Source, SpriteSize,
-            },
-            store,
-        },
-        physical_hands,
-        weapons::{
-            docks, engine,
-            grenade::{
-                catch::{CatchCounts, Caught, Sighting},
-                native::PinPull,
-                pin::{PinSource, TeethPull, TeethTick},
-                stock::Stock,
-                tuning::{GRENADE, GrenadeTuning},
-            },
-            hold::{self, act, refs::Weak},
-            inventory::engine::weapon_of,
-            pouch_return, reload,
-        },
+        hold::{self, act, refs::Weak},
+        inventory::engine::weapon_of,
+        pouch_return, reload,
     },
 };
 
@@ -641,9 +638,7 @@ pub(crate) fn observe_hands(grips: [Option<Pose>; 2]) {
     STATE.lock().grips = grips;
     safe::observe(
         grips,
-        &GrenadeTuning::of(&Config::lock_query(|config| {
-            config.controllers.weapons.grenade
-        })),
+        &GrenadeTuning::of(&CONTROLLERS_CONFIG.query(|config| config.weapons.grenade)),
     );
 }
 
@@ -655,9 +650,7 @@ pub(crate) fn observe_hands(grips: [Option<Pose>; 2]) {
 /// The game thread, before the world update.
 pub(crate) unsafe fn render_frame(dtf: f32) {
     unsafe { beacon::render_frame() };
-    let tuning = GrenadeTuning::of(&Config::lock_query(|config| {
-        config.controllers.weapons.grenade
-    }));
+    let tuning = GrenadeTuning::of(&CONTROLLERS_CONFIG.query(|config| config.weapons.grenade));
     unsafe { safe::render_frame(dtf, &tuning) };
 }
 

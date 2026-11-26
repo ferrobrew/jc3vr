@@ -13,24 +13,22 @@ use jc3gi::{
 };
 use parking_lot::Mutex;
 
-use crate::{
-    config::Config,
-    controllers::{
-        aim::gun,
-        bindings,
-        frame::{self, Hand},
-        hands::late,
-        loadout::live,
-        mode, scheme,
-        weapons::{
-            capabilities::{Capabilities, GunHand, gun_owners_now},
-            hold::{armed, refs::Strong},
-            inventory::engine::strong_to,
-            reload::{
-                engine::{self, DetachOutcome},
-                extraction::{DetachKind, DetachRequest, MagazineId},
-                loose::Retention,
-            },
+use crate::controllers::{
+    aim::gun,
+    bindings,
+    config::CONTROLLERS_CONFIG,
+    frame::{self, Hand},
+    hands::late,
+    loadout::live,
+    mode, scheme,
+    weapons::{
+        capabilities::{Capabilities, GunHand, gun_owners_now},
+        hold::{armed, refs::Strong},
+        inventory::engine::strong_to,
+        reload::{
+            engine::{self, DetachOutcome},
+            extraction::{DetachKind, DetachRequest, MagazineId},
+            loose::Retention,
         },
     },
 };
@@ -296,8 +294,8 @@ fn permitted(request: DetachRequest, retain: bool) -> bool {
     if crate::is_shutting_down()
         || !scheme::is_controllers()
         || !Capabilities::of(mode::current().mode).reload
-        || !Config::lock_query(|c| {
-            let reload = &c.controllers.weapons.reload;
+        || !CONTROLLERS_CONFIG.query(|c| {
+            let reload = &c.weapons.reload;
             reload.enabled
                 && (!retain || reload.loose.enabled)
                 && (!pull || reload.extraction.enabled)

@@ -41,21 +41,19 @@ use jc3gi::{
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::{
-    config::Config,
-    controllers::{
-        aim::gun,
-        bindings::hold::{Desired, MapKind, Target, Want},
-        frame::Hand,
-        hands,
-        haptics::{self, Event},
-        mode::Mode,
-        weapons::{
-            engine, gameplay,
-            wheel::{
-                select::{Close, HandPose, Wheel, WheelInput, WheelPress, WheelSlot, resting},
-                tuning::WheelTuning,
-            },
+use crate::controllers::{
+    aim::gun,
+    bindings::hold::{Desired, MapKind, Target, Want},
+    config::CONTROLLERS_CONFIG,
+    frame::Hand,
+    hands,
+    haptics::{self, Event},
+    mode::Mode,
+    weapons::{
+        engine, gameplay,
+        wheel::{
+            select::{Close, HandPose, Wheel, WheelInput, WheelPress, WheelSlot, resting},
+            tuning::WheelTuning,
         },
     },
 };
@@ -82,7 +80,7 @@ pub(crate) struct WheelTick {
 /// One input tick of the wheel: read the game, step the wheel, and put its slot-select hold in
 /// `desired`. Called while the bindings inject, outside the menus.
 pub(crate) fn input_tick(inputs: &TickInputs, desired: &mut Vec<Desired>) -> WheelTick {
-    let config = WheelTuning::of(&Config::lock_query(|c| c.controllers.weapons.wheel));
+    let config = WheelTuning::of(&CONTROLLERS_CONFIG.query(|c| c.weapons.wheel));
     // SAFETY: the game stage runs on the game thread before the world update.
     let owner = unsafe { engine::local_player() };
     let acting = config.enabled && gameplay(inputs.mode) && owner.is_some();

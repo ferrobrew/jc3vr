@@ -25,10 +25,7 @@ use jc3gi::{
 };
 use parking_lot::Mutex;
 
-use crate::{
-    config::Config,
-    controllers::{scheme, weapons::engine},
-};
+use crate::controllers::{config::CONTROLLERS_CONFIG, scheme, weapons::engine};
 
 /// The local player's grenades as the game counts them.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -325,7 +322,7 @@ pub(crate) unsafe fn should_block_pickup(weapon: &WeaponBase, activator: *mut Ga
     if player.is_null() || activator != engine::character_object(player) {
         return false;
     }
-    Config::lock_query(|c| c.controllers.weapons.grenade_throw) && scheme::is_controllers()
+    CONTROLLERS_CONFIG.query(|c| c.weapons.grenade_throw) && scheme::is_controllers()
 }
 
 #[cfg(test)]

@@ -60,14 +60,12 @@ pub use self::{
     class::HeftClass,
     tuning::{BracedHeft, BracedTuning, Heft, HeftTuning},
 };
-use crate::{
-    config::Config,
-    controllers::{
-        frame::Hand,
-        hands::CockpitHand,
-        scheme,
-        weapons::{foregrip, recoil::Motion},
-    },
+use crate::controllers::{
+    config::CONTROLLERS_CONFIG,
+    frame::Hand,
+    hands::CockpitHand,
+    scheme,
+    weapons::{foregrip, recoil::Motion},
 };
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -210,7 +208,7 @@ pub fn apply(hands: &mut [Option<CockpitHand>; 2], head: Vec3, config: &Heft) {
 /// for a gun the weight acts on in that hand, one otherwise. The recoil blends it toward its own
 /// two-hand kick scale by the foregrip's weight.
 pub fn one_hand_kick(hand: Hand) -> f32 {
-    let config = Heft::of(&Config::lock_query(|c| c.controllers.weapons.heft));
+    let config = Heft::of(&CONTROLLERS_CONFIG.query(|c| c.weapons.heft));
     let target = STATE.lock().hands[hand.index()].target.map(|(t, _)| t);
     match target {
         Some(t) if config.enabled => t.class.tuning(&config).kick_scale,
@@ -221,7 +219,7 @@ pub fn one_hand_kick(hand: Hand) -> f32 {
 /// The multiplier on the scatter of a shot from `weapon`: the class's spread scale, scaled by the
 /// unbraced share, for a weapon the weight acts on in either hand, one otherwise.
 pub fn spread_scale(weapon: usize) -> f32 {
-    let config = Heft::of(&Config::lock_query(|c| c.controllers.weapons.heft));
+    let config = Heft::of(&CONTROLLERS_CONFIG.query(|c| c.weapons.heft));
     if !config.enabled {
         return 1.0;
     }

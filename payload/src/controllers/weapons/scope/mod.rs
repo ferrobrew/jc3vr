@@ -46,9 +46,9 @@ use re_utilities::hook_library::HookLibrary;
 
 pub(crate) use crate::controllers::weapons::scope::pass::{capture, draw, release_on_eject};
 use crate::{
-    config::Config,
     controllers::{
         aim::{self, AimStatus, HandSource, gun::HeldWeapon, sights::SightSource},
+        config::CONTROLLERS_CONFIG,
         frame::{Hand, Pose},
         hands::late,
         scheme,
@@ -161,7 +161,7 @@ pub(crate) fn tick(eye: usize) {
     if !crate::stereo::dispatch::first_ui_eye(eye) || crate::stereo::far_phase() {
         return;
     }
-    let enabled = Config::lock_query(|c| c.controllers.enabled && c.controllers.weapons.scopes);
+    let enabled = CONTROLLERS_CONFIG.query(|c| c.enabled && c.weapons.scopes);
     let mut state = STATE.lock();
     let plan = plan(enabled, &LENS, &mut state.anchors);
     let mut status = STATUS.lock();

@@ -92,29 +92,27 @@ use jc3gi::{
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::{
-    config::Config,
-    controllers::{
-        aim::targets::weak_target,
-        bindings::controls::ButtonControl,
-        frame::{Hand, Pose},
-        hands::held::{self, Held, Slot},
-        haptics::{self, Event},
-        loadout::{ObjectAddress, live},
-        motion, physical_hands, scheme,
-        weapons::{
-            c4::{
-                detonator::{DETONATOR_HOLD, Detonator, DetonatorStep},
-                placed::{PlacedState, TakeStep},
-                stage::{InputEvent, Outcome, Refusal, Stage, WeaponAction, WeaponView},
-                stick::{self as stick_by_hand, StickAt},
-                tuning::{C4, C4Tuning},
-                wheel::{WheelHands, WheelStep},
-            },
-            engine,
-            grenade::{Release, catch::body_of, throw_release},
-            pouch_return,
+use crate::controllers::{
+    aim::targets::weak_target,
+    bindings::controls::ButtonControl,
+    config::CONTROLLERS_CONFIG,
+    frame::{Hand, Pose},
+    hands::held::{self, Held, Slot},
+    haptics::{self, Event},
+    loadout::{ObjectAddress, live},
+    motion, physical_hands, scheme,
+    weapons::{
+        c4::{
+            detonator::{DETONATOR_HOLD, Detonator, DetonatorStep},
+            placed::{PlacedState, TakeStep},
+            stage::{InputEvent, Outcome, Refusal, Stage, WeaponAction, WeaponView},
+            stick::{self as stick_by_hand, StickAt},
+            tuning::{C4, C4Tuning},
+            wheel::{WheelHands, WheelStep},
         },
+        engine,
+        grenade::{Release, catch::body_of, throw_release},
+        pouch_return,
     },
 };
 
@@ -837,8 +835,7 @@ fn update_from_user_serial(
     let Some(user) = (unsafe { local_user(weapon) }) else {
         return original();
     };
-    let (enabled, config) =
-        Config::lock_query(|c| (c.controllers.enabled, c.controllers.weapons.c4));
+    let (enabled, config) = CONTROLLERS_CONFIG.query(|c| (c.enabled, c.weapons.c4));
     let tuning = C4Tuning::of(&config);
     let acting = enabled && scheme::is_controllers();
 
