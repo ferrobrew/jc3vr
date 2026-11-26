@@ -1,6 +1,6 @@
 //! Re-exports of the diagnostics at their old path, for the consumers not yet moved: the note API
 //! is [`crate::controllers::telemetry`]'s, the samplers are `crate::diagnostics`'s, and the
-//! settings note and the frame-timing sink are the tracking recorder's.
+//! settings note is the tracking recorder's.
 
 pub(crate) use crate::{
     controllers::telemetry::{
@@ -8,6 +8,5 @@ pub(crate) use crate::{
         note_haptic, note_injected, note_release, note_rig, note_throw, note_throw_at, report,
         sample_drawn_arms,
     },
-    diagnostics::record,
-    recorder::tracking::{note_settings, register_frame_timing},
+    recorder::tracking::note_settings,
 };

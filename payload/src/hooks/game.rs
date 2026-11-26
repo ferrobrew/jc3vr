@@ -17,7 +17,7 @@ use re_utilities::hook_library::HookLibrary;
 
 use crate::{
     config::Config,
-    controllers::{diagnostics, hands, presentation},
+    controllers::{hands, presentation},
     crash::{Phase, mark},
     debug::{
         camera::capture_render_camera,
@@ -65,7 +65,7 @@ fn game_update(game: *const Game) -> bool {
     if !GAME_UPDATE_LOGGED.swap(true, Ordering::Relaxed) {
         tracing::info!("startup: first game update");
         // Before the first frame-timing window can close.
-        diagnostics::register_frame_timing();
+        crate::recorder::tracking::register_frame_timing();
     }
     thread_role::mark_thread(ThreadRole::Game);
     // Start of a real frame: re-arm the once-per-frame CClock::Update gate.
@@ -290,7 +290,7 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
         // After the engine's render update, whose camera update stores this frame's `dtf`: the
         // late hand readout is evaluated at it, and before it the readout would pair this frame's
         // hand snapshot with the previous frame's `dtf`.
-        diagnostics::record();
+        crate::diagnostics::record();
 
         // The overlapped frame begins here: taking the submit side waits for the previous frame's
         // deferred tail to submit, which drains the previous dispatch first, so nothing below --
