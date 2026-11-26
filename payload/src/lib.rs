@@ -2,8 +2,8 @@ use std::{ffi::c_void, sync::OnceLock};
 
 use jc3vr_body::controllers::body::estimator;
 use jc3vr_core::{
-    cpu_placement, director::clean_view, is_shutting_down, lifecycle, logging, module, session,
-    thread_role, util,
+    cpu_placement, director::clean_view, game_tick::GameTick, is_shutting_down, lifecycle, logging,
+    module, session, thread_role, util,
 };
 use jc3vr_hud::{egui_impl::EguiState, hooks::ui::cancel_pointer_on_game_thread, hud};
 use jc3vr_physical::controllers::physical_hands;
@@ -318,7 +318,9 @@ fn update() {
 
         // Ahead of the game's update, whose physics step fires the hand bodies' callback, so that
         // registering it never races the engine's walk over the callbacks.
-        physical_hands::physics::frame_tick();
+        // SAFETY: the top of the game's update is a serial point: the update has not started, so
+        // no engine thread mutates the world's game objects.
+        unsafe { GameTick::enter(physical_hands::physics::frame_tick) };
         physical_hands::collider_view::frame_tick();
 
         // The per-eye captures feed the VR blit, the desktop mirror, the recorder, and the screenshots.

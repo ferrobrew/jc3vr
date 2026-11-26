@@ -20,6 +20,7 @@ use jc3vr_body::{
 use jc3vr_capture::testing::visual;
 use jc3vr_core::{
     frame_timing::{self, Slot},
+    game_tick::GameTick,
     render_frame,
     thread_role::{self, ThreadRole},
 };
@@ -127,7 +128,9 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
         // simulation's input tick reads the palms' targets.
         {
             let _timing = frame_timing::scope(Slot::PhysicalHands);
-            physical_hands::main_thread_tick();
+            // SAFETY: a serial point: the simulation is done and the engine's render update has
+            // not started, so no engine thread mutates the world's game objects.
+            GameTick::enter(physical_hands::main_thread_tick);
             // Breaking glass, on the thread and in the phase of the ammunition manager's deferred
             // list, which applies the bullets' window damage; before the original runs it.
             glass::main_thread_tick();
