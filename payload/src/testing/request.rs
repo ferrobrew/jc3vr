@@ -3,10 +3,7 @@
 //! frame in a capture harness session), and claims, reads, deletes, and acts on it.
 //!
 //! ```toml
-//! command = "replay"    # record, stop_recording, replay, or stop_replay
-//! path = "C:/climb.jc3trk"  # replay: absolute
-//! start = "marker"      # replay: marker, bookmark, or in_place
-//! pacing = "real_time"  # replay: real_time or frame_locked
+//! command = "record"  # record or stop_recording, or a capture harness command
 //! ```
 
 use std::{
@@ -22,7 +19,6 @@ use crate::{
     screenshot::harness::snapshot::{SnapshotError, SnapshotRequest, SnapshotTable},
     testing::{
         benchmark::{BenchmarkError, BenchmarkRequest, BenchmarkTable},
-        replay::{self, Pacing, ReplayOptions, StartMode},
         stage::{self, StageRequest, StageTable},
         text::{self, TextError},
         visual,
@@ -82,11 +78,6 @@ static LAST_POLL: Mutex<Option<Instant>> = Mutex::new(None);
 enum Request {
     Record,
     StopRecording,
-    Replay {
-        path: PathBuf,
-        options: ReplayOptions,
-    },
-    StopReplay,
     Screenshot {
         id: crate::screenshot::harness::RequestId,
         motion: Option<u32>,
@@ -185,10 +176,6 @@ enum RequestErrorKind {
     Claim(std::io::Error),
     Remove(std::io::Error),
     Parse(toml::de::Error),
-    /// The command needs a path and has none.
-    NoPath(Command),
-    /// The path is not absolute.
-    NotAbsolute,
     InvalidId(&'static str),
     InvalidPose(visual::PoseError),
     InvalidMotion(visual::MotionError),
@@ -240,7 +227,6 @@ impl std::fmt::Display for RequestError {
                 write!(f, "could not remove it, so it is not acted on: {e}")
             }
             RequestErrorKind::Parse(e) => write!(f, "could not parse it: {e}"),
-            RequestErrorKind::NoPath(command) => write!(f, "{command:?} needs a path"),
             RequestErrorKind::InvalidId(reason) => write!(f, "invalid request id: {reason}"),
             RequestErrorKind::InvalidPose(error) => write!(f, "{error}"),
             RequestErrorKind::InvalidMotion(error) => write!(f, "{error}"),
@@ -365,7 +351,6 @@ impl std::fmt::Display for RequestError {
             RequestErrorKind::InvalidWarmup => {
                 write!(f, "visual_configure warmup_frames exceeds 300")
             }
-            RequestErrorKind::NotAbsolute => write!(f, "the path must be absolute"),
         }
     }
 }
@@ -382,8 +367,6 @@ enum Command {
     Benchmark,
     Record,
     StopRecording,
-    Replay,
-    StopReplay,
 }
 
 #[derive(Deserialize)]
@@ -391,11 +374,6 @@ enum Command {
 struct RequestFile {
     command: Command,
     id: Option<String>,
-    path: Option<String>,
-    #[serde(default)]
-    start: StartMode,
-    #[serde(default)]
-    pacing: Pacing,
     mode: Option<visual::RenderMode>,
     warmup_frames: Option<u32>,
     pose: Option<visual::PoseTable>,
@@ -588,22 +566,6 @@ fn parse(path: &Path, text: &str) -> Result<Request, RequestError> {
     text::limit("request file", text.len(), text::REQUEST_BYTES)
         .map_err(|e| error(RequestErrorKind::Read(e)))?;
     let file: RequestFile = toml::from_str(text).map_err(|e| error(RequestErrorKind::Parse(e)))?;
-    if let Some(path) = &file.path {
-        text::string("path", path).map_err(|e| error(RequestErrorKind::Read(e)))?;
-    }
-    let resolve = |command| -> Result<PathBuf, RequestError> {
-        let given = file
-            .path
-            .as_deref()
-            .map(str::trim)
-            .filter(|p| !p.is_empty())
-            .ok_or_else(|| error(RequestErrorKind::NoPath(command)))?;
-        let given = PathBuf::from(given);
-        if given.is_absolute() {
-            return Ok(given);
-        }
-        Err(error(RequestErrorKind::NotAbsolute))
-    };
     let pose = match file.pose {
         Some(table) => {
             if file.command != Command::VisualConfigure {
@@ -1051,14 +1013,6 @@ fn parse(path: &Path, text: &str) -> Result<Request, RequestError> {
         },
         Command::Record => Request::Record,
         Command::StopRecording => Request::StopRecording,
-        Command::Replay => Request::Replay {
-            path: resolve(Command::Replay)?,
-            options: ReplayOptions {
-                start: file.start,
-                pacing: file.pacing,
-            },
-        },
-        Command::StopReplay => Request::StopReplay,
     })
 }
 
@@ -1231,10 +1185,6 @@ fn act(request: Request) {
         }
         Request::Record => crate::recorder::tracking::request_start(),
         Request::StopRecording => crate::recorder::tracking::request_stop(),
-        Request::Replay { path, options } => {
-            replay::start(path, options);
-        }
-        Request::StopReplay => replay::stop(),
     }
 }
 

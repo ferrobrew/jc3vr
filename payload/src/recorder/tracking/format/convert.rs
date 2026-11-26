@@ -5,14 +5,16 @@
 
 use tracking_format::{self as file, model as wire};
 
+#[cfg(test)]
+use crate::recorder::tracking::format::Recording;
 use crate::{
     controllers::frame::{
         ActionSetKind, Button, ButtonSet, Hand, HandFrame, HandInputs, HandJoint,
         InteractionProfile, Pose, TrackedPose,
     },
     recorder::tracking::format::{
-        ControllerSample, EyeSample, Frame, HeadSample, Header, RecenterEvent, Recording,
-        SemanticSample, SessionSample, StartMarker,
+        ControllerSample, EyeSample, Frame, HeadSample, Header, RecenterEvent, SemanticSample,
+        SessionSample, StartMarker,
     },
     vr::{
         RecenterCause, RecenterKind,
@@ -122,6 +124,7 @@ pub(super) fn frame_to_file(frame: &Frame) -> file::Frame {
     }
 }
 
+#[cfg(test)]
 pub(super) fn recording_from_file(recording: file::Recording) -> Recording {
     let file::Recording {
         header,
@@ -357,6 +360,7 @@ fn action_state_to_file(state: ActionState) -> wire::ActionState {
     }
 }
 
+#[cfg(test)]
 fn header_from_file(header: file::Header) -> Header {
     let file::Header {
         build,
@@ -384,6 +388,7 @@ fn header_from_file(header: file::Header) -> Header {
     }
 }
 
+#[cfg(test)]
 fn frame_from_file(frame: file::Frame) -> Frame {
     let file::Frame {
         time_ns,
@@ -455,6 +460,7 @@ fn frame_from_file(frame: file::Frame) -> Frame {
     }
 }
 
+#[cfg(test)]
 fn hand_from_file(hand: wire::Hand) -> Hand {
     match hand {
         wire::Hand::Left => Hand::Left,
@@ -462,6 +468,7 @@ fn hand_from_file(hand: wire::Hand) -> Hand {
     }
 }
 
+#[cfg(test)]
 fn pose_from_file(pose: wire::Pose) -> Pose {
     let wire::Pose {
         position,
@@ -473,6 +480,7 @@ fn pose_from_file(pose: wire::Pose) -> Pose {
     }
 }
 
+#[cfg(test)]
 fn stage_from_file(stage: wire::Stage) -> StageInfo {
     let wire::Stage {
         available,
@@ -487,6 +495,7 @@ fn stage_from_file(stage: wire::Stage) -> StageInfo {
     }
 }
 
+#[cfg(test)]
 fn action_set_from_file(kind: wire::ActionSetKind) -> ActionSetKind {
     match kind {
         wire::ActionSetKind::OnFoot => ActionSetKind::OnFoot,
@@ -498,6 +507,7 @@ fn action_set_from_file(kind: wire::ActionSetKind) -> ActionSetKind {
     }
 }
 
+#[cfg(test)]
 fn hand_frame_from_file(hand: wire::HandFrame) -> HandFrame {
     let wire::HandFrame {
         active,
@@ -542,6 +552,7 @@ fn hand_frame_from_file(hand: wire::HandFrame) -> HandFrame {
     }
 }
 
+#[cfg(test)]
 fn tracked_pose_from_file(pose: wire::TrackedPose) -> TrackedPose {
     let wire::TrackedPose {
         pose,
@@ -563,6 +574,7 @@ fn tracked_pose_from_file(pose: wire::TrackedPose) -> TrackedPose {
     }
 }
 
+#[cfg(test)]
 fn inputs_from_file(inputs: wire::HandInputs) -> HandInputs {
     let wire::HandInputs {
         trigger,
@@ -602,6 +614,7 @@ fn inputs_from_file(inputs: wire::HandInputs) -> HandInputs {
     }
 }
 
+#[cfg(test)]
 fn buttons_from_file(buttons: wire::ButtonSet) -> ButtonSet {
     let mut out = ButtonSet::EMPTY;
     for button in Button::ALL {
@@ -610,6 +623,7 @@ fn buttons_from_file(buttons: wire::ButtonSet) -> ButtonSet {
     out
 }
 
+#[cfg(test)]
 fn set_state_from_file(state: wire::SetState) -> SetState {
     let wire::SetState { set, actions } = state;
     SetState {
@@ -629,6 +643,7 @@ fn set_state_from_file(state: wire::SetState) -> SetState {
     }
 }
 
+#[cfg(test)]
 fn action_state_from_file(state: wire::ActionState) -> ActionState {
     let wire::ActionState {
         value,

@@ -69,7 +69,7 @@ pub enum RecenterCause {
     SeatTransition,
     /// The follow bank ([`crate::headpose::follow`]): a frozen turn of the body under the view
     /// folded into the baseline's yaw. Nobody requests it; it is noted so that a recording carries
-    /// it and a replay applies it on the frame it took effect in.
+    /// it on the frame it took effect in.
     FollowBank,
 }
 
@@ -148,28 +148,6 @@ fn recenter_as(kind: RecenterKind, cause: RecenterCause) {
             tracing::warn!(target: "vr", "recenter requested before any head pose was located");
         }
     }
-}
-
-/// Apply a recenter a replay recorded: everything a recenter does besides re-basing the baseline,
-/// which the recorded poses already carry. A recorded follow bank gives its turn back to the
-/// composition as the live bank did, since the replay services no bank of its own. Game thread, at
-/// the top of the frame, like a live recenter.
-pub(crate) fn apply_replayed_recenter(kind: RecenterKind, cause: RecenterCause, turn: glam::Quat) {
-    if cause == RecenterCause::FollowBank {
-        flight_pose::source_changed(EpochChange::FollowBank);
-        // The bank turned the frame by the inverse of its yaw: new frame from old.
-        let yaw = -turn.to_euler(glam::EulerRot::YXZ).0;
-        banked(yaw, turn);
-        tracing::debug!(
-            target: "vr",
-            yaw_deg = yaw.to_degrees(),
-            "replayed a follow bank of the cockpit baseline"
-        );
-        return;
-    }
-    flight_pose::source_changed(EpochChange::Recenter);
-    rebased(kind, cause, turn);
-    tracing::info!(target: "vr", ?kind, ?cause, "replayed a recenter of the cockpit baseline");
 }
 
 /// What follows a re-base of the baseline: the cockpit frame turned by `turn`, new frame from old.
@@ -393,9 +371,7 @@ const REQUEST_POSTURE: u8 = 1 << 3;
 /// transitions such as exiting a vehicle keep a live character, so they never re-arm and never fire.
 /// See [`crate::vr::VrConfig::auto_recenter_on_gameplay`].
 pub fn auto_recenter_tick() {
-    // A replay's poses are re-based already, and it applies the recenters it recorded; a live one
-    // would turn the body and the torso estimate under them.
-    if !is_running() || crate::testing::replay::is_driving() {
+    if !is_running() {
         PENDING_RECENTER.store(REQUEST_NONE, Ordering::Relaxed);
         PENDING_SEAT_YAW.store(false, Ordering::Relaxed);
         *SEAT_YAW_BLEND.lock() = None;

@@ -1,12 +1,12 @@
 //! The tracking file: a recording of what the OpenXR runtime gave the mod each frame, in the form
-//! the mod published it, so that a replay can publish it again.
+//! the mod published it.
 //!
 //! The file's layout, data model, and codec are the `tracking-format` crate's, which host tools
 //! share. This module holds the recording in the payload's own types and converts between them and
-//! the crate's ([`convert`]), so the recorder and the replay deal only in the types they publish.
+//! the crate's ([`convert`]), so the recorder deals only in the types the mod publishes.
 //!
 //! The poses are in the cockpit frame, as the mod publishes them (the eye views and the controller
-//! spaces re-based against the recenter baseline), so a replay needs no baseline of its own. A
+//! spaces re-based against the recenter baseline), so a reader needs no baseline of its own. A
 //! recenter during the recording is recorded as an event on the frame it took effect in.
 
 mod convert;
@@ -26,7 +26,9 @@ use crate::{
     vr::{RecenterCause, RecenterKind, input::semantic::frame::SetState, stage::StageInfo},
 };
 
-/// A whole recording, as read back.
+/// A whole recording, as read back. Only the tests read a recording back, to check what the
+/// recorder wrote; the host tools read files through `tracking-format` directly.
+#[cfg(test)]
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Recording {
     pub(crate) header: Header,
@@ -189,6 +191,7 @@ pub(crate) fn debug_label(value: &impl std::fmt::Debug) -> tracking_format::even
 }
 
 /// Read a whole file.
+#[cfg(test)]
 pub(crate) fn decode(bytes: &[u8]) -> Result<Recording, DecodeError> {
     tracking_format::decode(bytes).map(convert::recording_from_file)
 }

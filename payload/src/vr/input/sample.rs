@@ -30,7 +30,6 @@ use crate::{
             active_action_set,
             flight_pose::{self, PendingHead},
             layout::{BoolInput, FloatInput, HandsAction, Vec2Input},
-            replay,
             self_check::CheckFrame,
             semantic::{
                 SemanticSet, admission,
@@ -96,18 +95,6 @@ impl InputState {
             ],
         );
 
-        // A replay's recorded frames stand in for the sampled ones. The actions are still synced,
-        // which keeps the session's input healthy, and the haptics still reach the controllers.
-        if replay::publish_replayed(cfg) {
-            flight_pose::unavailable();
-            match self.flush_haptics(session, cfg) {
-                Ok(()) => self.note_success(),
-                Err(e) => self.note_failure(&e),
-            }
-            return None;
-        }
-
-        replay::reset_on_handback(&mut self.previous_buttons);
         let sampling = Sampling {
             session,
             local,

@@ -109,7 +109,6 @@ features! {
         Checklist => ("tools.checklist", "Session checklist"),
         TrackingCapture => ("tools.tracking", "Tracking capture"),
         RenderCapture => ("tools.render", "Render capture"),
-        Replay => ("tools.replay", "Replay"),
         Director => ("tools.director", "Director"),
         Environment => ("tools.environment", "Environment"),
         Video => ("tools.video", "Video"),

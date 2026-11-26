@@ -8,7 +8,7 @@
 //! hand-joint frames, by bytes ([`MAX_BYTES`]). A save copies only the batches' shared handles and
 //! leaves encoding nothing; the file is written on a writer thread like any recording's.
 //!
-//! A saved file's times therefore start where the window starts, not at zero; a replay measures
+//! A saved file's times therefore start where the window starts, not at zero; a reader measures
 //! from its first frame. Batches evicted from the front take their input history with them, so
 //! the save opens with an input discontinuity counting them.
 

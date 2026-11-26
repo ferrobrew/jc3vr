@@ -45,7 +45,6 @@ pub enum Action {
     ClearHeat,
     Spawn,
     ToggleRecording,
-    ToggleReplay,
     ToggleColliderView,
 }
 impl Action {
@@ -66,7 +65,6 @@ impl Action {
             Action::ClearHeat => "Clear heat",
             Action::Spawn => "Spawn the configured tags",
             Action::ToggleRecording => "Start or stop a session recording",
-            Action::ToggleReplay => "Replay the last tracking recording, or stop the replay",
             Action::ToggleColliderView => "Show or hide the physics colliders",
         }
     }
@@ -90,13 +88,6 @@ impl Chord {
             ctrl: false,
             shift: false,
             alt: false,
-        }
-    }
-
-    const fn ctrl(key: u16) -> Self {
-        Self {
-            ctrl: true,
-            ..Self::plain(key)
         }
     }
 
@@ -232,13 +223,12 @@ pub fn run(action: Action) {
         Action::ClearHeat => heat::clear(),
         Action::Spawn => spawn::request(),
         Action::ToggleRecording => crate::recorder::session_recording::toggle(),
-        Action::ToggleReplay => crate::testing::toggle_replay(),
         Action::ToggleColliderView => crate::controllers::physical_hands::collider_view::toggle(),
     }
 }
 
 /// The stock layout [`Keymap::new`] borrows.
-const DEFAULT_BINDINGS: [Binding; 16] = [
+const DEFAULT_BINDINGS: [Binding; 15] = [
     Binding {
         action: Action::ToggleSlowMotion,
         chord: Chord::plain(VK_NUMPAD1.0),
@@ -294,10 +284,6 @@ const DEFAULT_BINDINGS: [Binding; 16] = [
     Binding {
         action: Action::ToggleRecording,
         chord: Chord::plain(VK_DIVIDE.0),
-    },
-    Binding {
-        action: Action::ToggleReplay,
-        chord: Chord::ctrl(VK_MULTIPLY.0),
     },
     Binding {
         action: Action::ToggleColliderView,

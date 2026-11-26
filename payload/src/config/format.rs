@@ -263,7 +263,7 @@ const KEYMAP_TABLE: &str = "keymap";
 const BINDINGS_KEY: &str = "bindings";
 const ACTION_KEY: &str = "action";
 /// The key actions a later build removed, as a settings file names them.
-const RETIRED_KEY_ACTIONS: [&str; 1] = ["ToggleScenario"];
+const RETIRED_KEY_ACTIONS: [&str; 2] = ["ToggleReplay", "ToggleScenario"];
 
 /// The single-pass group's switches that were off by default when format zero was current, under
 /// their table.

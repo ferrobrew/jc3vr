@@ -1,19 +1,8 @@
-//! The Tools page's tracking capture and replay features: the tracking recorder
-//! (`crate::recorder::tracking`) and the replay (`crate::testing::replay`).
-
-use std::path::PathBuf;
+//! The Tools page's tracking capture feature: the tracking recorder (`crate::recorder::tracking`).
 
 use egui::Color32;
-use parking_lot::Mutex;
 
-use crate::{
-    config,
-    recorder::tracking,
-    testing::{
-        replay::{self, Pacing, Phase, ReplayOptions, ReplayOutcome, StartMode},
-        request,
-    },
-};
+use crate::{config, recorder::tracking, testing::request};
 
 /// Render the tracking recorder's controls.
 pub(crate) fn tracking_feature(ui: &mut egui::Ui) {
@@ -21,8 +10,8 @@ pub(crate) fn tracking_feature(ui: &mut egui::Ui) {
         let mut cfg = config::edit();
         ui.checkbox(&mut cfg.testing.enabled, "Test tools available")
             .on_hover_text(
-                "Whether the recorder and the replay can be started from here, \
-                 the director's keys, and the request file. Nothing runs until it is started.",
+                "Whether the recorder can be started from here, the director's keys, and the \
+                 request file. Nothing runs until it is started.",
             );
     }
     egui::CollapsingHeader::new("Tracking recording")
@@ -54,45 +43,6 @@ pub(crate) fn tracking_status(ui: &mut egui::Ui) {
     }
 }
 
-pub(crate) fn replay_feature(ui: &mut egui::Ui) {
-    egui::CollapsingHeader::new("Replay")
-        .default_open(true)
-        .show(ui, replay_ui);
-}
-
-pub(crate) fn replay_status(ui: &mut egui::Ui) {
-    let status = replay::status();
-    ui.label(match status.phase {
-        Phase::Idle => "idle".to_owned(),
-        Phase::Loading => "loading".to_owned(),
-        Phase::Teleporting => "teleporting to the start".to_owned(),
-        Phase::Playing => format!(
-            "playing frame {} of {}, {:.1} s",
-            status.frame,
-            status.frames,
-            status.elapsed.as_secs_f32()
-        ),
-    });
-    for warning in &status.warnings {
-        ui.colored_label(Color32::YELLOW, warning);
-    }
-    match &status.last {
-        Some(ReplayOutcome::Completed { frames, duration }) => {
-            ui.label(format!(
-                "Last replay: {frames} frames in {:.1} s",
-                duration.as_secs_f32()
-            ));
-        }
-        Some(ReplayOutcome::Stopped) => {
-            ui.label("Last replay: stopped");
-        }
-        Some(ReplayOutcome::Failed(error)) => {
-            ui.colored_label(Color32::LIGHT_RED, error.to_string());
-        }
-        None => {}
-    }
-}
-
 fn recording_ui(ui: &mut egui::Ui) {
     let status = tracking::status();
     ui.label(if status.recording {
@@ -112,6 +62,10 @@ fn recording_ui(ui: &mut egui::Ui) {
          actions, and the mod's controller, grip, and gun release events each VR frame, starting \
          from where the player stands.",
     );
+    ui.label(format!(
+        "A script can drop {} into the configuration directory to start and stop a recording.",
+        request::FILE_NAME
+    ));
     ui.separator();
     lookback_ui(ui);
 }
@@ -151,72 +105,6 @@ fn lookback_ui(ui: &mut egui::Ui) {
     if let Some(error) = &status.error {
         ui.colored_label(Color32::LIGHT_RED, error);
     }
-}
-
-/// The replay form's fields.
-struct ReplayForm {
-    path: String,
-    options: ReplayOptions,
-}
-
-static REPLAY_FORM: Mutex<ReplayForm> = Mutex::new(ReplayForm {
-    path: String::new(),
-    options: ReplayOptions {
-        start: StartMode::Marker,
-        pacing: Pacing::RealTime,
-    },
-});
-
-fn replay_ui(ui: &mut egui::Ui) {
-    let status = replay::status();
-    let mut form = REPLAY_FORM.lock();
-    ui.horizontal(|ui| {
-        ui.label("Recording:");
-        ui.add(
-            egui::TextEdit::singleline(&mut form.path).desired_width(ui.available_width() - 90.0),
-        );
-        if ui
-            .button("Last")
-            .on_hover_text("This session's last tracking recording.")
-            .clicked()
-            && let Some(path) = tracking::status().path
-        {
-            form.path = path.display().to_string();
-        }
-    });
-    ui.horizontal(|ui| {
-        ui.label("Start:");
-        for mode in StartMode::ALL {
-            ui.selectable_value(&mut form.options.start, mode, mode.label());
-        }
-    });
-    ui.horizontal(|ui| {
-        ui.label("Pacing:");
-        for pacing in Pacing::ALL {
-            ui.selectable_value(&mut form.options.pacing, pacing, pacing.label());
-        }
-    });
-    ui.horizontal(|ui| {
-        if status.phase == Phase::Idle {
-            let path = form.path.trim();
-            if ui
-                .add_enabled(!path.is_empty(), egui::Button::new("Replay"))
-                .clicked()
-            {
-                replay::start(PathBuf::from(path), form.options);
-            }
-        } else if ui.button("Stop").clicked() {
-            replay::stop();
-        }
-    });
-    ui.label(
-        "Plays the recording's head and controllers in place of the headset's, with or without a \
-         session. Ctrl+Numpad* replays the last recording or stops.",
-    );
-    ui.label(format!(
-        "A script can drop {} into the configuration directory to start and stop the tools.",
-        request::FILE_NAME
-    ));
 }
 
 /// A labelled path, selectable so it can be copied.

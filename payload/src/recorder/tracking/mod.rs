@@ -1,21 +1,19 @@
 //! The tracking recorder: writes what the OpenXR runtime gives the mod each frame (the eye views,
 //! both controllers' poses and inputs, the semantic action states, the tracking validity, and the
 //! session state) to a file in the session folder, with a start marker naming where the player
-//! stood, so that a replay ([`crate::testing::replay`]) can drive the game with it again without
-//! the headset.
+//! stood, so that offline tools (`tools/tracking-synth`) can study and visualise a take without the
+//! game.
 //!
 //! The recorder samples at the point the frame loop has published everything a frame reads: the
 //! end of `VrState::begin_frame`, on the game thread under the runtime lock, after the eye views
 //! are located and the controllers are sampled. It records the published state, not the runtime's
-//! raw answers, so the replay can publish it in their place and every consumer sees the same thing
-//! it saw live. [`capture`] encodes the frame there and hands the bytes to a writer thread
+//! raw answers, so the recording holds what every consumer saw live. [`capture`] encodes the frame there and hands the bytes to a writer thread
 //! ([`writer`]), and takes only leaf locks (the published slots and its own state).
 //!
 //! A recording starts and stops on request ([`request_start`], [`request_stop`], [`toggle`]) from
 //! any thread: the debug UI, the director's key bindings, or the testing request file. The request
 //! is serviced on the game thread at the top of the next frame ([`frame_tick`]), which is where the
-//! player's transform can be read for the start marker. Nothing is recorded while a replay drives
-//! the game. The file format is [`format`]; see `docs/mod/testing/recorder.md`.
+//! player's transform can be read for the start marker. The file format is [`format`]; see `docs/mod/testing/recorder.md`.
 //!
 //! Beside each frame the recorder writes the mod-side [`events`] noted since the previous one. The
 //! [`lookback`] keeps the last few seconds of the same capture batches while motion controllers are
@@ -104,8 +102,6 @@ pub(crate) enum StartError {
     LookbackEmpty,
     /// The test tools are switched off.
     Disabled,
-    /// A replay is driving the game, so there is nothing live to record.
-    Replaying,
     /// There is no player character to mark the start at.
     NoPlayer,
     /// The recording's session path could not be produced.
@@ -122,7 +118,6 @@ impl std::fmt::Display for StartError {
         match self {
             StartError::LookbackEmpty => write!(f, "lookback: the window holds no frames"),
             StartError::Disabled => write!(f, "the test tools are switched off (testing.enabled)"),
-            StartError::Replaying => write!(f, "a replay is running"),
             StartError::NoPlayer => write!(f, "there is no player character to mark the start at"),
             StartError::Session(e) => write!(f, "{e}"),
             StartError::Writer(e) => write!(f, "{e}"),
@@ -591,9 +586,6 @@ fn begin(stamp: String) -> Result<PathBuf, StartError> {
     if !Config::lock_query(|c| c.testing.enabled) {
         return Err(StartError::Disabled);
     }
-    if crate::testing::replay::is_active() {
-        return Err(StartError::Replaying);
-    }
     let transform = crate::director::teleport::player_transform().ok_or(StartError::NoPlayer)?;
     let hand_joints = Config::lock_query(|c| c.testing.record_hand_joints);
     let header = header_at(transform, stamp.clone());
@@ -663,14 +655,13 @@ fn discard_before_start() {
     history::begin_capture();
 }
 
-/// Run the lookback while motion controllers are enabled, the OpenXR runtime is up, and no replay
-/// drives the game, and service a save request. Without a runtime no frame is captured, so the
+/// Run the lookback while motion controllers are enabled and the OpenXR runtime is up, and service
+/// a save request. Without a runtime no frame is captured, so the
 /// player's transform is not read for one.
 fn lookback_tick() {
     let (enabled, hand_joints) =
         Config::lock_query(|c| (c.controllers.enabled, c.testing.record_hand_joints));
-    let run =
-        enabled && crate::vr::published_status().runtime_up && !crate::testing::replay::is_active();
+    let run = enabled && crate::vr::published_status().runtime_up;
     let transform = run
         .then(crate::director::teleport::player_transform)
         .flatten();

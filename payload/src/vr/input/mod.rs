@@ -61,7 +61,6 @@
 pub(crate) mod actions;
 pub(crate) mod flight_pose;
 pub(crate) mod layout;
-mod replay;
 pub mod restart;
 mod sample;
 pub(crate) mod self_check;
@@ -73,7 +72,6 @@ mod state;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
 use parking_lot::Mutex;
-pub(crate) use replay::publish_replayed;
 pub(crate) use stash::clear as clear_stash;
 pub(crate) use state::InputState;
 

@@ -17,7 +17,7 @@ use crate::{
     config,
     controllers::body::rig::{
         live_observation,
-        origin_provenance::{OriginEvidence, OriginUnavailable, TrackingReceipt},
+        origin_provenance::{OriginEvidence, TrackingReceipt},
     },
     grapple, headpose,
     render_frame::RenderFrameSlot,
@@ -277,23 +277,8 @@ pub fn clear_render_params() {
 pub fn begin_render_frame(frame: &LocatedFrame, cfg: &VrConfig) {
     render_frame(
         [frame.eye_view(0), frame.eye_view(1)],
-        Some(frame.predicted_display_time()),
+        frame.predicted_display_time(),
         frame.tracking_origin(),
-        cfg,
-    );
-}
-
-/// Drive a frame from a replay's recorded views with no VR frame rendering: publish the head pose
-/// they compose to, as [`begin_render_frame`] does, and leave the per-eye render parameters
-/// cleared, so the desktop renders the recorded head's view. See [`crate::vr::drive_replay_frame`].
-pub(super) fn begin_replay_frame(eyes: [EyeView; 2], cfg: &VrConfig) {
-    render_frame(
-        eyes,
-        None,
-        (
-            OriginEvidence::Unavailable(OriginUnavailable::SourceAbsent),
-            None,
-        ),
         cfg,
     );
 }
@@ -306,11 +291,10 @@ pub(super) fn begin_replay_frame(eyes: [EyeView; 2], cfg: &VrConfig) {
 const CULL_FOV_PADDING: f32 = 0.4;
 
 /// The body of [`begin_render_frame`], over the frame's views. `display_time` is the VR frame's
-/// predicted display time, or `None` for a replay's views with no VR frame, which publishes the
-/// head pose only.
+/// predicted display time.
 fn render_frame(
     views: [EyeView; 2],
-    display_time: Option<openxr::Time>,
+    display_time: openxr::Time,
     (tracking_origin, tracking_receipt): (OriginEvidence, Option<TrackingReceipt>),
     cfg: &VrConfig,
 ) {
@@ -432,11 +416,7 @@ fn render_frame(
         cfg.world_scale,
     );
     headpose::xr::publish_pair(prev, cur);
-    if live_composition_available(
-        display_time.is_some(),
-        cfg.freeze_mode,
-        crate::testing::replay::is_driving(),
-    ) {
+    if cfg.freeze_mode == FreezeMode::Off {
         live_observation::publish_composition(
             cockpit
                 .source
@@ -456,12 +436,6 @@ fn render_frame(
         // The raw anchor, so a capture shows the landing snap against the eased `position`.
         anchor: anchor_raw,
     });
-
-    // Without a VR frame there is nothing to render per eye: the replay's head is published, and
-    // the camera hook renders the desktop view from it.
-    let Some(display_time) = display_time else {
-        return;
-    };
 
     // The symmetric union-FOV cull projection: a single centred frustum that contains both eyes'
     // off-axis frusta. Each eye is laterally offset by ~IPD/2 and has its own asymmetric FOV, so the
@@ -617,15 +591,6 @@ fn render_frame(
         predicted_display_time_ns: display_time.as_nanos(),
         eyes: [capture_eye(&views[0]), capture_eye(&views[1])],
     }));
-}
-
-/// A rendered HMD frame can contain replay views, so its display time does not prove live input.
-fn live_composition_available(
-    vr_frame_rendering: bool,
-    freeze_mode: FreezeMode,
-    replay_driving: bool,
-) -> bool {
-    vr_frame_rendering && freeze_mode == FreezeMode::Off && !replay_driving
 }
 
 /// Build a zero-shear (symmetric) off-axis projection that preserves the eye's horizontal and vertical
@@ -868,28 +833,5 @@ mod tests {
                 .world_offset(ordinary)
                 .abs_diff_eq(body * sampled, 1.0e-6)
         );
-    }
-
-    #[test]
-    fn rendered_hmd_replay_and_desktop_replay_cannot_publish_live_composition() {
-        assert!(!live_composition_available(true, FreezeMode::Off, true));
-        assert!(!live_composition_available(false, FreezeMode::Off, true));
-        assert!(live_composition_available(true, FreezeMode::Off, false));
-        assert!(!live_composition_available(false, FreezeMode::Off, false));
-    }
-
-    #[test]
-    fn either_freeze_mode_prevents_live_composition_with_or_without_replay() {
-        for freeze_mode in [FreezeMode::CockpitPose, FreezeMode::FullCamera] {
-            for replay_driving in [false, true] {
-                for vr_frame_rendering in [false, true] {
-                    assert!(!live_composition_available(
-                        vr_frame_rendering,
-                        freeze_mode,
-                        replay_driving,
-                    ));
-                }
-            }
-        }
     }
 }

@@ -57,7 +57,7 @@ fn cancellation_before_claim_preserves_the_restoration_request() {
 }
 
 #[test]
-fn stale_claims_are_discarded_without_replaying_and_do_not_accumulate() {
+fn stale_claims_are_discarded_without_acting_and_do_not_accumulate() {
     let directory = RequestDirectory::new();
     let path = directory.request();
     let stale = path.with_extension("toml.claimed");
@@ -465,58 +465,25 @@ fn a_pose_table_is_only_accepted_by_visual_configure() {
 }
 
 #[test]
-fn oversized_requests_and_paths_never_reach_dispatch() {
+fn oversized_requests_never_reach_dispatch() {
     assert!(matches!(
         read(&"x".repeat(text::REQUEST_BYTES + 1)),
         Err(RequestErrorKind::Read(TextError::Limit { .. }))
     ));
-    assert!(matches!(
-        read(&format!(
-            "command = 'replay'\npath = '{}'",
-            "x".repeat(text::STRING_BYTES + 1)
-        )),
-        Err(RequestErrorKind::Read(TextError::Limit {
-            field: "path",
-            ..
-        }))
-    ));
 }
 
 #[test]
-fn a_replay_request_carries_its_options() {
-    assert_eq!(
-        read(
-            "command = \"replay\"\npath = \"C:/recordings/climb.jc3trk\"\nstart = \
-                 \"in_place\"\npacing = \"frame_locked\"\n"
-        )
-        .unwrap(),
-        Request::Replay {
-            path: PathBuf::from("C:/recordings/climb.jc3trk"),
-            options: ReplayOptions {
-                start: StartMode::InPlace,
-                pacing: Pacing::FrameLocked,
-            },
-        }
-    );
-}
-
-#[test]
-fn the_commands_without_a_path_read() {
+fn the_recording_commands_read() {
     for (command, request) in [
         ("record", Request::Record),
         ("stop_recording", Request::StopRecording),
-        ("stop_replay", Request::StopReplay),
     ] {
         assert_eq!(read(&format!("command = \"{command}\"")).unwrap(), request);
     }
 }
 
 #[test]
-fn a_replay_without_a_path_or_an_unknown_command_is_refused() {
-    assert!(matches!(
-        read("command = \"replay\"\npath = \" \""),
-        Err(RequestErrorKind::NoPath(Command::Replay))
-    ));
+fn an_unknown_command_is_refused() {
     assert!(matches!(
         read("command = \"launch\""),
         Err(RequestErrorKind::Parse(_))
@@ -770,7 +737,6 @@ fn motion_capture_is_only_accepted_by_screenshot_and_carries_its_phase() {
         "visual_end",
         "record",
         "stop_recording",
-        "stop_replay",
     ] {
         let extra = match command {
             "visual_configure" => "\nid = 'configure'\nmode = 'multipass'",

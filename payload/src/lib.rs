@@ -165,7 +165,7 @@ fn shutdown_startup() {
         module::pin();
     }
 
-    // And for the tracking recorder's writer and a replay's loader.
+    // And for the tracking recorder's writer, and the test tools' threads.
     if !recorder::tracking::shutdown() {
         module::pin();
     }
@@ -341,8 +341,7 @@ fn update() {
         // one pass, and before the game's own update consumes the state they set.
         director::update();
 
-        // The test tools, after the director's pass, which services a replay's teleport to its
-        // start.
+        // The test tools, after the director's pass, which services a visual stage's teleport.
         recorder::tracking::frame_tick();
         testing::update();
         cpu_placement::update();

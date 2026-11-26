@@ -41,7 +41,6 @@ pub use config::{
     BlitGamma, FoveationConfig, FoveationConfigError, FreezeMode, MirrorView, ProjectionConvention,
     VrConfig,
 };
-use frame::begin_replay_frame;
 pub use frame::{
     CaptureEyeView, CaptureViews, EyeRenderParams, begin_render_frame, capture_views,
     clear_render_params, cull_projection_standard, eyes_union_projection_standard, render_params,
@@ -66,7 +65,6 @@ mod mirror;
 mod persist;
 pub mod pose_control;
 mod recenter;
-mod replay;
 mod resolution;
 mod session;
 pub mod stage;
@@ -89,12 +87,10 @@ pub use frame_loop::{EyeImage, EyeView, FrameContext, LocatedFrame, WaitedFrame,
 pub(crate) use frame_loop::{head_tracked, pose_age_totals};
 pub(crate) use mirror::latest_present;
 pub use mirror::{present_mirror, toggle_stereo_pair};
-pub(crate) use recenter::apply_replayed_recenter;
 pub use recenter::{
     RecenterCause, RecenterKind, auto_recenter_tick, recenter, recenter_count, request_recenter,
     request_seat_recenter, request_seat_yaw_rebase,
 };
-pub use replay::drive_replay_frame;
 pub use resolution::apply_native_resolution;
 pub(crate) use resolution::{
     ResolutionProgress, ResolutionStatus, progress as resolution_progress,

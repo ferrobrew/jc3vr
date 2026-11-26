@@ -25,14 +25,15 @@ use crate::{
     },
     frame_timing::{self, Slot},
     stereo::engine_context::EngineContext,
+    recorder::tracking::{CaptureSample, format::EyeSample},
     testing::visual::headset,
     vr::{
         Fov, FreezeMode, OffAxisProjection, VIEW_TYPE, VrConfig,
-        convert::{posef, quat, vec3},
+        convert::{self, posef, quat, vec3},
         input::flight_pose::{self, LocatedHead},
         pose_control,
         recenter::mid_pose,
-        replay, stage,
+        stage,
         state::{VrState, lock_state},
         submit::{Submitter, lock_submit},
         visibility_mask,
@@ -515,7 +516,6 @@ impl VrState {
         if located {
             log_located_views_once(&eyes);
             visibility_mask::refresh(&session.handle, [eyes[0].fov, eyes[1].fov]);
-            replay::replace_located_head(&mut eyes);
             substitute_headset_rig(&mut eyes, near_clip, far_clip);
         }
 
@@ -529,9 +529,6 @@ impl VrState {
             frame_state.predicted_display_time,
             head_pose,
         );
-        if let Some(info) = crate::testing::replay::stage() {
-            stage::publish_replayed(info);
-        }
 
         // The controllers are sampled at the same predicted display time and re-based against the
         // same baseline as the eye views, so a hand and the head it is drawn beside agree.
@@ -566,7 +563,7 @@ impl VrState {
         }
 
         // After the controllers, so the frame records what the input update published.
-        crate::recorder::tracking::capture(replay::capture_sample(
+        crate::recorder::tracking::capture(capture_sample(
             frame_state.predicted_display_time,
             frame_state.should_render,
             head_tracked,
@@ -652,6 +649,33 @@ fn end_frame(
 /// its turn from the mid-eye head pose, and the distance between the eyes. The headset's own view
 /// geometry is otherwise recorded nowhere, and it is what a headset-like rig in the visual harness
 /// approximates.
+/// The frame loop's record of a frame, for the tracking recorder.
+fn capture_sample(
+    display_time: xr::Time,
+    should_render: bool,
+    head_tracked: bool,
+    located: Option<&[EyeView; 2]>,
+) -> CaptureSample {
+    CaptureSample {
+        display_time_ns: display_time.as_nanos(),
+        should_render,
+        head_tracked,
+        eyes: located.map(|eyes| eyes.map(|eye| eye_sample(&eye))),
+    }
+}
+
+fn eye_sample(eye: &EyeView) -> EyeSample {
+    EyeSample {
+        pose: convert::pose(eye.pose),
+        fov: [
+            eye.fov.angle_left,
+            eye.fov.angle_right,
+            eye.fov.angle_up,
+            eye.fov.angle_down,
+        ],
+    }
+}
+
 fn log_located_views_once(eyes: &[EyeView; 2]) {
     if VIEWS_LOGGED.swap(true, Ordering::Relaxed) {
         return;

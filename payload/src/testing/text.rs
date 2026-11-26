@@ -7,7 +7,6 @@ use std::{
 };
 
 pub(super) const REQUEST_BYTES: usize = 8 * 1024;
-pub(super) const STRING_BYTES: usize = 4096;
 
 #[derive(Debug)]
 pub(crate) enum TextError {
@@ -28,7 +27,7 @@ impl std::fmt::Display for TextError {
             Self::Utf8(error) => write!(f, "invalid UTF-8: {error}"),
             Self::Limit { field, actual, max } => write!(
                 f,
-                "{field} has {actual} bytes or entries; the limit is {max}"
+                "{field} has {actual} bytes; the limit is {max}"
             ),
         }
     }
@@ -46,10 +45,6 @@ pub(super) fn limit(field: &'static str, actual: usize, max: usize) -> Result<()
     } else {
         Ok(())
     }
-}
-
-pub(super) fn string(field: &'static str, value: &str) -> Result<(), TextError> {
-    limit(field, value.len(), STRING_BYTES)
 }
 
 fn read_from(reader: impl Read, max: usize) -> Result<String, TextError> {
