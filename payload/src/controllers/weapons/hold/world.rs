@@ -1,5 +1,5 @@
 //! Grip targets for weapons discovered independently of the physical hands' probes: a gun in a
-//! living character's hands, and a weapon on a rack or in a locker. This path does not classify
+//! living character's hands or holstered on its body, and a weapon on a rack or in a locker. This path does not classify
 //! dropped weapon bodies or acquire remote grapple targets.
 //! Pure: the grip targets placed on them and which one a grab took.
 //!
@@ -27,6 +27,8 @@ use crate::controllers::{
 pub enum TargetKind {
     /// In the hands of the living character at this address.
     Held { character: usize },
+    /// Holstered on the body of the living character at this address.
+    Holstered { character: usize },
     /// On a rack, at this weapon's address.
     Rack { weapon: usize },
     /// One displayed gun of a paired rack, identified across cached completion.
@@ -53,7 +55,7 @@ pub struct WorldTarget {
 /// where the weapon is.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct TakeRadii {
-    /// A gun in a living character's hands.
+    /// A gun on a living character, in its hands or holstered on its body.
     pub held: f32,
     /// A weapon on a rack or in a locker.
     pub rack: f32,
@@ -71,7 +73,7 @@ impl TakeRadii {
     /// The radius of a target of `kind`, or `None` for one that is not finite and positive.
     pub fn of(&self, kind: TargetKind) -> Option<f32> {
         let radius = match kind {
-            TargetKind::Held { .. } => self.held,
+            TargetKind::Held { .. } | TargetKind::Holstered { .. } => self.held,
             TargetKind::Rack { .. } | TargetKind::RackMember { .. } => self.rack,
         };
         (radius.is_finite() && radius > 0.0).then_some(radius)
@@ -183,10 +185,10 @@ impl Offers {
     }
 
     /// The character whose gun is offered to `hand`, as an address, if the offer is of a gun in a
-    /// character's hands.
-    pub(crate) fn held_character(&self, hand: Hand) -> Option<usize> {
+    /// character's hands or holstered on its body.
+    pub(crate) fn character(&self, hand: Hand) -> Option<usize> {
         match self.hands[hand.index()]?.kind {
-            TargetKind::Held { character } => Some(character),
+            TargetKind::Held { character } | TargetKind::Holstered { character } => Some(character),
             TargetKind::Rack { .. } | TargetKind::RackMember { .. } => None,
         }
     }
@@ -474,17 +476,82 @@ mod tests {
                 Some(Vec3::new(0.9, 0.0, -0.5)),
             ],
         );
-        assert_eq!(offers.held_character(Hand::Left), Some(9));
-        assert_eq!(offers.held_character(Hand::Right), None, "a rack's gun");
+        assert_eq!(offers.character(Hand::Left), Some(9));
+        assert_eq!(offers.character(Hand::Right), None, "a rack's gun");
         let mut offers = offers;
         assert_eq!(
             offers.take(Hand::Left, Some(Vec3::new(0.1, 0.0, -0.5)), 0.3),
             Some(held)
         );
+        assert_eq!(offers.character(Hand::Left), None, "a grab consumed it");
+    }
+
+    #[test]
+    fn a_holstered_gun_reaches_as_far_as_one_in_hands_and_names_its_character() {
+        let radii = TakeRadii {
+            held: 0.4,
+            rack: 0.3,
+        };
+        let holstered = target(
+            TargetKind::Holstered { character: 7 },
+            Vec3::ZERO,
+            Vec3::NEG_Z * 0.2,
+        );
+        let rack = WorldTarget {
+            kind: TargetKind::Rack { weapon: 4 },
+            weapon: 0x2000,
+            ..holstered
+        };
+        let point = Vec3::new(0.35, 0.0, -0.1);
+        assert_eq!(radii.of(holstered.kind), Some(0.4));
+        assert_eq!(chosen(&[rack], point, radii), None);
+        assert_eq!(chosen(&[holstered, rack], point, radii), Some(holstered));
         assert_eq!(
-            offers.held_character(Hand::Left),
+            chosen(&[holstered], Vec3::new(0.41, 0.0, -0.1), radii),
+            None
+        );
+        let offered = candidates(&[holstered], radii, [true, false], [Some(point), None]);
+        assert_eq!(offered.len(), 1);
+        assert_eq!(offered[0].volume, GrabVolume::WorldWeapon);
+        assert_eq!(offered[0].radius, 0.4);
+        let offers = Offers::gather(&[holstered], radii, [true, true], [Some(point), None]);
+        assert_eq!(offers.character(Hand::Left), Some(7));
+        assert_eq!(offers.character(Hand::Right), None, "no point for the hand");
+    }
+
+    #[test]
+    fn a_holstered_gun_and_the_gun_in_hands_compete_by_distance() {
+        let held = target(TargetKind::Held { character: 7 }, Vec3::ZERO, Vec3::NEG_Z);
+        let holstered = WorldTarget {
+            weapon: 0x3000,
+            ..target(
+                TargetKind::Holstered { character: 7 },
+                Vec3::new(0.3, -0.4, 0.0),
+                Vec3::new(0.3, -0.6, 0.0),
+            )
+        };
+        let targets = [held, holstered];
+        assert_eq!(
+            chosen(&targets, Vec3::new(0.05, 0.0, -0.5), 0.4),
+            Some(held)
+        );
+        assert_eq!(
+            chosen(&targets, Vec3::new(0.3, -0.5, 0.05), 0.4),
+            Some(holstered)
+        );
+        let mut offers = Offers::gather(
+            &targets,
+            0.4,
+            [true; 2],
+            [Some(Vec3::new(0.3, -0.5, 0.05)); 2],
+        );
+        let taken = offers.take(Hand::Left, Some(Vec3::new(0.3, -0.5, 0.05)), 0.4);
+        assert_eq!(taken, Some(holstered));
+        offers.acquired(holstered);
+        assert_eq!(
+            offers.take(Hand::Right, Some(Vec3::new(0.3, -0.5, 0.05)), 0.4),
             None,
-            "a grab consumed it"
+            "the other hand cannot take the same holstered gun"
         );
     }
 

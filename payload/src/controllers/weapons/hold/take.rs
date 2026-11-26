@@ -1,5 +1,6 @@
 //! The input tick's side of taking a weapon that has no body for the hands' reach (a gun in a
-//! character's hands, [`crate::controllers::weapons::hold::steal`], or a weapon on a rack,
+//! character's hands or holstered on its body, [`crate::controllers::weapons::hold::steal`], or a
+//! weapon on a rack,
 //! [`crate::controllers::weapons::hold::rack`]): it gathers the targets
 //! ([`crate::controllers::weapons::hold::world`]), places their grab volumes for the free hands
 //! ([`begin_tick`]), and carries out a grab of one ([`finish_grab`]).
@@ -30,7 +31,7 @@ use crate::controllers::{
             source::{self, SourceRefusal, WeaponSource},
             steal,
             take::placement::{Identity, Records, Sample},
-            world::{self, TakeRadii, WorldTarget},
+            world::{self, TakeRadii, TargetKind, WorldTarget},
         },
     },
 };
@@ -40,9 +41,11 @@ mod placement;
 /// What taking weapons from the world did, for the readout.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct TakeStatus {
-    /// The guns in characters' hands within reach of a grab on the last tick.
+    /// The guns in characters' hands noted near the player on the last tick.
     pub held_targets: usize,
-    /// The weapons on racks within reach of a grab on the last tick.
+    /// The guns holstered on characters' bodies noted near the player on the last tick.
+    pub holstered_targets: usize,
+    /// The weapons on racks near the player on the last tick.
     pub rack_targets: usize,
     pub steals: u64,
     /// Weapons a rack handed over, and copies asked of racks with unlimited stock.
@@ -182,6 +185,7 @@ pub(crate) unsafe fn begin_tick(inputs: &TakeInputs) -> Vec<Candidate> {
     state.targets.clear();
     state.offered.clear();
     state.status.held_targets = 0;
+    state.status.holstered_targets = 0;
     state.status.rack_targets = 0;
     let Some(player) = player else {
         return Vec::new();
@@ -191,14 +195,20 @@ pub(crate) unsafe fn begin_tick(inputs: &TakeInputs) -> Vec<Candidate> {
     };
     let to_cockpit = |p: Vec3| frames.cockpit.point_to_cockpit(p);
     state.targets.extend(steal::targets(to_cockpit));
-    let held = state.targets.len();
+    let on_characters = state.targets.len();
+    let holstered = state
+        .targets
+        .iter()
+        .filter(|t| matches!(t.kind, TargetKind::Holstered { .. }))
+        .count();
     if let Some(owner) = owner {
         state
             .targets
             .extend(unsafe { rack::targets(owner, to_cockpit) });
     }
-    state.status.held_targets = held;
-    state.status.rack_targets = state.targets.len() - held;
+    state.status.held_targets = on_characters - holstered;
+    state.status.holstered_targets = holstered;
+    state.status.rack_targets = state.targets.len() - on_characters;
     let points = inputs.active.hands.map(|h| h.map(|h| h.grip.position));
     state.offered = world::Offers::gather(&state.targets, TAKE_RADII, inputs.free, points);
     world::candidates(&state.targets, TAKE_RADII, inputs.free, points)
@@ -247,14 +257,15 @@ pub(crate) fn stand_down() {
     state.targets.clear();
     state.offered.clear();
     state.status.held_targets = 0;
+    state.status.holstered_targets = 0;
     state.status.rack_targets = 0;
 }
 
 /// The character whose gun the last input tick offered `hand`, as an address: the hand is within
-/// its steal reach. `None` when no gun in a character's hands was offered to it, or once a grab
-/// consumed the offer.
+/// its steal reach of a gun in its hands or holstered on its body. `None` when no gun on a
+/// character was offered to it, or once a grab consumed the offer.
 pub(crate) fn steal_offer(hand: Hand) -> Option<usize> {
-    STATE.lock().offered.held_character(hand)
+    STATE.lock().offered.character(hand)
 }
 
 /// The take's reach around each kind of target.
@@ -301,6 +312,7 @@ static STATE: Mutex<State> = Mutex::new(State {
     offered: world::Offers::new(),
     status: TakeStatus {
         held_targets: 0,
+        holstered_targets: 0,
         rack_targets: 0,
         steals: 0,
         rack_takes: 0,

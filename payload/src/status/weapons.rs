@@ -217,6 +217,8 @@ fn takes() -> Line {
     Line::ok(text!(
         take.held_targets.to_string(),
         " in hands near, ",
+        take.holstered_targets.to_string(),
+        " holstered near, ",
         take.steals.to_string(),
         " taken"
     ))

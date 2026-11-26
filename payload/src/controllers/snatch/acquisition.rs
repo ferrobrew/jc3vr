@@ -124,7 +124,7 @@ pub(super) unsafe fn fire_at(hand: Hand, offer: Offer) -> Result<Fired, Refusal>
     let source = match offer.kind {
         OfferKind::Ground { weak, .. } => WeaponSource::Ground { weak },
         OfferKind::Held(target) => {
-            WeaponSource::Character(CharacterGun::held(&target).ok_or(Refusal::Gone)?)
+            WeaponSource::Character(CharacterGun::of_target(&target).ok_or(Refusal::Gone)?)
         }
         OfferKind::Holstered(target) => WeaponSource::Character(CharacterGun::holstered(&target)),
         OfferKind::Rack { weapon, weak, gun } => WeaponSource::Rack { weapon, weak, gun },

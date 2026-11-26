@@ -66,9 +66,11 @@ impl WeaponSource {
     /// The game thread, before the world update.
     pub(crate) unsafe fn of_target(target: &WorldTarget) -> Result<WeaponSource, SourceRefusal> {
         match target.kind {
-            TargetKind::Held { .. } => CharacterGun::held(target)
-                .map(WeaponSource::Character)
-                .ok_or(SourceRefusal::Gone),
+            TargetKind::Held { .. } | TargetKind::Holstered { .. } => {
+                CharacterGun::of_target(target)
+                    .map(WeaponSource::Character)
+                    .ok_or(SourceRefusal::Gone)
+            }
             TargetKind::Rack { weapon } => {
                 let alive = unsafe { rack::find(weapon) }.ok_or(SourceRefusal::Gone)?;
                 let weapon = NonZeroUsize::new(weapon).ok_or(SourceRefusal::Gone)?;
@@ -212,10 +214,16 @@ pub(crate) unsafe fn take(hand: Hand, source: &WeaponSource) -> Result<WeaponSlo
             let slot = unsafe { pickup::take(hand, weapon, options(freed.source)) }
                 .map_err(SourceRefusal::Take)?;
             steal::note_steal();
+            let from = if gun.holstered {
+                "off a character's holster"
+            } else {
+                "out of a character's hands"
+            };
             tracing::info!(
                 target: "controllers",
                 hand = hand.label(),
-                "hold: took the gun out of a character's hands into the {} hand",
+                slot = ?gun.slot,
+                "hold: took the gun {from} into the {} hand",
                 hand.label()
             );
             Ok(slot)

@@ -1,31 +1,33 @@
-//! Taking a gun out of a living character's hands. The design is in
+//! Taking a gun out of a living character's hands or off its body. The design is in
 //! `docs/mod/input/physical-weapons.md`, the engine side in
 //! `docs/engine/gameplay/weapon-equip-and-drop.md`.
 //!
 //! A gun in a character's hands has no body in the physics world (only a dropped weapon's bodies
 //! are there), so the hands' reach cannot find it. Instead the inventory's end-of-pass detour,
 //! which runs for every character, notes each character near the player that wields a gun
-//! ([`observe`]): where the gun's grips are, and a weak reference to the character, which tells the
-//! input tick whether it still lives without keeping it alive. The weapon handling places grab
-//! volumes along those guns for a free hand ([`crate::controllers::weapons::hold::world`]).
+//! ([`observe`]): where the grips are of the gun it wields and of the guns holstered on its body,
+//! and a weak reference to the character, which tells the input tick whether it still lives without
+//! keeping it alive. The weapon handling places grab volumes along those guns for a free hand
+//! ([`crate::controllers::weapons::hold::world`]).
 //!
 //! A grab of one takes the gun through the hands' take from a source
 //! ([`crate::controllers::weapons::hold::source`]), which frees it here ([`release`]), with the
 //! character locked alive for the whole release:
 //!
 //! 1. the character's inventory still holds the gun in the slot noted, and the gun is still in its
-//!    hands, and the player's animation allows a pickup;
+//!    hands (or still holstered), and the player's animation allows a pickup;
 //! 2. the gun is dropped at once while the character's inventory still holds it
 //!    ([`WeaponBase::OnDrop`], the call a swimming character's pickup makes on a slot's occupant),
 //!    which unequips it from the character;
-//! 3. the character's inventory lets the slot go and selects another weapon for it
-//!    ([`Inventory::DropWeapon`] with its selection on, the call its death makes), which defers no
-//!    second drop since the gun is already dropped;
+//! 3. the character's inventory lets the slot go ([`Inventory::DropWeapon`]), which defers no second
+//!    drop since the gun is already dropped: for a gun in its hands with its selection on, the call
+//!    its death makes, so it selects another weapon, and for a holstered gun with it off, so it
+//!    keeps what it wields;
 //! 4. the character staggers ([`Character::HitReaction`], an impulse between its stumble and its
 //!    knockdown thresholds, toward the player);
 //! 5. the gun goes into the grabbing hand as a weapon off the ground does: through the loadout
-//!    table, so the other hand keeps what it holds, sliding there from where it was in the
-//!    character's hands, or the grapple's snatch pulls it in on the line.
+//!    table, so the other hand keeps what it holds, sliding there from where it was on the
+//!    character, or the grapple's snatch pulls it in on the line.
 //!
 //! Whether the hand can take it is checked before the character lets go, so a refused take leaves
 //! the gun in the character's hands.
@@ -160,23 +162,31 @@ pub(crate) unsafe fn observe(inventory: *mut Inventory) {
     });
 }
 
-/// The guns in characters' hands noted recently, with their points carried into the cockpit frame
-/// by `to_cockpit`. Forgets the characters not noted for a while.
+/// The guns on characters noted recently, in their hands ([`TargetKind::Held`]) and holstered on
+/// their bodies ([`TargetKind::Holstered`]), with their points carried into the cockpit frame by
+/// `to_cockpit`. Forgets the characters not noted for a while.
 pub(crate) fn targets(to_cockpit: impl Fn(Vec3) -> Vec3) -> Vec<WorldTarget> {
+    let to_cockpit = &to_cockpit;
     let mut seen = SEEN.lock();
     seen.retain(|s| s.at.elapsed() <= SEEN_FOR);
     seen.iter()
-        .filter_map(|s| {
-            let w = s.wielded?;
-            Some(WorldTarget {
-                kind: TargetKind::Held {
-                    character: s.character,
-                },
+        .flat_map(|s| {
+            let character = s.character;
+            let held = s.wielded.map(|w| WorldTarget {
+                kind: TargetKind::Held { character },
                 weapon: w.weapon,
                 slot: w.slot,
-                points: w.points.map(&to_cockpit),
+                points: w.points.map(to_cockpit),
                 gun: w.gun,
-            })
+            });
+            let holstered = s.holstered.iter().flatten().map(move |h| WorldTarget {
+                kind: TargetKind::Holstered { character },
+                weapon: h.weapon,
+                slot: h.slot,
+                points: h.points.map(to_cockpit),
+                gun: h.gun,
+            });
+            held.into_iter().chain(holstered)
         })
         .collect()
 }
@@ -202,7 +212,7 @@ pub(crate) fn holstered_targets() -> Vec<HolsteredTarget> {
                 character: s.character,
                 weapon: h.weapon,
                 slot: h.slot,
-                point: h.point,
+                point: h.gun.position,
             })
         })
         .collect()
@@ -219,20 +229,23 @@ pub(crate) struct CharacterGun {
 }
 
 impl CharacterGun {
-    /// The gun in the hands that `target` (a [`TargetKind::Held`] target) stands for.
-    pub(crate) fn held(target: &WorldTarget) -> Option<CharacterGun> {
-        let TargetKind::Held { character } = target.kind else {
-            return None;
+    /// The gun that `target` stands for: in the hands for a [`TargetKind::Held`] target, holstered
+    /// for a [`TargetKind::Holstered`] one, and `None` for a target not on a character.
+    pub(crate) fn of_target(target: &WorldTarget) -> Option<CharacterGun> {
+        let (character, holstered) = match target.kind {
+            TargetKind::Held { character } => (character, false),
+            TargetKind::Holstered { character } => (character, true),
+            TargetKind::Rack { .. } | TargetKind::RackMember { .. } => return None,
         };
         Some(CharacterGun {
             character,
             weapon: target.weapon,
             slot: target.slot,
-            holstered: false,
+            holstered,
         })
     }
 
-    /// The holstered gun `target` stands for.
+    /// The holstered gun the snatch's `target` stands for.
     pub(crate) fn holstered(target: &HolsteredTarget) -> CharacterGun {
         CharacterGun {
             character: target.character,
@@ -295,9 +308,7 @@ pub(crate) unsafe fn release(
     unsafe { weapon.OnDrop() };
     unsafe { victim.m_Inventory.DropWeapon(gun.slot, !gun.holstered) };
     unsafe { stagger(victim, player_at) };
-    if !gun.holstered {
-        SEEN.lock().retain(|s| s.character != gun.character);
-    }
+    forget(gun);
     Ok(Freed {
         weapon,
         alive,
@@ -305,12 +316,12 @@ pub(crate) unsafe fn release(
     })
 }
 
-/// Count a take from a character's hands.
+/// Count a take from a character's hands or holsters.
 pub(crate) fn note_steal() {
     STEALS.fetch_add(1, Ordering::Relaxed);
 }
 
-/// The takes from characters' hands since the payload loaded.
+/// The takes from characters' hands and holsters since the payload loaded.
 pub(crate) fn steals() -> u64 {
     STEALS.load(Ordering::Relaxed)
 }
@@ -347,7 +358,9 @@ struct Wielded {
 struct Holstered {
     weapon: usize,
     slot: WeaponSlot,
-    point: Vec3,
+    /// The gun's segment in the world, between its two grips, or a grip and the gun's origin.
+    points: [Vec3; 2],
+    gun: Pose,
 }
 
 /// The slots of the guns a character holsters where they are seen.
@@ -381,7 +394,7 @@ unsafe fn wielded(character: &Character) -> Option<(*mut WeaponBase, WeaponSlot)
 }
 
 /// The guns `character` carries holstered and visible on its body, by [`HOLSTER_SLOTS`], each
-/// with its first gun's origin.
+/// with its first gun's grips and pose.
 unsafe fn holstered(character: &Character) -> [Option<Holstered>; HOLSTER_SLOTS.len()] {
     HOLSTER_SLOTS.map(|slot| {
         let weapon = unsafe {
@@ -397,13 +410,32 @@ unsafe fn holstered(character: &Character) -> [Option<Holstered>; HOLSTER_SLOTS.
         if state != WeaponState::E_WS_HOLSTERED as i32 {
             return None;
         }
-        let point = unsafe { engine::gun_position(weapon) }?;
+        let (points, gun) = unsafe { grip_points(weapon) }?;
         Some(Holstered {
             weapon: weapon as *const WeaponBase as usize,
             slot,
-            point,
+            points,
+            gun,
         })
     })
+}
+
+/// Forget `gun` once its character let go of it, so that no target offers it until the character
+/// is noted again: a character whose gun left its hands is forgotten whole, and only the holster is
+/// forgotten of one that keeps what it wields.
+fn forget(gun: &CharacterGun) {
+    let mut seen = SEEN.lock();
+    if !gun.holstered {
+        seen.retain(|s| s.character != gun.character);
+        return;
+    }
+    for s in seen.iter_mut().filter(|s| s.character == gun.character) {
+        for holstered in &mut s.holstered {
+            if holstered.is_some_and(|h| h.weapon == gun.weapon) {
+                *holstered = None;
+            }
+        }
+    }
 }
 
 /// Stagger `victim` toward `toward`, as a melee blow just over its stumble threshold would.
