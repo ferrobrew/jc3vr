@@ -508,7 +508,7 @@ fn write(target: ImageTarget, image: Image) -> anyhow::Result<PathBuf> {
     let (path, sidecar) = match &target {
         ImageTarget::HarnessScreenshot { path, .. } => (path.clone(), None),
         ImageTarget::Screenshot { stamp, sidecar } => (
-            session::capture_file(CaptureFile::Screenshot, stamp, None)?,
+            session::capture_file(CaptureFile::Screenshot, stamp)?,
             Some(sidecar),
         ),
         ImageTarget::TraceFrame {

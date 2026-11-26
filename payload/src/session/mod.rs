@@ -11,11 +11,10 @@
 //! - [`SessionFile`]: one file per session in the root, under a fixed name: `session.log` (the
 //!   tracing log), `crash.log` (the crash handler's log), and `markers.jsonl` (take markers made with
 //!   no video recording running).
-//! - [`CaptureFile`]: one file per capture, `<folder>/<stamp>[_<qualifier>].<ext>`:
-//!   `profiles/<stamp>.json` (profiler captures), `screenshots/<stamp>.png` with a `<stamp>.json`
-//!   sidecar (F12), `grapple-logs/<stamp>.csv` (grapple telemetry), `scenarios/<stamp>_<scenario
-//!   file>.toml` (scenario summaries), and `shader-dumps/<stamp>.txt` (the vertex-shader name
-//!   census).
+//! - [`CaptureFile`]: one file per capture, `<folder>/<stamp>.<ext>`: `profiles/<stamp>.json`
+//!   (profiler captures), `screenshots/<stamp>.png` with a `<stamp>.json` sidecar (F12),
+//!   `grapple-logs/<stamp>.csv` (grapple telemetry), and `shader-dumps/<stamp>.txt` (the
+//!   vertex-shader name census).
 //! - [`CaptureFolder`]: several files per capture, `<folder>/<stamp>/` holding files named by role:
 //!   `traces/<stamp>/` (a render trace's `trace.ndjson` and its `frameNNN_eye<N>.png` images) and
 //!   `recordings/<stamp>/` (a recording's halves, named by [`RecordingFile`]: the tracking
@@ -58,7 +57,7 @@ impl SessionFile {
     }
 }
 
-/// The artifact kinds that write one file per capture, `<folder>/<stamp>[_<qualifier>].<ext>`.
+/// The artifact kinds that write one file per capture, `<folder>/<stamp>.<ext>`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CaptureFile {
     /// A profiler capture in Chrome trace-event JSON.
@@ -67,8 +66,6 @@ pub enum CaptureFile {
     Screenshot,
     /// A grapple telemetry capture.
     GrappleLog,
-    /// A scenario's summary, qualified with the scenario file's stem.
-    ScenarioSummary,
     /// The vertex-shader name census.
     ShaderDump,
 }
@@ -79,7 +76,6 @@ impl CaptureFile {
             Self::Profile => "profiles",
             Self::Screenshot => "screenshots",
             Self::GrappleLog => "grapple-logs",
-            Self::ScenarioSummary => "scenarios",
             Self::ShaderDump => "shader-dumps",
         }
     }
@@ -89,20 +85,13 @@ impl CaptureFile {
             Self::Profile => "json",
             Self::Screenshot => "png",
             Self::GrappleLog => "csv",
-            Self::ScenarioSummary => "toml",
             Self::ShaderDump => "txt",
         }
     }
 
-    /// The capture's file name, `<stamp>[_<qualifier>].<ext>`. Fails when the qualifier is not a
-    /// plain name: empty, or holding a path separator or a parent-directory component.
-    pub fn file_name(self, stamp: &str, qualifier: Option<&str>) -> Result<String, SessionError> {
-        let ext = self.extension();
-        match qualifier {
-            None => Ok(format!("{stamp}.{ext}")),
-            Some(q) if is_plain_name(q) => Ok(format!("{stamp}_{q}.{ext}")),
-            Some(q) => Err(SessionError::InvalidQualifier(q.to_owned())),
-        }
+    /// The capture's file name, `<stamp>.<ext>`.
+    pub fn file_name(self, stamp: &str) -> String {
+        format!("{stamp}.{}", self.extension())
     }
 }
 
@@ -169,8 +158,6 @@ pub struct Location {
 pub enum SessionError {
     /// No sessions root could be resolved.
     Unavailable(RootError),
-    /// A file name qualifier was not a plain name.
-    InvalidQualifier(String),
     /// A folder could not be created.
     Create {
         path: PathBuf,
@@ -183,7 +170,6 @@ impl std::fmt::Display for SessionError {
         write!(f, "session: ")?;
         match self {
             Self::Unavailable(error) => write!(f, "the session folder is unavailable: {error}"),
-            Self::InvalidQualifier(q) => write!(f, "{q:?} is not a plain file name qualifier"),
             Self::Create { path, source } => {
                 write!(f, "could not create {}: {source}", path.display())
             }
@@ -196,7 +182,6 @@ impl std::error::Error for SessionError {
         match self {
             Self::Create { source, .. } => Some(source),
             Self::Unavailable(error) => Some(error),
-            Self::InvalidQualifier(_) => None,
         }
     }
 }
@@ -258,15 +243,10 @@ pub fn file(kind: SessionFile) -> Result<PathBuf, SessionError> {
     Ok(created(root_dir()?)?.join(kind.name()))
 }
 
-/// The path of one capture's file, `<folder>/<stamp>[_<qualifier>].<ext>`, creating its folder if
-/// missing. The caller passes the capture's [`stamp`] so it can record the same one elsewhere.
-pub fn capture_file(
-    kind: CaptureFile,
-    stamp: &str,
-    qualifier: Option<&str>,
-) -> Result<PathBuf, SessionError> {
-    let name = kind.file_name(stamp, qualifier)?;
-    Ok(created(root_dir()?.join(kind.folder()))?.join(name))
+/// The path of one capture's file, `<folder>/<stamp>.<ext>`, creating its folder if missing. The
+/// caller passes the capture's [`stamp`] so it can record the same one elsewhere.
+pub fn capture_file(kind: CaptureFile, stamp: &str) -> Result<PathBuf, SessionError> {
+    Ok(created(root_dir()?.join(kind.folder()))?.join(kind.file_name(stamp)))
 }
 
 /// One capture's folder, `<folder>/<stamp>/`, created if missing.
@@ -335,11 +315,6 @@ fn created(dir: PathBuf) -> Result<PathBuf, SessionError> {
     }
 }
 
-/// Whether `name` is a single plain path component: non-empty, no separator, not `.` or `..`.
-fn is_plain_name(name: &str) -> bool {
-    !name.is_empty() && name != "." && name != ".." && !name.contains(['/', '\\'])
-}
-
 #[cfg(test)]
 mod tests {
     use std::collections::HashSet;
@@ -348,11 +323,10 @@ mod tests {
 
     use super::*;
 
-    const ALL_FILES: [CaptureFile; 5] = [
+    const ALL_FILES: [CaptureFile; 4] = [
         CaptureFile::Profile,
         CaptureFile::Screenshot,
         CaptureFile::GrappleLog,
-        CaptureFile::ScenarioSummary,
         CaptureFile::ShaderDump,
     ];
     const ALL_FOLDERS: [CaptureFolder; 2] = [CaptureFolder::Trace, CaptureFolder::Recording];
@@ -385,36 +359,16 @@ mod tests {
     }
 
     #[test]
-    fn capture_file_names_are_the_stamp_and_an_optional_qualifier() {
-        let stamp = "2026-01-02_03-04-05_006";
+    fn capture_file_names_are_the_stamp() {
         assert_eq!(
-            CaptureFile::Profile.file_name(stamp, None).unwrap(),
+            CaptureFile::Profile.file_name("2026-01-02_03-04-05_006"),
             "2026-01-02_03-04-05_006.json"
-        );
-        assert_eq!(
-            CaptureFile::ScenarioSummary
-                .file_name(stamp, Some("grip"))
-                .unwrap(),
-            "2026-01-02_03-04-05_006_grip.toml"
         );
     }
 
-    #[test]
-    fn qualifiers_cannot_escape_the_folder() {
-        for bad in ["", ".", "..", "a/b", "..\\escape"] {
-            assert!(
-                matches!(
-                    CaptureFile::ScenarioSummary.file_name("s", Some(bad)),
-                    Err(SessionError::InvalidQualifier(_))
-                ),
-                "{bad:?}"
-            );
-        }
-        assert!(
-            CaptureFile::ScenarioSummary
-                .file_name("s", Some("grip.v2"))
-                .is_ok()
-        );
+    /// Whether `name` is a single plain path component: non-empty, no separator, not `.` or `..`.
+    fn is_plain_name(name: &str) -> bool {
+        !name.is_empty() && name != "." && name != ".." && !name.contains(['/', '\\'])
     }
 
     /// Every kind has a folder of its own, a plain plural name that no root file shares.

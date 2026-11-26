@@ -529,7 +529,7 @@ pub fn dump_vs_name_census() {
         return;
     }
     let path =
-        match crate::session::capture_file(CaptureFile::ShaderDump, &crate::session::stamp(), None)
+        match crate::session::capture_file(CaptureFile::ShaderDump, &crate::session::stamp())
         {
             Ok(path) => path,
             Err(e) => {

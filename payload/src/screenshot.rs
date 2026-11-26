@@ -209,7 +209,7 @@ unsafe fn map_out(
 /// exact matrices that produced the image can be inspected offline instead of read from a log line.
 fn submit(capture: Capture) {
     let sidecar = serde_json::json!({
-        "image": crate::session::CaptureFile::Screenshot.file_name(&capture.stamp, None).ok(),
+        "image": crate::session::CaptureFile::Screenshot.file_name(&capture.stamp),
         "width": capture.image.width(),
         "height": capture.image.height(),
         "format": capture.format,

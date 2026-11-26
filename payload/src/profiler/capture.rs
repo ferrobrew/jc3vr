@@ -214,6 +214,6 @@ fn write_capture(frames: &[Arc<FrameData>]) -> anyhow::Result<PathBuf> {
 
 /// A fresh stamped output path in the session's profiles.
 fn capture_path() -> anyhow::Result<PathBuf> {
-    crate::session::capture_file(CaptureFile::Profile, &crate::session::stamp(), None)
+    crate::session::capture_file(CaptureFile::Profile, &crate::session::stamp())
         .map_err(|e| anyhow::anyhow!("profiler: {e}"))
 }

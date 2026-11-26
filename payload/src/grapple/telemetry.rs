@@ -144,7 +144,7 @@ fn write_row(kind: &str, fields: &str) {
 /// the path cannot be resolved or created.
 fn open_capture() -> Option<TelemetryWriter> {
     let path =
-        match crate::session::capture_file(CaptureFile::GrappleLog, &crate::session::stamp(), None)
+        match crate::session::capture_file(CaptureFile::GrappleLog, &crate::session::stamp())
         {
             Ok(path) => path,
             Err(e) => {
