@@ -1,6 +1,6 @@
 # Smooth swim yaw
 
-Why body yaw snapped in water, and how the mod gives the right stick the swim heading. The engine-side mechanism is [engine/gameplay/swim-locomotion.md](../../engine/gameplay/swim-locomotion.md); the implementation is `crates/jc3vr-body/src/hooks/input/swim/` behind `MovementConfig::smooth_swim_yaw` (default on).
+Why body yaw snapped in water, and how the mod gives the right stick the swim heading. The engine-side mechanism is [engine/gameplay/swim-locomotion.md](../../engine/gameplay/swim-locomotion.md); the implementation is `crates/jc3vr-body/src/hooks/input/swim/`.
 
 ## The problem
 
