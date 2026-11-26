@@ -30,7 +30,7 @@ impl ConfigRoot for Config {
 
     /// Note the settings for a tracking recording.
     fn note_saved(text: &str) {
-        jc3vr_gameplay::controllers::diagnostics::note_settings(text);
+        jc3vr_render::recorder::tracking::note_settings(text);
     }
 }
 

@@ -1,12 +1,17 @@
 use std::{ffi::c_void, sync::OnceLock};
 
 use jc3vr_core::{
-    cpu_placement, crash, is_shutting_down, lifecycle, logging, module, session, thread_role, util,
+    cpu_placement, crash, director::clean_view, is_shutting_down, lifecycle, logging, module,
+    session, thread_role, util,
 };
 use jc3vr_gameplay::controllers;
 use jc3vr_hud::{egui_impl::EguiState, hooks::ui::cancel_pointer_on_game_thread, hud};
 use jc3vr_render::{
-    far_field, hooks::graphics_engine::shader::restore_original_shaders_on_eject, image_writer, vr,
+    far_field,
+    hooks::graphics_engine::{capture, shader::restore_original_shaders_on_eject},
+    image_writer,
+    recorder::tracking,
+    vr,
 };
 use jc3vr_tooling::{director, recorder, testing};
 use jc3vr_ui::ui;
@@ -138,7 +143,7 @@ fn shutdown_startup() {
     }
 
     // And for the tracking recorder's writer, and the test tools' threads.
-    if !recorder::tracking::shutdown() {
+    if !tracking::shutdown() {
         module::pin();
     }
     if !testing::shutdown() {
@@ -200,7 +205,7 @@ fn initialize_from_game() -> anyhow::Result<()> {
 
     eject_gpu::install();
     EguiState::install()?;
-    ui::render::install();
+    capture::install();
     hud::install();
     vr::install();
     tracing::info!("Initialized in game thread");
@@ -271,7 +276,7 @@ fn contain_fatal_failure() {
 fn debug_ui_visible(panel_active: bool) -> bool {
     panel_active
         || hud::mirror_overlay::is_active()
-        || (vr::render_params(0).is_none() && !director::clean_view::hides_desktop())
+        || (vr::render_params(0).is_none() && !clean_view::hides_desktop())
 }
 
 fn update() {
@@ -306,7 +311,7 @@ fn update() {
         director::update();
 
         // The test tools, after the director's pass, which services a visual stage's teleport.
-        recorder::tracking::frame_tick();
+        tracking::frame_tick();
         testing::update();
         let large_cache_cores = vr::VR_CONFIG.lock().large_cache_cores;
         cpu_placement::update(large_cache_cores);
@@ -320,9 +325,7 @@ fn update() {
         // Driven here rather than from inside the egui closure below: they are what VR submits, and
         // preparing them only as a side effect of the debug UI meant an `EguiState` that failed to
         // install left VR with nothing to present and no indication why.
-        ui::render::EGUI_DEBUG_RENDER_STATE
-            .lock()
-            .ensure_eye_targets();
+        capture::EGUI_DEBUG_RENDER_STATE.lock().ensure_eye_targets();
 
         {
             let mut egui_state_guard = EguiState::get();
@@ -355,7 +358,7 @@ fn update() {
                     // captures themselves are prepared above, off this path. The HUD preview's retired
                     // registrations are released first, outside the capture lock.
                     hud::HUD_STATE.lock().drain_preview_retirements(renderer);
-                    ui::render::EGUI_DEBUG_RENDER_STATE
+                    capture::EGUI_DEBUG_RENDER_STATE
                         .lock()
                         .prepare_if_necessary(renderer);
                     // Laying out and tessellating the debug window is the bulk of this pass, and

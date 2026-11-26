@@ -3,17 +3,17 @@
 use std::borrow::Cow;
 
 use glam::{Vec2, Vec3};
-use jc3vr_core::config::engine::{
-    Snapshot,
-    load::{LoadError, LoadReport},
+use jc3vr_core::{
+    config::engine::{
+        Snapshot,
+        load::{LoadError, LoadReport},
+    },
+    director::clean_view::CleanViewScope,
 };
 use jc3vr_gameplay::controllers::config::{LocomotionDirection, Posture, SightOverride};
 use jc3vr_input::frame::Hand;
 use jc3vr_render::vr::MirrorView;
-use jc3vr_tooling::director::{
-    clean_view::CleanViewScope,
-    keymap::{Action, Binding, Chord},
-};
+use jc3vr_tooling::director::keymap::{Action, Binding, Chord};
 use pretty_assertions::assert_eq;
 use toml::{Table, Value};
 

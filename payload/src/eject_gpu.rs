@@ -11,9 +11,11 @@
 
 use jc3gi::graphics_engine::graphics_engine::GraphicsEngine;
 use jc3vr_core::lifecycle;
-use jc3vr_gameplay::controllers;
 use jc3vr_hud::hud;
-use jc3vr_render::fsr;
+use jc3vr_render::{
+    controllers::{overlay, weapons::scope},
+    fsr,
+};
 use windows::{
     Win32::{
         Graphics::Dxgi::{DXGI_MEMORY_SEGMENT_GROUP_LOCAL, IDXGIAdapter3, IDXGIDevice},
@@ -34,8 +36,8 @@ fn release() {
     let steps: [(&str, fn()); 8] = [
         ("hud", hud::release_on_eject),
         ("fsr", fsr::release_on_eject),
-        ("overlay", controllers::overlay::release_on_eject),
-        ("scope", controllers::weapons::scope::release_on_eject),
+        ("overlay", overlay::pass::release_on_eject),
+        ("scope", scope::pass::release_on_eject),
         ("world_markers", hud::world_markers::release_on_eject),
         ("atlas", hud::atlas::release_on_eject),
         ("mirror_overlay", hud::mirror_overlay::release_on_eject),

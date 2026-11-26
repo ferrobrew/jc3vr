@@ -1,4 +1,5 @@
 use detours_macro::detour;
+use jc3vr_core::director::clean_view;
 #[cfg(feature = "profiler")]
 use jc3vr_core::profiler::capture;
 use jc3vr_hud::{
@@ -67,7 +68,7 @@ fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
         consume_desktop_shortcut(wparam.0);
         let previous_down = (lparam.0 & 0x4000_0000) != 0;
         if !previous_down {
-            let clean = director::clean_view::toggle();
+            let clean = clean_view::toggle();
             if let Some(egui_state) = EguiState::get().as_mut() {
                 egui_state.desktop_visibility_changed(!clean);
             }

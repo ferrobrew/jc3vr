@@ -42,6 +42,7 @@ use jc3vr_render::{
         },
         window_focus,
     },
+    recorder::tracking,
     stereo,
     stereo::{
         STEREO_STATE,
@@ -51,7 +52,7 @@ use jc3vr_render::{
     vr,
     vr::tail,
 };
-use jc3vr_tooling::{diagnostics, recorder, testing};
+use jc3vr_tooling::{diagnostics, testing};
 use re_utilities::hook_library::HookLibrary;
 
 use crate::config::Config;
@@ -79,7 +80,7 @@ fn game_update(game: *const Game) -> bool {
     if !GAME_UPDATE_LOGGED.swap(true, Ordering::Relaxed) {
         tracing::info!("startup: first game update");
         // Before the first frame-timing window can close.
-        recorder::tracking::register_frame_timing();
+        tracking::register_frame_timing();
     }
     thread_role::mark_thread(ThreadRole::Game);
     // Start of a real frame: re-arm the once-per-frame CClock::Update gate.

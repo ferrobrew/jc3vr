@@ -80,10 +80,10 @@ slots! {
     jc3vr_render::vr::PANEL_ON_MIRROR = hud.egui_panel.show_on_mirror,
     jc3vr_render::vr::PANEL_RESOLUTION = hud.egui_panel.resolution,
     jc3vr_render::debug::texture_census::TEXTURE_CENSUS = testing.texture_census,
-    jc3vr_tooling::recorder::tracking::TESTING_ENABLED = testing.enabled,
-    jc3vr_tooling::recorder::tracking::RECORD_HAND_JOINTS = testing.record_hand_joints,
-    jc3vr_tooling::recorder::tracking::TIME_SCALE = director.time_scale,
-    jc3vr_tooling::director::clean_view::CLEAN_VIEW_CONFIG = director.clean_view,
+    jc3vr_render::recorder::tracking::TESTING_ENABLED = testing.enabled,
+    jc3vr_render::recorder::tracking::RECORD_HAND_JOINTS = testing.record_hand_joints,
+    jc3vr_render::recorder::tracking::TIME_SCALE = director.time_scale,
+    jc3vr_core::director::clean_view::CLEAN_VIEW_CONFIG = director.clean_view,
     jc3vr_tooling::testing::visual::PAUSED = director.paused,
 }
 
