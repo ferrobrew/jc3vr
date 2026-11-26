@@ -15,7 +15,7 @@ use crate::{
         grab::tick as grab_tick,
         physical_hands::{self, physics as hand_bodies},
         roomscale, vehicles,
-        weapons::{self, fire, hold::take},
+        weapons::{self, fire, hold::take, inventory},
     },
     hooks::character::{
         bodies_destroying_registered, missing_auto_attach_blockers, serial_consumer_registered,
@@ -53,6 +53,12 @@ fn missing() -> String {
     }
     if !roomscale::take_off_registered() {
         missing.push_str("\n- the wingsuit's take-off");
+    }
+    if !hand_bodies::guns::targets::vehicle_targets_registered() {
+        missing.push_str("\n- the vehicle controls' targets for the hand bodies");
+    }
+    if !inventory::held_props_registered() {
+        missing.push_str("\n- the held props reader");
     }
     if !hand_bodies::rail_step_registered() {
         missing.push_str("\n- the vehicle rail's pre-simulation step");

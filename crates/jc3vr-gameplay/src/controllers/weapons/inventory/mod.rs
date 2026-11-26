@@ -54,8 +54,9 @@ pub mod traversal;
 mod world;
 
 use std::{
+    num::NonZeroUsize,
     sync::{
-        Arc,
+        Arc, OnceLock,
         atomic::{AtomicBool, AtomicU64, Ordering},
     },
     time::Instant,
@@ -71,7 +72,6 @@ use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
     loadout::{ItemKind, ObjectAddress, Place, Restored, SlotObject, Socket, TakeSource, live},
-    physical_hands,
     weapons::{
         c4,
         config::WEAPONS_CONFIG,
@@ -114,6 +114,20 @@ pub const LOST_RULES: LostRules = LostRules {
 pub const OFFSETS: Offsets = Offsets::new();
 
 /// The inventory's hooks, aggregated by [`crate::controllers::weapons::hook_library`].
+/// Register the reader of the loose object each hand carries, by
+/// [`Hand::index`](jc3vr_input::frame::Hand::index): a prop the physical hands hold, which the
+/// table records as the hand's. One reader: a second registration is refused and logged.
+pub(crate) fn register_held_props(read: fn() -> [Option<NonZeroUsize>; 2]) {
+    if HELD_PROPS.set(read).is_err() {
+        tracing::error!("inventory: a held props reader is already registered; keeping the first");
+    }
+}
+
+/// Whether the reader of the held props is registered.
+pub(crate) fn held_props_registered() -> bool {
+    HELD_PROPS.get().is_some()
+}
+
 pub(crate) fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_hook_library(reset::hook_library())
@@ -556,6 +570,8 @@ const SEA_LEVEL_M: f32 = 0.0;
 /// The most weapons lying in the world the table keeps.
 const MAX_TRACKED: usize = 24;
 
+static HELD_PROPS: OnceLock<fn() -> [Option<NonZeroUsize>; 2]> = OnceLock::new();
+
 static KEPT_STOPPED: AtomicBool = AtomicBool::new(false);
 
 /// The weapon at `object`, read live this tick, as the table takes one into a hand: a weapon of
@@ -578,7 +594,8 @@ pub(crate) unsafe fn held_of(object: ObjectKey) -> Option<live::Held> {
 /// hands that threw theirs since the last tick.
 fn held_others() -> live::HeldOthers {
     let mut hands = [None; 2];
-    for (hand, prop) in Hand::BOTH.into_iter().zip(physical_hands::held_props()) {
+    let props = HELD_PROPS.get().map_or([None; 2], |read| read());
+    for (hand, prop) in Hand::BOTH.into_iter().zip(props) {
         hands[hand.index()] = prop.map(|object| live::HeldOther {
             object: ObjectAddress::new(object),
             kind: ItemKind::Prop,

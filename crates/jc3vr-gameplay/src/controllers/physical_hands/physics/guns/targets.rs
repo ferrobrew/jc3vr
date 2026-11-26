@@ -1,4 +1,9 @@
 //! The support and weight targets shared by the physical hand drive and its drawn reference.
+//!
+//! The vehicle controls' targets come first, through the vehicle handling's registration
+//! ([`register_vehicle_targets`]), as in the hand composition.
+
+use std::sync::OnceLock;
 
 use glam::Vec3;
 use jc3vr_input::frame::Hand;
@@ -7,19 +12,35 @@ pub(crate) use crate::controllers::weapons::gun_bodies::apply;
 use crate::controllers::{
     hands::CockpitHand,
     physical_hands::physics::{guns::GunHolds, state::steps},
-    vehicles,
     weapons::{config::HeftConfig, gun_bodies},
 };
+
+/// Register the vehicle controls' targets: called with the cockpit-frame hands, it draws a hand
+/// holding a control or a handle there. One registration: a second is refused and logged.
+pub(crate) fn register_vehicle_targets(apply: fn(&mut [Option<CockpitHand>; 2])) {
+    if VEHICLE_TARGETS.set(apply).is_err() {
+        tracing::error!("hand bodies: vehicle targets are already registered; keeping the first");
+    }
+}
+
+/// Whether the vehicle controls' targets are registered.
+pub(crate) fn vehicle_targets_registered() -> bool {
+    VEHICLE_TARGETS.get().is_some()
+}
 
 /// Give the physical drive the support and weight targets of the currently published guns.
 /// Reads no native objects and does not compose active hands recursively.
 pub(crate) fn apply_physical(hands: &mut [Option<CockpitHand>; 2], head: Vec3, heft: &HeftConfig) {
     let holds = gun_bodies::holds_at(steps()).unwrap_or_default();
     let raw = *hands;
-    vehicles::apply(hands);
+    if let Some(vehicle_targets) = VEHICLE_TARGETS.get() {
+        vehicle_targets(hands);
+    }
     apply(hands, head, heft);
     retain_gun_targets(hands, raw, holds);
 }
+
+static VEHICLE_TARGETS: OnceLock<fn(&mut [Option<CockpitHand>; 2])> = OnceLock::new();
 
 fn retain_gun_targets(
     hands: &mut [Option<CockpitHand>; 2],
