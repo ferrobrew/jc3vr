@@ -92,7 +92,7 @@ Two refinements would help the iron-sight cases: take the front sight as the tal
 
 ## Magazine wells
 
-`extract_wells.py` derives each player weapon's reload geometry from the same models and writes it as `wells.json`: where the magazine, shell, or round goes in, which way it travels, and where the hand grabs to chamber. It covers the same weapons as `sights.json`, reads the archives the same way, and has the same prerequisites. The payload embeds the table at build time (`crates/jc3vr-gameplay/src/controllers/weapons/reload/wells.rs`), so a change to it takes effect on the next payload build.
+`extract_wells.py` derives each player weapon's reload geometry from the same models and writes it as `wells.json`: where the magazine, shell, or round goes in, which way it travels, and where the hand grabs to chamber. It covers the same weapons as `sights.json`, reads the archives the same way, and has the same prerequisites. The payload embeds the table at build time (`crates/jc3vr-weapons/src/controllers/weapons/reload/wells.rs`), so a change to it takes effect on the next payload build.
 
 ### Usage
 

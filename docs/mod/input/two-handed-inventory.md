@@ -130,7 +130,7 @@ Switching the control scheme away from the controllers (or turning the mod's wea
 
 ## The core as built
 
-The code is `crates/jc3vr-gameplay/src/controllers/loadout/`. It is pure, apart from the object address an item is bound to.
+The code is `crates/jc3vr-weapons/src/controllers/loadout/`. It is pure, apart from the object address an item is bound to.
 
 ### Items and their identity
 
@@ -410,7 +410,7 @@ The game docks a holstered weapon by its slot, never mirrored for handedness ([`
 
 ## The weapons in the world
 
-The inventory (`weapons::inventory`; the code is `crates/jc3vr-gameplay/src/controllers/weapons/inventory/`) is the game's side of the table's weapons, with `weapons.inventory.enabled` (on; it and the inventory's other switches are in the debug UI's Weapons > Inventory and body slots). It covers the pistols, the two-handed weapons, the special weapons, and the heavy weapons; the grenade, the planted explosive, the beacon, and the sun gun stay the game's alone. The engine side is in [weapon-ownership-and-despawn.md](../../engine/gameplay/weapon-ownership-and-despawn.md).
+The inventory (`weapons::inventory`; the code is `crates/jc3vr-weapons/src/controllers/weapons/inventory/`) is the game's side of the table's weapons, with `weapons.inventory.enabled` (on; it and the inventory's other switches are in the debug UI's Weapons > Inventory and body slots). It covers the pistols, the two-handed weapons, the special weapons, and the heavy weapons; the grenade, the planted explosive, the beacon, and the sun gun stay the game's alone. The engine side is in [weapon-ownership-and-despawn.md](../../engine/gameplay/weapon-ownership-and-despawn.md).
 
 The inventory (`inventory::world`) keeps a weak reference to each weapon it has seen in a slot, the carry set, or a hand ([`WeaponBase::m_WeakThis`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::WeaponBase##field-m_WeakThis)), which tells whether it still lives without keeping it alive, and each input tick asks what became of each of the table's weapons that is in no slot, the carry set, or a hand: a weapon whose holder ([`WeaponBase::m_Holder`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::WeaponBase##field-m_Holder)) is another character is that character's and leaves the table; one whose object is gone leaves it; any other is lying in the world, with its distance from the player.
 
