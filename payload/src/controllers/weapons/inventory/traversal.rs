@@ -13,11 +13,16 @@
 //! - [`NDropWeaponStateTask_OnEnter`] drops the heavy slot's weapon on a grapple, a throw, a fall,
 //!   the parachute's and the wingsuit's opening, a vehicle's entry, and swimming.
 //!
-//! Each is refused for the local player, so the table's hands and sockets stand through them. The
-//! forced neutral state ([`Character::ForceNeutralState`]) unequips the wielded weapon; its detour
-//! tells the live table which weapon it took ([`live::neutral_forced`]), so the next input tick
-//! keeps it in its hand rather than taking it for a holster, and the reconcile wields or arms it
-//! again.
+//! Each is refused for the local player, so the table's hands and sockets stand through them. A
+//! heavy weapon of the table's is beyond the slots, so none of the tasks reaches it: it stays in
+//! its hand through a swim, a hand climb, a grapple, and a vehicle's entry, as any other gun does.
+//! The drop task is let through for a heavy weapon the game wields from its slot, which is the
+//! game's own rather than the table's.
+//!
+//! The forced neutral state ([`Character::ForceNeutralState`]) unequips the wielded weapon; its
+//! detour tells the live table which weapon it took ([`live::neutral_forced`]), so the next input
+//! tick keeps it in its hand rather than taking it for a holster, and the reconcile wields or arms
+//! it again.
 //!
 //! While the table does not run, the tasks and the forced neutral state are the game's, and the
 //! table follows what they do: a weapon put away docks on its socket, and a heavy weapon dropped
@@ -33,9 +38,9 @@ use std::{
 
 use detours_macro::detour;
 use jc3gi::{
-    character::character::Character,
+    character::{character::Character, inventory::WeaponSlot},
     equipment::{
-        weapon::WeaponBase,
+        weapon::{WeaponBase, WeaponState},
         weapon_animation::{
             NDropWeaponStateTask_OnEnter_ADDRESS, NStopUsingWeaponStateTask_OnEnter_ADDRESS,
             NWeaponHideInVehicleTask_OnEnter_ADDRESS, NWeaponUnequipTask_OnEnter_ADDRESS,
@@ -118,13 +123,60 @@ fn stop_using_weapon_task(
     }
 }
 
+/// Refused only while the heavy slot holds no weapon the game wields: the table never puts a
+/// heavy weapon there, so one wielded from it is the game's own (picked up while the table did not
+/// run, which the reconcile leaves to the game), and the game drops it as it would. A heavy weapon
+/// of the table's, in a hand or on a socket, is beyond the slots and untouched either way; one the
+/// reconcile has yet to take out of the slot, holstered, is kept.
 #[detour(address = NDropWeaponStateTask_OnEnter_ADDRESS)]
 fn drop_weapon_task(context: *mut StateContext, properties: *mut c_void, instance: *mut c_void) {
-    if !unsafe { refuse(context) } {
+    let refused =
+        unsafe { refuse(context) } && refuses_heavy_drop(unsafe { heavy_occupant(context) });
+    if !refused {
         DROP_WEAPON_TASK
             .get()
             .unwrap()
             .call(context, properties, instance);
+    }
+}
+
+/// What the heavy slot of the task's character holds.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+enum HeavyOccupant {
+    Empty,
+    /// A weapon in any state but wielding, holstered included.
+    Kept,
+    Wielded,
+}
+
+/// Whether the drop task is refused for a local player whose heavy slot holds `occupant`.
+fn refuses_heavy_drop(occupant: HeavyOccupant) -> bool {
+    occupant != HeavyOccupant::Wielded
+}
+
+/// What the heavy slot of the character of `context` holds.
+///
+/// # Safety
+///
+/// `context` must be the state context the task was given.
+unsafe fn heavy_occupant(context: *mut StateContext) -> HeavyOccupant {
+    let Some(weapon) = (unsafe { character_from_context(context) })
+        .and_then(|c| {
+            c.m_Inventory
+                .m_Weapons
+                .get(WeaponSlot::E_SLOT_HEAVY as usize)
+        })
+        .and_then(|w| unsafe { w.px.as_ref() })
+    else {
+        return HeavyOccupant::Empty;
+    };
+    if matches!(
+        weapon.m_State,
+        WeaponState::E_WS_WIELDING | WeaponState::E_WS_DUAL_WIELDING
+    ) {
+        HeavyOccupant::Wielded
+    } else {
+        HeavyOccupant::Kept
     }
 }
 
@@ -161,4 +213,16 @@ pub(crate) unsafe fn wield_skipped(owner: &Character) -> bool {
     let seated = unsafe { owner.IsInRidingInVehicleState() && !owner.IsRidingMC() };
     let boost = unsafe { owner.HasBoostWingsuit() && owner.IsUsingWingsuit() };
     seated || boost
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_drop_task_drops_only_a_heavy_weapon_the_game_wields() {
+        assert!(refuses_heavy_drop(HeavyOccupant::Empty));
+        assert!(refuses_heavy_drop(HeavyOccupant::Kept));
+        assert!(!refuses_heavy_drop(HeavyOccupant::Wielded));
+    }
 }

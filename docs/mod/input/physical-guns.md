@@ -55,7 +55,7 @@ The gun body is made, kept, and destroyed only in the pre-simulation step, on th
 
 The weapon itself is never touched by the gun body: if the game destroys the weapon before the next step finds it gone, the gun body is a body of the mod's own with the mod's own joints, destroyed at that step.
 
-A heavy weapon's own body stays in the world while it is wielded, so such a gun gets no gun body and keeps the kinematic weight and recoil.
+A heavy weapon the table carries is holstered when it is taken, which takes its own body out of the world as for any carried weapon ([two-handed-inventory.md, "Heavy weapons"](two-handed-inventory.md#heavy-weapons)), so in a hand it gets a gun body like any other gun, with the heavy weight class's mass cap, fallback mass, and recoil impulse. A heavy weapon the game wields itself, picked up while the table does not run, keeps its own body in the world while it is wielded; the own-body check refuses it (`GunError::OwnBodyInWorld`), so it gets no gun body and keeps the kinematic weight and recoil.
 
 ## Grabbing a gun anywhere
 
