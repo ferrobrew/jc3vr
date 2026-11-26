@@ -55,13 +55,11 @@ pub struct CockpitPositions {
     pub cur: Vec3,
 }
 
-/// The render-side state the VR runtime's teardown releases. Both run on the game thread.
+/// The render-side state the VR runtime's teardown releases, on the game thread.
 pub struct TeardownParticipant {
     /// Release the flip block, so the game's own present path resumes. Runs whenever the runtime
     /// tears down, after the GPU is drained.
     pub release_flip: fn(),
-    /// Release the render resources a session's frames built. Runs once, at payload shutdown.
-    pub release_resources: fn(),
 }
 
 /// The observer of the engine resizes the native-resolution driver requests. Both run on the game

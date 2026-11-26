@@ -55,9 +55,8 @@ fn changed_settings_round_trip() {
         angles_deg: Vec2::new(1.0, -2.0),
     });
     original.controllers.hands.grip.position_m = Vec3::new(0.01, 0.07, 0.0);
-    // An enum, a borrowed default string made owned, and a switch beside its value.
+    // An enum, and a switch beside its value.
     original.controllers.dominant_hand = Hand::Left;
-    original.far_field.gated_types = Cow::Owned("Window".to_owned());
     original.fsr.sharpen = true;
     // Values JSON could not carry, in settings no validation covers.
     original.vr.far_clip = f32::INFINITY;
@@ -522,7 +521,6 @@ fn a_snapshot_serializes_exactly_as_the_config_does() {
     config.body.height = 1.9;
     config.controllers.hands.grip.position_m = Vec3::new(0.01, 0.07, 0.0);
     config.controllers.dominant_hand = Hand::Left;
-    config.far_field.gated_types = Cow::Owned("Window".to_owned());
     config.fsr.sharpen = true;
     config.vr.far_clip = f32::INFINITY;
     let snapshot = Snapshot::of(&config);

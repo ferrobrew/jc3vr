@@ -62,7 +62,6 @@ pub fn install() {
     jc3vr_core::lifecycle::on_cleanup(|_renderer| {
         blit::teardown();
         foveation::teardown();
-        (teardown_participant().release_resources)();
         mirror::teardown();
         uninstall();
     });

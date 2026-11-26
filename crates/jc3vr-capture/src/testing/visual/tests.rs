@@ -410,7 +410,6 @@ fn profile_keeps_per_eye_native_resolution_across_modes() {
             jc3vr_view::fsr::AntiAliasing::Engine
         );
         assert!(!config.part(&FOVEATION_CONFIG).enabled);
-        assert!(!config.part(&FAR_FIELD_CONFIG).enabled);
         assert!(config.part(&EXPOSURE_CONFIG).force);
         assert_eq!(config.part(&EXPOSURE_CONFIG).forced_value, 0.11);
         assert!(

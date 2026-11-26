@@ -9,7 +9,7 @@ reports where the frame budget goes:
 
   * frame-time statistics and an ASCII histogram against the HMD budgets,
   * the main-thread phase budget (sim, render update, per-dispatch submit vs. draw-thread wait),
-  * the GPU lane per dispatch kind (eyes, far field), per render seam, and per render pass,
+  * the GPU lane per eye dispatch, per render seam, and per render pass,
     with each dispatch's span split into work and starvation,
   * the draw-thread CPU cost per seam, per render pass, and per render-block type,
   * the worst frames with their per-phase and per-GPU-dispatch breakdown.
@@ -17,9 +17,8 @@ reports where the frame budget goes:
 Reading notes baked into the numbers:
   * The `Dispatch` scope covers its whole loop iteration, so the CPU submit cost is reported as
     `Dispatch` minus the contained `WaitForCPUDraw + drain` scope.
-  * The far dispatch runs at ordinal 0, so its PreDraw seam carries the frame's *shared*
-    prepasses (sun-shadow atlas, reflections, water sim) — that cost is once per frame, not a
-    far-field overhead.
+  * The first dispatch's PreDraw seam carries the frame's *shared* prepasses (sun-shadow atlas,
+    reflections, water sim); that cost is once per frame.
   * GPU results report a few frames late; events are attributed to frames by wall-clock windows,
     so per-frame GPU numbers describe "the GPU work that resolved during that frame".
   * A dispatch's outer GPU scope is a *span*, not busy time: the GPU can idle inside it. The
@@ -42,7 +41,7 @@ from collections import defaultdict
 BUDGETS_MS = [1000 / 120, 1000 / 90, 1000 / 72, 1000 / 45]
 
 # The GPU lane's outer (per-dispatch) scope names.
-GPU_LANES = ["GPU eye 0", "GPU eye 1", "GPU far field"]
+GPU_LANES = ["GPU eye 0", "GPU eye 1"]
 
 # The render seams, in draw order (shared by the CPU draw lane and the GPU lane).
 SEAMS = ["PreDraw", "DrawGBuffer", "Draw (scene)", "DrawPosteffects", "PostDraw"]
@@ -155,8 +154,7 @@ def main() -> None:
     print(f"== {args.trace}")
     print(
         f"span {span_s:.2f} s · {len(frame_events)} frames ({len(frame_events) / span_s:.1f} fps) · "
-        f"{len(dispatches)} dispatches ({per_frame_dispatches:.1f}/frame"
-        f"{', far-field share frames' if per_frame_dispatches > 2.5 else ''}) · "
+        f"{len(dispatches)} dispatches ({per_frame_dispatches:.1f}/frame) · "
         f"{len(xs)} scopes · draw lanes: {n_draw_lanes}"
     )
 
@@ -253,7 +251,7 @@ def main() -> None:
                 f"{seam_sum[(lane_name, s)] / seam_n[lane_name]:17.2f}" for s in SEAMS
             )
             print(f"  {lane_name:16}{row}")
-        print("  (far-field PreDraw = the frame's shared prepasses: shadow atlas, reflections, water)")
+        print("  (eye 0 PreDraw = the frame's shared prepasses: shadow atlas, reflections, water)")
 
         # The per-pass GPU intervals nested inside the seams, which is where a seam's span splits
         # into work and holes.

@@ -41,7 +41,6 @@ pub fn egui_debug_performance(ui: &mut egui::Ui) {
 
     frame_breakdown(ui);
     online_controls(ui);
-    far_field_summary(ui);
 
     // The profiler (issue #34): a collapsible with the live flame graph and trace capture, below
     // the frame-rate readout.
@@ -144,25 +143,6 @@ fn online_controls(ui: &mut egui::Ui) {
     );
 }
 
-/// The far-field split totals (issue #32), mirrored here so they can be watched alongside the
-/// frame rate while tuning the Experimental page's far field.
-fn far_field_summary(ui: &mut egui::Ui) {
-    let mut stats = jc3vr_render::far_field::stats_snapshot();
-    stats.retain(|(_, s)| s.updated.elapsed().as_secs_f32() < 1.0);
-    if stats.is_empty() {
-        return;
-    }
-    ui.separator();
-    let (near, far, windowed) = stats.iter().fold((0u64, 0u64, false), |(n, f, w), (_, s)| {
-        (n + u64::from(s.near), f + u64::from(s.far), w | s.windowed)
-    });
-    ui.label(format!(
-        "Far field: {near} near / {far} far instances ({:.0}% far{})",
-        100.0 * far as f64 / (near + far).max(1) as f64,
-        if windowed { ", skipping active" } else { "" },
-    ));
-}
-
 /// The rolling frame-time samples the chart draws: `(sample time, real ms/frame)`, capped to the
 /// chart window. Sampled once per UI frame (the overlay runs once per real frame).
 static FRAME_TIME_SAMPLES: Mutex<VecDeque<(Instant, f32)>> = Mutex::new(VecDeque::new());
@@ -170,9 +150,9 @@ static FRAME_TIME_SAMPLES: Mutex<VecDeque<(Instant, f32)>> = Mutex::new(VecDeque
 /// Seconds of history the chart keeps and displays.
 const CHART_WINDOW_S: f32 = 20.0;
 
-/// A rolling frame-time chart, for judging the impact of render features (e.g. the far-field
-/// share) where instantaneous numbers mislead — the VR runtime clamps the frame rate for
-/// reprojection, so a cost change often shows as a *stability* change rather than a mean change.
+/// A rolling frame-time chart, for judging the impact of render features where instantaneous
+/// numbers mislead — the VR runtime clamps the frame rate for reprojection, so a cost change often
+/// shows as a *stability* change rather than a mean change.
 fn frame_time_chart(ui: &mut egui::Ui, current_ms: f32) {
     let now = Instant::now();
     let mut samples = FRAME_TIME_SAMPLES.lock();

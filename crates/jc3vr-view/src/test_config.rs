@@ -13,7 +13,6 @@ use jc3vr_core::{
 use jc3vr_input::frame::Hand;
 
 use crate::{
-    far_field::{FAR_FIELD_CONFIG, FarFieldConfig},
     fsr::{FSR_CONFIG, FsrConfig},
     headpose::config::{HEADPOSE_CONFIG, HeadPoseConfig},
     hooks::camera::config::{CAMERA_CONFIG, CameraConfig},
@@ -33,7 +32,6 @@ jc3vr_core::test_root! {
     root {
         stereo: StereoConfig = StereoConfig::new(),
         foveation: FoveationConfig = FoveationConfig::new(),
-        far_field: FarFieldConfig = FarFieldConfig::new(),
         camera: CameraConfig = CameraConfig::new(),
         fsr: FsrConfig = FsrConfig::new(),
         headpose: HeadPoseConfig = HeadPoseConfig::new(),
@@ -68,7 +66,6 @@ jc3vr_core::test_root! {
     binds {
         STEREO_CONFIG => stereo,
         FOVEATION_CONFIG => foveation,
-        FAR_FIELD_CONFIG => far_field,
         CAMERA_CONFIG => camera,
         FSR_CONFIG => fsr,
         HEADPOSE_CONFIG => headpose,

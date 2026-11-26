@@ -3,17 +3,13 @@
 use jc3vr_core::config::engine::{ConfigSlot, Parts};
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    far_field::{FAR_FIELD_CONFIG, FarFieldMode},
-    vr::VR_CONFIG,
-};
+use crate::vr::VR_CONFIG;
 
 /// Turn the whole single-pass feature on or off together, as the debug UI's one button does: the
 /// master switch, the dual-eye split, the collapse, the double-wide target, the reprojected scene
 /// families, the terrain, the tree impostors, and the bark, foliage, and occluder re-issues, along
 /// with the native resolution the double-wide target needs, which turning the feature off leaves as
-/// it is. The far field's share mode cannot run under the collapse, so turning the feature on moves
-/// it to collecting. The defaults are the feature turned on, so applying this with `on` to a
+/// it is. The defaults are the feature turned on, so applying this with `on` to a
 /// default configuration changes nothing. The caller requests the shader reload that applies the
 /// change.
 pub fn set_single_pass_feature(config: &mut impl Parts, on: bool) {
@@ -32,10 +28,6 @@ pub fn set_single_pass_feature(config: &mut impl Parts, on: bool) {
     sps.patch_dryrun = false;
     if on {
         config.part_mut(&VR_CONFIG).native_resolution = true;
-        let far_field = config.part_mut(&FAR_FIELD_CONFIG);
-        if far_field.mode == FarFieldMode::Share {
-            far_field.mode = FarFieldMode::Collect;
-        }
     }
 }
 
@@ -937,7 +929,6 @@ mod tests {
             (
                 toml::Value::try_from(config.part(&STEREO_CONFIG)).unwrap(),
                 toml::Value::try_from(config.part(&VR_CONFIG)).unwrap(),
-                toml::Value::try_from(config.part(&FAR_FIELD_CONFIG)).unwrap(),
             )
         };
         assert_eq!(value(&turned_on), value(&defaults));

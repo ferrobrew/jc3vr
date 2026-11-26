@@ -15,7 +15,6 @@ use jc3vr_render::{
     hooks::graphics_engine::config::{EXPOSURE_CONFIG, POST_FX_CONFIG},
 };
 use jc3vr_view::{
-    far_field::FAR_FIELD_CONFIG,
     fsr::FSR_CONFIG,
     stereo::config::STEREO_CONFIG,
     vr::{FOVEATION_CONFIG, VR_CONFIG},
@@ -1225,7 +1224,6 @@ fn apply_profile(config: &mut impl Parts, mode: Mode) {
     // Every mode states single-pass explicitly: the isolated eyes and multipass turn the group off,
     // whatever the defaults are, and single-pass turns it on over the default production switches.
     stereo.single_pass = SinglePassConfig::new();
-    config.part_mut(&FAR_FIELD_CONFIG).enabled = false;
     set_single_pass_feature(config, mode == Mode::SinglePass);
 }
 

@@ -9,6 +9,8 @@ draw list. The concrete addresses and layouts are captured in the pyxis defs
 (`graphics_engine/render_pass.pyxis`, `render_engine.pyxis`); this doc is the wiring and the
 consequences for the mod.
 
+The mod's far field built on this has been removed; [far-field.md](far-field.md) records what it did and where to find it.
+
 ## The sort machinery (engine ground truth)
 
 Each pass's draw list is an array of [`RenderInstance`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_pass::RenderInstance) (`SRenderInstance`) entries, each holding a sort ID, the render block, its instance info, the render-block type, and a depth key. Once per list rotation, [`RenderPass::SortList`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_pass::RenderPass##func-SortList) (mislabelled `CRigidObject::Destruct` in the IDB, now renamed):

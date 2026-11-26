@@ -46,7 +46,6 @@ use jc3vr_physical::controllers::{
 };
 use jc3vr_vehicles::controllers::vehicles::config::VEHICLES_CONFIG;
 use jc3vr_view::{
-    far_field::{FAR_FIELD_CONFIG, FarFieldConfig},
     fsr::{FSR_CONFIG, FsrConfig},
     headpose::config::{HEADPOSE_CONFIG, HeadPoseConfig},
     hooks::camera::config::{CAMERA_CONFIG, CameraConfig},
@@ -71,7 +70,6 @@ jc3vr_core::test_root! {
     root {
         stereo: StereoConfig = StereoConfig::new(),
         foveation: FoveationConfig = FoveationConfig::new(),
-        far_field: FarFieldConfig = FarFieldConfig::new(),
         camera: CameraConfig = CameraConfig::new(),
         movement: MovementConfig = MovementConfig::new(),
         fsr: FsrConfig = FsrConfig::new(),
@@ -136,7 +134,6 @@ jc3vr_core::test_root! {
         WORLD_MARKERS_ENABLED => hud.world_markers.enabled,
         STEREO_CONFIG => stereo,
         FOVEATION_CONFIG => foveation,
-        FAR_FIELD_CONFIG => far_field,
         CAMERA_CONFIG => camera,
         FSR_CONFIG => fsr,
         HEADPOSE_CONFIG => headpose,

@@ -46,9 +46,6 @@ pub fn release_on_eject() {
 /// engine's context lock, before the world-space overlay draws, with `target` the dispatch's final
 /// back buffer.
 pub fn capture(context: &ID3D11DeviceContext, device: &Device, target: &Texture, eye: usize) {
-    if jc3vr_view::stereo::far_phase() {
-        return;
-    }
     if !lens_frame::frame().armed {
         return;
     }
@@ -91,7 +88,7 @@ pub fn capture(context: &ID3D11DeviceContext, device: &Device, target: &Texture,
 /// context lock after the world-space overlay; under the collapse, the caller has selected the eye
 /// with `set_collapse_ui_eye`.
 pub fn draw(context: &ID3D11DeviceContext, device: &Device, target: &Texture, eye: usize) {
-    if jc3vr_view::stereo::far_phase() || jc3vr_core::director::clean_view::hides_everything() {
+    if jc3vr_core::director::clean_view::hides_everything() {
         return;
     }
     let LensFrame {

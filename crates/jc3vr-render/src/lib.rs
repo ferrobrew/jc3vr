@@ -5,8 +5,8 @@
 //! layering"). The view crate below it holds the OpenXR runtime, the head pose, the camera, and the
 //! frame state these modules read. This crate owns:
 //!
-//! - [`stereo`], [`fsr`], and [`far_field`]: the per-eye rendering (multipass and single-pass),
-//!   the upscaler and anti-aliasing chain, and the far-field share.
+//! - [`stereo`] and [`fsr`]: the per-eye rendering (multipass and single-pass) and the upscaler
+//!   and anti-aliasing chain.
 //! - [`hooks`]: the engine-pipeline detours (the graphics engine and its passes, the clock, the
 //!   draw counts, and, with the `profiler` feature, the engine-phase scopes).
 //! - [`controllers`]: the render-side pieces of the layers above: the overlay and scope renderers
@@ -23,7 +23,6 @@
 pub mod capture_arming;
 pub mod controllers;
 pub mod debug;
-pub mod far_field;
 pub mod fsr;
 pub mod hooks;
 pub mod image_writer;

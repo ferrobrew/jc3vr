@@ -3,9 +3,8 @@
 //! The render seams (`PreDraw` / `DrawGBuffer` / `Draw` / `DrawPosteffects` / `PostDraw`) each
 //! bracket their work with a pair of timestamp queries on the immediate context, and the whole
 //! dispatch is wrapped in a disjoint query that yields the GPU tick frequency. Because the draw
-//! thread runs the seams once per dispatch — twice per frame in stereo, three times on far-field
-//! share frames — each dispatch is tagged with its eye and reported as its own scope on the "GPU"
-//! lane.
+//! thread runs the seams once per dispatch — twice per frame in multipass stereo — each dispatch
+//! is tagged with its eye and reported as its own scope on the "GPU" lane.
 //!
 //! GPU results lag the CPU by a few frames, so queries are read back lazily: a dispatch's queries
 //! are polled each frame and only consumed once the GPU has resolved them. Timestamps are mapped
@@ -167,11 +166,7 @@ pub unsafe fn begin_dispatch(ctx: *mut HContext_t) {
     let Some(device) = device else {
         return;
     };
-    // The far dispatch of a share frame gets its own lane label; it reports eye 0 but is a
-    // different workload (the G-buffer-only far-field render).
-    let lane = if jc3vr_view::stereo::far_phase() {
-        DispatchLane::Far
-    } else if jc3vr_view::stereo::draw_index() == 0 {
+    let lane = if jc3vr_view::stereo::draw_index() == 0 {
         DispatchLane::Eye0
     } else {
         DispatchLane::Eye1

@@ -44,7 +44,6 @@ fn non_default() -> Config {
     config.controllers.hands.grip.position_m = Vec3::new(0.01, 0.07, 0.0);
     config.controllers.dominant_hand = Hand::Left;
     config.controllers.body.rig.yaw.moving_deadzone_deg = 30.0;
-    config.far_field.gated_types = Cow::Owned("Window".to_owned());
     config.fsr.sharpen = true;
     config.fsr.sharpness = 0.07;
     config.hud.distance = 1.37;
@@ -84,9 +83,6 @@ alt = false
 ctrl = true
 key = 77
 shift = false
-
-[far_field]
-gated_types = "Window"
 
 [fsr]
 sharpen = true

@@ -443,8 +443,8 @@ fn mod_post_draw(context: *mut Context) {
             [lock.texture(0).cloned(), lock.texture(1).cloned()]
         };
         let index = jc3vr_view::stereo::draw_index();
-        // The frame's last near dispatch: after it, every eye image of the frame is final.
-        let last_near_dispatch = jc3vr_view::stereo::last_near_dispatch();
+        // The frame's last dispatch: after it, every eye image of the frame is final.
+        let last_dispatch = jc3vr_view::stereo::last_dispatch();
         // The dispatch ticks (the world-space overlay's producers and the scope lens's plan, each
         // acting once per frame), outside the context lock: they read the controller subsystems'
         // published state under those subsystems' own locks.
@@ -484,11 +484,11 @@ fn mod_post_draw(context: *mut Context) {
             // offscreen (consuming this frame's egui output) so the desktop mirror can composite it
             // from the deferred frame tail's thread, then the learned body estimator's GPU pass.
             //
-            // They run on the frame's last near dispatch rather than eye 0's: with the tail
+            // They run on the frame's last dispatch rather than eye 0's: with the tail
             // deferred, the game thread waits on eye 0's walk but not on the last one, which the
             // tail drains before it composites the mirror. Nothing per-eye reads the overlay, and
             // the floating panel, which consumes the same egui output, is off whenever it renders.
-            if last_near_dispatch {
+            if last_dispatch {
                 post_draw::run_frame_passes(&context.m_Context, device, back_buffer);
             }
         }
@@ -515,25 +515,21 @@ fn mod_post_draw(context: *mut Context) {
                 let half_w = u32::from(src.m_Width) / 2;
                 let height = u32::from(src.m_Height);
                 for eye in 0..2u32 {
-                    let blitted = !jc3vr_view::stereo::far_phase()
-                        && graphics_engine.m_Device.as_ref().is_some_and(|device| {
-                            jc3vr_view::vr::blit_direct(
-                                device,
-                                &context.m_Context,
-                                &src.m_Texture,
-                                eye as usize,
-                                BlitSource::Half(eye),
-                            )
-                        });
+                    let blitted = graphics_engine.m_Device.as_ref().is_some_and(|device| {
+                        jc3vr_view::vr::blit_direct(
+                            device,
+                            &context.m_Context,
+                            &src.m_Texture,
+                            eye as usize,
+                            BlitSource::Half(eye),
+                        )
+                    });
                     let dst = eye_textures[eye as usize]
                         .as_ref()
                         .filter(|_| !blitted || eye_capture_wanted(eye as usize));
                     mark_eye_capture(eye as usize, dst.is_some());
                     if let Some(probes) = probes::armed() {
-                        probes.note_eye(
-                            eye as usize,
-                            !jc3vr_view::stereo::far_phase() && dst.is_some(),
-                        );
+                        probes.note_eye(eye as usize, dst.is_some());
                     }
                     if let Some(dst) = dst {
                         let region = D3D11_BOX {
@@ -557,18 +553,15 @@ fn mod_post_draw(context: *mut Context) {
                     }
                 }
             } else {
-                // A share frame's far dispatch is not an eye image; its capture is overwritten by
-                // the near dispatch of the same eye.
-                let blitted = !jc3vr_view::stereo::far_phase()
-                    && graphics_engine.m_Device.as_ref().is_some_and(|device| {
-                        jc3vr_view::vr::blit_direct(
-                            device,
-                            &context.m_Context,
-                            &src.m_Texture,
-                            index,
-                            BlitSource::Whole,
-                        )
-                    });
+                let blitted = graphics_engine.m_Device.as_ref().is_some_and(|device| {
+                    jc3vr_view::vr::blit_direct(
+                        device,
+                        &context.m_Context,
+                        &src.m_Texture,
+                        index,
+                        BlitSource::Whole,
+                    )
+                });
                 let copied = match eye_textures.get(index).and_then(Option::as_ref) {
                     Some(dst) if !blitted || eye_capture_wanted(index) => {
                         context.m_Context.CopyResource(dst, &src.m_Texture);
@@ -578,16 +571,16 @@ fn mod_post_draw(context: *mut Context) {
                 };
                 mark_eye_capture(index, copied);
                 if let Some(probes) = probes::armed() {
-                    probes.note_eye(index, copied && !jc3vr_view::stereo::far_phase());
+                    probes.note_eye(index, copied);
                 }
             }
             #[cfg(feature = "profiler")]
             drop(copies_gpu);
 
-            // The recorder's sidecar line for the frame, on its last near dispatch, when every eye
+            // The recorder's sidecar line for the frame, on its last dispatch, when every eye
             // image of the frame is final, and a streamed take's eye-view capture, which needs both
             // eyes' captures to hold the frame. Both are no-ops unless recording.
-            if last_near_dispatch && let Some(recorder) = post_draw::eye_frame_recorder() {
+            if last_dispatch && let Some(recorder) = post_draw::eye_frame_recorder() {
                 let frame = (recorder.frame_rendered)();
                 match (graphics_engine.m_Device.as_ref(), &eye_textures) {
                     (Some(device), [Some(left), Some(right)])
@@ -604,7 +597,7 @@ fn mod_post_draw(context: *mut Context) {
                 }
             }
 
-            if last_near_dispatch
+            if last_dispatch
                 && let Some(probes) = probes::armed()
                 && let Some(device) = graphics_engine.m_Device.as_ref()
             {
@@ -626,14 +619,14 @@ fn mod_post_draw(context: *mut Context) {
             // Service an F12 screenshot request with a source that carries both eyes. Under
             // collapse the linear back buffer already holds the two eye-halves side by side; in
             // two-pass stereo it only holds the eye that just rendered, so the per-eye capture
-            // textures (copied just above) are stitched instead, after the last near dispatch,
+            // textures (copied just above) are stitched instead, after the last dispatch,
             // when both hold the current frame. An isolated mode uses its one physical eye's buffer.
             if let Some(device) = graphics_engine.m_Device.as_ref() {
                 let two_pass_stereo = jc3vr_view::stereo::active() && !collapse_active();
                 let source =
                     if !two_pass_stereo || jc3vr_view::stereo::dispatch::selected_eye().is_some() {
                         Some(CaptureSource::Full(&src.m_Texture))
-                    } else if !last_near_dispatch {
+                    } else if !last_dispatch {
                         None
                     } else if let [Some(left), Some(right)] = &eye_textures {
                         // Both captures must hold this frame; one the direct route skipped leaves the

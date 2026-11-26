@@ -8,7 +8,7 @@ use jc3gi::{
 };
 use jc3vr_render::stereo::single_pass;
 use jc3vr_view::{
-    stereo::{dispatch, dispatch::RenderMode, draw_index, far_phase},
+    stereo::{dispatch, dispatch::RenderMode, draw_index},
     vr,
 };
 use parking_lot::Mutex;
@@ -453,7 +453,7 @@ fn global_rows(rows: &[Vector4]) -> Vec<F32s<4>> {
 }
 
 fn observation() -> Option<(Identity, PhysicalEye)> {
-    if !screenshot_wants_eyes() || far_phase() {
+    if !screenshot_wants_eyes() {
         return None;
     }
     let metadata = visual::metadata();

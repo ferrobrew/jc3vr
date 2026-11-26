@@ -9,9 +9,8 @@
 //! been written in the current format. A switch or a mode is kept as written, since a player who
 //! set it back to its old default cannot be told from one who never touched it. The one exception
 //! is the single-pass stereo group, which a file of format zero holds turned off as it shipped
-//! then: [`migrate`] removes the group's switches that are off, and the far field's share mode the
-//! group's collapse cannot run under, so the group takes its current default as a whole rather
-//! than loading half on.
+//! then: [`migrate`] removes the group's switches that are off, so the group takes its current
+//! default as a whole rather than loading half on.
 
 #[cfg(test)]
 use jc3vr_core::config::engine;
@@ -97,7 +96,7 @@ fn migrate_retired_key_actions(file: &mut Table) -> Option<Migrated> {
 }
 
 /// Remove, from a file of format zero, the single-pass group's switches that hold their old default
-/// (off), and the far field's share mode, so that the group follows its current default as a whole.
+/// (off), so that the group follows its current default as a whole.
 /// The format did not write a setting's value as a choice, and the group was off when it was
 /// current, so an off value there is the old default; a switch the file holds on is kept, and the
 /// rest of the group then joins it.
@@ -129,12 +128,6 @@ fn migrate_single_pass_group(file: &mut Table) -> Vec<Migrated> {
             &off,
         );
     }
-    remove_if(
-        file.get_mut(FAR_FIELD_TABLE),
-        FAR_FIELD_TABLE,
-        FAR_FIELD_MODE,
-        &Value::String(FAR_FIELD_SHARE.to_owned()),
-    );
     migrated
 }
 
@@ -160,10 +153,6 @@ const SINGLE_PASS_GROUP_SWITCHES: [&str; 8] = [
     "tree_impostors",
     "occluder",
 ];
-/// The far field's mode, and the share mode it defaulted to when format zero was current.
-const FAR_FIELD_TABLE: &str = "far_field";
-const FAR_FIELD_MODE: &str = "mode";
-const FAR_FIELD_SHARE: &str = "Share";
 
 /// The table and key of the switch the anti-aliasing choice superseded.
 const LEGACY_FSR_TABLE: &str = "fsr";
@@ -259,9 +248,7 @@ mod tests {
         load::LoadReport,
     };
     use jc3vr_tooling::director::keymap::Binding;
-    use jc3vr_view::{
-        far_field::FarFieldMode, fsr::AntiAliasing, stereo::config::set_single_pass_feature,
-    };
+    use jc3vr_view::{fsr::AntiAliasing, stereo::config::set_single_pass_feature};
     use pretty_assertions::assert_eq;
 
     use super::*;
@@ -410,7 +397,6 @@ enabled = false
     fn a_format_zero_file_takes_the_single_pass_group_whole() {
         let mut old = Config::new();
         set_single_pass_feature(&mut old, false);
-        old.far_field.mode = FarFieldMode::Share;
         old.stereo.single_pass.reproject_camera_only = true;
         old.stereo.single_pass.bark = true;
         old.stereo.single_pass.foliage = true;
@@ -420,13 +406,11 @@ enabled = false
             toml::Value::try_from(loaded.config.stereo.single_pass).unwrap(),
             toml::Value::try_from(Config::new().stereo.single_pass).unwrap()
         );
-        assert_eq!(loaded.config.far_field.mode, FarFieldMode::Collect);
         let migrated = paths(&loaded.report.migrated);
         assert!(
             migrated.contains(&"stereo.single_pass.collapse"),
             "{migrated:?}"
         );
-        assert!(migrated.contains(&"far_field.mode"), "{migrated:?}");
         assert!(
             !migrated.contains(&"stereo.single_pass.enabled"),
             "{migrated:?}"
@@ -440,7 +424,6 @@ enabled = false
         let text = to_text(&off).unwrap();
         assert!(text.contains("[stereo.single_pass]"), "{text}");
         assert!(text.contains("enabled = false"), "{text}");
-        assert!(!text.contains("far_field"), "{text}");
         let loaded = parse(&text).unwrap();
         assert!(!loaded.config.stereo.single_pass.enabled);
         assert!(!loaded.config.stereo.single_pass.collapse);

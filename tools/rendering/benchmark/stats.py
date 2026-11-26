@@ -114,7 +114,7 @@ def frame_series(ack: dict) -> dict[str, list[float]]:
 
 def gpu_frames(ack: dict) -> list[dict[str, float]]:
     """The run's GPU dispatches grouped into frames, in milliseconds: a dispatch of eye 0 opens a
-    frame, and an eye 1 or far-field dispatch joins the open one. `gpu_ms` is the summed spans,
+    frame, and an eye 1 dispatch joins the open one. `gpu_ms` is the summed spans,
     `gpu_idle_ms` the measured idle before each dispatch, and each seam its summed time."""
     gpu = ack.get("gpu")
     if not gpu:

@@ -8,7 +8,7 @@ use jc3vr_core::{
 use jc3vr_hud::{egui_impl::EguiState, hooks::ui::cancel_pointer_on_game_thread, hud};
 use jc3vr_physical::controllers::physical_hands;
 use jc3vr_render::{
-    far_field, hooks::graphics_engine::shader::restore_original_shaders_on_eject, image_writer,
+    hooks::graphics_engine::shader::restore_original_shaders_on_eject, image_writer,
 };
 use jc3vr_tooling::{director, recorder, testing};
 use jc3vr_ui::ui;
@@ -227,11 +227,6 @@ fn shutdown_from_game() {
     // are inert and produce the unpatched originals. A no-op unless single-pass patched any shaders.
     restore_original_shaders_on_eject();
 
-    // Revert the far-field type gates and release the share pipeline's COM objects before the
-    // hooks (and their patches) are torn down: the gated IsEnabled slots and the composite
-    // pipeline must never outlive the payload code they point into.
-    far_field::sync_type_gates("");
-    far_field::share::teardown();
     // Unconditionally, not only when the debug UI came up: the cleanups undo engine-wide state --
     // the double-wide render resolution, the HUD redirect -- that a session sets whether or not egui
     // was ever shown.

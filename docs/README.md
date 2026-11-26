@@ -86,7 +86,6 @@ One deliberate exception: [`engine/rendering.md`](engine/rendering/rendering.md)
 
 - [single-pass-stereo.md](mod/stereo/single-pass-stereo.md) — rendering both eyes in one geometry walk into a double-wide target: the shader rewrites, the routing, the four ways content goes wrong under the collapse and what fixes each, the configuration, and the capture harness's switch-off variants, draw census, and staged scenes, weather, and moving camera.
 - [single-pass-render-blocks.md](mod/stereo/single-pass-render-blocks.md) — the per-render-block record of what single-pass stereo needs from each, and what it took to get there.
-- [far-field.md](mod/stereo/far-field.md) — the monoscopic far field (issue #32): identifying the far-regime scene work and sharing it between eyes.
 - [foveation.md](mod/stereo/foveation.md) — static foveated rendering (issue #29): the stencil radial-density-masking design, the depth-stencil-state seam, and the build plan.
 - [swapchain-ownership.md](mod/stereo/swapchain-ownership.md) — the mod-owned back buffer: substituting the engine's swapchain-derived render setups so the scene renders per-eye while the DXGI buffers stay at the window size.
 - [culling.md](mod/stereo/culling.md) — widening the engine's visibility culls to the binocular union: the union cull projection, the scene cull and its size and occlusion corrections, the spawn and character-occlusion frusta, the per-render-block frustum cull, and terrain.
@@ -181,6 +180,7 @@ One deliberate exception: [`engine/rendering.md`](engine/rendering/rendering.md)
 - [20-animation-judder.md](issues/20-animation-judder.md) — animation judder (issue #20).
 - [32-monoscopic-far-field.md](issues/32-monoscopic-far-field.md) — the render-pass sort/depth-bucket machinery as the distance-split mechanism for a shared far field (issue #32).
 - [40-terrain-black-tiles.md](issues/40-terrain-black-tiles.md) — terrain walls and cave ceilings rendering black at grazing angles (issue #40).
+- [far-field.md](issues/far-field.md) — the monoscopic far field (issue #32), removed: what it did, why it could not stay beside single-pass stereo, what a revival needs, and the commit that still holds it.
 - [periodic-sim-tick-hitches.md](issues/periodic-sim-tick-hitches.md) — 300 and 600 ms stalls on a 61-second wall-clock beat inside the sim tick but outside its timed phases, the candidates, and the slots that will name the cause.
 - [session-stalls-and-low-camera.md](issues/session-stalls-and-low-camera.md) — two 80-second game-thread stalls outside `Game::Update` and a camera at 0.85 m below the character's eyes, which was the floor remap following a low reported head height rather than a fallback.
 - [swim-yaw-endless-spin.md](issues/swim-yaw-endless-spin.md) — the swimming body flipping 180° the moment it moved: the crawl capsule offset's gimbal lock under the old `SetOrientation` yaw chase, and which `DoRotate` call actually turns the body.

@@ -39,11 +39,9 @@ pub(crate) fn route(id: FeatureId) -> FeatureRoute {
         FeatureId::Status => FeatureRoute::Status,
         FeatureId::HeadView => FeatureRoute::HeadView,
         FeatureId::Runtime => FeatureRoute::Runtime,
-        FeatureId::Stereo
-        | FeatureId::Foveation
-        | FeatureId::SinglePass
-        | FeatureId::FarField
-        | FeatureId::PostFx => FeatureRoute::Render,
+        FeatureId::Stereo | FeatureId::Foveation | FeatureId::SinglePass | FeatureId::PostFx => {
+            FeatureRoute::Render
+        }
         FeatureId::Hud => FeatureRoute::Hud,
         FeatureId::Previews => FeatureRoute::Previews,
         FeatureId::RenderCapture => FeatureRoute::RenderCapture,
@@ -112,7 +110,6 @@ fn controls(
             if let Some(body) = controllers::controls(id) {
                 body(ui, id);
             }
-            game::controls(ui, id);
         }
         FeatureRoute::HeadView => camera::head_view(ui),
         FeatureRoute::Runtime => vr::egui_debug_vr(ui),
@@ -130,11 +127,13 @@ fn controls(
 
 fn readouts(id: FeatureId) -> impl Iterator<Item = FeatureBody> {
     let routed: Option<FeatureBody> = match route(id) {
-        FeatureRoute::Status | FeatureRoute::RenderRe | FeatureRoute::Checklist => None,
+        FeatureRoute::Status
+        | FeatureRoute::RenderRe
+        | FeatureRoute::Checklist
+        | FeatureRoute::Render => None,
         FeatureRoute::HeadView => Some(|ui, _| camera::head_view_status(ui)),
         FeatureRoute::Controller => controllers::status(id),
         FeatureRoute::Runtime => Some(|ui, _| vr::status(ui)),
-        FeatureRoute::Render => render::status(id),
         FeatureRoute::Hud => Some(|ui, _| hud::status(ui)),
         FeatureRoute::Previews => Some(|ui, _| performance::egui_debug_performance(ui)),
         FeatureRoute::RenderCapture => Some(|ui, _| render_capture::status(ui)),

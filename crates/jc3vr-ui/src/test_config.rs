@@ -67,7 +67,6 @@ use jc3vr_tooling::{
 };
 use jc3vr_vehicles::controllers::vehicles::config::VEHICLES_CONFIG;
 use jc3vr_view::{
-    far_field::{FAR_FIELD_CONFIG, FarFieldConfig},
     fsr::{FSR_CONFIG, FsrConfig},
     headpose::config::{HEADPOSE_CONFIG, HeadPoseConfig, VrTurnConfig},
     hooks::camera::config::{CAMERA_CONFIG, CameraConfig},
@@ -90,7 +89,6 @@ jc3vr_core::test_root! {
         #[serde(default)]
         foveation: FoveationConfig = FoveationConfig::new(),
         #[serde(default)]
-        far_field: FarFieldConfig = FarFieldConfig::new(),
         post_fx: PostFxConfig = PostFxConfig::new(),
         camera: CameraConfig = CameraConfig::new(),
         movement: MovementConfig = MovementConfig::new(),
@@ -113,7 +111,6 @@ jc3vr_core::test_root! {
         STEREO_CONFIG => stereo,
         EXPOSURE_CONFIG => exposure,
         FOVEATION_CONFIG => foveation,
-        FAR_FIELD_CONFIG => far_field,
         POST_FX_CONFIG => post_fx,
         CAMERA_CONFIG => camera,
         MOVEMENT_CONFIG => movement,

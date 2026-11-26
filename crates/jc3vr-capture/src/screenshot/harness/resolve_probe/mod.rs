@@ -6,7 +6,7 @@ use anyhow::Context as _;
 use cascade::{CascadeGuard, CascadeTrial};
 use jc3vr_render::stereo::single_pass::{shader_identity, shader_identity::IdentityResult};
 use jc3vr_view::{
-    stereo::{dispatch, draw_index, far_phase},
+    stereo::{dispatch, draw_index},
     vr,
 };
 use parking_lot::Mutex;
@@ -252,7 +252,6 @@ pub(crate) unsafe fn on_draw(
     if vertex_count != 3
         || start_vertex != 0
         || !DEPTH.with(|depth| depth.get() == 1)
-        || far_phase()
         || !resolve_inputs_requested()
         || diagnostic_capture_id().is_none()
     {

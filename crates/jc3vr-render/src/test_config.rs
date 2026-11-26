@@ -12,7 +12,6 @@ use jc3vr_core::{
 };
 use jc3vr_input::frame::Hand;
 use jc3vr_view::{
-    far_field::{FAR_FIELD_CONFIG, FarFieldConfig},
     fsr::{FSR_CONFIG, FsrConfig},
     headpose::config::{HEADPOSE_CONFIG, HeadPoseConfig},
     hooks::camera::config::{CAMERA_CONFIG, CameraConfig},
@@ -40,7 +39,6 @@ jc3vr_core::test_root! {
         stereo: StereoConfig = StereoConfig::new(),
         exposure: ExposureConfig = ExposureConfig::new(),
         foveation: FoveationConfig = FoveationConfig::new(),
-        far_field: FarFieldConfig = FarFieldConfig::new(),
         post_fx: PostFxConfig = PostFxConfig::new(),
         camera: CameraConfig = CameraConfig::new(),
         fsr: FsrConfig = FsrConfig::new(),
@@ -78,7 +76,6 @@ jc3vr_core::test_root! {
         STEREO_CONFIG => stereo,
         EXPOSURE_CONFIG => exposure,
         FOVEATION_CONFIG => foveation,
-        FAR_FIELD_CONFIG => far_field,
         POST_FX_CONFIG => post_fx,
         CAMERA_CONFIG => camera,
         FSR_CONFIG => fsr,

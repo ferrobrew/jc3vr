@@ -53,7 +53,6 @@ slots! {
     jc3vr_view::stereo::config::STEREO_CONFIG = stereo,
     jc3vr_render::hooks::graphics_engine::config::EXPOSURE_CONFIG = exposure,
     jc3vr_view::vr::FOVEATION_CONFIG = foveation,
-    jc3vr_view::far_field::FAR_FIELD_CONFIG = far_field,
     jc3vr_render::hooks::graphics_engine::config::POST_FX_CONFIG = post_fx,
     jc3vr_view::hooks::camera::config::CAMERA_CONFIG = camera,
     jc3vr_body::hooks::input::config::MOVEMENT_CONFIG = movement,

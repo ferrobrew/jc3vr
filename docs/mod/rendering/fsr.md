@@ -109,7 +109,6 @@ The convention, established against FSR's shaders and checked in the image: an o
 
 - Multipass: each eye's render camera (`m_Projection` under the preferred convention, the reverse-Z projection under the other), and so every engine constant built from it, the deferred passes' reconstruction from depth included.
 - Single-pass: the `cb13` rows and the reprojection's `M_eye`, the eye vertex globals, the per-eye pixel buffers (the eye camera, the screen-space reflections, the ambient occlusion and its volumes, the decals, the fog volumes, the water, the clustered lights' tile bounds), the per-eye reconstruction inverses, and the velocity rewrite's map, whose eye pose is recovered from `M_eye` and the eye's projection, so the jitter cancels in it.
-- The far-field share's dispatches, which render part of the eye image.
 
 What must not see it keeps the projection as it was before the jitter, bit for bit (`EyeRenderParams::unjittered_projection_reverse_z` and its siblings):
 

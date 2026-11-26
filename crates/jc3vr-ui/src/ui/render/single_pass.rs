@@ -8,12 +8,9 @@ use jc3vr_render::{
     hooks::{draw_count::EFFECT_DEPTH_COPIES_SKIPPED, graphics_engine::shader},
     stereo::single_pass,
 };
-use jc3vr_view::{
-    far_field::{FAR_FIELD_CONFIG, FarFieldMode},
-    stereo::{
-        config::{STEREO_CONFIG, StereoConfig, set_single_pass_feature},
-        layout::{self, Capability},
-    },
+use jc3vr_view::stereo::{
+    config::{STEREO_CONFIG, set_single_pass_feature},
+    layout::{self, Capability},
 };
 
 pub(super) fn section(ui: &mut egui::Ui, cfg: &mut impl Parts) {
@@ -100,8 +97,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut impl Parts) {
                         "One walk renders both eyes: centered camera, no between-eye restore, the \
                          back buffer split into the two eye textures. Without double-wide each eye \
                          is squished/half-filled; unpatched geometry and the HUD reach the left eye \
-                         only. Turns the far-field Share mode off -- the two are exclusive. \
-                         Reloads shaders, since some rewrites only apply while the collapse is on.",
+                         only. Reloads shaders, since some rewrites only apply while the collapse is on.",
                     )
                     .changed();
                 if collapse_changed {
@@ -110,12 +106,6 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut impl Parts) {
                     // created under one setting is wrong under the other. Only the reload retracts or
                     // applies them.
                     shader::request_reload();
-                }
-                if collapse_changed
-                    && cfg.part_mut(&STEREO_CONFIG).single_pass.collapse
-                    && cfg.part_mut(&FAR_FIELD_CONFIG).mode == FarFieldMode::Share
-                {
-                    cfg.part_mut(&FAR_FIELD_CONFIG).mode = FarFieldMode::Collect;
                 }
                 if ui
                     .checkbox(
@@ -965,14 +955,6 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut impl Parts) {
             ui.label("re-runs the census over a fresh shader-creation pass");
         });
     });
-}
-
-/// Whether the config asks for the single-pass collapse, ignoring the runtime gates
-/// ([`jc3vr_view::stereo::layout::collapse_active`] also requires the device capability and a live
-/// session). The UI needs the *intent*, so a mutually-exclusive option greys out as soon as the boxes
-/// are ticked rather than only once the collapse is running.
-pub(super) fn collapse_configured(stereo: &StereoConfig) -> bool {
-    stereo.single_pass.enabled && stereo.single_pass.dual_eye && stereo.single_pass.collapse
 }
 
 /// How much of the collapse's frame the already-instanced eye-parity case covers, and how much of that

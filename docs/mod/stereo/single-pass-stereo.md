@@ -13,7 +13,7 @@ Single-pass is the default rendering mode while a VR session runs. Multipass sta
 
 The feature is live when its master switch is on, a VR session is running, and the device reports the routing capability (`stereo::single_pass::active`). The session state is latched at the frame start's configuration refresh, from the previous frame's runtime pump, so a session that starts or stops changes every reader of the next frame at once. Single-pass's rewrites are applied when the engine creates a shader, so the live shader set has to be re-created whenever that state changes: the frame driver compares it each frame with the state the live set was created under (`hooks::graphics_engine::shader::reconcile_single_pass`) and requests the reload, which runs in the same frame before the draws. This is what brings single-pass up after a late injection into a running game, where the game already holds its pristine shaders, and on the first frame of the first VR session after any injection; nothing needs to be toggled. The double-wide target and the native resolution follow from the same state the next time the resolution driver runs, and the draw-path detours install with the first rewritten shader. A session that stops takes the shaders back to the pristine set the same way, and an eject restores them as well (`restore_original_shaders_on_eject`), with the scene targets and the game's own resolution.
 
-The settings file stores only what differs from the defaults (see [settings.md](../settings.md)), so a player who never touched single-pass follows its default, on. Switching it off with the button writes the group's switches as `false` under `[stereo.single_pass]`, which loads as multipass. A file written before the format carried a version held every setting, and so held the group off as it then shipped; its upgrade drops the group's `false` values and a `far_field.mode` of `Share`, so the group loads whole rather than half on.
+The settings file stores only what differs from the defaults (see [settings.md](../settings.md)), so a player who never touched single-pass follows its default, on. Switching it off with the button writes the group's switches as `false` under `[stereo.single_pass]`, which loads as multipass. A file written before the format carried a version held every setting, and so held the group off as it then shipped; its upgrade drops the group's `false` values, so the group loads whole rather than half on.
 
 ## The technique
 
@@ -356,10 +356,6 @@ instead of the per-eye loop, so the between-eye snapshot and restore (gated on `
 skipped for free; `hooks/camera.rs` keeps the render camera centred, since both eyes come from `cb13`
 and the shadow-anchor delta is zeroed to match; and `render_engine_post_draw` splits the one back
 buffer into the two eye textures. This is the actual draw-submission win.
-
-The collapse is mutually exclusive with the far-field share mode
-([`far-field.md`](far-field.md)), which needs the per-eye dispatches it composites into. The UI
-enforces that.
 
 ### Double-wide
 
@@ -829,7 +825,6 @@ The capture profile (`apply_profile` in `crates/jc3vr-capture/src/testing/visual
 | `post_fx.skip_player_damage` | off | skipped | the player-damage pass | once over the double-wide target |
 | `post_fx.skip_motion_blur`, `skip_motion_blur_recon`, `skip_dof` | off | motion blur skipped | the motion blur and the depth of field | never run in VR, whatever the switches say (see below) |
 | `post_fx.dof_no_reproject` | on | on | the depth of field's underwater composite | unchanged by the profile |
-| `far_field.enabled` | off | off | the monoscopic far field | unchanged by the profile |
 | `vr.native_resolution`, `vr.resolution_scale` | on, 1.0 | on, left as configured | the per-eye render size | the double-wide target requires native resolution |
 | `director.clean_view.scope` | the desktop overlay only | every overlay | the mod's own overlays | composited outside the eye targets the comparison reads |
 | `director.paused`, `vr.freeze_mode` | running, off | held, full camera | the clock and the camera | what makes the four modes comparable at all |

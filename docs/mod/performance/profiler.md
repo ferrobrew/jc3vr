@@ -65,7 +65,7 @@ GPU lane: a synthetic "GPU" puffin thread built from the engine's own
 `Graphics::CreateTimeStampQuery` / `SetTimeStampQuery` / disjoint-query wrappers. Each dispatch
 wraps its seams (`PreDraw`, `DrawGBuffer`, `Draw (scene)`, `DrawPosteffects`, `PostDraw`) in
 timestamp pairs under one disjoint query, and the resolved results are reported a few frames later
-under a per-dispatch outer scope ("GPU eye 0" / "GPU eye 1" / "GPU far field"), which also carries
+under a per-dispatch outer scope ("GPU eye 0" / "GPU eye 1"), which also carries
 the dispatch's busy/starved/submit numbers as its scope data. The mod's FSR resolve has a seam of its own (`FSR`), nested inside `DrawPosteffects`. Each post effect the payload hooks and the foveation's two passes get a named detail interval (`gpu::detail_interval`): they show on the lane beside the passes, but the work-and-holes split below does not count them. GPU ticks are
 mapped onto the CPU timeline via a CPU reference taken at the dispatch's start, with consecutive
 dispatches serialized on the lane (the GPU executes them in order), so the lane aligns with — and

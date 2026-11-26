@@ -48,7 +48,6 @@ use jc3vr_render::{
     },
 };
 use jc3vr_view::{
-    far_field::FAR_FIELD_CONFIG,
     fsr::{AntiAliasing, FSR_CONFIG, FsrConfig},
     stereo::{
         config::{STEREO_CONFIG, set_single_pass_feature},
@@ -558,7 +557,6 @@ struct Environment {
     fsr_hybrid_velocity: bool,
     fsr_jitter: bool,
     foveation_enabled: bool,
-    far_field_enabled: bool,
     overlap_render_update: bool,
     /// The cores `vr.large_cache_cores` narrowed the process to, if it did.
     large_cache_mask: Option<u64>,
@@ -577,7 +575,6 @@ impl Environment {
         });
         let fsr = *FSR_CONFIG.lock();
         let foveation = FOVEATION_CONFIG.lock().enabled;
-        let far_field = FAR_FIELD_CONFIG.lock().enabled;
         Self {
             build: if cfg!(debug_assertions) {
                 "debug"
@@ -598,7 +595,6 @@ impl Environment {
             fsr_hybrid_velocity: fsr.hybrid_velocity,
             fsr_jitter: fsr.jitter,
             foveation_enabled: foveation,
-            far_field_enabled: far_field,
             overlap_render_update: overlap,
             large_cache_mask: jc3vr_core::cpu_placement::applied_mask().map(|mask| mask as u64),
             clock_pair_ns: detour_timing::clock_pair_ns(10_000),

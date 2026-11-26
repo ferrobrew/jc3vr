@@ -11,8 +11,7 @@
 //!   crate's graphics-engine hooks read and the layers above fill (the eye captures, the post-draw,
 //!   the palette edit, and the player's draw inputs).
 //! - [`stereo`]: the frame's stereo state, the dispatch, the engine context, the layout, and the
-//!   stereo settings; [`fsr`] and [`far_field`]: the upscaler's settings and jitter and the far
-//!   field's settings.
+//!   stereo settings; [`fsr`]: the upscaler's settings and jitter.
 //! - [`controllers`] and [`hud`]: the data the layers above hand the render passes: the cockpit
 //!   transform, the overlay's data model and inputs, the scope's lens frame, the rig's origin
 //!   provenance, the render camera's pose, the panel math, and the stage frame.
@@ -23,7 +22,6 @@
 //! every capture pass draws with, exported for the passes that live above.
 
 pub mod controllers;
-pub mod far_field;
 pub mod fsr;
 pub mod headpose;
 pub mod hooks;

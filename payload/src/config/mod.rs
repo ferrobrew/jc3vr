@@ -40,7 +40,6 @@
 //! [`ExposureConfig`](jc3vr_render::hooks::graphics_engine::config::ExposureConfig) and
 //! [`PostFxConfig`](jc3vr_render::hooks::graphics_engine::config::PostFxConfig) in
 //! `hooks::graphics_engine::config`,
-//! [`FarFieldConfig`](jc3vr_view::far_field::FarFieldConfig) in `far_field`,
 //! [`FoveationConfig`](jc3vr_view::vr::FoveationConfig) in `vr::config`,
 //! [`CameraConfig`](jc3vr_view::hooks::camera::CameraConfig) in `hooks::camera::config`,
 //! [`BodyIkConfig`](jc3vr_body::hooks::character::BodyIkConfig) in `hooks::character::config`,
@@ -76,7 +75,6 @@ use jc3vr_hud::hud::HudConfig;
 use jc3vr_render::hooks::graphics_engine::config::{ExposureConfig, PostFxConfig};
 use jc3vr_tooling::{director::DirectorConfig, recorder::RecorderConfig, testing::TestingConfig};
 use jc3vr_view::{
-    far_field::FarFieldConfig,
     fsr::FsrConfig,
     headpose::HeadPoseConfig,
     hooks::camera::CameraConfig,
@@ -143,7 +141,6 @@ pub struct Config {
     #[serde(default)]
     pub foveation: FoveationConfig,
     #[serde(default)]
-    pub far_field: FarFieldConfig,
     pub post_fx: PostFxConfig,
     pub camera: CameraConfig,
     pub movement: MovementConfig,
@@ -169,7 +166,6 @@ impl Config {
             stereo: StereoConfig::new(),
             exposure: ExposureConfig::new(),
             foveation: FoveationConfig::new(),
-            far_field: FarFieldConfig::new(),
             post_fx: PostFxConfig::new(),
             camera: CameraConfig::new(),
             movement: MovementConfig::new(),

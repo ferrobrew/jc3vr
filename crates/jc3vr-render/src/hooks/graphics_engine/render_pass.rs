@@ -20,7 +20,7 @@ use jc3gi::graphics_engine::{
     shadow_manager::ShadowManager,
 };
 use jc3vr_view::{
-    stereo::{STEREO_STATE, config::STEREO_CONFIG, draw_index, is_second_eye},
+    stereo::{STEREO_STATE, config::STEREO_CONFIG, is_second_eye},
     vr::{
         FOVEATION_CONFIG,
         foveation::{EyeLayout, FORCE_STENCIL_TEST, FoveatedPasses, FoveationParams},
@@ -64,11 +64,7 @@ fn render_pass_draw(this: *mut RenderPass) {
     );
 }
 
-// RenderPass::DoDraw -- one pass's walk over its sorted draw list. The far-field split (issue #32)
-// hangs here: `before_do_draw` maintains the pass's depth-bucket registration, computes the
-// near/far partition of the sorted list, and -- in the skip modes -- narrows the list header to one
-// run for the original walk; the guard restores it afterwards. `None` (far field off, pass out of
-// range, or nothing to skip) is the stock path.
+// RenderPass::DoDraw -- one pass's walk over its sorted draw list.
 #[detour(address = jc3gi::graphics_engine::render_pass::RenderPass::DoDraw_ADDRESS)]
 fn do_draw(this: *mut RenderPass, ctx: *mut RenderContext, color_mask: u32) -> bool {
     // A CPU scope named for the pass being drawn; the per-render-block-type runs opened inside it
@@ -76,8 +72,6 @@ fn do_draw(this: *mut RenderPass, ctx: *mut RenderContext, color_mask: u32) -> b
     #[cfg(feature = "profiler")]
     // SAFETY: `this` is the live render pass being drawn.
     let _pass = unsafe { crate::profiler::gpu::pass_scope(this) };
-    // SAFETY: `this` and `ctx` are the live pass and render context of this draw call.
-    let window = unsafe { crate::far_field::before_do_draw(this, ctx) };
     // Publish the pass for the duration of the walk: the draw detours see only a D3D context, and
     // which pass a draw belongs to is what tells a geometry draw apart from a fullscreen one.
     // SAFETY: `this` is the live render pass; `m_Index` is its render-pass id.
@@ -108,7 +102,6 @@ fn do_draw(this: *mut RenderPass, ctx: *mut RenderContext, color_mask: u32) -> b
             if sun_pass {
                 capture_point(PipelinePoint::AfterSun);
             }
-            drop(window);
             // Close the final render-block-type run's scope before the pass scope closes.
             #[cfg(feature = "profiler")]
             jc3vr_core::profiler::type_scope::clear();
@@ -145,18 +138,6 @@ fn draw_render_pass_range(
     let (skip_ssr, skip_gi, skip_ao_volumes) =
         STEREO_CONFIG.query(|c| (c.skip_ssr, c.skip_gi, c.skip_ao_volumes));
 
-    // The far-field share frame (issue #32): the far dispatch runs only the G-buffer range (its
-    // product is the captured G-buffer; lighting, scene, and post are per-eye work), and each near
-    // dispatch composites the captured far G-buffer between the clear/Z-prepass passes and the
-    // geometry passes.
-    let (far_phase, share_frame) = {
-        let state = STEREO_STATE.lock();
-        (state.far_phase, state.share_frame)
-    };
-    if far_phase && first >= RP_FIRST_SCENE {
-        return;
-    }
-
     let skipped = |pass: i32| {
         (skip_ssr && pass == RP_SCREEN_SPACE_REFLECTIONS)
             || (skip_gi && pass == RP_GLOBAL_ILLUMINATION)
@@ -179,10 +160,7 @@ fn draw_render_pass_range(
         }
     };
 
-    let bracket = (first == RP_Z_OCCLUDERS
-        && last == RenderPassId::RP_LAST_GBUFFER as i32
-        && !share_frame
-        && !far_phase)
+    let bracket = (first == RP_Z_OCCLUDERS && last == RenderPassId::RP_LAST_GBUFFER as i32)
         .then(|| {
             let probes = probes::armed()?;
             Some((probes, probes.near_patch_bracket()?))
@@ -199,23 +177,6 @@ fn draw_render_pass_range(
         }
     };
 
-    // Composite the shared far G-buffer on the near dispatches, splitting the range at the first
-    // geometry pass -- after the engine's clears (RP_CLEAR) and the Z prepass, whose depth the
-    // composite's GREATER_EQUAL merge respects -- and capture the far dispatch's G-buffer once its
-    // range completes. `run_scene_range` carries the rest of the body (the skip splitting and the
-    // foveation bracketing).
-    if share_frame && (first..last).contains(&RP_FIRST_GEOMETRY) && first <= RP_Z_OCCLUDERS {
-        if far_phase {
-            run_scene_range(first, last, &draw);
-            crate::far_field::share::capture_far_gbuffer();
-        } else {
-            run_scene_range(first, RP_FIRST_GEOMETRY, &draw);
-            crate::far_field::share::composite(draw_index());
-            run_scene_range(RP_FIRST_GEOMETRY, last, &draw);
-            capture_geometry_range(first, last);
-        }
-        return;
-    }
     // Single-pass stereo: mark the camera-scene geometry range so the dual-eye cb13,
     // viewport split, and instance doubling apply to it. `first >= RP_Z_OCCLUDERS` selects the main
     // camera scene, excluding the shadow/reflection prepasses (<= RP_LAST_PREPASS) that reuse the same
@@ -243,25 +204,18 @@ fn draw_render_pass_range(
 }
 
 fn capture_geometry_range(first: i32, last: i32) {
-    if first == RP_Z_OCCLUDERS
-        && last == RenderPassId::RP_LAST_GBUFFER as i32
-        && !STEREO_STATE.lock().far_phase
-    {
+    if first == RP_Z_OCCLUDERS && last == RenderPassId::RP_LAST_GBUFFER as i32 {
         capture_point(PipelinePoint::Geometry);
     }
 }
 
-/// The first pass of the scene (lighting/main) block; the far dispatch stops before it.
+/// The first pass of the scene (lighting/main) block.
 const RP_FIRST_SCENE: i32 = RenderPassId::RP_REFLECTIVE_WATER_PLANES as i32;
 /// The head of the G-buffer range (where the depth clear lands via the pass's own PreDraw flags).
 const RP_Z_OCCLUDERS: i32 = RenderPassId::RP_Z_OCCLUDERS as i32;
-/// The first G-buffer geometry pass after the clear/Z-prepass prefix: the far-field composite
-/// injects immediately before it.
-const RP_FIRST_GEOMETRY: i32 = RenderPassId::RP_ROAD_STENCIL as i32;
 
 /// One (possibly sub-)range of the G-buffer/scene pass chain: the maximal-run skip splitting plus
-/// the foveation bracketing, factored out of the detour so the far-field composite can split the
-/// range without duplicating either.
+/// the foveation bracketing.
 fn run_scene_range(first: i32, last: i32, draw: &dyn Fn(i32, i32)) {
     // Foveation (issue #29): write the peripheral stencil mask just before the first foveated pass,
     // then force the peripheral stencil test through each run of foveated passes so the GPU skips the
@@ -419,12 +373,6 @@ fn run_foveation_pass(
 fn draw_posteffects(this: *mut c_void, ctx: *mut c_void, setup: *mut c_void) {
     #[cfg(feature = "profiler")]
     puffin::profile_scope!("RenderEngine::DrawPosteffects");
-    // The share frame's far dispatch produces only the captured G-buffer; its post chain is
-    // skipped outright (the pass range beyond the G-buffer is already suppressed), so it records
-    // no post-effects seam either.
-    if jc3vr_view::stereo::far_phase() {
-        return;
-    }
     #[cfg(feature = "profiler")]
     // SAFETY: `ctx` is the live immediate-context handle for this dispatch.
     let _gpu = unsafe { seam(ctx.cast(), crate::profiler::gpu::GpuSeam::PostEffects) };

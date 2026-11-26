@@ -27,7 +27,6 @@ use jc3vr_hud::{hooks::ui, hud};
 use jc3vr_physical::controllers::{glass, physical_hands};
 use jc3vr_render::{
     debug::trace::{TraceEvent, TraceState, tracing_active},
-    far_field,
     hooks::{
         clock,
         draw_count::DRAW_COUNTS,
@@ -165,10 +164,6 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
         // Apply the sun-shadow diagnostic override before the original runs, so this frame's
         // sim-side CShadowManager::UpdateRender sees it and drives the engine's own SetEnabled path.
         sun_shadows::apply_override(Config::lock_query(|c| c.stereo.disable_sun_shadows));
-
-        // Point the far-regime render-block types' enable checks at the far field's gate, as the
-        // configuration lists them, before this frame's draws.
-        far_field::sync_configured_type_gates();
 
         // Apply a requested shader reload here, on the game thread before this frame's draws, so the
         // PCF-patch hook re-creates the already-loaded shaders (injection is normally after the game
@@ -406,13 +401,9 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
         // The per-eye camera offset is injected on the render camera in the SetupRenderCamera
         // hook (see hooks::camera and docs/engine/rendering/rendering.md section 2); here we just drive
         // the dispatches and tag each with its eye index via STEREO_STATE.draw_index.
-        // Eye 1 reaches the screen (the other's flip is blocked). A share frame (issue #32) prepends a far-only
-        // dispatch at eye 0's pose: it renders the far draw-list runs and the gated far-regime
-        // types into the G-buffer, which the render-pass-range hook captures for the two near
-        // dispatches to composite.
+        // Eye 1 reaches the screen (the other's flip is blocked).
         let collapsed = layout::collapse_active();
-        let plan = DispatchPlan::new(render_mode, collapsed, far_field::share_configured());
-        let share_frame = plan.share_frame();
+        let plan = DispatchPlan::new(render_mode, collapsed);
         let present_eye = render_mode.selected_eye().unwrap_or(1);
         TraceState::record(TraceEvent::FrameBegin {
             stereo: true,
@@ -421,7 +412,7 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
         });
 
         let dispatches = plan.dispatches;
-        for (ordinal, &(eye, far_phase)) in dispatches.iter().enumerate() {
+        for (ordinal, &eye) in dispatches.iter().enumerate() {
             if ordinal > 0 {
                 #[cfg(feature = "profiler")]
                 puffin::profile_scope!("Between-eye restore");
@@ -455,24 +446,22 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
             {
                 let mut state = STEREO_STATE.lock();
                 state.draw_index = eye;
-                state.far_phase = far_phase;
-                state.share_frame = share_frame;
                 state.dispatch_ordinal = ordinal;
-                state.last_near_dispatch = plan.last_near(ordinal);
+                state.last_dispatch = plan.last(ordinal);
             }
             // While a VR session runs there is no desktop present at all (the compositor
             // presents), so block the flip for every dispatch; otherwise only the presented eye
-            // reaches the game window. The far dispatch never presents.
+            // reaches the game window.
             //
             // The eye-parity block must not apply under the collapse: the one dispatch is tagged
             // eye 0 but carries *both* eyes, so the parity block would block every flip there is.
             BLOCK_FLIP.store(
-                vr_running || far_phase || (!collapsed && present_eye != eye),
+                vr_running || (!collapsed && present_eye != eye),
                 Ordering::Relaxed,
             );
             tracing::trace!(
                 target: "frameloop",
-                "game_update_render: dispatch {ordinal} (eye {eye}, far {far_phase}) Draw"
+                "game_update_render: dispatch {ordinal} (eye {eye}) Draw"
             );
             mark(if eye == 0 {
                 Phase::Eye0Draw
@@ -515,7 +504,7 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
         }
         TraceState::end_frame();
 
-        // The draw thread reads the per-dispatch stereo state (draw_index, far_phase) for the
+        // The draw thread reads the per-dispatch stereo state (draw_index) for the
         // final dispatch asynchronously. Resetting it here would race that read when the tail
         // is deferred (the main thread has not drained the last dispatch), so eye 1 would
         // render as eye 0 -- wrong camera, and its capture copies into eye 0's texture, leaving

@@ -63,9 +63,6 @@ pub(super) struct Dispatch {
 pub(super) enum DispatchLane {
     Eye0 = 0,
     Eye1 = 1,
-    /// The far-field share frame's G-buffer-only far render (issue #32); reported separately from
-    /// the eye-0 near render it shares a frame with.
-    Far = 2,
 }
 
 pub(super) struct GpuProfiler {
@@ -457,7 +454,6 @@ impl GpuProfiler {
         self.lane_scopes = profiler.register_user_scopes(&[
             ScopeDetails::from_scope_name("GPU eye 0"),
             ScopeDetails::from_scope_name("GPU eye 1"),
-            ScopeDetails::from_scope_name("GPU far field"),
         ]);
         let holes = profiler.register_user_scopes(&[
             ScopeDetails::from_scope_name("GPU idle"),

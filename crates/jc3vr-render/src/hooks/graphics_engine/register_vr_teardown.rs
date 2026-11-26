@@ -1,5 +1,5 @@
 //! What the VR runtime's teardown releases on the render side: the flip block the frame top sets
-//! while a session presents, and the far-field share pipeline's resources.
+//! while a session presents.
 
 use std::sync::atomic::Ordering;
 
@@ -13,5 +13,4 @@ pub fn register() {
 
 static TEARDOWN: TeardownParticipant = TeardownParticipant {
     release_flip: || BLOCK_FLIP.store(false, Ordering::Relaxed),
-    release_resources: crate::far_field::share::teardown,
 };

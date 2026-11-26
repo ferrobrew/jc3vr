@@ -9,7 +9,7 @@ use crate::stereo::STEREO_STATE;
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RenderMode {
-    /// Use the configured stereo, single-pass, and far-field behavior.
+    /// Use the configured stereo and single-pass behavior.
     #[default]
     Native,
     /// Render only the physical left eye.
@@ -80,55 +80,43 @@ pub fn first_ui_eye(eye: usize) -> bool {
 /// The ordered physical-eye dispatches and their once-per-frame ownership.
 #[derive(Clone, Copy)]
 pub struct DispatchPlan {
-    /// Each dispatch's physical eye and far-only flag.
-    pub dispatches: &'static [(usize, bool)],
+    /// Each dispatch's physical eye.
+    pub dispatches: &'static [usize],
 }
 
 impl DispatchPlan {
-    pub fn new(mode: RenderMode, collapsed: bool, share: bool) -> Self {
-        let dispatches: &'static [(usize, bool)] = match mode {
-            RenderMode::Native if collapsed => &[(0, false)],
-            RenderMode::Native if share => &[(0, true), (0, false), (1, false)],
-            RenderMode::Native | RenderMode::Multipass => &[(0, false), (1, false)],
-            RenderMode::ReverseMultipass => &[(1, false), (0, false)],
-            RenderMode::LeftOnly | RenderMode::SinglePass => &[(0, false)],
-            RenderMode::RightOnly => &[(1, false)],
+    pub fn new(mode: RenderMode, collapsed: bool) -> Self {
+        let dispatches: &'static [usize] = match mode {
+            RenderMode::Native if collapsed => &[0],
+            RenderMode::Native | RenderMode::Multipass => &[0, 1],
+            RenderMode::ReverseMultipass => &[1, 0],
+            RenderMode::LeftOnly | RenderMode::SinglePass => &[0],
+            RenderMode::RightOnly => &[1],
         };
         Self { dispatches }
     }
 
-    pub fn share_frame(self) -> bool {
-        self.dispatches.iter().any(|&(_, far)| far)
-    }
-
-    pub fn last_near(self, ordinal: usize) -> bool {
+    /// Whether `ordinal` is the frame's last dispatch.
+    pub fn last(self, ordinal: usize) -> bool {
         ordinal + 1 == self.dispatches.len()
-            && self.dispatches.get(ordinal).is_some_and(|&(_, far)| !far)
     }
 }
 
 /// Whether a scene dispatch follows another scene dispatch in the same stereo frame.
 #[inline]
-pub(crate) fn later_scene_dispatch(
-    active: bool,
-    far_phase: bool,
-    share_frame: bool,
-    ordinal: usize,
-) -> bool {
-    active && !far_phase && ordinal > usize::from(share_frame)
+pub(crate) fn later_scene_dispatch(active: bool, ordinal: usize) -> bool {
+    active && ordinal > 0
 }
 
-/// Reset the per-dispatch stereo state ([`STEREO_STATE`]) to the frame's baseline: eye 0, no far
-/// phase, no share frame, ordinal 0 — so state from a share frame's last dispatch never leaks into
-/// the next frame's first dispatch (or into a non-stereo frame). Called on the main thread inline,
-/// or from the tail worker after it drains the final dispatch (see [`crate::vr::tail`]).
+/// Reset the per-dispatch stereo state ([`STEREO_STATE`]) to the frame's baseline: eye 0, ordinal
+/// 0, so state from a frame's last dispatch never leaks into the next frame's first dispatch.
+/// Called on the main thread inline, or from the tail worker after it drains the final dispatch
+/// (see [`crate::vr::tail`]).
 pub fn reset_dispatch_state() {
     let mut state = STEREO_STATE.lock();
     state.draw_index = 0;
-    state.far_phase = false;
-    state.share_frame = false;
     state.dispatch_ordinal = 0;
-    state.last_near_dispatch = true;
+    state.last_dispatch = true;
 }
 
 static MODE: Mutex<RenderMode> = Mutex::new(RenderMode::Native);
@@ -138,35 +126,25 @@ mod tests {
     use super::*;
 
     #[test]
-    fn native_preserves_collapsed_and_far_share_plans() {
-        for (collapsed, share, expected) in [
-            (false, false, &[(0, false), (1, false)][..]),
-            (false, true, &[(0, true), (0, false), (1, false)][..]),
-            (true, false, &[(0, false)][..]),
-            (true, true, &[(0, false)][..]),
-        ] {
-            assert_eq!(
-                DispatchPlan::new(RenderMode::Native, collapsed, share).dispatches,
-                expected
-            );
-        }
+    fn native_plan_follows_the_collapse() {
+        assert_eq!(
+            DispatchPlan::new(RenderMode::Native, false).dispatches,
+            &[0, 1]
+        );
+        assert_eq!(DispatchPlan::new(RenderMode::Native, true).dispatches, &[0]);
     }
 
     #[test]
-    fn explicit_modes_ignore_native_plan_flags() {
+    fn explicit_modes_ignore_the_collapse() {
         for (mode, expected) in [
-            (RenderMode::LeftOnly, &[(0, false)][..]),
-            (RenderMode::RightOnly, &[(1, false)][..]),
-            (RenderMode::Multipass, &[(0, false), (1, false)][..]),
-            (RenderMode::ReverseMultipass, &[(1, false), (0, false)][..]),
-            (RenderMode::SinglePass, &[(0, false)][..]),
+            (RenderMode::LeftOnly, &[0][..]),
+            (RenderMode::RightOnly, &[1][..]),
+            (RenderMode::Multipass, &[0, 1][..]),
+            (RenderMode::ReverseMultipass, &[1, 0][..]),
+            (RenderMode::SinglePass, &[0][..]),
         ] {
             for collapsed in [false, true] {
-                for share in [false, true] {
-                    let plan = DispatchPlan::new(mode, collapsed, share);
-                    assert_eq!(plan.dispatches, expected);
-                    assert!(!plan.share_frame());
-                }
+                assert_eq!(DispatchPlan::new(mode, collapsed).dispatches, expected);
             }
         }
     }
@@ -182,35 +160,15 @@ mod tests {
             RenderMode::SinglePass,
         ] {
             for collapsed in [false, true] {
-                for share in [false, true] {
-                    let plan = DispatchPlan::new(mode, collapsed, share);
-                    let mut scene_count = 0;
-                    let mut last_count = 0;
-                    for (ordinal, &(eye, far)) in plan.dispatches.iter().enumerate() {
-                        assert_eq!(
-                            later_scene_dispatch(true, far, plan.share_frame(), ordinal),
-                            !far && scene_count > 0
-                        );
-                        if !far {
-                            if scene_count == 0 {
-                                assert_eq!(eye, mode.first_eye());
-                            }
-                            scene_count += 1;
-                        }
-                        if plan.last_near(ordinal) {
-                            assert!(!far);
-                            last_count += 1;
-                        }
-                        assert!(!later_scene_dispatch(
-                            false,
-                            far,
-                            plan.share_frame(),
-                            ordinal
-                        ));
-                    }
-                    assert_eq!(last_count, 1);
-                    assert!(!plan.last_near(plan.dispatches.len()));
+                let plan = DispatchPlan::new(mode, collapsed);
+                assert_eq!(plan.dispatches[0], mode.first_eye());
+                for ordinal in 0..plan.dispatches.len() {
+                    assert_eq!(later_scene_dispatch(true, ordinal), ordinal > 0);
+                    assert!(!later_scene_dispatch(false, ordinal));
                 }
+                let lasts = (0..plan.dispatches.len()).filter(|&o| plan.last(o)).count();
+                assert_eq!(lasts, 1);
+                assert!(!plan.last(plan.dispatches.len()));
             }
         }
     }
@@ -220,10 +178,7 @@ mod tests {
         for (mode, eye) in [(RenderMode::LeftOnly, 0), (RenderMode::RightOnly, 1)] {
             assert_eq!(mode.selected_eye(), Some(eye));
             assert_eq!([mode.source_eye(0), mode.source_eye(1)], [eye; 2]);
-            assert_eq!(
-                DispatchPlan::new(mode, false, false).dispatches,
-                &[(eye, false)]
-            );
+            assert_eq!(DispatchPlan::new(mode, false).dispatches, &[eye]);
         }
         for mode in [
             RenderMode::Native,

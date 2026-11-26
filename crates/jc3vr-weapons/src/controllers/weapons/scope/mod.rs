@@ -155,7 +155,7 @@ pub(crate) fn is_scoped(address: usize) -> bool {
 /// Plan the frame's lens. Called once per render dispatch at the end of `RenderEngine::PostDraw`,
 /// before the engine's context lock is taken; it acts only on the frame's first eye.
 pub fn tick(eye: usize) {
-    if !jc3vr_view::stereo::dispatch::first_ui_eye(eye) || jc3vr_view::stereo::far_phase() {
+    if !jc3vr_view::stereo::dispatch::first_ui_eye(eye) {
         return;
     }
     let enabled = scheme::enabled() && WEAPONS_CONFIG.query(|c| c.scopes);

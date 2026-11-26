@@ -116,7 +116,6 @@ features! {
     },
     Experimental {
         SinglePass => ("experimental.single-pass", "Single-pass stereo"),
-        FarField => ("experimental.far-field", "Far field"),
         PostFx => ("experimental.post-fx", "Post-FX skips"),
         RenderRe => ("experimental.render-re", "Render RE window"),
     },
