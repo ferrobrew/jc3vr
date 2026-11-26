@@ -54,6 +54,7 @@ mod register_hands;
 mod register_head_pose;
 mod register_lifecycle;
 mod register_render;
+mod register_siblings;
 mod register_vr_frame;
 pub mod snatch;
 pub mod summary;

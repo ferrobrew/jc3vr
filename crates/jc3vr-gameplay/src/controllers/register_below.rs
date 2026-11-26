@@ -1,7 +1,8 @@
 //! Registers the physical hands, the vehicle handling, and the weapon handling with the systems
 //! below them: the body, the grip model, the roomscale, the hand bodies' step, the per-shot seam,
 //! the weapon take, the weapon pickup hand-off, and the character hooks. Each subsystem's own
-//! `register_body` names what it contributes.
+//! `register_body` names what it contributes, and the weapon handling's and the physical hands'
+//! registrations with each other ride along (`register_siblings`).
 //!
 //! Each of these does real work every tick, and the body destruction observer keeps the climb and
 //! the carried bodies from holding a destroyed body, so the install refuses to finish with one
@@ -33,6 +34,7 @@ pub(super) fn register() {
     physical_hands::register_body::register();
     vehicles::register_body::register();
     weapons::register_body::register();
+    crate::controllers::register_siblings::register();
     let missing = missing();
     assert!(
         missing.is_empty(),
