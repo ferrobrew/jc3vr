@@ -1,5 +1,5 @@
 //! Regenerate the FSR2 DX11 compute-shader permutation headers consumed by `fsr-sys`, and compile the
-//! payload's own DX11 shaders.
+//! mod's own DX11 shaders.
 //!
 //! The FidelityFX DX11 backend bakes its compute shaders in as DXBC bytecode: the shader compiler
 //! (`FidelityFX_SC.exe`, bundled in the vendored submodule) compiles each pass into a
@@ -9,9 +9,9 @@
 //! its HTTP / archive dependencies never reach a normal build of the `-sys` crate or the payload. It
 //! runs only on an FSR version bump or after a fresh checkout.
 //!
-//! In addition, the payload's own DX11 shaders (velocity decode, HUD quad) and `body-estimator`'s
-//! compute shaders are compiled by the same toolchain and committed as `.dxbc` blobs alongside their
-//! `.hlsl` sources.
+//! In addition, the mod's own DX11 shaders (the payload's and the render crate's, such as the HUD
+//! quad and the velocity decode) and `body-estimator`'s compute shaders are compiled by the same
+//! toolchain and committed as `.dxbc` blobs alongside their `.hlsl` sources.
 //!
 //! `FidelityFX_SC.exe` is a Windows executable: on a Windows host it runs directly; elsewhere it runs
 //! under Wine. The Wine half -- provisioning a prefix with a native `d3dcompiler_47.dll`, since Wine's
@@ -84,29 +84,41 @@ const DX11_BASE_ARGS: &[&str] = &[
     "-DSPD_NO_WAVE_OPERATIONS",
 ];
 
-/// The payload's own shaders: `(name, shader-model profile)`. Each `payload/src/shaders/<name>.hlsl`
-/// (entry point `main`) compiles to a committed `payload/src/shaders/<name>.dxbc`.
-const PAYLOAD_SHADERS: &[(&str, &str)] = &[
-    ("velocity_decode", "cs_5_0"),
-    ("taa_resolve", "cs_5_0"),
-    ("marker_depth_cs", "cs_5_0"),
-    ("indirect_args_double_cs", "cs_5_0"),
-    ("snapshot_diff_cs", "cs_5_0"),
-    ("hud_quad_vs", "vs_5_0"),
-    ("hud_quad_ps", "ps_5_0"),
-    ("hud_quad_fade_ps", "ps_5_0"),
-    ("cursor_ps", "ps_5_0"),
-    ("capture_vs", "vs_5_0"),
-    ("capture_ps", "ps_5_0"),
-    ("vr_blit_ps", "ps_5_0"),
-    ("foveation_mask_ps", "ps_5_0"),
-    ("foveation_fill_ps", "ps_5_0"),
-    ("far_field_composite_ps", "ps_5_0"),
-    ("overlay_vs", "vs_5_0"),
-    ("overlay_ps", "ps_5_0"),
-    ("scope_lens_vs", "vs_5_0"),
-    ("scope_lens_ps", "ps_5_0"),
-    ("i420_pack_ps", "ps_5_0"),
+/// The mod's own shaders, grouped by the directory that holds them, relative to the workspace root:
+/// `(directory, [(name, shader-model profile)])`. Each `<directory>/<name>.hlsl` (entry point `main`)
+/// compiles to a committed `<directory>/<name>.dxbc` beside it. A shader lives with the crate that
+/// draws with it.
+const MOD_SHADERS: &[(&str, &[(&str, &str)])] = &[
+    (
+        "payload/src/shaders",
+        &[
+            ("marker_depth_cs", "cs_5_0"),
+            ("hud_quad_vs", "vs_5_0"),
+            ("hud_quad_ps", "ps_5_0"),
+            ("hud_quad_fade_ps", "ps_5_0"),
+            ("cursor_ps", "ps_5_0"),
+            ("i420_pack_ps", "ps_5_0"),
+        ],
+    ),
+    (
+        "crates/jc3vr-render/shaders",
+        &[
+            ("velocity_decode", "cs_5_0"),
+            ("taa_resolve", "cs_5_0"),
+            ("indirect_args_double_cs", "cs_5_0"),
+            ("snapshot_diff_cs", "cs_5_0"),
+            ("capture_vs", "vs_5_0"),
+            ("capture_ps", "ps_5_0"),
+            ("vr_blit_ps", "ps_5_0"),
+            ("foveation_mask_ps", "ps_5_0"),
+            ("foveation_fill_ps", "ps_5_0"),
+            ("far_field_composite_ps", "ps_5_0"),
+            ("overlay_vs", "vs_5_0"),
+            ("overlay_ps", "ps_5_0"),
+            ("scope_lens_vs", "vs_5_0"),
+            ("scope_lens_ps", "ps_5_0"),
+        ],
+    ),
 ];
 
 /// `body-estimator`'s compute shaders (`cs_5_0`): `(name, source, defines)`. Each
@@ -204,23 +216,22 @@ fn run() -> Result<(), String> {
     archive_headers(&out_dir)?;
     println!("regen-shaders: done -> {}", out_dir.display());
 
-    // The payload's own shaders use the same toolchain. Each compiles to a committed `.dxbc` blob the
-    // payload `include_bytes!`s -- no runtime shader compiler (uncertain under Proton).
-    let payload_shaders = workspace.join("payload/src/shaders");
-    for (name, profile) in PAYLOAD_SHADERS {
-        let shader = BlobShader {
-            dir: &payload_shaders,
-            name,
-            source: name,
-            profile,
-            defines: &[],
-        };
-        compile_blob_shader(&runner, &sc_exe, &shader)?;
+    // The mod's own shaders use the same toolchain. Each compiles to a committed `.dxbc` blob its
+    // crate `include_bytes!`s -- no runtime shader compiler (uncertain under Proton).
+    for (dir, shaders) in MOD_SHADERS {
+        let dir = workspace.join(dir);
+        for (name, profile) in *shaders {
+            let shader = BlobShader {
+                dir: &dir,
+                name,
+                source: name,
+                profile,
+                defines: &[],
+            };
+            compile_blob_shader(&runner, &sc_exe, &shader)?;
+        }
+        println!("regen-shaders: mod shaders -> {}", dir.display());
     }
-    println!(
-        "regen-shaders: payload shaders -> {}",
-        payload_shaders.display()
-    );
 
     let estimator_shaders = workspace.join("crates/body-estimator/src/shaders");
     for (name, source, defines) in ESTIMATOR_SHADERS {
