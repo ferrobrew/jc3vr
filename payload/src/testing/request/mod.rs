@@ -15,9 +15,9 @@ use parking_lot::Mutex;
 use serde::Deserialize;
 
 use crate::{
-    config::Config,
     screenshot::harness::snapshot::{SnapshotError, SnapshotRequest, SnapshotTable},
     testing::{
+        TESTING_CONFIG,
         benchmark::{BenchmarkError, BenchmarkRequest, BenchmarkTable},
         stage::{self, StageRequest, StageTable},
         text::{self, TextError},
@@ -43,7 +43,7 @@ pub(crate) fn poll() {
         }
         *last = Some(Instant::now());
     }
-    let (enabled, watched) = Config::lock_query(|c| (c.testing.enabled, c.testing.request_file));
+    let (enabled, watched) = TESTING_CONFIG.query(|c| (c.enabled, c.request_file));
     if !enabled || !watched {
         return;
     }

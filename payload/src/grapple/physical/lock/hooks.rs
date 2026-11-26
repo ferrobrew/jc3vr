@@ -37,7 +37,7 @@ use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{
-    config::Config,
+    controllers::config::CONTROLLERS_CONFIG,
     grapple::physical::lock::{
         engine, entering_helicopter, hang_takes_over, holds, last_velocity, want_hang,
     },
@@ -157,8 +157,8 @@ fn start_reel_upside_down(hook: *mut GrapplingHook, holder: *const SharedPtr<Cha
 
 /// Whether the lock and its hang are on.
 fn hang_enabled() -> bool {
-    Config::lock_query(|c| {
-        let lock = &c.controllers.grapple.lock;
+    CONTROLLERS_CONFIG.query(|c| {
+        let lock = &c.grapple.lock;
         lock.enabled && lock.hang
     })
 }

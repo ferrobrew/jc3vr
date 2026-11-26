@@ -38,8 +38,7 @@ use jc3gi::{
 };
 
 use crate::{
-    config::Config,
-    controllers::body::procedural::signals::is_local_model,
+    controllers::{body::procedural::signals::is_local_model, config::CONTROLLERS_CONFIG},
     headpose::{self, Source},
     hooks::character::resolve_act_id,
 };
@@ -64,7 +63,7 @@ pub(crate) fn drops_act(model: *const AnimatedModel, act: i32) -> bool {
     }
     let wanted = headpose::is_active()
         && headpose::source() == Source::Vr
-        && !Config::lock_query(|c| c.controllers.vehicles.wingsuit_evade.enabled);
+        && !CONTROLLERS_CONFIG.query(|c| c.vehicles.wingsuit_evade.enabled);
     if wanted {
         BARREL_ROLLS_DROPPED.fetch_add(1, Ordering::Relaxed);
         tracing::info!(

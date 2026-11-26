@@ -7,14 +7,17 @@ use glam::Quat;
 use jc3gi::character::character::{AnimatedModel, Character, Joint, SafeBoneIndex};
 
 use crate::{
-    config::Config,
     controllers::body::procedural::head::head_bone_world,
     headpose::{self, Source},
     hooks::{
         self,
-        character::body_ik::{PRE_IK_POSE, PreIkPose, body_ik_status, tuning::BODY_IK_TUNING},
+        character::{
+            body_ik::{PRE_IK_POSE, PreIkPose, body_ik_status, tuning::BODY_IK_TUNING},
+            config::BODY_IK_CONFIG,
+        },
         graphics_engine::render_block,
     },
+    vr::VR_CONFIG,
 };
 
 /// Hide the player's head and drive its full pose from the headpose.
@@ -116,7 +119,7 @@ pub(crate) unsafe fn override_head(character: *mut Character) {
         // The pre-IK capture retains the bind frame even when body IK is disabled. VR uses that
         // frame with the filtered animation and fresh tracking, while the sim preserves its
         // animated-or-post-solve fallback when body IK is disabled.
-        let body_ik_enabled = Config::lock_query(|c| c.body_ik.enabled);
+        let body_ik_enabled = BODY_IK_CONFIG.lock().enabled;
         let pre_ik_pose = *PRE_IK_POSE.lock();
         let pre_ik = body_ik_enabled.then_some(pre_ik_pose).flatten();
         let source = headpose::source();
@@ -154,7 +157,7 @@ pub(crate) unsafe fn override_head(character: *mut Character) {
                 && BODY_IK_TUNING.head_reach_t * BODY_IK_TUNING.weight > 0.0
                 && body_ik_status().is_some_and(|s| s.skip.is_none());
             let animated_head_world = headpose::anchor().unwrap_or(glam::Vec3::ZERO);
-            let scale = Config::lock_query(|c| c.vr.world_scale);
+            let scale = VR_CONFIG.lock().world_scale;
             let world_offset = head_bone_world(character_rotation, scale) - animated_head_world;
             if !hik_places_head && world_offset != glam::Vec3::ZERO {
                 let model_offset = character_rotation.inverse() * world_offset;

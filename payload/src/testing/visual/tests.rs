@@ -71,18 +71,21 @@ fn single_pass_switch_overrides_survive_the_profile_and_reset_with_it() {
         .unwrap(),
     )
     .unwrap();
-    let mut config = Config::new();
+    let mut config = Snapshot::defaults();
     apply_profile_with_overrides(&mut config, Mode::SinglePass, Some(overrides));
-    let sps = config.stereo.single_pass;
+    let sps = config.part(&STEREO_CONFIG).single_pass;
     assert!(sps.enabled && sps.collapse && sps.reproject);
     assert!(!sps.ssr_per_eye && !sps.tree_impostors);
     apply_profile_with_overrides(&mut config, Mode::SinglePass, None);
-    assert!(config.stereo.single_pass.ssr_per_eye && config.stereo.single_pass.tree_impostors);
+    assert!(
+        config.part(&STEREO_CONFIG).single_pass.ssr_per_eye
+            && config.part(&STEREO_CONFIG).single_pass.tree_impostors
+    );
 }
 
 #[test]
 fn reflection_override_runs_the_producer_without_disabling_sun_shadows() {
-    let mut config = Config::new();
+    let mut config = Snapshot::defaults();
     for mode in [
         Mode::LeftOnly,
         Mode::RightOnly,
@@ -120,9 +123,12 @@ fn reflection_override_runs_the_producer_without_disabling_sun_shadows() {
                 single_pass: Default::default(),
             }),
         );
-        assert!(!config.stereo.skip_ssr && !config.stereo.disable_sun_shadows);
+        assert!(
+            !config.part(&STEREO_CONFIG).skip_ssr
+                && !config.part(&STEREO_CONFIG).disable_sun_shadows
+        );
         apply_profile_with_overrides(&mut config, mode, None);
-        assert!(!config.stereo.skip_ssr);
+        assert!(!config.part(&STEREO_CONFIG).skip_ssr);
     }
 }
 
@@ -158,12 +164,12 @@ fn shadows_disabled() -> VisualOverrides {
 
 #[test]
 fn shadow_override_resets_on_new_profile() {
-    let mut config = Config::new();
+    let mut config = Snapshot::defaults();
     let treatment = Some(shadows_disabled());
     apply_profile_with_overrides(&mut config, Mode::Multipass, treatment);
-    assert!(config.stereo.disable_sun_shadows);
+    assert!(config.part(&STEREO_CONFIG).disable_sun_shadows);
     apply_profile_with_overrides(&mut config, Mode::Multipass, None);
-    assert!(!config.stereo.disable_sun_shadows);
+    assert!(!config.part(&STEREO_CONFIG).disable_sun_shadows);
 }
 
 #[test]
@@ -364,10 +370,10 @@ fn profile_states_single_pass_for_every_mode() {
         Mode::ReverseMultipass,
         Mode::SinglePass,
     ] {
-        let mut config = Config::new();
+        let mut config = Snapshot::defaults();
         apply_profile(&mut config, mode);
         let on = mode == Mode::SinglePass;
-        let sps = &config.stereo.single_pass;
+        let sps = &config.part(&STEREO_CONFIG).single_pass;
         assert_eq!(sps.enabled, on, "{mode:?}");
         assert_eq!(sps.dual_eye, on, "{mode:?}");
         assert_eq!(sps.collapse, on, "{mode:?}");
@@ -378,10 +384,10 @@ fn profile_states_single_pass_for_every_mode() {
 
 #[test]
 fn profile_keeps_per_eye_native_resolution_across_modes() {
-    let mut config = Config::new();
-    config.vr.resolution_scale = 0.75;
-    config.post_fx.skip_dof = true;
-    config.post_fx.dof_no_reproject = false;
+    let mut config = Snapshot::defaults();
+    config.part_mut(&VR_CONFIG).resolution_scale = 0.75;
+    config.part_mut(&POST_FX_CONFIG).skip_dof = true;
+    config.part_mut(&POST_FX_CONFIG).dof_no_reproject = false;
     for mode in [
         Mode::LeftOnly,
         Mode::RightOnly,
@@ -390,23 +396,36 @@ fn profile_keeps_per_eye_native_resolution_across_modes() {
         Mode::SinglePass,
     ] {
         apply_profile(&mut config, mode);
-        assert!(config.vr.native_resolution);
-        assert_eq!(config.vr.resolution_scale, 0.75);
-        assert_eq!(config.vr.freeze_mode, FreezeMode::FullCamera);
-        assert!(config.director.paused);
-        assert_eq!(config.fsr.antialiasing, crate::fsr::AntiAliasing::Engine);
-        assert!(!config.foveation.enabled);
-        assert!(!config.far_field.enabled);
-        assert!(config.exposure.force);
-        assert_eq!(config.exposure.forced_value, 0.11);
-        assert!(config.post_fx.skip_motion_blur && config.post_fx.skip_motion_blur_recon);
-        assert!(!config.post_fx.skip_dof && config.post_fx.dof_no_reproject);
-        assert!(!config.stereo.skip_ssr && !config.stereo.skip_gi);
-        assert!(!config.stereo.disable_ssao && !config.post_fx.skip_glare);
-        assert!(config.post_fx.skip_fade && config.post_fx.skip_player_damage);
-        assert!(!config.post_fx.skip_sun_halo);
+        assert!(config.part(&VR_CONFIG).native_resolution);
+        assert_eq!(config.part(&VR_CONFIG).resolution_scale, 0.75);
+        assert_eq!(config.part(&VR_CONFIG).freeze_mode, FreezeMode::FullCamera);
+        assert!(*config.part(&PAUSED));
+        assert_eq!(
+            config.part(&FSR_CONFIG).antialiasing,
+            crate::fsr::AntiAliasing::Engine
+        );
+        assert!(!config.part(&FOVEATION_CONFIG).enabled);
+        assert!(!config.part(&FAR_FIELD_CONFIG).enabled);
+        assert!(config.part(&EXPOSURE_CONFIG).force);
+        assert_eq!(config.part(&EXPOSURE_CONFIG).forced_value, 0.11);
+        assert!(
+            config.part(&POST_FX_CONFIG).skip_motion_blur
+                && config.part(&POST_FX_CONFIG).skip_motion_blur_recon
+        );
+        assert!(
+            !config.part(&POST_FX_CONFIG).skip_dof && config.part(&POST_FX_CONFIG).dof_no_reproject
+        );
+        assert!(!config.part(&STEREO_CONFIG).skip_ssr && !config.part(&STEREO_CONFIG).skip_gi);
+        assert!(
+            !config.part(&STEREO_CONFIG).disable_ssao && !config.part(&POST_FX_CONFIG).skip_glare
+        );
+        assert!(
+            config.part(&POST_FX_CONFIG).skip_fade
+                && config.part(&POST_FX_CONFIG).skip_player_damage
+        );
+        assert!(!config.part(&POST_FX_CONFIG).skip_sun_halo);
         let on = mode == Mode::SinglePass;
-        let sps = &config.stereo.single_pass;
+        let sps = &config.part(&STEREO_CONFIG).single_pass;
         assert_eq!(sps.enabled, on);
         assert_eq!(sps.dual_eye, on);
         assert_eq!(sps.double_wide, on);
@@ -658,8 +677,8 @@ fn metadata_tracks_generation_and_profile_without_json_state() {
 
 #[test]
 fn restoration_retains_the_original_configuration_until_completion() {
-    let mut original = Config::new();
-    original.vr.native_resolution = false;
+    let mut original = Snapshot::defaults();
+    original.part_mut(&VR_CONFIG).native_resolution = false;
     let mut state = State::new();
     state.saved = Some(original);
     state.start(Operation::Restoring(active("end-baseline")));
@@ -670,9 +689,23 @@ fn restoration_retains_the_original_configuration_until_completion() {
             .is_none()
     );
     assert!(!state.metadata().ready);
-    assert!(!state.saved.as_ref().unwrap().vr.native_resolution);
+    assert!(
+        !state
+            .saved
+            .as_ref()
+            .unwrap()
+            .part(&VR_CONFIG)
+            .native_resolution
+    );
     state.start(Operation::Configuring(active("configure-baseline")));
-    assert!(!state.saved.as_ref().unwrap().vr.native_resolution);
+    assert!(
+        !state
+            .saved
+            .as_ref()
+            .unwrap()
+            .part(&VR_CONFIG)
+            .native_resolution
+    );
     state.start(Operation::Restoring(active("retry-baseline")));
     assert!(
         state

@@ -29,8 +29,8 @@ use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{
-    config::Config,
     headpose::sim::{HeadMode, LatchState},
+    hooks::input::config::MOVEMENT_CONFIG,
 };
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -103,7 +103,7 @@ fn input_loco_aim_relative_task_update(ctx: *mut StateContext, p1: *mut c_void, 
     address = jc3gi::input::locomotion::NStateTask_MovementJumpTask::Update_ADDRESS
 )]
 fn movement_jump_task_update(ctx: *mut StateContext, p1: *mut c_void, p2: *mut c_void) {
-    let character = if Config::lock_query(|c| c.movement.suppress_air_aim_facing) {
+    let character = if MOVEMENT_CONFIG.query(|c| c.suppress_air_aim_facing) {
         unsafe { character_from_context(ctx) }.filter(|c| c.m_IsLocalCharacter && head_decoupled(c))
     } else {
         None
@@ -176,7 +176,7 @@ fn update_fall_steering(
         out_velocity_norm,
         out_speed,
     );
-    let hold_straight = Config::lock_query(|c| c.movement.suppress_air_aim_facing)
+    let hold_straight = MOVEMENT_CONFIG.query(|c| c.suppress_air_aim_facing)
         && unsafe { character.as_ref() }.is_some_and(|c| c.m_IsLocalCharacter && head_decoupled(c));
     if hold_straight && !out_facing.is_null() {
         let forward = -glam::Mat4::from(unsafe { (*character).m_WorldMatrixT1 })

@@ -65,9 +65,9 @@ use re_utilities::hook_library::HookLibrary;
 
 pub use crate::controllers::bindings::grapple_button::LockButton;
 use crate::{
-    config::Config,
     controllers::{
         bindings::yank::HandLine,
+        config::CONTROLLERS_CONFIG,
         frame::{self, Hand},
         haptics::{self, Event, Sustain},
         physical_hands::remote,
@@ -83,7 +83,7 @@ use crate::{
     },
     headpose::xr,
     hooks::input::air,
-    vr::recenter_count,
+    vr::{VR_CONFIG, recenter_count},
 };
 
 /// The lock's hooks, aggregated by [`crate::grapple::physical::hook_library`].
@@ -556,12 +556,8 @@ pub(crate) unsafe fn drive(
 }
 
 fn pump_sample(input: &LockTickInput) -> (Option<PumpSample>, SwingTuning) {
-    let (scale, tuning) = Config::lock_query(|c| {
-        (
-            c.vr.world_scale,
-            PhysicalGrappleTuning::of(&c.controllers.grapple).swing,
-        )
-    });
+    let scale = VR_CONFIG.lock().world_scale;
+    let tuning = CONTROLLERS_CONFIG.query(|c| PhysicalGrappleTuning::of(&c.grapple).swing);
     let fresh = frame::with_latest(|frame| {
         frame.focused
             && frame.published_at.elapsed() <= Duration::from_millis(100)

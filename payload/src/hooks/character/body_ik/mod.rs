@@ -20,7 +20,6 @@ use jc3gi::{
 use parking_lot::Mutex;
 
 use crate::{
-    config::Config,
     controllers::{
         body::{
             procedural::{head::head_bone_world, torso_weight},
@@ -36,8 +35,9 @@ use crate::{
     hooks::{
         self,
         animation::{active_state_type_id, body_rule_system},
-        character::body_ik::tuning::BODY_IK_TUNING,
+        character::{body_ik::tuning::BODY_IK_TUNING, config::BODY_IK_CONFIG},
     },
+    vr::VR_CONFIG,
 };
 
 /// A snapshot of what the body-IK path did on its last frame, for the debug UI. The engine-side
@@ -422,7 +422,7 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
         // gameplay owns the character: outside E_GAME_RUN the engine repositions Rico for a teleport,
         // so queuing head-follow targets would fight that (issue #27). The anchor capture above still
         // runs so the pose stays fresh for the auto-recenter rebase on resume.
-        let enabled = Config::lock_query(|c| c.body_ik.enabled);
+        let enabled = BODY_IK_CONFIG.lock().enabled;
         let tuning = BODY_IK_TUNING;
         if let Some(skip) = (!enabled)
             .then_some(BodyIkSkip::Disabled)
@@ -468,7 +468,7 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
         // the head on the neck instead of sinking it below the shoulders. It is transformed into character-model space — the space
         // AddEffectorTargetPosition expects (docs/engine/character/humanik.md) — plus the optional
         // tuning offset.
-        let scale = Config::lock_query(|c| c.vr.world_scale);
+        let scale = VR_CONFIG.lock().world_scale;
         let target_world = head_bone_world(character_rotation, scale);
         let target_model =
             character_world.inverse().transform_point3(target_world) + tuning.target_offset;

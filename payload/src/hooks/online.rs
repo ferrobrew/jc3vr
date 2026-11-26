@@ -52,7 +52,7 @@ use re_utilities::hook_library::HookLibrary;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    config::{Config, engine::ConfigSlot},
+    config::engine::ConfigSlot,
     frame_timing::{self, Slot},
 };
 
@@ -253,7 +253,7 @@ fn first_party_check(this: *mut AccountManagerSteam) -> bool {
         return FIRST_PARTY_CHECK.get().unwrap().call(this);
     }
     let _timing = frame_timing::scope(Slot::SimLoggedOn);
-    if Config::lock_query(|c| c.online.skip_logged_on_check) {
+    if ONLINE_CONFIG.query(|c| c.skip_logged_on_check) {
         return false;
     }
     FIRST_PARTY_CHECK.get().unwrap().call(this)

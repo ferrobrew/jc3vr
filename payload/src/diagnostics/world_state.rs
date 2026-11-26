@@ -17,13 +17,13 @@ use tracking_format::{
 };
 
 use crate::{
-    config::Config,
     controllers::{frame::Hand, haptics, snatch, vehicles},
     frame_timing,
     grapple::{hook, physical::lock},
     headpose,
     hooks::camera::{eye_point, last_dtf},
     recorder::tracking::format::debug_label,
+    vr::VR_CONFIG,
 };
 
 /// The cockpit's placement in the world, from the rendered eye midpoint the hands compose from
@@ -32,7 +32,7 @@ use crate::{
 pub(super) fn view_state() -> Option<ViewState> {
     let cockpit = headpose::xr::cockpit_pose()?;
     let head = headpose::query();
-    let world_scale = Config::lock_query(|c| c.vr.world_scale);
+    let world_scale = VR_CONFIG.lock().world_scale;
     // SAFETY: the game thread after the render update, where the camera manager and its active
     // camera are stable for the read.
     let camera = unsafe { CameraManager::get() }

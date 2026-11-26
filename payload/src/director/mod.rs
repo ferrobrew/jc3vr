@@ -13,7 +13,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::config::{CONFIG, engine::ConfigSlot};
+use crate::config::engine::ConfigSlot;
 pub(crate) use crate::controllers::spawn;
 
 pub mod clean_view;
@@ -80,7 +80,7 @@ impl DirectorConfig {
 /// The per-frame reconciliation pass. Main thread, once per real frame, before the debug UI runs
 /// so a hotkey and a panel click in the same frame are applied in one place.
 pub fn update() {
-    let cfg = CONFIG.lock().director.clone();
+    let cfg = DIRECTOR_CONFIG.lock().clone();
     clean_view::update(&cfg.clean_view);
     time::apply(&cfg);
     safety::apply(&cfg);

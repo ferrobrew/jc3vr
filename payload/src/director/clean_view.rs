@@ -19,7 +19,12 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use serde::{Deserialize, Serialize};
 
-use crate::config::{self, Config};
+use crate::config::engine::ConfigSlot;
+
+/// The clean view's settings, at `director.clean_view` in the configuration (never in the file).
+/// The payload binds the slot to its field in the directing settings at startup.
+pub(crate) static CLEAN_VIEW_CONFIG: ConfigSlot<CleanViewConfig> =
+    ConfigSlot::new("director.clean_view");
 
 /// The clean view's settings: the switch and its scope. Neither is saved: the switch is on at every
 /// launch, which keeps the flat debug overlay off the desktop window until F4 shows it, so a session
@@ -72,8 +77,7 @@ pub fn hides_everything() -> bool {
 
 /// Flip the clean view at its current scope, returning whether it is now on. Bound to F4.
 pub fn toggle() -> bool {
-    let mut cfg = config::edit();
-    let clean_view = settings(&mut cfg);
+    let mut clean_view = CLEAN_VIEW_CONFIG.edit();
     clean_view.on = !clean_view.on;
     publish(*clean_view);
     clean_view.on
@@ -81,8 +85,7 @@ pub fn toggle() -> bool {
 
 /// Switch the clean view on at its current scope: the debug UI's Hide.
 pub(crate) fn hide() {
-    let mut cfg = config::edit();
-    let clean_view = settings(&mut cfg);
+    let mut clean_view = CLEAN_VIEW_CONFIG.edit();
     clean_view.on = true;
     publish(*clean_view);
 }
@@ -92,11 +95,6 @@ pub(crate) fn hide() {
 /// overlays went away.
 pub(super) fn update(cfg: &CleanViewConfig) {
     publish(*cfg);
-}
-
-/// The clean view's part of the settings.
-fn settings(cfg: &mut Config) -> &mut CleanViewConfig {
-    &mut cfg.director.clean_view
 }
 
 /// Whether the clean view is on. Mirrored from [`CleanViewConfig::on`]; an atomic so the

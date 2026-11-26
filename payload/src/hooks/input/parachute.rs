@@ -44,7 +44,10 @@ use jc3gi::{
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::{config::Config, grapple::hook, hooks::input::locomotion::head_decoupled};
+use crate::{
+    controllers::config::CONTROLLERS_CONFIG, grapple::hook,
+    hooks::input::locomotion::head_decoupled,
+};
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&GET_PARACHUTE_STEERING_VALUES_BINDER)
@@ -92,7 +95,7 @@ fn get_parachute_steering_values(
     );
     if should_suppress(character) {
         remove_look_steer(para_settings, steering_values_out, look_steer_out);
-        let canopy = Config::lock_query(|c| c.controllers.vehicles.canopy);
+        let canopy = CONTROLLERS_CONFIG.lock().vehicles.canopy;
         if canopy.line_turn {
             // SAFETY: the game passes live pointers for the duration of the call.
             unsafe {

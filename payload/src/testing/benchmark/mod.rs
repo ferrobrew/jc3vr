@@ -39,15 +39,20 @@ pub(crate) use crate::testing::benchmark::request::{
     BenchmarkError, BenchmarkRequest, BenchmarkTable,
 };
 use crate::{
-    config::{CONFIG, Config},
+    config::engine::{Parts, Snapshot, lock_parts},
+    far_field::FAR_FIELD_CONFIG,
     frame_timing::{self, Slot},
-    fsr::{AntiAliasing, FsrConfig},
+    fsr::{AntiAliasing, FSR_CONFIG, FsrConfig},
     hooks::{
         draw_count,
         graphics_engine::{post::post_effects::vr_forces_blurs_off, shader},
     },
     screenshot::harness::draw_census,
-    stereo::{config::set_single_pass_feature, single_pass, switches::ShaderBuild},
+    stereo::{
+        config::{STEREO_CONFIG, set_single_pass_feature},
+        single_pass,
+        switches::ShaderBuild,
+    },
     testing::{
         benchmark::{
             gpu_passes::GpuPassTotal,
@@ -58,7 +63,7 @@ use crate::{
         visual::{OrientationOffset, TranslationOffset, overrides::SinglePassOverrides},
     },
     vr::{
-        FoveationConfig, FreezeMode,
+        FOVEATION_CONFIG, FoveationConfig, FreezeMode, VR_CONFIG,
         pose_control::{self, PoseValues},
     },
 };
@@ -187,7 +192,7 @@ struct State {
     pending: Option<BenchmarkRequest>,
     run: Option<Run>,
     /// The configuration before the first run since the last restoration.
-    saved: Option<Config>,
+    saved: Option<Snapshot>,
 }
 
 static STATE: Mutex<State> = Mutex::new(State {
@@ -267,44 +272,49 @@ fn start(state: &mut State, request: BenchmarkRequest, now: Instant) -> Result<R
         );
     }
     {
-        let mut config = CONFIG.lock();
-        let base = state.saved.get_or_insert_with(|| config.clone()).clone();
+        let mut config = lock_parts();
+        let base = state
+            .saved
+            .get_or_insert_with(|| Snapshot::of(&config))
+            .clone();
         let mut next = base;
         // FSR and the foveation as a player runs them, whatever the session configured.
-        next.fsr = FsrConfig::new();
-        next.foveation = FoveationConfig::new();
+        *next.part_mut(&FSR_CONFIG) = FsrConfig::new();
+        *next.part_mut(&FOVEATION_CONFIG) = FoveationConfig::new();
         set_single_pass_feature(&mut next, single_pass_on);
-        request.switches.apply(&mut next.stereo.single_pass);
+        request
+            .switches
+            .apply(&mut next.part_mut(&STEREO_CONFIG).single_pass);
         if let Some(scale) = request.resolution_scale {
-            next.vr.resolution_scale = scale;
+            next.part_mut(&VR_CONFIG).resolution_scale = scale;
         }
         if let Some(overlap) = request.overlap_render_update {
-            next.vr.overlap_render_update = overlap;
+            next.part_mut(&VR_CONFIG).overlap_render_update = overlap;
         }
         if let Some(large_cache_cores) = request.large_cache_cores {
-            next.vr.large_cache_cores = large_cache_cores;
+            next.part_mut(&VR_CONFIG).large_cache_cores = large_cache_cores;
         }
         if let Some(fsr) = request.fsr {
-            next.fsr.antialiasing = if fsr {
+            next.part_mut(&FSR_CONFIG).antialiasing = if fsr {
                 AntiAliasing::Fsr
             } else {
                 AntiAliasing::Engine
             };
         }
         if request.taa == Some(true) {
-            next.fsr.antialiasing = AntiAliasing::Taa;
+            next.part_mut(&FSR_CONFIG).antialiasing = AntiAliasing::Taa;
         }
         if let Some(hybrid) = request.fsr_hybrid_velocity {
-            next.fsr.hybrid_velocity = hybrid;
+            next.part_mut(&FSR_CONFIG).hybrid_velocity = hybrid;
         }
         if let Some(jitter) = request.fsr_jitter {
-            next.fsr.jitter = jitter;
+            next.part_mut(&FSR_CONFIG).jitter = jitter;
         }
         if let Some(foveation) = request.foveation {
-            next.foveation.enabled = foveation;
+            next.part_mut(&FOVEATION_CONFIG).enabled = foveation;
         }
-        next.vr.freeze_mode = FreezeMode::FullCamera;
-        *config = next;
+        next.part_mut(&VR_CONFIG).freeze_mode = FreezeMode::FullCamera;
+        config.restore(&next);
     }
     if request.recapture_camera {
         pose_control::clear();
@@ -521,7 +531,7 @@ fn restore_config(state: &mut State) {
     let Some(saved) = state.saved.take() else {
         return;
     };
-    *CONFIG.lock() = saved;
+    saved.restore();
     pose_control::clear();
     if shader::built_with() != Some(ShaderBuild::current()) {
         shader::request_reload();
@@ -577,17 +587,16 @@ struct Environment {
 impl Environment {
     fn current() -> Self {
         let resolution = crate::vr::resolution_status();
-        let (resolution_scale, native_resolution, fsr, foveation, far_field, overlap) =
-            Config::lock_query(|c| {
-                (
-                    c.vr.resolution_scale,
-                    c.vr.native_resolution,
-                    c.fsr,
-                    c.foveation.enabled,
-                    c.far_field.enabled,
-                    c.vr.overlap_render_update,
-                )
-            });
+        let (resolution_scale, native_resolution, overlap) = VR_CONFIG.query(|vr| {
+            (
+                vr.resolution_scale,
+                vr.native_resolution,
+                vr.overlap_render_update,
+            )
+        });
+        let fsr = *FSR_CONFIG.lock();
+        let foveation = FOVEATION_CONFIG.lock().enabled;
+        let far_field = FAR_FIELD_CONFIG.lock().enabled;
         Self {
             build: if cfg!(debug_assertions) {
                 "debug"

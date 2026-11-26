@@ -33,7 +33,7 @@ use jc3gi::{
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{
-    config::Config,
+    controllers::config::CONTROLLERS_CONFIG,
     hash::hashlittle,
     hooks::{animation::body_rule_system, input::locomotion::head_decoupled},
 };
@@ -94,7 +94,7 @@ unsafe fn skip_reel_opening(machine: *mut StateMachineInstance, new_state: *mut 
     else {
         return;
     };
-    if !Config::lock_query(|c| c.controllers.vehicles.canopy.skip_reel_opening) {
+    if !CONTROLLERS_CONFIG.query(|c| c.vehicles.canopy.skip_reel_opening) {
         return;
     }
     let Some(character) = (unsafe { Character::GetLocalPlayerCharacter().as_ref() })

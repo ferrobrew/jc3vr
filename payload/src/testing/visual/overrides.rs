@@ -11,12 +11,16 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize, Serializer, ser::SerializeMap as _};
 
 use crate::{
-    config::Config,
-    fsr::{AntiAliasing, FsrConfig},
-    hooks::graphics_engine::config::ExposureConfig,
-    stereo::{config::SinglePassConfig, dispatch::RenderMode, switches::SinglePassSwitch},
+    config::engine::Parts,
+    fsr::{AntiAliasing, FSR_CONFIG, FsrConfig},
+    hooks::graphics_engine::config::{EXPOSURE_CONFIG, ExposureConfig, POST_FX_CONFIG},
+    stereo::{
+        config::{STEREO_CONFIG, SinglePassConfig},
+        dispatch::RenderMode,
+        switches::SinglePassSwitch,
+    },
     testing::visual::headset::HeadsetRig,
-    vr::FoveationConfig,
+    vr::{FOVEATION_CONFIG, FoveationConfig, VR_CONFIG},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
@@ -384,79 +388,80 @@ impl VisualOverrides {
     }
 
     /// Apply the overrides on top of a freshly applied capture profile.
-    pub(crate) fn apply(&self, config: &mut Config) {
+    pub(crate) fn apply(&self, config: &mut impl Parts) {
         if let Some(SunShadowsOverride::Disabled) = self.sun_shadows {
-            config.stereo.disable_sun_shadows = true;
+            config.part_mut(&STEREO_CONFIG).disable_sun_shadows = true;
         }
         match self.screen_space_reflections {
-            Some(ReflectionOverride::Enabled) => config.stereo.skip_ssr = false,
-            Some(ReflectionOverride::Disabled) => config.stereo.skip_ssr = true,
+            Some(ReflectionOverride::Enabled) => config.part_mut(&STEREO_CONFIG).skip_ssr = false,
+            Some(ReflectionOverride::Disabled) => config.part_mut(&STEREO_CONFIG).skip_ssr = true,
             None => {}
         }
         if let Some(AmbientOcclusionOverride::Disabled) = self.ssao {
-            config.stereo.disable_ssao = true;
+            config.part_mut(&STEREO_CONFIG).disable_ssao = true;
         }
         if let Some(AmbientOcclusionOverride::Disabled) = self.ao_volumes {
-            config.stereo.skip_ao_volumes = true;
+            config.part_mut(&STEREO_CONFIG).skip_ao_volumes = true;
         }
         if let Some(AmbientOcclusionOverride::Disabled) = self.global_illumination {
-            config.stereo.skip_gi = true;
+            config.part_mut(&STEREO_CONFIG).skip_gi = true;
         }
         if let Some(ShippedOverride::Enabled) = self.fsr {
-            config.fsr = FsrConfig::new();
+            *config.part_mut(&FSR_CONFIG) = FsrConfig::new();
         }
         if let Some(ShippedOverride::Enabled) = self.taa {
-            config.fsr = FsrConfig::new();
-            config.fsr.antialiasing = AntiAliasing::Taa;
+            *config.part_mut(&FSR_CONFIG) = FsrConfig::new();
+            config.part_mut(&FSR_CONFIG).antialiasing = AntiAliasing::Taa;
         }
         if let Some(ShippedOverride::Enabled) = self.foveation {
-            config.foveation = FoveationConfig::new();
+            *config.part_mut(&FOVEATION_CONFIG) = FoveationConfig::new();
         }
         if let Some(ShippedOverride::Enabled) = self.auto_exposure {
-            config.exposure = ExposureConfig::new();
-            config.post_fx.skip_histogram = false;
+            *config.part_mut(&EXPOSURE_CONFIG) = ExposureConfig::new();
+            config.part_mut(&POST_FX_CONFIG).skip_histogram = false;
         }
         if let Some(ShippedOverride::Enabled) = self.screen_fade {
-            config.post_fx.skip_fade = false;
+            config.part_mut(&POST_FX_CONFIG).skip_fade = false;
         }
         if let Some(ShippedOverride::Enabled) = self.player_damage {
-            config.post_fx.skip_player_damage = false;
+            config.part_mut(&POST_FX_CONFIG).skip_player_damage = false;
         }
         if let Some(CorrectionOverride::Disabled) = self.fsr_mv_correction {
-            config.fsr.stereo_mv_correction = false;
+            config.part_mut(&FSR_CONFIG).stereo_mv_correction = false;
         }
         if let Some(CorrectionOverride::Disabled) = self.fsr_hybrid_velocity {
-            config.fsr.hybrid_velocity = false;
+            config.part_mut(&FSR_CONFIG).hybrid_velocity = false;
         }
         if let Some(CorrectionOverride::Disabled) = self.fsr_jitter {
-            config.fsr.jitter = false;
+            config.part_mut(&FSR_CONFIG).jitter = false;
         }
         if let Some(CorrectionOverride::Disabled) = self.anti_aliasing {
-            config.post_fx.skip_anti_aliasing = true;
+            config.part_mut(&POST_FX_CONFIG).skip_anti_aliasing = true;
         }
         if let Some(sharpness) = self.fsr_sharpness {
-            config.fsr.sharpen = true;
-            config.fsr.sharpness = sharpness.sharpness();
+            config.part_mut(&FSR_CONFIG).sharpen = true;
+            config.part_mut(&FSR_CONFIG).sharpness = sharpness.sharpness();
         }
         if let Some(CorrectionOverride::Disabled) = self.fsr_sharpen {
-            config.fsr.sharpen = false;
+            config.part_mut(&FSR_CONFIG).sharpen = false;
         }
         if let Some(weight) = self.taa_history_weight {
-            config.fsr.taa.history_weight = weight.value();
+            config.part_mut(&FSR_CONFIG).taa.history_weight = weight.value();
         }
         if let Some(gamma) = self.taa_clip_gamma_rest {
-            config.fsr.taa.clip_gamma_rest = gamma.value();
+            config.part_mut(&FSR_CONFIG).taa.clip_gamma_rest = gamma.value();
         }
         if let Some(weight) = self.taa_motion_history_weight {
-            config.fsr.taa.motion_history_weight = weight.value();
+            config.part_mut(&FSR_CONFIG).taa.motion_history_weight = weight.value();
         }
         if let Some(sharpness) = self.taa_current_sharpness {
-            config.fsr.taa.current_sharpness = sharpness.value() * 10.0;
+            config.part_mut(&FSR_CONFIG).taa.current_sharpness = sharpness.value() * 10.0;
         }
         if let Some(scale) = self.resolution_scale {
-            config.vr.resolution_scale = scale.scale();
+            config.part_mut(&VR_CONFIG).resolution_scale = scale.scale();
         }
-        self.single_pass.apply(&mut config.stereo.single_pass);
+        self.single_pass
+            .apply(&mut config.part_mut(&STEREO_CONFIG).single_pass);
     }
 
     /// The shipped-behaviour overrides by wire name.
@@ -526,6 +531,7 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use super::*;
+    use crate::config::engine::Snapshot;
 
     fn parse(text: &str) -> Result<VisualOverrides, OverrideError> {
         VisualOverrides::try_from(toml::from_str::<VisualOverridesTable>(text).unwrap())
@@ -584,9 +590,9 @@ mod tests {
     #[test]
     fn a_resolution_scale_applies_within_its_range() {
         let overrides = parse("resolution_scale = 1.414\n").unwrap();
-        let mut config = Config::new();
+        let mut config = Snapshot::defaults();
         overrides.apply(&mut config);
-        assert_eq!(config.vr.resolution_scale, 1.414);
+        assert_eq!(config.part(&VR_CONFIG).resolution_scale, 1.414);
         assert_eq!(
             serde_json::to_value(overrides).unwrap(),
             serde_json::json!({"resolution_scale": 1.414})
@@ -616,8 +622,8 @@ mod tests {
     #[test]
     fn apply_sets_only_the_named_switches() {
         let overrides = parse("[single_pass]\nssr_per_eye = false\n").unwrap();
-        let mut config = Config::new();
-        let before = config.stereo.single_pass;
+        let mut config = Snapshot::defaults();
+        let before = config.part(&STEREO_CONFIG).single_pass;
         overrides.apply(&mut config);
         for &switch in SinglePassSwitch::ALL {
             let expected = if switch == SinglePassSwitch::SsrPerEye {
@@ -625,11 +631,14 @@ mod tests {
             } else {
                 switch.get(&before)
             };
-            assert_eq!(switch.get(&config.stereo.single_pass), expected);
+            assert_eq!(
+                switch.get(&config.part(&STEREO_CONFIG).single_pass),
+                expected
+            );
         }
-        assert!(!config.stereo.disable_sun_shadows);
-        assert!(!config.stereo.disable_ssao);
-        assert!(!config.stereo.skip_ao_volumes);
+        assert!(!config.part(&STEREO_CONFIG).disable_sun_shadows);
+        assert!(!config.part(&STEREO_CONFIG).disable_ssao);
+        assert!(!config.part(&STEREO_CONFIG).skip_ao_volumes);
     }
 
     #[test]
@@ -647,28 +656,41 @@ mod tests {
         ] {
             assert_eq!(overrides.validate_for(mode), Ok(()));
         }
-        let mut config = Config::new();
-        config.fsr.antialiasing = AntiAliasing::Engine;
-        config.fsr.sharpness = 0.9;
-        config.foveation.enabled = false;
-        config.foveation.debug_show_mask = true;
-        config.exposure.force = true;
-        config.post_fx.skip_histogram = true;
-        config.post_fx.skip_fade = true;
-        config.post_fx.skip_player_damage = true;
-        config.post_fx.skip_motion_blur = true;
+        let mut config = Snapshot::defaults();
+        config.part_mut(&FSR_CONFIG).antialiasing = AntiAliasing::Engine;
+        config.part_mut(&FSR_CONFIG).sharpness = 0.9;
+        config.part_mut(&FOVEATION_CONFIG).enabled = false;
+        config.part_mut(&FOVEATION_CONFIG).debug_show_mask = true;
+        config.part_mut(&EXPOSURE_CONFIG).force = true;
+        config.part_mut(&POST_FX_CONFIG).skip_histogram = true;
+        config.part_mut(&POST_FX_CONFIG).skip_fade = true;
+        config.part_mut(&POST_FX_CONFIG).skip_player_damage = true;
+        config.part_mut(&POST_FX_CONFIG).skip_motion_blur = true;
         overrides.apply(&mut config);
         assert!(
-            config.fsr.antialiasing == AntiAliasing::Fsr
-                && config.fsr.sharpen == FsrConfig::new().sharpen
+            config.part(&FSR_CONFIG).antialiasing == AntiAliasing::Fsr
+                && config.part(&FSR_CONFIG).sharpen == FsrConfig::new().sharpen
         );
-        assert_eq!(config.fsr.sharpness, FsrConfig::new().sharpness);
-        assert!(config.foveation.enabled && !config.foveation.debug_show_mask);
-        assert!(!config.exposure.force && config.exposure.gate && config.exposure.gate_update);
-        assert!(!config.post_fx.skip_histogram);
-        assert!(!config.post_fx.skip_fade && !config.post_fx.skip_player_damage);
+        assert_eq!(
+            config.part(&FSR_CONFIG).sharpness,
+            FsrConfig::new().sharpness
+        );
         assert!(
-            config.post_fx.skip_motion_blur,
+            config.part(&FOVEATION_CONFIG).enabled
+                && !config.part(&FOVEATION_CONFIG).debug_show_mask
+        );
+        assert!(
+            !config.part(&EXPOSURE_CONFIG).force
+                && config.part(&EXPOSURE_CONFIG).gate
+                && config.part(&EXPOSURE_CONFIG).gate_update
+        );
+        assert!(!config.part(&POST_FX_CONFIG).skip_histogram);
+        assert!(
+            !config.part(&POST_FX_CONFIG).skip_fade
+                && !config.part(&POST_FX_CONFIG).skip_player_damage
+        );
+        assert!(
+            config.part(&POST_FX_CONFIG).skip_motion_blur,
             "an override left out keeps the profile's value"
         );
         assert_eq!(
@@ -689,9 +711,9 @@ mod tests {
     fn the_fsr_correction_can_be_left_out_in_any_mode() {
         let overrides = parse("fsr_mv_correction = 'disabled'\n").unwrap();
         assert_eq!(overrides.validate_for(RenderMode::LeftOnly), Ok(()));
-        let mut config = Config::new();
+        let mut config = Snapshot::defaults();
         overrides.apply(&mut config);
-        assert!(!config.fsr.stereo_mv_correction);
+        assert!(!config.part(&FSR_CONFIG).stereo_mv_correction);
         assert_eq!(
             serde_json::to_value(overrides).unwrap(),
             serde_json::json!({"fsr_mv_correction": "disabled"})
@@ -706,15 +728,15 @@ mod tests {
              anti_aliasing = 'disabled'\n",
         )
         .unwrap();
-        let mut config = Config::new();
+        let mut config = Snapshot::defaults();
         overrides.apply(&mut config);
         assert!(
-            config.fsr.antialiasing == AntiAliasing::Fsr
-                && !config.fsr.jitter
-                && config.fsr.sharpen
+            config.part(&FSR_CONFIG).antialiasing == AntiAliasing::Fsr
+                && !config.part(&FSR_CONFIG).jitter
+                && config.part(&FSR_CONFIG).sharpen
         );
-        assert!((config.fsr.sharpness - 0.45).abs() < 1e-6);
-        assert!(config.post_fx.skip_anti_aliasing);
+        assert!((config.part(&FSR_CONFIG).sharpness - 0.45).abs() < 1e-6);
+        assert!(config.part(&POST_FX_CONFIG).skip_anti_aliasing);
         assert_eq!(
             serde_json::to_value(overrides).unwrap(),
             serde_json::json!({
@@ -724,11 +746,11 @@ mod tests {
                 "anti_aliasing": "disabled",
             })
         );
-        let mut config = Config::new();
+        let mut config = Snapshot::defaults();
         parse("fsr_sharpen = 'disabled'\n")
             .unwrap()
             .apply(&mut config);
-        assert!(!config.fsr.sharpen);
+        assert!(!config.part(&FSR_CONFIG).sharpen);
         assert!(toml::from_str::<VisualOverridesTable>("fsr_sharpness = 1.5\n").is_err());
     }
 
@@ -744,10 +766,10 @@ mod tests {
         ] {
             assert_eq!(overrides.validate_for(mode), Ok(()));
         }
-        let mut config = Config::new();
-        let before = serde_json::to_value(&config).unwrap();
+        let mut config = Snapshot::defaults();
+        let before = config.to_toml().unwrap();
         overrides.apply(&mut config);
-        assert_eq!(serde_json::to_value(&config).unwrap(), before);
+        assert_eq!(config.to_toml().unwrap(), before);
         assert_eq!(
             serde_json::to_value(overrides).unwrap(),
             serde_json::json!({"headset": "index"})
@@ -776,10 +798,10 @@ ao_volumes = 'disabled'
         )
         .unwrap();
         assert_eq!(overrides.validate_for(RenderMode::LeftOnly), Ok(()));
-        let mut config = Config::new();
+        let mut config = Snapshot::defaults();
         overrides.apply(&mut config);
-        assert!(config.stereo.disable_ssao);
-        assert!(config.stereo.skip_ao_volumes);
+        assert!(config.part(&STEREO_CONFIG).disable_ssao);
+        assert!(config.part(&STEREO_CONFIG).skip_ao_volumes);
         assert_eq!(
             serde_json::to_value(
                 parse(

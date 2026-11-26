@@ -52,12 +52,12 @@ use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{
-    config::Config,
     controllers::{
         locomotion::strokes::{self, model::propel},
         mode::CharacterSnapshot,
     },
     headpose::body_yaw_target,
+    hooks::input::config::MOVEMENT_CONFIG,
 };
 
 mod telemetry;
@@ -287,7 +287,8 @@ fn do_rotate(from: *const Vector3, to: *const Vector3, rate: f32, out: *mut Vect
         }
         SwimCore::Underwater => pitched(target, advance_swim_pitch(window.dt).sin()),
     };
-    let rate = (Config::lock_query(|c| c.movement.swim_turn_rate_deg_s)
+    let rate = (MOVEMENT_CONFIG
+        .query(|c| c.swim_turn_rate_deg_s)
         .max(0.0)
         .to_radians()
         * window.dt)
@@ -362,7 +363,7 @@ fn process_motion(
 /// heading (the VR accumulator is seeded, or the flatscreen latch is following). `None` leaves every
 /// detour inert and the native swim behaviour standing.
 fn engaged_target() -> Option<Vec3> {
-    if !(swimming() && Config::lock_query(|c| c.movement.smooth_swim_yaw)) {
+    if !(swimming() && MOVEMENT_CONFIG.query(|c| c.smooth_swim_yaw)) {
         return None;
     }
     body_yaw_target()
@@ -400,7 +401,7 @@ fn with_swim_window(character: *mut Character, core: SwimCore, dt: f32, call: im
         return;
     }
     SWIM_EVAL_CALLS.fetch_add(1, Ordering::Relaxed);
-    if Config::lock_query(|c| c.movement.smooth_swim_yaw) && body_yaw_target().is_none() {
+    if MOVEMENT_CONFIG.query(|c| c.smooth_swim_yaw) && body_yaw_target().is_none() {
         SWIM_UNTARGETED.fetch_add(1, Ordering::Relaxed);
     }
     SWIM_WINDOW.with(|w| w.set(Some(SwimWindow { core, dt })));

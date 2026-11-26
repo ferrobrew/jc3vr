@@ -24,9 +24,8 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 };
 
 use crate::{
-    config::{self, Config},
     controllers::spawn,
-    director::{heat, markers, teleport, teleport::TeleportMode, time},
+    director::{DIRECTOR_CONFIG, heat, markers, teleport, teleport::TeleportMode, time},
 };
 
 /// Everything a key can trigger.
@@ -161,15 +160,14 @@ impl Keymap {
 
 /// The active map, for the debug tab.
 pub fn current() -> Keymap {
-    Config::lock_query(|c| c.director.keymap.clone())
+    DIRECTOR_CONFIG.query(|c| c.keymap.clone())
 }
 
 /// The chord that fires `action` in the active map, rendered as the debug tab shows it, or `None`
 /// when nothing binds it.
 pub fn chord_label(action: Action) -> Option<String> {
-    Config::lock_query(|c| {
-        c.director
-            .keymap
+    DIRECTOR_CONFIG.query(|c| {
+        c.keymap
             .effective()
             .find(|binding| binding.action == action)
             .map(|binding| binding.chord.describe())
@@ -178,14 +176,14 @@ pub fn chord_label(action: Action) -> Option<String> {
 
 /// Replace the map with the defaults.
 pub fn reset_to_defaults() {
-    config::edit().director.keymap = Keymap::new();
+    DIRECTOR_CONFIG.edit().keymap = Keymap::new();
 }
 
 /// Handle a key-down from the window procedure. `first_press` is false on auto-repeat. Returns
 /// whether a binding consumed the key. Runs on the window thread, which is the game's main thread.
 pub fn on_key_down(key: u16, first_press: bool) -> bool {
     let (ctrl, shift, alt) = modifiers();
-    let action = Config::lock_query(|c| c.director.keymap.resolve(key, ctrl, shift, alt));
+    let action = DIRECTOR_CONFIG.lock().keymap.resolve(key, ctrl, shift, alt);
     let Some(action) = action else {
         return false;
     };
@@ -199,13 +197,13 @@ pub fn on_key_down(key: u16, first_press: bool) -> bool {
 pub fn run(action: Action) {
     tracing::info!("director: {}", action.label());
     match action {
-        Action::ToggleSlowMotion => time::toggle_slow_motion(&mut config::edit().director),
+        Action::ToggleSlowMotion => time::toggle_slow_motion(&mut DIRECTOR_CONFIG.edit()),
         Action::TogglePause => {
-            let mut cfg = config::edit();
-            cfg.director.paused = !cfg.director.paused;
+            let mut director = DIRECTOR_CONFIG.edit();
+            director.paused = !director.paused;
         }
-        Action::TimeScaleUp => time::step_time_scale(&mut config::edit().director, 2.0),
-        Action::TimeScaleDown => time::step_time_scale(&mut config::edit().director, 0.5),
+        Action::TimeScaleUp => time::step_time_scale(&mut DIRECTOR_CONFIG.edit(), 2.0),
+        Action::TimeScaleDown => time::step_time_scale(&mut DIRECTOR_CONFIG.edit(), 0.5),
         Action::TakeMarker => markers::mark(""),
         Action::SaveBookmark => {
             teleport::save_current("");
@@ -214,12 +212,12 @@ pub fn run(action: Action) {
         Action::TeleportBookmark2 => teleport::request_bookmark(1, TeleportMode::Auto),
         Action::TeleportBookmark3 => teleport::request_bookmark(2, TeleportMode::Auto),
         Action::ToggleGodMode => {
-            let mut cfg = config::edit();
-            cfg.director.god_mode = !cfg.director.god_mode;
+            let mut director = DIRECTOR_CONFIG.edit();
+            director.god_mode = !director.god_mode;
         }
         Action::ToggleHeatLock => {
-            let mut cfg = config::edit();
-            cfg.director.heat_lock = !cfg.director.heat_lock;
+            let mut director = DIRECTOR_CONFIG.edit();
+            director.heat_lock = !director.heat_lock;
         }
         Action::ClearHeat => heat::clear(),
         Action::Spawn => spawn::request(),

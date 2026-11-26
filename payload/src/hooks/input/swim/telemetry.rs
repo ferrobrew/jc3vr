@@ -19,12 +19,14 @@ use glam::Vec3;
 use parking_lot::Mutex;
 
 use crate::{
-    config::Config,
     controllers::{body::procedural, diagnostics::report, hands::tiers, locomotion::strokes},
     headpose::{self, sim::body_yaw_of},
-    hooks::input::swim::{
-        SWIM_DIRECTION_OVERRIDES, SWIM_EVAL_CALLS, SWIM_MOVE_REFUSALS, SWIM_ROTATE_OVERRIDES,
-        SWIM_TURN_SUPPRESSIONS, SWIM_UNTARGETED, SwimCore, SwimSignals,
+    hooks::input::{
+        config::MOVEMENT_CONFIG,
+        swim::{
+            SWIM_DIRECTION_OVERRIDES, SWIM_EVAL_CALLS, SWIM_MOVE_REFUSALS, SWIM_ROTATE_OVERRIDES,
+            SWIM_TURN_SUPPRESSIONS, SWIM_UNTARGETED, SwimCore, SwimSignals,
+        },
     },
 };
 
@@ -138,7 +140,7 @@ fn log_gate(signals: SwimSignals) {
     }
     *last = signals;
     drop(last);
-    let override_on = Config::lock_query(|c| c.movement.smooth_swim_yaw);
+    let override_on = MOVEMENT_CONFIG.lock().smooth_swim_yaw;
     let heading = headpose::body_yaw_target().is_some();
     let what = if signals.any() {
         "the swim gate opened"

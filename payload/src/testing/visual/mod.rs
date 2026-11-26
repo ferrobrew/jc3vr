@@ -13,6 +13,14 @@ use jc3gi::{
 use parking_lot::Mutex;
 use serde::Serialize;
 
+use crate::{
+    far_field::FAR_FIELD_CONFIG,
+    fsr::FSR_CONFIG,
+    hooks::graphics_engine::config::{EXPOSURE_CONFIG, POST_FX_CONFIG},
+    stereo::config::STEREO_CONFIG,
+    vr::{FOVEATION_CONFIG, VR_CONFIG},
+};
+
 pub(crate) mod environment;
 pub(crate) mod headset;
 pub(crate) mod motion;
@@ -35,7 +43,8 @@ pub(crate) use pose::{
 
 pub(crate) use crate::stereo::dispatch::RenderMode;
 use crate::{
-    config::{CONFIG, Config},
+    config::engine::{ConfigSlot, Parts, Snapshot, lock_parts},
+    director::clean_view::{CLEAN_VIEW_CONFIG, CleanViewScope},
     fsr::AntiAliasing,
     hooks::graphics_engine::{shader, tone_mapping},
     stereo::{
@@ -48,6 +57,10 @@ use crate::{
         pose_control::{self, PoseValues},
     },
 };
+
+/// Whether the game is paused, `director.paused` in the settings file, which a capture pins. The
+/// payload binds the slot to its field in the directing settings at startup.
+pub(crate) static PAUSED: ConfigSlot<bool> = ConfigSlot::new("director.paused");
 pub(crate) type Mode = RenderMode;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -296,7 +309,7 @@ pub(crate) fn process_pending() {
                 return;
             }
             if state.saved.is_none() {
-                state.saved = Some(CONFIG.lock().clone());
+                state.saved = Some(Snapshot::take());
                 pose_control::clear();
             }
             let reset_pose =
@@ -339,13 +352,14 @@ pub(crate) fn process_pending() {
                 false
             };
             let first = state.mode.is_none();
-            let previous_sps = Config::lock_query(|config| config.stereo.single_pass.enabled);
+            let previous_sps = STEREO_CONFIG.lock().single_pass.enabled;
             {
-                let mut config = CONFIG.lock();
+                let mut config = lock_parts();
                 // The profile keeps the session's resolution scale, which an earlier
                 // configuration's override may have replaced.
                 if let Some(saved) = state.saved.as_ref() {
-                    config.vr.resolution_scale = saved.vr.resolution_scale;
+                    config.part_mut(&VR_CONFIG).resolution_scale =
+                        saved.part(&VR_CONFIG).resolution_scale;
                 }
                 apply_profile_with_overrides(&mut config, mode, visual_overrides);
             }
@@ -412,7 +426,7 @@ pub(crate) fn process_pending() {
             CLOCK_HELD.store(false, Ordering::Release);
             dispatch::set_mode(RenderMode::Native);
             if let Some(saved) = state.saved.as_ref() {
-                *CONFIG.lock() = saved.clone();
+                saved.restore();
                 single_pass::refresh_config_flags();
                 if let Err(error) = shader::reload_now() {
                     state.fail(error.to_string());
@@ -431,15 +445,15 @@ pub(crate) fn frame_complete() {
     if state.mode.is_none() {
         if matches!(state.operation, Operation::Restoring(_)) {
             let resolution = crate::vr::resolution_progress();
-            let config = CONFIG.lock();
+            let config = lock_parts();
             let paused = unsafe { Clock::get().map(|clock| clock.m_Stop) };
             let shadow_ready = !state.shadow_sync_required
-                || shadow_override_ready(config.stereo.disable_sun_shadows);
+                || shadow_override_ready(config.part(&STEREO_CONFIG).disable_sun_shadows);
             if let Some(active) = state.complete_restore(
                 resolution,
                 paused,
-                config.director.paused,
-                config.vr.freeze_mode != FreezeMode::Off,
+                *config.part(&PAUSED),
+                config.part(&VR_CONFIG).freeze_mode != FreezeMode::Off,
                 shadow_ready,
             ) {
                 let metadata = state.metadata();
@@ -469,7 +483,7 @@ pub(crate) fn frame_complete() {
             target_dimensions: resolution.target.unwrap_or_default(),
             single_pass: single_pass::active() && single_pass::double_wide_active(),
             camera_frozen: live.is_some()
-                && Config::lock_query(|config| config.vr.freeze_mode == FreezeMode::FullCamera),
+                && VR_CONFIG.query(|config| config.freeze_mode == FreezeMode::FullCamera),
             horizon_map_ready: horizon_map_ready(),
             shadow_override_ready: !state.shadow_sync_required
                 || shadow_override_ready(sun_shadows_overridden(state.visual_overrides.as_ref())),
@@ -500,7 +514,7 @@ pub(crate) fn frame_complete() {
             target_dimensions: resolution.target.unwrap_or_default(),
             single_pass: single_pass::active() && single_pass::double_wide_active(),
             camera_frozen: live.is_some()
-                && Config::lock_query(|config| config.vr.freeze_mode == FreezeMode::FullCamera),
+                && VR_CONFIG.query(|config| config.freeze_mode == FreezeMode::FullCamera),
             horizon_map_ready: horizon_map_ready(),
             shadow_override_ready: !state.shadow_sync_required
                 || shadow_override_ready(sun_shadows_overridden(state.visual_overrides.as_ref())),
@@ -552,7 +566,7 @@ pub(crate) fn shutdown() {
         tracing::warn!("{error}");
     }
     if let Some(saved) = state.saved.take() {
-        *CONFIG.lock() = saved;
+        saved.restore();
         pose_control::clear();
     }
     state.mode = None;
@@ -571,7 +585,7 @@ static STATE: Mutex<State> = Mutex::new(State::new());
 
 struct State {
     pending: VecDeque<Request>,
-    saved: Option<Config>,
+    saved: Option<Snapshot>,
     operation: Operation,
     mode: Option<Mode>,
     visual_overrides: Option<VisualOverrides>,
@@ -1156,7 +1170,7 @@ fn sun_shadows_overridden(overrides: Option<&VisualOverrides>) -> bool {
 }
 
 fn apply_profile_with_overrides(
-    config: &mut Config,
+    config: &mut impl Parts,
     mode: Mode,
     overrides: Option<VisualOverrides>,
 ) {
@@ -1171,42 +1185,47 @@ fn apply_profile_with_overrides(
 /// shaders a player sees. Bloom, the sun halo, ambient occlusion, screen-space reflections, and
 /// global illumination all run; a profile that skipped the bloom also left the composite reading
 /// bloom textures nothing refreshed, whose contents depended on the previous capture set.
-fn apply_profile(config: &mut Config, mode: Mode) {
-    config.director.paused = true;
-    config.director.clean_view.on = true;
-    config.director.clean_view.scope = crate::director::clean_view::CleanViewScope::Everything;
-    config.vr.freeze_mode = FreezeMode::FullCamera;
-    config.vr.native_resolution = true;
-    config.fsr.antialiasing = AntiAliasing::Engine;
-    config.foveation.enabled = false;
-    config.exposure.force = true;
-    config.exposure.forced_value = 0.11;
-    config.post_fx.skip_motion_blur = true;
-    config.post_fx.skip_motion_blur_recon = true;
-    config.post_fx.skip_dof = false;
-    config.post_fx.dof_no_reproject = true;
-    config.post_fx.skip_fade = true;
-    config.post_fx.skip_glare = false;
-    config.post_fx.skip_player_damage = true;
-    config.post_fx.skip_sun_halo = false;
-    config.post_fx.skip_histogram = true;
-    config.post_fx.skip_anti_aliasing = false;
-    config.stereo.enabled = true;
-    config.stereo.cameras = true;
-    config.stereo.disable_ssao = false;
-    config.stereo.skip_ssr = false;
-    config.stereo.skip_gi = false;
-    config.stereo.skip_ao_volumes = false;
-    config.stereo.symmetrize_eye_frusta = false;
-    config.stereo.mirror_eye0_to_both = false;
-    config.stereo.skip_pass_range_enabled = false;
-    config.stereo.freeze_shadow_maps = false;
-    config.stereo.disable_sun_shadows = false;
-    config.stereo.ssao_eye0_only = false;
-    config.far_field.enabled = false;
+fn apply_profile(config: &mut impl Parts, mode: Mode) {
+    *config.part_mut(&PAUSED) = true;
+    let clean_view = config.part_mut(&CLEAN_VIEW_CONFIG);
+    clean_view.on = true;
+    clean_view.scope = CleanViewScope::Everything;
+    let vr = config.part_mut(&VR_CONFIG);
+    vr.freeze_mode = FreezeMode::FullCamera;
+    vr.native_resolution = true;
+    config.part_mut(&FSR_CONFIG).antialiasing = AntiAliasing::Engine;
+    config.part_mut(&FOVEATION_CONFIG).enabled = false;
+    let exposure = config.part_mut(&EXPOSURE_CONFIG);
+    exposure.force = true;
+    exposure.forced_value = 0.11;
+    let post_fx = config.part_mut(&POST_FX_CONFIG);
+    post_fx.skip_motion_blur = true;
+    post_fx.skip_motion_blur_recon = true;
+    post_fx.skip_dof = false;
+    post_fx.dof_no_reproject = true;
+    post_fx.skip_fade = true;
+    post_fx.skip_glare = false;
+    post_fx.skip_player_damage = true;
+    post_fx.skip_sun_halo = false;
+    post_fx.skip_histogram = true;
+    post_fx.skip_anti_aliasing = false;
+    let stereo = config.part_mut(&STEREO_CONFIG);
+    stereo.enabled = true;
+    stereo.cameras = true;
+    stereo.disable_ssao = false;
+    stereo.skip_ssr = false;
+    stereo.skip_gi = false;
+    stereo.skip_ao_volumes = false;
+    stereo.symmetrize_eye_frusta = false;
+    stereo.mirror_eye0_to_both = false;
+    stereo.skip_pass_range_enabled = false;
+    stereo.freeze_shadow_maps = false;
+    stereo.disable_sun_shadows = false;
+    stereo.ssao_eye0_only = false;
     // Every mode states single-pass explicitly: the isolated eyes and multipass turn the group off,
     // whatever the defaults are, and single-pass turns it on over the default production switches.
-    config.stereo.single_pass = SinglePassConfig::new();
+    stereo.single_pass = SinglePassConfig::new();
+    config.part_mut(&FAR_FIELD_CONFIG).enabled = false;
     set_single_pass_feature(config, mode == Mode::SinglePass);
 }
 
