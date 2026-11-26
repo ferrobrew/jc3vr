@@ -48,7 +48,7 @@ Each source belongs to one category, which the readout counts its cues under. Ev
 
 The shot and the recoil kick are the weapons category's, and also need `game_rumble`, as they always have: the shot is the game's own fire rumble routed to the firing hand.
 
-The pause menu's `VR: CONTROLS` page has `HAPTICS` (`enabled`), `HAPTIC STRENGTH` (`intensity`), and `GAME RUMBLE` under HAPTICS. `gamepad_rumble` is in the debug UI's Feedback feature. Everything is on by default except `gamepad_rumble`. The settings live in `controllers.haptics` ([settings.md](../settings.md)); they moved there from `controllers.weapons.haptics`, so a settings file from before the move loads them as defaults once. The per-source switches that came before the categories (the holster and pouch cues, the line tension, the hand bodies' pressure and hit pulses, the palms' contact pulses, the grapple's pulses) and every per-source amplitude and duration are gone: the vocabulary's shapes replace them.
+The pause menu's `VR: CONTROLS` page has `HAPTICS` (`enabled`), `HAPTIC STRENGTH` (`intensity`), and `GAME RUMBLE` under HAPTICS. Everything is on by default. The settings live in `controllers.haptics` ([settings.md](../settings.md)); they moved there from `controllers.weapons.haptics`, so a settings file from before the move loads them as defaults once. The per-source switches that came before the categories (the holster and pouch cues, the line tension, the hand bodies' pressure and hit pulses, the palms' contact pulses, the grapple's pulses) and every per-source amplitude and duration are gone: the vocabulary's shapes replace them.
 
 ## Every source
 
@@ -139,7 +139,7 @@ Each default is rounded onto the primitive its source belongs to. The pressure a
 
 ## The game's rumble
 
-The game's rumble reaches the controllers through two detours ([controllers.md, "Recoil, haptics, and the grapple hand"](controllers.md#recoil-haptics-and-the-grapple-hand)): the weapon's own fire rumble inside a shot of a gun in a hand plays as `Event::Shot` on that hand, and the rumble manager's per-frame motor strength plays as `Sustain::GameRumble`, the low motor on the left hand and the high motor on the right. The gamepad itself is silenced unless `gamepad_rumble` is on. The forward sends every motor value, zero included, so the game's rumble stops on the controllers the frame it stops on the pad.
+The game's rumble reaches the controllers through two detours ([controllers.md, "Recoil, haptics, and the grapple hand"](controllers.md#recoil-haptics-and-the-grapple-hand)): the weapon's own fire rumble inside a shot of a gun in a hand plays as `Event::Shot` on that hand, and the rumble manager's per-frame motor strength plays as `Sustain::GameRumble`, the low motor on the left hand and the high motor on the right. The gamepad itself is silenced. The forward sends every motor value, zero included, so the game's rumble stops on the controllers the frame it stops on the pad.
 
 ## Threading
 

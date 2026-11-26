@@ -22,9 +22,6 @@ pub struct HapticsConfig {
     /// Forward the game's rumble to the controllers: a weapon's own fire rumble to the hand holding
     /// that gun, and the game's per-frame left and right motor strength to the hands by side.
     pub game_rumble: bool,
-    /// Also let the physical gamepad rumble under the controller scheme, instead of silencing it
-    /// so only the controllers vibrate.
-    pub gamepad_rumble: bool,
 }
 
 impl HapticsConfig {
@@ -33,7 +30,6 @@ impl HapticsConfig {
             enabled: true,
             intensity: 1.0,
             game_rumble: true,
-            gamepad_rumble: false,
         }
     }
 

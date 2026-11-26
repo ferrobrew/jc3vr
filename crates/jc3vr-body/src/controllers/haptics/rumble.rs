@@ -18,9 +18,8 @@
 //!   vehicle's own engine and road rumble, which never calls `SpawnRumble` at all. It sends the
 //!   low motor to the left hand and the high motor to the right hand as [`Sustain::GameRumble`],
 //!   which the mixer holds off a hand while one of the mod's one-off cues (the shot among them)
-//!   plays on it, and, unless [`HapticsConfig::gamepad_rumble`] says otherwise, replaces the value
-//!   it passes through with zero so the physical gamepad stays still while the controllers take
-//!   over.
+//!   plays on it, and replaces the value it passes through with zero so the physical gamepad
+//!   stays still while the controllers take over.
 
 use std::ffi::{CStr, c_char};
 
@@ -106,23 +105,14 @@ pub fn motor_hand(motor: i32) -> Option<Hand> {
 
 /// What the motor forward does with the rumble manager's per-frame `value` for `motor`: the hand
 /// and level to send, if any, and the value to actually pass through to the physical gamepad.
-/// `forward` is false while forwarding is off; `suppress_gamepad` silences a motor the game uses
+/// `forward` is false while forwarding is off; a motor the game uses is silenced on the gamepad
 /// whether or not it is forwarded.
-pub fn continuous_motor(
-    motor: i32,
-    value: f32,
-    forward: bool,
-    suppress_gamepad: bool,
-) -> ContinuousMotor {
+pub fn continuous_motor(motor: i32, value: f32, forward: bool) -> ContinuousMotor {
     let hand = motor_hand(motor);
     let level = hand
         .filter(|_| forward)
         .map(|hand| (hand, value.clamp(0.0, 1.0)));
-    let passthrough = if hand.is_some() && suppress_gamepad {
-        0.0
-    } else {
-        value
-    };
+    let passthrough = if hand.is_some() { 0.0 } else { value };
     ContinuousMotor { level, passthrough }
 }
 
@@ -225,7 +215,7 @@ fn route_continuous(motor: i32, value: f32) -> f32 {
     let Some(config) = acting() else {
         return value;
     };
-    let result = continuous_motor(motor, value, config.game_rumble, !config.gamepad_rumble);
+    let result = continuous_motor(motor, value, config.game_rumble);
     if let Some((hand, level)) = result.level {
         haptics::sustain(hand, Sustain::GameRumble, level);
     }
@@ -257,41 +247,34 @@ mod tests {
 
     #[test]
     fn a_forwarded_motor_sends_its_hand_and_silences_the_pad() {
-        let result = continuous_motor(0, 0.6, true, true);
+        let result = continuous_motor(0, 0.6, true);
         assert_eq!(result.level, Some((Hand::Left, 0.6)));
         assert_eq!(result.passthrough, 0.0);
     }
 
     #[test]
-    fn letting_the_gamepad_rumble_keeps_its_own_value() {
-        let result = continuous_motor(1, 0.6, true, false);
-        assert_eq!(result.level, Some((Hand::Right, 0.6)));
-        assert_eq!(result.passthrough, 0.6);
-    }
-
-    #[test]
     fn an_unforwarded_motor_still_silences_the_pad() {
-        let result = continuous_motor(0, 0.6, false, true);
+        let result = continuous_motor(0, 0.6, false);
         assert_eq!(result.level, None);
         assert_eq!(result.passthrough, 0.0);
     }
 
     #[test]
     fn a_still_motor_ends_its_hands_rumble() {
-        let result = continuous_motor(0, 0.0, true, true);
+        let result = continuous_motor(0, 0.0, true);
         assert_eq!(result.level, Some((Hand::Left, 0.0)));
     }
 
     #[test]
     fn an_unsupported_motor_is_left_untouched() {
-        let result = continuous_motor(2, 0.9, true, true);
+        let result = continuous_motor(2, 0.9, true);
         assert_eq!(result.level, None);
         assert_eq!(result.passthrough, 0.9);
     }
 
     #[test]
     fn a_motor_value_past_one_clamps_its_level() {
-        let result = continuous_motor(0, 1.5, true, false);
+        let result = continuous_motor(0, 1.5, true);
         assert_eq!(result.level, Some((Hand::Left, 1.0)));
     }
 

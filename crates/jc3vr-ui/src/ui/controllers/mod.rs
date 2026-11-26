@@ -105,8 +105,6 @@ pub(crate) fn controls(id: FeatureId) -> Option<FeatureBody> {
         }
         FeatureId::Feedback => |ui, _| {
             let mut c = CONTROLLERS_CONFIG.edit();
-            haptics::haptics_settings(ui, &mut c.haptics);
-            ui.separator();
             physical_hands::impact_sounds_settings(ui, &mut c.physical_hands);
         },
         FeatureId::Hold => {

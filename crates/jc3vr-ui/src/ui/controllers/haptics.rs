@@ -1,7 +1,7 @@
-//! The haptics: the cues of each kind, what the mixer sent each hand and the recent cues, and the gamepad rumble switch.
+//! The haptics: the cues of each kind, what the mixer sent each hand, and the recent cues.
 
 use egui::Ui;
-use jc3vr_body::controllers::haptics::{HapticsConfig, HapticsStatus};
+use jc3vr_body::controllers::haptics::HapticsStatus;
 use jc3vr_input::{frame::Hand, haptics::cues::Category};
 
 pub(super) fn haptics_readout(ui: &mut Ui, h: &HapticsStatus) {
@@ -32,9 +32,4 @@ pub(super) fn haptics_readout(ui: &mut Ui, h: &HapticsStatus) {
             cue.duration_s * 1000.0
         ));
     }
-}
-
-pub(super) fn haptics_settings(ui: &mut Ui, h: &mut HapticsConfig) {
-    ui.checkbox(&mut h.gamepad_rumble, "Also rumble the gamepad")
-        .on_hover_text("Let the physical gamepad rumble too, instead of staying silent.");
 }
