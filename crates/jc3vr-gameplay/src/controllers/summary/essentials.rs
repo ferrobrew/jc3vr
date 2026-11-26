@@ -403,7 +403,8 @@ mod tests {
         let left = &projected.cells[CellKind::Left.index()];
         let right = &projected.cells[CellKind::Right.index()];
         assert!(!left.is_empty() && !right.is_empty());
-        assert!(left.len() <= 4 && right.len() <= 4, "{projected:?}");
+        // The grapple hand also lists the yank beside its four buttons.
+        assert!(left.len() <= 5 && right.len() <= 4, "{projected:?}");
     }
 
     #[test]

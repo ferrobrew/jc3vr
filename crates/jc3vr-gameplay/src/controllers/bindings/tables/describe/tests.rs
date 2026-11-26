@@ -105,10 +105,12 @@ fn wrist_sources_remain_unfolded_without_changing_the_complete_reference() {
                 1
             );
         }
+        // The grenade's pin pull is the mod's own row on the trigger; no table action binds it.
         assert!(
             !wrist
                 .iter()
-                .any(|row| matches!(row.control, Control::Trigger(_)))
+                .any(|row| matches!(row.control, Control::Trigger(_))
+                    && matches!(row.effect, Effect::Actions(_)))
         );
     }
 }
@@ -381,10 +383,13 @@ fn the_chords_are_listed_in_every_mode() {
         assert!(rows.iter().any(|r| r.control == Control::BothStickClicks
             && r.gesture == Gesture::Hold
             && r.effect == Effect::Mod(ModAction::Recenter)));
-        assert!(
+        // The panel chord is withheld in the vehicle sets.
+        assert_eq!(
             rows.iter()
                 .any(|r| r.control == Control::LeftStickClickAndRightB
-                    && r.effect == Effect::Mod(ModAction::DebugPanel))
+                    && r.effect == Effect::Mod(ModAction::DebugPanel)),
+            !mode.action_set().is_vehicle(),
+            "{mode:?}"
         );
     }
 }

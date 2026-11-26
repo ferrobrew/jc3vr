@@ -157,10 +157,7 @@ fn retained_overlay_error_does_not_block_requested_visualizations() {
     let mut snapshot = snapshot_with(config);
     snapshot.runtime.overlay.error = Some("previous draw failure".to_owned());
 
-    assert_eq!(
-        snapshot.state(ViewId::BodyRig),
-        ViewState::DrawUnverified
-    );
+    assert_eq!(snapshot.state(ViewId::BodyRig), ViewState::DrawUnverified);
     assert_eq!(snapshot.summary().requested, 1);
     assert_eq!(snapshot.summary().blocked, 0);
     assert_eq!(snapshot.summary().draw_unverified, 1);

@@ -159,7 +159,18 @@ mod tests {
                 owned += usize::from(is_owned);
             }
         }
-        assert!(owned > 0);
+        // Every switch the two presets set differently is owned by both.
+        let applied = Preset::ALL.map(|preset| {
+            let mut c = baseline.clone();
+            apply_preset(&mut c, preset);
+            serde_json::to_value(c).unwrap()
+        });
+        let differing = leaves
+            .iter()
+            .filter(|path| applied[0].pointer(path) != applied[1].pointer(path))
+            .count();
+        assert!(differing > 0);
+        assert!(owned >= differing * Preset::ALL.len());
     }
 
     fn collect_leaves(value: &serde_json::Value, path: String, leaves: &mut Vec<String>) {
