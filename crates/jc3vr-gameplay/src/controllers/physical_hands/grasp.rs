@@ -13,46 +13,14 @@ use body_rig::{geometry::point_velocity, rotation::angular_velocity, smooth::fol
 use glam::{Quat, Vec3};
 use jc3vr_input::frame::Pose;
 
-pub use crate::controllers::physics::bodies::mass_of;
 use crate::controllers::{
     clock::TimeScale,
-    physical_hands::{
-        characters::CharacterTarget, doors::DoorTarget, pickup::PickupTuning, rigid::BodyPose,
-    },
+    physical_hands::{pickup::PickupTuning, rigid::BodyPose},
 };
-
-/// What a reachable object is to a hand.
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub enum TargetKind {
-    /// A loose rigid object, held in the hand, of this mass in kilograms.
-    Prop { mass_kg: f32 },
-    /// An object joined to the world or another body by a constraint, such as a hinged gate or a
-    /// lever, of this mass in kilograms, which its constraint carries.
-    Articulated { mass_kg: f32 },
-    /// A weapon lying in the world, collected through the game's own pickup.
-    Weapon,
-    /// A vehicle's door, hood, trunk, or hatch: an open one held as a loose object on its hinge, a
-    /// closed one gripped at its handle area until the latch gives.
-    Door(DoorTarget),
-    /// A character, held on to until a yank.
-    Character(CharacterTarget),
-}
-
-/// An object within a hand's reach.
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub struct Reach {
-    /// The object's address.
-    pub object: NonZeroUsize,
-    /// The reached body's Havok id.
-    pub body: u32,
-    /// Where the hand reached the object, world space.
-    pub point: Vec3,
-    /// How far the point is from the palm, metres.
-    pub distance: f32,
-    /// The surface's normal at the point, toward the palm; zero where none is known.
-    pub normal: Vec3,
-    pub kind: TargetKind,
-}
+pub use crate::controllers::{
+    grab::world_reach::{Reach, TargetKind},
+    physics::bodies::mass_of,
+};
 
 /// The nearest of `reaches`.
 pub fn nearest(reaches: impl IntoIterator<Item = Reach>) -> Option<Reach> {

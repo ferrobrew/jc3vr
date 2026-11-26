@@ -5,7 +5,10 @@
 use glam::Vec3;
 use jc3vr_input::frame::Hand;
 
-use crate::controllers::grab::{Category, GrabVolume};
+use crate::controllers::grab::{
+    Category, GrabVolume,
+    world_reach::{DoorEligibility, Reach},
+};
 
 /// Something a hand could take, as its provider places it on the input tick.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -23,9 +26,9 @@ pub struct GripTarget {
     /// How its marker is drawn.
     pub mark: Mark,
     /// The physical provider's already-observed target, when supplied. Diagnostic only.
-    pub(crate) observed: Option<crate::controllers::physical_hands::grasp::Reach>,
+    pub(crate) observed: Option<Reach>,
     /// A bounded provider-owned offer for the current wrist summary, separate from diagnostics.
-    pub(crate) door_eligibility: Option<crate::controllers::physical_hands::DoorEligibility>,
+    pub(crate) door_eligibility: Option<DoorEligibility>,
 }
 
 impl GripTarget {

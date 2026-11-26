@@ -96,7 +96,7 @@ pub use status::{HandStatus, Idle, PhysicalHandsStatus, ShoveReport, status};
 pub(crate) use status::{PalmReadout, palm_readout, press_summary};
 #[cfg(test)]
 pub(crate) use targets::test_support::DoorProvider;
-pub(crate) use targets::{DoorEligibility, targets};
+pub(crate) use targets::{door_offer_current, targets};
 pub use tick::{after_aim, free_hands, main_thread_tick, mode_acts};
 
 pub use crate::controllers::physics::{bodies::BodyError, rigid};

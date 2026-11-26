@@ -28,6 +28,7 @@ use crate::controllers::{
         tiers::{self, HandTier, TierState},
     },
     mode::{AirborneVariant, Detection, Mode},
+    physical_hands::door_offer_current,
     snatch,
     summary::{
         current::{CurrentRouting, TriggerUse},
@@ -158,7 +159,7 @@ pub(super) fn capture(input: Refresh<'_>) -> Eligibility {
     let doors = Hand::BOTH.map(|hand| {
         input.selected[hand.index()]
             .and_then(|target| target.door_eligibility)
-            .is_some_and(|offer| offer.current(hand, &input.config.physical_hands))
+            .is_some_and(|offer| door_offer_current(offer, hand, &input.config.physical_hands))
     });
     let hint = snatch::hint().filter(|hint| {
         input.ready[hint.hand.index()]

@@ -11,7 +11,10 @@ use std::time::Instant;
 use jc3vr_input::frame::Hand;
 
 use crate::controllers::{
-    grab::{GrabVolume, GripTarget, Mark, MarkAt, PickupKind, Provided, Shown},
+    grab::{
+        GrabVolume, GripTarget, Mark, MarkAt, PickupKind, Provided, Shown,
+        world_reach::DoorEligibility,
+    },
     physical_hands::{
         STATE, climb,
         config::{PHYSICAL_HANDS_CONFIG, PhysicalHandsConfig},
@@ -23,34 +26,15 @@ use crate::controllers::{
     },
 };
 
-/// An unheld latched-door offer from one fresh physical provider sample. Only the provider creates
-/// it; final summary capture checks that the same source and reach remain unclaimed after finish.
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub(crate) struct DoorEligibility {
+/// Whether `offer` still stands for `hand`: the same fresh sample of the same source, and the door
+/// it offers still unclaimed and in reach.
+pub(crate) fn door_offer_current(
+    offer: DoorEligibility,
     hand: Hand,
-    epoch: u64,
-    at: Instant,
-    reach: Reach,
-}
-
-impl DoorEligibility {
-    pub(crate) fn current(self, hand: Hand, config: &PhysicalHandsConfig) -> bool {
-        let state = STATE.lock();
-        self.current_in(hand, config, &state, Instant::now())
-    }
-
-    fn current_in(
-        self,
-        hand: Hand,
-        config: &PhysicalHandsConfig,
-        state: &State,
-        now: Instant,
-    ) -> bool {
-        self.hand == hand
-            && state.epoch == self.epoch
-            && state.at == Some(self.at)
-            && door_offer(hand, &self.reach, config, state, now) == Some(self)
-    }
+    config: &PhysicalHandsConfig,
+) -> bool {
+    let state = STATE.lock();
+    door_offer_current_in(offer, hand, config, &state, Instant::now())
 }
 
 /// The physical hands' targets for this input tick, with the reach's notes for each hand, at the VR
@@ -138,6 +122,19 @@ fn provided_reach(
     target
 }
 
+fn door_offer_current_in(
+    offer: DoorEligibility,
+    hand: Hand,
+    config: &PhysicalHandsConfig,
+    state: &State,
+    now: Instant,
+) -> bool {
+    offer.hand() == hand
+        && state.epoch == offer.epoch()
+        && state.at == Some(offer.at())
+        && door_offer(hand, &offer.reach(), config, state, now) == Some(offer)
+}
+
 fn door_offer(
     hand: Hand,
     reach: &Reach,
@@ -163,12 +160,7 @@ fn door_offer(
         && state.pickup.requests[i].is_none()
         && !door_claimed(door, reach, state)
         && state.status.hands[i].reach == Some(*reach))
-    .then_some(DoorEligibility {
-        hand,
-        epoch: state.epoch,
-        at: state.at?,
-        reach: *reach,
-    })
+    .then_some(DoorEligibility::new(hand, state.epoch, state.at?, *reach))
 }
 
 fn door_claimed(door: DoorTarget, reach: &Reach, state: &State) -> bool {

@@ -16,7 +16,7 @@ use crate::controllers::{
         shove::Give,
         state::{STALE_AFTER, State},
         status::PhysicalHandsStatus,
-        targets::provided_reach,
+        targets::{door_offer_current_in, provided_reach},
     },
 };
 
@@ -79,9 +79,9 @@ impl DoorProvider {
     }
 
     pub(crate) fn current(&self, hand: Hand, target: GripTarget) -> bool {
-        target
-            .door_eligibility
-            .is_some_and(|offer| offer.current_in(hand, &self.config, &self.state, self.now))
+        target.door_eligibility.is_some_and(|offer| {
+            door_offer_current_in(offer, hand, &self.config, &self.state, self.now)
+        })
     }
 
     pub(crate) fn expire(&mut self) {

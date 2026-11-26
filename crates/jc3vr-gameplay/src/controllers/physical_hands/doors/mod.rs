@@ -37,6 +37,7 @@ use glam::{Mat4, Vec3};
 use jc3gi::{physics::GameMaterialId, vehicle::vehicle::DoorSlot};
 use jc3vr_input::frame::Pose;
 
+pub use crate::controllers::grab::world_reach::DoorTarget;
 use crate::controllers::physical_hands::{
     contact::SurfaceHit,
     doors::{
@@ -47,22 +48,6 @@ use crate::controllers::physical_hands::{
     grasp::{Reach, TargetKind},
     pickup::diagnostics::scan::{Branch, Scan, ScanEntry, ScanResult},
 };
-
-/// A door a hand can take.
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub struct DoorTarget {
-    /// The vehicle the door belongs to.
-    pub vehicle: NonZeroUsize,
-    /// The vehicle's body the reach found, which proves the vehicle alive while the hand grips a
-    /// latched door; `None` for a hit on an open door's own body.
-    pub vehicle_body: Option<u32>,
-    pub part_index: u32,
-    pub slot: DoorSlot,
-    /// Whether the door is merged into the vehicle's body, latched shut.
-    pub latched: bool,
-    /// Which way is out of the vehicle at the door, world space.
-    pub outward: Vec3,
-}
 
 /// How far outside a door's box a palm still reaches it, metres of the player's hand.
 pub(crate) const REACH_M: f32 = 0.06;

@@ -62,26 +62,10 @@ use crate::controllers::physical_hands::{
     grasp::{Reach, TargetKind},
     remote,
 };
-pub use crate::controllers::physics::characters as engine;
-
-/// A character a hand can take hold of.
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub struct CharacterTarget {
-    pub character: NonZeroUsize,
-    /// The body the reach found, which proves the character alive while the hand holds on.
-    pub body: u32,
-    /// The vehicle attachment and its access through an open door, a broken window, or an exposed
-    /// seat.
-    pub seated: Option<Seated>,
-    /// Whether the body is one of the character's ragdoll's, which the hand holds as a loose
-    /// object, rather than its capsule.
-    pub ragdoll: bool,
-    /// Whether the player's faction is hostile to the character.
-    pub hostile: bool,
-    /// The whole ragdoll's mass, kilograms, for a body of its ragdoll: what holding that one body
-    /// drags. Zero for the capsule.
-    pub mass_kg: f32,
-}
+pub use crate::controllers::{
+    grab::world_reach::{CharacterTarget, SeatAccess, Seated},
+    physics::characters as engine,
+};
 
 /// Why a character the reach hit is not one a hand takes.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -107,38 +91,6 @@ impl Unavailable {
             Unavailable::Dying => "dying, not yet a ragdoll",
             Unavailable::NoBody => "no body of its ragdoll could be read",
             Unavailable::Protected(protection) => protection.label(),
-        }
-    }
-}
-
-/// A character attached to a vehicle, and how the hand reaches them.
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub struct Seated {
-    pub vehicle: NonZeroUsize,
-    pub access: SeatAccess,
-}
-
-/// How a hand reaches a seated character.
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub enum SeatAccess {
-    /// Through an open door beside the hand.
-    Door {
-        slot: DoorSlot,
-        /// How far the door stands open, degrees.
-        open_deg: f32,
-    },
-    /// Through a window of the vehicle the glass brought down ([`pane`]).
-    Pane,
-    /// An exposed motorcycle occupant, who needs no door.
-    Exposed,
-}
-
-impl SeatAccess {
-    /// The open door the hand reaches through, and how far it stands open, degrees.
-    pub fn door(self) -> Option<(DoorSlot, f32)> {
-        match self {
-            SeatAccess::Door { slot, open_deg } => Some((slot, open_deg)),
-            SeatAccess::Pane | SeatAccess::Exposed => None,
         }
     }
 }
