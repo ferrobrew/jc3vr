@@ -1,5 +1,5 @@
 use super::*;
-use crate::controllers::{bindings::tables::declare::WEAPON_SELECT, weapons::wheel::tuning::WHEEL};
+use crate::controllers::weapons::wheel::tuning::WHEEL;
 
 const ALL_OFFERED: [bool; 4] = [true; 4];
 
@@ -311,12 +311,9 @@ fn the_resting_slot() {
 }
 
 #[test]
-fn every_arm_round_trips_through_its_action_slot_and_zone() {
+fn every_arm_round_trips_through_its_action_and_slot() {
     for arm in WheelSlot::ALL {
         assert_eq!(WheelSlot::of_action(arm.action()), Some(arm));
         assert_eq!(WheelSlot::of_inventory(arm.inventory_slot()), Some(arm));
-    }
-    for (zone, action) in WEAPON_SELECT {
-        assert_eq!(WheelSlot::of_zone(zone).action(), action);
     }
 }

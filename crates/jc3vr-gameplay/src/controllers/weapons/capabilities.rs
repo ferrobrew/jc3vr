@@ -335,27 +335,11 @@ mod tests {
         }
     }
 
+    /// The held-gun tick asks the shooting permission on both fire paths and returns no claim for
+    /// an unwielded or paired gun. The bindings' half, clearing the cached fire while paused, is
+    /// checked beside the fire presses (`bindings::gun_fire`).
     #[test]
-    fn input_owner_clears_cached_fire_while_ui_and_action_set_are_paused() {
-        let source = include_str!("../bindings/mod.rs");
-        let pending_branch = source
-            .split_once("if set_pending {")
-            .unwrap()
-            .1
-            .split_once("writes: state.tracker.pause(),")
-            .unwrap()
-            .0;
-        assert!(pending_branch.contains("clear_controller();"));
-        assert!(pending_branch.contains("weapons::hold::tick::publish_fire([false; 2]);"));
-        let inactive_branch = source
-            .split_once("state.rail = rail::RailRelease::new();")
-            .unwrap()
-            .1
-            .split_once("fn ")
-            .unwrap()
-            .0;
-        assert!(inactive_branch.contains("weapons::hold::tick::publish_fire([false; 2]);"));
-        assert!(inactive_branch.contains("weapons::wheel::pause();"));
+    fn the_held_gun_tick_asks_the_permission_on_both_fire_paths() {
         let tick = include_str!("hold/tick/mod.rs");
         assert!(tick.contains("if !wielded || pair {\n        return None;"));
         assert_eq!(tick.matches("permission::shooting_allowed(").count(), 2);

@@ -2,6 +2,9 @@
 //! sight chord.
 
 use super::*;
+use crate::controllers::{
+    bindings::tables::declare::WEAPON_SELECT, weapons::wheel::select::WheelSlot,
+};
 
 #[test]
 fn nothing_pressed_wants_nothing() {
@@ -373,4 +376,13 @@ fn the_right_b_held_skips_a_cutscene_outside_the_menus() {
     let c = controls(Hand::Right, |_, off| off.b = down());
     let step = Bindings::default().sim_step(ON_FOOT, &c, DT, &CONFIG);
     assert_eq!(wants(&step, MapKind::Ui, SKIP_CUTSCENE), None);
+}
+
+/// The pad's weapon select fires the slot action of the wheel's arm in the same quadrant, so a
+/// trackpad quadrant and the gamepad's d-pad direction pick the same slot.
+#[test]
+fn the_pad_weapon_select_matches_the_wheel_arm_in_each_zone() {
+    for (zone, action) in WEAPON_SELECT {
+        assert_eq!(WheelSlot::of_zone(zone).action(), action);
+    }
 }
