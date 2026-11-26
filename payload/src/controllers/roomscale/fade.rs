@@ -1,16 +1,17 @@
 //! The comfort fade: a full-screen darkening of the headset's view, shared by the head-through-
 //! geometry probe, the push-back at walls, and the seat transitions. Each source sets a target level; the fade eases toward
-//! the darkest target at the configured rates, and the VR blit ([`crate::vr`]) scales the image by
-//! `1 - level` as it copies each eye into the swapchain.
+//! the darkest target at the configured rates, and hands the level to the VR blit
+//! ([`crate::vr::set_fade_level`]), which scales the image by `1 - level` as it copies each eye
+//! into the swapchain.
 //!
 //! The engine has its own screen fade (the post-effect fade quad), but the game drives it for its
 //! own transitions (loading, teleports, cutscenes), and a second writer would fight them. The blit
 //! is the mod's own last stage before the compositor, so darkening there leaves the game's fades
 //! alone and never reaches the flat mirror.
 
-use std::sync::atomic::{AtomicU32, Ordering};
-
 use parking_lot::Mutex;
+
+use crate::vr::{fade_level, set_fade_level};
 
 /// The comfort fade's timing, shared by every source (the head in geometry, the seat transitions).
 #[derive(Copy, Clone, Debug)]
@@ -51,9 +52,9 @@ impl FadeSource {
     }
 }
 
-/// The current darkness, `0` (clear) to `1` (black), for the blit.
+/// The current darkness, `0` (clear) to `1` (black), as the blit applies it.
 pub fn level() -> f32 {
-    f32::from_bits(LEVEL.load(Ordering::Relaxed))
+    fade_level()
 }
 
 /// The fade's state, for the debug UI.
@@ -91,13 +92,13 @@ pub fn set_target(source: FadeSource, target: f32) {
 pub fn advance(dt: f32, config: &FadeTuning) {
     let target = FADE.lock().targets.iter().copied().fold(0.0, f32::max);
     let next = step(level(), target, dt, config);
-    LEVEL.store(next.to_bits(), Ordering::Relaxed);
+    set_fade_level(next);
 }
 
 /// Clear every source and the level at once, when the headset stops rendering.
 pub fn reset() {
     FADE.lock().targets = [0.0; FadeSource::COUNT];
-    LEVEL.store(0f32.to_bits(), Ordering::Relaxed);
+    set_fade_level(0.0);
 }
 
 /// One step of the easing: toward `target` at `1 / out_s` per second while darkening and
@@ -123,9 +124,6 @@ struct Fade {
 static FADE: Mutex<Fade> = Mutex::new(Fade {
     targets: [0.0; FadeSource::COUNT],
 });
-
-/// The level as `f32` bits, read lock-free by the blit.
-static LEVEL: AtomicU32 = AtomicU32::new(0);
 
 #[cfg(test)]
 mod tests {

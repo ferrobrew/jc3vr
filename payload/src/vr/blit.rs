@@ -23,11 +23,11 @@
 //!
 //! The gamma bridge (linear source vs `_SRGB` target) is a runtime toggle; see
 //! [`crate::vr::config::BlitGamma`] and `vr_blit_ps.hlsl`. The blit also darkens the image by the
-//! comfort fade's level ([`crate::controllers::roomscale::fade`]): the engine's own screen fade
-//! belongs to the game's fades (loading, teleports, cutscenes), so the mod's fade is applied here,
-//! at the last stage before the compositor.
+//! comfort fade's level ([`set_fade_level`], from [`crate::controllers::roomscale::fade`]): the
+//! engine's own screen fade belongs to the game's fades (loading, teleports, cutscenes), so the
+//! mod's fade is applied here, at the last stage before the compositor.
 
-use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, Ordering};
 
 use anyhow::Context as _;
 use jc3gi::graphics_engine::device::Device;
@@ -107,6 +107,17 @@ pub fn present_and_submit(mut frame: FrameContext, cfg: &VrConfig) {
         let _ = frame.release();
     }
     end(frame);
+}
+
+/// Set the comfort fade's darkness, `0` (clear) to `1` (black), that the blit scales each eye by.
+/// The fade's owner writes it once per rendered frame, and any thread may.
+pub(crate) fn set_fade_level(level: f32) {
+    FADE_LEVEL.store(level.to_bits(), Ordering::Relaxed);
+}
+
+/// The comfort fade's darkness, as last set by [`set_fade_level`].
+pub(crate) fn fade_level() -> f32 {
+    f32::from_bits(FADE_LEVEL.load(Ordering::Relaxed))
 }
 
 /// Start the direct route for this frame: acquire the swapchain image now and publish it, so each
@@ -238,7 +249,7 @@ pub(crate) unsafe fn blit_direct(
     let Ok(src) = src.cast::<ID3D11Texture2D>() else {
         return false;
     };
-    let brightness = 1.0 - crate::controllers::roomscale::fade::level();
+    let brightness = 1.0 - fade_level();
     let image = EyeImage {
         array_index: eye as u32,
         ..target.image
@@ -327,6 +338,9 @@ static LAST_DIRECT_EYES: AtomicU8 = AtomicU8::new(0);
 /// Set when the direct route failed in a way a later frame would repeat, which leaves it off for
 /// the rest of the session.
 static GAVE_UP: AtomicBool = AtomicBool::new(false);
+
+/// The comfort fade's level as `f32` bits ([`set_fade_level`]), read lock-free by the blit.
+static FADE_LEVEL: AtomicU32 = AtomicU32::new(0);
 
 /// Turn the direct route off for the session after a failure, logging it once. The eye that failed
 /// is copied into its capture and blitted at the submit like every eye after it.
@@ -533,7 +547,7 @@ fn submit(frame: &mut FrameContext, cfg: &VrConfig) -> anyhow::Result<()> {
         unsafe { device.m_Context.as_ref() }.context("vr: the graphics context is unavailable")?;
 
     let linearize = matches!(cfg.blit_srgb_gamma, BlitGamma::Linearize);
-    let brightness = 1.0 - crate::controllers::roomscale::fade::level();
+    let brightness = 1.0 - fade_level();
 
     // Both eyes' immediate-context work runs under one critical-section hold, serialized with the
     // engine's render work. The blit pipeline's lock is taken inside it, as the draw task's direct
