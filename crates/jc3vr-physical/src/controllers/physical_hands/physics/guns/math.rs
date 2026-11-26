@@ -2,7 +2,7 @@
 //! strays from it, the motion that keeps it on the hand, the gun's barrel and up axes in its own
 //! frame, and a shot's impulse.
 
-use body_rig::rotation::{angle, angle_between, angular_velocity, clamp_angle};
+use body_rig::math::rotation::{angle, angle_between, angular_velocity, clamp_angle};
 use glam::{Mat4, Vec3};
 use jc3vr_body::controllers::{
     hands::pose as hand_pose,
@@ -217,7 +217,7 @@ pub fn shot_impulse(gun: Pose, axes: &GunAxes, impulse_ns: f32, muzzle_rise: f32
 
 #[cfg(test)]
 mod tests {
-    use body_rig::geometry::point_velocity;
+    use body_rig::math::geometry::point_velocity;
     use glam::Quat;
     use pretty_assertions::assert_eq;
 

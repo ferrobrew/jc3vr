@@ -21,15 +21,12 @@
 //! The body stays dynamic: the velocities are set before the step, which then integrates them,
 //! resolves the body's contacts, and resolves any constraint it hangs from, such as a hinge.
 
-use body_rig::rotation::rotation_error;
+use body_rig::math::{constants::GRAVITY_MPS2, rotation::rotation_error};
 use glam::{Vec2, Vec3};
 use jc3vr_body::controllers::{
     body::procedural::solver::arms::TorsoKeepOut,
     clock::TimeScale,
-    physics::{
-        GRAVITY_MPS2,
-        rigid::{RigidBody, Velocities},
-    },
+    physics::rigid::{RigidBody, Velocities},
 };
 
 use crate::controllers::physical_hands::{

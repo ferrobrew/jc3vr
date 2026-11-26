@@ -11,7 +11,7 @@
 
 use std::num::NonZeroUsize;
 
-use body_rig::rotation::level;
+use body_rig::math::constants::GRAVITY_MPS2;
 use glam::{Mat4, Quat, Vec2, Vec3};
 use jc3vr_body::controllers::{
     aim::raycast::CastOptions,
@@ -29,12 +29,15 @@ use jc3vr_body::controllers::{
         tuning::FINGERS_TUNING,
     },
     hands,
-    hands::tiers,
+    hands::{
+        reach::{level_eyes, torso_heading},
+        tiers,
+    },
     haptics, held,
     held::HeldItem,
     mode,
     mode::{AirborneVariant, Detection, Mode, OnFootVariant},
-    physics::{GRAVITY_MPS2, local_player::LocalPlayer},
+    physics::local_player::LocalPlayer,
     scheme,
 };
 use jc3vr_core::{
@@ -168,12 +171,10 @@ fn run(player: &LocalPlayer<'_>, dt: f32) {
         })
         .position
     };
-    let shoulders = body::shoulder_positions(
-        active.head.position,
-        level(active.head.orientation),
-        &body::player(),
-    )
-    .map(at);
+    // The shoulders hang from the levelled eyes, as the reach's do.
+    let torso = torso_heading(active.head, None);
+    let shoulders =
+        body::shoulder_positions(level_eyes(active.head, torso), torso, &body::player()).map(at);
     let free = free_hands();
     let to_world = Mat4::from(owner.m_WorldMatrixT1);
     let pickup_tuning = PICKUP.get();

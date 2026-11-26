@@ -3,11 +3,12 @@
 
 use std::num::NonZeroUsize;
 
+use body_rig::math::constants::GRAVITY_MPS2;
 use glam::Vec3;
 use jc3gi::vehicle::vehicle::DoorSlot;
 use jc3vr_body::controllers::{
     grab::world_reach::{Reach, TargetKind},
-    physics::{GRAVITY_MPS2, bodies, rigid::Velocities},
+    physics::{bodies, rigid::Velocities},
     telemetry::{Released, Thrown, note_release, note_throw},
 };
 use jc3vr_core::published::Stamp;

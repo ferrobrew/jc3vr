@@ -1,6 +1,7 @@
 //! The pre-simulation half of the hand bodies' tick: make, add, park, and drive the bodies toward
 //! where their palms will be at the end of the step, then keep the held guns' bodies on them.
 
+use body_rig::math::constants::GRAVITY_MPS2;
 use glam::{Quat, Vec2, Vec3};
 use jc3gi::physics::PhysicsSystem;
 use jc3vr_body::controllers::{
@@ -8,7 +9,7 @@ use jc3vr_body::controllers::{
     clock::TimeScale,
     held::guns as held_guns,
     mode,
-    physics::{GRAVITY_MPS2, steps},
+    physics::steps,
 };
 use jc3vr_core::published::Stamp;
 use jc3vr_input::frame::{Hand, Pose};

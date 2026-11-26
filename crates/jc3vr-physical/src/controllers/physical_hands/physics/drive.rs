@@ -15,7 +15,7 @@
 //! it shove a heavy one over a few steps; a hand held back by what it meets is driven more softly
 //! ([`contact_gain`]), so it rests on a wall rather than pounding it every step.
 
-use body_rig::{rotation::rotation_error, smooth::follow_factor};
+use body_rig::math::{rotation::rotation_error, smooth::follow_factor};
 use glam::{DVec3, Mat3, Quat, Vec2, Vec3};
 use jc3vr_body::controllers::clock::TimeScale;
 

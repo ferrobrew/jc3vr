@@ -14,7 +14,7 @@
 //! brakes, gives nothing, however light the shove that could move it in the open; the share it
 //! does not give is the resistance, which pushes the body away as a wall does.
 
-use body_rig::smooth::follow_factor;
+use body_rig::math::smooth::follow_factor;
 use glam::Vec3;
 use jc3vr_body::controllers::physics::rigid::RigidBody;
 use serde::Deserialize;

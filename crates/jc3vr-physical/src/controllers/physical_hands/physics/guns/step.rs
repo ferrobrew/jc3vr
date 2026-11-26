@@ -10,7 +10,7 @@
 //! outside the step: from the pre-simulation callback, or from the shutdown cleanup on the game
 //! thread.
 
-use body_rig::{geometry::point_velocity, rotation::angle};
+use body_rig::math::{geometry::point_velocity, rotation::angle};
 use glam::Vec3;
 use jc3gi::physics::CustomGroupCollisionFilter;
 use jc3vr_body::controllers::held::{

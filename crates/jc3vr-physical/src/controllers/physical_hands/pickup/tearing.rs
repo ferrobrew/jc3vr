@@ -2,7 +2,7 @@
 
 use std::num::NonZeroUsize;
 
-use body_rig::geometry::point_velocity;
+use body_rig::math::geometry::point_velocity;
 use glam::{Mat4, Vec3};
 use jc3vr_body::controllers::physics::bodies;
 

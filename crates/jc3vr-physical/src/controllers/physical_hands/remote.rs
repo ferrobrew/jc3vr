@@ -4,11 +4,12 @@
 
 use std::num::NonZeroUsize;
 
+use body_rig::math::constants::GRAVITY_MPS2;
 use glam::Vec3;
 use jc3gi::character::character::Character;
 use jc3vr_body::controllers::{
     grab::world_reach::{DoorTarget, Reach, TargetKind},
-    physics::{GRAVITY_MPS2, bodies, bodies::BodyError},
+    physics::{bodies, bodies::BodyError},
 };
 use jc3vr_input::frame::Hand;
 

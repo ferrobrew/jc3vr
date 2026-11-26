@@ -10,7 +10,7 @@
 //! where the body or the view is now, so the climb is a plain closed loop on the body's position:
 //! a hand held still holds the body still once it gets there.
 
-use body_rig::smooth::follow_factor;
+use body_rig::math::smooth::follow_factor;
 use glam::{Affine3A, Quat, Vec2, Vec3};
 
 /// One gripping hand: where the body and the palm were when it took hold, and where the palm is

@@ -1,6 +1,6 @@
 //! Bounded held-prop impact strength and repeat-contact admission.
 
-use body_rig::geometry::point_velocity;
+use body_rig::math::geometry::point_velocity;
 use glam::Vec3;
 
 use crate::controllers::physical_hands::characters::tuning::{

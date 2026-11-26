@@ -1,6 +1,5 @@
 use std::num::NonZeroUsize;
 
-use body_rig::rotation::level;
 use glam::{Vec2, Vec3};
 use jc3gi::character::character::Character;
 use jc3vr_body::controllers::{
@@ -8,7 +7,9 @@ use jc3vr_body::controllers::{
     body,
     clock::TimeScale,
     grab::world_reach::{Reach, TargetKind},
-    hands, haptics,
+    hands,
+    hands::reach::{level_eyes, torso_heading},
+    haptics,
 };
 use jc3vr_core::published::Stamp;
 use jc3vr_input::{
@@ -54,12 +55,11 @@ pub(super) unsafe fn run(owner: &Character, dt: f32) {
     let hand_tuning = PHYSICAL_HANDS.get();
     let smoothing_s = time_scale.game_s(hand_tuning.state.velocity_smoothing_s);
     let xf = CockpitTransform::current(active.head.position, active.world_scale);
-    let shoulders = body::shoulder_positions(
-        active.head.position,
-        level(active.head.orientation),
-        &body::player(),
-    )
-    .map(|point| xf.point_to_world(point));
+    // The shoulders hang from the levelled eyes, as the reach's do.
+    let torso = torso_heading(active.head, None);
+    let shoulders =
+        body::shoulder_positions(level_eyes(active.head, torso), torso, &body::player())
+            .map(|point| xf.point_to_world(point));
     let free = free_hands();
     let options = CastOptions {
         material: true,

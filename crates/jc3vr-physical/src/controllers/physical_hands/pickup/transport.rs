@@ -1,4 +1,4 @@
-use body_rig::rotation::angular_velocity;
+use body_rig::math::rotation::angular_velocity;
 use glam::{Quat, Vec3};
 use jc3vr_body::controllers::physics::rigid::Velocities;
 use jc3vr_input::frame::Pose;

@@ -1,9 +1,10 @@
 use std::num::NonZeroUsize;
 
+use body_rig::math::constants::GRAVITY_MPS2;
 use glam::{Quat, Vec3};
 use jc3vr_body::controllers::{
     grab::{GripTarget, Mark, MarkAt, PickupKind, target::Tier, world_reach::TargetKind},
-    physics::{GRAVITY_MPS2, rigid::BodyPose},
+    physics::rigid::BodyPose,
 };
 use jc3vr_core::published::Stamp;
 use jc3vr_input::frame::Pose;

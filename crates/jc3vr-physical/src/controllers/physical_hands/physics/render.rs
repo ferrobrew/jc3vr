@@ -4,7 +4,7 @@
 //! carries them into the world. They are not interpolated across physics steps: doing so mixes
 //! an old collision response with the current tracking and transport frame.
 
-use body_rig::rotation::shortest;
+use body_rig::math::rotation::shortest;
 use glam::{Quat, Vec3};
 use jc3vr_body::controllers::hands::CockpitHand;
 use jc3vr_core::published::Stamp;

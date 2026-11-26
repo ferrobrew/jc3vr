@@ -12,7 +12,7 @@
 
 use std::num::NonZeroUsize;
 
-use body_rig::geometry::cast_segment;
+use body_rig::math::geometry::cast_segment;
 use glam::Vec3;
 
 /// What a cast hit.
