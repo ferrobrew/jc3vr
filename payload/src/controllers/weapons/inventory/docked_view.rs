@@ -9,17 +9,15 @@ use std::time::Duration;
 use glam::Vec3;
 use jc3gi::{character::character::Character, graphics_engine::model_instance::ModelInstanceFlags};
 
-use crate::{
-    config::Config,
-    controllers::{
-        aim::gun,
-        loadout::live,
-        overlay::{
-            primitive::{Anchor, DepthMode, Facing, Primitive, Rgba, Shape, Source, SpriteSize},
-            store,
-        },
-        weapons::docks,
+use crate::controllers::{
+    aim::gun,
+    config::CONTROLLERS_CONFIG,
+    loadout::live,
+    overlay::{
+        primitive::{Anchor, DepthMode, Facing, Primitive, Rgba, Shape, Source, SpriteSize},
+        store,
     },
+    weapons::docks,
 };
 
 /// Submit the docked guns' marks for `owner`, or clear them while the view is off.
@@ -28,8 +26,7 @@ use crate::{
 ///
 /// `owner` must be the live local player character, on the game thread before the world update.
 pub(crate) unsafe fn submit(owner: &Character) {
-    let on =
-        Config::lock_query(|c| c.controllers.overlay.enabled && c.controllers.overlay.docked_guns);
+    let on = CONTROLLERS_CONFIG.query(|c| c.overlay.enabled && c.overlay.docked_guns);
     let Some(snapshot) = live::snapshot_now().filter(|_| on) else {
         store::clear(Source::DockedGuns);
         return;

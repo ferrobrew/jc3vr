@@ -32,25 +32,23 @@ use jc3gi::{
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::{
-    config::Config,
-    controllers::{
-        hands::ik,
-        loadout::{Delivery, TakeSource, live, take::TakeRoute},
-        weapons::{
-            dual_wield::single,
-            engine::{character_object, slot_of},
-            grenade::stock,
-            hold::{
-                self, SNAP_S,
-                pickup::{self, TakeOptions},
-                rack,
-                refs::Strong,
-            },
-            inventory::{
-                engine::{self as inventory_engine, strong_to, weapon_of},
-                gives, reconcile,
-            },
+use crate::controllers::{
+    config::CONTROLLERS_CONFIG,
+    hands::ik,
+    loadout::{Delivery, TakeSource, live, take::TakeRoute},
+    weapons::{
+        dual_wield::single,
+        engine::{character_object, slot_of},
+        grenade::stock,
+        hold::{
+            self, SNAP_S,
+            pickup::{self, TakeOptions},
+            rack,
+            refs::Strong,
+        },
+        inventory::{
+            engine::{self as inventory_engine, strong_to, weapon_of},
+            gives, reconcile,
         },
     },
 };
@@ -186,7 +184,7 @@ fn is_local_player(activator: *mut GameObject) -> bool {
 /// Whether the table takes the local player's pickup of `weapon` rather than the game: it runs,
 /// the weapons ride the hands that took them, and the weapon is one the table holds in a hand.
 fn table_takes(weapon: &WeaponBase) -> bool {
-    let either_hand = Config::lock_query(|c| c.controllers.weapons.hold.either_hand);
+    let either_hand = CONTROLLERS_CONFIG.lock().weapons.hold.either_hand;
     let tracked = unsafe { slot_of(weapon) }.is_some_and(inventory_engine::tracks);
     either_hand && tracked && live::running()
 }

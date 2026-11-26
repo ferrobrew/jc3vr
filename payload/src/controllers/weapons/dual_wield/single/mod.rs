@@ -53,28 +53,24 @@ use jc3gi::{
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::{
-    config::Config,
-    controllers::{
-        aim::gun,
-        frame::Hand,
-        loadout::{Place, Socket, live},
-        weapons::{
-            dual_wield::single::{
-                grant::{Grant, GrantTick, Grants, OneWhy, TwinState},
-                magazine::Dealt,
-            },
-            engine::{
-                character_object, credit_reserve, credit_stored, gun_at, gun_count, hide_gun,
-                slot_of,
-            },
-            hold::{self, rack::paired, refs::Strong},
-            inventory::{
-                carry, config::InventoryConfig, engine as inventory_engine, engine::ObjectKey,
-                restore,
-            },
-            reload,
+use crate::controllers::{
+    aim::gun,
+    config::CONTROLLERS_CONFIG,
+    frame::Hand,
+    loadout::{Place, Socket, live},
+    weapons::{
+        dual_wield::single::{
+            grant::{Grant, GrantTick, Grants, OneWhy, TwinState},
+            magazine::Dealt,
         },
+        engine::{
+            character_object, credit_reserve, credit_stored, gun_at, gun_count, hide_gun, slot_of,
+        },
+        hold::{self, rack::paired, refs::Strong},
+        inventory::{
+            carry, config::InventoryConfig, engine as inventory_engine, engine::ObjectKey, restore,
+        },
+        reload,
     },
 };
 
@@ -705,8 +701,8 @@ unsafe fn share_hands(pair: ObjectKey, twin: ObjectKey) {
         return;
     };
     let other = hand.other();
-    let both_hands = Config::lock_query(|c| {
-        let hold = c.controllers.weapons.hold;
+    let both_hands = CONTROLLERS_CONFIG.query(|c| {
+        let hold = c.weapons.hold;
         hold.either_hand
     });
     if both_hands && live::in_hand(other).is_none() && !unsafe { hold::take_into(other, twin) } {

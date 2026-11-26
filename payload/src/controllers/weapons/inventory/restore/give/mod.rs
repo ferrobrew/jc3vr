@@ -41,28 +41,26 @@ use jc3gi::{
 };
 use parking_lot::Mutex;
 
-use crate::{
-    config::Config,
-    controllers::{
-        bindings,
-        frame::Hand,
-        loadout::{ObjectAddress, Socket, live},
-        spawn::{self, SpawnDefinition},
-        summary::localise,
-        weapons::{
-            c4,
-            dual_wield::single,
-            grenade::stock,
-            hold::{self, act, refs::Strong, swap},
-            inventory::{
-                engine as inventory_engine,
-                restore::{
-                    PLAN, SpawnToken,
-                    adoption::{self, Outcome},
-                    spawned,
-                },
-                spawn_safety::{self, RequestKind},
+use crate::controllers::{
+    bindings,
+    config::CONTROLLERS_CONFIG,
+    frame::Hand,
+    loadout::{ObjectAddress, Socket, live},
+    spawn::{self, SpawnDefinition},
+    summary::localise,
+    weapons::{
+        c4,
+        dual_wield::single,
+        grenade::stock,
+        hold::{self, act, refs::Strong, swap},
+        inventory::{
+            engine as inventory_engine,
+            restore::{
+                PLAN, SpawnToken,
+                adoption::{self, Outcome},
+                spawned,
             },
+            spawn_safety::{self, RequestKind},
         },
     },
 };
@@ -680,8 +678,8 @@ unsafe fn adopt(owner: &mut Character) {
         let line = match carried {
             Some(object) => {
                 // SAFETY: the carry set keeps the weapon alive.
-                let separate = Config::lock_query(|config| {
-                    let weapons = &config.controllers.weapons;
+                let separate = CONTROLLERS_CONFIG.query(|config| {
+                    let weapons = &config.weapons;
                     separate_given_pistol(
                         weapons.separate_pistols,
                         weapons.inventory.enabled,

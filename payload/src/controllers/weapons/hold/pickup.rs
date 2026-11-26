@@ -41,21 +41,19 @@ use jc3gi::{
     hash::hashlittle,
 };
 
-use crate::{
-    config::Config,
-    controllers::{
-        aim::gun,
-        frame::Hand,
-        loadout::{
-            Delivery, ObjectAddress, TakeSource, WeaponType, live, slot_label,
-            take::{self, TakeOffer, TakeRefusal, TakeRoute, TakeRules},
-        },
-        weapons::{
-            dual_wield::single,
-            engine::{self, character_object, credit_stored, gun_pose, slot_of},
-            hold::{self, act, equip, use_item},
-            inventory::{self, carry, engine as inventory_engine},
-        },
+use crate::controllers::{
+    aim::gun,
+    config::CONTROLLERS_CONFIG,
+    frame::Hand,
+    loadout::{
+        Delivery, ObjectAddress, TakeSource, WeaponType, live, slot_label,
+        take::{self, TakeOffer, TakeRefusal, TakeRoute, TakeRules},
+    },
+    weapons::{
+        dual_wield::single,
+        engine::{self, character_object, credit_stored, gun_pose, slot_of},
+        hold::{self, act, equip, use_item},
+        inventory::{self, carry, engine as inventory_engine},
     },
 };
 
@@ -211,7 +209,7 @@ pub(crate) unsafe fn preflight(
 pub(crate) unsafe fn route(weapon: &WeaponBase, hand: Option<Hand>) -> Result<TakeRoute, Refusal> {
     let weapon_type =
         unsafe { inventory_engine::weapon_type(weapon) }.ok_or(Refusal::UnknownSlot)?;
-    let hold = Config::lock_query(|c| c.controllers.weapons.hold);
+    let hold = CONTROLLERS_CONFIG.lock().weapons.hold;
     let snapshot = live::snapshot_now();
     take::route(
         snapshot.as_ref(),

@@ -30,7 +30,6 @@ use jc3gi::{
 use parking_lot::Mutex;
 
 use crate::{
-    config::Config,
     controllers::{
         aim::gun,
         bindings,
@@ -64,7 +63,7 @@ use crate::{
     },
     headpose, hooks,
     recorder::tracking::events::{self, EventKind},
-    vr::recenter_count,
+    vr::{VR_CONFIG, recenter_count},
 };
 
 /// A snap as the rigid grip sees it.
@@ -849,7 +848,7 @@ static STATE: Mutex<State> = Mutex::new(State {
 });
 
 fn sample_release_transport(dt: f32) {
-    let scale = Config::lock_query(|config| config.vr.world_scale);
+    let scale = VR_CONFIG.lock().world_scale;
     let frame = headpose::xr::cockpit_pose().map(|head_cockpit| {
         let head_world = hooks::camera::eye_point();
         ReleaseFrame {

@@ -34,13 +34,11 @@ use jc3gi::{
 };
 use re_utilities::hook_library::HookLibrary;
 
-use crate::{
-    config::Config,
-    controllers::{
-        hands::ik,
-        loadout::live,
-        weapons::inventory::{self, reconcile, restore},
-    },
+use crate::controllers::{
+    config::CONTROLLERS_CONFIG,
+    hands::ik,
+    loadout::live,
+    weapons::inventory::{self, reconcile, restore},
 };
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -96,7 +94,7 @@ fn handle_event(inventory: *mut Inventory, event: *const EventImpl, data: *mut c
 
 #[detour(address = jc3gi::save::StorePlayerSaveData_ADDRESS)]
 fn store_player_save_data(save_data: *const PlayerSaveData, archive: *mut c_void) {
-    let settings = Config::lock_query(|c| c.controllers.weapons.inventory);
+    let settings = CONTROLLERS_CONFIG.lock().weapons.inventory;
     if let Some(store) = live::store_imminent() {
         // SAFETY: the store runs on the game thread, outside the world update.
         unsafe { reconcile::store(&store) };
@@ -115,7 +113,7 @@ fn load_player_save_data(save_data: *mut PlayerSaveData, archive: *mut c_void, v
         .get()
         .unwrap()
         .call(save_data, archive, version);
-    let settings = Config::lock_query(|c| c.controllers.weapons.inventory);
+    let settings = CONTROLLERS_CONFIG.lock().weapons.inventory;
     // SAFETY: the load was given live save data.
     unsafe { restore::on_load(save_data, &settings) };
     live::loaded();

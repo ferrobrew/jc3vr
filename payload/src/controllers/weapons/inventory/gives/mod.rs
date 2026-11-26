@@ -47,26 +47,24 @@ use jc3gi::{
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::{
-    config::Config,
-    controllers::{
-        hands::ik,
-        loadout::{GiveSource, Place, live, slot_label},
-        weapons::{
-            engine::{object_of, slot_of, weapon_at},
-            hold::{
-                equip,
-                rack::{
-                    self,
-                    paired::{CopyRequest, Member},
-                },
-                refs::Strong,
+use crate::controllers::{
+    config::CONTROLLERS_CONFIG,
+    hands::ik,
+    loadout::{GiveSource, Place, live, slot_label},
+    weapons::{
+        engine::{object_of, slot_of, weapon_at},
+        hold::{
+            equip,
+            rack::{
+                self,
+                paired::{CopyRequest, Member},
             },
-            inventory::{
-                self, engine,
-                gives::authority::{Authority, Identity},
-                reconcile,
-            },
+            refs::Strong,
+        },
+        inventory::{
+            self, engine,
+            gives::authority::{Authority, Identity},
+            reconcile,
         },
     },
 };
@@ -303,7 +301,7 @@ fn is_local(inventory: *const Inventory) -> bool {
 /// player's weapons (whose give-back the table restores from its cache), and the weapons ride the
 /// hands that took them.
 fn table_places() -> bool {
-    Config::lock_query(|c| c.controllers.weapons.hold.either_hand)
+    CONTROLLERS_CONFIG.query(|c| c.weapons.hold.either_hand)
         && live::running()
         && !live::resetting()
         && !live::mission_holds()

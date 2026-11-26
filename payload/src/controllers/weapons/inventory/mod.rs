@@ -68,27 +68,25 @@ use jc3gi::{
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::{
-    config::Config,
-    controllers::{
-        frame::Hand,
-        loadout::{ItemKind, ObjectAddress, Place, Restored, SlotObject, Socket, TakeSource, live},
-        physical_hands,
-        weapons::{
-            c4,
-            dual_wield::single,
-            engine as weapons_engine, grenade,
-            hold::{armed, refs::Strong, use_item},
-            hud_feed::lost_weapons,
-            inventory::{
-                config::InventoryConfig,
-                engine::ObjectKey,
-                game_view::GameInventory,
-                lost::LostRules,
-                pins::{PinSettings, WorldWeapon},
-                sockets::Offsets,
-                world::World,
-            },
+use crate::controllers::{
+    config::CONTROLLERS_CONFIG,
+    frame::Hand,
+    loadout::{ItemKind, ObjectAddress, Place, Restored, SlotObject, Socket, TakeSource, live},
+    physical_hands,
+    weapons::{
+        c4,
+        dual_wield::single,
+        engine as weapons_engine, grenade,
+        hold::{armed, refs::Strong, use_item},
+        hud_feed::lost_weapons,
+        inventory::{
+            config::InventoryConfig,
+            engine::ObjectKey,
+            game_view::GameInventory,
+            lost::LostRules,
+            pins::{PinSettings, WorldWeapon},
+            sockets::Offsets,
+            world::World,
         },
     },
 };
@@ -462,7 +460,7 @@ pub(crate) unsafe fn stand_down() {
     let Some(owner) = (unsafe { weapons_engine::local_player() }) else {
         return;
     };
-    let carry = Config::lock_query(|c| c.controllers.weapons.inventory.carry);
+    let carry = CONTROLLERS_CONFIG.lock().weapons.inventory.carry;
     // SAFETY: as this function's own contract.
     STATE.lock().game = Some(unsafe { game_view::capture(owner) });
     unsafe { stop(owner, "the controllers are not in use", carry) };
