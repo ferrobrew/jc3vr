@@ -17,7 +17,7 @@
 //! reconstruction see only that eye, at its own size, as an eye rendered on its own does.
 //!
 //! Each VR frame's projections carry a sub-pixel jitter ([`jitter`]), which FSR is told per eye in
-//! its own pixels; the motion vectors it is handed are free of it ([`jitter_free_reprojection`]).
+//! its own pixels; the motion vectors it is handed are free of it ([`jitter::jitter_free_reprojection`]).
 
 mod config;
 pub use config::{AntiAliasing, FSR_CONFIG, FsrConfig, TaaConfig};
@@ -210,7 +210,7 @@ impl EyeMotion {
             (Some((_, eye_reprojection)), Some(previous), Some(views)) => {
                 let current = glam::Mat4::from_cols_array(&views.current_eye);
                 Some((
-                    reprojection_from_jittered(previous, current, jitter_ndc),
+                    jitter::reprojection_from_jittered(previous, current, jitter_ndc),
                     eye_reprojection,
                 ))
             }
@@ -233,44 +233,9 @@ fn side_by_side_reprojection(
     current: EyeViewProjections,
 ) -> (Matrix4, Matrix4) {
     (
-        reprojection_from_jittered(previous.center, current.eye, current.jitter),
-        jitter_free_reprojection(previous.eye, current.eye, current.jitter),
+        jitter::reprojection_from_jittered(previous.center, current.eye, current.jitter),
+        jitter::jitter_free_reprojection(previous.eye, current.eye, current.jitter),
     )
-}
-
-/// The clip-to-previous-clip matrix of an eye that rasterizes with `current` jittered by `jitter`
-/// (a clip-space offset), into the unjittered `previous`, that yields motion vectors free of the
-/// jitter, as FSR wants them (its documentation: motion vectors carry no jitter unless it is told to
-/// cancel it, which the mod does not ask).
-///
-/// With `T(j)` the clip-space translation by `j`, a pixel at clip `x` of the jittered render is the
-/// point `C⁻¹ T(-j) x`; its jitter-free motion is where that point lies in the previous frame less
-/// where it lies in the unjittered current one, `ndc(P C⁻¹ T(-j) x) - (ndc(x) - j)`. The decode takes
-/// `ndc(M x) - ndc(x)`, so `M = T(j) P C⁻¹ T(-j)`: the previous view-projection with this frame's
-/// jitter, which is the engine's own construction for its TAA. The matrices are taken unjittered and
-/// the jitter applied here in `f64`, since a jitter folded into an `f32` view-projection rounds its
-/// world-scale translation differently every frame, which reads as motion at a still camera.
-pub fn jitter_free_reprojection(
-    previous: glam::Mat4,
-    current: glam::Mat4,
-    jitter: glam::Vec2,
-) -> Matrix4 {
-    let shift = jitter::translation(jitter).as_dmat4();
-    let back = jitter::translation(-jitter).as_dmat4();
-    Matrix4::from((shift * previous.as_dmat4() * current.as_dmat4().inverse() * back).as_mat4())
-}
-
-/// The clip-to-previous-clip matrix from an eye that rasterizes with `current` jittered by `jitter`
-/// into `previous` as it stands: what a velocity encoding that takes the current position from the
-/// rasterized pixel and the previous one through `previous` records, jitter and all. Formed in
-/// `f64` from the unjittered `current`, as [`jitter_free_reprojection`] is.
-pub fn reprojection_from_jittered(
-    previous: glam::Mat4,
-    current: glam::Mat4,
-    jitter: glam::Vec2,
-) -> Matrix4 {
-    let back = jitter::translation(-jitter).as_dmat4();
-    Matrix4::from((previous.as_dmat4() * current.as_dmat4().inverse() * back).as_mat4())
 }
 
 /// The previous view-projection the engine's velocity pass encodes `eye`'s motion against: the
@@ -908,64 +873,5 @@ mod tests {
             "the centre sees the point from elsewhere"
         );
         assert!((shifted.y / shifted.w - point.y).abs() < 1e-4);
-    }
-
-    /// The decode's motion for the pixel at `clip` through the clip-to-previous-clip `matrix`, in
-    /// NDC: the current position less the previous one.
-    fn decoded_motion(matrix: &Matrix4, clip: glam::Vec4) -> glam::Vec2 {
-        let previous = glam::Mat4::from(*matrix) * clip;
-        clip.truncate().truncate() - previous.truncate().truncate() / previous.w
-    }
-
-    #[test]
-    fn a_still_jittered_eye_decodes_to_no_motion() {
-        let projection = glam::Mat4::perspective_infinite_reverse_rh(1.5, 1.0, 0.1);
-        let view = glam::Mat4::from_translation(glam::Vec3::new(-5528.0, -12.0, 1926.0)).inverse();
-        let matrix = jitter_free_reprojection(
-            projection * view,
-            projection * view,
-            glam::Vec2::new(-2.3e-4, 0.4e-4),
-        );
-        for clip in [
-            glam::Vec4::new(0.3, -0.4, 0.02, 1.0),
-            glam::Vec4::new(-0.8, 0.7, 0.5, 1.0),
-            glam::Vec4::new(0.0, 0.0, 0.0, 1.0),
-        ] {
-            let motion = decoded_motion(&matrix, clip);
-            assert!(motion.abs().max_element() < 1e-6, "{motion}");
-        }
-    }
-
-    #[test]
-    fn a_moving_jittered_eye_decodes_to_the_unjittered_motion() {
-        let projection = glam::Mat4::perspective_infinite_reverse_rh(1.5, 1.0, 0.1);
-        let current_view = glam::Mat4::IDENTITY;
-        let previous_view = glam::Mat4::from_rotation_translation(
-            glam::Quat::from_rotation_y(0.02),
-            glam::Vec3::new(0.03, 0.0, 0.01),
-        )
-        .inverse();
-        let jitter = glam::Vec2::new(-1.0e-4, -2.5e-4);
-        let current = projection * current_view;
-        let previous = projection * previous_view;
-        let matrix = jitter_free_reprojection(previous, current, jitter);
-        let point = glam::Vec4::new(0.7, -0.3, -5.0, 1.0);
-        let ndc = |clip: glam::Vec4| clip.truncate().truncate() / clip.w;
-        let expected = ndc(current * point) - ndc(previous * point);
-        let rendered = jitter::translation(jitter) * current * point;
-        let motion = decoded_motion(&matrix, rendered / rendered.w);
-        assert!(
-            (motion - expected).abs().max_element() < 1e-5,
-            "{motion} {expected}"
-        );
-        // The encoding's own reprojection keeps the jitter, as the rasterized position does.
-        let encoded = decoded_motion(
-            &reprojection_from_jittered(previous, current, jitter),
-            rendered / rendered.w,
-        );
-        assert!(
-            (encoded - expected - jitter).abs().max_element() < 1e-5,
-            "{encoded}"
-        );
     }
 }

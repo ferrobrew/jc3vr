@@ -98,7 +98,7 @@ pub struct VpHistory {
     pub cur_center: [Option<glam::Mat4>; 2],
     /// This frame's final per-eye view-projections, the matrices each dispatch rasterizes with but
     /// for the FSR jitter, which [`cur_jitter`](Self::cur_jitter) holds apart (see
-    /// [`crate::fsr::jitter_free_reprojection`]).
+    /// [`crate::fsr::jitter::jitter_free_reprojection`]).
     pub cur_eye: [Option<glam::Mat4>; 2],
     /// This frame's final per-eye view matrices (eye offset applied). Used by CPU-side
     /// projection paths such as the light-glow sprite, which cannot be fixed by shader constant remaps.
@@ -140,15 +140,15 @@ impl VpHistory {
     /// higher-than-`f32` precision.
     ///
     /// Both take the current position from the jittered render; the eye's reprojection carries no
-    /// jitter (see [`crate::fsr::jitter_free_reprojection`]).
+    /// jitter (see [`crate::fsr::jitter::jitter_free_reprojection`]).
     pub fn reprojection_matrices(&self, eye: usize) -> Option<(Matrix4, Matrix4)> {
         let cur = (*self.cur_eye.get(eye)?)?;
         let prev_center = (*self.prev_center.get(eye)?)?;
         let prev_eye = (*self.prev_eye.get(eye)?)?;
         let jitter = *self.cur_jitter.get(eye)?;
         Some((
-            crate::fsr::reprojection_from_jittered(prev_center, cur, jitter),
-            crate::fsr::jitter_free_reprojection(prev_eye, cur, jitter),
+            crate::fsr::jitter::reprojection_from_jittered(prev_center, cur, jitter),
+            crate::fsr::jitter::jitter_free_reprojection(prev_eye, cur, jitter),
         ))
     }
 }
