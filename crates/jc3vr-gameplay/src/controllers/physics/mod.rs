@@ -4,13 +4,20 @@
 //! - [`bodies`]: a body's place, motion, mass, and owner, read and driven through the Havok world;
 //! - [`rigid`]: a rigid body's response to impulses;
 //! - [`world`]: the Havok world, lent out for one call at a time;
-//! - [`havok`]: conversions to and from Havok's vectors and transforms.
+//! - [`havok`]: conversions to and from Havok's vectors and transforms;
+//! - [`refs`]: weak and strong references to game objects held across ticks;
+//! - [`characters`]: a character's proxy body, its protection, and the ragdolls that take it out
+//!   of a seat;
+//! - [`grapple_hook`]: the grappling hook and its wire's two ends.
 //!
 //! The body operations below read and drive one body each for the hands, the weapons, and the
 //! grapple.
 
 pub mod bodies;
+pub mod characters;
+pub mod grapple_hook;
 pub mod havok;
+pub(crate) mod refs;
 pub mod rigid;
 pub(crate) mod world;
 

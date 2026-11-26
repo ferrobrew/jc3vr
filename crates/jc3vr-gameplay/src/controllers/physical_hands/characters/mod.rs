@@ -17,7 +17,8 @@
 //! `docs/engine/gameplay/melee-and-damage.md` and `docs/engine/gameplay/vehicle-doors.md`.
 //!
 //! - [`config`]: the settings;
-//! - [`engine`]: a character's capsule body, the player's hostility to it, and whether it is dead;
+//! - [`engine`]: a character's capsule body, the player's hostility to it, and whether it is dead
+//!   (in [`crate::controllers::physics`]);
 //! - [`get_up`]: holding a held ragdoll's get-up off, and what ended a hold;
 //! - [`pane`]: reaching an occupant through a window the glass brought down;
 //! - [`ragdoll`]: a ragdolling character's bodies, the bone nearest a point, and the whole
@@ -38,7 +39,6 @@
 
 mod acquisition;
 pub mod config;
-pub mod engine;
 pub(crate) mod get_up;
 pub(crate) mod pane;
 pub mod ragdoll;
@@ -62,6 +62,7 @@ use crate::controllers::physical_hands::{
     grasp::{Reach, TargetKind},
     remote,
 };
+pub use crate::controllers::physics::characters as engine;
 
 /// A character a hand can take hold of.
 #[derive(Debug, Copy, Clone, PartialEq)]

@@ -18,7 +18,7 @@ use jc3gi::{
 };
 use parking_lot::Mutex;
 
-use crate::controllers::physical_hands;
+use crate::controllers::physics;
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub(crate) struct BodyHit {
@@ -29,7 +29,7 @@ pub(crate) struct BodyHit {
 
 impl BodyHit {
     pub(crate) unsafe fn at(body: u32, owner: NonZeroUsize, world: Vec3) -> Option<Self> {
-        let state = unsafe { physical_hands::body_state(body, owner) }.ok()?;
+        let state = unsafe { physics::body_state(body, owner) }.ok()?;
         let local_point = state.pose.local(world);
         local_point.is_finite().then_some(Self {
             body,
@@ -39,7 +39,7 @@ impl BodyHit {
     }
 
     pub(crate) unsafe fn point(self) -> Option<Vec3> {
-        let state = unsafe { physical_hands::body_state(self.body, self.owner) }.ok()?;
+        let state = unsafe { physics::body_state(self.body, self.owner) }.ok()?;
         let point = state.pose.point(self.local_point);
         point.is_finite().then_some(point)
     }

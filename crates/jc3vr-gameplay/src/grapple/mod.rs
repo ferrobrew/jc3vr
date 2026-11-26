@@ -53,7 +53,6 @@ use jc3gi::equipment::grappling_hook::GrapplingHookState;
 use parking_lot::Mutex;
 
 pub mod device;
-pub mod hook;
 pub(crate) mod line_grab;
 pub mod physical;
 pub mod rope;
@@ -65,6 +64,7 @@ use jc3vr_render::{
     headpose::config::{GrappleComfortConfig, GrappleComfortMode},
 };
 
+pub use crate::controllers::physics::grapple_hook as hook;
 use crate::grapple::hook::HookRead;
 
 /// Advance the filter one step: read the hook's phase, run the engage/hold/handoff/release state

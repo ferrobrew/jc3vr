@@ -62,7 +62,6 @@ pub mod equip;
 pub mod layout;
 pub mod pickup;
 pub mod rack;
-pub(crate) mod refs;
 pub mod release_diagnostics;
 pub(crate) mod source;
 pub mod steal;
@@ -90,6 +89,7 @@ use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
+pub(crate) use crate::controllers::physics::refs;
 use crate::controllers::{
     aim::gun,
     hands::{grip, late},
