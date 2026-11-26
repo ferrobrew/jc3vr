@@ -130,7 +130,11 @@ pub fn steer(pose: &ArmPose, config: &ArmSteeringConfig, engaged: bool) -> Optio
     if pose.spread.is_nan() || pose.spread < needed_spread(engaged) {
         return None;
     }
-    let bank = shape(pose.bank_m, ARM_STEERING.deadzone_m, ARM_STEERING.full_bank_m);
+    let bank = shape(
+        pose.bank_m,
+        ARM_STEERING.deadzone_m,
+        ARM_STEERING.full_bank_m,
+    );
     let pitch = match pitch_input(pose, config) {
         PitchInput::Height(height) => shape(-height, ARM_STEERING.deadzone_m, FULL_PITCH_M),
         PitchInput::TiltDeg(tilt) => shape(tilt, TILT_DEADZONE_DEG, FULL_TILT_DEG),

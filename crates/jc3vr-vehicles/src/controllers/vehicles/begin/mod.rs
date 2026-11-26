@@ -118,10 +118,7 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickVolumes {
         ..Placement::new(physical_config, config.dominant)
     };
     let grips = active.hands.map(|h| h.map(|h| h.grip.position));
-    let aiming = STATE
-        .lock()
-        .mounted_grip
-        .aiming(grips.map(|g| g.is_some()));
+    let aiming = STATE.lock().mounted_grip.aiming(grips.map(|g| g.is_some()));
     let mounted = mounted_tick(game, &active, aiming);
     // A gunner seat's view is corrected from its gun's handles, as a driver's from the wheel.
     let gunner_view = (seat.is_some_and(|s| !s.driver) && fit.view.is_none())

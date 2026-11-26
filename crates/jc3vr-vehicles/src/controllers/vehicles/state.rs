@@ -15,8 +15,7 @@ use jc3vr_view::controllers::overlay::{primitive::Source, store};
 use parking_lot::Mutex;
 
 use crate::controllers::vehicles::{
-    arm_steering as arm,
-    driving_view,
+    arm_steering as arm, driving_view,
     entry::VehicleEntryIdentity,
     fit::VehicleLatch,
     mounted::{MountedTarget, Reference},
@@ -170,11 +169,9 @@ pub fn apply(hands: &mut [Option<CockpitHand>; 2]) {
     let grips = hands.map(|h| h.map(|h| h.grip.position));
     let kick_offset = mounted_recoil::offset();
     let state = STATE.lock();
-    let kick = state
-        .mounted_barrel
-        .map_or(Vec3::ZERO, |barrel| {
-            mounted_recoil::handle_shift(kick_offset, barrel)
-        });
+    let kick = state.mounted_barrel.map_or(Vec3::ZERO, |barrel| {
+        mounted_recoil::handle_shift(kick_offset, barrel)
+    });
     for hand in Hand::BOTH {
         let i = hand.index();
         let Some(h) = hands[i] else {

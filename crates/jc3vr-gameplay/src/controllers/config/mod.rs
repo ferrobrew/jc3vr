@@ -22,9 +22,8 @@
 pub mod validate;
 
 use jc3vr_body::controllers::{
-    aim::config::AimConfig, body::config::BodyRemapConfig,
-    hands::config::HandsConfig, haptics::HapticsConfig,
-    intent::config::BindingsConfig, locomotion::config::LocomotionConfig,
+    aim::config::AimConfig, body::config::BodyRemapConfig, hands::config::HandsConfig,
+    haptics::HapticsConfig, intent::config::BindingsConfig, locomotion::config::LocomotionConfig,
     overlay::config::OverlayConfig, roomscale::config::RoomscaleConfig, scheme,
 };
 use jc3vr_core::config::engine::ConfigSlot;

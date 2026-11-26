@@ -61,8 +61,8 @@ use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::vehicles::{
-    tuning::{RAIL, RailTuning},
     rail::solve::{RailLine, RailMotion, RailStep, step, walk_from},
+    tuning::{RAIL, RailTuning},
 };
 
 pub(super) fn hook_library() -> HookLibrary {

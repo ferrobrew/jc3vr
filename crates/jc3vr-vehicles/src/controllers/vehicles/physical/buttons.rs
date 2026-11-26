@@ -18,7 +18,9 @@ use glam::{Quat, Vec3};
 use jc3vr_body::controllers::grab::cockpit::{Button, ControlKind};
 use jc3vr_input::frame::Hand;
 
-use crate::controllers::vehicles::{physical::Hold, tuning::CockpitButtonsTuning, wheel::WheelFrame};
+use crate::controllers::vehicles::{
+    physical::Hold, tuning::CockpitButtonsTuning, wheel::WheelFrame,
+};
 
 /// A push button in the cockpit frame: a disc facing the driver.
 #[derive(Debug, Copy, Clone, PartialEq)]

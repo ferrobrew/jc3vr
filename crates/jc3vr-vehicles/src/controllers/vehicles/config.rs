@@ -3,9 +3,7 @@
 //! vehicles, the mounted guns, the wingsuit, and the parachute is fixed in
 //! [`crate::controllers::vehicles::tuning`].
 
-use jc3vr_body::controllers::{
-    body::config::BODY_REMAP_CONFIG, scheme,
-};
+use jc3vr_body::controllers::{body::config::BODY_REMAP_CONFIG, scheme};
 use jc3vr_core::config::engine::ConfigSlot;
 use jc3vr_input::frame::Hand;
 use serde::{Deserialize, Serialize};

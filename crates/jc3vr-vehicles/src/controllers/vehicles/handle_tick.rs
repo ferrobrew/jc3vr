@@ -8,11 +8,8 @@ use jc3vr_body::controllers::{
 };
 
 use crate::controllers::vehicles::{
-    HandlesReadout, arm_steering as arm,
-    config::VehicleSettings,
-    tuning::ParachuteHandlesTuning,
-    parachute,
-    parachute::HandleState,
+    HandlesReadout, arm_steering as arm, config::VehicleSettings, parachute,
+    parachute::HandleState, tuning::ParachuteHandlesTuning,
 };
 
 /// Whether the parachute handles act in `mode`.

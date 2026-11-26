@@ -19,7 +19,6 @@ use jc3gi::{
 use jc3vr_body::controllers::{aim, scheme};
 use re_utilities::hook_library::HookLibrary;
 
-
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&SET_AIM_TARGET_POSITION_BINDER)
 }

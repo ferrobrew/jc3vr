@@ -13,10 +13,7 @@ use jc3vr_input::frame::Hand;
 use jc3vr_view::controllers::cockpit::CockpitTransform;
 
 use crate::controllers::vehicles::{
-    mounted,
-    mounted::MountedTarget,
-    state::STATE,
-    types::MountedReadout,
+    mounted, mounted::MountedTarget, state::STATE, types::MountedReadout,
 };
 
 /// What the mounted-gun half of the input tick produced.
@@ -72,29 +69,29 @@ pub(super) fn mounted_tick(
     let grips = Hand::BOTH.map(|hand| grips[hand.index()].filter(|_| aiming[hand.index()]));
 
     let from_hands = mounted::hands_midpoint(grips).and_then(|(mid, tracked)| {
-            let mut state = STATE.lock();
-            let current = state
-                .mounted_reference
-                .filter(|r| r.weapon == gun.address && r.hands == tracked);
-            let reference = current.or_else(|| {
-                let handles_mid = match handles {
-                    [Some(l), Some(r)] => Some((l + r) * 0.5),
-                    [one, other] => one.or(other),
-                };
-                mounted::take_reference(
-                    gun.address,
-                    tracked,
-                    mid,
-                    to_cockpit(gun.pivot),
-                    handles_mid,
-                    body.inverse() * gun.barrel,
-                    MIN_LEVER_M,
-                )
-            });
-            state.mounted_reference = reference;
-            drop(state);
-            mounted::aim_direction(&reference?, mid).map(|d| body * d)
+        let mut state = STATE.lock();
+        let current = state
+            .mounted_reference
+            .filter(|r| r.weapon == gun.address && r.hands == tracked);
+        let reference = current.or_else(|| {
+            let handles_mid = match handles {
+                [Some(l), Some(r)] => Some((l + r) * 0.5),
+                [one, other] => one.or(other),
+            };
+            mounted::take_reference(
+                gun.address,
+                tracked,
+                mid,
+                to_cockpit(gun.pivot),
+                handles_mid,
+                body.inverse() * gun.barrel,
+                MIN_LEVER_M,
+            )
         });
+        state.mounted_reference = reference;
+        drop(state);
+        mounted::aim_direction(&reference?, mid).map(|d| body * d)
+    });
     let direction = {
         let mut state = STATE.lock();
         match from_hands {

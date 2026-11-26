@@ -81,9 +81,7 @@ pub fn finish_tick(
         },
         &mut mounted_events,
     );
-    mounted_recoil::set_holds(
-        Hand::BOTH.map(|h| state.mounted_grip.shares()[h.index()] > 0.0),
-    );
+    mounted_recoil::set_holds(Hand::BOTH.map(|h| state.mounted_grip.shares()[h.index()] > 0.0));
     state.status.mounted_holds = state.mounted_grip.holds;
     publish_mounted_holds(state.mounted_grip.holds);
     if !mounted_events.is_empty() {
@@ -224,8 +222,8 @@ pub fn finish_tick(
             "wingsuit arm steering"
         );
     }
-    let handles =
-        pulls.map(|pulls| handles_tick(&state.handles, pulls, controls, desired, &PARACHUTE_HANDLES));
+    let handles = pulls
+        .map(|pulls| handles_tick(&state.handles, pulls, controls, desired, &PARACHUTE_HANDLES));
     state.status.holds = state.controls.holds.map(|h| h.map(|h| h.kind));
     state.status.controls = state.controls;
     state.status.outputs = outputs;

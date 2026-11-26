@@ -113,7 +113,6 @@ fn twisting_the_held_stick_works_the_rudder_from_where_it_was_taken() {
         out.rudder.is_some_and(|r| (r - 1.0).abs() < 1e-4),
         "{out:?}"
     );
-
 }
 
 /// The throttle's grip for a hand at `share` of the forward section (negative: of the reverse

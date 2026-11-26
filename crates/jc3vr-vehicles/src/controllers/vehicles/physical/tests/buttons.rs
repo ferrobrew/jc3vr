@@ -4,9 +4,7 @@ use jc3vr_body::controllers::grab::cockpit::Button;
 
 use super::*;
 use crate::controllers::vehicles::{
-    physical::buttons::{
-        ButtonEvent, PushButton, PushPhase, grip_twist, push_step,
-    },
+    physical::buttons::{ButtonEvent, PushButton, PushPhase, grip_twist, push_step},
     write_outputs,
 };
 

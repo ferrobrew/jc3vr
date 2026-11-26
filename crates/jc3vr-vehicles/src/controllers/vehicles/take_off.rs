@@ -44,8 +44,8 @@ pub(crate) unsafe fn tick() {
     let character = unsafe { Character::GetLocalPlayerCharacter().as_ref() };
     let state = character.and_then(|c| unsafe { active_state_type_id(c) });
     let taking_off = state.is_some_and(is_take_off_state);
-    let holding = mode::current().mode == Mode::OnFoot(OnFootVariant::Ground)
-        && unsafe { use_held() };
+    let holding =
+        mode::current().mode == Mode::OnFoot(OnFootVariant::Ground) && unsafe { use_held() };
     let mut tracker = TRACKER.lock();
     let edge = tracker.step(holding, taking_off, Instant::now());
     let phase = tracker.phase;

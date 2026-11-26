@@ -160,12 +160,7 @@ fn the_take_leaves_the_velocity_alone_and_follows_the_rider_in() {
     let rush = Vec3::new(-12.0, 0.0, 6.0);
     let mut held = Held::new(Vec3::ZERO, start, &LOCK).unwrap();
     assert!(held.coasting());
-    let out = swing(
-        &mut held,
-        input(start, rush, Vec3::ZERO, Vec3::ZERO),
-        &LOCK,
-    )
-    .unwrap();
+    let out = swing(&mut held, input(start, rush, Vec3::ZERO, Vec3::ZERO), &LOCK).unwrap();
     assert!(
         (out.velocity - (rush - Vec3::Y * GRAVITY_MPS2 * DT)).length() < 1e-4,
         "nothing but gravity on the take's first tick: {}",
@@ -203,13 +198,9 @@ fn take(held: &mut Held, mut rider: Vec3, mut velocity: Vec3) -> (Vec3, Vec3) {
         if !held.coasting() {
             break;
         }
-        velocity = swing(
-            held,
-            input(rider, velocity, Vec3::ZERO, Vec3::ZERO),
-            &LOCK,
-        )
-        .unwrap()
-        .velocity;
+        velocity = swing(held, input(rider, velocity, Vec3::ZERO, Vec3::ZERO), &LOCK)
+            .unwrap()
+            .velocity;
         rider += velocity * DT;
     }
     (rider, velocity)
@@ -307,12 +298,7 @@ fn a_rush_up_to_a_high_hook_keeps_its_way_across_the_line() {
     let across = Vec3::Z * 5.0;
     let rush = -direction * 30.0 + across;
     let mut held = Held::new(Vec3::ZERO, start, &LOCK).unwrap();
-    let out = swing(
-        &mut held,
-        input(start, rush, Vec3::ZERO, Vec3::ZERO),
-        &LOCK,
-    )
-    .unwrap();
+    let out = swing(&mut held, input(start, rush, Vec3::ZERO, Vec3::ZERO), &LOCK).unwrap();
     assert!(
         (out.velocity.z - across.z).abs() < 1e-3
             && (out.velocity.y - (rush.y - GRAVITY_MPS2 * DT)).abs() < 1e-3,
@@ -412,12 +398,7 @@ fn a_tangential_swing_velocity_survives_the_next_lock() {
     let exit = Vec3::X * 6.0;
     let mut next = Held::new(Vec3::ZERO, rider, &LOCK).unwrap();
     assert!(next.coasting());
-    let out = swing(
-        &mut next,
-        input(rider, exit, Vec3::ZERO, Vec3::ZERO),
-        &LOCK,
-    )
-    .unwrap();
+    let out = swing(&mut next, input(rider, exit, Vec3::ZERO, Vec3::ZERO), &LOCK).unwrap();
     let direction = rider.normalize();
     let tangential = out.velocity - direction * out.velocity.dot(direction);
     assert!((tangential - exit).length() < 1e-3, "{out:?}");

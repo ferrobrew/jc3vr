@@ -22,7 +22,6 @@ use glam::Vec3;
 use jc3vr_body::controllers::{mode::VehicleSeat, scheme};
 use jc3vr_input::frame::Hand;
 
-
 /// The passenger aim's readout.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
 pub struct PassengerStatus {
@@ -121,9 +120,6 @@ mod tests {
         assert_eq!(aim_point(acting, seat(true), false, targets), None);
         assert_eq!(aim_point(acting, seat(false), true, targets), None);
         assert_eq!(aim_point(acting, None, false, targets), None);
-        assert_eq!(
-            aim_point(acting, seat(false), false, [None; 2]),
-            None
-        );
+        assert_eq!(aim_point(acting, seat(false), false, [None; 2]), None);
     }
 }

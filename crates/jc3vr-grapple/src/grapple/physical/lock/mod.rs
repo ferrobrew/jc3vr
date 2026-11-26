@@ -236,13 +236,13 @@ pub fn entering_helicopter() -> bool {
 /// something other than a character.
 pub(crate) fn lockable(game: &GameTick<'_>) -> bool {
     LocalPlayer::get(game)
-            .as_mut()
-            .and_then(LocalPlayer::character_and_hook)
-            .is_some_and(|(_, hook)| {
-                // SAFETY: the local player's hook, in the game tick.
-                unsafe { engine::reeling_far_end(hook) }
-                    .is_some_and(|proxy| engine::lockable_kind(proxy.m_AttachmentObjectInfo))
-            })
+        .as_mut()
+        .and_then(LocalPlayer::character_and_hook)
+        .is_some_and(|(_, hook)| {
+            // SAFETY: the local player's hook, in the game tick.
+            unsafe { engine::reeling_far_end(hook) }
+                .is_some_and(|proxy| engine::lockable_kind(proxy.m_AttachmentObjectInfo))
+        })
 }
 
 /// What the bindings hand the lock's tick.
@@ -408,11 +408,10 @@ pub fn lock_tick(game: &GameTick<'_>, input: &LockTickInput) {
                         haptics::sustain(input.hand.other(), Sustain::GrappleTension, 0.0);
                     }
                 }
-                let taken =
-                    active
-                        .take_in
-                        .step(input.real_dt, input.line, LOCK.reel_in_mps)
-                        + free_taken;
+                let taken = active
+                    .take_in
+                    .step(input.real_dt, input.line, LOCK.reel_in_mps)
+                    + free_taken;
                 active.pump.sample(pump_sample, input.real_dt, &pump_tuning);
                 active.pump_tuning = pump_tuning;
                 active.pump_at = Instant::now();
@@ -489,7 +488,9 @@ pub(crate) unsafe fn drive(
         return false;
     };
     let rider = Vec3::from_array(position.data);
-    let target_inverse_mass = active.target.map_or(0.0, |t| t.inverse_mass * LOCK.reaction);
+    let target_inverse_mass = active
+        .target
+        .map_or(0.0, |t| t.inverse_mass * LOCK.reaction);
     if active.pump_at.elapsed() > Duration::from_millis(100) {
         active.pump.expire();
     }

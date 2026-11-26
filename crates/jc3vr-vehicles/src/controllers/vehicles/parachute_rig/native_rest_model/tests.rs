@@ -7,9 +7,9 @@ use jc3vr_input::frame::Hand;
 
 use super::*;
 use crate::controllers::vehicles::{
-    tuning::{PARACHUTE_HANDLES, ParachuteHandlesTuning},
     parachute::{HandleEvent, HandleHold, HandleState, RADIUS_M, REACH_M, StepInputs},
     physical::Release,
+    tuning::{PARACHUTE_HANDLES, ParachuteHandlesTuning},
 };
 
 mod parachute {
