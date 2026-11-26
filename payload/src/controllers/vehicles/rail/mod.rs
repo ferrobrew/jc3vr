@@ -51,8 +51,8 @@ use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{
-    config::Config,
     controllers::{
+        config::CONTROLLERS_CONFIG,
         physical_hands::climb::{self, engine},
         scheme,
         vehicles::{
@@ -127,7 +127,7 @@ pub(crate) unsafe fn input_tick(jump: bool, on_foot: bool) {
         release("the local player went away");
         return;
     };
-    let config = Config::lock_query(|c| c.controllers.vehicles.rail);
+    let config = CONTROLLERS_CONFIG.lock().vehicles.rail;
     if !enabled() {
         ENTER_REQUESTED.store(false, Ordering::Relaxed);
         release("the rail was switched off");
@@ -198,7 +198,7 @@ pub(crate) unsafe fn step_physics() {
     if climb::climbing() {
         return;
     }
-    let config = Config::lock_query(|c| c.controllers.vehicles.rail);
+    let config = CONTROLLERS_CONFIG.lock().vehicles.rail;
     let Some(frame) = (unsafe { engine::body_frame(active.body) }) else {
         drop(state);
         release("the airframe went away");
@@ -265,7 +265,7 @@ fn evaluate(
 fn enabled() -> bool {
     scheme::is_controllers()
         && !crate::is_shutting_down()
-        && Config::lock_query(|c| c.controllers.enabled && c.controllers.vehicles.helicopter_rail)
+        && CONTROLLERS_CONFIG.query(|c| c.enabled && c.vehicles.helicopter_rail)
 }
 
 /// The rail's motion from its settings.

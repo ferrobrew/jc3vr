@@ -19,10 +19,7 @@ use jc3gi::{
 };
 use re_utilities::hook_library::HookLibrary;
 
-use crate::{
-    config::Config,
-    controllers::{aim, scheme},
-};
+use crate::controllers::{aim, config::CONTROLLERS_CONFIG, scheme};
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&SET_AIM_TARGET_POSITION_BINDER)
@@ -60,11 +57,11 @@ fn set_aim_target_position(vehicle: *mut Vehicle, position: *const Vector3) {
 /// The dominant hand's aim point from the last aim update, while the option is on and the hand
 /// aims.
 fn hand_point() -> Option<Vec3> {
-    let (enabled, on, dominant) = Config::lock_query(|c| {
+    let (enabled, on, dominant) = CONTROLLERS_CONFIG.query(|c| {
         (
-            c.controllers.enabled,
-            c.controllers.vehicles.driver_weapons_by_hand,
-            c.controllers.acting_hand(),
+            c.enabled,
+            c.vehicles.driver_weapons_by_hand,
+            c.acting_hand(),
         )
     });
     if !(enabled && on && scheme::is_controllers()) {

@@ -10,7 +10,7 @@
 //! game's hint queue keeps running, so its timing and cooldowns behave as normal. The controls
 //! summary stands in for them.
 
-use crate::{config::Config, controllers::scheme};
+use crate::controllers::{config::CONTROLLERS_CONFIG, scheme};
 
 /// Whether to hide the hints: the toggle, with the controllers' master switch, and the controller
 /// scheme.
@@ -25,8 +25,7 @@ pub const fn decide(enabled: bool, controllers_scheme: bool) -> bool {
 /// Must be called from the [`MovieImpl::Capture`](jc3gi::ui::scaleform::MovieImpl) detour, as
 /// [`crate::hud::scaleform::apply_hint_suppression`] requires.
 pub(crate) unsafe fn hide_game_hints() {
-    let enabled =
-        Config::lock_query(|c| c.controllers.enabled && c.controllers.summary.hide_game_hints);
+    let enabled = CONTROLLERS_CONFIG.query(|c| c.enabled && c.summary.hide_game_hints);
     let hidden = decide(enabled, scheme::is_controllers());
     // SAFETY: forwarded from the caller.
     unsafe { crate::hud::scaleform::apply_hint_suppression(hidden) };

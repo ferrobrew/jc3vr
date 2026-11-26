@@ -19,33 +19,31 @@ use jc3gi::{
 };
 use parking_lot::Mutex;
 
-use crate::{
-    config::Config,
-    controllers::{
-        bindings::hold::{Desired, MapKind, Target, Want},
-        cockpit::CockpitTransform,
-        frame::Hand,
-        hands,
-        loadout::{Delivery, TakeSource},
-        physical_hands::{self, doors::engine::vehicle_of as resolve_vehicle, physics_object_of},
-        scheme,
-        vehicles::{
-            is_mounted_weapon,
-            mounted::{
-                Held, Mount, MountedGun,
-                control::{Identity, Input, Tear},
-                gunner_seat, handle, mount_matches,
-                native::{self, Motor, Prompt},
-                pivot_and_barrel,
-                vehicle_hold::VehicleHold,
-            },
-            summary as vehicles_summary,
+use crate::controllers::{
+    bindings::hold::{Desired, MapKind, Target, Want},
+    cockpit::CockpitTransform,
+    config::CONTROLLERS_CONFIG,
+    frame::Hand,
+    hands,
+    loadout::{Delivery, TakeSource},
+    physical_hands::{self, doors::engine::vehicle_of as resolve_vehicle, physics_object_of},
+    scheme,
+    vehicles::{
+        is_mounted_weapon,
+        mounted::{
+            Held, Mount, MountedGun,
+            control::{Identity, Input, Tear},
+            gunner_seat, handle, mount_matches,
+            native::{self, Motor, Prompt},
+            pivot_and_barrel,
+            vehicle_hold::VehicleHold,
         },
-        weapons::{
-            FinishInputs,
-            engine::{character_object, object_of, weapon_at},
-            hold::{armed, pickup, refs::Weak},
-        },
+        summary as vehicles_summary,
+    },
+    weapons::{
+        FinishInputs,
+        engine::{character_object, object_of, weapon_at},
+        hold::{armed, pickup, refs::Weak},
     },
 };
 
@@ -87,9 +85,7 @@ pub(crate) unsafe fn observe(weapon: &WeaponBase) {
 pub(crate) unsafe fn tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
     let enabled = scheme::is_controllers()
         && !crate::is_shutting_down()
-        && Config::lock_query(|config| {
-            config.controllers.enabled && config.controllers.physical_hands.enabled
-        });
+        && CONTROLLERS_CONFIG.query(|config| config.enabled && config.physical_hands.enabled);
     let held = physical_hands::held_bodies();
     let now = Instant::now();
     let mut previous = std::mem::take(&mut *CONTROLLED.lock());

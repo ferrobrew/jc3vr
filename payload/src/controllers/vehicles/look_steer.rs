@@ -24,8 +24,8 @@ use jc3gi::{
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{
-    config::Config,
     controllers::{
+        config::CONTROLLERS_CONFIG,
         mode::{self, AirborneVariant, Mode},
         scheme,
     },
@@ -68,7 +68,7 @@ fn update_std_look_steering(
 /// Whether to remove the look-steer: the controller scheme is in effect, the player flies the
 /// wingsuit or the parachute, and the local player's head is decoupled.
 fn should_suppress() -> bool {
-    let enabled = Config::lock_query(|c| c.controllers.enabled);
+    let enabled = CONTROLLERS_CONFIG.lock().enabled;
     if !(enabled && scheme::is_controllers()) {
         return false;
     }
