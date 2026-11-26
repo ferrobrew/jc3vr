@@ -1,5 +1,5 @@
-//! Posture and roomscale: the player's posture, crouching, the head fade, and the seat transitions.
-//! The automatic posture's detection, the seated eye reference, and the comfort fade's timing are
+//! Posture and roomscale: the player's posture, the head fade, and the seat transitions.
+//! The automatic posture's detection, the seated eye reference, the crouch, and the comfort fade's timing are
 //! fixed in their modules under [`crate::controllers::roomscale`]. The chase that walks the body
 //! after the head is the rig's ([`crate::controllers::body::rig::config::ChaseConfig`]).
 
@@ -30,8 +30,6 @@ pub static TAKE_OFF_TO_HEAD: ConfigSlot<bool> =
 pub struct RoomscaleConfig {
     /// The player's posture.
     pub posture: Posture,
-    /// Crouching.
-    pub crouch: CrouchConfig,
     /// Fading the view when the head goes deep into geometry the body cannot follow it through.
     pub head_fade: HeadFadeConfig,
     /// How the view behaves while the character enters or exits a vehicle seat.
@@ -42,7 +40,6 @@ impl RoomscaleConfig {
     pub const fn new() -> Self {
         Self {
             posture: Posture::Auto,
-            crouch: CrouchConfig::new(),
             head_fade: HeadFadeConfig::new(),
             seat_transition: SeatTransition::Ride,
         }
@@ -70,35 +67,6 @@ pub enum Posture {
     /// about the room. A saved `Roomscale` loads as this.
     #[serde(alias = "Roomscale")]
     Standing,
-}
-
-/// Crouching.
-#[derive(Copy, Clone, Serialize, Deserialize)]
-#[serde(default)]
-pub struct CrouchConfig {
-    /// Shorten the character's collision capsule while crouched, with the game's own crouching
-    /// proxy state. The game hands the proxy state to its own states (swimming, vehicles, the
-    /// parachute, ragdoll) whenever they want it.
-    pub capsule: bool,
-    /// How far (metres, at the character's scale) the head must drop below the standing eye height
-    /// before the character counts as crouched, for the capsule and the readouts. It stands again
-    /// at [`CROUCH_EXIT_DROP_M`](crate::controllers::roomscale::crouch::CROUCH_EXIT_DROP_M).
-    pub enter_drop_m: f32,
-}
-
-impl CrouchConfig {
-    pub const fn new() -> Self {
-        Self {
-            capsule: true,
-            enter_drop_m: 0.45,
-        }
-    }
-}
-
-impl Default for CrouchConfig {
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 /// The head-through-geometry fade.

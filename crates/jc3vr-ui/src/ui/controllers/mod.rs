@@ -134,9 +134,6 @@ pub(crate) fn controls(id: FeatureId) -> Option<FeatureBody> {
         FeatureId::Air => |ui, id| {
             vehicles::feature_settings(ui, &mut CONTROLLERS_CONFIG.edit().vehicles, id);
         },
-        FeatureId::Posture => {
-            |ui, _| roomscale::roomscale_settings(ui, &mut CONTROLLERS_CONFIG.edit().roomscale)
-        }
         FeatureId::BodyFit => |ui, _| {
             let mut c = CONTROLLERS_CONFIG.edit();
             rig::rig_settings(ui, &mut c.body);

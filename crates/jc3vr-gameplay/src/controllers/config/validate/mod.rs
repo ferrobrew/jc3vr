@@ -14,7 +14,6 @@ mod aim;
 mod haptics;
 mod input;
 mod physical_hands;
-mod roomscale;
 mod vehicles;
 mod weapons;
 
@@ -38,7 +37,6 @@ pub fn controllers(c: &ControllersConfig) -> Result<(), Invalid> {
     aim::hands(&c.hands)?;
     aim::aim(&c.aim)?;
     weapons::weapons(&c.weapons)?;
-    roomscale::roomscale(&c.roomscale)?;
     vehicles::vehicles(&c.vehicles)?;
     physical_hands::physical_hands(&c.physical_hands)?;
     haptics::haptics(&c.haptics)

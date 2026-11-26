@@ -10,6 +10,10 @@
 
 use jc3gi::physics::ProxyState;
 
+/// How far (metres, at the character's scale) the head must drop below the standing eye height
+/// before the character counts as crouched, for the capsule and the readouts.
+pub const CROUCH_ENTER_DROP_M: f32 = 0.45;
+
 /// How far the head must come back up, metres below the standing eye height at the character's
 /// scale, before the character counts as standing again. Clamped to the crouch's entry depth, so
 /// the hysteresis never inverts.

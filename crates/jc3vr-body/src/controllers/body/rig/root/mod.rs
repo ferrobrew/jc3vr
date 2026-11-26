@@ -102,12 +102,7 @@ use crate::controllers::{
     locomotion::{after_task, config::LOCOMOTION_CONFIG},
     roomscale,
     roomscale::{
-        SeatPhase,
-        config::{ROOMSCALE_CONFIG, RoomscaleConfig},
-        crouch::capsule_step,
-        fade,
-        fade::FadeSource,
-        posture::EffectivePosture,
+        SeatPhase, crouch::capsule_step, fade, fade::FadeSource, posture::EffectivePosture,
         teleport,
     },
 };
@@ -455,11 +450,6 @@ pub(crate) unsafe fn release_capsule() {
     }
 }
 
-/// Whether the crouch capsule follows the head.
-pub(crate) fn capsule_enabled(config: &RoomscaleConfig) -> bool {
-    config.crouch.capsule
-}
-
 fn status_from(frame: &Mutex<FrameState>, sim: &Mutex<Sim>) -> RootStatus {
     let frame = frame.lock().status;
     let sim = sim.lock().readout();
@@ -618,7 +608,6 @@ fn locomotion_task_update(ctx: *mut StateContext, properties: *mut c_void, state
 
 /// The simulation half, for the local player after the locomotion task.
 unsafe fn after_locomotion(character: &mut Character, dt: f32) {
-    let config = *ROOMSCALE_CONFIG.lock();
     let rig = BODY_REMAP_CONFIG.query(|c| c.rig);
     let now = Instant::now();
     let shared = roomscale::frame_shared();
@@ -712,9 +701,7 @@ unsafe fn after_locomotion(character: &mut Character, dt: f32) {
         }
     }
 
-    if capsule_enabled(&config) {
-        unsafe { capsule_tick(&mut sim, character, shared.crouched, position) };
-    }
+    unsafe { capsule_tick(&mut sim, character, shared.crouched, position) };
 
     let input = TickInput {
         position,

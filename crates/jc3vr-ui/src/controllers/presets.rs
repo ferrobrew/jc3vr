@@ -41,7 +41,6 @@ pub fn apply_preset(c: &mut ControllersConfig, preset: Preset) {
     c.body.remap_hands = on;
     c.roomscale.posture = if on { Posture::Auto } else { Posture::Seated };
     c.body.rig.steps.enabled = on;
-    c.roomscale.crouch.capsule = on;
     c.roomscale.head_fade.enabled = on;
     c.roomscale.seat_transition = SeatTransition::Ride;
     c.vehicles.driver_weapons_by_hand = on;
@@ -120,7 +119,6 @@ mod tests {
         apply_preset(&mut c, Preset::GamepadBaseline);
         assert!(!c.enabled);
         assert!(!c.body.rig.steps.enabled);
-        assert!(!c.roomscale.crouch.capsule);
         assert!(!c.roomscale.head_fade.enabled);
         assert!(!c.body.remap_head);
         assert!(!c.body.remap_hands);

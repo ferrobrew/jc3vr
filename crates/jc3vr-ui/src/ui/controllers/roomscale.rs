@@ -1,12 +1,12 @@
 //! Posture and roomscale: the posture in effect, the play area, the head height, the teleports, the
-//! comfort fade, the crouch, and the seat phase, and the crouch settings. The steps and the lean are
+//! comfort fade, the crouch, and the seat phase. The steps and the lean are
 //! the rig's ([`crate::ui::controllers::rig`]).
 
 use egui::Ui;
 use jc3vr_body::controllers::{
     body::rig::collision::probe::ProbeResult,
     roomscale,
-    roomscale::{FrameStatus, RoomscaleStatus, config::RoomscaleConfig, posture::EffectivePosture},
+    roomscale::{FrameStatus, RoomscaleStatus, posture::EffectivePosture},
 };
 use jc3vr_gameplay::hooks::camera::height;
 
@@ -120,13 +120,6 @@ fn posture_inputs(ui: &mut Ui, f: &FrameStatus) {
         ),
         None => "Seated eye reference: none yet".to_owned(),
     });
-}
-
-pub(super) fn roomscale_settings(ui: &mut Ui, r: &mut RoomscaleConfig) {
-    let c = &mut r.crouch;
-    ui.checkbox(&mut c.capsule, "Crouch capsule")
-        .on_hover_text("Shorten the collision capsule while crouched.");
-    ui.add(egui::Slider::new(&mut c.enter_drop_m, 0.1..=1.2).text("Crouched below (m)"));
 }
 
 /// The camera's height against Rico's animated eyes, both above his root, and what sets the

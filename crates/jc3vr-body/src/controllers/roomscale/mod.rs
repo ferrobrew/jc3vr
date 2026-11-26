@@ -61,7 +61,7 @@ use crate::{
                 collision,
                 collision::{probe, probe::ProbeResult},
                 grounded, live_observation, root as rig_root,
-                root::{FrameSourceSnapshot, RootStatus, capsule_enabled},
+                root::{FrameSourceSnapshot, RootStatus},
             },
         },
         facts::driving,
@@ -71,7 +71,7 @@ use crate::{
             config::{
                 DRIVING_VIEW_ENABLED, Posture, ROOMSCALE_CONFIG, RoomscaleConfig, TAKE_OFF_TO_HEAD,
             },
-            crouch::{CROUCH_EXIT_DROP_M, CrouchTracker},
+            crouch::{CROUCH_ENTER_DROP_M, CROUCH_EXIT_DROP_M, CrouchTracker},
             fade::{FADE_TIMING, FadeSource},
             posture::{
                 AUTO_POSTURE, ClassifierInput, ClassifierStatus, DetectedPosture, EffectivePosture,
@@ -277,7 +277,7 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
     };
     let crouched = frame
         .crouch
-        .update(eye_drop_m, config.crouch.enter_drop_m, CROUCH_EXIT_DROP_M);
+        .update(eye_drop_m, CROUCH_ENTER_DROP_M, CROUCH_EXIT_DROP_M);
 
     if in_gameplay {
         // SAFETY: the game thread, outside the world update.
@@ -323,7 +323,7 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
     let sim_stale = sim
         .at
         .is_none_or(|at| now.duration_since(at) > probe::STALE_AFTER);
-    if sim.capsule_owned && (!capsule_enabled(&config) || sim_stale) {
+    if sim.capsule_owned && sim_stale {
         // SAFETY: the game thread, outside the world update.
         unsafe { rig_root::release_capsule() };
     }

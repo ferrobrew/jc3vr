@@ -239,7 +239,6 @@ mod tests {
             // display.
             controllers.input.hand_tracking = false;
             controllers.locomotion.stick.run_speed_mps = 3.0;
-            controllers.roomscale.crouch.enter_drop_m = 0.5;
             controllers.body.remap_head = false;
             controllers.body.estimator.enabled = false;
             let headpose = config.part_mut(&HEADPOSE_CONFIG);
@@ -272,7 +271,6 @@ mod tests {
             assert_eq!(controllers.locomotion.stick.run_speed_mps, 3.0);
             assert_eq!(headpose.grapple.mode, default_headpose.grapple.mode);
             assert_eq!(controllers.aim.sights.get(7), Some(&sight));
-            assert_eq!(controllers.roomscale.crouch.enter_drop_m, 0.5);
             assert!(!controllers.body.remap_head);
             assert!(!controllers.body.estimator.enabled);
             assert_eq!(config.part(&HUD_CONFIG).distance, 2.0);
