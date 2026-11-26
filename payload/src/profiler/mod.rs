@@ -37,9 +37,6 @@ use std::{
 use parking_lot::Mutex;
 use puffin::{GlobalProfiler, ScopeDetails, ScopeId, ThreadProfiler};
 
-// Re-exported at its former home, where the render-pass hook names it.
-pub(crate) use crate::profiler::gpu::pass_scope;
-
 /// Whether the profiler UI has scope collection enabled (independent of an active capture, which
 /// forces collection on for its duration).
 static UI_ENABLED: AtomicBool = AtomicBool::new(false);

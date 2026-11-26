@@ -135,7 +135,7 @@ fn do_draw(this: *mut RenderPass, ctx: *mut RenderContext, color_mask: u32) -> b
     // by `profiler::change_render_block_type` nest within this scope.
     #[cfg(feature = "profiler")]
     // SAFETY: `this` is the live render pass being drawn.
-    let _pass = unsafe { crate::profiler::pass_scope(this) };
+    let _pass = unsafe { crate::profiler::gpu::pass_scope(this) };
     // Single-pass-stereo feasibility probe: record this pass's per-eye GPU-op count so the two
     // eyes' draw sequences can be diffed at frame end. Armed per traced stereo frame; two atomic
     // loads when on.

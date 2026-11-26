@@ -153,7 +153,6 @@ payload/src/hud/summary_panel.rs -> payload
 payload/src/hud/target.rs -> payload
 payload/src/hud/world_markers/render.rs -> payload
 payload/src/image_writer.rs -> payload
-payload/src/profiler/mod.rs -> render
 payload/src/recorder/mod.rs -> payload
 payload/src/recorder/session_recording.rs -> payload
 payload/src/recorder/tracking/mod.rs -> payload
