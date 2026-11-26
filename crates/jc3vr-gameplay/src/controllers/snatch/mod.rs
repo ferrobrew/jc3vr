@@ -94,6 +94,7 @@ use crate::controllers::{
         tables,
         yank::{ArmedLine, HandLine, YankConfig, YankDetector},
     },
+    facts::line,
     grab::{GrabVolume, GripTarget, Mark, MarkAt, Provided, latch::GripLatch},
     haptics,
     loadout::slot_label,
@@ -191,13 +192,6 @@ const fn heavy(offer: &Offer) -> bool {
             ..
         } | OfferKind::Ragdoll { .. }
     )
-}
-
-/// Whether the snatch's own line is out: the hook flying to its target, freeing it, or the line
-/// pulling or swinging it. A gun in the other hand may fire meanwhile
-/// ([`crate::controllers::weapons::permission`]).
-pub(crate) fn line_out() -> bool {
-    STATE.lock().phase.in_flight().is_some()
 }
 
 /// The hook's point on the target the snatch's line swings from `hand`, world space, as the last
@@ -402,10 +396,8 @@ pub(crate) unsafe fn finish_tick(input: &FinishInput, desired: &mut Vec<Desired>
         (Phase::Pulling { hand, .. }, Some(swing)) => latch::submit_line(*hand, &swing),
         _ => latch::clear(),
     }
-    let line_out = matches!(
-        state.phase,
-        Phase::Freeing { .. } | Phase::HookOut { .. } | Phase::Pulling { .. }
-    );
+    let line_out = state.phase.in_flight().is_some();
+    line::publish(line_out);
     state.status.phase = state.phase.label();
     drop(state);
     if line_out && let Some((_, actions)) = tables::grapple_press(input.detection.mode) {
@@ -431,6 +423,7 @@ pub(crate) fn stand_down() {
     // SAFETY: the game stage runs on the game thread before the world update.
     unsafe { state.phase.end_line() };
     state.phase = Phase::Idle;
+    line::publish(false);
     state.prearm.clear();
     state.other_catch = None;
     state.status.live = false;

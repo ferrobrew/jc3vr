@@ -21,9 +21,9 @@
 
 use jc3gi::character::character::Character;
 
-use crate::{
-    controllers::{physical_hands::characters::engine::dead, snatch},
-    grapple::{hook, physical::lock},
+use crate::controllers::{
+    facts::{line, lock},
+    physics::{characters::dead, grapple_hook as hook},
 };
 
 /// Whether a gun the character holds may fire: the game's shooting permission, or the airborne
@@ -32,7 +32,7 @@ use crate::{
 /// # Safety
 ///
 /// `character` must be live for the call; the reads are the same ones the game's own predicates
-/// make, and the snatch's state lock, a leaf.
+/// make, and the grapple lock's and the snatch's published facts, which take no lock.
 pub(crate) unsafe fn shooting_allowed(character: &Character) -> bool {
     let allowed = unsafe { character.m_Inventory.GetAnimationAllowsShooting() };
     allowed || waived(unsafe { airborne_state(character) })
@@ -71,7 +71,7 @@ unsafe fn airborne_state(character: &Character) -> AirborneState {
                 || character.IsFastfalling(),
             reeling: character.IsPreReelingIn() || character.IsReelingIn(),
             active_wire: hook.is_some_and(|hook| hook.m_ActiveWire.exists()),
-            mod_line: lock::holds() || snatch::line_out(),
+            mod_line: lock::holds() || line::out(),
             withheld: character.IsRagdolling()
                 || dead(character)
                 || character.IsSwimming()
