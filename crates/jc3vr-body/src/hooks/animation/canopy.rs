@@ -30,16 +30,10 @@ use jc3gi::{
     character::character::Character,
     hash::HashString,
 };
-use jc3vr_core::{config::engine::ConfigSlot, hash::hashlittle};
+use jc3vr_core::hash::hashlittle;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::hooks::{animation::body_rule_system, input::locomotion::head_decoupled};
-
-/// Whether the canopy opens out of a grapple reel straight into its idle, at
-/// `controllers.vehicles.canopy.skip_reel_opening` in the settings file; the payload binds the slot
-/// at startup.
-pub static SKIP_REEL_OPENING: ConfigSlot<bool> =
-    ConfigSlot::new("controllers.vehicles.canopy.skip_reel_opening");
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&SET_STATE_INTERNAL_BINDER)
@@ -97,9 +91,6 @@ unsafe fn skip_reel_opening(machine: *mut StateMachineInstance, new_state: *mut 
     else {
         return;
     };
-    if !*SKIP_REEL_OPENING.lock() {
-        return;
-    }
     let Some(character) = (unsafe { Character::GetLocalPlayerCharacter().as_ref() })
         .filter(|character| head_decoupled(character))
     else {

@@ -40,20 +40,9 @@ pub fn apply_preset(c: &mut ControllersConfig, preset: Preset) {
     c.body.rig.steps.enabled = on;
     c.roomscale.head_fade.enabled = on;
     c.roomscale.seat_transition = SeatTransition::Ride;
-    c.vehicles.driver_weapons_by_hand = on;
-    c.vehicles.passenger_body_by_hand = on;
-    c.vehicles.mounted.aim_by_hands = on;
-    c.vehicles.mounted.grip_handles = on;
-    c.vehicles.physical.wheel.enabled = on;
-    c.vehicles.physical.handlebars = on;
-    c.vehicles.physical.sticks = on;
-    c.vehicles.physical.levers = on;
-    c.vehicles.physical.twist_rudder = on;
-    c.vehicles.physical.nitrous_button = on;
     c.vehicles.arm_steering.wingsuit = on;
     c.vehicles.driving_view.enabled = on;
     c.vehicles.parachute_handles.enabled = on;
-    c.vehicles.ripcord.enabled = on;
 }
 
 /// Whether applying the preset changes any of its owned switches.
@@ -96,7 +85,7 @@ mod tests {
         assert!(!preset_modified(&c, Preset::Controllers));
         c.hands.grip.position_m.x += 0.1;
         assert!(!preset_modified(&c, Preset::Controllers));
-        c.vehicles.physical.wheel.enabled = false;
+        c.vehicles.driving_view.enabled = false;
         assert!(preset_modified(&c, Preset::Controllers));
     }
 

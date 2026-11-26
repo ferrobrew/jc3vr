@@ -30,7 +30,7 @@ use jc3vr_body::controllers::{
 use jc3vr_input::frame::{ControllerFrame, Hand, Pose};
 use jc3vr_view::vr::input::flight_pose::{FlightPacket, GestureHead, GestureSample};
 
-use crate::controllers::vehicles::{arm_steering::wrist_tilt, config::WingsuitGesturesConfig};
+use crate::controllers::vehicles::{arm_steering::wrist_tilt, tuning::WingsuitGesturesTuning};
 
 /// A single transition request. The binding owner emits it once, never as a held toggle.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -89,8 +89,6 @@ pub enum Blocked {
     /// The binding owner suspended gameplay input.
     Gameplay,
     CanopyRequested,
-    Disabled,
-    InvalidTuning,
     Claimed(Hand, Claim),
     /// The observation carried no valid pose.
     NoPose,
@@ -130,8 +128,6 @@ impl fmt::Display for Blocked {
         match self {
             Self::Gameplay => f.write_str("gameplay input is suspended"),
             Self::CanopyRequested => f.write_str("a canopy is requested"),
-            Self::Disabled => f.write_str("the gestures are off"),
-            Self::InvalidTuning => f.write_str("the tuning is invalid"),
             Self::Claimed(hand, claim) => write!(f, "the {} hand {claim}", hand.label()),
             Self::NoPose => f.write_str("there is no valid arm pose"),
             Self::Mode => {
@@ -336,12 +332,12 @@ impl FlightPose {
     }
 
     /// Whether the pose is the flight pose: both arms spread and both palms flat.
-    fn flight(self, config: &WingsuitGesturesConfig) -> bool {
+    fn flight(self, config: &WingsuitGesturesTuning) -> bool {
         self.spread(config) && self.flat_palms(config.flight_roll_deg)
     }
 
     /// Whether both arms are spread out to the sides and near level, however the palms are turned.
-    fn spread(self, config: &WingsuitGesturesConfig) -> bool {
+    fn spread(self, config: &WingsuitGesturesTuning) -> bool {
         self.lateral
             .into_iter()
             .all(|v| v >= config.flight_lateral_span)
@@ -355,7 +351,7 @@ impl FlightPose {
     /// spreading their arms to fly turns the palms any way, often forward into the wind, and nothing
     /// else in a fall reads the palms. A canopy takes the flight pose, since the canopy's own pose
     /// (the arms out with the hands turned up on the toggles) is a spread with rolled palms.
-    fn deploys_from(self, stage: Stage, config: &WingsuitGesturesConfig) -> bool {
+    fn deploys_from(self, stage: Stage, config: &WingsuitGesturesTuning) -> bool {
         match stage {
             Stage::Fall => self.spread(config),
             Stage::Parachute => self.flight(config),
@@ -366,7 +362,7 @@ impl FlightPose {
     /// Whether the pose enters the air brake: both arms spread wide and both palms turned to face
     /// the wind, within the brake's roll band. The band stops short of palm-up, where the roll
     /// wraps, so a palm turned past it does not enter the brake from the far side.
-    fn enters_brake(self, config: &WingsuitGesturesConfig) -> bool {
+    fn enters_brake(self, config: &WingsuitGesturesTuning) -> bool {
         self.lateral
             .into_iter()
             .all(|v| v >= config.flight_lateral_span)
@@ -380,7 +376,7 @@ impl FlightPose {
     /// hysteresis, or both palms back within the flight pose's roll of flat. A held brake ignores
     /// the band's upper end, so a flare that turns the palms on toward palm-up, and through the
     /// roll's wrap, keeps braking.
-    fn releases_brake(self, config: &WingsuitGesturesConfig) -> bool {
+    fn releases_brake(self, config: &WingsuitGesturesTuning) -> bool {
         self.lateral
             .into_iter()
             .any(|v| v < config.flight_lateral_span - config.pose_hysteresis_span)
@@ -394,7 +390,7 @@ impl FlightPose {
             .all(|roll| roll.abs() <= limit_deg)
     }
 
-    fn withdrawn(self, config: &WingsuitGesturesConfig) -> bool {
+    fn withdrawn(self, config: &WingsuitGesturesTuning) -> bool {
         (0..2).all(|i| {
             self.lateral[i] >= -config.withdraw_lateral_span
                 && self.lateral[i] <= config.withdraw_lateral_span
@@ -427,7 +423,7 @@ pub struct GestureInput {
 pub struct WingsuitGestures {
     last: Option<(GestureSample, Stage)>,
     current: GestureAvailability,
-    config: Option<WingsuitGesturesConfig>,
+    config: Option<WingsuitGesturesTuning>,
     /// The stage last observed outside a menu, which tells a fall's start from its middle.
     stage: Option<Stage>,
     /// The flight pose may deploy the suit in this fall or canopy: from the fall's start, unless
@@ -497,7 +493,7 @@ impl WingsuitGestures {
     pub fn revalidate(
         &mut self,
         input: GestureInput,
-        config: &WingsuitGesturesConfig,
+        config: &WingsuitGesturesTuning,
     ) -> GestureAvailability {
         if input.canopy_requested {
             self.note_canopy_request();
@@ -506,14 +502,14 @@ impl WingsuitGestures {
             && self.config == Some(*config)
             && !input.pose.is_some_and(FlightPose::valid)
             && matches!(input.stage(), Stage::Fall | Stage::Parachute)
-            && input.blocked(config) == Some(Blocked::NoPose)
+            && input.blocked() == Some(Blocked::NoPose)
         {
             self.tracking_lost();
             return self.current;
         }
         if self.last != Some((input.sample, input.stage()))
             || self.config != Some(*config)
-            || input.availability(config) != self.current
+            || input.availability() != self.current
         {
             self.reset();
         }
@@ -523,7 +519,7 @@ impl WingsuitGestures {
     pub fn step(
         &mut self,
         input: GestureInput,
-        config: &WingsuitGesturesConfig,
+        config: &WingsuitGesturesTuning,
     ) -> GestureCommands {
         let previous = self.last;
         let repeated = if let Some((last, _)) = previous {
@@ -559,7 +555,7 @@ impl WingsuitGestures {
         if !repeated {
             self.last = Some((input.sample, stage));
         }
-        self.current = input.availability(config);
+        self.current = input.availability();
         let line_released = self.grapple_intent && !input.deploy_grapple;
         if !input.deploy_grapple {
             self.grapple_intent = false;
@@ -580,7 +576,7 @@ impl WingsuitGestures {
             self.clear_pose();
         }
         if self.current == GestureAvailability::Unavailable {
-            if input.blocked(config) != Some(Blocked::NoPose)
+            if input.blocked() != Some(Blocked::NoPose)
                 || !matches!(stage, Stage::Fall | Stage::Parachute)
             {
                 self.deploy_since_ns = None;
@@ -713,7 +709,7 @@ impl WingsuitGestures {
         &mut self,
         pose: FlightPose,
         now_ns: i64,
-        config: &WingsuitGesturesConfig,
+        config: &WingsuitGesturesTuning,
     ) -> bool {
         let releases = pose.releases_brake(config);
         if self.brake {
@@ -780,18 +776,12 @@ impl WingsuitGestures {
 
 impl GestureInput {
     /// The first gate that keeps the gestures unavailable, or `None` while they are available.
-    pub fn blocked(self, config: &WingsuitGesturesConfig) -> Option<Blocked> {
+    pub fn blocked(self) -> Option<Blocked> {
         if !self.gameplay {
             return Some(Blocked::Gameplay);
         }
         if self.canopy_requested {
             return Some(Blocked::CanopyRequested);
-        }
-        if !config.enabled {
-            return Some(Blocked::Disabled);
-        }
-        if !config.valid() {
-            return Some(Blocked::InvalidTuning);
         }
         if let Some((hand, claim)) = Hand::BOTH
             .into_iter()
@@ -818,8 +808,8 @@ impl GestureInput {
         }
     }
 
-    fn availability(self, config: &WingsuitGesturesConfig) -> GestureAvailability {
-        if self.blocked(config).is_some() {
+    fn availability(self) -> GestureAvailability {
+        if self.blocked().is_some() {
             return GestureAvailability::Unavailable;
         }
         match self.stage() {

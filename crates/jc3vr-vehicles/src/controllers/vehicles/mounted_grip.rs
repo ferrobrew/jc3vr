@@ -1,13 +1,10 @@
-//! The hands' hold on a mounted gun's handles, behind
-//! [`MountedConfig::grip_handles`](crate::controllers::vehicles::config::MountedConfig::grip_handles).
-//! Pure.
+//! The hands' hold on a mounted gun's handles. Pure.
 //!
 //! Each hand takes its own handle like a physical control: a grip press with the hand's grip near
 //! the handle takes it, and only releasing the grip lets go: a holding hand that drifts off its
 //! handle keeps aiming from where it is, however far it goes. Only a holding hand is drawn on its handle and aims the gun, so one hand can let go
 //! to throw a grenade or reach for something while the other keeps the gun, and with both hands off
-//! the gun stays where they left it. Off, both hands sit on the handles and aim the gun whenever
-//! the character mans it.
+//! the gun stays where they left it.
 
 use glam::Vec3;
 use jc3vr_body::controllers::{
@@ -16,7 +13,7 @@ use jc3vr_body::controllers::{
 };
 use jc3vr_input::frame::Hand;
 
-use crate::controllers::vehicles::{config::MountedConfig, physical::Release};
+use crate::controllers::vehicles::physical::Release;
 
 /// The hands' hold on the handles.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
@@ -35,22 +32,14 @@ impl MountedGrip {
         }
     }
 
-    /// The hands that aim the gun: the holding hands, or with the grip off, every tracked hand.
-    pub fn aiming(&self, config: &MountedConfig, tracked: [bool; 2]) -> [bool; 2] {
-        if config.grip_handles {
-            Hand::BOTH.map(|hand| self.holds[hand.index()] && tracked[hand.index()])
-        } else {
-            tracked
-        }
+    /// The hands that aim the gun: the holding hands that are tracked.
+    pub fn aiming(&self, tracked: [bool; 2]) -> [bool; 2] {
+        Hand::BOTH.map(|hand| self.holds[hand.index()] && tracked[hand.index()])
     }
 
-    /// Each hand's share of the pose on its handle: the blend, or with the grip off, all of it.
-    pub fn shares(&self, config: &MountedConfig) -> [f32; 2] {
-        if config.grip_handles {
-            self.weights
-        } else {
-            [1.0; 2]
-        }
+    /// Each hand's share of the pose on its handle.
+    pub fn shares(&self) -> [f32; 2] {
+        self.weights
     }
 }
 
@@ -63,8 +52,7 @@ pub enum MountedGripEvent {
 
 /// One tick's inputs.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct GripStep<'a> {
-    pub config: &'a MountedConfig,
+pub struct GripStep {
     /// Each hand's handle in the cockpit frame, where the gun places one; `None` off the gun.
     pub handles: [Option<Vec3>; 2],
     /// Each hand's grip position in the cockpit frame, `None` while untracked.
@@ -79,10 +67,7 @@ pub struct GripStep<'a> {
 }
 
 /// The handles' grab volumes: one sphere per handle, for its own hand.
-pub fn candidates(config: &MountedConfig, handles: [Option<Vec3>; 2]) -> Vec<Candidate> {
-    if !config.grip_handles {
-        return Vec::new();
-    }
+pub fn candidates(handles: [Option<Vec3>; 2]) -> Vec<Candidate> {
     Hand::BOTH
         .into_iter()
         .filter_map(|hand| {
@@ -104,7 +89,6 @@ pub fn step(state: &mut MountedGrip, inputs: &GripStep, events: &mut Vec<Mounted
         let handle = inputs.handles[i];
         let was = state.holds[i];
         let now = match (handle, inputs.grips[i]) {
-            _ if !inputs.config.grip_handles => false,
             (Some(_), Some(_)) => (was || inputs.grabs[i]) && inputs.held[i],
             _ => false,
         };
@@ -112,10 +96,7 @@ pub fn step(state: &mut MountedGrip, inputs: &GripStep, events: &mut Vec<Mounted
         match (was, now) {
             (false, true) => events.push(MountedGripEvent::Grabbed(hand)),
             (true, false) => {
-                let why = if inputs.config.grip_handles
-                    && handle.is_some()
-                    && inputs.grips[i].is_some()
-                {
+                let why = if handle.is_some() && inputs.grips[i].is_some() {
                     Release::GripReleased
                 } else {
                     Release::Gone
@@ -142,9 +123,8 @@ pub(super) const GRAB_RADIUS_M: f32 = 0.12;
 mod tests {
     use super::*;
 
-    fn inputs<'a>(config: &'a MountedConfig, grips: [Option<Vec3>; 2]) -> GripStep<'a> {
+    fn inputs(grips: [Option<Vec3>; 2]) -> GripStep {
         GripStep {
-            config,
             handles: [
                 Some(Vec3::new(-0.2, 0.0, -0.5)),
                 Some(Vec3::new(0.2, 0.0, -0.5)),
@@ -159,7 +139,6 @@ mod tests {
 
     #[test]
     fn a_hand_takes_its_handle_with_the_grip_and_lets_go_with_it() {
-        let config = MountedConfig::new();
         let near = [
             Some(Vec3::new(-0.2, 0.02, -0.5)),
             Some(Vec3::new(0.2, 0.0, -0.48)),
@@ -167,17 +146,17 @@ mod tests {
         let mut state = MountedGrip::new();
         let mut events = Vec::new();
         // Resting there without a press takes nothing.
-        step(&mut state, &inputs(&config, near), &mut events);
+        step(&mut state, &inputs(near), &mut events);
         assert_eq!(state.holds, [false; 2]);
-        let mut grab = inputs(&config, near);
+        let mut grab = inputs(near);
         grab.grabs = [false, true];
         step(&mut state, &grab, &mut events);
         assert_eq!(state.holds, [false, true]);
         assert_eq!(events, [MountedGripEvent::Grabbed(Hand::Right)]);
         assert_eq!(state.weights[1], 1.0);
-        assert_eq!(state.aiming(&config, [true; 2]), [false, true]);
+        assert_eq!(state.aiming([true; 2]), [false, true]);
 
-        let mut release = inputs(&config, near);
+        let mut release = inputs(near);
         release.held = [true, false];
         step(&mut state, &release, &mut events);
         assert_eq!(state.holds, [false; 2]);
@@ -192,19 +171,18 @@ mod tests {
 
     #[test]
     fn a_hand_that_drifts_off_its_handle_keeps_it_until_the_grip_opens() {
-        let config = MountedConfig::new();
         let mut state = MountedGrip::new();
         let mut events = Vec::new();
         let near = [Some(Vec3::new(-0.2, 0.0, -0.5)), None];
-        let mut grab = inputs(&config, near);
+        let mut grab = inputs(near);
         grab.grabs = [true, false];
         step(&mut state, &grab, &mut events);
         assert!(state.holds[0]);
         let far = [Some(Vec3::new(-0.2, 0.0, 0.7)), None];
-        step(&mut state, &inputs(&config, far), &mut events);
+        step(&mut state, &inputs(far), &mut events);
         assert!(state.holds[0]);
-        assert_eq!(state.aiming(&config, [true, false]), [true, false]);
-        let mut open = inputs(&config, far);
+        assert_eq!(state.aiming([true, false]), [true, false]);
+        let mut open = inputs(far);
         open.held = [false; 2];
         step(&mut state, &open, &mut events);
         assert!(!state.holds[0]);
@@ -215,17 +193,5 @@ mod tests {
                 Release::GripReleased
             ))
         );
-    }
-
-    #[test]
-    fn with_the_grip_off_every_tracked_hand_holds_and_aims() {
-        let config = MountedConfig {
-            grip_handles: false,
-            ..MountedConfig::new()
-        };
-        let state = MountedGrip::new();
-        assert_eq!(state.aiming(&config, [true, false]), [true, false]);
-        assert_eq!(state.shares(&config), [1.0; 2]);
-        assert!(candidates(&config, [Some(Vec3::ZERO); 2]).is_empty());
     }
 }

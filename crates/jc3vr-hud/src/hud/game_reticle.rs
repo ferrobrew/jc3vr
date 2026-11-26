@@ -15,13 +15,9 @@
 //!
 //! - on foot and in the air, always, armed or not, so it does not show in
 //!   the gaps between aim updates (drawing, holstering, a weapon switch, an empty hand);
-//! - in the driver's seat, while the vehicle's built-in weapons aim by hand;
+//! - in the driver's seat, where the vehicle's built-in weapons aim by hand;
 //! - at a mounted gun, while the gun's point comes from the hands;
 //! - in a passenger seat, while the aim's latest results aimed the wielded weapon by hand.
-//!
-//! A gun the gaze still aims keeps the reticle: the driver's weapons with
-//! [`VehiclesConfig::driver_weapons_by_hand`](jc3vr_vehicles::controllers::vehicles::config::VehiclesConfig::driver_weapons_by_hand)
-//! off, and a mounted gun with its hand aim off.
 //!
 //! [`decide`] is the pure rule; [`hide_game_reticles`] reads the mode, the settings, and the aim's
 //! latest results, and holds the reticle clips hidden through [`crate::hud::scaleform`].
@@ -77,8 +73,6 @@ pub struct ReticleInputs {
     /// Whether the controller scheme is in effect.
     pub controllers_scheme: bool,
     pub place: AimPlace,
-    /// Whether the driver's built-in weapons aim by hand.
-    pub driver_weapons_by_hand: bool,
     /// Whether a manned mounted gun is aimed by hand now.
     pub mounted_by_hand: bool,
     /// Whether the aim's results are recent. Stale results belong to an aim update that no longer
@@ -97,8 +91,7 @@ pub fn decide(inputs: ReticleInputs) -> HiddenReticles {
     // The mounted gun's point has its own freshness, so it does not wait on the aim update.
     let mounted = inputs.mounted_by_hand;
     let weapon = match inputs.place {
-        AimPlace::OnFoot => true,
-        AimPlace::Driver => inputs.driver_weapons_by_hand || weapon_aimed || mounted,
+        AimPlace::OnFoot | AimPlace::Driver => true,
         AimPlace::Passenger | AimPlace::Menu => weapon_aimed || mounted,
     };
     HiddenReticles {
@@ -114,19 +107,13 @@ pub fn decide(inputs: ReticleInputs) -> HiddenReticles {
 /// Must be called from the [`MovieImpl::Capture`](jc3gi::ui::scaleform::MovieImpl) detour, as
 /// [`crate::hud::scaleform::apply_reticle_suppression`] requires.
 pub(crate) unsafe fn hide_game_reticles() {
-    let (enabled, driver) = CONTROLLERS_CONFIG.query(|controllers| {
-        (
-            controllers.enabled,
-            controllers.vehicles.driver_weapons_by_hand,
-        )
-    });
+    let enabled = CONTROLLERS_CONFIG.query(|controllers| controllers.enabled);
     let hidden = if enabled {
         let status = aim::status();
         decide(ReticleInputs {
             enabled,
             controllers_scheme: scheme::is_controllers(),
             place: AimPlace::of(mode::current().mode),
-            driver_weapons_by_hand: driver,
             mounted_by_hand: vehicles::mounted_aim_point().is_some(),
             aim_fresh: aim_fresh(status.updates),
             weapon_aimed: status.weapon.is_some(),
@@ -170,7 +157,6 @@ mod tests {
         enabled: true,
         controllers_scheme: true,
         place: AimPlace::OnFoot,
-        driver_weapons_by_hand: true,
         mounted_by_hand: false,
         aim_fresh: false,
         weapon_aimed: false,
@@ -227,17 +213,12 @@ mod tests {
     }
 
     #[test]
-    fn the_driver_keeps_the_weapon_reticle_only_for_gaze_aimed_weapons() {
+    fn the_driver_hides_both_reticles() {
         let driver = ReticleInputs {
             place: AimPlace::Driver,
             ..ON_FOOT
         };
         assert_eq!(decide(driver), BOTH);
-        let gaze = ReticleInputs {
-            driver_weapons_by_hand: false,
-            ..driver
-        };
-        assert_eq!(decide(gaze), GRAPPLE);
     }
 
     #[test]

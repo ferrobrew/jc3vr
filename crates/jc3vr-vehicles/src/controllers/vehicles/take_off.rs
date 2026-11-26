@@ -34,18 +34,17 @@ use jc3vr_core::hash::StateSet;
 use jc3vr_view::{headpose, headpose::sim::body_yaw_of};
 use parking_lot::Mutex;
 
-/// Track the take-off for this game tick, with `enabled` from the debug UI.
+/// Track the take-off for this game tick.
 ///
 /// # Safety
 ///
 /// The game thread, outside the world update: reads the body rule system's current state and the
 /// local player's action map.
-pub(crate) unsafe fn tick(enabled: bool) {
+pub(crate) unsafe fn tick() {
     let character = unsafe { Character::GetLocalPlayerCharacter().as_ref() };
     let state = character.and_then(|c| unsafe { active_state_type_id(c) });
-    let taking_off = enabled && state.is_some_and(is_take_off_state);
-    let holding = enabled
-        && mode::current().mode == Mode::OnFoot(OnFootVariant::Ground)
+    let taking_off = state.is_some_and(is_take_off_state);
+    let holding = mode::current().mode == Mode::OnFoot(OnFootVariant::Ground)
         && unsafe { use_held() };
     let mut tracker = TRACKER.lock();
     let edge = tracker.step(holding, taking_off, Instant::now());

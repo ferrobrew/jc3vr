@@ -16,7 +16,6 @@ use parking_lot::Mutex;
 
 use crate::controllers::vehicles::{
     arm_steering as arm,
-    config::{MountedConfig, ParachuteHandlesConfig},
     driving_view,
     entry::VehicleEntryIdentity,
     fit::VehicleLatch,
@@ -26,6 +25,7 @@ use crate::controllers::vehicles::{
     parachute::{HandleEvent, HandleHold, HandleState},
     physical,
     physical::{ControlEvent, ControlState, Hold, Outputs, Placement},
+    tuning::PARACHUTE_HANDLES,
     types::{VehicleSummary, VehiclesStatus},
     wheel_render,
     wheel_render::RenderWheel,
@@ -172,7 +172,6 @@ pub fn apply(hands: &mut [Option<CockpitHand>; 2]) {
     let state = STATE.lock();
     let kick = state
         .mounted_barrel
-        .filter(|_| state.mounted_config.aim_by_hands)
         .map_or(Vec3::ZERO, |barrel| {
             mounted_recoil::handle_shift(kick_offset, barrel)
         });
@@ -191,7 +190,7 @@ pub fn apply(hands: &mut [Option<CockpitHand>; 2]) {
         let handle = state.last_handles[i]
             .filter(|_| state.anchor_weights[i] > 0.0)
             .map(|hold| {
-                let point = parachute::anchor_point(&state.handles_config, hold, h.grip.position);
+                let point = parachute::anchor_point(&PARACHUTE_HANDLES, hold, h.grip.position);
                 (point, state.anchor_weights[i])
             });
         let mounted = state
@@ -202,8 +201,7 @@ pub fn apply(hands: &mut [Option<CockpitHand>; 2]) {
                     manned: tier_status.state == Some(tiers::TierState::MountedGun),
                     grapple,
                     anchor_weight: tier_status.anchor_weights[i],
-                    grip_handles: state.mounted_config.grip_handles,
-                    share: state.mounted_grip.shares(&state.mounted_config)[i],
+                    share: state.mounted_grip.shares()[i],
                 });
                 (point + kick, weight)
             })
@@ -224,9 +222,6 @@ pub(super) struct MountedHandWeight {
     pub(super) grapple: bool,
     /// The hand's anchor weight from its tier.
     pub(super) anchor_weight: f32,
-    /// Whether the hands take the handles with the grip, rather than sitting on them whenever the
-    /// character mans the gun.
-    pub(super) grip_handles: bool,
     /// The hand's share of the pose on its handle ([`MountedGrip::shares`]).
     pub(super) share: f32,
 }
@@ -235,17 +230,14 @@ pub(super) struct MountedHandWeight {
 /// tier's weight scales the hand's share. Off the native mounted state, a hand that took a
 /// standalone gun's handle with its grip is drawn there by its grip's blend alone, since the tiers
 /// leave it free (on the 14 November take the hands floated at the controllers beside a tripod
-/// minigun they held); with the grip off, the hands sit on the handles only while manning. A
-/// grapple state's weights are the line's, never the handles'.
+/// minigun they held). A grapple state's weights are the line's, never the handles'.
 pub(super) fn mounted_hand_weight(inputs: MountedHandWeight) -> f32 {
     let weight = if inputs.grapple {
         0.0
     } else if inputs.manned {
         inputs.anchor_weight * inputs.share
-    } else if inputs.grip_handles {
-        inputs.share
     } else {
-        0.0
+        inputs.share
     };
     if weight.is_finite() {
         weight.clamp(0.0, 1.0)
@@ -272,8 +264,6 @@ pub(super) struct State {
     pub(super) handles: HandleState,
     /// Whether the parachute handles act this tick: under the parachute, with them switched on.
     pub(super) handles_on: bool,
-    /// The handles' settings as the last tick read them, kept while a hand blends off its handle.
-    pub(super) handles_config: ParachuteHandlesConfig,
     pub(super) mounted_reference: Option<Reference>,
     pub(super) mounted_target: Option<MountedTarget>,
     /// The gun the hands last aimed and the direction they gave it, in the body frame, which it
@@ -285,8 +275,6 @@ pub(super) struct State {
     pub(super) mounted_barrel: Option<Vec3>,
     /// The mounted gun's handles in the cockpit frame, where it places them, for the hold.
     pub(super) mounted_handle_points: [Option<Vec3>; 2],
-    /// The mounted-gun settings as the last tick read them, for the hands at every rate.
-    pub(super) mounted_config: MountedConfig,
     /// The mounted gun's handles in the cockpit frame, kept while the hands blend off them.
     pub(super) mounted_handles: Option<[Option<Vec3>; 2]>,
     /// What the fit keeps for the driven vehicle.
@@ -367,14 +355,12 @@ impl State {
             anchor_weights: [0.0; 2],
             handles: HandleState::new(),
             handles_on: false,
-            handles_config: ParachuteHandlesConfig::new(),
             mounted_reference: None,
             mounted_target: None,
             mounted_last: None,
             mounted_grip: MountedGrip::new(),
             mounted_barrel: None,
             mounted_handle_points: [None; 2],
-            mounted_config: MountedConfig::new(),
             mounted_handles: None,
             latch: None,
             render: None,
@@ -459,12 +445,11 @@ pub(super) fn push_events(status: &mut VehiclesStatus, events: Vec<ControlEvent>
 mod tests {
     use super::*;
 
-    fn weight(manned: bool, grip_handles: bool, share: f32) -> f32 {
+    fn weight(manned: bool, share: f32) -> f32 {
         mounted_hand_weight(MountedHandWeight {
             manned,
             grapple: false,
             anchor_weight: if manned { 1.0 } else { 0.0 },
-            grip_handles,
             share,
         })
     }
@@ -473,32 +458,26 @@ mod tests {
     fn a_hand_on_a_standalone_guns_handle_is_drawn_there_by_its_grip_alone() {
         // Off the native mounted state the tiers leave the hands free, and the grip's blend draws
         // a holding hand onto its handle, in and out.
-        assert_eq!(weight(false, true, 1.0), 1.0);
-        assert_eq!(weight(false, true, 0.4), 0.4);
-        assert_eq!(weight(false, true, 0.0), 0.0);
+        assert_eq!(weight(false, 1.0), 1.0);
+        assert_eq!(weight(false, 0.4), 0.4);
+        assert_eq!(weight(false, 0.0), 0.0);
         // Manning the gun, the anchored tier scales the share.
-        assert_eq!(weight(true, true, 0.5), 0.5);
+        assert_eq!(weight(true, 0.5), 0.5);
         let blending_in = mounted_hand_weight(MountedHandWeight {
             manned: true,
             grapple: false,
             anchor_weight: 0.5,
-            grip_handles: true,
             share: 1.0,
         });
         assert_eq!(blending_in, 0.5);
     }
 
     #[test]
-    fn without_the_grip_or_under_a_grapple_no_hand_goes_to_a_handle_off_the_mount() {
-        // With the grip off, the shares are whole whenever a gun is near: only manning it draws
-        // the hands there.
-        assert_eq!(weight(false, false, 1.0), 0.0);
-        assert_eq!(weight(true, false, 1.0), 1.0);
+    fn under_a_grapple_no_hand_goes_to_a_handle() {
         let grapple = MountedHandWeight {
             manned: false,
             grapple: true,
             anchor_weight: 1.0,
-            grip_handles: true,
             share: 1.0,
         };
         assert_eq!(mounted_hand_weight(grapple), 0.0);

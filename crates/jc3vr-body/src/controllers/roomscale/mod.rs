@@ -68,9 +68,7 @@ use crate::{
         locomotion,
         mode::{Mode, current as current_mode},
         roomscale::{
-            config::{
-                DRIVING_VIEW_ENABLED, Posture, ROOMSCALE_CONFIG, RoomscaleConfig, TAKE_OFF_TO_HEAD,
-            },
+            config::{DRIVING_VIEW_ENABLED, Posture, ROOMSCALE_CONFIG, RoomscaleConfig},
             crouch::{CROUCH_ENTER_DROP_M, CROUCH_EXIT_DROP_M, CrouchTracker},
             fade::{FADE_TIMING, FadeSource},
             posture::{
@@ -90,11 +88,10 @@ pub fn hook_library() -> HookLibrary {
 }
 
 /// Register the wingsuit's take-off from the ground, which the frame half ticks after the seat
-/// phase in gameplay, with whether the take-off follows the head ([`TAKE_OFF_TO_HEAD`]). One
-/// take-off: a second registration is refused and logged.
+/// phase in gameplay. One take-off: a second registration is refused and logged.
 ///
 /// The take-off is called on the game thread, outside the world update.
-pub fn register_take_off(tick: unsafe fn(bool)) {
+pub fn register_take_off(tick: unsafe fn()) {
     if TAKE_OFF.set(tick).is_err() {
         tracing::error!("roomscale: a take-off is already registered; keeping the first");
     }
@@ -282,10 +279,9 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
     if in_gameplay {
         // SAFETY: the game thread, outside the world update.
         unsafe { seat_tick(&mut frame, &config, now) };
-        let take_off = *TAKE_OFF_TO_HEAD.lock();
         if let Some(tick) = TAKE_OFF.get() {
             // SAFETY: as above.
-            unsafe { tick(take_off) };
+            unsafe { tick() };
         }
     } else {
         frame.seat = SeatTracker::default();
@@ -631,7 +627,7 @@ struct FrameState {
 /// The source of the composition [`compose_frame`] returned, until [`publish_composition`] takes it.
 static STAGED_SOURCE: Mutex<Option<FrameSourceSnapshot>> = Mutex::new(None);
 
-static TAKE_OFF: OnceLock<unsafe fn(bool)> = OnceLock::new();
+static TAKE_OFF: OnceLock<unsafe fn()> = OnceLock::new();
 
 static FRAME: Mutex<FrameState> = Mutex::new(FrameState {
     last_at: None,

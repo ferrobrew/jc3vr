@@ -7,7 +7,7 @@ use jc3vr_body::controllers::{
 };
 use jc3vr_input::frame::ActionSetKind;
 use jc3vr_vehicles::controllers::vehicles::{
-    config::WingsuitGesturesConfig,
+    tuning::WingsuitGesturesTuning,
     wingsuit_gestures::{FlightPose, SuitTransition},
 };
 use jc3vr_view::vr::input::flight_pose::GestureSample;
@@ -16,13 +16,13 @@ use jc3vr_weapons::controllers::loadout::Socket;
 use super::*;
 
 const SUIT: Mode = Mode::Airborne(AirborneVariant::Wingsuit);
-const CONFIG: WingsuitGesturesConfig = WingsuitGesturesConfig {
+const CONFIG: WingsuitGesturesTuning = WingsuitGesturesTuning {
     neutral_dwell_s: 0.125,
     flight_dwell_s: 0.25,
     close_dwell_s: 0.25,
     brake_dwell_s: 0.125,
     max_sample_gap_s: 0.5,
-    ..WingsuitGesturesConfig::new()
+    ..WingsuitGesturesTuning::new()
 };
 const FLIGHT: FlightPose = FlightPose {
     lateral: [0.30; 2],
@@ -349,6 +349,7 @@ fn missing_packets_clear_pose_history_and_a_lowered_pose_does_not_deploy() {
     let tick = Tick {
         frame: &frame,
         config: &config,
+        gestures: &WingsuitGesturesTuning::new(),
         dimensions: &dimensions,
         detection: Detection {
             mode: SUIT,
@@ -402,9 +403,9 @@ fn missing_packets_clear_pose_history_and_a_lowered_pose_does_not_deploy() {
             }
             let mut config = ControllersConfig::default();
             config.hands.grip = calibration().grip_offset;
-            config.vehicles.wingsuit_gestures = CONFIG;
             let missing = Tick {
                 config: &config,
+                gestures: &CONFIG,
                 detection: Detection {
                     mode: falling,
                     ..Default::default()
@@ -500,6 +501,7 @@ fn a_body_slot_claims_the_hand_only_while_its_grip_is_squeezed() {
         let tick = Tick {
             frame: &frame,
             config: &config,
+            gestures: &WingsuitGesturesTuning::new(),
             dimensions: &dimensions,
             detection: Detection {
                 mode: Mode::Airborne(AirborneVariant::Falling),

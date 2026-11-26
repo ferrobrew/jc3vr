@@ -43,7 +43,7 @@ use glam::{Vec2, Vec3};
 use jc3vr_body::controllers::grab::{Candidate, GrabVolume};
 use jc3vr_input::frame::Hand;
 
-use crate::controllers::vehicles::{config::ParachuteHandlesConfig, physical::Release};
+use crate::controllers::vehicles::{physical::Release, tuning::ParachuteHandlesTuning};
 
 /// A held handle.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -98,7 +98,7 @@ pub const DEADZONE_M: f32 = 0.03;
 /// The handles' grab volumes: a free hand's handle at its place by the shoulder, a held one where
 /// the hand holds it, each for its own side's hand only.
 pub fn candidates(
-    config: &ParachuteHandlesConfig,
+    config: &ParachuteHandlesTuning,
     state: &HandleState,
     centres: [Vec3; 2],
     grips: [Option<Vec3>; 2],
@@ -136,7 +136,7 @@ pub fn reach_candidates(
 /// were released or whose hands were lost. Returns each hand's signed pull, `-1..=1` ([`pull`]).
 pub fn step(
     state: &mut HandleState,
-    config: &ParachuteHandlesConfig,
+    config: &ParachuteHandlesTuning,
     inputs: &StepInputs,
     events: &mut Vec<HandleEvent>,
 ) -> [f32; 2] {
@@ -176,7 +176,7 @@ pub fn release_all(state: &mut HandleState, events: &mut Vec<HandleEvent>) {
 /// below where it was taken, over the deadzone, as a share of the rest of a full pull, positive;
 /// or, with no drop, the rise above it or the travel forward of it (the cockpit's -Z), whichever is
 /// further, the same way, negative.
-pub fn pull(config: &ParachuteHandlesConfig, hold: HandleHold, grip: Vec3) -> f32 {
+pub fn pull(config: &ParachuteHandlesTuning, hold: HandleHold, grip: Vec3) -> f32 {
     let span = (config.full_pull_m - DEADZONE_M).max(1e-3);
     let share = |travel: f32| ((travel - DEADZONE_M) / span).min(1.0);
     let drop = hold.rest.y - grip.y;
@@ -197,7 +197,7 @@ pub fn pull(config: &ParachuteHandlesConfig, hold: HandleHold, grip: Vec3) -> f3
 /// The stick vector the pulls steer with (+X right, +Y forward): the right pull less the left one
 /// banks, the share both are pulled past the brake threshold holds the stick back, and the share
 /// both are pushed pushes it forward.
-pub fn steer(pulls: [f32; 2], config: &ParachuteHandlesConfig) -> Vec2 {
+pub fn steer(pulls: [f32; 2], config: &ParachuteHandlesTuning) -> Vec2 {
     let [left, right] = pulls.map(|p| {
         if p.is_finite() {
             p.clamp(-1.0, 1.0)
@@ -218,7 +218,7 @@ pub fn steer(pulls: [f32; 2], config: &ParachuteHandlesConfig) -> Vec2 {
 
 /// Where the hand holding `hold` sits on its handle for its grip at `grip`: where it took the
 /// handle, moved down, up, or forward with the hand by no more than a full pull.
-pub fn anchor_point(config: &ParachuteHandlesConfig, hold: HandleHold, grip: Vec3) -> Vec3 {
+pub fn anchor_point(config: &ParachuteHandlesTuning, hold: HandleHold, grip: Vec3) -> Vec3 {
     let full = config.full_pull_m.max(0.0);
     let offset = grip - hold.rest;
     if !offset.is_finite() {
@@ -239,9 +239,9 @@ mod tests {
     use jc3vr_weapons::controllers::{loadout::Socket, weapons::volumes::SOCKETS};
 
     use super::*;
-    use crate::controllers::vehicles::arm_steering::combine;
+    use crate::controllers::vehicles::{arm_steering::combine, tuning::PARACHUTE_HANDLES};
 
-    const CONFIG: ParachuteHandlesConfig = ParachuteHandlesConfig::new();
+    const CONFIG: ParachuteHandlesTuning = PARACHUTE_HANDLES;
 
     /// The handles' centres: above, ahead of, and outside the shoulders.
     fn centres() -> [Vec3; 2] {

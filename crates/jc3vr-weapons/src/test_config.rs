@@ -23,23 +23,15 @@ use jc3vr_body::{
             BODY_CONFIG, BodyDimensions,
             config::{BODY_REMAP_CONFIG, BodyRemapConfig},
         },
-        hands::config::{HANDS_CONFIG, HandsConfig, MOUNTED_AIM_BY_HANDS},
+        hands::config::{HANDS_CONFIG, HandsConfig},
         haptics::config::{HAPTICS_CONFIG, HapticsConfig},
         intent::config::{BINDINGS_CONFIG, BindingsConfig},
         locomotion::config::{LOCOMOTION_CONFIG, LocomotionConfig},
         overlay::config::{OVERLAY_CONFIG, OverlayConfig},
-        roomscale::config::{
-            DRIVING_VIEW_ENABLED, ROOMSCALE_CONFIG, RoomscaleConfig, TAKE_OFF_TO_HEAD,
-        },
+        roomscale::config::{DRIVING_VIEW_ENABLED, ROOMSCALE_CONFIG, RoomscaleConfig},
         scheme,
     },
-    hooks::{
-        animation::canopy::SKIP_REEL_OPENING,
-        input::{
-            parachute::{CANOPY_LINE_TURN, CANOPY_LINE_TURN_SCALE},
-            wingsuit::WINGSUIT_EVADE_ENABLED,
-        },
-    },
+    hooks::input::wingsuit::WINGSUIT_EVADE_ENABLED,
 };
 use jc3vr_core::{
     director::clean_view::{CLEAN_VIEW_CONFIG, CleanViewConfig},
@@ -101,17 +93,8 @@ jc3vr_core::test_root! {
             haptics: HapticsConfig = HapticsConfig::new(),
             weapons: WeaponsConfig = WeaponsConfig::new(),
             vehicles: Vehicles {
-                take_off_to_head: bool = true,
-                mounted: Mounted {
-                    aim_by_hands: bool = true,
-                },
                 driving_view: DrivingView {
                     enabled: bool = true,
-                },
-                canopy: Canopy {
-                    line_turn: bool = true,
-                    line_turn_scale: f32 = 1.0,
-                    skip_reel_opening: bool = true,
                 },
                 wingsuit_evade: WingsuitEvade {
                     enabled: bool = true,
@@ -138,12 +121,7 @@ jc3vr_core::test_root! {
         ROOMSCALE_CONFIG => controllers.roomscale,
         HAPTICS_CONFIG => controllers.haptics,
         WEAPONS_CONFIG => controllers.weapons,
-        MOUNTED_AIM_BY_HANDS => controllers.vehicles.mounted.aim_by_hands,
         DRIVING_VIEW_ENABLED => controllers.vehicles.driving_view.enabled,
-        TAKE_OFF_TO_HEAD => controllers.vehicles.take_off_to_head,
-        CANOPY_LINE_TURN => controllers.vehicles.canopy.line_turn,
-        CANOPY_LINE_TURN_SCALE => controllers.vehicles.canopy.line_turn_scale,
-        SKIP_REEL_OPENING => controllers.vehicles.canopy.skip_reel_opening,
         WINGSUIT_EVADE_ENABLED => controllers.vehicles.wingsuit_evade.enabled,
         WORLD_MARKERS_ENABLED => hud.world_markers.enabled,
         STEREO_CONFIG => stereo,

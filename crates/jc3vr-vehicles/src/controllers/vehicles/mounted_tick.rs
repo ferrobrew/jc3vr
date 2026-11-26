@@ -13,10 +13,8 @@ use jc3vr_input::frame::Hand;
 use jc3vr_view::controllers::cockpit::CockpitTransform;
 
 use crate::controllers::vehicles::{
-    config::{PhysicalControlsConfig, VehicleSettings},
     mounted,
     mounted::MountedTarget,
-    physical::control_enabled,
     state::STATE,
     types::MountedReadout,
 };
@@ -40,7 +38,6 @@ pub(super) struct MountedTick {
 pub(super) fn mounted_tick(
     game: &GameTick<'_>,
     active: &ActiveHands,
-    config: &VehicleSettings,
     aiming: [bool; 2],
 ) -> MountedTick {
     let none = MountedTick {
@@ -51,12 +48,6 @@ pub(super) fn mounted_tick(
         handle_points: [None; 2],
         barrel: None,
     };
-    if !config.vehicles.mounted.aim_by_hands {
-        let mut state = STATE.lock();
-        state.mounted_reference = None;
-        state.mounted_last = None;
-        return none;
-    }
     let xf = CockpitTransform::current(active.head.position, active.world_scale);
     let hands_world = Hand::BOTH
         .map(|hand| active.hands[hand.index()].map(|hand| xf.point_to_world(hand.grip.position)));
@@ -80,10 +71,7 @@ pub(super) fn mounted_tick(
     let grips = active.hands.map(|h| h.map(|h| h.grip.position));
     let grips = Hand::BOTH.map(|hand| grips[hand.index()].filter(|_| aiming[hand.index()]));
 
-    let aim = config.vehicles.mounted.aim_by_hands;
-    let from_hands = mounted::hands_midpoint(grips)
-        .filter(|_| aim)
-        .and_then(|(mid, tracked)| {
+    let from_hands = mounted::hands_midpoint(grips).and_then(|(mid, tracked)| {
             let mut state = STATE.lock();
             let current = state
                 .mounted_reference
@@ -114,11 +102,10 @@ pub(super) fn mounted_tick(
                 state.mounted_last = Some((gun.address, body.inverse() * d));
                 Some(d)
             }
-            None if aim && config.vehicles.mounted.grip_handles => state
+            None => state
                 .mounted_last
                 .filter(|(weapon, _)| *weapon == gun.address)
                 .map(|(_, d)| body * d),
-            None => None,
         }
     };
     let target = direction.map(|d| MountedTarget {
@@ -162,31 +149,13 @@ fn keep_gunner_visible(game: &GameTick<'_>) {
 /// How long the gunner takes to fade back in, seconds: the game's own fade's length.
 const GUNNER_FADE_IN_S: f32 = 0.25;
 
-/// The physical controls `seat` offers with their toggles on: only the driver's seat has any. A
-/// vehicle with a steering fork (`fork`) offers handlebars, and a plane whose cockpit has a control
-/// wheel (`yoke`) offers the yoke.
-pub(super) fn offered(
-    seat: Option<VehicleSeat>,
-    physical: &PhysicalControlsConfig,
-    fork: bool,
-    yoke: bool,
-) -> &'static [ControlKind] {
-    let Some(seat) = seat.filter(|s| s.driver && physical.any()) else {
-        return &[];
-    };
-    let kinds = ControlKind::for_seat(seat.class, fork, yoke);
-    match kinds {
-        [one] if control_enabled(*one, physical) => kinds,
-        [first, second] => match (
-            control_enabled(*first, physical),
-            control_enabled(*second, physical),
-        ) {
-            (true, true) => kinds,
-            (true, false) => &kinds[..1],
-            (false, true) => &kinds[1..],
-            (false, false) => &[],
-        },
-        _ => &[],
+/// The physical controls `seat` offers: only the driver's seat has any. A vehicle with a steering
+/// fork (`fork`) offers handlebars, and a plane whose cockpit has a control wheel (`yoke`) offers
+/// the yoke.
+pub(super) fn offered(seat: Option<VehicleSeat>, fork: bool, yoke: bool) -> &'static [ControlKind] {
+    match seat.filter(|s| s.driver) {
+        Some(seat) => ControlKind::for_seat(seat.class, fork, yoke),
+        None => &[],
     }
 }
 

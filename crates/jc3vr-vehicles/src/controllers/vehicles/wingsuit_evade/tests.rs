@@ -1,6 +1,6 @@
 use super::*;
 
-const CONFIG: WingsuitEvadeConfig = WingsuitEvadeConfig::new();
+const CONFIG: WingsuitEvadeTuning = WingsuitEvadeTuning::new();
 const DT: f32 = 1.0 / 90.0;
 
 fn input(bank_deg: f32) -> EvadeInput {
@@ -200,29 +200,4 @@ fn the_bank_reads_the_hand_line_and_needs_the_arms_spread() {
     assert_eq!(bank_deg(0.2, 0.2, span), None);
     assert_eq!(bank_deg(f32::NAN, 0.9, span), None);
     assert_eq!(bank_deg(0.1, f32::NAN, span), None);
-}
-
-#[test]
-fn the_default_tuning_is_valid_and_inconsistent_tuning_is_not() {
-    assert!(CONFIG.valid());
-    for broken in [
-        WingsuitEvadeConfig {
-            rearm_bank_deg: 60.0,
-            ..CONFIG
-        },
-        WingsuitEvadeConfig {
-            throw_window_s: 0.0,
-            ..CONFIG
-        },
-        WingsuitEvadeConfig {
-            throw_bank_deg: f32::NAN,
-            ..CONFIG
-        },
-        WingsuitEvadeConfig {
-            diagonal_pitch: 1.5,
-            ..CONFIG
-        },
-    ] {
-        assert!(!broken.valid());
-    }
 }

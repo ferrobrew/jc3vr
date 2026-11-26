@@ -10,22 +10,19 @@ use jc3vr_body::controllers::mode::VehicleClass;
 
 use super::*;
 use crate::controllers::vehicles::{
-    config::PhysicalControlsConfig,
     physical::{
         handlebars::{bar_grab_point, bar_turn, steer_for_turn},
         levers::{ThrottleSection, detent},
         sticks,
     },
     steering,
-    tuning::{HandlebarsSpec, LeverAxis, PHYSICAL, PhysicalControlsTuning},
+    tuning::{HandlebarsSpec, LeverAxis, PHYSICAL},
 };
 
 const DT: f32 = 1.0 / 30.0;
 
-fn placement(set: impl FnOnce(&mut PhysicalControlsConfig)) -> Placement {
-    let mut config = PhysicalControlsConfig::new();
-    set(&mut config);
-    Placement::new(PhysicalControlsTuning::of(&config), Hand::Right)
+fn placement() -> Placement {
+    Placement::new(PHYSICAL, Hand::Right)
 }
 
 /// A tick with every tracked hand's grip held.
@@ -76,7 +73,7 @@ fn step_held(
 
 #[test]
 fn turning_the_wheel_clockwise_steers_right_and_it_returns_when_let_go() {
-    let p = placement(|c| c.wheel.enabled = true);
+    let p = placement();
     let spec = p.config.wheel;
     let wheel = p.wheel;
     let kinds = [ControlKind::Wheel];
@@ -111,7 +108,7 @@ fn turning_the_wheel_clockwise_steers_right_and_it_returns_when_let_go() {
 
 #[test]
 fn a_hand_in_the_wheel_with_its_grip_open_takes_nothing() {
-    let p = placement(|c| c.wheel.enabled = true);
+    let p = placement();
     let kinds = [ControlKind::Wheel];
     let mut state = ControlState::default();
     let on = p.wheel.rim_point(0.3);
@@ -156,7 +153,7 @@ fn a_hand_in_the_wheel_with_its_grip_open_takes_nothing() {
 
 #[test]
 fn grabbing_the_wheel_does_not_jump_it_and_a_hand_over_carries_on() {
-    let p = placement(|c| c.wheel.enabled = true);
+    let p = placement();
     let wheel = p.wheel;
     let kinds = [ControlKind::Wheel];
     let mut state = ControlState::default();
@@ -212,7 +209,7 @@ fn grabbing_the_wheel_does_not_jump_it_and_a_hand_over_carries_on() {
 
 #[test]
 fn a_hand_that_drifts_off_the_wheel_keeps_it_until_the_grip_opens() {
-    let p = placement(|c| c.wheel.enabled = true);
+    let p = placement();
     let kinds = [ControlKind::Wheel];
     let mut state = ControlState::default();
     let on = p.wheel.rim_point(0.3);
@@ -297,7 +294,7 @@ fn the_handlebars_steer_past_a_deadzone_on_a_curve_and_lean_as_they_steer() {
 
     // Held and turned, the bars write the same value to the steering and the lean, whatever the
     // grips' heights.
-    let p = placement(|c| c.handlebars = true);
+    let p = placement();
     let kinds = [ControlKind::Handlebars];
     let ends = bar_ends(p.bars.centre, p.bars.half_width, 0.0);
     let mut state = ControlState::default();
@@ -326,7 +323,7 @@ fn the_handlebars_steer_past_a_deadzone_on_a_curve_and_lean_as_they_steer() {
 
 #[test]
 fn a_hand_takes_the_handlebars_anywhere_along_its_half() {
-    let p = placement(|c| c.handlebars = true);
+    let p = placement();
     let state = ControlState::default();
     let ends = bar_ends(p.bars.centre, p.bars.half_width, 0.0);
     let radius = p.config.handlebars.grab_radius_m;
@@ -360,7 +357,7 @@ fn candidates_for(p: &Placement, state: &ControlState, point: Vec3) -> Candidate
 
 #[test]
 fn grabbing_the_handlebars_off_their_ends_neither_jumps_nor_biases_them() {
-    let p = placement(|c| c.handlebars = true);
+    let p = placement();
     let kinds = [ControlKind::Handlebars];
     let ends = bar_ends(p.bars.centre, p.bars.half_width, 0.0);
     let mut state = ControlState::default();
@@ -426,7 +423,7 @@ fn grabbing_the_handlebars_off_their_ends_neither_jumps_nor_biases_them() {
 
 #[test]
 fn a_stick_follows_the_hand_within_its_travel_and_springs_back() {
-    let p = placement(|c| c.sticks = true);
+    let p = placement();
     let kinds = [ControlKind::Cyclic];
     let top = p.config.cyclic.top_m;
     let mut state = ControlState::default();
@@ -478,7 +475,7 @@ fn a_stick_follows_the_hand_within_its_travel_and_springs_back() {
 
 #[test]
 fn a_throttle_stays_where_it_is_let_go_and_a_collective_returns() {
-    let p = placement(|c| c.levers = true);
+    let p = placement();
     for (kind, holds) in [
         (ControlKind::Throttle, true),
         (ControlKind::Collective, false),
@@ -521,7 +518,7 @@ fn a_throttle_stays_where_it_is_let_go_and_a_collective_returns() {
 
 #[test]
 fn a_one_handed_control_passes_to_the_hand_that_takes_it() {
-    let p = placement(|c| c.sticks = true);
+    let p = placement();
     let kinds = [ControlKind::Cyclic];
     let top = p.config.cyclic.top_m;
     let mut state = ControlState::default();
@@ -549,7 +546,7 @@ fn a_one_handed_control_passes_to_the_hand_that_takes_it() {
 
 #[test]
 fn a_left_handed_layout_mirrors_the_sticks_but_not_the_wheel() {
-    let mut config = PhysicalControlsTuning::of(&PhysicalControlsConfig::new());
+    let mut config = PHYSICAL;
     config.wheel.centre_m.x = -0.3;
     let p = Placement::new(config, Hand::Left);
     let state = ControlState::default();
@@ -596,14 +593,11 @@ fn only_the_seat_class_s_controls_are_offered() {
             &[ControlKind::Handlebars]
         );
     }
-    let mut off = PhysicalControlsConfig::new();
-    off.wheel.enabled = false;
-    assert!(!control_enabled(ControlKind::Wheel, &off));
 }
 
 #[test]
 fn at_the_lock_the_hand_stays_on_the_stopped_wheel_and_must_come_back() {
-    let p = placement(|c| c.wheel.enabled = true);
+    let p = placement();
     let wheel = p.wheel;
     let kinds = [ControlKind::Wheel];
     let lock = p.config.wheel.lock_deg.to_radians();
@@ -640,7 +634,7 @@ fn at_the_lock_the_hand_stays_on_the_stopped_wheel_and_must_come_back() {
 
 #[test]
 fn the_stick_takes_the_steering_back_from_a_returning_wheel() {
-    let p = placement(|c| c.wheel.enabled = true);
+    let p = placement();
     let kinds = [ControlKind::Wheel];
     let mut state = ControlState {
         wheel_angle: 1.0,

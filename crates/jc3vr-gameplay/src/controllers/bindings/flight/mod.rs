@@ -21,7 +21,7 @@ use jc3vr_body::controllers::{
 };
 use jc3vr_input::frame::{Button, ControllerFrame, Hand};
 use jc3vr_vehicles::controllers::vehicles::{
-    config::WingsuitGesturesConfig,
+    tuning::WingsuitGesturesTuning,
     wingsuit_gestures::{
         Blocked, FlightCalibration, FlightPose, GestureAvailability, GestureCommands, GestureInput,
         GesturePhase, HandClaims, Stage, SuitTransition, WingsuitGestures, desired_for,
@@ -76,6 +76,8 @@ impl FlightState {
 pub(super) struct Tick<'a> {
     pub frame: &'a ControllerFrame,
     pub config: &'a ControllersConfig,
+    /// The wingsuit gestures' tuning, the fixed one outside the tests.
+    pub gestures: &'a WingsuitGesturesTuning,
     pub dimensions: &'a BodyDimensions,
     pub detection: Detection,
     /// Rico is off the ground on foot, from the jump's grace on, as the view anchor last read it
@@ -96,7 +98,7 @@ pub(super) fn evaluate(
     desired: &[Desired],
 ) -> GestureCommands {
     let input = observation(tick, desired, Instant::now());
-    let config = &tick.config.vehicles.wingsuit_gestures;
+    let config = tick.gestures;
     if input.is_none() {
         cancel_without_tracking(state, tick, desired);
     }
@@ -109,7 +111,7 @@ pub(super) fn evaluate(
         input,
         config,
     );
-    note(state, tick, input, config, Pass::Evaluate);
+    note(state, tick, input, Pass::Evaluate);
     if let Some(transition) = commands.transition {
         tracing::info!(
             target: "controllers",
@@ -137,7 +139,7 @@ pub(super) fn commit(
     };
     state.calibrate(calibration);
     let input = observation(tick, desired, Instant::now());
-    let config = &tick.config.vehicles.wingsuit_gestures;
+    let config = tick.gestures;
     if input.is_none() {
         cancel_without_tracking(state, tick, desired);
     }
@@ -151,7 +153,7 @@ pub(super) fn commit(
             unsafe { hook.RetractActiveWire() };
         }
     });
-    note(state, tick, input, config, Pass::Commit);
+    note(state, tick, input, Pass::Commit);
 }
 
 /// Why the recognizer is unavailable, as far as the binding owner can tell.
@@ -215,13 +217,7 @@ enum Pass {
 /// Log the recognizer's phase when it, or the gate behind it, changed since the last log. Outside
 /// a fall (a jump included), a canopy, the suit, and a yieldable line, only the first tick there is
 /// logged.
-fn note(
-    state: &mut FlightState,
-    tick: &Tick<'_>,
-    input: Option<GestureInput>,
-    config: &WingsuitGesturesConfig,
-    pass: Pass,
-) {
+fn note(state: &mut FlightState, tick: &Tick<'_>, input: Option<GestureInput>, pass: Pass) {
     let deployable = deploy_grapple(tick.detection, tick.airborne, tick.grapple);
     let watched = Stage::of(tick.detection.mode, tick.airborne) != Stage::Other || deployable;
     let phase = state.gestures.phase();
@@ -230,7 +226,7 @@ fn note(
             None => Why::NoSample,
             Some(input) => suspension(tick)
                 .map(Why::Suspended)
-                .or_else(|| input.blocked(config).map(Why::Blocked))
+                .or_else(|| input.blocked().map(Why::Blocked))
                 .unwrap_or(match pass {
                     Pass::Evaluate => Why::Interrupted,
                     Pass::Commit => Why::Revalidated,
@@ -354,15 +350,11 @@ fn evaluate_input(
     state: &mut FlightState,
     calibration: Calibration,
     input: Option<GestureInput>,
-    config: &WingsuitGesturesConfig,
+    config: &WingsuitGesturesTuning,
 ) -> GestureCommands {
     state.calibrate(calibration);
     let Some(input) = input else {
-        if config.enabled && config.valid() {
-            state.gestures.tracking_lost();
-        } else {
-            state.reset();
-        }
+        state.gestures.tracking_lost();
         return GestureCommands::default();
     };
     state.gestures.step(input, config)
@@ -372,12 +364,12 @@ fn commit_input(
     state: &mut FlightState,
     commands: GestureCommands,
     input: Option<GestureInput>,
-    config: &WingsuitGesturesConfig,
+    config: &WingsuitGesturesTuning,
     desired: &mut Vec<Desired>,
 ) {
     state.retract_active_wire = false;
     let Some(mut input) = input else {
-        if config.enabled && config.valid() && !canopy(desired) {
+        if !canopy(desired) {
             state.gestures.tracking_lost();
         } else {
             state.reset();
@@ -391,7 +383,7 @@ fn commit_input(
         state.retracted_line = false;
     }
     if state.gestures.revalidate(input, config) == GestureAvailability::Unavailable {
-        if input.blocked(config) != Some(Blocked::NoPose) {
+        if input.blocked() != Some(Blocked::NoPose) {
             state.reset();
         }
         return;

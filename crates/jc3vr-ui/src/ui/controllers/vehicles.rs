@@ -18,9 +18,7 @@ use jc3vr_vehicles::controllers::{
         fit::FitReadout,
         look_steer, parachute_rig,
         physical::{ControlEvent, calibration},
-        rail,
-        ripcord::MIN_PULL_M,
-        turret,
+        rail, turret,
         wheel::WheelFrame,
         wheel_render, wingsuit_evade,
         wingsuit_evade::EvadeStatus,
@@ -168,12 +166,6 @@ fn physical_readout(ui: &mut Ui, readout: &VehiclesReadout) {
         axis(o.rudder),
         axis(o.throttle),
         if o.afterburner { " (afterburner)" } else { "" },
-    ));
-    let grip = |v: Option<f32>| v.map_or("not held".to_owned(), |v| format!("{v:.2}"));
-    ui.label(format!(
-        "Bars' grips: throttle {} · brake {}",
-        grip(o.bike_throttle),
-        grip(o.bike_brake),
     ));
     ui.label(format!(
         "Stick and lever cues {} (last {}) · afterburner gate passed {}",
@@ -512,181 +504,14 @@ fn placed_wheel(ui: &mut Ui, wheel: &WheelFrame) {
 }
 
 pub(super) fn feature_settings(ui: &mut Ui, v: &mut VehiclesConfig, id: FeatureId) {
-    match id {
-        FeatureId::Vehicles => vehicle_settings(ui, v),
-        FeatureId::Air => air_settings(ui, v),
-        _ => {}
-    }
-}
-
-fn vehicle_settings(ui: &mut Ui, v: &mut VehiclesConfig) {
-    ui.checkbox(&mut v.driver_weapons_by_hand, "Driver weapons aim by hand");
-    ui.checkbox(&mut v.passenger_body_by_hand, "Passenger aims by hand")
+    if id == FeatureId::Air {
+        ui.checkbox(
+            &mut v.wingsuit_evade.enabled,
+            "Wingsuit evade: throw the arms into a steep bank to barrel-roll",
+        )
         .on_hover_text(
-            "In a passenger or stunt seat, turn the seated body toward the gun hand's aim point \
-             instead of the gaze's.",
+            "With the boost wingsuit, bank the spread arms hard and fast to one side to roll that \
+             way; the view rolls with the body. Off, the player's barrel rolls are dropped.",
         );
-    let p = &mut v.physical;
-    ui.checkbox(
-        &mut p.wheel.enabled,
-        "Wheel (car, boat), with the horn on its hub",
-    );
-    ui.add_enabled(
-        p.wheel.enabled,
-        egui::Slider::new(&mut p.wheel.response, 0.5..=3.0)
-            .text("Wheel response (1 is linear, higher is gentler at centre)")
-            .fixed_decimals(2),
-    );
-    ui.checkbox(&mut p.handlebars, "Handlebars (motorcycle, ATV, jetski)");
-    ui.add_enabled(
-        p.handlebars,
-        egui::Slider::new(&mut p.bars_steering.deadzone_deg, 0.0..=10.0)
-            .text("Handlebars deadzone (°)")
-            .fixed_decimals(1),
-    );
-    ui.add_enabled(
-        p.handlebars,
-        egui::Slider::new(&mut p.bars_steering.response, 0.5..=3.0)
-            .text("Handlebars response (1 is linear, higher is gentler at centre)")
-            .fixed_decimals(2),
-    );
-    ui.checkbox(
-        &mut p.sticks,
-        "Stick (helicopter cyclic, plane flight stick)",
-    );
-    ui.checkbox(
-        &mut p.levers,
-        "Lever (helicopter collective, plane throttle with its afterburner gate)",
-    );
-    ui.checkbox(&mut p.nitrous_button, "Nitrous button beside the wheel");
-    ui.checkbox(
-        &mut p.bars_twist,
-        "Twist the bars' grips back: the right for the throttle, the left for the brake",
-    );
-    ui.checkbox(
-        &mut p.twist_rudder,
-        "Twist the flight stick or cyclic for the rudder and yaw",
-    );
-    ui.checkbox(
-        &mut v.mounted.aim_by_hands,
-        "Mounted guns aim by the hands on the handles",
-    );
-    ui.checkbox(
-        &mut v.mounted.grip_handles,
-        "Take the mounted gun's handles with the grip",
-    );
-}
-
-fn air_settings(ui: &mut Ui, v: &mut VehiclesConfig) {
-    let a = &mut v.arm_steering;
-    ui.add(
-        egui::Slider::new(&mut a.deadzone_m, 0.0..=0.2)
-            .text("Wingsuit arm deadzone (m)")
-            .fixed_decimals(2),
-    );
-    ui.add(
-        egui::Slider::new(&mut a.full_bank_m, 0.1..=1.0)
-            .text("Wingsuit full bank (m)")
-            .fixed_decimals(2),
-    );
-    let e = &mut v.wingsuit_evade;
-    ui.checkbox(
-        &mut e.enabled,
-        "Wingsuit evade: throw the arms into a steep bank to barrel-roll",
-    )
-    .on_hover_text(
-        "With the boost wingsuit, bank the spread arms hard and fast to one side to roll that way; \
-         the view rolls with the body. Off, the player's barrel rolls are dropped.",
-    );
-    ui.add(egui::Slider::new(&mut e.throw_bank_deg, 30.0..=85.0).text("Evade throw bank (°)"));
-    ui.add(
-        egui::Slider::new(&mut e.throw_sweep_deg, 20.0..=120.0)
-            .text("Evade throw swing within the window (°)"),
-    );
-    ui.add(
-        egui::Slider::new(&mut e.throw_window_s, 0.1..=0.8)
-            .text("Evade throw window (s)")
-            .fixed_decimals(2),
-    );
-    ui.add(egui::Slider::new(&mut e.rearm_bank_deg, 5.0..=45.0).text("Evade re-arm bank (°)"));
-    ui.add(
-        egui::Slider::new(&mut e.cooldown_s, 0.0..=5.0)
-            .text("Evade cooldown (s)")
-            .fixed_decimals(1),
-    );
-    ui.add(
-        egui::Slider::new(&mut e.diagonal_pitch, 0.0..=1.0)
-            .text("Evade diagonal from the arms' pitch (of a full pitch)")
-            .fixed_decimals(2),
-    );
-    let h = &mut v.parachute_handles;
-    ui.add(
-        egui::Slider::new(&mut h.full_pull_m, 0.1..=0.6)
-            .text("Parachute full pull (m)")
-            .fixed_decimals(2),
-    );
-    ui.add(
-        egui::Slider::new(&mut h.brake_threshold, 0.0..=0.9)
-            .text("Parachute brake threshold (of a full pull)")
-            .fixed_decimals(2),
-    );
-    ui.checkbox(
-        &mut v.take_off_to_head,
-        "Wingsuit take-off from the ground along the head's heading",
-    )
-    .on_hover_text(
-        "The boost suit's ground take-off turns the body to where you look during its wind-up, \
-         under the view, so the suit launches where you look.",
-    );
-    ui.checkbox(
-        &mut v.helicopter_rail,
-        "Stand on a helicopter's skid by its door",
-    )
-    .on_hover_text(
-        "After a reel onto a helicopter's door side, stand Rico on the skid, free to walk along \
-         it, rather than dropping him into the hang; Y enters, a brisk step off or the jump \
-         leaves it.",
-    );
-    ui.add(
-        egui::Slider::new(&mut v.rail.half_length_m, 0.3..=2.5).text("Skid reach either way (m)"),
-    );
-    ui.add(
-        egui::Slider::new(&mut v.rail.step_off_m, 0.15..=1.0).text("Skid step-off distance (m)"),
-    );
-    ui.add(
-        egui::Slider::new(&mut v.rail.pull_s, 0.05..=1.0)
-            .text("Skid pull time (s), longer is less sticky"),
-    );
-    let c = &mut v.canopy;
-    ui.checkbox(
-        &mut c.skip_reel_opening,
-        "Open the canopy out of a reel straight into its idle",
-    )
-    .on_hover_text(
-        "Skips the somersault Rico plays when the canopy opens during a grapple reel; the canopy \
-         itself still opens.",
-    );
-    ui.checkbox(
-        &mut c.line_turn,
-        "Turn the canopy toward a reeling grapple line",
-    )
-    .on_hover_text(
-        "Under the canopy, a line fired to one side turns the canopy toward it, as the game \
-             turns it toward where its camera looks.",
-    );
-    ui.add(
-        egui::Slider::new(&mut c.line_turn_scale, 0.0..=2.0)
-            .text("Canopy line turn strength")
-            .fixed_decimals(2),
-    );
-    let r = &mut v.ripcord;
-    ui.checkbox(
-        &mut r.enabled,
-        "Ripcord at the hip opens the parachute (falling, wingsuit)",
-    );
-    ui.add(
-        egui::Slider::new(&mut r.pull_m, MIN_PULL_M..=0.4)
-            .text("Ripcord pull (m)")
-            .fixed_decimals(2),
-    );
+    }
 }

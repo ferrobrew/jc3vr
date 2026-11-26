@@ -183,9 +183,6 @@ moving_deadzone_deg = [15.0]
 distance_m = [0.002]
 angle_rad = [0.01]
 
-[controllers.vehicles.wingsuit_gestures]
-flight_angle_deg = [35.0]
-
 [controllers.weapons.snatch.yank]
 min_distance_m = [0.12]
 min_speed_mps = [1.5, 1.0]
@@ -525,7 +522,7 @@ chord = { key = 120 }
     fn every_superseded_default_names_a_numeric_setting_whose_default_changed() {
         let defaults = defaults();
         let entries = superseded();
-        assert!(entries.len() > 10, "{}", entries.len());
+        assert!(entries.len() > 5, "{}", entries.len());
         for (path, values) in entries {
             let current =
                 lookup(&defaults, &path).unwrap_or_else(|| panic!("{path} is not a setting"));

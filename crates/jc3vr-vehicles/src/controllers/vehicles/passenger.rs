@@ -1,5 +1,4 @@
-//! Shooting from a passenger or stunt seat by the hand's aim, behind
-//! [`VehiclesConfig::passenger_body_by_hand`](crate::controllers::vehicles::config::VehiclesConfig::passenger_body_by_hand).
+//! Shooting from a passenger or stunt seat by the hand's aim.
 //!
 //! Out of the driver's seat the weapon in the hands is the player's wielded weapon, so the per-hand
 //! gun aim already aims and fires it along the holding hand's sight line
@@ -23,7 +22,6 @@ use glam::Vec3;
 use jc3vr_body::controllers::{mode::VehicleSeat, scheme};
 use jc3vr_input::frame::Hand;
 
-use crate::controllers::vehicles::config::VEHICLES_CONFIG;
 
 /// The passenger aim's readout.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
@@ -45,27 +43,25 @@ pub fn status() -> PassengerStatus {
 }
 
 /// The point the seated body aims at this update: the gun hand's aim point, the acting hand's
-/// first, while the player is in a vehicle out of the driver's seat and off a mounted gun, with the
-/// option on. `None` leaves the game's point.
+/// first, while the player is in a vehicle out of the driver's seat and off a mounted gun. `None`
+/// leaves the game's point.
 pub fn body_aim_point(
     seat: Option<VehicleSeat>,
     mounted: bool,
     gun_targets: [Option<Vec3>; 2],
 ) -> Option<Vec3> {
-    let by_hand = VEHICLES_CONFIG.query(|c| c.passenger_body_by_hand);
-    aim_point(by_hand, scheme::acting_hand(), seat, mounted, gun_targets)
+    aim_point(scheme::acting_hand(), seat, mounted, gun_targets)
 }
 
-/// [`body_aim_point`] with the option, `by_hand`, and the hand the roles follow, `acting`, given.
+/// [`body_aim_point`] with the hand the roles follow, `acting`, given.
 fn aim_point(
-    by_hand: bool,
     acting: Hand,
     seat: Option<VehicleSeat>,
     mounted: bool,
     gun_targets: [Option<Vec3>; 2],
 ) -> Option<Vec3> {
     let passenger = seat.is_some_and(|s| !s.driver) && !mounted;
-    if !(by_hand && passenger) {
+    if !passenger {
         return None;
     }
     gun_targets[acting.index()]
@@ -100,7 +96,6 @@ mod tests {
     use jc3vr_body::controllers::mode::VehicleClass;
 
     use super::*;
-    use crate::controllers::vehicles::config::VehiclesConfig;
 
     fn seat(driver: bool) -> Option<VehicleSeat> {
         Some(VehicleSeat {
@@ -111,26 +106,24 @@ mod tests {
 
     #[test]
     fn a_passenger_s_body_follows_the_gun_hand_and_a_driver_s_does_not() {
-        let by_hand = VehiclesConfig::new().passenger_body_by_hand;
         let acting = Hand::Right;
         let mut targets = [None; 2];
         targets[acting.other().index()] = Some(Vec3::X);
         assert_eq!(
-            aim_point(by_hand, acting, seat(false), false, targets),
+            aim_point(acting, seat(false), false, targets),
             Some(Vec3::X)
         );
         targets[acting.index()] = Some(Vec3::Y);
         assert_eq!(
-            aim_point(by_hand, acting, seat(false), false, targets),
+            aim_point(acting, seat(false), false, targets),
             Some(Vec3::Y)
         );
-        assert_eq!(aim_point(by_hand, acting, seat(true), false, targets), None);
-        assert_eq!(aim_point(by_hand, acting, seat(false), true, targets), None);
-        assert_eq!(aim_point(by_hand, acting, None, false, targets), None);
+        assert_eq!(aim_point(acting, seat(true), false, targets), None);
+        assert_eq!(aim_point(acting, seat(false), true, targets), None);
+        assert_eq!(aim_point(acting, None, false, targets), None);
         assert_eq!(
-            aim_point(by_hand, acting, seat(false), false, [None; 2]),
+            aim_point(acting, seat(false), false, [None; 2]),
             None
         );
-        assert_eq!(aim_point(false, acting, seat(false), false, targets), None);
     }
 }

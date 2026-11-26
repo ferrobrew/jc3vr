@@ -7,7 +7,7 @@ use jc3vr_input::frame::Hand;
 
 use super::*;
 use crate::controllers::vehicles::{
-    config::ParachuteHandlesConfig,
+    tuning::{PARACHUTE_HANDLES, ParachuteHandlesTuning},
     parachute::{HandleEvent, HandleHold, HandleState, RADIUS_M, REACH_M, StepInputs},
     physical::Release,
 };
@@ -17,7 +17,7 @@ mod parachute {
     pub(super) use crate::controllers::vehicles::parachute::{anchor_point, step};
 
     pub(super) fn candidates(
-        config: &ParachuteHandlesConfig,
+        config: &ParachuteHandlesTuning,
         state: &HandleState,
         centres: [Option<Vec3>; 2],
         grips: [Option<Vec3>; 2],
@@ -56,7 +56,7 @@ mod parachute {
     }
 }
 
-const CONFIG: ParachuteHandlesConfig = ParachuteHandlesConfig::new();
+const CONFIG: ParachuteHandlesTuning = PARACHUTE_HANDLES;
 const OWNER: OwnerIdentity = OwnerIdentity {
     character: 10,
     control_block: 20,

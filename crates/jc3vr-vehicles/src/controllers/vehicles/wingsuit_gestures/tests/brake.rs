@@ -133,11 +133,10 @@ fn braking_neither_closes_the_suit_nor_arms_it() {
 }
 
 #[test]
-fn every_valid_tuning_keeps_the_brake_entry_and_its_release_apart() {
+fn the_flight_rolls_keep_the_brake_entry_and_its_release_apart() {
     let mut config = CONFIG;
     for flight_roll_deg in [15.0, 40.0, 59.9] {
         config.flight_roll_deg = flight_roll_deg;
-        assert!(config.valid());
         for roll in [config.brake_roll_deg, config.brake_roll_max_deg] {
             let pose = palms(roll);
             assert!(pose.enters_brake(&config) && !pose.releases_brake(&config));

@@ -1,21 +1,10 @@
-//! Checks for vehicle settings: the wingsuit gestures and evade, the physical wheel, the arm
-//! steering, the parachute handles, and the ripcord.
+//! Checks for the vehicle settings: the wheel's lock and the wingsuit's neutral wrist tilt.
 
-use jc3vr_core::config::engine::{Invalid, nonnegative, positive, range};
-use jc3vr_vehicles::controllers::vehicles::{config::VehiclesConfig, ripcord::MIN_PULL_M};
+use jc3vr_core::config::engine::{Invalid, range};
+use jc3vr_vehicles::controllers::vehicles::config::VehiclesConfig;
 
 /// Check the vehicle settings. Paths are relative to `controllers.vehicles`.
 pub(super) fn vehicles(v: &VehiclesConfig) -> Result<(), Invalid> {
-    if !v.wingsuit_gestures.valid() {
-        return Err(Invalid(
-            "vehicles.wingsuit_gestures must have finite, bounded, consistent thresholds".into(),
-        ));
-    }
-    if !v.wingsuit_evade.valid() {
-        return Err(Invalid(
-            "vehicles.wingsuit_evade must have finite, bounded, consistent thresholds".into(),
-        ));
-    }
     range(
         "vehicles.physical.wheel.lock_deg",
         v.physical.wheel.lock_deg,
@@ -23,60 +12,9 @@ pub(super) fn vehicles(v: &VehiclesConfig) -> Result<(), Invalid> {
         1080.0,
     )?;
     range(
-        "vehicles.physical.wheel.response",
-        v.physical.wheel.response,
-        0.2,
-        5.0,
-    )?;
-    nonnegative(
-        "vehicles.arm_steering.deadzone_m",
-        v.arm_steering.deadzone_m,
-        10.0,
-    )?;
-    positive(
-        "vehicles.arm_steering.full_bank_m",
-        v.arm_steering.full_bank_m,
-        10.0,
-    )?;
-    range(
         "vehicles.arm_steering.tilt_neutral_deg",
         v.arm_steering.tilt_neutral_deg,
         -90.0,
         90.0,
-    )?;
-    positive(
-        "vehicles.parachute_handles.full_pull_m",
-        v.parachute_handles.full_pull_m,
-        10.0,
-    )?;
-    range(
-        "vehicles.parachute_handles.brake_threshold",
-        v.parachute_handles.brake_threshold,
-        0.0,
-        1.0,
-    )?;
-    range("vehicles.ripcord.pull_m", v.ripcord.pull_m, MIN_PULL_M, 1.0)
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::controllers::config::{ControllersConfig, validate::controllers};
-
-    #[test]
-    fn invalid_wingsuit_thresholds_reach_the_controller_validator() {
-        let mut config = ControllersConfig::default();
-        assert!(controllers(&config).is_ok());
-        config.vehicles.wingsuit_gestures.enabled = false;
-        config.vehicles.wingsuit_gestures.brake_roll_deg = f32::NAN;
-        let error = controllers(&config).unwrap_err();
-        assert!(error.0.starts_with("vehicles.wingsuit_gestures "));
-    }
-
-    #[test]
-    fn invalid_evade_thresholds_reach_the_controller_validator() {
-        let mut config = ControllersConfig::default();
-        config.vehicles.wingsuit_evade.rearm_bank_deg = 80.0;
-        let error = controllers(&config).unwrap_err();
-        assert!(error.0.starts_with("vehicles.wingsuit_evade "));
-    }
+    )
 }

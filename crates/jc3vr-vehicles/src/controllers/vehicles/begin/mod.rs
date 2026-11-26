@@ -48,7 +48,7 @@ use crate::controllers::vehicles::{
         MOUNTED_WEAPON, MountedHandWeight, STATE, State, log_handle_events, mounted_hand_weight,
         push_events,
     },
-    tuning::PhysicalControlsTuning,
+    tuning::{PARACHUTE_HANDLES, PhysicalControlsTuning},
     types::TickVolumes,
     wing_guide,
 };
@@ -106,7 +106,7 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickVolumes {
     let yoke = fit
         .cockpit
         .is_some_and(|fit| fit.asset.stick_kind == ControlKind::Yoke);
-    let offered = offered(seat, &config.vehicles.physical, fit.fork, yoke);
+    let offered = offered(seat, fit.fork, yoke);
     if offered.is_empty() {
         physical::visual::clear();
     }
@@ -118,12 +118,11 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickVolumes {
         ..Placement::new(physical_config, config.dominant)
     };
     let grips = active.hands.map(|h| h.map(|h| h.grip.position));
-    let mounted_config = config.vehicles.mounted;
     let aiming = STATE
         .lock()
         .mounted_grip
-        .aiming(&mounted_config, grips.map(|g| g.is_some()));
-    let mounted = mounted_tick(game, &active, &config, aiming);
+        .aiming(grips.map(|g| g.is_some()));
+    let mounted = mounted_tick(game, &active, aiming);
     // A gunner seat's view is corrected from its gun's handles, as a driver's from the wheel.
     let gunner_view = (seat.is_some_and(|s| !s.driver) && fit.view.is_none())
         .then(|| gunner_view_target(&xf, view_eyes, &mounted))
@@ -133,7 +132,6 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickVolumes {
     }
     driving_view::publish(fit.view.or(gunner_view));
     let handles_on = handles_act(mode, &config);
-    let handles_config = config.vehicles.parachute_handles;
     let native_centres = parachute_rig::centres(handles_on, &xf);
 
     let mut handle_events = Vec::new();
@@ -220,7 +218,7 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickVolumes {
             }),
     );
     targets.extend(
-        mounted_grip::candidates(&mounted_config, mounted.handle_points)
+        mounted_grip::candidates(mounted.handle_points)
             .iter()
             .filter(|c| c.hand.is_none_or(|h| !holding[h.index()]))
             .map(|c| handle_target(c.volume, c.centre, c.radius, c.hand.unwrap_or(Hand::Right))),
@@ -273,7 +271,7 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickVolumes {
     }
     if handles_on {
         let centres = native_centres.map(|point| point.unwrap_or(Vec3::ZERO));
-        let placed = parachute::candidates(&handles_config, &state.handles, centres, grips);
+        let placed = parachute::candidates(&PARACHUTE_HANDLES, &state.handles, centres, grips);
         for (hand, c) in Hand::BOTH.into_iter().zip(placed) {
             if state.handles.holds[hand.index()].is_none() && native_centres[hand.index()].is_none()
             {
@@ -314,7 +312,6 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickVolumes {
     let grips = grab::tick::hand_grips(&active);
     let volumes = grab::resolve::resolve(&targets, grips).map(|r| r.chosen.map(|c| c.volume));
     state.handles_on = handles_on;
-    state.handles_config = handles_config;
     state.placement = Some(placement);
     state.latch = latch;
     state.render = fit.render;
@@ -325,13 +322,8 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickVolumes {
     MOUNTED_WEAPON.store(mounted.weapon.unwrap_or(0), Ordering::Relaxed);
     state.mounted_handles = mounted.handles.or(state.mounted_handles);
     state.mounted_handle_points = mounted.handle_points;
-    state.mounted_config = mounted_config;
     state.mounted_barrel = mounted.barrel;
-    declare_mounted_grips(
-        mounted.handles,
-        state.mounted_grip.shares(&mounted_config),
-        mounted_config.grip_handles,
-    );
+    declare_mounted_grips(mounted.handles, state.mounted_grip.shares());
     state.status.active = true;
     state.status.seat = seat;
     state.status.offered = offered;
@@ -440,7 +432,7 @@ const NITROUS_LABEL: &str = "Nitrous";
 
 /// Declare each hand the mounted gun's handles anchor, for its finger pose, at the anchor's share
 /// times the hand's hold on its handle, `shares`.
-fn declare_mounted_grips(handles: Option<[Option<Vec3>; 2]>, shares: [f32; 2], grip_handles: bool) {
+fn declare_mounted_grips(handles: Option<[Option<Vec3>; 2]>, shares: [f32; 2]) {
     let tiers = tiers::status();
     let Some(handles) = handles else {
         return;
@@ -454,7 +446,6 @@ fn declare_mounted_grips(handles: Option<[Option<Vec3>; 2]>, shares: [f32; 2], g
                 Some(tiers::TierState::GrappleReel | tiers::TierState::GrappleHang)
             ),
             anchor_weight: tiers.anchor_weights[i],
-            grip_handles,
             share: shares[i],
         };
         if let Some(grip) = mounted_finger_grip(handles[i], inputs) {

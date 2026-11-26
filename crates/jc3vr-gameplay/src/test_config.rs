@@ -15,21 +15,15 @@ use jc3vr_body::{
     controllers::{
         aim::{WORLD_MARKERS_ENABLED, config::AIM_CONFIG},
         body::{BODY_CONFIG, BodyDimensions, config::BODY_REMAP_CONFIG},
-        hands::config::{HANDS_CONFIG, MOUNTED_AIM_BY_HANDS},
+        hands::config::HANDS_CONFIG,
         haptics::config::HAPTICS_CONFIG,
         intent::config::BINDINGS_CONFIG,
         locomotion::config::LOCOMOTION_CONFIG,
         overlay::config::OVERLAY_CONFIG,
-        roomscale::config::{DRIVING_VIEW_ENABLED, ROOMSCALE_CONFIG, TAKE_OFF_TO_HEAD},
+        roomscale::config::{DRIVING_VIEW_ENABLED, ROOMSCALE_CONFIG},
         scheme,
     },
-    hooks::{
-        animation::canopy::SKIP_REEL_OPENING,
-        input::{
-            parachute::{CANOPY_LINE_TURN, CANOPY_LINE_TURN_SCALE},
-            wingsuit::WINGSUIT_EVADE_ENABLED,
-        },
-    },
+    hooks::input::wingsuit::WINGSUIT_EVADE_ENABLED,
 };
 use jc3vr_core::{
     director::clean_view::{CLEAN_VIEW_CONFIG, CleanViewConfig},
@@ -105,12 +99,7 @@ jc3vr_core::test_root! {
         PHYSICAL_HANDS_CONFIG => controllers.physical_hands,
         HAPTICS_CONFIG => controllers.haptics,
         GLASS_CONFIG => controllers.glass,
-        MOUNTED_AIM_BY_HANDS => controllers.vehicles.mounted.aim_by_hands,
         DRIVING_VIEW_ENABLED => controllers.vehicles.driving_view.enabled,
-        TAKE_OFF_TO_HEAD => controllers.vehicles.take_off_to_head,
-        CANOPY_LINE_TURN => controllers.vehicles.canopy.line_turn,
-        CANOPY_LINE_TURN_SCALE => controllers.vehicles.canopy.line_turn_scale,
-        SKIP_REEL_OPENING => controllers.vehicles.canopy.skip_reel_opening,
         WINGSUIT_EVADE_ENABLED => controllers.vehicles.wingsuit_evade.enabled,
         WORLD_MARKERS_ENABLED => hud.world_markers.enabled,
         STEREO_CONFIG => stereo,

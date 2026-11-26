@@ -61,7 +61,7 @@ use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::vehicles::{
-    config::{RailConfig, VEHICLES_CONFIG},
+    tuning::{RAIL, RailTuning},
     rail::solve::{RailLine, RailMotion, RailStep, step, walk_from},
 };
 
@@ -118,10 +118,9 @@ pub fn input_tick(game: &GameTick<'_>, jump: bool, on_foot: bool) {
         return;
     };
     let character = local_player.character_mut();
-    let config = VEHICLES_CONFIG.lock().rail;
     if !enabled() {
         ENTER_REQUESTED.store(false, Ordering::Relaxed);
-        release("the rail was switched off");
+        release("the controller scheme is not in effect");
         return;
     }
     let held = { STATE.lock().active.map(|a| (a.character, a.since)) };
@@ -159,7 +158,7 @@ pub fn input_tick(game: &GameTick<'_>, jump: bool, on_foot: bool) {
         return;
     }
     if ENTER_REQUESTED.swap(false, Ordering::Relaxed) {
-        unsafe { enter(character, &config) };
+        unsafe { enter(character, &RAIL) };
     }
 }
 
@@ -189,7 +188,6 @@ pub(crate) unsafe fn step_physics() {
     if climb::climbing() {
         return;
     }
-    let config = VEHICLES_CONFIG.lock().rail;
     let Some(frame) = (unsafe { engine::body_frame(active.body) }) else {
         drop(state);
         release("the airframe went away");
@@ -204,7 +202,7 @@ pub(crate) unsafe fn step_physics() {
     let into_frame = frame.transform.inverse();
     let feet = into_frame.transform_point3(place.feet);
     let walk_local = into_frame.transform_vector3(walk);
-    let decision = step(&active.line, feet, walk_local, &motion(&config));
+    let decision = step(&active.line, feet, walk_local, &motion(&RAIL));
     let nearest = active.line.nearest(feet);
     state.status.off_line_m = Vec3::new(feet.x - nearest.x, 0.0, feet.z - nearest.z).length();
     state.status.walk_mps = walk.length();
@@ -252,16 +250,13 @@ fn evaluate(
     EVALUATE.get().unwrap().call(condition, machine, transition)
 }
 
-/// Whether the rail acts: the controllers' scheme, and its switch on.
+/// Whether the rail acts: the controllers' scheme, outside the shutdown.
 fn enabled() -> bool {
-    scheme::is_controllers()
-        && !jc3vr_core::is_shutting_down()
-        && scheme::enabled()
-        && VEHICLES_CONFIG.query(|c| c.helicopter_rail)
+    scheme::is_controllers() && !jc3vr_core::is_shutting_down() && scheme::enabled()
 }
 
-/// The rail's motion from its settings.
-fn motion(config: &RailConfig) -> RailMotion {
+/// The rail's motion from its tuning.
+fn motion(config: &RailTuning) -> RailMotion {
     RailMotion {
         step_off_m: config.step_off_m,
         pull_s: config.pull_s,
@@ -277,7 +272,7 @@ fn motion(config: &RailConfig) -> RailMotion {
 /// # Safety
 ///
 /// `character` is the live local player, on the game thread before the world update.
-unsafe fn enter(character: &mut Character, config: &RailConfig) {
+unsafe fn enter(character: &mut Character, config: &RailTuning) {
     let airframe = airframe::noted()
         .filter(|(_, at)| at.elapsed() <= AIRFRAME_FRESH)
         .map(|(body, _)| body);

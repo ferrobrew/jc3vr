@@ -126,7 +126,6 @@ fn off_seat_mounted_handles_declare_the_mounted_finger_source() {
             manned: false,
             grapple: false,
             anchor_weight: 0.0,
-            grip_handles: true,
             share,
         };
         let grip = mounted_finger_grip(Some(Vec3::ZERO), inputs).unwrap();
@@ -142,15 +141,10 @@ fn mounted_finger_sources_follow_the_mounted_pose_eligibility() {
         manned: false,
         grapple: false,
         anchor_weight: 0.0,
-        grip_handles: true,
         share: 1.0,
     };
     assert_eq!(mounted_finger_grip(None, held), None);
     for inputs in [
-        MountedHandWeight {
-            grip_handles: false,
-            ..held
-        },
         MountedHandWeight {
             grapple: true,
             ..held

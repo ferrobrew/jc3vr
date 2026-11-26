@@ -5,14 +5,14 @@
 //! rolls. A player flying with the arms spread as wings has no free button for it, so the evade is
 //! a gesture: a throw of the arms into a steep bank, much steeper and faster than any bank the arm
 //! steering ([`crate::controllers::vehicles::arm_steering`]) turns with. A throw is the bank
-//! reaching [`WingsuitEvadeConfig::throw_bank_deg`] either way after swinging toward that side by
-//! [`WingsuitEvadeConfig::throw_sweep_deg`] within [`WingsuitEvadeConfig::throw_window_s`]. After a
-//! throw the arms must come back within [`WingsuitEvadeConfig::rearm_bank_deg`], and the cooldown
+//! reaching [`WingsuitEvadeTuning::throw_bank_deg`] either way after swinging toward that side by
+//! [`WingsuitEvadeTuning::throw_sweep_deg`] within [`WingsuitEvadeTuning::throw_window_s`]. After a
+//! throw the arms must come back within [`WingsuitEvadeTuning::rearm_bank_deg`], and the cooldown
 //! must pass, before the next counts, so one throw is one roll.
 //!
 //! The throw clicks the action and, for [`DIRECTION_HOLD_S`], writes the move stick as the throw's
 //! direction over the arms' own: full to the side the arms banked toward, the side the lower hand
-//! is on, and, while the arms pitch past [`WingsuitEvadeConfig::diagonal_pitch`], as far up or down
+//! is on, and, while the arms pitch past [`WingsuitEvadeTuning::diagonal_pitch`], as far up or down
 //! the stick as the arms pitch, so the game picks the roll toward the throw (one of its side or
 //! diagonal rolls) rather than one from whatever the arms steered with as the throw began.
 //!
@@ -44,7 +44,10 @@ use jc3vr_body::controllers::{
 use jc3vr_core::game_tick::GameTick;
 use parking_lot::Mutex;
 
-use crate::controllers::vehicles::{config::WingsuitEvadeConfig, types::ArmReadout};
+use crate::controllers::vehicles::{
+    tuning::{self, WingsuitEvadeTuning},
+    types::ArmReadout,
+};
 
 /// Which way a throw rolls the body: the side the arms banked toward, and the arms' pitch past the
 /// diagonal threshold, if any.
@@ -190,7 +193,7 @@ impl EvadeRecognizer {
     }
 
     /// Step the recognizer by one observation.
-    pub fn step(&mut self, input: EvadeInput, config: &WingsuitEvadeConfig) -> Outcome {
+    pub fn step(&mut self, input: EvadeInput, config: &WingsuitEvadeTuning) -> Outcome {
         let dt = if input.dt.is_finite() {
             input.dt.max(0.0)
         } else {
@@ -232,7 +235,7 @@ impl EvadeRecognizer {
         }
     }
 
-    fn throw(&self, bank: f32, pitch: f32, config: &WingsuitEvadeConfig) -> Option<Throw> {
+    fn throw(&self, bank: f32, pitch: f32, config: &WingsuitEvadeTuning) -> Option<Throw> {
         if !self.armed || bank.abs() < config.throw_bank_deg {
             return None;
         }
@@ -294,13 +297,13 @@ pub(super) fn tick(
     game: &GameTick<'_>,
     arms: Option<&ArmReadout>,
     arm_span: f32,
-    config: &WingsuitEvadeConfig,
+    enabled: bool,
     desired: &mut Vec<Desired>,
     dt: f32,
 ) {
     let mut state = STATE.lock();
     let state = &mut *state;
-    let Some(arms) = arms.filter(|_| config.enabled && config.valid()) else {
+    let Some(arms) = arms.filter(|_| enabled) else {
         state.recognizer.reset();
         state.status.bank_deg = None;
         state.status.holding = false;
@@ -323,7 +326,7 @@ pub(super) fn tick(
         gate,
         dt,
     };
-    let mut outcome = state.recognizer.step(input, config);
+    let mut outcome = state.recognizer.step(input, &tuning::WINGSUIT_EVADE);
     if let Outcome::Throw(throw) = outcome
         && !flying_boost_suit(game)
     {

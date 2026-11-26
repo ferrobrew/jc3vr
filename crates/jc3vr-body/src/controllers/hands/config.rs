@@ -7,12 +7,6 @@ use serde::{Deserialize, Serialize};
 /// binds the slot at startup.
 pub static HANDS_CONFIG: ConfigSlot<HandsConfig> = ConfigSlot::new("controllers.hands");
 
-/// Whether a mounted gun's grips anchor the hands, at `controllers.vehicles.mounted.aim_by_hands`
-/// in the settings file: a field of the vehicles' group, which the hand tiers read to anchor the
-/// hands on a mounted gun's grips. The payload binds the slot at startup.
-pub static MOUNTED_AIM_BY_HANDS: ConfigSlot<bool> =
-    ConfigSlot::new("controllers.vehicles.mounted.aim_by_hands");
-
 /// Controller-owned hands (see [`crate::controllers::hands`]): their calibration. Every part of the
 /// hands acts only under the controller scheme and only for a hand whose controller is tracked.
 #[derive(Copy, Clone, Serialize, Deserialize)]

@@ -1,12 +1,11 @@
-//! The driver's vehicle weapons aimed by the dominant hand, behind
-//! [`VehiclesConfig::driver_weapons_by_hand`](crate::controllers::vehicles::config::VehiclesConfig::driver_weapons_by_hand).
+//! The driver's vehicle weapons aimed by the dominant hand under the controller scheme.
 //!
 //! The player's post-camera update hands the vehicle the aim control's weapon point through
 //! [`Vehicle::SetAimTargetPosition`] only while the player drives, and every built-in weapon of the
 //! vehicle aims from the stored point ([`Vehicle::m_AimingTargetPosition`]); turrets turn toward it
 //! at their own limited rate, so a hand-aimed turret trails the hand as it trails the gaze. The
 //! detour substitutes the dominant hand's aim point, cast by the aim update earlier in the same
-//! tick ([`jc3vr_body::controllers::aim`]), for the local player's vehicle. Off, or with no hand aim, the
+//! tick ([`jc3vr_body::controllers::aim`]), for the local player's vehicle. With no hand aim, the
 //! gaze point goes through unchanged.
 
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -20,7 +19,6 @@ use jc3gi::{
 use jc3vr_body::controllers::{aim, scheme};
 use re_utilities::hook_library::HookLibrary;
 
-use crate::controllers::vehicles::config::VEHICLES_CONFIG;
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&SET_AIM_TARGET_POSITION_BINDER)
@@ -55,13 +53,11 @@ fn set_aim_target_position(vehicle: *mut Vehicle, position: *const Vector3) {
     }
 }
 
-/// The dominant hand's aim point from the last aim update, while the option is on and the hand
-/// aims.
+/// The dominant hand's aim point from the last aim update, while the hand aims.
 fn hand_point() -> Option<Vec3> {
     let enabled = scheme::enabled();
-    let on = VEHICLES_CONFIG.query(|c| c.driver_weapons_by_hand);
     let dominant = scheme::acting_hand();
-    if !(enabled && on && scheme::is_controllers()) {
+    if !(enabled && scheme::is_controllers()) {
         return None;
     }
     let status = aim::status();

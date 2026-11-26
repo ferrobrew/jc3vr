@@ -23,7 +23,7 @@ The look steer is also what turns the canopy toward a grapple line in the game: 
 
 So while the local player's hook reels in under the canopy ([`GHS_REELING_IN`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::grappling_hook::GrapplingHookState##variant-GHS_REELING_IN)), the detour puts back the look steer a camera looking along the line would give (`line_turn` in `hooks/input/parachute.rs`): the yaw from the canopy's wanted heading to the line's ([`GrapplingHook::GetReelingInDirection`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::grappling_hook::GrapplingHook##func-GetReelingInDirection)), shaped by the game's own look-steer dead zone, maximum yaw, exponent, and maximum speed, written into `look_steer_out` and mixed into the steering values as the game mixes the camera's. The game's springs then turn the canopy, a turn rather than a snap, and the slingshot's pull grows as the facing comes round to the line. Like the game's block, it gives nothing while the stick steers across. The pitch half is left out, so the line does not pitch the canopy. A grapple pull is the movement action behind the turn.
 
-The switch and the strength (a share of the game's turn, 1.0 by default) are `controllers.vehicles.canopy.line_turn` and `line_turn_scale`, in the debug UI's Air feature, whose live status counts the ticks it turned (`line-turn ticks`).
+The turn always acts at the game's full strength. The debug UI's Air feature counts the ticks it turned in its live status (`line-turn ticks`).
 
 ## The opening's turn toward the velocity
 

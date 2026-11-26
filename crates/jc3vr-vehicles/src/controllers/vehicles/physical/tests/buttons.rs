@@ -1,18 +1,12 @@
-//! Tests for the cockpit's buttons and twist grips.
+//! Tests for the cockpit's buttons and the collective's twist grip.
 
-use jc3gi::input::input_action_map::Action;
-use jc3vr_body::controllers::{
-    grab::cockpit::Button,
-    intent::hold::{Desired, MapKind, Target, Want},
-};
+use jc3vr_body::controllers::grab::cockpit::Button;
 
 use super::*;
 use crate::controllers::vehicles::{
     physical::buttons::{
-        ButtonEvent, PushButton, PushPhase, THROTTLE_DEADZONE_DEG, TwistGrip, grip_twist,
-        push_step, twist_throttle,
+        ButtonEvent, PushButton, PushPhase, grip_twist, push_step,
     },
-    tuning::PHYSICAL,
     write_outputs,
 };
 
@@ -60,7 +54,7 @@ fn a_hand_reaching_the_button_from_behind_or_the_side_presses_nothing() {
 
 #[test]
 fn the_free_hand_sounds_the_horn_on_the_hub_while_the_other_holds_the_wheel() {
-    let p = placement(|c| c.wheel.enabled = true);
+    let p = placement();
     let wheel = p.wheel;
     let kinds = [ControlKind::Wheel];
     let mut state = ControlState::default();
@@ -109,7 +103,7 @@ fn the_free_hand_sounds_the_horn_on_the_hub_while_the_other_holds_the_wheel() {
 
 #[test]
 fn the_nitrous_button_sits_beside_the_wheel_and_holds_the_vehicle_mod() {
-    let p = placement(|c| c.wheel.enabled = true);
+    let p = placement();
     let config = p.config.buttons;
     let nitrous = PushButton::nitrous(&p.wheel, &config);
     let offset = nitrous.centre - p.wheel.centre;
@@ -132,10 +126,8 @@ fn the_nitrous_button_sits_beside_the_wheel_and_holds_the_vehicle_mod() {
     );
     assert!(out.nitrous && !out.horn);
 
-    let off = placement(|c| {
-        c.wheel.enabled = true;
-        c.nitrous_button = false;
-    });
+    let mut off = placement();
+    off.config.buttons.nitrous_button = false;
     let mut state = ControlState::default();
     step_with(
         &mut state,
@@ -155,126 +147,10 @@ fn the_nitrous_button_sits_beside_the_wheel_and_holds_the_vehicle_mod() {
 }
 
 #[test]
-fn the_throttle_opens_with_the_twist_past_a_deadzone() {
-    let config = PHYSICAL.buttons;
-    let deg = |d: f32| d.to_radians();
-    assert_eq!(twist_throttle(0.0, &config), 0.0);
-    assert_eq!(twist_throttle(deg(THROTTLE_DEADZONE_DEG), &config), 0.0);
-    assert_eq!(twist_throttle(deg(-20.0), &config), 0.0);
-    assert_eq!(twist_throttle(f32::NAN, &config), 0.0);
-    let half = twist_throttle(
-        deg((THROTTLE_DEADZONE_DEG + config.throttle_twist_deg) / 2.0),
-        &config,
-    );
-    assert!((half - 0.5).abs() < 1e-3, "{half}");
-    assert_eq!(twist_throttle(deg(config.throttle_twist_deg), &config), 1.0);
-    assert_eq!(twist_throttle(deg(80.0), &config), 1.0);
-}
-
-#[test]
-fn twisting_the_bars_grips_forward_opens_the_throttle_or_brakes_and_burns_no_nitrous() {
-    let config = PHYSICAL.buttons;
+fn the_collective_twists_either_way() {
     let grab = Quat::from_rotation_y(0.2);
-    // Rolling the grip's top forward, away from the rider, is a negative turn about the bars' line
-    // (+X, with +Z toward the rider), and opens the grip.
-    let forward = Quat::from_rotation_x(-(config.throttle_twist_deg + 5.0).to_radians()) * grab;
-    assert!(
-        grip_twist(TwistGrip::Throttle, grab, forward, Vec3::X)
-            > config.throttle_twist_deg.to_radians()
-    );
-    assert!(
-        grip_twist(TwistGrip::Brake, grab, forward, Vec3::X)
-            > config.throttle_twist_deg.to_radians()
-    );
-    let back = Quat::from_rotation_x(0.6) * grab;
-    assert!(grip_twist(TwistGrip::Throttle, grab, back, Vec3::X) < 0.0);
-    assert!(grip_twist(TwistGrip::Brake, grab, back, Vec3::X) < 0.0);
-    // The collective's grip works either way.
     let either = Quat::from_rotation_z(-0.7) * grab;
-    assert!(grip_twist(TwistGrip::Collective, grab, either, Vec3::X) > 0.6);
-
-    let p = placement(|c| {
-        c.handlebars = true;
-        c.bars_twist = true;
-    });
-    let kinds = [ControlKind::Handlebars];
-    let ends = bar_ends(p.bars.centre, p.bars.half_width, 0.0);
-    let mut state = ControlState::default();
-    let mut events = Vec::new();
-    let mut inputs = StepInputs {
-        kinds: &kinds,
-        grips: [Some(ends[0]), Some(ends[1])],
-        orientations: [Some(Quat::IDENTITY), Some(grab)],
-        held: [true; 2],
-        grabs: [Some(ControlKind::Handlebars); 2],
-        stick_steers: false,
-        stick_moves: false,
-        lever_moves: false,
-        dt: DT,
-    };
-    let out = step(&mut state, &p, &inputs, &mut events);
-    assert_eq!(out.bike_throttle, Some(0.0));
-    inputs.grabs = [None; 2];
-    // The left grip twisted forward the same way brakes, and opens no throttle.
-    inputs.orientations = [Some(forward), Some(grab)];
-    let out = step(&mut state, &p, &inputs, &mut events);
-    assert_eq!(out.bike_throttle, Some(0.0));
-    assert_eq!(out.bike_brake, Some(1.0));
-    assert!(events.contains(&ControlEvent::Button(ButtonEvent::Twisted(
-        Hand::Left,
-        TwistGrip::Brake
-    ))));
-    let mut desired = Vec::new();
-    write_outputs(&out, &mut desired);
-    assert_eq!(
-        desired
-            .iter()
-            .filter(|d| d.target.action == Action::REVERSE)
-            .map(|d| d.want)
-            .collect::<Vec<_>>(),
-        [Want::Analog(1.0)]
-    );
-    assert!(
-        desired
-            .iter()
-            .all(|d| d.target.action != Action::ACCELERATE)
-    );
-    inputs.orientations = [Some(Quat::IDENTITY), Some(forward)];
-    let out = step(&mut state, &p, &inputs, &mut events);
-    assert_eq!(out.bike_throttle, Some(1.0));
-    assert_eq!(out.bike_brake, Some(0.0));
-    assert!(!out.nitrous, "the throttle grip burns no nitrous");
-    assert!(events.contains(&ControlEvent::Button(ButtonEvent::Twisted(
-        Hand::Right,
-        TwistGrip::Throttle
-    ))));
-    // The throttle reaches the game as the accelerator, over a lighter trigger.
-    let mut desired = vec![Desired {
-        target: Target {
-            map: MapKind::Player,
-            action: Action::ACCELERATE,
-        },
-        want: Want::Analog(0.3),
-    }];
-    write_outputs(&out, &mut desired);
-    let accelerate: Vec<_> = desired
-        .iter()
-        .filter(|d| d.target.action == Action::ACCELERATE)
-        .collect();
-    assert_eq!(accelerate.len(), 1);
-    assert_eq!(accelerate[0].want, Want::Analog(1.0));
-    assert!(
-        desired
-            .iter()
-            .all(|d| d.target.action != Action::USE_VEHICLE_MOD)
-    );
-    inputs.orientations = [Some(Quat::IDENTITY), Some(grab)];
-    let out = step(&mut state, &p, &inputs, &mut events);
-    assert_eq!(out.bike_throttle, Some(0.0));
-    assert!(
-        events.contains(&ControlEvent::Button(ButtonEvent::Untwisted(
-            Hand::Right,
-            TwistGrip::Throttle
-        )))
-    );
+    assert!(grip_twist(grab, either) > 0.6);
+    let other = Quat::from_rotation_z(0.7) * grab;
+    assert!(grip_twist(grab, other) > 0.6);
 }

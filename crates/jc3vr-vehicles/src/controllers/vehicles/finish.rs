@@ -34,7 +34,7 @@ use crate::controllers::vehicles::{
     physical::{ControlEvent, ControlState, buttons::ButtonEvent},
     state::{STATE, log_handle_events, publish_mounted_holds, push_events},
     steering,
-    tuning::PhysicalControlsTuning,
+    tuning::{PARACHUTE_HANDLES, PhysicalControlsTuning},
     wheel_render, wingsuit_evade, write_outputs,
 };
 
@@ -72,7 +72,6 @@ pub fn finish_tick(
     mounted_grip::step(
         &mut state.mounted_grip,
         &mounted_grip::GripStep {
-            config: &config.vehicles.mounted,
             handles: mounted_handles,
             grips,
             held,
@@ -83,7 +82,7 @@ pub fn finish_tick(
         &mut mounted_events,
     );
     mounted_recoil::set_holds(
-        Hand::BOTH.map(|h| state.mounted_grip.shares(&config.vehicles.mounted)[h.index()] > 0.0),
+        Hand::BOTH.map(|h| state.mounted_grip.shares()[h.index()] > 0.0),
     );
     state.status.mounted_holds = state.mounted_grip.holds;
     publish_mounted_holds(state.mounted_grip.holds);
@@ -141,11 +140,10 @@ pub fn finish_tick(
         .map(|native| (native.target, native.motion(state.controls.stick)));
     wheel_render::publish_controls(rendered, native);
     state.status.rendered_angle = rendered.map(|(_, angle)| angle);
-    let handles_config = state.handles_config;
     let pulls = state.handles_on.then(|| {
         parachute::step(
             &mut state.handles,
-            &handles_config,
+            &PARACHUTE_HANDLES,
             &parachute::StepInputs {
                 grips,
                 held,
@@ -200,7 +198,7 @@ pub fn finish_tick(
         game,
         arms.as_ref(),
         body_dimensions(&config).arm_span,
-        &config.vehicles.wingsuit_evade,
+        config.vehicles.wingsuit_evade.enabled,
         desired,
         dt,
     );
@@ -227,7 +225,7 @@ pub fn finish_tick(
         );
     }
     let handles =
-        pulls.map(|pulls| handles_tick(&state.handles, pulls, controls, desired, &handles_config));
+        pulls.map(|pulls| handles_tick(&state.handles, pulls, controls, desired, &PARACHUTE_HANDLES));
     state.status.holds = state.controls.holds.map(|h| h.map(|h| h.kind));
     state.status.controls = state.controls;
     state.status.outputs = outputs;

@@ -80,12 +80,7 @@ slots! {
     jc3vr_body::controllers::haptics::config::HAPTICS_CONFIG = controllers.haptics,
     jc3vr_physical::controllers::glass::config::GLASS_CONFIG = controllers.glass,
     // Fields of a controllers group that a subsystem below the group's owner reads.
-    jc3vr_body::controllers::hands::config::MOUNTED_AIM_BY_HANDS = controllers.vehicles.mounted.aim_by_hands,
     jc3vr_body::controllers::roomscale::config::DRIVING_VIEW_ENABLED = controllers.vehicles.driving_view.enabled,
-    jc3vr_body::controllers::roomscale::config::TAKE_OFF_TO_HEAD = controllers.vehicles.take_off_to_head,
-    jc3vr_body::hooks::input::parachute::CANOPY_LINE_TURN = controllers.vehicles.canopy.line_turn,
-    jc3vr_body::hooks::input::parachute::CANOPY_LINE_TURN_SCALE = controllers.vehicles.canopy.line_turn_scale,
-    jc3vr_body::hooks::animation::canopy::SKIP_REEL_OPENING = controllers.vehicles.canopy.skip_reel_opening,
     jc3vr_body::hooks::input::wingsuit::WINGSUIT_EVADE_ENABLED = controllers.vehicles.wingsuit_evade.enabled,
     // Fields of a higher layer's group that a lower layer reads.
     jc3vr_view::vr::input::config::INPUT_CONFIG = controllers.input,

@@ -27,8 +27,7 @@
 //!   afterburner gate at the top of its travel.
 //!
 //! The cockpit's buttons ([`buttons`]) are worked by hand too: the horn pressed on the wheel's hub,
-//! a nitrous button on the dash, the handlebars' right grip twisted forward for the throttle and
-//! the left for the brake, and the collective twisted for the nitrous.
+//! a nitrous button on the dash, and the collective twisted for the nitrous.
 //!
 //! The sticks and levers give the holding hand a haptic cue at the ends of their travel, the
 //! levers at neutral, and the throttle going into and out of its gate ([`cues`]).
@@ -61,7 +60,6 @@ pub use crate::controllers::vehicles::physical::{
     cues::ControlCue, handlebars::bar_ends, sticks::stick_deflection,
 };
 use crate::controllers::vehicles::{
-    config::PhysicalControlsConfig,
     physical::{
         buttons::{ButtonEvent, ButtonInputs, ButtonPlacement, ButtonState, step_buttons},
         cues::TravelCues,
@@ -75,16 +73,6 @@ use crate::controllers::vehicles::{
     tuning::{LeverSpec, PhysicalControlsTuning, StickSpec},
     wheel::{BarsFrame, WheelFrame},
 };
-
-/// Whether `kind`'s toggle is on.
-pub const fn control_enabled(kind: ControlKind, config: &PhysicalControlsConfig) -> bool {
-    match kind {
-        ControlKind::Wheel => config.wheel.enabled,
-        ControlKind::Handlebars => config.handlebars,
-        ControlKind::Cyclic | ControlKind::FlightStick | ControlKind::Yoke => config.sticks,
-        ControlKind::Collective | ControlKind::Throttle => config.levers,
-    }
-}
 
 /// How a hand holds a control.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -104,7 +92,7 @@ pub enum Release {
     GripReleased,
     /// The other hand took a control only one hand holds.
     TakenOver,
-    /// The hand lost tracking, the seat changed, or the control was switched off.
+    /// The hand lost tracking or the seat changed.
     Gone,
 }
 
@@ -222,10 +210,6 @@ pub struct Outputs {
     pub horn: bool,
     /// Whether a hand presses the nitrous button or twists the collective's grip.
     pub nitrous: bool,
-    /// The throttle the handlebars' right grip opens, `0..=1`, while the right hand holds it.
-    pub bike_throttle: Option<f32>,
-    /// The brake the handlebars' left grip applies, `0..=1`, while the left hand holds it.
-    pub bike_brake: Option<f32>,
 }
 
 impl Outputs {
@@ -243,8 +227,6 @@ impl Outputs {
         lever_cue: None,
         horn: false,
         nitrous: false,
-        bike_throttle: None,
-        bike_brake: None,
     };
 }
 
@@ -650,19 +632,15 @@ pub fn step(
         &ButtonInputs {
             placement: &buttons,
             config: &placement.config.buttons,
-            bars: &placement.bars,
             grips: inputs.grips,
             orientations: inputs.orientations,
             holds: state.holds,
-            bars_turn: state.bars,
         },
         &mut button_events,
     );
     events.extend(button_events.into_iter().map(ControlEvent::Button));
     out.horn = pressed.horn;
     out.nitrous = pressed.nitrous;
-    out.bike_throttle = pressed.throttle;
-    out.bike_brake = pressed.brake;
     out
 }
 

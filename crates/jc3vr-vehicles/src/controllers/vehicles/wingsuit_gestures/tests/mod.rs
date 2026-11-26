@@ -10,7 +10,7 @@ use jc3vr_input::frame::{ActionSetKind, HandFrame, TrackedPose};
 
 use super::*;
 
-const CONFIG: WingsuitGesturesConfig = WingsuitGesturesConfig::new();
+const CONFIG: WingsuitGesturesTuning = WingsuitGesturesTuning::new();
 const FALLING: Mode = Mode::Airborne(AirborneVariant::Falling);
 const SUIT: Mode = Mode::Airborne(AirborneVariant::Wingsuit);
 const CANOPY: Mode = Mode::Airborne(AirborneVariant::Parachute);
@@ -659,47 +659,4 @@ fn palms_past_the_brake_band_toward_palm_up_do_not_brake() {
         ..FLIGHT
     };
     assert!(h.hold(one_hand, 12).iter().all(|c| !c.brake));
-}
-
-#[test]
-fn tuning_rejects_nonfinite_values_and_overlapping_pose_ranges() {
-    assert!(CONFIG.valid());
-    assert!(
-        !WingsuitGesturesConfig {
-            flight_dwell_s: f32::NAN,
-            ..CONFIG
-        }
-        .valid()
-    );
-    assert!(
-        !WingsuitGesturesConfig {
-            flight_lateral_span: 0.15,
-            withdraw_lateral_span: 0.14,
-            ..CONFIG
-        }
-        .valid()
-    );
-    let mut h = History::new(SUIT);
-    h.arm();
-    let invalid = WingsuitGesturesConfig {
-        close_dwell_s: 0.0,
-        ..CONFIG
-    };
-    assert_eq!(
-        h.state.step(
-            GestureInput {
-                sample: h.sample,
-                mode: SUIT,
-                airborne: false,
-                deploy_grapple: false,
-                gameplay: true,
-                canopy_requested: false,
-                pose: Some(FOLDED),
-                claims: [HandClaims::default(); 2],
-            },
-            &invalid
-        ),
-        GestureCommands::default()
-    );
-    assert!(!h.state.armed);
 }

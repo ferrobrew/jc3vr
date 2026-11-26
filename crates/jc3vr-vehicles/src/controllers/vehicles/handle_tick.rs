@@ -9,7 +9,8 @@ use jc3vr_body::controllers::{
 
 use crate::controllers::vehicles::{
     HandlesReadout, arm_steering as arm,
-    config::{ParachuteHandlesConfig, VehicleSettings},
+    config::VehicleSettings,
+    tuning::ParachuteHandlesTuning,
     parachute,
     parachute::HandleState,
 };
@@ -27,7 +28,7 @@ pub(super) fn handles_tick(
     pulls: [f32; 2],
     controls: &Controls,
     desired: &mut Vec<Desired>,
-    config: &ParachuteHandlesConfig,
+    config: &ParachuteHandlesTuning,
 ) -> HandlesReadout {
     let held = state.holds.map(|h| h.is_some());
     let handles = held

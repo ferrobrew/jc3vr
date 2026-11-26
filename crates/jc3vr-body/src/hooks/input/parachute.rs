@@ -41,23 +41,10 @@ use jc3gi::{
     input::parachute::{CharacterAirMovementSettings, CharacterParachuteSettings},
     types::math::{Vector2, Vector3},
 };
-use jc3vr_core::config::engine::ConfigSlot;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{controllers::physics::grapple_hook, hooks::input::locomotion::head_decoupled};
-
-/// Whether the canopy turns toward a grapple line it reels along, at
-/// `controllers.vehicles.canopy.line_turn` in the settings file; the payload binds the slot at
-/// startup.
-pub static CANOPY_LINE_TURN: ConfigSlot<bool> =
-    ConfigSlot::new("controllers.vehicles.canopy.line_turn");
-
-/// The line turn's strength, as a share of the turn the game gives a camera looking along the line,
-/// at `controllers.vehicles.canopy.line_turn_scale` in the settings file; the payload binds the slot
-/// at startup.
-pub static CANOPY_LINE_TURN_SCALE: ConfigSlot<f32> =
-    ConfigSlot::new("controllers.vehicles.canopy.line_turn_scale");
 
 pub fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&GET_PARACHUTE_STEERING_VALUES_BINDER)
@@ -105,22 +92,17 @@ fn get_parachute_steering_values(
     );
     if should_suppress(character) {
         remove_look_steer(para_settings, steering_values_out, look_steer_out);
-        let line_turn = *CANOPY_LINE_TURN.lock();
-        if line_turn {
-            let line_turn_scale = *CANOPY_LINE_TURN_SCALE.lock();
-            // SAFETY: the game passes live pointers for the duration of the call.
-            unsafe {
-                turn_toward_line(
-                    character,
-                    para_settings,
-                    input,
-                    wanted_char_yawpitchroll_out,
-                    steering_values_out,
-                    look_steer_out,
-                    line_turn_scale,
-                )
-            };
-        }
+        // SAFETY: the game passes live pointers for the duration of the call.
+        unsafe {
+            turn_toward_line(
+                character,
+                para_settings,
+                input,
+                wanted_char_yawpitchroll_out,
+                steering_values_out,
+                look_steer_out,
+            )
+        };
     }
 }
 
@@ -217,8 +199,7 @@ fn remove_look_steer(
     PARACHUTE_LOOK_STEER_SUPPRESSIONS.fetch_add(1, Ordering::Relaxed);
 }
 
-/// Put back the look steer a camera looking along the reeling line would give, scaled by `scale`,
-/// while the local character's hook reels in. Called after [`remove_look_steer`], so the look steer
+/// Put back the look steer a camera looking along the reeling line would give, while the local character's hook reels in. Called after [`remove_look_steer`], so the look steer
 /// is the line's alone.
 ///
 /// # Safety
@@ -231,7 +212,6 @@ unsafe fn turn_toward_line(
     wanted_char_yawpitchroll_out: *mut Vector3,
     steering_values_out: *mut Vector3,
     look_steer_out: *mut Vector2,
-    scale: f32,
 ) {
     let (Some(character), Some(settings), Some(input), Some(wanted), Some(steering), Some(look)) =
         (unsafe {
@@ -266,7 +246,6 @@ unsafe fn turn_toward_line(
     ) else {
         return;
     };
-    let yaw = yaw * scale;
     look.data[0] += yaw;
     for axis in 0..3 {
         steering.data[axis] += settings.m_AirControl.m_XLookYawPitchRollAmount[axis] * yaw;

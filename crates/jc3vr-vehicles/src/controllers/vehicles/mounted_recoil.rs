@@ -1,5 +1,4 @@
-//! A mounted gun's recoil in the handles, behind
-//! [`MountedConfig::aim_by_hands`](crate::controllers::vehicles::config::MountedConfig::aim_by_hands).
+//! A mounted gun's recoil in the handles the hands aim it by.
 //!
 //! Every shot of the mounted gun the hands aim (seen by the per-shot seam,
 //! [`jc3vr_weapons::controllers::weapons::fire`]) kicks a damped spring: back along the barrel and down,
@@ -26,13 +25,8 @@ use jc3vr_input::{frame::Hand, haptics::cues::Event};
 use jc3vr_weapons::controllers::weapons::recoil::Spring;
 use parking_lot::Mutex;
 
-use crate::controllers::vehicles::config::VEHICLES_CONFIG;
-
 /// Kick the handles by one shot of the mounted gun, and pulse the hands holding them.
 pub(crate) fn on_shot() {
-    if !VEHICLES_CONFIG.query(|c| c.mounted.aim_by_hands) {
-        return;
-    }
     SHOTS.fetch_add(1, Ordering::Relaxed);
     {
         let mut kick = KICK.lock();

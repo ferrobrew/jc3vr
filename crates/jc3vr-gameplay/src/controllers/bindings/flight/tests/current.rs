@@ -316,7 +316,7 @@ fn a_hang_releases_the_line_before_the_suit_request() {
 
 #[test]
 fn late_input_changes_remove_current_and_cancel_pending_commands() {
-    for denial in 0..21 {
+    for denial in 0..19 {
         let mut history = History::new();
         history.braking();
         let mut state = history.state;
@@ -329,7 +329,6 @@ fn late_input_changes_remove_current_and_cancel_pending_commands() {
         assert!(commands.brake);
         assert_eq!(state.current(), GestureAvailability::CloseAndBrake);
         let mut late = Some(original);
-        let mut config = CONFIG;
         match denial {
             0 => late = None,
             1 => late.as_mut().unwrap().sample.sequence += 1,
@@ -347,14 +346,12 @@ fn late_input_changes_remove_current_and_cancel_pending_commands() {
                     _ => claim.grapple = true,
                 }
             }
-            16 => config.enabled = false,
-            17 => config.flight_dwell_s = f32::NAN,
-            18 => late.as_mut().unwrap().mode = Mode::Airborne(AirborneVariant::Falling),
-            19 => late.as_mut().unwrap().sample.epoch += 1,
+            16 => late.as_mut().unwrap().mode = Mode::Airborne(AirborneVariant::Falling),
+            17 => late.as_mut().unwrap().sample.epoch += 1,
             _ => late.as_mut().unwrap().sample.time_ns += 1,
         }
         let mut desired = Vec::new();
-        commit_input(&mut state, commands, late, &config, &mut desired);
+        commit_input(&mut state, commands, late, &CONFIG, &mut desired);
         assert!(desired.is_empty(), "{denial}");
         assert_eq!(
             state.current(),
@@ -365,17 +362,14 @@ fn late_input_changes_remove_current_and_cancel_pending_commands() {
 }
 
 #[test]
-fn evaluation_denies_missing_disabled_invalid_and_unsupported_inputs() {
-    for denial in 0..10 {
+fn evaluation_denies_missing_and_unsupported_inputs() {
+    for denial in 0..8 {
         let mut state = FlightState::default();
         let mut observation = Some(input(SUIT));
-        let mut config = CONFIG;
         match denial {
             0 => observation = None,
-            1 => config.enabled = false,
-            2 => config.close_dwell_s = f32::NAN,
-            3 => observation.as_mut().unwrap().pose = None,
-            4 => {
+            1 => observation.as_mut().unwrap().pose = None,
+            2 => {
                 observation
                     .as_mut()
                     .unwrap()
@@ -384,10 +378,10 @@ fn evaluation_denies_missing_disabled_invalid_and_unsupported_inputs() {
                     .unwrap()
                     .palm_roll_deg[0] = 181.0
             }
-            5 => observation.as_mut().unwrap().mode = Mode::Ui,
-            6 => observation.as_mut().unwrap().mode = Mode::OnFoot(OnFootVariant::Swimming),
-            7 => observation.as_mut().unwrap().mode = Mode::OnFoot(OnFootVariant::Ground),
-            8 => {
+            3 => observation.as_mut().unwrap().mode = Mode::Ui,
+            4 => observation.as_mut().unwrap().mode = Mode::OnFoot(OnFootVariant::Swimming),
+            5 => observation.as_mut().unwrap().mode = Mode::OnFoot(OnFootVariant::Ground),
+            6 => {
                 observation.as_mut().unwrap().mode = Mode::Vehicle(VehicleSeat {
                     class: VehicleClass::Plane,
                     driver: true,
@@ -396,7 +390,7 @@ fn evaluation_denies_missing_disabled_invalid_and_unsupported_inputs() {
             _ => observation.as_mut().unwrap().canopy_requested = true,
         }
         assert_eq!(
-            evaluate_input(&mut state, calibration(), observation, &config),
+            evaluate_input(&mut state, calibration(), observation, &CONFIG),
             GestureCommands::default(),
         );
         assert_eq!(
@@ -464,6 +458,7 @@ fn actual_packet_evaluate_and_commit_apply_late_canopy_staleness_and_claims() {
     let mut tick = Tick {
         frame: &frame,
         config: &config,
+        gestures: &jc3vr_vehicles::controllers::vehicles::tuning::WINGSUIT_GESTURES,
         dimensions: &dimensions,
         detection: Detection {
             mode: SUIT,
@@ -502,23 +497,6 @@ fn actual_packet_evaluate_and_commit_apply_late_canopy_staleness_and_claims() {
     assert_eq!(state.current(), GestureAvailability::Unavailable);
 
     desired.clear();
-    for invalid in [false, true] {
-        let mut changed = config.clone();
-        if invalid {
-            changed.vehicles.wingsuit_gestures.flight_dwell_s = f32::NAN;
-        } else {
-            changed.vehicles.wingsuit_gestures.enabled = false;
-        }
-        let changed_tick = Tick {
-            config: &changed,
-            ..tick
-        };
-        let commands = evaluate(&mut state, &changed_tick, &[]);
-        assert_eq!(commands, GestureCommands::default());
-        assert_eq!(state.current(), GestureAvailability::Unavailable);
-        commit(&mut state, commands, &changed_tick, &mut desired);
-        assert_eq!(state.current(), GestureAvailability::Unavailable);
-    }
     let commands = evaluate(&mut state, &tick, &[]);
     assert_eq!(state.current(), GestureAvailability::CloseAndBrake);
     let expired_at = now - Duration::from_secs(10);

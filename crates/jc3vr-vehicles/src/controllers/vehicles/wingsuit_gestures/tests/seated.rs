@@ -141,7 +141,7 @@ const BRAKES: [Sample; 2] = [
 ];
 
 /// Whether `pose` is a flight pose under `config`, as the recognizer's arming reads it.
-fn flight(pose: FlightPose, config: &WingsuitGesturesConfig) -> bool {
+fn flight(pose: FlightPose, config: &WingsuitGesturesTuning) -> bool {
     pose.lateral
         .into_iter()
         .all(|v| v >= config.flight_lateral_span)

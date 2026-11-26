@@ -133,7 +133,6 @@ pub(crate) fn refresh(
     eligibility: &Eligibility,
 ) {
     let weapons = &config.weapons;
-    let physical = &config.vehicles.physical;
     let ctx = DescribeCtx {
         mode,
         dominant: controls.dominant,
@@ -148,13 +147,13 @@ pub(crate) fn refresh(
             wheel_trackpad: weapons.wheel.enabled && WHEEL.trackpad,
             wheel_stick: weapons.wheel.enabled && WHEEL.stick,
             parachute_handles: config.vehicles.parachute_handles.enabled,
-            ripcord: config.vehicles.ripcord.enabled,
+            ripcord: true,
             arm_steering: config.vehicles.arm_steering.wingsuit,
             physical: PhysicalFeatures {
-                wheel: physical.wheel.enabled,
-                handlebars: physical.handlebars,
-                helicopter: physical.sticks || physical.levers,
-                plane: physical.sticks || physical.levers,
+                wheel: true,
+                handlebars: true,
+                helicopter: true,
+                plane: true,
             },
         },
     };

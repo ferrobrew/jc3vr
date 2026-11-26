@@ -5,22 +5,16 @@ use jc3vr_body::controllers::{
     grab::cockpit::ControlKind,
     mode::{VehicleClass, VehicleSeat},
 };
-use jc3vr_gameplay::controllers::config::CONTROLLERS_CONFIG;
 use jc3vr_vehicles::controllers::{
     vehicles,
     vehicles::{
-        VehicleSummary,
-        config::MountedConfig,
-        mounted_recoil, passenger,
+        VehicleSummary, mounted_recoil, passenger,
         passenger::PassengerStatus,
-        tuning::{CockpitButtonsTuning, PhysicalControlsTuning},
+        tuning::{CockpitButtonsTuning, PHYSICAL},
     },
 };
 
-use crate::{
-    controllers::menu::read,
-    status::{Health, Line, Row, Text, prose, text},
-};
+use crate::status::{Health, Line, Row, Text, prose, text};
 
 pub(crate) const FLIGHT_CONTROLS: Row =
     Row::new("FLIGHT CONTROLS", "Flight controls", flight_controls);
@@ -30,31 +24,22 @@ pub(crate) const PASSENGER_AIM: Row = Row::new("PASSENGER AIM", "Passenger aim",
 pub(crate) const MOUNTED_GUN: Row = Row::new("MOUNTED GUN", "Mounted gun", mounted_gun);
 
 fn flight_controls() -> Line {
-    let on = read(&CONTROLLERS_CONFIG, |c| {
-        let p = &c.vehicles.physical;
-        p.sticks || p.levers
-    });
-    flight_controls_line(on, &vehicles::summary())
+    flight_controls_line(&vehicles::summary())
 }
 
 fn mounted_gun() -> Line {
-    let config = read(&CONTROLLERS_CONFIG, |c| c.vehicles.mounted);
-    mounted_gun_line(&config, &vehicles::summary(), mounted_recoil::shots())
+    mounted_gun_line(&vehicles::summary(), mounted_recoil::shots())
 }
 
-fn mounted_gun_line(config: &MountedConfig, summary: &VehicleSummary, shots: u64) -> Line {
-    if !config.aim_by_hands {
-        return Line::off("");
-    }
+fn mounted_gun_line(summary: &VehicleSummary, shots: u64) -> Line {
     if !summary.mounted {
         return Line::new(Health::Waiting, prose("Not on a mounted gun"));
     }
-    let hands = prose(match (config.grip_handles, summary.mounted_holds) {
-        (false, _) => "Hands always on",
-        (true, [true, true]) => "Both hands on",
-        (true, [true, false]) => "Left hand on",
-        (true, [false, true]) => "Right hand on",
-        (true, [false, false]) => "Hands off, gun held",
+    let hands = prose(match summary.mounted_holds {
+        [true, true] => "Both hands on",
+        [true, false] => "Left hand on",
+        [false, true] => "Right hand on",
+        [false, false] => "Hands off, gun held",
     });
     Line::ok(text!(
         hands,
@@ -67,15 +52,11 @@ fn mounted_gun_line(config: &MountedConfig, summary: &VehicleSummary, shots: u64
 }
 
 fn passenger_aim() -> Line {
-    let on = read(&CONTROLLERS_CONFIG, |c| c.vehicles.passenger_body_by_hand);
     let seat = vehicles::summary().seat;
-    passenger_aim_line(on, seat, passenger::status())
+    passenger_aim_line(seat, passenger::status())
 }
 
-fn passenger_aim_line(on: bool, seat: Option<VehicleSeat>, status: PassengerStatus) -> Line {
-    if !on {
-        return Line::off("");
-    }
+fn passenger_aim_line(seat: Option<VehicleSeat>, status: PassengerStatus) -> Line {
     match (seat.is_some_and(|s| !s.driver), status.aiming) {
         (true, true) => Line::ok(text!(
             "Following the hand, ",
@@ -93,16 +74,7 @@ fn passenger_aim_line(on: bool, seat: Option<VehicleSeat>, status: PassengerStat
 }
 
 fn cockpit_buttons() -> Line {
-    let physical = read(&CONTROLLERS_CONFIG, |c| c.vehicles.physical);
-    // The horn and the collective's twist come with their controls, so with every control off no
-    // button is reachable.
-    if !physical.any() {
-        return Line::off("");
-    }
-    cockpit_buttons_line(
-        &PhysicalControlsTuning::of(&physical).buttons,
-        &vehicles::summary(),
-    )
+    cockpit_buttons_line(&PHYSICAL.buttons, &vehicles::summary())
 }
 
 fn cockpit_buttons_line(config: &CockpitButtonsTuning, summary: &VehicleSummary) -> Line {
@@ -121,9 +93,6 @@ fn cockpit_buttons_line(config: &CockpitButtonsTuning, summary: &VehicleSummary)
         if config.nitrous_button {
             here.push(prose("nitrous button"));
         }
-    }
-    if config.bars_twist && offers(ControlKind::Handlebars) {
-        here.push(prose("throttle and brake grips"));
     }
     if config.twist_nitrous && offers(ControlKind::Collective) {
         here.push(prose("twist grip"));
@@ -147,10 +116,7 @@ fn cockpit_buttons_line(config: &CockpitButtonsTuning, summary: &VehicleSummary)
     ))
 }
 
-fn flight_controls_line(on: bool, summary: &VehicleSummary) -> Line {
-    if !on {
-        return Line::off("");
-    }
+fn flight_controls_line(summary: &VehicleSummary) -> Line {
     let flying = summary.active
         && summary
             .seat
@@ -229,9 +195,8 @@ mod tests {
 
     #[test]
     fn the_mounted_gun_names_the_hands_on_it() {
-        let config = MountedConfig::new();
         assert_eq!(
-            mounted_gun_line(&config, &flying(), 0).text(),
+            mounted_gun_line(&flying(), 0).text(),
             "WAITING, NOT ON A MOUNTED GUN"
         );
         let manned = VehicleSummary {
@@ -241,16 +206,8 @@ mod tests {
             ..flying()
         };
         assert_eq!(
-            mounted_gun_line(&config, &manned, 12).text(),
+            mounted_gun_line(&manned, 12).text(),
             "OK, LEFT HAND ON, 3 GRABS AND RELEASES, 12 KICKS"
-        );
-        let off = MountedConfig {
-            grip_handles: false,
-            ..config
-        };
-        assert_eq!(
-            mounted_gun_line(&off, &manned, 12).text(),
-            "OK, HANDS ALWAYS ON, 3 GRABS AND RELEASES, 12 KICKS"
         );
     }
 
@@ -266,23 +223,16 @@ mod tests {
             starts: 2,
         };
         assert_eq!(
-            passenger_aim_line(false, passenger, aiming).health,
-            Health::Off
-        );
-        assert_eq!(
-            passenger_aim_line(true, passenger, aiming).text(),
+            passenger_aim_line(passenger, aiming).text(),
             "OK, FOLLOWING THE HAND, 2 STARTS"
         );
         let idle = PassengerStatus {
             aiming: false,
             ..aiming
         };
+        assert_eq!(passenger_aim_line(passenger, idle).health, Health::Waiting);
         assert_eq!(
-            passenger_aim_line(true, passenger, idle).health,
-            Health::Waiting
-        );
-        assert_eq!(
-            passenger_aim_line(true, None, PassengerStatus::default()).text(),
+            passenger_aim_line(None, PassengerStatus::default()).text(),
             "WAITING, NOT A PASSENGER"
         );
     }
@@ -294,7 +244,6 @@ mod tests {
             horn: false,
             nitrous_button: false,
             twist_nitrous: false,
-            bars_twist: false,
             ..config
         };
         assert_eq!(cockpit_buttons_line(&off, &flying()).health, Health::Off);
@@ -333,7 +282,6 @@ mod tests {
 
     #[test]
     fn the_flight_controls_wait_for_a_plane_and_read_out_the_hands() {
-        assert_eq!(flight_controls_line(false, &flying()).health, Health::Off);
         let car = VehicleSummary {
             seat: Some(VehicleSeat {
                 class: VehicleClass::Car,
@@ -341,9 +289,9 @@ mod tests {
             }),
             ..flying()
         };
-        assert_eq!(flight_controls_line(true, &car).health, Health::Waiting);
+        assert_eq!(flight_controls_line(&car).health, Health::Waiting);
         assert_eq!(
-            flight_controls_line(true, &flying()).text(),
+            flight_controls_line(&flying()).text(),
             "OK, STICK HELD, RUDDER +0.25, THROTTLE +1.00 AFTERBURNER, 3 CUES, 1 BURNS"
         );
         let parked = VehicleSummary {
@@ -352,7 +300,7 @@ mod tests {
             ..flying()
         };
         assert_eq!(
-            flight_controls_line(true, &parked).text(),
+            flight_controls_line(&parked).text(),
             "OK, STICK FREE, THROTTLE BY TRIGGER, 3 CUES, 1 BURNS"
         );
     }

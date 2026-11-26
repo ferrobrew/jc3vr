@@ -1,5 +1,6 @@
-//! The physical controls' fixed placement and tuning, and the switches they take from the
-//! configuration ([`PhysicalControlsConfig`]).
+//! The vehicles' fixed tuning: the physical controls' placement and motion, with the wheel settings
+//! they take from the configuration ([`PhysicalControlsConfig`]), the wingsuit's arm steering,
+//! gestures, and evade, the parachute's handles and ripcord, and the helicopter's skid.
 //!
 //! The physical controls are placed in the seated character's body frame (+X right, +Y up, +Z back,
 //! metres) with the character's eyes at the origin: the cockpit frame, whose origin the head pose
@@ -12,11 +13,9 @@
 
 use glam::Vec3;
 
-use crate::controllers::vehicles::config::{
-    BarsSteeringConfig, PhysicalControlsConfig, WheelConfig, WheelTracking,
-};
+use crate::controllers::vehicles::config::{PhysicalControlsConfig, WheelConfig, WheelTracking};
 
-/// The physical controls' tuning with the default switches.
+/// The physical controls' tuning with the default wheel settings.
 pub const PHYSICAL: PhysicalControlsTuning = PhysicalControlsTuning::new();
 
 /// Where the physical controls of the driver's seat sit and how they move (see
@@ -55,8 +54,8 @@ impl PhysicalControlsTuning {
                 centre_m: Vec3::new(0.0, -0.50, -0.45),
                 half_width_m: 0.34,
                 max_steer_deg: 30.0,
-                deadzone_deg: BarsSteeringConfig::new().deadzone_deg,
-                response: BarsSteeringConfig::new().response,
+                deadzone_deg: 3.0,
+                response: 1.6,
                 grab_radius_m: 0.16,
             },
             cyclic: StickSpec {
@@ -92,7 +91,6 @@ impl PhysicalControlsTuning {
                 return_s: 0.12,
             },
             flight: FlightControlsTuning {
-                twist_rudder: true,
                 twist_deadzone_deg: 6.0,
                 twist_full_deg: 35.0,
                 afterburner_gate: true,
@@ -111,31 +109,15 @@ impl PhysicalControlsTuning {
                 press_depth_m: 0.02,
                 twist_nitrous: true,
                 twist_deg: 40.0,
-                bars_twist: false,
-                throttle_twist_deg: 30.0,
             },
             grab_radius_m: 0.09,
         }
     }
 
-    /// The fixed tuning with the settings `config` sets.
+    /// The fixed tuning with the wheel settings `config` sets.
     pub const fn of(config: &PhysicalControlsConfig) -> Self {
         Self {
             wheel: WheelSpec::of(&config.wheel),
-            flight: FlightControlsTuning {
-                twist_rudder: config.twist_rudder,
-                ..PHYSICAL.flight
-            },
-            handlebars: HandlebarsSpec {
-                deadzone_deg: config.bars_steering.deadzone_deg,
-                response: config.bars_steering.response,
-                ..PHYSICAL.handlebars
-            },
-            buttons: CockpitButtonsTuning {
-                nitrous_button: config.nitrous_button,
-                bars_twist: config.bars_twist,
-                ..PHYSICAL.buttons
-            },
             ..PHYSICAL
         }
     }
@@ -154,7 +136,8 @@ pub struct WheelSpec {
     pub tilt_deg: f32,
     /// [`WheelConfig::lock_deg`].
     pub lock_deg: f32,
-    /// [`WheelConfig::response`].
+    /// The exponent the share of the lock is raised to: one is linear, above one steers more gently
+    /// around centre and as fully at the lock.
     pub response: f32,
     /// Wheel angles within this of centre steer nothing, degrees.
     pub deadzone_deg: f32,
@@ -171,7 +154,7 @@ impl WheelSpec {
             radius_m: 0.19,
             tilt_deg: 25.0,
             lock_deg: config.lock_deg,
-            response: config.response,
+            response: 1.0,
             deadzone_deg: 2.0,
             turned_by: config.turned_by,
             return_deg_per_s: 360.0,
@@ -190,9 +173,11 @@ pub struct HandlebarsSpec {
     pub half_width_m: f32,
     /// The bars' turn that steers fully, degrees. The bars stop there.
     pub max_steer_deg: f32,
-    /// [`BarsSteeringConfig::deadzone_deg`].
+    /// Bar turns within this of centre steer nothing, degrees, so that a resting hand's tremor and
+    /// the small turns a wrist makes do not weave the bike.
     pub deadzone_deg: f32,
-    /// [`BarsSteeringConfig::response`].
+    /// The exponent the share of the lock past the deadzone is raised to: one is linear, above one
+    /// steers more gently around centre and as fully at the lock.
     pub response: f32,
     /// How far from the hand's half of the bars its grip may be for a grip press to take them,
     /// metres: wider than the other controls', since the bars are where a reaching hand expects
@@ -230,10 +215,9 @@ pub struct YokeSpec {
     pub return_s: f32,
 }
 
-/// The horn, the nitrous, and the bars' twist grips worked by hand (see
+/// The horn and the nitrous worked by hand (see
 /// [`crate::controllers::vehicles::physical::buttons`]): the horn pressed on the wheel's hub, a
-/// nitrous button on the dash beside the wheel, the collective twisted for the nitrous, and the
-/// handlebars' right grip twisted forward for the throttle and the left for the brake. The plane's
+/// nitrous button on the dash beside the wheel, and the collective twisted for the nitrous. The plane's
 /// afterburner is its throttle's gate
 /// ([`FlightControlsTuning::afterburner_gate`]). The buttons stay alongside the controller's.
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -242,7 +226,8 @@ pub struct CockpitButtonsTuning {
     pub horn: bool,
     /// The hub's share of the wheel's radius that presses the horn.
     pub hub_share: f32,
-    /// [`PhysicalControlsConfig::nitrous_button`].
+    /// A nitrous button on the dash beside the wheel, pushed with a free hand. Off on a vehicle
+    /// without nitrous.
     pub nitrous_button: bool,
     /// The nitrous button from the wheel's rim on its right: along the wheel's right, its up, and
     /// its axis toward the driver, metres.
@@ -255,16 +240,12 @@ pub struct CockpitButtonsTuning {
     /// How far the collective's grip is twisted from where the hand took it to burn the nitrous,
     /// degrees: well past the roll a wrist makes while it raises and lowers the lever.
     pub twist_deg: f32,
-    /// [`PhysicalControlsConfig::bars_twist`].
-    pub bars_twist: bool,
-    /// How far a handlebars' grip is twisted forward for full throttle or full brake, degrees.
-    pub throttle_twist_deg: f32,
 }
 
 impl CockpitButtonsTuning {
     /// Whether any button is switched on.
     pub const fn any(&self) -> bool {
-        self.horn || self.nitrous_button || self.twist_nitrous || self.bars_twist
+        self.horn || self.nitrous_button || self.twist_nitrous
     }
 }
 
@@ -272,8 +253,6 @@ impl CockpitButtonsTuning {
 /// [`crate::controllers::vehicles::physical`]).
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct FlightControlsTuning {
-    /// [`PhysicalControlsConfig::twist_rudder`].
-    pub twist_rudder: bool,
     /// Twists within this of where the hand took the stick work nothing, degrees.
     pub twist_deadzone_deg: f32,
     /// The twist that gives a full rudder, degrees.
@@ -329,4 +308,165 @@ impl LeverAxis {
             LeverAxis::ForeAft => Vec3::NEG_Z,
         }
     }
+}
+
+/// The wingsuit's arm steering's fixed tuning.
+pub const ARM_STEERING: ArmSteeringTuning = ArmSteeringTuning {
+    deadzone_m: 0.04,
+    full_bank_m: 0.45,
+};
+
+/// The arm steering's thresholds (see [`crate::controllers::vehicles::arm_steering`]).
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct ArmSteeringTuning {
+    /// Height differences and offsets below this steer nothing, metres. The bank, and the height
+    /// and sweep pitches, share it.
+    pub deadzone_m: f32,
+    /// The height difference between the hands that banks fully, metres.
+    pub full_bank_m: f32,
+}
+
+/// The bilateral wingsuit gestures' fixed tuning.
+pub const WINGSUIT_GESTURES: WingsuitGesturesTuning = WingsuitGesturesTuning::new();
+
+impl WingsuitGesturesTuning {
+    pub const fn new() -> Self {
+        Self {
+            flight_lateral_span: 0.23,
+            flight_angle_deg: 45.0,
+            withdraw_lateral_span: 0.10,
+            withdraw_lowered_span: 0.18,
+            withdraw_reach_span: 0.24,
+            pose_hysteresis_span: 0.03,
+            flight_roll_deg: 40.0,
+            brake_roll_deg: 60.0,
+            brake_roll_max_deg: 150.0,
+            neutral_dwell_s: 0.12,
+            flight_dwell_s: 0.20,
+            close_dwell_s: 0.30,
+            brake_dwell_s: 0.12,
+            max_sample_gap_s: 0.20,
+        }
+    }
+}
+
+impl Default for WingsuitGesturesTuning {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// The bilateral wingsuit gestures: fresh-pose deployment, bilateral withdrawal, and palms-forward
+/// braking (see [`crate::controllers::vehicles::wingsuit_gestures`]). Distances are shares of the
+/// calibrated arm span.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct WingsuitGesturesTuning {
+    /// Each wrist's minimum outward distance from its own shoulder for a flight pose.
+    pub flight_lateral_span: f32,
+    /// Maximum arm angle away from the outward horizontal direction for a fresh flight pose.
+    pub flight_angle_deg: f32,
+    /// Each wrist must be this close laterally before withdrawal qualifies.
+    pub withdraw_lateral_span: f32,
+    /// Each wrist qualifies as withdrawn when lowered this far below its shoulder.
+    pub withdraw_lowered_span: f32,
+    /// A tucked wrist also qualifies within this shoulder distance, without lowering the arm.
+    pub withdraw_reach_span: f32,
+    /// How far inside the flight pose's spread a held brake's arms may come before it releases.
+    pub pose_hysteresis_span: f32,
+    /// Each wrist's largest roll from palm-flat, either way, for a flight pose. Both palms back
+    /// within it release a held brake.
+    pub flight_roll_deg: f32,
+    /// Each wrist's smallest roll toward palm-forward to enter braking.
+    pub brake_roll_deg: f32,
+    /// Each wrist's largest roll toward palm-forward to enter braking, short of palm-up. A held
+    /// brake ignores it.
+    pub brake_roll_max_deg: f32,
+    pub neutral_dwell_s: f32,
+    pub flight_dwell_s: f32,
+    pub close_dwell_s: f32,
+    pub brake_dwell_s: f32,
+    /// A larger pose-time gap invalidates all pending gestures.
+    pub max_sample_gap_s: f32,
+}
+
+/// The boost wingsuit's evade's fixed tuning.
+pub const WINGSUIT_EVADE: WingsuitEvadeTuning = WingsuitEvadeTuning::new();
+
+impl WingsuitEvadeTuning {
+    pub const fn new() -> Self {
+        Self {
+            throw_bank_deg: 50.0,
+            throw_sweep_deg: 45.0,
+            throw_window_s: 0.3,
+            rearm_bank_deg: 25.0,
+            cooldown_s: 1.5,
+            diagonal_pitch: 0.6,
+        }
+    }
+}
+
+impl Default for WingsuitEvadeTuning {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// The boost wingsuit's barrel-roll evade's throw (see
+/// [`crate::controllers::vehicles::wingsuit_evade`]). The bank is the angle of the line between
+/// the hands from level, positive with the left hand above the right.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct WingsuitEvadeTuning {
+    /// The bank, either way, a throw must reach, degrees.
+    pub throw_bank_deg: f32,
+    /// How far the bank must swing toward the throw's side within [`Self::throw_window_s`],
+    /// degrees.
+    pub throw_sweep_deg: f32,
+    /// The time the swing must happen in, seconds.
+    pub throw_window_s: f32,
+    /// The bank, either way, the arms must come back within before another throw counts, degrees.
+    pub rearm_bank_deg: f32,
+    /// The time after a throw before another is taken, seconds.
+    pub cooldown_s: f32,
+    /// The arms' pitch, as a share of a full pitch, that turns the throw's side roll into its
+    /// diagonal: below it the evade rolls straight to the side.
+    pub diagonal_pitch: f32,
+}
+
+/// The parachute's handles' fixed tuning.
+pub const PARACHUTE_HANDLES: ParachuteHandlesTuning = ParachuteHandlesTuning {
+    full_pull_m: 0.30,
+    brake_threshold: 0.2,
+};
+
+/// How the parachute's handles pull (see [`crate::controllers::vehicles::parachute`]).
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct ParachuteHandlesTuning {
+    /// How far down from where it was taken a handle is pulled to act fully, metres.
+    pub full_pull_m: f32,
+    /// How far both handles must be pulled, as a share of a full pull, before they brake. Below it,
+    /// both pulled together only bank by their difference.
+    pub brake_threshold: f32,
+}
+
+/// How far the holding hand must come from where it took the ripcord to pull it, metres (see
+/// [`crate::controllers::vehicles::ripcord`]).
+pub const RIPCORD_PULL_M: f32 = 0.15;
+
+/// The helicopter skid's fixed tuning.
+pub const RAIL: RailTuning = RailTuning {
+    half_length_m: 1.0,
+    step_off_m: 0.35,
+    pull_s: 0.25,
+};
+
+/// The helicopter skid (see [`crate::controllers::vehicles::rail`]).
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct RailTuning {
+    /// How far the skid's line reaches either way from where Rico lands on it, metres.
+    pub half_length_m: f32,
+    /// How far off the line, level, the feet go before Rico has stepped off, metres.
+    pub step_off_m: f32,
+    /// The sticky pull's time constant: the offset off the line closes at this rate, seconds.
+    /// Longer is less sticky.
+    pub pull_s: f32,
 }

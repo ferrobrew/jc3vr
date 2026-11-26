@@ -112,7 +112,7 @@ pub(super) fn step_stick(
     let share = state.stick.length() / spec.max_deflection_m.max(1e-3);
     let flight = &placement.config.flight;
     let twistable = matches!(kind, ControlKind::FlightStick | ControlKind::Cyclic);
-    let rudder = (twistable && flight.twist_rudder)
+    let rudder = twistable
         .then(|| hold.orientation.zip(orientations[hand.index()]))
         .flatten()
         .map(|(grab, now)| {
@@ -276,7 +276,7 @@ mod tests {
     #[test]
     fn a_twisted_cyclic_and_flight_stick_both_yaw_through_the_step() {
         for kind in [ControlKind::FlightStick, ControlKind::Cyclic] {
-            let mut placement = Placement::new(PHYSICAL, Hand::Right);
+            let placement = Placement::new(PHYSICAL, Hand::Right);
             let spec = placement.stick(kind).unwrap();
             let top = placement.stick_top(kind, &spec);
             let grab = Quat::from_rotation_x(0.4);
@@ -312,9 +312,6 @@ mod tests {
                 ControlKind::FlightStick => assert!(out.flight_stick.is_some()),
                 _ => unreachable!(),
             }
-            placement.config.flight.twist_rudder = false;
-            let out = step(&mut state, &placement, &inputs, &mut events);
-            assert_eq!(out.rudder, None);
         }
     }
 

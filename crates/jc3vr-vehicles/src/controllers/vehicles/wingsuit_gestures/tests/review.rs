@@ -270,7 +270,7 @@ fn dwell_entry_boundaries_and_gaps_are_independent_of_the_poll_interval() {
     assert!(dwell.update(true, 325_000_000, 0.125));
     assert!(!dwell.update(false, 400_000_000, 0.125));
     assert!(!dwell.update(true, 600_000_000, 0.125));
-    let config = WingsuitGesturesConfig {
+    let config = WingsuitGesturesTuning {
         neutral_dwell_s: 0.125,
         flight_dwell_s: 0.25,
         brake_dwell_s: 0.125,
@@ -278,7 +278,6 @@ fn dwell_entry_boundaries_and_gaps_are_independent_of_the_poll_interval() {
         max_sample_gap_s: 0.5,
         ..CONFIG
     };
-    assert!(config.valid());
     let mut state = WingsuitGestures::default();
     let mut sample = GestureSample {
         epoch: 1,
@@ -367,11 +366,11 @@ fn old_observations_cannot_lower_the_watermark_on_any_cancellation_path() {
         state.step(observation(high, Some(FOLDED)), &CONFIG);
         assert_eq!(state.step(rejected, &CONFIG), GestureCommands::default());
         assert_eq!(state.last, Some((high, Stage::Suit)));
-        let disabled = WingsuitGesturesConfig {
-            enabled: false,
+        let other = WingsuitGesturesTuning {
+            flight_dwell_s: 0.5,
             ..CONFIG
         };
-        assert_eq!(state.step(rejected, &disabled), GestureCommands::default());
+        assert_eq!(state.step(rejected, &other), GestureCommands::default());
         assert_eq!(state.config, Some(CONFIG));
         assert_eq!(state.last, Some((high, Stage::Suit)));
         assert_eq!(
@@ -431,8 +430,8 @@ fn time_sequence_and_epoch_rollback_are_rejected_before_mode_or_config_updates()
         assert_eq!(
             state.step(
                 input,
-                &WingsuitGesturesConfig {
-                    enabled: false,
+                &WingsuitGesturesTuning {
+                    flight_dwell_s: 0.5,
                     ..CONFIG
                 }
             ),
@@ -696,88 +695,11 @@ fn grip_palm_basis_has_independent_expected_rolls_for_both_hands_and_adjustments
 }
 
 #[test]
-fn config_endpoints_and_pose_hysteresis_boundaries_remain_separated() {
-    assert!(
-        WingsuitGesturesConfig {
-            flight_lateral_span: 0.15,
-            flight_angle_deg: 15.0,
-            withdraw_lateral_span: 0.0,
-            withdraw_lowered_span: 0.10,
-            withdraw_reach_span: 0.10,
-            pose_hysteresis_span: 0.01,
-            flight_roll_deg: 15.0,
-            brake_roll_deg: 40.0,
-            brake_roll_max_deg: 100.0,
-            neutral_dwell_s: 0.05,
-            flight_dwell_s: 0.10,
-            close_dwell_s: 0.15,
-            brake_dwell_s: 0.05,
-            max_sample_gap_s: 0.05,
-            ..CONFIG
-        }
-        .valid()
-    );
-    assert!(
-        WingsuitGesturesConfig {
-            flight_lateral_span: 0.40,
-            flight_angle_deg: 60.0,
-            withdraw_lateral_span: 0.18,
-            withdraw_lowered_span: 0.35,
-            withdraw_reach_span: 0.35,
-            pose_hysteresis_span: 0.08,
-            flight_roll_deg: 60.0,
-            brake_roll_deg: 85.0,
-            brake_roll_max_deg: 165.0,
-            neutral_dwell_s: 0.50,
-            flight_dwell_s: 1.0,
-            close_dwell_s: 1.0,
-            brake_dwell_s: 0.50,
-            max_sample_gap_s: 0.50,
-            ..CONFIG
-        }
-        .valid()
-    );
+fn pose_hysteresis_boundaries_remain_separated() {
     let boundary_down = measured([Vec3::new(0.0, -0.18 * 1.8, 0.0); 2]);
     assert!(boundary_down.withdrawn(&CONFIG));
     let shallow = measured([Vec3::new(0.0, -0.17 * 1.8, -0.30 * 1.8); 2]);
     assert!(!shallow.withdrawn(&CONFIG));
-    for invalid in [
-        WingsuitGesturesConfig {
-            withdraw_lowered_span: f32::NAN,
-            ..CONFIG
-        },
-        WingsuitGesturesConfig {
-            withdraw_lowered_span: 0.0,
-            ..CONFIG
-        },
-        WingsuitGesturesConfig {
-            flight_roll_deg: CONFIG.brake_roll_deg,
-            ..CONFIG
-        },
-        WingsuitGesturesConfig {
-            brake_roll_max_deg: 165.1,
-            ..CONFIG
-        },
-        WingsuitGesturesConfig {
-            flight_angle_deg: 61.0,
-            ..CONFIG
-        },
-        WingsuitGesturesConfig {
-            pose_hysteresis_span: 0.0,
-            ..CONFIG
-        },
-        WingsuitGesturesConfig {
-            withdraw_reach_span: 0.351,
-            ..CONFIG
-        },
-        WingsuitGesturesConfig {
-            withdraw_lateral_span: 0.18,
-            flight_lateral_span: 0.20,
-            ..CONFIG
-        },
-    ] {
-        assert!(!invalid.valid());
-    }
     let mut h = History::new(SUIT);
     h.arm();
     let below_entry = FlightPose {

@@ -3,10 +3,7 @@
 use super::*;
 
 fn plane() -> Placement {
-    placement(|c| {
-        c.sticks = true;
-        c.levers = true;
-    })
+    placement()
 }
 
 const KINDS: [ControlKind; 2] = [ControlKind::FlightStick, ControlKind::Throttle];
@@ -117,16 +114,6 @@ fn twisting_the_held_stick_works_the_rudder_from_where_it_was_taken() {
         "{out:?}"
     );
 
-    let mut off = plane();
-    off.config.flight.twist_rudder = false;
-    let out = step_oriented(
-        &mut state,
-        &off,
-        [None, Some(top)],
-        [None, Some(right)],
-        [None; 2],
-    );
-    assert_eq!(out.rudder, None);
 }
 
 /// The throttle's grip for a hand at `share` of the forward section (negative: of the reverse
