@@ -15,6 +15,7 @@ use jc3gi::{character::character::Character, types::math::Vector3};
 /// # Safety
 ///
 /// The game thread, before the world update.
+#[inline]
 pub unsafe fn seat_vehicle_speed_mps() -> Option<f32> {
     let character = unsafe { Character::GetLocalPlayerCharacter().as_ref() }?;
     let vehicle = unsafe { character.GetVehiclePtr().as_ref() }?;

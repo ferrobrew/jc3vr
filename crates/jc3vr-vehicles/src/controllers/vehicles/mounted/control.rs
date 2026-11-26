@@ -25,6 +25,7 @@ pub struct Input {
 
 impl Input {
     /// Whether any hand still gripping the gun holds its fire input.
+    #[inline]
     pub fn trigger(self) -> bool {
         self.hands
             .into_iter()

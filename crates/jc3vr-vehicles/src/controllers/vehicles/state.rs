@@ -47,6 +47,7 @@ pub fn status() -> VehiclesStatus {
 }
 
 /// Copy current handle owners without reconstructing them from diagnostic booleans.
+#[inline]
 pub fn parachute_holds() -> [Option<HandleHold>; 2] {
     let state = STATE.lock();
     if state.status.active && state.handles_on {
@@ -95,6 +96,7 @@ pub fn mounted_target(weapon: usize) -> Option<Vec3> {
 }
 
 /// The mounted gun's aim point for the character-level aim point, which draws the gun.
+#[inline]
 pub fn mounted_aim_point() -> Option<Vec3> {
     STATE
         .lock()

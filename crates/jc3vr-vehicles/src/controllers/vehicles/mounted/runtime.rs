@@ -644,6 +644,7 @@ pub unsafe fn stand_down() {
 }
 
 /// The retained grips on `weapon`, if this module controls it.
+#[inline]
 pub fn input(weapon: &WeaponBase) -> Option<Input> {
     let address = weapon as *const WeaponBase as usize;
     let control = weapon.m_WeakThis.pn as usize;
@@ -655,6 +656,7 @@ pub fn input(weapon: &WeaponBase) -> Option<Input> {
 }
 
 /// The temporary shooter for `weapon`, and whether the hands still grip it.
+#[inline]
 pub fn shooter(weapon: &WeaponBase) -> Option<(Weak, bool)> {
     let address = weapon as *const WeaponBase as usize;
     let control = weapon.m_WeakThis.pn as usize;
@@ -725,6 +727,7 @@ pub(crate) unsafe fn nearby(hands: [Option<Vec3>; 2], reach_m: f32) -> Option<Mo
 }
 
 /// Whether the runtime holds `weapon`, so the game's native start-using must not run.
+#[inline]
 pub fn suppress_start_using(weapon: &WeaponBase) -> bool {
     // Entering a vehicle's gunner seat starts the native use, which the seat needs.
     // SAFETY: the game thread, where the native start-using runs.
