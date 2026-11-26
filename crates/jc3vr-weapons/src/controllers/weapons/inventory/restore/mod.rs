@@ -244,12 +244,19 @@ pub(crate) unsafe fn on_store(save_data: *const PlayerSaveData, settings: &Inven
     };
     let count = carried.len();
     let slot_pistol_single = single::active().then(single::slot_single);
-    let text = Sidecar {
+    let text = match (Sidecar {
         fingerprint,
         carried,
         slot_pistol_single,
-    }
-    .encode();
+    })
+    .encode()
+    {
+        Ok(text) => text,
+        Err(error) => {
+            tracing::warn!(target: "controllers", %error, "inventory: the save sidecar was not written");
+            return;
+        }
+    };
     sidecar::submit(sidecar::Snapshot {
         path,
         text,

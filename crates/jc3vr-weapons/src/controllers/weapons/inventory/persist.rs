@@ -148,9 +148,11 @@ pub struct Sidecar {
     pub slot_pistol_single: Option<bool>,
 }
 
-/// Why a sidecar could not be read.
+/// Why a sidecar could not be read or encoded.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SidecarError {
+    /// The sidecar could not be serialized; nothing is written.
+    Encode(String),
     /// The text is not TOML, or not the format's shape.
     Malformed(String),
     /// The file is of another version.
@@ -162,6 +164,7 @@ pub enum SidecarError {
 impl fmt::Display for SidecarError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            SidecarError::Encode(why) => write!(f, "sidecar: could not encode: {why}"),
             SidecarError::Malformed(why) => write!(f, "sidecar: malformed: {why}"),
             SidecarError::Version(found) => write!(
                 f,
@@ -177,8 +180,9 @@ impl fmt::Display for SidecarError {
 impl std::error::Error for SidecarError {}
 
 impl Sidecar {
-    /// The sidecar as its file's text.
-    pub fn encode(&self) -> String {
+    /// The sidecar as its file's text. An error leaves no text to write, so a failed encode never
+    /// replaces the file with an empty or partial one.
+    pub fn encode(&self) -> Result<String, SidecarError> {
         let file = File {
             version: VERSION,
             fingerprint: FileFingerprint {
@@ -197,8 +201,7 @@ impl Sidecar {
                 .collect(),
             slot_pistol_single: self.slot_pistol_single,
         };
-        // The file's types are all plain numbers, strings, arrays, and tables, which serialize.
-        toml::to_string(&file).unwrap_or_default()
+        toml::to_string(&file).map_err(|e| SidecarError::Encode(e.to_string()))
     }
 
     /// Read a sidecar from its file's text.
@@ -336,7 +339,7 @@ mod tests {
     #[test]
     fn a_sidecar_round_trips_through_its_file() {
         let original = sidecar();
-        let text = original.encode();
+        let text = original.encode().expect("encode");
         assert!(text.contains("version = 2"));
         assert_eq!(Sidecar::decode(&text), Ok(original));
         let empty = Sidecar {
@@ -344,7 +347,7 @@ mod tests {
             carried: Vec::new(),
             slot_pistol_single: None,
         };
-        assert_eq!(Sidecar::decode(&empty.encode()), Ok(empty));
+        assert_eq!(Sidecar::decode(&empty.encode().expect("encode")), Ok(empty));
     }
 
     #[test]
@@ -368,14 +371,14 @@ mod tests {
         });
         file.carried = stashed.into_iter().chain(active).collect();
         assert!(file.carried.len() > Socket::COUNT + Hand::BOTH.len());
-        let text = file.encode();
+        let text = file.encode().expect("encode");
         assert!(text.len() < MAX_BYTES);
         assert_eq!(Sidecar::decode(&text), Ok(file));
     }
 
     #[test]
     fn a_file_from_before_separate_pistols_says_nothing_of_the_slot_s_pistol() {
-        let text = sidecar().encode();
+        let text = sidecar().encode().expect("encode");
         assert!(text.contains("slot_pistol_single = true"));
         let older = text.replace("slot_pistol_single = true\n", "");
         assert_eq!(Sidecar::decode(&older).unwrap().slot_pistol_single, None);
@@ -383,7 +386,7 @@ mod tests {
 
     #[test]
     fn a_file_without_carried_weapons_reads_as_none() {
-        let text = sidecar().encode();
+        let text = sidecar().encode().expect("encode");
         let without: String = text.split("[[carried]]").next().unwrap().to_owned();
         assert_eq!(Sidecar::decode(&without).unwrap().carried, Vec::new());
     }
@@ -398,7 +401,7 @@ mod tests {
             Sidecar::decode(""),
             Err(SidecarError::Malformed(_))
         ));
-        let text = sidecar().encode();
+        let text = sidecar().encode().expect("encode");
         // Truncated anywhere, the file reads or fails cleanly.
         for end in 0..text.len() {
             if text.is_char_boundary(end) {
