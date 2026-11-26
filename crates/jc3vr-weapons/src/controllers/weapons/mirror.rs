@@ -13,7 +13,7 @@ use jc3vr_body::controllers::{
             TARGET_RING_M, line, ring,
         },
     },
-    overlay::config::OVERLAY_CONFIG,
+    overlay::config::{BODY_MIRROR_DISTANCE_M, OVERLAY_CONFIG},
 };
 use jc3vr_view::controllers::overlay::primitive::{Anchor, Primitive};
 
@@ -64,11 +64,10 @@ pub(crate) fn sample_attachments(
 /// Publish only copied values after the model producer applies this render's matrices.
 pub(crate) fn pouches_rendered(sample: &PouchRenderSample) {
     mirror::clear_pouch_render();
-    let (enabled, distance) = OVERLAY_CONFIG.query(|c| (c.body_mirror, c.body_mirror_distance_m));
-    if !enabled {
+    if !OVERLAY_CONFIG.query(|c| c.body_mirror) {
         return;
     }
-    let Some(context) = PouchRenderContext::new(sample, distance) else {
+    let Some(context) = PouchRenderContext::new(sample, BODY_MIRROR_DISTANCE_M) else {
         return;
     };
     let mut primitives = Vec::new();

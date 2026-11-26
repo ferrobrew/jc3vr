@@ -22,7 +22,7 @@ use crate::controllers::{loadout::live, weapons::docks};
 ///
 /// `owner` must be the live local player character, on the game thread before the world update.
 pub(crate) unsafe fn submit(owner: &Character) {
-    let on = OVERLAY_CONFIG.query(|c| c.enabled && c.docked_guns);
+    let on = OVERLAY_CONFIG.query(|c| c.docked_guns);
     let Some(snapshot) = live::snapshot_now().filter(|_| on) else {
         store::clear(Source::DockedGuns);
         return;

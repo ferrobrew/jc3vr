@@ -2,7 +2,6 @@
 
 use jc3vr_body::controllers::{
     aim::config::{AIM_CONFIG, AimConfig},
-    overlay::config::{OVERLAY_CONFIG, OverlayConfig},
     scheme,
 };
 use jc3vr_input::frame::Hand;
@@ -22,8 +21,6 @@ pub struct WeaponSettings {
     pub weapons: WeaponsConfig,
     /// Per-hand aiming, whose sight table places a weapon's sight line.
     pub aim: AimConfig,
-    /// Whether the world-space overlay draws ([`OverlayConfig::enabled`]).
-    pub overlay: bool,
 }
 
 impl WeaponSettings {
@@ -33,13 +30,11 @@ impl WeaponSettings {
         let dominant = scheme::acting_hand();
         let weapons = *WEAPONS_CONFIG.lock();
         let aim = *AIM_CONFIG.lock();
-        let overlay = OVERLAY_CONFIG.query(|c| c.enabled);
         Self {
             enabled,
             dominant,
             weapons,
             aim,
-            overlay,
         }
     }
 
@@ -51,7 +46,6 @@ impl WeaponSettings {
             dominant: Hand::Right,
             weapons: WeaponsConfig::new(),
             aim: AimConfig::new(),
-            overlay: OverlayConfig::new().enabled,
         }
     }
 }

@@ -850,7 +850,7 @@ fn warning(
     };
     let urgency = fuse_urgency(fuse.remaining_s, fuse.total_s);
     let mut primitives = Vec::new();
-    if tuning.warning_overlay && config.overlay {
+    if tuning.warning_overlay {
         primitives.push(Primitive::Sprite {
             at: Anchor::Hand {
                 hand,
