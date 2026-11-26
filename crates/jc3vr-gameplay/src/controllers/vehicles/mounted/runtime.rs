@@ -20,7 +20,10 @@ use jc3gi::{
 use jc3vr_body::controllers::{
     hands,
     held::native::weapon_at,
-    intent::hold::{Desired, MapKind, Target, Want},
+    intent::{
+        finish::FinishInputs,
+        hold::{Desired, MapKind, Target, Want},
+    },
     physics::{bodies::physics_object_of, refs::Weak},
     scheme,
 };
@@ -45,7 +48,6 @@ use crate::controllers::{
         summary as vehicles_summary,
     },
     weapons::{
-        FinishInputs,
         engine::{character_object, object_of},
         hold::{armed, pickup},
     },

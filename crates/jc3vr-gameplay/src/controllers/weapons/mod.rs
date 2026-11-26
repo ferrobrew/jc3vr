@@ -109,7 +109,7 @@ pub(crate) use begin::begin_tick;
 // reach them at the weapon handling's own path, as they did before the input tick's two halves
 // moved out of this file.
 use begin::{gameplay, weighted_hands};
-pub(crate) use finish::{FinishInputs, finish_tick};
+pub(crate) use finish::finish_tick;
 use re_utilities::hook_library::HookLibrary;
 pub use state::status;
 pub(crate) use state::{pause, stand_down};

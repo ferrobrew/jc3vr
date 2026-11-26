@@ -78,6 +78,7 @@ use jc3vr_body::controllers::{
     haptics, intent,
     intent::{
         controls::{ButtonControl, ClosedHand, Controls},
+        finish::FinishInputs,
         grapple_button::GrappleContext,
         hold::{ActionWrite, Desired, DevicePoll, HoldTracker, MapKind, Target, Want},
         yank::{HandLine, LineYank, Yank},
@@ -867,7 +868,7 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
     let mut trigger_changed = [false; 2];
     let mut belt_reload = None;
     if !in_menu {
-        let finish = weapons::FinishInputs {
+        let finish = FinishInputs {
             grabs: grabs_for(step.grabs, Consumer::Weapons),
             // Every hold the hands keep (a gun, a part of one, a pickup, a climb, the snatch's
             // catch) lets go when the hand opens, not when a force-sensing grip's press sags.
@@ -913,7 +914,7 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
             step.body_turn = 0.0;
         }
         physical_hands::pickup::finish_tick(
-            &weapons::FinishInputs {
+            &FinishInputs {
                 grabs: grabs_for(step.grabs, Consumer::Pickup),
                 ..finish
             },

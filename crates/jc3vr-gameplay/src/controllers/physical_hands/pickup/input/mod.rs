@@ -6,17 +6,17 @@ use jc3vr_body::controllers::{
         GrabVolume,
         world_reach::{Reach, TargetKind},
     },
-    intent::hold::{Desired, MapKind, Target, Want},
+    intent::{
+        finish::FinishInputs,
+        hold::{Desired, MapKind, Target, Want},
+    },
 };
 use jc3vr_input::frame::Hand;
 
-use crate::controllers::{
-    physical_hands::pickup::{
-        diagnostics,
-        diagnostics::{ConsumerResult, InputConsumer, InputContext},
-        state::{PickupState, Request},
-    },
-    weapons::FinishInputs,
+use crate::controllers::physical_hands::pickup::{
+    diagnostics,
+    diagnostics::{ConsumerResult, InputConsumer, InputContext},
+    state::{PickupState, Request},
 };
 
 pub(super) fn finish(
