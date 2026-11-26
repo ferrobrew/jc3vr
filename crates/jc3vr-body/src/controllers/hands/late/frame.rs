@@ -1,0 +1,1228 @@
+//! The frame's snapshot of the late update's inputs, the correction it derives from them, and the
+//! palette edit that carries the correction onto the skinning palette.
+
+use std::sync::{
+    OnceLock,
+    atomic::{AtomicU64, Ordering},
+};
+
+use glam::{Mat4, Vec3};
+use jc3gi::{character::character::Character, graphics_engine::render_block::Matrix3x4};
+use jc3vr_core::render_frame::RenderFrameSlot;
+use jc3vr_input::frame::{self, Hand, Pose};
+use jc3vr_view::{
+    controllers::cockpit::{CockpitTransform, body_of_head},
+    headpose,
+    hooks::{camera::eye_points, graphics_engine::palette_edit::PaletteLayout},
+};
+
+use crate::controllers::{
+    hands::{
+        self, ActiveHands, DrawTime, ik,
+        late::{
+            bones::{self, HandBones, Solved},
+            math::{
+                MAX_SHIFT_M, MAX_TURN_RAD, correction, interpolate_attached, keep_on_forearm,
+                lerp_transform, pose_matrix, relative_metrics,
+            },
+        },
+        palette, pose as hand_pose,
+        reach::{self, REACH, ReachTuning},
+    },
+    presentation,
+};
+
+/// A pose composed with both sides of the render-time head pose pair: `previous` with the
+/// previous-tick body frame and anchor, `current` with the current tick's. The engine interpolates
+/// the camera between the two by `dtf`, and so does [`at`](Self::at).
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct PosePair {
+    pub previous: Pose,
+    pub current: Pose,
+    /// The head pair that transports the fixed latest tracking pose into the world.
+    pub transport: Option<[Mat4; 2]>,
+}
+
+impl PosePair {
+    /// The pose at the interpolation fraction `dtf`.
+    pub fn at(&self, dtf: f32) -> Pose {
+        let Some(parent) = self.transport else {
+            return hand_pose::interp(self.previous, self.current, dtf);
+        };
+        let matrix = interpolate_attached(
+            parent,
+            [pose_matrix(self.previous), pose_matrix(self.current)],
+            dtf,
+        );
+        let (_, orientation, position) = matrix.to_scale_rotation_translation();
+        Pose {
+            position,
+            orientation,
+        }
+    }
+}
+
+/// One hand's render-time world poses from the latest controller frame, which the late update
+/// corrects the hand toward.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct RenderHand {
+    /// The character's wrist frame.
+    pub wrist: PosePair,
+    /// The controller's grip pose (moved with the wrist by the remap).
+    pub grip: PosePair,
+    /// The controller's aim pose (moved with the wrist by the remap).
+    pub aim: PosePair,
+}
+
+/// One hand's world poses as the hand is drawn at a render interpolation fraction.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct DrawnHand {
+    pub wrist: Pose,
+    pub grip: Pose,
+    pub aim: Pose,
+}
+
+/// The hands as they are drawn at the interpolation fraction `dtf`, indexed by [`Hand::index`]:
+/// the solved wrist moved by the hand's correction, which is what the palette edit draws, with the
+/// grip and the aim carried on it as the controller holds them. Anything placed in a hand or
+/// anchored to it at render time takes these rather than the controller's own render-time poses,
+/// so it stays on the hand where the hand falls short of the controller: an arm that cannot reach,
+/// a hand blending to or from the animation. A hand the correction does not apply to is drawn where the tick solved it;
+/// one the IK did not drive this tick takes the controller's render-time pose. `None` for an inert
+/// or untracked hand.
+pub fn drawn_hands(dtf: f32) -> [Option<DrawnHand>; 2] {
+    let frame = FRAME.get().flatten();
+    frame.map_or([None; 2], |frame| {
+        Hand::BOTH.map(|hand| frame.drawn(hand, dtf))
+    })
+}
+
+/// The world-space edit that carries a thing riding `hand`'s forearm, as the tick posed it, onto the
+/// forearm as the presentation layer draws it at `dtf`, or `None` while the layer re-poses nothing.
+pub fn drawn_forearm_delta(hand: Hand, dtf: f32) -> Option<Mat4> {
+    let frame = FRAME.get().flatten()?;
+    frame.forearm_delta(hand, dtf)
+}
+
+/// Count a palette upload edited by a draw outside this module (the presentation layer's), for the
+/// readout's tally.
+pub fn count_palette_edit() {
+    PALETTES_EDITED.fetch_add(1, Ordering::Relaxed);
+}
+
+/// Count a gun model matrix re-pushed by the weapon render detour, for the readout's tally.
+pub(super) fn count_weapon_update() {
+    WEAPONS_UPDATED.fetch_add(1, Ordering::Relaxed);
+}
+
+/// Why a hand was or was not corrected at the sampled render interpolation fraction.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
+pub enum LateReason {
+    #[default]
+    Disabled,
+    NoTrackedRenderHand,
+    NoSimTarget,
+    InvalidPoseOrWeight,
+    ExcessTranslation,
+    ExcessRotation,
+    Applied,
+}
+
+impl LateReason {
+    /// The stable label written by controller diagnostics.
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Disabled => "disabled",
+            Self::NoTrackedRenderHand => "no_tracked_render_hand",
+            Self::NoSimTarget => "no_sim_target",
+            Self::InvalidPoseOrWeight => "invalid_pose_or_weight",
+            Self::ExcessTranslation => "excess_translation",
+            Self::ExcessRotation => "excess_rotation",
+            Self::Applied => "applied",
+        }
+    }
+}
+
+/// One hand's late-correction status at the camera's last render interpolation fraction.
+#[derive(Debug, Copy, Clone, PartialEq, Default)]
+pub struct HandLateStatus {
+    pub reason: LateReason,
+    /// The physical distance between the latest and reference wrist positions, in metres.
+    pub physical_displacement_m: Option<f32>,
+    /// The relative wrist rotation between the latest and reference poses, in degrees.
+    pub relative_rotation_deg: Option<f32>,
+    /// The current simulation tick's requested wrist position, in world metres.
+    pub requested_wrist_position: Option<Vec3>,
+    /// The interpolated simulation reference wrist position, in world metres.
+    pub reference_wrist_position: Option<Vec3>,
+    /// The latest render wrist position, in world metres.
+    pub latest_wrist_position: Option<Vec3>,
+    /// The interpolated solved wrist position, in character model metres.
+    ///
+    /// The late render seam has no model instance matrix, so this is deliberately not presented as a
+    /// world-space position.
+    pub achieved_wrist_position_model: Option<Vec3>,
+    /// The interpolated shortfall of the solved wrist from its target, metres.
+    pub solve_miss_m: Option<f32>,
+    /// How far the rendered hand is detached from the solved wrist toward the target, metres.
+    pub detach_m: Option<f32>,
+}
+
+/// The late update's per-hand readout and cumulative counters.
+#[derive(Debug, Copy, Clone, PartialEq, Default)]
+pub struct LateStatus {
+    /// Structured status for each hand, indexed by [`Hand::index`].
+    pub hands: [HandLateStatus; 2],
+    /// Each hand's applied physical displacement in metres and relative rotation in degrees.
+    /// `None` when the hand was not corrected. Kept for the existing debug UI callers.
+    pub deltas: [Option<(f32, f32)>; 2],
+    /// Gun model matrices re-pushed since the payload loaded.
+    pub weapons_updated: u64,
+    /// Palette uploads edited since the payload loaded.
+    pub palettes_edited: u64,
+}
+
+/// The late update's readout.
+pub fn status() -> LateStatus {
+    let frame = FRAME.get().flatten();
+    let dtf = jc3vr_view::hooks::camera::last_dtf();
+    let hands = frame.map_or([HandLateStatus::default(); 2], |frame| {
+        Hand::BOTH.map(|hand| frame.hand_status(hand, dtf))
+    });
+    LateStatus {
+        hands,
+        deltas: hands.map(|hand| {
+            match (
+                hand.reason,
+                hand.physical_displacement_m,
+                hand.relative_rotation_deg,
+            ) {
+                (LateReason::Applied, Some(displacement), Some(rotation)) => {
+                    Some((displacement, rotation))
+                }
+                _ => None,
+            }
+        }),
+        weapons_updated: WEAPONS_UPDATED.load(Ordering::Relaxed),
+        palettes_edited: PALETTES_EDITED.load(Ordering::Relaxed),
+    }
+}
+
+/// Register the hand bodies' sample of their post-step presentation offsets, which
+/// [`begin_frame`] takes once per rendered frame before it composes the hands, on the game thread
+/// after the simulation and outside its step; the first registration stands.
+pub fn register_post_step_sample(sample: fn()) {
+    if POST_STEP_SAMPLE.set(sample).is_err() {
+        tracing::warn!("hands: a post-step sample is already registered; the new one is ignored");
+    }
+}
+
+/// Whether the hand bodies' post-step sample is registered.
+pub fn post_step_sample_registered() -> bool {
+    POST_STEP_SAMPLE.get().is_some()
+}
+
+/// Snapshot the frame's late-update inputs. Called once per rendered frame from `Game::UpdateRender`
+/// after the VR head pose pair is published and before the engine's render update.
+pub fn begin_frame() {
+    crate::controllers::hands::late::weapon::begin_frame();
+    // All model and palette consumers share this post-step measurement for the rendered frame.
+    if let Some(sample) = POST_STEP_SAMPLE.get() {
+        sample();
+    }
+    let Some(source) = frame::latest() else {
+        FRAME.set(None);
+        return;
+    };
+    let Some(active) = hands::active_hands_from_frame(&source, DrawTime::Render) else {
+        FRAME.set(None);
+        return;
+    };
+    let hands = compose_render_hands(&active);
+    let solved = bones::solved();
+    FRAME.set(Some(LateFrame {
+        hands,
+        shoulders: compose_render_shoulders(&active),
+        ticks: ik::tick_records(),
+        transport: character_transport(),
+        solved,
+        enabled: active.config.hands.late_update,
+        reach: REACH,
+    }));
+}
+
+/// A draw's palette edit: per hand, the model-space transforms for the hand group and the forearm
+/// group, and the bones they apply to.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct PaletteEdit {
+    bones: [HandBones; 2],
+    hands: [Option<HandPaletteEdit>; 2],
+}
+
+#[derive(Debug, Copy, Clone, PartialEq)]
+struct HandPaletteEdit {
+    hand: Mat4,
+    forearm: Mat4,
+}
+
+impl PaletteEdit {
+    pub(crate) fn source_len(&self) -> usize {
+        self.edited_bones()
+            .map(|(bone, _)| bone + 1)
+            .max()
+            .unwrap_or(0)
+    }
+
+    /// Whether the edit changes `bone`'s entry.
+    pub fn touches(&self, bone: usize) -> bool {
+        self.edited_bones().any(|(b, _)| b == bone)
+    }
+
+    /// Pre-multiply the edited entries of `entries`, which spans the batch's referenced bones.
+    pub fn apply(&self, entries: &mut [Matrix3x4], source: &[Matrix3x4], layout: PaletteLayout) {
+        let edits = Hand::BOTH.map(|hand| {
+            let bones = self.bones[hand.index()];
+            let mut edit = self.hands[hand.index()]?;
+            if bones.elbow() == 0 || bones.wrist() == 0 {
+                return None;
+            }
+            let entry = palette::entry_to_matrix(&source.get(bones.elbow() as usize)?.m, layout);
+            let elbow = entry.transform_point3(bones.bind[0].w_axis.truncate());
+            let source_end = entry.transform_point3(bones.bind[1].w_axis.truncate());
+            let wrist_entry =
+                palette::entry_to_matrix(&source.get(bones.wrist() as usize)?.m, layout);
+            let wrist = wrist_entry.transform_point3(bones.bind[1].w_axis.truncate());
+            let target = edit.hand.transform_point3(wrist);
+            edit.forearm =
+                palette::fit_segment(edit.forearm, [elbow, source_end], [elbow, target])?;
+            Some((
+                edit,
+                elbow,
+                target,
+                entry * bones.bind[0],
+                wrist_entry * bones.bind[1],
+            ))
+        });
+        for hand in Hand::BOTH {
+            let Some((edit, elbow, wrist, forearm_frame, hand_frame)) = edits[hand.index()] else {
+                continue;
+            };
+            let bones = self.bones[hand.index()];
+            for bone in bones.hand_bones() {
+                if let Some(entry) = entries.get_mut(bone) {
+                    palette::premultiply_entry(&mut entry.m, layout, &edit.hand);
+                }
+            }
+            for (index, bone) in bones
+                .forearm
+                .iter()
+                .copied()
+                .enumerate()
+                .filter(|(_, bone)| *bone != 0)
+            {
+                if let Some(entry) = entries.get_mut(bone as usize) {
+                    let twist = (wrist - elbow).try_normalize().map_or(0.0, |axis| {
+                        let Some(source) = source.get(bone as usize) else {
+                            return 0.0;
+                        };
+                        let bind = bones.bind.map(palette::bone_rotation);
+                        let [Some(fore_bind), Some(hand_bind)] = bind else {
+                            return 0.0;
+                        };
+                        let roll = edit.forearm
+                            * palette::entry_to_matrix(&source.m, layout)
+                            * Mat4::from_quat(bones.roll_bind[index]);
+                        palette::roll_correction(
+                            [edit.forearm * forearm_frame, edit.hand * hand_frame, roll],
+                            [fore_bind, hand_bind, bones.roll_bind[index]],
+                            axis,
+                            bones.roll[index],
+                        )
+                    });
+                    let transform = palette::roll_about(elbow, wrist, twist) * edit.forearm;
+                    palette::premultiply_entry(&mut entry.m, layout, &transform);
+                }
+            }
+        }
+        PALETTES_EDITED.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn edited_bones(&self) -> impl Iterator<Item = (usize, &Mat4)> + '_ {
+        Hand::BOTH.into_iter().flat_map(move |hand| {
+            let bones = &self.bones[hand.index()];
+            self.hands[hand.index()].iter().flat_map(move |edit| {
+                bones
+                    .hand_bones()
+                    .map(move |b| (b, &edit.hand))
+                    .chain(bones.forearm_bones().map(move |b| (b, &edit.forearm)))
+            })
+        })
+    }
+}
+
+/// The palette edit for a draw of the local player's body whose instance matrix is `instance`, at
+/// the interpolation fraction `dtf`, or `None` when no hand is corrected.
+pub fn palette_edit(instance: Mat4, dtf: f32) -> Option<PaletteEdit> {
+    let frame = FRAME.get().flatten()?;
+    let to_model = instance.inverse();
+    let hands = Hand::BOTH.map(|hand| {
+        let d = pose_matrix(frame.hand_delta(hand, dtf)?);
+        let d_model = to_model * d * instance;
+        let joints = frame.solved.current[hand.index()]?;
+        let previous = frame.solved.previous[hand.index()].unwrap_or(joints);
+        let elbow = previous.elbow.lerp(joints.elbow, dtf);
+        let wrist = previous.wrist.lerp(joints.wrist, dtf);
+        let stretch = frame.reach.detach && frame.reach.stretch_forearm;
+        Some(HandPaletteEdit {
+            hand: d_model,
+            forearm: palette::forearm_reach(elbow, wrist, d_model.transform_point3(wrist), stretch),
+        })
+    });
+    hands.iter().any(Option::is_some).then_some(PaletteEdit {
+        bones: frame.solved.bones,
+        hands,
+    })
+}
+
+pub fn shoulder_target(hand: Hand, dtf: f32) -> Option<Vec3> {
+    let frame = FRAME.get().flatten()?;
+    let target = frame.ticks.current[hand.index()]?;
+    (target.owner == ik::TargetOwner::Controller)
+        .then(|| frame.shoulders[hand.index()].map(|pair| pair.at(dtf).position))
+        .flatten()
+}
+
+pub fn arm_target(hand: Hand, dtf: f32) -> Option<(Pose, f32)> {
+    let frame = FRAME.get().flatten()?;
+    frame.arm_target(hand, dtf)
+}
+
+/// The world-space correction of `hand` at the interpolation fraction `dtf`, as a matrix, for a
+/// render seam that re-pushes a model riding that hand; `None` when the hand is not corrected.
+pub fn hand_correction(hand: Hand, dtf: f32) -> Option<Mat4> {
+    let frame = FRAME.get().flatten()?;
+    frame.hand_delta(hand, dtf).map(pose_matrix)
+}
+
+/// Interpolate a model attachment in the same parent frame as this frame's hand references.
+pub fn interpolate_in_character(matrices: [Mat4; 2], dtf: f32) -> Mat4 {
+    let transport = FRAME.get().flatten().and_then(|frame| frame.transport);
+    transport.map_or_else(
+        || lerp_transform(matrices[0], matrices[1], dtf),
+        |parent| interpolate_attached(parent, matrices, dtf),
+    )
+}
+
+/// The current frame's snapshot, for the weapon render seam's own guard and per-gun lookups.
+pub(super) fn current() -> Option<LateFrame> {
+    FRAME.get().flatten()
+}
+
+/// The frame's snapshot of the late update's inputs.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub(super) struct LateFrame {
+    hands: [Option<RenderHand>; 2],
+    shoulders: [Option<PosePair>; 2],
+    ticks: ik::TickRecords,
+    transport: Option<[Mat4; 2]>,
+    solved: Solved,
+    /// The late update's toggle; the render hands are published for the overlay either way.
+    enabled: bool,
+    /// The detach's settings.
+    reach: ReachTuning,
+}
+
+impl LateFrame {
+    fn arm_target(&self, hand: Hand, dtf: f32) -> Option<(Pose, f32)> {
+        let current = self.ticks.current[hand.index()]?;
+        if !current.weight.is_finite() || current.weight <= 0.0 || !dtf.is_finite() {
+            return None;
+        }
+        let reference = self.reference(hand, dtf)?;
+        let target = match current.owner {
+            ik::TargetOwner::Wingsuit => reference,
+            ik::TargetOwner::Controller => self.hands[hand.index()]
+                .filter(|_| self.enabled)
+                .map(|render| render.wrist.at(dtf))
+                .filter(|now| crate::controllers::hands::late::math::plausible(*now, reference))
+                .unwrap_or(reference),
+        };
+        Some((target, current.weight.clamp(0.0, 1.0)))
+    }
+
+    /// The world-space correction of `hand` at `dtf` (see the module docs), scaled by the weight
+    /// the tick's IK was asked at.
+    pub(super) fn hand_delta(&self, hand: Hand, dtf: f32) -> Option<Pose> {
+        if let Some((delta, _)) = self.presentation_hand(hand, dtf) {
+            let (_, orientation, position) = delta.to_scale_rotation_translation();
+            return Some(Pose {
+                position,
+                orientation,
+            });
+        }
+        let status = self.hand_status(hand, dtf);
+        (status.reason == LateReason::Applied).then(|| {
+            let now = self.hands[hand.index()].unwrap().wrist.at(dtf);
+            let current = self.ticks.current[hand.index()].unwrap();
+            let reference = self.reference(hand, dtf).unwrap();
+            let detached = Pose {
+                position: reference.position - self.detach(hand, dtf),
+                ..reference
+            };
+            // The detached reference can fail the plausibility bound the status passed only by the
+            // cap's margin; the hand then stays on the arm rather than going uncorrected.
+            let d = correction(now, detached, current.weight)
+                .or_else(|| correction(now, reference, current.weight))
+                .unwrap();
+            self.keep_on_forearm(hand, dtf, d)
+        })
+    }
+
+    /// `d` held to what the forearm's stretch reaches from the solved elbow, so every seam that
+    /// draws from the correction (the palette, the gun, what rides the drawn hand) keeps the hand
+    /// on the end of the arm when the controller has gone further than the arm can follow.
+    fn keep_on_forearm(&self, hand: Hand, dtf: f32, d: Pose) -> Pose {
+        let (Some(transport), Some(joints)) = (self.transport, self.solved.current[hand.index()])
+        else {
+            return d;
+        };
+        let previous = self.solved.previous[hand.index()].unwrap_or(joints);
+        let to_world = lerp_transform(transport[0], transport[1], dtf);
+        let elbow = to_world.transform_point3(previous.elbow.lerp(joints.elbow, dtf));
+        let wrist = to_world.transform_point3(previous.wrist.lerp(joints.wrist, dtf));
+        keep_on_forearm(d, elbow, wrist, palette::MAX_FOREARM_STRETCH)
+    }
+
+    /// `hand`'s forearm's world-space edit as the presentation layer draws it at `dtf`, through the
+    /// body's interpolated instance matrix as the hand's is.
+    fn forearm_delta(&self, hand: Hand, dtf: f32) -> Option<Mat4> {
+        if !dtf.is_finite() {
+            return None;
+        }
+        let transport = self.transport?;
+        let instance = lerp_transform(transport[0], transport[1], dtf.clamp(0.0, 1.0));
+        presentation::drawn_forearm(instance, dtf, hand)
+    }
+
+    fn presentation_hand(&self, hand: Hand, dtf: f32) -> Option<(Mat4, Pose)> {
+        if !dtf.is_finite() {
+            return None;
+        }
+        let transport = self.transport?;
+        let instance = lerp_transform(transport[0], transport[1], dtf.clamp(0.0, 1.0));
+        presentation::drawn_hand(instance, dtf, hand)
+    }
+
+    /// `hand`'s poses as drawn at `dtf` (see [`drawn_hands`]).
+    fn drawn(&self, hand: Hand, dtf: f32) -> Option<DrawnHand> {
+        let render = self.hands[hand.index()]?;
+        let (wrist, grip, aim) = (
+            render.wrist.at(dtf),
+            render.grip.at(dtf),
+            render.aim.at(dtf),
+        );
+        let drawn = self
+            .presentation_hand(hand, dtf)
+            .map(|(_, wrist)| wrist)
+            .unwrap_or_else(|| {
+                self.reference(hand, dtf).map_or(wrist, |reference| {
+                    let solved = Pose {
+                        position: reference.position - self.miss(hand, dtf).unwrap_or(Vec3::ZERO),
+                        ..reference
+                    };
+                    self.hand_delta(hand, dtf)
+                        .map_or(solved, |d| hand_pose::mul(d, solved))
+                })
+            });
+        let to_drawn = hand_pose::mul(drawn, hand_pose::inverse(wrist));
+        Some(DrawnHand {
+            wrist: drawn,
+            grip: hand_pose::mul(to_drawn, grip),
+            aim: hand_pose::mul(to_drawn, aim),
+        })
+    }
+
+    /// The tick targets in the same interpolated parent frame as the rendered skeleton.
+    fn reference(&self, hand: Hand, dtf: f32) -> Option<Pose> {
+        let current = self.ticks.current[hand.index()]?;
+        let previous = self.ticks.previous[hand.index()]
+            .filter(|previous| previous.owner == current.owner)
+            .unwrap_or(current);
+        let Some(transport) = self.transport else {
+            return Some(hand_pose::interp(previous.wrist, current.wrist, dtf));
+        };
+        let matrix = interpolate_attached(
+            transport,
+            [pose_matrix(previous.wrist), pose_matrix(current.wrist)],
+            dtf,
+        );
+        let (_, orientation, position) = matrix.to_scale_rotation_translation();
+        Some(Pose {
+            position,
+            orientation,
+        })
+    }
+
+    /// The solved wrist's shortfall from its target, interpolated at `dtf`.
+    fn miss(&self, hand: Hand, dtf: f32) -> Option<Vec3> {
+        let current = self.solved.current[hand.index()]?.miss?;
+        let previous = self.solved.previous[hand.index()]
+            .and_then(|j| j.miss)
+            .unwrap_or(current);
+        Some(self.transport.map_or_else(
+            || previous.lerp(current, dtf),
+            |parent| {
+                let local_previous = parent[0].inverse().transform_vector3(previous);
+                let local_current = parent[1].inverse().transform_vector3(current);
+                lerp_transform(parent[0], parent[1], dtf)
+                    .transform_vector3(local_previous.lerp(local_current, dtf))
+            },
+        ))
+    }
+
+    /// How far the rendered hand leaves the solved wrist toward the target at `dtf`, in the world.
+    fn detach(&self, hand: Hand, dtf: f32) -> Vec3 {
+        if !self.reach.detach {
+            return Vec3::ZERO;
+        }
+        self.miss(hand, dtf).map_or(Vec3::ZERO, |miss| {
+            reach::detach_offset(miss, self.reach.detach_threshold_m, self.reach.detach_cap_m)
+        })
+    }
+
+    pub(super) fn hand_status(&self, hand: Hand, dtf: f32) -> HandLateStatus {
+        if !self.enabled {
+            return HandLateStatus::default();
+        }
+        let Some(render_hand) = self.hands[hand.index()] else {
+            return HandLateStatus {
+                reason: LateReason::NoTrackedRenderHand,
+                ..HandLateStatus::default()
+            };
+        };
+        let Some(current) = self.ticks.current[hand.index()]
+            .filter(|target| target.owner == ik::TargetOwner::Controller)
+        else {
+            return HandLateStatus {
+                reason: LateReason::NoSimTarget,
+                ..HandLateStatus::default()
+            };
+        };
+        let reference = self.reference(hand, dtf).unwrap();
+        let now = render_hand.wrist.at(dtf);
+        let metrics = relative_metrics(now, reference);
+        let (physical_displacement_m, relative_rotation_deg) = metrics
+            .map(|(displacement, rotation)| (Some(displacement), Some(rotation)))
+            .unwrap_or((None, None));
+        let reason = match metrics {
+            _ if !current.weight.is_finite() => LateReason::InvalidPoseOrWeight,
+            None => LateReason::InvalidPoseOrWeight,
+            Some((displacement, _)) if displacement >= MAX_SHIFT_M => LateReason::ExcessTranslation,
+            Some((_, rotation)) if rotation >= MAX_TURN_RAD.to_degrees() => {
+                LateReason::ExcessRotation
+            }
+            Some(_) => LateReason::Applied,
+        };
+        let solved = (self.solved.previous[hand.index()].or(self.solved.current[hand.index()]))
+            .zip(self.solved.current[hand.index()])
+            .map(|(previous, current)| previous.wrist.lerp(current.wrist, dtf));
+        HandLateStatus {
+            reason,
+            physical_displacement_m,
+            relative_rotation_deg,
+            requested_wrist_position: Some(current.wrist.position),
+            reference_wrist_position: Some(reference.position),
+            latest_wrist_position: Some(now.position),
+            achieved_wrist_position_model: solved,
+            solve_miss_m: self.miss(hand, dtf).map(Vec3::length),
+            detach_m: (reason == LateReason::Applied).then(|| self.detach(hand, dtf).length()),
+        }
+    }
+}
+
+fn character_transport() -> Option<[Mat4; 2]> {
+    let current = unsafe { Character::GetLocalPlayerCharacter() };
+    if !matches_local_character(current as usize, ik::local_character()) {
+        return None;
+    }
+    // The game-thread lookup owns the lifetime check; the IK address is only an identity.
+    let character = unsafe { current.as_ref() }?;
+    let pair = [
+        Mat4::from(character.m_WorldMatrixT0),
+        Mat4::from(character.m_WorldMatrixT1),
+    ];
+    pair.iter()
+        .all(|m| m.is_finite() && m.determinant().abs() > f32::EPSILON)
+        .then_some(pair)
+}
+
+fn matches_local_character(current: usize, recorded: usize) -> bool {
+    current != 0 && current == recorded
+}
+
+fn compose_render_shoulders(active: &ActiveHands) -> [Option<PosePair>; 2] {
+    let heads = [headpose::query_prev(), headpose::query()];
+    let views = render_views(heads, eye_points(heads), active.head, active.world_scale);
+    hands::arm_remaps(
+        &active.config,
+        active.head,
+        active.torso,
+        active.world_scale,
+    )
+    .map(|remap| {
+        let shoulder = remap?.character_shoulder;
+        let pose = Pose {
+            position: shoulder,
+            orientation: glam::Quat::IDENTITY,
+        };
+        Some(PosePair {
+            previous: views[0].cockpit.pose_to_world(pose),
+            current: views[1].cockpit.pose_to_world(pose),
+            transport: Some([views[0].transport, views[1].transport]),
+        })
+    })
+}
+
+/// Each hand's render-time poses, composed on both sides of the head pose pair from the eye
+/// midpoint the camera renders from on that side, so that the hand rides the camera across its
+/// interpolation and lands where the player sees it.
+fn compose_render_hands(active: &ActiveHands) -> [Option<RenderHand>; 2] {
+    let heads = [headpose::query_prev(), headpose::query()];
+    let views = render_views(heads, eye_points(heads), active.head, active.world_scale);
+    let pair = |pose: Pose| PosePair {
+        previous: views[0].cockpit.pose_to_world(pose),
+        current: views[1].cockpit.pose_to_world(pose),
+        transport: Some([views[0].transport, views[1].transport]),
+    };
+    active.hands.map(|hand| {
+        hand.map(|h| RenderHand {
+            wrist: pair(h.wrist),
+            grip: pair(h.grip),
+            aim: pair(h.aim),
+        })
+    })
+}
+
+/// One side of the head pose pair as the hands are composed on it.
+#[derive(Debug, Copy, Clone, PartialEq)]
+struct RenderView {
+    /// The cockpit frame's map into the world on this side.
+    cockpit: CockpitTransform,
+    /// The camera's pose on this side, which the hands interpolate attached to.
+    transport: Mat4,
+}
+
+/// Both sides of the head pose pair `heads` as the hands are composed on them: the cockpit head
+/// `cockpit_head` at the eye midpoint `eyes` the camera renders from on that side, with the body
+/// frame recovered from the head's orientation.
+fn render_views(
+    heads: [headpose::HeadPose; 2],
+    eyes: [Vec3; 2],
+    cockpit_head: Pose,
+    world_scale: f32,
+) -> [RenderView; 2] {
+    [0, 1].map(|i| RenderView {
+        cockpit: CockpitTransform {
+            head_world: eyes[i],
+            head_cockpit: cockpit_head.position,
+            body: body_of_head(heads[i].orientation, cockpit_head.orientation),
+            world_scale,
+        },
+        transport: Mat4::from_rotation_translation(heads[i].orientation, eyes[i]),
+    })
+}
+
+static FRAME: RenderFrameSlot<Option<LateFrame>> = RenderFrameSlot::new();
+static POST_STEP_SAMPLE: OnceLock<fn()> = OnceLock::new();
+static WEAPONS_UPDATED: AtomicU64 = AtomicU64::new(0);
+static PALETTES_EDITED: AtomicU64 = AtomicU64::new(0);
+
+#[cfg(test)]
+mod tests {
+    use glam::Quat;
+
+    use super::*;
+    use crate::controllers::hands::late::bones::ArmJoints;
+
+    fn pose(x: f32, yaw: f32) -> Pose {
+        Pose {
+            position: Vec3::new(x, 1.0, 0.0),
+            orientation: Quat::from_rotation_y(yaw),
+        }
+    }
+
+    #[test]
+    fn a_wingsuit_target_is_not_corrected_toward_the_controller() {
+        let mut f = frame(pose(0.2, 0.3), pose(0.0, 0.0), pose(0.1, 0.1), 1.0);
+        f.ticks.current[Hand::Right.index()].as_mut().unwrap().owner = ik::TargetOwner::Wingsuit;
+        assert!(f.hand_delta(Hand::Right, 1.0).is_none());
+        assert_eq!(f.drawn(Hand::Right, 1.0).unwrap().wrist, pose(0.1, 0.1));
+        assert_eq!(f.reference(Hand::Right, 0.0), Some(pose(0.1, 0.1)));
+    }
+
+    #[test]
+    fn explicit_wingsuit_target_preserves_its_owner_frame_and_weight() {
+        let mut f = frame(pose(0.3, 0.8), pose(0.0, 0.0), pose(0.1, 0.1), 0.6);
+        f.ticks.current[1].as_mut().unwrap().owner = ik::TargetOwner::Wingsuit;
+        assert_eq!(f.arm_target(Hand::Right, 1.0), Some((pose(0.1, 0.1), 0.6)));
+        assert_eq!(f.arm_target(Hand::Right, 0.0), Some((pose(0.1, 0.1), 0.6)));
+    }
+
+    #[test]
+    fn explicit_controller_target_does_not_inherit_a_forearm_cap_or_solve_miss() {
+        let f = with_miss(
+            frame(pose(0.2, 0.3), pose(0.0, 0.0), pose(0.1, 0.1), 1.0),
+            Vec3::new(0.0, 0.25, 0.0),
+        );
+        assert_eq!(f.arm_target(Hand::Right, 1.0), Some((pose(0.2, 0.3), 1.0)));
+    }
+
+    fn frame(now: Pose, previous_tick: Pose, current_tick: Pose, weight: f32) -> LateFrame {
+        let still = PosePair {
+            previous: now,
+            current: now,
+            transport: None,
+        };
+        let target = |wrist| {
+            Some(ik::TickTarget {
+                wrist,
+                weight,
+                owner: ik::TargetOwner::Controller,
+            })
+        };
+        LateFrame {
+            hands: [
+                None,
+                Some(RenderHand {
+                    wrist: still,
+                    grip: still,
+                    aim: still,
+                }),
+            ],
+            shoulders: [None; 2],
+            ticks: ik::TickRecords {
+                previous: [None, target(previous_tick)],
+                current: [None, target(current_tick)],
+            },
+            transport: None,
+            solved: Solved::default(),
+            enabled: true,
+            reach: REACH,
+        }
+    }
+
+    /// `f` with the right wrist solved `miss` short of its targets on both ticks.
+    fn with_miss(mut f: LateFrame, miss: Vec3) -> LateFrame {
+        let joints = Some(ArmJoints {
+            elbow: Vec3::ZERO,
+            wrist: Vec3::X,
+            miss: Some(miss),
+        });
+        f.solved.previous[Hand::Right.index()] = joints;
+        f.solved.current[Hand::Right.index()] = joints;
+        f
+    }
+
+    #[test]
+    fn character_transport_requires_the_current_local_ik_identity() {
+        assert!(!matches_local_character(0, 0));
+        assert!(!matches_local_character(0, 17));
+        assert!(!matches_local_character(17, 0));
+        assert!(!matches_local_character(17, 23));
+        assert!(matches_local_character(17, 17));
+    }
+
+    #[test]
+    fn a_turning_platform_uses_the_same_parent_frame_for_the_reference_and_correction() {
+        let parent = [
+            Mat4::IDENTITY,
+            Mat4::from_rotation_translation(Quat::from_rotation_y(0.8), Vec3::X * 3.0),
+        ];
+        let local = Pose {
+            position: Vec3::new(0.4, 1.0, -0.5),
+            orientation: Quat::IDENTITY,
+        };
+        let from_matrix = |matrix: Mat4| {
+            let (_, orientation, position) = matrix.to_scale_rotation_translation();
+            Pose {
+                position,
+                orientation,
+            }
+        };
+        let ticks = [
+            from_matrix(parent[0] * pose_matrix(local)),
+            from_matrix(parent[1] * pose_matrix(local)),
+        ];
+        let pair = PosePair {
+            previous: ticks[0],
+            current: ticks[1],
+            transport: Some(parent),
+        };
+        let mut f = frame(ticks[1], ticks[0], ticks[1], 1.0);
+        f.transport = Some(parent);
+        f.hands[Hand::Right.index()] = Some(RenderHand {
+            wrist: pair,
+            grip: pair,
+            aim: pair,
+        });
+        for t in [0.0, 0.25, 0.5, 1.0] {
+            let expected = lerp_transform(parent[0], parent[1], t) * pose_matrix(local);
+            let reference = f.reference(Hand::Right, t).unwrap();
+            assert!(pose_matrix(reference).abs_diff_eq(expected, 1e-5));
+            let delta = f.hand_delta(Hand::Right, t).unwrap();
+            assert!(pose_matrix(delta).abs_diff_eq(Mat4::IDENTITY, 1e-5));
+            assert!(pose_matrix(f.drawn(Hand::Right, t).unwrap().grip).abs_diff_eq(expected, 1e-5));
+        }
+    }
+
+    #[test]
+    fn a_short_solve_detaches_the_hand_beyond_the_threshold() {
+        let p = pose(0.3, 0.0);
+        let f = with_miss(frame(p, p, p, 1.0), Vec3::new(0.05, 0.0, 0.0));
+        let d = f.hand_delta(Hand::Right, 0.5).unwrap();
+        assert!((d.position.x - 0.04).abs() < 1e-5);
+        let status = f.hand_status(Hand::Right, 0.5);
+        assert!((status.solve_miss_m.unwrap() - 0.05).abs() < 1e-5);
+        assert!((status.detach_m.unwrap() - 0.04).abs() < 1e-5);
+    }
+
+    #[test]
+    fn the_drawn_hand_is_the_controller_s_when_the_arm_reaches_it() {
+        let f = frame(pose(0.5, 0.2), pose(0.3, 0.0), pose(0.4, 0.1), 1.0);
+        let drawn = f.drawn(Hand::Right, 0.5).unwrap();
+        let now = pose(0.5, 0.2);
+        assert!(drawn.wrist.position.abs_diff_eq(now.position, 1e-5));
+        assert!(drawn.wrist.orientation.angle_between(now.orientation) < 1e-4);
+        assert!(drawn.grip.position.abs_diff_eq(now.position, 1e-5));
+        assert!(f.drawn(Hand::Left, 0.5).is_none());
+    }
+
+    #[test]
+    fn the_drawn_hand_falls_short_where_the_arm_does_and_carries_its_grip() {
+        let p = pose(0.3, 0.0);
+        let mut f = with_miss(frame(p, p, p, 1.0), Vec3::new(0.05, 0.0, 0.0));
+        let grip = Pose {
+            position: p.position + Vec3::new(0.0, 0.0, -0.05),
+            ..p
+        };
+        let pair = PosePair {
+            previous: grip,
+            current: grip,
+            transport: None,
+        };
+        f.hands[Hand::Right.index()].as_mut().unwrap().grip = pair;
+        let drawn = f.drawn(Hand::Right, 0.5).unwrap();
+        // The detach covers all but its threshold of the miss.
+        assert!((drawn.wrist.position.x - 0.29).abs() < 1e-5);
+        assert!(
+            (drawn.grip.position - drawn.wrist.position)
+                .abs_diff_eq(Vec3::new(0.0, 0.0, -0.05), 1e-5)
+        );
+        // Without the late update the hand is drawn where the tick solved it.
+        f.enabled = false;
+        let solved = f.drawn(Hand::Right, 0.5).unwrap();
+        assert!((solved.wrist.position.x - 0.25).abs() < 1e-5);
+    }
+
+    #[test]
+    fn a_controller_past_the_stretched_forearm_keeps_the_hand_and_its_gun_on_the_arm() {
+        // The tick solved the right wrist at its target, a forearm's length out from the elbow;
+        // the controller has since gone 40 cm further along the arm.
+        let target = pose(0.6, 0.0);
+        let mut f = frame(pose(1.0, 0.0), target, target, 1.0);
+        f.transport = Some([Mat4::IDENTITY; 2]);
+        let joints = Some(ArmJoints {
+            elbow: Vec3::new(0.36, 1.0, 0.0),
+            wrist: target.position,
+            miss: Some(Vec3::ZERO),
+        });
+        f.solved.previous[Hand::Right.index()] = joints;
+        f.solved.current[Hand::Right.index()] = joints;
+        let reach = 0.24 * palette::MAX_FOREARM_STRETCH;
+        let d = f.hand_delta(Hand::Right, 0.5).unwrap();
+        assert!((d.position.x - (reach - 0.24)).abs() < 1e-5);
+        let drawn = f.drawn(Hand::Right, 0.5).unwrap();
+        assert!((drawn.wrist.position.x - (0.36 + reach)).abs() < 1e-5);
+        // Within the stretch, the hand still goes all the way to the controller.
+        f.hands[Hand::Right.index()] = frame(pose(0.65, 0.0), target, target, 1.0).hands[1];
+        let near = f.drawn(Hand::Right, 0.5).unwrap();
+        assert!((near.wrist.position.x - 0.65).abs() < 1e-5);
+    }
+
+    #[test]
+    fn the_detach_is_capped_and_adds_to_the_motion_since_the_tick() {
+        let f = with_miss(
+            frame(pose(0.5, 0.0), pose(0.4, 0.0), pose(0.4, 0.0), 1.0),
+            Vec3::new(0.0, 0.0, -0.5),
+        );
+        let d = f.hand_delta(Hand::Right, 0.5).unwrap();
+        assert!((d.position.x - 0.1).abs() < 1e-5);
+        assert!((d.position.z + 0.1).abs() < 1e-5);
+    }
+
+    #[test]
+    fn the_detach_off_keeps_the_hand_on_the_arm() {
+        let p = pose(0.3, 0.0);
+        let mut f = with_miss(frame(p, p, p, 1.0), Vec3::new(0.05, 0.0, 0.0));
+        f.reach.detach = false;
+        let d = f.hand_delta(Hand::Right, 0.5).unwrap();
+        assert!(d.position.length() < 1e-5);
+    }
+
+    #[test]
+    fn a_hand_at_its_tick_target_needs_no_correction() {
+        let p = pose(0.3, 0.2);
+        let d = frame(p, p, p, 1.0).hand_delta(Hand::Right, 0.4).unwrap();
+        assert!(d.position.length() < 1e-5);
+        assert!(frame(p, p, p, 1.0).hand_delta(Hand::Left, 0.4).is_none());
+    }
+
+    #[test]
+    fn the_correction_covers_the_motion_since_the_interpolated_ticks() {
+        let f = frame(pose(0.5, 0.0), pose(0.3, 0.0), pose(0.4, 0.0), 1.0);
+        let d = f.hand_delta(Hand::Right, 0.5).unwrap();
+        assert!((d.position.x - 0.15).abs() < 1e-5);
+        let half = frame(pose(0.5, 0.0), pose(0.3, 0.0), pose(0.4, 0.0), 0.5)
+            .hand_delta(Hand::Right, 0.5)
+            .unwrap();
+        assert!((half.position.x - 0.075).abs() < 1e-5);
+    }
+
+    #[test]
+    fn status_reports_physical_metrics_and_applied_reason() {
+        let reference = Pose {
+            position: Vec3::new(1000.0, 200.0, -300.0),
+            orientation: Quat::IDENTITY,
+        };
+        let now = Pose {
+            orientation: -Quat::from_rotation_y(0.4),
+            ..reference
+        };
+        let f = frame(now, reference, reference, 0.5);
+        let status = f.hand_status(Hand::Right, 0.5);
+        assert_eq!(status.reason, LateReason::Applied);
+        assert_eq!(status.physical_displacement_m, Some(0.0));
+        assert!((status.relative_rotation_deg.unwrap() - 22.9183).abs() < 1e-3);
+        assert_eq!(status.latest_wrist_position, Some(reference.position));
+        assert_eq!(status.reference_wrist_position, Some(reference.position));
+    }
+
+    #[test]
+    fn status_reasons_keep_the_guard_independent_of_weight() {
+        let excessive = frame(pose(5.0, 0.0), pose(0.3, 0.0), pose(0.3, 0.0), 0.01);
+        assert_eq!(
+            excessive.hand_status(Hand::Right, 1.0).reason,
+            LateReason::ExcessTranslation
+        );
+        let excessive_turn = frame(
+            pose(0.3, std::f32::consts::PI),
+            pose(0.3, 0.0),
+            pose(0.3, 0.0),
+            0.01,
+        );
+        assert_eq!(
+            excessive_turn.hand_status(Hand::Right, 1.0).reason,
+            LateReason::ExcessRotation
+        );
+        assert_eq!(
+            frame(pose(0.3, 0.0), pose(0.3, 0.0), pose(0.3, 0.0), f32::NAN)
+                .hand_status(Hand::Right, 1.0)
+                .reason,
+            LateReason::InvalidPoseOrWeight
+        );
+    }
+
+    #[test]
+    fn status_reports_missing_inputs_and_disabled_state() {
+        let mut disabled = frame(pose(0.35, 0.0), pose(0.3, 0.0), pose(0.3, 0.0), 1.0);
+        disabled.enabled = false;
+        assert_eq!(
+            disabled.hand_status(Hand::Right, 1.0).reason,
+            LateReason::Disabled
+        );
+        assert_eq!(
+            frame(pose(0.3, 0.0), pose(0.3, 0.0), pose(0.3, 0.0), 1.0)
+                .hand_status(Hand::Left, 1.0)
+                .reason,
+            LateReason::NoTrackedRenderHand
+        );
+        let mut no_target = frame(pose(0.3, 0.0), pose(0.3, 0.0), pose(0.3, 0.0), 1.0);
+        no_target.ticks.current[Hand::Right.index()] = None;
+        assert_eq!(
+            no_target.hand_status(Hand::Right, 1.0).reason,
+            LateReason::NoSimTarget
+        );
+    }
+
+    #[test]
+    fn invalid_or_discontinuous_motion_is_not_corrected() {
+        let translated = frame(pose(5.0, 0.0), pose(0.3, 0.0), pose(0.3, 0.0), 1.0);
+        assert!(translated.hand_delta(Hand::Right, 1.0).is_none());
+        let mut off = frame(pose(0.35, 0.0), pose(0.3, 0.0), pose(0.3, 0.0), 1.0);
+        off.enabled = false;
+        assert!(off.hand_delta(Hand::Right, 1.0).is_none());
+    }
+
+    #[test]
+    fn late_arm_uploads_use_full_sources_and_replace_native_roll_in_both_layouts() {
+        let mut bones = [HandBones::default(); 2];
+        bones[1].forearm = [1, 2, 0, 0];
+        bones[1].hand[0] = 5;
+        bones[1].bind = [
+            Mat4::from_quat(Quat::from_rotation_x(0.2)),
+            Mat4::from_rotation_translation(Quat::from_rotation_x(-0.1), Vec3::X),
+        ];
+        bones[1].roll[1] = 0.5;
+        bones[1].roll_bind = [
+            Quat::from_rotation_x(0.2),
+            Quat::from_rotation_x(0.4),
+            Quat::IDENTITY,
+            Quat::IDENTITY,
+        ];
+        for layout in [PaletteLayout::Columns, PaletteLayout::Rows] {
+            let mut source = vec![
+                Matrix3x4 {
+                    m: palette::matrix_to_entry(&Mat4::IDENTITY, layout)
+                };
+                6
+            ];
+            for (bone, bind, angle, point) in [
+                (1, bones[1].bind[0], 0.3, Vec3::ZERO),
+                (5, bones[1].bind[1], 1.1, Vec3::X),
+                (
+                    2,
+                    Mat4::from_rotation_translation(bones[1].roll_bind[1], Vec3::X * 0.5),
+                    1.7,
+                    Vec3::X * 0.5,
+                ),
+            ] {
+                let actual = Mat4::from_rotation_translation(Quat::from_rotation_x(angle), point);
+                source[bone].m = palette::matrix_to_entry(&(actual * bind.inverse()), layout);
+            }
+            for distance in [0.0, 0.001, 0.6, 1.0] {
+                let edit = PaletteEdit {
+                    bones,
+                    hands: [
+                        None,
+                        Some(HandPaletteEdit {
+                            hand: Mat4::from_translation(Vec3::X * (distance - 1.0)),
+                            forearm: palette::forearm_reach(
+                                Vec3::ZERO,
+                                Vec3::X,
+                                Vec3::X * distance,
+                                true,
+                            ),
+                        }),
+                    ],
+                };
+                let mut full = source.clone();
+                edit.apply(&mut full, &source, layout);
+                assert!(
+                    full.iter()
+                        .all(|entry| entry.m.iter().all(|value| value.is_finite()))
+                );
+                let forearm = palette::entry_to_matrix(&full[1].m, layout);
+                let wrist = palette::entry_to_matrix(&full[5].m, layout);
+                assert!(
+                    forearm
+                        .transform_point3(Vec3::ZERO)
+                        .abs_diff_eq(Vec3::ZERO, 1e-5)
+                );
+                assert!(
+                    forearm
+                        .transform_point3(Vec3::X)
+                        .abs_diff_eq(Vec3::X * distance, 1e-5)
+                );
+                assert!(
+                    wrist
+                        .transform_point3(Vec3::X)
+                        .abs_diff_eq(Vec3::X * distance, 1e-5)
+                );
+                let mut short = source[..3].to_vec();
+                assert_eq!(edit.source_len(), 6);
+                edit.apply(&mut short, &source, layout);
+                assert!(
+                    short
+                        .iter()
+                        .zip(&full)
+                        .all(|(short, full)| short.m == full.m)
+                );
+                if distance == 1.0 {
+                    let frame = palette::entry_to_matrix(&full[2].m, layout)
+                        * Mat4::from_quat(bones[1].roll_bind[1]);
+                    assert!(
+                        palette::bone_rotation(frame)
+                            .unwrap()
+                            .abs_diff_eq(Quat::from_rotation_x(1.05), 1e-5)
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_edit_touches_only_the_resolved_bones_of_corrected_hands() {
+        let mut bones = [HandBones::default(); 2];
+        bones[1].hand[0] = 40;
+        bones[1].forearm[0] = 38;
+        bones[0].hand[0] = 20;
+        let edit = PaletteEdit {
+            bones,
+            hands: [
+                None,
+                Some(HandPaletteEdit {
+                    hand: Mat4::from_translation(Vec3::X),
+                    forearm: Mat4::IDENTITY,
+                }),
+            ],
+        };
+        assert!(edit.touches(40));
+        assert!(edit.touches(38));
+        assert!(!edit.touches(20));
+        assert!(!edit.touches(0));
+    }
+
+    /// The render-time hand lands at the eye midpoint the camera renders from plus the
+    /// controller's offset from the cockpit head, on both sides of the pair, and rides the camera
+    /// rigidly across the interpolation: the player sees it where their hand is.
+    #[test]
+    fn a_render_hand_lands_at_the_rendered_eyes_plus_the_controller_offset() {
+        let cockpit_head = Pose {
+            position: Vec3::new(0.05, 1.7, -0.1),
+            orientation: Quat::from_rotation_x(-0.2),
+        };
+        let bodies = [Quat::from_rotation_y(0.4), Quat::from_rotation_y(0.5)];
+        let heads = bodies.map(|body| headpose::HeadPose {
+            position: Vec3::new(10.0, 2.0, -3.0),
+            orientation: body * cockpit_head.orientation,
+        });
+        // The camera hangs the eyes ahead of and above the published head on each side.
+        let eyes = [0, 1].map(|i| heads[i].position + bodies[i] * Vec3::new(0.03, 0.06, -0.1));
+        let views = render_views(heads, eyes, cockpit_head, 1.0);
+        let controller = Pose {
+            position: cockpit_head.position + Vec3::new(0.2, -0.4, -0.35),
+            orientation: Quat::IDENTITY,
+        };
+        for i in 0..2 {
+            let world = views[i].cockpit.pose_to_world(controller);
+            let expected = eyes[i] + bodies[i] * (controller.position - cockpit_head.position);
+            assert!(world.position.distance(expected) < 1e-5, "side {i}");
+            assert!(
+                views[i]
+                    .cockpit
+                    .point_to_world(cockpit_head.position)
+                    .distance(eyes[i])
+                    < 1e-5
+            );
+        }
+        let pair = PosePair {
+            previous: views[0].cockpit.pose_to_world(controller),
+            current: views[1].cockpit.pose_to_world(controller),
+            transport: Some([views[0].transport, views[1].transport]),
+        };
+        let camera = lerp_transform(views[0].transport, views[1].transport, 0.5);
+        let local = camera.inverse() * pose_matrix(pair.at(0.5));
+        let expected = views[1].transport.inverse() * pose_matrix(pair.current);
+        assert!(local.abs_diff_eq(expected, 1e-4));
+    }
+}

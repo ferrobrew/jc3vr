@@ -9,6 +9,7 @@ members = [
     "crates/body-rig",
     "crates/dxbc-stereo",
     "crates/fsr-sys",
+    "crates/jc3vr-body",
     "crates/jc3vr-capture",
     "crates/jc3vr-core",
     "crates/jc3vr-gameplay",

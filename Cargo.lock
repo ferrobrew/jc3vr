@@ -2297,6 +2297,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "jc3vr-body"
+version = "0.1.0"
+dependencies = [
+ "body-estimator",
+ "body-rig",
+ "detours-macro",
+ "glam",
+ "jc3gi",
+ "jc3vr-core",
+ "jc3vr-input",
+ "jc3vr-view",
+ "openxr",
+ "parking_lot",
+ "re-utilities",
+ "serde",
+ "serde_json",
+ "smol_str",
+ "toml 1.1.6+spec-1.1.0",
+ "tracing",
+ "tracking-format",
+ "windows 0.62.2",
+]
+
+[[package]]
 name = "jc3vr-capture"
 version = "0.1.0"
 dependencies = [

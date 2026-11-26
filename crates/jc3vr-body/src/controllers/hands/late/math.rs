@@ -1,0 +1,196 @@
+//! The pure pose and transform math the late update builds its correction from, independent of any
+//! frame state.
+
+use body_rig::{geometry::within_sphere, rotation::angle};
+use glam::{Mat4, Quat, Vec3};
+use jc3vr_input::frame::Pose;
+
+use crate::controllers::hands::pose as hand_pose;
+
+/// Derive a bounded correction from the physical move between the reference and current wrist.
+///
+/// The relative position and rotation are validated before the correction is weighted. This keeps
+/// a stationary wrist rotation valid even when the world origin is far away, and rejects
+/// discontinuities before they can be interpolated into a plausible-looking correction.
+pub fn correction(now: Pose, reference: Pose, weight: f32) -> Option<Pose> {
+    (weight.is_finite() && plausible(now, reference))
+        .then(|| hand_pose::weighted_delta(now, reference, weight))
+}
+
+/// Whether the wrist moved by a tick or two rather than discontinuously (a teleport, a recenter, or
+/// a respawn), which must not be smeared onto the rendered hand.
+pub fn plausible(now: Pose, reference: Pose) -> bool {
+    relative_metrics(now, reference).is_some_and(|(displacement, rotation)| {
+        displacement < MAX_SHIFT_M && rotation < MAX_TURN_RAD.to_degrees()
+    })
+}
+
+/// The engine's transform interpolation (`CTransform::Lerp`): the translation and scale lerped and
+/// the rotation slerped.
+pub fn lerp_transform(a: Mat4, b: Mat4, t: f32) -> Mat4 {
+    let (sa, ra, ta) = a.to_scale_rotation_translation();
+    let (sb, rb, tb) = b.to_scale_rotation_translation();
+    Mat4::from_scale_rotation_translation(sa.lerp(sb, t), ra.slerp(rb, t), ta.lerp(tb, t))
+}
+
+/// Interpolate an attachment in its parent's frame, preserving its local mechanical motion.
+/// World-space interpolation cuts across the turn of a moving parent instead of following it.
+pub(crate) fn interpolate_attached(parent: [Mat4; 2], attachment: [Mat4; 2], t: f32) -> Mat4 {
+    let local = [
+        parent[0].inverse() * attachment[0],
+        parent[1].inverse() * attachment[1],
+    ];
+    if local.iter().any(|m| !m.is_finite()) {
+        return lerp_transform(attachment[0], attachment[1], t);
+    }
+    lerp_transform(parent[0], parent[1], t) * lerp_transform(local[0], local[1], t)
+}
+
+/// `d` with its translation shortened so that it carries `wrist` no further than `max_stretch`
+/// forearm lengths from `elbow`: the farthest the forearm's palette edit stretches to meet the
+/// hand ([`crate::controllers::hands::palette::MAX_FOREARM_STRETCH`]). Past it, the forearm would
+/// stop short and the hand would be drawn detached from the arm, its skin stretched across the gap.
+/// `d`'s turn is kept; a degenerate arm or a non-finite input leaves `d` as it is.
+pub(crate) fn keep_on_forearm(d: Pose, elbow: Vec3, wrist: Vec3, max_stretch: f32) -> Pose {
+    let reach = elbow.distance(wrist) * max_stretch;
+    let drawn = hand_pose::mul(
+        d,
+        Pose {
+            position: wrist,
+            orientation: Quat::IDENTITY,
+        },
+    )
+    .position;
+    if !(reach > f32::EPSILON && drawn.is_finite()) {
+        return d;
+    }
+    Pose {
+        position: d.position + (within_sphere(drawn, elbow, reach) - drawn),
+        ..d
+    }
+}
+
+pub(crate) fn pose_matrix(p: Pose) -> Mat4 {
+    Mat4::from_rotation_translation(p.orientation, p.position)
+}
+
+/// The physical wrist displacement and relative rotation, or `None` for a non-finite pose.
+pub(super) fn relative_metrics(now: Pose, reference: Pose) -> Option<(f32, f32)> {
+    (now.position.is_finite()
+        && reference.position.is_finite()
+        && now.orientation.is_finite()
+        && reference.orientation.is_finite())
+    .then(|| {
+        let displacement = (now.position - reference.position).length();
+        let rotation = angle(hand_pose::delta(now, reference).orientation);
+        (displacement, rotation.to_degrees())
+    })
+    .filter(|(displacement, rotation)| displacement.is_finite() && rotation.is_finite())
+}
+
+pub(super) const MAX_SHIFT_M: f32 = 0.5;
+pub(super) const MAX_TURN_RAD: f32 = std::f32::consts::FRAC_PI_2;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_stationary_rotating_wrist_is_corrected_at_a_translated_origin() {
+        let reference = Pose {
+            position: Vec3::new(1000.0, 200.0, -300.0),
+            orientation: Quat::IDENTITY,
+        };
+        let now = Pose {
+            orientation: Quat::from_rotation_y(0.4),
+            ..reference
+        };
+        let d = correction(now, reference, 0.5).unwrap();
+        let carried = hand_pose::mul(d, reference);
+        assert!(carried.position.distance(reference.position) < 1e-5);
+        assert!(
+            (carried
+                .orientation
+                .angle_between(Quat::from_rotation_y(0.2)))
+            .abs()
+                < 1e-5
+        );
+    }
+
+    #[test]
+    fn invalid_or_discontinuous_motion_is_not_corrected() {
+        let reference = Pose {
+            position: Vec3::new(0.3, 1.0, 0.0),
+            orientation: Quat::IDENTITY,
+        };
+        assert!(
+            correction(
+                Pose {
+                    orientation: Quat::from_rotation_y(std::f32::consts::PI),
+                    ..reference
+                },
+                reference,
+                1.0,
+            )
+            .is_none()
+        );
+        assert!(correction(reference, reference, f32::NAN).is_none());
+    }
+
+    #[test]
+    fn a_rigid_attachment_follows_platform_translation_and_rotation() {
+        let local = Mat4::from_translation(Vec3::new(0.4, 1.2, -0.5));
+        for (distance, yaw) in [(2.0, 0.0), (0.0, 1.0), (2.0, -0.6)] {
+            let parent = [
+                Mat4::IDENTITY,
+                Mat4::from_rotation_translation(Quat::from_rotation_y(yaw), Vec3::X * distance),
+            ];
+            let attachment = [parent[0] * local, parent[1] * local];
+            for t in [0.0, 0.25, 0.5, 1.0] {
+                let expected = lerp_transform(parent[0], parent[1], t) * local;
+                assert!(interpolate_attached(parent, attachment, t).abs_diff_eq(expected, 1e-5));
+            }
+        }
+    }
+
+    #[test]
+    fn a_hand_carried_past_the_stretched_forearm_stops_at_its_end() {
+        let elbow = Vec3::new(0.35, 1.25, 0.02);
+        let wrist = elbow + Vec3::new(0.0, 0.0, -0.24);
+        let turn = Quat::from_rotation_x(0.3);
+        // Half a metre along the forearm: the drawn wrist stops at one and a half forearms.
+        let far = Pose {
+            position: Vec3::new(0.0, 0.0, -0.5),
+            orientation: turn,
+        };
+        let kept = keep_on_forearm(far, elbow, wrist, 1.5);
+        let drawn = hand_pose::mul(
+            kept,
+            Pose {
+                position: wrist,
+                orientation: Quat::IDENTITY,
+            },
+        );
+        assert!((drawn.position.distance(elbow) - 0.36).abs() < 1e-4);
+        assert!(kept.orientation.angle_between(turn) < 1e-5);
+        // A correction the stretch covers, or a sideways one within reach, is left alone.
+        for within in [Vec3::new(0.0, 0.0, -0.1), Vec3::new(0.0, 0.2, 0.0)] {
+            let d = Pose {
+                position: within,
+                orientation: Quat::IDENTITY,
+            };
+            assert_eq!(keep_on_forearm(d, elbow, wrist, 1.5), d);
+        }
+        // A degenerate arm or a non-finite input leaves the correction as it is.
+        assert_eq!(keep_on_forearm(far, elbow, elbow, 1.5), far);
+        assert_eq!(keep_on_forearm(far, Vec3::NAN, wrist, 1.5), far);
+    }
+
+    #[test]
+    fn the_weapon_interpolation_matches_the_endpoints() {
+        let a = Mat4::from_rotation_translation(Quat::from_rotation_x(0.2), Vec3::X);
+        let b = Mat4::from_rotation_translation(Quat::from_rotation_x(0.6), Vec3::Y);
+        assert!(lerp_transform(a, b, 0.0).abs_diff_eq(a, 1e-5));
+        assert!(lerp_transform(a, b, 1.0).abs_diff_eq(b, 1e-5));
+    }
+}
