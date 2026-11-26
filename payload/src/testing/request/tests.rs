@@ -368,7 +368,6 @@ fn visual_environment_tables_validate_hours_weather_and_commands() {
         ("visual_end", "\nid = 'end-env'", Command::VisualEnd),
         ("record", "", Command::Record),
         ("screenshot", "\nid = 'shot'", Command::Screenshot),
-        ("scenario", "\npath = 'climb.toml'", Command::Scenario),
     ] {
         let text =
             format!("command = '{command}'{extra}\n[environment]\nhour = 13.5\nweather = 'sunny'");
@@ -451,7 +450,6 @@ fn a_pose_table_is_only_accepted_by_visual_configure() {
         ("visual_end", "\nid = 'end-pose'", Command::VisualEnd),
         ("record", "", Command::Record),
         ("screenshot", "\nid = 'shot'", Command::Screenshot),
-        ("scenario", "\npath = 'climb.toml'", Command::Scenario),
     ] {
         let text = format!(
             "command = '{command}'{extra}\n[pose]\ncase_id = 'sweep-1'\nyaw_deg = 0.0\npitch_deg = 0.0\nroll_deg = 0.0"
@@ -508,17 +506,16 @@ fn the_commands_without_a_path_read() {
         ("record", Request::Record),
         ("stop_recording", Request::StopRecording),
         ("stop_replay", Request::StopReplay),
-        ("stop_scenario", Request::StopScenario),
     ] {
         assert_eq!(read(&format!("command = \"{command}\"")).unwrap(), request);
     }
 }
 
 #[test]
-fn a_scenario_without_a_path_or_an_unknown_command_is_refused() {
+fn a_replay_without_a_path_or_an_unknown_command_is_refused() {
     assert!(matches!(
-        read("command = \"scenario\"\npath = \" \""),
-        Err(RequestErrorKind::NoPath(Command::Scenario))
+        read("command = \"replay\"\npath = \" \""),
+        Err(RequestErrorKind::NoPath(Command::Replay))
     ));
     assert!(matches!(
         read("command = \"launch\""),
@@ -614,7 +611,6 @@ fn motion_tables_are_only_accepted_by_visual_configure() {
         ("visual_end", "\nid = 'end-motion'", Command::VisualEnd),
         ("record", "", Command::Record),
         ("screenshot", "\nid = 'shot'", Command::Screenshot),
-        ("scenario", "\npath = 'climb.toml'", Command::Scenario),
     ] {
         let text = format!(
             "command = '{command}'{extra}\n[motion]\ncase_id = 'motion-sweep'\nperiod_frames = 32\nyaw_deg = 0.0\npitch_deg = 0.0\nroll_deg = 0.0"
@@ -775,7 +771,6 @@ fn motion_capture_is_only_accepted_by_screenshot_and_carries_its_phase() {
         "record",
         "stop_recording",
         "stop_replay",
-        "stop_scenario",
     ] {
         let extra = match command {
             "visual_configure" => "\nid = 'configure'\nmode = 'multipass'",

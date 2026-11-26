@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-/// The test tools' settings: the tracking recorder, the replay, and the scenario runner.
+/// The test tools' settings: the tracking recorder and the replay.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct TestingConfig {
     /// Whether the tools can be started at all: from the debug UI, the director's key bindings,
@@ -10,9 +10,6 @@ pub struct TestingConfig {
     pub enabled: bool,
     /// Whether a recording keeps the tracked hand joints, which triple a frame's size.
     pub record_hand_joints: bool,
-    /// Where the scenario files are, or empty for the `testing` folder in the configuration
-    /// directory. A scenario names its recording relative to its own file.
-    pub scenario_dir: String,
     /// Whether the request file in the configuration directory is watched, so that a script can
     /// start and stop the tools without the debug UI.
     pub request_file: bool,
@@ -31,7 +28,6 @@ impl TestingConfig {
         Self {
             enabled: true,
             record_hand_joints: true,
-            scenario_dir: String::new(),
             request_file: true,
             teleport_timeout_s: 60.0,
             texture_census: false,

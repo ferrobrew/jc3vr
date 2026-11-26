@@ -46,7 +46,6 @@ pub enum Action {
     Spawn,
     ToggleRecording,
     ToggleReplay,
-    ToggleScenario,
     ToggleColliderView,
 }
 impl Action {
@@ -68,7 +67,6 @@ impl Action {
             Action::Spawn => "Spawn the configured tags",
             Action::ToggleRecording => "Start or stop a session recording",
             Action::ToggleReplay => "Replay the last tracking recording, or stop the replay",
-            Action::ToggleScenario => "Run the last scenario again, or stop it",
             Action::ToggleColliderView => "Show or hide the physics colliders",
         }
     }
@@ -235,13 +233,12 @@ pub fn run(action: Action) {
         Action::Spawn => spawn::request(),
         Action::ToggleRecording => crate::recorder::session_recording::toggle(),
         Action::ToggleReplay => crate::testing::toggle_replay(),
-        Action::ToggleScenario => crate::testing::toggle_scenario(),
         Action::ToggleColliderView => crate::controllers::physical_hands::collider_view::toggle(),
     }
 }
 
 /// The stock layout [`Keymap::new`] borrows.
-const DEFAULT_BINDINGS: [Binding; 17] = [
+const DEFAULT_BINDINGS: [Binding; 16] = [
     Binding {
         action: Action::ToggleSlowMotion,
         chord: Chord::plain(VK_NUMPAD1.0),
@@ -301,10 +298,6 @@ const DEFAULT_BINDINGS: [Binding; 17] = [
     Binding {
         action: Action::ToggleReplay,
         chord: Chord::ctrl(VK_MULTIPLY.0),
-    },
-    Binding {
-        action: Action::ToggleScenario,
-        chord: Chord::ctrl(VK_SUBTRACT.0),
     },
     Binding {
         action: Action::ToggleColliderView,

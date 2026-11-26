@@ -3,8 +3,8 @@
 //! frame in a capture harness session), and claims, reads, deletes, and acts on it.
 //!
 //! ```toml
-//! command = "scenario"  # record, stop_recording, replay, stop_replay, scenario, or stop_scenario
-//! path = "climb.toml"   # replay and scenario: relative to the scenario folder, or absolute
+//! command = "replay"    # record, stop_recording, replay, or stop_replay
+//! path = "C:/climb.jc3trk"  # replay: absolute
 //! start = "marker"      # replay: marker, bookmark, or in_place
 //! pacing = "real_time"  # replay: real_time or frame_locked
 //! ```
@@ -23,7 +23,6 @@ use crate::{
     testing::{
         benchmark::{BenchmarkError, BenchmarkRequest, BenchmarkTable},
         replay::{self, Pacing, ReplayOptions, StartMode},
-        scenario,
         stage::{self, StageRequest, StageTable},
         text::{self, TextError},
         visual,
@@ -88,8 +87,6 @@ enum Request {
         options: ReplayOptions,
     },
     StopReplay,
-    Scenario(PathBuf),
-    StopScenario,
     Screenshot {
         id: crate::screenshot::harness::RequestId,
         motion: Option<u32>,
@@ -190,8 +187,8 @@ enum RequestErrorKind {
     Parse(toml::de::Error),
     /// The command needs a path and has none.
     NoPath(Command),
-    /// The scenario folder is unknown, so a relative path cannot be resolved.
-    NoFolder,
+    /// The path is not absolute.
+    NotAbsolute,
     InvalidId(&'static str),
     InvalidPose(visual::PoseError),
     InvalidMotion(visual::MotionError),
@@ -368,12 +365,7 @@ impl std::fmt::Display for RequestError {
             RequestErrorKind::InvalidWarmup => {
                 write!(f, "visual_configure warmup_frames exceeds 300")
             }
-            RequestErrorKind::NoFolder => {
-                write!(
-                    f,
-                    "the scenario folder is unknown, so the path must be absolute"
-                )
-            }
+            RequestErrorKind::NotAbsolute => write!(f, "the path must be absolute"),
         }
     }
 }
@@ -392,8 +384,6 @@ enum Command {
     StopRecording,
     Replay,
     StopReplay,
-    Scenario,
-    StopScenario,
 }
 
 #[derive(Deserialize)]
@@ -612,9 +602,7 @@ fn parse(path: &Path, text: &str) -> Result<Request, RequestError> {
         if given.is_absolute() {
             return Ok(given);
         }
-        scenario::folder()
-            .map(|folder| folder.join(&given))
-            .ok_or_else(|| error(RequestErrorKind::NoFolder))
+        Err(error(RequestErrorKind::NotAbsolute))
     };
     let pose = match file.pose {
         Some(table) => {
@@ -1071,8 +1059,6 @@ fn parse(path: &Path, text: &str) -> Result<Request, RequestError> {
             },
         },
         Command::StopReplay => Request::StopReplay,
-        Command::Scenario => Request::Scenario(resolve(Command::Scenario)?),
-        Command::StopScenario => Request::StopScenario,
     })
 }
 
@@ -1249,8 +1235,6 @@ fn act(request: Request) {
             replay::start(path, options);
         }
         Request::StopReplay => replay::stop(),
-        Request::Scenario(path) => scenario::start(path),
-        Request::StopScenario => scenario::stop(),
     }
 }
 

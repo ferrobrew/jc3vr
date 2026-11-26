@@ -133,6 +133,7 @@ pub(crate) fn upgrade(file: &mut Table) -> Upgrade {
         Some(_) => Format::Unreadable,
     };
     let mut migrated: Vec<Migrated> = migrate_antialiasing_switch(file).into_iter().collect();
+    migrated.extend(migrate_retired_key_actions(file));
     if format == Format::Zero {
         migrated.extend(migrate_single_pass_group(file));
         for (path, superseded) in superseded() {
@@ -185,6 +186,35 @@ fn migrate_antialiasing_switch(file: &mut Table) -> Option<Migrated> {
     })
 }
 
+/// Remove, from a file of any format, the director's key bindings whose action no longer exists
+/// ([`RETIRED_KEY_ACTIONS`]), which would otherwise fail the bindings' deserialization and reset
+/// every binding the file holds. A file of format zero then holds the stock layout of its day
+/// without them, which [`superseded`] recognises.
+fn migrate_retired_key_actions(file: &mut Table) -> Option<Migrated> {
+    let Some(Value::Table(director)) = file.get_mut(DIRECTOR_TABLE) else {
+        return None;
+    };
+    let Some(Value::Table(keymap)) = director.get_mut(KEYMAP_TABLE) else {
+        return None;
+    };
+    let Some(Value::Array(bindings)) = keymap.get_mut(BINDINGS_KEY) else {
+        return None;
+    };
+    let retired = |binding: &Value| {
+        binding
+            .get(ACTION_KEY)
+            .and_then(Value::as_str)
+            .is_some_and(|action| RETIRED_KEY_ACTIONS.contains(&action))
+    };
+    let (removed, kept): (Vec<Value>, Vec<Value>) =
+        std::mem::take(bindings).into_iter().partition(retired);
+    *bindings = kept;
+    (!removed.is_empty()).then(|| Migrated {
+        path: format!("{DIRECTOR_TABLE}.{KEYMAP_TABLE}.{BINDINGS_KEY}"),
+        removed: Value::Array(removed).to_string(),
+    })
+}
+
 /// Remove, from a file of format zero, the single-pass group's switches that hold their old default
 /// (off), and the far field's share mode, so that the group follows its current default as a whole.
 /// The format did not write a setting's value as a choice, and the group was off when it was
@@ -226,6 +256,14 @@ fn migrate_single_pass_group(file: &mut Table) -> Vec<Migrated> {
     );
     migrated
 }
+
+/// The director's key bindings, under their tables, and a binding's action key.
+const DIRECTOR_TABLE: &str = "director";
+const KEYMAP_TABLE: &str = "keymap";
+const BINDINGS_KEY: &str = "bindings";
+const ACTION_KEY: &str = "action";
+/// The key actions a later build removed, as a settings file names them.
+const RETIRED_KEY_ACTIONS: [&str; 1] = ["ToggleScenario"];
 
 /// The single-pass group's switches that were off by default when format zero was current, under
 /// their table.
@@ -378,6 +416,7 @@ mod tests {
     use super::*;
     use crate::{
         config::load::{LoadReport, parse},
+        director::keymap::Binding,
         far_field::FarFieldMode,
         stereo::config::set_single_pass_feature,
     };
@@ -622,6 +661,38 @@ enabled = false
         let mut file: Table = toml::from_str(&toml::to_string(&stale).unwrap()).unwrap();
         let upgrade = upgrade(&mut file);
         assert_eq!(paths(&upgrade.migrated), ["director.keymap.bindings"]);
+    }
+
+    #[test]
+    fn a_retired_key_action_is_dropped_and_the_other_bindings_kept() {
+        let mut file: Table = toml::from_str(
+            r#"
+version = 1
+[[director.keymap.bindings]]
+action = "ToggleScenario"
+chord = { key = 109, ctrl = true }
+[[director.keymap.bindings]]
+action = "TogglePause"
+chord = { key = 120 }
+"#,
+        )
+        .unwrap();
+        let upgrade = upgrade(&mut file);
+        assert_eq!(paths(&upgrade.migrated), ["director.keymap.bindings"]);
+        let loaded = parse(&toml::to_string(&file).unwrap()).unwrap();
+        assert!(loaded.report.reset.is_empty(), "{:?}", loaded.report.reset);
+        assert_eq!(
+            loaded.config.director.keymap.bindings.as_ref(),
+            [Binding {
+                action: Action::TogglePause,
+                chord: Chord {
+                    key: 120,
+                    ctrl: false,
+                    shift: false,
+                    alt: false,
+                },
+            }]
+        );
     }
 
     #[test]

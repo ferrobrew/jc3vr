@@ -7,9 +7,7 @@ use std::{
 };
 
 pub(super) const REQUEST_BYTES: usize = 8 * 1024;
-pub(super) const SCENARIO_BYTES: usize = 64 * 1024;
 pub(super) const STRING_BYTES: usize = 4096;
-pub(super) const EXPECTATIONS: usize = 128;
 
 #[derive(Debug)]
 pub(crate) enum TextError {
