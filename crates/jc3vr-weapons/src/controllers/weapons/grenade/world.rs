@@ -120,7 +120,7 @@ fn replace(game: &GameTick<'_>, alive: &Strong) -> Replacement {
 /// `weapon` must be live, on the game thread outside the physics step.
 unsafe fn motion(weapon: &WeaponBase) -> Option<(Mat4, Release)> {
     let pose = unsafe { gun_pose(weapon) }?;
-    let world = Mat4::from_rotation_translation(pose.orientation, pose.position);
+    let world = pose.to_mat4();
     let first = unsafe { gun::guns(weapon) }.next().flatten()?;
     let owner = NonZeroUsize::new(weapon as *const WeaponBase as usize)?;
     let release = unsafe { first.m_PfxInstance.as_ref() }

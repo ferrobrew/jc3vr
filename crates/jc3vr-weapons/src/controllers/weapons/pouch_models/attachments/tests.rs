@@ -105,9 +105,7 @@ fn all_props_compare_the_applied_render_matrix_with_the_unchanged_input_target()
                         .model_to_cockpit(pouch.position)
                         .abs_diff_eq(wanted.pouch.position, 1e-5)
                 );
-                let expected_local =
-                    Mat4::from_rotation_translation(pouch.orientation, pouch.position)
-                        * on_pouch(&config, side);
+                let expected_local = pouch.to_mat4() * on_pouch(&config, side);
                 assert!(local.abs_diff_eq(expected_local, 1e-5));
                 let input = sample(attachment);
                 let local = [

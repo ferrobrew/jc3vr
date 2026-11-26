@@ -29,10 +29,9 @@
 
 mod stride;
 
-use body_rig::smooth::smoothstep_between;
+use body_rig::math::{shoulders::EYES_FORWARD_OF_SHOULDERS, smooth::smoothstep_between};
 use glam::{Mat3, Quat, Vec3};
 use jc3vr_body::controllers::{
-    body,
     body::rig::frames::SkeletonLandmarks,
     grab::{Candidate, GrabVolume},
 };
@@ -78,7 +77,7 @@ pub struct VolumesTuning {
     /// that a hand feeling for the pouch does not land in the socket.
     pub belt_out_fraction: f32,
     /// How far in front of the hip joints' line the front of the belly is, metres, beyond the eyes'
-    /// own offset in front of the shoulders ([`body::EYES_FORWARD_OF_SHOULDERS`]).
+    /// own offset in front of the shoulders ([`EYES_FORWARD_OF_SHOULDERS`]).
     pub belly_front_m: f32,
     /// How far below the shoulder joints the chest pouches' landmark sits, as a fraction of the
     /// torso: the upper chest.
@@ -496,12 +495,6 @@ pub fn magazine_pouch(
     )
 }
 
-/// The standing height of the hip joints as a fraction of the standing height: a generic
-/// anthropometric figure, which the body dimensions do not carry because it varies little between
-/// adults.
-#[cfg(test)]
-pub const HIP_HEIGHT_FRACTION: f32 = 0.53;
-
 /// The chest of a frame: its middle and its orientation, as [`BodyFrame::chest`].
 #[derive(Debug, Copy, Clone, PartialEq)]
 struct Girdle {
@@ -541,7 +534,7 @@ fn belt(frame: &BodyFrame, side: Hand) -> Vec3 {
 fn belt_at(frame: &BodyFrame, out: f32) -> Vec3 {
     let tuning = &HOLD.get().volumes;
     let rise = frame.torso() * tuning.belt_rise_fraction;
-    let belly_front = tuning.belly_front_m + body::EYES_FORWARD_OF_SHOULDERS;
+    let belly_front = tuning.belly_front_m + EYES_FORWARD_OF_SHOULDERS;
     frame.skeleton.hip_centre() + frame.pelvis * Vec3::new(out, rise, -belly_front)
 }
 
@@ -556,7 +549,7 @@ fn chest_pouch(volume: GrabVolume, frame: &BodyFrame, spec: &VolumeSpec, side: H
             * Vec3::new(
                 out,
                 -frame.torso() * tuning.chest_pouch_drop_fraction,
-                -(tuning.chest_front_m + body::EYES_FORWARD_OF_SHOULDERS),
+                -(tuning.chest_front_m + EYES_FORWARD_OF_SHOULDERS),
             );
     place(volume, landmark, chest.basis, spec, side, None)
 }

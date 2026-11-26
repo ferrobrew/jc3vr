@@ -9,7 +9,7 @@
 //! anywhere on the gun takes it, and the marker shows where. A grab of one
 //! ([`GrabVolume::WorldWeapon`]) takes the target whose segment is nearest the grabbing hand.
 
-use body_rig::geometry::{closest_on_segment, segment_distance};
+use body_rig::math::geometry::{closest_on_segment, segment_distance};
 use glam::Vec3;
 use jc3gi::character::inventory::WeaponSlot;
 use jc3vr_body::controllers::grab::{Candidate, GrabVolume};

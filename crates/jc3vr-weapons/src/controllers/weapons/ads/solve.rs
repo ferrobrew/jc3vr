@@ -23,7 +23,7 @@
 //! covers what the inputs themselves do in a step: the front hand coming onto or off the foregrip,
 //! or the raised gun changing hands.
 
-use body_rig::smooth::{follow_factor, smoothstep_between};
+use body_rig::math::smooth::{follow_factor, smoothstep_between};
 use glam::{Quat, Vec3};
 use jc3vr_body::controllers::hands::CockpitHand;
 use jc3vr_input::frame::Pose;

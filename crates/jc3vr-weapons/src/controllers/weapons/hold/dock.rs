@@ -16,7 +16,7 @@
 //! after it took the gun by a grab; what the release does is the table's decision
 //! ([`crate::controllers::loadout::grab::release`]).
 
-use body_rig::smooth::smoothstep;
+use body_rig::math::smooth::smoothstep;
 use jc3vr_input::frame::{Hand, Pose};
 
 use crate::controllers::{loadout::Socket, weapons::hold::tuning::HOLD};

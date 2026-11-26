@@ -8,7 +8,7 @@
 //! by it.
 
 use glam::{Mat4, Vec3};
-use jc3vr_body::controllers::hands::{held::away_from_palm, pose as hand_pose};
+use jc3vr_body::controllers::hands::held::away_from_palm;
 use jc3vr_input::frame::{Hand, Pose};
 
 use crate::controllers::weapons::reload::plan::WellFrame;
@@ -26,7 +26,7 @@ impl GunFrame {
     /// relative to it.
     pub fn of(wrist: Pose, in_wrist: Pose, world_scale: f32) -> Self {
         Self {
-            pose: hand_pose::mul(wrist, in_wrist),
+            pose: wrist.compose(in_wrist),
             world_scale,
         }
     }
@@ -57,14 +57,11 @@ pub fn gun_in_wrist(gun_world: Mat4, wrist_world: Pose, world_scale: f32) -> Opt
     if !(scale.is_finite() && rotation.is_finite() && translation.is_finite()) || scale.x <= 0.0 {
         return None;
     }
-    let to_wrist = hand_pose::inverse(wrist_world);
-    let local = hand_pose::mul(
-        to_wrist,
-        Pose {
-            position: translation,
-            orientation: rotation.normalize(),
-        },
-    );
+    let to_wrist = wrist_world.inverse();
+    let local = to_wrist.compose(Pose {
+        position: translation,
+        orientation: rotation.normalize(),
+    });
     Some(Pose {
         position: local.position / world_scale,
         orientation: local.orientation,
@@ -120,13 +117,8 @@ mod tests {
             orientation: Quat::from_rotation_x(0.2),
         };
         let scale = 1.0;
-        let gun_world = hand_pose::mul(wrist_world, gun_local);
-        let measured = gun_in_wrist(
-            Mat4::from_rotation_translation(gun_world.orientation, gun_world.position),
-            wrist_world,
-            scale,
-        )
-        .unwrap();
+        let gun_world = wrist_world.compose(gun_local);
+        let measured = gun_in_wrist(gun_world.to_mat4(), wrist_world, scale).unwrap();
         assert!((measured.position - gun_local.position).length() < 1e-4);
         assert!(measured.orientation.angle_between(gun_local.orientation) < 1e-4);
 

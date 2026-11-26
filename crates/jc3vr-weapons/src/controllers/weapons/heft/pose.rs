@@ -3,7 +3,7 @@
 
 use std::f32::consts::TAU;
 
-use body_rig::{rotation::rotation_error, smooth::smoothstep_between};
+use body_rig::math::{rotation::rotation_error, smooth::smoothstep_between};
 use glam::{FloatExt, Quat, Vec2, Vec3};
 use jc3vr_body::controllers::hands::CockpitHand;
 use jc3vr_input::frame::Hand;

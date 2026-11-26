@@ -15,7 +15,7 @@ use jc3vr_body::controllers::{
     grab::{GrabVolume, resolve::dock_target},
     hands,
     hands::{
-        ActiveHands, pose as hand_pose, tiers,
+        ActiveHands, tiers,
         tiers::{HandTier, TierState},
     },
     haptics, intent,
@@ -556,7 +556,7 @@ fn leave_in_brace(
     let (Some(holding), Some(bracing)) = (hands[holder.index()], hands[brace.index()]) else {
         return false;
     };
-    let gun = hand_pose::mul(holding.wrist, hold.geometry.gun);
+    let gun = holding.wrist.compose(hold.geometry.gun);
     let anchor = regions::into_gun(hold.geometry.gun, hold.geometry.foregrip, world_scale);
     let turn = regions::turn_on_wrist(bracing.wrist.orientation, gun.orientation);
     if !anchor.is_finite() || !turn.is_finite() || !hold::hand_over(game, brace, weapon) {

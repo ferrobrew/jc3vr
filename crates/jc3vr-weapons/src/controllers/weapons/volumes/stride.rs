@@ -7,7 +7,7 @@
 //! While Rico moves, the hip joints the volumes are built on are low-passed over about a stride, so
 //! the belt keeps the stride's average place; standing still, they follow the skeleton at once.
 
-use body_rig::smooth::critically_damped;
+use body_rig::math::smooth::damp;
 use glam::Vec3;
 use jc3vr_body::controllers::body::rig::frames::SkeletonLandmarks;
 use jc3vr_core::config::engine::{Invalid, positive};
@@ -104,14 +104,6 @@ impl StrideFilter {
             ..skeleton
         }
     }
-}
-
-/// The critically damped step of each axis of `value` toward `target`, with a time constant of
-/// `smoothing_s`.
-fn damp(value: Vec3, rate: Vec3, target: Vec3, smoothing_s: f32, dt: f32) -> (Vec3, Vec3) {
-    let axis = |i: usize| critically_damped(value[i], rate[i], target[i], smoothing_s, dt);
-    let (x, y, z) = (axis(0), axis(1), axis(2));
-    (Vec3::new(x.0, y.0, z.0), Vec3::new(x.1, y.1, z.1))
 }
 
 #[cfg(test)]

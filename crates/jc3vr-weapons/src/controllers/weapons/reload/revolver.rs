@@ -15,6 +15,7 @@
 
 use std::f32::consts::{FRAC_PI_2, TAU};
 
+use body_rig::math::smooth::smoothstep;
 use glam::{Quat, Vec3};
 use jc3vr_input::frame::Hand;
 
@@ -215,11 +216,6 @@ fn roll_dps(last: Quat, now: Quat, dt: f32) -> Option<f32> {
 /// `elevation_deg` above the horizon.
 fn muzzle_up(orientation: Quat, elevation_deg: f32) -> bool {
     (orientation * Vec3::NEG_Z).y >= elevation_deg.to_radians().sin()
-}
-
-fn smoothstep(t: f32) -> f32 {
-    let t = t.clamp(0.0, 1.0);
-    t * t * (3.0 - 2.0 * t)
 }
 
 #[cfg(test)]

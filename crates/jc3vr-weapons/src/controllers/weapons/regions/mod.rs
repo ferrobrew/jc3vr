@@ -32,7 +32,7 @@ pub mod shape;
 
 use std::time::{Duration, Instant};
 
-use body_rig::smooth::smoothstep;
+use body_rig::math::smooth::smoothstep;
 use glam::{Quat, Vec3};
 pub use jc3vr_body::controllers::held::{GripSlide, slide_offset, slide_on_bone};
 use jc3vr_input::frame::Hand;

@@ -24,11 +24,7 @@ use jc3gi::{
     },
     equipment::weapon::{WeaponBase, WeaponData, WeaponState},
 };
-use jc3vr_body::controllers::{
-    aim::gun,
-    hands::{grip, pose as hand_pose},
-    physics,
-};
+use jc3vr_body::controllers::{aim::gun, hands::grip, physics};
 use jc3vr_input::frame::Pose;
 
 use crate::controllers::weapons::{
@@ -313,7 +309,7 @@ pub(crate) unsafe fn pose_on_bone(
         Mat4::from(owner.m_WorldMatrixT1),
         Mat4::from(gun.m_WorldMatrixT1),
     )?;
-    Some(hand_pose::mul(hand_pose::inverse(on_bone), in_model))
+    Some(on_bone.inverse().compose(in_model))
 }
 
 /// The weapon `owner` wields, to act on.

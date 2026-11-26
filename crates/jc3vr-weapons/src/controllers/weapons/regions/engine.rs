@@ -34,7 +34,7 @@ pub(crate) unsafe fn shape(weapon: &WeaponBase, hand: Hand) -> Option<GunShape> 
     // The rigid part of the gun's matrix: a holstered gun's is drawn scaled, and its model's box is
     // in the unscaled frame.
     let world = unsafe { gun_pose(weapon) }?;
-    let to_gun = Mat4::from_rotation_translation(world.orientation, world.position).inverse();
+    let to_gun = world.to_mat4().inverse();
     let grip_hand = match hand.other() {
         Hand::Left => WeaponGripHand::E_WEAPON_GRIP_HAND_LEFT,
         Hand::Right => WeaponGripHand::E_WEAPON_GRIP_HAND_RIGHT,

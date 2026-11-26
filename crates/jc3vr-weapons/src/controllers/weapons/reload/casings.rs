@@ -6,6 +6,7 @@
 
 use std::time::Instant;
 
+use body_rig::math::constants::GRAVITY_MPS2;
 use glam::{Mat4, Quat, Vec3};
 use parking_lot::Mutex;
 
@@ -16,9 +17,6 @@ use crate::controllers::weapons::{
         tuning::{CasingsTuning, RELOAD},
     },
 };
-
-/// The world's gravity, metres per second squared, down the world's Y.
-const GRAVITY_MPS2: f32 = 9.81;
 
 /// One casing to drop: its world matrix as it leaves its chamber, and the way out of the chamber
 /// (out of the cylinder's rear), world space.

@@ -34,9 +34,9 @@
 //! release distance from the foregrip; or when the weapon leaves the hands. Engaging and releasing
 //! blend over the tuned time ([`ForegripTuning::blend_s`]).
 
-use body_rig::smooth::smoothstep_between;
+use body_rig::math::smooth::smoothstep_between;
 use glam::{Quat, Vec3};
-use jc3vr_body::controllers::hands::{CockpitHand, pose as hand_pose};
+use jc3vr_body::controllers::hands::CockpitHand;
 use jc3vr_input::frame::{Hand, Pose};
 use parking_lot::Mutex;
 use serde::Deserialize;
@@ -256,14 +256,13 @@ pub fn hold_pose(
 
 /// The foregrip's point in the frame `holder` is given in.
 pub fn foregrip_point(holder: &CockpitHand, geometry: &GripGeometry) -> Vec3 {
-    hand_pose::mul(
-        holder.wrist,
-        Pose {
+    holder
+        .wrist
+        .compose(Pose {
             position: geometry.foregrip,
             orientation: Quat::IDENTITY,
-        },
-    )
-    .position
+        })
+        .position
 }
 
 /// The hands in a two-handed pose.
@@ -294,7 +293,7 @@ pub fn two_hand(
     let pivot = holder.grip.position;
     let to_off = off.grip.position - pivot;
     let line = to_off.try_normalize()?;
-    let pivot_in_wrist = hand_pose::mul(hand_pose::inverse(holder.wrist), holder.grip).position;
+    let pivot_in_wrist = holder.wrist.inverse().compose(holder.grip).position;
     let toward_foregrip =
         (holder.wrist.orientation * (geometry.foregrip - pivot_in_wrist)).try_normalize()?;
     let span_fade = span_fade(to_off.length(), config.min_span_m);

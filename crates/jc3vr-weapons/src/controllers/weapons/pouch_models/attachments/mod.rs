@@ -126,8 +126,7 @@ pub(crate) fn placement(
             Err(Missing::Transform)
         };
     let local = pouch.and_then(|pose| {
-        let local = Mat4::from_rotation_translation(pose.orientation, pose.position)
-            * on_pouch(config, wanted.side);
+        let local = pose.to_mat4() * on_pouch(config, wanted.side);
         if !local.is_finite() {
             Err(Missing::Transform)
         } else if model.is_none() {

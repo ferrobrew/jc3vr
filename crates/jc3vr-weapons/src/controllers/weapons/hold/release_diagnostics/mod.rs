@@ -8,7 +8,7 @@
 
 use std::time::Duration;
 
-use body_rig::rotation::{angular_velocity, shortest};
+use body_rig::math::rotation::{angular_velocity, shortest};
 use glam::{Quat, Vec3};
 use jc3gi::character::inventory::WeaponSlot;
 use jc3vr_body::controllers::{clock::TimeScale, physics::bodies::BodyError, telemetry::Thrown};

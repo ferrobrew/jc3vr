@@ -24,7 +24,7 @@
 
 use std::time::{Duration, Instant};
 
-use body_rig::rotation::angle_between;
+use body_rig::math::rotation::angle_between;
 use glam::Quat;
 use jc3gi::{
     character::character::Character,

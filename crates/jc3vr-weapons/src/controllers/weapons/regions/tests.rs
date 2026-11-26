@@ -1,5 +1,5 @@
 use glam::{Quat, Vec3};
-use jc3vr_body::controllers::{fingers::grip::catalogue::GripPose, hands::pose as hand_pose};
+use jc3vr_body::controllers::fingers::grip::catalogue::GripPose;
 use jc3vr_input::frame::Pose;
 use pretty_assertions::assert_eq;
 
@@ -235,17 +235,15 @@ fn a_sliding_gun_sits_with_its_anchor_in_the_palm_turned_as_it_was_braced() {
         turn: gun_on_wrist,
         aligned: 0.0,
     };
-    let attach = hand_pose::mul(wrist, grip);
-    let gun = hand_pose::mul(attach, slide_offset(&slide, grip));
+    let attach = wrist.compose(grip);
+    let gun = attach.compose(slide_offset(&slide, grip));
     // The anchor is where the grip's attach point is.
-    let anchor_world = hand_pose::mul(
-        gun,
-        Pose {
+    let anchor_world = gun
+        .compose(Pose {
             position: anchor,
             orientation: Quat::IDENTITY,
-        },
-    )
-    .position;
+        })
+        .position;
     assert!(close(anchor_world, attach.position));
     // At the start the gun turns on the wrist as it did when the hand braced it.
     let on_wrist = turn_on_wrist(wrist.orientation, gun.orientation);
@@ -306,14 +304,11 @@ fn a_slide_measured_on_the_wrist_frame_holds_the_gun_there_on_a_differently_orie
         turn: turn_on_wrist(wrist_frame, gun_world),
         aligned: 0.0,
     };
-    let attach = hand_pose::mul(bone, grip);
-    let placed = hand_pose::mul(
-        attach,
-        slide_offset(&slide_on_bone(slide, frame_on_bone), grip),
-    );
+    let attach = bone.compose(grip);
+    let placed = attach.compose(slide_offset(&slide_on_bone(slide, frame_on_bone), grip));
     assert!(placed.orientation.angle_between(gun_world) < 1e-4);
     // Composed on the bone without the conversion, the gun turns by the bone's offset.
-    let unconverted = hand_pose::mul(attach, slide_offset(&slide, grip));
+    let unconverted = attach.compose(slide_offset(&slide, grip));
     assert!(unconverted.orientation.angle_between(gun_world) > 0.5);
 }
 

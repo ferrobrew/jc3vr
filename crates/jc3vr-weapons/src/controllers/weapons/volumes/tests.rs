@@ -1,3 +1,7 @@
+use body_rig::{
+    body::HIP_HEIGHT_SHARE,
+    math::shoulders::{eyes_to_right_shoulder, shoulders},
+};
 use jc3vr_body::controllers::{body::BodyDimensions, grab::grab_volume};
 
 use super::*;
@@ -24,12 +28,16 @@ const BODIES: [BodyDimensions; 3] = [DIMS, BodyDimensions::GENERIC_ADULT, TALL];
 /// A skeleton built to the dimensions, with its eyes at the origin, turned by `yaw`.
 fn ideal_skeleton(dims: &BodyDimensions, yaw: f32) -> SkeletonLandmarks {
     let turn = Quat::from_rotation_y(yaw);
-    let shoulders = body::shoulder_positions(Vec3::ZERO, turn, dims);
+    let shoulders = shoulders(
+        Vec3::ZERO,
+        turn,
+        eyes_to_right_shoulder(dims.eye_height - dims.shoulder_height, dims.shoulder_width),
+    );
     let pelvis = turn
         * Vec3::new(
             0.0,
-            dims.height * HIP_HEIGHT_FRACTION - dims.eye_height,
-            body::EYES_FORWARD_OF_SHOULDERS,
+            dims.height * HIP_HEIGHT_SHARE - dims.eye_height,
+            EYES_FORWARD_OF_SHOULDERS,
         );
     let half = turn * Vec3::new(dims.shoulder_width * 0.22, 0.0, 0.0);
     SkeletonLandmarks {

@@ -12,7 +12,7 @@
 //! travels from where the hand left it onto the axis and down to the seat depth, turning onto the
 //! axis as it goes, and seats when it arrives. Anything else let go of drops.
 
-use body_rig::smooth::smoothstep;
+use body_rig::math::smooth::smoothstep;
 use glam::{Quat, Vec3};
 use jc3vr_input::frame::Hand;
 

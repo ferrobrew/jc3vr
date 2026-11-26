@@ -13,7 +13,7 @@
 //! image, so the image is correct at the target and the parallax between the eyes vanishes there.
 
 use glam::Vec3;
-use jc3vr_body::controllers::{aim::ray::Ray, hands::pose as hand_pose};
+use jc3vr_body::controllers::aim::ray::Ray;
 use jc3vr_input::frame::{Hand, Pose};
 use jc3vr_view::controllers::weapons::scope::lens_frame::LensDraw;
 use serde::Deserialize;
@@ -61,7 +61,7 @@ impl SightAnchor {
         focus_m: f32,
         config: &LensTuning,
     ) -> SightAnchor {
-        let to_wrist = hand_pose::inverse(wrist);
+        let to_wrist = wrist.inverse();
         SightAnchor {
             hand,
             origin: to_wrist.position + to_wrist.orientation * ray.origin,

@@ -296,7 +296,7 @@ pub(crate) fn input_tick(game: &GameTick<'_>, frames: Option<Frames>, shown: &[S
         slot.bone_local = local.and_then(|local| {
             // SAFETY: the game stage owns this live character observation.
             let bone = unsafe { grip::bone_model_pose(owner, prop.bone()) }?;
-            let bone = Mat4::from_rotation_translation(bone.orientation, bone.position);
+            let bone = bone.to_mat4();
             let local = bone.inverse() * local;
             local.is_finite().then_some(local)
         });
@@ -456,7 +456,7 @@ pub unsafe fn render_frame(dtf: f32) {
         let bone = slot.bone_local.and_then(|local| {
             // SAFETY: this is the live local character, observed on the render thread.
             let bone = unsafe { grip::bone_model_pose(owner, prop.bone()) }?;
-            let bone = Mat4::from_rotation_translation(bone.orientation, bone.position);
+            let bone = bone.to_mat4();
             bone_render_matrix(character, bone, local, dtf)
         });
         let Some(matrix) = bone.or_else(|| render_matrix(character, local, dtf)) else {

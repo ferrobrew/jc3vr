@@ -11,7 +11,7 @@ use jc3vr_body::controllers::{
     grab,
     grab::{Candidate, GrabVolume, GripTarget, Mark, MarkAt, MarkStyle, Shown, resolve},
     hands,
-    hands::{ActiveHands, CockpitHand, pose as hand_pose},
+    hands::{ActiveHands, CockpitHand},
     haptics, intent, locomotion,
     mode::{AirborneVariant, Mode, OnFootVariant},
     physics::local_player::LocalPlayer,
@@ -721,7 +721,7 @@ struct GunOnHand {
 impl GunOnHand {
     /// The gun's own frame in the cockpit frame, with the position in cockpit metres.
     fn pose(&self) -> Pose {
-        hand_pose::mul(self.hand.wrist, self.geometry.gun)
+        self.hand.wrist.compose(self.geometry.gun)
     }
 }
 

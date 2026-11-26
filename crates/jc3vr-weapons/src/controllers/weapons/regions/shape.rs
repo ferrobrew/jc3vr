@@ -6,9 +6,9 @@
 //! up, -Z toward the muzzle, and the origin at the attach point, which sits in the palm of the hand
 //! holding the pistol grip.
 
-use body_rig::geometry::closest_on_segment;
+use body_rig::math::geometry::closest_on_segment;
 use glam::{Quat, Vec3};
-use jc3vr_body::controllers::{fingers::grip::catalogue::GripPose, hands::pose as hand_pose};
+use jc3vr_body::controllers::fingers::grip::catalogue::GripPose;
 use jc3vr_input::frame::Pose;
 
 use crate::controllers::weapons::hold::tuning::HOLD;
@@ -255,14 +255,12 @@ pub fn turn_on_wrist(wrist: Quat, gun: Quat) -> Quat {
 /// `point` in the frame `gun` gives, in a frame of `scale` gun metres per unit: the gun's pose is
 /// in that frame's units, and the result in the gun's metres.
 pub fn into_gun(gun: Pose, point: Vec3, scale: f32) -> Vec3 {
-    hand_pose::mul(
-        hand_pose::inverse(gun),
-        Pose {
+    gun.inverse()
+        .compose(Pose {
             position: point,
             orientation: Quat::IDENTITY,
-        },
-    )
-    .position
+        })
+        .position
         * scale
 }
 

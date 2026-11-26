@@ -15,7 +15,7 @@ use jc3gi::{
 };
 use jc3vr_body::controllers::{
     aim::{config::AimConfig, gun, ray, sights},
-    hands::{ik::TickTarget, late, pose as hand_pose},
+    hands::{ik::TickTarget, late},
     held::{
         guns::HeftClass,
         native::{gun_count, gun_ptr},
@@ -392,7 +392,7 @@ pub unsafe fn measure_geometry(
         fire_point,
         sight.as_ref(),
     )?;
-    let to_wrist = hand_pose::inverse(target.wrist);
+    let to_wrist = target.wrist.inverse();
     let barrel = (to_wrist.orientation * barrel_world.direction).try_normalize()?;
     let sight = (to_wrist.position + to_wrist.orientation * barrel_world.origin) / world_scale;
     let muzzle_world = (Mat4::from(first.m_WorldMatrixT1) * fire_point)
@@ -408,26 +408,20 @@ pub unsafe fn measure_geometry(
     let native = unsafe { base.GetGripPosition(grip_hand, &mut grip) };
     let foregrip = if native {
         let world = Mat4::from(grip).w_axis.truncate();
-        let local = hand_pose::mul(
-            to_wrist,
-            Pose {
-                position: world,
-                orientation: Quat::IDENTITY,
-            },
-        );
+        let local = to_wrist.compose(Pose {
+            position: world,
+            orientation: Quat::IDENTITY,
+        });
         local.position / world_scale
     } else {
         barrel * HANDLING.get().foregrip.fallback_distance_m
     };
     let (_, gun_rotation, gun_position) =
         Mat4::from(first.m_WorldMatrixT1).to_scale_rotation_translation();
-    let gun = hand_pose::mul(
-        to_wrist,
-        Pose {
-            position: gun_position,
-            orientation: gun_rotation.normalize(),
-        },
-    );
+    let gun = to_wrist.compose(Pose {
+        position: gun_position,
+        orientation: gun_rotation.normalize(),
+    });
     let gun = Pose {
         position: gun.position / world_scale,
         orientation: gun.orientation,

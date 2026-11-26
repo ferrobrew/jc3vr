@@ -79,7 +79,7 @@ pub(crate) fn socket_world_pose(socket: Socket) -> Option<Mat4> {
         .find(|attachment| attachment.socket == socket && attachment.hand.is_none())?
         .pose
         .ok()
-        .map(|pose| Mat4::from_rotation_translation(pose.orientation, pose.position))
+        .map(|pose| pose.to_mat4())
 }
 
 /// What a socket's volume is for.
@@ -227,10 +227,7 @@ pub(crate) unsafe fn socket_points(owner: &Character, inputs: &SocketInputs) -> 
             && matches!(socket, Socket::Hip(_))
             && let Ok(pose) = pose
         {
-            grenade::safe::place_stowed(
-                socket,
-                Mat4::from_rotation_translation(pose.orientation, pose.position),
-            );
+            grenade::safe::place_stowed(socket, pose.to_mat4());
         }
         if matches!(source, PoseSource::VisibleGrip { .. }) || safe_occupant {
             for hand in Hand::BOTH {
@@ -541,7 +538,7 @@ unsafe fn grip_point(weapon: &WeaponBase) -> Option<Vec3> {
 /// The bone `socket` places a weapon on, bone-to-world.
 unsafe fn bone_world(owner: &Character, to_world: Mat4, socket: Socket) -> Option<Mat4> {
     let pose = unsafe { grip::bone_model_pose(owner, sockets::bone(socket)) }?;
-    let bone = to_world * Mat4::from_rotation_translation(pose.orientation, pose.position);
+    let bone = to_world * pose.to_mat4();
     bone.is_finite().then_some(bone)
 }
 
