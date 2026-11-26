@@ -1,9 +1,10 @@
 //! The published per-frame controller snapshot ([`ControllerFrame`]) and the input edge latch.
 //!
-//! The VR runtime ([`crate::vr::input`]) produces one [`ControllerFrame`] per rendered frame, on the
-//! main thread inside the VR frame loop: it syncs the OpenXR actions, locates the grip and aim
-//! spaces at the frame's predicted display time, re-bases them against the recenter baseline exactly
-//! as the eye views are, and calls [`publish`]. Everything downstream reads the snapshot:
+//! The VR runtime (`vr::input` in the payload) produces one [`ControllerFrame`] per rendered
+//! frame, on the main thread inside the VR frame loop: it syncs the OpenXR actions, locates the
+//! grip and aim spaces at the frame's predicted display time, re-bases them against the recenter
+//! baseline exactly as the eye views are, and calls [`publish`]. Everything downstream reads the
+//! snapshot:
 //!
 //! - [`latest`] (a copy) or [`with_latest`] (a borrow under the slot lock) for the current state:
 //!   poses, velocities, tracking validity, and every input value. Both hide a frame older than
@@ -23,8 +24,8 @@
 //! The values are raw: they are read from the always-active `hands` set's actions, which are named
 //! for the physical inputs (trigger, squeeze, A, B, ...), so they do not depend on the active mode
 //! set, and mapping them to game actions happens in the bindings layer. The semantic actions are
-//! published beside the frame ([`crate::vr::input::semantic::frame`]). The only derived states
-//! are the digital presses ([`Button::TriggerPress`], [`Button::SqueezePress`],
+//! published beside the frame (`vr::input::semantic::frame` in the payload). The only derived
+//! states are the digital presses ([`Button::TriggerPress`], [`Button::SqueezePress`],
 //! [`Button::TrackpadPressLeft`], and [`Button::TrackpadPressRight`]), thresholded here with
 //! hysteresis ([`PressRules`]) so that their edges are latched at frame rate like every other
 //! button.
@@ -35,10 +36,7 @@ use glam::{Quat, Vec2, Vec3};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    config::engine::{Invalid, range},
-    input_core::{motion, semantic::SemanticSet},
-};
+use crate::{motion, semantic::SemanticSet};
 
 /// A hand, and the index of its entry in the per-hand arrays ([`ControllerFrame::hands`],
 /// [`Edges`]). The left hand is index 0.
@@ -101,10 +99,10 @@ impl Hand {
 }
 
 /// The mode action set that was active when a frame was sampled. The mode detector selects one per
-/// sim tick through [`crate::vr::input::set_active_action_set`]. Each is one of the semantic sets
-/// ([`crate::vr::input::semantic`]), active beside the always-active `hands` and `global` sets.
-/// The raw inputs come from `hands` whichever is active, so the choice changes only which semantic
-/// actions are read.
+/// sim tick through `vr::input::set_active_action_set` in the payload. Each is one of the semantic
+/// sets (`vr::input::semantic` in the payload), active beside the always-active `hands` and
+/// `global` sets. The raw inputs come from `hands` whichever is active, so the choice changes only
+/// which semantic actions are read.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Default)]
 pub enum ActionSetKind {
     /// On foot, swimming, falling, and the parachute, including grapple traversal.
@@ -394,17 +392,6 @@ impl PressThresholds {
             value >= self.press
         }
     }
-
-    /// Check that both thresholds are in `[0, 1]` and the release does not exceed the press.
-    /// `name` is the pair's settings path, which leads the failure's message.
-    pub(crate) fn validate(self, name: &str) -> Result<(), Invalid> {
-        range(&format!("{name}.press"), self.press, 0.0, 1.0)?;
-        range(&format!("{name}.release"), self.release, 0.0, 1.0)?;
-        if self.release > self.press {
-            return Err(Invalid(format!("{name}.release exceeds press")));
-        }
-        Ok(())
-    }
 }
 
 /// Which grip reading derives [`Button::SqueezePress`] on one controller, with its thresholds.
@@ -671,7 +658,7 @@ pub fn take_edges() -> Edges {
 /// Publish a frame: fold its button transitions into the edge latch and make it the latest. The
 /// caller leaves [`ControllerFrame::sequence`] and [`ControllerFrame::published_at`] to this
 /// function, which stamps them.
-pub(crate) fn publish(frame: ControllerFrame) -> (u64, Instant) {
+pub fn publish(frame: ControllerFrame) -> (u64, Instant) {
     let mut slot = SLOT.lock();
     let frame = slot.publish(frame, Instant::now());
     motion::record(frame);
@@ -682,7 +669,7 @@ pub(crate) fn publish(frame: ControllerFrame) -> (u64, Instant) {
 /// or the frame loop stopped sampling. Buttons held at the time produce no release edge; consumers
 /// treat a missing frame as everything released. The first frame published after a clear has no
 /// baseline, so it produces no edges either: a button held across the clear is not pressed anew.
-pub(crate) fn clear() {
+pub fn clear() {
     SLOT.lock().clear();
     motion::clear();
 }

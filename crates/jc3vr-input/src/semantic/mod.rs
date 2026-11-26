@@ -1,13 +1,13 @@
 //! The semantic action vocabulary: the action sets, each set's actions, their OpenXR types, and
 //! their localized names. The OpenXR side (the action and set handles, the suggested bindings, the
-//! schema version, and the per-frame state) lives in [`crate::vr::input::semantic`].
+//! schema version, and the per-frame state) lives in `vr::input::semantic` in the payload.
 
-pub(crate) mod vocabulary;
+pub mod vocabulary;
 
 #[cfg(test)]
 mod tests;
 
-use crate::input_core::{
+use crate::{
     frame::ActionSetKind,
     semantic::vocabulary::{
         GlobalAction, HelicopterAction, LandVehicleAction, MenuAction, OnFootAction, PlaneAction,
@@ -17,7 +17,7 @@ use crate::input_core::{
 
 /// An action's OpenXR type.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub(crate) enum ActionKind {
+pub enum ActionKind {
     Bool,
     /// A scalar. Actions that need the mod's own press thresholds are floats, since the runtime
     /// thresholds a boolean action bound to a scalar input with its own hysteresis.
@@ -27,7 +27,7 @@ pub(crate) enum ActionKind {
 
 impl ActionKind {
     /// A short tag for logs, the debug UI, and the schema snapshot.
-    pub(crate) const fn label(self) -> &'static str {
+    pub const fn label(self) -> &'static str {
         match self {
             ActionKind::Bool => "bool",
             ActionKind::Float => "float",
@@ -38,17 +38,17 @@ impl ActionKind {
 
 /// One action's definition.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) struct ActionDef {
+pub struct ActionDef {
     /// The OpenXR action name, unique within its set.
-    pub(crate) name: &'static str,
-    pub(crate) kind: ActionKind,
+    pub name: &'static str,
+    pub kind: ActionKind,
     /// The name the runtime's binding interface shows.
-    pub(crate) localized_name: &'static str,
+    pub localized_name: &'static str,
 }
 
 /// A semantic action set.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub(crate) enum SemanticSet {
+pub enum SemanticSet {
     Global,
     OnFoot,
     Wingsuit,
@@ -60,7 +60,7 @@ pub(crate) enum SemanticSet {
 
 impl SemanticSet {
     /// Every set, in creation and stash order.
-    pub(crate) const ALL: [SemanticSet; 7] = [
+    pub const ALL: [SemanticSet; 7] = [
         SemanticSet::Global,
         SemanticSet::OnFoot,
         SemanticSet::Wingsuit,
@@ -71,7 +71,7 @@ impl SemanticSet {
     ];
 
     /// The set a mode selects.
-    pub(crate) const fn of(kind: ActionSetKind) -> SemanticSet {
+    pub const fn of(kind: ActionSetKind) -> SemanticSet {
         match kind {
             ActionSetKind::OnFoot => SemanticSet::OnFoot,
             ActionSetKind::Wingsuit => SemanticSet::Wingsuit,
@@ -83,12 +83,12 @@ impl SemanticSet {
     }
 
     /// The index of this set in [`ALL`](Self::ALL).
-    pub(crate) const fn index(self) -> usize {
+    pub const fn index(self) -> usize {
         self as usize
     }
 
     /// The OpenXR action set name.
-    pub(crate) const fn name(self) -> &'static str {
+    pub const fn name(self) -> &'static str {
         match self {
             SemanticSet::Global => "global",
             SemanticSet::OnFoot => "on_foot",
@@ -101,7 +101,7 @@ impl SemanticSet {
     }
 
     /// The localized set name the runtime's binding interface shows.
-    pub(crate) const fn localized_name(self) -> &'static str {
+    pub const fn localized_name(self) -> &'static str {
         match self {
             SemanticSet::Global => "Always",
             SemanticSet::OnFoot => "On foot, falling, and parachute",
@@ -114,7 +114,7 @@ impl SemanticSet {
     }
 
     /// The set's actions, in creation and stash order.
-    pub(crate) const fn actions(self) -> &'static [ActionDef] {
+    pub const fn actions(self) -> &'static [ActionDef] {
         match self {
             SemanticSet::Global => GlobalAction::DEFS,
             SemanticSet::OnFoot => OnFootAction::DEFS,

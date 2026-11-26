@@ -11,6 +11,7 @@ use crate::{
     },
     hooks::character::config::BODY_IK_CONFIG,
     ui::controllers::{locomotion, unarmed},
+    vr::input::config::validate_thresholds,
 };
 
 pub(super) fn devices(ui: &mut Ui, c: &mut ControllersConfig) {
@@ -158,7 +159,7 @@ fn set_threshold(pair: &mut PressThresholds, press: bool, value: f32) {
             release: value,
         }
     };
-    if candidate.validate("input").is_ok() {
+    if validate_thresholds(candidate, "input").is_ok() {
         *pair = candidate;
     }
 }

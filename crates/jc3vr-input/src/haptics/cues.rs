@@ -4,7 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::input_core::haptics::vocabulary::Primitive;
+use crate::haptics::vocabulary::Primitive;
 
 /// The groups of sources a player switches on and off together.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]

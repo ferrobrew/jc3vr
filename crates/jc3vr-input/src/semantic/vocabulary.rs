@@ -2,28 +2,28 @@
 //! and the localized name the runtime's binding interface shows.
 //!
 //! An action's name is part of the player's saved bindings, so a name never changes meaning: a
-//! rename is a removal plus an addition (see [`crate::vr::input::semantic::SCHEMA_VERSION`]). The
-//! localized names are English sentence case and mention the overloads the game or the mod resolves
-//! within the one action, such as a tap and a hold.
+//! rename is a removal plus an addition (see `vr::input::semantic::SCHEMA_VERSION` in the
+//! payload). The localized names are English sentence case and mention the overloads the game or
+//! the mod resolves within the one action, such as a tap and a hold.
 
-use crate::input_core::semantic::{ActionDef, ActionKind, SemanticSet};
+use crate::semantic::{ActionDef, ActionKind, SemanticSet};
 
 /// One semantic action of any set: the set, and the action's index in the set's `ALL` table. The
 /// binding tables name actions through their set's enum and convert them to this.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub(crate) struct ActionId {
-    pub(crate) set: SemanticSet,
-    pub(crate) index: u8,
+pub struct ActionId {
+    pub set: SemanticSet,
+    pub index: u8,
 }
 
 impl ActionId {
     /// The action's index, for the per-action tables.
-    pub(crate) const fn index(self) -> usize {
+    pub const fn index(self) -> usize {
         self.index as usize
     }
 
     /// Press thresholds belong to the action, independently of its suggested binding.
-    pub(crate) fn float_press(self) -> Option<FloatPress> {
+    pub fn float_press(self) -> Option<FloatPress> {
         use FloatPress::{Grip, Trackpad, Trigger};
         match self.set {
             SemanticSet::OnFoot => match OnFootAction::ALL[self.index()] {
@@ -75,7 +75,7 @@ impl ActionId {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) enum FloatPress {
+pub enum FloatPress {
     Trigger,
     Grip,
     Trackpad,
@@ -95,17 +95,17 @@ macro_rules! semantic_actions {
     ) => {
         $(#[$meta])*
         #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-        pub(crate) enum $name {
+        pub enum $name {
             $( $(#[$vmeta])* $variant, )+
         }
 
         impl $name {
             /// Every action, in creation and stash order.
-            pub(crate) const ALL: &'static [$name] = &[$($name::$variant,)+];
+            pub const ALL: &'static [$name] = &[$($name::$variant,)+];
 
             /// The name, type, and localized name of every action, indexed like
             /// [`ALL`](Self::ALL).
-            pub(crate) const DEFS: &'static [ActionDef] = &[$(
+            pub const DEFS: &'static [ActionDef] = &[$(
                 ActionDef {
                     name: $action,
                     kind: ActionKind::$kind,
@@ -114,7 +114,7 @@ macro_rules! semantic_actions {
             )+];
 
             /// The action as an [`ActionId`].
-            pub(crate) const fn id(self) -> ActionId {
+            pub const fn id(self) -> ActionId {
                 ActionId {
                     set: SemanticSet::$set,
                     index: self as u8,

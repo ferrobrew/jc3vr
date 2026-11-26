@@ -8,16 +8,16 @@
 //!   on the input thread and samples the desktop.
 //! - [`desktop`] describes one desktop input sample.
 
-pub(crate) mod desktop;
-pub(crate) mod state;
+pub mod desktop;
+mod state;
 
-pub(crate) use crate::input_core::capture::state::{
+pub use crate::capture::state::{
     CaptureDriver, DebugUiInput, debug_ui_capture, desktop_input_observation, input_captured,
     publish_capture, register_driver, update_debug_ui_capture,
 };
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(crate) enum PanelMode {
+pub enum PanelMode {
     #[default]
     Hidden,
     Editing,
@@ -25,7 +25,7 @@ pub(crate) enum PanelMode {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum PanelRequest {
+pub enum PanelRequest {
     Open,
     Hide,
     AllowGameplay,
@@ -34,7 +34,7 @@ pub(crate) enum PanelRequest {
 /// A valid neutral sample covers triggers, grips, buttons, sticks, pointer buttons, and keys.
 /// The adapter must also finish scroll/text composition and any consumed shortcut episode.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct InputObservation {
+pub struct InputObservation {
     pub focused: bool,
     pub tracking_ready: bool,
     pub controls_neutral: bool,
@@ -42,7 +42,7 @@ pub(crate) struct InputObservation {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum OwnershipBlocker {
+pub enum OwnershipBlocker {
     Editing,
     TrackingRecovery,
     AwaitingNeutral,
@@ -51,7 +51,7 @@ pub(crate) enum OwnershipBlocker {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(crate) struct EditCapture {
+pub struct EditCapture {
     pub pointer: bool,
     pub grip_drag: bool,
     pub keyboard: bool,
@@ -60,13 +60,13 @@ pub(crate) struct EditCapture {
 }
 
 impl EditCapture {
-    pub(crate) fn any(self) -> bool {
+    pub fn any(self) -> bool {
         self.pointer || self.grip_drag || self.keyboard || self.text || self.scroll
     }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct OwnershipSnapshot {
+pub struct OwnershipSnapshot {
     pub mode: PanelMode,
     pub visible: bool,
     pub editing_requested: bool,
@@ -86,7 +86,7 @@ pub(crate) struct OwnershipSnapshot {
 impl OwnershipSnapshot {
     /// Admission is fail-closed for every egui event, including clipboard and IME events.
     /// Grip dragging is outside egui and must use `edit_capture.grip_drag` separately.
-    pub(crate) fn filter_egui_input(self, input: &mut egui::RawInput) {
+    pub fn filter_egui_input(self, input: &mut egui::RawInput) {
         if !self.edit_capture.any() {
             input.events.clear();
             input.modifiers = egui::Modifiers::default();
@@ -116,7 +116,7 @@ impl OwnershipSnapshot {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(crate) enum DeviceEffect {
+pub enum DeviceEffect {
     #[default]
     Unchanged,
     SetEnabled(bool),
@@ -124,7 +124,7 @@ pub(crate) enum DeviceEffect {
 
 /// Effects describe required work, not completed engine or egui operations.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(crate) struct CaptureEffects {
+pub struct CaptureEffects {
     pub game_device: DeviceEffect,
     pub clear_pending_events: bool,
     pub cancel_pointer_and_drag: bool,
@@ -132,13 +132,13 @@ pub(crate) struct CaptureEffects {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct CaptureUpdate {
+pub struct CaptureUpdate {
     pub snapshot: OwnershipSnapshot,
     pub effects: CaptureEffects,
 }
 
 #[derive(Debug, Default)]
-pub(crate) struct CapturePolicy {
+pub struct CapturePolicy {
     mode: PanelMode,
     ownership: OwnershipState,
     prior_game_device_enabled: Option<bool>,
@@ -150,7 +150,7 @@ pub(crate) struct CapturePolicy {
 impl CapturePolicy {
     /// Call once per input sample, before delivering any pointer or gameplay output.
     /// `Open` only opens a hidden panel; a visible ReadOnly panel cannot edit itself.
-    pub(crate) fn update(
+    pub fn update(
         &mut self,
         request: Option<PanelRequest>,
         input: InputObservation,

@@ -106,7 +106,7 @@ pub struct Vocabulary {
 }
 
 impl Vocabulary {
-    pub const fn new() -> Self {
+    pub(crate) const fn new() -> Self {
         Self {
             tick: Shape {
                 soft: 0.06,

@@ -1,16 +1,16 @@
 //! One sample of the physical desktop input (the keyboard, the mouse buttons, and the text
 //! composition), as the capture policy consumes it. The sampler itself is native and lives with
-//! the window (`crate::egui_impl::desktop_input`).
+//! the window (`egui_impl::desktop_input` in the payload).
 
 /// An unavailable sample never establishes desktop neutrality.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum DesktopInputObservation {
+pub enum DesktopInputObservation {
     Unavailable(DesktopInputUnavailable),
     Observed(DesktopInputEvidence),
 }
 
 impl DesktopInputObservation {
-    pub(crate) fn controls_neutral(self) -> Option<bool> {
+    pub fn controls_neutral(self) -> Option<bool> {
         match self {
             Self::Unavailable(_) => None,
             Self::Observed(evidence) => Some(evidence.controls_neutral()),
@@ -18,7 +18,7 @@ impl DesktopInputObservation {
     }
 
     /// Native focus is known only for observed samples or an explicit focus failure.
-    pub(crate) fn focused(self) -> Option<bool> {
+    pub fn focused(self) -> Option<bool> {
         match self {
             Self::Observed(_) => Some(true),
             Self::Unavailable(DesktopInputUnavailable::Unfocused) => Some(false),
@@ -28,7 +28,7 @@ impl DesktopInputObservation {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum DesktopInputUnavailable {
+pub enum DesktopInputUnavailable {
     WindowNotObserved,
     WrongThread,
     Unfocused,
@@ -39,7 +39,7 @@ pub(crate) enum DesktopInputUnavailable {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(crate) struct DesktopModifiers {
+pub struct DesktopModifiers {
     pub shift: bool,
     pub control: bool,
     pub alt: bool,
@@ -47,7 +47,7 @@ pub(crate) struct DesktopModifiers {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct DesktopInputEvidence {
+pub struct DesktopInputEvidence {
     pub sequence: u64,
     pub held_virtual_keys: u16,
     pub held_mouse_buttons: u8,
@@ -61,7 +61,7 @@ pub(crate) struct DesktopInputEvidence {
 }
 
 impl DesktopInputEvidence {
-    pub(crate) fn controls_neutral(self) -> bool {
+    pub fn controls_neutral(self) -> bool {
         self.held_virtual_keys == 0
             && self.held_mouse_buttons == 0
             && self.modifiers == DesktopModifiers::default()

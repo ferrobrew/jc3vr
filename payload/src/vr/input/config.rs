@@ -4,7 +4,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    config::engine::{ConfigSlot, Invalid},
+    config::engine::{ConfigSlot, Invalid, range},
     controllers::frame::{GripPress, Hand, InteractionProfile, PressRules, PressThresholds},
     vr::input::layout::{FloatInput, Input, provides},
 };
@@ -85,11 +85,10 @@ impl InputConfig {
     /// Check the raw input settings, returning the first that is out of range. Paths are relative
     /// to `controllers`.
     pub(crate) fn validate(&self) -> Result<(), Invalid> {
-        self.trigger_press.validate("input.trigger_press")?;
-        self.squeeze_press.validate("input.squeeze_press")?;
-        self.squeeze_force_press
-            .validate("input.squeeze_force_press")?;
-        self.trackpad_press.validate("input.trackpad_press")
+        validate_thresholds(self.trigger_press, "input.trigger_press")?;
+        validate_thresholds(self.squeeze_press, "input.squeeze_press")?;
+        validate_thresholds(self.squeeze_force_press, "input.squeeze_force_press")?;
+        validate_thresholds(self.trackpad_press, "input.trackpad_press")
     }
 
     pub const fn new() -> Self {
@@ -139,4 +138,15 @@ impl Default for InputConfig {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Check that both thresholds are in `[0, 1]` and the release does not exceed the press. `name` is
+/// the pair's settings path, which leads the failure's message.
+pub(crate) fn validate_thresholds(pair: PressThresholds, name: &str) -> Result<(), Invalid> {
+    range(&format!("{name}.press"), pair.press, 0.0, 1.0)?;
+    range(&format!("{name}.release"), pair.release, 0.0, 1.0)?;
+    if pair.release > pair.press {
+        return Err(Invalid(format!("{name}.release exceeds press")));
+    }
+    Ok(())
 }

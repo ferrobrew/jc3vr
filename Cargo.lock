@@ -2297,6 +2297,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "jc3vr-input"
+version = "0.1.0"
+dependencies = [
+ "body-rig",
+ "egui",
+ "glam",
+ "parking_lot",
+ "serde",
+]
+
+[[package]]
 name = "jc3vr_injector"
 version = "0.1.0"
 dependencies = [
@@ -2333,6 +2344,7 @@ dependencies = [
  "glam",
  "image",
  "jc3gi",
+ "jc3vr-input",
  "jiff",
  "openxr",
  "parking_lot",

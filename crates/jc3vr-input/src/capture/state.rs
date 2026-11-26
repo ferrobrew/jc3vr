@@ -9,14 +9,14 @@ use std::sync::OnceLock;
 
 use parking_lot::Mutex;
 
-use crate::input_core::capture::{
+use crate::capture::{
     CaptureUpdate, OwnershipSnapshot,
     desktop::{DesktopInputObservation, DesktopInputUnavailable},
 };
 
 /// Input-thread observations before either editing or gameplay receives the sample.
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct DebugUiInput {
+pub struct DebugUiInput {
     pub focused: bool,
     pub tracking_ready: bool,
     /// Includes all source episodes, panel shortcuts, keys, buttons, composition, and scroll.
@@ -25,7 +25,7 @@ pub(crate) struct DebugUiInput {
 
 /// The debug UI's half of the capture: it owns the policy instance and the native desktop sampler.
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct CaptureDriver {
+pub struct CaptureDriver {
     /// Step the policy from an input-thread sample; `None` while the debug UI is not live.
     pub update: fn(DebugUiInput) -> Option<CaptureUpdate>,
     /// Sample the desktop's keys, buttons, and composition on the window's thread.
@@ -34,33 +34,33 @@ pub(crate) struct CaptureDriver {
 
 /// Install the debug UI's driver. The first registration stands; later ones are ignored, since the
 /// driver is a pair of plain functions that do not change across reinstalls.
-pub(crate) fn register_driver(driver: CaptureDriver) {
+pub fn register_driver(driver: CaptureDriver) {
     let _ = DRIVER.set(driver);
 }
 
 /// The latest policy observation; reading it never takes the renderer lock.
-pub(crate) fn debug_ui_capture() -> Option<OwnershipSnapshot> {
+pub fn debug_ui_capture() -> Option<OwnershipSnapshot> {
     *CAPTURE_SNAPSHOT.lock()
 }
 
 /// Whether the debug UI owns any editing input (keyboard, text, pointer, or a grip drag).
-pub(crate) fn input_captured() -> bool {
+pub fn input_captured() -> bool {
     debug_ui_capture().is_some_and(|snapshot| snapshot.edit_capture.any())
 }
 
 /// Publish the policy's latest snapshot, or `None` when the debug UI uninstalls.
-pub(crate) fn publish_capture(snapshot: Option<OwnershipSnapshot>) {
+pub fn publish_capture(snapshot: Option<OwnershipSnapshot>) {
     *CAPTURE_SNAPSHOT.lock() = snapshot;
 }
 
 /// Step capture before mode detection, pointer routing, and gameplay output on the input thread.
-pub(crate) fn update_debug_ui_capture(input: DebugUiInput) -> Option<CaptureUpdate> {
+pub fn update_debug_ui_capture(input: DebugUiInput) -> Option<CaptureUpdate> {
     DRIVER.get().and_then(|driver| (driver.update)(input))
 }
 
 /// Sample the desktop once before the capture policy, including while editing disables
 /// game-device polling.
-pub(crate) fn desktop_input_observation() -> DesktopInputObservation {
+pub fn desktop_input_observation() -> DesktopInputObservation {
     DRIVER.get().map_or(
         DesktopInputObservation::Unavailable(DesktopInputUnavailable::WindowNotObserved),
         |driver| (driver.sample_desktop)(),
@@ -73,7 +73,7 @@ static CAPTURE_SNAPSHOT: Mutex<Option<OwnershipSnapshot>> = Mutex::new(None);
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::input_core::capture::{CapturePolicy, EditCapture, InputObservation};
+    use crate::capture::{CapturePolicy, EditCapture, InputObservation};
 
     fn snapshot(edit_capture: EditCapture) -> OwnershipSnapshot {
         let observation = InputObservation {

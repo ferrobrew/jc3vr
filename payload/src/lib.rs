@@ -34,7 +34,8 @@ mod headpose;
 mod hooks;
 mod hud;
 mod image_writer;
-mod input_core;
+// The input layer lives in its own crate; the old path keeps working until the final cleanup pass.
+pub(crate) use jc3vr_input as input_core;
 mod lifecycle;
 mod logging;
 mod pause_menu;

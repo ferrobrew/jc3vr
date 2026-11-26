@@ -6,7 +6,7 @@
 //! consumer on the input tick that read only the latest frame would see one sample of a motion that
 //! lasts a few frames. A throw decelerates in the last moments before the fingers open, and a
 //! strike peaks between two ticks; both need the samples in between. [`record`] runs from
-//! [`crate::controllers::frame::publish`], and the consumers read [`history`].
+//! [`crate::frame::publish`], and the consumers read [`history`].
 //!
 //! Velocities are the runtime's own where it reports them, and a finite difference of the positions
 //! otherwise. A point held away from the grip (a grenade in the palm) moves with the grip's linear
@@ -18,7 +18,7 @@ use body_rig::rotation::angular_velocity;
 use glam::{Quat, Vec3};
 use parking_lot::Mutex;
 
-use crate::input_core::frame::{ControllerFrame, Hand};
+use crate::frame::{ControllerFrame, Hand};
 
 /// One sample of a controller's grip in the cockpit frame.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -59,7 +59,7 @@ pub struct ReleaseEstimate {
 
 /// How a release reads the hand's history: the fastest moment in the last quarter second, averaged
 /// with its immediate neighbours, because a throwing hand slows before the fingers finish opening.
-pub(crate) const RELEASE_ESTIMATE: ReleaseEstimate = ReleaseEstimate {
+pub const RELEASE_ESTIMATE: ReleaseEstimate = ReleaseEstimate {
     window_s: 0.25,
     peak_span_s: 0.015,
 };
@@ -155,7 +155,7 @@ pub fn latest_time() -> Option<f64> {
 /// Record a published frame's grips. A hand whose grip is not tracked this frame records nothing,
 /// so an inferred pose (an occluded controller) never feeds a throw or a strike, and a hand that is
 /// not tracked at all forgets its history.
-pub(crate) fn record(frame: &ControllerFrame) {
+pub fn record(frame: &ControllerFrame) {
     let time_s = frame.display_time_ns as f64 * 1e-9;
     let mut history = HISTORY.lock();
     history.latest = Some(time_s);
@@ -183,7 +183,7 @@ pub(crate) fn record(frame: &ControllerFrame) {
 }
 
 /// Forget both hands' histories: the controllers are disabled or the session is gone.
-pub(crate) fn clear() {
+pub fn clear() {
     let mut history = HISTORY.lock();
     history.hands.iter_mut().for_each(VecDeque::clear);
     history.latest = None;

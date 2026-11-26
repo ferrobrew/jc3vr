@@ -22,7 +22,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::input_core::{frame::Hand, haptics::cues::Sustain};
+use crate::{frame::Hand, haptics::cues::Sustain};
 
 /// A vibration for one controller.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -157,7 +157,7 @@ impl Mixer {
         }
     }
 
-    pub(crate) fn cancel_sustain(&mut self, hand: Hand, source: Sustain) {
+    pub fn cancel_sustain(&mut self, hand: Hand, source: Sustain) {
         self.hands[hand.index()].held.retain(|h| h.source != source);
     }
 

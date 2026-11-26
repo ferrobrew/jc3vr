@@ -30,6 +30,8 @@ tracking-format = { path = "../crates/tracking-format" }
 body-rig = { path = "../crates/body-rig", features = ["serde"] }
 # The learned body estimator, run on the game's device through its Direct3D 11 executor.
 body-estimator = { path = "../crates/body-estimator" }
+# The input layer: the controller frame, motion, scheme, haptic mixer, and capture policy.
+jc3vr-input = { path = "../crates/jc3vr-input" }
 # Runtime-loaded (`loaded` default feature): the OpenXR loader is opened at runtime via
 # `xr::Entry::load_from`, not linked, so an `openxr_loader.dll` must sit beside the payload DLL (see
 # the `vr` module docs). The `static` feature would build the loader in and drop that DLL, but it does
