@@ -15,9 +15,10 @@ use jc3gi::{
     equipment::weapon::{WeaponBase, WeaponGripHand},
     types::math::Matrix4,
 };
-use jc3vr_input::frame::{Hand, Pose};
+use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
+pub(crate) use crate::controllers::held::HandlePlacement;
 use crate::controllers::{
     aim::gun,
     grab::Candidate,
@@ -72,17 +73,6 @@ pub(crate) fn begin_handle_placement() -> u64 {
 /// Invalidate captured grips when hand ownership changes, including adoption before placement.
 pub(crate) fn invalidate_handle_placements() {
     HANDLE_PLACEMENTS.lock().clear();
-}
-
-/// The primary gun and its solved wrist immediately after native attachment placement.
-pub(crate) struct HandlePlacement {
-    pub generation: u64,
-    pub weapon: usize,
-    pub primary_gun: usize,
-    pub holder: Hand,
-    pub wrist_world: Pose,
-    pub weight: f32,
-    pub pinned: bool,
 }
 
 /// Capture the primary grip and wrist from the same native placement.

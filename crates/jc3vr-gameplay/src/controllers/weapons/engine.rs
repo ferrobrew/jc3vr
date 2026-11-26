@@ -3,8 +3,6 @@
 //! game stage ([`crate::controllers::bindings::stage`]), on the game thread before the world
 //! update.
 
-use std::ptr::NonNull;
-
 use glam::{Mat4, Quat, Vec3};
 use jc3gi::{
     character::{character::Character, inventory::WeaponSlot},
@@ -18,6 +16,7 @@ use jc3gi::{
 };
 use jc3vr_input::frame::{Hand, Pose};
 
+pub(crate) use crate::controllers::held::native::{gun_count, gun_ptr, weapon_at};
 use crate::controllers::{
     aim::{gun, ray, sights},
     config::AimConfig,
@@ -133,19 +132,6 @@ pub(crate) fn object_of(weapon: *const WeaponBase) -> *mut GameObject {
         .cast_mut()
 }
 
-/// The weapon whose `CGameObject` subobject is `object`, or null for a null object. The caller
-/// establishes that the object is a weapon.
-pub(crate) fn weapon_at(object: *const GameObject) -> *mut WeaponBase {
-    if object.is_null() {
-        return std::ptr::null_mut();
-    }
-    object
-        .cast::<u8>()
-        .wrapping_sub(WeaponBase::GAME_OBJECT_BASE_OFFSET as usize)
-        .cast::<WeaponBase>()
-        .cast_mut()
-}
-
 /// `character`'s `CGameObject` subobject, as a weapon's holder names it and the pickups take it
 /// as their activator.
 pub(crate) fn character_object(character: *const Character) -> *mut GameObject {
@@ -205,33 +191,6 @@ pub(crate) unsafe fn grip_points(weapon: &WeaponBase) -> Option<([Vec3; 2], Pose
     let right = grip(WeaponGripHand::E_WEAPON_GRIP_HAND_RIGHT).unwrap_or(pose.position);
     let left = grip(WeaponGripHand::E_WEAPON_GRIP_HAND_LEFT).unwrap_or(pose.position);
     Some(([right, left], pose))
-}
-
-/// How many guns `weapon`'s gun list holds, a single pistol's hidden second gun included.
-///
-/// # Safety
-///
-/// `weapon` must be live.
-pub(crate) unsafe fn gun_count(weapon: &WeaponBase) -> usize {
-    let list = &weapon.m_lWeaponData;
-    if list.m_Begin.is_null() || list.m_End < list.m_Begin {
-        0
-    } else {
-        unsafe { list.m_End.offset_from(list.m_Begin) as usize }
-    }
-}
-
-/// Gun `index` of `weapon`, as its list points to it: each gun is its own object, not part of the
-/// weapon.
-///
-/// # Safety
-///
-/// `weapon` must be live.
-pub(crate) unsafe fn gun_ptr(weapon: &WeaponBase, index: usize) -> Option<NonNull<WeaponData>> {
-    if index >= unsafe { gun_count(weapon) } {
-        return None;
-    }
-    NonNull::new(unsafe { *weapon.m_lWeaponData.m_Begin.add(index) })
 }
 
 /// Gun `index` of `weapon` ([`gun_ptr`]).

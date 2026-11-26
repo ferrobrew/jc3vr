@@ -88,6 +88,7 @@ pub mod pouch_models;
 pub(crate) mod pouch_return;
 pub mod recoil;
 pub mod regions;
+pub(crate) mod register_held;
 pub mod reload;
 pub mod scope;
 mod self_hits;

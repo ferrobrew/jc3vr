@@ -24,7 +24,7 @@ use std::time::Instant;
 
 use glam::{Mat4, Vec3};
 use jc3gi::{
-    character::character::{Character, SafeBoneIndex},
+    character::character::Character,
     equipment::weapon::{WeaponBase, WeaponState},
 };
 use jc3vr_input::{
@@ -39,6 +39,7 @@ use jc3vr_render::{
 };
 use parking_lot::Mutex;
 
+pub use crate::controllers::held::{SnapStart, SnapView};
 use crate::controllers::{
     aim::gun,
     bindings,
@@ -67,23 +68,6 @@ use crate::controllers::{
         sounds::{self, GunSound},
     },
 };
-
-/// A snap as the rigid grip sees it.
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub struct SnapView {
-    pub start: SnapStart,
-    /// How far the gun is from the far end toward the hand, `0..=1`.
-    pub toward_hand: f32,
-}
-
-/// The far end of a snap, as the rigid grip places it.
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub enum SnapStart {
-    /// The gun's pose `offset` on the dock bone `dock`, model space.
-    Dock { dock: SafeBoneIndex, offset: Pose },
-    /// A pose in the world.
-    World(Pose),
-}
 
 /// The moves' readout.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]

@@ -10,6 +10,7 @@ use body_rig::geometry::closest_on_segment;
 use glam::{Quat, Vec3};
 use jc3vr_input::frame::Pose;
 
+pub use crate::controllers::held::{GripSlide, slide_offset, slide_on_bone};
 use crate::controllers::{fingers::grip::catalogue::GripPose, hands::pose as hand_pose};
 
 /// A part of a gun a hand can hold it by.
@@ -240,49 +241,10 @@ pub fn classify(shape: &GunShape, point: Vec3, grip_radius: f32, reach: f32) -> 
     ))
 }
 
-/// A gun on its way onto a hand's canonical grip from where another part of it sat in the palm:
-/// the bracing hand's slide onto the grip when the holding hand lets go.
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub struct GripSlide {
-    /// The point of the gun in the palm now, in the gun's frame: the origin once the slide is over.
-    pub anchor: Vec3,
-    /// The gun's rotation on the hand's wrist when the slide began.
-    pub turn: Quat,
-    /// How far the gun has turned from `turn` onto the canonical grip, from 0 to 1.
-    pub aligned: f32,
-}
-
 /// The gun's rotation on a wrist of rotation `wrist`, for a gun of rotation `gun` in the same
 /// frame.
 pub fn turn_on_wrist(wrist: Quat, gun: Quat) -> Quat {
     (wrist.inverse() * gun).normalize()
-}
-
-/// `slide` with its turn moved from the wrist frame onto the wrist bone, for a wrist frame of
-/// rotation `frame_on_bone` on the bone. A slide's turn is measured on the hand-tracking wrist
-/// frame ([`crate::controllers::hands::pose`]), and the rigid grip composes it after the wrist
-/// bone's own frame, which the skeleton orients differently on each side.
-pub fn slide_on_bone(slide: GripSlide, frame_on_bone: Quat) -> GripSlide {
-    GripSlide {
-        turn: (frame_on_bone * slide.turn).normalize(),
-        ..slide
-    }
-}
-
-/// The pose that carries a gun held at its canonical grip to the same gun held as `slide` has it,
-/// in the attach frame, for a hand whose grip puts the attach frame at `grip` on its wrist: the gun
-/// turned from its slide's turn toward the canonical grip by the share it has aligned, and moved so
-/// that the anchor sits where the grip's attach point sits, in the palm. The rigid grip composes it
-/// after the grip's pose on the wrist; a finished slide gives the identity.
-pub fn slide_offset(slide: &GripSlide, grip: Pose) -> Pose {
-    let start = (grip.orientation.inverse() * slide.turn).normalize();
-    let orientation = start
-        .slerp(Quat::IDENTITY, slide.aligned.clamp(0.0, 1.0))
-        .normalize();
-    Pose {
-        position: -(orientation * slide.anchor),
-        orientation,
-    }
 }
 
 /// `point` in the frame `gun` gives, in a frame of `scale` gun metres per unit: the gun's pose is
