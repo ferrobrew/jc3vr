@@ -1,4 +1,4 @@
-//! Source-owned identity for live cockpit tracking acquisition and its rendered composition.
+//! Source-owned identity for live cockpit tracking acquisition.
 //!
 //! Tokens cover baseline, LOCAL reference-space, runtime, and detected teleport discontinuities.
 //! They do not identify native/root history, calibration, scale, authority, or support.
@@ -11,11 +11,10 @@ use openxr as xr;
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct OriginToken(u64);
 
-/// Why acquisition or composition has no supported origin identity.
+/// Why acquisition has no supported origin identity.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum OriginUnavailable {
     SourceAbsent,
-    DiagnosticExpired,
     MutationInProgress,
     GenerationExhausted,
     ReferenceSpacePending,
@@ -31,7 +30,7 @@ pub enum OriginEvidence {
 }
 
 impl OriginEvidence {
-    /// Check the held identity at the end of acquisition or composition without relabelling it.
+    /// Check the held identity at the end of acquisition without relabelling it.
     pub(crate) fn finish(self) -> Self {
         self.finish_with(&SOURCE)
     }
