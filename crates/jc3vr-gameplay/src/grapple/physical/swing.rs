@@ -1,7 +1,7 @@
 //! The hang swing's pump: the grapple hand's motion relative to the head pushes a hanging
 //! character the other way, as a body hanging from a rope moves against the hand that holds it.
-//! Pure; the hang task's detour ([`crate::controllers::hands::anchor`]) applies it with the hold
-//! that the hand's displacement drives.
+//! Pure; the hang task's detour in the hands' anchor applies it with the hold that the hand's
+//! displacement drives, through [`HANG_PUMP`], which the controllers' install registers there.
 //!
 //! The hold pushes for as long as the hand stays off where it took the line, like a stick held
 //! over. The pump pushes only while the hand moves, so pulling the hand back as the body swings
@@ -12,7 +12,18 @@
 use body_rig::smooth::follow_factor;
 use glam::Vec2;
 
-use crate::grapple::physical::config::SwingTuning;
+use crate::{
+    controllers::hands::anchor::HangPump,
+    grapple::physical::config::{GRAPPLE, SwingTuning},
+};
+
+/// The pump as the hands' anchor calls it: the fixed tuning with the pump switched by each call's
+/// `pump`.
+pub(crate) const HANG_PUMP: HangPump = HangPump {
+    smooth_velocity: anchor_smooth_velocity,
+    impulse: anchor_pump_impulse,
+    combine: anchor_combine,
+};
 
 /// The pump for a grapple hand moving at `velocity` (horizontal, body frame, metres per second)
 /// relative to the head: against the motion, from zero at the deadzone to `full_impulse` times
@@ -44,10 +55,29 @@ pub fn smooth_velocity(previous: Vec2, sample: Vec2, dt: f32, config: &SwingTuni
     previous.lerp(sample, follow_factor(dt, config.smoothing_s))
 }
 
+/// The fixed swing tuning with the pump switched by `pump`.
+const fn tuning(pump: bool) -> SwingTuning {
+    SwingTuning {
+        pump,
+        ..GRAPPLE.swing
+    }
+}
+
+fn anchor_smooth_velocity(previous: Vec2, sample: Vec2, dt: f32, pump: bool) -> Vec2 {
+    smooth_velocity(previous, sample, dt, &tuning(pump))
+}
+
+fn anchor_pump_impulse(velocity: Vec2, full_impulse: f32, pump: bool) -> Vec2 {
+    pump_impulse(velocity, full_impulse, &tuning(pump))
+}
+
+fn anchor_combine(hold: Vec2, pumped: Vec2, full_impulse: f32, pump: bool) -> Vec2 {
+    combine(hold, pumped, full_impulse, &tuning(pump))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::grapple::physical::config::GRAPPLE;
 
     #[test]
     fn the_pump_pushes_against_the_motion_and_saturates() {
