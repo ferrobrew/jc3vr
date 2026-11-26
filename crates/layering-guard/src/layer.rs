@@ -11,6 +11,7 @@ pub enum Layer {
     Render,
     Capture,
     Body,
+    Weapons,
     Physical,
     Gameplay,
     Hud,
@@ -20,13 +21,14 @@ pub enum Layer {
 }
 
 impl Layer {
-    pub const ALL: [Layer; 12] = [
+    pub const ALL: [Layer; 13] = [
         Layer::Core,
         Layer::Input,
         Layer::View,
         Layer::Render,
         Layer::Capture,
         Layer::Body,
+        Layer::Weapons,
         Layer::Physical,
         Layer::Gameplay,
         Layer::Hud,
@@ -44,6 +46,7 @@ impl Layer {
             Layer::Render => "render",
             Layer::Capture => "capture",
             Layer::Body => "body",
+            Layer::Weapons => "weapons",
             Layer::Physical => "physical",
             Layer::Gameplay => "gameplay",
             Layer::Hud => "hud",
@@ -84,8 +87,10 @@ impl Layer {
     /// Render sits side by side with body and gameplay on the view crate, so render and those two
     /// may not depend on each other: they reach the render passes through the registries and cells
     /// the view crate holds, and a render edit rebuilds neither. Gameplay sits on body, which holds
-    /// the subsystems it builds on and fills through registrations, and on physical, which sits on
-    /// body beside render and below gameplay. Capture sits on render, beside
+    /// the subsystems it builds on and fills through registrations, and on weapons and physical,
+    /// which sit side by side on body, beside render and below gameplay, so neither may depend on
+    /// the other: they meet only through the body crate's held-item seam and registrations, and a
+    /// weapons edit does not rebuild physical. Capture sits on render, beside
     /// body and gameplay, and
     /// only tooling and the layers above it see it: the render hooks reach the capture tooling
     /// through the probe tables the capture crate fills, so a capture edit rebuilds neither render
@@ -97,12 +102,15 @@ impl Layer {
             Layer::View => &[Layer::Core, Layer::Input],
             Layer::Render | Layer::Body => &[Layer::Core, Layer::Input, Layer::View],
             Layer::Capture => &[Layer::Core, Layer::Input, Layer::View, Layer::Render],
-            Layer::Physical => &[Layer::Core, Layer::Input, Layer::View, Layer::Body],
+            Layer::Weapons | Layer::Physical => {
+                &[Layer::Core, Layer::Input, Layer::View, Layer::Body]
+            }
             Layer::Gameplay => &[
                 Layer::Core,
                 Layer::Input,
                 Layer::View,
                 Layer::Body,
+                Layer::Weapons,
                 Layer::Physical,
             ],
             Layer::Hud => &[
@@ -111,6 +119,7 @@ impl Layer {
                 Layer::View,
                 Layer::Render,
                 Layer::Body,
+                Layer::Weapons,
                 Layer::Physical,
                 Layer::Gameplay,
             ],
@@ -121,6 +130,7 @@ impl Layer {
                 Layer::Render,
                 Layer::Capture,
                 Layer::Body,
+                Layer::Weapons,
                 Layer::Physical,
                 Layer::Gameplay,
             ],
@@ -131,6 +141,7 @@ impl Layer {
                 Layer::Render,
                 Layer::Capture,
                 Layer::Body,
+                Layer::Weapons,
                 Layer::Physical,
                 Layer::Gameplay,
                 Layer::Hud,
@@ -249,6 +260,30 @@ mod tests {
         for above in [Layer::Gameplay, Layer::Hud, Layer::Tooling, Layer::Ui] {
             assert!(above.may_depend_on(Layer::Physical), "{above}");
         }
+    }
+
+    #[test]
+    fn weapons_sits_on_body_below_gameplay() {
+        assert!(Layer::Weapons.may_depend_on(Layer::Body));
+        assert!(Layer::Weapons.may_depend_on(Layer::View));
+        assert!(Layer::Weapons.may_depend_on(Layer::Input));
+        assert!(Layer::Weapons.may_depend_on(Layer::Core));
+        assert!(!Layer::Weapons.may_depend_on(Layer::Gameplay));
+        assert!(!Layer::Weapons.may_depend_on(Layer::Render));
+        assert!(!Layer::Weapons.may_depend_on(Layer::Capture));
+        assert!(!Layer::Body.may_depend_on(Layer::Weapons));
+        assert!(!Layer::Render.may_depend_on(Layer::Weapons));
+        for above in [Layer::Gameplay, Layer::Hud, Layer::Tooling, Layer::Ui] {
+            assert!(above.may_depend_on(Layer::Weapons), "{above}");
+        }
+    }
+
+    #[test]
+    fn weapons_and_physical_are_siblings() {
+        assert!(!Layer::Weapons.may_depend_on(Layer::Physical));
+        assert!(!Layer::Physical.may_depend_on(Layer::Weapons));
+        assert!(Layer::Gameplay.may_depend_on(Layer::Weapons));
+        assert!(Layer::Gameplay.may_depend_on(Layer::Physical));
     }
 
     #[test]
