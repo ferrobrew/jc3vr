@@ -3,23 +3,14 @@
 
 use jc3gi::character::inventory::WeaponSlot;
 use jc3vr_body::controllers::hands::grip;
-use jc3vr_gameplay::controllers::config::CONTROLLERS_CONFIG;
 use jc3vr_input::frame::Hand;
 use jc3vr_weapons::controllers::{
     loadout::{Delivery, TakeSource, live::Expect, slot_label},
     weapons,
-    weapons::{
-        hold,
-        hold::armed,
-        regions, reload,
-        reload::chamber::{ActionKind, Chamber},
-    },
+    weapons::{hold, hold::armed, regions},
 };
 
-use crate::{
-    controllers::menu::read,
-    status::{Line, Row, Text, prose, text},
-};
+use crate::status::{Line, Row, Text, prose, text};
 
 pub(crate) const LEFT_HAND: Row = Row::new("LEFT HAND", "Left hand", left_hand);
 pub(crate) const RIGHT_HAND: Row = Row::new("RIGHT HAND", "Right hand", right_hand);
@@ -29,8 +20,6 @@ pub(crate) const RIGHT_HAND_ON_GUN: Row =
     Row::new("RIGHT HAND ON GUN", "Right hand on gun", right_hand_on_gun);
 pub(crate) const TAKES: Row = Row::new("TAKE FROM HANDS", "Take from hands", takes);
 pub(crate) const RACKS: Row = Row::new("TAKE FROM RACKS", "Take from racks", racks);
-pub(crate) const LEFT_ACTION: Row = Row::new("LEFT ACTION", "Left action", left_action);
-pub(crate) const RIGHT_ACTION: Row = Row::new("RIGHT ACTION", "Right action", right_action);
 pub(crate) const ARMED: Row = Row::new("ARMED BESIDE", "Armed beside", armed);
 pub(crate) const RIGHT_GRIP: Row = Row::new("RIGHT HAND GRIP", "Right hand grip", right_grip);
 pub(crate) const DOCKS: Row = Row::new("SOCKETS", "Sockets", docks);
@@ -42,69 +31,6 @@ fn left_hand() -> Line {
 
 fn right_hand() -> Line {
     hand(Hand::Right)
-}
-
-fn left_action() -> Line {
-    action(Hand::Left)
-}
-
-fn right_action() -> Line {
-    action(Hand::Right)
-}
-
-/// The action of `hand`'s gun on its travel: where its part is, whether a hand holds it, and
-/// whether its slide is locked back, with the chamber it loaded.
-fn action(hand: Hand) -> Line {
-    if !read(&CONTROLLERS_CONFIG, |c| {
-        let reload = c.weapons.reload;
-        reload.enabled && reload.manual_action && reload.action.physical
-    }) {
-        return Line::off("");
-    }
-    let status = reload::status();
-    if status.weapons.iter().all(Option::is_none) {
-        return Line::waiting(prose("No weapon reloaded by hand"));
-    }
-    let Some(weapon) = status.weapons[hand.index()] else {
-        return Line::ok(prose("No gun"));
-    };
-    let Some(travel) = weapon.action else {
-        return Line::ok(prose("Nothing to work"));
-    };
-    let kind = weapon.plan.action;
-    let chamber = prose(match weapon.chamber {
-        Chamber::Empty => "chamber empty",
-        Chamber::Chambered => "chambered",
-    });
-    let place = if travel.locked_back {
-        prose("locked back")
-    } else if kind == ActionKind::Bolt && travel.lift > 0.0 {
-        text!(
-            "up ",
-            format!("{:.0}%", travel.lift * 100.0),
-            ", back ",
-            format!("{:.0}%", travel.position * 100.0)
-        )
-    } else if travel.position > 0.0 {
-        text!("back ", format!("{:.0}%", travel.position * 100.0))
-    } else {
-        prose("home")
-    };
-    Line::ok(text!(
-        prose(kind.label()),
-        ": ",
-        place,
-        if travel.grip.is_some() {
-            prose(", held")
-        } else {
-            Text::default()
-        },
-        ", ",
-        chamber,
-        ", ",
-        status.counts.racks.to_string(),
-        " worked"
-    ))
 }
 
 fn left_hand_on_gun() -> Line {

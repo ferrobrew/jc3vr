@@ -175,10 +175,6 @@ pub(super) fn available() -> bool {
 }
 
 pub(super) fn submit(request: DetachRequest) -> bool {
-    submit_with_retention(request, true)
-}
-
-pub(super) fn submit_with_retention(request: DetachRequest, retain: bool) -> bool {
     let mut state = MAILBOX.lock();
     let hand = request.id.holder.index();
     if !state.hands[hand].can_submit(request) {
@@ -188,19 +184,14 @@ pub(super) fn submit_with_retention(request: DetachRequest, retain: bool) -> boo
     // A magazine whose prop cannot be retained (the gun has no spare prop yet, or the store is
     // full) still drops, unretained: the player can always reload, and only the prop in the world
     // is missing.
-    let retention = if retain {
-        let retention = Retention::reserve(request.expected.gun, request.expected.spare);
-        if retention.is_none() {
-            tracing::info!(
-                target: "controllers",
-                spare = request.expected.spare != 0,
-                "reload: the magazine's prop cannot be kept, so it drops unretained"
-            );
-        }
-        retention
-    } else {
-        None
-    };
+    let retention = Retention::reserve(request.expected.gun, request.expected.spare);
+    if retention.is_none() {
+        tracing::info!(
+            target: "controllers",
+            spare = request.expected.spare != 0,
+            "reload: the magazine's prop cannot be kept, so it drops unretained"
+        );
+    }
     state.hands[hand].retention = retention;
     let submitted = state.hands[hand].submit(request);
     state.status.submitted += u64::from(submitted);
@@ -260,7 +251,7 @@ pub(crate) unsafe fn consume(character: *mut Character, context: *mut GameObject
             *identity != request.expected || (retention.is_some() && !identity.has_spare())
         }) {
             Some(Refusal::Identity)
-        } else if !permitted(request, retention.is_some()) {
+        } else if !permitted(request) {
             Some(Refusal::Permission)
         } else {
             None
@@ -287,18 +278,12 @@ pub(crate) unsafe fn consume(character: *mut Character, context: *mut GameObject
     }
 }
 
-fn permitted(request: DetachRequest, retain: bool) -> bool {
+fn permitted(request: DetachRequest) -> bool {
     let pull = request.kind == DetachKind::Pull;
     if jc3vr_core::is_shutting_down()
         || !scheme::is_controllers()
         || !Capabilities::of(mode::current().mode).reload
-        || !WEAPONS_CONFIG.query(|c| {
-            let reload = &c.reload;
-            reload.enabled
-                && (!retain || reload.loose.enabled)
-                && (!pull || reload.extraction.enabled)
-                && (request.kind != DetachKind::Belt || reload.belt.enabled)
-        })
+        || !WEAPONS_CONFIG.query(|c| c.reload.enabled)
     {
         return false;
     }

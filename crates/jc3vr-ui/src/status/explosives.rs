@@ -75,10 +75,7 @@ fn down_the_sights() -> Line {
 }
 
 fn magazines() -> Line {
-    if !read(&CONTROLLERS_CONFIG, |c| {
-        let reload = c.weapons.reload;
-        reload.enabled && reload.loose.enabled
-    }) {
+    if !read(&CONTROLLERS_CONFIG, |c| c.weapons.reload.enabled) {
         return Line::off("");
     }
     let c = loose::counts();

@@ -312,16 +312,6 @@ fn capture_current(
                 effect: Effect::Mod(ModAction::OpenVehicleDoor),
             });
         }
-        if input.config.weapons.reload.enabled
-            && input.config.weapons.reload.flick_eject
-            && flick_ready(&reload, guns, hand)
-        {
-            mechanics.push(Row {
-                control: Control::Motion(hand),
-                gesture: Gesture::Flick,
-                effect: Effect::Mod(ModAction::FlickEject),
-            });
-        }
         if let Some(GrabVolume::VehicleControl(kind)) = chosen[i] {
             let action = match kind {
                 ControlKind::Wheel => ModAction::Wheel,
@@ -502,15 +492,6 @@ fn detonator_rows(
                 effect: Effect::Mod(action),
             })
         })
-}
-
-fn flick_ready(reload: &ReloadStatus, guns: [Option<GunOwner>; 2], hand: Hand) -> bool {
-    let i = hand.index();
-    reload.weapons[i].is_some_and(|weapon| {
-        guns[i].is_some_and(|gun| gun.weapon == weapon.address)
-            && weapon.plan.load.ejects()
-            && !weapon.out
-    })
 }
 
 fn foregrip_owner() -> Option<(usize, Hand, bool)> {
@@ -869,7 +850,7 @@ mod tests {
         });
         let mut before = stale.clone();
         refresh_magazine_out(&mut before, guns, |_| Some(false));
-        assert!(flick_ready(&before, guns, hand));
+        assert!(before.weapons[i].is_some_and(|weapon| !weapon.out));
         let chosen = Hand::BOTH.map(|h| (h == hand).then_some(GrabVolume::InsertedMagazine));
         for successful in [false, true] {
             let mut after = stale.clone();
@@ -877,7 +858,10 @@ mod tests {
                 assert_eq!(address, 1);
                 Some(successful)
             });
-            assert_eq!(flick_ready(&after, guns, hand), !successful);
+            assert_eq!(
+                after.weapons[i].is_some_and(|weapon| weapon.out),
+                successful
+            );
             assert_eq!(reload_changed(&before, &after), successful);
             assert_eq!(
                 retained_choices(chosen, [None; 2], reload_changed(&before, &after))[i],

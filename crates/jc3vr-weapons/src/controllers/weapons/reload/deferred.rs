@@ -33,7 +33,6 @@ impl State {
         gun: &GunTick,
         hand: Hand,
         kind: DetachKind,
-        retain: bool,
     ) -> bool {
         if weapon.reading.out
             || self.pending_ejects[hand.index()].is_some()
@@ -58,7 +57,7 @@ impl State {
             expected,
             kind,
         };
-        let queued = serial::submit_with_retention(request, retain);
+        let queued = serial::submit(request);
         if queued {
             self.pending_ejects[hand.index()] = Some(request);
         }
@@ -102,10 +101,7 @@ impl State {
             self.extraction_blocks_belt[hand.index()] = true;
             if request.kind == DetachKind::Knock {
                 self.finish_knock(hand, outcome, weapon);
-            } else if request.kind == DetachKind::Belt
-                && config.weapons.reload.belt.enabled
-                && self.load(weapon, gun)
-            {
+            } else if request.kind == DetachKind::Belt && self.load(weapon, gun) {
                 self.status.counts.belt_reloads += 1;
                 let record = self.records.get(weapon.key);
                 record.chambers[gun.entry()] =

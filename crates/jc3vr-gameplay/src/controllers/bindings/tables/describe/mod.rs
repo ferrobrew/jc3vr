@@ -66,10 +66,6 @@ pub struct Features {
     pub magazine: bool,
     /// The true reload's belt reload.
     pub belt_reload: bool,
-    /// The true reload's flick eject.
-    pub flick_eject: bool,
-    /// The true reload's chamber, worked by hand.
-    pub work_action: bool,
     /// The sight tuning capture chord is armed.
     pub sight_chord: bool,
     /// The weapon-select trackpad press opens the weapon wheel.
@@ -576,25 +572,11 @@ fn outside_rows(ctx: &DescribeCtx, bindings: Bindings) -> Vec<Row> {
                 modded(ModAction::InsertRound),
             );
         }
-        if features.work_action {
-            add(
-                Control::Grip(off),
-                Gesture::Press,
-                modded(ModAction::WorkAction),
-            );
-        }
         if features.belt_reload {
             add(
                 Control::Motion(dom),
                 Gesture::Press,
                 modded(ModAction::BeltReload),
-            );
-        }
-        if features.flick_eject {
-            add(
-                Control::Motion(dom),
-                Gesture::Flick,
-                modded(ModAction::FlickEject),
             );
         }
         add(

@@ -54,15 +54,9 @@ fn actual_belt_gate_requires_ammo_space_delay_and_no_other_reload_claim() {
     tick.weapons[weapon_slot].as_mut().unwrap().reading.out = true;
     assert!(offer(&state, &tick, &config, guns).is_some());
 
-    for disabled in [false, true] {
-        let mut config = config.clone();
-        if disabled {
-            config.weapons.reload.enabled = false;
-        } else {
-            config.weapons.reload.belt.enabled = false;
-        }
-        assert!(offer(&state, &tick, &config, guns).is_none());
-    }
+    let mut disabled = config.clone();
+    disabled.weapons.reload.enabled = false;
+    assert!(offer(&state, &tick, &disabled, guns).is_none());
     let mut gate = state.belt_gate(&tick, hand);
     gate.extracting = true;
     assert!(!gate.allows(&Reload::of(&config.weapons.reload)));

@@ -7,13 +7,9 @@
 //! - [`Character::StartReloadingWieldingWeapon`]: every animated reload start, refused while the
 //!   weapon is reloaded by hand.
 //! - [`SniperWeapon::UpdateFromUserPostSim_Parallel`]: the bolt rifle's update, run with its
-//!   bolt-action setting cleared while the bolt is worked by hand, so it never queues the bolt act;
-//!   the rifle's own bolt lock ([`SniperWeapon::m_HasFiredThisInput`]) keeps it from firing until
-//!   the worked bolt clears it. With the manual action off, the setting is cleared the same way and
-//!   the lock is cleared once the trigger is let go ([`trigger_released`]), so the rifle fires
-//!   once per pull with no bolt act.
-//! - [`DoActWeaponComponent::Fire_Start`]: the pump's per-shot act, skipped while the pump is
-//!   worked by hand.
+//!   bolt-action setting cleared so it never queues the bolt act, and the rifle's own bolt lock
+//!   ([`SniperWeapon::m_HasFiredThisInput`]) cleared once the trigger is let go
+//!   ([`trigger_released`]), so the rifle fires once per pull with no bolt act.
 
 use std::{ffi::CString, ptr::NonNull, sync::OnceLock};
 
@@ -23,8 +19,8 @@ use jc3gi::{
     animation::symbol_table::EventIdSymbolTable,
     character::character::Character,
     equipment::weapon::{
-        DoActWeaponComponent, ModelAttachementWeaponComponent, ReloadType, SniperWeapon,
-        WeaponBase, WeaponComponentType, WeaponData, WeaponInputs,
+        ModelAttachementWeaponComponent, ReloadType, SniperWeapon, WeaponBase, WeaponComponentType,
+        WeaponData, WeaponInputs,
     },
     spawn_system::SpawnSystem,
     types::math::{Matrix4, Vector3},
@@ -65,7 +61,6 @@ pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_static_binder(&START_RELOADING_WIELDING_WEAPON_BINDER)
         .with_static_binder(&SNIPER_UPDATE_FROM_USER_POST_SIM_PARALLEL_BINDER)
-        .with_static_binder(&DO_ACT_FIRE_START_BINDER)
         .with_static_binder(&UPDATE_WEAPON_PARALLEL_BINDER)
 }
 
@@ -879,8 +874,8 @@ fn reload_input(input: WeaponInputs, blocked: bool) -> WeaponInputs {
     }
 }
 
-/// The bolt rifle's update, with its bolt-action setting cleared for the call while the bolt is
-/// worked by hand.
+/// The bolt rifle's update, with its bolt-action setting cleared for the call and its bolt lock
+/// cleared once the trigger is let go.
 #[detour(address = jc3gi::equipment::weapon::SniperWeapon::UpdateFromUserPostSim_Parallel_ADDRESS)]
 fn sniper_update_from_user_post_sim_parallel(
     sniper: *mut SniperWeapon,
@@ -896,9 +891,7 @@ fn sniper_update_from_user_post_sim_parallel(
     };
     let local =
         unsafe { sniper.cast::<WeaponBase>().as_ref() }.is_some_and(|w| w.m_IsUserLocalPlayer);
-    let by_hand = local && gate::manual_action(sniper as usize);
-    let on_release = local && !by_hand && gate::self_cycling(sniper as usize);
-    if !(by_hand || on_release) {
+    if !(local && gate::self_cycling(sniper as usize)) {
         return original();
     }
     let Some(s) = (unsafe { sniper.as_mut() }) else {
@@ -910,19 +903,17 @@ fn sniper_update_from_user_post_sim_parallel(
         return;
     };
     s.m_BoltAction = bolt_action;
-    if on_release {
-        // SAFETY: the update's own input and its weapon's tuning, live for the call.
-        let released = unsafe { input.as_ref() }.is_some_and(|input| {
-            let tuning = unsafe { sniper.cast::<WeaponBase>().as_ref() }
-                .and_then(|w| unsafe { w.m_Tuning.as_ref() });
-            trigger_released(
-                input.m_PrimaryFireInput,
-                tuning.map(|t| t.m_trigger_sensitivity),
-            )
-        });
-        if released {
-            s.m_HasFiredThisInput = false;
-        }
+    // SAFETY: the update's own input and its weapon's tuning, live for the call.
+    let released = unsafe { input.as_ref() }.is_some_and(|input| {
+        let tuning = unsafe { sniper.cast::<WeaponBase>().as_ref() }
+            .and_then(|w| unsafe { w.m_Tuning.as_ref() });
+        trigger_released(
+            input.m_PrimaryFireInput,
+            tuning.map(|t| t.m_trigger_sensitivity),
+        )
+    });
+    if released {
+        s.m_HasFiredThisInput = false;
     }
 }
 
@@ -934,21 +925,6 @@ fn sniper_update_from_user_post_sim_parallel(
 fn trigger_released(input: f32, sensitivity: Option<[f32; 2]>) -> bool {
     let hold = sensitivity.map_or(0.0, |[_, hold]| hold);
     input.is_finite() && input <= hold.max(0.0)
-}
-
-/// The do-act component's per-shot act, skipped for the local player's weapon while its pump is
-/// worked by hand.
-#[detour(address = jc3gi::equipment::weapon::DoActWeaponComponent::Fire_Start_ADDRESS)]
-fn do_act_fire_start(component: *mut DoActWeaponComponent, weapon_data: *mut WeaponData) {
-    let owner = unsafe { component.as_ref() }.map_or(std::ptr::null_mut(), |c| c.m_Owner);
-    let local = unsafe { owner.as_ref() }.is_some_and(|w| w.m_IsUserLocalPlayer);
-    if local && gate::manual_action(owner as usize) {
-        return;
-    }
-    DO_ACT_FIRE_START
-        .get()
-        .unwrap()
-        .call(component, weapon_data);
 }
 
 /// The weapon's user, mutably: the character is its own object, not part of the weapon.

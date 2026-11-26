@@ -35,9 +35,7 @@ use crate::controllers::{
             belt::{BeltPush, PushInputs},
             chamber,
             chamber::{ActionKind, Chamber},
-            cylinders, eject,
-            eject::FlickDetector,
-            engine,
+            cylinders, eject, engine,
             extraction::{DetachKind, MagazineId},
             fire_hold::{FireFacts, FireHold, fire_hold},
             frames,
@@ -293,19 +291,15 @@ impl State {
         let record = *self.records.get(weapon.key);
         let e = gun.entry();
         let wanted = record.chambers[e] == Chamber::Empty
-            || (action.physical
-                && (weapon.plan.action.ready_rack() || !record.travels[e].in_battery(action)));
+            || weapon.plan.action.ready_rack()
+            || !record.travels[e].in_battery(action);
         if !wanted {
             return None;
         }
         let (handle, rearward) = gun.handle?;
         // The handle rides the part, so a slide held back is taken where it is.
-        let back = if action.physical {
-            let travel = &record.travels[gun.entry()];
-            action_back(travel.position, weapon.plan.travel_m, tick.world_scale)
-        } else {
-            0.0
-        };
+        let travel = &record.travels[gun.entry()];
+        let back = action_back(travel.position, weapon.plan.travel_m, tick.world_scale);
         Some(action_volume(
             handle,
             rearward,
@@ -346,8 +340,8 @@ impl State {
         for weapon in tick.weapons.iter().flatten() {
             self.records.touch(weapon.key);
         }
-        self.fold_shots(tick, reload);
-        self.sync(tick, reload);
+        self.fold_shots(tick);
+        self.sync(tick);
         self.cylinders(tick, dt);
 
         self.extraction_blocks_belt = [false; 2];
@@ -361,9 +355,9 @@ impl State {
         self.work(game, tick, inputs, config);
         self.sync_owned(tick);
 
-        self.insertion_guide(tick, config.weapons.reload.insertion_guide, reload);
+        self.insertion_guide(tick, reload);
         self.last_grips = tick.hands.map(|h| h.map(|h| h.grip.position));
-        let readouts = Hand::BOTH.map(|hand| self.readout(tick, hand, reload));
+        let readouts = Hand::BOTH.map(|hand| self.readout(tick, hand));
         for hand in Hand::BOTH {
             log_magazine_change(
                 hand,
@@ -377,7 +371,7 @@ impl State {
     }
 
     /// `hand`'s gun and its weapon, for the readout.
-    fn readout(&mut self, tick: &Tick, hand: Hand, reload: &Reload) -> Option<WeaponReadout> {
+    fn readout(&mut self, tick: &Tick, hand: Hand) -> Option<WeaponReadout> {
         let (weapon, gun) = tick.gun(hand)?;
         let record = *self.records.get(weapon.key);
         let e = gun.entry();
@@ -393,8 +387,7 @@ impl State {
             out: weapon.reading.out,
             occupied: weapon.occupied(),
             chamber: record.chambers[e],
-            action: (chambering(&weapon.plan) && reload.action.physical)
-                .then_some(record.travels[e]),
+            action: chambering(&weapon.plan).then_some(record.travels[e]),
         })
     }
 
@@ -414,7 +407,7 @@ impl State {
                 && matches!(self.status.insertion.stage, InsertStage::Captured { .. }),
             chambering: chambering(&weapon.plan),
             chamber_empty: record.chambers[e] == Chamber::Empty,
-            out_of_battery: reload.action.physical && !record.travels[e].in_battery(&reload.action),
+            out_of_battery: !record.travels[e].in_battery(&reload.action),
             magazine_out: weapon.reading.out,
             magazine_empty: weapon.reading.magazine <= 0,
             cylinder_open: weapon.cylinder.is_some_and(|c| !c.shut),
@@ -422,11 +415,11 @@ impl State {
     }
 
     /// Apply queued shot effects, deriving readiness only for weapons without an active partition.
-    fn fold_shots(&mut self, tick: &Tick, reload: &Reload) {
-        self.apply_shots(tick, reload, gate::take_shots());
+    fn fold_shots(&mut self, tick: &Tick) {
+        self.apply_shots(tick, gate::take_shots());
     }
 
-    fn apply_shots(&mut self, tick: &Tick, reload: &Reload, shots: Vec<gate::Shot>) {
+    fn apply_shots(&mut self, tick: &Tick, shots: Vec<gate::Shot>) {
         let mut locked = false;
         for shot in shots {
             let Some(weapon) = tick.weapon(shot.weapon) else {
@@ -444,7 +437,7 @@ impl State {
                 if !weapon.ammo_owned {
                     record.chambers[entry] = chamber::after_shot(left, weapon.plan.action);
                 }
-                if locks_back(&weapon.plan, reload) && left <= 0 {
+                if locks_back(&weapon.plan) && left <= 0 {
                     record.travels[entry].lock_back();
                     locked = true;
                 }
@@ -459,7 +452,7 @@ impl State {
 
     /// Bring each weapon's record in line with the game: empty the chambers of a weapon first seen
     /// with an empty magazine.
-    fn sync(&mut self, tick: &Tick, reload: &Reload) {
+    fn sync(&mut self, tick: &Tick) {
         for weapon in tick.weapons.iter().flatten() {
             let magazine = weapon.reading.magazine;
             let record = self.records.get(weapon.key);
@@ -468,7 +461,7 @@ impl State {
                 if !weapon.ammo_owned {
                     record.chambers = [Chamber::Empty; 2];
                 }
-                if locks_back(&weapon.plan, reload) {
+                if locks_back(&weapon.plan) {
                     record.travels.iter_mut().for_each(ActionTravel::lock_back);
                 }
             }
@@ -513,25 +506,11 @@ impl State {
                 targets[i] = true;
             }
         }
-        for hand in Hand::BOTH {
-            let i = hand.index();
-            let orientation = tick.guns[i].map(|g| g.wrist.orientation);
-            let flicked = self.flicks[i].step(
-                orientation,
-                inputs.dt,
-                reload.flick_speed_dps,
-                reload.flick_cooldown_s,
-            );
-            self.status.flick_dps[i] = self.flicks[i].speed_dps;
-            if flicked && reload.flick_eject {
-                targets[i] = true;
-            }
-        }
         for hand in Hand::BOTH.into_iter().filter(|h| targets[h.index()]) {
             if let Some((weapon, gun)) = tick.gun(hand)
                 && weapon.plan.load.ejects()
             {
-                self.eject(weapon, gun, hand, config);
+                self.eject(weapon, gun, hand);
             }
         }
     }
@@ -548,14 +527,8 @@ impl State {
     }
 
     /// Eject the magazine of `gun` of `weapon`, in `hand`, when it is in.
-    fn eject(&mut self, weapon: &WeaponTick, gun: &GunTick, hand: Hand, config: &WeaponSettings) {
-        if !self.queue_eject(
-            weapon,
-            gun,
-            hand,
-            DetachKind::Eject,
-            config.weapons.reload.loose.enabled,
-        ) {
+    fn eject(&mut self, weapon: &WeaponTick, gun: &GunTick, hand: Hand) {
+        if !self.queue_eject(weapon, gun, hand, DetachKind::Eject) {
             self.event(format!(
                 "the {hand:?} gun's magazine release could not drop it"
             ));
@@ -581,11 +554,6 @@ impl State {
         let reload = &Reload::of(&config.weapons.reload);
         if let Some(hand) = self.ready_cue.step(inputs.dt) {
             haptics::play(hand, Event::ReadyToFire);
-        }
-        if !reload.loose.enabled && adapter.held() {
-            adapter.release();
-            self.status.insertion.reset();
-            self.status.insert_hands = None;
         }
         let gun_hands = tick.gun_hands();
         let loading = |taker: Hand| insert::loading_hand(gun_hands, Some(taker), tick.dominant);
@@ -814,7 +782,7 @@ impl State {
                 }
             }
             Some(InsertEvent::Pushed { speed_mps })
-                if self.push_knock(tick, gun_hand, speed_mps, reload) => {}
+                if self.push_knock(tick, gun_hand, speed_mps) => {}
             Some(InsertEvent::Refused | InsertEvent::Pushed { .. }) => {
                 self.event(format!(
                     "the {gun_hand:?} gun's well refused the round: it still holds one ({} m from the mouth)",
@@ -876,7 +844,7 @@ impl State {
             // A magazine still in drops as the fresh one goes in, and the game's reload returns
             // its rounds.
             if weapon.occupied() && weapon.plan.load.ejects() {
-                if !self.queue_eject(weapon, gun, hand, DetachKind::Belt, reload.loose.enabled) {
+                if !self.queue_eject(weapon, gun, hand, DetachKind::Belt) {
                     // A refused drop must not leave the gun held as reloaded: on the 14 November
                     // take it read as a dead trigger until the gun left the pouch.
                     self.belts[i].refuse();
@@ -1042,7 +1010,6 @@ impl State {
         self.status.fire_held = [None; 2];
         self.cylinders = [None; 2];
         self.belts = [BeltPush::new(); 2];
-        self.flicks.iter_mut().for_each(FlickDetector::reset);
         self.last_grips = [None; 2];
         self.drawn = None;
         // A knocked magazine's part kept drawn in the well is hidden now, since no tick follows to
@@ -1176,7 +1143,7 @@ unsafe fn weapon_tick(
         reload.well_offset_m,
         reload.action.default_travel_m,
     )?
-    .with_manual_action(reload.manual_action);
+    .cocked();
     Some(WeaponTick {
         address: weapon.address,
         ammo_owned: false,

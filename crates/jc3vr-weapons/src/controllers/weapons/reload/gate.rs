@@ -32,11 +32,7 @@ pub(super) struct Published {
     /// The address of the weapon of each hand's gun that the input tick reloads by hand, or zero,
     /// by [`Hand::index`].
     pub weapons: [usize; 2],
-    /// Each hand's weapon's bolt or pump is worked by hand after every shot, in place of the game's
-    /// cycling, by [`Hand::index`].
-    pub manual_action: [bool; 2],
-    /// Each hand's weapon cycles its own bolt once the trigger is let go, with the manual action
-    /// off, by [`Hand::index`].
+    /// Each hand's weapon cycles its own bolt once the trigger is let go, by [`Hand::index`].
     pub self_cycling: [bool; 2],
     /// The hands whose guns may not fire, by [`Hand::index`].
     pub held: [bool; 2],
@@ -165,16 +161,8 @@ pub(super) fn tracks(weapon: usize, hand: Hand) -> bool {
         .is_some_and(|p| weapon != 0 && p.weapons[hand.index()] == weapon)
 }
 
-/// Whether the game's own cycling of `weapon`'s bolt or pump is suppressed.
-pub(super) fn manual_action(weapon: usize) -> bool {
-    SHARED
-        .lock()
-        .fresh()
-        .is_some_and(|p| cycles_by_hand(&p, weapon))
-}
-
 /// Whether the bolt of `weapon` is cycled on the trigger's release, in place of the game's bolt
-/// act, while the manual action is off.
+/// act.
 pub(super) fn self_cycling(weapon: usize) -> bool {
     SHARED
         .lock()
@@ -198,14 +186,6 @@ pub(super) fn on_shot(weapon: usize, hand: Hand, magazine: i32) {
 /// Whether `published` holds the gun of `weapon` in `hand` from firing.
 fn holds(published: &Published, weapon: usize, hand: Hand) -> bool {
     weapon != 0 && published.weapons[hand.index()] == weapon && published.held[hand.index()]
-}
-
-/// Whether `published` has `weapon`'s bolt or pump worked by hand.
-fn cycles_by_hand(published: &Published, weapon: usize) -> bool {
-    weapon != 0
-        && Hand::BOTH.into_iter().any(|hand| {
-            published.weapons[hand.index()] == weapon && published.manual_action[hand.index()]
-        })
 }
 
 /// Whether `published` has `weapon`'s bolt cycled on the trigger's release.
@@ -249,7 +229,6 @@ impl Shared {
 static SHARED: Mutex<Shared> = Mutex::new(Shared {
     published: Published {
         weapons: [0; 2],
-        manual_action: [false; 2],
         self_cycling: [false; 2],
         held: [false; 2],
     },
@@ -269,7 +248,6 @@ mod tests {
     fn two_weapons() -> Published {
         Published {
             weapons: [SECOND, WIELDED],
-            manual_action: [true, false],
             self_cycling: [false, false],
             held: [false, true],
         }
@@ -282,14 +260,6 @@ mod tests {
         assert!(!holds(&p, SECOND, Hand::Left));
         assert!(!holds(&p, WIELDED, Hand::Left));
         assert!(!holds(&p, 0, Hand::Left));
-    }
-
-    #[test]
-    fn the_manual_action_is_its_own_weapons() {
-        let p = two_weapons();
-        assert!(cycles_by_hand(&p, SECOND));
-        assert!(!cycles_by_hand(&p, WIELDED));
-        assert!(!cycles_by_hand(&Published::default(), 0));
     }
 
     #[test]

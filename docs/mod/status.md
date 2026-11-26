@@ -25,7 +25,6 @@ The status rows say whether each of the mod's systems is live, for confirming a 
 | | `LEFT HAND ON GUN`, `RIGHT HAND ON GUN` | the part of the wielded gun each hand holds and whether it fires it from the grip or braces it, with the braces and the guns passed to the brace since load ([input/physical-guns.md](input/physical-guns.md#grabbing-a-gun-anywhere)) |
 | | `TAKE FROM HANDS` | the guns in other characters' hands within reach of a grab, and the takes since load |
 | | `TAKE FROM RACKS` | the weapons on racks within reach of a grab, the weapons racks handed over, and the copies asked of racks with unlimited stock |
-| | `LEFT ACTION`, `RIGHT ACTION` | with the physical action on, each held gun's action on its travel: how far its part is back (and a bolt's turn up), whether a hand holds it or the slide is locked back, the chamber, and the actions worked since load ([input/reload.md](input/reload.md#the-physical-action)) |
 | | `ARMED BESIDE` | each weapon armed in a hand beside the wielded one, its slot and hand, and its magazine ([input/physical-weapons.md](input/physical-weapons.md#a-weapon-in-each-hand)) |
 | | `RIGHT HAND GRIP` | which grip the right hand took for a gun (its own, or the left hand's mirrored), and the angle between the two ([input/physical-weapons.md](input/physical-weapons.md#the-right-hands-grip)) |
 | | `SOCKETS` | how many sockets' volumes sat on the weapons docked on them on the last tick ([input/physical-weapons.md](input/physical-weapons.md#the-sockets)) |

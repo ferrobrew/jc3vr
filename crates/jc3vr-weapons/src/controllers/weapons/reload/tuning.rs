@@ -1,14 +1,14 @@
-//! The true reload's fixed tuning, and the feature switches it takes from the configuration
+//! The true reload's fixed tuning, and the switch it takes from the configuration
 //! ([`ReloadConfig`]).
 
 use glam::Vec3;
 
 use crate::controllers::weapons::reload::{
-    config::{ExtractionConfig, KnockConfig, ReloadConfig},
+    config::ReloadConfig,
     plan::{LoadKind, ReloadPlan},
 };
 
-/// The true reload's tuning with its default switches.
+/// The true reload's tuning, switched on.
 pub const RELOAD: Reload = Reload::new();
 
 /// The true reload. Acts only under the controller scheme.
@@ -21,15 +21,6 @@ pub struct Reload {
     /// The longest press of the reload button that counts as a tap, seconds. The game holsters on
     /// a longer hold of the same button, so a hold never ejects.
     pub tap_s: f32,
-    /// Eject a gun's magazine with a sharp flick of the hand holding it.
-    pub flick_eject: bool,
-    /// Work the slide, charging handle, bolt, or pump by hand
-    /// ([`ReloadConfig::manual_action`]).
-    pub manual_action: bool,
-    /// The angular speed of the gun hand that counts as a flick, degrees per second.
-    pub flick_speed_dps: f32,
-    /// The shortest time between two flick ejects, seconds.
-    pub flick_cooldown_s: f32,
     /// The magazine well of a weapon the wells table has no entry for, in the holding hand's wrist
     /// frame (-Z toward the fingers, +Y out of the back of the hand), metres: under the gun, just
     /// ahead of the grip. Given for the right hand and mirrored for the left.
@@ -48,11 +39,11 @@ pub struct Reload {
     pub capture_radius_m: f32,
     /// How far a held magazine may be turned from the well's axis and still catch, degrees.
     pub capture_angle_deg: f32,
-    /// The slowest push of a held magazine into a well that still holds one, along the well into
-    /// the gun and relative to it, that knocks the old one out
-    /// ([`KnockConfig::push_min_speed_mps`]); a slower push is refused.
-    ///
-    /// [`KnockConfig::push_min_speed_mps`]: crate::controllers::weapons::reload::config::KnockConfig::push_min_speed_mps
+    /// The slowest push of the held magazine's tip into the well's mouth while the old magazine is
+    /// still in, along the well into the gun and relative to it, that knocks the old one out,
+    /// metres per second at the player's scale; a slower push is refused. In the 10 November 2026
+    /// session the pushes that came to load were 0.3 to 0.5 m/s at the mouth and the strikes 1.9
+    /// to 3.2.
     pub push_knock_mps: f32,
     /// How close the top of a held round must come to a launcher's well to catch it, metres. A
     /// launcher's well (a rocket tube's front, the UPU-210's cartridge bay) is large and sits far
@@ -78,7 +69,7 @@ pub struct Reload {
     /// Ejected magazines that stay in the world with their rounds.
     pub loose: LooseTuning,
     /// Grip-and-pull removal of an inserted detachable magazine.
-    pub extraction: ExtractionConfig,
+    pub extraction: ExtractionTuning,
 }
 
 impl Reload {
@@ -86,16 +77,12 @@ impl Reload {
         Self {
             enabled: true,
             tap_s: 0.3,
-            flick_eject: false,
-            manual_action: false,
-            flick_speed_dps: 900.0,
-            flick_cooldown_s: 0.6,
             well_offset_m: Vec3::new(0.0, -0.08, -0.06),
             held_top_m: 0.07,
             held_palm_gap_m: 0.03,
             capture_radius_m: 0.08,
             capture_angle_deg: 50.0,
-            push_knock_mps: KnockConfig::new().push_min_speed_mps,
+            push_knock_mps: 0.75,
             launcher_capture_radius_m: 0.16,
             launcher_capture_angle_deg: 85.0,
             seat_depth_m: 0.025,
@@ -105,30 +92,14 @@ impl Reload {
             belt: BeltTuning::new(),
             action: ActionTuning::new(),
             loose: LooseTuning::new(),
-            extraction: ExtractionConfig::new(),
+            extraction: ExtractionTuning::new(),
         }
     }
 
-    /// The fixed tuning with the switches `config` sets.
+    /// The fixed tuning with the switch `config` sets.
     pub const fn of(config: &ReloadConfig) -> Self {
         Self {
             enabled: config.enabled,
-            flick_eject: config.flick_eject,
-            manual_action: config.manual_action,
-            belt: BeltTuning {
-                enabled: config.belt.enabled,
-                ..RELOAD.belt
-            },
-            action: ActionTuning {
-                physical: config.action.physical,
-                ..RELOAD.action
-            },
-            loose: LooseTuning {
-                enabled: config.loose.enabled,
-                ..RELOAD.loose
-            },
-            extraction: config.extraction,
-            push_knock_mps: config.knock.push_min_speed_mps,
             ..RELOAD
         }
     }
@@ -170,9 +141,6 @@ impl Reload {
 /// Magazines in the world (see [`crate::controllers::weapons::reload::loose`]).
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct LooseTuning {
-    /// An ejected magazine keeps the rounds it held as an object in the world, and a dropped
-    /// magazine that fits the held gun can be picked up and seated with its rounds.
-    pub enabled: bool,
     /// The radius of a dropped magazine's grab volume, metres.
     pub radius_m: f32,
     /// How far from the player a dropped magazine may be to be picked up, metres.
@@ -189,7 +157,6 @@ pub struct LooseTuning {
 impl LooseTuning {
     const fn new() -> Self {
         Self {
-            enabled: true,
             radius_m: 0.1,
             range_m: 2.0,
             half_length_m: 0.06,
@@ -202,7 +169,6 @@ impl LooseTuning {
 /// The one-handed belt reload (see [`crate::controllers::weapons::reload::belt`]).
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct BeltTuning {
-    pub enabled: bool,
     /// How far the gun's insertion axis may lean from straight up, degrees: the magazine must point
     /// down at the belt, give or take a gun held at an angle in a hand lowered to the hip.
     pub max_tilt_deg: f32,
@@ -222,7 +188,6 @@ pub struct BeltTuning {
 impl BeltTuning {
     const fn new() -> Self {
         Self {
-            enabled: true,
             max_tilt_deg: 60.0,
             radius_m: 0.12,
             depth_m: 0.02,
@@ -236,11 +201,6 @@ impl BeltTuning {
 /// [`crate::controllers::weapons::reload::chamber`]).
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct ActionTuning {
-    /// The action is a part that follows the hand through its travel: a slide or a charging handle
-    /// runs home on its spring when let go, a slide catches at the rear on an empty magazine, a
-    /// pump stays where it is left, and a bolt turns up before it slides. Off, the action is a
-    /// gesture: a pull to the pull share and a release or a push home.
-    pub physical: bool,
     /// How close the off-hand's grip must be to the handle to grab it, metres. A closed hand
     /// feeling along the gun for the handle lands a few centimetres off it, and while the gun
     /// waits on its action the handle is taken first within this reach
@@ -275,11 +235,32 @@ impl ActionTuning {
             return_fraction: 0.3,
             release_distance_m: 0.15,
             default_travel_m: 0.06,
-            physical: true,
             spring_s: 0.05,
             bolt_lift_deg: 60.0,
             bolt_radius_m: 0.03,
             lift_fraction: 0.85,
+        }
+    }
+}
+
+/// Grip-and-pull removal of a detachable magazine, with no release-button latch (see
+/// [`crate::controllers::weapons::reload::extraction`]).
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct ExtractionTuning {
+    /// The inserted magazine's grab radius, metres at the player's scale.
+    pub grab_radius_m: f32,
+    /// The outward hand travel required to detach the magazine, metres at the player's scale.
+    pub pull_m: f32,
+    /// How far the hand may move sideways from its acquired path, metres at the player's scale.
+    pub lateral_tolerance_m: f32,
+}
+
+impl ExtractionTuning {
+    pub const fn new() -> Self {
+        Self {
+            grab_radius_m: 0.06,
+            pull_m: 0.08,
+            lateral_tolerance_m: 0.06,
         }
     }
 }

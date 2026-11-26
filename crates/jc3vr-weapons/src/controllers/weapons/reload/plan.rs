@@ -139,18 +139,13 @@ impl ReloadPlan {
         }
     }
 
-    /// The plan with its action worked by hand only while `manual_action` is on. Off, every action
-    /// is [`ActionKind::None`], so the gun chambers its first round as its magazine seats, as a
-    /// launcher or a revolver does, and nothing waits on a slide, a charging handle, a bolt, or a
-    /// pump.
-    pub fn with_manual_action(self, manual_action: bool) -> Self {
-        if manual_action {
-            self
-        } else {
-            Self {
-                action: ActionKind::None,
-                ..self
-            }
+    /// The plan with no action worked by hand: every action is [`ActionKind::None`], so the gun
+    /// chambers its first round as its magazine seats, as a launcher or a revolver does, and
+    /// nothing waits on a slide, a charging handle, a bolt, or a pump.
+    pub fn cocked(self) -> Self {
+        Self {
+            action: ActionKind::None,
+            ..self
         }
     }
 }
@@ -1133,7 +1128,7 @@ mod tests {
     }
 
     #[test]
-    fn without_the_manual_action_no_action_is_worked_by_hand() {
+    fn a_cocked_plan_works_no_action_by_hand() {
         for (class, action) in [
             (WeaponClass::E_WEAPON_CLASS_PISTOL, TableAction::Slide),
             (WeaponClass::E_WEAPON_CLASS_SNIPER, TableAction::Bolt),
@@ -1142,8 +1137,7 @@ mod tests {
             let e = entry(WellKind::Magazine, action, WellGrade::Mesh);
             let p = plan(facts(class), Some(&e), WRIST, 0.06).unwrap();
             assert_ne!(p.action, ActionKind::None, "{class:?}");
-            assert_eq!(p.with_manual_action(true), p);
-            let cocked = p.with_manual_action(false);
+            let cocked = p.cocked();
             assert_eq!(cocked.action, ActionKind::None, "{class:?}");
             assert_eq!(cocked.load, p.load);
             assert_eq!(cocked.well, p.well);

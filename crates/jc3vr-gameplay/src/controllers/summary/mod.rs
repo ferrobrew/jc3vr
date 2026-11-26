@@ -140,9 +140,7 @@ pub(crate) fn refresh(
         features: Features {
             holsters: true,
             magazine: weapons.reload.enabled,
-            belt_reload: weapons.reload.enabled && weapons.reload.belt.enabled,
-            flick_eject: weapons.reload.enabled && weapons.reload.flick_eject,
-            work_action: weapons.reload.enabled && weapons.reload.manual_action,
+            belt_reload: weapons.reload.enabled,
             sight_chord: controls.sight_chord,
             wheel_trackpad: weapons.wheel.enabled && WHEEL.trackpad,
             wheel_stick: weapons.wheel.enabled && WHEEL.stick,

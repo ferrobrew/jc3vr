@@ -7,7 +7,7 @@
 //! inserted magazine: a capsule down the well's axis over the magazine's visible length, in the
 //! well's moving frame, so that the gun's own motion does not count. The tip must come into the
 //! capsule from outside, between two input ticks or along the line between them, closing on it
-//! faster than [`KnockConfig::min_speed_mps`] relative to the gun. A tip that rests against the
+//! faster than [`MIN_SPEED_MPS`] relative to the gun. A tip that rests against the
 //! magazine or slides along it does nothing.
 //!
 //! The knocked magazine leaves through the eject's own drop, with the eject's round accounting and
@@ -15,8 +15,6 @@
 //! gun's velocity, and the strike adds an impulse at the struck point as a collision with a hand
 //! driven body would, so a base strike sends it out along the well and a strike on its side near
 //! the well turns it as it goes ([`knocked`]).
-//!
-//! [`KnockConfig::min_speed_mps`]: crate::controllers::weapons::reload::config::KnockConfig::min_speed_mps
 
 use std::time::{Duration, Instant};
 
@@ -32,6 +30,15 @@ use crate::controllers::weapons::reload::{
     serial::Identity,
     wells::WellEntry,
 };
+
+/// The slowest closing speed of the held magazine's tip against the inserted magazine, relative to
+/// the gun, that knocks it out, metres per second at the player's scale. A hand brought to the gun
+/// to load moves at a few tenths of a metre per second, and a deliberate strike at one and a half
+/// to three, so a gentle touch does nothing. The speed is one tick's travel into the magazine,
+/// which reads 55 to 70 percent of the hand's peak as it slows into the contact: on the 14 November
+/// 2026 take strikes whose hands peaked at 1.2 to 1.8 m/s read 0.8 to 1.0 and were turned away at
+/// 1.0, while the seat attempts read 0.2 to 0.5.
+pub(crate) const MIN_SPEED_MPS: f32 = 0.75;
 
 /// The inserted magazine a held one can knock out, in the cockpit frame at the player's scale.
 #[derive(Debug, Copy, Clone, PartialEq)]

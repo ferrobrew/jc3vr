@@ -5,7 +5,7 @@ use test_case::test_case;
 use super::*;
 use crate::controllers::weapons::reload::tuning::RELOAD;
 
-const CONFIG: ExtractionConfig = ExtractionConfig::new();
+const CONFIG: ExtractionTuning = ExtractionTuning::new();
 
 fn sample(holder: Hand, outward_m: f32) -> Sample {
     Sample {
@@ -132,13 +132,6 @@ fn hand_loss_removal_identity_scale_and_mode_changes_require_a_new_claim() {
         true,
         &CONFIG
     ));
-    pull.step(Some(start), true, true, &CONFIG);
-    let disabled = ExtractionConfig {
-        enabled: false,
-        ..CONFIG
-    };
-    assert!(!pull.step(Some(start), false, true, &disabled));
-    assert_eq!(pull.hand(), None);
 }
 
 #[test]
@@ -149,9 +142,6 @@ fn only_an_inserted_detachable_magazine_is_eligible() {
     for load in [LoadKind::Shell, LoadKind::Rocket, LoadKind::Cylinder] {
         assert!(!eligible(load, false, &reload));
     }
-    reload.loose.enabled = false;
-    assert!(!eligible(LoadKind::Magazine, false, &reload));
-    reload.loose.enabled = true;
     reload.enabled = false;
     assert!(!eligible(LoadKind::Magazine, false, &reload));
 }

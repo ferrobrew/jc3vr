@@ -28,12 +28,11 @@ impl State {
     /// queue that magazine's drop on a strike. The zone is published for the grab view.
     pub(super) fn knock(&mut self, tick: &Tick, inputs: &FinishInputs, config: &WeaponSettings) {
         let reload = &Reload::of(&config.weapons.reload);
-        let min_speed_mps = config.weapons.reload.knock.min_speed_mps;
         let holding = matches!(self.status.insertion.stage, InsertStage::Holding { .. })
             && self.insertion_source == InsertionSource::Pouch;
         let Some((hand, gun_hand)) = self.status.insert_hands.filter(|_| holding) else {
             self.knocks.lose_tip();
-            self.knock_guns(tick, inputs, config);
+            self.knock_guns(tick, inputs);
             return;
         };
         self.knocks.lose_guns();
@@ -81,20 +80,20 @@ impl State {
             return;
         }
         let previous = self.knocks.previous;
-        let (strike, local) = knock::strike(&zone, previous, tip, inputs.dt, min_speed_mps);
+        let (strike, local) = knock::strike(&zone, previous, tip, inputs.dt, knock::MIN_SPEED_MPS);
         self.knocks.previous = local;
-        let fast = previous
-            .zip(local)
-            .is_some_and(|(p, l)| inputs.dt > 0.0 && p.distance(l) / inputs.dt >= min_speed_mps);
+        let fast = previous.zip(local).is_some_and(|(p, l)| {
+            inputs.dt > 0.0 && p.distance(l) / inputs.dt >= knock::MIN_SPEED_MPS
+        });
         if let Some(strike) = strike {
-            self.queue_knock(tick, gun_hand, strike, reload);
+            self.queue_knock(tick, gun_hand, strike);
         } else if let (Some(touch), _) = knock::strike(&zone, previous, tip, inputs.dt, 0.0) {
             // A meeting too slow to knock, logged so a threshold that turns strikes away shows.
             tracing::info!(
                 target: "controllers",
                 hand = ?hand,
                 closing_mps = touch.closing_mps,
-                min_speed_mps,
+                min_speed_mps = knock::MIN_SPEED_MPS,
                 "reload: the held magazine met the inserted one too slowly to knock it out"
             );
         }
@@ -105,13 +104,7 @@ impl State {
     /// `speed_mps`: the old magazine leaves straight out of the well, struck at the mouth, as a
     /// strike on its base sends it. Returns whether the drop was queued; a gun whose magazine
     /// cannot be knocked out refuses the push instead.
-    pub(super) fn push_knock(
-        &mut self,
-        tick: &Tick,
-        gun_hand: Hand,
-        speed_mps: f32,
-        reload: &Reload,
-    ) -> bool {
+    pub(super) fn push_knock(&mut self, tick: &Tick, gun_hand: Hand, speed_mps: f32) -> bool {
         let Some((weapon, gun)) = tick.gun(gun_hand) else {
             return false;
         };
@@ -127,10 +120,10 @@ impl State {
         };
         let strike = knock::push_strike(&zone, speed_mps);
         tracing::info!(target: "controllers", hand = ?gun_hand.other(), speed_mps, "reload: the held magazine was pushed into the occupied well fast enough to knock");
-        self.queue_knock(tick, gun_hand, strike, reload)
+        self.queue_knock(tick, gun_hand, strike)
     }
 
-    fn knock_guns(&mut self, tick: &Tick, inputs: &FinishInputs, config: &WeaponSettings) {
+    fn knock_guns(&mut self, tick: &Tick, inputs: &FinishInputs) {
         if self.status.insertion.holding()
             || self.pending_detach.is_some()
             || self.pending_ejects.iter().any(Option::is_some)
@@ -161,11 +154,9 @@ impl State {
                 world_scale: tick.world_scale,
             })
         });
-        let strikes = self.knocks.gun_strikes(
-            magazines,
-            inputs.dt,
-            config.weapons.reload.knock.min_speed_mps,
-        );
+        let strikes = self
+            .knocks
+            .gun_strikes(magazines, inputs.dt, knock::MIN_SPEED_MPS);
         let candidate = Hand::BOTH
             .into_iter()
             .filter_map(|holder| Some((holder, strikes[holder.index()]?)))
@@ -174,8 +165,7 @@ impl State {
             knock::publish(None);
             return;
         };
-        let reload = Reload::of(&config.weapons.reload);
-        if self.queue_knock(tick, holder, strike, &reload) {
+        if self.queue_knock(tick, holder, strike) {
             self.knocks.lose_guns();
             knock::publish(magazines[holder.index()].map(|magazine| KnockView {
                 holder,
@@ -189,11 +179,11 @@ impl State {
         }
     }
 
-    fn queue_knock(&mut self, tick: &Tick, holder: Hand, strike: Strike, reload: &Reload) -> bool {
+    fn queue_knock(&mut self, tick: &Tick, holder: Hand, strike: Strike) -> bool {
         let Some((weapon, gun)) = tick.gun(holder) else {
             return false;
         };
-        if !self.queue_eject(weapon, gun, holder, DetachKind::Knock, reload.loose.enabled) {
+        if !self.queue_eject(weapon, gun, holder, DetachKind::Knock) {
             return false;
         }
         self.knocks.strikes[holder.index()] = Some(strike);

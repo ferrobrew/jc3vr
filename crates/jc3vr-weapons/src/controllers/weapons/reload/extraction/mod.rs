@@ -20,13 +20,12 @@ use crate::controllers::weapons::{
     reload::{
         FinishInputs, GunTick, STATE, State, Tick, WeaponTick,
         chamber::WorkStage,
-        config::ExtractionConfig,
         engine,
         insert::{InsertInputs, InsertionSource},
         loose,
         plan::{LoadKind, WellFrame},
         serial,
-        tuning::Reload,
+        tuning::{ExtractionTuning, Reload},
         zones,
         zones::{MagazineZone, ZoneView},
     },
@@ -78,7 +77,7 @@ impl Pull {
         sample: Option<Sample>,
         claimed: bool,
         grip_held: bool,
-        config: &ExtractionConfig,
+        config: &ExtractionTuning,
     ) -> bool {
         let Some(sample) = sample.filter(|s| valid(s, config) && grip_held) else {
             self.reset();
@@ -363,8 +362,6 @@ impl State {
                 || self.status.insert_hands.is_some()
                 || loose::held().is_some()
                 || !reload.enabled
-                || !reload.extraction.enabled
-                || !reload.loose.enabled
             {
                 adapter.cancel(request);
                 self.cancel_extraction();
@@ -465,9 +462,8 @@ struct Acquired {
     world_scale: f32,
 }
 
-fn valid(sample: &Sample, config: &ExtractionConfig) -> bool {
-    config.enabled
-        && sample.frame.position.is_finite()
+fn valid(sample: &Sample, config: &ExtractionTuning) -> bool {
+    sample.frame.position.is_finite()
         && sample.frame.orientation.is_finite()
         && sample.frame.orientation.is_normalized()
         && sample.grip.is_finite()
@@ -586,11 +582,7 @@ fn zone_views(
 }
 
 pub(super) fn eligible(load: LoadKind, out: bool, reload: &Reload) -> bool {
-    reload.enabled
-        && reload.extraction.enabled
-        && reload.loose.enabled
-        && load == LoadKind::Magazine
-        && !out
+    reload.enabled && load == LoadKind::Magazine && !out
 }
 
 #[cfg(test)]

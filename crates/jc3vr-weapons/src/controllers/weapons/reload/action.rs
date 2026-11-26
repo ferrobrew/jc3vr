@@ -18,7 +18,7 @@ use crate::controllers::weapons::{
     pouch_models,
     reload::{
         FinishInputs, GunTick, State, Tick, WeaponTick, chamber,
-        chamber::{ActionKind, Chamber, WorkEvent, WorkInputs},
+        chamber::{ActionKind, Chamber},
         engine,
         insert::{InsertStage, InsertionSource},
         plan::ReloadPlan,
@@ -110,84 +110,8 @@ impl State {
         config: &WeaponSettings,
     ) {
         let reload = &Reload::of(&config.weapons.reload);
-        if reload.action.physical {
-            self.status.work.reset();
-            self.work_travel(tick, inputs, reload, &mut NativeAction);
-            self.publish_render(game, tick, reload);
-            return;
-        }
-        set_pump_slide(None);
-        // The gesture works one gun: the first whose chamber is empty, or else the first with an
-        // action to work.
-        let workable_gun = |hand: Hand| {
-            tick.gun(hand)
-                .filter(|(w, _)| workable(&w.plan))
-                .map(|(w, g)| (hand, w, g))
-        };
-        let target = Hand::BOTH
-            .into_iter()
-            .filter_map(workable_gun)
-            .find(|(_, w, g)| self.records.get(w.key).chambers[g.entry()] == Chamber::Empty)
-            .or_else(|| Hand::BOTH.into_iter().find_map(workable_gun));
-        let worker = self.free.filter(|h| {
-            self.status
-                .insert_hands
-                .is_none_or(|(holding, _)| holding != *h)
-                && self.extraction_hand() != Some(*h)
-        });
-        let hold = foregrip::status().hold.filter(|h| h.engaged);
-        let work_inputs = target.zip(worker).and_then(|((_, weapon, gun), worker)| {
-            let kind = weapon.plan.action;
-            let hand = tick.hands[worker.index()]?.grip.position;
-            let (handle, rearward) = match kind {
-                // The pump rides the foregrip, so its rest is wherever the hand holds it.
-                ActionKind::Pump => (gun.frame?.pose.position, gun.frame?.rearward()),
-                _ => gun.handle?,
-            };
-            Some(WorkInputs {
-                kind,
-                handle,
-                rearward,
-                travel_m: weapon.plan.travel_m,
-                hand,
-                grip_pressed: inputs.grabs[worker.index()] == Some(GrabVolume::WeaponAction),
-                grip_held: inputs.grips[worker.index()].held(),
-                on_foregrip: hold.is_some_and(|h| h.holder.other() == worker),
-                needed: self.records.get(weapon.key).chambers[gun.entry()] == Chamber::Empty,
-            })
-        });
-        let event = self.status.work.step(work_inputs, &reload.action);
-        match (event, target) {
-            (Some(WorkEvent::Pulled), Some((_, weapon, gun))) => {
-                let record = self.records.get(weapon.key);
-                if record.chambers[gun.entry()] == Chamber::Chambered {
-                    if NativeAction
-                        .eject_gun(weapon.address, gun.entry())
-                        .is_none()
-                    {
-                        self.status.work.reset();
-                        return;
-                    }
-                    record.chambers[gun.entry()] = Chamber::Empty;
-                }
-                if let Some(worker) = worker {
-                    haptics::play(worker, Event::Rack);
-                }
-            }
-            (Some(WorkEvent::Worked), Some((gun_hand, weapon, gun))) => {
-                let kind = weapon.plan.action;
-                let chamber = NativeAction.feed(weapon.address, gun.entry());
-                self.records.get(weapon.key).chambers[gun.entry()] = chamber;
-                self.status.counts.racks += 1;
-                self.event(format!("{} worked", kind.label()));
-                // SAFETY: game thread before the world update; the weapon was read this tick.
-                unsafe { engine::cycled(weapon.address, kind, true) };
-                if chamber == Chamber::Chambered {
-                    haptics::play(gun_hand, Event::Chambered);
-                }
-            }
-            _ => {}
-        }
+        self.status.work.reset();
+        self.work_travel(tick, inputs, reload, &mut NativeAction);
         self.publish_render(game, tick, reload);
     }
 
@@ -385,15 +309,9 @@ impl State {
     /// Publish each hand's action part with its own weapon, and the held magazine part with the
     /// weapon its round is for, for the render thread.
     fn publish_render(&mut self, game: &GameTick<'_>, tick: &Tick, reload: &Reload) {
-        let physical = reload.action.physical;
-        let working = matches!(self.status.work.stage, chamber::WorkStage::Held { .. });
         let records = Hand::BOTH.map(|hand| {
             tick.gun(hand)
                 .map(|(weapon, gun)| (*self.records.get(weapon.key), gun.entry()))
-        });
-        let worked_gun = Hand::BOTH.into_iter().find(|&hand| {
-            tick.gun(hand).is_some_and(|(w, _)| workable(&w.plan))
-                && records[hand.index()].is_some_and(|(r, e)| r.chambers[e] == Chamber::Empty)
         });
         let actions = Hand::BOTH.map(|hand| {
             let i = hand.index();
@@ -403,17 +321,7 @@ impl State {
                 return None;
             }
             let kind = weapon.plan.action;
-            let (share, lift) = if physical {
-                (record.travels[e].position, record.travels[e].lift)
-            } else if kind != ActionKind::Slide {
-                return None;
-            } else if working && worked_gun == Some(hand) {
-                (self.status.work.progress, 0.0)
-            } else if record.chambers[e] == Chamber::Empty {
-                (1.0, 0.0)
-            } else {
-                return None;
-            };
+            let (share, lift) = (record.travels[e].position, record.travels[e].lift);
             Some(render::ActionPart {
                 weapon: weapon.address,
                 gun: gun.index as u32,
@@ -507,8 +415,8 @@ impl State {
 }
 
 /// Whether the plan's slide catches at the rear on an empty magazine.
-pub(super) fn locks_back(plan: &ReloadPlan, reload: &Reload) -> bool {
-    plan.action == ActionKind::Slide && reload.action.physical
+pub(super) fn locks_back(plan: &ReloadPlan) -> bool {
+    plan.action == ActionKind::Slide
 }
 
 /// Whether the plan's action is the mod's to work.

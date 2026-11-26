@@ -1,7 +1,7 @@
 use super::*;
 use crate::controllers::weapons::reload::{
     steps::test_support::{state as make_state, tick as insertion_tick},
-    tuning::{RELOAD, Reload},
+    tuning::RELOAD,
 };
 
 fn tick(seating: bool) -> Tick {
@@ -24,7 +24,6 @@ fn shot(hand: Hand, magazine: i32) -> gate::Shot {
 
 #[test]
 fn delayed_pair_shots_preserve_owned_readiness_and_still_lock_back() {
-    let config = WeaponSettings::default();
     let mut tick = tick(false);
     let mut state = state();
     let weapon = tick.weapons[0].as_mut().unwrap();
@@ -35,11 +34,7 @@ fn delayed_pair_shots_preserve_owned_readiness_and_still_lock_back() {
     tick.guns[0] = Some(left);
     let chambers = [Chamber::Empty, Chamber::Chambered];
     state.records.get(key).chambers = chambers;
-    state.apply_shots(
-        &tick,
-        &Reload::of(&config.weapons.reload),
-        vec![shot(Hand::Right, 3), shot(Hand::Left, 0)],
-    );
+    state.apply_shots(&tick, vec![shot(Hand::Right, 3), shot(Hand::Left, 0)]);
     assert_eq!(state.records.get(key).chambers, chambers);
     assert_eq!(state.status.counts.lock_backs, 1);
     assert!(!state.records.get(key).travels[1].in_battery(&RELOAD.action));
@@ -47,29 +42,19 @@ fn delayed_pair_shots_preserve_owned_readiness_and_still_lock_back() {
 
 #[test]
 fn delayed_unowned_shots_keep_the_native_readiness_fallback() {
-    let config = WeaponSettings::default();
     let tick = tick(false);
     let mut state = state();
     let key = tick.weapons[0].unwrap().key;
     state.records.get(key).chambers = [Chamber::Empty; 2];
-    state.apply_shots(
-        &tick,
-        &Reload::of(&config.weapons.reload),
-        vec![shot(Hand::Right, 2)],
-    );
+    state.apply_shots(&tick, vec![shot(Hand::Right, 2)]);
     assert_eq!(state.records.get(key).chambers[0], Chamber::Chambered);
-    state.apply_shots(
-        &tick,
-        &Reload::of(&config.weapons.reload),
-        vec![shot(Hand::Right, 0)],
-    );
+    state.apply_shots(&tick, vec![shot(Hand::Right, 0)]);
     assert_eq!(state.records.get(key).chambers[0], Chamber::Empty);
     assert_eq!(state.status.counts.lock_backs, 1);
 }
 
 #[test]
 fn first_empty_observation_preserves_owned_chambers_and_seeds_lockback() {
-    let config = WeaponSettings::default();
     for owned in [false, true] {
         let mut tick = tick(false);
         let weapon = tick.weapons[0].as_mut().unwrap();
@@ -77,7 +62,7 @@ fn first_empty_observation_preserves_owned_chambers_and_seeds_lockback() {
         let key = weapon.key;
         let mut state = state();
         state.records.get(key).chambers = [Chamber::Chambered; 2];
-        state.sync(&tick, &Reload::of(&config.weapons.reload));
+        state.sync(&tick);
         assert_eq!(
             state.records.get(key).chambers,
             [if owned {

@@ -4,7 +4,6 @@ use jc3vr_body::controllers::{hands::pose::CockpitHand, intent::controls::Button
 use super::*;
 use crate::controllers::weapons::reload::{
     action::ActionEngine,
-    chamber::WorkStage,
     tuning::{RELOAD, Reload},
 };
 
@@ -217,14 +216,6 @@ fn ready_charging_handles_and_pumps_do_not_gain_a_handle_candidate() {
                 .is_none()
         );
     }
-    let (mut config, mut state, tick, _) = fixture(ActionKind::Slide, Hand::Right, 5);
-    config.weapons.reload.action.physical = false;
-    assert!(
-        state
-            .handle_candidate(&tick, Some(Hand::Left), &Reload::of(&config.weapons.reload))
-            .is_none()
-    );
-    assert_eq!(state.status.work.stage, WorkStage::Idle);
 }
 
 #[test]

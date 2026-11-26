@@ -47,12 +47,9 @@ use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::controllers::weapons::{
-    config::WEAPONS_CONFIG,
-    reload::{
-        loose::records::{DropKey, Records, Token, WorldHandle},
-        tuning::LooseTuning,
-    },
+use crate::controllers::weapons::reload::{
+    loose::records::{DropKey, Records, Token, WorldHandle},
+    tuning::LooseTuning,
 };
 
 mod body;
@@ -503,10 +500,9 @@ fn throw_away_magazine_object(
         // The original detour imported NPC rounds without removing them from native accounting.
         // Only a local automatic drop or an already empty NPC magazine is proved import-safe.
         unsafe { gun.as_ref() }.and_then(|g| {
-            let enabled = WEAPONS_CONFIG.lock().reload.loose.enabled;
             let local = unsafe { character.as_ref() }.is_some_and(|c| c.m_IsLocalCharacter);
             let rounds = unsafe { g.m_Owner.as_ref() }.map(|w| w.m_MagazineAmmo.max(0));
-            automatic_rounds(enabled, local, rounds).and_then(|rounds| {
+            automatic_rounds(local, rounds).and_then(|rounds| {
                 Retention::reserve(gun as usize, g.m_MagazineObject.px as usize)
                     .map(|lease| (lease, rounds))
             })
@@ -564,8 +560,8 @@ fn throw_away_magazine_object(
     thrown
 }
 
-fn automatic_rounds(enabled: bool, local: bool, native_rounds: Option<i32>) -> Option<i32> {
-    (enabled && (local || native_rounds == Some(0))).then_some(0)
+fn automatic_rounds(local: bool, native_rounds: Option<i32>) -> Option<i32> {
+    (local || native_rounds == Some(0)).then_some(0)
 }
 
 fn dispatch_drop(

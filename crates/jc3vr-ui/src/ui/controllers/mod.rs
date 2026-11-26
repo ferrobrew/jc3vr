@@ -89,9 +89,6 @@ pub(crate) fn controls(id: FeatureId) -> Option<FeatureBody> {
             let mut c = CONTROLLERS_CONFIG.edit();
             aim::aim_settings(ui, &mut c);
         },
-        FeatureId::Reload => {
-            |ui, _| weapons::reload_feature_settings(ui, &mut CONTROLLERS_CONFIG.edit().weapons)
-        }
         FeatureId::WeaponSelection => {
             |ui, _| weapon_selection::selection_settings(ui, &mut CONTROLLERS_CONFIG.edit().weapons)
         }

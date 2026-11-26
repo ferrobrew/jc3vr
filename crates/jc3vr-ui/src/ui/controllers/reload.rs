@@ -1,6 +1,5 @@
 //! The true reload: the action and magazine rows, each hand's reloaded weapon, its magazine and
-//! chamber, the round in hand, the belt pushes, the action's work, the counters, and the reload's
-//! switches.
+//! chamber, the round in hand, the belt pushes, the action's work, and the counters.
 
 use egui::Ui;
 use jc3vr_input::frame::Hand;
@@ -8,22 +7,15 @@ use jc3vr_weapons::controllers::weapons::reload::{
     ReloadStatus, WeaponReadout,
     belt::PushStage,
     chamber::{Chamber, WorkStage},
-    config::ReloadConfig,
     fire_hold::FireHold,
     insert::InsertStage,
     loose, wells,
 };
 
-use crate::{
-    status::{
-        explosives::MAGAZINES,
-        weapons::{LEFT_ACTION, RIGHT_ACTION},
-    },
-    ui::status_row::headlines,
-};
+use crate::{status::explosives::MAGAZINES, ui::status_row::headlines};
 
 pub(super) fn reload_readout(ui: &mut Ui, r: &ReloadStatus) {
-    headlines(ui, &[&LEFT_ACTION, &RIGHT_ACTION, &MAGAZINES]);
+    headlines(ui, &[&MAGAZINES]);
     ui.label(format!("Native magazine execution: {:?}", r.serial));
     let c = &r.counts;
     ui.label(format!(
@@ -63,7 +55,7 @@ pub(super) fn reload_readout(ui: &mut Ui, r: &ReloadStatus) {
                 weapon_lines(ui, w);
             }
             ui.label(format!(
-                "{} gun: chamber {} · belt {} · fire {} · turn {:.0}°/s",
+                "{} gun: chamber {} · belt {} · fire {}",
                 hand.label(),
                 match w.chamber {
                     Chamber::Chambered => "loaded",
@@ -76,7 +68,6 @@ pub(super) fn reload_readout(ui: &mut Ui, r: &ReloadStatus) {
                     PushStage::Brushed => "brushed the pouch",
                 },
                 r.fire_held[i].map_or("free", FireHold::label),
-                r.flick_dps[i]
             ));
         }
         let held = match r.insertion.stage {
@@ -145,50 +136,4 @@ fn weapon_lines(ui: &mut Ui, w: &WeaponReadout) {
             w.reserve.to_string()
         }
     ));
-}
-
-pub(super) fn reload_settings(ui: &mut Ui, r: &mut ReloadConfig) {
-    ui.checkbox(&mut r.insertion_guide, "Ammo insertion guide")
-        .on_hover_text(
-            "Show a translucent ammo-shaped outline moving into the empty loading position while \
-             holding the matching ammunition. Hide it when the well is occupied or the round is \
-             released. The outline uses measured model profiles, not a filled ghost model.",
-        );
-    ui.checkbox(&mut r.flick_eject, "Flick the gun to eject")
-        .on_hover_text("A sharp flick of the hand holding a gun ejects its magazine.");
-    ui.checkbox(&mut r.loose.enabled, "Magazines stay in the world")
-        .on_hover_text(
-            "An ejected magazine keeps its rounds, and a magazine on the ground that fits the gun \
-             can be picked up and seated with them.",
-        );
-    ui.checkbox(&mut r.belt.enabled, "Belt reload")
-        .on_hover_text("Push the gun's well down onto the belt pouch to reload it one-handed.");
-    ui.checkbox(&mut r.manual_action, "Work the action by hand")
-        .on_hover_text(
-            "A gun that ran dry fires again only once its slide, charging handle, bolt, or pump \
-             is worked by hand, and a bolt or a pump after every shot. Off, a seated magazine \
-             chambers its first round, and the bolt and the pump cycle themselves.",
-        );
-    ui.checkbox(&mut r.action.physical, "Physical action").on_hover_text(
-        "The slide, charging handle, bolt, or pump follows the hand through its travel. Off, the \
-         action is a pull-and-release gesture.",
-    );
-    ui.add(
-        egui::Slider::new(&mut r.knock.min_speed_mps, 0.3..=4.0)
-            .text("Magazine knock speed (m/s)")
-            .fixed_decimals(1),
-    )
-    .on_hover_text(
-        "How fast the fresh magazine in the hand must strike the one still in the gun, relative \
-         to the gun, to knock it out. Slower touches do nothing.",
-    );
-    ui.add(
-        egui::Slider::new(&mut r.knock.push_min_speed_mps, 0.3..=4.0)
-            .text("Magazine push-knock speed (m/s)")
-            .fixed_decimals(1),
-    )
-    .on_hover_text(
-        "How fast the fresh magazine must be pushed into the well while the old one is still in, \
-         relative to the gun, to knock the old one out. A slower push is refused with a buzz.",
-    );
 }

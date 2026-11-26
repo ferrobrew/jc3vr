@@ -528,8 +528,6 @@ mod tests {
             holsters: true,
             magazine: true,
             belt_reload: true,
-            flick_eject: true,
-            work_action: true,
             sight_chord: true,
             wheel_trackpad: true,
             wheel_stick: true,

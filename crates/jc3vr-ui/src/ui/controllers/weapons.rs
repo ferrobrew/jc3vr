@@ -2,7 +2,7 @@
 //! did, the foregrip, the hand tiers, the recoil, the dual-wield split, the grapple line and yank,
 //! the grenade throw, the C4 throw and its detonator, the true reload, the empty weapon, the
 //! one-handed weight, the gun-in-hand watch, the fire input with empty hands, per-hand aim assist,
-//! and the switches of the hold, the support, the reload, and the explosives.
+//! and the brace joint's tuning.
 
 use egui::Ui;
 use jc3vr_body::controllers::{
@@ -23,9 +23,7 @@ use jc3vr_weapons::controllers::{
     loadout::slot_label,
     weapons,
     weapons::{
-        WeaponsStatus,
-        config::WeaponsConfig,
-        empty,
+        WeaponsStatus, empty,
         empty::EmptyStatus,
         foregrip,
         foregrip::ForegripStatus,
@@ -59,7 +57,7 @@ use crate::{
     ui::{
         controllers::{
             explosives::{ExplosivesReadout, explosives_readout},
-            reload::{reload_readout, reload_settings},
+            reload::reload_readout,
             vec3, yes_no,
         },
         status_row::headlines,
@@ -558,8 +556,4 @@ fn assist_readout(ui: &mut Ui, a: &AimStatus) {
         "Aim assist: corrections {} · last update {per_hand}",
         a.assist_corrections
     ));
-}
-
-pub(super) fn reload_feature_settings(ui: &mut Ui, w: &mut WeaponsConfig) {
-    reload_settings(ui, &mut w.reload);
 }

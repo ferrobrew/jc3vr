@@ -61,7 +61,6 @@ pub(crate) fn state(stage: InsertStage) -> State {
         ready_cue: insert::ReadyCue::new(),
         tap: TapDetector::new(),
         fire_taps: [DoubleTapDetector::new(); 2],
-        flicks: [FlickDetector::new(); 2],
         belts: [BeltPush::new(); 2],
         last_grips: [None; 2],
         drawn: None,

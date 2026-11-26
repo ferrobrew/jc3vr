@@ -244,8 +244,6 @@ const SECTIONS: &[Section] = &[
             weapons::RIGHT_HAND_ON_GUN,
             weapons::TAKES,
             weapons::RACKS,
-            weapons::LEFT_ACTION,
-            weapons::RIGHT_ACTION,
             weapons::ARMED,
             weapons::RIGHT_GRIP,
             weapons::DOCKS,

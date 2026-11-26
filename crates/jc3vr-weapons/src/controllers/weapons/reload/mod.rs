@@ -6,12 +6,10 @@
 //! ([`gate`]), and the player reloads by hand:
 //!
 //! - **Eject.** A tap of the reload button ejects the magazine of the driest gun in either hand
-//!   (the dominant hand's on a tie), so a double tap ejects both, and a flick of a gun hand ejects
-//!   that gun's ([`eject`]). The game drops the
+//!   (the dominant hand's on a tie), so a double tap ejects both ([`eject`]). The game drops the
 //!   magazine as a prop from the gun, with the gun's velocity, and hides the magazine part. The
 //!   magazine keeps the rounds left in it as an object in the world, to be picked up and seated
-//!   again ([`loose`]); with that off, they go back to the reserve when the next magazine seats,
-//!   as the game's own reload does.
+//!   again ([`loose`]).
 //! - **Load.** The free hand takes a round from the universal pouch on the belt (a magazine, a
 //!   shell, a rocket, or a pod, whatever the gun takes) and pushes it into the gun's well
 //!   ([`insert`]). The well is the gun's own, from the wells table ([`wells`]), carried to the
@@ -22,13 +20,13 @@
 //!   that one out through the eject's drop, with an impulse from the strike ([`knock`]).
 //! - **Belt.** Pushing a gun's well down onto the pouch reloads it in one hand, swapping a magazine
 //!   still in it, and works its action ([`belt`]).
-//! - **Chamber.** A gun that ran dry fires again only once its action is worked by hand; a bolt
-//!   or a pump is worked after every shot ([`chamber`]). The action is a part that follows the
-//!   hand through its travel ([`travel`]), drawn on a separate slide part or on the gun's own
-//!   skeleton ([`render`], [`bones`]).
+//! - **Chamber.** A seated magazine chambers its first round, and the bolt and the pump cycle
+//!   themselves ([`chamber`]). The code for an action worked by hand, a part that follows the
+//!   hand through its travel ([`travel`]) drawn on a separate slide part or on the gun's own
+//!   skeleton ([`render`], [`bones`]), stays, though no plan reaches it.
 //! - **Two weapons.** With a gun in each hand, the reload acts on each hand's gun at once, each
 //!   with its own weapon's plan, magazine, and chamber. With both hands full, no hand is free to
-//!   take a round, so a flick ejects and the belt push loads.
+//!   take a round, so the reload button ejects and the belt push loads.
 //!
 //! What the reload remembers of a weapon, its chambers and its action, outlives the weapon's time
 //! in the hands ([`records`]).
@@ -105,7 +103,7 @@ use crate::controllers::weapons::{
     reload::{
         belt::{BeltPush, PushStage},
         chamber::{ActionWork, Chamber},
-        eject::{DoubleTapDetector, FlickDetector, TapDetector},
+        eject::{DoubleTapDetector, TapDetector},
         engine::Reading,
         extraction::{DetachRequest, PendingDetach, Pull},
         fire_hold::FireHold,
@@ -142,8 +140,6 @@ pub struct ReloadStatus {
     /// Each gun hand's belt push, by [`Hand::index`].
     pub belt: [PushStage; 2],
     pub work: ActionWork,
-    /// The angular speed of each hand over the last tick, degrees per second.
-    pub flick_dps: [f32; 2],
     /// Why each hand's gun may not fire, by [`Hand::index`].
     pub fire_held: [Option<FireHold>; 2],
     pub counts: ReloadCounts,
@@ -591,9 +587,7 @@ pub(super) fn finish_tick(
     let weapons = Hand::BOTH.map(|hand| tick.gun(hand).map(|(weapon, _)| weapon));
     gate::publish(Some(gate::Published {
         weapons: weapons.map(|w| w.map_or(0, |w| w.address)),
-        manual_action: weapons
-            .map(|w| w.is_some_and(|w| w.plan.action.manual() && steps::chambering(&w.plan))),
-        self_cycling: weapons.map(|w| w.is_some() && !config.weapons.reload.manual_action),
+        self_cycling: weapons.map(|w| w.is_some()),
         held: held.map(|h| h.is_some()),
     }));
     FinishResult {
@@ -754,8 +748,7 @@ struct BeltGate {
 
 impl BeltGate {
     fn allows(self, reload: &Reload) -> bool {
-        reload.belt.enabled
-            && !self.holding
+        !self.holding
             && !self.extracting
             && !self.blocked
             && self.since_draw_s >= reload.belt.after_draw_s
@@ -805,9 +798,7 @@ unsafe fn loose_sightings(
     let Some((weapon, gun)) = free.and_then(|free| tick.gun(free.other())) else {
         return (Vec::new(), None);
     };
-    let wants = reload.loose.enabled
-        && weapon.plan.load == plan::LoadKind::Magazine
-        && (weapon.reading.out || reload.extraction.enabled);
+    let wants = weapon.plan.load == plan::LoadKind::Magazine;
     if !wants {
         return (Vec::new(), None);
     }
@@ -1097,7 +1088,6 @@ struct State {
     tap: TapDetector,
     /// Each gun hand's fire press double tap, the seated magazine release, by [`Hand::index`].
     fire_taps: [DoubleTapDetector; 2],
-    flicks: [FlickDetector; 2],
     belts: [BeltPush; 2],
     /// Each hand's grip on the last tick, for its velocity.
     last_grips: [Option<Vec3>; 2],
@@ -1117,7 +1107,6 @@ static STATE: Mutex<State> = Mutex::new(State {
         insert_hands: None,
         belt: [PushStage::Outside; 2],
         work: ActionWork::new(),
-        flick_dps: [0.0; 2],
         fire_held: [None; 2],
         counts: ReloadCounts {
             ejects: 0,
@@ -1154,7 +1143,6 @@ static STATE: Mutex<State> = Mutex::new(State {
     ready_cue: ReadyCue::new(),
     tap: TapDetector::new(),
     fire_taps: [DoubleTapDetector::new(); 2],
-    flicks: [FlickDetector::new(); 2],
     belts: [BeltPush::new(); 2],
     last_grips: [None; 2],
     drawn: None,

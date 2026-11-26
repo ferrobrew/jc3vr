@@ -37,7 +37,7 @@ fn automatic_empty_records_reuse_capacity_without_changing_native_accounting() {
             (0, 70, false)
         });
         for index in 0..CAPACITY * 4 {
-            let rounds = automatic_rounds(true, local, Some(native.get().0)).unwrap();
+            let rounds = automatic_rounds(local, Some(native.get().0)).unwrap();
             let token = records.borrow_mut().reserve(key(index));
             let expected = token.map(|token| ExpectedDrop {
                 key: key(index),
@@ -79,7 +79,7 @@ fn automatic_empty_records_reuse_capacity_without_changing_native_accounting() {
 #[test]
 fn automatic_nonempty_npc_or_unknown_accounting_never_duplicates_native_rounds() {
     for native_rounds in [Some(17), None] {
-        assert_eq!(automatic_rounds(true, false, native_rounds), None);
+        assert_eq!(automatic_rounds(false, native_rounds), None);
         let native = Cell::new((17, 70));
         let result = dispatch_drop(
             None,
@@ -92,8 +92,6 @@ fn automatic_nonempty_npc_or_unknown_accounting_never_duplicates_native_rounds()
         assert_eq!(result, (true, None));
         assert_eq!(native.get(), (17, 70));
     }
-    assert_eq!(automatic_rounds(false, true, Some(17)), None);
-    assert_eq!(automatic_rounds(false, false, Some(0)), None);
 }
 
 #[test]

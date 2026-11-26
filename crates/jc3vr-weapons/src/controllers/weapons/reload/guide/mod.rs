@@ -13,11 +13,8 @@ use crate::controllers::weapons::reload::{
 mod geometry;
 
 impl State {
-    pub(super) fn insertion_guide(&self, tick: &Tick, enabled: bool, reload: &Reload) {
-        let primitives = enabled
-            .then(|| self.guide_primitives(tick, reload))
-            .flatten();
-        match primitives {
+    pub(super) fn insertion_guide(&self, tick: &Tick, reload: &Reload) {
+        match self.guide_primitives(tick, reload) {
             Some(mut primitives) => {
                 store::submit(source(), &mut primitives, Duration::from_millis(150));
             }
