@@ -17,6 +17,7 @@ use jc3vr_body::controllers::{
     locomotion::axis_output::axis_wanted,
     mode::{Mode, VehicleClass},
 };
+use jc3vr_core::game_tick::GameTick;
 use jc3vr_input::{frame::Hand, haptics::cues::Event};
 use jc3vr_view::controllers::cockpit::CockpitTransform;
 
@@ -41,6 +42,7 @@ use crate::controllers::vehicles::{
 /// write their axes over the tables', add the arm pose to the move stick in the wingsuit, and steer
 /// with the held handles under the parachute.
 pub fn finish_tick(
+    game: &GameTick<'_>,
     mode: Mode,
     grabs: [Option<GrabVolume>; 2],
     controls: &Controls,
@@ -194,17 +196,14 @@ pub fn finish_tick(
         last,
         grapple_held,
     );
-    // SAFETY: the vehicles' finish runs in the binding stage, on the game thread before the world
-    // update.
-    unsafe {
-        wingsuit_evade::tick(
-            arms.as_ref(),
-            body_dimensions(&config).arm_span,
-            &config.vehicles.wingsuit_evade,
-            desired,
-            dt,
-        )
-    };
+    wingsuit_evade::tick(
+        game,
+        arms.as_ref(),
+        body_dimensions(&config).arm_span,
+        &config.vehicles.wingsuit_evade,
+        desired,
+        dt,
+    );
     let now_held = arms.is_some_and(|a| a.held_for_grapple);
     if now_held != was_held {
         tracing::info!(

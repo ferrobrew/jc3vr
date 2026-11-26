@@ -24,9 +24,13 @@ use jc3vr_body::controllers::{
         finish::FinishInputs,
         hold::{Desired, MapKind, Target, Want},
     },
-    physics::{bodies::physics_object_of, characters::character_object, refs::Weak},
+    physics::{
+        bodies::physics_object_of, characters::character_object, local_player::LocalPlayer,
+        refs::Weak,
+    },
     scheme,
 };
+use jc3vr_core::game_tick::GameTick;
 use jc3vr_input::frame::Hand;
 use jc3vr_physical::controllers::{
     physical_hands,
@@ -86,8 +90,9 @@ pub unsafe fn observe(weapon: &WeaponBase) {
 /// Retain the mounted weapons the physical hands grip, and release the rest.
 ///
 /// # Safety
-/// The game thread, after the physical hands and weapon handling settled this tick.
-pub unsafe fn tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
+///
+/// After the physical hands and weapon handling settled this tick.
+pub unsafe fn tick(game: &GameTick<'_>, inputs: &FinishInputs, desired: &mut Vec<Desired>) {
     let enabled = scheme::is_controllers()
         && !jc3vr_core::is_shutting_down()
         && scheme::enabled()
@@ -96,14 +101,13 @@ pub unsafe fn tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
     let now = Instant::now();
     let mut previous = std::mem::take(&mut *CONTROLLED.lock());
     let mut next = Vec::new();
-    let Some(local) =
-        (unsafe { Character::GetLocalPlayerCharacter().as_mut() }).filter(|_| enabled)
-    else {
+    let Some(mut local_player) = LocalPlayer::get(game).filter(|_| enabled) else {
         unsafe { release_all(previous) };
         unsafe { hide_standalone_prompts(false) };
         gunner_seat::reset();
         return;
     };
+    let local = local_player.character_mut();
     // The virtual mounted handles are the grip the player takes on a gun without the use prompt.
     // The native mounted state places the same handles, so its hands are kept when the runtime
     // stops that use, and the gun does not fall out of the hands on the same tick.

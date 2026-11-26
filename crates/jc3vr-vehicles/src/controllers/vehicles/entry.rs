@@ -1,7 +1,8 @@
 //! One retained observation of the local character's vehicle for fitting and control ownership.
 
-use jc3gi::{character::character::Character, vehicle::vehicle::Vehicle};
-use jc3vr_body::controllers::physics::refs::Strong;
+use jc3gi::vehicle::vehicle::Vehicle;
+use jc3vr_body::controllers::physics::{local_player::LocalPlayer, refs::Strong};
+use jc3vr_core::game_tick::GameTick;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) struct VehicleEntryIdentity {
@@ -16,12 +17,9 @@ pub(super) struct VehicleEntry {
 
 impl VehicleEntry {
     /// Capture the actual vehicle and keep it stable through this input tick.
-    ///
-    /// # Safety
-    ///
-    /// The caller runs on the game thread before the world update.
-    pub(super) unsafe fn read() -> Option<Self> {
-        let character = unsafe { Character::GetLocalPlayerCharacter().as_ref() }?;
+    pub(super) fn read(game: &GameTick<'_>) -> Option<Self> {
+        let local_player = LocalPlayer::get(game)?;
+        let character = local_player.character();
         let owner = unsafe {
             Strong::filled(|out| {
                 character.GetVehicle(out.cast());

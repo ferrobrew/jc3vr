@@ -22,6 +22,7 @@ use jc3vr_body::controllers::{
     hands::tiers,
     mode::{Mode, VehicleSeat},
 };
+use jc3vr_core::game_tick::GameTick;
 use jc3vr_input::frame::Hand;
 use jc3vr_view::{controllers::cockpit::CockpitTransform, headpose};
 use jc3vr_weapons::controllers::loadout::live;
@@ -55,7 +56,7 @@ use crate::controllers::vehicles::{
 /// The first half of the vehicle handling's input tick: read the mounted gun, place the physical
 /// controls, and return the vehicle handling's grip targets. Called while the bindings inject,
 /// before the tables.
-pub fn begin_tick(mode: Mode) -> TickVolumes {
+pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickVolumes {
     let Some(active) = hands::active_hands_raw() else {
         crate::controllers::vehicles::stand_down();
         physical::visual::clear();
@@ -68,8 +69,7 @@ pub fn begin_tick(mode: Mode) -> TickVolumes {
     };
     let mut physical_config = PhysicalControlsTuning::of(&config.vehicles.physical);
     let xf = CockpitTransform::current(active.head.position, active.world_scale);
-    // SAFETY: the game stage runs on the game thread before the world update.
-    let entry = seat.and_then(|_| unsafe { VehicleEntry::read() });
+    let entry = seat.and_then(|_| VehicleEntry::read(game));
     // The nitrous button is only on a vehicle with nitrous, where the game's own nitrous meter
     // shows: elsewhere it would be a marker and a press that do nothing.
     if !entry.as_ref().is_some_and(VehicleEntry::has_nitrous) {
@@ -123,7 +123,7 @@ pub fn begin_tick(mode: Mode) -> TickVolumes {
         .lock()
         .mounted_grip
         .aiming(&mounted_config, grips.map(|g| g.is_some()));
-    let mounted = mounted_tick(&active, &config, aiming);
+    let mounted = mounted_tick(game, &active, &config, aiming);
     // A gunner seat's view is corrected from its gun's handles, as a driver's from the wheel.
     let gunner_view = (seat.is_some_and(|s| !s.driver) && fit.view.is_none())
         .then(|| gunner_view_target(&xf, view_eyes, &mounted))

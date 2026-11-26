@@ -3,7 +3,9 @@
 //! (`PARACHUTE_BAIL_MIN_SPEED_MPS`).
 
 use glam::{Mat4, Vec3};
-use jc3gi::{character::character::Character, types::math::Vector3};
+use jc3gi::types::math::Vector3;
+use jc3vr_body::controllers::physics::local_player::LocalPlayer;
+use jc3vr_core::game_tick::GameTick;
 
 /// The speed of the vehicle the local character is in, metres per second, or `None` outside a
 /// vehicle or while it cannot be read: the length of the vehicle's ground-relative velocity at the
@@ -11,13 +13,10 @@ use jc3gi::{character::character::Character, types::math::Vector3};
 /// parent-vehicle speed condition compares against its bounds.
 ///
 /// [`Vehicle::GetGroundRelativePointVelocity`]: jc3gi::vehicle::vehicle::Vehicle::GetGroundRelativePointVelocity
-///
-/// # Safety
-///
-/// The game thread, before the world update.
 #[inline]
-pub unsafe fn seat_vehicle_speed_mps() -> Option<f32> {
-    let character = unsafe { Character::GetLocalPlayerCharacter().as_ref() }?;
+pub fn seat_vehicle_speed_mps(game: &GameTick<'_>) -> Option<f32> {
+    let local_player = LocalPlayer::get(game)?;
+    let character = local_player.character();
     let vehicle = unsafe { character.GetVehiclePtr().as_ref() }?;
     // The game reads the velocity through the physics body without checking it.
     if vehicle.m_PfxVehicle.is_null() {

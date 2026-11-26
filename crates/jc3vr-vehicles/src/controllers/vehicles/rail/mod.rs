@@ -48,10 +48,14 @@ use jc3gi::{
     types::math::Vector3,
 };
 use jc3vr_body::{
-    controllers::{facts::airframe, physics::characters::character_position, scheme},
+    controllers::{
+        facts::airframe,
+        physics::{characters::character_position, local_player::LocalPlayer},
+        scheme,
+    },
     hooks::animation::{active_state_type_id, body_rule_system},
 };
-use jc3vr_core::hash::hashlittle;
+use jc3vr_core::{game_tick::GameTick, hash::hashlittle};
 use jc3vr_physical::controllers::physical_hands::{climb, climb::engine};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
@@ -108,15 +112,12 @@ pub(crate) fn blocks_auto_attach(character: *const Character) -> bool {
 /// let him go when the jump is pressed, he is no longer on foot (`on_foot`), or the game has
 /// taken him back into the helicopter's graph, and step him off the skid with the jump while the
 /// door-side state still holds him.
-///
-/// # Safety
-///
-/// The game stage, on the game thread before the world update.
-pub unsafe fn input_tick(jump: bool, on_foot: bool) {
-    let Some(character) = (unsafe { Character::GetLocalPlayerCharacter().as_mut() }) else {
+pub fn input_tick(game: &GameTick<'_>, jump: bool, on_foot: bool) {
+    let Some(mut local_player) = LocalPlayer::get(game) else {
         release("the local player went away");
         return;
     };
+    let character = local_player.character_mut();
     let config = VEHICLES_CONFIG.lock().rail;
     if !enabled() {
         ENTER_REQUESTED.store(false, Ordering::Relaxed);

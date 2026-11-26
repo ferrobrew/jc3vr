@@ -4,10 +4,11 @@
 use std::time::Instant;
 
 use glam::Vec3;
-use jc3gi::character::character::Character;
 use jc3vr_body::controllers::{
     aim::RAY_LENGTH_M, grab::cockpit::ControlKind, hands::ActiveHands, mode::VehicleSeat,
+    physics::local_player::LocalPlayer,
 };
+use jc3vr_core::game_tick::GameTick;
 use jc3vr_input::frame::Hand;
 use jc3vr_view::controllers::cockpit::CockpitTransform;
 
@@ -37,6 +38,7 @@ pub(super) struct MountedTick {
 /// [`Hand::index`](jc3vr_input::frame::Hand::index). With the grip on the handles and no hand
 /// aiming, the gun keeps the direction the hands last gave it, in the body frame.
 pub(super) fn mounted_tick(
+    game: &GameTick<'_>,
     active: &ActiveHands,
     config: &VehicleSettings,
     aiming: [bool; 2],
@@ -58,11 +60,12 @@ pub(super) fn mounted_tick(
     let xf = CockpitTransform::current(active.head.position, active.world_scale);
     let hands_world = Hand::BOTH
         .map(|hand| active.hands[hand.index()].map(|hand| xf.point_to_world(hand.grip.position)));
-    // SAFETY: the game stage runs on the game thread before the world update.
+    let local_player = LocalPlayer::get(game);
+    // SAFETY: the local player, in the game tick.
     let Some(gun) = (unsafe {
-        Character::GetLocalPlayerCharacter()
+        local_player
             .as_ref()
-            .and_then(|owner| mounted::read(owner))
+            .and_then(|owner| mounted::read(owner.character()))
     })
     .or_else(|| unsafe { mounted::nearby(hands_world, NEARBY_REACH_M) }) else {
         let mut state = STATE.lock();
@@ -70,8 +73,7 @@ pub(super) fn mounted_tick(
         state.mounted_last = None;
         return none;
     };
-    // SAFETY: as above.
-    unsafe { keep_gunner_visible() };
+    keep_gunner_visible(game);
     let to_cockpit = |world: Vec3| xf.point_to_cockpit(world);
     let body = xf.body;
     let handles = gun.handles.map(|h| h.map(to_cockpit));
@@ -142,14 +144,11 @@ pub(super) fn mounted_tick(
 /// start of use fades a local player user out and holds them transparent for as long as they man
 /// it, for the game's turret camera; in the headset the view is at the head, so a gunner's body,
 /// arms, and hands went undrawn (the gunner seat on the 14 November take, 536 to 550 s).
-///
-/// # Safety
-///
-/// The game stage, on the game thread before the world update.
-unsafe fn keep_gunner_visible() {
-    let Some(local) = (unsafe { Character::GetLocalPlayerCharacter().as_mut() }) else {
+fn keep_gunner_visible(game: &GameTick<'_>) {
+    let Some(mut local_player) = LocalPlayer::get(game) else {
         return;
     };
+    let local = local_player.character_mut();
     if local.m_FadingIn || !unsafe { local.IsInMountedGunState() } {
         return;
     }

@@ -39,8 +39,9 @@ use jc3gi::input::input_action_map::Action::{WINGSUIT_AIRBRAKE, WINGSUIT_EVADE};
 use jc3vr_body::controllers::{
     intent::hold::{Desired, MapKind, Target, Want},
     locomotion::axis_output::write_move,
-    physics::characters::local_player,
+    physics::local_player::LocalPlayer,
 };
+use jc3vr_core::game_tick::GameTick;
 use parking_lot::Mutex;
 
 use crate::controllers::vehicles::{config::WingsuitEvadeConfig, types::ArmReadout};
@@ -289,11 +290,8 @@ pub fn status() -> EvadeStatus {
 /// The arm-steered tick's evade: read the arms' pose, and on a throw click the evade and write its
 /// direction over the move stick the arm steering wrote. `arms` is the arm steering's readout,
 /// `None` while it does not act. `desired` holds the tick's inputs so far, the air brake's among them.
-///
-/// # Safety
-///
-/// On the game thread, before the world update: a throw reads the local player character.
-pub(super) unsafe fn tick(
+pub(super) fn tick(
+    game: &GameTick<'_>,
     arms: Option<&ArmReadout>,
     arm_span: f32,
     config: &WingsuitEvadeConfig,
@@ -327,7 +325,7 @@ pub(super) unsafe fn tick(
     };
     let mut outcome = state.recognizer.step(input, config);
     if let Outcome::Throw(throw) = outcome
-        && !unsafe { flying_boost_suit() }
+        && !flying_boost_suit(game)
     {
         state.recognizer.cancel_throw();
         outcome = Outcome::Refused(throw, Blocked::NoBoostSuit);
@@ -399,14 +397,12 @@ fn pitch_of(pitch: f32, threshold: f32) -> Option<Pitch> {
 }
 
 /// Whether the local player flies the boost wingsuit.
-///
-/// # Safety
-///
-/// On the game thread, before the world update.
-unsafe fn flying_boost_suit() -> bool {
-    unsafe {
-        local_player().is_some_and(|owner| owner.HasBoostWingsuit() && owner.IsUsingWingsuit())
-    }
+fn flying_boost_suit(game: &GameTick<'_>) -> bool {
+    LocalPlayer::get(game).is_some_and(|owner| {
+        let owner = owner.character();
+        // SAFETY: the local player, in the game tick.
+        unsafe { owner.HasBoostWingsuit() && owner.IsUsingWingsuit() }
+    })
 }
 
 struct State {
