@@ -22,6 +22,8 @@ mod declaration_replay;
 pub mod graphics_engine;
 // The registrations the post-draw, the UI redirect, and the flip run for the layers above.
 pub mod post_draw;
+// What the capture tooling observes at the pipeline's seams, registered by the capture side.
+pub(crate) mod probes;
 // The VR runtime's teardown participant: the flip block and the far-field share pipeline.
 pub mod register_vr_teardown;
 mod render_pass;

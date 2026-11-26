@@ -15,6 +15,7 @@ pub(crate) mod bound_buffer;
 pub(crate) mod constants;
 pub(crate) mod draw_census;
 pub(crate) mod patch_draw;
+pub mod register_pipeline;
 pub mod register_single_pass;
 pub(crate) mod resolve_probe;
 pub mod snapshot;
