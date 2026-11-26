@@ -33,7 +33,6 @@ use crate::{
     hooks::graphics_engine::config::{
         EXPOSURE_CONFIG, ExposureConfig, POST_FX_CONFIG, PostFxConfig,
     },
-    testing::visual::PAUSED,
 };
 
 jc3vr_core::test_root! {
@@ -71,7 +70,6 @@ jc3vr_core::test_root! {
         },
         director: Director {
             time_scale: f32 = 1.0,
-            paused: bool = false,
             #[serde(skip, default = "CleanViewConfig::new")]
             clean_view: CleanViewConfig = CleanViewConfig::new(),
         },
@@ -99,7 +97,6 @@ jc3vr_core::test_root! {
         RECORD_HAND_JOINTS => testing.record_hand_joints,
         TEXTURE_CENSUS => testing.texture_census,
         TIME_SCALE => director.time_scale,
-        PAUSED => director.paused,
         CLEAN_VIEW_CONFIG => director.clean_view,
     }
 }

@@ -22,8 +22,6 @@ use windows::{
     core::Interface as _,
 };
 
-pub mod harness;
-
 use crate::{
     image_writer::{self, ChannelOrder, Image, ImageTarget},
     stereo::single_pass::FrameDiagnostics,

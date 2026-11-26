@@ -1,0 +1,38 @@
+[package]
+name = "jc3vr-capture"
+version = "0.1.0"
+edition = "2024"
+description = "The capture layer of the payload: the screenshot harness and its probes into the render hooks, the visual-test stage controls, and the benchmark samplers."
+publish = false
+
+[features]
+# The capture tooling's profiler half (issue #34): the draw census's and the velocity stage's
+# render-block names, and the benchmark's GPU dispatch records. The payload's `profiler` feature
+# forwards here.
+profiler = ["jc3vr-core/profiler", "jc3vr-view/profiler", "jc3vr-render/profiler"]
+
+[dependencies]
+windows = { workspace = true }
+glam = { workspace = true }
+anyhow = { workspace = true }
+jc3gi = { path = "../../jc3gi" }
+jc3vr-core = { path = "../jc3vr-core" }
+jc3vr-input = { path = "../jc3vr-input" }
+jc3vr-view = { path = "../jc3vr-view" }
+jc3vr-render = { path = "../jc3vr-render" }
+dxbc-stereo = { path = "../dxbc-stereo" }
+tracing = "0.1"
+parking_lot = "0.12.5"
+sha2 = "0.10.9"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# PNG-only: the snapshot dumps write their planes as PNG.
+image = { version = "0.25", default-features = false, features = ["png"] }
+# The snapshot dumps compress raw planes with gzip.
+flate2 = "1"
+
+[dev-dependencies]
+jc3vr-core = { path = "../jc3vr-core", features = ["test-support"] }
+pretty_assertions = "1.4.1"
+test-case = "3.3.1"
+toml = "1.1.6"

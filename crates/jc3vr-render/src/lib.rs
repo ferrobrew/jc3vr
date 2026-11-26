@@ -11,13 +11,16 @@
 //!   draw counts, and, with the `profiler` feature, the engine-phase scopes).
 //! - [`controllers`]: the render-side pieces of the layers above: the overlay and scope renderers
 //!   and passes, and their registration in the post-draw.
-//! - [`debug`], [`screenshot`], [`image_writer`], [`testing`], and [`profiler`]: the render
-//!   diagnostics, the capture harness, the GPU dispatch records, and, with the `profiler` feature,
+//! - [`debug`], [`screenshot`], [`image_writer`], and [`profiler`]: the render diagnostics, the
+//!   F12 screenshot, the image writer, the GPU dispatch records, and, with the `profiler` feature,
 //!   the GPU timestamp lane.
+//! - [`capture_arming`] and the probe tables in [`stereo::single_pass::probes`] and
+//!   [`hooks::graphics_engine::probes`]: the seams the capture crate above fills at install, read
+//!   with one relaxed load while nothing has asked for a capture or a benchmark.
 //!
 //! The layers above reach these modules by path.
 
-mod capture_arming;
+pub mod capture_arming;
 pub mod controllers;
 pub mod debug;
 pub mod far_field;
@@ -27,7 +30,6 @@ pub mod image_writer;
 pub mod profiler;
 pub mod screenshot;
 pub mod stereo;
-pub mod testing;
 
 #[cfg(test)]
 mod test_config;
