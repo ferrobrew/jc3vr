@@ -6428,6 +6428,7 @@ dependencies = [
 name = "tracking-format"
 version = "0.1.0"
 dependencies = [
+ "body-rig",
  "glam",
  "lz4_flex",
  "openxr-sys",

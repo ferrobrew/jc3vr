@@ -32,7 +32,10 @@
 
 use std::time::{Duration, Instant};
 
-use glam::{Quat, Vec2, Vec3};
+/// A rigid transform; the frame's poses are in the cockpit frame.
+pub use body_rig::math::Pose;
+use body_rig::math::Side;
+use glam::{Vec2, Vec3};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
@@ -78,16 +81,13 @@ impl Hand {
     /// A vector in a hand's frame (the grip or the aim) given for the left hand, as it is for this
     /// hand: the right hand mirrors it across the frame's X.
     pub fn mirror_from_left(self, v: Vec3) -> Vec3 {
-        match self {
-            Hand::Left => v,
-            Hand::Right => Vec3::new(-v.x, v.y, v.z),
-        }
+        self.other().mirror_from_right(v)
     }
 
     /// A vector in a hand's frame given for the right hand, as it is for this hand: the left hand
     /// mirrors it across the frame's X.
     pub fn mirror_from_right(self, v: Vec3) -> Vec3 {
-        self.other().mirror_from_left(v)
+        Side::from(self).mirror_from_right(v)
     }
 
     /// The first hand that is `free`, trying the `dominant` hand before the other.
@@ -95,6 +95,24 @@ impl Hand {
         [dominant, dominant.other()]
             .into_iter()
             .find(|&hand| free(hand))
+    }
+}
+
+impl From<Hand> for Side {
+    fn from(hand: Hand) -> Side {
+        match hand {
+            Hand::Left => Side::Left,
+            Hand::Right => Side::Right,
+        }
+    }
+}
+
+impl From<Side> for Hand {
+    fn from(side: Side) -> Hand {
+        match side {
+            Side::Left => Hand::Left,
+            Side::Right => Hand::Right,
+        }
     }
 }
 
@@ -165,27 +183,6 @@ pub enum InteractionProfile {
     Other,
 }
 
-/// A rigid transform in the cockpit frame.
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub struct Pose {
-    /// Metres.
-    pub position: Vec3,
-    pub orientation: Quat,
-}
-
-impl Pose {
-    pub const IDENTITY: Pose = Pose {
-        position: Vec3::ZERO,
-        orientation: Quat::IDENTITY,
-    };
-}
-
-impl Default for Pose {
-    fn default() -> Self {
-        Self::IDENTITY
-    }
-}
-
 /// A located controller space: the pose, its validity and tracking flags, and the velocities the
 /// runtime reported.
 ///
@@ -215,7 +212,6 @@ impl TrackedPose {
     }
 
     /// Whether both the position and the orientation are measured this frame.
-    #[allow(dead_code, reason = "part of the pose validity contract")]
     pub fn is_tracked(&self) -> bool {
         self.is_valid() && self.position_tracked && self.orientation_tracked
     }

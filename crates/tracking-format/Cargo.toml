@@ -9,6 +9,9 @@ publish = false
 # such as `tools/tracking-synth` can read and write recordings on Linux and Windows alike.
 
 [dependencies]
+# The rigid `Pose`, shared with the payload's controller frame so that a recorded pose needs no
+# conversion. Pure and portable like this crate.
+body-rig = { path = "../body-rig" }
 glam = { workspace = true }
 lz4_flex = { version = "=0.13.1", default-features = false, features = ["std", "safe-encode", "safe-decode"] }
 # The session state's type only: the payload's `openxr` re-exports the same type from this crate,
@@ -18,4 +21,4 @@ openxr-sys = "0.13"
 serde = { version = "1", features = ["derive"], optional = true }
 
 [features]
-serde = ["dep:serde"]
+serde = ["dep:serde", "body-rig/serde"]

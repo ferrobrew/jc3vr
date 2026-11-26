@@ -6,8 +6,14 @@
 //! either side fails to build until the format, and its version, account for it. The orders that
 //! the encoding depends on ([`ActionSetKind::ALL`], [`Button::ALL`], [`SemanticSet::ALL`]) are the
 //! payload's, and are part of the format.
+//!
+//! The one exception is [`Pose`], the body rig's rigid transform, which the payload's controller
+//! frame uses as well: a position and an orientation are the same in the file as anywhere, and the
+//! codec writes their components explicitly, so the type carries no format of its own.
 
-use glam::{Quat, Vec2, Vec3};
+/// A rigid transform; the file's poses are in the cockpit frame unless a field says otherwise.
+pub use body_rig::math::Pose;
+use glam::{Vec2, Vec3};
 
 /// A hand, and the index of its entry in the per-hand arrays. The left hand is index 0.
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
@@ -83,28 +89,6 @@ pub enum InteractionProfile {
     OculusTouch,
     /// A profile the mod ships no suggested bindings for.
     Other,
-}
-
-/// A rigid transform in the cockpit frame.
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub struct Pose {
-    /// Metres.
-    pub position: Vec3,
-    pub orientation: Quat,
-}
-
-impl Pose {
-    pub const IDENTITY: Pose = Pose {
-        position: Vec3::ZERO,
-        orientation: Quat::IDENTITY,
-    };
-}
-
-impl Default for Pose {
-    fn default() -> Self {
-        Self::IDENTITY
-    }
 }
 
 /// A located controller space with its validity and tracking flags.

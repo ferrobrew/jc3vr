@@ -14,7 +14,7 @@
 
 use std::collections::VecDeque;
 
-use body_rig::rotation::angular_velocity;
+use body_rig::math::{geometry::point_velocity, rotation::angular_velocity};
 use glam::{Quat, Vec3};
 use parking_lot::Mutex;
 
@@ -37,9 +37,13 @@ impl MotionSample {
     /// The velocity of the point at `offset` in the grip's frame, from the reported velocities, or
     /// `None` when the runtime reported no linear velocity.
     pub fn point_velocity(&self, offset: Vec3) -> Option<Vec3> {
-        let linear = self.linear_velocity?;
-        let lever = self.orientation * offset;
-        Some(linear + self.angular_velocity.map_or(Vec3::ZERO, |w| w.cross(lever)))
+        let angular = self.angular_velocity.unwrap_or(Vec3::ZERO);
+        Some(point_velocity(
+            self.position,
+            self.linear_velocity?,
+            angular,
+            self.point(offset),
+        ))
     }
 
     /// The position of the point at `offset` in the grip's frame.
@@ -166,7 +170,7 @@ pub fn record(frame: &ControllerFrame) {
             samples.clear();
             continue;
         }
-        if !(h.grip.position_tracked && h.grip.orientation_tracked) {
+        if !h.grip.is_tracked() {
             continue;
         }
         push(
