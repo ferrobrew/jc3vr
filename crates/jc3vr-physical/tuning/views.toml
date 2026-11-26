@@ -1,0 +1,65 @@
+# The diagnostic views' tuning: `ViewsTuning` in
+# `src/controllers/physical_hands/views.rs`, whose fields say what each value does. Every key is
+# required and no other is accepted. Lengths are metres, times seconds, and a key ending in `_ms`
+# whole milliseconds; a share is a fraction in `0..1`, and a ring's thickness a share of its radius.
+
+[collider_view]
+radius_m = 6.0
+gaze_reach_per_radius = 2.0
+max_bodies = 128
+max_primitives = 1536
+ttl_ms = 100
+max_flashes = 32
+
+[collider_view.draw]
+flash_s = 0.4
+flash_ring_m = 0.06
+flash_ring_per_ns_m = 0.01
+flash_max_impulse_ns = 20.0
+flash_ring_thickness = 0.25
+box_width_m = 0.003
+highlight_box_width = 2.0
+ground_box_width = 1.5
+shape_width_m = 0.005
+shape_ring_thickness = 0.08
+joint_width_m = 0.008
+joint_end_m = 0.025
+point_m = 0.02
+normal_m = 0.3
+max_hull_edges = 96
+max_points = 32
+
+[grab_view]
+ttl_ms = 150
+record_max_age_ms = 200
+palm_stale_ms = 200
+candidate_period_ms = 100
+candidate_max_age_ms = 500
+candidate_radius_m = 3.0
+scan_max_bodies = 64
+max_candidates = 24
+max_flashes = 8
+refusal_flash_s = 0.5
+
+[grab_view.draw]
+primitive_budget = 1024
+refusal_mark_m = 0.16
+refusal_start_share = 0.5
+refusal_ring_thickness = 0.35
+ray_width_m = 0.002
+hit_mark_m = 0.012
+handle_mark_m = 0.04
+handle_ring_thickness = 0.3
+target_line_width_m = 0.0025
+min_target_mark_m = 0.015
+max_target_mark_m = 0.05
+target_ring_thickness = 0.3
+max_target_lines = 24
+target_radius_m = 2.0
+box_width_m = 0.002
+zone_line_width_m = 0.002
+zone_ring_thickness = 0.08
+handover_ring_thickness = 0.05
+knock_top_ring_thickness = 0.08
+knock_base_ring_thickness = 0.2
+knock_tip_m = 0.014

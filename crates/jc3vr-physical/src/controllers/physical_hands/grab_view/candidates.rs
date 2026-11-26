@@ -17,10 +17,11 @@ use crate::controllers::physical_hands::{
     grab_view::model::{Candidate, CandidateKind},
     grasp,
     pickup::PICKUP,
+    views::GrabViewTuning,
 };
 
 /// The candidates whose boxes come within the candidate radius of a hand at `hands` (game space,
-/// by [`Hand::index`]), nearest first, at most the configured number, one per object. The body
+/// by [`Hand::index`]), nearest first, at most `tuning`'s number, one per object. The body
 /// `standing_on` the player stands on is not one.
 ///
 /// # Safety
@@ -29,6 +30,7 @@ use crate::controllers::physical_hands::{
 pub(super) unsafe fn scan(
     hands: [Option<Vec3>; 2],
     standing_on: Option<u32>,
+    tuning: &GrabViewTuning,
 ) -> Result<Vec<Candidate>, ScanError> {
     let tracked: Vec<(Hand, Vec3)> = Hand::BOTH
         .into_iter()
@@ -43,9 +45,10 @@ pub(super) unsafe fn scan(
         .iter()
         .map(|(_, p)| p.distance(centre))
         .fold(0.0, f32::max);
-    let radius = CANDIDATE_RADIUS_M;
+    let radius = tuning.candidate_radius_m;
     // SAFETY: forwarded from the caller.
-    let snapshot = unsafe { collider_view::scan_moving(centre, radius + spread, SCAN_MAX_BODIES) }?;
+    let snapshot =
+        unsafe { collider_view::scan_moving(centre, radius + spread, tuning.scan_max_bodies) }?;
 
     let mut found: Vec<(NonZeroUsize, Candidate)> = Vec::new();
     for body in &snapshot.bodies {
@@ -84,7 +87,7 @@ pub(super) unsafe fn scan(
     }
     let mut out: Vec<Candidate> = found.into_iter().map(|(_, c)| c).collect();
     out.sort_by(|a, b| a.distance_m.total_cmp(&b.distance_m));
-    out.truncate(MAX_CANDIDATES);
+    out.truncate(tuning.max_candidates);
     Ok(out)
 }
 
@@ -108,7 +111,7 @@ unsafe fn kind_of(
     }
     match unsafe { classify(object, body) } {
         Ok(TargetKind::Weapon) => Some(CandidateKind::Weapon),
-        Ok(TargetKind::Prop { mass_kg }) if grasp::can_hold(mass_kg, &PICKUP) => {
+        Ok(TargetKind::Prop { mass_kg }) if grasp::can_hold(mass_kg, PICKUP.get()) => {
             Some(CandidateKind::Prop)
         }
         Ok(TargetKind::Prop { .. }) => Some(CandidateKind::TooHeavy),
@@ -116,12 +119,3 @@ unsafe fn kind_of(
         Err(_) => None,
     }
 }
-
-/// The most candidates drawn, the nearest first.
-pub(super) const MAX_CANDIDATES: usize = 24;
-
-/// How far from a hand a candidate's box may be and still be drawn, metres.
-const CANDIDATE_RADIUS_M: f32 = 3.0;
-
-/// The most bodies a read keeps, the nearest the hands first, before they are told apart.
-const SCAN_MAX_BODIES: u32 = 64;

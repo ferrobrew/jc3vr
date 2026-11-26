@@ -5,7 +5,8 @@ use egui::Ui;
 use jc3vr_input::frame::Hand;
 use jc3vr_physical::controllers::physical_hands::{
     grab_view,
-    grab_view::{GrabViewStatus, draw::PRIMITIVE_BUDGET, model::CandidateKind},
+    grab_view::{GrabViewStatus, model::CandidateKind},
+    views::VIEWS,
 };
 
 pub(super) fn grab_view_readout(ui: &mut Ui, status: &GrabViewStatus) {
@@ -38,7 +39,7 @@ pub(super) fn grab_view_readout(ui: &mut Ui, status: &GrabViewStatus) {
         drawn.zones,
         drawn.dropped,
         status.primitives,
-        PRIMITIVE_BUDGET
+        VIEWS.get().grab_view.draw.primitive_budget
     ));
     let kinds = CandidateKind::ALL
         .into_iter()

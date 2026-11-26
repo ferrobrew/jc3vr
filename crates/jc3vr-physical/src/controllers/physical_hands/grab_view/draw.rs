@@ -21,13 +21,15 @@ use jc3vr_view::controllers::overlay::primitive::{
     Anchor, DepthMode, Facing, HandPose, Primitive, Rgba, Shape, SpriteSize,
 };
 
-use crate::controllers::physical_hands::grab_view::{
-    Recorded,
-    candidates::MAX_CANDIDATES,
-    model::{
-        Candidate, REFUSAL_COLOUR, TargetState, approach, refusal_flash, target_colour,
-        target_mark_size,
+use crate::controllers::physical_hands::{
+    grab_view::{
+        Recorded,
+        model::{
+            Candidate, REFUSAL_COLOUR, TargetState, approach, refusal_flash, target_colour,
+            target_mark_size,
+        },
     },
+    views::{GrabDrawTuning, GrabViewTuning},
 };
 
 /// What one tick drew.
@@ -58,22 +60,29 @@ pub(crate) struct DrawInputs<'a> {
     pub zones: [Option<GunZones>; 2],
     /// The knock zone of the gun whose magazine a held pouch magazine can knock out.
     pub knock: Option<KnockZone>,
+    pub tuning: &'a GrabViewTuning,
 }
-
-/// The most primitives the view submits in a tick.
-pub const PRIMITIVE_BUDGET: usize = 1024;
 
 /// Build the tick's primitives into `out` (cleared first).
 pub(crate) fn build(inputs: &DrawInputs, out: &mut Vec<Primitive>) -> Drawn {
     out.clear();
+    let tuning = &inputs.tuning.draw;
+    let budget = tuning.primitive_budget;
     let mut drawn = Drawn::default();
     for &(at, age_s) in inputs.flashes {
-        if let Some((alpha, share)) = refusal_flash(age_s) {
+        let flash = refusal_flash(
+            age_s,
+            inputs.tuning.refusal_flash_s,
+            tuning.refusal_start_share,
+        );
+        if let Some((alpha, share)) = flash {
             let [r, g, b] = REFUSAL_COLOUR;
             out.push(sprite(
                 at,
-                REFUSAL_MARK_M * share * inputs.frame.xf.world_scale,
-                Shape::Ring { thickness: 0.35 },
+                tuning.refusal_mark_m * share * inputs.frame.xf.world_scale,
+                Shape::Ring {
+                    thickness: tuning.refusal_ring_thickness,
+                },
                 [r, g, b, alpha],
             ));
             drawn.flashes += 1;
@@ -84,17 +93,24 @@ pub(crate) fn build(inputs: &DrawInputs, out: &mut Vec<Primitive>) -> Drawn {
         for ray in recorded.rays.iter().flatten() {
             let colour = ray.outcome.colour();
             let end = ray.hit.unwrap_or(ray.to);
-            out.push(line(rides(ray.from), rides(end), RAY_WIDTH_M, colour));
+            out.push(line(
+                rides(ray.from),
+                rides(end),
+                tuning.ray_width_m,
+                colour,
+            ));
             if let Some(hit) = ray.hit {
-                out.push(sprite(rides(hit), HIT_MARK_M, Shape::Disc, colour));
+                out.push(sprite(rides(hit), tuning.hit_mark_m, Shape::Disc, colour));
             }
             drawn.rays += 1;
         }
         for handle in recorded.handles.iter().flatten() {
             out.push(sprite(
                 Anchor::World(handle.at),
-                HANDLE_MARK_M,
-                Shape::Ring { thickness: 0.3 },
+                tuning.handle_mark_m,
+                Shape::Ring {
+                    thickness: tuning.handle_ring_thickness,
+                },
                 handle.outcome.colour(),
             ));
             drawn.handles += 1;
@@ -102,7 +118,7 @@ pub(crate) fn build(inputs: &DrawInputs, out: &mut Vec<Primitive>) -> Drawn {
     }
     let lines = target_lines(inputs);
     for line_spec in lines {
-        if out.len() + 2 > PRIMITIVE_BUDGET {
+        if out.len() + 2 > budget {
             drawn.dropped += 1;
             continue;
         }
@@ -110,39 +126,41 @@ pub(crate) fn build(inputs: &DrawInputs, out: &mut Vec<Primitive>) -> Drawn {
         out.push(line(
             Anchor::hand(line_spec.hand, HandPose::Grip),
             line_spec.at,
-            TARGET_LINE_WIDTH_M,
+            tuning.target_line_width_m,
             colour,
         ));
         let shape = match line_spec.state {
-            TargetState::OutOfReach | TargetState::InReach => Shape::Ring { thickness: 0.3 },
+            TargetState::OutOfReach | TargetState::InReach => Shape::Ring {
+                thickness: tuning.target_ring_thickness,
+            },
             TargetState::Chosen | TargetState::Held => Shape::Disc,
         };
         out.push(sprite(
             line_spec.at,
-            target_mark_size(line_spec.approach) * inputs.frame.xf.world_scale,
+            target_mark_size(line_spec.approach, tuning) * inputs.frame.xf.world_scale,
             shape,
             colour,
         ));
         drawn.target_lines += 1;
     }
     for view in inputs.zones.iter().flatten() {
-        if out.len() + ZONE_PRIMITIVES > PRIMITIVE_BUDGET {
+        if out.len() + ZONE_PRIMITIVES > budget {
             drawn.dropped += 1;
             continue;
         }
-        zone_primitives(view, inputs.frame, out);
+        zone_primitives(view, inputs.frame, tuning, out);
         drawn.zones += 1;
     }
     if let Some(view) = inputs.knock {
-        if out.len() + KNOCK_PRIMITIVES > PRIMITIVE_BUDGET {
+        if out.len() + KNOCK_PRIMITIVES > budget {
             drawn.dropped += 1;
         } else {
-            knock_primitives(&view, inputs.frame, out);
+            knock_primitives(&view, inputs.frame, tuning, out);
             drawn.zones += 1;
         }
     }
     for (k, candidate) in inputs.candidates.iter().enumerate() {
-        if k >= MAX_CANDIDATES || out.len() + CANDIDATE_PRIMITIVES > PRIMITIVE_BUDGET {
+        if k >= inputs.tuning.max_candidates || out.len() + CANDIDATE_PRIMITIVES > budget {
             drawn.dropped += 1;
             continue;
         }
@@ -151,7 +169,7 @@ pub(crate) fn build(inputs: &DrawInputs, out: &mut Vec<Primitive>) -> Drawn {
             out.push(line(
                 Anchor::World(a),
                 Anchor::World(b),
-                BOX_WIDTH_M,
+                tuning.box_width_m,
                 colour,
             ));
         }
@@ -159,7 +177,7 @@ pub(crate) fn build(inputs: &DrawInputs, out: &mut Vec<Primitive>) -> Drawn {
         out.push(line(
             Anchor::World(candidate.aabb.centre()),
             Anchor::hand(candidate.hand, HandPose::Grip),
-            BOX_WIDTH_M,
+            tuning.box_width_m,
             [r, g, b, a * 0.5],
         ));
         drawn.candidates += 1;
@@ -177,12 +195,14 @@ struct TargetLine {
     distance: f32,
 }
 
-/// Each hand's lines to the targets near it, nearest first per hand, at most
-/// [`MAX_TARGET_LINES`] per hand. A target out of reach farther than [`TARGET_RADIUS_M`] gets none,
-/// nor does a socket or pouch on the body out of reach, whose own marker already shows it.
+/// Each hand's lines to the targets near it, nearest first per hand, at most the tuning's
+/// `max_target_lines` per hand. A target out of reach farther than the tuning's `target_radius_m`
+/// gets none, nor does a socket or pouch on the body out of reach, whose own marker already shows
+/// it.
 fn target_lines(inputs: &DrawInputs) -> Vec<TargetLine> {
     let tick = inputs.tick;
-    let radius = TARGET_RADIUS_M;
+    let tuning = &inputs.tuning.draw;
+    let radius = tuning.target_radius_m;
     let mut out = Vec::new();
     for hand in Hand::BOTH {
         let i = hand.index();
@@ -215,7 +235,7 @@ fn target_lines(inputs: &DrawInputs) -> Vec<TargetLine> {
             })
             .collect();
         lines.sort_by(|a, b| a.distance.total_cmp(&b.distance));
-        lines.truncate(MAX_TARGET_LINES);
+        lines.truncate(tuning.max_target_lines);
         out.extend(lines);
     }
     out
@@ -246,7 +266,12 @@ fn distance_to(
 /// zone under the well as its axis and a ring at each end, and the handover's reach around the
 /// pistol grip as a ring of its radius. The zone the free hand is in is drawn brighter, and the
 /// handover dimmed while the magazine's zone holds the hand.
-fn zone_primitives(view: &GunZones, frame: &MarkerFrame, out: &mut Vec<Primitive>) {
+fn zone_primitives(
+    view: &GunZones,
+    frame: &MarkerFrame,
+    tuning: &GrabDrawTuning,
+    out: &mut Vec<Primitive>,
+) {
     let on_gun = |point: Vec3| {
         markers::anchor_at(
             MarkAt::OnHand {
@@ -261,12 +286,14 @@ fn zone_primitives(view: &GunZones, frame: &MarkerFrame, out: &mut Vec<Primitive
     if let Some(zone) = view.magazine {
         let colour = shade(MAGAZINE_ZONE_COLOUR, view.at_magazine);
         if let (Some(top), Some(bottom)) = (on_gun(zone.top), on_gun(zone.bottom)) {
-            out.push(line(top, bottom, ZONE_LINE_WIDTH_M, colour));
+            out.push(line(top, bottom, tuning.zone_line_width_m, colour));
             for end in [top, bottom] {
                 out.push(sprite(
                     end,
                     2.0 * zone.radius * scale,
-                    Shape::Ring { thickness: 0.08 },
+                    Shape::Ring {
+                        thickness: tuning.zone_ring_thickness,
+                    },
                     colour,
                 ));
             }
@@ -288,7 +315,9 @@ fn zone_primitives(view: &GunZones, frame: &MarkerFrame, out: &mut Vec<Primitive
         out.push(sprite(
             at,
             2.0 * radius * scale,
-            Shape::Ring { thickness: 0.05 },
+            Shape::Ring {
+                thickness: tuning.handover_ring_thickness,
+            },
             colour,
         ));
     }
@@ -297,7 +326,12 @@ fn zone_primitives(view: &GunZones, frame: &MarkerFrame, out: &mut Vec<Primitive
 /// The knock zone on the held gun: the inserted magazine as its axis with a ring at the base and
 /// one at the top, and the held magazine's tip, green while it moves fast enough to knock. The
 /// zone flashes white when the magazine is knocked out.
-fn knock_primitives(view: &KnockZone, frame: &MarkerFrame, out: &mut Vec<Primitive>) {
+fn knock_primitives(
+    view: &KnockZone,
+    frame: &MarkerFrame,
+    tuning: &GrabDrawTuning,
+    out: &mut Vec<Primitive>,
+) {
     let on_gun = |point: Vec3| {
         markers::anchor_at(
             MarkAt::OnHand {
@@ -315,8 +349,12 @@ fn knock_primitives(view: &KnockZone, frame: &MarkerFrame, out: &mut Vec<Primiti
         KNOCK_ZONE_COLOUR
     };
     if let (Some(top), Some(base)) = (on_gun(view.zone.top), on_gun(view.zone.bottom)) {
-        out.push(line(top, base, ZONE_LINE_WIDTH_M, colour));
-        for (end, thickness) in [(top, 0.08), (base, 0.2)] {
+        out.push(line(top, base, tuning.zone_line_width_m, colour));
+        let rings = [
+            (top, tuning.knock_top_ring_thickness),
+            (base, tuning.knock_base_ring_thickness),
+        ];
+        for (end, thickness) in rings {
             out.push(sprite(
                 end,
                 2.0 * view.zone.radius * scale,
@@ -334,7 +372,7 @@ fn knock_primitives(view: &KnockZone, frame: &MarkerFrame, out: &mut Vec<Primiti
         } else {
             KNOCK_ZONE_COLOUR
         };
-        out.push(sprite(tip, KNOCK_TIP_M * scale, Shape::Disc, colour));
+        out.push(sprite(tip, tuning.knock_tip_m * scale, Shape::Disc, colour));
     }
 }
 
@@ -371,8 +409,6 @@ const XRAY: DepthMode = DepthMode::XRay {
 
 /// The most primitives one held gun's zones take.
 const ZONE_PRIMITIVES: usize = 4;
-/// The magazine zone's axis width, metres.
-const ZONE_LINE_WIDTH_M: f32 = 0.002;
 /// The magazine's zone: amber, as the well's gold ring.
 const MAGAZINE_ZONE_COLOUR: Rgba = [1.0, 0.7, 0.15, 0.55];
 /// The handover's reach: cyan.
@@ -388,20 +424,7 @@ const KNOCK_ZONE_COLOUR: Rgba = [1.0, 0.3, 0.25, 0.6];
 const KNOCK_FLASH_COLOUR: Rgba = [1.0, 1.0, 1.0, 1.0];
 /// The held tip while it moves fast enough to knock.
 const KNOCK_FAST_COLOUR: Rgba = [0.3, 1.0, 0.35, 0.9];
-/// The held tip's marker diameter, metres at the player's scale.
-const KNOCK_TIP_M: f32 = 0.014;
 
-/// A refusal's flash at its largest, metres.
-const REFUSAL_MARK_M: f32 = 0.16;
-const RAY_WIDTH_M: f32 = 0.002;
-const HIT_MARK_M: f32 = 0.012;
-const HANDLE_MARK_M: f32 = 0.04;
-const TARGET_LINE_WIDTH_M: f32 = 0.0025;
-const BOX_WIDTH_M: f32 = 0.002;
-/// The most target lines per hand.
-const MAX_TARGET_LINES: usize = 24;
-/// How far from a hand a grip target out of its reach still gets a line, metres.
-const TARGET_RADIUS_M: f32 = 2.0;
 /// A candidate's primitives: its box's twelve edges and its line to the hand.
 const CANDIDATE_PRIMITIVES: usize = 13;
 
@@ -416,7 +439,12 @@ mod tests {
     use crate::controllers::physical_hands::{
         collider_view::model::Aabb,
         grab_view::model::{CandidateKind, RayOutcome, ReachRay},
+        views::VIEWS,
     };
+
+    fn config() -> &'static GrabViewTuning {
+        &VIEWS.get().grab_view
+    }
 
     fn sphere(volume: GrabVolume, centre: Vec3, radius: f32) -> GripTarget {
         GripTarget::sphere(
@@ -441,6 +469,7 @@ mod tests {
             flashes: &[],
             zones: [None; 2],
             knock: None,
+            tuning: config(),
         }
     }
 
@@ -505,7 +534,8 @@ mod tests {
             hand: Hand::Left,
             distance_m: 1.0,
         };
-        let candidates = [candidate; MAX_CANDIDATES + 1];
+        let max_candidates = config().max_candidates;
+        let candidates = vec![candidate; max_candidates + 1];
         let head = Vec3::new(10.0, 2.0, -5.0);
         let recorded = Recorded {
             head,
@@ -525,15 +555,15 @@ mod tests {
         let mut out = Vec::new();
         let drawn = build(&drawn_inputs, &mut out);
         assert_eq!(drawn.rays, 1);
-        assert_eq!(drawn.candidates, MAX_CANDIDATES);
+        assert_eq!(drawn.candidates, max_candidates);
         assert_eq!(drawn.dropped, 1);
         assert!(out.contains(&line(
             Anchor::Head(Vec3::X),
             Anchor::Head(Vec3::new(1.0, 0.0, -0.5)),
-            RAY_WIDTH_M,
+            config().draw.ray_width_m,
             RayOutcome::InReach.colour(),
         )));
         // The ray and its hit, and the candidates.
-        assert_eq!(out.len(), 2 + MAX_CANDIDATES * CANDIDATE_PRIMITIVES);
+        assert_eq!(out.len(), 2 + max_candidates * CANDIDATE_PRIMITIVES);
     }
 }

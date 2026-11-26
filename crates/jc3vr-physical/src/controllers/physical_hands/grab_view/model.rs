@@ -6,7 +6,9 @@ use glam::Vec3;
 use jc3vr_input::frame::Hand;
 use jc3vr_view::controllers::overlay::primitive::Rgba;
 
-use crate::controllers::physical_hands::{PalmReadout, collider_view::model::Aabb, status::Idle};
+use crate::controllers::physical_hands::{
+    PalmReadout, collider_view::model::Aabb, status::Idle, views::GrabDrawTuning,
+};
 
 /// One of a palm's reach rays as the tick cast it, world space.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -111,12 +113,12 @@ pub enum PalmState {
 
 impl PalmState {
     /// The state of the hand `readout` describes: why the palms stood down, or that they have not
-    /// ticked within [`PALM_STALE_MS`], or what the hand was doing on the last tick.
-    pub fn of(readout: &PalmReadout) -> Self {
+    /// ticked within `stale_ms` milliseconds, or what the hand was doing on the last tick.
+    pub fn of(readout: &PalmReadout, stale_ms: u64) -> Self {
         if let Some(idle) = readout.idle {
             return PalmState::Idle(idle);
         }
-        if readout.age_ms.is_none_or(|age| age > PALM_STALE_MS) {
+        if readout.age_ms.is_none_or(|age| age > u128::from(stale_ms)) {
             return PalmState::Stale;
         }
         match (readout.free, readout.palm, readout.holding, readout.driven) {
@@ -140,10 +142,6 @@ impl PalmState {
         }
     }
 }
-
-/// How old the palms' last tick may be and still describe the hands, milliseconds: they tick
-/// every simulation tick while they act.
-pub const PALM_STALE_MS: u128 = 200;
 
 /// Something near the hands that a hand might take, as the last read of the world found it.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -263,9 +261,11 @@ pub fn approach(distance: f32, reach: f32, radius: f32) -> f32 {
     (1.0 - (distance - reach) / span).clamp(0.0, 1.0)
 }
 
-/// A target's end marker's diameter at `approach`, metres.
-pub fn target_mark_size(approach: f32) -> f32 {
-    MIN_TARGET_MARK_M + (MAX_TARGET_MARK_M - MIN_TARGET_MARK_M) * approach.clamp(0.0, 1.0)
+/// A target's end marker's diameter at `approach`, metres, between `tuning`'s smallest and
+/// largest.
+pub fn target_mark_size(approach: f32, tuning: &GrabDrawTuning) -> f32 {
+    let (min, max) = (tuning.min_target_mark_m, tuning.max_target_mark_m);
+    min + (max - min) * approach.clamp(0.0, 1.0)
 }
 
 /// A target's line and end marker colour in `state` at `approach`: an out-of-reach target
@@ -279,28 +279,39 @@ pub fn target_colour(state: TargetState, approach: f32) -> Rgba {
     [r, g, b, a]
 }
 
-/// How long a refused grab flashes, seconds.
-pub const REFUSAL_FLASH_S: f32 = 0.5;
-
-/// A refusal's flash `age_s` seconds after it, as its opacity and its size's share, or `None`
-/// once it is spent: it starts full and small, and fades as it grows.
-pub fn refusal_flash(age_s: f32) -> Option<(f32, f32)> {
-    if !(0.0..REFUSAL_FLASH_S).contains(&age_s) {
+/// A refusal's flash `age_s` seconds after it, of one lasting `flash_s` and starting at
+/// `start_share` of its size, as its opacity and its size's share, or `None` once it is spent: it
+/// starts full and small, and fades as it grows.
+pub fn refusal_flash(age_s: f32, flash_s: f32, start_share: f32) -> Option<(f32, f32)> {
+    if !(0.0..flash_s).contains(&age_s) {
         return None;
     }
-    let t = age_s / REFUSAL_FLASH_S;
-    Some((1.0 - t, 0.5 + 0.5 * t))
+    let t = age_s / flash_s;
+    Some((1.0 - t, start_share + (1.0 - start_share) * t))
 }
 
 pub const REFUSAL_COLOUR: [f32; 3] = [1.0, 0.1, 0.1];
 
-/// The smallest and largest a target's end marker is drawn, metres.
-const MIN_TARGET_MARK_M: f32 = 0.015;
-const MAX_TARGET_MARK_M: f32 = 0.05;
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::controllers::physical_hands::views::{GrabViewTuning, VIEWS};
+
+    fn config() -> &'static GrabViewTuning {
+        &VIEWS.get().grab_view
+    }
+
+    fn palm_state(readout: &PalmReadout) -> PalmState {
+        PalmState::of(readout, config().palm_stale_ms)
+    }
+
+    fn flash(age_s: f32) -> Option<(f32, f32)> {
+        refusal_flash(
+            age_s,
+            config().refusal_flash_s,
+            config().draw.refusal_start_share,
+        )
+    }
 
     #[test]
     fn a_ray_is_classified_by_what_it_hit() {
@@ -357,10 +368,7 @@ mod tests {
             (true, true, false, true, PalmState::Driven),
             (true, true, false, false, PalmState::Acting),
         ] {
-            assert_eq!(
-                PalmState::of(&readout(free, palm, holding, driven)),
-                expected
-            );
+            assert_eq!(palm_state(&readout(free, palm, holding, driven)), expected);
         }
     }
 
@@ -370,17 +378,17 @@ mod tests {
             idle: Some(Idle::Mode),
             ..readout(true, true, false, false)
         };
-        assert_eq!(PalmState::of(&idle), PalmState::Idle(Idle::Mode));
+        assert_eq!(palm_state(&idle), PalmState::Idle(Idle::Mode));
         let never = PalmReadout {
             age_ms: None,
             ..readout(true, true, false, false)
         };
-        assert_eq!(PalmState::of(&never), PalmState::Stale);
+        assert_eq!(palm_state(&never), PalmState::Stale);
         let old = PalmReadout {
-            age_ms: Some(PALM_STALE_MS + 1),
+            age_ms: Some(u128::from(config().palm_stale_ms) + 1),
             ..readout(true, true, false, false)
         };
-        assert_eq!(PalmState::of(&old), PalmState::Stale);
+        assert_eq!(palm_state(&old), PalmState::Stale);
     }
 
     #[test]
@@ -433,8 +441,9 @@ mod tests {
 
     #[test]
     fn a_target_mark_grows_and_an_out_of_reach_line_brightens_as_the_hand_nears() {
-        assert!(target_mark_size(1.0) > target_mark_size(0.0));
-        assert_eq!(target_mark_size(2.0), target_mark_size(1.0));
+        let draw = &config().draw;
+        assert!(target_mark_size(1.0, draw) > target_mark_size(0.0, draw));
+        assert_eq!(target_mark_size(2.0, draw), target_mark_size(1.0, draw));
         let far = target_colour(TargetState::OutOfReach, 0.0)[3];
         let near = target_colour(TargetState::OutOfReach, 0.9)[3];
         assert!(near > far);
@@ -446,11 +455,12 @@ mod tests {
 
     #[test]
     fn a_refusal_flashes_then_is_spent() {
-        let (alpha, size) = refusal_flash(0.0).expect("fresh");
-        assert_eq!((alpha, size), (1.0, 0.5));
-        let (later_alpha, later_size) = refusal_flash(0.4).expect("still flashing");
+        let flash_s = config().refusal_flash_s;
+        let (alpha, size) = flash(0.0).expect("fresh");
+        assert_eq!((alpha, size), (1.0, config().draw.refusal_start_share));
+        let (later_alpha, later_size) = flash(flash_s * 0.8).expect("still flashing");
         assert!(later_alpha < alpha && later_size > size);
-        assert_eq!(refusal_flash(REFUSAL_FLASH_S), None);
-        assert_eq!(refusal_flash(-0.1), None);
+        assert_eq!(flash(flash_s), None);
+        assert_eq!(flash(-0.1), None);
     }
 }

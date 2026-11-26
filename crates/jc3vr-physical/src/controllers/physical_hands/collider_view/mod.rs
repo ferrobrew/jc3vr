@@ -7,7 +7,8 @@
 //! - [`model`]: the snapshot it fills, and the pure geometry over it;
 //! - [`draw`]: the primitives within a budget;
 //! - [`nearby`]: the reads the tracking recorder's near set makes, a slice of the walk at a time;
-//! - [`config`]: the settings.
+//! - [`config`]: the settings;
+//! - the tuning, in [`crate::controllers::physical_hands::views`].
 //!
 //! Geometry discovery runs once per physics step. After the engine's render update, retained body
 //! transforms are refreshed and drawn at their current collision poses, independently of the mesh's
@@ -24,7 +25,7 @@ mod scan;
 
 use std::{
     sync::atomic::{AtomicBool, Ordering},
-    time::{Duration, Instant},
+    time::Instant,
 };
 
 use glam::Vec3;
@@ -41,11 +42,15 @@ use parking_lot::Mutex;
 
 pub use self::{config::ColliderViewConfig, scan::ScanError};
 use self::{
-    draw::{DrawInputs, Drawn, FLASH_S, Flash},
+    draw::{DrawInputs, Drawn, Flash},
     model::{Aabb, BodyKind, JointKind, MotionKind, Snapshot, gazed},
     scan::ModIds,
 };
-use crate::controllers::physical_hands::{config::PHYSICAL_HANDS_CONFIG, physics};
+use crate::controllers::physical_hands::{
+    config::PHYSICAL_HANDS_CONFIG,
+    physics,
+    views::{ColliderViewTuning, VIEWS},
+};
 
 /// The view's readout for the debug UI and the status rows.
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -162,6 +167,7 @@ pub unsafe fn render_tick(dtf: f32) {
     }
     WAS_ACTIVE.store(true, Ordering::Relaxed);
 
+    let tuning = &VIEWS.get().collider_view;
     let steps = callback::steps();
     let head = headpose::query();
     let read = {
@@ -172,10 +178,18 @@ pub unsafe fn render_tick(dtf: f32) {
         let mods = mod_ids();
         let started = Instant::now();
         // SAFETY: forwarded from the caller.
-        let scanned = unsafe { scan::scan(head.position, RADIUS_M, MAX_BODIES, true, &mods) };
+        let scanned = unsafe {
+            scan::scan(
+                head.position,
+                tuning.radius_m,
+                tuning.max_bodies,
+                true,
+                &mods,
+            )
+        };
         (scanned, started.elapsed())
     });
-    let flashes = take_flashes();
+    let flashes = take_flashes(tuning);
 
     let mut state = STATE.lock();
     let state = &mut *state;
@@ -216,14 +230,15 @@ pub unsafe fn render_tick(dtf: f32) {
         &current.bodies,
         head.position,
         head.orientation * Vec3::NEG_Z,
-        RADIUS_M * 2.0,
+        tuning.radius_m * tuning.gaze_reach_per_radius,
     );
     let drawn = draw::build(
         &DrawInputs {
             current,
             previous: None,
             dtf,
-            budget: MAX_PRIMITIVES,
+            budget: tuning.max_primitives,
+            tuning: &tuning.draw,
             flashes: &flashes,
             gaze: gaze.map(|b| b.id),
         },
@@ -260,7 +275,7 @@ pub unsafe fn render_tick(dtf: f32) {
             render_fraction: mesh.fraction,
         })
     });
-    store::submit(Source::ColliderView, &mut state.primitives, TTL);
+    store::submit(Source::ColliderView, &mut state.primitives, tuning.ttl());
 
     let mut status = STATUS.lock();
     status.enabled = true;
@@ -323,11 +338,9 @@ pub(crate) fn note_contact(at: Vec3, other_body: u32, impulse_ns: f32) {
     if !WAS_ACTIVE.load(Ordering::Relaxed) {
         return;
     }
-    let mut flashes = FLASHES.lock();
-    if flashes.len() >= MAX_FLASHES {
-        flashes.remove(0);
-    }
-    flashes.push((Instant::now(), at, other_body, impulse_ns));
+    FLASHES
+        .lock()
+        .push((Instant::now(), at, other_body, impulse_ns));
 }
 
 /// The view's state across frames.
@@ -376,29 +389,13 @@ static STATUS: Mutex<ColliderViewStatus> = Mutex::new(ColliderViewStatus {
     last_error: None,
 });
 
-/// The contacts reported lately: when, where, the other body, and the impulse.
+/// The contacts reported lately, oldest first: when, where, the other body, and the impulse.
 static FLASHES: Mutex<Vec<(Instant, Vec3, u32, f32)>> = Mutex::new(Vec::new());
 
 /// Whether the view drew last frame, so that switching it off clears its slot once.
 static WAS_ACTIVE: AtomicBool = AtomicBool::new(false);
 
 static CLEANUP_REGISTERED: AtomicBool = AtomicBool::new(false);
-
-/// The view submits every rendered frame, so its slot lives a little past one.
-const TTL: Duration = Duration::from_millis(100);
-
-/// The most contacts kept flashing at once.
-const MAX_FLASHES: usize = 32;
-
-/// How far from the player a body's box may be and still be drawn, metres.
-const RADIUS_M: f32 = 6.0;
-
-/// The most bodies drawn, the nearest first.
-const MAX_BODIES: usize = 128;
-
-/// The most overlay primitives the view submits in a frame. The overlay's own cap covers every
-/// readout together, and the view's slot comes last, so the view gives way first.
-const MAX_PRIMITIVES: usize = 1536;
 
 /// The mod's bodies and joints, from the hand bodies' and the held guns' readouts.
 fn mod_ids() -> ModIds {
@@ -424,11 +421,16 @@ fn mod_ids() -> ModIds {
     ids
 }
 
-/// The contacts still flashing, with their ages; the spent ones are dropped.
-fn take_flashes() -> Vec<Flash> {
+/// The newest contacts still flashing, at most `tuning`'s number of them, with their ages; the
+/// spent and the older ones are dropped. The cap is applied here, once a frame, rather than as
+/// each contact is noted, in the physics' per-contact loop.
+fn take_flashes(tuning: &ColliderViewTuning) -> Vec<Flash> {
     let now = Instant::now();
+    let flash_s = tuning.draw.flash_s;
     let mut flashes = FLASHES.lock();
-    flashes.retain(|(at, ..)| now.saturating_duration_since(*at).as_secs_f32() < FLASH_S);
+    flashes.retain(|(at, ..)| now.saturating_duration_since(*at).as_secs_f32() < flash_s);
+    let over = flashes.len().saturating_sub(tuning.max_flashes);
+    flashes.drain(..over);
     flashes
         .iter()
         .map(|&(born, at, body, impulse_ns)| Flash {

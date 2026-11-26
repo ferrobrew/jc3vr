@@ -6,7 +6,8 @@
 //!   how a hand stands to a grip target, and their colours;
 //! - [`draw`]: the primitives, within a budget;
 //! - [`candidates`]: the read of the world for the objects near the hands;
-//! - [`config`]: the settings.
+//! - [`config`]: the settings;
+//! - the tuning, in [`crate::controllers::physical_hands::views`].
 //!
 //! The palms' simulation tick records what its reach cast ([`record`]) and reads the candidates
 //! from the world a few times a second ([`scan_candidates`]); a grab that a subsystem refuses is
@@ -22,7 +23,7 @@ pub mod model;
 
 use std::{
     sync::atomic::{AtomicBool, Ordering},
-    time::{Duration, Instant},
+    time::Instant,
 };
 
 use glam::Vec3;
@@ -43,9 +44,11 @@ use parking_lot::Mutex;
 pub use self::config::GrabViewConfig;
 use self::{
     draw::{DrawInputs, Drawn},
-    model::{Candidate, CandidateKind, HandleSeen, PalmState, REFUSAL_FLASH_S, ReachRay},
+    model::{Candidate, CandidateKind, HandleSeen, PalmState, ReachRay},
 };
-use crate::controllers::physical_hands::{config::PHYSICAL_HANDS_CONFIG, palm_readout};
+use crate::controllers::physical_hands::{
+    config::PHYSICAL_HANDS_CONFIG, palm_readout, views::VIEWS,
+};
 
 /// The view's readout for the debug UI.
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -105,16 +108,18 @@ pub(crate) fn record(recorded: Recorded) {
 ///
 /// The game thread, before the world update.
 pub(crate) unsafe fn scan_candidates(hands: [Option<Vec3>; 2], standing_on: Option<u32>) {
+    let tuning = &VIEWS.get().grab_view;
     let now = Instant::now();
+    let period = tuning.candidate_period();
     let due = STATE
         .lock()
         .candidates_at
-        .is_none_or(|at| now.saturating_duration_since(at) >= CANDIDATE_PERIOD);
+        .is_none_or(|at| now.saturating_duration_since(at) >= period);
     if !due {
         return;
     }
     // SAFETY: forwarded from the caller.
-    let found = unsafe { candidates::scan(hands, standing_on) };
+    let found = unsafe { candidates::scan(hands, standing_on, tuning) };
     let took = now.elapsed();
     let mut counts = [0; CandidateKind::COUNT];
     let error = match found {
@@ -154,7 +159,7 @@ pub fn refused(hand: Hand, at: Option<Vec3>, why: &str) {
             .map(Anchor::World)
             .or(state.chosen[hand.index()]);
         if let Some(anchor) = anchor {
-            if state.flashes.len() >= MAX_FLASHES {
+            if state.flashes.len() >= VIEWS.get().grab_view.max_flashes {
                 state.flashes.remove(0);
             }
             state.flashes.push((anchor, Instant::now()));
@@ -175,9 +180,10 @@ pub fn submit(tick: &Tick, frame: Option<&MarkerFrame>) {
         return;
     };
     WAS_ACTIVE.store(true, Ordering::Relaxed);
+    let tuning = &VIEWS.get().grab_view;
     let now = Instant::now();
     // Read before the view's lock: the readout takes the palms' own state.
-    let palms = Hand::BOTH.map(|hand| PalmState::of(&palm_readout(hand)));
+    let palms = Hand::BOTH.map(|hand| PalmState::of(&palm_readout(hand), tuning.palm_stale_ms));
 
     let mut state = STATE.lock();
     let state = &mut *state;
@@ -188,9 +194,9 @@ pub fn submit(tick: &Tick, frame: Option<&MarkerFrame>) {
             marker_anchor(target, frame)
         });
     }
-    state
-        .flashes
-        .retain(|(_, born)| now.saturating_duration_since(*born).as_secs_f32() < REFUSAL_FLASH_S);
+    state.flashes.retain(|(_, born)| {
+        now.saturating_duration_since(*born).as_secs_f32() < tuning.refusal_flash_s
+    });
     let flashes: Vec<(Anchor, f32)> = state
         .flashes
         .iter()
@@ -199,10 +205,12 @@ pub fn submit(tick: &Tick, frame: Option<&MarkerFrame>) {
     let recorded = state
         .recorded
         .as_ref()
-        .filter(|(at, _)| now.saturating_duration_since(*at) <= RECORD_MAX_AGE)
+        .filter(|(at, _)| now.saturating_duration_since(*at) <= tuning.record_max_age())
         .map(|(_, recorded)| recorded);
     let candidates: &[Candidate] = match state.candidates_at {
-        Some(at) if now.saturating_duration_since(at) <= CANDIDATE_MAX_AGE => &state.candidates,
+        Some(at) if now.saturating_duration_since(at) <= tuning.candidate_max_age() => {
+            &state.candidates
+        }
         _ => &[],
     };
     let reload = held::reload_views(now);
@@ -215,11 +223,12 @@ pub fn submit(tick: &Tick, frame: Option<&MarkerFrame>) {
             flashes: &flashes,
             zones: reload.zones,
             knock: reload.knock,
+            tuning,
         },
         &mut state.primitives,
     );
     let primitives = state.primitives.len();
-    store::submit(Source::GrabView, &mut state.primitives, TTL);
+    store::submit(Source::GrabView, &mut state.primitives, tuning.ttl());
 
     let mut status = STATUS.lock();
     status.enabled = true;
@@ -294,20 +303,3 @@ static STATUS: Mutex<GrabViewStatus> = Mutex::new(GrabViewStatus {
 
 /// Whether the view drew on the last input tick, so that switching it off clears its slot once.
 static WAS_ACTIVE: AtomicBool = AtomicBool::new(false);
-
-/// The view is submitted at the input tick's rate, so it lives a little past one tick.
-const TTL: Duration = Duration::from_millis(150);
-
-/// How long the palms' last tick is drawn after it ran: they tick every simulation tick while they
-/// act, so an older record means they have stopped.
-const RECORD_MAX_AGE: Duration = Duration::from_millis(200);
-
-/// How often the world is read for candidates: a pass over every body slot, a few times a second
-/// rather than every tick.
-const CANDIDATE_PERIOD: Duration = Duration::from_millis(100);
-
-/// How long the candidates are drawn after their read, past which they are taken as stale.
-const CANDIDATE_MAX_AGE: Duration = Duration::from_millis(500);
-
-/// The most refused grabs flashing at once.
-const MAX_FLASHES: usize = 8;

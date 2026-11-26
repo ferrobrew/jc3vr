@@ -13,8 +13,9 @@ use jc3vr_view::controllers::overlay::primitive::{
     Anchor, DepthMode, Facing, Primitive, Rgba, Shape, SpriteSize, scale_alpha,
 };
 
-use crate::controllers::physical_hands::collider_view::model::{
-    Aabb, Body, BodyKind, Geometry, JointKind, Snapshot, interpolate,
+use crate::controllers::physical_hands::{
+    collider_view::model::{Aabb, Body, BodyKind, Geometry, JointKind, Snapshot, interpolate},
+    views::ColliderDrawTuning,
 };
 
 /// A contact to flash.
@@ -41,6 +42,7 @@ pub struct DrawInputs<'a> {
     pub flashes: &'a [Flash],
     /// The body under the gaze.
     pub gaze: Option<u32>,
+    pub tuning: &'a ColliderDrawTuning,
 }
 
 /// What a frame drew.
@@ -54,16 +56,14 @@ pub struct Drawn {
     pub kinds: [u32; BodyKind::COUNT],
 }
 
-/// How long a contact flashes, seconds.
-pub const FLASH_S: f32 = 0.4;
-
-/// The most primitives the view submits, whatever its budget: the overlay's cap covers every
-/// readout together.
+/// The most primitives the view submits, whatever its budget, and the bound the views' tuning
+/// checks its budgets against: the overlay's cap covers every readout together.
 pub const PRIMITIVE_CEILING: usize = 2048;
 
 /// Build the frame's primitives into `out` (cleared first).
 pub fn build(inputs: &DrawInputs<'_>, out: &mut Vec<Primitive>) -> Drawn {
     out.clear();
+    let tuning = inputs.tuning;
     let budget = inputs.budget.min(PRIMITIVE_CEILING);
     let frames = Frames::new(inputs);
     let mut drawn = Drawn::default();
@@ -79,31 +79,34 @@ pub fn build(inputs: &DrawInputs<'_>, out: &mut Vec<Primitive>) -> Drawn {
             JointKind::GunBrace => GUN_BRACE_JOINT,
         };
         scratch.clear();
-        scratch.push(line(a, b, JOINT_WIDTH_M, color, DepthMode::Always));
+        scratch.push(line(a, b, tuning.joint_width_m, color, DepthMode::Always));
         for end in [a, b] {
-            scratch.push(disc(end, JOINT_END_M, color));
+            scratch.push(disc(end, tuning.joint_end_m, color));
         }
         commit(out, &mut scratch, budget);
     }
 
     for flash in inputs.flashes {
-        let Some(fade) = flash_fade(flash.age_s) else {
+        let Some(fade) = flash_fade(flash.age_s, tuning.flash_s) else {
             continue;
         };
         scratch.clear();
-        let size = FLASH_RING_M + FLASH_RING_PER_NS_M * flash.impulse_ns.clamp(0.0, 20.0);
+        let size = tuning.flash_ring_m
+            + tuning.flash_ring_per_ns_m * flash.impulse_ns.clamp(0.0, tuning.flash_max_impulse_ns);
         scratch.push(Primitive::Sprite {
             at: Anchor::World(flash.at),
-            size: SpriteSize::World(size * (1.0 + flash.age_s / FLASH_S)),
+            size: SpriteSize::World(size * (1.0 + flash.age_s / tuning.flash_s)),
             facing: Facing::Billboard,
-            shape: Shape::Ring { thickness: 0.25 },
+            shape: Shape::Ring {
+                thickness: tuning.flash_ring_thickness,
+            },
             color: scale_alpha(CONTACT, fade),
             depth: DepthMode::Always,
         });
         if let Some(aabb) = flash.body.and_then(|id| frames.aabb(id)) {
             box_lines(
                 &aabb,
-                BOX_WIDTH_M * 2.0,
+                tuning.box_width_m * tuning.highlight_box_width,
                 scale_alpha(CONTACT, fade),
                 &mut scratch,
             );
@@ -113,7 +116,12 @@ pub fn build(inputs: &DrawInputs<'_>, out: &mut Vec<Primitive>) -> Drawn {
     if let Some(ground) = inputs.current.ground {
         scratch.clear();
         if let Some(aabb) = frames.aabb(ground.body) {
-            box_lines(&aabb, BOX_WIDTH_M * 1.5, GROUND, &mut scratch);
+            box_lines(
+                &aabb,
+                tuning.box_width_m * tuning.ground_box_width,
+                GROUND,
+                &mut scratch,
+            );
         }
         let player = inputs
             .current
@@ -126,8 +134,8 @@ pub fn build(inputs: &DrawInputs<'_>, out: &mut Vec<Primitive>) -> Drawn {
             let foot = Vec3::new(centre.x, player.min.y, centre.z);
             scratch.push(line(
                 foot,
-                foot + ground.normal.normalize_or_zero() * NORMAL_M,
-                JOINT_WIDTH_M,
+                foot + ground.normal.normalize_or_zero() * tuning.normal_m,
+                tuning.joint_width_m,
                 GROUND,
                 DepthMode::Always,
             ));
@@ -137,7 +145,12 @@ pub fn build(inputs: &DrawInputs<'_>, out: &mut Vec<Primitive>) -> Drawn {
 
     if let Some(aabb) = inputs.gaze.and_then(|id| frames.aabb(id)) {
         scratch.clear();
-        box_lines(&aabb, BOX_WIDTH_M * 2.0, GAZE, &mut scratch);
+        box_lines(
+            &aabb,
+            tuning.box_width_m * tuning.highlight_box_width,
+            GAZE,
+            &mut scratch,
+        );
         commit(out, &mut scratch, budget);
     }
 
@@ -150,11 +163,11 @@ pub fn build(inputs: &DrawInputs<'_>, out: &mut Vec<Primitive>) -> Drawn {
         ));
         box_lines(
             &aabb,
-            BOX_WIDTH_M,
+            tuning.box_width_m,
             scale_alpha(color, BOX_ALPHA),
             &mut scratch,
         );
-        shape(&body.geometry, &transform, color, &mut scratch);
+        shape(&body.geometry, &transform, color, tuning, &mut scratch);
         if commit(out, &mut scratch, budget) {
             drawn.bodies += 1;
             drawn.kinds[body.kind.index()] += 1;
@@ -233,9 +246,9 @@ fn commit(out: &mut Vec<Primitive>, scratch: &mut Vec<Primitive>, budget: usize)
     fits
 }
 
-/// How visible a flash `age_s` old is, or `None` once it is over.
-fn flash_fade(age_s: f32) -> Option<f32> {
-    (age_s.is_finite() && (0.0..FLASH_S).contains(&age_s)).then(|| 1.0 - age_s / FLASH_S)
+/// How visible a flash `age_s` old is, of one lasting `flash_s`, or `None` once it is over.
+fn flash_fade(age_s: f32, flash_s: f32) -> Option<f32> {
+    (age_s.is_finite() && (0.0..flash_s).contains(&age_s)).then(|| 1.0 - age_s / flash_s)
 }
 
 fn box_lines(aabb: &Aabb, width: f32, color: Rgba, out: &mut Vec<Primitive>) {
@@ -247,34 +260,42 @@ fn box_lines(aabb: &Aabb, width: f32, color: Rgba, out: &mut Vec<Primitive>) {
 }
 
 /// A body's shape at `transform`.
-fn shape(geometry: &Geometry, transform: &Affine3A, color: Rgba, out: &mut Vec<Primitive>) {
+fn shape(
+    geometry: &Geometry,
+    transform: &Affine3A,
+    color: Rgba,
+    tuning: &ColliderDrawTuning,
+    out: &mut Vec<Primitive>,
+) {
     let at = |p: Vec3| transform.transform_point3(p);
+    let ring = |centre: Vec3, radius: f32| ring(centre, radius, tuning.shape_ring_thickness, color);
+    let width = tuning.shape_width_m;
     match geometry {
-        Geometry::Sphere { centre, radius } => out.push(ring(at(*centre), *radius, color)),
+        Geometry::Sphere { centre, radius } => out.push(ring(at(*centre), *radius)),
         Geometry::Capsule { a, b, radius } => {
             let (a, b) = (at(*a), at(*b));
             let axis = (b - a).normalize_or(Vec3::Y);
             let (u, v) = axis.any_orthonormal_pair();
             for side in [u, -u, v, -v] {
                 let offset = side * *radius;
-                out.push(line(a + offset, b + offset, SHAPE_WIDTH_M, color, XRAY));
+                out.push(line(a + offset, b + offset, width, color, XRAY));
             }
-            out.push(ring(a, *radius, color));
-            out.push(ring(b, *radius, color));
+            out.push(ring(a, *radius));
+            out.push(ring(b, *radius));
         }
         Geometry::Hull { vertices, edges } => {
-            for &(i, j) in edges.iter().take(MAX_HULL_EDGES) {
+            for &(i, j) in edges.iter().take(tuning.max_hull_edges) {
                 let (Some(&p), Some(&q)) =
                     (vertices.get(usize::from(i)), vertices.get(usize::from(j)))
                 else {
                     continue;
                 };
-                out.push(line(at(p), at(q), SHAPE_WIDTH_M, color, XRAY));
+                out.push(line(at(p), at(q), width, color, XRAY));
             }
         }
         Geometry::Points(vertices) => {
-            for &p in vertices.iter().take(MAX_POINTS) {
-                out.push(disc(at(p), POINT_M, color));
+            for &p in vertices.iter().take(tuning.max_points) {
+                out.push(disc(at(p), tuning.point_m, color));
             }
         }
         Geometry::Other(_) => {}
@@ -291,12 +312,12 @@ fn line(a: Vec3, b: Vec3, width: f32, color: Rgba, depth: DepthMode) -> Primitiv
     }
 }
 
-fn ring(centre: Vec3, radius: f32, color: Rgba) -> Primitive {
+fn ring(centre: Vec3, radius: f32, thickness: f32, color: Rgba) -> Primitive {
     Primitive::Sprite {
         at: Anchor::World(centre),
         size: SpriteSize::World(radius * 2.0),
         facing: Facing::Billboard,
-        shape: Shape::Ring { thickness: 0.08 },
+        shape: Shape::Ring { thickness },
         color,
         depth: XRAY,
     }
@@ -316,20 +337,8 @@ fn disc(centre: Vec3, diameter: f32, color: Rgba) -> Primitive {
 const XRAY: DepthMode = DepthMode::XRay {
     occluded_alpha: 0.3,
 };
-const BOX_WIDTH_M: f32 = 0.003;
-const SHAPE_WIDTH_M: f32 = 0.005;
-const JOINT_WIDTH_M: f32 = 0.008;
-const JOINT_END_M: f32 = 0.025;
-const POINT_M: f32 = 0.02;
-const NORMAL_M: f32 = 0.3;
-const FLASH_RING_M: f32 = 0.06;
-const FLASH_RING_PER_NS_M: f32 = 0.01;
 /// A box is fainter than its shape, so the shape reads through it.
 const BOX_ALPHA: f32 = 0.4;
-/// The most edges of one hull drawn.
-const MAX_HULL_EDGES: usize = 96;
-/// The most vertices of one hull without faces drawn.
-const MAX_POINTS: usize = 32;
 const GRIP_JOINT: Rgba = [0.5, 1.0, 0.3, 1.0];
 const GUN_GRIP_JOINT: Rgba = [1.0, 0.85, 0.2, 1.0];
 const GUN_BRACE_JOINT: Rgba = [1.0, 0.55, 0.2, 1.0];
@@ -342,7 +351,14 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use super::*;
-    use crate::controllers::physical_hands::collider_view::model::{Ground, Joint, MotionKind};
+    use crate::controllers::physical_hands::{
+        collider_view::model::{Ground, Joint, MotionKind},
+        views::VIEWS,
+    };
+
+    fn config() -> &'static ColliderDrawTuning {
+        &VIEWS.get().collider_view.draw
+    }
 
     fn body(id: u32, kind: BodyKind, at: Vec3, geometry: Geometry) -> Body {
         Body {
@@ -370,6 +386,7 @@ mod tests {
             budget: PRIMITIVE_CEILING,
             flashes: &[],
             gaze: None,
+            tuning: config(),
         }
     }
 
@@ -511,7 +528,7 @@ mod tests {
             radius: 0.3,
         };
         let mut out = Vec::new();
-        shape(&capsule, &Affine3A::IDENTITY, [1.0; 4], &mut out);
+        shape(&capsule, &Affine3A::IDENTITY, [1.0; 4], config(), &mut out);
         assert_eq!(out.len(), 6);
         for p in &out[..4] {
             let Primitive::Line {
@@ -556,7 +573,7 @@ mod tests {
             Flash {
                 at: Vec3::ZERO,
                 body: None,
-                age_s: FLASH_S,
+                age_s: config().flash_s,
                 impulse_ns: 1.0,
             },
         ];
