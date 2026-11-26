@@ -49,3 +49,23 @@ impl Drop for SpawnScope {
 thread_local! {
     static SPAWN: Cell<Spawn> = const { Cell::new(Spawn::Refused) };
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn spawning_is_refused_outside_a_game_stage_and_restored_after_one() {
+        assert_eq!(spawn(), Spawn::Refused);
+        {
+            let _outer = SpawnScope::enter(Spawn::Allowed);
+            assert_eq!(spawn(), Spawn::Allowed);
+            {
+                let _inner = SpawnScope::enter(Spawn::Refused);
+                assert_eq!(spawn(), Spawn::Refused);
+            }
+            assert_eq!(spawn(), Spawn::Allowed);
+        }
+        assert_eq!(spawn(), Spawn::Refused);
+    }
+}

@@ -30,7 +30,7 @@
 //! ([`Grenade::UpdatePostSim`](jc3gi::equipment::explosive::Grenade::UpdatePostSim)). The stage
 //! therefore runs there whenever the queue runs, and elsewhere (a paused update, which skips the
 //! queue and the ammunition manager's pass, or an inline game stage) it runs with [`Spawn`]
-//! refused, which acts that spawn such objects check through [`stage::spawn`].
+//! refused, which acts that spawn such objects check through [`spawn`](crate::controllers::intent::stage::spawn).
 //!
 //! Where the poll stage runs outside the input job (the load state, and the frontend before its
 //! main menu, call the input update inline on the game thread with no world update after it), the
@@ -61,7 +61,7 @@ use crate::controllers::{
         inject::{self, Landing, Outcome},
     },
     gamepad_setting,
-    intent::stage::{self, Spawn, SpawnScope},
+    intent::stage::{Spawn, SpawnScope},
     telemetry::{Write, note_injected},
 };
 
@@ -204,7 +204,7 @@ pub(crate) fn poll_stage(dt: f32, poll: DevicePoll) -> Option<f32> {
 
 /// The game stage: run the bindings' decisions and acts for the tick the last poll stage
 /// published, and the active-input-device pin, with `spawn` saying whether the acts may spawn
-/// objects that register for the world's updates ([`stage::spawn`]). Does nothing when no poll stage ran
+/// objects that register for the world's updates ([`spawn`](crate::controllers::intent::stage::spawn)). Does nothing when no poll stage ran
 /// since the last game stage (the device poll was skipped, or the frontend or load state already
 /// ran this tick inline).
 ///
@@ -438,21 +438,6 @@ mod tests {
         assert_eq!(turn.queue_runs(), None);
         assert_eq!(turn.leave(), None);
         assert_eq!(turn.queue_runs(), None);
-    }
-
-    #[test]
-    fn spawning_is_refused_outside_a_game_stage_and_restored_after_one() {
-        assert_eq!(spawn(), Spawn::Refused);
-        {
-            let _outer = SpawnScope::enter(Spawn::Allowed);
-            assert_eq!(spawn(), Spawn::Allowed);
-            {
-                let _inner = SpawnScope::enter(Spawn::Refused);
-                assert_eq!(spawn(), Spawn::Refused);
-            }
-            assert_eq!(spawn(), Spawn::Allowed);
-        }
-        assert_eq!(spawn(), Spawn::Refused);
     }
 
     #[test]
