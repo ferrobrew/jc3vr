@@ -55,11 +55,9 @@ use jc3gi::{
 use jc3vr_body::controllers::{
     hands::ik,
     held::pickup::Refusal,
-    physics::{
-        characters::{character_position, local_player},
-        refs::Weak,
-    },
+    physics::{characters::character_position, local_player::LocalPlayer, refs::Weak},
 };
+use jc3vr_core::game_tick::GameTick;
 use jc3vr_input::frame::Pose;
 use parking_lot::Mutex;
 
@@ -267,11 +265,8 @@ impl CharacterGun {
 /// its hands goes through its inventory's selection, as its death's drop does; a holstered gun is
 /// dropped without a selection change, so the character keeps what it wields. `admit` runs once
 /// the gun is known still to be the character's, and a refusal there leaves the gun where it is.
-///
-/// # Safety
-///
-/// The game thread, before the world update.
-pub(crate) unsafe fn release(
+pub(crate) fn release(
+    game: &GameTick<'_>,
     gun: &CharacterGun,
     admit: impl FnOnce(&Character, &WeaponBase) -> Result<(), SourceRefusal>,
 ) -> Result<Freed, SourceRefusal> {
@@ -304,7 +299,9 @@ pub(crate) unsafe fn release(
     }
     // SAFETY: the character's inventory holds the weapon, and the character is held alive.
     let weapon = unsafe { &mut *(gun.weapon as *mut WeaponBase) };
-    let player = unsafe { local_player() }.ok_or(SourceRefusal::Take(Refusal::NoCharacter))?;
+    let mut local_player =
+        LocalPlayer::get(game).ok_or(SourceRefusal::Take(Refusal::NoCharacter))?;
+    let player = local_player.character_mut();
     admit(player, weapon)?;
     // SAFETY: the weapon's own weak reference to itself, live while it is.
     let alive = unsafe { Weak::of(&weapon.m_WeakThis) }

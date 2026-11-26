@@ -90,6 +90,7 @@ use jc3vr_body::controllers::{
     hands::{grip, late},
     held::native::gun_count,
 };
+use jc3vr_core::game_tick::GameTick;
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
@@ -230,11 +231,8 @@ pub(crate) unsafe fn wielded(owner: &Character) -> Option<usize> {
 /// Follow the local player's wielded weapon (`wielded`, from [`wielded`]) for one input tick, after
 /// the table's feed has landed it in a hand (`arrival`, when it came into one this tick), and
 /// publish whether the mod owns its attach bones: while `enabled`. Returns the holding hand.
-///
-/// # Safety
-///
-/// The game thread, before the world update.
-pub(crate) unsafe fn input_tick(
+pub(crate) fn input_tick(
+    game: &GameTick<'_>,
     wielded: Option<usize>,
     enabled: bool,
     arrival: Option<live::Arrival>,
@@ -251,7 +249,7 @@ pub(crate) unsafe fn input_tick(
     if enabled && let Some(arrival) = arrival {
         took(arrival);
     }
-    unsafe { act::tick(dt) };
+    act::tick(game, dt);
     wielded.and_then(owned_holder)
 }
 
@@ -291,8 +289,8 @@ pub(crate) unsafe fn adopt(weapon: usize) {
 ///
 /// # Safety
 ///
-/// `object` must be a live weapon, on the game thread before the world update.
-pub(crate) unsafe fn take_into(hand: Hand, object: usize) -> bool {
+/// `object` must be a live weapon.
+pub(crate) unsafe fn take_into(game: &GameTick<'_>, hand: Hand, object: usize) -> bool {
     // SAFETY: forwarded from the caller.
     let Some(held) = (unsafe { inventory::held_of(object) }) else {
         return false;
@@ -300,15 +298,14 @@ pub(crate) unsafe fn take_into(hand: Hand, object: usize) -> bool {
     if !live::arrive(hand, held) {
         return false;
     }
-    // SAFETY: forwarded from the caller.
-    unsafe { inventory::reconcile::now() };
+    inventory::reconcile::now(game);
     act::arm(hand);
     true
 }
 
 /// Hand `weapon`, the weapon the other hand holds (wielded or armed there), to `hand`. Returns
 /// whether it moved.
-pub(crate) fn hand_over(hand: Hand, weapon: usize) -> bool {
+pub(crate) fn hand_over(game: &GameTick<'_>, hand: Hand, weapon: usize) -> bool {
     let Some(object) = ObjectAddress::from_address(weapon) else {
         return false;
     };
@@ -318,8 +315,7 @@ pub(crate) fn hand_over(hand: Hand, weapon: usize) -> bool {
     TICK.lock().handovers += 1;
     act::arm(hand);
     // The primary may have changed hands with it.
-    // SAFETY: handovers are made on the input tick, on the game thread before the world update.
-    unsafe { inventory::reconcile::now() };
+    inventory::reconcile::now(game);
     tracing::info!(
         target: "controllers",
         hand = hand.label(),

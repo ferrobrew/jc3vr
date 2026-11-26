@@ -6,7 +6,8 @@
 
 use glam::Vec3;
 use jc3gi::equipment::weapon::WeaponBase;
-use jc3vr_body::controllers::physics::characters::{character_position, local_player};
+use jc3vr_body::controllers::physics::{characters::character_position, local_player::LocalPlayer};
+use jc3vr_core::game_tick::GameTick;
 use tracking_format::event::WorldMotion;
 
 use crate::controllers::{
@@ -29,12 +30,9 @@ use crate::controllers::{
 /// Let the weapon docked on `socket` fall into the world, moving away from the player at
 /// [`EJECT_MPS`] so that it falls clear of the body rather than onto it, and take it off the socket
 /// in the table.
-///
-/// # Safety
-///
-/// The game thread, before the world update.
-pub(crate) unsafe fn eject(socket: Socket) -> Result<(), DockRefusal> {
-    let owner = unsafe { local_player() }.ok_or(DockRefusal::NoCharacter)?;
+pub(crate) fn eject(game: &GameTick<'_>, socket: Socket) -> Result<(), DockRefusal> {
+    let mut local_player = LocalPlayer::get(game).ok_or(DockRefusal::NoCharacter)?;
+    let owner = local_player.character_mut();
     let snapshot = live::snapshot_now().ok_or(DockRefusal::NoTable)?;
     let docked = unsafe { docks::socket_weapons(owner, &snapshot) }
         .into_iter()

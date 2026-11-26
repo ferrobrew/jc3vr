@@ -24,8 +24,9 @@ use jc3gi::{
 use jc3vr_body::controllers::{
     body::rig::frames::Frames,
     hands::{held::held_matrix, late},
-    physics::characters::local_player,
+    physics::local_player::LocalPlayer,
 };
+use jc3vr_core::game_tick::GameTick;
 use jc3vr_input::{
     frame::{Hand, Pose},
     motion,
@@ -52,14 +53,13 @@ use crate::controllers::{
 /// Refused outside the top of the world's pre-simulation queue, where the actor could not be
 /// spawned safely ([`native::create`]).
 ///
-/// # Safety
-///
-/// The input tick's game stage, on the game thread.
-pub(crate) unsafe fn draw(hand: Hand, tuning: &GrenadeTuning) -> bool {
-    let Some(owner) = (unsafe { local_player() }) else {
+/// In the input tick's game stage.
+pub(crate) fn draw(game: &GameTick<'_>, hand: Hand, tuning: &GrenadeTuning) -> bool {
+    let Some(mut owner) = LocalPlayer::get(game) else {
         return false;
     };
-    let Some(weapon) = grenade_weapon(owner) else {
+    let owner_id = owner.address();
+    let Some(weapon) = grenade_weapon(owner.character_mut()) else {
         return false;
     };
     let Some(grip) = STATE.lock().grips[hand.index()] else {
@@ -78,7 +78,6 @@ pub(crate) unsafe fn draw(hand: Hand, tuning: &GrenadeTuning) -> bool {
         unsafe { native::remove(&actor) };
         return false;
     }
-    let owner_id = owner as *const Character as usize;
     let mut state = STATE.lock();
     state.owner = Some(owner_id);
     state.items.push(Item {
@@ -96,14 +95,13 @@ pub(crate) unsafe fn draw(hand: Hand, tuning: &GrenadeTuning) -> bool {
 /// stage rules, admitted to the world, and released inert into the simulation once its body exists
 /// ([`native::submit`]). `false`, with nothing made, when the pool or the stage refuses.
 ///
-/// # Safety
-///
-/// The input tick's game stage, on the game thread.
-pub(crate) unsafe fn spawn_in_world(world: Mat4, release: Release) -> bool {
-    let Some(owner) = (unsafe { local_player() }) else {
+/// In the input tick's game stage.
+pub(crate) fn spawn_in_world(game: &GameTick<'_>, world: Mat4, release: Release) -> bool {
+    let Some(mut owner) = LocalPlayer::get(game) else {
         return false;
     };
-    let Some(weapon) = grenade_weapon(owner) else {
+    let owner_id = owner.address();
+    let Some(weapon) = grenade_weapon(owner.character_mut()) else {
         return false;
     };
     let Some(model) = new_model_id() else {
@@ -116,7 +114,6 @@ pub(crate) unsafe fn spawn_in_world(world: Mat4, release: Release) -> bool {
         unsafe { native::remove(&actor) };
         return false;
     };
-    let owner_id = owner as *const Character as usize;
     let mut state = STATE.lock();
     state.owner = Some(owner_id);
     state.items.push(Item {
@@ -242,10 +239,8 @@ pub(crate) fn fuse_in_hand(hand: Hand) -> Option<(f32, f32)> {
 /// loadout's; with it out, it is a live grenade. The release goes through now when the actor has
 /// its physics body, and waits for the body otherwise ([`native::release_now`]).
 ///
-/// # Safety
-///
-/// The input tick's game stage, on the game thread.
-pub(crate) unsafe fn opened(hand: Hand) {
+/// In the input tick's game stage.
+pub(crate) fn opened(game: &GameTick<'_>, hand: Hand) {
     let Some(item) = in_hand(hand) else {
         return;
     };
@@ -276,9 +271,12 @@ pub(crate) unsafe fn opened(hand: Hand) {
         world,
         release,
     };
-    let weapon = unsafe { local_player() }.and_then(grenade_weapon);
+    let mut owner = LocalPlayer::get(game);
+    let weapon = owner
+        .as_mut()
+        .and_then(|owner| grenade_weapon(owner.character_mut()));
     match weapon {
-        // SAFETY: forwarded from the caller; the weapon is the local player's.
+        // SAFETY: the game tick, and the weapon is the local player's.
         Some(weapon) => unsafe { native::release_now(weapon, launch) },
         None => {
             native::submit(launch);
@@ -291,6 +289,7 @@ pub(crate) unsafe fn opened(hand: Hand) {
 /// A released actor is a simulating body, which the engine no longer follows from its transform, so
 /// the item is admitted to the hand with a new inert actor rather than a teleported one.
 pub(crate) fn take_loose(
+    game: &GameTick<'_>,
     hand: Hand,
     cockpit_grip: Vec3,
     frames: &Frames,
@@ -299,14 +298,19 @@ pub(crate) fn take_loose(
     let Some(item) = nearest_loose(cockpit_grip, frames, tuning.catch.radius_m) else {
         return false;
     };
-    take_item(hand, item, tuning)
+    take_item(game, hand, item, tuning)
 }
 
 /// Take up the inert item `item`, lying in the world, into `hand` with a fresh actor, wherever it
 /// is: the grapple's snatch brought it to the hand.
 ///
 /// Refused outside the top of the world's pre-simulation queue, as a draw is ([`native::create`]).
-pub(crate) fn take_item(hand: Hand, item: SafeItemView, tuning: &GrenadeTuning) -> bool {
+pub(crate) fn take_item(
+    game: &GameTick<'_>,
+    hand: Hand,
+    item: SafeItemView,
+    tuning: &GrenadeTuning,
+) -> bool {
     if !matches!(item.place, Place::World(_)) {
         return false;
     }
@@ -319,10 +323,10 @@ pub(crate) fn take_item(hand: Hand, item: SafeItemView, tuning: &GrenadeTuning) 
     let Some(held) = grip_world(hand, tuning) else {
         return false;
     };
-    let Some(owner) = (unsafe { local_player() }) else {
+    let Some(mut owner) = LocalPlayer::get(game) else {
         return false;
     };
-    let Some(weapon) = grenade_weapon(owner) else {
+    let Some(weapon) = grenade_weapon(owner.character_mut()) else {
         return false;
     };
     let Some(replacement) = (unsafe { native::create(weapon, held) }) else {
@@ -484,7 +488,9 @@ pub(crate) fn observe(grips: [Option<Pose>; 2], tuning: &GrenadeTuning) {
 /// The game thread, before the world update.
 pub(crate) unsafe fn render_frame(dtf: f32, tuning: &GrenadeTuning) {
     let owner = if jc3vr_core::hooks::in_gameplay() {
-        (unsafe { local_player() }).map(|owner| owner as *const Character as usize)
+        // SAFETY: the render update's game thread, outside the world update.
+        (unsafe { Character::GetLocalPlayerCharacter().as_ref() })
+            .map(|owner| owner as *const Character as usize)
     } else {
         None
     };
@@ -524,7 +530,8 @@ pub(crate) unsafe fn render_frame(dtf: f32, tuning: &GrenadeTuning) {
             lost(*item);
         }
     }
-    if let Some(owner) = unsafe { local_player() }
+    // SAFETY: as above.
+    if let Some(owner) = unsafe { Character::GetLocalPlayerCharacter().as_mut() }
         && let Some(weapon) = grenade_weapon(owner)
     {
         unsafe { native::update(weapon) };

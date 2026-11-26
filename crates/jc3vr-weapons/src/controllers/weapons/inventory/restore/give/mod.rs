@@ -40,6 +40,7 @@ use jc3gi::{
     ui::locator::Locale,
 };
 use jc3vr_body::controllers::{intent, physics::refs::Strong, spawn, spawn::SpawnDefinition};
+use jc3vr_core::game_tick::GameTick;
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
@@ -182,8 +183,8 @@ pub fn refusal(name: &str) -> Option<&'static str> {
 ///
 /// # Safety
 ///
-/// `owner` must be the live local player character, on the game thread before the world update.
-pub(super) unsafe fn input_tick(owner: &mut Character, ready: bool) {
+/// `owner` must be the live local player character.
+pub(super) unsafe fn input_tick(game: &GameTick<'_>, owner: &mut Character, ready: bool) {
     let queued = QUEUE.lock().take(ready);
     if !ready {
         return;
@@ -191,7 +192,9 @@ pub(super) unsafe fn input_tick(owner: &mut Character, ready: bool) {
     unsafe { refresh_names() };
     for request in queued {
         let outcome = match request {
-            GiveRequest::Weapon { socket, name } => unsafe { give(owner, socket, None, &name) },
+            GiveRequest::Weapon { socket, name } => unsafe {
+                give(game, owner, socket, None, &name)
+            },
             GiveRequest::Hand { hand, name } => match live::snapshot_now() {
                 Some(table) => {
                     let small = spawn::definitions()
@@ -206,14 +209,14 @@ pub(super) unsafe fn input_tick(owner: &mut Character, ready: bool) {
                                 .iter()
                                 .any(|pending| pending.socket == socket)
                     });
-                    unsafe { give(owner, socket, Some(hand), &name) }
+                    unsafe { give(game, owner, socket, Some(hand), &name) }
                 }
                 None => "give: there is no loadout table".to_owned(),
             },
-            GiveRequest::Clear(socket) => unsafe { clear(socket) },
+            GiveRequest::Clear(socket) => unsafe { clear(game, socket) },
             GiveRequest::LetGo(hand) => {
                 unsafe { cancel_target(None, Some(hand)) };
-                match unsafe { act::let_go(hand, 0.0) } {
+                match act::let_go(game, hand, 0.0) {
                     Ok(_) => format!("give: the {} hand let go of its weapon", hand.label()),
                     Err(refusal) => format!(
                         "give: the {} hand let go of nothing: {refusal}",
@@ -221,7 +224,7 @@ pub(super) unsafe fn input_tick(owner: &mut Character, ready: bool) {
                     ),
                 }
             }
-            GiveRequest::Grenades(count) => match unsafe { stock::set(count) } {
+            GiveRequest::Grenades(count) => match stock::set(game, count) {
                 Some(count) => format!("give: the grenade stock is {count}"),
                 None => "give: the player has no grenade weapon".to_owned(),
             },
@@ -235,7 +238,7 @@ pub(super) unsafe fn input_tick(owner: &mut Character, ready: bool) {
         *LAST.lock() = Some(outcome);
     }
     QUEUE.lock().dispatching.clear();
-    unsafe { draw_given() };
+    draw_given(game);
     unsafe { adopt(owner) };
 }
 
@@ -466,7 +469,13 @@ unsafe fn cancel_target(socket: Option<Socket>, hand: Option<Hand>) {
 
 /// Spawn a weapon of the definition `name` for `socket`, clearing the socket once the spawn is asked
 /// for, and for `hand` to draw once it is there.
-unsafe fn give(owner: &Character, socket: Socket, hand: Option<Hand>, name: &str) -> String {
+unsafe fn give(
+    game: &GameTick<'_>,
+    owner: &Character,
+    socket: Socket,
+    hand: Option<Hand>,
+    name: &str,
+) -> String {
     let Some(def) = spawn::definitions().iter().find(|def| def.name == name) else {
         return format!("give: no shipped definition is named {name}");
     };
@@ -515,7 +524,7 @@ unsafe fn give(owner: &Character, socket: Socket, hand: Option<Hand>, name: &str
     // leaves the weapon there. The spawned weapon lands from a later tick ([`GIVEN`]), never inside
     // the request. A refusal here only means the socket was empty.
     unsafe { cancel_target(Some(socket), hand) };
-    let _ = unsafe { swap::eject(socket) };
+    let _ = swap::eject(game, socket);
     PENDING.lock().push(Pending {
         token,
         generation,
@@ -541,11 +550,7 @@ unsafe fn give(owner: &Character, socket: Socket, hand: Option<Hand>, name: &str
 
 /// Draw each weapon given to a hand off the socket it came onto, while the hand's grip is closed
 /// and the hand is empty.
-///
-/// # Safety
-///
-/// The game thread, before the world update.
-unsafe fn draw_given() {
+fn draw_given(game: &GameTick<'_>) {
     let draws = std::mem::take(&mut *DRAWS.lock());
     let generation = PLAN.lock().generation;
     for Draw {
@@ -579,7 +584,7 @@ unsafe fn draw_given() {
                 hand.label()
             )
         } else {
-            match unsafe { act::draw(hand, socket, hold::SNAP_S) } {
+            match act::draw(game, hand, socket, hold::SNAP_S) {
                 Ok(()) => format!("give: {name} is in the {} hand", hand.label()),
                 Err(refusal) => format!("give: {name} stays on the {}: {refusal}", socket.label()),
             }
@@ -646,9 +651,9 @@ unsafe fn definition_status(
 }
 
 /// Let the weapon on `socket` fall clear of the player.
-unsafe fn clear(socket: Socket) -> String {
+unsafe fn clear(game: &GameTick<'_>, socket: Socket) -> String {
     unsafe { cancel_target(Some(socket), None) };
-    match unsafe { swap::eject(socket) } {
+    match swap::eject(game, socket) {
         Ok(()) => format!("give: cleared the {}", socket.label()),
         Err(refusal) => format!("give: the {} was not cleared: {refusal}", socket.label()),
     }

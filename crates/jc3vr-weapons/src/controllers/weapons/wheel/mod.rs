@@ -32,10 +32,7 @@ use std::time::{Duration, Instant};
 
 use glam::Quat;
 use jc3gi::{
-    character::{
-        character::Character,
-        inventory::{Inventory, WeaponSlot},
-    },
+    character::inventory::{Inventory, WeaponSlot},
     ui::hud_ui::HUDUI,
 };
 use jc3vr_body::controllers::{
@@ -43,8 +40,9 @@ use jc3vr_body::controllers::{
     hands, haptics,
     intent::hold::{Desired, MapKind, Target, Want},
     mode::Mode,
-    physics::characters::local_player,
+    physics::local_player::LocalPlayer,
 };
+use jc3vr_core::game_tick::GameTick;
 use jc3vr_input::{frame::Hand, haptics::cues::Event};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
@@ -79,13 +77,15 @@ pub struct WheelTick {
 
 /// One input tick of the wheel: read the game, step the wheel, and put its slot-select hold in
 /// `desired`. Called while the bindings inject, outside the menus.
-pub fn input_tick(inputs: &TickInputs, desired: &mut Vec<Desired>) -> WheelTick {
+pub fn input_tick(
+    game: &GameTick<'_>,
+    inputs: &TickInputs,
+    desired: &mut Vec<Desired>,
+) -> WheelTick {
     let config = WheelTuning::of(&WEAPONS_CONFIG.query(|c| c.wheel));
-    // SAFETY: the game stage runs on the game thread before the world update.
-    let owner = unsafe { local_player() };
-    let acting = config.enabled && gameplay(inputs.mode) && owner.is_some();
-    // SAFETY: as above.
-    let game = owner.as_deref().map(|owner| unsafe { read_game(owner) });
+    let mut local_player = LocalPlayer::get(game);
+    let acting = config.enabled && gameplay(inputs.mode) && local_player.is_some();
+    let read = local_player.as_ref().map(read_game);
     let active = hands::active_hands_raw();
     let input = WheelInput {
         acting,
@@ -100,10 +100,10 @@ pub fn input_tick(inputs: &TickInputs, desired: &mut Vec<Desired>) -> WheelTick 
                 grip: h.grip.position,
             })
         }),
-        gate: game.is_some_and(|g| g.gate),
-        offered: game.map_or([false; 4], |g| g.offered),
-        wielded: game.and_then(|g| g.wielded),
-        resting: game.and_then(|g| resting(g.wielded, g.selected, &g.offered)),
+        gate: read.is_some_and(|g| g.gate),
+        offered: read.map_or([false; 4], |g| g.offered),
+        wielded: read.and_then(|g| g.wielded),
+        resting: read.and_then(|g| resting(g.wielded, g.selected, &g.offered)),
     };
 
     let mut shell = SHELL.lock();
@@ -162,7 +162,7 @@ pub fn input_tick(inputs: &TickInputs, desired: &mut Vec<Desired>) -> WheelTick 
         shell.wheel.is_open().then_some(shell.steering).flatten(),
         out.closed.is_some(),
     );
-    service_cancel(&mut shell, owner);
+    service_cancel(&mut shell, local_player.as_mut());
     WheelTick {
         by_stick: out.by_stick,
     }
@@ -199,14 +199,14 @@ pub fn cross_anchor() -> Option<CrossAnchor> {
 /// Close an open wheel as a cancel while a game menu is up: the menu takes the slot-select inputs
 /// away, and the game would commit the pending selection when it resumes.
 #[inline]
-pub fn pause() {
-    close_as_cancel();
+pub fn pause(game: &GameTick<'_>) {
+    close_as_cancel(game);
 }
 
 /// Stop acting: close an open wheel as a cancel and withdraw its placement. Called whenever the
 /// bindings do not inject.
-pub(crate) fn stand_down() {
-    close_as_cancel();
+pub(crate) fn stand_down(game: &GameTick<'_>) {
+    close_as_cancel(game);
     placement::clear();
     *ANCHOR.lock() = None;
 }
@@ -243,12 +243,10 @@ struct GameState {
 }
 
 /// Read the game's state for the wheel.
-///
-/// # Safety
-/// `owner` must be the live local player character, on the game thread before the world update.
-unsafe fn read_game(owner: &Character) -> GameState {
+fn read_game(owner: &LocalPlayer<'_>) -> GameState {
+    let owner = owner.character();
     let inventory: &Inventory = &owner.m_Inventory;
-    // SAFETY: forwarded from the caller.
+    // SAFETY: the local player's inventory, in the game tick.
     let gate = unsafe { inventory.GetAnimationAllowsSwitchWeaponGUI() };
     // The selection the game last pushed to its HUD carries the offer as the game decides it (the
     // planted explosive's depends on more than its slot); without a HUD, a slot that holds a
@@ -275,7 +273,7 @@ unsafe fn read_game(owner: &Character) -> GameState {
     // SAFETY: the character is live; the field is plain data.
     let selected = unsafe { (&raw const owner.m_SelectedWeaponSlot).cast::<i32>().read() };
     let selected = engine::slot_from_raw(selected);
-    // SAFETY: forwarded from the caller.
+    // SAFETY: the local player, in the game tick.
     let wielded = unsafe { gun::held_weapon(owner) }.and(selected);
     GameState {
         gate,
@@ -304,7 +302,7 @@ fn pulse(hand: Hand, commit: bool) {
     haptics::play(hand, event);
 }
 
-fn close_as_cancel() {
+fn close_as_cancel(game: &GameTick<'_>) {
     let mut shell = SHELL.lock();
     if shell.wheel.cancel() {
         tracing::debug!(target: "controllers", "weapon wheel: cancelled by a mode change");
@@ -313,9 +311,7 @@ fn close_as_cancel() {
         placement::publish(None, false);
         publish_anchor(None, true);
     }
-    // SAFETY: the game stage runs on the game thread before the world update.
-    let owner = unsafe { local_player() };
-    service_cancel(&mut shell, owner);
+    service_cancel(&mut shell, LocalPlayer::get(game).as_mut());
 }
 
 /// The steering hand and when the wheel closed (`None` while open), for [`cross_anchor`]. A leaf
@@ -340,13 +336,13 @@ fn publish_anchor(open: Option<Hand>, closed: bool) {
 }
 
 /// Clear the game's pending selection while a cancel asks for it.
-fn service_cancel(shell: &mut Shell, owner: Option<&mut Character>) {
+fn service_cancel(shell: &mut Shell, owner: Option<&mut LocalPlayer<'_>>) {
     if shell.cancel_ticks == 0 {
         return;
     }
     shell.cancel_ticks -= 1;
     if let Some(owner) = owner {
-        owner.m_Inventory.m_SlotToSelectOnRelease = WeaponSlot::E_NONE;
+        owner.character_mut().m_Inventory.m_SlotToSelectOnRelease = WeaponSlot::E_NONE;
     }
 }
 

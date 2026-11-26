@@ -33,9 +33,10 @@ use jc3vr_body::controllers::{
     hands::grip,
     held::{SnapStart, SnapView},
     intent,
-    physics::characters::local_player,
+    physics::local_player::LocalPlayer,
     telemetry,
 };
+use jc3vr_core::game_tick::GameTick;
 use jc3vr_input::{
     frame::{self, Hand, Pose},
     motion,
@@ -102,15 +103,16 @@ pub fn status() -> DockStatus {
 }
 
 /// Draw the weapon on `socket` into `hand`, sliding it off the socket over `snap_s` seconds.
-///
-/// # Safety
-///
-/// The game thread, before the world update.
-pub(crate) unsafe fn draw(hand: Hand, socket: Socket, snap_s: f32) -> Result<(), DockRefusal> {
+pub(crate) fn draw(
+    game: &GameTick<'_>,
+    hand: Hand,
+    socket: Socket,
+    snap_s: f32,
+) -> Result<(), DockRefusal> {
     if draw_blocked(docking()[hand.index()], false) || !draw_ready(hand) {
         return Err(DockRefusal::NotDone);
     }
-    let result = unsafe { draw_off(hand, socket) };
+    let result = draw_off(game, hand, socket);
     let mut state = STATE.lock();
     match result {
         Ok(seat) => {
@@ -142,22 +144,19 @@ pub(crate) unsafe fn draw(hand: Hand, socket: Socket, snap_s: f32) -> Result<(),
 
 /// Dock the weapon `hand` holds on `socket`, sliding it there over `snap_s` seconds first when its
 /// pose there is known.
-///
-/// # Safety
-///
-/// The game thread, before the world update.
-pub(crate) unsafe fn dock(hand: Hand, socket: Socket, snap_s: f32) -> Result<(), DockRefusal> {
-    let object =
-        unsafe { start_dock(hand, socket) }.inspect_err(|&refusal| hold::refused(refusal))?;
-    unsafe { dock_started(hand, socket, object, snap_s) }
+pub(crate) fn dock(
+    game: &GameTick<'_>,
+    hand: Hand,
+    socket: Socket,
+    snap_s: f32,
+) -> Result<(), DockRefusal> {
+    let object = start_dock(game, hand, socket).inspect_err(|&refusal| hold::refused(refusal))?;
+    dock_started(game, hand, socket, object, snap_s)
 }
 
 /// [`dock`] the weapon at `object`, which [`start_dock`] found `hand` can dock on `socket`.
-///
-/// # Safety
-///
-/// The game thread, before the world update.
-unsafe fn dock_started(
+fn dock_started(
+    game: &GameTick<'_>,
     hand: Hand,
     socket: Socket,
     object: usize,
@@ -170,7 +169,7 @@ unsafe fn dock_started(
         return Ok(());
     }
     drop(state);
-    unsafe { finish_dock(hand, socket, object) }
+    finish_dock(game, hand, socket, object)
 }
 
 /// Dock the weapon `hand` let go of on `socket`, whose attraction caught it outside the socket's
@@ -178,17 +177,14 @@ unsafe fn dock_started(
 /// socket over `travel_s` seconds, and the table takes the dock when it arrives. A gun with no
 /// pose there from a draw travels to `toward` (where its grip goes, in the world) at the
 /// orientation it left the hand with, and takes the socket's own placement on arrival.
-///
-/// # Safety
-///
-/// The game thread, before the world update.
-pub(crate) unsafe fn attract(
+pub(crate) fn attract(
+    game: &GameTick<'_>,
     hand: Hand,
     socket: Socket,
     toward: Vec3,
     travel_s: f32,
 ) -> Result<(), DockRefusal> {
-    let result = unsafe { start_dock(hand, socket) };
+    let result = start_dock(game, hand, socket);
     let object = match result {
         Ok(object) => object,
         Err(refusal) => {
@@ -197,7 +193,7 @@ pub(crate) unsafe fn attract(
         }
     };
     // SAFETY: the table holds the weapon in the hand, and a slot or the carry set keeps it alive.
-    let provisional = unsafe { provisional_offset(object, socket, toward) };
+    let provisional = unsafe { provisional_offset(game, object, socket, toward) };
     let mut state = STATE.lock();
     state.watches[hand.index()].release.disarm();
     state.watches[hand.index()].since_s = None;
@@ -208,17 +204,17 @@ pub(crate) unsafe fn attract(
         return Ok(());
     }
     drop(state);
-    unsafe { finish_dock(hand, socket, object) }
+    finish_dock(game, hand, socket, object)
 }
 
 /// Let the weapon `hand` holds fall, with the hand's motion capped at `max_speed_mps`.
-///
-/// # Safety
-///
-/// The game thread, before the world update.
-pub(crate) unsafe fn let_go(hand: Hand, max_speed_mps: f32) -> Result<Thrown, DockRefusal> {
+pub(crate) fn let_go(
+    game: &GameTick<'_>,
+    hand: Hand,
+    max_speed_mps: f32,
+) -> Result<Thrown, DockRefusal> {
     let mut diagnostic = ReleaseRecord::new(hand, max_speed_mps);
-    let result = unsafe { drop_from(hand, max_speed_mps, &mut diagnostic) };
+    let result = drop_from(game, hand, max_speed_mps, &mut diagnostic);
     diagnostic.refusal = result.as_ref().err().copied();
     let mut state = STATE.lock();
     state.status.releases.record(diagnostic);
@@ -329,11 +325,11 @@ pub(crate) fn retry_release(hand: Hand, closed: bool, near: bool, dt: f32) -> bo
 /// body ([`stow`]), lets it fall when none takes it, and keeps it when one would but cannot now
 /// ([`StowFallback`]). The hold ends with the grip, even when the grip opened while the release
 /// stood down (the debug panel, the pause menu, a tracking loss).
-///
-/// # Safety
-///
-/// The game thread, before the world update.
-pub(crate) unsafe fn release_tick(grips: [bool; 2], action_hands: [bool; 2]) -> [bool; 2] {
+pub(crate) fn release_tick(
+    game: &GameTick<'_>,
+    grips: [bool; 2],
+    action_hands: [bool; 2],
+) -> [bool; 2] {
     let held = Hand::BOTH.map(live::in_hand);
     let now_s = motion::latest_time();
     let physical = physical_grips();
@@ -353,8 +349,7 @@ pub(crate) unsafe fn release_tick(grips: [bool; 2], action_hands: [bool; 2]) -> 
         GripRelease::Kept => false,
         GripRelease::LetGo => true,
         GripRelease::Stow => {
-            // SAFETY: forwarded from the caller.
-            let stowed = unsafe { stow(hand) };
+            let stowed = stow(game, hand);
             match stowed.map_err(stow_fallback) {
                 Ok(socket) => tracing::info!(
                     target: "controllers",
@@ -372,11 +367,11 @@ pub(crate) unsafe fn release_tick(grips: [bool; 2], action_hands: [bool; 2]) -> 
                         "hold: the {} hand's grip opened while the release stood down, and no socket takes its weapon; it falls",
                         hand.label()
                     );
-                    // SAFETY: forwarded from the caller. A refusal is logged by the let-go.
+                    // A refusal is logged by the let-go.
                     if let Some(object) = live::in_hand(hand) {
                         intend_release(hand, object, None);
                     }
-                    let _ = unsafe { let_go(hand, hold::MAX_THROW_MPS) };
+                    let _ = let_go(game, hand, hold::MAX_THROW_MPS);
                 }
                 Err((refusal, StowFallback::Keep)) => tracing::info!(
                     target: "controllers",
@@ -426,11 +421,7 @@ struct GripReading {
 
 /// Put the gun `hand` holds back on a socket of the body that takes it: the one it was last drawn
 /// off when that one is free ([`stow_socket`]), sliding there as a dock does. Returns the socket.
-///
-/// # Safety
-///
-/// The game thread, before the world update.
-unsafe fn stow(hand: Hand) -> Result<Socket, DockRefusal> {
+fn stow(game: &GameTick<'_>, hand: Hand) -> Result<Socket, DockRefusal> {
     let snapshot = live::snapshot_now().ok_or(DockRefusal::NoTable)?;
     let object = live::in_hand(hand).ok_or(DockRefusal::NothingHeld)?;
     let remembered = STATE
@@ -442,10 +433,10 @@ unsafe fn stow(hand: Hand) -> Result<Socket, DockRefusal> {
         .map(|&(_, socket, _)| socket);
     let socket = stow_socket(remembered, |socket| grab::fits(&snapshot, hand, socket))
         .ok_or(DockRefusal::DoesNotFit)?;
-    // SAFETY: forwarded from the caller. The refusals are the caller's to log.
+    // The refusals are the caller's to log.
     intend_release(hand, object, Some(socket));
-    let object = unsafe { start_dock(hand, socket) }?;
-    unsafe { dock_started(hand, socket, object, hold::SNAP_S) }?;
+    let object = start_dock(game, hand, socket)?;
+    dock_started(game, hand, socket, object, hold::SNAP_S)?;
     Ok(socket)
 }
 
@@ -521,11 +512,7 @@ pub(crate) fn draw_ready(hand: Hand) -> bool {
 
 /// Advance each hand's snap by `dt` seconds: a finished dock's snap docks the weapon, and a snap
 /// whose weapon left its hand is dropped.
-///
-/// # Safety
-///
-/// The game thread, before the world update.
-pub(crate) unsafe fn tick(dt: f32) {
+pub(crate) fn tick(game: &GameTick<'_>, dt: f32) {
     STATE.lock().docked_this_tick.clear();
     sample_release_transport(dt);
     STATE.lock().draw_rearm.observe(physical_grips());
@@ -555,7 +542,7 @@ pub(crate) unsafe fn tick(dt: f32) {
             finished
         };
         if let (snap, Finish::Dock(socket)) = finished {
-            let _ = unsafe { finish_dock(hand, socket, snap.weapon) };
+            let _ = finish_dock(game, hand, socket, snap.weapon);
         }
     }
 }
@@ -931,8 +918,9 @@ fn estimate(
 
 /// Draw the weapon on `socket` into `hand` through the loadout table, which the reconcile carries
 /// out at once. Returns where it sat.
-unsafe fn draw_off(hand: Hand, socket: Socket) -> Result<Seat, DockRefusal> {
-    let owner = unsafe { local_player() }.ok_or(DockRefusal::NoCharacter)?;
+fn draw_off(game: &GameTick<'_>, hand: Hand, socket: Socket) -> Result<Seat, DockRefusal> {
+    let mut local_player = LocalPlayer::get(game).ok_or(DockRefusal::NoCharacter)?;
+    let owner = local_player.character_mut();
     let gate = DrawGate {
         // SAFETY: the game thread, on the live local player.
         wield_skipped: unsafe { traversal::wield_skipped(owner) },
@@ -990,10 +978,15 @@ impl DrawGate {
 ///
 /// # Safety
 ///
-/// `weapon` must be a weapon a slot or the carry set keeps alive, on the game thread before the
-/// world update.
-unsafe fn provisional_offset(weapon: usize, socket: Socket, toward: Vec3) -> Option<Pose> {
-    let owner = unsafe { local_player() }?;
+/// `weapon` must be a weapon a slot or the carry set keeps alive.
+unsafe fn provisional_offset(
+    game: &GameTick<'_>,
+    weapon: usize,
+    socket: Socket,
+    toward: Vec3,
+) -> Option<Pose> {
+    let mut local_player = LocalPlayer::get(game)?;
+    let owner = local_player.character_mut();
     // SAFETY: forwarded from the caller.
     let weapon = unsafe { (weapon as *const WeaponBase).as_ref() }?;
     let bone = sockets::bone(socket);
@@ -1021,8 +1014,9 @@ fn shift_on_bone(on_bone: Pose, bone: Pose, character: Mat4, world: Vec3) -> Opt
 }
 
 /// Check that `hand` can dock its weapon on `socket` now. Returns the weapon.
-unsafe fn start_dock(hand: Hand, socket: Socket) -> Result<usize, DockRefusal> {
-    let owner = unsafe { local_player() }.ok_or(DockRefusal::NoCharacter)?;
+fn start_dock(game: &GameTick<'_>, hand: Hand, socket: Socket) -> Result<usize, DockRefusal> {
+    let mut local_player = LocalPlayer::get(game).ok_or(DockRefusal::NoCharacter)?;
+    let owner = local_player.character_mut();
     let snapshot = live::snapshot_now().ok_or(DockRefusal::NoTable)?;
     if !grab::fits(&snapshot, hand, socket) {
         return Err(DockRefusal::DoesNotFit);
@@ -1041,14 +1035,20 @@ unsafe fn start_dock(hand: Hand, socket: Socket) -> Result<usize, DockRefusal> {
 /// The table takes `hand`'s dock of `weapon` on `socket`, the game unequips it when it wields it,
 /// and the reconcile does the rest: the other hand's weapon becomes the wielded one when that hand
 /// is the primary now, and a weapon armed in `hand` is disarmed.
-unsafe fn finish_dock(hand: Hand, socket: Socket, weapon: usize) -> Result<(), DockRefusal> {
+fn finish_dock(
+    game: &GameTick<'_>,
+    hand: Hand,
+    socket: Socket,
+    weapon: usize,
+) -> Result<(), DockRefusal> {
     let refused = |refusal: DockRefusal| {
         hold::refused(refusal);
         Err(refusal)
     };
-    let Some(owner) = (unsafe { local_player() }) else {
+    let Some(mut local_player) = LocalPlayer::get(game) else {
         return refused(DockRefusal::NoCharacter);
     };
+    let owner = local_player.character_mut();
     let Some(object) = ObjectAddress::from_address(weapon) else {
         return refused(DockRefusal::NothingHeld);
     };
@@ -1112,12 +1112,14 @@ unsafe fn gun_sound(weapon: usize, sound: GunSound) {
 
 /// Drop the weapon `hand` holds: the wielded weapon through its slot, a weapon armed in the hand
 /// once it is disarmed. Then the table takes the let-go.
-unsafe fn drop_from(
+fn drop_from(
+    game: &GameTick<'_>,
     hand: Hand,
     max_speed_mps: f32,
     diagnostic: &mut ReleaseRecord,
 ) -> Result<Thrown, DockRefusal> {
-    let owner = unsafe { local_player() }.ok_or(DockRefusal::NoCharacter)?;
+    let mut local_player = LocalPlayer::get(game).ok_or(DockRefusal::NoCharacter)?;
+    let owner = local_player.character_mut();
     let object = live::in_hand(hand).ok_or(DockRefusal::NothingHeld)?;
     diagnostic.weapon = Some(object);
     let thrown = if is_wielded(owner, object) {

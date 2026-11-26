@@ -42,7 +42,7 @@ use jc3gi::{
     types::{math::Matrix4, shared_ptr::SharedPtr, std_vector::Vector},
 };
 use jc3vr_body::controllers::{hands::ik, held::native::weapon_at, physics::refs::Strong};
-use jc3vr_core::config::engine::paths;
+use jc3vr_core::{config::engine::paths, game_tick::GameTick};
 use parking_lot::Mutex;
 
 use crate::controllers::weapons::{
@@ -297,8 +297,13 @@ pub(crate) unsafe fn on_load(save_data: *const PlayerSaveData, settings: &Invent
 ///
 /// # Safety
 ///
-/// `owner` must be the live local player character, on the game thread before the world update.
-pub(crate) unsafe fn input_tick(owner: &mut Character, settings: &InventoryConfig, ready: bool) {
+/// `owner` must be the live local player character.
+pub(crate) unsafe fn input_tick(
+    game: &GameTick<'_>,
+    owner: &mut Character,
+    settings: &InventoryConfig,
+    ready: bool,
+) {
     if !ready || jc3vr_core::is_shutting_down() || !jc3vr_core::hooks::in_gameplay() {
         return;
     }
@@ -319,7 +324,7 @@ pub(crate) unsafe fn input_tick(owner: &mut Character, settings: &InventoryConfi
         unsafe { request(owner, chosen.origin, chosen.records) };
     }
     unsafe { adoption::adopt(owner) };
-    unsafe { give::input_tick(owner, ready) };
+    unsafe { give::input_tick(game, owner, ready) };
 }
 
 /// Ask the spawn system for the second pistol of a pair of the type `tag_hash`, at the player, for

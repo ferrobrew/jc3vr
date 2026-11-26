@@ -33,8 +33,9 @@ use jc3gi::equipment::{
 use jc3vr_body::controllers::{
     grab::{Candidate, GrabVolume},
     hands::ActiveHands,
-    physics::characters::local_player,
+    physics::local_player::LocalPlayer,
 };
+use jc3vr_core::game_tick::GameTick;
 use jc3vr_input::frame::Hand;
 
 use crate::controllers::weapons::{
@@ -99,18 +100,13 @@ pub(crate) struct BeginInputs<'a> {
 
 /// Offer each placed charge near the player to the free hands, and note the charge nearest each
 /// of them for its grab.
-///
-/// # Safety
-///
-/// The game thread, before the world update.
-pub(crate) unsafe fn begin_tick(inputs: &BeginInputs) -> Vec<Candidate> {
+pub(crate) fn begin_tick(game: &GameTick<'_>, inputs: &BeginInputs) -> Vec<Candidate> {
     let mut state = STATE.lock();
     state.placed.offers = [None; 2];
     if !inputs.acting || state.stage != Stage::Idle || state.placed.charges.is_empty() {
         return Vec::new();
     }
-    let Some(player) = (unsafe { local_player() }).map(|player| Mat4::from(player.m_WorldMatrixT1))
-    else {
+    let Some(player) = LocalPlayer::get(game).as_ref().map(LocalPlayer::frame) else {
         return Vec::new();
     };
     let Some(frames) = docks::cockpit_frames(inputs.active, player) else {

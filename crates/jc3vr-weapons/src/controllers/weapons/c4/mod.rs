@@ -99,9 +99,10 @@ use jc3vr_body::controllers::{
     held::{native, native::object_of},
     intent::controls::ButtonControl,
     physics,
-    physics::characters::local_player,
+    physics::local_player::LocalPlayer,
     scheme,
 };
+use jc3vr_core::game_tick::GameTick;
 use jc3vr_input::{
     frame::{Hand, Pose},
     haptics::cues::Event,
@@ -405,7 +406,7 @@ pub(super) struct TickInputs {
 }
 
 /// The input tick's half of the throw: fold the grab and the release into the stage.
-pub(super) fn input_tick(inputs: &TickInputs, tuning: &C4Tuning) {
+pub(super) fn input_tick(game: &GameTick<'_>, inputs: &TickInputs, tuning: &C4Tuning) {
     if !inputs.acting {
         stand_down();
         // SAFETY: the game stage runs on the game thread before the world update.
@@ -482,9 +483,8 @@ pub(super) fn input_tick(inputs: &TickInputs, tuning: &C4Tuning) {
     match state.step_wheel(hands, Instant::now()) {
         WheelStep::Leave(hand) => {
             drop(state);
-            // SAFETY: the game stage runs on the game thread before the world update.
-            if let Some(owner) = unsafe { local_player() } {
-                unsafe { engine::holster(owner) };
+            if let Some(mut owner) = LocalPlayer::get(game) {
+                engine::holster(&mut owner);
             }
             tracing::info!(
                 target: "controllers",
@@ -534,8 +534,7 @@ pub(super) fn input_tick(inputs: &TickInputs, tuning: &C4Tuning) {
         .hand()
         .and_then(|hand| state.grips[hand.index()].map(|grip| (hand, grip)));
     drop(state);
-    // SAFETY: the game stage runs on the game thread before the world update.
-    unsafe { detonator::place_model(held) };
+    detonator::place_model(game, held);
     pulses.extend(returned.map(|hand| (hand, Event::PouchReturn)));
     for (hand, event) in pulses {
         if event == Event::DetonatorPress {

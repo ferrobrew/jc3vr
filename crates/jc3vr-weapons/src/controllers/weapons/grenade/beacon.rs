@@ -6,7 +6,7 @@ use std::{
 use detours_macro::detour;
 use glam::Mat4;
 use jc3gi::{
-    character::inventory::WeaponSlot,
+    character::{character::Character, inventory::WeaponSlot},
     equipment::{
         explosive::Explosive,
         weapon::{BeaconWeapon, ThrownGrenadeWeapon, WeaponBase, WeaponData},
@@ -20,10 +20,7 @@ use jc3vr_body::controllers::{
     },
     held::{native, native::object_of},
     intent,
-    physics::{
-        characters::local_player,
-        refs::{Weak, null_weak},
-    },
+    physics::refs::{Weak, null_weak},
     scheme,
 };
 use jc3vr_input::{
@@ -192,13 +189,16 @@ pub(super) unsafe fn render_frame() {
         held::hold(Slot::Grenade, None);
         return;
     }
+    // The render update has no game tick: the game thread, outside the world update.
     let owner_valid = base.is_some_and(|base| unsafe {
-        local_player().is_some_and(|owner| {
-            owner.m_Inventory.m_Weapons[WeaponSlot::E_SLOT_BEACON as usize].px == base
-                && (*base).m_IsUserLocalPlayer
-        })
+        Character::GetLocalPlayerCharacter()
+            .as_ref()
+            .is_some_and(|owner| {
+                owner.m_Inventory.m_Weapons[WeaponSlot::E_SLOT_BEACON as usize].px == base
+                    && (*base).m_IsUserLocalPlayer
+            })
     });
-    let selected = unsafe { local_player() }.is_some_and(|owner| {
+    let selected = unsafe { Character::GetLocalPlayerCharacter().as_ref() }.is_some_and(|owner| {
         (unsafe { (&raw const owner.m_SelectedWeaponSlot).cast::<i32>().read() })
             == WeaponSlot::E_SLOT_BEACON as i32
     });
@@ -287,7 +287,8 @@ unsafe fn observe_selection() {
     if STATE.lock().pending.is_some() {
         return;
     }
-    let Some(owner) = (unsafe { local_player() }) else {
+    // The render update has no game tick: the game thread, outside the world update.
+    let Some(owner) = (unsafe { Character::GetLocalPlayerCharacter().as_ref() }) else {
         STATE.lock().selection = None;
         return;
     };

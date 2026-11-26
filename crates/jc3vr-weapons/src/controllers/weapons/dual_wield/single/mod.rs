@@ -55,6 +55,7 @@ use jc3vr_body::controllers::{
     held::native::gun_count,
     physics::{characters::character_object, refs::Strong},
 };
+use jc3vr_core::game_tick::GameTick;
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
@@ -341,8 +342,8 @@ pub(crate) struct Tick<'a> {
 ///
 /// # Safety
 ///
-/// `owner` must be the live local player character, on the game thread before the world update.
-pub(crate) unsafe fn input_tick(owner: &mut Character, tick: &Tick) {
+/// `owner` must be the live local player character.
+pub(crate) unsafe fn input_tick(game: &GameTick<'_>, owner: &mut Character, tick: &Tick) {
     let enabled = tick.separate && tick.settings.enabled && tick.settings.carry;
     ACTIVE.store(enabled, Ordering::Relaxed);
     for object in set::all() {
@@ -382,7 +383,7 @@ pub(crate) unsafe fn input_tick(owner: &mut Character, tick: &Tick) {
     };
     unsafe { act_on(owner, grant) };
     for strong in restore::take_twins() {
-        unsafe { take_twin(owner, strong, tick) };
+        unsafe { take_twin(game, owner, strong, tick) };
     }
 }
 
@@ -579,7 +580,7 @@ unsafe fn twin_socket(pair: &WeaponBase, dominant: Hand) -> Option<Socket> {
 
 /// A twin came: carry it on the hip the slot's pistol does not take, and deal the pair's magazine
 /// between the two, or let it go when the pair it was asked for is not in the slot any more.
-unsafe fn take_twin(owner: &mut Character, strong: Strong, tick: &Tick) {
+unsafe fn take_twin(game: &GameTick<'_>, owner: &mut Character, strong: Strong, tick: &Tick) {
     let slot_source = slot_handle(owner);
     let slot = slot_source.map(|handle| handle.as_ptr() as ObjectKey);
     // SAFETY: the strong reference keeps the twin alive.
@@ -664,7 +665,7 @@ unsafe fn take_twin(owner: &mut Character, strong: Strong, tick: &Tick) {
     if let Some(restored) = unsafe { inventory_engine::restored(twin_pistol, socket) } {
         live::restored(restored);
     }
-    unsafe { share_hands(pair, twin) };
+    unsafe { share_hands(game, pair, twin) };
     note(
         |s| s.splits += 1,
         format!("the pair is two pistols; the second is on {socket}"),
@@ -699,7 +700,7 @@ unsafe fn park(owner: &mut Character, strong: Strong, why: &str) {
 /// A pair split while in a hand, its second gun shown in the other, keeps a pistol in each hand:
 /// the slot's pistol stays in its hand, and with the other hand empty the second pistol comes off
 /// its hip into that hand at once.
-unsafe fn share_hands(pair: ObjectKey, twin: ObjectKey) {
+unsafe fn share_hands(game: &GameTick<'_>, pair: ObjectKey, twin: ObjectKey) {
     let Some(hand) = live::hand_of(pair) else {
         return;
     };
@@ -708,7 +709,10 @@ unsafe fn share_hands(pair: ObjectKey, twin: ObjectKey) {
         let hold = c.hold;
         hold.either_hand
     });
-    if both_hands && live::in_hand(other).is_none() && !unsafe { hold::take_into(other, twin) } {
+    if both_hands
+        && live::in_hand(other).is_none()
+        && !unsafe { hold::take_into(game, other, twin) }
+    {
         tracing::info!(target: "controllers", "single pistols: the second pistol stays on its hip");
     }
 }

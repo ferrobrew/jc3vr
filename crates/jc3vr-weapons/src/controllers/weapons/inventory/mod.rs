@@ -67,9 +67,9 @@ use jc3gi::{
     equipment::weapon::WeaponBase,
 };
 use jc3vr_body::controllers::physics::{
-    characters::{character_position, local_player},
-    refs::Strong,
+    characters::character_position, local_player::LocalPlayer, refs::Strong,
 };
+use jc3vr_core::game_tick::GameTick;
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
@@ -233,8 +233,9 @@ pub(crate) struct TickInputs {
 ///
 /// # Safety
 ///
-/// `owner` must be the live local player character, on the game thread before the world update.
+/// `owner` must be the live local player character.
 pub(crate) unsafe fn input_tick(
+    game: &GameTick<'_>,
     owner: &mut Character,
     inputs: &TickInputs,
 ) -> Option<live::Arrival> {
@@ -247,9 +248,9 @@ pub(crate) unsafe fn input_tick(
         let spawning = engine::tracked_slots()
             .any(|slot| owner.m_Inventory.m_WeaponPendingSpawn[slot as usize]);
         let restore_ready = live::begin_tick(inputs.dominant, &slots, spawning);
-        unsafe { restore::input_tick(owner, &inputs.settings, restore_ready) };
+        unsafe { restore::input_tick(game, owner, &inputs.settings, restore_ready) };
         unsafe { use_item::input_tick(owner) };
-        unsafe { gives::input_tick(owner) };
+        unsafe { gives::input_tick(game, owner) };
         unsafe { resume() };
     } else {
         // Captured before the stop, whose publication carries it.
@@ -412,6 +413,7 @@ pub(crate) unsafe fn input_tick(
     drop(world_singles);
     unsafe {
         single::input_tick(
+            game,
             owner,
             &single::Tick {
                 separate: inputs.separate_pistols,
@@ -442,17 +444,14 @@ pub(crate) unsafe fn input_tick(
 /// Keep the loadout table and the game's slots in step on an input tick the weapon handling does
 /// not run: begin the table's tick from the live slots, restore and reconcile them, and publish the
 /// views, while the inventory is on; stop the table while it is off.
-///
-/// # Safety
-///
-/// The game thread, before the world update.
-pub unsafe fn maintenance_tick(settings: &InventoryConfig, dominant: Hand) {
+pub fn maintenance_tick(game: &GameTick<'_>, settings: &InventoryConfig, dominant: Hand) {
     if jc3vr_core::is_shutting_down() || !jc3vr_core::hooks::in_gameplay() {
         return;
     }
-    let Some(owner) = (unsafe { local_player() }) else {
+    let Some(mut local_player) = LocalPlayer::get(game) else {
         return;
     };
+    let owner = local_player.character_mut();
     if !(settings.enabled && settings.project_slots) {
         unsafe { stop(owner, "the inventory is off", settings.carry) };
         return;
@@ -466,7 +465,7 @@ pub unsafe fn maintenance_tick(settings: &InventoryConfig, dominant: Hand) {
     }
     STATE.lock().status.active = true;
     traversal::publish(true);
-    unsafe { restore::input_tick(owner, settings, ready) };
+    unsafe { restore::input_tick(game, owner, settings, ready) };
     unsafe { resume() };
     unsafe { reconcile::apply(owner) };
     live::publish_status();
@@ -477,14 +476,11 @@ pub unsafe fn maintenance_tick(settings: &InventoryConfig, dominant: Hand) {
 
 /// Stop the table for the scheme leaving the controllers. Called on every input tick the bindings
 /// do not inject; it does nothing once stopped.
-///
-/// # Safety
-///
-/// The game thread, before the world update.
-pub unsafe fn stand_down() {
-    let Some(owner) = (unsafe { local_player() }) else {
+pub fn stand_down(game: &GameTick<'_>) {
+    let Some(mut local_player) = LocalPlayer::get(game) else {
         return;
     };
+    let owner = local_player.character_mut();
     let carry = WEAPONS_CONFIG.lock().inventory.carry;
     // SAFETY: as this function's own contract.
     STATE.lock().game = Some(unsafe { game_view::capture(owner) });

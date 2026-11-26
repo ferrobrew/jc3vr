@@ -52,8 +52,9 @@ use jc3gi::{
 use jc3vr_body::controllers::{
     body::{mirror, mirror::SampleId, rig::frames::Frames},
     hands::{grip, late::lerp_transform},
-    physics::characters::local_player,
+    physics::local_player::LocalPlayer,
 };
+use jc3vr_core::game_tick::GameTick;
 use jc3vr_input::frame::{Hand, Pose};
 use parking_lot::Mutex;
 
@@ -242,26 +243,24 @@ pub(crate) fn render_character(character: [Mat4; 2], dtf: f32) -> Option<Mat4> {
 
 /// Place the pouches' models for the tick: show each prop in `shown` on its pouch, carried into the
 /// character's model space by `frames`, and hide the rest.
-///
-/// # Safety
-///
-/// The game thread, before the world update.
-pub(crate) unsafe fn input_tick(
+pub(crate) fn input_tick(
+    game: &GameTick<'_>,
     config: &PouchModelsConfig,
     frames: Option<Frames>,
     shown: &[ShownPouch],
 ) {
     let owner = if config.enabled && jc3vr_core::hooks::in_gameplay() {
-        unsafe { local_player() }
+        LocalPlayer::get(game)
     } else {
         None
     };
     let mut state = STATE.lock();
-    let (Some(owner), Some(frames)) = (owner, frames) else {
+    let (Some(mut local_player), Some(frames)) = (owner, frames) else {
         // Outside gameplay the world the instances live in may be torn down, so they go with it.
         unsafe { state.release_all() };
         return;
     };
+    let owner = local_player.character_mut();
     ensure_cleanup();
     let owner_id = owner as *const Character as usize;
     if state.owner != Some(owner_id) {
@@ -349,18 +348,18 @@ pub(crate) unsafe fn input_tick(
 ///
 /// # Safety
 ///
-/// The game thread, before the world update; the request's weapon is a live weapon of the local
-/// player.
-pub(crate) unsafe fn hand_tick(request: Option<HandRequest>) -> bool {
+/// The request's weapon is a live weapon of the local player.
+pub(crate) unsafe fn hand_tick(game: &GameTick<'_>, request: Option<HandRequest>) -> bool {
     let mut state = STATE.lock();
     let owner = state
         .owner
-        .and_then(|_| unsafe { local_player() })
-        .filter(|owner| state.owner == Some(*owner as *const Character as usize));
-    let (Some(owner), Some(request)) = (owner, request) else {
+        .and_then(|_| LocalPlayer::get(game))
+        .filter(|owner| state.owner == Some(owner.address()));
+    let (Some(mut local_player), Some(request)) = (owner, request) else {
         unsafe { state.hide_hand() };
         return false;
     };
+    let owner = local_player.character_mut();
     state.hand_sequence = state.input_sequence;
     let world = Mat4::from(owner.m_WorldMatrixT1);
     let weapon = request.weapon;
@@ -440,7 +439,8 @@ pub unsafe fn render_frame(dtf: f32) {
     if state.attachments.is_none() {
         return;
     }
-    let Some(owner) = (unsafe { local_player() }) else {
+    // The render update has no game tick: the game thread, outside the world update.
+    let Some(owner) = (unsafe { Character::GetLocalPlayerCharacter().as_mut() }) else {
         unsafe { state.release_all() };
         return;
     };

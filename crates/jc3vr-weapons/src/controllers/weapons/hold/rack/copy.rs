@@ -29,9 +29,9 @@ use jc3gi::{
     types::math::Matrix4,
 };
 use jc3vr_body::controllers::physics::{
-    characters::{character_object, local_player},
-    refs::Strong,
+    characters::character_object, local_player::LocalPlayer, refs::Strong,
 };
+use jc3vr_core::game_tick::GameTick;
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
@@ -128,8 +128,8 @@ pub(crate) fn waiting(member: Member) -> bool {
 ///
 /// # Safety
 ///
-/// `actor` owns a live weapon on the game thread before the world update.
-pub(crate) unsafe fn staged(member: Member, actor: Strong) {
+/// `actor` owns a live weapon.
+pub(crate) unsafe fn staged(game: &GameTick<'_>, member: Member, actor: Strong) {
     let weapon = unsafe { &mut *weapon_of(&actor) };
     let (hand, delivery, gun) = {
         let pending = PENDING.lock();
@@ -150,7 +150,8 @@ pub(crate) unsafe fn staged(member: Member, actor: Strong) {
     unsafe { weapon.SetState(WeaponState::E_WS_DROPPED, true) };
     let stage = match delivery {
         Delivery::Local => {
-            unsafe { deliver(hand, weapon) };
+            // SAFETY: the staged actor owns the weapon, alive.
+            unsafe { deliver(game, hand, weapon) };
             Stage::Delivered { at: Instant::now() }
         }
         Delivery::Remote => {
@@ -284,12 +285,13 @@ static COPIES: AtomicU64 = AtomicU64::new(0);
 ///
 /// # Safety
 ///
-/// `weapon` must be held alive, on the game thread before the world update.
-unsafe fn deliver(hand: Hand, weapon: &mut WeaponBase) {
-    let Some(owner) = (unsafe { local_player() }) else {
+/// `weapon` must be held alive.
+unsafe fn deliver(game: &GameTick<'_>, hand: Hand, weapon: &mut WeaponBase) {
+    let Some(mut local_player) = LocalPlayer::get(game) else {
         unsafe { weapon.Despawn() };
         return;
     };
+    let owner = local_player.character_mut();
     let options = TakeOptions {
         slide_s: SNAP_S,
         source: TakeSource::RackCopy,

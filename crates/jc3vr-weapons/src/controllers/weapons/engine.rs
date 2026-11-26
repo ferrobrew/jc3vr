@@ -20,6 +20,7 @@ use jc3vr_body::controllers::{
         guns::HeftClass,
         native::{gun_count, gun_ptr},
     },
+    physics::local_player::LocalPlayer,
 };
 use jc3vr_input::frame::{Hand, Pose};
 
@@ -447,12 +448,9 @@ pub unsafe fn measure_geometry(
 }
 
 /// Holster the wielded weapon, as the game's own holster input does.
-///
-/// # Safety
-///
-/// `owner` must be the live local player character, on the game thread before the world update.
-pub unsafe fn holster(owner: &mut Character) {
-    unsafe { owner.HolsterWeapon() };
+pub fn holster(owner: &mut LocalPlayer<'_>) {
+    // SAFETY: the local player, in the game tick.
+    unsafe { owner.character_mut().HolsterWeapon() };
 }
 
 /// The inventory slot of a raw slot value, or `None` for one out of the enum's range.

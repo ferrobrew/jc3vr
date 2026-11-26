@@ -44,8 +44,9 @@ use jc3vr_body::controllers::{
         guns::HeftClass,
         native::{gun_count, gun_ptr},
     },
-    physics::characters::local_player,
+    physics::local_player::LocalPlayer,
 };
+use jc3vr_core::game_tick::GameTick;
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
@@ -313,18 +314,15 @@ pub(crate) unsafe fn sample_readouts(owner: &Character) {
 
 /// Disarm the weapons in the hands, left on the body where the game has them, or forget them when
 /// there is no local player. Called when the weapon handling stands down.
-///
-/// # Safety
-///
-/// The game thread, before the world update.
-pub(crate) unsafe fn stand_down() {
+pub(crate) fn stand_down(game: &GameTick<'_>) {
     *READOUTS.lock() = [None; 2];
-    let Some(owner) = (unsafe { local_player() }) else {
+    let Some(mut local_player) = LocalPlayer::get(game) else {
         for hand in Hand::BOTH {
             forget(hand);
         }
         return;
     };
+    let owner = local_player.character_mut();
     for hand in Hand::BOTH {
         let weapon = unsafe { weapon_handle(owner, hand) };
         unsafe { disarm(owner, hand, weapon, true) };

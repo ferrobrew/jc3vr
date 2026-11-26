@@ -16,8 +16,10 @@
 //! and give the slots what the table's projection puts there.
 
 use detours_macro::detour;
-use jc3gi::mission::{ROMManager, ROMObject};
-use jc3vr_body::controllers::physics::characters::local_player;
+use jc3gi::{
+    character::character::Character,
+    mission::{ROMManager, ROMObject},
+};
 use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
@@ -35,8 +37,9 @@ pub(super) fn hook_library() -> HookLibrary {
 
 /// The local player's tracked slots' weapons, by slot, and their removal marks.
 fn slots_now() -> Option<([usize; 8], [bool; 8])> {
-    // SAFETY: the challenge seams run on the game thread, outside the world update.
-    let owner = unsafe { local_player() }?;
+    // SAFETY: the challenge seams run on the game thread, outside the world update; the engine
+    // calls them where the mod opens no game tick.
+    let owner = unsafe { Character::GetLocalPlayerCharacter().as_ref() }?;
     let inventory = &owner.m_Inventory;
     let mut objects = [0; 8];
     let mut marked = [false; 8];

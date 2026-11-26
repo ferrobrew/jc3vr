@@ -88,6 +88,7 @@ use jc3vr_body::controllers::{
     },
     telemetry,
 };
+use jc3vr_core::game_tick::GameTick;
 use jc3vr_input::frame::{Hand, Pose};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
@@ -557,7 +558,11 @@ pub(super) struct FinishInputs {
 
 /// The second half of the reload's input tick: eject, load, push, and work the action, and decide
 /// which guns may fire. The copied finish facts are consumed after weapon ownership settles.
-pub(super) fn finish_tick(inputs: &FinishInputs, config: &WeaponSettings) -> FinishResult {
+pub(super) fn finish_tick(
+    game: &GameTick<'_>,
+    inputs: &FinishInputs,
+    config: &WeaponSettings,
+) -> FinishResult {
     let mut state = STATE.lock();
     let Some(tick) = state.tick else {
         state.stand_down();
@@ -568,7 +573,7 @@ pub(super) fn finish_tick(inputs: &FinishInputs, config: &WeaponSettings) -> Fin
             belt: None,
         };
     };
-    let held = state.step(&tick, inputs, config);
+    let held = state.step(game, &tick, inputs, config);
     for hand in Hand::BOTH {
         let (before, after) = (state.status.fire_held[hand.index()], held[hand.index()]);
         if before != after {

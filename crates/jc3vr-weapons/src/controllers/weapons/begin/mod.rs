@@ -14,8 +14,9 @@ use jc3vr_body::controllers::{
     hands::{ActiveHands, CockpitHand, pose as hand_pose},
     haptics, intent, locomotion,
     mode::{AirborneVariant, Mode, OnFootVariant},
-    physics::characters::local_player,
+    physics::local_player::LocalPlayer,
 };
+use jc3vr_core::game_tick::GameTick;
 use jc3vr_input::{
     frame::{Hand, Pose},
     haptics::cues::Event,
@@ -66,11 +67,11 @@ mod socket_candidates;
 
 /// The first half of the weapon handling's input tick: read the weapons in the hands and return
 /// the weapon handling's grip targets. Called while the bindings inject, before the tables.
-pub fn begin_tick(mode: Mode) -> TickStart {
+pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickStart {
     let config = WeaponSettings::read();
     docks::publish_targets(None);
     let Some(active) = hands::active_hands_raw() else {
-        crate::controllers::weapons::stand_down();
+        crate::controllers::weapons::stand_down(game);
         hand_ammo::clear();
         hint::clear();
         return TickStart::default();
@@ -79,13 +80,15 @@ pub fn begin_tick(mode: Mode) -> TickStart {
     let pouches_act = pouches(mode);
     let capabilities = Capabilities::of(mode);
     let holding = config.weapons.hold;
-    // SAFETY: the game stage runs on the game thread before the world update.
+    // SAFETY: the local player, in the game tick.
     let ticked = unsafe {
-        local_player().map_or(Ticked::default(), |owner| {
+        LocalPlayer::get(game).map_or(Ticked::default(), |mut player| {
+            let owner = player.character_mut();
             armed::sample_readouts(owner);
             // The table lands the wielded weapon in a hand first; the hold then follows it there.
             let wielded = hold::wielded(owner);
             let arrival = inventory::input_tick(
+                game,
                 owner,
                 &inventory::TickInputs {
                     settings: config.weapons.inventory,
@@ -94,7 +97,7 @@ pub fn begin_tick(mode: Mode) -> TickStart {
                     separate_pistols: config.weapons.separate_pistols,
                 },
             );
-            let holder = hold::input_tick(wielded, holding.either_hand, arrival);
+            let holder = hold::input_tick(game, wielded, holding.either_hand, arrival);
             hold::tick::input_tick(owner, wielded, holding.either_hand);
             reload::native::refill_armed(owner, &config, capabilities.reload);
             let weapon = engine::held_weapon(owner).map(|w| with_holder(w, holder));
@@ -395,8 +398,7 @@ pub fn begin_tick(mode: Mode) -> TickStart {
             acting: pouches_act,
         };
         let tuning = GrenadeTuning::of(&config.weapons.grenade);
-        // SAFETY: the game stage runs on the game thread before the world update.
-        let grenades = unsafe { grenade::begin_tick(&inputs, &tuning) };
+        let grenades = grenade::begin_tick(game, &inputs, &tuning);
         targets.extend(grenades.iter().map(|c| place.world(c)));
         targets.extend(
             grenade::pin_candidates(&inputs, &tuning)
@@ -405,25 +407,25 @@ pub fn begin_tick(mode: Mode) -> TickStart {
         );
     }
     if config.weapons.c4_throw {
-        // SAFETY: the game stage runs on the game thread before the world update.
-        let placed = unsafe {
-            c4::placed::begin_tick(&c4::placed::BeginInputs {
+        let placed = c4::placed::begin_tick(
+            game,
+            &c4::placed::BeginInputs {
                 active: &active,
                 free: Hand::BOTH.map(|h| free[h.index()] && !grenade::holds(h)),
                 acting: pouches_act,
-            })
-        };
+            },
+        );
         targets.extend(placed.iter().map(|c| place.world(c)));
     }
-    // SAFETY: the game stage runs on the game thread before the world update.
-    let taken = unsafe {
-        hold::take::begin_tick(&hold::take::TakeInputs {
+    let taken = hold::take::begin_tick(
+        game,
+        &hold::take::TakeInputs {
             active: &active,
             settings: &holding,
             free,
             gameplay,
-        })
-    };
+        },
+    );
     targets.extend(taken.iter().map(|c| place.world(c)));
     let reload_candidates = reload::begin_tick(&reload::BeginInputs {
         weapons: [weapon.as_ref(), beside.as_ref()],
@@ -460,8 +462,7 @@ pub fn begin_tick(mode: Mode) -> TickStart {
             }
             shown
         });
-    // SAFETY: the game stage runs on the game thread before the world update.
-    unsafe { pouch_models::input_tick(&config.weapons.pouches.models, frames, &shown) };
+    pouch_models::input_tick(game, &config.weapons.pouches.models, frames, &shown);
     if let Some((gun_hand, mouth, radius, occupied)) =
         reload::well(&reload::tuning::Reload::of(&config.weapons.reload))
     {
@@ -672,11 +673,11 @@ pub fn begin_tick(mode: Mode) -> TickStart {
     let in_attraction = Hand::BOTH.map(|hand| tracked.zones.inside(hand));
     drop(state);
 
-    // SAFETY: the game stage runs on the game thread before the world update, and the table keeps
-    // its live weapons alive.
+    let player = LocalPlayer::get(game);
+    // SAFETY: the local player, in the game tick, and the table keeps its live weapons alive.
     unsafe {
         hint::publish(
-            local_player().as_deref(),
+            player.as_ref().map(LocalPlayer::character),
             &hint::HintInputs {
                 snapshot: live::snapshot_now().as_ref(),
                 chosen: volumes,

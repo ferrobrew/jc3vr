@@ -16,6 +16,7 @@ use jc3vr_body::controllers::{
     held::{native::gun_count, pickup::Refusal},
     physics::{characters::character_object, refs::Strong},
 };
+use jc3vr_core::game_tick::GameTick;
 use jc3vr_input::frame::{Hand, Pose};
 use parking_lot::Mutex;
 
@@ -238,10 +239,10 @@ pub(crate) fn waiting(member: Member) -> bool {
 ///
 /// # Safety
 ///
-/// `actor` owns a live weapon on the game thread before the world update.
-pub(crate) unsafe fn staged(member: Member, actor: Strong) {
+/// `actor` owns a live weapon.
+pub(crate) unsafe fn staged(game: &GameTick<'_>, member: Member, actor: Strong) {
     if copy::owns(member) {
-        unsafe { copy::staged(member, actor) };
+        unsafe { copy::staged(game, member, actor) };
         return;
     }
     if finite::owns(member) {

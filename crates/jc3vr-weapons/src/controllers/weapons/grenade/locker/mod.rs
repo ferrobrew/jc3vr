@@ -28,10 +28,11 @@ use jc3vr_body::controllers::{
     grab::{Candidate, GrabVolume, resolve::nearest_within},
     held::native::{gun_count, gun_ptr},
     physics::{
-        characters::local_player,
+        local_player::LocalPlayer,
         refs::{Strong, Weak},
     },
 };
+use jc3vr_core::game_tick::GameTick;
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
@@ -142,18 +143,15 @@ pub(super) unsafe fn begin(
 }
 
 /// Revalidate the exact cached source before drawing the existing actor-free grenade item.
-///
-/// # Safety
-///
-/// The game thread, before the world update.
-pub(super) unsafe fn take(
+pub(super) fn take(
+    game: &GameTick<'_>,
     hand: Hand,
     grip: Option<Vec3>,
     to_cockpit: impl Fn(Vec3) -> Vec3,
     tuning: &GrenadeTuning,
 ) -> Result<(), Refusal> {
     let offered = OFFERS.lock()[hand.index()].take();
-    let owner = unsafe { local_player() }.ok_or(Refusal::SourceChanged)?;
+    let owner = LocalPlayer::get(game).ok_or(Refusal::SourceChanged)?;
     let result = match offered.map(|source| source.identity.provider) {
         Some(Provider::Collection {
             collection,
@@ -163,7 +161,7 @@ pub(super) unsafe fn take(
             collection::with_sources(&to_cockpit, |current| {
                 complete(offered, &current, grip, || {
                     let model = offered.map_or(0, |source| source.identity.model);
-                    if !safe::draw(hand, tuning) {
+                    if !safe::draw(game, hand, tuning) {
                         return false;
                     }
                     // The registry's lock, held here, keeps the collection from being destroyed.
@@ -177,7 +175,8 @@ pub(super) unsafe fn take(
             })
         },
         Some(Provider::Weapon) | None => {
-            let current = unsafe { sources(owner, &to_cockpit) };
+            // SAFETY: the local player, in the game tick.
+            let current = unsafe { sources(owner.character(), &to_cockpit) };
             let pickup = offered.and_then(|source| registered(source.identity));
             complete(offered, &current, grip, || unsafe {
                 let Some(alive) = &pickup else {
@@ -186,10 +185,10 @@ pub(super) unsafe fn take(
                 let weapon = &mut *weapon_of(alive);
                 if grenade::finite_world_pickup(weapon) {
                     // A finite grenade lying in the world is the grenade the hand takes.
-                    grenade::take_world_pickup(hand, weapon, tuning)
+                    grenade::take_world_pickup(game, hand, weapon, tuning)
                 } else {
                     // A display's grenade is one grenade too, which its rule restocks.
-                    safe::draw(hand, tuning) && stock::consume_through_pickup(weapon)
+                    safe::draw(game, hand, tuning) && stock::consume_through_pickup(game, weapon)
                 }
             })
         }

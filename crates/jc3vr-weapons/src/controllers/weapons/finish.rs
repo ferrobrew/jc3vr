@@ -25,9 +25,10 @@ use jc3vr_body::controllers::{
         hold::{Desired, MapKind},
     },
     mode,
-    physics::characters::local_player,
+    physics::local_player::LocalPlayer,
     telemetry,
 };
+use jc3vr_core::game_tick::GameTick;
 use jc3vr_input::{
     frame::{self, Hand},
     haptics::cues::Event,
@@ -68,6 +69,7 @@ use crate::controllers::{
 /// throw and the reload, and hold the fire inputs back during a weapon action. `desired` is the
 /// tables' output, which the grenade throw adds to and the fire hold-back trims.
 pub fn finish_tick(
+    game: &GameTick<'_>,
     inputs: &FinishInputs,
     desired: &mut Vec<Desired>,
 ) -> Option<reload::BeltEligibility> {
@@ -194,7 +196,7 @@ pub fn finish_tick(
                                 .map(|_| c4::hand_over(hand))
                         })
                         .unwrap_or_else(|| {
-                            gun_moved = gun.is_some_and(|w| hold::hand_over(hand, w));
+                            gun_moved = gun.is_some_and(|w| hold::hand_over(game, hand, w));
                             gun_moved
                         });
                 if moved {
@@ -229,11 +231,11 @@ pub fn finish_tick(
                     gameplay,
                 };
                 // SAFETY: the game stage runs on the game thread before the world update.
-                let taken = unsafe { hold::take::finish_grab(hand, &inputs) };
+                let taken = unsafe { hold::take::finish_grab(game, hand, &inputs) };
                 GrabOutcome::Take { taken }
             }
             // A draw takes the gun by its grip wherever on it the hand closed.
-            GrabVolume::Socket(socket) => match grab_socket(hand, socket, &config) {
+            GrabVolume::Socket(socket) => match grab_socket(game, hand, socket, &config) {
                 Some(outcome) => outcome,
                 None => continue,
             },
@@ -281,6 +283,7 @@ pub fn finish_tick(
         opened[hand.index()]
     });
     grenade::input_tick(
+        game,
         &grenade::TickInputs {
             acting: config.weapons.grenade_throw && pouches && active.is_some(),
             // The pin is on the grenade in the other hand.
@@ -325,6 +328,7 @@ pub fn finish_tick(
             && reload::holding_hand() != Some(h)
     });
     c4::input_tick(
+        game,
         &c4::TickInputs {
             acting: config.weapons.c4_throw && pouches && active.is_some(),
             pouch_grab: Hand::BOTH
@@ -341,6 +345,7 @@ pub fn finish_tick(
         &C4Tuning::of(&config.weapons.c4),
     );
     let reload_finish = reload::finish_tick(
+        game,
         &reload::FinishInputs {
             grabs,
             grips,
@@ -358,8 +363,7 @@ pub fn finish_tick(
     let release_active =
         config.weapons.hold.grip_to_hold && capabilities.release && active.is_some();
     let released = if release_active {
-        // SAFETY: the game stage runs on the game thread before the world update.
-        unsafe { hold::act::release_tick(grips.map(ButtonControl::held), action_hands) }
+        hold::act::release_tick(game, grips.map(ButtonControl::held), action_hands)
     } else {
         hold::act::cancel_releases();
         [false; 2]
@@ -385,16 +389,17 @@ pub fn finish_tick(
             if !released[hand.index()] && !retry {
                 continue;
             }
-            if pending.is_none() && passes[hand.index()] && pass_by_action(hand) {
+            if pending.is_none() && passes[hand.index()] && pass_by_action(game, hand) {
                 continue;
             }
             let gun = lone.map(|(weapon, _)| weapon);
-            release(hand, gun, active.as_ref(), world_scale, &config);
+            release(game, hand, gun, active.as_ref(), world_scale, &config);
         }
     }
-    // SAFETY: the game stage runs on the game thread before the world update.
-    let current = unsafe { local_player().and_then(|owner| engine::held_weapon(owner)) }
-        .map(|weapon| with_holder(weapon, hold::owned_holder(weapon.address)));
+    // SAFETY: the local player, in the game tick.
+    let current =
+        unsafe { LocalPlayer::get(game).and_then(|owner| engine::held_weapon(owner.character())) }
+            .map(|weapon| with_holder(weapon, hold::owned_holder(weapon.address)));
     let gun_hands = current.map_or([false; 2], |weapon| {
         if weapon.wielded.slot == WeaponSlot::E_SLOT_PLANTED_EXPLOSIVE {
             [false; 2]
@@ -535,7 +540,13 @@ fn declare_grips(gun_hands: [bool; 2]) {
 /// bracing hand slides onto the grip from wherever it braced, the gun turning onto the canonical
 /// grip as it glides through the hand ([`regions::grip_from_brace`]), and fires it. Returns whether
 /// the gun stayed in the bracing hand.
-fn leave_in_brace(weapon: usize, holder: Hand, active: &ActiveHands, world_scale: f32) -> bool {
+fn leave_in_brace(
+    game: &GameTick<'_>,
+    weapon: usize,
+    holder: Hand,
+    active: &ActiveHands,
+    world_scale: f32,
+) -> bool {
     let Some(hold) = foregrip::status()
         .hold
         .filter(|h| h.engaged && h.weapon == weapon && h.holder == holder)
@@ -550,7 +561,7 @@ fn leave_in_brace(weapon: usize, holder: Hand, active: &ActiveHands, world_scale
     let gun = hand_pose::mul(holding.wrist, hold.geometry.gun);
     let anchor = regions::into_gun(hold.geometry.gun, hold.geometry.foregrip, world_scale);
     let turn = regions::turn_on_wrist(bracing.wrist.orientation, gun.orientation);
-    if !anchor.is_finite() || !turn.is_finite() || !hold::hand_over(brace, weapon) {
+    if !anchor.is_finite() || !turn.is_finite() || !hold::hand_over(game, brace, weapon) {
         return false;
     }
     foregrip::clear();
@@ -727,7 +738,12 @@ fn weapon_action_running(gun_hand: Hand) -> bool {
 /// Carry out `hand`'s grab of `socket` as the table decides it: draw the weapon on it into the
 /// empty hand, or dock the hand's weapon there. `None` for a grab that did nothing worth reporting:
 /// a free socket with nothing to put there, or no table to decide against.
-fn grab_socket(hand: Hand, socket: Socket, config: &WeaponSettings) -> Option<GrabOutcome> {
+fn grab_socket(
+    game: &GameTick<'_>,
+    hand: Hand,
+    socket: Socket,
+    config: &WeaponSettings,
+) -> Option<GrabOutcome> {
     if hold::act::docking()[hand.index()] || hold::act::pending_release(hand).is_some() {
         return None;
     }
@@ -749,20 +765,14 @@ fn grab_socket(hand: Hand, socket: Socket, config: &WeaponSettings) -> Option<Gr
         both_hands: settings.either_hand,
     };
     let outcome = match grab::grab(&snapshot, hand, socket, rules) {
-        // SAFETY: the game stage runs on the game thread before the world update.
-        Ok(SocketMove::Draw { .. }) => {
-            match unsafe { hold::act::draw(hand, socket, hold::SNAP_S) } {
-                Ok(()) => SocketOutcome::Drew,
-                Err(refusal) => SocketOutcome::Failed(refusal),
-            }
-        }
-        // SAFETY: as above.
-        Ok(SocketMove::Dock { .. }) => {
-            match unsafe { hold::act::dock(hand, socket, hold::SNAP_S) } {
-                Ok(()) => SocketOutcome::Docked,
-                Err(refusal) => SocketOutcome::Failed(refusal),
-            }
-        }
+        Ok(SocketMove::Draw { .. }) => match hold::act::draw(game, hand, socket, hold::SNAP_S) {
+            Ok(()) => SocketOutcome::Drew,
+            Err(refusal) => SocketOutcome::Failed(refusal),
+        },
+        Ok(SocketMove::Dock { .. }) => match hold::act::dock(game, hand, socket, hold::SNAP_S) {
+            Ok(()) => SocketOutcome::Docked,
+            Err(refusal) => SocketOutcome::Failed(refusal),
+        },
         Err(SocketRefusal::Empty(_)) => return None,
         Err(refusal) => {
             hold::refused(refusal);
@@ -776,6 +786,7 @@ fn grab_socket(hand: Hand, socket: Socket, config: &WeaponSettings) -> Option<Gr
 /// decides it: dock it on the nearest socket under the hand that takes it, leave a long gun
 /// the other hand braces in that hand, or let it fall with the hand's motion.
 fn release(
+    game: &GameTick<'_>,
     hand: Hand,
     weapon: Option<engine::HeldWeapon>,
     active: Option<&ActiveHands>,
@@ -822,22 +833,22 @@ fn release(
     hold::act::intend_release(hand, object, over.or(attracted.map(|a| a.socket)));
     // A taken socket on the back swaps: its weapon falls clear first, which frees the socket for
     // the dock below.
-    let swapped = attracted.filter(|a| a.swap).is_some_and(|a| {
-        // SAFETY: the game stage runs on the game thread before the world update.
-        match unsafe { hold::swap::eject(a.socket) } {
-            Ok(()) => true,
-            Err(refusal) => {
-                tracing::info!(
-                    target: "controllers",
-                    %refusal,
-                    socket = a.socket.label(),
-                    "hold: the swap on the {} was not done: {refusal}",
-                    a.socket.label()
-                );
-                false
-            }
-        }
-    });
+    let swapped =
+        attracted
+            .filter(|a| a.swap)
+            .is_some_and(|a| match hold::swap::eject(game, a.socket) {
+                Ok(()) => true,
+                Err(refusal) => {
+                    tracing::info!(
+                        target: "controllers",
+                        %refusal,
+                        socket = a.socket.label(),
+                        "hold: the swap on the {} was not done: {refusal}",
+                        a.socket.label()
+                    );
+                    false
+                }
+            });
     let attracted = attracted.filter(|a| !a.swap || swapped);
     let snapshot = if swapped {
         match live::snapshot_now() {
@@ -870,11 +881,9 @@ fn release(
                         socket.label(),
                         hand.label()
                     );
-                    // SAFETY: as above.
-                    unsafe { hold::act::attract(hand, socket, a.toward, travel) }
+                    hold::act::attract(game, hand, socket, a.toward, travel)
                 }
-                // SAFETY: as above.
-                None => unsafe { hold::act::dock(hand, socket, hold::SNAP_S) },
+                None => hold::act::dock(game, hand, socket, hold::SNAP_S),
             };
             match docked {
                 Ok(()) if swapped => haptics::play(hand, Event::SocketSwap),
@@ -890,12 +899,11 @@ fn release(
             let braced = pending.is_none()
                 && config.weapons.regions.enabled
                 && weapon.is_some_and(|w| w.address == object)
-                && active.is_some_and(|a| leave_in_brace(object, hand, a, world_scale));
+                && active.is_some_and(|a| leave_in_brace(game, object, hand, a, world_scale));
             if braced {
                 return;
             }
-            // SAFETY: as above.
-            if let Err(refusal) = unsafe { hold::act::let_go(hand, hold::MAX_THROW_MPS) } {
+            if let Err(refusal) = hold::act::let_go(game, hand, hold::MAX_THROW_MPS) {
                 tracing::debug!(target: "controllers", %refusal, "hold: the weapon was not let go of");
             }
         }
@@ -949,7 +957,7 @@ fn waiting_on_action(action_hands: [bool; 2], passes: [bool; 2]) -> [bool; 2] {
 /// seen to move into the palm rather than jump there. The action lets go of its handle once the
 /// hand on it holds the gun. `false` when the other hand could not take it, for the ordinary
 /// release to decide.
-fn pass_by_action(hand: Hand) -> bool {
+fn pass_by_action(game: &GameTick<'_>, hand: Hand) -> bool {
     let Some(object) = live::in_hand(hand) else {
         return false;
     };
@@ -958,7 +966,7 @@ fn pass_by_action(hand: Hand) -> bool {
     let from = unsafe { (object as *const WeaponBase).as_ref() }
         .and_then(|weapon| unsafe { engine::gun_pose(weapon) });
     let to = hand.other();
-    if !hold::hand_over(to, object) {
+    if !hold::hand_over(game, to, object) {
         return false;
     }
     if let Some(from) = from {
@@ -1218,7 +1226,7 @@ mod tests {
         let source = include_str!("finish.rs");
         let compact: String = source.split_whitespace().collect();
         assert!(compact.contains(
-            "letcurrent=unsafe{local_player().and_then(|owner|engine::held_weapon(owner))}"
+            "letcurrent=unsafe{LocalPlayer::get(game).and_then(|owner|engine::held_weapon(owner.character()))}"
         ));
         assert!(source.contains("primary_trigger_idle(current, &fire_presses)"));
         let triggers = [ButtonControl {

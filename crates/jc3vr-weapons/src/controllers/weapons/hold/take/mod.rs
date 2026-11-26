@@ -23,8 +23,9 @@ use jc3vr_body::controllers::{
     grab::Candidate,
     hands::{ActiveHands, CockpitHand},
     held::HandlePlacement,
-    physics::characters::local_player,
+    physics::local_player::LocalPlayer,
 };
+use jc3vr_core::game_tick::GameTick;
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
@@ -164,16 +165,12 @@ pub(crate) struct TakeInputs<'a> {
 }
 
 /// Gather the targets and return their grab volumes.
-///
-/// # Safety
-///
-/// The game thread, before the world update.
-pub(crate) unsafe fn begin_tick(inputs: &TakeInputs) -> Vec<Candidate> {
+pub(crate) fn begin_tick(game: &GameTick<'_>, inputs: &TakeInputs) -> Vec<Candidate> {
     let settings = inputs.settings;
     rack::tick();
     let acting = inputs.gameplay && settings.either_hand;
-    let owner = unsafe { local_player() }.filter(|_| acting);
-    let player = owner.as_ref().map(|o| Mat4::from(o.m_WorldMatrixT1));
+    let owner = LocalPlayer::get(game).filter(|_| acting);
+    let player = owner.as_ref().map(LocalPlayer::frame);
     steal::publish_probe(player.map(|m| m.w_axis.truncate()));
     let mut state = STATE.lock();
     state.targets.clear();
@@ -195,10 +192,11 @@ pub(crate) unsafe fn begin_tick(inputs: &TakeInputs) -> Vec<Candidate> {
         .iter()
         .filter(|t| matches!(t.kind, TargetKind::Holstered { .. }))
         .count();
-    if let Some(owner) = owner {
+    if let Some(mut owner) = owner {
+        // SAFETY: the local player, in the game tick.
         state
             .targets
-            .extend(unsafe { rack::targets(owner, to_cockpit) });
+            .extend(unsafe { rack::targets(owner.character_mut(), to_cockpit) });
     }
     state.status.held_targets = on_characters - holstered;
     state.status.holstered_targets = holstered;
@@ -215,13 +213,13 @@ pub(crate) unsafe fn begin_tick(inputs: &TakeInputs) -> Vec<Candidate> {
 ///
 /// # Safety
 ///
-/// The game thread, before the world update, after [`begin_tick`] on the same input tick.
-pub(crate) unsafe fn finish_grab(hand: Hand, inputs: &TakeInputs) -> bool {
+/// After [`begin_tick`] on the same input tick.
+pub(crate) unsafe fn finish_grab(game: &GameTick<'_>, hand: Hand, inputs: &TakeInputs) -> bool {
     let point = inputs.active.hands[hand.index()].map(|h| h.grip.position);
     let target = STATE.lock().offered.take(hand, point, TAKE_RADII);
     let result = world::complete_offer(target, |target| {
-        unsafe { WeaponSource::of_target(&target) }
-            .and_then(|source| unsafe { source::take(hand, &source) })
+        WeaponSource::of_target(game, &target)
+            .and_then(|source| source::take(game, hand, &source))
             .map_err(TakeRefusal::Source)
     });
     match result {

@@ -24,9 +24,10 @@ use jc3gi::{
     game::GameObject,
 };
 use jc3vr_body::controllers::{
-    physics::characters::{character_object, local_player},
+    physics::{characters::character_object, local_player::LocalPlayer},
     scheme,
 };
+use jc3vr_core::game_tick::GameTick;
 use parking_lot::Mutex;
 
 use crate::controllers::weapons::{config::WEAPONS_CONFIG, engine};
@@ -119,60 +120,44 @@ pub fn last() -> Option<Stock> {
 }
 
 /// Read the local player's stock and remember it for [`in_stock`].
-///
-/// # Safety
-///
-/// The game thread, before the world update.
-pub(super) unsafe fn refresh() -> Option<Stock> {
-    let stock = unsafe { local_player() }.and_then(|owner| unsafe { read(owner) });
+pub(super) fn refresh(game: &GameTick<'_>) -> Option<Stock> {
+    let stock = LocalPlayer::get(game).and_then(|owner| read(&owner));
     *CACHED.lock() = stock;
     stock
 }
 
 /// Take one grenade for a pouch draw that has already put its item in the hand. `false`, with the
 /// stock unchanged, when there was none to take.
-///
-/// # Safety
-///
-/// The game thread, before the world update.
-pub(super) unsafe fn take() -> bool {
-    let Some(owner) = (unsafe { local_player() }) else {
+pub(super) fn take(game: &GameTick<'_>) -> bool {
+    let Some(mut owner) = LocalPlayer::get(game) else {
         return false;
     };
-    let Some(stock) = (unsafe { read(owner) }) else {
+    let Some(stock) = read(&owner) else {
         return false;
     };
     let Some(change) = stock.draw() else {
         return false;
     };
-    unsafe { apply(owner, change) };
-    let _ = unsafe { refresh() };
+    apply(&mut owner, change);
+    let _ = refresh(game);
     true
 }
 
 /// Whether a grenade could be given back now.
-///
-/// # Safety
-///
-/// The game thread, before the world update.
-pub(super) unsafe fn may_give_back() -> Result<(), Full> {
-    let stock = unsafe { local_player() }
-        .and_then(|owner| unsafe { read(owner) })
+pub(super) fn may_give_back(game: &GameTick<'_>) -> Result<(), Full> {
+    let stock = LocalPlayer::get(game)
+        .and_then(|owner| read(&owner))
         .ok_or(Full)?;
     stock.give_back().map(|_| ())
 }
 
 /// Give one grenade back to the stock, up to its capacity.
-///
-/// # Safety
-///
-/// The game thread, before the world update.
-pub(super) unsafe fn give_back() -> Result<(), Full> {
-    let owner = unsafe { local_player() }.ok_or(Full)?;
-    let stock = unsafe { read(owner) }.ok_or(Full)?;
+pub(super) fn give_back(game: &GameTick<'_>) -> Result<(), Full> {
+    let mut owner = LocalPlayer::get(game).ok_or(Full)?;
+    let stock = read(&owner).ok_or(Full)?;
     let change = stock.give_back()?;
-    unsafe { apply(owner, change) };
-    let _ = unsafe { refresh() };
+    apply(&mut owner, change);
+    let _ = refresh(game);
     Ok(())
 }
 
@@ -180,17 +165,13 @@ pub(super) unsafe fn give_back() -> Result<(), Full> {
 /// magazine emptied, through the game's own setters. Returns the count set, or `None` without a
 /// grenade weapon. Under unlimited ammunition the count is still written, though the draw ignores
 /// it.
-///
-/// # Safety
-///
-/// The game thread, before the world update.
-pub(crate) unsafe fn set(count: i32) -> Option<i32> {
-    let owner = unsafe { local_player() }?;
-    let stock = unsafe { read(owner) }?;
+pub(crate) fn set(game: &GameTick<'_>, count: i32) -> Option<i32> {
+    let mut owner = LocalPlayer::get(game)?;
+    let stock = read(&owner)?;
     let count = settable(stock, count);
-    unsafe { apply(owner, Change::Magazine(0)) };
-    unsafe { apply(owner, Change::Reserve(count)) };
-    let _ = unsafe { refresh() };
+    apply(&mut owner, Change::Magazine(0));
+    apply(&mut owner, Change::Reserve(count));
+    let _ = refresh(game);
     Some(count)
 }
 
@@ -213,14 +194,14 @@ fn settable(stock: Stock, count: i32) -> i32 {
 ///
 /// # Safety
 ///
-/// The game thread, before the world update; `weapon` must be held alive.
-pub(super) unsafe fn consume_through_pickup(weapon: &mut WeaponBase) -> bool {
-    let Some(owner) = (unsafe { local_player() }) else {
+/// `weapon` must be held alive.
+pub(super) unsafe fn consume_through_pickup(game: &GameTick<'_>, weapon: &mut WeaponBase) -> bool {
+    let Some(owner) = LocalPlayer::get(game) else {
         return false;
     };
     unsafe { weapon.SetMagazineAmmo(0) };
     weapon.m_StoredNonMagazineAmmo = 0;
-    let activator = character_object(owner);
+    let activator = owner.object();
     let previous = PERMIT.replace(true);
     unsafe { weapon.PickupStart(activator) };
     PERMIT.set(previous);
@@ -237,17 +218,16 @@ thread_local! {
 
 /// Read `owner`'s stock, or `None` without a grenade weapon or with an ammunition kind outside the
 /// inventory's arrays.
-///
-/// # Safety
-///
-/// `owner` is the live local player, on the game thread.
-unsafe fn read(owner: &Character) -> Option<Stock> {
-    let weapon = unsafe { grenade_weapon(owner) }?;
+fn read(owner: &LocalPlayer<'_>) -> Option<Stock> {
+    let weapon = grenade_weapon(owner)?;
+    // SAFETY: the inventory's weapon lives with the local player, in the tick.
     let kind = unsafe { engine::limited_ammo(weapon) }? as usize;
-    let inventory = &owner.m_Inventory;
+    let character = owner.character();
+    let inventory = &character.m_Inventory;
     let reserve = inventory.m_Ammunition.get(kind)?;
     let cap = inventory.m_MaxAmmunition.get(kind)?;
-    let unlimited = unsafe { owner.HasUnlimitedAmmo() }
+    // SAFETY: as above.
+    let unlimited = unsafe { character.HasUnlimitedAmmo() }
         || unsafe { weapon.m_Tuning.as_ref() }.is_some_and(|tuning| tuning.m_unlimited_ammo);
     Some(Stock {
         magazine: weapon.m_MagazineAmmo.max(0),
@@ -258,22 +238,25 @@ unsafe fn read(owner: &Character) -> Option<Stock> {
 }
 
 /// Apply `change` to `owner`'s stock through the game's own setters, which keep the HUD current.
-///
-/// # Safety
-///
-/// As [`read`], with `owner` mutable.
-unsafe fn apply(owner: &mut Character, change: Change) {
+fn apply(owner: &mut LocalPlayer<'_>, change: Change) {
     match change {
         Change::None => {}
         Change::Reserve(count) => {
-            let Some(weapon) = (unsafe { grenade_weapon(owner) }) else {
+            let Some(weapon) = grenade_weapon(owner) else {
                 return;
             };
             let kind = weapon.m_AmmunitionType;
-            unsafe { owner.m_Inventory.SetAmmoCount(kind, count, false) };
+            // SAFETY: the local player's inventory, in the tick.
+            unsafe {
+                owner
+                    .character_mut()
+                    .m_Inventory
+                    .SetAmmoCount(kind, count, false)
+            };
         }
         Change::Magazine(count) => {
-            if let Some(weapon) = unsafe { grenade_weapon_mut(owner) } {
+            if let Some(weapon) = grenade_weapon_mut(owner) {
+                // SAFETY: the inventory's weapon lives with the local player, in the tick.
                 unsafe { weapon.SetMagazineAmmo(count) };
             }
         }
@@ -281,12 +264,9 @@ unsafe fn apply(owner: &mut Character, change: Change) {
 }
 
 /// `owner`'s hand-grenade weapon.
-///
-/// # Safety
-///
-/// As [`read`].
-unsafe fn grenade_weapon(owner: &Character) -> Option<&WeaponBase> {
+fn grenade_weapon<'a>(owner: &'a LocalPlayer<'_>) -> Option<&'a WeaponBase> {
     let weapon = owner
+        .character()
         .m_Inventory
         .m_Weapons
         .get(WeaponSlot::E_SLOT_HAND_GRENADE as usize)?;
@@ -295,12 +275,9 @@ unsafe fn grenade_weapon(owner: &Character) -> Option<&WeaponBase> {
 }
 
 /// `owner`'s hand-grenade weapon, mutable.
-///
-/// # Safety
-///
-/// As [`read`].
-unsafe fn grenade_weapon_mut(owner: &mut Character) -> Option<&mut WeaponBase> {
+fn grenade_weapon_mut<'a>(owner: &'a mut LocalPlayer<'_>) -> Option<&'a mut WeaponBase> {
     let weapon = owner
+        .character_mut()
         .m_Inventory
         .m_Weapons
         .get(WeaponSlot::E_SLOT_HAND_GRENADE as usize)?;

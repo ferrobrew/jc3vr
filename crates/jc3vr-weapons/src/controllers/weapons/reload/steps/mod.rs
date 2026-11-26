@@ -9,6 +9,7 @@ use jc3vr_body::controllers::{
     haptics, mode,
     mode::Mode,
 };
+use jc3vr_core::game_tick::GameTick;
 use jc3vr_input::{
     frame::{self, Hand, Pose},
     haptics::cues::Event,
@@ -317,6 +318,7 @@ impl State {
     /// The tick's steps; returns why each hand's gun may not fire, by [`Hand::index`].
     pub(super) fn step(
         &mut self,
+        game: &GameTick<'_>,
         tick: &Tick,
         inputs: &FinishInputs,
         config: &WeaponSettings,
@@ -356,7 +358,7 @@ impl State {
         self.knock(tick, inputs, config);
         self.extract(tick, inputs, reload);
         self.belt(tick, config);
-        self.work(tick, inputs, config);
+        self.work(game, tick, inputs, config);
         self.sync_owned(tick);
 
         self.insertion_guide(tick, config.weapons.reload.insertion_guide, reload);

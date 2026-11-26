@@ -27,6 +27,7 @@ use jc3vr_body::controllers::{
     },
     scheme,
 };
+use jc3vr_core::game_tick::GameTick;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
@@ -40,19 +41,16 @@ pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&ON_DROP_BINDER)
 }
 
-/// Replace the dropped grenades noted since the last tick with grenades of the mod's own.
-///
-/// # Safety
-///
-/// The input tick's game stage, on the game thread.
-pub(super) unsafe fn input_tick() {
+/// Replace the dropped grenades noted since the last tick with grenades of the mod's own, in the
+/// input tick's game stage.
+pub(super) fn input_tick(game: &GameTick<'_>) {
     let pending = std::mem::take(&mut *PENDING.lock());
     let mut retry = Vec::new();
     for mut drop in pending {
         let Some(alive) = drop.weapon.lock() else {
             continue;
         };
-        match unsafe { replace(&alive) } {
+        match replace(game, &alive) {
             Replacement::Replaced | Replacement::NotAPickup => {}
             Replacement::Refused if drop.ticks < MAX_TICKS => {
                 drop.ticks += 1;
@@ -97,12 +95,8 @@ enum Replacement {
 }
 
 /// Make a grenade of the mod's own where the native grenade `alive` lies, and consume the native
-/// one.
-///
-/// # Safety
-///
-/// The input tick's game stage, on the game thread.
-unsafe fn replace(alive: &Strong) -> Replacement {
+/// one, in the input tick's game stage.
+fn replace(game: &GameTick<'_>, alive: &Strong) -> Replacement {
     // SAFETY: the strong reference keeps the weapon alive.
     let weapon = unsafe { &mut *weapon_of(alive) };
     if !finite_world_pickup(weapon) {
@@ -111,7 +105,7 @@ unsafe fn replace(alive: &Strong) -> Replacement {
     let Some((world, release)) = (unsafe { motion(weapon) }) else {
         return Replacement::NotAPickup;
     };
-    if !unsafe { safe::spawn_in_world(world, release) } {
+    if !safe::spawn_in_world(game, world, release) {
         return Replacement::Refused;
     }
     unsafe { consume_world_pickup(weapon) };

@@ -29,11 +29,9 @@ use jc3gi::{
 };
 use jc3vr_body::controllers::{
     held::{native::object_of, pickup::Refusal},
-    physics::{
-        characters::{character_object, local_player},
-        refs::Weak,
-    },
+    physics::{characters::character_object, local_player::LocalPlayer, refs::Weak},
 };
+use jc3vr_core::game_tick::GameTick;
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
@@ -138,11 +136,8 @@ pub unsafe fn current(weapon: NonZeroUsize, gun: u8, weak: &Weak) -> Option<Vec3
 /// Free `weapon` from its rack or locker for the snatch into `hand`: tell the rack it was picked
 /// up, as the hand's take does, and drop it into the world where it hangs, for the line to pull
 /// in. A take the hand could not make is refused before the weapon leaves.
-///
-/// # Safety
-///
-/// The game thread, before the world update.
-pub(crate) unsafe fn release(
+pub(crate) fn release(
+    game: &GameTick<'_>,
     hand: Hand,
     weapon: NonZeroUsize,
     weak: &Weak,
@@ -153,7 +148,9 @@ pub(crate) unsafe fn release(
     if !unsafe { waiting(weapon) } {
         return Err(SourceRefusal::Gone);
     }
-    let owner = unsafe { local_player() }.ok_or(SourceRefusal::Take(Refusal::NoCharacter))?;
+    let mut local_player =
+        LocalPlayer::get(game).ok_or(SourceRefusal::Take(Refusal::NoCharacter))?;
+    let owner = local_player.character_mut();
     unsafe { pickup::preflight(owner, weapon, hand, false) }.map_err(SourceRefusal::Take)?;
     let from_rack = weapon.m_State == WeaponState::E_WS_WEAPON_RACK;
     let source = offered_source(weapon);

@@ -23,7 +23,7 @@ mod world;
 use std::{cell::Cell, num::NonZeroUsize, time::Duration};
 
 use detours_macro::detour;
-use glam::{Mat4, Vec3};
+use glam::Vec3;
 use jc3gi::{
     equipment::{
         explosive::{Explosive, Grenade},
@@ -46,10 +46,11 @@ use jc3vr_body::controllers::{
         hold::{Desired, MapKind},
     },
     physics,
-    physics::{characters::local_player, refs::Weak},
+    physics::{local_player::LocalPlayer, refs::Weak},
     telemetry,
     telemetry::Thrown,
 };
+use jc3vr_core::game_tick::GameTick;
 use jc3vr_input::{
     frame::{Hand, Pose},
     haptics::cues::Event,
@@ -260,8 +261,9 @@ pub fn finite_world_pickup(weapon: &WeaponBase) -> bool {
 ///
 /// # Safety
 ///
-/// The input tick's game stage, on the game thread; `weapon` must be held alive.
+/// `weapon` must be held alive.
 pub(super) unsafe fn take_world_pickup(
+    game: &GameTick<'_>,
     hand: Hand,
     weapon: &mut WeaponBase,
     tuning: &GrenadeTuning,
@@ -269,7 +271,7 @@ pub(super) unsafe fn take_world_pickup(
     if !finite_world_pickup(weapon) || holds(hand) {
         return false;
     }
-    if !unsafe { safe::draw(hand, tuning) } {
+    if !safe::draw(game, hand, tuning) {
         return false;
     }
     unsafe { consume_world_pickup(weapon) };
@@ -325,46 +327,44 @@ pub(super) struct BeginInputs<'a> {
 }
 
 /// Offer inert loose models and native live grenades to free hands.
-///
-/// # Safety
-///
-/// The game thread, before the world update.
-pub(super) unsafe fn begin_tick(inputs: &BeginInputs, tuning: &GrenadeTuning) -> Vec<Candidate> {
+pub(super) fn begin_tick(
+    game: &GameTick<'_>,
+    inputs: &BeginInputs,
+    tuning: &GrenadeTuning,
+) -> Vec<Candidate> {
     {
         let mut state = STATE.lock();
         state.sightings.clear();
         state.locker_frames = None;
         state.mouth = [None; 2];
     }
-    // SAFETY: the game thread, before the world update.
-    let _ = unsafe { stock::refresh() };
+    let _ = stock::refresh(game);
     locker::clear();
     if !inputs.acting {
         return Vec::new();
     }
-    let Some(player) = (unsafe { local_player() }).map(|player| Mat4::from(player.m_WorldMatrixT1))
-    else {
+    let Some(mut owner) = LocalPlayer::get(game) else {
         return Vec::new();
     };
+    let player = owner.frame();
     let Some(frames) = docks::cockpit_frames(inputs.active, player) else {
         return Vec::new();
     };
     STATE.lock().locker_frames = Some(frames);
     STATE.lock().mouth = at_mouth(inputs, tuning);
     let mut candidates = Vec::new();
-    if let Some(owner) = unsafe { local_player() } {
-        candidates.extend(unsafe {
-            locker::begin(
-                owner,
-                inputs.free,
-                inputs
-                    .active
-                    .hands
-                    .map(|hand| hand.map(|hand| hand.grip.position)),
-                |point| frames.cockpit.point_to_cockpit(point),
-            )
-        });
-    }
+    // SAFETY: the local player, in the game tick.
+    candidates.extend(unsafe {
+        locker::begin(
+            owner.character_mut(),
+            inputs.free,
+            inputs
+                .active
+                .hands
+                .map(|hand| hand.map(|hand| hand.grip.position)),
+            |point| frames.cockpit.point_to_cockpit(point),
+        )
+    });
     for world in safe::loose() {
         for hand in Hand::BOTH {
             if inputs.free[hand.index()] && !holds(hand) {
@@ -426,7 +426,12 @@ pub(super) struct TickInputs {
 }
 
 /// Consume the resolved pouch grab and grip opening in the actual input tick.
-pub(super) fn input_tick(inputs: &TickInputs, config: &WeaponSettings, desired: &mut Vec<Desired>) {
+pub(super) fn input_tick(
+    game: &GameTick<'_>,
+    inputs: &TickInputs,
+    config: &WeaponSettings,
+    desired: &mut Vec<Desired>,
+) {
     if !inputs.acting {
         stand_down();
         return;
@@ -440,15 +445,13 @@ pub(super) fn input_tick(inputs: &TickInputs, config: &WeaponSettings, desired: 
             let result = frames
                 .ok_or(locker::Refusal::SourceChanged)
                 .and_then(|frames| {
-                    // SAFETY: the game stage runs on the game thread before the world update.
-                    unsafe {
-                        locker::take(
-                            hand,
-                            inputs.cockpit_grips[hand.index()],
-                            |point| frames.cockpit.point_to_cockpit(point),
-                            tuning,
-                        )
-                    }
+                    locker::take(
+                        game,
+                        hand,
+                        inputs.cockpit_grips[hand.index()],
+                        |point| frames.cockpit.point_to_cockpit(point),
+                        tuning,
+                    )
                 });
             match result {
                 Ok(()) => haptics::play(hand, Event::GrenadePrime),
@@ -462,8 +465,7 @@ pub(super) fn input_tick(inputs: &TickInputs, config: &WeaponSettings, desired: 
     if let Some(hand) = inputs.pouch_grab
         && !holds(hand)
     {
-        // SAFETY: the game stage runs on the game thread before the world update.
-        if unsafe { draw_from_pouch(hand, tuning) } {
+        if draw_from_pouch(game, hand, tuning) {
             haptics::play(hand, Event::GrenadePrime);
         } else {
             haptics::play(hand, Event::PouchRefused);
@@ -471,20 +473,17 @@ pub(super) fn input_tick(inputs: &TickInputs, config: &WeaponSettings, desired: 
     }
     for (hand, pressed) in Hand::BOTH.into_iter().zip(pouch_return::take_grenades()) {
         if pressed {
-            // SAFETY: the game stage runs on the game thread before the world update.
-            unsafe { return_to_pouch(hand) };
+            return_to_pouch(game, hand);
         }
     }
-    // SAFETY: the game stage runs on the game thread before the world update.
-    unsafe { world::input_tick() };
+    world::input_tick(game);
     let pickups = std::mem::take(&mut STATE.lock().snatched_pickups);
     for (hand, weapon) in Hand::BOTH.into_iter().zip(pickups) {
         let Some(alive) = weapon.as_ref().and_then(Weak::lock) else {
             continue;
         };
-        // SAFETY: the strong reference keeps the weapon alive; the game stage runs on the game
-        // thread before the world update.
-        let took = unsafe { take_world_pickup(hand, &mut *weapon_of(&alive), tuning) };
+        // SAFETY: the strong reference keeps the weapon alive.
+        let took = unsafe { take_world_pickup(game, hand, &mut *weapon_of(&alive), tuning) };
         if took {
             haptics::play(hand, Event::GrenadeCatch);
         } else {
@@ -496,7 +495,7 @@ pub(super) fn input_tick(inputs: &TickInputs, config: &WeaponSettings, desired: 
         if let Some(item) = item
             && !holds(hand)
         {
-            if safe::take_item(hand, item, tuning) {
+            if safe::take_item(game, hand, item, tuning) {
                 haptics::play(hand, Event::GrenadeCatch);
             } else {
                 tracing::debug!(target: "controllers", hand = hand.label(), "grenade: the snatched grenade could not be taken into the hand");
@@ -509,7 +508,7 @@ pub(super) fn input_tick(inputs: &TickInputs, config: &WeaponSettings, desired: 
         let frames = STATE.lock().locker_frames;
         let took_safe = frames
             .zip(inputs.cockpit_grips[hand.index()])
-            .is_some_and(|(frames, grip)| safe::take_loose(hand, grip, &frames, tuning));
+            .is_some_and(|(frames, grip)| safe::take_loose(game, hand, grip, &frames, tuning));
         if !took_safe
             && catch::caught().is_none()
             && let Some(grip) = inputs.cockpit_grips[hand.index()]
@@ -562,8 +561,7 @@ pub(super) fn input_tick(inputs: &TickInputs, config: &WeaponSettings, desired: 
     }
     for hand in Hand::BOTH {
         if inputs.opened[hand.index()] {
-            // SAFETY: the game stage runs on the game thread before the world update.
-            unsafe { safe::opened(hand) };
+            safe::opened(game, hand);
         }
     }
     if Hand::BOTH.into_iter().any(holds) {
@@ -681,18 +679,16 @@ pub(super) fn report_native_throw(hand: Hand, release: Release) {
 /// read before the item is made and taken after, so a refused allocation takes nothing and an empty
 /// stock makes nothing.
 ///
-/// # Safety
-///
-/// The input tick's game stage, on the game thread.
-unsafe fn draw_from_pouch(hand: Hand, tuning: &GrenadeTuning) -> bool {
-    if !unsafe { stock::refresh() }.is_some_and(Stock::may_draw) {
+/// In the input tick's game stage.
+fn draw_from_pouch(game: &GameTick<'_>, hand: Hand, tuning: &GrenadeTuning) -> bool {
+    if !stock::refresh(game).is_some_and(Stock::may_draw) {
         tracing::info!(target: "controllers", hand = hand.label(), "grenade: the pouch is empty");
         return false;
     }
-    if !unsafe { safe::draw(hand, tuning) } {
+    if !safe::draw(game, hand, tuning) {
         return false;
     }
-    if !unsafe { stock::take() } {
+    if !stock::take(game) {
         // The stock changed between the read and the take: the item goes back as it came.
         tracing::warn!(target: "controllers", hand = hand.label(), "grenade: the stock emptied during the draw; the grenade goes back");
         safe::return_held(hand);
@@ -705,14 +701,12 @@ unsafe fn draw_from_pouch(hand: Hand, tuning: &GrenadeTuning) -> bool {
 /// up by one. A full stock refuses with the pouch's buzz and leaves the grenade in the hand; a
 /// grenade whose pin is out never goes back.
 ///
-/// # Safety
-///
-/// The input tick's game stage, on the game thread.
-unsafe fn return_to_pouch(hand: Hand) {
+/// In the input tick's game stage.
+fn return_to_pouch(game: &GameTick<'_>, hand: Hand) {
     if returnable(hand).is_none() {
         return;
     }
-    if let Err(error) = unsafe { stock::may_give_back() } {
+    if let Err(error) = stock::may_give_back(game) {
         tracing::info!(target: "controllers", hand = hand.label(), %error, "grenade: the pouch refused the grenade");
         STATE.lock().status.returns_refused += 1;
         // The brief refusal buzz went unnoticed on the 14 November take, and six grenades fell.
@@ -734,7 +728,7 @@ unsafe fn return_to_pouch(hand: Hand) {
         tracing::debug!(target: "controllers", hand = hand.label(), "grenade: the held grenade could not be put away");
         return;
     }
-    if let Err(error) = unsafe { stock::give_back() } {
+    if let Err(error) = stock::give_back(game) {
         // Read a moment ago as having room, on the same thread: only a change from elsewhere in the
         // game between the two reads lands here.
         tracing::warn!(target: "controllers", hand = hand.label(), %error, "grenade: the stock filled while the grenade was put away");

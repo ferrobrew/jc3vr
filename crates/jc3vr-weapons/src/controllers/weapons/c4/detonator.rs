@@ -27,7 +27,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use glam::Vec3;
 use jc3gi::{
-    character::character::Character,
     equipment::weapon::WeaponBase,
     graphics_engine::model_instance::{Model, ModelInstance},
     types::shared_ptr::SharedPtr,
@@ -36,8 +35,9 @@ use jc3vr_body::controllers::{
     hands::{held, held::HoldPlacement, late},
     held::native,
     intent::controls::ButtonControl,
-    physics::characters::local_player,
+    physics::local_player::LocalPlayer,
 };
+use jc3vr_core::game_tick::GameTick;
 use jc3vr_input::frame::{Hand, Pose};
 use parking_lot::Mutex;
 
@@ -130,11 +130,7 @@ pub const DETONATOR_LENGTH_M: f32 = 0.088;
 
 /// Show the detonator's model in `hand`, whose grip in the world is `grip`, or with `None`, release
 /// it. Released too when the local player has no C4 weapon, or the weapon no base model.
-///
-/// # Safety
-///
-/// The game thread, before the world update.
-pub(crate) unsafe fn place_model(held: Option<(Hand, Pose)>) {
+pub(crate) fn place_model(game: &GameTick<'_>, held: Option<(Hand, Pose)>) {
     let mut model = MODEL.lock();
     let Some((hand, grip)) = held else {
         unsafe { model.release() };
@@ -143,7 +139,7 @@ pub(crate) unsafe fn place_model(held: Option<(Hand, Pose)>) {
     ensure_cleanup();
     let local = DETONATOR_HOLD.in_hand(hand);
     let matrix = held::held_matrix(grip, local);
-    let source = unsafe { local_player() }.and_then(|owner| unsafe { owner_trigger_model(owner) });
+    let source = LocalPlayer::get(game).and_then(|mut owner| owner_trigger_model(&mut owner));
     let shown = source.and_then(|source| unsafe { model.owned.show(source, matrix) });
     if shown.is_none() {
         unsafe { model.release() };
@@ -235,14 +231,13 @@ fn ensure_cleanup() {
 }
 
 /// The trigger model of `owner`'s C4 weapon, when the slot holds one.
-///
-/// # Safety
-///
-/// `owner` must be the live local player character, on the game thread.
-unsafe fn owner_trigger_model(owner: &mut Character) -> Option<*const SharedPtr<Model>> {
-    let weapon = unsafe { slot_c4(owner) }?;
-    let base = unsafe { &*std::ptr::from_mut(weapon).cast::<WeaponBase>() };
-    unsafe { trigger_model(base) }
+fn owner_trigger_model(owner: &mut LocalPlayer<'_>) -> Option<*const SharedPtr<Model>> {
+    // SAFETY: the local player, in the game tick; its inventory keeps the slot's weapon alive.
+    unsafe {
+        let weapon = slot_c4(owner.character_mut())?;
+        let base = &*std::ptr::from_mut(weapon).cast::<WeaponBase>();
+        trigger_model(base)
+    }
 }
 
 #[cfg(test)]

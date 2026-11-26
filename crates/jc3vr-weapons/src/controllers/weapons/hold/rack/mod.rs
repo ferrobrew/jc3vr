@@ -43,11 +43,9 @@ use jc3gi::{
 };
 use jc3vr_body::controllers::{
     held::{native::weapon_at, pickup::Refusal},
-    physics::{
-        characters::{character_object, local_player},
-        refs::Strong,
-    },
+    physics::{characters::character_object, local_player::LocalPlayer, refs::Strong},
 };
+use jc3vr_core::game_tick::GameTick;
 use jc3vr_input::frame::Hand;
 
 use crate::controllers::{
@@ -104,12 +102,9 @@ pub(crate) unsafe fn targets(
 }
 
 /// The weapon at `weapon` while the local player's interaction entries still offer it, held alive.
-///
-/// # Safety
-///
-/// The game thread, before the world update.
-pub(crate) unsafe fn find(weapon: usize) -> Option<Strong> {
-    let owner = unsafe { local_player() }?;
+pub(crate) fn find(game: &GameTick<'_>, weapon: usize) -> Option<Strong> {
+    let mut local_player = LocalPlayer::get(game)?;
+    let owner = local_player.character_mut();
     let mut found = None;
     unsafe {
         walk(owner, |offered, strong| {
@@ -130,16 +125,15 @@ pub(crate) fn racked(alive: &Strong) -> bool {
 }
 
 /// Take the offered weapon `alive` holds off its rack, or out of its locker, into `hand`.
-///
-/// # Safety
-///
-/// The game thread, before the world update.
-pub(crate) unsafe fn take(
+pub(crate) fn take(
+    game: &GameTick<'_>,
     hand: Hand,
     alive: &Strong,
     options: TakeOptions,
 ) -> Result<WeaponSlot, SourceRefusal> {
-    let owner = unsafe { local_player() }.ok_or(SourceRefusal::Take(Refusal::NoCharacter))?;
+    let mut local_player =
+        LocalPlayer::get(game).ok_or(SourceRefusal::Take(Refusal::NoCharacter))?;
+    let owner = local_player.character_mut();
     // SAFETY: the strong reference keeps the weapon alive.
     let weapon = unsafe { &mut *inventory_engine::weapon_of(alive) };
     if !offered_state(weapon) {

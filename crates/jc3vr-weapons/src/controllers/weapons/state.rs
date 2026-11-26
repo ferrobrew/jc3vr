@@ -7,6 +7,7 @@ use jc3vr_body::controllers::{
     grab::{GrabVolume, GripTarget},
     hands::ik,
 };
+use jc3vr_core::game_tick::GameTick;
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
@@ -45,7 +46,7 @@ pub fn pause() {
 
 /// Stop acting: drop the foregrip hold and forget the tick's weapon. Called whenever the bindings
 /// do not inject.
-pub fn stand_down() {
+pub fn stand_down(game: &GameTick<'_>) {
     foregrip::clear();
     jc3vr_body::controllers::held::guns::publish(
         jc3vr_body::controllers::held::guns::GunHolds::default(),
@@ -71,10 +72,9 @@ pub fn stand_down() {
     hold::tick::stand_down();
     hold::take::stand_down();
     regions::stand_down();
-    // SAFETY: the game stage runs on the game thread before the world update.
-    unsafe { armed::stand_down() };
+    armed::stand_down(game);
     reload::stand_down();
-    wheel::stand_down();
+    wheel::stand_down(game);
     let mut state = STATE.lock();
     state.weapon = None;
     state.lone = None;

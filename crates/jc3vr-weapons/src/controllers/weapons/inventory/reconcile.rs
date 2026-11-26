@@ -35,9 +35,10 @@ use jc3gi::{
     equipment::weapon::{WeaponBase, WeaponState},
 };
 use jc3vr_body::{
-    controllers::{aim::gun, physics::characters::local_player},
+    controllers::{aim::gun, physics::local_player::LocalPlayer},
     hooks::character::acts::resolve_act_id,
 };
+use jc3vr_core::game_tick::GameTick;
 use jc3vr_input::frame::Hand;
 
 use crate::controllers::{
@@ -72,12 +73,9 @@ pub(crate) unsafe fn apply(owner: &mut Character) {
 }
 
 /// [`apply`] for the local player, when there is one.
-///
-/// # Safety
-///
-/// The game thread, before the world update.
-pub(crate) unsafe fn now() {
-    if let Some(owner) = unsafe { local_player() } {
+pub(crate) fn now(game: &GameTick<'_>) {
+    if let Some(mut local_player) = LocalPlayer::get(game) {
+        let owner = local_player.character_mut();
         unsafe { apply(owner) };
     }
 }
@@ -136,9 +134,10 @@ pub(crate) unsafe fn project_back(owner: &mut Character) {
 ///
 /// # Safety
 ///
-/// On the game thread before the world update.
+/// On the game thread before the world update. The save, mission, and challenge seams that call it
+/// are engine detours, where the mod opens no game tick, so it fetches the local player itself.
 pub(crate) unsafe fn store(store: &StoreProjection) {
-    let Some(owner) = (unsafe { local_player() }) else {
+    let Some(owner) = (unsafe { Character::GetLocalPlayerCharacter().as_mut() }) else {
         return;
     };
     let Some(snapshot) = live::snapshot_now() else {

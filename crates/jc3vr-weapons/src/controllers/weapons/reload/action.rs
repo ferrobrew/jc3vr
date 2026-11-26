@@ -5,6 +5,7 @@
 
 use glam::{Quat, Vec3};
 use jc3vr_body::controllers::{grab::GrabVolume, haptics};
+use jc3vr_core::game_tick::GameTick;
 use jc3vr_input::{
     frame::{Hand, Pose},
     haptics::cues::Event,
@@ -101,12 +102,18 @@ impl ActionEngine for NativeAction {
 
 impl State {
     /// The action's work by the free hand.
-    pub(super) fn work(&mut self, tick: &Tick, inputs: &FinishInputs, config: &WeaponSettings) {
+    pub(super) fn work(
+        &mut self,
+        game: &GameTick<'_>,
+        tick: &Tick,
+        inputs: &FinishInputs,
+        config: &WeaponSettings,
+    ) {
         let reload = &Reload::of(&config.weapons.reload);
         if reload.action.physical {
             self.status.work.reset();
             self.work_travel(tick, inputs, reload, &mut NativeAction);
-            self.publish_render(tick, reload);
+            self.publish_render(game, tick, reload);
             return;
         }
         set_pump_slide(None);
@@ -181,7 +188,7 @@ impl State {
             }
             _ => {}
         }
-        self.publish_render(tick, reload);
+        self.publish_render(game, tick, reload);
     }
 
     /// The physical action's work: each gun's part on its travel, with its own weapon's plan, the
@@ -377,7 +384,7 @@ impl State {
 
     /// Publish each hand's action part with its own weapon, and the held magazine part with the
     /// weapon its round is for, for the render thread.
-    fn publish_render(&mut self, tick: &Tick, reload: &Reload) {
+    fn publish_render(&mut self, game: &GameTick<'_>, tick: &Tick, reload: &Reload) {
         let physical = reload.action.physical;
         let working = matches!(self.status.work.stage, chamber::WorkStage::Held { .. });
         let records = Hand::BOTH.map(|hand| {
@@ -435,7 +442,7 @@ impl State {
                 })
             });
         // SAFETY: game thread before the world update; the weapon was read this tick.
-        let modelled = unsafe { pouch_models::hand_tick(request) };
+        let modelled = unsafe { pouch_models::hand_tick(game, request) };
         let held = self.status.insert_hands.and_then(|(hand, gun_hand)| {
             let (weapon, gun) = tick.gun(gun_hand)?;
             let (drawn, part_top, part_axis, in_gun) = if modelled {

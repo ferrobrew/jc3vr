@@ -49,6 +49,7 @@ use jc3vr_body::controllers::{
     held::native::{object_of, weapon_at},
     physics::refs::Strong,
 };
+use jc3vr_core::game_tick::GameTick;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
@@ -158,14 +159,14 @@ pub(crate) fn on_reset() {
 ///
 /// # Safety
 ///
-/// `owner` must be the live local player character, on the game thread before the world update.
-pub(crate) unsafe fn input_tick(owner: &mut Character) {
+/// `owner` must be the live local player character.
+pub(crate) unsafe fn input_tick(game: &GameTick<'_>, owner: &mut Character) {
     let inventory = &raw mut owner.m_Inventory;
     observe_inventory(inventory);
     let queued = std::mem::take(&mut STATE.lock().queued);
     for arrival in queued {
         if STATE.lock().admits(&arrival, inventory as usize) {
-            unsafe { hand_over(owner, arrival) };
+            unsafe { hand_over(game, owner, arrival) };
         }
     }
 }
@@ -329,7 +330,7 @@ unsafe fn call_original(inventory: *mut Inventory, weapon: &mut SharedPtr<Weapon
 
 /// Hand `arrival` over to the slot without the equip, then place it in the table and make the game
 /// follow.
-unsafe fn hand_over(owner: &mut Character, arrival: Arrival) {
+unsafe fn hand_over(game: &GameTick<'_>, owner: &mut Character, arrival: Arrival) {
     let Arrival {
         weapon,
         slot,
@@ -339,7 +340,7 @@ unsafe fn hand_over(owner: &mut Character, arrival: Arrival) {
     } = arrival;
     let inventory = &raw mut owner.m_Inventory;
     if let Some(request) = member {
-        unsafe { stage_member(owner, inventory, weapon, slot, request) };
+        unsafe { stage_member(game, owner, inventory, weapon, slot, request) };
         return;
     }
     let object = engine::weapon_of(&weapon) as usize;
@@ -388,6 +389,7 @@ unsafe fn hand_over(owner: &mut Character, arrival: Arrival) {
 
 /// Initialize a source member through the game's arrival without adopting it into the loadout.
 unsafe fn stage_member(
+    game: &GameTick<'_>,
     owner: &mut Character,
     inventory: *mut Inventory,
     weapon: Strong,
@@ -425,7 +427,7 @@ unsafe fn stage_member(
     }
     unsafe { reconcile::apply(owner) };
     if initialized {
-        unsafe { rack::paired::staged(request.member, retained) };
+        unsafe { rack::paired::staged(game, request.member, retained) };
     } else {
         unsafe { (*engine::weapon_of(&retained)).Despawn() };
         tracing::warn!(target: "controllers", "rack: the native give did not initialize its source member");

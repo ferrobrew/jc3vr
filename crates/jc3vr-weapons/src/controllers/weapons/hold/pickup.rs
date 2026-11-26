@@ -43,8 +43,9 @@ use jc3gi::{
 use jc3vr_body::controllers::{
     aim::gun,
     held::pickup::Refusal,
-    physics::characters::{character_object, local_player},
+    physics::{characters::character_object, local_player::LocalPlayer},
 };
+use jc3vr_core::game_tick::GameTick;
 use jc3vr_input::frame::Hand;
 
 use crate::controllers::{
@@ -82,14 +83,15 @@ pub struct TakeOptions {
 ///
 /// # Safety
 ///
-/// `weapon` must be a live weapon (its body checked to belong to it this tick, or its holder held
-/// alive), on the game thread before the world update.
+/// `weapon` must be a live weapon (its body checked to belong to it this tick, or its holder held alive).
 pub(crate) unsafe fn take(
+    game: &GameTick<'_>,
     hand: Hand,
     weapon: &mut WeaponBase,
     options: TakeOptions,
 ) -> Result<WeaponSlot, Refusal> {
-    let owner = unsafe { local_player() }.ok_or(Refusal::NoCharacter)?;
+    let mut local_player = LocalPlayer::get(game).ok_or(Refusal::NoCharacter)?;
+    let owner = local_player.character_mut();
     if weapon.m_State != WeaponState::E_WS_DROPPED {
         return Err(Refusal::NotDropped);
     }
