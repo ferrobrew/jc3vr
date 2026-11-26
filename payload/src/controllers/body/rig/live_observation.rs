@@ -27,7 +27,7 @@ use crate::{
     vr::{self, convert},
 };
 
-/// The head located before replay replacement, with the exact transform used to rebase grips.
+/// The located head, with the exact transform used to rebase grips.
 /// `cockpit_from_local` is a transform value, not a complete origin-generation identity.
 #[derive(Clone, Copy)]
 pub(crate) struct LocatedTracking {
@@ -286,7 +286,7 @@ pub(crate) struct ObservationStatus {
 }
 
 /// Publish only the sampler-owned controller frame returned with its real publication receipt.
-/// No latest-value global or replay controller is paired with the located live head.
+/// No latest-value global controller is paired with the located live head.
 pub(crate) fn publish_tracking(
     located: Option<LocatedTracking>,
     controllers: Option<ControllerFrame>,

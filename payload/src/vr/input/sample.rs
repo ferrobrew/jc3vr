@@ -698,7 +698,7 @@ mod tests {
             },
             critical.is_none(),
         );
-        let (_, published) = history::take_gameplay();
+        let published = history::take_gameplay();
         assert!(
             matches!(&published.last().unwrap().record, tracking_format::input::InputRecord::Group(group) if group.samples[0].active && group.samples[0].down)
         );

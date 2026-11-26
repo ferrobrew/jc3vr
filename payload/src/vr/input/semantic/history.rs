@@ -1,14 +1,13 @@
 //! Coherent input publications with independent bounded capture and gameplay queues.
 //!
-//! Live groups retain host observation time and actual controller publication identity. Replay
-//! uses separate storage and never enters the live clock's history. Each consumer drains once;
-//! overflow is an explicit discontinuity, not an inferred button release.
+//! Live groups retain host observation time and actual controller publication identity. Each
+//! consumer drains once; overflow is an explicit discontinuity, not an inferred button release.
 
 use std::{collections::VecDeque, sync::LazyLock, time::Instant};
 
 use parking_lot::Mutex;
 use tracking_format::input::{
-    CapturedInput, ClockDomain, DiscontinuityReason, GroupOrder, HISTORY_CAPACITY, InputGroup,
+    ClockDomain, DiscontinuityReason, GroupOrder, HISTORY_CAPACITY, InputGroup,
     InputRecord, InputStamp, RouteSample,
     policy::{PROTECTED_CONTROLS, PolicyEvaluation},
 };
@@ -130,9 +129,6 @@ pub(crate) fn take_capture() -> Vec<Publication> {
 /// This does not drain or reinterpret the gameplay evidence.
 pub(crate) fn original_group(frame_sequence: u64) -> Option<InputGroup> {
     let slot = SLOT.lock();
-    if slot.replay_active {
-        return None;
-    }
     slot.latest
         .as_ref()
         .filter(|publication| publication.frame_sequence == Some(frame_sequence))
@@ -142,23 +138,8 @@ pub(crate) fn original_group(frame_sequence: u64) -> Option<InputGroup> {
         })
 }
 
-pub(crate) fn take_gameplay() -> (bool, Vec<Publication>) {
-    let mut slot = SLOT.lock();
-    let replay = slot.replay_active;
-    let publications = if replay {
-        slot.gameplay.pending.clear();
-        slot.replayed
-            .drain(..)
-            .map(|captured| Publication {
-                observed_at: Instant::now(),
-                frame_sequence: None,
-                record: captured.record,
-            })
-            .collect()
-    } else {
-        slot.gameplay.pending.drain(..).collect()
-    };
-    (replay, publications)
+pub(crate) fn take_gameplay() -> Vec<Publication> {
+    SLOT.lock().gameplay.pending.drain(..).collect()
 }
 
 /// Capture a final decision without changing live ownership. A fresh recording has an explicit
@@ -207,84 +188,16 @@ pub(crate) fn interrupt(reason: DiscontinuityReason) {
     SLOT.lock().interrupt(reason, Instant::now());
 }
 
-/// Repeated playback starts allocate fresh storage, not a replacement live clock epoch.
-pub(crate) fn begin_replay(available: bool) {
-    flight_pose::source_changed(EpochChange::ReplayStarted);
-    SLOT.lock().begin_replay(available);
-}
-
-/// Capacity available before replay publication would discard ordered evidence.
-pub(crate) fn replay_capacity() -> usize {
-    HISTORY_CAPACITY.saturating_sub(SLOT.lock().replayed.len())
-}
-
-/// Preserve the recorded envelope and logical stamp in bounded replay storage, never in the live
-/// publication queue. The gameplay drain selects only one clock at a time.
-pub(crate) fn publish_replayed(records: &[CapturedInput]) {
-    SLOT.lock().publish_replayed(records);
-}
-
-pub(crate) fn end_replay() {
-    flight_pose::source_changed(EpochChange::ReplayEnded);
-    SLOT.lock().end_replay(Instant::now());
-}
-
 struct Published {
     sequence: u64,
     generation: Option<u64>,
     capture: CaptureQueue,
     gameplay: CaptureQueue,
-    replayed: VecDeque<CapturedInput>,
-    replay_active: bool,
     capture_boundary: bool,
     latest: Option<Publication>,
 }
 
 impl Published {
-    fn begin_replay(&mut self, available: bool) {
-        self.replayed.clear();
-        self.replay_active = true;
-        if !available {
-            self.replayed.push_back(CapturedInput {
-                capture_time_ns: 0,
-                frame_sequence: None,
-                record: InputRecord::Discontinuity {
-                    reason: DiscontinuityReason::LegacyOrderAbsent,
-                    discarded: 0,
-                },
-            });
-        }
-    }
-
-    fn publish_replayed(&mut self, records: &[CapturedInput]) {
-        if !self.replay_active {
-            return;
-        }
-        for record in records {
-            if self.replayed.len() >= HISTORY_CAPACITY {
-                let discarded = self.replayed.iter().fold(0u64, |count, captured| {
-                    count.saturating_add(record_loss(&captured.record))
-                });
-                self.replayed.clear();
-                self.replayed.push_back(CapturedInput {
-                    capture_time_ns: record.capture_time_ns,
-                    frame_sequence: None,
-                    record: InputRecord::Discontinuity {
-                        reason: DiscontinuityReason::Overflow,
-                        discarded,
-                    },
-                });
-            }
-            self.replayed.push_back(record.clone());
-        }
-    }
-
-    fn end_replay(&mut self, now: Instant) {
-        self.replayed.clear();
-        self.replay_active = false;
-        self.interrupt(DiscontinuityReason::ClockChanged, now);
-    }
-
     fn interrupt(&mut self, reason: DiscontinuityReason, at: Instant) {
         if matches!(reason, DiscontinuityReason::ClockChanged) {
             flight_pose::source_changed(EpochChange::SourceClockChanged);
@@ -339,18 +252,10 @@ static SLOT: LazyLock<Mutex<Published>> = LazyLock::new(|| {
         generation: None,
         capture: CaptureQueue::default(),
         gameplay: CaptureQueue::default(),
-        replayed: VecDeque::new(),
-        replay_active: false,
         capture_boundary: false,
         latest: None,
     })
 });
-
-#[cfg(test)]
-pub(crate) fn replayed_for_test() -> (bool, Vec<CapturedInput>) {
-    let slot = SLOT.lock();
-    (slot.replay_active, slot.replayed.iter().cloned().collect())
-}
 
 #[cfg(test)]
 pub(crate) static TEST_LOCK: parking_lot::ReentrantMutex<()> = parking_lot::ReentrantMutex::new(());
@@ -365,8 +270,6 @@ mod tests {
             generation: Some(9),
             capture: CaptureQueue::default(),
             gameplay: CaptureQueue::default(),
-            replayed: VecDeque::new(),
-            replay_active: false,
             capture_boundary: false,
             latest: None,
         }
@@ -421,43 +324,6 @@ mod tests {
             );
             assert_eq!(slot.sequence, 44);
         }
-    }
-
-    #[test]
-    fn replay_lifecycle_never_replaces_or_splices_live_clock_history() {
-        let _guard = flight_pose::test_guard();
-        let mut slot = local();
-        let now = Instant::now();
-        slot.interrupt(DiscontinuityReason::Unavailable, now);
-        slot.begin_replay(false);
-        assert_eq!(
-            slot.replayed[0].record,
-            InputRecord::Discontinuity {
-                reason: DiscontinuityReason::LegacyOrderAbsent,
-                discarded: 0
-            }
-        );
-        slot.begin_replay(true);
-        assert!(slot.replayed.is_empty());
-        let captured = CapturedInput {
-            capture_time_ns: 17,
-            frame_sequence: Some(99),
-            record: InputRecord::Discontinuity {
-                reason: DiscontinuityReason::Unavailable,
-                discarded: 3,
-            },
-        };
-        slot.publish_replayed(std::slice::from_ref(&captured));
-        assert_eq!(slot.replayed[0], captured);
-        assert_eq!(slot.sequence, 44);
-        assert_eq!(slot.generation, Some(9));
-        assert_eq!(slot.capture.pending.len(), 1);
-        slot.end_replay(now);
-        assert!(slot.replayed.is_empty());
-        slot.publish_replayed(&[captured]);
-        assert!(slot.replayed.is_empty());
-        assert_eq!(slot.capture.pending.len(), 2);
-        assert_eq!(slot.sequence, 44);
     }
 
     #[test]

@@ -1,7 +1,6 @@
 //! Complete live head/controller observations for the wingsuit gestures.
 //!
-//! The frame loop supplies current rebased eye poses before replay replaces them. The sampler
-//! completes the packet with the actual controller publication receipt. No global head is queried.
+//! The frame loop supplies current rebased eye poses. The sampler completes the packet with the actual controller publication receipt. No global head is queried.
 
 use std::{sync::LazyLock, time::Instant};
 
@@ -29,19 +28,10 @@ pub(crate) enum EpochChange {
     Recenter,
     FollowBank,
     RuntimeReset,
-    ReplayStarted,
-    ReplayEnded,
     SourceClockChanged,
 }
 
-/// The live producer deliberately does not pair replay controllers with a live located head.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) enum PoseSource {
-    Live,
-    Replay,
-}
-
-/// Head data from this frame's located and already-rebased eye views, before any replay replacement.
+/// Head data from this frame's located and already-rebased eye views.
 /// The same baseline and predicted display time must be passed to controller sampling.
 pub(crate) struct LocatedHead {
     pub eyes: [xr::Posef; 2],
@@ -132,7 +122,7 @@ pub(crate) fn source_changed(change: EpochChange) {
 }
 
 /// The current source epoch: it advances at every change of the cockpit frame's source (a
-/// recenter, a follow bank, each share of a seat-lock yaw re-base, a replay starting or ending).
+/// recenter, a follow bank, each share of a seat-lock yaw re-base, a runtime reset).
 /// `None` once it has overflowed.
 pub(crate) fn epoch() -> Option<u64> {
     SLOT.lock().epoch
@@ -198,7 +188,6 @@ struct Producer {
     epoch: Option<u64>,
     ticket: u64,
     pending: Option<u64>,
-    source: PoseSource,
     packet: Option<FlightPacket>,
 }
 
@@ -208,7 +197,6 @@ impl Producer {
             epoch: Some(1),
             ticket: 0,
             pending: None,
-            source: PoseSource::Live,
             packet: None,
         }
     }
@@ -218,21 +206,13 @@ impl Producer {
         self.packet = None;
     }
 
-    fn source_changed(&mut self, change: EpochChange) {
+    fn source_changed(&mut self, _change: EpochChange) {
         self.cancel();
         self.epoch = self.epoch.and_then(|epoch| epoch.checked_add(1));
-        self.source = match change {
-            EpochChange::ReplayStarted => PoseSource::Replay,
-            EpochChange::ReplayEnded => PoseSource::Live,
-            _ => self.source,
-        };
     }
 
     fn begin(&mut self, head: Option<LocatedHead>) -> Option<PendingHead> {
         self.cancel();
-        if self.source != PoseSource::Live {
-            return None;
-        }
         let epoch = self.epoch?;
         let head = head?;
         let pose = located_center(&head)?;
@@ -252,10 +232,7 @@ impl Producer {
         mut controllers: ControllerFrame,
         (sequence, published_at): (u64, Instant),
     ) -> bool {
-        if self.epoch != Some(pending.epoch)
-            || self.pending != Some(pending.ticket)
-            || self.source != PoseSource::Live
-        {
+        if self.epoch != Some(pending.epoch) || self.pending != Some(pending.ticket) {
             return false;
         }
         self.pending = None;
@@ -291,7 +268,6 @@ impl Producer {
         let packet = self.packet.as_ref()?;
         let sample = packet.head.sample;
         (self.epoch == Some(sample.epoch)
-            && self.source == PoseSource::Live
             && frame.sequence == sample.sequence
             && frame.display_time_ns == sample.time_ns
             && frame.published_at == packet.head.published_at
@@ -339,7 +315,7 @@ fn located_center(head: &LocatedHead) -> Option<TrackedPose> {
 
 static SLOT: LazyLock<Mutex<Producer>> = LazyLock::new(|| Mutex::new(Producer::new()));
 
-/// Serialize tests that share the live packet with replay and history source changes.
+/// Serialize tests that share the live packet with history source changes, and leave it empty.
 #[cfg(test)]
 pub(crate) fn test_guard() -> impl Drop {
     struct Guard {
@@ -348,14 +324,14 @@ pub(crate) fn test_guard() -> impl Drop {
 
     impl Drop for Guard {
         fn drop(&mut self) {
-            source_changed(EpochChange::ReplayEnded);
+            SLOT.lock().cancel();
         }
     }
 
     let guard = Guard {
         _serial: crate::vr::input::semantic::history::TEST_LOCK.lock(),
     };
-    source_changed(EpochChange::ReplayEnded);
+    SLOT.lock().cancel();
     guard
 }
 
@@ -432,24 +408,21 @@ mod tests {
     }
 
     #[test]
-    fn global_test_guard_restores_an_empty_live_source_on_setup_and_unwind() {
+    fn global_test_guard_restores_an_empty_packet_on_setup_and_unwind() {
         let _serial = crate::vr::input::semantic::history::TEST_LOCK.lock();
-        source_changed(EpochChange::ReplayStarted);
+        assert!(begin_located(Some(head(100))).is_some());
         {
             let _guard = test_guard();
             let slot = SLOT.lock();
-            assert_eq!(slot.source, PoseSource::Live);
             assert!(slot.packet.is_none() && slot.pending.is_none());
         }
         let panicked = std::panic::catch_unwind(|| {
             let _guard = test_guard();
             assert!(begin_located(Some(head(100))).is_some());
-            source_changed(EpochChange::ReplayStarted);
             panic!("exercise flight packet test cleanup");
         });
         assert!(panicked.is_err());
         let slot = SLOT.lock();
-        assert_eq!(slot.source, PoseSource::Live);
         assert!(slot.packet.is_none() && slot.pending.is_none());
     }
 
@@ -557,19 +530,6 @@ mod tests {
             assert!(!producer.complete(pending, controllers, (1, now)));
             assert!(producer.packet.is_none() && producer.pending.is_none());
         }
-    }
-
-    #[test]
-    fn replay_never_pairs_live_head_with_recorded_controllers_and_handback_gets_a_new_epoch() {
-        let mut producer = Producer::new();
-        let now = Instant::now();
-        let old = publish(&mut producer, 100, 1, now);
-        producer.source_changed(EpochChange::ReplayStarted);
-        assert!(producer.for_frame(&old, now).is_none());
-        assert!(producer.begin(Some(head(200))).is_none());
-        producer.source_changed(EpochChange::ReplayEnded);
-        let new = publish(&mut producer, 50, 2, now);
-        assert_eq!(producer.for_frame(&new, now).unwrap().sample().epoch, 3);
     }
 
     #[test]
