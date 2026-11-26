@@ -1,0 +1,16 @@
+[package]
+name = "layering-guard"
+version = "0.1.0"
+edition = "2024"
+description = "A test-only check that the payload's modules respect the planned crate layering, and, once the crates exist, that their manifests do."
+publish = false
+
+# Host-native on purpose: it reads source and manifests and links nothing from Windows, so it runs
+# under `cargo test -p layering-guard --target x86_64-unknown-linux-gnu` as well as under
+# `scripts/xwin_test.sh` with the rest of the workspace.
+
+[dependencies]
+toml = "1.1.6"
+
+[dev-dependencies]
+pretty_assertions = "1.4.1"

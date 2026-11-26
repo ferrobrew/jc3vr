@@ -2474,6 +2474,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "layering-guard"
+version = "0.1.0"
+dependencies = [
+ "pretty_assertions",
+ "toml 1.1.6+spec-1.1.0",
+]
+
+[[package]]
 name = "lazy_static"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

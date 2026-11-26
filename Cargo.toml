@@ -15,6 +15,8 @@ members = [
     "tools/scaleform-gfx-examine",
     "tools/shadergen",
     "tools/tracking-synth",
+    # Repository checks.
+    "crates/layering-guard",
 ]
 resolver = "3"
 default-members = ["injector"]
