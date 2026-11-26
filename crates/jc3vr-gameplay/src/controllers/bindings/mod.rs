@@ -277,6 +277,8 @@ fn tick(game: &GameTick<'_>, dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>)
         weapons::stand_down(game);
         weapons::inventory::stand_down(game);
         vehicles::stand_down();
+        // SAFETY: the bindings tick runs on the game thread, before the world update.
+        unsafe { vehicles::mounted::stand_down() };
         grapple::physical::stand_down();
         grapple::seat::stand_down(game);
         snatch::stand_down();
@@ -403,6 +405,8 @@ fn tick(game: &GameTick<'_>, dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>)
             grapple::seat::stand_down(game);
         }
         vehicles::stand_down();
+        // SAFETY: the bindings tick runs on the game thread, before the world update.
+        unsafe { vehicles::mounted::stand_down() };
         grapple::physical::stand_down();
         firm_ragdoll::input_tick(game, firm_ragdoll::Want::Off, false);
         snatch::stand_down();
@@ -1246,6 +1250,8 @@ fn cancel_capture_routes(poll: DevicePoll, sink: &mut Vec<Segment>) {
     // stays held.
     weapons::pause();
     vehicles::stand_down();
+    // SAFETY: the bindings tick runs this on the game thread, before the world update.
+    unsafe { vehicles::mounted::stand_down() };
     grapple::physical::stand_down();
     // A hook flying from the seat is kept through the panel, for the next tick to tether.
     snatch::stand_down();

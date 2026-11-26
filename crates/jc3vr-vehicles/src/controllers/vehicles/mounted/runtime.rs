@@ -102,9 +102,7 @@ pub unsafe fn tick(game: &GameTick<'_>, inputs: &FinishInputs, desired: &mut Vec
     let mut previous = std::mem::take(&mut *CONTROLLED.lock());
     let mut next = Vec::new();
     let Some(mut local_player) = LocalPlayer::get(game).filter(|_| enabled) else {
-        unsafe { release_all(previous) };
-        unsafe { hide_standalone_prompts(false) };
-        gunner_seat::reset();
+        unsafe { release_everything(previous) };
         return;
     };
     let local = local_player.character_mut();
@@ -636,15 +634,15 @@ const SEAT_EXIT_RETRY: Duration = Duration::from_millis(1500);
 /// How long a tear from the seat waits for the player to leave it.
 const SEAT_EXIT_TIMEOUT: Duration = Duration::from_secs(4);
 
-/// Release every retained gun, for a paused game, a mode change, or a shutdown.
+/// Release every retained gun, for a paused game, a mode change, a stand-down of the bindings, or a
+/// shutdown, the way the tick does when the runtime is off.
 ///
 /// # Safety
 /// The game thread, outside the world update; a retained gun is checked through its weak reference
 /// before it is touched.
 pub unsafe fn stand_down() {
-    gunner_seat::reset();
     let records = std::mem::take(&mut *CONTROLLED.lock());
-    unsafe { release_all(records) };
+    unsafe { release_everything(records) };
 }
 
 /// The retained grips on `weapon`, if this module controls it.
@@ -808,6 +806,14 @@ unsafe fn native_mounted(local: &Character, weapon: &WeaponBase) -> bool {
             .and_then(|slot| slot.px.as_ref())
             .is_some_and(|held| std::ptr::eq(held, weapon))
     }
+}
+
+/// Stop the runtime: release `records`, show the standalone guns' use prompts again, and leave the
+/// gunner seat.
+unsafe fn release_everything(records: Vec<Controlled>) {
+    unsafe { release_all(records) };
+    unsafe { hide_standalone_prompts(false) };
+    gunner_seat::reset();
 }
 
 /// Restore every record's mount and prompt, release its fire, and keep only the ones whose
