@@ -23,26 +23,24 @@ use jc3gi::{
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::{
-    config::Config,
-    controllers::{
-        frame::Hand,
-        haptics::{self, Event},
-        physical_hands::{
-            bodies, carry_collision, engine,
-            impacts::{
-                policy::{Motion, object_damage},
-                state::{Contact, Enabled, FlagCall, Identity, Lease, Observation, State},
-            },
-            physics::{
-                blows::{self, DamageContext},
-                body, drawn_body,
-            },
-            sounds::{self, Impact, ImpactKind},
-            world::World,
+use crate::controllers::{
+    config::CONTROLLERS_CONFIG,
+    frame::Hand,
+    haptics::{self, Event},
+    physical_hands::{
+        bodies, carry_collision, engine,
+        impacts::{
+            policy::{Motion, object_damage},
+            state::{Contact, Enabled, FlagCall, Identity, Lease, Observation, State},
         },
-        weapons::hold::refs::{Strong, Weak},
+        physics::{
+            blows::{self, DamageContext},
+            body, drawn_body,
+        },
+        sounds::{self, Impact, ImpactKind},
+        world::World,
     },
+    weapons::hold::refs::{Strong, Weak},
 };
 
 /// Counters for held-prop contact observation and feedback.
@@ -143,7 +141,7 @@ pub(crate) unsafe fn deliver() {
         unsafe { clear() };
         return;
     }
-    let config = Config::lock_query(|c| c.controllers.physical_hands);
+    let config = CONTROLLERS_CONFIG.lock().physical_hands;
     let retained = std::mem::take(&mut *RETAINED.lock());
     let locked: Vec<_> = retained
         .iter()
@@ -458,10 +456,10 @@ static STATE: Mutex<State> = Mutex::new(State::new());
 static HAS_LEASES: AtomicBool = AtomicBool::new(false);
 
 fn enabled() -> Enabled {
-    Config::lock_query(|c| Enabled {
-        controllers: c.controllers.enabled,
-        hands: c.controllers.physical_hands.enabled,
-        pickup: c.controllers.physical_hands.pickup.enabled,
+    CONTROLLERS_CONFIG.query(|c| Enabled {
+        controllers: c.enabled,
+        hands: c.physical_hands.enabled,
+        pickup: c.physical_hands.pickup.enabled,
         gameplay: crate::hooks::in_gameplay(),
         running: !crate::is_shutting_down(),
     })

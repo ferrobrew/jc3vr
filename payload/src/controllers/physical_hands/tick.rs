@@ -18,12 +18,12 @@ use parking_lot::Mutex;
 use windows::Win32::System::Threading::GetCurrentThreadId;
 
 use crate::{
-    config::Config,
     controllers::{
         aim::raycast::CastOptions,
         body,
         clock::TimeScale,
         cockpit::CockpitTransform,
+        config::CONTROLLERS_CONFIG,
         fingers::{
             grip::{
                 self, Grip, GripSource,
@@ -108,7 +108,7 @@ unsafe fn run(owner: &Character, dt: f32) {
     physics::observe(dt);
     // SAFETY: forwarded from the caller: the game runs.
     let time_scale = unsafe { TimeScale::current() };
-    let config = Config::lock_query(|c| c.controllers.physical_hands);
+    let config = CONTROLLERS_CONFIG.lock().physical_hands;
     let gate = Gate {
         active: config.enabled && scheme::is_controllers() && hooks::in_gameplay(),
         role: thread_role::current(),
@@ -751,7 +751,7 @@ pub(super) fn declare_grips(
     wrists: [Option<Pose>; 2],
     cast: &mut dyn FnMut(Vec3, Vec3) -> Option<SurfaceHit>,
 ) {
-    let fit_on = Config::lock_query(|c| c.controllers.fingers.enabled);
+    let fit_on = CONTROLLERS_CONFIG.lock().fingers.enabled;
     for hand in Hand::BOTH {
         let i = hand.index();
         let Some((source, body)) = pickup.grip(hand) else {

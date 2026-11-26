@@ -31,9 +31,9 @@ use jc3gi::character::character::Character;
 use parking_lot::Mutex;
 
 use crate::{
-    config::Config,
     controllers::{
         body::procedural::{solver::arms::Capsule as KeepOutCapsule, torso_keep_out},
+        config::CONTROLLERS_CONFIG,
         frame::Hand,
         physical_hands::{
             bodies,
@@ -124,11 +124,9 @@ pub(crate) unsafe fn rests_against(body: u32) -> bool {
 ///
 /// The thread that steps the physics world, before the step.
 pub(super) unsafe fn step() {
-    let enabled = Config::lock_query(|c| {
-        c.controllers.enabled
-            && c.controllers.physical_hands.enabled
-            && c.controllers.physical_hands.body_proxies
-    }) && scheme::is_controllers()
+    let enabled = CONTROLLERS_CONFIG
+        .query(|c| c.enabled && c.physical_hands.enabled && c.physical_hands.body_proxies)
+        && scheme::is_controllers()
         && hooks::in_gameplay()
         && !crate::is_shutting_down();
     let targets = enabled

@@ -33,21 +33,19 @@ use self::{
     draw::{DrawInputs, Drawn},
     model::{Candidate, CandidateKind, HandleSeen, PalmState, REFUSAL_FLASH_S, ReachRay},
 };
-use crate::{
-    config::Config,
-    controllers::{
-        frame::Hand,
-        grab::{
-            markers::{MarkerFrame, anchor as marker_anchor},
-            tick::Tick,
-        },
-        overlay::{
-            primitive::{Anchor, Primitive, Source},
-            store,
-        },
-        physical_hands::{PhysicalHandsConfig, palm_readout},
-        weapons::reload::{knock, zones},
+use crate::controllers::{
+    config::CONTROLLERS_CONFIG,
+    frame::Hand,
+    grab::{
+        markers::{MarkerFrame, anchor as marker_anchor},
+        tick::Tick,
     },
+    overlay::{
+        primitive::{Anchor, Primitive, Source},
+        store,
+    },
+    physical_hands::{PhysicalHandsConfig, palm_readout},
+    weapons::reload::{knock, zones},
 };
 
 /// The view's readout for the debug UI.
@@ -81,8 +79,8 @@ pub fn status() -> GrabViewStatus {
 
 /// Switch the view on or off.
 pub fn toggle() {
-    let mut config = crate::config::edit();
-    let view = &mut config.controllers.physical_hands.grab_view;
+    let mut config = CONTROLLERS_CONFIG.edit();
+    let view = &mut config.physical_hands.grab_view;
     view.enabled = !view.enabled;
     tracing::info!(enabled = view.enabled, "grab view: toggled");
 }
@@ -187,7 +185,7 @@ pub(crate) fn refused(hand: Hand, at: Option<Vec3>, why: &str) {
 /// `None` (the overlay is off, or a menu is up). Called by the input tick after the grip model's
 /// own finish.
 pub(crate) fn submit(tick: &Tick, frame: Option<&MarkerFrame>) {
-    let config = Config::lock_query(|c| c.controllers.physical_hands.grab_view);
+    let config = CONTROLLERS_CONFIG.lock().physical_hands.grab_view;
     let Some(frame) = frame.filter(|_| config.enabled) else {
         stand_down(config.enabled);
         return;

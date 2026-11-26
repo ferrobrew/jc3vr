@@ -8,20 +8,18 @@
 
 use std::time::Instant;
 
-use crate::{
-    config::Config,
-    controllers::{
-        frame::Hand,
-        grab::{GrabVolume, GripTarget, Mark, MarkAt, PickupKind, Provided, Shown},
-        physical_hands::{
-            STATE, climb,
-            config::PhysicalHandsConfig,
-            doors::DoorTarget,
-            grasp::{Reach, TargetKind},
-            pickup::diagnostics::scan::Scan,
-            state::State,
-            stunt,
-        },
+use crate::controllers::{
+    config::CONTROLLERS_CONFIG,
+    frame::Hand,
+    grab::{GrabVolume, GripTarget, Mark, MarkAt, PickupKind, Provided, Shown},
+    physical_hands::{
+        STATE, climb,
+        config::PhysicalHandsConfig,
+        doors::DoorTarget,
+        grasp::{Reach, TargetKind},
+        pickup::diagnostics::scan::Scan,
+        state::State,
+        stunt,
     },
 };
 
@@ -59,7 +57,7 @@ impl DoorEligibility {
 /// world scale `world_scale`.
 pub(crate) fn targets(world_scale: f32, scans: &mut [Option<Scan>; 2]) -> Provided {
     *scans = [None; 2];
-    let config = Config::lock_query(|c| c.controllers.physical_hands);
+    let config = CONTROLLERS_CONFIG.lock().physical_hands;
     let scale = world_scale.max(1e-3);
     let mut out = Provided::default();
     if !config.enabled {

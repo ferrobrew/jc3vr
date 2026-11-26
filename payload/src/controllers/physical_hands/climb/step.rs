@@ -6,29 +6,27 @@ use std::time::Instant;
 use glam::{Quat, Vec3};
 use jc3gi::character::character::Character;
 
-use crate::{
-    config::Config,
-    controllers::{
-        frame::Hand,
-        physical_hands::{
-            climb::{
-                config::HandClimbTuning,
-                engine, native,
-                solve::{
-                    ClimbTuning, Follow, MantleTuning, body_target, carry_velocity, climb_velocity,
-                    fling_carry, is_ledge, release_velocity, slope_follow, smooth_motion,
-                },
-                state::{
-                    Carry, Event, Grip, LOG_PERIOD, MAX_MANTLE_STEPS, MAX_STALE_STEPS, MantleStep,
-                    MantleTick, Request, STATE, enabled,
-                },
+use crate::controllers::{
+    config::CONTROLLERS_CONFIG,
+    frame::Hand,
+    physical_hands::{
+        climb::{
+            config::HandClimbTuning,
+            engine, native,
+            solve::{
+                ClimbTuning, Follow, MantleTuning, body_target, carry_velocity, climb_velocity,
+                fling_carry, is_ledge, release_velocity, slope_follow, smooth_motion,
             },
-            physics::{self, drive::Goal},
-            pickup::PICKUP,
-            stunt,
+            state::{
+                Carry, Event, Grip, LOG_PERIOD, MAX_MANTLE_STEPS, MAX_STALE_STEPS, MantleStep,
+                MantleTick, Request, STATE, enabled,
+            },
         },
-        roomscale::teleport,
+        physics::{self, drive::Goal},
+        pickup::PICKUP,
+        stunt,
     },
+    roomscale::teleport,
 };
 
 /// The climb's part of the hand bodies' pre-simulation step: take and end the grips, and move the
@@ -40,7 +38,7 @@ use crate::{
 /// The thread that steps the physics world, outside the step, after the characters' proxy
 /// updates (the pre-simulation callback).
 pub(crate) unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2] {
-    let config = Config::lock_query(|c| c.controllers.physical_hands);
+    let config = CONTROLLERS_CONFIG.lock().physical_hands;
     let climb = HandClimbTuning::of(&config.climb);
     let context = unsafe { engine::gate_context() };
     native::observe(context);

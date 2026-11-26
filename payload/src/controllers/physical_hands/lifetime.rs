@@ -16,8 +16,8 @@ use windows::Win32::System::Threading::{
 };
 
 use crate::{
-    config::Config,
     controllers::{
+        config::CONTROLLERS_CONFIG,
         physical_hands::{
             STALE_AFTER, bodies,
             climb::engine::{BodyIdentity, body_identity},
@@ -129,9 +129,7 @@ fn active(state: &State, now: Instant) -> bool {
         && hooks::in_gameplay()
         && !crate::is_shutting_down()
         && scheme::is_controllers()
-        && Config::lock_query(|config| {
-            config.controllers.enabled && config.controllers.physical_hands.enabled
-        })
+        && CONTROLLERS_CONFIG.query(|config| config.enabled && config.physical_hands.enabled)
 }
 
 /// A physical hold whose object may be waiting in the remove queue.

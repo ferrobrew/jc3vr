@@ -37,8 +37,8 @@ use self::{
     scan::ModIds,
 };
 use crate::{
-    config::Config,
     controllers::{
+        config::CONTROLLERS_CONFIG,
         frame::Hand,
         hands::late,
         overlay::{
@@ -118,8 +118,8 @@ pub fn status() -> ColliderViewStatus {
 
 /// Switch the view on or off.
 pub fn toggle() {
-    let mut config = crate::config::edit();
-    let view = &mut config.controllers.physical_hands.collider_view;
+    let mut config = CONTROLLERS_CONFIG.edit();
+    let view = &mut config.physical_hands.collider_view;
     view.enabled = !view.enabled;
     tracing::info!(enabled = view.enabled, "collider view: toggled");
 }
@@ -128,7 +128,7 @@ pub fn toggle() {
 /// per frame on the game thread, ahead of the game's update.
 pub(crate) fn frame_tick() {
     let wanted = !crate::is_shutting_down()
-        && Config::lock_query(|c| c.controllers.physical_hands.collider_view.enabled);
+        && CONTROLLERS_CONFIG.query(|c| c.physical_hands.collider_view.enabled);
     // SAFETY: the game thread, ahead of the game's update, which fires the callbacks.
     let registered = unsafe { callback::reconcile(wanted) };
     if registered && !CLEANUP_REGISTERED.swap(true, Ordering::AcqRel) {
@@ -147,7 +147,7 @@ pub(crate) fn frame_tick() {
 ///
 /// The game thread, after the engine's render update and outside the physics step.
 pub(crate) unsafe fn render_tick(dtf: f32) {
-    let config = Config::lock_query(|c| c.controllers.physical_hands.collider_view);
+    let config = CONTROLLERS_CONFIG.lock().physical_hands.collider_view;
     if !config.enabled || !hooks::in_gameplay() {
         if WAS_ACTIVE.swap(false, Ordering::Relaxed) {
             store::clear(Source::ColliderView);

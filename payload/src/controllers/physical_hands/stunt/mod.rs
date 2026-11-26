@@ -28,19 +28,17 @@ pub use config::StuntConfig;
 use jc3gi::input::input_action_map::Action;
 use parking_lot::Mutex;
 
-use crate::{
-    config::Config,
-    controllers::{
-        bindings::hold::{Desired, MapKind, Target, Want},
-        fingers::grip::{self, Grip, GripSource, catalogue::GripPose},
-        frame::Hand,
-        haptics::{self, Event, Sustain},
-        physical_hands::{
-            PhysicalHandsConfig, climb,
-            stunt::{
-                engine::Entry,
-                solve::{Decision, StuntKind, Tick, Tracker, Tuning},
-            },
+use crate::controllers::{
+    bindings::hold::{Desired, MapKind, Target, Want},
+    config::CONTROLLERS_CONFIG,
+    fingers::grip::{self, Grip, GripSource, catalogue::GripPose},
+    frame::Hand,
+    haptics::{self, Event, Sustain},
+    physical_hands::{
+        PhysicalHandsConfig, climb,
+        stunt::{
+            engine::Entry,
+            solve::{Decision, StuntKind, Tick, Tracker, Tuning},
         },
     },
 };
@@ -98,7 +96,7 @@ pub(crate) fn hanging() -> bool {
 /// whose grips opened. `held` is each hand's grip; a let-go asks the game for its jump, which
 /// leaves the hang, through `desired`. Called from the input tick after the climb's.
 pub(crate) fn finish_tick(held: [bool; 2], desired: &mut Vec<Desired>) {
-    let config = Config::lock_query(|c| c.controllers.physical_hands);
+    let config = CONTROLLERS_CONFIG.lock().physical_hands;
     let now = Instant::now();
     let mut state = STATE.lock();
     let dt = state

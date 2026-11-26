@@ -11,9 +11,9 @@ use glam::Vec3;
 use parking_lot::Mutex;
 
 use crate::{
-    config::Config,
     controllers::{
         clock::TimeScale,
+        config::CONTROLLERS_CONFIG,
         frame::{Hand, Pose},
         hands::CockpitHand,
         haptics::{self, Sustain},
@@ -46,7 +46,7 @@ pub(crate) fn frame_tick() {
         blows::discard();
         return;
     }
-    let config = Config::lock_query(|c| c.controllers.physical_hands);
+    let config = CONTROLLERS_CONFIG.lock().physical_hands;
     // SAFETY: the game thread, ahead of the game's update.
     unsafe { crate::controllers::physical_hands::impacts::deliver() };
     if hooks::in_gameplay() {
@@ -100,7 +100,7 @@ pub(crate) fn frame_tick() {
 /// results. Called from the player aim control's post-simulation update, `dt` seconds after the
 /// last.
 pub(crate) fn observe(dt: f32) {
-    let config = Config::lock_query(|c| c.controllers.physical_hands);
+    let config = CONTROLLERS_CONFIG.lock().physical_hands;
     let now = Instant::now();
     let acting = enabled(&config).then(|| acting_palms(&config)).flatten();
     let step = steps();
@@ -228,7 +228,7 @@ fn braced_by_hold() -> Option<Hand> {
 /// The game thread, after simulation and outside the physics step.
 pub(crate) unsafe fn sample_render_offsets() {
     let now = Instant::now();
-    let config = Config::lock_query(|c| c.controllers.physical_hands);
+    let config = CONTROLLERS_CONFIG.lock().physical_hands;
     let (targets, rotation, scale, shown, fallback) = {
         let shared = SHARED.lock();
         if !enabled(&config) || !shared.fresh(now) || !shared.stepped_lately(now) {

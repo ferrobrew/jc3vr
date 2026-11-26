@@ -102,13 +102,12 @@ pub(crate) use targets::test_support::DoorProvider;
 pub(crate) use targets::{DoorEligibility, targets};
 pub(crate) use tick::{after_aim, free_hands, main_thread_tick, mode_acts};
 
+use crate::controllers::config::CONTROLLERS_CONFIG;
+
 pub(crate) mod lifetime;
 
-use crate::{
-    config::Config,
-    controllers::{
-        frame::Hand, grab::PickupKind, hands::CockpitHand, physical_hands::state::STATE,
-    },
+use crate::controllers::{
+    frame::Hand, grab::PickupKind, hands::CockpitHand, physical_hands::state::STATE,
 };
 
 pub(crate) unsafe fn carry_bodies_destroying(world: *mut hknpWorld, ids: *const u32, count: i32) {
@@ -162,7 +161,7 @@ pub enum DrawTime {
 /// body's hand at its body, for `at`. Called by [`crate::controllers::hands::active_hands`] and
 /// [`crate::controllers::hands::active_hands_from_frame`].
 pub fn apply(cockpit: &mut [Option<CockpitHand>; 2], at: DrawTime) {
-    let enabled = Config::lock_query(|c| c.controllers.physical_hands.enabled);
+    let enabled = CONTROLLERS_CONFIG.lock().physical_hands.enabled;
     let palm_offset = tuning::PALMS.palm_offset_m;
     match at {
         DrawTime::Tick => physics::apply(cockpit, palm_offset),
@@ -259,9 +258,7 @@ pub(crate) unsafe fn body_mass_kg(body: u32) -> Option<f32> {
 }
 
 pub(crate) unsafe fn push_body(character: &mut Character) {
-    let enabled = Config::lock_query(|c| {
-        c.controllers.physical_hands.enabled && c.controllers.physical_hands.push
-    });
+    let enabled = CONTROLLERS_CONFIG.query(|c| c.physical_hands.enabled && c.physical_hands.push);
     let palms = if enabled {
         let state = STATE.lock();
         if state.fresh(std::time::Instant::now()) {

@@ -7,13 +7,13 @@ use glam::{Quat, Vec2, Vec3};
 use jc3gi::physics::PhysicsSystem;
 
 use crate::{
-    config::Config,
     controllers::{
         aim::{
             ray::Ray,
             raycast::{self, CastOptions},
         },
         clock::TimeScale,
+        config::CONTROLLERS_CONFIG,
         frame::{Hand, Pose},
         mode,
         physical_hands::{
@@ -55,7 +55,7 @@ pub(crate) unsafe fn step() {
     let time_scale = unsafe { TimeScale::current() };
     let step_number = count_step();
     let step_s = step_seconds();
-    let config = Config::lock_query(|c| c.controllers.physical_hands);
+    let config = CONTROLLERS_CONFIG.lock().physical_hands;
     contact::step_tick();
     let mut hands = HANDS.lock();
     hands.steps += 1;

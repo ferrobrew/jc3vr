@@ -13,8 +13,8 @@ use std::time::Duration;
 use glam::Vec3;
 
 use crate::{
-    config::Config,
     controllers::{
+        config::CONTROLLERS_CONFIG,
         overlay::{
             primitive::{Anchor, DepthMode, Facing, Primitive, Rgba, Shape, Source, SpriteSize},
             store,
@@ -26,7 +26,7 @@ use crate::{
 
 /// Submit the palms of the last tick, or clear them when they are not shown.
 pub(super) fn submit(hands: &[HandStatus; 2], config: &PhysicalHandsConfig) {
-    let overlay = Config::lock_query(|c| c.controllers.overlay.enabled);
+    let overlay = CONTROLLERS_CONFIG.lock().overlay.enabled;
     if !(overlay && config.show_boxes) {
         clear();
         return;
