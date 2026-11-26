@@ -50,6 +50,7 @@ pub use crate::frame_timing::{
 };
 use crate::{
     frame_timing::{recent::RecentFrames, report::SlotTotals},
+    published::Stamp,
     thread_role::{self, ThreadRole},
 };
 
@@ -137,7 +138,7 @@ pub fn note_sim_tick() {
 /// reporting windows that have run their length, publishing the debug UI's breakdown and logging
 /// the long one. Call once per frame from the game thread, at the top of `Game::Update`.
 pub fn frame_tick() {
-    let now = duration_ns(epoch().elapsed());
+    let now = Stamp::now().as_nanos();
     // A stall averages into its ten-second window as a frame time a few hundred milliseconds long,
     // which hides that it was one frame, so a frame past the threshold is also logged on its own;
     // the line's timestamp is when the stalled frame ended.
@@ -295,7 +296,7 @@ static LAST_FRAME_TICKS: AtomicU32 = AtomicU32::new(0);
 const STALL_LOG_NS: u64 = 1_000_000_000;
 
 thread_local! {
-    /// When the game thread last ticked, on the frame clock.
+    /// When the game thread last ticked, in nanoseconds on the wall clock ([`Stamp`]).
     static LAST_TICK_NS: Cell<Option<u64>> = const { Cell::new(None) };
     /// The time of the scopes that have closed inside the innermost open scope on this thread.
     static CHILD_NS: Cell<u64> = const { Cell::new(0) };
@@ -345,12 +346,6 @@ fn thread_class() -> ThreadClass {
     }
 }
 
-/// The instant the frame clock counts from.
-fn epoch() -> Instant {
-    static EPOCH: OnceLock<Instant> = OnceLock::new();
-    *EPOCH.get_or_init(Instant::now)
-}
-
 /// Take the live counters' totals and reset them. A scope closing on another thread while this
 /// runs lands in this window or the next; nothing is lost.
 fn drain() -> Totals {
@@ -371,7 +366,7 @@ fn drain() -> Totals {
 }
 
 /// The frame intervals and the two reporting windows, advanced once per frame. Times are
-/// nanoseconds on the frame clock.
+/// nanoseconds on the wall clock ([`Stamp`]).
 struct Windows {
     last_frame_ns: Option<u64>,
     /// The frame intervals since the UI window opened; the scope totals are drained into it when

@@ -54,6 +54,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     config::engine::ConfigSlot,
     frame_timing::{self, Slot},
+    published::ReentryGuard,
 };
 
 /// The online-feature settings, at `online` in the settings file; the payload binds the slot at
@@ -112,28 +113,9 @@ thread_local! {
     /// Whether this thread is inside the online-suite manager's update and outside the online
     /// suite's own update: the stretch that holds the manager's queued login and its suite retry,
     /// whose first-party check is the only call to [`first_party_check`] there. The suite's parts
-    /// clear it, because its reply handlers can reach the account manager for other reasons.
+    /// clear it, because its reply handlers can reach the account manager for other reasons. Set
+    /// through a [`ReentryGuard`], so a nested suspension and an unwind both leave it right.
     static IN_SUITE_RETRY: Cell<bool> = const { Cell::new(false) };
-}
-
-/// Sets [`IN_SUITE_RETRY`] for its lifetime and restores the previous value on drop, so a nested
-/// suspension inside the manager's update and a panic unwinding out of it both leave it right.
-struct SuiteRetryScope {
-    previous: bool,
-}
-
-impl SuiteRetryScope {
-    fn set(value: bool) -> Self {
-        Self {
-            previous: IN_SUITE_RETRY.with(|cell| cell.replace(value)),
-        }
-    }
-}
-
-impl Drop for SuiteRetryScope {
-    fn drop(&mut self) {
-        IN_SUITE_RETRY.with(|cell| cell.set(self.previous));
-    }
 }
 
 #[detour(address = jc3gi::online::StatisticManager::Update_ADDRESS)]
@@ -157,7 +139,7 @@ fn profile_manager_update(this: *mut ProfileManager, dt: f32) {
 #[detour(address = jc3gi::online::OnlineSuiteManager::Update_ADDRESS)]
 fn online_suite_update(this: *mut OnlineSuiteManager, dt: f32) {
     let _timing = frame_timing::scope(Slot::SimOnline);
-    let _retry = SuiteRetryScope::set(true);
+    let _retry = ReentryGuard::enter(&IN_SUITE_RETRY, true);
     ONLINE_SUITE_UPDATE.get().unwrap().call(this, dt);
 }
 
@@ -193,7 +175,7 @@ fn login_manager_update(this: *mut LoginManager, dt: f32) {
 #[detour(address = jc3gi::osuite::PlayerAccountManager::Update_ADDRESS)]
 fn player_accounts_update(this: *mut PlayerAccountManager) {
     let _timing = frame_timing::scope(Slot::OsuiteAccounts);
-    let _retry = SuiteRetryScope::set(false);
+    let _retry = ReentryGuard::enter(&IN_SUITE_RETRY, false);
     PLAYER_ACCOUNTS_UPDATE.get().unwrap().call(this);
 }
 
@@ -236,20 +218,20 @@ fn consumables_update(this: *mut OnlineSuiteConsumables) {
 #[detour(address = jc3gi::osuite::OsInfo::Update_ADDRESS)]
 fn os_info_update(this: *mut OsInfo) {
     let _timing = frame_timing::scope(Slot::OsuiteInfo);
-    let _retry = SuiteRetryScope::set(false);
+    let _retry = ReentryGuard::enter(&IN_SUITE_RETRY, false);
     OS_INFO_UPDATE.get().unwrap().call(this);
 }
 
 #[detour(address = jc3gi::osuite::Worker::CallCallbacks_ADDRESS)]
 fn worker_call_callbacks(this: *mut Worker) {
     let _timing = frame_timing::scope(Slot::OsuiteCallbacks);
-    let _retry = SuiteRetryScope::set(false);
+    let _retry = ReentryGuard::enter(&IN_SUITE_RETRY, false);
     WORKER_CALL_CALLBACKS.get().unwrap().call(this);
 }
 
 #[detour(address = jc3gi::online::AccountManagerSteam::IsConnectedToFirstPartyService_ADDRESS)]
 fn first_party_check(this: *mut AccountManagerSteam) -> bool {
-    if !IN_SUITE_RETRY.with(Cell::get) {
+    if !IN_SUITE_RETRY.get() {
         return FIRST_PARTY_CHECK.get().unwrap().call(this);
     }
     let _timing = frame_timing::scope(Slot::SimLoggedOn);
@@ -257,38 +239,4 @@ fn first_party_check(this: *mut AccountManagerSteam) -> bool {
         return false;
     }
     FIRST_PARTY_CHECK.get().unwrap().call(this)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn in_suite_retry() -> bool {
-        IN_SUITE_RETRY.with(Cell::get)
-    }
-
-    #[test]
-    fn the_suite_parts_suspend_the_retry_and_restore_it() {
-        assert!(!in_suite_retry());
-        {
-            let _manager = SuiteRetryScope::set(true);
-            assert!(in_suite_retry());
-            {
-                let _suite_part = SuiteRetryScope::set(false);
-                assert!(!in_suite_retry());
-            }
-            assert!(in_suite_retry());
-        }
-        assert!(!in_suite_retry());
-    }
-
-    #[test]
-    fn an_unwind_out_of_the_manager_clears_the_retry() {
-        let unwound = std::panic::catch_unwind(|| {
-            let _manager = SuiteRetryScope::set(true);
-            panic!("the manager's update unwinds");
-        });
-        assert!(unwound.is_err());
-        assert!(!in_suite_retry());
-    }
 }
