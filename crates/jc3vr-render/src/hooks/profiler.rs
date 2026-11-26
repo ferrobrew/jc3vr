@@ -27,7 +27,10 @@ use jc3gi::graphics_engine::{
 use jc3vr_core::profiler::{self, type_scope};
 use re_utilities::hook_library::HookLibrary;
 
-use crate::profiler::gpu::{self, GpuSeam};
+use crate::{
+    hooks::graphics_engine::probes::pipeline_probes,
+    profiler::gpu::{self, GpuSeam},
+};
 
 pub fn hook_library() -> HookLibrary {
     HookLibrary::new()
@@ -95,13 +98,10 @@ fn change_render_block_type(
             type_scope::replace(scope);
         }
     }
-    crate::screenshot::harness::stages::velocity::type_switch(None);
-    crate::screenshot::harness::draw_census::type_switch(None);
+    pipeline_probes().before_block_type_switch();
     CHANGE_RENDER_BLOCK_TYPE
         .get()
         .unwrap()
         .call(this, ctx, prev, next, inout_count);
-    crate::screenshot::harness::stages::velocity::type_switch(Some(next));
-    crate::screenshot::harness::draw_census::type_switch(Some(next));
-    crate::testing::benchmark::sampler::note_block_type(next);
+    pipeline_probes().after_block_type_switch(next);
 }

@@ -26,8 +26,12 @@ use jc3gi::graphics_engine::{
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{
-    debug::pipeline_probes::record_main_color_mean, hooks::graphics_engine::reconstruction,
-    screenshot::harness::stages, stereo::config::STEREO_CONFIG,
+    debug::pipeline_probes::record_main_color_mean,
+    hooks::graphics_engine::{
+        probes::{PipelinePoint, pipeline_probes},
+        reconstruction,
+    },
+    stereo::config::STEREO_CONFIG,
 };
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -57,7 +61,7 @@ fn atmospheric_scattering_draw(
     if scene_pass {
         crate::debug::pipeline_probes::record_global_constants("scene");
         record_main_color_mean("pre_atmosphere");
-        stages::capture_before_atmosphere();
+        pipeline_probes().capture_point(PipelinePoint::BeforeAtmosphere);
     }
 
     // SAFETY: `rc` is the live render context for this dispatch; the caller (the engine's draw
@@ -70,7 +74,7 @@ fn atmospheric_scattering_draw(
     }
 
     if scene_pass {
-        stages::capture_after_atmosphere();
+        pipeline_probes().capture_point(PipelinePoint::AfterAtmosphere);
         record_main_color_mean("post_atmosphere");
     }
 }

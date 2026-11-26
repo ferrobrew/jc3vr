@@ -21,6 +21,7 @@ use crate::{
                 decline_split_for_context, decline_warning, restore_viewport, unsplittable_context,
             },
         },
+        probes::{PipelinePoint, pipeline_probes},
         reconstruction,
     },
     stereo::config::STEREO_CONFIG,
@@ -118,7 +119,7 @@ fn draw_clustered(
     if unsafe { rc.as_ref() }
         .is_some_and(|rc| rc.m_ActiveRenderPass == RenderPassId::RP_DEFERRED_LIGHTS as i32)
     {
-        crate::screenshot::harness::stages::capture_after_resolve();
+        pipeline_probes().capture_point(PipelinePoint::AfterResolve);
     }
 
     crate::debug::pipeline_probes::record_main_color_mean("post_resolve");
@@ -212,12 +213,10 @@ fn run_draw_clustered(
     // The scope puts every pinned or suppressed piece of state back on *every* path out of the call,
     // so a leaked eye-half viewport or clear suppression cannot corrupt the rest of the frame.
     let scope = ClusteredScope(armed);
-    let resolve_scope = crate::screenshot::harness::resolve_probe::begin(
+    pipeline_probes().resolve_scope(
         rc_ref.is_some_and(|rc| rc.m_ActiveRenderPass == RenderPassId::RP_DEFERRED_LIGHTS as i32),
+        &mut || DRAW_CLUSTERED.get().unwrap().call(this, rc, a3, a4),
     );
-
-    DRAW_CLUSTERED.get().unwrap().call(this, rc, a3, a4);
-    drop(resolve_scope);
 
     let engaged = SPLIT
         .get()

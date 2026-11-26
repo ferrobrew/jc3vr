@@ -4,6 +4,8 @@ use detours_macro::detour;
 use jc3gi::clock::Clock;
 use re_utilities::hook_library::HookLibrary;
 
+use crate::hooks::graphics_engine::probes::pipeline_probes;
+
 /// Reset at the start of each real frame (in `game_update`). While stereo is active, the
 /// `CClock::Update` detour gates the clock to once per real frame, so a second `Draw` doesn't run
 /// the SPF exponential smoother twice and drag the game into slow motion.
@@ -19,7 +21,7 @@ fn clock_update(clock: *mut Clock) {
         return;
     }
     CLOCK_UPDATE.get().unwrap().call(clock);
-    if crate::testing::visual::clock_held()
+    if pipeline_probes().clock_held()
         && let Some(clock) = unsafe { clock.as_mut() }
     {
         unsafe {

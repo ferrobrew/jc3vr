@@ -22,7 +22,7 @@ use re_utilities::hook_library::HookLibrary;
 
 use crate::{
     debug::trace::{DrawCounts, TraceEvent, TraceState},
-    hooks::graphics_engine::{clustered_lighting, reconstruction},
+    hooks::graphics_engine::{clustered_lighting, probes::pipeline_probes, reconstruction},
 };
 
 // Per-pass tallies: bumped alongside the global per-eye counters, then read + reset on each
@@ -39,9 +39,9 @@ thread_local! {
 pub static DRAW_COUNTS: DrawCounts = DrawCounts::new();
 
 /// The engine's draw calls and compute dispatches through its `Graphics::` wrappers, summed since the
-/// payload loaded and never reset, for samplers that difference two readings (the benchmark,
-/// `crate::testing::benchmark`). A render block re-issued per eye calls the wrappers again, so these
-/// count its draws once per eye.
+/// payload loaded and never reset, for samplers that difference two readings (the capture tooling's
+/// benchmark). A render block re-issued per eye calls the wrappers again, so these count its draws
+/// once per eye.
 pub(crate) fn engine_call_totals() -> EngineCallTotals {
     EngineCallTotals {
         draws: TOTAL_DRAWS.load(Ordering::Relaxed),
@@ -113,7 +113,7 @@ fn draw_indexed(
 fn draw(ctx: *mut c_void, prim: i32, arg2: i32, arg3: i32) {
     bump_draw();
     DRAW.get().unwrap().call(ctx, prim, arg2, arg3);
-    crate::screenshot::harness::snapshot::ambient_occlusion_draw_hook();
+    pipeline_probes().after_engine_draw();
 }
 
 // The six below forward opaque args transparently -- see the module doc and draw.pyxis.

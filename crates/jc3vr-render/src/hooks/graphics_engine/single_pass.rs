@@ -37,7 +37,10 @@ use jc3gi::graphics_engine::{
 };
 use re_utilities::hook_library::HookLibrary;
 
-use crate::stereo::single_pass::{BlockIntercept, BoundVsGate, EyeDisplayWidth, EyeLightWidth};
+use crate::{
+    hooks::graphics_engine::probes::pipeline_probes,
+    stereo::single_pass::{BlockIntercept, BoundVsGate, EyeDisplayWidth, EyeLightWidth},
+};
 
 /// Where a render block's baked view-projection lives, and how its intercept is gated: the four values
 /// that vary between the render-block detours below, pinned in one place so a block's buffer layout is
@@ -138,9 +141,12 @@ fn proxy_draw(
     rc: *mut RenderContext,
     info: *const RBIInfo,
 ) {
-    crate::screenshot::harness::stages::proxy::scope(this, rc, || {
-        PROXY_DRAW.get().unwrap().call(this, rc, info)
-    });
+    // SAFETY: `this` and `rc` are the live block and render context the engine passed into `Draw`.
+    unsafe {
+        pipeline_probes().reflection_proxy_scope(this, rc, &mut || {
+            PROXY_DRAW.get().unwrap().call(this, rc, info)
+        });
+    }
 }
 
 /// The tree-trunk/branch block bakes its world-view-projection into vertex `cb1` registers 0..3.
@@ -309,6 +315,6 @@ fn set_all_global_shader_program_constants(this: *mut RenderEngine, ctx: *const 
         crate::stereo::single_pass::eye_camera::sync(engine);
     }
     if let (Some(engine), Some(ctx)) = unsafe { (this.as_ref(), ctx.as_ref()) } {
-        crate::screenshot::harness::constants::capture(engine, ctx, cb13_uploaded);
+        pipeline_probes().capture_constants(engine, ctx, cb13_uploaded);
     }
 }

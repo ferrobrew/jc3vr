@@ -28,8 +28,10 @@ use crate::{
         stereo_diff::{op_total, record_pass, recording},
         trace::{TraceEvent, TraceState, tracing_active},
     },
-    hooks::graphics_engine::screen::reconstruction,
-    screenshot::harness::stages::{Stage, capture_prefix_depth, velocity},
+    hooks::graphics_engine::{
+        probes::{PipelinePoint, pipeline_probes, scoped},
+        screen::reconstruction,
+    },
     stereo::{
         STEREO_STATE,
         config::STEREO_CONFIG,
@@ -64,22 +66,13 @@ pub(super) fn hook_library() -> HookLibrary {
 #[detour(address = jc3gi::graphics_engine::render_pass::RenderPass::Draw_ADDRESS)]
 fn render_pass_draw(this: *mut RenderPass) {
     let pass_id = unsafe { this.as_ref() }.map(|pass| pass.m_Index);
-    if let Some(id) = pass_id {
-        crate::screenshot::harness::stages::capture_before_fog_apply(id);
+    // SAFETY: `this` is the live render pass the engine is drawing.
+    unsafe {
+        pipeline_probes().pass_draw_scope(this, pass_id, &mut || {
+            RENDER_PASS_DRAW.get().unwrap().call(this)
+        });
     }
-    crate::screenshot::harness::draw_census::begin_pass();
-    let snapshot = pass_id
-        .filter(|id| {
-            (RenderPassId::PRE_RP_REFLECTION_ATMOSPHERE as i16
-                ..=RenderPassId::PRE_RP_REFLECTION_CLOUDS as i16)
-                .contains(id)
-        })
-        .and_then(|_| unsafe { crate::screenshot::harness::stages::eye_width_snapshot(this) });
-    RENDER_PASS_DRAW.get().unwrap().call(this);
-    crate::screenshot::harness::draw_census::end_pass();
-    drop(snapshot);
     let Some(id) = pass_id else { return };
-    crate::screenshot::harness::stages::capture_late_sky(id);
     if !tracing_active() || draw_index() != 0 {
         return;
     }
@@ -151,40 +144,41 @@ fn do_draw(this: *mut RenderPass, ctx: *mut RenderContext, color_mask: u32) -> b
     // SAFETY: `this` is the live render pass; `m_Index` is its render-pass id.
     let pass_id = unsafe { (*this).m_Index };
     let previous_pass = crate::stereo::single_pass::set_current_pass(pass_id);
-    let _lake_producer = (RenderPassId::PRE_RP_REFLECTION_DISTANT_BACKDROP as i16
-        ..=RenderPassId::PRE_RP_REFLECTION_CLOUDS as i16)
-        .contains(&pass_id)
-        .then(|| unsafe {
-            crate::screenshot::harness::stages::capture_producer_context(this, ctx)
-        });
-    // Capture-gated producer diagnostic for the passes that feed the water's reflection inputs;
-    // inert for every other pass and for an unarmed capture.
-    let _reflection_producer = crate::stereo::single_pass::reflection_producer(pass_id.into());
-    // The ambient-occlusion volumes' per-eye rows, bound for the walk of their pass.
-    // SAFETY: `ctx` is the live render context of this pass.
-    let _ao_volume_rows = (pass_id == RP_AO_VOLUMES as i16)
-        .then(|| unsafe { ao_volumes::bind_rows(ctx) })
-        .flatten();
-    let sun_pass = is_sun_pass(pass_id);
-    let result = if sun_pass {
-        reissue_sun_pass(ctx, &|| DO_DRAW.get().unwrap().call(this, ctx, color_mask))
-            .unwrap_or_else(|| DO_DRAW.get().unwrap().call(this, ctx, color_mask))
-    } else {
-        DO_DRAW.get().unwrap().call(this, ctx, color_mask)
-    };
-    crate::stereo::single_pass::restore_current_pass(previous_pass);
-    if sun_pass {
-        crate::screenshot::harness::stages::capture_after_sun();
-    }
-    drop(window);
-    if diff {
-        let ops = op_total().wrapping_sub(ops_before);
-        record_pass(pass_id, draw_index(), ops);
-    }
-    // Close the final render-block-type run's scope before the pass scope closes.
-    #[cfg(feature = "profiler")]
-    jc3vr_core::profiler::type_scope::clear();
-    result
+    scoped(
+        // SAFETY: `this` and `ctx` are the live pass and render context of this draw call.
+        |body| unsafe { pipeline_probes().pass_walk_scope(this, ctx, pass_id, body) },
+        || {
+            // Capture-gated producer diagnostic for the passes that feed the water's reflection
+            // inputs; inert for every other pass and for an unarmed capture.
+            let _reflection_producer =
+                crate::stereo::single_pass::reflection_producer(pass_id.into());
+            // The ambient-occlusion volumes' per-eye rows, bound for the walk of their pass.
+            // SAFETY: `ctx` is the live render context of this pass.
+            let _ao_volume_rows = (pass_id == RP_AO_VOLUMES as i16)
+                .then(|| unsafe { ao_volumes::bind_rows(ctx) })
+                .flatten();
+            let sun_pass = is_sun_pass(pass_id);
+            let result = if sun_pass {
+                reissue_sun_pass(ctx, &|| DO_DRAW.get().unwrap().call(this, ctx, color_mask))
+                    .unwrap_or_else(|| DO_DRAW.get().unwrap().call(this, ctx, color_mask))
+            } else {
+                DO_DRAW.get().unwrap().call(this, ctx, color_mask)
+            };
+            crate::stereo::single_pass::restore_current_pass(previous_pass);
+            if sun_pass {
+                pipeline_probes().capture_point(PipelinePoint::AfterSun);
+            }
+            drop(window);
+            if diff {
+                let ops = op_total().wrapping_sub(ops_before);
+                record_pass(pass_id, draw_index(), ops);
+            }
+            // Close the final render-block-type run's scope before the pass scope closes.
+            #[cfg(feature = "profiler")]
+            jc3vr_core::profiler::type_scope::clear();
+            result
+        },
+    )
 }
 
 const RP_AO_VOLUMES: i32 = RenderPassId::RP_AO_VOLUMES as i32;
@@ -264,168 +258,14 @@ fn draw_render_pass_range(
         && last == RenderPassId::RP_LAST_GBUFFER as i32
         && !share_frame
         && !far_phase)
-        .then(crate::screenshot::harness::requested_water_diagnostic)
-        .flatten()
-        .and_then(|diag| match diag {
-            crate::screenshot::harness::WaterReflection::LakeNearPatch => {
-                Some((RenderPassId::RP_TERRAINPATCH_BASEMESH_NEAR as i32, false))
-            }
-            crate::screenshot::harness::WaterReflection::LakeTessPatch
-            | crate::screenshot::harness::WaterReflection::LakePatchDraw
-            | crate::screenshot::harness::WaterReflection::LakeCameraControl
-            | crate::screenshot::harness::WaterReflection::LakePatchOwners
-            | crate::screenshot::harness::WaterReflection::LakeDomainCamera
-            | crate::screenshot::harness::WaterReflection::LakeHullCamera => Some((
-                RenderPassId::RP_TERRAINPATCH_BASEMESH_TESSELLATE_NEAR as i32,
-                true,
-            )),
-            _ => None,
-        });
+        .then(|| pipeline_probes().near_patch_bracket())
+        .flatten();
     let draw = |lo, hi| {
-        if let Some((near_patch, tess)) = bracket
-            && (lo..hi).contains(&near_patch)
-            && !skipped(near_patch)
+        if let Some(bracket) = bracket
+            && (lo..hi).contains(&bracket.pass)
+            && !skipped(bracket.pass)
         {
-            let z = RenderPassId::RP_Z_PASS as i32;
-            let velocity = RenderPassId::RP_Z_AND_VELOCITY_PASS as i32;
-            if tess
-                && lo <= z
-                && velocity < near_patch
-                && !skipped(z)
-                && !skipped(velocity)
-                && crate::screenshot::harness::frame_identity()
-                    .is_some_and(crate::screenshot::harness::early_depth_requested)
-            {
-                draw_runs(lo, z);
-                capture_prefix_depth(Stage::BeforeZPassDepth);
-                draw_runs(z, velocity);
-                capture_prefix_depth(Stage::AfterZPassDepth);
-                velocity::scope(velocity::Scope::Velocity, || {
-                    draw_runs(velocity, velocity + 1)
-                });
-                capture_prefix_depth(Stage::AfterZVelocityDepth);
-                draw_runs(velocity + 1, near_patch);
-            } else {
-                draw_runs(lo, near_patch);
-            }
-            crate::screenshot::harness::stages::capture_near_patch(false, tess);
-            crate::screenshot::harness::patch_draw::scope(tess, || {
-                if tess {
-                    velocity::scope(velocity::Scope::Terrain, || {
-                        draw_runs(near_patch, near_patch + 1)
-                    });
-                } else {
-                    draw_runs(near_patch, near_patch + 1);
-                }
-            });
-            crate::screenshot::harness::stages::capture_near_patch(true, tess);
-            velocity::scope(velocity::Scope::BarkColor, || {
-                let mut start = near_patch + 1;
-                if crate::screenshot::harness::frame_identity()
-                    .is_some_and(crate::screenshot::harness::post_geometry_requested)
-                {
-                    for (end, stage) in [
-                        (
-                            RenderPassId::RP_MODELS_DYNAMIC as i32,
-                            Stage::BeforeDynamicModelsDepth,
-                        ),
-                        (
-                            RenderPassId::RP_MODELS_DYNAMIC as i32 + 1,
-                            Stage::AfterDynamicModelsDepth,
-                        ),
-                        (
-                            RenderPassId::RP_MODELS_STATIC as i32 + 1,
-                            Stage::AfterStaticModelsDepth,
-                        ),
-                        (
-                            RenderPassId::RP_VEGETATION_OPAQUE as i32 + 1,
-                            Stage::AfterOpaqueVegetationDepth,
-                        ),
-                        (
-                            RenderPassId::RP_TERRAIN_FOREST as i32 + 1,
-                            Stage::AfterForestDepth,
-                        ),
-                    ] {
-                        if start < end && end <= hi {
-                            if stage == Stage::BeforeDynamicModelsDepth
-                                && crate::screenshot::harness::frame_identity().is_some_and(
-                                    crate::screenshot::harness::terrain_interval_requested,
-                                )
-                            {
-                                let mut next = start;
-                                for (pass, boundary) in [
-                                    (
-                                        RenderPassId::RP_TERRAINPATCH_BASEMESH_NEAR,
-                                        Stage::AfterBaseNearDepth,
-                                    ),
-                                    (
-                                        RenderPassId::RP_TERRAINPATCH_BASEMESH_TESSELLATE_FAR,
-                                        Stage::AfterTessFarDepth,
-                                    ),
-                                    (
-                                        RenderPassId::RP_TERRAINPATCH_BASEMESH_FAR,
-                                        Stage::AfterBaseFarDepth,
-                                    ),
-                                    (
-                                        RenderPassId::RP_TERRAINPATCH_BASEMESH_TESSELLATE_COLOR,
-                                        Stage::AfterTessColorDepth,
-                                    ),
-                                    (
-                                        RenderPassId::RP_TERRAINPATCH_BASEMESH_COLOR,
-                                        Stage::AfterBaseColorDepth,
-                                    ),
-                                    (
-                                        RenderPassId::RP_TERRAIN_APPLY_NEAR_DETAILED,
-                                        Stage::AfterApplyNearDetailedDepth,
-                                    ),
-                                    (
-                                        RenderPassId::RP_TERRAIN_APPLY_NEAR,
-                                        Stage::AfterApplyNearDepth,
-                                    ),
-                                ] {
-                                    let after = pass as i32 + 1;
-                                    if pass == RenderPassId::RP_TERRAINPATCH_BASEMESH_NEAR {
-                                        velocity::scope(velocity::Scope::Base, || {
-                                            draw_runs(next, after)
-                                        });
-                                    } else {
-                                        draw_runs(next, after);
-                                    }
-                                    capture_prefix_depth(boundary);
-                                    next = after;
-                                }
-                                draw_runs(next, end);
-                            } else if stage == Stage::AfterForestDepth
-                                && crate::screenshot::harness::frame_identity().is_some_and(
-                                    crate::screenshot::harness::interval_trace_requested,
-                                )
-                            {
-                                velocity::scope(velocity::Scope::Interval, || {
-                                    for (pass, boundary) in [
-                                        (RenderPassId::RP_VEGETATIONFINS, Stage::AfterFinsDepth),
-                                        (RenderPassId::RP_VEGETATIONGROUP, Stage::AfterGroupDepth),
-                                        (
-                                            RenderPassId::RP_VEGETATIONGROUP2,
-                                            Stage::AfterGroup2Depth,
-                                        ),
-                                        (RenderPassId::RP_TERRAIN_FOREST, Stage::AfterForestDepth),
-                                    ] {
-                                        draw_runs(pass as i32, pass as i32 + 1);
-                                        if boundary != Stage::AfterForestDepth {
-                                            capture_prefix_depth(boundary);
-                                        }
-                                    }
-                                });
-                            } else {
-                                draw_runs(start, end);
-                            }
-                            capture_prefix_depth(stage);
-                            start = end;
-                        }
-                    }
-                }
-                draw_runs(start, hi);
-            });
+            pipeline_probes().draw_near_patch_bracket(bracket, lo, hi, &skipped, &draw_runs);
         } else {
             draw_runs(lo, hi);
         }
@@ -479,7 +319,7 @@ fn capture_geometry_range(first: i32, last: i32) {
         && last == RenderPassId::RP_LAST_GBUFFER as i32
         && !STEREO_STATE.lock().far_phase
     {
-        crate::screenshot::harness::stages::capture_geometry();
+        pipeline_probes().capture_point(PipelinePoint::Geometry);
     }
 }
 

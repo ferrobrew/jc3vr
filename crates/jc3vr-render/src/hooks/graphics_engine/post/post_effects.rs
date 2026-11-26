@@ -31,8 +31,8 @@ use crate::{
     hooks::graphics_engine::{
         capture::{POST_STAGE_DOF, POST_STAGE_MB, capture_post_stage, previews_visible},
         config::POST_FX_CONFIG,
+        probes::{AntiAliasingSide, PipelinePoint, pipeline_probes, scoped},
     },
-    screenshot::harness::stages::{self, Stage},
     stereo::{self, config::STEREO_CONFIG, draw_index, far_phase, later_scene},
 };
 
@@ -163,7 +163,7 @@ fn render_block_post_effects_draw(this: *mut c_void, ctx: *mut c_void, info: *mu
         return 0;
     }
     crate::debug::pipeline_probes::record_main_color_mean("post_block_entry");
-    stages::capture_main_color();
+    pipeline_probes().capture_point(PipelinePoint::MainColor);
     #[cfg(feature = "profiler")]
     let _gpu = crate::profiler::gpu::detail_interval("post: world block");
     RENDER_BLOCK_POST_EFFECTS_DRAW
@@ -225,7 +225,7 @@ fn anti_aliasing_apply(
     slot: *mut u32,
 ) -> u64 {
     // SAFETY: the AA hook receives the current chain slot as a live in/out parameter.
-    stages::capture_slot(Stage::PreAa, mgr, unsafe { *slot });
+    pipeline_probes().capture_anti_aliasing_slot(AntiAliasingSide::Before, mgr, unsafe { *slot });
     let force_smaa_1x = stereo::active();
     let fsr = FSR_CONFIG.query(|fsr| match fsr.antialiasing {
         AntiAliasing::Fsr => Some(TemporalResolve::Fsr(fsr.sharpen.then_some(fsr.sharpness))),
@@ -254,18 +254,23 @@ fn anti_aliasing_apply(
         restore = true;
     }
 
-    let aa_probe = stages::aa::Scope::begin(unsafe { (*this).m_Mode });
-    #[cfg(feature = "profiler")]
-    let gpu = crate::profiler::gpu::detail_interval("post: engine anti-aliasing");
-    let r = ANTI_ALIASING_APPLY
-        .get()
-        .unwrap()
-        .call(this, ctx, pec, mgr, slot);
-    // SAFETY: the AA result updates the same live slot parameter.
-    #[cfg(feature = "profiler")]
-    drop(gpu);
-    stages::capture_slot(Stage::PostAa, mgr, unsafe { *slot });
-    drop(aa_probe);
+    let r = scoped(
+        |body| pipeline_probes().anti_aliasing_scope(unsafe { (*this).m_Mode }, body),
+        || {
+            #[cfg(feature = "profiler")]
+            let gpu = crate::profiler::gpu::detail_interval("post: engine anti-aliasing");
+            let r = ANTI_ALIASING_APPLY
+                .get()
+                .unwrap()
+                .call(this, ctx, pec, mgr, slot);
+            #[cfg(feature = "profiler")]
+            drop(gpu);
+            // SAFETY: the AA result updates the same live slot parameter.
+            pipeline_probes()
+                .capture_anti_aliasing_slot(AntiAliasingSide::After, mgr, unsafe { *slot });
+            r
+        },
+    );
     if restore {
         unsafe { (*this).m_Mode = saved_mode };
     }
@@ -344,33 +349,32 @@ fn dof_apply(
     if skip_dof {
         return input;
     }
-    let probe = stages::dof::begin(pec, input);
-    #[cfg(feature = "profiler")]
-    let gpu = crate::profiler::gpu::detail_interval("post: blur and composite");
-    let slot = if dof_no_reproject {
-        // Bit 0 of the render context's flags is the engine's underwater bit
-        // (`m_CameraUnderwater`), which selects the DoF composite's underwater shader family --
-        // the variant that carries the reprojection-style distortion this toggle was validated to
-        // suppress. Clear just that bit for the call so DoF composites through the plain family,
-        // then restore.
-        let rc = unsafe { pec.as_mut().and_then(|p| p.m_RenderContext.as_mut()) };
-        if let Some(rc) = rc {
-            let saved = rc.m_Flags;
-            rc.m_Flags.remove(RenderContextFlags::m_CameraUnderwater);
-            let result = DOF_APPLY.get().unwrap().call(this, ctx, pec, mgr, input);
-            rc.m_Flags = saved;
-            result
+    let slot = pipeline_probes().depth_of_field_scope(pec, input, mgr, &mut || {
+        #[cfg(feature = "profiler")]
+        let gpu = crate::profiler::gpu::detail_interval("post: blur and composite");
+        let slot = if dof_no_reproject {
+            // Bit 0 of the render context's flags is the engine's underwater bit
+            // (`m_CameraUnderwater`), which selects the DoF composite's underwater shader family --
+            // the variant that carries the reprojection-style distortion this toggle was validated to
+            // suppress. Clear just that bit for the call so DoF composites through the plain family,
+            // then restore.
+            let rc = unsafe { pec.as_mut().and_then(|p| p.m_RenderContext.as_mut()) };
+            if let Some(rc) = rc {
+                let saved = rc.m_Flags;
+                rc.m_Flags.remove(RenderContextFlags::m_CameraUnderwater);
+                let result = DOF_APPLY.get().unwrap().call(this, ctx, pec, mgr, input);
+                rc.m_Flags = saved;
+                result
+            } else {
+                DOF_APPLY.get().unwrap().call(this, ctx, pec, mgr, input)
+            }
         } else {
             DOF_APPLY.get().unwrap().call(this, ctx, pec, mgr, input)
-        }
-    } else {
-        DOF_APPLY.get().unwrap().call(this, ctx, pec, mgr, input)
-    };
-    #[cfg(feature = "profiler")]
-    drop(gpu);
-    if let Some(probe) = probe {
-        probe.finish(mgr, slot);
-    }
+        };
+        #[cfg(feature = "profiler")]
+        drop(gpu);
+        slot
+    });
     capture_post_result(POST_STAGE_DOF, mgr, slot);
     slot
 }
