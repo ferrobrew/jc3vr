@@ -266,7 +266,10 @@ fn wingsuit(action: WingsuitAction) -> Option<DefaultBinding> {
         FireSecondary => on(Right, TriggerValue),
         Boost => on(Right, UpperFace),
         OpenParachute => on(Right, LowerFace),
-        AirBrake | Use => None,
+        // The fallback for the brake gesture, on the one face button the suit leaves free. Like
+        // the suit's other buttons, it keeps its physical side whichever hand is dominant.
+        AirBrake => on(Left, LowerFace),
+        Use => None,
         Grapple => on(Left, UpperFace),
         ReleaseTethers | FireGrapple => None,
     }

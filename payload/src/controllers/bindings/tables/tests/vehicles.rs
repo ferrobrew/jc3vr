@@ -875,6 +875,27 @@ fn the_wingsuit_uses_physical_right_b_for_boost_and_a_for_canopy() {
 }
 
 #[test]
+fn the_wingsuit_holds_the_air_brake_on_the_physical_left_a() {
+    let wingsuit = Mode::Airborne(AirborneVariant::Wingsuit);
+    for dominant in Hand::BOTH {
+        let mut c = Controls {
+            dominant,
+            ..Default::default()
+        };
+        c.hands[Hand::Left.index()].a = down();
+        let step = Bindings::default().sim_step(wingsuit, &c, DT, &CONFIG);
+        assert_eq!(player(&step, CANCEL), Some(Want::Hold(1.0)), "{dominant:?}");
+        assert_eq!(
+            player(&step, WINGSUIT_AIRBRAKE),
+            Some(Want::Hold(1.0)),
+            "{dominant:?}"
+        );
+        assert_eq!(player(&step, OPEN_PARACHUTE), None, "{dominant:?}");
+        assert_eq!(player(&step, RETRACT_GRAPPLE), None, "{dominant:?}");
+    }
+}
+
+#[test]
 fn falling_and_the_parachute_keep_the_hand_weapon_bindings() {
     let c = controls(Hand::Right, |dom, off| {
         dom.trigger_press = down();

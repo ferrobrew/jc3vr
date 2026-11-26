@@ -195,7 +195,9 @@ semantic_actions! {
     WingsuitAction in Wingsuit {
         Steer => ("steer", Vec2, "Steer"),
         Turn => ("turn", Float, "Turn"),
-        AirBrake => ("air_brake", Float, "Air brake"),
+        /// Held, the air brake, and low and slow enough, the landing; the arm gesture holds the
+        /// same pair of game actions.
+        AirBrake => ("air_brake", Bool, "Air brake (hold; low and slow: land)"),
         FireGuns => ("fire_guns", Float, "Fire the wingsuit guns"),
         FireSecondary => ("fire_secondary", Float, "Fire the wingsuit's secondary weapon"),
         Boost => ("boost", Bool, "Boost"),

@@ -284,7 +284,7 @@ The mech is its own vehicle class ([`Character::IsAttachedToMech`](https://ferro
 | Action | VR binding |
 |---|---|
 | Steer (analog `MOVE_*`) | L stick; arm-pose steering |
-| Air brake (`CANCEL` hold, upgrade-gated; `WINGSUIT_AIRBRAKE` when weaponized) | L trigger |
+| Air brake (`CANCEL` hold, upgrade-gated; `WINGSUIT_AIRBRAKE` when weaponized) | hold the left controller's A (X on the Touch); the brake gesture |
 | Boost (weaponized) | R stick click |
 | Fire weapons (weaponized wingsuit or parachute) | R trigger and R grip, aimed by the right hand |
 | Open the parachute | A |
@@ -563,7 +563,7 @@ Mode detection and bindings:
 
 - An analog action above 0.2 also reads as pressed, standing in for the device button threshold, which is not read.
 - The pause and commlink clicks go to both the player map and the UI map, which may toggle pause twice.
-- The wingsuit's L trigger mapping (the air brake).
+- The wingsuit's left A mapping (the air brake).
 - The generic actions (`BTN_*`, `L1`, `R2`, and the others) mirrored alongside each virtual gamepad button.
 - The R stick click carries only `DETONATE_EXPLOSIVE`, which the gamepad rules act on once it is held past the hold threshold, as the gamepad's RB hold detonates.
 - A device poll that the engine skips can stretch a click over two ticks.
