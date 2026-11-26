@@ -82,6 +82,7 @@ pub fn update() -> bool {
 /// Whether an OpenXR session was running when the game thread last pumped the runtime ([`update`]).
 /// An atomic, so any thread may read it, including the main loop outside `Game::Update`, where
 /// [`is_running`] may not take the runtime lock. One frame stale at most.
+#[inline]
 pub fn is_running_published() -> bool {
     SESSION_RUNNING.load(Ordering::Relaxed)
 }

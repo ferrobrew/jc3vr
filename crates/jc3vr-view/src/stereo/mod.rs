@@ -153,22 +153,26 @@ impl VpHistory {
 pub static STEREO_STATE: Mutex<StereoState> = Mutex::new(StereoState::new());
 
 /// Whether the current frame is being rendered in stereo.
+#[inline]
 pub fn active() -> bool {
     STEREO_STATE.lock().active
 }
 
 /// The physical eye currently being drawn (0 = left, 1 = right).
+#[inline]
 pub fn draw_index() -> usize {
     STEREO_STATE.lock().draw_index
 }
 
 /// True while the Draw driver is rendering the physical right eye of a stereo frame.
+#[inline]
 pub fn is_second_eye() -> bool {
     let state = STEREO_STATE.lock();
     state.active && state.draw_index == 1
 }
 
 /// True for a near-scene dispatch that follows another near-scene dispatch this frame.
+#[inline]
 pub fn later_scene() -> bool {
     let state = STEREO_STATE.lock();
     dispatch::later_scene_dispatch(
@@ -180,21 +184,25 @@ pub fn later_scene() -> bool {
 }
 
 /// True on the frame's last near-scene dispatch, regardless of its physical eye.
+#[inline]
 pub fn last_near_dispatch() -> bool {
     STEREO_STATE.lock().last_near_dispatch
 }
 
 /// True while the Draw driver is rendering a share frame's far-only dispatch.
+#[inline]
 pub fn far_phase() -> bool {
     STEREO_STATE.lock().far_phase
 }
 
 /// True while the current frame runs the three-dispatch far-field share.
+#[inline]
 pub fn share_frame() -> bool {
     STEREO_STATE.lock().share_frame
 }
 
 /// The current dispatch's 0-based ordinal within the frame (see [`StereoState::dispatch_ordinal`]).
+#[inline]
 pub fn dispatch_ordinal() -> usize {
     STEREO_STATE.lock().dispatch_ordinal
 }
@@ -209,6 +217,7 @@ pub fn dispatch_ordinal() -> usize {
 /// a session (`docs/mod/stereo/swapchain-ownership.md`). Anything sizing a resource *to the render* --
 /// capture textures, HUD targets -- wants this; only code addressing the presented surface wants the
 /// swapchain's.
+#[inline]
 pub fn render_size() -> Option<(u32, u32)> {
     // SAFETY: the engine singleton and its surface pointer are read under the same discipline as the
     // rest of the render hooks; both are null-checked.
@@ -223,6 +232,7 @@ pub fn render_size() -> Option<(u32, u32)> {
 
 /// One eye's slice of [`render_size`]. Under single-pass double-wide the render target holds both
 /// eyes side by side, so the per-eye width is half of it.
+#[inline]
 pub fn per_eye_render_size() -> Option<(u32, u32)> {
     let (width, height) = render_size()?;
     let width = if layout::double_wide_active() {

@@ -57,6 +57,7 @@ pub fn register_player_draw_edits(edits: &'static dyn PlayerDrawEdits) {
     }
 }
 
+#[inline]
 pub fn player_draw_edits() -> Option<&'static dyn PlayerDrawEdits> {
     PROVIDER.get().copied()
 }

@@ -40,6 +40,7 @@ pub enum GpuPassLabel {
 }
 
 /// Whether the GPU layer should time every pass for the recording run.
+#[inline]
 pub fn armed() -> bool {
     ARMED.load(Ordering::Relaxed)
 }

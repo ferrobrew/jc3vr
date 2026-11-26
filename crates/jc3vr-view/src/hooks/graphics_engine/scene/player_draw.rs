@@ -84,6 +84,7 @@ pub fn collapse_target_published() -> bool {
 
 /// The published collapse target: the NECK bone's model-space position (see
 /// [`publish_collapse_target`]).
+#[inline]
 pub fn collapse_target() -> glam::Vec3 {
     let [x, y, z] = &COLLAPSE_TARGET;
     glam::Vec3::new(

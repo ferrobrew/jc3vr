@@ -22,6 +22,7 @@ pub struct EngineContext(&'static jc3gi::graphics_engine::device::Context);
 
 impl EngineContext {
     /// The engine's immediate context, or `None` if the device/context is not live yet.
+    #[inline]
     pub fn get() -> Option<Self> {
         // SAFETY: read on the render thread, where the engine device/context pointers are stable.
         unsafe {
@@ -33,6 +34,7 @@ impl EngineContext {
 
     /// Run `f` on the D3D immediate context under the engine's own context mutex, which every other
     /// path in the mod that touches the context also takes.
+    #[inline]
     pub fn with_lock<R>(self, f: impl FnOnce(&ID3D11DeviceContext) -> R) -> R {
         // SAFETY: `m_Mutex` is the engine's live critical section for this context. The guard releases
         // it on drop, so the critical section is left even if `f` unwinds.
@@ -51,6 +53,7 @@ impl EngineContext {
 struct CritSecGuard(*mut CRITICAL_SECTION);
 
 impl Drop for CritSecGuard {
+    #[inline]
     fn drop(&mut self) {
         // SAFETY: the guard is only constructed after a matching `EnterCriticalSection` on the same
         // critical section, and is dropped exactly once.

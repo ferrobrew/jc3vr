@@ -452,6 +452,7 @@ pub static EGUI_DEBUG_RENDER_STATE: Mutex<EguiDebugRenderState> =
 /// Record whether eye `eye`'s capture was refreshed by its latest dispatch. The post-draw hook skips
 /// the copy into the capture when the eye went straight to the headset and nothing else wanted it
 /// (see `crate::vr::blit`), so a reader that can come late to a frame checks this first.
+#[inline]
 pub fn mark_eye_capture(eye: usize, fresh: bool) {
     if let Some(flag) = EYE_CAPTURE_FRESH.get(eye) {
         flag.store(fresh, Ordering::Relaxed);
@@ -459,6 +460,7 @@ pub fn mark_eye_capture(eye: usize, fresh: bool) {
 }
 
 /// Whether eye `eye`'s capture holds the image of its latest dispatch (see [`mark_eye_capture`]).
+#[inline]
 pub fn eye_capture_fresh(eye: usize) -> bool {
     EYE_CAPTURE_FRESH
         .get(eye)
@@ -492,6 +494,7 @@ pub fn mark_previews_visible() {
 /// [`PREVIEWS_VISIBLE_TIMEOUT`]). Read by the post-stage and MainColor capture call sites to skip
 /// their `CopyResource`, and by [`EguiDebugRenderState::prepare_if_necessary`] to know when to
 /// release the captures it has been maintaining.
+#[inline]
 pub fn previews_visible() -> bool {
     PREVIEWS_LAST_SEEN
         .lock()

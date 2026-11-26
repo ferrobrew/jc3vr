@@ -153,6 +153,7 @@ pub struct FoveatedPasses {
 
 impl FoveatedPasses {
     /// Whether the peripheral stencil test is forced through `pass`.
+    #[inline]
     pub fn contains(self, pass: i32) -> bool {
         let within =
             |&(lo, hi): &(RenderPassId, RenderPassId)| (lo as i32..=hi as i32).contains(&pass);
@@ -162,6 +163,7 @@ impl FoveatedPasses {
     }
 
     /// The first pass the test is forced through: the mask-write runs just before it.
+    #[inline]
     pub fn first(self) -> i32 {
         (0..RenderPassId::RP_RENDERPASS_COUNT as i32)
             .find(|&pass| self.contains(pass))
@@ -279,12 +281,14 @@ pub fn mask_write(params: FoveationParams) -> anyhow::Result<()> {
 /// from their kept neighbours, drawing every pixel (the kept ones pass through). For a point in the
 /// frame where the mask bit may no longer be in the stencil. Acquires the engine context internally
 /// under its mutex.
+#[inline]
 pub fn fill_in(params: FoveationParams) -> anyhow::Result<()> {
     fill_in_with(params, false)
 }
 
 /// Run the fill-in pass for one eye under a stencil test against the mask bit, so only the dropped
 /// pixels run the pixel shader. The mask bit must still be in the main depth surface's stencil.
+#[inline]
 pub fn fill_in_dropped(params: FoveationParams) -> anyhow::Result<()> {
     fill_in_with(params, true)
 }

@@ -26,6 +26,7 @@ pub enum RenderMode {
 
 impl RenderMode {
     /// The captured physical eye duplicated into both XR slices, if only one eye renders.
+    #[inline]
     pub const fn selected_eye(self) -> Option<usize> {
         match self {
             Self::LeftOnly => Some(0),
@@ -42,6 +43,7 @@ impl RenderMode {
         }
     }
 
+    #[inline]
     pub(crate) const fn first_eye(self) -> usize {
         match self {
             Self::RightOnly | Self::ReverseMultipass => 1,
@@ -51,11 +53,13 @@ impl RenderMode {
 }
 
 /// The current dispatch policy.
+#[inline]
 pub fn mode() -> RenderMode {
     *MODE.lock()
 }
 
 /// The physical eye rendered in isolation, or `None` when the mode renders both eyes.
+#[inline]
 pub fn selected_eye() -> Option<usize> {
     mode().selected_eye()
 }
@@ -68,6 +72,7 @@ pub fn set_mode(mode: RenderMode) {
 
 /// True for the physical eye that prepares shared UI before the other eye draws it.
 /// Single-pass callers pass the physical eye of each half, not the dispatch's eye tag.
+#[inline]
 pub fn first_ui_eye(eye: usize) -> bool {
     eye == mode().first_eye()
 }
@@ -103,6 +108,7 @@ impl DispatchPlan {
 }
 
 /// Whether a scene dispatch follows another scene dispatch in the same stereo frame.
+#[inline]
 pub(crate) fn later_scene_dispatch(
     active: bool,
     far_phase: bool,

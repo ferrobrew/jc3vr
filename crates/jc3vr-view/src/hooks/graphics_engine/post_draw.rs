@@ -133,16 +133,19 @@ pub fn register_desktop_overlay(draw: fn()) {
     set_once(&DESKTOP_OVERLAY, draw, "desktop overlay");
 }
 
+#[inline]
 pub fn run_dispatch_ticks(index: usize) {
     DISPATCH_TICKS.each().for_each(|tick| tick(index));
 }
 
+#[inline]
 pub fn capture_scene(context: &ID3D11DeviceContext, device: &Device, target: &Texture, eye: usize) {
     if let Some(capture) = SCENE_CAPTURE.get() {
         capture(context, device, target, eye);
     }
 }
 
+#[inline]
 pub fn draw_eye_layers(
     context: &ID3D11DeviceContext,
     device: &Device,
@@ -154,34 +157,40 @@ pub fn draw_eye_layers(
         .for_each(|draw| draw(context, device, target, eye));
 }
 
+#[inline]
 pub fn run_frame_passes(context: &ID3D11DeviceContext, device: &Device, target: &Texture) {
     FRAME_PASSES
         .each()
         .for_each(|draw| draw(context, device, target));
 }
 
+#[inline]
 pub fn maintain_ui_redirect(device: &Device, width: u32, height: u32) {
     if let Some(redirect) = UI_REDIRECT.get() {
         (redirect.maintain)(device, width, height);
     }
 }
 
+#[inline]
 pub fn ui_redirect_applied() -> bool {
     UI_REDIRECT
         .get()
         .is_some_and(|redirect| (redirect.applied)())
 }
 
+#[inline]
 pub fn eye_frame_recorder() -> Option<&'static EyeFrameRecorder> {
     RECORDER.get()
 }
 
+#[inline]
 pub fn recorder_wants_eye_captures() -> bool {
     RECORDER
         .get()
         .is_some_and(|recorder| (recorder.wants_eye_captures)())
 }
 
+#[inline]
 pub fn draw_desktop_overlay() {
     if let Some(draw) = DESKTOP_OVERLAY.get() {
         draw();

@@ -90,6 +90,7 @@ impl EyeRenderParams {
     }
 
     /// The jitter's clip-space offset in this frame's projections (zero without one).
+    #[inline]
     pub fn jitter_ndc(self) -> Vec2 {
         self.jitter.map_or(Vec2::ZERO, |jitter| jitter.ndc)
     }
@@ -99,6 +100,7 @@ impl EyeRenderParams {
     /// lens) and must hold still while the scene jitters, and for the motion FSR is handed, which
     /// must carry none. Undoing the jitter in `f32` instead would leave a rounding in the
     /// view-projection's world-scale translation that changes from frame to frame.
+    #[inline]
     pub fn unjittered_projection_reverse_z(self) -> glam::Mat4 {
         glam::Mat4::from(
             self.jitter
@@ -107,6 +109,7 @@ impl EyeRenderParams {
     }
 
     /// The standard-depth projection without the frame's jitter, bit for bit.
+    #[inline]
     pub fn unjittered_projection_standard(self) -> glam::Mat4 {
         glam::Mat4::from(
             self.jitter
@@ -138,6 +141,7 @@ impl EyeRenderParams {
         eye * glam::Mat4::from_quat(self.orientation_delta)
     }
 
+    #[inline]
     pub fn world_offset(self, center: glam::Mat4) -> Vec3 {
         center.transform_vector3(self.local_offset)
     }
@@ -218,12 +222,14 @@ pub struct CaptureEyeView {
 }
 
 /// The located views for the frame in flight, or `None` when no VR frame is rendering.
+#[inline]
 pub fn capture_views() -> Option<CaptureViews> {
     CAPTURE_VIEWS.get().flatten()
 }
 
 /// The render parameters for `eye` (`0` = left, `1` = right) this frame, or `None` when no VR frame
 /// is rendering. Read by the `SetupRenderCamera` hook.
+#[inline]
 pub fn render_params(eye: usize) -> Option<EyeRenderParams> {
     RENDER_PARAMS.get().flatten().map(|p| p[eye.min(1)])
 }
@@ -233,6 +239,7 @@ pub fn render_params(eye: usize) -> Option<EyeRenderParams> {
 /// hook writes this into the shared cull camera's `m_ProjectionF` so the visibility cull -- which the
 /// engine runs once per frame against the narrower center camera -- covers everything either eye can
 /// see, removing the black voids and pop-in at the outer edges.
+#[inline]
 pub fn cull_projection_standard() -> Option<Matrix4> {
     CULL_PROJECTION.get().flatten()
 }
@@ -242,6 +249,7 @@ pub fn cull_projection_standard() -> Option<Matrix4> {
 /// is rendering. The sun-shadow cascade fit sizes each cascade's sphere from its camera's field of
 /// view; fitting to the padded cull projection instead stretched every cascade over the padding,
 /// coarsening its texels for geometry neither eye sees.
+#[inline]
 pub fn shadow_fit_projection_standard() -> Option<Matrix4> {
     SHADOW_FIT_PROJECTION.get().flatten()
 }
@@ -251,6 +259,7 @@ pub fn shadow_fit_projection_standard() -> Option<Matrix4> {
 /// margin for the eyes' offset from the centre), in the engine's standard-depth layout, or `None`
 /// when no VR frame is rendering. For a cull that runs once from the centred camera on the GPU,
 /// where the cull projection's padding would cost work for nothing.
+#[inline]
 pub fn eyes_union_projection_standard() -> Option<Matrix4> {
     EYES_UNION_PROJECTION.get().flatten()
 }

@@ -34,6 +34,7 @@ pub fn register_overlay_inputs(inputs: OverlayInputs) {
 }
 
 /// The registered inputs, or `None` before the controllers register them.
+#[inline]
 pub fn registered() -> Option<&'static OverlayInputs> {
     INPUTS.get()
 }
