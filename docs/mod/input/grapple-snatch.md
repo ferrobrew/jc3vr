@@ -73,6 +73,8 @@ The owned wire's native constraint creation and tension callbacks are excluded w
 
 While the line swings, the other hand can brace the grapple hand: squeeze its grip with its wrist within `SNATCH.brace_take_m` of the grapple hand's wrist (`snatch::brace`). The other hand must be free and empty, its grip closed on nothing; while the line is out that grip is held for the snatch already, so the squeeze takes nothing in reach. Braced, the line's strength is `brace_factor` times one hand's, and the line is anchored at the average of the two hands, keeping the grapple hand's offset to the line's origin; the anchor's move between the hand and the pair is not read as a motion of the hands. The brace holds until the grip opens, the hand takes something, a wrist loses tracking, or the wrists drift more than `SNATCH.brace_break_m` apart, and the line returns to one hand's strength.
 
+The other hand can instead take hold of the line ahead of the wrist, which anchors the line at that hand, to pull the target in and swing it by ([grapple-line-grab.md](grapple-line-grab.md)).
+
 ### Feedback
 
 Haptics: the grapple hand feels the line's tension (`Sustain::GrappleTension`, by the tension's share of the line's strength), and so does the bracing hand while it braces ([haptics.md](haptics.md)).

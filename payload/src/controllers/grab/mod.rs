@@ -122,6 +122,9 @@ pub enum GrabVolume {
     /// A thing out of reach under the grapple's aim, for the empty grapple hand to snatch (see
     /// [`crate::controllers::snatch`]).
     Snatch(RemoteKind),
+    /// The grapple's held line ahead of the grapple hand, for the free hand while the lock holds
+    /// the line or the snatch's line swings its target (see [`crate::grapple::line_grab`]).
+    GrappleLine,
 }
 
 impl GrabVolume {
@@ -167,6 +170,7 @@ impl GrabVolume {
             GrabVolume::Snatch(RemoteKind::Weapon) => "weapon to snatch",
             GrabVolume::Snatch(RemoteKind::Object) => "object to snatch",
             GrabVolume::Snatch(RemoteKind::Door) => "car door to pull open",
+            GrabVolume::GrappleLine => "grapple line",
         }
     }
 
@@ -199,7 +203,7 @@ impl GrabVolume {
             | GrabVolume::LiveGrenade
             | GrabVolume::ChargeSurface
             | GrabVolume::PlacedCharge => Category::Explosive,
-            GrabVolume::Climb => Category::Climb,
+            GrabVolume::Climb | GrabVolume::GrappleLine => Category::Climb,
             GrabVolume::Pickup(PickupKind::Prop | PickupKind::Hinged)
             | GrabVolume::Snatch(RemoteKind::Object)
             | GrabVolume::WorldMagazine => Category::Prop,
@@ -234,6 +238,7 @@ impl GrabVolume {
             GrabVolume::Climb => Consumer::Climb,
             GrabVolume::StuntHold => Consumer::Stunt,
             GrabVolume::Snatch(_) => Consumer::Snatch,
+            GrabVolume::GrappleLine => Consumer::Line,
         }
     }
 }
@@ -273,6 +278,8 @@ pub enum Consumer {
     Climb,
     Stunt,
     Snatch,
+    /// The lock and the snatch's swing, which read the grip's hold of the line from its latch.
+    Line,
 }
 
 /// The grabs of `grabs` (by [`Hand::index`]) that `consumer` acts on.

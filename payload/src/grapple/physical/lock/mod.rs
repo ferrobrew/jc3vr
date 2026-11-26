@@ -25,7 +25,8 @@
 //! The grapple button's gestures ([`crate::controllers::bindings::grapple_button`]) say what the
 //! player asks ([`LockButton`]), and [`lock_tick`] acts on them after the bindings' tables step:
 //!
-//! - pulling the grapple hand back takes line in ([`model::TakeIn`]);
+//! - pulling the grapple hand back takes line in ([`model::TakeIn`]), as does pulling back the free
+//!   hand holding the line ahead of it ([`crate::grapple::line_grab`]);
 //! - a quick release unlocks and resumes the reel, firing nothing: a fire onto the attached line
 //!   can release it;
 //! - a release after a longer hold lets go of the line, and the character flies on with the swing's
@@ -76,7 +77,7 @@ use crate::{
         hook,
         physical::{
             config::{LockConfig, PhysicalGrappleTuning, SwingTuning},
-            lock::model::{Held, Pump, PumpSample, SwingInput, TakeIn},
+            lock::model::{FreeHand, Held, Pump, PumpSample, SwingInput, TakeIn},
         },
         rope::{self, RopeFault},
     },
@@ -170,6 +171,8 @@ pub struct LockStatus {
     pub braking: bool,
     /// Whether the lock is a hang below a ceiling attach rather than a swing the button took.
     pub hanging: bool,
+    /// Whether the free hand holds the line ahead of the grapple hand.
+    pub free_hand: bool,
     /// The held length, metres.
     pub length_m: f32,
     /// How far the character is past the held length, metres: negative while slack.
@@ -252,6 +255,9 @@ pub(crate) struct LockTickInput<'a> {
     pub enter: bool,
     /// The grapple hand's grip and aim, in the cockpit frame, or `None` while untracked.
     pub line: Option<HandLine>,
+    /// The free hand's grip in the cockpit frame, with the line's direction there as its aim, while
+    /// it holds the line ([`crate::grapple::line_grab::lock_hand`]), or `None`.
+    pub free_hand: Option<HandLine>,
     /// The wingsuit or the parachute is out: a release's velocity is theirs to carry on.
     pub deployed: bool,
     /// The tick's length, real seconds: the hand's take-in.
@@ -376,15 +382,32 @@ pub(crate) unsafe fn lock_tick(input: &LockTickInput) {
             end(Some((character, hook)), why, input.hand)
         }
         None => {
-            let share = {
+            let (share, free_held) = {
                 let mut shared = SHARED.lock();
                 let Some(active) = shared.active.as_mut() else {
                     return;
                 };
+                let (free_taken, changed) =
+                    active
+                        .free
+                        .step(input.real_dt, input.free_hand, input.config.reel_in_mps);
+                let free_held = active.free.held();
+                if changed {
+                    tracing::info!(
+                        target: "grapple",
+                        length_m = active.held.rope.length_m,
+                        "grapple lock: the free hand {} the line",
+                        if free_held { "took hold of" } else { "let go of" }
+                    );
+                    if !free_held {
+                        haptics::sustain(input.hand.other(), Sustain::GrappleTension, 0.0);
+                    }
+                }
                 let taken =
                     active
                         .take_in
-                        .step(input.real_dt, input.line, input.config.reel_in_mps);
+                        .step(input.real_dt, input.line, input.config.reel_in_mps)
+                        + free_taken;
                 active.pump.sample(pump_sample, input.real_dt, &pump_tuning);
                 active.pump_tuning = pump_tuning;
                 active.pump_at = Instant::now();
@@ -394,9 +417,13 @@ pub(crate) unsafe fn lock_tick(input: &LockTickInput) {
                 let braking = active.held.coasting();
                 shared.status.length_m = length_m;
                 shared.status.braking = braking;
-                shared.status.share()
+                shared.status.free_hand = free_held;
+                (shared.status.share(), free_held)
             };
             haptics::sustain(input.hand, Sustain::GrappleTension, share);
+            if free_held {
+                haptics::sustain(input.hand.other(), Sustain::GrappleTension, share);
+            }
         }
     }
 }
@@ -409,6 +436,7 @@ pub(crate) fn stand_down() {
     shared.release_velocity = None;
     if shared.active.take().is_some() {
         shared.status.locked = false;
+        shared.status.free_hand = false;
         shared.status.last_end = Some(LockEnd::ReelEnded);
         LOCKED.store(false, Ordering::Release);
         tracing::info!(target: "grapple", "grapple lock: the bindings stand down");
@@ -666,6 +694,7 @@ unsafe fn start(
             target,
             config: *input.config,
             take_in,
+            free: FreeHand::default(),
             pump,
             pump_tuning,
             pump_at: Instant::now(),
@@ -683,6 +712,7 @@ unsafe fn start(
             locked: true,
             braking: held.coasting(),
             hanging: hold == Hold::Hang,
+            free_hand: false,
             length_m: held.rope.length_m,
             target: Some(lock_target),
             hook: hook_point,
@@ -763,28 +793,29 @@ unsafe fn ending(
 /// character.
 fn end(local: Option<(&mut Character, &mut GrapplingHook)>, why: LockEnd, hand: Hand) {
     hooks::forget_motion();
-    let (status, last_velocity) = {
+    let (status, last_velocity, free_held) = {
         let mut shared = SHARED.lock();
         if local.is_none() {
             // The character the captured velocity belonged to is gone; never hand it to a later
             // one, even when the lock already ended.
             shared.release_velocity = None;
         }
-        if shared.active.take().is_none() {
+        let Some(active) = shared.active.take() else {
             return;
-        }
+        };
         shared.pending = None;
         shared.fault = None;
         let last_velocity = shared.last_velocity.take();
         shared.status.locked = false;
         shared.status.braking = false;
         shared.status.hanging = false;
+        shared.status.free_hand = false;
         shared.status.tension_n = 0.0;
         shared.status.last_end = Some(why);
         if matches!(why, LockEnd::Broke(_)) {
             shared.status.breaks += 1;
         }
-        (shared.status, last_velocity)
+        (shared.status, last_velocity, active.free.held())
     };
     LOCKED.store(false, Ordering::Release);
     if why.lets_go()
@@ -818,6 +849,9 @@ fn end(local: Option<(&mut Character, &mut GrapplingHook)>, why: LockEnd, hand: 
         "grapple lock: the lock ends"
     );
     haptics::sustain(hand, Sustain::GrappleTension, 0.0);
+    if free_held {
+        haptics::sustain(hand.other(), Sustain::GrappleTension, 0.0);
+    }
     match why {
         LockEnd::Broke(_) => haptics::play(hand, Event::LineSnap),
         LockEnd::Released | LockEnd::Landed => haptics::play(hand, Event::LineRelease),
@@ -847,6 +881,7 @@ struct Active {
     target: Option<TargetBody>,
     config: LockConfig,
     take_in: TakeIn,
+    free: FreeHand,
     pump: Pump,
     pump_tuning: SwingTuning,
     pump_at: Instant,
@@ -908,6 +943,7 @@ static SHARED: Mutex<Shared> = Mutex::new(Shared {
         locked: false,
         braking: false,
         hanging: false,
+        free_hand: false,
         length_m: 0.0,
         stretch_m: 0.0,
         tension_n: 0.0,

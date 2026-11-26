@@ -187,3 +187,23 @@ fn a_catch_never_overrides_a_grip_that_holds_something_else() {
         GripLatch::Grab(GrabVolume::Socket(Socket::Hip(Hand::Left)))
     );
 }
+
+#[test]
+fn a_grip_held_for_the_catch_still_takes_the_snatch_line() {
+    let mut b = Bindings::default();
+    let press = controls(Hand::Right, |dom, _| {
+        dom.grip = down();
+        dom.grab_volume = Some(GrabVolume::GrappleLine);
+        dom.catch_reserved = true;
+    });
+    let step = b.sim_step(ON_FOOT, &press, DT, &CONFIG);
+    assert_eq!(
+        step.grabs[Hand::Right.index()],
+        Some(GrabVolume::GrappleLine)
+    );
+    assert!(step.desired.is_empty(), "{:?}", step.desired);
+    assert_eq!(
+        b.grip_latches()[Hand::Right.index()],
+        GripLatch::Grab(GrabVolume::GrappleLine)
+    );
+}

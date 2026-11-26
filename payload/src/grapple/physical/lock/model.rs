@@ -453,3 +453,34 @@ impl TakeIn {
         }
     }
 }
+
+/// The free hand taking line in while it holds the line ahead of the grapple hand
+/// ([`crate::grapple::line_grab`]): a [`TakeIn`] of its own along the line's direction, started
+/// afresh at each hold, so a hand that lets go, reaches out, and takes hold again keeps taking line
+/// in.
+#[derive(Debug, Copy, Clone, PartialEq, Default)]
+pub(crate) struct FreeHand {
+    take_in: TakeIn,
+    held: bool,
+}
+
+impl FreeHand {
+    pub(crate) fn held(&self) -> bool {
+        self.held
+    }
+
+    /// The line the free hand at `hand` (`None` while it does not hold the line) takes in over a
+    /// tick of `dt` seconds, at most `max_mps`, metres, and whether it took hold or let go this
+    /// tick.
+    pub(crate) fn step(&mut self, dt: f32, hand: Option<HandLine>, max_mps: f32) -> (f32, bool) {
+        let held = hand.is_some();
+        let changed = held != self.held;
+        if changed {
+            *self = Self {
+                take_in: TakeIn::default(),
+                held,
+            };
+        }
+        (self.take_in.step(dt, hand, max_mps), changed)
+    }
+}

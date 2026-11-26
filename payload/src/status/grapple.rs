@@ -513,6 +513,7 @@ mod tests {
                 max_tension_n: 5809.5,
                 mass_kg: 150.0,
                 braced: true,
+                line_held: false,
                 tethered: true,
                 anchor: Vec3::ZERO,
                 centre: Vec3::NEG_Z * 3.0,

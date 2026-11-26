@@ -22,6 +22,10 @@ pub struct PhysicalGrappleConfig {
     /// The seat grapple: the grapple button fires the hook from a vehicle seat and tethers what it
     /// hits to the vehicle ([`crate::grapple::seat`]).
     pub seat: bool,
+    /// The free hand takes hold of a held lock's or a swinging snatch's line ahead of the grapple
+    /// hand, to take line in by pulling it and to swing a snatched target by it
+    /// ([`crate::grapple::line_grab`]).
+    pub free_hand_line: bool,
 }
 
 impl PhysicalGrappleConfig {
@@ -31,6 +35,7 @@ impl PhysicalGrappleConfig {
             pump: true,
             lock: LockConfig::new(),
             seat: true,
+            free_hand_line: true,
         }
     }
 }

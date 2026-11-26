@@ -67,7 +67,7 @@ Standing down vehicle input clears the skid rail, its remembered airframe, pendi
 
 ## Shortening the line
 
-Pulling the grapple hand back along the aim it had when the lock took hold takes line in, as far as the hand comes back and no faster than `lock.reel_in_mps`, down to `lock.min_length_m` (`lock::model::TakeIn`). The least length is never below the floor every held line shares with the snatch (`grapple::rope::held_floor`), and taking line in never pays it out (`Rope::shorten`), so raising `lock.min_length_m` while the line is held leaves a shorter line as it is. Reaching out pays nothing out, so hand over hand keeps taking line in. An untracked hand takes nothing in: the lock holds on the button alone.
+Pulling the grapple hand back along the aim it had when the lock took hold takes line in, as far as the hand comes back and no faster than `lock.reel_in_mps`, down to `lock.min_length_m` (`lock::model::TakeIn`). The least length is never below the floor every held line shares with the snatch (`grapple::rope::held_floor`), and taking line in never pays it out (`Rope::shorten`), so raising `lock.min_length_m` while the line is held leaves a shorter line as it is. Reaching out pays nothing out, so hand over hand keeps taking line in. An untracked hand takes nothing in: the lock holds on the button alone. The free hand can take hold of the line ahead of the grapple hand and take line in by pulling it back the same way ([grapple-line-grab.md](grapple-line-grab.md)).
 
 ## The target
 

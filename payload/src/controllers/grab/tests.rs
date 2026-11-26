@@ -300,6 +300,7 @@ fn every_kind() -> Vec<GrabVolume> {
         GrabVolume::Snatch(RemoteKind::Weapon),
         GrabVolume::Snatch(RemoteKind::Object),
         GrabVolume::Snatch(RemoteKind::Door),
+        GrabVolume::GrappleLine,
     ];
     out.extend(
         [
@@ -338,7 +339,8 @@ fn every_kind() -> Vec<GrabVolume> {
             | GrabVolume::WorldWeapon
             | GrabVolume::LiveGrenade
             | GrabVolume::WorldMagazine
-            | GrabVolume::Snatch(_) => {}
+            | GrabVolume::Snatch(_)
+            | GrabVolume::GrappleLine => {}
         }
     }
     out

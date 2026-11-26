@@ -194,6 +194,18 @@ impl Sling {
         }
     }
 
+    /// Anchor the line at `anchor`, a hand that took hold of it or the one it was handed back to,
+    /// held at `length_m` from there. The change of anchor is not read as the hand moving. A
+    /// length that is not finite keeps the held one; any other is raised to the line's least.
+    pub fn regrip(&mut self, anchor: Vec3, length_m: f32) {
+        if anchor.is_finite() {
+            self.anchor = anchor;
+        }
+        if length_m.is_finite() {
+            self.rope.length_m = length_m.max(rope::held_floor(0.0));
+        }
+    }
+
     /// Reel the line in, then pull along it with the hand as the rope's kinematic end: preserve
     /// the tangent, never push a slack rope, and bound the tension by the line's strength over a
     /// bounded time step. The target is the rope's `b` end; a hand that jumped between ticks is
@@ -505,6 +517,47 @@ mod tests {
             .step(step(Vec3::X * 2.05, Vec3::ZERO, Vec3::X * 0.05))
             .unwrap();
         assert_eq!(out.tension_n, 0.0);
+    }
+
+    #[test]
+    fn a_regrip_moves_the_anchor_and_length_without_reading_a_hand_motion() {
+        let mut rope = Sling::new(Vec3::X * 2.0, Vec3::ZERO).unwrap();
+        let hand = Vec3::new(0.5, 0.3, 0.0);
+        rope.regrip(hand, 1.5);
+        assert_eq!(rope.length_m(), 1.5);
+        let centre = hand + Vec3::X * 1.5;
+        let out = rope.step(step(centre, Vec3::ZERO, hand)).unwrap();
+        assert_eq!(out.tension_n, 0.0);
+        rope.regrip(Vec3::NAN, f32::NAN);
+        assert_eq!(rope.length_m(), 1.5);
+        rope.regrip(hand, 0.0);
+        assert_eq!(rope.length_m(), rope::held_floor(0.0));
+    }
+
+    #[test]
+    fn a_hand_swung_across_a_held_line_pulls_the_target_the_new_way() {
+        // A 100 kg target hanging 2.5 m out along +X from a hand holding the line ahead; the hand
+        // sweeps 0.6 m along +Z over a fifth of a second.
+        let mass_kg = 100.0;
+        let tuning = LineTuning::of(&SwingConfig::new(), mass_kg, true);
+        let mut rope = Sling::new(Vec3::X * 2.5, Vec3::ZERO).unwrap();
+        let (mut centre, mut velocity) = (Vec3::X * 2.5, Vec3::ZERO);
+        let dt = 1.0 / 60.0;
+        for i in 1..=12 {
+            let out = rope
+                .step(SlingStep {
+                    centre,
+                    velocity,
+                    mass_kg,
+                    anchor: Vec3::Z * (0.05 * i as f32),
+                    dt,
+                    line: tuning,
+                })
+                .unwrap();
+            velocity = out.b_velocity;
+            centre += velocity * dt;
+        }
+        assert!(velocity.z > 0.0, "{velocity}");
     }
 
     #[test]

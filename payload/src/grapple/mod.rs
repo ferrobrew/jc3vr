@@ -55,6 +55,7 @@ use parking_lot::Mutex;
 pub mod config;
 pub(crate) mod device;
 pub(crate) mod hook;
+pub(crate) mod line_grab;
 pub mod physical;
 pub mod rope;
 pub mod seat;

@@ -5,7 +5,7 @@ use crate::{
     grapple::{
         physical::{
             config::{GRAPPLE, LockConfig},
-            lock::model::{Held, Pump, PumpSample, SwingInput, TakeIn, armed, swing},
+            lock::model::{FreeHand, Held, Pump, PumpSample, SwingInput, TakeIn, armed, swing},
         },
         rope::{GRAVITY_MPS2, RopeFault},
     },
@@ -585,6 +585,41 @@ fn the_hand_takes_line_in_only_pulling_back_and_no_faster_than_the_reel() {
         0.0,
         "tracking back restarts it"
     );
+}
+
+#[test]
+fn the_free_hand_takes_line_in_by_its_pull_along_the_line_and_starts_afresh_at_each_hold() {
+    // The line runs to the hook along +X; the hand holding it pulls back toward -X.
+    let at = |x: f32| {
+        Some(HandLine {
+            grip: Vec3::new(x, 0.0, -0.3),
+            aim: Vec3::X,
+        })
+    };
+    let mut free = FreeHand::default();
+    assert_eq!(
+        free.step(DT, at(0.5), 3.0),
+        (0.0, true),
+        "the take starts it"
+    );
+    assert!(free.held());
+    let (pulled, changed) = free.step(DT, at(0.45), 3.0);
+    assert!((pulled - 0.05).abs() < 1e-5 && !changed, "{pulled}");
+    assert_eq!(
+        free.step(DT, at(0.6), 3.0),
+        (0.0, false),
+        "reaching out pays none out"
+    );
+    assert_eq!(free.step(DT, None, 3.0), (0.0, true), "let go");
+    assert!(!free.held());
+    assert_eq!(free.step(DT, None, 3.0), (0.0, false));
+    assert_eq!(
+        free.step(DT, at(0.2), 3.0),
+        (0.0, true),
+        "a new hold measures from where it took hold"
+    );
+    let (pulled, _) = free.step(DT, at(0.15), 3.0);
+    assert!((pulled - 0.05).abs() < 1e-5, "{pulled}");
 }
 
 #[test]

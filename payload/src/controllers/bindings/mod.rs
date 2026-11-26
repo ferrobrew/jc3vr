@@ -536,6 +536,11 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
                 config: &config,
             })
         });
+        provided.extend(grapple::line_grab::targets(
+            grapple_hand,
+            config.grapple.free_hand_line,
+            active.as_ref().map_or(1.0, |a| a.world_scale),
+        ));
     }
     let targets = grab::tick::resolve(provided.targets, provided.notes, active.as_ref());
     let mut controls = Controls::from_frame(
@@ -729,6 +734,11 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
                 .is_some_and(|input| input.hands.iter().any(|hand| hand.button.pressed)),
             enter: enter_from_hang,
             line: grapple_line,
+            free_hand: grapple::line_grab::lock_hand(
+                grapple_hand,
+                state.bindings.grip_latches()[grapple_hand.other().index()],
+            )
+            .filter(|_| config.grapple.free_hand_line),
             deployed: matches!(
                 detection.mode,
                 Mode::Airborne(AirborneVariant::Wingsuit | AirborneVariant::Parachute)

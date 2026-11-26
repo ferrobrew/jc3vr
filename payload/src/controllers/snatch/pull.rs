@@ -33,7 +33,7 @@ use crate::{
         snatch::{
             FinishInput, Refusal, SNATCH,
             arrival::{self, Landing, LandingInput},
-            brace::{self, Brace, BraceInput, BraceReach},
+            brace::{self, Brace, BraceInput, BraceReach, LineInput, Regrip},
             catch::{self, CatchHand, CatchTuning, CatchWatch},
             engine, juice, landing,
             rules::{self, FlightLimits, FlightSample, PropHandling, StallWatch, Verdict},
@@ -49,6 +49,7 @@ use crate::{
     },
     grapple::{
         hook::BodyHit,
+        line_grab,
         rope::{self, GRAVITY_MPS2, RopeFault},
     },
     hooks::camera,
@@ -634,6 +635,8 @@ pub(super) struct Swinging {
     pub mass_kg: f32,
     /// Whether the other hand braces the grapple hand.
     pub braced: bool,
+    /// Whether the other hand holds the line ahead of the grapple hand.
+    pub line_held: bool,
     /// Where the line is anchored, and the target's centre, world space.
     pub anchor: Vec3,
     pub centre: Vec3,
@@ -654,7 +657,8 @@ pub(super) struct SlingInput<'a> {
 
 /// One tick of the held line: hold the target at the line's held length from the grapple hand,
 /// reeling in toward the swing's length, with a tension up to the line's strength for the target's
-/// mass, raised while the other hand braces the grapple hand's wrist ([`brace`]).
+/// mass, raised while the other hand braces the grapple hand's wrist or holds the line ahead of it
+/// ([`brace`]), which then anchors the line.
 ///
 /// # Safety
 ///
@@ -686,14 +690,17 @@ pub(super) unsafe fn sling(
     let state = unsafe { physical_hands::body_state(body, owner) }.map_err(Refusal::Body)?;
     let (line_anchor, wrist) = unsafe { prepare_sling(hand, wire) }?;
     let other = hand.other();
-    let other_wrist = ik::tick_records().current[other.index()].map(|t| t.wrist.position);
+    let other_record = ik::tick_records().current[other.index()];
+    let other_wrist = other_record.map(|t| t.wrist.position);
+    let other_palm = other_record.map(|t| line_grab::palm(t.wrist));
+    let other_free = line_grab::free_and_empty(other);
     let was_braced = brace.braced();
+    let was_holding = brace.holds_line();
     let braced = brace.step(
         BraceInput {
             grip_held: input.grips[other.index()].held()
                 && matches!(input.latches[other.index()], GripLatch::Fist { .. }),
-            free: physical_hands::free_hands()[other.index()]
-                && physical_hands::held_props()[other.index()].is_none(),
+            free: other_free,
             gap_m: other_wrist.map(|other| other.distance(wrist)),
         },
         BraceReach {
@@ -702,7 +709,7 @@ pub(super) unsafe fn sling(
         },
     );
     let braced_anchor = brace::anchor(line_anchor, wrist, other_wrist);
-    let anchor = if braced { braced_anchor } else { line_anchor };
+    let mut anchor = if braced { braced_anchor } else { line_anchor };
     let rope = match rope {
         Some(rope) => {
             // The anchor moving between the hand and the pair is no motion of the hands.
@@ -719,13 +726,42 @@ pub(super) unsafe fn sling(
             slot.insert(Sling::new(state.pose.point(hit.local_point), anchor).ok_or(Refusal::Gone)?)
         }
     };
+    let regrip = brace.step_line(LineInput {
+        holds: !braced
+            && other_free
+            && input.config.grapple.free_hand_line
+            && input.grips[other.index()].held()
+            && line_grab::holds_line(input.latches[other.index()]),
+        ahead_m: other_palm.and_then(|palm| {
+            line_grab::ahead_m(line_anchor, state.pose.point(hit.local_point), palm)
+        }),
+        length_m: rope.length_m(),
+    });
+    let line_held = brace.holds_line();
+    if let (true, Some(palm)) = (line_held, other_palm) {
+        anchor = palm;
+    }
+    if let Some(regrip) = regrip {
+        let (Regrip::Took { length_m } | Regrip::LetGo { length_m }) = regrip;
+        rope.regrip(anchor, length_m);
+        tracing::info!(
+            target: "controllers",
+            length_m,
+            "snatch: the free hand {} the line",
+            if line_held { "took hold of" } else { "let go of" }
+        );
+    }
     // A ragdoll's body drags the whole ragdoll, so the line holds and pulls the whole ragdoll's
     // weight.
     let mass_kg = match grabbed.kind {
         Pulled::Ragdoll { mass_kg, .. } => mass_kg,
         _ => state.mass_kg.unwrap_or(1.0),
     };
-    let mut line = LineTuning::of(&input.config.weapons.snatch.swing, mass_kg, braced);
+    let mut line = LineTuning::of(
+        &input.config.weapons.snatch.swing,
+        mass_kg,
+        braced || line_held,
+    );
     if let Pulled::Ragdoll { .. } = grabbed.kind {
         // A body is yanked in to arm's reach, where the free hand can take it, and then swung on
         // the line held there; at the swing's own length and reel, a body bitten a few metres off
@@ -765,13 +801,14 @@ pub(super) unsafe fn sling(
         max_tension_n: line.max_tension_n,
         mass_kg,
         braced,
+        line_held,
         anchor,
         centre: hook_point,
     };
     haptics::sustain(hand, Sustain::GrappleTension, swinging.share());
-    if braced {
+    if braced || line_held {
         haptics::sustain(other, Sustain::GrappleTension, swinging.share());
-    } else if was_braced {
+    } else if was_braced || was_holding {
         haptics::sustain(other, Sustain::GrappleTension, 0.0);
     }
     Ok(swinging)

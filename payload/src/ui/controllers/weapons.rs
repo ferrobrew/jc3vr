@@ -428,6 +428,9 @@ fn grapple_readout(ui: &mut Ui, a: &AnchorStatus, (yanks, last): (u64, Option<Ya
         } else {
             "  Holding the line: release grip to throw · release B to snatch"
         });
+        if swing.line_held {
+            ui.label("  The other hand holds the line ahead: pull to take line in, swing to whip");
+        }
     }
 }
 

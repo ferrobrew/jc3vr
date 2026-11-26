@@ -45,7 +45,8 @@
 //! A loose object too heavy for a hand to carry, up to the swing's ceiling, is never pulled in: once
 //! the hook bites, the held line swings it ([`sling`]), a stiff, tension-only spring-damper from the
 //! grapple hand whose strength scales with the target's mass, and which the other hand can brace at
-//! the grapple hand's wrist ([`brace`]). Holding B after arming swings a weapon or a light object
+//! the grapple hand's wrist, or take hold of ahead of it to pull and swing the target by
+//! ([`brace`], [`crate::grapple::line_grab`]). Holding B after arming swings a weapon or a light object
 //! the same way until B releases. [`sling_hooks`] keeps the native device endpoint on the tracked
 //! forearm and excludes the owned wire's native constraint and tension path while the line swings.
 //! Grip release writes no target velocity. [`hooks`] keeps ordinary grapple taps and holds working
@@ -74,6 +75,7 @@ mod target;
 
 use std::num::NonZeroUsize;
 
+use glam::Vec3;
 use jc3gi::character::character::Character;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
@@ -196,6 +198,21 @@ const fn heavy(offer: &Offer) -> bool {
 /// ([`crate::controllers::weapons::permission`]).
 pub(crate) fn line_out() -> bool {
     STATE.lock().phase.in_flight().is_some()
+}
+
+/// The hook's point on the target the snatch's line swings from `hand`, world space, as the last
+/// tick left it: the far end of the line the free hand may take hold of
+/// ([`crate::grapple::line_grab`]).
+pub(crate) fn swinging_far_end(hand: Hand) -> Option<Vec3> {
+    let state = STATE.lock();
+    match state.phase {
+        Phase::Pulling {
+            hand: swinging,
+            rope: Some(_),
+            ..
+        } if swinging == hand => state.status.swing.map(|swing| swing.centre),
+        _ => None,
+    }
 }
 
 /// The hands whose grips the snatch holds for its catch, by [`Hand::index`]: while its line is out,

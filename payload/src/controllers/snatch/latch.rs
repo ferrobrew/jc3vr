@@ -200,6 +200,7 @@ mod tests {
             max_tension_n: 1000.0,
             mass_kg: 100.0,
             braced,
+            line_held: false,
             tethered: true,
             anchor: Vec3::ZERO,
             centre: Vec3::new(0.0, 0.0, -3.5),

@@ -260,7 +260,8 @@ pub(crate) fn finish_tick(
             | GrabVolume::Pickup(_)
             | GrabVolume::Climb
             | GrabVolume::StuntHold
-            | GrabVolume::Snatch(_) => {
+            | GrabVolume::Snatch(_)
+            | GrabVolume::GrappleLine => {
                 continue;
             }
         };

@@ -351,12 +351,12 @@ impl Bindings {
             let volume = volume.filter(|v| {
                 !(chord.dominant_grip && hand == off_hand && *v == GrabVolume::Foregrip)
             });
-            // A grip held for the snatch's catch closes on nothing.
+            // A grip held for the snatch's catch closes on nothing but the snatch's own line.
             let reserved = controls.hand(hand).catch_reserved;
             self.grips[hand.index()].step(LatchTick {
                 grip: controls.hand(hand).grip,
                 closed: controls.hand(hand).hold.held(),
-                target: volume.filter(|_| !reserved),
+                target: volume.filter(|v| !reserved || *v == GrabVolume::GrappleLine),
                 bound: !reserved && grip_bound(input, hand),
                 slow: controls.hand(hand).grab_slow,
                 holds_line: hand == off_hand && (controls.grapple.line || controls.grapple.reeling),

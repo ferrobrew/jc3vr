@@ -50,6 +50,8 @@ pub struct SwingReadout {
     pub mass_kg: f32,
     /// Whether the other hand braces the grapple hand.
     pub braced: bool,
+    /// Whether the other hand holds the line ahead of the grapple hand.
+    pub line_held: bool,
     /// Whether the target is too heavy to come to the hand.
     pub tethered: bool,
     /// Where the line is anchored, and the target's centre, world space.
@@ -65,6 +67,7 @@ impl SwingReadout {
             max_tension_n: swinging.max_tension_n,
             mass_kg: swinging.mass_kg,
             braced: swinging.braced,
+            line_held: swinging.line_held,
             tethered,
             anchor: swinging.anchor,
             centre: swinging.centre,

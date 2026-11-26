@@ -77,6 +77,11 @@ pub(super) fn grapple_settings(ui: &mut Ui, cfg: &mut config::Config) {
         "In a vehicle seat, the grapple button fires the hook along the off-hand's aim and tethers \
          what it hits to the vehicle.",
     );
+    ui.checkbox(&mut c.grapple.free_hand_line, "Free hand on the line")
+        .on_hover_text(
+            "The free hand grips a locked or swinging line ahead of the grapple hand: pulling it \
+             back takes line in, and swinging it swings a snatched target.",
+        );
     let l = &mut c.grapple.lock;
     ui.checkbox(&mut l.enabled, "Lock the reel's line").on_hover_text(
         "Holding the grapple button during the reel holds the line's length to swing from. A quick \
