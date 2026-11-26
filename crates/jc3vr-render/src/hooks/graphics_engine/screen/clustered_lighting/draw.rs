@@ -120,8 +120,6 @@ fn draw_clustered(
     {
         capture_point(PipelinePoint::AfterResolve);
     }
-
-    crate::debug::pipeline_probes::record_main_color_mean("post_resolve");
 }
 
 /// What one `run_draw_clustered` is asked to do.

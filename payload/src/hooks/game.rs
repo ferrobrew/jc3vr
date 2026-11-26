@@ -9,7 +9,6 @@ use jc3gi::{
         gi::{GISolver, LightManager},
         graphics_engine::{GraphicsEngine, RenderFrameCounters, get_render_frame_counters},
         render_block::{RenderBlockTypeTerrain, RenderBlockTypeTerrainPatch},
-        render_engine::RenderEngine,
         render_pass::get_current_add_buffer,
     },
 };
@@ -27,11 +26,7 @@ use jc3vr_core::{
 use jc3vr_hud::{hooks::ui, hud};
 use jc3vr_physical::controllers::{glass, physical_hands};
 use jc3vr_render::{
-    debug,
-    debug::{
-        camera::capture_render_camera,
-        trace::{TraceEvent, TraceState, tracing_active},
-    },
+    debug::trace::{TraceEvent, TraceState, tracing_active},
     far_field,
     hooks::{
         clock,
@@ -334,13 +329,7 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
         // Start of a frame: publish the master toggle from config into the live stereo state, which
         // the render hooks read via `jc3vr_render::stereo`. Copy the config values out and drop the lock
         // before driving the eye loop / engine work.
-        let (stereo, present_eye_0, restore_cb_ring) = Config::lock_query(|c| {
-            (
-                c.stereo.enabled,
-                c.stereo.present_eye_0,
-                c.stereo.restore_cb_ring,
-            )
-        });
+        let stereo = Config::lock_query(|c| c.stereo.enabled);
         // A running VR session always renders both eyes (the XR swapchain has a slice per eye), so
         // force the stereo double-Draw on regardless of the flatscreen stereo toggle.
         let render_mode = dispatch::mode();
@@ -381,7 +370,6 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
         }
 
         if stereo {
-            debug::stereo_diff::begin_frame(!defer_tail);
             #[cfg(feature = "profiler")]
             let snapshot_scope = puffin::profile_scope_custom!("Stereo snapshots");
             mark(Phase::Eye0Snapshot);
@@ -394,11 +382,6 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
             // dispatch, keeping all dispatches on the same TAA-jitter phase, shadow parity, and CB
             // ring slot.
             let frame_counters = snapshot_frame_counters();
-            // Snapshot the RenderEngine per-Draw constant-buffer ring index so we can rewind it
-            // before each later dispatch: it advances once per Draw and is not part of the frame
-            // counters above, so without this the dispatches select different CB pool slots (see
-            // RESTORE_CB_RING).
-            let cb_ring = restore_cb_ring.then(snapshot_cb_ring).flatten();
             // Snapshot the SSAO temporal history index and the GI cascade index so every dispatch
             // resolves against the same SSAO slot and refreshes the same LPV cascade -- the two
             // passes that carry an unsynchronized per-eye history. The SSAO index advances once per
@@ -431,17 +414,14 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
             // The per-eye camera offset is injected on the render camera in the SetupRenderCamera
             // hook (see hooks::camera and docs/engine/rendering/rendering.md section 2); here we just drive
             // the dispatches and tag each with its eye index via STEREO_STATE.draw_index.
-            // present_eye_0 picks which eye reaches the screen (the other's flip is blocked), so
-            // each eye can be compared live. A share frame (issue #32) prepends a far-only
+            // Eye 1 reaches the screen (the other's flip is blocked). A share frame (issue #32) prepends a far-only
             // dispatch at eye 0's pose: it renders the far draw-list runs and the gated far-regime
             // types into the G-buffer, which the render-pass-range hook captures for the two near
             // dispatches to composite.
             let collapsed = layout::collapse_active();
             let plan = DispatchPlan::new(render_mode, collapsed, far_field::share_configured());
             let share_frame = plan.share_frame();
-            let present_eye = render_mode
-                .selected_eye()
-                .unwrap_or(usize::from(!present_eye_0));
+            let present_eye = render_mode.selected_eye().unwrap_or(1);
             TraceState::record(TraceEvent::FrameBegin {
                 stereo: true,
                 present_eye: Some(present_eye),
@@ -465,9 +445,6 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
                     // first dispatch's, so this dispatch would otherwise reuse its projection for
                     // the distant tessellated terrain (a sheared horizon wedge in VR).
                     invalidate_terrain_cbs();
-                    if let Some(ring) = cb_ring {
-                        restore_cb_ring_index(ring);
-                    }
                     if let Some(history) = ssao_history {
                         restore_ssao_history_indices(history);
                     }
@@ -492,13 +469,11 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
                     state.last_near_dispatch = plan.last_near(ordinal);
                 }
                 // While a VR session runs there is no desktop present at all (the compositor
-                // presents), so block the flip for every dispatch; otherwise `present_eye_0` picks
-                // which eye reaches the game window. The far dispatch never presents.
+                // presents), so block the flip for every dispatch; otherwise only the presented eye
+                // reaches the game window. The far dispatch never presents.
                 //
                 // The eye-parity block must not apply under the collapse: the one dispatch is tagged
-                // eye 0 but carries *both* eyes, so blocking it whenever `present_eye_0` is off (the
-                // default) would block every flip there is, and the game window would keep showing
-                // whatever it last presented while the engine ran on at full rate.
+                // eye 0 but carries *both* eyes, so the parity block would block every flip there is.
                 BLOCK_FLIP.store(
                     vr_running || far_phase || (!collapsed && present_eye != eye),
                     Ordering::Relaxed,
@@ -541,19 +516,11 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
                 } else {
                     Phase::Eye1Post
                 });
-                if !far_phase {
-                    debug::rt_hash::hash_engine_rts();
-                    debug::pipeline_probes::record_global_constants("frame_end");
-                    capture_render_camera(eye);
-                }
                 TraceState::record(TraceEvent::DrawEnd {
                     eye,
                     counts: DRAW_COUNTS.snapshot(),
                 });
             }
-            // Before the frame tick, so the diff lands in this frame of the trace (and the final
-            // frame's diff precedes the dump).
-            debug::stereo_diff::finish_frame();
             TraceState::end_frame();
 
             // The draw thread reads the per-dispatch stereo state (draw_index, far_phase) for the
@@ -579,7 +546,6 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
                 let _timing = frame_timing::scope(Slot::Dispatch);
                 game.Draw(spf);
             }
-            capture_render_camera(0);
             TraceState::end_frame();
         }
 
@@ -628,7 +594,7 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
         // (the compositor paces the loop), so the mirror never delays the HMD path. The present is
         // unsynced by mandate: a vsynced mirror on a 60 Hz monitor would throttle the 90 Hz HMD loop (see
         // `jc3vr_view::vr::mirror::present_mirror`). When no session runs the engine presents normally, so
-        // the mirror is skipped and flatscreen behaviour (including present_eye_0) is unchanged.
+        // the mirror is skipped and flatscreen behaviour is unchanged.
         if !tail_deferred && vr_running && vr_cfg.mirror {
             #[cfg(feature = "profiler")]
             puffin::profile_scope!("Desktop mirror");
@@ -696,18 +662,6 @@ pub(crate) unsafe fn drain_draw_thread_fragment(ge: &mut GraphicsEngine) {
             return;
         }
         CpuFragmentWaitUntilSignalIsNonZero(&raw const ge.m_DrawThreadWorkSignal);
-    }
-}
-
-fn snapshot_cb_ring() -> Option<u32> {
-    unsafe { Some(RenderEngine::get()?.m_CurrBackBufferCopy) }
-}
-
-fn restore_cb_ring_index(saved: u32) {
-    unsafe {
-        if let Some(re) = RenderEngine::get() {
-            re.m_CurrBackBufferCopy = saved;
-        }
     }
 }
 

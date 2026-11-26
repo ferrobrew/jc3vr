@@ -31,10 +31,7 @@ use re_utilities::hook_library::HookLibrary;
 #[cfg(feature = "profiler")]
 use crate::profiler::gpu::seam;
 use crate::{
-    debug::{
-        stereo_diff::{op_total, record_pass, recording},
-        trace::{TraceEvent, TraceState, tracing_active},
-    },
+    debug::trace::{TraceEvent, TraceState, tracing_active},
     hooks::graphics_engine::{
         probes,
         probes::{PipelinePoint, capture_point, scoped},
@@ -46,22 +43,16 @@ use crate::{
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_static_binder(&RENDER_PASS_DRAW_BINDER)
-        .with_static_binder(&SETUP_RENDER_FRAME_DATA_BINDER)
         .with_static_binder(&DO_DRAW_BINDER)
-        .with_static_binder(&HAND_BACK_BUFFERS_BINDER)
         .with_static_binder(&DRAW_RENDER_PASS_RANGE_BINDER)
         .with_static_binder(&PRE_DRAW_BINDER)
         .with_static_binder(&DRAW_POSTEFFECTS_BINDER)
         .with_static_binder(&SETUP_RENDER_STATES_BINDER)
         .with_static_binder(&SET_GLOBAL_SHADER_CONSTANTS_BINDER)
-        .with_static_binder(&COMMIT_RENDER_PASS_SETTINGS_BINDER)
         .with_static_binder(&SHADOW_MANAGER_UPDATE_RENDER_BINDER)
 }
 
-// RenderPass::Draw -- the per-pass draw entry. Under `stereo.diagnose_pass_sweep`, record the
-// MainColor mean after each late-scene pass (fog gradient through the particle/transparent tail),
-// so a global change walks itself to the pass that injects it. Eye 0, every 2nd frame, to bound
-// the readback stalls.
+// RenderPass::Draw -- the per-pass draw entry.
 #[detour(address = jc3gi::graphics_engine::render_pass::RenderPass::Draw_ADDRESS)]
 fn render_pass_draw(this: *mut RenderPass) {
     let pass_id = unsafe { this.as_ref() }.map(|pass| pass.m_Index);
@@ -71,53 +62,6 @@ fn render_pass_draw(this: *mut RenderPass) {
         |probes, body| unsafe { probes.pass_draw_scope(this, pass_id, body) },
         || RENDER_PASS_DRAW.get().unwrap().call(this),
     );
-    let Some(id) = pass_id else { return };
-    if !tracing_active() || draw_index() != 0 {
-        return;
-    }
-    if !SWEEP_PASS_RANGE.contains(&id) {
-        return;
-    }
-    let even_frame = TraceState::current_frame().is_some_and(|(_, frame)| frame % 2 == 0);
-    if !even_frame {
-        return;
-    }
-    crate::debug::pipeline_probes::record_pass_sweep_mean(format!("pass{id:#04x}"));
-}
-
-/// The late-scene pass ids the sweep covers: `RP_SKY_GRADIENT` through `RP_PARTICLE_ONSCREEN`.
-const SWEEP_PASS_RANGE: std::ops::RangeInclusive<i16> =
-    RenderPassId::RP_SKY_GRADIENT as i16..=RenderPassId::RP_PARTICLE_ONSCREEN as i16;
-
-// RenderPass::SetupRenderFrameData -- the per-batch list *build*: appends `count` render-block-items
-// to the active add-list. Runs on worker threads during the sim, not during our Draw calls, so the
-// eye-1 gate never actually fires; it is NOT the add/draw swap (the swap is handled by restoring
-// `current_add_buffer` between eyes in `game::game_update_render`).
-#[detour(address = jc3gi::graphics_engine::render_pass::RenderPass::SetupRenderFrameData_ADDRESS)]
-fn setup_render_frame_data(a1: *mut c_void, count: i32, a3: *mut c_void, items: *mut c_void) {
-    let gated = jc3vr_view::stereo::later_scene()
-        && STEREO_CONFIG.query(|c| c.gate_setup_render_frame_data);
-    TraceState::record_eye(TraceEvent::SetupRenderFrameData { gated });
-    if gated {
-        return;
-    }
-    SETUP_RENDER_FRAME_DATA
-        .get()
-        .unwrap()
-        .call(a1, count, a3, items);
-}
-
-// ConstantBufferPool::HandBackBuffers -- recycles last frame's constant buffers back to the free
-// pool. Suppressing it on eye 1 starves the second render of constant buffers. Off by default.
-#[detour(address = jc3gi::graphics_engine::render_pass::ConstantBufferPool::HandBackBuffers_ADDRESS)]
-fn hand_back_buffers(this: *mut c_void) {
-    let gated =
-        jc3vr_view::stereo::later_scene() && STEREO_CONFIG.query(|c| c.gate_hand_back_buffers);
-    TraceState::record_eye(TraceEvent::HandBackBuffers { gated });
-    if gated {
-        return;
-    }
-    HAND_BACK_BUFFERS.get().unwrap().call(this);
 }
 
 // RenderPass::DoDraw -- one pass's walk over its sorted draw list. The far-field split (issue #32)
@@ -132,11 +76,6 @@ fn do_draw(this: *mut RenderPass, ctx: *mut RenderContext, color_mask: u32) -> b
     #[cfg(feature = "profiler")]
     // SAFETY: `this` is the live render pass being drawn.
     let _pass = unsafe { crate::profiler::gpu::pass_scope(this) };
-    // Single-pass-stereo feasibility probe: record this pass's per-eye GPU-op count so the two
-    // eyes' draw sequences can be diffed at frame end. Armed per traced stereo frame; two atomic
-    // loads when on.
-    let diff = recording();
-    let ops_before = if diff { op_total() } else { 0 };
     // SAFETY: `this` and `ctx` are the live pass and render context of this draw call.
     let window = unsafe { crate::far_field::before_do_draw(this, ctx) };
     // Publish the pass for the duration of the walk: the draw detours see only a D3D context, and
@@ -170,10 +109,6 @@ fn do_draw(this: *mut RenderPass, ctx: *mut RenderContext, color_mask: u32) -> b
                 capture_point(PipelinePoint::AfterSun);
             }
             drop(window);
-            if diff {
-                let ops = op_total().wrapping_sub(ops_before);
-                record_pass(pass_id, draw_index(), ops);
-            }
             // Close the final render-block-type run's scope before the pass scope closes.
             #[cfg(feature = "profiler")]
             jc3vr_core::profiler::type_scope::clear();
@@ -194,12 +129,8 @@ const RP_GLOBAL_ILLUMINATION: i32 = RenderPassId::RP_GLOBAL_ILLUMINATION as i32;
 // the ranges never vary between frames. `PreDraw` (the shadow, reflection, and vegetation prepasses)
 // runs before all three and does not come through here.
 //
-// The per-eye-divergence and flicker diagnostics drop passes by splitting the range around them, so
-// every other pass runs untouched: SSR (reads a previous-frame scene capture regenerated each Draw)
-// and GI (may carry a per-eye temporal/probe history) for the per-eye MainColor divergence, AO
-// volumes (depth-tested proxy geometry whose whole contribution can flip on a sub-pixel jitter
-// shift) for the blob-scale shadow flicker, and an arbitrary range for bisecting whichever pass an
-// artifact lives in.
+// The capture overrides that leave out SSR, GI, or the AO volumes drop those passes by splitting
+// the range around them, so every other pass runs untouched.
 #[detour(address = jc3gi::graphics_engine::render_engine::RenderEngine::DrawRenderPassRange_ADDRESS)]
 fn draw_render_pass_range(
     this: *mut c_void,
@@ -211,14 +142,8 @@ fn draw_render_pass_range(
     #[cfg(feature = "profiler")]
     puffin::profile_scope!("DrawRenderPassRange", format!("{first}..{last}"));
     let original = DRAW_RENDER_PASS_RANGE.get().unwrap();
-    let (skip_ssr, skip_gi, skip_ao_volumes, skip_range) = STEREO_CONFIG.query(|c| {
-        (
-            c.skip_ssr,
-            c.skip_gi,
-            c.skip_ao_volumes,
-            c.skip_pass_range_enabled.then_some(c.skip_pass_range),
-        )
-    });
+    let (skip_ssr, skip_gi, skip_ao_volumes) =
+        STEREO_CONFIG.query(|c| (c.skip_ssr, c.skip_gi, c.skip_ao_volumes));
 
     // The far-field share frame (issue #32): the far dispatch runs only the G-buffer range (its
     // product is the captured G-buffer; lighting, scene, and post are per-eye work), and each near
@@ -236,7 +161,6 @@ fn draw_render_pass_range(
         (skip_ssr && pass == RP_SCREEN_SPACE_REFLECTIONS)
             || (skip_gi && pass == RP_GLOBAL_ILLUMINATION)
             || (skip_ao_volumes && pass == RP_AO_VOLUMES)
-            || skip_range.is_some_and(|(lo, hi)| lo <= pass && pass <= hi)
     };
 
     // Draw maximal runs of non-skipped passes in [lo, hi), omitting the skipped ones.
@@ -615,37 +539,6 @@ fn shadow_manager_update_render(this: *mut c_void, dt: f32, dtf: f32) -> u64 {
         camera.m_TransformT1.data[9] = saved_row2[1];
         camera.m_TransformT1.data[10] = saved_row2[2];
         result
-    }
-}
-
-// ShadowManager::CommitRenderPassSettings -- the per-dispatch gate that enables this frame's
-// scheduled shadow passes (the update round-robin) and re-points their targets by parity. With the
-// freeze diagnostic on, the pass-enable flags the original just set are cleared again (mirroring its
-// own prologue), so no shadow pass renders and the atlas keeps its last contents -- shadows stay
-// visible but stop updating, splitting "atlas content pulses" from "shadow sampling pulses".
-#[detour(
-    address = jc3gi::graphics_engine::shadow_manager::ShadowManager::CommitRenderPassSettings_ADDRESS
-)]
-fn commit_render_pass_settings(this: *mut ShadowManager, ctx: *mut c_void) {
-    #[cfg(feature = "profiler")]
-    puffin::profile_scope!("ShadowManager::CommitRenderPassSettings");
-    COMMIT_RENDER_PASS_SETTINGS.get().unwrap().call(this, ctx);
-    if !STEREO_CONFIG.query(|c| c.freeze_shadow_maps) {
-        return;
-    }
-    // SAFETY: `this` is the live shadow manager; each cascade's pass pointers are engine-owned and
-    // null-checked, and the flag write mirrors the original's own prologue stores.
-    unsafe {
-        let Some(manager) = this.as_mut() else {
-            return;
-        };
-        for cascade in &mut manager.m_Cascades {
-            for pass in cascade.m_Passes {
-                if let Some(pass) = pass.as_mut() {
-                    pass.m_StateFlags.remove(RenderPassState::m_Enabled);
-                }
-            }
-        }
     }
 }
 

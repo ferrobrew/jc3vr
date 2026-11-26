@@ -18,7 +18,6 @@ use crate::{
     controllers::body::rig::origin_provenance::{OriginEvidence, TrackingReceipt},
     headpose,
     headpose::{FrameTelemetry, config::HEADPOSE_CONFIG, participants::head_participants},
-    stereo::config::STEREO_CONFIG,
     vr::{
         EyeView, Fov, FrameInputs, FreezeMode, LocatedFrame, OffAxisProjection, VrConfig,
         config::ProjectionConvention,
@@ -505,23 +504,10 @@ fn render_frame(
         OffAxisProjection::new(fit_fov, near_clip, far_clip).standard_depth,
     ));
 
-    // Flicker-isolation diagnostics (issue #31), read once for the frame. `symmetrize` swaps each eye's
-    // asymmetric off-axis frustum for a zero-shear symmetric one of the same extent (Test A); `mirror`
-    // makes eye 1 reuse eye 0's params so both eyes draw the identical view (Test B). Both feed the
-    // reconstruction consistently, since the camera hook and reconstruction read whatever lands in
-    // `RENDER_PARAMS`. See `crate::stereo::config::StereoConfig`.
-    let (symmetrize, mirror) =
-        STEREO_CONFIG.query(|c| (c.symmetrize_eye_frusta, c.mirror_eye0_to_both));
-
     let eye_params = |eye: crate::vr::EyeView, eye_position: Vec3| {
-        let projection = if symmetrize {
-            symmetric_projection(eye.fov, near_clip, far_clip)
-        } else {
-            eye.projection
-        };
         EyeRenderParams {
-            projection_standard: projection.standard_depth,
-            projection_reverse_z: projection.reverse_z,
+            projection_standard: eye.projection.standard_depth,
+            projection_reverse_z: eye.projection.reverse_z,
             local_offset: center_orientation.inverse()
                 * ((eye_position - center_position) * cfg.world_scale),
             // The eye's orientation relative to the center head pose, in the head-local frame -- the
@@ -535,11 +521,7 @@ fn render_frame(
     };
 
     let eye0_params = eye_params(eye0, pos0);
-    let eye1_params = if mirror {
-        eye0_params
-    } else {
-        eye_params(eye1, pos1)
-    };
+    let eye1_params = eye_params(eye1, pos1);
 
     // Under the full-camera freeze the render camera itself is pinned in world space (see the
     // `SetupRenderCamera` hook), so the head-local eye geometry is pinned with it. Otherwise live
@@ -593,26 +575,6 @@ fn render_frame(
         predicted_display_time_ns: display_time.as_nanos(),
         eyes: [capture_eye(&views[0]), capture_eye(&views[1])],
     }));
-}
-
-/// Build a zero-shear (symmetric) off-axis projection that preserves the eye's horizontal and vertical
-/// FOV *extent* but re-centres the frustum, for the [`crate::stereo::config::StereoConfig::symmetrize_eye_frusta`]
-/// flicker-isolation diagnostic (issue #31). Each axis' symmetric half-extent is half the asymmetric
-/// tangent span, so `2/(tr-tl)` (the projection's scale term) is unchanged while the off-centre terms
-/// `(tl+tr)` and `(td+tu)` collapse to zero.
-fn symmetric_projection(fov: openxr::Fovf, near: f32, far: f32) -> OffAxisProjection {
-    let half_h = 0.5 * (fov.angle_right.tan() - fov.angle_left.tan());
-    let half_v = 0.5 * (fov.angle_up.tan() - fov.angle_down.tan());
-    OffAxisProjection::new(
-        Fov {
-            left: (-half_h).atan(),
-            right: half_h.atan(),
-            up: half_v.atan(),
-            down: (-half_v).atan(),
-        },
-        near,
-        far,
-    )
 }
 
 /// The tangent extents `[left, right, up, down]` of an eye's frustum in the centre head frame: the

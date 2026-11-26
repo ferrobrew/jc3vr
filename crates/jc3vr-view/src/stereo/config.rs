@@ -773,67 +773,12 @@ pub struct StereoConfig {
     pub single_pass: SinglePassConfig,
     /// Master switch: render the scene twice, once per eye.
     pub enabled: bool,
-    /// Apply the per-eye IPD camera offset.
-    pub cameras: bool,
-    /// Which eye reaches the screen (debug A/B).
-    pub present_eye_0: bool,
-    /// Skip SetupRenderFrameData on eye 1 (experimental; normally inert).
-    pub gate_setup_render_frame_data: bool,
-    /// Skip HandBackBuffers on eye 1.
-    pub gate_hand_back_buffers: bool,
     /// Zero the post-effect dt on eye 1 (so once-per-frame accumulators do not double-step).
     pub gate_eye1_dt: bool,
-    /// Diagnostic: while a render trace collects, record each eye's per-pass GPU-op count during a
-    /// stereo frame and trace the diff -- which passes draw identically between eyes (replayable
-    /// from one walk) and which diverge (the per-eye special-casing burden). The feasibility probe
-    /// for single-pass stereo; see `jc3vr_render::debug::stereo_diff`.
-    pub diagnose_stereo_draw_diff: bool,
-    /// Diagnostic: hash a curated set of engine render targets after each eye's Draw and record the
-    /// per-eye hashes into the active render trace. Run with `cameras` off (both eyes share one
-    /// camera) so any RT whose two eyes' hashes differ is being accumulated across the two Draws --
-    /// the "stronger in one eye" bug. See `jc3vr_render::debug::rt_hash`.
-    pub diagnose_rt_hashes: bool,
-    /// Diagnostic: while a render trace collects, encode each eye's final `BackBufferLinear` to a PNG
-    /// each frame into the trace's session folder (alongside `trace.ndjson`), named by
-    /// frame index so the sequence reassembles and aligns 1:1 with the per-frame trace events. For
-    /// localizing per-frame visual artifacts (e.g. the shadow flicker) the numeric trace cannot
-    /// place spatially.
-    /// Heavy (a full readback + PNG encode per frame); only meaningful during a manual trace.
-    pub diagnose_rt_screenshots: bool,
-    /// Diagnostic: while tracing, record the MainColor mean at the fixed pipeline stage brackets
-    /// (after the deferred resolve, around the aerial-perspective composite, at the post block
-    /// entry, and at the post-chain start). Bracketing a global change between two stages names the
-    /// frame segment that injects it. Each sample drains the GPU, so traces run slower.
-    pub diagnose_main_color_means: bool,
-    /// Diagnostic: while tracing, record the MainColor mean after every late-scene render pass
-    /// (`RP_SKY_GRADIENT` through `RP_PARTICLE_ONSCREEN`, eye 0, every 2nd frame) -- the per-pass
-    /// ladder that walks a global change to the pass that injects it. Much heavier than the stage
-    /// brackets.
-    pub diagnose_pass_sweep: bool,
-    /// Diagnostic: while tracing, dump the render engine's FP/VP global constant staging blocks at
-    /// the scene composite and at frame end, for good-vs-bad frame diffing.
-    pub diagnose_global_constants: bool,
-    /// Automatically start a render trace when the raw-brightness histogram mid-point (the
-    /// auto-exposure divisor) jumps against its recent median -- the CPU-visible signature of the
-    /// latched global-brightness step, which lags the visual flip by only a few frames. Saves
-    /// having to time a manual capture to a spontaneous flip. An arm flag the capture clears when
-    /// it fires, so it is not saved.
-    #[serde(skip)]
-    pub auto_trace_brightness_step: bool,
     /// Diagnostic: skip the SSAO pass on both eyes in stereo, to confirm whether SSAO drives the
     /// "stronger in one eye" darkening. (Equivalent to lowering the in-game AO setting, but toggleable
     /// live.)
     pub disable_ssao: bool,
-    /// Experiment: skip the SSAO pass on the second eye only, so the first eye's screen AO is absent
-    /// from the second. A crude test of whether the AO asymmetry is the artifact (a real shared-AO fix
-    /// needs reprojection, not omission).
-    pub ssao_eye0_only: bool,
-    /// Diagnostic: restore the `RenderEngine` back-buffer copy ring index (`m_CurrBackBufferCopy`)
-    /// between the two stereo eyes. This ring advances once per `Draw` and is *not* one of the engine
-    /// frame counters the between-eye restore rewinds, so the two eyes
-    /// otherwise land on different back-buffer copies -- any pass that reads the previous copy then
-    /// sees different data per eye. Test whether pinning it converges the per-eye MainColor.
-    pub restore_cb_ring: bool,
     /// Diagnostic: skip the screen-space reflections pass (`RP_SCREEN_SPACE_REFLECTIONS`) on both eyes.
     /// SSR reads a previous-frame scene-color capture that is regenerated every `Draw`, so eye 1 reads
     /// what eye 0 just wrote -- a content-based per-eye divergence no counter restore can fix. If
@@ -849,36 +794,16 @@ pub struct StereoConfig {
     /// depth shift, so the temporal jitter cycles it -- the prime suspect for the blob-scale
     /// "shadows flicker in and out" artifact in MainColor (issue #10's residual flicker).
     pub skip_ao_volumes: bool,
-    /// Diagnostic: skip the [`skip_pass_range`](Self::skip_pass_range) passes on both eyes. A
-    /// separate flag (rather than an `Option` around the range) so the range can be preset while
-    /// disarmed -- dragging the bounds live sweeps through intermediate ranges, some of which are
-    /// unsafe to skip. Armed for one session at a time, so it is not saved.
-    #[serde(skip)]
-    pub skip_pass_range_enabled: bool,
-    /// Diagnostic: the inclusive render-pass index range `[start, end]` to skip while
-    /// [`skip_pass_range_enabled`](Self::skip_pass_range_enabled), for bisecting which pass an
-    /// artifact originates in ([`RenderPassId`](jc3gi::graphics_engine::render_engine::RenderPassId)
-    /// maps every index; GBuffer `RP_Z_OCCLUDERS`..`RP_LAST_GBUFFER`, lighting/main
-    /// `RP_REFLECTIVE_WATER_PLANES`..`RP_POSTEFFECTS`).
-    pub skip_pass_range: (i32, i32),
     /// Patch the screen-space PCF rotation hash out of the sun-shadow shaders at creation, so both
     /// eyes use the same unrotated 38-tap PCF (removes the per-eye shadow shimmer + foliage grain).
     /// Applies only to shaders created after the hook installs; trigger a shader reload (e.g. change
     /// shadow quality) if injected mid-session. See `jc3vr_render::hooks::graphics_engine::shader`.
     pub patch_shadow_pcf_hash: bool,
-    /// Close a leaked G-buffer range from the **draw thread**, in the dispatch prologue
-    /// (`RenderEngine::PreDraw`), instead of from the game thread at frame start.
-    ///
     /// Diagnostic: disable the sun-shadow system entirely through the engine's own settings path
     /// (`CShadowManager` enabled flag, synced by the sim-side `UpdateRender` via `SetEnabled`). The
     /// sharpest shadow-pipeline discriminator: an artifact that survives with no shadows at all
     /// cannot be shadow data.
     pub disable_sun_shadows: bool,
-    /// Diagnostic: freeze the sun-shadow atlas by re-clearing the pass-enable flags after
-    /// `CommitRenderPassSettings` sets them, so no shadow pass renders and the atlas keeps its last
-    /// contents. Shadows stay visible but stop updating: an artifact that survives the freeze is in
-    /// the shadow *sampling*; one that dies with it is in the atlas *contents*.
-    pub freeze_shadow_maps: bool,
     /// Widen the spawn system and character occlusion BFBC frustums to cover both eyes. Both
     /// `CSpawnSystem::Update` and `CGameWorldObjectManager::ProcessCharacterOcclusion` build their BFBC
     /// cull frustums against the camera manager's active camera (not the occluder manager's cull camera),
@@ -916,24 +841,6 @@ pub struct StereoConfig {
     /// distance from the camera, so without this the two eyes of a multipass frame see the ground's
     /// surface at slightly different places. See `stereo::terrain_prep`. VR only.
     pub terrain_prep_from_centre: bool,
-    /// Diagnostic (issue #31 isolation, Test A): render each eye through a *symmetric* (zero-shear)
-    /// off-axis frustum instead of the true asymmetric HMD one. The replacement preserves each eye's
-    /// horizontal and vertical FOV *extent* but re-centres it, so the off-centre shear terms
-    /// (`(tl+tr)`, `(td+tu)`) go to zero -- reproducing the known-good symmetric-stereo projection
-    /// *inside* the full VR path (per-eye offset, double-draw, and the off-axis depth reconstruction all
-    /// still run). The flicker occurs only under the asymmetric off-axis projection, not symmetric
-    /// stereo, so this is the direct discriminator: if the flicker dies with the shear removed, the
-    /// shear is the amplifier; if it survives, the reconstruction inverse (or another projection oddity)
-    /// is. The headset image will look slightly stretched (the compositor still composites at the true
-    /// asymmetric FOV) -- diagnostic only. VR only; no-op on flatscreen. **Default off.**
-    pub symmetrize_eye_frusta: bool,
-    /// Diagnostic (issue #31 isolation, Test B): render *both* eyes with eye 0's exact projection and
-    /// world offset, so the two dispatches draw the identical off-axis view (mono in stereo). This
-    /// removes all per-eye divergence while keeping the off-axis projection and its depth reconstruction,
-    /// isolating "the two eyes disagree" from "each single off-axis frame wanders frame to frame": if
-    /// the flicker survives two identical off-axis draws, it is not inter-eye divergence at all. VR only;
-    /// no-op on flatscreen. **Default off.**
-    pub mirror_eye0_to_both: bool,
     /// The multiplier for the terrain detail-tessellation GPU budget buffers — the fix for the
     /// world-locked black cliff-wall/cave-ceiling tiles (issue #40). The detail rock skin is built
     /// by a GPU pipeline that allocates vertices/indices/texels from fixed-size buffers with
@@ -1034,42 +941,19 @@ impl StereoConfig {
         Self {
             single_pass: SinglePassConfig::new(),
             enabled: true,
-            cameras: true,
-            present_eye_0: false,
-            gate_setup_render_frame_data: false,
-            gate_hand_back_buffers: false,
             gate_eye1_dt: true,
-            diagnose_stereo_draw_diff: false,
-            diagnose_rt_hashes: false,
-            diagnose_rt_screenshots: true,
-            diagnose_main_color_means: false,
-            diagnose_pass_sweep: false,
-            diagnose_global_constants: false,
-            auto_trace_brightness_step: false,
             disable_ssao: false,
-            ssao_eye0_only: false,
-            restore_cb_ring: false,
             skip_ssr: false,
             skip_gi: false,
             skip_ao_volumes: false,
-            skip_pass_range_enabled: false,
-            skip_pass_range: (
-                jc3gi::graphics_engine::render_engine::RenderPassId::RP_REFLECTIVE_WATER_PLANES
-                    as i32,
-                jc3gi::graphics_engine::render_engine::RenderPassId::RP_REFLECTIVE_WATER_PLANES
-                    as i32,
-            ),
             patch_shadow_pcf_hash: true,
             disable_sun_shadows: false,
-            freeze_shadow_maps: false,
             widen_spawn_cull: true,
             spawn_budget_scale: 2.0,
             shadow_update_every_frame: false,
             shadow_fit_unpadded: true,
             shadow_anchor_to_fit: true,
             terrain_prep_from_centre: true,
-            symmetrize_eye_frusta: false,
-            mirror_eye0_to_both: false,
             terrain_detail_budget_scale: 4,
         }
     }

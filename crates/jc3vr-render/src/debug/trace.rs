@@ -7,17 +7,14 @@ use std::sync::atomic::{AtomicI32, AtomicUsize, Ordering};
 use jc3vr_core::{config::engine::Snapshot, session::CaptureFolder};
 use parking_lot::Mutex;
 
-use crate::debug::{
-    coord_frame, coord_frame::CoordFrameSample, stereo_diff, stereo_diff::DrawDiff,
-};
+use crate::debug::{coord_frame, coord_frame::CoordFrameSample};
 
 /// Frames left in the active trace; 0 = inactive. Kept as a standalone atomic so the hot-path
 /// [`tracing_active`] gate is lock-free -- the heavier state lives in [`TRACE_STATE`]. Driven by the
 /// render capture's button.
 static TRACE_FRAMES: AtomicI32 = AtomicI32::new(0);
 
-/// The frame count a manual trace covers, edited from the render capture and reused as the floor
-/// of the brightness-step auto-capture.
+/// The frame count a manual trace covers, edited from the render capture.
 pub static CAPTURE_FRAMES: AtomicI32 = AtomicI32::new(60);
 
 /// The in-progress trace's collected-but-unwritten state.
@@ -190,10 +187,6 @@ pub enum TraceEvent {
         /// wobbling.
         proj: [f32; 5],
     },
-    #[serde(rename = "SetupRenderFrameData")]
-    SetupRenderFrameData { gated: bool },
-    #[serde(rename = "HandBackBuffers")]
-    HandBackBuffers { gated: bool },
     #[serde(rename = "SmoothedExposureUpdate")]
     SmoothedExposureUpdate { gated: bool, exposure: f32 },
     #[serde(rename = "CalcHistogramMidBright")]
@@ -223,27 +216,6 @@ pub enum TraceEvent {
         pingpong: u32,
         forced: bool,
     },
-    /// The render engine's CPU staging copies of the global shader constant buffers: `fp` is the
-    /// 95-row fragment `GlobalConstants` block (lighting, wetness, shadow, per-view camera rows),
-    /// `vp` the 49-row vertex block (view-projection, fog, and atmospheric-scattering rows), each
-    /// flattened row-major. The blocks are re-staged per pass, so `at` names the sample point
-    /// (`scene` at the aerial-perspective composite, `frame_end` after the draw drains). Diffing a
-    /// good frame against a bad one identifies which row a latched change rides in. Gated on
-    /// `stereo.diagnose_global_constants`.
-    #[serde(rename = "GlobalConstants")]
-    GlobalConstants {
-        at: String,
-        fp: Vec<f32>,
-        vp: Vec<f32>,
-    },
-    /// The subsampled linear mean of the HDR MainColor buffer at a named pipeline stage
-    /// (`post_resolve`, `pre_atmosphere`, `post_atmosphere`, `post_block_entry`, `pre_post`, or a
-    /// `pass0xNN` label from the per-pass sweep). Bracketing a global change between two stages
-    /// names the frame segment that injects it -- the instrument that localized the foveation
-    /// blend-state latch. Gated on `stereo.diagnose_main_color_means` (stage brackets) and
-    /// `stereo.diagnose_pass_sweep` (the per-pass ladder).
-    #[serde(rename = "MainColorMean")]
-    MainColorMean { at: String, r: f32, g: f32, b: f32 },
     #[serde(rename = "ToneMappingApply")]
     ToneMappingApply { skip: bool },
     #[serde(rename = "GenerateFinalHistogram")]
@@ -290,38 +262,10 @@ pub enum TraceEvent {
     CopySurfaceToTexture { dst: u64, src: u64 },
     #[serde(rename = "ResolveSurface")]
     ResolveSurface,
-    /// A content hash of one engine render target, captured per eye after that eye's Draw completes
-    /// (see [`crate::debug::rt_hash`]). With `stereo.cameras` off (both eyes share one camera) the two
-    /// eyes' hashes for a given RT must match; any mismatch means that RT is written twice without a
-    /// per-dispatch reset -- the "stronger in one eye" accumulation bug.
-    #[serde(rename = "rt_hash")]
-    RtHash { rt: RtKind, hash: u64 },
-    /// One stereo frame's per-pass draw-sequence diff between the eyes, recorded after both eyes
-    /// drain (see [`crate::debug::stereo_diff`]). Gated on `stereo.diagnose_stereo_draw_diff`.
-    #[serde(rename = "StereoDrawDiff")]
-    StereoDrawDiff(DrawDiff),
     /// The render camera's world frame and travel direction, once per real frame (see
     /// [`crate::debug::coord_frame`]).
     #[serde(rename = "CoordFrame")]
     CoordFrame(CoordFrameSample),
-}
-
-/// The engine render targets hashed by the per-eye RT-doubling diagnostic. The colour/material buffers
-/// are where a doubled darkening term (shadow / AO) surfaces; velocity is included to localise where
-/// the per-eye divergence first enters (with identical cameras, the geometry-pass outputs --
-/// GBuffer1/2/3 -- stay identical, so a divergent velocity points upstream of lighting at the
-/// previous-frame view-projection, while a divergent GBuffer0/MainColor alone points at a screen-space
-/// resolve or scratch reuse). Depth targets are excluded -- they are awkward and fault-prone to read
-/// back on the CPU and track the geometry pass anyway.
-#[derive(serde::Serialize, serde::Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
-pub enum RtKind {
-    MainColor,
-    GBuffer0,
-    GBuffer1,
-    GBuffer2,
-    GBuffer3,
-    Velocity,
-    BackBufferLinear,
 }
 
 /// Whether a render trace is currently collecting. Lock-free; lets hooks skip readback work when off.
@@ -396,17 +340,6 @@ impl TraceState {
         }
     }
 
-    /// The collecting trace's stamp and current real-frame index, or `None` when no trace is
-    /// collecting. Used by [`crate::debug::rt_hash`] to name per-frame render-target images into the
-    /// same folder as the trace NDJSON.
-    pub fn current_frame() -> Option<(String, u32)> {
-        if !tracing_active() {
-            return None;
-        }
-        let state = TRACE_STATE.lock();
-        Some((state.stamp.clone(), state.frame))
-    }
-
     /// Append a frame/driver marker record (no dispatch eye) while a trace is active (auto-locks).
     pub fn record(event: TraceEvent) {
         if tracing_active() {
@@ -438,7 +371,6 @@ impl TraceState {
             };
             state.push_event(None, build_manifest(stamp));
         }
-        stereo_diff::begin_run();
         coord_frame::begin_run();
         TRACE_FRAMES.store(frames, Ordering::Relaxed);
         tracing::info!("Render trace started ({frames} frames)");
@@ -456,7 +388,6 @@ impl TraceState {
         if finished {
             state.dump();
             drop(state);
-            stereo_diff::finish_run();
             coord_frame::finish_run();
         }
     }
@@ -481,7 +412,6 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::debug::stereo_diff::NamedPass;
 
     /// `tools/analysis/analyze_trace_frames.py` reads the probe events by their `ev` tag with the
     /// payload's fields flattened beside it; this pins that shape.
@@ -491,49 +421,22 @@ mod tests {
             time_ns: 5,
             frame: 2,
             eye: None,
-            event: TraceEvent::StereoDrawDiff(DrawDiff {
-                shared_passes: 1,
-                shared_ops: 4,
-                matched_ops: 4,
-                order_consistent: true,
-                eye1_only: vec![NamedPass {
-                    pass: 3,
-                    name: "P3".into(),
-                }],
-                ..DrawDiff::default()
+            event: TraceEvent::CoordFrame(CoordFrameSample {
+                position: [0.0; 3],
+                right: [1.0, 0.0, 0.0],
+                up: [0.0, 1.0, 0.0],
+                z_basis: [0.0, 0.0, 1.0],
+                delta: [0.0; 3],
+                dot_neg_z: 0.0,
+                dot_pos_z: 0.0,
+                dot_right: 0.0,
+                dot_up: 0.0,
             }),
         };
-        assert_eq!(
-            serde_json::to_value(&record).unwrap(),
-            json!({
-                "time_ns": 5,
-                "frame": 2,
-                "event": {
-                    "ev": "StereoDrawDiff",
-                    "shared_passes": 1,
-                    "shared_ops": 4,
-                    "matched_ops": 4,
-                    "eye0_only_passes": 0,
-                    "eye0_only_ops": 0,
-                    "order_consistent": true,
-                    "divergent": [],
-                    "eye1_only": [{ "pass": 3, "name": "P3" }],
-                },
-            })
-        );
-        let event = serde_json::to_value(TraceEvent::CoordFrame(CoordFrameSample {
-            position: [0.0; 3],
-            right: [1.0, 0.0, 0.0],
-            up: [0.0, 1.0, 0.0],
-            z_basis: [0.0, 0.0, 1.0],
-            delta: [0.0; 3],
-            dot_neg_z: 0.0,
-            dot_pos_z: 0.0,
-            dot_right: 0.0,
-            dot_up: 0.0,
-        }))
-        .unwrap();
-        assert_eq!(event["ev"], "CoordFrame");
-        assert_eq!(event["z_basis"], json!([0.0, 0.0, 1.0]));
+        let value = serde_json::to_value(&record).unwrap();
+        assert_eq!(value["time_ns"], 5);
+        assert_eq!(value["frame"], 2);
+        assert_eq!(value["event"]["ev"], "CoordFrame");
+        assert_eq!(value["event"]["z_basis"], json!([0.0, 0.0, 1.0]));
     }
 }

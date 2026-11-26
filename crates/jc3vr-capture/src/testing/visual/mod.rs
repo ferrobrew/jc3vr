@@ -1218,17 +1218,11 @@ fn apply_profile(config: &mut impl Parts, mode: Mode) {
     post_fx.skip_anti_aliasing = false;
     let stereo = config.part_mut(&STEREO_CONFIG);
     stereo.enabled = true;
-    stereo.cameras = true;
     stereo.disable_ssao = false;
     stereo.skip_ssr = false;
     stereo.skip_gi = false;
     stereo.skip_ao_volumes = false;
-    stereo.symmetrize_eye_frusta = false;
-    stereo.mirror_eye0_to_both = false;
-    stereo.skip_pass_range_enabled = false;
-    stereo.freeze_shadow_maps = false;
     stereo.disable_sun_shadows = false;
-    stereo.ssao_eye0_only = false;
     // Every mode states single-pass explicitly: the isolated eyes and multipass turn the group off,
     // whatever the defaults are, and single-pass turns it on over the default production switches.
     stereo.single_pass = SinglePassConfig::new();

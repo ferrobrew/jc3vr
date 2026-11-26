@@ -32,7 +32,7 @@ use jc3gi::{
 use jc3vr_view::{
     fsr::{FSR_CONFIG, jitter},
     hooks::camera::SCENE_NEAR_CLIP_M,
-    stereo::{STEREO_STATE, config::STEREO_CONFIG},
+    stereo::STEREO_STATE,
 };
 use parking_lot::Mutex;
 use serde::Serialize;
@@ -351,10 +351,9 @@ pub fn dispatch(
         EyeLayout::SideBySide => (&EYES, [Some(0), Some(build.eye_width)]),
     };
     let stereo = jc3vr_view::stereo::active();
-    let cameras = STEREO_CONFIG.lock().cameras;
     let (correction, hybrid) = FSR_CONFIG.query(|fsr| {
         (
-            cameras && fsr.stereo_mv_correction && stereo,
+            fsr.stereo_mv_correction && stereo,
             fsr.hybrid_velocity && stereo,
         )
     });

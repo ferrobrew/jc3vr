@@ -168,7 +168,6 @@ fn render_block_post_effects_draw(this: *mut c_void, ctx: *mut c_void, info: *mu
     if repeat {
         return 0;
     }
-    crate::debug::pipeline_probes::record_main_color_mean("post_block_entry");
     capture_point(PipelinePoint::MainColor);
     #[cfg(feature = "profiler")]
     let _gpu = crate::profiler::gpu::detail_interval("post: world block");

@@ -1,8 +1,6 @@
 //! The head and view feature: the camera switch and the frozen-pose diagnostic, the headpose
-//! readout, the grapple comfort's readout it shares with the grapple feature, and the shared
-//! matrix-grid widget.
+//! readout, and the grapple comfort's readout it shares with the grapple feature.
 
-use jc3gi::types::math::Matrix4;
 use jc3vr_core::config::engine::{Parts, edit_parts};
 use jc3vr_grapple::grapple;
 use jc3vr_view::{
@@ -216,24 +214,4 @@ fn pose_row(ui: &mut egui::Ui, label: &str, value: &mut f32, step: f32, suffix: 
     }
     ui.end_row();
     changed
-}
-
-pub fn matrix_grid(ui: &mut egui::Ui, id: &str, label: &str, m: &Matrix4, other: Option<&Matrix4>) {
-    ui.label(label);
-    egui::Grid::new(id).striped(true).show(ui, |ui| {
-        for r in 0..4 {
-            for c in 0..4 {
-                let i = r * 4 + c;
-                let v = m.data[i];
-                let differs = other.is_some_and(|o| (v - o.data[i]).abs() > 1e-5);
-                let text = format!("{v:+.3}");
-                if differs {
-                    ui.colored_label(egui::Color32::YELLOW, text);
-                } else {
-                    ui.label(text);
-                }
-            }
-            ui.end_row();
-        }
-    });
 }

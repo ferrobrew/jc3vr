@@ -86,12 +86,12 @@ fn ssao_draw(this: *mut SSAOPass) {
     SSAO_PASS.store(this, Ordering::Relaxed);
 
     let stereo = stereo::active();
-    let (disable, eye0_only) = STEREO_CONFIG.query(|c| (c.disable_ssao, c.ssao_eye0_only));
+    let disable = STEREO_CONFIG.query(|c| c.disable_ssao);
 
-    // Diagnostic levers: skipping the pass leaves that eye's GBuffer-alpha AO untouched (material AO
-    // only, no screen AO) and is fully reversible -- toggling off resumes the pass next dispatch with
-    // no engine state clobbered. `disable_ssao` drops both eyes; `ssao_eye0_only` drops just the second.
-    if stereo && (disable || (eye0_only && stereo::is_second_eye())) {
+    // Skipping the pass leaves the GBuffer-alpha AO untouched (material AO only, no screen AO) and
+    // is fully reversible: turning it back on resumes the pass next dispatch with no engine state
+    // clobbered.
+    if stereo && disable {
         TraceState::record_eye(TraceEvent::SsaoDraw {
             forced_first_pass: false,
         });

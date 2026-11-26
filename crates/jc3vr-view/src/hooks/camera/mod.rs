@@ -23,7 +23,7 @@ use crate::{
     controllers::cockpit::CockpitTransform,
     fsr::FSR_CONFIG,
     hooks::camera::config::CAMERA_CONFIG,
-    stereo::{STEREO_STATE, config::STEREO_CONFIG},
+    stereo::STEREO_STATE,
     vr::{FreezeMode, VR_CONFIG, harness, pose_control},
 };
 
@@ -121,7 +121,6 @@ fn setup_render_camera(camera: *mut Camera, jitter: bool) -> *mut c_void {
 
     // Snapshot the stereo + FSR config once; drop the lock before the engine call below.
     let stereo_active = crate::stereo::active();
-    let stereo_cameras = STEREO_CONFIG.lock().cameras;
     let fsr_enabled = FSR_CONFIG.lock().antialiasing.temporal();
 
     // The engine's TAA jitter only feeds its own SMAA T2X. Drop it when that resolve is gone --
@@ -250,7 +249,7 @@ fn setup_render_camera(camera: *mut Camera, jitter: bool) -> *mut c_void {
                     STEREO_STATE.lock().shadow_anchor_delta = delta;
                 }
             }
-        } else if stereo_cameras {
+        } else {
             unsafe {
                 if let Some(camera) = camera.as_mut() {
                     let eye1 = crate::stereo::draw_index() == 1;

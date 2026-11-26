@@ -26,12 +26,9 @@ use jc3gi::graphics_engine::{
 use jc3vr_view::stereo::config::STEREO_CONFIG;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::{
-    debug::pipeline_probes::record_main_color_mean,
-    hooks::graphics_engine::{
-        probes::{PipelinePoint, capture_point},
-        reconstruction,
-    },
+use crate::hooks::graphics_engine::{
+    probes::{PipelinePoint, capture_point},
+    reconstruction,
 };
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -54,13 +51,10 @@ fn atmospheric_scattering_draw(
             .call(this, rc, info)
     };
 
-    // Pipeline diagnostics: the scene aerial-perspective composite (pass 102) is the reference
-    // point for the scene-time constant staging and the mid-scene brightness bracket.
+    // The scene aerial-perspective composite brackets the capture's atmosphere pipeline points.
     let scene_pass =
         unsafe { rc.as_ref() }.is_some_and(|r| r.m_ActiveRenderPass == SCENE_COMPOSITE_PASS);
     if scene_pass {
-        crate::debug::pipeline_probes::record_global_constants("scene");
-        record_main_color_mean("pre_atmosphere");
         capture_point(PipelinePoint::BeforeAtmosphere);
     }
 
@@ -75,7 +69,6 @@ fn atmospheric_scattering_draw(
 
     if scene_pass {
         capture_point(PipelinePoint::AfterAtmosphere);
-        record_main_color_mean("post_atmosphere");
     }
 }
 

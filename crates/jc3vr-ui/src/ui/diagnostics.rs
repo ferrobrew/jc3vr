@@ -1,30 +1,22 @@
 //! The render RE window: a separate egui window, opened from the Experimental page, holding the
 //! tools that serve single-pass stereo and render reverse-engineering. These are the render-block
-//! type registry, the per-eye skips and the skip-pass range, the eye-1 gates, the exposure A/B, the
-//! render trace's probes, the terrain and flicker diagnostics, and the per-eye camera readout.
+//! type registry, the pass skips, the eye-1 gates, the exposure A/B, and the terrain and shadow
+//! diagnostics.
 
 use std::{
     collections::BTreeSet,
     sync::atomic::{AtomicBool, Ordering},
 };
 
-use jc3gi::{
-    camera::camera::CameraState,
-    graphics_engine::{
-        render_block::{
-            RenderBlockTypeTerrain as BaseTerrain, RenderBlockTypeTerrainPatch as TerrainPatch,
-        },
-        render_engine::{RenderBlockTypeInstances, RenderBlockTypeRegistry},
+use jc3gi::graphics_engine::{
+    render_block::{
+        RenderBlockTypeTerrain as BaseTerrain, RenderBlockTypeTerrainPatch as TerrainPatch,
     },
+    render_engine::{RenderBlockTypeInstances, RenderBlockTypeRegistry},
 };
 use jc3vr_core::config::engine::{Parts, edit_parts};
-use jc3vr_render::{
-    debug::camera::{CAMERA_SNAPSHOTS, CameraSnapshot},
-    hooks::graphics_engine::{config::EXPOSURE_CONFIG, terrain},
-};
+use jc3vr_render::hooks::graphics_engine::{config::EXPOSURE_CONFIG, terrain};
 use jc3vr_view::stereo::config::STEREO_CONFIG;
-
-use crate::ui::camera::matrix_grid;
 
 /// The Experimental page's entry point: the button that opens the render RE window.
 pub(crate) fn open_button(ui: &mut egui::Ui) {
@@ -32,8 +24,8 @@ pub(crate) fn open_button(ui: &mut egui::Ui) {
     if ui
         .add_enabled(!open, egui::Button::new("Open the render RE window"))
         .on_hover_text(
-            "The render-block type registry, per-eye skips, eye-1 gates, exposure A/B, render trace \
-             probes, terrain and flicker diagnostics, and the per-eye camera readout.",
+            "The render-block type registry, pass skips, eye-1 gates, exposure A/B, and terrain and \
+             shadow diagnostics.",
         )
         .clicked()
     {
@@ -55,9 +47,6 @@ pub(crate) fn window(ctx: &egui::Context, editing: bool) {
         .show(ctx, |ui| {
             ui.add_enabled_ui(editing, |ui| {
                 diagnostics_controls(ui);
-                trace_options(ui);
-                ui.separator();
-                camera_visualization(ui);
             });
         });
     OPEN.store(open, Ordering::Relaxed);
@@ -67,72 +56,9 @@ pub(crate) fn window(ctx: &egui::Context, editing: bool) {
 /// button closes it; it is not persisted.
 static OPEN: AtomicBool = AtomicBool::new(false);
 
-/// The render trace's probes and the brightness-step auto-capture; a manual trace is started from
-/// the Tools page's render capture ([`crate::ui::render_capture`]). The render camera's coordinate
-/// frame is recorded into every trace and has no toggle.
-fn trace_options(ui: &mut egui::Ui) {
-    let mut cfg = STEREO_CONFIG.edit();
-    ui.collapsing("Render trace probes", |ui| {
-        ui.checkbox(
-            &mut cfg.diagnose_rt_screenshots,
-            "Write each eye's BackBufferLinear to a PNG per frame into the trace folder",
-        );
-        ui.checkbox(
-            &mut cfg.auto_trace_brightness_step,
-            "Auto-capture a trace when the frame brightness steps (one-shot; disarms after firing)",
-        );
-        ui.checkbox(
-            &mut cfg.diagnose_main_color_means,
-            "Record MainColor means at the pipeline stage brackets (slower traces)",
-        );
-        ui.checkbox(
-            &mut cfg.diagnose_pass_sweep,
-            "Record MainColor means after every late-scene pass (per-pass ladder; much slower)",
-        );
-        ui.checkbox(
-            &mut cfg.diagnose_global_constants,
-            "Dump the FP/VP global constant staging into the trace (scene + frame end)",
-        );
-        ui.checkbox(
-            &mut cfg.diagnose_rt_hashes,
-            "Hash engine RTs per eye into the trace (run with cameras off)",
-        );
-        ui.checkbox(
-            &mut cfg.diagnose_stereo_draw_diff,
-            "Diff the two eyes' per-pass draw counts into the trace (single-pass-stereo feasibility)",
-        )
-        .on_hover_text(
-            "Records a StereoDrawDiff event per stereo frame: which passes draw identically between \
-             eyes vs diverge, and what fraction of draws are replayable from one walk. The log gets \
-             one summary line when the trace ends.",
-        );
-    });
-}
-
 fn diagnostics_controls(ui: &mut egui::Ui) {
     let mut cfg = edit_parts();
-    // The #31 flicker-isolation A/B levers -- all default off; enable one at a time to localize the
-    // whole-terrain sun-shadow flicker. See `jc3vr_view::stereo::config::StereoConfig`.
-    ui.collapsing("Flicker isolation (#31)", |ui| {
-            ui.checkbox(
-                &mut cfg.part_mut(&STEREO_CONFIG).symmetrize_eye_frusta,
-                "A: Symmetric eye frusta (zero shear, same FOV; if flicker dies, the off-axis shear is \
-                 the amplifier)",
-            )
-            .on_hover_text(
-                "Renders each eye through a symmetric (centred) frustum instead of the true asymmetric \
-                 off-axis one, keeping the per-eye offset, double-draw, and depth reconstruction. The \
-                 headset image will look slightly stretched -- diagnostic only.",
-            );
-            ui.checkbox(
-                &mut cfg.part_mut(&STEREO_CONFIG).mirror_eye0_to_both,
-                "B: Both eyes = eye 0 (identical off-axis view twice; if flicker survives, it isn't \
-                 inter-eye divergence)",
-            )
-            .on_hover_text(
-                "Renders both eyes with eye 0's projection and offset (mono), removing all per-eye \
-                 divergence while keeping the off-axis projection and its reconstruction.",
-            );
+    ui.collapsing("Shadow cascades", |ui| {
             ui.checkbox(
                 &mut cfg.part_mut(&STEREO_CONFIG).shadow_update_every_frame,
                 "Update all shadow cascades every frame (defeats 2^L amortization; parity-flip probe)",
@@ -348,16 +274,8 @@ fn diagnostics_controls(ui: &mut egui::Ui) {
         },
     );
 
-    // Investigation levers -- normally off; used to isolate what differs between the eyes.
-    ui.collapsing("Per-eye diagnostics", |ui| {
-        ui.checkbox(
-            &mut cfg.part_mut(&STEREO_CONFIG).cameras,
-            "Stereo cameras (per-eye IPD offset; off for the render-target hash diagnostic)",
-        );
-        ui.checkbox(
-            &mut cfg.part_mut(&STEREO_CONFIG).present_eye_0,
-            "Present eye 0 (else eye 1) -- flip to compare each eye live",
-        );
+    // The pass skips the capture overrides also drive; normally off.
+    ui.collapsing("Pass skips", |ui| {
         ui.checkbox(
             &mut cfg.part_mut(&STEREO_CONFIG).skip_ssr,
             "Skip SSR (drops screen-space reflections; tests the per-eye prev-scene feedback)",
@@ -375,37 +293,8 @@ fn diagnostics_controls(ui: &mut egui::Ui) {
             "Disable sun shadows (engine SetEnabled path; does the flicker survive with none?)",
         );
         ui.checkbox(
-            &mut cfg.part_mut(&STEREO_CONFIG).freeze_shadow_maps,
-            "Freeze shadow maps (atlas keeps last contents; dies = content, survives = sampling)",
-        );
-        ui.horizontal(|ui| {
-            ui.checkbox(&mut cfg.part_mut(&STEREO_CONFIG).skip_pass_range_enabled, "Skip pass range");
-            // The bounds stay editable while disarmed, so a target range can be preset and then
-            // armed in one step instead of dragging through unsafe intermediate ranges live.
-            let (lo, hi) = &mut cfg.part_mut(&STEREO_CONFIG).skip_pass_range;
-            // Each end clamps to the other so the range can never invert mid-drag.
-            let hi_cap = *hi;
-            ui.add(egui::DragValue::new(lo).range(0..=hi_cap).hexadecimal(2, false, false));
-            ui.label("..=");
-            let lo_cap = *lo;
-            ui.add(egui::DragValue::new(hi).range(lo_cap..=156).hexadecimal(2, false, false));
-        })
-        .response
-        .on_hover_text(
-            "Bisect which render pass an artifact originates in (inclusive hex indices; \
-             jc3gi's RenderPassId maps every index)",
-        );
-        ui.checkbox(
             &mut cfg.part_mut(&STEREO_CONFIG).disable_ssao,
             "Disable SSAO (does the 'stronger in one eye' darkening vanish?)",
-        );
-        ui.checkbox(
-            &mut cfg.part_mut(&STEREO_CONFIG).ssao_eye0_only,
-            "SSAO on eye 0 only (drop the second eye's screen AO)",
-        );
-        ui.checkbox(
-            &mut cfg.part_mut(&STEREO_CONFIG).restore_cb_ring,
-            "Restore CB ring between eyes (pin RenderEngine +0x16C0; both eyes share CB slots)",
         );
     });
 
@@ -421,14 +310,6 @@ fn diagnostics_controls(ui: &mut egui::Ui) {
         ui.checkbox(
             &mut cfg.part_mut(&STEREO_CONFIG).gate_eye1_dt,
             "Eye-1 dt=0 (world fade / sun / heat-haze step once per frame)",
-        );
-        ui.checkbox(
-            &mut cfg.part_mut(&STEREO_CONFIG).gate_setup_render_frame_data,
-            "SetupRenderFrameData (per-batch list build, not the swap)",
-        );
-        ui.checkbox(
-            &mut cfg.part_mut(&STEREO_CONFIG).gate_hand_back_buffers,
-            "HandBackBuffers (constant-buffer recycle)",
         );
     });
 
@@ -446,97 +327,6 @@ fn diagnostics_controls(ui: &mut egui::Ui) {
              darkening was the exposure loop; stereo still darker => a render path.",
         );
     });
-}
-
-fn camera_visualization(ui: &mut egui::Ui) {
-    ui.collapsing("Per-eye render camera (differences in yellow)", |ui| {
-        let (s0, s1) = {
-            let g = CAMERA_SNAPSHOTS.lock();
-            (g[0], g[1])
-        };
-        ui.columns(2, |cols| {
-            show_camera_snapshot(&mut cols[0], "Eye 0", &s0, &s1);
-            show_camera_snapshot(&mut cols[1], "Eye 1", &s1, &s0);
-        });
-    });
-}
-
-fn show_camera_snapshot(
-    ui: &mut egui::Ui,
-    label: &str,
-    snap: &CameraSnapshot,
-    other: &CameraSnapshot,
-) {
-    ui.label(egui::RichText::new(label).strong());
-    if !snap.valid {
-        ui.label("(no capture)");
-        return;
-    }
-    ui.label(format!("cam ptr: {:#x}", snap.camera_ptr));
-
-    // The flag values come from the generated bitflags, so the table's bits can never drift from
-    // the pyxis definition; only the display labels are local.
-    const FLAG_NAMES: [(CameraState, &str); 6] = [
-        (CameraState::m_UseOffCenter, "OffCenter"),
-        (CameraState::m_ScreenshotSeriesRunning, "ScreenshotSeries"),
-        (CameraState::m_Ortho, "Ortho"),
-        (CameraState::m_ComputeView, "ComputeView"),
-        (CameraState::m_DirtyProjection, "DirtyProj"),
-        (CameraState::m_IsRenderCamera, "IsRenderCam"),
-    ];
-    let state = CameraState::from_bits_truncate(snap.state_bits);
-    let active: Vec<&str> = FLAG_NAMES
-        .iter()
-        .filter(|(flag, _)| state.contains(*flag))
-        .map(|(_, name)| *name)
-        .collect();
-    let flag_text = format!("flags {:#04x}: {}", snap.state_bits, active.join(" | "));
-    if other.valid && snap.state_bits != other.state_bits {
-        ui.colored_label(egui::Color32::YELLOW, flag_text);
-    } else {
-        ui.label(flag_text);
-    }
-
-    ui.label(format!(
-        "offcenter: tiles={} x={} y={}",
-        snap.offcenter_tiles, snap.offcenter_tile_x, snap.offcenter_tile_y
-    ));
-    ui.label(format!("fov={:.4}  aspect={:.4}", snap.fov, snap.aspect));
-    ui.label(format!("near={:.3}  far={:.1}", snap.near, snap.far));
-    ui.label(format!("size={}x{}", snap.width, snap.height));
-
-    let other_proj = other.valid.then_some(&other.projection);
-    let other_view = other.valid.then_some(&other.view);
-    let other_vpf = other.valid.then_some(&other.view_proj_f);
-    matrix_grid(
-        ui,
-        &format!("proj_{label}"),
-        "m_Projection:",
-        &snap.projection,
-        other_proj,
-    );
-    matrix_grid(
-        ui,
-        &format!("view_{label}"),
-        "m_View:",
-        &snap.view,
-        other_view,
-    );
-    matrix_grid(
-        ui,
-        &format!("vpf_{label}"),
-        "m_ViewProjectionF:",
-        &snap.view_proj_f,
-        other_vpf,
-    );
-    let other_tf = other.valid.then_some(&other.transform);
-    matrix_grid(
-        ui,
-        &format!("tf_{label}"),
-        "m_TransformF:",
-        &snap.transform,
-        other_tf,
-    );
 }
 
 /// A vtable-compatible `IRenderBlockType::IsEnabled` override that always reports disabled.

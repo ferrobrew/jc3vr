@@ -20,10 +20,7 @@ use jc3gi::{
     graphics_engine::{device::Device, texture::Texture},
     types::math::Matrix4,
 };
-use jc3vr_view::{
-    fsr::{FSR_CONFIG, TaaConfig, jitter},
-    stereo::config::STEREO_CONFIG,
-};
+use jc3vr_view::fsr::{FSR_CONFIG, TaaConfig, jitter};
 use parking_lot::Mutex;
 use windows::{
     Win32::Graphics::{
@@ -144,10 +141,9 @@ pub fn dispatch(
 
     jitter::publish_eye_size(build.eye_width, build.height);
     let stereo = jc3vr_view::stereo::active();
-    let cameras = STEREO_CONFIG.lock().cameras;
     let (correction, hybrid) = FSR_CONFIG.query(|fsr| {
         (
-            cameras && fsr.stereo_mv_correction && stereo,
+            fsr.stereo_mv_correction && stereo,
             fsr.hybrid_velocity && stereo,
         )
     });

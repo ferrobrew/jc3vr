@@ -164,13 +164,6 @@ fn tonemapping_apply(
     let later_scene_gated = later_scene() && gate_exposure;
     let skip = skip_histogram || later_scene_gated;
     TraceState::record_eye(TraceEvent::ToneMappingApply { skip });
-    // MainColor still holds this dispatch's clean lit scene here (the post chain has not recycled
-    // it), so this seam is the `pre_post` brightness bracket and feeds the armed brightness-step
-    // auto-capture.
-    crate::debug::pipeline_probes::record_main_color_mean("pre_post");
-    if !later_scene() {
-        crate::debug::pipeline_probes::armed_brightness_probe();
-    }
     // The histogram reads the final HDR scene (MainColor) for auto-exposure, so this is the first
     // point in the post chain where MainColor still holds this dispatch's clean scene -- grab it for
     // the per-eye "Scene" preview before the chain recycles it. Debug-only: gated on the Previews tab
