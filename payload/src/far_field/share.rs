@@ -20,18 +20,28 @@ use jc3gi::graphics_engine::device::Device;
 use parking_lot::Mutex;
 use windows::Win32::{
     Graphics::{
+        Direct3D::D3D11_SRV_DIMENSION_TEXTURE2D,
         Direct3D11::{
             D3D11_BIND_SHADER_RESOURCE, D3D11_BLEND_DESC, D3D11_BUFFER_DESC,
             D3D11_COMPARISON_GREATER_EQUAL, D3D11_CPU_ACCESS_WRITE, D3D11_CULL_NONE,
             D3D11_DEPTH_STENCIL_DESC, D3D11_DEPTH_WRITE_MASK_ALL, D3D11_FILL_SOLID,
-            D3D11_MAP_WRITE_DISCARD, D3D11_RASTERIZER_DESC, D3D11_SUBRESOURCE_DATA,
-            D3D11_TEXTURE2D_DESC, D3D11_USAGE_DEFAULT, D3D11_USAGE_DYNAMIC, D3D11_VIEWPORT,
-            ID3D11BlendState, ID3D11Buffer, ID3D11DepthStencilState, ID3D11DeviceContext,
-            ID3D11PixelShader, ID3D11RasterizerState, ID3D11RenderTargetView,
-            ID3D11ShaderResourceView, ID3D11Texture2D, ID3D11VertexShader,
+            D3D11_MAP_WRITE_DISCARD, D3D11_RASTERIZER_DESC, D3D11_RENDER_TARGET_VIEW_DESC,
+            D3D11_RENDER_TARGET_VIEW_DESC_0, D3D11_RTV_DIMENSION_TEXTURE2D,
+            D3D11_SHADER_RESOURCE_VIEW_DESC, D3D11_SHADER_RESOURCE_VIEW_DESC_0,
+            D3D11_SUBRESOURCE_DATA, D3D11_TEX2D_RTV, D3D11_TEX2D_SRV, D3D11_TEXTURE2D_DESC,
+            D3D11_USAGE_DEFAULT, D3D11_USAGE_DYNAMIC, D3D11_VIEWPORT, ID3D11BlendState,
+            ID3D11Buffer, ID3D11DepthStencilState, ID3D11DeviceContext, ID3D11PixelShader,
+            ID3D11RasterizerState, ID3D11RenderTargetView, ID3D11ShaderResourceView,
+            ID3D11Texture2D, ID3D11VertexShader,
         },
         Dxgi::Common::{
-            DXGI_FORMAT, DXGI_FORMAT_R24_UNORM_X8_TYPELESS, DXGI_FORMAT_R24G8_TYPELESS,
+            DXGI_FORMAT, DXGI_FORMAT_B8G8R8A8_TYPELESS, DXGI_FORMAT_B8G8R8A8_UNORM,
+            DXGI_FORMAT_B8G8R8A8_UNORM_SRGB, DXGI_FORMAT_D24_UNORM_S8_UINT,
+            DXGI_FORMAT_D32_FLOAT_S8X24_UINT, DXGI_FORMAT_R8G8B8A8_TYPELESS,
+            DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
+            DXGI_FORMAT_R10G10B10A2_TYPELESS, DXGI_FORMAT_R10G10B10A2_UNORM,
+            DXGI_FORMAT_R16G16B16A16_TYPELESS, DXGI_FORMAT_R16G16B16A16_UNORM,
+            DXGI_FORMAT_R24_UNORM_X8_TYPELESS, DXGI_FORMAT_R24G8_TYPELESS,
             DXGI_FORMAT_R32_FLOAT_X8X24_TYPELESS, DXGI_FORMAT_R32G8X24_TYPELESS, DXGI_SAMPLE_DESC,
         },
     },
@@ -313,10 +323,6 @@ impl SharePipeline {
                 let mut src_desc = D3D11_TEXTURE2D_DESC::default();
                 unsafe { src.GetDesc(&mut src_desc) };
                 let format = raw_color_format(src_desc.Format).unwrap_or(src_desc.Format);
-                use windows::Win32::Graphics::Direct3D11::{
-                    D3D11_RENDER_TARGET_VIEW_DESC, D3D11_RENDER_TARGET_VIEW_DESC_0,
-                    D3D11_RTV_DIMENSION_TEXTURE2D, D3D11_TEX2D_RTV,
-                };
                 let mut view = None;
                 unsafe {
                     ge.m_Device
@@ -471,13 +477,6 @@ fn create_capture(
                 .context("far field: creating a capture SRV")?;
             srv
         } else {
-            use windows::Win32::Graphics::{
-                Direct3D::D3D11_SRV_DIMENSION_TEXTURE2D,
-                Direct3D11::{
-                    D3D11_SHADER_RESOURCE_VIEW_DESC, D3D11_SHADER_RESOURCE_VIEW_DESC_0,
-                    D3D11_TEX2D_SRV,
-                },
-            };
             let mut srv = None;
             device
                 .m_Device
@@ -509,12 +508,6 @@ fn create_capture(
 /// writing through the engine's sRGB view double-encodes the albedo, darkening every composited
 /// pixel. `None` means the format is already a plain typed format usable as-is.
 fn raw_color_format(format: DXGI_FORMAT) -> Option<DXGI_FORMAT> {
-    use windows::Win32::Graphics::Dxgi::Common::{
-        DXGI_FORMAT_B8G8R8A8_TYPELESS, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_B8G8R8A8_UNORM_SRGB,
-        DXGI_FORMAT_R8G8B8A8_TYPELESS, DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
-        DXGI_FORMAT_R10G10B10A2_TYPELESS, DXGI_FORMAT_R10G10B10A2_UNORM,
-        DXGI_FORMAT_R16G16B16A16_TYPELESS, DXGI_FORMAT_R16G16B16A16_UNORM,
-    };
     match format {
         DXGI_FORMAT_R8G8B8A8_TYPELESS | DXGI_FORMAT_R8G8B8A8_UNORM_SRGB => {
             Some(DXGI_FORMAT_R8G8B8A8_UNORM)
@@ -530,9 +523,6 @@ fn raw_color_format(format: DXGI_FORMAT) -> Option<DXGI_FORMAT> {
 
 /// The typeless copy format and depth-readable SRV format for a depth texture's family.
 fn depth_family_formats(format: DXGI_FORMAT) -> Option<(DXGI_FORMAT, DXGI_FORMAT)> {
-    use windows::Win32::Graphics::Dxgi::Common::{
-        DXGI_FORMAT_D24_UNORM_S8_UINT, DXGI_FORMAT_D32_FLOAT_S8X24_UINT,
-    };
     match format {
         DXGI_FORMAT_D32_FLOAT_S8X24_UINT | DXGI_FORMAT_R32G8X24_TYPELESS => Some((
             DXGI_FORMAT_R32G8X24_TYPELESS,

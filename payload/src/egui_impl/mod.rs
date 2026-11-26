@@ -10,6 +10,24 @@ use parking_lot::{Mutex, MutexGuard};
 use windows::Win32::{
     Foundation::{HWND, LPARAM, WPARAM},
     Graphics::Direct3D11::{ID3D11DeviceContext, ID3D11RenderTargetView},
+    UI::{
+        Input::KeyboardAndMouse::{
+            GetKeyState, VIRTUAL_KEY, VK_0, VK_1, VK_2, VK_3, VK_4, VK_5, VK_6, VK_7, VK_8, VK_9,
+            VK_A, VK_B, VK_BACK, VK_C, VK_CONTROL, VK_D, VK_DELETE, VK_DOWN, VK_E, VK_END,
+            VK_ESCAPE, VK_F, VK_F1, VK_F2, VK_F3, VK_F4, VK_F5, VK_F6, VK_F7, VK_F8, VK_F9, VK_F10,
+            VK_F11, VK_F12, VK_F13, VK_F14, VK_F15, VK_F16, VK_F17, VK_F18, VK_F19, VK_F20, VK_F21,
+            VK_F22, VK_F23, VK_F24, VK_G, VK_H, VK_HOME, VK_I, VK_INSERT, VK_J, VK_K, VK_L,
+            VK_LEFT, VK_M, VK_MENU, VK_N, VK_NEXT, VK_O, VK_OEM_2, VK_OEM_3, VK_OEM_4, VK_OEM_5,
+            VK_OEM_6, VK_OEM_7, VK_OEM_COMMA, VK_OEM_MINUS, VK_OEM_PERIOD, VK_OEM_PLUS, VK_P,
+            VK_PRIOR, VK_Q, VK_R, VK_RETURN, VK_RIGHT, VK_S, VK_SHIFT, VK_SPACE, VK_T, VK_TAB,
+            VK_U, VK_UP, VK_V, VK_W, VK_X, VK_Y, VK_Z,
+        },
+        WindowsAndMessaging::{
+            WHEEL_DELTA, WM_CHAR, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP,
+            WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_PASTE, WM_RBUTTONDOWN,
+            WM_RBUTTONUP, WM_SYSKEYDOWN, WM_SYSKEYUP,
+        },
+    },
 };
 
 pub(crate) use crate::egui_impl::desktop_input::{
@@ -670,10 +688,6 @@ fn flat_buffer_size() -> (f32, f32) {
 
 /// Whether `msg` is a mouse move/button/wheel message whose coordinates are window-relative.
 fn is_mouse_message(msg: u32) -> bool {
-    use windows::Win32::UI::WindowsAndMessaging::{
-        WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL,
-        WM_RBUTTONDOWN, WM_RBUTTONUP,
-    };
     matches!(
         msg,
         WM_MOUSEMOVE
@@ -688,8 +702,6 @@ fn is_mouse_message(msg: u32) -> bool {
 }
 
 pub fn wndproc(events: &mut Vec<egui::Event>, msg: u32, wparam: WPARAM, lparam: LPARAM) {
-    use windows::Win32::UI::WindowsAndMessaging::*;
-
     let wparam = wparam.0;
     let lparam = lparam.0;
 
@@ -801,7 +813,6 @@ pub fn wndproc(events: &mut Vec<egui::Event>, msg: u32, wparam: WPARAM, lparam: 
 }
 
 fn get_modifiers() -> egui::Modifiers {
-    use windows::Win32::UI::Input::KeyboardAndMouse::{GetKeyState, VK_CONTROL, VK_MENU, VK_SHIFT};
     unsafe {
         egui::Modifiers {
             alt: (GetKeyState(VK_MENU.0 as _) as u16 & 0x8000) != 0,
@@ -846,7 +857,6 @@ fn is_paste_command(modifiers: egui::Modifiers, keycode: egui::Key) -> bool {
 mod capture_tests;
 
 fn virtual_key_to_egui_key(vk: u32) -> Option<egui::Key> {
-    use windows::Win32::UI::Input::KeyboardAndMouse::*;
     match VIRTUAL_KEY(vk as _) {
         VK_DOWN => Some(egui::Key::ArrowDown),
         VK_LEFT => Some(egui::Key::ArrowLeft),

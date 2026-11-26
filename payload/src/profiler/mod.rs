@@ -23,7 +23,10 @@ pub mod ui;
 use std::{
     collections::HashMap,
     ffi::CStr,
-    sync::atomic::{AtomicBool, Ordering},
+    sync::{
+        Once,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 use jc3gi::graphics_engine::{render_engine::GetRenderPassName_ADDRESS, render_pass::RenderPass};
@@ -131,7 +134,6 @@ pub fn scope_details() -> puffin::ScopeCollection {
 /// `new_frame`; it takes only the `SCOPE_DETAILS` lock, which nothing holds while locking the
 /// profiler, so the order is acyclic.
 fn install_details_sink() {
-    use std::sync::Once;
     static INSTALL: Once = Once::new();
     INSTALL.call_once(|| {
         let mut profiler = GlobalProfiler::lock();
@@ -154,7 +156,6 @@ fn install_details_sink() {
 /// runs exactly once per real frame from the very first frame on; a `Once` still guards it in case
 /// a future caller invokes `new_frame` from more than one place.
 fn ensure_gpu_cleanup_registered() {
-    use std::sync::Once;
     static REGISTER: Once = Once::new();
     REGISTER.call_once(|| {
         crate::lifecycle::on_cleanup(|_renderer| gpu::teardown());
