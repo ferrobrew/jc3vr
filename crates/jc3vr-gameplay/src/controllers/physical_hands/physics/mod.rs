@@ -64,6 +64,7 @@ mod step;
 mod types;
 
 pub(crate) use blows::queue_shove;
+pub(crate) use callback::{rail_step_registered, register_rail_step};
 pub use blows::{Shove, ShoveForce};
 pub use config::{HAND_BODIES, HandBodiesConfig, HandHitsTuning};
 pub(crate) use joint::{affine as havok_affine, vector as havok_vector};
