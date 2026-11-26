@@ -1,5 +1,6 @@
 //! The weapon handling's hold tuning, read from the shipped `tuning/hold.toml` ([`HOLD`]): the
-//! hold's slides, reaches, and throw cap, the takes from characters and racks.
+//! hold's slides, reaches, and throw cap, the takes from characters and racks, the grip targets'
+//! volumes and marks, the sockets' attraction, and the body's grab volumes.
 
 use jc3vr_body::tuning::Millis;
 use jc3vr_core::{
@@ -7,6 +8,8 @@ use jc3vr_core::{
     tuning::Tuning,
 };
 use serde::Deserialize;
+
+use crate::controllers::weapons::{docks::attract::AttractionTuning, volumes::VolumesTuning};
 
 jc3vr_core::tuning_file! {
     /// The hold tuning file.
@@ -18,11 +21,17 @@ jc3vr_core::tuning_file! {
 #[serde(deny_unknown_fields)]
 pub struct HoldFileTuning {
     pub hold: HoldTuning,
+    pub begin: BeginTuning,
+    pub docks: DocksTuning,
+    pub volumes: VolumesTuning,
 }
 
 impl Tuning for HoldFileTuning {
     fn validate(&self) -> Result<(), Invalid> {
-        self.hold.validate()
+        self.hold.validate()?;
+        self.begin.validate()?;
+        self.docks.validate()?;
+        self.volumes.validate()
     }
 }
 
@@ -179,6 +188,87 @@ impl PairedRackTuning {
         self.copy_wait_ms
             .validate("hold.rack.paired.copy_wait_ms", 30_000)?;
         nonnegative("hold.rack.paired.stack_m", self.stack_m, 0.5)
+    }
+}
+
+/// The grip targets the begin tick places on the held gun, and their marks.
+#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BeginTuning {
+    /// How far past the hand a volume on a gun reaches, metres.
+    pub gun_volume_margin_m: f32,
+    /// How deep in a volume on a gun the hand is, as a share of its radius.
+    pub gun_volume_depth: f32,
+    pub marks: MarksTuning,
+}
+
+impl BeginTuning {
+    fn validate(&self) -> Result<(), Invalid> {
+        nonnegative("begin.gun_volume_margin_m", self.gun_volume_margin_m, 0.5)?;
+        range("begin.gun_volume_depth", self.gun_volume_depth, 0.01, 1.0)?;
+        self.marks.validate()
+    }
+}
+
+/// The marks' sizes. A target reached within a radius is marked by the reach's diameter, kept
+/// within [`MarksTuning::min_m`] and [`MarksTuning::max_m`], so the mark shows the spot without
+/// covering what is around it.
+#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MarksTuning {
+    /// The smallest mark, metres.
+    pub min_m: f32,
+    /// The largest mark, metres.
+    pub max_m: f32,
+    /// The mark where a held charge would stick, metres.
+    pub charge_m: f32,
+    /// The mark on a braced foregrip, metres.
+    pub foregrip_m: f32,
+}
+
+impl MarksTuning {
+    fn validate(&self) -> Result<(), Invalid> {
+        positive("begin.marks.min_m", self.min_m, 1.0)?;
+        range("begin.marks.max_m", self.max_m, self.min_m, 1.0)?;
+        positive("begin.marks.charge_m", self.charge_m, 1.0)?;
+        positive("begin.marks.foregrip_m", self.foregrip_m, 1.0)
+    }
+}
+
+/// The sockets (see [`crate::controllers::weapons::docks`]).
+#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DocksTuning {
+    /// How long the sockets' attachment offers stay current after the input observations stop,
+    /// for the mirror and the pouch models.
+    pub attachments_max_age_ms: Millis,
+    pub attraction: AttractionTuning,
+}
+
+impl DocksTuning {
+    fn validate(&self) -> Result<(), Invalid> {
+        self.attachments_max_age_ms
+            .validate("docks.attachments_max_age_ms", 5_000)?;
+        let a = &self.attraction;
+        positive("docks.attraction.shoulder_m", a.shoulder_m, 2.0)?;
+        positive("docks.attraction.hip_m", a.hip_m, 2.0)?;
+        nonnegative("docks.attraction.back_front_m", a.back_front_m, 1.0)?;
+        nonnegative("docks.attraction.back_floor_m", a.back_floor_m, 2.0)?;
+        nonnegative("docks.attraction.hip_front_m", a.hip_front_m, 1.0)?;
+        positive(
+            "docks.attraction.back_max_speed_mps",
+            a.back_max_speed_mps,
+            50.0,
+        )?;
+        positive(
+            "docks.attraction.hip_max_speed_mps",
+            a.hip_max_speed_mps,
+            50.0,
+        )?;
+        nonnegative("docks.attraction.speed_window_s", a.speed_window_s, 1.0)?;
+        positive("docks.attraction.travel_mps", a.travel_mps, 50.0)?;
+        positive("docks.attraction.max_travel_s", a.max_travel_s, 5.0)?;
+        nonnegative("docks.attraction.exit_margin_m", a.exit_margin_m, 0.5)
     }
 }
 

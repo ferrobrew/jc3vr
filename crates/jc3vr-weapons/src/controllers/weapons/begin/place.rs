@@ -7,7 +7,7 @@ use jc3vr_body::controllers::{
 use jc3vr_input::frame::Hand;
 use jc3vr_view::controllers::cockpit::CockpitTransform;
 
-use crate::controllers::weapons::{foregrip, handling_tuning::HANDLING};
+use crate::controllers::weapons::{foregrip, handling_tuning::HANDLING, hold::tuning::HOLD};
 
 /// How the weapon handling's candidates become grip targets, and where the markers go.
 pub(super) struct Place {
@@ -127,7 +127,7 @@ pub(super) fn held_foregrip(hold: &foregrip::Hold, active: &ActiveHands) -> Opti
             hand: hold.holder,
             point,
         },
-        FOREGRIP_MARK_M,
+        HOLD.get().begin.marks.foregrip_m,
     ));
     Some(target.held(brace))
 }
@@ -135,12 +135,6 @@ pub(super) fn held_foregrip(hold: &foregrip::Hold, active: &ActiveHands) -> Opti
 /// A marker's size for a target reached within `radius`: the reach's diameter, kept within a size
 /// that marks the spot without covering what is around it.
 pub(super) fn mark_size(radius: f32) -> f32 {
-    (radius * 2.0).clamp(MIN_MARK_M, MAX_MARK_M)
+    let marks = &HOLD.get().begin.marks;
+    (radius * 2.0).clamp(marks.min_m, marks.max_m)
 }
-
-const MIN_MARK_M: f32 = 0.03;
-const MAX_MARK_M: f32 = 0.12;
-/// The marker where a held charge would stick, metres.
-pub(super) const CHARGE_MARK_M: f32 = 0.08;
-/// The marker on a braced foregrip, metres.
-const FOREGRIP_MARK_M: f32 = 0.03;

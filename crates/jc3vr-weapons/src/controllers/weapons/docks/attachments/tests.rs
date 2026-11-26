@@ -252,7 +252,7 @@ fn a_platform_move_rebases_the_same_sample_without_refreshing_its_age() {
             .in_world(
                 7,
                 destination,
-                sample.at + MAX_AGE + Duration::from_nanos(1)
+                sample.at + max_age() + Duration::from_nanos(1)
             )
             .is_none()
     );

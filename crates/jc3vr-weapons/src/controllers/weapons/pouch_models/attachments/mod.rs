@@ -7,7 +7,7 @@ use jc3vr_body::controllers::body::{mirror::SampleId, rig::frames::Frames};
 use jc3vr_input::frame::{Hand, Pose};
 
 use crate::controllers::weapons::{
-    docks::attachments::MAX_AGE,
+    docks::attachments::max_age,
     pouch_models::{ModelPlacement, Prop, ShownPouch, on_pouch},
 };
 
@@ -92,7 +92,7 @@ impl Sample {
             && usable(self.character)
             && now
                 .checked_duration_since(self.at)
-                .is_some_and(|age| age <= MAX_AGE)
+                .is_some_and(|age| age <= max_age())
     }
 }
 

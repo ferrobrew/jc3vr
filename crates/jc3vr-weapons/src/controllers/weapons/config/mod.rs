@@ -13,9 +13,9 @@ pub use self::{
     settings::WeaponSettings,
 };
 
-/// The body's sockets (see [`crate::controllers::weapons::docks`]), whose fixed tuning is
-/// [`SOCKETS`](crate::controllers::weapons::volumes::SOCKETS). They act only under the controller
-/// scheme.
+/// The body's sockets (see [`crate::controllers::weapons::docks`]), whose reach is tuned by
+/// [`SocketTuning`](crate::controllers::weapons::volumes::SocketTuning). They act only under the
+/// controller scheme.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct HolstersConfig {

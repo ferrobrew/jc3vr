@@ -2,6 +2,10 @@ use jc3vr_body::controllers::{body::BodyDimensions, grab::grab_volume};
 
 use super::*;
 
+fn pouches() -> &'static PouchTuning {
+    &HOLD.get().volumes.pouches
+}
+
 const DIMS: BodyDimensions = BodyDimensions::CHARACTER_ESTIMATE;
 /// A body a little shorter than the character's.
 const TALL: BodyDimensions = BodyDimensions {
@@ -76,7 +80,7 @@ fn every_volume_for(frame: &BodyFrame, pouches: &PouchTuning, dominant: Hand) ->
 }
 
 fn every_volume(frame: &BodyFrame) -> Vec<Candidate> {
-    every_volume_for(frame, &POUCHES, Hand::Right)
+    every_volume_for(frame, pouches(), Hand::Right)
 }
 
 fn find(c: &[Candidate], volume: GrabVolume) -> Candidate {
@@ -111,7 +115,7 @@ fn the_default_volumes_keep_apart() {
         for yaw in [0.0, -0.6] {
             let frame = frame_of(ideal_skeleton(&dims, yaw));
             for dominant in Hand::BOTH {
-                let c = every_volume_for(&frame, &POUCHES, dominant);
+                let c = every_volume_for(&frame, pouches(), dominant);
                 assert_apart(
                     &c,
                     &format!("height {}, yaw {yaw}, dominant {dominant:?}", dims.height),
@@ -159,8 +163,8 @@ fn the_pouches_sit_on_the_front_of_the_body_by_handedness() {
 #[test]
 fn a_left_handed_layout_mirrors_a_right_handed_one() {
     let frame = standing(&DIMS);
-    let right = every_volume_for(&frame, &POUCHES, Hand::Right);
-    let left = every_volume_for(&frame, &POUCHES, Hand::Left);
+    let right = every_volume_for(&frame, pouches(), Hand::Right);
+    let left = every_volume_for(&frame, pouches(), Hand::Left);
     for volume in [
         GrabVolume::GrenadePouch,
         GrabVolume::C4Pouch,
@@ -180,17 +184,17 @@ fn the_magazine_pouch_is_laid_out_around_the_gun_hand_not_the_dominant_hand() {
     // A left-handed player whose gun rides the right hand: the free hand is the left.
     let side = gun_side(Some(Hand::Right), None, Hand::Left);
     assert_eq!(side, Hand::Right);
-    let magazine = magazine_pouch(&frame, &POUCHES, side.other(), Some(Hand::Left));
+    let magazine = magazine_pouch(&frame, pouches(), side.other(), Some(Hand::Left));
     assert!(magazine.centre.x < 0.0, "{}", magazine.centre);
     assert_eq!(magazine.hand, Some(Hand::Left));
     // The pouch sits on the side it is placed on, whichever hand takes from it.
-    let right = magazine_pouch(&frame, &POUCHES, Hand::Right, None);
+    let right = magazine_pouch(&frame, pouches(), Hand::Right, None);
     assert!(right.centre.x > 0.0);
     assert_eq!(right.hand, None);
-    let left = magazine_pouch(&frame, &POUCHES, Hand::Left, Some(Hand::Right));
+    let left = magazine_pouch(&frame, pouches(), Hand::Left, Some(Hand::Right));
     assert!(left.centre.x < 0.0);
     // The chest pouches stay on the dominant hand's sides whichever hand holds the gun.
-    let grenade = grenade_pouch(&frame, &POUCHES, Hand::Left, ChestGrabbers::Either).unwrap();
+    let grenade = grenade_pouch(&frame, pouches(), Hand::Left, ChestGrabbers::Either).unwrap();
     assert!(grenade.centre.x < 0.0);
     // Holstered, the layout stays where the last gun had it, and falls back on the dominant hand
     // before any gun is drawn.
@@ -211,11 +215,11 @@ fn one_gun_s_pouch_is_on_the_midline_and_two_guns_pouches_are_apart_on_their_sid
             let midline = skeleton.hip_centre();
             let right = frame.pelvis * Vec3::X;
             for grabber in Hand::BOTH {
-                let centred = centre_magazine_pouch(&frame, &POUCHES, Some(grabber));
+                let centred = centre_magazine_pouch(&frame, pouches(), Some(grabber));
                 assert!((centred.centre - midline).dot(right).abs() < 1e-5);
                 assert_eq!(centred.hand, Some(grabber));
                 // The centred pouch keeps clear of the chest pouches above it.
-                let mut c: Vec<Candidate> = every_volume_for(&frame, &POUCHES, grabber)
+                let mut c: Vec<Candidate> = every_volume_for(&frame, pouches(), grabber)
                     .into_iter()
                     .filter(|c| c.volume != GrabVolume::MagazinePouch)
                     .collect();
@@ -227,11 +231,11 @@ fn one_gun_s_pouch_is_on_the_midline_and_two_guns_pouches_are_apart_on_their_sid
                 assert!((centred.centre - midline).dot(up) > 0.0);
                 for hand in Hand::BOTH {
                     let hip = skeleton.hips[hand.index()];
-                    let side = magazine_pouch(&frame, &POUCHES, hand, None);
+                    let side = magazine_pouch(&frame, pouches(), hand, None);
                     assert!(centred.centre.distance(hip) > side.centre.distance(hip));
                 }
             }
-            let sides = Hand::BOTH.map(|hand| magazine_pouch(&frame, &POUCHES, hand, None));
+            let sides = Hand::BOTH.map(|hand| magazine_pouch(&frame, pouches(), hand, None));
             assert!((sides[0].centre - midline).dot(right) < 0.0);
             assert!((sides[1].centre - midline).dot(right) > 0.0);
         }
@@ -243,7 +247,7 @@ fn the_grenade_takes_the_dominant_side_and_the_c4_the_other() {
     for dominant in Hand::BOTH {
         let sides = chest_sides(dominant);
         assert_eq!((sides.grenade, sides.c4), (dominant, dominant.other()));
-        let c = every_volume_for(&standing(&DIMS), &POUCHES, dominant);
+        let c = every_volume_for(&standing(&DIMS), pouches(), dominant);
         let grenade = centre(&c, GrabVolume::GrenadePouch);
         assert_eq!(grenade.x > 0.0, dominant == Hand::Right);
     }
@@ -383,8 +387,8 @@ fn only_a_free_hand_takes_from_the_chest_pouches_while_a_gun_is_drawn() {
     assert_eq!(ChestGrabbers::for_guns([true; 2]), ChestGrabbers::Neither);
     let only_left = ChestGrabbers::Only(Hand::Left);
     for pouch in [
-        grenade_pouch(&frame, &POUCHES, Hand::Right, only_left).unwrap(),
-        c4_pouch(&frame, &POUCHES, Hand::Right, only_left).unwrap(),
+        grenade_pouch(&frame, pouches(), Hand::Right, only_left).unwrap(),
+        c4_pouch(&frame, pouches(), Hand::Right, only_left).unwrap(),
     ] {
         assert_eq!(pouch.hand, Some(Hand::Left));
         let c = [pouch];
@@ -394,8 +398,8 @@ fn only_a_free_hand_takes_from_the_chest_pouches_while_a_gun_is_drawn() {
             Some(pouch.volume)
         );
     }
-    assert!(grenade_pouch(&frame, &POUCHES, Hand::Right, ChestGrabbers::Neither).is_none());
-    assert!(c4_pouch(&frame, &POUCHES, Hand::Right, ChestGrabbers::Neither).is_none());
+    assert!(grenade_pouch(&frame, pouches(), Hand::Right, ChestGrabbers::Neither).is_none());
+    assert!(c4_pouch(&frame, pouches(), Hand::Right, ChestGrabbers::Neither).is_none());
 }
 
 #[test]
@@ -498,7 +502,7 @@ fn the_back_sockets_reach_lower_and_further_out_than_their_weapons_sit() {
     let at = |socket: Socket, x: f32| Candidate {
         volume: GrabVolume::Socket(socket),
         centre: chest + Vec3::new(x, 0.2, 0.15),
-        radius: SOCKETS.shoulder_radius_m,
+        radius: HOLD.get().volumes.sockets.shoulder_radius_m,
         hand: None,
     };
     let sockets = [

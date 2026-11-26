@@ -1,6 +1,6 @@
 //! Placing the body's grab volumes: the grenade pouch, the magazine pouch, and the C4 pouch, beside
-//! the sockets' reach ([`SOCKETS`]; a socket's volume sits where the socket's weapon is placed).
-//! Pure.
+//! the sockets' reach ([`SocketTuning`]; a socket's volume sits where the socket's weapon is
+//! placed). Pure. The placement's tuning is [`VolumesTuning`], in the hold tuning file.
 //!
 //! The volumes ride the character's skeleton, the body the player sees, carried into the cockpit
 //! frame: what the player sees on the body is what they reach for, and the hands reach it as they
@@ -36,29 +36,138 @@ use jc3vr_body::controllers::{
     body::rig::frames::SkeletonLandmarks,
     grab::{Candidate, GrabVolume},
 };
+use jc3vr_core::config::engine::{Invalid, positive, range, vec3};
 use jc3vr_input::frame::Hand;
+use serde::Deserialize;
 pub(crate) use stride::StrideFilter;
+pub use stride::StrideTuning;
 
-use crate::controllers::loadout::Socket;
+use crate::controllers::{loadout::Socket, weapons::hold::tuning::HOLD};
 
-/// The sockets' fixed reach.
-pub const SOCKETS: SocketTuning = SocketTuning {
-    hip_radius_m: 0.22,
-    shoulder_radius_m: 0.255,
-};
+/// Where the body's grab volumes go: the sockets' reach, the pouches' volumes, and the landmarks of
+/// the skeleton they ride. Lengths that scale with the body are fractions of the skeleton's own
+/// torso or shoulder width.
+#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct VolumesTuning {
+    pub sockets: SocketTuning,
+    pub pouches: PouchTuning,
+    /// How far the back's sockets' reach is moved from where their weapons sit, in the chest's
+    /// frame (+X right, mirrored for the left side; +Y up the spine; +Z back), metres: down by about
+    /// a hand's width and out from the spine. In the 10 November 17:07 session the releases over
+    /// the shoulder that dropped the weapon came lower and further out than the place; the draws,
+    /// which closed at eye height behind the head on the weapon, are left there
+    /// ([`reach_back_sockets`]).
+    pub back_reach_offset_m: Vec3,
+    /// The look down below which the chest pouches ride the chest as it is, radians: about ten
+    /// degrees ([`BodyFrame::looking`]).
+    pub look_down_start_rad: f32,
+    /// The look down from which the chest pouches are kept off the whole bend, radians: about forty
+    /// degrees.
+    pub look_down_full_rad: f32,
+    /// The spine's tilt from upright within which a look down's bend is undone, radians: about
+    /// thirty degrees.
+    pub bend_full_rad: f32,
+    /// The spine's tilt from upright past which nothing is undone, radians: about fifty degrees.
+    pub bend_none_rad: f32,
+    /// How far above the hip joints the belt's front is, where the magazine pouch hangs, as a
+    /// fraction of the torso: the waist.
+    pub belt_rise_fraction: f32,
+    /// How far out from the midline the belt's front landmark on a side sits, as a fraction of the
+    /// shoulder width: toward the middle of the belt, well inside the hip socket on that side, so
+    /// that a hand feeling for the pouch does not land in the socket.
+    pub belt_out_fraction: f32,
+    /// How far in front of the hip joints' line the front of the belly is, metres, beyond the eyes'
+    /// own offset in front of the shoulders ([`body::EYES_FORWARD_OF_SHOULDERS`]).
+    pub belly_front_m: f32,
+    /// How far below the shoulder joints the chest pouches' landmark sits, as a fraction of the
+    /// torso: the upper chest.
+    pub chest_pouch_drop_fraction: f32,
+    /// How far out from the midline the chest pouches' landmark sits, as a fraction of the shoulder
+    /// width: about under the shoulder joint.
+    pub chest_pouch_out_fraction: f32,
+    /// How far in front of the shoulder joints' line the front of the chest is, metres, beyond the
+    /// eyes' own offset in front of the shoulders: a little deeper than the belly.
+    pub chest_front_m: f32,
+    pub stride: StrideTuning,
+}
 
-/// The pouches' fixed placement. Each pouch's centre is a few centimetres out from the body's
-/// surface, where a hand laid flat on the body closes.
-pub const POUCHES: PouchTuning = PouchTuning {
-    grenade: CHEST_POUCH,
-    c4: C4_POUCH,
-    magazine: POUCH,
-    reach_margin_m: 0.05,
-};
+impl VolumesTuning {
+    pub(crate) fn validate(&self) -> Result<(), Invalid> {
+        positive(
+            "volumes.sockets.hip_radius_m",
+            self.sockets.hip_radius_m,
+            1.0,
+        )?;
+        positive(
+            "volumes.sockets.shoulder_radius_m",
+            self.sockets.shoulder_radius_m,
+            1.0,
+        )?;
+        self.pouches.grenade.validate("volumes.pouches.grenade")?;
+        self.pouches.c4.validate("volumes.pouches.c4")?;
+        self.pouches.magazine.validate("volumes.pouches.magazine")?;
+        range(
+            "volumes.pouches.reach_margin_m",
+            self.pouches.reach_margin_m,
+            0.0,
+            0.5,
+        )?;
+        vec3("volumes.back_reach_offset_m", self.back_reach_offset_m, 1.0)?;
+        let half_turn = std::f32::consts::PI;
+        range(
+            "volumes.look_down_start_rad",
+            self.look_down_start_rad,
+            0.0,
+            half_turn,
+        )?;
+        range(
+            "volumes.look_down_full_rad",
+            self.look_down_full_rad,
+            self.look_down_start_rad + f32::EPSILON,
+            half_turn,
+        )?;
+        range("volumes.bend_full_rad", self.bend_full_rad, 0.0, half_turn)?;
+        range(
+            "volumes.bend_none_rad",
+            self.bend_none_rad,
+            self.bend_full_rad + f32::EPSILON,
+            half_turn,
+        )?;
+        range(
+            "volumes.belt_rise_fraction",
+            self.belt_rise_fraction,
+            -1.0,
+            1.0,
+        )?;
+        range(
+            "volumes.belt_out_fraction",
+            self.belt_out_fraction,
+            0.0,
+            1.0,
+        )?;
+        range("volumes.belly_front_m", self.belly_front_m, -0.5, 0.5)?;
+        range(
+            "volumes.chest_pouch_drop_fraction",
+            self.chest_pouch_drop_fraction,
+            -1.0,
+            1.0,
+        )?;
+        range(
+            "volumes.chest_pouch_out_fraction",
+            self.chest_pouch_out_fraction,
+            0.0,
+            1.0,
+        )?;
+        range("volumes.chest_front_m", self.chest_front_m, -0.5, 0.5)?;
+        self.stride.validate()
+    }
+}
 
 /// The body's sockets: how near a hand must come to each, metres. A socket's grab volume is centred
 /// where the socket places its weapon, so the socket has no placement of its own here.
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SocketTuning {
     /// The sockets on both hips. A hand reaching for the pistol closes on the front of the hip
     /// more often than on the pistol's grip behind it, and in the 10 November 17:07 session five
@@ -69,19 +178,36 @@ pub struct SocketTuning {
     pub shoulder_radius_m: f32,
 }
 
-/// The pouches on the front of the body: the magazine pouch at the front of the belt, and the grenade and C4 pouches on either side of the chest. Each is placed only
-/// while its feature is on: the grenade pouch with the grenade throw, the C4 pouch with the C4
-/// throw, and the magazine pouch while the true reload reloads the held weapon. Offsets are given
-/// for the right side and mirrored for the left.
-#[derive(Copy, Clone, Debug, PartialEq)]
+/// The pouches on the front of the body: the magazine pouch at the front of the belt, and the
+/// grenade and C4 pouches on either side of the chest. Each is placed only while its feature is on:
+/// the grenade pouch with the grenade throw, the C4 pouch with the C4 throw, and the magazine pouch
+/// while the true reload reloads the held weapon. Offsets are given for the right side and mirrored
+/// for the left.
+#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PouchTuning {
-    /// The grenade pouch, offset from the chest's front on its side.
+    /// The grenade pouch, offset from the chest's front on its side: at the chest's surface and a
+    /// little below the landmark, and wider than the magazine pouch, so that both a hand laid flat
+    /// on the chest with the gaze level and a hand reaching out in front of it close inside it. In
+    /// the 2 November 2026 standing session a pouch centred a few centimetres out from the surface
+    /// missed hands laid on the chest by 4 to 10 cm, which sat about 13 cm behind and 4 cm below
+    /// its centre, while the takes came from hands pushed out in front of the chest. Of that
+    /// session's level-gaze presses at the chest, the shipped centre and radius take 22 of 48,
+    /// against 18 for the old pouch and 17 for one moved the whole 13 cm back. The pouch models sit
+    /// partly inside the character's chest until his chest is aligned with the player's.
     pub grenade: VolumeSpec,
-    /// The C4 pouch, offset from the chest's front on its side.
+    /// The C4 pouch, offset from the chest's front on its side: as the grenade pouch, but wider and
+    /// nearer the midline. The charge is taken with the hand reaching across the body to the far
+    /// side of the chest, and that hand stops short of the far shoulder: in the 10 November 17:07
+    /// session every take and near miss closed 11 to 17 cm toward the midline from a pouch under
+    /// the shoulder joint, so that all seven takes came from the reach margin and five presses
+    /// missed it by up to 3 cm. Moved 10 cm in, the pouch takes eleven of those twelve presses
+    /// inside its own radius and the last within its margin.
     pub c4: VolumeSpec,
     /// The universal reload pouch, offset from the belt's front, at its middle or on one side
-    /// ([`centre_magazine_pouch`], [`magazine_pouch`]). It hands out what the held weapon takes: a
-    /// magazine, a shell, a rocket, or a pod.
+    /// ([`centre_magazine_pouch`], [`magazine_pouch`]): its centre a few centimetres out from the
+    /// belly's surface. It hands out what the held weapon takes: a magazine, a shell, a rocket, or
+    /// a pod.
     pub magazine: VolumeSpec,
     /// How far outside a pouch's surface a grip press still takes from it, metres, when the hand
     /// is in no other volume: a hand feeling for a pouch lands a little off it, and a press there
@@ -90,12 +216,20 @@ pub struct PouchTuning {
 }
 
 /// A spherical grab volume placed relative to a body landmark.
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct VolumeSpec {
     /// The centre's offset from the landmark in the body frame (+X right, +Y up, +Z back), metres,
     /// given for the right side and mirrored across the body's midline for the left.
     pub offset_m: Vec3,
     pub radius_m: f32,
+}
+
+impl VolumeSpec {
+    fn validate(&self, path: &str) -> Result<(), Invalid> {
+        vec3(&format!("{path}.offset_m"), self.offset_m, 1.0)?;
+        positive(&format!("{path}.radius_m"), self.radius_m, 1.0)
+    }
 }
 
 /// The body the volumes ride: the character's skeleton in the cockpit frame, with its girdles'
@@ -181,14 +315,15 @@ impl BodyFrame {
     }
 }
 
-/// Move the shoulders' socket volumes in `candidates` from where
-/// a weapon would sit on `body` to where a hand putting one away over the shoulder closes: lower
-/// and further out from the spine, by [`BACK_REACH_OFFSET_M`] in the chest's frame. A long gun on
-/// the back sits with its grip up behind the head, and a hand reaching over the shoulder to put a
-/// gun there closes below and outside that. Only the reach for docking moves: a draw is reached on
+/// Move the shoulders' socket volumes in `candidates` from where a weapon would sit on `body` to
+/// where a hand putting one away over the shoulder closes: lower and further out from the spine, by
+/// [`VolumesTuning::back_reach_offset_m`] in the chest's frame. A long gun on the back sits with
+/// its grip up behind the head, and a hand reaching over the shoulder to put a gun there closes
+/// below and outside that. Only the reach for docking moves: a draw is reached on
 /// the weapon the player sees, a docked weapon stays where its socket puts it, and the attraction
 /// travels a weapon to the socket's own place.
 pub fn reach_back_sockets(candidates: &mut [Candidate], body: &BodyFrame) {
+    let back_reach = HOLD.get().volumes.back_reach_offset_m;
     let midline = body.skeleton.chest();
     let right = body.chest * Vec3::X;
     for candidate in candidates {
@@ -200,11 +335,7 @@ pub fn reach_back_sockets(candidates: &mut [Candidate], body: &BodyFrame) {
         } else {
             1.0
         };
-        let offset = Vec3::new(
-            BACK_REACH_OFFSET_M.x * side,
-            BACK_REACH_OFFSET_M.y,
-            BACK_REACH_OFFSET_M.z,
-        );
+        let offset = Vec3::new(back_reach.x * side, back_reach.y, back_reach.z);
         let centre = candidate.centre + body.chest * offset;
         if centre.is_finite() {
             candidate.centre = centre;
@@ -371,37 +502,6 @@ pub fn magazine_pouch(
 #[cfg(test)]
 pub const HIP_HEIGHT_FRACTION: f32 = 0.53;
 
-/// The magazine pouch's volume: its centre a few centimetres out from the belly's surface.
-const POUCH: VolumeSpec = VolumeSpec {
-    offset_m: Vec3::new(0.0, 0.0, -0.04),
-    radius_m: 0.075,
-};
-
-/// The chest pouches' volume: at the chest's surface and a little below the landmark, and wider than
-/// the magazine pouch's, so that both a hand laid flat on the chest with the gaze level and a hand
-/// reaching out in front of it close inside it. In the 2 November 2026 standing session a pouch
-/// centred a few centimetres out from the surface missed hands laid on the chest by 4 to 10 cm,
-/// which sat about 13 cm behind and 4 cm below its centre, while the takes came from hands pushed
-/// out in front of the chest. Of that session's level-gaze presses at the chest, this centre and
-/// radius take 22 of 48, against 18 for the old pouch and 17 for one moved the whole 13 cm back.
-/// The pouch models sit partly inside the character's chest until his chest is aligned with the
-/// player's.
-const CHEST_POUCH: VolumeSpec = VolumeSpec {
-    offset_m: Vec3::new(0.0, -0.02, 0.04),
-    radius_m: 0.09,
-};
-
-/// The C4 pouch's volume: as the grenade pouch's, but wider and nearer the midline. The charge is
-/// taken with the hand reaching across the body to the far side of the chest, and that hand stops
-/// short of the far shoulder: in the 10 November 17:07 session every take and near miss closed 11 to
-/// 17 cm toward the midline from a pouch under the shoulder joint, so that all seven takes came
-/// from the reach margin and five presses missed it by up to 3 cm. Moved 10 cm in, the pouch
-/// takes eleven of those twelve presses inside its own radius and the last within its margin.
-const C4_POUCH: VolumeSpec = VolumeSpec {
-    offset_m: Vec3::new(-0.10, -0.02, 0.04),
-    radius_m: 0.1,
-};
-
 /// The chest of a frame: its middle and its orientation, as [`BodyFrame::chest`].
 #[derive(Debug, Copy, Clone, PartialEq)]
 struct Girdle {
@@ -409,92 +509,54 @@ struct Girdle {
     basis: Quat,
 }
 
-/// How far the back's sockets' reach is moved from where their weapons sit, in the chest's frame
-/// (+X right, mirrored for the left side; +Y up the spine; +Z back), metres: down by about a hand's
-/// width and out from the spine. In the same session the releases over the shoulder that dropped
-/// the weapon came lower and further out than the place; the draws, which closed at eye height
-/// behind the head on the weapon, are left there.
-const BACK_REACH_OFFSET_M: Vec3 = Vec3::new(0.05, -0.12, 0.0);
-
 /// The share of the look-down bend the chest pouches are kept off for a head turned `head`: none
-/// for a look down of up to [`LOOK_DOWN_START`], all of it from [`LOOK_DOWN_FULL`], eased between.
+/// for a look down of up to [`VolumesTuning::look_down_start_rad`], all of it from
+/// [`VolumesTuning::look_down_full_rad`], eased between.
 fn look_down_share(head: Quat) -> f32 {
+    let tuning = &HOLD.get().volumes;
     let down = (-(head * Vec3::NEG_Z).y).clamp(-1.0, 1.0).asin();
-    smoothstep_between(LOOK_DOWN_START, LOOK_DOWN_FULL, down)
+    smoothstep_between(tuning.look_down_start_rad, tuning.look_down_full_rad, down)
 }
 
 /// The share of the bend the chest pouches are kept off for a spine running along `up`: all of it
-/// within [`BEND_FULL`] of upright, which covers the bend a look down puts in the body, none past
-/// [`BEND_NONE`], where the body is lying or folded by more than a look explains.
+/// within [`VolumesTuning::bend_full_rad`] of upright, which covers the bend a look down puts in
+/// the body, none past [`VolumesTuning::bend_none_rad`], where the body is lying or folded by more
+/// than a look explains.
 fn bend_share(up: Vec3) -> f32 {
+    let tuning = &HOLD.get().volumes;
     let bend = up.y.clamp(-1.0, 1.0).acos();
-    1.0 - smoothstep_between(BEND_FULL, BEND_NONE, bend)
+    1.0 - smoothstep_between(tuning.bend_full_rad, tuning.bend_none_rad, bend)
 }
-
-/// The look down below which the chest pouches ride the chest as it is, radians: about ten degrees.
-const LOOK_DOWN_START: f32 = 0.17;
-
-/// The look down from which the chest pouches are kept off the whole bend, radians: about forty
-/// degrees.
-const LOOK_DOWN_FULL: f32 = 0.7;
-
-/// The spine's tilt from upright within which a look down's bend is undone, radians: about thirty
-/// degrees.
-const BEND_FULL: f32 = 0.52;
-
-/// The spine's tilt from upright past which nothing is undone, radians: about fifty degrees.
-const BEND_NONE: f32 = 0.87;
-
-/// How far above the hip joints the belt's front is, where the magazine pouch hangs, as a fraction
-/// of the torso: the waist.
-const BELT_RISE_FRACTION: f32 = 0.17;
-
-/// How far out from the midline the belt's front landmark on a side sits, as a fraction of the
-/// shoulder width: toward the middle of the belt, well inside the hip socket on that side, so that a hand
-/// feeling for the pouch does not land in the socket.
-const BELT_OUT_FRACTION: f32 = 0.12;
-
-/// How far in front of the hip joints' line the front of the belly is, metres.
-const BELLY_FRONT_M: f32 = 0.03 + body::EYES_FORWARD_OF_SHOULDERS;
-
-/// How far below the shoulder joints the chest pouches' landmark sits, as a fraction of the torso:
-/// the upper chest.
-const CHEST_POUCH_DROP_FRACTION: f32 = 0.22;
-
-/// How far out from the midline the chest pouches' landmark sits, as a fraction of the shoulder
-/// width: about under the shoulder joint.
-const CHEST_POUCH_OUT_FRACTION: f32 = 0.52;
-
-/// How far in front of the shoulder joints' line the front of the chest is, metres: a little deeper
-/// than the belly.
-const CHEST_FRONT_M: f32 = 0.02 + body::EYES_FORWARD_OF_SHOULDERS;
 
 /// The belt's front landmark on `side`: on the belly's surface at the belt's height, at the front
 /// of the hip on that side.
 fn belt(frame: &BodyFrame, side: Hand) -> Vec3 {
     belt_at(
         frame,
-        frame.shoulder_width() * BELT_OUT_FRACTION * side_sign(side),
+        frame.shoulder_width() * HOLD.get().volumes.belt_out_fraction * side_sign(side),
     )
 }
 
 /// The point on the belly's surface at the belt's height, `out` metres to the right of the midline.
 fn belt_at(frame: &BodyFrame, out: f32) -> Vec3 {
-    let rise = frame.torso() * BELT_RISE_FRACTION;
-    frame.skeleton.hip_centre() + frame.pelvis * Vec3::new(out, rise, -BELLY_FRONT_M)
+    let tuning = &HOLD.get().volumes;
+    let rise = frame.torso() * tuning.belt_rise_fraction;
+    let belly_front = tuning.belly_front_m + body::EYES_FORWARD_OF_SHOULDERS;
+    frame.skeleton.hip_centre() + frame.pelvis * Vec3::new(out, rise, -belly_front)
 }
 
 /// The chest pouch `volume` on `side`: on the chest's surface below and inside the shoulder joint,
 /// riding the pouches' chest ([`BodyFrame::looking`]).
 fn chest_pouch(volume: GrabVolume, frame: &BodyFrame, spec: &VolumeSpec, side: Hand) -> Candidate {
-    let out = frame.shoulder_width() * CHEST_POUCH_OUT_FRACTION * side_sign(side);
+    let tuning = &HOLD.get().volumes;
+    let out = frame.shoulder_width() * tuning.chest_pouch_out_fraction * side_sign(side);
     let chest = frame.pouch_chest;
     let landmark = chest.centre
         + chest.basis
             * Vec3::new(
                 out,
-                -frame.torso() * CHEST_POUCH_DROP_FRACTION,
-                -CHEST_FRONT_M,
+                -frame.torso() * tuning.chest_pouch_drop_fraction,
+                -(tuning.chest_front_m + body::EYES_FORWARD_OF_SHOULDERS),
             );
     place(volume, landmark, chest.basis, spec, side, None)
 }

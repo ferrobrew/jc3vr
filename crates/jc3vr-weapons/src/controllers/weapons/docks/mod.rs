@@ -72,7 +72,7 @@ pub(crate) fn publish_targets(sample: Option<Sample>) {
 pub(crate) fn socket_world_pose(socket: Socket) -> Option<Mat4> {
     let attachments = ATTACHMENTS.lock();
     let sample = attachments.as_ref()?;
-    (Instant::now().checked_duration_since(sample.at)? <= attachments::MAX_AGE).then_some(())?;
+    (Instant::now().checked_duration_since(sample.at)? <= attachments::max_age()).then_some(())?;
     sample
         .attachments
         .iter()

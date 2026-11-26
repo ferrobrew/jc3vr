@@ -10,6 +10,31 @@
 use body_rig::smooth::critically_damped;
 use glam::Vec3;
 use jc3vr_body::controllers::body::rig::frames::SkeletonLandmarks;
+use jc3vr_core::config::engine::{Invalid, positive};
+use serde::Deserialize;
+
+use crate::controllers::weapons::hold::tuning::HOLD;
+
+/// How the belt is held steady through a stride.
+#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StrideTuning {
+    /// The smoothing of the hip joints while moving, seconds: about half a running stride, which
+    /// takes out most of a stride's swing and bob.
+    pub smoothing_s: f32,
+    /// The furthest a smoothed hip joint lags the drawn one, metres: a stride's swing at the hip.
+    pub max_lag_m: f32,
+    /// The longest tick the filter steps, seconds: a stall resets nothing, but steps no further.
+    pub max_dt_s: f32,
+}
+
+impl StrideTuning {
+    pub(crate) fn validate(&self) -> Result<(), Invalid> {
+        positive("volumes.stride.smoothing_s", self.smoothing_s, 5.0)?;
+        positive("volumes.stride.max_lag_m", self.max_lag_m, 1.0)?;
+        positive("volumes.stride.max_dt_s", self.max_dt_s, 1.0)
+    }
+}
 
 /// Low-passes the hip joints of the skeleton the belt rides while Rico moves.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
@@ -38,8 +63,9 @@ impl StrideFilter {
         moving: bool,
         dt: f32,
     ) -> SkeletonLandmarks {
+        let tuning = &HOLD.get().volumes.stride;
         let dt = if dt.is_finite() {
-            dt.clamp(0.0, MAX_DT_S)
+            dt.clamp(0.0, tuning.max_dt_s)
         } else {
             0.0
         };
@@ -55,7 +81,13 @@ impl StrideFilter {
             rates: [Vec3::ZERO; 2],
         });
         for side in 0..2 {
-            let (hip, rate) = damp(state.hips[side], state.rates[side], skeleton.hips[side], dt);
+            let (hip, rate) = damp(
+                state.hips[side],
+                state.rates[side],
+                skeleton.hips[side],
+                tuning.smoothing_s,
+                dt,
+            );
             state.hips[side] = hip;
             state.rates[side] = rate;
         }
@@ -63,8 +95,8 @@ impl StrideFilter {
         // or a crouch passes through.
         for side in 0..2 {
             let offset = state.hips[side] - skeleton.hips[side];
-            if offset.length() > MAX_LAG_M {
-                state.hips[side] = skeleton.hips[side] + offset.normalize() * MAX_LAG_M;
+            if offset.length() > tuning.max_lag_m {
+                state.hips[side] = skeleton.hips[side] + offset.normalize() * tuning.max_lag_m;
             }
         }
         SkeletonLandmarks {
@@ -74,22 +106,13 @@ impl StrideFilter {
     }
 }
 
-/// The critically damped step of each axis of `value` toward `target`.
-fn damp(value: Vec3, rate: Vec3, target: Vec3, dt: f32) -> (Vec3, Vec3) {
-    let axis = |i: usize| critically_damped(value[i], rate[i], target[i], STRIDE_SMOOTHING_S, dt);
+/// The critically damped step of each axis of `value` toward `target`, with a time constant of
+/// `smoothing_s`.
+fn damp(value: Vec3, rate: Vec3, target: Vec3, smoothing_s: f32, dt: f32) -> (Vec3, Vec3) {
+    let axis = |i: usize| critically_damped(value[i], rate[i], target[i], smoothing_s, dt);
     let (x, y, z) = (axis(0), axis(1), axis(2));
     (Vec3::new(x.0, y.0, z.0), Vec3::new(x.1, y.1, z.1))
 }
-
-/// The smoothing of the hip joints while moving, seconds: about half a running stride, which takes
-/// out most of a stride's swing and bob.
-const STRIDE_SMOOTHING_S: f32 = 0.2;
-
-/// The furthest a smoothed hip joint lags the drawn one, metres: a stride's swing at the hip.
-const MAX_LAG_M: f32 = 0.12;
-
-/// The longest tick the filter steps, seconds: a stall resets nothing, but steps no further.
-const MAX_DT_S: f32 = 0.1;
 
 #[cfg(test)]
 mod tests {
@@ -137,6 +160,6 @@ mod tests {
         let mut filter = StrideFilter::new();
         filter.step(skeleton(0.95, 0.0), true, 1.0 / 60.0);
         let out = filter.step(skeleton(0.5, 0.0), true, 1.0 / 60.0);
-        assert!((out.hips[0].y - 0.5).abs() <= MAX_LAG_M + 1e-5);
+        assert!((out.hips[0].y - 0.5).abs() <= HOLD.get().volumes.stride.max_lag_m + 1e-5);
     }
 }

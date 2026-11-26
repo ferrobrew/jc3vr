@@ -97,6 +97,7 @@ use crate::controllers::weapons::{
     docks,
     dual_wield::single::magazine::Dealt,
     engine::{HeldWeapon, reserve},
+    hold::tuning::HOLD,
     inventory::engine::strong_to,
     pouch_models,
     pouch_models::MODEL_PLACEMENT,
@@ -116,7 +117,7 @@ use crate::controllers::weapons::{
         tuning::{RELOAD, Reload},
     },
     volumes,
-    volumes::{BodyFrame, POUCHES},
+    volumes::BodyFrame,
 };
 
 /// The reload's hooks, aggregated by [`crate::controllers::weapons::hook_library`].
@@ -253,9 +254,9 @@ pub(super) fn begin_tick(inputs: &BeginInputs) -> Vec<Candidate> {
     // away from the gun being loaded.
     let pouch = body.map(|b| {
         let pouch = if gun_hands == [true; 2] {
-            volumes::magazine_pouch(b, &POUCHES, pouch_side, Some(pouch_side))
+            volumes::magazine_pouch(b, &HOLD.get().volumes.pouches, pouch_side, Some(pouch_side))
         } else {
-            volumes::centre_magazine_pouch(b, &POUCHES, Some(pouch_side))
+            volumes::centre_magazine_pouch(b, &HOLD.get().volumes.pouches, Some(pouch_side))
         };
         Candidate {
             hand: free,
@@ -288,8 +289,13 @@ pub(super) fn begin_tick(inputs: &BeginInputs) -> Vec<Candidate> {
     // reaches across the body for the one pouch.
     let belt_pouches = if gun_hands == [true; 2] {
         Hand::BOTH.map(|hand| {
-            body.map(|b| displayed(volumes::magazine_pouch(b, &POUCHES, hand, None), hand))
-                .map(|pouch| pouch.centre)
+            body.map(|b| {
+                displayed(
+                    volumes::magazine_pouch(b, &HOLD.get().volumes.pouches, hand, None),
+                    hand,
+                )
+            })
+            .map(|pouch| pouch.centre)
         })
     } else {
         [target_pouch.map(|pouch| pouch.centre); 2]

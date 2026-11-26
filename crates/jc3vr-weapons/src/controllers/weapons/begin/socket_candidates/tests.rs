@@ -10,10 +10,10 @@ use jc3vr_view::controllers::{
 
 use super::*;
 use crate::controllers::weapons::{
-    docks::attachments::{Attachment, MAX_AGE, Missing, Occupancy, PoseSource},
+    docks::attachments::{Attachment, Missing, Occupancy, PoseSource, max_age},
+    hold::tuning::HOLD,
     mirror::attachment_markers,
     volumes,
-    volumes::SOCKETS,
 };
 
 fn frames(character: Mat4) -> Frames {
@@ -162,7 +162,7 @@ fn published_offers_match_final_candidates_for_long_gun_restrictions() {
     let frames = frames(Mat4::IDENTITY);
     let native = offer_sample(&frames);
     let original = native.clone();
-    let holsters = SOCKETS;
+    let holsters = HOLD.get().volumes.sockets;
     for dominant in Hand::BOTH {
         for occupied in [[false; 2], [true, false], [false, true], [true; 2]] {
             let draw = DrawContext { dominant, occupied };
@@ -198,7 +198,7 @@ fn restricted_draws_preserve_base_observations_and_missing_pose_diagnostics() {
             attachment.pose = Err(Missing::Weapon);
         }
     }
-    let holsters = SOCKETS;
+    let holsters = HOLD.get().volumes.sockets;
     for dominant in Hand::BOTH {
         let mut published = None;
         let (draws, others) = provide_and_publish(
@@ -244,7 +244,7 @@ fn restricted_draws_preserve_base_observations_and_missing_pose_diagnostics() {
 #[test]
 fn removing_the_only_hand_offer_keeps_the_base_socket_marker() {
     let frames = frames(Mat4::IDENTITY);
-    let holsters = SOCKETS;
+    let holsters = HOLD.get().volumes.sockets;
     for dominant in Hand::BOTH {
         let mut native = offer_sample(&frames);
         native.attachments.retain(|attachment| {
@@ -289,7 +289,7 @@ fn unavailable_provider_clears_published_offers_and_candidates() {
         let (draws, others) = provide_and_publish(
             have_native.then_some(&native),
             have_frames.then_some(&frames),
-            &SOCKETS,
+            &HOLD.get().volumes.sockets,
             occupied_context(),
             |sample| {
                 publications += 1;
@@ -311,7 +311,12 @@ fn missing_native_poses_stay_missing_and_no_fit_keeps_occupancy() {
     native.attachments[0].pose = Err(Missing::Weapon);
     native.attachments[1].pose = Err(Missing::Bone);
     native.attachments[2].usage = Some(SocketUse::NoFit);
-    let (sample, draws, others) = provide(&native, &frames, &SOCKETS, occupied_context());
+    let (sample, draws, others) = provide(
+        &native,
+        &frames,
+        &HOLD.get().volumes.sockets,
+        occupied_context(),
+    );
     assert_eq!(sample.attachments[0], native.attachments[0]);
     assert_eq!(sample.attachments[1], native.attachments[1]);
     assert_eq!(sample.attachments[2].usage, Some(SocketUse::NoFit));
@@ -326,7 +331,12 @@ fn missing_native_poses_stay_missing_and_no_fit_keeps_occupancy() {
 fn the_targets_are_the_native_observations() {
     let frames = frames(Mat4::IDENTITY);
     let native = native_sample(&frames);
-    let (sample, draws, others) = provide(&native, &frames, &SOCKETS, occupied_context());
+    let (sample, draws, others) = provide(
+        &native,
+        &frames,
+        &HOLD.get().volumes.sockets,
+        occupied_context(),
+    );
     assert_eq!(sample.attachments, native.attachments);
     assert_provider_and_mirror(&sample, &draws, &others, &frames);
 }
@@ -335,7 +345,7 @@ fn the_targets_are_the_native_observations() {
 fn platform_rebase_carries_the_targets_without_refreshing_age() {
     let source = frames(Mat4::from_translation(Vec3::new(3.0, 0.0, 1.0)));
     let native = native_sample(&source);
-    let holsters = SOCKETS;
+    let holsters = HOLD.get().volumes.sockets;
     let (sample, _, _) = provide(&native, &source, &holsters, occupied_context());
     let destination =
         Mat4::from_rotation_translation(Quat::from_rotation_y(1.1), Vec3::new(20.0, 4.0, -7.0));
@@ -366,7 +376,7 @@ fn platform_rebase_carries_the_targets_without_refreshing_age() {
             .in_world(
                 7,
                 destination,
-                sample.at + MAX_AGE + Duration::from_nanos(1)
+                sample.at + max_age() + Duration::from_nanos(1)
             )
             .is_none()
     );

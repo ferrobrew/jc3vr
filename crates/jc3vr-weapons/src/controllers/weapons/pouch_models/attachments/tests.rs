@@ -229,9 +229,9 @@ fn foreign_expired_invalid_or_different_phase_samples_are_rejected() {
         &config,
     ));
     assert!(input.current(7, input.at));
-    assert!(input.current(7, input.at + MAX_AGE));
+    assert!(input.current(7, input.at + max_age()));
     assert!(!input.current(8, input.at));
-    assert!(!input.current(7, input.at + MAX_AGE + Duration::from_nanos(1)));
+    assert!(!input.current(7, input.at + max_age() + Duration::from_nanos(1)));
     assert!(!input.current(7, input.at - Duration::from_millis(1)));
     let mut foreign = id(19);
     foreign.owner += 1;
@@ -245,7 +245,7 @@ fn foreign_expired_invalid_or_different_phase_samples_are_rejected() {
             id(19),
             &input,
             Mat4::IDENTITY,
-            input.at + MAX_AGE + Duration::from_nanos(1)
+            input.at + max_age() + Duration::from_nanos(1)
         )
         .is_none()
     );
@@ -282,8 +282,8 @@ fn clearing_or_replacing_the_render_source_preserves_the_skeleton_source() {
     let mut pouches = Vec::new();
     pouch_render_markers(&render, context, &mut pouches);
     let skeleton = pouches[0];
-    store.submit(Source::BodyMirror, &mut vec![skeleton], MAX_AGE, now);
-    store.submit(Source::BodyMirrorPouches, &mut pouches, MAX_AGE, now);
+    store.submit(Source::BodyMirror, &mut vec![skeleton], max_age(), now);
+    store.submit(Source::BodyMirrorPouches, &mut pouches, max_age(), now);
     let mut out = Vec::new();
     let collection = store.collect(now, &mut out, true);
     assert_eq!(collection.retained[Source::BodyMirror.index()], 1);
@@ -292,7 +292,7 @@ fn clearing_or_replacing_the_render_source_preserves_the_skeleton_source() {
     let cleared = store.collect(now, &mut out, true);
     assert_eq!(cleared.retained[Source::BodyMirrorPouches.index()], 0);
     assert_eq!(out, vec![skeleton]);
-    store.submit(Source::BodyMirrorPouches, &mut Vec::new(), MAX_AGE, now);
+    store.submit(Source::BodyMirrorPouches, &mut Vec::new(), max_age(), now);
     assert_eq!(
         store.collect(now, &mut out, true).retained[Source::BodyMirror.index()],
         1

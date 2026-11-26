@@ -228,7 +228,7 @@ fn release(state: &mut HandleState, hand: Hand, why: Release, events: &mut Vec<H
 #[cfg(test)]
 mod tests {
     use jc3vr_body::controllers::grab::grab_volume;
-    use jc3vr_weapons::controllers::{loadout::Socket, weapons::volumes::SOCKETS};
+    use jc3vr_weapons::controllers::{loadout::Socket, weapons::hold::tuning::HOLD};
 
     use super::*;
     use crate::controllers::vehicles::arm_steering::combine;
@@ -316,7 +316,7 @@ mod tests {
         let socket = Candidate {
             volume: GrabVolume::Socket(Socket::Shoulder(Hand::Right)),
             centre: centres[1] + Vec3::new(-0.10, -0.10, 0.04),
-            radius: SOCKETS.shoulder_radius_m,
+            radius: HOLD.get().volumes.sockets.shoulder_radius_m,
             hand: Some(Hand::Right),
         };
         assert!(socket.centre.distance(centres[1]) < config().radius_m);

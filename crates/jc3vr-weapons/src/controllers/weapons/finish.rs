@@ -49,7 +49,7 @@ use crate::controllers::{
             Capabilities, GunHand, gun_hands_now, gun_owners_now, tracked_hands, trigger_claims,
         },
         config::WeaponSettings,
-        docks::{attract, attract::ATTRACTION},
+        docks::attract,
         dual_wield::single,
         engine, foregrip,
         foregrip::{GripGeometry, Inputs, Transition, TwoHandedWeapon},
@@ -858,7 +858,9 @@ fn release(
             hold::act::intend_release(hand, object, Some(socket));
             let docked = match attracted.filter(|a| a.socket == socket) {
                 Some(a) => {
-                    let travel = attract::travel_s(a.distance, HOLD.get().hold.snap_s, &ATTRACTION);
+                    let tuning = HOLD.get();
+                    let travel =
+                        attract::travel_s(a.distance, tuning.hold.snap_s, &tuning.docks.attraction);
                     tracing::info!(
                         target: "controllers",
                         hand = hand.label(),
@@ -979,7 +981,7 @@ fn pass_by_action(game: &GameTick<'_>, hand: Hand) -> bool {
 fn attraction_for(hand: Hand, reserved: Option<Socket>) -> Option<attract::Attraction> {
     let speed = motion::latest_time()
         .and_then(|latest| {
-            let since = latest - f64::from(ATTRACTION.speed_window_s);
+            let since = latest - f64::from(HOLD.get().docks.attraction.speed_window_s);
             motion::peak_velocity(&motion::history(hand), since)
         })
         .map_or(0.0, |(_, velocity)| velocity.length());
@@ -991,7 +993,7 @@ fn attraction_for(hand: Hand, reserved: Option<Socket>) -> Option<attract::Attra
         .filter(|a| Some(a.socket) != reserved)
         .copied()
         .collect();
-    attract::attract(&open, hand, grip, speed, &ATTRACTION)
+    attract::attract(&open, hand, grip, speed, &HOLD.get().docks.attraction)
 }
 
 /// Whether the weapon at `object` can lie in the world: every weapon but the game's dual-wield pair,

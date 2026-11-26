@@ -1,11 +1,11 @@
 //! The sockets' attraction: a weapon let go of near a free socket that takes it, though outside the
 //! socket's own reach, travels into the socket rather than falling. Pure.
 //!
-//! A socket's reach ([`crate::controllers::weapons::volumes::SOCKETS`]) is tight, so that a grab
+//! A socket's reach ([`crate::controllers::weapons::volumes::SocketTuning`]) is tight, so that a grab
 //! between two sockets takes the nearer one. Putting a weapon back needs less precision than that:
 //! the back's sockets are behind the head, out of sight, and a seated player's chair stands
 //! between the hand and the shoulder blade. Each free socket that takes the weapon a hand holds
-//! therefore has a wider attraction around its centre ([`ATTRACTION`]), which only a release
+//! therefore has a wider attraction around its centre ([`AttractionTuning`]), which only a release
 //! consults, after the socket's own reach has found nothing.
 //!
 //! The attraction is limited on two sides, so that a weapon dropped on purpose still falls:
@@ -29,31 +29,18 @@
 use glam::Vec3;
 use jc3vr_body::controllers::grab::{Candidate, GrabVolume};
 use jc3vr_input::frame::Hand;
+use serde::Deserialize;
 
 use crate::controllers::{
     loadout::Socket,
     weapons::{docks::SocketUse, volumes::BodyFrame},
 };
 
-/// The attraction's fixed tuning.
-pub(crate) const ATTRACTION: AttractionTuning = AttractionTuning {
-    shoulder_m: 0.675,
-    hip_m: 0.3,
-    back_front_m: 0.08,
-    back_floor_m: 0.3,
-    hip_front_m: 0.25,
-    back_max_speed_mps: 5.0,
-    hip_max_speed_mps: 3.5,
-    speed_window_s: 0.1,
-    travel_mps: 1.5,
-    max_travel_s: 0.35,
-    exit_margin_m: 0.03,
-};
-
 /// How far each kind of socket attracts a released weapon, where the hand must be, and how fast it
 /// may move.
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub(crate) struct AttractionTuning {
+#[derive(Debug, Copy, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AttractionTuning {
     /// The attraction of the shoulders' sockets from their centres, metres: a
     /// hand let open over the shoulder, beside the head on that side, or behind it, which is about
     /// a forearm's length from the point behind the shoulder blade a long gun's grip sits at. The

@@ -27,13 +27,13 @@ use crate::controllers::{
     loadout::{LoadoutSnapshot, grab::swaps, live},
     weapons::{
         ads,
-        begin::place::{CHARGE_MARK_M, Place, held_foregrip, mark_size},
+        begin::place::{Place, held_foregrip, mark_size},
         c4,
         capabilities::{Capabilities, gun_hands_now, tracked_hands, trigger_claims},
         collide,
         config::WeaponSettings,
         docks,
-        docks::{SocketInputs, SocketUse, attachments::Sample, attract, attract::ATTRACTION},
+        docks::{SocketInputs, SocketUse, attachments::Sample, attract},
         engine,
         engine::HeldWeapon,
         foregrip, grenade,
@@ -53,7 +53,7 @@ use crate::controllers::{
         state::{OffTouch, STATE},
         types::{TickStart, WieldedReadout},
         volumes,
-        volumes::{BodyFrame, ChestGrabbers, POUCHES, SOCKETS, StrideFilter},
+        volumes::{BodyFrame, ChestGrabbers, StrideFilter},
     },
 };
 
@@ -245,7 +245,7 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickStart {
         placed.map_or("nothing: no skeleton", |(_, source)| source.anchor()),
     );
     let body = placed.map(|(body, _)| body.looking(active.head.orientation));
-    let pouches = &POUCHES;
+    let pouches = &HOLD.get().volumes.pouches;
     let place = Place::new(&active);
     // A held foregrip goes first, so that the bracing hand keeps it over anything as near.
     let mut targets = Vec::new();
@@ -316,7 +316,7 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickStart {
             &others,
             body.as_ref(),
             |p| place.xf.point_to_world(p),
-            &ATTRACTION,
+            &HOLD.get().docks.attraction,
         );
         if let Some(snapshot) = &snapshot {
             state.attractors.extend(attract::swap_attractors(
@@ -324,7 +324,7 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickStart {
                 |hand, socket| swaps(snapshot, hand, socket),
                 body.as_ref(),
                 |p| place.xf.point_to_world(p),
-                &ATTRACTION,
+                &HOLD.get().docks.attraction,
             ));
         }
     }
@@ -355,12 +355,22 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickStart {
     pouch_return::observe(&pouch_return::Inputs {
         grenade_pouch: return_body
             .and_then(|body| {
-                volumes::grenade_pouch(body, &POUCHES, config.dominant, ChestGrabbers::Either)
+                volumes::grenade_pouch(
+                    body,
+                    &HOLD.get().volumes.pouches,
+                    config.dominant,
+                    ChestGrabbers::Either,
+                )
             })
             .map(as_pouch),
         charge_pouch: return_body
             .and_then(|body| {
-                volumes::c4_pouch(body, &POUCHES, config.dominant, ChestGrabbers::Either)
+                volumes::c4_pouch(
+                    body,
+                    &HOLD.get().volumes.pouches,
+                    config.dominant,
+                    ChestGrabbers::Either,
+                )
             })
             .map(as_pouch),
         grips: active.hands.map(|hand| hand.map(|hand| hand.grip.position)),
@@ -472,9 +482,12 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickStart {
             GrabVolume::ChargeSurface,
             hand,
             contact.distance,
-            Mark::ring(MarkAt::World(contact.point), CHARGE_MARK_M)
-                .on_surface(contact.normal)
-                .showing(Shown::Always),
+            Mark::ring(
+                MarkAt::World(contact.point),
+                HOLD.get().begin.marks.charge_m,
+            )
+            .on_surface(contact.normal)
+            .showing(Shown::Always),
         ));
     }
     // A hand holding something of its own braces nothing and takes nothing from the other hand, so
@@ -647,9 +660,12 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickStart {
     let tracked = &mut *state;
     let attracted = Hand::BOTH.map(|hand| {
         let grip = grips[hand.index()].filter(|_| braced != Some(hand));
-        tracked
-            .zones
-            .step(hand, &tracked.attractors, grip, &ATTRACTION)
+        tracked.zones.step(
+            hand,
+            &tracked.attractors,
+            grip,
+            &HOLD.get().docks.attraction,
+        )
     });
     let in_attraction = Hand::BOTH.map(|hand| tracked.zones.inside(hand));
     drop(state);
@@ -766,13 +782,9 @@ fn brace_slide(gun: &GunOnHand, hand: Hand, active: &ActiveHands) -> Option<(Vec
 /// just inside it, so any volume the hand is well inside of wins over the gun (the action's, while
 /// the chamber waits on it).
 fn gun_volume_radius(distance: f32) -> f32 {
-    (distance.max(0.0) + GUN_VOLUME_MARGIN_M) / GUN_VOLUME_DEPTH
+    let tuning = &HOLD.get().begin;
+    (distance.max(0.0) + tuning.gun_volume_margin_m) / tuning.gun_volume_depth
 }
-
-/// How far past the hand a volume on a gun reaches, metres.
-const GUN_VOLUME_MARGIN_M: f32 = 0.01;
-/// How deep in a volume on a gun the hand is, as a share of its radius.
-const GUN_VOLUME_DEPTH: f32 = 0.95;
 
 /// The volumes on the long guns docked on the shoulders, for each free hand that touches one at a
 /// part other than its grip, as both are drawn: a grab there draws the gun from its shoulder as the
@@ -825,7 +837,7 @@ fn docked_candidates(ticked: &Ticked, active: &ActiveHands, free: [bool; 2]) -> 
 /// The pouches to draw their models on this tick: each pouch with something to give, wherever it
 /// is placed, whichever hands are free to take from it.
 fn shown_props(body: &BodyFrame, config: &WeaponSettings) -> Vec<ShownPouch> {
-    let pouches = &POUCHES;
+    let pouches = &HOLD.get().volumes.pouches;
     let dominant = config.dominant;
     let sides = volumes::chest_sides(dominant);
     let on_chest = |prop: Prop, pouch: Candidate, side: Hand| ShownPouch {
@@ -887,7 +899,7 @@ fn socket_candidates(
         ticked.sockets.as_ref(),
         active,
         ticked.character,
-        &SOCKETS,
+        &HOLD.get().volumes.sockets,
         draw,
     )
 }

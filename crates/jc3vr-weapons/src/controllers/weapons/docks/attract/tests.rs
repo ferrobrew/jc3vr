@@ -2,6 +2,11 @@ use glam::Quat;
 use jc3vr_body::controllers::body::rig::frames::SkeletonLandmarks;
 
 use super::*;
+use crate::controllers::weapons::hold::tuning::HOLD;
+
+fn tuning() -> &'static AttractionTuning {
+    &HOLD.get().docks.attraction
+}
 
 /// A standing body facing -Z: shoulders at 1.45 m, hips at 0.95 m, 0.4 m and 0.2 m wide.
 fn body(yaw: f32) -> BodyFrame {
@@ -60,8 +65,8 @@ fn free_sockets() -> Vec<(Candidate, SocketUse)> {
 
 fn attracted(grip: Vec3, speed: f32) -> Option<Socket> {
     let body = body(0.0);
-    let attractors = attractors(&free_sockets(), Some(&body), offset, &ATTRACTION);
-    attract(&attractors, Hand::Right, grip, speed, &ATTRACTION).map(|a| a.socket)
+    let attractors = attractors(&free_sockets(), Some(&body), offset, tuning());
+    attract(&attractors, Hand::Right, grip, speed, tuning()).map(|a| a.socket)
 }
 
 #[test]
@@ -81,11 +86,11 @@ fn a_hand_let_open_over_the_shoulder_docks_on_the_back() {
 fn a_weapon_let_go_of_in_front_of_the_body_falls() {
     // In front of the chest, within the back socket's radius but out in front of the shoulders.
     let front = Vec3::new(0.2, 1.4, -0.25);
-    assert!(front.distance(Vec3::new(0.12, 1.3, 0.15)) <= ATTRACTION.shoulder_m);
+    assert!(front.distance(Vec3::new(0.12, 1.3, 0.15)) <= tuning().shoulder_m);
     assert_eq!(attracted(front, 0.2), None);
     // Held out over the belly, within the hip's radius.
     let belly = Vec3::new(0.15, 0.9, -0.27);
-    assert!(belly.distance(Vec3::new(0.2, 0.85, 0.0)) <= ATTRACTION.hip_m);
+    assert!(belly.distance(Vec3::new(0.2, 0.85, 0.0)) <= tuning().hip_m);
     assert_eq!(attracted(belly, 0.2), None);
     // Out at the side of the chest, beyond the hip's radius.
     assert_eq!(attracted(Vec3::new(0.45, 1.15, -0.1), 0.2), None);
@@ -96,9 +101,9 @@ fn a_weapon_let_go_of_in_front_of_the_body_falls() {
 #[test]
 fn a_throw_is_never_attracted() {
     let over = Vec3::new(0.18, 1.62, 0.0);
-    assert_eq!(attracted(over, ATTRACTION.back_max_speed_mps + 0.5), None);
+    assert_eq!(attracted(over, tuning().back_max_speed_mps + 0.5), None);
     let beside = Vec3::new(0.32, 0.95, 0.05);
-    assert_eq!(attracted(beside, ATTRACTION.hip_max_speed_mps + 0.5), None);
+    assert_eq!(attracted(beside, tuning().hip_max_speed_mps + 0.5), None);
     assert_eq!(attracted(over, f32::NAN), None);
     assert_eq!(attracted(Vec3::NAN, 0.0), None);
 }
@@ -122,9 +127,9 @@ fn a_pistol_turned_down_onto_the_front_of_the_thigh_docks() {
 #[test]
 fn an_attraction_sends_the_grip_to_the_sockets_centre_in_the_world() {
     let body = body(0.0);
-    let attractors = attractors(&free_sockets(), Some(&body), offset, &ATTRACTION);
+    let attractors = attractors(&free_sockets(), Some(&body), offset, tuning());
     let over = Vec3::new(0.18, 1.62, 0.0);
-    let attraction = attract(&attractors, Hand::Right, over, 0.5, &ATTRACTION).unwrap();
+    let attraction = attract(&attractors, Hand::Right, over, 0.5, tuning()).unwrap();
     let centre = Vec3::new(0.12, 1.3, 0.15);
     assert!(attraction.toward.distance(offset(centre)) < 1e-5);
     assert!((attraction.distance - over.distance(centre)).abs() < 1e-5);
@@ -151,14 +156,14 @@ fn the_socket_the_hand_is_deepest_inside_wins() {
         ),
         dock(Socket::Hip(Hand::Right), Hand::Right, hip_centre, 0.12),
     ];
-    let attractors = attractors(&sockets, Some(&body(0.0)), offset, &ATTRACTION);
+    let attractors = attractors(&sockets, Some(&body(0.0)), offset, tuning());
     let grip = Vec3::new(0.2, 1.17, 0.0);
     let hip_distance = grip.distance(hip_centre);
     let shoulder_distance = grip.distance(shoulder_centre);
     assert!(hip_distance < shoulder_distance);
-    assert!(hip_distance <= ATTRACTION.hip_m);
-    assert!(shoulder_distance / ATTRACTION.shoulder_m < hip_distance / ATTRACTION.hip_m);
-    let attraction = attract(&attractors, Hand::Right, grip, 0.2, &ATTRACTION).unwrap();
+    assert!(hip_distance <= tuning().hip_m);
+    assert!(shoulder_distance / tuning().shoulder_m < hip_distance / tuning().hip_m);
+    let attraction = attract(&attractors, Hand::Right, grip, 0.2, tuning()).unwrap();
     assert_eq!(attraction.socket, Socket::Shoulder(Hand::Right));
 }
 
@@ -167,8 +172,8 @@ fn a_hand_down_by_the_thigh_is_never_drawn_onto_the_back() {
     // Within the shoulder's wide radius but well below the shoulders, fast enough that the hip
     // takes it as a throw: it falls rather than docking on the back.
     let beside = Vec3::new(0.32, 0.95, 0.05);
-    assert!(beside.distance(Vec3::new(0.12, 1.3, 0.15)) <= ATTRACTION.shoulder_m);
-    assert_eq!(attracted(beside, ATTRACTION.hip_max_speed_mps + 0.5), None);
+    assert!(beside.distance(Vec3::new(0.12, 1.3, 0.15)) <= tuning().shoulder_m);
+    assert_eq!(attracted(beside, tuning().hip_max_speed_mps + 0.5), None);
 }
 
 #[test]
@@ -189,15 +194,15 @@ fn the_front_limits_turn_with_the_body() {
         })
         .collect();
     let body = body(yaw);
-    let attractors = attractors(&sockets, Some(&body), offset, &ATTRACTION);
+    let attractors = attractors(&sockets, Some(&body), offset, tuning());
     let over = turn * Vec3::new(0.18, 1.62, 0.0);
     let front = turn * Vec3::new(0.2, 1.4, -0.25);
     assert_eq!(
-        attract(&attractors, Hand::Right, over, 0.5, &ATTRACTION).map(|a| a.socket),
+        attract(&attractors, Hand::Right, over, 0.5, tuning()).map(|a| a.socket),
         Some(Socket::Shoulder(Hand::Right))
     );
     assert_eq!(
-        attract(&attractors, Hand::Right, front, 0.5, &ATTRACTION),
+        attract(&attractors, Hand::Right, front, 0.5, tuning()),
         None
     );
 }
@@ -208,36 +213,27 @@ fn only_free_fitting_sockets_attract_and_only_their_hand() {
     let mut sockets = free_sockets();
     sockets[0].1 = SocketUse::NoFit;
     sockets[1].1 = SocketUse::Draw;
-    assert!(attractors(&sockets, Some(&body), offset, &ATTRACTION).is_empty());
+    assert!(attractors(&sockets, Some(&body), offset, tuning()).is_empty());
     sockets[1].1 = SocketUse::Dock;
-    let attractors = attractors(&sockets, Some(&body), offset, &ATTRACTION);
+    let attractors = attractors(&sockets, Some(&body), offset, tuning());
     assert_eq!(attractors.len(), 1);
     assert_eq!(attractors[0].socket, Socket::Hip(Hand::Right));
     let over = Vec3::new(0.18, 1.62, 0.0);
-    assert_eq!(
-        attract(&attractors, Hand::Right, over, 0.5, &ATTRACTION),
-        None
-    );
+    assert_eq!(attract(&attractors, Hand::Right, over, 0.5, tuning()), None);
     let all = attractors_for_both();
     assert_eq!(
-        attract(
-            &all,
-            Hand::Left,
-            Vec3::new(0.32, 0.95, 0.05),
-            0.5,
-            &ATTRACTION
-        ),
+        attract(&all, Hand::Left, Vec3::new(0.32, 0.95, 0.05), 0.5, tuning()),
         None
     );
 }
 
 fn attractors_for_both() -> Vec<Attractor> {
-    attractors(&free_sockets(), Some(&body(0.0)), offset, &ATTRACTION)
+    attractors(&free_sockets(), Some(&body(0.0)), offset, tuning())
 }
 
 #[test]
 fn without_a_body_no_socket_attracts() {
-    assert!(attractors(&free_sockets(), None, offset, &ATTRACTION).is_empty());
+    assert!(attractors(&free_sockets(), None, offset, tuning()).is_empty());
 }
 
 #[test]
@@ -248,19 +244,19 @@ fn an_attraction_never_reaches_less_than_the_sockets_own_reach() {
         Vec3::ZERO,
         0.5,
     )];
-    let attractors = attractors(&wide, Some(&body(0.0)), offset, &ATTRACTION);
-    assert_eq!(attractors[0].radius, ATTRACTION.shoulder_m.max(0.5));
+    let attractors = attractors(&wide, Some(&body(0.0)), offset, tuning());
+    assert_eq!(attractors[0].radius, tuning().shoulder_m.max(0.5));
 }
 
 #[test]
 fn the_travel_takes_longer_from_farther_within_its_bounds() {
     let snap = 0.12;
-    assert_eq!(travel_s(0.0, snap, &ATTRACTION), snap);
-    let near = travel_s(0.25, snap, &ATTRACTION);
-    let far = travel_s(0.4, snap, &ATTRACTION);
+    assert_eq!(travel_s(0.0, snap, tuning()), snap);
+    let near = travel_s(0.25, snap, tuning());
+    let far = travel_s(0.4, snap, tuning());
     assert!(near > snap && far > near);
-    assert_eq!(travel_s(10.0, snap, &ATTRACTION), ATTRACTION.max_travel_s);
-    assert_eq!(travel_s(f32::NAN, snap, &ATTRACTION), snap);
+    assert_eq!(travel_s(10.0, snap, tuning()), tuning().max_travel_s);
+    assert_eq!(travel_s(f32::NAN, snap, tuning()), snap);
 }
 
 #[test]
@@ -268,7 +264,7 @@ fn coming_into_an_attraction_ticks_once_until_the_hand_leaves_it() {
     let attractors = attractors_for_both();
     let mut watch = ZoneWatch::new();
     let step = |watch: &mut ZoneWatch, grip: Option<Vec3>| {
-        watch.step(Hand::Right, &attractors, grip, &ATTRACTION)
+        watch.step(Hand::Right, &attractors, grip, tuning())
     };
     let centre = Vec3::new(0.12, 1.3, 0.15);
     let up = Vec3::Y;
@@ -289,7 +285,7 @@ fn the_tick_keeps_the_front_limit_and_stops_with_nothing_to_dock() {
     let attractors = attractors_for_both();
     let mut watch = ZoneWatch::new();
     let step = |watch: &mut ZoneWatch, grip: Option<Vec3>| {
-        watch.step(Hand::Right, &attractors, grip, &ATTRACTION)
+        watch.step(Hand::Right, &attractors, grip, tuning())
     };
     // In front of the chest, within the back's radius: no tick.
     assert!(!step(&mut watch, Some(Vec3::new(0.2, 1.4, -0.25))));
@@ -300,7 +296,7 @@ fn the_tick_keeps_the_front_limit_and_stops_with_nothing_to_dock() {
     assert!(!step(&mut watch, None));
     assert!(step(&mut watch, over));
     // The other hand has no attraction here.
-    assert!(!watch.step(Hand::Left, &attractors, over, &ATTRACTION));
+    assert!(!watch.step(Hand::Left, &attractors, over, tuning()));
 }
 
 #[test]
@@ -308,7 +304,7 @@ fn moving_from_one_attraction_straight_into_another_ticks_for_the_new_socket() {
     let attractors = attractors_for_both();
     let mut watch = ZoneWatch::new();
     let step = |watch: &mut ZoneWatch, grip: Vec3| {
-        watch.step(Hand::Right, &attractors, Some(grip), &ATTRACTION)
+        watch.step(Hand::Right, &attractors, Some(grip), tuning())
     };
     assert!(step(&mut watch, Vec3::new(0.32, 0.95, 0.05)));
     // Up to the shoulder, out of the hip's attraction by more than the margin.
@@ -327,19 +323,19 @@ fn a_taken_back_socket_draws_in_a_swap_and_a_free_one_comes_first() {
         taken(Socket::Hip(Hand::Left), Vec3::new(-0.2, 0.85, 0.0)),
     ];
     let swaps = |_: Hand, socket: Socket| matches!(socket, Socket::Shoulder(_));
-    let swapping = swap_attractors(&others, swaps, Some(&body), offset, &ATTRACTION);
+    let swapping = swap_attractors(&others, swaps, Some(&body), offset, tuning());
     assert_eq!(swapping.len(), 1);
     assert!(swapping[0].swap);
     assert_eq!(swapping[0].socket, Socket::Shoulder(Hand::Left));
     // A hand let open over the left shoulder swaps there.
     let over_left = Vec3::new(-0.15, 1.45, 0.2);
-    let attraction = attract(&swapping, Hand::Right, over_left, 0.1, &ATTRACTION).unwrap();
+    let attraction = attract(&swapping, Hand::Right, over_left, 0.1, tuning()).unwrap();
     assert!(attraction.swap);
     // With a free socket in reach as well, the free one takes the weapon, however deep the hand is
     // in the taken one's attraction.
-    let mut all = attractors(&free_sockets(), Some(&body), offset, &ATTRACTION);
+    let mut all = attractors(&free_sockets(), Some(&body), offset, tuning());
     all.extend(swapping);
-    let attraction = attract(&all, Hand::Right, over_left, 0.1, &ATTRACTION).unwrap();
+    let attraction = attract(&all, Hand::Right, over_left, 0.1, tuning()).unwrap();
     assert!(!attraction.swap);
     assert_eq!(attraction.socket, Socket::Shoulder(Hand::Right));
 }
@@ -362,36 +358,31 @@ fn the_hand_feels_the_free_socket_a_release_would_take_before_a_swap() {
         Vec3::new(0.2, 1.0, 0.0),
         0.12,
     );
-    let mut all = attractors(&[(hip, hip_use)], Some(&body), offset, &ATTRACTION);
+    let mut all = attractors(&[(hip, hip_use)], Some(&body), offset, tuning());
     all.extend(swap_attractors(
         &[(shoulder, SocketUse::NoFit)],
         |_, _| true,
         Some(&body),
         offset,
-        &ATTRACTION,
+        tuning(),
     ));
     let grip = Vec3::new(0.25, 1.17, 0.05);
     let share = |centre: Vec3, radius: f32| grip.distance(centre) / radius;
     assert!(
-        share(Vec3::new(0.12, 1.3, 0.15), ATTRACTION.shoulder_m)
-            < share(Vec3::new(0.2, 1.0, 0.0), ATTRACTION.hip_m)
+        share(Vec3::new(0.12, 1.3, 0.15), tuning().shoulder_m)
+            < share(Vec3::new(0.2, 1.0, 0.0), tuning().hip_m)
     );
     let mut watch = ZoneWatch::new();
-    assert!(watch.step(Hand::Right, &all, Some(grip), &ATTRACTION));
+    assert!(watch.step(Hand::Right, &all, Some(grip), tuning()));
     assert_eq!(watch.inside(Hand::Right), Some(Socket::Hip(Hand::Right)));
     // Starting in the shoulder's swap alone, then coming within the free hip's reach: the hand
     // moves to the hip, and ticks for it.
     let mut watch = ZoneWatch::new();
-    assert!(watch.step(
-        Hand::Right,
-        &all,
-        Some(Vec3::new(0.25, 1.5, 0.1)),
-        &ATTRACTION
-    ));
+    assert!(watch.step(Hand::Right, &all, Some(Vec3::new(0.25, 1.5, 0.1)), tuning()));
     assert_eq!(
         watch.inside(Hand::Right),
         Some(Socket::Shoulder(Hand::Right))
     );
-    assert!(watch.step(Hand::Right, &all, Some(grip), &ATTRACTION));
+    assert!(watch.step(Hand::Right, &all, Some(grip), tuning()));
     assert_eq!(watch.inside(Hand::Right), Some(Socket::Hip(Hand::Right)));
 }

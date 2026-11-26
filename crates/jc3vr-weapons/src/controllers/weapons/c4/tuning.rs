@@ -19,7 +19,7 @@ jc3vr_core::tuning_file! {
 /// The C4's tuning file's root: the throw of a charge from the C4 pouch (see
 /// [`crate::controllers::weapons::c4`]), the press onto a surface, the placed charges, the
 /// detonation, and the detonator. The pouch itself is placed with the others
-/// ([`POUCHES`](crate::controllers::weapons::volumes::POUCHES)).
+/// ([`PouchTuning`](crate::controllers::weapons::volumes::PouchTuning)).
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct C4Tuning {

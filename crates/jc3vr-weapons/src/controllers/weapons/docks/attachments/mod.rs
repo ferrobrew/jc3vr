@@ -10,7 +10,10 @@ use jc3vr_input::frame::{Hand, Pose};
 
 use crate::controllers::{
     loadout::{ItemId, Socket},
-    weapons::docks::{SocketPoint, SocketUse},
+    weapons::{
+        docks::{SocketPoint, SocketUse},
+        hold::tuning::HOLD,
+    },
 };
 
 /// Whether the loadout has an item on the socket, independently of whether its grip was observed.
@@ -80,7 +83,7 @@ impl Sample {
     /// Copy this observation onto the owner's current world transform, or reject an old or foreign
     /// observation. Bone-relative poses remain the input tick's observations, not fresh joint reads.
     pub(crate) fn in_world(&self, owner: usize, character: Mat4, now: Instant) -> Option<Self> {
-        if self.owner != owner || now.checked_duration_since(self.at)? > MAX_AGE {
+        if self.owner != owner || now.checked_duration_since(self.at)? > max_age() {
             return None;
         }
         if !usable_transform(self.character) || !usable_transform(character) {
@@ -187,8 +190,13 @@ pub(crate) fn socket_pose(
     }
 }
 
-/// The mirror must not keep showing attachment offers after input observations stop.
-pub(crate) const MAX_AGE: Duration = Duration::from_millis(250);
+/// How long the attachment offers stay current: the mirror must not keep showing them after the
+/// input observations stop ([`DocksTuning::attachments_max_age_ms`]).
+///
+/// [`DocksTuning::attachments_max_age_ms`]: crate::controllers::weapons::hold::tuning::DocksTuning::attachments_max_age_ms
+pub(crate) fn max_age() -> Duration {
+    HOLD.get().docks.attachments_max_age_ms.duration()
+}
 
 fn usable_transform(matrix: Mat4) -> bool {
     matrix.is_finite() && matrix.determinant().abs() > 1.0e-6
