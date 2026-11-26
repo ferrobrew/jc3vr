@@ -109,13 +109,16 @@ const MOD_SHADERS: &[(&str, &[(&str, &str)])] = &[
             ("velocity_decode", "cs_5_0"),
             ("taa_resolve", "cs_5_0"),
             ("indirect_args_double_cs", "cs_5_0"),
-            ("snapshot_diff_cs", "cs_5_0"),
             ("far_field_composite_ps", "ps_5_0"),
             ("overlay_vs", "vs_5_0"),
             ("overlay_ps", "ps_5_0"),
             ("scope_lens_vs", "vs_5_0"),
             ("scope_lens_ps", "ps_5_0"),
         ],
+    ),
+    (
+        "crates/jc3vr-capture/shaders",
+        &[("snapshot_diff_cs", "cs_5_0")],
     ),
     (
         "crates/jc3vr-hud/shaders",
