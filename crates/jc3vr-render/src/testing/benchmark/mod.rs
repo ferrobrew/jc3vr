@@ -41,6 +41,7 @@ use windows::{
 
 pub use crate::testing::benchmark::request::{BenchmarkError, BenchmarkRequest, BenchmarkTable};
 use crate::{
+    capture_arming::{Arming, arm},
     far_field::FAR_FIELD_CONFIG,
     fsr::{AntiAliasing, FSR_CONFIG, FsrConfig},
     hooks::{
@@ -48,11 +49,10 @@ use crate::{
         graphics_engine::{post::post_effects::vr_forces_blurs_off, shader},
     },
     profiler::gpu_samples::{self, GPU_SEAM_NAMES, GpuDispatchSample},
-    screenshot::harness::draw_census,
     stereo::{
         config::{STEREO_CONFIG, set_single_pass_feature},
         layout,
-        single_pass::{self, detour_timing},
+        single_pass::{self, detour_timing, probes::submission_total},
         switches::ShaderBuild,
     },
     testing::{
@@ -73,6 +73,7 @@ use crate::{
 /// Queue a benchmark run. One runs at a time; a request while another is queued or running is
 /// refused with a failed acknowledgement.
 pub fn request(request: BenchmarkRequest) {
+    arm(Arming::Benchmark);
     let mut state = STATE.lock();
     if state.pending.is_some() || state.run.is_some() {
         drop(state);
@@ -483,7 +484,7 @@ fn read() -> Reading {
     Reading {
         timing: frame_timing::cumulative(),
         engine: draw_count::engine_call_totals(),
-        submissions: draw_census::submission_total(),
+        submissions: submission_total(),
         detours: detour_timing::totals(),
         pose_age: crate::vr::pose_age_totals(),
     }

@@ -9,14 +9,18 @@
 use std::{
     any::Any,
     ffi::c_void,
-    sync::OnceLock,
+    sync::{
+        OnceLock,
+        atomic::{AtomicU64, Ordering},
+    },
 };
 
 use jc3gi::{graphics_engine::graphics_engine::RenderContext, types::math::Vector4};
+use jc3vr_core::util::bump;
 use windows::Win32::Graphics::Direct3D11::ID3D11Resource;
 
 use crate::{
-    capture_arming::capture_armed,
+    capture_arming::{capture_armed, capture_or_benchmark_armed},
     stereo::single_pass::{cb13::STEREO_CB_TOTAL_ROWS, detour_timing},
 };
 
@@ -240,7 +244,8 @@ pub(crate) fn armed() -> Option<&'static dyn SinglePassProbes> {
 }
 
 /// Submit a draw: through the submission trace while armed, and otherwise straight through the
-/// detour timing's forward.
+/// detour timing's forward. Either way the submission is counted while a capture or a benchmark is
+/// armed ([`submission_total`]).
 #[inline]
 pub(crate) fn submit(
     probes: Option<&dyn SinglePassProbes>,
@@ -249,6 +254,7 @@ pub(crate) fn submit(
     args: [i64; 5],
     draw: impl FnOnce(),
 ) {
+    count_submission(probes.is_some());
     match probes {
         Some(probes) => {
             let mut draw = Some(draw);
@@ -271,6 +277,7 @@ pub(crate) fn submit_indirect(
     offset: u32,
     draw: impl FnOnce(),
 ) {
+    count_submission(probes.is_some());
     match probes {
         Some(probes) => {
             let mut draw = Some(draw);
@@ -282,6 +289,13 @@ pub(crate) fn submit_indirect(
         }
         None => detour_timing::forward(draw),
     }
+}
+
+/// Every submission the stereo draw path has made while a capture or a benchmark was armed, never
+/// reset, for samplers that difference two readings (the benchmark, `crate::testing::benchmark`,
+/// whose request arms the count). Counted only while the draw-path detours are installed.
+pub(crate) fn submission_total() -> u64 {
+    SUBMISSIONS.load(Ordering::Relaxed)
 }
 
 /// Keep one eye's FSR input for a pending snapshot.
@@ -315,3 +329,14 @@ pub(crate) fn reflection_producer(pass: i32) -> Option<ProbeGuard> {
 }
 
 static PROBES: OnceLock<&'static dyn SinglePassProbes> = OnceLock::new();
+
+/// Count one submission for [`submission_total`]. `capture_armed` is what the caller's
+/// [`armed`] read found, which spares the flag a second load on the capture path.
+#[inline]
+fn count_submission(capture_armed: bool) {
+    if capture_armed || capture_or_benchmark_armed() {
+        bump(&SUBMISSIONS);
+    }
+}
+
+static SUBMISSIONS: AtomicU64 = AtomicU64::new(0);
