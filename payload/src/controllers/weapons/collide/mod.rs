@@ -79,11 +79,6 @@ impl CollideStatus {
     pub fn weapon(&self) -> bool {
         self.hands.iter().any(|h| h.weapon)
     }
-
-    /// Whether either hand's gun is against a wall.
-    pub fn touching(&self) -> bool {
-        self.hands.iter().any(|h| h.touching)
-    }
 }
 
 pub fn status() -> CollideStatus {
@@ -388,7 +383,8 @@ mod tests {
         // Both probes are kept for the next cast.
         assert!(STATE.lock().hands.iter().all(|h| h.probe.is_some()));
         observe([None; 2]);
-        assert!(!status().weapon() && !status().touching());
+        assert!(!status().weapon());
+        assert!(status().hands.iter().all(|h| !h.touching));
     }
 
     #[test]

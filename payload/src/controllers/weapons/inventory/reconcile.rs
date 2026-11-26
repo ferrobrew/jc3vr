@@ -24,10 +24,7 @@
 //!
 //! Everything here runs in the game stage, on the game thread before the world update.
 
-use std::{
-    ptr::NonNull,
-    sync::atomic::{AtomicU64, Ordering},
-};
+use std::ptr::NonNull;
 
 use jc3gi::{
     animation::symbol_table::EventIdSymbolTable,
@@ -55,33 +52,6 @@ use crate::{
     },
     hooks::character::acts::resolve_act_id,
 };
-
-/// The reconcile's readout.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
-pub struct ReconcileStatus {
-    /// Weapons taken out of their slots and put into them since the payload loaded.
-    pub out_of_slots: u64,
-    pub into_slots: u64,
-    /// The primary's weapon equipped, a weapon unequipped with no primary, and clips aborted first.
-    pub equips: u64,
-    pub unequips: u64,
-    pub aborts: u64,
-    /// Weapons armed in a hand, and armed weapons made the primary's, wielded in the same hand.
-    pub arms: u64,
-    pub promotions: u64,
-}
-
-pub fn status() -> ReconcileStatus {
-    ReconcileStatus {
-        out_of_slots: OUT.load(Ordering::Relaxed),
-        into_slots: IN.load(Ordering::Relaxed),
-        equips: EQUIPS.load(Ordering::Relaxed),
-        unequips: UNEQUIPS.load(Ordering::Relaxed),
-        aborts: ABORTS.load(Ordering::Relaxed),
-        arms: ARMS.load(Ordering::Relaxed),
-        promotions: PROMOTIONS.load(Ordering::Relaxed),
-    }
-}
 
 /// Make the game match the table as it is now: the slots, the primary, and the hands. Called each
 /// input tick after the table's feed, and at once after the hands move a weapon, so the next
@@ -180,14 +150,6 @@ pub(crate) unsafe fn store(store: &StoreProjection) {
     }
 }
 
-static OUT: AtomicU64 = AtomicU64::new(0);
-static IN: AtomicU64 = AtomicU64::new(0);
-static EQUIPS: AtomicU64 = AtomicU64::new(0);
-static UNEQUIPS: AtomicU64 = AtomicU64::new(0);
-static ABORTS: AtomicU64 = AtomicU64::new(0);
-static ARMS: AtomicU64 = AtomicU64::new(0);
-static PROMOTIONS: AtomicU64 = AtomicU64::new(0);
-
 /// Make each tracked slot hold what `projection` puts there. Returns whether a slot changed.
 unsafe fn slots(
     owner: &mut Character,
@@ -276,7 +238,6 @@ unsafe fn take_out(
     if is_wielded(weapon) {
         unsafe { abort_clips(owner) };
         unsafe { weapon.OnUnequip() };
-        UNEQUIPS.fetch_add(1, Ordering::Relaxed);
     }
     if let Some(hand) = armed::hand_of(object) {
         unsafe { armed::disarm(owner, hand, Some(NonNull::from(&mut *weapon)), true) };
@@ -288,7 +249,6 @@ unsafe fn take_out(
     unsafe { owner.m_Inventory.RemoveWeapon(slot) };
     let empty = owner.m_Inventory.m_Weapons[slot as usize].px.is_null();
     if empty {
-        OUT.fetch_add(1, Ordering::Relaxed);
         tracing::info!(target: "controllers", ?slot, "reconcile: took a weapon out of its slot");
     }
     empty
@@ -318,7 +278,6 @@ unsafe fn put_in(owner: &mut Character, slot: WeaponSlot, object: ObjectKey, hom
         unsafe { carry::keep(weapon, home) };
         return false;
     }
-    IN.fetch_add(1, Ordering::Relaxed);
     tracing::info!(target: "controllers", ?slot, "reconcile: put a weapon into its slot");
     true
 }
@@ -343,7 +302,6 @@ unsafe fn primary(owner: &mut Character, snapshot: &LoadoutSnapshot) {
             };
             // SAFETY: the input phase retains the revalidated original slot source.
             unsafe { handle.as_mut().OnUnequip() };
-            UNEQUIPS.fetch_add(1, Ordering::Relaxed);
             tracing::info!(target: "controllers", "reconcile: the game's update skips the wielded weapon here; unequipped it to arm it in its hand");
         }
         return;
@@ -375,14 +333,12 @@ unsafe fn primary(owner: &mut Character, snapshot: &LoadoutSnapshot) {
             };
             if let Some(hand) = armed::hand_of(target) {
                 unsafe { armed::disarm(owner, hand, Some(handle), true) };
-                PROMOTIONS.fetch_add(1, Ordering::Relaxed);
             }
             let Some(mut handle) = inventory_engine::slot_handle(&owner.m_Inventory, target) else {
                 return;
             };
             // SAFETY: the input phase retains the revalidated original slot source.
             unsafe { handle.as_mut().OnEquip(owner) };
-            EQUIPS.fetch_add(1, Ordering::Relaxed);
             tracing::info!(target: "controllers", "reconcile: the primary hand's weapon is wielded");
         }
         (Some(current), None) if primary.is_none() => {
@@ -396,7 +352,6 @@ unsafe fn primary(owner: &mut Character, snapshot: &LoadoutSnapshot) {
             };
             // SAFETY: the input phase retains the revalidated original slot source.
             unsafe { handle.as_mut().OnUnequip() };
-            UNEQUIPS.fetch_add(1, Ordering::Relaxed);
             tracing::info!(target: "controllers", "reconcile: no hand holds a weapon; unequipped the wielded one");
         }
         _ => {}
@@ -430,7 +385,6 @@ unsafe fn hands(owner: &mut Character, snapshot: &LoadoutSnapshot) {
         }
         match unsafe { armed::arm(owner, weapon, hand) } {
             Ok(()) => {
-                ARMS.fetch_add(1, Ordering::Relaxed);
                 tracing::info!(
                     target: "controllers",
                     hand = hand.label(),
@@ -473,5 +427,4 @@ unsafe fn abort_clips(owner: &mut Character) {
     };
     let act = act as u32;
     unsafe { owner.QueueAct(&act) };
-    ABORTS.fetch_add(1, Ordering::Relaxed);
 }

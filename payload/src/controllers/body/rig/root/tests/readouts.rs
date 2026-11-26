@@ -12,13 +12,12 @@ use crate::controllers::{
         shift::CockpitShift,
         status_from,
         trace::RootTrace,
-        try_frame_readout_from, try_sim_readout_from,
     },
     roomscale::SeatPhase,
 };
 
 #[test]
-fn blocking_and_try_readouts_project_current_counts_without_mutating_the_simulation() {
+fn the_readout_projects_current_counts_without_mutating_the_simulation() {
     let frame_status = FrameReadout {
         at: Some(Instant::now()),
         snaps: 3,
@@ -47,42 +46,11 @@ fn blocking_and_try_readouts_project_current_counts_without_mutating_the_simulat
 
     for _ in 0..3 {
         assert_eq!(status_from(&frame, &sim), expected);
-        assert_eq!(try_frame_readout_from(&frame), Some(expected.frame));
-        assert_eq!(try_sim_readout_from(&sim), Some(expected.sim));
         let stored = sim.lock();
         assert_eq!(stored.status, stored_status);
         assert_eq!(stored.movement, movement);
     }
     assert_eq!(frame.lock().status, frame_status);
-}
-
-#[test]
-fn a_held_frame_lock_returns_busy_without_blocking_the_simulation_readout() {
-    let frame = local_frame(FrameReadout::default());
-    let sim = local_sim();
-    let held = frame.lock();
-    assert_eq!(try_frame_readout_from(&frame), None);
-    assert_eq!(try_sim_readout_from(&sim).unwrap().ledger.projected, 1);
-    drop(held);
-    assert_eq!(
-        try_frame_readout_from(&frame),
-        Some(FrameReadout::default())
-    );
-}
-
-#[test]
-fn a_held_simulation_lock_returns_busy_without_blocking_the_frame_readout() {
-    let expected = FrameReadout {
-        pushbacks: 7,
-        ..FrameReadout::default()
-    };
-    let frame = local_frame(expected);
-    let sim = local_sim();
-    let held = sim.lock();
-    assert_eq!(try_sim_readout_from(&sim), None);
-    assert_eq!(try_frame_readout_from(&frame), Some(expected));
-    drop(held);
-    assert_eq!(try_sim_readout_from(&sim).unwrap().ledger.projected, 1);
 }
 
 fn local_frame(status: FrameReadout) -> Mutex<FrameState> {

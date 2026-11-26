@@ -2,7 +2,7 @@
 
 use smol_str::SmolStr;
 
-/// Text for the Status page and the existing log and scenario contracts.
+/// Text for the Status page and the existing log contract.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(super) struct Text {
     pub(super) legacy: SmolStr,
@@ -58,7 +58,7 @@ impl From<SmolStr> for Text {
     }
 }
 
-/// Authored display prose whose uppercase spelling is retained in logs and scenario details.
+/// Authored display prose whose uppercase spelling is retained in the logs.
 pub(super) fn prose(display: impl AsRef<str>) -> Text {
     let display = display.as_ref();
     Text::pair(display.to_uppercase(), display)

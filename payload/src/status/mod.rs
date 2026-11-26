@@ -1,9 +1,8 @@
 //! The status lines: a read-only summary of whether each of the mod's systems is live and healthy,
 //! for confirming a headset session at a glance. Each row reads one system's published state and
 //! gives a state word ([`Health`]) and a few numbers. The debug UI's Status tab shows every row and
-//! logs the summary ([`summary`]) on request, and the scenario runner's status-row probes read the
-//! rows by stable IDs ([`read_row`]). Authored prose and opaque values are composed separately;
-//! the UI reads display text, while logs and scenario probes retain their existing spelling.
+//! logs the summary ([`summary`]) on request. Authored prose and opaque values are composed
+//! separately; the UI reads display text, while the logs retain their existing spelling.
 //!
 //! A row may be read on any thread, including in the middle of a frame while the game thread holds
 //! the VR runtime lock, so the rows read only atomics and leaf locks that their modules publish for
@@ -62,7 +61,7 @@ impl Health {
     }
 }
 
-/// A status row with separate text for the UI and the existing log and scenario contracts.
+/// A status row with separate text for the UI and the existing log contract.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Line {
     pub(crate) health: Health,
@@ -118,23 +117,6 @@ impl Line {
             smol_str::format_smolstr!("{}, {}", self.health.word(), self.detail)
         }
     }
-}
-
-/// Every row's label, top to bottom: the names the scenario runner's status-row probes use.
-pub(crate) fn row_labels() -> impl Iterator<Item = &'static str> {
-    SECTIONS
-        .iter()
-        .flat_map(|section| section.rows.iter().map(|row| row.label))
-}
-
-/// The line of the row labelled `label`, read now, or `None` when no row has that label. The rows
-/// read only published slots, so any thread may ask.
-pub(crate) fn read_row(label: &str) -> Option<Line> {
-    SECTIONS
-        .iter()
-        .flat_map(|section| section.rows.iter())
-        .find(|row| row.label == label)
-        .map(|row| (row.read)())
 }
 
 /// Every section's stable ID, display title, and authored row labels and lines, top to bottom.
@@ -446,8 +428,12 @@ mod tests {
             .find(|row| row.label == "VR SESSION")
             .unwrap();
         assert_eq!(session.display_label, "VR session");
-        assert!(row_labels().any(|label| label == "C4 BY HAND"));
-        assert!(!row_labels().any(|label| label == "C4 by hand"));
+        let labels: Vec<&str> = SECTIONS
+            .iter()
+            .flat_map(|section| section.rows.iter().map(|row| row.label))
+            .collect();
+        assert!(labels.contains(&"C4 BY HAND"));
+        assert!(!labels.contains(&"C4 by hand"));
         for (health, legacy, display) in [
             (Health::Ok, "OK", "Ok"),
             (Health::Off, "OFF", "Off"),

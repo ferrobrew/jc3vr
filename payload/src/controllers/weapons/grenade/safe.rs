@@ -45,24 +45,6 @@ use crate::controllers::{
     },
 };
 
-/// Successful safe-item transitions since the payload loaded.
-#[derive(Default, Debug, Copy, Clone)]
-pub(crate) struct Counts {
-    pub drawn: u64,
-    pub stowed: u64,
-    pub redrawn: u64,
-    pub dropped: u64,
-    pub recovered: u64,
-    /// Items the world made in place of native pickups.
-    pub spawned: u64,
-    /// Items put back into the pouch.
-    pub returned: u64,
-}
-
-pub(crate) fn counts() -> Counts {
-    *COUNTS.lock()
-}
-
 /// Draw another safe grenade without reading or mutating ammunition.
 ///
 /// Refused outside the top of the world's pre-simulation queue, where the actor could not be
@@ -104,7 +86,6 @@ pub(crate) unsafe fn draw(hand: Hand, tuning: &GrenadeTuning) -> bool {
     });
     drop(state);
     ensure_cleanup();
-    COUNTS.lock().drawn += 1;
     true
 }
 
@@ -149,7 +130,6 @@ pub(crate) unsafe fn spawn_in_world(world: Mat4, release: Release) -> bool {
         world,
         release,
     });
-    COUNTS.lock().spawned += 1;
     true
 }
 
@@ -181,20 +161,15 @@ pub(crate) fn stow(hand: Hand, socket: Socket, world: Mat4) -> bool {
         return false;
     }
     place(item.binding.lease, world);
-    COUNTS.lock().stowed += 1;
     true
 }
 
 /// Draw the exact safe item stored in a holster, without allocating another actor.
 pub(crate) fn draw_stowed(socket: Socket, hand: Hand) -> bool {
-    let moved = live::safe_items()
+    live::safe_items()
         .into_iter()
         .find(|item| item.place == Place::Socket(socket))
-        .is_some_and(|item| live::move_safe_item(item, Place::Hand(hand)).is_ok());
-    if moved {
-        COUNTS.lock().redrawn += 1;
-    }
-    moved
+        .is_some_and(|item| live::move_safe_item(item, Place::Hand(hand)).is_ok())
 }
 
 /// Update the resolved world transform of a safe item in a holster.
@@ -227,7 +202,6 @@ pub(crate) fn return_held(hand: Hand) -> bool {
     // inert.
     unsafe { native::remove(&actor) };
     retire(item, "item put back into the pouch");
-    COUNTS.lock().returned += 1;
     true
 }
 
@@ -370,7 +344,6 @@ pub(crate) fn take_item(hand: Hand, item: SafeItemView, tuning: &GrenadeTuning) 
         return false;
     };
     unsafe { native::remove(&landed) };
-    COUNTS.lock().recovered += 1;
     true
 }
 
@@ -452,8 +425,6 @@ pub(super) fn dropped(item: SafeItemView) {
     }
     if let Err(error) = live::move_safe_item(current, Place::World(Departure::Dropped)) {
         tracing::debug!(target: "controllers", %error, "grenade: released item could not be placed in the world");
-    } else {
-        COUNTS.lock().dropped += 1;
     }
 }
 
@@ -818,15 +789,6 @@ static STATE: Mutex<State> = Mutex::new(State {
     held_since: [None; 2],
     items: Vec::new(),
     retiring: Vec::new(),
-});
-static COUNTS: Mutex<Counts> = Mutex::new(Counts {
-    drawn: 0,
-    stowed: 0,
-    redrawn: 0,
-    dropped: 0,
-    recovered: 0,
-    spawned: 0,
-    returned: 0,
 });
 static NEXT_MODEL: AtomicU64 = AtomicU64::new(1);
 static CLEANUP: AtomicBool = AtomicBool::new(false);

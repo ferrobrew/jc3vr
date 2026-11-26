@@ -418,17 +418,6 @@ pub fn status() -> RootStatus {
     status_from(&FRAME, &SIM)
 }
 
-/// Copy the frame readout without waiting for its owner. `None` means the frame lock is busy.
-pub(crate) fn try_frame_readout() -> Option<FrameReadout> {
-    try_frame_readout_from(&FRAME)
-}
-
-/// Copy the simulation readout without waiting for its owner. `None` means the simulation lock is
-/// busy. The ledger counts are projected into the copy without changing the stored status.
-pub(crate) fn try_sim_readout() -> Option<SimStatus> {
-    try_sim_readout_from(&SIM)
-}
-
 /// Release a capsule the mod holds, from outside the locomotion task (the task no longer runs, or
 /// the capsule was switched off).
 ///
@@ -455,14 +444,6 @@ fn status_from(frame: &Mutex<FrameState>, sim: &Mutex<Sim>) -> RootStatus {
     let frame = frame.lock().status;
     let sim = sim.lock().readout();
     RootStatus { frame, sim }
-}
-
-fn try_frame_readout_from(frame: &Mutex<FrameState>) -> Option<FrameReadout> {
-    frame.try_lock().map(|frame| frame.status)
-}
-
-fn try_sim_readout_from(sim: &Mutex<Sim>) -> Option<SimStatus> {
-    sim.try_lock().map(|sim| sim.readout())
 }
 
 /// A gap between rendered frames longer than this means the headset stopped rendering, and the
