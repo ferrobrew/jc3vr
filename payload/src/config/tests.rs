@@ -494,37 +494,6 @@ fn text_that_is_not_toml_is_an_error() {
     ));
 }
 
-#[test]
-fn an_automatic_switch_off_keeps_the_saved_choice_until_the_user_changes_it() {
-    let switch = Switch {
-        path: "vr.mirror",
-        place: |c| &mut c.vr.mirror,
-    };
-    let mut config = Config::new();
-    automatic::disable(&mut config, switch);
-    assert!(!config.vr.mirror);
-    let mut snapshot = config.clone();
-    automatic::apply(&mut snapshot);
-    assert!(snapshot.vr.mirror);
-
-    // An edit that leaves the switch alone keeps the override.
-    let before = automatic::observe(&mut config);
-    config.fsr.sharpness = 0.07;
-    automatic::settle(&mut config, &before);
-    let mut snapshot = config.clone();
-    automatic::apply(&mut snapshot);
-    assert!(snapshot.vr.mirror);
-
-    // An edit that changes it makes the live value the user's.
-    let before = automatic::observe(&mut config);
-    config.vr.mirror = true;
-    automatic::settle(&mut config, &before);
-    config.vr.mirror = false;
-    let mut snapshot = config.clone();
-    automatic::apply(&mut snapshot);
-    assert!(!snapshot.vr.mirror);
-}
-
 fn defaults_table() -> Table {
     toml::from_str(&toml::to_string(&Config::new()).unwrap()).unwrap()
 }

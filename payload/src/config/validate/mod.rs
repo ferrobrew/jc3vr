@@ -1,7 +1,10 @@
 //! Range and consistency checks for the settings whose types admit values the subsystems cannot
 //! use: the controller tuning, the per-weapon sight corrections, and the VR turn settings. The
-//! tolerant load ([`crate::config::load`]) runs them on a loaded configuration and resets the
-//! setting a failure names, or the subtree when that does not make it pass.
+//! tolerant load ([`crate::config::engine::load`]) runs them on a loaded configuration, through
+//! the configuration's schema ([`crate::config::schema`]), and resets the setting a failure
+//! names, or the subtree when that does not make it pass. A failure is an
+//! [`Invalid`](crate::config::engine::Invalid), which the engine owns so that a subsystem's own
+//! checks need nothing from this module.
 //!
 //! The checks are split by config area, one module per subsystem, each returning the first
 //! out-of-range or inconsistent setting in `controllers`' order. The primitives below (`range` and
@@ -16,10 +19,9 @@ mod roomscale;
 mod vehicles;
 mod weapons;
 
-use std::fmt;
-
 use glam::{Vec2, Vec3};
 
+pub(crate) use crate::config::engine::Invalid;
 use crate::{
     controllers::{
         config::{ControllersConfig, SightTable},
@@ -28,19 +30,6 @@ use crate::{
     },
     headpose::config::VrTurnConfig,
 };
-
-/// A setting that is well-typed but out of range or inconsistent with another. The message leads
-/// with the setting's path, relative to the checked subtree, which the tolerant load resets.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Invalid(pub String);
-
-impl fmt::Display for Invalid {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "invalid setting: {}", self.0)
-    }
-}
-
-impl std::error::Error for Invalid {}
 
 /// Check every controller setting except the sight corrections ([`sights`]), returning the first
 /// that is out of range or inconsistent. Paths are relative to `controllers`.

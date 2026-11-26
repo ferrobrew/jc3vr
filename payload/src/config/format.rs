@@ -1,169 +1,47 @@
-//! The settings file's format: which settings a save writes, and the upgrade of a file an older
-//! format wrote.
-//!
-//! A save writes only the settings that differ from their defaults, headed by the format's version
-//! ([`to_text`]). A setting left at its default is absent from the file, so it follows the default
-//! when a later build changes it, while a value the player chose stays as written.
+//! The settings file's format for this configuration: the engine's diff-from-defaults text
+//! ([`crate::config::engine::format`]) for a [`Config`], and the migrations of a file an older
+//! build wrote, which name the subsystems' settings.
 //!
 //! Format zero, a file without a version, holds every setting, each default as it stood when the
 //! file was written, so a default changed since is indistinguishable from the player's choice.
-//! [`upgrade`] removes each numeric tuning of such a file that holds a default a later build
+//! [`migrate`] removes each numeric tuning of such a file that holds a default a later build
 //! replaced ([`SUPERSEDED`]), so that it takes the current default, as it would have had the file
 //! been written in the current format. A switch or a mode is kept as written, since a player who
 //! set it back to its old default cannot be told from one who never touched it. The one exception
 //! is the single-pass stereo group, which a file of format zero holds turned off as it shipped
-//! then: [`upgrade`] removes the group's switches that are off, and the far field's share mode the
+//! then: [`migrate`] removes the group's switches that are off, and the far field's share mode the
 //! group's collapse cannot run under, so the group takes its current default as a whole rather
 //! than loading half on.
-
-use std::fmt;
 
 use toml::{Table, Value};
 use windows::Win32::UI::Input::KeyboardAndMouse::VK_NUMPAD0;
 
+pub(crate) use crate::config::engine::format::{Format, Migrated};
+#[cfg(test)]
+use crate::config::{Config, engine, engine::format::TextError, schema::SCHEMA};
 use crate::{
-    config::Config,
+    config::engine::format::{remove_superseded, same},
     director::keymap::{Action, Chord, Keymap},
 };
 
-/// The format a save writes.
-pub(crate) const VERSION: i64 = 1;
-
-/// The key the format's version is stored under, at the top of the file.
-pub(crate) const VERSION_KEY: &str = "version";
-
-/// What [`upgrade`] found and did.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Upgrade {
-    pub format: Format,
-    /// The settings that held a superseded default and were removed.
-    pub migrated: Vec<Migrated>,
-}
-
-/// A setting that held a superseded default and was removed, so that it takes the current one.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Migrated {
-    /// The setting's path (`controllers.body.rig.yaw.moving_deadzone_deg`).
-    pub path: String,
-    /// The value the file held, as TOML.
-    pub removed: String,
-}
-
-/// The format a file was written in.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) enum Format {
-    /// No version: every setting, with the defaults of its day.
-    Zero,
-    /// The format this build writes.
-    Current,
-    /// A version this build does not know, from a newer build. It loads as the current format.
-    Newer(i64),
-    /// A version key that is not an integer. It loads as the current format, so that nothing is
-    /// migrated on a guess.
-    Unreadable,
-}
-
-impl Format {
-    /// Whether the file holds every setting, so that one it lacks is worth reporting.
-    pub fn complete(self) -> bool {
-        self == Self::Zero
-    }
-}
-
 /// The configuration as a save writes it: the version, then each setting that differs from its
-/// default. A list that differs is written whole.
+/// default.
+#[cfg(test)]
 pub(crate) fn to_text(config: &Config) -> Result<String, TextError> {
-    let actual = tree(config)?;
-    let defaults = tree(&Config::new())?;
-    let mut file = Table::new();
-    file.insert(VERSION_KEY.to_owned(), Value::Integer(VERSION));
-    if let Some(Value::Table(changed)) = difference(actual, &defaults) {
-        file.extend(changed);
-    }
-    toml::to_string(&file).map_err(TextError::Serialize)
+    engine::format::to_text(&SCHEMA, config)
 }
 
-/// Why the settings could not be written as text.
-#[derive(Debug)]
-pub(crate) enum TextError {
-    /// The configuration could not be serialized.
-    Serialize(toml::ser::Error),
-    /// The serialized configuration did not parse back; a programming error.
-    Reparse(toml::de::Error),
-}
-
-impl fmt::Display for TextError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Serialize(source) => write!(f, "format: could not serialize: {source}"),
-            Self::Reparse(source) => {
-                write!(f, "format: the serialized settings do not parse: {source}")
-            }
-        }
-    }
-}
-
-impl std::error::Error for TextError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::Serialize(source) => Some(source),
-            Self::Reparse(source) => Some(source),
-        }
-    }
-}
-
-/// The configuration's value tree, through its text: a float serialized straight into the tree
-/// widens from `f32` and prints with the widening's digits (`1.8489999771118164`), while the text
-/// prints the `f32` as written (`1.849`).
-fn tree(config: &Config) -> Result<Value, TextError> {
-    let text = toml::to_string(config).map_err(TextError::Serialize)?;
-    toml::from_str::<Table>(&text)
-        .map(Value::Table)
-        .map_err(TextError::Reparse)
-}
-
-/// Take the version out of a settings file's table, and remove the superseded defaults from a file
-/// of format zero.
-pub(crate) fn upgrade(file: &mut Table) -> Upgrade {
-    let format = match file.remove(VERSION_KEY) {
-        None => Format::Zero,
-        Some(Value::Integer(version)) if version > VERSION => Format::Newer(version),
-        Some(Value::Integer(version)) if version >= 1 => Format::Current,
-        Some(Value::Integer(_)) => Format::Zero,
-        Some(_) => Format::Unreadable,
-    };
+/// The migrations of a settings file's table, its version already taken out, written in `format`.
+/// Every file loses the settings a later build renamed or removed; a file of format zero also
+/// loses the defaults a later build replaced. Returns the settings removed.
+pub(crate) fn migrate(file: &mut Table, format: Format) -> Vec<Migrated> {
     let mut migrated: Vec<Migrated> = migrate_antialiasing_switch(file).into_iter().collect();
     migrated.extend(migrate_retired_key_actions(file));
     if format == Format::Zero {
         migrated.extend(migrate_single_pass_group(file));
-        for (path, superseded) in superseded() {
-            let steps: Vec<&str> = path.split('.').collect();
-            let Some((last, parents)) = steps.split_last() else {
-                continue;
-            };
-            let Some(table) =
-                parents
-                    .iter()
-                    .try_fold(&mut *file, |table, key| match table.get_mut(*key) {
-                        Some(Value::Table(child)) => Some(child),
-                        _ => None,
-                    })
-            else {
-                continue;
-            };
-            if table
-                .get(*last)
-                .is_some_and(|value| superseded.iter().any(|old| same(value, old)))
-                && let Some(removed) = table.remove(*last)
-            {
-                migrated.push(Migrated {
-                    path,
-                    removed: removed.to_string(),
-                });
-            }
-        }
+        migrated.extend(remove_superseded(file, superseded()));
     }
-    Upgrade { format, migrated }
+    migrated
 }
 
 /// Replace the older `fsr.enabled` switch, in a file of any format, with the anti-aliasing choice
@@ -291,47 +169,9 @@ const LEGACY_FSR_ENABLED: &str = "enabled";
 const ANTIALIASING_KEY: &str = "antialiasing";
 const ENGINE_ANTIALIASING: &str = "Engine";
 
-/// The part of `actual` that differs from `defaults`, or `None` when nothing does. Tables differ
-/// key by key; any other value differs whole.
-fn difference(actual: Value, defaults: &Value) -> Option<Value> {
-    match (actual, defaults) {
-        (Value::Table(actual), Value::Table(defaults)) => {
-            let changed: Table = actual
-                .into_iter()
-                .filter_map(|(key, value)| {
-                    let changed = match defaults.get(&key) {
-                        Some(default) => difference(value, default),
-                        None => Some(value),
-                    };
-                    changed.map(|value| (key, value))
-                })
-                .collect();
-            (!changed.is_empty()).then_some(Value::Table(changed))
-        }
-        (actual, defaults) => (!same(&actual, defaults)).then_some(actual),
-    }
-}
-
-/// Whether two values are the same setting value. Floats compare at the precision the settings
-/// hold them, so a value written from an `f32` matches the same number written by hand.
-fn same(a: &Value, b: &Value) -> bool {
-    match (a, b) {
-        (Value::Float(a), Value::Float(b)) => (*a as f32) == (*b as f32),
-        (Value::Array(a), Value::Array(b)) => {
-            a.len() == b.len() && a.iter().zip(b).all(|(a, b)| same(a, b))
-        }
-        (Value::Table(a), Value::Table(b)) => {
-            a.len() == b.len()
-                && a.iter()
-                    .all(|(key, a)| b.get(key).is_some_and(|b| same(a, b)))
-        }
-        (a, b) => a == b,
-    }
-}
-
 /// The defaults a later build replaced, by setting: each list holds the values the setting's
 /// default once had. Only numeric tunings are listed: a file of format zero that holds one of
-/// their exact old values never had it chosen, as far as can be told, so [`upgrade`] removes it. A
+/// their exact old values never had it chosen, as far as can be told, so [`migrate`] removes it. A
 /// switch or a mode has too few values for that to hold (a player may have set it back to its old
 /// default on purpose), so it is kept as written. A default changed after the current format was
 /// introduced needs no entry here, since the current format does not write defaults.
@@ -415,11 +255,19 @@ mod tests {
 
     use super::*;
     use crate::{
-        config::load::{LoadReport, parse},
+        config::{
+            engine::format::{Upgrade, VERSION, VERSION_KEY},
+            load::{LoadReport, parse},
+        },
         director::keymap::Binding,
         far_field::FarFieldMode,
+        fsr::AntiAliasing,
         stereo::config::set_single_pass_feature,
     };
+
+    fn upgrade(file: &mut Table) -> Upgrade {
+        engine::format::upgrade(&SCHEMA, file)
+    }
 
     fn defaults() -> Value {
         Value::try_from(Config::new()).unwrap()
@@ -630,7 +478,6 @@ enabled = false
 
     #[test]
     fn the_old_fsr_switch_becomes_the_antialiasing_choice() {
-        use crate::fsr::AntiAliasing;
         let off = parse("version = 1\n[fsr]\nenabled = false\n").unwrap();
         assert_eq!(off.config.fsr.antialiasing, AntiAliasing::Engine);
         assert_eq!(paths(&off.report.migrated), ["fsr.enabled"]);

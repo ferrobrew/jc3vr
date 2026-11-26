@@ -5,17 +5,25 @@
 //! per-subsystem runtime statics. A field that is configuration-shaped but holds state for the
 //! session (a value discovered at runtime, a diagnostic armed for one capture) is `#[serde(skip)]`.
 //!
+//! The store, the load, and the save are the configuration engine ([`engine`]), which names no
+//! subsystem: it holds the configuration as an erased root and works through the [`Schema`](engine::Schema) this
+//! module registers for [`Config`] ([`schema`]). This module owns the aggregate, binds the slot
+//! table ([`slots`]) to it, and keeps the access paths the payload uses ([`CONFIG`], [`edit`],
+//! [`disable_automatically`]); each registers the configuration on first use ([`register`]).
+//!
 //! The configuration is saved to `settings.toml` in the per-user configuration directory
 //! ([`paths`]), which holds only the settings that differ from their defaults ([`format`]), so a
-//! setting the user never changed follows its default when a later build changes it. It is loaded once at startup, before VR initialization reads it ([`init`]); the
-//! load is tolerant ([`load`]), so a file from another build costs at most the settings it gets
-//! wrong. A change the user meant goes through [`edit`], which marks the configuration changed;
-//! [`tick`] saves it from the game thread's frame once the changes settle, handing the write to a
-//! short-lived writer thread, and [`shutdown`] flushes a pending save. A change the payload makes on
-//! its own, such as a fallback after a failure, takes the plain [`CONFIG`] lock instead and is not
-//! saved for its own sake; one that switches off a setting the user chose goes through
-//! [`disable_automatically`], so a later save keeps the user's choice. See
-//! `docs/mod/settings.md`.
+//! setting the user never changed follows its default when a later build changes it. It is loaded
+//! once at startup, before VR initialization reads it ([`init`]); the load is tolerant ([`load`]),
+//! so a file from another build costs at most the settings it gets wrong. A change the user meant
+//! goes through [`edit`], which marks the configuration changed; [`tick`] saves it from the game
+//! thread's frame once the changes settle, handing the write to a short-lived writer thread, and
+//! [`shutdown`] flushes a pending save. A change the payload makes on its own, such as a fallback
+//! after a failure, takes the plain [`CONFIG`] lock instead and is not saved for its own sake; one
+//! that switches off a setting the user chose goes through [`disable_automatically`], so a later
+//! save keeps the user's choice. Every guard locks the one configuration lock, so a thread must
+//! not lock it again while it holds one (the
+//! [nesting rule](crate::config::engine::store#lock-nesting)). See `docs/mod/settings.md`.
 //!
 //! TOML has no null, so a `None` is left out of the file. An optional setting defaults to `None`:
 //! the load then reads a missing key as `None` and a present one as `Some`. A setting whose value is
@@ -46,22 +54,20 @@
 //! [`TestingConfig`](crate::testing::TestingConfig) in `testing::config`, and
 //! [`BodyDimensions`](crate::controllers::body::BodyDimensions) in `controllers::body`.
 
-mod automatic;
+pub(crate) mod engine;
 pub(crate) mod format;
 pub(crate) mod load;
-pub(crate) mod paths;
-mod persist;
+mod schema;
+pub(crate) mod slots;
 pub(crate) mod validate;
-pub(crate) mod write;
 
-use std::ops::{Deref, DerefMut};
+use std::sync::Once;
 
-pub(crate) use automatic::Switch;
-use parking_lot::{Mutex, MutexGuard};
-pub(crate) use persist::{SaveStatus, init, shutdown, status, tick};
 use serde::{Deserialize, Serialize};
 
+pub(crate) use crate::config::engine::{SaveStatus, paths, status, write};
 use crate::{
+    config::engine::{EditGuard, SlotGuard},
     controllers::{ControllersConfig, body::BodyDimensions},
     director::DirectorConfig,
     far_field::FarFieldConfig,
@@ -81,16 +87,27 @@ use crate::{
     vr::{FoveationConfig, VrConfig},
 };
 
-/// The global runtime configuration. Cheap to lock (uncontended `parking_lot::Mutex`); read it at the
-/// top of a hook and release before doing engine work.
+/// The global runtime configuration. Cheap to lock (an uncontended `parking_lot::Mutex`); read it
+/// at the top of a hook and release before doing engine work.
 ///
 /// Lock it directly to read, and for a change the payload makes on its own (a fallback, a value
 /// discovered at runtime). A change the user meant (a debug UI control, a pause menu item, a
 /// hotkey, a calibration) goes through [`edit`] instead, so that it is saved.
-pub static CONFIG: Mutex<Config> = Mutex::new(Config::new());
+pub(crate) static CONFIG: ConfigLock = ConfigLock(());
+
+/// The lock over the whole configuration; see [`CONFIG`].
+pub(crate) struct ConfigLock(());
+
+impl ConfigLock {
+    /// Lock the whole configuration. The guard derefs to the [`Config`].
+    pub(crate) fn lock(&self) -> SlotGuard<Config> {
+        register();
+        slots::ROOT.lock()
+    }
+}
 
 /// Snapshot the whole config (for the trace manifest / bulk UI reads).
-pub fn get() -> Config {
+pub(crate) fn get() -> Config {
     CONFIG.lock().clone()
 }
 
@@ -101,44 +118,63 @@ pub fn get() -> Config {
 ///
 /// Like a plain lock of [`CONFIG`], it must not be held while locking the VR runtime state.
 pub(crate) fn edit() -> ConfigEdit {
-    let mut guard = CONFIG.lock();
-    let before = automatic::observe(&mut guard);
-    ConfigEdit { guard, before }
+    register();
+    slots::ROOT.edit()
+}
+
+/// The guard [`edit`] returns.
+pub(crate) type ConfigEdit = EditGuard<Config>;
+
+/// A boolean setting a fallback can turn off: its path in the settings file, for the log, and its
+/// place in the configuration.
+#[derive(Copy, Clone)]
+pub(crate) struct Switch {
+    pub path: &'static str,
+    pub place: for<'a> fn(&'a mut Config) -> &'a mut bool,
 }
 
 /// Switch `switch` off because the payload cannot keep it on (a fallback after a failure, or a
 /// teardown), without saving that as the user's choice: the live configuration changes at once,
 /// while a save keeps the value the user chose until the user changes the switch through [`edit`].
 pub(crate) fn disable_automatically(switch: Switch) {
-    let mut config = CONFIG.lock();
-    automatic::disable(&mut config, switch);
+    register();
+    engine::disable_automatically(engine::Switch {
+        path: switch.path,
+        slot: &slots::ROOT,
+        place: switch.place,
+    });
 }
 
-/// The guard [`edit`] returns.
-pub(crate) struct ConfigEdit {
-    guard: MutexGuard<'static, Config>,
-    before: automatic::Observed,
+/// Load the settings file into the configuration. Called once at startup, before anything reads
+/// the configuration for initialization; see [`engine::init`].
+pub(crate) fn init() {
+    register();
+    engine::init();
 }
 
-impl Deref for ConfigEdit {
-    type Target = Config;
-
-    fn deref(&self) -> &Config {
-        &self.guard
-    }
+/// Save the configuration if the user's changes have settled; see [`engine::tick`].
+pub(crate) fn tick() {
+    register();
+    engine::tick();
 }
 
-impl DerefMut for ConfigEdit {
-    fn deref_mut(&mut self) -> &mut Config {
-        &mut self.guard
-    }
+/// Stop saving and write a pending change; see [`engine::shutdown`]. Returns `false` when a writer
+/// did not finish in time, in which case the payload must stay mapped.
+#[must_use = "a writer that did not finish means the payload must stay mapped"]
+pub(crate) fn shutdown() -> bool {
+    register();
+    engine::shutdown()
 }
 
-impl Drop for ConfigEdit {
-    fn drop(&mut self) {
-        automatic::settle(&mut self.guard, &self.before);
-        persist::note_edit();
-    }
+/// Bind the slot table and register the configuration's schema with the store, once. Every access
+/// path in this module calls it first, so the configuration reads as its defaults from the first
+/// lock, as it did when it was a constant.
+pub(crate) fn register() {
+    static REGISTER: Once = Once::new();
+    REGISTER.call_once(|| {
+        slots::bind();
+        engine::register(&schema::SCHEMA);
+    });
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -199,8 +235,15 @@ impl Config {
     }
 }
 
+/// Take the configuration for a test: other tests that take it wait, and the configuration and the
+/// edit marks are restored when the fixture drops.
 #[cfg(test)]
-pub(crate) use persist::test_fixture;
+pub(crate) fn test_fixture() -> engine::TestFixture {
+    register();
+    engine::test_fixture()
+}
 
+#[cfg(test)]
+mod golden;
 #[cfg(test)]
 mod tests;

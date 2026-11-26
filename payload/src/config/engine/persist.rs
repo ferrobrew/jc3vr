@@ -1,6 +1,6 @@
 //! Loading the settings file at startup and saving it as the user changes settings.
 //!
-//! The save has explicit write points: [`crate::config::edit`] marks the configuration changed
+//! The save has explicit write points: an edit ([`crate::config::engine::ConfigSlot::edit`]) marks the configuration changed
 //! ([`note_edit`]), and the game thread's per-frame [`tick`] saves once the changes settle, at
 //! most [`MAX_DELAY`] after the first unsaved one so that a control held through every frame (an
 //! open debug UI tab edits each frame) still saves. A save serializes a snapshot (the settings
@@ -15,6 +15,9 @@
 //! a change, so that its upgrade runs once and a default changed later reaches every setting the
 //! player left alone. A copy of it is kept beside it first.
 //!
+//! The configuration is read through the registered schema ([`store::schema`]), so nothing here
+//! names its type.
+//!
 //! Locks: the saver state is taken outermost, then the configuration lock, then the edit marks and
 //! the automatic overrides, which are leaves. Nothing takes the saver state with the configuration
 //! locked.
@@ -28,10 +31,11 @@ use std::{
 
 use parking_lot::Mutex;
 
-use crate::config::{
-    CONFIG, Config, automatic,
+use crate::config::engine::{
+    automatic,
     format::{self, Format},
     load, paths,
+    store::{self, Root, Schema},
     write::{self, WriteError},
 };
 
@@ -58,14 +62,15 @@ pub(crate) fn init() {
         return;
     };
     tracing::info!(path = %path.display(), "settings: using this settings file");
-    let loaded = load_from(&path);
+    let schema = store::schema();
+    let loaded = load_from(schema, &path);
     let Startup {
         baseline,
         set_aside,
         rewrite,
-    } = startup(&path, &loaded, &crate::session::stamp());
+    } = startup(schema, &path, &loaded, &crate::session::stamp());
     WRITTEN.lock().set_aside = set_aside;
-    *CONFIG.lock() = loaded.config;
+    store::lock_root().replace(loaded.root);
     let mut saver = SAVER.lock();
     saver.last_text = baseline;
     saver.rewrite = rewrite;
@@ -73,7 +78,7 @@ pub(crate) fn init() {
 
 /// Mark the configuration changed by the user. Called by the edit guard with the configuration
 /// lock held.
-pub(super) fn note_edit() {
+pub(crate) fn note_edit() {
     EDITS.lock().note(Instant::now());
 }
 
@@ -195,14 +200,18 @@ static SAVER: Mutex<Saver> = Mutex::new(Saver::new());
 
 static EDITS: Mutex<Edits> = Mutex::new(Edits::new());
 
+/// Take the configuration for a test: other tests that take it wait, and the configuration and
+/// the edit marks are restored when the fixture drops. A schema must be registered.
 #[cfg(test)]
 pub(crate) fn test_fixture() -> TestFixture {
     let guard = TEST_CONFIG.lock();
-    let config = CONFIG.lock().clone();
+    let schema = store::schema();
+    let root = schema.clone_root(&*store::lock_root());
     let edits = std::mem::replace(&mut *EDITS.lock(), Edits::new());
     TestFixture {
         _guard: guard,
-        config,
+        schema,
+        root,
         edits,
     }
 }
@@ -210,17 +219,24 @@ pub(crate) fn test_fixture() -> TestFixture {
 #[cfg(test)]
 static TEST_CONFIG: Mutex<()> = Mutex::new(());
 
+/// Whether a change is waiting to be saved.
+#[cfg(test)]
+pub(crate) fn edit_pending() -> bool {
+    EDITS.lock().pending()
+}
+
 #[cfg(test)]
 pub(crate) struct TestFixture {
     _guard: parking_lot::MutexGuard<'static, ()>,
-    config: Config,
+    schema: &'static Schema,
+    root: Box<Root>,
     edits: Edits,
 }
 
 #[cfg(test)]
 impl Drop for TestFixture {
     fn drop(&mut self) {
-        *CONFIG.lock() = self.config.clone();
+        store::lock_root().replace(self.schema.clone_root(self.root.as_ref()));
         *EDITS.lock() = std::mem::replace(&mut self.edits, Edits::new());
     }
 }
@@ -242,7 +258,7 @@ struct Startup {
 /// setting changes. A file of format zero has no baseline and is rewritten on the first tick: left
 /// as it is, its settings at the defaults of its day would stick when a later build changes them,
 /// since only the current format leaves the defaults out.
-fn startup(path: &Path, loaded: &Loaded, stamp: &str) -> Startup {
+fn startup(schema: &Schema, path: &Path, loaded: &Loaded, stamp: &str) -> Startup {
     let set_aside = loaded.keep.map(|keep| SetAside {
         to: keep.path(path, stamp),
         keep,
@@ -251,7 +267,7 @@ fn startup(path: &Path, loaded: &Loaded, stamp: &str) -> Startup {
     let baseline = if rewrite {
         None
     } else {
-        format::to_text(&loaded.config)
+        format::to_text(schema, loaded.root.as_ref())
             .inspect_err(|error| {
                 tracing::warn!("settings: could not serialize the loaded settings: {error}")
             })
@@ -640,15 +656,15 @@ impl std::error::Error for ReadError {
 
 /// What [`load_from`] read.
 struct Loaded {
-    config: Config,
+    root: Box<Root>,
     /// Why the file is kept before the first write replaces it, if it is.
     keep: Option<Keep>,
 }
 
 /// Read and load the settings file at `path`, falling back to the defaults and logging why.
-fn load_from(path: &Path) -> Loaded {
-    let unreadable = |config| Loaded {
-        config,
+fn load_from(schema: &Schema, path: &Path) -> Loaded {
+    let unreadable = |root| Loaded {
+        root,
         keep: Some(Keep::Unreadable),
     };
     let text = match fs::read_to_string(path) {
@@ -656,7 +672,7 @@ fn load_from(path: &Path) -> Loaded {
         Err(source) if source.kind() == io::ErrorKind::NotFound => {
             tracing::info!("settings: no settings file yet; using the defaults");
             return Loaded {
-                config: Config::new(),
+                root: schema.defaults(),
                 keep: None,
             };
         }
@@ -669,10 +685,10 @@ fn load_from(path: &Path) -> Loaded {
                 "{error}; using the defaults, and moving the file aside before a setting change \
                  replaces it"
             );
-            return unreadable(Config::new());
+            return unreadable(schema.defaults());
         }
     };
-    match load::parse(&text) {
+    match load::parse(schema, &text) {
         Ok(loaded) => {
             loaded.report.log(&path.display().to_string());
             if loaded.report.is_empty() {
@@ -685,7 +701,7 @@ fn load_from(path: &Path) -> Loaded {
                 Keep::FormatZero
             });
             Loaded {
-                config: loaded.config,
+                root: loaded.root,
                 keep,
             }
         }
@@ -694,7 +710,7 @@ fn load_from(path: &Path) -> Loaded {
                 "{error}; using the defaults, and moving the file aside before a setting change \
                  replaces it"
             );
-            unreadable(Config::new())
+            unreadable(schema.defaults())
         }
     }
 }
@@ -702,7 +718,8 @@ fn load_from(path: &Path) -> Loaded {
 /// Serialize the configuration as a save writes it: with the user's values for the switches the
 /// payload turned off on its own. Takes the saver state so that the lock order is explicit.
 fn serialize_snapshot(saver: &mut Saver) -> Option<String> {
-    match format::to_text(&snapshot()) {
+    let schema = store::schema();
+    match format::to_text(schema, snapshot(schema).as_ref()) {
         Ok(text) => Some(text),
         Err(source) => {
             saver.failed = true;
@@ -714,18 +731,21 @@ fn serialize_snapshot(saver: &mut Saver) -> Option<String> {
 
 /// The configuration as a save writes it, with the user's values for the switches the payload
 /// turned off on its own.
-fn snapshot() -> Config {
-    let config = CONFIG.lock();
-    let mut snapshot = config.clone();
-    automatic::apply(&mut snapshot);
+fn snapshot(schema: &Schema) -> Box<Root> {
+    let root = store::lock_root();
+    let mut snapshot = schema.clone_root(&*root);
+    automatic::apply(snapshot.as_mut());
     snapshot
 }
 
-/// Note a saved change for a tracking recording, with every setting rather than the file's
-/// changes alone, so that a take says what it ran with whatever the defaults of its build.
+/// Hand a saved change to the schema
+/// ([`ConfigRoot::note_saved`](crate::config::engine::ConfigRoot::note_saved)), with every setting rather than
+/// the file's changes alone, so that a tracking recording says what it ran with whatever the
+/// defaults of its build.
 fn note_settings() {
-    match toml::to_string(&snapshot()) {
-        Ok(text) => crate::controllers::diagnostics::note_settings(&text),
+    let schema = store::schema();
+    match schema.serialize(snapshot(schema).as_ref()) {
+        Ok(text) => schema.note_saved(&text),
         Err(error) => tracing::warn!("settings: could not serialize the settings to note: {error}"),
     }
 }
@@ -771,18 +791,10 @@ fn write_generation(generation: u64, path: &Path, text: &str) -> Result<Written,
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn scoped_config_fixture_restores_both_settings_and_edit_status() {
-        {
-            let _fixture = test_fixture();
-            crate::config::edit().hud.distance = 42.0;
-            assert!(EDITS.lock().pending());
-        }
-        let _fixture = test_fixture();
-        assert_eq!(CONFIG.lock().hud.distance, Config::new().hud.distance);
-        assert!(!EDITS.lock().pending());
-    }
+    use crate::config::engine::{
+        ConfigRoot,
+        tests::{SAMPLE, Sample},
+    };
 
     #[test]
     fn a_retry_waits_and_backs_off_up_to_the_cap() {
@@ -876,9 +888,9 @@ mod tests {
     const STAMP: &str = "2026-01-02_03-04-05_678";
 
     fn loaded(text: &str) -> Loaded {
-        let loaded = load::parse(text).unwrap();
+        let loaded = load::parse(&SAMPLE, text).unwrap();
         Loaded {
-            config: loaded.config,
+            root: loaded.root,
             keep: (loaded.format == Format::Zero).then_some(Keep::FormatZero),
         }
     }
@@ -886,8 +898,8 @@ mod tests {
     #[test]
     fn a_format_zero_file_is_rewritten_on_the_first_tick_after_a_copy_is_kept() {
         let path = Path::new("config").join("settings.toml");
-        let full = toml::to_string(&Config::new()).unwrap();
-        let startup = startup(&path, &loaded(&full), STAMP);
+        let full = toml::to_string(&Sample::defaults()).unwrap();
+        let startup = startup(&SAMPLE, &path, &loaded(&full), STAMP);
         assert!(startup.rewrite);
         assert_eq!(startup.baseline, None);
         assert_eq!(
@@ -902,10 +914,10 @@ mod tests {
     #[test]
     fn a_current_file_is_left_alone_until_a_setting_changes() {
         let path = Path::new("config").join("settings.toml");
-        let mut config = Config::new();
-        config.body.height = 1.9;
-        let text = format::to_text(&config).unwrap();
-        let startup = startup(&path, &loaded(&text), STAMP);
+        let mut config = Sample::defaults();
+        config.height = 1.9;
+        let text = format::to_text(&SAMPLE, &config).unwrap();
+        let startup = startup(&SAMPLE, &path, &loaded(&text), STAMP);
         assert_eq!(
             startup,
             Startup {
