@@ -341,5 +341,4 @@ pub(crate) fn scroll_key(state: NavigationState) -> (&'static str, &'static str)
 }
 
 #[cfg(test)]
-#[path = "navigation/tests.rs"]
 mod tests;

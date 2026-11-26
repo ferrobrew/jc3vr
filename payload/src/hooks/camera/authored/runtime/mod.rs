@@ -586,9 +586,7 @@ static STATE: Mutex<Runtime> = Mutex::new(Runtime {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[path = "adapter.rs"]
     mod adapter;
-    #[path = "grapple.rs"]
     mod grapple;
 
     use crate::hooks::camera::authored::{

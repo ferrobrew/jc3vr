@@ -23,7 +23,7 @@ from tools.rendering.protocol.base import (
 )
 
 
-# Mirrors `MAX_TRANSLATION_M` in `payload/src/testing/visual/motion.rs`.
+# Mirrors `MAX_TRANSLATION_M` in `payload/src/testing/visual/motion/mod.rs`.
 MAX_TRANSLATION_M = 20.0
 
 

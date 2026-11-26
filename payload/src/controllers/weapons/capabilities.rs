@@ -356,7 +356,7 @@ mod tests {
             .0;
         assert!(inactive_branch.contains("weapons::hold::tick::publish_fire([false; 2]);"));
         assert!(inactive_branch.contains("weapons::wheel::pause();"));
-        let tick = include_str!("hold/tick.rs");
+        let tick = include_str!("hold/tick/mod.rs");
         assert!(tick.contains("if !wielded || pair {\n        return None;"));
         assert_eq!(tick.matches("permission::shooting_allowed(").count(), 2);
     }

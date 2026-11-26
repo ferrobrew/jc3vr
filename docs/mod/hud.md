@@ -24,7 +24,7 @@ A HUD rigidly locked to the head is the worst case — the eyes can't settle on 
 
 The panel sits at a configurable distance (3 m default, inside the 1.5–3 m comfort band — far enough to avoid vergence strain, near enough to read), flat. The gameplay HUD panel eases toward the head's current orientation with critically-damped quaternion slerp, with no deadzone; its position is the live head position. Because the orientation follow is a single slerp toward the head quaternion, it tracks yaw, pitch, and roll together. Roll matters for JC3: parachute, wingsuit, and vehicle sections all bank heavily, and VR head-tracking adds more. Without a deadzone the panel always tracks the head; the halflife alone controls how snappy the follow is. A quick flick barely moves the panel because the halflife limits how far it can travel in a short interval, but the panel never gets stuck at a permanent offset from where the head is looking.
 
-The damper is a critically-damped exponential, so it converges fast with no overshoot and is frame-rate independent: `alpha = 1 - 2^(-dt/halflife); current = slerp(current, target, alpha)` (Holden's damper). The rotation halflife is 0.2 s (`FOLLOW_ROTATION_HALFLIFE_S` in `payload/src/hud/state.rs`).
+The damper is a critically-damped exponential, so it converges fast with no overshoot and is frame-rate independent: `alpha = 1 - 2^(-dt/halflife); current = slerp(current, target, alpha)` (Holden's damper). The rotation halflife is 0.2 s (`FOLLOW_ROTATION_HALFLIFE_S` in `payload/src/hud/state/mod.rs`).
 
 The egui debug panel does not follow the head: it stays in the play space where the player leaves it (["Where the debug panel lives"](#where-the-debug-panel-lives)).
 

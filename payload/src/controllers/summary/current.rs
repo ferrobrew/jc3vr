@@ -369,5 +369,5 @@ fn normalize_hold(line: &mut Line, hold: &str) {
 }
 
 #[cfg(test)]
-#[path = "current_tests.rs"]
+#[path = "current_tests/mod.rs"]
 mod tests;

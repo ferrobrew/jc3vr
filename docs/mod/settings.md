@@ -14,7 +14,7 @@ The header reports the requested mode separately from effective input ownership.
 
 The overlay state belongs to the current editing session. `Allow gameplay input` is not a saved configuration field, does not enable motion controllers or bindings, and does not override native menus or input recovery. The feature navigation and detached views share the disabled editing boundary. Visualization settings remain unchanged by input-mode and page changes. Layout persistence is described in [debug-ui.md](debug-ui.md).
 
-The capture adapter and header are implemented in `payload/src/egui_impl.rs`, `controllers/mode.rs`, and `ui/mod.rs`. The production adapter notifies the input owner, observes neutral input, gates gameplay and controller-pointer input, and handles desktop F4 visibility separately from the VR panel. Renderer-free tests cover these ownership transitions. No headset verification is recorded.
+The capture adapter and header are implemented in `payload/src/egui_impl/mod.rs`, `controllers/mode.rs`, and `ui/mod.rs`. The production adapter notifies the input owner, observes neutral input, gates gameplay and controller-pointer input, and handles desktop F4 visibility separately from the VR panel. Renderer-free tests cover these ownership transitions. No headset verification is recorded.
 
 ## Where the files live
 

@@ -285,5 +285,4 @@ impl Default for OwnershipState {
 }
 
 #[cfg(test)]
-#[path = "capture/tests.rs"]
 mod tests;

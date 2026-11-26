@@ -2,7 +2,6 @@
 //! rows that need attention first.
 
 #[cfg(test)]
-#[path = "overview/tests.rs"]
 mod tests;
 
 #[cfg(feature = "profiler")]

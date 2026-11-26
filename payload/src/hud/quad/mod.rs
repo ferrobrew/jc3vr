@@ -42,12 +42,12 @@ use windows::{
 use crate::hud::cursor::{CursorFrame, LIFT, SIZE};
 
 /// The committed, precompiled quad shaders (entry point `main`).
-const VERTEX_DXBC: &[u8] = include_bytes!("../shaders/hud_quad_vs.dxbc");
-const PIXEL_DXBC: &[u8] = include_bytes!("../shaders/hud_quad_ps.dxbc");
+const VERTEX_DXBC: &[u8] = include_bytes!("../../shaders/hud_quad_vs.dxbc");
+const PIXEL_DXBC: &[u8] = include_bytes!("../../shaders/hud_quad_ps.dxbc");
 /// The cursor-dot pixel shader (an analytic circle with a stroke; shares the quad vertex shader).
-const CURSOR_PIXEL_DXBC: &[u8] = include_bytes!("../shaders/cursor_ps.dxbc");
+const CURSOR_PIXEL_DXBC: &[u8] = include_bytes!("../../shaders/cursor_ps.dxbc");
 /// The textured pixel shader with an opacity, for quads that fade (shares the quad vertex shader).
-const FADE_PIXEL_DXBC: &[u8] = include_bytes!("../shaders/hud_quad_fade_ps.dxbc");
+const FADE_PIXEL_DXBC: &[u8] = include_bytes!("../../shaders/hud_quad_fade_ps.dxbc");
 
 /// Constant buffer uploaded per draw: view-projection matrix, four world-space corners, and the
 /// tint. Matches the HLSL `cbuffer Quad` layout: `row_major float4x4 ViewProjection` (64 bytes) +

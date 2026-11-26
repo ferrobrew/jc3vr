@@ -722,5 +722,4 @@ fn apply_edits(config: &mut Config, edits: &[Edit]) {
 }
 
 #[cfg(test)]
-#[path = "visualizations/tests.rs"]
 mod tests;

@@ -843,7 +843,6 @@ fn is_paste_command(modifiers: egui::Modifiers, keycode: egui::Key) -> bool {
 }
 
 #[cfg(test)]
-#[path = "egui_impl/capture_tests.rs"]
 mod capture_tests;
 
 fn virtual_key_to_egui_key(vk: u32) -> Option<egui::Key> {

@@ -2,7 +2,6 @@
 //! readout.
 
 #[cfg(test)]
-#[path = "dispatch/tests.rs"]
 mod tests;
 
 use egui::Ui;

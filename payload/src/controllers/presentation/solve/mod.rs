@@ -596,5 +596,4 @@ const MIN_DRAWN_BEND_SIN: f32 = 0.05;
 const FULL_DRAWN_BEND_SIN: f32 = 0.2;
 
 #[cfg(test)]
-#[path = "solve/tests.rs"]
 mod tests;

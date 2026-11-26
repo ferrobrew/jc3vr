@@ -333,5 +333,4 @@ fn normalize_tabs<T>(dock: &mut egui_dock::DockState<T>) {
 }
 
 #[cfg(test)]
-#[path = "layout/tests.rs"]
 mod tests;

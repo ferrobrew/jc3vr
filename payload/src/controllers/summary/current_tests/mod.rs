@@ -23,11 +23,8 @@ use crate::{
     },
 };
 
-#[path = "current_tests/doors.rs"]
 mod doors;
-#[path = "current_tests/flight.rs"]
 mod flight;
-#[path = "current_tests/snatch.rs"]
 mod snatch;
 
 const MODE: Mode = Mode::OnFoot(OnFootVariant::Ground);

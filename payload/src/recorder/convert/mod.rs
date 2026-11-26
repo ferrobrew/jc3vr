@@ -306,8 +306,8 @@ impl Converter {
 
 /// The committed, precompiled pack shaders (entry point `main`). The vertex shader is the capture
 /// composite's fullscreen triangle.
-const VERTEX_DXBC: &[u8] = include_bytes!("../shaders/capture_vs.dxbc");
-const PIXEL_DXBC: &[u8] = include_bytes!("../shaders/i420_pack_ps.dxbc");
+const VERTEX_DXBC: &[u8] = include_bytes!("../../shaders/capture_vs.dxbc");
+const PIXEL_DXBC: &[u8] = include_bytes!("../../shaders/i420_pack_ps.dxbc");
 
 /// The pack shader's constant buffer, laid out as `PackParams` in `i420_pack_ps.hlsl`.
 #[repr(C)]
