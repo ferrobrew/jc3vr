@@ -24,8 +24,8 @@ use crate::{
         frame as controller_frame,
     },
     frame_timing::{self, Slot},
-    stereo::engine_context::EngineContext,
     recorder::tracking::{CaptureSample, format::EyeSample},
+    stereo::engine_context::EngineContext,
     testing::visual::headset,
     vr::{
         Fov, FreezeMode, OffAxisProjection, VIEW_TYPE, VrConfig,

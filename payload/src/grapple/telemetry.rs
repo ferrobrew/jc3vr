@@ -143,15 +143,14 @@ fn write_row(kind: &str, fields: &str) {
 /// Create a fresh timestamped capture file with its header, or `None` (with a warning logged) when
 /// the path cannot be resolved or created.
 fn open_capture() -> Option<TelemetryWriter> {
-    let path =
-        match crate::session::capture_file(CaptureFile::GrappleLog, &crate::session::stamp())
-        {
-            Ok(path) => path,
-            Err(e) => {
-                tracing::warn!("grapple telemetry: {e}");
-                return None;
-            }
-        };
+    let path = match crate::session::capture_file(CaptureFile::GrappleLog, &crate::session::stamp())
+    {
+        Ok(path) => path,
+        Err(e) => {
+            tracing::warn!("grapple telemetry: {e}");
+            return None;
+        }
+    };
     match std::fs::File::create(&path) {
         Ok(mut file) => {
             let _ = file.write_all(TELEMETRY_HEADER.as_bytes());

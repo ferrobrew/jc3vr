@@ -528,15 +528,14 @@ pub fn dump_vs_name_census() {
     if census.is_empty() {
         return;
     }
-    let path =
-        match crate::session::capture_file(CaptureFile::ShaderDump, &crate::session::stamp())
-        {
-            Ok(path) => path,
-            Err(e) => {
-                tracing::warn!("vs name census: {e}");
-                return;
-            }
-        };
+    let path = match crate::session::capture_file(CaptureFile::ShaderDump, &crate::session::stamp())
+    {
+        Ok(path) => path,
+        Err(e) => {
+            tracing::warn!("vs name census: {e}");
+            return;
+        }
+    };
     let mut out = String::new();
     for (label, class) in [
         (

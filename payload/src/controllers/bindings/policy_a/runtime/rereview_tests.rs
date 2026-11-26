@@ -1,6 +1,5 @@
 use tracking_format::{
-    Header, StartMarker, decode, encode_input, encode_input_preamble,
-    input::CapturedInput,
+    Header, StartMarker, decode, encode_input, encode_input_preamble, input::CapturedInput,
 };
 
 use super::*;

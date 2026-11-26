@@ -732,12 +732,7 @@ fn motion_capture_is_only_accepted_by_screenshot_and_carries_its_phase() {
         read("command = 'screenshot'\nid = 'shot'"),
         Ok(Request::Screenshot { motion: None, .. })
     ));
-    for command in [
-        "visual_configure",
-        "visual_end",
-        "record",
-        "stop_recording",
-    ] {
+    for command in ["visual_configure", "visual_end", "record", "stop_recording"] {
         let extra = match command {
             "visual_configure" => "\nid = 'configure'\nmode = 'multipass'",
             "visual_end" => "\nid = 'end'",

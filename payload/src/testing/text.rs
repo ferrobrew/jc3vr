@@ -25,10 +25,9 @@ impl std::fmt::Display for TextError {
         match self {
             Self::Io(error) => write!(f, "{error}"),
             Self::Utf8(error) => write!(f, "invalid UTF-8: {error}"),
-            Self::Limit { field, actual, max } => write!(
-                f,
-                "{field} has {actual} bytes; the limit is {max}"
-            ),
+            Self::Limit { field, actual, max } => {
+                write!(f, "{field} has {actual} bytes; the limit is {max}")
+            }
         }
     }
 }

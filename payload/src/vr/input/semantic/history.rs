@@ -7,8 +7,8 @@ use std::{collections::VecDeque, sync::LazyLock, time::Instant};
 
 use parking_lot::Mutex;
 use tracking_format::input::{
-    ClockDomain, DiscontinuityReason, GroupOrder, HISTORY_CAPACITY, InputGroup,
-    InputRecord, InputStamp, RouteSample,
+    ClockDomain, DiscontinuityReason, GroupOrder, HISTORY_CAPACITY, InputGroup, InputRecord,
+    InputStamp, RouteSample,
     policy::{PROTECTED_CONTROLS, PolicyEvaluation},
 };
 
