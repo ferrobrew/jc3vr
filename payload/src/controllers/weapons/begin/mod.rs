@@ -94,6 +94,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
             );
             let holder = hold::input_tick(wielded, holding.either_hand, arrival);
             hold::tick::input_tick(owner, wielded, holding.either_hand);
+            reload::native::refill_armed(owner, &config, capabilities.reload);
             let weapon = engine::held_weapon(owner).map(|w| with_holder(w, holder));
             let guns = engine::in_hands(weapon, Hand::BOTH.map(|h| armed::held_weapon(owner, h)));
             // The gun a hand holds beside the wielded weapon, armed there.

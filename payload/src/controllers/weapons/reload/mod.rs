@@ -34,7 +34,9 @@
 //! in the hands ([`records`]).
 //!
 //! What a weapon loads and how is its plan ([`plan`]). The minigun, the mounted guns, and the
-//! special weapons keep the game's reload. With the reload off, every weapon does.
+//! special weapons keep the game's reload. With the reload off, every weapon does. A weapon armed
+//! in a hand that keeps the game's reload is refilled through it once empty ([`native`]), since the
+//! game's reload only reloads the wielded weapon.
 
 mod action;
 mod ammo;
@@ -59,6 +61,7 @@ pub mod insert;
 pub(crate) mod knock;
 mod knocking;
 pub mod loose;
+pub(super) mod native;
 pub mod plan;
 mod pouch;
 mod records;
@@ -774,6 +777,7 @@ pub(crate) fn cancel_extraction_on_standdown() {
 pub(super) fn stand_down() {
     STATE.lock().stand_down();
     gate::publish(None);
+    native::stand_down();
     render::clear();
     // SAFETY: the weapon handling stands down in the game stage, on the game thread before the
     // world update.
