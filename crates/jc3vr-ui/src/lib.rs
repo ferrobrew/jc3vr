@@ -39,3 +39,6 @@ pub mod pause_menu;
 pub mod profiler;
 pub mod status;
 pub mod ui;
+
+#[cfg(test)]
+mod test_config;
