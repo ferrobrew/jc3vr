@@ -20,7 +20,7 @@ use parking_lot::MutexGuard;
 use crate::{
     controllers::body::rig::{
         origin_provenance,
-        origin_provenance::{OriginEvidence, OriginUnavailable, TrackingReceipt},
+        origin_provenance::{OriginEvidence, OriginUnavailable},
     },
     recorder::tracking::{CaptureSample, format::EyeSample},
     stereo::engine_context::EngineContext,
@@ -352,10 +352,6 @@ impl LocatedFrame {
     pub fn eye_view(&self, eye: usize) -> EyeView {
         self.eyes[eye]
     }
-
-    pub(crate) fn tracking_origin(&self) -> (OriginEvidence, Option<TrackingReceipt>) {
-        (self.tracking_origin, self.tracking_receipt)
-    }
 }
 
 /// Whether the last located views had a valid pose, so a tracking loss and its recovery log once
@@ -382,8 +378,6 @@ pub struct LocatedFrame {
     predicted_display_time: xr::Time,
     should_render: bool,
     eyes: [EyeView; 2],
-    tracking_origin: OriginEvidence,
-    tracking_receipt: Option<TrackingReceipt>,
     /// Whether the swapchain image was acquired at some point this frame (so `frame_end` knows
     /// whether a world layer can be submitted).
     image_ever_acquired: bool,
@@ -445,7 +439,6 @@ impl VrState {
             .origin_reference_space
             .prepare(frame_state.predicted_display_time.as_nanos());
         let mut tracking_origin = OriginEvidence::Unavailable(OriginUnavailable::SourceAbsent);
-        let mut tracking_receipt = None;
         let mut located_at = None;
         if frame_state.should_render {
             tracking_origin = origin_provenance::begin(origin_readiness);
@@ -564,7 +557,6 @@ impl VrState {
                 &sampling,
                 flight_head,
             );
-            tracking_receipt = sampled.as_ref().map(TrackingReceipt::from_frame);
             tracking_origin = if sampled.is_some() {
                 tracking_origin.finish()
             } else {
@@ -576,11 +568,6 @@ impl VrState {
             live_tracking::publish_tracking(body_head, sampled);
         } else {
             flight_pose::unavailable();
-            tracking_origin = OriginEvidence::Unavailable(OriginUnavailable::SourceAbsent);
-        }
-        if !located {
-            tracking_origin = OriginEvidence::Unavailable(OriginUnavailable::SourceAbsent);
-            tracking_receipt = None;
         }
 
         // After the controllers, so the frame records what the input update published.
@@ -595,8 +582,6 @@ impl VrState {
             predicted_display_time: frame_state.predicted_display_time,
             should_render: frame_state.should_render,
             eyes,
-            tracking_origin,
-            tracking_receipt,
             image_ever_acquired: false,
             located_at,
         })

@@ -43,7 +43,6 @@ use glam::{Quat, Vec3};
 use jc3gi::character::character::Character;
 use jc3vr_input::frame as controllers_frame;
 use jc3vr_view::{
-    controllers::body::rig::origin_provenance::{OriginEvidence, TrackingReceipt},
     headpose, vr,
     vr::{CockpitPositions, FrameInputs, RecenterCause, RecenterKind, stage::StageInfo},
 };
@@ -61,8 +60,8 @@ use crate::{
             rig::{
                 collision,
                 collision::{probe, probe::ProbeResult},
-                grounded, live_observation, root as rig_root,
-                root::{FrameSourceSnapshot, RootStatus},
+                grounded, root as rig_root,
+                root::RootStatus,
             },
         },
         facts::driving,
@@ -110,7 +109,6 @@ pub fn take_off_registered() -> bool {
 pub struct ComposedCockpit {
     pub prev: Vec3,
     pub cur: Vec3,
-    pub(crate) source: FrameSourceSnapshot,
 }
 
 /// The frame half: resolve the posture, remap the head height, hand the cockpit to the rig's
@@ -378,32 +376,16 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
     ComposedCockpit {
         prev: prev + driving_view,
         cur: cur + driving_view,
-        source: root.source,
     }
 }
 
-/// The frame half as the VR frame drives it ([`jc3vr_view::vr::FrameParticipants`]): [`compose_cockpit`],
-/// keeping the composition's source for [`publish_composition`], which the frame calls once the
-/// pose pair is published.
+/// The frame half as the VR frame drives it ([`jc3vr_view::vr::FrameParticipants`]):
+/// [`compose_cockpit`].
 pub fn compose_frame(inputs: &FrameInputs) -> CockpitPositions {
     let composed = compose_cockpit(inputs);
-    *STAGED_SOURCE.lock() = Some(composed.source);
     CockpitPositions {
         prev: composed.prev,
         cur: composed.cur,
-    }
-}
-
-/// Publish the source of the composition [`compose_frame`] last returned, with the live tracking
-/// origin it composed, as the rig's composition evidence; or clear the evidence when `tracking` is
-/// `None` (no live, unfrozen pose pair) or no composition is waiting. A source is published once.
-pub fn publish_composition(tracking: Option<(OriginEvidence, Option<TrackingReceipt>)>) {
-    let source = STAGED_SOURCE.lock().take();
-    match (tracking, source) {
-        (Some((origin, receipt)), Some(source)) => {
-            live_observation::publish_composition(source.with_tracking_origin(origin, receipt));
-        }
-        _ => live_observation::composition_unavailable(),
     }
 }
 
@@ -629,9 +611,6 @@ struct FrameState {
     shared: Option<FrameShared>,
     status: FrameStatus,
 }
-
-/// The source of the composition [`compose_frame`] returned, until [`publish_composition`] takes it.
-static STAGED_SOURCE: Mutex<Option<FrameSourceSnapshot>> = Mutex::new(None);
 
 static TAKE_OFF: OnceLock<unsafe fn()> = OnceLock::new();
 

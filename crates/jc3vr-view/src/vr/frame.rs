@@ -15,7 +15,6 @@ use jc3vr_core::render_frame::RenderFrameSlot;
 use parking_lot::Mutex;
 
 use crate::{
-    controllers::body::rig::origin_provenance::{OriginEvidence, TrackingReceipt},
     headpose,
     headpose::{FrameTelemetry, config::HEADPOSE_CONFIG, participants::head_participants},
     tuning::VIEW,
@@ -268,7 +267,6 @@ pub fn eyes_union_projection_standard() -> Option<Matrix4> {
 /// flatscreen stereo. Called when no VR frame renders this frame (session down, or `should_render`
 /// false).
 pub fn clear_render_params() {
-    (frame_participants().publish_composition)(None);
     RENDER_PARAMS.set(None);
     CAPTURE_VIEWS.set(None);
     CULL_PROJECTION.set(None);
@@ -287,19 +285,13 @@ pub fn begin_render_frame(frame: &LocatedFrame, cfg: &VrConfig) {
     render_frame(
         [frame.eye_view(0), frame.eye_view(1)],
         frame.predicted_display_time(),
-        frame.tracking_origin(),
         cfg,
     );
 }
 
 /// The body of [`begin_render_frame`], over the frame's views. `display_time` is the VR frame's
 /// predicted display time.
-fn render_frame(
-    views: [EyeView; 2],
-    display_time: openxr::Time,
-    (tracking_origin, tracking_receipt): (OriginEvidence, Option<TrackingReceipt>),
-    cfg: &VrConfig,
-) {
+fn render_frame(views: [EyeView; 2], display_time: openxr::Time, cfg: &VrConfig) {
     // Cockpit-pose freeze diagnostic: reuse the first captured pose -- eye views plus the sim-driven
     // body frame and anchor -- so the head contributes the same thing every frame, isolating
     // per-frame-input-driven artifacts (pose noise, head-bone idle animation) from intrinsic render
@@ -418,9 +410,6 @@ fn render_frame(
         cfg.world_scale,
     );
     headpose::xr::publish_pair(prev, cur);
-    (participants.publish_composition)(
-        (cfg.freeze_mode == FreezeMode::Off).then(|| (tracking_origin.finish(), tracking_receipt)),
-    );
 
     (head_participants.log_grapple_frame)(&FrameTelemetry {
         cockpit_orientation: center_orientation,

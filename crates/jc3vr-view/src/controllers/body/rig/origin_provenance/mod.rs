@@ -3,12 +3,8 @@
 //! Tokens cover baseline, LOCAL reference-space, runtime, and detected teleport discontinuities.
 //! They do not identify native/root history, calibration, scale, authority, or support.
 
-use std::{
-    sync::atomic::{AtomicU64, Ordering},
-    time::Instant,
-};
+use std::sync::atomic::{AtomicU64, Ordering};
 
-use jc3vr_input::frame::ControllerFrame;
 use openxr as xr;
 
 /// A non-reused source identity. Only the source can construct a token.
@@ -48,28 +44,6 @@ impl OriginEvidence {
                 Self::Known(_) => Self::Unavailable(OriginUnavailable::ChangedDuringAcquisition),
                 unavailable => unavailable,
             },
-        }
-    }
-}
-
-/// The actual controller receipt associated with the acquired live head and frame.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct TrackingReceipt {
-    sequence: u64,
-    display_time_ns: i64,
-    published_at: Instant,
-}
-
-impl TrackingReceipt {
-    pub fn from_frame(frame: &ControllerFrame) -> Self {
-        Self::from_receipt(frame.sequence, frame.display_time_ns, frame.published_at)
-    }
-
-    pub fn from_receipt(sequence: u64, display_time_ns: i64, published_at: Instant) -> Self {
-        Self {
-            sequence,
-            display_time_ns,
-            published_at,
         }
     }
 }

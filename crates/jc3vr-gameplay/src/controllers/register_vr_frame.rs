@@ -9,7 +9,6 @@ pub(super) fn register() {
 
 static PARTICIPANTS: FrameParticipants = FrameParticipants {
     compose_cockpit: roomscale::compose_frame,
-    publish_composition: roomscale::publish_composition,
     on_recenter: roomscale::on_recenter,
     manual_recenter_kind: roomscale::manual_recenter_kind,
 };

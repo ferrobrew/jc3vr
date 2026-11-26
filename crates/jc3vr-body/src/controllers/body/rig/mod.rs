@@ -15,7 +15,6 @@ pub mod collision;
 pub mod config;
 pub mod frames;
 pub mod grounded;
-pub(crate) mod live_observation;
 pub mod root;
 pub mod skeleton;
 pub mod torso;

@@ -25,10 +25,7 @@ use crate::{
     controllers::{
         body::{
             procedural::{head::head_bone_world, torso_weight},
-            rig::{
-                self,
-                live_observation::{self, NativeCapture},
-            },
+            rig,
         },
         locomotion::{anchor::stabilize as stabilize_anchors, view::Neutral},
     },
@@ -240,7 +237,6 @@ pub(crate) fn capture_unavailable() {
     *PRE_IK_POSE.lock() = None;
     *SHOULDERS_DRIVEN.lock() = [false; 2];
     headpose::withdraw_anchors();
-    live_observation::native_unavailable();
 }
 
 /// Capture the headpose anchors (pre-IK) and queue the HumanIK head effector target for the local
@@ -267,7 +263,7 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
         let Some(animation_controller) = character.m_AnimatedModel.m_AnimationController.as_mut()
         else {
             capture_unavailable();
-            let _ = rig::root::complete_movement(character_world_prev, character_world);
+            rig::root::complete_movement(character_world_prev, character_world);
             return;
         };
 
@@ -389,21 +385,7 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
         };
         let current = pair.current;
         let animated_head_world = current.root.transform_point3(current.head_model);
-        let animated_head_world_prev = pair
-            .previous
-            .root
-            .transform_point3(pair.previous.head_model);
-        let completion = rig::root::complete_movement(character_world_prev, character_world);
-        live_observation::publish_native(NativeCapture {
-            completion,
-            previous_root: pair.previous.root,
-            current_root: current.root,
-            previous_anchor: animated_head_world_prev,
-            current_anchor: animated_head_world,
-            current_head_model: current.head_model,
-            current_neck_model: current.neck_model,
-            current_eye_mid_model: current.eyes_model,
-        });
+        rig::root::complete_movement(character_world_prev, character_world);
         headpose::set_anchor_pair(pair.geometry());
         let pre_ik_pose = PreIkPose {
             head_orientation: current.head_orientation,

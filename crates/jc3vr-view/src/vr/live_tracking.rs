@@ -2,9 +2,7 @@
 //! OpenXR frame, published by the frame loop for the diagnostics that read live tracking.
 //!
 //! The packet is replaced on every frame and cleared before each acquisition, so a reader never
-//! sees tracking from an earlier frame as current. Joining it with the native pose and the body's
-//! movement completion is the rig's
-//! ([`crate::controllers::body::rig::live_observation`]).
+//! sees tracking from an earlier frame as current.
 
 use std::time::{Duration, Instant};
 

@@ -14,10 +14,7 @@ use std::sync::OnceLock;
 
 use glam::{Quat, Vec3};
 
-use crate::{
-    controllers::body::rig::origin_provenance::{OriginEvidence, TrackingReceipt},
-    vr::{RecenterCause, RecenterKind},
-};
+use crate::vr::{RecenterCause, RecenterKind};
 
 /// The functions the VR frame and the recenter call into their owners through. Each runs on the
 /// game thread, at the point of the frame its caller documents.
@@ -25,10 +22,6 @@ pub struct FrameParticipants {
     /// Resolve the posture, remap the head height, and shift the cockpit for the frame, returning
     /// the cockpit positions to compose the pose pair with.
     pub compose_cockpit: fn(inputs: &FrameInputs) -> CockpitPositions,
-    /// Publish the evidence of the composition [`compose_cockpit`](Self::compose_cockpit) last
-    /// returned, with the live tracking origin it composed, or clear it with `None` when no live,
-    /// unfrozen pose pair is published.
-    pub publish_composition: fn(tracking: Option<(OriginEvidence, Option<TrackingReceipt>)>),
     /// Follow a re-base of the cockpit baseline: the cockpit frame turned by `turn`, new frame from
     /// old.
     pub on_recenter: fn(kind: RecenterKind, turn: Quat, cause: RecenterCause),

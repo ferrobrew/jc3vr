@@ -63,14 +63,6 @@ use jc3vr_view::{
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-pub(crate) use crate::controllers::body::rig::root::completion::{
-    CompletionSnapshot, CompletionSnapshotAvailability, CompletionToken, CompletionUnavailable,
-    FrameSourceSnapshot, MovementCompletion,
-};
-#[cfg(test)]
-pub(crate) use crate::controllers::body::rig::root::completion::{
-    test_source, test_source_with_root,
-};
 use crate::{
     controllers::{
         aim::raycast::CastOptions,
@@ -162,7 +154,6 @@ pub struct FrameInputs {
 pub struct FrameOutput {
     pub prev: Vec3,
     pub cur: Vec3,
-    pub(crate) source: FrameSourceSnapshot,
 }
 
 /// The frame half: fold the credited movement into the cockpit shift, advance the grounded rig,
@@ -194,8 +185,8 @@ pub fn frame(inputs: &FrameInputs) -> FrameOutput {
         grounded::forget();
         ik_body::forget();
     }
-    let movement = SIM.lock().frame_movement(now, epoch);
-    frame.shift.observe(&basis, movement.movement());
+    let movement = SIM.lock().frame_movement(now);
+    frame.shift.observe(&basis, movement);
 
     let (owner, stopped) = owner_and_obstruction(now);
     let shift = frame.shift.current();
@@ -277,11 +268,7 @@ pub fn frame(inputs: &FrameInputs) -> FrameOutput {
         ..state.status
     };
     let (prev, cur) = state.shift.apply(inputs.raw);
-    FrameOutput {
-        prev,
-        cur,
-        source: movement.compose(basis, &state.shift),
-    }
+    FrameOutput { prev, cur }
 }
 
 /// The arm [`eye_rig_slip`] turns: the camera's own head-to-eyes offset while the headset's eyes
@@ -336,22 +323,9 @@ pub fn on_recenter(kind: RecenterKind, turn: Quat, cause: RecenterCause) {
 }
 
 /// Complete the tick's request using the roots already read by the local pre-IK capture.
-/// Only a publishable completion returns an identity; host time never joins sources.
-pub(crate) fn complete_movement(
-    previous_root: Mat4,
-    current_root: Mat4,
-) -> Option<CompletionToken> {
-    SIM.lock().complete_movement(
-        previous_root,
-        current_root,
-        Instant::now(),
-        headpose::teleport::epoch(),
-    )
-}
-
-/// Copy the bounded completion record without reading engine pointers or frame-half state.
-pub(crate) fn completion_snapshot() -> CompletionSnapshot {
-    SIM.lock().completion_snapshot(headpose::teleport::epoch())
+pub(crate) fn complete_movement(previous_root: Mat4, current_root: Mat4) {
+    SIM.lock()
+        .complete_movement(previous_root, current_root, headpose::teleport::epoch());
 }
 
 /// The root's readout, for the debug UI, the signals, and the diagnostics.
@@ -524,7 +498,7 @@ fn published_step(now: Instant) -> Option<StepFrame> {
 /// Clear the ledger and return its running total.
 fn clear_movement() -> CompletedMovement {
     let mut sim = SIM.lock();
-    sim.clear_movement(CompletionUnavailable::Cleared);
+    sim.movement.clear();
     sim.movement.completed()
 }
 
@@ -535,8 +509,6 @@ struct Sim {
     last_position: Option<Vec3>,
     movement: Requests,
     tracer: Tracer,
-    completion_sequence: u64,
-    completion: CompletionSnapshot,
     status: SimStatus,
 }
 
@@ -547,8 +519,6 @@ impl Sim {
             last_position: None,
             movement: Requests::new(),
             tracer: Tracer::new(),
-            completion_sequence: 0,
-            completion: CompletionSnapshot::unavailable(CompletionUnavailable::NotCompleted),
             status: SimStatus {
                 at: None,
                 owner: None,
@@ -617,7 +587,7 @@ unsafe fn after_locomotion(character: &mut Character, dt: f32) {
     {
         sim.last_position = None;
         sim.tracer.forget();
-        sim.clear_movement(CompletionUnavailable::SourceUnavailable);
+        sim.movement.clear();
     }
     sim.status.at = Some(now);
 
@@ -645,7 +615,7 @@ unsafe fn after_locomotion(character: &mut Character, dt: f32) {
     let epoch = headpose::teleport::epoch();
     if epoch != sim.seen_epoch {
         sim.seen_epoch = epoch;
-        sim.clear_movement(CompletionUnavailable::Teleported);
+        sim.movement.clear();
         sim.tracer.forget();
         sim.status.trace = None;
         stand_down(&mut sim.status, RootOwner::Game);
@@ -653,7 +623,7 @@ unsafe fn after_locomotion(character: &mut Character, dt: f32) {
     }
 
     let (Some(shared), true) = (shared, live) else {
-        sim.clear_movement(CompletionUnavailable::SourceUnavailable);
+        sim.movement.clear();
         sim.tracer.forget();
         sim.status.trace = None;
         stand_down(&mut sim.status, RootOwner::Game);
@@ -690,7 +660,7 @@ unsafe fn after_locomotion(character: &mut Character, dt: f32) {
         None => {
             // The ledger records nothing for a tick the player did not move the root on, so a climb
             // or an authored motion is never credited as a step.
-            sim.clear_movement(CompletionUnavailable::Cleared);
+            sim.movement.clear();
             stand_down(&mut sim.status, owner);
         }
     }
