@@ -14,6 +14,7 @@ use jc3vr_body::controllers::{
     haptics, physics,
     physics::{GRAVITY_MPS2, grapple_hook::BodyHit, refs::Weak, rigid::Velocities},
 };
+use jc3vr_core::game_tick::GameTick;
 use jc3vr_input::{frame::Hand, haptics::cues::Sustain};
 use jc3vr_physical::controllers::physical_hands::{
     doors::engine::vehicle_frame,
@@ -239,11 +240,8 @@ pub(super) unsafe fn bite(
 /// spin, collides on the way, and is never placed. Beyond the final approach the line pulls at the
 /// hook's point, so a target hooked off its centre spins; within it the line pulls at the centre,
 /// so the centre's own velocity, which the target keeps once the line is slack, is the line's.
-///
-/// # Safety
-///
-/// The game thread, before the world update and the physics step.
-pub(super) unsafe fn pull(
+pub(super) fn pull(
+    game: &GameTick<'_>,
     hand: Hand,
     grabbed: &Grabbed,
     wire: NonZeroUsize,
@@ -321,15 +319,18 @@ pub(super) unsafe fn pull(
         *slack_s += input.dt;
     }
     // A gun the landing steers is caught at its grip, where the catching hand will hold it.
-    let landed = flight.landing.as_mut().map(|landing| unsafe {
-        landing.tick(&LandingInput {
-            body: state.pose,
-            velocity: state.velocities.linear,
-            angular: state.velocities.angular,
-            receiver,
-            palm,
-            dt: input.dt,
-        })
+    let landed = flight.landing.as_mut().map(|landing| {
+        landing.tick(
+            game,
+            &LandingInput {
+                body: state.pose,
+                velocity: state.velocities.linear,
+                angular: state.velocities.angular,
+                receiver,
+                palm,
+                dt: input.dt,
+            },
+        )
     });
     let at = landed.map_or(centre, |l| l.grip);
     let from = flight.last_centre.unwrap_or(at);
@@ -425,7 +426,7 @@ pub(super) unsafe fn pull(
                 }),
                 _ => SNAP_S,
             };
-            let arrived = unsafe { arrive(catcher, grabbed, body, centre, catcher_palm, slide_s) };
+            let arrived = arrive(game, catcher, grabbed, body, centre, catcher_palm, slide_s);
             if arrived.is_err() {
                 // A target the hand caught and could not take drops at the hand, as one let go of
                 // does, rather than flying on past the player at the pull's speed.
@@ -822,11 +823,8 @@ const TOSS_FLIGHT_S: (f32, f32) = (0.45, 1.2);
 /// Hand what the hand caught over: a weapon into the hand through the table, sliding the rest of
 /// the way into its grip over `slide_s`, an object into the hand's hold at its surface nearest the
 /// palm, and a grenade into the hand through the loadout.
-///
-/// # Safety
-///
-/// The game thread, before the world update and the physics step.
-unsafe fn arrive(
+fn arrive(
+    game: &GameTick<'_>,
     hand: Hand,
     grabbed: &Grabbed,
     body: u32,
@@ -838,7 +836,7 @@ unsafe fn arrive(
         Pulled::Weapon { source } => {
             let (weapon, _) = unsafe { engine::dropped(grabbed.object) }?;
             let address = weapon as *mut WeaponBase as usize;
-            unsafe { hold_source::deliver(hand, weapon, source, slide_s) }
+            unsafe { hold_source::deliver(game, hand, weapon, source, slide_s) }
                 .map(|slot| Arrival::Weapon {
                     slot,
                     weapon: address,
@@ -909,16 +907,12 @@ unsafe fn body_centre(body: u32, object: NonZeroUsize) -> Result<Vec3, Refusal> 
 }
 
 /// Toss the weapon a tap of the grapple reeled in to land in front of the player.
-///
-/// # Safety
-///
-/// The game thread, before the world update and the physics step.
-pub(super) unsafe fn toss(weak: &Weak) -> Result<(), Refusal> {
+pub(super) fn toss(game: &GameTick<'_>, weak: &Weak) -> Result<(), Refusal> {
     let alive = weak.lock().ok_or(Refusal::Gone)?;
     let weapon = NonZeroUsize::new(weapon_of(&alive) as usize).ok_or(Refusal::Gone)?;
     let (_, body) = unsafe { engine::dropped(weapon) }?;
     let from = unsafe { body_centre(body, weapon) }?;
-    let player = unsafe { engine::player_position() }.ok_or(Refusal::NoPlayer)?;
+    let player = engine::player_position(game).ok_or(Refusal::NoPlayer)?;
     let toward = Vec3::new(from.x - player.x, 0.0, from.z - player.z)
         .try_normalize()
         .unwrap_or(Vec3::ZERO);

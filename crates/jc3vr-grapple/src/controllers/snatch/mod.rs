@@ -76,7 +76,6 @@ mod target;
 use std::num::NonZeroUsize;
 
 use glam::Vec3;
-use jc3gi::character::character::Character;
 use jc3vr_body::controllers::{
     aim,
     aim::grapple_weapons,
@@ -90,7 +89,9 @@ use jc3vr_body::controllers::{
         yank::{ArmedLine, HandLine, YankConfig, YankDetector},
     },
     mode::{Detection, Mode, VehicleClass},
+    physics::local_player::LocalPlayer,
 };
+use jc3vr_core::game_tick::GameTick;
 use jc3vr_input::{frame::Hand, haptics::cues::Event};
 use jc3vr_physical::controllers::physical_hands;
 pub use jc3vr_weapons::controllers::weapons::config::{SnatchConfig, SwingConfig};
@@ -125,17 +126,15 @@ pub fn hook_library() -> HookLibrary {
 }
 
 #[inline]
-pub fn available_in(detection: &Detection) -> bool {
+pub fn available_in(game: &GameTick<'_>, detection: &Detection) -> bool {
     if detection.traversal.is_some() {
         return false;
     }
     match detection.mode {
         Mode::OnFoot(_) => true,
-        Mode::Vehicle(seat) if seat.class == VehicleClass::Car => unsafe {
-            Character::GetLocalPlayerCharacter()
-                .as_ref()
-                .is_some_and(|character| seat::rides_in_seat(character))
-        },
+        Mode::Vehicle(seat) if seat.class == VehicleClass::Car => LocalPlayer::get(game)
+            // SAFETY: the local player, in the game tick.
+            .is_some_and(|player| unsafe { seat::rides_in_seat(player.character()) }),
         _ => false,
     }
 }
@@ -250,11 +249,7 @@ pub struct OfferInput<'a> {
 }
 
 /// The remote target for the grapple hand's grip this tick, if there is one.
-///
-/// # Safety
-///
-/// The game thread, before the world update.
-pub unsafe fn targets(input: &OfferInput) -> Provided {
+pub fn targets(game: &GameTick<'_>, input: &OfferInput) -> Provided {
     let config = &input.config.snatch;
     let hold = &input.config.hold;
     let takes_held = hold.either_hand;
@@ -270,7 +265,7 @@ pub unsafe fn targets(input: &OfferInput) -> Provided {
         state.prearm.clear();
         return Provided::default();
     }
-    if let Err(why) = unsafe { target::offerable(input) } {
+    if let Err(why) = target::offerable(game, input) {
         state.prearm.clear();
         state.status.target = None;
         state.status.unoffered = Some(why);
@@ -366,15 +361,11 @@ pub struct FinishInput<'a> {
 
 /// Act on the tick's grab of a remote target, step the snatch, and hold the grapple button back from
 /// the game while its line is out.
-///
-/// # Safety
-///
-/// The game thread, before the world update.
-pub unsafe fn finish_tick(input: &FinishInput, desired: &mut Vec<Desired>) {
+pub fn finish_tick(game: &GameTick<'_>, input: &FinishInput, desired: &mut Vec<Desired>) {
     let config = &input.config.snatch;
     hooks::publish(config.enabled, input.ordinary_button_held);
     if let Some(weak) = hooks::take_toss() {
-        match unsafe { pull::toss(&weak) } {
+        match pull::toss(game, &weak) {
             Ok(()) => {
                 haptics::play(input.hand, Event::GrappleAttach);
                 STATE.lock().status.tosses += 1;
@@ -392,7 +383,7 @@ pub unsafe fn finish_tick(input: &FinishInput, desired: &mut Vec<Desired>) {
         state.watch = None;
     }
     let (from, hand) = (state.phase.label(), state.phase.hand());
-    unsafe { state.step(input) };
+    unsafe { state.step(game, input) };
     let to = state.phase.label();
     let hand = hand.or(state.phase.hand());
     state.moment.note(hand, from, to);
@@ -601,7 +592,7 @@ fn log_swing_start(swinging: &Swinging, tethered: bool) {
 
 impl State {
     /// One input tick of the snatch.
-    unsafe fn step(&mut self, input: &FinishInput) {
+    unsafe fn step(&mut self, game: &GameTick<'_>, input: &FinishInput) {
         let config = &input.config.snatch;
         self.status.swing = None;
         if let Phase::HookOut { target, .. } | Phase::Pulling { target, .. } = &self.phase
@@ -610,7 +601,7 @@ impl State {
             self.cancel("another hand took the target");
             return;
         }
-        let available = available_in(input.detection);
+        let available = available_in(game, input.detection);
         if let Some(hand) = self.phase.hand() {
             let continuation = sling::Continuation {
                 enabled: config.enabled,
@@ -658,7 +649,7 @@ impl State {
                     self.moment.yank(pulled.distance_m, pulled.speed_mps);
                     haptics::play(hand, Event::SnatchFire);
                     self.status.fired += 1;
-                    match unsafe { pull::fire_at(hand, offer) } {
+                    match pull::fire_at(game, hand, offer) {
                         Ok(Fired::Freeing(target)) => Phase::Freeing {
                             hand,
                             target,
@@ -691,7 +682,7 @@ impl State {
             } => {
                 let timeout_s = target.timeout_s();
                 let waited_s = waited_s + input.dt;
-                match unsafe { pull::collect(hand, target) } {
+                match pull::collect(game, hand, target) {
                     Ok(Freeing::Freed(grabbed)) => match unsafe { pull::fire_hook(&grabbed) } {
                         Ok(wire) => {
                             haptics::play(hand, Event::GrappleFire);
@@ -865,7 +856,7 @@ impl State {
                             tracing::info!(target: "controllers", "snatch: released B; pulling to the hand");
                         }
                         let hands = catch_hands(hand, input);
-                        unsafe { pull::pull(hand, &target, wire, &mut flight, hands, input) }
+                        pull::pull(game, hand, &target, wire, &mut flight, hands, input)
                     }
                     sling::AttachedMode::Cancel => Err(Refusal::Gone),
                 };

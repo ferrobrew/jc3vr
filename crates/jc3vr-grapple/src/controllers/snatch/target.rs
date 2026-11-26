@@ -15,6 +15,7 @@ use jc3vr_body::controllers::{
         refs::Weak,
     },
 };
+use jc3vr_core::game_tick::GameTick;
 use jc3vr_physical::controllers::{
     physical_hands,
     physical_hands::{
@@ -402,12 +403,8 @@ impl OfferKind {
 }
 
 /// Why the grapple hand cannot snatch now, if it cannot.
-///
-/// # Safety
-///
-/// The game thread, before the world update.
-pub(super) unsafe fn offerable(input: &OfferInput) -> Result<(), &'static str> {
-    if !crate::controllers::snatch::available_in(input.detection) {
+pub(super) fn offerable(game: &GameTick<'_>, input: &OfferInput) -> Result<(), &'static str> {
+    if !crate::controllers::snatch::available_in(game, input.detection) {
         return Err("SNATCH UNAVAILABLE");
     }
     let i = input.hand.index();

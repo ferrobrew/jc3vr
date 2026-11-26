@@ -25,10 +25,12 @@ use jc3vr_body::controllers::{
     physics::{
         bodies::game_object_of,
         grapple_hook as hook,
-        grapple_hook::{BodyHit, CustomOwner, local},
+        grapple_hook::{BodyHit, CustomOwner},
+        local_player::LocalPlayer,
         refs::{Strong, null_weak},
     },
 };
+use jc3vr_core::game_tick::GameTick;
 use jc3vr_input::frame::Hand;
 use jc3vr_physical::controllers::physical_hands::doors::engine::vehicle_body;
 use jc3vr_view::controllers::cockpit::CockpitTransform;
@@ -55,15 +57,12 @@ impl Target {
     /// origin toward it meets close to it, passing through the local player and the vehicle it
     /// rides, with the physics body there. `None` when the point is not finite, the grapple has no aim, or the ray meets
     /// nothing near the point.
-    ///
-    /// # Safety
-    ///
-    /// The game thread: it reads the local player and casts through the physics world.
-    pub unsafe fn capture(at: Vec3) -> Option<Self> {
+    pub fn capture(game: &GameTick<'_>, at: Vec3) -> Option<Self> {
         if !at.is_finite() {
             return None;
         }
-        let (character, _) = unsafe { local() }?;
+        let local_player = LocalPlayer::get(game)?;
+        let character = local_player.character();
         let aim = aim::status().grapple?;
         let ray = Ray::new(aim.ray.origin, at - aim.ray.origin)?;
         let options = unsafe { CastOptions::ignoring_rider(character) }.seeing_through();
@@ -80,12 +79,12 @@ impl Target {
         })
     }
 
-    unsafe fn current(self) -> Option<(Vec3, RayHit)> {
+    unsafe fn current(self, game: &GameTick<'_>) -> Option<(Vec3, RayHit)> {
         let mut hit = self.hit?;
         if let Some(body) = self.body {
             hit.position = unsafe { body.point() }?;
         } else if hit.object.is_some() {
-            let fresh = unsafe { Self::capture(self.point) }?.hit?;
+            let fresh = Self::capture(game, self.point)?.hit?;
             if fresh.body != hit.body || fresh.object != hit.object {
                 return None;
             }
@@ -95,8 +94,9 @@ impl Target {
     }
 }
 
-pub(super) unsafe fn fire(target: Target) -> Result<NonZeroUsize, Refusal> {
-    let (character, hook) = unsafe { local() }.ok_or(Refusal::NoPlayer)?;
+pub(super) unsafe fn fire(game: &GameTick<'_>, target: Target) -> Result<NonZeroUsize, Refusal> {
+    let mut local_player = LocalPlayer::get(game).ok_or(Refusal::NoPlayer)?;
+    let (character, hook) = local_player.character_and_hook().ok_or(Refusal::NoPlayer)?;
     let vehicle = NonZeroUsize::new(unsafe { character.GetVehiclePtr() } as usize)
         .ok_or(Refusal::NoPlayer)?;
     let body = unsafe { vehicle_body(vehicle) }.ok_or(Refusal::NoPlayer)?;
@@ -112,7 +112,7 @@ pub(super) unsafe fn fire(target: Target) -> Result<NonZeroUsize, Refusal> {
     if !unsafe { hook::claim_custom(CustomOwner::Seat) } {
         return Err(Refusal::Busy);
     }
-    let Some((at, hit)) = (unsafe { target.current() }) else {
+    let Some((at, hit)) = (unsafe { target.current(game) }) else {
         hook::release_custom(CustomOwner::Seat);
         return Err(Refusal::NoTarget);
     };
@@ -267,7 +267,11 @@ pub(super) unsafe fn attachment_point(wire: NonZeroUsize) -> Option<Vec3> {
     at.is_finite().then_some(at)
 }
 
-pub(super) unsafe fn tether(wire: NonZeroUsize, second: Option<Target>) -> bool {
+pub(super) unsafe fn tether(
+    game: &GameTick<'_>,
+    wire: NonZeroUsize,
+    second: Option<Target>,
+) -> bool {
     if unsafe { active_wire(wire) }.is_none() {
         return false;
     }
@@ -278,7 +282,7 @@ pub(super) unsafe fn tether(wire: NonZeroUsize, second: Option<Target>) -> bool 
         return false;
     };
     if let Some(second) = second {
-        let Some((at, hit)) = (unsafe { second.current() }) else {
+        let Some((at, hit)) = (unsafe { second.current(game) }) else {
             return false;
         };
         let Some(tuning) = (unsafe { hook.GetTuning().as_ref() }) else {

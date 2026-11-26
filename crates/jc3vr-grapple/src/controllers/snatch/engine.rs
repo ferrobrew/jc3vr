@@ -25,9 +25,11 @@ use jc3vr_body::controllers::{
         characters::character_position,
         grapple_hook as hook,
         grapple_hook::{BodyHit, CustomOwner, local_hook},
+        local_player::LocalPlayer,
         refs::{Strong, null_weak},
     },
 };
+use jc3vr_core::game_tick::GameTick;
 use jc3vr_weapons::controllers::weapons::{engine, grenade};
 
 use crate::controllers::snatch::{Refusal, sling_hooks};
@@ -431,12 +433,9 @@ pub(super) unsafe fn on_mount(address: NonZeroUsize) -> bool {
 }
 
 /// Where the local player stands, world space.
-///
-/// # Safety
-///
-/// The game thread, before the world update.
-pub(super) unsafe fn player_position() -> Option<Vec3> {
-    let character = unsafe { Character::GetLocalPlayerCharacter().as_ref() }?;
+pub(super) fn player_position(game: &GameTick<'_>) -> Option<Vec3> {
+    let local_player = LocalPlayer::get(game)?;
+    let character = local_player.character();
     let position = character_position(character);
     position.is_finite().then_some(position)
 }

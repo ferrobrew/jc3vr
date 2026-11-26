@@ -14,15 +14,13 @@
 use std::time::{Duration, Instant};
 
 use glam::{Quat, Vec3};
-use jc3gi::{
-    character::character::Character, equipment::weapon::WeaponBase,
-    graphics_engine::model_instance::ModelInstanceFlags,
-};
+use jc3gi::{equipment::weapon::WeaponBase, graphics_engine::model_instance::ModelInstanceFlags};
 use jc3vr_body::controllers::{
     aim::gun,
     hands::{grip, ik, pose as hand_pose},
-    physics::rigid::BodyPose,
+    physics::{local_player::LocalPlayer, rigid::BodyPose},
 };
+use jc3vr_core::game_tick::GameTick;
 use jc3vr_input::frame::{Hand, Pose};
 use jc3vr_weapons::controllers::{
     loadout::live,
@@ -91,11 +89,7 @@ impl Landing {
     }
 
     /// One tick of the landing.
-    ///
-    /// # Safety
-    ///
-    /// The game thread, before the world update.
-    pub(super) unsafe fn tick(&mut self, input: &LandingInput) -> LandingTick {
+    pub(super) fn tick(&mut self, game: &GameTick<'_>, input: &LandingInput) -> LandingTick {
         let tuning = &SNATCH.landing;
         let body = Pose {
             position: input.body.centre,
@@ -103,7 +97,8 @@ impl Landing {
         };
         let gun = hand_pose::mul(body, hand_pose::inverse(self.body_in_gun));
         let grip = gun.position;
-        let character = unsafe { Character::GetLocalPlayerCharacter().as_ref() };
+        let local_player = LocalPlayer::get(game);
+        let character = local_player.as_ref().map(LocalPlayer::character);
         let records = ik::tick_records();
         let wrists = Hand::BOTH.map(|hand| {
             let current = records.current[hand.index()]?.wrist;

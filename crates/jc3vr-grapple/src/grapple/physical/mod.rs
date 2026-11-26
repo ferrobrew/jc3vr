@@ -41,6 +41,7 @@ use jc3vr_body::controllers::{
     mode::{Detection, Traversal},
     physics::{grapple_hook as hook, grapple_hook::HookRead},
 };
+use jc3vr_core::game_tick::GameTick;
 use jc3vr_input::{
     frame::Hand,
     haptics::cues::{Event, Sustain},
@@ -180,11 +181,7 @@ pub fn status() -> GrappleStatus {
 
 /// Run the physical grapple's part of the input tick. Called in the game stage while the bindings
 /// inject.
-///
-/// # Safety
-///
-/// Game thread, before the world update.
-pub unsafe fn input_tick(input: &TickInput) -> TickOutput {
+pub fn input_tick(game: &GameTick<'_>, input: &TickInput) -> TickOutput {
     let config = &PhysicalGrappleTuning::of(input.config);
     let hand = input.dominant.other();
     let hook = unsafe { read_hook() };
@@ -375,7 +372,7 @@ pub unsafe fn input_tick(input: &TickInput) -> TickOutput {
     TickOutput {
         retract,
         tethers,
-        lockable: locked || unsafe { lock::lockable(&input.config.lock) },
+        lockable: locked || lock::lockable(game, &input.config.lock),
         lock_yank,
     }
 }

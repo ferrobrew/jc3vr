@@ -63,10 +63,11 @@ use jc3vr_body::{
     controllers::{
         facts, haptics,
         intent::{grapple_button::LockButton, yank::HandLine},
-        physics::{GRAVITY_MPS2, characters::character_position, grapple_hook as hook},
+        physics::{GRAVITY_MPS2, characters::character_position, local_player::LocalPlayer},
     },
     hooks::input::air,
 };
+use jc3vr_core::game_tick::GameTick;
 use jc3vr_input::{
     frame::{self, Hand},
     haptics::cues::{Event, Sustain},
@@ -233,16 +234,16 @@ pub fn entering_helicopter() -> bool {
 
 /// Whether the lock could take hold now: the switch is on, and the local player's hook reels in
 /// along an attached line to something other than a character.
-///
-/// # Safety
-///
-/// The game thread.
-pub(crate) unsafe fn lockable(config: &LockConfig) -> bool {
+pub(crate) fn lockable(game: &GameTick<'_>, config: &LockConfig) -> bool {
     config.enabled
-        && unsafe { hook::local() }.is_some_and(|(_, hook)| {
-            unsafe { engine::reeling_far_end(hook) }
-                .is_some_and(|proxy| engine::lockable_kind(proxy.m_AttachmentObjectInfo))
-        })
+        && LocalPlayer::get(game)
+            .as_mut()
+            .and_then(LocalPlayer::character_and_hook)
+            .is_some_and(|(_, hook)| {
+                // SAFETY: the local player's hook, in the game tick.
+                unsafe { engine::reeling_far_end(hook) }
+                    .is_some_and(|proxy| engine::lockable_kind(proxy.m_AttachmentObjectInfo))
+            })
 }
 
 /// What the bindings hand the lock's tick.
@@ -274,11 +275,7 @@ pub struct LockTickInput<'a> {
 
 /// Run the lock's part of the input tick, after the bindings' tables have stepped: apply the
 /// target's reaction, take the lock, end it, or take line in.
-///
-/// # Safety
-///
-/// The game thread, before the world update.
-pub unsafe fn lock_tick(input: &LockTickInput) {
+pub fn lock_tick(game: &GameTick<'_>, input: &LockTickInput) {
     HANG_GATE.lock().ticked = Some(Instant::now());
     let (pending, fault) = {
         let mut shared = SHARED.lock();
@@ -296,7 +293,11 @@ pub unsafe fn lock_tick(input: &LockTickInput) {
     }
     let wants = arm(input.button);
     let (pump_sample, pump_tuning) = pump_sample(input);
-    let Some((character, hook)) = (unsafe { hook::local() }) else {
+    let mut local_player = LocalPlayer::get(game);
+    let Some((character, hook)) = local_player
+        .as_mut()
+        .and_then(LocalPlayer::character_and_hook)
+    else {
         end(None, LockEnd::ReelEnded, input.hand);
         return;
     };

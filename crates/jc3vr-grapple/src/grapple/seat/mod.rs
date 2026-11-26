@@ -12,8 +12,9 @@ use jc3vr_body::controllers::{
     facts::seat::stands_in,
     haptics,
     intent::grapple_button::{SeatRequest, TAP_S},
-    physics::grapple_hook::local,
+    physics::local_player::LocalPlayer,
 };
+use jc3vr_core::game_tick::GameTick;
 use jc3vr_input::{frame::Hand, haptics::cues::Event};
 use parking_lot::Mutex;
 
@@ -70,13 +71,13 @@ impl Refusal {
 }
 
 /// [`stands_in`] for the local player.
-///
-/// # Safety
-///
-/// The game thread.
 #[inline]
-pub unsafe fn stands_in_for_local() -> bool {
-    unsafe { local() }.is_some_and(|(character, hook)| unsafe { stands_in(character, hook) })
+pub fn stands_in_for_local(game: &GameTick<'_>) -> bool {
+    LocalPlayer::get(game)
+        .as_mut()
+        .and_then(LocalPlayer::character_and_hook)
+        // SAFETY: the local player and its hook, in the game tick.
+        .is_some_and(|(character, hook)| unsafe { stands_in(character, hook) })
 }
 
 /// The seat grapple's readout. Safe from any thread: it takes only a leaf lock.
@@ -86,15 +87,13 @@ pub fn status() -> SeatStatus {
 }
 
 /// Run the seat grapple's part of the input tick.
-///
-/// # Safety
-///
-/// The game thread, before the world update.
-pub unsafe fn tick(input: &SeatTickInput) {
+pub fn tick(game: &GameTick<'_>, input: &SeatTickInput) {
     // Clearing tethers also applies when the native hook handles fire, outside `stands_in`.
     if input.release_all
-        && let Some((_, hook)) = unsafe { local() }
+        && let Some(mut local_player) = LocalPlayer::get(game)
+        && let Some((_, hook)) = local_player.character_and_hook()
     {
+        // SAFETY: the local player's hook, in the game tick.
         unsafe { hook.ReleaseAllDualTethers() };
     }
     let phase = STATE.lock().phase;
@@ -133,7 +132,7 @@ pub unsafe fn tick(input: &SeatTickInput) {
     let (phase, act) = step(phase, input, reading);
     let (phase, record) = match act {
         Act::None => (phase, Record::None),
-        Act::Fire(pending) => match unsafe { engine::fire(pending.target) } {
+        Act::Fire(pending) => match unsafe { engine::fire(game, pending.target) } {
             Ok(wire) => {
                 tracing::info!(target: "grapple", request = ?pending.request, "seat grapple: fired");
                 (pending.phase(wire), Record::Fired)
@@ -142,7 +141,7 @@ pub unsafe fn tick(input: &SeatTickInput) {
         },
         Act::Refuse(why) => (phase, Record::Refused(why)),
         Act::Tether(wire, second) => {
-            if unsafe { engine::tether(wire, second) } {
+            if unsafe { engine::tether(game, wire, second) } {
                 tracing::info!(target: "grapple", dual = second.is_some(), "seat grapple: tether handed off");
                 haptics::play(input.hand, Event::LineLock);
                 (phase, Record::Tethered)
@@ -186,11 +185,7 @@ pub unsafe fn tick(input: &SeatTickInput) {
 /// later fire. A pause of the controllers (the debug panel, a lost frame) does not call this: the
 /// phase is kept, and the next tick tethers the hook if it holds and the character is still
 /// seated, or calls it back otherwise.
-///
-/// # Safety
-///
-/// The game thread, before the world update.
-pub unsafe fn stand_down() {
+pub fn stand_down(_game: &GameTick<'_>) {
     let phase = {
         let mut state = STATE.lock();
         state.status.flying = false;

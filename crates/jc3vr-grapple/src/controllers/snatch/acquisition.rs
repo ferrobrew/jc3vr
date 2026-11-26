@@ -7,6 +7,7 @@ use jc3vr_body::controllers::{
     grab::world_reach::DoorTarget,
     physics::{grapple_hook::BodyHit, refs::Strong},
 };
+use jc3vr_core::game_tick::GameTick;
 use jc3vr_input::frame::Hand;
 use jc3vr_physical::controllers::physical_hands::doors::engine::vehicle_frame;
 use jc3vr_weapons::controllers::{
@@ -115,11 +116,7 @@ pub(super) enum Fired {
 
 /// Fire at the armed target: free a gun from a character's hands or holster first, fire the hook at
 /// a weapon, an object, a charge, or a door.
-///
-/// # Safety
-///
-/// The game thread, before the world update.
-pub(super) unsafe fn fire_at(hand: Hand, offer: Offer) -> Result<Fired, Refusal> {
+pub(super) fn fire_at(game: &GameTick<'_>, hand: Hand, offer: Offer) -> Result<Fired, Refusal> {
     let hit = offer.hit;
     let object_local = offer.object_local;
     let source = match offer.kind {
@@ -236,7 +233,7 @@ pub(super) unsafe fn fire_at(hand: Hand, offer: Offer) -> Result<Fired, Refusal>
         }
     };
     let ground = matches!(source, WeaponSource::Ground { .. });
-    let freed = match unsafe { hold_source::free(hand, &source) }.map_err(Refusal::Source)? {
+    let freed = match hold_source::free(game, hand, &source).map_err(Refusal::Source)? {
         Yield::Ready(freed) => freed,
         Yield::Pending(ticket) => return Ok(Fired::Freeing(Freeing::Making(ticket, object_local))),
     };
@@ -270,15 +267,15 @@ impl Freeing {
 }
 
 /// Collect the weapon a source was making into `freeing`, when it has made it.
-///
-/// # Safety
-///
-/// The game thread, before the world update.
-pub(super) unsafe fn collect(hand: Hand, freeing: Freeing) -> Result<Freeing, Refusal> {
+pub(super) fn collect(
+    game: &GameTick<'_>,
+    hand: Hand,
+    freeing: Freeing,
+) -> Result<Freeing, Refusal> {
     let Freeing::Making(ticket, local) = freeing else {
         return Ok(freeing);
     };
-    match unsafe { hold_source::poll(hand, &ticket) } {
+    match hold_source::poll(game, hand, &ticket) {
         None => Ok(Freeing::Making(ticket, local)),
         Some(Ok(freed)) => grabbed(freed, None, local).map(Freeing::Freed),
         Some(Err(refusal)) => Err(Refusal::Source(refusal)),
