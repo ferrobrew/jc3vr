@@ -96,7 +96,11 @@ impl Target {
     }
 }
 
-pub(super) unsafe fn fire(game: &GameTick<'_>, target: Target) -> Result<NonZeroUsize, Refusal> {
+pub(super) unsafe fn fire(
+    game: &GameTick<'_>,
+    target: Target,
+    hand: Hand,
+) -> Result<NonZeroUsize, Refusal> {
     let mut local_player = LocalPlayer::get(game).ok_or(Refusal::NoPlayer)?;
     let (character, hook) = local_player.character_and_hook().ok_or(Refusal::NoPlayer)?;
     let vehicle = NonZeroUsize::new(unsafe { character.GetVehiclePtr() } as usize)
@@ -124,17 +128,14 @@ pub(super) unsafe fn fire(game: &GameTick<'_>, target: Target) -> Result<NonZero
         info.m_TargetGameObject.Assign(&null_weak());
     }
     let wire = NonZeroUsize::new(hook.m_ActiveWire.px as usize);
-    if hook.m_State != GrapplingHookState::GHS_CUSTOM_ACTIVE_WIRE || wire.is_none() {
-        hook::release_custom(CustomOwner::Seat);
-        return Err(Refusal::FireRefused);
-    }
-    let Some(wire) = wire else {
+    let Some(wire) = wire.filter(|_| hook.m_State == GrapplingHookState::GHS_CUSTOM_ACTIVE_WIRE)
+    else {
         hook::release_custom(CustomOwner::Seat);
         return Err(Refusal::FireRefused);
     };
     hook::own_custom(CustomOwner::Seat, wire);
     let active = unsafe { hook.m_ActiveWire.px.as_mut() }.ok_or(Refusal::FireRefused)?;
-    let car_at = hand_point().unwrap_or(state.pose.centre);
+    let car_at = hand_point(hand).unwrap_or(state.pose.centre);
     let car_hit = RayHit {
         position: car_at,
         normal: Vec3::Y,
@@ -204,8 +205,10 @@ pub(super) unsafe fn read(wire: NonZeroUsize) -> WireReading {
     }
 }
 
-pub(super) unsafe fn track_hand(wire: NonZeroUsize) -> bool {
-    let Some(at) = hand_point() else { return false };
+pub(super) unsafe fn track_hand(wire: NonZeroUsize, hand: Hand) -> bool {
+    let Some(at) = hand_point(hand) else {
+        return false;
+    };
     let Some(active) = (unsafe { active_wire(wire) }) else {
         return false;
     };
@@ -255,9 +258,10 @@ pub(super) unsafe fn track_hand(wire: NonZeroUsize) -> bool {
     true
 }
 
-fn hand_point() -> Option<Vec3> {
+/// Where the grapple hand's grip is in the world.
+fn hand_point(hand: Hand) -> Option<Vec3> {
     let active = hands::active_hands_raw()?;
-    let hand = active.hands[Hand::Left.index()]?;
+    let hand = active.hands[hand.index()]?;
     let transform = CockpitTransform::current(active.head.position, active.world_scale);
     let point = transform.pose_to_world(hand.grip).position;
     point.is_finite().then_some(point)

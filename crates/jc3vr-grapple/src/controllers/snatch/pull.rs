@@ -434,8 +434,15 @@ pub(super) fn pull(
             if arrived.is_err() {
                 // A target the hand caught and could not take drops at the hand, as one let go of
                 // does, rather than flying on past the player at the pull's speed.
-                let _ =
-                    unsafe { physics::set_body_velocities(body, owner, Vec3::ZERO, Vec3::ZERO) };
+                if let Err(error) =
+                    unsafe { physics::set_body_velocities(body, owner, Vec3::ZERO, Vec3::ZERO) }
+                {
+                    tracing::warn!(
+                        target: "controllers",
+                        body,
+                        "snatch: the caught target kept its velocity: {error}"
+                    );
+                }
             }
             return arrived.map(|arrival| Step::Caught(catcher, arrival));
         }

@@ -32,6 +32,7 @@ pub struct SeatTickInput {
     pub target: Option<Target>,
     /// The tick's length, game seconds.
     pub dt: f32,
+    /// The grapple hand: the hand the wire's car end follows.
     pub hand: Hand,
 }
 
@@ -109,7 +110,7 @@ pub fn tick(game: &GameTick<'_>, input: &SeatTickInput) {
         && input.seated
         && !input.release_all
         && matches!(reading, Some(WireReading::Attached | WireReading::Flying))
-        && !unsafe { engine::track_hand(wire) }
+        && !unsafe { engine::track_hand(wire, input.hand) }
     {
         reading = Some(WireReading::Gone);
     }
@@ -134,7 +135,7 @@ pub fn tick(game: &GameTick<'_>, input: &SeatTickInput) {
     let (phase, act) = step(phase, input, reading);
     let (phase, record) = match act {
         Act::None => (phase, Record::None),
-        Act::Fire(pending) => match unsafe { engine::fire(game, pending.target) } {
+        Act::Fire(pending) => match unsafe { engine::fire(game, pending.target, input.hand) } {
             Ok(wire) => {
                 tracing::info!(target: "grapple", request = ?pending.request, "seat grapple: fired");
                 (pending.phase(wire), Record::Fired)
