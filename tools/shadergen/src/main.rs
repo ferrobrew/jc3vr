@@ -9,7 +9,7 @@
 //! its HTTP / archive dependencies never reach a normal build of the `-sys` crate or the payload. It
 //! runs only on an FSR version bump or after a fresh checkout.
 //!
-//! In addition, the mod's own DX11 shaders (the payload's and the render crate's, such as the HUD
+//! In addition, the mod's own DX11 shaders (the layer crates', such as the HUD
 //! quad and the velocity decode) and `body-estimator`'s compute shaders are compiled by the same
 //! toolchain and committed as `.dxbc` blobs alongside their `.hlsl` sources.
 //!
@@ -94,17 +94,22 @@ const MOD_SHADERS: &[(&str, &[(&str, &str)])] = &[
         &[("i420_pack_ps", "ps_5_0")],
     ),
     (
+        "crates/jc3vr-view/shaders",
+        &[
+            ("capture_vs", "vs_5_0"),
+            ("capture_ps", "ps_5_0"),
+            ("vr_blit_ps", "ps_5_0"),
+            ("foveation_mask_ps", "ps_5_0"),
+            ("foveation_fill_ps", "ps_5_0"),
+        ],
+    ),
+    (
         "crates/jc3vr-render/shaders",
         &[
             ("velocity_decode", "cs_5_0"),
             ("taa_resolve", "cs_5_0"),
             ("indirect_args_double_cs", "cs_5_0"),
             ("snapshot_diff_cs", "cs_5_0"),
-            ("capture_vs", "vs_5_0"),
-            ("capture_ps", "ps_5_0"),
-            ("vr_blit_ps", "ps_5_0"),
-            ("foveation_mask_ps", "ps_5_0"),
-            ("foveation_fill_ps", "ps_5_0"),
             ("far_field_composite_ps", "ps_5_0"),
             ("overlay_vs", "vs_5_0"),
             ("overlay_ps", "ps_5_0"),
