@@ -11,6 +11,7 @@
 BUILD_STAMP core
 SHUTTING_DOWN core
 config::automatic core
+config::engine core
 config::format core
 config::load core
 config::paths core
