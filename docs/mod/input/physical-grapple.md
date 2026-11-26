@@ -1,6 +1,6 @@
 # Physical grapple
 
-The grapple hand works the line: a pull back along it starts and speeds the reel, a yank during the reel boosts it, pulling back with tethers attached tightens them, the arm's motion pumps the swing while hanging, and the hand feels the line's tension. Every part sits on top of the existing bindings, so the buttons keep working and the hand adds to them. The implementation is `crates/jc3vr-gameplay/src/grapple/physical/`, with the hang swing in `crates/jc3vr-body/src/controllers/hands/anchor.rs`; the engine side is in [grapple-pipeline.md](../../engine/gameplay/grapple-pipeline.md), "The reel's speed and the tether squeeze".
+The grapple hand works the line: a pull back along it starts and speeds the reel, a yank during the reel boosts it, pulling back with tethers attached tightens them, the arm's motion pumps the swing while hanging, and the hand feels the line's tension. Every part sits on top of the existing bindings, so the buttons keep working and the hand adds to them. The implementation is `crates/jc3vr-grapple/src/grapple/physical/`, with the hang swing in `crates/jc3vr-body/src/controllers/hands/anchor.rs`; the engine side is in [grapple-pipeline.md](../../engine/gameplay/grapple-pipeline.md), "The reel's speed and the tether squeeze".
 
 ## The grapple button
 

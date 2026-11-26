@@ -123,7 +123,7 @@ That override has a side effect on the body — see `docs/engine/gameplay/aim-pi
 
 ## Grapple comfort
 
-The grapple rotates and teleports the character violently — the fire act's alignment, the reel's rotation toward the target, and the landing snap. Left unfiltered, all of it reaches the composed view, doubled up with the head rotation the player used to aim (issue #36). The filter that fixes this lives in `crates/jc3vr-gameplay/src/grapple/` and is documented in [`grapple-comfort.md`](grapple-comfort.md): a body-frame hold from fire to landing, a yaw handoff that turns the character to the view at landings (scheme B applied at the landing), and a landing-snap absorber for the head anchor. Only body-driven components are filtered — the HMD's tracking path stays direct, and the animation-driven posture swing above is a separate, composing mechanism.
+The grapple rotates and teleports the character violently — the fire act's alignment, the reel's rotation toward the target, and the landing snap. Left unfiltered, all of it reaches the composed view, doubled up with the head rotation the player used to aim (issue #36). The filter that fixes this lives in `crates/jc3vr-grapple/src/grapple/` and is documented in [`grapple-comfort.md`](grapple-comfort.md): a body-frame hold from fire to landing, a yaw handoff that turns the character to the view at landings (scheme B applied at the landing), and a landing-snap absorber for the head anchor. Only body-driven components are filtered — the HMD's tracking path stays direct, and the animation-driven posture swing above is a separate, composing mechanism.
 
 ## Body IK via HumanIK
 

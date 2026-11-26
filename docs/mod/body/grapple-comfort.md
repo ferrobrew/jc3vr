@@ -1,6 +1,6 @@
 # Grapple comfort
 
-The grapple is JC3's most-used traversal mechanic, and unfiltered in VR it is the most uncomfortable one: firing at anything off-axis swings the view violently, with rotation the inner ear never feels. This doc describes the filter that fixes it (issue #36). The implementation lives in `crates/jc3vr-gameplay/src/grapple/`; the engine-side grapple machinery it reads is documented in `docs/engine/gameplay/grapple-pipeline.md`.
+The grapple is JC3's most-used traversal mechanic, and unfiltered in VR it is the most uncomfortable one: firing at anything off-axis swings the view violently, with rotation the inner ear never feels. This doc describes the filter that fixes it (issue #36). The implementation lives in `crates/jc3vr-grapple/src/grapple/`; the engine-side grapple machinery it reads is documented in `docs/engine/gameplay/grapple-pipeline.md`.
 
 ## The problem: rotation applied twice
 
@@ -57,11 +57,11 @@ The filtered anchor is always `raw + offset`, so pose-pair deltas built from it 
 
 The filter advances on the engine's input tick *and* on every rendered VR frame. The frame-cadence advance is load-bearing: the body starts rotating the instant the grapple acts, and a tick-only (~33 Hz) read leaves up to a tick of that rotation in the view before the filter can engage.
 
-Both advances share one mutex, and it is the innermost lock in the headpose's SIM → BODY_YAW → FILTER order: the input-tick caller holds the sim lock when it calls `advance`, so nothing under the filter's lock may call back into a locking `headpose` accessor — `on_foot` arrives as a parameter for exactly this reason. Violating this deadlocked the game on injection once; see the lock-order note in `crates/jc3vr-gameplay/src/grapple/mod.rs`.
+Both advances share one mutex, and it is the innermost lock in the headpose's SIM → BODY_YAW → FILTER order: the input-tick caller holds the sim lock when it calls `advance`, so nothing under the filter's lock may call back into a locking `headpose` accessor — `on_foot` arrives as a parameter for exactly this reason. Violating this deadlocked the game on injection once; see the lock-order note in `crates/jc3vr-grapple/src/grapple/mod.rs`.
 
 ## Telemetry
 
-`crates/jc3vr-gameplay/src/grapple/telemetry.rs` captures the filter's inputs and outputs — hook phase, blend, raw/filtered/held body frames, HMD cockpit pose, composed head pose, anchor — to `grapple-logs/<stamp>.csv` in the session folder ([sessions.md](../sessions.md)), one row per input tick and per rendered VR frame. Toggle it from the debug UI's Grapple feature, in its live status ("Log reel telemetry"; off by default); each enable starts a fresh file. Every behaviour above was diagnosed and verified against these captures, and they remain the tool of choice when a comfort report is hard to reproduce by feel.
+`crates/jc3vr-grapple/src/grapple/telemetry.rs` captures the filter's inputs and outputs — hook phase, blend, raw/filtered/held body frames, HMD cockpit pose, composed head pose, anchor — to `grapple-logs/<stamp>.csv` in the session folder ([sessions.md](../sessions.md)), one row per input tick and per rendered VR frame. Toggle it from the debug UI's Grapple feature, in its live status ("Log reel telemetry"; off by default); each enable starts a fresh file. Every behaviour above was diagnosed and verified against these captures, and they remain the tool of choice when a comfort report is hard to reproduce by feel.
 
 ## Configuration
 

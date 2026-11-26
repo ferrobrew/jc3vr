@@ -2,7 +2,7 @@
 
 While the reel carries Rico toward the hook, the player can lock the line's length and swing from it. Holding the grapple button during the reel locks the line; pulling the grapple hand back shortens it; a yank resumes the reel; letting go of the button lets go of the line, and Rico flies on with his momentum. The line is a spring the player can work with, measured against the hook's point's own motion, so a lock onto a moving vehicle or a helicopter keeps Rico at a mostly fixed offset from it. The target feels the line's pull back.
 
-The implementation is `crates/jc3vr-gameplay/src/grapple/physical/lock/`, with the rope shared with the snatch in `crates/jc3vr-gameplay/src/grapple/rope.rs` and the button's gestures in `crates/jc3vr-body/src/controllers/intent/grapple_button.rs`. The engine side is in [grapple-pipeline.md](../../engine/gameplay/grapple-pipeline.md), "The reel's motion and endings". The rest of the physical grapple is in [physical-grapple.md](physical-grapple.md).
+The implementation is `crates/jc3vr-grapple/src/grapple/physical/lock/`, with the rope shared with the snatch in `crates/jc3vr-grapple/src/grapple/rope.rs` and the button's gestures in `crates/jc3vr-body/src/controllers/intent/grapple_button.rs`. The engine side is in [grapple-pipeline.md](../../engine/gameplay/grapple-pipeline.md), "The reel's motion and endings". The rest of the physical grapple is in [physical-grapple.md](physical-grapple.md).
 
 ## The button
 
