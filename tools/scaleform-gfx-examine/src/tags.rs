@@ -392,11 +392,8 @@ fn dump_do_abc(
     Ok(())
 }
 
-#[allow(dead_code)]
 struct AbcFile {
     strings: Vec<String>,
-    namespace_strings: Vec<String>,
-    multinames: Vec<String>,
     method_names: Vec<String>,
 }
 
@@ -446,21 +443,12 @@ fn parse_abc(data: &[u8]) -> anyhow::Result<AbcFile> {
 
     // --- Constant pool: namespaces ---
     let ns_count = read_u30(data, &mut pos) as usize;
-    let mut namespace_strings = Vec::with_capacity(ns_count);
-    namespace_strings.push(String::new()); // index 0
     for _ in 1..ns_count {
         if pos >= data.len() {
             break;
         }
-        let _kind = data[pos];
-        pos += 1;
-        let name_idx = read_u30(data, &mut pos) as usize;
-        let name = if name_idx < strings.len() {
-            strings[name_idx].clone()
-        } else {
-            String::new()
-        };
-        namespace_strings.push(name);
+        pos += 1; // The namespace's kind.
+        read_u30(data, &mut pos); // Its name, which nothing here reads.
     }
 
     // --- Constant pool: namespace sets ---
@@ -553,8 +541,6 @@ fn parse_abc(data: &[u8]) -> anyhow::Result<AbcFile> {
 
     Ok(AbcFile {
         strings,
-        namespace_strings,
-        multinames,
         method_names,
     })
 }
