@@ -66,9 +66,6 @@ pub(crate) const HAND_OVER: Row = Row::new("HAND-OVER CASE", "Hand-over case", h
 pub(crate) const TWIST_BONES: Row = Row::new("TWIST BONES", "Twist bones", twist_bones);
 
 fn rigid_grip() -> Line {
-    if !read(&CONTROLLERS_CONFIG, |c| c.hands.rigid_grip) {
-        return Line::off("");
-    }
     let pinned = grip_watch::status().pinned;
     let pins = grip::status().pins;
     rigid_grip_line(pinned, pins)

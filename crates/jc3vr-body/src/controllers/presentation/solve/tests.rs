@@ -266,8 +266,8 @@ fn driven(weight: f32) -> Motion {
     Motion {
         elbow: Some(ElbowDrive {
             up: Vec3::Y,
-            palm_weight: elbow::DEFAULT_PALM_WEIGHT,
-            smoothing_s: elbow::DEFAULT_SMOOTHING_S,
+            palm_weight: elbow::PALM_WEIGHT,
+            smoothing_s: elbow::SMOOTHING_S,
             dt: 1.0 / 90.0,
             arms: [
                 ArmDrive {
@@ -337,13 +337,7 @@ fn the_smoothed_pole_carries_from_the_last_frame() {
     let mut motion = driven(1.0);
     motion.elbow.as_mut().unwrap().arms[0].previous = Some(previous);
     let smoothed = solve(&b, &motion).elbows[0].unwrap().pole;
-    let expected = elbow::smooth(
-        previous,
-        target,
-        axis,
-        1.0 / 90.0,
-        elbow::DEFAULT_SMOOTHING_S,
-    );
+    let expected = elbow::smooth(previous, target, axis, 1.0 / 90.0, elbow::SMOOTHING_S);
     assert!(
         smoothed.abs_diff_eq(expected, 1e-4),
         "{smoothed:?} {expected:?}"

@@ -36,10 +36,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::controllers::{
     body::{config::BODY_REMAP_CONFIG, procedural::config::ProceduralMode},
-    hands::{
-        anchor::{ANCHOR_BLEND_S, AnchorConfig},
-        config::{HANDS_CONFIG, MOUNTED_AIM_BY_HANDS},
-    },
+    hands::{anchor::ANCHOR_BLEND_S, config::MOUNTED_AIM_BY_HANDS},
     held,
     mode::{self, AirborneVariant, CharacterSnapshot, Detection, Mode, OnFootVariant, Traversal},
     physics::local_player::LocalPlayer,
@@ -455,7 +452,6 @@ pub fn tick(game: &GameTick<'_>, dt: f32) {
     let swim_arms = BODY_REMAP_CONFIG.query(|c| c.procedural.mode == ProceduralMode::Full);
     let config = TierConfig {
         table: HandTierTable::PLAN.with_swim_arms(swim_arms),
-        anchor: HANDS_CONFIG.query(|c| c.anchor),
     };
     let dominant = scheme::acting_hand();
     let mounted_anchor = *MOUNTED_AIM_BY_HANDS.lock();
@@ -480,24 +476,22 @@ pub fn tick(game: &GameTick<'_>, dt: f32) {
 }
 
 /// What [`advance`] reads of the settings: the tier table, with its swimming row as
-/// [`HandTierTable::with_swim_arms`] sets it, and the grapple hand's anchor.
+/// [`HandTierTable::with_swim_arms`] sets it.
 #[derive(Copy, Clone)]
 pub struct TierConfig {
     pub table: HandTierTable,
-    pub anchor: AnchorConfig,
 }
 
 #[cfg(test)]
 impl TierConfig {
     const PLAN: TierConfig = TierConfig {
         table: HandTierTable::PLAN,
-        anchor: AnchorConfig::new(),
     };
 }
 
 /// Fold one tick into the status: a new state (or the held one) assigns each hand its tier, and
 /// the weights step toward the tiers' targets. `mounted_anchor` is the mounted guns' own anchor
-/// switch; the grapple states follow [`TierConfig::anchor`]. `holding` says which hands hold
+/// switch; the grapple states always anchor. `holding` says which hands hold
 /// something, indexed by [`Hand::index`]: a grapple hand holding anything stays free rather than
 /// taking the line, so that what it holds stays where the controller puts it.
 pub fn advance(
@@ -517,7 +511,7 @@ pub fn advance(
     });
     let anchor = match state {
         Some(TierState::MountedGun) => mounted_anchor,
-        _ => config.anchor.enabled,
+        _ => true,
     };
     let grapple = state.is_some_and(|s| s.scope() == TierScope::GrappleHand);
     let effective = Hand::BOTH.map(

@@ -79,11 +79,7 @@ pub(crate) fn controls(id: FeatureId) -> Option<FeatureBody> {
         FeatureId::Grapple => |ui, _| {
             let mut c = CONTROLLERS_CONFIG.edit();
             settings::grapple_settings(ui, &mut c);
-            hands::anchor_settings(ui, &mut c.hands);
         },
-        FeatureId::Presentation => {
-            |ui, _| hands::presentation_settings(ui, &mut CONTROLLERS_CONFIG.edit().hands)
-        }
         FeatureId::GripFingers => |ui, _| {
             let mut c = CONTROLLERS_CONFIG.edit();
             hands::grip_settings(ui, &mut c.hands);

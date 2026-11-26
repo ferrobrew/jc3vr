@@ -73,7 +73,7 @@ use crate::controllers::{
         mounted,
         seat::{rides_in_seat, stands_in},
     },
-    hands::{self, config::HANDS_CONFIG, ik, late},
+    hands::{self, ik, late},
     held::armed_weapon,
     mode::{self, Mode},
     physics::grapple_hook,
@@ -318,12 +318,10 @@ fn begin() -> Result<TickHands, AimIdle> {
     let xf = CockpitTransform::current(active.head.position, active.world_scale);
     let compose = |pose: Pose| xf.pose_to_world(pose);
     let records = ik::tick_records();
-    let late_update = HANDS_CONFIG.query(|c| c.late_update);
     let hands = Hand::BOTH.map(|hand| {
         let cockpit = active.hands[hand.index()]?;
         let wrist = compose(cockpit.wrist);
         let correction = records.current[hand.index()]
-            .filter(|_| late_update)
             .and_then(|target| late::correction(wrist, target.wrist, target.weight));
         Some(WorldHand {
             wrist,

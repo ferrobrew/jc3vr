@@ -22,7 +22,7 @@
 //! - [`palette`]: the pure palette-entry math of the late update.
 //!
 //! Everything here is inert unless the controller scheme is in effect and the hand's controller is
-//! tracked ([`active_hands`]), and each part has its toggle in [`HandsConfig`].
+//! tracked ([`active_hands`]).
 
 use glam::{Quat, Vec3};
 use jc3vr_input::frame::{self, ControllerFrame, Hand, Pose};
@@ -208,7 +208,7 @@ pub fn controller_grips(active: &ActiveHands) -> [Option<Vec3>; 2] {
 
 /// Hand IK ownership without composing poses or acquiring weapon and vehicle state locks.
 pub(crate) fn ik_owned() -> [bool; 2] {
-    let enabled = scheme::enabled() && HANDS_CONFIG.query(|c| c.ik);
+    let enabled = scheme::enabled();
     if !enabled
         || !scheme::is_controllers()
         || headpose::source() != headpose::Source::Vr

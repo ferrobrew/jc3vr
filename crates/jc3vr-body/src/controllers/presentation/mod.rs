@@ -31,7 +31,6 @@
 //! shares state only through leaf locks it holds briefly, and none takes the VR runtime lock
 //! (`docs/mod/threading.md`).
 
-mod config;
 mod edit;
 pub mod elbow;
 pub mod rig;
@@ -58,16 +57,14 @@ use jc3vr_view::{
 use parking_lot::Mutex;
 use smol_str::{SmolStr, ToSmolStr};
 
-pub use crate::controllers::presentation::{
-    config::PresentationConfig,
-    edit::{BodyEdit, DrawEdit, PlayerBodyEdits},
-};
+pub use crate::controllers::presentation::edit::{BodyEdit, DrawEdit, PlayerBodyEdits};
 use crate::controllers::{
     body::procedural::{self, skeleton},
-    hands::{config::HANDS_CONFIG, ik, late, pose as hand_pose, reach::REACH},
+    hands::{ik, late, pose as hand_pose, reach::REACH},
     mode::{self, Mode},
     presentation::{
         edit::{DrawnArms, PaletteRegistration},
+        elbow::{PALM_WEIGHT, SMOOTHING_S},
         rig::{Group, GroupMap, PresentationRig},
         solve::{ArmDrive, ArmJoints, ElbowDrive, Motion, UpperBody, head_motion, solve},
     },
@@ -79,8 +76,6 @@ pub enum Idle {
     /// It re-poses the body.
     #[default]
     Active,
-    /// Switched off in the settings.
-    Off,
     /// Not in the headset, or not in gameplay.
     NotInHeadset,
     /// No recent tick recorded the body: the player's pose pass has not run lately.
@@ -90,18 +85,11 @@ pub enum Idle {
 }
 
 impl Idle {
-    const ALL: [Self; 5] = [
-        Self::Active,
-        Self::Off,
-        Self::NotInHeadset,
-        Self::NoTick,
-        Self::NoRig,
-    ];
+    const ALL: [Self; 4] = [Self::Active, Self::NotInHeadset, Self::NoTick, Self::NoRig];
 
     pub const fn label(self) -> &'static str {
         match self {
             Self::Active => "active",
-            Self::Off => "off",
             Self::NotInHeadset => "not in the headset",
             Self::NoTick => "no recent tick",
             Self::NoRig => "no rig",
@@ -250,52 +238,49 @@ pub fn begin_frame() {
     let start = Instant::now();
     let _timing = frame_timing::scope(Slot::Presentation);
     roll_cost();
-    let config = HANDS_CONFIG.lock().presentation;
     let world_scale = VR_CONFIG.lock().world_scale;
     let rig_failed = RIG.lock().as_ref().is_some_and(|(_, rig)| rig.is_err());
     let ticks = *TICKS.lock();
     let fresh = ticks
         .current
         .filter(|t| start.saturating_duration_since(t.at) <= STALE_AFTER);
-    let (idle, frame) = if !config.enabled {
-        (Idle::Off, None)
-    } else if headpose::source() != headpose::Source::Vr || !jc3vr_core::hooks::in_gameplay() {
-        (Idle::NotInHeadset, None)
-    } else if rig_failed {
-        (Idle::NoRig, None)
-    } else if let Some(current) = fresh {
-        let (previous, current) = (ticks.previous.unwrap_or(current), current);
-        let scale = if world_scale.is_finite() && world_scale > 0.0 {
-            world_scale
+    let (idle, frame) =
+        if headpose::source() != headpose::Source::Vr || !jc3vr_core::hooks::in_gameplay() {
+            (Idle::NotInHeadset, None)
+        } else if rig_failed {
+            (Idle::NoRig, None)
+        } else if let Some(current) = fresh {
+            let (previous, current) = (ticks.previous.unwrap_or(current), current);
+            let scale = if world_scale.is_finite() && world_scale > 0.0 {
+                world_scale
+            } else {
+                1.0
+            };
+            let head = |pose: headpose::HeadPose| Pose {
+                position: pose.position,
+                orientation: pose.orientation,
+            };
+            let frame = Frame {
+                up: [
+                    headpose::xr::body_rotation_prev(),
+                    headpose::xr::body_rotation(),
+                ]
+                .map(|body| body * Vec3::Y),
+                poles: PoleContext {
+                    teleport: teleport::epoch(),
+                    mode: mode::current().mode,
+                },
+                at: start,
+                stretch_forearm: REACH.detach && REACH.stretch_forearm,
+                pivot_offset: EYES_TO_NECK * scale,
+                head: [head(headpose::query_prev()), head(headpose::query())],
+                ticks: [previous, current],
+                sequence: SEQUENCE.fetch_add(1, Ordering::Relaxed) + 1,
+            };
+            (Idle::Active, Some(frame))
         } else {
-            1.0
+            (Idle::NoTick, None)
         };
-        let head = |pose: headpose::HeadPose| Pose {
-            position: pose.position,
-            orientation: pose.orientation,
-        };
-        let frame = Frame {
-            config,
-            up: [
-                headpose::xr::body_rotation_prev(),
-                headpose::xr::body_rotation(),
-            ]
-            .map(|body| body * Vec3::Y),
-            poles: PoleContext {
-                teleport: teleport::epoch(),
-                mode: mode::current().mode,
-            },
-            at: start,
-            stretch_forearm: REACH.detach && REACH.stretch_forearm,
-            pivot_offset: EYES_TO_NECK * scale,
-            head: [head(headpose::query_prev()), head(headpose::query())],
-            ticks: [previous, current],
-            sequence: SEQUENCE.fetch_add(1, Ordering::Relaxed) + 1,
-        };
-        (Idle::Active, Some(frame))
-    } else {
-        (Idle::NoTick, None)
-    };
     IDLE.store(idle as u8, Ordering::Relaxed);
     FRAME.set(frame);
     add_cost(start);
@@ -348,7 +333,6 @@ struct Ticks {
 /// The frame's snapshot.
 #[derive(Debug, Copy, Clone, PartialEq)]
 struct Frame {
-    config: PresentationConfig,
     /// The player's up in the world, from the previous and the current ticks' body frames.
     up: [Vec3; 2],
     /// What the smoothed elbow poles belong to.
@@ -548,15 +532,14 @@ fn solve_frame(frame: &Frame, instance: Mat4, dtf: f32) -> Option<BodyEdit> {
             ))
         })
     };
-    let elbow = frame.config.elbow;
     let up = to_model
         .transform_vector3(frame.up[0].lerp(frame.up[1], t))
         .try_normalize();
-    let memory = elbow.enabled.then(|| POLES.lock().begin(frame));
-    let drive = memory.zip(up).map(|((last, dt), up)| ElbowDrive {
+    let (last, dt) = POLES.lock().begin(frame);
+    let drive = up.map(|up| ElbowDrive {
         up,
-        palm_weight: elbow.palm_weight,
-        smoothing_s: elbow.smoothing_s,
+        palm_weight: PALM_WEIGHT,
+        smoothing_s: SMOOTHING_S,
         dt,
         arms: std::array::from_fn(|i| ArmDrive {
             weight: previous.drive[i] + (current.drive[i] - previous.drive[i]) * t,

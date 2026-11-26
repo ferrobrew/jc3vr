@@ -51,35 +51,17 @@ use jc3vr_input::{
 use jc3vr_view::{controllers::cockpit::CockpitTransform, headpose};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
-use serde::{Deserialize, Serialize};
 
 use crate::{
     controllers::{
         fingers::grip::{self, Grip, GripSource},
-        hands::{self, CockpitHand, config::HANDS_CONFIG, tiers},
+        hands::{self, CockpitHand, tiers},
         haptics,
         physics::grapple_hook as hook,
         scheme,
     },
     hooks::input::locomotion::character_from_context,
 };
-
-/// The anchored tier's settings, held in
-/// [`HandsConfig`](crate::controllers::hands::config::HandsConfig). Acts only under the controller scheme,
-/// so it defaults on.
-#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct AnchorConfig {
-    /// Anchor the grapple hand to the line in the grapple states. Off, those states yield the hand
-    /// to the animation.
-    /// Swinging a hanging character by moving the grapple hand comes with it.
-    pub enabled: bool,
-}
-
-impl AnchorConfig {
-    pub const fn new() -> Self {
-        Self { enabled: true }
-    }
-}
 
 /// How long the hand takes to turn onto the line and back off it, seconds. The vehicle controls'
 /// and handles' anchored poses blend over it too.
@@ -94,12 +76,6 @@ const SWING_FULL_M: f32 = 0.3;
 /// The full-strength swing impulse per hang tick, as a multiple of the game's own continuous stick
 /// swing at full deflection.
 const SWING_SCALE: f32 = 1.0;
-
-impl Default for AnchorConfig {
-    fn default() -> Self {
-        Self::new()
-    }
-}
 
 /// The grapple's pump of the hang swing by the grapple hand's motion relative to the head, which
 /// the hang task's detour adds to the hold ([`register_hang_pump`]). Each function takes the
@@ -335,14 +311,13 @@ fn hang_task_update(ctx: *mut StateContext, p1: *mut c_void, p2: *mut c_void) {
 
 /// Push the local player's hang body by the grapple hand's displacement and motion.
 unsafe fn swing(character: &mut Character) {
-    let anchor = HANDS_CONFIG.query(|c| c.anchor);
     let pump_fns = HANG_PUMP.get();
     let hand = scheme::acting_hand().other();
     let now = Instant::now();
     // Read before this module's state is locked, so that no other lock is taken while it is held.
     let anchored = tiers::status().effective[hand.index()] == tiers::HandTier::Anchored;
     let offset = hands::active_hands_raw()
-        .filter(|_| anchor.enabled && anchored)
+        .filter(|_| anchored)
         .and_then(|active| {
             let grip = active.hands[hand.index()]?.grip.position;
             let offset = grip - active.head.position;

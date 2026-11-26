@@ -160,9 +160,6 @@ fn mirror_line(status: &MirrorStatus, now: Instant) -> Line {
 const MIRROR_STALE: Duration = Duration::from_secs(30);
 
 fn render_rate_body() -> Line {
-    if !read(&CONTROLLERS_CONFIG, |c| c.hands.presentation.enabled) {
-        return Line::off("");
-    }
     presentation_line(&presentation::status())
 }
 

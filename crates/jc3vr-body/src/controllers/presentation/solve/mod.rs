@@ -120,7 +120,7 @@ pub struct Motion {
 pub struct ElbowDrive {
     /// The player's up, a unit vector.
     pub up: Vec3,
-    /// The little finger's pull ([`elbow::ElbowPoleConfig::palm_weight`]).
+    /// The little finger's pull ([`elbow::PALM_WEIGHT`]).
     pub palm_weight: f32,
     /// The smoothing's time constant, seconds.
     pub smoothing_s: f32,

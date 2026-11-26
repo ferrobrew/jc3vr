@@ -23,45 +23,15 @@
 
 use body_rig::smooth::follow_factor;
 use glam::{Quat, Vec3};
-use serde::{Deserialize, Serialize};
 
 use crate::controllers::body::procedural::solver::arms::Side;
 
-/// The rule's settings.
-#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct ElbowPoleConfig {
-    /// Bend each controller-driven arm toward the rule's pole. Off, the arm bends toward where
-    /// HumanIK left the elbow.
-    pub enabled: bool,
-    /// How hard the little-finger side of the wrist pulls the pole, against the body pole's
-    /// downward pull of one.
-    pub palm_weight: f32,
-    /// The smoothing's time constant, seconds.
-    pub smoothing_s: f32,
-}
+/// How hard the little-finger side of the wrist pulls the pole, against the body pole's downward
+/// pull of one.
+pub const PALM_WEIGHT: f32 = 0.7;
 
-impl ElbowPoleConfig {
-    pub const fn new() -> Self {
-        Self {
-            enabled: true,
-            palm_weight: DEFAULT_PALM_WEIGHT,
-            smoothing_s: DEFAULT_SMOOTHING_S,
-        }
-    }
-}
-
-impl Default for ElbowPoleConfig {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// The default pull of the little-finger side of the wrist.
-pub const DEFAULT_PALM_WEIGHT: f32 = 0.7;
-
-/// The default smoothing time constant, seconds.
-pub const DEFAULT_SMOOTHING_S: f32 = 0.06;
+/// The smoothing's time constant, seconds.
+pub const SMOOTHING_S: f32 = 0.06;
 
 /// The longest step the smoothing carries its direction across, seconds; past it (the layer was
 /// idle, a hitch) the smoothing starts again from the rule's pole.
@@ -84,7 +54,7 @@ pub struct PoleInput {
 
 /// The direction the elbow of the arm on `side` points from the line from its shoulder to its
 /// wrist: a unit vector square to that line. `palm_weight` is the little finger's pull
-/// ([`ElbowPoleConfig::palm_weight`]). `None` for a degenerate arm: the wrist on the shoulder, the
+/// ([`PALM_WEIGHT`]). `None` for a degenerate arm: the wrist on the shoulder, the
 /// shoulders on one vertical line, or non-finite inputs.
 pub fn pole(input: &PoleInput, side: Side, palm_weight: f32) -> Option<Vec3> {
     let up = input.up.try_normalize()?;
@@ -239,7 +209,7 @@ mod tests {
     fn a_hand_low_in_front_hangs_the_elbow_down_out_and_back() {
         // Thumb up: the little finger points down.
         let input = right(Vec3::new(0.05, -0.35, -0.3), Vec3::NEG_Y);
-        let p = pole(&input, Side::Right, DEFAULT_PALM_WEIGHT).unwrap();
+        let p = pole(&input, Side::Right, PALM_WEIGHT).unwrap();
         assert_square_unit(p, &input);
         assert!(p.y < -0.5, "down: {p:?}");
         assert!(p.x > 0.15, "out: {p:?}");
@@ -252,11 +222,11 @@ mod tests {
         let low = pole(
             &right(Vec3::new(0.05, -0.35, -0.3), Vec3::X),
             Side::Right,
-            DEFAULT_PALM_WEIGHT,
+            PALM_WEIGHT,
         )
         .unwrap();
         let input = right(Vec3::new(0.05, 0.3, -0.35), Vec3::X);
-        let raised = pole(&input, Side::Right, DEFAULT_PALM_WEIGHT).unwrap();
+        let raised = pole(&input, Side::Right, PALM_WEIGHT).unwrap();
         assert_square_unit(raised, &input);
         assert!(raised.x > 0.8, "out: {raised:?}");
         assert!(raised.x > low.x);
@@ -269,11 +239,11 @@ mod tests {
         let level = pole(
             &right(Vec3::new(0.05, -0.2, -0.4), little),
             Side::Right,
-            DEFAULT_PALM_WEIGHT,
+            PALM_WEIGHT,
         )
         .unwrap();
         let input = right(Vec3::new(-0.4, -0.2, -0.3), little);
-        let across = pole(&input, Side::Right, DEFAULT_PALM_WEIGHT).unwrap();
+        let across = pole(&input, Side::Right, PALM_WEIGHT).unwrap();
         assert_square_unit(across, &input);
         // The elbow lifts further out than with the hand in front of its shoulder.
         assert!(across.x > 0.5, "out: {across:?}");
@@ -283,7 +253,7 @@ mod tests {
     #[test]
     fn a_hand_behind_the_hip_points_the_elbow_back() {
         let input = right(Vec3::new(0.08, -0.5, 0.2), Vec3::Z);
-        let p = pole(&input, Side::Right, DEFAULT_PALM_WEIGHT).unwrap();
+        let p = pole(&input, Side::Right, PALM_WEIGHT).unwrap();
         assert_square_unit(p, &input);
         assert!(p.z > 0.5, "back: {p:?}");
     }
@@ -322,8 +292,8 @@ mod tests {
                 little_finger: mirror(r.little_finger),
             };
             assert_eq!(l.shoulder, shoulder(Side::Left));
-            let pr = pole(&r, Side::Right, DEFAULT_PALM_WEIGHT).unwrap();
-            let pl = pole(&l, Side::Left, DEFAULT_PALM_WEIGHT).unwrap();
+            let pr = pole(&r, Side::Right, PALM_WEIGHT).unwrap();
+            let pl = pole(&l, Side::Left, PALM_WEIGHT).unwrap();
             assert!(pl.abs_diff_eq(mirror(pr), 1e-5), "{pl:?} against {pr:?}");
         }
     }
@@ -364,7 +334,7 @@ mod tests {
             let roll = TAU * i as f32 / steps as f32;
             let little = Quat::from_axis_angle(axis, roll) * start;
             let input = right(offset, little);
-            let raw = pole(&input, Side::Right, DEFAULT_PALM_WEIGHT).unwrap();
+            let raw = pole(&input, Side::Right, PALM_WEIGHT).unwrap();
             if let Some(before) = previous_raw {
                 assert!(
                     degrees(before, raw) < 5.0,
@@ -373,7 +343,7 @@ mod tests {
             }
             previous_raw = Some(raw);
             if i % per_frame == 0 {
-                let next = smoothed.map_or(raw, |s| smooth(s, raw, axis, dt, DEFAULT_SMOOTHING_S));
+                let next = smoothed.map_or(raw, |s| smooth(s, raw, axis, dt, SMOOTHING_S));
                 smoothed = Some(next);
                 history.push(next);
             }
@@ -396,14 +366,14 @@ mod tests {
             let dt = 1.0 / hz;
             let mut v = from;
             for _ in 0..(0.1 * hz).round() as usize {
-                v = smooth(v, to, axis, dt, DEFAULT_SMOOTHING_S);
+                v = smooth(v, to, axis, dt, SMOOTHING_S);
             }
             v
         };
         let (slow, fast) = (run(30.0), run(120.0));
         assert!(degrees(slow, fast) < 0.05, "{slow:?} against {fast:?}");
         // The follow closes the angle exponentially.
-        let expected = 90.0 * (-0.1 / DEFAULT_SMOOTHING_S).exp();
+        let expected = 90.0 * (-0.1 / SMOOTHING_S).exp();
         assert!((degrees(fast, to) - expected).abs() < 0.05, "{fast:?}");
         // After the time constant's worth and more, most of the way is closed.
         assert!(degrees(fast, to) < 25.0, "{fast:?}");
@@ -431,12 +401,12 @@ mod tests {
     #[test]
     fn a_degenerate_arm_has_no_pole() {
         let mut input = right(Vec3::ZERO, Vec3::X);
-        assert!(pole(&input, Side::Right, DEFAULT_PALM_WEIGHT).is_none());
+        assert!(pole(&input, Side::Right, PALM_WEIGHT).is_none());
         input.wrist = input.shoulder + Vec3::NEG_Y * 0.4;
         input.other_shoulder = input.shoulder + Vec3::Y;
-        assert!(pole(&input, Side::Right, DEFAULT_PALM_WEIGHT).is_none());
+        assert!(pole(&input, Side::Right, PALM_WEIGHT).is_none());
         input.other_shoulder = shoulder(other(Side::Right));
         input.little_finger = Vec3::NAN;
-        assert!(pole(&input, Side::Right, DEFAULT_PALM_WEIGHT).is_some());
+        assert!(pole(&input, Side::Right, PALM_WEIGHT).is_some());
     }
 }

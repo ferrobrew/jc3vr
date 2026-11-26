@@ -124,8 +124,8 @@ impl HandPlan {
 /// The local character and controller must be live on their serialized owning thread.
 pub(crate) unsafe fn plan(character: &Character) -> HandPlan {
     unsafe { rig::prepare(character) };
-    let active = hands::active_hands()
-        .filter(|a| a.config.hands.ik && jc3vr_core::hooks::in_gameplay() && headpose::is_active());
+    let active =
+        hands::active_hands().filter(|_| jc3vr_core::hooks::in_gameplay() && headpose::is_active());
     let tier_weights = tiers::weights();
     let tracked = Hand::BOTH.map(|hand| {
         active

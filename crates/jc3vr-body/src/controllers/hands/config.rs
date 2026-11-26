@@ -1,9 +1,7 @@
-//! Controller-owned hands' settings and their wrist-to-grip offset.
+//! Controller-owned hands' wrist-to-grip offset.
 
 use jc3vr_core::config::engine::ConfigSlot;
 use serde::{Deserialize, Serialize};
-
-use crate::controllers::{hands::anchor::AnchorConfig, presentation::PresentationConfig};
 
 /// The controller-owned hands' settings, at `controllers.hands` in the settings file; the payload
 /// binds the slot at startup.
@@ -15,38 +13,19 @@ pub static HANDS_CONFIG: ConfigSlot<HandsConfig> = ConfigSlot::new("controllers.
 pub static MOUNTED_AIM_BY_HANDS: ConfigSlot<bool> =
     ConfigSlot::new("controllers.vehicles.mounted.aim_by_hands");
 
-/// Controller-owned hands (see [`crate::controllers::hands`]). Every part acts only under the
-/// controller scheme and only for a hand whose controller is tracked, so the parts default on.
+/// Controller-owned hands (see [`crate::controllers::hands`]): their calibration. Every part of the
+/// hands acts only under the controller scheme and only for a hand whose controller is tracked.
 #[derive(Copy, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct HandsConfig {
-    /// Drive the arms with HumanIK from the shoulders to the controller poses, with the wrists
-    /// taking the controller rotations.
-    pub ik: bool,
-    /// Re-pose the hand and forearm bones and the held weapon at render time from the latest
-    /// controller pose, removing the sim tick's lag behind the controllers.
-    pub late_update: bool,
-    /// Re-pose the upper body (the spine, the head, and the arms) at render time from the latest
-    /// tracking, on top of the late update's hands.
-    pub presentation: PresentationConfig,
-    /// Hold a gun in a controller-driven hand fixed to the wrist at the hand's bind-pose grip,
-    /// rather than where the animation puts the attach bone.
-    pub rigid_grip: bool,
     /// Where the character's wrist sits relative to the controller's grip pose.
     pub grip: GripOffset,
-    /// The anchored tier of the grapple states, and the hang movement it drives.
-    pub anchor: AnchorConfig,
 }
 
 impl HandsConfig {
     pub const fn new() -> Self {
         Self {
-            ik: true,
-            late_update: true,
-            presentation: PresentationConfig::new(),
-            rigid_grip: true,
             grip: GripOffset::INDEX_BEST_GUESS,
-            anchor: AnchorConfig::new(),
         }
     }
 }

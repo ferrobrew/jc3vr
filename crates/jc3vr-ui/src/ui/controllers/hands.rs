@@ -12,7 +12,6 @@ use jc3vr_body::controllers::{
         parts, rig,
         tiers::{TierState, TierStatus},
     },
-    presentation::elbow::ElbowPoleConfig,
 };
 use jc3vr_input::frame::Hand;
 
@@ -158,48 +157,7 @@ fn mm(metres: Option<f32>) -> String {
     metres.map_or("none".to_owned(), |m| format!("{:.0} mm", m * 1000.0))
 }
 
-pub(super) fn presentation_settings(ui: &mut Ui, h: &mut HandsConfig) {
-    ui.checkbox(&mut h.ik, "Hand IK")
-        .on_hover_text("Drive the wrists to the controllers with HumanIK.");
-    ui.checkbox(&mut h.late_update, "Render-time late update")
-        .on_hover_text("Re-pose the hands and the held gun from the latest controller pose.");
-    ui.checkbox(&mut h.presentation.enabled, "Render-rate upper body")
-        .on_hover_text(
-            "Re-pose the spine, the head, and the arms every frame from the latest tracking.",
-        );
-    let elbow = &mut h.presentation.elbow;
-    ui.add_enabled_ui(h.presentation.enabled, |ui| {
-        ui.checkbox(&mut elbow.enabled, "Elbow pole").on_hover_text(
-            "Point a controller-driven arm's elbow down, out, and a little back, further out for \
-             a raised or crossing hand and toward the little finger, instead of where HumanIK \
-             left it.",
-        );
-        ui.add_enabled_ui(elbow.enabled, |ui| {
-            ui.add(egui::Slider::new(&mut elbow.palm_weight, 0.0..=1.5).text("Little-finger pull"))
-                .on_hover_text(
-                    "How far the wrist's turn swings the elbow; the body pole pulls one.",
-                );
-            let mut smoothing_ms = elbow.smoothing_s * 1000.0;
-            if ui
-                .add(egui::Slider::new(&mut smoothing_ms, 0.0..=200.0).text("Smoothing (ms)"))
-                .changed()
-            {
-                elbow.smoothing_s = smoothing_ms / 1000.0;
-            }
-            if ui.button("Reset elbow pole").clicked() {
-                *elbow = ElbowPoleConfig {
-                    enabled: elbow.enabled,
-                    ..ElbowPoleConfig::new()
-                };
-            }
-        });
-    });
-}
-
 pub(super) fn grip_settings(ui: &mut Ui, h: &mut HandsConfig) {
-    ui.checkbox(&mut h.rigid_grip, "Rigid grip").on_hover_text(
-        "Hold a gun fixed in a controller-driven hand, whatever the animation does.",
-    );
     ui.label("Grip offset (right hand, grip frame; the left mirrors it)");
     vec3_drag(ui, "Wrist position (m)", &mut h.grip.position_m, 0.005);
     vec3_drag(
@@ -211,12 +169,4 @@ pub(super) fn grip_settings(ui: &mut Ui, h: &mut HandsConfig) {
     if ui.button("Reset grip offset").clicked() {
         h.grip = GripOffset::INDEX_BEST_GUESS;
     }
-}
-
-pub(super) fn anchor_settings(ui: &mut Ui, h: &mut HandsConfig) {
-    ui.checkbox(&mut h.anchor.enabled, "Anchor the grapple hand to the line")
-        .on_hover_text(
-            "Hold the grapple hand on the line and swing a hang by moving it. Off, the grapple \
-             states yield the hand to the animation.",
-        );
 }

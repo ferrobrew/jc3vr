@@ -118,6 +118,7 @@ pub(super) fn count_weapon_update() {
 /// Why a hand was or was not corrected at the sampled render interpolation fraction.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
 pub enum LateReason {
+    /// No late frame is published: the hands are inert.
     #[default]
     Disabled,
     NoTrackedRenderHand,
@@ -246,7 +247,6 @@ pub fn begin_frame() {
         ticks: ik::tick_records(),
         transport: character_transport(),
         solved,
-        enabled: active.config.hands.late_update,
         reach: REACH,
     }));
 }
@@ -426,8 +426,6 @@ pub(super) struct LateFrame {
     ticks: ik::TickRecords,
     transport: Option<[Mat4; 2]>,
     solved: Solved,
-    /// The late update's toggle; the render hands are published for the overlay either way.
-    enabled: bool,
     /// The detach's settings.
     reach: ReachTuning,
 }
@@ -442,7 +440,6 @@ impl LateFrame {
         let target = match current.owner {
             ik::TargetOwner::Wingsuit => reference,
             ik::TargetOwner::Controller => self.hands[hand.index()]
-                .filter(|_| self.enabled)
                 .map(|render| render.wrist.at(dtf))
                 .filter(|now| crate::controllers::hands::late::math::plausible(*now, reference))
                 .unwrap_or(reference),
@@ -591,9 +588,6 @@ impl LateFrame {
     }
 
     pub(super) fn hand_status(&self, hand: Hand, dtf: f32) -> HandLateStatus {
-        if !self.enabled {
-            return HandLateStatus::default();
-        }
         let Some(render_hand) = self.hands[hand.index()] else {
             return HandLateStatus {
                 reason: LateReason::NoTrackedRenderHand,
@@ -806,7 +800,6 @@ mod tests {
             },
             transport: None,
             solved: Solved::default(),
-            enabled: true,
             reach: REACH,
         }
     }
@@ -918,10 +911,6 @@ mod tests {
             (drawn.grip.position - drawn.wrist.position)
                 .abs_diff_eq(Vec3::new(0.0, 0.0, -0.05), 1e-5)
         );
-        // Without the late update the hand is drawn where the tick solved it.
-        f.enabled = false;
-        let solved = f.drawn(Hand::Right, 0.5).unwrap();
-        assert!((solved.wrist.position.x - 0.25).abs() < 1e-5);
     }
 
     #[test]
@@ -1033,13 +1022,7 @@ mod tests {
     }
 
     #[test]
-    fn status_reports_missing_inputs_and_disabled_state() {
-        let mut disabled = frame(pose(0.35, 0.0), pose(0.3, 0.0), pose(0.3, 0.0), 1.0);
-        disabled.enabled = false;
-        assert_eq!(
-            disabled.hand_status(Hand::Right, 1.0).reason,
-            LateReason::Disabled
-        );
+    fn status_reports_missing_inputs() {
         assert_eq!(
             frame(pose(0.3, 0.0), pose(0.3, 0.0), pose(0.3, 0.0), 1.0)
                 .hand_status(Hand::Left, 1.0)
@@ -1058,9 +1041,6 @@ mod tests {
     fn invalid_or_discontinuous_motion_is_not_corrected() {
         let translated = frame(pose(5.0, 0.0), pose(0.3, 0.0), pose(0.3, 0.0), 1.0);
         assert!(translated.hand_delta(Hand::Right, 1.0).is_none());
-        let mut off = frame(pose(0.35, 0.0), pose(0.3, 0.0), pose(0.3, 0.0), 1.0);
-        off.enabled = false;
-        assert!(off.hand_delta(Hand::Right, 1.0).is_none());
     }
 
     #[test]

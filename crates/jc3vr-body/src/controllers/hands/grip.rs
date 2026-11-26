@@ -58,7 +58,7 @@ use parking_lot::Mutex;
 
 use crate::controllers::{
     aim::gun,
-    hands::{config::HANDS_CONFIG, ik, pose as hand_pose},
+    hands::{ik, pose as hand_pose},
     held::{
         self, GripSlide, SnapStart, SnapView, placement::HandlePlacement, slide_offset,
         slide_on_bone,
@@ -234,7 +234,6 @@ pub unsafe fn before_placement(
         return None;
     }
     let controller = unsafe { character.m_AnimatedModel.m_AnimationController.as_mut() }?;
-    let enabled = HANDS_CONFIG.lock().rigid_grip;
     let targets = ik::tick_records().current;
     let weights = ik::placement_weights(local, controller as *mut AnimationController as usize);
     let mut placement = Placement {
@@ -259,7 +258,7 @@ pub unsafe fn before_placement(
             }
             // The effective plan weight preserves the yield blend without granting a pin to an
             // inactive hand or requiring its IK target to have queued successfully.
-            let weight = if enabled { weights[hand.index()] } else { 0.0 };
+            let weight = weights[hand.index()];
             let address = weapon as *const WeaponBase as usize;
             let snap = held::placement::snap(address, hand);
             // A sliding gun is not in the hand yet, so it has no body to follow.
