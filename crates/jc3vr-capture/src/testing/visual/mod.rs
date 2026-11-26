@@ -1217,7 +1217,6 @@ fn apply_profile(config: &mut impl Parts, mode: Mode) {
     post_fx.skip_histogram = true;
     post_fx.skip_anti_aliasing = false;
     let stereo = config.part_mut(&STEREO_CONFIG);
-    stereo.enabled = true;
     stereo.disable_ssao = false;
     stereo.skip_ssr = false;
     stereo.skip_gi = false;

@@ -27,8 +27,7 @@
 //! `CGameWorldObjectManager::ProcessCharacterOcclusion` both build their BFBC frustums against the
 //! active camera, so the cull-camera widen does not reach them. The active camera's `m_ProjectionF`
 //! is widened before the original call and fully restored (all 16 floats) after, so the per-eye
-//! render projections are untouched. See
-//! [`StereoConfig::widen_spawn_cull`](jc3vr_view::stereo::config::StereoConfig).
+//! render projections are untouched.
 //!
 //! Terrain patches are decided by a separate landscape system that does not read this cull frustum;
 //! [`terrain_patch_system_update`] widens its camera instead. Model render blocks re-cull against the
@@ -49,7 +48,7 @@ use jc3gi::{
     spawn_system::SpawnSystem,
     types::math::Matrix4,
 };
-use jc3vr_view::{stereo::config::STEREO_CONFIG, vr::cull_projection_standard};
+use jc3vr_view::vr::cull_projection_standard;
 use re_utilities::hook_library::HookLibrary;
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -93,7 +92,7 @@ fn get_bfbc_frustum_params(
     // original (which builds the BFBC frustum from it), then restore the full projection so the per-eye
     // render projections are untouched. No `m_FOVT1` relaxation or occlusion drop -- those are
     // cull-camera-specific.
-    let saved_proj: Option<Matrix4> = if !main && STEREO_CONFIG.query(|c| c.widen_spawn_cull) {
+    let saved_proj: Option<Matrix4> = if !main {
         is_active_camera(camera)
             .then(|| stamp_union_projection(camera))
             .flatten()
@@ -265,17 +264,18 @@ fn camera_update_frustum(this: *mut Camera, transform: *const Matrix4) {
 // highest-despawn-rank object is despawned. Under VR's wider FOV, the despawn rank's view-direction
 // weighting can cause vehicles in front of the player to be despawned when the budget is pressed. This
 // detour patches every budget entry's `m_Budget` field once (via the patcher, so it auto-reverts on
-// uninject), scaling by `spawn_budget_scale`.
+// uninject), doubling it.
 #[detour(address = jc3gi::spawn_system::SpawnSystem::Update_ADDRESS)]
 fn spawn_system_update(this: *mut SpawnSystem) {
     if !BUDGETS_SCALED.swap(true, Ordering::Relaxed) {
-        let scale = STEREO_CONFIG.lock().spawn_budget_scale;
-        if scale != 1.0 {
-            patch_spawn_budgets(this, scale);
-        }
+        patch_spawn_budgets(this, SPAWN_BUDGET_SCALE);
     }
     SPAWN_SYSTEM_UPDATE.get().unwrap().call(this);
 }
+
+/// The factor every spawn budget is scaled by, so the wider field of view does not despawn the
+/// vehicles and characters in front of the player.
+const SPAWN_BUDGET_SCALE: f32 = 2.0;
 
 /// Guard so the one-time budget patch only fires on the first `Update` call.
 static BUDGETS_SCALED: AtomicBool = AtomicBool::new(false);

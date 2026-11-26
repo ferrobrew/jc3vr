@@ -6,7 +6,7 @@ use jc3vr_hud::{
     egui_impl::{EguiState, consume_desktop_shortcut, observe_desktop_message},
     hud::{cursor, egui_panel},
 };
-use jc3vr_render::{hooks::graphics_engine::shader, screenshot};
+use jc3vr_render::screenshot;
 use jc3vr_tooling::{director, recorder};
 use jc3vr_view::{headpose, vr};
 use re_utilities::hook_library::HookLibrary;
@@ -15,7 +15,7 @@ use windows::Win32::UI::Input::KeyboardAndMouse::VK_F9;
 use windows::Win32::{
     Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM},
     UI::{
-        Input::KeyboardAndMouse::{VK_F1, VK_F2, VK_F4, VK_F7, VK_F8, VK_F10, VK_F11, VK_F12},
+        Input::KeyboardAndMouse::{VK_F1, VK_F2, VK_F4, VK_F7, VK_F8, VK_F10, VK_F12},
         WindowsAndMessaging::{
             GetClientRect, SIZE_MINIMIZED, SIZE_RESTORED, WM_ACTIVATEAPP, WM_KEYDOWN, WM_KILLFOCUS,
             WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_RBUTTONDOWN,
@@ -23,8 +23,6 @@ use windows::Win32::{
         },
     },
 };
-
-use crate::config;
 
 pub(crate) fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&WNDPROC_BINDER)
@@ -78,7 +76,7 @@ fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     }
 
     // F7 recenters the headpose: snapshots the current headpose as the neutral reference so
-    // subsequent poses are relative to it. Edge-detected like F11.
+    // subsequent poses are relative to it. Edge-detected like F8.
     if (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) && wparam.0 == VK_F7.0 as usize {
         consume_desktop_shortcut(wparam.0);
         let previous_down = (lparam.0 & 0x4000_0000) != 0;
@@ -104,7 +102,7 @@ fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     }
 
     // F8 summons/dismisses the interactive egui floating panel in VR (issue #24), together with
-    // egui's input capture (`hud::egui_panel::toggle`). Edge-detected like F7/F11.
+    // egui's input capture (`hud::egui_panel::toggle`). Edge-detected like F7.
     if (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) && wparam.0 == VK_F8.0 as usize {
         consume_desktop_shortcut(wparam.0);
         let previous_down = (lparam.0 & 0x4000_0000) != 0;
@@ -127,27 +125,6 @@ fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
         if !previous_down {
             let view = vr::toggle_stereo_pair();
             tracing::info!("F10: desktop mirror view {view:?}");
-        }
-        return LRESULT(0);
-    }
-
-    // F11 flips the sun-shadow PCF patch and reloads the shaders, for a live in-headset A/B of the
-    // patch without reaching for the debug overlay. Edge-detected like F7; consumed so the game does
-    // not also act on it.
-    if (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) && wparam.0 == VK_F11.0 as usize {
-        consume_desktop_shortcut(wparam.0);
-        let previous_down = (lparam.0 & 0x4000_0000) != 0;
-        if !previous_down {
-            let now_on = {
-                let mut cfg = config::edit();
-                cfg.stereo.patch_shadow_pcf_hash = !cfg.stereo.patch_shadow_pcf_hash;
-                cfg.stereo.patch_shadow_pcf_hash
-            };
-            shader::request_reload();
-            tracing::info!(
-                "F11: sun-shadow PCF patch {}; reloading shaders to apply",
-                if now_on { "ON" } else { "OFF" }
-            );
         }
         return LRESULT(0);
     }

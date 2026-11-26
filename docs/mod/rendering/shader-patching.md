@@ -22,13 +22,12 @@ The hooks see a shader only when the engine creates it. With launch-time injecti
 
 A reload bounces the active shader bundle. `bounce_shader_bundle` reads `GraphicsEngine::m_CurrentBundleName`, waits for the draw thread with `WaitForCPUDrawToFinish`, calls `LoadShaderBundle` with the other shadow-quality variant of the bundle, and then calls it again with the original name. `LoadShaderBundle` reloads only when the name differs from the current bundle, so a single call with the current name does nothing. The bounce re-creates every shader twice through the hooks. Between the two calls the single-pass census and the patched-vertex-shader set are reset, so both reflect the final pass only. `toggle_bundle` pairs `Shaders` with `ShadersLowShadows`, and `ShadersConstMath` with `ShadersConstMathLowShadows`.
 
-Three triggers cause a reload:
+Two triggers cause a reload:
 
 - the "Reload shaders" button in the debug UI's Rendering page, in the Stereo feature (beside the count of patched shadow PCF sites) and in the single-pass section;
-- F11, which also toggles `stereo.patch_shadow_pcf_hash`, for an in-headset comparison without the debug overlay;
 - a change of shadow quality in the game's own graphics menu, which runs the same `LoadShaderBundle` path.
 
-The button and F11 set a request flag. `process_reload_request` services it at the top of the next frame on the game thread, before the frame's draws.
+The button sets a request flag. `process_reload_request` services it at the top of the next frame on the game thread, before the frame's draws.
 
 The debug UI shows the number of patched PCF sites next to the shader reload. A count of zero means that no matching shader has been created since injection, and a reload is needed.
 
@@ -40,7 +39,7 @@ On eject, `restore_original_shaders_on_eject` bounces the bundle once more if an
 
 In stereo, sun shadows and alpha-tested foliage shimmered and grained differently in each eye. The cause is the PCF disk rotation in the sun-shadow resolve, which is seeded from the screen pixel `v0.xy` ([shaders.md, "The screen-pixel PCF rotation hash in the sun-shadow resolve"](../../engine/rendering/shaders.md#the-screen-pixel-pcf-rotation-hash-in-the-sun-shadow-resolve)). The same world point lands on a different pixel in each eye, so each eye gets a different rotation and a different tap noise pattern. The shadow lookup uses the interpolated world position, so the shadow's position and mean coverage already match between the eyes. Only the noise differs. The same applies to any shader math seeded from `v0.xy`: it is screen-space, and it differs between the eyes.
 
-`stereo.patch_shadow_pcf_hash` (on by default) zeroes the two seed constants `12.9898` and `78.233`, which are the first eight bytes of the `dp2` immediate `39 d6 4f 41 4c 77 9c 42 00 00 00 00 00 00 00 00`. The dot product becomes zero, the rotation becomes a constant, and both eyes sample the same unrotated 38-tap disk. With 38 taps the visual change is negligible. The constant occurs only in this instruction (159 sites per bundle), so the pattern scan matches nothing else.
+The pixel-shader hook zeroes the two seed constants `12.9898` and `78.233`, which are the first eight bytes of the `dp2` immediate `39 d6 4f 41 4c 77 9c 42 00 00 00 00 00 00 00 00`. The dot product becomes zero, the rotation becomes a constant, and both eyes sample the same unrotated 38-tap disk. With 38 taps the visual change is negligible. The constant occurs only in this instruction (159 sites per bundle), so the pattern scan matches nothing else.
 
 The patch does not address shadows that look uniformly stronger or longer in one eye, because a rotated disk changes the noise and not the mean. That residual is view-dependence inherent to screen-space AO: each eye computes SSAO from its own depth, so near an occluder one eye sees more of it. It is not an accumulation bug. The sun-shadow map and its cascades are computed once per frame from the shared camera and are identical between the eyes, and the SSAO temporal history is handled per eye (the SSAO first-pass force and history restore in [lighting-shadow-vr-interactions.md](../stereo/lighting-shadow-vr-interactions.md#saverestore-ledger--default-on-modifications)). A per-eye render-target hash comparison with both eyes on one camera found no cross-eye accumulator. AO shared between the eyes would require reprojecting one eye's result into the other.
 

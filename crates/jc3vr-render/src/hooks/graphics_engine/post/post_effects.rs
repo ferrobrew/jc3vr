@@ -192,7 +192,7 @@ fn apply_world_filters(
     a7: *mut c_void,
     a8: *mut c_void,
 ) {
-    let gated = (later_scene() || far_phase()) && STEREO_CONFIG.query(|c| c.gate_eye1_dt);
+    let gated = later_scene() || far_phase();
     TraceState::record_eye(TraceEvent::ApplyWorldFilters { gated });
     let dt = if gated { 0.0 } else { dt };
     APPLY_WORLD_FILTERS
@@ -206,7 +206,7 @@ fn apply_world_filters(
 // dispatches for the same once-per-real-frame reason.
 #[detour(address = jc3gi::graphics_engine::post_effects::PostEffectsManager::ApplyGlobalFilters_ADDRESS)]
 fn apply_global_filters(this: *mut c_void, dt: f32, ctx: *mut c_void) {
-    let gated = (later_scene() || far_phase()) && STEREO_CONFIG.query(|c| c.gate_eye1_dt);
+    let gated = later_scene() || far_phase();
     TraceState::record_eye(TraceEvent::ApplyGlobalFilters { gated });
     let dt = if gated { 0.0 } else { dt };
     APPLY_GLOBAL_FILTERS.get().unwrap().call(this, dt, ctx);

@@ -24,7 +24,6 @@ pub enum Phase {
     Eye1Drain,
     Eye1Post,
     Present,
-    NonStereoDraw,
     FrameEnd,
 }
 
@@ -71,8 +70,7 @@ fn phase_name(code: u32) -> &'static str {
         9 => "Eye1Drain",
         10 => "Eye1Post",
         11 => "Present",
-        12 => "NonStereoDraw",
-        13 => "FrameEnd",
+        12 => "FrameEnd",
         _ => "?",
     }
 }

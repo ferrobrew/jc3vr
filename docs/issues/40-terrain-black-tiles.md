@@ -179,8 +179,7 @@ settings-change path — processed at frame start alongside the shader-reload re
 
 **Confirmed in-headset: scaling the detail budget fixes the black tiles** (even 2× sufficed in the
 test scene; the shipping default is 4× for headroom, ~20 MB of VRAM). The shipping change is the
-budget scale (`terrain_detail_budget_scale`, applied automatically at the first frame start after
-injection and re-appliable from the debug UI) plus the render-block-type registry bisect panel that
+budget scale (a constant 4, applied once at the first frame start after injection) plus the render-block-type registry bisect panel that
 found the owning block. The full diagnostic state used along the way — the LOD-clip/visibility/
 terrain-cull forces, the heartbeat instrumentation, and the base-terrain probes — is preserved on
 the `issue-40-investigation` branch.

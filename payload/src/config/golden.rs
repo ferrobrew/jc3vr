@@ -16,7 +16,7 @@ use jc3vr_tooling::director::keymap::{Action, Binding, Chord};
 use jc3vr_view::vr::{MirrorView, VR_CONFIG};
 use pretty_assertions::assert_eq;
 
-use crate::config::{CONFIG, Config, edit, format, load::parse, test_fixture};
+use crate::config::{CONFIG, Config, format, load::parse, test_fixture};
 
 /// A configuration with settings changed across many groups and value kinds: floats that widen
 /// from `f32`, an option, a list of another length, a list of tables, an enum, a borrowed string
@@ -193,7 +193,7 @@ fn a_messy_file_loads_as_it_did() {
 fn the_fixture_restores_both_the_settings_and_the_edit_status() {
     {
         let _fixture = test_fixture();
-        edit().hud.distance = 42.0;
+        HUD_CONFIG.edit().distance = 42.0;
         assert!(edit_pending());
     }
     let _fixture = test_fixture();

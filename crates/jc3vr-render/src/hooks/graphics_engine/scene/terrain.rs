@@ -10,12 +10,10 @@
 //! VR's wide FOV admits roughly 2–3x the quads and oversubscribes them.
 //!
 //! The fix scales the budget: the five buffer-size immediates in the terrain setup types' `Create`
-//! functions are patched to `shipped * scale` (through the patcher, so they auto-revert on
-//! uninject), and the two setup types are destroyed and re-created so the larger buffers go live —
-//! required because injection happens after the engine has already created them, and these types'
-//! `Recreate` is a no-op. Applied automatically at the first frame start after
-//! injection and re-appliable from the debug UI. See
-//! [`StereoConfig::terrain_detail_budget_scale`](jc3vr_view::stereo::config::StereoConfig).
+//! functions are patched to [`BUDGET_SCALE`] times their shipped values (through the patcher, so
+//! they auto-revert on uninject), and the two setup types are destroyed and re-created so the larger
+//! buffers go live — required because injection happens after the engine has already created them,
+//! and these types' `Recreate` is a no-op. Applied once, at the first frame start after injection.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -28,7 +26,6 @@ use jc3gi::graphics_engine::{
         TerrainDetailBudgetValues,
     },
 };
-use jc3vr_view::stereo::config::STEREO_CONFIG;
 use re_utilities::hook_library::HookLibrary;
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -58,19 +55,11 @@ fn terrain_detail_draw(
     }
 }
 
-/// Set when a detail-budget apply is wanted; consumed by [`process_budget_request`] at the next
-/// frame start on the game thread.
-static BUDGET_APPLY_REQUESTED: AtomicBool = AtomicBool::new(false);
+/// The multiplier on the shipped detail-budget buffer sizes, enough for the headset's field of view.
+const BUDGET_SCALE: u32 = 4;
 
-/// Whether the automatic once-per-session apply has been requested yet.
-static STARTUP_APPLY_DONE: AtomicBool = AtomicBool::new(false);
-
-/// Request the detail-tessellation budget apply (from the debug UI): patch the setup types'
-/// buffer-size immediates by the configured scale and re-create the two terrain setup types so the
-/// larger buffers go live.
-pub fn request_detail_budget_apply() {
-    BUDGET_APPLY_REQUESTED.store(true, Ordering::Relaxed);
-}
+/// Whether the once-per-session apply has run.
+static APPLIED: AtomicBool = AtomicBool::new(false);
 
 /// The five buffer-size immediates (via their [`TerrainDetailBudgetPatchSites`] addresses) and their
 /// shipped values (via [`TerrainDetailBudgetValues`]): the detail vertex/index/texel budgets the GPU
@@ -98,21 +87,14 @@ const BUDGET_SITES: [(u64, u32); 5] = [
     ),
 ];
 
-/// If an apply was requested, patch the detail-budget buffer sizes to `shipped * scale` and
-/// re-create the two terrain setup types so the new sizes take effect. Their
-/// `Recreate` is a no-op, so this goes through the same `Destroy` + `Create` pair `RegisterType`
-/// runs at startup, with the render engine's own resource context. Call once per frame on the game
-/// thread with no draw in flight; the immediates auto-revert on uninject.
-pub fn process_budget_request() {
-    let scale = STEREO_CONFIG
-        .query(|c| c.terrain_detail_budget_scale)
-        .clamp(1, 16);
-    // The automatic once-per-session apply: the first frame-start after injection, when the engine
-    // singletons are guaranteed live. Skipped at scale 1 (the shipped sizes). The flag is set only
-    // after the patcher and engine-singleton checks succeed, so an early return leaves it unset and
-    // retries next frame.
-    let startup = !STARTUP_APPLY_DONE.load(Ordering::Relaxed) && scale > 1;
-    if !BUDGET_APPLY_REQUESTED.swap(false, Ordering::Relaxed) && !startup {
+/// Once per session, patch the detail-budget buffer sizes to [`BUDGET_SCALE`] times their shipped
+/// values and re-create the two terrain setup types so the new sizes take effect. Their `Recreate`
+/// is a no-op, so this goes through the same `Destroy` + `Create` pair `RegisterType` runs at
+/// startup, with the render engine's own resource context. Call once per frame on the game thread
+/// with no draw in flight; the immediates auto-revert on uninject.
+pub fn apply_detail_budget_once() {
+    // The flag is set only after the patcher check succeeds, so an early return retries next frame.
+    if APPLIED.load(Ordering::Relaxed) {
         return;
     }
     {
@@ -125,13 +107,11 @@ pub fn process_budget_request() {
             // types' `Create` functions (verified); the patcher restores the shipped
             // bytes on uninject.
             unsafe {
-                patcher.patch(site as usize, &(shipped * scale).to_le_bytes());
+                patcher.patch(site as usize, &(shipped * BUDGET_SCALE).to_le_bytes());
             }
         }
     }
-    if startup {
-        STARTUP_APPLY_DONE.store(true, Ordering::Relaxed);
-    }
+    APPLIED.store(true, Ordering::Relaxed);
     // SAFETY: runs at frame start on the game thread; the engine singletons are live. The draw is
     // drained before the types destroy and re-create their GPU buffers (the same discipline as the
     // shader-reload path).
@@ -163,7 +143,7 @@ pub fn process_budget_request() {
             }
         }
         tracing::info!(
-            scale,
+            scale = BUDGET_SCALE,
             recreated,
             "terrain detail budget applied (#40): buffer sizes scaled and setup types re-created"
         );

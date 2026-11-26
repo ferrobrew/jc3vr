@@ -268,7 +268,7 @@ const PROJECTED_PROLOGUE: usize = 10;
 const PATTERN: [u32; 2] = [0x3eef_965b, 0xbf34_2246];
 
 /// A shader as the payload creates it: the sun-shadow filter's rotation vector zeroed
-/// (`patch_shadow_pcf_hash`).
+/// (the shadow PCF patch).
 fn as_created(blob: &[u8]) -> Vec<u8> {
     let mut code = blob.to_vec();
     let mut patched = false;

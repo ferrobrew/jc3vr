@@ -12,8 +12,7 @@
 //! depth across each patch's interior.
 //!
 //! Like the level-of-detail and tessellation choices the rest of the engine makes from the centred
-//! active camera, the prep is a choice both eyes should share: with `stereo.terrain_prep_from_centre`
-//! on, an eye-at-a-time dispatch stages the centre camera's position for those passes, and puts the
+//! active camera, the prep is a choice both eyes should share: an eye-at-a-time dispatch stages the centre camera's position for those passes, and puts the
 //! eye's back for the rest of the pass list.
 
 use jc3gi::{
@@ -23,7 +22,7 @@ use jc3gi::{
     },
     types::math::Vector4,
 };
-use jc3vr_view::{stereo, stereo::config::STEREO_CONFIG};
+use jc3vr_view::stereo;
 
 /// Stage the centre camera's position into the vertex globals for a terrain patch prep pass in an
 /// eye-at-a-time stereo dispatch. Returns the eye's staged row for [`restore`] when it changed
@@ -35,7 +34,6 @@ pub(crate) fn stage_centre_camera(
     if !PREP_PASSES.contains(&rc.m_ActiveRenderPass)
         || !stereo::active()
         || stereo::layout::collapse_active()
-        || !STEREO_CONFIG.query(|c| c.terrain_prep_from_centre)
     {
         return None;
     }

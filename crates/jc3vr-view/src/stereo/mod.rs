@@ -1,7 +1,7 @@
 //! Live stereo runtime state and the per-eye gating helpers shared across the render hooks.
 //!
-//! The Draw driver (`hooks::core::game`) maintains [`StereoState`]: it sets `active` from
-//! `config.stereo.enabled` at the start of a frame and bumps `draw_index` per eye dispatch. Hooks
+//! The Draw driver (`hooks::core::game`) maintains [`StereoState`]: it sets `active` at the start
+//! of every frame and bumps `draw_index` per eye dispatch. Hooks
 //! read it via [`is_second_eye`] / [`draw_index`] / [`active`]. This is *runtime* state,
 //! distinct from the `stereo` config toggles in [`crate::config`].
 

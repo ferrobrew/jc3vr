@@ -244,7 +244,6 @@ fn create_fragment_program(
     // for the duration of the (bytecode-copying) CreatePixelShader call, then restore the caller's
     // pointer. `saved` keeps the patched copy alive across the call.
     let mut saved: Option<(*const u8, u64, Vec<u8>)> = None;
-    let patch_pcf = STEREO_CONFIG.lock().patch_shadow_pcf_hash;
     // The screen-space decal permutations' depth-UV bias, the one rewrite here that *grows* the blob.
     let bias_ssdecal = ss_decal::shader_rewrite_enabled();
     // The final composite's vignette and lens dirt, mapped over one eye instead of the whole
@@ -338,14 +337,13 @@ fn create_fragment_program(
         p.m_Code = saved.as_ref().expect("just set").2.as_ptr();
         p.m_Size = len;
     } else if !jc3vr_core::is_shutting_down()
-        && (patch_pcf || bias_ssdecal || localize_overlays || localize_bloom)
         && let Some(p) = unsafe { params.as_mut() }
     {
         let size = p.m_Size as usize;
         if !p.m_Code.is_null() && size >= SEED.len() {
             let code = unsafe { std::slice::from_raw_parts(p.m_Code, size) };
             let mut copy = code.to_vec();
-            let pcf = if patch_pcf { zero_seeds(&mut copy) } else { 0 };
+            let pcf = zero_seeds(&mut copy);
             if pcf > 0 {
                 // A raw byte-patch leaves the DXBC container checksum stale; D3D consumers that
                 // validate it (the translation layers under Proton do) reject the blob, so the
@@ -404,7 +402,7 @@ fn create_fragment_program(
     // other rewrites left alone. The camera and screen-door rewrites do not count: the water's
     // per-eye draws stage each eye's camera rows into `cb0` themselves, which the engine's bytecode
     // reads, and the only pattern the water hashes from its pixel position is the shadow rotation
-    // `patch_shadow_pcf_hash` zeroes.
+    // the shadow PCF patch zeroes.
     let substituted_before_camera = saved.is_some();
     let mut rewrote_velocity = false;
     if !jc3vr_core::is_shutting_down()

@@ -15,7 +15,7 @@ use jc3gi::graphics_engine::{
     render_engine::{RenderBlockTypeInstances, RenderBlockTypeRegistry},
 };
 use jc3vr_core::config::engine::{Parts, edit_parts};
-use jc3vr_render::hooks::graphics_engine::{config::EXPOSURE_CONFIG, terrain};
+use jc3vr_render::hooks::graphics_engine::config::EXPOSURE_CONFIG;
 use jc3vr_view::stereo::config::STEREO_CONFIG;
 
 /// The Experimental page's entry point: the button that opens the render RE window.
@@ -161,8 +161,7 @@ fn diagnostics_controls(ui: &mut egui::Ui) {
 
     // The base VolumetricTerrain block (CRenderBlockTerrain) -- dormant in the game world (the live
     // terrain is the volumetric-patch system + the TerrainDetail rock skin), so these engine flags are
-    // inert there; kept for other worlds. The #40 detail-budget controls sit at the bottom of this
-    // section. Live engine flags, not saved; reset on level reload.
+    // inert there; kept for other worlds. Live engine flags, not saved; reset on level reload.
     ui.collapsing("Base terrain culling (walls; engine, live)", |ui| {
         match unsafe { BaseTerrain::get() } {
             Some(terrain) => {
@@ -240,27 +239,6 @@ fn diagnostics_controls(ui: &mut egui::Ui) {
                 ui.label("Base terrain render type not initialized yet.");
             }
         }
-        ui.separator();
-        ui.label(
-            "Detail budget (the #40 black-tile fix: the GPU detail pipeline drops whatever \
-             overflows its fixed vertex/index/texel buffers, and VR's wide FOV oversubscribes \
-             them -- the losing tiles render black). Applied automatically at startup:",
-        );
-        ui.horizontal(|ui| {
-            ui.add(
-                egui::Slider::new(
-                    &mut cfg.part_mut(&STEREO_CONFIG).terrain_detail_budget_scale,
-                    1..=16,
-                )
-                .text("budget scale"),
-            );
-            if ui
-                .button("Re-apply (patch sizes + recreate setup buffers)")
-                .clicked()
-            {
-                terrain::request_detail_budget_apply();
-            }
-        });
     });
 
     // The engine's render-block-type registry: every registered type by name, with its engine-native
@@ -306,10 +284,6 @@ fn diagnostics_controls(ui: &mut egui::Ui) {
         ui.checkbox(
             &mut cfg.part_mut(&EXPOSURE_CONFIG).gate_update,
             "ToneMappingEffect::Update ring-index step",
-        );
-        ui.checkbox(
-            &mut cfg.part_mut(&STEREO_CONFIG).gate_eye1_dt,
-            "Eye-1 dt=0 (world fade / sun / heat-haze step once per frame)",
         );
     });
 

@@ -10,15 +10,15 @@
 //! [`Schema`](engine::Schema) this module registers for [`Config`] ([`schema`]). Each subsystem
 //! reads and changes its own settings through the [`ConfigSlot`](engine::ConfigSlot) it declares
 //! beside their type; this module owns the aggregate, binds every slot to its place in it
-//! ([`slots`]), and keeps the access paths over the whole configuration ([`CONFIG`], [`get`],
-//! [`edit`]), each of which registers the configuration on first use ([`register`]).
+//! ([`slots`]), and keeps the access paths over the whole configuration ([`CONFIG`] and [`get`]),
+//! each of which registers the configuration on first use ([`register`]).
 //!
 //! The configuration is saved to `settings.toml` in the per-user configuration directory
 //! ([`paths`]), which holds only the settings that differ from their defaults ([`format`]), so a
 //! setting the user never changed follows its default when a later build changes it. It is loaded
 //! once at startup, before VR initialization reads it ([`init`]); the load is tolerant ([`load`]),
 //! so a file from another build costs at most the settings it gets wrong. A change the user meant
-//! goes through an edit guard (a slot's `edit`, or [`edit`]), which marks the configuration
+//! goes through an edit guard (a slot's `edit`), which marks the configuration
 //! changed; [`tick`] saves it from the game thread's frame once the changes settle, handing the
 //! write to a short-lived writer thread, and [`shutdown`] flushes a pending save. A change the
 //! payload makes on its own, such as a fallback after a failure, takes a plain lock instead and is
@@ -68,10 +68,7 @@ use jc3vr_body::{
     hooks::{character::BodyIkConfig, input::MovementConfig},
 };
 use jc3vr_core::{
-    config::{
-        engine,
-        engine::{EditGuard, SlotGuard},
-    },
+    config::{engine, engine::SlotGuard},
     hooks::online::OnlineConfig,
 };
 use jc3vr_gameplay::controllers::ControllersConfig;
@@ -93,7 +90,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// Lock it directly to read, and for a change the payload makes on its own (a fallback, a value
 /// discovered at runtime). A change the user meant (a debug UI control, a pause menu item, a
-/// hotkey, a calibration) goes through [`edit`] instead, so that it is saved.
+/// hotkey, a calibration) goes through an edit guard instead, so that it is saved.
 pub(crate) static CONFIG: ConfigLock = ConfigLock(());
 
 /// The lock over the whole configuration; see [`CONFIG`].
@@ -106,20 +103,6 @@ impl ConfigLock {
         slots::ROOT.lock()
     }
 }
-
-/// Lock the configuration for a change the user meant. The guard derefs to the [`Config`]; when it
-/// drops, the configuration is marked changed and [`tick`] saves it once the changes settle.
-/// Holding the guard through a frame of debug UI without changing anything is harmless: the save
-/// compares the serialized text with the file's and writes nothing when they match.
-///
-/// Like a plain lock of [`CONFIG`], it must not be held while locking the VR runtime state.
-pub(crate) fn edit() -> ConfigEdit {
-    register();
-    slots::ROOT.edit()
-}
-
-/// The guard [`edit`] returns.
-pub(crate) type ConfigEdit = EditGuard<Config>;
 
 /// Load the settings file into the configuration. Called once at startup, before anything reads
 /// the configuration for initialization; see [`engine::init`].

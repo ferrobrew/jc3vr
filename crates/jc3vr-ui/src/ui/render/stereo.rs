@@ -1,5 +1,5 @@
-//! The core stereo widgets: the double-Draw switch, FSR, and the shader reload that applies the
-//! shader patches.
+//! The core stereo widgets: the anti-aliasing, the shadow fit, and the shader reload that applies
+//! the shader patches.
 
 use jc3vr_core::config::engine::Parts;
 use jc3vr_render::hooks::graphics_engine::{shader, shadow_fit_gap_m};
@@ -9,11 +9,6 @@ use jc3vr_view::{
 };
 
 pub(super) fn section(ui: &mut egui::Ui, cfg: &mut impl Parts) {
-    ui.checkbox(
-        &mut cfg.part_mut(&STEREO_CONFIG).enabled,
-        "Stereo (double-Draw)",
-    )
-    .on_hover_text("Issue a second game.Draw per frame; CClock::Update is gated to once/frame");
     ui.horizontal(|ui| {
         ui.label("Anti-aliasing");
         for (choice, label, hover) in [
@@ -97,16 +92,6 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut impl Parts) {
          between it and the render camera does not shift every shadow off its object. Off for an \
          A/B of shadows detached from distant objects while moving fast.",
     );
-    ui.checkbox(
-        &mut cfg.part_mut(&STEREO_CONFIG).terrain_prep_from_centre,
-        "Terrain patch prep from the centre camera",
-    )
-    .on_hover_text(
-        "Runs the terrain patches' per-frame detail and morph from the centre camera when the eyes \
-         are drawn one at a time, as single-pass runs it once for both. Off, each eye morphs the \
-         ground from its own position, so the eyes disagree about the surface by a fraction of a \
-         millimetre.",
-    );
     ui.label(format!(
         "Render camera to the shadow fit's camera: {:.2} m",
         shadow_fit_gap_m()
@@ -133,6 +118,6 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut impl Parts) {
     .response
     .on_hover_text(
         "Re-creates every shader so the shader patches take effect on shaders created before \
-         injection (F11 toggles the shadow PCF patch and reloads).",
+         injection.",
     );
 }

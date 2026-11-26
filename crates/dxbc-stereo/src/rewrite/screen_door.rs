@@ -28,7 +28,7 @@
 //!
 //! Any `dp2` of the pixel position with a fixed vector is such a hash and is rewritten. The other one
 //! the game's shaders build is the sun-shadow filter's rotation, `l(12.9898, 78.233, 0, 0)`, whose
-//! vector the payload zeroes before this rewrite runs (`patch_shadow_pcf_hash`); a zero vector makes
+//! vector the payload zeroes before this rewrite runs (the shadow PCF patch); a zero vector makes
 //! the product a constant and is left alone.
 //!
 //! The rewrite composes after the eye-camera rewrite, which declines a shader already declaring the

@@ -771,10 +771,6 @@ pub static STEREO_CONFIG: ConfigSlot<StereoConfig> = ConfigSlot::new("stereo");
 pub struct StereoConfig {
     /// Single-pass stereo; see [`SinglePassConfig`].
     pub single_pass: SinglePassConfig,
-    /// Master switch: render the scene twice, once per eye.
-    pub enabled: bool,
-    /// Zero the post-effect dt on eye 1 (so once-per-frame accumulators do not double-step).
-    pub gate_eye1_dt: bool,
     /// Diagnostic: skip the SSAO pass on both eyes in stereo, to confirm whether SSAO drives the
     /// "stronger in one eye" darkening. (Equivalent to lowering the in-game AO setting, but toggleable
     /// live.)
@@ -794,30 +790,11 @@ pub struct StereoConfig {
     /// depth shift, so the temporal jitter cycles it -- the prime suspect for the blob-scale
     /// "shadows flicker in and out" artifact in MainColor (issue #10's residual flicker).
     pub skip_ao_volumes: bool,
-    /// Patch the screen-space PCF rotation hash out of the sun-shadow shaders at creation, so both
-    /// eyes use the same unrotated 38-tap PCF (removes the per-eye shadow shimmer + foliage grain).
-    /// Applies only to shaders created after the hook installs; trigger a shader reload (e.g. change
-    /// shadow quality) if injected mid-session. See `jc3vr_render::hooks::graphics_engine::shader`.
-    pub patch_shadow_pcf_hash: bool,
     /// Diagnostic: disable the sun-shadow system entirely through the engine's own settings path
     /// (`CShadowManager` enabled flag, synced by the sim-side `UpdateRender` via `SetEnabled`). The
     /// sharpest shadow-pipeline discriminator: an artifact that survives with no shadows at all
     /// cannot be shadow data.
     pub disable_sun_shadows: bool,
-    /// Widen the spawn system and character occlusion BFBC frustums to cover both eyes. Both
-    /// `CSpawnSystem::Update` and `CGameWorldObjectManager::ProcessCharacterOcclusion` build their BFBC
-    /// cull frustums against the camera manager's active camera (not the occluder manager's cull camera),
-    /// so the scene-cull widen does not reach them. This widens the active camera's projection for those
-    /// calls (with a full save/restore so the per-eye render projections are untouched), so the spawn
-    /// visibility gate and character occlusion cull account for the combined VR eye frusta. VR only.
-    pub widen_spawn_cull: bool,
-    /// Scale factor for spawn system budget limits. The spawn system enforces per-resource-def max
-    /// object counts (loaded from `settings/spawn_budget_pools.bin`); when the count is exceeded it
-    /// despawns the highest-rank object, which under VR's wider FOV can pop vehicles/NPCs in front of
-    /// the player. This multiplies every budget entry by the given factor (e.g. `2.0` doubles all
-    /// limits) via a one-time patch on first `CSpawnSystem::Update` call (auto-reverted on uninject).
-    /// `1.0` leaves them unchanged. Read once at startup; requires restart to change.
-    pub spawn_budget_scale: f32,
     /// Refresh every sun-shadow cascade every frame, defeating the engine's update-pattern amortisation.
     /// The engine re-fits and re-renders cascade level L only every `2^L` frames (via
     /// `ShadowManager::m_CascadeUpdateLevels`), copying each cascade's fit forward between refreshes, so
@@ -835,23 +812,6 @@ pub struct StereoConfig {
     /// material shaders subtract the render camera's position before applying it, so any gap
     /// between the two shifts every shadow by that gap in the world.
     pub shadow_anchor_to_fit: bool,
-    /// Run the terrain patch system's per-frame prep (its detail, triangles, and morph targets) from
-    /// the centre camera's position in every dispatch that renders one eye at a time, as the
-    /// single-pass collapse runs it once for both eyes. The prep morphs each patch's interior by its
-    /// distance from the camera, so without this the two eyes of a multipass frame see the ground's
-    /// surface at slightly different places. See `stereo::terrain_prep`. VR only.
-    pub terrain_prep_from_centre: bool,
-    /// The multiplier for the terrain detail-tessellation GPU budget buffers — the fix for the
-    /// world-locked black cliff-wall/cave-ceiling tiles (issue #40). The detail rock skin is built
-    /// by a GPU pipeline that allocates vertices/indices/texels from fixed-size buffers with
-    /// unbounded cursors; whatever overflows is silently dropped and the losing tiles render
-    /// black. The shipped sizes fit the flatscreen FOV; VR's wide FOV admits more quads and
-    /// oversubscribes them. The buffer-size immediates in the setup types' `Create` functions are
-    /// patched to `shipped * scale` (auto-reverting on uninject) and the two setup types are
-    /// re-created, automatically at the first frame start after injection and on demand from the
-    /// debug UI. `1` leaves the shipped sizes (and skips the automatic apply). VR and flatscreen;
-    /// **default 4.**
-    pub terrain_detail_budget_scale: u32,
 }
 impl SinglePassConfig {
     pub const fn new() -> Self {
@@ -940,21 +900,14 @@ impl StereoConfig {
     pub const fn new() -> Self {
         Self {
             single_pass: SinglePassConfig::new(),
-            enabled: true,
-            gate_eye1_dt: true,
             disable_ssao: false,
             skip_ssr: false,
             skip_gi: false,
             skip_ao_volumes: false,
-            patch_shadow_pcf_hash: true,
             disable_sun_shadows: false,
-            widen_spawn_cull: true,
-            spawn_budget_scale: 2.0,
             shadow_update_every_frame: false,
             shadow_fit_unpadded: true,
             shadow_anchor_to_fit: true,
-            terrain_prep_from_centre: true,
-            terrain_detail_budget_scale: 4,
         }
     }
 }

@@ -174,7 +174,7 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
         // PCF-patch hook re-creates the already-loaded shaders (injection is normally after the game
         // has built them).
         graphics_engine::shader::process_reload_request();
-        graphics_engine::terrain::process_budget_request();
+        graphics_engine::terrain::apply_detail_budget_once();
 
         // Execute queued Scaleform debug operations (display-tree dump, clip visibility) here on
         // the game thread, which is the Scaleform capture thread.
@@ -326,15 +326,10 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
 
         let game = game.as_mut().unwrap();
 
-        // Start of a frame: publish the master toggle from config into the live stereo state, which
-        // the render hooks read via `jc3vr_render::stereo`. Copy the config values out and drop the lock
-        // before driving the eye loop / engine work.
-        let stereo = Config::lock_query(|c| c.stereo.enabled);
-        // A running VR session always renders both eyes (the XR swapchain has a slice per eye), so
-        // force the stereo double-Draw on regardless of the flatscreen stereo toggle.
+        // Start of a frame: every frame renders both eyes, which the render hooks read via
+        // `jc3vr_render::stereo`.
         let render_mode = dispatch::mode();
-        let stereo = stereo || vr_running || render_mode != RenderMode::Native;
-        STEREO_STATE.lock().active = stereo;
+        STEREO_STATE.lock().active = true;
 
         // Whether this frame's tail (final drain, blit, mirror, submit) runs on the tail worker
         // instead of inline, overlapping the next frame's sim with the draw thread's last walk and
@@ -346,8 +341,7 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
         // before the XR submit in this mode, costing it a little HMD submit latency. Requires a VR
         // frame to hand over, and falls back to the inline tail while a render trace needs the
         // eyes drained on this thread before the frame ends.
-        let defer_tail = stereo
-            && vr_frame.is_some()
+        let defer_tail = vr_frame.is_some()
             && !tracing_active()
             && render_mode == RenderMode::Native
             && !visual::requires_inline_tail();
@@ -359,8 +353,7 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
             || Config::lock_query(|c| c.stereo.single_pass.collapse_direct_blit);
         match vr_frame.as_mut() {
             Some(frame)
-                if stereo
-                    && frame.should_render()
+                if frame.should_render()
                     && direct_route
                     && render_mode.selected_eye().is_none() =>
             {
@@ -369,184 +362,166 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
             _ => vr::disarm_direct(),
         }
 
-        if stereo {
-            #[cfg(feature = "profiler")]
-            let snapshot_scope = puffin::profile_scope_custom!("Stereo snapshots");
-            mark(Phase::Eye0Snapshot);
-            // Snapshot the reflection-proxy depth-history before the first dispatch and restore it
-            // before each later one, so every dispatch makes the same per-slot decisions -- the
-            // state then advances once per real frame instead of once per dispatch, otherwise
-            // water reflections flicker.
-            let effect_info = snapshot_effect_info();
-            // Snapshot the prologue frame counters so we can rewind them before each later
-            // dispatch, keeping all dispatches on the same TAA-jitter phase, shadow parity, and CB
-            // ring slot.
-            let frame_counters = snapshot_frame_counters();
-            // Snapshot the SSAO temporal history index and the GI cascade index so every dispatch
-            // resolves against the same SSAO slot and refreshes the same LPV cascade -- the two
-            // passes that carry an unsynchronized per-eye history. The SSAO index advances once per
-            // SSAO draw and is not reset by the first-pass force, and the GI index toggles which
-            // cascade each GI draw refreshes; unrestored, each is half of the per-eye MainColor
-            // divergence.
-            let ssao_history = snapshot_ssao_history();
-            let gi_cascade = snapshot_gi_cascade();
-            // Diagnostic (only while a trace is collecting, so it costs nothing in normal play):
-            // confirm the between-dispatch restores are actually reaching live state -- a
-            // `None`/null here means the snapshot missed and the restore is a silent no-op.
-            if tracing_active() {
-                tracing::info!(
-                    target: "stereo",
-                    "restore diag: ssao_ptr_null={} ssao_snap={:?} gi_snap={:?}",
-                    ssao::ssao_pass().is_null(),
-                    ssao_history,
-                    gi_cascade,
-                );
-            }
-            // Snapshot the add/draw list parity so each later dispatch's CKeep1000Frames toggles
-            // it to the same value as the first, making SaveRenderFrameData set the same list
-            // pointers. With the parity matched, RotateRenderFrameData runs on every dispatch rather
-            // than being skipped on eye 1, so the overflow list is processed and the external
-            // render camera is updated on all of them too.
-            let saved_add_buffer = *get_current_add_buffer();
-            #[cfg(feature = "profiler")]
-            drop(snapshot_scope);
+        #[cfg(feature = "profiler")]
+        let snapshot_scope = puffin::profile_scope_custom!("Stereo snapshots");
+        mark(Phase::Eye0Snapshot);
+        // Snapshot the reflection-proxy depth-history before the first dispatch and restore it
+        // before each later one, so every dispatch makes the same per-slot decisions -- the
+        // state then advances once per real frame instead of once per dispatch, otherwise
+        // water reflections flicker.
+        let effect_info = snapshot_effect_info();
+        // Snapshot the prologue frame counters so we can rewind them before each later
+        // dispatch, keeping all dispatches on the same TAA-jitter phase, shadow parity, and CB
+        // ring slot.
+        let frame_counters = snapshot_frame_counters();
+        // Snapshot the SSAO temporal history index and the GI cascade index so every dispatch
+        // resolves against the same SSAO slot and refreshes the same LPV cascade -- the two
+        // passes that carry an unsynchronized per-eye history. The SSAO index advances once per
+        // SSAO draw and is not reset by the first-pass force, and the GI index toggles which
+        // cascade each GI draw refreshes; unrestored, each is half of the per-eye MainColor
+        // divergence.
+        let ssao_history = snapshot_ssao_history();
+        let gi_cascade = snapshot_gi_cascade();
+        // Diagnostic (only while a trace is collecting, so it costs nothing in normal play):
+        // confirm the between-dispatch restores are actually reaching live state -- a
+        // `None`/null here means the snapshot missed and the restore is a silent no-op.
+        if tracing_active() {
+            tracing::info!(
+                target: "stereo",
+                "restore diag: ssao_ptr_null={} ssao_snap={:?} gi_snap={:?}",
+                ssao::ssao_pass().is_null(),
+                ssao_history,
+                gi_cascade,
+            );
+        }
+        // Snapshot the add/draw list parity so each later dispatch's CKeep1000Frames toggles
+        // it to the same value as the first, making SaveRenderFrameData set the same list
+        // pointers. With the parity matched, RotateRenderFrameData runs on every dispatch rather
+        // than being skipped on eye 1, so the overflow list is processed and the external
+        // render camera is updated on all of them too.
+        let saved_add_buffer = *get_current_add_buffer();
+        #[cfg(feature = "profiler")]
+        drop(snapshot_scope);
 
-            // The per-eye camera offset is injected on the render camera in the SetupRenderCamera
-            // hook (see hooks::camera and docs/engine/rendering/rendering.md section 2); here we just drive
-            // the dispatches and tag each with its eye index via STEREO_STATE.draw_index.
-            // Eye 1 reaches the screen (the other's flip is blocked). A share frame (issue #32) prepends a far-only
-            // dispatch at eye 0's pose: it renders the far draw-list runs and the gated far-regime
-            // types into the G-buffer, which the render-pass-range hook captures for the two near
-            // dispatches to composite.
-            let collapsed = layout::collapse_active();
-            let plan = DispatchPlan::new(render_mode, collapsed, far_field::share_configured());
-            let share_frame = plan.share_frame();
-            let present_eye = render_mode.selected_eye().unwrap_or(1);
-            TraceState::record(TraceEvent::FrameBegin {
-                stereo: true,
-                present_eye: Some(present_eye),
-                restore_counters: Some(true),
-            });
+        // The per-eye camera offset is injected on the render camera in the SetupRenderCamera
+        // hook (see hooks::camera and docs/engine/rendering/rendering.md section 2); here we just drive
+        // the dispatches and tag each with its eye index via STEREO_STATE.draw_index.
+        // Eye 1 reaches the screen (the other's flip is blocked). A share frame (issue #32) prepends a far-only
+        // dispatch at eye 0's pose: it renders the far draw-list runs and the gated far-regime
+        // types into the G-buffer, which the render-pass-range hook captures for the two near
+        // dispatches to composite.
+        let collapsed = layout::collapse_active();
+        let plan = DispatchPlan::new(render_mode, collapsed, far_field::share_configured());
+        let share_frame = plan.share_frame();
+        let present_eye = render_mode.selected_eye().unwrap_or(1);
+        TraceState::record(TraceEvent::FrameBegin {
+            stereo: true,
+            present_eye: Some(present_eye),
+            restore_counters: Some(true),
+        });
 
-            let dispatches = plan.dispatches;
-            for (ordinal, &(eye, far_phase)) in dispatches.iter().enumerate() {
-                if ordinal > 0 {
-                    #[cfg(feature = "profiler")]
-                    puffin::profile_scope!("Between-eye restore");
-                    mark(Phase::BetweenEyesRestore);
-                    if let Some(state) = &effect_info {
-                        restore_effect_info(state);
-                    }
-                    restore_frame_counters(frame_counters);
-                    // Now that the frame counters are pinned back to the first dispatch's values,
-                    // force the terrain tessellation blocks to re-upload their per-slot constant
-                    // buffers: they cache the baked (per-eye off-axis) view-projection keyed on
-                    // the render frame number, which the restore above just made identical to the
-                    // first dispatch's, so this dispatch would otherwise reuse its projection for
-                    // the distant tessellated terrain (a sheared horizon wedge in VR).
-                    invalidate_terrain_cbs();
-                    if let Some(history) = ssao_history {
-                        restore_ssao_history_indices(history);
-                    }
-                    if let Some(cascade) = gi_cascade {
-                        restore_gi_cascade_index(cascade);
-                    }
-                    // Restore the add/draw parity so this dispatch's CKeep1000Frames produces the
-                    // same toggle as the first, and SaveRenderFrameData zeroes the same add-list
-                    // (removing the earlier dispatch's draw-time additions like SSAO/post blocks).
-                    *get_current_add_buffer() = saved_add_buffer;
-                }
-
-                DRAW_COUNTS.clear();
-                graphics_engine::post_effects::reset_post_block_gate();
-                TraceState::record(TraceEvent::DrawBegin { eye });
-                {
-                    let mut state = STEREO_STATE.lock();
-                    state.draw_index = eye;
-                    state.far_phase = far_phase;
-                    state.share_frame = share_frame;
-                    state.dispatch_ordinal = ordinal;
-                    state.last_near_dispatch = plan.last_near(ordinal);
-                }
-                // While a VR session runs there is no desktop present at all (the compositor
-                // presents), so block the flip for every dispatch; otherwise only the presented eye
-                // reaches the game window. The far dispatch never presents.
-                //
-                // The eye-parity block must not apply under the collapse: the one dispatch is tagged
-                // eye 0 but carries *both* eyes, so the parity block would block every flip there is.
-                BLOCK_FLIP.store(
-                    vr_running || far_phase || (!collapsed && present_eye != eye),
-                    Ordering::Relaxed,
-                );
-                tracing::trace!(
-                    target: "frameloop",
-                    "game_update_render: dispatch {ordinal} (eye {eye}, far {far_phase}) Draw"
-                );
-                mark(if eye == 0 {
-                    Phase::Eye0Draw
-                } else {
-                    Phase::Eye1Draw
-                });
+        let dispatches = plan.dispatches;
+        for (ordinal, &(eye, far_phase)) in dispatches.iter().enumerate() {
+            if ordinal > 0 {
                 #[cfg(feature = "profiler")]
-                puffin::profile_scope!("Dispatch", format!("eye {eye}, ordinal {ordinal}"));
-                {
-                    let _timing = frame_timing::scope(Slot::Dispatch);
-                    game.Draw(spf);
+                puffin::profile_scope!("Between-eye restore");
+                mark(Phase::BetweenEyesRestore);
+                if let Some(state) = &effect_info {
+                    restore_effect_info(state);
                 }
-                mark(if eye == 0 {
-                    Phase::Eye0Drain
-                } else {
-                    Phase::Eye1Drain
-                });
-                // The between-eye drains are mandatory (the next dispatch's restores mutate state
-                // the in-flight fragment reads); the *last* dispatch's drain moves to the tail
-                // worker when the tail is deferred.
-                let last_dispatch = ordinal + 1 == dispatches.len();
-                if !(defer_tail && last_dispatch)
-                    && let Some(ge) = GraphicsEngine::get()
-                {
-                    #[cfg(feature = "profiler")]
-                    puffin::profile_scope!("WaitForCPUDraw + drain");
-                    let _timing = frame_timing::scope(Slot::Drain);
-                    ge.WaitForCPUDrawToFinish();
-                    drain_draw_thread_fragment(ge);
+                restore_frame_counters(frame_counters);
+                // Now that the frame counters are pinned back to the first dispatch's values,
+                // force the terrain tessellation blocks to re-upload their per-slot constant
+                // buffers: they cache the baked (per-eye off-axis) view-projection keyed on
+                // the render frame number, which the restore above just made identical to the
+                // first dispatch's, so this dispatch would otherwise reuse its projection for
+                // the distant tessellated terrain (a sheared horizon wedge in VR).
+                invalidate_terrain_cbs();
+                if let Some(history) = ssao_history {
+                    restore_ssao_history_indices(history);
                 }
-                mark(if eye == 0 {
-                    Phase::Eye0Post
-                } else {
-                    Phase::Eye1Post
-                });
-                TraceState::record(TraceEvent::DrawEnd {
-                    eye,
-                    counts: DRAW_COUNTS.snapshot(),
-                });
+                if let Some(cascade) = gi_cascade {
+                    restore_gi_cascade_index(cascade);
+                }
+                // Restore the add/draw parity so this dispatch's CKeep1000Frames produces the
+                // same toggle as the first, and SaveRenderFrameData zeroes the same add-list
+                // (removing the earlier dispatch's draw-time additions like SSAO/post blocks).
+                *get_current_add_buffer() = saved_add_buffer;
             }
-            TraceState::end_frame();
 
-            // The draw thread reads the per-dispatch stereo state (draw_index, far_phase) for the
-            // final dispatch asynchronously. Resetting it here would race that read when the tail
-            // is deferred (the main thread has not drained the last dispatch), so eye 1 would
-            // render as eye 0 -- wrong camera, and its capture copies into eye 0's texture, leaving
-            // the right eye frozen. When deferring, the tail resets it after draining instead.
-            if !defer_tail {
-                reset_dispatch_state();
-            }
-        } else {
-            TraceState::record(TraceEvent::FrameBegin {
-                stereo: false,
-                present_eye: None,
-                restore_counters: None,
-            });
-            reset_dispatch_state();
+            DRAW_COUNTS.clear();
             graphics_engine::post_effects::reset_post_block_gate();
-            mark(Phase::NonStereoDraw);
+            TraceState::record(TraceEvent::DrawBegin { eye });
             {
-                #[cfg(feature = "profiler")]
-                puffin::profile_scope!("Dispatch", "mono");
+                let mut state = STEREO_STATE.lock();
+                state.draw_index = eye;
+                state.far_phase = far_phase;
+                state.share_frame = share_frame;
+                state.dispatch_ordinal = ordinal;
+                state.last_near_dispatch = plan.last_near(ordinal);
+            }
+            // While a VR session runs there is no desktop present at all (the compositor
+            // presents), so block the flip for every dispatch; otherwise only the presented eye
+            // reaches the game window. The far dispatch never presents.
+            //
+            // The eye-parity block must not apply under the collapse: the one dispatch is tagged
+            // eye 0 but carries *both* eyes, so the parity block would block every flip there is.
+            BLOCK_FLIP.store(
+                vr_running || far_phase || (!collapsed && present_eye != eye),
+                Ordering::Relaxed,
+            );
+            tracing::trace!(
+                target: "frameloop",
+                "game_update_render: dispatch {ordinal} (eye {eye}, far {far_phase}) Draw"
+            );
+            mark(if eye == 0 {
+                Phase::Eye0Draw
+            } else {
+                Phase::Eye1Draw
+            });
+            #[cfg(feature = "profiler")]
+            puffin::profile_scope!("Dispatch", format!("eye {eye}, ordinal {ordinal}"));
+            {
                 let _timing = frame_timing::scope(Slot::Dispatch);
                 game.Draw(spf);
             }
-            TraceState::end_frame();
+            mark(if eye == 0 {
+                Phase::Eye0Drain
+            } else {
+                Phase::Eye1Drain
+            });
+            // The between-eye drains are mandatory (the next dispatch's restores mutate state
+            // the in-flight fragment reads); the *last* dispatch's drain moves to the tail
+            // worker when the tail is deferred.
+            let last_dispatch = ordinal + 1 == dispatches.len();
+            if !(defer_tail && last_dispatch)
+                && let Some(ge) = GraphicsEngine::get()
+            {
+                #[cfg(feature = "profiler")]
+                puffin::profile_scope!("WaitForCPUDraw + drain");
+                let _timing = frame_timing::scope(Slot::Drain);
+                ge.WaitForCPUDrawToFinish();
+                drain_draw_thread_fragment(ge);
+            }
+            mark(if eye == 0 {
+                Phase::Eye0Post
+            } else {
+                Phase::Eye1Post
+            });
+            TraceState::record(TraceEvent::DrawEnd {
+                eye,
+                counts: DRAW_COUNTS.snapshot(),
+            });
+        }
+        TraceState::end_frame();
+
+        // The draw thread reads the per-dispatch stereo state (draw_index, far_phase) for the
+        // final dispatch asynchronously. Resetting it here would race that read when the tail
+        // is deferred (the main thread has not drained the last dispatch), so eye 1 would
+        // render as eye 0 -- wrong camera, and its capture copies into eye 0's texture, leaving
+        // the right eye frozen. When deferring, the tail resets it after draining instead.
+        if !defer_tail {
+            reset_dispatch_state();
         }
 
         // Submit the VR frame: blit each captured eye into its swapchain slice and end the XR frame
