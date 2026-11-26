@@ -28,10 +28,9 @@ use glam::{Quat, Vec3};
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{
-    config::Config,
     controllers::{
         body::{self, BodyDimensions, rig as body_rig},
-        config::{ControllersConfig, HandsConfig},
+        config::{CONTROLLERS_CONFIG, ControllersConfig, HandsConfig},
         frame::{self, ControllerFrame, Hand, Pose},
         hands::reach::{ArmRemap, ReachLimit},
         physical_hands::{self, DrawTime, physics::guns},
@@ -39,6 +38,7 @@ use crate::{
         weapons::{ads, collide, recoil},
     },
     headpose, hooks,
+    vr::VR_CONFIG,
 };
 
 pub mod anchor;
@@ -142,7 +142,8 @@ fn compose_active_hands(at: DrawTime) -> Option<ActiveHands> {
 }
 
 fn active_hands_raw_from_frame(frame: &ControllerFrame) -> Option<ActiveHands> {
-    let (config, world_scale) = Config::lock_query(|c| (c.controllers.clone(), c.vr.world_scale));
+    let config = CONTROLLERS_CONFIG.lock().clone();
+    let world_scale = VR_CONFIG.lock().world_scale;
     if !config.enabled || !scheme::is_controllers() || headpose::source() != headpose::Source::Vr {
         return None;
     }
@@ -201,7 +202,7 @@ pub(crate) fn controller_grips(active: &ActiveHands) -> [Option<Vec3>; 2] {
 
 /// Hand IK ownership without composing poses or acquiring weapon and vehicle state locks.
 pub(crate) fn ik_owned() -> [bool; 2] {
-    let enabled = Config::lock_query(|c| c.controllers.enabled && c.controllers.hands.ik);
+    let enabled = CONTROLLERS_CONFIG.query(|c| c.enabled && c.hands.ik);
     if !enabled
         || !scheme::is_controllers()
         || headpose::source() != headpose::Source::Vr

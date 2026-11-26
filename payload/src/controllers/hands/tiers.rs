@@ -35,18 +35,14 @@ use jc3gi::{
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    config::Config,
-    controllers::{
-        body::procedural::config::ProceduralMode,
-        frame::Hand,
-        hands::anchor::{ANCHOR_BLEND_S, AnchorConfig},
-        loadout::live,
-        mode::{
-            self, AirborneVariant, CharacterSnapshot, Detection, Mode, OnFootVariant, Traversal,
-        },
-        weapons::{self, hold::armed},
-    },
+use crate::controllers::{
+    body::procedural::config::ProceduralMode,
+    config::CONTROLLERS_CONFIG,
+    frame::Hand,
+    hands::anchor::{ANCHOR_BLEND_S, AnchorConfig},
+    loadout::live,
+    mode::{self, AirborneVariant, CharacterSnapshot, Detection, Mode, OnFootVariant, Traversal},
+    weapons::{self, hold::armed},
 };
 
 /// The plan's hand tiers.
@@ -455,15 +451,15 @@ pub fn weights() -> [f32; 2] {
 /// Classify this input tick and advance the blends. Called from the game stage after the mode
 /// detector, while the controllers are enabled.
 pub(crate) fn tick(dt: f32) {
-    let (config, dominant, mounted_anchor) = Config::lock_query(|c| {
-        let swim_arms = c.controllers.body.procedural.mode == ProceduralMode::Full;
+    let (config, dominant, mounted_anchor) = CONTROLLERS_CONFIG.query(|c| {
+        let swim_arms = c.body.procedural.mode == ProceduralMode::Full;
         (
             TierConfig {
                 table: HandTierTable::PLAN.with_swim_arms(swim_arms),
-                anchor: c.controllers.hands.anchor,
+                anchor: c.hands.anchor,
             },
-            c.controllers.acting_hand(),
-            c.controllers.vehicles.mounted.aim_by_hands,
+            c.acting_hand(),
+            c.vehicles.mounted.aim_by_hands,
         )
     });
     // SAFETY: the game stage runs on the game thread before the world update, as the mode

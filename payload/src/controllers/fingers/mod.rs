@@ -39,23 +39,21 @@ use glam::{Quat, Vec3};
 use jc3gi::character::character::{AnimationController, Character, Joint};
 use parking_lot::Mutex;
 
-use crate::{
-    config::Config,
-    controllers::{
-        fingers::{
-            curl::{CurlSource, Finger},
-            grip::{
-                SourceLog,
-                contact::{self, HandGeometry},
-            },
-            pose::{BoneJoint, HandShape, PalmFrame},
-            target::{GripMemory, GripReport, TargetInputs},
-            tuning::FINGERS,
+use crate::controllers::{
+    config::CONTROLLERS_CONFIG,
+    fingers::{
+        curl::{CurlSource, Finger},
+        grip::{
+            SourceLog,
+            contact::{self, HandGeometry},
         },
-        frame::{self, Hand},
-        hands::ik,
-        scheme,
+        pose::{BoneJoint, HandShape, PalmFrame},
+        target::{GripMemory, GripReport, TargetInputs},
+        tuning::FINGERS,
     },
+    frame::{self, Hand},
+    hands::ik,
+    scheme,
 };
 
 /// One hand's finger curls on the last tick, for the debug UI and the status rows.
@@ -94,7 +92,7 @@ pub(crate) unsafe fn after_solve(character: *mut Character) {
     let Some(character) = (unsafe { character.as_mut() }).filter(|c| c.m_IsLocalCharacter) else {
         return;
     };
-    let (config, enabled) = Config::lock_query(|c| (c.controllers.fingers, c.controllers.enabled));
+    let (config, enabled) = CONTROLLERS_CONFIG.query(|c| (c.fingers, c.enabled));
     let mut state = STATE.lock();
     if !config.enabled || !enabled || !scheme::is_controllers() {
         *state = FingerState::EMPTY;

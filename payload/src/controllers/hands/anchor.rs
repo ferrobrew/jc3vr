@@ -47,10 +47,9 @@ use re_utilities::hook_library::HookLibrary;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    config::Config,
     controllers::{
         cockpit::CockpitTransform,
-        config::ControllersConfig,
+        config::{CONTROLLERS_CONFIG, ControllersConfig},
         fingers::grip::{self, Grip, GripSource},
         frame::{Hand, Pose},
         hands::{self, CockpitHand, tiers},
@@ -305,7 +304,7 @@ fn hang_task_update(ctx: *mut StateContext, p1: *mut c_void, p2: *mut c_void) {
 
 /// Push the local player's hang body by the grapple hand's displacement and motion.
 unsafe fn swing(character: &mut Character) {
-    let config = Config::lock_query(|c| c.controllers.clone());
+    let config = CONTROLLERS_CONFIG.lock().clone();
     let anchor = config.hands.anchor;
     let pump = PhysicalGrappleTuning::of(&config.grapple).swing;
     let hand = config.acting_hand().other();

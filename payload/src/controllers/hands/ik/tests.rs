@@ -8,7 +8,7 @@ use jc3gi::{
 
 use super::*;
 use crate::{
-    controllers::config::ControllersConfig,
+    controllers::config::{CONTROLLERS_CONFIG, ControllersConfig},
     headpose::Anchors,
     thread_role::{self, ThreadRole},
 };
@@ -47,9 +47,9 @@ impl Drop for FixtureState {
 #[test]
 fn replacement_before_measure_cannot_seed_new_or_deferred_plans_with_old_arms() {
     crate::controllers::register_head_participants_for_tests();
-    let _config = crate::config::test_fixture();
+    let _config = crate::config::engine::test_fixture();
     // Plan admission is under test, not the live controller and world-rotation adapters.
-    crate::config::CONFIG.lock().controllers.enabled = false;
+    CONTROLLERS_CONFIG.lock().enabled = false;
     let _role = thread_role::enter(ThreadRole::Unmarked);
     let _state = FixtureState::new();
     let mut bones: [HkaBone; 2] = unsafe { std::mem::zeroed() };

@@ -54,12 +54,12 @@ pub use crate::controllers::presentation::{
     edit::{BodyEdit, DrawEdit},
 };
 use crate::{
-    config::Config,
     controllers::{
         body::procedural::{
             self,
             skeleton::{self, SkeletonKey},
         },
+        config::CONTROLLERS_CONFIG,
         frame::{Hand, Pose},
         hands::{ik, late, pose as hand_pose, reach::REACH},
         mode::{self, Mode},
@@ -73,6 +73,7 @@ use crate::{
     frame_timing::{self, Slot},
     headpose, hooks,
     render_frame::RenderFrameSlot,
+    vr::VR_CONFIG,
 };
 
 /// Why the layer is or is not re-posing the body.
@@ -252,8 +253,8 @@ pub(crate) fn begin_frame() {
     let start = Instant::now();
     let _timing = frame_timing::scope(Slot::Presentation);
     roll_cost();
-    let (config, world_scale) =
-        Config::lock_query(|c| (c.controllers.hands.presentation, c.vr.world_scale));
+    let config = CONTROLLERS_CONFIG.lock().hands.presentation;
+    let world_scale = VR_CONFIG.lock().world_scale;
     let rig_failed = RIG.lock().as_ref().is_some_and(|(_, rig)| rig.is_err());
     let ticks = *TICKS.lock();
     let fresh = ticks
