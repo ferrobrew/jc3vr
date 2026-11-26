@@ -16,9 +16,12 @@ use windows::{
 
 use crate::screenshot::{
     harness,
-    harness::stages::{
-        LakeSampleTargets, STATE, Stage, StageImage, capture_raster_state, empty_stage_record,
-        read_texture,
+    harness::{
+        rewrites,
+        stages::{
+            LakeSampleTargets, STATE, Stage, StageImage, capture_raster_state, empty_stage_record,
+            read_texture,
+        },
     },
 };
 thread_local! {static ORDINAL:Cell<Option<u8>>=const{Cell::new(None)};}
@@ -159,7 +162,7 @@ fn bind_ray(
         march_eye.is_none(),
         "the march trial needs a per-eye run over the double-wide depth, which no mode takes"
     );
-    let bytes = dxbc_stereo::trace_ssr_ray(
+    let bytes = rewrites::trace_ssr_ray(
         &bytes,
         None,
         veto_eye == Some(true),

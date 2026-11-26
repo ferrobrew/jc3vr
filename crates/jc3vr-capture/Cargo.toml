@@ -10,6 +10,9 @@ publish = false
 # render-block names, and the benchmark's GPU dispatch records. The payload's `profiler` feature
 # forwards here.
 profiler = ["jc3vr-core/profiler", "jc3vr-view/profiler", "jc3vr-render/profiler"]
+# The shader rewrites only the harness's experiments request (`screenshot::harness::rewrites`). The
+# payload's `capture-rewrites` feature forwards here, and the harness builds with it.
+capture-rewrites = ["dxbc-stereo/capture-rewrites"]
 
 [dependencies]
 windows = { workspace = true }

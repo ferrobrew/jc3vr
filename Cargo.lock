@@ -1256,6 +1256,9 @@ dependencies = [
 [[package]]
 name = "dxbc-stereo"
 version = "0.1.0"
+dependencies = [
+ "dxbc-stereo",
+]
 
 [[package]]
 name = "dxbc-tool"

@@ -13,7 +13,7 @@ use crate::screenshot::{
     harness,
     harness::{
         bound_buffer::{ShaderStage, read_bound_constant_buffer},
-        late_sky_stages_requested,
+        late_sky_stages_requested, rewrites,
         stages::{
             HdrStage, STATE, Stage, StageArtifact, StageImage, StageRecord, capture_hdr,
             capture_raster_state, empty_stage_record, read_texture,
@@ -187,7 +187,7 @@ pub(crate) unsafe fn capture_fog_generation(context: *mut c_void, draw: &dyn Fn(
                     && matches!(&ps,Some(shader_identity::IdentityResult::Mapped{identity}) if identity.actual_sha256==shader_identity::FOG_PS && identity.pristine_sha256==shader_identity::FOG_PS),
                 "fog UV: unexpected producer"
             );
-            let bytes = dxbc_stereo::local_fog_reconstruction(
+            let bytes = rewrites::local_fog_reconstruction(
                 &shader_identity::fog_bytecode().context("fog UV: missing bytecode")?,
             )?;
             let mut shader = None;

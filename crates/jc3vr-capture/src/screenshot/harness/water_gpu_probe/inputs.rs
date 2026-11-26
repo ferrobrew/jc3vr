@@ -24,6 +24,7 @@ use crate::screenshot::harness::{
     lake_ds_mvp, lake_gradients_requested, lake_inner_edge, lake_normals_requested,
     lake_waves_requested,
     patch_draw::LakeMvpGuard,
+    rewrites,
     stages::{LakeSampleTargets, capture_water_inputs, record_water_treatment},
     water_gpu_probe::work,
     water_inputs_requested, water_reflection_requested, water_tess_draw,
@@ -405,7 +406,7 @@ impl LakeShaderGuard {
             | WaterReflection::LakeSkyBuffer
             | WaterReflection::LakeResponse => {
                 let source = if jc3vr_view::stereo::layout::collapse_active() {
-                    dxbc_stereo::isolate_lake_reflection(
+                    rewrites::isolate_lake_reflection(
                         &dxbc_stereo::scale_lake_refraction(&blob)?,
                         eye == 1,
                     )?
@@ -422,41 +423,41 @@ impl LakeShaderGuard {
                     if treatment == WaterReflection::LakeResponse {
                         if eye == 0 && frame_identity().and_then(lake_inner_edge) == Some(true) {
                             verify_inner_edge(ctx, false)?;
-                            dxbc_stereo::trace_lake_inner_edge(&source)?
+                            rewrites::trace_lake_inner_edge(&source)?
                         } else {
-                            dxbc_stereo::trace_lake_response(&source)?
+                            rewrites::trace_lake_response(&source)?
                         }
                     } else {
-                        dxbc_stereo::trace_lake_lighting(&source)?
+                        rewrites::trace_lake_lighting(&source)?
                     }
                 } else {
-                    dxbc_stereo::trace_lake_samples(&source)?
+                    rewrites::trace_lake_samples(&source)?
                 }
             }
             WaterReflection::PlanarUv => {
                 let source = if jc3vr_view::stereo::layout::collapse_active() {
-                    dxbc_stereo::reproject_lake_reflection(
+                    rewrites::reproject_lake_reflection(
                         &dxbc_stereo::scale_lake_refraction(&blob)?,
                         eye == 1,
                     )?
                 } else {
                     blob.clone()
                 };
-                dxbc_stereo::capture_lake_planar_uv(&source)?
+                rewrites::capture_lake_planar_uv(&source)?
             }
-            WaterReflection::EyeWidthPlanar => dxbc_stereo::isolate_lake_reflection(
+            WaterReflection::EyeWidthPlanar => rewrites::isolate_lake_reflection(
                 &dxbc_stereo::scale_lake_refraction(&blob)?,
                 eye == 1,
             )?,
-            WaterReflection::MirroredPlanar => dxbc_stereo::mirror_lake_reflection(
+            WaterReflection::MirroredPlanar => rewrites::mirror_lake_reflection(
                 &dxbc_stereo::scale_lake_refraction(&blob)?,
                 eye == 1,
             )?,
-            WaterReflection::ProjectedPlanar => dxbc_stereo::reproject_lake_reflection(
+            WaterReflection::ProjectedPlanar => rewrites::reproject_lake_reflection(
                 &dxbc_stereo::scale_lake_refraction(&blob)?,
                 eye == 1,
             )?,
-            WaterReflection::CenterPlanar => dxbc_stereo::offset_lake_reflection(&blob, eye == 1)?,
+            WaterReflection::CenterPlanar => rewrites::offset_lake_reflection(&blob, eye == 1)?,
             WaterReflection::PackedRefraction => dxbc_stereo::scale_lake_refraction(&blob)?,
             _ => anyhow::bail!("lake shader: expected a shader treatment"),
         };
@@ -464,13 +465,13 @@ impl LakeShaderGuard {
         let waves = displacement && frame_identity().is_some_and(lake_waves_requested);
         let gradients = waves && frame_identity().is_some_and(lake_gradients_requested);
         let patched = if gradients {
-            dxbc_stereo::trace_lake_gradients(&patched)?
+            rewrites::trace_lake_gradients(&patched)?
         } else if waves {
-            dxbc_stereo::trace_lake_waves(&patched)?
+            rewrites::trace_lake_waves(&patched)?
         } else if normals {
-            dxbc_stereo::trace_lake_normals(&patched)?
+            rewrites::trace_lake_normals(&patched)?
         } else if displacement {
-            dxbc_stereo::trace_lake_displacement(&patched)?
+            rewrites::trace_lake_displacement(&patched)?
         } else {
             patched
         };
@@ -480,11 +481,11 @@ impl LakeShaderGuard {
         {
             verify_inner_edge(ctx, true)?;
             if treated {
-                let depth = dxbc_stereo::bound_lake_candidate_depth(&patched)?;
+                let depth = rewrites::bound_lake_candidate_depth(&patched)?;
                 if frame_identity().and_then(crate::screenshot::harness::lake_color_mirror)
                     == Some(true)
                 {
-                    dxbc_stereo::mirror_lake_color_overflow(&depth)?
+                    rewrites::mirror_lake_color_overflow(&depth)?
                 } else {
                     depth
                 }

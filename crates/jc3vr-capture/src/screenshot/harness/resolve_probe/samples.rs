@@ -2,7 +2,7 @@ use anyhow::{Context as _, ensure};
 use jc3vr_render::stereo::single_pass::{shader_identity, shader_identity::IdentityResult};
 use windows::Win32::Graphics::Direct3D11::{ID3D11DeviceContext, ID3D11PixelShader};
 
-use crate::screenshot::harness::{resolve_probe::Observation, stages::LakeSampleTargets};
+use crate::screenshot::harness::{resolve_probe::Observation, rewrites, stages::LakeSampleTargets};
 
 pub(crate) struct Guard {
     ctx: ID3D11DeviceContext,
@@ -26,7 +26,7 @@ impl Guard {
         let bytes =
             shader_identity::resolve_bytecode().context("resolve samples: missing executable")?;
         let shadow = crate::screenshot::harness::resolve_shadow_requested(frame);
-        let traced = dxbc_stereo::trace_deferred_samples(&bytes, shadow)?;
+        let traced = rewrites::trace_deferred_samples(&bytes, shadow)?;
         let mut shader = None;
         unsafe {
             ctx.GetDevice()?

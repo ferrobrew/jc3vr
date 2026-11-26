@@ -23,6 +23,12 @@
 //! fading materials discard by out from each eye's own origin, reading the eye-camera rewrite's
 //! boundary. `velocity` measures the motion vectors the velocity pass writes in the screen space of
 //! the eye whose half the pixel lies in, from the same buffer.
+//! `refraction` halves the lake permutation's refraction displacement for the water's per-eye
+//! re-issue.
+//!
+//! `lake` and `resolve` hold the rewrites only the capture harness's experiments request (the lake
+//! traces and planar lookups, and the resolve, reflection-ray, impostor, bark, fog, depth-of-field,
+//! and anti-aliasing trials). They compile only under the `capture-rewrites` feature.
 
 mod ambient;
 pub use ambient::{
@@ -40,14 +46,16 @@ mod common;
 mod domain_rows;
 mod full_vp;
 pub use full_vp::remap_pinned_full_view_projection;
+#[cfg(feature = "capture-rewrites")]
 mod lake;
 mod lights;
+#[cfg(feature = "capture-rewrites")]
 pub use lake::{
     bound_lake_candidate_depth, capture_lake_planar_uv, isolate_lake_reflection,
     mirror_lake_color_overflow, mirror_lake_reflection, offset_lake_reflection,
-    reproject_lake_reflection, scale_lake_refraction, trace_lake_displacement,
-    trace_lake_gradients, trace_lake_inner_edge, trace_lake_lighting, trace_lake_normals,
-    trace_lake_response, trace_lake_samples, trace_lake_waves,
+    reproject_lake_reflection, trace_lake_displacement, trace_lake_gradients,
+    trace_lake_inner_edge, trace_lake_lighting, trace_lake_normals, trace_lake_response,
+    trace_lake_samples, trace_lake_waves,
 };
 mod overlay;
 pub use overlay::localize_screen_overlays;
@@ -55,7 +63,11 @@ mod pinned;
 pub use pinned::{rebase_pinned_domain_shader, reproject_pinned_eye};
 mod planar;
 pub use planar::localize_planar_reflection;
+mod refraction;
+pub use refraction::scale_lake_refraction;
+#[cfg(feature = "capture-rewrites")]
 mod resolve;
+#[cfg(feature = "capture-rewrites")]
 pub use resolve::{
     impostor_atlas_scale, local_aa_neighbor, local_bark_dither, local_dof_edge,
     local_fog_reconstruction, physical_impostor_fade, trace_deferred_samples, trace_ssr_ray,

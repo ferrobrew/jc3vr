@@ -135,8 +135,16 @@ pub enum DxbcError {
     /// The pixel shader carries no screen-space depth fetch built from a projective UV, so there is
     /// nothing for the decal depth-UV bias to separate; the caller should leave it untouched.
     NoDepthUvFetch,
+    /// The pixel shader is not one the capture harness's resolve, reflection-ray, impostor, fog,
+    /// depth-of-field, or anti-aliasing trial was written against.
+    #[cfg(feature = "capture-rewrites")]
     NoResolveInputs,
+    /// The pixel shader is not the lake permutation the capture harness's lake traces were written
+    /// against: it holds no single planar reflection sample in the shape they recognise.
+    #[cfg(feature = "capture-rewrites")]
     NoLakeReflection,
+    /// The pixel shader holds no single lake refraction displacement scale in the shape the packed
+    /// refraction rewrite recognises; the caller should leave it untouched.
     NoLakeRefraction,
     /// The pixel shader lays no screen-space overlay over the frame in a shape the overlay rewrite
     /// recognises; the caller should leave it untouched.
@@ -228,6 +236,7 @@ impl fmt::Display for DxbcError {
             DxbcError::NoTerrainCameraRows => {
                 "dxbc: the domain shader reads no terrain camera rows"
             }
+            #[cfg(feature = "capture-rewrites")]
             DxbcError::NoResolveInputs => "dxbc: unsupported deferred input sequence",
             DxbcError::NoScreenOverlay => "dxbc: no recognised screen-space overlay lookup",
             DxbcError::NoPlanarReflection => "dxbc: no recognised planar reflection coordinate",
@@ -263,6 +272,7 @@ impl fmt::Display for DxbcError {
                 "dxbc: the pixel shader declares the eye-camera constant buffer slot too small for \
                  the velocity rows"
             }
+            #[cfg(feature = "capture-rewrites")]
             DxbcError::NoLakeReflection => "dxbc: missing unique planar lake reflection sample",
             DxbcError::NoLakeRefraction => {
                 "dxbc: missing unique lake refraction displacement scale"

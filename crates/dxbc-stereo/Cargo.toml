@@ -8,3 +8,16 @@ edition = "2024"
 # its consumer (the payload) is a Windows cdylib.
 
 [dependencies]
+
+[features]
+# The rewrites only the capture harness's experiments request (the lake traces and planar
+# lookups, and the deferred-resolve, reflection-ray, impostor, fog, depth-of-field, and
+# anti-aliasing trials), so the shipped payload does not carry them. The harness builds the payload
+# with its `capture-rewrites` feature, which forwards here through the capture crate.
+capture-rewrites = []
+
+[dev-dependencies]
+# The crate's own tests cover the capture-only rewrites too, so they enable the feature on the crate
+# under test.
+dxbc-stereo = { path = ".", features = ["capture-rewrites"] }
+

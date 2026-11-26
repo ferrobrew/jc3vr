@@ -25,7 +25,7 @@ use crate::screenshot::{
     harness,
     harness::{
         bound_buffer::{ShaderStage, read_bound_constant_buffer},
-        patch_draw,
+        patch_draw, rewrites,
         stages::{
             STATE, Stage, empty_stage_record,
             velocity::impostor::{ImpostorInputs, impostor_inputs},
@@ -896,7 +896,7 @@ impl Trace {
                 shader_identity::impostor_bytecode().context("impostor trial: missing bytecode")?;
             let bytes = if let Some(physical) = card_atlas {
                 if physical {
-                    dxbc_stereo::impostor_atlas_scale(&original, v[1].TopLeftX, true)?
+                    rewrites::impostor_atlas_scale(&original, v[1].TopLeftX, true)?
                 } else {
                     original
                 }
@@ -913,12 +913,12 @@ impl Trace {
                     "impostor fade: unexpected screen reciprocals"
                 );
                 if physical {
-                    dxbc_stereo::physical_impostor_fade(&original)?
+                    rewrites::physical_impostor_fade(&original)?
                 } else {
                     original
                 }
             } else {
-                dxbc_stereo::impostor_atlas_scale(
+                rewrites::impostor_atlas_scale(
                     &original,
                     v[1].TopLeftX,
                     left_atlas_scale || group_atlas_scale,
@@ -958,7 +958,7 @@ impl Trace {
                     && matches!(ps.as_ref().map(shader_identity::lookup),Some(shader_identity::IdentityResult::Mapped{identity}) if identity.pristine_sha256==expected_ps),
                 "bark trial: unexpected submission"
             );
-            let bytes = dxbc_stereo::local_bark_dither(
+            let bytes = rewrites::local_bark_dither(
                 &shader_identity::bark_bytecode(self.color).context("missing bark bytecode")?,
                 v[0].TopLeftX,
                 self.color,

@@ -20,6 +20,9 @@ profiler = [
     "jc3vr-gameplay/profiler",
     "jc3vr-ui/profiler",
 ]
+# The shader rewrites only the capture harness's experiments request. Off in the shipped payload;
+# `tools/rendering` builds with it (see `docs/mod/testing/fast-comparison.md`).
+capture-rewrites = ["jc3vr-capture/capture-rewrites"]
 
 [dependencies]
 windows = { workspace = true }

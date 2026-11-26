@@ -17,6 +17,7 @@ pub(crate) mod patch_draw;
 pub mod register_pipeline;
 pub mod register_single_pass;
 pub(crate) mod resolve_probe;
+pub(crate) mod rewrites;
 mod sidecar;
 pub mod snapshot;
 pub(crate) mod stages;

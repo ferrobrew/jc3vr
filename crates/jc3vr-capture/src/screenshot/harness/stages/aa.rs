@@ -8,7 +8,10 @@ use windows::{Win32::Graphics::Direct3D11::*, core::Interface};
 
 use crate::screenshot::{
     harness,
-    harness::stages::{STATE, Stage},
+    harness::{
+        rewrites,
+        stages::{STATE, Stage},
+    },
 };
 
 #[derive(Clone, Debug, Serialize)]
@@ -158,7 +161,7 @@ pub(crate) unsafe fn with_color_edge(context: *mut c_void, submit: &dyn Fn()) ->
             let mut original=None;unsafe{ctx.PSGetShader(&mut original,None,None)};
             let original=original.ok_or_else(|| anyhow::anyhow!("AA: missing original shader"))?;
             let mut bytes=shader_identity::aa_bytecode().ok_or_else(|| anyhow::anyhow!("AA: missing original bytes"))?;
-            if treated {bytes=dxbc_stereo::local_aa_neighbor(&bytes)?;}
+            if treated {bytes=rewrites::local_aa_neighbor(&bytes)?;}
             let mut ps=None;unsafe{ctx.GetDevice()?.CreatePixelShader(&bytes,None,Some(&mut ps))?};
             let replacement=ps.ok_or_else(|| anyhow::anyhow!("AA: missing shader"))?;
             let mut bound=None;unsafe{ctx.PSSetShader(&replacement,None);ctx.PSGetShader(&mut bound,None,None)};

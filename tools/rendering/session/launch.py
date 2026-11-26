@@ -38,6 +38,7 @@ from tools.rendering.session.channel import RequestChannel
 from tools.rendering.session.errors import SessionError
 from tools.rendering.session.options import Options
 from tools.rendering.session.processes import ProcessError, processes, steam_client
+from tools.rendering.session.reinject import PAYLOAD_FEATURES
 from tools.rendering.viewer.server import DEFAULT_POINTER, publish_run
 
 LOG = logging.getLogger("tools.rendering.session.launch")
@@ -538,9 +539,10 @@ class RenderingSession(RequestChannel):
 
     def _build(self):
         flag = " --release" if self.options.release else ""
-        for root, prefix in ((self.boot, "jc3boot"), (ROOT, "jc3vr")):
+        for root, prefix, features in ((self.boot, "jc3boot", ""),
+                                       (ROOT, "jc3vr", f" {PAYLOAD_FEATURES}")):
             command = ("cargo xwin build --xwin-cache-dir .xwin --target x86_64-pc-windows-msvc "
-                       f"-p {prefix}_payload -p {prefix}_injector{flag}")
+                       f"-p {prefix}_payload -p {prefix}_injector{features}{flag}")
             self._command(["nix-shell", str(root / "shell.nix"), "--run", command],
                           f"build-{prefix}", self.options.build_timeout, cwd=root)
 

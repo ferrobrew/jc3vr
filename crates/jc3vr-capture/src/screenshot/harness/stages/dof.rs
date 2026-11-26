@@ -17,6 +17,7 @@ use crate::screenshot::{
     harness,
     harness::{
         bound_buffer::{ShaderStage, read_bound_constant_buffer},
+        rewrites,
         stages::{
             STATE, Stage, StageArtifact, StageImage, StageRecord, capture, capture_raster_state,
             empty_stage_record, read_texture,
@@ -212,7 +213,7 @@ pub(crate) unsafe fn on_draw(context: *mut c_void, draw: &dyn Fn()) -> bool {
                         && v.5 == Some((20, 3, 3, 3))),
                 "DoF edge: unexpected program, branch or t9 binding"
             );
-            let bytes = dxbc_stereo::local_dof_edge(
+            let bytes = rewrites::local_dof_edge(
                 &shader_identity::dof_bytecode().context("DoF edge: no bytecode")?,
             )?;
             let mut shader = None;

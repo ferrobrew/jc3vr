@@ -14,6 +14,9 @@ from tools.rendering.session.errors import SessionError
 
 LOG = logging.getLogger("tools.rendering.session.reinject")
 ROOT = Path(__file__).resolve().parents[3]
+# The payload's features every harness build enables: the shader rewrites only the committed
+# experiments request, which the shipped payload leaves out.
+PAYLOAD_FEATURES = "--features jc3vr_payload/capture-rewrites"
 # The line the payload logs once the game is in gameplay with the VR session rendering; the
 # session launcher waits for the same line.
 READY_LINE = "camera height above Rico"
@@ -39,7 +42,7 @@ def build(release: bool = False, timeout: float = 900.0) -> float:
     """Build the payload and the injector incrementally; returns the seconds it took."""
     flag = " --release" if release else ""
     command = ("cargo xwin build --xwin-cache-dir .xwin --target x86_64-pc-windows-msvc "
-               f"-p jc3vr_payload -p jc3vr_injector{flag}")
+               f"-p jc3vr_payload -p jc3vr_injector {PAYLOAD_FEATURES}{flag}")
     started = time.monotonic()
     result = subprocess.run(["nix-shell", str(ROOT / "shell.nix"), "--run", command], cwd=ROOT,
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=timeout,
