@@ -213,9 +213,7 @@ fn a_file_from_before_the_rig_loads_its_posture_and_skips_the_retired_settings()
         report.ignored,
         [
             "controllers.body.alignment",
-            "controllers.body.procedural.gait",
-            "controllers.body.procedural.hips_follow_s",
-            "controllers.body.procedural.step_under_head",
+            "controllers.body.procedural",
             "controllers.roomscale.chase",
             "controllers.roomscale.crouch.visual",
             "controllers.roomscale.roomscale_min_extent_m",
