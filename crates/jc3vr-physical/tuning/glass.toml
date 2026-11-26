@@ -1,0 +1,20 @@
+# Breaking glass's tuning: `GlassTuning` in `src/controllers/glass/tuning.rs`, whose fields say
+# what each value does. Every key is required and no other is accepted. Lengths are metres, speeds
+# world metres per second, and times seconds; damage is in the game's damage-point strength.
+
+[strike]
+min_speed_mps = 2.0
+full_speed_mps = 7.0
+min_damage = 0.15
+max_damage = 0.6
+shatter_speed_mps = 8.5
+shatter_total = 2.5
+cooldown_s = 0.2
+palm_lead_m = 0.05
+tip_lead_m = 0.03
+pistol_reach_m = 0.18
+max_gap_s = 0.1
+
+[panes]
+memory_s = 120.0
+max_records = 32

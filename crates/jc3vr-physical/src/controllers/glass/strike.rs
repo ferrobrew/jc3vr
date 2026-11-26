@@ -4,7 +4,7 @@
 use glam::Vec3;
 use jc3vr_input::frame::Hand;
 
-use crate::controllers::glass::config::GlassTuning;
+use crate::controllers::glass::tuning::StrikeTuning;
 
 /// What a strike is made with.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -124,10 +124,10 @@ pub fn sweep(from: Vec3, to: Vec3, lead_m: f32) -> Option<Sweep> {
 }
 
 /// The damage a strike at `speed_mps` does to the pane at the point it meets, or `None` for a
-/// strike too slow to count: from [`GlassTuning::min_damage`] at
-/// [`GlassTuning::min_speed_mps`] up to [`GlassTuning::max_damage`] at
-/// [`GlassTuning::full_speed_mps`] and beyond.
-pub fn hit_damage(speed_mps: f32, tuning: &GlassTuning) -> Option<f32> {
+/// strike too slow to count: from [`StrikeTuning::min_damage`] at
+/// [`StrikeTuning::min_speed_mps`] up to [`StrikeTuning::max_damage`] at
+/// [`StrikeTuning::full_speed_mps`] and beyond.
+pub fn hit_damage(speed_mps: f32, tuning: &StrikeTuning) -> Option<f32> {
     if !(speed_mps.is_finite() && speed_mps >= tuning.min_speed_mps) {
         return None;
     }
@@ -180,9 +180,9 @@ pub fn accumulate(before: f32, after: f32, damage: f32, excess: f32) -> Accumula
 /// Why a pane shatters.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum ShatterCause {
-    /// One strike at [`GlassTuning::shatter_speed_mps`] or faster.
+    /// One strike at [`StrikeTuning::shatter_speed_mps`] or faster.
     HardHit,
-    /// The pane's damage reached [`GlassTuning::shatter_total`].
+    /// The pane's damage reached [`StrikeTuning::shatter_total`].
     Accumulated,
 }
 
@@ -205,7 +205,7 @@ pub enum Outcome {
 }
 
 /// What a strike at `speed_mps` that leaves the pane at `total` damage does.
-pub fn outcome(speed_mps: f32, total: f32, tuning: &GlassTuning) -> Outcome {
+pub fn outcome(speed_mps: f32, total: f32, tuning: &StrikeTuning) -> Outcome {
     if speed_mps >= tuning.shatter_speed_mps {
         Outcome::Shatter(ShatterCause::HardHit)
     } else if total >= tuning.shatter_total {
@@ -258,9 +258,11 @@ mod tests {
     use test_case::test_case;
 
     use super::*;
-    use crate::controllers::glass::config::GLASS;
+    use crate::controllers::glass::tuning::GLASS;
 
-    const TUNING: GlassTuning = GLASS;
+    fn tuning() -> &'static StrikeTuning {
+        &GLASS.get().strike
+    }
 
     fn sample(at: Vec3, time_s: f64) -> Sample {
         Sample { at, time_s }
@@ -306,31 +308,31 @@ mod tests {
 
     #[test]
     fn a_resting_hand_does_no_damage() {
-        assert_eq!(hit_damage(0.3, &TUNING), None);
-        assert_eq!(hit_damage(f32::NAN, &TUNING), None);
+        assert_eq!(hit_damage(0.3, tuning()), None);
+        assert_eq!(hit_damage(f32::NAN, tuning()), None);
     }
 
     #[test]
     fn damage_grows_with_speed_and_stops_at_its_ceiling() {
-        let low = hit_damage(TUNING.min_speed_mps, &TUNING).unwrap();
+        let low = hit_damage(tuning().min_speed_mps, tuning()).unwrap();
         let mid = hit_damage(
-            (TUNING.min_speed_mps + TUNING.full_speed_mps) / 2.0,
-            &TUNING,
+            (tuning().min_speed_mps + tuning().full_speed_mps) / 2.0,
+            tuning(),
         )
         .unwrap();
-        let full = hit_damage(TUNING.full_speed_mps, &TUNING).unwrap();
-        let past = hit_damage(TUNING.full_speed_mps * 3.0, &TUNING).unwrap();
-        assert_eq!(low, TUNING.min_damage);
+        let full = hit_damage(tuning().full_speed_mps, tuning()).unwrap();
+        let past = hit_damage(tuning().full_speed_mps * 3.0, tuning()).unwrap();
+        assert_eq!(low, tuning().min_damage);
         assert!(low < mid && mid < full, "{low} {mid} {full}");
-        assert_eq!(full, TUNING.max_damage);
-        assert_eq!(past, TUNING.max_damage);
+        assert_eq!(full, tuning().max_damage);
+        assert_eq!(past, tuning().max_damage);
     }
 
     #[test]
     fn a_degenerate_speed_span_gives_full_damage() {
-        let tuning = GlassTuning {
-            full_speed_mps: TUNING.min_speed_mps,
-            ..TUNING
+        let tuning = StrikeTuning {
+            full_speed_mps: tuning().min_speed_mps,
+            ..*tuning()
         };
         assert_eq!(
             hit_damage(tuning.min_speed_mps, &tuning),
@@ -359,8 +361,8 @@ mod tests {
 
     #[test]
     fn repeated_punches_bring_the_pane_down() {
-        let speed = TUNING.min_speed_mps + 1.0;
-        let damage = hit_damage(speed, &TUNING).unwrap();
+        let speed = tuning().min_speed_mps + 1.0;
+        let damage = hit_damage(speed, tuning()).unwrap();
         let (mut points, mut excess) = (0.0_f32, 0.0);
         let mut blows = 0;
         loop {
@@ -369,7 +371,7 @@ mod tests {
             let acc = accumulate(points, after, damage, excess);
             points = after;
             excess = acc.excess;
-            if outcome(speed, acc.total, &TUNING) != Outcome::Damage {
+            if outcome(speed, acc.total, tuning()) != Outcome::Damage {
                 break;
             }
             assert!(blows < 50, "the pane never fell");
@@ -383,14 +385,17 @@ mod tests {
     #[test]
     fn a_hard_hit_shatters_at_once() {
         assert_eq!(
-            outcome(TUNING.shatter_speed_mps, 0.0, &TUNING),
+            outcome(tuning().shatter_speed_mps, 0.0, tuning()),
             Outcome::Shatter(ShatterCause::HardHit)
         );
         assert_eq!(
-            outcome(TUNING.min_speed_mps, TUNING.shatter_total, &TUNING),
+            outcome(tuning().min_speed_mps, tuning().shatter_total, tuning()),
             Outcome::Shatter(ShatterCause::Accumulated)
         );
-        assert_eq!(outcome(TUNING.min_speed_mps, 0.0, &TUNING), Outcome::Damage);
+        assert_eq!(
+            outcome(tuning().min_speed_mps, 0.0, tuning()),
+            Outcome::Damage
+        );
     }
 
     #[test]

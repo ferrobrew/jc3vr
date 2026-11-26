@@ -9,15 +9,15 @@
 //! [`strike::Striker`]) is swept from where it was on the last tick to where it is now, as the
 //! bullet's own ray is cast: on the query layer, passing what bullets pass. The sweep is composed
 //! in the cockpit frame, so a hand inside a moving car sweeps against the car's own glass rather
-//! than the road behind it. A swing at [`GlassTuning::min_speed_mps`] or faster whose sweep meets
+//! than the road behind it. A swing at [`StrikeTuning::min_speed_mps`] or faster whose sweep meets
 //! glass strikes it:
 //!
 //! 1. The panes the hit names are looked up as the bullet looks them up, and each takes a damage
 //!    point where the sweep met it, in its own space, through the bullet's own damage call; the
 //!    damage grows with the swing's speed ([`strike::hit_damage`]). Several strikes build cracks
 //!    up as several bullets do.
-//! 2. A strike at [`GlassTuning::shatter_speed_mps`] or faster, or one that leaves the pane's
-//!    damage at [`GlassTuning::shatter_total`], brings the whole pane down. The game has no state
+//! 2. A strike at [`StrikeTuning::shatter_speed_mps`] or faster, or one that leaves the pane's
+//!    damage at [`StrikeTuning::shatter_total`], brings the whole pane down. The game has no state
 //!    for a window that is gone (its shader only cracks glass over), so the pane's model instance
 //!    is hidden, and only when its model draws nothing but glass ([`engine::hide`]).
 //! 3. The striking hand gets a haptic strike, and the game's melee impact against glass plays
@@ -35,10 +35,11 @@ pub mod bullets;
 pub mod config;
 mod engine;
 pub mod strike;
+pub mod tuning;
 
 use std::{num::NonZeroUsize, time::Instant};
 
-pub use config::{GLASS, GlassConfig, GlassTuning};
+pub use config::GlassConfig;
 use glam::Vec3;
 use jc3gi::physics::{GameMaterialId, PhysicsSystem};
 use jc3vr_body::controllers::{
@@ -66,9 +67,10 @@ use crate::controllers::{
     glass::{
         engine::{HideRefusal, Pane},
         strike::{Limiter, Outcome, STRIKERS, Sample, Striker, StrikerKind},
+        tuning::{GLASS, GlassTuning, PanesTuning, StrikeTuning},
     },
     physical_hands,
-    physical_hands::{palm::PalmBox, sounds, sounds::MeleeImpact, tuning::PALMS},
+    physical_hands::{palm::PalmBox, sounds, sounds::MeleeImpact, tuning::PHYSICAL_HANDS},
 };
 
 /// Why breaking glass stands down this tick.
@@ -156,19 +158,21 @@ pub unsafe fn main_thread_tick() {
         STATE.lock().stand_down(Idle::NoHands);
         return;
     };
-    let points = strikers(&hands);
+    let glass = GLASS.get();
+    let tuning = &glass.strike;
+    let points = strikers(&hands, tuning);
     let frame = CockpitTransform::current(hands.head.position, hands.world_scale);
     let held = physical_hands::held_props();
     let swings = {
         let mut state = STATE.lock();
         state.status.idle = None;
         let now_s = state.now_s();
-        state.swings(points, now_s, hands.world_scale, &GLASS)
+        state.swings(points, now_s, hands.world_scale, tuning)
     };
     for (striker, swing, now_s) in swings.into_iter().flatten() {
         let lead_m = match striker.kind {
-            StrikerKind::Palm => GLASS.palm_lead_m,
-            StrikerKind::Weapon => GLASS.tip_lead_m,
+            StrikerKind::Palm => tuning.palm_lead_m,
+            StrikerKind::Weapon => tuning.tip_lead_m,
         } * frame.scale();
         let from = frame.point_to_world(swing.from);
         let to = frame.point_to_world(swing.to);
@@ -199,13 +203,13 @@ pub unsafe fn main_thread_tick() {
             continue;
         }
         state.limiter.note(striker, now_s);
-        let Some(damage) = strike::hit_damage(swing.speed_mps, &GLASS) else {
+        let Some(damage) = strike::hit_damage(swing.speed_mps, tuning) else {
             continue;
         };
         let mut shattered = false;
         for pane in panes {
             // SAFETY: forwarded from the caller; the pane was found this tick.
-            let result = unsafe { state.strike(pane, at, swing.speed_mps, damage) };
+            let result = unsafe { state.strike(pane, at, swing.speed_mps, damage, glass) };
             shattered |= result.hidden;
             state.status.last = Some(LastStrike {
                 striker,
@@ -220,7 +224,7 @@ pub unsafe fn main_thread_tick() {
         let scale = if shattered {
             1.0
         } else {
-            damage / GLASS.max_damage.max(f32::EPSILON)
+            damage / tuning.max_damage.max(f32::EPSILON)
         };
         haptics::play_scaled(striker.hand, Event::HandStrike, scale);
         // SAFETY: forwarded from the caller.
@@ -247,7 +251,7 @@ pub unsafe fn main_thread_tick() {
 
 /// Each striker's point this tick, in the cockpit frame, by [`Striker::index`]: an empty hand's
 /// palm, and the muzzle end of the gun a hand holds.
-fn strikers(hands: &ActiveHands) -> [Option<Vec3>; STRIKERS] {
+fn strikers(hands: &ActiveHands, tuning: &StrikeTuning) -> [Option<Vec3>; STRIKERS] {
     let free = physical_hands::free_hands();
     let wielded = held::last_wielded_hands();
     let mut points = [None; STRIKERS];
@@ -256,24 +260,25 @@ fn strikers(hands: &ActiveHands) -> [Option<Vec3>; STRIKERS] {
             continue;
         };
         if free[hand.index()] {
-            let palm = PalmBox::from_wrist(pose.wrist, 1.0, &PALMS);
+            let palm = PalmBox::from_wrist(pose.wrist, 1.0, &PHYSICAL_HANDS.get().palms);
             points[Striker::new(hand, StrikerKind::Palm).index()] = Some(palm.centre);
             continue;
         }
         let holds_gun = wielded[hand.index()] || held::item(hand) == Some(HeldItem::Weapon);
         if holds_gun {
-            points[Striker::new(hand, StrikerKind::Weapon).index()] = Some(muzzle(hand, pose));
+            points[Striker::new(hand, StrikerKind::Weapon).index()] =
+                Some(muzzle(hand, pose, tuning.pistol_reach_m));
         }
     }
     points
 }
 
-/// The muzzle end of the gun in `hand`: its measured muzzle for a long gun, or a pistol's reach
+/// The muzzle end of the gun in `hand`: its measured muzzle for a long gun, or `pistol_reach_m`
 /// ahead of the aim pose.
-fn muzzle(hand: Hand, pose: CockpitHand) -> Vec3 {
+fn muzzle(hand: Hand, pose: CockpitHand, pistol_reach_m: f32) -> Vec3 {
     match held::long_gun_muzzle(hand) {
         Some(muzzle) => pose.wrist.position + pose.wrist.orientation * muzzle,
-        None => ahead(pose.aim, GLASS.pistol_reach_m),
+        None => ahead(pose.aim, pistol_reach_m),
     }
 }
 
@@ -395,7 +400,7 @@ impl State {
         points: [Option<Vec3>; STRIKERS],
         now_s: f64,
         world_scale: f32,
-        tuning: &GlassTuning,
+        tuning: &StrikeTuning,
     ) -> [Option<(Striker, strike::Swing, f64)>; STRIKERS] {
         Striker::ALL.map(|striker| {
             let i = striker.index();
@@ -414,7 +419,14 @@ impl State {
     /// # Safety
     ///
     /// The game thread, within the tick the pane was found in.
-    unsafe fn strike(&mut self, pane: Pane, at: Vec3, speed_mps: f32, damage: f32) -> PaneStrike {
+    unsafe fn strike(
+        &mut self,
+        pane: Pane,
+        at: Vec3,
+        speed_mps: f32,
+        damage: f32,
+        tuning: &GlassTuning,
+    ) -> PaneStrike {
         let now_s = self.now_s();
         // SAFETY: forwarded from the caller.
         let (before, after) = unsafe {
@@ -424,11 +436,16 @@ impl State {
             (before, engine::point_total(pane))
         };
         self.status.strikes += 1;
-        self.panes.retain(|p| now_s - p.last_s <= PANE_MEMORY_S);
+        let PanesTuning {
+            memory_s,
+            max_records,
+        } = tuning.panes;
+        self.panes
+            .retain(|p| now_s - p.last_s <= f64::from(memory_s));
         let record = match self.panes.iter_mut().find(|p| p.address == pane.address()) {
             Some(record) => record,
             None => {
-                if self.panes.len() >= MAX_PANE_RECORDS {
+                if self.panes.len() >= max_records {
                     self.panes.remove(0);
                 }
                 self.panes.push(PaneRecord {
@@ -442,7 +459,7 @@ impl State {
         let accumulated = strike::accumulate(before, after, damage, record.excess);
         record.excess = accumulated.excess;
         record.last_s = now_s;
-        let outcome = strike::outcome(speed_mps, accumulated.total, &GLASS);
+        let outcome = strike::outcome(speed_mps, accumulated.total, &tuning.strike);
         // SAFETY: forwarded from the caller.
         let model = unsafe { pane.model_hash() };
         let mut hidden = false;
@@ -500,12 +517,6 @@ impl State {
         }
     }
 }
-
-/// How long a pane's strikes are remembered after its last, seconds.
-const PANE_MEMORY_S: f64 = 120.0;
-
-/// The most panes whose strikes are remembered at once.
-const MAX_PANE_RECORDS: usize = 32;
 
 static STATE: Mutex<State> = Mutex::new(State {
     epoch: None,
