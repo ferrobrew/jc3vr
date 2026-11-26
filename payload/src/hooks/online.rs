@@ -79,7 +79,7 @@ impl Default for OnlineConfig {
     }
 }
 
-pub(super) fn hook_library() -> HookLibrary {
+pub(crate) fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_static_binder(&STATISTIC_MANAGER_UPDATE_BINDER)
         .with_static_binder(&BRAG_MANAGER_UPDATE_BINDER)

@@ -53,7 +53,7 @@ pub(crate) use acts::resolve_act_id;
 pub(crate) use body_ik::body_ik_status;
 pub(crate) use config::BodyIkConfig;
 
-pub(super) fn hook_library() -> HookLibrary {
+pub(crate) fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_static_binder(&CHARACTER_UPDATE_PASS_FINALIZE_POSE_PARALLEL_BINDER)
         .with_static_binder(&CHARACTER_UPDATE_SECONDARY_HAND_IK_PASS_BINDER)

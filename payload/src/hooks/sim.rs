@@ -1,7 +1,7 @@
 //! Detours around the sim tick and its phases: timing for the always-on frame breakdown
 //! (`crate::frame_timing`) and, under the `profiler` feature, the profiler's flame graph; the input
-//! job's thread role; the input tick's game stage; and the tracking recorder's bodies near Rico,
-//! sampled after the world's post-simulation update.
+//! job's thread role; the input tick's game stage; and the post-step observer
+//! ([`register_post_step`]), run after the world's post-simulation update.
 //!
 //! The timing hooks change nothing the game does: each opens a [`frame_timing::scope`] around the
 //! original call. Three hooks do more. The input job's body (`RunInputThread_Proxy`) holds
@@ -32,7 +32,7 @@
 //! Threading: everything here except the AI thread bodies and the input job runs on the game thread,
 //! inside the engine's `Game::Update`.
 
-use std::{cell::RefCell, ffi::c_void};
+use std::{cell::RefCell, ffi::c_void, sync::OnceLock};
 
 use detours_macro::detour;
 use jc3gi::{
@@ -48,7 +48,17 @@ use crate::{
     thread_role::{self, ThreadRole},
 };
 
-pub(super) fn hook_library() -> HookLibrary {
+/// Register the observer that runs after each simulation step, at the end of the world's
+/// post-simulation update. One observer: a second registration is refused and logged.
+///
+/// The observer is called on the game thread, after the step's physics phase and outside it.
+pub(crate) fn register_post_step(observer: unsafe fn()) {
+    if POST_STEP.set(observer).is_err() {
+        tracing::error!("sim: a post-step observer is already registered; keeping the first");
+    }
+}
+
+pub(crate) fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_static_binder(&UPDATE_GAME_BINDER)
         .with_static_binder(&WORLD_UPDATE_PRE_SIM_BINDER)
@@ -62,6 +72,8 @@ pub(super) fn hook_library() -> HookLibrary {
         .with_static_binder(&AI_THREAD_2_BINDER)
         .with_static_binder(&INPUT_JOB_BINDER)
 }
+
+static POST_STEP: OnceLock<unsafe fn()> = OnceLock::new();
 
 #[detour(address = jc3gi::game::Game::UpdateGame_ADDRESS)]
 fn update_game(this: *mut Game, update_contexts: *mut UpdateContexts) {
@@ -115,8 +127,10 @@ fn world_update_post_sim(this: *mut GameWorld, context: *mut GameObjectUpdateCon
     #[cfg(feature = "profiler")]
     puffin::profile_scope!("GameWorld::UpdatePostSim");
     WORLD_UPDATE_POST_SIM.get().unwrap().call(this, context);
-    // SAFETY: the game thread, after the step's physics phase and outside it.
-    unsafe { crate::controllers::diagnostics::after_step() };
+    if let Some(observer) = POST_STEP.get() {
+        // SAFETY: the game thread, after the step's physics phase and outside it.
+        unsafe { observer() };
+    }
 }
 
 #[detour(address = jc3gi::game::StreamerUpdate_ADDRESS)]

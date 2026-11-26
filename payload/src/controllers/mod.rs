@@ -59,6 +59,8 @@
 
 use re_utilities::hook_library::HookLibrary;
 
+use crate::lifecycle::RegistrationError;
+
 pub mod aim;
 pub mod aim_state;
 pub mod bindings;
@@ -84,6 +86,8 @@ pub mod overlay;
 pub mod physical_hands;
 pub mod presentation;
 pub mod presets;
+mod register_lifecycle;
+mod register_post_step;
 pub mod roomscale;
 pub mod scheme;
 pub mod snatch;
@@ -93,8 +97,17 @@ pub mod weapons;
 
 pub use config::ControllersConfig;
 
+/// Register the controller subsystems' shutdown participants, their hook installation and removal
+/// steps, and their simulation observers. Runs before the hooks are installed; an error refuses
+/// hook installation, and the refusal is already logged.
+pub(crate) fn install() -> Result<(), RegistrationError> {
+    register_lifecycle::register()?;
+    register_post_step::register();
+    Ok(())
+}
+
 /// The controller subsystems' hooks, aggregated into the payload's hook library by
-/// [`crate::hooks`].
+/// [`crate::composition`].
 pub(crate) fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_hook_library(aim_state::hook_library())

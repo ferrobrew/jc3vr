@@ -32,7 +32,7 @@ use crate::profiler::{
     type_scope,
 };
 
-pub(super) fn hook_library() -> HookLibrary {
+pub(crate) fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_static_binder(&DRAW_GBUFFER_BINDER)
         .with_static_binder(&RENDER_ENGINE_DRAW_BINDER)

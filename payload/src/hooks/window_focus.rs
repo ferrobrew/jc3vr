@@ -24,7 +24,7 @@ use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 use windows::Win32::{Foundation::HWND, UI::WindowsAndMessaging::GetForegroundWindow};
 
-pub(super) fn hook_library() -> HookLibrary {
+pub(crate) fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_static_binder(&LOSE_FOCUS_BINDER)
         .with_static_binder(&GAIN_FOCUS_BINDER)

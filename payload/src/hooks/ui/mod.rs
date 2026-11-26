@@ -33,7 +33,7 @@ use crate::{
     hud::{HUD_STATE, aim, compute_panel_vp, current_aspect},
 };
 
-pub(super) fn hook_library() -> HookLibrary {
+pub(crate) fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_static_binder(&GET_2D_INFO_BINDER)
         .with_static_binder(&CONVERT_3D_COORDS_DEFAULT_BINDER)

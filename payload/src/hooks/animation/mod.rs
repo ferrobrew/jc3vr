@@ -11,7 +11,7 @@ use re_utilities::hook_library::HookLibrary;
 pub(crate) mod canopy;
 pub(crate) mod publication;
 
-pub(super) fn hook_library() -> HookLibrary {
+pub(crate) fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_static_binder(&UPDATE_ANIMATIONS_TIME_BINDER)
         .with_static_binder(&UPDATE_ANIMATIONS_BINDER)

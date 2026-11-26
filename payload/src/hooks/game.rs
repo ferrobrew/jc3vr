@@ -44,7 +44,7 @@ use crate::{
     thread_role::{self, ThreadRole},
 };
 
-pub(super) fn hook_library() -> HookLibrary {
+pub(crate) fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_static_binder(&GAME_UPDATE_BINDER)
         // Nop the `m_UpdateFlags & 4` gate (the `jz`) at

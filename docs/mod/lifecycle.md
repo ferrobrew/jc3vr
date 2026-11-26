@@ -6,13 +6,17 @@ Participants register before enabling work that requires shutdown preparation. P
 
 The reserved human-collider participant does not implement shape migration. A future implementation must restore all affected state transactionally and prove clearance, identity, and reader exclusion before returning a ready guard. An unavailable or blocked restoration must keep gameplay and its required hooks active. No global collider mutation is enabled by this lifecycle change.
 
+## Hook installation and removal
+
+`crate::composition` is the one place that names every module with detours. At startup it runs each module's registrations, then hands `hooks::install` the composed hook library. A module registers its shutdown participants with the lifecycle, and its hook steps with `hooks`: `register_post_enable` for admission that may open only once its detour is live, `register_pre_unpatch` for detours managed outside the hook library (the single-pass COM-vtable detours) and for refusals (an armed texture census), and `register_post_unpatch` for the checks that no native callback is still running in payload code once every patch is reverted. Each kind runs in registration order, and a refusing step stops removal and keeps the image mapped. The libraries compose in a fixed enable order, which a unit test pins, because detour order and removal order both bear on startup and ejection timing.
+
 ## Inventory spawn callbacks
 
-Inventory restore and second-pistol requests hand the engine a payload callback, and nothing the engine reports proves that a queued callback has retired. The participant in `controllers/weapons/inventory/spawn_safety.rs` latches the first such exposure for the rest of the process, but the exposure does not veto an unload: an unload that can never run cannot show whether the risk is real. Preparation and the post-unpatch check log a warning naming the risk (a callback the engine still holds would crash the game once the image unmaps) and continue. They defer only while a submission or callback is executing payload code at that moment, which is transient, and preparation closes admission so no new request starts.
+Inventory restore and second-pistol requests hand the engine a payload callback, and nothing the engine reports proves that a queued callback has retired. The participant in `controllers/weapons/inventory/spawn_safety/` latches the first such exposure for the rest of the process, but the exposure does not veto an unload: an unload that can never run cannot show whether the risk is real. Preparation and the post-unpatch check log a warning naming the risk (a callback the engine still holds would crash the game once the image unmaps) and continue. They defer only while a submission or callback is executing payload code at that moment, which is transient, and preparation closes admission so no new request starts.
 
 ## Magazine executor restriction
 
-`hooks::activate_magazine_executor` marks the magazine binder installed. Shutdown preparation for the magazine executor runs only on the game thread. It cancels a magazine extraction in progress, then defers (`DeferReason::MagazineBusy`) while the reload executor has not drained or a native magazine callback entry is active.
+`controllers::weapons::reload::shutdown` opens magazine admission once the hooks are enabled and closes it after removal. Shutdown preparation for the magazine executor runs only on the game thread. It cancels a magazine extraction in progress, then defers (`DeferReason::MagazineBusy`) while the reload executor has not drained or a native magazine callback entry is active.
 
 The hook library's disable operation does not establish callback completion. A snapshot of suspended threads also does not prove that a callback cannot resume in removed code. A future executor adapter must retain a proven barrier through removal or provide an equivalent lifetime guarantee. This restriction does not certify the pre-existing removal behavior of every other hook.
 
@@ -22,4 +26,4 @@ Initialization failures and caught update panics enter a fatal lifecycle state. 
 
 ## Verification
 
-Isolated lifecycle tests cover coalesced requests, bounded retries, normal-frame continuation on deferral, partial preparation rollback, stale tokens, participant-generation changes, registration exclusivity, cleanup ordering, and one-shot commit. Hook-preparation tests cover busy drains and rejection of an installed callback without an entry-exclusion contract. These tests do not prove native callback exclusion, collider clearance, or live ejection and reinjection safety.
+Isolated lifecycle tests cover coalesced requests, bounded retries, normal-frame continuation on deferral, partial preparation rollback, stale tokens, participant-generation changes, registration exclusivity, cleanup ordering, and one-shot commit. The inventory spawn participant's tests run it in an isolated lifecycle beside the others. Magazine preparation tests cover busy drains and rejection of an installed callback without an entry-exclusion contract. These tests do not prove native callback exclusion, collider clearance, or live ejection and reinjection safety.

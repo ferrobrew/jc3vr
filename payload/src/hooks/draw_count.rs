@@ -77,7 +77,7 @@ fn bump_dispatch() {
     PASS_DISPATCH.with(|c| c.set(c.get() + 1));
 }
 
-pub(super) fn hook_library() -> HookLibrary {
+pub(crate) fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_static_binder(&DRAW_INDEXED_BINDER)
         .with_static_binder(&DRAW_BINDER)

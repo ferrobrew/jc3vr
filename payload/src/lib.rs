@@ -16,6 +16,7 @@ pub mod util;
 pub mod vr;
 
 mod allocator;
+mod composition;
 mod config;
 mod controllers;
 mod cpu_placement;
@@ -122,7 +123,7 @@ fn initialize_startup() {
     // (the dominant hand and the input layout among it), so it must already hold the saved settings.
     config::init();
     tracing::info!("startup: config init complete");
-    hooks::install();
+    composition::install();
     tracing::info!("startup: hook installation returned");
 }
 

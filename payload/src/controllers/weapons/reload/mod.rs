@@ -69,6 +69,7 @@ mod render;
 mod retained;
 mod revolver;
 pub(crate) mod serial;
+pub(crate) mod shutdown;
 mod steps;
 pub mod travel;
 pub mod tuning;

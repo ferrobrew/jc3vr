@@ -21,7 +21,7 @@ use crate::{
     hud::{cursor, egui_panel},
 };
 
-pub(super) fn hook_library() -> HookLibrary {
+pub(crate) fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&WNDPROC_BINDER)
 }
 

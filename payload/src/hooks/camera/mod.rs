@@ -39,7 +39,7 @@ use crate::{
     hooks::in_gameplay,
 };
 
-pub(super) fn hook_library() -> HookLibrary {
+pub(crate) fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_static_binder(&CAMERA_UPDATE_RENDER_BINDER)
         .with_static_binder(&CAMERA_TREE_UPDATE_RENDER_CONTEXTS_BINDER)
