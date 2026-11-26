@@ -339,4 +339,6 @@ impl Drop for PreparedSpawn {
 }
 
 #[cfg(test)]
+mod lifecycle_tests;
+#[cfg(test)]
 mod tests;
