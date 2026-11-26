@@ -27,7 +27,6 @@ What lands where is fixed per kind of output, in `payload/src/session.rs`. Folde
 | `screenshots/<stamp>.png` and `<stamp>.json` | an F12 screenshot and its single-pass sidecar | |
 | `grapple-logs/<stamp>.csv` | a grapple telemetry capture ([grapple-comfort.md](body/grapple-comfort.md)) | |
 | `recordings/<stamp>/` | a recording, holding whichever halves it has (below) | |
-| `scenarios/<stamp>_<scenario file>.toml` | a scenario's summary, stamped with the scenario's start | |
 | `shader-dumps/<stamp>.txt` | the vertex-shader name census, after a shader reload with the census on | |
 | `traces/<stamp>/` | a render trace: `trace.ndjson` and, with the per-eye screenshot probe, `frameNNN_eye<N>.png` ([render-trace.md](rendering/render-trace.md)) | `tools/analysis/analyze_trace_frames.py` |
 
@@ -35,8 +34,8 @@ A recording's folder holds:
 
 | File | What writes it | Read by |
 | --- | --- | --- |
-| `tracking.jc3trk` | a tracking recording ([testing/recorder.md](testing/recorder.md)) | `tracking-synth dump`, the replay |
-| `lookback.jc3trk` | a save of the tracking lookback, in a folder of its own | `tracking-synth dump`, the replay |
+| `tracking.jc3trk` | a tracking recording ([testing/recorder.md](testing/recorder.md)) | `tracking-synth` (`dump`, `rig-eval`, `export-rerun`, and the rest) |
+| `lookback.jc3trk` | a save of the tracking lookback, in a folder of its own | `tracking-synth` |
 | `frames.jsonl` | a video recording's per-frame sidecar, with its mirror layouts and take markers ([capture.md](capture.md)) | `tools/capture/reframe.py` |
 | `frame_map.jsonl` | a streamed take's record of each video frame's source frame ([capture.md](capture.md)) | |
 | `video.mkv`, `video.mkv.ts`, and `stream.json` | the capture host's screen recording of the mirror window, the recorder's first-frame time, and the host's metadata with the region and the video's start wall clock, written there by the host (not the game) when the session folder's Unix form is known | `tools/capture/reframe.py`, an editor |

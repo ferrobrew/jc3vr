@@ -173,7 +173,7 @@ The part is drawn where the travel has it:
 
 While the pump is back, the foregrip moves back along the barrel with it (`foregrip::set_pump_slide`), so the drawn off-hand rides the pump. With the hand bodies on, the off-hand on the foregrip is drawn at its body, joined to the gun body where it took the foregrip, so the drawn hand stays at the brace while the pump moves.
 
-The log has, at info level, `reload: the action cycled` with the action, the gun hand, and whether a round was chambered; `reload: the last shot locked the slide back`; `reload: the slide caught at the rear on an empty magazine`; and `reload: took the slide off its catch`. At debug level, `reload: took the action's handle`. The debug UI's Status page shows `LEFT ACTION` and `RIGHT ACTION` under `WEAPONS IN HAND`: the action and where its part is (`HOME`, `BACK 40%`, `UP 100%, BACK 30%`, or `LOCKED BACK`), `HELD` while a hand holds it, the chamber, and the actions worked. The scenario signals are `actions.worked`, `actions.locked_back`, `actions.held`, and `actions.travel` (`testing/scenarios/physical_actions.toml`).
+The log has, at info level, `reload: the action cycled` with the action, the gun hand, and whether a round was chambered; `reload: the last shot locked the slide back`; `reload: the slide caught at the rear on an empty magazine`; and `reload: took the slide off its catch`. At debug level, `reload: took the action's handle`. The debug UI's Status page shows `LEFT ACTION` and `RIGHT ACTION` under `WEAPONS IN HAND`: the action and where its part is (`HOME`, `BACK 40%`, `UP 100%, BACK 30%`, or `LOCKED BACK`), `HELD` while a hand holds it, the chamber, and the actions worked.
 
 ## Each hand's gun
 

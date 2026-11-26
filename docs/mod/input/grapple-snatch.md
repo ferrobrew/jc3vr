@@ -113,7 +113,10 @@ In the headset:
 9. Squeeze and yank at the body's arm: the hook latches that arm, and the line reels the body in by it, the arm leading and the rest dragging. Whirl it and let go: it tumbles on. A soldier who was only knocked down gets up once the line lets go and the body comes to rest.
 10. Drag a body along the ground on the line by walking backward and swinging the hand: the whole body follows promptly, the hooked limb a little ahead, rather than the limb stretching out while the body stays put; the `SNATCH` row's tension no longer sits at its strength for long.
 
-`testing/scenarios/grapple_hammer_throw.toml` records the acceptance sequence for weapons and light props on B, and `testing/scenarios/grapple_heavy_swing.toml` the heavy swing's. Both still need a headset recording and live-game acceptance.
+11. Aim at an object above the ceiling (a hay bale or a container): no marker.
+12. With B held on a swinging rifle or loose prop, open the grip: no grapple or tether fires on releasing B, and the target keeps its motion. Press B before gripping: an ordinary grapple. Check also the cancellation while B stays down, tracking loss, opening the menu, a held line left still for longer than the usual stall window, and a target picked up or destroyed in flight. The native line starts at the tracked forearm, and neither a weapon nor a prop is pulled all the way in while B stays down.
+
+The sequence still needs live-game acceptance in the headset.
 
 ## The snatch's sounds
 

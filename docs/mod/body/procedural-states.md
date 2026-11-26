@@ -26,7 +26,7 @@ The legs stay the seat's: the clip puts the feet on the pedals or the footrests 
 
 The body IK's torso lean, which posed the torso in a seat before, stands down once the procedural torso has its full weight, as on foot.
 
-The scenario signals `procedural.seated` and `procedural.neck_error_m` read the same, and `testing/scenarios/seated_torso.toml` is the template for a recorded check ([recorder.md](../testing/recorder.md)). The `SEATED TORSO` status row shows the torso's weight and the neck's distance from the point under the player's head; it is `OK` at full weight, and `NOT SEATED` outside a seat.
+The `SEATED TORSO` status row shows the torso's weight and the neck's distance from the point under the player's head; it is `OK` at full weight, and `NOT SEATED` outside a seat.
 
 ## Standing on a roof
 
@@ -34,7 +34,7 @@ Standing in a vehicle's stunt area (a car's roof, a boat's deck, a plane's wing;
 
 The animation set's `STUNT_COMBAT_MODIFIER` and `STUNT_NONCOMBAT_MODIFIER` select the stunt idle, movement, turn, and stop clip variants inside the on-foot states (see [idle-stance.md](../../engine/character/idle-stance.md)). For the local player standing in a stunt area, `hooks::character::modifiers` drops those two modifiers on their way to the rule systems, so the on-foot state selects its normal clips; the engine clears frame-bound modifiers and re-sets them every tick, so nothing is left behind. This is the replacement of the stunt clips the previous reference-pose body was standing in for.
 
-The `ROOF TORSO` status row shows the torso's weight and the neck's distance from the point under the player's head, `OK` at full weight and `NOT ON A ROOF` otherwise. The scenario signal `procedural.roof` reads the same, and `testing/scenarios/stunt_positions.toml` covers it.
+The `ROOF TORSO` status row shows the torso's weight and the neck's distance from the point under the player's head, `OK` at full weight and `NOT ON A ROOF` otherwise.
 
 ## The firm ragdoll
 
@@ -54,7 +54,7 @@ The targets are placed at the solve gate from the pose the animation wrote this 
 
 The wingsuit's membrane is skinned between the arms and the body, so arms held far from the wing pose (by the sides, overhead) fold or stretch it as they would in the game's own arm animation; the arms spread as wings keep it as the flight pose has it.
 
-The `WINGSUIT ARMS` status row shows the arms' weight and the hands queued, `OK` with both at full weight and `NOT IN THE WINGSUIT` otherwise. The scenario signal `procedural.wing_arms` reads the same, and `testing/scenarios/wingsuit_arms.toml` is the template for a recorded check. The Body page's Body fit live status shows the row, and beneath it the arm targets placed.
+The `WINGSUIT ARMS` status row shows the arms' weight and the hands queued, `OK` with both at full weight and `NOT IN THE WINGSUIT` otherwise. The Body page's Body fit live status shows the row, and beneath it the arm targets placed.
 
 ## The parachute
 
@@ -64,7 +64,7 @@ The canopy and its lines are a separate model with its own skeleton; whether the
 
 Coming from a jump the torso stays procedural through the change of case; coming from a fall past the grace the torso's weight blends it in from the animation. Landing hands back to the torso on foot, with the legs the game's landing.
 
-The `PARACHUTE BODY` status row shows the torso's weight and the neck's distance from the point under the player's head, `OK` at full weight, `NOT UNDER THE CANOPY` otherwise. The scenario signal `procedural.parachute` reads the same, and `testing/scenarios/parachute_body.toml` is the template for a recorded check.
+The `PARACHUTE BODY` status row shows the torso's weight and the neck's distance from the point under the player's head, `OK` at full weight, `NOT UNDER THE CANOPY` otherwise.
 
 ## The grapple's wall attach
 
@@ -78,7 +78,7 @@ The swimming hand tier is yielded in the plan's table ([controllers-and-roomscal
 
 Walking into the water keeps the torso procedural throughout, on the hips of whatever clip plays, and the legs go to the kick as the game's animation blends them. Walking back out does the same the other way.
 
-The `SWIM TORSO` status row shows the torso's weight and the neck's distance from the point under the player's head, `OK` at full weight and `NOT SWIMMING` otherwise. The scenario signal `procedural.swimming` reads the same, and `testing/scenarios/swim_torso.toml` is the template for a recorded check.
+The `SWIM TORSO` status row shows the torso's weight and the neck's distance from the point under the player's head, `OK` at full weight and `NOT SWIMMING` otherwise.
 
 ## The body mirror
 

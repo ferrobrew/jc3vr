@@ -166,8 +166,6 @@ The live readout shows the owner; the step phase, the steps committed, the deman
 
 The in-world diagnostics are on by default (`controllers.overlay.body_rig`, the visualisation drawer's `Body rig`, `rig::visual`): a sprite at the neck pivot and one at the waist pivot, the spine segment between them, the lean radius as a ring on the floor around the pelvis, and a fainter ring at the lean's reach, teal while idle, yellow while settling or drifting, and orange while stepping, drawn through Rico's body. They hang from the head in the player's own metres, so they show the player's body as the rig reads it, not Rico's.
 
-The scenario signals ([recorder.md](../testing/recorder.md)) are `rig.gap_m` (the neck's offset over the pelvis), `rig.residual_m` (the step demand), `rig.stepping`, `rig.steps`, `rig.ledger_projected`, `rig.pushback_m`, `rig.obstructed`, and `rig.pushbacks`.
-
 ## Offline evaluation
 
 `tracking-synth rig-eval <recording> <out.csv>` runs the same solver over a recorded `tracking.jc3trk` and writes a CSV of the time, the bend, the step demand, the committed steps, the step phase, the yaw error, and the head's pitch ([testing/recorder.md](../testing/recorder.md)); `tools/analysis/plot_rig_eval.py` plots it against the take's video.
