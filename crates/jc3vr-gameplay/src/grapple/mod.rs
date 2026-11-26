@@ -64,8 +64,7 @@ use jc3vr_render::{
     headpose::config::{GrappleComfortConfig, GrappleComfortMode},
 };
 
-pub use crate::controllers::physics::grapple_hook as hook;
-use crate::grapple::hook::HookRead;
+use crate::controllers::physics::grapple_hook::{self as hook, HookRead};
 
 /// Advance the filter one step: read the hook's phase, run the engage/hold/handoff/release state
 /// machine, and update the anchor absorber. `body` is the raw body rotation as of this advance,

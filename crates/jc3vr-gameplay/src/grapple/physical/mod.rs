@@ -48,14 +48,12 @@ use crate::{
         hands::anchor,
         haptics,
         mode::{Detection, Traversal},
+        physics::grapple_hook::{self as hook, HookRead},
     },
-    grapple::{
-        hook::{self, HookRead},
-        physical::{
-            pull::{LinePull, PullReading},
-            reel::ReelDrive,
-            tether::TetherTick,
-        },
+    grapple::physical::{
+        pull::{LinePull, PullReading},
+        reel::ReelDrive,
+        tether::TetherTick,
     },
 };
 

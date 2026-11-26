@@ -26,12 +26,10 @@ use crate::{
         },
         hands,
         physical_hands::{self, doors::engine::vehicle_body, game_object_of},
+        physics::grapple_hook::{self as hook, BodyHit, CustomOwner, local},
         weapons::hold::refs::{Strong, null_weak},
     },
-    grapple::{
-        hook::{self, BodyHit, CustomOwner, local},
-        seat::Refusal,
-    },
+    grapple::seat::Refusal,
 };
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]

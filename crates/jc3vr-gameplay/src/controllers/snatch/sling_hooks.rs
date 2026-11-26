@@ -22,7 +22,7 @@ use jc3gi::{
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::grapple::hook;
+use crate::controllers::physics::grapple_hook as hook;
 
 /// Only addresses identifying the owned wire and its native near-end proxy accompany the pose.
 #[derive(Copy, Clone)]

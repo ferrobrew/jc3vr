@@ -31,7 +31,7 @@ use crate::{
             remote,
             rigid::Velocities,
         },
-        physics::GRAVITY_MPS2,
+        physics::{GRAVITY_MPS2, grapple_hook::BodyHit},
         snatch::{
             FinishInput, Refusal, SNATCH,
             arrival::{self, Landing, LandingInput},
@@ -50,7 +50,6 @@ use crate::{
         },
     },
     grapple::{
-        hook::BodyHit,
         line_grab,
         rope::{self, RopeFault},
     },

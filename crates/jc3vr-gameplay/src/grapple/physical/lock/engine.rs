@@ -18,12 +18,10 @@ use jc3gi::{
     vehicle::vehicle::Helicopter,
 };
 
-use crate::{
-    controllers::{
-        physical_hands::{self, BodyState, characters::engine::proxy_body, game_object_of},
-        weapons::engine::character_position,
-    },
-    grapple::hook,
+use crate::controllers::{
+    physical_hands::{self, BodyState, characters::engine::proxy_body, game_object_of},
+    physics::grapple_hook as hook,
+    weapons::engine::character_position,
 };
 
 /// The far end's proxy of `hook`'s active wire while the hook reels in along it, the far end is

@@ -23,7 +23,7 @@ use jc3gi::{
 use jc3vr_input::frame::Hand;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::{controllers::hands::late, grapple::hook};
+use crate::controllers::{hands::late, physics::grapple_hook as hook};
 
 /// The device's render hook, registered by `crate::hooks`.
 pub fn hook_library() -> HookLibrary {

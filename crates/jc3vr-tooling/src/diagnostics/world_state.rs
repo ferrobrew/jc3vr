@@ -10,8 +10,8 @@ use jc3gi::{
 };
 use jc3vr_core::frame_timing;
 use jc3vr_gameplay::{
-    controllers::{haptics, snatch, vehicles},
-    grapple::{hook, physical::lock},
+    controllers::{haptics, physics::grapple_hook as hook, snatch, vehicles},
+    grapple::physical::lock,
 };
 use jc3vr_input::frame::Hand;
 use jc3vr_render::{

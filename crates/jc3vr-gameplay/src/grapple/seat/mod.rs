@@ -12,12 +12,10 @@ use jc3vr_input::{frame::Hand, haptics::cues::Event};
 use parking_lot::Mutex;
 
 pub(crate) use crate::controllers::facts::seat::{rides_in_seat, stands_in};
-use crate::{
-    controllers::{
-        bindings::grapple_button::{SeatRequest, TAP_S},
-        haptics,
-    },
-    grapple::hook::local,
+use crate::controllers::{
+    bindings::grapple_button::{SeatRequest, TAP_S},
+    haptics,
+    physics::grapple_hook::local,
 };
 
 /// What the bindings hand the seat grapple's tick.

@@ -6,42 +6,40 @@ use std::num::NonZeroUsize;
 use glam::Vec3;
 use jc3gi::physics::{PfxLayer, PhysicsSystem};
 
-use crate::{
-    controllers::{
-        aim::{
-            grapple_weapons,
-            ray::Ray,
-            raycast::{self, CastOptions},
+use crate::controllers::{
+    aim::{
+        grapple_weapons,
+        ray::Ray,
+        raycast::{self, CastOptions},
+    },
+    grab::RemoteKind,
+    physical_hands::{
+        self,
+        collider_view::model::Aabb,
+        doors::{
+            DoorTarget,
+            engine::{broken_off, is_vehicle_part},
         },
-        grab::RemoteKind,
-        physical_hands::{
-            self,
-            collider_view::model::Aabb,
-            doors::{
-                DoorTarget,
-                engine::{broken_off, is_vehicle_part},
-            },
-            game_object_of,
-            remote::{self, NearBody, NearKind, RagdollTarget},
-        },
-        snatch::{
-            OfferInput, Refusal, SNATCH,
-            config::SnatchSettings,
-            engine,
-            rules::{self, Candidate, PropHandling},
-        },
-        weapons::{
-            c4::placed::{self as placed_charges, ChargeIdentity, PlacedCharge},
-            grenade,
-            hold::{
-                rack::{self, remote::RemoteRack},
-                refs::Weak,
-                steal::{self, HolsteredTarget},
-                world::{TargetKind, WorldTarget},
-            },
+        game_object_of,
+        remote::{self, NearBody, NearKind, RagdollTarget},
+    },
+    physics::grapple_hook::{BodyHit, local_hook},
+    snatch::{
+        OfferInput, Refusal, SNATCH,
+        config::SnatchSettings,
+        engine,
+        rules::{self, Candidate, PropHandling},
+    },
+    weapons::{
+        c4::placed::{self as placed_charges, ChargeIdentity, PlacedCharge},
+        grenade,
+        hold::{
+            rack::{self, remote::RemoteRack},
+            refs::Weak,
+            steal::{self, HolsteredTarget},
+            world::{TargetKind, WorldTarget},
         },
     },
-    grapple::hook::BodyHit,
 };
 
 /// Revalidate a recent offer without selecting a different object.
@@ -416,7 +414,7 @@ pub(super) unsafe fn offerable(input: &OfferInput) -> Result<(), &'static str> {
     if input.button_held {
         return Err("GRAPPLE BUTTON HELD");
     }
-    let hook = unsafe { crate::grapple::hook::local_hook() }.ok_or("NO HOOK")?;
+    let hook = unsafe { local_hook() }.ok_or("NO HOOK")?;
     match engine::busy(hook) {
         Some(Refusal::LineOut) => Err("LINE OUT"),
         Some(_) => Err("HOOK BUSY"),

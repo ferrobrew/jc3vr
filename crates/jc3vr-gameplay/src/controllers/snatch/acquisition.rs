@@ -5,27 +5,25 @@ use std::{cell::Cell, num::NonZeroUsize};
 use glam::Vec3;
 use jc3vr_input::frame::Hand;
 
-use crate::{
-    controllers::{
-        loadout::TakeSource,
-        physical_hands::doors::{DoorTarget, engine::vehicle_frame},
-        snatch::{
-            Refusal, SNATCH, charge, engine,
-            pull::fire_hook,
-            rules::PropHandling,
-            target::{Offer, OfferKind},
-        },
-        weapons::{
-            c4::placed,
-            hold::{
-                rack::copy,
-                refs::Strong,
-                source::{self as hold_source, Freed, Ticket, WeaponSource, Yield},
-                steal::CharacterGun,
-            },
+use crate::controllers::{
+    loadout::TakeSource,
+    physical_hands::doors::{DoorTarget, engine::vehicle_frame},
+    physics::grapple_hook::BodyHit,
+    snatch::{
+        Refusal, SNATCH, charge, engine,
+        pull::fire_hook,
+        rules::PropHandling,
+        target::{Offer, OfferKind},
+    },
+    weapons::{
+        c4::placed,
+        hold::{
+            rack::copy,
+            refs::Strong,
+            source::{self as hold_source, Freed, Ticket, WeaponSource, Yield},
+            steal::CharacterGun,
         },
     },
-    grapple::hook::BodyHit,
 };
 
 /// What the snatch fired at, with its lifetime checked throughout the flight.

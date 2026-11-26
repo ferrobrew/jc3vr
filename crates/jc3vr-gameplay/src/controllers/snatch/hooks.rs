@@ -25,12 +25,12 @@ use jc3gi::{
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::{
-    controllers::weapons::{
+use crate::controllers::{
+    physics::grapple_hook::{attached_hook_end, local_hook},
+    weapons::{
         hold::refs::{Strong, Weak},
         inventory::engine::weapon_of,
     },
-    grapple::hook::{attached_hook_end, local_hook},
 };
 
 /// The hooks, aggregated by [`crate::controllers::snatch::hook_library`].

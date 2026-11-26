@@ -17,25 +17,23 @@ use jc3vr_render::{
 };
 use tracking_format::event::{Label, WingsuitGesture};
 
-use crate::{
-    controllers::{
-        bindings::hold::{Desired, MapKind, Target, Want},
-        body::BodyDimensions,
-        config::{ControllersConfig, GripOffset},
-        fingers::grip::{self, GripSource},
-        grab::GrabVolume,
-        mode::{AirborneVariant, Detection, Mode, OnFootVariant, Traversal},
-        vehicles::{
-            config::WingsuitGesturesConfig,
-            wingsuit_gestures::{
-                Blocked, FlightCalibration, FlightPose, GestureAvailability, GestureCommands,
-                GestureInput, GesturePhase, HandClaims, Stage, SuitTransition, WingsuitGestures,
-                desired_for,
-            },
+use crate::controllers::{
+    bindings::hold::{Desired, MapKind, Target, Want},
+    body::BodyDimensions,
+    config::{ControllersConfig, GripOffset},
+    fingers::grip::{self, GripSource},
+    grab::GrabVolume,
+    mode::{AirborneVariant, Detection, Mode, OnFootVariant, Traversal},
+    physics::grapple_hook as hook,
+    vehicles::{
+        config::WingsuitGesturesConfig,
+        wingsuit_gestures::{
+            Blocked, FlightCalibration, FlightPose, GestureAvailability, GestureCommands,
+            GestureInput, GesturePhase, HandClaims, Stage, SuitTransition, WingsuitGestures,
+            desired_for,
         },
-        weapons,
     },
-    grapple::hook,
+    weapons,
 };
 
 /// Recognition and the calibration that interprets its pose history belong to one binding state.

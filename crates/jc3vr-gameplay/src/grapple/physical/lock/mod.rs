@@ -73,11 +73,13 @@ use re_utilities::hook_library::HookLibrary;
 pub use crate::controllers::bindings::grapple_button::LockButton;
 use crate::{
     controllers::{
-        bindings::yank::HandLine, facts, haptics, physical_hands::remote, physics::GRAVITY_MPS2,
+        bindings::yank::HandLine,
+        facts, haptics,
+        physical_hands::remote,
+        physics::{GRAVITY_MPS2, grapple_hook as hook},
         weapons::engine::character_position,
     },
     grapple::{
-        hook,
         physical::{
             config::{GRAPPLE_CONFIG, LockConfig, PhysicalGrappleTuning, SwingTuning},
             lock::model::{FreeHand, Held, Pump, PumpSample, SwingInput, TakeIn},

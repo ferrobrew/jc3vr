@@ -25,15 +25,13 @@ use jc3gi::{
 };
 use re_utilities::hook_library::HookLibrary;
 
-use crate::{
-    controllers::{
-        aim::{
-            ray::Ray,
-            raycast::{self, CastOptions, RayHit},
-        },
-        snatch::engine,
+use crate::controllers::{
+    aim::{
+        ray::Ray,
+        raycast::{self, CastOptions, RayHit},
     },
-    grapple::hook::local_hook,
+    physics::grapple_hook::local_hook,
+    snatch::engine,
 };
 
 /// The juice's hooks, aggregated by [`crate::controllers::snatch::hook_library`].

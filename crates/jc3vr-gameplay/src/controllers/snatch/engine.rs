@@ -18,17 +18,15 @@ use jc3gi::{
     },
 };
 
-use crate::{
-    controllers::{
-        aim::gun,
-        physical_hands::{self, game_object_of},
-        snatch::{Refusal, sling_hooks},
-        weapons::{
-            engine, grenade,
-            hold::refs::{Strong, null_weak},
-        },
+use crate::controllers::{
+    aim::gun,
+    physical_hands::{self, game_object_of},
+    physics::grapple_hook::{self as hook, BodyHit, CustomOwner, local_hook},
+    snatch::{Refusal, sling_hooks},
+    weapons::{
+        engine, grenade,
+        hold::refs::{Strong, null_weak},
     },
-    grapple::hook::{self, BodyHit, CustomOwner, local_hook},
 };
 
 /// Why the hook cannot fire now, if it cannot: a line is out, or a fire or a reel is under way.
