@@ -47,8 +47,8 @@ pub enum EstimatorError {
     Weights(WeightsError),
     /// The thread that loads the weights could not start.
     LoaderThread(io::Error),
-    /// The loader thread ended without a result.
-    LoaderLost,
+    /// The loader thread ended without a result, which only a panic does; the join logs it.
+    LoaderPanicked,
     /// The executor could not be created on the game's device, or a result could not be read.
     Gpu(GpuError),
 }
@@ -73,8 +73,11 @@ impl fmt::Display for EstimatorError {
             EstimatorError::LoaderThread(error) => {
                 write!(f, "could not start the weights' loader thread: {error}")
             }
-            EstimatorError::LoaderLost => {
-                write!(f, "the weights' loader thread ended without a result")
+            EstimatorError::LoaderPanicked => {
+                write!(
+                    f,
+                    "the weights' loader thread panicked before it delivered the weights"
+                )
             }
             EstimatorError::Gpu(error) => write!(f, "{error}"),
         }
@@ -89,7 +92,7 @@ impl std::error::Error for EstimatorError {
             EstimatorError::Gpu(error) => Some(error),
             EstimatorError::NoWeightsPath
             | EstimatorError::MissingWeights { .. }
-            | EstimatorError::LoaderLost => None,
+            | EstimatorError::LoaderPanicked => None,
         }
     }
 }
@@ -275,7 +278,7 @@ impl Executor {
                 },
                 Ok(Err(error)) => panic!("{}", EstimatorError::Weights(error)),
                 Err(TryRecvError::Empty) => {}
-                Err(TryRecvError::Disconnected) => self.fail(EstimatorError::LoaderLost),
+                Err(TryRecvError::Disconnected) => self.fail(EstimatorError::LoaderPanicked),
             },
             _ => {}
         }
@@ -313,7 +316,7 @@ impl Executor {
         let mut index = 0;
         while index < self.handles.len() {
             if self.handles[index].is_finished() {
-                let _ = self.handles.swap_remove(index).join();
+                join_loader(self.handles.swap_remove(index));
             } else {
                 index += 1;
             }
@@ -360,13 +363,27 @@ fn wait(handle: JoinHandle<()>, budget: Duration) -> bool {
     let started = Instant::now();
     loop {
         if handle.is_finished() {
-            return handle.join().is_ok();
+            return join_loader(handle);
         }
         if started.elapsed() >= budget {
             return false;
         }
         std::thread::sleep(SHUTDOWN_POLL);
     }
+}
+
+/// Join a finished loader thread, logging its panic if it had one. True when it ended cleanly.
+fn join_loader(handle: JoinHandle<()>) -> bool {
+    let Err(payload) = handle.join() else {
+        return true;
+    };
+    let message = payload
+        .downcast_ref::<&str>()
+        .copied()
+        .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+        .unwrap_or("a non-string payload");
+    tracing::error!(target: "body", "body estimator: the weights' loader thread panicked: {message}");
+    false
 }
 
 fn stop(executor: &Mutex<Executor>, budget: Duration) -> bool {
