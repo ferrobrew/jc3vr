@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-# Mirrors the `vr.resolution_scale` clamp in `crates/jc3vr-render/src/vr/eye_resolution.rs` at the low end; the
+# Mirrors the `vr.resolution_scale` clamp in `crates/jc3vr-view/src/vr/eye_resolution.rs` at the low end; the
 # high end bounds the per-eye size to what a headset's recommended size reaches.
 DEFAULT_RESOLUTION_SCALE = 0.5
 MAX_RESOLUTION_SCALE = 4.0

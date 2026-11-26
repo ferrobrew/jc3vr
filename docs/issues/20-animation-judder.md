@@ -150,7 +150,7 @@ headpose (`headpose::query()`) and `m_TransformT0` from the previous headpose
 (`headpose::query_prev()`), so the engine's own `Lerp` smooths the camera
 placement across the sim-tick cadence — the same T0≠T1 approach Approach C
 below recommends. The headpose module's own doc-comment
-(`crates/jc3vr-render/src/headpose/mod.rs`) explains the rationale: the engine polls input
+(`crates/jc3vr-view/src/headpose/mod.rs`) explains the rationale: the engine polls input
 on its fixed-rate sim tick and its camera smooths that cadence by interpolating
 T0 → T1 by `dtf`, so handing it the previous/current pose pair lets it smooth
 the headpose exactly as it smooths its own camera.

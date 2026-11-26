@@ -61,7 +61,7 @@ Ordered by expected payoff.
 
 **Fill rate, for the configurations this hardware does not represent.** Higher-resolution headsets and weaker GPUs will bind on fill where this machine does not, and the render is noticeably soft at 1.0x, so resolution wants to go *up*. The asymmetry above makes that affordable: extra pixels cost post-chain time, not geometry time.
 
-- **Foveation** (`crates/jc3vr-render/src/vr/foveation.rs`) is the structurally correct answer, because it saves more as resolution rises and it discards pixels the optics discard anyway.
+- **Foveation** (`crates/jc3vr-view/src/vr/foveation.rs`) is the structurally correct answer, because it saves more as resolution rises and it discards pixels the optics discard anyway.
 - **FSR2** (`crates/jc3vr-render/src/fsr/`) is already integrated and trades fill for sharpness directly.
 - The motion blur and the depth of field never run in VR (see "The motion blur and the depth of field" in [`single-pass-stereo.md`](../stereo/single-pass-stereo.md)). `stereo.skip_ssr` exists and defaults **off**. What remains in the post chain is wanted output — tone mapping, bloom, AA, SSAO — so cutting it further is a quality decision, not free.
 

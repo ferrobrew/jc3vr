@@ -47,12 +47,12 @@ Depth-stencil clears are per-pass and data-driven through [`Clear`](https://ferr
 The design above is implemented, on by default, across:
 
 - pyxis defs: [`SetupRenderStates`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::graphics_engine##func-SetupRenderStates), [`CreateDepthStencilState`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::graphics_engine##func-CreateDepthStencilState), and the [`HContext_t::m_DepthStencilStateIndex`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::HContext_t##field-m_DepthStencilStateIndex) and [`HContext_t::m_StencilRef`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::HContext_t##field-m_StencilRef) fields with the full packed-index bit layout.
-- **shaders** — `crates/jc3vr-render/shaders/foveation_mask_ps.hlsl` (radial dithered mask, interleaved-gradient
+- **shaders** — `crates/jc3vr-view/shaders/foveation_mask_ps.hlsl` (radial dithered mask, interleaved-gradient
   noise, decided per drop cell) and `foveation_fill_ps.hlsl` (neighbour-average reconstruction), compiled
   via `shadergen`. Both take the same constant buffer (the eyes' centres, the radii, the drop, the seam
   column, and the cell size); the two must keep their `ign` and drop decision identical so the fill
   reproduces the mask's choice.
-- **`crates/jc3vr-render/src/vr/foveation.rs`** — the D3D pipeline (mask-write and fill-in full-screen passes on the
+- **`crates/jc3vr-view/src/vr/foveation.rs`** — the D3D pipeline (mask-write and fill-in full-screen passes on the
   immediate context under `Context::m_Mutex`, the `blit.rs` pattern), the `SetupRenderStates` force-test
   index rewrite (`apply_force_test`), and the `packed_stencil_test` bit math.
 - **`crates/jc3vr-render/src/hooks/graphics_engine/render_pass.rs`** — the `SetupRenderStates` detour, and the
@@ -70,7 +70,7 @@ The design above is implemented, on by default, across:
 
 ## Which passes skip the dropped pixels
 
-The forced test covers a set of render passes (`FoveatedPasses` in `crates/jc3vr-render/src/vr/foveation.rs`), and a pass belongs in it only if dropping its pixels leaves every kept pixel as it was. Two things decide that: whether the pass writes anything a later pass reads at a neighbouring pixel before the fill-in runs, and whether it writes depth the prepasses have not already written. A dropped pixel keeps whatever depth it had when the forced test began, and the SSAO, the depth downsample, the fog volumes, the water's depth test, and FSR all read depth at and around it.
+The forced test covers a set of render passes (`FoveatedPasses` in `crates/jc3vr-view/src/vr/foveation.rs`), and a pass belongs in it only if dropping its pixels leaves every kept pixel as it was. Two things decide that: whether the pass writes anything a later pass reads at a neighbouring pixel before the fill-in runs, and whether it writes depth the prepasses have not already written. A dropped pixel keeps whatever depth it had when the forced test began, and the SSAO, the depth downsample, the fog volumes, the water's depth test, and FSR all read depth at and around it.
 
 - Always: the models, the vegetation, and the creatures ([`RenderPassId::RP_MODELS_DYNAMIC`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderPassId##variant-RP_MODELS_DYNAMIC) through [`RenderPassId::RP_CREATURES`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderPassId##variant-RP_CREATURES)), as before.
 - `single_pass.foveation_gbuffer`: the terrain's apply passes ([`RenderPassId::RP_TERRAIN_APPLY_NEAR_DETAILED`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderPassId##variant-RP_TERRAIN_APPLY_NEAR_DETAILED) through `RP_TERRAIN_APPLY_FAR`), the road junctions and road layers (`RP_ROAD_JUNCTION` through `RP_ROAD_JUNCTION_OPAQUE`), and the decals (`RP_DECALS` through `RP_SCREEN_SPACE_ROAD_DECALS`). Per draw, a draw that already uses stencil is left alone, as before.
