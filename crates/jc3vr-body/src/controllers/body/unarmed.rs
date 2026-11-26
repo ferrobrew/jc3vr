@@ -9,8 +9,8 @@
 //!   reloads' and draws' timing ([`crate::hooks::character::modifiers`]);
 //! - the partial and additive layers (the upper-body actions, the turns toward the aim target, and
 //!   the fire additives). They keep running, so their animation events (a reload's refill, a
-//!   holster's unequip) and segments still drive the game, but the layers set in
-//!   [`UnarmedBodyConfig`] are left out of the pose ([`crate::hooks::character::layers`]);
+//!   holster's unequip) and segments still drive the game, but the layers in [`MASKABLE_LAYERS`]
+//!   are left out of the pose ([`crate::hooks::character::layers`]);
 //! - the game's off-hand weapon grip, switched off for both hands at the `SECONDARY` pass's entry
 //!   ([`crate::controllers::hands::ik::before_secondary`]);
 //! - the graph's weapon-wielded condition (`C_WEAPON_WIELDED`), which switches the base layer's
@@ -21,7 +21,12 @@
 //!
 //! The decision is made once per tick at the entry of the local player's pose-finalization pass
 //! ([`tick`]), which also publishes the masked layers' blenders for the pose job. The modifier pass
-//! and the pose job of the next tick read it. The settings are `controllers.body.unarmed`.
+//! and the pose job of the next tick read it.
+//!
+//! It acts only under the controller scheme with the headset driving the view, in gameplay, while
+//! the hand tiers classify the character as on foot (including a reload, draw, or holster). While
+//! it applies, it switches the game's off-hand weapon grip off for both hands, driven or not, so
+//! that only the foregrip grab puts a hand on a two-handed weapon.
 
 use std::{
     sync::{
@@ -34,67 +39,14 @@ use std::{
 use jc3gi::character::character::{AnimationLayer, Character};
 use jc3vr_view::headpose;
 use parking_lot::Mutex;
-use serde::{Deserialize, Serialize};
 
 use crate::{
     controllers::{
-        body::config::BODY_REMAP_CONFIG,
         hands::tiers::{self, TierState},
         scheme,
     },
     hooks,
 };
-
-/// Which of the game's weapon animations reach the character's body on foot.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
-pub enum WeaponAnimations {
-    /// The game's own: the weapon's stances, the upper-body actions, and the additive layers.
-    Native,
-    /// The body plays what it plays unarmed, whatever is held: the weapon's animation modifiers stay
-    /// off every layer but the upper-body actions, and the layers set in [`UnarmedBodyConfig`] are
-    /// left out of the pose while still running, so reloads, draws, and holsters keep their timing
-    /// and their animation events.
-    #[default]
-    Unarmed,
-}
-
-impl WeaponAnimations {
-    pub const ALL: [WeaponAnimations; 2] = [WeaponAnimations::Native, WeaponAnimations::Unarmed];
-
-    pub const fn label(self) -> &'static str {
-        match self {
-            WeaponAnimations::Native => "native",
-            WeaponAnimations::Unarmed => "unarmed",
-        }
-    }
-}
-
-/// The weapon-agnostic body. Acts only under the controller scheme with the headset driving the
-/// view, in gameplay, while the hand tiers classify the character as on foot (including a reload,
-/// draw, or holster), so it defaults on. While it applies, it leaves every layer in
-/// [`MASKABLE_LAYERS`] out of the pose, switches the game's off-hand weapon grip off for both
-/// hands, driven or not, so that only the foregrip grab puts a hand on a two-handed weapon, and
-/// keeps the body's relaxed locomotion, turns, and stance whatever is held: the graph's
-/// weapon-wielded condition reads false on every layer but the upper-body actions.
-#[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct UnarmedBodyConfig {
-    pub weapon_animations: WeaponAnimations,
-}
-
-impl UnarmedBodyConfig {
-    pub const fn new() -> Self {
-        Self {
-            weapon_animations: WeaponAnimations::Unarmed,
-        }
-    }
-}
-
-impl Default for UnarmedBodyConfig {
-    fn default() -> Self {
-        Self::new()
-    }
-}
 
 /// Whether the unarmed body applies, and why not when it does not.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
@@ -109,8 +61,6 @@ pub enum UnarmedVerdict {
 /// Why the unarmed body stands down, in the order the conditions are tested.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum UnarmedStandDown {
-    /// The weapon animations are set to the game's own.
-    Native,
     NotControllers,
     NotVr,
     NotInGameplay,
@@ -121,7 +71,6 @@ pub enum UnarmedStandDown {
 impl UnarmedStandDown {
     pub const fn label(self) -> &'static str {
         match self {
-            Self::Native => "weapon animations set to native",
             Self::NotControllers => "not the controller scheme",
             Self::NotVr => "the headset does not drive the view",
             Self::NotInGameplay => "not in gameplay",
@@ -141,10 +90,8 @@ pub struct GateInputs {
 }
 
 /// Decide whether the unarmed body applies.
-pub fn decide(weapon_animations: WeaponAnimations, inputs: &GateInputs) -> UnarmedVerdict {
-    let stand_down = if weapon_animations == WeaponAnimations::Native {
-        Some(UnarmedStandDown::Native)
-    } else if !inputs.controllers {
+pub fn decide(inputs: &GateInputs) -> UnarmedVerdict {
+    let stand_down = if !inputs.controllers {
         Some(UnarmedStandDown::NotControllers)
     } else if !inputs.vr {
         Some(UnarmedStandDown::NotVr)
@@ -259,14 +206,13 @@ pub unsafe fn tick(character: *mut Character) {
     let Some(character) = (unsafe { character.as_ref() }).filter(|c| c.m_IsLocalCharacter) else {
         return;
     };
-    let weapon_animations = BODY_REMAP_CONFIG.lock().unarmed.weapon_animations;
     let inputs = GateInputs {
         controllers: scheme::is_controllers(),
         vr: headpose::source() == headpose::Source::Vr,
         gameplay: jc3vr_core::hooks::in_gameplay(),
         tier: tiers::status().state,
     };
-    let verdict = decide(weapon_animations, &inputs);
+    let verdict = decide(&inputs);
     let masked = masked_layers(verdict);
     let blenders = unsafe { layer_blenders(character) };
     let published = std::array::from_fn(|i| {
@@ -374,30 +320,18 @@ mod tests {
 
     #[test]
     fn applies_on_foot_and_during_weapon_actions() {
-        assert_eq!(
-            decide(WeaponAnimations::Unarmed, &on_foot()),
-            UnarmedVerdict::Applies
-        );
+        assert_eq!(decide(&on_foot()), UnarmedVerdict::Applies);
         let action = GateInputs {
             tier: Some(TierState::WeaponAction),
             ..on_foot()
         };
-        assert_eq!(
-            decide(WeaponAnimations::Unarmed, &action),
-            UnarmedVerdict::Applies
-        );
+        assert_eq!(decide(&action), UnarmedVerdict::Applies);
     }
 
     #[test]
     fn stands_down_in_order() {
         let cases = [
             (
-                WeaponAnimations::Native,
-                on_foot(),
-                UnarmedStandDown::Native,
-            ),
-            (
-                WeaponAnimations::Unarmed,
                 GateInputs {
                     controllers: false,
                     vr: false,
@@ -406,7 +340,6 @@ mod tests {
                 UnarmedStandDown::NotControllers,
             ),
             (
-                WeaponAnimations::Unarmed,
                 GateInputs {
                     vr: false,
                     gameplay: false,
@@ -415,7 +348,6 @@ mod tests {
                 UnarmedStandDown::NotVr,
             ),
             (
-                WeaponAnimations::Unarmed,
                 GateInputs {
                     gameplay: false,
                     tier: None,
@@ -424,9 +356,9 @@ mod tests {
                 UnarmedStandDown::NotInGameplay,
             ),
         ];
-        for (setting, inputs, reason) in cases {
+        for (inputs, reason) in cases {
             assert_eq!(
-                decide(setting, &inputs),
+                decide(&inputs),
                 UnarmedVerdict::StandDown(reason),
                 "{inputs:?}"
             );
@@ -450,7 +382,7 @@ mod tests {
         for tier in off_foot {
             let inputs = GateInputs { tier, ..on_foot() };
             assert_eq!(
-                decide(WeaponAnimations::Unarmed, &inputs),
+                decide(&inputs),
                 UnarmedVerdict::StandDown(UnarmedStandDown::NotOnFoot),
                 "{tier:?}"
             );

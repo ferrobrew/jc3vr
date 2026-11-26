@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::controllers::body::{
     estimator::EstimatorConfig, ik_body::IkBodyConfig, procedural::config::ProceduralBodyConfig,
-    rig::RigConfig, unarmed::UnarmedBodyConfig,
+    rig::RigConfig,
 };
 
 /// The body remap settings, at `controllers.body` in the settings file; the payload binds the slot
@@ -33,8 +33,6 @@ pub struct BodyRemapConfig {
     pub estimator: EstimatorConfig,
     /// The IK-first on-foot body: the lower body posed from the estimate while Rico stands.
     pub ik: IkBodyConfig,
-    /// The weapon-agnostic body: which of the game's weapon animations reach the body on foot.
-    pub unarmed: UnarmedBodyConfig,
 }
 
 impl BodyRemapConfig {
@@ -46,7 +44,6 @@ impl BodyRemapConfig {
             rig: RigConfig::new(),
             estimator: EstimatorConfig::new(),
             ik: IkBodyConfig::new(),
-            unarmed: UnarmedBodyConfig::new(),
         }
     }
 }

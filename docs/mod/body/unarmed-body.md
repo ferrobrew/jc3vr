@@ -6,7 +6,7 @@ The engine side is in [animation-layers.md](../../engine/character/animation-lay
 
 ## When it applies
 
-The settings are `controllers.body.unarmed`. With `weapon_animations` set to `Unarmed` (the default; `Native` restores the game's), the unarmed body applies under the controller scheme, with the headset driving the view, in gameplay, while the hand tiers classify the character as on foot or in a reload, draw, or holster. Vehicles, the parachute, the wingsuit, swimming, the grapple hang and reel, cutscenes, and ragdoll keep the game's animation.
+The unarmed body has no settings. It applies under the controller scheme, with the headset driving the view, in gameplay, while the hand tiers classify the character as on foot or in a reload, draw, or holster. Vehicles, the parachute, the wingsuit, swimming, the grapple hang and reel, cutscenes, and ragdoll keep the game's animation.
 
 The decision is made once per tick at the entry of the local player's pose-finalization pass. The next tick's modifier pass and pose job use it, so it takes effect one tick late, and a decision older than a quarter of a second counts as not applying.
 

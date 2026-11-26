@@ -1,14 +1,10 @@
-//! The weapon-agnostic body: whether it applies, which layers it leaves out of the pose, and its
-//! switch.
+//! The weapon-agnostic body: whether it applies and which layers it leaves out of the pose.
 
 use std::time::Duration;
 
 use egui::Ui;
 use jc3vr_body::controllers::{
-    body::unarmed::{
-        MASKABLE_LAYERS, UnarmedBodyConfig, UnarmedStatus, UnarmedVerdict, WeaponAnimations,
-        layer_label,
-    },
+    body::unarmed::{MASKABLE_LAYERS, UnarmedStatus, UnarmedVerdict, layer_label},
     hands::ik::HandIkStatus,
 };
 use jc3vr_input::frame::Hand;
@@ -56,20 +52,6 @@ pub(super) fn unarmed_readout(ui: &mut Ui, unarmed: &UnarmedStatus, hand_ik: &[H
         yes_no(hand_ik[Hand::Left.index()].secondary_grip_off),
         yes_no(hand_ik[Hand::Right.index()].secondary_grip_off),
     ));
-}
-
-pub(super) fn unarmed_settings(ui: &mut Ui, c: &mut UnarmedBodyConfig) {
-    ui.horizontal(|ui| {
-        ui.label("Weapon animations on foot:");
-        for setting in WeaponAnimations::ALL {
-            ui.selectable_value(&mut c.weapon_animations, setting, setting.label());
-        }
-    })
-    .response
-    .on_hover_text(
-        "Unarmed: the body plays its unarmed animation whatever is held, and the controllers \
-         alone place the arms and the guns. Native: the game's weapon stances and actions.",
-    );
 }
 
 /// How old a readout may be before it counts as inactive.

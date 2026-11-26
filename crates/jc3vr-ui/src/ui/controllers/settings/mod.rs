@@ -12,7 +12,7 @@ use jc3vr_input::{
 };
 use jc3vr_view::vr::input::config::{InputConfig, validate_thresholds};
 
-use crate::ui::controllers::{locomotion, unarmed};
+use crate::ui::controllers::locomotion;
 
 pub(super) fn devices(ui: &mut Ui, c: &mut ControllersConfig) {
     ui.checkbox(&mut c.input.hand_tracking, "Hand tracking")
@@ -122,7 +122,6 @@ pub(super) fn locomotion_settings(ui: &mut Ui, c: &mut ControllersConfig) {
 pub(super) fn animation_settings(ui: &mut Ui, cfg: &mut impl Parts) {
     let c = cfg.part_mut(&CONTROLLERS_CONFIG);
     ui.checkbox(&mut c.aim_state.skip_arm_ik, "Skip the game's arm aim IK");
-    unarmed::unarmed_settings(ui, &mut c.body.unarmed);
 }
 
 /// The press and release sliders of one threshold pair, kept in order and valid.
