@@ -1,4 +1,5 @@
-//! The wingsuit's stall flip and barrel roll removed while the head pose comes from the headset.
+//! The wingsuit's stall flip removed, and its barrel roll with the evade off, while the head pose
+//! comes from the headset.
 //!
 //! When the wingsuit slows with its nose raised, the wingsuit's blend state plays a stall clip in
 //! place of the flight blend, and with the nose raised further a full loop that recovers from it.
@@ -15,11 +16,13 @@
 //! and reverted otherwise, through the hooks' patcher, which also reverts it on unload.
 //!
 //! The evade is a barrel roll ([`ACT_BOOST_WINGSUIT_BARREL_ROLL`]): the clip rolls the body a full
-//! turn and carries it sideways, a roll the player's own body never makes. The air physics queues
-//! it straight on the animated model, so the `Character::QueueAct` filters never see it; the
-//! animated model's act queue asks [`drops_act`] instead, which drops it for the local player's
-//! model while the head pose comes from the headset. The roll's directions
-//! and recovery are segments of its clip, so the one act covers every evade.
+//! turn and carries it sideways. The arms throw it
+//! ([`crate::controllers::vehicles::wingsuit_evade`]), and the view rolls with the body. With the
+//! evade switched off, it is a roll the player never asked for: the air physics queues it straight
+//! on the animated model, so the `Character::QueueAct` filters never see it, and the animated
+//! model's act queue asks [`drops_act`] instead, which drops it for the local player's model while
+//! the head pose comes from the headset. The roll's directions and recovery are segments of its
+//! clip, so the one act covers every evade.
 //!
 //! [`WingsuitBlendState_StallFlagSet`]: jc3gi::input::parachute::get_WingsuitBlendState_StallFlagSet
 //! [`ACT_BOOST_WINGSUIT_BARREL_ROLL`]: jc3gi::animation::symbol_table::EventIdSymbolTable::ACT_BOOST_WINGSUIT_BARREL_ROLL
@@ -35,6 +38,7 @@ use jc3gi::{
 };
 
 use crate::{
+    config::Config,
     controllers::body::procedural::signals::is_local_model,
     headpose::{self, Source},
     hooks::character::resolve_act_id,
@@ -51,16 +55,22 @@ pub fn barrel_rolls_dropped() -> u64 {
 }
 
 /// Whether the animated model's act queue should drop `act`, queued on `model`: the barrel roll,
-/// on the local player's model, while the head pose comes from the headset.
-/// Called for every model's every act, so another model is turned away by its address first.
+/// on the local player's model, while the head pose comes from the headset and the evade is
+/// switched off. Called for every model's every act, so another model is turned away by its address
+/// first.
 pub(crate) fn drops_act(model: *const AnimatedModel, act: i32) -> bool {
     if !is_local_model(model) || barrel_roll_id() != Some(act) {
         return false;
     }
-    let wanted = headpose::is_active() && headpose::source() == Source::Vr;
+    let wanted = headpose::is_active()
+        && headpose::source() == Source::Vr
+        && !Config::lock_query(|c| c.controllers.vehicles.wingsuit_evade.enabled);
     if wanted {
         BARREL_ROLLS_DROPPED.fetch_add(1, Ordering::Relaxed);
-        tracing::info!(target: "controllers", "wingsuit: dropped the barrel roll");
+        tracing::info!(
+            target: "controllers",
+            "wingsuit: dropped the barrel roll, the evade is switched off"
+        );
     }
     wanted
 }

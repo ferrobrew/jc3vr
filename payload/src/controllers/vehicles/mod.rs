@@ -14,6 +14,7 @@
 //! - [`mounted`]: mounted guns and gunner seats, whose handles hold the hands and aim the gun;
 //!   [`mounted_grip`] takes the handles with the grip, and [`mounted_recoil`] kicks them;
 //! - [`arm_steering`]: the arm-pose steering of the wingsuit;
+//! - [`wingsuit_evade`]: the boost wingsuit's barrel-roll evade, thrown by banking the arms;
 //! - [`parachute`]: the parachute's handles, taken with the grip and pulled to steer and brake;
 //! - [`ripcord`]: the ripcord at the hip, taken with the grip and pulled to open the parachute
 //!   from a fall or the wingsuit;
@@ -82,6 +83,7 @@ mod types;
 pub mod wheel;
 pub mod wheel_render;
 mod wing_guide;
+pub mod wingsuit_evade;
 pub(crate) mod wingsuit_gestures;
 
 use re_utilities::hook_library::HookLibrary;

@@ -20,6 +20,7 @@ use crate::controllers::{
     vehicles::{
         arm_tick::arm_tick,
         axis_output::{axis_wanted, lever_axes_wanted, stick_axes_wanted},
+        begin::body_dimensions,
         control_haptics,
         handle_tick::handles_tick,
         mounted_grip::{self, MountedGripEvent},
@@ -28,7 +29,7 @@ use crate::controllers::{
         state::{STATE, log_handle_events, publish_mounted_holds, push_events},
         steering,
         tuning::PhysicalControlsTuning,
-        wheel_render, write_outputs,
+        wheel_render, wingsuit_evade, write_outputs,
     },
 };
 
@@ -190,6 +191,17 @@ pub(crate) fn finish_tick(
         grapple_held,
         reserve_brake_pitch,
     );
+    // SAFETY: the vehicles' finish runs in the binding stage, on the game thread before the world
+    // update.
+    unsafe {
+        wingsuit_evade::tick(
+            arms.as_ref(),
+            body_dimensions(&config).arm_span,
+            &config.vehicles.wingsuit_evade,
+            desired,
+            dt,
+        )
+    };
     let now_held = arms.is_some_and(|a| a.held_for_grapple);
     if now_held != was_held {
         tracing::info!(

@@ -25,6 +25,9 @@ pub struct VehiclesConfig {
     pub arm_steering: ArmSteeringConfig,
     /// Fresh-pose wingsuit deployment, bilateral withdrawal, and palms-forward braking.
     pub wingsuit_gestures: WingsuitGesturesConfig,
+    /// The boost wingsuit's barrel-roll evade, thrown by banking the spread arms hard and fast
+    /// ([`wingsuit_evade`](crate::controllers::vehicles::wingsuit_evade)).
+    pub wingsuit_evade: WingsuitEvadeConfig,
     /// The parachute's handles, grabbed and pulled to steer and brake.
     pub parachute_handles: ParachuteHandlesConfig,
     /// The ripcord at the hip, grabbed and pulled to open the parachute from a fall or the
@@ -55,6 +58,7 @@ impl VehiclesConfig {
             physical: PhysicalControlsConfig::new(),
             arm_steering: ArmSteeringConfig::new(),
             wingsuit_gestures: WingsuitGesturesConfig::new(),
+            wingsuit_evade: WingsuitEvadeConfig::new(),
             parachute_handles: ParachuteHandlesConfig::new(),
             ripcord: RipcordConfig::new(),
             canopy: CanopyConfig::new(),
@@ -526,6 +530,64 @@ impl CanopyConfig {
 }
 
 impl Default for CanopyConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// The boost wingsuit's barrel-roll evade, in [`VehiclesConfig::wingsuit_evade`]. The bank is the
+/// angle of the line between the hands from level, positive with the left hand above the right.
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct WingsuitEvadeConfig {
+    /// Throw the evade with the arms, and let the game's own evade roll the player's body. Off, the
+    /// arms throw nothing and every barrel roll of the player's body is dropped, the gamepad's too.
+    pub enabled: bool,
+    /// The bank, either way, a throw must reach, degrees.
+    pub throw_bank_deg: f32,
+    /// How far the bank must swing toward the throw's side within [`Self::throw_window_s`],
+    /// degrees.
+    pub throw_sweep_deg: f32,
+    /// The time the swing must happen in, seconds.
+    pub throw_window_s: f32,
+    /// The bank, either way, the arms must come back within before another throw counts, degrees.
+    pub rearm_bank_deg: f32,
+    /// The time after a throw before another is taken, seconds.
+    pub cooldown_s: f32,
+    /// The arms' pitch, as a share of a full pitch, that turns the throw's side roll into its
+    /// diagonal: below it the evade rolls straight to the side.
+    pub diagonal_pitch: f32,
+}
+
+impl WingsuitEvadeConfig {
+    pub const fn new() -> Self {
+        Self {
+            enabled: true,
+            throw_bank_deg: 50.0,
+            throw_sweep_deg: 45.0,
+            throw_window_s: 0.3,
+            rearm_bank_deg: 25.0,
+            cooldown_s: 1.5,
+            diagonal_pitch: 0.6,
+        }
+    }
+
+    /// Whether the tuning is finite and consistent: the throw's bank above the re-arming bank and
+    /// short of vertical, a swing no larger than the throw's whole reach from the far side, and a
+    /// positive window.
+    pub fn valid(&self) -> bool {
+        let bounded = |value: f32, low, high| value.is_finite() && (low..=high).contains(&value);
+        bounded(self.throw_bank_deg, 10.0, 85.0)
+            && bounded(self.rearm_bank_deg, 0.0, 80.0)
+            && self.rearm_bank_deg < self.throw_bank_deg
+            && bounded(self.throw_sweep_deg, 5.0, 170.0)
+            && bounded(self.throw_window_s, 0.05, 2.0)
+            && bounded(self.cooldown_s, 0.0, 30.0)
+            && bounded(self.diagonal_pitch, 0.0, 1.0)
+    }
+}
+
+impl Default for WingsuitEvadeConfig {
     fn default() -> Self {
         Self::new()
     }

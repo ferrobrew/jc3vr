@@ -23,6 +23,7 @@ use crate::{
             turret,
             wheel::WheelFrame,
             wheel_render,
+            wingsuit_evade::{self, EvadeStatus},
         },
     },
     status::vehicles::{COCKPIT_BUTTONS, FLIGHT_CONTROLS, MOUNTED_GUN, PASSENGER_AIM},
@@ -38,6 +39,7 @@ pub(super) struct VehiclesReadout {
     hand_aimed_turret_ticks: u64,
     wheel_turns: u64,
     handles_unplaced: u64,
+    evade: EvadeStatus,
 }
 
 impl VehiclesReadout {
@@ -50,6 +52,7 @@ impl VehiclesReadout {
             hand_aimed_turret_ticks: turret::hand_aimed_ticks(),
             wheel_turns: wheel_render::turned(),
             handles_unplaced: parachute_rig::handles_unplaced(),
+            evade: wingsuit_evade::status(),
         }
     }
 }
@@ -80,6 +83,7 @@ pub(super) fn feature_readout(ui: &mut Ui, readout: &VehiclesReadout, id: Featur
         }
         FeatureId::Air => {
             arms_readout(ui, readout);
+            evade_readout(ui, &readout.evade);
             handles_readout(ui, readout);
             ui.label(match vehicles::ripcord_holder() {
                 Some(hand) => format!("Ripcord: held by the {} hand", hand.label()),
@@ -345,6 +349,34 @@ fn arms_readout(ui: &mut Ui, readout: &VehiclesReadout) {
     }
 }
 
+fn evade_readout(ui: &mut Ui, evade: &EvadeStatus) {
+    ui.label(format!(
+        "Evade: arm bank {} · throws {} · turned away {}{}",
+        evade
+            .bank_deg
+            .map_or("not read".to_owned(), |bank| format!("{bank:+.0}°")),
+        evade.throws,
+        evade.refusals,
+        if evade.holding {
+            " · writing the throw's direction"
+        } else {
+            ""
+        },
+    ));
+    if let Some(throw) = evade.last_throw {
+        ui.label(format!(
+            "Last evade: {}, banked {:+.0}° after a {:.0}° swing",
+            throw.direction, throw.bank_deg, throw.sweep_deg
+        ));
+    }
+    if let Some((throw, blocked)) = evade.last_refusal {
+        ui.label(format!(
+            "Last turned away: {}, banked {:+.0}° ({blocked})",
+            throw.direction, throw.bank_deg
+        ));
+    }
+}
+
 fn handles_readout(ui: &mut Ui, readout: &VehiclesReadout) {
     let status = &readout.status;
     match &status.handles {
@@ -553,6 +585,36 @@ fn air_settings(ui: &mut Ui, v: &mut VehiclesConfig) {
     ui.add(
         egui::Slider::new(&mut a.full_bank_m, 0.1..=1.0)
             .text("Wingsuit full bank (m)")
+            .fixed_decimals(2),
+    );
+    let e = &mut v.wingsuit_evade;
+    ui.checkbox(
+        &mut e.enabled,
+        "Wingsuit evade: throw the arms into a steep bank to barrel-roll",
+    )
+    .on_hover_text(
+        "With the boost wingsuit, bank the spread arms hard and fast to one side to roll that way; \
+         the view rolls with the body. Off, the player's barrel rolls are dropped.",
+    );
+    ui.add(egui::Slider::new(&mut e.throw_bank_deg, 30.0..=85.0).text("Evade throw bank (°)"));
+    ui.add(
+        egui::Slider::new(&mut e.throw_sweep_deg, 20.0..=120.0)
+            .text("Evade throw swing within the window (°)"),
+    );
+    ui.add(
+        egui::Slider::new(&mut e.throw_window_s, 0.1..=0.8)
+            .text("Evade throw window (s)")
+            .fixed_decimals(2),
+    );
+    ui.add(egui::Slider::new(&mut e.rearm_bank_deg, 5.0..=45.0).text("Evade re-arm bank (°)"));
+    ui.add(
+        egui::Slider::new(&mut e.cooldown_s, 0.0..=5.0)
+            .text("Evade cooldown (s)")
+            .fixed_decimals(1),
+    );
+    ui.add(
+        egui::Slider::new(&mut e.diagonal_pitch, 0.0..=1.0)
+            .text("Evade diagonal from the arms' pitch (of a full pitch)")
             .fixed_decimals(2),
     );
     let h = &mut v.parachute_handles;

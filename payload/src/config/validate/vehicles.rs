@@ -1,5 +1,5 @@
-//! Checks for vehicle settings: the wingsuit gestures, the physical wheel, the arm steering, the
-//! parachute handles, and the ripcord.
+//! Checks for vehicle settings: the wingsuit gestures and evade, the physical wheel, the arm
+//! steering, the parachute handles, and the ripcord.
 
 use crate::{
     config::validate::{Invalid, nonnegative, positive, range},
@@ -11,6 +11,11 @@ pub(super) fn vehicles(v: &VehiclesConfig) -> Result<(), Invalid> {
     if !v.wingsuit_gestures.valid() {
         return Err(Invalid(
             "vehicles.wingsuit_gestures must have finite, bounded, consistent thresholds".into(),
+        ));
+    }
+    if !v.wingsuit_evade.valid() {
+        return Err(Invalid(
+            "vehicles.wingsuit_evade must have finite, bounded, consistent thresholds".into(),
         ));
     }
     range(
@@ -67,5 +72,13 @@ mod tests {
         config.vehicles.wingsuit_gestures.brake_roll_deg = f32::NAN;
         let error = controllers(&config).unwrap_err();
         assert!(error.0.starts_with("vehicles.wingsuit_gestures "));
+    }
+
+    #[test]
+    fn invalid_evade_thresholds_reach_the_controller_validator() {
+        let mut config = ControllersConfig::default();
+        config.vehicles.wingsuit_evade.rearm_bank_deg = 80.0;
+        let error = controllers(&config).unwrap_err();
+        assert!(error.0.starts_with("vehicles.wingsuit_evade "));
     }
 }
