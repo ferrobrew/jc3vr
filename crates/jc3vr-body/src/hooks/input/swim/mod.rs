@@ -51,9 +51,12 @@ use jc3vr_view::headpose::body_yaw_target;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::controllers::{
-    locomotion::strokes::{self, model::propel},
-    mode::CharacterSnapshot,
+use crate::{
+    controllers::{
+        locomotion::strokes::{self, model::propel},
+        mode::CharacterSnapshot,
+    },
+    hooks::input::tuning::INPUT_HOOKS,
 };
 
 mod telemetry;
@@ -283,8 +286,8 @@ fn do_rotate(from: *const Vector3, to: *const Vector3, rate: f32, out: *mut Vect
         }
         SwimCore::Underwater => pitched(target, advance_swim_pitch(window.dt).sin()),
     };
-    let rate =
-        (SWIM_TURN_RATE_DEG_S.to_radians() * window.dt).clamp(f32::EPSILON, DO_ROTATE_EASE_ANGLE);
+    let rate = (INPUT_HOOKS.get().swim.turn_rate_deg_s.to_radians() * window.dt)
+        .clamp(f32::EPSILON, DO_ROTATE_EASE_ANGLE);
     let given = target;
     let target = Vector3 {
         data: target.to_array(),
@@ -297,12 +300,6 @@ fn do_rotate(from: *const Vector3, to: *const Vector3, rate: f32, out: *mut Vect
         telemetry::record_rotate(window.core, from, game_to, given, out);
     }
 }
-
-/// The rate the body is turned toward the swim heading, degrees per second. It stays above the look
-/// input's own rate, or the body trails the target and the turn continues after the stick is
-/// released; the game's own swim turn rates are far below it. Capped per frame by
-/// [`DO_ROTATE_EASE_ANGLE`], so it cannot overshoot.
-const SWIM_TURN_RATE_DEG_S: f32 = 360.0;
 
 /// The angle below which [`physics::DoRotate`] eases its step out, and the largest step that cannot
 /// overshoot the target. Radians.
@@ -473,18 +470,6 @@ thread_local! {
     static FACING: Cell<Option<Vec3>> = const { Cell::new(None) };
 }
 
-/// The head pitch, in degrees, within which the underwater dive control does nothing, so a resting
-/// head does not slowly dive or surface the swimmer.
-const SWIM_PITCH_DEADZONE_DEG: f32 = 12.0;
-
-/// The furthest the underwater dive control will pitch the body, in degrees. Kept short of vertical,
-/// where a heading is undefined.
-const SWIM_PITCH_LIMIT_DEG: f32 = 55.0;
-
-/// How fast, in degrees per second, the underwater dive pitch follows the head. Slower than the yaw
-/// rate on purpose: a dive that snaps as fast as a turn reads as the world tipping over.
-const SWIM_PITCH_RATE_DEG_S: f32 = 60.0;
-
 /// The held underwater dive pitch, radians. Zero at the surface.
 static SWIM_PITCH: Mutex<f32> = Mutex::new(0.0);
 
@@ -494,10 +479,11 @@ static SWIM_PITCH: Mutex<f32> = Mutex::new(0.0);
 /// change. Taking it from the camera's world pitch instead is a runaway, because the view rides the
 /// body frame: pitching the body toward where the camera points pitches the camera further.
 fn advance_swim_pitch(dt: f32) -> f32 {
+    let tuning = &INPUT_HOOKS.get().swim;
     let (deadzone, limit, rate) = (
-        SWIM_PITCH_DEADZONE_DEG.to_radians(),
-        SWIM_PITCH_LIMIT_DEG.to_radians(),
-        SWIM_PITCH_RATE_DEG_S.to_radians(),
+        tuning.pitch_deadzone_deg.to_radians(),
+        tuning.pitch_limit_deg.to_radians(),
+        tuning.pitch_rate_deg_s.to_radians(),
     );
     let head = jc3vr_view::headpose::body_relative_rotation() * Vec3::NEG_Z;
     let head_pitch = head.normalize_or_zero().y.clamp(-1.0, 1.0).asin();

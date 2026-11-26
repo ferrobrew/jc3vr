@@ -29,6 +29,8 @@ use jc3vr_view::headpose::sim::{HeadMode, LatchState};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
+use crate::hooks::input::tuning::INPUT_HOOKS;
+
 pub fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_static_binder(&INPUT_LOCO_MOVE_TASK_UPDATE_BINDER)
@@ -44,16 +46,6 @@ pub fn hook_library() -> HookLibrary {
         .with_static_binder(&EVALUATE_CHARACTER_SPEED_BINDER)
         .with_static_binder(&GET_AIM_MOVE_ANGLE_BINDER)
 }
-
-/// The tracking turn rate: the maximum yaw step, in degrees per orientation update (one per frame),
-/// passed to the orientation executor while the body is pinned to the camera or the headpose's
-/// heading. Positive, since the executor divides by it.
-const FACE_CAMERA_TURN_STEP: f32 = 10.0;
-
-/// The half-angle, in degrees, of the input cone around camera-forward within which the face-camera
-/// pin applies while moving (it always applies while idle). At 180 the pin always applies, and the
-/// slide strafe moves the body along lateral and backward input.
-const FACE_CAMERA_INPUT_CONE_DEG: f32 = 180.0;
 
 /// Diagnostic counters for the debug UI, so hook liveness and the overrides' activity are visible
 /// in-game: how often each locomotion task ran, and how often the orientation executor was forced
@@ -246,20 +238,13 @@ fn evaluate_character_orientation_ms(
     )
 }
 
-/// Move-direction magnitudes below this are treated as no input (idle), where the pin always
-/// applies so that turning the camera turns the body.
-const MOVE_DIR_IDLE_THRESHOLD: f32 = 0.1;
-
 /// The heading half of FPS movement: for the local player, write the camera's ground-plane forward
 /// to the target-face-dir blackboard value and force the orientation executor's tracking mode with
-/// the configured turn step. Everything else (NPCs, toggle off, no camera) passes through
-/// untouched. The step is clamped positive because the executor divides by it.
+/// the input tuning's `locomotion.turn_step_deg`. Everything else (NPCs, toggle off, no camera)
+/// passes through untouched. The step is positive because the executor divides by it.
 ///
-/// The pin is gated on the input direction: it always applies while idle (turning the camera turns
-/// the body), and while moving it only applies within the configured cone around camera-forward.
-/// Outside the cone the native steer runs instead -- the run animations only carry forward root
-/// motion, so pinning the yaw against lateral or backward input leaves the character fighting its
-/// own turn acts in place rather than strafing.
+/// The pin applies whatever the input direction, idle or moving, so turning the camera turns the
+/// body and the slide strafe moves the body along lateral and backward input.
 ///
 /// The headpose sim layers on top: its latch target takes priority over the camera pin (the body
 /// follows the head once past the latch threshold), and while the head is decoupled on foot (idle,
@@ -283,10 +268,10 @@ fn force_face_camera(
     let blackboard = character_blackboard(character);
 
     // Steer the body toward the headpose's requested heading, if any: the flatscreen sim's
-    // head-follow latch target, or the VR source's look-driven body yaw. This reuses
-    // [`FACE_CAMERA_TURN_STEP`] as the turn rate and intentionally bypasses the move-dir cone check: the requested heading takes priority over strafe, so the
-    // native turn-toward-movement never fights it (which is what let backpedaling tank-turn the body
-    // in VR).
+    // head-follow latch target, or the VR source's look-driven body yaw. This reuses the pin's turn
+    // step as the turn rate, and the requested heading takes priority over strafe, so the native
+    // turn-toward-movement never fights it (which is what let backpedaling tank-turn the body in
+    // VR).
     if let Some(face_dir) = jc3vr_view::headpose::body_yaw_target() {
         unsafe {
             let value = Vector3 {
@@ -300,7 +285,7 @@ fn force_face_camera(
             );
         }
         FACE_CAMERA_CALLS.fetch_add(1, Ordering::Relaxed);
-        return (true, FACE_CAMERA_TURN_STEP);
+        return (true, INPUT_HOOKS.get().locomotion.turn_step_deg);
     }
 
     // While the head is decoupled, force the executor *out* of face-dir tracking rather than
@@ -317,21 +302,9 @@ fn force_face_camera(
         return passthrough;
     };
 
-    match read_move_dir(blackboard) {
-        // Idle: pin, so turning the camera turns the body. (With the headpose active, idle
-        // reaches here only when really aiming — the decoupled-idle case returned above — and the
-        // camera forward is the head forward, which is exactly the aim-tracking behavior.)
-        None => {}
-        // Moving: pin only within the configured cone around camera-forward (outside it, the
-        // native steer runs; see the function docs).
-        Some(move_dir)
-            if move_dir.angle_between(face_dir).to_degrees() > FACE_CAMERA_INPUT_CONE_DEG =>
-        {
-            return passthrough;
-        }
-        Some(_) => {}
-    }
-
+    // With the headpose active, idle reaches here only when really aiming (the decoupled-idle case
+    // returned above), and the camera forward is the head forward, which is exactly the
+    // aim-tracking behavior.
     unsafe {
         let value = Vector3 {
             data: [face_dir.x, face_dir.y, face_dir.z],
@@ -344,7 +317,7 @@ fn force_face_camera(
         );
     }
     FACE_CAMERA_CALLS.fetch_add(1, Ordering::Relaxed);
-    (true, FACE_CAMERA_TURN_STEP)
+    (true, INPUT_HOOKS.get().locomotion.turn_step_deg)
 }
 
 /// Whether the body must not chase the head this frame — so both the orientation executor's face-dir
@@ -380,7 +353,8 @@ pub fn head_decoupled(character: &Character) -> bool {
         && !character
             .m_AimFlags
             .intersects(AimState::m_AimingWeapon | AimState::m_AimingGrapple)
-        && !move_input_magnitude().is_some_and(|magnitude| magnitude >= INPUT_DEADZONE)
+        && !move_input_magnitude()
+            .is_some_and(|magnitude| magnitude >= INPUT_HOOKS.get().locomotion.input_deadzone)
 }
 
 fn character_blackboard(character: &mut Character) -> *mut ObjectBlackboard {
@@ -397,8 +371,8 @@ fn read_move_dir(blackboard: *mut ObjectBlackboard) -> Option<glam::Vec3> {
         }
     }
     let flat = glam::Vec3::new(value.data[0], 0.0, value.data[2]);
-    (flat.length_squared() > MOVE_DIR_IDLE_THRESHOLD * MOVE_DIR_IDLE_THRESHOLD)
-        .then(|| flat.normalize())
+    let threshold = INPUT_HOOKS.get().locomotion.move_dir_idle_threshold;
+    (flat.length_squared() > threshold * threshold).then(|| flat.normalize())
 }
 
 /// The camera's forward on the ground plane, from the same input matrix the game uses to make the
@@ -448,9 +422,6 @@ fn move_input_magnitude() -> Option<f32> {
     }
 }
 
-/// Movement-input magnitudes below this are treated as no input.
-const INPUT_DEADZONE: f32 = 0.15;
-
 /// The source-level fix for the animation war the slide used to fight downstream: while sliding,
 /// overwrite the freshly written blackboard move direction with camera-forward, so every consumer
 /// in the input-task layer -- act selection, starts, stops, plant-and-turns, rotate-on-spot --
@@ -476,7 +447,7 @@ fn setup_target_dir(character: *mut Character, target_dir: *mut c_void, props: *
                 .m_AimFlags
                 .intersects(AimState::m_AimingWeapon | AimState::m_AimingGrapple)
     }) && move_input_magnitude()
-        .is_some_and(|magnitude| magnitude >= INPUT_DEADZONE);
+        .is_some_and(|magnitude| magnitude >= INPUT_HOOKS.get().locomotion.input_deadzone);
 
     let mut real_dir = None;
     if eligible && let Some(character) = unsafe { character.as_mut() } {

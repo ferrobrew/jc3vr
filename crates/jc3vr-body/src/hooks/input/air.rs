@@ -29,15 +29,15 @@ use jc3gi::{
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::hooks::input::locomotion::head_decoupled;
+use crate::hooks::input::{locomotion::head_decoupled, tuning::INPUT_HOOKS};
 
 pub fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&UPDATE_AIR_PHYSICS_BINDER)
 }
 
 /// Carry `speed_mps`, the speed a reel or the grapple lock let the local player go at, into the
-/// air physics' cap for the next [`CARRY_S`]. A speed that is not a positive number carries
-/// nothing.
+/// air physics' cap for the next input tuning's `air.carry_s`. A speed that is not a positive
+/// number carries nothing.
 pub fn carry_speed(speed_mps: f32) {
     if speed_mps.is_finite() && speed_mps > 0.0 {
         *CARRY.lock() = Some(Carry {
@@ -91,16 +91,17 @@ fn update_air_physics(
 }
 
 /// The cap the carried speed asks for now, easing from the carried speed to nothing (the game's
-/// own cap) over [`CARRY_S`]; `None` once the carry has run out.
+/// own cap) over the input tuning's `air.carry_s`; `None` once the carry has run out.
 fn carried_cap() -> Option<f32> {
     let mut carry = CARRY.lock();
     let current = (*carry)?;
     let elapsed = current.since.elapsed().as_secs_f32();
-    if elapsed >= CARRY_S {
+    let carry_s = INPUT_HOOKS.get().air.carry_s;
+    if elapsed >= carry_s {
         *carry = None;
         return None;
     }
-    Some(current.speed_mps * (1.0 - smoothstep(elapsed / CARRY_S)))
+    Some(current.speed_mps * (1.0 - smoothstep(elapsed / carry_s)))
 }
 
 /// A carried speed and when it began.
@@ -113,6 +114,3 @@ struct Carry {
 static CARRY: Mutex<Option<Carry>> = Mutex::new(None);
 
 static CARRIED_UPDATES: AtomicU64 = AtomicU64::new(0);
-
-/// How long a carried speed takes to ease back to the game's cap, seconds.
-const CARRY_S: f32 = 1.5;

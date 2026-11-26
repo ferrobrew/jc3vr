@@ -6,6 +6,7 @@ use jc3vr_body::controllers::intent::tuning::CONTROLS;
 use jc3vr_body::controllers::locomotion::tuning::LOCOMOTION;
 use jc3vr_body::controllers::roomscale::tuning::ROOMSCALE;
 use jc3vr_body::hooks::character::tuning::CHARACTER;
+use jc3vr_body::hooks::input::tuning::INPUT_HOOKS;
 use jc3vr_body::{
     controllers::{
         aim::tuning_file::AIM,
@@ -56,6 +57,7 @@ static FILES: &[&dyn AnyTuningFile] = &[
     &ROOMSCALE,
     &CONTROLS,
     &CHARACTER,
+    &INPUT_HOOKS,
 ];
 
 #[cfg(test)]

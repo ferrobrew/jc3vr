@@ -45,7 +45,9 @@ use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{
-    controllers::physics::grapple_hook, hooks::input::locomotion::head_decoupled, tuning::FRESHNESS,
+    controllers::physics::grapple_hook,
+    hooks::input::{locomotion::head_decoupled, tuning::INPUT_HOOKS},
+    tuning::FRESHNESS,
 };
 
 pub fn hook_library() -> HookLibrary {
@@ -134,18 +136,19 @@ unsafe fn yaw_alignment_held(character: &Character) -> bool {
         state.last_call = Some(now);
         state.opened_at.unwrap_or(now)
     };
-    if now.saturating_duration_since(opened).as_secs_f32() < ALIGN_HOLD_S {
+    let tuning = &INPUT_HOOKS.get().parachute;
+    if now.saturating_duration_since(opened).as_secs_f32() < tuning.align_hold_s {
         return true;
     }
     let velocity = Vec3::from(character.m_MeasuredWorldVelocity);
     let horizontal = Vec3::new(velocity.x, 0.0, velocity.z);
-    if !horizontal.is_finite() || horizontal.length() < ALIGN_MIN_MPS {
+    if !horizontal.is_finite() || horizontal.length() < tuning.align_min_mps {
         return true;
     }
     let (_, rotation, _) = Mat4::from(character.m_WorldMatrixT1).to_scale_rotation_translation();
     let facing = rotation * Vec3::NEG_Z;
     let facing = Vec3::new(facing.x, 0.0, facing.z);
-    facing.angle_between(horizontal) > ALIGN_REVERSED_RAD
+    facing.angle_between(horizontal) > tuning.align_reversed_rad
 }
 
 /// When the canopy steering was last called, and when the canopy opened.
@@ -158,16 +161,6 @@ static ALIGN_STATE: Mutex<AlignState> = Mutex::new(AlignState {
     last_call: None,
     opened_at: None,
 });
-
-/// How long after the canopy opens its yaw alignment stays off, seconds.
-const ALIGN_HOLD_S: f32 = 0.6;
-
-/// The horizontal speed below which the canopy's yaw alignment stays off, metres per second.
-const ALIGN_MIN_MPS: f32 = 3.0;
-
-/// How far from the facing the velocity may point before the canopy's yaw alignment stays off,
-/// radians: about 100 degrees.
-const ALIGN_REVERSED_RAD: f32 = 1.75;
 
 /// Whether to remove the parachute look-steer this call: the character is a head-decoupled (VR)
 /// local player.

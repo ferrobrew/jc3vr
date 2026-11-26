@@ -6,4 +6,5 @@ pub mod air;
 pub mod locomotion;
 pub mod parachute;
 pub mod swim;
+pub mod tuning;
 pub mod wingsuit;

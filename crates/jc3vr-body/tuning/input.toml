@@ -1,0 +1,23 @@
+# The input detours' tuning: `InputHooksTuning` in `src/hooks/input/tuning.rs`, whose fields say
+# what each value does. Every key is required and no other is accepted. Times are seconds, speeds
+# metres per second, and angles degrees unless the key says radians; a threshold on an input's
+# magnitude is in `0..1`.
+
+[air]
+carry_s = 1.5
+
+[locomotion]
+turn_step_deg = 10.0
+move_dir_idle_threshold = 0.1
+input_deadzone = 0.15
+
+[parachute]
+align_hold_s = 0.6
+align_min_mps = 3.0
+align_reversed_rad = 1.75
+
+[swim]
+turn_rate_deg_s = 360.0
+pitch_deadzone_deg = 12.0
+pitch_limit_deg = 55.0
+pitch_rate_deg_s = 60.0
