@@ -1,0 +1,44 @@
+[package]
+name = "jc3vr-core"
+version = "0.1.0"
+edition = "2024"
+description = "The bottom layer of the payload: the payload lifecycle, the configuration engine, the hook plumbing, the frame slots and timing, the session folder, logging, crash reports, and the profiler core."
+publish = false
+
+[features]
+# The in-game profiler's core (issue #34): the puffin scopes, the frame advance, and the trace
+# capture. The payload's `profiler` feature forwards here.
+profiler = ["dep:puffin"]
+# Test fixtures other crates' tests use: the configuration fixture and the lifecycle harness.
+test-support = []
+
+[dependencies]
+windows = { workspace = true }
+glam = { workspace = true }
+anyhow = { workspace = true }
+jc3gi = { path = "../../jc3gi" }
+# The online timing detours. The detour macro emits `::re_utilities` paths, so a crate that defines
+# detours depends on `re-utilities` directly.
+re-utilities = { workspace = true }
+detours-macro = { workspace = true }
+parking_lot = "0.12.5"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "1.1.6"
+serde_path_to_error = "0.1.20"
+serde_ignored = "0.1.14"
+# The configuration engine serializes its type-erased root through whichever serializer a caller
+# embeds it in, so a capture's copy of the settings reads exactly as the typed root would.
+erased-serde = "0.4.10"
+directories = "6.0.0"
+jiff = "0.2.29"
+# Same rev as the payload's `puffin_egui`, so both agree on the puffin data model.
+puffin = { git = "https://github.com/EmbarkStudios/puffin", rev = "d06bed0fcb8c8e4c78643d4ead7cf1de9b76fd3b", optional = true }
+
+[dev-dependencies]
+# The session tests check the tracking recording extension against the format crate.
+tracking-format = { path = "../tracking-format" }
+pretty_assertions = "1.4.1"
+test-case = "3.3.1"
