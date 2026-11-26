@@ -164,7 +164,7 @@ pub fn request() {
 }
 
 /// Run the queued spawn, if any. Main thread: the spawn system is game-thread data.
-pub(super) fn service_pending(cfg: &SpawnConfig) {
+pub(crate) fn service_pending(cfg: &SpawnConfig) {
     if !with_state(|state| std::mem::take(&mut state.pending)) {
         return;
     }
@@ -283,7 +283,7 @@ static STATE: Mutex<Status> = Mutex::new(Status {
 pub(crate) mod test_status {
     use std::cell::RefCell;
 
-    use crate::director::spawn::Status;
+    use crate::controllers::spawn::Status;
 
     pub(crate) struct Fixture {
         previous: Option<Status>,

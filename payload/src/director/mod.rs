@@ -1,6 +1,9 @@
 //! Directing tools for staging footage from inside the headset: time control, actor safety, heat
 //! control, teleport bookmarks, a spawner, a clean view that hides the overlays, take markers, and the key bindings that drive them without opening the debug panel.
 //!
+//! The spawner itself, with the spawn definition table, is [`crate::controllers::spawn`], because
+//! the inventory's gives use the table too; the director queues its requests and services them.
+//!
 //! Everything here is applied from [`update`], which runs on the game's main thread at the top of
 //! `CGame::Update` (`crate::update`), so the engine setters that assert the main thread (the heat
 //! manager, the teleports) are always called from the right place. The debug tab and the hotkeys
@@ -11,6 +14,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::config::CONFIG;
+pub(crate) use crate::controllers::spawn;
 
 pub mod clean_view;
 pub mod heat;
@@ -18,7 +22,6 @@ pub mod keymap;
 pub mod markers;
 pub(crate) mod register_tracking;
 pub mod safety;
-pub mod spawn;
 pub mod teleport;
 pub mod time;
 

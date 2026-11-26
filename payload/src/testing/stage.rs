@@ -34,10 +34,8 @@ use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    director::{
-        spawn::{self, Submission},
-        teleport::{self, TeleportMode},
-    },
+    controllers::spawn::{self, Submission},
+    director::teleport::{self, TeleportMode},
     testing::visual::{self, EnvironmentRequest, EnvironmentTable, RequestId, environment},
 };
 

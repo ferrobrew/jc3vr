@@ -74,7 +74,6 @@ vr render
 # Gameplay: the controllers, the grapple, and the character, animation, input, equipment, and sim
 # detours. The summary model and the diagnostics note API stay here.
 controllers gameplay
-director::spawn gameplay
 grapple gameplay
 hooks::animation gameplay
 hooks::camera::height gameplay

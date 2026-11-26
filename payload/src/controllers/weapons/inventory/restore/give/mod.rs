@@ -47,6 +47,7 @@ use crate::{
         bindings,
         frame::Hand,
         loadout::{ObjectAddress, Socket, live},
+        spawn::{self, SpawnDefinition},
         summary::localise,
         weapons::{
             c4,
@@ -64,7 +65,6 @@ use crate::{
             },
         },
     },
-    director::spawn::{self, SpawnDefinition},
 };
 
 /// What the debug UI asks of the inventory.

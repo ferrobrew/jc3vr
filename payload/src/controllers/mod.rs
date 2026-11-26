@@ -37,6 +37,8 @@
 //!   the dual-wield split;
 //! - [`snatch`]: the grapple snatch: the empty grapple hand pulls a weapon out of reach into itself
 //!   on the game's hook;
+//! - [`spawn`]: the spawn system's requests and the shipped spawn definition table, for the
+//!   inventory's gives and the director's spawner;
 //! - [`physical_hands`]: each empty hand's palm colliding with the world: pushing the body off
 //!   surfaces, holding the hand at them, and striking characters and objects;
 //! - [`glass`]: breaking window glass with a palm or a held gun, as bullets crack it, and bringing
@@ -90,6 +92,7 @@ mod register_lifecycle;
 pub mod roomscale;
 pub mod scheme;
 pub mod snatch;
+pub mod spawn;
 pub mod summary;
 pub(crate) mod telemetry;
 pub mod vehicles;

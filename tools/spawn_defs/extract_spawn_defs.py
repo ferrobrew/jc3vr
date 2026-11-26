@@ -13,7 +13,7 @@ its display name in the game's localisation store.
 Usage:
     extract_spawn_defs.py <dir with spawn_*_defs.xml> [output.json]
 
-The output defaults to `payload/src/director/spawn_defs.json` relative to the repository root.
+The output defaults to `payload/src/controllers/spawn/spawn_defs.json` relative to the repository root.
 """
 
 import json
@@ -74,7 +74,7 @@ def main(argv):
         return 2
     source = Path(argv[1])
     repo = Path(__file__).resolve().parents[2]
-    output = Path(argv[2]) if len(argv) > 2 else repo / "payload/src/director/spawn_defs.json"
+    output = Path(argv[2]) if len(argv) > 2 else repo / "payload/src/controllers/spawn/spawn_defs.json"
     table = []
     for name in FILES:
         path = source / name

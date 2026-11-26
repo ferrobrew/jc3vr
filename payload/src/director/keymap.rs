@@ -25,7 +25,8 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 
 use crate::{
     config::{self, Config},
-    director::{heat, markers, spawn, teleport, teleport::TeleportMode, time},
+    controllers::spawn,
+    director::{heat, markers, teleport, teleport::TeleportMode, time},
 };
 
 /// Everything a key can trigger.
