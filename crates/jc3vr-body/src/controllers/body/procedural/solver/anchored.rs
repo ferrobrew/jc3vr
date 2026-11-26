@@ -10,21 +10,20 @@
 //! 1. The chest twists to face the player's torso: the torso's turn against Rico's facing, less the
 //!    heading the clip's own shoulder line already faces, so a clip that stands with its shoulders
 //!    turned (the bladed idle) is squared to the player rather than turned further. The twist is
-//!    held within `torso.chest_turn_limit_deg`, about the clip's own spine and shared out up it as
-//!    on foot. A spine far from upright (lying in a swim) takes less of the twist, none lying flat,
+//!    held within `chest_turn_limit_deg`, about the clip's own spine and shared out up it as on
+//!    foot. A spine far from upright (lying in a swim) takes less of the twist, none lying flat,
 //!    since the torso's heading is a turn about the vertical.
 //! 2. The spine swings so the neck reaches the point under the player's head, shared out along the
-//!    four spine bones and repeated to converge, never past `torso.lean_limit_deg` from the clip's
-//!    own spine, so a lean in the seat bends the back and the hips stay put.
+//!    four spine bones and repeated to converge, never past `lean_limit_deg` from the clip's own
+//!    spine, so a lean in the seat bends the back and the hips stay put.
 //! 3. A look down pitches the chest forward by a share of it, as on foot, again by how upright the
 //!    spine is, and the spine turns back onto the neck's line about its base.
-//! 4. The chest is kept out of the camera's near field: a chest within `chest_clearance.below_m`
-//!    below the eyes is swung back about the spine's base until it is `chest_clearance.back_m`
-//!    behind them, along the view's level forward, so a camera that sits low, or a spine bent back,
-//!    never puts the chest in front of the eyes. A look down at a chest further below is left
-//!    alone. The view's level forward is the head's heading, which stays defined looking straight
-//!    down, and the swing never passes `chest_clearance.limit_rad`, so no pose of the head folds
-//!    the spine over.
+//! 4. The chest is kept out of the camera's near field: a chest within `chest_clear_below_m` below
+//!    the eyes is swung back about the spine's base until it is `chest_clear_back_m` behind them,
+//!    along the view's level forward, so a camera that sits low, or a spine bent back, never puts
+//!    the chest in front of the eyes. A look down at a chest further below is left alone. The
+//!    view's level forward is the head's heading, which stays defined looking straight down, and
+//!    the swing never passes `CLEAR_LIMIT`, so no pose of the head folds the spine over.
 //! 5. The neck takes a share of the head's turn: the head's rotation against the body is a turn on
 //!    top of the clip's head, so the neck's share is a share of it.
 //!
@@ -41,9 +40,12 @@ use crate::controllers::body::procedural::{
     solver::{
         SolveInput,
         pose::RigPose,
-        spine::{SPINE, SWING_ITERATIONS, chest_pitch, swing_toward},
+        spine::{
+            NECK_SHARE, PITCH_SHARES, SPINE, SWING_ITERATIONS, SWING_SHARES, TWIST_SHARES,
+            chest_pitch, swing_toward,
+        },
     },
-    tuning::{PROCEDURAL, ProceduralTuning, TorsoTuning},
+    tuning::ProceduralTuning,
 };
 
 /// Solve the torso on the animated hips of `input.animated`, toward `input.head`.
@@ -71,13 +73,12 @@ pub fn solve_anchored(input: &SolveInput, config: &ProceduralTuning) -> RigPose 
     let Some(upright) = (pose.position(RigBone::Neck) - base).try_normalize() else {
         return animated;
     };
-    let torso = &config.torso;
-    let share = upright_share_with(upright, torso);
+    let share = upright_share(upright);
     let neck_target = input.head
         + input.head_rotation
             * (animated.position(RigBone::Neck) - animated.position(RigBone::Head));
 
-    let limit = torso.chest_turn_limit_deg.max(0.0).to_radians();
+    let limit = config.chest_turn_limit_deg.max(0.0).to_radians();
     let clip_chest = line_yaw(
         animated.position(RigBone::LeftShoulder),
         animated.position(RigBone::RightShoulder),
@@ -90,7 +91,7 @@ pub fn solve_anchored(input: &SolveInput, config: &ProceduralTuning) -> RigPose 
         .clamp(-limit, limit)
         * share;
     if yaw.abs() > 1e-5 {
-        for (bone, bone_share) in SPINE.iter().zip(torso.twist_shares) {
+        for (bone, bone_share) in SPINE.iter().zip(TWIST_SHARES) {
             let pivot = pose.position(*bone);
             pose.rotate_about(
                 *bone,
@@ -100,12 +101,12 @@ pub fn solve_anchored(input: &SolveInput, config: &ProceduralTuning) -> RigPose 
         }
     }
 
-    let lean = torso.lean_limit_deg.max(0.0).to_radians();
+    let lean = config.lean_limit_deg.max(0.0).to_radians();
     for _ in 0..SWING_ITERATIONS {
         let Some((axis, angle)) = swing_toward(&pose, neck_target, upright, lean) else {
             break;
         };
-        for (bone, bone_share) in SPINE.iter().zip(torso.swing_shares) {
+        for (bone, bone_share) in SPINE.iter().zip(SWING_SHARES) {
             let pivot = pose.position(*bone);
             pose.rotate_about(
                 *bone,
@@ -115,14 +116,14 @@ pub fn solve_anchored(input: &SolveInput, config: &ProceduralTuning) -> RigPose 
         }
     }
 
-    let pitch = chest_pitch(input.head_rotation, torso) * share;
+    let pitch = chest_pitch(input.head_rotation) * share;
     if pitch > 0.0
         && let Some(axis) = (pose.position(RigBone::LeftShoulder)
             - pose.position(RigBone::RightShoulder))
         .try_normalize()
     {
         // Turning about the line to the left shoulder carries the chest's up toward its front.
-        for (bone, bone_share) in SPINE.iter().zip(torso.pitch_shares) {
+        for (bone, bone_share) in SPINE.iter().zip(PITCH_SHARES) {
             let pivot = pose.position(*bone);
             pose.rotate_about(
                 *bone,
@@ -137,7 +138,7 @@ pub fn solve_anchored(input: &SolveInput, config: &ProceduralTuning) -> RigPose 
 
     keep_chest_clear(&mut pose, input, base, config);
 
-    let look = Quat::IDENTITY.slerp(input.head_rotation.normalize(), torso.neck_share);
+    let look = Quat::IDENTITY.slerp(input.head_rotation.normalize(), NECK_SHARE);
     if look.is_finite() {
         let pivot = pose.position(RigBone::Neck);
         pose.rotate_about(RigBone::Neck, look, pivot);
@@ -147,9 +148,8 @@ pub fn solve_anchored(input: &SolveInput, config: &ProceduralTuning) -> RigPose 
 }
 
 /// Swing the spine back about its base `base` until none of the chest's points within
-/// `chest_clearance.below_m` below the eyes is less than `chest_clearance.back_m` behind them,
-/// along the view's level forward (the head's heading), swinging no further than
-/// `chest_clearance.limit_rad` in all.
+/// `chest_clear_below_m` below the eyes is less than `chest_clear_back_m` behind them, along the
+/// view's level forward (the head's heading), swinging no further than [`CLEAR_LIMIT`] in all.
 fn keep_chest_clear(pose: &mut RigPose, input: &SolveInput, base: Vec3, config: &ProceduralTuning) {
     let Some(heading) = head_heading(input.head_rotation.normalize()) else {
         return;
@@ -158,8 +158,10 @@ fn keep_chest_clear(pose: &mut RigPose, input: &SolveInput, base: Vec3, config: 
     let Some(axis) = Vec3::Y.cross(forward).try_normalize() else {
         return;
     };
-    let clearance = &config.chest_clearance;
-    let (below, back) = (clearance.below_m.max(0.0), clearance.back_m.max(0.0));
+    let (below, back) = (
+        config.chest_clear_below_m.max(0.0),
+        config.chest_clear_back_m.max(0.0),
+    );
     let mut swung = 0.0f32;
     for _ in 0..CLEAR_ITERATIONS {
         let worst = chest_points(pose)
@@ -179,7 +181,7 @@ fn keep_chest_clear(pose: &mut RigPose, input: &SolveInput, base: Vec3, config: 
         let angle = (over / radius)
             .clamp(0.0, 1.0)
             .asin()
-            .min(clearance.limit_rad - swung);
+            .min(CLEAR_LIMIT - swung);
         if angle <= 0.0 {
             return;
         }
@@ -190,10 +192,10 @@ fn keep_chest_clear(pose: &mut RigPose, input: &SolveInput, base: Vec3, config: 
 
 /// `offset`, a translation of a clavicle whose root and shoulder joint are at `points`, less as
 /// much of its forward part as would carry either point into the near field [`keep_chest_clear`]
-/// keeps the chest out of: within `chest_clearance.below_m` below the eyes and less than
-/// `chest_clearance.back_m` behind them along the view's level forward. Only the offset's own
-/// forward part is taken back, so a point the solve left in the near field is not pushed further
-/// back than it stood, and a translation back or to the side is untouched.
+/// keeps the chest out of: within `chest_clear_below_m` below the eyes and less than
+/// `chest_clear_back_m` behind them along the view's level forward. Only the offset's own forward
+/// part is taken back, so a point the solve left in the near field is not pushed further back than
+/// it stood, and a translation back or to the side is untouched.
 pub fn clear_clavicle_offset(
     points: [Vec3; 2],
     offset: Vec3,
@@ -208,8 +210,10 @@ pub fn clear_clavicle_offset(
     if ahead <= 0.0 {
         return offset;
     }
-    let clearance = &config.chest_clearance;
-    let (below, back) = (clearance.below_m.max(0.0), clearance.back_m.max(0.0));
+    let (below, back) = (
+        config.chest_clear_below_m.max(0.0),
+        config.chest_clear_back_m.max(0.0),
+    );
     let over = points
         .into_iter()
         .map(|p| p + offset)
@@ -234,19 +238,25 @@ fn chest_points(pose: &RigPose) -> [Vec3; 4] {
 /// takes up what the first left.
 const CLEAR_ITERATIONS: usize = 3;
 
-/// How much of the torso's turn and of the look down a spine pointing along `upright` takes: all
-/// of it within the tuning's `torso.upright_full_rad` of the vertical, none past
-/// `torso.upright_none_rad`, eased between.
-pub fn upright_share(upright: Vec3) -> f32 {
-    upright_share_with(upright, &PROCEDURAL.get().torso)
-}
+/// The furthest the chest clearance swings the spine back in all, radians: forty-five degrees. A
+/// camera far inside the chest would otherwise fold the spine over backwards to clear it.
+const CLEAR_LIMIT: f32 = std::f32::consts::FRAC_PI_4;
 
-/// [`upright_share`] with the torso's tuning `torso`.
-fn upright_share_with(upright: Vec3, torso: &TorsoTuning) -> f32 {
+/// How much of the torso's turn and of the look down a spine pointing along `upright` takes: all
+/// of it within [`UPRIGHT_FULL`] of the vertical, none past [`UPRIGHT_NONE`], eased between.
+pub fn upright_share(upright: Vec3) -> f32 {
     let cos = upright.y;
-    let (none, full) = (torso.upright_none_rad.cos(), torso.upright_full_rad.cos());
+    let (none, full) = (UPRIGHT_NONE.cos(), UPRIGHT_FULL.cos());
     smoothstep_between(none, full, cos)
 }
+
+/// The spine's tilt from the vertical within which it takes the whole of the torso's turn,
+/// radians: about thirty degrees.
+const UPRIGHT_FULL: f32 = std::f32::consts::FRAC_PI_6;
+
+/// The spine's tilt from the vertical past which it takes none of it, radians: about seventy
+/// degrees.
+const UPRIGHT_NONE: f32 = 1.22;
 
 #[cfg(test)]
 mod tests {
@@ -255,7 +265,7 @@ mod tests {
     use super::*;
     use crate::controllers::body::procedural::{
         rig::{Rig, test_support::skeleton},
-        tuning::PROCEDURAL,
+        tuning::TUNING,
     };
 
     fn setup() -> (SolveInput, ProceduralTuning) {
@@ -271,7 +281,7 @@ mod tests {
             torso_yaw: Some(0.0),
             delean: 0.0,
         };
-        (input, *PROCEDURAL.get())
+        (input, TUNING)
     }
 
     /// The clip leaning the whole body by `angle` about +Z (a bike in a turn), from the hips.
@@ -294,9 +304,9 @@ mod tests {
         input.eye = shoulders + Vec3::new(0.0, 0.1, 0.0);
         let pose = solve_anchored(&input, &config);
         for p in chest_points(&pose) {
-            if p.y > input.eye.y - config.chest_clearance.below_m {
+            if p.y > input.eye.y - config.chest_clear_below_m {
                 assert!(
-                    (p - input.eye).dot(Vec3::NEG_Z) <= -config.chest_clearance.back_m + 2e-3,
+                    (p - input.eye).dot(Vec3::NEG_Z) <= -config.chest_clear_back_m + 2e-3,
                     "{p:?} in front of {:?}",
                     input.eye
                 );
@@ -319,7 +329,7 @@ mod tests {
     #[test]
     fn a_clavicle_translated_toward_the_camera_stops_at_the_clearance() {
         let (input, config) = setup();
-        let back = config.chest_clearance.back_m;
+        let back = config.chest_clear_back_m;
         // A root and joint level with the eyes, a clearance and a half behind them.
         let root = input.eye + Vec3::new(0.0, -0.05, back * 1.5);
         let joint = root + Vec3::new(0.18, -0.02, 0.02);
@@ -338,7 +348,7 @@ mod tests {
                 offset
             );
         }
-        let low = root - Vec3::Y * (config.chest_clearance.below_m + 0.1);
+        let low = root - Vec3::Y * (config.chest_clear_below_m + 0.1);
         let ahead = Vec3::new(0.0, 0.0, -0.3);
         assert_eq!(
             clear_clavicle_offset([low, low], ahead, &input, &config),
@@ -379,23 +389,15 @@ mod tests {
     fn the_clearance_swings_no_further_than_its_limit() {
         let (mut input, config) = setup();
         let mut no_look = config;
-        no_look.torso.lean_limit_deg = 0.0;
+        no_look.lean_limit_deg = 0.0;
         // The eyes well behind the chest, a little below the sternum.
         let sternum = input.animated.position(RigBone::Sternum);
         input.eye = sternum + Vec3::new(0.0, -0.05, 0.25);
         input.head = input.animated.position(RigBone::Head);
         let pose = solve_anchored(&input, &no_look);
         let swing = spine_swing(&pose, &input);
-        assert!(
-            swing <= config.chest_clearance.limit_rad + 1e-3,
-            "{}",
-            swing.to_degrees()
-        );
-        assert!(
-            swing > config.chest_clearance.limit_rad * 0.5,
-            "{}",
-            swing.to_degrees()
-        );
+        assert!(swing <= CLEAR_LIMIT + 1e-3, "{}", swing.to_degrees());
+        assert!(swing > CLEAR_LIMIT * 0.5, "{}", swing.to_degrees());
     }
 
     #[test]
@@ -450,7 +452,7 @@ mod tests {
         let pose = solve_anchored(&input, &config);
         let lean = (pose.position(RigBone::Neck) - base).angle_between(clip);
         assert!(
-            (lean - config.torso.lean_limit_deg.to_radians()).abs() < 0.05,
+            (lean - config.lean_limit_deg.to_radians()).abs() < 0.05,
             "{} degrees",
             lean.to_degrees()
         );

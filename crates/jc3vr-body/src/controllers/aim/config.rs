@@ -11,7 +11,7 @@ pub static AIM_CONFIG: ConfigSlot<AimConfig> = ConfigSlot::new("controllers.aim"
 
 /// Per-hand aiming (see [`crate::controllers::aim`]). Acts only under the controller scheme, where
 /// the guns aim along their hands' sight lines and the grapple along the off-hand's ray. The
-/// rays' fixed reach is [`RAY_LENGTH_M`](crate::controllers::aim::RAY_LENGTH_M).
+/// rays' fixed reach is [`ray_length_m`](crate::controllers::aim::ray_length_m).
 #[derive(Copy, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AimConfig {

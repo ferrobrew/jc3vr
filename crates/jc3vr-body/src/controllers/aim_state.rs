@@ -63,7 +63,8 @@ use re_utilities::hook_library::HookLibrary;
 
 use crate::{
     controllers::{
-        aim, hands,
+        aim::{self, tuning_file::AIM},
+        hands,
         mode::{self, Mode},
         scheme,
     },
@@ -593,7 +594,7 @@ fn update_weapon_aiming(character: *mut Character, target: *const Vector3) {
     let point = neutral_aim_point(
         headpose::anchor().unwrap_or(position),
         forward,
-        NEUTRAL_AIM_DISTANCE_M,
+        AIM.get().neutral.distance_m,
     );
     control.m_AimTargetWeapons = Vector3 {
         data: point.to_array(),
@@ -745,9 +746,6 @@ fn watched_act(id: i32) -> Option<WatchedAct> {
         _ => None,
     }
 }
-
-/// How far ahead of the head the neutral aim point sits, metres.
-pub(crate) const NEUTRAL_AIM_DISTANCE_M: f32 = 25.0;
 
 static WATCHED_ACT_IDS: OnceLock<[i32; 2]> = OnceLock::new();
 

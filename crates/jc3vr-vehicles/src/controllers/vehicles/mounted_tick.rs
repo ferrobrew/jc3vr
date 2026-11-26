@@ -5,7 +5,7 @@ use std::time::Instant;
 
 use glam::Vec3;
 use jc3vr_body::controllers::{
-    aim::RAY_LENGTH_M, grab::cockpit::ControlKind, hands::ActiveHands, mode::VehicleSeat,
+    aim::ray_length_m, grab::cockpit::ControlKind, hands::ActiveHands, mode::VehicleSeat,
     physics::local_player::LocalPlayer,
 };
 use jc3vr_core::game_tick::GameTick;
@@ -107,7 +107,7 @@ pub(super) fn mounted_tick(
     };
     let target = direction.map(|d| MountedTarget {
         weapon: gun.address,
-        point: gun.pivot + d * RAY_LENGTH_M,
+        point: gun.pivot + d * ray_length_m(),
         at: Instant::now(),
     });
     MountedTick {

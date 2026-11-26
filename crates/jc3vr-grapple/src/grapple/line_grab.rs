@@ -14,7 +14,7 @@
 
 use glam::Vec3;
 use jc3vr_body::controllers::{
-    aim::GRAPPLE_ORIGIN_M,
+    aim::grapple_origin_m,
     grab::{GrabVolume, GripTarget, Mark, MarkAt, Provided, latch::GripLatch},
     hands,
     hands::ik,
@@ -168,7 +168,7 @@ pub fn lock_hand(grapple_hand: Hand, latch: GripLatch) -> Option<HandLine> {
 
 /// The line's origin on the grapple hand, from its wrist frame in the world.
 pub(crate) fn line_origin(wrist: Pose) -> Vec3 {
-    wrist.position + wrist.orientation * GRAPPLE_ORIGIN_M
+    wrist.position + wrist.orientation * grapple_origin_m()
 }
 
 /// Where a hand holds the line, from its wrist frame in the world: the palm, ahead of the wrist

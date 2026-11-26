@@ -7,9 +7,7 @@
 use body_rig::angle::{line_yaw, wrap};
 use glam::Quat;
 
-use crate::controllers::body::procedural::{
-    authority::Case, rig::RigBone, solver::pose::RigPose, tuning::PROCEDURAL,
-};
+use crate::controllers::body::procedural::{authority::Case, rig::RigBone, solver::pose::RigPose};
 
 /// What the hips' follower does in a hand-over case.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -91,19 +89,22 @@ impl HipFollower {
     }
 
     /// Follow `measured` over `dt` seconds: the first measurement is taken whole, and later ones
-    /// are followed the short way round with the time constant of the tuning's `hips.smoothing_s`.
+    /// are followed the short way round with a time constant of [`SMOOTHING_S`].
     fn step(&mut self, measured: Option<f32>, dt: f32) -> Option<f32> {
         let measured = measured.filter(|yaw| yaw.is_finite())?;
         let dt = if dt.is_finite() { dt.max(0.0) } else { 0.0 };
-        let smoothing_s = PROCEDURAL.get().hips.smoothing_s;
         let yaw = match self.yaw {
-            Some(yaw) => wrap(yaw + wrap(measured - yaw) * (dt / (smoothing_s + dt))),
+            Some(yaw) => wrap(yaw + wrap(measured - yaw) * (dt / (SMOOTHING_S + dt))),
             None => wrap(measured),
         };
         self.yaw = Some(yaw);
         self.yaw
     }
 }
+
+/// The hips' follower's time constant, seconds: long against a stride, so the walk's swing of the
+/// hips averages out, and short against standing still.
+const SMOOTHING_S: f32 = 0.8;
 
 pub(super) fn square_pose(animated: &RigPose, target: f32, weight: f32) -> RigPose {
     let mut pose = *animated;

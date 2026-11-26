@@ -18,7 +18,6 @@ use crate::{
         body::procedural::{
             authority::CharacterState,
             signals::{in_hit_reaction, in_ledge_climb},
-            tuning::PROCEDURAL,
         },
         facts::climb,
         hands::tiers::{self, TierState},
@@ -92,11 +91,10 @@ impl StateTracker {
         // While the movement task still runs, Rico is on foot to the game, and a lift off the
         // support is a stair, a bump, or the proxy settling as a walk stops; once it stops, the
         // body has left the ground.
-        let in_air = &PROCEDURAL.get().in_air;
         let debounce_s = if movement_task {
-            in_air.debounce_on_foot_s
+            IN_AIR_DEBOUNCE_ON_FOOT_S
         } else {
-            in_air.debounce_s
+            IN_AIR_DEBOUNCE_S
         };
         let airborne = has(StateBitFlag::SB_IS_JUMPING)
             || falling
@@ -180,6 +178,15 @@ unsafe fn grapple_attached(character: &Character) -> bool {
 
 /// The body rule state of the grapple's wall attach, from the shipped animation graph.
 const GRAPPLE_ATTACH_STATE: &str = "S_GRAPPLE_ATTACH_0";
+
+/// How long the proxy must be off its support, with no jump and no fall detected, before the
+/// body counts as in the air, seconds: a stair or a bump lifts it for a tick without a fall.
+const IN_AIR_DEBOUNCE_S: f32 = 0.06;
+
+/// How long the proxy must be off its support while the movement task still runs, seconds: the
+/// proxy loses its support for a few ticks as a walk comes to a stop, and drops a few centimetres
+/// onto the ground, without leaving it.
+const IN_AIR_DEBOUNCE_ON_FOOT_S: f32 = 0.15;
 
 /// The state bits of an authored motion: the animation carries the body through it.
 const AUTHORED_MOTION: [StateBitFlag; 7] = [

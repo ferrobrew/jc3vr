@@ -15,8 +15,6 @@
 use glam::{Mat4, Quat, Vec3};
 use jc3vr_input::frame::Pose;
 
-use crate::controllers::body::procedural::tuning::PROCEDURAL;
-
 /// The player's arms, in the cockpit frame.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct PlayerArms {
@@ -67,11 +65,9 @@ pub fn wing_targets(player: &PlayerArms, rico: &RicoArms) -> [Option<WingTarget>
     }
     // The turn from the player's heading frame to Rico's: both keep the vertical.
     let carry = (rico_heading * player_heading.inverse()).normalize();
-    let tuning = &PROCEDURAL.get().wings;
     [0, 1].map(|i| {
         let wrist = player.wrists[i]?;
-        let scale = (rico.arm_lengths[i] / player.arm_length)
-            .clamp(tuning.arm_scale_min, tuning.arm_scale_max);
+        let scale = (rico.arm_lengths[i] / player.arm_length).clamp(MIN_SCALE, MAX_SCALE);
         let reach = carry * ((wrist.position - player.shoulders[i]) * scale);
         let shoulder = rico.world.transform_point3(rico.shoulders[i]);
         let target = WingTarget {
@@ -105,6 +101,10 @@ fn flat_turn(direction: Vec3) -> Option<Quat> {
 
 /// The shortest player arm the targets are scaled from, metres.
 const MIN_ARM_M: f32 = 0.2;
+
+/// The bounds on the scale from the player's arm to Rico's.
+const MIN_SCALE: f32 = 0.5;
+const MAX_SCALE: f32 = 2.0;
 
 /// How long a direction laid flat must be to have a heading of its own.
 const MIN_FLAT: f32 = 0.2;

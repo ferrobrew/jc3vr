@@ -74,8 +74,8 @@ impl IkEvalOptions {
 /// The IK body's `MAX_PELVIS_DROP_M` (the payload's `ik_body::gate`).
 pub const DEFAULT_MAX_PELVIS_DROP_M: f32 = 0.2;
 
-/// The square stance's `stance.width_m` and `stance.toe_out_deg` (the body crate's
-/// `tuning/procedural.toml`).
+/// The square stance's `STANCE_WIDTH_M` and `STANCE_TOE_OUT_DEG` (the payload's
+/// `procedural::stance`).
 pub const DEFAULT_STANCE: Stance = Stance {
     width_m: 0.29,
     toe_out_deg: 10.0,

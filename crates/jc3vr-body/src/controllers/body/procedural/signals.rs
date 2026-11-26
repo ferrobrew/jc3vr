@@ -9,8 +9,7 @@
 //!   queues a stumble or a knock-back straight on the character's animated model
 //!   ([`AnimatedModel::QueueAct`](jc3gi::character::character::AnimatedModel::QueueAct)), so
 //!   [`note_act`] stamps the local player's from that queue. The character keeps no state for the
-//!   reaction's length, so it counts for the tuning's `hit_reaction.hold_ms` after its act, renewed
-//!   by the next.
+//!   reaction's length, so it counts for `hit_reaction_hold_s` after its act, renewed by the next.
 //!
 //! Both are logged at info level when they start. The published local model also answers
 //! [`is_local_model`] for the other act-queue filters.
@@ -31,10 +30,7 @@ use jc3gi::{
 };
 use parking_lot::Mutex;
 
-use crate::{
-    controllers::body::procedural::tuning::PROCEDURAL, hooks::character::resolve_act_id,
-    tuning::FRESHNESS,
-};
+use crate::{hooks::character::resolve_act_id, tuning::FRESHNESS};
 
 /// Publish the local player's character, whose animated model's acts [`note_act`] watches. Called
 /// at the entry of every pose-finalization pass of the local player, so the address is refreshed
@@ -103,14 +99,18 @@ pub fn in_ledge_climb(now: Instant) -> bool {
         .is_some_and(|at| now.saturating_duration_since(at) <= TASK_GAP)
 }
 
-/// Whether a hit reaction's act was queued within the tuning's last `hit_reaction.hold_ms`.
+/// Whether a hit reaction's act was queued within the last [`HIT_REACTION_HOLD`].
 pub fn in_hit_reaction(now: Instant) -> bool {
-    let hold = PROCEDURAL.get().hit_reaction.hold_ms.duration();
+    let hold = HIT_REACTION_HOLD;
     STATE
         .lock()
         .hit_reaction_at
         .is_some_and(|at| now.saturating_duration_since(at) <= hold)
 }
+
+/// How long a hit reaction (a stumble or a knock-back) holds the body on the animation after its
+/// act: the game keeps no state for the reaction's length.
+const HIT_REACTION_HOLD: Duration = Duration::from_millis(1200);
 
 /// How long after the climb's task last ran it still counts as running: a tick or two.
 const TASK_GAP: Duration = Duration::from_millis(100);

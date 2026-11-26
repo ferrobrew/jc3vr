@@ -8,7 +8,7 @@ use std::num::NonZeroUsize;
 use glam::{Mat4, Vec3};
 use jc3gi::{character::inventory::WeaponSlot, equipment::weapon::WeaponBase};
 use jc3vr_body::controllers::{
-    aim::{GRAPPLE_ORIGIN_M, ray::Ray, raycast, raycast::CastOptions},
+    aim::{grapple_origin_m, ray::Ray, raycast, raycast::CastOptions},
     grab::latch::GripLatch,
     hands::ik,
     haptics, physics,
@@ -609,7 +609,7 @@ pub(super) unsafe fn prepare_sling(
     let wrist = ik::tick_records().current[hand.index()]
         .ok_or(Refusal::Gone)?
         .wrist;
-    let anchor = wrist.position + wrist.orientation * GRAPPLE_ORIGIN_M;
+    let anchor = wrist.position + wrist.orientation * grapple_origin_m();
     let transform = Mat4::from_rotation_translation(wrist.orientation, anchor);
     if !transform.is_finite() {
         return Err(Refusal::Gone);
