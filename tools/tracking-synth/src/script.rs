@@ -11,7 +11,7 @@ use crate::track::Track;
 /// What a synthetic player does.
 #[derive(Debug, Clone)]
 pub struct Script {
-    /// The name the tool and the scenarios know it by, and the recording's file stem.
+    /// The name the tool knows it by, and the recording's file stem.
     pub name: &'static str,
     /// What the player does, for the tool's listing.
     pub summary: &'static str,
@@ -153,5 +153,5 @@ pub enum PressButton {
 /// The squeeze value of a hand resting round an Index controller's handle.
 pub const RESTING_SQUEEZE: f32 = 0.9;
 
-/// The rest after the last key, so a scenario sees the final pose settle.
+/// The rest after the last key, so a reader sees the final pose settle.
 const TAIL_S: f32 = 1.0;

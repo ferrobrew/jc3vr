@@ -14,8 +14,7 @@
 //! ```
 //!
 //! With no script named, every built-in script is written. The recordings go to `<dir>/<script>.jc3trk`,
-//! by default `testing/recordings/synthetic/` in the repository, where the synthetic scenarios look
-//! for them. `--list` prints each built-in script's name and summary, tab-separated, one per line.
+//! by default `target/tracking-synth/` in the repository, for the offline commands to read. `--list` prints each built-in script's name and summary, tab-separated, one per line.
 //! `dump` prints any recording's frames and events to stdout, as text or, with `--json`, as JSON
 //! lines. `--from` and `--to` limit it to an inclusive stretch; a `<time>` is seconds on the
 //! recording's clock (`12.5`) or an OpenXR predicted display time in nanoseconds (`xr:<ns>`), the
@@ -821,8 +820,8 @@ fn video_clock(recording: &Path) -> Option<VideoClock> {
     VideoClock::parse(&frames, &stream)
 }
 
-/// Where the synthetic scenarios look for their recordings: `testing/recordings/synthetic/` in the
-/// repository this tool was built from.
+/// Where the synthetic recordings go by default: `target/tracking-synth/` in the repository this tool
+/// was built from, beside the build output and as disposable.
 fn default_out() -> PathBuf {
     let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
     // The tool's manifest is two levels below the repository's root.
@@ -830,5 +829,5 @@ fn default_out() -> PathBuf {
         .ancestors()
         .nth(2)
         .unwrap_or(manifest)
-        .join("testing/recordings/synthetic")
+        .join("target/tracking-synth")
 }

@@ -1,7 +1,7 @@
-//! The built-in scripts, each the recording of one scenario in `testing/scenarios/`.
+//! The built-in scripts, each one basic motion of a standing player.
 //!
 //! Every script starts and ends at rest, standing where it started, and holds still for a moment
-//! first so a replay sees the stance before anything moves.
+//! first so a reader sees the stance before anything moves.
 
 use std::mem::replace;
 

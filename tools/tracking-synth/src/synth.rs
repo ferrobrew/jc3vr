@@ -6,7 +6,7 @@
 //! rates, measured across a millisecond each side of the frame. The semantic actions are `global`
 //! and `on_foot`, every action at rest but the two a stick drives with the default bindings of a
 //! right-handed player: `move` from the left stick and `turn` from the right stick's horizontal
-//! axis. The first frame carries a full recenter, so a replay starts the posture, the rig's
+//! axis. The first frame carries a full recenter, so a reader starts the posture, the rig's
 //! chase, and the torso estimate afresh from the scripted head.
 
 use std::fmt;
@@ -291,8 +291,8 @@ fn header(script: &Script, schema: &Schema) -> Header {
         build: format!("tracking-synth {}", env!("CARGO_PKG_VERSION")),
         recorded_at: format!("synthetic {}", script.name),
         action_schema: schema.version,
-        // A synthetic recording was made nowhere in the world: it replays in place, and the
-        // marker is the identity at the world's origin.
+        // A synthetic recording was made nowhere in the world, so the marker is the identity at
+        // the world's origin.
         start: StartMarker {
             transform,
             bookmark: None,
