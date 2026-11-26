@@ -54,7 +54,7 @@ No wrist next/back semantic route exists. The interim pagination policy cycles w
 
 The panel has its own egui context, renderer, render target, and quad pass. Eye zero advances visibility and pagination; both eyes draw the same cached world corners. The panel stays on the back of the off-hand wrist. The glance cone, dwell, hysteresis, and linger, the trackpad-touch pin, the mode-change display, the placement, and the fade are constants in `hud/summary_panel.rs`. The summary action uses its accepted semantic boolean hold, including remapped controls. A trackpad press cancels only an accepted hold whose sole known source on that hand is trackpad touch and whose raw touch is active. Force/click bindings do not cancel. OpenXR reports an aggregate action value rather than the contributing binding, so an alternative binding or another accepted held route preserves the summary instead of inferring a touch contribution. Missing source metadata never enables a raw-input fallback. The health/heat wrist display remains a separate surface.
 
-`controllers.summary` holds `enabled`, `hide_game_hints`, and `show_on_glance`, which Input/bindings > Wrist summary shows. Page overflow does not lower the row height (`ROW_PX`). The page height (`MAX_HEIGHT_PX`) is a page budget rather than a request to shrink text.
+The panel and the hint suppression have no settings: both act whenever the controller scheme is in effect, and Input/bindings > Wrist summary shows only the panel's readout. Page overflow does not lower the row height (`ROW_PX`). The page height (`MAX_HEIGHT_PX`) is a page budget rather than a request to shrink text.
 
 ## Verification and integration status
 

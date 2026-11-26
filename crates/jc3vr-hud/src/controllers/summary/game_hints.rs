@@ -1,5 +1,4 @@
-//! Hiding the game's own context button hints under the controller scheme
-//! ([`SummaryConfig::hide_game_hints`](jc3vr_gameplay::controllers::summary::SummaryConfig::hide_game_hints)).
+//! Hiding the game's own context button hints under the controller scheme.
 //!
 //! The HUD shows the hints it raises in context (release the tethers, reel in, the gunner seat, a
 //! mission's prompts) with a gamepad glyph per action
@@ -11,13 +10,6 @@
 //! summary stands in for them.
 
 use jc3vr_body::controllers::scheme;
-use jc3vr_gameplay::controllers::config::CONTROLLERS_CONFIG;
-
-/// Whether to hide the hints: the toggle, with the controllers' master switch, and the controller
-/// scheme.
-pub const fn decide(enabled: bool, controllers_scheme: bool) -> bool {
-    enabled && controllers_scheme
-}
 
 /// Hold the game's hint stages hidden under the controller scheme, and restore them otherwise.
 ///
@@ -26,8 +18,7 @@ pub const fn decide(enabled: bool, controllers_scheme: bool) -> bool {
 /// Must be called from the [`MovieImpl::Capture`](jc3gi::ui::scaleform::MovieImpl) detour, as
 /// [`crate::hud::scaleform::apply_hint_suppression`] requires.
 pub(crate) unsafe fn hide_game_hints() {
-    let enabled = CONTROLLERS_CONFIG.query(|c| c.enabled && c.summary.hide_game_hints);
-    let hidden = decide(enabled, scheme::is_controllers());
+    let hidden = scheme::is_controllers();
     // SAFETY: forwarded from the caller.
     unsafe { crate::hud::scaleform::apply_hint_suppression(hidden) };
 }

@@ -57,10 +57,7 @@ use jc3vr_view::{
 };
 use jc3vr_weapons::controllers::weapons::config::WEAPONS_CONFIG;
 
-use crate::controllers::{
-    config::{CONTROLLERS_CONFIG, ControllersConfig},
-    summary::config::SUMMARY_CONFIG,
-};
+use crate::controllers::config::{CONTROLLERS_CONFIG, ControllersConfig};
 
 jc3vr_core::test_root! {
     root {
@@ -109,7 +106,6 @@ jc3vr_core::test_root! {
         VEHICLES_CONFIG => controllers.vehicles,
         FINGERS_CONFIG => controllers.fingers,
         PHYSICAL_HANDS_CONFIG => controllers.physical_hands,
-        SUMMARY_CONFIG => controllers.summary,
         GRAPPLE_CONFIG => controllers.grapple,
         HAPTICS_CONFIG => controllers.haptics,
         GLASS_CONFIG => controllers.glass,

@@ -1,7 +1,7 @@
-//! The controls summary: what it shows now, why the panel is up, and its switches.
+//! The controls summary: what it shows now, and why the panel is up.
 
 use egui::Ui;
-use jc3vr_gameplay::controllers::summary::{SummaryConfig, SummaryStatus};
+use jc3vr_gameplay::controllers::summary::SummaryStatus;
 use jc3vr_hud::hud::summary_panel::PanelStatus;
 
 use crate::ui::controllers::yes_no;
@@ -36,18 +36,4 @@ pub(super) fn summary_readout(ui: &mut Ui, status: &SummaryStatus, panel: &Panel
         )),
         None => ui.label("Panel texture: not laid out yet"),
     };
-}
-
-pub(super) fn summary_settings(ui: &mut Ui, s: &mut SummaryConfig) {
-    ui.checkbox(&mut s.enabled, "Controls summary on the off-hand wrist")
-        .on_hover_text("List what each controller input does in the current mode.");
-    ui.add_enabled(
-        s.enabled,
-        egui::Checkbox::new(&mut s.show_on_glance, "Show on a glance at the wrist"),
-    );
-    ui.checkbox(&mut s.hide_game_hints, "Hide the game's button hints")
-        .on_hover_text(
-            "Hide the HUD's context button hints under the controller scheme: they show gamepad \
-             glyphs for actions the controllers drive with other inputs.",
-        );
 }

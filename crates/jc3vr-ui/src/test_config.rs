@@ -40,10 +40,7 @@ use jc3vr_core::{
     director::clean_view::CLEAN_VIEW_CONFIG,
     hooks::online::{ONLINE_CONFIG, OnlineConfig},
 };
-use jc3vr_gameplay::controllers::{
-    config::{CONTROLLERS_CONFIG, ControllersConfig, validate},
-    summary::config::SUMMARY_CONFIG,
-};
+use jc3vr_gameplay::controllers::config::{CONTROLLERS_CONFIG, ControllersConfig, validate};
 use jc3vr_grapple::grapple::physical::config::GRAPPLE_CONFIG;
 use jc3vr_hud::hud::config::{HUD_CONFIG, HudConfig};
 use jc3vr_physical::controllers::{
@@ -134,7 +131,6 @@ jc3vr_core::test_root! {
         VEHICLES_CONFIG => controllers.vehicles,
         FINGERS_CONFIG => controllers.fingers,
         PHYSICAL_HANDS_CONFIG => controllers.physical_hands,
-        SUMMARY_CONFIG => controllers.summary,
         GRAPPLE_CONFIG => controllers.grapple,
         HAPTICS_CONFIG => controllers.haptics,
         GLASS_CONFIG => controllers.glass,

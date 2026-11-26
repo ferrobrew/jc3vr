@@ -155,9 +155,6 @@ pub(crate) fn controls(id: FeatureId) -> Option<FeatureBody> {
             rig::rig_settings(ui, &mut c.body);
             estimator::estimator_settings(ui, &mut c);
         },
-        FeatureId::Wrist => {
-            |ui, _| summary::summary_settings(ui, &mut CONTROLLERS_CONFIG.edit().summary)
-        }
         FeatureId::Presets => |ui, _| presets::presets(ui, &mut CONTROLLERS_CONFIG.edit()),
         FeatureId::Semantic => |ui, _| {
             ui.checkbox(

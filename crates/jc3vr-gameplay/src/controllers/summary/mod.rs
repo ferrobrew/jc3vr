@@ -4,7 +4,7 @@
 //! own button hints, whose gamepad glyphs do not match the controllers. See
 //! `docs/mod/input/controls-summary.md`.
 //!
-//! - [`config`]: the settings, [`SummaryConfig`];
+//! - [`config`]: the glance and the wrist placement's parameter types;
 //! - [`labels`]: the game's localisation key for each action per mode, and the mod's own strings;
 //! - [`localise`]: resolving those through the game's localisation store, with an English
 //!   fallback;
@@ -59,7 +59,6 @@ use jc3vr_view::vr::input::sources;
 use jc3vr_weapons::controllers::weapons::{c4, wheel::tuning::WHEEL};
 use parking_lot::Mutex;
 
-pub use crate::controllers::summary::config::SummaryConfig;
 use crate::controllers::{
     bindings::tables::{
         declare::TableCtx,
@@ -133,9 +132,6 @@ pub(crate) fn refresh(
     config: &ControllersConfig,
     eligibility: &Eligibility,
 ) {
-    if !config.summary.enabled {
-        return;
-    }
     let weapons = &config.weapons;
     let physical = &config.vehicles.physical;
     let ctx = DescribeCtx {
@@ -145,13 +141,10 @@ pub(crate) fn refresh(
         features: Features {
             yank: config.bindings.yank.enabled,
             holsters: true,
-            foregrip: weapons.foregrip.enabled,
             magazine: weapons.reload.enabled,
             belt_reload: weapons.reload.enabled && weapons.reload.belt.enabled,
             flick_eject: weapons.reload.enabled && weapons.reload.flick_eject,
             work_action: weapons.reload.enabled && weapons.reload.manual_action,
-            grenade_throw: weapons.grenade_throw,
-            c4_throw: weapons.c4_throw,
             sight_chord: controls.sight_chord,
             wheel_trackpad: weapons.wheel.enabled && WHEEL.trackpad,
             wheel_stick: weapons.wheel.enabled && WHEEL.stick,
@@ -169,17 +162,14 @@ pub(crate) fn refresh(
                 .suppress_developer_chords_in_vehicles,
         },
     };
-    // The game's context hints are relabelled on the wrist only while the HUD's are hidden.
-    let hints = if config.summary.hide_game_hints {
-        // SAFETY: the game stage runs on the game thread past startup.
-        let read = unsafe { context::read() };
+    // SAFETY: the game stage runs on the game thread past startup.
+    let read = unsafe { context::read() };
+    let hints = {
         let mut state = STATE.lock();
         if let Some(read) = read {
             state.hints = read;
         }
         state.hints.clone()
-    } else {
-        Vec::new()
     };
     // SAFETY: the game stage runs on the game thread past startup.
     let locale = unsafe { current_locale() };

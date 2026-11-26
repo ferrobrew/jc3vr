@@ -34,7 +34,7 @@ use jc3vr_gameplay::controllers::{
     config::CONTROLLERS_CONFIG,
     summary,
     summary::{
-        Published, SummaryConfig,
+        Published,
         config::{GlanceConfig, WristPlacement},
         content::Metrics,
         current::{CellKind, CurrentSummary, Hint},
@@ -63,13 +63,12 @@ use crate::{
 pub(crate) fn draw(context: &ID3D11DeviceContext, device: &Device, target: &Texture, eye: usize) {
     let mut panel = PANEL.lock();
     if jc3vr_view::stereo::dispatch::first_ui_eye(eye) {
-        let (enabled, dominant, config) = CONTROLLERS_CONFIG
-            .query(|c| (c.enabled && c.summary.enabled, c.acting_hand(), c.summary));
+        let (enabled, dominant) = CONTROLLERS_CONFIG.query(|c| (c.enabled, c.acting_hand()));
         let active = enabled
             && scheme::is_controllers()
             && !jc3vr_core::director::clean_view::hides_everything()
             && jc3vr_view::vr::render_params(0).is_some();
-        panel.prepare(context, device, active, dominant.other(), &config);
+        panel.prepare(context, device, active, dominant.other());
     }
     panel.draw(context, device, target);
 }
@@ -167,7 +166,6 @@ impl Panel {
         device: &Device,
         active: bool,
         off: frame::Hand,
-        config: &SummaryConfig,
     ) {
         let now = Instant::now();
         let dt = self
@@ -185,7 +183,7 @@ impl Panel {
         let pose = grip.map(|grip| wrist_pose(grip, off, &PLACEMENT));
         let published = summary::published();
 
-        let looked = match (active && config.show_on_glance, head, pose) {
+        let looked = match (active, head, pose) {
             (true, Some(head), Some(pose)) => looking(head, &pose, &GLANCE, self.glance.shown()),
             _ => false,
         };

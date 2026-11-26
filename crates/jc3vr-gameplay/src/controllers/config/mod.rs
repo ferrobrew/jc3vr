@@ -36,8 +36,6 @@ use jc3vr_view::vr::input::config::InputConfig;
 pub use jc3vr_weapons::controllers::weapons::config::WeaponsConfig;
 use serde::{Deserialize, Serialize};
 
-use crate::controllers::summary::SummaryConfig;
-
 /// The controller settings, at `controllers` in the settings file; the payload binds the slot at
 /// startup.
 pub static CONTROLLERS_CONFIG: ConfigSlot<ControllersConfig> = ConfigSlot::new("controllers");
@@ -80,8 +78,6 @@ pub struct ControllersConfig {
     pub fingers: FingersConfig,
     /// The palms' collision with the world.
     pub physical_hands: PhysicalHandsConfig,
-    /// The controls summary, and the game's own button hints.
-    pub summary: SummaryConfig,
     /// The physical grapple: the reel, the tether retract, and the hang swing worked by the grapple
     /// hand.
     pub grapple: PhysicalGrappleConfig,
@@ -120,7 +116,6 @@ impl ControllersConfig {
             vehicles: VehiclesConfig::new(),
             fingers: FingersConfig::new(),
             physical_hands: PhysicalHandsConfig::new(),
-            summary: SummaryConfig::new(),
             grapple: PhysicalGrappleConfig::new(),
             haptics: HapticsConfig::new(),
             glass: GlassConfig::new(),

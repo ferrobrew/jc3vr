@@ -1,43 +1,6 @@
-//! The controls summary's settings (the panel, its glance trigger, and the suppression of the
-//! game's own button hints), and the glance and wrist placement parameter types.
+//! The controls summary's glance and wrist placement parameter types.
 
 use glam::Vec3;
-use jc3vr_core::config::engine::ConfigSlot;
-use serde::{Deserialize, Serialize};
-
-/// The controls summary's settings, at `controllers.summary` in the settings file; the payload
-/// binds the slot at startup.
-pub static SUMMARY_CONFIG: ConfigSlot<SummaryConfig> = ConfigSlot::new("controllers.summary");
-
-/// The controls summary and the game's own button hints under the controller scheme. Both act only
-/// under the controller scheme, so both default on.
-#[derive(Copy, Clone, Serialize, Deserialize)]
-#[serde(default)]
-pub struct SummaryConfig {
-    /// Show the controls summary panel on the off-hand wrist.
-    pub enabled: bool,
-    /// Hide the HUD's context button hints, which show gamepad glyphs for the actions the
-    /// controllers drive with other inputs.
-    pub hide_game_hints: bool,
-    /// Show the panel while the player glances at the wrist.
-    pub show_on_glance: bool,
-}
-
-impl SummaryConfig {
-    pub const fn new() -> Self {
-        Self {
-            enabled: true,
-            hide_game_hints: true,
-            show_on_glance: true,
-        }
-    }
-}
-
-impl Default for SummaryConfig {
-    fn default() -> Self {
-        Self::new()
-    }
-}
 
 /// When a look at the wrist counts as a glance.
 #[derive(Copy, Clone)]
