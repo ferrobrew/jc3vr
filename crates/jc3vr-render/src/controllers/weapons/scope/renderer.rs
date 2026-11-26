@@ -33,7 +33,7 @@ use windows::{
     core::Interface as _,
 };
 
-use crate::controllers::weapons::scope::pass::{EyeCamera, LensConstants};
+use crate::controllers::weapons::scope::lens_frame::{EyeCamera, LensConstants};
 
 /// One eye's copied image and the camera it was rendered with.
 pub struct EyeCopy {
