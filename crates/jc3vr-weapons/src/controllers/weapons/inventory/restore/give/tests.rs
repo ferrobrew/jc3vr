@@ -184,14 +184,19 @@ fn mounted_thrown_and_vehicle_weapons_are_not_given() {
 
 #[test]
 fn a_give_waits_past_the_short_wait_only_while_its_entity_streams() {
-    let past = GIVE_WAIT + Duration::from_secs(1);
+    let tuning = &INVENTORY.get().restore;
+    let past = tuning.give_wait() + Duration::from_secs(1);
     for streaming in [
         SpawnResourceDefStatus::LOADING,
         SpawnResourceDefStatus::UNLOADED,
     ] {
-        assert_eq!(wait_verdict(Some(streaming), past), Verdict::Wait);
+        assert_eq!(wait_verdict(tuning, Some(streaming), past), Verdict::Wait);
         assert_eq!(
-            wait_verdict(Some(streaming), GIVE_WAIT_LOADING + Duration::from_secs(1)),
+            wait_verdict(
+                tuning,
+                Some(streaming),
+                tuning.give_wait_loading() + Duration::from_secs(1)
+            ),
             Verdict::GiveUp
         );
     }
@@ -201,7 +206,7 @@ fn a_give_waits_past_the_short_wait_only_while_its_entity_streams() {
         Some(SpawnResourceDefStatus::UNLOADING),
         Some(SpawnResourceDefStatus::LOAD_ERROR),
     ] {
-        assert_eq!(wait_verdict(settled, past), Verdict::GiveUp);
+        assert_eq!(wait_verdict(tuning, settled, past), Verdict::GiveUp);
     }
 }
 

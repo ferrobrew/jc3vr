@@ -1,0 +1,52 @@
+# The inventory's, the loadout table's, and the weapon wheel's tuning: `InventoryTuning` in
+# `src/controllers/weapons/inventory/tuning.rs`, whose fields say what each value does. Every key is
+# required and no other is accepted. Lengths are metres, speeds metres per second, angles degrees,
+# and times seconds unless a key says otherwise; a colour is linear RGBA in `0..1`, and a stick
+# value is in the action's `0..=1`.
+
+[pins]
+radius_m = 8.0
+release_m = 12.0
+max_pinned = 6
+forget_m = 60.0
+max_tracked = 24
+
+[lost]
+lost_depth_m = 10.0
+left_behind_m = 30.0
+fast_speed_mps = 10.0
+speed_time_s = 0.25
+
+# Each socket's weapon offset from its bone, in the character's frame (x across, y up, z backward).
+[sockets]
+back_first = [0.0, 0.0, 0.07]
+back_second = [0.0, 0.0, 0.07]
+hip_left = [0.0, 0.0, -0.09]
+hip_right = [0.0, 0.0, -0.09]
+
+[docked_view]
+ttl_ms = 150
+ring_m = 0.04
+ring_thickness = 0.3
+barrel_m = 0.15
+barrel_width_m = 0.004
+shown = [0.3, 1.0, 0.4, 0.9]
+hidden = [1.0, 0.25, 0.2, 0.9]
+occluded_alpha = 0.5
+
+[restore]
+give_wait_s = 10.0
+give_wait_loading_s = 45.0
+spawn_wait_s = 10.0
+reset_record_s = 120.0
+
+[loadout]
+settle_wait_s = 10.0
+expect_s = 3.0
+
+[wheel]
+stick_open = 0.7
+stick_release = 0.4
+point_leave_deg = 12.0
+point_return_deg = 7.0
+hysteresis_deg = 10.0

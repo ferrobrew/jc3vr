@@ -1,23 +1,15 @@
-//! The weapon wheel's fixed tuning, and the feature switch it takes from the configuration
-//! ([`WheelConfig`]).
+//! The weapon wheel's tuning, a section of the inventory's tuning file
+//! ([`INVENTORY`](crate::controllers::weapons::inventory::tuning::INVENTORY)'s `wheel`). Whether
+//! the wheel acts at all is a setting ([`WheelConfig`](crate::controllers::weapons::wheel::config::WheelConfig)).
 
-use crate::controllers::weapons::wheel::config::WheelConfig;
+use jc3vr_core::config::engine::{Invalid, positive, range};
+use serde::Deserialize;
 
-/// The weapon wheel's tuning, switched off as [`WheelConfig`] ships it.
-pub const WHEEL: WheelTuning = WheelTuning::new();
-
-/// The weapon wheel (see [`crate::controllers::weapons::wheel`]): how it opens, how the hand steers
-/// it, and where the cross is drawn.
-#[derive(Copy, Clone, Debug, PartialEq)]
+/// The weapon wheel (see [`crate::controllers::weapons::wheel`]): how its openers open it and how
+/// the hand steers it.
+#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct WheelTuning {
-    /// Open the game's selection cross with a held input and choose an arm with the hand.
-    pub enabled: bool,
-    /// Open the wheel with the weapon-select trackpad press (`weapon_select_press`, the off-hand
-    /// trackpad pressed down on the Index). A press in a quadrant starts on that quadrant's arm, so
-    /// a tap still selects it at once.
-    pub trackpad: bool,
-    /// Open the wheel with the `weapon_wheel` action (the dominant stick held up by default).
-    pub stick: bool,
     /// How far the `weapon_wheel` action must be pushed to open the wheel, `0..=1`.
     pub stick_open: f32,
     /// How far the `weapon_wheel` action must stay pushed to keep the wheel open, `0..=1`. Below
@@ -32,43 +24,24 @@ pub struct WheelTuning {
     /// How far past the line between two arms the hand must go before the other arm is chosen,
     /// degrees around the wheel.
     pub hysteresis_deg: f32,
-    /// Move the game's cross on the floating panel to where the steering hand was, seen from the
-    /// head, when the wheel opened, instead of over the character's hips.
-    pub place_at_hand: bool,
 }
 
 impl WheelTuning {
-    const fn new() -> Self {
-        Self {
-            enabled: false,
-            trackpad: true,
-            stick: true,
-            stick_open: 0.7,
-            stick_release: 0.4,
-            point_leave_deg: 12.0,
-            point_return_deg: 7.0,
-            hysteresis_deg: 10.0,
-            place_at_hand: true,
-        }
-    }
-
-    /// The fixed tuning with the switch `config` sets.
-    pub const fn of(config: &WheelConfig) -> Self {
-        Self {
-            enabled: config.enabled,
-            ..WHEEL
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn the_wheel_ships_off_and_its_switch_still_turns_it_on() {
-        assert!(!WheelConfig::default().enabled);
-        assert!(!WheelTuning::of(&WheelConfig::default()).enabled);
-        assert!(WheelTuning::of(&WheelConfig { enabled: true }).enabled);
+    pub(crate) fn validate(&self) -> Result<(), Invalid> {
+        range("wheel.stick_open", self.stick_open, 0.05, 1.0)?;
+        range(
+            "wheel.stick_release",
+            self.stick_release,
+            0.0,
+            self.stick_open,
+        )?;
+        positive("wheel.point_leave_deg", self.point_leave_deg, 90.0)?;
+        range(
+            "wheel.point_return_deg",
+            self.point_return_deg,
+            0.0,
+            self.point_leave_deg,
+        )?;
+        range("wheel.hysteresis_deg", self.hysteresis_deg, 0.0, 44.0)
     }
 }

@@ -62,7 +62,7 @@ use crate::controllers::{
             Delivery, Give, GiveSource, LostWhy, Release, Removal, RemovalWhy, Restored, TakeSource,
         },
     },
-    weapons::grenade::safe::reset as retire_safe_items,
+    weapons::{grenade::safe::reset as retire_safe_items, inventory::tuning::INVENTORY},
 };
 
 /// The live table as the readouts show it.
@@ -140,7 +140,8 @@ pub(crate) struct HeldOther {
 /// Start the input tick's feed: start the table from the slots on its first tick, complete a spawn
 /// reset or a load since the last tick, and a checkpoint's, a mission's, or a challenge's restore.
 /// `slots` are the tracked slots' weapons, and `spawning` whether a slot's spawn is still on its
-/// way: a completion waits for the slots to settle, up to [`SETTLE_WAIT`]. Called before anything
+/// way: a completion waits for the slots to settle, up to the tuning's `loadout.settle_wait_s`
+/// ([`LoadoutTuning`](crate::controllers::weapons::inventory::tuning::LoadoutTuning)). Called before anything
 /// restores a weapon this tick, so a restore lands in the table that the reset left.
 pub(crate) fn begin_tick(dominant: Hand, slots: &[SlotObject], spawning: bool) -> bool {
     LIVE.lock()
@@ -166,7 +167,8 @@ pub(crate) fn input_tick(tick: &Tick) -> Option<Arrival> {
         .last
         .map_or(0.0, |t| now.saturating_duration_since(t).as_secs_f32());
     live.last = Some(now);
-    live.pending = live.pending.and_then(|p| p.aged(dt_s));
+    let expect_s = INVENTORY.get().loadout.expect_s;
+    live.pending = live.pending.and_then(|p| p.aged(dt_s, expect_s));
     live.rebind_kept(tick.carried);
     let arrival = live.hand_moves(tick);
     live.sync_others(tick.others);
@@ -673,9 +675,6 @@ pub(crate) fn restored(restored: Restored) {
         live.publish_places();
     }
 }
-
-/// The longest a completion waits for the slots' spawns to arrive.
-const SETTLE_WAIT: std::time::Duration = std::time::Duration::from_secs(10);
 
 /// How many log lines the readouts keep.
 const LOG_LINES: usize = 24;

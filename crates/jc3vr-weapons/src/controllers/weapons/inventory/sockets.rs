@@ -9,6 +9,7 @@
 use glam::Vec3;
 use jc3gi::character::character::SafeBoneIndex;
 use jc3vr_input::frame::Hand;
+use serde::Deserialize;
 
 use crate::controllers::loadout::Socket;
 
@@ -50,10 +51,10 @@ pub fn placed_offset(offsets: &Offsets, socket: Socket, pair: bool) -> Vec3 {
 }
 
 /// Where each socket's weapon sits relative to its bone, in the character's frame (x across, y up,
-/// z backward), metres. The fields keep the settings file's names, the first back socket being the
-/// right shoulder's and the second the left's.
-#[derive(Debug, Copy, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-#[serde(default)]
+/// z backward), metres. The fields keep the save sidecar's socket names ([`key`]), the first back
+/// socket being the right shoulder's and the second the left's.
+#[derive(Debug, Copy, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Offsets {
     pub back_first: Vec3,
     pub back_second: Vec3,
@@ -62,15 +63,6 @@ pub struct Offsets {
 }
 
 impl Offsets {
-    pub const fn new() -> Self {
-        Self {
-            back_first: Vec3::new(0.0, 0.0, 0.07),
-            back_second: Vec3::new(0.0, 0.0, 0.07),
-            hip_left: Vec3::new(0.0, 0.0, -0.09),
-            hip_right: Vec3::new(0.0, 0.0, -0.09),
-        }
-    }
-
     /// The offset of `socket`, or zero for one that is not finite.
     pub fn of(&self, socket: Socket) -> Vec3 {
         let offset = match socket {
@@ -87,15 +79,14 @@ impl Offsets {
     }
 }
 
-impl Default for Offsets {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::controllers::weapons::inventory::tuning::INVENTORY;
+
+    fn shipped() -> Offsets {
+        INVENTORY.get().sockets
+    }
 
     #[test]
     fn the_keys_round_trip_and_keep_their_names() {
@@ -111,7 +102,7 @@ mod tests {
 
     #[test]
     fn a_pistol_sits_in_its_hip_s_holster_unless_the_pair_takes_both() {
-        let offsets = Offsets::new();
+        let offsets = shipped();
         for side in Hand::BOTH {
             assert_eq!(
                 placed_offset(&offsets, Socket::Hip(side), false),
@@ -130,12 +121,14 @@ mod tests {
 
     #[test]
     fn a_bad_offset_reads_as_none() {
-        let mut offsets = Offsets::new();
-        offsets.back_second = Vec3::NAN;
+        let offsets = Offsets {
+            back_second: Vec3::NAN,
+            ..shipped()
+        };
         assert_eq!(offsets.of(Socket::Shoulder(Hand::Left)), Vec3::ZERO);
         assert_eq!(
             offsets.of(Socket::Shoulder(Hand::Right)),
-            Vec3::new(0.0, 0.0, 0.07)
+            shipped().back_first
         );
     }
 }

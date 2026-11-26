@@ -1,5 +1,5 @@
 use super::*;
-use crate::controllers::weapons::wheel::tuning::WHEEL;
+use crate::controllers::weapons::inventory::tuning::INVENTORY;
 
 const ALL_OFFERED: [bool; 4] = [true; 4];
 
@@ -25,7 +25,7 @@ const TAPPED: ButtonControl = ButtonControl {
 };
 
 fn config() -> WheelTuning {
-    WHEEL
+    INVENTORY.get().wheel
 }
 
 /// An aim pose turned `right_deg` to the right and `up_deg` up from straight ahead.
@@ -264,15 +264,6 @@ fn the_stick_opens_past_its_threshold_and_holds_down_to_its_release() {
     assert!(out.by_stick);
     assert!(tick(0.5).closed.is_none());
     assert_eq!(tick(0.2).closed, Some(Close::Cancel));
-}
-
-#[test]
-fn a_disabled_opener_never_opens() {
-    let mut config = config();
-    config.trackpad = false;
-    let mut wheel = Wheel::new();
-    let out = wheel.step(&input(PRESSED, Some(PadZone::Up), None), &config);
-    assert_eq!(out, WheelOutput::default());
 }
 
 #[test]

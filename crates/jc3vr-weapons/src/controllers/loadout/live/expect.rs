@@ -17,9 +17,6 @@ use crate::controllers::loadout::{
     transition::{Delivery, TakeSource},
 };
 
-/// How long a hand expects a weapon, seconds.
-pub(crate) const PENDING_S: f32 = 3.0;
-
 /// What a grab told its hand to expect.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Expect {
@@ -59,11 +56,11 @@ impl Pending {
         }
     }
 
-    /// The expectation `dt_s` seconds later, or `None` once it has lapsed.
-    pub(crate) fn aged(self, dt_s: f32) -> Option<Pending> {
+    /// The expectation `dt_s` seconds later, or `None` once it is older than `lapse_s`.
+    pub(crate) fn aged(self, dt_s: f32, lapse_s: f32) -> Option<Pending> {
         let dt = if dt_s.is_finite() { dt_s.max(0.0) } else { 0.0 };
         let age_s = self.age_s + dt;
-        (age_s <= PENDING_S).then_some(Pending { age_s, ..self })
+        (age_s <= lapse_s).then_some(Pending { age_s, ..self })
     }
 
     /// Whether the expectation is for `object`: the weapon it names, or any when it names none.
@@ -102,6 +99,7 @@ mod tests {
     }
 
     const TICK: f32 = 1.0 / 60.0;
+    const LAPSE_S: f32 = 3.0;
 
     #[test]
     fn a_draw_lands_in_the_grabbing_hand() {
@@ -157,8 +155,11 @@ mod tests {
     #[test]
     fn an_expectation_lapses() {
         let pending = Pending::new(Hand::Left, Expect::Draw, None);
-        assert!(pending.aged(TICK).is_some());
-        assert_eq!(pending.aged(PENDING_S + TICK), None);
-        assert!(pending.aged(f32::NAN).is_some(), "a bad tick ages nothing");
+        assert!(pending.aged(TICK, LAPSE_S).is_some());
+        assert_eq!(pending.aged(LAPSE_S + TICK, LAPSE_S), None);
+        assert!(
+            pending.aged(f32::NAN, LAPSE_S).is_some(),
+            "a bad tick ages nothing"
+        );
     }
 }

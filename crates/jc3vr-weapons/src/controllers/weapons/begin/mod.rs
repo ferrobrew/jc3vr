@@ -43,7 +43,9 @@ use crate::controllers::{
         heft, hold,
         hold::armed,
         hud_feed::hand_ammo,
-        inventory, pouch_models,
+        inventory,
+        inventory::tuning::INVENTORY,
+        pouch_models,
         pouch_models::{Prop, ShownPouch},
         pouch_return, regions,
         regions::{GunRegion, GunShape, Observed, engine as region_engine, engine::DockedLongGun},
@@ -120,7 +122,7 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickStart {
                         &SocketInputs {
                             snapshot,
                             free,
-                            offsets: &inventory::OFFSETS,
+                            offsets: &INVENTORY.get().sockets,
                         },
                     )
                 });

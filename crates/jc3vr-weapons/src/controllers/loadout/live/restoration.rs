@@ -4,9 +4,12 @@ use std::time::Instant;
 
 use jc3vr_input::frame::Hand;
 
-use crate::controllers::loadout::{
-    BodyLayout, CacheKind, Event, ResetKind, SlotObject,
-    live::{Hold, Live, ResetWatch, SETTLE_WAIT},
+use crate::controllers::{
+    loadout::{
+        BodyLayout, CacheKind, Event, ResetKind, SlotObject,
+        live::{Hold, Live, ResetWatch},
+    },
+    weapons::inventory::tuning::INVENTORY,
 };
 
 impl Live {
@@ -17,10 +20,11 @@ impl Live {
         spawning: bool,
         now: Instant,
     ) -> bool {
+        let settle_wait = INVENTORY.get().loadout.settle_wait();
         self.table.set_body(BodyLayout::full(dominant));
         if !self.started {
             let since = *self.reset.completed_at.get_or_insert(now);
-            if spawning && now.saturating_duration_since(since) < SETTLE_WAIT {
+            if spawning && now.saturating_duration_since(since) < settle_wait {
                 return false;
             }
             self.started = true;
@@ -36,7 +40,7 @@ impl Live {
             return true;
         }
         let settled = |since: Option<Instant>| {
-            !spawning || since.is_some_and(|at| now.saturating_duration_since(at) >= SETTLE_WAIT)
+            !spawning || since.is_some_and(|at| now.saturating_duration_since(at) >= settle_wait)
         };
         if self.reset.completed {
             let since = *self.reset.completed_at.get_or_insert(now);

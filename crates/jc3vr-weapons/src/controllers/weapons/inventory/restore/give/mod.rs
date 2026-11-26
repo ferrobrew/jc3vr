@@ -57,6 +57,7 @@ use crate::controllers::{
             restore::{PLAN, SpawnToken, adoption, adoption::Outcome, spawned},
             spawn_safety,
             spawn_safety::RequestKind,
+            tuning::{INVENTORY, RestoreTuning},
         },
     },
 };
@@ -252,11 +253,6 @@ pub(crate) fn clear_pending() {
 
 /// The most requests queued at once.
 const MAX_QUEUED: usize = 16;
-/// How long a give's spawn is waited for when its definition's entity is loaded.
-const GIVE_WAIT: Duration = Duration::from_secs(10);
-/// How long a give's spawn is waited for at most, while its definition's entity is still streaming
-/// in.
-const GIVE_WAIT_LOADING: Duration = Duration::from_secs(45);
 
 /// A give whose weapon is on its way.
 struct Pending {
@@ -269,7 +265,7 @@ struct Pending {
     /// The definition's unique spawn tag.
     tag_index: i32,
     at: Instant,
-    /// Whether the wait past [`GIVE_WAIT`] for a streaming entity has been logged.
+    /// Whether the wait past [`RestoreTuning::give_wait_s`] for a streaming entity has been logged.
     noted_loading: bool,
 }
 
@@ -714,6 +710,7 @@ unsafe fn adopt(owner: &mut Character) {
 /// Give up on each give that has waited too long: withdraw its request, so that a late spawn does
 /// not leave a weapon at the player, and say why it did not come.
 unsafe fn expire() {
+    let tuning = &INVENTORY.get().restore;
     let mut system = unsafe { SpawnSystem::get() };
     let mut lines = Vec::new();
     let expired: Vec<(Pending, Option<SpawnResourceDefStatus>)> = {
@@ -722,14 +719,14 @@ unsafe fn expire() {
         let mut waiting = Vec::new();
         for mut p in std::mem::take(&mut *pending) {
             let waited = p.at.elapsed();
-            if waited <= GIVE_WAIT {
+            if waited <= tuning.give_wait() {
                 waiting.push(p);
                 continue;
             }
             let status = system
                 .as_deref()
                 .and_then(|system| unsafe { definition_status(system, p.tag_index) });
-            match wait_verdict(status, waited) {
+            match wait_verdict(tuning, status, waited) {
                 Verdict::Wait => {
                     if !p.noted_loading {
                         p.noted_loading = true;
@@ -762,21 +759,26 @@ unsafe fn expire() {
     }
 }
 
-/// Whether a give past [`GIVE_WAIT`] keeps waiting.
+/// Whether a give past [`RestoreTuning::give_wait_s`] keeps waiting.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 enum Verdict {
     Wait,
     GiveUp,
 }
 
-/// Whether a give that has waited `waited`, past [`GIVE_WAIT`], keeps waiting, by its definition's
-/// load state: while the entity is streaming in or queued to, up to [`GIVE_WAIT_LOADING`].
-fn wait_verdict(status: Option<SpawnResourceDefStatus>, waited: Duration) -> Verdict {
+/// Whether a give that has waited `waited`, past [`RestoreTuning::give_wait_s`], keeps waiting, by
+/// its definition's load state: while the entity is streaming in or queued to, up to
+/// [`RestoreTuning::give_wait_loading_s`].
+fn wait_verdict(
+    tuning: &RestoreTuning,
+    status: Option<SpawnResourceDefStatus>,
+    waited: Duration,
+) -> Verdict {
     let streaming = matches!(
         status,
         Some(SpawnResourceDefStatus::LOADING | SpawnResourceDefStatus::UNLOADED)
     );
-    if streaming && waited <= GIVE_WAIT_LOADING {
+    if streaming && waited <= tuning.give_wait_loading() {
         Verdict::Wait
     } else {
         Verdict::GiveUp

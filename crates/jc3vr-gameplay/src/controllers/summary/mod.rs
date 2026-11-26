@@ -56,7 +56,7 @@ use jc3vr_body::controllers::{
     mode::{AirborneVariant, Mode},
 };
 use jc3vr_view::vr::input::sources;
-use jc3vr_weapons::controllers::weapons::{c4, wheel::tuning::WHEEL};
+use jc3vr_weapons::controllers::weapons::c4;
 use parking_lot::Mutex;
 
 use crate::controllers::{
@@ -142,8 +142,8 @@ pub(crate) fn refresh(
             magazine: weapons.reload.enabled,
             belt_reload: weapons.reload.enabled,
             sight_chord: controls.sight_chord,
-            wheel_trackpad: weapons.wheel.enabled && WHEEL.trackpad,
-            wheel_stick: weapons.wheel.enabled && WHEEL.stick,
+            wheel_trackpad: weapons.wheel.enabled,
+            wheel_stick: weapons.wheel.enabled,
             parachute_handles: config.vehicles.parachute_handles.enabled,
             ripcord: true,
             arm_steering: config.vehicles.arm_steering.wingsuit,

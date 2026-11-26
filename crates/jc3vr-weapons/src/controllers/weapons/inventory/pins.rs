@@ -9,13 +9,14 @@
 //! resources loaded. A weapon left unpinned and far away, or beyond the most the table keeps in
 //! the world, is forgotten: it leaves the table, and the game's own clean-up takes it from there.
 
+use serde::Deserialize;
+
 use crate::controllers::loadout::ObjectAddress;
 
 /// How the pins are chosen.
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PinSettings {
-    /// Whether weapons in the world are pinned at all.
-    pub enabled: bool,
     /// A weapon this near the player is pinned, metres.
     pub radius_m: f32,
     /// A pinned weapon stays pinned until it is this far away, metres; below `radius_m` it is
@@ -63,13 +64,10 @@ pub fn plan(world: &[WorldWeapon], settings: &PinSettings) -> PinPlan {
         (None, Some(_)) => std::cmp::Ordering::Greater,
         (None, None) => a.0.cmp(&b.0),
     });
-    let wants = |distance: Option<f32>, pinned: bool| {
-        settings.enabled
-            && match distance {
-                Some(d) => d <= radius || (pinned && d <= release),
-                // Without a reading, a pinned weapon keeps its pin.
-                None => pinned,
-            }
+    let wants = |distance: Option<f32>, pinned: bool| match distance {
+        Some(d) => d <= radius || (pinned && d <= release),
+        // Without a reading, a pinned weapon keeps its pin.
+        None => pinned,
     };
     let mut plan = PinPlan::default();
     let mut kept = 0;
@@ -105,7 +103,6 @@ mod tests {
     use super::*;
 
     const SETTINGS: PinSettings = PinSettings {
-        enabled: true,
         radius_m: 8.0,
         release_m: 12.0,
         max_pinned: 2,
@@ -178,15 +175,5 @@ mod tests {
             plan(&[world(1, Some(f32::NAN), true)], &SETTINGS),
             PinPlan::default()
         );
-    }
-
-    #[test]
-    fn switched_off_every_pin_goes() {
-        let off = PinSettings {
-            enabled: false,
-            ..SETTINGS
-        };
-        let p = plan(&[world(1, Some(1.0), true), world(2, None, true)], &off);
-        assert_eq!(p.unpin, vec![object(1), object(2)]);
     }
 }

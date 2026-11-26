@@ -377,14 +377,14 @@ fn find_opener(input: &WheelInput, config: &WheelTuning) -> Option<(Opener, Hand
 /// its release threshold.
 fn held(opener: Opener, press: &WheelPress, config: &WheelTuning, open: bool) -> bool {
     match opener {
-        Opener::Trackpad => config.trackpad && press.pad.held(),
+        Opener::Trackpad => press.pad.held(),
         Opener::Stick => {
             let threshold = if open {
                 config.stick_release.min(config.stick_open)
             } else {
                 config.stick_open
             };
-            config.stick && press.stick.is_finite() && press.stick >= threshold.max(0.05)
+            press.stick.is_finite() && press.stick >= threshold.max(0.05)
         }
     }
 }

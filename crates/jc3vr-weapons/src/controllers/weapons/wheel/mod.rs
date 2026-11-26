@@ -50,10 +50,8 @@ use re_utilities::hook_library::HookLibrary;
 use crate::controllers::weapons::{
     config::WEAPONS_CONFIG,
     engine, gameplay,
-    wheel::{
-        select::{Close, HandPose, Wheel, WheelInput, WheelPress, WheelSlot, resting},
-        tuning::WheelTuning,
-    },
+    inventory::tuning::INVENTORY,
+    wheel::select::{Close, HandPose, Wheel, WheelInput, WheelPress, WheelSlot, resting},
 };
 
 /// The wheel's hooks, aggregated by [`crate::controllers::weapons::hook_library`].
@@ -82,9 +80,10 @@ pub fn input_tick(
     inputs: &TickInputs,
     desired: &mut Vec<Desired>,
 ) -> WheelTick {
-    let config = WheelTuning::of(&WEAPONS_CONFIG.query(|c| c.wheel));
+    let enabled = WEAPONS_CONFIG.query(|c| c.wheel.enabled);
+    let tuning = &INVENTORY.get().wheel;
     let mut local_player = LocalPlayer::get(game);
-    let acting = config.enabled && gameplay(inputs.mode) && local_player.is_some();
+    let acting = enabled && gameplay(inputs.mode) && local_player.is_some();
     let read = local_player.as_ref().map(read_game);
     let active = hands::active_hands_raw();
     let input = WheelInput {
@@ -107,8 +106,8 @@ pub fn input_tick(
     };
 
     let mut shell = SHELL.lock();
-    let out = shell.wheel.step(&input, &config);
-    if acting && config.trackpad {
+    let out = shell.wheel.step(&input, tuning);
+    if acting {
         drop_table_selects(desired);
     }
     if let Some(arm) = out.hold {
@@ -124,14 +123,10 @@ pub fn input_tick(
     if let Some((opener, hand)) = out.opened {
         shell.steering = Some(hand);
         shell.cancel_ticks = 0;
-        shell.point = config
-            .place_at_hand
-            .then(|| {
-                let active = active.as_ref()?;
-                let grip = active.hands[hand.index()]?.grip.position;
-                placement::panel_point(active.head.position, grip)
-            })
-            .flatten();
+        shell.point = active.as_ref().and_then(|active| {
+            let grip = active.hands[hand.index()]?.grip.position;
+            placement::panel_point(active.head.position, grip)
+        });
         tracing::debug!(target: "controllers", ?opener, ?hand, chosen = ?out.chosen, "weapon wheel: opened");
         pulse(hand, false);
     } else if out.changed

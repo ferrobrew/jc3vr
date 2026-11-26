@@ -6,7 +6,7 @@
 //! `lost_depth_m`, which a weapon reaches only by sinking out of reach or falling through the
 //! terrain; or when it was let go of at speed and is left behind, farther than `left_behind_m` from
 //! the player. The player travels fast while their speed, measured each input tick, is at least
-//! `lost_speed_mps` ([`live::set_fast`]), so a let-go then is one at speed. A weapon dropped at an
+//! `fast_speed_mps` ([`live::set_fast`]), so a let-go then is one at speed. A weapon dropped at an
 //! ordinary pace never comes back by itself, only out of the world.
 //!
 //! The judgement is pure ([`judge`]); the adapter ([`input_tick`]) tells the table of each loss
@@ -22,6 +22,7 @@ use glam::Vec3;
 use jc3gi::character::character::Character;
 use jc3vr_body::controllers::physics::refs::Strong;
 use parking_lot::Mutex;
+use serde::Deserialize;
 
 use crate::controllers::{
     loadout::{Departure, LostWhy, ObjectAddress, Place, live},
@@ -32,14 +33,18 @@ use crate::controllers::{
 };
 
 /// What the lost-weapon return judges by.
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct LostRules {
-    /// The world's sea level, metres.
-    pub sea_level_m: f32,
     /// How far below the sea's level a weapon is out of the world, metres.
     pub lost_depth_m: f32,
     /// How far from the player a weapon let go of at speed is left behind, metres.
     pub left_behind_m: f32,
+    /// The speed from which the player travels fast, so a let-go is one at speed, metres per
+    /// second.
+    pub fast_speed_mps: f32,
+    /// How long the player's speed is smoothed over, seconds.
+    pub speed_time_s: f32,
 }
 
 /// A weapon the table has lying in the world, as the return judges it.
@@ -59,7 +64,7 @@ pub fn judge(lying: &[Lying], player: Vec3, rules: &LostRules) -> Vec<(ObjectAdd
         .iter()
         .filter_map(|weapon| {
             let at = weapon.at.filter(|at| at.is_finite())?;
-            if at.y < rules.sea_level_m - rules.lost_depth_m {
+            if at.y < SEA_LEVEL_M - rules.lost_depth_m {
                 return Some((weapon.object, LostWhy::OutOfWorld));
             }
             let behind =
@@ -69,9 +74,9 @@ pub fn judge(lying: &[Lying], player: Vec3, rules: &LostRules) -> Vec<(ObjectAdd
         .collect()
 }
 
-/// The player's speed from the last tick's position to `player` now, smoothed over a short time so
+/// The player's speed from the last tick's position to `player` now, smoothed over `time_s` so
 /// that a frame's jitter does not count as travelling fast.
-pub fn speed(last: Option<(Vec3, f32)>, player: Vec3, dt_s: f32) -> f32 {
+pub fn speed(last: Option<(Vec3, f32)>, player: Vec3, dt_s: f32, time_s: f32) -> f32 {
     let Some((from, smoothed)) = last else {
         return 0.0;
     };
@@ -79,14 +84,13 @@ pub fn speed(last: Option<(Vec3, f32)>, player: Vec3, dt_s: f32) -> f32 {
         return smoothed;
     }
     let now = from.distance(player) / dt_s;
-    let blend = (dt_s / SPEED_TIME_S).min(1.0);
+    let blend = (dt_s / time_s).min(1.0);
     smoothed + (now - smoothed) * blend
 }
 
 /// What the adapter is handed each tick.
-pub(crate) struct LostTick {
-    pub lost_speed_mps: f32,
-    pub rules: LostRules,
+pub(crate) struct LostTick<'a> {
+    pub rules: &'a LostRules,
     pub player: Vec3,
     /// The table's weapons lying in the world, with a strong reference to each that still lives.
     pub lying: Vec<(Lying, Option<Strong>)>,
@@ -98,17 +102,17 @@ pub(crate) struct LostTick {
 /// # Safety
 ///
 /// `owner` must be the live local player character, on the game thread before the world update.
-pub(crate) unsafe fn input_tick(owner: &mut Character, tick: LostTick) {
+pub(crate) unsafe fn input_tick(owner: &mut Character, tick: LostTick<'_>) {
     let now = Instant::now();
     let (fast, falling) = {
         let mut state = STATE.lock();
         let dt_s = state
             .last_at
             .map_or(0.0, |at| now.saturating_duration_since(at).as_secs_f32());
-        let smoothed = speed(state.last, tick.player, dt_s);
+        let smoothed = speed(state.last, tick.player, dt_s, tick.rules.speed_time_s);
         state.last = Some((tick.player, smoothed));
         state.last_at = Some(now);
-        let fast = smoothed >= tick.lost_speed_mps;
+        let fast = smoothed >= tick.rules.fast_speed_mps;
         (fast, std::mem::take(&mut state.falling))
     };
     live::set_fast(fast);
@@ -116,7 +120,7 @@ pub(crate) unsafe fn input_tick(owner: &mut Character, tick: LostTick) {
         unsafe { let_fall(owner, object) };
     }
     let judged: Vec<Lying> = tick.lying.iter().map(|(lying, _)| *lying).collect();
-    let lost = judge(&judged, tick.player, &tick.rules);
+    let lost = judge(&judged, tick.player, tick.rules);
     for (lying, strong) in tick.lying {
         let Some(&(object, why)) = lost.iter().find(|(object, _)| *object == lying.object) else {
             continue;
@@ -147,8 +151,9 @@ pub(crate) fn falling(object: ObjectKey) -> bool {
         .any(|falling| falling.get() == object)
 }
 
-/// How long the player's speed is smoothed over, seconds.
-const SPEED_TIME_S: f32 = 0.25;
+/// The height of the world's sea, metres: the game's water plane is at the world's zero height
+/// (unverified).
+const SEA_LEVEL_M: f32 = 0.0;
 
 struct State {
     last: Option<(Vec3, f32)>,
@@ -225,9 +230,10 @@ mod tests {
     use super::*;
 
     const RULES: LostRules = LostRules {
-        sea_level_m: 0.0,
         lost_depth_m: 10.0,
         left_behind_m: 30.0,
+        fast_speed_mps: 10.0,
+        speed_time_s: 0.25,
     };
 
     fn object(n: usize) -> ObjectAddress {
@@ -288,12 +294,12 @@ mod tests {
         let mut at = Vec3::ZERO;
         for _ in 0..60 {
             at += Vec3::new(0.5, 0.0, 0.0);
-            last = Some((at, speed(last, at, 0.05)));
+            last = Some((at, speed(last, at, 0.05, RULES.speed_time_s)));
         }
         let smoothed = last.unwrap().1;
         assert!((smoothed - 10.0).abs() < 0.1, "{smoothed}");
-        assert_eq!(speed(last, Vec3::NAN, 0.05), smoothed);
-        assert_eq!(speed(last, at, 0.0), smoothed);
-        assert_eq!(speed(None, at, 0.05), 0.0);
+        assert_eq!(speed(last, Vec3::NAN, 0.05, RULES.speed_time_s), smoothed);
+        assert_eq!(speed(last, at, 0.0, RULES.speed_time_s), smoothed);
+        assert_eq!(speed(None, at, 0.05, RULES.speed_time_s), 0.0);
     }
 }

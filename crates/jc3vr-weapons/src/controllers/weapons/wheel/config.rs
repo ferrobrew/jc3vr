@@ -1,6 +1,6 @@
 //! The weapon wheel's settings, held in
-//! [`WeaponsConfig::wheel`](crate::controllers::weapons::config::WeaponsConfig::wheel). The fixed tuning is
-//! [`WHEEL`](crate::controllers::weapons::wheel::tuning::WHEEL).
+//! [`WeaponsConfig::wheel`](crate::controllers::weapons::config::WeaponsConfig::wheel). The tuning
+//! is [`WheelTuning`](crate::controllers::weapons::wheel::tuning::WheelTuning).
 
 use serde::{Deserialize, Serialize};
 

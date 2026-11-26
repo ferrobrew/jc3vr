@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use jc3vr_core::lifecycle::{Preparation, PrepareOutcome};
 
 use super::*;
@@ -32,7 +34,7 @@ fn clear_reset_and_expiry_never_erase_callback_exposure_or_block_preparation() {
     };
     PLAN.lock().spawning.push(Spawning {
         record,
-        at: Instant::now() - SPAWN_WAIT - Duration::from_secs(1),
+        at: Instant::now() - INVENTORY.get().restore.spawn_wait() - Duration::from_secs(1),
     });
     assert_eq!(expire_spawning(), vec![record]);
     assert!(PLAN.lock().spawning.is_empty());

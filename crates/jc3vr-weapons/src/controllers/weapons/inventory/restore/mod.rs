@@ -30,7 +30,7 @@ use std::{
     io::Read,
     path::PathBuf,
     sync::atomic::{AtomicU64, Ordering},
-    time::{Duration, Instant},
+    time::Instant,
 };
 
 use jc3gi::{
@@ -53,6 +53,7 @@ use crate::controllers::weapons::{
         persist::{Fingerprint, MAX_BYTES, RESERVES, Record, SLOTS, Sidecar},
         sidecar, spawn_safety,
         spawn_safety::RequestKind,
+        tuning::INVENTORY,
     },
 };
 
@@ -480,12 +481,6 @@ fn apply_write_status(status: &mut RestoreStatus, written: sidecar::WriteStatus)
 /// The submission sequence prevents an older prepared snapshot from replacing a newer one.
 static WRITE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
-/// How long a reset's record waits for the player: a load screen's length. A record older than
-/// this is taken for a quit to the menu, and a new game does not get it.
-const RESET_RECORD_FOR: Duration = Duration::from_secs(120);
-/// How long a spawn is waited for.
-const SPAWN_WAIT: Duration = Duration::from_secs(10);
-
 /// The player's character, from the save data.
 unsafe fn character_of(save_data: *const PlayerSaveData) -> Option<&'static Character> {
     let save_data = unsafe { save_data.as_ref() }?;
@@ -607,7 +602,10 @@ fn choose(from_load: Option<Pending>, from_reset: Option<Pending>, character: us
         slot_pistol_single: None,
     };
     match from_reset {
-        Some(reset) if reset.at.elapsed() <= RESET_RECORD_FOR && reset.character == character => {
+        Some(reset)
+            if reset.at.elapsed() <= INVENTORY.get().restore.reset_record()
+                && reset.character == character =>
+        {
             Chosen {
                 origin: Origin::Reset,
                 records: reset.records,
@@ -682,10 +680,11 @@ unsafe fn request(owner: &Character, origin: Origin, records: Vec<Record>) {
 }
 
 fn expire_spawning() -> Vec<Record> {
+    let wait = INVENTORY.get().restore.spawn_wait();
     let mut plan = PLAN.lock();
     let (waiting, expired) = std::mem::take(&mut plan.spawning)
         .into_iter()
-        .partition(|s| s.at.elapsed() <= SPAWN_WAIT);
+        .partition(|s| s.at.elapsed() <= wait);
     plan.spawning = waiting;
     expired.into_iter().map(|s| s.record).collect()
 }
