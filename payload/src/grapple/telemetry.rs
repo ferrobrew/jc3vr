@@ -17,6 +17,7 @@ use std::{
 use glam::{Quat, Vec3};
 use parking_lot::Mutex;
 
+pub use crate::vr::FrameTelemetry;
 use crate::{grapple::filter_snapshot, session::CaptureFile};
 
 /// Whether the capture is running.
@@ -58,18 +59,6 @@ pub fn log_tick(body: Quat, dt: f32) {
         empty = ",".repeat(16),
     );
     write_row("tick", &fields);
-}
-
-/// One rendered VR frame's pose composition, for [`log_frame`]: the HMD cockpit pose, the raw and
-/// filtered body frames the frame used, and the composed head pose it published.
-pub struct FrameTelemetry {
-    pub cockpit_orientation: Quat,
-    pub cockpit_position: Vec3,
-    pub body_raw: Quat,
-    pub body_filtered: Quat,
-    pub composed: Quat,
-    pub position: Vec3,
-    pub anchor: Vec3,
 }
 
 /// Log one rendered VR frame's pose composition (no-op when disabled). Called from the VR frame

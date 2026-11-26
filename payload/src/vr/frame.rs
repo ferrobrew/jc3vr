@@ -15,17 +15,16 @@ use parking_lot::Mutex;
 
 use crate::{
     config,
-    controllers::body::rig::{
-        live_observation,
-        origin_provenance::{OriginEvidence, TrackingReceipt},
-    },
-    grapple, headpose,
+    controllers::body::rig::origin_provenance::{OriginEvidence, TrackingReceipt},
+    headpose,
     render_frame::RenderFrameSlot,
     testing::visual::headset::{self, HeadsetRig},
     vr::{
-        EyeView, Fov, FreezeMode, LocatedFrame, OffAxisProjection, VrConfig,
+        EyeView, Fov, FrameInputs, FrameTelemetry, FreezeMode, LocatedFrame, OffAxisProjection,
+        VrConfig,
         config::ProjectionConvention,
         convert::{quat, vec3},
+        participants::frame_participants,
         pose_control,
     },
 };
@@ -259,7 +258,7 @@ pub fn eyes_union_projection_standard() -> Option<Matrix4> {
 /// flatscreen stereo. Called when no VR frame renders this frame (session down, or `should_render`
 /// false).
 pub fn clear_render_params() {
-    live_observation::composition_unavailable();
+    (frame_participants().publish_composition)(None);
     RENDER_PARAMS.set(None);
     CAPTURE_VIEWS.set(None);
     CULL_PROJECTION.set(None);
@@ -336,8 +335,9 @@ fn render_frame(
         || anchor_pair.map_or(Vec3::ZERO, |pair| pair[1].view_head()),
         |f| f.anchor,
     );
+    let participants = frame_participants();
     let headpose_config = config::Config::lock_query(|c| c.headpose);
-    grapple::advance(
+    (participants.advance_grapple)(
         headpose::xr::body_rotation_followed(),
         frozen
             .is_none()
@@ -360,7 +360,7 @@ fn render_frame(
     let body_rotation = frozen.map_or_else(headpose::xr::body_rotation, |f| f.body_rotation);
     // The anchor goes through the grapple filter's landing rate limit; the previous-tick anchor is
     // offset by the same amount so the pair keeps the true tick delta for the engine's `dtf` lerp.
-    let anchor = grapple::filter_anchor(anchor_raw);
+    let anchor = (participants.filter_anchor)(anchor_raw);
     let anchor_prev_raw = frozen.map_or_else(
         || anchor_pair.map_or(anchor_raw, |pair| pair[0].view_head()),
         |f| f.anchor,
@@ -389,14 +389,12 @@ fn render_frame(
 
     // The posture's head height and the roomscale cockpit shift. The per-eye offsets below stay
     // relative to the located centre, so they are untouched by either.
-    let cockpit = crate::controllers::roomscale::compose_cockpit(
-        &crate::controllers::roomscale::FrameInputs {
-            cockpit: center_position,
-            orientation: center_orientation,
-            body: body_rotation,
-            world_scale: cfg.world_scale,
-        },
-    );
+    let cockpit = (participants.compose_cockpit)(&FrameInputs {
+        cockpit: center_position,
+        orientation: center_orientation,
+        body: body_rotation,
+        world_scale: cfg.world_scale,
+    });
 
     let cur = headpose::xr::compose(
         cockpit.cur,
@@ -416,17 +414,11 @@ fn render_frame(
         cfg.world_scale,
     );
     headpose::xr::publish_pair(prev, cur);
-    if cfg.freeze_mode == FreezeMode::Off {
-        live_observation::publish_composition(
-            cockpit
-                .source
-                .with_tracking_origin(tracking_origin.finish(), tracking_receipt),
-        );
-    } else {
-        live_observation::composition_unavailable();
-    }
+    (participants.publish_composition)(
+        (cfg.freeze_mode == FreezeMode::Off).then(|| (tracking_origin.finish(), tracking_receipt)),
+    );
 
-    grapple::telemetry::log_frame(&grapple::telemetry::FrameTelemetry {
+    (participants.log_grapple_frame)(&FrameTelemetry {
         cockpit_orientation: center_orientation,
         cockpit_position: center_position,
         body_raw: headpose::xr::body_rotation_raw(),

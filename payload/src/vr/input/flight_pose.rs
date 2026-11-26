@@ -15,8 +15,7 @@ use crate::{
         config::GripOffset,
         frame::{ControllerFrame, Pose, TrackedPose},
         vehicles::wingsuit_gestures::{
-            FlightPose, GestureCommands, GestureHead, GestureObservation, GestureSample, Stage,
-            SuitTransition,
+            FlightPose, GestureCommands, GestureHead, GestureObservation, Stage, SuitTransition,
         },
     },
     vr::convert,
@@ -29,6 +28,14 @@ pub(crate) enum EpochChange {
     FollowBank,
     RuntimeReset,
     SourceClockChanged,
+}
+
+/// Identity and pose time of an input observation. A newer epoch permits clock/sequence reset.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) struct GestureSample {
+    pub epoch: u64,
+    pub sequence: u64,
+    pub time_ns: i64,
 }
 
 /// Head data from this frame's located and already-rebased eye views.

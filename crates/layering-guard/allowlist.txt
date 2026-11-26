@@ -125,7 +125,6 @@ payload/src/grapple/physical/lock/hooks.rs -> payload
 payload/src/grapple/physical/lock/mod.rs -> payload
 payload/src/headpose/anchors/mod.rs -> gameplay
 payload/src/headpose/anchors/mod.rs -> payload
-payload/src/headpose/config.rs -> gameplay
 payload/src/headpose/mod.rs -> payload
 payload/src/headpose/sim/mod.rs -> gameplay
 payload/src/headpose/sim/mod.rs -> payload
@@ -225,7 +224,6 @@ payload/src/ui/vr.rs -> payload
 payload/src/vr/back_buffer.rs -> payload
 payload/src/vr/blit.rs -> ui
 payload/src/vr/eye_resolution.rs -> payload
-payload/src/vr/frame.rs -> gameplay
 payload/src/vr/frame.rs -> payload
 payload/src/vr/frame_loop.rs -> payload
 payload/src/vr/input/flight_pose.rs -> gameplay
@@ -236,7 +234,6 @@ payload/src/vr/input/state.rs -> gameplay
 payload/src/vr/mirror/mod.rs -> hud
 payload/src/vr/mirror/mod.rs -> payload
 payload/src/vr/mirror/mod.rs -> tooling
-payload/src/vr/recenter.rs -> gameplay
 payload/src/vr/recenter.rs -> payload
 payload/src/vr/resolution.rs -> payload
 payload/src/vr/state.rs -> payload

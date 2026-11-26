@@ -42,6 +42,7 @@ use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 pub use seat::SeatPhase;
 
+pub use crate::vr::FrameInputs;
 use crate::{
     config::Config,
     controllers::{
@@ -52,7 +53,8 @@ use crate::{
                     self,
                     probe::{self, ProbeResult},
                 },
-                grounded,
+                grounded, live_observation,
+                origin_provenance::{OriginEvidence, TrackingReceipt},
                 root::{self as rig_root, FrameSourceSnapshot, RootStatus, capsule_enabled},
             },
         },
@@ -73,24 +75,12 @@ use crate::{
     },
     headpose,
     hooks::{self, animation::active_state_type_id},
-    vr::{self, RecenterCause, RecenterKind, stage::StageInfo},
+    vr::{self, CockpitPositions, RecenterCause, RecenterKind, stage::StageInfo},
 };
 
 /// The roomscale hooks, aggregated by [`crate::controllers::hook_library`].
 pub(crate) fn hook_library() -> HookLibrary {
     HookLibrary::new().with_hook_library(teleport::hook_library())
-}
-
-/// One rendered frame's inputs to the pose composition.
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub struct FrameInputs {
-    /// The head's cockpit position (relative to the recenter baseline), metres.
-    pub cockpit: Vec3,
-    /// The head's cockpit orientation.
-    pub orientation: Quat,
-    /// The body rotation the cockpit composes with.
-    pub body: Quat,
-    pub world_scale: f32,
 }
 
 /// The cockpit positions to compose the two sides of the pose pair with.
@@ -364,6 +354,31 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
     }
 }
 
+/// The frame half as the VR frame drives it ([`crate::vr::FrameParticipants`]): [`compose_cockpit`],
+/// keeping the composition's source for [`publish_composition`], which the frame calls once the
+/// pose pair is published.
+pub(crate) fn compose_frame(inputs: &FrameInputs) -> CockpitPositions {
+    let composed = compose_cockpit(inputs);
+    *STAGED_SOURCE.lock() = Some(composed.source);
+    CockpitPositions {
+        prev: composed.prev,
+        cur: composed.cur,
+    }
+}
+
+/// Publish the source of the composition [`compose_frame`] last returned, with the live tracking
+/// origin it composed, as the rig's composition evidence; or clear the evidence when `tracking` is
+/// `None` (no live, unfrozen pose pair) or no composition is waiting. A source is published once.
+pub(crate) fn publish_composition(tracking: Option<(OriginEvidence, Option<TrackingReceipt>)>) {
+    let source = STAGED_SOURCE.lock().take();
+    match (tracking, source) {
+        (Some((origin, receipt)), Some(source)) => {
+            live_observation::publish_composition(source.with_tracking_origin(origin, receipt));
+        }
+        _ => live_observation::composition_unavailable(),
+    }
+}
+
 /// The standing eye height the head remap measures the player's eyes from: the grounded rig's
 /// measure standing, and the calibration's otherwise (seated, the seated reference carries the
 /// height instead).
@@ -593,6 +608,9 @@ struct FrameState {
     shared: Option<FrameShared>,
     status: FrameStatus,
 }
+
+/// The source of the composition [`compose_frame`] returned, until [`publish_composition`] takes it.
+static STAGED_SOURCE: Mutex<Option<FrameSourceSnapshot>> = Mutex::new(None);
 
 static FRAME: Mutex<FrameState> = Mutex::new(FrameState {
     last_at: None,

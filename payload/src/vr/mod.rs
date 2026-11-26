@@ -62,6 +62,7 @@ mod frame_loop;
 pub mod input;
 mod loader;
 mod mirror;
+mod participants;
 mod persist;
 pub mod pose_control;
 mod recenter;
@@ -89,6 +90,8 @@ pub use frame_loop::{EyeImage, EyeView, FrameContext, LocatedFrame, WaitedFrame,
 pub(crate) use frame_loop::{head_tracked, pose_age_totals};
 pub(crate) use mirror::latest_present;
 pub use mirror::{present_mirror, toggle_stereo_pair};
+pub(crate) use participants::{CockpitPositions, FrameParticipants, register_frame_participants};
+pub use participants::{FrameInputs, FrameTelemetry};
 pub use recenter::{
     RecenterCause, RecenterKind, auto_recenter_tick, recenter, recenter_count, request_recenter,
     request_seat_recenter, request_seat_yaw_rebase,

@@ -89,6 +89,7 @@ pub mod physical_hands;
 pub mod presentation;
 pub mod presets;
 mod register_lifecycle;
+mod register_vr_frame;
 pub mod roomscale;
 pub mod scheme;
 pub mod snatch;
@@ -104,6 +105,7 @@ pub use config::ControllersConfig;
 /// removal steps. Runs before the hooks are installed; an error refuses hook installation, and the
 /// refusal is already logged.
 pub(crate) fn install() -> Result<(), RegistrationError> {
+    register_vr_frame::register();
     register_lifecycle::register()
 }
 

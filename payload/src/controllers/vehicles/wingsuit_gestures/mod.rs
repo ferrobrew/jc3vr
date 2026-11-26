@@ -27,6 +27,7 @@ use crate::controllers::{
     mode::{AirborneVariant, Mode, OnFootVariant},
     vehicles::{arm_steering::wrist_tilt, config::WingsuitGesturesConfig},
 };
+pub(crate) use crate::vr::input::flight_pose::GestureSample;
 
 /// A single transition request. The binding owner emits it once, never as a held toggle.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -174,14 +175,6 @@ pub(crate) struct HandClaims {
     pub slot: bool,
     pub mechanical: bool,
     pub grapple: bool,
-}
-
-/// Identity and pose time of an input observation. A newer epoch permits clock/sequence reset.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) struct GestureSample {
-    pub epoch: u64,
-    pub sequence: u64,
-    pub time_ns: i64,
 }
 
 /// A head pose published from the same locate and cockpit baseline as the controller observation.
