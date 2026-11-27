@@ -287,8 +287,8 @@ fn emit_injection(out: &mut Vec<u32>, plan: &Plan, position: u32) {
 /// eye's width, and half the target's height less `y`. The eye's width is the boundary an eye-split
 /// pass publishes (the right eye's first pixel is the left eye's width). Everywhere else the boundary
 /// lies past every pixel, and the `dp2` reads the engine's own offset. The original instructions
-/// are left in place; the `dp2` alone reads the selected offset. Returns [`DxbcError::NoScreenDoor`] for a shader that
-/// builds no such pattern.
+/// are left in place; the `dp2` alone reads the selected offset. Returns
+/// [`DxbcError::NoScreenDoor`] for a shader that builds no such pattern.
 pub fn localize_projected_screen_door(blob: &[u8]) -> Result<Vec<u8>, DxbcError> {
     let dxbc = Dxbc::parse(blob)?;
     let shex = dxbc
@@ -584,7 +584,7 @@ const TARGET_SIZE_ROW: u32 = 8;
 const SCREEN_DOOR_X: u32 = 0x3eef_965b;
 /// The screen-door vector's `y`, `-0.703648`.
 const SCREEN_DOOR_Y: u32 = 0xbf34_2246;
-/// The opcode token of a seven-token `add`, `div`, and ten-token `dp2`.
+/// The opcode tokens of a nine-token `add`, a seven-token `div`, and a ten-token `dp2`.
 const ADD_7: u32 = (9 << 24) | OPCODE_ADD;
 const DIV_7: u32 = (7 << 24) | OPCODE_DIV;
 const DP2_10: u32 = (10 << 24) | OPCODE_DP2;

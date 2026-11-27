@@ -2,7 +2,7 @@
 //!
 //! Editing a shader's bytecode leaves the container's stored hash stale, and the D3D stack under
 //! Proton rejects a blob whose hash no longer matches -- so every bytecode patch must finish by
-//! refreshing the checksum. The hash lives here rather than in the payload because it belongs to
+//! refreshing the checksum. The hash lives here rather than beside the hooks because it belongs to
 //! the container format, not to any one hook.
 
 /// Recompute the DXBC container checksum over a patched blob and write it into the 16-byte hash

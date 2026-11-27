@@ -265,11 +265,9 @@ enum Pass {
         sampling: AmbientOcclusionSampling,
     },
     /// The blur or the composite: only the samples of `source` are clamped, and with `snap` (the
-    /// pixel position's input register) every read of the screen UV reads the UV computed from the
-    /// pixel position instead.
-    ///
-    /// The textures in `loads` are read through loads instead of samples (see [`Loads`]). `snap`
-    /// holds the pixel position's input register and where the target's size comes from.
+    /// pixel position's input register and where the target's size comes from) every read of the
+    /// screen UV reads the UV computed from the pixel position instead. The textures in `loads` are
+    /// read through loads instead of samples (see [`Loads`]).
     Filter {
         source: u32,
         snap: Option<(u32, SizeSource)>,

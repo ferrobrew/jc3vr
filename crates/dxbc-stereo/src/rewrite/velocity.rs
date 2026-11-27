@@ -307,9 +307,9 @@ fn mark_inputs_read(isgn: &[u8], plan: &Plan) -> Result<Vec<u8>, DxbcError> {
     position.then_some(out).ok_or(DxbcError::NoPixelPosition)
 }
 
-/// Rebuild the shader chunk: declare the buffer when no earlier rewrite has, declare or widen the position input to `.xy`, widen each
-/// previous position's input to `.xyzw`, bump the temp count, and correct the positions after every
-/// divide.
+/// Rebuild the shader chunk: declare the buffer when no earlier rewrite has, declare or widen the
+/// position input to `.xy`, widen each previous position's input to `.xyzw`, bump the temp count,
+/// and correct the positions after every divide.
 fn rewrite(stream: &TokenStream, plan: &Plan, position: u32) -> Result<Vec<u8>, DxbcError> {
     let tokens = stream.tokens();
     let mut out: Vec<u32> = Vec::with_capacity(tokens.len() + 96 * plan.sites.len());

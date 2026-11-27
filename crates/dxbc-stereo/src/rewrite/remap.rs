@@ -21,7 +21,8 @@
 //!    vertex shader.
 //!
 //! The token and signature encodings reproduce byte-for-byte what fxc emits for a vs_5_0 that does
-//! the same thing (the committed `tests/data/ref_vs50.dxbc`); see `docs/mod/single-pass-stereo.md`.
+//! the same thing (the committed `tests/data/ref_vs50.dxbc`); see
+//! `docs/mod/stereo/single-pass-stereo.md`.
 
 use crate::{
     PER_EYE_CB0_ROWS,

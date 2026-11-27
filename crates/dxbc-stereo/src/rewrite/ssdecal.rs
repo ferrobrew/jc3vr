@@ -49,7 +49,7 @@ use crate::{
 /// Widening the declaration is only half of what has to be in range: the caller must also be able to
 /// *stage* the register. It can, and by more than one row -- the engine rounds the pass's declared
 /// thirteen rows up to a sixteen-row pooled constant buffer and uploads all sixteen, so 13, 14, and 15
-/// are all addressable. See the register's counterpart in the payload for the rest of that argument.
+/// are all addressable. See the render crate's `EYE_BIAS_REGISTER` for the rest of that argument.
 pub const SSDECAL_EYE_BIAS_REGISTER: u32 = 13;
 
 /// Insert the depth-UV bias into an `ssdecal*` pixel shader, returning the rewritten container.
@@ -357,9 +357,10 @@ mod tests {
 
     /// An SM4 (`SHDR`) container must be rejected up front, matching every other rewrite entry point --
     /// see `rewrite::remap::patch_vertex_shader`, `rewrite::reproject::reproject_vertex_shader`, and
-    /// `rewrite::terrain`. Before this guard, [`bias_ssdecal_depth_uv`] fell through to
-    /// [`Dxbc::shader_chunk`], which accepts `SHDR` as a fallback, and silently reassembled the
-    /// original bytes unmodified because [`crate::rewrite::common::reassemble`] only substitutes an `SHEX` body.
+    /// `rewrite::terrain`. Without the guard, [`bias_ssdecal_depth_uv`] would fall through to
+    /// [`Dxbc::shader_chunk`], which accepts `SHDR` as a fallback, and silently reassemble the
+    /// original bytes unmodified, because [`crate::rewrite::common::reassemble`] substitutes only an
+    /// `SHEX` body.
     #[test]
     fn an_sm4_container_is_rejected() {
         assert_eq!(

@@ -4,8 +4,8 @@
 //! `SV_Position` from a scene view-projection without exposing per-eye `cb0` rows to remap. Instead
 //! of remapping operands, it saves the shader's own center-clip position and post-multiplies it by a
 //! per-eye matrix `M_eye = VP_eye · VP_center⁻¹` before each `ret`, so each eye lands its own clip
-//! position. The eye index, viewport routing, and `cb13` layout are shared with the terrain domain
-//! reprojection.
+//! position. The eye index, viewport routing, and `cb13` layout are shared with the `cb0` remap and
+//! the terrain domain rewrite.
 
 use crate::{
     container::{Dxbc, DxbcError},
@@ -27,7 +27,7 @@ use crate::{
 };
 
 /// Rewrites a vertex shader for single-pass stereo by **reprojection**: instead of remapping `cb0`
-/// per-eye operands (which the baked-WVP / terrain / GPU-indirect families don't have), it renames
+/// per-eye operands (which the baked-WVP and GPU-indirect families don't have), it renames
 /// the shader's own `SV_Position` writes to a temp `rClip` and post-multiplies by a per-eye matrix
 /// `M_eye` before each `ret`, so `o0 = M_eye · clip_center` lands the shader's own center-clip
 /// position in each eye. `M_eye = VP_eye · VP_center⁻¹` is uploaded to `cb13`'s four-rows-per-eye
@@ -160,7 +160,8 @@ struct ReprojectPlan {
     /// (saved clip position) at `temp_base + 1`, and with a declared instance id `rInst` (the halved
     /// id) at `temp_base + 2`.
     temp_base: u32,
-    /// The token index of the existing `dcl_temps`, if any (its count is bumped by two).
+    /// The token index of the existing `dcl_temps`, if any (its count is bumped by the temps the
+    /// rewrite claims).
     dcl_temps_start: Option<usize>,
     /// The token index of the first non-declaration instruction, where declarations and the prologue
     /// are injected.
@@ -168,9 +169,10 @@ struct ReprojectPlan {
 }
 
 /// Scans the declarations for the reprojection rewrite: the `SV_Position` output register, the temp
-/// count and injection point, and the preconditions (`cb13` and `SV_InstanceID` unclaimed, an
-/// `SV_Position` output present, no `retc`). The free input/output registers are supplied by the
-/// caller from the signatures, which are authoritative over the declarations.
+/// count and injection point, and the preconditions (`cb13` unclaimed, `SV_InstanceID` unclaimed or
+/// declared as `instance_ids` requires, an `SV_Position` output present, and no `retc` when
+/// post-multiplying by `M_eye`). The free input/output registers are supplied by the caller from the
+/// signatures, which are authoritative over the declarations.
 fn plan_reproject(
     stream: &TokenStream,
     input_register: u32,
@@ -310,9 +312,10 @@ fn rewrite_reproject(stream: &TokenStream, plan: &ReprojectPlan) -> Result<Vec<u
     Ok(out.iter().flat_map(|t| t.to_le_bytes()).collect())
 }
 
-/// Emits the reprojection declarations and eye prologue: `cb13[18]`, the `SV_InstanceID` input, the
-/// `SV_ViewportArrayIndex` output, then `and rBase.x, vN.x, l(1)` (eye), `mov oM.x, rBase.x`
-/// (viewport), `imul null, rBase.x, rBase.x, l(4)` (the eye's `M_eye` row base, four rows per eye).
+/// Emits the reprojection declarations and eye prologue: `cb13[18]` (through the full view-projection
+/// copies when the shader reads those), the `SV_InstanceID` input unless the shader declares its own,
+/// the `SV_ViewportArrayIndex` output, then `and rBase.x, vN.x, l(1)` (eye), `mov oM.x, rBase.x`
+/// (viewport), `imul null, rBase.x, rBase.x, l(4)` (the eye's row base, four rows per eye).
 fn emit_reproject_injection(out: &mut Vec<u32>, plan: &ReprojectPlan) {
     let n = plan.input_register;
     let m = plan.output_register;

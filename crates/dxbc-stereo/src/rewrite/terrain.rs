@@ -2,9 +2,9 @@
 //!
 //! Handles the two ends of the terrain tessellation path: the vertex shader originates the eye index
 //! and rides it through the free `.z` of its `TEXCOORD3` output lane (VS → HS → DS), and the domain
-//! shader reads that lane, reprojects its own `SV_Position` via the per-eye `M_eye`, and routes to
-//! the eye's viewport. Both share the `M_eye` epilogue and `cb13` layout with the vertex
-//! reprojection.
+//! shader reads that lane, takes its camera rows from the eye's `cb13` slot (`domain_rows`), and
+//! routes to the eye's viewport. The eye prologue and `cb13` layout are shared with the vertex
+//! rewrites.
 
 use crate::{
     container::{Dxbc, DxbcError},
@@ -35,7 +35,7 @@ use crate::{
 
 /// The output semantic that carries the single-pass eye index through the terrain tessellation
 /// pipeline: `TEXCOORD3`'s free `.z` component (the VS uses only `.xy`). The VS writes the eye there,
-/// the hull shader forwards it, and the domain shader reads it to reproject and route.
+/// the hull shader forwards it, and the domain shader reads it to choose its camera rows and route.
 const EYE_LANE_SEMANTIC: &str = "TEXCOORD";
 const EYE_LANE_SEMANTIC_INDEX: u32 = 3;
 /// The `.z` write-mask bit in an operand token's mask nibble (bit 6 of the low byte). ORing it into a
@@ -358,7 +358,7 @@ pub fn rebase_domain_shader(blob: &[u8]) -> Result<Vec<u8>, DxbcError> {
     reassemble(&dxbc, blob, new_isgn, new_osgn, new_shex, true)
 }
 
-/// What the terrain-DS reprojection scan learned.
+/// What the terrain-DS rebase scan learned.
 struct DomainReprojectPlan {
     /// The `TEXCOORD3` control-point input register the eye rides in (`vicp[..][lane_register].z`).
     lane_register: u32,
@@ -377,9 +377,10 @@ struct DomainReprojectPlan {
     inject_before: usize,
 }
 
-/// Scans the domain shader's declarations for the reprojection rewrite: the `SV_Position` output, the
-/// free output register, the control-point lane declaration to widen, the temp count and injection
-/// point, and the preconditions (`cb13` unclaimed, an `SV_Position` output present, no `retc`).
+/// Scans the domain shader's declarations for the rebase: the control-point lane declaration to
+/// widen, the temp count and injection point, and the preconditions (`cb13` unclaimed, an
+/// `SV_Position` output present). The free output register is supplied by the caller from the
+/// output signature.
 fn plan_domain_reproject(
     stream: &TokenStream,
     lane_register: u32,

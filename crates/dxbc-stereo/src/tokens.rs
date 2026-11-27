@@ -190,7 +190,7 @@ impl<'a> Instruction<'a> {
     /// Two SM5 declaration opcodes sit just below the range and are **not** recognised: `dcl_stream`
     /// (`0x8F`) and `dcl_function_body` (`0x90`). `dcl_stream` is geometry-shader-only and
     /// `dcl_function_body` belongs to class linkage, and none of these rewrites accepts a shader from
-    /// either family, so the gap is unreachable today -- but it is a gap, not a deliberate exclusion.
+    /// either family, so the gap is unreachable -- but it is a gap, not a deliberate exclusion.
     pub fn is_declaration(&self) -> bool {
         matches!(self.opcode, OPCODE_CUSTOMDATA | 0x58..=0x6A | 0x91..=0xA2)
     }
@@ -393,8 +393,8 @@ mod tests {
     }
 
     /// A custom-data block whose declared length runs past the end of the token stream is a truncated
-    /// stream, not a zero-length instruction -- the two used to share `ZeroLengthInstruction`, which
-    /// told a caller bucketing by error kind the wrong story about what went wrong.
+    /// stream, not a zero-length instruction, so a caller bucketing by error kind sees what went
+    /// wrong.
     #[test]
     fn a_truncated_customdata_block_is_unexpected_end_of_tokens() {
         let body = token_stream_body(&[OPCODE_CUSTOMDATA, 100]);

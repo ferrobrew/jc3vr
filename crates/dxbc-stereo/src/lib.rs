@@ -4,7 +4,9 @@
 //! in the position path is five `cb0` rows -- the camera position (`cb0[4]`) and the view-projection
 //! (`cb0[29..32]`) -- so the transform binds a mod-owned `cb13` holding both eyes' five rows
 //! (`[eye0: 0..4][eye1: 5..9]`) and rewrites the shader to index it per eye by `SV_InstanceID & 1`,
-//! emitting `SV_ViewportArrayIndex`. See `docs/mod/single-pass-stereo.md`.
+//! emitting `SV_ViewportArrayIndex`. See `docs/mod/stereo/single-pass-stereo.md`. The rewrites for
+//! the other shader families, and for the hull, domain, and pixel stages, live beside it in
+//! `rewrite`.
 //!
 //! Two layers: the *analysis* foundation (parse the DXBC container and the SM5 token stream, and
 //! locate the operands the rewrite must remap -- [`per_eye_refs`]) and the *rewrite* built on it

@@ -1,12 +1,14 @@
 //! The single-pass stereo rewrite layer.
 //!
-//! Rewrites DXBC shader bytecode so one instance-doubled draw renders both eyes. Four functional
-//! areas each target a different shader family: `remap` retargets an opaque model VS's per-eye `cb0`
-//! rows to a mod-owned `cb13`, `reproject` post-multiplies a baked-WVP VS's clip position by a
-//! per-eye `M_eye`, and `terrain` handles the tessellation VS and DS ends of the terrain path.
-//! `pinned` is the reprojection for a vertex or domain shader that cannot learn its eye and is drawn
-//! once per eye instead, reading whichever eye the payload pinned `cb13` to. The shared DXBC
-//! scaffolding lives in `common`.
+//! Rewrites DXBC shader bytecode so one instance-doubled draw renders both eyes. Three functional
+//! areas each target a different pre-rasterization shader family: `remap` retargets an opaque model
+//! VS's per-eye `cb0` rows to a mod-owned `cb13`, `reproject` post-multiplies a baked-WVP VS's clip
+//! position by a per-eye `M_eye` (or reads the eye's copy of the full view-projection in place of
+//! `cb0`'s), and `terrain` carries the eye from the tessellation VS through the HS to the DS, which
+//! reads its camera rows from the eye's `cb13` slot through `domain_rows`. `pinned` and `full_vp`
+//! serve a vertex or domain shader that cannot learn its eye and is drawn once per eye instead,
+//! reading whichever eye the payload pinned `cb13` to. The shared DXBC scaffolding lives in
+//! `common`.
 //!
 //! `ssdecal` is a pixel-shader rewrite: it separates the screen-space decal permutations'
 //! depth-texture UV from the viewport-normalized UV their reconstruction basis needs, so the two can

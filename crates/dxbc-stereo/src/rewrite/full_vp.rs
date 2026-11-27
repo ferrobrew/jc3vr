@@ -1,9 +1,9 @@
 //! Shaders that project through the full view-projection, read from the eye's slot of `cb13`.
 //!
 //! The full, translation-bearing view-projection (`cb0[0..3]`, the render context's
-//! `m_ViewProjectionF`) is outside the `cb0` remap's per-eye rows, so a shader that projects an
-//! absolute world position through it was reprojected: its centre clip position post-multiplied by
-//! `M_eye`. That lands in the eye only in real arithmetic. `cb13` carries each eye's copy of those
+//! `m_ViewProjectionF`) is outside the `cb0` remap's per-eye rows. Reprojecting a shader that
+//! projects an absolute world position through it, its centre clip position post-multiplied by
+//! `M_eye`, lands in the eye only in real arithmetic. `cb13` carries each eye's copy of those
 //! four rows, as an eye rendered on its own stages them, and reading them in place of `cb0[0..3]`
 //! makes the shader do the arithmetic that render does. Outside the routed range both copies mirror
 //! the current `cb0` rows, so the substitution changes nothing there.

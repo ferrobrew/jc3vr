@@ -136,8 +136,8 @@ pub enum DxbcError {
     /// The pixel shader carries no screen-space depth fetch built from a projective UV, so there is
     /// nothing for the decal depth-UV bias to separate; the caller should leave it untouched.
     NoDepthUvFetch,
-    /// The pixel shader is not one the capture harness's resolve, reflection-ray, impostor, fog,
-    /// depth-of-field, or anti-aliasing trial was written against.
+    /// The pixel shader is not one the capture harness's resolve, reflection-ray, impostor, bark,
+    /// fog, depth-of-field, or anti-aliasing trial was written against.
     #[cfg(feature = "capture-rewrites")]
     NoResolveInputs,
     /// The pixel shader is not the lake permutation the capture harness's lake traces were written
