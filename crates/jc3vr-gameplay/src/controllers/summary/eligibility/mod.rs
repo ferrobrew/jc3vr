@@ -1,4 +1,5 @@
-//! Bounded current eligibility from mode routes, resolved grab choices, and explicit mechanic gates.
+//! Bounded current eligibility from mode routes, resolved grab choices, and explicit mechanic
+//! gates.
 
 use jc3gi::input::input_action_map::Action;
 use jc3vr_body::controllers::{
@@ -29,7 +30,8 @@ pub(crate) struct Eligibility {
     /// Current contextual actions proved usable by their owning subsystem, including cutscene skip.
     pub actions: Vec<Action>,
     /// Actual current physical gestures not represented by a chosen grip target. Examples include
-    /// an eligible belt reload or flight gesture. The producer supplies their real physical control.
+    /// an eligible belt reload or flight gesture. The producer supplies their real physical
+    /// control.
     pub(crate) mechanics: Vec<Row>,
     pub snatch: Option<SnatchHint>,
     /// The reload owner permits the native tap, independently of held holstering.

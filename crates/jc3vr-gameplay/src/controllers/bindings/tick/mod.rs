@@ -14,8 +14,8 @@
 //! 7. [`hands::controls`], [`hands::triggers`], and [`hands::grapple`]: the logical controls, the
 //!    triggers' ownership, and the grapple button's owners and the physical grapple.
 //! 8. [`acts::evaluate`]: the tables, the hang under a helicopter, the grapple lock, the rail, the
-//!    firm ragdoll, the seat grapple, the wingsuit gestures' evaluation, and the grip model's
-//!    finish.
+//!    firm ragdoll, the seat grapple, the controls summary's hold, the wingsuit gestures'
+//!    evaluation, and the grip model's finish.
 //! 9. [`acts::finish`]: the subsystems' acts in the order [`acts::ACTS`] lists, or in a game menu
 //!    the pause of them ([`Reason::Menu`]).
 //! 10. [`publish::settle`] and [`publish::publish`]: the triggers' ownership after the acts, the

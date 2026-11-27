@@ -13,16 +13,16 @@
 //!
 //! One hook changes what the game does. While a session is logged in offline, the online-suite
 //! manager asks the account manager on every tick whether Steam is logged on
-//! ([`AccountManager::IsConnectedToFirstPartyService`]), to decide whether to retry the online suite.
-//! The Steam account answers through `ISteamUser::BLoggedOn`, a call into the Steam client, which
-//! under Proton crosses into the native client; it is the only untimed per-tick work in the
+//! ([`AccountManager::IsConnectedToFirstPartyService`]), to decide whether to retry the online
+//! suite. The Steam account answers through `ISteamUser::BLoggedOn`, a call into the Steam client,
+//! which under Proton crosses into the native client; it is the only untimed per-tick work in the
 //! manager, where the periodic stalls of hundreds of milliseconds sit
-//! (`docs/issues/periodic-sim-tick-hitches.md`). With
-//! [`OnlineConfig::skip_logged_on_check`] on, that one call site answers false without calling
-//! Steam, so the retry never starts; the account manager's other callers (the title screen's login
-//! choice, the achievements, the pause menu, the reconnect from the menus) still reach Steam. The
-//! call site is told apart by the thread being inside [`OnlineSuiteManager::Update`] and outside the
-//! online suite's own update, whose parts are all hooked here.
+//! (`docs/issues/periodic-sim-tick-hitches.md`). With [`OnlineConfig::skip_logged_on_check`] on,
+//! that one call site answers false without calling Steam, so the retry never starts; the account
+//! manager's other callers (the title screen's login choice, the achievements, the pause menu, the
+//! reconnect from the menus) still reach Steam. The call site is told apart by the thread being
+//! inside [`OnlineSuiteManager::Update`] and outside the online suite's own update, whose parts are
+//! all hooked here.
 //!
 //! Threading: every hooked function runs on the game thread, inside the sim tick, except the
 //! account manager's check, which only acts inside the online-suite manager's update.

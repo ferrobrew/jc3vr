@@ -1,32 +1,34 @@
-//! The controls summary: a panel on the off-hand wrist of the controls usable now above the mode's
-//! fixed essentials ([`essentials`]), and a separate complete binding reference, with the game's
-//! own names for actions and the runtime's actual source names, and the suppression of the game's
-//! own button hints, whose gamepad glyphs do not match the controllers. See
+//! The controls summary's model: a panel on the off-hand wrist of the controls usable now above the
+//! mode's fixed essentials ([`essentials`]), and a separate complete binding reference, with the
+//! game's own names for actions and the runtime's actual source names. See
 //! `docs/mod/input/controls-summary.md`.
 //!
 //! - [`config`]: the glance and the wrist placement's parameter types;
 //! - [`labels`]: the game's localisation key for each action per mode, and the mod's own strings;
 //! - [`localise`]: resolving those through the game's localisation store, with an English
 //!   fallback;
+//! - [`current`]: the rows usable now, projected from the sources the runtime bound and what is
+//!   eligible ([`eligibility`]), with the snatch's own instructions ([`snatch`]);
+//! - [`essentials`]: the mode's fixed rows below them;
 //! - [`content`]: the labelled rows grouped by hand, and their sizes on the panel;
-//! - the test-only glyph mapping retains asset and physical-source compatibility checks;
-//! - [`glance`]: the panel's pose on the wrist, the glance that shows it, and its fade;
-//! - [`game_hints`]: hiding the HUD's context button hints;
-//! - [`context`]: those hints relabelled for the controllers, first on the wrist while they show.
+//! - [`context`]: the game's context button hints relabelled for the controllers, first on the
+//!   wrist while they show;
+//! - [`hold`]: the summary hold the input owner accepted, and its touch cancellation.
 //!
 //! The rows come from the binding tables themselves
 //! ([`crate::controllers::bindings::tables::describe`]), so the summary cannot drift from what the
 //! controllers inject, and each row's control from the sources the runtime bound its actions to
-//! ([`jc3vr_view::vr::input::sources::table`]): a compact control label for a known source, the runtime's
-//! name otherwise, and "unbound" in the reference for an action bound to nothing. The input tick
-//! rebuilds the summary when the mode, the table context, the enabled gestures, the game's
-//! language, or the bound sources change ([`refresh`]), resolving the strings on the game thread;
-//! the render thread draws the latest one (`hud::summary_panel`). Active source paths are
-//! checked every sync independently of panel visibility. A locale change requests fresh names.
+//! ([`jc3vr_view::vr::input::sources::table`]): a compact control label for a known source, the
+//! runtime's name otherwise, and "unbound" in the reference for an action bound to nothing. The
+//! input tick rebuilds the summary when the mode, the table context, the enabled gestures, the
+//! game's language, or the bound sources change ([`refresh`]), resolving the strings on the game
+//! thread; the render thread draws the latest one (`hud::summary_panel`). The bound sources are
+//! checked on every sync whether or not the panel shows, and a change of the game's language
+//! resolves the names afresh.
 //!
-//! The presentation modules ([`glance`], [`grid`], [`page_clock`], [`game_hints`], and the test-only
-//! glyph mapping) belong to the HUD with the panel that draws them; the rest is the model, which
-//! describes the binding tables and is built on the input tick.
+//! The presentation (the glyphs, the grid layout, the glance, the page clock, and the hiding of the
+//! game's own button hints, whose gamepad glyphs do not match the controllers) belongs to the HUD
+//! with the panel that draws it, under its `controllers::summary`.
 
 pub mod config;
 pub mod content;
@@ -304,10 +306,10 @@ pub(crate) fn refresh(
 }
 
 /// Whether a change to `mode` shows the summary, given the heading of the last mode the player
-/// settled in, and that heading after the change. Falling is passed through on the way from one mode
-/// to another (every jump, every drop off a ledge, every grapple launch), so it neither shows the
-/// summary nor counts as the mode the player left: a jump that lands shows nothing, and a fall that
-/// opens the parachute or the wingsuit shows that mode's. A change between modes that share a
+/// settled in, and that heading after the change. Falling is passed through on the way from one
+/// mode to another (every jump, every drop off a ledge, every grapple launch), so it neither shows
+/// the summary nor counts as the mode the player left: a jump that lands shows nothing, and a fall
+/// that opens the parachute or the wingsuit shows that mode's. A change between modes that share a
 /// heading (walking and swimming, a seat and another in the same class) shows nothing either.
 pub(crate) fn shows_mode_change(settled: Option<Text>, mode: Mode) -> (bool, Option<Text>) {
     if transient(mode) {

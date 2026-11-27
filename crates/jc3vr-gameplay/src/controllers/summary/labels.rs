@@ -62,7 +62,7 @@ impl CurrentAction {
 pub(crate) const HOLD_KEY: &str = "buttonhint_hold";
 
 /// How `action` is labelled in `mode`, or `None` for an action the summary has no label for. Every
-/// action the tables inject has one ([`crate::controllers::bindings::tables::coverage`]).
+/// action the tables inject has one (the tables' test-only `coverage`).
 pub(crate) fn action_label(action: Action, mode: Mode) -> Option<ActionLabel> {
     let class = match mode {
         Mode::Vehicle(seat) => Some(seat.class),

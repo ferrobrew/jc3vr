@@ -117,7 +117,8 @@ pub struct Source {
 
 impl PartialEq for Source {
     fn eq(&self, other: &Self) -> bool {
-        // Runtime name indices belong to one source table; only the hand and resolved name are drawn.
+        // Runtime name indices belong to one source table; only the hand and resolved name are
+        // drawn.
         let same_control = match (self.control, other.control) {
             (Control::Named(hand, _), Control::Named(other_hand, _)) => hand == other_hand,
             (control, other_control) => control == other_control,

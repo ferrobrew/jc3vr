@@ -10,12 +10,12 @@
 //! - [`egui_grab`] decides which hand's grip holds the panel.
 //!
 //! The rays are intersected with the panels the HUD last drew and published
-//! ([`jc3vr_view::hud::panel`], which the camera hook also gives the render camera they were
-//! placed from), and the egui panel's aspect is read from its settings slot
-//! ([`jc3vr_view::vr::PANEL_CONFIG`]). The HUD reads the results: it routes the game UI's mouse from
-//! [`selected_controller`] and drains the egui updates ([`take_updates`]). What the pointers need
-//! from the HUD itself (whether the game UI is redirected, the desktop mouse's capture, and the
-//! debug panel's placement and grab) comes through the [`PointerHud`] table, the pointer's one
+//! ([`jc3vr_view::hud::panel`], which the camera hook also gives the render camera they were placed
+//! from), and the egui panel's aspect is read from its settings slot
+//! ([`jc3vr_view::vr::PANEL_CONFIG`]). The HUD reads the results: it routes the game UI's mouse
+//! from [`selected_controller`] and drains the egui updates ([`take_updates`]). What the pointers
+//! need from the HUD itself (whether the game UI is redirected, the desktop mouse's capture, and
+//! the debug panel's placement and grab) comes through the [`PointerHud`] table, the pointer's one
 //! registration, which the HUD makes at install.
 
 mod aim_hold;

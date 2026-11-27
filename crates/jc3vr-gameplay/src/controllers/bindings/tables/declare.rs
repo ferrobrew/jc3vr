@@ -157,9 +157,10 @@ fn grapple() -> [Press; 2] {
     ]
 }
 
-/// The hand-weapon fire actions: the dominant trigger's, and with a pistol in the off-hand its
-/// own. The one fire action reaches the weapon, and the dual-wield split
-/// ([`jc3vr_weapons::controllers::weapons::dual_wield`]) hands it to the pistol of the pulling hand.
+/// The hand-weapon fire actions: the dominant trigger's, and with a pistol in the off-hand its own.
+/// The one fire action reaches the weapon, and the dual-wield split
+/// ([`jc3vr_weapons::controllers::weapons::dual_wield`]) hands it to the pistol of the pulling
+/// hand.
 fn fire(ctx: &TableCtx) -> Vec<Press> {
     if ctx.dual_wield {
         vec![p(F::Fire), p(F::FireOffHandPistol)]

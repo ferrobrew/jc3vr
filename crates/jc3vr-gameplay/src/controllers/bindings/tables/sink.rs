@@ -82,9 +82,9 @@ pub(crate) enum PadLayout {
 }
 
 impl PadLayout {
-    /// The zone of the pad at `position` (+X right, +Y up), or `None` within
-    /// the tuning's `bindings.pad_zone_margin` of the lines between the zones, where a press waits for the thumb to
-    /// move off.
+    /// The zone of the pad at `position` (+X right, +Y up), or `None` within the tuning's
+    /// `bindings.pad_zone_margin` of the lines between the zones, where a press waits for the thumb
+    /// to move off.
     pub fn zone(self, position: Vec2) -> Option<PadZone> {
         if !position.is_finite() {
             return None;

@@ -1,6 +1,6 @@
 //! Registers the controller subsystems with the render layer: the world-space overlay's and the
-//! scope lens's ticks in the post-draw ([`DISPATCH_TICKS`]), the body estimator's GPU pass, what the
-//! overlay's draw reads, the presentation layer's edits of the body's palette, and the camera's
+//! scope lens's ticks in the post-draw ([`DISPATCH_TICKS`]), the body estimator's GPU pass, what
+//! the overlay's draw reads, the presentation layer's edits of the body's palette, and the camera's
 //! participants (the grapple's aim matrix and the camera height readout). The overlay's and the
 //! lens's draws are the render layer's own, which its post-draw runs itself. [`register`] reports
 //! any of these still missing to the install's registration check.

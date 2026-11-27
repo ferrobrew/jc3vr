@@ -1,5 +1,5 @@
-//! The aim hold of a pointer's trigger: a light pull freezes the cursor where it is, and only a full
-//! pull clicks.
+//! The aim hold of a pointer's trigger: a light pull freezes the cursor where it is, and only a
+//! full pull clicks.
 //!
 //! A hand-held ray wanders, and the trigger pull itself jerks it, so a click taken at the press
 //! threshold lands a little off where the player aimed. With the hold, the player settles the

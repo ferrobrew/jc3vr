@@ -7,9 +7,6 @@
 //! physical inputs it is bound to on each hand ([`BoundSet`]). [`Intents::build`] then applies,
 //! in order:
 //!
-//! The shared input arbiter has already filtered the sampled semantic values before this module
-//! applies its contextual masks. Raw stick levels never substitute for semantic action values.
-//!
 //! - the masks ([`Mask`]): a mechanism that claims a physical input on a hand (a grip press
 //!   latched to a grab, the dual-wield split's off-hand trigger, the native UI pointer's trigger,
 //!   the debug panel chord's buttons) or a whole hand (input recovery) puts every action that reads
@@ -17,6 +14,9 @@
 //!   does not recognise is masked only with its whole hand;
 //! - the gestures, as sources of the actions they stand for: the yank presses the grapple hand's
 //!   `fire_grapple` for a tick.
+//!
+//! The shared input arbiter has already filtered the sampled semantic values before these masks
+//! apply. Raw stick levels never substitute for semantic action values.
 //!
 //! The two hands' states of an action combine as OpenXR combines an action's bindings: a press is
 //! held while either hand holds it, a value is the larger in magnitude, and a vector the longer.

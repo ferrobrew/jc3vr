@@ -1,11 +1,11 @@
 //! Applying effector writes to the game's action maps, in the input tick's poll stage after the
 //! device poll ([`crate::controllers::bindings::stage`]).
 //!
-//! Each write resolves its action through the same lookup the game's readers use (device `-1`),
-//! so it lands in the effector the next reader picks: the one with the largest value among the
-//! devices that bind the action. Values are only ever raised, so a physical device's reading in the
-//! same effector is never reduced. An action no device binds resolves to the null effector, and
-//! the write is skipped and reported. The writes that undo earlier ones (releases, undone clicks, and
+//! Each write resolves its action through the same lookup the game's readers use (device `-1`), so
+//! it lands in the effector the next reader picks: the one with the largest value among the devices
+//! that bind the action. Values are only ever raised, so a physical device's reading in the same
+//! effector is never reduced. An action no device binds resolves to the null effector, and the
+//! write is skipped and reported. The writes that undo earlier ones (releases, undone clicks, and
 //! the return to idle) resolve through the lookup that ignores the player map's blockers, so that a
 //! map blocked since the write was made cannot hide the effector it landed on.
 
@@ -129,9 +129,9 @@ fn apply_one(effector: &mut InputDeviceEffector, id: EffectorId, write: &ActionW
         }
         Phase::Unclick { effector: clicked } => {
             // The poll moves a clicked effector to pressed or released on every run, so one still
-            // clicked since our click is one the poll skipped: left alone, it reads as a fresh click
-            // again. It is released as the poll would have released it. The physical-press guard
-            // does not apply: the value in it is the one our click wrote.
+            // clicked since our click is one the poll skipped: left alone, it reads as a fresh
+            // click again. It is released as the poll would have released it. The physical-press
+            // guard does not apply: the value in it is the one our click wrote.
             if id != clicked || effector.m_State != EffectorState::Clicked {
                 return Outcome::AlreadyMovedOn;
             }

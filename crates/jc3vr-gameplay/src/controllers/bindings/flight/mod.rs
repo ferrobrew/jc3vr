@@ -404,8 +404,8 @@ fn commit_input(
         return;
     }
     let stage = match input.stage() {
-        // A remaining canopy command (not a deploy, which cuts the canopy above) is read as a fall's:
-        // the parachute has no suit command of its own.
+        // A remaining canopy command (not a deploy, which cuts the canopy above) is read as a
+        // fall's: the parachute has no suit command of its own.
         Stage::Parachute => Stage::Fall,
         stage => stage,
     };
@@ -524,10 +524,10 @@ fn grapple_claim(detection: Detection, airborne: bool, grapple: bool) -> bool {
     (grapple || detection.traversal.is_some()) && !deploy_grapple(detection, airborne, grapple)
 }
 
-/// Whether a grip of `source` claims its hand away from the gestures. Neither the line's finger pose
-/// nor a flat palm does: the grapple claims the hand through [`grapple_claim`] for exactly as long as
-/// it should, while the line's pose outlasts the line by a few ticks, and a flat palm is a passive
-/// contact, which the fingers also report in free fall with the arms spread, not a grip.
+/// Whether a grip of `source` claims its hand away from the gestures. Neither the line's finger
+/// pose nor a flat palm does: the grapple claims the hand through [`grapple_claim`] for exactly as
+/// long as it should, while the line's pose outlasts the line by a few ticks, and a flat palm is a
+/// passive contact, which the fingers also report in free fall with the arms spread, not a grip.
 fn claims_gesture(source: GripSource) -> bool {
     !holds_item(source) && ![grip::GRAPPLE_LINE, grip::SURFACE].contains(&source)
 }

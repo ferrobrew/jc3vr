@@ -118,8 +118,8 @@ impl Recovery {
     }
 
     /// Whether this hand has produced a neutral sample since it became usable again. Consumers that
-    /// own a separate click path must use this gate as well as the filtered frame, because filtering
-    /// a held trigger makes the copied frame look released.
+    /// own a separate click path must use this gate as well as the filtered frame, because
+    /// filtering a held trigger makes the copied frame look released.
     pub fn ready(&self, hand: Hand) -> bool {
         self.usable[hand.index()] && self.armed[hand.index()]
     }

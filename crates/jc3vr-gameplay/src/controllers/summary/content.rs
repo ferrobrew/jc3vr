@@ -28,8 +28,8 @@ pub enum Side {
     Hand(Hand),
     /// Either hand, or no hand in particular (the system button).
     Either,
-    /// The game's context hints on screen now, relabelled ([`crate::controllers::summary::context`]),
-    /// under a title rather than a controller.
+    /// The game's context hints on screen now, relabelled
+    /// ([`crate::controllers::summary::context`]), under a title rather than a controller.
     Context,
 }
 

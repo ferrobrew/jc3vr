@@ -1,6 +1,6 @@
-//! Motion controllers built on the body layer: the weapon handling, the physical hands, the
-//! vehicles, and the bindings, following the plan of record in
-//! `docs/mod/input/controllers-and-roomscale.md`.
+//! What the gameplay layer builds on the controller subsystems: the bindings that drive the game
+//! from the controllers, the controls summary's model, and the camera height readout, following the
+//! plan of record in `docs/mod/input/controllers-and-roomscale.md`.
 //!
 //! The OpenXR side (action sets, suggested bindings, locating the controller spaces, haptics
 //! output, hand tracking) lives in [`jc3vr_view::vr::input`], which publishes one
@@ -14,8 +14,8 @@
 //! the weapons crate's, under [`jc3vr_weapons::controllers`], the physical hands and the glass are
 //! the physical crate's, under [`jc3vr_physical::controllers`], and the vehicles, mounted guns, the
 //! wingsuit, and the parachute are the vehicles crate's, under [`jc3vr_vehicles::vehicles`]. The
-//! grapple snatch is the grapple crate's, under [`jc3vr_grapple::controllers::snatch`]. This module
-//! owns what builds on them:
+//! grapple and its snatch are the grapple crate's, under [`jc3vr_grapple`]. This module owns what
+//! builds on them:
 //!
 //! - [`config`]: [`ControllersConfig`], the controllers' settings assembled from each subsystem's
 //!   group;
@@ -23,15 +23,16 @@
 //!   injection on the input tick;
 //! - [`summary`]: the controls summary's model, which the HUD draws on the off-hand wrist;
 //! - [`camera_height`]: the camera height readout, which observes where the camera puts the eyes
-//!   against Rico's animated eyes.
+//!   against Rico's animated eyes;
+//! - [`tuning`]: the layer's shipped tuning.
 //!
 //! [`register`] registers what these contribute to the layers below and fills the body's
 //! contributions this crate declares the order of. The controls map and the summary's presentation
 //! belong to the HUD layer, and the pause menu's `VR:` pages to the UI layer.
 //!
-//! Every subsystem is gated on its toggle and, where it changes how the character behaves, on the
-//! controller scheme ([`jc3vr_body::controllers::scheme::is_controllers`]), so that the mod
-//! behaves as before whenever no controllers are in use.
+//! Every subsystem that changes how the character behaves is gated on the controller scheme
+//! ([`jc3vr_body::controllers::scheme::is_controllers`]), so that the game plays as it does on the
+//! gamepad whenever no controllers are in use.
 
 use jc3vr_body::contributions::BodyContributions;
 use jc3vr_core::registration::RegistrationCheck;

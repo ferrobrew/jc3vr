@@ -52,10 +52,10 @@ use crate::controllers::{
 
 /// State that can invalidate an offer between the provider pass and final publication.
 ///
-/// The hands' contents are sampled live ([`weapons::contents::now`]), not read from the weapon handling's
-/// published hands record: the record is the end of the last finish half, and the beacon and the C4
-/// throw change in their weapons' updates between input ticks, and the loss cancels throws earlier
-/// in this tick, so the record would count those changes as this tick's finish's.
+/// The hands' contents are sampled live ([`weapons::contents::now`]), not read from the weapon
+/// handling's published hands record: the record is the end of the last finish half, and the beacon
+/// and the C4 throw change in their weapons' updates between input ticks, and the loss cancels
+/// throws earlier in this tick, so the record would count those changes as this tick's finish's.
 pub(super) struct BeforeFinish {
     guns: [Option<GunOwner>; 2],
     reload: ReloadStatus,
@@ -64,8 +64,8 @@ pub(super) struct BeforeFinish {
 }
 
 /// The parts of a hand's contents whose change invalidates an offer: the foregrip it braces (an
-/// engaged hold only, not one fading out), whether it holds a grenade, whether a C4 throw belongs to
-/// it, and whether it holds the detonator.
+/// engaged hold only, not one fading out), whether it holds a grenade, whether a C4 throw belongs
+/// to it, and whether it holds the detonator.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
 struct HeldParts {
     braces: Option<usize>,

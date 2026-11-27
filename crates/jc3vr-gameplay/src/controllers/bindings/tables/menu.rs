@@ -3,8 +3,8 @@
 //! latched direction at a time; and the pad presses' latches ([`PadLatch`]), which keep the zone a
 //! press began on. Pure.
 //!
-//! The game repeats a held menu step itself, firing at once and then faster the longer the input
-//! is held, and it ranks the stick's directions up, down, left, right. A stick read as raw half-axes
+//! The game repeats a held menu step itself, firing at once and then faster the longer the input is
+//! held, and it ranks the stick's directions up, down, left, right. A stick read as raw half-axes
 //! therefore steps up when pushed mostly sideways with a little lift. The latch takes the push's
 //! larger axis instead, holds that one direction until the push falls back below half the push
 //! threshold, and reports nothing else meanwhile.
@@ -82,8 +82,8 @@ fn latch_button(latched: Option<bool>, button: ButtonControl, gripped: bool) -> 
 }
 
 /// The stick's latch: the latched direction holds while the push along it stays at or above the
-/// tuning's `bindings.menu_stick_hold_share` of `push`; otherwise a push of at least `push` along the stick's larger axis latches that axis's
-/// direction, with the grip as it is now.
+/// tuning's `bindings.menu_stick_hold_share` of `push`; otherwise a push of at least `push` along
+/// the stick's larger axis latches that axis's direction, with the grip as it is now.
 fn latch_stick(
     latched: Option<(Direction, bool)>,
     stick: Vec2,

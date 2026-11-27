@@ -1,5 +1,6 @@
-//! The gameplay participants of the VR frame and its recenters ([`jc3vr_view::vr::FrameParticipants`]).
-//! [`register`] reports them to the install's registration check when they are missing.
+//! The gameplay participants of the VR frame and its recenters
+//! ([`jc3vr_view::vr::FrameParticipants`]). [`register`] reports them to the install's registration
+//! check when they are missing.
 
 use jc3vr_body::controllers::roomscale;
 use jc3vr_core::registration::RegistrationCheck;

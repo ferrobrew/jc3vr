@@ -126,8 +126,8 @@ impl From<ButtonControl> for TriggerSample {
 
 impl TriggerSample {
     /// Whether the pointer treats the trigger as down this tick, given whether it did last tick. A
-    /// tap that starts and ends between two ticks reads as down for one tick, and a release followed
-    /// by a new press between two ticks reads as up for one tick, so neither is lost.
+    /// tap that starts and ends between two ticks reads as down for one tick, and a release
+    /// followed by a new press between two ticks reads as up for one tick, so neither is lost.
     pub(super) fn down(self, was_down: bool) -> bool {
         if was_down && self.released {
             false
@@ -150,7 +150,8 @@ pub(super) struct ControllerState {
     updated: Option<Instant>,
     /// The trigger as the pointer saw it on the previous tick.
     trigger_down: bool,
-    /// Whether the current trigger press began with a projected pointer, including outside its edge.
+    /// Whether the current trigger press began with a projected pointer, including outside its
+    /// edge.
     trigger_claimed: bool,
     hand: Option<Hand>,
     aim: AimHold,
@@ -172,8 +173,8 @@ impl ControllerState {
         }
     }
 
-    /// A fresh state for a hand whose trigger is `trigger_down` now. A held trigger must be released
-    /// before it can click.
+    /// A fresh state for a hand whose trigger is `trigger_down` now. A held trigger must be
+    /// released before it can click.
     pub(super) const fn after(trigger_down: bool) -> Self {
         let mut state = Self::new();
         state.trigger_down = trigger_down;
@@ -279,8 +280,8 @@ impl ControllerState {
                     owns_ui: true,
                 })
             } else {
-                // A held trigger that entered UI before the pointer was usable remains inert until a
-                // complete release/press cycle. It can still provide hover feedback.
+                // A held trigger that entered UI before the pointer was usable remains inert until
+                // a complete release/press cycle. It can still provide hover feedback.
                 Some(ControllerPointer {
                     hand,
                     uv: hit.uv,

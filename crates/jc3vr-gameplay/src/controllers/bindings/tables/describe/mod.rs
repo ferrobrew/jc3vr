@@ -1,17 +1,17 @@
 //! The describing reader: what each controller input does in a mode, read from the same table
-//! declarations the injection evaluates ([`crate::controllers::bindings::tables::declare`]), plus
-//! the inputs the mod handles outside the tables (the pause button, the body turn, the crouch
-//! flick, the sight chord, the recenter and debug panel chords, the weapon gestures, and the
-//! parachute handles). Pure; the controls summary ([`crate::controllers::summary`]) labels and draws
-//! the rows.
+//! declarations the injection evaluates
+//! ([`declare`](mod@crate::controllers::bindings::tables::declare)), plus the inputs the mod
+//! handles outside the tables (the pause button, the body turn, the crouch flick, the sight chord,
+//! the recenter and debug panel chords, the weapon gestures, and the parachute handles). Pure; the
+//! controls summary ([`crate::controllers::summary`]) labels and draws the rows.
 //!
 //! The tables name semantic actions; each is described on the physical inputs the runtime reports
 //! it bound to ([`jc3vr_view::vr::input::semantic::bound::SourceTable`]), or, for an action whose
 //! sources are not known, on those its default binding
-//! ([`jc3vr_view::vr::input::semantic::defaults`]) puts it on, less the inputs the table context masks
-//! ([`crate::controllers::bindings::tables::context_masks`]). A source the mod does not recognise
-//! is described by the runtime's name for it ([`Control::Named`]), and an action bound to nothing
-//! as [`Control::Unbound`].
+//! ([`jc3vr_view::vr::input::semantic::defaults`]) puts it on, less the inputs the table context
+//! masks ([`crate::controllers::bindings::tables::context_masks`]). A source the mod does not
+//! recognise is described by the runtime's name for it ([`Control::Named`]), and an action bound to
+//! nothing as [`Control::Unbound`].
 
 use jc3gi::input::input_action_map::Action;
 use jc3vr_body::controllers::{
@@ -118,8 +118,9 @@ pub fn describe(ctx: &DescribeCtx) -> Vec<Row> {
     )
 }
 
-/// [`describe`], on the sources the runtime reported in `sources`, with the default bindings
-/// standing in for the actions whose sources are not known.
+/// Every input of `ctx.mode` and what it does, on the sources the runtime reported in `sources`,
+/// with the default bindings standing in for the actions whose sources are not known, merged and
+/// folded as [`describe_with`] does.
 pub(crate) fn describe_bound(ctx: &DescribeCtx, sources: &SourceTable) -> Vec<Row> {
     describe_with(
         ctx,
@@ -138,8 +139,11 @@ pub(crate) fn describe_sources(ctx: &DescribeCtx, sources: &SourceTable) -> Vec<
     describe_current(ctx, sources, None)
 }
 
-/// Current semantic routes are filtered while action identity is still available. Physical
-/// mechanics remain subject to their owning subsystem's separate eligibility.
+/// Every input of `ctx.mode` and what it does on the runtime's `sources`, with no default bindings
+/// and no folding of the hands. Given `routes`, an action keeps only its sources on the hands the
+/// routes leave it, in place of the table context's masks: the routes are applied here, while the
+/// rows still name their actions. The mechanics the mod handles outside the tables stay subject to
+/// their own subsystem's eligibility.
 pub(crate) fn describe_current(
     ctx: &DescribeCtx,
     sources: &SourceTable,
@@ -162,10 +166,14 @@ pub(crate) struct Bindings<'a> {
     pub(crate) layout: Layout,
     /// The sources the runtime reported.
     pub(crate) runtime: Option<&'a SourceTable>,
+    /// The usable semantic routes, each action with a hand it may be read on; `None` keeps every
+    /// source and applies the table context's masks instead.
     pub(crate) routes: Option<&'a [(ActionId, Hand)]>,
 }
 
-/// [`describe`], with the actions on the inputs `bindings` puts them on.
+/// Every input of `ctx.mode` and what it does, with the actions on the inputs `bindings` puts them
+/// on: the rows that share an input and a gesture merged, in declaration order, and a face button,
+/// stick, or trackpad row that both hands share folded into one.
 pub(crate) fn describe_with(ctx: &DescribeCtx, bindings: Bindings) -> Vec<Row> {
     fold_hands(describe_unfolded(ctx, bindings))
 }

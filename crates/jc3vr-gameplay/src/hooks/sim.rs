@@ -1,20 +1,21 @@
 //! Detours around the sim tick and its phases: timing for the always-on frame breakdown
-//! (`jc3vr_core::frame_timing`) and, under the `profiler` feature, the profiler's flame graph; the input
-//! job's thread role; the input tick's game stage; and the post-step observer
+//! (`jc3vr_core::frame_timing`) and, under the `profiler` feature, the profiler's flame graph; the
+//! input job's thread role; the input tick's game stage; and the post-step observer
 //! ([`register_post_step`]), run after the world's post-simulation update.
 //!
 //! The timing hooks change nothing the game does: each opens a [`frame_timing::scope`] around the
-//! original call. Three hooks do more. The input job's body (`RunInputThread_Proxy`) holds
+//! original call. Four hooks do more. The input job's body (`RunInputThread_Proxy`) holds
 //! [`ThreadRole::InputJob`] for its extent, so the input tick can tell the job, which overlaps the
 //! game thread's world-mutating work, from an inline input update on the game thread. The world's
 //! pre-simulation update and the update queue's execution ([`UpdateQueue::Execute`]) together run
 //! the input tick's game stage at the top of the pre-simulation queue
 //! ([`stage::update_queue_runs`]): on the game thread, after the input job's completion wait and
 //! after the update-queue commit that opens the world's pre-simulation update, and before any
-//! character, weapon, or vehicle update and the physics step. The stage's acts so see no concurrent
-//! world mutation, still precede the world update that reads them, and register what they spawn
-//! after the commit. When the update skips its queue (a paused context), the stage runs after it
-//! instead ([`stage::world_pre_sim_left`]).
+//! character, weapon, or vehicle update and the physics step. The stage's acts thus see no
+//! concurrent world mutation, still precede the world update that reads them, and register what
+//! they spawn after the commit. When the update skips its queue (a paused context), the stage runs
+//! after it instead ([`stage::world_pre_sim_left`]). The world's post-simulation update runs the
+//! post-step observer after the original.
 //!
 //! The tick itself ([`Game::UpdateGame`]) also counts against the frame it runs in,
 //! so the breakdown can split the frames by how many ticks they carried. Inside the tick, the run
@@ -29,8 +30,8 @@
 //! the tick's end. The online managers, which run in both and keep their own clocks, are timed on
 //! their own inside them by [`crate::hooks::online`].
 //!
-//! Threading: everything here except the AI thread bodies and the input job runs on the game thread,
-//! inside the engine's `Game::Update`.
+//! Threading: everything here except the AI thread bodies and the input job runs on the game
+//! thread, inside the engine's `Game::Update`.
 
 use std::{cell::RefCell, ffi::c_void, sync::OnceLock};
 

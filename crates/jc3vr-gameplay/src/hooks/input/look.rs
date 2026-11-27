@@ -1,12 +1,13 @@
 //! The `InputDeviceManager::Update` detour: read and consume the game's own look effectors so the
 //! headpose simulation owns the mouse-look deltas.
 //!
-//! The game polls devices via `InputDeviceManager::Update(dt)`, which populates `InputDeviceEffector`
-//! slots including `LOOK_LEFT` / `LOOK_RIGHT` / `LOOK_UP` / `LOOK_DOWN`. These are the mouse-look
-//! deltas the game's camera system reads. We intercept them post-call: read the values, clear the
-//! effectors so the game's camera doesn't respond, and feed the deltas into the headpose simulation.
-//! The same seam is where [`jc3vr_body::hooks::input::swim`] refuses backward and sideways movement in
-//! water, and where the motion controllers' poll stage lands their bindings' writes
+//! The game polls devices via `InputDeviceManager::Update(dt)`, which populates
+//! `InputDeviceEffector` slots including `LOOK_LEFT` / `LOOK_RIGHT` / `LOOK_UP` / `LOOK_DOWN`.
+//! These are the mouse-look deltas the game's camera system reads. The detour takes them after the
+//! call: it reads the values, clears the effectors so the game's camera does not respond, and feeds
+//! the deltas into the headpose simulation. The same seam is where
+//! [`jc3vr_body::hooks::input::swim`] refuses backward and sideways movement in water, and where
+//! the motion controllers' poll stage lands their bindings' writes
 //! ([`crate::controllers::bindings::stage::poll_stage`]): after the poll, so the injected state
 //! survives until the game reads it, and before the swim refusal, so it covers the controllers'
 //! input too. The bindings' decisions and acts run in the game stage, on the game thread before the
@@ -53,7 +54,7 @@ fn input_device_manager_update(manager: *mut InputDeviceManager, dt: f32) {
     if !headpose::is_active() {
         return;
     }
-    // When egui captures input, publish a zero-delta tick — the game's input is already disabled,
+    // When egui captures input, publish a zero-delta tick: the game's input is already disabled,
     // but the sim's tick cadence (mode detection, pose-pair rotation) must keep running.
     if input_captured() {
         headpose::sim::on_input_tick(0.0, 0.0, false, dt);
@@ -92,9 +93,9 @@ fn input_device_manager_update(manager: *mut InputDeviceManager, dt: f32) {
 }
 
 /// Read two opposite-direction effectors and return the net value plus whether it is delta-based (a
-/// mouse per-tick displacement) rather than an absolute axis (a stick position). Delta-based if either
-/// contributing effector is non-zero and delta-based -- the two device kinds must be turned into body
-/// yaw differently (see [`headpose::xr::advance_body_yaw`]).
+/// mouse per-tick displacement) rather than an absolute axis (a stick position). Delta-based if
+/// either contributing effector is non-zero and delta-based: the two device kinds must be turned
+/// into body yaw differently (see `jc3vr_view::headpose::xr::advance_body_yaw`).
 unsafe fn read_look_axis(
     map: &mut LocalPlayerActionMap,
     positive: Action,

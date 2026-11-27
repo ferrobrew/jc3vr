@@ -4,8 +4,11 @@
 //! the routes) undoes the bindings' writes, forgets their holds and latches, and stands down every
 //! subsystem whose acts the tick drives. A partial one keeps the holds: an action set that is still
 //! switching pauses the writes until the next OpenXR sample, and a game menu or the map pauses the
-//! acts so that what the hands hold is still held when gameplay resumes. Each set runs in the
-//! order it lists.
+//! acts so that what the hands hold is still held when gameplay resumes.
+//!
+//! Each set runs in the order it lists. One order matters: the recovery is published after the
+//! writes are released or paused, since releasing them resets it. The subsystems otherwise keep
+//! one relative order across the full sets, so that the sets differ only in what they stop.
 
 use jc3vr_body::controllers::{body::firm_ragdoll, grab, intent::hold::DevicePoll};
 use jc3vr_core::game_tick::GameTick;
@@ -81,6 +84,8 @@ pub(super) enum Step {
     PauseWheel,
     /// The physical hands' pickups pause.
     PausePickup,
+    /// The vehicle handling lets go of its controls, handles, and rail, and clears what it
+    /// published.
     Vehicles,
     /// The mounted gun lets the player go as its user.
     Mounted,

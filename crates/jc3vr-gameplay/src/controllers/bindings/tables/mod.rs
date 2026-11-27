@@ -3,18 +3,18 @@
 //! the timed presses, what each grip press is doing ([`GripLatch`]), the wingsuit's evade press,
 //! and the menu and pad latches).
 //!
-//! Each mode reads the semantic actions of its action set ([`jc3vr_view::vr::input::semantic`]), which
-//! the player can rebind in the runtime; [`jc3vr_view::vr::input::semantic::defaults`] suggests the
-//! layout. The gestures, the grabs, the chords, and the pointers read the raw controls instead, and
-//! what they claim of a hand is masked from the semantic actions bound there
+//! Each mode reads the semantic actions of its action set ([`jc3vr_view::vr::input::semantic`]),
+//! which the player can rebind in the runtime; [`jc3vr_view::vr::input::semantic::defaults`]
+//! suggests the layout. The gestures, the grabs, the chords, and the pointers read the raw controls
+//! instead, and what they claim of a hand is masked from the semantic actions bound there
 //! ([`crate::controllers::bindings::intents`]).
 //!
-//! Where a semantic action stands for a gamepad button, it injects every gameplay action the
-//! game's default gamepad keymap puts on that button, and the game's own context picks the one that
-//! applies (a virtual gamepad button). This is what keeps the game's tap and hold overloads
-//! intact: the reload button is also the holster (hold), `USE_VEHICLE_MOD` is nitrous (hold) and
-//! the turbo jump (tap), `ENTER_VEHICLE` held enters the gunner seat, and the grapple tethers on a
-//! hold, all decided by the game from the hold time the tracker ([`jc3vr_body::controllers::intent::hold`])
+//! Where a semantic action stands for a gamepad button, it injects every gameplay action the game's
+//! default gamepad keymap puts on that button, and the game's own context picks the one that
+//! applies (a virtual gamepad button). This is what keeps the game's tap and hold overloads intact:
+//! the reload button is also the holster (hold), `USE_VEHICLE_MOD` is nitrous (hold) and the turbo
+//! jump (tap), `ENTER_VEHICLE` held enters the gunner seat, and the grapple tethers on a hold, all
+//! decided by the game from the hold time the tracker ([`jc3vr_body::controllers::intent::hold`])
 //! writes. The mod resolves two overloads itself, by the press's length: the pause action, whose
 //! short press opens the commlink and long press pauses, and a vehicle's stunt and exit, which a
 //! table reads as a short and a long press ([`sink::Input::Short`] and [`sink::Input::Long`]).
@@ -26,15 +26,15 @@
 //! The shared input arbiter resolves the system chords before these tables. They consume only
 //! accepted semantic values and never recognize or cancel a second chord.
 //!
-//! The sight tuning chord drives the mod too, and only while the sight tuning tool's marker is placed
-//! ([`Controls::sight_chord`]): on foot, holding both grips and pressing the dominant A captures the
-//! held weapon's sight offset ([`jc3vr_body::controllers::aim::sights::tuning`]). While it is armed, the
-//! dominant grip withholds the grapple (squeeze the dominant grip first) and both grips withhold the
-//! jump, so the chord neither grapples nor jumps.
+//! The sight tuning chord drives the mod too, and only while the sight tuning tool's marker is
+//! placed ([`Controls::sight_chord`]): on foot, holding both grips and pressing the dominant A
+//! captures the held weapon's sight offset ([`jc3vr_body::controllers::aim::sights::tuning`]).
+//! While it is armed, the dominant grip withholds the grapple (squeeze the dominant grip first) and
+//! both grips withhold the jump, so the chord neither grapples nor jumps.
 //!
-//! The tables themselves are declared once, in [`declare`], over the vocabulary of [`sink`].
-//! [`Bindings::step`] evaluates them against the tick's intents, and [`describe`] reads the same
-//! declarations to list what each input does, for the controls summary
+//! The tables themselves are declared once, in [`declare`](mod@declare), over the vocabulary of
+//! [`sink`]. [`Bindings::step`] evaluates them against the tick's intents, and [`describe`] reads
+//! the same declarations to list what each input does, for the controls summary
 //! ([`crate::controllers::summary`]).
 
 #[cfg(test)]
@@ -99,20 +99,21 @@ pub struct Step {
     pub body_turn: f32,
     /// The seated crouch toggle was flicked this tick.
     pub(crate) crouch_toggle: bool,
-    /// The grab each hand's grip started this tick, indexed by [`Hand::index`]: what the hand was in
-    /// reach of at the press, or what a fist came to while the grip was held ([`GripLatch`]). The
-    /// grabbing subsystems act on it; the tables inject nothing for it.
+    /// The grab each hand's grip started this tick, indexed by [`Hand::index`]: what the hand was
+    /// in reach of at the press, or what a fist came to while the grip was held ([`GripLatch`]).
+    /// The grabbing subsystems act on it; the tables inject nothing for it.
     pub grabs: [Option<GrabVolume>; 2],
     /// The sight tuning capture chord was pressed this tick.
     pub(crate) sight_capture: bool,
     /// Each hand's weapon wheel inputs, by [`Hand::index`]: the weapon-select trackpad press with
     /// the quadrant it latched to, and the `weapon_wheel` action's value. The wheel
-    /// ([`jc3vr_weapons::controllers::weapons::wheel`]) acts on them; the tables inject nothing for the
-    /// `weapon_wheel` action.
+    /// ([`jc3vr_weapons::controllers::weapons::wheel`]) acts on them; the tables inject nothing for
+    /// the `weapon_wheel` action.
     pub wheel: [WheelPress; 2],
     /// The grapple's button is held this tick, in a mode with a grapple: the hand is aiming it.
     pub grapple_held: bool,
-    /// What the grapple's button asks of the lock this tick ([`jc3vr_grapple::grapple::physical::lock`]).
+    /// What the grapple's button asks of the lock this tick
+    /// ([`jc3vr_grapple::grapple::physical::lock`]).
     pub(crate) grapple_lock: Option<LockButton>,
     /// The grapple's button fired the seat grapple this tick ([`jc3vr_grapple::grapple::seat`]).
     pub(crate) grapple_seat_fire: Option<SeatRequest>,
@@ -299,7 +300,8 @@ impl Bindings {
         self.grapple.current_permissions(context)
     }
 
-    /// Cancel only a grapple episode attributable to a trigger whose ownership or usability changed.
+    /// Cancel only a grapple episode attributable to a trigger whose ownership or usability
+    /// changed.
     pub(crate) fn cancel_trigger_gestures(&mut self, changed: [bool; 2]) {
         if Hand::BOTH
             .into_iter()

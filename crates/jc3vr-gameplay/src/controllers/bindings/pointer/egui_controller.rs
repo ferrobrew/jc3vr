@@ -1,6 +1,6 @@
-//! The egui debug panel's controller pointer: either hand's aim ray against the panel, accepted menu
-//! pointer-select delivery as the primary button, its upper face button as the secondary, and its
-//! thumbstick as the wheel.
+//! The egui debug panel's controller pointer: either hand's aim ray against the panel, accepted
+//! menu pointer-select delivery as the primary button, its upper face button as the secondary, and
+//! its thumbstick as the wheel.
 //!
 //! The input tick steps it once per tick ([`update_egui_controller`]) from the controller frame
 //! with the debug panel chord's presses already masked out, and queues one [`ControllerUpdate`] per
@@ -16,14 +16,14 @@
 //!
 //! A trigger press is the derived [`Button::TriggerPress`], whose press and release thresholds
 //! differ, so a partial pull resting near one threshold does not chatter. The press logic itself is
-//! the game-UI pointer's ([`ControllerState`]): a press clicks only after a released sample and only
-//! when it begins with the ray on the panel, and a press held across the ray leaving the panel
+//! the game-UI pointer's ([`ControllerState`]): a press clicks only after a released sample and
+//! only when it begins with the ray on the panel, and a press held across the ray leaving the panel
 //! drags along the panel's edge.
 //!
-//! A hand grabs the panel by pressing its grip with its ray on the panel ([`GrabTracker`]): the panel
-//! then follows the hand rigidly, and the hand's thumbstick pushes and pulls it along the aim ray
-//! instead of scrolling, until the grip is released. The grip is not a pointer button, so a grab
-//! never clicks.
+//! A hand grabs the panel by pressing its grip with its ray on the panel ([`GrabTracker`]): the
+//! panel then follows the hand rigidly, and the hand's thumbstick pushes and pulls it along the aim
+//! ray instead of scrolling, until the grip is released. The grip is not a pointer button, so a
+//! grab never clicks.
 //!
 //! A held press stays a click however long it is held, until the hit moves past the click slop
 //! ([`ClickSlop`]): until then the pointer stays where the press began, so a hand's tremor never

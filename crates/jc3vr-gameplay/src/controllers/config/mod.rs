@@ -1,17 +1,16 @@
-//! The motion-controller configuration: the master switch and one sub-struct per
-//! subsystem of the plan of record (`docs/mod/input/controllers-and-roomscale.md`), each holding its
-//! toggle and the tuning beside it.
+//! The motion-controller configuration: the master switch and one group per subsystem of the plan
+//! of record (`docs/mod/input/controllers-and-roomscale.md`), each holding the settings a player
+//! sets for it.
 //!
-//! `ControllersConfig::new()` ships as the full gameplay preset
-//! (`presets::Preset::Controllers`),
-//! so that hand aiming, roomscale, weapon handling, vehicle steering (including the wingsuit's arm
-//! steering and the parachute's handles), and the debug gizmos all work, and show, out of the box.
-//! `presets::preset_modified` checked against that preset stays false for the defaults.
+//! `ControllersConfig::new()` ships as the full gameplay preset (the debug UI's
+//! `presets::Preset::Controllers`), so that hand aiming, roomscale, weapon handling, and vehicle
+//! steering (including the wingsuit's arm steering and the parachute's handles) all work out of the
+//! box, and the debug UI's `presets::preset_modified` stays false for the defaults.
 //!
 //! Stick turning is not configured here: the controller scheme's right stick drives the same body
 //! yaw as the gamepad's look input, so it shares
-//! [`VrTurnConfig`](jc3vr_view::headpose::config::VrTurnConfig) (`headpose.vr_turn`) rather than keeping
-//! a second copy of the smooth and snap settings.
+//! [`VrTurnConfig`](jc3vr_view::headpose::config::VrTurnConfig) (`headpose.vr_turn`) rather than
+//! keeping a second copy of the smooth and snap settings.
 //!
 //! Each group's type and its slot live beside the subsystem that owns them (`WEAPONS_CONFIG` beside
 //! [`WeaponsConfig`] in [`jc3vr_weapons::controllers::weapons::config`], `controllers.enabled` in
@@ -84,9 +83,9 @@ pub struct ControllersConfig {
     /// are still created and attached with the session, because attachment is possible only once
     /// per session and turning this on later must not require a new one.
     pub enabled: bool,
-    /// The hand that holds and fires the guns. The other hand fires the grapple. Mirroring swaps the
-    /// bindings and the dual-wield pistols' attach bones; a single gun stays on the model's right
-    /// hand, and the grapple gauntlet on the model's left arm. The hand roles follow
+    /// The hand that holds and fires the guns. The other hand fires the grapple. Mirroring swaps
+    /// the bindings and the dual-wield pistols' attach bones; a single gun stays on the model's
+    /// right hand, and the grapple gauntlet on the model's left arm. The hand roles follow
     /// [`ControllersConfig::acting_hand`], which differs from this until a restart after a change.
     pub dominant_hand: Hand,
     /// Raw input interpretation: the derived press thresholds and hand tracking.

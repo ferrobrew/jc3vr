@@ -1,29 +1,37 @@
 //! The controller-to-game bindings: on every engine input tick, map the latest controller frame
 //! and its edges to the game's actions for the current mode, and inject them.
 //!
-//! - [`controls`](jc3vr_body::controllers::intent::controls) reduces the frame to logical controls (deadzones, edges, what each grip would
-//!   take);
+//! - [`controls`](jc3vr_body::controllers::intent::controls) reduces the frame to logical controls
+//!   (deadzones, edges, what each grip would take);
 //! - [`intents`] reads the tick's semantic actions and masks what the mod claims of each hand;
 //! - [`tables`] maps the semantic actions to the wanted game actions per mode;
 //! - `bail` chooses, once per press, between the vehicle exit and the parachute bail for the
 //!   exit's long press;
-//! - [`hold`](jc3vr_body::controllers::intent::hold) turns the wanted actions into effector writes with the game's hold timing;
-//! - the grip model ([`jc3vr_body::controllers::grab`]) gathers the targets the weapon handling, the
-//!   vehicle handling, and the physical hands provide, resolves each hand among them, and hands
-//!   each grab to the subsystem that owns its target;
-//! - [`grapple_button`](jc3vr_grapple::controllers::grapple_button) reads the grapple button's gestures while tethers or a line are attached:
-//!   a tap, a double tap that releases the tethers, a hold that tethers or tightens, and a sharp
-//!   pull that zips;
-//! - [`yank`](jc3vr_grapple::controllers::yank) detects the yank gesture on the grapple hand, a sharp pull while the grapple button is
-//!   held, and the snatch's own yank while the grip holds a remote target
-//!   ([`jc3vr_grapple::controllers::snatch`]);
+//! - [`hold`](jc3vr_body::controllers::intent::hold) turns the wanted actions into effector writes
+//!   with the game's hold timing;
+//! - the grip model ([`jc3vr_body::controllers::grab`]) gathers the targets the weapon handling,
+//!   the vehicle handling, the physical hands, the snatch, and the grapple line provide, resolves
+//!   each hand among them, and hands each grab to the subsystem that owns its target;
+//! - [`grapple_button`](jc3vr_grapple::controllers::grapple_button) reads the grapple button's
+//!   gestures while tethers or a line are attached: a tap, a double tap that releases the tethers,
+//!   a hold that tethers or tightens, and a sharp pull that zips;
+//! - [`yank`](jc3vr_grapple::controllers::yank) detects the yank gesture on the grapple hand, a
+//!   sharp pull while the grapple button is held, and the snatch's own yank while the grip holds a
+//!   remote target ([`jc3vr_grapple::controllers::snatch`]);
 //! - `recovery` masks a hand after a loss of its pose or of injection until its controls rest
 //!   ([`HandRecovery`]): its raw controls, and every semantic action on it;
 //! - [`inject`] applies the writes to the player and UI action maps;
 //! - [`stage`] splits the tick between the input job and the game thread, and hands the writes and
 //!   the body turn between them;
 //! - [`policy_a`] arbitrates the shared system chords before raw, semantic, and pointer consumers,
-//!   retaining ownership while gameplay stands down.
+//!   retaining ownership while gameplay stands down;
+//! - `gun_fire` and `trigger_ownership` give each hand's trigger to the gun it holds or to the
+//!   mode's own use of it;
+//! - `flight`, `heli_hang`, and `rail` rework the tick's actions for the wingsuit gestures, the
+//!   hang under a helicopter, and the release from it;
+//! - [`pointer`] turns the controller frame into the game-UI and debug panel pointers;
+//! - `tick` runs one tick as ordered stages, `stand_down` stops what the tick drives when the
+//!   bindings do not inject, and `summary` reads the tick for the controls summary.
 //!
 //! The tick runs in two stages ([`stage`]). [`game_tick`], the decisions and the subsystems' acts
 //! in the order `tick` lays out, runs in the game stage, on the game thread at the top of the
@@ -93,7 +101,7 @@ pub use crate::controllers::bindings::{
     report::{Idle, ReportedWrite, TickReport, recovery_status},
 };
 
-/// The bindings' game stage ([`stage::game_stage`]): take in where the last writes landed, detect
+/// The bindings' game stage (`stage::game_stage`): take in where the last writes landed, detect
 /// the mode (which selects the action set), evaluate the bindings, run the subsystems' acts, and
 /// produce this tick's writes. Under [`Delivery::Inline`] the writes land before this returns;
 /// under [`Delivery::Deferred`] they are returned for the next poll stage to land.

@@ -2,14 +2,14 @@
 //!
 //! In play the engine runs its input update in the input job (`RunInputThread_Proxy`), which
 //! overlaps game-thread work that mutates the world: effect physics models, AI path requests, the
-//! traffic and ambient-spawn starts, task continuations, and the character manager's
-//! pre-simulation step. The engine keeps the two apart by partition, so the job may touch only input
-//! and UI state. The input tick is split along the same line:
+//! traffic and ambient-spawn starts, task continuations, and the character manager's pre-simulation
+//! step. The engine keeps the two apart by partition, so the job may touch only input and UI state.
+//! The input tick is split along the same line:
 //!
 //! - the poll stage ([`poll_stage`]) runs in the device poll's post-call detour
-//!   ([`crate::hooks::input::look`]). It lands the action writes the last game stage produced, right
-//!   after the device poll, where every reader of the action maps sees them (the UI's input update
-//!   later in the same job reads the pause and commlink actions from the player map, and the
+//!   ([`crate::hooks::input::look`]). It lands the action writes the last game stage produced,
+//!   right after the device poll, where every reader of the action maps sees them (the UI's input
+//!   update later in the same job reads the pause and commlink actions from the player map, and the
 //!   challenge update reads the player map before the world update), and hands the tick to the game
 //!   stage;
 //! - the game stage ([`game_stage`]) runs on the game thread at the top of the world's
@@ -20,17 +20,18 @@
 //!   active-input-device pin, and produces the writes the next poll stage lands.
 //!
 //! The top of that queue is after the world's update-queue commit
-//! ([`UpdateQueue::CommitAddRemove`](jc3gi::update_queue::UpdateQueue::CommitAddRemove)), where
-//! the world's pre-simulation update makes the updates registered since the last commit live
+//! ([`UpdateQueue::CommitAddRemove`](jc3gi::update_queue::UpdateQueue::CommitAddRemove)), where the
+//! world's pre-simulation update makes the updates registered since the last commit live
 //! ([`PreSimTurn`]). An object the stage spawns there joins the queue at the next commit, at the
 //! end of the render update, so its first updates are the next tick's, as for an object the
 //! engine's own updates spawn. Spawned before the commit, an explosive's post-simulation update
-//! would run in the same tick, before the ammunition manager's pass at the end of the tick has
-//! made its physics body, and a grenade's dereferences that body
+//! would run in the same tick, before the ammunition manager's pass at the end of the tick has made
+//! its physics body, and a grenade's dereferences that body
 //! ([`Grenade::UpdatePostSim`](jc3gi::equipment::explosive::Grenade::UpdatePostSim)). The stage
 //! therefore runs there whenever the queue runs, and elsewhere (a paused update, which skips the
 //! queue and the ammunition manager's pass, or an inline game stage) it runs with [`Spawn`]
-//! refused, which acts that spawn such objects check through [`spawn`](jc3vr_body::controllers::intent::stage::spawn).
+//! refused, which acts that spawn such objects check through
+//! [`spawn`](jc3vr_body::controllers::intent::stage::spawn).
 //!
 //! Where the poll stage runs outside the input job (the load state, and the frontend before its
 //! main menu, call the input update inline on the game thread with no world update after it), the
@@ -206,11 +207,11 @@ pub(crate) fn poll_stage(dt: f32, poll: DevicePoll) -> Option<f32> {
     HANDOFF.lock().take_body_turn()
 }
 
-/// The game stage: run the bindings' decisions and acts for the tick the last poll stage
-/// published, and the active-input-device pin, with `spawn` saying whether the acts may spawn
-/// objects that register for the world's updates ([`spawn`](jc3vr_body::controllers::intent::stage::spawn)). Does nothing when no poll stage ran
-/// since the last game stage (the device poll was skipped, or the frontend or load state already
-/// ran this tick inline).
+/// The game stage: run the bindings' decisions and acts for the tick the last poll stage published,
+/// and the active-input-device pin, with `spawn` saying whether the acts may spawn objects that
+/// register for the world's updates ([`spawn`](jc3vr_body::controllers::intent::stage::spawn)).
+/// Does nothing when no poll stage ran since the last game stage (the device poll was skipped, or
+/// the frontend or load state already ran this tick inline).
 ///
 /// Must run on the game thread with no input job in flight: at the top of the world's
 /// pre-simulation queue, after the world's pre-simulation update when it skipped its queue, or
@@ -440,7 +441,8 @@ mod tests {
     }
 
     /// Only the first band after the update begins is its queue's top: later bands (the
-    /// post-simulation, post-camera, and render queues), and bands outside the update, take nothing.
+    /// post-simulation, post-camera, and render queues), and bands outside the update, take
+    /// nothing.
     #[test]
     fn only_the_first_band_of_the_update_takes_the_stage() {
         let mut turn = PreSimTurn::default();

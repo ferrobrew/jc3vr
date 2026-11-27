@@ -301,7 +301,8 @@ pub(super) fn triggers(
     }
     controls.weapon_cycle = live.settings.stick_click_cycles;
     controls.pointer_hand = owns_menu_trigger();
-    // The off-hand's trigger fires the gun it holds, in a mode whose triggers fire the hand weapons.
+    // The off-hand's trigger fires the gun it holds, in a mode whose triggers fire the hand
+    // weapons.
     let fires_guns = tables::triggers_fire_hand_weapons(detection.mode);
     let held = offers.held.filter(|_| fires_guns).unwrap_or([false; 2]);
     controls.dual_wield = held[live.dominant.other().index()];

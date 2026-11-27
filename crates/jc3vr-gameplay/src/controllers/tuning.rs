@@ -86,7 +86,7 @@ impl BindingsTuning {
 }
 
 /// When lateral movement leaves a native helicopter hang
-/// ([`crate::controllers::bindings::rail`]).
+/// (the bindings' `rail`).
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RailReleaseTuning {

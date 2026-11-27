@@ -1,13 +1,13 @@
 //! The game's context button hints, relabelled for the controllers: the hints the HUD has queued
 //! (release the tethers, the gunner seat, a hang jump, a mission's prompt), each shown on the wrist
 //! with the controller input that drives its action in the current mode, rather than the gamepad
-//! glyph the hidden HUD hint would show (`controllers::summary::game_hints`).
+//! glyph the hidden HUD hint would show (the HUD's `controllers::summary::game_hints`).
 //!
 //! The input tick reads the HUD's queue ([`read`]) without waiting on its lock, and [`lines`] turns
 //! each hint into a row of the summary: the hint's own localised description, with the glyph of the
 //! summary row whose actions include the hint's action, and the "HOLD" prefix for a hint the game
-//! asks to be held. A hint whose action no row drives is left out, since the wrist cannot say how to
-//! do it.
+//! asks to be held. A hint whose action no row drives is left out, since the wrist cannot say how
+//! to do it.
 
 use jc3gi::{
     input::{button_mapping::ButtonInteraction, input_action_map::Action},

@@ -67,12 +67,12 @@ static GRIP_ORDER: [GripSource; 19] = [
 /// drive applies the same ones.
 static TARGET_STAGES: [HandStageFn; 2] = [vehicle_controls, gun_targets];
 
-/// The rest of the hand composition's stages, in the order they run after the target stages:
-/// aiming down the sights lifts the gun to the eye and the hands as the sights leave them are
-/// recorded; the synthetic recoil and the wall probe displace a kinematic gun hand; a hand whose gun
-/// is a body gets its sighted pose back, since the poses between are the gun body's to give; the
-/// hand bodies hold a pressed palm at its surface and draw a body's hand at its body; and an
-/// anchored grapple hand holds the line, last, over all of them.
+/// The rest of the hand composition's stages, in the order they run after the target stages: aiming
+/// down the sights lifts the gun to the eye and the hands as the sights leave them are recorded;
+/// the synthetic recoil and the wall probe displace a kinematic gun hand; a hand whose gun is a
+/// body gets its sighted pose back, since the poses between are the gun body's to give; the hand
+/// bodies hold a pressed palm at its surface and draw a body's hand at its body; and an anchored
+/// grapple hand holds the line, last, over all of them.
 static HAND_STAGES: [HandStageFn; 7] = [
     aim_down_sights,
     stages::record_sighted,
