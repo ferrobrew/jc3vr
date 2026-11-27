@@ -1,9 +1,8 @@
 //! Registers the systems above the hands with the hands: the hand composition's stages in their
-//! order, the observers of each world weapon at its render update in theirs, the hand bodies'
-//! post-step sample taken before each rendered frame's composition, the weapon handling's held-item
-//! source ([`jc3vr_body::controllers::held`]) and its held guns' support and weight targets, which
-//! the hand bodies' drive applies ([`jc3vr_body::controllers::held::guns`]). The grapple fills its
-//! pump of the hang swing itself ([`jc3vr_grapple::register`]).
+//! order and the observers of each world weapon at its render update in theirs. The weapon handling
+//! fills its held-item source and its held guns' targets in its own `register_body`
+//! (`register_below`), and the grapple fills its pump of the hang swing itself
+//! ([`jc3vr_grapple::register`]).
 //!
 //! Each fills a field of the body's contributions, which reports any still empty to the install's
 //! registration check ([`jc3vr_body::contributions::register`]). The tables here declare the
@@ -21,20 +20,14 @@ use jc3vr_body::{
         held::guns,
     },
 };
-use jc3vr_physical::controllers::{physical_hands, physical_hands::physics};
+use jc3vr_physical::controllers::physical_hands;
 use jc3vr_vehicles::controllers::vehicles;
-use jc3vr_weapons::controllers::{
-    weapons,
-    weapons::{ads, collide, grenade, gun_bodies, hold::rack, recoil},
-};
+use jc3vr_weapons::controllers::weapons::{ads, collide, grenade, hold::rack, recoil};
 
 pub(super) fn register(body: &mut BodyContributions) {
     body.target_stages = &TARGET_STAGES;
     body.hand_stages = &HAND_STAGES;
     body.weapon_observers = &WEAPON_OBSERVERS;
-    body.post_step_sample = Some(post_step_sample);
-    weapons::register_held::register(body);
-    body.gun_targets = Some(gun_bodies::apply);
 }
 
 /// The hand composition's target stages, in the order they run: a hand on a physical vehicle
@@ -95,10 +88,4 @@ fn hand_bodies(c: &mut HandComposition) {
 
 fn grapple_anchor(c: &mut HandComposition) {
     anchor::apply(&mut c.hands, c.head, c.world_scale);
-}
-
-fn post_step_sample() {
-    // SAFETY: the late update's frame begins on the game thread from `Game::UpdateRender`, after
-    // the simulation and outside its step.
-    unsafe { physics::sample_render_offsets() };
 }
