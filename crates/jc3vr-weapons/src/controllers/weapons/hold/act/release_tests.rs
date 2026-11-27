@@ -4,7 +4,7 @@ use crate::controllers::weapons::{
         chamber::ActionKind,
         travel::{ActionTravel, TravelGrip},
     },
-    state::pause,
+    stand_down::pause,
 };
 
 fn grips(hand: Hand, gun: bool, off: bool) -> [bool; 2] {

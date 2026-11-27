@@ -71,6 +71,7 @@ pub mod capabilities;
 pub mod collide;
 pub mod config;
 pub mod contents;
+mod context;
 pub mod docks;
 pub mod dual_wield;
 pub mod empty;
@@ -100,6 +101,7 @@ pub mod reload;
 pub mod scope;
 mod self_hits;
 pub(crate) mod sounds;
+mod stand_down;
 mod state;
 mod types;
 pub mod unarmed_fire;
@@ -107,13 +109,13 @@ pub mod volumes;
 pub mod wheel;
 
 pub use begin::begin_tick;
-// Re-exported so the weapon-handling submodules that need them (the weapon wheel, the reload) can
-// reach them at the weapon handling's own path, as they did before the input tick's two halves
-// moved out of this file.
-use begin::{gameplay, weighted_hands};
+// Re-exported so the weapon-handling submodules that need it (the reload) can reach it at the
+// weapon handling's own path.
+use begin::weighted_hands;
 pub use finish::finish_tick;
 use re_utilities::hook_library::HookLibrary;
-pub use state::{StandDown, StandDownScope, stand_down, status};
+pub use stand_down::{StandDown, StandDownScope, stand_down};
+pub use state::status;
 pub use types::{TickStart, WeaponsStatus};
 
 /// The weapon handling's hooks, aggregated by `controllers::hook_library`.
@@ -133,148 +135,4 @@ pub fn hook_library() -> HookLibrary {
         .with_hook_library(heft::hook_library())
         .with_hook_library(reload::hook_library())
         .with_hook_library(wheel::hook_library())
-}
-
-#[cfg(test)]
-mod tests {
-    use jc3gi::{character::inventory::WeaponSlot, input::input_action_map::Action};
-    use jc3vr_body::controllers::{
-        grab::GrabVolume,
-        intent::{
-            controls::ButtonControl,
-            hold::{Desired, MapKind, Target, Want},
-        },
-        mode::{AirborneVariant, Mode, OnFootVariant},
-    };
-    use jc3vr_input::frame::Hand;
-
-    use crate::controllers::{
-        loadout::{Socket, grab::SocketRefusal},
-        weapons::{
-            StandDown, StandDownScope,
-            begin::{entered_body_volumes, gameplay},
-            engine::{HeldWeapon, Wielded},
-            finish::{cues_grab, hold_fire_back, primary_trigger_idle},
-            foregrip::Transition,
-            types::{GrabOutcome, SocketOutcome},
-        },
-    };
-
-    #[test]
-    fn only_leaving_the_controllers_puts_the_loadout_back_and_only_a_pause_keeps_the_hands() {
-        let scopes = [
-            (StandDown::Disabled, StandDownScope::Loadout),
-            (StandDown::GamepadScheme, StandDownScope::Loadout),
-            (StandDown::NoControllers, StandDownScope::Hands),
-            (StandDown::HandsInactive, StandDownScope::Hands),
-            (StandDown::PollDisabled, StandDownScope::Pause),
-            (StandDown::ModPanel, StandDownScope::Pause),
-            (StandDown::CaptureCancel, StandDownScope::Pause),
-            (StandDown::Menu, StandDownScope::Pause),
-        ];
-        for (reason, scope) in scopes {
-            assert_eq!(reason.scope(), scope, "{reason:?}");
-        }
-    }
-
-    #[test]
-    fn explosive_pouches_and_world_pickup_keep_their_existing_modes() {
-        assert!(gameplay(Mode::OnFoot(OnFootVariant::Ground)));
-        assert!(gameplay(Mode::Airborne(AirborneVariant::Parachute)));
-        assert!(!gameplay(Mode::Airborne(AirborneVariant::Wingsuit)));
-        assert!(!gameplay(Mode::OnFoot(OnFootVariant::Swimming)));
-        assert!(!gameplay(Mode::Ui));
-    }
-
-    #[test]
-    fn a_hand_entering_a_socket_or_a_pouch_is_cued_once() {
-        let hip = Some(GrabVolume::Socket(Socket::Hip(Hand::Right)));
-        let pouch = Some(GrabVolume::MagazinePouch);
-        let foregrip = Some(GrabVolume::Foregrip);
-        assert_eq!(
-            entered_body_volumes([None, None], [pouch, hip]),
-            [true, true]
-        );
-        // Staying in a volume is not entering it again.
-        assert_eq!(
-            entered_body_volumes([pouch, hip], [pouch, hip]),
-            [false, false]
-        );
-        // Moving from one body volume straight into another is.
-        assert_eq!(
-            entered_body_volumes([hip, None], [pouch, None]),
-            [true, false]
-        );
-        // The foregrip is not on the body; its grab is cued instead.
-        assert_eq!(
-            entered_body_volumes([None; 2], [foregrip, None]),
-            [false, false]
-        );
-        assert!(cues_grab(GrabOutcome::Foregrip(Transition::Grabbed)));
-        assert!(cues_grab(GrabOutcome::Socket(SocketOutcome::Docked)));
-        assert!(!cues_grab(GrabOutcome::Socket(SocketOutcome::Refused(
-            SocketRefusal::Occupied(Socket::Hip(Hand::Left))
-        ))));
-        assert!(!cues_grab(GrabOutcome::Magazine));
-    }
-
-    fn rifle_in(hand: Hand) -> HeldWeapon {
-        HeldWeapon {
-            address: 0x1000,
-            wielded: Wielded {
-                slot: WeaponSlot::E_SLOT_TWO_HANDED,
-                hands: Hand::BOTH.map(|h| h == hand),
-            },
-            holder: Some(hand),
-            two_handed: true,
-            class: jc3vr_body::controllers::held::guns::HeftClass::of(0, true),
-        }
-    }
-
-    fn triggers(left: bool, right: bool) -> [ButtonControl; 2] {
-        let pulled = |down| ButtonControl {
-            down,
-            ..ButtonControl::default()
-        };
-        [pulled(left), pulled(right)]
-    }
-
-    #[test]
-    fn only_a_hand_holding_the_gun_fires_it() {
-        let left_rifle = Some(rifle_in(Hand::Left));
-        // The other trigger alone fires nothing while the gun is in this hand.
-        assert!(primary_trigger_idle(left_rifle, &triggers(false, true)));
-        // The holding hand's trigger fires it, with or without the other trigger.
-        assert!(!primary_trigger_idle(left_rifle, &triggers(true, false)));
-        assert!(!primary_trigger_idle(left_rifle, &triggers(true, true)));
-        // No trigger pulled holds nothing back.
-        assert!(!primary_trigger_idle(left_rifle, &triggers(false, false)));
-        // Mirrored: the trigger of a gun in the left hand does not fire the right-held gun.
-        let right_rifle = Some(rifle_in(Hand::Right));
-        assert!(primary_trigger_idle(right_rifle, &triggers(true, false)));
-        assert!(!primary_trigger_idle(right_rifle, &triggers(false, true)));
-        // Pistols in both hands fire from either trigger, and no weapon is the game's as before.
-        let mut pair = rifle_in(Hand::Right);
-        pair.wielded.hands = [true; 2];
-        assert!(!primary_trigger_idle(Some(pair), &triggers(true, false)));
-        assert!(!primary_trigger_idle(None, &triggers(true, true)));
-    }
-
-    #[test]
-    fn a_weapon_action_holds_only_the_fire_inputs_back() {
-        let want = |action| Desired {
-            target: Target {
-                map: MapKind::Player,
-                action,
-            },
-            want: Want::Hold(1.0),
-        };
-        let mut desired = vec![
-            want(Action::FIRE_RIGHT),
-            want(Action::R2),
-            want(Action::JUMP),
-        ];
-        hold_fire_back(&mut desired);
-        assert_eq!(desired, vec![want(Action::JUMP)]);
-    }
 }

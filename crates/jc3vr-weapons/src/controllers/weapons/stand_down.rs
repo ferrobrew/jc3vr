@@ -1,0 +1,327 @@
+//! The weapon handling's stand-down: why it stands down, how much of it stops for each reason, and
+//! each subsystem's part, in the order they run.
+//!
+//! The order matters in three places, and is otherwise the order the subsystems were added in:
+//!
+//! - the C4 throw puts the detonator back on the chest before the detonator's model is released;
+//! - the hold lets go of the attach bones before the armed weapons are disarmed onto the body, so
+//!   that the game's own layout, not the mod's, is the one the disarm restores;
+//! - the tick's own state goes last, after every subsystem that reads the begin half's handoff.
+//!
+//! The loadout table's stop, for the reasons that leave the controllers, runs after all of them.
+
+use jc3vr_body::controllers::held::guns::{self, GunHolds};
+use jc3vr_core::game_tick::GameTick;
+
+use crate::controllers::{
+    loadout::contents,
+    weapons::{
+        ads, c4, collide, dual_wield, foregrip, grenade, grip_watch, heft, hold, hold::armed,
+        inventory, pouch_models, pouch_return, recoil, regions, reload, state::STATE, wheel,
+    },
+};
+
+/// Why the weapon handling stands down, which decides how much of it stops.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum StandDown {
+    /// The controllers are disabled in the settings.
+    Disabled,
+    /// The gamepad scheme is in effect.
+    GamepadScheme,
+    /// No controller frame, or no active controller.
+    NoControllers,
+    /// The hands are not active (no tracked hands to act with).
+    HandsInactive,
+    /// The game's device manager is disabled, so its device poll does not run.
+    PollDisabled,
+    /// The mod's debug UI owns the controls.
+    ModPanel,
+    /// The debug UI's capture of the controls cancelled the tick's routes.
+    CaptureCancel,
+    /// A game menu or the map is open.
+    Menu,
+}
+
+/// How much of the weapon handling a [`StandDown`] stops.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum StandDownScope {
+    /// Skip the tick halves but keep what the hands hold.
+    Pause,
+    /// Stop acting and forget the tick's weapons, keeping the loadout table.
+    Hands,
+    /// Stop acting, and put the loadout table back into the game's slots.
+    Loadout,
+}
+
+impl StandDown {
+    /// How much of the weapon handling this reason stops.
+    pub fn scope(self) -> StandDownScope {
+        match self {
+            Self::Disabled | Self::GamepadScheme => StandDownScope::Loadout,
+            Self::NoControllers | Self::HandsInactive => StandDownScope::Hands,
+            Self::PollDisabled | Self::ModPanel | Self::CaptureCancel | Self::Menu => {
+                StandDownScope::Pause
+            }
+        }
+    }
+}
+
+/// Stand the weapon handling down for `reason`, as far as its [`StandDown::scope`] says, running
+/// each subsystem's part in order. Called on every input tick the weapon handling's tick halves do
+/// not run.
+pub fn stand_down(game: &GameTick<'_>, reason: StandDown) {
+    match reason.scope() {
+        StandDownScope::Pause => pause(),
+        StandDownScope::Hands => run(game, &HANDS),
+        StandDownScope::Loadout => {
+            run(game, &HANDS);
+            run(game, &LOADOUT);
+        }
+    }
+}
+
+/// Pause: physical magazine work is cancelled, and the grip release stands down, so that the first
+/// tick back ends a gun's hold with the grip as it is then. What the hands hold stays held; the
+/// debug panel stood the weapons down instead, which took the left hand's SMG out of it the moment
+/// the panel opened on the 14 November take.
+pub(crate) fn pause() {
+    for step in &PAUSE {
+        (step.run)();
+    }
+}
+
+/// One subsystem's part in a stand-down: `F` is `fn()` for a pause's, which reads nothing of the
+/// game, and `fn(&GameTick)` for the others.
+struct Step<F> {
+    /// The subsystem, for the order's test.
+    #[cfg_attr(not(test), expect(dead_code, reason = "read by the order's test"))]
+    name: &'static str,
+    run: F,
+}
+
+/// Run `steps` in order.
+fn run(game: &GameTick<'_>, steps: &[Step<fn(&GameTick<'_>)>]) {
+    for step in steps {
+        (step.run)(game);
+    }
+}
+
+/// The pause's steps.
+const PAUSE: [Step<fn()>; 2] = [
+    Step {
+        name: "reload extraction",
+        run: reload::cancel_extraction_on_standdown,
+    },
+    Step {
+        name: "grip release",
+        run: hold::act::cancel_releases,
+    },
+];
+
+/// Stop acting and forget the tick's weapons. Every step runs in the game stage, on the game
+/// thread before the world update, which is what the unsafe ones need.
+const HANDS: [Step<fn(&GameTick<'_>)>; 23] = [
+    // The foregrip hold lets go.
+    Step {
+        name: "foregrip",
+        run: |_| foregrip::clear(),
+    },
+    // The hands' published contents empty.
+    Step {
+        name: "contents",
+        run: |_| contents::clear(),
+    },
+    // The hand bodies hold no gun.
+    Step {
+        name: "gun bodies",
+        run: |_| guns::publish(GunHolds::default()),
+    },
+    // No gun weighs on a hand, and none is held still.
+    Step {
+        name: "heft",
+        run: |_| {
+            heft::observe([None; 2]);
+            heft::freeze([false; 2]);
+        },
+    },
+    Step {
+        name: "aim down sights",
+        run: |_| ads::observe([None; 2]),
+    },
+    Step {
+        name: "collision",
+        run: |_| collide::observe([None; 2]),
+    },
+    Step {
+        name: "grip watch",
+        run: |_| grip_watch::clear(),
+    },
+    Step {
+        name: "recoil",
+        run: |_| recoil::clear(),
+    },
+    // Safe grenades are released inertly; a caught grenade's fuse runs on.
+    Step {
+        name: "grenades",
+        run: |_| grenade::stand_down(),
+    },
+    Step {
+        name: "pouch models",
+        // SAFETY: the game stage, on the game thread before the world update.
+        run: |_| unsafe { pouch_models::stand_down() },
+    },
+    // A held charge is taken back, and the detonator goes back on the chest.
+    Step {
+        name: "C4",
+        run: |_| c4::stand_down(),
+    },
+    // After the C4 throw's stand-down, which puts the detonator back.
+    Step {
+        name: "detonator model",
+        // SAFETY: as above.
+        run: |_| unsafe { c4::detonator::release_model() },
+    },
+    Step {
+        name: "pouch return",
+        run: |_| pouch_return::stand_down(),
+    },
+    Step {
+        name: "single pistols",
+        // SAFETY: as above.
+        run: |_| unsafe { dual_wield::single::stand_down() },
+    },
+    // The mod stops owning the attach bones.
+    Step {
+        name: "hold",
+        run: |_| hold::clear(),
+    },
+    Step {
+        name: "hold snaps",
+        run: |_| hold::act::clear(),
+    },
+    // The hands fire nothing.
+    Step {
+        name: "hand fire",
+        run: |_| hold::tick::stand_down(),
+    },
+    Step {
+        name: "take",
+        run: |_| hold::take::stand_down(),
+    },
+    Step {
+        name: "regions",
+        run: |_| regions::stand_down(),
+    },
+    // After the hold lets go of the attach bones.
+    Step {
+        name: "armed",
+        run: armed::stand_down,
+    },
+    // A round in hand drops, and the weapons go back to the game.
+    Step {
+        name: "reload",
+        run: |_| reload::stand_down(),
+    },
+    // An open wheel closes as a cancel.
+    Step {
+        name: "wheel",
+        run: wheel::stand_down,
+    },
+    // Last: the begin half's handoff and the tick's targets.
+    Step {
+        name: "tick",
+        run: |_| STATE.lock().stand_down(),
+    },
+];
+
+/// Put the loadout table back into the game's slots, after the hands stand down.
+const LOADOUT: [Step<fn(&GameTick<'_>)>; 1] = [Step {
+    name: "loadout table",
+    run: inventory::stand_down,
+}];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn names(scope: StandDownScope) -> Vec<&'static str> {
+        let hands = HANDS.iter().map(|step| step.name);
+        match scope {
+            StandDownScope::Pause => PAUSE.iter().map(|step| step.name).collect(),
+            StandDownScope::Hands => hands.collect(),
+            StandDownScope::Loadout => hands.chain(LOADOUT.iter().map(|step| step.name)).collect(),
+        }
+    }
+
+    const HANDS_ORDER: [&str; 23] = [
+        "foregrip",
+        "contents",
+        "gun bodies",
+        "heft",
+        "aim down sights",
+        "collision",
+        "grip watch",
+        "recoil",
+        "grenades",
+        "pouch models",
+        "C4",
+        "detonator model",
+        "pouch return",
+        "single pistols",
+        "hold",
+        "hold snaps",
+        "hand fire",
+        "take",
+        "regions",
+        "armed",
+        "reload",
+        "wheel",
+        "tick",
+    ];
+
+    #[test]
+    fn only_leaving_the_controllers_puts_the_loadout_back_and_only_a_pause_keeps_the_hands() {
+        let scopes = [
+            (StandDown::Disabled, StandDownScope::Loadout),
+            (StandDown::GamepadScheme, StandDownScope::Loadout),
+            (StandDown::NoControllers, StandDownScope::Hands),
+            (StandDown::HandsInactive, StandDownScope::Hands),
+            (StandDown::PollDisabled, StandDownScope::Pause),
+            (StandDown::ModPanel, StandDownScope::Pause),
+            (StandDown::CaptureCancel, StandDownScope::Pause),
+            (StandDown::Menu, StandDownScope::Pause),
+        ];
+        for (reason, scope) in scopes {
+            assert_eq!(reason.scope(), scope, "{reason:?}");
+        }
+    }
+
+    #[test]
+    fn a_pause_cancels_the_magazine_work_and_the_release_only() {
+        assert_eq!(
+            names(StandDownScope::Pause),
+            ["reload extraction", "grip release"]
+        );
+    }
+
+    #[test]
+    fn the_hands_stand_down_in_their_documented_order() {
+        assert_eq!(names(StandDownScope::Hands), HANDS_ORDER);
+    }
+
+    #[test]
+    fn leaving_the_controllers_stops_the_loadout_table_after_the_hands() {
+        let mut order = HANDS_ORDER.to_vec();
+        order.push("loadout table");
+        assert_eq!(names(StandDownScope::Loadout), order);
+    }
+
+    #[test]
+    fn the_orderings_that_matter_hold() {
+        let order = names(StandDownScope::Hands);
+        let at = |name| order.iter().position(|n| *n == name).unwrap();
+        assert!(at("C4") < at("detonator model"));
+        assert!(at("hold") < at("armed"));
+        assert_eq!(at("tick"), order.len() - 1);
+    }
+}

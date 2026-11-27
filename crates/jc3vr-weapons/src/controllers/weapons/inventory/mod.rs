@@ -606,6 +606,21 @@ fn live_slot(object: ObjectKey) -> Option<SlotObject> {
 
 /// The spawn system is resetting: release every weapon the inventory keeps and forget them all,
 /// since the reset removes the weapons in the world and replaces the slots' weapons.
+///
+/// Each part of the weapon handling resets its own state, in this order:
+///
+/// 1. the reload's records and ammunition, while the weapons they name are still alive;
+/// 2. the safe grenades, whose actors retire;
+/// 3. the live loadout table, told which carried weapons the reset releases, read from the carry
+///    set before it lets go of them in step 7;
+/// 4. the gives in flight;
+/// 5. the restore's record of the carried weapons for the respawn (`restore::on_pre_reset`), with
+///    whether the slot's pistol is a single one, read before step 6 forgets it;
+/// 6. the single pistols;
+/// 7. the inventory's own state, then the carry set, which releases its weapons.
+///
+/// The respawn's restore is set due at the post-reset event (`restore::on_post_reset`, in
+/// [`reset`]), and a load or the frontend's reset retires the safe grenades on its own.
 fn on_reset() {
     crate::controllers::weapons::reload::on_pre_reset();
     let released: Vec<ObjectAddress> = carry::objects()
