@@ -75,6 +75,16 @@ impl Tuning for AimTuning {
             "sight_tool.marker_distance_m",
             self.sight_tool.marker_distance_m,
             100.0,
+        )?;
+        positive(
+            "sight_tool.min_marker_distance_m",
+            self.sight_tool.min_marker_distance_m,
+            100.0,
+        )?;
+        positive(
+            "sight_tool.max_offset_m",
+            self.sight_tool.max_offset_m,
+            10.0,
         )
     }
 }
@@ -143,6 +153,12 @@ pub struct NeutralAimTuning {
 pub(crate) struct SightToolTuning {
     /// How far ahead of the head the line-up marker is placed, metres.
     pub(crate) marker_distance_m: f32,
+    /// The nearest the marker is placed, metres: nearer, the eye cannot focus on the sights and the
+    /// marker together, and the solve is dominated by where the eye sits.
+    pub(crate) min_marker_distance_m: f32,
+    /// The farthest a sight's origin may be from the fire point, metres. The embedded table's
+    /// highest sight is under a fifth of this.
+    pub(crate) max_offset_m: f32,
 }
 
 #[cfg(test)]

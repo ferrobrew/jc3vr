@@ -166,6 +166,9 @@ pub struct TakeOffTuning {
     /// the hold that starts the take-off's wind-up, so the body has the rest of the hold to come
     /// around.
     pub(crate) turn_after_s: f32,
+    /// The effector value at which the take-off action counts as down, `0..1`: half of a full
+    /// press.
+    pub(crate) held_value: f32,
 }
 
 impl TakeOffTuning {
@@ -175,7 +178,8 @@ impl TakeOffTuning {
     }
 
     pub(super) fn validate(&self) -> Result<(), Invalid> {
-        nonnegative("take_off.turn_after_s", self.turn_after_s, 5.0)
+        nonnegative("take_off.turn_after_s", self.turn_after_s, 5.0)?;
+        range("take_off.held_value", self.held_value, 0.0, 1.0)
     }
 }
 

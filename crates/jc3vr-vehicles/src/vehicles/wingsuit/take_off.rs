@@ -165,11 +165,8 @@ unsafe fn use_held() -> bool {
         return false;
     };
     unsafe { map.GetActionEffector(Action::OPEN_WINGSUIT).as_ref() }
-        .is_some_and(|effector| effector.m_Value >= HELD_VALUE)
+        .is_some_and(|effector| effector.m_Value >= VEHICLES.get().take_off.held_value)
 }
-
-/// The effector value at which the action counts as down: half of a full press.
-const HELD_VALUE: f32 = 0.5;
 
 /// The rule states of the take-off from the ground.
 pub const TAKE_OFF_STATES: [&str; 2] = [

@@ -149,6 +149,7 @@ min_separation = 0.6
 
 [take_off]
 turn_after_s = 0.2
+held_value = 0.5
 
 [parachute_handles]
 full_pull_m = 0.30
@@ -165,6 +166,13 @@ pull_m = 0.15
 from_hip_m = [0.06, 0.06, 0.12]
 radius_m = 0.12
 reach_m = 0.22
+
+[guides]
+control_mark_m = 0.05
+yoke_column_m = 0.2
+stick_shaft_m = 0.24
+wing_ring_m = 0.09
+wing_line_m = 0.006
 
 [rail]
 half_length_m = 1.0

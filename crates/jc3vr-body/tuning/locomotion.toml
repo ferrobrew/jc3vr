@@ -60,3 +60,8 @@ steer_travel_m = 0.5
 palm_against_cos = -0.1
 min_alignment = 0.35
 catch_min_strength = 0.45
+
+[speed_log]
+min_stick = 0.2
+settle_ms = 1000
+measure_ms = 1500

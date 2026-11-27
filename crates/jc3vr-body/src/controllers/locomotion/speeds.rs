@@ -7,6 +7,8 @@ use std::time::Duration;
 
 use jc3vr_core::published::Stamp;
 
+use crate::controllers::locomotion::tuning::LOCOMOTION;
+
 /// Watches the target speed and the root speed, and logs each target speed once.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct SpeedLog {
@@ -45,8 +47,12 @@ impl SpeedLog {
         target: Option<f32>,
         root_speed: f32,
     ) -> Option<Measured> {
+        let tuning = LOCOMOTION.get().speed_log;
+        let (settle, measure) = (tuning.settle_ms.duration(), tuning.measure_ms.duration());
         let key = target
-            .filter(|t| t.is_finite() && *t > 0.0 && stick >= MIN_STICK && root_speed.is_finite())
+            .filter(|t| {
+                t.is_finite() && *t > 0.0 && stick >= tuning.min_stick && root_speed.is_finite()
+            })
             .map(|t| (t * 100.0).round() as i32);
         let Some(key) = key else {
             self.current = None;
@@ -63,12 +69,12 @@ impl SpeedLog {
         };
         // The first second of a hold is the start clip's ramp, not the speed.
         let held_for = now.saturating_duration_since(held.since);
-        if held_for < SETTLE {
+        if held_for < settle {
             return None;
         }
         held.sum += root_speed;
         held.count += 1;
-        if held_for < SETTLE + MEASURE || self.logged.contains(&Some(key)) {
+        if held_for < settle + measure || self.logged.contains(&Some(key)) {
             return None;
         }
         let measured = Measured {
@@ -106,13 +112,6 @@ struct Measured {
 
 /// How many distinct target speeds are logged in a session.
 const MAX_LOGGED: usize = 16;
-
-/// The stick must be held at least this far for its speed to count.
-const MIN_STICK: f32 = 0.2;
-
-/// How long a hold settles before its root speed is sampled, and then sampled for.
-const SETTLE: Duration = Duration::from_secs(1);
-const MEASURE: Duration = Duration::from_millis(1500);
 
 #[cfg(test)]
 mod tests {

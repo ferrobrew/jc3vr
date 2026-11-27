@@ -195,7 +195,10 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickVolumes {
             .iter()
             .filter(|c| c.hand.is_none_or(|h| !holding[h.index()]))
             .map(|c| {
-                let mark = Mark::ring(MarkAt::Cockpit(c.centre), CONTROL_MARK_M);
+                let mark = Mark::ring(
+                    MarkAt::Cockpit(c.centre),
+                    VEHICLES.get().guides.control_mark_m,
+                );
                 let mark = match c.volume {
                     GrabVolume::VehicleControl(kind)
                         if matches!(
@@ -419,7 +422,7 @@ fn control_target(volume: GrabVolume, point: Vec3, radius: f32, hand: Hand) -> G
         Some(hand),
         point,
         radius,
-        Mark::ring(MarkAt::Cockpit(point), CONTROL_MARK_M),
+        Mark::ring(MarkAt::Cockpit(point), VEHICLES.get().guides.control_mark_m),
     )
 }
 
@@ -433,9 +436,6 @@ fn handle_target(volume: GrabVolume, point: Vec3, radius: f32, hand: Hand) -> Gr
         Mark::ring(MarkAt::Cockpit(point), radius * 2.0).styled(MarkStyle::Handle),
     )
 }
-
-/// The marker on a vehicle control's grab point, metres.
-const CONTROL_MARK_M: f32 = 0.05;
 
 /// The nitrous button's label.
 const NITROUS_LABEL: &str = "Nitrous";

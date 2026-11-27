@@ -12,9 +12,9 @@
 //!
 //! A source calls [`play`], [`play_hands`], or [`play_scaled`] for a one-off cue and [`sustain`]
 //! each tick for a level. Any thread may call them: the cue is shaped from the settings, checked
-//! against the master switch, the controller scheme, and its category's switch, and handed to the
-//! mixer, a leaf lock. The VR frame loop calls [`mix`] once per rendered frame and plays what it
-//! returns.
+//! against the master switch and the controller scheme and, for the game's rumble alone (the only
+//! category with a switch of its own), the game-rumble switch, and handed to the mixer, a leaf lock.
+//! The VR frame loop calls [`mix`] once per rendered frame and plays what it returns.
 //!
 //! [`vocabulary`]: jc3vr_input::haptics::vocabulary
 //! [`cues`]: jc3vr_input::haptics::cues
@@ -43,7 +43,7 @@ use jc3vr_view::{
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::controllers::{scheme, telemetry};
+use crate::controllers::{intent::tuning::CONTROLS, scheme, telemetry};
 
 /// The haptics' hooks, enabled by the payload's composition.
 pub fn hook_library() -> HookLibrary {
@@ -134,7 +134,7 @@ pub fn test(hand: Hand, primitive: Primitive) {
     let shape = HAPTICS.get().shape(primitive);
     // A sustained primitive tests as a one-off a little longer than its hold, so it is felt alone.
     let duration_s = if primitive.is_sustained() {
-        TEST_SUSTAIN_S
+        CONTROLS.get().haptics_test.sustain_s
     } else {
         shape.duration_s
     };
@@ -182,9 +182,6 @@ pub fn status() -> HapticsStatus {
     status.last_output = output::last_output();
     status
 }
-
-/// How long a sustained primitive plays when tested, seconds.
-const TEST_SUSTAIN_S: f32 = 0.4;
 
 static STATUS: Mutex<HapticsStatus> = Mutex::new(HapticsStatus {
     recent: EventLog::new(),

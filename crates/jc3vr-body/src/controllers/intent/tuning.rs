@@ -1,6 +1,6 @@
 //! The controls' tuning, read from the shipped `tuning/controls.toml` ([`CONTROLS`]): the bindings'
 //! thresholds and chord timings, the held actions' analog press, the mode detection's debounce, the
-//! game rumble's forward, and the world-space overlay's drawing.
+//! game rumble's forward, the haptic test, and the world-space overlay's drawing.
 
 use jc3vr_core::{
     config::{Invalid, nonnegative, positive, range},
@@ -21,6 +21,7 @@ pub struct ControlsTuning {
     pub hold: HoldTuning,
     pub mode: ModeTuning,
     pub rumble: RumbleTuning,
+    pub(crate) haptics_test: HapticsTestTuning,
     pub overlay: OverlayTuning,
 }
 
@@ -59,6 +60,8 @@ impl Tuning for ControlsTuning {
             1000.0,
         )?;
         nonnegative("rumble.max_shot_s", r.max_shot_s, 10.0)?;
+
+        positive("haptics_test.sustain_s", self.haptics_test.sustain_s, 10.0)?;
 
         let o = &self.overlay;
         nonnegative("overlay.min_line_px", o.min_line_px, 100.0)?;
@@ -133,6 +136,15 @@ pub struct RumbleTuning {
     /// The longest a weapon's fire rumble plays on a controller, seconds: the game's rumbles can
     /// last long enough to blur into one another.
     pub(crate) max_shot_s: f32,
+}
+
+/// The debug UI's haptic test ([`crate::controllers::haptics::test`]).
+#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct HapticsTestTuning {
+    /// How long a sustained primitive plays when tested, seconds: a little longer than its hold,
+    /// so it is felt alone.
+    pub(crate) sustain_s: f32,
 }
 
 /// The world-space overlay's drawing ([`crate::controllers::overlay`]).

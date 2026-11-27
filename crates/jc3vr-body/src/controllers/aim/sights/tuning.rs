@@ -193,7 +193,10 @@ pub(crate) fn service(
 
 /// The marker's position: `distance_m` along the head's forward (-Z).
 pub(crate) fn marker_position(head: Pose, distance_m: f32) -> Vec3 {
-    head.position + head.orientation * Vec3::NEG_Z * distance_m.max(MIN_MARKER_DISTANCE_M)
+    head.position
+        + head.orientation
+            * Vec3::NEG_Z
+            * distance_m.max(AIM.get().sight_tool.min_marker_distance_m)
 }
 
 /// The sight origin, in the fire point's frame, that makes a sight line at `angles_deg` from the
@@ -221,7 +224,7 @@ pub(crate) fn line_up(
         return Err(LineUpError::Degenerate);
     }
     let distance = offset.length();
-    if distance > MAX_OFFSET_M {
+    if distance > AIM.get().sight_tool.max_offset_m {
         return Err(LineUpError::Implausible { offset_m: distance });
     }
     Ok(offset)
@@ -272,12 +275,6 @@ impl State {
 
 static STATE: Mutex<State> = Mutex::new(State::EMPTY);
 
-/// The nearest the marker is placed, metres: nearer, the eye cannot focus on the sights and the
-/// marker together, and the solve is dominated by where the eye sits.
-const MIN_MARKER_DISTANCE_M: f32 = 2.0;
-/// The farthest a sight's origin may be from the fire point, metres. The embedded table's highest
-/// sight is under a fifth of this.
-const MAX_OFFSET_M: f32 = 0.5;
 /// The least the sight line may run along the barrel, as the -Z component of its direction.
 const MIN_FORWARD: f32 = 0.2;
 

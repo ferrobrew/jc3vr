@@ -28,6 +28,7 @@ pub struct LocomotionTuning {
     pub height: HeightTuning,
     pub follow: FollowTuning,
     pub strokes: StrokeTuning,
+    pub(crate) speed_log: SpeedLogTuning,
 }
 
 impl Tuning for LocomotionTuning {
@@ -74,6 +75,11 @@ impl Tuning for LocomotionTuning {
         nonnegative("follow.escape_s", f.escape_s, 10.0)?;
         range("follow.escape_return_m", f.escape_return_m, 0.0, f.escape_m)?;
 
+        let l = &self.speed_log;
+        range("speed_log.min_stick", l.min_stick, 0.0, 1.0)?;
+        l.settle_ms.validate("speed_log.settle_ms", 60_000)?;
+        l.measure_ms.validate("speed_log.measure_ms", 60_000)?;
+
         self.strokes.validate()
     }
 }
@@ -95,6 +101,19 @@ pub struct StickTuning {
     /// The shortest horizontal head forward that still has a heading, `0..1`; a head looking
     /// further up or down takes Rico's own forward as the stick's frame.
     pub(crate) min_forward: f32,
+}
+
+/// The log of the game's on-foot speeds ([`crate::controllers::locomotion::speeds`]).
+#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct SpeedLogTuning {
+    /// The stick must be held at least this far for its speed to count, `0..1`.
+    pub(crate) min_stick: f32,
+    /// How long a hold settles before its root speed is sampled: the start clip's ramp is not the
+    /// speed.
+    pub(crate) settle_ms: Millis,
+    /// How long the root speed is then sampled for.
+    pub(crate) measure_ms: Millis,
 }
 
 /// The act filter's watchdog ([`crate::controllers::locomotion::acts::Watchdog`]).

@@ -66,6 +66,7 @@ pub struct VehiclesTuning {
     pub parachute_rig: ParachuteRigTuning,
     pub ripcord: RipcordTuning,
     pub rail: RailTuning,
+    pub(crate) guides: GuidesTuning,
     pub driving_view: DrivingViewTuning,
     pub calibration: CalibrationTuning,
     pub mounted: MountedTuning,
@@ -87,10 +88,39 @@ impl Tuning for VehiclesTuning {
         self.parachute_rig.validate()?;
         self.ripcord.validate()?;
         self.rail.validate()?;
+        self.guides.validate()?;
         self.driving_view.validate()?;
         self.calibration.validate()?;
         self.mounted.validate()?;
         self.gunner_seat.validate()
+    }
+}
+
+/// The sizes the vehicle guides are drawn at: the markers on a control's grab point, the yoke and
+/// stick shapes, and the wingsuit's arm guide ([`crate::vehicles::begin`],
+/// [`crate::vehicles::driving::physical`], [`crate::vehicles::wingsuit`]).
+#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct GuidesTuning {
+    /// The marker on a vehicle control's grab point, metres.
+    pub(crate) control_mark_m: f32,
+    /// How much of the yoke's column is drawn ahead of its hub, metres.
+    pub(crate) yoke_column_m: f32,
+    /// How far below a stick's top its shaft is drawn, metres.
+    pub(crate) stick_shaft_m: f32,
+    /// The wingsuit guide's rings' diameter, metres.
+    pub(crate) wing_ring_m: f32,
+    /// How wide the wingsuit guide's line between the hands is drawn, metres.
+    pub(crate) wing_line_m: f32,
+}
+
+impl GuidesTuning {
+    fn validate(&self) -> Result<(), Invalid> {
+        positive("guides.control_mark_m", self.control_mark_m, 1.0)?;
+        positive("guides.yoke_column_m", self.yoke_column_m, 2.0)?;
+        positive("guides.stick_shaft_m", self.stick_shaft_m, 2.0)?;
+        positive("guides.wing_ring_m", self.wing_ring_m, 1.0)?;
+        positive("guides.wing_line_m", self.wing_line_m, 1.0)
     }
 }
 

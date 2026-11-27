@@ -23,3 +23,5 @@ distance_m = 25.0
 
 [sight_tool]
 marker_distance_m = 10.0
+min_marker_distance_m = 2.0
+max_offset_m = 0.5

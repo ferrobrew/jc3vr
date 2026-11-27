@@ -14,7 +14,10 @@ use jc3vr_view::controllers::{
     },
 };
 
-use crate::vehicles::driving::physical::{ControlState, Placement, yoke::YokeFrame};
+use crate::vehicles::{
+    driving::physical::{ControlState, Placement, yoke::YokeFrame},
+    tuning::VEHICLES,
+};
 
 pub(crate) fn submit(
     placement: &Placement,
@@ -111,7 +114,12 @@ fn yoke(
             depth: DEPTH,
         });
     };
-    line(hub - frame.axis * YOKE_COLUMN_M, hub, 0.018, SHAFT);
+    line(
+        hub - frame.axis * VEHICLES.get().guides.yoke_column_m,
+        hub,
+        0.018,
+        SHAFT,
+    );
     let [left, right] = Hand::BOTH.map(|hand| frame.horn(hand, roll, pitch));
     let foot = up * frame.grip_height;
     line(left - foot, right - foot, 0.018, SHAFT);
@@ -148,7 +156,7 @@ fn geometry(placement: &Placement, state: &ControlState, kind: ControlKind) -> O
         Geometry {
             handle,
             grip_half: Vec3::Y * 0.045,
-            base: placement.stick_top(kind, &spec) - Vec3::Y * STICK_SHAFT_M,
+            base: placement.stick_top(kind, &spec) - Vec3::Y * VEHICLES.get().guides.stick_shaft_m,
             rail: None,
         }
     } else {
@@ -174,10 +182,6 @@ fn geometry(placement: &Placement, state: &ControlState, kind: ControlKind) -> O
 }
 
 const TTL: Duration = Duration::from_millis(150);
-/// How much of the yoke's column is drawn ahead of its hub, metres.
-const YOKE_COLUMN_M: f32 = 0.2;
-/// How far below a stick's top its shaft is drawn, metres.
-const STICK_SHAFT_M: f32 = 0.24;
 const DEPTH: DepthMode = DepthMode::XRay {
     occluded_alpha: 0.3,
 };
@@ -331,7 +335,11 @@ mod tests {
             let state = ControlState::default();
             let stick = geometry(&placement, &state, asset.stick_kind).unwrap();
             assert!((stick.handle - fit.stick_top()).length() < 1e-5);
-            assert!((stick.base - fit.stick_top() + Vec3::Y * STICK_SHAFT_M).length() < 1e-5);
+            assert!(
+                (stick.base - fit.stick_top() + Vec3::Y * VEHICLES.get().guides.stick_shaft_m)
+                    .length()
+                    < 1e-5
+            );
             assert!(stick.rail.is_none());
             let lever_kind = match asset.stick_kind {
                 ControlKind::Cyclic => ControlKind::Collective,
@@ -412,7 +420,11 @@ mod tests {
             };
             let control = geometry(&placement, &state, kind).unwrap();
             assert!((control.handle - native.handle(state.stick)).length() < 1e-5);
-            assert!((control.base - native.top() + Vec3::Y * STICK_SHAFT_M).length() < 1e-5);
+            assert!(
+                (control.base - native.top() + Vec3::Y * VEHICLES.get().guides.stick_shaft_m)
+                    .length()
+                    < 1e-5
+            );
             assert!(control.rail.is_none());
             let lever_kind = match kind {
                 ControlKind::Cyclic => ControlKind::Collective,

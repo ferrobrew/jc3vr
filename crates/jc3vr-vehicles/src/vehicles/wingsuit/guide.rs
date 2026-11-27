@@ -11,6 +11,8 @@ use jc3vr_view::controllers::overlay::{
     store,
 };
 
+use crate::vehicles::tuning::VEHICLES;
+
 /// Submit the guide while `shown`, lit while the arms steer (`engaged`), or clear it.
 pub(crate) fn submit(shown: bool, engaged: bool) {
     if !shown {
@@ -27,7 +29,7 @@ fn primitives(engaged: bool) -> Vec<Primitive> {
         .into_iter()
         .map(|hand| Primitive::Sprite {
             at: Anchor::hand(hand, HandPose::Grip),
-            size: SpriteSize::World(WING_RING_M),
+            size: SpriteSize::World(VEHICLES.get().guides.wing_ring_m),
             facing: Facing::Billboard,
             shape: Shape::Ring { thickness: 0.2 },
             color,
@@ -38,7 +40,7 @@ fn primitives(engaged: bool) -> Vec<Primitive> {
         prims.push(Primitive::Line {
             from: Anchor::hand(Hand::Left, HandPose::Grip),
             to: Anchor::hand(Hand::Right, HandPose::Grip),
-            width: WING_LINE_M,
+            width: VEHICLES.get().guides.wing_line_m,
             color,
             depth: XRAY,
         });
@@ -58,9 +60,3 @@ const WING_IDLE: Rgba = [0.8, 0.85, 0.9, 0.35];
 
 /// The guide while the arms steer.
 const WING_ENGAGED: Rgba = [0.35, 1.0, 0.6, 0.85];
-
-/// The guide's rings' diameter, metres.
-const WING_RING_M: f32 = 0.09;
-
-/// How wide the guide's line between the hands is drawn, metres.
-const WING_LINE_M: f32 = 0.006;
