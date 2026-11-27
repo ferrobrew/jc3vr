@@ -4,8 +4,8 @@
 //! The game renders each eye into `m_BackBufferLinear` and the mod captures it after the resolve
 //! (`docs/engine/rendering/rendering.md` §12); those captures live in [`EGUI_DEBUG_RENDER_STATE`] as
 //! `R8G8B8A8_UNORM` textures sized to the game's back buffer. The OpenXR swapchain is a 2-slice
-//! texture array sized to the runtime's recommended per-eye resolution in a negotiated (usually
-//! `_SRGB`) format. Sizes and formats generally differ, so this is a **shader blit** (fullscreen
+//! texture array sized to the runtime's recommended per-eye resolution in a negotiated `_SRGB`
+//! format. Sizes and formats generally differ, so this is a **shader blit** (fullscreen
 //! triangle sampling the eye SRV into the slice RTV), not a `CopyResource`. It runs on the engine's
 //! immediate context under `Context::m_Mutex`, serialized with the engine's own render work, the
 //! same model as the desktop mirror ([`crate::vr::present_mirror`]).

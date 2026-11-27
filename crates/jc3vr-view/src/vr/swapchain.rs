@@ -15,7 +15,7 @@ pub(super) struct Swapchain {
     pub(super) handle: xr::Swapchain<xr::D3D11>,
     pub(super) width: u32,
     pub(super) height: u32,
-    /// The DXGI format actually chosen (recorded for the per-eye blit, which must match/convert).
+    /// The DXGI format chosen, an 8-bit sRGB one (recorded for the per-eye blit's view).
     pub(super) format: u32,
     /// The enumerated swapchain images (raw `ID3D11Texture2D` pointers as `usize`, so the state stays
     /// `Send`; runtime-owned). Cast back to a pointer at [`Swapchain::acquired_texture`].
@@ -26,7 +26,7 @@ pub(super) struct Swapchain {
 
 impl Swapchain {
     /// Create the swapchain from the recommended view-configuration resolution × `resolution_scale`,
-    /// negotiating a format from `enumerate_swapchain_formats` (preferring sRGB 8-bit).
+    /// negotiating an sRGB 8-bit format from `enumerate_swapchain_formats`.
     pub(super) fn create(
         instance: &xr::Instance,
         system: xr::SystemId,
@@ -122,27 +122,50 @@ impl Swapchain {
     }
 }
 
-/// Negotiate a swapchain color format from the runtime's supported list, preferring an 8-bit sRGB
-/// format (the eye captures resolve through the engine's LDR path). Falls back to the runtime's
-/// first offered format, logging the choice. The game's captures may be a different format; the
-/// per-eye blit bridges them.
+/// Negotiate a swapchain color format from the runtime's supported list: an 8-bit sRGB format, which
+/// the per-eye blit's gamma bridge requires (`crate::vr::blit`). The blit writes the game's
+/// display-referred bytes through an `_SRGB` view so the hardware encode reproduces them and the
+/// compositor decodes them as sRGB. A runtime offering no such format has no target the bridge is
+/// right for (a plain UNORM format would store the bytes undecoded, and compositors do not agree
+/// on how they treat it), so the session fails to start instead of rendering a wrong image.
 fn negotiate_format(formats: &[u32]) -> anyhow::Result<u32> {
     const PREFERRED: [u32; 2] = [
         DXGI_FORMAT_R8G8B8A8_UNORM_SRGB.0 as u32,
         DXGI_FORMAT_B8G8R8A8_UNORM_SRGB.0 as u32,
     ];
 
-    if let Some(&format) = PREFERRED.iter().find(|f| formats.contains(f)) {
-        tracing::info!(target: "vr", format, "negotiated a preferred sRGB swapchain format");
-        return Ok(format);
-    }
-    let format = *formats
-        .first()
-        .context("vr: the runtime offered no swapchain formats")?;
-    tracing::warn!(
-        target: "vr",
-        format,
-        "no preferred sRGB format available; using the runtime's first offered format",
-    );
+    let format = PREFERRED
+        .iter()
+        .copied()
+        .find(|f| formats.contains(f))
+        .with_context(|| {
+            format!("vr: the runtime offers no 8-bit sRGB swapchain format (offered: {formats:?})")
+        })?;
+    tracing::info!(target: "vr", format, "negotiated an sRGB swapchain format");
     Ok(format)
+}
+
+#[cfg(test)]
+mod tests {
+    use windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_R8G8B8A8_UNORM;
+
+    use super::*;
+
+    #[test]
+    fn the_first_preferred_srgb_format_wins() {
+        let formats = [
+            DXGI_FORMAT_B8G8R8A8_UNORM_SRGB.0 as u32,
+            DXGI_FORMAT_R8G8B8A8_UNORM_SRGB.0 as u32,
+        ];
+        assert_eq!(
+            negotiate_format(&formats).unwrap(),
+            DXGI_FORMAT_R8G8B8A8_UNORM_SRGB.0 as u32
+        );
+    }
+
+    #[test]
+    fn a_runtime_without_an_srgb_format_is_refused() {
+        let error = negotiate_format(&[DXGI_FORMAT_R8G8B8A8_UNORM.0 as u32]).unwrap_err();
+        assert!(error.to_string().starts_with("vr: the runtime offers no"));
+    }
 }
