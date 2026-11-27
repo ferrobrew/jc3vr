@@ -38,7 +38,7 @@ Two snapshots on different FSR jitter offsets ([fsr.md](../rendering/fsr.md#sub-
 
 ## FSR variants
 
-FSR's effect is smaller than what drifts between runs, so its settings are compared within one schedule: a config's `[[fsr_variants]]` (`tools/rendering/experiment_fsr.py`, which has the fields) each render after the configured modes at the same clock and pinned pose, turning FSR, its jitter, decode, or sharpening, the game's anti-aliasing, or the mod's TAA ([taa.md](../rendering/taa.md)) on or off, or changing the resolution scale. Every configuration resets FSR's history and warms up long enough for FSR to settle. `tools/rendering/suites/fsr.toml` and `suites/taa.toml` list the scenes, and the `fsr-quality`, `fsr-jitter`, and `fsr-motion` commands read the saved planes; the results are in [fsr-measurements.md](../rendering/fsr-measurements.md).
+FSR's effect is smaller than what drifts between runs, so its settings are compared within one schedule: a config's `[[fsr_variants]]` (`tools/rendering/experiment_fsr.py`, which has the fields) each render after the configured modes at the same clock and pinned pose, turning FSR, its jitter, decode, or sharpening, the game's anti-aliasing, or the mod's TAA ([taa.md](../rendering/taa.md)) on or off, or changing the resolution scale. Every configuration resets FSR's history and warms up long enough for FSR to settle. `tools/rendering/suites/fsr.toml` and `suites/taa.toml` list the scenes, and the `fsr-quality`, `fsr-jitter`, and `fsr-motion` commands read the saved planes; the standing results are in [fsr.md](../rendering/fsr.md#what-the-harness-measures).
 
 ## A still camera holds a fixed pose
 
