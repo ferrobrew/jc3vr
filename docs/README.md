@@ -96,12 +96,14 @@ Code and docs cite [engine/rendering/rendering.md](engine/rendering/rendering.md
 
 ### rendering/
 
-- [fsr.md](mod/rendering/fsr.md): FSR 2 in the stereo pipeline, why FSR over XeSS, and what the harness measures of it.
+- [fsr.md](mod/rendering/fsr.md): FSR 2 in the stereo pipeline.
+- [fsr-measurements.md](mod/rendering/fsr-measurements.md): the harness's measurements of FSR's motion vectors, jitter, image quality, and cost.
 - [taa.md](mod/rendering/taa.md): the mod's own TAA resolve, an alternative to FSR.
 - [presentation-layer.md](mod/rendering/presentation-layer.md): what is re-posed at the render rate rather than the simulation's.
 - [render-trace.md](mod/rendering/render-trace.md): the render trace.
 - [render-time-anchoring.md](mod/rendering/render-time-anchoring.md): anchoring what is drawn relative to the player at render time.
 - [shader-patching.md](mod/rendering/shader-patching.md): patching the game's shaders in memory at creation.
+- [upscaling-evaluation.md](mod/rendering/upscaling-evaluation.md): XeSS assessed against FSR 2.
 - [ui-decoupling.md](mod/rendering/ui-decoupling.md): splitting HUD parts out of the panel texture, and the atlas.
 
 ### performance/
@@ -135,7 +137,7 @@ Code and docs cite [engine/rendering/rendering.md](engine/rendering/rendering.md
 - [hands-and-aiming.md](mod/input/hands-and-aiming.md): the controller-driven hands, the arm reach, the fingers, the gun and grapple aim, the overlay, and the scopes.
 - [roomscale.md](mod/input/roomscale.md): the body dimensions, the posture, the head height, crouching, the fades, and the seat transitions.
 - [weapon-handling.md](mod/input/weapon-handling.md): the pouches, the foregrip, a held gun's weight, recoil, and grenades and C4 in outline.
-- [flight.md](mod/input/flight.md): the wingsuit's arm steering and barrel roll, the parachute's handles, and the ripcord.
+- [flight.md](mod/input/flight.md): flying the wingsuit and parachute with the arms, the parachute handles, and the ripcord.
 - [grip.md](mod/input/grip.md): the grip, how each hand picks a grab target, and the fingers wrapping what it holds.
 - [two-handed-inventory.md](mod/input/two-handed-inventory.md): the mod's loadout table and independent hands, the weapons in the world and beyond the slots, resets, caches, saves, and the debug view.
 - [haptics.md](mod/input/haptics.md): the controllers' vibration.
@@ -159,8 +161,6 @@ Code and docs cite [engine/rendering/rendering.md](engine/rendering/rendering.md
 - [stunt-positions.md](mod/input/stunt-positions.md): stunt positions held by the grip.
 - [vehicle-doors.md](mod/input/vehicle-doors.md): vehicle doors, hoods, and trunks by hand.
 - [cockpit-controls.md](mod/input/cockpit-controls.md): the flight stick, throttle, cyclic, and collective.
-- [wingsuit-gestures.md](mod/input/wingsuit-gestures.md): opening, braking, and closing the wingsuit by pose.
-- [canopy-target-contract.md](mod/input/canopy-target-contract.md): the parachute canopy's targets from the native rig.
 - [vehicle-weapons.md](mod/input/vehicle-weapons.md): passenger aim and mounted guns.
 - [steering-wheel.md](mod/input/steering-wheel.md): the physical wheel and handlebars.
 

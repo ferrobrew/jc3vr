@@ -18,7 +18,7 @@ Every vehicle class shares one scheme, and the grips only grip ([cockpit-control
 
 ### Wingsuit
 
-The wingsuit's buttons are on fixed physical hands: the left and right triggers fire the suit's machine gun and rockets, the right B boosts, the right A opens the parachute, the left A held is the air brake, and the left Y grapples. A handheld gun reserves only its own trigger. The arms steer, brake, close the suit, and roll ([wingsuit-gestures.md](wingsuit-gestures.md), [flight.md](flight.md)), so the game's evade is on no button.
+The wingsuit's buttons are on fixed physical hands: the left and right triggers fire the suit's machine gun and rockets, the right B boosts, the right A opens the parachute, the left A held is the air brake, and the left Y grapples. A handheld gun reserves only its own trigger. The arms steer, brake, close the suit, and roll ([flight.md](flight.md)), so the game's evade is on no button.
 
 ### Menus
 
