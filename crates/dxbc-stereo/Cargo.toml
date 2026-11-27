@@ -11,7 +11,7 @@ edition = "2024"
 
 [features]
 # The rewrites only the capture harness's experiments request (the lake traces and planar
-# lookups, and the deferred-resolve, reflection-ray, impostor, fog, depth-of-field, and
+# lookups, and the deferred-resolve, reflection-ray, impostor, bark, fog, depth-of-field, and
 # anti-aliasing trials), so the shipped payload does not carry them. The harness builds the payload
 # with its `capture-rewrites` feature, which forwards here through the capture crate.
 capture-rewrites = []
