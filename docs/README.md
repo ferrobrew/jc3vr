@@ -96,14 +96,12 @@ Code and docs cite [engine/rendering/rendering.md](engine/rendering/rendering.md
 
 ### rendering/
 
-- [fsr.md](mod/rendering/fsr.md): FSR 2 in the stereo pipeline.
-- [fsr-measurements.md](mod/rendering/fsr-measurements.md): the harness's measurements of FSR's motion vectors, jitter, image quality, and cost.
+- [fsr.md](mod/rendering/fsr.md): FSR 2 in the stereo pipeline, why FSR over XeSS, and what the harness measures of it.
 - [taa.md](mod/rendering/taa.md): the mod's own TAA resolve, an alternative to FSR.
 - [presentation-layer.md](mod/rendering/presentation-layer.md): what is re-posed at the render rate rather than the simulation's.
 - [render-trace.md](mod/rendering/render-trace.md): the render trace.
 - [render-time-anchoring.md](mod/rendering/render-time-anchoring.md): anchoring what is drawn relative to the player at render time.
 - [shader-patching.md](mod/rendering/shader-patching.md): patching the game's shaders in memory at creation.
-- [upscaling-evaluation.md](mod/rendering/upscaling-evaluation.md): XeSS assessed against FSR 2.
 - [ui-decoupling.md](mod/rendering/ui-decoupling.md): splitting HUD parts out of the panel texture, and the atlas.
 
 ### performance/
