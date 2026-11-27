@@ -7,11 +7,12 @@ use std::{collections::VecDeque, time::Instant};
 use jc3vr_core::{
     frame_timing,
     frame_timing::{Kind, ThreadClass, TickLoad, ns_to_ms},
+    hooks,
 };
 use jc3vr_gameplay::hooks::online::ONLINE_CONFIG;
 use parking_lot::Mutex;
 
-use crate::{tuning::UI, ui::util::patchbox};
+use crate::tuning::UI;
 
 pub(crate) fn egui_debug_performance(ui: &mut egui::Ui) {
     unsafe {
@@ -245,4 +246,17 @@ fn frame_time_chart(ui: &mut egui::Ui, current_ms: f32) {
         egui::FontId::proportional(10.0),
         visuals.weak_text_color(),
     );
+}
+
+/// A checkbox over a game bool, written through the patcher so pages that are not plainly writable
+/// still take the edit (and so the write is reverted on uninject).
+fn patchbox(ui: &mut egui::Ui, label: &str, value: *mut bool) {
+    let mut enabled = unsafe { *value };
+    if ui.checkbox(&mut enabled, label).changed()
+        && let Some(mut patcher) = hooks::patcher()
+    {
+        unsafe {
+            patcher.patch(value as *const _ as usize, &[if enabled { 1 } else { 0 }]);
+        }
+    }
 }

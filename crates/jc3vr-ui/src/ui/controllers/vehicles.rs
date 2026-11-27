@@ -7,7 +7,7 @@
 use egui::Ui;
 use jc3vr_body::controllers::grab::cockpit::ControlKind;
 use jc3vr_input::frame::Hand;
-use jc3vr_vehicles::controllers::{
+use jc3vr_vehicles::{
     vehicles,
     vehicles::{
         VehiclesStatus,

@@ -7,4 +7,5 @@ mod replace;
 mod root;
 mod session;
 
-pub(crate) use crate::pause_menu::runtime::{hooks::hook_library, session::SESSION};
+pub use crate::pause_menu::runtime::hooks::hook_library;
+pub(crate) use crate::pause_menu::runtime::session::SESSION;

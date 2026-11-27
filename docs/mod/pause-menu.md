@@ -8,7 +8,7 @@ The feature is always on; HUD Live status in the debug UI shows the menu state.
 
 The VR settings need a heading with children, and the movie offers two structures for one. Folders (an entry that opens a sub-list) are the developer menu's: a folder is drawn on plain debug text fields with the main buttons hidden, so it would not look like the shipped menu. The settings screen's tab bar is the other, and it is the one used: it is the shared navigation bar that the game's other menus also use (see [the engine doc](../engine/pause-menu.md#the-tab-bar)), the settings screen still names a tab per native page before hiding it, and its selectors, shoulder-button hints, mouse handling, and sounds are the movie's own. So the VR settings are one `VR` entry whose screen shows the VR pages as tabs. The movie's own code opens the settings screen, and the mod replaces the page the screen is about to read while the game fills the pages. The rest of the game's pages stay as the game built them.
 
-The entry's label is plain text: a label beginning with `&` or `#` would be looked up as a localisation key. The registry is capped (`MAX_PAGES` in `pause_menu/pages/mod.rs`) at the tab bar's selector count ([`TAB_COUNT`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::pause_ui::SettingsUI)); a page past the cap gets no tab and a warning is logged.
+The entry's label is plain text: a label beginning with `&` or `#` would be looked up as a localisation key. The registry is capped (`MAX_PAGES` in `pause_menu/pages.rs`) at the tab bar's selector count ([`TAB_COUNT`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::pause_ui::SettingsUI)); a page past the cap gets no tab and a warning is logged.
 
 ## The root entry
 
@@ -93,7 +93,7 @@ Arguments and fields are written as unmanaged values laid out the way the engine
 
 ## The page model
 
-A page is data, defined beside the settings it edits (`pause_menu/model/page.rs`) and registered in `PAGES` (`pause_menu/pages/mod.rs`):
+A page is data, defined beside the settings it edits (`pause_menu/model/page.rs`) and registered in `PAGES` (`pause_menu/pages.rs`):
 
 - `PageDef { tab, build, on_close, on_frame }`: the tab's label, a `fn() -> Page` that builds the page's current contents (called on open and on every rebuild), an optional `fn()` run once when the page's stay ends, by whichever path (a tab switch included; see the session), to reset its state, and an optional `fn() -> ButtonOutcome` run every frame while the page is shown, for work that runs over time; returning `Rebuild` rebuilds the page.
 - `Page::new(title)` with the builders `.header(text)` (a section header, see [Section headers](#section-headers)), `.text(text)`, and `.item(item)`.
@@ -109,7 +109,7 @@ A step-by-step page (the body calibration) keeps its step in a static beside its
 
 ## Pages
 
-Four pages are registered, in this order, as the tabs `BODY` (`controllers/body/menu/`, titled `VR: BODY`), `CONTROLS` (`controllers/menu/controls/`, `VR: CONTROLS`), `COMFORT` (`controllers/menu/comfort.rs`, `VR: COMFORT`), and `DISPLAY` (`controllers/menu/display.rs`, `VR: DISPLAY`). Labels are written in upper case in the source because that is how the movie shows them: it upper-cases row labels and key text, and shows option labels as given. A registry test checks it.
+Four pages are registered, in this order, as the tabs `BODY` (`controllers/body/`, titled `VR: BODY`), `CONTROLS` (`controllers/menu/controls/`, `VR: CONTROLS`), `COMFORT` (`controllers/menu/comfort.rs`, `VR: COMFORT`), and `DISPLAY` (`controllers/menu/display.rs`, `VR: DISPLAY`). Labels are written in upper case in the source because that is how the movie shows them: it upper-cases row labels and key text, and shows option labels as given. A registry test checks it.
 
 ### Settings pages
 

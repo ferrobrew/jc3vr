@@ -22,7 +22,9 @@ use jc3vr_weapons::controllers::{
     loadout::slot_label,
     weapons,
     weapons::{
-        WeaponsStatus, empty,
+        WeaponsStatus,
+        config::WeaponsConfig,
+        empty,
         empty::EmptyStatus,
         foregrip,
         foregrip::ForegripStatus,
@@ -255,6 +257,14 @@ pub(super) fn weapons_readout(ui: &mut Ui, readout: &WeaponsReadout) {
             event.outcome.label()
         ));
     }
+}
+
+/// Weapon selection: the weapon wheel.
+pub(super) fn selection_settings(ui: &mut Ui, w: &mut WeaponsConfig) {
+    ui.checkbox(&mut w.wheel.enabled, "Weapon wheel")
+        .on_hover_text(
+            "Open the game's selection cross with a held input and choose an arm with the hand.",
+        );
 }
 
 pub(super) fn feature_readout(

@@ -33,7 +33,6 @@ pub mod render;
 pub(crate) mod render_capture;
 mod status_row;
 pub mod testing;
-mod util;
 pub(crate) mod visualizations;
 pub mod vr;
 

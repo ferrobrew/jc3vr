@@ -9,6 +9,7 @@ use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+pub use crate::ui::layout::writer::shutdown;
 use crate::ui::{catalog::FeatureId, navigation::NavigationState};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -36,11 +37,6 @@ pub(crate) struct Layout {
 }
 
 pub(crate) static STATE: Mutex<Option<Layout>> = Mutex::new(None);
-
-#[must_use = "an unfinished layout writer requires the payload to stay mapped"]
-pub fn shutdown() -> bool {
-    writer::shutdown()
-}
 
 impl Default for Layout {
     fn default() -> Self {

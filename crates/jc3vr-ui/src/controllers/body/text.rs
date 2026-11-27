@@ -11,7 +11,7 @@ use jc3vr_core::published::Stamp;
 use jc3vr_input::frame::Hand;
 use smol_str::{SmolStr, format_smolstr};
 
-use crate::controllers::body::menu::{measure::live_grip_span, state::CALIBRATION};
+use crate::controllers::body::{measure::live_grip_span, state::CALIBRATION};
 
 /// A live estimate from the controllers' gap and what the flow has measured so far.
 pub(super) fn live_estimate(estimate: fn(&Calibration, f32) -> Option<f32>) -> SmolStr {

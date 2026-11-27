@@ -34,7 +34,6 @@ mod summary;
 mod torso;
 mod unarmed;
 mod vehicles;
-mod weapon_selection;
 mod weapons;
 
 use egui::Ui;
@@ -84,7 +83,7 @@ pub(crate) fn controls(id: FeatureId) -> Option<FeatureBody> {
             aim::aim_settings(ui, &mut c);
         },
         FeatureId::WeaponSelection => {
-            |ui, _| weapon_selection::selection_settings(ui, &mut CONTROLLERS_CONFIG.edit().weapons)
+            |ui, _| weapons::selection_settings(ui, &mut CONTROLLERS_CONFIG.edit().weapons)
         }
         FeatureId::Vehicles => |ui, id| {
             vehicles::feature_settings(ui, &mut CONTROLLERS_CONFIG.edit().vehicles, id);

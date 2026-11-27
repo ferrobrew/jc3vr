@@ -34,7 +34,7 @@ pub(super) fn acknowledgement() -> Acknowledgement {
 }
 
 #[must_use = "an unfinished layout writer requires the payload to stay mapped"]
-pub(crate) fn shutdown() -> bool {
+pub fn shutdown() -> bool {
     let stopped = shutdown_owner(&OWNER, Duration::from_secs(10));
     if !stopped {
         tracing::error!("UI layout: writer has not exited; keeping the payload mapped");

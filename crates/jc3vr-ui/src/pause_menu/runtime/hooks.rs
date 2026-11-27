@@ -48,7 +48,8 @@ use crate::pause_menu::{
     runtime::{render, root, session::SESSION},
 };
 
-pub(crate) fn hook_library() -> HookLibrary {
+/// The pause-menu detours.
+pub fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_static_binder(&ON_ACTIVE_BINDER)
         .with_static_binder(&POPULATE_SETTINGS_BINDER)

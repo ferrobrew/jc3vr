@@ -9,7 +9,7 @@ use jc3vr_gameplay::controllers::config::CONTROLLERS_CONFIG;
 
 use crate::{
     controllers::{
-        body::menu::{
+        body::{
             measure::{live_eye_height, live_grip_span},
             state::{
                 CALIBRATION, STANCE, chosen_stance, measure, posture_stance, rebuild_if, save,

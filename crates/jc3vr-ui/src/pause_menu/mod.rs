@@ -14,21 +14,15 @@
 //! it in [`pages::PAGES`]; it gets a tab. A step-by-step page keeps its step beside its definition, lists the
 //! current step's rows from its builder, and returns
 //! [`ButtonOutcome::Rebuild`](model::page::ButtonOutcome::Rebuild) when the step changes; the body
-//! calibration (`controllers/body/menu.rs`) is the example.
+//! calibration (`controllers/body/`) is the example.
 
 pub(crate) mod gfx;
 pub(crate) mod model;
 pub(crate) mod pages;
 mod runtime;
 
-use re_utilities::hook_library::HookLibrary;
-
+pub use crate::pause_menu::runtime::hook_library;
 use crate::pause_menu::{model::state::MenuState, runtime::SESSION};
-
-/// The pause-menu detours.
-pub fn hook_library() -> HookLibrary {
-    runtime::hook_library()
-}
 
 /// The menu state, for the debug UI.
 pub(crate) fn state() -> MenuState {

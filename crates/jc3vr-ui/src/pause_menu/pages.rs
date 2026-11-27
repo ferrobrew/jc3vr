@@ -12,7 +12,7 @@ pub(crate) const ENTRY_LABEL: &str = "VR";
 
 /// The registered pages.
 pub(crate) const PAGES: &[PageDef] = &[
-    body::menu::PAGE,
+    body::PAGE,
     menu::controls::PAGE,
     menu::comfort::PAGE,
     menu::display::PAGE,

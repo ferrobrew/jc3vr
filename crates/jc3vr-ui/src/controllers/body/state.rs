@@ -15,7 +15,7 @@ use parking_lot::Mutex;
 
 use crate::{
     controllers::{
-        body::menu::measure::{live_eye_height, live_grip_span},
+        body::measure::{live_eye_height, live_grip_span},
         menu::read,
     },
     pause_menu::model::page::ButtonOutcome,

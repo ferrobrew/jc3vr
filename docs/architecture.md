@@ -100,7 +100,7 @@ The payload's code lives in the layer crates under `crates/`, each a library who
 - `jc3vr-gameplay`: the controller subsystems built on the body, weapons, physical, vehicles, and grapple crates (`controllers::{bindings, summary}`), the camera height readout (`controllers::camera_height`), the controllers' settings aggregate (`controllers::config`) and their registration, and the gameplay detours (`hooks::{input::look, sim, online}`).
 - `jc3vr-hud`: `hud`, `egui_impl`, the UI detours (`hooks::ui`), the controls map (`controllers::map`), and the summary's presentation (`controllers::summary`).
 - `jc3vr-tooling`: `recorder`, `director`, `testing`, and `diagnostics`.
-- `jc3vr-ui`: `ui`, `status`, `pause_menu`, the VR pages (`controllers::{menu, presets, body::menu}`), and the profiler's panel (`profiler`).
+- `jc3vr-ui`: `ui`, `status`, `pause_menu`, the VR pages (`controllers::{menu, presets, body}`), and the profiler's panel (`profiler`).
 - `jc3vr_payload`: `lib.rs` (the entry points, startup, shutdown, and the per-frame update), `composition` with the native-callback participants (`native_callbacks`) and the worker stops (`teardown`), `allocator`, `eject_gpu`, `crash`, `config` (the settings aggregate, its schema, slot table, format, and load), and the game's frame entry points and the window procedure (`hooks::{game, wndproc}`).
 
 | Domain | Modules | Responsibility | Owning docs |
