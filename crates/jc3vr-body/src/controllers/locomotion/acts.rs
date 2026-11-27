@@ -1,6 +1,6 @@
 //! The act filter: keeps the turning animations off the local player while the stick drives the
 //! body on foot, and while the player stands in a vehicle's stunt area. Called from the
-//! `Character::QueueAct` detour (`hooks::character::acts`).
+//! act arbiter (`controllers::acts`) at the `Character::QueueAct` entry.
 //!
 //! - The turn-in-place acts (the rotate-on-spot acts, their warp flavors, the continuous rotation
 //!   starts, the quarter and half turns, and the heavy weapon's aim-focus rotations) are dropped
@@ -40,6 +40,7 @@ use parking_lot::Mutex;
 
 use crate::{
     controllers::{
+        acts::{ActAction, ActClaim, ActDecision, Owner, Refusal},
         body::{ik_body, rig::grounded},
         body_frame,
         locomotion::{config::LocomotionConfig, tuning::LOCOMOTION},
@@ -71,23 +72,12 @@ impl ActScope {
     /// What a replacement the state machine refused becomes. On foot the original act is queued,
     /// so the state machine still moves on; a stunt turn is dropped, which leaves the state as the
     /// game would have left it with no turn to make.
-    pub(crate) const fn on_refusal(self) -> ActDecision {
+    pub(crate) const fn on_refusal(self) -> Refusal {
         match self {
-            ActScope::OnFoot => ActDecision::Pass,
-            ActScope::StuntArea => ActDecision::Drop,
+            ActScope::OnFoot => Refusal::QueueOriginal,
+            ActScope::StuntArea => Refusal::Drop,
         }
     }
-}
-
-/// What the filter does with an act.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) enum ActDecision {
-    /// Queue the act as the game asked.
-    Pass,
-    /// Drop the act.
-    Drop,
-    /// Queue this act id instead.
-    Replace(i32),
 }
 
 /// The filter's counters, for the debug UI and the log.
@@ -109,25 +99,21 @@ pub fn status() -> ActFilterStatus {
     STATE.lock().status
 }
 
-/// Decide what to do with the local player's act `id`. `locomotion` is the locomotion settings and
-/// `controllers_enabled` the controllers' master switch, read by the caller with the config lock it
-/// already takes.
+/// The filter's claim on the local player's act `id`, or `None` when it lets the act through. The
+/// act arbiter ([`crate::controllers::acts`]) asks it, pre-flights a replacement, and reports the
+/// outcome back ([`note_replacement`]). `locomotion` is the locomotion settings and
+/// `controllers_enabled` the controllers' master switch.
 ///
 /// # Safety
 ///
 /// `character` must be the live local character, on the thread queuing its act.
-pub(crate) unsafe fn filter(
-    character: &mut Character,
+pub(crate) unsafe fn claim(
+    character: &Character,
     id: i32,
     locomotion: &LocomotionConfig,
     controllers_enabled: bool,
-) -> ActDecision {
-    let Some(table) = table() else {
-        return ActDecision::Pass;
-    };
-    let Some((wanted, scope)) = table.decide(id) else {
-        return ActDecision::Pass;
-    };
+) -> Option<ActClaim> {
+    let (wanted, scope) = table()?.decide(id)?;
     let gates = ActGates::now(controllers_enabled);
     let applies = match scope {
         ActScope::OnFoot => {
@@ -144,7 +130,7 @@ pub(crate) unsafe fn filter(
         ActScope::StuntArea => gates.open() && unsafe { character.ShouldApplyStuntModification() },
     };
     if !applies {
-        return ActDecision::Pass;
+        return None;
     }
     if body_turn_passes(
         scope,
@@ -153,14 +139,14 @@ pub(crate) unsafe fn filter(
         body_frame::locomotion().standing_still(),
         ik_body::owns_idle(),
     ) {
-        return ActDecision::Pass;
+        return None;
     }
     let mut state = STATE.lock();
     if scope.watched() {
         let now = Stamp::now();
         if !state.watchdog.admit(now) {
             state.status.released = true;
-            return ActDecision::Pass;
+            return None;
         }
         state.status.released = false;
         if let Some(release) = state.watchdog.record(now) {
@@ -172,27 +158,34 @@ pub(crate) unsafe fn filter(
                 release_s = LOCOMOTION.get().acts.release_s,
                 "locomotion: the act filter acted without a break; letting every act through",
             );
-            return ActDecision::Pass;
+            return None;
         }
     }
-    match wanted {
-        ActDecision::Replace(replacement) => {
-            let act = replacement as u32;
-            // SAFETY: the act pre-flight only reads the animation state machine, on the thread
-            // that is queuing the act.
-            if unsafe { character.m_AnimatedModel.TryAct(&act) } {
-                state.status.replaced += 1;
-                wanted
-            } else {
-                state.status.refused += 1;
-                scope.on_refusal()
-            }
-        }
+    let action = match wanted {
+        ActDecision::Replace(with) => ActAction::Replace {
+            with,
+            refused: scope.on_refusal(),
+        },
         ActDecision::Drop => {
             state.status.dropped += 1;
-            wanted
+            ActAction::Drop
         }
-        ActDecision::Pass => ActDecision::Pass,
+        ActDecision::Pass => return None,
+    };
+    Some(ActClaim {
+        owner: Owner::Locomotion,
+        act: id,
+        action,
+    })
+}
+
+/// Count how a replacement the filter claimed came out: queued, or refused by the state machine
+/// (on foot the original act was queued, and in the stunt area the act was dropped).
+pub(crate) fn note_replacement(decision: ActDecision) {
+    let mut state = STATE.lock();
+    match decision {
+        ActDecision::Replace(_) => state.status.replaced += 1,
+        ActDecision::Pass | ActDecision::Drop => state.status.refused += 1,
     }
 }
 
@@ -662,8 +655,8 @@ mod tests {
 
     #[test]
     fn a_refused_stunt_turn_is_dropped_and_a_refused_start_passes() {
-        assert_eq!(ActScope::StuntArea.on_refusal(), ActDecision::Drop);
-        assert_eq!(ActScope::OnFoot.on_refusal(), ActDecision::Pass);
+        assert_eq!(ActScope::StuntArea.on_refusal(), Refusal::Drop);
+        assert_eq!(ActScope::OnFoot.on_refusal(), Refusal::QueueOriginal);
     }
 
     #[test]

@@ -18,9 +18,9 @@
 //! The evade is a barrel roll ([`ACT_BOOST_WINGSUIT_BARREL_ROLL`]): the clip rolls the body a full
 //! turn and carries it sideways. The arms throw it (`vehicles::wingsuit_evade`), and the view rolls
 //! with the body. With the evade switched off, it is a roll the player never asked for: the air
-//! physics queues it straight on the animated model, so the `Character::QueueAct` filters never see
-//! it, and the animated model's act queue asks [`drops_act`] instead, which drops it for the local
-//! player's model while the head pose comes from the headset. The roll's directions and recovery
+//! physics queues it straight on the animated model, so the act arbiter's character entry never sees
+//! it, and its model entry (`controllers::acts`) asks [`drops_act`] instead, which drops it for the
+//! local player's model while the head pose comes from the headset. The roll's directions and recovery
 //! are segments of its clip, so the one act covers every evade.
 //!
 //! [`WingsuitBlendState_StallFlagSet`]: jc3gi::input::parachute::get_WingsuitBlendState_StallFlagSet
@@ -79,7 +79,7 @@ pub fn barrel_rolls_dropped() -> u64 {
     BARREL_ROLLS_DROPPED.get()
 }
 
-/// Whether the animated model's act queue should drop `act`, queued on `model`: the barrel roll,
+/// Whether the act arbiter's model entry should drop `act`, queued on `model`: the barrel roll,
 /// on the local player's model, while the head pose comes from the headset and the evade is
 /// switched off. Called for every model's every act, so another model is turned away by its address
 /// first.
