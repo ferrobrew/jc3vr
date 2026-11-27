@@ -51,7 +51,7 @@ use jc3gi::{
 };
 use jc3vr_body::controllers::{
     grab::world_reach::{CharacterTarget, Reach, SeatAccess, Seated, TargetKind},
-    physics::{bodies::owner_of, characters as engine},
+    physics::{bodies, bodies::owner_of, characters as engine},
 };
 use jc3vr_input::frame::Pose;
 
@@ -59,7 +59,6 @@ use crate::controllers::physical_hands::{
     characters::{ragdoll::Ragdoll, tuning::CHARACTERS},
     contact::SurfaceHit,
     doors::engine as door_engine,
-    remote,
 };
 
 /// Why a character the reach hit is not one a hand takes.
@@ -435,7 +434,7 @@ pub(crate) unsafe fn damp_held_ragdoll(character: NonZeroUsize, body: u32, dt: f
     let per_s = CHARACTERS.get().characters.held_ragdoll_damping_per_s;
     for (bone, impulse) in ragdoll.internal_damping(per_s, dt) {
         // A bone the game has freed since the read is passed over.
-        let _ = unsafe { remote::push(bone.body, bone.owner, impulse, bone.centre) };
+        let _ = unsafe { bodies::shove(bone.body, bone.owner, impulse, bone.centre) };
     }
 }
 

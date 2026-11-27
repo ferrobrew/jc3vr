@@ -15,7 +15,10 @@ use jc3vr_body::controllers::{
     haptics,
     held::{handover, handover::HandedProp},
     physics,
-    physics::{grapple_hook::BodyHit, refs::Weak, rigid::Velocities, vehicles::vehicle_frame},
+    physics::{
+        error::PhysicsError, grapple_hook::BodyHit, refs::Weak, rigid::Velocities,
+        vehicles::vehicle_frame,
+    },
 };
 use jc3vr_core::game_tick::GameTick;
 use jc3vr_input::{frame::Hand, haptics::cues::Sustain};
@@ -69,7 +72,7 @@ pub(super) unsafe fn fire_hook(grabbed: &Grabbed) -> Result<NonZeroUsize, Refusa
     }
     if matches!(grabbed.kind, Pulled::Prop { .. }) {
         let (body, owner) = unsafe { target_body(grabbed) }?;
-        unsafe { remote::loosen(owner, body) }.map_err(Refusal::Body)?;
+        unsafe { loosen(owner, body) }.map_err(Refusal::Body)?;
     }
     if let Some(hit) = grabbed.hit.get() {
         let (wire, hit) = unsafe { engine::fire(grabbed.object, hit) }?;
@@ -92,6 +95,20 @@ pub(super) unsafe fn fire_hook(grabbed: &Grabbed) -> Result<NonZeroUsize, Refusa
     let (wire, hit) = unsafe { engine::fire(grabbed.object, hit) }?;
     grabbed.hit.set(Some(hit));
     Ok(wire)
+}
+
+/// Turn a placed object at rest loose, so the line can pull it: its body becomes dynamic with the
+/// mass it was placed with ([`physics::bodies::loosen`]). A body already dynamic is left as it is.
+///
+/// # Safety
+///
+/// The main thread, outside the physics step; `object` must be held alive.
+unsafe fn loosen(object: NonZeroUsize, body: u32) -> Result<(), PhysicsError> {
+    let loosened = unsafe { physics::bodies::loosen(object, body) }?;
+    if loosened {
+        tracing::info!(target: "controllers", body, "physical hands: a placed object was turned loose for the snatch");
+    }
+    Ok(())
 }
 
 /// What the hook taking hold of a grabbed thing does.
@@ -195,7 +212,7 @@ pub(super) unsafe fn bite(
     grabbed.hit.set(Some(hit));
     let (body, owner) = (hit.body, hit.owner);
     if matches!(grabbed.kind, Pulled::Prop { .. }) {
-        unsafe { remote::loosen(owner, body) }.map_err(Refusal::Body)?;
+        unsafe { loosen(owner, body) }.map_err(Refusal::Body)?;
     }
     let state = unsafe { physics::body_state(body, owner) }.map_err(Refusal::Body)?;
     unsafe { engine::exclude_rope(wire) };
@@ -794,7 +811,7 @@ pub(super) unsafe fn sling(
         Pulled::Ragdoll { .. } => unsafe {
             remote::pull_ragdoll(grabbed.object, body, owner, impulse, hook_point)
         },
-        _ => unsafe { remote::push(body, owner, impulse, hook_point) },
+        _ => unsafe { physics::bodies::shove(body, owner, impulse, hook_point) },
     }
     .map_err(Refusal::Body)?;
     let swinging = Swinging {

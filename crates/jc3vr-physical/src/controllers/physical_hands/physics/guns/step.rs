@@ -189,12 +189,6 @@ pub(crate) unsafe fn step(hands: &mut Hands, input: GunStep<'_>) {
     });
 }
 
-/// Forget the last step's gun bodies and the shots queued, for a step that acts on no hand (the
-/// hand bodies off, or the game out of gameplay), whose bodies, guns included, it destroys.
-pub(crate) fn stand_down() {
-    held_guns::stand_down();
-}
-
 /// Destroy every gun body that hangs from `hand`'s body: the gun it holds, with its joints, and
 /// the brace joint it holds the other hand's gun by. Called before `hand`'s body is parked, held,
 /// forgotten, or destroyed, so that no joint outlives either of its bodies.

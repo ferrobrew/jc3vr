@@ -60,7 +60,9 @@ use jc3gi::{
 use jc3vr_body::{
     controllers::{
         facts, haptics,
-        physics::{characters::character_position, local_player::LocalPlayer, rig::RigSample},
+        physics::{
+            bodies, characters::character_position, local_player::LocalPlayer, rig::RigSample,
+        },
     },
     hooks::input::air,
 };
@@ -72,7 +74,6 @@ use jc3vr_input::{
     frame::{self, Hand},
     haptics::cues::{Event, Sustain},
 };
-use jc3vr_physical::controllers::physical_hands::remote;
 use jc3vr_view::{headpose::xr, vr::VR_CONFIG};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
@@ -285,7 +286,7 @@ pub fn lock_tick(game: &GameTick<'_>, input: &LockTickInput) {
         impulse,
         at,
     }) = pending
-        && let Err(error) = unsafe { remote::push(body, owner, impulse, at) }
+        && let Err(error) = unsafe { bodies::shove(body, owner, impulse, at) }
     {
         tracing::debug!(target: "grapple", %error, "grapple lock: the reaction found no body");
     }

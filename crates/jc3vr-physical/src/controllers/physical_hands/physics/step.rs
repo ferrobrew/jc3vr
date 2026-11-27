@@ -62,7 +62,7 @@ pub unsafe fn step() {
         unsafe { climb::step([None; 2]) };
         vault::stand_down();
         let destroyed = unsafe { hands.destroy_all(reason) };
-        guns::step::stand_down();
+        held_guns::stand_down();
         let mut shared = SHARED.lock();
         shared.status.destroyed += destroyed;
         shared.status.steps = step_number.count();

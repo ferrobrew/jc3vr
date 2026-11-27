@@ -134,7 +134,7 @@ pub(super) unsafe fn refresh(offer: &mut Offer, ray: &Ray) -> bool {
             if unsafe { prop_handling(*object, *body) }.map(|(_, h)| h) != Some(*handling) {
                 return false;
             }
-            let Ok(point) = (unsafe { remote::position(*object, *body) }) else {
+            let Ok(point) = (unsafe { physics::bodies::position(*body, *object) }) else {
                 return false;
             };
             point

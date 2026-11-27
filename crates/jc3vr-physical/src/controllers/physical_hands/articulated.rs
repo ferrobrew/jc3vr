@@ -23,11 +23,11 @@ use std::{collections::VecDeque, num::NonZeroUsize};
 
 use glam::Vec3;
 use jc3gi::physics::{hknpConstraint, hknpConstraintManager};
-use jc3vr_body::controllers::physics::rigid;
+use jc3vr_body::controllers::physics::{bodies, rigid};
 
 use crate::controllers::{
     physical_hands,
-    physical_hands::{physics::drawn_body, remote, tuning::PHYSICAL_HANDS, world::World},
+    physical_hands::{physics::drawn_body, tuning::PHYSICAL_HANDS, world::World},
 };
 
 /// A constraint slot, as far as an articulation cares.
@@ -165,7 +165,7 @@ pub(crate) unsafe fn damp_assembly(
     let impulses = rigid::internal_damping(&masses, per_s, dt);
     for (member, impulse) in members.iter().zip(impulses) {
         // A body the game freed since the read is passed over.
-        let _ = unsafe { remote::push(member.body, member.owner, impulse, member.centre) };
+        let _ = unsafe { bodies::shove(member.body, member.owner, impulse, member.centre) };
     }
     Some(AssemblyDamping {
         bodies: members.len(),

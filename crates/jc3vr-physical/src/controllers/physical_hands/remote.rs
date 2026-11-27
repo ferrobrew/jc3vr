@@ -51,32 +51,6 @@ pub unsafe fn loose_mass(object: NonZeroUsize, body: u32) -> Option<f32> {
     Some(mass_kg)
 }
 
-/// Where `object`'s body `body` is, world space: its centre while it is dynamic, or where a placed
-/// object at rest stands ([`bodies::position`]).
-///
-/// # Safety
-///
-/// The main thread, outside the physics step; `object` must be held alive or come from a cast this
-/// tick.
-#[inline]
-pub unsafe fn position(object: NonZeroUsize, body: u32) -> Result<Vec3, PhysicsError> {
-    unsafe { bodies::position(body, object) }
-}
-
-/// Turn a placed object at rest loose, so the line can pull it: its body becomes dynamic with the
-/// mass it was placed with ([`bodies::loosen`]). A body already dynamic is left as it is.
-///
-/// # Safety
-///
-/// The main thread, outside the physics step; `object` must be held alive.
-pub unsafe fn loosen(object: NonZeroUsize, body: u32) -> Result<(), PhysicsError> {
-    let loosened = unsafe { bodies::loosen(object, body) }?;
-    if loosened {
-        tracing::info!(target: "controllers", body, "physical hands: a placed object was turned loose for the snatch");
-    }
-    Ok(())
-}
-
 /// A ragdolling character under the grapple's aim: the bone of its ragdoll the line pulls, and
 /// the whole ragdoll's mass, which that bone drags.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -110,23 +84,6 @@ pub unsafe fn ragdoll_target(
     })
 }
 
-/// Push the body `body` of `owner` by `impulse` at `at`, world space, after checking it still
-/// belongs to `owner`: the line's pull on a loose object.
-///
-/// # Safety
-///
-/// The main thread, outside the physics step.
-#[track_caller]
-#[inline]
-pub unsafe fn push(
-    body: u32,
-    owner: NonZeroUsize,
-    impulse: Vec3,
-    at: Vec3,
-) -> Result<(), PhysicsError> {
-    unsafe { bodies::shove(body, owner, impulse, at) }
-}
-
 /// Pull the ragdoll of `character` by `impulse` at `at` on its body `body` of `owner`, world space:
 /// the line's pull on a ragdoll, sized for the whole ragdoll's mass. The tuning's
 /// [`ragdoll_lead_share`] of it goes to the hooked body at the hook, so the body comes by the limb
@@ -153,17 +110,17 @@ pub unsafe fn pull_ragdoll(
         .then(|| unsafe { Ragdoll::of(&*(character.get() as *const Character)) })
         .flatten();
     let Some(ragdoll) = ragdoll.filter(|r| r.bone(body).is_some()) else {
-        return unsafe { push(body, owner, impulse, at) };
+        return unsafe { bodies::shove(body, owner, impulse, at) };
     };
     let lead = PHYSICAL_HANDS.get().remote.ragdoll_lead_share;
     let pull = spread_pull(ragdoll.bones(), body, impulse, at, lead);
     // The hooked body's share first: its failure is the line's.
     if let Some(lead) = pull.lead {
-        unsafe { push(lead.body, lead.owner, lead.impulse, lead.at) }?;
+        unsafe { bodies::shove(lead.body, lead.owner, lead.impulse, lead.at) }?;
     }
     for share in pull.spread {
         // A bone the game has freed since the read is passed over; the rest still pull.
-        let _ = unsafe { push(share.body, share.owner, share.impulse, share.at) };
+        let _ = unsafe { bodies::shove(share.body, share.owner, share.impulse, share.at) };
     }
     Ok(())
 }

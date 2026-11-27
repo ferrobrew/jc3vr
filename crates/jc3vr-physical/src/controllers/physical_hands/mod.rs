@@ -92,7 +92,6 @@ use std::num::NonZeroUsize;
 
 pub use config::PhysicalHandsConfig;
 use glam::Vec3;
-use jc3gi::physics::hknpWorld;
 use jc3vr_body::controllers::physics::{line_body, world};
 use jc3vr_core::published::Stamp;
 use state::{State, stale_after};
@@ -112,10 +111,6 @@ use jc3vr_body::controllers::{
 use jc3vr_input::frame::Hand;
 
 use crate::controllers::physical_hands::state::STATE;
-
-pub(crate) unsafe fn carry_bodies_destroying(world: *mut hknpWorld, ids: *const u32, count: i32) {
-    unsafe { carry_collision::destroying(world, ids, count) };
-}
 
 /// The loose object each hand carries, by [`Hand::index`](jc3vr_input::frame::Hand::index),
 /// for the loadout table: a prop, not a grip on something hinged, a door, or a character, which are

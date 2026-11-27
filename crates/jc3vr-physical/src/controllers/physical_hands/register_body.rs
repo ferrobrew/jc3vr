@@ -11,7 +11,7 @@ use jc3gi::{character::character::Character, physics::hknpWorld};
 use jc3vr_body::{contributions::BodyContributions, controllers::facts::climb::ClimbReaders};
 
 use crate::controllers::physical_hands::{
-    carry_bodies_destroying, climb, palm_push, physics, press_summary, remote,
+    carry_collision, climb, palm_push, physics, press_summary, remote,
 };
 
 /// Fill the physical hands' fields of `body`.
@@ -59,5 +59,5 @@ unsafe fn bodies_destroying(world: *mut hknpWorld, ids: *const u32, count: i32) 
             climb::lifetime::destroyed(world as usize, body);
         }
     }
-    unsafe { carry_bodies_destroying(world, ids, count) };
+    unsafe { carry_collision::destroying(world, ids, count) };
 }
