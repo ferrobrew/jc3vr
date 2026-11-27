@@ -52,7 +52,7 @@ The fields `weapon_hash`, `offset_m`, and `angles_deg` are the serde form of `Si
 
 ## In the payload
 
-The payload looks a held weapon's sight correction up by `weapon_hash`: the per-weapon entry in the mod's config first, then this table, then none, which leaves the sight line on the fire point. It uses only the `scoped`, `pistol`, and `tuned` entries; an `iron_uncertain` or `failed` entry is not trusted and leaves the weapon on its fire point. See [`docs/mod/input/controllers.md`, "Sight lines"](../../docs/mod/input/controllers.md#sight-lines).
+The payload looks a held weapon's sight correction up by `weapon_hash`: the per-weapon entry in the mod's config first, then this table, then none, which leaves the sight line on the fire point. It uses only the `scoped`, `pistol`, and `tuned` entries; an `iron_uncertain` or `failed` entry is not trusted and leaves the weapon on its fire point. See [`docs/mod/input/hands-and-aiming.md`, "Sight lines"](../../docs/mod/input/hands-and-aiming.md#sight-lines).
 
 ## Tuned entries
 
