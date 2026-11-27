@@ -2,7 +2,7 @@
 
 `engine/` is reverse-engineered ground truth about Just Cause 3 as it is, independent of the mod. `mod/` is the mod's design and shipped implementation. `issues/` holds investigations scoped to one issue. `sessions/` records each headset playtest and is not edited after the fact. Start with [architecture.md](architecture.md); [roadmap.md](roadmap.md) says where the project stands.
 
-[engine/rendering/rendering.md](engine/rendering/rendering.md) is the one page that covers both the engine's frame pipeline and the mod's stereo driver against it. Its section numbers (`rendering §N`) are referenced from code and docs, so it stays whole.
+Code and docs cite [engine/rendering/rendering.md](engine/rendering/rendering.md) by section number (`rendering §N`), so its numbers stay stable; a section that goes leaves a gap rather than renumbering the rest.
 
 ## engine/
 
@@ -14,14 +14,13 @@
 
 ### rendering/
 
-- [rendering.md](engine/rendering/rendering.md): the frame pipeline, camera and projection, present, resolution and render setups, and the stereo double-draw.
+- [rendering.md](engine/rendering/rendering.md): the frame pipeline, camera and projection, the passes and buffers, what advances per frame and per dispatch, the draw lists and their sort, present, and resolution.
 - [lighting-shadow-pipeline.md](engine/rendering/lighting-shadow-pipeline.md): the per-frame sun-shadow and global-lighting state, and which constants are parity- or counter-indexed.
 - [shaders.md](engine/rendering/shaders.md): extracting and disassembling the game's shaders, and how the engine creates and reloads them.
 - [render-setups-reinit.md](engine/rendering/render-setups-reinit.md): the runtime resize path and the render setups.
 - [window-glass.md](engine/rendering/window-glass.md): window glass, its damage, and how a pane is drawn and hidden.
 - [model-culling.md](engine/rendering/model-culling.md): the instance cull and the per-render-block frustum cull.
 - [terrain.md](engine/rendering/terrain.md): the terrain's blocks, patch culling, the hull's discards, and the detail skin's budget.
-- [render-pass-sort.md](engine/rendering/render-pass-sort.md): the render-pass sort and its depth buckets.
 - [ui-rendering.md](engine/rendering/ui-rendering.md): how the Scaleform UI is updated, captured, and rendered, and the HUD movie's layout.
 
 ### performance/

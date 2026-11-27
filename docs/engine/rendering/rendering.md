@@ -1,283 +1,159 @@
-# JC3 (Apex engine) per-frame rendering pipeline — authoritative reference
+# JC3 per-frame rendering pipeline
 
-Where a claim could not be confirmed it is flagged **[UNVERIFIED]**. The concrete addresses, struct offsets, singletons and globals all live in the pyxis-defs (the `graphics_engine/`, `camera/`, `ui/` modules); this doc is the wiring — what each thing is, what reads what, and the frame order. Reference everything here by name and follow the name into the defs for the exact address/offset.
+The wiring of Just Cause 3's frame: what each piece is, what reads what, and the frame order. Addresses, offsets, singletons, and globals live in the pyxis defs (the `graphics_engine/`, `camera/`, and `ui/` modules); follow a name there. Claims not confirmed are marked unverified. The shader side (extracting, disassembling, and finding shaders, and how the engine creates them) is in [`shaders.md`](shaders.md).
 
-For the shader side — extracting the DXBC from the bundles, disassembling it, finding a specific effect, and how the engine creates and reloads shaders — see [`shaders.md`](shaders.md). How the mod patches shaders in memory is in [`shader-patching.md`](../../mod/rendering/shader-patching.md).
-
-Key singletons:
-- [`GraphicsEngine`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::GraphicsEngine) and [`RenderEngine`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderEngine): two separate singletons. `GraphicsEngine` owns the scene render targets, the main render context, and the render camera; `RenderEngine` owns the pass array and the global shader-constant staging blocks.
-- [`CameraManager`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/camera::camera_manager::CameraManager) (engine-side) instance.
-- [`GameCameraManager`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/camera::game_camera_manager::GameCameraManager) instance: a distinct singleton (`Base::CSingle<GameCameraManager>::Instance`), separate from the engine-side `CameraManager` it drives.
-- [`Clock`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/clock::Clock) instance.
-
----
+The key singletons are [`GraphicsEngine`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::GraphicsEngine) (the scene render targets, the main render context, and the render camera), [`RenderEngine`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderEngine) (the pass array and the global shader-constant staging blocks), the engine-side [`CameraManager`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/camera::camera_manager::CameraManager), the separate [`GameCameraManager`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/camera::game_camera_manager::GameCameraManager) (`Base::CSingle<GameCameraManager>::Instance`) that drives it, and [`Clock`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/clock::Clock).
 
 ## 1. Threading & frame structure
 
 ### 1.1 Two threads
 
-- Main / sim thread runs `Game::Update` -> `Game::UpdateRender` -> `Game::Draw` -> `GraphicsEngine::Draw`.
-- Render / draw worker thread runs `GraphicsEngine::HandleDrawThreadTask`, which builds and submits the actual GPU command stream for the frame.
-
-The split is decided in `GraphicsEngine::DispatchDraw`:
-
-```c
-if ( CpuPrimaryCount() <= 1 )
-    return HandleDrawThreadTask(a1, &param);                   // inline, same thread
-// else: post a fragment job "CallProxy" to the worker pool
-v2 = HashString("CallProxy");
-CpuFragmentCall(v2, v4 /* {fn=HandleDrawThreadTaskProxy, ctx, signal} */, 24, &v5, 0);
-```
-
-So with >1 CPU primary, `DispatchDraw` enqueues a `CpuFragmentCall` whose function, [`HandleDrawThreadTaskProxy`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::graphics_engine##func-HandleDrawThreadTaskProxy), tail-calls `HandleDrawThreadTask` on a worker; with a single primary it runs inline. The work performed is identical either way — only the thread differs.
+The main thread runs `Game::Update` -> `Game::UpdateRender` -> `Game::Draw` -> `GraphicsEngine::Draw`. The draw worker runs `GraphicsEngine::HandleDrawThreadTask`, which builds and submits the frame's GPU work. `GraphicsEngine::DispatchDraw` chooses: with one CPU primary (`CpuPrimaryCount() <= 1`) it calls `HandleDrawThreadTask` inline; otherwise it posts a `CpuFragmentCall` ("CallProxy") whose function, [`HandleDrawThreadTaskProxy`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::graphics_engine##func-HandleDrawThreadTaskProxy), tail-calls it on a worker. The work is identical either way.
 
 ### 1.2 What `WaitForCPUDrawToFinish` drains
 
-```c
-if ( a1->m_DrawFragmentSignal ) CpuFragmentWaitUntilSignalIsNonZero();  // wait on the shared_ptr<SCallProxyKeepAlive> end-draw signal
-if ( !a1->m_CPUDrawFinished )                                            // the "draw done" event-set flag
-    WaitForSingleObject(a1->m_CPUFinishedDrawingEvent, INFINITE);        // wait on the draw-done Win32 event
-```
-
-`GraphicsEngine::WaitForCPUDrawToFinish` blocks until the previous dispatched `HandleDrawThreadTask` has finished (the end-of-draw `SetEvent` at the tail of `HandleDrawThreadTask` sets [`GraphicsEngine::m_CPUFinishedDrawingEvent`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::GraphicsEngine##field-m_CPUFinishedDrawingEvent) and its flag [`GraphicsEngine::m_CPUDrawFinished`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::GraphicsEngine##field-m_CPUDrawFinished); the fragment signal is [`GraphicsEngine::m_DrawFragmentSignal`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::GraphicsEngine##field-m_DrawFragmentSignal)). It is the fence between the render worker and the next frame's sim work. `Game::Draw` calls it at entry and `GraphicsEngine::Draw` re-checks the same two conditions in its prologue.
+`GraphicsEngine::WaitForCPUDrawToFinish` is the fence between the draw worker and the next frame's sim work. It waits on the end-draw fragment signal ([`GraphicsEngine::m_DrawFragmentSignal`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::GraphicsEngine##field-m_DrawFragmentSignal), a `shared_ptr<SCallProxyKeepAlive>`) if set, then, unless [`GraphicsEngine::m_CPUDrawFinished`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::GraphicsEngine##field-m_CPUDrawFinished) is set, on the Win32 event [`GraphicsEngine::m_CPUFinishedDrawingEvent`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::GraphicsEngine##field-m_CPUFinishedDrawingEvent), which the tail of `HandleDrawThreadTask` sets. `Game::Draw` calls it at entry, and `GraphicsEngine::Draw` re-checks the same two conditions in its prologue.
 
 ### 1.3 Prologue of `GraphicsEngine::Draw` — per-real-frame-once state
 
-Executed once per real frame, in order:
+In order:
 
 | Operation | Notes |
 |---|---|
-| wait on the fragment signal + draw-done event | drain previous frame |
-| `m_RenderContext.m_Dt = dt` ([`RenderContext::m_Dt`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::RenderContext##field-m_Dt)) | store the frame dt for the worker |
-| `render_frame_counters.m_FrameIndex = render_frame_counters.m_Counter++` | **RenderFrameCounter / parity source**: `m_FrameIndex` = previous value of `m_Counter`, then `m_Counter` increments |
-| [`render_frame_index`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::render_frame_index) `= m_Counter % 3` | a `%3` ring index |
-| [`previous_render_context_frame_index`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::previous_render_context_frame_index) `= m_RingIndex` | save previous |
-| `render_frame_counters.m_RingIndex = m_FrameIndex % 3` | the per-frame `%3` ring used by RBI/CB indices |
-| `++m_CurrBackBufferCopy`, wrapping to 0 at `m_BackBufferCopyCount` | [`RenderEngine::m_CurrBackBufferCopy`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderEngine##field-m_CurrBackBufferCopy) is the current slot of [`RenderEngine::m_BackBufferCopy`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderEngine##field-m_BackBufferCopy), the ring of scene-colour copies that serves as the screen-space refraction source. It is not a ring of presentable buffers; those are owned by the DXGI swapchain (§7). |
-| `TextureCachePreUpdate` | texture streaming bookkeeping |
-| `CGameStateRun::UpdatePostEffectEdit` | post-effect-edit (dev) sync |
-| [`GraphicsEngine::TextureCachePlatformUpdate(engine, masterCtx)`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::GraphicsEngine##func-TextureCachePlatformUpdate) | **the camera copy + render-camera setup happens here — see §2** |
-| `Clock::Update` | **the per-frame clock tick** (the slow-mo hazard, see §5.4) |
-| `CConstantBufferPool::HandBackBuffers` | CB pool ring rotation |
-| `CRenderEngine::CalculateConstantBufferIndices` | per-RBI CB draw indices |
-| `DispatchDraw` | hand the frame to the worker |
+| wait on the fragment signal and the draw-done event | drains the previous frame |
+| `m_RenderContext.m_Dt = dt` ([`RenderContext::m_Dt`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::RenderContext##field-m_Dt)) | the frame dt for the worker |
+| `render_frame_counters.m_FrameIndex = render_frame_counters.m_Counter++` | the frame counter and parity source |
+| [`render_frame_index`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::render_frame_index) `= m_Counter % 3`; [`previous_render_context_frame_index`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::previous_render_context_frame_index) `= m_RingIndex`; `m_RingIndex = m_FrameIndex % 3` | the three-slot ring used by render-block and constant-buffer indices |
+| `++m_CurrBackBufferCopy`, wrapping at `m_BackBufferCopyCount` | [`RenderEngine::m_CurrBackBufferCopy`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderEngine##field-m_CurrBackBufferCopy) selects the slot of [`RenderEngine::m_BackBufferCopy`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderEngine##field-m_BackBufferCopy), the ring of scene-colour copies that is the screen-space refraction source, not a ring of presentable buffers (§7) |
+| `TextureCachePreUpdate`, `CGameStateRun::UpdatePostEffectEdit` | texture streaming; the dev post-effect edit sync |
+| [`GraphicsEngine::TextureCachePlatformUpdate`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::GraphicsEngine##func-TextureCachePlatformUpdate) | the active-to-render camera copy (§2.3) |
+| `GraphicsEngine::Flip` unless [`m_FirstFrame`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::GraphicsEngine##field-m_FirstFrame) | presents the previous frame (§7); `m_FirstFrame` is then cleared |
+| `HandleModeChange` | services a pending resize ([render-setups-reinit.md](render-setups-reinit.md)) |
+| `Clock::Update` | the per-frame clock tick |
+| `CConstantBufferPool::HandBackBuffers`, `CRenderEngine::CalculateConstantBufferIndices` | constant-buffer pool rotation and per-block draw indices |
+| `DispatchDraw` | hands the frame to the worker |
 
-The present (Flip) is in this prologue, between `TextureCachePlatformUpdate` and `Clock::Update`: `if (!engine->m_FirstFrame) GraphicsEngine::Flip(engine); engine->m_FirstFrame = 0;` — [`GraphicsEngine::Flip`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::GraphicsEngine##func-Flip) does `AcquireThreadOwnership; graphics_flip(device); ReleaseThreadOwnership` (verified: it calls `graphics_flip` in its body). So the prologue presents the previous frame's back buffer, guarded one-shot by the [`GraphicsEngine::m_FirstFrame`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::GraphicsEngine##field-m_FirstFrame) flag (set elsewhere to skip the very first frame). The present is pipelined: Flip-previous, then `DispatchDraw` the current frame. The mod's `BLOCK_FLIP` suppresses `graphics_flip` — hooking it directly is correct since this prologue reaches it through `GraphicsEngine::Flip`.
+The prologue also rotates the render-pass draw lists (§11). Presenting is pipelined: flip the previous frame, then dispatch the current one. [`GraphicsEngine::Flip`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::GraphicsEngine##func-Flip) is `AcquireThreadOwnership; graphics_flip(device); ReleaseThreadOwnership`.
 
 ### 1.4 Body of `HandleDrawThreadTask` — per-dispatch
 
-High-level order of [`GraphicsEngine::HandleDrawThreadTask`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::GraphicsEngine##func-HandleDrawThreadTask):
+[`GraphicsEngine::HandleDrawThreadTask`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::GraphicsEngine##func-HandleDrawThreadTask), in order:
 
-1. `QueryPerformanceCounter` -> [`draw_start_time`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::draw_start_time).
-2. get master context (`GetMasterContext`) -> `m_RenderContext.m_Context` ([`RenderContext::m_Context`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::RenderContext##field-m_Context)).
-3. `ShadowManager::CommitRenderPassSettings` (if [`shadow_system_enabled`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::shadow_manager::shadow_system_enabled), i.e. shadows enabled).
-4. `TextureCacheGpuUpdate`.
-5. `RenderPass::SetupRenderContext(&m_RenderContext, 0, ctx)` — [`GraphicsEngine::m_RenderContext`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::GraphicsEngine##field-m_RenderContext) is the main `RenderContext`.
-6. `RenderPass::SetRenderContextCamera(&m_RenderContext, CameraManager.m_RenderCamera)` — feeds the render camera (see §2) into the render context.
-7. `RenderEngine::SetGlobalShaderConstants(&m_RenderContext)` — uploads per-view CB.
-8. `SetAllGlobalShaderProgramConstants`.
-9. If [`GraphicsEngine::m_DrawScene`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::GraphicsEngine##field-m_DrawScene) is set:
-   - UI off-screen textures and render kick-off ([`UIManager::RenderOffScreenTextures`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::ui_manager::UIManager##vfunc-RenderOffScreenTextures), then [`UIManager::StartRender`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::ui_manager::UIManager##vfunc-StartRender), both virtual calls on the `GetIUIManager` instance).
-   - `PreDraw`.
-   - `RenderEngine::DrawGBuffer` (passes `RP_Z_OCCLUDERS..RP_LAST_GBUFFER`).
-   - **EffectInfo slot machine** (see §5.1).
-   - `RenderEngine::Draw` (passes `RP_REFLECTIVE_WATER_PLANES..RP_PARTICLE_ONSCREEN`: lighting/SSR/reflection/main).
-   - `PostEffectsManager::ApplyWorldFilters(dt, ...)`.
-   - `RenderEngine::DrawPosteffects` (pass `RP_POSTEFFECTS`).
-   - else (no main draw): just UI submit.
-10. `PostEffectsManager::ApplyGlobalFilters(dt, ctx)`.
-11. `RenderEngine::PostDraw`.
-12. GPU-profiler `EndFrame` (one of two countdown branches), screenshot countdown [`GraphicsEngine::m_FramesUntilScreenshot`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::GraphicsEngine##field-m_FramesUntilScreenshot).
-13. UI render block (clear, then [`UIManager::RenderStaticBackGround`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::ui_manager::UIManager##vfunc-RenderStaticBackGround), [`UIManager::SyncRender`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::ui_manager::UIManager##vfunc-SyncRender), and [`UIManager::Submit`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::ui_manager::UIManager##vfunc-Submit)).
-14. `QuickDrawController::Draw` (debug overlays).
-15. `Graphics::EndDraw(m_RenderContext.m_Context)` — submits the frame's recorded command work. **Not** a copy to the presentable surface; see §12 for the correction and the mislabelling behind it.
-16. end-draw one-shot signal callbacks (`sig::Signal`) — self-removing.
-17. `RenderEngine::EraseAllDeletedRenderBlocks`.
-18. compute draw-time floats ([`GraphicsEngine::m_CPUDrawStallDuration`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::GraphicsEngine##field-m_CPUDrawStallDuration), [`GraphicsEngine::m_DrawTime`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::GraphicsEngine##field-m_DrawTime)).
-19. `m_CPUDrawFinished = 1; SetEvent(m_CPUFinishedDrawingEvent)` — signal draw-done.
+1. `QueryPerformanceCounter` into [`draw_start_time`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::draw_start_time); `GetMasterContext` into [`RenderContext::m_Context`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::RenderContext##field-m_Context).
+2. `ShadowManager::CommitRenderPassSettings` if [`shadow_system_enabled`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::shadow_manager::shadow_system_enabled); `TextureCacheGpuUpdate`.
+3. `RenderPass::SetupRenderContext` on [`GraphicsEngine::m_RenderContext`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::GraphicsEngine##field-m_RenderContext), then `RenderPass::SetRenderContextCamera` with `CameraManager.m_RenderCamera` (§2.4).
+4. `RenderEngine::SetGlobalShaderConstants` (the per-view constant buffer) and `SetAllGlobalShaderProgramConstants`.
+5. If [`GraphicsEngine::m_DrawScene`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::GraphicsEngine##field-m_DrawScene): [`UIManager::RenderOffScreenTextures`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::ui_manager::UIManager##vfunc-RenderOffScreenTextures) and [`UIManager::StartRender`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::ui_manager::UIManager##vfunc-StartRender); `PreDraw`; `RenderEngine::DrawGBuffer` (`RP_Z_OCCLUDERS..RP_LAST_GBUFFER`); the EffectInfo slot machine (§5.1); `RenderEngine::Draw` (`RP_REFLECTIVE_WATER_PLANES..RP_PARTICLE_ONSCREEN`); `PostEffectsManager::ApplyWorldFilters(dt)`; `RenderEngine::DrawPosteffects` (`RP_POSTEFFECTS`). Otherwise only the UI submit.
+6. `PostEffectsManager::ApplyGlobalFilters(dt)`, then `RenderEngine::PostDraw`.
+7. GPU-profiler `EndFrame` and the screenshot countdown [`GraphicsEngine::m_FramesUntilScreenshot`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::GraphicsEngine##field-m_FramesUntilScreenshot) (two branches).
+8. The UI block: a stencil clear, then [`UIManager::RenderStaticBackGround`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::ui_manager::UIManager##vfunc-RenderStaticBackGround), [`SyncRender`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::ui_manager::UIManager##vfunc-SyncRender), [`Submit`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::ui_manager::UIManager##vfunc-Submit), and `ResetContext`.
+9. `QuickDrawController::Draw` (debug overlays).
+10. `Graphics::EndDraw`, which submits the frame's command work; it is not a copy to the presentable surface (§12).
+11. The end-draw one-shot `sig::Signal` callbacks, which remove themselves; `RenderEngine::EraseAllDeletedRenderBlocks`.
+12. The draw-time floats [`GraphicsEngine::m_CPUDrawStallDuration`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::GraphicsEngine##field-m_CPUDrawStallDuration) and [`GraphicsEngine::m_DrawTime`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::GraphicsEngine##field-m_DrawTime), then `m_CPUDrawFinished = 1; SetEvent(m_CPUFinishedDrawingEvent)`.
 
 ### 1.5 Per-frame vs per-dispatch
 
-- **Per real frame (once), in `GraphicsEngine::Draw` prologue:** frame counter/parity (`render_frame_counters`), `%3` ring, the scene-colour copy ring slot (`RenderEngine::m_CurrBackBufferCopy`), texture-cache pre/platform update, the active->render camera copy, `Clock::Update`, CB pool `HandBackBuffers`, CB indices.
-- **Per dispatch (would run twice if you Draw twice), in `HandleDrawThreadTask`:** the entire render pass chain, the EffectInfo slot machine (§5.1), `ApplyWorldFilters`/`ApplyGlobalFilters` accumulators, screenshot countdown, profiler frame begin/end, the final copy + end-draw callbacks.
-
----
+Once per real frame, in the `Draw` prologue: the frame counters and parity, the three-slot ring, the scene-colour copy slot, the texture-cache updates, the camera copy, the draw-list rotation, `Clock::Update`, and the constant-buffer pool and indices. Once per dispatch, in `HandleDrawThreadTask`: the whole pass chain, the EffectInfo slot machine, the filters' dt accumulators, the screenshot countdown, the profiler frame, the end-draw callbacks, and the draw-done event. §5 lists what each advances.
 
 ## 2. Camera data flow
 
 ### 2.1 Cast of cameras
 
-- `GameCameraManager` holds `m_ControlContext` with four sub-contexts (Previous/Next x Camera/Render); these carry `m_CameraTransform` (a world transform, not a view matrix), FOV, blur factors.
-- `CameraManager` (engine) holds:
-  - [`m_ActiveCamera`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/camera::camera_manager::CameraManager##field-m_ActiveCamera): the active scene camera (a [`Camera`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/camera::camera::Camera)).
-  - [`m_RenderCamera`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/camera::camera_manager::CameraManager##field-m_RenderCamera): the camera the render thread reads.
-- A `Camera`'s matrix/flag layout is in the `Camera` def (`m_PreviousTransformF`, `m_TransformF`, `m_TransformT0`, `m_TransformT1`, `m_ProjectionF`, `m_ViewProjectionF`, `m_Projection`, `m_View`, `m_ViewProjection`, ...). The [`Camera::m_StateBitfield`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/camera::camera::Camera##field-m_StateBitfield) ([`CameraState`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/camera::camera::CameraState)) carries [`m_ComputeView`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/camera::camera::CameraState##flag-m_ComputeView) (compute-view-from-transform), [`m_DirtyProjection`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/camera::camera::CameraState##flag-m_DirtyProjection), and [`m_IsRenderCamera`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/camera::camera::CameraState##flag-m_IsRenderCamera) (the SetupRenderCamera one-shot guard).
+`GameCameraManager` holds `m_ControlContext` with four sub-contexts (previous and next, camera and render), each carrying a world transform `m_CameraTransform` (not a view matrix), the FOV, and blur factors. `CameraManager` holds [`m_ActiveCamera`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/camera::camera_manager::CameraManager##field-m_ActiveCamera), the active scene [`Camera`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/camera::camera::Camera), and [`m_RenderCamera`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/camera::camera_manager::CameraManager##field-m_RenderCamera), the camera the draw thread reads. A `Camera` carries `m_PreviousTransformF`, `m_TransformF`, `m_TransformT0`, `m_TransformT1`, `m_ProjectionF`, `m_ViewProjectionF`, `m_Projection`, `m_View`, `m_ViewProjection`, and their previous-frame copies. [`Camera::m_StateBitfield`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/camera::camera::Camera##field-m_StateBitfield) ([`CameraState`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/camera::camera::CameraState)) holds [`m_ComputeView`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/camera::camera::CameraState##flag-m_ComputeView), [`m_DirtyProjection`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/camera::camera::CameraState##flag-m_DirtyProjection), and [`m_IsRenderCamera`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/camera::camera::CameraState##flag-m_IsRenderCamera).
 
 ### 2.2 Sim path: where `m_ActiveCamera.m_View` is produced (once per frame)
 
-In `GameCameraManager::UpdateRender`, runs in the sim path (under `CGameStateRun::UpdateRender`, before `Game::Draw`):
+`GameCameraManager::UpdateRender` runs on the sim path, under `CGameStateRun::UpdateRender` and before `Game::Draw`:
 
 ```
-CCameraTree::UpdateRenderContexts(...)         // populate m_ControlContext contexts
+CCameraTree::UpdateRenderContexts(...)         // fill the m_ControlContext contexts
 CSpecialCameras::UpdateRender(...)
-GameCameraManager::PushRenderContext(this)     // -> InitTransform: m_ActiveCamera.T0 = T1 = ctx transform
-CameraManager::UpdateRender(dt, dtf)
+GameCameraManager::PushRenderContext(this)     // -> CameraManager::InitTransform
+CameraManager::UpdateRender(dt, dtf)           // -> Camera::UpdateRender for every camera
 ```
 
-`PushRenderContext` eventually calls [`CameraManager::InitTransform`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/camera::camera_manager::CameraManager##func-InitTransform):
-
-```c
-v2 = m_ActiveCamera;
-memcpy(&v2->m_TransformT0, mat, sizeof(CMatrix4f));
-memcpy(&v2->m_TransformT1, mat, sizeof(CMatrix4f));     // T0 = T1 = context transform
-```
-
-So the gameplay camera's *world transform* lands in `m_ActiveCamera.m_TransformT0 == m_TransformT1`.
-
-Then `CameraManager::UpdateRender` iterates every camera in its list and calls [`Camera::UpdateRender`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/camera::camera::Camera##func-UpdateRender). That function is where `m_View` is computed:
+[`CameraManager::InitTransform`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/camera::camera_manager::CameraManager##func-InitTransform) copies the context transform into both `m_ActiveCamera.m_TransformT0` and `m_TransformT1`. [`Camera::UpdateRender`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/camera::camera::Camera##func-UpdateRender) then computes the view:
 
 ```c
 m_PreviousView = m_View;  m_PreviousProj = m_Projection;  m_PreviousViewProjection = m_ViewProjection;
 m_PreviousTransformF = m_TransformF;
-Lerp(&m_TransformF, &m_TransformT0, &m_TransformT1, dtf);     // T0==T1 => constant
-if ( m_StateBitfield & m_ComputeView )                        // SetComputeView(true)
-    m_View = m_TransformF;
-    CMatrix4f::Inverse(&m_View);                              // m_View = inverse(world transform)
-...
+Lerp(&m_TransformF, &m_TransformT0, &m_TransformT1, dtf);
+if ( m_StateBitfield & m_ComputeView ) { m_View = m_TransformF; CMatrix4f::Inverse(&m_View); }
 Multiply4x4(&m_View, &m_Projection, &m_ViewProjection);
 m_ProjectionF = m_Projection;  m_ViewProjectionF = m_ViewProjection;  ...
 ```
 
-[`Camera::SetComputeView(true)`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/camera::camera::Camera##func-SetComputeView) sets `CameraState::m_ComputeView`. The active gameplay camera has this set, so `m_View` is re-derived as `Inverse(m_TransformF)` every sim frame, from the T0/T1-Lerped transform. Because `InitTransform` set T0 == T1, the Lerp is a no-op constant and engine pose interpolation is effectively disabled for the active camera (independent of `m_InterpolationOverride`).
-
-`m_View` is computed exactly once per real frame, in the sim path, here. It is NOT recomputed at Draw time.
+The active gameplay camera has `m_ComputeView` set ([`Camera::SetComputeView`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/camera::camera::Camera##func-SetComputeView)), so `m_View = Inverse(m_TransformF)` every sim frame. Because `InitTransform` set T0 equal to T1, the lerp is constant and pose interpolation is effectively off for the active camera, whatever `m_InterpolationOverride` says. `m_View` is computed once per real frame, here, and never at draw time.
 
 ### 2.3 Draw path: active -> render camera copy
 
-At Draw time the prologue calls `GraphicsEngine::TextureCachePlatformUpdate`. Near its top:
+Near the top of `TextureCachePlatformUpdate`:
 
 ```c
-memcpy(&this->m_RenderCamera, CameraManager.m_ActiveCamera, sizeof(Camera));  // render-copy = *m_ActiveCamera (whole Camera)
-Camera::SetupRenderCamera(&this->m_RenderCamera, 1);                           // derive VP, reverse-Z, jitter
+memcpy(&this->m_RenderCamera, CameraManager.m_ActiveCamera, sizeof(Camera));
+Camera::SetupRenderCamera(&this->m_RenderCamera, 1);
 CameraManager.m_RenderCamera = &this->m_RenderCamera;
 ```
 
-So the render camera lives inside the `GraphicsEngine` object as [`GraphicsEngine::m_RenderCamera`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::GraphicsEngine##field-m_RenderCamera) and is a byte-for-byte copy of `m_ActiveCamera` (including its `m_View`), made once per frame.
-
-[`Camera::SetupRenderCamera`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/camera::camera::Camera##func-SetupRenderCamera) is guarded by `CameraState::m_IsRenderCamera`. The body (verified):
+The render camera is [`GraphicsEngine::m_RenderCamera`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::GraphicsEngine##field-m_RenderCamera), a byte copy of the active camera, `m_View` included, made once per frame. [`Camera::SetupRenderCamera`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/camera::camera::Camera##func-SetupRenderCamera):
 
 ```c
-result = m_StateBitfield;
-if ( (result & m_IsRenderCamera) == 0 ) {     // check-AND-SET: skip entirely if already set
+if ( (m_StateBitfield & m_IsRenderCamera) == 0 ) {   // check-and-set: a no-op once set
     m_StateBitfield |= m_IsRenderCamera;
-    // reverse-Z fixup on m_Projection (z' = w - z): e[2]=e[3]-e[2]; e[6]=e[7]-e[6]; e[10]=e[11]-e[10]; e[14]=e[15]-e[14]
-    // same reverse-Z on the secondary/previous projection:
-    if ( a2 ) {                               // a2 = "apply jitter" (always 1 from the prologue call)
+    // reverse-Z on m_Projection, then on m_PreviousProj (§2.7)
+    if ( a2 ) {                                     // apply jitter; 1 from the prologue
         ApplyJitterTransform(engine, m_Projection, ...);
         ApplyJitterTransform(engine, m_PreviousProj, ...);
     }
     Multiply4x4(m_PreviousView, m_PreviousProj, m_PreviousViewProjection);
     Multiply4x4(m_View,         m_Projection,   m_ViewProjection);
-    m_ProjectionF     = m_Projection;
-    m_ViewProjectionF = m_ViewProjection;
-    // + the secondary projection / VP float-shadow copies
+    m_ProjectionF = m_Projection;  m_ViewProjectionF = m_ViewProjection;
+    // and the secondary projection and view-projection float copies
 }
-return result;                                 // if m_IsRenderCamera already set: NO-OP
 ```
 
-The guard is check-and-set: the body runs only when `m_IsRenderCamera` is clear, and sets it as its first action. The active/source camera (`m_ActiveCamera`) never has `m_IsRenderCamera` set — `Camera::UpdateRender` (the sim-path per-frame update) asserts `m_IsRenderCamera == false`, so the active cam carries it clear. The Draw-prologue memcpy copies it verbatim, so the render copy (`GraphicsEngine::m_RenderCamera`) always lands with `m_IsRenderCamera` clear; `SetupRenderCamera` then runs its full body (reverse-Z + jitter + VP rebuild) and sets `m_IsRenderCamera` on the copy. `m_ViewProjection` / `m_ViewProjectionF` are therefore rebuilt from `m_View x m_Projection` on every Draw. A second call on the same object (a double dispatch reusing the copy) is a no-op, which constrains hook ordering (§2.5).
+`Camera::UpdateRender` asserts `m_IsRenderCamera` is clear, so the active camera never has it, the copy lands with it clear, and the full body runs on every draw, rebuilding the view-projections from `m_View · m_Projection`. A second call on the same copy is a no-op. `SetupRenderCamera` reads `m_View` and never writes or derives it, so a write to the render camera's `m_View` after it has run leaves `m_ViewProjection` and `m_ViewProjectionF` stale until rebuilt by hand (§2.6).
 
-`SetupRenderCamera` reads `m_View` as an input and never writes it. It does not derive `m_View` from any transform. So whatever `m_View` was in the copied active camera is what the render camera uses. Corollary for VR: a hook that writes the render-cam `m_View` *after* `SetupRenderCamera` has already run (`m_IsRenderCamera` set) will leave a stale `m_ViewProjection`/`m_ViewProjectionF`, because the re-call is a no-op and nothing else rebuilds VP on the render cam. You must then rebuild VP yourself (§2.6).
-
-`ApplyJitterTransform` -> [`AntiAliasingEffect::ApplySubsampleJitter`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::post_effects::AntiAliasingEffect##func-ApplySubsampleJitter) only fires when the AA mode is [`AAMode::AA_SMAA_T2X`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::post_effects::AAMode##variant-AA_SMAA_T2X); it post-multiplies a sub-pixel clip-space translation onto the projection (`proj = proj · jitterMat`).
-
-[`Camera::SetupRenderCamera`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/camera::camera::Camera##func-SetupRenderCamera) jitters `m_PreviousProj` with the same offset as `m_Projection`, this frame's phase, before it rebuilds `m_PreviousViewProjection`, so the velocity pass's current and previous positions both carry it and the motion it encodes does not. Only the scene render camera is jittered: the Draw prologue sets it up with the jitter flag set, while a render pass's external camera (the reflection and shadow cameras) is set up without it, by [`RenderPass::GetSortCamera`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_pass::RenderPass##func-GetSortCamera) and [`RenderPass::Draw`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_pass::RenderPass##func-Draw). The visibility cull and the sun-shadow cascade fit read the active camera, which is never jittered. Every pass that draws with the render camera's constants, the deferred passes' reconstruction from depth included, sees the jittered projection, so they agree with the jittered depth.
+`ApplyJitterTransform` reaches [`AntiAliasingEffect::ApplySubsampleJitter`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::post_effects::AntiAliasingEffect##func-ApplySubsampleJitter), which acts only in [`AAMode::AA_SMAA_T2X`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::post_effects::AAMode##variant-AA_SMAA_T2X): it post-multiplies a sub-pixel clip-space translation (`m[12] = jx`, `m[13] = jy`, each the offset over the target width or height) onto the projection, `proj = proj · jitterMat`. The current and previous projections take the same offset, this frame's phase, so the velocity pass's two positions both carry it and the motion it encodes does not. Only the scene render camera is jittered: a pass's external camera (the reflection and shadow cameras) is set up without the flag by [`RenderPass::GetSortCamera`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_pass::RenderPass##func-GetSortCamera) and [`RenderPass::Draw`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_pass::RenderPass##func-Draw), and the visibility cull and the sun-shadow fit read the unjittered active camera. Every pass that draws with the render camera's constants, depth reconstruction included, sees the jittered projection, so they agree with the jittered depth.
 
 ### 2.4 What the scene render actually reads (camera-relative)
 
-In `HandleDrawThreadTask`:
+The main scene renders camera-relative, for large-world precision: `clip = (objectWorld - CameraPosition) · OffsetViewProjection`, where `OffsetViewProjection` is the view-projection with the view's translation row zeroed and `CameraPosition` is the camera's world position, supplied separately.
 
-```c
-SetRenderContextCamera(&engine->m_RenderContext, CameraManager.m_RenderCamera)   // = &engine->m_RenderCamera
-SetGlobalShaderConstants(&engine->m_RenderContext)
-```
+[`RenderPass::SetRenderContextCamera`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_pass::RenderPass##func-SetRenderContextCamera) (the non-shadow path) fills the render context from the render camera: the view matrix from `m_View`, the projection from `m_ProjectionF`, `CameraPosition` from `m_TransformF`'s translation row, the full `m_TransformF` rows, and, through `CalculateOffsetViewProjectionMatrix` called for the current and previous frames, the offset view-projection: `m_View` with its translation row set to `{0,0,0,1}`, times the projection. That is the matrix opaque geometry uses.
 
-The main scene is rendered **camera-relative** (for large-world float precision). The opaque-geometry transform is
+`CRenderEngine::SetGlobalShaderConstants` copies the render camera's full, translation-bearing `m_ViewProjectionF` into [`RenderEngine::m_VPGlobalConstData`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderEngine##field-m_VPGlobalConstData), with the camera-position constants from `m_TransformF`. That per-view block drives screen-space and non-geometry work (post effects, billboards, the camera-position constant), not opaque vertices.
 
-```
-clip = (objectWorld - CameraPosition) x OffsetViewProjection
-```
-
-where `OffsetViewProjection` is the view-projection with the view's **translation row zeroed**, and `CameraPosition` is the camera's **world position** supplied separately. The camera translation lives in the per-object subtraction, not in the matrix.
-
-[`RenderPass::SetRenderContextCamera`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_pass::RenderPass##func-SetRenderContextCamera) (non-shadow path) reads the live render camera (`GraphicsEngine::m_RenderCamera`) and fills the render context (`GraphicsEngine::m_RenderContext`):
-
-- ctx ViewMatrix <- camera `m_View`
-- ctx ProjectionMatrix <- camera `m_ProjectionF`
-- ctx **CameraPosition** <- the translation row of `m_TransformF` (the camera world position)
-- ctx <- the full `m_TransformF` world-transform rows
-- `CalculateOffsetViewProjectionMatrix` is called twice, current + previous: it copies `m_View`, **zeros its translation row** (`row3 = {0,0,0,1}`), multiplies by the projection, and writes the translation-free **OffsetViewProjection** into the context. This is the VP opaque geometry actually uses.
-
-`CRenderEngine::SetGlobalShaderConstants` uploads the **global per-view CB**: it calls `CameraManager::GetRenderCamera` then `memcpy(&this->m_VPGlobalConstData[0], RenderCamera.m_ViewProjectionF, sizeof(CMatrix4f))` ([`RenderEngine::m_VPGlobalConstData`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderEngine##field-m_VPGlobalConstData)) — the *full*, translation-bearing `m_ViewProjectionF`; the camera-position constants come from `m_TransformF`'s translation. This per-view block drives **screen-space / non-geometry** work (post-effects, billboards, the camera-position constant); it is **not** what positions opaque geometry vertices.
-
-**Consequence for VR (the key correction):** on the geometry path, `m_View`'s translation is deleted by the OffsetVP zeroing. A per-eye lateral offset must move the **camera world position** — `m_TransformF`'s translation, hence `CameraPosition` — not `m_View`'s translation. (Confirmed at runtime: writing only `m_View`'s translation gave two divergent `m_ViewProjectionF`s on the render camera but byte-identical geometry between eyes; only the muzzle flash, which rides the per-view CB, shifted.) See §2.5.
-
-### 2.5 Per-eye view injection
-
-Because the geometry is camera-relative (§2.4), the per-eye offset must move the camera **world position** (`m_TransformF`'s translation), not `m_View`'s translation (which the OffsetVP zeros). It targets the **render camera** (`GraphicsEngine::m_RenderCamera`), not `m_ActiveCamera` — the sim recomputes the active camera's `m_View = Inverse(m_TransformF)` (`m_ComputeView`) and the prologue memcpy copies it verbatim, so any per-eye divergence has to be applied to the render-camera copy between dispatches.
-
-**Recipe.** Hook `Camera::SetupRenderCamera` and act only on the main render camera (`this == &engine->m_RenderCamera`), or equivalently hook right after the active->render memcpy in `GraphicsEngine::TextureCachePlatformUpdate`. Per eye:
-
-1. Offset `m_TransformF`'s translation by +/- IPD/2 along the camera's right axis (the first basis row of `m_TransformF`). This moves `CameraPosition`, so the camera-relative geometry diverges.
-2. Re-derive `m_View = Inverse(m_TransformF)` so the view stays consistent with the moved camera (the OffsetVP's rotation comes from `m_View`; the per-view CB's `m_ViewProjectionF` uses the full `m_View`).
-3. Rebuild `m_ViewProjection` / `m_ViewProjectionF` from `m_View x m_Projection` (§2.6) so the per-view CB matches.
-
-Pitfalls:
-
-- Offsetting only `m_View`'s translation does nothing to geometry — the OffsetVP zeros it (§2.4). It shifts only the per-view CB (post / camera-position constant), which is the muzzle-flash-moves-but-world-doesn't symptom.
-- Offsetting only `m_TransformF` without re-deriving `m_View` desyncs `CameraPosition` from the OffsetVP rotation and the per-view CB.
+So `m_View`'s translation never reaches geometry. Moving the viewpoint means moving `m_TransformF`'s translation and re-deriving `m_View` from it; changing only `m_View`'s translation diverges the per-view block's `m_ViewProjectionF` (the muzzle flash moves) while the geometry stays byte-identical.
 
 ### 2.6 The VP-rebuild recipe
 
-The engine's `Matrix4` (`CMatrix4f`) is D3D-style — row-major, row-vector (`clip = p · M`) — and `Matrix4::Multiply4x4(a, b, dest)` writes `dest = a · b`; the full convention (basis-in-rows, the glam bridge) is documented on the `Matrix4` def. `SetupRenderCamera` calls `Multiply4x4(m_View, m_Projection, m_ViewProjection)` ⇒ `m_ViewProjection = m_View · m_Projection`, `clip = p · View · Projection`, and `Camera::UpdateRender` uses the identical order. So to rebuild a render camera after writing a custom `m_View` and/or `m_Projection`:
+The engine's `Matrix4` (`CMatrix4f`) is D3D-style, row-major and row-vector (`clip = p · M`), and `Matrix4::Multiply4x4(a, b, dest)` writes `dest = a · b`; the full convention (basis in rows, the glam bridge) is on the `Matrix4` def. `SetupRenderCamera` and `Camera::UpdateRender` both compute `m_ViewProjection = m_View · m_Projection`. Rebuilding a render camera after writing `m_View` or `m_Projection`:
 
 ```c
-Camera *cam = &engine->m_RenderCamera;                       // == CameraManager.m_RenderCamera
-// (write cam->m_View and/or cam->m_Projection first)
 Multiply4x4(&cam->m_View, &cam->m_Projection, &cam->m_ViewProjection);
 memcpy(&cam->m_ProjectionF,     &cam->m_Projection,     sizeof(CMatrix4f));
 memcpy(&cam->m_ViewProjectionF, &cam->m_ViewProjection, sizeof(CMatrix4f));
 ```
 
-The `*F` float-shadow copies (`m_ProjectionF`, `m_ViewProjectionF`) are what the render context and global CB actually read (§2.4) — you MUST update them too, not just `m_ViewProjection`.
+The `*F` copies are what the render context and the global constants read (§2.4), so they must be updated too.
 
 ### 2.7 Reverse-Z / depth convention + the per-eye projection wedge bug
 
-The base projection built by `Camera::RecalcProjection` (via `PerspectiveFov` / `PerspectiveOffCenter` / `Ortho`) is a standard (non-reversed) projection. The reverse-Z remap `z' = w - z` is applied exactly once per render camera, gated by `m_IsRenderCamera`:
+`Camera::RecalcProjection` builds a standard projection (§2.9). The reverse-Z remap `z' = w - z` is applied once per render camera, by whichever of two sites first sees `m_IsRenderCamera` clear: [`RecalcProjection`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/camera::camera::Camera##func-RecalcProjection) applies it at its tail only when `m_IsRenderCamera` is already set, and `SetupRenderCamera` applies it, under its guard, to whatever `m_Projection` holds, with no check for an already reversed matrix. The depth convention is reverse-Z with NDC z in [0, 1], near at 1 and far at 0, on a `D32FS8` MainDepth.
 
-- [`RecalcProjection`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/camera::camera::Camera##func-RecalcProjection) applies it only when `m_IsRenderCamera` is set — i.e. only when called on a render cam.
-- `SetupRenderCamera` applies it **unconditionally to whatever is in `m_Projection`** when its `m_IsRenderCamera`-guarded body runs (§2.3). There is no "already reversed?" check.
-
-Result: reverse-Z is applied once, by whichever of {`RecalcProjection`-on-render-cam, `SetupRenderCamera`} first sees `m_IsRenderCamera` clear. Depth convention: reverse-Z, NDC z in [0,1] with near=1, far=0 (MainDepth is `D32FS8`), enabling far-plane precision / infinite-far style projections.
-
-**The wedge bug (VR):** if you write a per-eye off-axis projection into the render cam's `m_Projection` **before** `SetupRenderCamera` runs, `SetupRenderCamera` will reverse-Z it. So:
-
-- **Preferred:** supply a standard (non-reversed) off-axis projection into `m_Projection` *before* `SetupRenderCamera`, and let the engine apply reverse-Z + jitter once. Matches engine convention; you also get TAA jitter for free.
-- **Alternative:** supply an already-reverse-Z'd projection *after* `SetupRenderCamera` (when `m_IsRenderCamera` is set, so it won't re-reverse), then rebuild VP/`*F` yourself (§2.6). With this path you must apply jitter yourself if `AA_SMAA_T2X` is active, and maintain `m_PreviousProj`/`m_PreviousViewProjection` for velocity. Do not feed an already-reversed projection into the pre-`SetupRenderCamera` window — that double-applies the remap (the wedge artifact).
-
-`AntiAliasingEffect::ApplySubsampleJitter` only fires when the AA mode is `AA_SMAA_T2X`; it post-multiplies a sub-pixel clip-space translation (`m[12]=jx`, `m[13]=jy`, `j = ±offset/width,height`) onto the projection: `proj = proj · jitterMat`.
+So a projection written into the render camera's `m_Projection` before `SetupRenderCamera` runs is reverse-Z'd and jittered exactly once, and must be a standard one; an already reversed matrix written there is remapped twice, which renders as a wedge. A projection written after `SetupRenderCamera` (flag set) must already be reversed, and then the view-projections (§2.6), the jitter, and `m_PreviousProj` and `m_PreviousViewProjection` for velocity are the writer's to maintain.
 
 ### 2.8 Vehicle camera path
 
-Vehicles take a different path through `GameCameraManager::PushRenderContext`: an `IsInDrivingVehicleState` branch routes the transform differently — a raw matrix, bypassing the jitter freeze — so vehicle head-look behaves differently from on-foot. See `docs/mod/body/head-and-body.md`'s RE notes for the mod-side validation this motivates (logging the cockpit head-bone position against character world position, confirming it isn't clipped to seat or world origin).
+`GameCameraManager::PushRenderContext` routes a driving vehicle's transform differently: its `IsInDrivingVehicleState` branch passes a raw matrix and bypasses the rotation jitter filter, so the vehicle camera behaves differently from on foot.
 
 ### 2.9 Projection construction — exact formulas, real near/far, and consume-vs-rebuild (decompiled)
 
-Decompiled to settle the depth convention for the VR off-axis projection (the claims in §2.7 named the flow; this is the line-level confirmation, plus the numbers).
+`Camera::RecalcProjection` builds `m_Projection` by `m_StateBitfield`: [`m_Ortho`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/camera::camera::CameraState##flag-m_Ortho) selects `CMatrix4f::Ortho`, [`m_UseOffCenter`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/camera::camera::CameraState##flag-m_UseOffCenter) (off-centre tiling) `CMatrix4f::PerspectiveOffCenter`, and otherwise `CMatrix4f::PerspectiveFov`. All read `m_Near` and `m_Far`, with `m_FOV` and `m_AspectRatio`. There is no infinite-far form; the far plane is a finite field.
 
-**Where `m_Projection` is built.** `Camera::RecalcProjection` builds it once, dispatching on `m_StateBitfield`: [`m_Ortho`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/camera::camera::CameraState##flag-m_Ortho) → `CMatrix4f::Ortho`, [`m_UseOffCenter`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/camera::camera::CameraState##flag-m_UseOffCenter) (off-center tiling) → `CMatrix4f::PerspectiveOffCenter`, else → `CMatrix4f::PerspectiveFov`. All three read the camera's `m_Near` / `m_Far` scalars; the FOV comes from `m_FOV`, the aspect from `m_AspectRatio`. There is no infinite-far formulation — the far plane is a finite field value.
-
-**`CMatrix4f::PerspectiveOffCenter(this, x_min, x_max, y_min, y_max, z_min=near, z_max=far)`** writes the row-major `e[]` (D3D row-vector, `clip = p·M`) as:
+`CMatrix4f::PerspectiveOffCenter(this, x_min, x_max, y_min, y_max, near, far)` writes, row-major (`clip = p·M`):
 
 ```
 e[0]  = 2·near / (x_max − x_min)          e[5]  = 2·near / (y_max − y_min)
@@ -286,341 +162,228 @@ e[10] = far / (near − far)                 e[11] = −1
 e[14] = near·far / (near − far)            e[15] = 0   (all others 0)
 ```
 
-`RecalcProjection` passes **near-plane extents** (`x = near·tan θ`, computed via the engine's polynomial sin/cos approximations of `m_FOV`), so `near` cancels from `e[0]`/`e[5]`/`e[8]`/`e[9]` and the matrix depends only on the FOV tangents and the depth column. This is exactly `DirectXMath`'s `PerspectiveOffCenterRH` (standard depth, NDC z in `[0, 1]`, near → 0, far → 1). `PerspectiveFov` is the symmetric special case.
+`RecalcProjection` passes near-plane extents (`x = near·tan θ`, through the engine's polynomial sin and cos of `m_FOV`), so `near` cancels from `e[0]`, `e[5]`, `e[8]`, and `e[9]`. This is `DirectXMath`'s `PerspectiveOffCenterRH` (standard depth, near to 0, far to 1); `PerspectiveFov` is the symmetric case. The reverse-Z remap is in place on the depth column, `e[row·4+2] = e[row·4+3] − e[row·4+2]` for all four rows.
 
-**Reverse-Z is `z' = w − z`, applied in place.** In the row-major layout that is `e[row·4+2] = e[row·4+3] − e[row·4+2]` for all four rows (`e[2]=e[3]−e[2]; e[6]=e[7]−e[6]; e[10]=e[11]−e[10]; e[14]=e[15]−e[14]`). It maps near → 1, far → 0 (MainDepth is `D32FS8`). Two sites apply it, each gated so it happens **exactly once**:
+`SetupRenderCamera` consumes rather than rebuilds: it never calls `PerspectiveFov` or `PerspectiveOffCenter` and never reads `m_FOV`, `m_Near`, or `m_Far`; it remaps, jitters, and multiplies whatever matrix it finds (§2.3).
 
-- `RecalcProjection` applies it at its tail **only if** `m_IsRenderCamera` is already set.
-- `Camera::SetupRenderCamera` applies it under its check-and-set `m_IsRenderCamera` guard.
-
-**Consume vs rebuild — settled: `SetupRenderCamera` CONSUMES.** Decompiled, its guarded body does, in order: (1) the four-element reverse-Z remap **on whatever is already in `m_Projection`**, then the same on `m_PreviousProj`; (2) `ApplyJitterTransform` on both (when `a2`); (3) `Multiply4x4` to rebuild `m_ViewProjection` / `m_PreviousViewProjection`; (4) `memcpy` the `*F` float-shadow copies. It **never calls `PerspectiveFov`/`PerspectiveOffCenter` and never reads `m_FOV`/`m_Near`/`m_Far`** — it transforms the existing matrix in place. So a `m_Projection` written *before* `SetupRenderCamera` flows through and receives reverse-Z (and jitter) exactly once; the engine does **not** build the reversed form from scratch, it remaps whatever standard matrix it finds. This is the verified basis for writing a standard off-axis projection before `SetupRenderCamera` (§2.7).
-
-**Real near/far.** The `Camera` constructor writes `m_Near` = [`Camera::DEFAULT_NEAR_PLANE`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/camera::camera::Camera::DEFAULT_NEAR_PLANE) and `m_Far` = [`Camera::DEFAULT_FAR_PLANE`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/camera::camera::Camera::DEFAULT_FAR_PLANE) . No gameplay-wide override was found — only auxiliary cameras diverge (`CWaterPatchManager` reflection/top-down cameras, shadow/RSM light cameras at the default near; `CCollisionModule` nudges *near* when the camera clips geometry). So the on-foot/vehicle scene camera renders a **finite-far reverse-Z frustum** at those defaults (the far plane matches the open world's draw distance; reverse-Z is what keeps `D32` precision usable at that range). The VR off-axis builder adopts these as its default near/far so its frustum matches the engine and the horizon does not clip.
-
----
+The `Camera` constructor sets `m_Near` to [`Camera::DEFAULT_NEAR_PLANE`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/camera::camera::Camera::DEFAULT_NEAR_PLANE) and `m_Far` to [`Camera::DEFAULT_FAR_PLANE`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/camera::camera::Camera::DEFAULT_FAR_PLANE). No gameplay-wide override was found; only auxiliary cameras diverge (the `CWaterPatchManager` reflection and top-down cameras, and the shadow and RSM light cameras at the default near), and `CCollisionModule` nudges the near plane when the camera clips geometry. The scene camera therefore renders a finite-far reverse-Z frustum at the defaults, the far plane matching the world's draw distance.
 
 ## 3. Render passes / stages (ordered)
 
-The pass system is a flat enum `ERenderPass` of ~180 `RP_*` values (ordered, contiguous; names recovered from the pass-name switch). Passes are drawn by index range via [`RenderEngine::DrawRenderPassRange(ctx, renderSetup, first, last)`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderEngine##func-DrawRenderPassRange), which walks [`RenderEngine::m_RenderPasses`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderEngine##field-m_RenderPasses) (a fixed array of per-pass `CRenderPass*` lists, created at init) and vtable-dispatches each pass's render blocks. The per-frame render-block instances live in each `CRenderPass`'s double-buffered `m_Lists[2]` (two `CRBILists`); see §11.
+Passes are a flat, ordered enum `ERenderPass` of `RP_*` values (names from the pass-name switch), drawn by index range through [`RenderEngine::DrawRenderPassRange(ctx, renderSetup, first, last)`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderEngine##func-DrawRenderPassRange), which walks [`RenderEngine::m_RenderPasses`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderEngine##field-m_RenderPasses) and vtable-dispatches each pass's render blocks from its current draw list (§11). Per dispatch:
 
-Ordered stages per dispatch:
-
-1. **Shadow atlas** — committed in `CShadowManager::CommitRenderPassSettings` and rendered as the `RP_SHADOW_0..7` / `RP_STATIC_SHADOW_0..7` / `RP_SHADOW_REFLECTIVE_*` passes. Shadow data is **parity-buffered** by `render_frame_counters.m_FrameIndex & 1`: `CRenderPass::SetRenderContextCamera` and the shadow-matrix reads index shadow storage by the parity of `m_FrameIndex`, one block per parity. So shadows ping-pong between two parity buffers each real frame. Running Draw twice in one real frame uses the same parity twice (parity only advances in the `GraphicsEngine::Draw` prologue), which is benign for the second eye but means the second eye sees the same parity slot.
-
-2. **GBuffer fill** — [`RenderEngine::DrawGBuffer`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderEngine##func-DrawGBuffer) -> `DrawRenderPassRange(setup, RP_Z_OCCLUDERS, RP_LAST_GBUFFER)`. The depth/velocity prefix is `RP_Z_OCCLUDERS`, `RP_Z_COARSE_PASS`, `RP_Z_PASS`, `RP_Z_AND_VELOCITY_PASS` (this is where the velocity buffer is written using the previous-frame VP), then static/dynamic models, then `RP_DECALS` / `RP_SCREEN_SPACE_DECALS` / `RP_SCREEN_SPACE_ROAD_DECALS`, terminating at `RP_LAST_GBUFFER`. Before drawing it binds two global textures on fragment texture slots 40 and 41.
-
-3. **Lighting / reflections / main** — [`RenderEngine::Draw`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderEngine##func-Draw) -> `DrawRenderPassRange(setup, RP_REFLECTIVE_WATER_PLANES, RP_POSTEFFECTS)`. In order: `RP_REFLECTIVE_WATER_PLANES`, `RP_AO_VOLUMES`, `RP_SSAO`, `RP_SCREEN_SPACE_REFLECTIONS`, `RP_GLOBAL_ILLUMINATION`, `RP_SCREEN_SPACE_SUBSURFACE_SKIN`, `RP_DEFERRED_LIGHTS` (these resolve lighting into MainColor), then opaque/`RP_LAST_OPAQUE`, environment (`RP_STARS`/`RP_SUN`/`RP_MOON`/`RP_SKYBOX`), water, transparency, ending just before `RP_POSTEFFECTS`. Reflection-proxy passes (`RP_REFLECTION_*`) and `RP_ENVREFLECTION` are also in this block.
-
-4. **Post-effects (world)** — `CPostEffectsManager::ApplyWorldFilters` enqueues the world post-effect block, then [`RenderEngine::DrawPosteffects`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderEngine##func-DrawPosteffects) -> `DrawRenderPassRange` over the one-pass range starting at `RP_POSTEFFECTS` runs that pass. The actual HDR chain executes inside `CRenderBlockPostEffects::Draw`, in order:
-   1. `CToneMappingEffect::Apply` (publishes the applied exposure into the frame context; exposure-weighted histogram)
-   2. `CSunHaloEffect::PreApply`
-   3. blur: bokeh path (`CDownScale2x2PackFocus::Apply` -> `CBlurEffectBokeh::Apply`) if `CPostEffectsManager::IsBokehActive`, else `CBlurEffect::Apply`
-   4. `CGlareEffect::Apply`
-   5. `CDepthOfFieldEffect::Apply`
-   6. `CMotionBlurEffect::Apply` (gated by motion-blur active / AA mode `AA_SMAA_T2X` / heat-haze)
-   7. `CToneMappingEffect::GenerateHistogramForFinalScene` (the raw final-scene histogram; **the HDR->LDR tonemap composite itself is `CDepthOfFieldEffect::Apply`**, step 4's DoF composite, which multiplies the scene by the published exposure as fragment constant c2.x)
-   8. `CPlayerDamageEffect::Apply` (if damage flag set)
-   9. `CAntiAliasingEffect::Apply`
-   10. `CSunHaloEffect::Apply` + additive sun blend (`SetBlendFunc`)
-   11. `CFadeEffect::Apply` (final fade)
-
-5. **Global filters** — `CPostEffectsManager::ApplyGlobalFilters` enqueues `RP_POSTEFFECTS_GLOBAL` work (screen fade alpha, heat-haze, sun-direction accumulation — see §5).
-
-6. **PostDraw / UI / debug / final copy** — `CRenderEngine::PostDraw`, UI render block, `QuickDrawController::Draw`, then `CopySurfaceToTexture` (the present-target blit).
+1. Shadow atlas: committed in `CShadowManager::CommitRenderPassSettings` and drawn as `RP_SHADOW_0..7`, `RP_STATIC_SHADOW_0..7`, and `RP_SHADOW_REFLECTIVE_*`, parity-buffered by `render_frame_counters.m_FrameIndex & 1` ([lighting-shadow-pipeline.md](lighting-shadow-pipeline.md) §3).
+2. G-buffer: [`RenderEngine::DrawGBuffer`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderEngine##func-DrawGBuffer) over `RP_Z_OCCLUDERS..RP_LAST_GBUFFER`: the depth and velocity prefix `RP_Z_OCCLUDERS`, `RP_Z_COARSE_PASS`, `RP_Z_PASS`, and `RP_Z_AND_VELOCITY_PASS` (the velocity buffer, from the previous frame's view-projection), then static and dynamic models, then `RP_DECALS`, `RP_SCREEN_SPACE_DECALS`, and `RP_SCREEN_SPACE_ROAD_DECALS`. It first binds two global textures on fragment texture slots 40 and 41.
+3. Lighting, reflections, and the main scene: [`RenderEngine::Draw`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderEngine##func-Draw) from `RP_REFLECTIVE_WATER_PLANES` to just before `RP_POSTEFFECTS`: `RP_REFLECTIVE_WATER_PLANES`, `RP_AO_VOLUMES`, `RP_SSAO`, `RP_SCREEN_SPACE_REFLECTIONS`, `RP_GLOBAL_ILLUMINATION`, `RP_SCREEN_SPACE_SUBSURFACE_SKIN`, and `RP_DEFERRED_LIGHTS` (resolving into MainColor), then the opaques to `RP_LAST_OPAQUE`, the environment (`RP_STARS`, `RP_SUN`, `RP_MOON`, `RP_SKYBOX`), water, and transparency. The reflection-proxy passes (`RP_REFLECTION_*`) and `RP_ENVREFLECTION` are in this range.
+4. World post effects: `CPostEffectsManager::ApplyWorldFilters` enqueues the block, and [`RenderEngine::DrawPosteffects`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderEngine##func-DrawPosteffects) draws the one-pass range at `RP_POSTEFFECTS`. `CRenderBlockPostEffects::Draw` runs, in order:
+   1. `CToneMappingEffect::Apply`: publishes the applied exposure and meters the exposure-weighted histogram (§5.4).
+   2. `CSunHaloEffect::PreApply` (§3.3).
+   3. The blur: `CDownScale2x2PackFocus::Apply` then `CBlurEffectBokeh::Apply` if `CPostEffectsManager::IsBokehActive`, else `CBlurEffect::Apply`.
+   4. `CGlareEffect::Apply` (§3.3).
+   5. `CDepthOfFieldEffect::Apply`, which is the HDR-to-LDR composite (§3.1).
+   6. `CMotionBlurEffect::Apply`, gated by motion blur, `AA_SMAA_T2X`, or the heat haze.
+   7. `CToneMappingEffect::GenerateHistogramForFinalScene`: the raw final-scene histogram (§5.4).
+   8. `CPlayerDamageEffect::Apply`, when the damage flag is set.
+   9. `CAntiAliasingEffect::Apply`.
+   10. `CSunHaloEffect::Apply` with an additive blend.
+   11. `CFadeEffect::Apply`.
+5. Global filters: `CPostEffectsManager::ApplyGlobalFilters` enqueues `RP_POSTEFFECTS_GLOBAL` work (the screen fade, the heat haze, the sun-direction accumulation; §5.2).
+6. `CRenderEngine::PostDraw`, the UI block, and `QuickDrawController::Draw`.
 
 ### 3.1 The HDR->LDR composite
 
-The HDR→LDR conversion — applying the published exposure and the tone-map operator to turn the R11G11B10F HDR MainColor into the LDR target — happens in `CDepthOfFieldEffect::Apply` (the DoF composite step of the same block; exposure rides in as fragment constant c2.x from `PostEffectContext::m_Exposure`). Step 1 publishes that exposure and meters the exposure-weighted histogram; step 7 meters the raw final scene.
-
-The composite picks its fragment program from four families by the render context and the depth of field's state: the underwater family when the camera is underwater, otherwise the depth-of-field family (or its heat-haze variant when the heat haze is on) when [`PostEffectsManager::IsBokehActive`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::post_effects::PostEffectsManager##func-IsBokehActive), and otherwise the plain composite family, which carries the exposure, the grading, and the tonemap without the depth of field (the shader names `Dof_*`, `HHDof_*`, `UW_*`, and `Comp_*` per tone-mapping operator, created in `CDepthOfFieldEffect::Init`). `IsBokehActive` is the post chain's one depth-of-field gate: it holds while the chain is enabled, any of three further enable flags on the manager is set (what sets them is unverified), and either focal range has a nonzero distance and blur, or the heat haze is on. The post block calls it to choose between the bokeh prepass (`CDownScale2x2PackFocus::Apply` and `CBlurEffectBokeh::Apply`) and the plain blur (`CBlurEffect::Apply`, whose result the glare also reads), and the composite calls it twice, to choose its family and to upload the focal parameters. Nothing else calls it.
+`CDepthOfFieldEffect::Apply` turns the R11G11B10F HDR MainColor into the LDR target, applying the published exposure (fragment constant `c2.x`, from `PostEffectContext::m_Exposure`) and the tone-map operator. It picks its fragment program from four families, created in `CDepthOfFieldEffect::Init` per tone-mapping operator: `UW_*` when the camera is underwater; otherwise `Dof_*`, or `HHDof_*` with the heat haze on, when [`PostEffectsManager::IsBokehActive`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::post_effects::PostEffectsManager##func-IsBokehActive); and otherwise `Comp_*`, the exposure, grading, and tonemap without depth of field. `IsBokehActive` is the chain's one depth-of-field gate: it holds while the chain is enabled, any of three further enable flags on the manager is set (what sets them is unverified), and either focal range has a nonzero distance and blur, or the heat haze is on. Its only callers are the post block (choosing between the bokeh prepass and the plain blur, whose result the glare also reads) and the composite (twice: to choose its family and to upload the focal parameters).
 
 ### 3.2 Ping-pong slot scheme (why per-eye intermediate captures alias)
 
-`CRenderBlockPostEffects::Draw` threads a single integer "current result-texture slot" through the effects: it reads the current slot index, and each of DoF/MotionBlur/PlayerDamage/AntiAliasing returns the new slot index which is written back, so the chain hops between the three temp textures. The temp arrays are `m_FullscreenSrgbTempTexture[3]` / `m_FullscreenLinearTempTexture[3]` with `m_RenderSetups[3]` (count [`s_FullscreenTempTextureCount`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::post_effects::PostEffectsManager::FULLSCREEN_TEMP_TEXTURE_COUNT)). The rotation idiom is: render into `m_RenderSetups[(current+1)%3]`, sample from temp `[current]`, then `current = (current+1)%3`. The [`PostEffectsManager::RESULT_TEXTURE_SLOT_BASE`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::post_effects::PostEffectsManager::RESULT_TEXTURE_SLOT_BASE) convention is the result-texture-index offset each effect exposes via `GetResultTexture`; effects publish their output texture pointer into the next consumer's input slot.
-
-Because the slot index advances per *dispatch* (and the `%3` ring `render_frame_counters.m_RingIndex` advances per *real frame*), two dispatches in one real frame share the same `%3` ring value but advance the intra-chain slot index twice — so a per-eye capture taken "from slot N" can alias the other eye's intermediate. For VR captures, snapshot from the final composite/back-buffer copy (`CopySurfaceToTexture` output) rather than from an intermediate temp slot.
+`CRenderBlockPostEffects::Draw` threads one "current result slot" integer through the chain: each of depth of field, motion blur, player damage, and anti-aliasing renders into `m_RenderSetups[(current+1)%3]`, samples temp `[current]`, and returns the advanced index. The temps are `m_FullscreenSrgbTempTexture[3]` and `m_FullscreenLinearTempTexture[3]` with `m_RenderSetups[3]` (count [`s_FullscreenTempTextureCount`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::post_effects::PostEffectsManager::FULLSCREEN_TEMP_TEXTURE_COUNT)). Each effect exposes its output through `GetResultTexture`, offset by [`PostEffectsManager::RESULT_TEXTURE_SLOT_BASE`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::post_effects::PostEffectsManager::RESULT_TEXTURE_SLOT_BASE), into the next consumer's input. The slot index advances per dispatch, while the frame's three-slot ring advances per real frame, so two dispatches in one frame leave a given slot holding different intermediates; only the final composite target is stable.
 
 ### 3.3 The glare chain and the sun halo
 
-[`GlareEffect::Apply`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::post_effects::GlareEffect##func-Apply) (step 4) builds the bloom from the blurred, half-resolution scene the blur step leaves behind (the bokeh path's texture instead when bokeh is active). Every draw is one fullscreen triangle through the post manager's textured fullscreen vertex program, addressing its source by the screen UV, and every source is read through the effect's own sampler, which is bilinear and clamps on every axis. The chain owns ping-pong pairs of targets at a half, a quarter, an eighth, and a sixteenth of the screen size, each size taken by shifting the screen width and height right, plus a half-resolution bright-pass copy, a half-resolution single-channel binary image, and a pair of half-resolution targets for the temporal blend. In order:
+[`GlareEffect::Apply`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::post_effects::GlareEffect##func-Apply) builds the bloom from the blur step's half-resolution scene (the bokeh texture when bokeh is active). Every draw is one fullscreen triangle through the post manager's textured fullscreen vertex program, addressed by screen UV, through the effect's own bilinear sampler that clamps on every axis. The chain owns ping-pong pairs at a half, quarter, eighth, and sixteenth of the screen (each by shifting the screen size right), a half-resolution bright-pass copy, a half-resolution single-channel binary image, and a pair of half-resolution targets for the temporal blend. In order:
 
-1. The bright pass (`highpass_rh`, `highpass_u2`, or `highpass_pg`, by the tone-mapping technique) scales the source by the exposure, subtracts a threshold, and raises it to the bloom contrast, writing the first half-resolution target. If the source already is that target, it is first copied to the second with the plain copy program (`2dtexsimple`).
-2. With the morphological opening on, `bloomerosion_3x3` loads the three-by-three texel neighbourhood (`ld` at integer coordinates, so a load past the edge returns zero) into the binary image, and `bloomdilation_3x3` gathers the binary image around each texel and masks the bright pass with it. With it off, the plain copy moves the bright pass to the second half-resolution target. Either way the plain copy also writes the bright-pass copy.
-3. `downscale2x2` box-downsamples the half level into the quarter, the quarter into the eighth, and the eighth into the sixteenth. Its four tap offsets come from the destination's sample-offset table, which places them half a source texel before and one and a half after the destination texel's centre, so the last destination texel of a row reads one source texel past its own footprint.
-4. The blur. The default accumulated technique blurs the sixteenth level horizontally then vertically with `blur_1dgaussian_17sample` (nine bilinear taps, seventeen texels wide, stepping one source texel through a constant), adds it into the eighth level with the plain copy under additive blending (a bilinear upsample), and repeats for the eighth into the quarter and the quarter into the half, then blurs the half level; the maximum downsample power can stop it short of the sixteenth. The separate technique blurs every level and sums them in `compositebloom`. With temporal smoothing on, `simpleblend` blends the result with the previous frame's into the other temporal target.
-5. The secondary bloom: `blur_1dsaw_17sample` blurs the eighth level three times horizontally and three times vertically, ending in the eighth level's second target.
+1. The bright pass (`highpass_rh`, `highpass_u2`, or `highpass_pg`, by the tone-mapping technique) scales the source by the exposure, subtracts a threshold, and raises it to the bloom contrast into the first half-resolution target, first copying the source to the second with `2dtexsimple` if it already is that target.
+2. With the morphological opening on, `bloomerosion_3x3` loads the three-by-three neighbourhood (`ld` at integer coordinates, so past the edge reads zero) into the binary image, and `bloomdilation_3x3` gathers it around each texel and masks the bright pass; with it off, the plain copy moves the bright pass to the second target. The plain copy also writes the bright-pass copy.
+3. `downscale2x2` box-downsamples half to quarter to eighth to sixteenth. Its four taps, from the destination's sample-offset table, sit half a source texel before and one and a half after the destination texel's centre, so a row's last texel reads one source texel past its footprint.
+4. The blur. The default accumulated technique blurs the sixteenth level horizontally then vertically with `blur_1dgaussian_17sample` (nine bilinear taps over seventeen texels, one source texel per step through a constant), adds it into the eighth with the plain copy under additive blending, and repeats up to the half, then blurs the half; the maximum downsample power can stop short of the sixteenth. The separate technique blurs every level and sums them in `compositebloom`. With temporal smoothing on, `simpleblend` blends with the previous frame's result into the other temporal target.
+5. The secondary bloom: `blur_1dsaw_17sample` blurs the eighth level three times each way, ending in its second target.
 
-The DoF composite (§3.1) then reads the chain's result as `BloomTexture` and the eighth level as `SecondaryBloomTexture`, both by the screen UV with a bilinear sampler, and adds them, the second also weighted by the lens dirt. Under a target whose two halves hold two views side by side, every one of these reads lands in the right half except where a tap, a footprint, or a neighbourhood crosses the middle of its source.
+The composite (§3.1) reads the result as `BloomTexture` and the eighth level as `SecondaryBloomTexture`, both by screen UV through a bilinear sampler, and adds them, the second weighted by the lens dirt.
 
-The sun halo is a per-screen sprite rather than a filter. [`SunHaloEffect::PreApply`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::post_effects::SunHaloEffect##func-PreApply) (step 2) runs only while the sun is below the effect's height threshold and in front of the camera. It projects a point along the sun direction through the render context's view and projection onto the scene texture's pixel size, masks a block of one of the post context's screen inputs around that one pixel position into its own small target (which input is not identified), blurs the mask twice, draws the halo rings from it, and stores the halo's centre for the frame. [`SunHaloEffect::Apply`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::post_effects::SunHaloEffect##func-Apply) (step 10) composites the result additively at that position after anti-aliasing. There is one halo per screen, positioned from the screen's single projection.
-
----
+The sun halo is a per-screen sprite. [`SunHaloEffect::PreApply`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::post_effects::SunHaloEffect##func-PreApply) runs only while the sun is below the effect's height threshold and in front of the camera. It projects a point along the sun direction through the render context's view and projection onto the scene texture's pixel size, masks a block of one of the post context's screen inputs around that pixel into its own small target (which input is unidentified), blurs the mask twice, draws the rings, and stores the centre. [`SunHaloEffect::Apply`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::post_effects::SunHaloEffect##func-Apply) composites it additively there after anti-aliasing: one halo per screen, from the screen's single projection.
 
 ## 4. Buffers & how the frame comes together
 
-Render targets (created in `CreateRenderSetups`):
+Render targets created in `CreateRenderSetups`:
 
 | Buffer | Name string | Format | Role |
 |---|---|---|---|
-| MainDepth | `"MainDepthBuffer"` | `SURFACEFORMAT_D32FS8` | scene depth+stencil (reverse-Z) |
-| MainColor | `"MainColorBuffer"` | `SURFACEFORMAT_R11G11B10F` | **HDR** scene color |
-| GBuffer0 | `"GBuffer0"` | `SURFACEFORMAT_ABGR32` | albedo/material; sRGB+linear aliases |
-| GBuffer1 | `"GBuffer1"` | `SURFACEFORMAT_A2R10G10B10` **[UNVERIFIED]** | normals |
+| MainDepth | `"MainDepthBuffer"` | `SURFACEFORMAT_D32FS8` | scene depth and stencil (reverse-Z) |
+| MainColor | `"MainColorBuffer"` | `SURFACEFORMAT_R11G11B10F` | HDR scene colour |
+| GBuffer0 | `"GBuffer0"` | `SURFACEFORMAT_ABGR32` | albedo and material; sRGB and linear aliases |
+| GBuffer1 | `"GBuffer1"` | `SURFACEFORMAT_A2R10G10B10` (unverified) | normals |
 | GBuffer2 | `"GBuffer2"` | `SURFACEFORMAT_ABGR32` | material; sRGB alias |
-| GBuffer3 | `"GBuffer3"` | `SURFACEFORMAT_ABGR32` | misc/material |
-| DownsampledDepth | `"DownsampledDepth"` | half-res depth (D32FS8 + D32F alias) | SSAO/SSR/soft particles |
-| Velocity | `"motion_blur_velocity_buffer"` | `SURFACEFORMAT_ABGR32` | screen-space velocity (written in `RP_Z_AND_VELOCITY_PASS`) |
-| BackBufferLinear | `"BackBufferLinear"` | ABGR32 (alias of BACK_BUFFER) | final LDR present target (`m_BackBufferLinear`; used as `m_BackBufferRenderSetup` color) |
+| GBuffer3 | `"GBuffer3"` | `SURFACEFORMAT_ABGR32` | material |
+| DownsampledDepth | `"DownsampledDepth"` | half-resolution `D32FS8` with a `D32F` alias | SSAO, SSR, soft particles |
+| Velocity | `"motion_blur_velocity_buffer"` | `SURFACEFORMAT_ABGR32` | screen-space velocity, from `RP_Z_AND_VELOCITY_PASS` |
+| BackBufferLinear | `"BackBufferLinear"` | `ABGR32` alias of the back buffer | the final LDR target, colour of `m_BackBufferRenderSetup` |
 
-These RT pointers live on the `GraphicsEngine` singleton (`m_GBufferTexture[4]`, `m_VelocityBufferTexture`, `m_MainDepthTexture`, `m_MainColorBuffer`, `m_DownSampledDepthTexture`, `m_BackBufferLinear`). Reflection-proxy RTs created alongside: `reflection_proxy_water_plane_texture`, `reflection_proxy_depth_texture`, `reflection_proxy_normal_gloss_texture`, `ao_volume_texture`, and 5x `VfxDepthCopy_%d` (the EffectInfo depth-copy slots, §5.1). **[Formats UNVERIFIED.]**
+The pointers are on `GraphicsEngine` (`m_GBufferTexture[4]`, `m_VelocityBufferTexture`, `m_MainDepthTexture`, `m_MainColorBuffer`, `m_DownSampledDepthTexture`, `m_BackBufferLinear`). Created alongside, formats unverified: `reflection_proxy_water_plane_texture`, `reflection_proxy_depth_texture`, `reflection_proxy_normal_gloss_texture`, `ao_volume_texture`, and the five `VfxDepthCopy_%d` EffectInfo slots (§5.1).
 
-Frame assembly path:
-```
-GBuffer fill (MainDepth + GBuffer0..3 + Velocity)
-  -> lighting/SSR/GI/deferred lights resolve into MainColor (HDR, R11G11B10F)
-  -> environment/water/transparency composited into MainColor
-  -> post chain (blur/glare/DoF-composite tonemap HDR->LDR/motionblur),
-     AA, damage, sun halo, fade  -> intermediate fullscreen temp textures (3-slot ring)
-  -> global filters (screen fade, heat haze) -> RP_POSTEFFECTS_GLOBAL
-  -> PostDraw + UI + debug
-  -> EndDraw (command submission; there is no final copy -- the composite already
-     wrote into BackBufferLinear, which aliases swapchain buffer 0)
-  -> graphics_flip (present; suppressed by BLOCK_FLIP in VR)
-```
+The frame: the G-buffer fill (MainDepth, GBuffer0 to 3, velocity); lighting, SSR, GI, and the deferred lights into MainColor; environment, water, and transparency into MainColor; the post chain through the three temp slots, its composite writing the LDR image; the global filters; `PostDraw`, the UI, and debug; `EndDraw`, which submits, with no copy after, because the composite target `BackBufferLinear` aliases swapchain buffer 0 (§12); and `graphics_flip` at the next prologue.
 
 ### 4.1 The depth-reconstruction passes (a closed set)
 
-Some passes recover world or view position from the depth buffer rather than from interpolated vertex
-data. They all do it the same way: rebuild a clip-to-view inverse with
-[`CMatrix4f::PerspectiveFovInverse`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/types::math::Matrix4##func-PerspectiveFovInverse), then multiply by the render context's camera
-transform. Cross-referencing that one function enumerates every such pass in the engine — the set is
-closed, and there are seven call sites:
+Some passes recover position from depth rather than from vertex data, all the same way: they rebuild a clip-to-view inverse with [`CMatrix4f::PerspectiveFovInverse`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/types::math::Matrix4##func-PerspectiveFovInverse) and multiply by the render context's camera transform. Its seven call sites are every such pass:
 
 | Pass | Notes |
 |---|---|
 | [`RenderBlockDeferredLighting::DrawClustered`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::RenderBlockDeferredLighting##func-DrawClustered) | the shaded lighting path |
-| [`RenderBlockDeferredLighting::DrawPassThrough`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::RenderBlockDeferredLighting##func-DrawPassThrough) | **wireframe only** — [`Draw`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::RenderBlockDeferredLighting##func-Draw) branches on `IsWireframeEnabled` |
-| [`RenderBlockAtmosphericScattering::Draw`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::RenderBlockAtmosphericScattering##func-Draw) | reconstructs the whole screen, sky included; ray-marches the sun cascade and aerial perspective |
-| [`RenderBlockSSAO::Draw`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::RenderBlockSSAO##func-Draw) | carries a temporal history advanced per invocation; the inverse feeds only the temporal resolve's reprojection, and the occlusion itself is reconstructed another way (below) |
+| [`RenderBlockDeferredLighting::DrawPassThrough`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::RenderBlockDeferredLighting##func-DrawPassThrough) | wireframe only; [`Draw`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::RenderBlockDeferredLighting##func-Draw) branches on `IsWireframeEnabled` |
+| [`RenderBlockAtmosphericScattering::Draw`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::RenderBlockAtmosphericScattering##func-Draw) | the whole screen, sky included; ray-marches the sun cascade and aerial perspective |
+| [`RenderBlockSSAO::Draw`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::RenderBlockSSAO##func-Draw) | temporal history advanced per invocation; the inverse feeds only the temporal reprojection |
 | [`RenderBlockScreenSpaceReflection::Draw`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::RenderBlockScreenSpaceReflection##func-Draw) | ray-marches an earlier scene-colour capture |
-| [`RenderBlockScreenSpaceSubSurfaceSkin::Draw`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::RenderBlockScreenSpaceSubSurfaceSkin##func-Draw) | calls it twice, once per blur axis |
-| [`DOFUtil::GetViewProjInverse`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::post_effects##func-GetViewProjInverse) | post-effect utility, not a render block |
+| [`RenderBlockScreenSpaceSubSurfaceSkin::Draw`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::RenderBlockScreenSpaceSubSurfaceSkin##func-Draw) | twice, once per blur axis |
+| [`DOFUtil::GetViewProjInverse`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::post_effects##func-GetViewProjInverse) | a post-effect utility |
 
-The rebuild encodes only a *symmetric* frustum (see the `PerspectiveFovInverse` def for the exact
-matrix), so any consumer that needs an asymmetric one has to substitute the matrix rather than adjust
-its inputs. Two of the seven sample the sun shadow cascade over the reconstructed positions —
-`DrawClustered` and `AtmosphericScattering::Draw` — so shadow behaviour that depends on the
-reconstruction basis is governed by those two together, and fixing one alone leaves the other
-painting over it.
+The rebuild encodes only a symmetric frustum (the def has the matrix), so an asymmetric one needs the matrix substituted, not the inputs adjusted. `DrawClustered` and `AtmosphericScattering::Draw` both sample the sun cascade over their reconstructed positions, so shadow behaviour that depends on the reconstruction basis needs both changed together.
 
-**SSAO's occlusion generation does not go through the inverse.** Of the block's draws, the one that computes occlusion (the `ssao` pixel shader, or `ssao_nvidia` on an NVIDIA adapter) reconstructs view-space position as `z * (uv * basis.xy + basis.zw)` from the packed linear depth, with the basis built on the CPU from four terms of the render context's [`m_ProjectionF`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::RenderContext##field-m_ProjectionF): `(-2 / p00, -2 / p11, (1 - p02) / p00, (p12 + 1) / p11)`. The two terms that carry an off-centre frustum's shear are not among them, so an asymmetric projection reconstructs as the symmetric frustum of the same scale. The normal buffer is turned into view space by three more rows, the transpose of the inverse of [`m_View`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::RenderContext##field-m_View) with its translation dropped. Its taps sit on a spiral of isotropic offsets in screen UV, scaled by half the inverse of [`CameraFOV`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::RenderContext##field-CameraFOV) over the depth, at a depth mip picked from the same radius, and the spiral's rotation and a two-by-two quad parity both come from `SV_Position`. The separable bilateral blur steps one target texel at a time through the screen-size constant, the temporal resolve reprojects through the render context's previous view-projection, and the composite multiplies the half-resolution result into the scene target's alpha with a bilinear upsample. The point and bilinear samplers these draws read through clamp at the texture edge; only the temporal resolve's history lookup uses a border sampler.
+SSAO's occlusion does not use the inverse. Its generation draw (the `ssao` pixel shader, or `ssao_nvidia` on NVIDIA) reconstructs view-space position as `z * (uv * basis.xy + basis.zw)` from the packed linear depth, the basis built on the CPU from four terms of the render context's [`m_ProjectionF`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::RenderContext##field-m_ProjectionF): `(-2 / p00, -2 / p11, (1 - p02) / p00, (p12 + 1) / p11)`. The two shear terms are not among them, so an asymmetric projection reconstructs as the symmetric frustum of the same scale. Normals go to view space through the transpose of the inverse of [`m_View`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::RenderContext##field-m_View) without its translation. The taps sit on a spiral of isotropic screen-UV offsets scaled by half the inverse of [`CameraFOV`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::RenderContext##field-CameraFOV) over depth, at a depth mip chosen from the same radius; the spiral's rotation and a two-by-two quad parity come from `SV_Position`. The bilateral blur steps one target texel at a time through the screen-size constant, the temporal resolve reprojects through the render context's previous view-projection, and the composite multiplies the half-resolution result into the scene target's alpha with a bilinear upsample. The samplers clamp at the edge, except the temporal history lookup's border sampler.
 
 ### 4.2 Draw entry points, and the D3D11 slots they reach
 
-Every render block submits its geometry through one of the `Graphics::` draw wrappers (the `graphics_engine::draw` module of the defs), and each wrapper is a thin cover over a single `ID3D11DeviceContext` vtable slot. IDA's names for these wrappers are shuffled, and IDA misreports their argument counts and types as well, so the IDB names cannot be trusted on their own. The names bound in the defs are matched by body: the D3D11 method each wrapper calls, whether it loops, and whether it takes the context mutex. The `NoMutex` variants skip the mutex because their callers already hold the context. The bound names are the ones used here:
+Every render block submits through a `Graphics::` draw wrapper (the `graphics_engine::draw` module), each a thin cover over one `ID3D11DeviceContext` vtable slot. IDA's names for them are shuffled and their signatures misreported, so the defs bind them by body: the method called, whether it loops, and whether it takes the context mutex (the `NoMutex` variants' callers already hold it).
 
 | Wrapper | `ID3D11DeviceContext` method | Vtable slot |
 |---|---|---|
-| [`Graphics::DrawIndexed`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::draw##func-DrawIndexed) | `DrawIndexed` | 12 |
-| [`Graphics::DrawIndexedWithBoundState`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::draw##func-DrawIndexedWithBoundState) | `DrawIndexed` | 12 |
-| [`Graphics::DrawIndexedNoMutex`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::draw##func-DrawIndexedNoMutex) | `DrawIndexed` | 12 |
+| [`Graphics::DrawIndexed`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::draw##func-DrawIndexed), [`DrawIndexedWithBoundState`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::draw##func-DrawIndexedWithBoundState), [`DrawIndexedNoMutex`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::draw##func-DrawIndexedNoMutex) | `DrawIndexed` | 12 |
 | [`Graphics::Draw`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::draw##func-Draw) | `Draw` | 13 |
-| [`Graphics::DrawIndexedInstanced`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::draw##func-DrawIndexedInstanced) | `DrawIndexedInstanced` | 20 |
-| [`Graphics::DrawIndexedInstancedNoMutex`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::draw##func-DrawIndexedInstancedNoMutex) | `DrawIndexedInstanced` | 20 |
+| [`Graphics::DrawIndexedInstanced`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::draw##func-DrawIndexedInstanced), [`DrawIndexedInstancedNoMutex`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::draw##func-DrawIndexedInstancedNoMutex) | `DrawIndexedInstanced` | 20 |
 | [`Graphics::DrawInstanced`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::draw##func-DrawInstanced) | `DrawInstanced` | 21 |
-| [`Graphics::DrawIndexedInstancedIndirect`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::draw##func-DrawIndexedInstancedIndirect) | `DrawIndexedInstancedIndirect` | 39 |
-| [`Graphics::DrawIndexedInstancedIndirectNoMutex`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::draw##func-DrawIndexedInstancedIndirectNoMutex) | `DrawIndexedInstancedIndirect` | 39 |
-| [`Graphics::DrawIndexedInstancedMultiIndirect`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::draw##func-DrawIndexedInstancedMultiIndirect) | `DrawIndexedInstancedIndirect`, once per draw in a loop | 39 |
+| [`Graphics::DrawIndexedInstancedIndirect`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::draw##func-DrawIndexedInstancedIndirect), [`DrawIndexedInstancedIndirectNoMutex`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::draw##func-DrawIndexedInstancedIndirectNoMutex), [`DrawIndexedInstancedMultiIndirect`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::draw##func-DrawIndexedInstancedMultiIndirect) (once per draw in a loop) | `DrawIndexedInstancedIndirect` | 39 |
 | [`Graphics::DrawInstancedIndirect`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::draw##func-DrawInstancedIndirect) | `DrawInstancedIndirect` | 40 |
 
-The two indirect slots are how the GPU-driven geometry submits: [`RenderBlockTerrainPatch::Draw`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::RenderBlockTerrainPatch##func-Draw)'s near tessellating passes (`RP_TERRAINPATCH_BASEMESH_TESSELLATE_NEAR` and `RP_TERRAINPATCH_BASEMESH_NEAR`) go through `DrawInstancedIndirect` (slot 40), and [`RenderBlockFoliage::Draw`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::RenderBlockFoliage##func-Draw)'s dominant grass path through `DrawIndexedInstancedIndirectNoMutex` (slot 39). Both blocks also have plain `DrawIndexed` paths for their other passes, so a block is not characterized by one entry point (see `docs/mod/stereo/single-pass-render-blocks.md` for the per-block routing).
-
-`Graphics::Draw` (slot 13) is not exclusively the fullscreen-pass entry point, though that is its dominant use. Several render blocks submit ordinary world geometry non-indexed through it — evidenced so far in `RP_ROAD_LAYERS` (`CRenderBlockSplineRoad`), `RP_DECALS` (the four `CRenderBlockDecal*` blocks), `RP_SKIDMARKS`, and `RP_WINDOW_DECALS`. A fullscreen triangle and a decal box are indistinguishable at the draw call; only the pass tells them apart.
+The indirect slots carry the GPU-driven geometry: [`RenderBlockTerrainPatch::Draw`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::RenderBlockTerrainPatch##func-Draw)'s near tessellating passes (`RP_TERRAINPATCH_BASEMESH_TESSELLATE_NEAR`, `RP_TERRAINPATCH_BASEMESH_NEAR`) through `DrawInstancedIndirect`, and [`RenderBlockFoliage::Draw`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::RenderBlockFoliage##func-Draw)'s dominant grass path through `DrawIndexedInstancedIndirectNoMutex`. Both blocks also use `DrawIndexed` for other passes. `Graphics::Draw` is mostly the fullscreen-pass entry, but some blocks draw world geometry non-indexed through it: `RP_ROAD_LAYERS` (`CRenderBlockSplineRoad`), `RP_DECALS` (the four `CRenderBlockDecal*` blocks), `RP_SKIDMARKS`, and `RP_WINDOW_DECALS`. Only the pass tells a fullscreen triangle from a decal box.
 
 ### 4.3 How shaders address the screen
 
-Three idioms are in use, and they agree with one another in the stock game only because it renders one view into a target the size of the display.
+Three idioms are in use; they agree only while one view fills a target the size of the display.
 
-1. **Absolute texel fetch** — `ftoi SV_Position.xy` followed by `ld`. The deferred and forward G-buffer readers use this, as does the clustered light-grid lookup (`tile = ftoi(SV_Position.xy) >> 6`). `SV_Position` in a pixel shader is the absolute render-target coordinate: `RSSetViewports`' `TopLeftX`/`TopLeftY` are already included. This addresses the **target**.
-2. **Normalized by the inverse display size** — `mul rN.xy, v0.xyxx, cb0[8].zzwz`, where `cb0[8].zw = (1/DisplayWidth, 1/DisplayHeight)` is staged into [`RenderEngine::m_FPGlobalConstData`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderEngine##field-m_FPGlobalConstData) by `SetGlobalShaderConstants` from `Graphics::SDeviceInfo` and **not** from the bound render setup or the viewport (see `lighting-shadow-pipeline.md` §5.3). `deferred_clusteredlighting_full`'s reflection and SSR lookups build their UV this way, and so does the WaveWorks `nvwater*` family. This also addresses the **target**.
-3. **A CPU-staged projective UV** — the legacy, non-WaveWorks `Water*` / `WaterBox*` family (selected at the lower water-quality settings) receives a world-to-screen-UV matrix on vertex `cb1` from its block type's `Setup`: the render context's view-projection post-multiplied by an NDC-to-UV bias, so the `x·0.5 + w·0.5` is folded in on the CPU. The vertex shader passes the result on as a projective `TEXCOORD1` and the pixel shader divides by `w`. That UV is normalized over the **viewport**, not over the target. [`WaterHighEndRenderBlockType::Setup`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::WaterHighEndRenderBlockType##func-Setup) stages it at `cb1[1..4]` and [`WaterBoxRenderBlockType::Setup`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::WaterBoxRenderBlockType##func-Setup) at `cb1[4..7]`. Exactly 9 of the 961 pixel shaders in `Shaders_F` bind `RefractionMap`, and they are this family.
-
-The distinction is invisible while the viewport covers the whole target and load-bearing as soon as it does not.
-
----
+1. Absolute texel fetch, `ftoi SV_Position.xy` then `ld`: the deferred and forward G-buffer readers and the clustered light-grid lookup (`tile = ftoi(SV_Position.xy) >> 6`). A pixel shader's `SV_Position` is the absolute target coordinate, the viewport's `TopLeftX` and `TopLeftY` included, so this addresses the target.
+2. Normalized by the inverse display size, `mul rN.xy, v0.xyxx, cb0[8].zzwz`, where `cb0[8].zw = (1/DisplayWidth, 1/DisplayHeight)` is staged into [`RenderEngine::m_FPGlobalConstData`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderEngine##field-m_FPGlobalConstData) from `Graphics::SDeviceInfo`, not from the bound render setup or the viewport ([lighting-shadow-pipeline.md](lighting-shadow-pipeline.md) §5.3). `deferred_clusteredlighting_full`'s reflection and SSR lookups and the WaveWorks `nvwater*` family use it. This also addresses the target.
+3. A CPU-staged projective UV: the legacy `Water*` and `WaterBox*` family (the lower water-quality settings) receives a world-to-screen-UV matrix on vertex `cb1` from its block type's `Setup`, the render context's view-projection post-multiplied by an NDC-to-UV bias; the vertex shader passes it as a projective `TEXCOORD1` and the pixel shader divides by `w`. That UV is normalized over the viewport, not the target. [`WaterHighEndRenderBlockType::Setup`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::WaterHighEndRenderBlockType##func-Setup) stages it at `cb1[1..4]` and [`WaterBoxRenderBlockType::Setup`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::WaterBoxRenderBlockType##func-Setup) at `cb1[4..7]`. Exactly 9 of the 961 pixel shaders in `Shaders_F` bind `RefractionMap`, and they are this family.
 
 ## 5. Per-frame-once / single-use state (double-dispatch hazards)
 
-For the double-dispatch VR hack, these advance/consume exactly once per dispatch and so double-step if `HandleDrawThreadTask` (or `Game::Draw`) runs twice per presented frame.
+What advances once per dispatch, and so twice if `HandleDrawThreadTask` or `Game::Draw` runs twice in a presented frame, and what advances once per real frame.
 
 ### 5.1 EffectInfo reflection-proxy history (slot machine)
 
-[`GraphicsEngine::m_EffectInfo`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::GraphicsEngine##field-m_EffectInfo) = an array of [`EffectInfo`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::EffectInfo) slots on the `GraphicsEngine`; [`m_EffectInfoIndex`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::GraphicsEngine##field-m_EffectInfoIndex) is the current-index int. The slot machine runs in `HandleDrawThreadTask` between `DrawGBuffer` and `RenderEngine::Draw`. Each slot stores an `m_FrameIndex` state byte, a depth texture (`m_DepthTexture`, a `VfxDepthCopy_%d`), and an `m_Transform` VP matrix. Per dispatch:
+[`GraphicsEngine::m_EffectInfo`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::GraphicsEngine##field-m_EffectInfo) is an array of [`EffectInfo`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::EffectInfo) slots, each with an `m_FrameIndex` state byte, a depth texture (`m_DepthTexture`, a `VfxDepthCopy_%d`), and an `m_Transform` view-projection; [`m_EffectInfoIndex`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::GraphicsEngine##field-m_EffectInfoIndex) is the current slot. Between `DrawGBuffer` and `RenderEngine::Draw`, per dispatch:
 
-- Loop the slots: [`FRAME_INDEX_FREE`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::EffectInfo::FRAME_INDEX_FREE) -> remember as free slot; `FRAME_INDEX_READY` -> remember; `FRAME_INDEX_PICKED` -> write its index into `m_EffectInfoIndex` (current read slot); `FRAME_INDEX_COPIED` -> increment to `FRAME_INDEX_READY`.
-- If a free slot found: `CopySurfaceToTexture(slot.m_DepthTexture, m_ReflectionProxyDepthSurface)` (capture this frame's proxy depth) and set it to `FRAME_INDEX_COPIED`.
-- If a ready slot found: promote to `FRAME_INDEX_PICKED`.
-- `memcpy(slot[current].m_Transform, RenderCamera.m_ViewProjectionF, sizeof(CMatrix4f))` then set `slot[current].m_FrameIndex = FRAME_INDEX_FREE`.
+- Walk the slots: remember a [`FRAME_INDEX_FREE`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::EffectInfo::FRAME_INDEX_FREE) and a `FRAME_INDEX_READY` slot, write a `FRAME_INDEX_PICKED` slot's index into `m_EffectInfoIndex`, and advance `FRAME_INDEX_COPIED` to `FRAME_INDEX_READY`.
+- Into a free slot, `CopySurfaceToTexture(slot.m_DepthTexture, m_ReflectionProxyDepthSurface)`, and mark it `FRAME_INDEX_COPIED`; promote a ready slot to `FRAME_INDEX_PICKED`.
+- Copy the render camera's `m_ViewProjectionF` into the current slot's `m_Transform` and mark it `FRAME_INDEX_FREE`.
 
-This is a depth+VP history ring, though nothing reads the stored depth or transform (see the [`EffectInfo::m_DepthTexture`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::EffectInfo##field-m_DepthTexture) def). **Double dispatch:** every slot's state advances twice, so captures age twice as fast, and the VP `memcpy` overwrites the same current slot with the same-frame VP. **Mitigation:** snapshot the `m_FrameIndex` state bytes plus `m_EffectInfoIndex` before eye 0 and restore before eye 1.
+Nothing reads the stored depth or transform (see the [`EffectInfo::m_DepthTexture`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::EffectInfo##field-m_DepthTexture) def). Run twice, every slot advances twice and the current slot is overwritten with the same frame's view-projection.
 
 ### 5.2 dt-driven accumulators in `ApplyWorldFilters` / `ApplyGlobalFilters`
 
-- [`PostEffectsManager::ApplyWorldFilters(dt)`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::post_effects::PostEffectsManager##func-ApplyWorldFilters): `dt` flows only into [`PostEffectsManager::ApplyWorldFadeFilter(dt)`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::post_effects::PostEffectsManager##func-ApplyWorldFadeFilter) — the world fade accumulator. The rest is just texture/setup wiring.
-- [`PostEffectsManager::ApplyGlobalFilters(dt)`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::post_effects::PostEffectsManager##func-ApplyGlobalFilters): advances the screen fade alpha (`+= / -= (1/fade_duration)*dt`, clamped [0,1]) per dispatch; advances a sun-direction / heat-haze accumulator; calls the DoF update hook. The fade alpha, its duration, and the accumulator are fields of `PostEffectsManager` that are not yet bound in the defs. These step twice on double dispatch.
-
-**Mitigation:** the mod zeroes the `dt` both functions receive on every scene dispatch after the first (`hooks::graphics_engine::post::post_effects` in jc3vr-render), so dt-driven accumulators do not advance twice. (Auto-exposure is a *separate*, frame-counted hazard that a zero `dt` does **not** touch — see §5.4.)
+In [`PostEffectsManager::ApplyWorldFilters(dt)`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::post_effects::PostEffectsManager##func-ApplyWorldFilters), `dt` reaches only [`ApplyWorldFadeFilter(dt)`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::post_effects::PostEffectsManager##func-ApplyWorldFadeFilter), the world fade accumulator. [`PostEffectsManager::ApplyGlobalFilters(dt)`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::post_effects::PostEffectsManager##func-ApplyGlobalFilters) steps the screen fade alpha by `(1/fade_duration)·dt`, clamped to [0, 1], advances a sun-direction and heat-haze accumulator, and calls the depth-of-field update hook; the fade alpha, its duration, and the accumulator are unbound fields of `PostEffectsManager`. All step per dispatch. Auto-exposure is not dt-driven (§5.4).
 
 ### 5.3 Shadow parity (`render_frame_counters.m_FrameIndex & 1`)
 
-Parity advances only in the `GraphicsEngine::Draw` prologue, not per dispatch. Two dispatches in one prologue share the same parity — eye 1 reads the same shadow parity slot eye 0 wrote. Benign but means shadows are not independently double-buffered per eye.
+Parity advances only in the `Draw` prologue, so dispatches under one prologue read and write the same parity slot.
 
 ### 5.4 Exposure smoother / clock
 
-- `Clock::Update` ticks once in the prologue (per real frame) — keep it there; the slow-mo hazard is calling it twice, so it is gated to once per real frame.
-- Auto-exposure is **frame-counted, not dt-driven** — a zero `dt` does **not** touch it. The stereo darkening (~0.74x) comes from a **second histogram meter run on both eyes**; gating it to one eye removes it.
+`Clock::Update` ticks once per real frame in the prologue.
 
-  **How it works.** `CToneMappingEffect::Update` runs **once per real frame** (`CPostEffectsManager::UpdateRender`); it sets the auto-exposure target to `key / m_Histogram2.m_HistogramMidPoint` — key over the *raw* scene brightness — then adapts `m_ExposureBrightPoint` (the applied exposure) toward it. There are **two** histograms, both metered via `PopulateHistogram` → per-bucket occlusion queries over a fixed small RT (a correct read totals its pixel count):
-  - [`m_Histogram`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::tone_mapping::ToneMappingEffect##field-m_Histogram): the **exposure-weighted** meter, run by `CToneMappingEffect::Apply` per dispatch (fed `m_ExposureBrightPoint` through the `"LuminanceToDepthWithExposure"` shader; that exposure-weighting is the feedback loop). The mod gates it to eye 0.
-  - [`m_Histogram2`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::tone_mapping::ToneMappingEffect##field-m_Histogram2): the **un-weighted** raw-brightness meter — the target's divisor — run by `GenerateHistogramForFinalScene`. That function just calls `PopulateHistogram` with a fixed exposure of `1.0`; it also runs per dispatch.
+Auto-exposure is frame-counted, not dt-driven. `CToneMappingEffect::Update` runs once per real frame (from `CPostEffectsManager::UpdateRender`): it sets the target to `key / m_Histogram2.m_HistogramMidPoint`, key over the raw scene brightness, and adapts `m_ExposureBrightPoint`, the applied exposure, toward it. Two histograms are metered through `PopulateHistogram`, as per-bucket occlusion queries over a fixed small target, so a correct read totals its pixel count:
 
-  **The hazard and the gate.** Gating only the exposure-weighted meter (`Apply`) to eye 0 leaves the raw meter (`GenerateHistogramForFinalScene`) running on *both* dispatches in stereo: `m_Histogram2`'s occlusion-query ring inflates and corrupts (the total reads several times the RT's pixel count, with irregular buckets), its mid-point reads ~1.35x high, and the exposure divides by a too-large brightness → the frame darkens ~0.74x. The gate is the symmetry: the raw meter is gated on eye 1 too (`hooks::graphics_engine::post::tone_mapping::generate_final_histogram` in jc3vr-render), so `m_Histogram2` meters once per real frame. The per-frame `ExposureInternals` trace confirms it — with the gate, stereo `divisor`/`exposure` match non-stereo and `hist2`'s total is the RT's pixel count. (Gating the exposure-weighted meter harder does nothing, precisely because it feeds `m_Histogram`, not the divisor; the functions are all in `graphics_engine/tone_mapping.pyxis`.)
+- [`m_Histogram`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::tone_mapping::ToneMappingEffect##field-m_Histogram), the exposure-weighted meter, run per dispatch by `CToneMappingEffect::Apply` through the `"LuminanceToDepthWithExposure"` shader, fed `m_ExposureBrightPoint` (a feedback loop).
+- [`m_Histogram2`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::tone_mapping::ToneMappingEffect##field-m_Histogram2), the unweighted raw meter and the target's divisor, run per dispatch by `GenerateHistogramForFinalScene`, which calls `PopulateHistogram` with a fixed exposure of one.
+
+Running `GenerateHistogramForFinalScene` twice in a frame corrupts `m_Histogram2`'s occlusion-query ring (the total reads several times the target's pixel count, with irregular buckets), its mid-point reads high, and the exposure darkens the frame. The exposure-weighted meter does not feed the divisor. The functions are in `graphics_engine/tone_mapping.pyxis`.
 
 ### 5.5 Screenshot countdown / profiler / end-draw callbacks
 
-- `GraphicsEngine::m_FramesUntilScreenshot`, the screenshot frames-until countdown, decrements per dispatch (two branches in `HandleDrawThreadTask`). Gate to eye 0.
-- GPU profiler `EndFrame` fires per dispatch — extra profiler entries (harmless).
-- End-draw `sig::Signal` one-shot callbacks self-remove after first fire; gate to the last (eye 1) dispatch so they fire once.
+The screenshot countdown `m_FramesUntilScreenshot` decrements per dispatch (two branches). The GPU profiler's `EndFrame` fires per dispatch. The end-draw `sig::Signal` one-shot callbacks remove themselves after the first dispatch that fires them.
 
 ### 5.6 Draw-done completion event
 
-At the tail of `HandleDrawThreadTask`: `engine->m_CPUDrawFinished = 1; SetEvent(engine->m_CPUFinishedDrawingEvent)` — the draw-done signal that `WaitForCPUDrawToFinish` fences on. It fires on **every** dispatch. If you run two dispatches per frame, eye 0 sets the event and the sim side's next `WaitForCPUDrawToFinish` could be released by eye 0's signal before eye 1 finishes. **Mitigation:** suppress the `SetEvent`/`m_CPUDrawFinished = 1` on eye 0; let only the final (eye 1) dispatch signal. Also `m_CPUDrawStallDuration`/`m_DrawTime` (CPU draw-time floats) are last-writer-wins — harmless.
+`m_CPUDrawFinished = 1; SetEvent(m_CPUFinishedDrawingEvent)` runs at the tail of every dispatch, so with two dispatches the first one's signal can release `WaitForCPUDrawToFinish` before the second finishes. `m_CPUDrawStallDuration` and `m_DrawTime` are last-writer-wins.
 
 ### 5.7 Jitter phase / frame-counter ring (TAA)
 
-The TAA jitter offset comes from a 2-phase table [`jittered_samples`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::post_effects::jittered_samples) (4 floats) indexed by `render_frame_counters.m_FrameIndex & 1` (set in the Draw prologue), scaled by [`jitter_scale_factor`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::post_effects::jitter_scale_factor) and divided by RT width/height. The phase + the `%3` CB ring (`m_RingIndex`) advance **per real frame in the prologue**, NOT per dispatch — so both eyes in one frame share the same jitter phase and CB indices **if you call only the dispatch body twice** (recommended). If you instead call the whole `GraphicsEngine::Draw` twice, the counter double-steps and the two eyes get opposite jitter phases + mismatched CB slots → TAA history mismatch / flicker. **Per-eye TAA:** the velocity buffer's `m_PreviousViewProjection` is snapshotted only in the sim-path `Camera::UpdateRender`, not per dispatch; for correct per-eye velocity, give each eye its own previous-frame VP (or disable `AA_SMAA_T2X` / motion blur during bring-up). For FSR, mod code handles this: the velocity-decode pass re-anchors each eye's vectors at its own previous pose using per-eye VP snapshots (`stereo::VpHistory`; the stereo MV correction in `docs/mod/rendering/fsr.md` — the fix for issue #10's per-eye shadow-edge flicker). A shared TAA history RT reprojected with two different cameras in one frame is the primary flicker source — use per-eye history or disable temporal AA initially. **[UNVERIFIED]** exact TAA history RT binding.
-
-The mod takes the disable path: in every stereo frame it drops the resolve mode [`AntiAliasingEffect::m_Mode`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::post_effects::AntiAliasingEffect##field-m_Mode) from `AA_SMAA_T2X` to `AA_SMAA` (SMAA 1x) on stereo, and skips the TAA jitter with it, removing the cross-eye temporal ghost. Restoring per-eye T2X would mean giving each eye its own history ping-pong pair on `AntiAliasingEffect` (a pair of history textures, a pair of render setups, and a pair of history indices, none of which is bound in the defs yet), allocated to match [`AntiAliasingEffect::CreateRenderTargetResources`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::post_effects::AntiAliasingEffect##func-CreateRenderTargetResources) (its `CreateRenderSetup` call is mislabeled `LockVolumeTexture` in the IDB). Low priority: T2X ghosts in VR head-motion regardless of per-eye history.
-
----
-
-## 6. Quick injection cheat-sheet (VR)
-
-- **Per-eye view divergence (camera-relative — see §2.4/§2.5):** the geometry is camera-relative, so offset the render camera's **`m_TransformF` translation** along the camera right axis — NOT `m_View`'s translation, which the OffsetVP zeros — then re-derive `m_View = Inverse(m_TransformF)` and rebuild `m_ViewProjection`/`m_ViewProjectionF` (§2.6). Hook `Camera::SetupRenderCamera` on the main render camera (`this == &engine->m_RenderCamera`), or right after the active->render memcpy in `GraphicsEngine::TextureCachePlatformUpdate`. For a per-eye off-axis *projection*, write a standard (non-reverse-Z) `m_Projection` before `SetupRenderCamera` so it reverse-Z's once (§2.7). Writing only `m_View`'s translation moves the per-view CB (post / muzzle flash) but not the world.
-- **Per-eye pose (gameplay-correct):** hook `GameCameraManager::PushRenderContext` to write the head pose into the control contexts; the engine then derives a consistent `m_View`. Combine with the render-cam offset for true stereo.
-- **Once-per-frame state to protect when double-dispatching:** clock (gate), EffectInfo slot bytes (snapshot/restore), eye-1 zero filter `dt`, screenshot countdown (gate eye 0), end-draw callbacks (gate eye 1). Shadow parity is shared (benign).
-
----
+The jitter comes from the two-phase table [`jittered_samples`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::post_effects::jittered_samples) indexed by `render_frame_counters.m_FrameIndex & 1`, scaled by [`jitter_scale_factor`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::post_effects::jitter_scale_factor) and divided by the target width and height. The phase and the three-slot constant-buffer ring advance per real frame in the prologue, so dispatches under one prologue share them; running the whole `GraphicsEngine::Draw` twice double-steps the counter, giving opposite jitter phases and mismatched constant-buffer slots. The velocity pass's `m_PreviousViewProjection` is snapshotted only in the sim-path `Camera::UpdateRender`, not per dispatch, and the T2X resolve keeps one history ping-pong pair on [`AntiAliasingEffect`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::post_effects::AntiAliasingEffect) (a pair of history textures, render setups, and indices, unbound), allocated in [`AntiAliasingEffect::CreateRenderTargetResources`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::post_effects::AntiAliasingEffect##func-CreateRenderTargetResources), whose `CreateRenderSetup` call is mislabelled `LockVolumeTexture` in the IDB. Which history target the resolve binds was not traced.
 
 ## 7. Present / swapchain
 
-- **Present** happens in [`graphics_flip`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::graphics_engine##func-graphics_flip). Verified: it takes the context critical section (the immediate-context mutex — see §8), does GPU-timestamp bookkeeping (a small query ring), then issues the actual present as `device->m_SwapChain->Present(device->m_DeviceInfo.m_DisplayPresentationInterval /*sync interval*/, 0)` ([`Device::m_SwapChain`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::device::Device##field-m_SwapChain), [`DeviceInfo::m_DisplayPresentationInterval`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::device::DeviceInfo##field-m_DisplayPresentationInterval)). The engine-side `GraphicsEngine::Flip` wraps it with `AcquireThreadOwnership`/`ReleaseThreadOwnership`.
-- **Swapchain model:** classic **BitBlt `DXGI_SWAP_EFFECT_DISCARD`** (NOT flip-model), created via `IDXGIFactory::CreateSwapChain`. `DXGI_SWAP_CHAIN_DESC`: `Flags=2` (`ALLOW_MODE_SWITCH`), `BufferUsage=0x70` (RENDER_TARGET_OUTPUT | SHADER_INPUT), `SampleDesc.Count=1`. **`BufferCount`** is a bit field of the device create flags minus one, asserted `>=2` → typically **2 back buffers** (double-buffered). Sync interval = `m_DisplayPresentationInterval` (from `CGraphicsEngine::m_FlipInterval`; 0 = no vsync). The swapchain owns the presentable buffers; the engine wraps back-buffer 0 as a `Graphics::HTexture_t` (RTV+SRV) and exposes it via `GetDeviceSurface(BACK_BUFFER)`.
-- `RenderEngine::m_CurrBackBufferCopy` indexes `RenderEngine::m_BackBufferCopy`, the ring of scene-colour copies used as the screen-space refraction source (§1.3). It is not a history of presentable buffers; those live in the DXGI swapchain.
-- **VR present suppression:** hooking `graphics_flip` and skipping the inner present vtable call is the correct point (the existing `BLOCK_FLIP` does this). The timestamp/query bookkeeping in the wrapper is safe to keep. Grab eye textures before suppressing.
+[`graphics_flip`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::graphics_engine##func-graphics_flip) takes the context critical section (§8), does GPU-timestamp bookkeeping over a small query ring, and presents with `device->m_SwapChain->Present(device->m_DeviceInfo.m_DisplayPresentationInterval, 0)` ([`Device::m_SwapChain`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::device::Device##field-m_SwapChain), [`DeviceInfo::m_DisplayPresentationInterval`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::device::DeviceInfo##field-m_DisplayPresentationInterval), from `CGraphicsEngine::m_FlipInterval`; 0 is no vsync). `GraphicsEngine::Flip` wraps it in `AcquireThreadOwnership` and `ReleaseThreadOwnership`.
+
+The swapchain is the BitBlt model, `DXGI_SWAP_EFFECT_DISCARD`, created by `IDXGIFactory::CreateSwapChain` with `Flags = 2` (`ALLOW_MODE_SWITCH`), `BufferUsage = 0x70` (render-target output and shader input), and `SampleDesc.Count = 1`. `BufferCount` is a bit field of the device create flags minus one, asserted at least two, so typically double-buffered. The engine wraps back buffer 0 as a `Graphics::HTexture_t` (RTV and SRV) returned by `GetDeviceSurface(BACK_BUFFER)`.
 
 ## 8. D3D11 context model
 
-- **The "master context" (`m_RenderContext.m_Context`) is a `Context` (`Graphics::HContext_t` wrapper) around the D3D11 *immediate* context.** At device init, `D3D11CreateDevice` writes the immediate context into [`Context::m_Context`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::device::Context##field-m_Context); [`GetMasterContext`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::device##func-GetMasterContext) returns it. `HandleDrawThreadTask` fetches it each dispatch (`m_RenderContext.m_Context = GetMasterContext(...)`).
-- **Deferred contexts exist** (`CreateDeferredContext`) for command-buffer recording; `FinishCommandList`/`ExecuteCommandList` (`Graphics::EndCommandBuffer`/`ApplyCommandBuffer`) record and replay onto the immediate context. `HandleDrawThreadTask` calls `ApplyCommandBuffer(m_RenderContext.m_Context)` early, then issues GBuffer/lighting/post/UI/resolve **directly on the immediate context**. So the render thread ultimately drives the immediate context.
-- **Mutex:** every immediate-context op is guarded by [`Context::m_Mutex`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::device::Context##field-m_Mutex) (a Win32 `CRITICAL_SECTION`), created at device init. Pattern: `ThreadMutexLock`/`Unlock` (`Graphics::CScopedCriticalSection`). `graphics_flip`, `CopyTexture`, `BeginDraw`, viewport sets all take it.
-- **VR implications:** for `CreateTexture`/`CopyResource`/per-eye RT injection, use the **immediate context** (`Context::m_Context`) and **take `Context::m_Mutex`** around any immediate-context call to stay coherent with engine draws. Resource *creation* (`CreateTexture2D` on the `ID3D11Device`) is free-threaded (driver reports concurrent creates) and needs no context lock. `CRenderEngine::PostDraw` itself does not take the mutex — the existing mod's "context mutex" is this `Context::m_Mutex`.
+The master context, `m_RenderContext.m_Context`, is a `Context` (`Graphics::HContext_t`) around the D3D11 immediate context: `D3D11CreateDevice` writes it into [`Context::m_Context`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::device::Context##field-m_Context), [`GetMasterContext`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::device##func-GetMasterContext) returns it, and `HandleDrawThreadTask` fetches it each dispatch. Deferred contexts exist (`CreateDeferredContext`), recorded and replayed through `Graphics::EndCommandBuffer` and `ApplyCommandBuffer` (`FinishCommandList`, `ExecuteCommandList`); `HandleDrawThreadTask` applies one early, then issues the G-buffer, lighting, post, and UI directly on the immediate context.
+
+Every immediate-context operation is guarded by [`Context::m_Mutex`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::device::Context##field-m_Mutex), a Win32 `CRITICAL_SECTION` created at device init and taken through `ThreadMutexLock`/`Unlock` (`Graphics::CScopedCriticalSection`): `graphics_flip`, `CopyTexture`, `BeginDraw`, and the viewport sets all take it, while `CRenderEngine::PostDraw` itself does not. Resource creation on the `ID3D11Device` is free-threaded (the driver reports concurrent creates) and needs no context lock.
 
 ## 9. Viewport / render resolution
 
-- **Viewport is set per render-setup, not from a global.** `Graphics::SetRenderSetup`, when binding RTs, sets the viewport to the **bound color/depth target's own dimensions** (`vp = {0,0,target->m_Width, target->m_Height, 0, 1}; RSSetViewports(...)`). So per-pass viewport = bound RT size. (`Graphics::SetViewport` -> `RSSetViewports` exists for explicit sets.)
-- **Not every pass draws at scene resolution.** Several passes redirect their draws to a reduced-resolution off-screen target: a shared quarter-resolution buffer (half per axis) that the low-resolution clouds, the low-resolution particles, and the volumetric spot-light cones all render into, plus the downsampled depth buffer beside it. Their composes then stretch the whole low-resolution texture over the whole scene target with a baked UV, and blend rather than overwrite. So the viewport in force mid-frame is not always the scene's, and anything deriving a screen region has to follow the bound target rather than the scene.
-- **Render resolution source:** every scene RT in `CreateRenderSetups` is sized from its `SDeviceInfo` *parameter*'s `m_DisplayWidth`/`m_DisplayHeight`, which `ApplyResize` fills from `device->m_DeviceInfo`. Some derived RTs are `>>1` (half-res). `m_BackBufferLinear` is the exception: it is not sized at all, but built as a format alias of swapchain buffer 0, so it inherits the swapchain's dimensions (§7, and `docs/engine/rendering/render-setups-reinit.md` §4). The two coincide in the stock game because the same `ApplyResize` drives both.
-- **No dynamic resolution / render-scale** found — RTs are allocated at full display resolution; no scale multiplier between display size and RT size.
-- **Per-eye resolution:** because all scene RT sizes flow from the device info through `CreateRenderSetups`, setting the device display size to the per-eye render resolution and re-running `CreateRenderSetups` resizes the whole scene chain, and viewports follow automatically from the bound RT sizes — no per-pass viewport patching. `m_BackBufferLinear` and the two back-buffer render setups do not follow, because they derive from the swapchain rather than the device info; the mod substitutes its own (`docs/mod/stereo/swapchain-ownership.md`).
+`Graphics::SetRenderSetup` sets the viewport to the bound colour or depth target's own size (`{0, 0, target->m_Width, target->m_Height, 0, 1}`), so a pass's viewport is its target's size; `Graphics::SetViewport` sets one explicitly.
+
+Not every pass draws at scene resolution. The low-resolution clouds, the low-resolution particles, and the volumetric spot-light cones render into a shared quarter-resolution target (half per axis) beside the downsampled depth, and their composes stretch the whole texture over the scene target with a baked UV and blend. The viewport mid-frame is therefore not always the scene's.
+
+Every scene target in `CreateRenderSetups` is sized from its `SDeviceInfo` parameter's `m_DisplayWidth` and `m_DisplayHeight` (some at half), which `ApplyResize` fills from `device->m_DeviceInfo`. There is no dynamic resolution or render scale. `m_BackBufferLinear` is the exception: it is a format alias of swapchain buffer 0 and inherits the swapchain's size. Re-running `CreateRenderSetups` at another device size resizes the scene chain, with the viewports following, while `m_BackBufferLinear` and the two back-buffer render setups stay at the swapchain's size ([render-setups-reinit.md](render-setups-reinit.md) §4).
 
 ## 10. UI / HUD pipeline
 
-- **Global instance:** [`GetIUIManager`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/ui::ui_manager##func-GetIUIManager) returns the [`CUIManager`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::ui_manager::UIManager) singleton — a concrete `CUIManager` (Scaleform GFx) singleton (only one instance), vtable `??_7CUIManager@@6B@`.
-- **Resolved virtual calls** (the calls in `HandleDrawThreadTask`, modelled in the `UIManager` vtable in the defs):
-  - `UIManager::StartRender` — kicks off the async UI render fragment.
-  - `UIManager::SyncRender` — barrier (wait for UI render thread).
-  - `UIManager::Submit` — locks master ctx, flushes UI draws (`m_RenderHAL->Submit`).
-  - `UIManager::RenderOffScreenTextures` — in-world Scaleform screens (not HUD).
-  - `UIManager::RenderStaticBackGround` — pause/menu background.
-  - Mapping: the early block (before `PreDraw`) calls `RenderOffScreenTextures` then `StartRender`; the main UI block calls `Graphics::Clear(ctx, CLEAR_STENCILBUFFER, ...)` then `RenderStaticBackGround`, `SyncRender`, `Submit`, then `ResetContext`.
-- **Which RT the HUD draws into:** **directly into `m_BackBufferLinear`** (the linear alias of the DXGI back buffer). [`CUIManager::InitPlatformRT`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::ui_manager::UIManager##func-InitPlatformRT) binds Scaleform's `m_RenderBuffer` to the RTV of `m_BackBufferLinear` + `m_MainDepthSurface` DSV; `CUIManager::Render` does `SetRenderTarget(m_RenderBuffer)` -> `HAL::Draw`. The HUD is composited **on top of the final LDR image**, into the same surface the composite pass just wrote. There is no separate HUD RT for the main overlay, and no copy afterwards (§12).
-- **`HandleDrawThreadTask` runs once per frame, not per eye** — so the main UI block is a single HUD emission per real frame already. (If the VR layer calls only the *dispatch body* twice, you must decide which eye gets the UI block; if you call it per eye, gate UI to one.)
-- **World-to-screen (markers / distance labels):** `CUIManager::Convert3DCoords` projects a world point to a HUD pixel: `world·vp`, divide by `|w|`, aspect-correct, map NDC→pixels with `m_ViewWidth`/`m_ViewHeight`, return `w > 0`. **The VP is a parameter**, so feeding a chosen per-eye VP relocates where every projected marker lands. Marker placement + off-screen edge-clamp: `CUIManager::Get2DInfo` → `CUIManager::ClampToScreen`; xref `Get2DInfo` to find each gameplay callsite's VP source. The default VP is the render camera's `m_ViewProjectionF`.
-- **VR UI compositing:** the mod rebinds Scaleform's render buffer to its own offscreen HUD texture and draws it as an in-scene quad per eye; see [`hud.md`](../../mod/hud.md).
+[`GetIUIManager`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/ui::ui_manager##func-GetIUIManager) returns the one [`CUIManager`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::ui_manager::UIManager) (Scaleform GFx, vtable `??_7CUIManager@@6B@`). `HandleDrawThreadTask` calls its virtuals in two places (§1.4): before `PreDraw`, `RenderOffScreenTextures` (the in-world Scaleform screens) and `StartRender` (kicks off the UI render fragment); in the UI block, `RenderStaticBackGround` (the pause and menu background), `SyncRender` (waits for the fragment), and `Submit` (locks the master context and flushes the HAL). The update, capture, and render are in [ui-rendering.md](ui-rendering.md).
+
+The HUD draws directly into `m_BackBufferLinear`: [`CUIManager::InitPlatformRT`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::ui_manager::UIManager##func-InitPlatformRT) binds Scaleform's `m_RenderBuffer` to its RTV with `m_MainDepthSurface` as the DSV, and `CUIManager::Render` sets that target and draws. The HUD lands on top of the final LDR image in the surface the composite wrote, with no separate target and no copy after. There is one UI block per dispatch.
+
+`CUIManager::Convert3DCoords` projects a world point to a HUD position (`world·vp`, divide by `|w|`, aspect-correct, map NDC to the view size, return `w > 0`), with the view-projection as a parameter; `CUIManager::Get2DInfo` and `CUIManager::ClampToScreen` place and edge-clamp markers. The markers are in [ui-rendering.md](ui-rendering.md#points-of-interest).
 
 ## 11. Render-block / draw-list lifecycle across dispatches
 
-The per-pass draw is **non-destructive**, but the per-frame list **rotation runs inside `GraphicsEngine::Draw`'s prologue** — so running the whole `GraphicsEngine::Draw` twice (as the mod does) rotates the lists twice and the second eye draws an **empty** buffer. This is the "eye 1 has no scene geometry" failure (measured: eye 0 = 194 indexed draws, eye 1 = 0; eye 1 still issues its ~53 fullscreen/non-RBI draws + 8 compute dispatches, which is why it isn't pure black).
+Drawing a pass's list is non-destructive; the list rotation runs in the `Draw` prologue.
 
-- **Pass array:** `RenderEngine::m_RenderPasses` is the fixed array of per-pass lists (created at init), iterated by `DrawRenderPassRange` over pass categories (gbuffer `RP_Z_OCCLUDERS`..`RP_LAST_GBUFFER`, scene `RP_REFLECTIVE_WATER_PLANES`..`RP_POSTEFFECTS`, ...). Each `CRenderPass` owns a double-buffered `m_Lists[2]` (two [`CRBILists`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_pass::RBILists)) followed by [`RenderPass::m_CurrentAddList`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_pass::RenderPass##field-m_CurrentAddList) / [`m_CurrentDrawList`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_pass::RenderPass##field-m_CurrentDrawList).
-- **`CRBILists` layout (from [`CRBILists::Add`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_pass::RBILists##func-Add)):** `m_List` (array of [`RenderInstance`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_pass::RenderInstance) entries), `m_ListSize` (u16 capacity), `m_NumElements` (volatile u32; `Add` does `InterlockedExchangeAdd(m_NumElements,1)`). On overflow (`count >= cap`) `Add` spills to a global overflow list ([`render_block_overflow_count`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_pass::render_block_overflow_count) plus its entries). The overflow list's capacity and entry size are not yet confirmed.
-- **Population (sim, once/frame):** sim systems append blocks into `m_CurrentAddList` via `CRBILists::Add`, dispatched as worker jobs. [`CRenderPass::SetupRenderFrameData`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_pass::RenderPass##func-SetupRenderFrameData) is one such per-batch *build* appender — it does **not** swap; it appends `count` items.
-- **Rotation / swap (in EVERY `GraphicsEngine::Draw` prologue):** `GraphicsEngine::Draw` calls `CKeep1000Frames::CKeep1000Frames` in its prologue (IDA's label for the inlined `CRenderPass::SetupRenderFrameData` merged with the profiling constructor). It: (1) toggles a global 1-bit parity [`current_add_buffer`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_pass::current_add_buffer) (`parity = (parity-1)&1`); (2) loops all passes (via a sub mislabeled `std::map::operator[]`) calling each pass's virtual [`CRenderPass::SaveRenderFrameData`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_pass::RenderPass##func-SaveRenderFrameData): `m_CurrentAddList = &m_Lists[parity]`, `m_CurrentDrawList = &m_Lists[(parity-1)&1]`, and **zeroes the new add-list's `m_NumElements`**; (3) flushes the overflow global back into the lists and resets its count.
-- **Drawing does NOT consume:** the virtual [`CRenderPass::DoDraw`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_pass::RenderPass##func-DoDraw) loads `m_CurrentDrawList`, draws `min(m_ListSize, m_NumElements)` blocks via a local cursor, and **never writes `m_NumElements`**. A buffer can be redrawn any number of times.
-- **Why eye 1 is empty (running the whole `Draw` twice without saving the parity):** eye 0's rotation points every `m_CurrentDrawList` at the sim-populated buffer → 194 draws. Eye 1's rotation toggles parity *back*, re-points `m_CurrentDrawList` to the buffer eye 0's rotation had just zeroed **and zeroes eye 0's buffer in turn** → 0 draws. The geometry is not consumed by drawing; it is wiped by the *second* rotation. Saving/restoring `current_add_buffer` between eyes prevents this.
-- **`CRenderEngine::EraseAllDeletedRenderBlocks` (called from `HandleDrawThreadTask`):** a *separate* deletion list; does not touch pass draw lists. Benign across dispatches.
-- **Sort task (`m_SortTaskProxy`):** each dispatch creates a fresh sort proxy that sorts each `m_CurrentDrawList` in place; the dispatch spinwaits before `EndDraw`. Sorting an already-sorted stable list is idempotent → safe across two dispatches (serialized by the single render thread).
+- `RenderEngine::m_RenderPasses` is a fixed array of per-pass lists created at init. Each `CRenderPass` owns a double-buffered `m_Lists[2]` of [`CRBILists`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_pass::RBILists), followed by [`RenderPass::m_CurrentAddList`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_pass::RenderPass##field-m_CurrentAddList) and [`m_CurrentDrawList`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_pass::RenderPass##field-m_CurrentDrawList).
+- A `CRBILists` holds `m_List` (an array of [`RenderInstance`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_pass::RenderInstance)), `m_ListSize` (a u16 capacity), and `m_NumElements` (a volatile u32). [`CRBILists::Add`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_pass::RBILists##func-Add) does `InterlockedExchangeAdd(m_NumElements, 1)` and, when full, spills to a global overflow list ([`render_block_overflow_count`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_pass::render_block_overflow_count) and its entries; its capacity and entry size are unconfirmed).
+- Population: sim systems append to `m_CurrentAddList` through `CRBILists::Add` from worker jobs, once per frame. [`CRenderPass::SetupRenderFrameData`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_pass::RenderPass##func-SetupRenderFrameData) is one such batch appender; it does not swap.
+- Rotation: the prologue calls what IDA labels `CKeep1000Frames::CKeep1000Frames` (the inlined rotation merged with a profiling constructor). It toggles the global parity [`current_add_buffer`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_pass::current_add_buffer) (`parity = (parity-1)&1`); calls every pass's virtual [`CRenderPass::SaveRenderFrameData`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_pass::RenderPass##func-SaveRenderFrameData) (through a sub mislabelled `std::map::operator[]`), which sets `m_CurrentAddList = &m_Lists[parity]` and `m_CurrentDrawList = &m_Lists[(parity-1)&1]`, zeroes the new add list's `m_NumElements`, and copies an external camera into the pass's render camera; and flushes the overflow list back into the lists.
+- Drawing: the virtual [`CRenderPass::DoDraw`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_pass::RenderPass##func-DoDraw) draws `min(m_ListSize, m_NumElements)` entries of `m_CurrentDrawList` through a local cursor and never writes the list, so a list can be drawn any number of times.
+- `CRenderEngine::EraseAllDeletedRenderBlocks` works on a separate deletion list and does not touch the draw lists.
 
-**Two correct fixes:**
-1. **Save/restore `current_add_buffer` between eyes** — what the mod does: snapshot the parity before eye 0's `Draw` and restore it before eye 1's `Draw`. Eye 1's `CKeep1000Frames` then toggles it to the same value as eye 0, so `SaveRenderFrameData` sets the same list pointers and zeroes the same add-list. Eye 1 draws from the same populated draw list as eye 0. The function runs on both eyes, so the overflow list is processed and the external render camera is updated on both eyes too — no side effects from skipping.
-2. **Run only the dispatch body twice** (`DispatchDraw`/`HandleDrawThreadTask`) under a single `GraphicsEngine::Draw` prologue — the rotation then runs once and both dispatches read the same populated buffer. More invasive; the mod instead runs the whole `Draw` twice and saves/restores the per-dispatch side effects.
+Running the whole `Draw` twice therefore rotates twice: the second rotation toggles the parity back, points every draw list at the buffer the first rotation just zeroed, and zeroes the populated one, so the second dispatch draws no list-driven geometry (its fullscreen and compute work still runs). Restoring `current_add_buffer` before the second `Draw` makes its rotation select and zero the same lists as the first, so it draws the same populated lists; running only the dispatch body twice under one prologue rotates once. Neither needs the list contents saved.
 
-Either way, **no geometry snapshot/restore is needed** — the draw is non-destructive; you only have to stop the *second rotation* from wiping the lists.
+### 11.1 The render-pass sort and depth buckets
 
-## 12. Per-eye output routing
+Each [`RenderInstance`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_pass::RenderInstance) (`SRenderInstance`) holds a sort ID, the render block, its instance info, the render-block type, and a depth key. Once per rotation, [`RenderPass::SortList`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_pass::RenderPass##func-SortList) (labelled `CRigidObject::Destruct` in the IDB):
 
-**There is no final resolve.** The `EndDraw` call in `HandleDrawThreadTask` (§1.4 step 15) is not `Graphics::CopySurfaceToTexture`, an MSAA resolve of the composite into the device's presentable surface, as its IDB name suggests: two mislabelled symbols in the IDB swap a pair of `Graphics::` functions ([swapchain-ownership.md §11](../../mod/stereo/swapchain-ownership.md#11-a-note-on-symbols)):
+1. Recomputes each entry's keys through [`RenderBlock::GetSortID`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_pass::RenderBlock##vfunc-GetSortID) and [`RenderBlock::GetSqDistanceToCamera`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_pass::RenderBlock##vfunc-GetSqDistanceToCamera), the squared distance from the instance's buffered world translation to the sort camera; only `CRenderBlockWindow` and the particle blocks override the distance.
+2. `std::sort`s by `(m_Depth, m_RenderBlockType, m_SortID)` as [`RenderPass::m_SortMethod`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_pass::RenderPass##field-m_SortMethod) says: by sort ID with no depth key, back to front or front to back by raw distance, or front to back by bucket.
+3. Latches [`RenderPassSortState::m_Sorted`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_pass::RenderPassSortState##flag-m_Sorted) in [`RenderPass::m_SortStateFlags`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_pass::RenderPass##field-m_SortStateFlags) under [`RenderPass::m_SortLock`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_pass::RenderPass##field-m_SortLock); `SaveRenderFrameData` clears it, so a list sorts at most once per rotation and every draw of it that frame sees one order.
 
-- The function labelled `Graphics::CopySurfaceToTexture` is really **[`Graphics::EndDraw(ctx)`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::draw##func-EndDraw)** — it reads no argument beyond the context, takes the context critical section, and submits the frame's two prebuilt command objects from the command-slot ring. This is the call in §1.4 step 15.
-- The function labelled `NGraphicsEngine::CGPUProfiler::BeginScope` is really **[`Graphics::CopySurfaceToTexture(ctx, dst, src)`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::draw##func-CopySurfaceToTexture)** — a whole-resource `CopyResource`. Its one call in `HandleDrawThreadTask` is the VFX depth copy of the EffectInfo slot machine (§5.1), nothing to do with the back buffer.
+Two callers reach it: the render thread's sort task, [`RenderEngine::SortRenderPasses`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderEngine##func-SortRenderPasses) (`m_SortTaskProxy`, created fresh per dispatch and awaited before `EndDraw`), which sorts by the pass's external camera when it has one and the render camera otherwise, and a lazy call at the top of `DoDraw`. The distance is the instance centre's, not the nearest point of its bounds ([`RenderBlock::GetBoundingBox`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_pass::RenderBlock##vfunc-GetBoundingBox)), so a large object with a far centre sorts as far.
 
-Nothing copies to the back buffer because there is nothing to copy: `m_BackBufferLinear` is a **format alias** of swapchain buffer 0 (`CreateSurfaceAlias` memcpys the source handle, `AddRef`s the same `ID3D11Resource`, and builds fresh views), so the composite pass bound to `m_BackBufferRenderSetup` writes *directly into* the presentable surface. `Graphics::Flip` then presents it.
+`m_SortMethod` defaults to `Auto`: front to back by bucket, or back to front for alpha-blended passes. Bucketing quantizes the squared distance through [`RenderPass::m_DepthSqTable`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_pass::RenderPass##field-m_DepthSqTable), a fixed-capacity table of ascending squared boundaries with its count in [`RenderPass::m_NumDepthBuckets`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_pass::RenderPass##field-m_NumDepthBuckets), storing the bucket index in `m_Depth`. With one bucket, the constructor's default, no depth key is computed and the sort is by type, then sort ID. Adding a boundary (the inlined `AddDepthBucket`: append, keep sorted, raise the count) makes the sorted list one contiguous, type-batched run per bucket. Back-to-front passes keep raw distances, so a distance splits them too, in reverse. The only stock pass with more than one bucket is [`RenderPassId::RP_Z_AND_VELOCITY_PASS`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderPassId##variant-RP_Z_AND_VELOCITY_PASS), with boundaries [`RenderPass::Z_AND_VELOCITY_DEPTH_SQ_NEAR`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_pass::RenderPass::Z_AND_VELOCITY_DEPTH_SQ_NEAR) and [`RenderPass::Z_AND_VELOCITY_DEPTH_SQ_FAR`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_pass::RenderPass::Z_AND_VELOCITY_DEPTH_SQ_FAR) registered inline in [`RenderEngine::InitializeSystem`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderEngine##func-InitializeSystem). Some content is near or far by block type rather than distance: the distant terrain, distant trees, and occluders ([terrain.md](terrain.md#which-blocks-draw-the-visible-terrain)).
 
-**Consequence for per-eye routing.** `CopyResource` `m_BackBufferLinear`'s texture into the per-eye texture after the composite — what the mod does in the `PostDraw`-adjacent path — is correct: it reads the composite target, with no resolve to copy after. There is no resolve to suppress or retarget. Do the copy on the **immediate context under `Context::m_Mutex`**, once per eye dispatch.
+## 12. There is no final resolve
 
----
+The `EndDraw` call in `HandleDrawThreadTask` (§1.4) is not the MSAA resolve into the presentable surface its IDB name suggests. Two IDB symbols swap a pair of `Graphics::` functions: the function labelled `Graphics::CopySurfaceToTexture` is [`Graphics::EndDraw(ctx)`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::draw##func-EndDraw), which reads only the context, takes the context critical section, and submits the frame's two prebuilt command objects from the command-slot ring; and the function labelled `NGraphicsEngine::CGPUProfiler::BeginScope` is [`Graphics::CopySurfaceToTexture(ctx, dst, src)`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::draw##func-CopySurfaceToTexture), a whole-resource `CopyResource`, whose one call in `HandleDrawThreadTask` is the EffectInfo depth copy (§5.1).
 
-## 13. To dispatch one correct stereo eye — checklist
+Nothing copies to the back buffer because `m_BackBufferLinear` is a format alias of swapchain buffer 0 (`CreateSurfaceAlias` copies the source handle, `AddRef`s the same `ID3D11Resource`, and builds fresh views), so the composite bound through `m_BackBufferRenderSetup` writes straight into the presentable surface, which `Graphics::Flip` presents. The composite's output is read from `m_BackBufferLinear` after the post chain.
 
-Two viable structures (§11): **(A)** run the whole `GraphicsEngine::Draw` twice and gate/snapshot the per-frame + per-dispatch side effects (what the mod does), or **(B)** run only the **dispatch body** twice under a single prologue. The lists below assume **(A)**; under **(B)** the prologue items (frame counter, jitter phase, CB ring, clock, **list rotation**) run once and need no gating.
+## Open questions
 
-**SET (per eye), on the render camera `GraphicsEngine::m_RenderCamera` — hook `Camera::SetupRenderCamera` (`this == &engine->m_RenderCamera`) or right after the active->render memcpy in `GraphicsEngine::TextureCachePlatformUpdate`. The scene is camera-relative (§2.4), so:**
-- `m_TransformF` translation: lateral IPD/2 offset along the camera right axis (the camera *world position* — this is what camera-relative geometry subtracts). Do NOT just offset `m_View`'s translation; the OffsetVP zeros it.
-- Re-derive `m_View = Inverse(m_TransformF)`, then rebuild `m_ViewProjection`/`m_ViewProjectionF` from `m_View x m_Projection` (§2.6) so the per-view CB matches.
-- Per-eye off-axis *projection* (optional): write a standard (non-reverse-Z) `m_Projection` before `SetupRenderCamera` so it reverse-Z's + jitters once (§2.7).
-- After the dispatch: `WaitForCPUDrawToFinish`, then `CopyResource(eyeN_tex, m_BackBufferLinear)` under `Context::m_Mutex` (§12).
-
-**SNAPSHOT / RESTORE around the eye pair (so once-per-dispatch state doesn't double-step):**
-- EffectInfo slot bytes (each `m_EffectInfo[i].m_FrameIndex`) + `m_EffectInfoIndex` (§5.1).
-- Per-eye previous-frame VP for velocity if you keep motion blur / `AA_SMAA_T2X` (§5.7); else disable them.
-- (Optional) restore the sort proxy state to skip the eye-1 re-sort (perf only, §11).
-
-**GATE to a single eye:**
-- **Render-list parity `current_add_buffer` (in the `Draw` prologue) -> save/restore between eyes** — eye 1's `CKeep1000Frames` must toggle to the same value as eye 0's so `SaveRenderFrameData` sets the same list pointers. Without this, eye 1's rotation flips every `m_CurrentDrawList` to the buffer eye 0 just zeroed and draws no scene geometry (§11). This is the core geometry fix under structure (A); not needed under (B).
-- Draw-done `SetEvent`/`m_CPUDrawFinished = 1` -> **eye 1 (last) only** (§5.6).
-- Screenshot countdown `m_FramesUntilScreenshot` -> eye 0 only (§5.5).
-- End-draw `sig::Signal` one-shot callbacks -> eye 1 only (§5.5).
-- Main UI block (§1.4 step 13) -> one eye (or redirect to a UI layer RT, §10).
-- Zero the filters' `dt` on eye 1 so dt accumulators (fade/heat-haze) don't double-step (§5.2).
-
-**LEAVE ALONE (do not touch / shared is fine):**
-- Draw-list *contents* — non-destructively drawn, so no re-population/snapshot needed (§11). The per-frame *rotation* runs on both eyes but the parity is saved/restored so both eyes see the same list pointers under structure (A).
-- Shadow parity (`render_frame_counters.m_FrameIndex & 1`) — shared slot, benign (§5.3).
-- `Clock::Update` — runs once in the sim prologue; do not call per dispatch (§5.4).
-- Frame counter / jitter phase / `%3` CB ring — advanced once in the prologue; keep both eyes on the same values (§5.7).
-- `graphics_flip` — suppressed once per frame via `BLOCK_FLIP`; present via OpenXR.
-
----
-
-## Open questions / unverified
-
-1. **GBuffer1/2/3 and aux-RT exact formats** beyond GBuffer0 (`ABGR32`): GBuffer1 as `A2R10G10B10` is unverified (out of scope per the brief — best-effort).
-2. **Exposure adaptation EMA** exact location/decay (inferred to be in the tonemapping effect; not line-traced).
-3. **`render_frame_index` / `previous_render_context_frame_index` consumers** (the `%3` ring values): not traced; presumed triple-buffered per-frame resources. Advanced once/frame in the prologue, so benign for double-dispatch.
-4. **TAA history RT binding** (§5.7): the camera-side snapshot chain is verified, and the EffectInfo VP history is `EffectInfo::m_Transform`; the downstream history RT names were not traced.
-5. **Reflection-proxy RT formats / `VfxDepthCopy_%d` count**: names confirmed, formats not.
-6. **Which draw entry point WaveWorks uses** (§4.2). [`CNvWaterHighEndRenderBlock::Draw`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::NvWaterHighEndRenderBlock##func-Draw) hands a raw `ID3D11DeviceContext` to `GFSDK_WaveWorks_Quadtree_DrawD3D11`, an import from `gfsdk_waveworks.win64.dll`, so which of slots 12/20/39/40/21 the water geometry lands on is not visible in the IDB. A per-slot counter keyed to the water pass ids, or a frame capture, settles it in one run.
-7. **Whether WaveWorks' savestate restore stomps the viewport.** `GFSDK_WaveWorks_Savestate_RestoreD3D11` restores rasterizer state around the water draws through the same context the engine draws on; what exactly it puts back is not determinable from the IDB.
-8. **Whether `UVScale` is ever non-unity.** The fullscreen reconstruction vertex shaders build their G-buffer UV as `o1 = (v0 · 0.5 + 0.5) · cb1[5].xy` (`UVScale`), which is only a no-op while that constant is `(1, 1)`. The constant is [`RenderContext::m_UVScale`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::RenderContext##field-m_UVScale), which `SetupRenderContext` copies each pass from [`GraphicsEngine::m_UVScale`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::GraphicsEngine##field-m_UVScale). Nothing has been found that writes the engine field otherwise, but its writer was not traced.
-9. **Camera-relative per-object combine site (§2.4)**: the mechanism is established from `SetRenderContextCamera` storing a translation-free OffsetVP (`CalculateOffsetViewProjectionMatrix`) alongside a separate `CameraPosition` (from `m_TransformF`'s translation) — there is no other reason to keep both. The literal per-object `world.row3 -= CameraPosition` multiply in the model render block was not line-verified (a claimed address was a misattribution); not needed for the camera-side fix.
+1. The formats of GBuffer1 to 3 beyond GBuffer0's `ABGR32` (GBuffer1 as `A2R10G10B10` is unverified), of the reflection-proxy targets, and the `VfxDepthCopy_%d` count.
+2. Where the exposure adaptation's smoothing lives and its decay; inferred to be in the tone-mapping effect, not traced.
+3. The consumers of `render_frame_index` and `previous_render_context_frame_index`, presumed triple-buffered per-frame resources.
+4. The TAA history target bindings (§5.7).
+5. Which draw entry point WaveWorks uses (§4.2). [`CNvWaterHighEndRenderBlock::Draw`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::NvWaterHighEndRenderBlock##func-Draw) hands a raw `ID3D11DeviceContext` to `GFSDK_WaveWorks_Quadtree_DrawD3D11`, an import from `gfsdk_waveworks.win64.dll`, so the slot is not visible in the IDB; a per-slot counter on the water passes or a frame capture settles it.
+6. What `GFSDK_WaveWorks_Savestate_RestoreD3D11`, which restores rasterizer state around the water draws on the engine's context, puts back, and whether it includes the viewport.
+7. Whether `UVScale` is ever non-unity. The fullscreen reconstruction vertex shaders build their G-buffer UV as `o1 = (v0 · 0.5 + 0.5) · cb1[5].xy`, from [`RenderContext::m_UVScale`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::RenderContext##field-m_UVScale), which `SetupRenderContext` copies each pass from [`GraphicsEngine::m_UVScale`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::GraphicsEngine##field-m_UVScale); its writer was not traced.
+8. The literal per-object `world.row3 -= CameraPosition` in the model render block (§2.4) was not line-verified; the camera-relative scheme rests on `SetRenderContextCamera` storing a translation-free offset view-projection beside a separate `CameraPosition`.
