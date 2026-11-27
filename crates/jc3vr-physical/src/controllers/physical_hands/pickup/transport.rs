@@ -1,3 +1,7 @@
+//! The character's motion a carried object rides along with: the hands ride on the character, so
+//! a carried object the hands can lift takes on a share of the character's own motion between
+//! two ticks, turn included, rather than chasing it through the hands' strength.
+
 use body_rig::math::rotation::angular_velocity;
 use glam::{Quat, Vec3};
 use jc3vr_body::controllers::physics::rigid::Velocities;

@@ -1,7 +1,10 @@
-//! Bounded evidence from the grip resolver, pickup request queue, and pickup consumer.
+//! The grip press's trail through the pickup, kept as fixed-size records for the readout: what the
+//! grip resolver offered each hand, the requests the input tick queued, what the simulation tick
+//! did with each, and how it drove what a request took.
 //!
-//! Records contain copied observations only. Missing provider identity is distinct from a provider
-//! reporting no target. The leaf slot never logs and never calls an engine reader.
+//! Records hold copied values only, and a candidate whose provider supplies no identity is told
+//! apart from a provider that reports no target. The slot's lock is a leaf: nothing logs or reads
+//! the engine under it.
 //!
 //! While a tracking recording or the lookback collects, each acquisition stage is also noted as a
 //! [`GripAcquisition`] event: a grip press or a queued request with the resolver's candidates and
@@ -43,13 +46,13 @@ pub struct InputState {
     pub grabs: [Option<GrabVolume>; 2],
 }
 
-/// The exact controller publication used by an input tick, with its bounded resolver evidence.
+/// The controller publication an input tick read, with what the resolver offered each hand.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct InputContext {
     pub hands: [InputRecord; 2],
 }
 
-/// A reached target retained from the real resolver output.
+/// A target the grip resolver offered a hand.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Candidate {
     pub resolved: resolve::Reach,
@@ -77,7 +80,7 @@ pub struct InputRecord {
     pub consumer: InputConsumer,
 }
 
-/// What the pickup input consumer actually did with an input observation.
+/// What the pickup's input tick did with an input observation.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum InputConsumer {
     NotRun,
@@ -89,17 +92,17 @@ pub enum InputConsumer {
     Queued,
 }
 
-/// An identity carried by the actual queued request to its simulation consumer.
+/// The identity a queued request carries to the simulation tick that consumes it.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct RequestKey {
     pub sequence: u64,
     pub episode: u64,
     pub request: u64,
-    /// The reach read by the pickup finisher, not an inferred provider identity.
+    /// The reach the input tick queued, as it read it, not one inferred from the provider.
     pub target: Reach,
 }
 
-/// The simulation consumer's observed result, or the queue operation that removed a request.
+/// What the simulation tick did with a request, or the queue operation that removed it.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum ConsumerResult {
     Queued,
@@ -121,7 +124,7 @@ pub struct DriveRecord {
     pub object: usize,
     pub body: u32,
     pub before: BodyState,
-    /// None for a joint-driven hold. This is the requested value, not a post-step observation.
+    /// `None` for a hold through a joint. The velocities asked for, not those after the step.
     pub commanded: Option<Velocities>,
     pub result: Option<Result<(), PhysicsError>>,
     pub report: Option<HeldReport>,
@@ -156,7 +159,8 @@ pub struct Status {
     pub hands: [HandEvidence; 2],
 }
 
-/// Capture the exact resolver result and the input caller's captured publication sequence.
+/// Record what the resolver offered each hand on `tick`, with the publication sequence the input
+/// tick read.
 pub fn input(
     sequence: u64,
     tick: &Tick,
@@ -177,12 +181,13 @@ pub fn input(
     }
 }
 
-/// Copy a bounded snapshot for a guard-free consumer to format after this call returns.
+/// A copy of both hands' records, to format without holding the lock.
 pub fn status() -> Status {
     *STATUS.lock()
 }
 
-/// Record a branch in the actual pickup input consumer. A press's branch is noted as an event.
+/// Record the branch the pickup's input tick took for `input`; a press's branch is also noted as
+/// an event.
 pub(crate) fn input_consumer(hand: Hand, input: InputRecord, result: InputConsumer) {
     STATUS.lock().hands[hand.index()].input_consumer(input, result);
     if input.grip.pressed {
@@ -196,7 +201,7 @@ pub(crate) fn input_consumer(hand: Hand, input: InputRecord, result: InputConsum
     }
 }
 
-/// Record the reach that the actual pickup input consumer places in its queue, and note it.
+/// Record the reach the pickup's input tick queues for `hand`, and note it.
 pub(crate) fn queued(hand: Hand, input: InputRecord, target: Reach) -> RequestKey {
     let key = STATUS.lock().hands[hand.index()].queued(input, target);
     note(|| {
@@ -214,7 +219,7 @@ pub(crate) fn queued(hand: Hand, input: InputRecord, target: Reach) -> RequestKe
     key
 }
 
-/// Attach the actual consumer result only to the request carrying this key, and note it.
+/// Record what the simulation tick did with the request `key`, and note it.
 pub(crate) fn consumed(hand: Hand, key: RequestKey, result: ConsumerResult) {
     let record = {
         let mut status = STATUS.lock();
@@ -226,8 +231,8 @@ pub(crate) fn consumed(hand: Hand, key: RequestKey, result: ConsumerResult) {
     }
 }
 
-/// Retain already-read body values and the outcome of the existing drive call. A request's first
-/// drive is noted as an event.
+/// Record the body as the tick read it and the outcome of its drive for the request `key`. A
+/// request's first drive is noted as an event.
 pub(crate) fn driven(hand: Hand, key: RequestKey, drive: DriveRecord) {
     let first = {
         let mut status = STATUS.lock();

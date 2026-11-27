@@ -3,8 +3,9 @@
 //!
 //! The bodies are read from the character's own ragdoll ([`Character::m_Ragdoll`]) on every call,
 //! so a ragdoll the game has freed or rebuilt since is never trusted, and each body is read through
-//! [`physical_hands::line_body`], which checks that its engine instance still belongs to its owner
-//! and that it is dynamic: a ragdoll whose bones the animation drives keyframed has none to take.
+//! [`line_body`](jc3vr_body::controllers::physics::line_body), which checks that its engine
+//! instance still belongs to its owner and that it is dynamic: a ragdoll whose bones the animation
+//! drives keyframed has none to take.
 //!
 //! Every function here runs on the game thread outside the physics step.
 
@@ -37,7 +38,7 @@ pub(crate) struct Ragdoll {
 
 impl Ragdoll {
     /// The dynamic bodies of `character`'s ragdoll while it ragdolls
-    /// ([`Character::IsRagdolling`]), or `None` when it does not, or has no dynamic body.
+    /// ([`Character::IsRagdolling`]) or is dead, or `None` otherwise, or without a dynamic body.
     ///
     /// # Safety
     ///
@@ -111,9 +112,9 @@ impl Ragdoll {
         self.bones.iter().copied().find(|b| b.body == body)
     }
 
-    /// The bone a hit on the body `body` at `point` takes the ragdoll by: the hit body's, when it is
-    /// one of the ragdoll's, or else the bone nearest `point`. A hit on the character's capsule or
-    /// its ragdoll's hit proxy lands on no body of the ragdoll itself.
+    /// The bone a hit on the body `body` at `point` takes the ragdoll by: the hit body's, when it
+    /// is one of the ragdoll's, or else the bone nearest `point`. A hit on the character's capsule
+    /// or its ragdoll's hit proxy lands on no body of the ragdoll itself.
     pub(crate) fn bone_at(&self, body: u32, point: Vec3) -> Option<Bone> {
         self.bone(body).or_else(|| self.nearest(point))
     }

@@ -68,7 +68,7 @@ fn worker_adapter_uses_only_caller_proof_and_atomic_stamps() {
     let gate = Gate::new();
     let now = Stamp::now();
     gate.observe(Some(context()));
-    // Serialized validation rejects the recycled identity before it can become a proof.
+    // The step's validation rejects a recycled identity before it can join a claim.
     gate.validated(context(), [Some(hold(10)), None], Kind::Grips, now, |_| {
         None
     });
@@ -174,7 +174,7 @@ fn pending_landing_survives_extra_no_grip_steps_until_handoff_reject_consume_or_
         .unwrap();
     assert_eq!(offer.landing.body, 10);
     assert!(gate.blocks(caller(), at + Duration::from_millis(50), |_, _| 8));
-    drop(offer); // The production stunt tick drops this after success or rejection.
+    drop(offer); // The stunt tick drops the offer once the entry succeeds or is refused.
     assert!(!gate.blocks(caller(), at + Duration::from_millis(51), |_, _| 8));
     assert!(gate.take_landing(at, |_| true).is_none());
     pending(&gate, at);

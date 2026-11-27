@@ -1,37 +1,44 @@
 //! Picking things up with an empty hand. The design is in `docs/mod/input/physical-hands.md`, the
 //! engine side in `docs/engine/gameplay/item-pickup.md`.
 //!
-//! Each simulation tick, from the palms' tick ([`super::main_thread_tick`]), every empty hand that holds
-//! nothing looks for what it could take: short rays out of the palm, and the surface the palm
-//! presses into ([`reach`]). The nearest object it reaches that a hand takes is the hand's target:
-//! a loose rigid object light enough to move, or a weapon lying in the world.
+//! Each simulation tick, from the palms' tick
+//! ([`main_thread_tick`](crate::controllers::physical_hands::main_thread_tick)), every empty hand
+//! that holds nothing looks for what it could take: short rays out of the palm, the surface the
+//! palm presses into, and the dropped weapons and characters near it ([`reach`](mod@reach)). The
+//! nearest object it reaches that a hand takes is the hand's target: a loose rigid object light
+//! enough to move, an articulated object, a vehicle's door, a character, or a weapon lying in the
+//! world.
 //!
 //! The grip decides, on the input tick: a hand with a target and no other grab volume reports the
-//! [`GrabVolume::Pickup`] volume to the bindings, which latch the grip press to it, so the press
-//! neither grapples nor reaches the game. A pickup grab of a weapon takes that weapon straight into
-//! the grabbing hand through the weapon handling ([`held::pickup`]), or, for a weapon the direct
-//! pickup refuses, clicks the game's use-item action, so that the game picks the weapon up its own
-//! way ([`finish_tick`]). A pickup grab of an
-//! object asks the next simulation tick to take hold of it; letting the grip go asks it to let go.
+//! [`GrabVolume::Pickup`](jc3vr_body::controllers::grab::GrabVolume::Pickup) volume to the
+//! bindings, which latch the grip press to it, so the press neither grapples nor reaches the game.
+//! A pickup grab of a weapon takes that weapon straight into the grabbing hand through the weapon
+//! handling ([`held::pickup`]), or, for a weapon the direct pickup refuses, clicks the game's
+//! use-item action, so that the game picks the weapon up its own way ([`finish_tick`]). A pickup
+//! grab of an object asks the next simulation tick to take hold of it; letting the grip go asks it
+//! to let go.
 //!
 //! A held object is held at the point the hand touched, in one of two ways. A hand its body drives
-//! holds it through a joint: a fixed constraint between the
-//! hand's body and the object's, which the physics step makes and ends
-//! ([`crate::controllers::physical_hands::physics`]), so the object has mass, the hand's strength
-//! carries it, and it leaves with the velocity the hand gave it; a ragdoll joined this way is
-//! thrown as a carried one is. Otherwise the object is
-//! carried, not attached: each tick its body is given the velocities that carry the grab point to
-//! where the hand holds it and turn the body as the hand turns, within the hands' strength
-//! ([`crate::controllers::physical_hands::hold`]), and it is let go with the hand's velocity, so
-//! that it is thrown. One hand carries what weighs less than [`HandStrength::force_n`], and two
-//! hands twice that; a character's ragdoll, which the hand drags by one of its bones, carries with
-//! the characters' tuning's `characters.ragdoll_carry_strength` times that pull. A hand that holds
-//! what it cannot lift drags it, and a body hinged to the world swings about its hinge. A hand
-//! that holds something does not probe, push off surfaces, or strike.
-//!
-//! The module is split by concern: [`state`] holds the pickups' state across ticks, [`reach`] what
-//! a hand could take, and [`tick`] the simulation tick that drives it; [`grips`] holds the grips a
-//! hand keeps on what it cannot simply carry.
+//! holds it through a joint: a fixed constraint between the hand's body and the object's, which
+//! the physics step makes and ends ([`crate::controllers::physical_hands::physics`]), so the object
+//! has mass, the hand's strength carries it, and it leaves with the velocity the hand gave it; a
+//! ragdoll joined this way is thrown as a carried one is. A loose prop is never joined. Otherwise
+//! the object is carried, not attached: each tick its body is given the velocities that carry the
+//! grab point to where the hand holds it and turn the body as the hand turns, within the hands'
+//! strength ([`crate::controllers::physical_hands::hold`]), and it is let go with the hand's
+//! velocity, so that it is thrown. One hand carries what weighs less than
+//! [`HandStrength::force_n`], and two hands twice that; a character's ragdoll, which the hand drags
+//! by one of its bones, carries with the characters' tuning's `characters.ragdoll_carry_strength`
+//! times that pull. A hand that holds what it cannot lift drags it, and a body hinged to the world
+//! swings about its hinge. A hand that holds something does not probe, push off surfaces, or
+//! strike.
+//! The module is split by concern: [`state`] holds the pickups' state across ticks,
+//![`reach`](mod@reach) what a hand could take, [`input`] the input tick's requests, and
+//![`tick`](mod@tick) the simulation tick that drives it; [`grips`] holds the grips a hand keeps on
+//!what it cannot simply carry, [`tearing`] the tearing of a held door off its vehicle,
+//![`transport`] the character's motion a carried object rides along with, [`damping`] and
+//![`held_ragdolls`] what follows each simulation tick,
+//! and [`diagnostics`] the grip press's trail for the readout.
 
 mod damping;
 pub mod diagnostics;
@@ -127,9 +134,10 @@ pub struct PickupStatus {
     pub last_error: Option<String>,
 }
 
-/// Act on the input tick's pickup grabs and grip releases: a grab of a weapon clicks the game's
-/// use-item action into `desired`, a grab of an object asks the next simulation tick to take hold
-/// of it, and a released grip asks it to let go. Called from the input tick after the tables.
+/// Act on the input tick's pickup grabs and grip releases: a grab of a weapon takes it straight
+/// into the hand, or clicks the game's use-item action into `desired` when the direct pickup
+/// refuses it in a way that falls back, a grab of an object asks the next simulation tick to take
+/// hold of it, and a released grip asks it to let go. Called from the input tick after the tables.
 pub fn finish_tick(
     game: &GameTick<'_>,
     inputs: &FinishInputs,

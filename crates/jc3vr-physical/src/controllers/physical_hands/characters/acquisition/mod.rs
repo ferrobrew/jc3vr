@@ -1,4 +1,7 @@
-//! Revalidate a queued character grip before reading a character or its current vehicle.
+//! The grip a hand takes on a character it reached ([`take`]) and the seat access the grip keeps
+//! ([`seated`]). The reach that found the character was queued, so the target is checked again
+//! before the character or its vehicle is read: its body's owner first, then where it sits and the
+//! way in.
 
 use std::num::NonZeroUsize;
 
@@ -11,7 +14,11 @@ use jc3vr_body::controllers::{
 
 use crate::controllers::physical_hands::characters::{Seize, bone_frame, frame, open_door_near};
 
+/// The grip on `target` at the world point `point`, held in the frame of the character's bone
+/// nearest the point, or `None` once the target no longer holds.
+///
 /// # Safety
+///
 /// The game thread, outside the physics step. The queued target need not still be live.
 pub(super) unsafe fn take(
     target: CharacterTarget,
@@ -27,7 +34,11 @@ pub(super) unsafe fn take(
     )
 }
 
+/// The seat access a grip on `target` keeps: `None` once the character left the seat it was
+/// reached in, or the door it was reached through closed.
+///
 /// # Safety
+///
 /// The game thread, outside the physics step. The saved vehicle pointer is never dereferenced.
 pub(super) unsafe fn seated(
     target: CharacterTarget,
@@ -77,12 +88,12 @@ fn refresh(
         target.seated = None;
         return Some(target);
     }
-    // Ownership proves the character live before the adapter forms any character reference.
+    // The body's owner proves the character live before the engine reads it.
     target.seated = match (target.seated, engine.attachment(target.character)?) {
         (None, Attachment::OnFoot) => None,
         (Some(before), Attachment::Vehicle(vehicle)) if before.vehicle == vehicle => {
             match before.access {
-                // The current character supplies this vehicle, not the queued seat observation.
+                // The vehicle comes from the character as it is now, not from the queued seat.
                 SeatAccess::Door { .. } => Some(engine.open_door(vehicle, conditions)?),
                 // A window the glass brought down stays down: the reach that found the way in
                 // judged it, and the hand, now inside the cabin, keeps it while the character

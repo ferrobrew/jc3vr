@@ -1,4 +1,7 @@
-//! Once-per-body door tearing and conversion of surviving holds to loose props.
+//! The pickup tick's part in tearing a held door off its vehicle: each held door's pull is read
+//! as a tear gesture once, however many hands hold it ([`step`]), and a door that comes off, or
+//! was already off when a hand took it, turns every hold of it into a hold of a loose prop
+//! ([`apply`], [`acquired`]).
 
 use std::num::NonZeroUsize;
 
@@ -40,7 +43,10 @@ impl Observation {
     }
 }
 
-/// Install the checked identity, or refuse the new hold without leaving an untracked door.
+/// Record the door grip a hand's new hold of a door took (`result`, from [`TearGrip::take`]): a
+/// door still on its vehicle keeps its grip for the tearing, a door already off turns every hold
+/// of it into a loose prop, and a refused grip ends the hold, so that no door is held untracked.
+/// Returns whether the hold stands.
 pub(super) fn acquired(state: &mut PickupState, index: usize, result: Option<Acquisition>) -> bool {
     state.doors[index] = None;
     let Some(result) = result else {
@@ -71,8 +77,12 @@ pub(super) struct Frame {
     pub world_scale: f32,
 }
 
+/// Read each held door's pull as a tear gesture, once per door, and tear the door off when a
+/// hand asks.
+///
 /// # Safety
-/// Runs on the game thread, outside the physics step.
+///
+/// The game thread, outside the physics step.
 pub(super) unsafe fn step(
     state: &mut PickupState,
     frame: Frame,
@@ -250,6 +260,7 @@ fn lost(state: &mut PickupState, held: &Held, loss: HoldLoss, outcome: &mut Tick
     apply(state, held, TearResult::Lost, outcome);
 }
 
+/// Apply a tear's `result` to every hold of `held`.
 pub(super) fn apply(
     state: &mut PickupState,
     held: &Held,

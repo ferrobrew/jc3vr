@@ -1,6 +1,7 @@
 //! The pickups' tuning, read from the shipped `tuning/pickup.toml` ([`PICKUP`]): the reach, the
-//! weight limits, the drive toward the hand, and the tearing away. The hand's strength
-//! on what it holds is the hand bodies' ([`HandStrength`]).
+//! weight limits, the drive toward the hand, the tearing away, the carry along with the
+//! character, and the floor scan. The hand's strength on what it holds is the hand bodies'
+//! ([`HandStrength`]).
 
 use jc3vr_core::{
     config::{Invalid, nonnegative, positive, range},
@@ -95,7 +96,7 @@ pub struct ReachLimits {
     pub(crate) max_hit_vehicles: usize,
 }
 
-/// The scan for dropped weapons near the hands
+/// The scan for dropped weapons and characters near the hands
 /// ([`floor_weapons`](crate::controllers::physical_hands::pickup::floor_weapons)).
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -111,7 +112,7 @@ pub(crate) struct FloorWeaponsTuning {
 /// One hand's strength on what it holds: the hand bodies' strongest pull and twist at the hands'
 /// strength setting ([`HandBodyTuning::force_n`]).
 ///
-/// [`HandBodyTuning::force_n`]: crate::controllers::physical_hands::physics::config::HandBodyTuning::force_n
+/// [`HandBodyTuning::force_n`]: crate::controllers::physical_hands::physics::tuning::HandBodyTuning::force_n
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct HandStrength {
     /// The strongest pull of one hand on what it holds, newtons. One hand lifts what weighs less;

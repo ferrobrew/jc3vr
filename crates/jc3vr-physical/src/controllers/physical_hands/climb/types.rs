@@ -36,7 +36,7 @@ impl Hold {
 /// One hand's climbing on the last tick, for the readout.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct ClimbHandStatus {
-    /// The static surface in the hand's reach.
+    /// The climbable surface in the hand's reach.
     pub reach: Option<Hold>,
     /// The surface the hand grips.
     pub grip: Option<Hold>,
@@ -49,7 +49,7 @@ pub struct ClimbStatus {
     pub climbing: bool,
     /// Whether the mantle is carrying the body over a ledge.
     pub mantling: bool,
-    /// Indexed by [`Hand::index`].
+    /// Indexed by [`Hand::index`](jc3vr_input::frame::Hand::index).
     pub hands: [ClimbHandStatus; 2],
     /// The velocity the last step gave the body, world space.
     pub velocity: Vec3,
@@ -85,12 +85,13 @@ pub struct Landing {
     pub feet: Vec3,
 }
 
-/// What the palms' tick found for the climb, indexed by [`Hand::index`].
+/// What the palms' tick found for the climb, indexed by
+/// [`Hand::index`](jc3vr_input::frame::Hand::index).
 pub struct Observed {
     /// Each driven hand's palm in the rig: its tracking-space place turned by the body's facing
     /// and scaled into world metres.
     pub palms: [Option<Vec3>; 2],
-    /// The static surface in each driven hand's reach.
+    /// The climbable surface in each driven hand's reach.
     pub reaches: [Option<Hold>; 2],
     /// Whether each driven hand's body presses into something that holds it back.
     pub pressing: [bool; 2],

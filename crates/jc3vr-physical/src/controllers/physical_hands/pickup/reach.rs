@@ -1,5 +1,6 @@
 //! What a hand could take: the nearest grabbable object a palm's rays find, or the surface it
-//! presses into, or a vehicle's door.
+//! presses into, or a vehicle's door, or a dropped weapon or a character the floor scan finds near
+//! the hand.
 
 use std::num::NonZeroUsize;
 
@@ -35,7 +36,8 @@ use crate::controllers::physical_hands::{
     world::World,
 };
 
-/// The existing reach readouts and a bounded copy of its evaluated branches.
+/// What the reach records besides its result: the notes for the grip press's log, the rays for the
+/// grab view, the scan of the branches it evaluated, and the vehicles its rays hit.
 pub(crate) struct ReachObservations<'a> {
     pub notes: &'a mut Vec<String>,
     pub rays: Option<&'a mut Vec<ReachRay>>,
@@ -56,11 +58,12 @@ pub(crate) struct ReachTuning<'a> {
     pub pickup: &'a PickupTuning,
     /// The hand bodies, whose grip joints do not make what they hold articulated.
     pub hand_bodies: [Option<u32>; 2],
-    /// Live dropped-weapon bodies discovered once for both hands this simulation tick.
+    /// The live bodies of dropped weapons and characters near the hands, found once for both
+    /// hands this simulation tick ([`floor_weapons`]).
     pub(crate) floor_weapons: &'a [FloorWeapon],
 }
 
-/// A dropped weapon's exact dynamic body and its broad-phase bounds.
+/// A dynamic body of a dropped weapon or a character near the hands, and its broad-phase bounds.
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct FloorWeapon {
     pub object: NonZeroUsize,
@@ -68,7 +71,9 @@ pub(crate) struct FloorWeapon {
     pub bounds: Aabb,
 }
 
-/// Discover dropped weapons near either hand, independently of the wrist's pointing direction.
+/// Find the bodies of dropped weapons and characters near either hand, whichever way the wrists
+/// point. The scan walks a budget of the world's dynamic bodies each tick and remembers those near
+/// the hands across ticks.
 ///
 /// # Safety
 ///
@@ -144,8 +149,7 @@ pub(crate) unsafe fn floor_weapons(hands: &[Vec3], radius: f32) -> Vec<FloorWeap
     found
 }
 
-/// The directions of the reach rays in the wrist frame: out of the palm (-Y), along the fingers
-/// (-Z), between the two, and out of either edge of the hand.
+/// Where the floor scan has walked to in the world's dynamic bodies, and the bodies it remembers.
 static FLOOR_SCAN: Mutex<FloorScan> = Mutex::new(FloorScan {
     world: 0,
     next: 0,
@@ -158,6 +162,8 @@ struct FloorScan {
     bodies: Vec<u32>,
 }
 
+/// The directions of the reach rays in the wrist frame: out of the palm (-Y), along the fingers
+/// (-Z), between the two, and out of either edge of the hand.
 pub(crate) const REACH_DIRECTIONS: [Vec3; 5] = [
     Vec3::new(0.0, -1.0, 0.0),
     Vec3::new(0.0, 0.0, -1.0),
@@ -168,7 +174,8 @@ pub(crate) const REACH_DIRECTIONS: [Vec3; 5] = [
 
 /// What a hand could take: the nearest grabbable object hit by short rays out of the palm (from the
 /// back of the hand, through the palm, out to the pickup's reach at the VR world scale
-/// `world_scale`), or the object the palm presses into, or a vehicle's door ([`doors::reach`]). An
+/// `world_scale`), or the object the palm presses into, or a vehicle's door ([`doors::reach`]), or
+/// a dropped weapon or a character the floor scan found near the hand ([`floor_weapons`]). An
 /// object heavier than [`PickupTuning::max_mass_kg`] is not one, nor the body `standing_on` the
 /// player stands on, which a hand would lift from under the player. `cast` returns the first hit
 /// between two points. What each hit was, and why it was not taken, goes into `notes` for the grip
@@ -177,7 +184,7 @@ pub(crate) const REACH_DIRECTIONS: [Vec3; 5] = [
 ///
 /// # Safety
 ///
-/// Main thread, outside the physics step.
+/// The main thread, outside the physics step.
 pub(crate) unsafe fn reach(
     palm: &PalmBox,
     press: Option<SurfaceHit>,
@@ -200,7 +207,8 @@ pub(crate) unsafe fn reach(
     }
 }
 
-/// Evaluate reach with injected ordinary and floor-layer casts.
+/// [`reach`] with its casts given: `cast` on the palm's ordinary layer, and `cast_floor` on the
+/// layer that meets dropped weapons, so that the tests can stand in for both.
 ///
 /// # Safety
 ///
@@ -377,7 +385,8 @@ fn palm_surface_distance(palm: &PalmBox, point: Vec3) -> f32 {
         .length()
 }
 
-/// The ordinary palm query layer excludes dropped weapons; this cast meets their real bodies.
+/// The first hit between `from` and `to` on the vehicle raycast layer, which meets dropped weapons'
+/// bodies: the palm's ordinary query layer passes through them.
 unsafe fn floor_cast(from: Vec3, to: Vec3) -> Option<SurfaceHit> {
     let ray = Ray::new(from, to - from)?;
     let options = unsafe { CastOptions::ignoring_player(0) };
@@ -401,7 +410,9 @@ unsafe fn floor_cast(from: Vec3, to: Vec3) -> Option<SurfaceHit> {
     })
 }
 
-/// A body's bounds direct the probe; only a hit on that exact body establishes surface reach.
+/// The reach of a body the floor scan found: casts from the palm toward the nearest point of the
+/// body's bounds and toward their centre, of which only a hit on that body itself, within the
+/// pickup's reach of the palm's surface, counts.
 fn floor_reach(
     weapon: &FloorWeapon,
     palm: &PalmBox,
@@ -481,7 +492,7 @@ struct Judged<'a> {
 ///
 /// # Safety
 ///
-/// Main thread, outside the physics step; `hit` must come from a cast this tick.
+/// The main thread, outside the physics step; `hit` must come from a cast this tick.
 unsafe fn judge(
     hit: &SurfaceHit,
     palm: &PalmBox,
@@ -604,9 +615,9 @@ unsafe fn judge(
     }
     // SAFETY: forwarded from the caller; the hit was found this tick.
     let classified = unsafe { classify(object, body) };
-    // A rejected semantic class cannot be restored through the articulation fallback.
-    // A body joined to the world or another body is taken whatever its weight, since its
-    // constraint carries it.
+    // A body the classification refuses stays refused rather than being taken as articulated. A
+    // body joined to the world or another body is taken whatever its weight, since its constraint
+    // carries it.
     // SAFETY: forwarded from the caller.
     let articulated = match classified {
         Ok(TargetKind::Weapon) => None,
@@ -659,7 +670,7 @@ unsafe fn judge(
 ///
 /// # Safety
 ///
-/// Main thread, outside the physics step; `object` and `body` must come from a cast this tick.
+/// The main thread, outside the physics step; `object` and `body` must come from a cast this tick.
 unsafe fn articulated_kind(
     object: NonZeroUsize,
     body: u32,

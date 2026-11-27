@@ -236,7 +236,7 @@ pub(super) struct Grip {
     pub(super) hand: Hand,
     pub(super) hold: Hold,
     /// Whether the gripped surface is a ledge's top a mantle may carry the body over, judged at
-    /// the grip ([`is_ledge`]).
+    /// the grip ([`is_ledge`](crate::controllers::physical_hands::climb::solve::is_ledge)).
     pub(super) ledge: bool,
     /// Where the player's body was when the hand took hold, game space.
     pub(super) body: Vec3,

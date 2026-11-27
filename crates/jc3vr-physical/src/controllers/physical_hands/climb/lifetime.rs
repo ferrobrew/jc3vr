@@ -1,7 +1,9 @@
-//! Bounded lifetime stamps for gripped bodies, advanced before native destruction.
+//! Lifetime stamps for the bodies a hand grips, advanced before the world destroys a body
+//! ([`destroyed`]) and compared against the stamp a grip took ([`stamp`]).
 //!
-//! Hash collisions conservatively lose a grip; they cannot make a destroyed body valid again.
-//! No allocation or lock is needed on a Havok destruction or character worker.
+//! The stamps are a fixed table of atomics hashed by world and body, so a Havok destruction worker
+//! or a character worker reads and advances them without an allocation or a lock. A collision
+//! only loses a grip; it cannot make a destroyed body valid again.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 

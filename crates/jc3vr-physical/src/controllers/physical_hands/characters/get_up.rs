@@ -3,10 +3,10 @@
 //! The animation graph stands a ragdolling character up once its ragdolling timers say so
 //! ([`RagdollingControllerParams`]): the time spent ragdolling, against a threshold, and the time
 //! spent settled, its limbs slow against each other and near the ground
-//! (`docs/engine/character/ragdoll.md`, "Out of the ragdoll"). On the 14 November take the get-up
-//! fired about six seconds after a topple while two hands held the soldier, and ended the hold.
-//! So each pickup tick of a hold writes the held character's timers back to where no get-up
-//! condition holds ([`hold_timers`]). Each hold that ends is classed by what the character does
+//! (`docs/engine/character/ragdoll.md`, "Out of the ragdoll"). Left alone, the get-up fires a few
+//! seconds after a topple even while the hands hold the character, and ends the hold, so each
+//! pickup tick of a hold writes the held character's timers back to where no get-up condition
+//! holds ([`hold_timers`]). Each hold that ends is classed by what the character does
 //! next ([`HoldEnd`]), so the log shows whether a get-up ended it anyway.
 //!
 //! [`RagdollingControllerParams`]: jc3gi::character::control_parameters::RagdollingControllerParams

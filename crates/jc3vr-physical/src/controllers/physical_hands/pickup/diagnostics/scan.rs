@@ -1,4 +1,5 @@
-//! Fixed-size copies of branches the production reach paths actually evaluate.
+//! The reach's scan for one hand on one tick: a fixed-size record of the branches the reach
+//! evaluated, what each found, and the reach each branch and the whole scan selected.
 
 use std::num::NonZeroUsize;
 

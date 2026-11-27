@@ -7,15 +7,14 @@
 //! The game decides whether the player is on the ground from the proxy's support
 //! ([`jc3gi::physics::PfxCharacterInstance::m_GroundInformation`]), which the proxy's update
 //! ([`jc3gi::physics::PfxCharacterInstance::UpdateContext`]) finds afresh before each physics step
-//! and which the state machines read before the next proxy update. The physics system's pre-simulation
-//! callbacks run after every character's proxy update, so a support written there is the one the
-//! state machines, the fall bookkeeping, and the ground raycasts see until the next proxy update:
-//! the player hanging from the hands stays on foot rather than falling. The proxy's update has
-//! already set the proxy's velocity for the step by then, so a velocity set there is the one the
-//! step integrates. The climb holds the player up from that callback for both reasons.
+//! and which the state machines read before the next proxy update. The physics system's
+//! pre-simulation callbacks run after every character's proxy update, so a support written there
+//! is the one the state machines, the fall bookkeeping, and the ground raycasts see until the next
+//! proxy update: the player hanging from the hands stays on foot rather than falling. The proxy's
+//! update has already set the proxy's velocity for the step by then, so a velocity set there is
+//! the one the step integrates. The climb holds the player up from that callback for both reasons.
 //!
-//! Every function here runs on the thread that steps the physics world, outside the step, except
-//! the reads marked otherwise.
+//! Every function here runs outside the physics step, on the thread its safety section names.
 
 use std::ptr;
 
@@ -83,7 +82,8 @@ pub unsafe fn body_identity(body: u32) -> Option<BodyIdentity> {
     })
 }
 
-/// Copy ownership only from the serialized input/pre-simulation boundary.
+/// The local player and the world the native gate's claims are taken in, or `None` without a
+/// player, a proxy, or a world.
 ///
 /// # Safety
 ///

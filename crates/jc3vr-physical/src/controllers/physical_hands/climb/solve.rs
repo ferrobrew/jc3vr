@@ -3,12 +3,12 @@
 //! Everything is in game space, metres and seconds.
 //!
 //! A grip remembers where the body was when it took hold, and where the palm was in the rig: the
-//! palm's place in the tracking space, turned by the body's facing and scaled by the VR world scale
-//! into world metres, but not carried by the body's position. The hands would have the body wherever
-//! keeps each palm on its grip: where the body was at the grip, moved back by how far the palm has
-//! since moved in the rig, averaged over the gripping hands. Nothing in that target depends on
-//! where the body or the view is now, so the climb is a plain closed loop on the body's position:
-//! a hand held still holds the body still once it gets there.
+//! palm's place in the tracking space, turned by the body's facing and scaled by the VR world
+//! scale into world metres, but not carried by the body's position. The hands would have the body
+//! wherever keeps each palm on its grip: where the body was at the grip, moved back by how far the
+//! palm has since moved in the rig, averaged over the gripping hands. Nothing in that target
+//! depends on where the body or the view is now, so the climb is a plain closed loop on the body's
+//! position: a hand held still holds the body still once it gets there.
 
 use body_rig::math::smooth::follow_factor;
 use glam::{Affine3A, Quat, Vec2, Vec3};
@@ -50,8 +50,8 @@ pub(crate) fn body_target(follows: impl IntoIterator<Item = Follow>) -> Option<V
 /// How far a hand's pull that lifts the body by `rise` metres also carries it toward the face it
 /// grips, whose normal (toward the hand) is `normal`: on a face that leans back, the face at the
 /// head's height is further away than at the feet, and a purely vertical lift leaves the body
-/// behind it, so the player had to lean the whole head forward to keep reaching it on the 14
-/// November take. The body rises along the face instead: `rise` times the face's slope (its
+/// behind it, so that the player must lean the whole head forward to keep reaching it. The body
+/// rises along the face instead: `rise` times the face's slope (its
 /// normal's upward share over its level share, at most one, so a ledge's top adds nothing), toward
 /// the face. A vertical face, an overhang, a lowering, or a face the normal says nothing of adds
 /// nothing, and so does a normal whose level share is below `min_face_level`, a ledge's top rather
@@ -129,7 +129,9 @@ pub fn carry_velocity(points: impl IntoIterator<Item = Vec3>, max_speed_mps: f32
     (sum / count as f32).clamp_length_max(max_speed_mps.max(0.0))
 }
 
-/// Filter total and carry together, resetting both when the contributing grip set changes.
+/// Smooth the climbing velocity and the share of it the gripped bodies carry together, over a
+/// step of `step_s` with the time constant `seconds`. A change in what the hands grip takes the
+/// current pair as it is, so that the last grip's motion does not linger in a fling.
 pub(crate) fn smooth_motion(
     previous: (Vec3, Vec3),
     current: (Vec3, Vec3),

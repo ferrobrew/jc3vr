@@ -17,10 +17,13 @@
 //!
 //! - [`engine`]: a character's capsule body, the player's hostility to it, and whether it is dead
 //!   (in [`jc3vr_body::controllers::physics`]);
+//! - `acquisition`: the grip a hand takes on a character, and the seat access it keeps;
 //! - [`get_up`]: holding a held ragdoll's get-up off, and what ended a hold;
 //! - [`pane`]: reaching an occupant through a window the glass brought down;
 //! - [`ragdoll`]: a ragdolling character's bodies, the bone nearest a point, and the whole
-//!   ragdoll's mass.
+//!   ragdoll's mass;
+//! - [`tuning`]: the tuning of the character grips, the stunt positions, and the held objects'
+//!   impacts.
 //!
 //! A ragdolling character, fallen or dead, is taken by the dynamic body of its ragdoll nearest the
 //! point the reach hit, whichever of the character's bodies the hit was on. The hand holds that
@@ -30,9 +33,9 @@
 //! The pickup's reach ([`crate::controllers::physical_hands::pickup::reach`]) asks [`reach`] about
 //! every ray hit on a character. The pickup tick
 //! ([`crate::controllers::physical_hands::pickup::tick`]) keeps a grip on a character
-//! ([`Seize`]): the hand stays at its grab point on the character ([`SeizeStep::Pin`]) until it pulls
-//! away past [`tuning::CharacterGripTuning::yank_m`] ([`SeizeStep::Yank`]). The yank's and the
-//! shove's hit reactions are dealt by the hand bodies' blows on the next frame tick
+//! ([`Seize`]): the hand stays at its grab point on the character ([`SeizeStep::Pin`]) until it
+//! pulls away past [`tuning::CharacterGripTuning::yank_m`] ([`SeizeStep::Yank`]). The yank's and
+//! the shove's hit reactions are dealt by the hand bodies' blows on the next frame tick
 //! ([`crate::controllers::physical_hands::physics::queue_shove`]), outside the game's update.
 
 mod acquisition;
@@ -87,8 +90,8 @@ impl Unavailable {
 }
 
 /// Whether a grip that took `target` throws the character into their ragdoll at once, held by the
-/// bone nearest the palm, rather than holding on until a yank: a character on foot, alive, and not one whose state keeps it out
-/// of its ragdoll, so that the game's own hit reaction ragdolls it.
+/// bone nearest the palm, rather than holding on until a yank: a character on foot, alive, and not
+/// one whose state keeps it out of its ragdoll, so that the game's own hit reaction ragdolls it.
 ///
 /// # Safety
 ///
@@ -124,8 +127,8 @@ pub(crate) fn topple_direction(palm_velocity: Vec3, normal: Vec3) -> Option<Vec3
 /// its body `body`: a character on foot, by its capsule, a ragdolling character, by the body of
 /// its ragdoll nearest the hit, or a vehicle occupant accessible through an open door, a window
 /// the glass brought down that the hand came in through ([`pane::reached_through`]), or an exposed
-/// motorcycle seat; or why it reaches none of these. An open door is preferred over a window. A character the game protects
-/// ([`engine::protection`]) is never reached.
+/// motorcycle seat; or why it reaches none of these. An open door is preferred over a window. A
+/// character the game protects ([`engine::protection`]) is never reached.
 ///
 /// # Safety
 ///
@@ -371,7 +374,7 @@ impl Seize {
         palm: Pose,
         world_scale: f32,
     ) -> Option<Self> {
-        // SAFETY: the adapter checks body ownership before any character access.
+        // SAFETY: `acquisition::take` checks the body's owner before it reads the character.
         let mut seize = unsafe { acquisition::take(target, point, palm.position, world_scale) }?;
         seize.in_palm = palm.orientation.inverse() * (point - palm.position);
         seize.in_palm.is_finite().then_some(seize)
@@ -415,10 +418,9 @@ pub(crate) unsafe fn gunner_out(target: CharacterTarget) -> GunnerOut {
 
 /// Damp the ragdoll of `character`, held by its body `body`, within itself over a step of `dt`
 /// seconds ([`Ragdoll::internal_damping`] at
-/// [`tuning::CharacterGripTuning::held_ragdoll_damping_per_s`]): a hand drives only
-/// the bone it holds, and the rest of the body, hung off that bone on soft constraints, kept its
-/// momentum and orbited and thrashed about the palm (on the 14 November take, at 2 to 4 Hz a few
-/// centimetres from the camera).
+/// [`tuning::CharacterGripTuning::held_ragdoll_damping_per_s`]): a hand drives only the bone it
+/// holds, and the rest of the body, hung off that bone on soft constraints, would otherwise keep
+/// its momentum and orbit and thrash about the palm, a few centimetres from the camera.
 ///
 /// # Safety
 ///
@@ -438,8 +440,8 @@ pub(crate) unsafe fn damp_held_ragdoll(character: NonZeroUsize, body: u32, dt: f
     }
 }
 
-/// Take the character `target`, reached through a window the glass brought down, out of its seat as
-/// a ragdoll where it sits ([`engine::seat_out`]).
+/// Take the character `target`, reached through a window the glass brought down, out of its seat
+/// as a ragdoll where it sits ([`engine::seat_out`]).
 ///
 /// # Safety
 ///
@@ -515,14 +517,16 @@ unsafe fn open_door_near(
         .map(|(slot, open_deg, _)| (slot, open_deg))
 }
 
-/// Prefer the persistent proxy identity while retaining the hit's anatomical point.
+/// The body a reach on a standing character holds by: its proxy's body while the character owns
+/// it, or else the body the ray hit. The reach keeps the hit's point either way.
 fn standing_body(hit: u32, proxy: Option<u32>, owned: impl Fn(u32) -> bool) -> Option<u32> {
     proxy
         .filter(|&body| owned(body))
         .or_else(|| owned(hit).then_some(hit))
 }
 
-/// The character's frame: its world transform at the end of the current simulation step.
+/// The world matrix of the bone `bone` of `character`, or `None` while its animation controller
+/// cannot pose the bone, or for a degenerate matrix.
 ///
 /// # Safety
 ///
@@ -543,6 +547,11 @@ unsafe fn bone_frame(character: &Character, bone: SafeBoneIndex) -> Option<Mat4>
     (matrix.is_finite() && matrix.determinant().abs() > 1e-6).then_some(matrix)
 }
 
+/// The character's frame: its world transform at the end of the current simulation step.
+///
+/// # Safety
+///
+/// `character` must be a live character.
 unsafe fn frame(character: NonZeroUsize) -> Mat4 {
     let character = unsafe { &*(character.get() as *const Character) };
     Mat4::from(character.m_WorldMatrixT1)

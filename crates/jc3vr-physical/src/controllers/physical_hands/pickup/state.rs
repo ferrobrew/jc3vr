@@ -114,7 +114,9 @@ impl PickupState {
         });
     }
 
-    /// A second holder inherits the existing body's mode and classification.
+    /// The kind of a hold of `body` of `object`, and whether it joins: a second hand on a body the
+    /// other hand holds takes the first hold's, so that the two never disagree; otherwise `kind`,
+    /// joined as [`HeldKind::joined`] allows `joined`.
     pub(crate) fn body_mode(
         &self,
         object: NonZeroUsize,
@@ -129,7 +131,8 @@ impl PickupState {
             .map_or((kind, kind.joined(joined)), |h| (h.kind, h.joined))
     }
 
-    /// A latch handoff retains the pull by carrying every holder of the same body.
+    /// Turn every hold of `body` of `object` into a carried door hold, so that the pull a latch
+    /// hands over as it gives goes on through the carry rather than a joint.
     pub(crate) fn carry_body(&mut self, object: NonZeroUsize, body: u32) {
         for holder in self
             .held
@@ -303,7 +306,8 @@ impl PickupState {
         self.carrier_angular = Vec3::ZERO;
     }
 
-    /// Preserve the queue's existing replacement semantics and record a displaced local request.
+    /// Replace `hand`'s request with `request`, recording a displaced observed grab in the
+    /// diagnostics as `displaced`.
     pub(crate) fn replace_request(
         &mut self,
         hand: Hand,
@@ -324,7 +328,7 @@ pub(crate) struct Held {
     pub(crate) body: u32,
     pub(crate) grip: Grip,
     pub(crate) mass_kg: f32,
-    /// The character whose ragdoll owns this anatomical contact.
+    /// The character whose ragdoll the held body belongs to.
     pub(crate) ragdoll: Option<NonZeroUsize>,
     /// Whether the hand holds the object through a joint rather than carrying it.
     pub(crate) joined: bool,

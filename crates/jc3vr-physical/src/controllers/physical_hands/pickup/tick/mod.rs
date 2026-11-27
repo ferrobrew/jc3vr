@@ -1,5 +1,5 @@
 //! The pickups' simulation tick: take hold and let go as the input tick asked, keep the grips on
-//! latched doors, and drive what the hands carry.
+//! latched doors, characters, and doors being torn off, and drive what the hands carry.
 
 use std::num::NonZeroUsize;
 
@@ -73,8 +73,7 @@ pub(crate) struct TickInputs {
     pub tearing: doors::tuning::TearTuning,
     /// The VR world scale.
     pub world_scale: f32,
-    /// What each hand reaches this tick, from which a hand that yanked a character takes hold of
-    /// its ragdoll.
+    /// What each hand reaches this tick.
     pub reaches: [Option<Reach>; 2],
     /// The player character's world velocity, metres per second, whose change a carried object
     /// takes on ([`PickupTuning::carrier_motion_share`]); none when it is not known.
@@ -164,7 +163,7 @@ impl HoldLoss {
 }
 
 impl TickOutcome {
-    /// Note that each hand holding `held` lost its hold, `loss`.
+    /// Note that each hand in `holders` lost its hold, `loss`.
     pub(super) fn lose_hold(&mut self, holders: [bool; 2], loss: HoldLoss) {
         for (k, holds) in holders.into_iter().enumerate() {
             if holds {
@@ -181,11 +180,11 @@ impl TickOutcome {
 }
 
 /// The pickups' simulation tick: take hold and let go as the input tick asked, keep the grips on
-/// latched doors, and drive what the hands carry.
+/// latched doors, characters, and doors being torn off, and drive what the hands carry.
 ///
 /// # Safety
 ///
-/// Main thread, outside the physics step.
+/// The main thread, outside the physics step.
 pub(crate) unsafe fn tick(
     state: &mut PickupState,
     inputs: TickInputs,
@@ -874,6 +873,7 @@ unsafe fn tick_with(
     outcome
 }
 
+/// The body reads and writes a pickup tick makes, which the tests stand in for.
 trait BodyEngine {
     fn read(&mut self, body: u32, object: NonZeroUsize) -> Result<bodies::BodyState, PhysicsError>;
     fn release_joints(&mut self, held: &Held);
@@ -1045,8 +1045,8 @@ pub(super) fn take_body(
 /// point `at` along `direction`, a unit vector, just past the knockdown; the hand then waits for
 /// the ragdoll as after a yank.
 fn topple(hand: Hand, seize: Seize, at: Vec3, direction: Vec3, outcome: &mut TickOutcome) {
-    // Both hands seizing one character on one tick topple it once: two knockdowns summed flung the
-    // body, and the two-handed hold started already ringing (2659 s of the 14 November take).
+    // Both hands seizing one character on one tick topple it once: two knockdowns summed would
+    // fling the body, and the two-handed hold would start out ringing.
     if outcome.toppled.contains(&seize.target.character) {
         return;
     }

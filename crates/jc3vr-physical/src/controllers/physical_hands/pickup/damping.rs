@@ -1,7 +1,7 @@
 //! Damping what the hands hold within itself, after each pickup tick: a held ragdoll's bones
 //! ([`characters::damp_held_ragdoll`]) and an articulated object's assembly
 //! ([`articulated::damp_assembly`]). A hand drives only the body it holds, and the bodies hung off
-//! it on constraints of their own kept their momentum and rang against the hand.
+//! it on constraints of their own would otherwise keep their momentum and ring against the hand.
 
 use std::num::NonZeroUsize;
 

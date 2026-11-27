@@ -29,7 +29,7 @@ use crate::controllers::physical_hands::{
 ///
 /// # Safety
 ///
-/// Main thread, outside the physics step.
+/// The main thread, outside the physics step.
 pub(super) unsafe fn keep_latch(
     state: &mut PickupState,
     hand: Hand,
@@ -160,7 +160,7 @@ pub(super) unsafe fn keep_latch(
 ///
 /// # Safety
 ///
-/// Main thread, outside the physics step.
+/// The main thread, outside the physics step.
 pub(super) unsafe fn keep_seize(
     state: &mut PickupState,
     hand: Hand,
@@ -184,8 +184,8 @@ pub(super) unsafe fn keep_seize(
         outcome.pins[i] = unsafe { seize.point() };
         return;
     }
-    // SAFETY: forwarded from the caller.
     let tuning = &CHARACTERS.get().characters;
+    // SAFETY: forwarded from the caller.
     match unsafe { seize.step(palm, tuning.yank_m * world_scale) } {
         SeizeStep::Pin(pin) => outcome.pins[i] = Some(pin),
         SeizeStep::Yank { at, direction } => {
@@ -340,13 +340,13 @@ pub(super) fn shove_on_release(hand: Hand, seize: &Seize, palm: &PalmMotion) {
     });
 }
 
-/// Keep `hand` at the character it yanked while it falls: once the hand's reach finds a body of
-/// the character's ragdoll, hold that body as a loose object; give up when the regrip has run out
-/// ([`Regrip::run_down`]) or the character is gone.
+/// Keep `hand` at the character it yanked while it falls: once the character ragdolls, hold the
+/// body of its ragdoll the grip lands on ([`Seize::ragdoll_reach`]); give up when the regrip has
+/// run out ([`Regrip::run_down`]) or the character is gone.
 ///
 /// # Safety
 ///
-/// Main thread, outside the physics step.
+/// The main thread, outside the physics step.
 pub(super) unsafe fn keep_regrip(
     state: &mut PickupState,
     hand: Hand,

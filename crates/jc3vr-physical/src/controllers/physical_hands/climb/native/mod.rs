@@ -1,8 +1,14 @@
-//! Native attachment gate backed by serialized body validation and bounded immutable proofs.
+//! The climb's refusal of the game's automatic entry into a vehicle's stunt area below the player
+//! while the hands climb ([`blocks`]), and the hand-over of a mantle that landed on a moving body
+//! to the stunt positions ([`take_landing`]).
 //!
-//! Workers read only their caller-owned character and atomic snapshots. A proof does not pin any
-//! engine allocation: destruction stamps invalidate it, observed player/world changes advance its
-//! generation, and unobserved lifecycle changes can conservatively deny attachment only until expiry.
+//! The pre-simulation step publishes a claim of the bodies the hands grip, checked against the
+//! live world on its own thread ([`hold`], [`landed`]); the input tick and the step record the
+//! player and world the claims belong to ([`observe`]). The refusal runs on the game's character
+//! workers, so it reads only the calling character's own members and the gate's atomic snapshots.
+//! A claim pins no engine allocation: a body's destruction advances its lifetime stamp
+//! ([`lifetime`]), a change of player or world advances the claim's generation, and a change
+//! neither catches can only refuse an entry until the claim goes stale.
 
 use std::{
     cell::Cell,
@@ -22,7 +28,8 @@ use crate::controllers::physical_hands::climb::{
     Hold, engine, lifetime, tuning::CLIMB, types::Landing,
 };
 
-/// Copied only at the serialized input/pre-simulation boundary, never looked up by a worker.
+/// The player and world a claim belongs to, copied on the game thread by the input tick or the
+/// pre-simulation step, never looked up by a worker.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Context {
     pub character: usize,
@@ -44,18 +51,30 @@ impl Drop for LandingOffer<'_> {
     }
 }
 
-/// Update lifecycle ownership from a serialized live-world observation.
+/// Record the player and world the claims belong to; a change drops the claim and advances the
+/// generation.
 pub(crate) fn observe(context: Option<Context>) {
     GATE.observe(context);
 }
 
-/// Publish only identities already validated by the serialized pre-simulation step.
+/// Publish the grips as the claim, keeping only those whose bodies still have the identity the
+/// hand took.
+///
+/// # Safety
+///
+/// The thread that steps the physics world, outside the step.
 pub(crate) unsafe fn hold(context: Context, grips: [Option<Hold>; 2], now: Stamp) {
     GATE.validated(context, grips, Kind::Grips, now, |body| unsafe {
         engine::body_identity(body)
     });
 }
 
+/// Publish a mantle's landing on the moving body `hold` as the claim, for the stunt positions to
+/// take.
+///
+/// # Safety
+///
+/// The thread that steps the physics world, outside the step.
 pub(crate) unsafe fn landed(context: Context, hold: Hold, landing: Landing, now: Stamp) {
     GATE.validated(
         context,
@@ -66,7 +85,8 @@ pub(crate) unsafe fn landed(context: Context, hold: Hold, landing: Landing, now:
     );
 }
 
-/// End physical locomotion without discarding a completed mantle awaiting input handoff.
+/// Drop the grips' claim as the climb ends, keeping a current landing the stunt positions have
+/// yet to take.
 pub(crate) fn finish_grips(now: Stamp) {
     GATE.finish_grips(now);
 }
@@ -86,12 +106,15 @@ pub(crate) fn take_landing(
     GATE.take_landing(now, valid)
 }
 
-/// Read no singleton, world, body storage, property buffer, instance, or owner on this caller.
+/// Whether the climb refuses the automatic stunt-area entry of `character`: a current claim taken
+/// for this local character, its proxy, and this teleport epoch, with a claimed body not destroyed
+/// since. Runs on a character worker, so it reads no singleton, world, body storage, property
+/// buffer, instance, or owner.
 ///
 /// # Safety
 ///
-/// The native caller keeps `character` and its proxy member alive for this call, as required by
-/// the original attachment function. Only members of that character are read here.
+/// The native caller keeps `character` and its proxy member alive for this call, as the hooked
+/// attachment function requires. Only members of that character are read here.
 pub(crate) unsafe fn blocks(character: *const Character) -> bool {
     let Some(current) = (unsafe { character.as_ref() }) else {
         return false;
@@ -108,7 +131,8 @@ pub(crate) unsafe fn blocks(character: *const Character) -> bool {
     GATE.blocks(caller, Stamp::now(), lifetime::stamp)
 }
 
-/// Permit only the synchronous, owner-checked mantle entry on the calling thread.
+/// Run `enter` with the refusal lifted for `character` on the calling thread, so that the stunt
+/// positions' own entry is not refused.
 pub(crate) fn deliberate<R>(character: *const Character, enter: impl FnOnce() -> R) -> R {
     let previous = DELIBERATE.with(|owner| owner.replace(character as usize));
     let _restore = Restore(previous);

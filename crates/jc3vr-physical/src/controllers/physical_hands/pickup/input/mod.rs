@@ -1,4 +1,6 @@
-//! The input tick's pickup requests and derived vehicle-entry clicks, without native acquisition.
+//! The input tick's half of the pickup: the requests each hand's grip makes of the next simulation
+//! tick, the weapons it hands back for a direct take, and the vehicle-entry click that completes a
+//! seated yank. It reads no game object, so it needs no engine to test.
 
 use jc3gi::input::input_action_map::Action;
 use jc3vr_body::controllers::{
