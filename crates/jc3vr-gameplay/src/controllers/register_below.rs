@@ -22,7 +22,7 @@ use jc3vr_body::{
         bodies_destroying_registered, missing_auto_attach_blockers, serial_consumer_registered,
     },
 };
-use jc3vr_physical::controllers::{physical_hands, physical_hands::physics as hand_bodies};
+use jc3vr_physical::controllers::physical_hands;
 use jc3vr_vehicles::controllers::vehicles;
 use jc3vr_weapons::{contributions as weapons_contributions, controllers::weapons};
 
@@ -58,12 +58,6 @@ fn missing() -> String {
     }
     if !roomscale::take_off_registered() {
         missing.push_str("\n- the wingsuit's take-off");
-    }
-    if !hand_bodies::guns::targets::vehicle_targets_registered() {
-        missing.push_str("\n- the vehicle controls' targets for the hand bodies");
-    }
-    if !hand_bodies::rail_step_registered() {
-        missing.push_str("\n- the vehicle rail's pre-simulation step");
     }
     if !weapons_contributions::registered() {
         missing.push_str("\n- the weapon handling's contributions");

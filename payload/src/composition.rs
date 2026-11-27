@@ -36,7 +36,7 @@ use jc3vr_render::{
 };
 use jc3vr_tooling::{diagnostics, director, recorder};
 use jc3vr_ui::pause_menu;
-use jc3vr_vehicles::hooks::equipment;
+use jc3vr_vehicles::{Registered as VehiclesRegistered, register as register_vehicles};
 use jc3vr_view::hooks::{camera, window_focus};
 use re_utilities::hook_library::HookLibrary;
 
@@ -64,11 +64,13 @@ pub(crate) fn install() -> Result<(), InstallError> {
     register_probes::register();
     // What the input tick reads from the HUD and the recorder, registered before any tick runs.
     recorder::register_mark::register();
+    // What the vehicle handling contributes to the physical crate, and its equipment detours.
+    let vehicles = register_vehicles(&mut check);
     controllers::install(&mut check).map_err(InstallError::Participant)?;
     diagnostics::install();
     director::register_tracking::register();
     check.finish().map_err(InstallError::Missing)?;
-    core_hooks::install(compose);
+    core_hooks::install(|| compose(&vehicles));
     Ok(())
 }
 
@@ -107,8 +109,9 @@ struct NamedLibrary {
     build: fn() -> HookLibrary,
 }
 
-/// The hook libraries, in enable order.
-fn libraries() -> Vec<NamedLibrary> {
+/// The hook libraries, in enable order. The vehicles crate's equipment detours come from its
+/// registration, so they enable only once it has registered.
+fn libraries(vehicles: &VehiclesRegistered) -> Vec<NamedLibrary> {
     #[cfg_attr(
         not(feature = "profiler"),
         expect(
@@ -123,7 +126,7 @@ fn libraries() -> Vec<NamedLibrary> {
         library("clock", clock::hook_library),
         library("graphics_engine", graphics_engine::hook_library),
         library("draw_count", draw_count::hook_library),
-        library("equipment", equipment::hook_library),
+        library("equipment", vehicles.equipment_hooks()),
         library("camera", camera::hook_library),
         library("wndproc", wndproc::hook_library),
         library("window_focus", window_focus::hook_library),
@@ -150,8 +153,8 @@ fn library(name: &'static str, build: fn() -> HookLibrary) -> NamedLibrary {
 
 /// Build every library in [`libraries`] order, as children of one root. A child library's binders
 /// enable after its parent's and in the order it was added, so the root adds nothing to the order.
-fn compose() -> HookLibrary {
-    libraries()
+fn compose(vehicles: &VehiclesRegistered) -> HookLibrary {
+    libraries(vehicles)
         .into_iter()
         .fold(HookLibrary::new(), |root, library| {
             root.with_hook_library((library.build)())
@@ -188,7 +191,11 @@ mod tests {
         if cfg!(feature = "profiler") {
             expected.push("profiler");
         }
-        let names: Vec<_> = libraries().iter().map(|library| library.name).collect();
+        let vehicles = register_vehicles(&mut RegistrationCheck::new());
+        let names: Vec<_> = libraries(&vehicles)
+            .iter()
+            .map(|library| library.name)
+            .collect();
         assert_eq!(names, expected);
     }
 }

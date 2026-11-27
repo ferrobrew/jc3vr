@@ -23,18 +23,21 @@
 //! diagnostics, and the payload's composition and settings aggregate. Everything else keeps its
 //! crate-private visibility.
 //!
-//! The gameplay crate composes the registrations and the controllers' hook library, and the
-//! payload the equipment detours:
+//! The payload's composition and the gameplay crate's install register the crate, and the
+//! composition enables its hook libraries:
 //!
-//! - [`controllers::vehicles::register_body::register`] fills the body and physical crates'
-//!   registrations the vehicle handling contributes to, and
-//!   [`controllers::vehicles::register_mounted::register`] the body crate's mounted-gun fact; the
-//!   gameplay crate's install calls both.
+//! - [`register()`]: what the vehicle handling contributes to the physical crate, which the
+//!   payload's composition calls before any hook is installed. It returns [`Registered`], the only
+//!   way to reach the equipment detours ([`hooks::equipment`]), which the composition enables in
+//!   their place in its order.
+//! - [`controllers::vehicles::register_body::register`] fills the body crate's registrations the
+//!   vehicle handling contributes to, and [`controllers::vehicles::register_mounted::register`] the
+//!   body crate's mounted-gun fact; the gameplay crate's install calls both.
 //! - [`controllers::vehicles::hook_library`], which the gameplay crate enables inside its
-//!   controllers library in its established place (the order is load-bearing).
-//! - [`hooks::equipment::hook_library`]: the weapon update detours and the native start-using
-//!   guard the physically gripped mounted guns use, which the payload's composition enables in its
-//!   established place (the order is load-bearing).
+//!   controllers library in its established place.
+//! - [`controllers::vehicles::mounted_recoil::on_shot`], the handles' kick by each shot of the
+//!   mounted gun the hands aim, which the gameplay crate hands to the weapon handling's
+//!   contributions.
 //! - The settings: [`controllers::vehicles::config::VEHICLES_CONFIG`] declares the slot for the
 //!   group beside its type, and the payload binds it to its aggregate. The gameplay crate's
 //!   controller settings checks run the group's own
@@ -45,6 +48,9 @@
 
 pub mod controllers;
 pub mod hooks;
+mod register;
+
+pub use register::{Registered, register};
 
 #[cfg(test)]
 mod test_config;
