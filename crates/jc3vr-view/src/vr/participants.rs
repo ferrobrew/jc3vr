@@ -75,6 +75,11 @@ pub fn register_frame_participants(participants: &'static FrameParticipants) {
     }
 }
 
+/// Whether the VR frame's participants are registered.
+pub fn frame_participants_registered() -> bool {
+    PARTICIPANTS.get().is_some()
+}
+
 /// The registered participants. Every frame and recenter runs from a hook, and the table is
 /// registered before the hooks are installed, so it is always present by then.
 pub(crate) fn frame_participants() -> &'static FrameParticipants {
@@ -91,6 +96,11 @@ pub fn register_teardown_participant(participant: &'static TeardownParticipant) 
             "teardown participant: one is already registered; the new one is ignored"
         );
     }
+}
+
+/// Whether the VR teardown's participant is registered.
+pub fn teardown_participant_registered() -> bool {
+    TEARDOWN.get().is_some()
 }
 
 /// The registered teardown participant. The teardown releases state the runtime cannot release
@@ -111,6 +121,11 @@ pub fn register_resize_observer(observer: &'static ResizeObserver) {
             "resize observer: one is already registered; the new one is ignored"
         );
     }
+}
+
+/// Whether the resize observer is registered.
+pub fn resize_observer_registered() -> bool {
+    RESIZE_OBSERVER.get().is_some()
 }
 
 /// The registered resize observer, or `None` when nobody observes the resizes.

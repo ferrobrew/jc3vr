@@ -164,6 +164,11 @@ pub fn register(probes: &'static dyn CaptureProbes) {
     }
 }
 
+/// Whether the capture probes are registered, for the install's registration check.
+pub fn is_registered() -> bool {
+    PROBES.get().is_some()
+}
+
 /// Every submission the stereo draw path has made while a capture or a benchmark was armed, never
 /// reset, for samplers that difference two readings (the capture crate's benchmark, whose request
 /// arms the count). Counted only while the draw-path detours are installed.

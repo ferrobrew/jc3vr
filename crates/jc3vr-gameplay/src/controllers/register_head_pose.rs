@@ -21,11 +21,17 @@ use jc3vr_body::{
 use jc3vr_core::{published::Stamp, registration::RegistrationCheck};
 use jc3vr_vehicles::controllers::vehicles::take_off;
 use jc3vr_view::headpose::{
-    HeadParticipants, body_frame_filter_registered, register_head_participants,
+    HeadParticipants, body_frame_filter_registered, head_participants_registered,
+    register_head_participants,
 };
 
 pub(super) fn register(check: &mut RegistrationCheck) {
     register_head_participants(&PARTICIPANTS);
+    check.require(
+        "head pose",
+        "the gameplay participants",
+        head_participants_registered(),
+    );
     check.require(
         "head pose",
         "the body frame filter",

@@ -44,6 +44,16 @@ pub fn register_camera_debug_taps(taps: CameraDebugTaps) {
     }
 }
 
+/// Whether the camera's gameplay-side participants are registered.
+pub fn camera_participants_registered() -> bool {
+    PARTICIPANTS.get().is_some()
+}
+
+/// Whether the debug tools' taps are registered.
+pub fn camera_debug_taps_registered() -> bool {
+    DEBUG_TAPS.get().is_some()
+}
+
 pub(super) fn matrix_override() -> Option<Matrix4> {
     PARTICIPANTS
         .get()

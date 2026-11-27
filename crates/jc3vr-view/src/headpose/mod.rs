@@ -45,7 +45,7 @@ pub mod xr;
 pub use config::HeadPoseConfig;
 pub use participants::{
     BodyFrameFilter, FrameTelemetry, HeadParticipants, body_frame_filter_registered,
-    register_body_frame_filter, register_head_participants,
+    head_participants_registered, register_body_frame_filter, register_head_participants,
 };
 /// The body-bound subsystems' reads of the two sources, named here so a consumer reaches the head
 /// pose through this module rather than through either source's internals.

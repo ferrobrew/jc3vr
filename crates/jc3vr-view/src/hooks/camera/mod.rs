@@ -33,7 +33,8 @@ mod participants;
 pub use config::{CameraConfig, SCENE_NEAR_CLIP_M};
 use jc3vr_core::hooks::in_gameplay;
 pub use participants::{
-    CameraDebugTaps, CameraParticipants, register_camera_debug_taps, register_camera_participants,
+    CameraDebugTaps, CameraParticipants, camera_debug_taps_registered,
+    camera_participants_registered, register_camera_debug_taps, register_camera_participants,
 };
 
 use crate::headpose::{

@@ -16,8 +16,6 @@ mod declaration_replay;
 // The `CGraphicsEngine` detours, mirroring `jc3gi::graphics_engine::graphics_engine`; public for the
 // payload's flip block and hook-thread log.
 pub mod engine;
-// The VR runtime's teardown participant: the flip block and the far-field share pipeline.
-pub mod register_vr_teardown;
 mod render_pass;
 // `shader` is public so the debug UI can read its patched-shader count.
 pub mod shader;

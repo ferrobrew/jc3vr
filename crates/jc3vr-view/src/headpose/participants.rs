@@ -96,6 +96,11 @@ pub fn body_frame_filter_registered() -> bool {
     FILTER.get().is_some()
 }
 
+/// Whether the head pose's participants are registered, for the install's registration check.
+pub fn head_participants_registered() -> bool {
+    PARTICIPANTS.get().is_some()
+}
+
 /// The registered participants. The simulation ticks and the frames run from hooks, and the table
 /// is registered before the hooks are installed, so it is always present by then.
 pub(crate) fn head_participants() -> &'static HeadParticipants {

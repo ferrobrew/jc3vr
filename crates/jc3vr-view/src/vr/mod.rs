@@ -99,7 +99,8 @@ pub use mirror::{
 };
 pub use participants::{
     CockpitPositions, FrameInputs, FrameParticipants, ResizeObserver, TeardownParticipant,
-    register_frame_participants, register_resize_observer, register_teardown_participant,
+    frame_participants_registered, register_frame_participants, register_resize_observer,
+    register_teardown_participant, resize_observer_registered, teardown_participant_registered,
 };
 pub use recenter::{
     RecenterCause, RecenterKind, auto_recenter_tick, recenter, recenter_count, request_recenter,

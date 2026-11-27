@@ -57,6 +57,12 @@ pub fn register_dispatch_sink(sink: GpuDispatchSink) {
     }
 }
 
+/// Whether the dispatch sink is registered, for the install's registration check.
+#[cfg(feature = "profiler")]
+pub fn dispatch_sink_registered() -> bool {
+    SINK.get().is_some()
+}
+
 /// Arms or disarms the lane's dispatch timing for a recording run.
 pub fn arm(armed: bool) {
     ARMED.store(armed, Ordering::Relaxed);

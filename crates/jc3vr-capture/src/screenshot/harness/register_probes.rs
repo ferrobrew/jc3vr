@@ -1,6 +1,8 @@
 //! The capture tooling's side of the render hooks' probe table: what the screenshot harness, its
 //! snapshots, the visual tests, and the benchmark observe at the hooks' events, registered at
-//! startup, with the benchmark's sink for the GPU timestamp lane.
+//! startup, with the benchmark's sink for the GPU timestamp lane. [`register`] is the crate's one
+//! registration with the layers below it, which the payload's composition calls once; it reports
+//! any slot still empty to the install's registration check, which stops the startup naming it.
 //!
 //! The hooks call the table only once a request has armed it ([`jc3vr_render::probes::arm`]), except
 //! for the shader tag. The events are generic; this module decides which diagnostic each one feeds
@@ -13,8 +15,11 @@ use std::cell::Cell;
 #[cfg(feature = "profiler")]
 use jc3gi::graphics_engine::render_engine::RenderBlockTypeBase;
 use jc3gi::graphics_engine::{graphics_engine::RenderContext, render_engine::RenderPassId};
+use jc3vr_core::registration::RegistrationCheck;
 #[cfg(feature = "profiler")]
-use jc3vr_render::profiler::gpu_samples::{GpuDispatchSink, register_dispatch_sink};
+use jc3vr_render::profiler::gpu_samples::{
+    GpuDispatchSink, dispatch_sink_registered, register_dispatch_sink,
+};
 use jc3vr_render::{
     probes,
     probes::{
@@ -22,6 +27,7 @@ use jc3vr_render::{
         PipelinePoint, PostEffect, ProbeGuard, RawDrawKind, Route, Submission,
     },
     screenshot::CaptureSource,
+    stereo::single_pass::shader_identity::kept_registered,
 };
 use windows::Win32::Graphics::Direct3D11::{ID3D11Device, ID3D11DeviceChild, ID3D11DeviceContext};
 
@@ -41,8 +47,9 @@ use crate::{
 };
 
 /// Registers the capture tooling's probes, the shaders the census keeps for the trials, and the
-/// benchmark as the GPU timestamp lane's dispatch sink. Once, at startup, before the hooks install.
-pub fn register() {
+/// benchmark as the GPU timestamp lane's dispatch sink, and reports what is still missing to
+/// `check`. Once, at startup, before the hooks install.
+pub fn register(check: &mut RegistrationCheck) {
     probes::register(&HARNESS_PROBES);
     kept_shaders::register();
     #[cfg(feature = "profiler")]
@@ -50,6 +57,23 @@ pub fn register() {
         record: benchmark::record_gpu_dispatch,
         dropped: benchmark::note_gpu_dispatch_dropped,
     });
+
+    check.require(
+        "render hooks",
+        "the capture harness's probes",
+        probes::is_registered(),
+    );
+    check.require(
+        "shader identity",
+        "the capture harness's kept shaders",
+        kept_registered(),
+    );
+    #[cfg(feature = "profiler")]
+    check.require(
+        "GPU timestamp lane",
+        "the benchmark's dispatch sink",
+        dispatch_sink_registered(),
+    );
 }
 
 static HARNESS_PROBES: HarnessProbes = HarnessProbes;

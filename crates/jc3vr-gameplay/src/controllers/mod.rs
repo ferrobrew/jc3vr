@@ -65,7 +65,7 @@ pub use config::ControllersConfig;
 /// contributions they leave missing to `check`.
 pub fn install(check: &mut RegistrationCheck) -> Result<(), RegistrationError> {
     register_head_pose::register(check);
-    register_vr_frame::register();
+    register_vr_frame::register(check);
     register_render::register(check);
     let mut body = BodyContributions::default();
     jc3vr_grapple::register(&mut body);

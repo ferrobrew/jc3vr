@@ -19,6 +19,9 @@
 //! - [`draw_path`]: the plain load-and-store counter the draw path bumps.
 //! - [`probes`]: the capture probes, the one table the capture crate above fills at install, read
 //!   with one relaxed load while nothing has asked for a capture or a benchmark.
+//! - [`register`]: what the crate registers with the layers below it (its steps at hook removal,
+//!   the debug tools' taps, and the VR teardown's flip release), which the payload's composition
+//!   calls once.
 //!
 //! The layers above reach these modules by path.
 
@@ -31,9 +34,12 @@ pub mod image_writer;
 pub mod probes;
 pub mod profiler;
 pub mod readback;
+mod register;
 pub mod screenshot;
 pub mod stereo;
 pub mod tuning;
+
+pub use register::register;
 
 #[cfg(test)]
 mod test_config;

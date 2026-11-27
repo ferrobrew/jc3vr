@@ -3,7 +3,7 @@
 //! overlay's draw reads, the presentation layer's edits of the body's palette, and the camera's
 //! participants (the grapple's aim matrix and the camera height readout). The overlay's and the
 //! lens's draws are the render layer's own, which its post-draw runs itself. [`register`] reports
-//! a post-draw contribution still missing to the install's registration check.
+//! any of these still missing to the install's registration check.
 
 use jc3gi::graphics_engine::{device::Device, texture::Texture};
 use jc3vr_body::controllers::{aim, body::estimator, overlay, presentation::PlayerBodyEdits};
@@ -12,11 +12,15 @@ use jc3vr_core::{
     registration::RegistrationCheck,
 };
 use jc3vr_view::{
-    controllers::overlay::inputs::{OverlayInputs, register_overlay_inputs},
+    controllers::overlay::inputs::{
+        OverlayInputs, register_overlay_inputs, registered as overlay_inputs,
+    },
     hooks::{
-        camera::{CameraParticipants, register_camera_participants},
+        camera::{
+            CameraParticipants, camera_participants_registered, register_camera_participants,
+        },
         graphics_engine::{
-            palette_edit::register_player_draw_edits,
+            palette_edit::{player_draw_edits, register_player_draw_edits},
             post_draw::{
                 DispatchTick, FramePass, dispatch_ticks_registered, frame_pass_registered,
                 register_dispatch_ticks, register_frame_pass,
@@ -51,6 +55,21 @@ pub(super) fn register(check: &mut RegistrationCheck) {
         "post-draw",
         "the body estimator's frame pass",
         frame_pass_registered(FramePass::BodyEstimator),
+    );
+    check.require(
+        "overlay",
+        "the overlay's draw inputs",
+        overlay_inputs().is_some(),
+    );
+    check.require(
+        "render block",
+        "the presentation layer's player draw edits",
+        player_draw_edits().is_some(),
+    );
+    check.require(
+        "camera",
+        "the grapple's aim matrix and the camera height readout",
+        camera_participants_registered(),
     );
 }
 

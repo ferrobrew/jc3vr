@@ -387,6 +387,11 @@ pub fn keep(shaders: &'static [Kept]) {
     }
 }
 
+/// Whether the kept shaders are registered, for the install's registration check.
+pub fn kept_registered() -> bool {
+    KEPT.get().is_some()
+}
+
 /// The bytecode the census kept this generation for the shader created from `pristine`.
 pub fn kept_bytecode(pristine: &str) -> Option<Vec<u8>> {
     REGISTRY.lock().kept.get(pristine).cloned()

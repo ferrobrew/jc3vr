@@ -8,12 +8,15 @@
 //!
 //! - [`screenshot::harness`]: the capture harness (the per-eye and stage captures, the draw census,
 //!   the snapshot comparisons, the water GPU probe, and the sun probe), and the registrations of its
-//!   probes into the single-pass draw path and the graphics-engine pipeline.
+//!   probes into the single-pass draw path and the graphics-engine pipeline ([`register`], which
+//!   the payload's composition calls once).
 //! - [`testing`]: the visual stage's camera, clock, and render overrides, and the benchmark
 //!   samplers. The request parsing and the stage driver live in the tooling layer above.
 
 pub mod screenshot;
 pub mod testing;
+
+pub use screenshot::harness::register_probes::register;
 
 #[cfg(test)]
 mod test_config;

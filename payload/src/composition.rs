@@ -13,7 +13,6 @@
 use std::fmt;
 
 use jc3vr_body::hooks::{animation, character};
-use jc3vr_capture::screenshot::harness::register_probes;
 use jc3vr_core::{
     hooks as core_hooks,
     lifecycle::RegistrationError,
@@ -28,11 +27,7 @@ use jc3vr_hud::{controllers::map, hooks::ui};
 use jc3vr_physical::controllers::physical_hands::human_hull;
 #[cfg(feature = "profiler")]
 use jc3vr_render::hooks::profiler;
-use jc3vr_render::{
-    debug,
-    hooks::{clock, draw_count, graphics_engine},
-    stereo,
-};
+use jc3vr_render::hooks::{clock, draw_count, graphics_engine};
 use jc3vr_ui::pause_menu;
 use jc3vr_vehicles::{Registered as VehiclesRegistered, register as register_vehicles};
 use jc3vr_view::hooks::{camera, window_focus};
@@ -44,20 +39,13 @@ use crate::hooks::{game, wndproc};
 /// refused participant registration or a missing contribution leaves the hooks uninstalled.
 pub(crate) fn install() -> Result<(), InstallError> {
     let mut check = RegistrationCheck::new();
-    // Registered first, so hook removal attempts them whether or not installation got further.
-    stereo::register_unpatch::register();
-    debug::register_unpatch::register();
+    jc3vr_render::register(&mut check);
+    jc3vr_capture::register(&mut check);
     // What the HUD and the tooling contribute to the layers below them: the post-draw, the mirror,
     // the flip, the input capture, the pointers, the session, the sim, the character hooks, and the
     // tracking recorder. Each fills slots of its own.
     jc3vr_hud::register(&mut check);
     jc3vr_tooling::register(&mut check);
-    // What the debug tools and the graphics-engine hooks contribute to the VR runtime and the
-    // camera hooks below them.
-    debug::register_view::register();
-    graphics_engine::register_vr_teardown::register();
-    // What the capture tooling observes in the render hooks.
-    register_probes::register();
     // What the vehicle handling contributes to the physical crate, and its equipment detours.
     let vehicles = register_vehicles(&mut check);
     controllers::install(&mut check).map_err(InstallError::Participant)?;
