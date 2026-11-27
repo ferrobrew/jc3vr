@@ -1,0 +1,30 @@
+# The physics substrate
+
+The hands, the weapons, the grapple, and the vehicle handling reach the physics world through one layer in the body crate, `jc3vr_body::controllers::physics`. It reads and drives bodies, reads the local player's proxy, finds the vehicle behind a body, scans the world's bodies by their boxes, watches the rig for jumps, and composes the character's wanted velocity. Every helper fails with one error, `PhysicsError`, whose message starts `physics:`.
+
+## Bodies, the proxy, vehicles, and scans
+
+- `bodies` reads a dynamic body's pose, velocities, and mass after checking that it still belongs to the object it was taken from, sets its velocities (`drive`), and shoves it with an impulse at a point (`shove`). `push` applies an impulse to a body a ray hit this tick, whoever owns it; the engine leaves a static or keyframed body alone. Both impulses go through [`hknpWorld::applyBodyImpulseAt`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/physics::hknpWorld##func-applyBodyImpulseAt), and both velocity writes through [`hknpWorld::setBodyVelocity`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/physics::hknpWorld##func-setBodyVelocity), by way of `World::apply_impulse` and `World::set_velocities`, which take game-space points.
+- `proxy` reads the local player's proxy body: its slot, the velocity its motion holds, and the support its last update found, and gives it a velocity for the coming step as the proxy's own update does.
+- `vehicles` finds the vehicle a hit object belongs to (the vehicle itself or the vehicle a loosened part came from), the vehicle that owns a body, the vehicle's own body checked against its owner, and the vehicle's frame.
+- `scan` reads a body's motion kind from its slot flags and its broad-phase box through the world's integer space, and walks the slots for the dynamic bodies whose boxes a test accepts, either all at once (`dynamic_boxes`) or a slice per step (`walk_dynamic`).
+
+## The rig's jumps
+
+A snap turn or a recenter moves every palm in the rig at once without the hands moving. The hand bodies, the climb, and the grapple's pump each start their motion afresh across one. `rig::RigWatch` holds the rig sample (the body's facing and the recenter count) a reader took on its last tick, and reports a jump when the count changed or the facing turned by more than the substrate tuning's `rig.jump_rad` since then. Each reader judges over its own interval, so a fast smooth turn that passes the threshold between two of a slow reader's ticks counts as a jump for that reader.
+
+## The wanted velocity
+
+The engine moves the character's proxy by the wanted velocity its movement task writes each simulation tick. The mod's writers adjust it around the task's write, and each is a `wanted::Contributor`. A tick's writes go through one `wanted::Composition`, which applies them in the contributors' order: each contribution reads the velocity as the previous one left it and returns the velocity to write, or nothing. The order within a frame:
+
+1. Before the world update, on the game thread: the vehicle rail's entry, which takes Rico off a helicopter's interaction graph moving with its skid, and the grapple lock's release and its handback after the reel's cancel. The movement task runs after them and writes the velocity afresh, so these are inputs the task carries into its tick.
+2. In the character's update, exactly one movement task runs:
+   - On foot, the locomotion task's post-call composes the stick's velocity in place of the clip's horizontal one ([locomotion.md](locomotion.md)), the palms' push added to it ([physical-hands.md](../input/physical-hands.md#pushing-off-surfaces)), and, while the player owns the root, the step drive added to the sum and capped ([rig.md](rig.md#who-moves-the-root)). A step that does not move writes nothing.
+   - Swimming, the swim core's post-call joins the arm strokes' speed to the core's velocity along the facing ([swim-strokes.md](swim-strokes.md)).
+   - Reeling, the reel's arrival hands the grapple lock's velocity on ([grapple-lock.md](../input/grapple-lock.md)).
+
+The rail and the grapple lock never run in the same frame, and the three movement tasks exclude each other, so the on-foot composition is the only one with more than one contributor. A contributor applied out of order is a programming error, which a debug build stops on. The body's tests compare the on-foot composition with the writers applied one after another, reading the velocity back each time, over every combination of stick, push, and step.
+
+## Release velocities
+
+Every release shapes its velocity the same way: `jc3vr_input::motion::shaped_release` takes the hand's velocity and the velocity the hand inherits from what carries it, scales and caps the hand's own share, and adds the inherited velocity back. The hand's velocity is the caller's estimate, either the peak of the hand's recent history (`motion::release_velocity`, which the gun and explosive throws use) or the palm's velocity on the release's tick. The physical hands' props throw and the climb's fling shape theirs through it.
