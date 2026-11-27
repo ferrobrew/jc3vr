@@ -1,11 +1,13 @@
-//! The render-side pieces of the HUD: the render camera's pose, the pointer's panel math, and the
-//! world markers' stage frame. The HUD itself lives in the HUD layer.
+//! The render-side pieces of the HUD: the render camera's pose, the pointer's panel math
+//! ([`panel`]: where a ray meets the floating panel), and the world markers' stage frame
+//! ([`stage_frame`], which the marker layout projects through). The HUD itself lives in the HUD
+//! layer.
 
 use glam::{Mat3, Mat4, Quat, Vec3};
 use jc3gi::camera::camera_manager::CameraManager;
 
-pub mod pointer;
-pub mod world_markers;
+pub mod panel;
+pub mod stage_frame;
 
 /// Extract the head's world-space pose `(position, rotation)` from the render camera's world
 /// transform, or `None` if the camera is not available.

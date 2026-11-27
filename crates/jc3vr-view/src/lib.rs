@@ -15,8 +15,8 @@
 //! - [`controllers`] and [`hud`]: the data the layers above hand the render passes: the cockpit
 //!   transform, the overlay's data model and inputs, the scope's lens frame, the rig's origin
 //!   provenance, the render camera's pose, the panel math, and the stage frame.
-//! - [`recorder::tracking`]: the `.jc3trk` tracking recorder.
-//! - [`testing::benchmark::gpu_passes`]: the benchmark's per-pass GPU totals.
+//! - [`recorder`]: the `.jc3trk` tracking recorder.
+//! - [`gpu_passes`]: the benchmark's per-pass GPU totals.
 //! - [`tuning`]: the crate's tuning files, and the input crate's haptics file it loads.
 //!
 //! The layers above reach these modules by path. [`CAPTURE_VS`] is the full-screen vertex shader
@@ -24,12 +24,12 @@
 
 pub mod controllers;
 pub mod fsr;
+pub mod gpu_passes;
 pub mod headpose;
 pub mod hooks;
 pub mod hud;
 pub mod recorder;
 pub mod stereo;
-pub mod testing;
 pub mod tuning;
 pub mod vr;
 

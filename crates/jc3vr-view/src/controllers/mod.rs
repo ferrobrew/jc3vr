@@ -3,7 +3,7 @@
 //! themselves live in the gameplay layer and feed these, and the passes that draw them live in the
 //! render layer.
 
-pub mod body;
 pub mod cockpit;
+pub mod lens_frame;
+pub mod origin_provenance;
 pub mod overlay;
-pub mod weapons;
