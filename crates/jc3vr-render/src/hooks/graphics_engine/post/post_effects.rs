@@ -13,7 +13,7 @@
 
 use std::{
     ffi::c_void,
-    sync::atomic::{AtomicBool, Ordering},
+    sync::atomic::{AtomicBool, AtomicU8, Ordering},
 };
 
 use detours_macro::detour;
@@ -70,6 +70,31 @@ enum TemporalResolve {
     Fsr(Option<f32>),
     /// The mod's own resolve.
     Taa(TaaConfig),
+}
+
+impl TemporalResolve {
+    const fn code(self) -> u8 {
+        match self {
+            Self::Fsr(_) => 1,
+            Self::Taa(_) => 2,
+        }
+    }
+}
+
+/// The code of the resolve chosen in the last AA stage, or [`NO_RESOLVE`] when the engine's own AA
+/// was.
+static LAST_RESOLVE: AtomicU8 = AtomicU8::new(NO_RESOLVE);
+const NO_RESOLVE: u8 = 0;
+
+/// Restart a temporal resolve's history when it is chosen after a frame that chose another AA: its
+/// history then predates the frames in between, and reprojecting it would smear the old view over
+/// the new one.
+fn note_resolve_choice(resolve: Option<TemporalResolve>) {
+    let code = resolve.map_or(NO_RESOLVE, TemporalResolve::code);
+    let previous = LAST_RESOLVE.swap(code, Ordering::Relaxed);
+    if code != NO_RESOLVE && previous != code {
+        crate::fsr::request_history_reset();
+    }
 }
 
 /// Dispatch the chosen temporal resolve for the current eye, reading the chain's current slot color
@@ -245,6 +270,7 @@ fn anti_aliasing_apply(
     // resolve replaces SMAA, so its 1x-forcing is moot here.
     let saved_mode = unsafe { (*this).m_Mode };
     let mut restore = false;
+    note_resolve_choice(fsr);
     let fsr_ran = fsr.is_some_and(|resolve| {
         // SAFETY: `slot` is a valid out-param holding the current chain slot index.
         let slot_index = unsafe { *slot };
