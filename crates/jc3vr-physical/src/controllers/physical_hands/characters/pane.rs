@@ -9,7 +9,10 @@ use std::num::NonZeroUsize;
 use glam::Vec3;
 use jc3vr_body::controllers::aim::raycast::CastOptions;
 
-use crate::controllers::{glass::bullets, physical_hands::query};
+use crate::controllers::{
+    glass::bullets,
+    physical_hands::{characters::tuning::CHARACTERS, query},
+};
 
 /// Whether a palm at `palm` that reaches `target` on an occupant of `vehicle` came in through one
 /// of the vehicle's panes the glass brought down ([`query::crosses_hidden_pane`]), with the
@@ -45,18 +48,16 @@ pub(crate) fn eyes() -> Vec3 {
 /// Whether any leg of the path through `points` crosses, by `crosses`, skipping a leg too short or
 /// too broken to cast.
 fn any_leg_crosses(points: &[Vec3], mut crosses: impl FnMut(Vec3, Vec3) -> bool) -> bool {
+    let min_leg_m = CHARACTERS.get().characters.min_pane_leg_m;
     points
         .windows(2)
         .filter(|leg| {
             leg[0].is_finite()
                 && leg[1].is_finite()
-                && leg[0].distance_squared(leg[1]) >= MIN_LEG_M * MIN_LEG_M
+                && leg[0].distance_squared(leg[1]) >= min_leg_m * min_leg_m
         })
         .any(|leg| crosses(leg[0], leg[1]))
 }
-
-/// The shortest leg of the hand's way in that is cast, metres.
-const MIN_LEG_M: f32 = 0.01;
 
 #[cfg(test)]
 mod tests {

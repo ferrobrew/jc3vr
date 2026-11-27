@@ -60,7 +60,7 @@ pub struct StuntStatus {
     pub holding: [bool; 2],
     /// Which hands' climbing grips hold a helicopter, indexed by [`Hand::index`].
     pub on_helicopter: [bool; 2],
-    /// The hangs the mod entered. Physical grips never request the game's hang, so it stays zero.
+    /// The hangs the game put the player in, counted as the position changes to hanging.
     pub hang_entries: u64,
     /// The stunt areas the mantles entered.
     pub roof_entries: u64,
@@ -256,6 +256,9 @@ impl State {
                 "stunt positions: the player left the stunt position"
             ),
         }
+        if position == Some(StuntKind::Hanging) {
+            self.status.hang_entries += 1;
+        }
         self.status.position = position;
     }
 
@@ -322,6 +325,24 @@ mod tests {
         }
         state.observe_read(None, false);
         assert_eq!(state.status.position, None);
+    }
+
+    #[test]
+    fn a_hang_counts_once_as_the_position_changes_to_it() {
+        let mut state = State {
+            tracker: Tracker::new(),
+            ticked: None,
+            status: StuntStatus::default(),
+        };
+        for kind in [
+            Some(StuntKind::Hanging),
+            Some(StuntKind::Hanging),
+            None,
+            Some(StuntKind::Hanging),
+        ] {
+            state.observe_position(kind);
+        }
+        assert_eq!(state.status.hang_entries, 2);
     }
 
     #[test]

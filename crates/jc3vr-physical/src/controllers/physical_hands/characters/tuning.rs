@@ -63,6 +63,9 @@ pub struct CharacterGripTuning {
     /// How far from the palm an open door may be for the hand to reach in through it, metres of
     /// the player's hand.
     pub(crate) hijack_door_reach_m: f32,
+    /// The shortest leg of a hand's way in through a pane the glass brought down that is cast,
+    /// metres: a shorter one has no direction to cast along.
+    pub(crate) min_pane_leg_m: f32,
 }
 
 /// The stunt positions (see [`crate::controllers::physical_hands::stunt`]).
@@ -209,6 +212,7 @@ impl CharacterGripTuning {
             100.0,
         )?;
         nonnegative("characters.topple_strength", self.topple_strength, 100.0)?;
+        positive("characters.min_pane_leg_m", self.min_pane_leg_m, 1.0)?;
         nonnegative(
             "characters.ragdoll_carry_strength",
             self.ragdoll_carry_strength,

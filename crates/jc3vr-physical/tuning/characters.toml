@@ -15,6 +15,7 @@ ragdoll_carry_strength = 4.0
 held_ragdoll_damping_per_s = 4.0
 hijack_min_open_deg = 25.0
 hijack_door_reach_m = 1.2
+min_pane_leg_m = 0.01
 
 [stunt]
 reading_stale_after_ms = 200

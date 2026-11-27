@@ -616,7 +616,9 @@ unsafe fn strike(
 }
 
 /// Queue a supported knockdown transition only for a physical punch, by a hand at `hand_at`, on an
-/// exposed occupant ([`exposed_seat`]).
+/// exposed occupant ([`exposed_seat`]). Returns whether it queued the transition: a rider whose
+/// state accepts the native hit-reaction ragdoll is left to the native damage message, which
+/// queues nothing here.
 ///
 /// # Safety
 /// The game thread, outside the game's update; the victim remains live after native dispatch.

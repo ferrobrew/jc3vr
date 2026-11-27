@@ -154,7 +154,8 @@ fn enabled() -> bool {
 ///
 /// # Safety
 ///
-/// A current physics hit, on the simulation thread outside the physics step or its query worker.
+/// A current physics hit, on the game thread inside a query-layer cast's hit callback, or on the
+/// worker updating the bullet that made it.
 pub(crate) unsafe fn names_hidden_pane(info: &mut CastRayInfoBase) -> bool {
     let mut found = [ptr::null_mut::<ModelInstance>(); MAX_PANES];
     let base = found.as_mut_ptr();

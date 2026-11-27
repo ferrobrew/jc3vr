@@ -357,7 +357,7 @@ pub unsafe fn step() {
                     "the hand stopped acting"
                 };
                 // SAFETY: forwarded from the caller.
-                joint_lost[i] |= unsafe { hands.unjoin(hand, "the hand stopped acting") };
+                joint_lost[i] |= unsafe { hands.unjoin(hand, reason) };
                 if park {
                     // SAFETY: forwarded from the caller.
                     unsafe { hands.park(hand, reason) };
@@ -450,7 +450,7 @@ pub unsafe fn step() {
         *lost |= now_lost;
     }
     shared.world_offsets = offsets;
-    shared.offset_timeline.push(offsets, Stamp::now());
+    shared.offset_timeline.push(offsets, now);
     shared.loads = loads;
     shared.body_poses = poses;
     shared.push = push;
