@@ -51,7 +51,7 @@ use crate::{
         HeadPose, anchor_pair,
         config::{HeadPoseConfig, VrTurnMode},
         follow::{BodyFollow, FollowTick},
-        participants::head_participants,
+        participants::{body_frame_filter, head_participants},
     },
     tuning::VIEW,
 };
@@ -179,13 +179,13 @@ pub fn advance_body_yaw(tick: YawTick, config: &HeadPoseConfig, follow: &FollowS
         });
         s.yaw = None;
         s.snap_armed = true;
-        // Any pending grapple retarget is left unconsumed: it is aimed at the next on-foot tick.
+        // Any pending filter retarget is left unconsumed: it is aimed at the next on-foot tick.
         return;
     }
 
-    // The grapple's yaw handoff may want the body turned toward a specific heading (the held view
-    // heading at a landing); it overrides the accumulator and the raw-facing seed below.
-    if let Some(yaw) = (head_participants().take_body_yaw_retarget)() {
+    // The body frame filter may want the body turned toward a specific heading (the grapple's held
+    // view heading at a landing); it overrides the accumulator and the raw-facing seed below.
+    if let Some(yaw) = (body_frame_filter().take_body_yaw_retarget)() {
         s.yaw = Some(yaw);
     }
 
@@ -357,12 +357,11 @@ pub fn follow_status() -> (bool, f32) {
 }
 
 /// The frozen turn of the body under the view, radians, when the body has stopped following and
-/// the turn is still to be folded into the cockpit baseline ([`bank`]). Held back while the grapple
-/// filter holds the view or the swim levelling drops the body's tilt: both compose with the turned
-/// body frame, so folding the turn out of it then would turn the view.
+/// the turn is still to be folded into the cockpit baseline ([`bank`]). Held back while the body
+/// frame filter is engaged or the swim levelling drops the body's tilt: both compose with the
+/// turned body frame, so folding the turn out of it then would turn the view.
 pub fn pending_bank() -> Option<f32> {
-    let participants = head_participants();
-    if (participants.grapple_blend)() > 0.0 || (participants.swimming)() {
+    if (body_frame_filter().engaged)() || (head_participants().swimming)() {
         return None;
     }
     let s = BODY_YAW.lock();
@@ -431,22 +430,22 @@ struct VrBodyYaw {
 
 /// The local player character's world rotation, the body frame the cockpit pose composes onto.
 /// Identity when there is no local character (loading screens), so the head still tracks in a
-/// neutral upright frame. Filtered by the grapple reel-in body-frame filter (issue #36): while
-/// reeling in, the rotation the reel adds is cancelled from the composed view -- the HMD keeps
-/// full rotational authority (see [`crate::grapple`]). Consumers that steer the actual character
-/// rather than the view must use [`body_rotation_raw`] instead.
+/// neutral upright frame. Filtered by the body frame filter: while the grapple reels in, for
+/// example, the rotation the reel adds is cancelled from the composed view (issue #36), and the
+/// HMD keeps full rotational authority. Consumers that steer the actual character rather than the
+/// view must use [`body_rotation_raw`] instead.
 ///
 /// The body's turn under the view ([`follow_turn`]) is taken out first, so the view keeps its
 /// heading while the body follows the torso.
 pub fn body_rotation() -> Quat {
-    level_while_swimming((head_participants().filter_body_rotation)(
+    level_while_swimming((body_frame_filter().filter_rotation)(
         body_rotation_followed(),
     ))
 }
 
-/// The synthetic head frame before the grapple filter and swim levelling: the captured root
+/// The synthetic head frame before the body frame filter and swim levelling: the captured root
 /// composed once with the filtered, bind-relative head rotation and the turn under the view.
-/// The grapple filter advances against this same frame.
+/// The body frame filter advances against this same frame.
 pub fn body_rotation_followed() -> Quat {
     let frame = anchor_pair().map_or_else(body_rotation_raw, |pair| pair[1].view_frame());
     frame * follow_turn(true)
@@ -454,7 +453,7 @@ pub fn body_rotation_followed() -> Quat {
 
 /// The local player character's world rotation as the engine holds it, unfiltered. The body-yaw
 /// accumulator seeds and clamps against this: it steers the real character, whose heading the
-/// grapple filter's view-frame does not track during a reel.
+/// body frame filter's view frame does not track while it holds.
 pub fn body_rotation_raw() -> Quat {
     body_rotation_from(|character| glam::Mat4::from(character.m_WorldMatrixT1))
 }
@@ -468,7 +467,7 @@ pub fn body_rotation_prev() -> Quat {
         || body_rotation_from(|character| glam::Mat4::from(character.m_WorldMatrixT0)),
         |pair| pair[0].previous_endpoint(pair[0], pair[1]).view_frame(),
     );
-    level_while_swimming((head_participants().filter_body_rotation)(
+    level_while_swimming((body_frame_filter().filter_rotation)(
         frame * follow_turn(false),
     ))
 }

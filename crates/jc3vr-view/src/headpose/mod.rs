@@ -43,7 +43,10 @@ pub mod teleport;
 pub mod xr;
 
 pub use config::HeadPoseConfig;
-pub use participants::{FrameTelemetry, HeadParticipants, register_head_participants};
+pub use participants::{
+    BodyFrameFilter, FrameTelemetry, HeadParticipants, body_frame_filter_registered,
+    register_body_frame_filter, register_head_participants,
+};
 
 /// Which source currently owns the published headpose. The flatscreen [`sim`] and the VR [`xr`]
 /// source are mutually exclusive publishers; the arbiter is a plain atomic so the sim's per-tick

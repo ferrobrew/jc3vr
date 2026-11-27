@@ -16,7 +16,7 @@ use parking_lot::Mutex;
 
 use crate::{
     headpose,
-    headpose::{FrameTelemetry, config::HEADPOSE_CONFIG, participants::head_participants},
+    headpose::{FrameTelemetry, config::HEADPOSE_CONFIG, participants::body_frame_filter},
     tuning::VIEW,
     vr::{
         EyeView, Fov, FrameInputs, FreezeMode, LocatedFrame, OffAxisProjection, VrConfig,
@@ -318,11 +318,11 @@ fn render_frame(views: [EyeView; 2], display_time: openxr::Time, cfg: &VrConfig)
     };
     let [eye0, eye1] = frozen.map_or(views, |f| f.eyes);
 
-    // Advance the grapple reel-in filter at frame cadence, before the body frame and anchor below
-    // are read through it: the engine rotates the body the instant a reel begins, and the ~33 Hz
-    // input-tick advance alone left up to a tick of that rotation reaching the view before the
-    // filter engaged (issue #36 telemetry). At frame cadence the held pre-reel frame is the one
-    // the previous render composed with, so an instant engage is seamless.
+    // Advance the body frame filter at frame cadence, before the body frame and anchor below are
+    // read through it: the engine rotates the body the instant a grapple reel begins, and the
+    // ~33 Hz input-tick advance alone left up to a tick of that rotation reaching the view before
+    // the filter engaged (issue #36 telemetry). At frame cadence the frame the filter holds is the
+    // one the previous render composed with, so an instant engage is seamless.
     // The pose hangs from the view head, the neutral head while the view is held off the walking
     // animation, so the animation's bob stays on the body and out of the headset.
     let anchor_pair = headpose::anchor_pair();
@@ -331,16 +331,16 @@ fn render_frame(views: [EyeView; 2], display_time: openxr::Time, cfg: &VrConfig)
         |f| f.anchor,
     );
     let participants = frame_participants();
-    let head_participants = head_participants();
+    let filter = body_frame_filter();
     let headpose_config = HEADPOSE_CONFIG.query(|c| *c);
-    (head_participants.advance_grapple)(
+    (filter.advance)(
         headpose::xr::body_rotation_followed(),
         frozen
             .is_none()
             .then(|| anchor_pair.map(|pair| anchor_raw - pair[1].root.w_axis.truncate()))
             .flatten(),
         headpose::sim::mode() == headpose::sim::HeadMode::OnFoot,
-        &headpose_config.grapple,
+        &headpose_config,
     );
 
     let pos0 = vec3(eye0.pose.position);
@@ -354,9 +354,9 @@ fn render_frame(views: [EyeView; 2], display_time: openxr::Time, cfg: &VrConfig)
     let center_orientation = quat(eye0.pose.orientation).slerp(quat(eye1.pose.orientation), 0.5);
 
     let body_rotation = frozen.map_or_else(headpose::xr::body_rotation, |f| f.body_rotation);
-    // The anchor goes through the grapple filter's landing rate limit; the previous-tick anchor is
-    // offset by the same amount so the pair keeps the true tick delta for the engine's `dtf` lerp.
-    let anchor = (head_participants.filter_anchor)(anchor_raw);
+    // The anchor goes through the body frame filter; the previous-tick anchor is offset by the same
+    // amount so the pair keeps the true tick delta for the engine's `dtf` lerp.
+    let anchor = (filter.filter_anchor)(anchor_raw);
     let anchor_prev_raw = frozen.map_or_else(
         || anchor_pair.map_or(anchor_raw, |pair| pair[0].view_head()),
         |f| f.anchor,
@@ -411,7 +411,7 @@ fn render_frame(views: [EyeView; 2], display_time: openxr::Time, cfg: &VrConfig)
     );
     headpose::xr::publish_pair(prev, cur);
 
-    (head_participants.log_grapple_frame)(&FrameTelemetry {
+    (filter.observe_frame)(&FrameTelemetry {
         cockpit_orientation: center_orientation,
         cockpit_position: center_position,
         body_raw: headpose::xr::body_rotation_raw(),

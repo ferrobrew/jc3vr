@@ -1,5 +1,7 @@
 //! The gameplay participants of the head pose ([`jc3vr_view::headpose::HeadParticipants`]): the
-//! grapple's comfort filter and the character's state the head composition reads.
+//! character's state the head composition reads. The grapple registers its comfort filter as the
+//! head pose's body frame filter itself ([`jc3vr_grapple::register`]), and [`register`] reports it
+//! to the install's registration check when it is missing.
 
 use jc3vr_body::{
     controllers::{
@@ -13,22 +15,21 @@ use jc3vr_body::{
     },
     hooks::input::swim,
 };
-use jc3vr_core::published::Stamp;
-use jc3vr_grapple::grapple;
-use jc3vr_view::headpose::{HeadParticipants, register_head_participants};
+use jc3vr_core::{published::Stamp, registration::RegistrationCheck};
+use jc3vr_view::headpose::{
+    HeadParticipants, body_frame_filter_registered, register_head_participants,
+};
 
-pub(super) fn register() {
+pub(super) fn register(check: &mut RegistrationCheck) {
     register_head_participants(&PARTICIPANTS);
+    check.require(
+        "head pose",
+        "the body frame filter",
+        body_frame_filter_registered(),
+    );
 }
 
 static PARTICIPANTS: HeadParticipants = HeadParticipants {
-    advance_grapple: grapple::advance,
-    filter_body_rotation: grapple::filter_body_rotation,
-    filter_anchor: grapple::filter_anchor,
-    grapple_blend: grapple::blend_factor,
-    take_body_yaw_retarget: grapple::take_body_yaw_retarget,
-    log_grapple_tick: grapple::telemetry::log_tick,
-    log_grapple_frame: grapple::telemetry::log_frame,
     follow_settings,
     on_foot_ran: || body_frame::liveness().on_foot,
     swim_ran: || body_frame::liveness().swimming,

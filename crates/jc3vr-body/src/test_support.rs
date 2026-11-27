@@ -1,10 +1,9 @@
 //! Fixtures the body-bound subsystems' tests share, which move with them to the body crate.
 //!
 //! The head pose's participants ([`HeadParticipants`]) are registered at install by the crate's
-//! composition, which names the grapple above the body. A test that drives the head composition
-//! without that install registers [`register_head_participants`]'s table instead: the body-bound
-//! participants themselves, and stand-ins for the grapple's that act as the grapple's own do while
-//! no grapple runs, which no body test starts.
+//! composition. A test that drives the head composition without that install registers
+//! [`register_head_participants`]'s table instead. No body frame filter is registered, so the head
+//! pose passes the body frame through as it does while no grapple runs, which no body test starts.
 
 use std::sync::Once;
 
@@ -32,13 +31,6 @@ pub(crate) fn register_head_participants() {
 }
 
 static PARTICIPANTS: HeadParticipants = HeadParticipants {
-    advance_grapple: |_, _, _, _| {},
-    filter_body_rotation: |body| body,
-    filter_anchor: |anchor| anchor,
-    grapple_blend: || 0.0,
-    take_body_yaw_retarget: || None,
-    log_grapple_tick: |_, _| {},
-    log_grapple_frame: |_| {},
     follow_settings,
     on_foot_ran: || body_frame::liveness().on_foot,
     swim_ran: || body_frame::liveness().swimming,

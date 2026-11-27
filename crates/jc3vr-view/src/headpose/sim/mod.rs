@@ -38,7 +38,7 @@ use crate::{
     headpose::{
         HeadPose,
         config::HEADPOSE_CONFIG,
-        participants::head_participants,
+        participants::{body_frame_filter, head_participants},
         xr::{YawTick, advance_body_yaw, follow_turn},
     },
     tuning::VIEW,
@@ -108,12 +108,12 @@ pub fn on_input_tick(look_x: f32, look_y: f32, look_x_delta: bool, dt: f32) {
     let swimming = swim_ran > s.last_swim_run || (participants.swimming)();
     s.last_swim_run = swim_ran;
 
-    // Advance the grapple reel-in body-frame filter on this tick, likewise before the VR
-    // early-return: the blend it smooths (and the pre-reel frame it holds) is applied by both
-    // sources' body-frame composition (here at publish, and in `xr::body_rotation`). The VR frame
-    // loop advances it per rendered frame as well, so under VR this tick advance is the flatscreen
-    // fallback and the state read that keeps `sim` coverage.
+    // Advance the body frame filter on this tick, likewise before the VR early-return: what it
+    // smooths (and the frame it holds) is applied by both sources' body-frame composition (here at
+    // publish, and in `xr::body_rotation`). The VR frame loop advances it per rendered frame as
+    // well, so under VR this tick advance is the flatscreen fallback.
     {
+        let filter = body_frame_filter();
         // The view frame, with any turn of the body under the view taken out, so the frame the
         // filter holds is the one the view composes with.
         let body = read_body_rotation().unwrap_or(Quat::IDENTITY) * follow_turn(true);
@@ -121,8 +121,8 @@ pub fn on_input_tick(look_x: f32, look_y: f32, look_x_delta: bool, dt: f32) {
             .map(|pair| pair[1].view_head() - pair[1].root.w_axis.truncate());
         // `on_foot` is passed in rather than read back via `sim::mode()`: the SIM lock is held
         // here, and re-locking it inside `advance` deadlocks the input tick.
-        (participants.advance_grapple)(body, rooted, s.mode == HeadMode::OnFoot, &config.grapple);
-        (participants.log_grapple_tick)(body, dt);
+        (filter.advance)(body, rooted, s.mode == HeadMode::OnFoot, &config);
+        (filter.observe_tick)(body, dt);
     }
 
     // The VR source owns the pose while an OpenXR session is running (it publishes a fresh HMD pose
@@ -204,12 +204,12 @@ pub fn on_input_tick(look_x: f32, look_y: f32, look_x_delta: bool, dt: f32) {
     // composition; in vehicles and the wingsuit it carries the body's pitch and roll too, so a
     // banking wingsuit rolls the view with it. The position anchors to the animated head bone.
     let head_offset = Quat::from_euler(glam::EulerRot::YXZ, s.yaw, s.pitch, s.roll);
-    // The grapple filter cancels the body rotation the reel adds while reeling in (issue #36), so
-    // the alignment toward the target never reaches the composed view; see `crate::grapple`.
-    let body_rotation =
-        (participants.filter_body_rotation)(body_rotation.unwrap_or(Quat::IDENTITY));
+    // The body frame filter takes out the rotation and the anchor snaps the filtering feature
+    // adds, such as the grapple's reel toward its target (issue #36).
+    let filter = body_frame_filter();
+    let body_rotation = (filter.filter_rotation)(body_rotation.unwrap_or(Quat::IDENTITY));
     let orientation = body_rotation * head_offset;
-    let anchor = (participants.filter_anchor)(crate::headpose::anchor().unwrap_or(Vec3::ZERO));
+    let anchor = (filter.filter_anchor)(crate::headpose::anchor().unwrap_or(Vec3::ZERO));
     let position = anchor;
     drop(s);
     crate::headpose::set_pose(HeadPose {
@@ -325,7 +325,7 @@ fn update_latch(latch: LatchState, relative_yaw_deg: f32, mode: HeadMode) -> Lat
 /// Compose the latest input state in a captured current body frame without advancing input.
 pub(crate) fn orientation_at(root: glam::Mat4) -> Quat {
     let (_, body, _) = root.to_scale_rotation_translation();
-    let body = (head_participants().filter_body_rotation)(body);
+    let body = (body_frame_filter().filter_rotation)(body);
     let state = SIM.lock();
     body * Quat::from_euler(glam::EulerRot::YXZ, state.yaw, state.pitch, state.roll)
 }

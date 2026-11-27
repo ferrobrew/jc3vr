@@ -69,7 +69,7 @@ pub mod tuning;
 use jc3vr_body::controllers::physics::{grapple_hook as hook, grapple_hook::HookRead};
 use jc3vr_view::{
     headpose,
-    headpose::config::{GrappleComfortConfig, GrappleComfortMode},
+    headpose::{HeadPoseConfig, config::GrappleComfortMode},
 };
 
 use crate::grapple::tuning::GRAPPLE;
@@ -77,14 +77,15 @@ use crate::grapple::tuning::GRAPPLE;
 /// Advance the filter one step: read the hook's phase, run the engage/hold/handoff/release state
 /// machine, and update the anchor absorber. `body` is the raw body rotation as of this advance,
 /// and `rooted` the head anchor's offset from the character's root (`None` without anchors);
-/// `on_foot` gates the yaw handoff.
+/// `on_foot` gates the yaw handoff, and the head pose settings' `grapple` section picks the mode.
 ///
 /// Called from both cadences — the input tick ([`jc3vr_view::headpose::sim::on_input_tick`], the poll
 /// stage, in the engine's input job in play) and the VR frame loop (render thread) — under one
 /// mutex, with the step `dt` measured internally. `on_foot` arrives as a parameter because the
 /// input-tick caller already holds the sim lock, and reading `sim::mode()` here would deadlock (SIM
 /// → FILTER is the only legal lock order).
-pub fn advance(body: Quat, rooted: Option<Vec3>, on_foot: bool, config: &GrappleComfortConfig) {
+pub fn advance(body: Quat, rooted: Option<Vec3>, on_foot: bool, config: &HeadPoseConfig) {
+    let config = &config.grapple;
     let tuning = &GRAPPLE.get().comfort;
     let mut s = FILTER.lock();
     let now = Stamp::now();

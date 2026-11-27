@@ -10,7 +10,8 @@
 //! - [`controllers::grapple_button`] and [`controllers::yank`]: the grapple button's gestures and
 //!   the yank gesture, which the bindings read for the grapple and the snatch;
 //! - [`controllers::snatch`]: the grapple snatch, which pulls a weapon, a loose object, or a car
-//!   door out of reach into the empty grapple hand on the game's hook.
+//!   door out of reach into the empty grapple hand on the game's hook;
+//! - [`register()`]: what the grapple contributes to the layers below it, registered in one place.
 //!
 //! # The public surface
 //!
@@ -33,6 +34,9 @@
 
 pub mod controllers;
 pub mod grapple;
+mod register;
+
+pub use register::register;
 
 #[cfg(test)]
 mod test_config;

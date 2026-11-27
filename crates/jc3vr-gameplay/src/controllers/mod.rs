@@ -60,7 +60,8 @@ pub use config::ControllersConfig;
 /// refusal is already logged. The aim's registration reports the contributions it leaves missing to
 /// `check`; the others still panic naming them.
 pub fn install(check: &mut RegistrationCheck) -> Result<(), RegistrationError> {
-    register_head_pose::register();
+    jc3vr_grapple::register();
+    register_head_pose::register(check);
     register_vr_frame::register();
     register_render::register();
     register_hands::register();

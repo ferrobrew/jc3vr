@@ -6,7 +6,7 @@ The grapple is JC3's most-used traversal mechanic, and unfiltered in VR it is th
 
 You aim the grapple by looking at the target, so the head pose already carries the rotation toward it. The engine then rotates the character's root toward the same target — first the fire act's directional alignment, a fast turn through a large angle before the wire even spawns, then `NReeledInController::RotateToGrappleTarget` during the reel. The alignment's angle and rate limits have no code constant and are not yet confirmed; they are most likely authored in the fire act's animation data. The headpose composes the view as `body × head`, so that rotation lands twice and the view sweeps *past* the thing you're looking at.
 
-The fix filters the body-driven inputs to that composition while the grapple owns the character. The HMD's own tracking passes through untouched in both rotation and position, per the "no smoothing on the HMD→camera path" rule in `head-and-body.md`. Three pieces cooperate: the body-frame hold, the yaw handoff, and the landing-snap absorber.
+The fix filters the body-driven inputs to that composition while the grapple owns the character. The HMD's own tracking passes through untouched in both rotation and position, per the "no smoothing on the HMD→camera path" rule in `head-and-body.md`. Three pieces cooperate: the body-frame hold, the yaw handoff, and the landing-snap absorber. The grapple registers them with the head pose as its body frame filter (`headpose::BodyFrameFilter`, from the grapple crate's `register`), so the head pose names no grapple.
 
 ## The body-frame hold
 
