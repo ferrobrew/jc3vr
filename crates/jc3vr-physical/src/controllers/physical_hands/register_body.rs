@@ -1,7 +1,8 @@
 //! The physical hands' contributions to the body, the grip model, and the character hooks below
 //! them ([`BodyContributions`]): the climb's readers ([`jc3vr_body::controllers::facts::climb`]),
 //! the palms' push in the rig's simulation half, the observer of a body destruction, and the palm
-//! summary logged with each grip press. The climb's refusal of the automatic entry into a vehicle's
+//! summary logged with each grip press, and the hand bodies' post-step sample taken before each
+//! rendered frame's hand composition. The climb's refusal of the automatic entry into a vehicle's
 //! stunt area below the player ([`blocks_auto_attach`]) rides in the gameplay crate's refusal
 //! table, which declares the refusals' order.
 
@@ -9,7 +10,7 @@ use jc3gi::{character::character::Character, physics::hknpWorld};
 use jc3vr_body::{contributions::BodyContributions, controllers::facts::climb::ClimbReaders};
 
 use crate::controllers::physical_hands::{
-    carry_bodies_destroying, climb, press_summary, push_body,
+    carry_bodies_destroying, climb, physics, press_summary, push_body,
 };
 
 /// Fill the physical hands' fields of `body`.
@@ -22,6 +23,7 @@ pub fn register(body: &mut BodyContributions) {
     body.palm_push = Some(push_body);
     body.bodies_destroying = Some(bodies_destroying);
     body.palm_summary = Some(press_summary);
+    body.post_step_sample = Some(post_step_sample);
 }
 
 /// Whether a physical handhold the player climbs by refuses the automatic entry of `character`
@@ -33,6 +35,12 @@ pub fn register(body: &mut BodyContributions) {
 /// that character are read.
 pub unsafe fn blocks_auto_attach(character: *const Character) -> bool {
     unsafe { climb::native::blocks(character) }
+}
+
+fn post_step_sample() {
+    // SAFETY: the late update's frame begins on the game thread from `Game::UpdateRender`, after
+    // the simulation and outside its step.
+    unsafe { physics::sample_render_offsets() };
 }
 
 /// Before the world destroys bodies: the climb forgets each body's lifetime stamp, then the carried
