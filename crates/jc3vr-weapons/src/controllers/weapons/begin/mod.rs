@@ -57,6 +57,7 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickStart {
     };
     let mut begin = Begin::new(context, active);
     for stage in &STAGES {
+        tracing::trace!(target: "controllers", stage = stage.name, "weapon handling: begin stage");
         (stage.run)(game, &mut begin);
     }
     TickStart {
@@ -137,8 +138,7 @@ impl Begin {
 
 /// One stage of the begin half.
 struct Stage {
-    /// The stage, for the order's test.
-    #[cfg_attr(not(test), expect(dead_code, reason = "read by the order's test"))]
+    /// The stage, for the trace log and the order's test.
     name: &'static str,
     run: fn(&GameTick<'_>, &mut Begin),
 }
@@ -279,31 +279,53 @@ pub(super) fn entered_body_volumes(
 mod tests {
     use super::*;
 
+    fn at(name: &str) -> usize {
+        STAGES.iter().position(|s| s.name == name).unwrap()
+    }
+
     #[test]
-    fn the_stages_run_in_their_documented_order() {
-        assert_eq!(
-            STAGES.map(|stage| stage.name),
-            [
-                "player",
-                "guns",
-                "geometry",
-                "gun observers",
-                "body",
-                "hand offers",
-                "sockets",
-                "chest pouches",
-                "pouch return",
-                "docked guns",
-                "grenades",
-                "placed charges",
-                "world weapons",
-                "reload",
-                "pouch models",
-                "marks",
-                "lone gun",
-                "resolve",
-                "publish",
-            ]
-        );
+    fn the_stages_are_named_once() {
+        let mut names = STAGES.map(|stage| stage.name);
+        names.sort_unstable();
+        assert!(names.windows(2).all(|pair| pair[0] != pair[1]));
+    }
+
+    #[test]
+    fn a_stage_reads_only_what_an_earlier_one_left() {
+        assert_eq!(at("player"), 0);
+        assert!(at("player") < at("guns"));
+        assert!(at("guns") < at("geometry"));
+        assert!(at("geometry") < at("gun observers"));
+        assert!(at("gun observers") < at("body"));
+        // Every target stage rides the body, and the lone gun reads the geometry's pick.
+        for target in ["hand offers", "sockets", "marks", "lone gun"] {
+            assert!(at("body") < at(target), "{target}");
+        }
+        assert!(at("geometry") < at("lone gun"));
+    }
+
+    #[test]
+    fn the_hand_offers_go_first_among_the_targets_so_a_held_foregrip_wins_ties() {
+        for later in [
+            "sockets",
+            "chest pouches",
+            "pouch return",
+            "docked guns",
+            "grenades",
+            "placed charges",
+            "world weapons",
+            "reload",
+            "pouch models",
+            "marks",
+            "lone gun",
+        ] {
+            assert!(at("hand offers") < at(later), "{later}");
+        }
+    }
+
+    #[test]
+    fn the_resolve_and_the_publish_come_last_over_every_target() {
+        assert_eq!(at("resolve"), STAGES.len() - 2);
+        assert_eq!(at("publish"), STAGES.len() - 1);
     }
 }

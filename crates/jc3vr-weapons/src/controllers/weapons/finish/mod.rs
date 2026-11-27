@@ -80,6 +80,7 @@ pub fn finish_tick(
         belt: None,
     };
     for stage in &STAGES {
+        tracing::trace!(target: "controllers", stage = stage.name, "weapon handling: finish stage");
         (stage.run)(game, &mut finish);
     }
     finish.belt
@@ -116,8 +117,7 @@ struct Finish<'a> {
 
 /// One stage of the finish half.
 struct Stage {
-    /// The stage, for the order's test.
-    #[cfg_attr(not(test), expect(dead_code, reason = "read by the order's test"))]
+    /// The stage, for the trace log and the order's test.
     name: &'static str,
     run: fn(&GameTick<'_>, &mut Finish<'_>),
 }

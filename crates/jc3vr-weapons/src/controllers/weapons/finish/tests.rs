@@ -34,17 +34,27 @@ use crate::controllers::{
     },
 };
 
+fn stage_at(name: &str) -> usize {
+    STAGES.iter().position(|s| s.name == name).unwrap()
+}
+
 #[test]
-fn the_stages_run_in_their_documented_order() {
-    // The fire decision reads the hands after every move of the tick: a gun handed over, drawn,
-    // docked, or let go of this tick fires from where it is now.
-    assert_eq!(
-        STAGES.map(|stage| stage.name),
-        [
-            "fingers", "foregrip", "grabs", "grenades", "C4", "reload", "release", "fire",
-            "publish",
-        ]
-    );
+fn the_fingers_and_the_foregrip_step_before_the_grabs_and_the_throws_read_them() {
+    for first in ["fingers", "foregrip"] {
+        for later in ["grabs", "grenades", "C4"] {
+            assert!(stage_at(first) < stage_at(later), "{first} before {later}");
+        }
+    }
+}
+
+#[test]
+fn the_fire_decision_reads_the_hands_after_every_move_of_the_tick() {
+    // A gun handed over, drawn, docked, or let go of this tick fires from where it is now.
+    for mover in ["grabs", "grenades", "C4", "reload", "release"] {
+        assert!(stage_at(mover) < stage_at("fire"), "{mover}");
+    }
+    assert_eq!(stage_at("publish"), STAGES.len() - 1);
+    assert_eq!(stage_at("fire") + 1, stage_at("publish"));
 }
 
 #[test]

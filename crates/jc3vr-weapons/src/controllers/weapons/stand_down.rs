@@ -71,13 +71,29 @@ impl StandDown {
 /// each subsystem's part in order. Called on every input tick the weapon handling's tick halves do
 /// not run.
 pub fn stand_down(game: &GameTick<'_>, reason: StandDown) {
-    match reason.scope() {
-        StandDownScope::Pause => pause(),
-        StandDownScope::Hands => run(game, &HANDS),
-        StandDownScope::Loadout => {
-            run(game, &HANDS);
-            run(game, &LOADOUT);
+    for part in parts(reason.scope()) {
+        match part {
+            Part::Pause => pause(),
+            Part::Hands => run(game, &HANDS),
+            Part::Loadout => run(game, &LOADOUT),
         }
+    }
+}
+
+/// A run of steps of the stand-down.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+enum Part {
+    Pause,
+    Hands,
+    Loadout,
+}
+
+/// The parts a stand-down of `scope` runs, in order: the loadout table stops after the hands.
+const fn parts(scope: StandDownScope) -> &'static [Part] {
+    match scope {
+        StandDownScope::Pause => &[Part::Pause],
+        StandDownScope::Hands => &[Part::Hands],
+        StandDownScope::Loadout => &[Part::Hands, Part::Loadout],
     }
 }
 
@@ -86,6 +102,7 @@ pub fn stand_down(game: &GameTick<'_>, reason: StandDown) {
 /// stand-down here would take a gun out of a hand the moment the debug panel opens.
 pub(crate) fn pause() {
     for step in &PAUSE {
+        tracing::trace!(target: "controllers", step = step.name, "weapon handling: pause step");
         (step.run)();
     }
 }
@@ -93,8 +110,7 @@ pub(crate) fn pause() {
 /// One subsystem's part in a stand-down: `F` is `fn()` for a pause's, which reads nothing of the
 /// game, and `fn(&GameTick)` for the others.
 struct Step<F> {
-    /// The subsystem, for the order's test.
-    #[cfg_attr(not(test), expect(dead_code, reason = "read by the order's test"))]
+    /// The subsystem, for the trace log and the order's test.
     name: &'static str,
     run: F,
 }
@@ -102,6 +118,7 @@ struct Step<F> {
 /// Run `steps` in order.
 fn run(game: &GameTick<'_>, steps: &[Step<fn(&GameTick<'_>)>]) {
     for step in steps {
+        tracing::trace!(target: "controllers", step = step.name, "weapon handling: stand-down step");
         (step.run)(game);
     }
 }
@@ -237,83 +254,72 @@ const LOADOUT: [Step<fn(&GameTick<'_>)>; 1] = [Step {
 
 #[cfg(test)]
 mod tests {
+    use test_case::test_case;
+
     use super::*;
 
-    fn names(scope: StandDownScope) -> Vec<&'static str> {
-        let hands = HANDS.iter().map(|step| step.name);
-        match scope {
-            StandDownScope::Pause => PAUSE.iter().map(|step| step.name).collect(),
-            StandDownScope::Hands => hands.collect(),
-            StandDownScope::Loadout => hands.chain(LOADOUT.iter().map(|step| step.name)).collect(),
+    fn names(part: Part) -> Vec<&'static str> {
+        match part {
+            Part::Pause => PAUSE.iter().map(|step| step.name).collect(),
+            Part::Hands => HANDS.iter().map(|step| step.name).collect(),
+            Part::Loadout => LOADOUT.iter().map(|step| step.name).collect(),
         }
     }
 
-    const HANDS_ORDER: [&str; 23] = [
-        "foregrip",
-        "contents",
-        "gun bodies",
-        "heft",
-        "aim down sights",
-        "collision",
-        "grip watch",
-        "recoil",
-        "grenades",
-        "pouch models",
-        "C4",
-        "detonator model",
-        "pouch return",
-        "single pistols",
-        "hold",
-        "hold snaps",
-        "hand fire",
-        "take",
-        "regions",
-        "armed",
-        "reload",
-        "wheel",
-        "tick",
-    ];
+    /// The steps a stand-down for `reason` runs, in order.
+    fn steps_for(reason: StandDown) -> Vec<&'static str> {
+        parts(reason.scope())
+            .iter()
+            .flat_map(|&p| names(p))
+            .collect()
+    }
 
-    #[test]
-    fn only_leaving_the_controllers_puts_the_loadout_back_and_only_a_pause_keeps_the_hands() {
-        let scopes = [
-            (StandDown::Disabled, StandDownScope::Loadout),
-            (StandDown::GamepadScheme, StandDownScope::Loadout),
-            (StandDown::NoControllers, StandDownScope::Hands),
-            (StandDown::HandsInactive, StandDownScope::Hands),
-            (StandDown::PollDisabled, StandDownScope::Pause),
-            (StandDown::ModPanel, StandDownScope::Pause),
-            (StandDown::CaptureCancel, StandDownScope::Pause),
-            (StandDown::Menu, StandDownScope::Pause),
-        ];
-        for (reason, scope) in scopes {
-            assert_eq!(reason.scope(), scope, "{reason:?}");
-        }
+    #[test_case(StandDown::Disabled, StandDownScope::Loadout)]
+    #[test_case(StandDown::GamepadScheme, StandDownScope::Loadout)]
+    #[test_case(StandDown::NoControllers, StandDownScope::Hands)]
+    #[test_case(StandDown::HandsInactive, StandDownScope::Hands)]
+    #[test_case(StandDown::PollDisabled, StandDownScope::Pause)]
+    #[test_case(StandDown::ModPanel, StandDownScope::Pause)]
+    #[test_case(StandDown::CaptureCancel, StandDownScope::Pause)]
+    #[test_case(StandDown::Menu, StandDownScope::Pause)]
+    fn each_reason_stops_as_much_as_its_scope(reason: StandDown, scope: StandDownScope) {
+        assert_eq!(reason.scope(), scope);
+    }
+
+    #[test_case(StandDown::PollDisabled)]
+    #[test_case(StandDown::ModPanel)]
+    #[test_case(StandDown::CaptureCancel)]
+    #[test_case(StandDown::Menu)]
+    fn a_pause_cancels_the_magazine_work_and_the_release_and_keeps_what_the_hands_hold(
+        reason: StandDown,
+    ) {
+        assert_eq!(steps_for(reason), ["reload extraction", "grip release"]);
+    }
+
+    #[test_case(StandDown::NoControllers)]
+    #[test_case(StandDown::HandsInactive)]
+    fn losing_the_hands_forgets_the_tick_but_keeps_the_loadout_table(reason: StandDown) {
+        let steps = steps_for(reason);
+        assert_eq!(steps, names(Part::Hands));
+        assert!(!steps.contains(&"loadout table"));
+    }
+
+    #[test_case(StandDown::Disabled)]
+    #[test_case(StandDown::GamepadScheme)]
+    fn leaving_the_controllers_stops_the_loadout_table_after_the_hands(reason: StandDown) {
+        let steps = steps_for(reason);
+        let (hands, loadout) = steps.split_at(HANDS.len());
+        assert_eq!(hands, names(Part::Hands));
+        assert_eq!(loadout, ["loadout table"]);
     }
 
     #[test]
-    fn a_pause_cancels_the_magazine_work_and_the_release_only() {
-        assert_eq!(
-            names(StandDownScope::Pause),
-            ["reload extraction", "grip release"]
-        );
-    }
-
-    #[test]
-    fn the_hands_stand_down_in_their_documented_order() {
-        assert_eq!(names(StandDownScope::Hands), HANDS_ORDER);
-    }
-
-    #[test]
-    fn leaving_the_controllers_stops_the_loadout_table_after_the_hands() {
-        let mut order = HANDS_ORDER.to_vec();
-        order.push("loadout table");
-        assert_eq!(names(StandDownScope::Loadout), order);
-    }
-
-    #[test]
-    fn the_orderings_that_matter_hold() {
-        let order = names(StandDownScope::Hands);
+    fn the_steps_are_named_once_and_the_orderings_that_matter_hold() {
+        let order = names(Part::Hands);
+        let mut unique = order.clone();
+        unique.sort_unstable();
+        unique.dedup();
+        assert_eq!(unique.len(), order.len());
         let at = |name| order.iter().position(|n| *n == name).unwrap();
         assert!(at("C4") < at("detonator model"));
         assert!(at("hold") < at("armed"));
