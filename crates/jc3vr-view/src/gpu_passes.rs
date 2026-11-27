@@ -2,11 +2,11 @@
 //!
 //! The profiler's GPU layer brackets each render pass a dispatch draws with a timestamp pair, and a
 //! few stretches of work that are not render passes (each post effect, the mod's foveation passes)
-//! with a pair of their own (`jc3vr_render::profiler::gpu::pass_interval` and `detail_interval`). While a
-//! run records with this switch on, every resolved interval is added to a total keyed by the
-//! dispatch's lane and the interval's label, and the acknowledgement carries the totals: what each
-//! pass cost over the recording, which divided by the frames is its cost per frame. The totals are
-//! kept rather than every interval, since a dispatch draws about a hundred passes.
+//! with a pair of their own (`jc3vr_render::profiler::gpu::pass_interval` and `detail_interval`).
+//! While a run records with this switch on, every resolved interval is added to a total keyed by
+//! the dispatch's lane and the interval's label, and the acknowledgement carries the totals: what
+//! each pass cost over the recording, which divided by the frames is its cost per frame. The totals
+//! are kept rather than every interval, since a dispatch draws about a hundred passes.
 //!
 //! The holes between the timed intervals are totalled too, each named by where it lies (before a
 //! seam or a pass, after a seam's last pass, or after the dispatch's last seam): the clears, copies,
@@ -31,10 +31,10 @@ pub enum GpuPassLabel {
     /// A render pass, by the engine's debug name for it. Only the profiler's GPU lane times one.
     #[cfg(feature = "profiler")]
     RenderPass(&'static str),
-    /// A stretch of work that is not a render pass, by a name the payload gives it.
+    /// A stretch of work that is not a render pass, by a name the mod gives it.
     Detail(&'static str),
-    /// A hole between the timed intervals, by where it lies (`jc3vr_render::profiler::gpu::GapAt`). Only
-    /// the profiler's GPU lane finds one.
+    /// A hole between the timed intervals, by where it lies (`jc3vr_render::profiler::gpu::GapAt`).
+    /// Only the profiler's GPU lane finds one.
     #[cfg(feature = "profiler")]
     Gap(&'static str),
 }

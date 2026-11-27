@@ -1,9 +1,10 @@
 //! The view crate's tuning files (`docs/mod/tuning.md`):
 //!
-//! - [`VIEW`]: the head pose's turning, follow steps, flatscreen latch, and synthetic-rotation
-//!   filter, the camera's flatscreen stereo and context field of view, the tracking recorder's
-//!   lookback, the VR runtime's foveation, cull padding, recenter, floor watch, bring-up retry,
-//!   press thresholds, and mirror zoom, and how long a drawn panel stays a pointer target.
+//! - [`VIEW`]: the head pose's turning, follow steps, flatscreen look, synthetic-rotation filter,
+//!   and anchors, the camera's flatscreen stereo and context field of view, the tracking
+//!   recorder's lookback and start-marker bookmark radius, the VR runtime's foveation, cull
+//!   padding, recenter, floor watch, bring-up retry, press thresholds, and mirror zoom, and how
+//!   long a drawn panel stays a pointer target.
 //! - [`HAPTICS`]: the haptic output's primitives, mix, and cues, whose types the input crate
 //!   declares ([`jc3vr_input::haptics::tuning`]) and which this crate loads because the input crate
 //!   depends on no layer crate.
@@ -170,7 +171,7 @@ pub struct FoveationTuning {
     pub max_drop: f32,
 }
 
-/// The VR frame's culling ([`crate::vr::frame`]).
+/// The VR frame's culling ([`crate::vr::cull_projection_standard`]).
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FrameTuning {
@@ -217,7 +218,7 @@ pub struct StageTuning {
     pub(crate) max_head_step_m: f32,
 }
 
-/// The OpenXR runtime's bring-up ([`crate::vr::state`]).
+/// The OpenXR runtime's bring-up ([`crate::vr::update`]).
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RuntimeTuning {
@@ -253,7 +254,7 @@ pub struct PressTuning {
     pub trackpad_half_margin: f32,
 }
 
-/// The desktop mirror ([`crate::vr::mirror`]).
+/// The desktop mirror ([`crate::vr::present_mirror`]).
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MirrorTuning {

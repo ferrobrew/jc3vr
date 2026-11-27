@@ -8,8 +8,8 @@ use serde::{Deserialize, Serialize};
 pub enum AntiAliasing {
     /// FSR 2 at 1:1, in place of the engine's SMAA, which is suppressed.
     Fsr,
-    /// The mod's own temporal resolve (`fsr::taa`), in place of the engine's SMAA, which is
-    /// suppressed. See `docs/mod/rendering/taa.md`.
+    /// The mod's own temporal resolve (`jc3vr_render::fsr::taa`), in place of the engine's SMAA,
+    /// which is suppressed. See `docs/mod/rendering/taa.md`.
     Taa,
     /// The engine's own anti-aliasing (SMAA 1x in stereo), with no jitter.
     Engine,
@@ -31,13 +31,13 @@ pub static FSR_CONFIG: ConfigSlot<FsrConfig> = ConfigSlot::new("fsr");
 #[derive(Copy, Clone, Serialize, Deserialize)]
 pub struct FsrConfig {
     /// Which resolve runs at the anti-aliasing stage. A settings file that holds the older
-    /// `enabled` switch instead is migrated on load (`config::format`).
+    /// `enabled` switch instead is migrated on load (the payload's `config::format`).
     #[serde(default = "default_antialiasing")]
     pub antialiasing: AntiAliasing,
     /// Run the RCAS sharpening pass after the upscale, at [`sharpness`](Self::sharpness). Off by
     /// default: with the jitter, FSR's own resolve is already sharper than the game's SMAA against a
-    /// supersampled reference, and the pass only moved the image further from it, added spurious
-    /// gradient, and made the still image change more from frame to frame (see "Sharpening" in
+    /// supersampled reference, and the pass only moves the image further from it, adds spurious
+    /// gradient, and makes the still image change more from frame to frame (see "Sharpening" in
     /// `docs/mod/rendering/fsr.md`).
     pub sharpen: bool,
     /// The RCAS sharpening strength (0..1) while [`sharpen`](Self::sharpen) is on. A separate
@@ -98,7 +98,8 @@ fn default_jitter() -> bool {
     FsrConfig::new().jitter
 }
 
-/// The tuning of the mod's own temporal resolve (`fsr::taa`). See `docs/mod/rendering/taa.md`.
+/// The tuning of the mod's own temporal resolve (`jc3vr_render::fsr::taa`). See
+/// `docs/mod/rendering/taa.md`.
 #[derive(Copy, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct TaaConfig {

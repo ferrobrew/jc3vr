@@ -24,8 +24,8 @@ use jc3gi::types::math::Matrix4;
 use crate::fsr::FSR_CONFIG;
 
 /// The frame's jitter, or `None` when the jitter is off: neither FSR nor the mod's own temporal
-/// resolve running (the game's SMAA 1x has no temporal resolve to use it), the jitter switch off, or no FSR resolve yet to size the eyes. Advances the
-/// phase; call once per VR frame.
+/// resolve running (the game's SMAA 1x has no temporal resolve to use it), the jitter switch off,
+/// or no FSR resolve yet to size the eyes. Advances the phase; call once per VR frame.
 pub(crate) fn frame_offset() -> Option<FrameJitter> {
     let enabled = FSR_CONFIG.query(|c| c.antialiasing.temporal() && c.jitter);
     if !enabled {
@@ -59,8 +59,9 @@ pub fn reset_phase() {
     PHASE.store(0, Ordering::Relaxed);
 }
 
-/// Publish the eye size FSR or the temporal resolve last resolved at, from the render thread, for [`frame_offset`] to scale
-/// the next frames' offsets by. Under single-pass it is one eye's half of the double-wide target.
+/// Publish the eye size FSR or the temporal resolve last resolved at, from the render thread, for
+/// [`frame_offset`] to scale the next frames' offsets by. Under single-pass it is one eye's half of
+/// the double-wide target.
 pub fn publish_eye_size(width: u32, height: u32) {
     EYE_SIZE.store(
         (u64::from(width) << 32) | u64::from(height),
