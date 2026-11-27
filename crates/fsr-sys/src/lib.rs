@@ -3,7 +3,8 @@
 //! Wraps the vendored `optiscaler/FidelityFX-FSR2-DX11` submodule (MIT) through a thin C shim
 //! (`shim/fsr_shim.{h,cpp}`), so the by-value Ffx structs stay on the C++ side. The payload drives one
 //! [`Context`] per eye: create it at the per-eye resolution, [`Context::dispatch`] each frame with the
-//! engine's color/depth/velocity and our output target, and drop it to tear down. See `docs/mod/fsr.md`.
+//! engine's color/depth/velocity and our output target, and drop it to tear down. See
+//! `docs/mod/rendering/fsr.md`.
 //!
 //! The backend records onto the device's immediate context, so dispatch must happen on the render
 //! thread under the engine's context mutex, like the other D3D11 work in the payload.
@@ -175,7 +176,7 @@ impl Context {
 impl Drop for Context {
     fn drop(&mut self) {
         // SAFETY: `self.raw` was created by `fsr_context_create` and is destroyed exactly once. The
-        // caller must have ensured the GPU is idle (see `docs/mod/fsr.md`).
+        // caller must have ensured the GPU is idle (see `docs/mod/rendering/fsr.md`).
         unsafe { ffi::fsr_context_destroy(self.raw) };
     }
 }
