@@ -108,7 +108,7 @@ A free hand takes a weapon off a rack, or out of a locker, by grabbing it (`hold
 
 A weapon of a kind the player already carries in its slot is not among the valid entries as the game has it: the pickup graph's not-carried condition ([`InteractionGraphParentWeaponNotInInventory::Evaluate`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/interaction::InteractionGraphParentWeaponNotInInventory##func-Evaluate)) fails while the slot holds a weapon with the same [`m_WeaponId`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::WeaponBase##field-m_WeaponId). Each hand holds its own weapon of the dual-wield slot, so for the local player a detour on the condition lets it pass for a weapon of that slot (`hold::rack::offer`), and a second submachine gun off a rack is offered and taken as a weapon of another kind would be. The two-handed and special slots keep the game's rule.
 
-Out of reach, the snatch takes from the same sources the same way ([grapple-snatch-targets.md, "Racks and lockers"](grapple-snatch-targets.md#racks-and-lockers)).
+Out of reach, the snatch takes from the same sources the same way ([grapple-snatch.md, "Racks and lockers"](grapple-snatch.md#racks-and-lockers)).
 
 ## The sockets
 

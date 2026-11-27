@@ -168,13 +168,9 @@
 - [grenades.md](mod/input/grenades.md): grenades, the beacon, C4, and the detonator by hand.
 - [paired-rack-weapons.md](mod/input/paired-rack-weapons.md): rack weapons and their ammunition.
 - [reload.md](mod/input/reload.md): the hand-worked reload, and what each weapon loads.
-- [physical-grapple.md](mod/input/physical-grapple.md): working the grapple line with the hand.
-- [grapple-lock.md](mod/input/grapple-lock.md): the grapple lock.
-- [seat-grapple.md](mod/input/seat-grapple.md): the grapple from a vehicle seat.
-- [grapple-line-grab.md](mod/input/grapple-line-grab.md): the free hand on the grapple line.
-- [grapple-snatch.md](mod/input/grapple-snatch.md): pulling things into the hand with the grapple.
-- [grapple-snatch-targets.md](mod/input/grapple-snatch-targets.md): what the grapple snatch takes, and how each kind is freed and finished.
-- [grapple-snatch-swing.md](mod/input/grapple-snatch-swing.md): swinging a heavy object or a body on the snatch's line.
+- [physical-grapple.md](mod/input/physical-grapple.md): working the grapple line with the hand, and the grapple from a vehicle seat.
+- [grapple-lock.md](mod/input/grapple-lock.md): the grapple lock, and the free hand on the line.
+- [grapple-snatch.md](mod/input/grapple-snatch.md): pulling things into the hand with the grapple, what it takes, and swinging heavy things on its line.
 - [stunt-positions.md](mod/input/stunt-positions.md): stunt positions held by the grip.
 - [vehicle-doors.md](mod/input/vehicle-doors.md): vehicle doors, hoods, and trunks by hand.
 - [cockpit-controls.md](mod/input/cockpit-controls.md): the flight stick, throttle, cyclic, and collective.

@@ -24,7 +24,7 @@ The providers place their targets every input tick:
 | The vehicle handling (`vehicles::begin`) | The driver's controls, the cockpit's buttons, the parachute's handles (with a reach margin), the ripcord, and the mounted gun's handles | `Vehicles` |
 | The physical hands (`physical_hands::targets`) | What each empty hand's reach found (a loose or hinged object, a weapon, a door, a character), every vehicle door near the hand by its handle, a surface to climb, and the helicopter the player hangs from | `Pickup`, `Climb`, `Stunt` |
 | The snatch (the grapple crate's `controllers::snatch`) | The thing out of reach under the grapple's aim ([grapple-snatch.md](grapple-snatch.md)) | `Snatch` |
-| The free hand on the line (`grapple::line_grab`) | The held lock's or the swinging snatch's line ahead of the grapple hand ([grapple-line-grab.md](grapple-line-grab.md)) | `Line` |
+| The free hand on the line (`grapple::line_grab`) | The held lock's or the swinging snatch's line ahead of the grapple hand ([grapple-lock.md](grapple-lock.md#the-free-hand-on-the-line)) | `Line` |
 
 Each subsystem only provides and consumes. The gameplay crate's binding tick gathers the targets and resolves the hands among them (`bindings::tick::hands::offers`), steps the grips, and hands each grab to the subsystem its target names (`grab::grabs_for`, in `bindings::tick::acts`).
 
