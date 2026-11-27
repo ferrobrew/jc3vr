@@ -6,9 +6,10 @@ use jc3gi::{
 };
 use jc3vr_body::controllers::{
     aim::gun,
+    body_frame,
     grab::{GrabVolume, GripTarget, PickupKind, cockpit::ControlKind},
     hands::{
-        late, tiers,
+        late,
         tiers::{HandTier, TierState},
     },
     intent::{
@@ -50,6 +51,12 @@ use crate::controllers::{
 };
 
 /// State that can invalidate an offer between the provider pass and final publication.
+///
+/// The hands' explosives and the foregrip hold are read live, not from the weapon handling's
+/// published hands record: the record is the end of the last finish half, and the beacon and the C4
+/// throw change in their weapons' updates between input ticks, and the loss cancels throws earlier
+/// in this tick, so the record would count those changes as this tick's finish's. The record also
+/// leaves out a foregrip hold that is fading out.
 pub(super) struct BeforeFinish {
     guns: [Option<GunOwner>; 2],
     reload: ReloadStatus,
@@ -529,7 +536,7 @@ pub(super) fn yank_armed_in(wire: bool, detection: &Detection) -> bool {
 
 fn fire_ready(game: &GameTick<'_>, ready: [bool; 2], guns: [Option<GunOwner>; 2]) -> [bool; 2] {
     let base = weapons::capabilities::fire_ready_now(ready, false);
-    let action = tiers::status();
+    let action = body_frame::tiers();
     let action_running = Hand::BOTH.map(|hand| {
         action.state == Some(TierState::WeaponAction)
             && action.effective[hand.index()] == HandTier::ActionRuns

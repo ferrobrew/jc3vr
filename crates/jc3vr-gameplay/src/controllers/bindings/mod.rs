@@ -65,9 +65,9 @@ use body_rig::math::angle::{heading, yaw_of};
 use glam::Vec3;
 use jc3gi::{input::input_action_map::Action, state::StateBitFlag};
 use jc3vr_body::controllers::{
-    aim,
     aim::sights,
     body::{BODY_CONFIG, firm_ragdoll, rig::grounded::add_step_walk},
+    body_frame,
     clock::TimeScale,
     grab,
     grab::{Consumer, Provided, grabs_for, markers::MarkerFrame},
@@ -119,7 +119,7 @@ use jc3vr_view::{
         semantic::{frame as semantic_frame, history},
     },
 };
-use jc3vr_weapons::controllers::weapons;
+use jc3vr_weapons::controllers::{loadout::contents, weapons};
 use parking_lot::Mutex;
 
 pub use crate::controllers::bindings::{
@@ -693,14 +693,14 @@ fn tick(game: &GameTick<'_>, dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>)
     controls.grapple = GrappleContext {
         tethers: physical_grapple.tethers > 0,
         line: yank_armed_in(line, &detection) || grapple::seat::status().flying,
-        aim_target: aim::status().grapple.is_some_and(|g| g.valid),
+        aim_target: body_frame::aim().grapple.is_some_and(|g| g.valid),
         reeling: physical_grapple.lockable && !snatch_button_owned,
         seated: grapple::seat::stands_in_for_local(game),
     };
     controls.lock_yank = physical_grapple.lock_yank;
     let lock_status = grapple::physical::lock::status();
     controls.grapple_retarget = lock_status.locked
-        && aim::status().grapple.is_some_and(|aim| {
+        && body_frame::aim().grapple.is_some_and(|aim| {
             aim.valid
                 && aim.current
                 && aim.point.distance(lock_status.hook) > GAMEPLAY.get().bindings.grapple_retarget_m
@@ -762,7 +762,7 @@ fn tick(game: &GameTick<'_>, dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>)
                     Action::RELEASE_GRAPPLE | Action::VEHICLE_RELEASE_GRAPPLE
                 ) && d.want == Want::Click
             }),
-            target: aim::status()
+            target: body_frame::aim()
                 .grapple
                 .filter(|g| g.seat && g.valid)
                 .and_then(|g| grapple::seat::Target::capture(game, g.point)),
@@ -839,6 +839,9 @@ fn tick(game: &GameTick<'_>, dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>)
     );
     let summary_before = summary::BeforeFinish::capture(vehicles::parachute_holds());
     let mut trigger_changed = [false; 2];
+    // Each hand's fire input as the weapon handling last published it this tick: the finish
+    // half's decision, then each retain below.
+    let mut fire = [false; 2];
     let mut belt_reload = None;
     if !in_menu {
         let finish = FinishInputs {
@@ -865,9 +868,11 @@ fn tick(game: &GameTick<'_>, dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>)
         });
         let changed = state.trigger_ownership.after_finish(after);
         trigger_changed = changed;
+        // The record's fire is the finish half's, sampled at its end.
+        fire = contents::hands().map(|hand| hand.fired);
         if changed.contains(&true) {
-            let fire = weapons::hold::tick::status().fire;
-            weapons::hold::tick::publish_fire(trigger_ownership::retain_fire(fire, changed));
+            fire = trigger_ownership::retain_fire(fire, changed);
+            weapons::hold::tick::publish_fire(fire);
             for hand in Hand::BOTH {
                 if changed[hand.index()] {
                     controls.hands[hand.index()].trigger_press = ButtonControl::default();
@@ -1014,8 +1019,8 @@ fn tick(game: &GameTick<'_>, dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>)
         Hand::BOTH.map(|hand| trigger_changed[hand.index()] || late_changed[hand.index()]);
     state.bindings.cancel_trigger_gestures(trigger_changed);
     if trigger_changed.contains(&true) {
-        let fire = weapons::hold::tick::status().fire;
-        weapons::hold::tick::publish_fire(trigger_ownership::retain_fire(fire, trigger_changed));
+        fire = trigger_ownership::retain_fire(fire, trigger_changed);
+        weapons::hold::tick::publish_fire(fire);
     }
     trigger_ownership::suppress_changed_routes(
         &mut step.desired,

@@ -32,7 +32,7 @@ use jc3vr_view::{
     recorder::tracking::{events, events::EventKind},
     vr::input::flight_pose,
 };
-use jc3vr_weapons::controllers::weapons;
+use jc3vr_weapons::controllers::{loadout::contents, weapons};
 use tracking_format::event::{Label, WingsuitGesture};
 
 use crate::controllers::config::ControllersConfig;
@@ -472,15 +472,14 @@ fn canopy(desired: &[Desired]) -> bool {
 
 fn claims(tick: &Tick<'_>, now: Stamp) -> [HandClaims; 2] {
     let reload = weapons::reload::status();
-    let foregrip = weapons::foregrip::two_hand_grip();
+    // Only the finish half and a stand-down change the brace, so the record is current here.
+    let held = contents::hands();
     Hand::BOTH.map(|hand| {
         let i = hand.index();
         let grip = grip::current(hand, now, grip::max_age(tick.dt))
             .is_some_and(|grip| claims_gesture(grip.source));
         HandClaims {
-            grip: grip
-                || tick.grabs[i].is_some()
-                || foregrip.is_some_and(|hold| hold.holder.other() == hand),
+            grip: grip || tick.grabs[i].is_some() || held[i].braces.is_some(),
             slot: tick.frame.hand(hand).buttons.contains(Button::SqueezePress)
                 && tick.reaches[i].iter().copied().any(GrabVolume::on_body),
             mechanical: reload.fire_held[i].is_some()
