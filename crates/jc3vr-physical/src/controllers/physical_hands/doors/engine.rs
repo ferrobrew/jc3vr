@@ -24,11 +24,6 @@ use jc3gi::{
         vehicle::{DoorInfo, DoorMapNode, DoorSlot, DoorState, Vehicle},
     },
 };
-/// The vehicle lookups, which live in the physics substrate: shims for the callers that still name
-/// them here.
-pub use jc3vr_body::controllers::physics::vehicles::{
-    is_vehicle_part, vehicle_body, vehicle_frame, vehicle_of,
-};
 use jc3vr_body::controllers::physics::{bodies::owner_of, vehicles};
 
 use crate::controllers::physical_hands::doors::{geometry::DoorBox, hinge};

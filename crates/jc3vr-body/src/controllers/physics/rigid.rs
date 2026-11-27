@@ -5,7 +5,7 @@
 //! so the world-space inverse inertia is that diagonal turned by the motion's orientation. An
 //! impulse at a point changes the linear velocity by the impulse over the mass and the angular
 //! velocity by the inverse inertia times the impulse's moment about the centre of mass, as the
-//! engine's own impulse does (`physical_hands::engine::push_body`).
+//! engine's own impulse does ([`crate::controllers::physics::bodies::push`]).
 
 use body_rig::math::geometry::point_velocity;
 use glam::{Mat3, Quat, Vec3};

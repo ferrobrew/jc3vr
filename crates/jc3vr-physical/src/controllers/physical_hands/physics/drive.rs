@@ -17,10 +17,7 @@
 
 use body_rig::math::{rotation::rotation_error, smooth::follow_factor};
 use glam::{DVec3, Mat3, Quat, Vec2, Vec3};
-use jc3vr_body::controllers::{
-    clock::TimeScale,
-    physics::rig::{self, RigSample},
-};
+use jc3vr_body::controllers::clock::TimeScale;
 
 /// How a hand body is driven.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -276,20 +273,6 @@ pub fn smooth_push(smoothed: Vec2, push: Vec2, dt: f32, smoothing_s: f32, max_sp
     smoothed
         .lerp(push, blend)
         .clamp_length_max(max_speed.max(0.0))
-}
-
-/// Whether the rig moved under the hands between two palms' ticks without the hands moving: a
-/// snap turn or a recenter. `last` is the facing and the count of the last tick, if there was one.
-/// A shim over [`rig::jumped`], whose tuning is the substrate's `rig.jump_rad`.
-pub fn rig_jumped(last: Option<(Quat, u32)>, rotation: Quat, recenters: u32) -> bool {
-    let sample = |rotation, recenters| RigSample {
-        rotation,
-        recenters,
-    };
-    rig::jumped(
-        last.map(|(rotation, recenters)| sample(rotation, recenters)),
-        sample(rotation, recenters),
-    )
 }
 
 /// Where a body at `body` goes when the rig carries its hand's palm from `from` to `to` in one
@@ -704,19 +687,6 @@ mod tests {
         let torque = body.inverse_inertia.inverse() * d.angular / STEP;
         assert!((torque.length() - 1.0).abs() < 1e-3);
         assert_eq!(d.torque_share, 1.0);
-    }
-
-    #[test]
-    fn a_snap_turn_or_a_recenter_is_a_rig_jump() {
-        let facing = Quat::from_rotation_y(0.5);
-        assert!(!rig_jumped(None, facing, 0));
-        assert!(!rig_jumped(
-            Some((facing, 3)),
-            Quat::from_rotation_y(0.52),
-            3
-        ));
-        assert!(rig_jumped(Some((facing, 3)), Quat::from_rotation_y(1.3), 3));
-        assert!(rig_jumped(Some((facing, 3)), facing, 4));
     }
 
     #[test]
