@@ -1,37 +1,57 @@
+use std::{cell::Cell, rc::Rc};
+
 use super::*;
 
-/// A wanted velocity held in memory, which counts its writes.
-#[derive(Debug, Default)]
-struct Memory {
-    wanted: Vec3,
-    writes: u32,
+/// A wanted velocity held in memory, which counts its writes; the clone the test keeps sees them.
+#[derive(Debug, Default, Clone)]
+struct Memory(Rc<Cell<(Vec3, u32)>>);
+
+impl Memory {
+    fn writes(&self) -> u32 {
+        self.0.get().1
+    }
 }
 
 impl WantedStore for Memory {
     fn read(&self) -> Vec3 {
-        self.wanted
+        self.0.get().0
     }
 
     fn write(&mut self, wanted: Vec3) {
-        self.wanted = wanted;
-        self.writes += 1;
+        self.0.set((wanted, self.writes() + 1));
     }
 }
 
 fn store(wanted: Vec3) -> Memory {
-    Memory { wanted, writes: 0 }
+    Memory(Rc::new(Cell::new((wanted, 0))))
 }
 
 #[test]
-fn the_contributors_are_declared_in_their_order() {
-    let mut sorted = Contributor::ORDER;
-    sorted.sort();
-    assert_eq!(sorted, Contributor::ORDER);
+fn a_frames_contributors_apply_in_order_each_on_the_last_ones_result() {
+    let memory = store(Vec3::ZERO);
+    let mut composition = Composition::new(memory.clone());
+    let sequence = [
+        Contributor::Rail,
+        Contributor::GrappleLock,
+        Contributor::Locomotion,
+        Contributor::PalmPush,
+        Contributor::StepDrive,
+        Contributor::Strokes,
+    ];
+    for (n, contributor) in sequence.into_iter().enumerate() {
+        composition.apply(contributor, |_, wanted| {
+            assert_eq!(wanted, Vec3::X * n as f32, "{}", contributor.label());
+            Some(wanted + Vec3::X)
+        });
+    }
+    assert_eq!(composition.read(), Vec3::X * 6.0);
+    assert_eq!(memory.writes(), 6);
 }
 
 #[test]
 fn each_contribution_reads_what_the_one_before_left() {
-    let mut composition = Composition::new(store(Vec3::new(1.0, -2.0, 3.0)));
+    let memory = store(Vec3::new(1.0, -2.0, 3.0));
+    let mut composition = Composition::new(memory.clone());
     composition.apply(Contributor::Locomotion, |_, wanted| {
         assert_eq!(wanted, Vec3::new(1.0, -2.0, 3.0));
         Some(with_horizontal(wanted, Vec2::new(4.0, 5.0)))
@@ -41,16 +61,17 @@ fn each_contribution_reads_what_the_one_before_left() {
         pushed(wanted, Some(Vec2::new(0.5, -0.5)))
     });
     assert_eq!(composition.read(), Vec3::new(4.5, -2.0, 4.5));
-    assert_eq!(composition.store().writes, 2);
+    assert_eq!(memory.writes(), 2);
 }
 
 #[test]
 fn a_contribution_that_returns_nothing_writes_nothing() {
-    let mut composition = Composition::new(store(Vec3::new(1.0, 2.0, 3.0)));
+    let memory = store(Vec3::new(1.0, 2.0, 3.0));
+    let mut composition = Composition::new(memory.clone());
     composition.apply(Contributor::PalmPush, |_, wanted| pushed(wanted, None));
     composition.apply(Contributor::StepDrive, |_, _| None);
     assert_eq!(composition.read(), Vec3::new(1.0, 2.0, 3.0));
-    assert_eq!(composition.store().writes, 0);
+    assert_eq!(memory.writes(), 0);
 }
 
 #[test]

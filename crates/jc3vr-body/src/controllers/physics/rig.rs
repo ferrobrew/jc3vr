@@ -175,4 +175,18 @@ mod tests {
             Some(RigJump::Settling)
         );
     }
+
+    #[test]
+    fn a_rebase_outranks_a_turn_and_an_unannounced_turn_on_the_same_tick() {
+        let mut watch = RigWatch::new();
+        watch.observe(sample(0.0, 0, 0));
+        assert_eq!(
+            watch.observe(sample(unannounced() * 1.5, 1, 1)),
+            Some(RigJump::Rebase)
+        );
+        assert_eq!(
+            watch.observe(sample(unannounced() * 1.5, 1, 1)),
+            Some(RigJump::Settling)
+        );
+    }
 }

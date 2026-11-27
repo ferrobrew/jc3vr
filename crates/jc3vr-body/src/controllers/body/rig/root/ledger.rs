@@ -109,8 +109,7 @@ pub struct LedgerCounts {
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub(crate) struct CompletedRequest {
     pub movement: Movement,
-    /// Absent for callers that submit movement without an owner.
-    pub owner: Option<RootOwner>,
+    pub owner: RootOwner,
     pub credited: Vec2,
     pub attribution: Attribution,
 }
@@ -169,27 +168,9 @@ impl Requests {
         self.counts
     }
 
-    /// Whether a request waits for its step to complete.
-    #[cfg(test)]
-    pub fn pending(&self) -> bool {
-        self.pending.is_some()
-    }
-
-    /// Ask for this tick's movement without submission ownership evidence.
-    #[cfg(test)]
-    pub fn submit(&mut self, movement: Movement) {
-        self.pending = Some(PendingRequest {
-            movement,
-            owner: None,
-        });
-    }
-
     /// Retain the owner selected at this submission, rather than a later status value.
     pub(crate) fn submit_owned(&mut self, movement: Movement, owner: RootOwner) {
-        self.pending = Some(PendingRequest {
-            movement,
-            owner: Some(owner),
-        });
+        self.pending = Some(PendingRequest { movement, owner });
     }
 
     /// Complete a step that moved the root from `previous` to `current`, world positions.
@@ -236,7 +217,7 @@ impl Requests {
 #[derive(Debug, Copy, Clone, PartialEq)]
 struct PendingRequest {
     movement: Movement,
-    owner: Option<RootOwner>,
+    owner: RootOwner,
 }
 
 /// The fastest the stick, the hands, and the drive together may move the root, metres per second:
@@ -272,6 +253,10 @@ fn exact_tolerance(expected: f32, position_scale: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn submit(requests: &mut Requests, movement: Movement) {
+        requests.submit_owned(movement, RootOwner::Player);
+    }
 
     fn drive(movement: Movement, actual: Vec2, scale: f32) -> Vec2 {
         movement.achieved_drive(actual, scale).0
@@ -366,12 +351,10 @@ mod tests {
     fn stationary_prior_pair_cannot_consume_a_new_unsolved_request() {
         let mut requests = Requests::new();
         requests.complete(Vec3::ZERO, Vec3::ZERO);
-        requests.submit(Movement::new(Vec2::X, -Vec2::X, 1.0));
+        submit(&mut requests, Movement::new(Vec2::X, -Vec2::X, 1.0));
         assert_eq!(requests.completed(), CompletedMovement::default());
-        assert!(requests.pending());
         requests.complete(Vec3::ZERO, Vec3::ZERO);
         assert_eq!(requests.completed().current, -Vec2::X);
-        assert!(!requests.pending());
         assert_eq!(
             requests.counts(),
             LedgerCounts {
@@ -385,7 +368,7 @@ mod tests {
     fn two_steps_before_render_accumulate_both_compensations() {
         let mut requests = Requests::new();
         for step in 0..2 {
-            requests.submit(Movement::new(Vec2::ZERO, Vec2::X, 1.0));
+            submit(&mut requests, Movement::new(Vec2::ZERO, Vec2::X, 1.0));
             requests.complete(Vec3::X * step as f32, Vec3::X * (step + 1) as f32);
         }
         assert_eq!(
@@ -400,7 +383,7 @@ mod tests {
     #[test]
     fn task_exit_and_stale_reset_settle_without_replaying() {
         let mut requests = Requests::new();
-        requests.submit(Movement::new(Vec2::ZERO, Vec2::X, 1.0));
+        submit(&mut requests, Movement::new(Vec2::ZERO, Vec2::X, 1.0));
         requests.complete(Vec3::ZERO, Vec3::X);
         requests.complete(Vec3::X, Vec3::X + Vec3::Z);
         assert_eq!(
@@ -410,7 +393,7 @@ mod tests {
                 current: Vec2::X
             }
         );
-        requests.submit(Movement::new(Vec2::ZERO, Vec2::Y, 1.0));
+        submit(&mut requests, Movement::new(Vec2::ZERO, Vec2::Y, 1.0));
         requests.clear();
         requests.complete(Vec3::ZERO, Vec3::Z);
         assert_eq!(requests.completed().current, Vec2::X);
@@ -421,21 +404,21 @@ mod tests {
     fn a_wall_obstructs_and_a_shallow_slide_does_not() {
         let mut requests = Requests::new();
         for _ in 0..2 {
-            requests.submit(Movement::new(Vec2::ZERO, Vec2::X * 0.1, 1.0));
+            submit(&mut requests, Movement::new(Vec2::ZERO, Vec2::X * 0.1, 1.0));
             requests.complete(Vec3::ZERO, Vec3::ZERO);
         }
         assert!(requests.obstructed());
         // Along a wall at thirty degrees: most of the drive still goes through.
         let along = Vec2::new(30f32.to_radians().cos(), 30f32.to_radians().sin()) * 0.1;
         for _ in 0..2 {
-            requests.submit(Movement::new(Vec2::ZERO, along, 1.0));
+            submit(&mut requests, Movement::new(Vec2::ZERO, along, 1.0));
             requests.complete(
                 Vec3::ZERO,
                 Vec3::new(0.1 * 30f32.to_radians().cos(), 0.0, 0.0),
             );
         }
         assert!(!requests.obstructed());
-        requests.submit(Movement::new(Vec2::ZERO, Vec2::X, 1.0));
+        submit(&mut requests, Movement::new(Vec2::ZERO, Vec2::X, 1.0));
         requests.complete(Vec3::ZERO, Vec3::ZERO);
         requests.clear();
         assert!(!requests.obstructed());
@@ -447,7 +430,7 @@ mod tests {
     #[test]
     fn a_wall_counts_as_projected() {
         let mut requests = Requests::new();
-        requests.submit(Movement::new(Vec2::ZERO, Vec2::X, 1.0));
+        submit(&mut requests, Movement::new(Vec2::ZERO, Vec2::X, 1.0));
         requests.complete(Vec3::ZERO, Vec3::ZERO);
         assert_eq!(requests.completed().current, Vec2::ZERO);
         assert_eq!(

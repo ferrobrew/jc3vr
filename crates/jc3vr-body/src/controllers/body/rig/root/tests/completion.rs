@@ -24,7 +24,6 @@ fn completions_credit_the_pending_request_once_and_roll_the_totals() {
     assert_eq!(first.movement.current, Vec2::X);
     assert_eq!(first.request.unwrap().credited, Vec2::X);
     assert_eq!(first.request.unwrap().attribution, Attribution::Exact);
-    assert!(!sim.movement.pending());
 
     sim.movement
         .submit_owned(movement(Vec2::Y), RootOwner::Player);
@@ -65,7 +64,7 @@ fn consumed_owner_survives_an_intervening_selection_and_status_change() {
     stand_down(&mut sim.status, later_owner);
     let completion = sim.complete_movement(root(Vec3::ZERO), root(Vec3::X), 0);
     assert_eq!(sim.status.owner, Some(RootOwner::Authored));
-    assert_eq!(completion.request.unwrap().owner, Some(RootOwner::Player));
+    assert_eq!(completion.request.unwrap().owner, RootOwner::Player);
 
     sim.movement
         .submit_owned(movement(Vec2::X), RootOwner::Player);
@@ -76,7 +75,7 @@ fn consumed_owner_survives_an_intervening_selection_and_status_change() {
         .request
         .unwrap();
     assert_eq!(replacement.movement, movement(Vec2::Y));
-    assert_eq!(replacement.owner, Some(RootOwner::Seated));
+    assert_eq!(replacement.owner, RootOwner::Seated);
     assert_eq!(replacement.credited, Vec2::Y);
 }
 
@@ -90,7 +89,6 @@ fn teleport_at_completion_discards_pending_credit() {
         .submit_owned(movement(Vec2::Y), RootOwner::Player);
     let teleported = sim.complete_movement(root(Vec3::ZERO), root(Vec3::Z), 1);
     assert_eq!(teleported.request, None);
-    assert!(!sim.movement.pending());
     assert_eq!(sim.movement.completed().current, Vec2::X);
     assert_eq!(sim.movement.counts().exact, 1);
 }

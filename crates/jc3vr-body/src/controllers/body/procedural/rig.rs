@@ -213,12 +213,6 @@ impl Rig {
         self.bones[bone.index()]
     }
 
-    /// The reference model-space transform of `bone`.
-    #[cfg(test)]
-    pub fn reference(&self, bone: RigBone) -> &Transform {
-        &self.reference[bone.index()]
-    }
-
     /// The arm on `side`.
     pub fn arm(&self, side: Side) -> &ArmRig {
         &self.arms[side.index()]
@@ -425,7 +419,7 @@ mod tests {
         let rig = Rig::from_skeleton(&skeleton()).unwrap();
         assert_eq!(rig.skeleton_index(RigBone::Hips), 1);
         assert!(
-            rig.reference(RigBone::Head)
+            rig.reference[RigBone::Head.index()]
                 .translation
                 .abs_diff_eq(Vec3::new(0.0, 1.65, 0.0), 1e-6)
         );

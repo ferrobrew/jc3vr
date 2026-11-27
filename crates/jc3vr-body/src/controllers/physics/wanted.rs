@@ -56,16 +56,6 @@ pub enum Contributor {
 }
 
 impl Contributor {
-    /// Every contributor, in order.
-    pub const ORDER: [Contributor; 6] = [
-        Contributor::Rail,
-        Contributor::GrappleLock,
-        Contributor::Locomotion,
-        Contributor::PalmPush,
-        Contributor::StepDrive,
-        Contributor::Strokes,
-    ];
-
     /// A short name for a log.
     pub const fn label(self) -> &'static str {
         match self {
@@ -166,12 +156,6 @@ impl<S: WantedStore> Composition<S> {
         if let Some(wanted) = contribution(&mut self.store, current) {
             self.store.write(wanted);
         }
-    }
-
-    /// The store, for reads between the contributions.
-    #[cfg(test)]
-    pub(crate) fn store(&self) -> &S {
-        &self.store
     }
 }
 
