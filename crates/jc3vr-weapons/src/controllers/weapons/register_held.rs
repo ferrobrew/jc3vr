@@ -1,7 +1,7 @@
 //! Registers the weapon handling's side of the held-item seam ([`jc3vr_body::controllers::held`]): the
 //! query functions behind each hand's contents, armed weapon, wielded gun, C4 detonate act, and long
 //! gun, the steal offer, rack and slide state, the reload's zones, and the rigid grip's placement
-//! reads, whose captures the loadout table's hand moves invalidate.
+//! reads.
 
 use glam::Vec3;
 use jc3vr_body::controllers::{
@@ -15,7 +15,7 @@ use jc3vr_core::published::Stamp;
 use jc3vr_input::frame::Hand;
 
 use crate::controllers::{
-    loadout::{ItemKind, live},
+    loadout::ItemKind,
     weapons::{
         c4, collide, contents,
         dual_wield::single,
@@ -29,7 +29,6 @@ use crate::controllers::{
 
 /// Register the source once; the controllers' install calls it before any hook is enabled.
 pub fn register() {
-    live::register_hands_moved(take::invalidate_handle_placements);
     held::register_held_source(HeldSource {
         armed_hand_of: armed::hand_of,
         armed_weapon: armed::weapon_of,

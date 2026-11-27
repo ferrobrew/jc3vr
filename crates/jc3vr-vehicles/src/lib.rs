@@ -26,8 +26,8 @@
 //! The gameplay crate composes the registrations and the controllers' hook library, and the
 //! payload the equipment detours:
 //!
-//! - [`controllers::vehicles::register_body::register`] fills the body, weapons, and physical
-//!   crates' registrations the vehicle handling contributes to, and
+//! - [`controllers::vehicles::register_body::register`] fills the body and physical crates'
+//!   registrations the vehicle handling contributes to, and
 //!   [`controllers::vehicles::register_mounted::register`] the body crate's mounted-gun fact; the
 //!   gameplay crate's install calls both.
 //! - [`controllers::vehicles::hook_library`], which the gameplay crate enables inside its

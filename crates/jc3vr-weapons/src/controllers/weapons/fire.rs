@@ -17,10 +17,8 @@
 //!   its own still pulses the hand with the kick alone.
 //!
 //! A shot of the mounted gun the hands aim ([`jc3vr_body::controllers::facts::mounted`]) rides no hand:
-//! after it, the detour hands it to the observer the vehicle handling registers
-//! ([`register_mounted_shot_observer`]), which kicks the handles.
-
-use std::sync::OnceLock;
+//! after it, the detour calls the mounted-shot contribution
+//! ([`crate::contributions::WeaponsContributions::mounted_shot`]), which kicks the handles.
 
 use detours_macro::detour;
 use jc3gi::equipment::weapon::{WeaponBase, WeaponData, WeaponState};
@@ -34,28 +32,14 @@ use jc3vr_body::controllers::{
 use jc3vr_input::frame::Hand;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::controllers::weapons::{
-    config::WeaponSettings, dual_wield, heft, hold::armed, recoil, reload,
+use crate::{
+    contributions,
+    controllers::weapons::{config::WeaponSettings, dual_wield, heft, hold::armed, recoil, reload},
 };
-
-/// Register the observer of each shot of the mounted gun the hands aim, called after the shot on
-/// the thread that updates the weapon. One observer: a second registration is refused and logged.
-pub fn register_mounted_shot_observer(observer: fn()) {
-    if MOUNTED_SHOT_OBSERVER.set(observer).is_err() {
-        tracing::error!("fire: a mounted shot observer is already registered; keeping the first");
-    }
-}
-
-/// Whether the mounted shot observer is registered.
-pub fn mounted_shot_observer_registered() -> bool {
-    MOUNTED_SHOT_OBSERVER.get().is_some()
-}
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&FIRE_PROJECTILE_BASE_BINDER)
 }
-
-static MOUNTED_SHOT_OBSERVER: OnceLock<fn()> = OnceLock::new();
 
 #[detour(address = jc3gi::equipment::weapon::WeaponBase::Fire_ProjectileBase_ADDRESS)]
 fn fire_projectile_base(weapon: *mut WeaponBase, gun_data: *mut WeaponData) {
@@ -65,8 +49,8 @@ fn fire_projectile_base(weapon: *mut WeaponBase, gun_data: *mut WeaponData) {
     // The mounted gun the hands aim rides no hand; its kick goes to the handles.
     if acting && mounted::is_mounted_weapon(weapon as usize) {
         original();
-        if let Some(observe) = MOUNTED_SHOT_OBSERVER.get() {
-            observe();
+        if let Some(contributions) = contributions::get() {
+            (contributions.mounted_shot)();
         }
         return;
     }

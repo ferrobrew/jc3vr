@@ -29,7 +29,7 @@ use parking_lot::Mutex;
 use crate::controllers::vehicles::tuning::VEHICLES;
 
 /// Kick the handles by one shot of the mounted gun, and pulse the hands holding them.
-pub(crate) fn on_shot() {
+pub fn on_shot() {
     SHOTS.bump();
     {
         let mut kick = KICK.lock();

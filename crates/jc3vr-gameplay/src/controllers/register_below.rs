@@ -24,10 +24,7 @@ use jc3vr_body::{
 };
 use jc3vr_physical::controllers::{physical_hands, physical_hands::physics as hand_bodies};
 use jc3vr_vehicles::controllers::vehicles;
-use jc3vr_weapons::controllers::{
-    weapons,
-    weapons::{fire, hold::take, inventory},
-};
+use jc3vr_weapons::{contributions as weapons_contributions, controllers::weapons};
 
 pub(super) fn register() {
     physical_hands::register_body::register();
@@ -65,17 +62,11 @@ fn missing() -> String {
     if !hand_bodies::guns::targets::vehicle_targets_registered() {
         missing.push_str("\n- the vehicle controls' targets for the hand bodies");
     }
-    if !inventory::held_props_registered() {
-        missing.push_str("\n- the held props reader");
-    }
     if !hand_bodies::rail_step_registered() {
         missing.push_str("\n- the vehicle rail's pre-simulation step");
     }
-    if !fire::mounted_shot_observer_registered() {
-        missing.push_str("\n- the mounted shot observer");
-    }
-    if !take::refusal_sink_registered() {
-        missing.push_str("\n- the take refusal sink");
+    if !weapons_contributions::registered() {
+        missing.push_str("\n- the weapon handling's contributions");
     }
     if !pickup::sink_registered() {
         missing.push_str("\n- the weapon pickup sink");

@@ -55,9 +55,8 @@ pub mod tuning;
 mod world;
 
 use std::{
-    num::NonZeroUsize,
     sync::{
-        Arc, OnceLock,
+        Arc,
         atomic::{AtomicBool, AtomicU64, Ordering},
     },
     time::Instant,
@@ -75,36 +74,25 @@ use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::controllers::{
-    loadout::{ItemKind, ObjectAddress, Place, Restored, SlotObject, Socket, TakeSource, live},
-    weapons::{
-        c4,
-        dual_wield::single,
-        engine as weapons_engine, grenade,
-        hold::{armed, use_item},
-        hud_feed::lost_weapons,
-        inventory::{
-            engine::ObjectKey, game_view::GameInventory, pins::WorldWeapon, tuning::INVENTORY,
-            world::World,
+use crate::{
+    contributions,
+    controllers::{
+        loadout::{ItemKind, ObjectAddress, Place, Restored, SlotObject, Socket, TakeSource, live},
+        weapons::{
+            c4,
+            dual_wield::single,
+            engine as weapons_engine, grenade,
+            hold::{armed, use_item},
+            hud_feed::lost_weapons,
+            inventory::{
+                engine::ObjectKey, game_view::GameInventory, pins::WorldWeapon, tuning::INVENTORY,
+                world::World,
+            },
         },
     },
 };
 
 /// The inventory's hooks, aggregated by [`crate::controllers::weapons::hook_library`].
-/// Register the reader of the loose object each hand carries, by
-/// [`Hand::index`](jc3vr_input::frame::Hand::index): a prop the physical hands hold, which the
-/// table records as the hand's. One reader: a second registration is refused and logged.
-pub fn register_held_props(read: fn() -> [Option<NonZeroUsize>; 2]) {
-    if HELD_PROPS.set(read).is_err() {
-        tracing::error!("inventory: a held props reader is already registered; keeping the first");
-    }
-}
-
-/// Whether the reader of the held props is registered.
-pub fn held_props_registered() -> bool {
-    HELD_PROPS.get().is_some()
-}
-
 pub(crate) fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_hook_library(reset::hook_library())
@@ -528,8 +516,6 @@ unsafe fn resume() {
     );
 }
 
-static HELD_PROPS: OnceLock<fn() -> [Option<NonZeroUsize>; 2]> = OnceLock::new();
-
 /// Whether the last stop kept the weapons beyond the slots for the table's next start.
 static KEPT_STOPPED: AtomicBool = AtomicBool::new(false);
 
@@ -553,7 +539,7 @@ pub(crate) unsafe fn held_of(object: ObjectKey) -> Option<live::Held> {
 /// hands that threw theirs since the last tick.
 fn held_others() -> live::HeldOthers {
     let mut hands = [None; 2];
-    let props = HELD_PROPS.get().map_or([None; 2], |read| read());
+    let props = contributions::get().map_or([None; 2], |c| (c.held_props)());
     for (hand, prop) in Hand::BOTH.into_iter().zip(props) {
         hands[hand.index()] = prop.map(|object| live::HeldOther {
             object: ObjectAddress::new(object),
