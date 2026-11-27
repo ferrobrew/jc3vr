@@ -3,11 +3,11 @@
 //! The HUD's weapon icons are standalone textures, one per weapon id
 //! (`textures/ui/weapon_icons/<id>.ddsc`, the path the HUD movie's `GetWeaponIconName` builds for
 //! the selection cross, the pickup panel, and the pickup markers), not frames inside the movie, so
-//! the mod reads them straight from the archives on disk ([`archive`]) and decodes them itself
-//! ([`avtx`]) rather than through the game's streaming. The hand grenade and the C4 charge have
+//! the mod reads them straight from the archives on disk (`archive`) and decodes them itself
+//! (`avtx`) rather than through the game's streaming. The hand grenade and the C4 charge have
 //! icons under their weapons' ids too.
 //!
-//! [`lookup`] never blocks: the first lookup of an icon queues it for a worker thread, which
+//! `lookup` never blocks: the first lookup of an icon queues it for a worker thread, which
 //! indexes the archives once and decodes each icon asked for; later lookups find it ready, or
 //! missing when no archive holds it or it does not decode. A failure is logged once per icon.
 

@@ -106,7 +106,7 @@ pub struct BodyStateTuning {
     pub(crate) repeat_after_s: f32,
 }
 
-/// The visual stage ([`crate::testing::stage`]).
+/// The visual stage (`crate::testing::stage`).
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct StageTuning {

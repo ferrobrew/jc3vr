@@ -1,12 +1,12 @@
 //! The controls summary's floating panel: an egui-to-texture panel like the debug panel
-//! ([`crate::hud::egui_panel`]) and the restart notice ([`crate::hud::restart_notice`]), anchored
+//! ([`crate::hud::egui_panel`]) and the restart notice (`crate::hud::restart_notice`), anchored
 //! to the off-hand wrist rather than the head ([`jc3vr_gameplay::controllers::summary`]).
 //!
 //! It has its own egui context and renderer, so that it never shares input, output, fonts, or
 //! textures with the debug UI, and it takes no input. On eye 0 the glance and the fade are
 //! advanced, the summary is painted into the panel's own render target while it is visible, and the
 //! world corners are cached; both eyes then draw the same corners through the shared quad pass
-//! ([`crate::hud::quad`]), as the other panels do. Nothing is drawn, and the panel's resources are
+//! (`crate::hud::quad`), as the other panels do. Nothing is drawn, and the panel's resources are
 //! not created, until it is first shown.
 //!
 //! The current usable hints occupy fixed physical left/right columns. Layout measures wrapped
@@ -86,7 +86,7 @@ pub struct PanelStatus {
 pub struct PanelLayout {
     /// The texture's size, pixels.
     pub size: (u32, u32),
-    /// The readable row height ([`ROW_PX`]), independent of the number of hints.
+    /// The readable row height (`ROW_PX`), independent of the number of hints.
     pub row_px: f32,
     /// The visible page and total, both one-based.
     pub page: usize,

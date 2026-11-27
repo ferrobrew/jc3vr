@@ -30,7 +30,7 @@ pub struct HudConfig {
     pub distance: f32,
     /// Apparent-size multiplier for the panel; `1.0` is the comfortable baseline (4 m wide at 3 m).
     /// The physical size is derived from this, [`distance`](HudConfig::distance), and the effective
-    /// aspect (see [`crate::hud::panel_height`]), so changing the distance or aspect keeps the panel
+    /// aspect (see `crate::hud::panel_height`), so changing the distance or aspect keeps the panel
     /// looking the same size and fitting the same horizontal content.
     pub panel_scale: f32,
     /// The interactive egui debug panel floating in 3D space in VR (issue #24). Off by default;

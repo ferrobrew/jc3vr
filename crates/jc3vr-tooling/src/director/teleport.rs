@@ -42,7 +42,7 @@ impl Bookmark {
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub enum TeleportMode {
     /// Instant within the tuning's
-    /// [`instant_teleport_range_m`](crate::tuning::DirectorTuning::instant_teleport_range_m) of the
+    /// `instant_teleport_range_m` of the
     /// character, deferred with streaming beyond it.
     Auto,
     /// Place the character synchronously. The destination must already be streamed in.

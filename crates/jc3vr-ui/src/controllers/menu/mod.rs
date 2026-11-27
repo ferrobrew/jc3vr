@@ -1,6 +1,6 @@
-//! The pause menu's VR settings pages: `VR: CONTROLS` ([`controls`]) for the core controller
-//! settings, `VR: COMFORT` ([`comfort`]) for the view, posture, turning, and movement, and
-//! `VR: DISPLAY` ([`display`]) for the rendering and the floating panel, and the glue they and the
+//! The pause menu's VR settings pages: `VR: CONTROLS` (`controls`) for the core controller
+//! settings, `VR: COMFORT` (`comfort`) for the view, posture, turning, and movement, and
+//! `VR: DISPLAY` (`display`) for the rendering and the floating panel, and the glue they and the
 //! body page share. The pages hold only what a player reaches for in the headset; the feature
 //! switches and the status lines ([`crate::status`]) are in the debug UI, and the tuning is in the
 //! crates' tuning files. See `docs/mod/pause-menu.md` for the menu itself.

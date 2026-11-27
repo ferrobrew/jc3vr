@@ -13,12 +13,12 @@
 //! feeds the live measurement to the capture, and a finished capture moves the flow on and has the
 //! page rebuilt. Every refusal shows in the step's `STATUS` readout and is logged, rate-limited.
 //!
-//! - [`measure`]: the live measurements the calibration steps read;
-//! - [`state`]: the running
+//! - `measure`: the live measurements the calibration steps read;
+//! - `state`: the running
 //!   [`Calibration`](jc3vr_body::controllers::body::calibration::Calibration), the stance choice, and
 //!   the lifecycle handlers;
-//! - [`text`]: the row text the flow and its readouts show;
-//! - [`pages`]: the page's rows for each step of the flow.
+//! - `text`: the row text the flow and its readouts show;
+//! - `pages`: the page's rows for each step of the flow.
 
 mod measure;
 mod pages;

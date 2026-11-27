@@ -4,17 +4,17 @@
 //! involved. See `docs/mod/pause-menu.md` for the route and the hooks, and
 //! `docs/engine/pause-menu.md` for the movie.
 //!
-//! - [`model`]: the pure logic: the page model ([`model::page`]), row ids and row encoding, slider
+//! - `model`: the pure logic: the page model (`model::page`), row ids and row encoding, slider
 //!   mapping, the live-value diff, the menu state machine, command routing, finding the chosen
 //!   entry, the tabs' memory, and the section headers' bookkeeping;
-//! - [`gfx`]: the capture-thread token and the owned AS3 value;
-//! - [`runtime`]: the detours and the movie access they use;
-//! - [`pages`]: the registry of pages.
+//! - `gfx`: the capture-thread token and the owned AS3 value;
+//! - `runtime`: the detours and the movie access they use;
+//! - `pages`: the registry of pages.
 //!
-//! To add a page, describe it as a [`model::page::PageDef`] beside the settings it edits and list
-//! it in [`pages::PAGES`]; it gets a tab. A step-by-step page keeps its step beside its definition,
+//! To add a page, describe it as a `model::page::PageDef` beside the settings it edits and list
+//! it in `pages::PAGES`; it gets a tab. A step-by-step page keeps its step beside its definition,
 //! lists the current step's rows from its builder, and returns
-//! [`ButtonOutcome::Rebuild`](model::page::ButtonOutcome::Rebuild) when the step changes; the body
+//! `ButtonOutcome::Rebuild` when the step changes; the body
 //! calibration (`controllers/body/`) is the example.
 
 pub(crate) mod gfx;

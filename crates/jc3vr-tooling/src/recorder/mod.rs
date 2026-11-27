@@ -6,15 +6,15 @@
 //! The video is encoded outside the game process, by a capture host listening on a TCP port: the
 //! injector, which stays running after it injects and drives an ffmpeg it carries, or on Linux the
 //! relay (`scripts/capture_host.sh`, which runs `tools/capture/relay.py`). For each take the payload
-//! connects and names the take's folder ([`protocol`]).
+//! connects and names the take's folder (`protocol`).
 //!
 //! With the in-process capture on (`RecorderConfig::in_process`, the default) the payload streams
 //! the eye views itself (protocol version 2). On the render thread, once both eyes of a frame are
 //! final, [`capture_frame`] draws them side by side into one planar-YUV frame on the GPU, each eye
-//! scaled to the configured width with its aspect kept ([`layout`], [`convert`]), and reads the
-//! frame back through a staging ring without stalling. The take's video writer ([`stream`]) sends
+//! scaled to the configured width with its aspect kept (`layout`, `convert`), and reads the
+//! frame back through a staging ring without stalling. The take's video writer (`stream`) sends
 //! the frames to the host as `yuv4mpegpipe`, paced to a constant rate by the wall clock
-//! ([`pacing`]), and the host encodes them with its audio into the take's folder.
+//! (`pacing`), and the host encodes them with its audio into the take's folder.
 //!
 //! With it off, the host records the game's mirror window on screen with the desktop's audio
 //! (protocol version 1, which only the relay speaks). What the video shows is then what the desktop
@@ -29,7 +29,7 @@
 //!
 //! ## Threads and shutdown
 //!
-//! Each take has one thread ([`take`]) that writes the sidecar and services the connection, and a
+//! Each take has one thread (`take`) that writes the sidecar and services the connection, and a
 //! streamed take a video writer thread beside it, which the take's thread joins. Active and
 //! finishing takes share a bounded owner; completed threads are joined before their slots are
 //! reused. [`shutdown`] waits for every retained thread and keeps the DLL mapped if any has not

@@ -1,7 +1,7 @@
 //! The status lines: a read-only summary of whether each of the mod's systems is live and healthy,
 //! for confirming a headset session at a glance. Each row reads one system's published state and
-//! gives a state word ([`Health`]) and a few numbers. The debug UI's Status tab shows every row and
-//! logs the summary ([`summary`]) on request, both in the same spelling.
+//! gives a state word (`Health`) and a few numbers. The debug UI's Status tab shows every row and
+//! logs the summary (`summary`) on request, both in the same spelling.
 //!
 //! A row may be read on any thread, including in the middle of a frame while the game thread holds
 //! the VR runtime lock, so the rows read only atomics and leaf locks that their modules publish for

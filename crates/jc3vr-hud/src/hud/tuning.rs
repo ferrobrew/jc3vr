@@ -185,7 +185,7 @@ pub struct EguiPanelTuning {
     /// [`scale`](EguiPanelTuning::scale) at this distance.
     pub(crate) summon_distance_m: f32,
     /// The panel's apparent-size multiplier at the summoning distance; `1.0` is the comfortable
-    /// baseline (see [`crate::hud::panel_height`]).
+    /// baseline (see `crate::hud::panel_height`).
     pub scale: f32,
     /// The nearest a summoned or grabbed panel is placed, metres.
     pub min_distance_m: f32,
@@ -564,7 +564,7 @@ impl MarkLabelsTuning {
     }
 }
 
-/// The markers over the weapons the player let go of (see [`crate::hud::lost_weapons`]).
+/// The markers over the weapons the player let go of (see `crate::hud::lost_weapons`).
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LostWeaponsTuning {

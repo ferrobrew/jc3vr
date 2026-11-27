@@ -2,18 +2,18 @@
 //!
 //! The map keeps its own cursor, picking, panning, and zoom-to-cursor behaviour, all driven from
 //! its mouse branch. The UI input boundary ([`crate::hooks::ui`]) prepares one controller sample
-//! per frame ([`prepare_dispatch`]); when the map handles its input it commits that sample and,
+//! per frame (`prepare_dispatch`); when the map handles its input it commits that sample and,
 //! for the duration of the call, switches the engine to mouse mode and answers the map's mouse and
-//! zoom action lookups with effectors owned here ([`lookup`]), leaving every physical action-map
-//! slot untouched. The map's cursor comes from [`cursor_uv`] through the UI manager's coordinate
+//! zoom action lookups with effectors owned here (`lookup`), leaving every physical action-map
+//! slot untouched. The map's cursor comes from `cursor_uv` through the UI manager's coordinate
 //! hook.
 //!
 //! The trigger is the map's primary button and selects where it was pressed (see the tuning's
 //! `map.click_slop_uv`), and the confirm the map reads becomes the mouse's context action at the
-//! cursor (see [`lookup`]), so both act at the controller's cursor.
+//! cursor (see `lookup`), so both act at the controller's cursor.
 //!
-//! - [`controller`] is the pure owner, button-edge, press-point, and zoom-step state machine;
-//! - [`lookup`] is the scoped effector shim;
+//! - `controller` is the pure owner, button-edge, press-point, and zoom-step state machine;
+//! - `lookup` is the scoped effector shim;
 //! - [`report`] is the debug readout.
 
 mod controller;

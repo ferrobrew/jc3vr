@@ -12,7 +12,7 @@
 //! on eye 0's walk, and with the tail deferred it does not wait on the last one, which the tail drains
 //! before it composites the mirror. That walk can run after the next frame's egui pass has started,
 //! so it may take that frame's output a frame early;
-//! [`EguiState::render_to`](crate::egui_impl::EguiState::render_to) then leaves the texture
+//! `EguiState::render_to` then leaves the texture
 //! as it is on the frame that finds the output gone, rather than blanking it.
 //!
 //! Only active while a VR session renders, the mirror is on, the floating panel is off (with the

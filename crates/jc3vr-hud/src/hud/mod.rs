@@ -22,20 +22,20 @@
 //! The panel has two modes (see [`HudMode`], chosen per frame by [`current_mode`]): the gameplay HUD
 //! lazily follows the head's orientation with critically-damped quaternion slerp, while full-screen
 //! UI (movies, loading screens, menus) is world-static -- latched in place so the head can look away
-//! from it. Each mode also has its own aspect (the tuning's `panel.hud_aspect` / [`MOVIE_ASPECT`]).
+//! from it. Each mode also has its own aspect (the tuning's `panel.hud_aspect` / `MOVIE_ASPECT`).
 //! The panel's world-space corners are computed once per frame (eye 0) and projected through each
 //! eye's own per-eye VP, so it sits at a finite world position with correct stereo depth rather than
 //! being head-locked at infinity.
 //!
-//! The redirect is split into the GPU resources ([`target`]), the game-side UI rebind operations
-//! ([`binding`]), the quad draw pass ([`quad`]), and the [`state`] machine that drives them; the
+//! The redirect is split into the GPU resources (`target`), the game-side UI rebind operations
+//! (`binding`), the quad draw pass (`quad`), and the `state` machine that drives them; the
 //! settings are in [`config`] and the tuning in [`tuning`]. Parts of the gameplay HUD leave the panel through the
 //! [`atlas`]: the [`world_markers`] at their world points, the [`anchored`] readouts at the
-//! gun hand and the off-hand's wrist, and the reticles at the aim point ([`reticle`]).
+//! gun hand and the off-hand's wrist, and the reticles at the aim point (`reticle`).
 //! The [`grab_hint`] draws the game's icons ([`game_icons`]) on the panel's plane, and
-//! [`lost_weapons`] over the weapons the player let go of; [`mark_labels`] names the grip markers
+//! `lost_weapons` over the weapons the player let go of; `mark_labels` names the grip markers
 //! that carry a label, such as the nitrous button. Beside the HUD panel float the debug UI's
-//! [`egui_panel`], the controls [`summary_panel`], and the [`restart_notice`]; the controller
+//! [`egui_panel`], the controls [`summary_panel`], and the `restart_notice`; the controller
 //! [`pointer`](mod@pointer)s and the [`cursor`] reach into the panels, the [`scaleform`] module
 //! edits the HUD movie's clips, and the [`mirror_overlay`] draws the layers onto the desktop
 //! mirror.
@@ -101,12 +101,12 @@ use crate::hud::{config::HUD_CONFIG, tuning::HUD};
 
 /// Which presentation the HUD is in this frame. Drives the panel's aspect (gameplay vs full-screen
 /// UI). Placement (head-following vs world-locked) is chosen separately by
-/// [`menu_world_lock`], which only freezes for in-game menus with a valid camera.
+/// `menu_world_lock`, which only freezes for in-game menus with a valid camera.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum HudMode {
     /// Gameplay HUD: rendered at the tuning's `panel.hud_aspect`, head-following.
     Hud,
-    /// Full-screen UI -- movies, loading screens, and menus: rendered at [`MOVIE_ASPECT`].
+    /// Full-screen UI -- movies, loading screens, and menus: rendered at `MOVIE_ASPECT`.
     Movie,
 }
 
@@ -245,7 +245,7 @@ pub(crate) fn redirect_applied() -> bool {
 /// *render* -- the reset proxy and the engine-binding restore -- reads
 /// [`jc3vr_view::stereo::render_size`] instead, because the two diverge once the mod substitutes its own
 /// back buffer (`docs/mod/stereo/swapchain-ownership.md`). The HUD texture's own size is neither: it is the
-/// mod's choice (see [`hud_target_size`]), as is its aspect.
+/// mod's choice (see `hud_target_size`), as is its aspect.
 pub fn tick(device: &Device, window_width: u32, window_height: u32) {
     let mut hud = HUD_STATE.lock();
     let cfg = *HUD_CONFIG.lock();
@@ -496,7 +496,7 @@ pub(crate) fn compute_panel_vp() -> Option<(Matrix4, Matrix4)> {
 /// eject. The shutdown cleanup ([`install`]) asks the per-frame [`tick`] to do this, but the eject
 /// renders no further frames, so without it the target (a colour and a depth texture) stays
 /// allocated after the payload is gone. Call after the engine is back at its native
-/// size, which [`restore`](state::HudState::restore) binds the UI to.
+/// size, which `restore` binds the UI to.
 pub fn release_on_eject() {
     let Some((width, height)) = jc3vr_view::stereo::render_size() else {
         return;

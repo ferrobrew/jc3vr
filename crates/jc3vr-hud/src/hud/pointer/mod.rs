@@ -8,14 +8,14 @@
 //!   camera hook placed them from, and the ray intersection against them;
 //! - the input tick turns the controllers into pointer samples
 //!   ([`jc3vr_gameplay::controllers::bindings::pointer`]);
-//! - [`route`] decides which source, if any, owns the game UI's mouse on each delivery.
+//! - `route` decides which source, if any, owns the game UI's mouse on each delivery.
 //!
 //! The egui debug panel has its own pointer, built the same way: the input tick queues the
-//! controller's updates, and [`egui_route`] gives egui's pointer to the desktop mouse or the
+//! controller's updates, and `egui_route` gives egui's pointer to the desktop mouse or the
 //! controller, whichever was used last, and builds the egui events.
 //!
 //! The pointers' input side reads the HUD's redirect switch, the desktop mouse's capture, and the
-//! debug panel's state through [`POINTER_HUD`], which the crate's registration installs
+//! debug panel's state through `POINTER_HUD`, which the crate's registration installs
 //! ([`crate::register`]).
 
 mod egui_route;

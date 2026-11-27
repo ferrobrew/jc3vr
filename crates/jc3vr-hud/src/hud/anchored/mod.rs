@@ -10,15 +10,15 @@
 //!
 //! The tether, heat, and grenade readouts are the game's own clips, moved into atlas cells for the
 //! capture ([`crate::hud::atlas`]) and drawn here from their cells' copies, so they keep the game's
-//! values, icons, and fades. The health bar is the mod's own ([`health`]), from the player
+//! values, icons, and fades. The health bar is the mod's own (`health`), from the player
 //! character's health, sampled at the capture seam. So are the ammunition counters
-//! ([`hand_ammo`]), sampled by the weapon handling's input tick: each hand holds a weapon of its
+//! (`hand_ammo`), sampled by the weapon handling's input tick: each hand holds a weapon of its
 //! own, and the game's weapon readout shows the wielded one alone, so every gun gets the same
 //! counter rather than one gun the game's readout and the other the mod's. The game's weapon
 //! readout keeps its atlas cell, which takes it off the panel, and is not drawn.
 //!
 //! On eye 0 the anchors are placed from the render-time hand poses and the head
-//! ([`place`]); both eyes then draw the same corners through the shared quad pass, after the
+//! (`place`); both eyes then draw the same corners through the shared quad pass, after the
 //! floating panel, since the readouts are nearer than it.
 
 pub(crate) mod hand_ammo;

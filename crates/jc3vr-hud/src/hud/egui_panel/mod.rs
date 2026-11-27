@@ -3,14 +3,14 @@
 //! In VR the flat egui overlay that rides the game back buffer is invisible -- the desktop cursor
 //! lands in neither eye and the overlay is suppressed by `BLOCK_FLIP` -- so the debug UI is redirected
 //! into an offscreen texture and drawn back into the scene as a floating quad, with the gameplay
-//! HUD's quad pipeline (see [`crate::hud::quad`]), and driven by the desktop mouse re-sourced onto the
+//! HUD's quad pipeline (see `crate::hud::quad`), and driven by the desktop mouse re-sourced onto the
 //! panel surface or by either controller's aim ray (see [`crate::hud::pointer`]). Each frame's corners
 //! are published with the camera basis that placed them, for the controller pointer to intersect,
 //! and the cursor dot follows whichever source owns the pointer.
 //!
 //! The panel lives in the player's play space, like a window in a VR runtime's dashboard: its pose
 //! is held in the cockpit frame, the tracked space the head and the hands are composed in, so it
-//! travels with the player and stays where it was left as the head turns ([`slot`]). A hand grabs
+//! travels with the player and stays where it was left as the head turns (`slot`). A hand grabs
 //! it with the grip and carries it, and the thumbstick pushes it along the aim ray while it is held
 //! ([`crate::hud::pointer`]). Its world corners are composed at render time through the rendered
 //! camera's basis, so it does not trail the head when the player moves fast.

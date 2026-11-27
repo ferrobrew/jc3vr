@@ -6,16 +6,16 @@
 //! marker clip and its world point. The world markers take them from there and crops each marker out
 //! of the existing HUD texture, without moving anything in the movie:
 //!
-//! - [`seam`] (the thread that runs the UI update): inside the HUD's point-of-interest update, a
+//! - `seam` (the thread that runs the UI update): inside the HUD's point-of-interest update, a
 //!   marker the headset can see is classified on screen even where the panel's narrower projection
 //!   would make it an edge arrow; at the capture seam, the visible on-screen markers (id, world
 //!   point, clip origin, 2D offset) are snapshotted and published, keyed by the snapshot the capture
 //!   produced.
-//! - [`render`] (the render thread, at each eye's HUD draw): the published layout matching the
+//! - `render` (the render thread, at each eye's HUD draw): the published layout matching the
 //!   displayed snapshot is cropped out of the HUD texture into per-marker slots, the rectangles are
 //!   cut out of the panel, and each slot is drawn as a billboard facing the head at the marker's
 //!   world point, with the angular size it had on the panel. The scene depth at each marker's pixel
-//!   ([`depth`]) places it on the nearest visible surface along its line of sight.
+//!   (`depth`) places it on the nearest visible surface along its line of sight.
 //! - [`jc3vr_body::controllers::aim::marker_rays`] (the game thread, in the player aim's simulation
 //!   update): a physics raycast for the markers that had no recent depth sample.
 //!
@@ -62,7 +62,7 @@ pub struct Status {
     pub layout_snapshot: Option<u64>,
     pub displayed_snapshot: u64,
     pub layout_matched: bool,
-    /// Visible on-screen markers past [`MAX_MARKERS`] in the last layout.
+    /// Visible on-screen markers past `MAX_MARKERS` in the last layout.
     pub skipped: usize,
     /// The labelled POI's id in the last layout.
     pub labelled_id: u32,

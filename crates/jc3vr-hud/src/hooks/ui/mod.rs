@@ -1,7 +1,7 @@
 //! UI manager detours: world-to-screen compensation for the floating HUD panel, the aim-depth
 //! recording, the capture seam's clip writes, the HUD atlas's moves and the world markers'
-//! classification and capture snapshot, (in [`hud`]) the HUD's point-of-interest update, and (in
-//! [`mouse`]) the game UI's mouse input.
+//! classification and capture snapshot, (in `hud`) the HUD's point-of-interest update, and (in
+//! `mouse`) the game UI's mouse input.
 //!
 //! [`get_2d_info`](UIManager::Get2DInfo) is the gameplay marker placement function. When the HUD
 //! is redirected and drawn as a floating quad, the VP and camera matrix are replaced with the

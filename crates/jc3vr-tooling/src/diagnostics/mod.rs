@@ -9,13 +9,13 @@
 //! [`ControllerState`](tracking_format::event::ControllerState) event, which the recorder stamps on
 //! the frame timeline and writes beside the next frame, and a
 //! [`BodyState`](tracking_format::event::BodyState) event when the body's animation state changed
-//! ([`body_state`]). The controller state combines independently read subsystem snapshots; it does
-//! not claim an atomic cross-subsystem instant; its world groups are [`world_state`]'s.
+//! (`body_state`). The controller state combines independently read subsystem snapshots; it does
+//! not claim an atomic cross-subsystem instant; its world groups are `world_state`'s.
 //!
 //! The other samplers observe the game where it acts, through the observers the crate's
 //! registration installs ([`crate::register()`]): Rico's pose before and after the solves
-//! ([`pose`]), at the character hooks' pose-finalization observer, and the bodies near Rico and
-//! what his hands hold ([`bodies`]), after each simulation step. The notes the controller subsystems write as they act (refusals, forces, injected actions,
+//! (`pose`), at the character hooks' pose-finalization observer, and the bodies near Rico and
+//! what his hands hold (`bodies`), after each simulation step. The notes the controller subsystems write as they act (refusals, forces, injected actions,
 //! haptic cues, the rig's frames) are [`jc3vr_body::controllers::telemetry`]'s, and the
 //! settings and the frame timing are the tracking recorder's own.
 

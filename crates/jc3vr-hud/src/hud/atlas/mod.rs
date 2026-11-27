@@ -3,7 +3,7 @@
 //!
 //! The HUD renders into one texture, taller than the stage's aspect, so the show-all scaling leaves
 //! a band above and below the stage. With the atlas on, the gameplay HUD's safe area hugs the stage
-//! (the stage-shaped safe-area input of [`crate::hud::binding`]), so nothing the HUD lays out lands
+//! (the stage-shaped safe-area input of `crate::hud::binding`), so nothing the HUD lays out lands
 //! in the bands, and at each capture the parts below are moved into cells there:
 //!
 //! - the weapon readout (`MCI_weapons_parent`), drawn above the gun hand
@@ -16,17 +16,17 @@
 //!   grapple sits;
 //! - the aim part: the weapon reticle group, the grapple reticle, and the hit marker
 //!   (`MCI_inflict_damage`), gathered around the aim point and drawn there at the aim depth
-//!   ([`crate::hud::reticle`]);
+//!   (`crate::hud::reticle`);
 //! - the visible world-placed markers ([`crate::hud::world_markers`]), each in a cell of its own
 //!   instead of cropped from the panel, so a marker's quad never carries a neighbour or a centre
 //!   notice.
 //!
 //! The pieces:
 //!
-//! - [`layout`]: the pure geometry of the bands, the cells, and the marker cells' assignment;
-//! - [`seam`] (the capture thread): the moves before the capture and the restores after it, and
+//! - `layout`: the pure geometry of the bands, the cells, and the marker cells' assignment;
+//! - `seam` (the capture thread): the moves before the capture and the restores after it, and
 //!   the published layout, keyed by the snapshot the capture produced;
-//! - [`render`] (the render thread): the layout matching the displayed snapshot, each part's cell
+//! - `render` (the render thread): the layout matching the displayed snapshot, each part's cell
 //!   copied into its own texture per eye, and the bands cleared before the panel samples the HUD
 //!   texture, so moved parts vanish from the panel.
 //!

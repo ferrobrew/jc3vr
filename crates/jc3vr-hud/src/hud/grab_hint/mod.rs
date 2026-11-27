@@ -5,10 +5,10 @@
 //! A take shows the item's icon: the weapon docked on a socket, the grenade or the C4 charge from
 //! its pouch, or the gun a magazine from the belt pouch is for. Letting a held weapon go over a
 //! taken socket on the back swaps it for the one docked there, which shows the weapon going in, an
-//! arrow, and the weapon coming out, dimmed ([`paint`]). Above the middle of either, a small label
+//! arrow, and the weapon coming out, dimmed (`paint`). Above the middle of either, a small label
 //! names the socket or pouch. The hint has no backing, only a soft dark halo. Each hand has its
 //! own hint; two at once (each hand armed its own) sit apart toward their own hands' sides, the
-//! left hand's on the left ([`layout`]).
+//! left hand's on the left (`layout`).
 //!
 //! The weapon handling's input tick publishes each hand's hint
 //! ([`jc3vr_weapons::controllers::weapons::hud_feed::grab_hint`]), with the icons named by weapon

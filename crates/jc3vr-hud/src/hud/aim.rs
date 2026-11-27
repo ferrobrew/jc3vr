@@ -1,6 +1,6 @@
 //! The aim depth: the distance from the panel anchor to the point the player aims at, smoothed with
 //! a critically-damped exponential, and the aim point itself. Its reader is the atlas's aim part,
-//! the cell holding the reticles and the hit marker ([`crate::hud::reticle`]), which is drawn at
+//! the cell holding the reticles and the hit marker (`crate::hud::reticle`), which is drawn at
 //! this depth, toward this point.
 //!
 //! The source is the game's own aim system: `CHUDUI::UpdateGrappleReticle` projects the smoothed

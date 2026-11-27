@@ -1,5 +1,5 @@
 //! The test tools the capture harness (`tools/rendering`) drives: the visual configurations
-//! ([`visual`]), the staging of a scene for them ([`stage`]), and the benchmark ([`benchmark`]),
+//! ([`visual`]), the staging of a scene for them (`stage`), and the benchmark ([`benchmark`]),
 //! started through the request file a script drops into the configuration directory ([`request`]),
 //! which also starts and stops a tracking recording ([`jc3vr_view::recorder`]).
 //! `testing.enabled` switches the request file and the tracking recorder off.

@@ -23,7 +23,7 @@
 //! the render-thread [`tick`](crate::hud::tick) (frame geometry), and the `SendMouseEvents` detour
 //! (position, visibility) -- and the reader, the panel draw, which renders the cursor as a small
 //! circle-dot quad lifted slightly off the panel toward the camera (see
-//! [`quad`](crate::hud::quad) and [`state`](crate::hud::state)).
+//! `quad` and `state`).
 
 use std::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 
