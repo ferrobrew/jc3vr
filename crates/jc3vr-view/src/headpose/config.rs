@@ -1,4 +1,4 @@
-//! Headpose configuration: the thresholds and tunables for the headpose simulation.
+//! The head pose settings: the master switch, the VR turn, and the grapple comfort filter's mode.
 
 use jc3vr_core::config::{ConfigSlot, Invalid, SlotOptions, load::reset_or_default, range};
 use serde::{Deserialize, Serialize};
@@ -18,8 +18,7 @@ pub static HEADPOSE_CONFIG: ConfigSlot<HeadPoseConfig> = ConfigSlot::with(
     }),
 );
 
-/// All thresholds and tunables for the headpose simulation, added to [`crate::config::Config`] as
-/// `headpose`.
+/// The head pose settings, held in the payload's settings aggregate as `headpose`.
 #[derive(Copy, Clone, Serialize, Deserialize)]
 pub struct HeadPoseConfig {
     /// Master switch for headpose-driven head control.
@@ -28,9 +27,9 @@ pub struct HeadPoseConfig {
     /// (mouse and right stick) is free to turn the body instead (see [`VrTurnConfig`]).
     #[serde(default)]
     pub vr_turn: VrTurnConfig,
-    /// Grapple comfort settings (see [`crate::grapple`]): how the body frame the head composes onto
-    /// is filtered while the grapple turns the character, kept with the rest of the head pose's
-    /// tunables.
+    /// Grapple comfort settings, read by the grapple's body frame filter: how the body frame the
+    /// head composes onto is filtered while the grapple turns the character, kept with the rest of
+    /// the head pose's settings.
     #[serde(default)]
     pub grapple: GrappleComfortConfig,
 }
@@ -135,7 +134,7 @@ pub enum GrappleComfortMode {
     LevelPitch,
 }
 
-/// Grapple comfort settings; see [`GrappleComfortMode`] and [`crate::grapple`].
+/// Grapple comfort settings; see [`GrappleComfortMode`].
 #[derive(Copy, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct GrappleComfortConfig {

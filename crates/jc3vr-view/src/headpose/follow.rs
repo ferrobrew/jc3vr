@@ -15,10 +15,9 @@
 //!   interpolates between, so however the game turns the body, at whatever rate, none of it reaches
 //!   the view.
 //! - **Not following** (off foot, swimming, or the setting off): the offset is frozen at its last
-//!   value, so the view rides the body as it always has, turned by a constant. The body is steered
-//!   to the accumulator's heading plus the frozen offset, which leaves the view converging on the
-//!   accumulator's heading exactly as it did before the offset existed.
-//!
+//!   value, so the view rides the body, turned by a constant. The body is steered to the
+//!   accumulator's heading plus the frozen offset, which leaves the view converging on the
+//!   accumulator's heading.
 //! - **Stepping** (off foot, through a vehicle's entry or exit animation): the view's heading is
 //!   held as while following, so the clip's turn of the body does not swing the view, and every
 //!   step interval ([`FollowTuning`](crate::tuning::FollowTuning)) it steps toward the body's
@@ -30,7 +29,7 @@
 //!   the view with it.
 //! - **Holding** (off foot, through a ragdoll, its get-up, or a death): the view's heading is held
 //!   as while stepping, but it never steps: the get-up's pose matching turns the root by up to
-//!   half a turn to wherever the ragdoll fell, and a view riding the body turned with it. Once the
+//!   half a turn to wherever the ragdoll fell, and a view riding the body would turn with it. Once the
 //!   body follows again it turns to the player's torso under the held view; off foot, what is left
 //!   is frozen and banked as below.
 //!

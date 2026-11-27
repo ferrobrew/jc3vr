@@ -3,7 +3,7 @@
 //!
 //! The game has no reliable per-character teleport flag. The roomscale loop counts each camera
 //! reset the game makes after moving the player, and each warp the body rig's per-tick distance
-//! test finds ([`crate::controllers::roomscale::teleport`]).
+//! test finds (the body crate's `controllers::roomscale::teleport`).
 
 use std::sync::atomic::{AtomicU64, Ordering};
 

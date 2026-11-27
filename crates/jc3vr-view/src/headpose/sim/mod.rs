@@ -5,11 +5,11 @@
 //! [`on_input_tick`] that produces a [`HeadPose`](crate::headpose::HeadPose) and publishes it via
 //! [`crate::headpose::set_pose`].
 //!
-//! The key insight: in VR, the player's head and body are independent — the head moves freely (HMD),
-//! and the body is yawed via a stick. In flatscreen, we don't have independent head/body controls,
-//! so the latch unifies them: within a configurable cone the head moves freely (decoupled), past
-//! the threshold the body yaw tracks the head direction. This coupling is entirely a sim concern —
-//! the headpose abstraction knows nothing about it.
+//! In VR, the player's head and body are independent: the HMD moves the head, and a stick turns the
+//! body. Flatscreen has no independent head and body controls, so the latch unifies them: within a
+//! cone the head moves freely (decoupled), and past the threshold the body yaw tracks the head
+//! direction. This coupling is entirely a sim concern; the rest of the head pose knows nothing
+//! about it.
 //!
 //! The accumulated yaw is **body-relative**: the head's yaw offset from the character's facing.
 //! On foot, the offset is compensated when the body turns (the head stays world-anchored while the
@@ -25,9 +25,9 @@
 //! runs inside that hook, in the engine's input job in play, on the engine's own tick timeline: the
 //! published pose pair ([`crate::headpose::snapshot_prev`]) rotates at the exact moment the engine
 //! resets its sub-frame interpolation fraction, so the camera hook's previous/current pair is
-//! phase-aligned with the `dtf` lerp that smooths it across the frames between ticks. (Deferring
-//! the step to the next frame's update left the render lerping a stale pair at `dtf ≈ 0` on every
-//! tick frame — a per-tick jerk.)
+//! phase-aligned with the `dtf` lerp that smooths it across the frames between ticks. Deferring the
+//! step to the next frame's update would leave the render lerping a stale pair at the start of every
+//! tick frame, a per-tick jerk.
 
 use body_rig::math::angle::{direction, heading, wrap};
 use glam::{Quat, Vec3};
@@ -65,10 +65,9 @@ pub enum HeadMode {
     Other,
 }
 
-/// Handle one engine input tick, called from the `InputDeviceManager::Update` hook (in the poll
-/// stage, [`crate::controllers::bindings::stage`]: the engine's input job in play, inside the
-/// engine's fixed-rate sim tick): detect the mode, rotate the published pose
-/// pair, integrate the look deltas, update the latch, and publish the headpose.
+/// Handle one engine input tick, called from the `InputDeviceManager::Update` detour (the engine's
+/// input job in play, inside the engine's fixed-rate sim tick): detect the mode, rotate the
+/// published pose pair, integrate the look deltas, update the latch, and publish the headpose.
 pub fn on_input_tick(look_x: f32, look_y: f32, look_x_delta: bool, dt: f32) {
     let config = *HEADPOSE_CONFIG.lock();
     if !config.enabled {
@@ -85,14 +84,13 @@ pub fn on_input_tick(look_x: f32, look_y: f32, look_x_delta: bool, dt: f32) {
     // Mode detection, once per input tick: the locomotion orientation evaluator runs once per sim
     // tick while on foot (including idle — the move/aim task counters stop while idle), and never
     // in vehicles. This hook fires on the same sim-tick cadence, so between ticks the evaluator's
-    // run advances exactly when the player is on foot. Comparing per rendered frame instead flickered
+    // run advances exactly when the player is on foot. Comparing per rendered frame instead flickers
     // to `Other` on every frame without a sim tick, resetting the latch and letting the idle
-    // camera pin leak through (the body tracked the head immediately).
+    // camera pin leak through (the body tracks the head immediately).
     //
-    // This runs regardless of the active source, *before* the VR early-return below: `sim::mode()`
-    // is read by `head_decoupled_idle` (the body-turn suppression gate), so freezing it under VR
-    // left the game's aim-relative body turn permanently unsuppressed, which the body-relative pose
-    // composition (`body × cockpit`) turns into a runaway head spin.
+    // This runs regardless of the active source, *before* the VR early-return below: the mode is
+    // read under VR too (the VR body-yaw accumulator, the per-frame body frame filter advance, the
+    // recenter, and the body-bound subsystems through `head_mode`), so it must not freeze there.
     let on_foot_ran = (participants.on_foot_ran)();
     s.mode = detect_mode(s.last_on_foot_run, on_foot_ran);
     s.last_on_foot_run = on_foot_ran;
@@ -133,9 +131,9 @@ pub fn on_input_tick(look_x: f32, look_y: f32, look_x_delta: bool, dt: f32) {
     // look effectors do not steer the HMD-driven head, so they are consumed here to turn the body
     // instead (the flatscreen head-yaw path below owns this for the sim source).
     if crate::headpose::source() == crate::headpose::Source::Vr {
-        // Swimming keeps the accumulator seeded: the swim yaw override
-        // (`crate::hooks::input::swim`) consumes the same body-yaw target, and clearing the
-        // accumulator in water would hand the body back to the game's act-quantized turns.
+        // Swimming keeps the accumulator seeded: the body crate's swim yaw override consumes the
+        // same body-yaw target, and clearing the accumulator in water would hand the body back to
+        // the game's act-quantized turns.
         let vehicle_transition = (participants.vehicle_transition)();
         let body_thrown = (participants.body_thrown)();
         advance_body_yaw(
@@ -164,7 +162,7 @@ pub fn on_input_tick(look_x: f32, look_y: f32, look_x_delta: bool, dt: f32) {
     crate::headpose::snapshot_prev();
 
     // Negated: a positive net LOOK_RIGHT delta must turn the head clockwise from above, which is
-    // a negative rotation about +Y (established in-game; the unnegated form turned the wrong way).
+    // a negative rotation about +Y (established in-game).
     let look = &VIEW.get().flatscreen_look;
     let yaw_delta = -(look_x * look.mouse_sensitivity).to_radians();
     let pitch_delta = (look_y * look.mouse_sensitivity).to_radians();

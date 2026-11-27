@@ -1,26 +1,29 @@
-//! The headpose abstraction: a pure pose source of truth.
+//! The head pose: the one published pose the head bone override, the camera hook, and the debug
+//! UI read through [`query`], and the facade the body-bound subsystems reach it through.
 //!
-//! In flatscreen, the [`sim`] module publishes a headpose (a latching mouse-look scheme). In VR,
-//! the OpenXR pose will replace the sim and publish directly here. The headpose owns no latch
-//! logic, no mode detection, and no body-yaw target — those are all sim concerns. Consumers (the
-//! head bone override, the camera hook, the debug UI) read the world-space pose via [`query`].
+//! Two sources publish it, one at a time ([`Source`]): in flatscreen, the [`sim`] module's latching
+//! mouse-look scheme; in VR, the OpenXR source ([`xr`]), which composes the HMD pose onto the body
+//! frame and the animated head. The latch, the mode detection, and each source's body-yaw target
+//! belong to the sources; this module publishes their pose, dispatches [`body_yaw_target`] and
+//! [`recenter`] to them, and holds the anchors, the gameplay state the sources read through
+//! [`HeadParticipants`], and the body frame filter ([`BodyFrameFilter`]).
 //!
 //! Two auxiliary pieces of state support the consumers:
 //!
 //! - The **anchor**: the animated (pre-override) head bone world position, published by the
-//!   character hook each frame before it overrides the bone. The pose position derives from the
-//!   anchor rather than being read back from the bone — the bone reflects last frame's override,
-//!   so reading it back closes a feedback loop that freezes the position at whatever world point
-//!   the loop first latched onto (and drags the head bone toward it as the body walks away).
+//!   character hook on each simulation tick before it overrides the bone. The pose position derives
+//!   from the anchor rather than being read back from the bone: the bone reflects the previous
+//!   override, so reading it back closes a feedback loop that freezes the position at whatever world
+//!   point the loop first latched onto (and drags the head bone toward it as the body walks away).
 //! - The **previous pose**: the pose as of the previous input tick, rotated by [`snapshot_prev`].
 //!   The engine polls input on its fixed-rate sim tick, not per rendered frame, and its camera
-//!   smooths that cadence by interpolating `m_TransformT0 → m_TransformT1` with the sub-frame
-//!   fraction `dtf`. Handing it the previous/current pose pair lets it smooth the headpose exactly
-//!   as it smooths its own camera.
+//!   smooths that cadence by interpolating `m_TransformT0` to `m_TransformT1` with the sub-frame
+//!   fraction `dtf`. Handing it the previous and current pose pair lets it smooth the head pose
+//!   exactly as it smooths its own camera.
 //!
 //! Recentering is a source concern: the sim's pose is body-relative, so it recenters by zeroing
-//! its accumulated angles ([`recenter`] delegates to [`sim::reset`]). The VR source re-bases
-//! against the HMD's absolute pose instead ([`crate::vr::recenter`]).
+//! its accumulated angles ([`sim::reset`]). The VR source re-bases against the HMD's absolute pose
+//! instead ([`crate::vr::recenter()`]).
 
 use std::sync::{
     OnceLock,
@@ -57,8 +60,8 @@ pub use xr::{
 
 /// Which source currently owns the published headpose. The flatscreen [`sim`] and the VR [`xr`]
 /// source are mutually exclusive publishers; the arbiter is a plain atomic so the sim's per-tick
-/// gate and [`set_anchors`] can read it without taking the runtime lock (the VR frame loop holds the
-/// OpenXR runtime lock across the frame, so reading it there would deadlock).
+/// gate and [`set_anchor_pair`] can read it without taking the runtime lock (the VR frame loop holds
+/// the OpenXR runtime lock across the frame, so reading it there would deadlock).
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum Source {
     /// The flatscreen mouse-look simulation ([`sim`]) publishes the pose.
@@ -67,11 +70,12 @@ pub enum Source {
     Vr,
 }
 
-/// The active headpose source. Set once per frame by the VR frame loop (`Vr` while an OpenXR session
-/// is running, else `Sim`).
+/// The active headpose source. Set once per frame by the game's frame entry before the input tick
+/// (`Vr` while an OpenXR session is running, else `Sim`), and to `Vr` whenever the VR source
+/// publishes a pose pair.
 static SOURCE: AtomicU8 = AtomicU8::new(Source::Sim as u8);
 
-/// Set the active headpose source (see [`Source`]). Called once per frame by the VR frame loop.
+/// Set the active headpose source (see [`Source`]).
 pub fn set_source(source: Source) {
     SOURCE.store(source as u8, Ordering::Relaxed);
 }
@@ -104,8 +108,8 @@ pub fn query_prev() -> HeadPose {
 }
 
 /// The head's rotation *relative to the body frame*: how far the head is turned from neutral, with
-/// the body's own facing divided out. The
-/// identity means the head faces exactly where the body does.
+/// the body's own facing divided out. The identity means the head faces exactly where the body
+/// does.
 ///
 /// Both sources compose their published world orientation as `body × (…) × this`, so this is the
 /// factor each contributes — the sim's accumulated look angles, or the HMD's orientation relative to
@@ -148,8 +152,8 @@ pub(crate) fn set_pose(pose: HeadPose) {
 /// so the engine's `dtf` lerp interpolates the camera between them across sub-tick frames. The VR
 /// source uses this for the sim-driven part of the pose (the body frame and the animated head
 /// anchor, which advance at the tick rate). Its HMD cockpit delta is identical on both sides, so it
-/// still passes through with zero added latency — publishing the same pose to both sides instead
-/// would freeze the tick-rate anchor/body motion too, which stepped the camera in vehicles and while
+/// still passes through with zero added latency. Publishing the same pose to both sides instead
+/// would freeze the tick-rate anchor and body motion too, stepping the camera in vehicles and while
 /// parachuting.
 pub(crate) fn set_pose_pair(prev: HeadPose, cur: HeadPose) {
     let mut s = state().lock();
@@ -253,7 +257,7 @@ pub fn eye_arm() -> Vec3 {
 /// the VR source re-bases the cockpit baseline against the HMD's latest located pose. Both are
 /// re-based so one action recenters whichever source is live (and the other stays consistent for a
 /// later switch). The sim recenters at once; the VR re-base runs at the start of the next frame
-/// ([`crate::vr::recenter`]), so this is safe from any thread.
+/// ([`crate::vr::recenter()`]), so this is safe from any thread.
 pub fn recenter() {
     sim::reset();
     crate::vr::recenter();
@@ -469,6 +473,7 @@ mod tests {
             );
         }
     }
+
     /// While the view is held off the walking animation, the pose hangs from the neutral head, and
     /// a new tick's animated head bob does not move it: only the neutral head's own motion does.
     #[test]

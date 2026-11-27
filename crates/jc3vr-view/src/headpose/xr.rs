@@ -6,8 +6,7 @@
 //! When an OpenXR session is running, this source replaces the sim as the headpose publisher (the
 //! sim continues to own flatscreen). The VR runtime (`crate::vr`) locates the per-eye views each
 //! frame, re-bases them into the cockpit frame against the recenter baseline, and reduces them to a
-//! single **cockpit pose** -- the head's position delta and yaw-only-unrotated orientation relative
-//! to the baseline. This module composes that cockpit pose into world space exactly as the sim
+//! single **cockpit pose**: the head's position delta and orientation relative to the baseline. This module composes that cockpit pose into world space exactly as the sim
 //! composes its body-relative offset:
 //!
 //! - **orientation** = body-frame rotation × cockpit orientation, so the body's pitch and roll (a
@@ -18,17 +17,15 @@
 //!   does not swing that offset with the head orientation: the tracked translation already
 //!   contains the player's real neck pivot.
 //!
-//! The pose is published as a tick-spaced pair ([`crate::headpose::set_pose_pair`], via [`publish_pair`]): the
-//! sim-driven part (the body frame and the animated head-bone anchor) advances at the engine's sim
-//! tick rate, so its previous-tick and current-tick values feed the engine's `dtf` lerp and smooth
-//! the sub-tick frames — without this the camera stepped at the tick rate in vehicles and while
-//! parachuting, where the anchor moves ~1 m per tick. The HMD cockpit delta is sampled fresh at the
+//! The pose is published as a tick-spaced pair ([`crate::headpose::set_pose_pair`], via
+//! [`publish_pair`]): the sim-driven part (the body frame and the animated head-bone anchor)
+//! advances at the engine's sim tick rate, so its previous-tick and current-tick values feed the
+//! engine's `dtf` lerp and smooth the sub-tick frames. Without the pair the camera steps at the tick
+//! rate in vehicles and while parachuting, where the anchor moves about a metre per tick. The HMD
+//! cockpit delta is sampled fresh at the
 //! predicted display time every rendered frame and is identical on both sides of the pair, so it
 //! passes through with zero added latency (any residual delta would only lag the head behind the
 //! HMD).
-//!
-//! Aim is unchanged from flatscreen: the camera follows the head, and the head *is* the aim (gaze
-//! aim is the interim model).
 //!
 //! Body yaw: the HMD owns the head, so the look effectors (mouse and right stick) do not steer
 //! it and are repurposed to turn the body ([`advance_body_yaw`]). The turned heading is handed to
@@ -133,11 +130,11 @@ pub fn cockpit_pose() -> Option<CockpitPose> {
 /// the next landing re-seeds. `look_x` follows the same sign convention as the flatscreen head yaw:
 /// a rightward look turns the heading clockwise (a negative rotation about +Y).
 ///
-/// `swimming` is passed separately from `on_foot` only to keep the accumulator alive: the swim
+/// `swimming` is passed separately from `on_foot`, foremost to keep the accumulator alive: the swim
 /// family never runs the on-foot orientation evaluator, so without it the accumulator would clear
 /// the moment the player entered water and the right stick would stop steering the body. The lead
 /// clamp below applies identically in both, since in water the body also turns because of the
-/// target (see [`crate::hooks::input::swim`]).
+/// target (the body crate's swim input hook steers toward it).
 ///
 /// `follow` lets the body turn under the view toward the player's torso ([`BodyFollow`]); its
 /// offset also seeds the accumulator, so that the view does not jump when the body was turned
