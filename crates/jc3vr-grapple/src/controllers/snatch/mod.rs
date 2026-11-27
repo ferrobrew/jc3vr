@@ -392,11 +392,15 @@ pub fn finish_tick(game: &GameTick<'_>, input: &FinishInput, desired: &mut Vec<D
     }
 }
 
-/// Stand the snatch down: end its line, let go of its target, and turn the grapple's weapon aim
-/// and button hooks off. Called from the input tick whenever the bindings stand down.
+/// Stand the snatch down: end its line, let go of its target, turn the grapple's weapon aim and
+/// button hooks off, drop a weapon a tap reeled in before it could be tossed, and narrow the
+/// characters' gun notice back to reach. Called from the input tick whenever the bindings stand
+/// down.
 pub fn stand_down() {
     hooks::publish(false, false);
+    hooks::take_toss();
     grapple_weapons::set_enabled(false);
+    steal::widen_notice(0.0);
     latch::clear();
     let mut state = STATE.lock();
     if !matches!(state.phase, Phase::Idle) {
