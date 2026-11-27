@@ -3,21 +3,21 @@
 //! `docs/engine/gameplay/weapon-equip-and-drop.md`, "Racks".
 //!
 //! A pickup's interaction graph is offered to a character only while its entry conditions pass, and
-//! one of them ([`InteractionGraphParentWeaponNotInInventory`]) fails while the character's slot for
-//! the offered weapon holds a weapon of the same kind. The game holds one weapon per slot, so a
+//! one of them ([`InteractionGraphParentWeaponNotInInventory`]) fails while the character's slot
+//! for the offered weapon holds a weapon of the same kind. The game holds one weapon per slot, so a
 //! second of a kind would only replace the first. Under single pistols each hand holds its own
 //! weapon of the dual-wield slot, and the free hand can take a second of the same kind beside the
 //! first: a second submachine gun off the same rack, for instance. The condition would hide that
 //! rack from the player's valid interaction entries, which are how the rack's weapons are found
 //! ([`crate::controllers::weapons::hold::rack`]), so for the local player the detour lets it pass
-//! for a weapon of the dual-wield slot while pistols are single. A weapon of another kind in the
-//! slot already passes, so the second of a kind is then offered and taken exactly as one of
+//! for a weapon of the dual-wield slot while the single pistols are made. A weapon of another kind
+//! in the slot already passes, so the second of a kind is then offered and taken exactly as one of
 //! another kind is: by a free hand's grab, or by the game's use-item pickup, which the table routes
 //! into a free hand ([`crate::controllers::weapons::hold::use_item`]).
 //!
 //! The condition is evaluated wherever the character's interactions are updated, so the detour
-//! reads only the entries and the weapon they offer, as the condition itself does, and the
-//! single-pistol switch.
+//! reads only the entries and the weapon they offer, as the condition itself does, and whether
+//! the single pistols are made ([`single::active`]).
 
 use detours_macro::detour;
 use jc3gi::{
@@ -34,8 +34,8 @@ pub(crate) fn hook_library() -> HookLibrary {
 }
 
 /// Whether a pickup whose not-carried condition evaluated to `passed` is offered: as the game has
-/// it, or, for the local player while pistols are single, whenever the offered weapon is of the
-/// dual-wield slot, which each hand fills on its own.
+/// it, or, for the local player while the single pistols are made, whenever the offered weapon is
+/// of the dual-wield slot, which each hand fills on its own.
 pub(crate) fn offered_to_player(
     passed: bool,
     local_player: bool,

@@ -14,10 +14,10 @@
 //! One hook changes what the game does. While a session is logged in offline, the online-suite
 //! manager asks the account manager on every tick whether Steam is logged on
 //! ([`AccountManager::IsConnectedToFirstPartyService`]), to decide whether to retry the online
-//! suite. The Steam account answers through `ISteamUser::BLoggedOn`, a call into the Steam client,
-//! which under Proton crosses into the native client; it is the only untimed per-tick work in the
-//! manager, where the periodic stalls of hundreds of milliseconds sit
-//! (`docs/issues/periodic-sim-tick-hitches.md`). With [`OnlineConfig::skip_logged_on_check`] on,
+//! suite. The Steam account answers through `ISteamUser::BLoggedOn`, a round trip into the Steam
+//! client, which under Proton crosses into the native client. The periodic stalls of hundreds of
+//! milliseconds are the client's own (`docs/issues/periodic-sim-tick-hitches.md`); this per-tick
+//! call is where the manager first meets them. With [`OnlineConfig::skip_logged_on_check`] on,
 //! that one call site answers false without calling Steam, so the retry never starts; the account
 //! manager's other callers (the title screen's login choice, the achievements, the pause menu, the
 //! reconnect from the menus) still reach Steam. The call site is told apart by the thread being

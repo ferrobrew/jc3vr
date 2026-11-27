@@ -1,5 +1,5 @@
 //! The per-hand tick: every gun a hand holds fires from that hand's own trigger and aims at that
-//! hand's own point. The design is the two-handed inventory's "Firing"
+//! hand's own point. The design is the two-handed inventory's "The per-hand tick"
 //! (`docs/mod/input/two-handed-inventory.md`), the engine side in
 //! `docs/engine/gameplay/weapon-firing.md`.
 //!

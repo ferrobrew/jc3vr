@@ -1,7 +1,6 @@
 //! Traversal leaves the hands as they are: the base layer's weapon state tasks are refused for the
 //! local player while the loadout table runs, and the neutral state the game forces on a teleport,
-//! a revive, or a cutscene's setup is undone. The design is the two-handed inventory's "No
-//! automatic moves" (`docs/mod/input/two-handed-inventory.md`), the engine side in
+//! a revive, or a cutscene's setup is undone. The design is the two-handed inventory's "Traversal" (`docs/mod/input/two-handed-inventory.md`), the engine side in
 //! `docs/engine/character/animation-graph.md`, "The base layer's weapon tasks".
 //!
 //! - [`NWeaponUnequipTask_OnEnter`] puts the wielded weapon away on entering a vehicle, a seat, a

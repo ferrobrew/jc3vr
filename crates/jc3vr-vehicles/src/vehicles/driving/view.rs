@@ -24,8 +24,8 @@
 //! standing at the helm and the seated standard does not fit them.
 //!
 //! A vehicle's gunner seat is corrected the same way from the manned gun's handles: the turret's
-//! animation puts the head right over them, so on the 14 November take the view looked down at the
-//! handles from a few centimetres and the player stepped back to reach them. Their midpoint is put
+//! animation puts the head right over them, so the view would look down at the handles from a few
+//! centimetres and the player would have to step back to reach them. Their midpoint is put
 //! at the tuning's `driving_view.handles_from_eyes_m` ([`derive_handles`]).
 
 use std::time::Duration;

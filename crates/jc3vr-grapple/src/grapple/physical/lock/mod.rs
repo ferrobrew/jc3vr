@@ -17,10 +17,11 @@
 //! to it on the next input tick ([`lock_tick`]). A static target takes nothing, and a character is
 //! never locked onto.
 //!
-//! On take, the lock turns the reel's rush into the swing: over the config's take time it turns the
-//! character's speed toward the hook's point, measured against the hook's own motion, across the
-//! line, keeping the speed as far as the line can hold the swing it starts, and lets the held
-//! length follow the character in, so the line does not fall slack ([`model::swing`]).
+//! On take, the lock changes nothing about the character's motion: while the character still
+//! closes on the hook's point, measured against the hook's own motion, it coasts on its momentum
+//! and the held length follows it in, so the line goes taut as the approach ends and nothing across
+//! the line is turned. Only a coast that would carry it in past the shortest length the line can
+//! swing it on is braked, along the line alone (`model::Held::take`).
 //!
 //! The grapple button's gestures ([`crate::controllers::grapple_button`]) say what the
 //! player asks ([`LockButton`]), and [`lock_tick`] acts on them after the bindings' tables step:

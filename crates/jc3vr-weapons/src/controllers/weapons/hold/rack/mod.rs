@@ -28,10 +28,10 @@
 //!   one, which spawns a few frames later where the rack's weapon hangs, and then goes into the
 //!   hand as the rack's own weapon would, while the rack's weapon is hidden until it has left.
 //!
-//! While pistols are single, a rack's pistol pair is taken one pistol at a time ([`paired`]), and
-//! the game's offer of a second weapon of a kind the player already carries is let pass for the
-//! dual-wield slot ([`offer`]). The weapons a placement rule set out beyond the hands' reach are
-//! noted for the grapple's snatch ([`remote`]).
+//! While the single pistols are made, a rack's pistol pair is taken one pistol at a time
+//! ([`paired`]), and the game's offer of a second weapon of a kind the player already carries is
+//! let pass for the dual-wield slot ([`offer`]). The weapons a placement rule set out beyond the
+//! hands' reach are noted for the grapple's snatch ([`remote`]).
 //!
 //! [`InteractionUserProxy::m_ValidEntries`]: jc3gi::interaction::InteractionUserProxy::m_ValidEntries
 

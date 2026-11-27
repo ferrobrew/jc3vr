@@ -1,7 +1,6 @@
 //! The debug UI's give: a weapon of any kind the game ships put straight onto a socket or into a
 //! hand, a socket cleared or a hand's weapon let go of, the grenade stock set, and the placed C4
-//! charges removed. The design is in `docs/mod/input/two-handed-inventory.md`, "Giving weapons from
-//! the debug UI".
+//! charges removed. The design is in `docs/mod/input/two-handed-inventory.md`, "The debug UI".
 //!
 //! A give takes the restore's path for a carried weapon: the shipped definition's tag set names
 //! its definition's unique tag ([`SpawnSystem::GetUniqueTag`]), the spawn system spawns that one

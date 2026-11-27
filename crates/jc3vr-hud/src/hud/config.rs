@@ -26,7 +26,7 @@ pub struct HudConfig {
     pub redirect: bool,
     /// Distance from the eye to the panel, in meters. The panel resizes with distance to keep a
     /// constant apparent (angular) size, so this can be changed freely without the HUD growing or
-    /// shrinking. Comfort band: 1.5-3m.
+    /// shrinking. Ships at 6 m.
     pub distance: f32,
     /// Apparent-size multiplier for the panel; `1.0` is the comfortable baseline (4 m wide at 3 m).
     /// The physical size is derived from this, [`distance`](HudConfig::distance), and the effective

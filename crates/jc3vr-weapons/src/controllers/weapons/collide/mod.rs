@@ -1,5 +1,5 @@
-//! Held long guns that collide with the world: the plan of record's colliding held weapons
-//! (`docs/mod/input/physical-weapons.md`, "Guns against walls").
+//! Held long guns that collide with the world, described in
+//! `docs/mod/input/physical-weapons.md`, "Guns against walls".
 //!
 //! A gun in the hands has no body in the physics world (the weapon's bodies are out of the world
 //! while it is wielded), so nothing stops it at a wall: a rifle held up against one goes through.

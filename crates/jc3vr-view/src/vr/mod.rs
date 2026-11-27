@@ -32,8 +32,10 @@
 //!
 //! Bring-up failure at any stage logs on target `"vr"` and leaves the mod in flatscreen stereo;
 //! [`update`] retries the whole bring-up on the cadence of the runtime tuning's `retry_interval_s`
-//! while `vr.enabled`. Turning `vr.enabled` off, or [`jc3vr_core::lifecycle`] shutdown, tears the runtime down
-//! in order (swapchain → session → instance) so the OpenXR instance never outlives the DLL.
+//! while `vr.enabled`. Turning `vr.enabled` off tears the runtime down in order (swapchain →
+//! session → instance). [`jc3vr_core::lifecycle`] shutdown releases the swapchain and stashes the
+//! instance and session handles for a reinject instead, because the runtime allows few of each per
+//! process (`vr::persist`).
 
 pub mod projection;
 

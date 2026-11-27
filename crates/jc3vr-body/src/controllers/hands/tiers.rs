@@ -1,9 +1,9 @@
 //! The hand tiers: which of the plan's four tiers each scripted state assigns the hands, and the
 //! per-hand weight that blends a hand between its controller and the animation.
 //!
-//! The plan of record ("Hand tiers" in `docs/mod/input/hands-and-aiming.md`) assigns every
+//! The hand tiers table ("Hand tiers" in `docs/mod/input/hands-and-aiming.md`) assigns every
 //! scripted state one of four tiers. The assignments are data: [`HandTierTable`] holds one tier per
-//! [`TierState`], fixed at the plan's table ([`HandTierTable::PLAN`]). The tiers:
+//! [`TierState`], fixed at the documented table ([`HandTierTable::PLAN`]). The tiers:
 //!
 //! - [`HandTier::Free`]: the hand follows its controller;
 //! - [`HandTier::ActionRuns`]: the game plays the action (a reload's timer and the weapon model's
@@ -220,7 +220,7 @@ pub struct HandTierTable {
 }
 
 impl HandTierTable {
-    /// The plan of record's assignments. Driving is free: the physical vehicle controls anchor a
+    /// The documented assignments. Driving is free: the physical vehicle controls anchor a
     /// holding hand within it.
     pub const PLAN: HandTierTable = HandTierTable {
         on_foot: HandTier::Free,

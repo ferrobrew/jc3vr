@@ -1,4 +1,4 @@
-# The vehicles' tuning: `VehiclesTuning` in `src/controllers/vehicles/tuning/mod.rs` and the
+# The vehicles' tuning: `VehiclesTuning` in `src/vehicles/tuning/mod.rs` and the
 # structs under it, whose fields say what each value does. Every key is required and no other is
 # accepted. Lengths are metres, angles degrees, and times seconds, or milliseconds where the key
 # ends in `_ms`; a share is a fraction of a range, in `0..1`.

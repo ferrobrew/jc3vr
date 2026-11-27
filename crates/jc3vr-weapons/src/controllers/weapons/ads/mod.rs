@@ -1,5 +1,5 @@
-//! Aiming a long gun down its sights: the plan of record's true aiming down sights
-//! (`docs/mod/input/physical-weapons.md`, "Aiming down the sights").
+//! Aiming a long gun down its sights, described in
+//! `docs/mod/input/physical-weapons.md`, "Aiming down the sights".
 //!
 //! A long gun raised to the eye is lined up with it ([`solve`]): its stock seats in the shoulder
 //! pocket and the gun pivots about it, its sight line turns through the aiming eye, and a scope

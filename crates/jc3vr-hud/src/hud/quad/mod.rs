@@ -10,9 +10,9 @@
 //! draw.
 //!
 //! World-space corners are computed once per frame (eye 0) via [`compute_world_corners`] and cached
-//! by [`crate::hud::state::HudState`]; both eyes then project the same world-space quad through their own
-//! per-eye VP. Geometry comes from [`crate::hud::config::HudConfig`]; the panel pose (head-following
-//! or world-static, per the [`crate::hud::HudMode`]) is chosen by
+//! by [`crate::hud::state::HudState`]; both eyes then project the same world-space quad through
+//! their own per-eye VP. Geometry comes from [`crate::hud::config::HudConfig`]; the panel pose
+//! (head-following, or latched while an in-game modal menu is up) is chosen by
 //! [`crate::hud::state::HudState::update_pose`].
 
 use anyhow::Context as _;
@@ -394,12 +394,12 @@ impl HudQuad {
 
 /// Geometry parameters for computing the panel's world-space corners.
 pub(crate) struct PanelParams {
-    /// The panel's anchor position (the eye/head position the panel is placed in front of). In
-    /// [`HudMode::Hud`](crate::hud::HudMode::Hud) this tracks the head; in
-    /// [`HudMode::Movie`](crate::hud::HudMode::Movie) it is the latched world-static position.
+    /// The panel's anchor position (the eye/head position the panel is placed in front of). It
+    /// tracks the head, except while an in-game modal menu is up, when it is the latched
+    /// world-static position.
     pub pos: Vec3,
-    /// The panel's world orientation: the damped follow rotation in `Hud` mode, or the latched
-    /// rotation in `Movie` mode.
+    /// The panel's world orientation: the damped follow rotation, or the latched
+    /// rotation while an in-game modal menu is up.
     pub(crate) rot: Quat,
     /// Panel aspect ratio (width / height) -- the effective aspect for the current mode, shared with
     /// the render target and marker projection so the panel always matches the texture.

@@ -2,18 +2,18 @@
 //! design is in `docs/mod/input/physical-weapons.md`, the engine side in
 //! `docs/engine/gameplay/weapon-equip-and-drop.md`.
 //!
-//! The game holds every weapon but the dual-wield pair in the right hand. Here any weapon rides
-//! the hand the loadout table holds it in ([`crate::controllers::loadout::live`]): the hand that
-//! drew it at a holster, took it off the ground, or was handed it, or for a weapon the game wields
-//! on its own a free hand, the dominant first. A grab that starts a draw or a take tells the table
+//! The game holds every weapon but the dual-wield pair in the right hand. Here any weapon rides the
+//! hand the loadout table holds it in ([`crate::controllers::loadout::live`]): the hand that drew
+//! it at a holster, took it off the ground, or was handed it, or for a weapon the game wields on
+//! its own a free hand, the dominant first. A grab that starts a draw or a take tells the table
 //! which hand expects the weapon ([`begin`]), a call of the mod's that wields one lands it at once
 //! ([`adopt`]), and a handover moves it ([`hand_over`]). Its guns ride that hand's attach bones
 //! ([`layout`]), and everything downstream that derives a gun's hand from its attach bone (the gun
 //! aim, the shot's hand, the rigid grip, the recoil, the heft, the haptics, the reload, and the
-//! render-time late update) follows. The grenade, the planted explosive, and the beacon are left
-//! to the game. A weapon of two guns (the game's dual-wield pair, while the pistols are not made
-//! separate) keeps a gun in each hand ([`layout::placed_bone`]). The table holds the hands only
-//! while the VR inventory runs it; without it the game's own layout stands.
+//! render-time late update) follows. The grenade, the planted explosive, and the beacon are left to
+//! the game. A weapon of two guns (the game's dual-wield pair, until its twin is spawned) keeps a
+//! gun in each hand ([`layout::placed_bone`]). The table holds the hands only while the VR
+//! inventory runs it; without it the game's own layout stands.
 //!
 //! The game rewrites every gun's attach-bone table at the end of the character's
 //! pose-finalization pass ([`WeaponBase::UpdatePostFinalizePose`]), and the character's state

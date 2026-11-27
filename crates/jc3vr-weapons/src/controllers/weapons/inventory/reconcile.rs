@@ -1,5 +1,5 @@
 //! The game's slots as a projection of the loadout table, made to match each input tick. The
-//! design is the two-handed inventory's "The game's slots are a projection"
+//! design is the two-handed inventory's "The slots as a projection"
 //! (`docs/mod/input/two-handed-inventory.md`), the engine side in
 //! `docs/engine/gameplay/weapon-equip-and-drop.md`.
 //!

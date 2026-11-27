@@ -1,5 +1,5 @@
 //! The hint's textures, painted on the CPU from the game's icons: for a take the item's icon, and
-//! for a swap the weapon going in, an arrow, and the weapon coming out, dimmed, as the game's own
+//! for a swap the weapon coming out, dimmed, an arrow, and the weapon going in, as the game's own
 //! pickup panel pairs a pickup with the weapon it replaces. Above the middle of either (the icon
 //! of a take, the arrow of a swap) a small label names the socket or pouch involved.
 //!

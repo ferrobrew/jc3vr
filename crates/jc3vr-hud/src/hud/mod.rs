@@ -19,10 +19,11 @@
 //! more frames tick before the hooks come down, so the restore happens on the render thread the same
 //! way turning the redirect off does.
 //!
-//! The panel has two modes (see [`HudMode`], chosen per frame by [`current_mode`]): the gameplay HUD
-//! lazily follows the head's orientation with critically-damped quaternion slerp, while full-screen
-//! UI (movies, loading screens, menus) is world-static -- latched in place so the head can look away
-//! from it. Each mode also has its own aspect (the tuning's `panel.hud_aspect` / `MOVIE_ASPECT`).
+//! The panel has two modes (see [`HudMode`], chosen per frame by [`current_mode`]) that set its
+//! aspect (the tuning's `panel.hud_aspect` / `MOVIE_ASPECT`). Its placement is chosen separately:
+//! it lazily follows the head's orientation with critically-damped quaternion slerp, except while
+//! an in-game modal menu is up ([`menu_world_lock`]), when it is latched in place so the head can
+//! look away from it. Movies, loading screens, and the frontend follow the head.
 //! The panel's world-space corners are computed once per frame (eye 0) and projected through each
 //! eye's own per-eye VP, so it sits at a finite world position with correct stereo depth rather than
 //! being head-locked at infinity.
@@ -296,7 +297,7 @@ fn hud_target_size(render_scale: f32, aspect: f32, eye_width: u32, eye_height: u
 
 /// Draw the redirected HUD as a floating quad for `eye` over `target` (the eye's linear back buffer),
 /// while the redirect is on. The first UI eye chooses the panel pose for the
-/// current mode (head-following or world-static) and computes the shared world-space corners.
+/// current mode (head-following or latched) and computes the shared world-space corners.
 /// Ordinary two-pass rendering crops and clears the HUD texture on every dispatch. Collapse
 /// crops only on eye 0, reuses the prepared textures for both eyes, and clears after eye 1. Called
 /// from the render-thread post-draw hook, before the back buffer is captured/presented, with the
@@ -433,7 +434,7 @@ static POINTER_BASIS_MISSING: AtomicBool = AtomicBool::new(false);
 /// ahead of the camera but off-center from the panel's facing direction appears at the correct
 /// position on the panel surface, compensating for the follow-damping lag.
 pub(crate) fn compute_panel_vp() -> Option<(Matrix4, Matrix4)> {
-    // Reuse the pose chosen for the quad this frame (head-following or latched world-static), so
+    // Reuse the pose chosen for the quad this frame (head-following or latched), so
     // markers project onto exactly the panel the quad drew.
     let (pos, rot) = HUD_STATE.lock().panel_pose()?;
     let aspect = current_aspect();

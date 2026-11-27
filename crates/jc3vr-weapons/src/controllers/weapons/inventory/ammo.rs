@@ -1,5 +1,5 @@
 //! The ammunition auto-pickup, for every weapon in the loadout table. The design is the two-handed
-//! inventory's "No automatic moves" (`docs/mod/input/two-handed-inventory.md`), the engine side in
+//! inventory's "The takes" (`docs/mod/input/two-handed-inventory.md`), the engine side in
 //! `docs/engine/gameplay/item-pickup.md`.
 //!
 //! A weapon lying in the world gives its stored rounds to the reserve when the player walks over it

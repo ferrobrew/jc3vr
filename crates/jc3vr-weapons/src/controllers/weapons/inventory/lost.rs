@@ -1,6 +1,6 @@
 //! The lost-weapon return: a weapon lying in the world that the player lost rather than dropped
 //! comes back to a free socket that fits it, else to the player's feet. The design is the
-//! two-handed inventory's "Letting go" (`docs/mod/input/two-handed-inventory.md`).
+//! two-handed inventory's "The weapons in the world" (`docs/mod/input/two-handed-inventory.md`).
 //!
 //! A weapon is lost when it is out of the world, below the sea's level by more than
 //! `lost_depth_m`, which a weapon reaches only by sinking out of reach or falling through the

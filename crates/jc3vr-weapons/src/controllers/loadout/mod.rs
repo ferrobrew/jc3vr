@@ -1,5 +1,5 @@
 //! The loadout: the one source of truth for the local player's items, as the two-handed
-//! inventory's "The architecture" describes it (`docs/mod/input/two-handed-inventory.md`).
+//! inventory's "The model" describes it (`docs/mod/input/two-handed-inventory.md`).
 //!
 //! Every item the player has is in exactly one place: the left hand, the right hand, a socket of
 //! the body, or the world near the player. The core is pure and tested without the game:

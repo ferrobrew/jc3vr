@@ -6,8 +6,9 @@
 //! (the stage-shaped safe-area input of `crate::hud::binding`), so nothing the HUD lays out lands
 //! in the bands, and at each capture the parts below are moved into cells there:
 //!
-//! - the weapon readout (`MCI_weapons_parent`), drawn above the gun hand
-//!   ([`crate::hud::anchored`]);
+//! - the weapon readout (`MCI_weapons_parent`), moved out of the band but not drawn: the
+//!   mod's own counter above each hand holding a gun replaces it
+//!   ([`crate::hud::anchored::hand_ammo`]);
 //! - the heat readout (`MCI_heat_container`) and the grenade readout (`MCI_grenade_parent`), drawn
 //!   on the off-hand's wrist;
 //! - the weapon selection cross (`MCI_weapon_selection_wheel`), drawn at the hand steering the

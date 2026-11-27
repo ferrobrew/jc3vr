@@ -1,5 +1,5 @@
 //! The game's own use-item pickup of a weapon, routed into the loadout table's take. The design is
-//! the two-handed inventory's "No automatic moves" (`docs/mod/input/two-handed-inventory.md`), the
+//! the two-handed inventory's "The takes" (`docs/mod/input/two-handed-inventory.md`), the
 //! engine side in `docs/engine/gameplay/item-pickup.md`.
 //!
 //! The game completes a pickup through [`WeaponBase::PickupItem`]: from the pickup animation's track

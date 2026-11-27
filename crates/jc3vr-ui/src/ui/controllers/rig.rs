@@ -112,7 +112,7 @@ pub(super) fn rig_settings(ui: &mut Ui, body: &mut BodyRemapConfig) {
         None => "Firm ragdoll: out".to_owned(),
     });
     ui.label(format!(
-        "Muscle target (dry run): {} composed, {} refused · legs from the {} · upper body moved \
+        "Muscle target: {} composed, {} refused · legs from the {} · upper body moved \
          {:.3} m · thighs turned {:.0}° and {:.0}°",
         firm.targets,
         firm.refused,
@@ -199,8 +199,7 @@ fn ik_body_settings(ui: &mut Ui, ik: &mut IkBodyConfig) {
     )
     .on_hover_text(
         "Compose the firm ragdoll's muscle target from the drawn upper body and the IK body's \
-             legs rather than the raw clip. Until the ragdoll's pre-physics step is bound, the \
-             target is composed as a dry run for the readout.",
+             legs rather than the raw clip. With it off, the ragdoll's motors chase the clip.",
     );
     ui.collapsing("IK body", |ui| {
         let c = &mut ik.contact;

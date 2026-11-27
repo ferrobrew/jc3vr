@@ -1,8 +1,9 @@
-//! Physical hands: each empty hand's palm collides with the world. The design is in
-//! `docs/mod/input/physical-hands.md`, the engine side in
+//! Physical hands: each empty hand is a body in the physics world, and a hand whose body does not
+//! act is probed instead. The design is in `docs/mod/input/physical-hands.md`, the engine side in
 //! `docs/engine/gameplay/melee-and-damage.md`.
 //!
-//! - [`palm`]: the palm box at the tracked wrist, and the points its contacts are probed from;
+//! - [`palm`]: the palm box at the tracked wrist, and the points its contacts are probed from when
+//!   the hand's body does not act;
 //! - [`contact`]: whether each probe point has passed into a surface, and how deep;
 //! - [`push`]: the body's push away from what the palms press into;
 //! - [`shove`]: a palm's soft contact with a loose body, and how much the body gives;
@@ -10,7 +11,7 @@
 //!   grip in [`grasp`] and the solver that carries what the hands hold in [`hold`];
 //! - [`touch`]: what the contacts do to the world: knocks, shoves, and pressure pulses;
 //! - [`sounds`]: the impact sounds of a hand or a held object meeting something;
-//! - [`physics`]: the hand bodies, which replace the palms' probes for the hands they drive;
+//! - [`physics`]: the hand bodies, which meet the world for the hands they drive;
 //! - [`impacts`]: what a held object's contacts do: haptics, sounds, and damage;
 //! - [`characters`]: taking hold of characters, and pulling a seated one out through an open door
 //!   or a broken window;
@@ -31,13 +32,13 @@
 //! [`rigid`](jc3vr_body::controllers::physics::rigid)) is the body crate's
 //! ([`jc3vr_body::controllers::physics`]).
 //!
-//! A hand its body drives ([`physics::drives`]) meets the world through its body. Otherwise, the
-//! palms are probed rather than simulated: no body is added to the physics world. Each simulation
-//! tick, once the player aim control's post-simulation update has run ([`tick::after_aim`]), the
-//! palms' tick runs on the game thread at the start of the frame's render update
-//! ([`tick::main_thread_tick`]), and each probe point of each acting palm is cast from where it
-//! last was in the open to where it is now, through the player aim's ray filter, which never hits
-//! the player. Characters are passed through. What the casts find drives these:
+//! A hand its body drives ([`physics::drives`]) meets the world through its body. A hand whose body
+//! does not act falls back to the palm's probes: no body is added to the physics world for it. For
+//! such a palm, each simulation tick, once the player aim control's post-simulation update has run
+//! ([`tick::after_aim`]), the palms' tick runs on the game thread at the start of the frame's
+//! render update ([`tick::main_thread_tick`]), and each probe point of each acting palm is cast
+//! from where it last was in the open to where it is now, through the player aim's ray filter,
+//! which never hits the player. Characters are passed through. What the casts find drives these:
 //!
 //! 1. A press into a solid surface pushes the body away from it ([`push`]), as movement added to
 //!    the on-foot locomotion task's own ([`palm_push`], composed by the body rig's simulation

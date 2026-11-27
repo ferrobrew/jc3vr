@@ -458,7 +458,7 @@ unsafe fn tear_off(
         });
     if let Err(error) = delivered {
         // The game's use-item action is not a fallback: it picks up the nearest pickup, not the
-        // torn gun, and its slot swap ejected the player's own weapons on the 14 November take.
+        // torn gun, and its slot swap ejects the player's own weapons.
         // The gun stays where the tear left it.
         tracing::info!(
             target: "controllers",

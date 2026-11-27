@@ -121,9 +121,9 @@ pub struct HudState {
     depth_shift: Option<DepthShift>,
     /// Lazy-follow damping state for the floating panel (gameplay HUD mode).
     follow: FollowState,
-    /// The latched world-static pose `(position, rotation)` for [`HudMode::Movie`](crate::hud::HudMode::Movie):
-    /// captured when the mode is entered and held so the panel does not move with the head. `None`
-    /// outside movie mode.
+    /// The latched world-static pose `(position, rotation)` while an in-game modal menu is up
+    /// ([`menu_world_lock`](crate::hud::menu_world_lock)): captured on the first frozen frame and
+    /// held so the panel does not move with the head. `None` otherwise.
     latched_pose: Option<(Vec3, Quat)>,
     /// The panel pose `(position, rotation)` chosen for the current frame, cached for the marker
     /// projection ([`compute_panel_vp`](crate::hud::compute_panel_vp)) to reuse.
