@@ -133,6 +133,31 @@ pub fn register_desktop_overlay(draw: fn()) {
     set_once(&DESKTOP_OVERLAY, draw, "desktop overlay");
 }
 
+/// Whether `layer` is registered, for the install's registration check.
+pub fn eye_layer_registered(layer: EyeLayer) -> bool {
+    EYE_LAYERS.registered(layer as usize)
+}
+
+/// Whether `pass` is registered, for the install's registration check.
+pub fn frame_pass_registered(pass: FramePass) -> bool {
+    FRAME_PASSES.registered(pass as usize)
+}
+
+/// Whether the UI redirect is registered, for the install's registration check.
+pub fn ui_redirect_registered() -> bool {
+    UI_REDIRECT.get().is_some()
+}
+
+/// Whether the eye-frame recorder is registered, for the install's registration check.
+pub fn eye_frame_recorder_registered() -> bool {
+    RECORDER.get().is_some()
+}
+
+/// Whether the desktop overlay is registered, for the install's registration check.
+pub fn desktop_overlay_registered() -> bool {
+    DESKTOP_OVERLAY.get().is_some()
+}
+
 #[inline]
 pub fn run_dispatch_ticks(index: usize) {
     DISPATCH_TICKS.each().for_each(|tick| tick(index));
@@ -207,6 +232,10 @@ impl<F: Copy, const N: usize> Slots<F, N> {
 
     fn set(&self, index: usize, value: F, what: &str) {
         set_once(&self.0[index], value, what);
+    }
+
+    fn registered(&self, index: usize) -> bool {
+        self.0[index].get().is_some()
     }
 
     fn each(&self) -> impl Iterator<Item = F> + '_ {

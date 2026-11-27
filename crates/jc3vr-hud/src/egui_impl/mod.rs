@@ -1,6 +1,4 @@
 pub(crate) mod desktop_input;
-pub mod register_desktop_overlay;
-mod register_input_capture;
 
 use anyhow::Context as _;
 use egui::CursorIcon as CI;
@@ -231,6 +229,17 @@ fn device_write(effect: DeviceEffect, focused: bool) -> Option<bool> {
     }
 }
 
+/// Render the debug UI into the game's back buffer, unless the clean view hides it (the deferred
+/// mirror-overlay path in `crate::hud::mirror_overlay` honours the same switch). The flip presents
+/// it as the desktop overlay.
+pub(crate) fn render_flat() {
+    if let Some(egui_state) = EguiState::get().as_mut()
+        && !hides_desktop()
+    {
+        egui_state.render();
+    }
+}
+
 fn cancel_external_pointer() {
     pointer::reset_egui_pointer();
     egui_panel::end_grab();
@@ -277,7 +286,6 @@ impl EguiState {
     }
 
     pub fn install() -> anyhow::Result<()> {
-        register_input_capture::register();
         desktop_input::reset_desktop_input();
         STATE.lock().replace(Self::new()?);
         tracing::info!("Initialized egui");

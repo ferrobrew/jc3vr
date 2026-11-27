@@ -65,6 +65,16 @@ pub fn register_mirror_observer(observer: MirrorObserver) {
     }
 }
 
+/// Whether the mirror's overlay textures are registered, for the install's registration check.
+pub fn mirror_layers_registered() -> bool {
+    LAYERS.get().is_some()
+}
+
+/// Whether the mirror's observer is registered, for the install's registration check.
+pub fn mirror_observer_registered() -> bool {
+    OBSERVER.get().is_some()
+}
+
 pub(super) fn panel_srv() -> Option<ID3D11ShaderResourceView> {
     LAYERS.get().and_then(|layers| (layers.panel_srv)())
 }

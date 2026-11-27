@@ -1,7 +1,6 @@
 //! What the layers above the camera hooks contribute to them: the sim-phase camera matrix the
 //! grapple's scoped aim calls read in place of the camera's own, the observer of each gameplay
-//! frame's camera placement, the observer of the render camera the floating panel and the pointer
-//! share, and the debug tools' taps on the scene render camera's setup.
+//! frame's camera placement, and the debug tools' taps on the scene render camera's setup.
 //!
 //! Each is registered once at startup by the module that owns it, so the camera hooks name none of
 //! them. Until one is registered the hooks behave as if it had nothing to say: no override, and
@@ -11,8 +10,6 @@ use std::sync::OnceLock;
 
 use glam::{Mat4, Vec3};
 use jc3gi::types::math::Matrix4;
-
-use crate::headpose::xr::CockpitPose;
 
 /// The camera's gameplay-side participants.
 #[derive(Clone, Copy)]
@@ -25,12 +22,8 @@ pub struct CameraParticipants {
     pub placed: fn(Mat4, Vec3),
 }
 
-/// An observer of the un-offset centre render camera's world transform, with the cockpit head pose
-/// and the world scale that placed it.
-pub(crate) type RenderCameraObserver = fn(Mat4, Option<CockpitPose>, f32);
-
 /// The debug tools' tap on `SetupRenderCamera` for the scene render camera. It fires on entry,
-/// unlike the render camera observer, which sees the published world transform.
+/// before the hook publishes the camera's world transform.
 #[derive(Clone, Copy)]
 pub struct CameraDebugTaps {
     /// The hook was entered for the scene render camera, before anything in it ran.
@@ -41,15 +34,6 @@ pub struct CameraDebugTaps {
 pub fn register_camera_participants(participants: CameraParticipants) {
     if PARTICIPANTS.set(participants).is_err() {
         tracing::warn!("camera: participants are already registered; the new ones are ignored");
-    }
-}
-
-/// Register the render camera's observer. The first registration stands.
-pub fn register_render_camera_observer(observer: RenderCameraObserver) {
-    if RENDER_CAMERA_OBSERVER.set(observer).is_err() {
-        tracing::warn!(
-            "camera: a render camera observer is already registered; the new one is ignored"
-        );
     }
 }
 
@@ -72,12 +56,6 @@ pub(super) fn note_placement(character: Mat4, camera: Vec3) {
     }
 }
 
-pub(super) fn publish_render_camera(world: Mat4, cockpit: Option<CockpitPose>, scale: f32) {
-    if let Some(observer) = RENDER_CAMERA_OBSERVER.get() {
-        observer(world, cockpit, scale);
-    }
-}
-
 pub(super) fn tap_setup_entered() {
     if let Some(taps) = DEBUG_TAPS.get() {
         (taps.setup_entered)();
@@ -85,7 +63,5 @@ pub(super) fn tap_setup_entered() {
 }
 
 static PARTICIPANTS: OnceLock<CameraParticipants> = OnceLock::new();
-
-static RENDER_CAMERA_OBSERVER: OnceLock<RenderCameraObserver> = OnceLock::new();
 
 static DEBUG_TAPS: OnceLock<CameraDebugTaps> = OnceLock::new();

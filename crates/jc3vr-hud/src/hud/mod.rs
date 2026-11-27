@@ -55,7 +55,6 @@ mod offscreen_egui;
 mod palette;
 pub mod pointer;
 mod quad;
-pub mod register_render;
 pub(crate) mod restart_notice;
 mod reticle;
 pub mod scaleform;

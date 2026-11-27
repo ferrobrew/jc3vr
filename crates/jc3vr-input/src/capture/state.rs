@@ -38,6 +38,11 @@ pub fn register_driver(driver: CaptureDriver) {
     let _ = DRIVER.set(driver);
 }
 
+/// Whether the debug UI's driver is registered, for the install's registration check.
+pub fn driver_registered() -> bool {
+    DRIVER.get().is_some()
+}
+
 /// The latest policy observation; reading it never takes the renderer lock.
 pub fn debug_ui_capture() -> Option<OwnershipSnapshot> {
     *CAPTURE_SNAPSHOT.lock()

@@ -9,11 +9,14 @@
 //!   thumbstick into egui pointer updates, and moves the panel while a hand grabs it;
 //! - [`egui_grab`] decides which hand's grip holds the panel.
 //!
-//! The rays are intersected with the panels the renderer last drew
-//! ([`jc3vr_view::hud::pointer::panel`]). The HUD reads the results: it routes the game UI's mouse from
+//! The rays are intersected with the panels the HUD last drew and published
+//! ([`jc3vr_view::hud::pointer::panel`], which the camera hook also gives the render camera they were
+//! placed from), and the egui panel's aspect is read from its settings slot
+//! ([`jc3vr_view::vr::PANEL_CONFIG`]). The HUD reads the results: it routes the game UI's mouse from
 //! [`selected_controller`] and drains the egui updates ([`take_updates`]). What the pointers need
-//! from the HUD (its settings, the desktop mouse's capture, and the debug panel's placement) comes
-//! through the [`PointerHud`] table the HUD registers at install.
+//! from the HUD itself (whether the game UI is redirected, the desktop mouse's capture, and the
+//! debug panel's placement and grab) comes through the [`PointerHud`] table, the pointer's one
+//! registration, which the HUD makes at install.
 
 mod aim_hold;
 mod controller;
@@ -42,8 +45,6 @@ pub struct PointerHud {
     /// Whether a desktop press currently owns the game UI, so a controller press must not start
     /// mid-drag.
     pub desktop_capture: fn() -> bool,
-    /// The egui panel pointer's settings.
-    pub egui_pointer: fn() -> EguiPointerSettings,
     /// Whether the egui panel may accept controller pointer, scroll, and grab input.
     pub panel_accepts_edit_input: fn() -> bool,
     /// Whether the egui panel has a placement a grab can take hold of.
@@ -60,13 +61,6 @@ pub struct PointerHud {
     pub toggle_panel: fn() -> bool,
 }
 
-/// The egui panel pointer's settings, read together.
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub struct EguiPointerSettings {
-    /// The panel's width over its height.
-    pub aspect: f32,
-}
-
 /// Register the HUD's side of the pointers. Only one table is held: the first registration wins
 /// and a later one is refused with a warning.
 pub fn register_hud(hud: &'static PointerHud) {
@@ -75,13 +69,19 @@ pub fn register_hud(hud: &'static PointerHud) {
     }
 }
 
+/// Whether the HUD's side of the pointers is registered, for the install's registration check.
+pub fn hud_registered() -> bool {
+    HUD.get().is_some()
+}
+
 /// Show or hide the egui panel, returning whether it is now shown. Without a registered HUD there
 /// is no panel to show.
 pub(crate) fn toggle_panel() -> bool {
     registered_hud().is_some_and(|hud| (hud.toggle_panel)())
 }
 
-/// The registered HUD. Without one, the pointers behave as with no panel shown.
+/// The registered HUD. Without one (only in a test that registers none), the pointers behave as
+/// with no panel shown.
 fn registered_hud() -> Option<&'static PointerHud> {
     HUD.get().copied()
 }

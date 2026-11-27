@@ -24,7 +24,7 @@ use jc3vr_gameplay::{
     hooks::{input, sim},
 };
 use jc3vr_grapple::grapple;
-use jc3vr_hud::{controllers::map, egui_impl::register_desktop_overlay, hooks::ui, hud};
+use jc3vr_hud::{controllers::map, hooks::ui};
 use jc3vr_physical::controllers::physical_hands::human_hull;
 #[cfg(feature = "profiler")]
 use jc3vr_render::hooks::profiler;
@@ -51,11 +51,11 @@ pub(crate) fn install() -> Result<(), InstallError> {
     debug::register_unpatch::register();
     // The render layer's own passes in the post-draw.
     register_passes::register();
-    // What the layers above the render hooks contribute to the post-draw, the mirror, the camera,
-    // and the flip.
-    hud::register_render::register();
+    // What the HUD contributes to the layers below it: the post-draw, the mirror, the flip, the
+    // input capture, and the pointers. It fills slots of its own.
+    jc3vr_hud::register(&mut check);
+    // What the tooling contributes to the post-draw and the mirror.
     recorder::register_render::register();
-    register_desktop_overlay::register();
     // What the debug tools and the graphics-engine hooks contribute to the VR runtime and the
     // camera hooks below them.
     debug::register_view::register();
@@ -63,7 +63,6 @@ pub(crate) fn install() -> Result<(), InstallError> {
     // What the capture tooling observes in the render hooks.
     register_probes::register();
     // What the input tick reads from the HUD and the recorder, registered before any tick runs.
-    hud::pointer::register_pointer::register();
     recorder::register_mark::register();
     controllers::install(&mut check).map_err(InstallError::Participant)?;
     diagnostics::install();

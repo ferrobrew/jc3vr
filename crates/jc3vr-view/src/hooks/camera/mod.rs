@@ -22,6 +22,7 @@ use crate::{
     controllers::cockpit::CockpitTransform,
     fsr::FSR_CONFIG,
     hooks::camera::config::CAMERA_CONFIG,
+    hud::pointer::panel::publish_camera,
     stereo::STEREO_STATE,
     tuning::VIEW,
     vr::{FreezeMode, VR_CONFIG, harness, pose_control},
@@ -33,7 +34,6 @@ pub use config::{CameraConfig, SCENE_NEAR_CLIP_M};
 use jc3vr_core::hooks::in_gameplay;
 pub use participants::{
     CameraDebugTaps, CameraParticipants, register_camera_debug_taps, register_camera_participants,
-    register_render_camera_observer,
 };
 
 use crate::headpose::{
@@ -185,7 +185,7 @@ fn setup_render_camera(camera: *mut Camera, jitter: bool) -> *mut c_void {
 
         // Snapshot the un-offset world transform for the HUD panel pose (see `StereoState::center_transform`).
         STEREO_STATE.lock().center_transform = Some(camera.m_TransformF);
-        participants::publish_render_camera(
+        publish_camera(
             glam::Mat4::from(camera.m_TransformF),
             pointer_cockpit,
             pointer_scale,

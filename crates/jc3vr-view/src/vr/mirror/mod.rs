@@ -101,8 +101,8 @@ mod participants;
 mod stamp;
 
 pub use crate::vr::mirror::participants::{
-    MirrorDraw, MirrorFrame, MirrorLayers, MirrorObserver, register_mirror_layers,
-    register_mirror_observer,
+    MirrorDraw, MirrorFrame, MirrorLayers, MirrorObserver, mirror_layers_registered,
+    mirror_observer_registered, register_mirror_layers, register_mirror_observer,
 };
 
 /// The committed, precompiled shaders shared with the VR blit and others: the fullscreen-triangle

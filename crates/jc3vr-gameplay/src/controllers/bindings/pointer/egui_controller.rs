@@ -46,6 +46,7 @@ use jc3vr_view::{
         store,
     },
     hud::pointer::panel::{PanelHit, aim_at_egui_panel, intersect_panel},
+    vr::PANEL_CONFIG,
 };
 use parking_lot::Mutex;
 
@@ -53,7 +54,7 @@ use crate::controllers::{
     bindings::{
         intents::Intent,
         pointer::{
-            EguiPointerSettings, PointerHud,
+            PointerHud,
             controller::{ControllerState, TriggerSample},
             egui_grab::{GrabSample, GrabStep, GrabTracker},
             registered_hud,
@@ -92,12 +93,11 @@ pub fn update_egui_controller(
 ) {
     let now = Instant::now();
     let hud = registered_hud();
-    let settings = hud.map(|hud| (hud.egui_pointer)());
+    let aspect = PANEL_CONFIG.query(|c| c.aspect);
     let samples = hud
-        .zip(settings)
         .zip(input)
-        .filter(|((hud, _), (frame, _))| frame.is_fresh_at(now) && (hud.panel_accepts_edit_input)())
-        .map(|((hud, settings), (frame, edges))| {
+        .filter(|(hud, (frame, _))| frame.is_fresh_at(now) && (hud.panel_accepts_edit_input)())
+        .map(|(hud, (frame, edges))| {
             let samples = Hand::BOTH.map(|hand| {
                 let mut sample = sample(frame, edges, hand);
                 let select = select[hand.index()];
@@ -105,11 +105,11 @@ pub fn update_egui_controller(
                 sample.trigger_value = select.raw;
                 sample
             });
-            (hud, settings, samples)
+            (hud, samples)
         });
     let placed = hud.is_some_and(|hud| (hud.panel_is_placed)());
     let mut state = STATE.lock();
-    let Some((hud, EguiPointerSettings { aspect }, mut samples)) = samples else {
+    let Some((hud, mut samples)) = samples else {
         let grabbed = state.grab.hand().is_some();
         if state.hand.is_some() || grabbed {
             *state = EguiControllerState::new();

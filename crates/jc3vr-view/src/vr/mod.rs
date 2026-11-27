@@ -94,8 +94,8 @@ pub use frame_loop::{
 };
 pub use mirror::{
     EguiPanelConfig, MirrorDraw, MirrorFrame, MirrorLayers, MirrorObserver, PANEL_CONFIG,
-    latest_present, present_mirror, register_mirror_layers, register_mirror_observer,
-    toggle_stereo_pair,
+    latest_present, mirror_layers_registered, mirror_observer_registered, present_mirror,
+    register_mirror_layers, register_mirror_observer, toggle_stereo_pair,
 };
 pub use participants::{
     CockpitPositions, FrameInputs, FrameParticipants, ResizeObserver, TeardownParticipant,

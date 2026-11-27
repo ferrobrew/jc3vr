@@ -12,8 +12,8 @@ pub mod desktop;
 mod state;
 
 pub use crate::capture::state::{
-    CaptureDriver, DebugUiInput, debug_ui_capture, desktop_input_observation, input_captured,
-    publish_capture, register_driver, update_debug_ui_capture,
+    CaptureDriver, DebugUiInput, debug_ui_capture, desktop_input_observation, driver_registered,
+    input_captured, publish_capture, register_driver, update_debug_ui_capture,
 };
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
