@@ -6,7 +6,7 @@ The render trace records the frame's render events over a fixed number of real f
 
 Tools > Render capture starts a trace over the next N frames, with N editable beside the button, and shows the frames left while it runs.
 
-While a trace runs, the frame tail always runs inline on the game thread, so each eye has drained before the frame's trace events close.
+While a trace runs, the frame tail runs inline on the game thread (`payload/src/hooks/game.rs`), so each eye has drained before the frame's trace events close.
 
 ## Output
 
@@ -16,8 +16,4 @@ The trace is held in memory and written when its last frame ends, so a crash mid
 
 ## Events
 
-Every trace records the frame and dispatch markers, the post-effect and exposure gates, the buffer-flow events, and the shadow and depth-reconstruction state.
-
-## Log lines
-
-The trace dump logs the record count and path.
+Every trace records the frame and dispatch markers, the post-effect and exposure gates, the buffer-flow events, and the shadow and depth-reconstruction state. The event types are `TraceEvent` in `trace.rs`. The dump logs the record count and the path.
