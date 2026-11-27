@@ -112,7 +112,6 @@ Code and docs cite [engine/rendering/rendering.md](engine/rendering/rendering.md
 - [human-hull-restoration.md](mod/body/human-hull-restoration.md): restoring the human's native shape settings.
 - [attachments.md](mod/body/attachments.md): socket interaction targets and pouch markers in the body mirror.
 - [head-and-body.md](mod/body/head-and-body.md): how head and body yaw relate, the head pose, and the head bone.
-- [grapple-comfort.md](mod/body/grapple-comfort.md): the grapple's body-frame comfort filter.
 - [swimming.md](mod/body/swimming.md): the right stick owning the swim heading, the dive control, and swimming with the arms.
 - [parachute.md](mod/body/parachute.md): keeping the head from steering the parachute, the turn toward a grapple line, and skipping the opening roll out of a reel.
 - [locomotion.md](mod/body/locomotion.md): stick locomotion and the steady on-foot view.
@@ -130,7 +129,7 @@ Code and docs cite [engine/rendering/rendering.md](engine/rendering/rendering.md
 - [input.md](mod/input/input.md): the game's look, move, and mouse input under the mod.
 - [controllers.md](mod/input/controllers.md): the motion controllers: principles, the OpenXR input layer, the scheme, and mode detection.
 - [bindings.md](mod/input/bindings.md): the default layout, the binding tables and their injection, the menus, the chords, and the controls summary on the wrist.
-- [hands-and-aiming.md](mod/input/hands-and-aiming.md): the controller-driven hands, the arm reach, the fingers, the gun and grapple aim, the overlay, and the scopes.
+- [hands-and-aiming.md](mod/input/hands-and-aiming.md): the controller-driven hands, the arm reach, the fingers, the gun aim, the overlay, and the scopes.
 - [roomscale.md](mod/input/roomscale.md): the body dimensions, the posture, the head height, crouching, the fades, and the seat transitions.
 - [weapon-handling.md](mod/input/weapon-handling.md): the pouches, the foregrip, a held gun's weight, recoil, and grenades and C4 in outline.
 - [flight.md](mod/input/flight.md): flying the wingsuit and parachute with the arms, the parachute handles, and the ripcord.
@@ -149,14 +148,16 @@ Code and docs cite [engine/rendering/rendering.md](engine/rendering/rendering.md
 - [physical-guns.md](mod/input/physical-guns.md): a held gun as a physics body joined to the hand bodies.
 - [grenades.md](mod/input/grenades.md): grenades, the beacon, C4, and the detonator by hand, and the models on Rico's pouches.
 - [reload.md](mod/input/reload.md): the true reload: what each weapon loads, eject, pull, knock, the belt push, revolvers, and the chamber.
-- [physical-grapple.md](mod/input/physical-grapple.md): working the grapple line with the hand, and the grapple from a vehicle seat.
-- [grapple-lock.md](mod/input/grapple-lock.md): the grapple lock, and the free hand on the line.
-- [grapple-snatch.md](mod/input/grapple-snatch.md): pulling things into the hand with the grapple, what it takes, and swinging heavy things on its line.
 - [stunt-positions.md](mod/input/stunt-positions.md): stunt positions held by the grip.
 - [vehicle-doors.md](mod/input/vehicle-doors.md): vehicle doors, hoods, and trunks by hand.
 - [cockpit-controls.md](mod/input/cockpit-controls.md): the flight stick, throttle, cyclic, and collective.
 - [vehicle-weapons.md](mod/input/vehicle-weapons.md): passenger aim and mounted guns.
 - [steering-wheel.md](mod/input/steering-wheel.md): the physical wheel and handlebars.
+
+### grapple/
+
+- [grapple.md](mod/grapple/grapple.md): what the grapple does in the mod: the controls, the states, the hand on the line, the lock and the hang, the free hand on the line, the seat grapple, and comfort.
+- [snatch.md](mod/grapple/snatch.md): pulling things into the hand with the grapple, what it takes, and swinging heavy things on its line.
 
 ### testing/
 
