@@ -1,3134 +1,3649 @@
 [
  {
+  "name": "v2602_helicopter_urga_lightassault_military_01_custom_mm230",
+  "category": "",
+  "tags": "vehicle,air",
+  "pool": "aircraft",
+  "entity_hash": 445045305
+ },
+ {
   "name": "v4603_plane_urga_cargotransport_military_01_paratrooper",
   "category": "",
   "tags": "vehicle,plane_paratrooper",
-  "pool": "aircraft"
+  "pool": "aircraft",
+  "entity_hash": 2863970422
  },
  {
   "name": "v2102_helicopter_eubus_utility_civilian_01",
   "category": "vehicle|air|civilian",
   "tags": "vehicle,air,helicopter,civilian,utility,light,eubus,unarmed,unarmored",
-  "pool": "aircraft"
+  "pool": "aircraft",
+  "entity_hash": 1493705456
  },
  {
   "name": "v2102_helicopter_eubus_utility_commercial_news",
   "category": "vehicle|air|civilian",
   "tags": "vehicle,air,helicopter,commercial,utility,news,light,eubus,unarmed,unarmored",
-  "pool": "aircraft"
+  "pool": "aircraft",
+  "entity_hash": 3619392854
  },
  {
   "name": "v4500_plane_solar_smallfloatprop_civilian_01",
   "category": "vehicle|air|civilian",
   "tags": "vehicle,air,plane,solar,civilian,propeller,float,water,unarmed,unarmored",
-  "pool": "aircraft"
+  "pool": "aircraft",
+  "entity_hash": 2647868720
  },
  {
   "name": "v4600_plane_urga_privatepropeller_civilian_01",
   "category": "vehicle|air|civilian",
   "tags": "vehicle,air,plane,urga,civilian,propeller,unarmed,unarmored",
-  "pool": "aircraft"
+  "pool": "aircraft",
+  "entity_hash": 596249749
  },
  {
   "name": "v2200_helicopter_capstone_assault_military_01",
   "category": "vehicle|air|military",
   "tags": "vehicle,air,helicopter,military,assault,capstone,armored,missiles,heat3,heat4,heat5,r01_outpost,r02_outpost,r03_outpost",
-  "pool": "aircraft"
+  "pool": "aircraft",
+  "entity_hash": 4145800282
  },
  {
   "name": "v2201_helicopter_capstone_heavytroop_military_01",
   "category": "vehicle|air|military",
   "tags": "vehicle,air,helicopter,transport,military,heavy,troop,capstone,armored,r02_outpost,r03_outpost",
-  "pool": "aircraft"
+  "pool": "aircraft",
+  "entity_hash": 2671062828
  },
  {
   "name": "v2601_helicopter_urga_heavyassault_military_01",
   "category": "vehicle|air|military",
   "tags": "vehicle,air,helicopter,military,heavy,assault,machinegun,missiles,armored,urga,r03_outpost",
-  "pool": "aircraft"
+  "pool": "aircraft",
+  "entity_hash": 1412710783
  },
  {
   "name": "v2602_helicopter_urga_lightassault_military_01",
   "category": "vehicle|air|military",
   "tags": "vehicle,air,helicopter,military,light,assault,machinegun,unarmored,urga,heat3,heat4,r01_outpost,r02_outpost,r03_outpost",
-  "pool": "aircraft"
+  "pool": "aircraft",
+  "entity_hash": 936369891
  },
  {
   "name": "v2603_helicopter_urga_seascout_military_01",
   "category": "vehicle|air|military",
   "tags": "vehicle,air,helicopter,military,scout,light,float,water,unarmed,unarmored,r01_outpost",
-  "pool": "aircraft"
+  "pool": "aircraft",
+  "entity_hash": 788638133
  },
  {
   "name": "v2604_helicopter_urga_advancedassault_military_01",
   "category": "vehicle|air|military",
   "tags": "vehicle,air,helicopter,military,advanced,assault,machinegun,missiles,armored,urga",
-  "pool": "aircraft"
+  "pool": "aircraft",
+  "entity_hash": 2834809898
  },
  {
   "name": "v4202_plane_capstone_fighterjet_military_01",
   "category": "vehicle|air|military",
   "tags": "vehicle,air,plane,jet,capstone,military,fighter,machinegun,missiles,armored",
-  "pool": "aircraft"
+  "pool": "aircraft",
+  "entity_hash": 1951838228
  },
  {
   "name": "v4602_plane_urga_fighterbomber_military_01",
   "category": "vehicle|air|military",
   "tags": "vehicle,air,plane,jet,capstone,military,fighter,bomber,missiles,bombs,armored",
-  "pool": "aircraft"
+  "pool": "aircraft",
+  "entity_hash": 1643964103
  },
  {
   "name": "v4603_plane_urga_cargotransport_military_01",
   "category": "vehicle|air|military",
   "tags": "vehicle,air,plane,urga,military,cargo,transport,propeller,unarmed,armored",
-  "pool": "aircraft"
+  "pool": "aircraft",
+  "entity_hash": 2204830311
  },
  {
   "name": "v4603_plane_urga_cargotransport_mm340",
   "category": "vehicle|air|military",
   "tags": "vehicle,air,mm340",
-  "pool": "aircraft"
+  "pool": "aircraft",
+  "entity_hash": 1193662465
  },
  {
   "name": "v2200_helicopter_capstone_assault_rebel_01",
   "category": "vehicle|air|rebel",
   "tags": "vehicle,air,helicopter,rebel,assault,capstone,armored,missiles,heat3,heat4,heat5,r01_outpost,r02_outpost,r03_outpost",
-  "pool": "aircraft"
+  "pool": "aircraft",
+  "entity_hash": 4029907821
  },
  {
   "name": "v2201_helicopter_capstone_heavytroop_rebel_01",
   "category": "vehicle|air|rebel",
   "tags": "vehicle,air,helicopter,transport,rebel,heavy,troop,capstone,armored,r02_outpost,r03_outpost",
-  "pool": "aircraft"
+  "pool": "aircraft",
+  "entity_hash": 249846758
  },
  {
   "name": "v2601_helicopter_urga_heavyassault_rebel_01",
   "category": "vehicle|air|rebel",
   "tags": "vehicle,air,helicopter,rebel,heavy,assault,machinegun,missiles,armored,urga,r03_outpost",
-  "pool": "aircraft"
+  "pool": "aircraft",
+  "entity_hash": 1955404280
  },
  {
   "name": "v2602_helicopter_urga_lightassault_rebel_01",
   "category": "vehicle|air|rebel",
   "tags": "vehicle,air,helicopter,rebel,light,assault,machinegun,unarmored,urga,heat3,heat4,r01_outpost,r02_outpost,r03_outpost",
-  "pool": "aircraft"
+  "pool": "aircraft",
+  "entity_hash": 506564449
  },
  {
   "name": "v2603_helicopter_urga_seascout_rebel_01",
   "category": "vehicle|air|rebel",
   "tags": "vehicle,air,helicopter,rebel,scout,light,float,water,unarmed,unarmored,r01_outpost",
-  "pool": "aircraft"
+  "pool": "aircraft",
+  "entity_hash": 1632385059
  },
  {
   "name": "v2604_helicopter_urga_advancedassault_rebel_01",
   "category": "vehicle|air|rebel",
   "tags": "vehicle,helicopter",
-  "pool": "aircraft"
+  "pool": "aircraft",
+  "entity_hash": 3947727649
  },
  {
   "name": "v4202_plane_capstone_fighterjet_rebel_01",
   "category": "vehicle|air|rebel",
   "tags": "vehicle,air,plane,jet,capstone,rebel,fighter,machinegun,missiles,armored",
-  "pool": "aircraft"
+  "pool": "aircraft",
+  "entity_hash": 1350246166
  },
  {
   "name": "v4602_plane_urga_fighterbomber_rebel_01",
   "category": "vehicle|air|rebel",
   "tags": "vehicle,air,plane,jet,capstone,rebel,fighter,bomber,missiles,bombs,armored",
-  "pool": "aircraft"
+  "pool": "aircraft",
+  "entity_hash": 2491278791
  },
  {
   "name": "v4603_plane_urga_cargotransport_rebel_01",
   "category": "vehicle|air|rebel",
   "tags": "vehicle,air,plane,urga,rebel,cargo,transport,propeller,unarmed,armored",
-  "pool": "aircraft"
+  "pool": "aircraft",
+  "entity_hash": 1181146141
  },
  {
   "name": "v4800_plane_brothers_vintagefighter_rebel_01",
   "category": "vehicle|air|rebel",
   "tags": "vehicle,air,plane,prop,brothers,rebel,vintage,old,fighter,machinegun,unarmored",
-  "pool": "aircraft"
+  "pool": "aircraft",
+  "entity_hash": 448735752
  },
  {
   "name": "v2604_helicopter_urga_advancedassault_signature_shielded",
   "category": "vehicle|bavarium",
   "tags": "vehicle,air,helicopter,signature,shielded,heavy,assault,machinegun,missiles,armored,urga",
-  "pool": "aircraft"
+  "pool": "aircraft",
+  "entity_hash": 1182346887
  },
  {
   "name": "v2604_helicopter_urga_advancedassault_signature_shielded_di_ravello",
   "category": "vehicle|bavarium",
   "tags": "vehicle,helicopter,boss_helicopter",
-  "pool": "aircraft"
+  "pool": "aircraft",
+  "entity_hash": 2074025954
  },
  {
   "name": "boss_heli_prototype",
   "category": "vehicle|prototype",
   "tags": "vehicle,boss",
-  "pool": "aircraft"
+  "pool": "aircraft",
+  "entity_hash": 2929089531
  },
  {
   "name": "cow",
   "category": "Character|Animals",
   "tags": "character,animal,cow",
-  "pool": "animals"
+  "pool": "animals",
+  "entity_hash": 3493012430
  },
  {
   "name": "deer_buck",
   "category": "Character|Animals",
   "tags": "character,animal,deer,buck",
-  "pool": "animals"
+  "pool": "animals",
+  "entity_hash": 817781363
  },
  {
   "name": "deer_doe",
   "category": "Character|Animals",
   "tags": "character,animal,deer,doe",
-  "pool": "animals"
+  "pool": "animals",
+  "entity_hash": 2139368658
  },
  {
   "name": "dog",
   "category": "Character|Animals",
   "tags": "character,dog,skramps,scramps",
-  "pool": "animals"
+  "pool": "animals",
+  "entity_hash": 3806720801
  },
  {
   "name": "goat",
   "category": "Character|Animals",
   "tags": "character,animal,goat",
-  "pool": "animals"
+  "pool": "animals",
+  "entity_hash": 3944852290
  },
  {
   "name": "power_cow",
   "category": "Character|Animals",
   "tags": "character,power_cow",
-  "pool": "animals"
+  "pool": "animals",
+  "entity_hash": 4127071936
  },
  {
   "name": "v1300_boat_kensington_motoryacht_civilian_01",
   "category": "vehicle|water|civilian",
   "tags": "vehicle,water,boat,civilian,motor,large,modern,yacht,kensington,unarmed,unarmored,ambient",
-  "pool": "boat"
+  "pool": "boat",
+  "entity_hash": 3332358986
  },
  {
   "name": "v1302_boat_kensington_sailboat_civilian_01",
   "category": "vehicle|water|civilian",
   "tags": "vehicle,water,boat,civilian,medium,modern,sailboat,kensington,unarmed,unarmored,large,ambient",
-  "pool": "boat"
+  "pool": "boat",
+  "entity_hash": 530733049
  },
  {
   "name": "v1400_boat_mugello_spyspeedboat_civilian_01",
   "category": "vehicle|water|civilian",
   "tags": "vehicle",
-  "pool": "boat"
+  "pool": "boat",
+  "entity_hash": 1442821020
  },
  {
   "name": "v1401_boat_mugello_racingboat_civilian_01",
   "category": "vehicle|water|civilian",
   "tags": "vehicle,water,boat,civilian,motor,racing,mugello,unarmed,unarmored,not_large,ambient",
-  "pool": "boat"
+  "pool": "boat",
+  "entity_hash": 1734594165
  },
  {
   "name": "v1500_boat_solar_jetski_civilian_01",
   "category": "vehicle|water|civilian",
   "tags": "vehicle,water,boat,jetski,civilian,small,modern,solar,unarmed,unarmored,not_large,ambient",
-  "pool": "boat"
+  "pool": "boat",
+  "entity_hash": 867451438
  },
  {
   "name": "v1701_boat_na_smalloldfishing_civilian_01",
   "category": "vehicle|water|civilian",
   "tags": "vehicle,water,boat,civilian,motor,small,fishing,old,na,unarmed,unarmored,not_large,ambient",
-  "pool": "boat"
+  "pool": "boat",
+  "entity_hash": 2580011165
  },
  {
   "name": "v1705_boat_na_mediumoldfishing_civilian_01",
   "category": "vehicle|water|civilian",
   "tags": "vehicle,water,boat,civilian,motor,medium,fishing,old,na,unarmed,unarmored,large,ambient",
-  "pool": "boat"
+  "pool": "boat",
+  "entity_hash": 1967374600
  },
  {
   "name": "v1717_boat_na_duck_civilian_01",
   "category": "vehicle|water|civilian",
   "tags": "vehicle",
-  "pool": "boat"
+  "pool": "boat",
+  "entity_hash": 3998318206
  },
  {
   "name": "v1200_boat_capstone_heavypatrol_military_01",
   "category": "vehicle|water|military",
   "tags": "vehicle,water,boat,heavy,patrol,military,capstone,mounted,machinegun,armored,heat3,heat4,large",
-  "pool": "boat"
+  "pool": "boat",
+  "entity_hash": 954310635
  },
  {
   "name": "v1202_boat_capstone_corvette_military_01",
   "category": "vehicle|water|military",
   "tags": "vehicle,water,boat,corvette,military,armored,capstone,cannon,heat5,large",
-  "pool": "boat"
+  "pool": "boat",
+  "entity_hash": 3794198039
  },
  {
   "name": "v1602_boat_urga_transport_military_01",
   "category": "vehicle|water|military",
   "tags": "vehicle,water,boat,heavy,transport,military,urga,mounted,unarmed,unarmored,large",
-  "pool": "boat"
+  "pool": "boat",
+  "entity_hash": 3276262971
  },
  {
   "name": "v1704_boat_na_lightpatrol_civic_police_01",
   "category": "vehicle|water|military",
   "tags": "vehicle,water,boat,light,patrol,civic,police,na,unarmed,unarmored,not_large",
-  "pool": "boat"
+  "pool": "boat",
+  "entity_hash": 1244074668
  },
  {
   "name": "v1704_boat_na_lightpatrol_military_01",
   "category": "vehicle|water|military",
   "tags": "vehicle,water,boat,light,patrol,military,na,mounted,machinegun,unarmored,heat1,heat2,not_large",
-  "pool": "boat"
+  "pool": "boat",
+  "entity_hash": 3672040481
  },
  {
   "name": "v1200_boat_capstone_heavypatrol_rebel_01",
   "category": "vehicle|water|rebel",
   "tags": "vehicle,water,boat,heavy,patrol,rebel,capstone,mounted,machinegun,armored,r02_outpost,r03_outpost",
-  "pool": "boat"
+  "pool": "boat",
+  "entity_hash": 660992745
  },
  {
   "name": "v1200_boat_capstone_heavypatrol_rebel_01_mm210",
   "category": "vehicle|water|rebel",
   "tags": "vehicle,water,mm210",
-  "pool": "boat"
+  "pool": "boat",
+  "entity_hash": 3080042235
  },
  {
   "name": "v1202_boat_capstone_corvette_rebel_01",
   "category": "vehicle|water|rebel",
   "tags": "vehicle,water,boat,corvette,rebel,armored,capstone,cannon,r03_outpost",
-  "pool": "boat"
+  "pool": "boat",
+  "entity_hash": 2474676614
  },
  {
   "name": "v1602_boat_urga_transport_rebel_01",
   "category": "vehicle|water|rebel",
   "tags": "vehicle,water,boat,heavy,transport,rebel,urga,mounted,unarmed,unarmored,r01_outpost,r02_outpost,r03_outpost",
-  "pool": "boat"
+  "pool": "boat",
+  "entity_hash": 557972553
  },
  {
   "name": "v1704_boat_na_lightpatrol_rebel_01",
   "category": "vehicle|water|rebel",
   "tags": "vehicle,water,boat,light,patrol,rebel,na,mounted,machinegun,unarmored,r01_outpost,r02_outpost,r03_outpost",
-  "pool": "boat"
+  "pool": "boat",
+  "entity_hash": 1634346906
  },
  {
   "name": "Previewer version of Civilian",
   "category": "",
   "tags": "character,civilian_previewer",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 821081845
  },
  {
   "name": "Previewer version of Enemy",
   "category": "",
   "tags": "character,enemy_previewer",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 278639223
  },
  {
   "name": "Previewer version of Rico",
   "category": "",
   "tags": "character,rico_previewer",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 2050110942
  },
  {
   "name": "bolo",
   "category": "",
   "tags": "character,bolo",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 2940840973
  },
  {
   "name": "pinata_omar",
   "category": "",
   "tags": "character,omar",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 329163677
  },
  {
   "name": "beach_female_001",
   "category": "Character|Civilian|Beach",
   "tags": "character,beach,female,civ_boat",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 378750850
  },
  {
   "name": "beach_female_002",
   "category": "Character|Civilian|Beach",
   "tags": "character,beach,female,civ_boat",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 2967490239
  },
  {
   "name": "beach_female_003",
   "category": "Character|Civilian|Beach",
   "tags": "character,beach,female,civ_boat",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 1297707316
  },
  {
   "name": "beach_female_004",
   "category": "Character|Civilian|Beach",
   "tags": "character,beach,civilian,female,civ_boat",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 2364187905
  },
  {
   "name": "beach_female_005",
   "category": "Character|Civilian|Beach",
   "tags": "character,beach,female,civ_boat",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 2480415977
  },
  {
   "name": "beach_female_006",
   "category": "Character|Civilian|Beach",
   "tags": "character,beach,civilian,female,civ_boat",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 688535125
  },
  {
   "name": "beach_female_007",
   "category": "Character|Civilian|Beach",
   "tags": "character,beach,female,civ_boat",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 3826624084
  },
  {
   "name": "beach_female_008",
   "category": "Character|Civilian|Beach",
   "tags": "character,beach,female,civ_boat",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 1172716928
  },
  {
   "name": "beach_male_001",
   "category": "Character|Civilian|Beach",
   "tags": "character,beach,male,civ_boat",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 255493653
  },
  {
   "name": "beach_male_002",
   "category": "Character|Civilian|Beach",
   "tags": "character,beach,male,civ_boat",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 1391457834
  },
  {
   "name": "beach_male_003",
   "category": "Character|Civilian|Beach",
   "tags": "character,beach,male,civ_boat",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 2742629982
  },
  {
   "name": "beach_male_004",
   "category": "Character|Civilian|Beach",
   "tags": "character,beach,civilian,male,civ_boat,motor_bike_rider",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 3798853705
  },
  {
   "name": "beach_male_005",
   "category": "Character|Civilian|Beach",
   "tags": "character,beach,civilian,male,civ_boat,motor_bike_rider",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 3397122641
  },
  {
   "name": "beach_male_006",
   "category": "Character|Civilian|Beach",
   "tags": "character,beach,male,civ_boat",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 3048420845
  },
  {
   "name": "business_female_001",
   "category": "Character|Civilian|Busniess",
   "tags": "character,business,female,highend,motor_bike_rider",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 991762235
  },
  {
   "name": "business_female_002",
   "category": "Character|Civilian|Busniess",
   "tags": "character,business,female,highend,motor_bike_rider",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 4272570308
  },
  {
   "name": "business_female_003",
   "category": "Character|Civilian|Busniess",
   "tags": "character,business,female,highend",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 1485439128
  },
  {
   "name": "business_female_004",
   "category": "Character|Civilian|Busniess",
   "tags": "character,business,female,highend,motor_bike_rider",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 2197757502
  },
  {
   "name": "business_female_005",
   "category": "Character|Civilian|Busniess",
   "tags": "character,business,female,highend,motor_bike_rider",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 1818322524
  },
  {
   "name": "business_female_006",
   "category": "Character|Civilian|Busniess",
   "tags": "character,business,female,highend",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 400408165
  },
  {
   "name": "business_male_001",
   "category": "Character|Civilian|Busniess",
   "tags": "character,business,male,highend,motor_bike_rider",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 512541712
  },
  {
   "name": "business_male_002",
   "category": "Character|Civilian|Busniess",
   "tags": "character,business,male,highend,motor_bike_rider",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 887190324
  },
  {
   "name": "business_male_003",
   "category": "Character|Civilian|Busniess",
   "tags": "character,business,male,highend,motor_bike_rider",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 4176893325
  },
  {
   "name": "business_male_004",
   "category": "Character|Civilian|Busniess",
   "tags": "character,business,male,highend,motor_bike_rider",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 1616146714
  },
  {
   "name": "business_male_005",
   "category": "Character|Civilian|Busniess",
   "tags": "character,business,male,highend,motor_bike_rider",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 997626390
  },
  {
   "name": "business_male_006",
   "category": "Character|Civilian|Busniess",
   "tags": "character,business,male,highend,motor_bike_rider",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 4167639471
  },
  {
   "name": "business_male_007",
   "category": "Character|Civilian|Busniess",
   "tags": "character,business,male,highend,motor_bike_rider",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 2720089262
  },
  {
   "name": "business_male_008",
   "category": "Character|Civilian|Busniess",
   "tags": "character,business,male,highend,motor_bike_rider",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 1277559951
  },
  {
   "name": "female_civil_servant_01",
   "category": "Character|Civilian|CivilServant",
   "tags": "character,civilian,civil,female,servant",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 2286238239
  },
  {
   "name": "female_civil_servant_01_propvan_driver",
   "category": "Character|Civilian|CivilServant",
   "tags": "character,female,propvan_driver",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 1425475516
  },
  {
   "name": "male_civil_servant_01",
   "category": "Character|Civilian|CivilServant",
   "tags": "character,civilian,civil,male,servant",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 2023740137
  },
  {
   "name": "male_civil_servant_01_propvan_driver",
   "category": "Character|Civilian|CivilServant",
   "tags": "character,propvan_driver,male",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 2217693096
  },
  {
   "name": "male_civil_servant_02",
   "category": "Character|Civilian|CivilServant",
   "tags": "character,busdriver",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 270000258
  },
  {
   "name": "nun_01",
   "category": "Character|Civilian|Clergy",
   "tags": "character,civilian,clergy,female,priest,nun,cleric,motor_bike_rider",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 618293996
  },
  {
   "name": "nun_02",
   "category": "Character|Civilian|Clergy",
   "tags": "character,civilian,clergy,female,priest,nun,cleric",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 2080509496
  },
  {
   "name": "nun_03",
   "category": "Character|Civilian|Clergy",
   "tags": "character,civilian,clergy,female,priest,nun,cleric,motor_bike_rider",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 3833180104
  },
  {
   "name": "priest_01",
   "category": "Character|Civilian|Clergy",
   "tags": "character,civilian,clergy,male,priest,cleric,motor_bike_rider",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 2603642091
  },
  {
   "name": "priest_clear_heat",
   "category": "Character|Civilian|Clergy",
   "tags": "character,priest_clear_heat",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 4013654164
  },
  {
   "name": "male_construction_worker_01",
   "category": "Character|Civilian|Construction",
   "tags": "character,construction,worker,male,truck_driver",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 221981318
  },
  {
   "name": "male_construction_worker_02",
   "category": "Character|Civilian|Construction",
   "tags": "character,construction,worker,male,truck_driver",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 1235289057
  },
  {
   "name": "male_construction_worker_03",
   "category": "Character|Civilian|Construction",
   "tags": "character,construction,worker,male,truck_driver",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 1074403098
  },
  {
   "name": "male_construction_worker_04",
   "category": "Character|Civilian|Construction",
   "tags": "character,construction,worker,male,truck_driver",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 1971830735
  },
  {
   "name": "male_dock_worker_01",
   "category": "Character|Civilian|Dock",
   "tags": "character,dock,worker,male,truck_driver",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 1662639953
  },
  {
   "name": "male_dock_worker_02",
   "category": "Character|Civilian|Dock",
   "tags": "character,dock,worker,male,truck_driver",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 372478281
  },
  {
   "name": "business_female_the_dress_blue",
   "category": "Character|Civilian|EasterEgg",
   "tags": "character,thedress,blue,female",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 478610205
  },
  {
   "name": "business_female_the_dress_gold",
   "category": "Character|Civilian|EasterEgg",
   "tags": "character,thedress,gold,female",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 1690686441
  },
  {
   "name": "female_elder_001_avg",
   "category": "Character|Civilian|Elder",
   "tags": "character,civilian,civil,female,elder,old,oppressed",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 1569037003
  },
  {
   "name": "female_elder_002_avg",
   "category": "Character|Civilian|Elder",
   "tags": "character,civilian,civil,female,elder,old,oppressed",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 1031734907
  },
  {
   "name": "female_elder_003_avg",
   "category": "Character|Civilian|Elder",
   "tags": "character,civilian,civil,female,elder,old,oppressed",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 3942327529
  },
  {
   "name": "male_elder_001_avg",
   "category": "Character|Civilian|Elder",
   "tags": "character,civilian,civil,male,elder,old,oppressed",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 1950031238
  },
  {
   "name": "male_elder_002_heavy",
   "category": "Character|Civilian|Elder",
   "tags": "character,civilian,civil,male,elder,old,heavy,oppressed",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 2416186662
  },
  {
   "name": "male_elder_003_avg",
   "category": "Character|Civilian|Elder",
   "tags": "character,civilian,civil,male,elder,old,oppressed",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 3010851358
  },
  {
   "name": "male_elder_004_avg",
   "category": "Character|Civilian|Elder",
   "tags": "character,civilian,civil,male,elder,old,oppressed",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 543022024
  },
  {
   "name": "male_elder_005_avg",
   "category": "Character|Civilian|Elder",
   "tags": "character,civilian,civil,male,elder,old,oppressed",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 3870535204
  },
  {
   "name": "male_elder_006_avg",
   "category": "Character|Civilian|Elder",
   "tags": "character,civilian,civil,male,elder,old,oppressed,highend",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 941466118
  },
  {
   "name": "male_elder_007_heavy",
   "category": "Character|Civilian|Elder",
   "tags": "character,civilian,civil,male,elder,old,heavy,oppressed",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 934871931
  },
  {
   "name": "male_elder_008_avg",
   "category": "Character|Civilian|Elder",
   "tags": "character,civilian,civil,male,elder,old,oppressed,scooter_rider,motor_bike_rider,highend",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 1782278061
  },
  {
   "name": "male_elder_009_avg",
   "category": "Character|Civilian|Elder",
   "tags": "character,civilian,civil,male,elder,old,oppressed",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 4285183834
  },
  {
   "name": "female_farmer_001_avg",
   "category": "Character|Civilian|Farmer",
   "tags": "character,civilian,civil,female,farmer,oppressed,fishing_boat,farm,truck_driver",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 2207109247
  },
  {
   "name": "female_farmer_002_avg",
   "category": "Character|Civilian|Farmer",
   "tags": "character,civilian,civil,female,farmer,oppressed,fishing_boat,farm,truck_driver",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 619271045
  },
  {
   "name": "female_farmer_003_avg",
   "category": "Character|Civilian|Farmer",
   "tags": "character,civilian,civil,female,farmer,oppressed,fishing_boat,farm,truck_driver",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 2765804054
  },
  {
   "name": "female_farmer_003_avg_banana_stand",
   "category": "Character|Civilian|Farmer",
   "tags": "character,banana_stand",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 434605931
  },
  {
   "name": "male_farmer_002_avg",
   "category": "Character|Civilian|Farmer",
   "tags": "character,civilian,civil,male,farmer,oppressed,fishing_boat,farm,truck_driver",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 2027519320
  },
  {
   "name": "male_farmer_003_avg",
   "category": "Character|Civilian|Farmer",
   "tags": "character,civilian,civil,male,farmer,oppressed,fishing_boat,farm,truck_driver",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 4215541167
  },
  {
   "name": "male_farmer_004_avg",
   "category": "Character|Civilian|Farmer",
   "tags": "character,civilian,civil,male,farmer,oppressed,fishing_boat,farm,truck_driver",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 1905067093
  },
  {
   "name": "male_farmer_005_avg",
   "category": "Character|Civilian|Farmer",
   "tags": "character,civilian,civil,male,farmer,oppressed,fishing_boat,farm,truck_driver",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 1041404588
  },
  {
   "name": "male_farmer_006_avg",
   "category": "Character|Civilian|Farmer",
   "tags": "character,civilian,civil,male,farmer,oppressed,fishing_boat,farm,truck_driver",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 3144662934
  },
  {
   "name": "male_farmer_007_avg",
   "category": "Character|Civilian|Farmer",
   "tags": "character,civilian,civil,male,farmer,oppressed,fishing_boat,farm,truck_driver",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 1803606605
  },
  {
   "name": "male_farmer_008_avg",
   "category": "Character|Civilian|Farmer",
   "tags": "character,civilian,civil,male,farmer,fisherman,fish,oppressed,fishing_boat,farm,truck_driver",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 3578502476
  },
  {
   "name": "male_farmer_009_avg",
   "category": "Character|Civilian|Farmer",
   "tags": "character,civilian,civil,male,farmer,fisherman,fish,oppressed,fishing_boat,farm,truck_driver",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 2650177803
  },
  {
   "name": "male_farmer_old_001_heavy",
   "category": "Character|Civilian|Farmer",
   "tags": "character,civilian,civil,male,farmer,elder,old,heavy,oppressed,fishing_boat,farm,truck_driver",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 3543186441
  },
  {
   "name": "civilian_gen_female001",
   "category": "Character|Civilian|Generic",
   "tags": "character,civilian,generic,female,avg,highend",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 2889445095
  },
  {
   "name": "civilian_gen_female002",
   "category": "Character|Civilian|Generic",
   "tags": "character,civilian,generic,female,avg,worker,motor_bike_rider",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 3002225058
  },
  {
   "name": "civilian_gen_female003",
   "category": "Character|Civilian|Generic",
   "tags": "character,civilian,generic,female,avg,oppressed,worker,motor_bike_rider",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 3555025200
  },
  {
   "name": "civilian_gen_female004",
   "category": "Character|Civilian|Generic",
   "tags": "character,civilian,generic,female,avg,oppressed,worker,motor_bike_rider",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 1727175712
  },
  {
   "name": "civilian_gen_female005",
   "category": "Character|Civilian|Generic",
   "tags": "character,civilian,generic,female,avg,motor_bike_rider",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 1922797773
  },
  {
   "name": "civilian_gen_female006",
   "category": "Character|Civilian|Generic",
   "tags": "character,civilian,generic,female,avg,oppressed,worker,motor_bike_rider",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 879044427
  },
  {
   "name": "civilian_gen_female007",
   "category": "Character|Civilian|Generic",
   "tags": "character,civilian,generic,female,avg,motor_bike_rider",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 946937768
  },
  {
   "name": "civilian_gen_female008",
   "category": "Character|Civilian|Generic",
   "tags": "character,civilian,generic,female,avg,oppressed,worker,motor_bike_rider",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 2441523024
  },
  {
   "name": "civilian_gen_female009",
   "category": "Character|Civilian|Generic",
   "tags": "character,civilian,generic,female,avg,oppressed,motor_bike_rider",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 400120514
  },
  {
   "name": "civilian_gen_female010",
   "category": "Character|Civilian|Generic",
   "tags": "character,civilian,generic,female,avg,worker,motor_bike_rider",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 3228059531
  },
  {
   "name": "civilian_gen_female011",
   "category": "Character|Civilian|Generic",
   "tags": "character,civilian,generic,female,avg,oppressed,motor_bike_rider",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 2232906145
  },
  {
   "name": "civilian_gen_female012",
   "category": "Character|Civilian|Generic",
   "tags": "character,civilian,generic,female,avg,motor_bike_rider",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 3991785743
  },
  {
   "name": "civilian_gen_female013",
   "category": "Character|Civilian|Generic",
   "tags": "character,civilian,generic,female,avg,oppressed,scooter_rider,motor_bike_rider",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 579865902
  },
  {
   "name": "civilian_gen_female014",
   "category": "Character|Civilian|Generic",
   "tags": "character,civilian,generic,female,avg,oppressed",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 3441324891
  },
  {
   "name": "civilian_gen_female015",
   "category": "Character|Civilian|Generic",
   "tags": "character,civilian,generic,female,avg,oppressed,motor_bike_rider",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 286788934
  },
  {
   "name": "civilian_gen_female016",
   "category": "Character|Civilian|Generic",
   "tags": "character,civilian,tourist,female,avg,motor_bike_rider",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 2625656708
  },
  {
   "name": "civilian_gen_male001",
   "category": "Character|Civilian|Generic",
   "tags": "character,civilian,generic,male,avg,scooter_rider,motor_bike_rider,highend",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 1891864530
  },
  {
   "name": "civilian_gen_male002",
   "category": "Character|Civilian|Generic",
   "tags": "character,civilian,generic,male,avg,oppressed,scooter_rider,motor_bike_rider",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 2919812731
  },
  {
   "name": "civilian_gen_male003",
   "category": "Character|Civilian|Generic",
   "tags": "character,civilian,generic,male,avg,oppressed,worker,scooter_rider,motor_bike_rider",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 1973860509
  },
  {
   "name": "civilian_gen_male004",
   "category": "Character|Civilian|Generic",
   "tags": "character,civilian,generic,male,avg,scooter_rider,motor_bike_rider",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 2099197981
  },
  {
   "name": "civilian_gen_male005",
   "category": "Character|Civilian|Generic",
   "tags": "character,civilian,generic,male,avg,oppressed,scooter_rider,motor_bike_rider",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 2234949485
  },
  {
   "name": "civilian_gen_male006",
   "category": "Character|Civilian|Generic",
   "tags": "character,civilian,generic,male,avg,oppressed,worker,motor_bike_rider",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 2449701839
  },
  {
   "name": "civilian_gen_male007",
   "category": "Character|Civilian|Generic",
   "tags": "character,civilian,generic,male,avg,oppressed,scooter_rider,motor_bike_rider",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 1396976115
  },
  {
   "name": "civilian_gen_male008",
   "category": "Character|Civilian|Generic",
   "tags": "character,civilian,generic,male,avg,oppressed,scooter_rider,motor_bike_rider",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 1308568474
  },
  {
   "name": "civilian_gen_male009",
   "category": "Character|Civilian|Generic",
   "tags": "character,civilian,generic,male,avg,oppressed,worker,motor_bike_rider",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 3690451201
  },
  {
   "name": "civilian_gen_male010",
   "category": "Character|Civilian|Generic",
   "tags": "character,civilian,generic,male,avg",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 1655233726
  },
  {
   "name": "civilian_gen_male011",
   "category": "Character|Civilian|Generic",
   "tags": "character,civilian,generic,male,avg,oppressed,motor_bike_rider",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 809665343
  },
  {
   "name": "civilian_gen_male012",
   "category": "Character|Civilian|Generic",
   "tags": "character,civilian,generic,male,avg,oppressed,scooter_rider,motor_bike_rider",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 3466335805
  },
  {
   "name": "civilian_gen_male013",
   "category": "Character|Civilian|Generic",
   "tags": "character,civilian,generic,male,avg,highend,motor_bike_rider",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 4289485827
  },
  {
   "name": "civilian_gen_male014",
   "category": "Character|Civilian|Generic",
   "tags": "character,civilian,generic,male,avg,highend,motor_bike_rider",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 3590602247
  },
  {
   "name": "civilian_gen_male015",
   "category": "Character|Civilian|Generic",
   "tags": "character,civilian,generic,male,avg,oppressed,scooter_rider,motor_bike_rider",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 2410069832
  },
  {
   "name": "civilian_gen_male016",
   "category": "Character|Civilian|Generic",
   "tags": "character,civilian,generic,male,avg,worker,scooter_rider,motor_bike_rider",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 1458509730
  },
  {
   "name": "civilian_gen_male017",
   "category": "Character|Civilian|Generic",
   "tags": "character,civilian,generic,male,avg,oppressed,motor_bike_rider",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 1154498377
  },
  {
   "name": "civilian_gen_male018",
   "category": "Character|Civilian|Generic",
   "tags": "character,civilian,generic,male,avg,oppressed,worker,scooter_rider,motor_bike_rider",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 2969182754
  },
  {
   "name": "civilian_gen_male019",
   "category": "Character|Civilian|Generic",
   "tags": "character,civilian,generic,male,avg,scooter_rider,motor_bike_rider",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 2663784174
  },
  {
   "name": "male_prisoner_civilian_001_avg",
   "category": "Character|Civilian|Prisoner",
   "tags": "character,prisoner,male",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 3613485847
  },
  {
   "name": "male_prisoner_civilian_002_avg",
   "category": "Character|Civilian|Prisoner",
   "tags": "character,prisoner,male",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 4072487894
  },
  {
   "name": "male_prisoner_civilian_003_avg",
   "category": "Character|Civilian|Prisoner",
   "tags": "character,prisoner,male",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 42639511
  },
  {
   "name": "male_prisoner_civilian_004_avg",
   "category": "Character|Civilian|Prisoner",
   "tags": "character,prisoner,male",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 1887315512
  },
  {
   "name": "male_prisoner_civilian_005_avg",
   "category": "Character|Civilian|Prisoner",
   "tags": "character,prisoner,male",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 2449972568
  },
  {
   "name": "green_man",
   "category": "Character|Civilian|Scientist",
   "tags": "character,greenman",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 3733901850
  },
  {
   "name": "scientist_female_001",
   "category": "Character|Civilian|Scientist",
   "tags": "character,scientist,female",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 1796444247
  },
  {
   "name": "scientist_male_001",
   "category": "Character|Civilian|Scientist",
   "tags": "character,scientist,male",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 1445626130
  },
  {
   "name": "scientist_male_002",
   "category": "Character|Civilian|Scientist",
   "tags": "character,scientist,male",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 2309583878
  },
  {
   "name": "scientist_male_003",
   "category": "Character|Civilian|Scientist",
   "tags": "character,scientist,male",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 2435109156
  },
  {
   "name": "tourist_female_avg_001",
   "category": "Character|Civilian|Tourist",
   "tags": "character,civilian,tourist,female",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 362722005
  },
  {
   "name": "tourist_female_avg_002",
   "category": "Character|Civilian|Tourist",
   "tags": "character,civilian,tourist,female,motor_bike_rider",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 315107261
  },
  {
   "name": "tourist_female_avg_003",
   "category": "Character|Civilian|Tourist",
   "tags": "character,civilian,tourist,female",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 2676965919
  },
  {
   "name": "tourist_female_avg_004",
   "category": "Character|Civilian|Tourist",
   "tags": "character,civilian,tourist,female",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 2053764960
  },
  {
   "name": "tourist_male_avg_001",
   "category": "Character|Civilian|Tourist",
   "tags": "character,civilian,tourist,male,scooter_rider,motor_bike_rider",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 531627570
  },
  {
   "name": "tourist_male_avg_002",
   "category": "Character|Civilian|Tourist",
   "tags": "character,civilian,tourist,male,motor_bike_rider",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 2273010809
  },
  {
   "name": "tourist_male_avg_003",
   "category": "Character|Civilian|Tourist",
   "tags": "character,civilian,tourist,male,scooter_rider,motor_bike_rider",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 1908323116
  },
  {
   "name": "tourist_male_avg_004",
   "category": "Character|Civilian|Tourist",
   "tags": "character,civilian,tourist,male,scooter_rider,motor_bike_rider",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 491141041
  },
  {
   "name": "vagrant_gen_female001",
   "category": "Character|Civilian|Vagrant",
   "tags": "character,vagrant,female,oppressed",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 2202460111
  },
  {
   "name": "vagrant_gen_female002",
   "category": "Character|Civilian|Vagrant",
   "tags": "character,vagrant,female,oppressed",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 1275788914
  },
  {
   "name": "vagrant_gen_female003",
   "category": "Character|Civilian|Vagrant",
   "tags": "character,vagrant,female,oppressed",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 599978231
  },
  {
   "name": "vagrant_gen_male001",
   "category": "Character|Civilian|Vagrant",
   "tags": "character,vagrant,male,oppressed",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 2379497419
  },
  {
   "name": "vagrant_gen_male002",
   "category": "Character|Civilian|Vagrant",
   "tags": "character,vagrant,male,oppressed",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 248691173
  },
  {
   "name": "vagrant_gen_male003",
   "category": "Character|Civilian|Vagrant",
   "tags": "character,vagrant,male,oppressed",
-  "pool": "civilian"
+  "pool": "civilian",
+  "entity_hash": 1160476950
  },
  {
   "name": "blackhand_ghost_001",
   "category": "Character|Combatant|BlackHand",
   "tags": "character,black,hand,blackhand,black_hand,ghost,blackhandghost",
-  "pool": "combatant"
+  "pool": "combatant",
+  "entity_hash": 3468842375
  },
  {
   "name": "blackhand_grunt_001",
   "category": "Character|Combatant|BlackHand",
   "tags": "character,black,hand,blackhand,black_hand,bh_grunt,bhgrunt,blackhand_grunt",
-  "pool": "combatant"
+  "pool": "combatant",
+  "entity_hash": 3921102295
  },
  {
   "name": "blackhand_titan_001",
   "category": "Character|Combatant|BlackHand",
   "tags": "character,black,hand,blackhand,black_hand,titan,black_hand_titan,blackhand_titan,blackhandtitan",
-  "pool": "combatant"
+  "pool": "combatant",
+  "entity_hash": 911550672
  },
  {
   "name": "drm_captain_001",
   "category": "Character|Combatant|DRM",
   "tags": "character,police,enemy,captain,drm,drm_captain,police_captain",
-  "pool": "combatant"
+  "pool": "combatant",
+  "entity_hash": 269288726
  },
  {
   "name": "drm_grunt_001",
   "category": "Character|Combatant|DRM",
   "tags": "character,police,enemy,officer,heat1,drm_grunt,drm",
-  "pool": "combatant"
+  "pool": "combatant",
+  "entity_hash": 4287282373
  },
  {
   "name": "drm_swat_001",
   "category": "Character|Combatant|DRM",
   "tags": "character,police,enemy,swat,drm,drm_swat,police_swat",
-  "pool": "combatant"
+  "pool": "combatant",
+  "entity_hash": 3837623014
  },
  {
   "name": "armored_driver_001",
   "category": "Character|Combatant|Military",
   "tags": "character,military,enemy,armored_driver,tank_driver",
-  "pool": "combatant"
+  "pool": "combatant",
+  "entity_hash": 788215409
  },
  {
   "name": "biker_scout01",
   "category": "Character|Combatant|Military",
   "tags": "character,military,enemy,biker,scout,biker_scout",
-  "pool": "combatant"
+  "pool": "combatant",
+  "entity_hash": 2616488612
  },
  {
   "name": "commander_001",
   "category": "Character|Combatant|Military",
   "tags": "character,military,enemy,commander",
-  "pool": "combatant"
+  "pool": "combatant",
+  "entity_hash": 960417454
  },
  {
   "name": "demolition_001",
   "category": "Character|Combatant|Military",
   "tags": "character,military,enemy,demolition,demo,rpg",
-  "pool": "combatant"
+  "pool": "combatant",
+  "entity_hash": 3640991174
  },
  {
   "name": "demolition_002",
   "category": "Character|Combatant|Military",
   "tags": "character,military,enemy,demolition,demo,rpg",
-  "pool": "combatant"
+  "pool": "combatant",
+  "entity_hash": 2390986890
  },
  {
   "name": "machinegunner_001",
   "category": "Character|Combatant|Military",
   "tags": "character,military,enemy,machinegunner,heat4,heat5",
-  "pool": "combatant"
+  "pool": "combatant",
+  "entity_hash": 1757987118
  },
  {
   "name": "machinegunner_002",
   "category": "Character|Combatant|Military",
   "tags": "character,military,enemy,machinegunner,heat4,heat5",
-  "pool": "combatant"
+  "pool": "combatant",
+  "entity_hash": 2333284723
  },
  {
   "name": "machinegunner_003",
   "category": "Character|Combatant|Military",
   "tags": "character,military,enemy,machinegunner,heat4,heat5",
-  "pool": "combatant"
+  "pool": "combatant",
+  "entity_hash": 2843799792
  },
  {
   "name": "paratrooper_001",
   "category": "Character|Combatant|Military",
   "tags": "character,paratrooper",
-  "pool": "combatant"
+  "pool": "combatant",
+  "entity_hash": 1936630124
  },
  {
   "name": "pilot001",
   "category": "Character|Combatant|Military",
   "tags": "character,military,enemy,pilot",
-  "pool": "combatant"
+  "pool": "combatant",
+  "entity_hash": 3867627592
  },
  {
   "name": "pilot002",
   "category": "Character|Combatant|Military",
   "tags": "character,military,enemy,pilot_jet",
-  "pool": "combatant"
+  "pool": "combatant",
+  "entity_hash": 342341107
  },
  {
   "name": "ravello_guard_001",
   "category": "Character|Combatant|Military",
   "tags": "character,military,enemy,guard",
-  "pool": "combatant"
+  "pool": "combatant",
+  "entity_hash": 3310508924
  },
  {
   "name": "shock_trooper",
   "category": "Character|Combatant|Military",
   "tags": "character,military,enemy,shock,heat3,heat4,heat5",
-  "pool": "combatant"
+  "pool": "combatant",
+  "entity_hash": 129297583
  },
  {
   "name": "shock_trooper02",
   "category": "Character|Combatant|Military",
   "tags": "character,military,enemy,shock,heat3,heat4,heat5",
-  "pool": "combatant"
+  "pool": "combatant",
+  "entity_hash": 2062114620
  },
  {
   "name": "sniper_001",
   "category": "Character|Combatant|Military",
   "tags": "character,military,enemy,sniper",
-  "pool": "combatant"
+  "pool": "combatant",
+  "entity_hash": 1242130506
  },
  {
   "name": "soldier001",
   "category": "Character|Combatant|Military",
   "tags": "character,military,enemy,grunt,heat2,heat3,heat4,heat5",
-  "pool": "combatant"
+  "pool": "combatant",
+  "entity_hash": 4166867299
  },
  {
   "name": "soldier02",
   "category": "Character|Combatant|Military",
   "tags": "character,military,enemy,grunt,heat2,heat3,heat4,heat5",
-  "pool": "combatant"
+  "pool": "combatant",
+  "entity_hash": 2401827378
  },
  {
   "name": "soldier03",
   "category": "Character|Combatant|Military",
   "tags": "character,military,enemy,grunt,heat2,heat3,heat4,heat5",
-  "pool": "combatant"
+  "pool": "combatant",
+  "entity_hash": 3412765613
  },
  {
   "name": "soldier04",
   "category": "Character|Combatant|Military",
   "tags": "character,military,enemy,grunt,heat2,heat3,heat4,heat5",
-  "pool": "combatant"
+  "pool": "combatant",
+  "entity_hash": 1199786081
  },
  {
   "name": "soldier05",
   "category": "Character|Combatant|Military",
   "tags": "character,military,enemy,grunt,heat2,heat3,heat4,heat5",
-  "pool": "combatant"
+  "pool": "combatant",
+  "entity_hash": 633079445
  },
  {
   "name": "soldier_elite_001",
   "category": "Character|Combatant|Military",
   "tags": "character,military,enemy,elite,heat4,heat5",
-  "pool": "combatant"
+  "pool": "combatant",
+  "entity_hash": 2695714392
  },
  {
   "name": "soldier_elite_002",
   "category": "Character|Combatant|Military",
   "tags": "character,military,enemy,elite,heat4,heat5",
-  "pool": "combatant"
+  "pool": "combatant",
+  "entity_hash": 1965398877
  },
  {
   "name": "police_captain_001",
   "category": "Character|Combatant|Police",
   "tags": "character,obsolete",
-  "pool": "combatant"
+  "pool": "combatant",
+  "entity_hash": 758995850
  },
  {
   "name": "police_officer_001",
   "category": "Character|Combatant|Police",
   "tags": "character,obsolete",
-  "pool": "combatant"
+  "pool": "combatant",
+  "entity_hash": 698051724
  },
  {
   "name": "police_swat_001",
   "category": "Character|Combatant|Police",
   "tags": "character,obsolete",
-  "pool": "combatant"
+  "pool": "combatant",
+  "entity_hash": 7949010
  },
  {
   "name": "male_prisoner_001",
   "category": "Character|Combatant|Prisoner",
   "tags": "character,prisoner_combatant,male",
-  "pool": "combatant"
+  "pool": "combatant",
+  "entity_hash": 4077999009
  },
  {
   "name": "male_prisoner_002",
   "category": "Character|Combatant|Prisoner",
   "tags": "character,prisoner_combatant,male",
-  "pool": "combatant"
+  "pool": "combatant",
+  "entity_hash": 1281901724
  },
  {
   "name": "male_prisoner_003",
   "category": "Character|Combatant|Prisoner",
   "tags": "character,prisoner_combatant,male",
-  "pool": "combatant"
+  "pool": "combatant",
+  "entity_hash": 684780578
  },
  {
   "name": "male_prisoner_004",
   "category": "Character|Combatant|Prisoner",
   "tags": "character,prisoner_combatant,male",
-  "pool": "combatant"
+  "pool": "combatant",
+  "entity_hash": 2512925376
  },
  {
   "name": "male_prisoner_005",
   "category": "Character|Combatant|Prisoner",
   "tags": "character,prisoner_combatant,male",
-  "pool": "combatant"
+  "pool": "combatant",
+  "entity_hash": 799027271
  },
  {
   "name": "female_rebel_001",
   "category": "Character|Combatant|Rebel",
   "tags": "character,rebel,female",
-  "pool": "combatant"
+  "pool": "combatant",
+  "entity_hash": 684073562
  },
  {
   "name": "female_rebel_002",
   "category": "Character|Combatant|Rebel",
   "tags": "character,rebel,female",
-  "pool": "combatant"
+  "pool": "combatant",
+  "entity_hash": 2657691626
  },
  {
   "name": "female_rebel_003",
   "category": "Character|Combatant|Rebel",
   "tags": "character,rebel,female",
-  "pool": "combatant"
+  "pool": "combatant",
+  "entity_hash": 1263308379
  },
  {
   "name": "female_rebel_004",
   "category": "Character|Combatant|Rebel",
   "tags": "character,rebel,female",
-  "pool": "combatant"
+  "pool": "combatant",
+  "entity_hash": 3198866089
  },
  {
   "name": "female_rebel_004_grapple_melee_immune",
   "category": "Character|Combatant|Rebel",
   "tags": "character,rebel_mission_immune,female",
-  "pool": "combatant"
+  "pool": "combatant",
+  "entity_hash": 1090065042
  },
  {
   "name": "female_rebel_005",
   "category": "Character|Combatant|Rebel",
   "tags": "character,rebel,female",
-  "pool": "combatant"
+  "pool": "combatant",
+  "entity_hash": 1098316461
  },
  {
   "name": "female_rebel_006",
   "category": "Character|Combatant|Rebel",
   "tags": "character,rebel,female",
-  "pool": "combatant"
+  "pool": "combatant",
+  "entity_hash": 3816171326
  },
  {
   "name": "female_rebel_007",
   "category": "Character|Combatant|Rebel",
   "tags": "character,rebel,female",
-  "pool": "combatant"
+  "pool": "combatant",
+  "entity_hash": 2094367030
  },
  {
   "name": "male_rebel_001",
   "category": "Character|Combatant|Rebel",
   "tags": "character,rebel,male",
-  "pool": "combatant"
+  "pool": "combatant",
+  "entity_hash": 2257557266
  },
  {
   "name": "male_rebel_002",
   "category": "Character|Combatant|Rebel",
   "tags": "character,rebel,male",
-  "pool": "combatant"
+  "pool": "combatant",
+  "entity_hash": 2752261397
  },
  {
   "name": "male_rebel_003",
   "category": "Character|Combatant|Rebel",
   "tags": "character,rebel,male",
-  "pool": "combatant"
+  "pool": "combatant",
+  "entity_hash": 439434717
  },
  {
   "name": "male_rebel_004",
   "category": "Character|Combatant|Rebel",
   "tags": "character,rebel,male",
-  "pool": "combatant"
+  "pool": "combatant",
+  "entity_hash": 2695926800
  },
  {
   "name": "male_rebel_005",
   "category": "Character|Combatant|Rebel",
   "tags": "character,rebel,male",
-  "pool": "combatant"
+  "pool": "combatant",
+  "entity_hash": 4150434499
  },
  {
   "name": "male_rebel_006",
   "category": "Character|Combatant|Rebel",
   "tags": "character,rebel,male",
-  "pool": "combatant"
+  "pool": "combatant",
+  "entity_hash": 2374437774
  },
  {
   "name": "male_rebel_007",
   "category": "Character|Combatant|Rebel",
   "tags": "character,rebel,male",
-  "pool": "combatant"
+  "pool": "combatant",
+  "entity_hash": 971635149
  },
  {
   "name": "male_rebel_008",
   "category": "Character|Combatant|Rebel",
   "tags": "character,rebel_biker,rebel,male",
-  "pool": "combatant"
+  "pool": "combatant",
+  "entity_hash": 4107439940
  },
  {
   "name": "male_rebel_009",
   "category": "Character|Combatant|Rebel",
   "tags": "character,rebel,male",
-  "pool": "combatant"
+  "pool": "combatant",
+  "entity_hash": 64386083
  },
  {
   "name": "male_rebel_010",
   "category": "Character|Combatant|Rebel",
   "tags": "character,rebel,male",
-  "pool": "combatant"
+  "pool": "combatant",
+  "entity_hash": 2950673894
  },
  {
   "name": "male_rebel_011",
   "category": "Character|Combatant|Rebel",
   "tags": "character,rebel_biker,rebel,male",
-  "pool": "combatant"
+  "pool": "combatant",
+  "entity_hash": 3687991215
  },
  {
   "name": "male_rebel_paratrooper",
   "category": "Character|Combatant|Rebel",
   "tags": "character,rebel_paratrooper,male",
-  "pool": "combatant"
+  "pool": "combatant",
+  "entity_hash": 2097735615
  },
  {
   "name": "mc_annika",
   "category": "Character|Main_characters",
   "tags": "character,ally,annika",
-  "pool": "combatant"
+  "pool": "combatant",
+  "entity_hash": 146526493
  },
  {
   "name": "mc_di_ravello",
   "category": "Character|Main_characters",
   "tags": "character,ally,di_ravello,ravello",
-  "pool": "combatant"
+  "pool": "combatant",
+  "entity_hash": 891256341
  },
  {
   "name": "mc_dimah",
   "category": "Character|Main_characters",
   "tags": "character,ally,dimah",
-  "pool": "combatant"
+  "pool": "combatant",
+  "entity_hash": 1385892868
  },
  {
   "name": "mc_luciano",
   "category": "Character|Main_characters",
   "tags": "character,ally,luciano",
-  "pool": "combatant"
+  "pool": "combatant",
+  "entity_hash": 1985866488
  },
  {
   "name": "mc_mario",
   "category": "Character|Main_characters",
   "tags": "character,ally,mario",
-  "pool": "combatant"
+  "pool": "combatant",
+  "entity_hash": 799045750
  },
  {
   "name": "mc_pierce",
   "category": "Character|Main_characters",
   "tags": "character,ally,pierce",
-  "pool": "combatant"
+  "pool": "combatant",
+  "entity_hash": 3616375601
  },
  {
   "name": "mc_rosa",
   "category": "Character|Main_characters",
   "tags": "character,ally,rosa",
-  "pool": "combatant"
+  "pool": "combatant",
+  "entity_hash": 1517786473
  },
  {
   "name": "mc_salvatore",
   "category": "Character|Main_characters",
   "tags": "character,ally,salvatore",
-  "pool": "combatant"
+  "pool": "combatant",
+  "entity_hash": 4224558773
  },
  {
   "name": "mc_sheldon",
   "category": "Character|Main_characters",
   "tags": "character,ally,sheldon",
-  "pool": "combatant"
+  "pool": "combatant",
+  "entity_hash": 2882354072
  },
  {
   "name": "mc_teo",
   "category": "Character|Main_characters",
   "tags": "character,ally,teo,theo",
-  "pool": "combatant"
+  "pool": "combatant",
+  "entity_hash": 3209650799
  },
  {
   "name": "mc_zeno",
   "category": "Character|Main_characters",
   "tags": "character,ally,zeno",
-  "pool": "combatant"
+  "pool": "combatant",
+  "entity_hash": 2009485057
  },
  {
   "name": "Grappling Device JC2-style",
   "category": "",
   "tags": "grappling_device_jc2_default",
-  "pool": "device"
+  "pool": "device",
+  "entity_hash": 3382651886
  },
  {
   "name": "Grappling Device JC3-style",
   "category": "",
   "tags": "grappling_device_jc3_default",
-  "pool": "device"
+  "pool": "device",
+  "entity_hash": 798301688
  },
  {
   "name": "Assault rifle magazine",
   "category": "",
   "tags": "magazine",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 1321087891
  },
  {
   "name": "Assault rifle magazine",
   "category": "",
   "tags": "magazine",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 3588635410
  },
  {
   "name": "Assault rifle magazine",
   "category": "",
   "tags": "magazine",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 2916937671
  },
  {
   "name": "Assault rifle magazine",
   "category": "",
   "tags": "magazine",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 2196790540
  },
  {
   "name": "Assault rifle magazine",
   "category": "",
   "tags": "magazine",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 3193744679
  },
  {
   "name": "Assault rifle magazine",
   "category": "",
   "tags": "magazine",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 3386890104
  },
  {
   "name": "Assault rifle magazine",
   "category": "",
   "tags": "magazine",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 2506803530
  },
  {
   "name": "Assault rifle magazine",
   "category": "",
   "tags": "magazine",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 1670889661
  },
  {
   "name": "Assault rifle magazine",
   "category": "",
   "tags": "magazine",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 831256848
  },
  {
   "name": "Assault rifle magazine",
   "category": "",
   "tags": "magazine",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 2161069255
  },
  {
   "name": "Assault rifle magazine",
   "category": "",
   "tags": "magazine",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 1970343133
  },
  {
   "name": "Collectible Placeholder",
   "category": "",
   "tags": "ngc_collectible",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 3418685493
  },
  {
   "name": "Hydra magazine",
   "category": "",
   "tags": "magazine",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 3479570683
  },
  {
   "name": "Road Flare (checkpoint)",
   "category": "",
   "tags": "checkpoint,flare",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 2874129280
  },
  {
   "name": "Road Flare (finish)",
   "category": "",
   "tags": "finish,flare",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 1779952043
  },
  {
   "name": "Road Flare (small)",
   "category": "",
   "tags": "small,flare",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 1831288459
  },
  {
   "name": "Sniper rifle magazine",
   "category": "",
   "tags": "magazine",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 703894956
  },
  {
   "name": "Sniper rifle magazine",
   "category": "",
   "tags": "magazine",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 1429638857
  },
  {
   "name": "Sniper rifle magazine",
   "category": "",
   "tags": "magazine",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 438901421
  },
  {
   "name": "field_hay_bale",
   "category": "",
   "tags": "haybale",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 3505163163
  },
  {
   "name": "inspect_deadbody_context_action",
   "category": "",
   "tags": "inspect_deadbody_context_action",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 1738277139
  },
  {
   "name": "rebel_drop_crate",
   "category": "",
   "tags": "rebel_drop_crate",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 2232031882
  },
  {
   "name": "rebel_drop_weapon_case",
   "category": "",
   "tags": "rebel_drop_weapon_case",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 1433916190
  },
  {
   "name": "sea_mine",
   "category": "",
   "tags": "sea_mine",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 3371861532
  },
  {
   "name": "art_paintbrush",
   "category": "animation_props",
   "tags": "art_paintbrush",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 3425883699
  },
  {
   "name": "art_palette",
   "category": "animation_props",
   "tags": "art_palette",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 256535503
  },
  {
   "name": "beer_botle",
   "category": "animation_props",
   "tags": "beer_botle,beer_bottle",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 3266857423
  },
  {
   "name": "binoculars",
   "category": "animation_props",
   "tags": "binoculars",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 3641362721
  },
  {
   "name": "book",
   "category": "animation_props",
   "tags": "book",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 3924845677
  },
  {
   "name": "broome",
   "category": "animation_props",
   "tags": "broome,broom",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 3161796639
  },
  {
   "name": "bucket",
   "category": "animation_props",
   "tags": "bucket",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 2206231830
  },
  {
   "name": "ca_flare",
   "category": "animation_props",
   "tags": "ca_flare",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 4265437979
  },
  {
   "name": "camera",
   "category": "animation_props",
   "tags": "camera",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 318491328
  },
  {
   "name": "cards_fan",
   "category": "animation_props",
   "tags": "cards_fan",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 500219791
  },
  {
   "name": "cellphone",
   "category": "animation_props",
   "tags": "cellphone",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 875293589
  },
  {
   "name": "cigar",
   "category": "animation_props",
   "tags": "cigar",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 4169742588
  },
  {
   "name": "cigarette",
   "category": "animation_props",
   "tags": "cigarette",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 2993778003
  },
  {
   "name": "clipboard",
   "category": "animation_props",
   "tags": "clipboard",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 589506439
  },
  {
   "name": "fishingpole",
   "category": "animation_props",
   "tags": "fishingpole",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 378529458
  },
  {
   "name": "glass",
   "category": "animation_props",
   "tags": "glass",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 58006723
  },
  {
   "name": "guitar",
   "category": "animation_props",
   "tags": "guitar",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 1077103367
  },
  {
   "name": "harmonica",
   "category": "animation_props",
   "tags": "harmonica",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 2691839404
  },
  {
   "name": "map",
   "category": "animation_props",
   "tags": "map",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 3592184659
  },
  {
   "name": "mug",
   "category": "animation_props",
   "tags": "mug",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 2975124205
  },
  {
   "name": "paintbrush",
   "category": "animation_props",
   "tags": "paintbrush",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 3564891154
  },
  {
   "name": "paintbucket",
   "category": "animation_props",
   "tags": "paintbucket",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 3541664108
  },
  {
   "name": "paperbag",
   "category": "animation_props",
   "tags": "paperbag",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 145943406
  },
  {
   "name": "pickaxe",
   "category": "animation_props",
   "tags": "pickaxe",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 2836720616
  },
  {
   "name": "pinata",
   "category": "animation_props",
   "tags": "pinata",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 3458819429
  },
  {
   "name": "pinata_stick",
   "category": "animation_props",
   "tags": "pinata_stick",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 278886716
  },
  {
   "name": "playing_card",
   "category": "animation_props",
   "tags": "playing_card",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 1502738244
  },
  {
   "name": "shears",
   "category": "animation_props",
   "tags": "shears",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 3322131309
  },
  {
   "name": "shopping_bag",
   "category": "animation_props",
   "tags": "shopping_bag",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 2819281404
  },
  {
   "name": "soda_can",
   "category": "animation_props",
   "tags": "soda_can",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 1722034901
  },
  {
   "name": "sponge",
   "category": "animation_props",
   "tags": "sponge",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 124127185
  },
  {
   "name": "squeegee",
   "category": "animation_props",
   "tags": "squeegee",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 1248206180
  },
  {
   "name": "umbrella",
   "category": "animation_props",
   "tags": "umbrella",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 3255617899
  },
  {
   "name": "violin",
   "category": "animation_props",
   "tags": "violin",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 8805659
  },
  {
   "name": "violin_bow",
   "category": "animation_props",
   "tags": "violin_bow",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 825939757
  },
  {
   "name": "watering_kettle",
   "category": "animation_props",
   "tags": "watering_kettle",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 1851845836
  },
  {
   "name": "zpad",
   "category": "animation_props",
   "tags": "zpad",
-  "pool": "prop"
- },
- {
-  "name": "para002_skin_flame",
-  "category": "parachute_skins",
-  "tags": "para002_skin_flame",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 3560171917
  },
  {
   "name": "parachute_skin_debug",
   "category": "parachute_skins",
   "tags": "parachute_skin_debug",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 1392604367
  },
  {
   "name": "Borghetto blaster",
   "category": "props",
   "tags": "borghettoblaster",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 3007076543
  },
  {
   "name": "Exploding Barrel",
   "category": "props",
   "tags": "prop,barrel,explosive,timed",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 3277504482
  },
  {
   "name": "Exploding ammo box single",
   "category": "props",
   "tags": "ammo,box,destruction,single",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 3000857611
  },
  {
   "name": "Magnet",
   "category": "props",
   "tags": "magnet",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 240686335
  },
  {
   "name": "Merry Go Boom",
   "category": "props",
   "tags": "merrygoboom",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 2208689255
  },
  {
   "name": "Pogostick",
   "category": "props",
   "tags": "pogostick",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 2713128176
  },
  {
   "name": "Rico ready to jump from a helicopter",
   "category": "props",
   "tags": "rico_jump_from_heli",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 3161329477
  },
  {
   "name": "Spotlight for Mission A SAM turrets",
   "category": "props",
   "tags": "sam_spotlight_01",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 1565198398
  },
  {
   "name": "armored_transport_wreck",
   "category": "props",
   "tags": "region_war_wreck",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 4281471914
  },
  {
   "name": "bus_wreck",
   "category": "props",
   "tags": "region_war_wreck",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 4250680972
  },
  {
   "name": "corpse_civilian_farmer_001",
   "category": "props",
   "tags": "corpse,civilan_corpse,farmer_corpse,civilian_corpse",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 3508280647
  },
  {
   "name": "corpse_civilian_female_002",
   "category": "props",
   "tags": "corpse,civilan_corpse,civilian_corpse",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 4128927347
  },
  {
   "name": "corpse_civilian_female_003",
   "category": "props",
   "tags": "corpse,civilan_corpse,civilian_corpse",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 2380566557
  },
  {
   "name": "corpse_civilian_female_009",
   "category": "props",
   "tags": "corpse,civilan_corpse,civilian_corpse",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 2334389012
  },
  {
   "name": "corpse_civilian_male_001",
   "category": "props",
   "tags": "corpse,civilan_corpse,civilian_corpse",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 4000150614
  },
  {
   "name": "corpse_civilian_male_002",
   "category": "props",
   "tags": "corpse,civilan_corpse,civilian_corpse",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 1502549670
  },
  {
   "name": "corpse_civilian_male_003",
   "category": "props",
   "tags": "corpse,civilan_corpse,civilian_corpse",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 1147483359
  },
  {
   "name": "corpse_drm_001",
   "category": "props",
   "tags": "corpse,drm_corpse",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 3143624561
  },
  {
   "name": "corpse_military_001",
   "category": "props",
   "tags": "corpse,military_corpse,grunt_corpse",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 4037356063
  },
  {
   "name": "corpse_military_002",
   "category": "props",
   "tags": "corpse,military_corpse,grunt_corpse",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 1489497278
  },
  {
   "name": "corpse_military_003",
   "category": "props",
   "tags": "corpse,military_corpse,armored_driver_corpse",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 2711497962
  },
  {
   "name": "corpse_military_004",
   "category": "props",
   "tags": "corpse,military_corpse,commander_corpse",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 320434241
  },
  {
   "name": "corpse_military_006",
   "category": "props",
   "tags": "corpse,military_corpse,elite_corpse",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 1694611397
  },
  {
   "name": "corpse_military_006",
   "category": "props",
   "tags": "corpse,military_corpse,demolition_corpse",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 3998019708
  },
  {
   "name": "corpse_military_007",
   "category": "props",
   "tags": "corpse,military_corpse,guard_corpse",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 3595825063
  },
  {
   "name": "corpse_military_008",
   "category": "props",
   "tags": "corpse,military_corpse,machinegunner_corpse",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 1092700619
  },
  {
   "name": "corpse_military_009",
   "category": "props",
   "tags": "corpse,military_corpse,pilot_corpse",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 2199432917
  },
  {
   "name": "corpse_military_010",
   "category": "props",
   "tags": "corpse,military_corpse,scout_corpse",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 3676322747
  },
  {
   "name": "corpse_military_011",
   "category": "props",
   "tags": "corpse,military_corpse,shocktrooper_corpse",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 392627398
  },
  {
   "name": "corpse_rebel_001",
   "category": "props",
   "tags": "corpse,rebel_corpse",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 2905645391
  },
  {
   "name": "corpse_rebel_002",
   "category": "props",
   "tags": "corpse,rebel_corpse",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 1638943641
  },
  {
   "name": "corpse_rebel_003",
   "category": "props",
   "tags": "corpse,rebel_corpse",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 2792540665
  },
  {
   "name": "corpse_rebel_004",
   "category": "props",
   "tags": "corpse,rebel_corpse",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 1271042212
  },
  {
   "name": "glowstick_blue",
   "category": "props",
   "tags": "glowstick,glowblue",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 4231186441
  },
  {
   "name": "glowstick_green",
   "category": "props",
   "tags": "glowstick,glowgreen",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 1036681504
  },
  {
   "name": "glowstick_red",
   "category": "props",
   "tags": "glowstick,glowred",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 1095743619
  },
  {
   "name": "glowstick_yellow",
   "category": "props",
   "tags": "glowstick,glowyellow",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 3893433951
  },
  {
   "name": "lights search assembly",
   "category": "props",
   "tags": "lightssearch",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 1926940313
  },
  {
   "name": "military flat bed",
   "category": "props",
   "tags": "flatbed",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 1096914739
  },
  {
   "name": "oldcompact_wreck",
   "category": "props",
   "tags": "region_war_wreck",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 2963819295
  },
  {
   "name": "random_encounter_crate",
   "category": "props",
   "tags": "re_crate",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 429788749
  },
  {
   "name": "search light",
   "category": "props",
   "tags": "searchlight",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 2605136116
  },
  {
   "name": "tank2_transport_wreck",
   "category": "props",
   "tags": "region_war_wreck",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 2420115693
  },
  {
   "name": "tank_bus_wreck",
   "category": "props",
   "tags": "region_war_wreck",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 3378979396
  },
  {
   "name": "tank_oldcompact_wreck",
   "category": "props",
   "tags": "region_war_wreck",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 783473410
  },
  {
   "name": "tank_techinal_wreck",
   "category": "props",
   "tags": "region_war_wreck",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 1041486589
  },
  {
   "name": "tank_wreck",
   "category": "props",
   "tags": "region_war_wreck",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 3937885823
  },
  {
   "name": "techinal2_oldcompact_wreck",
   "category": "props",
   "tags": "region_war_wreck",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 162886447
  },
  {
   "name": "technicaljeep_wreck",
   "category": "props",
   "tags": "region_war_wreck",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 3413686670
  },
  {
   "name": "rico002_skin_flame",
   "category": "rico_skins",
   "tags": "rico002_skin_flame",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 2075626810
  },
  {
   "name": "rico_skin_debug",
   "category": "rico_skins",
   "tags": "rico_skin_debug",
-  "pool": "prop"
- },
- {
-  "name": "wgst002_skin_flame",
-  "category": "wingsuit_skins",
-  "tags": "wgst002_skin_flame",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 2075626810
  },
  {
   "name": "wingsuit_skin_debug",
   "category": "wingsuit_skins",
   "tags": "wingsuit_skin_debug",
-  "pool": "prop"
+  "pool": "prop",
+  "entity_hash": 1497938087
  },
  {
   "name": "v4603_plane_urga_cargotransport_mm340",
   "category": "",
   "tags": "vehicle,ground",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 2548326913
  },
  {
   "name": "v0202_car_capstone_bavariumtank_military_01",
   "category": "vehicle|bavarium",
   "tags": "vehicle,military,shielded",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 3735240277
  },
  {
   "name": "v0202_car_capstone_bavariumtank_rebel_01",
   "category": "vehicle|bavarium",
   "tags": "vehicle,rebel,shielded",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 1207218883
  },
  {
   "name": "v0000_car_autostraad_oldjeep_civilian_01",
   "category": "vehicle|ground|civilian",
   "tags": "vehicle",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 1684130889
  },
  {
   "name": "v0002_car_autostraad_oldcampervan_civilian_01",
   "category": "vehicle|ground|civilian",
   "tags": "vehicle,ground,car,civilian,old,autostraad,van,campervan,unarmed,unarmored,ambient,oppressed,global_neutral",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 1567828325
  },
  {
   "name": "v0003_car_autostraad_racinghothatch_civilian_01",
   "category": "vehicle|ground|civilian",
   "tags": "vehicle,ground,car,civilian,modern,sports,autostraad,sedan,unarmed,unarmored,ambient,liberated",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 1222118188
  },
  {
   "name": "v0005_car_autostraad_minetruck_commercial_01",
   "category": "vehicle|ground|civilian",
   "tags": "vehicle,ground,industrial,modern,commercial,mine,huge,autostraad,unarmored,unarmed",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 776016794
  },
  {
   "name": "v0008_car_autostraad_modernsportssaloon_civilian_01",
   "category": "vehicle|ground|civilian",
   "tags": "vehicle,ground,car,civilian,modern,sports,autostraad,sedan,unarmed,unarmored,ambient,liberated",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 1683768425
  },
  {
   "name": "v0009_car_autostraad_modernsaloon_civilian_01",
   "category": "vehicle|ground|civilian",
   "tags": "vehicle,ground,car,civilian,modern,autostraad,saloon,unarmed,unarmored,ambient,liberated",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 3843099743
  },
  {
   "name": "v0011_car_autostraad_articulatedtruck_commercial_01",
   "category": "vehicle|ground|civilian",
   "tags": "vehicle,ground,truck,modern,articulated,commercial,autostraad,unarmored,unarmed",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 4200435076
  },
  {
   "name": "v0012_car_autostraad_atv_civilian_01",
   "category": "vehicle|ground|civilian",
   "tags": "vehicle,ground,car,civilian,modern,autostraad,atv,unarmed,unarmored",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 1863812216
  },
  {
   "name": "v0300_car_kensington_sportsmuscle_civilian_01",
   "category": "vehicle|ground|civilian",
   "tags": "vehicle,ground,car,civilian,racing,modern,muscle,kensington,sports,unarmed,unarmored,ambient,liberated",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 3535039305
  },
  {
   "name": "v0302_car_kensington_modernlimo_civilian_01",
   "category": "vehicle|ground|civilian",
   "tags": "vehicle,ground,car,civilian,modern,kensington,limo,unarmed,unarmored,ambient,liberated,highend",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 911076462
  },
  {
   "name": "v0305_car_kensington_moderngrandtourer_civilian_01",
   "category": "vehicle|ground|civilian",
   "tags": "vehicle,ground,car,civilian,modern,kensington,grandtourer,unarmed,unarmored,ambient,liberated",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 3080666513
  },
  {
   "name": "v0400_car_mugello_vintagesports_civilian_01",
   "category": "vehicle|ground|civilian",
   "tags": "vehicle,ground,car,civilian,vintage,mugello,sports,unarmed,unarmored,ambient,liberated,highend",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 3203194893
  },
  {
   "name": "v0401_car_mugello_racingsupercar_civilian_01",
   "category": "vehicle|ground|civilian",
   "tags": "vehicle,ground,car,civilian,racing,super,modern,mugello,sports,unarmed,unarmored,ambient,liberated,highend",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 1192327012
  },
  {
   "name": "v0402_car_mugello_vintagesuper_civilian_01",
   "category": "vehicle|ground|civilian",
   "tags": "vehicle,ground,car,civilian,vintage,super,old,mugello,sports,unarmed,unarmored,ambient,liberated,highend",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 4286768685
  },
  {
   "name": "v0403_car_mugello_modernecosuper_civilian_01",
   "category": "vehicle|ground|civilian",
   "tags": "vehicle",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 4225384683
  },
  {
   "name": "v0405_car_mugello_moderncircuitracer_civilian_01",
   "category": "vehicle|ground|civilian",
   "tags": "vehicle",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 2336539742
  },
  {
   "name": "v0500_car_solar_oldmini_civilian_01",
   "category": "vehicle|ground|civilian",
   "tags": "vehicle,ground,car,civilian,old,solar,mini,unarmed,unarmored,ambient,oppressed,global_neutral,dirt",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 857303830
  },
  {
   "name": "v0502_car_solar_modernsedan_civilian_01",
   "category": "vehicle|ground|civilian",
   "tags": "vehicle,ground,car,civilian,modern,solar,sedan,unarmed,unarmored,ambient,oppressed,global_neutral",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 1866205445
  },
  {
   "name": "v0503_car_solar_modernsuv_civilian_01",
   "category": "vehicle|ground|civilian",
   "tags": "vehicle,ground,car,civilian,modern,solar,suv,unarmed,unarmored,ambient,oppressed,global_neutral",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 2662510920
  },
  {
   "name": "v0506_car_solar_oldtractor_civilian_01",
   "category": "vehicle|ground|civilian",
   "tags": "vehicle,ground,tractor,civilian,old,solar,unarmed,unarmored,ambient,oppressed,global_neutral",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 943568602
  },
  {
   "name": "v0508_car_solar_oldcompact_civilian_01",
   "category": "vehicle|ground|civilian",
   "tags": "vehicle,ground,car,civilian,old,solar,compact,unarmed,unarmored,ambient,oppressed,global_neutral,dirt",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 695483605
  },
  {
   "name": "v0509_car_solar_modernmini_civilian_01",
   "category": "vehicle|ground|civilian",
   "tags": "vehicle,ground,car,civilian,modern,solar,mini,unarmed,unarmored,ambient,liberated",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 2455749603
  },
  {
   "name": "v0510_car_solar_modernroadster_civilian_01",
   "category": "vehicle|ground|civilian",
   "tags": "vehicle,ground,car,civilian,modern,solar,roadster,unarmed,unarmored,ambient,liberated,highend",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 160481253
  },
  {
   "name": "v0512_car_solar_oldtwodoorhatch_civilian_01",
   "category": "vehicle|ground|civilian",
   "tags": "vehicle,ground,car,civilian,old,solar,compact,unarmed,unarmored,ambient,oppressed,global_neutral,dirt",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 3844689418
  },
  {
   "name": "v0513_car_solar_oldfourdoorhatch_civilian_01",
   "category": "vehicle|ground|civilian",
   "tags": "vehicle,ground,car,civilian,old,solar,compact,unarmed,unarmored,ambient,oppressed,global_neutral,dirt",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 1629307753
  },
  {
   "name": "v0514_car_solar_modernpickup_civilian_01",
   "category": "vehicle|ground|civilian",
   "tags": "vehicle,ground,car,civilian,old,solar,pickup,jeep,unarmed,unarmored,ambient,oppressed,global_neutral,dirt",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 1733269748
  },
  {
   "name": "v0803_car_na_monstertruck_civilian_01",
   "category": "vehicle|ground|civilian",
   "tags": "vehicle",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 4129388734
  },
  {
   "name": "v0866_car_na_ladbil_civilian_01",
   "category": "vehicle|ground|civilian",
   "tags": "vehicle",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 1999738350
  },
  {
   "name": "v3000_bike_autostraad_trials_civilian_01",
   "category": "vehicle|ground|civilian",
   "tags": "vehicle,ground,bike,civilian,offroad,trials,dirt,modern,autostraad,unarmored,unarmed,ambient,liberated",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 2160521137
  },
  {
   "name": "v3401_bike_mugello_modernsport_civilian_01",
   "category": "vehicle|ground|civilian",
   "tags": "vehicle,ground,bike,civilian,modern,sport,mugello,unarmed,unarmored,ambient,liberated",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 2865733197
  },
  {
   "name": "v3402_bike_mugello_modernsuper_civilian_01",
   "category": "vehicle|ground|civilian",
   "tags": "vehicle,ground,bike,civilian,modern,super,mugello,unarmed,unarmored,ambient,liberated",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 3510706963
  },
  {
   "name": "v3500_bike_solar_oldmoped_civilian_01",
   "category": "vehicle|ground|civilian",
   "tags": "vehicle,ground,bike,civilian,old,moped,solar,unarmed,unarmored,ambient,oppressed,global_neutral",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 1671177981
  },
  {
   "name": "v3501_bike_solar_modernmoped_civilian_01",
   "category": "vehicle|ground|civilian",
   "tags": "vehicle,ground,bike,civilian,modern,moped,solar,unarmed,unarmored,ambient,liberated",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 2395818479
  },
  {
   "name": "v3502_bike_solar_modernroad_civilian_01",
   "category": "vehicle|ground|civilian",
   "tags": "vehicle,ground,bike,civilian,modern,road,solar,unarmed,unarmored,ambient,oppressed,global_neutral",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 717463248
  },
  {
   "name": "v3503_bike_solar_oldroad_civilian_01",
   "category": "vehicle|ground|civilian",
   "tags": "vehicle,ground,bike,civilian,old,road,solar,unarmed,unarmored,ambient,oppressed,global_neutral",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 3300933530
  },
  {
   "name": "v0001_car_autostraad_armoredtruck_commercial_01",
   "category": "vehicle|ground|commercial",
   "tags": "vehicle,ground,truck,modern,commercial,autostraad,armored,unarmed,ambient,civil_servant",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 484034449
  },
  {
   "name": "v0006_car_autostraad_modernbus_commercial_01",
   "category": "vehicle|ground|commercial",
   "tags": "vehicle,ground,bus,modern,commercial,autostraad,unarmored,unarmed,ambient,civil_servant",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 719430386
  },
  {
   "name": "v0501_car_solar_smallvan_civic_ambulance_01",
   "category": "vehicle|ground|commercial",
   "tags": "vehicle,ground,van,civic,ambulance,modern,solar,unarmed,unarmored,ambient,civil_servant",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 2030470101
  },
  {
   "name": "v0501_car_solar_smallvan_commercial_01",
   "category": "vehicle|ground|commercial",
   "tags": "vehicle,ground,van,modern,commercial,solar,unarmored,unarmed,oppressed,global_neutral,ambient,civil_servant",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 1642334787
  },
  {
   "name": "v0505_car_solar_oldtruck_commercial_01",
   "category": "vehicle|ground|commercial",
   "tags": "vehicle,ground,truck,old,commercial,solar,unarmored,unarmed,oppressed,global_neutral,ambient",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 2627875542
  },
  {
   "name": "v0505_car_solar_oldtruck_commercial_cargo_barrel",
   "category": "vehicle|ground|commercial",
   "tags": "vehicle,ground,truck,solar,unarmored,unarmed,ambient,oppressed,global_neutral,cargo,barrel",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 1124348706
  },
  {
   "name": "v0505_car_solar_oldtruck_commercial_cargo_random",
   "category": "vehicle|ground|commercial",
   "tags": "random_cargo",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 1099576994
  },
  {
   "name": "v0505_car_solar_oldtruck_commercial_cargo_wine",
   "category": "vehicle|ground|commercial",
   "tags": "vehicle,ground,truck,old,solar,unarmored,unarmed,ambient,oppressed,global_neutral,cargo,wine",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 1925727205
  },
  {
   "name": "v0507_car_solar_oldbus_commercial_01",
   "category": "vehicle|ground|commercial",
   "tags": "vehicle,ground,bus,old,commercial,solar,unarmored,unarmed,ambient,oppressed,global_neutral,civil_servant",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 709014260
  },
  {
   "name": "v0000_car_autostraad_oldjeep_military_01",
   "category": "vehicle|ground|military",
   "tags": "vehicle,ground,car,military,offroad,old,jeep,autostraad,unarmed,unarmored,heat2,heat3,r01_outpost,mil_now_traffic,mil_auth_road_traffic",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 1535405532
  },
  {
   "name": "v0200_car_capstone_apc_military_01",
   "category": "vehicle|ground|military",
   "tags": "vehicle,ground,truck,apc,military,armored,capstone,unarmed,r02_outpost,r03_outpost",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 2631053328
  },
  {
   "name": "v0201_car_capstone_mediumtank_military_01",
   "category": "vehicle|ground|military",
   "tags": "vehicle,ground,tank,military,armored,capstone,cannon,machinegun,not_shielded,r03_outpost",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 2840535164
  },
  {
   "name": "v0501_car_solar_smallvan_propaganda_01",
   "category": "vehicle|ground|military",
   "tags": "vehicle,ground,van,propaganda,modern,solar,unarmed,unarmored",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 3174928626
  },
  {
   "name": "v0501_car_solar_smallvan_propaganda_chaoslist",
   "category": "vehicle|ground|military",
   "tags": "vehicle,ground",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 698010258
  },
  {
   "name": "v0502_car_solar_modernsedan_civic_police_01",
   "category": "vehicle|ground|military",
   "tags": "vehicle,ground,car,patrol,civic,militia,police,modern,solar,sedan,unarmed,unarmored",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 4044104901
  },
  {
   "name": "v0505_car_solar_oldtruck_military_01",
   "category": "vehicle|ground|military",
   "tags": "vehicle,ground,truck,old,military,solar,unarmored,unarmed,mil_now_traffic,mil_auth_road_traffic",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 3874188721
  },
  {
   "name": "v0600_car_urga_armoredjeep_military_01",
   "category": "vehicle|ground|military",
   "tags": "vehicle,ground,car,military,offroad,armored,urga,mounted,machinegun,heat3,heat4,heat5,r01_outpost,r02_outpost,r03_outpost,mil_now_traffic",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 2713830733
  },
  {
   "name": "v0602_car_urga_armoredtransport_military_01",
   "category": "vehicle|ground|military",
   "tags": "vehicle,ground,truck,transport,military,armored,urga,unarmed,r02_outpost,r03_outpost,mil_now_traffic,mil_auth_road_traffic",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 2781420465
  },
  {
   "name": "v0603_car_urga_smalltank_military_01",
   "category": "vehicle|ground|military",
   "tags": "vehicle,ground,tank,military,armored,urga,cannon,not_shielded,r02_outpost,r03_outpost",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 970032925
  },
  {
   "name": "v0604_car_urga_buggy_military_01",
   "category": "vehicle|ground|military",
   "tags": "vehicle,ground,car,military,offroad,modern,urga,buggy,unarmed,unarmored,r01_outpost,r02_outpost,r03_outpost,mil_now_traffic",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 2913800493
  },
  {
   "name": "v3600_bike_urga_combatdirt_military_01",
   "category": "vehicle|ground|military",
   "tags": "vehicle,ground,bike,offroad,dirt,combat,old,military,urga,unarmored,unarmed,r01_outpost,mil_now_bike,combatdirt",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 300281319
  },
  {
   "name": "v0504_car_solar_technicaljeep_militia_01",
   "category": "vehicle|ground|militia",
   "tags": "vehicle,ground,car,militia,old,solar,jeep,unarmed,unarmored,drm,heat1",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 1344393073
  },
  {
   "name": "v0000_car_autostraad_oldjeep_rebel_01",
   "category": "vehicle|ground|rebel",
   "tags": "vehicle,ground,car,rebel,old,jeep,autostraad,unarmed,unarmored,r01_outpost,rebel_now_traffic,reb_auth_road_traffic",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 274180142
  },
  {
   "name": "v0200_car_capstone_apc_rebel_01",
   "category": "vehicle|ground|rebel",
   "tags": "vehicle,ground,truck,apc,rebel,armored,capstone,unarmed,r02_outpost,r03_outpost",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 1332328959
  },
  {
   "name": "v0201_car_capstone_mediumtank_rebel_01",
   "category": "vehicle|ground|rebel",
   "tags": "vehicle,ground,tank,rebel,armored,capstone,cannon,machinegun,not_shielded,r03_outpost",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 2758160814
  },
  {
   "name": "v0504_car_solar_technicaljeep_rebel_01",
   "category": "vehicle|ground|rebel",
   "tags": "vehicle,ground,car,rebel,old,solar,jeep,unarmed,unarmored,rebel_now_traffic,reb_auth_road_traffic",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 3145488079
  },
  {
   "name": "v0504_car_solar_technicaljeep_rebel_machinegun",
   "category": "vehicle|ground|rebel",
   "tags": "vehicle,ground,car,rebel,old,solar,jeep,machinegun,unarmored",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 1768482594
  },
  {
   "name": "v0505_car_solar_oldtruck_rebel_01",
   "category": "vehicle|ground|rebel",
   "tags": "vehicle,ground,truck,old,rebel,solar,unarmored,unarmed,reb_auth_road_traffic",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 3910701466
  },
  {
   "name": "v0505_car_solar_oldtruck_rebel_emp_01",
   "category": "vehicle|ground|rebel",
   "tags": "vehicle,ground",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 2377611706
  },
  {
   "name": "v0600_car_urga_armoredjeep_rebel_01",
   "category": "vehicle|ground|rebel",
   "tags": "vehicle,ground,car,rebel,armored,urga,mounted,machinegun,r01_outpost,r02_outpost,r03_outpost",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 2020191645
  },
  {
   "name": "v0602_car_urga_armoredtransport_rebel_01",
   "category": "vehicle|ground|rebel",
   "tags": "vehicle,ground,truck,transport,rebel,armored,urga,unarmed,r02_outpost,r03_outpost,reb_auth_road_traffic",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 2079723022
  },
  {
   "name": "v0603_car_urga_smalltank_rebel_01",
   "category": "vehicle|ground|rebel",
   "tags": "vehicle,ground,tank,rebel,armored,urga,cannon,not_shielded,r02_outpost,r03_outpost",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 4038562464
  },
  {
   "name": "v0604_car_urga_buggy_rebel_01",
   "category": "vehicle|ground|rebel",
   "tags": "vehicle,ground,car,rebel,offroad,modern,urga,buggy,unarmed,unarmored,r01_outpost,r02_outpost,r03_outpost,rebel_now_traffic",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 669313043
  },
  {
   "name": "v3600_bike_urga_combatdirt_rebel_01",
   "category": "vehicle|ground|rebel",
   "tags": "vehicle,ground,bike,offroad,dirt,combat,old,rebel,urga,unarmored,unarmed,r01_outpost",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 2718282527
  },
  {
   "name": "v0012_car_autostraad_atv_signature_01",
   "category": "vehicle|ground|reward",
   "tags": "vehicle",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 4216479759
  },
  {
   "name": "v3000_bike_autostraad_trials_signature_01",
   "category": "vehicle|ground|reward",
   "tags": "vehicle",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 2966292608
  },
  {
   "name": "v0000_car_autostraad_oldjeep_civilian_z80",
   "category": "vehicle|ground|z80",
   "tags": "vehicle,z80",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 2887741045
  },
  {
   "name": "v0000_car_autostraad_oldjeep_military_z80",
   "category": "vehicle|ground|z80",
   "tags": "vehicle,z80",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 121246434
  },
  {
   "name": "v0002_car_autostraad_oldcampervan_civilian_z80",
   "category": "vehicle|ground|z80",
   "tags": "vehicle,z80",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 1550496746
  },
  {
   "name": "v0003_car_autostraad_racinghothatch_civilian_z80",
   "category": "vehicle|ground|z80",
   "tags": "vehicle,z80",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 3406930663
  },
  {
   "name": "v0012_car_autostraad_atv_civilian_01_z80",
   "category": "vehicle|ground|z80",
   "tags": "vehicle,z80",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 510797552
  },
  {
   "name": "v0400_car_mugello_vintagesports_civilian_z80",
   "category": "vehicle|ground|z80",
   "tags": "vehicle,z80",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 369388473
  },
  {
   "name": "v0402_car_mugello_vintagesuper_civilian_z80_01",
   "category": "vehicle|ground|z80",
   "tags": "vehicle,z80",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 7144193
  },
  {
   "name": "v0506_car_solar_oldtractor_civilian_z80",
   "category": "vehicle|ground|z80",
   "tags": "vehicle,z80",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 3100982204
  },
  {
   "name": "v0507_car_solar_oldbus_commercial_z80",
   "category": "vehicle|ground|z80",
   "tags": "vehicle,z80",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 3760096448
  },
  {
   "name": "v0514_car_solar_modernpickup_civilian_z80",
   "category": "vehicle|ground|z80",
   "tags": "vehicle,z80",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 480691323
  },
  {
   "name": "v0604_car_urga_buggy_military_z80",
   "category": "vehicle|ground|z80",
   "tags": "vehicle,z80",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 28454791
  },
  {
   "name": "v0803_car_na_monstertruck_civilian_01_z80",
   "category": "vehicle|ground|z80",
   "tags": "vehicle,z80",
-  "pool": "vehicle"
+  "pool": "vehicle",
+  "entity_hash": 3678661493
  },
  {
   "name": "boss_rpg_prototype",
   "category": "",
   "tags": "do_not_spawn",
-  "pool": "weapon"
+  "pool": "weapon",
+  "entity_hash": 3883973471
  },
  {
   "name": "mission_a_turret_aa_gun",
   "category": "",
   "tags": "mission_a_turret_aa_gun",
-  "pool": "weapon"
+  "pool": "weapon",
+  "entity_hash": 151280316
  },
  {
   "name": "w201_mounted_minigun",
   "category": "",
   "tags": "weapon,mounted,heavy,minigun,urga,vulcan,w201",
-  "pool": "weapon"
+  "pool": "weapon",
+  "entity_hash": 1574426474
  },
  {
   "name": "w206_mounted_capstone_m2hm",
   "category": "",
   "tags": "weapon,unmounted,heavy,50cal,capstone,w206",
-  "pool": "weapon"
+  "pool": "weapon",
+  "entity_hash": 1091350153
  },
  {
   "name": "w401_explosives_c4",
   "category": "",
   "tags": "weapon,thrown,planted_explosive,planted,w401",
-  "pool": "weapon"
+  "pool": "weapon",
+  "entity_hash": 117263914
  },
  {
   "name": "w601_helicopter_missile",
   "category": "",
   "tags": "do_not_spawn",
-  "pool": "weapon"
+  "pool": "weapon",
+  "entity_hash": 761188693
  },
  {
   "name": "w602_mediumtank_canon",
   "category": "",
   "tags": "do_not_spawn",
-  "pool": "weapon"
+  "pool": "weapon",
+  "entity_hash": 1057967201
  },
  {
   "name": "w603_mediumtank_mgun",
   "category": "",
   "tags": "do_not_spawn",
-  "pool": "weapon"
+  "pool": "weapon",
+  "entity_hash": 502440914
  },
  {
   "name": "w604_helicopter_mgun",
   "category": "",
   "tags": "do_not_spawn",
-  "pool": "weapon"
+  "pool": "weapon",
+  "entity_hash": 2798585508
  },
  {
   "name": "w605_smalltank_canon",
   "category": "",
   "tags": "do_not_spawn",
-  "pool": "weapon"
+  "pool": "weapon",
+  "entity_hash": 154566667
  },
  {
   "name": "w606_heavyhelicopter_missile",
   "category": "",
   "tags": "do_not_spawn",
-  "pool": "weapon"
+  "pool": "weapon",
+  "entity_hash": 682355505
  },
  {
   "name": "w607_heavyhelicopter_mgun",
   "category": "",
   "tags": "do_not_spawn",
-  "pool": "weapon"
+  "pool": "weapon",
+  "entity_hash": 4229490449
  },
  {
   "name": "w608_fighterjet_missile",
   "category": "",
   "tags": "do_not_spawn",
-  "pool": "weapon"
+  "pool": "weapon",
+  "entity_hash": 4245530038
  },
  {
   "name": "w609_fighterjet_missile_air_lockon",
   "category": "",
   "tags": "do_not_spawn",
-  "pool": "weapon"
+  "pool": "weapon",
+  "entity_hash": 943102125
  },
  {
   "name": "w610_fighterjet_mgun",
   "category": "",
   "tags": "do_not_spawn",
-  "pool": "weapon"
+  "pool": "weapon",
+  "entity_hash": 1651259793
  },
  {
   "name": "w611_fighterbomber_missile",
   "category": "",
   "tags": "do_not_spawn",
-  "pool": "weapon"
+  "pool": "weapon",
+  "entity_hash": 1346494491
  },
  {
   "name": "w612_fighterbomber_missile_air_lockon",
   "category": "",
   "tags": "do_not_spawn",
-  "pool": "weapon"
+  "pool": "weapon",
+  "entity_hash": 3855671407
  },
  {
   "name": "w613_fighterbomber_missile_ground_lockon",
   "category": "",
   "tags": "do_not_spawn",
-  "pool": "weapon"
+  "pool": "weapon",
+  "entity_hash": 1274292546
  },
  {
   "name": "w615_helicopter_heavy_missile",
   "category": "",
   "tags": "do_not_spawn",
-  "pool": "weapon"
+  "pool": "weapon",
+  "entity_hash": 865228324
  },
  {
   "name": "w616_corvette_canon",
   "category": "",
   "tags": "do_not_spawn",
-  "pool": "weapon"
+  "pool": "weapon",
+  "entity_hash": 2389073612
  },
  {
   "name": "w617_vintagefighter_mgun",
   "category": "",
   "tags": "do_not_spawn",
-  "pool": "weapon"
+  "pool": "weapon",
+  "entity_hash": 745984232
  },
  {
   "name": "w618_sportsmuscle_missile",
   "category": "",
   "tags": "do_not_spawn",
-  "pool": "weapon"
+  "pool": "weapon",
+  "entity_hash": 3407801836
  },
  {
   "name": "w619_buggy_mgun",
   "category": "",
   "tags": "do_not_spawn",
-  "pool": "weapon"
+  "pool": "weapon",
+  "entity_hash": 1429040882
  },
  {
   "name": "w620_racingboat_mgun",
   "category": "",
   "tags": "do_not_spawn",
-  "pool": "weapon"
+  "pool": "weapon",
+  "entity_hash": 2019870327
  },
  {
   "name": "w621_advancedhelicopter_missile",
   "category": "",
   "tags": "do_not_spawn",
-  "pool": "weapon"
+  "pool": "weapon",
+  "entity_hash": 4289059468
  },
  {
   "name": "w622_advancedhelicopter_mgun",
   "category": "",
   "tags": "do_not_spawn",
-  "pool": "weapon"
+  "pool": "weapon",
+  "entity_hash": 3124352037
  },
  {
   "name": "w011_pistol_u_pozhar_98",
   "category": "Weapon",
   "tags": "weapon,bullet,one_handed,pistol,urga,w011,sniper_pistol,demo_pistol,drm_pistol,rack_r1_1h_drm",
-  "pool": "weapon"
+  "pool": "weapon",
+  "entity_hash": 4040374394
  },
  {
   "name": "w012_pistol_cs_spectre_mark_v",
   "category": "Weapon",
   "tags": "weapon,bullet,one_handed,markv,capstone,w012,rack_r2_1h_military,rack_r2_1h_drm,rack_r2_1h_rebel,rack_r3_1h_rebel",
-  "pool": "weapon"
+  "pool": "weapon",
+  "entity_hash": 3944301769
  },
  {
   "name": "w014_handgun_little_general",
   "category": "Weapon",
   "tags": "weapon,golden,golden_gun,w014,little_general",
-  "pool": "weapon"
+  "pool": "weapon",
+  "entity_hash": 3305603558
  },
  {
   "name": "w021_handgun_peacekeeper",
   "category": "Weapon",
   "tags": "weapon,one_handed,bullet,revolver,capstone,w021,rack_r2_1h_rebel,rack_r3_1h_drm,rack_r3_1h_rebel",
-  "pool": "weapon"
+  "pool": "weapon",
+  "entity_hash": 2144721124
  },
  {
   "name": "w031_smg_prizrak_u4",
   "category": "Weapon",
   "tags": "weapon,bullet,one_handed,smg,urga,w031,guard,drm_smg,rebel_smg,rack_r1_1h_military,rack_r1_1h_rebel",
-  "pool": "weapon"
+  "pool": "weapon",
+  "entity_hash": 1709033370
  },
  {
   "name": "w032_smg_cs_wraith_2000",
   "category": "Weapon",
   "tags": "weapon,bullet,one_handed,smg,capstone,w032,ghost_smg,rack_r2_1h_military,rack_r2_1h_rebel,rack_r3_1h_military,rack_r3_1h_rebel",
-  "pool": "weapon"
+  "pool": "weapon",
+  "entity_hash": 89410586
  },
  {
   "name": "w033_smg_cs_9",
   "category": "Weapon",
   "tags": "weapon,bullet,one_handed,capstone,w033,rack_r3_1h_military",
-  "pool": "weapon"
+  "pool": "weapon",
+  "entity_hash": 2470879546
  },
  {
   "name": "w111_assault_rifle_up_39",
   "category": "Weapon",
   "tags": "weapon,two_handed,bullet,rifle,assault,urga,w111,grunt,rack_r1_2h_military,rack_r1_2h_drm",
-  "pool": "weapon"
+  "pool": "weapon",
+  "entity_hash": 2307691279
  },
  {
   "name": "w112_assault_rifle_cs_predator",
   "category": "Weapon",
   "tags": "weapon,two_handed,bullet,rifle,assault,capstone,w112,elite,bh_grunt,commander,rack_r1_2h_military,rack_r1_2h_rebel,rack_r2_2h_military,rack_r2_2h_drm,rack_r2_2h_rebel,rack_r3_2h_military,rack_r3_2h_drm,rack_r3_2h_rebel",
-  "pool": "weapon"
+  "pool": "weapon",
+  "entity_hash": 2621157955
  },
  {
   "name": "w117_assault_rifle_csv",
   "category": "Weapon",
   "tags": "weapon,two_handed,bullet,rifle,assault,capstone,w117,rack_r2_2h_military,rack_r2_2h_rebel,rack_r3_2h_military,rack_r3_2h_drm,rack_r3_2h_rebel",
-  "pool": "weapon"
+  "pool": "weapon",
+  "entity_hash": 1394636892
  },
  {
   "name": "w118_assault_rifle_up_61",
   "category": "Weapon",
   "tags": "weapon,two_handed,bullet,rifle,assault,capstone,w118,rack_r3_2h_military,rack_r3_2h_rebel",
-  "pool": "weapon"
+  "pool": "weapon",
+  "entity_hash": 3681410946
  },
  {
   "name": "w121_grenade_launcher_cs_bildt_negotiator",
   "category": "Weapon",
   "tags": "weapon,two_handed,explosive,grenadelauncher,capstone,w121,rack_r1_spc_military,rack_r1_spc_rebel,rack_r2_spc_drm,rack_r3_spc_drm",
-  "pool": "weapon"
+  "pool": "weapon",
+  "entity_hash": 2042423840
  },
  {
   "name": "w123_grenade_launcher_upu_210",
   "category": "Weapon",
   "tags": "weapon,two_handed,explosive,capstone,w123,rack_r1_spc_rebel,rack_r2_spc_military,rack_r2_spc_rebel,rack_r3_spc_military,rack_r3_spc_rebel",
-  "pool": "weapon"
+  "pool": "weapon",
+  "entity_hash": 3759082339
  },
  {
   "name": "w131_machine_gun_urga_vdova_89",
   "category": "Weapon",
   "tags": "weapon,two_handed,bullet,machinegun,urga,w131,rack_r1_2h_military,rack_r1_2h_rebel,rack_r2_2h_military,rack_r2_2h_rebel",
-  "pool": "weapon"
+  "pool": "weapon",
+  "entity_hash": 3413507878
  },
  {
   "name": "w141_rpg_uvk_13",
   "category": "Weapon",
   "tags": "weapon,rpg,explosive,capstone,uvk13,w141,demolition,rack_r1_spc_military,rack_r1_spc_drm,rack_r1_spc_rebel,rack_r2_spc_military,rack_r2_spc_drm,rack_r3_spc_military,rack_r3_spc_drm",
-  "pool": "weapon"
+  "pool": "weapon",
+  "entity_hash": 3913913650
  },
  {
   "name": "w141_rpg_uvk_13_mm110",
   "category": "Weapon",
   "tags": "mm110_rpg",
-  "pool": "weapon"
+  "pool": "weapon",
+  "entity_hash": 2722878274
  },
  {
   "name": "w143_rpg_fire_leach",
   "category": "Weapon",
   "tags": "weapon,explosive,madscientist,fireleach,w143,rack_r2_spc_rebel,rack_r3_spc_military,rack_r3_spc_rebel",
-  "pool": "weapon"
+  "pool": "weapon",
+  "entity_hash": 68160093
  },
  {
   "name": "w144_rpg_capstone_hydra",
   "category": "Weapon",
   "tags": "weapon,explosive,urga,hydra,w144,rack_r1_spc_rebel,rack_r2_spc_military,rack_r2_spc_rebel,rack_r3_spc_military,rack_r3_spc_rebel",
-  "pool": "weapon"
+  "pool": "weapon",
+  "entity_hash": 3070823687
  },
  {
   "name": "w151_shotgun_u_rys_96",
   "category": "Weapon",
   "tags": "weapon,two_handed,rifle,shotgun,urga,w151,shock,rack_r1_2h_military,rack_r1_2h_drm,rack_r2_2h_drm",
-  "pool": "weapon"
+  "pool": "weapon",
+  "entity_hash": 4091120604
  },
  {
   "name": "w153_shotgun_automat_12",
   "category": "Weapon",
   "tags": "weapon,two_handed,shotgun_auto,w153,rack_r2_2h_military,rack_r2_2h_rebel,rack_r3_2h_military,rack_r3_2h_drm,rack_r3_2h_rebel",
-  "pool": "weapon"
+  "pool": "weapon",
+  "entity_hash": 1549148855
  },
  {
   "name": "w155_shotgun_u_rys_12",
   "category": "Weapon",
   "tags": "weapon,bullet,one_handed,urga,w155,rack_r1_1h_rebel,rack_r2_1h_drm,rack_r3_1h_drm",
-  "pool": "weapon"
+  "pool": "weapon",
+  "entity_hash": 2219364824
  },
  {
   "name": "w161_sniper_rifle_u_sv_45",
   "category": "Weapon",
   "tags": "weapon,bullet,rifle,sniper,urga,u-sv45,w161,sniper_ai",
-  "pool": "weapon"
+  "pool": "weapon",
+  "entity_hash": 3923877588
  },
  {
   "name": "w162_sniper_rifle_cs111_archangel",
   "category": "Weapon",
   "tags": "weapon,bullet,rifle,capstone,archangel,w162",
-  "pool": "weapon"
+  "pool": "weapon",
+  "entity_hash": 37039781
  },
  {
   "name": "w176_stupka_210",
   "category": "Weapon",
   "tags": "weapon,mortar,w176,rare_special",
-  "pool": "weapon"
+  "pool": "weapon",
+  "entity_hash": 1440484885
  },
  {
   "name": "w201_minigun",
   "category": "Weapon",
   "tags": "weapon,unmounted,heavy,minigun,urga,vulcan,w201,titan",
-  "pool": "weapon"
+  "pool": "weapon",
+  "entity_hash": 2562098196
  },
  {
   "name": "w205_mounted_urga_uzhas_120",
   "category": "Weapon",
   "tags": "weapon,mounted,heavy,mounted_sniper,urga,w205",
-  "pool": "weapon"
+  "pool": "weapon",
+  "entity_hash": 801060824
  },
  {
   "name": "w301_frag_grenade",
   "category": "Weapon",
   "tags": "weapon,thrown,explosive,grenade,frag,urga,w301",
-  "pool": "weapon"
+  "pool": "weapon",
+  "entity_hash": 3668584052
  },
  {
   "name": "w302_beacon",
   "category": "Weapon",
   "tags": "weapon,thrown,beacon,w302",
-  "pool": "weapon"
+  "pool": "weapon",
+  "entity_hash": 883506229
  },
  {
   "name": "w701_missile_strike",
   "category": "Weapon",
   "tags": "weapon,fow,w701",
-  "pool": "weapon"
+  "pool": "weapon",
+  "entity_hash": 1355855625
  },
  {
   "name": "w701_missile_strike_ai",
   "category": "Weapon",
   "tags": "weapon,fow,w701_ai",
-  "pool": "weapon"
+  "pool": "weapon",
+  "entity_hash": 3569836023
  },
  {
   "name": "w702_emp",
   "category": "Weapon",
   "tags": "weapon,fow,w702",
-  "pool": "weapon"
+  "pool": "weapon",
+  "entity_hash": 1910733294
  },
  {
   "name": "w704_m488",
   "category": "Weapon",
   "tags": "weapon,fow,w704",
-  "pool": "weapon"
+  "pool": "weapon",
+  "entity_hash": 1064776106
  },
  {
   "name": "w013_pistol_balloon_head",
   "category": "Weapon|Easter Egg",
   "tags": "weapon,eater_egg",
-  "pool": "weapon"
+  "pool": "weapon",
+  "entity_hash": 3300750911
  },
  {
   "name": "w147_rpg_guitar_case",
   "category": "Weapon|Easter Egg",
   "tags": "weapon,eater_egg",
-  "pool": "weapon"
+  "pool": "weapon",
+  "entity_hash": 3191136252
  },
  {
   "name": "w501_turret_sam",
   "category": "Weapon|Stationary",
   "tags": "weapon,turret,sam,capstone,w501",
-  "pool": "weapon"
+  "pool": "weapon",
+  "entity_hash": 1637080871
  },
  {
   "name": "w502_turret_aa_gun",
   "category": "Weapon|Stationary",
   "tags": "weapon,turret,aa,capstone,w502",
-  "pool": "weapon"
+  "pool": "weapon",
+  "entity_hash": 3474037240
  },
  {
   "name": "w503_turret_emp",
   "category": "Weapon|Stationary",
   "tags": "weapon,turret,emp,w503",
-  "pool": "weapon"
+  "pool": "weapon",
+  "entity_hash": 1234433653
  },
  {
   "name": "w504_turret_m488",
   "category": "Weapon|Stationary",
   "tags": "weapon,turret,m488,w504",
-  "pool": "weapon"
+  "pool": "weapon",
+  "entity_hash": 3272809668
  }
 ]
