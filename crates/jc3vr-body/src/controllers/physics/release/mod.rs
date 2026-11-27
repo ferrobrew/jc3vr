@@ -54,8 +54,8 @@ pub fn sample() {
     });
     let time_s = motion::latest_time();
     // The rig's origin moves only on sim ticks, which a frame may run none or two of, so its
-    // difference over a frame read the platform's speed as zero or about double, and a charge
-    // thrown forward off a moving jeep on the 14 November take landed behind. The character's own
+    // difference over a frame read the platform's speed as zero or about double, so a charge
+    // thrown forward off a moving jeep lands behind. The character's own
     // measured velocity is the tick's, and the platform carries the rig with it.
     // SAFETY: the local player, read on the game thread before the world update.
     let measured = unsafe { Character::GetLocalPlayerCharacter().as_ref() }
