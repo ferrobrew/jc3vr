@@ -61,8 +61,8 @@ use crate::{
                 root::RootStatus,
             },
         },
+        body_frame,
         facts::driving,
-        locomotion,
         mode::{Mode, current as current_mode},
         roomscale::{
             config::{DRIVING_VIEW_CONFIG, Posture, ROOMSCALE_CONFIG, RoomscaleConfig},
@@ -123,7 +123,7 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
     let in_gameplay = jc3vr_core::hooks::in_gameplay();
     let on_foot = headpose::sim::mode() == headpose::sim::HeadMode::OnFoot;
     let moving = {
-        let stick = locomotion::status();
+        let stick = body_frame::locomotion();
         stick.fresh(now) && stick.stick.length() > tuning.moving_stick
     };
 

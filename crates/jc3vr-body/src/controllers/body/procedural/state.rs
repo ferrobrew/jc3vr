@@ -20,9 +20,10 @@ use crate::{
             signals::{in_hit_reaction, in_ledge_climb},
             tuning::PROCEDURAL,
         },
+        body_frame,
         facts::climb,
-        hands::tiers::{self, TierState},
-        locomotion::LocomotionStatus,
+        hands::tiers::TierState,
+        locomotion::LocomotionFrame,
         mode::{AirborneVariant, Mode, OnFootVariant, current as current_mode},
     },
     hooks::animation::active_state_type_id,
@@ -71,7 +72,7 @@ impl StateTracker {
     pub unsafe fn read(
         &mut self,
         character: &Character,
-        locomotion: &LocomotionStatus,
+        locomotion: &LocomotionFrame,
         now: Stamp,
         dt: f32,
         jump_grace_s: f32,
@@ -130,7 +131,7 @@ impl StateTracker {
             // The hand tiers' classification, from the input tick: seated and riding, which an
             // entry, an exit, a seat switch, and a mounted gun are not. It lags by up to a frame,
             // as the mode detection does.
-            seated: tiers::status().state == Some(TierState::VehicleSeated)
+            seated: body_frame::tiers().state == Some(TierState::VehicleSeated)
                 && !stunt_position
                 && !stunt_hanging,
             stunt_standing,

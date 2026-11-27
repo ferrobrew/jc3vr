@@ -33,6 +33,7 @@ use re_utilities::hook_library::HookLibrary;
 use crate::controllers::{
     body,
     body::{BodyDimensions, config::BODY_REMAP_CONFIG, rig as body_rig},
+    body_frame,
     hands::{
         config::{HANDS_CONFIG, HandsConfig},
         reach::{ArmRemap, ReachLimit, level_eyes},
@@ -220,7 +221,7 @@ pub(crate) fn ik_owned() -> [bool; 2] {
     {
         return [false; 2];
     }
-    let weights = tiers::weights();
+    let weights = body_frame::tiers().weights;
     frame::with_latest(|frame| {
         Hand::BOTH.map(|hand| {
             let h = frame.hand(hand);

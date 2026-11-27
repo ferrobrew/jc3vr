@@ -48,7 +48,7 @@ use crate::controllers::{
         },
         rig::{grounded, tuning::RIG},
     },
-    locomotion::LocomotionStatus,
+    locomotion::LocomotionFrame,
     scheme,
     telemetry::report,
 };
@@ -499,7 +499,7 @@ pub(crate) struct GateInput<'a> {
     pub case: Case,
     /// Whether the active state is one of the standing idles.
     pub idle_state: bool,
-    pub locomotion: LocomotionStatus,
+    pub locomotion: LocomotionFrame,
     /// The player's neck pivot in Rico's model space: where the head bone goes.
     pub model_neck: Vec3,
     /// The character's world transform.

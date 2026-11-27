@@ -51,6 +51,7 @@ use re_utilities::hook_library::HookLibrary;
 
 use crate::{
     controllers::{
+        body_frame,
         fingers::grip::{self, Grip, GripSource},
         hands::{self, CockpitHand, tiers, tuning::HANDS},
         haptics,
@@ -137,7 +138,7 @@ pub fn swing_impulse(displacement: Vec2, full_impulse: f32) -> Vec2 {
 /// Put the anchored hands on the line. `hands` are the cockpit-frame hands indexed by
 /// [`Hand::index`], `head` the head's cockpit pose, and `world_scale` the VR world scale.
 pub fn apply(hands: &mut [Option<CockpitHand>; 2], head: Pose, world_scale: f32) {
-    let status = tiers::status();
+    let status = body_frame::tiers();
     // The mounted guns anchor the hands too, to their handles
     // (the gameplay crate's `controllers::vehicles::apply`), which the line must not turn.
     let mounted = status.state == Some(tiers::TierState::MountedGun);
@@ -215,7 +216,7 @@ pub unsafe fn input_tick(dominant: Hand) {
 /// Declare the grapple hand's grip on the line while the grapple states anchor it, for its finger
 /// pose, at the anchor's share.
 fn declare_line_grip(hand: Hand) {
-    let status = tiers::status();
+    let status = body_frame::tiers();
     let grapple = matches!(
         status.state,
         Some(tiers::TierState::GrappleReel | tiers::TierState::GrappleHang)
@@ -303,7 +304,7 @@ unsafe fn swing(character: &mut Character) {
     let hand = scheme::acting_hand().other();
     let now = Stamp::now();
     // Read before this module's state is locked, so that no other lock is taken while it is held.
-    let anchored = tiers::status().effective[hand.index()] == tiers::HandTier::Anchored;
+    let anchored = body_frame::tiers().effective[hand.index()] == tiers::HandTier::Anchored;
     let offset = hands::active_hands_raw()
         .filter(|_| anchored)
         .and_then(|active| {

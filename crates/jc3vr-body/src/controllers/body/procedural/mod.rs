@@ -96,9 +96,9 @@ use crate::{
             },
             rig::{grounded, torso::relative_heading, torso_turn},
         },
-        facts,
+        body_frame, facts,
         hands::{active_hands_raw, arm_remaps},
-        locomotion::{anchor::jump_grace_s, status as locomotion_status},
+        locomotion::anchor::jump_grace_s,
         mode::{AirborneVariant, Mode, current as current_mode},
     },
     hooks::animation::active_state_type_id,
@@ -316,7 +316,7 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
     };
     let rig = &live.rig;
     let animated = unsafe { live.read(controller) };
-    let locomotion = locomotion_status();
+    let locomotion = body_frame::locomotion();
     let read = unsafe {
         state
             .tracker

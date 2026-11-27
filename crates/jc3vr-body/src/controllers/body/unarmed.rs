@@ -39,10 +39,7 @@ use jc3vr_view::headpose;
 use parking_lot::Mutex;
 
 use crate::{
-    controllers::{
-        hands::tiers::{self, TierState},
-        scheme,
-    },
+    controllers::{body_frame, hands::tiers::TierState, scheme},
     hooks,
     tuning::FRESHNESS,
 };
@@ -209,7 +206,7 @@ pub unsafe fn tick(character: *mut Character) {
         controllers: scheme::is_controllers(),
         vr: headpose::source() == headpose::Source::Vr,
         gameplay: jc3vr_core::hooks::in_gameplay(),
-        tier: tiers::status().state,
+        tier: body_frame::tiers().state,
     };
     let verdict = decide(&inputs);
     let masked = masked_layers(verdict);

@@ -67,11 +67,11 @@ use crate::{
             procedural::{ArmContext, arm_context, owns_body, solver::arms::elbow_hint},
             unarmed,
         },
+        body_frame,
         hands::{
             self, ActiveHands, CockpitHand, late, pose as hand_pose, reach,
             rig::{self, TickArm},
             secondary::{self, SecondaryParts, Switched},
-            tiers,
             tuning::HANDS,
         },
     },
@@ -125,7 +125,7 @@ pub(crate) unsafe fn plan(character: &Character) -> HandPlan {
     unsafe { rig::prepare(character) };
     let active =
         hands::active_hands().filter(|_| jc3vr_core::hooks::in_gameplay() && headpose::is_active());
-    let tier_weights = tiers::weights();
+    let tier_weights = body_frame::tiers().weights;
     let tracked = Hand::BOTH.map(|hand| {
         active
             .as_ref()

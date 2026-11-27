@@ -40,7 +40,8 @@ use parking_lot::Mutex;
 use crate::{
     controllers::{
         body::{ik_body, rig::grounded},
-        locomotion::{config::LocomotionConfig, status as locomotion_status, tuning::LOCOMOTION},
+        body_frame,
+        locomotion::{config::LocomotionConfig, tuning::LOCOMOTION},
         mode::{Mode, OnFootVariant, current as current_mode},
     },
     hooks::character::resolve_act_id,
@@ -141,7 +142,7 @@ pub(crate) unsafe fn filter(
     if scope == ActScope::OnFoot
         && wanted == ActDecision::Drop
         && grounded::turning()
-        && locomotion_status().standing_still()
+        && body_frame::locomotion().standing_still()
         && !ik_body::owns_idle()
     {
         return ActDecision::Pass;
