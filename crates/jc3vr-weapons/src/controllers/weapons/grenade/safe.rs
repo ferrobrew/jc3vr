@@ -22,9 +22,7 @@ use jc3gi::{
     equipment::{explosive::Explosive, weapon::ThrownGrenadeWeapon},
 };
 use jc3vr_body::controllers::{
-    body::rig::frames::Frames,
-    hands::{held::held_matrix, late},
-    physics::local_player::LocalPlayer,
+    body::rig::frames::Frames, hands::late, physics::local_player::LocalPlayer,
 };
 use jc3vr_core::game_tick::GameTick;
 use jc3vr_input::{
@@ -47,6 +45,7 @@ use crate::controllers::{
             throw_release,
             tuning::GrenadeTuning,
         },
+        in_hand::held_matrix,
         inventory::slots,
     },
 };

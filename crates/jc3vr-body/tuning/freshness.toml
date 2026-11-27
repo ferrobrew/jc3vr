@@ -37,7 +37,6 @@ hang_gap_ms = 300
 measured_arms_ms = 250
 presentation_ms = 250
 grab_status_ms = 500
-held_registration_ms = 150
 grab_markers_ms = 150
 elbow_smoothing_gap_s = 0.15
 

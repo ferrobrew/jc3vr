@@ -14,10 +14,6 @@ use jc3gi::{
     types::math::Vector3,
 };
 use jc3vr_body::controllers::{
-    hands::{
-        held,
-        held::{Held, Slot, held_matrix},
-    },
     held::{native, native::object_of},
     intent,
     physics::refs::{Weak, null_weak},
@@ -37,6 +33,8 @@ use crate::controllers::weapons::{
         LAUNCH, PlannedLaunch, Release, TickInputs, catch, hold_local, primed_explosive,
         report_native_throw, safe, throw_release, tuning::GRENADE,
     },
+    in_hand,
+    in_hand::{Held, Slot, held_matrix},
     inventory::{engine::weapon_of, slots},
 };
 
@@ -185,7 +183,7 @@ pub(super) unsafe fn render_frame() {
             && unsafe { (*weapon).m_PrimedGrenade.pn } == actor.control_block()
     });
     if actor_alive.is_none() || (base.is_some() && !same_actor) {
-        held::hold(Slot::Grenade, None);
+        in_hand::hold(Slot::Grenade, None);
         return;
     }
     // The render update has no game tick: the game thread, outside the world update.
@@ -222,7 +220,7 @@ pub(super) unsafe fn render_frame() {
     if let Some(release) = pending.gesture.release
         && (physics_ready || pending.gesture.started.elapsed() >= BODY_WAIT)
     {
-        held::hold(Slot::Grenade, None);
+        in_hand::hold(Slot::Grenade, None);
         let world = pending.gesture.world;
         if same_actor
             && owner_valid
@@ -262,7 +260,7 @@ pub(super) unsafe fn render_frame() {
         (*explosive).SetPhysicsTransform(&world);
     }
     let tuning = GRENADE.get();
-    held::hold(
+    in_hand::hold(
         Slot::Grenade,
         Some(Held {
             explosive: pending.explosive,

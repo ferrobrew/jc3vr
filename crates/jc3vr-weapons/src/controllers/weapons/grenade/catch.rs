@@ -23,14 +23,11 @@ use std::{num::NonZeroUsize, time::Instant};
 
 use glam::Vec3;
 use jc3gi::{equipment::explosive::Explosive, physics::PfxInstance};
-use jc3vr_body::controllers::{
-    grab::{Candidate, GrabVolume},
-    hands::{held, held::Slot},
-};
+use jc3vr_body::controllers::grab::{Candidate, GrabVolume};
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
-use crate::controllers::weapons::grenade::tuning::CatchTuning;
+use crate::controllers::weapons::{grenade::tuning::CatchTuning, in_hand, in_hand::Slot};
 
 /// A live grenade the input tick saw, in the cockpit frame.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -199,7 +196,7 @@ pub(crate) fn caught() -> Option<Caught> {
 
 /// Let go of the caught grenade: `thrown` when the hand threw it, otherwise it was lost.
 pub(crate) fn let_go(thrown: bool) {
-    held::hold(Slot::CaughtGrenade, None);
+    in_hand::hold(Slot::CaughtGrenade, None);
     let mut state = STATE.lock();
     if let Some(caught) = state.caught.take() {
         if thrown {

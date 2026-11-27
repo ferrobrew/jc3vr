@@ -2,13 +2,15 @@
 //! ([`GRENADE`]): the hold, the fuse warning, the catch, the pin, and the locker's reach.
 
 use glam::Vec3;
-use jc3vr_body::controllers::hands::held::HoldPlacement;
+use jc3vr_body::tuning::Millis;
 use jc3vr_core::{
     config::engine::{Invalid, nonnegative, positive, range, vec3},
     tuning::Tuning,
 };
 use jc3vr_view::controllers::overlay::primitive::Rgba;
 use serde::Deserialize;
+
+use crate::controllers::weapons::in_hand::HoldPlacement;
 
 jc3vr_core::tuning_file! {
     /// The grenades' tuning file.
@@ -37,6 +39,9 @@ pub struct GrenadeTuning {
     pub pin: PinTuning,
     /// Taking grenades from a weapon locker.
     pub locker: LockerTuning,
+    /// The render-time placement of the explosives a hand holds, the grenades' and the C4
+    /// charge's ([`crate::controllers::weapons::in_hand`]).
+    pub held: HeldTuning,
 }
 
 impl Tuning for GrenadeTuning {
@@ -45,8 +50,21 @@ impl Tuning for GrenadeTuning {
         self.warning.validate()?;
         self.catch.validate()?;
         self.pin.validate()?;
-        positive("locker.reach_m", self.locker.reach_m, 1.0)
+        positive("locker.reach_m", self.locker.reach_m, 1.0)?;
+        self.held
+            .registration_ms
+            .validate("held.registration_ms", 10_000)
     }
+}
+
+/// The render-time placement of the explosives a hand holds
+/// ([`crate::controllers::weapons::in_hand`]).
+#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HeldTuning {
+    /// How long a held explosive's registration stays current without a refresh: a little past a
+    /// tick.
+    pub registration_ms: Millis,
 }
 
 /// The fuse warning: a ring at the hand holding a live grenade, turning from calm to urgent as the

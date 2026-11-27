@@ -35,3 +35,6 @@ mouth_radius_m = 0.08
 
 [locker]
 reach_m = 0.18
+
+[held]
+registration_ms = 150

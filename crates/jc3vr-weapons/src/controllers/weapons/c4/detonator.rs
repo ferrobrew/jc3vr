@@ -32,10 +32,7 @@ use jc3gi::{
     types::shared_ptr::SharedPtr,
 };
 use jc3vr_body::controllers::{
-    hands::{held, late},
-    held::native,
-    intent::controls::ButtonControl,
-    physics::local_player::LocalPlayer,
+    hands::late, held::native, intent::controls::ButtonControl, physics::local_player::LocalPlayer,
 };
 use jc3vr_core::game_tick::GameTick;
 use jc3vr_input::frame::{Hand, Pose};
@@ -43,6 +40,7 @@ use parking_lot::Mutex;
 
 use crate::controllers::weapons::{
     c4::{slot_c4, tuning::C4},
+    in_hand,
     pouch_models::owned::OwnedModel,
 };
 
@@ -131,7 +129,7 @@ pub(crate) fn place_model(game: &GameTick<'_>, held: Option<(Hand, Pose)>) {
     };
     ensure_cleanup();
     let local = C4.get().detonator_hold.in_hand(hand);
-    let matrix = held::held_matrix(grip, local);
+    let matrix = in_hand::held_matrix(grip, local);
     let source = LocalPlayer::get(game).and_then(|mut owner| owner_trigger_model(&mut owner));
     let shown = source.and_then(|source| unsafe { model.owned.show(source, matrix) });
     if shown.is_none() {
@@ -157,7 +155,7 @@ pub unsafe fn render_frame(dtf: f32) {
     let Some(drawn) = late::drawn_hands(dtf)[hand.index()] else {
         return;
     };
-    let matrix = held::held_matrix(drawn.grip, C4.get().detonator_hold.in_hand(hand));
+    let matrix = in_hand::held_matrix(drawn.grip, C4.get().detonator_hold.in_hand(hand));
     if matrix.is_finite() {
         unsafe { model.owned.push(matrix) };
     }

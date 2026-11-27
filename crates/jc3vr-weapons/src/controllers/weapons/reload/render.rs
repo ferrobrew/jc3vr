@@ -25,11 +25,11 @@ use glam::{Mat3, Mat4, Quat, Vec3};
 use jc3gi::equipment::weapon::{
     BarrelRecoilWeaponComponent, ModelAttachementWeaponComponent, WeaponComponentType,
 };
-use jc3vr_body::controllers::hands::{held::away_from_palm, late};
+use jc3vr_body::controllers::hands::late;
 use jc3vr_input::frame::{Hand, Pose};
 use parking_lot::Mutex;
 
-use crate::controllers::weapons::reload::chamber::ActionKind;
+use crate::controllers::weapons::{in_hand::away_from_palm, reload::chamber::ActionKind};
 
 /// Gun `gun`'s action part where the reload has it.
 #[derive(Debug, Copy, Clone, PartialEq)]

@@ -2,14 +2,13 @@
 //! ([`C4`]).
 
 use glam::Vec3;
-use jc3vr_body::controllers::hands::held::HoldPlacement;
 use jc3vr_core::{
     config::engine::{Invalid, nonnegative, positive},
     tuning::Tuning,
 };
 use serde::Deserialize;
 
-use crate::controllers::weapons::grenade::tuning::hold_placement;
+use crate::controllers::weapons::{grenade::tuning::hold_placement, in_hand::HoldPlacement};
 
 jc3vr_core::tuning_file! {
     /// The C4's tuning file.

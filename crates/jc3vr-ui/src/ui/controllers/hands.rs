@@ -6,7 +6,6 @@ use jc3vr_body::controllers::{
     body,
     hands::{
         config::{GripOffset, HandsConfig},
-        held,
         ik::HandIkStatus,
         late::{HandLateStatus, LateStatus},
         parts, rig,
@@ -14,6 +13,7 @@ use jc3vr_body::controllers::{
     },
 };
 use jc3vr_input::frame::Hand;
+use jc3vr_weapons::controllers::weapons::in_hand;
 
 use crate::{
     status::body::RENDER_RATE_BODY,
@@ -90,7 +90,7 @@ pub(super) fn hands_readout(
          edited {}",
         late.weapons_updated,
         parts::parts_updated(),
-        held::updated(),
+        in_hand::updated(),
         late.palettes_edited
     ));
 }

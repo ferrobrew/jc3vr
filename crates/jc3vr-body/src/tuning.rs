@@ -81,10 +81,6 @@ impl Tuning for FreshnessTuning {
             ),
             ("body.wings_gap_ms", self.body.wings_gap_ms),
             ("rig.snap_wait_ms", self.rig.snap_wait_ms),
-            (
-                "hands.held_registration_ms",
-                self.hands.held_registration_ms,
-            ),
             ("hands.grab_markers_ms", self.hands.grab_markers_ms),
             ("overlay.sim_ms", self.overlay.sim_ms),
             ("overlay.frame_ms", self.overlay.frame_ms),
@@ -252,8 +248,6 @@ pub struct HandsFreshness {
     pub presentation_ms: Millis,
     /// How long the grab readout counts as live after the last input tick.
     pub grab_status_ms: Millis,
-    /// How long a held item's registration stays current without a refresh: a little past a tick.
-    pub held_registration_ms: Millis,
     /// How long the grab markers live in the overlay. They are submitted at the input tick's rate,
     /// so they live a little past one tick.
     pub grab_markers_ms: Millis,

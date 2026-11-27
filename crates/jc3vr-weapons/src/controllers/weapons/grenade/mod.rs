@@ -36,10 +36,7 @@ use jc3vr_body::controllers::{
     aim::targets::weak_target,
     body::rig::frames::Frames,
     grab::{Candidate, GrabVolume, resolve::nearest_within},
-    hands::{
-        ActiveHands, held,
-        held::{Held, Slot},
-    },
+    hands::ActiveHands,
     haptics, intent,
     intent::{
         controls::ButtonControl,
@@ -75,6 +72,8 @@ use crate::controllers::{
             tuning::{GRENADE, GrenadeTuning},
         },
         hold::{act, tuning::HOLD},
+        in_hand,
+        in_hand::{Held, Slot},
         inventory::engine::weapon_of,
         pouch_return, reload,
     },
@@ -998,7 +997,7 @@ unsafe fn carry_caught(inputs: &TickInputs, tuning: &GrenadeTuning) -> Option<(H
         return None;
     }
     let world_grip = STATE.lock().grips[hand.index()];
-    held::hold(
+    in_hand::hold(
         Slot::CaughtGrenade,
         Some(Held {
             explosive: caught.explosive,
@@ -1026,13 +1025,12 @@ unsafe fn carry_caught(inputs: &TickInputs, tuning: &GrenadeTuning) -> Option<(H
 
 #[cfg(test)]
 mod tests {
-    use jc3vr_body::controllers::{
-        fingers::grip::catalogue::{GripPose, cylinder_curl},
-        hands::held::away_from_palm,
-    };
+    use jc3vr_body::controllers::fingers::grip::catalogue::{GripPose, cylinder_curl};
 
     use super::*;
-    use crate::controllers::weapons::grenade::tuning::GRENADE_BODY_RADIUS_M;
+    use crate::controllers::weapons::{
+        grenade::tuning::GRENADE_BODY_RADIUS_M, in_hand::away_from_palm,
+    };
 
     #[test]
     fn the_fuse_warning_rises_from_the_pin() {

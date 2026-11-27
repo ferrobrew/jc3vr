@@ -4,7 +4,7 @@
 //! The throws place a held explosive at the hand's grip on the sim tick, by writing its cached
 //! world matrix, and the engine draws it from its own cached matrices in its render update. That
 //! draws it where the tick put the hand, a tick or two behind the hand the late update draws
-//! ([`crate::controllers::hands::late`]), and a caught grenade, which its physics carries toward
+//! ([`jc3vr_body::controllers::hands::late`]), and a caught grenade, which its physics carries toward
 //! the hand by velocity, further behind still. So each throw registers what its hand holds here
 //! ([`hold`]), and a post-call detour on the explosive's render update re-pushes the model matrix
 //! from the grip of the hand as it is drawn ([`late::drawn_hands`]) at the frame's interpolation
@@ -31,13 +31,14 @@ use jc3gi::{
     game::GameObjectRenderContext,
     types::math::Matrix4,
 };
+use jc3vr_body::controllers::hands::late;
 use jc3vr_core::published::{Counter, Stamp};
 use jc3vr_input::frame::{Hand, Pose};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 use serde::Deserialize;
 
-use crate::{controllers::hands::late, tuning::FRESHNESS};
+use crate::controllers::weapons::grenade::tuning::GRENADE;
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new()
@@ -79,7 +80,7 @@ pub struct Held {
 }
 
 /// Where a held model sits in a hand, given for the right hand and mirrored across the body's
-/// sagittal plane for the left, as the grip offset is ([`crate::controllers::hands::pose::grip_to_wrist`]).
+/// sagittal plane for the left, as the grip offset is ([`jc3vr_body::controllers::hands::pose::grip_to_wrist`]).
 ///
 /// The grip frame is OpenXR's: the origin at the centre of the closed hand, -Z up the tube of the
 /// curled fingers toward the thumb, +X out of the back of the right hand (into the left palm), and
@@ -225,12 +226,7 @@ fn current(explosive: usize, slots: [Slot; 2], now: Stamp) -> Option<Held> {
         held[slot.index()]
             .filter(|(h, at)| {
                 h.explosive == explosive
-                    && FRESHNESS
-                        .get()
-                        .hands
-                        .held_registration_ms
-                        .window()
-                        .holds(*at, now)
+                    && GRENADE.get().held.registration_ms.window().holds(*at, now)
             })
             .map(|(h, _)| h)
     })
@@ -322,7 +318,7 @@ mod tests {
             current(
                 0x4000,
                 slots,
-                now + FRESHNESS.get().hands.held_registration_ms.duration() * 2
+                now + GRENADE.get().held.registration_ms.duration() * 2
             ),
             None
         );

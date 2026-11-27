@@ -91,10 +91,6 @@ use jc3gi::{
 };
 use jc3vr_body::controllers::{
     aim::targets::weak_target,
-    hands::{
-        held,
-        held::{Held, Slot},
-    },
     haptics,
     held::{native, native::object_of},
     intent::controls::ButtonControl,
@@ -125,6 +121,8 @@ use crate::controllers::{
         },
         engine,
         grenade::{Release, catch::body_of, throw_release},
+        in_hand,
+        in_hand::{Held, Slot},
         inventory::slots,
         pouch_return,
     },
@@ -516,8 +514,8 @@ pub(super) fn input_tick(game: &GameTick<'_>, inputs: &TickInputs, tuning: &C4Tu
         // Without a tracked sample of the throw, the charge is dropped where it is rather than kept
         // in a hand that has opened.
         let release = state.grips[hand.index()].map_or(Release::REST, |grip| {
-            let point =
-                held::held_matrix(grip, hold_local(hand, tuning)).transform_point3(CHARGE_CENTRE_M);
+            let point = in_hand::held_matrix(grip, hold_local(hand, tuning))
+                .transform_point3(CHARGE_CENTRE_M);
             throw_release(
                 hand,
                 point,
@@ -805,7 +803,7 @@ pub(crate) fn hold_local(hand: Hand, tuning: &C4Tuning) -> Pose {
 
 /// The held charge's world matrix in a hand whose grip is `grip`.
 fn held_matrix(grip: Pose, local: Pose) -> Matrix4 {
-    Matrix4::from(held::held_matrix(grip, local))
+    Matrix4::from(in_hand::held_matrix(grip, local))
 }
 
 /// Record a throw step's outcome.
@@ -1043,11 +1041,11 @@ fn update_attachment_transforms(
         (state.stage, state.grips)
     };
     let Some(hand) = stage.hand().filter(|_| stage.charge_in_hand()) else {
-        held::hold(Slot::Charge, None);
+        in_hand::hold(Slot::Charge, None);
         return;
     };
     let Some(grip) = grips[hand.index()] else {
-        held::hold(Slot::Charge, None);
+        in_hand::hold(Slot::Charge, None);
         return;
     };
     let local = hold_local(hand, C4.get());
@@ -1056,7 +1054,7 @@ fn update_attachment_transforms(
     let charge = unsafe { primed_charge(&*weapon) };
     // The tick's place moves the charge's transform; its in-hand model is drawn at the hand's
     // render-time grip.
-    held::hold(
+    in_hand::hold(
         Slot::Charge,
         charge.map(|charge| Held {
             explosive: charge as usize,
@@ -1112,7 +1110,7 @@ unsafe fn place_act_detonator(weapon: &mut PlantedExplosiveWeapon, user: &Charac
     let Some(gun) = (unsafe { native::gun_ptr(&*base, 0) }) else {
         return;
     };
-    let matrix = Matrix4::from(held::held_matrix(
+    let matrix = Matrix4::from(in_hand::held_matrix(
         grip,
         C4.get().detonator_hold.in_hand(hand),
     ));
@@ -1245,7 +1243,7 @@ unsafe fn throw(
         return;
     };
     // A thrown charge is drawn where it flies from at once, not at the hand.
-    held::hold(Slot::Charge, None);
+    in_hand::hold(Slot::Charge, None);
     // Under the parachute the weapon drops the charge itself, from the right-hand bone.
     let parachute = unsafe { user.IsUsingParachute() };
     let carried = Vec3::from_array(user.m_MeasuredWorldVelocity.data);

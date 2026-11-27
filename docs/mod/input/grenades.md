@@ -32,7 +32,7 @@ A safe grenade can move between hands and the supported hip and chest holsters, 
 
 ## In the hand
 
-A held grenade and a held C4 charge are each placed in the hand by a hold (`hands::held::HoldPlacement`): the model's origin and axes in the hand's grip frame, given for the right hand and mirrored for the left. The grip frame's origin is the centre of the closed hand, which is about where Rico's palm is drawn, so a model centred there with the grip's own orientation sinks into the palm. Each hold is derived from its model's geometry.
+A held grenade and a held C4 charge are each placed in the hand by a hold (`weapons::in_hand::HoldPlacement`): the model's origin and axes in the hand's grip frame, given for the right hand and mirrored for the left. The grip frame's origin is the centre of the closed hand, which is about where Rico's palm is drawn, so a model centred there with the grip's own orientation sinks into the palm. Each hold is derived from its model's geometry.
 
 The grenade (the grenade tuning's `hold`, in `crates/jc3vr-weapons/tuning/grenade.toml`; [tuning.md](../tuning.md)) stands upright in the fist: its body runs up the finger tube with the fuse head out past the thumb, its lever lies against the palm, and its body sits one body radius out of the palm, level with the middle of the palm. The grenade palm pose closes the fingers as far as round a bar of the body's diameter, so they lie on the body.
 

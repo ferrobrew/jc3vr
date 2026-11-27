@@ -26,6 +26,8 @@
 //! - [`grenade`]: the physical grenade throw;
 //! - [`opening`]: when a hand holding a grenade or a charge lets it go: when its fingers open;
 //! - [`c4`]: the C4 throw from the chest pouch and the wrist detonator;
+//! - [`in_hand`]: where a held model sits in the hand, and the render-time placement of the
+//!   explosives a hand holds (the primed and the caught grenade, and the primed charge);
 //! - [`reload`]: the true reload: eject, load from the belt pouch, and chamber by hand;
 //! - [`sounds`]: the sounds at the gun for the hands' own work: seats, action cycles, draws, and
 //!   holsters;
@@ -87,6 +89,7 @@ pub mod handling_tuning;
 pub mod heft;
 pub mod hold;
 pub mod hud_feed;
+pub mod in_hand;
 pub mod inventory;
 pub(crate) mod mirror;
 pub mod opening;
@@ -126,6 +129,7 @@ pub fn hook_library() -> HookLibrary {
         .with_hook_library(camera_kick::hook_library())
         .with_hook_library(grenade::hook_library())
         .with_hook_library(c4::hook_library())
+        .with_hook_library(in_hand::hook_library())
         .with_hook_library(scope::hook_library())
         .with_hook_library(hold::hook_library())
         .with_hook_library(hold::rack::offer::hook_library())
