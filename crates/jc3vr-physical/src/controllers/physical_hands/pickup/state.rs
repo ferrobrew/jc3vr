@@ -19,6 +19,7 @@ use crate::controllers::physical_hands::{
     characters::{Regrip, Seize},
     doors::{Latch, tearing::TearGrip},
     grasp::{Grip, Strain},
+    grip_sources,
     pickup::{
         diagnostics,
         diagnostics::{ConsumerResult, RequestKey, scan::Scan},
@@ -222,10 +223,10 @@ impl PickupState {
             return Some((held.kind.source(), Some(held.body)));
         }
         if self.latches[i].is_some() {
-            return Some((GripSource::Door, None));
+            return Some((grip_sources::DOOR, None));
         }
         (self.seizes[i].is_some() || self.regrips[i].is_some())
-            .then_some((GripSource::Character, None))
+            .then_some((grip_sources::CHARACTER, None))
     }
 
     /// The loose object each hand carries, by [`Hand::index`]: a hold of a prop, not a grip on
@@ -390,10 +391,10 @@ impl HeldKind {
 
     const fn source(self) -> GripSource {
         match self {
-            HeldKind::Prop => GripSource::Pickup,
-            HeldKind::Articulated => GripSource::Articulated,
-            HeldKind::Door => GripSource::Door,
-            HeldKind::Ragdoll => GripSource::Character,
+            HeldKind::Prop => grip_sources::PICKUP,
+            HeldKind::Articulated => grip_sources::ARTICULATED,
+            HeldKind::Door => grip_sources::DOOR,
+            HeldKind::Ragdoll => grip_sources::CHARACTER,
         }
     }
 }

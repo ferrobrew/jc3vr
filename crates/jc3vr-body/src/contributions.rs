@@ -24,6 +24,7 @@ use crate::{
         aim_state::PreWeaponHookFn,
         body::mirror::AttachmentSampler,
         facts::{climb::ClimbReaders, mounted::MountedSource},
+        fingers::grip::{GripSource, MAX_SOURCES},
         hands::{anchor::HangPump, late::ObserveWeapon, stages::HandStageFn},
         held::{HeldSource, guns::TargetsFn, pickup::PickupSink},
     },
@@ -87,12 +88,16 @@ pub struct BodyContributions {
     pub serial_consumer: Option<unsafe fn(*mut Character, *mut GameObjectUpdateContext)>,
     /// The body mirror's sampler of the attachments on the body (the weapon handling).
     pub attachment_sampler: Option<AttachmentSampler>,
+    /// Every source that may declare a grip, in the order their declarations win for one hand:
+    /// what the hand holds in its fingers over what it holds on to; at most
+    /// [`MAX_SOURCES`] (gameplay's grip table).
+    pub grip_order: &'static [GripSource],
 }
 
 impl BodyContributions {
     /// Report every field still empty to `check`, under the reader that reads it.
     pub fn report(&self, check: &mut RegistrationCheck) {
-        let fields: [(&'static str, &'static str, bool); 19] = [
+        let fields: [(&'static str, &'static str, bool); 20] = [
             ("aim", "the aim hooks", self.aim_hooks.is_some()),
             (
                 "aim",
@@ -148,6 +153,11 @@ impl BodyContributions {
                 "the body mirror's attachment sampler",
                 self.attachment_sampler.is_some(),
             ),
+            (
+                "fingers",
+                "the grip sources' order, at most the slots the declarations have",
+                !self.grip_order.is_empty() && self.grip_order.len() <= MAX_SOURCES,
+            ),
         ];
         for (reader, contribution, registered) in fields {
             check.require(reader, contribution, registered);
@@ -181,6 +191,6 @@ mod tests {
     fn an_empty_record_reports_every_contribution() {
         let mut check = RegistrationCheck::new();
         BodyContributions::default().report(&mut check);
-        assert_eq!(check.missing().len(), 19);
+        assert_eq!(check.missing().len(), 20);
     }
 }

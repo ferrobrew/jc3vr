@@ -3,6 +3,7 @@ use jc3vr_body::controllers::{grab::cockpit::ControlKind, mode::VehicleClass};
 use super::*;
 use crate::controllers::vehicles::{
     config::VehiclesConfig,
+    grip_sources,
     physical::{ControlState, Hold, Outputs, Release},
 };
 
@@ -129,7 +130,7 @@ fn off_seat_mounted_handles_declare_the_mounted_finger_source() {
             share,
         };
         let grip = mounted_finger_grip(Some(Vec3::ZERO), inputs).unwrap();
-        assert_eq!(grip.source, GripSource::MountedGun);
+        assert_eq!(grip.source, grip_sources::MOUNTED_GUN);
         assert_eq!(grip.share, share);
         assert_eq!(grip.share, mounted_hand_weight(inputs));
     }
@@ -164,6 +165,6 @@ fn mounted_finger_sources_follow_the_mounted_pose_eligibility() {
         ..held
     };
     let grip = mounted_finger_grip(Some(Vec3::ZERO), manned).unwrap();
-    assert_eq!(grip.source, GripSource::MountedGun);
+    assert_eq!(grip.source, grip_sources::MOUNTED_GUN);
     assert_eq!(grip.share, 0.25);
 }

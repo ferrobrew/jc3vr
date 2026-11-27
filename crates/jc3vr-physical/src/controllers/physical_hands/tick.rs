@@ -21,7 +21,7 @@ use jc3vr_body::controllers::{
     fingers::{
         grip,
         grip::{
-            Grip, GripSource,
+            Grip,
             catalogue::GripPose,
             contact as finger_contact,
             contact::{CastHit, FitTarget},
@@ -58,7 +58,7 @@ use crate::controllers::physical_hands::{
     doors::{acquisition::PanelReach, tuning::DOORS},
     engine, grab_view, grasp,
     grasp::PalmMotion,
-    hold,
+    grip_sources, hold,
     hold::{BodySpace, PlayerKeepOut},
     impacts,
     palm::{PROBE_POINTS, PalmBox},
@@ -675,13 +675,13 @@ pub(super) fn declare_grips(
         let i = hand.index();
         let Some((source, body)) = pickup.grip(hand) else {
             if hands[i].press.is_some() || physics::pressing(hand) {
-                grip::declare(hand, Grip::new(GripSource::Surface));
+                grip::declare(hand, Grip::new(grip::SURFACE));
             }
             continue;
         };
         // One hand on what it cannot lift lays its palm on it, as on a crate it drags.
         let pose = match hands[i].held {
-            Some(held) if source == GripSource::Pickup && !held.liftable => GripPose::FlatPalm,
+            Some(held) if source == grip_sources::PICKUP && !held.liftable => GripPose::FlatPalm,
             _ => source.pose(),
         };
         let fit = body.zip(wrists[i]).and_then(|(body, wrist)| {

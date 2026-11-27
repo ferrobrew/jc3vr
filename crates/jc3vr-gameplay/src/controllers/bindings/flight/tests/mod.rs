@@ -9,6 +9,7 @@ use jc3vr_body::controllers::{
 };
 use jc3vr_input::frame::ActionSetKind;
 use jc3vr_vehicles::controllers::vehicles::{
+    grip_sources as vehicle_grips,
     tuning::{VEHICLES, WingsuitGesturesTuning},
     wingsuit_gestures::{FlightPose, SuitTransition},
 };
@@ -526,14 +527,14 @@ fn a_body_slot_claims_the_hand_only_while_its_grip_is_squeezed() {
 
 #[test]
 fn the_line_pose_and_a_flat_palm_yield_but_physical_grips_still_claim_the_hand() {
-    assert!(!claims_gesture(GripSource::GrappleLine));
-    assert!(!claims_gesture(GripSource::Surface));
+    assert!(!claims_gesture(grip::GRAPPLE_LINE));
+    assert!(!claims_gesture(grip::SURFACE));
     for source in [
-        GripSource::Magazine,
-        GripSource::Foregrip,
-        GripSource::Climb,
-        GripSource::Door,
-        GripSource::ParachuteHandle,
+        weapon_grips::MAGAZINE,
+        weapon_grips::FOREGRIP,
+        physical_grips::CLIMB,
+        physical_grips::DOOR,
+        vehicle_grips::PARACHUTE_HANDLE,
     ] {
         assert!(claims_gesture(source), "{source:?}");
     }
@@ -542,19 +543,19 @@ fn the_line_pose_and_a_flat_palm_yield_but_physical_grips_still_claim_the_hand()
 #[test]
 fn a_held_item_rides_along_and_a_body_slot_in_reach_claims_the_hand() {
     for source in [
-        GripSource::Gun,
-        GripSource::Grenade,
-        GripSource::C4,
-        GripSource::Pickup,
+        weapon_grips::GUN,
+        weapon_grips::GRENADE,
+        weapon_grips::C4,
+        physical_grips::PICKUP,
     ] {
         assert!(holds_item(source), "{source:?}");
     }
     for source in [
-        GripSource::Magazine,
-        GripSource::Foregrip,
-        GripSource::Climb,
-        GripSource::Door,
-        GripSource::ParachuteHandle,
+        weapon_grips::MAGAZINE,
+        weapon_grips::FOREGRIP,
+        physical_grips::CLIMB,
+        physical_grips::DOOR,
+        vehicle_grips::PARACHUTE_HANDLE,
     ] {
         assert!(!holds_item(source), "{source:?}");
     }

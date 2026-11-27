@@ -54,7 +54,7 @@ use crate::{
     contributions,
     controllers::{
         body_frame,
-        fingers::grip::{self, Grip, GripSource},
+        fingers::grip::{self, Grip},
         hands::{self, CockpitHand, tiers, tuning::HANDS},
         haptics,
         physics::grapple_hook as hook,
@@ -213,7 +213,7 @@ fn declare_line_grip(hand: Hand) {
     );
     let weight = status.anchor_weights[hand.index()];
     if grapple && status.effective[hand.index()] == tiers::HandTier::Anchored && weight > 0.0 {
-        grip::declare(hand, Grip::new(GripSource::GrappleLine).share(weight));
+        grip::declare(hand, Grip::new(grip::GRAPPLE_LINE).share(weight));
     }
 }
 

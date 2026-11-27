@@ -2,7 +2,7 @@
 
 use jc3vr_body::controllers::{
     fingers,
-    fingers::{HandFingersStatus, grip::GripSource, target::GripMode},
+    fingers::{HandFingersStatus, target::GripMode},
 };
 use jc3vr_gameplay::controllers::config::CONTROLLERS_CONFIG;
 use jc3vr_input::frame::Hand;
@@ -39,11 +39,7 @@ fn grip_line(curls: bool, status: &HandFingersStatus) -> Line {
     let Some(grip) = status.grip else {
         return Line::ok("Holds nothing");
     };
-    let source = match grip.source {
-        GripSource::C4 => SmolStr::new_static("C4"),
-        source => format_smolstr!("{}", source.label()),
-    };
-    let what = format_smolstr!("{} from {}", grip.pose.label(), source);
+    let what = format_smolstr!("{} from {}", grip.pose.label(), grip.source.label());
     let fitted = if grip.fitted > 0 {
         format_smolstr!(", {} fitted", grip.fitted)
     } else {
@@ -68,6 +64,8 @@ mod tests {
     use jc3vr_body::controllers::fingers::{
         curl::CurlSource, grip::catalogue::GripPose, target::GripReport,
     };
+    use jc3vr_physical::controllers::physical_hands::grip_sources as physical_grips;
+    use jc3vr_weapons::controllers::weapons::grip_sources as weapon_grips;
 
     use super::*;
 
@@ -83,7 +81,7 @@ mod tests {
         let mut status = driven();
         assert_eq!(grip_line(true, &status).text(), "Ok, Holds nothing");
         status.grip = Some(GripReport {
-            source: GripSource::Pickup,
+            source: physical_grips::PICKUP,
             pose: GripPose::Wrap,
             share: 0.8,
             fitted: 4,
@@ -99,7 +97,7 @@ mod tests {
     fn a_c4_grip_names_its_pose_and_its_source() {
         let status = HandFingersStatus {
             grip: Some(GripReport {
-                source: GripSource::C4,
+                source: weapon_grips::C4,
                 pose: GripPose::ChargePalm,
                 share: 0.5,
                 fitted: 0,

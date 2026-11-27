@@ -21,6 +21,7 @@ use jc3vr_body::controllers::{
 };
 use jc3vr_core::published::Stamp;
 use jc3vr_input::frame::{Button, ControllerFrame, Hand};
+use jc3vr_physical::controllers::physical_hands::grip_sources as physical_grips;
 use jc3vr_vehicles::controllers::vehicles::{
     tuning::WingsuitGesturesTuning,
     wingsuit_gestures::{
@@ -32,7 +33,9 @@ use jc3vr_view::{
     recorder::tracking::{events, events::EventKind},
     vr::input::flight_pose,
 };
-use jc3vr_weapons::controllers::{loadout::contents, weapons};
+use jc3vr_weapons::controllers::{
+    loadout::contents, weapons, weapons::grip_sources as weapon_grips,
+};
 use tracking_format::event::{Label, WingsuitGesture};
 
 /// Recognition and the calibration that interprets its pose history belong to one binding state.
@@ -526,16 +529,19 @@ fn grapple_claim(detection: Detection, airborne: bool, grapple: bool) -> bool {
 /// it should, while the line's pose outlasts the line by a few ticks, and a flat palm is a passive
 /// contact, which the fingers also report in free fall with the arms spread, not a grip.
 fn claims_gesture(source: GripSource) -> bool {
-    !holds_item(source) && !matches!(source, GripSource::GrappleLine | GripSource::Surface)
+    !holds_item(source) && ![grip::GRAPPLE_LINE, grip::SURFACE].contains(&source)
 }
 
 /// Whether a grip of `source` is a held item, which rides along in the hand rather than claiming
 /// it. A magazine is the reload's, which claims the hand itself.
-const fn holds_item(source: GripSource) -> bool {
-    matches!(
-        source,
-        GripSource::Gun | GripSource::Grenade | GripSource::C4 | GripSource::Pickup
-    )
+fn holds_item(source: GripSource) -> bool {
+    [
+        weapon_grips::GUN,
+        weapon_grips::GRENADE,
+        weapon_grips::C4,
+        physical_grips::PICKUP,
+    ]
+    .contains(&source)
 }
 
 #[cfg(test)]

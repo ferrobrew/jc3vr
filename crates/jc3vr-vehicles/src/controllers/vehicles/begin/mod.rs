@@ -36,6 +36,7 @@ use crate::controllers::vehicles::{
     entry::{VehicleEntry, VehicleEntryIdentity},
     fit,
     fit::{FitInputs, VehicleLatch},
+    grip_sources,
     handle_tick::handles_act,
     mounted_grip,
     mounted_tick::{MountedTick, mounted_tick, offered},
@@ -290,7 +291,7 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickVolumes {
                 ..target
             };
             if state.handles.holds[hand.index()].is_some() {
-                grip::declare(hand, Grip::new(GripSource::ParachuteHandle));
+                grip::declare(hand, Grip::new(grip_sources::PARACHUTE_HANDLE));
                 targets.insert(0, target.held(hand));
             } else if !holding[hand.index()] {
                 targets.push(target);
@@ -353,7 +354,7 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickVolumes {
             .into_iter()
             .any(|b| controls_now.buttons.phase(b, hand) == PushPhase::Pressed);
         if pressing {
-            grip::declare(hand, Grip::new(GripSource::Surface));
+            grip::declare(hand, Grip::new(grip::SURFACE));
         }
     }
     wing_guide::submit(arms_act(mode, &config), arms_engaged);
@@ -467,7 +468,7 @@ fn declare_mounted_grips(handles: Option<[Option<Vec3>; 2]>, shares: [f32; 2]) {
 fn mounted_finger_grip(handle: Option<Vec3>, inputs: MountedHandWeight) -> Option<Grip> {
     handle?;
     let weight = mounted_hand_weight(inputs);
-    (weight > 0.0).then(|| Grip::new(GripSource::MountedGun).share(weight))
+    (weight > 0.0).then(|| Grip::new(grip_sources::MOUNTED_GUN).share(weight))
 }
 
 /// The dimensions the hands are measured against: the character's while the hands are remapped

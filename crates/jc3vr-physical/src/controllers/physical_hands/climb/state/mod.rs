@@ -7,10 +7,7 @@ use std::time::Duration;
 use glam::{Affine3A, Quat, Vec3};
 use jc3vr_body::controllers::{
     facts::climb::BodyFrame,
-    fingers::{
-        grip,
-        grip::{Grip as FingerGrip, GripSource},
-    },
+    fingers::{grip, grip::Grip as FingerGrip},
     grab::GrabVolume,
     mode,
     mode::{AirborneVariant, Mode, OnFootVariant},
@@ -29,6 +26,7 @@ use crate::controllers::physical_hands::{
         tuning::CLIMB,
         types::{ClimbHandStatus, ClimbStatus, Hold, Landing},
     },
+    grip_sources,
     physics::drive::Goal,
 };
 
@@ -122,7 +120,7 @@ pub fn finish_tick(held: [bool; 2], grabs: [Option<GrabVolume>; 2]) {
     for hand in Hand::BOTH {
         let i = hand.index();
         if state.grips[i].is_some() && state.stepped_lately(now) {
-            grip::declare(hand, FingerGrip::new(GripSource::Climb));
+            grip::declare(hand, FingerGrip::new(grip_sources::CLIMB));
         }
         if !held[i] {
             if state.grips[i].is_some() || matches!(state.requests[i], Some(Request::Grip(_))) {

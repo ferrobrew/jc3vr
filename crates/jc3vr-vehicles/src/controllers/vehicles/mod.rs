@@ -59,6 +59,7 @@ pub mod driving_view;
 mod entry;
 mod finish;
 pub mod fit;
+pub mod grip_sources;
 mod handle_tick;
 
 pub mod look_steer;

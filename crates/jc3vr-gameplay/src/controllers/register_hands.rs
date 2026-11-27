@@ -1,16 +1,17 @@
 //! Registers the systems above the hands with the hands: the hand composition's stages in their
-//! order and the observers of each world weapon at its render update in theirs. The weapon handling
-//! fills its held-item source and its held guns' targets in its own `register_body`
+//! order, and the observers of each world weapon at its render update in theirs. The weapon
+//! handling fills its held-item source and its held guns' targets in its own `register_body`
 //! (`register_below`), and the grapple fills its pump of the hang swing itself
 //! ([`jc3vr_grapple::register`]).
 //!
 //! Each fills a field of the body's contributions, which reports any still empty to the install's
 //! registration check ([`jc3vr_body::contributions::register`]). The tables here declare the
-//! stages' and the observers' order, once.
+//! stages', the observers', and the grip sources' order ([`GRIP_ORDER`]), once.
 
 use jc3vr_body::{
     contributions::BodyContributions,
     controllers::{
+        fingers::{grip, grip::GripSource},
         hands::{
             anchor,
             late::ObserveWeapon,
@@ -20,15 +21,44 @@ use jc3vr_body::{
         held::guns,
     },
 };
-use jc3vr_physical::controllers::physical_hands;
-use jc3vr_vehicles::controllers::vehicles;
-use jc3vr_weapons::controllers::weapons::{ads, collide, grenade, hold::rack, recoil};
+use jc3vr_physical::controllers::{physical_hands, physical_hands::grip_sources as physical_grips};
+use jc3vr_vehicles::controllers::{vehicles, vehicles::grip_sources as vehicle_grips};
+use jc3vr_weapons::controllers::weapons::{
+    ads, collide, grenade, grip_sources as weapon_grips, hold::rack, recoil,
+};
 
 pub(super) fn register(body: &mut BodyContributions) {
     body.target_stages = &TARGET_STAGES;
     body.hand_stages = &HAND_STAGES;
     body.weapon_observers = &WEAPON_OBSERVERS;
+    body.grip_order = &GRIP_ORDER;
 }
+
+/// Every grip source, in the order their declarations win for one hand: what the hand holds in its
+/// fingers (the weapon handling's items, then what the physical hands take hold of) over what it
+/// holds on to (a climb, the vehicle controls and handles, the grapple line), and a palm pressed on
+/// a surface last.
+static GRIP_ORDER: [GripSource; 19] = [
+    weapon_grips::MAGAZINE,
+    weapon_grips::GRENADE,
+    weapon_grips::C4,
+    weapon_grips::GUN,
+    weapon_grips::FOREGRIP,
+    physical_grips::CHARACTER,
+    physical_grips::DOOR,
+    physical_grips::ARTICULATED,
+    physical_grips::PICKUP,
+    physical_grips::STUNT,
+    physical_grips::CLIMB,
+    grip::WHEEL,
+    grip::HANDLEBARS,
+    grip::STICK,
+    grip::LEVER,
+    vehicle_grips::PARACHUTE_HANDLE,
+    vehicle_grips::MOUNTED_GUN,
+    grip::GRAPPLE_LINE,
+    grip::SURFACE,
+];
 
 /// The hand composition's target stages, in the order they run: a hand on a physical vehicle
 /// control or a mounted gun's handle holds it, then the shared support and weight targets of a held

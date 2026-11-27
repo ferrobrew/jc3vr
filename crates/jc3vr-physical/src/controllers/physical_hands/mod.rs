@@ -63,6 +63,7 @@ pub mod doors;
 mod engine;
 pub mod grab_view;
 pub mod grasp;
+pub mod grip_sources;
 pub mod hold;
 pub mod human_hull;
 pub mod impacts;

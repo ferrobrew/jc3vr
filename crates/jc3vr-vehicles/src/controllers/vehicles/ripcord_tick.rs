@@ -9,10 +9,7 @@
 use jc3gi::input::input_action_map::Action::OPEN_PARACHUTE;
 use jc3vr_body::controllers::{
     body,
-    fingers::{
-        grip,
-        grip::{Grip, GripSource},
-    },
+    fingers::{grip, grip::Grip},
     grab::{GrabVolume, GripTarget, Mark, MarkAt, MarkStyle, Shown, Tier},
     hands,
     hands::ActiveHands,
@@ -28,7 +25,7 @@ use parking_lot::Mutex;
 
 use crate::controllers::vehicles::{
     config::VehicleSettings,
-    ripcord,
+    grip_sources, ripcord,
     ripcord::{RipcordEvent, RipcordState, StepInputs},
     tuning::VEHICLES,
 };
@@ -74,7 +71,7 @@ pub(super) fn targets(
     let mut targets = Vec::with_capacity(2);
     match state.ripcord.hold {
         Some(hold) => {
-            grip::declare(hold.hand, Grip::new(GripSource::ParachuteHandle));
+            grip::declare(hold.hand, Grip::new(grip_sources::PARACHUTE_HANDLE));
             targets.push(placed.target(mark).held(hold.hand));
         }
         None => targets.push(placed.target(mark)),

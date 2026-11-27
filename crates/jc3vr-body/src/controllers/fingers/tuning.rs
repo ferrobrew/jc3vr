@@ -400,7 +400,7 @@ impl ContactFitTuning {
 }
 
 /// The bar diameter, metres, of each grip source whose hold is a round bar
-/// ([`GripSource::pose`](crate::controllers::fingers::grip::GripSource::pose)).
+/// ([`diameters`](crate::controllers::fingers::grip::diameters)).
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SourceDiametersTuning {

@@ -134,7 +134,10 @@ const RELEASED_SHARE: f32 = 1e-3;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::controllers::fingers::tuning::FINGERS_TUNING;
+    use crate::controllers::fingers::{grip, grip::Firmness, tuning::FINGERS_TUNING};
+
+    /// A loose object's grip, as the physical hands define it.
+    const LOOSE: GripSource = GripSource::new("loose", || GripPose::Wrap, Firmness::Grip);
 
     fn fingers() -> FingerTuning {
         FINGERS_TUNING.get().curls
@@ -176,7 +179,7 @@ mod tests {
         let config = fingers();
         let measured = FingerCurls::default();
         let hand = HandInputs::default();
-        let wheel = Some(Grip::new(GripSource::Wheel));
+        let wheel = Some(Grip::new(grip::WHEEL));
         let mut memory = GripMemory::EMPTY;
         let mut last = 0.0;
         for _ in 0..60 {
@@ -186,7 +189,7 @@ mod tests {
             last = middle;
             assert_eq!(target.grip.unwrap().mode, GripMode::Posed);
         }
-        let posed = GripSource::Wheel.pose().shape().curl[2];
+        let posed = grip::WHEEL.pose().shape().curl[2];
         assert!((last - posed).abs() < 1e-3, "{last} {posed}");
         let released = hand_target(&inputs(&config, None, &measured, &hand), &mut memory);
         assert_eq!(released.grip.unwrap().mode, GripMode::Releasing);
@@ -205,7 +208,7 @@ mod tests {
         config.grip.blend_s = 0.0;
         let measured = FingerCurls::default();
         let mut hand = HandInputs::default();
-        let pickup = Some(Grip::new(GripSource::Pickup));
+        let pickup = Some(Grip::new(LOOSE));
         let mut memory = GripMemory::EMPTY;
         hand.squeeze = 0.0;
         let light = hand_target(&inputs(&config, pickup, &measured, &hand), &mut memory);
@@ -226,7 +229,7 @@ mod tests {
             ..HandInputs::default()
         };
         let fit = [None, Some(0.2), Some(0.2), Some(0.2), None];
-        let pickup = Some(Grip::new(GripSource::Pickup).fitted(Some(fit)));
+        let pickup = Some(Grip::new(LOOSE).fitted(Some(fit)));
         let mut memory = GripMemory::EMPTY;
         let fitted = hand_target(&inputs(&config, pickup, &measured, &hand), &mut memory);
         assert_eq!(fitted.grip.unwrap().fitted, 3);

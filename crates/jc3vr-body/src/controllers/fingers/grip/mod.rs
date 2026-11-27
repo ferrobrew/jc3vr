@@ -9,16 +9,17 @@
 //! holds it, with [`declare`] and a [`Grip`] built from its [`GripSource`]:
 //!
 //! ```ignore
-//! grip::declare(hand, Grip::new(GripSource::Wheel));
+//! grip::declare(hand, Grip::new(grip::WHEEL));
 //! ```
 //!
-//! The source names the default pose and how firmly it holds; a declaration may name another pose
-//! ([`Grip::pose`]), scale the pose's share as its hold blends in ([`Grip::share`]), or carry the
-//! contact fit's curls ([`Grip::fitted`]). The finger curls read the declarations once per sim
-//! tick. A declaration lasts a few of their ticks, so a source that stops declaring (the hold
-//! ended, or the source stood down) lets the hand go without a release call of its own. When two
-//! sources declare for one hand, the first in [`GripSource::ALL`] wins: what the hand holds in
-//! its fingers over what it holds on to.
+//! A source is a value its owning system defines: a label, the default pose, and how firmly it
+//! holds. A declaration may name another pose ([`Grip::pose`]), scale the pose's share as its hold
+//! blends in ([`Grip::share`]), or carry the contact fit's curls ([`Grip::fitted`]). The finger
+//! curls read the declarations once per sim tick. A declaration lasts a few of their ticks, so a
+//! source that stops declaring (the hold ended, or the source stood down) lets the hand go without
+//! a release call of its own. When two sources declare for one hand, the first in the registered
+//! order wins ([`crate::contributions::BodyContributions::grip_order`]): what the hand holds in its
+//! fingers over what it holds on to.
 //!
 //! The declarations are a leaf lock: a source declares from its own tick, on whatever thread it
 //! runs, holding its own state's lock or not, and nothing is taken under the slot.
@@ -27,161 +28,121 @@ pub mod blend;
 pub mod catalogue;
 pub mod contact;
 
-use std::time::Duration;
+use std::{
+    fmt,
+    sync::atomic::{AtomicBool, Ordering},
+    time::Duration,
+};
 
 use jc3vr_core::published::Stamp;
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
 use crate::{
+    contributions,
     controllers::{
-        fingers::{grip::catalogue::GripPose, tuning::FINGERS_TUNING},
+        fingers::{
+            grip::catalogue::GripPose,
+            tuning::{FINGERS_TUNING, SourceDiametersTuning},
+        },
         grab::cockpit::ControlKind,
     },
     tuning::FRESHNESS,
 };
 
-/// What put something in a hand, in the order the declarations win.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum GripSource {
-    /// A magazine or a round taken for the reload.
-    Magazine,
-    Grenade,
-    C4,
-    /// A gun in the hand, by its grip.
-    Gun,
-    /// The off-hand on the held gun's foregrip.
-    Foregrip,
-    /// A character taken hold of, or the ragdoll of one.
-    Character,
-    /// A vehicle's door: its handle area while latched, or the door itself once open.
-    Door,
-    /// An object hinged to the world or another body.
-    Articulated,
-    /// A loose object picked up.
-    Pickup,
-    /// A stunt handhold: a helicopter's skid, gripped to hang from it, or held in its hang.
-    Stunt,
-    /// The world, or a moving body, gripped to climb.
-    Climb,
-    Wheel,
-    Handlebars,
-    /// A helicopter's cyclic or a plane's flight stick.
-    Stick,
-    /// A helicopter's collective or a plane's throttle.
-    Lever,
-    ParachuteHandle,
-    /// A mounted gun's handles.
-    MountedGun,
-    /// The grapple line, while the grapple carries the player.
-    GrappleLine,
-    /// An empty palm pressed on a surface: a wall, a crate, or a ledge pushed down on.
-    Surface,
+/// What put something in a hand: a label for the readouts and the log, the pose the hand takes on
+/// it, and how firmly its hold holds. Each system that puts something in a hand defines its own
+/// as a constant; two sources are the same when their labels are.
+#[derive(Copy, Clone)]
+pub struct GripSource {
+    label: &'static str,
+    pose: fn() -> GripPose,
+    firmness: Firmness,
 }
 
 impl GripSource {
-    pub const ALL: [GripSource; 19] = [
-        GripSource::Magazine,
-        GripSource::Grenade,
-        GripSource::C4,
-        GripSource::Gun,
-        GripSource::Foregrip,
-        GripSource::Character,
-        GripSource::Door,
-        GripSource::Articulated,
-        GripSource::Pickup,
-        GripSource::Stunt,
-        GripSource::Climb,
-        GripSource::Wheel,
-        GripSource::Handlebars,
-        GripSource::Stick,
-        GripSource::Lever,
-        GripSource::ParachuteHandle,
-        GripSource::MountedGun,
-        GripSource::GrappleLine,
-        GripSource::Surface,
-    ];
-
-    pub const fn index(self) -> usize {
-        self as usize
+    /// A source labelled `label` whose hand takes `pose` and whose hold holds as `firmness` says:
+    /// [`Firmness::Held`] for what stays in the hand after the grip lets go (whose hold is sticky
+    /// or is ended by the source itself) and for a palm pressed on a surface, which no grip holds,
+    /// and [`Firmness::Grip`] for what the grip has to keep holding.
+    pub const fn new(label: &'static str, pose: fn() -> GripPose, firmness: Firmness) -> Self {
+        Self {
+            label,
+            pose,
+            firmness,
+        }
     }
 
     pub const fn label(self) -> &'static str {
-        match self {
-            GripSource::Magazine => "magazine",
-            GripSource::Grenade => "grenade",
-            GripSource::C4 => "c4",
-            GripSource::Gun => "gun",
-            GripSource::Foregrip => "foregrip",
-            GripSource::Character => "character",
-            GripSource::Door => "door",
-            GripSource::Articulated => "hinged object",
-            GripSource::Pickup => "loose object",
-            GripSource::Stunt => "stunt handhold",
-            GripSource::Climb => "climb",
-            GripSource::Wheel => "wheel",
-            GripSource::Handlebars => "handlebars",
-            GripSource::Stick => "stick",
-            GripSource::Lever => "lever",
-            GripSource::ParachuteHandle => "parachute handle",
-            GripSource::MountedGun => "mounted gun",
-            GripSource::GrappleLine => "grapple line",
-            GripSource::Surface => "surface",
-        }
+        self.label
+    }
+
+    /// The pose a hand takes on what this source puts in it.
+    pub fn pose(self) -> GripPose {
+        (self.pose)()
+    }
+
+    /// How firmly the source's hold holds.
+    pub const fn firmness(self) -> Firmness {
+        self.firmness
     }
 
     /// The source of a hand on the physical vehicle control `kind`.
     pub const fn of_control(kind: ControlKind) -> GripSource {
         match kind {
-            ControlKind::Wheel | ControlKind::Yoke => GripSource::Wheel,
-            ControlKind::Handlebars => GripSource::Handlebars,
-            ControlKind::Cyclic | ControlKind::FlightStick => GripSource::Stick,
-            ControlKind::Collective | ControlKind::Throttle => GripSource::Lever,
+            ControlKind::Wheel | ControlKind::Yoke => WHEEL,
+            ControlKind::Handlebars => HANDLEBARS,
+            ControlKind::Cyclic | ControlKind::FlightStick => STICK,
+            ControlKind::Collective | ControlKind::Throttle => LEVER,
         }
     }
+}
 
-    /// The pose a hand takes on what this source puts in it.
-    pub fn pose(self) -> GripPose {
-        let diameters = &FINGERS_TUNING.get().diameters;
-        let bar = |diameter_m| GripPose::Cylinder { diameter_m };
-        match self {
-            GripSource::Magazine => GripPose::MagazinePinch,
-            GripSource::Grenade => GripPose::GrenadePalm,
-            GripSource::C4 => GripPose::ChargePalm,
-            GripSource::Gun => GripPose::PistolGrip,
-            GripSource::Foregrip => GripPose::Foregrip,
-            GripSource::Character => GripPose::CollarGrab,
-            GripSource::Door => GripPose::DoorHandle,
-            GripSource::Articulated => bar(diameters.articulated_m),
-            GripSource::Pickup => GripPose::Wrap,
-            GripSource::Stunt => bar(diameters.stunt_m),
-            GripSource::Climb => GripPose::LedgeHook,
-            GripSource::Wheel => bar(diameters.wheel_m),
-            GripSource::Handlebars => bar(diameters.handlebars_m),
-            GripSource::Stick => bar(diameters.stick_m),
-            GripSource::Lever => bar(diameters.lever_m),
-            GripSource::ParachuteHandle => bar(diameters.parachute_handle_m),
-            GripSource::MountedGun => bar(diameters.mounted_gun_m),
-            GripSource::GrappleLine => bar(diameters.grapple_line_m),
-            GripSource::Surface => GripPose::FlatPalm,
-        }
+impl PartialEq for GripSource {
+    fn eq(&self, other: &Self) -> bool {
+        self.label == other.label
     }
+}
 
-    /// How firmly the source's hold holds: [`Firmness::Held`] for what stays in the hand after the
-    /// grip lets go (the weapons, the vehicles' controls, and the grapple line, whose holds are
-    /// sticky or are ended by the source itself) and for a palm pressed on a surface, which no grip
-    /// holds, and [`Firmness::Grip`] for what the grip has to keep holding.
-    pub const fn firmness(self) -> Firmness {
-        match self {
-            GripSource::Character
-            | GripSource::Door
-            | GripSource::Articulated
-            | GripSource::Pickup
-            | GripSource::Stunt
-            | GripSource::Climb => Firmness::Grip,
-            _ => Firmness::Held,
-        }
+impl Eq for GripSource {}
+
+impl fmt::Debug for GripSource {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.label)
     }
+}
+
+/// A steering wheel or a yoke.
+pub const WHEEL: GripSource = GripSource::new("wheel", || bar(diameters().wheel_m), Firmness::Held);
+pub const HANDLEBARS: GripSource = GripSource::new(
+    "handlebars",
+    || bar(diameters().handlebars_m),
+    Firmness::Held,
+);
+/// A helicopter's cyclic or a plane's flight stick.
+pub const STICK: GripSource = GripSource::new("stick", || bar(diameters().stick_m), Firmness::Held);
+/// A helicopter's collective or a plane's throttle.
+pub const LEVER: GripSource = GripSource::new("lever", || bar(diameters().lever_m), Firmness::Held);
+/// The grapple line, while the grapple carries the player.
+pub const GRAPPLE_LINE: GripSource = GripSource::new(
+    "grapple line",
+    || bar(diameters().grapple_line_m),
+    Firmness::Held,
+);
+/// An empty palm pressed on a surface: a wall, a crate, or a ledge pushed down on.
+pub const SURFACE: GripSource = GripSource::new("surface", || GripPose::FlatPalm, Firmness::Held);
+
+/// The most sources the registered order may hold.
+pub const MAX_SOURCES: usize = 32;
+
+/// A round bar of `diameter_m` metres.
+pub const fn bar(diameter_m: f32) -> GripPose {
+    GripPose::Cylinder { diameter_m }
+}
+
+/// The bar diameters of the sources whose hold is a round bar.
+pub fn diameters() -> &'static SourceDiametersTuning {
+    &FINGERS_TUNING.get().diameters
 }
 
 /// How firmly a hold holds, which sets the pose's share
@@ -251,7 +212,16 @@ impl Grip {
 /// Declare what `hand` holds on this tick. Call it on every tick of the source while the hand
 /// holds the thing; a hand whose declarations stop is let go.
 pub fn declare(hand: Hand, grip: Grip) {
-    DECLARED.lock()[hand.index()][grip.source.index()] = Some((grip, Stamp::now()));
+    let Some(rank) = rank(grip.source) else {
+        if !UNORDERED.swap(true, Ordering::Relaxed) {
+            tracing::error!(
+                source = grip.source.label(),
+                "grip: a source outside the registered order declared a grip; it is ignored"
+            );
+        }
+        return;
+    };
+    DECLARED.lock()[hand.index()][rank] = Some((grip, Stamp::now()));
 }
 
 /// The grip `hand` holds now: the winning declaration made within `max_age`.
@@ -345,11 +315,23 @@ impl SourceLog {
 /// The shortest gap between two logged changes of one hand's grip source.
 pub(crate) const LOG_INTERVAL: Duration = Duration::from_millis(500);
 
-type Declarations = [Option<(Grip, Stamp)>; GripSource::ALL.len()];
+type Declarations = [Option<(Grip, Stamp)>; MAX_SOURCES];
 
-/// Each hand's latest declaration per source, indexed by [`Hand::index`] and
-/// [`GripSource::index`].
-static DECLARED: Mutex<[Declarations; 2]> = Mutex::new([[None; GripSource::ALL.len()]; 2]);
+/// Each hand's latest declaration per source, indexed by [`Hand::index`] and the source's place in
+/// the registered order ([`rank`]).
+static DECLARED: Mutex<[Declarations; 2]> = Mutex::new([[None; MAX_SOURCES]; 2]);
+
+/// Whether a source outside the registered order has declared, so it is logged once.
+static UNORDERED: AtomicBool = AtomicBool::new(false);
+
+/// `source`'s place in the registered order, the first winning.
+fn rank(source: GripSource) -> Option<usize> {
+    let order = contributions::get().map_or(&[][..], |contributions| contributions.grip_order);
+    order
+        .iter()
+        .take(MAX_SOURCES)
+        .position(|ordered| *ordered == source)
+}
 
 /// The first source's declaration made within `max_age` of `now`.
 fn winner(declared: &Declarations, now: Stamp, max_age: Duration) -> Option<Grip> {
@@ -373,33 +355,30 @@ fn fresh(
 mod tests {
     use super::*;
 
-    #[test]
-    fn the_sources_are_indexed_in_order() {
-        for (i, source) in GripSource::ALL.into_iter().enumerate() {
-            assert_eq!(source.index(), i);
-            assert!(!source.label().is_empty());
-        }
-    }
+    /// Stand-ins for the sources the systems above define, in their winning order.
+    const BALL: GripSource = GripSource::new("ball", || GripPose::GrenadePalm, Firmness::Held);
+    const LEDGE: GripSource = GripSource::new("ledge", || GripPose::LedgeHook, Firmness::Grip);
+    const LOOSE: GripSource = GripSource::new("loose", || GripPose::Wrap, Firmness::Grip);
 
     #[test]
     fn the_first_fresh_source_wins() {
         let earlier = Stamp::from_nanos(1_000_000_000);
         let now = earlier + Duration::from_millis(80);
         let age = Duration::from_millis(50);
-        let mut declared: Declarations = [None; GripSource::ALL.len()];
+        let mut declared: Declarations = [None; MAX_SOURCES];
         assert_eq!(winner(&declared, now, age), None);
-        declared[GripSource::Pickup.index()] = Some((Grip::new(GripSource::Pickup), now));
-        declared[GripSource::Grenade.index()] = Some((Grip::new(GripSource::Grenade), earlier));
+        declared[2] = Some((Grip::new(LOOSE), now));
+        declared[0] = Some((Grip::new(BALL), earlier));
         assert_eq!(
             winner(&declared, now, age).map(|g| g.source),
-            Some(GripSource::Pickup),
+            Some(LOOSE),
             "a stale declaration has let go"
         );
-        declared[GripSource::Grenade.index()] = Some((Grip::new(GripSource::Grenade), now));
+        declared[0] = Some((Grip::new(BALL), now));
         assert_eq!(
             winner(&declared, now, age).map(|g| g.source),
-            Some(GripSource::Grenade),
-            "what the fingers hold wins"
+            Some(BALL),
+            "the earlier source in the order wins"
         );
     }
 
@@ -408,12 +387,12 @@ mod tests {
         let earlier = Stamp::from_nanos(1_000_000_000);
         let now = earlier + Duration::from_millis(80);
         let age = Duration::from_millis(50);
-        let mut declared: Declarations = [None; GripSource::ALL.len()];
-        declared[GripSource::Climb.index()] = Some((Grip::new(GripSource::Climb), now));
-        declared[GripSource::Magazine.index()] = Some((Grip::new(GripSource::Magazine), now));
-        declared[GripSource::Door.index()] = Some((Grip::new(GripSource::Door), earlier));
+        let mut declared: Declarations = [None; MAX_SOURCES];
+        declared[1] = Some((Grip::new(LEDGE), now));
+        declared[0] = Some((Grip::new(BALL), now));
+        declared[2] = Some((Grip::new(LOOSE), earlier));
         let sources: Vec<GripSource> = fresh(&declared, now, age).map(|g| g.source).collect();
-        assert_eq!(sources, [GripSource::Magazine, GripSource::Climb]);
+        assert_eq!(sources, [BALL, LEDGE]);
     }
 
     #[test]
@@ -438,34 +417,24 @@ mod tests {
 
     #[test]
     fn a_grip_scales_its_share_and_keeps_a_fit() {
-        let grip = Grip::new(GripSource::Wheel).share(0.5).share(0.5);
+        let grip = Grip::new(WHEEL).share(0.5).share(0.5);
         assert_eq!(grip.share, 0.25);
-        assert_eq!(Grip::new(GripSource::Wheel).share(f32::NAN).share, 0.0);
-        assert_eq!(Grip::new(GripSource::Wheel).share(3.0).share, 1.0);
+        assert_eq!(Grip::new(WHEEL).share(f32::NAN).share, 0.0);
+        assert_eq!(Grip::new(WHEEL).share(3.0).share, 1.0);
         let fit = [Some(0.5), None, None, None, None];
-        assert_eq!(Grip::new(GripSource::Pickup).fitted(Some(fit)).fit, fit);
-        assert_eq!(Grip::new(GripSource::Pickup).fitted(None).fit, [None; 5]);
+        assert_eq!(Grip::new(LOOSE).fitted(Some(fit)).fit, fit);
+        assert_eq!(Grip::new(LOOSE).fitted(None).fit, [None; 5]);
         assert_eq!(
-            Grip::new(GripSource::Pickup).pose(GripPose::FlatPalm).pose,
+            Grip::new(LOOSE).pose(GripPose::FlatPalm).pose,
             GripPose::FlatPalm
         );
     }
 
     #[test]
-    fn sticky_holds_hold_and_grip_holds_follow_the_grip() {
-        assert_eq!(GripSource::Gun.firmness(), Firmness::Held);
-        assert_eq!(GripSource::GrappleLine.firmness(), Firmness::Held);
-        assert_eq!(GripSource::Pickup.firmness(), Firmness::Grip);
-        assert_eq!(GripSource::Climb.firmness(), Firmness::Grip);
-        assert_eq!(GripSource::Stunt.firmness(), Firmness::Grip);
-        assert_eq!(
-            GripSource::of_control(ControlKind::Throttle),
-            GripSource::Lever
-        );
-        assert_eq!(
-            GripSource::of_control(ControlKind::FlightStick),
-            GripSource::Stick
-        );
+    fn a_vehicle_control_takes_its_bar() {
+        assert_eq!(GripSource::of_control(ControlKind::Throttle), LEVER);
+        assert_eq!(GripSource::of_control(ControlKind::FlightStick), STICK);
+        assert_eq!(GripSource::of_control(ControlKind::Yoke), WHEEL);
     }
 
     #[test]
@@ -473,25 +442,22 @@ mod tests {
         let start = Stamp::now();
         let mut log = SourceLog::NEW;
         assert_eq!(log.observe(start, None), None, "an empty hand is not news");
-        let first = log.observe(start, Some(GripSource::Gun)).unwrap();
+        let first = log.observe(start, Some(BALL)).unwrap();
         assert_eq!(
             (first.from, first.to, first.unlogged),
-            (None, Some(GripSource::Gun), 0)
+            (None, Some(BALL), 0)
         );
         let soon = start + Duration::from_millis(100);
         assert_eq!(log.observe(soon, None), None, "too soon");
-        assert_eq!(log.observe(soon, Some(GripSource::Pickup)), None);
-        assert_eq!(log.observe(soon, Some(GripSource::Pickup)), None);
+        assert_eq!(log.observe(soon, Some(LOOSE)), None);
+        assert_eq!(log.observe(soon, Some(LOOSE)), None);
         let later = start + LOG_INTERVAL;
-        let settled = log.observe(later, Some(GripSource::Pickup)).unwrap();
-        assert_eq!(settled.from, Some(GripSource::Gun));
-        assert_eq!(settled.to, Some(GripSource::Pickup));
+        let settled = log.observe(later, Some(LOOSE)).unwrap();
+        assert_eq!(settled.from, Some(BALL));
+        assert_eq!(settled.to, Some(LOOSE));
         assert_eq!(settled.unlogged, 1, "the release in between was not logged");
-        assert_eq!(log.observe(later, Some(GripSource::Pickup)), None);
+        assert_eq!(log.observe(later, Some(LOOSE)), None);
         let back = later + LOG_INTERVAL;
-        assert_eq!(
-            log.observe(back, Some(GripSource::Gun)).unwrap().unlogged,
-            0
-        );
+        assert_eq!(log.observe(back, Some(BALL)).unwrap().unlogged, 0);
     }
 }

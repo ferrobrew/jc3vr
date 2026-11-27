@@ -8,10 +8,7 @@
 //! its new hand.
 
 use jc3vr_body::controllers::{
-    fingers::{
-        grip,
-        grip::{Grip, GripSource},
-    },
+    fingers::{grip, grip::Grip},
     grab::{GrabVolume, resolve::dock_target},
     hands,
     hands::ActiveHands,
@@ -39,7 +36,7 @@ use crate::controllers::{
         engine::HeldWeapon,
         foregrip,
         foregrip::{GripGeometry, Inputs, Transition, TwoHandedWeapon},
-        grenade,
+        grenade, grip_sources,
         handling_tuning::HANDLING,
         regions,
         regions::GunRegion,
@@ -400,27 +397,27 @@ fn declare_grips(hands: &[HandContents; 2]) {
             .filter(move |hand| pick(&hands[hand.index()]))
     };
     for hand in held(HandContents::gun) {
-        grip::declare(hand, Grip::new(GripSource::Gun));
+        grip::declare(hand, Grip::new(grip_sources::GUN));
     }
     if let Some(two) = foregrip::two_hand_grip() {
         grip::declare(
             two.holder.other(),
-            Grip::new(GripSource::Foregrip)
+            Grip::new(grip_sources::FOREGRIP)
                 .pose(two.region.finger_pose())
                 .share(two.weight),
         );
     }
     for hand in held(|hand| hand.grenade.is_some()) {
-        grip::declare(hand, Grip::new(GripSource::Grenade));
+        grip::declare(hand, Grip::new(grip_sources::GRENADE));
     }
     for hand in held(|hand| hand.charge.is_some()) {
-        grip::declare(hand, Grip::new(GripSource::C4));
+        grip::declare(hand, Grip::new(grip_sources::C4));
     }
     for hand in held(|hand| hand.detonator) {
-        grip::declare(hand, Grip::new(GripSource::Gun));
+        grip::declare(hand, Grip::new(grip_sources::GUN));
     }
     for hand in held(|hand| hand.round) {
-        grip::declare(hand, Grip::new(GripSource::Magazine));
+        grip::declare(hand, Grip::new(grip_sources::MAGAZINE));
     }
 }
 

@@ -24,7 +24,7 @@ use jc3gi::input::input_action_map::Action;
 use jc3vr_body::controllers::{
     fingers::{
         grip,
-        grip::{Grip, GripSource, catalogue::GripPose},
+        grip::{Grip, catalogue::GripPose},
     },
     haptics,
     intent::hold::{Desired, MapKind, Target, Want},
@@ -38,7 +38,7 @@ use parking_lot::Mutex;
 
 use crate::controllers::physical_hands::{
     characters::tuning::CHARACTERS,
-    climb,
+    climb, grip_sources,
     stunt::{
         engine::Entry,
         solve::{Decision, StuntKind, Tick, Tracker, Tuning},
@@ -183,7 +183,7 @@ pub fn finish_tick(game: &GameTick<'_>, held: [bool; 2], desired: &mut Vec<Desir
         let i = hand.index();
         let in_hang = state.status.holding[i];
         if in_hang || (held[i] && helicopters[i]) {
-            grip::declare(hand, Grip::new(GripSource::Stunt).pose(skid));
+            grip::declare(hand, Grip::new(grip_sources::STUNT).pose(skid));
         }
         if in_hang && strain >= tuning.min_strain {
             strains.push((hand, strain));
