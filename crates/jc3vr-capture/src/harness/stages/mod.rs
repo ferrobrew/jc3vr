@@ -449,7 +449,7 @@ pub(crate) fn capture_slot(stage: Stage, mgr: *mut c_void, slot: u32) {
         if mgr.is_null() {
             bail!("post-effects manager unavailable");
         }
-        // SAFETY: the existing post-chain hook supplies the manager and its current result slot.
+        // SAFETY: the post-chain hook supplies the manager and its current result slot.
         Ok(unsafe {
             (mgr as *const *mut Texture)
                 .add(slot as usize + PostEffectsManager::RESULT_TEXTURE_SLOT_BASE as usize)

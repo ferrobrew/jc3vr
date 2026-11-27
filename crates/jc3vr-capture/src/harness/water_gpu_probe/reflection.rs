@@ -33,9 +33,8 @@ use windows::{
 
 use crate::harness::water_gpu_probe::{pointer, viewport_text};
 
-/// A scene costs fifteen records across its four modes (three isolated, six double-draw, three
-/// single-pass), so sky and shore together cost thirty; this leaves headroom for one more scene while
-/// still stopping well short of a whole-session trace.
+/// Enough for the sky and shore scenes' records across the render modes, with headroom for one more
+/// scene, while still stopping well short of a whole-session trace.
 const MAX_INVOCATIONS: usize = 40;
 
 /// The most draws one bracketed pass logs. A reflection pass issues a handful of water draws; the cap

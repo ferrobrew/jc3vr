@@ -48,7 +48,9 @@ pub(crate) unsafe fn raw_entry(kind: RawDrawKind, context: *mut c_void) {
     unsafe { crate::harness::stages::observe_producer_draw(context) };
     // SAFETY: per this function's contract, `context` is the live immediate context.
     unsafe { crate::harness::draw_census::on_call(kind, context) };
+    // SAFETY: as above.
     unsafe { reflection::on_raw_draw(kind, context) };
+    // SAFETY: as above.
     unsafe { inputs::on_raw_draw(context) };
     RAW_CAPTURE.with(|state| {
         let mut state = state.borrow_mut();

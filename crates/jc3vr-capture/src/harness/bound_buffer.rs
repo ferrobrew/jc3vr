@@ -7,7 +7,7 @@ use windows::{
     core::Interface,
 };
 
-/// The longest prefix of a bound constant-buffer range a readback decodes, in floats.
+/// The prefix of a bound constant-buffer range the water readbacks decode, in 16-byte constants.
 pub(crate) const WATER_READBACK_ROWS: u32 = 16;
 const MAX_READBACK_ROWS: u32 = 18;
 
@@ -252,8 +252,8 @@ pub(crate) enum RangeError {
 
 /// Decodes the floats of a bound constant-buffer range from a whole-buffer readback.
 ///
-/// The range starts at `first_constant` (a 16-byte constant) and is capped at the requested rows.
-/// Bytes before the range are not decoded.
+/// The range starts at `first_constant` (a 16-byte constant) and is capped at
+/// [`WATER_READBACK_ROWS`]. Bytes before the range are not decoded.
 #[cfg(test)]
 pub(crate) fn decode_range(
     bytes: &[u8],
