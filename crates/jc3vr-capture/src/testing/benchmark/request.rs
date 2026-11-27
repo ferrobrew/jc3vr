@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{screenshot::harness::RequestId, testing::visual::overrides::SinglePassOverrides};
+use crate::{harness::RequestId, testing::visual::overrides::SinglePassOverrides};
 
 /// The render mode a benchmark run measures, as a player would run it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]

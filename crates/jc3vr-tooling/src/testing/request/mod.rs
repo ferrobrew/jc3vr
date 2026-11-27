@@ -13,12 +13,10 @@ use std::{
 };
 
 use jc3vr_capture::{
-    screenshot::{
-        harness,
-        harness::{
-            CaptureRequest, RequestId,
-            snapshot::{SnapshotError, SnapshotRequest, SnapshotTable},
-        },
+    harness,
+    harness::{
+        CaptureRequest, RequestId,
+        snapshot::{SnapshotError, SnapshotRequest, SnapshotTable},
     },
     testing::{
         benchmark::{BenchmarkError, BenchmarkRequest, BenchmarkTable},

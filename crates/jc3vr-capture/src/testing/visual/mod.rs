@@ -356,7 +356,7 @@ pub fn process_pending() {
             jc3vr_render::fsr::request_history_reset();
             state.visual_overrides = visual_overrides;
             headset::set_active(visual_overrides.and_then(|overrides| overrides.headset));
-            crate::screenshot::harness::stages::set_geometry_only(
+            crate::harness::stages::set_geometry_only(
                 visual_overrides.is_some_and(|overrides| overrides.stages.is_some()),
             );
             CLOCK_HELD.store(true, Ordering::Release);
@@ -409,7 +409,7 @@ pub fn process_pending() {
             harness::set_visual_active(false);
             state.visual_overrides = None;
             headset::set_active(None);
-            crate::screenshot::harness::stages::set_geometry_only(false);
+            crate::harness::stages::set_geometry_only(false);
             state.clear_pose();
             CLOCK_HELD.store(false, Ordering::Release);
             dispatch::set_mode(RenderMode::Native);
@@ -535,7 +535,7 @@ pub(crate) fn clock_held() -> bool {
 pub fn shutdown() {
     single_pass::shader_identity::disarm();
     headset::set_active(None);
-    crate::screenshot::harness::stages::set_geometry_only(false);
+    crate::harness::stages::set_geometry_only(false);
     CLOCK_HELD.store(false, Ordering::Release);
     let mut state = STATE.lock();
     while let Some(request) = state.pending.pop_front() {

@@ -18,7 +18,7 @@ use jc3vr_capture::testing::{benchmark, visual};
 /// the visual stage. Game thread, once per frame from the top of the game's update, after the
 /// director's pass (which services the stage's teleport).
 pub fn update() {
-    jc3vr_capture::screenshot::harness::tick();
+    jc3vr_capture::harness::tick();
     visual::tick();
     request::poll();
     benchmark::tick();
@@ -30,5 +30,5 @@ pub fn update() {
 pub fn shutdown() -> bool {
     benchmark::shutdown();
     visual::shutdown();
-    jc3vr_capture::screenshot::harness::snapshot::shutdown()
+    jc3vr_capture::harness::snapshot::shutdown()
 }

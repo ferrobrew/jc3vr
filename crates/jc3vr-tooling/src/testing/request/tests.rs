@@ -1,6 +1,6 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use jc3vr_capture::screenshot::harness::{CascadeScale, WaterReflection};
+use jc3vr_capture::harness::{CascadeScale, WaterReflection};
 use jc3vr_view::stereo::config::SinglePassSwitch;
 use pretty_assertions::assert_eq;
 
