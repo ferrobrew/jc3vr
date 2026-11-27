@@ -3,9 +3,10 @@
 //! Normally the flat egui overlay is drawn straight onto the mirror's back buffer by
 //! [`EguiState::render`](crate::egui_impl::EguiState::render). That call mutates the shared
 //! `EguiState` and issues D3D work, so it is only safe on the game thread after the frame's egui
-//! pass — which the deferred frame tail ([`jc3vr_view::vr::tail`]) is not. So when the tail is deferred,
-//! render the overlay once on the draw thread, into an offscreen texture, and let the mirror composite
-//! that texture from whichever thread runs it — the model the floating panel (issue #24) uses.
+//! pass, which the deferred frame tail ([`jc3vr_view::vr::tail`]) is not. So when the tail is
+//! deferred, the overlay renders once on the draw thread, into an offscreen texture, and the mirror
+//! composites that texture from whichever thread runs it, the model the floating panel (issue #24)
+//! uses.
 //!
 //! It renders on the frame's last near dispatch, not on eye 0's like the panel: the game thread waits
 //! on eye 0's walk, and with the tail deferred it does not wait on the last one, which the tail drains
@@ -16,8 +17,7 @@
 //!
 //! Only active while a VR session renders, the mirror is on, the floating panel is off (with the
 //! panel on, the mirror composites the panel texture instead), and the clean view is off
-//! ([`jc3vr_core::clean_view`], toggled with F4). Off, every path is the untouched flat
-//! overlay.
+//! ([`jc3vr_core::clean_view`], toggled with F4). Off, every path is the untouched flat overlay.
 
 use jc3gi::graphics_engine::{device::Device, texture::Texture};
 use parking_lot::Mutex;
@@ -33,10 +33,11 @@ pub fn release_on_eject() {
     *OVERLAY.lock() = None;
 }
 
-/// Whether the flat overlay should be redirected into the offscreen texture this frame: a VR frame is
-/// rendering, the mirror is on, the floating panel is off, and the clean view is off. Read on the draw thread (the render
-/// gate) and the mirror thread (the composite gate), so it uses the draw-safe render-params signal,
-/// not the VR runtime lock (see [`crate::hud::egui_panel::is_active`] for why).
+/// Whether the flat overlay should be redirected into the offscreen texture this frame: a VR frame
+/// is rendering, the mirror is on, the floating panel is off, and the clean view is off. Read on the
+/// draw thread (the render gate) and the mirror thread (the composite gate), so it uses the
+/// draw-safe render-params signal, not the VR runtime lock (see
+/// [`crate::hud::egui_panel::is_active`] for why).
 pub fn is_active() -> bool {
     jc3vr_view::vr::render_params(0).is_some()
         && !jc3vr_core::clean_view::hides_desktop()

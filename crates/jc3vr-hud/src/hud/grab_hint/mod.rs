@@ -11,9 +11,10 @@
 //! left hand's on the left ([`layout`]).
 //!
 //! The weapon handling's input tick publishes each hand's hint
-//! ([`jc3vr_weapons::controllers::weapons::hud_feed::grab_hint`]), with the icons named by weapon id. The
-//! draw reads the icons from the archives ([`crate::hud::game_icons`]), paints a texture per hand
-//! when its hint changes, and draws it on the panel's plane after the panel, with a short fade. A hint whose icons are not all loaded is not drawn: it never falls back to text.
+//! ([`jc3vr_weapons::controllers::weapons::hud_feed::grab_hint`]), with the icons named by weapon
+//! id. The draw reads the icons from the archives ([`crate::hud::game_icons`]), paints a texture
+//! per hand when its hint changes, and draws it on the panel's plane after the panel, with a short
+//! fade. A hint whose icons are not all loaded is not drawn: it never falls back to text.
 
 mod layout;
 mod paint;

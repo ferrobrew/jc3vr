@@ -1,6 +1,6 @@
-//! The controls summary's floating panel: the third egui-to-texture panel, after the gameplay HUD
-//! and the debug panel ([`crate::hud::egui_panel`]), anchored to the off-hand wrist rather than the
-//! head ([`jc3vr_gameplay::controllers::summary`]).
+//! The controls summary's floating panel: an egui-to-texture panel like the debug panel
+//! ([`crate::hud::egui_panel`]) and the restart notice ([`crate::hud::restart_notice`]), anchored
+//! to the off-hand wrist rather than the head ([`jc3vr_gameplay::controllers::summary`]).
 //!
 //! It has its own egui context and renderer, so that it never shares input, output, fonts, or
 //! textures with the debug UI, and it takes no input. On eye 0 the glance and the fade are
@@ -86,7 +86,7 @@ pub struct PanelStatus {
 pub struct PanelLayout {
     /// The texture's size, pixels.
     pub size: (u32, u32),
-    /// The configured readable row height, independent of the number of hints.
+    /// The readable row height ([`ROW_PX`]), independent of the number of hints.
     pub row_px: f32,
     /// The visible page and total, both one-based.
     pub page: usize,
@@ -522,8 +522,8 @@ fn paint_text(painter: &egui::Painter, text: &str, bounds: Bounds, size: f32, co
     painter.galley(Pos2::new(bounds.x, bounds.y), galley, color);
 }
 
-/// The fonts: Libre Franklin (SIL OFL, `crates/jc3vr-hud/assets/fonts/libre-franklin`), a revival of the
-/// Franklin Gothic the game's own UI is set in, before egui's bundled fonts, which cover the
+/// The fonts: Libre Franklin (SIL OFL, `crates/jc3vr-hud/assets/fonts/libre-franklin`), a revival
+/// of the Franklin Gothic the game's own UI is set in, before egui's bundled fonts, which cover the
 /// Cyrillic it lacks.
 fn fonts() -> egui::FontDefinitions {
     let mut fonts = egui::FontDefinitions::default();

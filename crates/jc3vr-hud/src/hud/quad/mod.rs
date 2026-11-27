@@ -1,7 +1,7 @@
 //! Draw the redirected HUD texture as a lazy-follow in-scene quad, per eye, over the final image.
 //!
-//! Step one redirected the HUD into our texture and dropped it from the scene composite; this draws it
-//! back in as a head-relative panel that lazily follows the head's orientation with critically-damped
+//! The redirect ([`crate::hud`]) moves the HUD into the mod's texture and drops it from the scene
+//! composite; this draws it back in as a head-relative panel that lazily follows the head's orientation with critically-damped
 //! quaternion slerp. The panel sits at its own world-space orientation (the damped follow rotation),
 //! positioned at the camera position + panel_forward * distance. Corners are uploaded alongside the
 //! camera's per-eye view-projection matrix; the vertex shader projects each corner
@@ -392,8 +392,7 @@ impl HudQuad {
     }
 }
 
-/// Geometry parameters for computing the panel's world-space corners. Bundled into a struct to keep
-/// the argument list under `clippy::too_many_arguments`.
+/// Geometry parameters for computing the panel's world-space corners.
 pub(crate) struct PanelParams {
     /// The panel's anchor position (the eye/head position the panel is placed in front of). In
     /// [`HudMode::Hud`](crate::hud::HudMode::Hud) this tracks the head; in

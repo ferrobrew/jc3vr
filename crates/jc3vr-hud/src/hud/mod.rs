@@ -1,11 +1,12 @@
-//! Floating-HUD redirect: render the game's HUD into our own offscreen texture.
+//! The floating HUD: the game's HUD redirected into the mod's own offscreen texture and drawn as a
+//! panel in the world, with the layers drawn around it.
 //!
 //! The Scaleform UI normally renders into the engine's working surface, so it composites onto the
-//! scene at the screen plane. Step one of the floating HUD is to redirect it into a texture we own, by
-//! rebinding the UI's render buffer ([`UIManager::m_RenderBuffer`]) to a render-target view over our
-//! texture via [`RenderTargetData::UpdateData`]. Once redirected, the HUD no longer lands on the
-//! working surface, so it drops out of the scene composite automatically; we later draw our texture as
-//! a 3D quad.
+//! scene at the screen plane. The redirect rebinds the UI's render buffer
+//! ([`UIManager::m_RenderBuffer`]) to a render-target view over the mod's texture via
+//! [`RenderTargetData::UpdateData`](jc3gi::ui::ui_manager::RenderTargetData::UpdateData). Once
+//! redirected, the HUD no longer lands on the working surface, so it drops out of the scene
+//! composite automatically, and the quad pass draws the texture as a 3D quad.
 //!
 //! The rebind is not tied to startup, so under late injection (where `InitPlatformRT` has already
 //! created `m_RenderBuffer`) we just call `UpdateData` once. We install lazily on the render thread and
@@ -16,7 +17,7 @@
 //! `InitPlatformRT` rebinds GPU views, so the redirect and the restore both run from the per-frame
 //! [`tick`] on the render thread. Shutdown (game thread) just clears the config flag and lets a few
 //! more frames tick before the hooks come down, so the restore happens on the render thread the same
-//! way a toggle-off does.
+//! way turning the redirect off does.
 //!
 //! The panel has two modes (see [`HudMode`], chosen per frame by [`current_mode`]): the gameplay HUD
 //! lazily follows the head's orientation with critically-damped quaternion slerp, while full-screen
@@ -26,14 +27,18 @@
 //! eye's own per-eye VP, so it sits at a finite world position with correct stereo depth rather than
 //! being head-locked at infinity.
 //!
-//! The module is split into the GPU resources ([`target`]), the game-side UI rebind operations
-//! ([`binding`]), the quad draw pass ([`quad`]), the [`state`] machine that drives them, and the
-//! [`config`] types for tuning parameters. Parts of the gameplay HUD leave the panel through the
+//! The redirect is split into the GPU resources ([`target`]), the game-side UI rebind operations
+//! ([`binding`]), the quad draw pass ([`quad`]), and the [`state`] machine that drives them; the
+//! settings are in [`config`] and the tuning in [`tuning`]. Parts of the gameplay HUD leave the panel through the
 //! [`atlas`]: the [`world_markers`] at their world points, the [`anchored`] readouts at the
 //! gun hand and the off-hand's wrist, and the reticles at the aim point ([`reticle`]).
 //! The [`grab_hint`] draws the game's icons ([`game_icons`]) on the panel's plane, and
 //! [`lost_weapons`] over the weapons the player let go of; [`mark_labels`] names the grip markers
-//! that carry a label, such as the nitrous button.
+//! that carry a label, such as the nitrous button. Beside the HUD panel float the debug UI's
+//! [`egui_panel`], the controls [`summary_panel`], and the [`restart_notice`]; the controller
+//! [`pointer`](mod@pointer)s and the [`cursor`] reach into the panels, the [`scaleform`] module
+//! edits the HUD movie's clips, and the [`mirror_overlay`] draws the layers onto the desktop
+//! mirror.
 
 pub mod aim;
 pub mod anchored;
@@ -290,7 +295,7 @@ fn hud_target_size(render_scale: f32, aspect: f32, eye_width: u32, eye_height: u
 }
 
 /// Draw the redirected HUD as a floating quad for `eye` over `target` (the eye's linear back buffer),
-/// when both the redirect and the quad are enabled. The first UI eye chooses the panel pose for the
+/// while the redirect is on. The first UI eye chooses the panel pose for the
 /// current mode (head-following or world-static) and computes the shared world-space corners.
 /// Ordinary two-pass rendering crops and clears the HUD texture on every dispatch. Collapse
 /// crops only on eye 0, reuses the prepared textures for both eyes, and clears after eye 1. Called
@@ -488,9 +493,9 @@ pub(crate) fn compute_panel_vp() -> Option<(Matrix4, Matrix4)> {
 }
 
 /// Put the engine's own UI binding back and release the redirected HUD texture and its depth, for
-/// eject. The cleanup above asks the per-frame [`tick`] to do this, but the eject renders no further
-/// frames, so without it the target (a colour and a depth texture at one and a half times the eye
-/// size) stays allocated after the payload is gone. Call after the engine is back at its native
+/// eject. The shutdown cleanup ([`install`]) asks the per-frame [`tick`] to do this, but the eject
+/// renders no further frames, so without it the target (a colour and a depth texture) stays
+/// allocated after the payload is gone. Call after the engine is back at its native
 /// size, which [`restore`](state::HudState::restore) binds the UI to.
 pub fn release_on_eject() {
     let Some((width, height)) = jc3vr_view::stereo::render_size() else {
@@ -500,7 +505,8 @@ pub fn release_on_eject() {
 }
 
 /// Register the HUD's shutdown cleanup. Call once at init. The cleanup clears the redirect config flag
-/// (so the per-frame [`tick`] restores the engine binding on the render thread, as a toggle-off does)
+/// (so the per-frame [`tick`] restores the engine binding on the render thread, as turning the
+/// redirect off does)
 /// and releases the egui preview registrations when the owning renderer is available. This requests
 /// render-thread restoration; it does not acknowledge native restoration or establish unload safety.
 pub fn install() {

@@ -21,8 +21,8 @@ pub static HUD_CONFIG: ConfigSlot<HudConfig> = ConfigSlot::with(
 /// Floating-HUD settings. See `docs/mod/hud.md`.
 #[derive(Copy, Clone, Serialize, Deserialize)]
 pub struct HudConfig {
-    /// Redirect the HUD into our own offscreen texture (the first step toward the floating panel).
-    /// Off leaves the HUD on the engine surface as normal.
+    /// Redirect the HUD into the mod's own offscreen texture, which the floating panel draws. Off
+    /// leaves the HUD on the engine surface as normal.
     pub redirect: bool,
     /// Distance from the eye to the panel, in meters. The panel resizes with distance to keep a
     /// constant apparent (angular) size, so this can be changed freely without the HUD growing or
@@ -34,7 +34,7 @@ pub struct HudConfig {
     /// looking the same size and fitting the same horizontal content.
     pub panel_scale: f32,
     /// The interactive egui debug panel floating in 3D space in VR (issue #24). Off by default;
-    /// only takes effect while an OpenXR session is running.
+    /// it takes effect only while an OpenXR session is running.
     #[serde(default)]
     pub egui_panel: EguiPanelConfig,
     /// The HUD atlas: parts of the gameplay HUD moved into their own cells of the HUD texture for
@@ -96,7 +96,7 @@ impl Default for HudConfig {
 #[derive(Copy, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AtlasConfig {
-    /// Master toggle.
+    /// Whether the atlas moves the parts into their cells.
     pub enabled: bool,
 }
 

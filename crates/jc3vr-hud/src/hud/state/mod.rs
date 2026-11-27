@@ -192,7 +192,7 @@ impl HudState {
     }
 
     /// Ensure the HUD is redirected into a target at `texture_width` x `texture_height`, (re)creating
-    /// the target on a config-size change and applying the rebind once. A render-size change
+    /// the target on a size change and applying the rebind once. A render-size change
     /// (`render_width`/`render_height`) forces a re-apply without recreating the target,
     /// because the engine re-runs `InitPlatformRT` on a device/reset and discards our rebind. A failed
     /// allocation keeps an applied old target usable. A failed binding restores the engine binding

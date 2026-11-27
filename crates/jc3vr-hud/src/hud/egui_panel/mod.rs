@@ -17,14 +17,15 @@
 //!
 //! This is a wholly independent panel: its own render target, its own placement, and its own
 //! eye-0-cached corners, so it never touches [`crate::hud::state::HUD_STATE`] and cannot perturb the
-//! gameplay HUD. The whole feature is gated behind [`is_active`] -- an OpenXR session running *and* the
-//! opt-in [`EguiPanelConfig::enabled`] flag -- and defaults off, so with it off
-//! every path is byte-identical to the flat overlay baseline.
+//! gameplay HUD. The whole feature is gated behind [`is_active`] -- an OpenXR session running *and*
+//! the opt-in [`EguiPanelConfig::enabled`] flag -- and defaults off, so with it off every path is
+//! byte-identical to the flat overlay baseline.
 //!
 //! egui is tessellated exactly once per frame (the single-use `RendererOutput`), on eye 0, into the
-//! panel texture; both eyes then draw the same cached world-space corners through their own per-eye VP
-//! (the same compute-on-eye-0 rule as the gameplay HUD), and the desktop mirror composites the same
-//! panel texture (see [`jc3vr_view::vr::mirror`]). There is never a second egui pass.
+//! panel texture; both eyes then draw the same cached world-space corners through their own per-eye
+//! VP (the same compute-on-eye-0 rule as the gameplay HUD), and the desktop mirror composites the
+//! same panel texture (through the HUD's [`MirrorLayers`](jc3vr_view::vr::MirrorLayers)
+//! registration). There is never a second egui pass.
 
 mod placement;
 mod slot;
@@ -75,24 +76,24 @@ pub fn release_on_eject() {
 /// their edge.
 static WAS_ACTIVE: AtomicBool = AtomicBool::new(false);
 
-/// Whether the egui floating panel is active this frame: the opt-in panel is enabled and a VR frame
-/// is rendering. The single predicate gating every panel path; off is the untouched baseline.
+/// Whether the egui floating panel is active this frame: the opt-in panel is enabled, the clean
+/// view does not hide everything, and a VR frame is rendering. The single predicate gating every
+/// panel path; off is the untouched baseline.
 ///
 /// This runs on the render thread (per-eye `draw_quad`), which must never block on the VR runtime's
 /// locks: the frame holds the submit side across the eye draws (`FrameContext`), so a blocking lock
-/// here (as an earlier `vr::is_running()` was) deadlocks the draw against `WaitForCPUDrawToFinish`
-/// -- even with the panel disabled, since the config check came second. The enabled flag is checked first (cheap, and
-/// `CONFIG` is never held across a draw), and the VR-frame signal is the draw-safe [`jc3vr_view::vr::render_params`]
-/// slot (a separate lock, published per frame precisely so draw-thread hooks can read it), not the
-/// runtime lock.
+/// on the runtime here would deadlock the draw against `WaitForCPUDrawToFinish`. The enabled flag
+/// is checked first (cheap, and [`HUD_CONFIG`] is never held across a draw), and the VR-frame
+/// signal is the draw-safe [`jc3vr_view::vr::render_params`] slot (a separate lock, published per
+/// frame precisely so draw-thread hooks can read it), not the runtime lock.
 pub fn is_active() -> bool {
     HUD_CONFIG.query(|c| c.egui_panel.enabled)
         && !jc3vr_core::clean_view::hides_everything()
         && jc3vr_view::vr::render_params(0).is_some()
 }
 
-/// Show or hide the panel through the existing F8/controller route.
-/// Reopening enters Editing; a visible ReadOnly panel cannot edit itself.
+/// Show or hide the panel, for the F8 key and the controller shortcut. Reopening enters editing; a
+/// visible read-only panel cannot edit itself.
 pub fn toggle() -> bool {
     let enabled = {
         let mut hud = HUD_CONFIG.edit();

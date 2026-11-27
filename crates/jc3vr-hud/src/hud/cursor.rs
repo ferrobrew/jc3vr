@@ -66,8 +66,8 @@ pub fn buttons() -> u32 {
     BUTTONS.load(Ordering::Relaxed)
 }
 
-/// Drain the accumulated wheel movement into Flash line units (the engine's own conversion is
-/// `delta / WHEEL_DELTA * 3`). Zero when the wheel has not moved.
+/// Drain the accumulated wheel movement into Flash line units, by the engine's own conversion from
+/// `WHEEL_DELTA` units. Zero when the wheel has not moved.
 pub(crate) fn take_wheel_lines() -> f32 {
     let raw = WHEEL.swap(0, Ordering::Relaxed);
     raw as f32 / 120.0 * 3.0

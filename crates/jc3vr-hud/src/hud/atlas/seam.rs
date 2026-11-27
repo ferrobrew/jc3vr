@@ -1,6 +1,6 @@
 //! The game side of the atlas: at the capture seam, lay out the cells, move the weapon, heat,
-//! tether, and grenade readouts and the aim part's clips into theirs, and after the capture move them back and
-//! publish the layout keyed by the snapshot the capture produced.
+//! tether, and grenade readouts and the aim part's clips into theirs, and after the capture move
+//! them back and publish the layout keyed by the snapshot the capture produced.
 //!
 //! Both halves run in the `MovieImpl::Capture` detour, on the thread that runs
 //! `CUIManager::PreRender`, with every display-tree writer quiescent. The moves are display-info

@@ -56,8 +56,8 @@ pub(crate) struct FrameInputs<'a> {
     pub graphics_engine: Option<&'a GraphicsEngine>,
 }
 
-/// Place this frame's markers (eye 0). Clears the plan when the prototype is off or nothing can be
-/// placed, so the eye passes draw nothing.
+/// Place this frame's markers (eye 0). Clears the plan when the world quads are inactive or nothing
+/// can be placed, so the eye passes draw nothing.
 pub(crate) fn prepare_frame(
     context: &ID3D11DeviceContext,
     device: &Device,

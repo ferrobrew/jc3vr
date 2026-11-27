@@ -19,8 +19,8 @@
 //! - at a mounted gun, while the gun's point comes from the hands;
 //! - in a passenger seat, while the aim's latest results aimed the wielded weapon by hand.
 //!
-//! [`decide`] is the pure rule; [`hide_game_reticles`] reads the mode, the settings, and the aim's
-//! latest results, and holds the reticle clips hidden through [`crate::hud::scaleform`].
+//! [`decide`] is the pure rule; [`hide_game_reticles`] reads the controllers' master switch, the
+//! mode, and the aim's latest results, and holds the reticle clips hidden through [`crate::hud::scaleform`].
 
 use jc3vr_body::controllers::{body_frame, mode, mode::Mode, scheme};
 use jc3vr_gameplay::controllers::config::CONTROLLERS_CONFIG;
@@ -63,11 +63,11 @@ impl AimPlace {
     }
 }
 
-/// What the rule reads: the toggle, the scheme, the place, the vehicle weapons' hand-aim
-/// settings, and the aim's latest results.
+/// What the rule reads: the controllers' master switch, the scheme, the place, the mounted gun's
+/// hand aim, and the aim's latest results.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
 pub(crate) struct ReticleInputs {
-    /// The toggle, with the controllers' master switch.
+    /// The controllers' master switch.
     pub enabled: bool,
     /// Whether the controller scheme is in effect.
     pub(crate) controllers_scheme: bool,

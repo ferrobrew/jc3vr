@@ -1,6 +1,6 @@
 //! The grip markers' labels: a short name drawn upright above a labelled marker
-//! ([`jc3vr_body::controllers::grab::Mark::label`]), such as the cockpit's nitrous button, while a hand
-//! is at it. The overlay that draws the markers has no text, so the HUD draws each label as a quad
+//! ([`jc3vr_body::controllers::grab::Mark::label`]), such as the cockpit's nitrous button, while a
+//! hand is at it. The overlay that draws the markers has no text, so the HUD draws each label as a quad
 //! of the grab hint's haloed text ([`crate::hud::grab_hint`]), with no backing.
 //!
 //! The grip markers publish the labels at the input tick's rate with each marker's anchor
@@ -48,7 +48,8 @@ pub(crate) fn draw(context: &ID3D11DeviceContext, device: &Device, target: &Text
 
 /// The corners of `label`'s quad, seen from `head` (with `head_up`, the head's up), with the
 /// hands' render-time poses `hands`: upright and facing the eye, the tuning's
-/// `mark_labels.height_m` tall, its lower edge `mark_labels.gap_m` above the marker's edge. `None` when the anchor's hand has no pose.
+/// `mark_labels.height_m` tall, its lower edge `mark_labels.gap_m` above the marker's edge. `None`
+/// when the anchor's hand has no pose.
 pub(crate) fn place(
     label: &MarkLabel,
     head: Vec3,

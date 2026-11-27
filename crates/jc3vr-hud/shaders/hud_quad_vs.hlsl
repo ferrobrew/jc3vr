@@ -1,8 +1,8 @@
 // HUD quad vertex shader: projects four world-space corners through the camera's view-projection.
 //
-// Corners are computed CPU-side in view space, transformed to world space, then uploaded. The
-// view-projection matrix (with reverse-Z applied) transforms them to clip space. UVs are hardcoded
-// per vertex ID. `row_major` matches the engine's row-major data layout so `mul(v, M)` = `v * M`.
+// Corners are computed CPU-side in world space, then uploaded. The view-projection matrix (with
+// reverse-Z applied) transforms them to clip space. UVs are hardcoded per vertex ID. `row_major`
+// matches the engine's row-major data layout so `mul(v, M)` = `v * M`.
 
 cbuffer Quad : register(b0)
 {

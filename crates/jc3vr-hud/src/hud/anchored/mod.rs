@@ -1,12 +1,11 @@
 //! The body-anchored HUD readouts, under the controller scheme: an ammunition counter above each
-//! gun in a hand, the tether readout above the off-hand's forearm, the health bar and the heat and grenade
-//! readouts on the inside of the off-hand's wrist, and the weapon selection cross where the hand steering the
-//! weapon wheel was when it opened.
+//! gun in a hand, the tether readout above the off-hand's forearm, the health bar and the heat and
+//! grenade readouts on the inside of the off-hand's wrist, and the weapon selection cross where the
+//! hand steering the weapon wheel was when it opened.
 //!
 //! The ammunition counters follow the rendered guns, including their rotation. The forearm readout
-//! stands upright and faces the eye. The readouts are drawn
-//! without a depth test, like every HUD quad, so they are placed clear of the hand and the gun
-//! rather than tested against them: a readout near the hand that the scene's depth could hide
+//! stands upright and faces the eye. The readouts are drawn without a depth test, like every HUD
+//! quad, so they are placed clear of the hand and the gun rather than tested against them: a readout near the hand that the scene's depth could hide
 //! would vanish into the gun or a wall the gun is pushed against.
 //!
 //! The tether, heat, and grenade readouts are the game's own clips, moved into atlas cells for the

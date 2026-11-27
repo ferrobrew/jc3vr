@@ -1,9 +1,9 @@
-//! The world-marker prototype: the game's on-screen point-of-interest markers drawn as billboards at
+//! The world markers: the game's on-screen point-of-interest markers drawn as billboards at
 //! their world points instead of on the floating panel.
 //!
 //! Every world-anchored HUD marker (objectives, waypoints, enemy and vehicle health markers, weapon
 //! pickup hints, explosives) is a point of interest whose record in the HUD's list carries both its
-//! marker clip and its world point. The prototype takes them from there and crops each marker out
+//! marker clip and its world point. The world markers take them from there and crops each marker out
 //! of the existing HUD texture, without moving anything in the movie:
 //!
 //! - [`seam`] (the thread that runs the UI update): inside the HUD's point-of-interest update, a
@@ -19,8 +19,8 @@
 //! - [`jc3vr_body::controllers::aim::marker_rays`] (the game thread, in the player aim's simulation
 //!   update): a physics raycast for the markers that had no recent depth sample.
 //!
-//! [`layout`] holds the pure geometry, and [`stage_frame`](jc3vr_view::hud::stage_frame), in the render crate, the stage's mapping onto the texture. See
-//! `docs/mod/rendering/ui-decoupling.md`.
+//! [`layout`] holds the pure geometry, and [`stage_frame`](jc3vr_view::hud::stage_frame), in the
+//! view crate, the stage's mapping onto the texture. See `docs/mod/rendering/ui-decoupling.md`.
 
 mod depth;
 pub mod layout;
@@ -54,7 +54,7 @@ pub(crate) const LABEL_CROP: CropExtents = CropExtents {
     ..CROP
 };
 
-/// A live snapshot of the prototype for the debug UI.
+/// A live snapshot of the world markers for the debug UI.
 #[derive(Clone, Default)]
 pub struct Status {
     /// The snapshot id of the layout drawn last, and whether it matched the displayed snapshot (a
@@ -90,7 +90,7 @@ pub struct MarkerStatus {
 /// What set a marker's drawn distance.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DistanceSource {
-    /// The true point: surface placement is off, or nothing is nearer.
+    /// The true point: no surface is nearer.
     Point,
     /// The scene depth at the marker's pixel.
     Depth,
@@ -98,12 +98,12 @@ pub enum DistanceSource {
     Ray,
 }
 
-/// The latest status, or `None` while the prototype is not drawing.
 /// Release the markers' GPU resources, for eject.
 pub fn release_on_eject() {
     render::release_on_eject();
 }
 
+/// The latest status, or `None` while the world markers are not drawing.
 pub fn status() -> Option<Status> {
     STATUS.lock().clone()
 }
@@ -147,7 +147,7 @@ static LAYOUTS: Mutex<VecDeque<CaptureLayout>> = Mutex::new(VecDeque::new());
 /// The latest status, written by the render thread.
 static STATUS: Mutex<Option<Status>> = Mutex::new(None);
 
-/// Publish a capture's layout, or clear them all when the prototype is inactive for the capture.
+/// Publish a capture's layout, or clear them all when the world markers are inactive for the capture.
 fn publish_layout(layout: Option<CaptureLayout>) {
     let mut layouts = LAYOUTS.lock();
     match layout {

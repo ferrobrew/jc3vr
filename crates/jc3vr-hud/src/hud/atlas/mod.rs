@@ -83,12 +83,12 @@ pub struct FrameStatus {
     pub texture: (u32, u32),
 }
 
-/// The latest status.
 /// Release the atlas's GPU resources, for eject.
 pub fn release_on_eject() {
     render::release_on_eject();
 }
 
+/// The latest status.
 pub fn status() -> AtlasStatus {
     STATUS.lock().clone()
 }

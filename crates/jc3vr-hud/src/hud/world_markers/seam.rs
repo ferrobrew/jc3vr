@@ -59,8 +59,8 @@ pub(crate) struct Projection<'a> {
 /// Classify a point of interest's projection for the world markers. Called from the `Get2DInfo`
 /// detour after the original; a no-op outside `UpdatePOIs`.
 ///
-/// A point the panel projection put off screen (an edge arrow) but that is inside the headset's field of view
-/// is reclassified on screen and its stage position clamped into the safe area, so the HUD draws
+/// A point the panel projection put off screen (an edge arrow) but that is inside the headset's
+/// field of view is reclassified on screen and its stage position clamped into the safe area, so the HUD draws
 /// its on-screen icon there for the crop. The final classification is recorded by world point for
 /// the capture seam.
 pub(crate) fn classify(projection: Projection<'_>) {
@@ -157,10 +157,9 @@ fn world_key(world: Vec3) -> [u32; 3] {
 
 /// Whether `world` is inside the headset's field of view (both eyes' together) from the game
 /// camera, falling back to the tuning's `world_markers.fallback_half_fov_deg` without a headset
-/// frame. Deciding on the
-/// headset's field of view rather than the panel's narrower subtense keeps a marker the player can
-/// see in the world from being demoted to an edge arrow; markers outside it stay edge arrows on the
-/// panel.
+/// frame. Deciding on the headset's field of view rather than the panel's narrower subtense keeps a
+/// marker the player can see in the world from being demoted to an edge arrow; markers outside it
+/// stay edge arrows on the panel.
 fn in_headset_fov(camera: &Matrix4, world: Vec3) -> bool {
     let tuning = &HUD.get().world_markers;
     let inset = tuning.fov_inset_deg.to_radians();

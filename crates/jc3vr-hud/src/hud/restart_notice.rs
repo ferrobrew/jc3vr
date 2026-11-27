@@ -1,6 +1,6 @@
 //! The restart notice: a head-locked panel telling the player that the game must restart for the
-//! controller input to match the settings ([`jc3vr_view::vr::input::restart`]). It shows for as long as
-//! that holds: until the game restarts, or, for a changed dominant hand, until the hand is changed
+//! controller input to match the settings ([`jc3vr_view::vr::input::restart`]). It shows for as
+//! long as that holds: until the game restarts, or, for a changed dominant hand, until the hand is changed
 //! back. The desktop mirror shows it through the eyes' images.
 //!
 //! Like the controls summary's panel ([`crate::hud::summary_panel`]), it has its own egui context,

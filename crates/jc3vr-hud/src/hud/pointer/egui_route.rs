@@ -5,8 +5,9 @@
 //! clicks, or scrolls. The controller is used when its ray lands on the panel, moves on it beyond
 //! the tuning's `egui_panel.controller_move_uv` (so tracking jitter of a controller at rest never
 //! takes the pointer from the mouse), clicks, or scrolls. Ownership changes only while the owner
-//! holds no button, so a drag always ends where it began. A source taking over with a button already held has that button
-//! withheld until it is released, so the takeover itself never clicks.
+//! holds no button, so a drag always ends where it began. A source taking over with a button
+//! already held has that button withheld until it is released, so the takeover itself never
+//! clicks.
 //!
 //! Positions are `uv * panel_size`, the panel texture's space, which egui lays out in while
 //! [`crate::egui_impl::EguiState::set_panel_mode`] is active.
@@ -54,9 +55,9 @@ pub fn egui_cursor_uv() -> Option<(f32, f32)> {
     *CURSOR_UV.lock()
 }
 
-/// Set egui's click options for the panel: while the panel is shown, a press held up to
-/// the tuning's `egui_panel.click_duration_s` still clicks; otherwise egui's own default applies. Call from the
-/// egui frame on the game thread.
+/// Set egui's click options for the panel: while the panel is shown, a press held up to the
+/// tuning's `egui_panel.click_duration_s` still clicks; otherwise egui's own default applies. Call
+/// from the egui frame on the game thread.
 #[inline]
 pub fn apply_panel_input_options(ctx: &egui::Context, panel: bool) {
     let duration = if panel {
