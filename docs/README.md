@@ -140,7 +140,7 @@
 
 - [input.md](mod/input/input.md): the game's look, move, and mouse input under the mod.
 - [controllers.md](mod/input/controllers.md): the motion controllers: principles, the OpenXR input layer, the scheme, and mode detection.
-- [bindings.md](mod/input/bindings.md): the default layout, the binding tables and their injection, the menus, and the chords.
+- [bindings.md](mod/input/bindings.md): the default layout, the binding tables and their injection, the menus, the chords, and the controls summary on the wrist.
 - [hands-and-aiming.md](mod/input/hands-and-aiming.md): the controller-driven hands, the arm reach, the fingers, the gun and grapple aim, the overlay, and the scopes.
 - [roomscale.md](mod/input/roomscale.md): the body dimensions, the posture, the head height, crouching, the fades, and the seat transitions.
 - [weapon-handling.md](mod/input/weapon-handling.md): the pouches, the foregrip, a held gun's weight, recoil, and grenades and C4 in outline.
@@ -151,7 +151,6 @@
 - [inventory-world-and-carry.md](mod/input/inventory-world-and-carry.md): the weapons let go of, their pins and markers, the lost-weapon return, and the carry set.
 - [inventory-persistence.md](mod/input/inventory-persistence.md): the loadout table across caches, resets, saves, and the scheme switch.
 - [inventory-debug-ui.md](mod/input/inventory-debug-ui.md): the inventory view, giving weapons, and the docked guns' view.
-- [controls-summary.md](mod/input/controls-summary.md): the controls summary on the off-hand wrist.
 - [haptics.md](mod/input/haptics.md): the controllers' vibration.
 - [slow-motion.md](mod/input/slow-motion.md): the game's slow motion against real time.
 - [physical-hands.md](mod/input/physical-hands.md): the hand bodies, the palm probes, pushing and shoving, and picking up and holding objects.
