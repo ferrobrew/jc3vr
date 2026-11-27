@@ -6,7 +6,7 @@ use std::sync::atomic::Ordering;
 use jc3vr_body::controllers::locomotion::config::LocomotionDirection;
 use jc3vr_gameplay::controllers::config::CONTROLLERS_CONFIG;
 use jc3vr_input::frame::Hand;
-use jc3vr_vehicles::vehicles::config::{ArmPitch, WheelTracking};
+use jc3vr_vehicles::controllers::vehicles::config::{ArmPitch, WheelTracking};
 
 use crate::{
     controllers::menu::{config_choice, config_slider, config_toggle, controls::CONFIRMING_RESET},

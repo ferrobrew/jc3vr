@@ -11,7 +11,7 @@ mod sections;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use jc3vr_gameplay::controllers::config::CONTROLLERS_CONFIG;
-use jc3vr_vehicles::{vehicles, vehicles::config::ArmPitch};
+use jc3vr_vehicles::controllers::{vehicles, vehicles::config::ArmPitch};
 #[cfg(not(test))]
 use parking_lot::Mutex;
 use sections::DOMINANT_HAND;
