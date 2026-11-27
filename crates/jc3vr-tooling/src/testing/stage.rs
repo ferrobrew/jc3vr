@@ -5,12 +5,11 @@
 //! A `visual_stage` request file ([`crate::testing::request`]) carries a [`StageRequest`]. A stage
 //! with an environment sets its hour and pins its weather first, without holding the day cycle, so
 //! the rain or snow has fallen for the whole settle. The stage then runs from the game thread's
-//! update ([`update`]) in three phases: the teleport (through
-//! the director's teleport, which streams the destination in when it is far), the spawns (through
-//! the director's spawner, once the player has stood at the destination for the tuning's
-//! [`arrived_frames`](crate::tuning::StageTuning::arrived_frames)),
-//! and the settle (wall-clock seconds with the game running, so streaming, physics, and the
-//! spawned entities come to rest). It then writes `visual/<id>.json` with `state = "staged"` and
+//! update ([`update`]) in three phases: the teleport (through the director's teleport, which
+//! streams the destination in when it is far), the spawns (through the director's spawner, once
+//! the player has stood at the destination for the tuning's
+//! [`arrived_frames`](crate::tuning::StageTuning::arrived_frames)), and the settle (wall-clock
+//! seconds with the game running, so streaming, physics, and the spawned entities come to rest). It then writes `visual/<id>.json` with `state = "staged"` and
 //! the player's landed position, or `state = "failed"` and why.
 //!
 //! A stage that sets `reuse_within_m` is acknowledged at once, with its environment set but no

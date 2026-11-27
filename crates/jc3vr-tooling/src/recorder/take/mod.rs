@@ -268,8 +268,8 @@ const CONNECT_TIMEOUT: Duration = Duration::from_millis(250);
 const START_TIMEOUT: Duration = Duration::from_secs(30);
 /// How long the thread waits for the host to confirm the video is finalized after the stop line.
 const FINISH_TIMEOUT: Duration = Duration::from_secs(5);
-/// How long a streamed take's writer has to send what is queued and end the stream. It stops
-/// writing after five seconds of its own.
+/// How long a streamed take's writer has to send what is queued and end the stream, beyond the
+/// writer's own grace for the queue ([`crate::recorder::stream`]).
 const WRITER_FINISH_TIMEOUT: Duration = Duration::from_secs(8);
 /// How long the thread waits for the host to finalize a streamed take's file after the stream
 /// ends. The encoder drains its own queue of frames first.

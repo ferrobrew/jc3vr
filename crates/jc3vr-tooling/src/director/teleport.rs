@@ -5,12 +5,13 @@
 //! forces the neutral animation state, resets the camera behind the new transform, and fires the
 //! events the HUD and the streaming systems listen for. Two variants exist. The instant one places
 //! the character synchronously and needs the destination resident; the deferred one goes through
-//! the load state so the destination streams in first. [`TeleportMode::Auto`] picks by distance
-//! against the engine's own "too far without load state" threshold.
+//! the load state so the destination streams in first. [`TeleportMode::Auto`] picks by distance,
+//! staying short of the distance at which the engine warns about a teleport without the load state.
 //!
 //! Bookmarks persist in `teleports.toml` in the configuration directory
-//! ([`jc3vr_core::config::paths`]), so a shot's framing survives a relaunch. The stored transform is the character's full world matrix, so the facing comes back
-//! too and no axis convention is assumed.
+//! ([`jc3vr_core::config::paths`]), so a shot's framing survives a relaunch. The stored transform
+//! is the character's full world matrix, so the facing comes back too and no axis convention is
+//! assumed.
 
 use std::{
     fmt,

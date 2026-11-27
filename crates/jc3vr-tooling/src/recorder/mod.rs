@@ -30,8 +30,8 @@
 //! ## Threads and shutdown
 //!
 //! Each take has one thread ([`take`]) that writes the sidecar and services the connection, and a
-//! streamed take a video writer thread beside it, which the take's thread joins. Active
-//! and finishing takes share a bounded owner; completed threads are joined before their slots are
+//! streamed take a video writer thread beside it, which the take's thread joins. Active and
+//! finishing takes share a bounded owner; completed threads are joined before their slots are
 //! reused. [`shutdown`] waits for every retained thread and keeps the DLL mapped if any has not
 //! exited.
 
@@ -484,7 +484,7 @@ pub fn note_present(present: u32, stamped: bool) {
 
 /// Stop the recording and wait for the take's thread to exit, for eject. Returns whether every take
 /// thread is confirmed stopped; `false` means the payload must stay mapped (see
-/// `image_writer::shutdown`).
+/// `jc3vr_render::image_writer::shutdown`).
 #[must_use = "a take thread that did not finish means the payload must stay mapped"]
 pub fn shutdown() -> bool {
     stop();

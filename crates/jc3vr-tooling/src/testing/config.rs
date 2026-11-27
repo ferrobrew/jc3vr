@@ -32,7 +32,7 @@ pub struct TestingConfig {
     /// start and stop the tools without the debug UI.
     pub(crate) request_file: bool,
     /// Whether to keep a census of the live 2D textures and log it after every resize
-    /// (`debug::texture_census`). Diagnostic: once armed, the payload cannot be ejected until the
+    /// (`jc3vr_render::debug::texture_census`). Diagnostic: once armed, the payload cannot be ejected until the
     /// game restarts.
     #[serde(default)]
     pub texture_census: bool,

@@ -1,18 +1,18 @@
 //! The payload's tooling layer: the tools for recording, staging, and diagnosing a session, built
-//! on the gameplay and render layers and naming nothing above them.
+//! on the gameplay, render, and capture layers and naming nothing above them.
 //!
-//! The crate sits above the core, render, and gameplay crates and beside the HUD crate, with no
-//! edge between the two (`docs/architecture.md`, "Crate layering"). It owns:
+//! The crate sits above the gameplay and capture crates and beside the HUD crate, with no edge
+//! between the two (`docs/architecture.md`, "Crate layering"). It owns:
 //!
 //! - [`recorder`]: the video recorder: a take's sidecar, the eye views streamed to the capture
-//!   host, and the session recording's take markers. The tracking recorder is the render crate's
+//!   host, and the session recording's take markers. The tracking recorder is the view crate's
 //!   ([`jc3vr_view::recorder`]).
 //! - [`director`]: the directing tools: time control, actor safety, heat, the teleport bookmarks,
 //!   the take markers, and the key bindings that drive them. Its pass also drives the core crate's
 //!   clean view ([`jc3vr_core::clean_view`]) and the weapons crate's spawner
 //!   ([`jc3vr_weapons::controllers::spawn`]), whose settings it holds.
 //! - [`testing`]: the capture harness's request file, the staging of a scene, its text, and the
-//!   testing settings. It drives the render crate's visual stage and benchmark
+//!   testing settings. It drives the capture crate's visual stage and benchmark
 //!   ([`jc3vr_capture::testing`]).
 //! - [`diagnostics`]: the samplers that note the controller subsystems' state, Rico's pose, and
 //!   the bodies around him into a tracking recording.

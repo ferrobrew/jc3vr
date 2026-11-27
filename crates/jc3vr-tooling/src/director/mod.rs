@@ -1,5 +1,6 @@
 //! Directing tools for staging footage from inside the headset: time control, actor safety, heat
-//! control, teleport bookmarks, a spawner, a clean view that hides the overlays, take markers, and the key bindings that drive them without opening the debug panel.
+//! control, teleport bookmarks, a spawner, a clean view that hides the overlays, take markers, and
+//! the key bindings that drive them without opening the debug panel.
 //!
 //! The spawner itself, with the spawn definition table, is [`jc3vr_weapons::controllers::spawn`],
 //! because the inventory's gives use the table too; the director queues its requests and services
@@ -62,7 +63,8 @@ pub struct DirectorConfig {
     pub unlimited_ammo: bool,
     /// Lock the heat system so the level neither rises nor decays, re-asserted every frame.
     pub heat_lock: bool,
-    /// Cap the heat level at this value (`0..=5`), or `None` to leave the game's own cap alone.
+    /// Cap the heat level at this value (clamped to `HeatManager::MAX_LEVEL`), or `None` to leave the
+    /// game's own cap alone.
     pub heat_cap: Option<i32>,
     /// The clean view's switch and scope; see [`clean_view`]. Neither is saved.
     #[serde(skip)]

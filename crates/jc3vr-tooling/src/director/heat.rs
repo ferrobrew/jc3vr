@@ -85,7 +85,8 @@ pub fn clear() {
     set_level(0);
 }
 
-/// The live heat level and whether the manager reports itself locked, for the debug tab.
+/// The live heat level, whether the manager reports itself locked, and the level cap, for the debug
+/// tab.
 pub fn live_state() -> Option<(i32, bool, i32)> {
     // SAFETY: read-only access to a main-thread singleton from the UI pass on that thread.
     unsafe {

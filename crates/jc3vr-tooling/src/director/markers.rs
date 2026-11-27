@@ -3,9 +3,9 @@
 //!
 //! A marker carries the wall clock, the engine's game-run time, and a label. While the video
 //! recorder runs, it goes into the recording's per-frame sidecar before the next rendered frame
-//! ([`crate::recorder::mark`]), so post finds the take by frame and wall clock. Otherwise it is appended to
-//! `markers.jsonl` in the session folder, one JSON object per line, where the wall clock is what
-//! lines it up against a host-side recording. Either way, while a tracking recording or the
+//! ([`crate::recorder::mark`]), so post finds the take by frame and wall clock. Otherwise it is
+//! appended to `markers.jsonl` in the session folder, one JSON object per line, where the wall
+//! clock is what lines it up against a host-side recording. Either way, while a tracking recording or the
 //! lookback collects, the same marker is also noted as a `take_marker` event on the tracking
 //! timeline, joinable to the other copy by its index and stamp.
 

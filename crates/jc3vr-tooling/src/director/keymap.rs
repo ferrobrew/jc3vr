@@ -6,7 +6,7 @@
 //! the settings file with everything else, and rebinding is an edit to the `director.keymap`
 //! section there (or the debug tab's reset). The defaults sit on the numeric keypad: nothing else
 //! in the game or the mod uses it, and it is findable by touch under a headset. Controller chords
-//! are not bound here yet; the in-headset debug panel covers the controller-only case for now.
+//! are not bound: the in-headset debug panel covers the controller-only case.
 //!
 //! A saved map keeps its own list, so an action added after it was saved would have no key. An
 //! action the saved map does not bind at all therefore takes its default chord, unless the saved

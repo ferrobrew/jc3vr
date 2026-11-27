@@ -2,9 +2,9 @@
 //! and the procedural body's hand-over case, noted when either changes.
 //!
 //! A note also repeats, unchanged, once the tuning's
-//! [`repeat_after_s`](crate::tuning::BodyStateTuning::repeat_after_s) has passed since the last one, so that a
-//! stretch of a recording that starts between changes (a lookback save, or a recording started
-//! while the lookback ran) still opens with the state it started in.
+//! [`repeat_after_s`](crate::tuning::BodyStateTuning::repeat_after_s) has passed since the last
+//! one, so that a stretch of a recording that starts between changes (a lookback save, or a
+//! recording started while the lookback ran) still opens with the state it started in.
 
 use std::time::{Duration, Instant};
 
