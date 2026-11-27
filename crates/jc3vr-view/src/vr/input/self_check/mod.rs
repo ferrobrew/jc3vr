@@ -2,8 +2,8 @@
 //! semantic actions' headset validation.
 //!
 //! Once per OpenXR runtime and set of controller interaction profiles ([`record`]), after the
-//! first focused sync at which a hand has an interaction profile, it logs one block (info, target `vr`, starting
-//! `input: self-check`) and keeps it for the debug UI. The block holds:
+//! first focused sync at which a hand has an interaction profile, it logs one block (info, target
+//! `vr`, starting `input: self-check`) and keeps it for the debug UI. The block holds:
 //!
 //! - the runtime's name and version, the dominant hand the bindings were suggested for, and each
 //!   hand's interaction profile path;

@@ -1,5 +1,7 @@
-//! What the VR runtime's input sampling reads from the settings: the raw input interpretation
-//! ([`InputConfig`], stored as `controllers.input`), and the frame's [`SamplingConfig`].
+//! What the VR runtime's input sampling reads from the settings: the controllers master switch,
+//! the dominant hand, the raw input interpretation ([`InputConfig`]), the vibration settings
+//! ([`HapticsConfig`]), the press rules each profile's inputs are read by, and the frame's
+//! [`SamplingConfig`].
 
 use jc3vr_core::config::{ConfigSlot, SlotOptions};
 use jc3vr_input::{

@@ -106,7 +106,8 @@ impl InputState {
         let mut joints_error = None;
         let generation = sources::observation_generation(self.profiles, self.dominant);
         let mut observed = Vec::new();
-        // The chord arbiter's protected controls, in its order (`policy_a::Control`).
+        // The chord arbiter's protected controls, in its order
+        // (`jc3vr_gameplay::controllers::bindings::policy_a::Control`).
         let mut raw = [State::<bool>::default(); PROTECTED_CONTROLS];
         for (index, (hand, input)) in [
             (Hand::Left, BoolInput::ThumbstickClick),

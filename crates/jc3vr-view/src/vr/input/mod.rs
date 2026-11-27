@@ -1,9 +1,9 @@
 //! Controller input through OpenXR: the action sets, suggested bindings, the controller spaces,
 //! haptics output, `XR_EXT_hand_tracking` (with `XR_EXT_hand_joints_motion_range` when offered),
-//! and the persistence of the action handles across
-//! reinjects. Once per rendered frame the VR frame loop syncs the actions, locates the controllers
-//! at the frame's predicted display time, and publishes a
-//! [`ControllerFrame`](jc3vr_input::frame::ControllerFrame) for the rest of the mod.
+//! and the persistence of the action handles across reinjects. Once per rendered frame the VR
+//! frame loop syncs the actions, locates the controllers at the frame's predicted display time,
+//! and publishes a [`ControllerFrame`](jc3vr_input::frame::ControllerFrame) for the rest of the
+//! mod.
 //!
 //! # Action sets
 //!
@@ -20,7 +20,7 @@
 //!   ([`semantic`]). The mode detector picks the mode set through [`set_active_action_set`]. Their
 //!   per-hand states are published each frame as a
 //!   [`SemanticFrame`](semantic::frame::SemanticFrame), which the binding tables read
-//!   ([`crate::controllers::bindings::intents`]).
+//!   (`jc3vr_gameplay::controllers::bindings::intents`).
 //!
 //! Every set has priority 0, so an input bound in `hands` and in a semantic set reaches both. Every
 //! action is created with both hands as subaction paths and is read per hand. Suggested bindings
@@ -55,7 +55,8 @@
 //! rather than stashed.
 //!
 //! The actions are created and attached whether or not the controllers are enabled, because
-//! attachment is possible only once per session; the master toggle gates the per-frame sync and the
+//! attachment is possible only once per session; the master switch
+//! ([`CONTROLLERS_ENABLED`](config::CONTROLLERS_ENABLED)) gates the per-frame sync and the
 //! publication.
 
 pub mod actions;
@@ -80,7 +81,7 @@ pub(crate) use state::InputState;
 use crate::vr::input::restart::RestartReason;
 
 /// Select the mode action set read from the next frame on. The mode detector calls this once per
-/// sim tick.
+/// input tick.
 pub fn set_active_action_set(kind: ActionSetKind) {
     ACTIVE_SET.store(kind.index() as u8, Ordering::Relaxed);
 }

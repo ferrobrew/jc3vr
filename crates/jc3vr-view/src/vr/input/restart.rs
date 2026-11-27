@@ -13,8 +13,8 @@
 //!   were suggested for the other hand ([`RestartReason::HandChanged`]).
 //!
 //! [`reason`] decides from the published [`InputStatus`] and the configured hand. It is pure, and
-//! its inputs are leaf slots, so any thread may ask; the notice panel, the debug UI, and the pause
-//! menu all show it.
+//! its inputs are leaf slots, so any thread may ask; the headset's notice panel, the desktop
+//! window's banner, and the debug UI's status page all show it.
 
 use std::fmt;
 

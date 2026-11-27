@@ -1,6 +1,7 @@
 //! Complete live head/controller observations for the wingsuit gestures.
 //!
-//! The frame loop supplies current rebased eye poses. The sampler completes the packet with the actual controller publication receipt. No global head is queried.
+//! The frame loop supplies the current rebased eye poses, and the sampler completes the packet
+//! with the actual controller publication receipt. No global head is queried.
 
 use std::{sync::LazyLock, time::Instant};
 
@@ -88,8 +89,9 @@ pub fn begin_located(head: Option<LocatedHead>) -> Option<PendingHead> {
     SLOT.lock().begin(head)
 }
 
-/// Complete only after `frame::publish` returns its real sequence and host publication time.
-/// `controllers` is the sampled frame retained before that call, never read back from a global slot.
+/// Complete only after `semantic::frame::publish` returns its real sequence and host publication
+/// time. `controllers` is the sampled frame retained before that call, never read back from a
+/// global slot.
 pub fn complete(
     pending: PendingHead,
     controllers: ControllerFrame,
