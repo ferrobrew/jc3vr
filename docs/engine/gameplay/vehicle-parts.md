@@ -1,16 +1,16 @@
 # Vehicle parts
 
-A vehicle is built from parts (the body, the doors, the wheels, the mirrors, the steering wheel, and so on), each a separately modelled piece that can deform, loosen, and break off. The doors, which loosen onto their hinges and latch shut, are in [vehicle-doors.md](vehicle-doors.md).
+A vehicle is built from separately modelled parts (the body, doors, wheels, mirrors, steering wheel, and so on) that can deform, loosen, and break off. The doors are in [vehicle-doors.md](vehicle-doors.md).
 
 ## The parts resource
 
 Each vehicle entity embeds a `<model>_vehicle_parts.vmodc`, an ADF `VehicleParts` resource whose `parts` array holds one [`Part`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/vehicle::parts::Part) per piece: its `name`, `damage_type`, `behavior`, `model`, and `model_swap` as ADF hash strings (a string pointer with its `hashlittle` hash, [`AdfHashString`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/vehicle::parts::AdfHashString)), its own and its parent's index, and its `parent_space_offset`, the pivot in its parent's space. The resource's `hinged_parts`, `rotating_parts`, and `skinned_parts` name the parts the engine animates, and `door_parts` the door parts, whose behaviours (`FrontLeftDoor`, `Hood`, `Trunk`, and so on) match the door slots' names; that the door controller fills its slots by behaviour is unverified.
 
-Part names follow `<model>_<piece>`, and the name, not the damage type, identifies a part: the type is chosen for the damage it takes, so some steering wheels use `Land_Generic` or `Boat_Body`, and the mirrors of the modern mini and the old moped use `Land_Steering_Wheel`.
+Part names follow `<model>_<piece>`. The name identifies a part; the damage type, chosen for the damage taken, does not (some steering wheels use `Land_Generic` or `Boat_Body`, and the modern mini's and old moped's mirrors `Land_Steering_Wheel`).
 
-A part's mesh is authored in its own space, whose origin is the pivot its offset places. Most parts have an identity offset under the body, so their meshes are in the vehicle's space (+X right, +Y up, -Z forward, the driver on -X in a car). A hinged part the engine turns, such as a handlebar, has its hinge pivot as its offset. The doors, hoods, and trunks have identity offsets too: the hinge they hang from once loose is their constraint from the physics prototype, whose point is also a deform point.
+A part's mesh is authored in its own space, about the pivot its offset places. Most parts, the doors, hoods, and trunks included, have an identity offset under the body, so their meshes are in the vehicle's space (+X right, +Y up, -Z forward, the driver on -X in a car); a loose door hangs from its prototype constraint, whose point is also a deform point. A hinged part the engine turns, such as a handlebar, has its hinge pivot as its offset.
 
-Each entity also embeds a `<model>_vehicle_deform.vmodc`, an ADF `DeformPoints` resource of named transforms in the vehicle's space, each with a type, the part it comes from, and the part it is skinned to, which the vehicle moves with its deformation. Among them are the seats the interaction graph's nodes name ([vehicle-doors.md](vehicle-doors.md#the-interaction-graph-in-the-entity)), each loose part's constraint (type `Constraint`, named after the part's `..._CON` node), lights, and stunt-area corners.
+Each entity also embeds a `<model>_vehicle_deform.vmodc`, an ADF `DeformPoints` resource of named, typed transforms in the vehicle's space, each with its source part and the part it is skinned to, moved with the deformation. Among them are the seats the interaction graph's nodes name ([vehicle-doors.md](vehicle-doors.md#the-interaction-graph-in-the-entity)), each loose part's constraint (type `Constraint`, named after the part's `..._CON` node), lights, and stunt-area corners.
 
 ## The live parts
 
@@ -24,11 +24,11 @@ The vehicle keeps its world transform at both ends of the simulation step, `m_Wo
 
 ## Steering wheels
 
-Almost every car and boat has its steering wheel as its own part, named `<model>_steeringwheel` or `<model>_steering_wheel`. The exceptions are the modern bus and the old truck, whose wheels are part of another mesh, the tanks, which have none, and the spy speedboat, the medium old fishing boat, the heavy patrol boat, and the corvette.
+Almost every car and boat has a steering wheel part, `<model>_steeringwheel` or `<model>_steering_wheel`, except the modern bus and the old truck, whose wheels are part of another mesh, the tanks, which have none, and the spy speedboat, the medium old fishing boat, the heavy patrol boat, and the corvette.
 
-Every steering wheel part has an identity offset under the body (the grand tourer's and the transport boat's hang from another part, also at identity), so its mesh and box are in the vehicle's space. For a disc-shaped wheel, the box's centre is the hub, half its width the rim's radius, and its depth against its height the face's tilt. Some boxes mislead because the mesh includes the column or is not a disc: the circuit racer's and the ladbil's run far forward, the old bus's runs down to the floor, the old jeep's depth reads as a steep tilt, and the transport boat's ship's wheel spans its handles.
+Every steering wheel part has an identity offset under the body (the grand tourer's and the transport boat's under another part), so its box is in the vehicle's space: for a disc, the centre is the hub, half the width the rim's radius, and the depth against the height the face's tilt. Boxes of meshes that include the column or are not discs mislead: the circuit racer's and the ladbil's run far forward, the old bus's runs down to the floor, the old jeep's depth reads as a steep tilt, and the transport boat's ship's wheel spans its handles.
 
-The game never turns a car's or a boat's steering wheel. The hands' grip on it is the driving animation's, one per animation set, with no hand IK to a wheel.
+The game never turns a car's or a boat's steering wheel; the hands' grip is the driving animation's, one per animation set, with no hand IK.
 
 ## Hinged parts
 
@@ -40,7 +40,7 @@ The vehicle-common properties include a `SteeringWheel` hinge driven by `steerin
 
 The landing gear and its hatches move toward [`Vehicle::m_DesiredLandingGearState`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/vehicle::vehicle::Vehicle##field-m_DesiredLandingGearState) in [`Vehicle::UpdateLandingGearVariables`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/vehicle::vehicle::Vehicle##func-UpdateLandingGearVariables): the hatches open before the gear comes down and close after it is up, and the gear's attached effects (its sounds) play as they open, close, and lock. Lowered gear is limited by the height above the ground, so it does not stand through a runway.
 
-There is no player input for the gear. While the local player drives, the update chooses the desired state itself on every call: down while the vehicle is low and slower than a deploy speed, unless airborne and tilted past its landing tilt, and up otherwise while airborne. The deploy speed moves between the take-off and landing speeds with the throttle ([`Vehicle::m_SteeringAcceleration`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/vehicle::vehicle::Vehicle##field-m_SteeringAcceleration)): braking raises it toward the landing speed at once, and thrust lowers it toward the take-off speed over a smoothing time. With another seat's occupant, or none, the desired state stays as last set, for example by the AI steering's deploy and retract.
+There is no player input for the gear: while the local player drives, the update chooses the desired state every call: down while the vehicle is low and slower than a deploy speed, unless airborne and tilted past its landing tilt, and up otherwise while airborne. The deploy speed moves between the take-off and landing speeds with the throttle ([`Vehicle::m_SteeringAcceleration`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/vehicle::vehicle::Vehicle##field-m_SteeringAcceleration)): braking raises it toward the landing speed at once, and thrust lowers it toward the take-off speed over a smoothing time. With another seat's occupant, or none, the desired state stays as last set, for example by the AI steering's deploy and retract.
 
 ## The vehicle type hash
 
