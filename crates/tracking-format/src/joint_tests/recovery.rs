@@ -5,7 +5,7 @@ use crate::{
 };
 
 #[test]
-fn v4_recovers_complete_records_and_chunks_at_every_cut_position() {
+fn the_latest_container_recovers_complete_records_and_chunks_at_every_cut_position() {
     let preamble = encode_latest_preamble(&header());
     for chunked in [false, true] {
         let record = |sequence| {
@@ -49,7 +49,7 @@ fn v4_recovers_complete_records_and_chunks_at_every_cut_position() {
 }
 
 #[test]
-fn complete_malformed_v4_flags_are_errors_in_direct_and_chunked_records() {
+fn complete_malformed_joint_flags_are_errors_in_direct_and_chunked_records() {
     for (flags, field) in [
         (0x40, "joint reserved flags"),
         (0x80, "joint reserved flags"),
@@ -122,7 +122,7 @@ fn incomplete_standalone_frames_and_complete_short_payloads_are_errors() {
 }
 
 #[test]
-fn v4_uses_the_existing_crc_chunk_layout_and_rejects_complete_corruption() {
+fn the_latest_container_uses_the_existing_crc_chunk_layout_and_rejects_complete_corruption() {
     let record = expected_record(&frame(3), FrameSchema::V4);
     let encoded = encode_chunk(&record).unwrap();
     assert_eq!(
@@ -166,7 +166,7 @@ fn v4_uses_the_existing_crc_chunk_layout_and_rejects_complete_corruption() {
 }
 
 #[test]
-fn v4_bounds_and_unknown_required_tags_are_checked_before_tail_recovery() {
+fn the_latest_container_bounds_and_unknown_required_tags_are_checked_before_tail_recovery() {
     for (tag, length) in [
         (TAG_FRAME, 2 * 1024 * 1024 + 1),
         (TAG_INPUT, crate::input::MAX_INPUT_PAYLOAD + 1),

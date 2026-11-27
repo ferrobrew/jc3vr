@@ -1,5 +1,3 @@
-use std::time::Instant;
-
 use glam::{Quat, Vec3};
 
 use super::*;
@@ -466,29 +464,6 @@ fn v3_unknown_required_tags_fail_and_optional_tags_are_counted() {
 #[test]
 fn chunk_crc32_matches_the_standard_check_value() {
     assert_eq!(checksum(b"1234", b"56789"), 0xcbf4_3926);
-}
-
-#[test]
-#[ignore = "deterministic synthetic timing harness; not representative real-capture evidence"]
-fn synthetic_full_joint_chunk_timing_harness() {
-    let started = Instant::now();
-    let mut stored = 0usize;
-    let mut logical = 0usize;
-    for sequence in 0..10_000 {
-        let original = batch(sequence);
-        let encoded = encode_chunk(&original).unwrap();
-        let decoded = decode(&file(&encoded)).unwrap();
-        assert_eq!(
-            encode_frame(&decoded.frames[0]),
-            encode_frame(&frame(sequence))
-        );
-        stored += encoded.len();
-        logical += original.len();
-    }
-    eprintln!(
-        "synthetic deterministic full-joint corpus only: elapsed={:?} stored={stored} logical={logical}",
-        started.elapsed()
-    );
 }
 
 #[test]

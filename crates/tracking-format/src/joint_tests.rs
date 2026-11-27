@@ -11,7 +11,7 @@ use crate::{
 };
 
 #[test]
-fn all_component_combinations_have_exact_v4_frame_and_chunk_wire() {
+fn all_component_combinations_have_exact_latest_frame_and_chunk_wire() {
     let source = frame(41);
     let expected = expected_record(&source, FrameSchema::V4);
     let record = encode_latest_frame(&source);
@@ -125,7 +125,7 @@ fn schema_selection_and_legacy_entry_points_stay_pinned() {
 }
 
 #[test]
-fn v4_accepts_exactly_the_sixteen_consistent_flag_bytes() {
+fn the_joint_flag_schema_accepts_exactly_the_sixteen_consistent_flag_bytes() {
     let record = encode_latest_frame(&frame(1));
     let offset = joint_flag_offsets()[0];
     let mut accepted = 0;
