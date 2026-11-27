@@ -1,14 +1,15 @@
 //! The weapon handling's stand-down: why it stands down, how much of it stops for each reason, and
 //! each subsystem's part, in the order they run.
 //!
-//! The order matters in three places, and is otherwise the order the subsystems were added in:
+//! The order matters in two places:
 //!
 //! - the C4 throw puts the detonator back on the chest before the detonator's model is released;
 //! - the hold lets go of the attach bones before the armed weapons are disarmed onto the body, so
-//!   that the game's own layout, not the mod's, is the one the disarm restores;
-//! - the tick's own state goes last, after every subsystem that reads the begin half's handoff.
+//!   that the game's own layout, not the mod's, is the one the disarm restores.
 //!
-//! The loadout table's stop, for the reasons that leave the controllers, runs after all of them.
+//! No other ordering between the steps is known to matter. The tick's own state, which no step
+//! reads, goes last, and the loadout table's stop, for the reasons that leave the controllers,
+//! runs after all of them.
 
 use jc3vr_body::controllers::held::guns::{self, GunHolds};
 use jc3vr_core::game_tick::GameTick;
@@ -81,9 +82,8 @@ pub fn stand_down(game: &GameTick<'_>, reason: StandDown) {
 }
 
 /// Pause: physical magazine work is cancelled, and the grip release stands down, so that the first
-/// tick back ends a gun's hold with the grip as it is then. What the hands hold stays held; the
-/// debug panel stood the weapons down instead, which took the left hand's SMG out of it the moment
-/// the panel opened on the 14 November take.
+/// tick back ends a gun's hold with the grip as it is then. What the hands hold stays held: a full
+/// stand-down here would take a gun out of a hand the moment the debug panel opens.
 pub(crate) fn pause() {
     for step in &PAUSE {
         (step.run)();
@@ -121,17 +121,14 @@ const PAUSE: [Step<fn()>; 2] = [
 /// Stop acting and forget the tick's weapons. Every step runs in the game stage, on the game
 /// thread before the world update, which is what the unsafe ones need.
 const HANDS: [Step<fn(&GameTick<'_>)>; 23] = [
-    // The foregrip hold lets go.
     Step {
         name: "foregrip",
         run: |_| foregrip::clear(),
     },
-    // The hands' published contents empty.
     Step {
         name: "contents",
         run: |_| contents::clear(),
     },
-    // The hand bodies hold no gun.
     Step {
         name: "gun bodies",
         run: |_| guns::publish(GunHolds::default()),
@@ -175,7 +172,6 @@ const HANDS: [Step<fn(&GameTick<'_>)>; 23] = [
         name: "C4",
         run: |_| c4::stand_down(),
     },
-    // After the C4 throw's stand-down, which puts the detonator back.
     Step {
         name: "detonator model",
         // SAFETY: as above.
@@ -212,7 +208,6 @@ const HANDS: [Step<fn(&GameTick<'_>)>; 23] = [
         name: "regions",
         run: |_| regions::stand_down(),
     },
-    // After the hold lets go of the attach bones.
     Step {
         name: "armed",
         run: armed::stand_down,
@@ -227,7 +222,7 @@ const HANDS: [Step<fn(&GameTick<'_>)>; 23] = [
         name: "wheel",
         run: wheel::stand_down,
     },
-    // Last: the begin half's handoff and the tick's targets.
+    // The begin half's handoff and the tick's targets.
     Step {
         name: "tick",
         run: |_| STATE.lock().stand_down(),

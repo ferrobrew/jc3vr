@@ -1,4 +1,6 @@
-//! Held-gun interaction permission and physical-hand trigger ownership, independent of locomotion.
+//! What the weapon handling does in each control mode ([`Capabilities`]), and which physical hand
+//! holds which gun and may fire it: the hands' gun roles, the trigger claims, and the fire
+//! readiness, none of which depends on the locomotion mode beyond the mode table.
 
 use jc3gi::{
     character::{character::Character, inventory::WeaponSlot},
@@ -99,14 +101,16 @@ pub fn trigger_claims(
     })
 }
 
-/// A physical hand's gun identity and role, for the input owner's neutral ownership transfer.
+/// A physical hand's gun and its role in holding it, as the bindings' trigger ownership reads it.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct GunOwner {
     pub weapon: usize,
     pub role: GunHand,
 }
 
-/// The current ownership after any draw, release, or handover in the input tick.
+/// Each hand's gun and role, read now, after any draw, release, or handover the input tick made,
+/// by [`Hand::index`]. The support hand is the engaged foregrip hold's only, not one whose hold is
+/// fading out after a release.
 pub fn gun_owners_now() -> [Option<GunOwner>; 2] {
     let support = foregrip::status().hold.filter(|hold| hold.engaged);
     let held = Hand::BOTH.map(|hand| {
@@ -126,8 +130,11 @@ pub fn gun_owners_now() -> [Option<GunOwner>; 2] {
     discover_owners(held, support.map(|hold| (hold.weapon, hold.holder.other())))
 }
 
-/// Current engine and mechanic permission for a held gun's fire hint, independent of trigger value.
-/// Runs after final ownership reconciliation on the game input thread.
+/// Whether each hand's held gun may fire now, by [`Hand::index`], whatever its trigger reads: the
+/// hand is `ready`, the game's shooting permission allows it ([`permission::shooting_allowed`]),
+/// the hand holds a firing grip or the native pair, the reload does not hold its fire, and, with
+/// `block_actions`, no weapon action runs in it. Read on the game input thread, after the input
+/// tick has settled which hand holds which gun.
 pub fn fire_ready_now(ready: [bool; 2], block_actions: bool) -> [bool; 2] {
     // SAFETY: the input thread resolves the current local character without retaining the borrow.
     let animation = unsafe { Character::GetLocalPlayerCharacter().as_ref() }
@@ -194,7 +201,8 @@ pub(crate) fn gun_hands_now() -> [GunHand; 2] {
     })
 }
 
-/// Tracking validity alone can retain an extrapolated pose; firing requires a tracked grip.
+/// Which hands are focused, active, and with a tracked grip pose, by [`Hand::index`]. Tracking
+/// validity alone can retain an extrapolated pose, and firing requires a tracked grip.
 pub(crate) fn tracked_hands() -> [bool; 2] {
     frame::with_latest(|frame| {
         Hand::BOTH.map(|hand| {

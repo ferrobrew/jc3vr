@@ -10,11 +10,12 @@
 //!
 //! - a detour on the ammunition check marks the check of the local player's weapon on its thread
 //!   ([`CHECK`]) for the length of the call;
-//! - a detour on the switch, inside a marked check, reports that no weapon qualified without switching. The game then treats the pull as it does
-//!   with no other weapon to switch to: the HUD's out-of-ammunition notice and the gun's
-//!   `OutOfAmmoFire` effect at the pull's press edge, and no shot. The switch's other caller, the
-//!   `NWeaponEquipTask` state task, runs outside a check and is left alone, as are manual
-//!   selection, scripted switches, and the removal of a weapon, which never call it.
+//! - a detour on the switch, inside a marked check, reports that no weapon qualified without
+//!   switching. The game then treats the pull as it does with no other weapon to switch to: the
+//!   HUD's out-of-ammunition notice and the gun's `OutOfAmmoFire` effect at the pull's press edge,
+//!   and no shot. The switch's other caller, the `NWeaponEquipTask` state task, runs outside a
+//!   check and is left alone, as are manual selection, scripted switches, and the removal of a
+//!   weapon, which never call it.
 //!
 //! The empty gun stays wielded, so it can be holstered at its holster as usual, and the reload
 //! input does nothing until ammunition is picked up, since the game queues a reload only when the
@@ -23,18 +24,19 @@
 //!
 //! A pull at the press edge that the check found empty plays [`Event::DryFire`] on the hand whose
 //! gun was pulled, since the gun gives no recoil to feel: one that tried the switch, and one of an
-//! empty magazine with ammunition left,
-//! whose reload the true reload stops ([`crate::controllers::weapons::reload`]). A gun the true
-//! reload holds from firing (its chamber empty or its magazine out) has its shot cleared here as
-//! well; its trigger already clicks at the input tick.
+//! empty magazine with ammunition left, whose reload the true reload stops
+//! ([`crate::controllers::weapons::reload`]). A gun the true reload holds from firing (its chamber
+//! empty or its magazine out) has its shot cleared here as well; its trigger already clicks at the
+//! input tick.
 //!
 //! With the per-hand tick ([`crate::controllers::weapons::hold::tick`]), every gun in a hand runs
 //! its own check, and each check asks the character to reload the wielded weapon whenever its own
 //! magazine runs low, and cancels the character's reload every tick for a gun that does not reload
 //! by magazine. Inside a marked check both requests are refused for the local player
-//! ([`refuses_check_request`], from the detours on [`Character::StartReloadingWieldingWeapon`] and
-//! [`Character::CancelReload`]), so one hand's gun never reloads or interrupts the other's; the
-//! true reload reloads each gun by hand.
+//! ([`refuses_check_request`], from the reload's detour on
+//! [`Character::StartReloadingWieldingWeapon`] and this module's on [`Character::CancelReload`]),
+//! so one hand's gun never reloads or interrupts the other's; the true reload reloads each gun by
+//! hand.
 //!
 //! [`Character::StartReloadingWieldingWeapon`]: jc3gi::character::character::Character::StartReloadingWieldingWeapon
 

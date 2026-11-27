@@ -5,7 +5,9 @@
 //! The half is a table of stages ([`STAGES`]) run in order over one [`Begin`] context: the tick's
 //! settings and mode table, the hands, and what each stage leaves for the ones after it. The
 //! stages read the local player first, then measure the guns, then gather every grip target, and
-//! resolve and publish last; a stage reads only what an earlier one left.
+//! resolve and publish last; a stage reads only what an earlier one left. The target stages push
+//! onto one list in their order, and the resolve takes the first of equally near targets, so the
+//! hand offers go first: a held foregrip keeps its bracing hand over anything as near.
 
 use glam::Vec3;
 use jc3vr_body::controllers::{

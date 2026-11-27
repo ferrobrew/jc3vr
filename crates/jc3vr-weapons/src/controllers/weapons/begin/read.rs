@@ -80,7 +80,6 @@ pub(super) fn player(game: &GameTick<'_>, b: &mut Begin) {
                 .into_iter()
                 .filter_map(|h| guns[h.index()])
                 .find(|w| weapon.is_none_or(|wielded| wielded.address != w.address));
-            // The guns the hands hold, for their bodies.
             guns::publish(if capabilities.guns {
                 gun_bodies::read_holds([
                     weapon.map(|w| (w.address, w.class)),

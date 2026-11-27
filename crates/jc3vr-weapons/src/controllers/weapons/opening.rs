@@ -1,5 +1,5 @@
 //! When a hand holding a grenade or a charge lets it go: when its fingers open, not when its
-//! squeeze relaxes. Pure.
+//! squeeze relaxes.
 //!
 //! A throwing hand relaxes its squeeze before the fingers open, and on a force-sensing grip the
 //! press ends well before that, so a release read from the grip's press drops the grenade at the
@@ -7,8 +7,8 @@
 //! the capacitive sense of the fingers round the handle, which stays full while the fingers rest on
 //! it however lightly they press, and on a Touch controller the grip's pull. The hand counts as
 //! closed once the value passes [`OpeningTuning::closed`] or the grip is pressed, and opens when the
-//! value falls under [`OpeningTuning::open`]. A hand whose value is not read (an inactive controller) opens with its grip's
-//! press instead.
+//! value falls under [`OpeningTuning::open`]. A hand whose value is not read (an inactive
+//! controller) opens with its grip's press instead.
 
 use jc3vr_body::controllers::intent::controls::ButtonControl;
 use jc3vr_input::frame::Hand;
@@ -59,7 +59,9 @@ impl OpenWatch {
         })
     }
 
-    /// Unavailable controls cannot establish a deliberate opening or retain a closed episode.
+    /// Advance one tick as [`step`](Self::step) does, with the hands whose controls are
+    /// `unavailable` neither opening nor staying closed: an unavailable control cannot show a
+    /// deliberate opening, nor keep a closed grip across its loss.
     pub(crate) fn step_available(
         &mut self,
         values: [Option<f32>; 2],

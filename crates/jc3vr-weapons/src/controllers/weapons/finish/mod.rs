@@ -3,9 +3,10 @@
 //!
 //! The half is a table of stages ([`STAGES`]) run in order over one [`Finish`] context: the
 //! begin half's handoff ([`TickContext`]), the bindings' inputs, and what each stage leaves for
-//! the ones after it. The grabs act first, then the throws, the reload, and the releases; the fire
-//! decision reads the hands after all of them, so a gun that changed hands this tick fires from
-//! its new hand.
+//! the ones after it. The fingers' opening and the foregrip step first, for the grabs and the
+//! throws to read; then the grabs act, then the throws, the reload, and the releases; the fire
+//! decision reads the hands after all of them, so a gun that changed hands this tick fires from its
+//! new hand.
 
 use jc3vr_body::controllers::{
     fingers::{grip, grip::Grip},
@@ -155,7 +156,7 @@ const STAGES: [Stage; 9] = [
         name: "release",
         run: release::release_stage,
     },
-    // After every move of the tick: each hand's own fire input, and the fire hold-back.
+    // Each hand's own fire input, and the fire hold-back.
     Stage {
         name: "fire",
         run: fire::fire,

@@ -2,22 +2,23 @@
 //!
 //! The game withholds its shooting permission (`Inventory::GetAnimationAllowsShooting`) through
 //! its animation graph's permission tasks and a few code rules (see
-//! `docs/engine/gameplay/weapon-firing.md`, "The shooting permission"). Several of those tasks sit on
-//! airborne locomotion states, most of which also put the game's own weapon away: free fall, fast fall, the
-//! wingsuit's rolls, evades, flinches, and exits, and the parachute's opening. A gun the player
-//! holds in a hand is not posed by those animations, and the mod updates it directly, which the
-//! permission does not reach, so the held-gun paths waive the permission in those states. The
-//! waiver is scoped to them: it never covers a grapple wind-up, reel-in, or live wire (the code rules
-//! that withhold every permission, or shooting without the reel upgrade), and it never covers the
-//! ground, swimming, vehicle, ragdoll, or death states, whose withholding still applies. A trigger
-//! the permission withholds stays reserved by the gun, so a press neither fires nor falls through to
-//! the game's own action for the trigger.
+//! `docs/engine/gameplay/weapon-firing.md`, "The shooting permission"). Several of those tasks sit
+//! on airborne locomotion states, most of which also put the game's own weapon away: free fall,
+//! fast fall, the wingsuit's rolls, evades, flinches, and exits, and the parachute's opening. A gun
+//! the player holds in a hand is not posed by those animations, and the mod updates it directly,
+//! which the permission does not reach, so the held-gun paths waive the permission in those states.
+//! The waiver is scoped to them: it never covers a grapple wind-up, reel-in, or live wire (the code
+//! rules that withhold every permission, or shooting without the reel upgrade), and it never covers
+//! the ground, swimming, vehicle, ragdoll, or death states, whose withholding still applies. A
+//! trigger the permission withholds stays reserved by the gun, so a press neither fires nor falls
+//! through to the game's own action for the trigger.
 //!
 //! A live wire that is the mod's own also waives it, on foot or in the air (never ragdolling, dead,
-//! swimming, or in a vehicle): the snatch's line, or the grapple lock's held swing. The game withholds every permission while the hook has a live
-//! wire, but those lines are the mod's, held by the other hand, and the gun the free hand holds is
-//! posed and fired by the mod; on the 14 November take the trigger did nothing while a ragdoll
-//! swung on the snatch's line. A plain reel keeps the game's own rule.
+//! swimming, or in a vehicle): the snatch's line, or the grapple lock's held swing. The game
+//! withholds every permission while the hook has a live wire, but those lines are the mod's, held
+//! by the other hand, and the gun the free hand holds is posed and fired by the mod, so without the
+//! waiver its trigger does nothing while a ragdoll swings on the snatch's line. A plain reel keeps
+//! the game's own rule.
 
 use jc3gi::character::character::Character;
 use jc3vr_body::controllers::{

@@ -37,11 +37,24 @@
 //! - [`scope`]: scoped weapons: the game's precision aim suppressed, and the lens on the scope;
 //! - [`wheel`]: the game's weapon selection cross, opened with a held input and steered by the
 //!   hand;
+//! - [`ads`]: a long gun raised to the eye lined up with it;
+//! - [`collide`]: held long guns pushed out of the world;
+//! - [`self_hits`]: the local player's own bullets able to hit the local player;
+//! - [`permission`]: the game's shooting permission as the held-gun fire paths apply it;
+//! - [`pouch_return`]: a held grenade or charge put back by pressing it onto its chest pouch;
+//! - [`capabilities`]: what the weapon handling does in each mode;
+//! - [`contents`]: each hand's contents, sampled from the sources above;
+//! - [`engine`]: the engine reads and calls the rest share;
+//! - [`grip_sources`]: the grip sources the weapon handling puts in a hand;
+//! - [`hud_feed`]: what the weapon handling publishes for the HUD;
+//! - [`handling_tuning`]: the gun handling's shipped tuning;
+//! - [`register_body`]: the weapon handling's contributions to the body crate;
 //! - [`config`]: the weapon-handling settings.
 //!
 //! The weapon handling runs in the input tick's game stage
-//! (`controllers::bindings::stage`), in two halves around the bindings' tables
-//! (`controllers::bindings::game_tick`):
+//! (`jc3vr_gameplay::controllers::bindings::stage`), in two halves within the bindings' tick
+//! (`jc3vr_gameplay::controllers::bindings::tick`), the begin half in its hands stage and the
+//! finish half in its acts stage:
 //!
 //! 1. [`begin_tick`] reads the wielded weapon and provides the weapon handling's grip targets
 //!    ([`jc3vr_body::controllers::grab`]): the sockets and pouches on the body, reached by the player's
@@ -112,8 +125,8 @@ pub mod volumes;
 pub mod wheel;
 
 pub use begin::begin_tick;
-// Re-exported so the weapon-handling submodules that need it (the reload) can reach it at the
-// weapon handling's own path.
+// Imported so the submodules beside the begin half that need it (the reload and the finish half's
+// releases) reach it at the weapon handling's own path.
 use begin::weighted_hands;
 pub use finish::finish_tick;
 use re_utilities::hook_library::HookLibrary;

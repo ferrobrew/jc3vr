@@ -289,11 +289,9 @@ fn pass_by_action(game: &GameTick<'_>, hand: Hand) -> bool {
 }
 
 /// The free socket whose attraction takes the weapon `hand` lets go of from outside every socket's
-/// reach: the hand's grip as it is drawn
-/// against the tick's attractors, and the hand's fastest motion just before the release, which
-/// must not be a throw. A hand without motion history counts as still.
-/// The socket `hand`'s release is attracted to, leaving out `reserved`, the socket the other
-/// hand's weapon is already on its way to.
+/// reach, leaving out `reserved`, the socket the other hand's weapon is already on its way to: the
+/// hand's grip as it is drawn against the tick's attractors, and the hand's fastest motion just
+/// before the release, which must not be a throw. A hand without motion history counts as still.
 fn attraction_for(hand: Hand, reserved: Option<Socket>) -> Option<attract::Attraction> {
     let speed = motion::latest_time()
         .and_then(|latest| {

@@ -145,8 +145,8 @@ pub(super) struct HandFire<'a> {
 }
 
 /// Each hand's own fire input, by [`Hand::index`]: its trigger pulled with permission for that
-/// hand's firing grip while nothing holds its gun back. The true reload and shooting permission are checked at
-/// the gun's update.
+/// hand's firing grip while nothing holds its gun back. The true reload and the shooting permission
+/// are checked at the gun's update.
 pub(super) fn hand_fire(f: &HandFire) -> [bool; 2] {
     Hand::BOTH.map(|hand| {
         let wielding = f.holder == Some(hand);

@@ -2,11 +2,11 @@
 //!
 //! A press counts when the hand holding the item enters its return volume from outside. Grenades
 //! use their press's depth into the pouch; C4 uses its wider return volume (both in
-//! [`PouchReturnTuning`](crate::controllers::weapons::hold::tuning::PouchReturnTuning)). An item drawn
-//! inside that volume counts only after the hand has left it by the leave margin, so a draw never
-//! puts its grenade straight back; after a press, accepted or refused, the hand has to leave the
-//! same way before it can press again. The begin tick, which places the pouches, folds the hands
-//! in ([`observe`]); the grenade's and the charge's own input ticks take the presses
+//! [`PouchReturnTuning`](crate::controllers::weapons::hold::tuning::PouchReturnTuning)). An item
+//! drawn inside that volume counts only after the hand has left it by the leave margin, so a draw
+//! never puts its grenade straight back; after a press, accepted or refused, the hand has to leave
+//! the same way before it can press again. The begin tick, which places the pouches, folds the
+//! hands in ([`observe`]); the grenade's and the charge's own input ticks take the presses
 //! ([`take_grenades`], [`take_charges`]) and decide whether the pouch takes the item.
 
 use glam::Vec3;
@@ -217,7 +217,7 @@ mod tests {
             Some(POUCH),
             grenade_press()
         ));
-        // Beside the pouch, the reach is the sphere's as before.
+        // Beside the pouch, the reach is the sphere's.
         let mut beside = Press::new();
         assert!(!beside.step(Some(1), at(0.4), Some(POUCH), grenade_press()));
         assert!(!beside.step(Some(1), at(0.07), Some(POUCH), grenade_press()));

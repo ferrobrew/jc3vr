@@ -189,9 +189,9 @@ fn grab_safe_grenade(hand: Hand, socket: Socket) -> Option<bool> {
     has_safe_item.then(|| grenade::safe::draw_stowed(socket, hand))
 }
 
-/// Stow a held safe grenade before the caller opens its grenade input.
-///
-/// Stow at the socket selected as available and reachable by the release coordinator.
+/// Stow a held safe grenade on `socket`, the hip socket its opening hand would dock in, before the
+/// grenade stage sees the fingers open. `None` when the hand holds no safe grenade, and
+/// `Some(false)` when there is no hip socket to stow it on or the stow is refused.
 pub(super) fn stow_safe_grenade(hand: Hand, socket: Option<Socket>) -> Option<bool> {
     grenade::safe::in_hand(hand)?;
     let Some(socket) = socket.filter(|socket| matches!(socket, Socket::Hip(_))) else {

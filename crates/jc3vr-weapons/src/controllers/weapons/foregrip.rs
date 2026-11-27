@@ -12,18 +12,25 @@
 //!   holding hand to the off-hand, up to a limit, and less as the hands close in;
 //! - the off-hand's poses move so that its grip lands on the foregrip, keeping the controller's
 //!   rotation;
-//! - [`two_hand_grip`] reports the grip, for the recoil spring to stiffen under.
+//! - [`two_hand_grip`] reports the engaged grip, for the recoil spring to stiffen under and the
+//!   one-handed weight to give way to.
 //!
-//! Both happen in [`apply`], on the cockpit-frame hands every hand subsystem starts from
-//! ([`jc3vr_body::controllers::hands::active_hands`]), so the IK targets, the render-time late update,
-//! the gun's sight line, and the overlay all see the same two-handed pose. The engine's own
-//! off-hand grip IK stays suppressed ([`jc3vr_body::controllers::hands::secondary`]): the mod places the
-//! off-hand itself, on the `MAIN` pass with the rest of the arm, so the late update corrects it
-//! like any other controller-driven hand.
+//! Both poses are made in [`apply`], which the held guns' support and weight targets run in the
+//! body's hand composition ([`crate::controllers::weapons::gun_bodies::apply`]), so the IK targets,
+//! the render-time late update, the gun's sight line, and the overlay all see the same two-handed
+//! pose. The engine's own off-hand grip IK stays suppressed
+//! ([`jc3vr_body::controllers::hands::secondary`]): the mod places the off-hand itself, on the
+//! `MAIN` pass with the rest of the arm, so the late update corrects it like any other
+//! controller-driven hand.
+//!
+//! Only an engaged hold braces the gun. A hold blending out after a release still poses the hands
+//! until its weight reaches zero, but it is not a brace: a reader asking whether the gun is braced
+//! checks [`Hold::engaged`].
 //!
 //! The weapon's geometry in the holding wrist's frame (the grip point and the barrel axis) is
 //! measured on the input tick from the gun's last placement and the wrist target it was placed from
-//! ([`GripGeometry`]), and frozen for the length of a hold.
+//! ([`GripGeometry`]), and frozen for the length of a hold, but for the foregrip's point, which
+//! follows a hand sliding along the handguard or the barrel, and the pump.
 //!
 //! A pump-action's pump slides along the barrel under the off-hand
 //! ([`crate::controllers::weapons::reload::travel`]): the reload publishes how far back the pump
@@ -31,8 +38,8 @@
 //! pump.
 //!
 //! The grip ends when the off-hand lets go of its grip; when the off-hand moves further than the
-//! release distance from the foregrip; or when the weapon leaves the hands. Engaging and releasing
-//! blend over the tuned time ([`ForegripTuning::blend_s`]).
+//! release distance from the foregrip; when the physical brace breaks; or when the weapon leaves
+//! the hands. Engaging and releasing blend over the tuned time ([`ForegripTuning::blend_s`]).
 
 use body_rig::math::smooth::smoothstep_between;
 use glam::{Quat, Vec3};
@@ -99,7 +106,8 @@ pub struct Hold {
     pub geometry: GripGeometry,
     /// The part of the gun the off-hand holds; the foregrip's point is where it closes on it.
     pub region: GunRegion,
-    /// Whether the off-hand holds the foregrip; false while the hold blends out.
+    /// Whether the off-hand holds the foregrip; false while the hold blends out, when the hold no
+    /// longer braces the gun.
     pub engaged: bool,
     /// The share of the two-handed pose, `0..=1`.
     pub weight: f32,
@@ -118,7 +126,7 @@ pub enum Release {
     LeftTheGun,
     /// The weapon left the hands, or another weapon was drawn.
     WeaponGone,
-    /// A hand lost tracking, the controllers went inert, or the foregrip was switched off.
+    /// A hand lost tracking, or the controllers went inert.
     HandsGone,
 }
 
@@ -134,7 +142,8 @@ impl Release {
     }
 }
 
-/// The foregrip's state, for the debug UI and the recoil.
+/// The foregrip's state: the debug UI's readout, and the hold the weapon handling's readers check
+/// for a brace (the engaged hold only).
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct ForegripStatus {
     pub hold: Option<Hold>,
@@ -158,7 +167,7 @@ pub struct Turn {
     pub span_fade: f32,
 }
 
-/// An engaged two-hand grip, for the recoil spring.
+/// An engaged two-hand grip, for the recoil spring and the one-handed weight.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub(crate) struct TwoHandGrip {
     pub holder: Hand,
@@ -357,7 +366,8 @@ pub fn span_fade(span: f32, min_span: f32) -> f32 {
 /// What the input tick knows about the hands and the weapon for the foregrip.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Inputs {
-    /// Whether the foregrip may act: the toggle, the controller scheme, and the hands active.
+    /// Whether the foregrip may act: the active hands exist, which they do only under the
+    /// controller scheme with a head pose and a controller frame.
     pub active: bool,
     /// The raw cockpit-frame hands, before any two-handed pose.
     pub hands: [Option<CockpitHand>; 2],

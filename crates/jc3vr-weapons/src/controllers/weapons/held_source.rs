@@ -1,8 +1,8 @@
 //! The weapon handling's side of the held-item seam ([`jc3vr_body::controllers::held`]), which
-//! [`crate::controllers::weapons::register_body`] registers: the query functions behind each hand's
-//! contents, armed weapon, wielded gun, C4 detonate act, and long
-//! gun, the steal offer, rack and slide state, the reload's zones, and the rigid grip's placement
-//! reads.
+//! [`crate::controllers::weapons::register_body`] puts in the body's contributions: the query
+//! functions behind each hand's armed weapon, owned holder, contents, wielded gun, C4 detonator,
+//! and long gun's muzzle, the steal offer, the single pistols, the rack's stacked pistol, the
+//! weapon parts the hands move, the reload's zones, and the rigid grip's placement reads.
 
 use glam::Vec3;
 use jc3vr_body::controllers::held::{

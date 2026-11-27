@@ -1,5 +1,5 @@
 //! The weapon handling's part of the body mirror ([`jc3vr_body::controllers::body::mirror`]): the
-//! sockets' copied interaction targets drawn on each mirror pass through the registered sampler
+//! sockets' copied interaction targets drawn on each mirror pass through the contributed sampler
 //! ([`sample_attachments`]), and the pouches' render placement compared with their input targets
 //! after each render publication ([`pouches_rendered`]).
 
@@ -34,7 +34,8 @@ pub(crate) fn sample_attachments(pass: &AttachmentPass, out: &mut Vec<Primitive>
     }
 }
 
-/// Publish only copied values after the model producer applies this render's matrices.
+/// Submit the pouches' render markers to the body mirror, after the pouch models apply this
+/// render's matrices, from copied values only.
 pub(crate) fn pouches_rendered(sample: &PouchRenderSample) {
     mirror::clear_pouch_render();
     if !OVERLAY_CONFIG.query(|c| c.body_mirror) {

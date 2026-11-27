@@ -4,11 +4,11 @@
 //! The throws place a held explosive at the hand's grip on the sim tick, by writing its cached
 //! world matrix, and the engine draws it from its own cached matrices in its render update. That
 //! draws it where the tick put the hand, a tick or two behind the hand the late update draws
-//! ([`jc3vr_body::controllers::hands::late`]), and a caught grenade, which its physics carries toward
-//! the hand by velocity, further behind still. So each throw registers what its hand holds here
-//! ([`hold`]), and a post-call detour on the explosive's render update re-pushes the model matrix
-//! from the grip of the hand as it is drawn ([`late::drawn_hands`]) at the frame's interpolation
-//! fraction, so it stays in the hand where the hand falls short of the controller:
+//! ([`jc3vr_body::controllers::hands::late`]), and a caught grenade, which its physics carries
+//! toward the hand by velocity, further behind still. So each throw registers what its hand holds
+//! here ([`hold`]), and a post-call detour on the explosive's render update re-pushes the model
+//! matrix from the grip of the hand as it is drawn ([`late::drawn_hands`]) at the frame's
+//! interpolation fraction, so it stays in the hand where the hand falls short of the controller:
 //! the grenade's model for [`Explosive::UpdateRender`], and the charge's in-hand model for
 //! [`PlantedExplosive::UpdateRender`].
 //!
@@ -80,7 +80,8 @@ pub struct Held {
 }
 
 /// Where a held model sits in a hand, given for the right hand and mirrored across the body's
-/// sagittal plane for the left, as the grip offset is ([`jc3vr_body::controllers::hands::pose::grip_to_wrist`]).
+/// sagittal plane for the left, as the grip offset is
+/// ([`jc3vr_body::controllers::hands::pose::grip_to_wrist`]).
 ///
 /// The grip frame is OpenXR's: the origin at the centre of the closed hand, -Z up the tube of the
 /// curled fingers toward the thumb, +X out of the back of the right hand (into the left palm), and

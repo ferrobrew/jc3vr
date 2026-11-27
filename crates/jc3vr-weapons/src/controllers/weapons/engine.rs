@@ -1,7 +1,8 @@
-//! The weapon handling's engine reads and calls: the local player's wielded weapon, the foregrip
-//! geometry measured from the gun's placement, and the holster call. Everything here runs in the
-//! game stage (`controllers::bindings::stage`), on the game thread before the world
-//! update.
+//! The weapon handling's engine reads and calls: the local player's wielded weapon and the gun in
+//! each hand, the weapons' slots, their guns' poses, grip points, placement, and visibility, the
+//! ammunition reserve, the foregrip geometry measured from the gun's placement, and the holster
+//! call. Most run in the input tick's game stage, on the game thread before the world update; each
+//! function's safety section says where it may run.
 
 use glam::{Mat4, Quat, Vec3};
 use jc3gi::{
@@ -314,10 +315,10 @@ pub(crate) unsafe fn reserve(weapon: &WeaponBase) -> i32 {
 }
 
 /// Add `rounds` of `weapon`'s ammunition to `owner`'s reserve, up to its cap, as the game's pickup
-/// does ([`Inventory::AddAmmo`](jc3gi::character::inventory::Inventory::AddAmmo)); nothing for no rounds or a type no reserve counts. Unlike a write
-/// of the reserve
-/// ([`Inventory::SetAmmoCount`](jc3gi::character::inventory::Inventory::SetAmmoCount)), it starts no reload of an empty wielded weapon and
-/// pushes nothing to the game's weapon readout.
+/// does ([`Inventory::AddAmmo`](jc3gi::character::inventory::Inventory::AddAmmo)); nothing for no
+/// rounds or a type no reserve counts. Unlike a write of the reserve
+/// ([`Inventory::SetAmmoCount`](jc3gi::character::inventory::Inventory::SetAmmoCount)), it starts
+/// no reload of an empty wielded weapon and pushes nothing to the game's weapon readout.
 ///
 /// # Safety
 ///

@@ -3,13 +3,16 @@
 //!
 //! Each hand that holds a gun carries an offset between its controller pose and the pose the hand,
 //! the gun, and the gun's sight line are placed at: a pitch and a yaw of the barrel about the
-//! controller's grip, and a shift back along the barrel ([`offset_motion`]). Every shot kicks the offset of the hand whose gun fired, by the
-//! recoil the game adds for that shot ([`WeaponBase::m_RecoilPitch`] and
-//! [`WeaponBase::m_RecoilYaw`], read across the shot by [`crate::controllers::weapons::fire`]), and
-//! a damped spring returns it to zero. The offset is applied to the active hands
-//! ([`jc3vr_body::controllers::hands::active_hands`]), so the IK targets, the render-time late update,
-//! the gun's sight line, and the overlay all carry it: the aim follows the kicked gun, and a player
-//! who holds against the climb keeps the gun on target. The game's own scatter stays on top.
+//! controller's grip, and a shift back along the barrel ([`offset_motion`]). Every shot kicks the
+//! offset of the hand whose gun fired, by the recoil the game adds for that shot
+//! ([`WeaponBase::m_RecoilPitch`] and [`WeaponBase::m_RecoilYaw`], read across the shot by
+//! [`crate::controllers::weapons::fire`]), and a damped spring returns it to zero. The offset is
+//! applied as one of the stages of the body's hand composition ([`apply`]), so the IK targets, the
+//! render-time late update, the gun's sight line, and the overlay all carry it: the aim follows
+//! the kicked gun, and a player who holds against the climb keeps the gun on target. The game's
+//! own scatter stays on top. A hand on a gun whose body the hand bodies hold is put back after
+//! this stage ([`jc3vr_body::controllers::hands::stages::keep_physical`]), so that gun carries no
+//! offset and takes the shot's kick as an impulse on its body instead.
 //!
 //! While the off-hand holds a two-handed weapon's foregrip
 //! ([`foregrip::two_hand_grip`]), the kick is reduced, the spring stiffens, and the off-hand moves
