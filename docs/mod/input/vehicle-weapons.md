@@ -1,6 +1,6 @@
 # Weapons in vehicles
 
-Out of the driver's seat the hands fire the weapons they hold, or the mounted gun they man. The driver's built-in vehicle weapons are in [controllers.md, "Vehicles, mounted guns, and flight"](controllers.md#vehicles-mounted-guns-and-flight). This covers shooting from a passenger or stunt seat by the hand's aim, and manning a mounted gun with both hands on its handles. The code is in `crates/jc3vr-vehicles/src/controllers/vehicles/`: `passenger.rs`, with its call in the aim update (`controllers::aim`), and `mounted.rs`, `mounted_tick.rs`, `mounted_grip.rs`, and `mounted_recoil.rs`, with each shot handed to it by the per-shot seam (`controllers::weapons::fire`) through the observer the vehicle handling registers.
+Out of the driver's seat the hands fire the weapons they hold, or the mounted gun they man. The driver's built-in vehicle weapons are in [controllers.md, "Vehicles, mounted guns, and flight"](controllers.md#vehicles-mounted-guns-and-flight). This covers shooting from a passenger or stunt seat by the hand's aim, and manning a mounted gun with both hands on its handles. The code is in `crates/jc3vr-vehicles/src/vehicles/`: `passenger.rs`, with its call in the aim update (`controllers::aim`), and `mounted.rs`, `mounted_tick.rs`, `mounted_grip.rs`, and `mounted_recoil.rs`, with each shot handed to it by the per-shot seam (`controllers::weapons::fire`) through the observer the vehicle handling registers.
 
 ## Passenger and stunt seats
 
