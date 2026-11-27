@@ -1,6 +1,6 @@
 # HumanIK: driving the upper body from an external target
 
-JC3 wraps Autodesk HumanIK in `NAnimationSystem::CHumanIK` ([`HumanIK`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/animation::ik::HumanIK), in the [`animation::ik`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/animation::ik) module). Each `Character` embeds one solver and drives it every frame inside the pose-finalization pass. This page covers the solver's layout, the pass order (which this page owns for the whole finalize pass), the effector ids, and the semantics of the target calls.
+JC3 wraps Autodesk HumanIK in `NAnimationSystem::CHumanIK` ([`HumanIK`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/animation::ik::HumanIK), in the [`animation::ik`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/animation::ik) module). Each `Character` embeds one solver and drives it every frame inside the pose-finalization pass, whose full order this page also owns.
 
 ## Where it lives
 
@@ -137,4 +137,4 @@ The game's own calls:
 ## Open questions
 
 - `IKToCharacterState` takes `CCharacter::m_IkToCharacterUpdateAllBones`; how the flag changes which bones receive the solved result is not characterized. A later `SetJoint` on the same bones, such as one at `UpdatePropEffects`, overwrites the solved joint and re-derives its descendants.
-- `CharacterToIKState` and `IKToCharacterState` take the character's `hkaPose*` and are invoked only inside the pass, so code outside it queues targets and leaves the solve to the engine.
+- `CharacterToIKState` and `IKToCharacterState` take the character's `hkaPose*` and run only inside the pass; code outside it queues targets and leaves the solve to the engine.

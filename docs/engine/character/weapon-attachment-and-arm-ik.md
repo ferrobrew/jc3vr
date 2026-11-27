@@ -32,7 +32,7 @@ An animation task (`NWeaponModelAttachementSetBoneTask`) can put a part on one o
 
 ### What derives from the attach bone and what derives from the weapon cache
 
-The weapon model, the muzzle effects, and the weapon's own physics proxy all derive from the hand attach bone, so a `SetJoint` on it in the post-finalize phase moves them together. The cached `T1` is downstream of the attach bone: the hand bone, the hand mesh, and the arm IK's grip do not read it, so changing `T1` alone (or the return of `GetWorldMatrixT1`) moves the rendered weapon and its muzzle but separates them from the hand.
+The weapon model, the muzzle effects, and the weapon's physics proxy all derive from the hand attach bone, so a `SetJoint` on it in the post-finalize phase moves them together. `T1` is downstream of the bone and nothing on the hand side reads it, so changing `T1` alone (or the return of `GetWorldMatrixT1`) moves the rendered weapon and muzzle away from the hand.
 
 ### Dual-wield: one weapon object, per-gun attach bones
 
@@ -82,4 +82,4 @@ Where the hook fires and attaches is grapple targeting ([grapple-pipeline.md](..
 
 ### Wrist targets and the animated grip
 
-`GetEffectorIdFromBoneIndex(m_HIK, wristBoneIndex)` yields [`Effector::LEFT_WRIST`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/animation::ik::Effector##variant-LEFT_WRIST) and [`Effector::RIGHT_WRIST`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/animation::ik::Effector##variant-RIGHT_WRIST) ([humanik.md, "Effector-id model"](humanik.md#effector-id-model)), and a position target with `m_TargetReachT` places a wrist on either pass. The wielded weapon's animation also poses the hand (fingers and forearm, with the weapon on the attach bone), so a wrist target that disagrees with the animation's grip pulls the wrist away from the pose the animation and the attach bone assume. How a wrist effector behaves on an arm the animation holds in a two-handed grip is not verified.
+A position target on [`Effector::LEFT_WRIST`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/animation::ik::Effector##variant-LEFT_WRIST) or [`Effector::RIGHT_WRIST`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/animation::ik::Effector##variant-RIGHT_WRIST) ([humanik.md, "Effector-id model"](humanik.md#effector-id-model)) places a wrist on either pass, but the weapon's animation also poses the hand, so a wrist target that disagrees with the animated grip pulls the wrist off the pose the animation and the attach bone assume. How a wrist effector behaves on an arm the animation holds in a two-handed grip is not verified.
