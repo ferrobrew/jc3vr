@@ -167,8 +167,7 @@ Code and docs cite [engine/rendering/rendering.md](engine/rendering/rendering.md
 ### testing/
 
 - [recorder.md](mod/testing/recorder.md): the tracking recorder and the offline `tracking-synth` commands.
-- [rerun.md](mod/testing/rerun.md): exporting a recording to Rerun.
-- [view-scan.md](mod/testing/view-scan.md): scanning a take's video for camera flashes.
+- [rerun.md](mod/testing/rerun.md): exporting a take to Rerun beside its video, and scanning the video for camera flashes.
 - [fast-comparison.md](mod/testing/fast-comparison.md): the capture harness's fast GPU comparison loop.
 - [benchmark.md](mod/testing/benchmark.md): the frame-time benchmark.
 
