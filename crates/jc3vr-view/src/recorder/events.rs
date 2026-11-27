@@ -2,10 +2,10 @@
 //! the subsystems that make the decisions, held here until the next captured frame, and written
 //! before it, stamped on the recording's frame timeline.
 //!
-//! Noting is a no-op unless a recording or the lookback ([`crate::recorder::lookback`])
-//! is collecting, so a producer builds its event lazily through [`note_with`]. The pending list
-//! is bounded; an event beyond the bound is counted and dropped rather than growing the list when
-//! no frame is captured to drain it (a session without a headset, for one).
+//! Noting is a no-op unless a recording or the lookback ([`crate::recorder::lookback`]) is
+//! collecting, so a producer builds its event lazily through [`note_with`]. The pending list is
+//! bounded; an event beyond the bound is counted and dropped rather than growing the list when no
+//! frame is captured to drain it (a session without a headset, for one).
 
 use std::{
     sync::atomic::{AtomicU64, Ordering},

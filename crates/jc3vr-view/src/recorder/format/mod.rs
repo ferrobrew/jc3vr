@@ -121,8 +121,8 @@ pub(crate) struct EyeSample {
     pub(crate) fov: [f32; 4],
 }
 
-/// The published [`ControllerFrame`](jc3vr_input::frame::ControllerFrame), less the fields
-/// a publish stamps.
+/// The published [`ControllerFrame`](jc3vr_input::frame::ControllerFrame), less the fields a
+/// publish stamps.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ControllerSample {
     pub(crate) focused: bool,
@@ -155,18 +155,18 @@ pub(crate) fn encode_preamble(header: &Header) -> Vec<u8> {
     tracking_format::encode_preamble(&convert::header_to_file(header))
 }
 
-/// The uncompressed version 4 container with input records, which the reader still accepts.
+/// The newest version's container with uncompressed input records, which the reader accepts.
 #[cfg(test)]
 pub(crate) fn encode_input_preamble(header: &Header) -> Vec<u8> {
     tracking_format::encode_latest_preamble(&convert::header_to_file(header))
 }
 
-/// Recordings store lossless atomic capture batches in the version 4 chunked container.
+/// Recordings store lossless atomic capture batches in the newest version's chunked container.
 pub(crate) fn encode_chunked_preamble(header: &Header) -> Vec<u8> {
     tracking_format::encode_latest_chunked_preamble(&convert::header_to_file(header))
 }
 
-/// One version 4 frame record, preserving every independent joint flag.
+/// One frame record of the newest version, preserving every independent joint flag.
 pub(crate) fn encode_frame(frame: &Frame) -> Vec<u8> {
     tracking_format::encode_latest_frame(&convert::frame_to_file(frame))
 }

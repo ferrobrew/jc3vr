@@ -5,15 +5,18 @@
 //! game.
 //!
 //! The recorder samples at the point the frame loop has published everything a frame reads: the
-//! end of `VrState::begin_frame`, on the game thread under the runtime lock, after the eye views
-//! are located and the controllers are sampled. It records the published state, not the runtime's
-//! raw answers, so the recording holds what every consumer saw live. [`capture`] encodes the frame there and hands the bytes to a writer thread
-//! ([`writer`]), and takes only leaf locks (the published slots and its own state).
+//! end of `VrState::wait_frame`, on the game thread under the runtime lock, after the eye views are
+//! located and the controllers are sampled. It records the published state, not the runtime's raw
+//! answers, so the recording holds what every consumer saw live. [`capture`] encodes the frame
+//! there and hands the bytes to a writer thread ([`writer`]), and takes only leaf locks (the
+//! published slots and its own state).
 //!
-//! A recording starts and stops on request ([`request_start`], [`request_stop`], [`toggle`]) from
-//! any thread: the debug UI, the director's key bindings, or the testing request file. The request
-//! is serviced on the game thread at the top of the next frame ([`frame_tick`]), which is where the
-//! player's transform can be read for the start marker. The file format is [`format`]; see `docs/mod/testing/recorder.md`.
+//! A recording starts and stops on request ([`request_start`], [`request_start_stamped`],
+//! [`request_stop`]) from any thread: the tooling crate's session recording (the debug UI and the
+//! director's key bindings) and the testing request file. The request is serviced on the game
+//! thread at the top of the next frame ([`frame_tick`]), which is where the player's transform can
+//! be read for the start marker. The file format is [`format`](mod@format); see
+//! `docs/mod/testing/recorder.md`.
 //!
 //! Beside each frame the recorder writes the mod-side [`events`] noted since the previous one. The
 //! [`lookback`] keeps the last few seconds of the same capture batches while motion controllers are
@@ -112,8 +115,8 @@ pub struct TrackingStatus {
     pub frames: u32,
     /// Frames dropped because the writer fell behind.
     pub dropped: u32,
-    /// Stored bytes accepted by the buffered sink, including the preamble. A flush error can
-    /// prevent durability. The chunked writer stores chunks; the raw writer stores original records.
+    /// Stored bytes accepted by the buffered sink, including the preamble: the compressed chunks,
+    /// not the original records. A flush error can prevent durability.
     pub bytes: u64,
     /// Preamble and original record bytes for complete accepted batches, before compression.
     pub(crate) logical_bytes: u64,
@@ -443,8 +446,8 @@ pub fn shutdown() -> bool {
     state.shutdown()
 }
 
-/// Includes the active writer, and leaves room for a lookback save beside it. Saturation refuses a
-/// start rather than discarding an owner.
+/// The most writers alive at once, the active one included, which leaves room for a lookback save
+/// beside it. Saturation refuses a start rather than discarding an owner.
 const MAX_WRITERS: usize = 3;
 
 const REQUEST_NONE: u8 = 0;
@@ -678,8 +681,8 @@ fn discard_before_start() {
 }
 
 /// Run the lookback while motion controllers are enabled and the OpenXR runtime is up, and service
-/// a save request. Without a runtime no frame is captured, so the
-/// player's transform is not read for one.
+/// a save request. Without a runtime no frame is captured, so the player's transform is not read
+/// for one.
 fn lookback_tick() {
     let enabled = *CONTROLLERS_ENABLED.lock();
     let hand_joints = *RECORD_HAND_JOINTS.lock();

@@ -91,8 +91,8 @@ impl Owner {
 }
 
 impl Writer {
-    /// Create the recording at `path` in the lossless version 4 chunked container and start its
-    /// writer thread.
+    /// Create the recording at `path` in the newest version's lossless chunked container and start
+    /// its writer thread.
     pub(crate) fn start(path: &Path, header: &Header) -> Result<Self, WriterError> {
         let preamble = format::encode_chunked_preamble(header);
         let create = || -> std::io::Result<BufWriter<File>> {

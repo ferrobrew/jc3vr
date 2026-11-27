@@ -176,8 +176,8 @@ pub(super) fn take_save_request() -> bool {
     SAVE_REQUESTED.swap(false, Ordering::Relaxed)
 }
 
-/// The most memory the window holds. Ten seconds of frames with hand joints at a high refresh
-/// rate stay well below it; it only bounds a pathological case.
+/// The most memory the window holds. The shipped window of frames with hand joints at a high
+/// refresh rate stays well below it; it only bounds a pathological case.
 const MAX_BYTES: usize = 64 * 1024 * 1024;
 
 static RUNNING: AtomicBool = AtomicBool::new(false);
