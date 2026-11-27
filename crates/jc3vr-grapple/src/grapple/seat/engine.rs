@@ -105,7 +105,7 @@ pub(super) unsafe fn fire(
     let vehicle = NonZeroUsize::new(unsafe { character.GetVehiclePtr() } as usize)
         .ok_or(Refusal::NoPlayer)?;
     let body = unsafe { vehicle_body(vehicle) }.ok_or(Refusal::NoPlayer)?;
-    let state = unsafe { physics::body_state(body, vehicle) }.map_err(|_| Refusal::NoPlayer)?;
+    let state = unsafe { physics::bodies::read(body, vehicle) }.map_err(|_| Refusal::NoPlayer)?;
     let speed = unsafe { hook.GetTuning().as_ref() }
         .ok_or(Refusal::FireRefused)?
         .m_GrappleFireSpeed;

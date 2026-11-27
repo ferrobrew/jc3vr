@@ -121,7 +121,7 @@ unsafe fn motion(weapon: &WeaponBase) -> Option<(Mat4, Release)> {
     let first = unsafe { gun::guns(weapon) }.next().flatten()?;
     let owner = NonZeroUsize::new(weapon as *const WeaponBase as usize)?;
     let release = unsafe { first.m_PfxInstance.as_ref() }
-        .and_then(|instance| unsafe { physics::body_state(instance.m_BodyId, owner) }.ok())
+        .and_then(|instance| unsafe { physics::bodies::read(instance.m_BodyId, owner) }.ok())
         .map(|state| Release {
             velocity: state.velocities.linear,
             angular: state.velocities.angular,

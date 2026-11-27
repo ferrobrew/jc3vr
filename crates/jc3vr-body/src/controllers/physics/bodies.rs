@@ -354,7 +354,7 @@ pub unsafe fn aabb(body: u32) -> Option<(Vec3, Vec3)> {
 /// # Safety
 ///
 /// Main thread, outside the physics step.
-pub(crate) unsafe fn mass_kg(body: u32) -> Option<f32> {
+pub unsafe fn mass_kg(body: u32) -> Option<f32> {
     let world = unsafe { World::get() }?;
     let world = world.world();
     let slot = unsafe { slot(world, body) }?;

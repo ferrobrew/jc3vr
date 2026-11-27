@@ -36,7 +36,7 @@ impl BodyHit {
     ///
     /// The main thread, outside the physics step.
     pub unsafe fn at(body: u32, owner: NonZeroUsize, world: Vec3) -> Option<Self> {
-        let state = unsafe { physics::body_state(body, owner) }.ok()?;
+        let state = unsafe { physics::bodies::read(body, owner) }.ok()?;
         let local_point = state.pose.local(world);
         local_point.is_finite().then_some(Self {
             body,
@@ -51,7 +51,7 @@ impl BodyHit {
     ///
     /// The main thread, outside the physics step.
     pub unsafe fn point(self) -> Option<Vec3> {
-        let state = unsafe { physics::body_state(self.body, self.owner) }.ok()?;
+        let state = unsafe { physics::bodies::read(self.body, self.owner) }.ok()?;
         let point = state.pose.point(self.local_point);
         point.is_finite().then_some(point)
     }

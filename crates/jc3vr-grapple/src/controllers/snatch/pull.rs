@@ -214,7 +214,7 @@ pub(super) unsafe fn bite(
     if matches!(grabbed.kind, Pulled::Prop { .. }) {
         unsafe { loosen(owner, body) }.map_err(Refusal::Body)?;
     }
-    let state = unsafe { physics::body_state(body, owner) }.map_err(Refusal::Body)?;
+    let state = unsafe { physics::bodies::read(body, owner) }.map_err(Refusal::Body)?;
     unsafe { engine::exclude_rope(wire) };
     if let Some(palm) = ik::tick_records().current[hand.index()].map(|t| t.wrist.position) {
         unsafe { juice::impact(wire, grabbed.object, palm) };
@@ -289,7 +289,7 @@ pub(super) fn pull(
         flight.hit = hit;
     }
     let BodyHit { body, owner, .. } = hit;
-    let state = unsafe { physics::body_state(body, owner) }.map_err(Refusal::Body)?;
+    let state = unsafe { physics::bodies::read(body, owner) }.map_err(Refusal::Body)?;
     let heavy = rules::HeavyCatch {
         mass_kg: state.mass_kg.unwrap_or(f32::INFINITY),
         heavy_mass_kg: SNATCH.get().heavy_mass_kg,
@@ -584,11 +584,11 @@ unsafe fn verified_hit(
 ) -> Result<Option<engine::Anchor>, Refusal> {
     let anchor = unsafe { engine::anchor(wire) };
     let owner = hit.owner;
-    let selected_owned = unsafe { physics::body_state(hit.body, owner) }.is_ok();
+    let selected_owned = unsafe { physics::bodies::read(hit.body, owner) }.is_ok();
     let proxy = anchor.map(|anchor| {
         (
             anchor.body,
-            unsafe { physics::body_state(anchor.body, owner) }.is_ok(),
+            unsafe { physics::bodies::read(anchor.body, owner) }.is_ok(),
         )
     });
     match engine::check_anchor(selected_owned, hit.body, proxy) {
@@ -685,7 +685,7 @@ pub(super) unsafe fn sling(
         flight.hit = hit;
     }
     let BodyHit { body, owner, .. } = hit;
-    let state = unsafe { physics::body_state(body, owner) }.map_err(Refusal::Body)?;
+    let state = unsafe { physics::bodies::read(body, owner) }.map_err(Refusal::Body)?;
     let (line_anchor, wrist) = unsafe { prepare_sling(hand, wire) }?;
     let other = hand.other();
     let other_record = ik::tick_records().current[other.index()];
@@ -898,7 +898,7 @@ unsafe fn surface_toward(object: NonZeroUsize, centre: Vec3, palm: Vec3) -> Vec3
 ///
 /// The game thread, before the world update.
 unsafe fn body_centre(body: u32, object: NonZeroUsize) -> Result<Vec3, Refusal> {
-    unsafe { physics::body_state(body, object) }
+    unsafe { physics::bodies::read(body, object) }
         .map(|state| state.pose.centre)
         .map_err(Refusal::Body)
 }

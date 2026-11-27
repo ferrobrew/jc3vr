@@ -342,7 +342,7 @@ pub(super) unsafe fn knock(
     knock: impl FnOnce(RigidBody) -> Velocities,
 ) -> Operation<()> {
     let mut state = STATE.lock();
-    let read = unsafe { physics::body_state(magazine.body, magazine.owner) };
+    let read = unsafe { physics::bodies::read(magazine.body, magazine.owner) };
     let body = match state.observe(magazine, read) {
         Operation::Ready(body) => body,
         Operation::Deferred => return Operation::Deferred,

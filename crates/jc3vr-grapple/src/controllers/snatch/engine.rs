@@ -224,7 +224,7 @@ unsafe fn attach_body(
     let position = Vec3::from_array(position.data);
     let offset_m = position.distance(at);
     let proxy_body_owned =
-        body != hit.body && unsafe { physics::body_state(body, hit.owner) }.is_ok();
+        body != hit.body && unsafe { physics::bodies::read(body, hit.owner) }.is_ok();
     let matched = verify_proxy(
         hit.body,
         body,

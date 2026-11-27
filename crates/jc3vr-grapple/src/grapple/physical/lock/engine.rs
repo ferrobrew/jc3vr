@@ -266,7 +266,7 @@ const NO_ENTRY: i32 = -1;
 /// The game thread, outside the physics step.
 pub(super) unsafe fn rider_mass_kg(character: &Character) -> Option<f32> {
     let body = unsafe { proxy_body(character) }?;
-    unsafe { physics::body_mass_kg(body) }.filter(|m| *m > 0.0)
+    unsafe { physics::bodies::mass_kg(body) }.filter(|m| *m > 0.0)
 }
 
 /// Whether the character's proxy stands on a surface.
