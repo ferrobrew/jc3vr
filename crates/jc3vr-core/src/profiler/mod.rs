@@ -59,7 +59,8 @@ pub fn are_scopes_on() -> bool {
 /// finest-grained instrumentation the mod has (hundreds of scopes per frame, each a lock and a
 /// stream push) and they sit on the draw-submission path, so leaving them on inflates the very
 /// cost a capture is usually taken to measure. The [`blocks`] counters carry the cheap part of
-/// their signal (how many blocks of each type were drawn) unconditionally.
+/// their signal (how many blocks of each type were drawn) whenever scopes are on, without this
+/// switch.
 pub fn per_draw_scopes() -> bool {
     PER_DRAW_SCOPES.load(Ordering::Relaxed)
 }

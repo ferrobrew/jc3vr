@@ -23,7 +23,7 @@ use windows::{
 use crate::gpu_passes::{self, GpuPassLabel};
 
 /// The lane the tail blit's time is filed under, past the dispatch lanes.
-pub(super) const TAIL_LANE: u8 = 3;
+pub(super) const TAIL_LANE: u8 = 2;
 
 /// A small ring of query sets, so a frame's read-back can trail its submit by a few frames.
 #[derive(Default)]
