@@ -1,6 +1,6 @@
-//! The local player's character proxy as the physics world holds it: its body's slot, the velocity
-//! its motion holds, the support its last update found, and the velocity it is given for the coming
-//! step, the way its own update gives it one.
+//! The local player's character proxy as the physics world holds it: its body's slot and place, the
+//! velocity its motion holds, the support its last update found, and the velocity and support it is
+//! given for the coming step, the way its own update gives them.
 //!
 //! Every function here reaches the local player character itself, on the thread that steps the
 //! physics world, outside the step.
@@ -13,8 +13,17 @@ use jc3gi::{
 };
 
 use crate::controllers::physics::{
-    bodies::slot, error::PhysicsError, havok::vector as havok_vector, world::World,
+    bodies::slot, characters::character_position, error::PhysicsError,
+    havok::vector as havok_vector, world::World,
 };
+
+/// The local player as the physics world places it: the proxy body's centre and the character's
+/// root, game space.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct ProxyPlace {
+    pub body: Vec3,
+    pub feet: Vec3,
+}
 
 /// The local player character's proxy, or [`PhysicsError::NoPlayer`] without a local player or a
 /// proxy.
@@ -43,6 +52,26 @@ pub unsafe fn proxy_slot<'w>(
     let mut body = PfxCharacterInstance::INVALID_BODY_ID;
     unsafe { proxy.GetCharacterRigidBodyId(&mut body) };
     unsafe { slot(world, body) }.ok_or(PhysicsError::NoPlayer)
+}
+
+/// Where the local player's proxy body and root are: [`PhysicsError::NoPlayer`] without a local
+/// player, a proxy, or a proxy body, or for a place that is not finite.
+///
+/// # Safety
+///
+/// The game thread, outside the physics step.
+pub unsafe fn place() -> Result<ProxyPlace, PhysicsError> {
+    let character =
+        unsafe { Character::GetLocalPlayerCharacter().as_ref() }.ok_or(PhysicsError::NoPlayer)?;
+    let proxy = unsafe { character.m_PfxCharacter.px.as_ref() }.ok_or(PhysicsError::NoPlayer)?;
+    let world = unsafe { World::require() }?;
+    let slot = unsafe { proxy_slot(world.world(), proxy) }?;
+    let body = Vec3::from_array(slot.m_transform.m_translation.data) + world.shift;
+    let feet = character_position(character);
+    if !(body.is_finite() && feet.is_finite()) {
+        return Err(PhysicsError::NoPlayer);
+    }
+    Ok(ProxyPlace { body, feet })
 }
 
 /// The velocity of the local player's proxy body, as its motion holds it: [`PhysicsError::NoPlayer`]
@@ -82,6 +111,37 @@ pub unsafe fn set_proxy_velocity(velocity: Vec3, step_s: f32) -> Result<(), Phys
         m_real: [step_s; 4],
     };
     unsafe { body.setLinearVelocity(&havok_vector(velocity), &timestep, false) };
+    Ok(())
+}
+
+/// Hold the local player up: give the proxy body `velocity` for the coming step of `step_s` seconds
+/// ([`set_proxy_velocity`]), and write the proxy as supported on the body `ground`, level, moving at
+/// `surface_velocity`: at rest on the static world, carried with a moving body. Fails for a surface
+/// velocity that is not finite ([`PhysicsError::BadMotion`]) before reaching the proxy.
+///
+/// # Safety
+///
+/// The thread that steps the physics world, outside the step, after the proxy's update; `ground`
+/// must be a body of the world.
+pub unsafe fn hold(
+    velocity: Vec3,
+    step_s: f32,
+    ground: u32,
+    surface_velocity: Vec3,
+) -> Result<(), PhysicsError> {
+    if !surface_velocity.is_finite() {
+        return Err(PhysicsError::BadMotion);
+    }
+    unsafe { set_proxy_velocity(velocity, step_s) }?;
+    let proxy = unsafe { local_proxy() }?;
+    let info = &mut proxy.m_GroundInformation;
+    info.m_isSurfaceDynamic = surface_velocity != Vec3::ZERO;
+    info.m_supportedState = hknpCharacterSurfaceInfo::SUPPORTED;
+    info.m_surfaceDistanceExcess = 0.0;
+    info.m_surfaceNormal = havok_vector(Vec3::Y);
+    info.m_surfaceVelocity = havok_vector(surface_velocity);
+    proxy.m_GroundBodyId = ground;
+    proxy.m_LastValidGroundBodyId = ground;
     Ok(())
 }
 
