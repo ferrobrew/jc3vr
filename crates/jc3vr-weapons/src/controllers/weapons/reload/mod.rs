@@ -632,6 +632,16 @@ pub struct BeltEligibility {
 }
 
 impl BeltEligibility {
+    /// The offer, on input tick `sequence`, of the push to `hands` (by [`Hand::index`]) for
+    /// `guns`.
+    pub const fn new(sequence: u64, hands: [bool; 2], guns: [Option<GunOwner>; 2]) -> Self {
+        Self {
+            sequence,
+            hands,
+            guns,
+        }
+    }
+
     /// The row of `hand`'s push. Final claims and hand readiness can revoke the offer without
     /// another engine query.
     pub fn row(
@@ -716,11 +726,9 @@ impl BeltFinish {
             (hand == self.dominant || self.dual)
                 && self.hand_eligible(hand, &reload, guns, &mut read)
         });
-        hands.contains(&true).then_some(BeltEligibility {
-            sequence,
-            hands,
-            guns,
-        })
+        hands
+            .contains(&true)
+            .then_some(BeltEligibility::new(sequence, hands, guns))
     }
 
     fn hand_eligible(
@@ -773,13 +781,6 @@ impl BeltGate {
             && self.has_ammo
             && self.can_belt
     }
-}
-
-/// The belt reload's eligibility on the steps' fixture of one gun in the dominant hand, and the
-/// guns' owners it was offered for, for the bindings' summary tests.
-#[cfg(any(test, feature = "test-support"))]
-pub fn eligible_belt_for_test(config: &WeaponSettings) -> (BeltEligibility, [Option<GunOwner>; 2]) {
-    steps::eligible_belt_for_test(config)
 }
 
 /// Cancel only physical magazine manipulation on a mode boundary. Other weapon holds remain.

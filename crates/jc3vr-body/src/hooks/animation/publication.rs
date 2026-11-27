@@ -124,12 +124,18 @@ static STORE: Mutex<Store> = Mutex::new(Store {
 
 #[cfg(test)]
 mod tests {
-    use jc3vr_view::headpose::anchors::test_support::identity_fixture;
+    use jc3gi::animation::skeleton::{HkaSkeleton, Skeleton};
 
     use super::*;
 
+    /// A store with a controller selected, and an evaluation over a zeroed five-bone skeleton.
     fn fixture() -> (Store, Evaluation) {
-        let identity = identity_fixture();
+        let mut havok: HkaSkeleton = unsafe { std::mem::zeroed() };
+        havok.m_Bones.size = 5;
+        let mut skeleton: Skeleton = unsafe { std::mem::zeroed() };
+        skeleton.m_HavokSkeleton = &mut havok;
+        let mut controller: AnimationController = unsafe { std::mem::zeroed() };
+        controller.m_Skeleton = &mut skeleton;
         (
             Store {
                 selected: Some(1),
@@ -137,8 +143,8 @@ mod tests {
                 latest: None,
             },
             Evaluation {
-                skeleton: identity.skeleton,
-                producer: identity.producer,
+                skeleton: unsafe { SkeletonKey::of(&controller) }.unwrap(),
+                producer: 2,
                 bones: 5,
             },
         )

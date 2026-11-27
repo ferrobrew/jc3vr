@@ -43,8 +43,8 @@ pub struct Target {
     pub action: Action,
 }
 
-#[cfg(any(test, feature = "test-support"))]
 impl Target {
+    /// `action` on the local player's action map.
     pub const fn player(action: Action) -> Self {
         Self {
             map: MapKind::Player,
@@ -52,6 +52,7 @@ impl Target {
         }
     }
 
+    /// `action` on the UI action map.
     pub const fn ui(action: Action) -> Self {
         Self {
             map: MapKind::Ui,

@@ -10,6 +10,7 @@ use jc3vr_view::vr::input::flight_pose::LocatedHead;
 use openxr as xr;
 
 use super::*;
+use crate::test_support::flight_guard;
 
 fn input(mode: Mode) -> GestureInput {
     GestureInput {
@@ -403,7 +404,7 @@ fn evaluation_denies_missing_and_unsupported_inputs() {
 
 #[test]
 fn actual_packet_evaluate_and_commit_apply_late_canopy_staleness_and_claims() {
-    let _guard = flight_pose::test_guard();
+    let _guard = flight_guard();
     let now = Instant::now();
     let eyes = [xr::Posef {
         position: xr::Vector3f {

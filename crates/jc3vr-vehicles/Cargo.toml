@@ -31,9 +31,7 @@ smol_str = "0.3.6"
 toml = "1.1.6"
 
 [dev-dependencies]
-jc3vr-body = { path = "../jc3vr-body", features = ["test-support"] }
 jc3vr-core = { path = "../jc3vr-core", features = ["test-support"] }
-jc3vr-view = { path = "../jc3vr-view", features = ["test-support"] }
 pretty_assertions = "1.4.1"
 proptest = "1.11.0"
 test-case = "3.3.1"

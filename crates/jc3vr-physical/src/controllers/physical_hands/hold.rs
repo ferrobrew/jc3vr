@@ -340,16 +340,13 @@ mod tests {
     use std::f32::consts::FRAC_PI_2;
 
     use glam::Quat;
-    use jc3vr_body::controllers::{
-        body::procedural::{
-            rig::{Rig, test_support::skeleton},
-            solver::pose::RigPose,
-        },
-        physics::rigid::test_support::crate_body,
-    };
+    use jc3vr_body::controllers::body::procedural::solver::arms::Capsule;
 
     use super::*;
-    use crate::controllers::physical_hands::pickup::{HandStrength, PICKUP};
+    use crate::{
+        controllers::physical_hands::pickup::{HandStrength, PICKUP},
+        test_support::crate_body,
+    };
 
     const DT: f32 = 1.0 / 60.0;
 
@@ -939,15 +936,21 @@ mod tests {
         );
         assert_eq!(cylinder.offset(Vec3::new(5.0, 1.0, 0.0)), Vec3::ZERO);
 
-        let rig = Rig::from_skeleton(&skeleton()).unwrap();
-        let torso = PlayerKeepOut::Torso(TorsoKeepOut::around(
-            &RigPose {
-                bones: rig.reference,
-            },
-            0.14,
-            0.13,
-            0.03,
-        ));
+        let torso = PlayerKeepOut::Torso(TorsoKeepOut {
+            capsules: [
+                Capsule {
+                    a: Vec3::new(0.0, 1.25, 0.0),
+                    b: Vec3::new(0.0, 1.5, 0.0),
+                    radius: 0.14,
+                },
+                Capsule {
+                    a: Vec3::new(0.0, 0.95, 0.0),
+                    b: Vec3::new(0.0, 1.25, 0.0),
+                    radius: 0.13,
+                },
+            ],
+            margin: 0.03,
+        });
         let inside = Vec3::new(0.02, 1.1, -0.05);
         let offset = torso.offset(inside);
         assert!(offset.length() > 0.0, "{offset:?}");

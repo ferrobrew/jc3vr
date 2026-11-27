@@ -21,8 +21,8 @@
 //! [`controllers::weapons::hook_library`] in its place in the order.
 //!
 //! The crate's own tests register a configuration root of their own (`test_config`) holding the
-//! weapons group and the body-bound groups the weapon handling reads, and use the body crate's
-//! `test-support` fixtures.
+//! weapons group and the body-bound groups the weapon handling reads, and share the fixtures in
+//! `test_support`.
 
 pub mod contributions;
 pub mod controllers;
@@ -31,3 +31,5 @@ pub use controllers::weapons::register_body::register;
 
 #[cfg(test)]
 mod test_config;
+#[cfg(test)]
+mod test_support;

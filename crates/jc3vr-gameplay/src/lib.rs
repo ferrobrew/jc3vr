@@ -45,7 +45,7 @@
 //!
 //! The `profiler` feature adds the sim step's profiler scopes. The crate's own tests register a
 //! configuration root of their own (`test_config`), since the payload's aggregate is not there,
-//! and use the lower crates' `test-support` fixtures.
+//! and serialize over the view crate's input history through `test_support`.
 
 pub mod controllers;
 pub mod hooks;
@@ -54,3 +54,5 @@ pub use crate::controllers::register;
 
 #[cfg(test)]
 mod test_config;
+#[cfg(test)]
+mod test_support;

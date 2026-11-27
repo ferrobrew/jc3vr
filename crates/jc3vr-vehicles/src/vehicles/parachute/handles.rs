@@ -221,11 +221,10 @@ fn release(state: &mut HandleState, hand: Hand, why: Release, events: &mut Vec<H
 
 #[cfg(test)]
 mod tests {
-    use jc3vr_body::controllers::grab::grab_volume;
     use jc3vr_weapons::controllers::{loadout::Socket, weapons::hold::tuning::HOLD};
 
     use super::*;
-    use crate::vehicles::wingsuit::arm_steering::combine;
+    use crate::{test_support::grab_volume, vehicles::wingsuit::arm_steering::combine};
 
     fn config() -> &'static ParachuteHandlesTuning {
         &VEHICLES.get().parachute_handles

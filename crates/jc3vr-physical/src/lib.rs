@@ -38,7 +38,7 @@
 //!   their types, and the payload binds them to its aggregate.
 //!
 //! The crate's own tests register a configuration root of their own (`test_config`), since the
-//! payload's aggregate is not there, and use the body crate's `test-support` fixtures.
+//! payload's aggregate is not there, and share the fixtures in `test_support`.
 
 pub mod contributions;
 pub mod controllers;
@@ -47,3 +47,5 @@ pub use controllers::physical_hands::register_body::register;
 
 #[cfg(test)]
 mod test_config;
+#[cfg(test)]
+mod test_support;

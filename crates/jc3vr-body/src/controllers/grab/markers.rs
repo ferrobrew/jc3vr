@@ -283,21 +283,5 @@ pub fn anchor_at(at: MarkAt, frame: &MarkerFrame) -> Option<Anchor> {
     }
 }
 
-/// A frame with no turn, for the tests.
-#[cfg(any(test, feature = "test-support"))]
-pub fn test_frame() -> MarkerFrame {
-    use glam::{Quat, Vec3};
-
-    MarkerFrame {
-        xf: CockpitTransform {
-            head_world: Vec3::new(10.0, 2.0, -5.0),
-            head_cockpit: Vec3::new(0.0, 1.7, 0.0),
-            body: Quat::IDENTITY,
-            world_scale: 1.0,
-        },
-        drawn: [None; 2],
-    }
-}
-
 /// The labels to draw, published at the input tick's rate with when they were published.
 static LABELS: Published<Vec<MarkLabel>> = Published::new(Stage::InputGame);

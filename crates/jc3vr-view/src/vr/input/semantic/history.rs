@@ -137,7 +137,7 @@ pub fn take_gameplay() -> Vec<Publication> {
 /// Capture a final decision without changing live ownership. A fresh recording has an explicit
 /// unavailable prefix until a recorded real-neutral boundary, rather than inheriting a live episode.
 pub fn record_policy(evaluation: PolicyEvaluation) {
-    #[cfg(any(test, feature = "test-support"))]
+    #[cfg(test)]
     let _serial = TEST_LOCK.lock();
     SLOT.lock().record_policy(evaluation);
 }
@@ -248,8 +248,9 @@ static SLOT: LazyLock<Mutex<Published>> = LazyLock::new(|| {
     })
 });
 
-#[cfg(any(test, feature = "test-support"))]
-pub static TEST_LOCK: parking_lot::ReentrantMutex<()> = parking_lot::ReentrantMutex::new(());
+/// Serializes the tests that record into, capture, or reset the history.
+#[cfg(test)]
+pub(crate) static TEST_LOCK: parking_lot::ReentrantMutex<()> = parking_lot::ReentrantMutex::new(());
 
 #[cfg(test)]
 mod tests {

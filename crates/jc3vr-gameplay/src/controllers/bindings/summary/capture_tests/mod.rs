@@ -1,5 +1,4 @@
 use jc3vr_body::controllers::mode::OnFootVariant;
-use jc3vr_weapons::controllers::weapons::{config::WeaponSettings, reload::eligible_belt_for_test};
 
 use super::*;
 use crate::controllers::{config::ControllersConfig, summary::eligibility};
@@ -22,12 +21,13 @@ fn capture_revalidates_belt_against_physical_guns_without_per_hand_trigger_subst
     let config = ControllersConfig::default();
     let hand = config.acting_hand();
     let mode = Mode::OnFoot(OnFootVariant::Ground);
-    let settings = WeaponSettings {
-        weapons: config.weapons,
-        dominant: hand,
-        ..WeaponSettings::new()
-    };
-    let (lease, guns) = eligible_belt_for_test(&settings);
+    let guns = Hand::BOTH.map(|physical| {
+        (physical == hand).then_some(GunOwner {
+            weapon: 1,
+            role: GunHand::Grip,
+        })
+    });
+    let lease = BeltEligibility::new(7, Hand::BOTH.map(|physical| physical == hand), guns);
     let before = owner_state(guns);
     let owners = guns.map(|_| Owner { mode, gun: None });
     assert!(owners.iter().all(|owner| owner.gun.is_none()));

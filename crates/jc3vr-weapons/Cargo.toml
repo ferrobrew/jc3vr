@@ -5,11 +5,6 @@ edition = "2024"
 description = "The weapons layer of the payload: physical weapon handling (the holsters and grab volumes, the foregrip, the reloads, the grenades and C4, recoil, the dual-wield split, and the weapon wheel) and the loadout table, built on the body layer."
 publish = false
 
-[features]
-# Test fixtures the gameplay crate's tests rely on: the reload steps' belt eligibility on one gun
-# in the dominant hand.
-test-support = []
-
 [dependencies]
 glam = { workspace = true }
 jc3gi = { path = "../../jc3gi" }
@@ -33,9 +28,7 @@ smol_str = "0.3.6"
 toml = "1.1.6"
 
 [dev-dependencies]
-jc3vr-body = { path = "../jc3vr-body", features = ["test-support"] }
 jc3vr-core = { path = "../jc3vr-core", features = ["test-support"] }
-jc3vr-view = { path = "../jc3vr-view", features = ["test-support"] }
 pretty_assertions = "1.4.1"
 proptest = "1.11.0"
 test-case = "3.3.1"

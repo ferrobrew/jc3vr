@@ -46,7 +46,7 @@ pub(super) fn publish(enabled: bool, button_held: bool) {
 
 /// Whether the hook's update ends a line holding a weapon: the snatch is on and the grapple
 /// button, as the input tick last injected it, is not held.
-pub fn should_reel_weapon(enabled: bool, ordinary_button_held: bool) -> bool {
+fn should_reel_weapon(enabled: bool, ordinary_button_held: bool) -> bool {
     enabled && !ordinary_button_held
 }
 

@@ -19,9 +19,12 @@ use jc3vr_view::vr::input::{
 };
 
 use super::*;
-use crate::controllers::bindings::{
-    tables::Bindings,
-    trigger_ownership::{TriggerMask, mask_routes},
+use crate::{
+    controllers::bindings::{
+        tables::Bindings,
+        trigger_ownership::{TriggerMask, mask_routes},
+    },
+    test_support::flight_guard,
 };
 
 fn hands() -> [HandFrame; 2] {
@@ -253,8 +256,8 @@ fn captured_loss_round_trips_through_the_recording() {
 
 #[test]
 fn queued_live_publications_keep_middle_loss_through_capture() {
-    let _flight = jc3vr_view::vr::input::flight_pose::test_guard();
-    let _serial = history::TEST_LOCK.lock();
+    let _flight = flight_guard();
+    let _serial = HISTORY_LOCK.lock();
     history::take_gameplay();
     history::begin_capture();
     let trace = chord_loss_trace();

@@ -28,8 +28,7 @@
 //! ([`controllers::snatch::config::SNATCH`]).
 //!
 //! The crate's own tests register a configuration root of their own (`test_config`), since the
-//! payload's aggregate is not there, and use the body crate's `test-support` fixtures. The
-//! `test-support` feature exposes the snatch's input-side reel gate to the gameplay crate's tests.
+//! payload's aggregate is not there.
 
 pub mod controllers;
 pub mod grapple;

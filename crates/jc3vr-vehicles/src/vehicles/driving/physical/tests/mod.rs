@@ -338,7 +338,7 @@ fn a_hand_takes_the_handlebars_anywhere_along_its_half() {
         [None, Some(inboard)],
     );
     assert_eq!(candidates.len(), 1);
-    assert!(candidates[0].reach(inboard).is_some());
+    assert!(candidates[0].centre.distance(inboard) <= candidates[0].radius);
     assert!(candidates[0].centre.distance(inboard) < 0.1 + 1e-4);
     // The middle of the bars and the other half are not this hand's.
     let middle = p.bars.centre;
@@ -349,7 +349,7 @@ fn a_hand_takes_the_handlebars_anywhere_along_its_half() {
     // Well past the end, the reach runs out.
     let past = ends[1] + Vec3::new(radius + 0.12, 0.0, 0.0);
     let far = candidates_for(&p, &state, past);
-    assert!(far.reach(past).is_none());
+    assert!(far.centre.distance(past) > far.radius);
 }
 
 fn candidates_for(p: &Placement, state: &ControlState, point: Vec3) -> Candidate {

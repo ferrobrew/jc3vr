@@ -174,10 +174,9 @@ impl Give {
 #[cfg(test)]
 mod tests {
     use glam::Quat;
-    use jc3vr_body::controllers::physics::rigid::test_support::crate_body;
 
     use super::*;
-    use crate::controllers::physical_hands::tuning::PHYSICAL_HANDS;
+    use crate::{controllers::physical_hands::tuning::PHYSICAL_HANDS, test_support::crate_body};
 
     const DT: f32 = 1.0 / 60.0;
 

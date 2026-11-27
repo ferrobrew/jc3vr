@@ -255,8 +255,8 @@ fn located_center(head: &LocatedHead) -> Option<TrackedPose> {
 static SLOT: LazyLock<Mutex<Producer>> = LazyLock::new(|| Mutex::new(Producer::new()));
 
 /// Serialize tests that share the live packet with history source changes, and leave it empty.
-#[cfg(any(test, feature = "test-support"))]
-pub fn test_guard() -> impl Drop {
+#[cfg(test)]
+pub(crate) fn test_guard() -> impl Drop {
     struct Guard {
         _serial: parking_lot::ReentrantMutexGuard<'static, ()>,
     }

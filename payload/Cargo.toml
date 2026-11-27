@@ -79,5 +79,4 @@ glam = { workspace = true }
 jc3vr-input = { path = "../crates/jc3vr-input" }
 serde_json = "1"
 jc3vr-core = { path = "../crates/jc3vr-core", features = ["test-support"] }
-jc3vr-view = { path = "../crates/jc3vr-view", features = ["test-support"] }
 pretty_assertions = "1.4.1"

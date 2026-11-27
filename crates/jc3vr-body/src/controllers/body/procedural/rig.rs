@@ -252,8 +252,8 @@ impl fmt::Display for RigError {
 impl std::error::Error for RigError {}
 
 /// Fixtures for the tests here and in the crates above.
-#[cfg(any(test, feature = "test-support"))]
-pub mod test_support {
+#[cfg(test)]
+pub(crate) mod test_support {
     use glam::{Quat, Vec3};
 
     use super::*;

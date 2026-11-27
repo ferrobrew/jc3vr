@@ -399,30 +399,8 @@ pub struct Candidate {
 }
 
 impl Candidate {
-    /// How far `point` is from the grab point, when it is within reach: `None` outside the reach,
-    /// for a degenerate reach, or for a point that is not finite.
-    #[cfg(any(test, feature = "test-support"))]
-    pub fn reach(&self, point: Vec3) -> Option<f32> {
-        if self.radius.is_nan() || self.radius <= 0.0 || !point.is_finite() {
-            return None;
-        }
-        let distance = point.distance(self.centre);
-        (distance <= self.radius).then_some(distance)
-    }
-
     /// The target this places, reached by the hand as it is drawn and marked by `mark`.
     pub fn target(&self, mark: Mark) -> GripTarget {
         GripTarget::sphere(self.volume, self.hand, self.centre, self.radius, mark)
     }
-}
-
-/// The candidate `hand`, at `point`, would take among `candidates`, by the resolver's own rule
-/// ([`resolve::choose`]): for the tests of the providers' placement.
-#[cfg(any(test, feature = "test-support"))]
-pub fn grab_volume(point: Vec3, hand: Hand, candidates: &[Candidate]) -> Option<GrabVolume> {
-    let targets: Vec<GripTarget> = candidates
-        .iter()
-        .map(|c| c.target(Mark::ring(MarkAt::Cockpit(c.centre), c.radius)))
-        .collect();
-    resolve::choose(resolve::reaches(hand, &targets, Some(point))).map(|reach| reach.volume)
 }

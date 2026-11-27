@@ -17,7 +17,7 @@ use jc3vr_view::vr::input::flight_pose::GestureSample;
 use jc3vr_weapons::controllers::loadout::Socket;
 
 use super::*;
-use crate::controllers::config::ControllersConfig;
+use crate::{controllers::config::ControllersConfig, test_support::flight_guard};
 
 const SUIT: Mode = Mode::Airborne(AirborneVariant::Wingsuit);
 static CONFIG: LazyLock<WingsuitGesturesTuning> = LazyLock::new(|| WingsuitGesturesTuning {
@@ -339,7 +339,7 @@ fn late_canopy_suppresses_an_otherwise_publishable_close() {
 
 #[test]
 fn missing_packets_clear_pose_history_and_a_lowered_pose_does_not_deploy() {
-    let _guard = flight_pose::test_guard();
+    let _guard = flight_guard();
     let frame = ControllerFrame {
         sequence: 1,
         display_time_ns: 1,
@@ -483,7 +483,7 @@ fn missing_packets_clear_pose_history_and_a_lowered_pose_does_not_deploy() {
 /// are made of; only the grip squeezed there, a draw starting, claims the hand.
 #[test]
 fn a_body_slot_claims_the_hand_only_while_its_grip_is_squeezed() {
-    let _guard = flight_pose::test_guard();
+    let _guard = flight_guard();
     let config = ControllersConfig::default();
     let dimensions = BodyDimensions::default();
     let hips = [

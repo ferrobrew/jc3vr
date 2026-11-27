@@ -1,6 +1,5 @@
 //! The reload steps' shared fixtures: an insertion state and tick with one gun in the dominant
-//! hand, and the belt reload's offer on them. The steps' own tests use them, and so do the
-//! bindings' summary tests in the gameplay crate, through the `test-support` feature.
+//! hand, and the belt reload's offer on them.
 
 use glam::{Mat4, Quat};
 use jc3vr_body::controllers::{body::rig::frames::Frames, hands::pose::CockpitHand};
@@ -185,21 +184,4 @@ pub(super) fn offer(
             let weapon = tick.weapon(address)?;
             Some((weapon.reading, weapon.reserve))
         })
-}
-
-pub(crate) fn eligible_belt_for_test(
-    config: &WeaponSettings,
-) -> (BeltEligibility, [Option<GunOwner>; 2]) {
-    let (_, state, mut tick, _) = fixture();
-    if tick.dominant != config.dominant {
-        tick.guns.swap(0, 1);
-    }
-    tick.dominant = config.dominant;
-    let guns = Hand::BOTH.map(|hand| {
-        (hand == tick.dominant).then_some(GunOwner {
-            weapon: 1,
-            role: GunHand::Grip,
-        })
-    });
-    (offer(&state, &tick, config, guns).unwrap(), guns)
 }

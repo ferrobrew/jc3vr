@@ -140,10 +140,12 @@ const PIN_IN_MODEL_M: Vec3 = Vec3::new(0.0, 0.065, 0.0);
 #[cfg(test)]
 mod tests {
     use glam::Quat;
-    use jc3vr_body::controllers::grab::grab_volume;
 
     use super::*;
-    use crate::controllers::weapons::{grenade::tuning::GRENADE, hold::tuning::HOLD};
+    use crate::{
+        controllers::weapons::{grenade::tuning::GRENADE, hold::tuning::HOLD},
+        test_support::grab_volume,
+    };
 
     fn config() -> &'static PinTuning {
         &GRENADE.get().pin

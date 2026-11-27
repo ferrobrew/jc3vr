@@ -1,7 +1,7 @@
 //! Snatch ownership through the production binding tables and native hook gate.
 
 use jc3vr_body::controllers::{grab::RemoteKind, intent::controls::GrappleContext};
-use jc3vr_grapple::controllers::snatch::{ButtonHolds, should_reel_weapon};
+use jc3vr_grapple::controllers::snatch::ButtonHolds;
 use jc3vr_view::vr::input::semantic::defaults::{Component, DefaultBinding};
 
 use super::*;
@@ -28,9 +28,11 @@ fn ordinary_held_weapon_first_attachment_and_b_first_tether_keep_the_native_hold
     let owned = bindings.claim_snatch(c.off().b, false, true, false);
     let first = bindings.sim_step(ON_FOOT, &c, DT);
     let holds = ButtonHolds::routed(first.grapple_held, owned);
-    assert!(holds.ordinary);
+    assert!(
+        holds.ordinary,
+        "the held ordinary button keeps the hook's weapon reel back"
+    );
     assert!(!holds.modifier);
-    assert!(!should_reel_weapon(true, holds.ordinary));
     assert!(player(&first, FIRE_GRAPPLE).is_some());
 
     c.hands[Hand::Left.index()].b.pressed = false;
@@ -43,20 +45,19 @@ fn ordinary_held_weapon_first_attachment_and_b_first_tether_keep_the_native_hold
     let attached = bindings.sim_step(ON_FOOT, &c, DT);
     let holds = ButtonHolds::routed(attached.grapple_held, owned);
     assert!(!owned, "B before grip remains an ordinary episode");
-    assert!(holds.ordinary);
-    assert!(!holds.modifier);
     assert!(
-        !should_reel_weapon(true, holds.ordinary),
+        holds.ordinary,
         "first attached tick precedes native cached held latch"
     );
+    assert!(!holds.modifier);
     assert!(player(&attached, FIRE_GRAPPLE).is_some());
     c.hands[Hand::Left.index()].b = release();
     let released = bindings.sim_step(ON_FOOT, &c, DT);
     assert!(!released.grapple_held);
-    assert!(should_reel_weapon(
-        true,
-        ButtonHolds::routed(released.grapple_held, false).ordinary
-    ));
+    assert!(
+        !ButtonHolds::routed(released.grapple_held, false).ordinary,
+        "the released button lets the hook reel the weapon in"
+    );
 }
 
 #[test]

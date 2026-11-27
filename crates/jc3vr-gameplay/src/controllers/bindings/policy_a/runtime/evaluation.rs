@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use jc3vr_body::controllers::intent::{config::BindingsConfig, controls::ButtonControl};
 use jc3vr_input::frame::ActionSetKind;
-use jc3vr_view::vr::input::semantic::{SCHEMA_VERSION, history};
+use jc3vr_view::vr::input::semantic::SCHEMA_VERSION;
 use tracking_format::input::{GroupOrder, InputGroup, InputStamp};
 
 use crate::controllers::bindings::policy_a::{
@@ -14,6 +14,7 @@ use crate::controllers::bindings::policy_a::{
     recording,
     runtime::{
         Delivery, Runtime, Tick, arbitration, complete_inventory, group_neutral, raw_evidence,
+        record_policy,
     },
 };
 
@@ -45,14 +46,14 @@ impl Runtime {
         {
             self.reset(ResetReason::BindingUnresolved);
             tick.commands.clear();
-            history::record_policy(evaluation);
+            record_policy(evaluation);
             return;
         }
         if group.stamp.epoch != self.epoch {
             if group.stamp.epoch < self.epoch {
                 self.reset(ResetReason::InvalidHistory);
                 tick.commands.clear();
-                history::record_policy(evaluation);
+                record_policy(evaluation);
                 return;
             }
             self.epoch = group.stamp.epoch;
@@ -62,7 +63,7 @@ impl Runtime {
         if !ordered_after(self.watermark, group) {
             self.reset(ResetReason::InvalidHistory);
             tick.commands.clear();
-            history::record_policy(evaluation);
+            record_policy(evaluation);
             return;
         }
         self.watermark = Some((group.stamp, group.order));
@@ -83,7 +84,7 @@ impl Runtime {
         let Some(policy) = &mut self.policy else {
             self.reset(ResetReason::BindingUnresolved);
             tick.commands.clear();
-            history::record_policy(evaluation);
+            record_policy(evaluation);
             return;
         };
         let decision = policy.observe_available(
@@ -172,7 +173,7 @@ impl Runtime {
                 .fold(0, |bits, command| bits | command_bit(*command));
             tick.commands.extend(commands);
         }
-        history::record_policy(evaluation);
+        record_policy(evaluation);
     }
 }
 

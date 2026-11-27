@@ -45,12 +45,7 @@ smol_str = "0.3.6"
 toml = "1.1.6"
 
 [dev-dependencies]
-jc3vr-body = { path = "../jc3vr-body", features = ["test-support"] }
-jc3vr-weapons = { path = "../jc3vr-weapons", features = ["test-support"] }
-jc3vr-physical = { path = "../jc3vr-physical", features = ["test-support"] }
-jc3vr-grapple = { path = "../jc3vr-grapple", features = ["test-support"] }
 jc3vr-core = { path = "../jc3vr-core", features = ["test-support"] }
-jc3vr-view = { path = "../jc3vr-view", features = ["test-support"] }
 # The tests build the OpenXR poses and times the published tracking carries.
 openxr = "0.21"
 pretty_assertions = "1.4.1"

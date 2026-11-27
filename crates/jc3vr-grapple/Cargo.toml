@@ -5,10 +5,6 @@ edition = "2024"
 description = "The grapple layer of the payload: the grapple's device, its physical rope and swing, its lock and seats, and the grapple snatch, built on the body, weapons, and physical layers."
 publish = false
 
-[features]
-# Test fixtures the gameplay crate's tests rely on: the snatch's input-side reel gate.
-test-support = []
-
 [dependencies]
 windows = { workspace = true }
 glam = { workspace = true }
@@ -36,7 +32,5 @@ parking_lot = "0.12.5"
 serde = { version = "1", features = ["derive"] }
 
 [dev-dependencies]
-jc3vr-body = { path = "../jc3vr-body", features = ["test-support"] }
 jc3vr-core = { path = "../jc3vr-core", features = ["test-support"] }
-jc3vr-view = { path = "../jc3vr-view", features = ["test-support"] }
 pretty_assertions = "1.4.1"

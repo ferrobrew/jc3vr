@@ -174,9 +174,8 @@ fn release(state: &mut RipcordState, why: Release, events: &mut Vec<RipcordEvent
 
 #[cfg(test)]
 mod tests {
-    use jc3vr_body::controllers::grab::grab_volume;
-
     use super::*;
+    use crate::test_support::grab_volume;
 
     const PULL_M: f32 = 0.15;
 

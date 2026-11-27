@@ -177,9 +177,9 @@ fn skew(v: Vec3) -> Mat3 {
     )
 }
 
-/// Fixtures for the tests here and in the crates above.
-#[cfg(any(test, feature = "test-support"))]
-pub mod test_support {
+/// Fixtures for the tests here.
+#[cfg(test)]
+mod test_support {
     use super::*;
 
     /// A box of `mass` kilograms and `size` metres, at rest at `centre`, turned by `orientation`.

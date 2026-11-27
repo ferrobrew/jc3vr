@@ -28,7 +28,7 @@ use tracking_format::input::policy::PolicyOutcome;
 use tracking_format::input::{
     GroupOrder, HISTORY_CAPACITY, InputGroup, InputRecord, InputRoute, InputStamp, RouteSample,
     ValueBits,
-    policy::{DirectAcceptance, DirectDecision},
+    policy::{DirectAcceptance, DirectDecision, PolicyEvaluation},
 };
 
 use crate::controllers::bindings::{
@@ -95,7 +95,7 @@ impl Runtime {
     pub(crate) fn cancel_publications(&mut self, publications: Vec<Publication>) {
         for publication in publications {
             if let InputRecord::Group(group) = publication.record {
-                history::record_policy(recording::cancelled(&group, self.config, 0, false));
+                record_policy(recording::cancelled(&group, self.config, 0, false));
             }
         }
         self.cancel();
@@ -139,7 +139,7 @@ impl Runtime {
                     {
                         self.reset(ResetReason::MissingOrStaleInput);
                         tick.commands.clear();
-                        history::record_policy(recording::cancelled(
+                        record_policy(recording::cancelled(
                             &group,
                             self.config,
                             input.context,
@@ -422,6 +422,14 @@ impl Runtime {
         self.claims = claims;
         (direct, self.claims)
     }
+}
+
+/// Record a final policy evaluation in the input history. Under test it holds the crate's
+/// history lock, so a test that captures the history sees only its own test's records.
+fn record_policy(evaluation: PolicyEvaluation) {
+    #[cfg(test)]
+    let _serial = crate::test_support::HISTORY_LOCK.lock();
+    history::record_policy(evaluation);
 }
 
 /// The arbitration for `config` from `epoch` on, or `None`, logged, when `config` is invalid: the

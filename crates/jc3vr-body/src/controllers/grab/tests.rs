@@ -1,9 +1,12 @@
-use glam::Vec3;
-use jc3vr_view::controllers::overlay::primitive::{Anchor, Primitive};
+use glam::{Quat, Vec3};
+use jc3vr_view::controllers::{
+    cockpit::CockpitTransform,
+    overlay::primitive::{Anchor, Primitive},
+};
 
 use super::{
     latch::{GripLatch, LatchTick},
-    markers::{self, colour, test_frame},
+    markers::{self, MarkerFrame, colour},
     resolve::{Lost, choose, dock_target, losers, nearest_within, resolve},
     *,
 };
@@ -20,6 +23,19 @@ fn sphere(volume: GrabVolume, x: f32, radius: f32, hand: Option<Hand>) -> GripTa
         radius,
         Mark::ring(MarkAt::Cockpit(Vec3::new(x, 0.0, 0.0)), 0.05),
     )
+}
+
+/// A marker frame with no turn.
+fn test_frame() -> MarkerFrame {
+    MarkerFrame {
+        xf: CockpitTransform {
+            head_world: Vec3::new(10.0, 2.0, -5.0),
+            head_cockpit: Vec3::new(0.0, 1.7, 0.0),
+            body: Quat::IDENTITY,
+            world_scale: 1.0,
+        },
+        drawn: [None; 2],
+    }
 }
 
 fn at(x: f32) -> Option<Vec3> {

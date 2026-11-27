@@ -9,9 +9,6 @@ publish = false
 # The in-game profiler's view half (issue #34): the frame loop's and the frame tail's scopes, and
 # the benchmark's render-pass totals. The payload's `profiler` feature forwards here.
 profiler = ["dep:puffin", "jc3vr-core/profiler"]
-# Test fixtures and per-test isolation other crates' tests rely on: the head pose and anchor
-# fixtures and the live input packet's test guard.
-test-support = []
 
 [dependencies]
 windows = { workspace = true }

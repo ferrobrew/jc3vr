@@ -2,9 +2,10 @@ use body_rig::{
     body::HIP_HEIGHT_SHARE,
     math::shoulders::{eyes_to_right_shoulder, shoulders},
 };
-use jc3vr_body::controllers::{body::BodyDimensions, grab::grab_volume};
+use jc3vr_body::controllers::body::BodyDimensions;
 
 use super::*;
+use crate::test_support::grab_volume;
 
 fn pouches() -> &'static PouchTuning {
     &HOLD.get().volumes.pouches

@@ -16,6 +16,7 @@ use jc3vr_input::{
 use tracking_format::input::{ClockDomain, GroupOrder, InputStamp, SourceQuery};
 
 use super::*;
+use crate::test_support::HISTORY_LOCK;
 
 const LS: &str = "/user/hand/left/input/thumbstick/click";
 const RS: &str = "/user/hand/right/input/thumbstick/click";
@@ -166,7 +167,7 @@ fn evaluate_in(
 }
 
 fn captured_trace(groups: &[InputGroup]) -> Vec<Publication> {
-    let _serial = history::TEST_LOCK.lock();
+    let _serial = HISTORY_LOCK.lock();
     history::begin_capture();
     let mut runtime = Runtime::default();
     let mut out = Vec::new();

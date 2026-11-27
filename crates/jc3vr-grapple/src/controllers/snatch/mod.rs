@@ -322,9 +322,6 @@ impl ButtonHolds {
     }
 }
 
-#[cfg(any(test, feature = "test-support"))]
-pub use hooks::should_reel_weapon;
-
 /// What the bindings hand [`finish_tick`].
 pub struct FinishInput<'a> {
     /// The grapple hand.

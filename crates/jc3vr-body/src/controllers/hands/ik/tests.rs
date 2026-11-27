@@ -1,3 +1,4 @@
+use glam::Mat4;
 use jc3gi::{
     animation::{
         pose_producer::{PoseProducer, QsTransform},
@@ -6,7 +7,10 @@ use jc3gi::{
     character::character::{CharacterInitializationFlags, DamageStateFlags},
 };
 use jc3vr_core::thread_role::{self, ThreadRole};
-use jc3vr_view::{headpose::Anchors, vr::input::config::CONTROLLERS_ENABLED};
+use jc3vr_view::{
+    headpose::{Anchors, anchors::Geometry},
+    vr::input::config::CONTROLLERS_ENABLED,
+};
 
 use super::*;
 use crate::controllers::{
@@ -130,12 +134,13 @@ fn replacement_before_measure_cannot_seed_new_or_deferred_plans_with_old_arms() 
         assert!(rig::test_arms(view).iter().all(Option::is_none));
         assert!(!unsafe { retained.current_for(&character) });
         assert!(unsafe { fresh.current_for(&character) });
-        headpose::set_anchors(Anchors {
+        let anchors = Anchors {
             head: Vec3::Y,
             head_prev: Vec3::Y,
             neck: Vec3::Y,
             eye_arm: Vec3::ZERO,
-        });
+        };
+        headpose::set_anchor_pair([Geometry::from_anchors(anchors, Mat4::IDENTITY); 2]);
         assert_eq!(unsafe { deferred_wrist_targets(&character) }, [None; 2]);
         unsafe { queue_deferred(character.as_mut()) };
         assert!(DEFERRED.with_borrow(Option::is_none));

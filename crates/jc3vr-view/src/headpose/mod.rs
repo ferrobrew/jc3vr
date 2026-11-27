@@ -177,13 +177,6 @@ pub struct Anchors {
     pub eye_arm: Vec3,
 }
 
-/// Publish a collapsed anchor sample for non-historical callers.
-#[cfg(any(test, feature = "test-support"))]
-pub fn set_anchors(anchors: Anchors) {
-    let geometry = anchors::Geometry::from_anchors(anchors, glam::Mat4::IDENTITY);
-    set_anchor_pair([geometry; 2]);
-}
-
 /// Publish the complete pre-override endpoints captured on distinct simulation ticks.
 /// Invalid geometry withdraws the whole pair rather than retaining individual old components.
 pub fn set_anchor_pair(pair: [anchors::Geometry; 2]) {

@@ -40,7 +40,7 @@
 //!   ([`VehiclesConfig::validate`](vehicles::config::VehiclesConfig::validate)).
 //!
 //! The crate's own tests register a configuration root of their own (`test_config`), since the
-//! payload's aggregate is not there, and use the body crate's `test-support` fixtures.
+//! payload's aggregate is not there, and share the fixtures in `test_support`.
 
 pub mod hooks;
 mod register;
@@ -50,3 +50,5 @@ pub use register::{Registered, register};
 
 #[cfg(test)]
 mod test_config;
+#[cfg(test)]
+mod test_support;

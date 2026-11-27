@@ -431,13 +431,12 @@ const CANDIDATE_PRIMITIVES: usize = 13;
 
 #[cfg(test)]
 mod tests {
-    use glam::Vec3;
+    use glam::{Quat, Vec3};
     use jc3vr_body::controllers::{
-        grab::{
-            GrabVolume, Mark, MarkAt, Reach, Resolved, Tier, markers::test_frame, socket::Socket,
-        },
+        grab::{GrabVolume, Mark, MarkAt, Reach, Resolved, Tier, socket::Socket},
         physics::scan::Aabb,
     };
+    use jc3vr_view::controllers::cockpit::CockpitTransform;
 
     use super::*;
     use crate::controllers::physical_hands::{
@@ -447,6 +446,19 @@ mod tests {
 
     fn config() -> &'static GrabViewTuning {
         &VIEWS.get().grab_view
+    }
+
+    /// A marker frame with no turn.
+    fn test_frame() -> MarkerFrame {
+        MarkerFrame {
+            xf: CockpitTransform {
+                head_world: Vec3::new(10.0, 2.0, -5.0),
+                head_cockpit: Vec3::new(0.0, 1.7, 0.0),
+                body: Quat::IDENTITY,
+                world_scale: 1.0,
+            },
+            drawn: [None; 2],
+        }
     }
 
     fn sphere(volume: GrabVolume, centre: Vec3, radius: f32) -> GripTarget {

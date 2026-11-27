@@ -1,11 +1,83 @@
+use std::num::NonZeroUsize;
+
+use glam::Vec3;
+use jc3gi::vehicle::vehicle::DoorSlot;
 use jc3vr_body::controllers::{
     grab,
-    grab::{target::TargetReach, world_reach::TargetKind},
+    grab::{
+        Mark, MarkAt,
+        target::TargetReach,
+        world_reach::{DoorEligibility, DoorTarget, Reach, TargetKind},
+    },
 };
-use jc3vr_physical::controllers::physical_hands::DoorProvider;
+use jc3vr_core::published::Stamp;
 
 use super::*;
 use crate::controllers::config::ControllersConfig;
+
+/// A door provider standing in for the physical hands: the reach targets it offers, and whether a
+/// selected target still carries an offer it made. The physical crate's own tests cover when the
+/// real provider makes and revokes an offer.
+struct DoorProvider {
+    epoch: u64,
+    at: Stamp,
+}
+
+impl DoorProvider {
+    fn new(epoch: u64) -> Self {
+        Self {
+            epoch,
+            at: Stamp::now(),
+        }
+    }
+
+    /// The target `hand` reaches of `kind`, offered when it is a latched door.
+    fn target(&self, hand: Hand, kind: TargetKind) -> GripTarget {
+        let reach = Reach {
+            object: NonZeroUsize::new(0x1000).unwrap(),
+            body: 1,
+            point: Vec3::ZERO,
+            distance: 0.02,
+            normal: Vec3::Y,
+            kind,
+        };
+        let pickup = match kind {
+            TargetKind::Door(_) => PickupKind::Door,
+            _ => PickupKind::Prop,
+        };
+        let mark = Mark::ring(MarkAt::World(reach.point), Mark::world_size_m());
+        let mut target = GripTarget::measured(
+            GrabVolume::Pickup(pickup),
+            hand,
+            reach.distance,
+            mark.on_surface(reach.normal),
+        );
+        target.observed = Some(reach);
+        target.door_eligibility = matches!(kind, TargetKind::Door(door) if door.latched)
+            .then(|| DoorEligibility::new(hand, self.epoch, self.at, reach));
+        target
+    }
+
+    fn door(&self, hand: Hand, latched: bool) -> GripTarget {
+        self.target(
+            hand,
+            TargetKind::Door(DoorTarget {
+                vehicle: NonZeroUsize::new(0x2000).unwrap(),
+                vehicle_body: Some(1),
+                part_index: 2,
+                slot: DoorSlot::FRONT_LEFT,
+                latched,
+                outward: Vec3::X,
+            }),
+        )
+    }
+
+    fn current(&self, hand: Hand, target: GripTarget) -> bool {
+        target.door_eligibility.is_some_and(|offer| {
+            offer.hand() == hand && offer.epoch() == self.epoch && offer.at() == self.at
+        })
+    }
+}
 
 fn row(hand: Hand) -> Row {
     Row {
@@ -92,7 +164,7 @@ fn has_door(snapshot: &Eligibility, hand: Hand) -> bool {
 #[test]
 fn actual_provider_selection_captures_only_the_chosen_unheld_latched_door() {
     for hand in Hand::BOTH {
-        let mut provider = DoorProvider::new();
+        let provider = DoorProvider::new(1);
         let latched = provider.door(hand, true);
         let tick = select(vec![latched]);
         assert_eq!(tick.selected_for_summary()[hand.index()], Some(latched));
@@ -102,7 +174,7 @@ fn actual_provider_selection_captures_only_the_chosen_unheld_latched_door() {
         assert!(!has_door(&snapshot, hand.other()));
 
         for other in 0..3 {
-            let mut competitor = DoorProvider::new();
+            let competitor = DoorProvider::new(2);
             let mut target = match other {
                 0 => competitor.door(hand, false),
                 1 => competitor.door(hand, true).held(hand),
@@ -147,7 +219,7 @@ fn actual_provider_selection_captures_only_the_chosen_unheld_latched_door() {
 #[test]
 fn final_capture_revokes_door_offers_after_release_consumption_and_unready_hands() {
     for hand in Hand::BOTH {
-        let mut provider = DoorProvider::new();
+        let provider = DoorProvider::new(1);
         let tick = select(vec![provider.door(hand, true)]);
         let mut released = [false; 2];
         released[hand.index()] = true;
@@ -178,33 +250,5 @@ fn final_capture_revokes_door_offers_after_release_consumption_and_unready_hands
             &capture_door(&provider, &tick, [false; 2], other_unready, [None; 2]),
             hand,
         ));
-    }
-}
-
-#[test]
-fn final_capture_does_not_reuse_a_selected_door_after_source_or_claim_changes() {
-    for hand in Hand::BOTH {
-        for change in 0..9 {
-            let mut provider = DoorProvider::new();
-            let tick = select(vec![provider.door(hand, true)]);
-            match change {
-                0 => provider.expire(),
-                1 => provider.replace_source(),
-                2 => provider.replace_sample(),
-                3 => provider.remove_reach(hand),
-                4 => provider.claim(hand),
-                5 => provider.hold(hand),
-                6 => provider.latch(hand),
-                7 => provider.replace_door(hand),
-                _ => provider.claim_same_door(hand),
-            }
-            assert!(
-                !has_door(
-                    &capture_door(&provider, &tick, [false; 2], [true; 2], [None; 2]),
-                    hand,
-                ),
-                "change {change}"
-            );
-        }
     }
 }

@@ -1159,9 +1159,6 @@ unsafe fn weapon_tick(
     })
 }
 
-#[cfg(any(test, feature = "test-support"))]
-pub(super) use test_support::eligible_belt_for_test;
-
 #[cfg(test)]
 mod action_tests;
 #[cfg(test)]
@@ -1170,5 +1167,5 @@ mod authority_tests;
 mod belt_tests;
 #[cfg(test)]
 mod insertion_tests;
-#[cfg(any(test, feature = "test-support"))]
+#[cfg(test)]
 mod test_support;

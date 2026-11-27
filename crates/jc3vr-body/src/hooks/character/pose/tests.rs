@@ -1,7 +1,9 @@
+use glam::{Mat4, Vec3};
 use jc3gi::animation::{
     pose_producer::{PoseProducer, QsTransform},
     skeleton::{HkaBone, HkaPose, HkaSkeleton, Skeleton},
 };
+use jc3vr_view::headpose::{self, Anchors, anchors::Geometry};
 
 use super::*;
 
@@ -16,18 +18,19 @@ fn array<T>(values: &mut [T]) -> HkArray<T> {
 #[test]
 fn failed_required_bone_capture_withdraws_current_anchor_authority() {
     crate::test_support::register_head_participants();
-    jc3vr_view::headpose::set_anchors(jc3vr_view::headpose::Anchors {
-        head: glam::Vec3::Y,
-        head_prev: glam::Vec3::Y,
-        neck: glam::Vec3::Y * 0.9,
-        eye_arm: glam::Vec3::Z * 0.1,
-    });
-    assert!(jc3vr_view::headpose::anchor().is_some());
+    let anchors = Anchors {
+        head: Vec3::Y,
+        head_prev: Vec3::Y,
+        neck: Vec3::Y * 0.9,
+        eye_arm: Vec3::Z * 0.1,
+    };
+    headpose::set_anchor_pair([Geometry::from_anchors(anchors, Mat4::IDENTITY); 2]);
+    assert!(headpose::anchor().is_some());
     crate::hooks::character::body_ik::capture_unavailable();
-    assert!(jc3vr_view::headpose::anchor().is_none());
-    assert!(jc3vr_view::headpose::anchor_prev().is_none());
-    assert_eq!(jc3vr_view::headpose::neck_delta(), glam::Vec3::ZERO);
-    assert_eq!(jc3vr_view::headpose::eye_arm(), glam::Vec3::ZERO);
+    assert!(headpose::anchor().is_none());
+    assert!(headpose::anchor_prev().is_none());
+    assert_eq!(headpose::neck_delta(), Vec3::ZERO);
+    assert_eq!(headpose::eye_arm(), Vec3::ZERO);
 }
 
 #[test]

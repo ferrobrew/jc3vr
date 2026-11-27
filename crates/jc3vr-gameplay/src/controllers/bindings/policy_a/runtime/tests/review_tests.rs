@@ -223,7 +223,7 @@ fn independent_direct_commands_survive_and_unknown_component_is_unavailable() {
 
 #[test]
 fn rejected_and_stale_groups_record_their_policy_outcome() {
-    let _serial = history::TEST_LOCK.lock();
+    let _serial = HISTORY_LOCK.lock();
     for damage in 0..3 {
         history::begin_capture();
         let mut runtime = Runtime::default();
@@ -270,7 +270,7 @@ fn rejected_and_stale_groups_record_their_policy_outcome() {
 
 #[test]
 fn recording_mid_pending_single_and_chord_waits_for_real_neutral_without_live_reset() {
-    let _serial = history::TEST_LOCK.lock();
+    let _serial = HISTORY_LOCK.lock();
     for state in 0..3 {
         let mut runtime = Runtime::default();
         evaluate(&mut runtime, group(1, 1, [false; CONTROLS], &[]), true);

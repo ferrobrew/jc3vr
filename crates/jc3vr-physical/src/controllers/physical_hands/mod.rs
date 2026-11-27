@@ -107,8 +107,6 @@ use jc3vr_core::published::Stamp;
 use state::{State, stale_after};
 pub use status::{HandStatus, Idle, PhysicalHandsStatus, ShoveReport, status};
 pub(crate) use status::{PalmReadout, palm_readout, press_summary};
-#[cfg(any(test, feature = "test-support"))]
-pub use targets::test_support::DoorProvider;
 pub use targets::{door_offer_current, targets};
 pub use tick::{after_aim, free_hands, main_thread_tick, mode_acts};
 

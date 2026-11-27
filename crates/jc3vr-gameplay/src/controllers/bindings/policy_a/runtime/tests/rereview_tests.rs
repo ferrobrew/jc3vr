@@ -81,7 +81,7 @@ fn publish_configured(
 
 #[test]
 fn capture_transaction_excludes_foreign_policy_publications() {
-    let serial = history::TEST_LOCK.lock();
+    let serial = HISTORY_LOCK.lock();
     history::begin_capture();
     let mut runtime = Runtime::default();
     evaluate(&mut runtime, group(1, 1, [false; CONTROLS], &[]), true);
@@ -94,7 +94,7 @@ fn capture_transaction_excludes_foreign_policy_publications() {
     let (done, done_rx) = std::sync::mpsc::channel();
     let worker = std::thread::spawn(move || {
         started.send(()).unwrap();
-        history::record_policy(foreign);
+        record_policy(foreign);
         done.send(()).unwrap();
     });
     started_rx.recv().unwrap();
@@ -115,7 +115,7 @@ fn capture_transaction_excludes_foreign_policy_publications() {
 
 #[test]
 fn actual_capture_writes_each_group_before_its_policy() {
-    let _serial = history::TEST_LOCK.lock();
+    let _serial = HISTORY_LOCK.lock();
     history::take_gameplay();
     history::begin_capture();
     let command = GlobalAction::RecenterView.id();
@@ -418,7 +418,7 @@ fn neutral_boundary_requires_complete_active_attributable_route_inventory() {
 
 #[test]
 fn actual_capture_mid_pending_single_and_chord_waits_for_direct_and_merged_neutral() {
-    let _serial = history::TEST_LOCK.lock();
+    let _serial = HISTORY_LOCK.lock();
     history::take_gameplay();
     let command = GlobalAction::RecenterView.id();
     let merged = OnFootAction::Detonate.id();

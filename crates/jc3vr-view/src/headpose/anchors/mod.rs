@@ -13,8 +13,6 @@ use crate::{
     vr::{VR_CONFIG, live_tracking},
 };
 
-#[cfg(any(test, feature = "test-support"))]
-pub mod test_support;
 #[cfg(test)]
 pub(crate) mod tests;
 
