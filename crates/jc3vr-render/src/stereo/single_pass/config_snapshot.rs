@@ -73,31 +73,24 @@ impl ConfigFlags {
 }
 
 /// The flags this draw thread's dispatch was opened with, else the game thread's frame snapshot, else
-/// a fresh read if neither has been taken yet.
+/// a fresh read if neither has been taken yet (the module docs say why there are two snapshots).
 ///
-/// Every gate in this module is consulted from the render thread on paths that run per draw -- the
-/// viewport, indexed-draw and render-block detours -- so reading them through `Config`'s mutex made
-/// the feature pay a lock acquisition per draw submission, in a feature whose purpose is to reduce
-/// per-draw cost.
-///
-/// There are two snapshots because the two consumers want different things, and one snapshot cannot
-/// give both. The **draw thread** wants a value that does not move for the whole dispatch: nearly
-/// every gate here brackets something (a pass range, an eye-half viewport, an armed reprojection,
-/// a per-eye re-issue loop), and a flag that changes between the arm and the restore leaks that state
-/// into the rest of the frame -- so it pins its own copy in [`DISPATCH_FLAGS`] at
-/// [`begin_dispatch`]. Everything else -- the game thread's resolution and camera decisions, and the
-/// shader-creation hooks, which must see a toggle in the *same* frame the debug UI turns it on,
-/// because that frame's shader reload is what applies it -- reads [`CONFIG_FLAGS`], resampled at frame
-/// start ([`refresh_config_flags`]).
+/// The **draw thread** wants a value that does not move for the whole dispatch: nearly every gate it
+/// consults brackets something (a pass range, an eye-half viewport, an armed reprojection, a per-eye
+/// re-issue loop), and a flag that changes between the arm and the restore leaks that state into the
+/// rest of the frame -- so it pins its own copy in [`DISPATCH_FLAGS`] at [`begin_dispatch`].
+/// Everything else -- the game thread's resolution and camera decisions, and the shader-creation
+/// hooks, which must see a toggle in the *same* frame the debug UI turns it on, because that frame's
+/// shader reload is what applies it -- reads [`CONFIG_FLAGS`], resampled at frame start
+/// ([`refresh_config_flags`]).
 ///
 /// The pin ends with the dispatch ([`end_dispatch`]): the draw thread is a job-pool worker that runs
 /// game-side jobs between dispatches, and those read the frame snapshot like everything else.
 ///
 /// The frame snapshot deliberately does **not** reach the draw thread mid-dispatch. It is written on
-/// the game thread, which with the frame tail deferred runs concurrently with the previous
-/// frame's still-walking dispatch -- the same interleaving that made the game-thread G-buffer range
-/// clear tear a live range (see [`begin_dispatch`]). A flag changing there would land between an arm
-/// and its restore, which is why the draw thread reads a pinned copy instead.
+/// the game thread, which with the frame tail deferred runs concurrently with the previous frame's
+/// still-walking dispatch (the interleaving [`begin_dispatch`] describes for the G-buffer range
+/// clear), so a flag changing there would land between an arm and its restore.
 pub(crate) fn config_flags() -> ConfigFlags {
     if let Some(flags) = DISPATCH_FLAGS.get() {
         return flags;
@@ -134,11 +127,10 @@ pub(super) fn pin_dispatch_config_flags() {
 /// whatever this thread runs between dispatches reads the frame snapshot like any other thread.
 ///
 /// The engine runs its draw dispatch on a worker of its job pool, and the pool's workers run
-/// game-side jobs between dispatches too. A pin left in place outlived its dispatch on that worker:
-/// a job it later ran read the flags of whatever dispatch the worker last drew, so the
-/// water's reflection camera update, which runs as such a job, saw the collapse off on the frames it
-/// landed on a worker last used for a multipass dispatch, and sized the reflection to the double-wide
-/// target.
+/// game-side jobs between dispatches too. A pin left in place would outlive its dispatch on that
+/// worker, and a job it ran later would read the flags of whatever dispatch the worker last drew:
+/// the water's reflection camera update, which runs as such a job, would size its reflection by the
+/// wrong layout on the frames it lands on a worker last used for a dispatch of the other mode.
 pub(crate) struct DispatchEnd(());
 
 /// Open the scope that ends this thread's dispatch pin; held for the dispatch's last seam.

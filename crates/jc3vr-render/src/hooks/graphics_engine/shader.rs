@@ -4,11 +4,13 @@
 //! the bytecode-copying D3D create call, moving the size with the pointer when a rewrite grows the
 //! blob, and puts the caller's pointer and size back afterwards.
 //!
-//! The vertex detour runs the single-pass `cb0` remap over every vertex shader for the census,
-//! decides which single-pass transform the shader gets from its engine name (the only place the name
-//! exists), and remembers that decision against the bytecode for the D3D-level re-create path; while
-//! single-pass is active it substitutes the transformed blob. The hull and domain detours carry the
-//! eye through the terrain's tessellation stages while terrain single-pass is active.
+//! While the single-pass master switch is on (session or not), the vertex detour runs the
+//! single-pass `cb0` remap over every vertex shader for the census, decides which single-pass
+//! transform the shader gets from its engine name (the only place the name exists), and remembers
+//! that decision against the bytecode for the D3D-level re-create path; while single-pass is active
+//! it substitutes the transformed blob and records the bark and foliage blocks' reprojected
+//! variants. The hull and domain detours carry the eye through the terrain's tessellation stages
+//! while terrain single-pass is active.
 //!
 //! The fragment detour applies its rewrites in a fixed order, each step over what the step before it
 //! produced:
@@ -19,11 +21,13 @@
 //! 2. The patches made on one copy: the sun-shadow PCF rotation seeds zeroed, the screen-space
 //!    decals' depth-UV bias, and the composite's vignette, lens dirt, and bloom lookups kept to each
 //!    eye's half.
-//! 3. The eye camera rewrite, then the two screen-door rewrites, which read the eye boundary from the
-//!    camera rewrite's buffer, then the velocity rewrite, which reads that buffer's declaration.
+//! 3. The eye camera rewrite (which also carries the local lights per eye), then the two
+//!    screen-door rewrites, then the velocity rewrite. The camera rewrite goes first because it
+//!    declines a shader that already declares the eye-camera buffer's slot, and the later rewrites
+//!    read the eye boundary and rows from that declaration when it is there.
 //! 4. Once the engine has created the shader: the water's per-eye variants, built from the engine's
-//!    own bytecode only when steps 1 and 2 left it alone, and the glare chain filters' eye-half
-//!    variants.
+//!    own bytecode only when steps 1 and 2 left it alone, and, while single-pass is configured, the
+//!    glare chain filters' eye-half variants.
 //!
 //! Every patched copy carries a recomputed DXBC checksum, since the D3D stack under Proton rejects a
 //! container whose stored hash no longer matches.
@@ -120,25 +124,26 @@ pub(super) fn hook_library() -> HookLibrary {
 /// Detour on `Graphics::CreateVertexProgram` for single-pass stereo: census the vertex-shader rewrite
 /// and, when single-pass is active, substitute the patched bytecode.
 ///
-/// When single-pass (or its census-only dry-run) is enabled, run [`dxbc_stereo::patch_vertex_shader`]
-/// on the incoming DXBC and tally the outcome ([`crate::stereo::single_pass::record_patch_outcome`]),
-/// so the debug UI reports how the rewriter fares against the game's real shader set. Decide which of
-/// the single-pass transforms the shader is to get ([`crate::stereo::single_pass::decide_vs_transform`])
-/// -- that decision reads the shader's engine name, which exists nowhere else -- and remember it
-/// against the bytecode for the D3D-level re-create path. When single-pass is *active* (master on,
-/// dry-run off, capability present), also point the params at the patched copy for the
-/// (bytecode-copying) `CreateVertexShader` call -- the copy is kept alive in `saved` and the caller's
-/// pointer restored afterwards, exactly as the fragment hook does. The patched shader reads
-/// its position from `cb13` (see [`crate::hooks::graphics_engine::single_pass`]); in dry-run the copy
-/// is discarded and rendering is unchanged. Only sees shaders created after it installs; use the
-/// shader-reload button for shaders loaded before injection.
+/// While the single-pass master switch is on, session or not, run the `cb0` remap
+/// ([`crate::stereo::single_pass::remap_vertex_shader`]) on the incoming DXBC and tally the outcome
+/// ([`crate::stereo::single_pass::record_patch_outcome`]), so the debug UI reports how the rewriter
+/// fares against the game's real shader set. Decide which of the single-pass transforms the shader
+/// is to get ([`crate::stereo::single_pass::decide_vs_transform`]) -- that decision reads the
+/// shader's engine name, which exists nowhere else -- and remember it against the bytecode for the
+/// D3D-level re-create path. When single-pass is [active](crate::stereo::single_pass::active), also
+/// point the params at the transformed copy for the (bytecode-copying) `CreateVertexShader` call,
+/// keeping the copy alive in `saved` and restoring the caller's pointer afterwards, as the fragment
+/// hook does. The patched shader reads its position from `cb13` (see
+/// [`crate::hooks::graphics_engine::single_pass`]); without a session the copy is discarded and
+/// rendering is unchanged. Only shaders created after the hook installs pass through it; the shader
+/// reload re-creates the ones loaded before injection.
 #[detour(address = jc3gi::graphics_engine::draw::CreateVertexProgram_ADDRESS)]
 fn create_vertex_program(
     device: *mut c_void,
     params: *mut CreateVertexProgramParams,
 ) -> *mut c_void {
     // The patched blob is *larger* than the original (added SFI0 chunk, cb13 declaration, prologue,
-    // signature entries), so unlike the in-place fragment patch this must repoint `m_Size` as well as
+    // signature entries), so unlike an in-place byte patch this must repoint `m_Size` as well as
     // `m_Code` -- otherwise the engine hands the D3D stack a truncated container whose chunk table
     // runs past the declared length. Both are restored after the (bytecode-copying) call.
     let mut saved: Option<(*const u8, u64, Vec<u8>)> = None;
@@ -180,10 +185,6 @@ fn create_vertex_program(
         // name exists. The decision is then remembered against the bytecode, so the `CreateVertexShader`
         // detour re-applies *this* decision to a shader re-created through a path that skips this hook,
         // rather than deriving a `cb0` remap it has no name to override.
-        //
-        // Decided (and remembered) whether or not single-pass is active: the dry-run census is the only
-        // pass over the shader set that some shaders get, and turning single-pass on afterwards creates
-        // no new programs to decide from.
         let transform = if owned {
             VsTransform::None
         } else {
@@ -251,6 +252,8 @@ fn create_fragment_program(
     device: *mut c_void,
     params: *mut CreateFragmentProgramParams,
 ) -> *mut HFragmentProgram_t {
+    // Every rewrite stands down once eject begins, so the restore's bundle bounce re-creates
+    // pristine fragment shaders (matching the vertex side) and the game keeps none of the mod's edits.
     let identity = if jc3vr_core::is_shutting_down() {
         None
     } else {
@@ -258,22 +261,18 @@ fn create_fragment_program(
             crate::stereo::single_pass::shader_identity::begin(p.m_Code, p.m_Size)
         })
     };
-    // When enabled and a target site is present, point the params at a patched copy of the bytecode
-    // for the duration of the (bytecode-copying) CreatePixelShader call, then restore the caller's
-    // pointer. `saved` keeps the patched copy alive across the call.
+    // The caller's pointer and size, and the substituted copy kept alive across the bytecode-copying
+    // `CreatePixelShader` call; the caller's pair is put back after it.
     let mut saved: Option<(*const u8, u64, Vec<u8>)> = None;
-    // The screen-space decal permutations' depth-UV bias, the one rewrite here that *grows* the blob.
     let bias_ssdecal = ss_decal::shader_rewrite_enabled();
     // The final composite's vignette and lens dirt, mapped over one eye instead of the whole
-    // double-wide target. Baked into the bytecode, so it is only right while the collapse is live.
+    // double-wide target, and its bloom lookups kept to each eye's half: right only while the
+    // collapse is live.
     let localize_overlays = jc3vr_view::stereo::layout::collapse_active();
-    // The composite's bloom lookups, kept to each eye's half. Baked into the bytecode like the
-    // overlays.
     let localize_bloom = jc3vr_view::stereo::layout::collapse_active();
     let flags = config_flags();
-    // The ambient-occlusion generation pass computed for each eye's half. Baked into the bytecode
-    // like the overlays, and decided for every fragment program so the SSAO block knows whether the
-    // generation shader it will run carries it.
+    // Decided for every fragment program, so the SSAO block knows whether the generation shader it
+    // will run computes each eye's half.
     let localize_ambient_occlusion =
         jc3vr_view::stereo::layout::collapse_active() && flags.has(SinglePassSwitch::SsaoPerEye);
     // The SSAO passes' sampling computed in the shader, in every mode: under the collapse as part of
@@ -284,17 +283,14 @@ fn create_fragment_program(
     } else {
         AmbientOcclusionSampling::DoubleWide
     };
-    // The ambient-occlusion volumes mapped through each eye's camera. Baked into the bytecode like
-    // the ambient occlusion; its vertex shader's reprojection is decided by name with the same switch.
+    // The ambient-occlusion volumes' vertex shader is reprojected by name under the same switch.
     let localize_ao_volumes = jc3vr_view::stereo::layout::collapse_active()
         && flags.has(SinglePassSwitch::AoVolumesPerEye);
-    // The screen-space reflection ray march traced for each eye's half, and its blur kept to it.
-    // Baked into the bytecode like the ambient occlusion, and decided for every fragment program so
-    // the reflection block knows whether the ray march it will run carries it.
+    // Decided for every fragment program, so the reflection block knows whether the ray march it
+    // will run traces each eye's half and keeps its blur to it.
     let localize_reflections =
         jc3vr_view::stereo::layout::collapse_active() && flags.has(SinglePassSwitch::SsrPerEye);
-    // Every pixel shader that reads the camera position picks its eye's copy per pixel. Applied last,
-    // over whatever the other rewrites produced, since it composes with all of them.
+    // Every pixel shader that reads the camera position picks its eye's copy per pixel.
     let localize_camera = jc3vr_view::stereo::layout::collapse_active()
         && flags.has(SinglePassSwitch::PixelCameraPerEye);
     let local_lights = if flags.has(SinglePassSwitch::LocalLightsPerEye) {
@@ -303,14 +299,12 @@ fn create_fragment_program(
         LocalLights::Unchanged
     };
     // Every screen-door pattern hashed from the pixel position is laid out from its eye's origin.
-    // Applied after the camera rewrite, whose buffer carries the eye boundary it reads.
     let localize_screen_door = jc3vr_view::stereo::layout::collapse_active()
         && flags.has(SinglePassSwitch::ScreenDoorPerEye);
-    // The tree impostors hash theirs from their own projected position; the same buffer's boundary
-    // lays it out per eye.
+    // The tree impostors hash theirs from their own projected position, laid out per eye from the
+    // same eye boundary.
     let localize_projected_screen_door = jc3vr_view::stereo::layout::collapse_active();
-    // The velocity pass's motion vectors are written in each eye's screen space, from rows of the
-    // same buffer. Applied after the screen-door rewrites, whose buffer declaration it reads.
+    // The velocity pass's motion vectors are written in each eye's screen space.
     let localize_velocity = jc3vr_view::stereo::layout::collapse_active();
     let mut rewritten_screen_pass = None;
     if !jc3vr_core::is_shutting_down()
@@ -332,8 +326,6 @@ fn create_fragment_program(
         .or_else(|| screen_space_reflection::rewrite_fragment_program(code, localize_reflections))
         .or_else(|| ao_volumes::rewrite_fragment_program(code, localize_ao_volumes));
     }
-    // Skip patching once eject begins, so the shader restore's bounce re-creates pristine fragment
-    // shaders (matching the vertex side) and the clean game keeps none of the mod's edits.
     if let Some(blob) = rewritten_screen_pass
         && let Some(p) = unsafe { params.as_mut() }
     {
@@ -407,9 +399,9 @@ fn create_fragment_program(
                 );
             }
             if pcf > 0 || biased || localized {
-                // Unlike the in-place byte patches, the decal rewrite splices an instruction in, so
-                // `m_Size` has to move with `m_Code` or the engine hands D3D a container whose chunk
-                // table runs past the declared length. Both are restored after the copying call.
+                // Unlike the in-place seed patch, the decal and composite rewrites reassemble the
+                // container and can change its length, so `m_Size` has to move with `m_Code` or the
+                // engine hands D3D a container whose chunk table runs past the declared length.
                 let len = copy.len() as u64;
                 saved = Some((p.m_Code, p.m_Size, copy));
                 p.m_Code = saved.as_ref().expect("just set").2.as_ptr();
@@ -425,6 +417,8 @@ fn create_fragment_program(
     // the shadow PCF patch zeroes.
     let substituted_before_camera = saved.is_some();
     let mut rewrote_velocity = false;
+    // Step 3 of the module docs: each rewrite reads the previous one's output, the camera rewrite
+    // first because it declines a shader already declaring the eye-camera buffer's slot.
     if !jc3vr_core::is_shutting_down()
         && let Some(p) = unsafe { params.as_mut() }
         && !p.m_Code.is_null()
@@ -680,8 +674,8 @@ pub fn patched_count() -> usize {
 }
 
 /// Request a shader reload (from the debug UI). Performed at the next [`process_reload_request`] on the
-/// game thread, so the patch can be applied to shaders that were created before the hook installed
-/// (the usual case -- injection is after the game has loaded its shaders).
+/// game thread, so the rewrites reach shaders that were created before the hooks installed (the usual
+/// case: injection comes after the game has loaded its shaders).
 pub fn request_reload() {
     RELOAD_REQUESTED.store(true, Ordering::Relaxed);
 }
@@ -711,8 +705,8 @@ pub fn reconcile_single_pass() {
 
 /// If a reload was requested, force the engine to re-create every shader: read the active bundle name,
 /// then `LoadShaderBundle` the *other* quality variant and back. Each call re-creates all shader
-/// holders through [`create_fragment_program`], so the PCF patch lands. Call once per frame on the game
-/// thread (no draw in flight).
+/// holders through the creation detours, so every creation-time rewrite lands. Call once per frame on
+/// the game thread (no draw in flight).
 pub fn process_reload_request() -> Option<Result<(), ReloadError>> {
     if !RELOAD_REQUESTED.swap(false, Ordering::Relaxed) {
         return None;
@@ -767,15 +761,15 @@ pub fn reload_now() -> Result<(), ReloadError> {
 }
 
 /// On eject: if the mod patched any shaders that the game still holds -- single-pass's substituted
-/// (`cb13`-reading) vertex shaders, or the fragment-side PCF edits -- re-create the
+/// (`cb13`-reading) vertex and tessellation shaders, or the fragment-side edits -- re-create the
 /// originals. `LoadShaderBundle` re-runs the create hooks, and with `jc3vr_core::is_shutting_down()` set
 /// both the vertex substitution and the fragment patches are inert, so the game returns to fully
 /// pristine shaders instead of keeping the mod's edits after it is gone. Game thread, during
 /// shutdown, before the hooks are uninstalled.
 pub fn restore_original_shaders_on_eject() {
     // Every substitution the mod makes has to be represented here, or a session that made only that
-    // kind of substitution ejects without a bounce. The tessellation pair is the case that was
-    // missing: a terrain-only session leaves a domain shader reading a `cb13` nothing binds any more.
+    // kind of substitution ejects without a bounce (a terrain-only session, for one, would leave a
+    // domain shader reading a `cb13` nothing binds any more).
     let (hull_forwarded, domain_reprojected) = crate::stereo::single_pass::terrain_counts();
     let patched_anything = crate::stereo::single_pass::has_patched_shaders()
         || patched_count() > 0
