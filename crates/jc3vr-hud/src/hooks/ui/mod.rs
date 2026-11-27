@@ -155,7 +155,8 @@ fn movie_capture(this: *mut MovieImpl, if_changed: bool) -> u64 {
 
 /// Replace the VP and camera matrix in `Get2DInfo` with the floating panel's orientation, so
 /// world-to-screen projects markers onto the panel surface rather than the screen plane. When the
-/// HUD redirect or quad is off, the original caller's VP is passed through unchanged.
+/// HUD redirect is off or the panel has no pose, the original caller's VP is passed through
+/// unchanged.
 //
 // The parameter count matches the game's `CUIManager::Get2DInfo` ABI — the detour macro requires an
 // exact signature match, so the parameters cannot be bundled into a struct.

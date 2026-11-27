@@ -1,6 +1,8 @@
-//! The button glyphs: Kenney's Input Prompts (CC0, `crates/jc3vr-hud/assets/glyphs/kenney-input-prompts`),
-//! the Valve Index set, with the grips from the same pack's Steam Frame set, since the Index set has
-//! no grip glyph. Test-only asset and physical-source mapping compatibility coverage.
+//! The button glyphs: Kenney's Input Prompts (CC0,
+//! `crates/jc3vr-hud/assets/glyphs/kenney-input-prompts`), the Valve Index set, with the grips from
+//! the same pack's Steam Frame set, since the Index set has no grip glyph. The summary panel does
+//! not draw them: the module is compiled only for its tests, which check the assets and the
+//! mapping from physical sources to glyphs.
 
 use jc3vr_body::controllers::intent::rows::{Control, StickDir};
 use jc3vr_input::frame::Hand;

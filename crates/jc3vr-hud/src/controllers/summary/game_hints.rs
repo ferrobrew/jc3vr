@@ -4,8 +4,8 @@
 //! mission's prompts) with a gamepad glyph per action
 //! (`docs/engine/button-hints-and-localisation.md`). Under the controller scheme the mod pins the
 //! game to its gamepad rules, so those glyphs name gamepad buttons for actions the controllers
-//! drive with other inputs. The two hint stages of the HUD
-//! movie are held hidden through [`crate::hud::scaleform`] while the scheme is in effect; the
+//! drive with other inputs. The two hint stages of the HUD movie are held hidden through
+//! [`crate::hud::scaleform`] while the scheme is in effect; the
 //! game's hint queue keeps running, so its timing and cooldowns behave as normal. The controls
 //! summary stands in for them.
 

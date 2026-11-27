@@ -18,7 +18,8 @@ pub(crate) struct ControllerSample {
     pub(crate) uv: Vec2,
     /// The map's primary button, the pointer's trigger.
     pub(crate) primary: bool,
-    /// The map's secondary button. The controller pointer has no secondary binding yet.
+    /// The map's secondary button. The game UI's controller pointer binds none, so it reads
+    /// released.
     pub(crate) secondary: bool,
     /// The off-hand stick's vertical axis, positive to zoom in. Raw: the zoom stepper applies its
     /// own thresholds.
@@ -282,8 +283,8 @@ fn press_anchor(
 }
 
 /// Turns a stick axis into discrete zoom steps: one per push, then repeating at a fixed rate while
-/// the push is held (the tuning's `map.zoom_*` keys). The map moves one snapped zoom level per clicked zoom action, so an axis fed
-/// through every dispatch would run through all the levels in a few frames, and stick drift would
+/// the push is held (the tuning's `map.zoom_*` keys). The map moves one snapped zoom level per
+/// clicked zoom action, so an axis fed through every dispatch would run through all the levels in a few frames, and stick drift would
 /// pin the map at a limit.
 #[derive(Debug, Copy, Clone, PartialEq)]
 struct ZoomRepeat {

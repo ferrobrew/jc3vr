@@ -67,7 +67,7 @@ pub struct EguiState {
     /// When `Some`, the egui UI is being driven as the VR floating panel (issue #24): [`run`] sizes
     /// the layout to this panel-texture size instead of the game window, and [`render_to`] paints it
     /// into the panel render target. Set from the game thread each frame before [`run`]; `None` is
-    /// the flat back-buffer overlay (the default, unchanged) behavior.
+    /// the flat back-buffer overlay.
     panel: Option<(u32, u32)>,
 }
 static STATE: Mutex<Option<EguiState>> = Mutex::new(None);
@@ -230,7 +230,7 @@ fn device_write(effect: DeviceEffect, focused: bool) -> Option<bool> {
 }
 
 /// Render the debug UI into the game's back buffer, unless the clean view hides it (the deferred
-/// mirror-overlay path in `crate::hud::mirror_overlay` honours the same switch). The flip presents
+/// mirror-overlay path in `crate::hud::mirror_overlay` honours the same check). The flip presents
 /// it as the desktop overlay.
 pub(crate) fn render_flat() {
     if let Some(egui_state) = EguiState::get().as_mut()
@@ -307,9 +307,10 @@ impl EguiState {
         STATE.lock()
     }
 
-    /// Select the panel (VR) or flat (desktop) layout mode for the next [`run`]. `Some(size)` sizes
-    /// the egui layout to a panel texture of that size (VR floating panel, issue #24); `None` sizes it
-    /// to the game window (the flat back-buffer overlay). Call from the game thread before [`run`].
+    /// Select the panel (VR) or flat (desktop) layout mode for the next [`run`](Self::run).
+    /// `Some(size)` sizes the egui layout to a panel texture of that size (VR floating panel, issue
+    /// #24); `None` sizes it to the game window (the flat back-buffer overlay). Call from the game
+    /// thread before [`run`](Self::run).
     pub fn set_panel_mode(&mut self, size: Option<(u32, u32)>) {
         let desktop_visible = crate::hud::mirror_overlay::is_active()
             || (jc3vr_view::vr::render_params(0).is_none() && !hides_desktop());
@@ -343,7 +344,7 @@ impl EguiState {
     }
 
     /// Append externally-sourced input events (the VR panel's virtual pointer, issue #24) to the next
-    /// [`run`]'s event queue. Call from the game thread before [`run`].
+    /// [`run`](Self::run)'s event queue. Call from the game thread before it.
     pub fn push_events(&mut self, events: impl IntoIterator<Item = egui::Event>) {
         if self.is_input_captured() {
             self.events.extend(events);
@@ -499,7 +500,8 @@ impl EguiState {
         }
     }
 
-    /// The existing desktop capture key never turns a ReadOnly overlay into an editor.
+    /// Cycle the desktop overlay's game-input capture, for the desktop capture key. The key never
+    /// turns a read-only overlay into an editor.
     pub fn toggle_game_input_capture(&mut self) {
         if egui_panel::is_active() {
             return;
@@ -600,7 +602,8 @@ impl EguiState {
         if cancelled {
             cancel_external_pointer();
         }
-        // SAFETY: cancellation may call native code, so device and focus evidence are read again.
+        // Cancellation may call native code, so the device and focus evidence are read again.
+        // SAFETY: the input device manager is a live singleton on the game thread.
         let device = unsafe { InputDeviceManager::get() };
         let device_enabled = device.as_ref().is_some_and(|device| device.m_Enabled);
         let write = self.capture.validate_device_write(
@@ -626,7 +629,9 @@ impl EguiState {
         if !cancelled && update.effects.cancel_pointer_and_drag {
             cancel_external_pointer();
         }
-        // SAFETY: cursor ownership is updated only after the device write boundary on this thread.
+        // Cursor ownership is updated only after the device write boundary on this thread.
+        // SAFETY (the graphics engine reads below): the graphics engine is a live singleton on the
+        // game thread.
         if update.snapshot.editing_requested
             && update.snapshot.focused
             && observation.tracking_ready

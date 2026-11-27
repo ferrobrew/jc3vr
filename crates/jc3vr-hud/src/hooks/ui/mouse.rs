@@ -7,7 +7,7 @@
 //! is committed only when `SendMouseEvents` actually delivers it (see
 //! [`crate::hud::pointer::PendingRoute`]).
 //!
-//! Every cancellation (the redirect or cursor turning off, egui taking input, a missing or replaced
+//! Every cancellation (the redirect turning off, egui taking input, a missing or replaced
 //! movie, shutdown) goes through [`cancel_pointer`], which releases a held button off the movie at
 //! the engine's own gamepad park position. Scaleform treats a release outside the pressed object as
 //! no click, so a cancelled press never activates the control under it.
@@ -104,7 +104,6 @@ fn send_mouse_events(this: *mut UIManager, steering: *mut c_void) -> bool {
     let (Some(manager), Some(((window_w, window_h), (movie_w, movie_h))), true) =
         (manager, geometry, mouse_route_active())
     else {
-        // SAFETY: only the movie supplied by the current live manager is dereferenced.
         let blocked = debug_ui_capture().is_some_and(|snapshot| !snapshot.gameplay_effective);
         // SAFETY: only the current live manager's movie is used for cancellation.
         let movie = unsafe { this.as_mut().and_then(|manager| manager.m_Movie.as_mut()) };
@@ -227,8 +226,8 @@ fn send_mouse_events(this: *mut UIManager, steering: *mut c_void) -> bool {
 /// `ComputeMovieSizeOnViewSize` -- which the redirect bypasses, leaving them describing the
 /// window-shaped movie rectangle (X happens to stay correct because its delta is zero and the
 /// scale factor cancels; Y is offset by the stale half-letterbox). Generic Scaleform widgets are
-/// unaffected -- they hit-test through the injected `NotifyMouseState` path -- so the map was the
-/// one UI screen left broken. Replace the mapping with the same client-rect normalization the
+/// unaffected -- they hit-test through the injected `NotifyMouseState` path -- so the map is the
+/// one UI screen the stale fields break. Replace the mapping with the same client-rect normalization the
 /// injection uses, so the map's cursor and the panel dot agree by construction.
 #[detour(address = UIManager::GetMovieSpaceMouseCursor_ADDRESS)]
 fn get_movie_space_mouse_cursor(
@@ -270,9 +269,8 @@ fn get_movie_space_mouse_cursor(
     }
 }
 
-/// Whether the mod routes the game UI's mouse this frame: the HUD redirect is on,
-/// the redirect's mapping geometry is published, egui does not own input, and the payload is not
-/// shutting down. The UI input boundary and the mouse delivery share this one gate.
+/// Whether the mod routes the game UI's mouse this frame: the HUD redirect is on, the redirect's
+/// mapping geometry is published, egui does not own input, and the payload is not shutting down. The UI input boundary and the mouse delivery share this one gate.
 fn mouse_route_active() -> bool {
     !jc3vr_core::is_shutting_down()
         && HUD_CONFIG.query(|c| c.redirect)
@@ -337,7 +335,9 @@ fn cancel_pointer(movie: Option<&mut MovieImpl>) {
     }
 }
 
-/// Native input is not recorded in SyntheticMouse, so every ownership interval parks once.
+/// Cancel every pointer source for an input-ownership change or shutdown. Native input never passes
+/// through [`SyntheticMouse`], so whether it holds a button is unknown here: the live movie is
+/// parked once per ownership interval regardless.
 fn cancel_pointer_for_ownership(movie: Option<&mut MovieImpl>) {
     clear_controller();
     pointer::reset_route();
