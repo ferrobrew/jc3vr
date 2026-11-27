@@ -6,6 +6,8 @@
 
 [comfort]
 release_s = 0.4
+engage_s = 0.0
+disarm_factor = 0.001
 handoff_timeout_s = 1.5
 handoff_converged_deg = 3.0
 retarget_fresh_s = 2.0

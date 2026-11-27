@@ -151,14 +151,14 @@ pub fn advance(body: Quat, rooted: Option<Vec3>, on_foot: bool, config: &HeadPos
 
     let target = if hold { 1.0 } else { 0.0 };
     let tau = if target > s.factor {
-        ENGAGE_S
+        tuning.engage_s
     } else {
         tuning.release_s
     };
     s.factor = s.factor + (target - s.factor) * follow_factor(dt, tau);
     // The release decay is exponential and never truly reaches zero; snap the tail off so the
     // filter (and the absorber's arming) fully disarms a couple of seconds after a release.
-    if !hold && s.factor < FACTOR_DISARM {
+    if !hold && s.factor < tuning.disarm_factor {
         s.factor = 0.0;
     }
     FACTOR_BITS.store(s.factor.to_bits(), Ordering::Relaxed);
@@ -235,15 +235,6 @@ fn absorb_step(offset: Vec3, step: Vec3, armed: bool) -> Vec3 {
         offset
     }
 }
-
-/// The blend-in time constant (seconds) when the filter engages. The filter holds the frame the
-/// previous render composed with, so an instant engage is seamless; a ramp here would only let the
-/// grapple's opening rotation leak through.
-const ENGAGE_S: f32 = 0.0;
-
-/// The blend below which a releasing filter snaps to fully disarmed (its rotational effect is long
-/// imperceptible there).
-const FACTOR_DISARM: f32 = 1e-3;
 
 /// The filter's state: written by [`advance`] in the input tick's poll stage (the engine's
 /// input job in play) and the render thread's frame loop, read per-eye on the render thread.

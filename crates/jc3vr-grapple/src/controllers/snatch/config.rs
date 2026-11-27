@@ -108,6 +108,24 @@ pub struct RagdollYankTuning {
     pub(crate) ease_per_s: f32,
 }
 
+/// The armed snatch's marker and the held line's drawing ([`crate::controllers::snatch`]'s latch).
+#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct LatchTuning {
+    /// The line's width, metres.
+    pub(crate) line_width_m: f32,
+    /// How much wider the held line is at its strength, metres.
+    pub(crate) strained_width_m: f32,
+    /// The line's opacity, `0..=1`, fainter than the dot so that it does not hide the target.
+    pub(crate) line_alpha: f32,
+    /// The dot's apparent diameter, radians.
+    pub(crate) dot_rad: f32,
+    /// The ring's apparent diameter, radians.
+    pub(crate) ring_rad: f32,
+    /// The opacity of the marker where the scene hides it, `0..=1`.
+    pub(crate) occluded_alpha: f32,
+}
+
 /// A gun tossed to the player's feet when no hand can catch it.
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -236,6 +254,8 @@ pub struct SnatchTuning {
     pub ragdoll: RagdollYankTuning,
     /// A gun tossed to the player's feet.
     pub(crate) toss: TossTuning,
+    /// The armed snatch's marker.
+    pub(crate) latch: LatchTuning,
 }
 
 impl Tuning for SnatchTuning {
@@ -335,6 +355,14 @@ impl Tuning for SnatchTuning {
         nonnegative("ragdoll.length_m", ragdoll.length_m, 100.0)?;
         nonnegative("ragdoll.mps", ragdoll.mps, 100.0)?;
         nonnegative("ragdoll.ease_per_s", ragdoll.ease_per_s, 100.0)?;
+
+        let latch = &self.latch;
+        positive("latch.line_width_m", latch.line_width_m, 1.0)?;
+        nonnegative("latch.strained_width_m", latch.strained_width_m, 1.0)?;
+        range("latch.line_alpha", latch.line_alpha, 0.0, 1.0)?;
+        positive("latch.dot_rad", latch.dot_rad, 1.0)?;
+        positive("latch.ring_rad", latch.ring_rad, 1.0)?;
+        range("latch.occluded_alpha", latch.occluded_alpha, 0.0, 1.0)?;
 
         let toss = &self.toss;
         nonnegative("toss.land_m", toss.land_m, 100.0)?;

@@ -19,7 +19,10 @@ use jc3vr_view::controllers::overlay::{
     store,
 };
 
-use crate::controllers::snatch::SwingReadout;
+use crate::controllers::snatch::{
+    SwingReadout,
+    config::{LatchTuning, SNATCH},
+};
 
 /// Draw the latch of `hand` on the target at the world point `point`.
 pub(super) fn submit(hand: Hand, point: Vec3) {
@@ -52,6 +55,7 @@ fn line_primitives(hand: Hand, swing: &SwingReadout) -> Vec<Primitive> {
     let Some(direction) = offset.try_normalize().filter(|_| swing.centre.is_finite()) else {
         return Vec::new();
     };
+    let latch = &SNATCH.get().latch;
     let share = if swing.max_tension_n > 0.0 {
         (swing.tension_n / swing.max_tension_n).clamp(0.0, 1.0)
     } else {
@@ -73,27 +77,27 @@ fn line_primitives(hand: Hand, swing: &SwingReadout) -> Vec<Primitive> {
                 offset: Vec3::ZERO,
             },
             to: Anchor::World(swing.centre),
-            width: LINE_WIDTH_M + share * STRAINED_WIDTH_M,
+            width: latch.line_width_m + share * latch.strained_width_m,
             color,
-            depth: DEPTH,
+            depth: depth(latch),
         },
         Primitive::Sprite {
             at: Anchor::World(held),
-            size: SpriteSize::Angular(RING_RAD * 0.5),
+            size: SpriteSize::Angular(latch.ring_rad * 0.5),
             facing: Facing::Billboard,
             shape: Shape::Ring { thickness: 0.3 },
             color,
-            depth: DEPTH,
+            depth: depth(latch),
         },
     ];
     if swing.braced {
         prims.push(Primitive::Sprite {
             at: Anchor::World(swing.anchor),
-            size: SpriteSize::Angular(DOT_RAD),
+            size: SpriteSize::Angular(latch.dot_rad),
             facing: Facing::Billboard,
             shape: Shape::Disc,
             color,
-            depth: DEPTH,
+            depth: depth(latch),
         });
     }
     prims
@@ -105,6 +109,7 @@ fn primitives(hand: Hand, point: Vec3) -> Vec<Primitive> {
     if !point.is_finite() {
         return Vec::new();
     }
+    let latch = &SNATCH.get().latch;
     let at = Anchor::World(point);
     let sprite = |size: f32, shape: Shape| Primitive::Sprite {
         at,
@@ -112,11 +117,11 @@ fn primitives(hand: Hand, point: Vec3) -> Vec<Primitive> {
         facing: Facing::Billboard,
         shape,
         color: LATCH_COLOUR,
-        depth: DEPTH,
+        depth: depth(latch),
     };
     vec![
-        sprite(DOT_RAD, Shape::Disc),
-        sprite(RING_RAD, Shape::Ring { thickness: 0.3 }),
+        sprite(latch.dot_rad, Shape::Disc),
+        sprite(latch.ring_rad, Shape::Ring { thickness: 0.3 }),
         Primitive::Line {
             from: Anchor::Hand {
                 hand,
@@ -124,14 +129,14 @@ fn primitives(hand: Hand, point: Vec3) -> Vec<Primitive> {
                 offset: Vec3::ZERO,
             },
             to: at,
-            width: LINE_WIDTH_M,
+            width: latch.line_width_m,
             color: [
                 LATCH_COLOUR[0],
                 LATCH_COLOUR[1],
                 LATCH_COLOUR[2],
-                LINE_ALPHA,
+                latch.line_alpha,
             ],
-            depth: DEPTH,
+            depth: depth(latch),
         },
     ]
 }
@@ -146,23 +151,12 @@ const LATCH_COLOUR: [f32; 4] = [0.3, 0.95, 1.0, 1.0];
 /// The held line's colour at its strength.
 const STRAINED_COLOUR: [f32; 4] = [1.0, 0.25, 0.15, 1.0];
 
-/// How much wider the held line is at its strength, metres.
-const STRAINED_WIDTH_M: f32 = 0.008;
-
-/// The line's opacity, fainter than the dot so that it does not hide the target.
-const LINE_ALPHA: f32 = 0.6;
-
-/// The dot's and the ring's apparent diameters, radians.
-const DOT_RAD: f32 = 0.012;
-const RING_RAD: f32 = 0.04;
-
-/// The line's width, metres.
-const LINE_WIDTH_M: f32 = 0.004;
-
 /// Seen through the scene, dimmed, as the grip markers are.
-const DEPTH: DepthMode = DepthMode::XRay {
-    occluded_alpha: 0.5,
-};
+fn depth(latch: &LatchTuning) -> DepthMode {
+    DepthMode::XRay {
+        occluded_alpha: latch.occluded_alpha,
+    }
+}
 
 #[cfg(test)]
 mod tests {

@@ -49,6 +49,13 @@ pub struct ComfortTuning {
     /// accumulated over the reel back into the view instead of snapping to it. Under the yaw
     /// handoff this carries only the small pitch and roll residual.
     pub release_s: f32,
+    /// The blend-in time constant when the filter engages, seconds. The filter holds the frame the
+    /// previous render composed with, so an instant engage (zero) is seamless; a ramp would only
+    /// let the grapple's opening rotation leak through.
+    pub(crate) engage_s: f32,
+    /// The blend below which a releasing filter snaps to fully disarmed. The release decay is
+    /// exponential and never reaches zero; its rotational effect is long imperceptible here.
+    pub(crate) disarm_factor: f32,
     /// How long the post-reel yaw handoff may hold the view while the body turns toward it,
     /// seconds, before falling back to the blend release (the body can be blocked from turning).
     pub(crate) handoff_timeout_s: f32,
@@ -116,6 +123,8 @@ impl Tuning for GrappleTuning {
     fn validate(&self) -> Result<(), Invalid> {
         let comfort = &self.comfort;
         nonnegative("comfort.release_s", comfort.release_s, 10.0)?;
+        nonnegative("comfort.engage_s", comfort.engage_s, 10.0)?;
+        range("comfort.disarm_factor", comfort.disarm_factor, 0.0, 1.0)?;
         nonnegative("comfort.handoff_timeout_s", comfort.handoff_timeout_s, 10.0)?;
         nonnegative(
             "comfort.handoff_converged_deg",

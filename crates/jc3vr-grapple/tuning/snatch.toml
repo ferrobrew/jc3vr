@@ -82,3 +82,11 @@ land_m = 1.2
 speed_mps = 9.0
 min_flight_s = 0.45
 max_flight_s = 1.2
+
+[latch]
+line_width_m = 0.004
+strained_width_m = 0.008
+line_alpha = 0.6
+dot_rad = 0.012
+ring_rad = 0.04
+occluded_alpha = 0.5
